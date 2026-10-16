@@ -143,8 +143,12 @@ function createFake({ now: start = 0 }: { now?: number } = {}): FakeClock {
 
 // The module itself is the real clock: each method of `real`, exported under its own name (aliased so the module
 // scope never shadows the global timers they call).
-const { now, setTimeout: realSetTimeout, clearTimeout: realClearTimeout, setInterval: realSetInterval,
-  clearInterval: realClearInterval, sleep } = real;
+const now: () => number = real.now;
+const realSetTimeout: (fn: TimerCallback, ms?: number, ...args: unknown[]) => TimerHandle = real.setTimeout;
+const realClearTimeout: (h: ClearArg) => void = real.clearTimeout;
+const realSetInterval: (fn: TimerCallback, ms?: number, ...args: unknown[]) => TimerHandle = real.setInterval;
+const realClearInterval: (h: ClearArg) => void = real.clearInterval;
+const sleep: (ms: number) => Promise<void> = real.sleep;
 export {
   now, realSetTimeout as setTimeout, realClearTimeout as clearTimeout, realSetInterval as setInterval,
   realClearInterval as clearInterval, sleep, real, createFake,

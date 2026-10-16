@@ -27,7 +27,8 @@
 import { createRequire } from 'node:module';
 import * as reply from '../reply.ts';
 import type { AnyHookIn, CardQuestion, HookOutput, Recorded } from '../types.ts';
-import type { Proposal, Review } from '../../lib/types-app.ts';
+import type { HandoffAskDoc, Proposal, Review } from '../../lib/types-app.ts';
+import type { AdmissionRequest } from '../../lib/remote/admission.ts';
 import type { Identity } from '../../lib/identity.ts';
 import type { ConsentEffect, ConsentEvent, Pending, Say, State, Target } from '../../lib/consent/review.ts';
 import type { CardResponse } from '../../lib/consent/card.ts';
@@ -40,7 +41,7 @@ interface ToolResponse extends CardResponse { plan?: unknown; planWasEdited?: un
  * transcript's lines once read (lines()). */
 type ConsentIn = Omit<AnyHookIn, 'tool_input'> & { tool_input?: ConsentToolInput; _lines?: string[] | null };
 /** An invite's join request waiting on the host (lib/remote/admission.ts pending). */
-type JoinRequest = ReturnType<typeof import('../../lib/remote/admission.ts')['pending']>[number];
+type JoinRequest = AdmissionRequest;
 
 // The rest of this file's modules load only past the quiet exit in handle(), so they are required (createRequire:
 // require(esm) is synchronous and caches like an import) by load(), not imported: a static import would load them first.
@@ -48,7 +49,7 @@ const require = createRequire(import.meta.url);
 
 /** A room tool call outside plan mode, other than post: the reducer acts on one only while a review is open (plan
  * mode) or, for post, while a note waits for its card, so nothing else needs loading. */
-const quiet = (input: AnyHookIn | undefined) => !!input && input.hook_event_name === 'PreToolUse' && input.permission_mode !== 'plan'
+const quiet = (input: AnyHookIn | undefined): boolean => !!input && input.hook_event_name === 'PreToolUse' && input.permission_mode !== 'plan'
   && /^mcp__plugin_sub-human_room__/.test(String(input.tool_name || '')) && !POST_TOOL.test(String(input.tool_name || ''));
 const POST_TOOL = /^mcp__plugin_sub-human_room__post$/;
 
@@ -167,11 +168,12 @@ const pendingOf = (me: Identity, ps: Proposal[] = proposal.pendingFor(me)): Pend
 const isPending = (me: Identity, hash: string | undefined) => !!hash && proposal.pendingFor(me).some(p => p.hash === hash);
 
 /** The model's call as text, scanned once: the hex tokens it names and its words (what a card call is about). */
-function callOf(input: unknown) {
+/** text: the call's JSON; tokens: every 6-12 hex run in it; words: those that stand alone. */
+interface Call { text: string; tokens: string[]; words: string[] }
+function callOf(input: unknown): Call {
   const text = JSON.stringify(input || {});
   return { text, tokens: text.match(/[0-9a-f]{6,12}/g) || [], words: text.match(/\b[0-9a-f]{6,12}\b/g) || [] };
 }
-type Call = ReturnType<typeof callOf>;
 /** Pending proposals the call names (a hash, or a 6–12 hex prefix of exactly one), oldest first. */
 const named = (pending: Proposal[], call: Call): Proposal[] => pending.filter(p => call.text.includes(p.hash)
   || call.tokens.some(t => p.hash.startsWith(t) && pending.filter(q => q.hash.startsWith(t)).length === 1));
@@ -185,7 +187,7 @@ function onlyPending(pending: Proposal[], call: Call): Proposal[] {
   return call.words.some(t => /[a-f]/.test(t) && /\d/.test(t) && !pending[0].hash.startsWith(t)) ? [] : pending;
 }
 /** The handoff waiting for me, when this card call is about it (it says "handoff", or carries the card's question). */
-function handoffAsked(me: Identity, call: Call) {
+function handoffAsked(me: Identity, call: Call): HandoffAskDoc | null {
   const a = handoff.pendingAsk(me.code, me.name);
   return a && (/handoff/i.test(call.text) || call.text.includes(handoff.question(a, me.code))) ? a : null;
 }
@@ -200,7 +202,7 @@ function admitAsked(me: Identity, call: Call): JoinRequest | null {
 }
 
 // ---------- running a step ----------
-type Out = { say: Say | null; show?: { admit?: JoinRequest; handoff?: ReturnType<typeof handoff.pendingAsk>; card?: Proposal[] } };
+type Out = { say: Say | null; show?: { admit?: JoinRequest; handoff?: HandoffAskDoc | null; card?: Proposal[] } };
 
 /** The seat's state, reduce one event (made from it), run the effects, store the state, write the answer. */
 function step(input: ConsentIn, me: Identity, make: (st: State) => ConsentEvent, show: Out['show'] = {}) {
@@ -487,7 +489,7 @@ function prompt(input: ConsentIn, me: Identity) {
 }
 
 /** Every event consent handles, for one hook input; an answer not recorded is told to the person (systemMessage). */
-function dispatch(input: ConsentIn) {
+function dispatch(input: ConsentIn): void {
   unsent = [];
   const r = c.capture(() => route(input));
   const note = unsent.length ? { systemMessage: `sub-human: ${unsent.join(' ')}` } : null;
@@ -516,7 +518,7 @@ function route(input: ConsentIn) {
 }
 
 /** The UserPromptSubmit handler (hooks/handlers/prompt.ts runs it after at-room.ts's, in one process). */
-const onPrompt = (input: ConsentIn) => { load(); dispatch({ ...input, hook_event_name: 'UserPromptSubmit' }); };
+const onPrompt = (input: ConsentIn): void => { load(); dispatch({ ...input, hook_event_name: 'UserPromptSubmit' }); };
 
 /** True when this session's seat has a review on record or a note consent must still offer (review.openOf), so the
  * module still runs node at the next turn end or prompt; false with no seat. noteWaits: any note of the seat waits for
@@ -548,10 +550,10 @@ function shimDispatch(input: ConsentIn) {
 }
 
 /** Run by the hooks module (mod/core/shim.ts SHIM_MODE), past load(). */
-const SHIM = () => env().envFlag('SUB_HUMAN_SHIM');
+const SHIM = (): boolean => env().envFlag('SUB_HUMAN_SHIM');
 
 /** Every event consent handles, as a hook (hooks/run.ts consent). */
-function handle(input: ConsentIn) {
+function handle(input: ConsentIn): void {
   if (quiet(input)) return;
   load();
   (SHIM() ? shimDispatch : dispatch)(input);

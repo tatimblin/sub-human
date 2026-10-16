@@ -128,12 +128,12 @@ class HoldServer {
     this.me = null; this.meAt = 0; this.timer = null; this.seat = null;
   }
 
-  log(...a: unknown[]) { try { this.ctx.log && this.ctx.log('hold', ...a); } catch { /* debug only */ } }
+  log(...a: unknown[]): void { try { this.ctx.log && this.ctx.log('hold', ...a); } catch { /* debug only */ } }
   text(s: string, isError = false): ToolResult { return this.ctx.text ? this.ctx.text(s, isError) : { content: [{ type: 'text', text: s }], ...(isError ? { isError: true as const } : {}) }; }
-  memberHolds(code: RoomCode) { return [...this.holds.values()].filter(h => h.kind === 'member' && h.code === code); }
-  roomHolds(code: RoomCode) { return [...this.holds.values()].filter(h => h.kind === 'room' && h.code === code); }
+  memberHolds(code: RoomCode): Hold[] { return [...this.holds.values()].filter(h => h.kind === 'member' && h.code === code); }
+  roomHolds(code: RoomCode): Hold[] { return [...this.holds.values()].filter(h => h.kind === 'room' && h.code === code); }
   members(code: RoomCode): Members { try { return this.ctx.identity.readMembers(code) || {}; } catch { return {}; } }
-  present(ms: Members, name: string) { const m = ms[name]; return !!(m && !m.left_at); }
+  present(ms: Members, name: string): boolean { const m = ms[name]; return !!(m && !m.left_at); }
 
   /**
    * The room's entries (the store's cached read: the same array while the log is unchanged), its joins and leaves,
@@ -157,7 +157,7 @@ class HoldServer {
     return { entries, moves, fresh };
   }
 
-  progress(h: Hold, msg?: string) {
+  progress(h: Hold, msg?: string): void {
     if (msg) h.msg = msg;
     h.sentAt = Date.now();
     if (h.token == null) return;
@@ -165,7 +165,7 @@ class HoldServer {
     try { this.ctx.progress(h.token, h.n, h.msg + HINT); } catch { /* client gone */ }
   }
 
-  finish(h: Hold, s: string) {
+  finish(h: Hold, s: string): void {
     if (!this.holds.has(h.id)) return;
     this.holds.delete(h.id);
     // A room hold returning JOINED/RESPAWN is re-called by its row agent at once: the row is still running.
@@ -177,7 +177,7 @@ class HoldServer {
     if (!this.holds.size) this.stopTimer();
   }
 
-  saveSeat() {
+  saveSeat(): void {
     const seat = this.seat;
     if (!seat) return;
     // a room this machine no longer has (`link --forget`): write nothing there, ever again (item 9 R1)
@@ -220,7 +220,7 @@ class HoldServer {
     return lines.join('\n');
   }
 
-  tick() {
+  tick(): void {
     const now = Date.now();
     if (now - this.meAt >= this.WHO_MS) {
       this.meAt = now;
@@ -276,14 +276,14 @@ class HoldServer {
     return n ? clip(noticeText(n)) : '';
   }
 
-  startTimer() {
+  startTimer(): void {
     if (this.timer) return;
     this.timer = setInterval(() => { try { this.tick(); } catch (e) { this.log('tick error', msgOf(e)); } }, this.POLL_MS);
     if (this.timer.unref) this.timer.unref();
   }
-  stopTimer() { if (this.timer) { clearInterval(this.timer); this.timer = null; } }
+  stopTimer(): void { if (this.timer) { clearInterval(this.timer); this.timer = null; } }
 
-  onCancelled(h: Hold) {
+  onCancelled(h: Hold): void {
     if (!this.holds.has(h.id)) return;
     this.holds.delete(h.id);
     this.log('CANCELLED', h.id, h.kind, h.name || h.code);
@@ -300,7 +300,7 @@ class HoldServer {
     if (!this.holds.size) this.stopTimer();
   }
 
-  respawnCheck(h: Hold) {
+  respawnCheck(h: Hold): void {
     const code = h.code;
     const gone = this.roomGone.get(code);
     if (gone && Date.now() - gone < this.RESPAWN_MS * 4) return;

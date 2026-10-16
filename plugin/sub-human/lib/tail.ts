@@ -98,7 +98,22 @@ type Judge = (e: Entry, entries?: readonly Readonly<Entry>[], note?: string) => 
 type Log = (where: string, e: unknown) => void;
 /** The tail's write: text (whole lines) and a callback once it is out. */
 type Write = (text: string, done: () => void) => unknown;
-type Timings = ReturnType<typeof timings>;
+/** The tail's timings (timings()): each from its SUB_HUMAN_* override, else lib/config.ts. */
+interface Timings {
+  resolveMs: number;
+  unseatedMs: number;
+  pollMs: number;
+  settleMs: number;
+  settleMaxMs: number;
+  roomClaudeSettleMs: number;
+  roomClaudeSettleMaxMs: number;
+  leaveMs: number;
+  healthMs: number;
+  backoffMs: number;
+  backoffMaxMs: number;
+  errorLogMs: number;
+  stallMs: number;
+}
 /** One item the Batcher holds: the entry, and when it was enqueued. */
 interface Item { e: Entry, away: boolean }
 type Pending<T> = T & { at: number };
@@ -166,12 +181,18 @@ interface FormatCtx {
   seen: Set<number>;
   leaveMs: number;
 }
-type Cursor = ReturnType<typeof cursorKeeper>;
+/** A seat's read cursor (cursorKeeper): saw each id, hold and release the ones in flight, save the highest done. */
+interface Cursor {
+  saw(id: number): void;
+  hold(id: number): void;
+  release(id: number): void;
+  save(): void;
+}
 
 const STATE_KINDS = new Set(['proposal', 'signoff', 'objection', 'decision']);
 const isMove = (e: Entry) => e.kind === 'member_joined' || e.kind === 'member_left';
 
-function timings() {
+function timings(): Timings {
   const resolveMs = envMs('SUB_HUMAN_RESOLVE_MS');
   const settleMs = envMs('SUB_HUMAN_SETTLE_MS');
   const settleMaxMs = envMs('SUB_HUMAN_SETTLE_MAX_MS');
@@ -221,15 +242,15 @@ class Batcher<T extends { e: { id: number } } = Item> {
     this.maxT = null;
     this.dead = false;
   }
-  enqueue(item: T) { this.pending.push({ ...item, at: this.clock.now() }); this.arm(); }
-  arm() {
+  enqueue(item: T): void { this.pending.push({ ...item, at: this.clock.now() }); this.arm(); }
+  arm(): void {
     if (this.dead) return;
     this.clock.clearTimeout(this.quietT);
     this.quietT = this.clock.setTimeout(() => this.flush(), this.settleMs);
     if (!this.maxT) this.maxT = this.clock.setTimeout(() => this.flush(), this.settleMaxMs);
   }
-  clear() { this.clock.clearTimeout(this.quietT); this.clock.clearTimeout(this.maxT); this.quietT = this.maxT = null; }
-  flush() {
+  clear(): void { this.clock.clearTimeout(this.quietT); this.clock.clearTimeout(this.maxT); this.quietT = this.maxT = null; }
+  flush(): void {
     this.clear();
     if (this.dead) return;
     const now = this.clock.now();
@@ -246,7 +267,7 @@ class Batcher<T extends { e: { id: number } } = Item> {
       this.onError(err);
     }
   }
-  stop() { this.dead = true; this.clear(); }
+  stop(): void { this.dead = true; this.clear(); }
 }
 
 // ---------- formatters ----------
@@ -417,7 +438,7 @@ function startCursor(rm: Pick<TailRoom, 'readView'>, saved: number, me: Identity
  *   hold(id), release(id)   in flight, or out
  *   save()       move the saved cursor as far as it may go; a failed write is retried by the next save
  */
-function cursorKeeper(write: (id: number) => void, after: number, { log, dead }: { log: Log, dead: () => boolean }) {
+function cursorKeeper(write: (id: number) => void, after: number, { log, dead }: { log: Log, dead: () => boolean }): Cursor {
   const inflight = new Set<number>();
   let processed = after, saved = after;
   return {

@@ -62,7 +62,7 @@ interface ReqFields {
 }
 type GateResult = { ok: true, req?: Entry } | { ok: false, reason: string };
 
-const OPS = ['add', 'claim', 'release', 'done'];
+const OPS: readonly string[] = ['add', 'claim', 'release', 'done'];
 const SUBJECT_MAX = config.TASK_SUBJECT_MAX;
 const DETAIL_MAX = config.TASK_DETAIL_MAX;
 const EVIDENCE_MAX = config.TASK_EVIDENCE_MAX;

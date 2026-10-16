@@ -46,7 +46,7 @@ import {
 import { RoomError } from './validate.ts';
 import { namedSeat } from '../../mod/core/seat.ts';
 import type { JoinOutcome, KvApi, Member, Members, MembersApi, Presence, PresenceInput, PresenceState, SeatRecord } from './types.ts';
-import type { RoomCode } from '../brand.ts';
+import type { RoomCode, SeatName } from '../brand.ts';
 
 /** What ops() needs of its store: the members document's read and update, its kv, and the room code. */
 interface OpsStore {
@@ -62,7 +62,7 @@ const PRESENCE_STATES = ['working', 'idle', 'permission', 'error'] as const;
 const PRESENCE_SET: ReadonlySet<unknown> = new Set(PRESENCE_STATES);
 const isPresenceState = (s: unknown): s is PresenceState => PRESENCE_SET.has(s);
 /** The room's Claude: its member name, role and SendMessage name (claude.CODE). */
-const ROOM_CLAUDE = namedSeat('claude');
+const ROOM_CLAUDE: 'claude' & SeatName = namedSeat('claude');
 const LOCAL_FIELDS = ['pid', 'pid_start', 'session_id', 'cwd'] as const;
 const ROOM_CLAUDE_FIELDS = ['job', 'spawned_at', 'closing', 'by', 'job_session', 'claim'] as const; // kept across the room Claude's (re)bind
 
@@ -83,7 +83,7 @@ function startMatches(m: SeatLike): boolean {
   const s = pidStart(m.pid);
   return s == null || Math.abs(s - Number(m.pid_start)) <= PID_START_SLACK_S;
 }
-const leaseFresh = (m: SeatLike | null | undefined, now = Date.now()): boolean => { const t = Date.parse(String(m && m.seen_at)); return Number.isFinite(t) && now - t < SEAT_LEASE_MS; };
+const leaseFresh = (m: SeatLike | null | undefined, now: number = Date.now()): boolean => { const t = Date.parse(String(m && m.seen_at)); return Number.isFinite(t) && now - t < SEAT_LEASE_MS; };
 function seatAlive(m: SeatLike | null | undefined): boolean { // unary: callers pass it to filter/some
   if (!m || !m.name || m.left_at) return false;
   if (validPid(m.pid) && isMine(machineOf(m))) return isAlive(m.pid) && startMatches(m);
@@ -161,7 +161,7 @@ function publicView(members: Members | null | undefined): Members {
  * 'starting' (a spawn claim younger than ROOM_CLAUDE_CLAIM_MS, or a job not bound within ROOM_CLAUDE_BIND_MS), else null (never
  * ran, its start failed, stopped, left or closing). Same rules as lib/room-claude.ts needsSpawn, from any machine.
  */
-function roomClaudePresence(o: SeatLike | null | undefined, now = Date.now()): 'live' | 'starting' | null {
+function roomClaudePresence(o: SeatLike | null | undefined, now: number = Date.now()): 'live' | 'starting' | null {
   if (!o || o.left_at || o.stopped_at || o.closing) return null;
   if (validPid(o.pid) && isMine(machineOf(o))) return seatAlive(o) ? 'live' : null;
   if (o.joined_at && o.job !== 'pending' && !o.spawn_error && leaseFresh(o, now)) return 'live';

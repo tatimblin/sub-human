@@ -27,7 +27,7 @@ import { answersItself, joinPayload, readReply, answerOf, cancels, leftName, gon
 import { shimArgv, shimEnv, toClassic, asNotice, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { restoreNeeded } from './core/prefilter.ts';
 import { mergeClassic } from './core/prompt.ts';
-import { factsBook } from './core/facts.ts';
+import { factsBook, type FactsBook } from './core/facts.ts';
 import { asHello, asNonce, mintNonce } from './core/state.ts';
 import { assertNever } from './core/never.ts';
 import type { EngineInterface, On, SessionAppendArgs } from 'claude-code';
@@ -64,7 +64,7 @@ function nonceFor($: EngineInterface, sid: string): Promise<string | null> {
 /** What classic.PreToolUse needs and its event does not carry (mod/core/facts.ts): each main-loop classic event this
  * module sees notes the session's transcript path and permission mode; tool.call stashes the call's agentId. Module
  * state: a reload forgets it until the next event. */
-export const facts = factsBook();
+export const facts: FactsBook = factsBook();
 /** The last presence the module wrote or saw for seat (address|sid). A typed prompt (mod/prompt.ts) only marks
  * "working" as pending; the turn it starts writes it (turn.start below), so a prompt the plugin stops or refuses (no
  * turn: an @room's receipt, a refusal) writes nothing (seen live: "working" for 8+ minutes). turn.complete writes
@@ -193,9 +193,9 @@ let noticedAt = -Infinity;
 /** Error counts in order: two failures at once must not both read the same count. */
 let counting: Promise<void> = Promise.resolve();
 
-export const delivering = (sid: unknown) => !!(child && !child.stopped && child.sid === sid && child.seat);
+export const delivering = (sid: unknown): boolean => !!(child && !child.stopped && child.sid === sid && child.seat);
 
-export function setRemote(on: boolean | undefined) { if (typeof on === 'boolean') remote = on; }
+export function setRemote(on: boolean | undefined): void { if (typeof on === 'boolean') remote = on; }
 
 const userRow = (text: string): SessionAppendArgs => ({ message: { type: 'user', content: [{ type: 'text', text }] } });
 
@@ -299,7 +299,7 @@ async function midTurnWake($: EngineInterface, text: string) {
   if (!turns.appended(text, at)) await submitWake($, text, { appended: true });
 }
 
-export const isRelay = (text: string) => relaying.has(text);
+export const isRelay = (text: string): boolean => relaying.has(text);
 
 /**
  * What a relay needs of a hook's $, as plain functions (a hooks module passes no $ across an import): {now, after,
@@ -313,7 +313,7 @@ const relayIo = ($: EngineInterface): RelayIo => ({
 });
 
 /** Lines for the person on Remote Control (io: relayIo's shape): queued for the next relay. Never throws. */
-export function queueRelay(io: RelayIo, lines: unknown) {
+export function queueRelay(io: RelayIo, lines: unknown): void {
   if (relayQ.add(lines)) scheduleRelay(io);
 }
 
@@ -466,7 +466,7 @@ function unpin($: EngineInterface): void {
   $.ui.status(undefined);
 }
 
-export function registerDeliver(on: On) {
+export function registerDeliver(on: On): void {
   on('session.start', async ($, e, next) => {
     try {
       const sid = await $.session.id();

@@ -129,7 +129,7 @@ const outboxMod = (): typeof import('./outbox.ts') => require('./outbox.ts');
 /** Why a link stopped for good with nothing wrong (reasons ROOM_CLOSED, NO_SEAT): a dormant link. */
 const ROOM_CLOSED_REASON = 'the room was closed';
 const NO_SEAT_REASON = 'no seat of this machine is left in the room';
-const nextDelay = engine.nextDelay;
+const nextDelay: (prev: number, base: number, cap: number, random?: () => number) => number = engine.nextDelay;
 
 /** The reasons a link's token never gets in again (kicked, or the host forgot it): the token goes from the link file. */
 const SPENT: ReadonlySet<string> = new Set(['LINK_REVOKED', 'TOKEN_UNKNOWN', 'KEY_REVOKED']);

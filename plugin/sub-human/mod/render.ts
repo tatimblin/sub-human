@@ -41,7 +41,7 @@ export function drawRow(props: RowProps, own: boolean): RenderElement | null {
   return { type: 'Box', props: { flexDirection: 'column' }, children: rows.map((r): RenderElement => ({ type: 'Text', props: { dimColor: r.dim }, children: [r.text] })) };
 }
 
-export function registerRender(on: On) {
+export function registerRender(on: On): void {
   // the d.ts takes no list for a field nested in a union (origin.kind), the engine does (validate reads it): typed as
   // the UserMessage matcher it is, the origin left to the engine
   on('ui.render', { component: 'UserMessage', props: { origin: { kind: ['peer', 'peer-send-message', 'plugin'] } } } as { component: 'UserMessage' }, ($, e, next) => {

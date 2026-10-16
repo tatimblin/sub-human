@@ -106,7 +106,7 @@ function showStatus(code: RoomCode, { out }: CliIo) {
   }
 }
 
-function handoffCmd(args: readonly string[], ctx: CliIo) {
+function handoffCmd(args: readonly string[], ctx: CliIo): void {
   const die: CliIo['die'] = ctx.die, out = ctx.out;
   const { flags, rest } = flagsOf(args, { ...LOCATOR_FLAGS, room: 1, as: 1, status: 0 }, die);
   const code = roomOf(flags, die);
@@ -132,7 +132,7 @@ const FORK_RISK = (code: RoomCode, last: number): string[] => [
   '(its own lines are kept in orphaned-<time>.jsonl, never merged).',
 ];
 
-function promoteCmd(args: readonly string[], ctx: CliIo) {
+function promoteCmd(args: readonly string[], ctx: CliIo): void {
   const die: CliIo['die'] = ctx.die, out = ctx.out;
   const { flags, rest } = flagsOf(args, { ...LOCATOR_FLAGS, as: 1, force: 0, confirm: 1 }, die);
   const code = rest[0];
@@ -176,7 +176,7 @@ function readLine(fd = 0): string {
   return text.split('\n')[0];
 }
 
-function demoteCmd(args: readonly string[], ctx: CliIo) {
+function demoteCmd(args: readonly string[], ctx: CliIo): void {
   const die: CliIo['die'] = ctx.die, out = ctx.out;
   const { flags, rest } = flagsOf(args, { from: 1 }, die);
   // the invite and its PIN never go in argv (ps shows it, the shell's history keeps it): stdin, or a file

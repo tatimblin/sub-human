@@ -576,7 +576,7 @@ const handoffCli = (name: 'handoff' | 'promote' | 'demote'): Command => args => 
 Object.assign(cmds, { handoff: handoffCli('handoff'), promote: handoffCli('promote'), demote: handoffCli('demote') });
 
 /** Run one command: argv is what follows `sub-human` (scripts/sub-human passes process.argv.slice(2)). */
-function main([cmd, ...args]: string[] = process.argv.slice(2)) {
+function main([cmd, ...args]: string[] = process.argv.slice(2)): void {
   // Keep the SSH serve shim's pointer on this install and node (lib/remote/shim.ts); not on the status line's hot
   // path, and never creating a home. Passive: a dev checkout's run never takes the pointer from another live install.
   if (cmd !== 'agent-statusline' && cmd !== 'doctor') { // doctor reports the shim as it is (--fix refreshes it)

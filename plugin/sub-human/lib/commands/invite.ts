@@ -14,7 +14,7 @@ import type { Verb } from './types.ts';
 const require = createRequire(import.meta.url);
 const webhost = (): typeof import('../remote/webhost.ts') => require('../remote/webhost.ts');
 
-export const INVITE_USAGE = `usage: /sub-human invite (an ssh line; --web for the web). ${HELP_HINT}`;
+export const INVITE_USAGE: string = `usage: /sub-human invite (an ssh line; --web for the web). ${HELP_HINT}`;
 
 export const invite: Verb = (argv, { cur }) => {
   const why = hostOnly(cur, 'invite');

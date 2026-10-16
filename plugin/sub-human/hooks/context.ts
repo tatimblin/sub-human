@@ -21,7 +21,7 @@ import type { RoomCode } from '../lib/brand.ts';
 
 const PLUGIN_ROOT = path.join(import.meta.dirname, '..');
 const CAP = config.CONTEXT_CAP;
-export const BLOCK_MAX = config.BLOCK_MAX;
+export const BLOCK_MAX: number = config.BLOCK_MAX;
 
 /** readMembers() ({name: record}) as an array, in join order. */
 const members = (code: RoomCode): Member[] => Object.values<Member>(identity.readMembers(code) || {}).filter(m => m && m.name);
@@ -102,9 +102,9 @@ function compactRows(text: string, me: Identity): string {
   return `Make ${calls.length === 1 ? 'this Agent call' : 'these Agent calls, in one message,'} now, exactly as written; write nothing about it:\n${calls.join('\n')}${tail}`;
 }
 
-export const seatTitle = (me: Identity) => identity.address(me.name, me.code);
+export const seatTitle = (me: Identity): string => identity.address(me.name, me.code);
 
-export function contextBlock(me: Identity, lead?: string, { rowsLead = '', rowsText = null, allRows = false }: { rowsLead?: string; rowsText?: string | null; allRows?: boolean } = {}) {
+export function contextBlock(me: Identity, lead?: string, { rowsLead = '', rowsText = null, allRows = false }: { rowsLead?: string; rowsText?: string | null; allRows?: boolean } = {}): string {
   const text = roleText(me.role, me);
   const tail = lead ? `\n(${lead})` : '';
   let rs = rowsText != null ? rowsText : rowCalls(me, allRows);

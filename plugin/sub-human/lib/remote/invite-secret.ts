@@ -43,8 +43,8 @@ const ROLES: readonly SecretRole[] = Object.freeze(['listener', 'machine']);
 const ALPHABET = '0123456789abcdefghjkmnpqrstvwxyz';
 const SECRET_BYTES = 16;
 const TAG_BYTES = 8;
-const WORD_LEN = Math.ceil(((SECRET_BYTES + TAG_BYTES) * 8) / 5); // 39
-const WORD_RE = new RegExp(`^[${ALPHABET}]{${WORD_LEN}}$`);
+const WORD_LEN: number = Math.ceil(((SECRET_BYTES + TAG_BYTES) * 8) / 5); // 39
+const WORD_RE: RegExp = new RegExp(`^[${ALPHABET}]{${WORD_LEN}}$`);
 const KEY_RE = /^[A-Za-z0-9_-]{43}$/;
 const LOOKALIKE: Readonly<Record<string, string>> = Object.freeze({ i: '1', l: '1', o: '0' });
 

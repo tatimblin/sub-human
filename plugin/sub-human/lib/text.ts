@@ -37,8 +37,8 @@ import { NAME_RE, CODE_RE, SID_SAFE, homeOf, isSeatName, isRoomCode, isSessionId
 import { envStr } from './env.ts';
 import type { MachineId, ProposalHash } from './brand.ts';
 
-const HASH_RE = /^[0-9a-f]{12}$/;
-const MACHINE_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const HASH_RE: RegExp = /^[0-9a-f]{12}$/;
+const MACHINE_RE: RegExp = /^[A-Za-z0-9_-]{1,64}$/;
 const isMachineId = (v: unknown): v is MachineId => typeof v === 'string' && MACHINE_RE.test(v);
 const hash12 = (data: crypto.BinaryLike): string => crypto.createHash('sha256').update(data).digest('hex').slice(0, 12);
 const isProposalHash = (v: unknown): v is ProposalHash => typeof v === 'string' && HASH_RE.test(v);

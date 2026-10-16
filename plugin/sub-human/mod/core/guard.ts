@@ -14,8 +14,8 @@ import type { GuardCtx } from './types.ts';
 import { homeOf } from './seat.ts';
 
 export const MCP_PREFIX = 'mcp__plugin_sub-human_room__';
-export const HOLD = MCP_PREFIX + 'hold';
-export const WRITE_TOOLS = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'];
+export const HOLD: string = MCP_PREFIX + 'hold';
+export const WRITE_TOOLS: readonly string[] = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'];
 const MSG = 'ROOM-GUARD: the room store is reached only through sub-human. Post with the room MCP tools; read with the room MCP read tool.';
 export const HOLD_DENY = 'sub-human: hold is for row agents only (sub-human:participant / sub-human:room); never call it yourself. Spawn the row agents listed under ROWS instead.';
 export const ROOM_ALLOW = 'sub-human: room tool for a joined session.';
@@ -79,7 +79,7 @@ function homeSpellings({ home, realHome, userHome }: GuardCtx = {}): string[] {
 }
 
 /** bashVerdict reads ctx.realCwd / realPluginRoot for this command (ctx.cwd it reads for every command it can). */
-export const needsCwd = (command: unknown) => {
+export const needsCwd = (command: unknown): boolean => {
   const cmd = typeof command === 'string' ? command : '';
   return RUNS_JS.test(cmd) && PLUGIN_CODE.test(cmd) && !NAMES_PLUGIN(cmd);
 };
@@ -448,7 +448,7 @@ export function homeEnv(home: unknown, userHome: unknown): string {
 /** The deny text. root (the plugin root, when known): name the read-only CLI by its path; it lives in scripts/, which is
  *  not on the Bash tool's PATH (a top-level bin/ would be, but claude.ai org sync rejects a plugin that has one).
  *  doctor --fix / --bundle: a person's step, run in a terminal (by the same path), never the store's wording. */
-export const denyText = (why: string, root: unknown, homes: { home?: unknown; userHome?: unknown } = {}) => {
+export const denyText = (why: string, root: unknown, homes: { home?: unknown; userHome?: unknown } = {}): string => {
   const known = typeof root === 'string' && root.startsWith('/');
   if (why === DOCTOR_WHY) {
     return `ROOM-GUARD: sub-human ${why} (the shim, the home's modes, a bundle file), so they are the person's step: ${
@@ -512,7 +512,7 @@ export const WRITE_DENY = (tool: string, p: string | null) => `${MSG} (Denied: $
  * pending invite's SECRET and PIN, and a web link's own Noise key) and sessions/ (the hooks module's lease with the
  * session's nonce, sessions/mods/, and the session indexes). Everything else in the store stays readable.
  */
-export const SECRET_DIRS = ['keys', 'listen', 'links', 'sessions'];
+export const SECRET_DIRS: readonly string[] = ['keys', 'listen', 'links', 'sessions'];
 const SECRET_SEGMENT = /(?:^|\/)\.sub-human\/(?:keys|listen|links|sessions)(?:\/|$)/;
 const DOT_HOME_END = /(?:^|\/)\.sub-human\/?$/;
 const homesOf = (ctx: GuardCtx): string[] => [ctx.home, ctx.realHome].filter((r): r is string => typeof r === 'string' && r.startsWith('/')).map(normalize);

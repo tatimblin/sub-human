@@ -4,7 +4,9 @@
  * hooks.json shell lines read SUB_HUMAN_HOME themselves). A reader reads the variable at the moment it is called (tests
  * set the env per child process, some per call). Zero dependencies but lib/config.ts (the defaults).
  *
- *   ENV                                      name -> {kind, default?, allowZero?, test?, does}
+ *   ENV                                      name -> {kind, allowZero?, test?, does}: literals only (its type is the
+ *                                            source of EnvName and the rest, and an isolated declaration infers it)
+ *   MS_DEFAULTS                              ms knob -> its default (lib/config.ts), one per ms knob of ENV
  *     kind ms     a timing override: envMs (testMs when test: honoured only under the test preload)
  *     kind num    a number read as Number(value) (NaN when unset): envNum; the caller keeps its own fallback
  *     kind flag   "1" turns it on: envFlag
@@ -29,45 +31,45 @@ import * as config from './config.ts';
 
 type Env = Record<string, string | undefined>;
 
-interface MsKnob { kind: 'ms'; default: number; allowZero?: boolean; test?: boolean; does: string }
+interface MsKnob { kind: 'ms'; allowZero?: boolean; test?: boolean; does: string }
 interface OtherKnob { kind: 'num' | 'flag' | 'str' | 'path'; does: string }
 type Knob = MsKnob | OtherKnob;
 
 export const ENV = {
   // ----- timings (envMs) -----
-  SUB_HUMAN_SETTLE_MS: { kind: 'ms', default: config.SETTLE_MS, does: 'the tail: quiet before a batch of events goes out' },
-  SUB_HUMAN_SETTLE_MAX_MS: { kind: 'ms', default: config.SETTLE_MAX_MS, does: 'the tail: the longest a batch waits' },
-  SUB_HUMAN_LEAVE_MS: { kind: 'ms', default: config.LEAVE_SETTLE_MS, does: 'a leave settles (tail, notices, rows, hold)' },
-  SUB_HUMAN_UNSEATED_MS: { kind: 'ms', default: config.UNSEATED_MS, does: 'the tail: no seat yet, look it up this rarely' },
-  SUB_HUMAN_RESOLVE_MS: { kind: 'ms', default: config.RESOLVE_MS, does: 'the tail: seated, re-resolve the seat this often' },
-  SUB_HUMAN_POLL_MS: { kind: 'ms', default: config.TAIL_POLL_MS, does: 'the tail\'s log poll' },
-  SUB_HUMAN_TAIL_HEALTH_MS: { kind: 'ms', default: config.TAIL_HEALTH_MS, does: 'the tail\'s health check' },
-  SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS: { kind: 'ms', default: config.ROOM_CLAUDE_ORPHAN_MS, does: 'the room\'s Claude with no human' },
-  SUB_HUMAN_REAP_STOP_MS: { kind: 'ms', default: config.REAP_STOP_MS, allowZero: true, does: 'after `claude stop`, the wait for the process' },
-  SUB_HUMAN_REAP_GRACE_MS: { kind: 'ms', default: config.REAP_GRACE_MS, allowZero: true, does: 'a quick rejoin cancels the reap' },
-  SUB_HUMAN_REAP_WAIT_MS: { kind: 'ms', default: config.REAP_WAIT_MS, allowZero: true, does: 'wait for task 1 before `claude stop`' },
-  SUB_HUMAN_REWAKE_WAIT_MS: { kind: 'ms', default: config.REWAKE_WAIT_MS, allowZero: true, does: 'row-rewake waits for the seat' },
-  SUB_HUMAN_ROOM_GC_MS: { kind: 'ms', default: config.ROOM_GC_MS, does: 'an idle room is set aside after this' },
-  SUB_HUMAN_EXIT_INPUT_WAIT_MS: { kind: 'ms', default: config.EXIT_INPUT_WAIT_MS, does: 'consent: the wait for ExitPlanMode\'s input' },
-  SUB_HUMAN_FORK_WAIT_MS: { kind: 'ms', default: config.FORK_RECORD_WAIT_MS, does: 'session-restore: the fork\'s continued-in record' },
-  SUB_HUMAN_HOLD_BEAT_MS: { kind: 'ms', default: config.HOLD_BEAT_MS, does: 'the hold: progress re-sent' },
-  SUB_HUMAN_HOLD_POLL_MS: { kind: 'ms', default: config.HOLD_POLL_MS, does: 'the hold\'s poll' },
-  SUB_HUMAN_HOLD_GRACE_MS: { kind: 'ms', default: config.HOLD_GRACE_MS, does: 'the hold: a name is announced only after this' },
-  SUB_HUMAN_HOLD_RESPAWN_MS: { kind: 'ms', default: config.HOLD_RESPAWN_MS, does: 'the hold\'s respawn' },
-  SUB_HUMAN_HOLD_WHO_MS: { kind: 'ms', default: config.HOLD_WHO_MS, does: 'the hold: `me` re-resolved' },
-  SUB_HUMAN_HOLD_ROOM_GAP_MS: { kind: 'ms', default: config.HOLD_ROOM_GAP_MS, does: 'the hold: a returned room hold still counts' },
-  SUB_HUMAN_LINK_RETRY_MS: { kind: 'ms', default: config.LINK_RETRY_MS, does: 'the link daemon\'s first retry' },
-  SUB_HUMAN_LINK_RETRY_MAX_MS: { kind: 'ms', default: config.LINK_RETRY_MAX_MS, does: 'the link daemon\'s longest retry' },
-  SUB_HUMAN_LINK_PING_MS: { kind: 'ms', default: config.LINK_PING_MS, does: 'the link\'s ping' },
-  SUB_HUMAN_LINK_PONG_MS: { kind: 'ms', default: config.LINK_PONG_MS, does: 'the link: the wait for a pong' },
-  SUB_HUMAN_LINK_DEAD_MS: { kind: 'ms', default: config.LINK_DEAD_MS, does: 'the link: silence before it is dead' },
-  SUB_HUMAN_LINK_WAKE_TICK_MS: { kind: 'ms', default: config.LINK_WAKE_TICK_MS, does: 'the link\'s sleep detector tick' },
-  SUB_HUMAN_LINK_WAKE_GAP_MS: { kind: 'ms', default: config.LINK_WAKE_GAP_MS, does: 'the link: a gap that means the machine slept' },
-  SUB_HUMAN_LINK_IDLE_MS: { kind: 'ms', default: config.LINK_IDLE_MS, does: 'the link daemon with no seat stops' },
-  SUB_HUMAN_WS_CONNECT_MS: { kind: 'ms', default: config.WS_CONNECT_MS, does: 'a web link\'s connect' },
-  SUB_HUMAN_YES_GUARD_MS: { kind: 'ms', default: config.YES_GUARD_MS, test: true, does: 'consent: a plan-view Yes this soon records nothing' },
-  SUB_HUMAN_PIN_BACKOFF_MS: { kind: 'ms', default: config.PIN_BACKOFF_MS, test: true, does: 'the wait after a wrong PIN' },
-  SUB_HUMAN_ADMIT_TTL_MS: { kind: 'ms', default: config.ADMIT_TTL_MS, test: true, does: 'a held join waits for the host\'s card' },
+  SUB_HUMAN_SETTLE_MS: { kind: 'ms', does: 'the tail: quiet before a batch of events goes out' },
+  SUB_HUMAN_SETTLE_MAX_MS: { kind: 'ms', does: 'the tail: the longest a batch waits' },
+  SUB_HUMAN_LEAVE_MS: { kind: 'ms', does: 'a leave settles (tail, notices, rows, hold)' },
+  SUB_HUMAN_UNSEATED_MS: { kind: 'ms', does: 'the tail: no seat yet, look it up this rarely' },
+  SUB_HUMAN_RESOLVE_MS: { kind: 'ms', does: 'the tail: seated, re-resolve the seat this often' },
+  SUB_HUMAN_POLL_MS: { kind: 'ms', does: 'the tail\'s log poll' },
+  SUB_HUMAN_TAIL_HEALTH_MS: { kind: 'ms', does: 'the tail\'s health check' },
+  SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS: { kind: 'ms', does: 'the room\'s Claude with no human' },
+  SUB_HUMAN_REAP_STOP_MS: { kind: 'ms', allowZero: true, does: 'after `claude stop`, the wait for the process' },
+  SUB_HUMAN_REAP_GRACE_MS: { kind: 'ms', allowZero: true, does: 'a quick rejoin cancels the reap' },
+  SUB_HUMAN_REAP_WAIT_MS: { kind: 'ms', allowZero: true, does: 'wait for task 1 before `claude stop`' },
+  SUB_HUMAN_REWAKE_WAIT_MS: { kind: 'ms', allowZero: true, does: 'row-rewake waits for the seat' },
+  SUB_HUMAN_ROOM_GC_MS: { kind: 'ms', does: 'an idle room is set aside after this' },
+  SUB_HUMAN_EXIT_INPUT_WAIT_MS: { kind: 'ms', does: 'consent: the wait for ExitPlanMode\'s input' },
+  SUB_HUMAN_FORK_WAIT_MS: { kind: 'ms', does: 'session-restore: the fork\'s continued-in record' },
+  SUB_HUMAN_HOLD_BEAT_MS: { kind: 'ms', does: 'the hold: progress re-sent' },
+  SUB_HUMAN_HOLD_POLL_MS: { kind: 'ms', does: 'the hold\'s poll' },
+  SUB_HUMAN_HOLD_GRACE_MS: { kind: 'ms', does: 'the hold: a name is announced only after this' },
+  SUB_HUMAN_HOLD_RESPAWN_MS: { kind: 'ms', does: 'the hold\'s respawn' },
+  SUB_HUMAN_HOLD_WHO_MS: { kind: 'ms', does: 'the hold: `me` re-resolved' },
+  SUB_HUMAN_HOLD_ROOM_GAP_MS: { kind: 'ms', does: 'the hold: a returned room hold still counts' },
+  SUB_HUMAN_LINK_RETRY_MS: { kind: 'ms', does: 'the link daemon\'s first retry' },
+  SUB_HUMAN_LINK_RETRY_MAX_MS: { kind: 'ms', does: 'the link daemon\'s longest retry' },
+  SUB_HUMAN_LINK_PING_MS: { kind: 'ms', does: 'the link\'s ping' },
+  SUB_HUMAN_LINK_PONG_MS: { kind: 'ms', does: 'the link: the wait for a pong' },
+  SUB_HUMAN_LINK_DEAD_MS: { kind: 'ms', does: 'the link: silence before it is dead' },
+  SUB_HUMAN_LINK_WAKE_TICK_MS: { kind: 'ms', does: 'the link\'s sleep detector tick' },
+  SUB_HUMAN_LINK_WAKE_GAP_MS: { kind: 'ms', does: 'the link: a gap that means the machine slept' },
+  SUB_HUMAN_LINK_IDLE_MS: { kind: 'ms', does: 'the link daemon with no seat stops' },
+  SUB_HUMAN_WS_CONNECT_MS: { kind: 'ms', does: 'a web link\'s connect' },
+  SUB_HUMAN_YES_GUARD_MS: { kind: 'ms', test: true, does: 'consent: a plan-view Yes this soon records nothing' },
+  SUB_HUMAN_PIN_BACKOFF_MS: { kind: 'ms', test: true, does: 'the wait after a wrong PIN' },
+  SUB_HUMAN_ADMIT_TTL_MS: { kind: 'ms', test: true, does: 'a held join waits for the host\'s card' },
   // ----- numbers (envNum: Number(value); the caller's fallback) -----
   SUB_HUMAN_LISTEN_CHECK_MS: { kind: 'num', does: 'the listener: how often it checks for closed rooms' },
   SUB_HUMAN_LISTEN_PORT: { kind: 'num', does: 'the web listener\'s port' },
@@ -90,7 +92,9 @@ export const ENV = {
   SUB_HUMAN_TAILSCALE: { kind: 'path', does: 'the tailscale binary' },
   SUB_HUMAN_TAILSCALE_WARM: { kind: 'str', does: '"0": no warm-up request to a Tailscale URL' },
   SUB_HUMAN_MACHINE_LABEL: { kind: 'str', does: 'this machine\'s short name (default the host name)' },
-} as const satisfies Record<`SUB_HUMAN_${string}`, Knob>;
+} as const;
+// the table's shape, checked apart from the table: an exported `satisfies` is a type an isolated declaration cannot infer
+ENV satisfies Record<`SUB_HUMAN_${string}`, Knob>;
 
 type Table = typeof ENV;
 export type EnvName = keyof Table;
@@ -107,13 +111,50 @@ function parseMs(raw: string | undefined, fallback: number, { allowZero = false 
   return n;
 }
 
+/** Each ms knob's default: the lib/config.ts value its name overrides. */
+export const MS_DEFAULTS: { readonly [N in Of<'ms'>]: number } = {
+  SUB_HUMAN_SETTLE_MS: config.SETTLE_MS,
+  SUB_HUMAN_SETTLE_MAX_MS: config.SETTLE_MAX_MS,
+  SUB_HUMAN_LEAVE_MS: config.LEAVE_SETTLE_MS,
+  SUB_HUMAN_UNSEATED_MS: config.UNSEATED_MS,
+  SUB_HUMAN_RESOLVE_MS: config.RESOLVE_MS,
+  SUB_HUMAN_POLL_MS: config.TAIL_POLL_MS,
+  SUB_HUMAN_TAIL_HEALTH_MS: config.TAIL_HEALTH_MS,
+  SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS: config.ROOM_CLAUDE_ORPHAN_MS,
+  SUB_HUMAN_REAP_STOP_MS: config.REAP_STOP_MS,
+  SUB_HUMAN_REAP_GRACE_MS: config.REAP_GRACE_MS,
+  SUB_HUMAN_REAP_WAIT_MS: config.REAP_WAIT_MS,
+  SUB_HUMAN_REWAKE_WAIT_MS: config.REWAKE_WAIT_MS,
+  SUB_HUMAN_ROOM_GC_MS: config.ROOM_GC_MS,
+  SUB_HUMAN_EXIT_INPUT_WAIT_MS: config.EXIT_INPUT_WAIT_MS,
+  SUB_HUMAN_FORK_WAIT_MS: config.FORK_RECORD_WAIT_MS,
+  SUB_HUMAN_HOLD_BEAT_MS: config.HOLD_BEAT_MS,
+  SUB_HUMAN_HOLD_POLL_MS: config.HOLD_POLL_MS,
+  SUB_HUMAN_HOLD_GRACE_MS: config.HOLD_GRACE_MS,
+  SUB_HUMAN_HOLD_RESPAWN_MS: config.HOLD_RESPAWN_MS,
+  SUB_HUMAN_HOLD_WHO_MS: config.HOLD_WHO_MS,
+  SUB_HUMAN_HOLD_ROOM_GAP_MS: config.HOLD_ROOM_GAP_MS,
+  SUB_HUMAN_LINK_RETRY_MS: config.LINK_RETRY_MS,
+  SUB_HUMAN_LINK_RETRY_MAX_MS: config.LINK_RETRY_MAX_MS,
+  SUB_HUMAN_LINK_PING_MS: config.LINK_PING_MS,
+  SUB_HUMAN_LINK_PONG_MS: config.LINK_PONG_MS,
+  SUB_HUMAN_LINK_DEAD_MS: config.LINK_DEAD_MS,
+  SUB_HUMAN_LINK_WAKE_TICK_MS: config.LINK_WAKE_TICK_MS,
+  SUB_HUMAN_LINK_WAKE_GAP_MS: config.LINK_WAKE_GAP_MS,
+  SUB_HUMAN_LINK_IDLE_MS: config.LINK_IDLE_MS,
+  SUB_HUMAN_WS_CONNECT_MS: config.WS_CONNECT_MS,
+  SUB_HUMAN_YES_GUARD_MS: config.YES_GUARD_MS,
+  SUB_HUMAN_PIN_BACKOFF_MS: config.PIN_BACKOFF_MS,
+  SUB_HUMAN_ADMIT_TTL_MS: config.ADMIT_TTL_MS,
+};
+
 const knob = (name: Of<'ms'>): MsKnob => ENV[name];
 
-function envMs(name: MsName, fallback: number = knob(name).default): number {
+function envMs(name: MsName, fallback: number = MS_DEFAULTS[name]): number {
   return parseMs(process.env[name], fallback, { allowZero: knob(name).allowZero === true });
 }
 
-function testMs(name: TestMsName, fallback: number = knob(name).default): number {
+function testMs(name: TestMsName, fallback: number = MS_DEFAULTS[name]): number {
   return envFlag('SUB_HUMAN_TEST') ? parseMs(process.env[name], fallback) : fallback;
 }
 
@@ -128,7 +169,7 @@ function segmentMaxBytes(): number {
 
 const MS_NAMES: readonly string[] = Object.keys(ENV).filter(n => /_MS$/.test(n));
 /** The timing knobs' names: SUB_HUMAN_<WHAT>_MS, each one in ENV. */
-const TIMING_ENV_RE = new RegExp(`^(?:${MS_NAMES.join('|')})$`);
+const TIMING_ENV_RE: RegExp = new RegExp(`^(?:${MS_NAMES.join('|')})$`);
 
 function timingEnv(src: Env | null = process.env): Record<string, string> {
   const out: Record<string, string> = {};

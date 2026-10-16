@@ -57,7 +57,7 @@ interface SeatRef { room: string; name: string; pubkey: string }
 const LINKS_KEY = 'remote/links';
 const REVOKED_KEY = 'remote/revoked';
 const REVOKED_KEEP = 200;
-const LINK_ID_RE = /^[0-9a-f]{12}$/;
+const LINK_ID_RE: RegExp = /^[0-9a-f]{12}$/;
 const TOKEN_RE = /^[A-Za-z0-9_-]{32}$/;
 const isLinkToken = (v: unknown): v is LinkToken => typeof v === 'string' && TOKEN_RE.test(v);
 const newLinkId = (): string => crypto.randomBytes(6).toString('hex');

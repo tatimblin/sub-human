@@ -16,7 +16,7 @@ import { msgOf } from '../../errors.ts';
 type ListenerStatus = import('../../remote/listener.ts').ListenStatus;
 
 /** The host's web listener and the rooms it serves (lib/remote/listener.ts), with their Tailscale paths. */
-function checkListener({ quick = false } = {}): Check[] {
+function checkListener({ quick = false }: { quick?: boolean } = {}): Check[] {
   let st: ListenerStatus;
   try { st = lib('remote/listener.ts').status(); } catch (e) { return [check({ id: 'listener', status: 'warn', title: 'listener', detail: `could not read its state: ${msgOf(e)}` })]; }
   const codes = Object.keys(st.rooms || {});
@@ -55,7 +55,7 @@ function checkListener({ quick = false } = {}): Check[] {
 }
 
 
-const webRooms = () => { try { return Object.keys(lib('remote/listener.ts').status().rooms || {}); } catch { return []; } };
+const webRooms = (): string[] => { try { return Object.keys(lib('remote/listener.ts').status().rooms || {}); } catch { return []; } };
 /** The hostnames of the rooms this machine serves over the web (a ts.net name is redacted like a link's host). */
 function webHosts(): (string | null)[] {
   try {

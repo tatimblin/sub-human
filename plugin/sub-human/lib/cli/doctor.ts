@@ -39,7 +39,7 @@ import { checkListener } from './doctor/listener.ts';
 import { roomChecks, verifyRoom, verifyText } from './doctor/rooms.ts';
 import { claudeVersion, checkClaude, checkDaemon, checkRoomClaudes, settingsFiles, checkHooks, checkRemoteControl } from './doctor/claude.ts';
 import { bundle, redactor } from './doctor/redact.ts';
-import type { CheckStatus, DoctorOptions, Report } from './types.ts';
+import type { Check, CheckStatus, DoctorOptions, Report } from './types.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -58,7 +58,7 @@ function checkPlugin() {
   return check({ id: 'plugin', status: v ? 'pass' : 'warn', title: 'plugin', detail: `sub-human ${v || '(no version in plugin.json)'} at ${tilde(PLUGIN_ROOT)}` });
 }
 
-function checkNode(version = process.versions.node) {
+function checkNode(version: string = process.versions.node): Check {
   const [major, minor] = String(version).split('.').map(Number);
   const min = NODE_MIN.join('.');
   return major > NODE_MIN[0] || (major === NODE_MIN[0] && minor >= NODE_MIN[1])
@@ -112,7 +112,7 @@ async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, authorized
 const MARK: Record<CheckStatus, string> = { pass: '✓', warn: '!', fail: '✗', info: '·' };
 const PAINT: Record<CheckStatus, string> = { pass: '32', warn: '33', fail: '31', info: '2' };
 
-function format(report: Report, { color = false } = {}): string {
+function format(report: Report, { color = false }: { color?: boolean } = {}): string {
   const c = (code: string, s: string) => (color ? `\x1b[${code}m${s}\x1b[0m` : s);
   const v = report.versions;
   const lines = [`checks · sub-human ${v.plugin} · node v${v.node} · claude ${v.claude || '?'} · ${v.platform} ${v.arch}`];

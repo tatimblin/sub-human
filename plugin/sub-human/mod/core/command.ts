@@ -17,11 +17,11 @@
  * the command is not run a second time. A reply that says this session's lease did not hold (join.ts: {subHuman:
  * {lease: 'stale'}}, nothing run) is read as 'stale': the module says hello again and runs it once more.
  */
-import type { JoinReply, HookJson, HookJsonSpecific, Loose, OriginLike, PinnedStatus, RunOutput, SubHumanRead } from './types.ts';
+import type { JoinPayload, JoinReply, HookJson, HookJsonSpecific, Loose, OriginLike, PinnedStatus, RunOutput, SubHumanRead } from './types.ts';
 import type { PinnedReport } from '../../hooks/types.ts';
 
 /** The command as command.run names it (a plugin skill's name, or its bare form). */
-export const COMMANDS = Object.freeze(['sub-human:sub-human', 'sub-human']);
+export const COMMANDS: readonly string[] = Object.freeze(['sub-human:sub-human', 'sub-human']);
 
 /** The one rule for a prompt that may carry a secret (lib/commands/index.ts answers it hidden, the module leaves it to
  * the classic hook through Remote Control): `join`, `invite` and `admit`, any word of 3-10 digits (a PIN), and any word
@@ -30,12 +30,12 @@ const SECRET_VERBS = ['join', 'invite', 'admit'];
 const DIGITS = /^[0-9]{3,10}$/;
 /** An invite line's SECRET (lib/remote/invite-secret.ts: 39 characters of Crockford base32, read in either case), with
  * room for a paste that lost or doubled a few: any word of 32-48 letters and digits is taken for one. */
-export const SECRET_WORD = /^[0-9A-Za-z]{32,48}$/;
+export const SECRET_WORD: RegExp = /^[0-9A-Za-z]{32,48}$/;
 const words = (args: unknown) => String(args ?? '').trim().split(/\s+/).filter(Boolean);
 const secretShaped = (w: string) => DIGITS.test(w) || SECRET_WORD.test(w);
-export const mayHoldSecret = (args: unknown) => { const a = words(args); return SECRET_VERBS.includes(a[0]) || a.some(secretShaped); };
+export const mayHoldSecret = (args: unknown): boolean => { const a = words(args); return SECRET_VERBS.includes(a[0]) || a.some(secretShaped); };
 /** A word of the prompt is PIN- or SECRET-shaped: lib/commands/index.ts never hands such a prompt a seat's block. */
-export const hasPinWord = (args: unknown) => words(args).some(secretShaped);
+export const hasPinWord = (args: unknown): boolean => words(args).some(secretShaped);
 
 /**
  * Whether the module answers this run itself. Typed here (composer): yes. Typed through Remote Control (bridge): only
@@ -51,7 +51,7 @@ export function answersItself(e: { args?: unknown; origin?: OriginLike } | null 
 }
 
 /** hooks/handlers/join.ts's stdin: the UserPromptExpansion payload Claude Code would give it, marked as the module's. */
-export function joinPayload({ sid, cwd, args, nonce }: { sid: unknown; cwd: unknown; args: unknown; nonce: unknown }) {
+export function joinPayload({ sid, cwd, args, nonce }: { sid: unknown; cwd: unknown; args: unknown; nonce: unknown }): JoinPayload {
   return {
     hook_event_name: 'UserPromptExpansion', session_id: sid, cwd, expansion_type: 'slash_command',
     command_name: 'sub-human:sub-human', command_args: String(args ?? ''), command_source: 'plugin',
@@ -63,7 +63,7 @@ export function joinPayload({ sid, cwd, args, nonce }: { sid: unknown; cwd: unkn
 export const CONFIRM_AFTER_MS = 150;
 
 /** One notice per line (a newline in one is drawn as U+FFFD, cc CONTRACT ui-log-notice); blank lines dropped. */
-export const noticeLines = (text: unknown) => String(text ?? '').split('\n').filter(l => l.trim());
+export const noticeLines = (text: unknown): string[] => String(text ?? '').split('\n').filter(l => l.trim());
 
 const FAILED = '✗ /sub-human did not finish here. Run /sub-human doctor.';
 
@@ -110,14 +110,14 @@ export function failLogLine(at: number | null, args: unknown, line: string): str
 }
 
 /** text (the log so far) with line added, only the last MODULE_LOG_LINES kept. */
-export function appendCapped(text: unknown, line: string, max = MODULE_LOG_LINES): string {
+export function appendCapped(text: unknown, line: string, max: number = MODULE_LOG_LINES): string {
   const lines = String(text ?? '').split('\n').filter(Boolean);
   lines.push(line);
   return lines.slice(-max).join('\n') + '\n';
 }
 
 /** The refusal of a run that did not answer: "✗ /sub-human did not finish here (after 10.0 s: LINE). Run /sub-human doctor." */
-export const failedLine = (f?: FailInfo | null) => {
+export const failedLine = (f?: FailInfo | null): string => {
   const d = failDetail(f);
   return d ? `✗ /sub-human did not finish here (${d}). Run /sub-human doctor.` : FAILED;
 };
@@ -199,7 +199,7 @@ export function cancels(args: unknown, reply: JoinReply, ref: string | null): bo
 }
 
 /** The longest a pinned invite stays on the status line (an invite's life: lib/config.ts INVITE_TTL_MS). */
-export const PINNED_MS = 15 * 60_000;
+export const PINNED_MS: number = 15 * 60_000;
 
 /**
  * How a reply goes out: {result, logs, status?}. status: an invite's line and PIN, for $.ui.status (Claude Code draws

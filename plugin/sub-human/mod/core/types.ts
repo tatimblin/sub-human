@@ -59,6 +59,19 @@ export type TailSeat = Pick<TailLineSeat, 'name' | 'code'> & Partial<Omit<TailLi
  * A type-only import, erased when Claude Code or node loads this file. */
 export type TailEvent = Exclude<TailLine, { type: 'seat' }> | { type: 'seat'; seat: TailSeat | null };
 
+/** A command hook's stdin as the module builds it (the shim hands it to hooks/run.ts): the fields every one carries. */
+interface PayloadBase { hook_event_name: string; session_id: unknown; cwd?: string; transcript_path?: string; permission_mode?: string }
+/** classic.PreToolUse's e as a command hook's stdin (mod/core/facts.ts prePayload). */
+export interface PrePayload extends PayloadBase { tool_name: unknown; tool_input: Record<string, unknown>; tool_use_id: unknown; agent_id?: string }
+/** A refused ExitPlanMode as the PostToolUseFailure stdin consent reads (mod/core/facts.ts rejectedPayload). */
+export interface RejectedPayload extends PayloadBase { tool_name: string; tool_input: Record<string, never>; tool_use_id: unknown; error: string }
+/** /sub-human run by the module, as the UserPromptExpansion stdin join.ts reads (mod/core/command.ts joinPayload;
+ * hooks/types.ts JoinIn). */
+export interface JoinPayload {
+  hook_event_name: string; session_id: unknown; cwd: unknown; expansion_type: string; command_name: string; command_args: string;
+  command_source: string; sub_human_via: string; sub_human_nonce: unknown;
+}
+
 /** One $ call an event maps to (mod/core/deliver.ts route). */
 export type DeliverAction =
   | { do: 'log' | 'append' | 'mid-turn-wake' | 'hold-pull'; text: string }

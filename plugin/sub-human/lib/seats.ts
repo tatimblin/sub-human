@@ -332,6 +332,6 @@ function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd,
 
 /** Test seam: the room's Claude starts through this object, which a test may stub (test/seats.node-test.ts); an ES
  * module's own exports are read-only. */
-const seam = { startDetached: (o: Parameters<typeof roomClaude.startDetached>[0]) => roomClaude.startDetached(o) };
+const seam = { startDetached: (o: Parameters<typeof roomClaude.startDetached>[0]): number | undefined => roomClaude.startDetached(o) };
 
 export { enter, exit, sweep, back, ensureRoomClaude, seam, take, withWhom, liveSeatHere, forkedText };

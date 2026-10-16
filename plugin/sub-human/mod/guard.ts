@@ -54,7 +54,7 @@ async function placed($: EngineInterface, abs: string): Promise<string | undefin
   return undefined;
 }
 
-export function registerGuard(on: On) {
+export function registerGuard(on: On): void {
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const h = await helloOf($);
     const ctx: GuardCtx & { pluginRoot: string } = { ...(await withTalk($, h)), pluginRoot: h.pluginRoot || $.plugin.root };

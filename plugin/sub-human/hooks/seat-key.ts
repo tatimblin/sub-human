@@ -70,6 +70,6 @@ function ensure(code: RoomCode, name: SeatName): crypto.KeyObject {
 const publicPem = (code: RoomCode, name: SeatName): string => crypto.createPublicKey(ensure(code, name)).export({ type: 'spki', format: 'pem' }).toString(); // PEM: always a string
 
 // globalThis has no declared slot for the signer: lib/room/store.ts reads it back by the same symbol
-function arm() { (globalThis as Record<symbol, unknown>)[store.SIGNER] = ensure; }
+function arm(): void { (globalThis as Record<symbol, unknown>)[store.SIGNER] = ensure; }
 
 export { ensure, publicPem, arm, keyPath };

@@ -14,7 +14,7 @@ const SERVER = 'room'; // the server's key in .mcp.json
 
 const parse = (s: string): unknown => { try { return JSON.parse(s); } catch { return null; } };
 
-export function registerSend(on: On) {
+export function registerSend(on: On): void {
   on('session.send', async ($, e, next) => {
     const hello = asHello((await $.state.get(HELLO)).value);
     const seat = hello?.seat;

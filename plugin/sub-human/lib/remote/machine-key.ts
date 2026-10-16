@@ -67,13 +67,13 @@ function load(): { priv: crypto.KeyObject; pub: string } {
   return cached;
 }
 
-function proof(room: string, now = Date.now()): Proof {
+function proof(room: string, now: number = Date.now()): Proof {
   const { priv, pub } = load();
   return { key: pub, ts: now, sig: crypto.sign(null, message(room, now), priv).toString('base64url') };
 }
 
 const boundMessage = (room: string, challenge: string): Buffer => Buffer.from(`sub-human machine v2:${room}:${challenge}`);
-function proofFor(room: string, challenge: string, now = Date.now()): Proof {
+function proofFor(room: string, challenge: string, now: number = Date.now()): Proof {
   const { priv, pub } = load();
   return { key: pub, ts: now, sig: crypto.sign(null, boundMessage(room, challenge), priv).toString('base64url') };
 }
@@ -86,7 +86,7 @@ function verifyFor(p: unknown, room: string, challenge: string | null | undefine
 }
 
 const hostMessage = (room: string, nonce: string): Buffer => Buffer.from(`sub-human host v3:${room}:${nonce}`);
-const NONCE_RE = /^[A-Za-z0-9_-]{16,64}$/;
+const NONCE_RE: RegExp = /^[A-Za-z0-9_-]{16,64}$/;
 const publicKey = (): string => load().pub;
 const pubObj = (key: string): crypto.KeyObject => crypto.createPublicKey({ key: Buffer.concat([SPKI_ED25519, Buffer.from(key, 'base64url')]), format: 'der', type: 'spki' });
 
@@ -101,7 +101,7 @@ function verifyHost(p: unknown, room: string, nonce: string): string | null {
   try { return crypto.verify(null, hostMessage(room, nonce), pubObj(x.key), Buffer.from(x.sig, 'base64url')) ? x.key : null; } catch { return null; }
 }
 
-function verify(p: unknown, room: string, now = Date.now()): MachineId | null {
+function verify(p: unknown, room: string, now: number = Date.now()): MachineId | null {
   const x = p as Partial<Proof> | null | undefined;
   if (!x || typeof x.key !== 'string' || !KEY_RE.test(x.key) || !Number.isFinite(x.ts) || typeof x.sig !== 'string') return null;
   if (Math.abs(now - (x.ts as number)) > SIG_SKEW_MS) return null;

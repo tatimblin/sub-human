@@ -46,7 +46,7 @@ const require = createRequire(import.meta.url);
 const wsT = (): typeof import('../remote/transports/ws.ts') => require('../remote/transports/ws.ts');
 const sshT = (): typeof import('../remote/transports/ssh.ts') => require('../remote/transports/ssh.ts');
 
-export const JOIN_USAGE = `usage: /sub-human join HOST ROOM SECRET (the line from an invite), then /sub-human join PIN when it asks. ${HELP_HINT}`;
+export const JOIN_USAGE: string = `usage: /sub-human join HOST ROOM SECRET (the line from an invite), then /sub-human join PIN when it asks. ${HELP_HINT}`;
 /** A line from a host before protocol 3: its last word is a 4-digit PIN, where an invite line has its SECRET. */
 const OLD_LINE = 'that invite line comes from an older sub-human on the host (a 4-digit PIN where the line\'s SECRET goes): ask the host to update (/plugin update sub-human) and invite you again';
 const NOT_WHOLE = 'the line\'s SECRET (its last long word) did not come through whole: paste the whole line the host sent you';

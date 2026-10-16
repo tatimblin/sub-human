@@ -45,7 +45,7 @@ async function runTasks(
   return toClassic(event, run).result;
 }
 
-export function registerTasks(on: On) {
+export function registerTasks(on: On): void {
   on('classic.PostToolUse', { tool_name: ['TaskCreate', 'TaskUpdate'] }, async ($, e, next) => {
     const ours = await runTasks($, e, 'PostToolUse');
     return ours ? mergeClassic(ours, await next(e)) : next(e);

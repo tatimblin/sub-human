@@ -47,7 +47,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { CODED, errCode, msgOf } from '../errors.ts';
+import { markCoded, errCode, msgOf } from '../errors.ts';
 
 /** A pattern's message tokens (both patterns here have the pre-message <- s). */
 type Token = 'e' | 's' | 'ee' | 'es' | 'se';
@@ -56,17 +56,17 @@ const PATTERNS: Readonly<Record<PatternName, { name: string; messages: readonly 
   NK: { name: 'Noise_NK_25519_ChaChaPoly_SHA256', messages: [['e', 'es'], ['e', 'ee']] },
   XK: { name: 'Noise_XK_25519_ChaChaPoly_SHA256', messages: [['e', 'es'], ['e', 'ee'], ['s', 'se']] },
 });
-const PROTOCOL = PATTERNS.NK.name;
+const PROTOCOL: string = PATTERNS.NK.name;
 const DHLEN = 32, HASHLEN = 32, TAGLEN = 16;
 const MAX_MESSAGE = 65535;
-const MAX_PLAINTEXT = MAX_MESSAGE - TAGLEN;
+const MAX_PLAINTEXT: number = MAX_MESSAGE - TAGLEN;
 const EMPTY = Buffer.alloc(0);
 
 class NoiseError extends Error {
   code: 'NOISE';
   constructor(msg: string) { super(msg); this.code = 'NOISE'; }
-  get [CODED](): true { return true; }
 }
+markCoded(NoiseError);
 
 /** A raw X25519 pair: 32-byte Buffers. */
 interface KeyPair { priv: Buffer; pub: Buffer }
@@ -123,8 +123,8 @@ class CipherState {
   k: Buffer | null;
   n: number;
   constructor(k: Buffer | null = null) { this.k = k; this.n = 0; }
-  hasKey() { return this.k !== null; }
-  _next() {
+  hasKey(): boolean { return this.k !== null; }
+  _next(): Buffer {
     if (this.n >= Number.MAX_SAFE_INTEGER) throw new NoiseError('nonce exhausted');
     return nonce(this.n++);
   }

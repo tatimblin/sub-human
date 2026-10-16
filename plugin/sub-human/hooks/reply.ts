@@ -49,16 +49,16 @@ export async function captureAsync<T>(fn: () => T | Promise<T>): Promise<Capture
 }
 
 /** PreToolUse decisions; the reason reaches the model. */
-export const pre = (decision: 'allow' | 'deny' | 'ask', reason: string, extra: { updatedInput?: unknown } = {}) => out({
+export const pre = (decision: 'allow' | 'deny' | 'ask', reason: string, extra: { updatedInput?: unknown } = {}): void => out({
   hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: decision, permissionDecisionReason: reason, ...extra },
 });
-export const deny = (reason: string) => pre('deny', reason);
+export const deny = (reason: string): void => pre('deny', reason);
 
 /** additionalContext for any event that supports it. */
-export const context = (event: string, text: string, top: HookOutput = {}) => out({ ...top, hookSpecificOutput: { hookEventName: event, additionalContext: text } });
+export const context = (event: string, text: string, top: HookOutput = {}): void => out({ ...top, hookSpecificOutput: { hookEventName: event, additionalContext: text } });
 
 /** An error on stderr (Claude Code shows hook stderr to the person only, never to the model). */
-export function logError(err: unknown, where = 'hook') {
+export function logError(err: unknown, where = 'hook'): void {
   try { process.stderr.write(`sub-human ${where} error: ${err instanceof Error && err.stack || err}\n`); } catch { /* stderr closed */ }
 }
 
@@ -101,7 +101,7 @@ export function render(reply: Reply | null | undefined | void): Rendered {
 }
 
 /** The edge: the lines on stdout, stderr, the exit code. */
-export function write(r: Rendered) {
+export function write(r: Rendered): void {
   for (const o of r.outputs) process.stdout.write(JSON.stringify(o) + '\n');
   if (r.stderr) { try { process.stderr.write(r.stderr.endsWith('\n') ? r.stderr : r.stderr + '\n'); } catch { /* closed */ } }
   if (r.exit) process.exitCode = r.exit;

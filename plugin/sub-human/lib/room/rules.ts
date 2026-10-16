@@ -201,13 +201,13 @@ function placeAfter(p: Payload, { keys, host, machine, newest, prevLine, now }: 
 }
 
 // ---------- names ----------
-const KEY_SEG = /^(?!\.)[A-Za-z0-9_.-]{1,128}$/;
+const KEY_SEG: RegExp = /^(?!\.)[A-Za-z0-9_.-]{1,128}$/;
 function checkKey(key: unknown): string {
   const segs = typeof key === 'string' ? key.split('/') : [];
   if (!segs.length || segs.length > 3 || !segs.every(s => KEY_SEG.test(s))) throw new RoomError('INVALID', `invalid store key "${key}"`);
   return key as string; // its segments matched KEY_SEG
 }
-const BLOB_RE = /^(plans)\/([A-Za-z0-9_][A-Za-z0-9_.-]{0,127})$/;
+const BLOB_RE: RegExp = /^(plans)\/([A-Za-z0-9_][A-Za-z0-9_.-]{0,127})$/;
 /** A blob's room-relative ref ("plans/<x>"), from a ref or from the absolute path older entries stored. */
 function blobRef(p: unknown): string | null {
   if (typeof p !== 'string' || !p) return null;

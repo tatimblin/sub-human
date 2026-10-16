@@ -86,7 +86,7 @@ function settingsFiles(env: NodeJS.ProcessEnv): Settings[] {
     .filter((s): s is Settings => !!s && typeof s === 'object');
 }
 
-function checkHooks(settings: Settings[], env = process.env): Check {
+function checkHooks(settings: Settings[], env: NodeJS.ProcessEnv = process.env): Check {
   if (settings.some(s => s.disableAllHooks === true)) {
     return check({ id: 'hooks', status: 'fail', title: 'hooks', detail: 'a settings file sets disableAllHooks: sub-human\'s hooks and hooks module never run', fix: 'remove disableAllHooks from your Claude Code settings' });
   }

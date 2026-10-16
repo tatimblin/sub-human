@@ -18,8 +18,8 @@ import type { Check, CheckStatus } from '../types.ts';
 const require = createRequire(import.meta.url);
 
 const LIB = path.join(import.meta.dirname, '..', '..');
-const PLUGIN_ROOT = path.join(LIB, '..');
-const BIN = path.join(PLUGIN_ROOT, 'scripts', 'sub-human');
+const PLUGIN_ROOT: string = path.join(LIB, '..');
+const BIN: string = path.join(PLUGIN_ROOT, 'scripts', 'sub-human');
 const DOCTOR_HELLO_MS = 8000;
 /** The modules doctor loads lazily, by their path under lib/. */
 interface Libs {
@@ -51,9 +51,9 @@ const cli = (args: string): string => lib('text.ts').cliLine(args);
 
 /** A check's verdict: id (stable, for the bundle), status, title (what was checked), detail (what was found) and fix. */
 const check = ({ id, status, title, detail, fix }: { id: string; status: CheckStatus; title: string; detail: string; fix?: string | undefined }): Check => ({ id, status, title, detail, ...(fix ? { fix } : {}) });
-const tilde = <P extends string | null | undefined>(p: P, h = os.homedir()): P | string => (p && h && (p === h || p.startsWith(h + path.sep)) ? '~' + p.slice(h.length) : p);
-const isExec = (p: string) => { try { fs.accessSync(p, fs.constants.X_OK); return fs.statSync(p).isFile(); } catch { return false; } };
+const tilde = <P extends string | null | undefined>(p: P, h: string = os.homedir()): P | string => (p && h && (p === h || p.startsWith(h + path.sep)) ? '~' + p.slice(h.length) : p);
+const isExec = (p: string): boolean => { try { fs.accessSync(p, fs.constants.X_OK); return fs.statSync(p).isFile(); } catch { return false; } };
 const readText = (p: string): string | null => { try { return fs.readFileSync(p, 'utf8'); } catch { return null; } };
-const truthy = (v: unknown) => v !== undefined && v !== '' && v !== '0' && String(v).toLowerCase() !== 'false';
+const truthy = (v: unknown): boolean => v !== undefined && v !== '' && v !== '0' && String(v).toLowerCase() !== 'false';
 
 export { lib, cli, check, tilde, isExec, readText, truthy, PLUGIN_ROOT, BIN, DOCTOR_HELLO_MS };

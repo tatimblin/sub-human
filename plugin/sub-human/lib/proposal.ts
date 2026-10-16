@@ -95,7 +95,7 @@ import type { RoomCode, ProposalHash } from './brand.ts';
 /** Who acts: a seat's room and name are all these functions read. */
 type Me = Pick<Identity, 'code' | 'name'>;
 
-const QUESTION_RE = /^Agree to proposal ([0-9a-f]{12})\?$/;
+const QUESTION_RE: RegExp = /^Agree to proposal ([0-9a-f]{12})\?$/;
 const PREVIEW_MAX = config.PREVIEW_MAX;     // the card withholds a longer preview (JS .length)
 const PREVIEW_LINES = config.PREVIEW_LINES; // about 24 lines show at 50 rows; keep a margin
 const VIEW_MAX = config.VIEW_MAX;           // the plan dialog withholds approval above 200,000 chars
@@ -339,9 +339,9 @@ function picked(me: Me, ps: Proposal[]): Proposal | null {
 /** How the model opens proposal hash for its person (the plan view; the hooks fall back to the card), how it shows
  * the confirm card for a waiting note, and the line telling it to show that card now (after an Esc on it: that the
  * Esc was no answer): lib/consent/review.ts's lines, which the consent hook, the tail and the room server share. */
-const openCall = NEXT.open;
-const confirmCall = NEXT.note;
-const showConfirm = showNote;
+const openCall: (h: string) => string = NEXT.open;
+const confirmCall: (h: string) => string = NEXT.note;
+const showConfirm: typeof showNote = showNote;
 /** A proposal as a list item: `3fa2c1 "Ship v3 Monday"` (the short hash alone without a title or a room to read it from). */
 function listed(code: RoomCode | undefined, p: Pick<Proposal, 'hash' | 'entry'>): string {
   const t = code ? clip(title(code, p.hash, p.entry).replace(/\s+/g, ' ').trim(), TITLE_MAX) : '';
@@ -526,7 +526,7 @@ function restorePlan(st: Review | null | undefined): void {
  * plan file when it still holds the proposal's text (a file the person wrote since is left alone) and clear
  * the state. force: the session restarted (/clear, --resume). Returns 'restored' | 'cleared' | null.
  */
-function restoreStale(me: Me | null | undefined, { force = false, now = Date.now() } = {}): 'restored' | 'cleared' | null {
+function restoreStale(me: Me | null | undefined, { force = false, now = Date.now() }: { force?: boolean; now?: number } = {}): 'restored' | 'cleared' | null {
   if (!me || !me.code || !me.name) return null;
   return withReview(me, () => {
     const st = readReview(me);

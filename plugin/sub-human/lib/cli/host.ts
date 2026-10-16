@@ -42,7 +42,7 @@ const say = (s: string) => process.stdout.write(s.endsWith('\n') ? s : s + '\n')
 const fail = (s: string, code = 1) => { process.stderr.write(s.endsWith('\n') ? s : s + '\n'); return code; };
 
 /** Run inside Claude Code (its `!` shell, a Bash tool): whatever is printed lands in the conversation, model input. */
-const inClaudeCode = (env = process.env) => env.CLAUDECODE === '1' || !!env.CLAUDE_CODE_SESSION_ID;
+const inClaudeCode = (env: NodeJS.ProcessEnv = process.env): boolean => env.CLAUDECODE === '1' || !!env.CLAUDE_CODE_SESSION_ID;
 const PIN_HIDDEN = 'PIN and SECRET hidden: this ran inside Claude Code, where the output becomes part of the conversation. Run it in a terminal outside Claude Code, or use /sub-human invite in the room (its reply is shown to you only).';
 
 /** text with every PIN in it masked, and why, when run inside Claude Code; else text as it is. */

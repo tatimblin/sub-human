@@ -14,6 +14,8 @@
  *   isCoded(e) -> e is CodedError      one of them (their prototypes carry CODED; a structural check, so a copy of the
  *                                      module loaded twice still answers)
  *   CODED                              the brand (Symbol.for: one symbol however many copies load)
+ *   markCoded(cls)                     put it on a class's prototype, as a getter that answers true (after the class:
+ *                                      a computed member would be one an isolated declaration cannot type)
  *   Result<T, E = RoomError>           {ok: true, value} | {ok: false, error}: lib/decode.ts's, and new code's
  */
 import type { RoomError } from './room/validate.ts';
@@ -27,6 +29,12 @@ export type CodedError = RoomError | NoiseError;
 
 /** On the prototype of each CodedError class (a getter that answers true). */
 export const CODED: unique symbol = Symbol.for('sub-human.coded-error');
+
+/** CODED on cls.prototype: a getter that answers true, as `get [CODED]() { return true; }` in the class body would
+ * define it (not enumerable, configurable). */
+export function markCoded(cls: { prototype: object }): void {
+  Object.defineProperty(cls.prototype, CODED, { get: (): true => true, enumerable: false, configurable: true });
+}
 
 /** Any object's field, own or inherited (a thrown value may be anything). */
 const field = (e: unknown, k: PropertyKey): unknown => (typeof e === 'object' && e !== null ? (e as Record<PropertyKey, unknown>)[k] : undefined);

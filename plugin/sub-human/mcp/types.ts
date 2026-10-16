@@ -5,6 +5,7 @@
  */
 
 import type * as identityMod from '../lib/identity.ts';
+import type { Identity } from '../lib/identity.ts';
 import type * as roomMod from '../lib/room.ts';
 import type * as proposalMod from '../lib/proposal.ts';
 
@@ -92,7 +93,7 @@ export interface CallMeta {
 // ---------- the plug-in contract ----------
 
 /** The calling member: identity.resolveByPid(process.ppid). */
-export type Me = NonNullable<ReturnType<typeof identityMod.resolveByPid>>;
+export type Me = Identity;
 
 /** ctx.request(method, params): a Promise of the client's result, with .id = the JSON-RPC request id. */
 export type OutgoingRequest = Promise<unknown> & { id?: string };

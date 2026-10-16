@@ -133,7 +133,7 @@ async function runPrompt(
   return result;
 }
 
-export function registerPrompt(on: On) {
+export function registerPrompt(on: On): void {
   // the room's Claude: a slash command a person types there is answered with the refusal, never run
   on('command.run', async ($, e, next) => {
     const why = roomClaudeCommand(e.command, e.origin, await $.env.get('SUB_HUMAN_ROOM'));

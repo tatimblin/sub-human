@@ -91,7 +91,7 @@ export const LINK_CALL_END_MS = 1000;          // SessionEnd (5 s timeout)
 // says its outcome is unknown, never "nothing was sent" (a slow link delivers the frame late; lib/remote/link.ts).
 export const LINK_RELAY_MS = 2000;
 // One protocol frame (lib/remote/protocol.ts), bytes: a plan blob (PROPOSAL_FILE_MAX) in base64 fits.
-export const LINK_FRAME_MAX_BYTES = 1024 * 1024;
+export const LINK_FRAME_MAX_BYTES: number = 1024 * 1024;
 // The link daemon (lib/remote/link.ts): the join hook waits this long for it to listen; a lost connection is
 // tried again after a jittered delay from LINK_RETRY_MS up to LINK_RETRY_MAX_MS; it exits LINK_IDLE_MS after
 // this machine has no seat left in the room.
@@ -108,20 +108,20 @@ export const LINK_IDLE_MS = 60_000;            // SUB_HUMAN_LINK_IDLE_MS
 // A planned handoff (lib/handoff.ts): the ask waits this long for the target's card answer; the new host's
 // invites the old host hands out (also to a member that reconnects late) are kept this long; a manual promote
 // needs the link down at least PROMOTE_OFFLINE_MS (else --force).
-export const HANDOFF_ASK_MS = 10 * 60_000;
-export const HANDOFF_INVITE_MS = 24 * 60 * 60_000;
+export const HANDOFF_ASK_MS: number = 10 * 60_000;
+export const HANDOFF_INVITE_MS: number = 24 * 60 * 60_000;
 export const HANDOFF_CALL_MS = 6000;           // the target's accept op (the old host appends, releases its room Claude): in a 10 s hook
-export const PROMOTE_OFFLINE_MS = 10 * 60_000;
+export const PROMOTE_OFFLINE_MS: number = 10 * 60_000;
 // An invite (lib/remote/invites.ts): the host checks its PIN online only, INVITE_PIN_TRIES times, and the invite burns
 // at the last wrong one or INVITE_TTL_MS after it was minted (whichever is first), or on success. An invite line's PIN
 // (protocol 3) is throttled too: after the n-th wrong one the invite takes no PIN for PIN_BACKOFF_MS * 2^(n-1) (2, 4, 8,
 // 16 s), and the machine that typed it waits one step longer. At most SHORT_LIVE_MAX open per room. The joiner whose PIN
 // held then waits ADMIT_TTL_MS for the host person's card (Let in / Refuse) before it lapses.
-export const INVITE_TTL_MS = 15 * 60_000;
+export const INVITE_TTL_MS: number = 15 * 60_000;
 export const INVITE_PIN_TRIES = 5;
 export const PIN_BACKOFF_MS = 2000;              // SUB_HUMAN_PIN_BACKOFF_MS, honoured under the tests only (testMs)
 export const SHORT_LIVE_MAX = 4;
-export const ADMIT_TTL_MS = 10 * 60_000;       // SUB_HUMAN_ADMIT_TTL_MS, honoured under the tests only (testMs)
+export const ADMIT_TTL_MS: number = 10 * 60_000;       // SUB_HUMAN_ADMIT_TTL_MS, honoured under the tests only (testMs)
 // The join hook waits this long for a fresh link's first hello (redeem or refusal) before it answers.
 export const LINK_JOIN_WAIT_MS = 4000;
 // The app-level heartbeat (op ping, to a server whose caps list it): a ping every LINK_PING_MS; no pong within
@@ -146,10 +146,10 @@ export const LINK_NET_POLL_MS = 5000;
 // than SIG_SKEW_MS (10 min, lib/room/envelope.ts) from its clock, and the daemon never re-signs, so a post
 // queued longer could never be placed: the age stays inside that window, with a minute for clock skew.
 export const LINK_OUTBOX_MAX = 50;
-export const LINK_OUTBOX_AGE_MS = 9 * 60_000;
+export const LINK_OUTBOX_AGE_MS: number = 9 * 60_000;
 
 // ---------- rows (lib/rows.ts) ----------
-export const PRESENCE_STALE_MS = 6 * 60 * 60 * 1000;
+export const PRESENCE_STALE_MS: number = 6 * 60 * 60 * 1000;
 export const HOLDS_STALE_MS = 90_000;          // a holds file not refreshed in this long is dead
 export const MISSING_GRACE_MS = 45_000;        // a member who joined this recently is covered by their join notice
 export const ROW_NOTICE_MS = 120_000;          // a join / leave leads the room row this long
@@ -182,10 +182,10 @@ export const RATE_HUMAN_MAX = 300;             // via=human entries per seat per
 export const LINK_QUOTAS = {
   'append.human': { max: 30, windowMs: 60_000, per: 'log' },       // a person's posts, per seat
   'append.agent': { max: 30, windowMs: 60_000, per: 'log' },       // a Claude's posts, per seat, every addressee together
-  'blob.put': { max: 40, windowMs: 60 * 60_000, per: 'link' },     // new plans stored
-  subscribe: { max: 60, windowMs: 10 * 60_000, per: 'link' },      // each one a replay from the asked line
-  seat: { max: 30, windowMs: 10 * 60_000, per: 'link' },           // join and leave
-  hello: { max: 120, windowMs: 10 * 60_000, per: 'link' },         // a link's hellos (each reconnect says one)
+  'blob.put': { max: 40, windowMs: 3_600_000, per: 'link' },      // new plans stored (an hour)
+  subscribe: { max: 60, windowMs: 600_000, per: 'link' },          // each one a replay from the asked line (10 min)
+  seat: { max: 30, windowMs: 600_000, per: 'link' },               // join and leave
+  hello: { max: 120, windowMs: 600_000, per: 'link' },             // a link's hellos (each reconnect says one)
   'hello.session': { max: 10, windowMs: 60_000, per: 'session' },  // any hello on one connection (an invite's, a token's)
   beat: { max: 120, windowMs: 60_000, per: 'session' },            // a lease renewal per seat every SEAT_BEAT_MS, and reconnects
   'blob.get': { max: 600, windowMs: 60_000, per: 'session' },      // plans fetched
@@ -193,28 +193,33 @@ export const LINK_QUOTAS = {
   handoff: { max: 20, windowMs: 60_000, per: 'session' },          // handoff.accept and handoff.refuse
 } as const;
 
+/** One op's quota: at most max in any windowMs, counted where per says (above). */
+export interface Quota { max: number; windowMs: number; per: 'log' | 'link' | 'session' }
+// checked apart from the table: an exported `satisfies` is a type an isolated declaration cannot infer
+LINK_QUOTAS satisfies Record<string, Quota>;
+
 // ---------- what a home stops keeping (lib/gc.ts; it runs from the join path) ----------
 // A closed room (no seat alive, no link to it, its room Claude stopped) nobody touched in this long is deleted, with its
 // seat keys; so are the folders `sub-human link --forget` set aside. A session index (sessions/by-sid, by-pid) not
 // written in this long whose process is gone, and a session's agent -> row map (rooms/CODE/rows/<session>) whose newest
 // row is this old, go too.
-export const ROOM_GC_MS = 30 * 24 * 60 * 60_000;      // SUB_HUMAN_ROOM_GC_MS
-export const SESSION_INDEX_TTL_MS = 30 * 24 * 60 * 60_000;
+export const ROOM_GC_MS: number = 30 * 24 * 60 * 60_000;      // SUB_HUMAN_ROOM_GC_MS
+export const SESSION_INDEX_TTL_MS: number = 30 * 24 * 60 * 60_000;
 export const FORK_RECORD_WAIT_MS = 3000;     // session-restore after ← (the agent view): the old transcript's continued-in record, written just after the fork starts (SUB_HUMAN_FORK_WAIT_MS)
-export const ROWS_TTL_MS = 7 * 24 * 60 * 60_000;
-export const GC_EVERY_MS = 6 * 60 * 60_000;           // at most one sweep of the home this often (<home>/gc.json)
+export const ROWS_TTL_MS: number = 7 * 24 * 60 * 60_000;
+export const GC_EVERY_MS: number = 6 * 60 * 60_000;           // at most one sweep of the home this often (<home>/gc.json)
 export const GC_BUDGET_MS = 250;                      // a sweep stops when it has run this long; the next one goes on
 
 // ---------- room log integrity (lib/room/{store,validate,render}.js) ----------
-export const ENTRY_TEXT_MAX_BYTES = 16 * 1024; // an entry's text, UTF-8 bytes (validate)
+export const ENTRY_TEXT_MAX_BYTES: number = 16 * 1024; // an entry's text, UTF-8 bytes (validate)
 export const ENTRY_REFS_MAX = 50;              // refs per entry (validate)
 export const ENTRY_STR_MAX = 4000;             // any other string field, JS .length (validate)
 export const ENTRY_LIST_MAX = 50;              // approvers / blockedBy entries (validate)
-export const LOG_LINE_MAX_BYTES = 64 * 1024;   // one serialized log line, UTF-8 bytes (append refuses longer)
+export const LOG_LINE_MAX_BYTES: number = 64 * 1024;   // one serialized log line, UTF-8 bytes (append refuses longer)
 // The log in segments (lib/room/log-io.ts): once the active segment, log.jsonl, holds this many bytes, the line that
 // crosses it seals it as log-NNNN.jsonl and writes snapshot.json. A reader starts from the snapshot and parses only the
 // active segment, so this bounds a cold reader's parse (about 5,000 lines; a few ms) and a rotation's own cost.
-export const SEGMENT_MAX_BYTES = 1024 * 1024;
+export const SEGMENT_MAX_BYTES: number = 1024 * 1024;
 // What a snapshot keeps of its last lines for the next placement (rules.ts scanTail): every entry this close before
 // its last line (the rate window, and the nonce window of 2 * SIG_SKEW_MS), at most SNAPSHOT_WINDOW_MAX of them.
 export const SNAPSHOT_WINDOW_MAX = 20_000;
@@ -237,14 +242,14 @@ export const HOLD_MSG_MAX = 140;               // a hold progress line (+ its hi
 export const READ_MAX = 100;                   // the MCP read tool's unseen entries
 export const SHOWN_MAX = 200;                  // notices-NAME.json ids kept
 export const PRESENCE_DETAIL_MAX = 200;
-export const TRANSCRIPT_TAIL_BYTES = 512 * 1024;
+export const TRANSCRIPT_TAIL_BYTES: number = 512 * 1024;
 export const PROPOSAL_TITLE_MAX = 160;         // the proposal entry's title line, and each summary line of the card
 export const PREVIEW_MAX = 2000;               // the card withholds a preview longer than this (JS .length)
 export const PREVIEW_LINES = 20;               // about 24 lines show at 50 rows; keep a margin
 export const SUMMARY_MAX = 1200;
 export const SUMMARY_LINES = 12;
 export const VIEW_MAX = 200_000;               // the plan dialog withholds approval above this (JS .length)
-export const PROPOSAL_FILE_MAX = 256 * 1024;   // bytes
+export const PROPOSAL_FILE_MAX: number = 256 * 1024;   // bytes
 export const TASK_SUBJECT_MAX = 200;           // the task tool (JS .length)
 export const TASK_DETAIL_MAX = 2000;
 export const TASK_EVIDENCE_MAX = 2000;
@@ -259,7 +264,7 @@ export const REVIEW_LOCK_TIMEOUT_MS = 3000;    // members/NAME/review.json read-
 // review's closing ExitPlanMode polls as long for the dialog's rejection line (hooks/handlers/consent.ts resolveShown).
 export const EXIT_INPUT_WAIT_MS = 1500;        // SUB_HUMAN_EXIT_INPUT_WAIT_MS
 export const EXIT_INPUT_POLL_MS = 50;
-export const REVIEW_STALE_MS = 30 * 60 * 1000; // a plan-view review open this long is stuck: session-restore restores the plan file
+export const REVIEW_STALE_MS: number = 30 * 60 * 1000; // a plan-view review open this long is stuck: session-restore restores the plan file
 // A plan-view Yes this soon after the view was shown is asked again on the card before it records (item 8: keys meant for
 // the prompt, typed as the view opened, answered three reviews in the live round). Claude Code draws the dialog about
 // 0.1 s after its Pre hook; a person who reads the proposal first takes several seconds.

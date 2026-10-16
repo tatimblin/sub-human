@@ -251,7 +251,7 @@ function post(me: Me, args: ToolArgs) {
 }
 
 /** Entries as the model reads them: one rendered line each (render.line full), the trust marker in it. */
-const lines = (r: ReturnType<typeof room.open>, es: readonly Readonly<Entry>[], none: string) => text(es.length ? es.map(e => r.line(e, { full: true })).join('\n') : none);
+const lines = (r: room.Room, es: readonly Readonly<Entry>[], none: string) => text(es.length ? es.map(e => r.line(e, { full: true })).join('\n') : none);
 
 function read(me: Me, args: ToolArgs) {
   const r = room.open(me.code);

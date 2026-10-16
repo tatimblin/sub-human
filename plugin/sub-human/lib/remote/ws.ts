@@ -76,7 +76,7 @@ type ConnEvents = {
 };
 
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
-const MAX_PAYLOAD = 1024 * 1024;
+const MAX_PAYLOAD: number = 1024 * 1024;
 const CLOSE_WAIT_MS = 2000;
 const HEADER_MAX = 16 * 1024;
 const OP = { cont: 0, text: 1, binary: 2, close: 8, ping: 9, pong: 10 };

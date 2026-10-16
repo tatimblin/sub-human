@@ -245,7 +245,7 @@ function lastHumanPrompt(lines: readonly TranscriptLine[]): { text: string; at: 
  * @cc <pasted_content id="
  * @stability incidental
  */
-const PASTED_RE = /(?:\n\n)?<pasted_content id="?(\w+)"?>\n([\s\S]*?)\n?<\/pasted_content id="?\1"?>\n?/g;
+const PASTED_RE: RegExp = /(?:\n\n)?<pasted_content id="?(\w+)"?>\n([\s\S]*?)\n?<\/pasted_content id="?\1"?>\n?/g;
 
 /** {text, normalized}: the prompt with each paste wrapper replaced by its body. Same as at-room's unwrap. */
 function unwrapPasted(text: unknown): { text: string; normalized: boolean } {

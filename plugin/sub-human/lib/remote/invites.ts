@@ -76,8 +76,8 @@ interface Redeemed { token: LinkToken; link: LinkRecord; handoff: boolean; admis
 interface Asked { name: string; label: string }
 
 const INVITE_PREFIX = 'sh2';
-const PIN_RE = /^[0-9]{6}$/;
-const SHORT_PIN_RE = /^[0-9]{4}$/;
+const PIN_RE: RegExp = /^[0-9]{6}$/;
+const SHORT_PIN_RE: RegExp = /^[0-9]{4}$/;
 const isPromotePin = (v: unknown): v is Pin => typeof v === 'string' && PIN_RE.test(v);
 const isShortPin = (v: unknown): v is Pin => typeof v === 'string' && SHORT_PIN_RE.test(v);
 const isPin = (v: unknown): v is Pin => isPromotePin(v) || isShortPin(v);
@@ -147,7 +147,7 @@ function checkBound(inv: BoundInvite, secret: string, pin: unknown, now: number)
 const admissionSlot = (secret: string): string => sha256(`${secret}/admission`);
 
 /** An invite line's record that may still be used: protocol 3's, not used, burnt or expired, a try left. */
-const inviteOpen = (inv: unknown, now = Date.now()): inv is ShortInvite => {
+const inviteOpen = (inv: unknown, now: number = Date.now()): inv is ShortInvite => {
   const i = inv as InviteRecord | null | undefined; // a stored record, read unchecked
   return !!i && i.short === true && i.v === 4 && !i.used_at && !i.burnt_at && now <= Date.parse(i.expires_at) && i.tries > 0;
 };

@@ -65,7 +65,7 @@ async function apply($: EngineInterface, { systemMessage, subHuman }: { systemMe
 /** The prompt holds typed text (the last PromptHint drawn said isDraft): module state, lost on reload (then false). */
 let draft = false;
 
-export function registerConsent(on: On) {
+export function registerConsent(on: On): void {
   on('tool.call', { tool: ['EnterPlanMode', 'ExitPlanMode'] }, async ($, e, next) => {
     await $.state.set(REVIEW, true);
     const r = await next(e);

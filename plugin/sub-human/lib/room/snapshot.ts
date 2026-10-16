@@ -31,7 +31,7 @@ import { CHAT_KINDS, hostStep } from './rules.ts';
 import { decode, isObj, objAs } from '../decode.ts';
 import type { Entry, HostState, LogSnapshot, SnapshotWire, WindowItem } from './types.ts';
 
-const WINDOW_MS = Math.max(RATE_WINDOW_MS, 2 * SIG_SKEW_MS);
+const WINDOW_MS: number = Math.max(RATE_WINDOW_MS, 2 * SIG_SKEW_MS);
 
 function windowItem(e: Entry | WindowItem): WindowItem {
   const w: WindowItem = { id: e.id, at: e.at, from: e.from };

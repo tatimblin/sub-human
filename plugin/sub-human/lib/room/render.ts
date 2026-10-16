@@ -443,7 +443,7 @@ interface Notice {
 const settleMs = () => envMs('SUB_HUMAN_LEAVE_MS');
 const isMove = (e: Entry | null | undefined) => !!e && e.via === 'system' && (e.kind === 'member_joined' || e.kind === 'member_left');
 
-function joinLeave(es: readonly Readonly<Entry>[] | null | undefined, viewer: string | null | undefined, { now = clock.now(), settle = settleMs() } = {}): Notice[] {
+function joinLeave(es: readonly Readonly<Entry>[] | null | undefined, viewer: string | null | undefined, { now = clock.now(), settle = settleMs() }: { now?: number; settle?: number } = {}): Notice[] {
   const list = (es || []).filter(e => isMove(e) && e.from !== viewer && e.from !== ROOM_CLAUDE);
   const drop = new Set<number>();
   const next = new Map<string, Entry>(); // name -> its next join, walking back
@@ -466,7 +466,7 @@ function noticeText(n: Pick<Notice, 'kind' | 'name' | 'rejoin'> & { why?: string
   return `${n.name} ${n.rejoin ? 'rejoined' : 'joined'}`;
 }
 
-function rowSegment(es: readonly Readonly<Entry>[] | null | undefined, viewer: string | null | undefined, { now = clock.now() } = {}): string {
+function rowSegment(es: readonly Readonly<Entry>[] | null | undefined, viewer: string | null | undefined, { now = clock.now() }: { now?: number } = {}): string {
   const settle = settleMs();
   const fresh = (x: Notice) => now - Date.parse(x.at) - (x.kind === 'member_left' ? settle : 0) < ROW_NOTICE_MS;
   // only the log's last ROW_NOTICE_MS + settle can hold a fresh notice, or the rejoin that cancels one: the log is in

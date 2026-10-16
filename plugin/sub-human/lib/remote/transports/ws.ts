@@ -57,8 +57,8 @@ const require = createRequire(import.meta.url);
 const HOST_RE = /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,62})(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}))*\.?$/;
 const PATH_RE = /^\/[A-Za-z0-9._~/-]{0,200}$/;
 const KEY_RE = /^[A-Za-z0-9_-]{43}$/;
-const PROLOGUE = Buffer.from('sub-human ws1');
-const PROLOGUE3 = Buffer.from('sub-human ws3');
+const PROLOGUE: Buffer = Buffer.from('sub-human ws1');
+const PROLOGUE3: Buffer = Buffer.from('sub-human ws3');
 const HANDSHAKE_MS = 10_000;
 
 // lib/remote/noise.ts and lib/remote/ws.ts, loaded on first use

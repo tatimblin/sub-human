@@ -34,23 +34,25 @@ import * as consent from './room/consent.ts';
 import * as render from './room/render.ts';
 import * as delivery from './room/deliver.ts';
 import { DIGEST_CAP, TAIL_MAX, CHAT_MAX, CHAT_WRAP, CHAT_LINES_MAX, CHAT_NEST } from './config.ts';
-import type { AppendOpts, Delivery, Entry, EntryInput, LaneViewer, ReadViewOpts, RoomStore, TailerFs, Trust } from './room/types.ts';
+import type { AppendOpts, ChainCheck, ChainVerify, Delivery, Entry, EntryInput, Fold, LaneViewer, Members, ProposalEntry, ReadViewOpts, RoomStore, Tailer, TailerFs, Trust } from './room/types.ts';
 import type { DeliverState } from './room/deliver.ts';
 import { msgOf } from './errors.ts';
 import type { RoomCode } from './brand.ts';
 
 type Entries = readonly Readonly<Entry>[];
-const { trustOf } = store;
+const trustOf: typeof store.trustOf = store.trustOf;
 
 // ---------- stateless (a person's line judged by the store of the room it names) ----------
 const line = (e: Entry, opts: { full?: boolean; trust?: Trust } = {}): string => render.line(e, { trust: trustOf, ...opts });
 const chatLines = (e: Entry, opts: { viewer?: string; entries?: Entries; trust?: Trust } = {}): string[] => render.chatLines(e, { trust: trustOf, ...opts });
 const fmt = (e: Entry, trust: Trust = trustOf): string => render.fmt(e, { trust });
-const fold = (entries: Entries | null | undefined, trust: Trust = trustOf) => consent.fold(entries, trust);
+const fold = (entries: Entries | null | undefined, trust: Trust = trustOf): Fold => consent.fold(entries, trust);
 const deliver = (me: LaneViewer | null | undefined, e: Entry, st: DeliverState = {}): Delivery => delivery.deliver(me, e, { trust: trustOf, ...st });
-const { who, FOR_CLAUDE } = render;
-const { normalize, hash12 } = store;
-const { approversOf } = consent;
+const who: typeof render.who = render.who;
+const FOR_CLAUDE: typeof render.FOR_CLAUDE = render.FOR_CLAUDE;
+const normalize: typeof store.normalize = store.normalize;
+const hash12: typeof store.hash12 = store.hash12;
+const approversOf: typeof consent.approversOf = consent.approversOf;
 
 /** A status line from the room itself (via system), best effort: the action it reports stands either way. */
 function roomLine(s: Pick<RoomStore, 'append'>, text: string, log?: (msg: string) => void): void {
@@ -65,12 +67,53 @@ function hostStore(code: RoomCode, { what = 'its host does this' }: { what?: str
   return s;
 }
 
-const pure = {
+/** The stateless helpers and caps every Room carries (see the header). */
+interface Pure {
+  RoomError: typeof RoomError;
+  DIGEST_CAP: typeof DIGEST_CAP; TAIL_MAX: typeof TAIL_MAX; CHAT_MAX: typeof CHAT_MAX; CHAT_WRAP: typeof CHAT_WRAP;
+  CHAT_LINES_MAX: typeof CHAT_LINES_MAX; CHAT_NEST: typeof CHAT_NEST;
+  hash12: typeof hash12; normalize: typeof normalize; FOR_CLAUDE: typeof FOR_CLAUDE; who: typeof who; approversOf: typeof approversOf;
+}
+const pure: Pure = {
   RoomError, DIGEST_CAP, TAIL_MAX, CHAT_MAX, CHAT_WRAP, CHAT_LINES_MAX, CHAT_NEST, hash12, normalize, FOR_CLAUDE, who, approversOf,
 };
 
+/** One room: its store's calls plus the queries and renderings over its log (see the header). */
+interface Room extends Pure {
+  readonly code: RoomStore['code'];
+  readonly store: RoomStore;
+  readonly trust: Trust;
+  append: RoomStore['append'];
+  readAll(): Entries;
+  readById(ids: Parameters<RoomStore['readById']>[0]): Entries;
+  readAfter(id: number, f?: (e: Readonly<Entry>) => boolean): Entries;
+  lastId(): number;
+  readView(opts?: ReadViewOpts): Entries;
+  /** every non-chat entry, and every line since the log's last rotation (all of it before any): a cold reader's
+   * cheap view of what is recent (the status line) */
+  readRecent(): Entries;
+  tailer(opts?: { fs?: TailerFs; after?: number }): Tailer;
+  validateChain(): ChainCheck;
+  verifyChain(opts?: Parameters<RoomStore['verifyChain']>[0]): ChainVerify;
+  getCursor(name: string): number;
+  setCursor(name: string, id: number): void;
+  members(): Members;
+  line(e: Entry, opts?: { full?: boolean }): string;
+  chatLines(e: Entry, opts?: { viewer?: string; entries?: Entries }): string[];
+  fmt(e: Entry): string;
+  stateLine(me: LaneViewer | null | undefined, entries?: Entries | null, opts?: { ids?: boolean }): string;
+  digest(entries?: Entries | null): string;
+  fold(entries?: Entries | null): Fold;
+  proposal(hash: string, entries?: Entries | null): ProposalEntry | null;
+  proposals(entries?: Entries | null): ProposalEntry[];
+  answers(hash: string, approvers?: string[] | null, entries?: Entries | null): ReturnType<typeof consent.answers>;
+  answered(name: string, hash: string, entries?: Entries | null): Entry | null;
+  decided(hash: string, entries?: Entries | null): Entry | null;
+  deliver(me: LaneViewer | null | undefined, e: Entry, st?: Omit<DeliverState, 'trust'>): Delivery;
+}
+
 /** A Room over a RoomStore: the store's calls plus the queries and renderings that need this room's log. */
-function roomOver(s: RoomStore) {
+function roomOver(s: RoomStore): Room {
   const trust = s.trust;
   const all = (entries?: Entries | null): Entries => entries || s.readAll();
   return {
@@ -107,9 +150,6 @@ function roomOver(s: RoomStore) {
     deliver: (me: LaneViewer | null | undefined, e: Entry, st: Omit<DeliverState, 'trust'> = {}) => delivery.deliver(me, e, { ...st, trust }),
   };
 }
-
-/** One room: its store's calls plus the queries and renderings over its log (see the header). */
-type Room = ReturnType<typeof roomOver>;
 
 const rooms = new Map<string, { s: RoomStore; room: Room }>(); // code -> {s, room}
 function open(code: RoomCode, { store: s, dir }: { store?: RoomStore; dir?: string } = {}): Room {

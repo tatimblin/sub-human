@@ -207,7 +207,7 @@ type RoomClaudePatch = { [K in keyof Member]?: Member[K] | undefined };
 const VERBS: readonly string[] = ['invite', 'join', 'kick', 'leave', 'doctor', 'help', 'admit', 'handoff', 'promote', 'demote'];
 const RESERVED: readonly string[] = [ROOM_CLAUDE, 'room', 'all', 'system', 'host', ...VERBS];
 const ROLES: readonly string[] = [ROOM_CLAUDE, 'member'];
-const ANIMALS = [
+const ANIMALS: readonly string[] = [
   'otter', 'badger', 'beaver', 'bison', 'camel', 'cheetah', 'condor', 'coyote',
   'crane', 'dingo', 'dolphin', 'eagle', 'egret', 'falcon', 'ferret', 'finch',
   'gecko', 'gibbon', 'gopher', 'heron', 'hippo', 'husky', 'ibex', 'iguana',
@@ -275,7 +275,7 @@ const fail = (error: string): JoinOutcome => ({ ok: false, error });
  * Renew me's lease (members seen_at), at most every SEAT_BEAT_MS: the tail's health tick and the hold server
  * call it. Only for the seat as me holds it (same pid when me has one; not left). Returns true when written.
  */
-function heartbeat(me: { code?: RoomCode; name?: string; pid?: number | null } | null | undefined, now = Date.now()): boolean {
+function heartbeat(me: { code?: RoomCode; name?: string; pid?: number | null } | null | undefined, now: number = Date.now()): boolean {
   if (!me || !me.code || !me.name || !roomExists(me.code)) return false;
   const m: Member | undefined = readMembers(me.code)[me.name]; // the cheap check, before the op (a mirror's document holds no pid)
   const stale = !!m && !m.left_at && (!validPid(me.pid) || m.pid == null || m.pid === me.pid) && !(Date.parse(String(m.seen_at)) > now - SEAT_BEAT_MS);
@@ -425,7 +425,7 @@ const leaseLive = (lease: ModLease | null): boolean => !!lease && validPid(lease
  * its start time, so a reused pid does not count), or recently. Any other lease is a leftover: a session id
  * resumed in a process whose module never said hello (--bare, hooks off) must not inherit the old one.
  */
-function modLeaseOk(sid: unknown, pid: unknown, now = Date.now()): boolean {
+function modLeaseOk(sid: unknown, pid: unknown, now: number = Date.now()): boolean {
   const lease = readModLease(sid);
   if (!lease || lease.session_id !== sid) return false;
   // a young lease lets it through on its own: asked first, it spares the ps a live check costs (a loaded machine)
@@ -440,7 +440,7 @@ function deleteModLease(sid: unknown): boolean {
 }
 
 /** Delete leases whose process is gone; a lease with no pid (or unreadable) once it is past the fresh window. */
-function pruneSessionIndexes(now = Date.now(), ttlMs = SESSION_INDEX_TTL_MS): number {
+function pruneSessionIndexes(now: number = Date.now(), ttlMs: number = SESSION_INDEX_TTL_MS): number {
   let n = 0;
   for (const dir of [byPidDir(), path.join(home(), 'sessions', 'by-sid')]) {
     let names: string[];
@@ -468,7 +468,7 @@ function pruneSessionIndexes(now = Date.now(), ttlMs = SESSION_INDEX_TTL_MS): nu
   return n;
 }
 
-function pruneModLeases(now = Date.now()): number {
+function pruneModLeases(now: number = Date.now()): number {
   const dir = path.join(home(), 'sessions', 'mods');
   let names: string[];
   try { names = fs.readdirSync(dir); } catch { return 0; }
@@ -576,7 +576,7 @@ const isAddress = (title: string): boolean => { const i = title.lastIndexOf('.')
  * nothing then); with no notice, a title that was a seat's address NAME.CODE. {sid, title, home?} or null. */
 type ForkedAway = { sid: string; title: string; home?: string };
 const realish = (p: string): string => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
-function forkedAway(sid: unknown, dir: string | null | undefined, now = Date.now()): ForkedAway | null {
+function forkedAway(sid: unknown, dir: string | null | undefined, now: number = Date.now()): ForkedAway | null {
   if (!isSessionId(sid) || typeof dir !== 'string' || !dir) return null;
   let names: string[];
   try { names = fs.readdirSync(dir).filter(f => f.endsWith('.jsonl')); } catch { return null; }
@@ -639,7 +639,7 @@ function adoptFork(from: ForkParent, { pid: pidArg, session_id, cwd }: { pid: un
   return r;
 }
 
-const claudePid = () => cc.claudePid();
+const claudePid = (): number | null => cc.claudePid();
 
 function parentTable(): Map<number, number> {
   const r = spawnSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' }, maxBuffer: 16 << 20 });

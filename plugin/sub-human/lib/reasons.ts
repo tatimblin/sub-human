@@ -62,7 +62,9 @@ export const REASON_CODE = {
   // a link stopped
   ROOM_CLOSED: null, // the room was closed: a dormant link
   NO_SEAT: null, // no seat of this machine is left in the room
-} as const satisfies Record<string, WireCode | null>;
+} as const;
+// checked apart from the table: an exported `satisfies` is a type an isolated declaration cannot infer
+REASON_CODE satisfies Record<string, WireCode | null>;
 
 export type Reason = keyof typeof REASON_CODE;
 /** The reasons that may ride with code C. */

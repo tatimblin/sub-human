@@ -34,7 +34,7 @@ function seatOf(input: StatuslineIn | null | undefined): Identity | null {
   return me && me.code ? me : null;
 }
 
-function agentStatusline(input: StatuslineIn | null = {}, { env = process.env } = {}): string {
+function agentStatusline(input: StatuslineIn | null = {}, { env = process.env }: { env?: NodeJS.ProcessEnv } = {}): string {
   try {
     const list = input && input.tasks;
     const tasks: (PanelTask | null)[] = Array.isArray(list) ? list : [];

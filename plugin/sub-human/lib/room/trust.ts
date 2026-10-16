@@ -37,7 +37,7 @@ import type { RoomCode } from '../brand.ts';
 /** The installed human signer (hooks/seat-key.ts arm): the seat's private key for (room, from), or null. */
 type HumanSigner = (room: string, from: string) => KeyObject | null | undefined;
 
-const SIGNER = Symbol.for('sub-human.human-signer');
+const SIGNER: unique symbol = Symbol.for('sub-human.human-signer');
 
 function humanKey(code: RoomCode, from: string): KeyObject {
   const signer = (globalThis as unknown as Record<symbol, HumanSigner | undefined>)[SIGNER];
