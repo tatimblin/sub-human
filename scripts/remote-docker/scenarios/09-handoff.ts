@@ -13,6 +13,7 @@
 // LAB_HANDOFF_CMD overrides step 1's command ({name} and {code} are filled in).
 import { WAN, JUMP, delivered, waitState, converge, entries, type DoctorReport } from './_lib.ts';
 import type { HookRun, SeatDriver, T } from '../lab.ts';
+import { parseJson } from '../../lib/io.ts';
 
 const NEW_HOST = 'joiner@joiner-a';
 
@@ -63,7 +64,7 @@ export async function run(t: T): Promise<void> {
   t.check("bea's link follows to joiner-a; with no login of hers there it is offline with a reason that names bob and the way out", repointed && /ssh login|invite/.test(bl.reason || ''), `${bl.state}: ${(bl.reason || '').slice(0, 200)}`);
   const dj = b.seat.cli(['doctor', '--json', '--quick'], { env: { SUB_HUMAN_SSH_OPTS: `-F ${b.conf}` } });
   let report: DoctorReport | null = null;
-  try { report = JSON.parse(dj.stdout); } catch { /* not JSON */ }
+  try { report = parseJson<DoctorReport>(dj.stdout); } catch { /* not JSON */ }
   t.ev.write('doctor-bea-moved.json', dj.stdout + dj.stderr);
   const ld = report && (report.links || []).find(l => l.code === code);
   t.check('doctor --json on joiner-b: the link\'s room moved to bob, not reached yet', !!ld && ld.moved && ld.moved.host === 'bob' && !ld.moved.reached, ld ? JSON.stringify(ld.moved) : 'no link in the report');

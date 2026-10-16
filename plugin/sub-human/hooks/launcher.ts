@@ -55,7 +55,7 @@ function launcherBody(roots: string | string[]): string {
 type RootsRec = Record<string, { at?: unknown; temp?: unknown } | null | undefined>;
 
 function orderRoots(rec: RootsRec | null): string[] {
-  const xs = Object.entries(rec || {}).map(([root, v]) => ({ root, at: Number(v && v.at) || 0, temp: !!(v && v.temp) }));
+  const xs = Object.entries(rec ?? {}).map(([root, v]) => ({ root, at: Number(v && v.at) || 0, temp: !!(v && v.temp) }));
   xs.sort((a, b) => (Number(a.temp) - Number(b.temp)) || (b.at - a.at));
   return xs.map(x => x.root);
 }

@@ -12,8 +12,9 @@
 import { parse } from './args.ts';
 import { createRequire } from 'node:module';
 import { msgOf } from '../errors.ts';
+import type * as ListenerMod from '../remote/listener.ts';
 
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 const say = (s: string) => process.stdout.write(s.endsWith('\n') ? s : s + '\n');
 const fail = (s: string, code = 1) => { process.stderr.write(s.endsWith('\n') ? s : s + '\n'); return code; };
@@ -26,7 +27,7 @@ function listen(args: readonly string[]): number | null {
   if (p.error === '--port needs a value') return fail('--port takes a port number', 2);
   const doStart = !!p.flags.start, doStop = !!p.flags.stop, doStatus = !!p.flags.status;
   if (p.error || p.rest.length || Number(doStart) + Number(doStop) + Number(doStatus) > 1) return fail('usage: sub-human listen [--port 7420] | --start [--port P] | --stop | --status', 2);
-  const L: typeof import('../remote/listener.ts') = require('../remote/listener.ts');
+  const L: typeof ListenerMod = require('../remote/listener.ts');
   try {
     if (doStatus) { say(JSON.stringify(L.status(), null, 2)); return 0; }
     if (doStop) { say(L.stop() ? 'the listener stopped' : 'no listener was running'); return 0; }

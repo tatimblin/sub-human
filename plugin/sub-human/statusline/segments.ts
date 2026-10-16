@@ -34,10 +34,13 @@ function seatOf(input: StatuslineIn | null | undefined): Identity | null {
   return me && me.code ? me : null;
 }
 
+// Claude Code's panel tasks (its own input; each read checks what it uses)
+const isTasks = (v: unknown): v is (PanelTask | null)[] => Array.isArray(v);
+
 function agentStatusline(input: StatuslineIn | null = {}, { env = process.env }: { env?: NodeJS.ProcessEnv } = {}): string {
   try {
     const list = input && input.tasks;
-    const tasks: (PanelTask | null)[] = Array.isArray(list) ? list : [];
+    const tasks = isTasks(list) ? list : [];
     if (!tasks.length) return '';
     // a session that left keeps labelling its rows (they end a moment later): with nothing from here Claude Code shows
     // the row agent's own activity ("Spawning participant row for bob": stage 8e I.7)
@@ -47,7 +50,7 @@ function agentStatusline(input: StatuslineIn | null = {}, { env = process.env }:
       const sid = input && typeof input.session_id === 'string' ? input.session_id : null;
       const last = sid !== null ? identity.lastSeat(sid) : null;
       if (!last) return '';
-      me = { ...last, pid: null, session_id: sid } as Identity;
+      me = { ...last, pid: null, session_id: sid };
       left = true;
     }
     const members: Members = identity.readMembers(me.code) || {};

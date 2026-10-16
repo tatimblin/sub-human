@@ -112,15 +112,15 @@ type RoomHandle = Room;
 
 /** The call's change to the list as a `task` entry, appended to the log and to `log` (the event's one read). */
 function mirror(code: RoomCode, input: TasksIn, r: RoomHandle, log: Entry[]): boolean {
-  const resp: TaskResponse = input.tool_response || {};
+  const resp: TaskResponse = input.tool_response ?? {};
   if (resp.success === false || resp.error) return false; // refused: the native list did not change
-  const inp: TaskCall = input.tool_input || {};
+  const inp: TaskCall = input.tool_input ?? {};
   const created = input.tool_name === 'TaskCreate';
   const id = String(created ? (resp.task && resp.task.id) || '' : resp.taskId || inp.taskId || '');
   if (!/^\d+$/.test(id)) return false;
   if (created && internal(inp)) return false;
 
-  const prev: TaskState | null = tasks.fold(log).find((t: TaskState) => t.id === id) || null;
+  const prev: TaskState | null = tasks.fold(log).find((t: TaskState) => t.id === id) ?? null;
   const native = readNative(code, id);
   if (internal(native)) return false;
   const base: TaskState = prev ? { ...prev } : native ? {
@@ -192,11 +192,11 @@ function reconcile(code: RoomCode, r: RoomHandle, log: Entry[]): boolean {
 
 function gateHook(code: RoomCode, input: TasksIn, r: RoomHandle): Reply | null {
   const id = String(input.task_id || '');
-  const native: NativeTask = readNative(code, id) || {};
+  const native: NativeTask = readNative(code, id) ?? {};
   // the recent view (every non-chat entry, and the lines since the last rotation) holds every task entry; only an
   // owner's confirmation older than the rotation (a say) is not in it, so a refusal is checked again over the whole log
   let log = r.readRecent();
-  const m: Partial<TaskState> = tasks.fold(log).find((t: TaskState) => t.id === id) || {};
+  const m: Partial<TaskState> = tasks.fold(log).find((t: TaskState) => t.id === id) ?? {};
   const task = {
     id,
     subject: input.task_subject || native.subject || m.subject || '',
@@ -245,7 +245,7 @@ export function handle(input: TasksIn): Reply | null {
 
   /** A reconcile failure: on the reply's stderr when there is one, else on the process's. */
   function note(text: string) {
-    const r0 = reply as Reply | null;
+    const r0 = reply;
     if (r0 && r0.kind === 'classic') reply = { ...r0, stderr: `${r0.stderr || ''}\n${text}`.trim() };
     else process.stderr.write(`${text}\n`);
   }

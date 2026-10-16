@@ -13,6 +13,7 @@ import { context, DEMO } from '../checks/context.ts';
 import { joinLineIn, pinIn, admitCardState } from '../lib/panes.ts';
 import type { Proposal } from '../../plugin/sub-human/lib/types-app.ts';
 import { must } from './must.ts';
+import { parseJson } from '../lib/io.ts';
 
 const { Machine } = paths.pluginTest('support/two-homes.ts');
 const store = paths.pluginLib('room/store.ts');
@@ -84,7 +85,7 @@ test('S11: carol from a second home passes every check over real evidence; a bro
   fs.copyFileSync(path.join(host.home, 'machine.json'), path.join(st, 'machine-host.json'));
   const linkFile = path.join(remote.home, 'links', `${code}.json`);
   const shape = (l: { token?: unknown, transport?: unknown }) => ({ mode: (fs.statSync(linkFile).mode & 0o777).toString(8), token: typeof l.token === 'string', invite: 'invite' in l, transport: l.transport });
-  fs.writeFileSync(path.join(st, 'link-file.json'), JSON.stringify(shape(JSON.parse(fs.readFileSync(linkFile, 'utf8')))));
+  fs.writeFileSync(path.join(st, 'link-file.json'), JSON.stringify(shape(parseJson<{ token?: unknown, transport?: unknown }>(fs.readFileSync(linkFile, 'utf8')))));
   const at = new Date().toISOString();
   const caps: [string, number, string][] = [['alice', 1, shown], ['alice', 2, `⏺ carol: ${DEMO.carol11}`], ['carol', 1, `❯ /sub-human\n  ⎿ joined ${code} as carol`]];
   fs.writeFileSync(path.join(screens, 'index.json'), JSON.stringify(caps.map(([seat, step]) => ({ scene: 'S11', session: `sh-${seat}`, step, time: at, txt: `S11-${step}-${seat}.txt`, room: code }))));

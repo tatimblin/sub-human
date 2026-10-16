@@ -12,7 +12,7 @@ import type { AgentCall, WithToolInput } from '../types.ts';
 interface SpawnResponse { agentId?: unknown; agent_id?: unknown; data?: { agentId?: unknown } }
 
 export function handle(input: WithToolInput<'PostToolUse', AgentCall>): void {
-  const ti: AgentCall = input.tool_input || {};
+  const ti: AgentCall = input.tool_input ?? {};
   const type = String(ti.subagent_type || '');
   if (type !== rows.PARTICIPANT && type !== rows.ROOM_AGENT) return;
   const r: SpawnResponse = typeof input.tool_response === 'object' && input.tool_response ? input.tool_response : {};

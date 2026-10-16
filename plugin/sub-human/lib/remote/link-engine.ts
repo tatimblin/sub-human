@@ -131,7 +131,7 @@ function step(state: EngineState, event: EngineEvent, ctx: EngineCtx): { state: 
   const s: EngineState = { ...state };
   const fx: EngineEffect[] = [];
   const T = ctx.timings;
-  const random = ctx.random || Math.random;
+  const random = ctx.random ?? Math.random;
   const enter = (phase: LinkStateWord, reason: string | null = null, code: string | null = null, why: Reason | null = null) => {
     Object.assign(s, { phase, reason, code, why, since: ctx.now });
     fx.push({ type: 'publish' });

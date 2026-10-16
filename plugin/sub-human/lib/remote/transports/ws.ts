@@ -51,8 +51,11 @@ import type { CipherState, KeyPair } from '../noise.ts';
 import type { Conn } from '../ws.ts';
 import { errCode, msgOf } from '../../errors.ts';
 import type { RoomCode } from '../../brand.ts';
+import type * as NoiseMod from '../noise.ts';
+import type * as WsMod from '../ws.ts';
+import type * as TransportsMod from './index.ts';
 
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 const HOST_RE = /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,62})(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}))*\.?$/;
 const PATH_RE = /^\/[A-Za-z0-9._~/-]{0,200}$/;
@@ -62,8 +65,8 @@ const PROLOGUE3: Buffer = Buffer.from('sub-human ws3');
 const HANDSHAKE_MS = 10_000;
 
 // lib/remote/noise.ts and lib/remote/ws.ts, loaded on first use
-const noise = (): typeof import('../noise.ts') => require('../noise.ts');
-const ws = (): typeof import('../ws.ts') => require('../ws.ts');
+const noise = (): typeof NoiseMod => require('../noise.ts');
+const ws = (): typeof WsMod => require('../ws.ts');
 
 function parse(rest: string): WsAddr | null {
   const m = /^\/\/([^/:?#@\s]+)(?::([0-9]{1,5}))?(\/[^?#\s]*)?$/.exec(String(rest));
@@ -191,7 +194,7 @@ async function clientChannel(conn: Conn, { rs, code, s = null, timeoutMs = HANDS
 async function serverChannel(conn: Conn, { s, check = () => null, timeoutMs = HANDSHAKE_MS, m1: first }: {
   s: KeyPair; check?: (hello: WsHello) => Refusal | null; timeoutMs?: number; m1?: Buffer;
 }): Promise<{ duplex: Duplex; hello: WsHello; peer: Buffer | null }> {
-  const m1 = first || await firstMessage(conn, timeoutMs, 'the joiner');
+  const m1 = first ?? await firstMessage(conn, timeoutMs, 'the joiner');
   let hs: ReturnType<ReturnType<typeof noise>['responder']> | null = null, hello: WsHello | null = null; // checked below
   for (const [pattern, prologue] of [['XK', PROLOGUE3], ['NK', PROLOGUE]] as const) {
     const h = noise().responder({ s, pattern, prologue });
@@ -252,7 +255,7 @@ const kind: Required<KindEntry<WsSpec>> = {
     } catch (e) { throw new RoomError('OFFLINE', msgOf(e)); }
     try {
       const duplex = await clientChannel(conn, { rs: Buffer.from(spec.hostKey, 'base64url'), code: ctx.code, s: own });
-      return (require('./index.ts') as typeof import('./index.ts')).fromDuplex(duplex);
+      return require<typeof TransportsMod>('./index.ts').fromDuplex(duplex);
     } catch (e) {
       conn.terminate();
       throw e;

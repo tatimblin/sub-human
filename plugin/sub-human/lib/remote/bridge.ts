@@ -32,10 +32,11 @@ import { RoomError } from '../room/validate.ts';
 import { isReason, reasonOf } from '../reasons.ts';
 import { errCode, msgOf } from '../errors.ts';
 import { isWireCode } from './protocol.ts';
+import { isObj } from '../decode.ts';
 import { createRequire } from 'node:module';
 
 // The worker loads its handler by path (createRequire: require(esm) is synchronous and caches like an import).
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 const ENTRY = 'sub-human.bridge';
 
@@ -75,7 +76,7 @@ function createBridge<A extends Api>({ handler, deadlineMs = config.LINK_CALL_MS
     port.postMessage({ id, method, params });
     for (;;) {
       const seen = Atomics.load(replies, 0);
-      const got = receiveMessageOnPort(port) as { message: BridgeReply } | undefined;
+      const got: { message: BridgeReply } | undefined = receiveMessageOnPort(port);
       if (got) { if (got.message.id === id) return settle(got.message); continue; } // an abandoned call's reply
       const left = until - Date.now();
       if (left <= 0) throw new RoomError('OFFLINE', `${method}: no answer within ${ms} ms`, 'UNKNOWN_OUTCOME'); // sent, or not
@@ -84,7 +85,7 @@ function createBridge<A extends Api>({ handler, deadlineMs = config.LINK_CALL_MS
   }
 
   // the handler module answers each method as A says (the one place a reply is read as its type)
-  return { call: call as Bridge<A>['call'], close() { port.close(); worker.terminate(); } };
+  return { call, close() { port.close(); void worker.terminate(); } }; // terminate's promise: nothing waits on the end
 }
 
 function settle({ result, error }: BridgeReply): unknown {
@@ -107,18 +108,20 @@ const failure = (id: number, err: unknown): BridgeReply => {
 
 function serve({ handler, replies, port }: { handler: string; replies: Int32Array; port: MessagePort }): void {
   let handle: Handle | null = null;
-  port.on('message', async ({ id, method, params }: Call) => {
+  const answer = async ({ id, method, params }: Call): Promise<void> => {
     let reply: BridgeReply;
     try {
-      handle = handle || (require(handler) as { handle: Handle }).handle; // at the first call: a preload may be requiring this file
+      handle = handle ?? require<{ handle: Handle }>(handler).handle; // at the first call: a preload may be requiring this file
       reply = { id, result: await handle(method, params) };
     } catch (e) { reply = failure(id, e); }
     try { port.postMessage(reply); } catch (e) { port.postMessage(failure(id, e)); } // a result that does not clone
     Atomics.add(replies, 0, 1);
     Atomics.notify(replies, 0);
-  });
+  };
+  port.on('message', (m: Call) => { void answer(m); }); // each call answers on the port itself
 }
 
-if (!isMainThread && workerData && workerData[ENTRY]) serve(workerData);
+const data: unknown = workerData;
+if (!isMainThread && isObj(data) && data[ENTRY]) serve(data as { handler: string; replies: Int32Array; port: MessagePort });
 
 export { createBridge };

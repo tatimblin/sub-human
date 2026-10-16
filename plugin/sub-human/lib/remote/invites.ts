@@ -173,11 +173,11 @@ function redeemShort(cur: Invites, key: string, secret: string, inv: ShortInvite
     // of it once per machine: if the real joiner is the second one, the one waiting on the card is not them
     if (!adm || !adm.admission || adm.machine !== proven) {
       const used = authError('this invite was used already (each invite works once); ask the host for a new one', 'INVITE_USED');
-      if (!adm || !adm.admission || !proven || (adm.others || []).includes(proven) || (adm.others || []).length >= OTHERS_MAX) return { err: used };
+      if (!adm || !adm.admission || !proven || (adm.others ?? []).includes(proven) || (adm.others ?? []).length >= OTHERS_MAX) return { err: used };
       const second = secretMod.joinCheck(proven, peerKey);
       const note = `a second machine (${second}) presented invite ${ref}, which ${adm.name} (${secretMod.joinCheck(adm.machine, adm.key)}) used already: `
         + `if ${adm.name}'s screen does not show ${secretMod.joinCheck(adm.machine, adm.key)}, refuse the card${adm.admit === 'let-in' ? ` (let in already: /sub-human kick ${adm.name})` : ''} and invite again`;
-      return { err: Object.assign(used, { note }), next: { ...cur, [admissionSlot(secret)]: { ...adm, others: [...(adm.others || []), proven] } } };
+      return { err: Object.assign(used, { note }), next: { ...cur, [admissionSlot(secret)]: { ...adm, others: [...(adm.others ?? []), proven] } } };
     }
     const r = admission.check(adm, { machine: proven || '', linkId, peerKey, now });
     if (r.err) return { err: r.err, ...(r.next ? { next: { ...cur, [slot]: r.next } } : {}) };
@@ -194,12 +194,12 @@ function redeemShort(cur: Invites, key: string, secret: string, inv: ShortInvite
   if (!as || !NAME_RE.test(as.name)) return { err: new RoomError('INVALID', 'a PIN goes with the name to join as') };
   // what the joiner says it is called: its charset only, and short, since a room line every Claude reads carries it
   const label = LABEL_RE.test(String(as.label)) ? as.label.slice(0, LABEL_SHOWN) : 'a-machine';
-  const src = (inv.sources || {})[proven];
+  const src = (inv.sources ?? {})[proven];
   const wait = Math.max(inv.next_at ? Date.parse(inv.next_at) - now : 0, src ? Date.parse(src.next_at) - now : 0);
   if (wait > 0) return { err: authError(`too many PINs tried just now: wait ${Math.ceil(wait / 1000)} s, then type the PIN again`, 'PIN_THROTTLED') };
   if (typeof pin !== 'string' || !SHORT_PIN_RE.test(pin) || !sameDigest(pinDigest(secret, pin), inv.pin_sha256)) {
     const tries = Math.max(0, inv.tries - 1), wrong = (inv.wrong || 0) + 1, srcWrong = (src ? src.wrong : 0) + 1;
-    const sources = { ...(inv.sources || {}), [proven]: { wrong: srcWrong, next_at: iso(now + backoff(srcWrong + 1)) } };
+    const sources = { ...(inv.sources ?? {}), [proven]: { wrong: srcWrong, next_at: iso(now + backoff(srcWrong + 1)) } };
     const rec: ShortInvite = { ...inv, tries, wrong, next_at: iso(now + backoff(wrong)), sources, ...(tries ? {} : { burnt_at: iso(now) }) };
     const next = { ...cur, [key]: rec };
     return tries
@@ -227,7 +227,7 @@ function redeemInvite(store: AuthStore, secret: string, { machine, pin, proven =
   const got: { link: { id: string; seats: string[]; bound: boolean; machine: MachineId; key: string | null } | null; err: RoomError | null; handoff: boolean; adm: AdmissionRecord | null } = { link: null, err: null, handoff: false, adm: null };
   store.kv.update(INVITES_KEY, (stored: Invites | null) => {
     got.err = null;
-    const cur = stored || {};
+    const cur = stored ?? {};
     const inv = cur[key];
     if (inv && inv.admission) { // an admission of a short invite a 0.5.0-beta.15 host enrolled (its own secret)
       got.adm = inv;
@@ -279,7 +279,7 @@ function mintInvite(store: AuthStore, { kind, locator, by = null, now = Date.now
   const pin = newPin(4);
   const made: { out: { ref: string; expires_at: string } | null } = { out: null }; // set in the update
   store.kv.update(INVITES_KEY, (cur: Invites | null) => {
-    const live = Object.values(cur || {}).filter(i => inviteOpen(i, now));
+    const live = Object.values(cur ?? {}).filter(i => inviteOpen(i, now));
     if (live.length >= SHORT_LIVE_MAX) {
       throw new RoomError('INVALID', `${live.length} invites to room ${store.code} are open already; wait until one is used or expires, or cancel one (/sub-human invite --cancel REF)`);
     }
@@ -314,7 +314,7 @@ const inviteRef = (secret: string): string => sha256(secret).slice(0, 12);
 /** The invite of this room whose ref (inviteRef, 12 hex) is ref, or null: none, or more than one. */
 function findInvite(store: AuthStore, ref: unknown): { key: string; invite: InviteRecord } | null {
   if (!REF_RE.test(String(ref))) return null;
-  const hit = Object.entries((store.kv.get(INVITES_KEY, null) || {}) as Invites).filter(([k]) => k.startsWith(ref as string)); // ref: 12 hex (REF_RE)
+  const hit = Object.entries(store.kv.get<Invites>(INVITES_KEY, null) ?? {}).filter(([k]) => k.startsWith(ref as string)); // ref: 12 hex (REF_RE)
   const [only] = hit;
   return hit.length === 1 && only ? { key: only[0], invite: only[1] } : null;
 }
@@ -327,7 +327,7 @@ function burnInvite(store: AuthStore, ref: string, { now = Date.now() }: { now?:
   if (!store.isHost) throw new RoomError('HOST_ONLY', 'only the host of a room revokes its invites');
   const burnt: { out: { state: 'used' | 'burnt already' | 'burnt'; invite: InviteRecord } | null } = { out: null }; // set in the update
   store.kv.update(INVITES_KEY, (cur: Invites | null) => {
-    const hit = Object.entries(cur || {}).filter(([k]) => REF_RE.test(String(ref)) && k.startsWith(ref));
+    const hit = Object.entries(cur ?? {}).filter(([k]) => REF_RE.test(String(ref)) && k.startsWith(ref));
     const [only] = hit;
     if (hit.length !== 1 || !only) throw new RoomError('AUTH', `no invite of room ${store.code} has the ref ${ref}`, 'INVITE_UNKNOWN');
     const [slot, inv] = only;
@@ -348,7 +348,7 @@ function burnFor(store: AuthStore, id: string, { now = Date.now() }: { now?: num
   store.kv.update(INVITES_KEY, (cur: Invites | null) => {
     n = 0;
     const next: Invites = { ...cur };
-    for (const [k, inv] of Object.entries(cur || {})) {
+    for (const [k, inv] of Object.entries(cur ?? {})) {
       if (inv && inv.link === id && !inv.burnt_at) { const { prs, ...kept } = inv; next[k] = { ...kept, burnt_at: iso(now) }; n++; }
     }
     return n ? next : undefined;
@@ -357,7 +357,7 @@ function burnFor(store: AuthStore, id: string, { now = Date.now() }: { now?: num
 }
 
 /** Whether an invite reserves link id (an admission, before its redemption). */
-const reserves = (store: AuthStore, id: string): boolean => Object.values((store.kv.get(INVITES_KEY, null) || {}) as Invites).some(inv => inv.link === id);
+const reserves = (store: AuthStore, id: string): boolean => Object.values(store.kv.get<Invites>(INVITES_KEY, null) ?? {}).some(inv => inv.link === id);
 
 export {
   INVITE_PREFIX, PIN_RE, SHORT_PIN_RE, INVITES_KEY, mintFor, redeemInvite, formatInvite, parseInvite, inviteRef, findInvite,

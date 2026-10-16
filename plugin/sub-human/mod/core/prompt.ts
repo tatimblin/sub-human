@@ -175,11 +175,11 @@ export function originQueue() {
 /** Ours (the shim's) above theirs (the hooks beneath): a block or stop of ours wins, contexts join (ours first), our
  * title wins. */
 export function mergeClassic(ours: ShimResult | null = {}, theirs: ShimResult | null | undefined = {}): ShimResult {
-  const a = ours || {}, b = theirs || {};
+  const a = ours ?? {}, b = theirs ?? {};
   const out: ShimResult = { ...b };
   if (a.block) out.block = a.block;
   if (a.preventContinuation) { out.preventContinuation = true; if (a.stopReason) out.stopReason = a.stopReason; }
-  const ctx = [...(a.additionalContext || []), ...(b.additionalContext || [])];
+  const ctx = [...(a.additionalContext ?? []), ...(b.additionalContext ?? [])];
   if (ctx.length) out.additionalContext = ctx;
   if (a.sessionTitle) out.sessionTitle = a.sessionTitle;
   if (a.suppressOriginalPrompt) out.suppressOriginalPrompt = true;

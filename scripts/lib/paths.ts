@@ -20,39 +20,57 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import type { RoomCode, SeatName } from '../../plugin/sub-human/lib/brand.ts';
+import type * as ContractMod from '../../plugin/sub-human/lib/cc/contract.ts';
+import type * as IdentityMod from '../../plugin/sub-human/lib/identity.ts';
+import type * as ProposalMod from '../../plugin/sub-human/lib/proposal.ts';
+import type * as LinkSocketMod from '../../plugin/sub-human/lib/remote/link-socket.ts';
+import type * as ListenerMod from '../../plugin/sub-human/lib/remote/listener.ts';
+import type * as TailscaleMod from '../../plugin/sub-human/lib/remote/tailscale.ts';
+import type * as WsMod from '../../plugin/sub-human/lib/remote/transports/ws.ts';
+import type * as RemoteWsMod from '../../plugin/sub-human/lib/remote/ws.ts';
+import type * as RoomClaudeMod from '../../plugin/sub-human/lib/room-claude.ts';
+import type * as RoomMod from '../../plugin/sub-human/lib/room.ts';
+import type * as EnvelopeMod from '../../plugin/sub-human/lib/room/envelope.ts';
+import type * as StoreMod from '../../plugin/sub-human/lib/room/store.ts';
+import type * as TextMod from '../../plugin/sub-human/lib/text.ts';
+import type * as BrandsMod from '../../plugin/sub-human/test/support/brands.ts';
+import type * as TwoHomesMod from '../../plugin/sub-human/test/support/two-homes.ts';
+import type * as HoldMod from '../../plugin/sub-human/mcp/hold.ts';
+import type * as TaskMod from '../../plugin/sub-human/mcp/task.ts';
+import type * as RegisterMod from '../../plugin/sub-human/mod/register.ts';
 
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 export const REPO = path.resolve(import.meta.dirname, '..', '..');
 export const PLUGIN = path.join(REPO, 'plugin', 'sub-human');
 
 /** The plugin libs the scripts load (plugin/sub-human/lib/<key>). */
 export interface PluginLibs {
-  'cc/contract.ts': typeof import('../../plugin/sub-human/lib/cc/contract.ts');
-  'identity.ts': typeof import('../../plugin/sub-human/lib/identity.ts');
-  'proposal.ts': typeof import('../../plugin/sub-human/lib/proposal.ts');
-  'remote/link-socket.ts': typeof import('../../plugin/sub-human/lib/remote/link-socket.ts');
-  'remote/listener.ts': typeof import('../../plugin/sub-human/lib/remote/listener.ts');
-  'remote/tailscale.ts': typeof import('../../plugin/sub-human/lib/remote/tailscale.ts');
-  'remote/transports/ws.ts': typeof import('../../plugin/sub-human/lib/remote/transports/ws.ts');
-  'remote/ws.ts': typeof import('../../plugin/sub-human/lib/remote/ws.ts');
-  'room-claude.ts': typeof import('../../plugin/sub-human/lib/room-claude.ts');
-  'room.ts': typeof import('../../plugin/sub-human/lib/room.ts');
-  'room/envelope.ts': typeof import('../../plugin/sub-human/lib/room/envelope.ts');
-  'room/store.ts': typeof import('../../plugin/sub-human/lib/room/store.ts');
-  'text.ts': typeof import('../../plugin/sub-human/lib/text.ts');
+  'cc/contract.ts': typeof ContractMod;
+  'identity.ts': typeof IdentityMod;
+  'proposal.ts': typeof ProposalMod;
+  'remote/link-socket.ts': typeof LinkSocketMod;
+  'remote/listener.ts': typeof ListenerMod;
+  'remote/tailscale.ts': typeof TailscaleMod;
+  'remote/transports/ws.ts': typeof WsMod;
+  'remote/ws.ts': typeof RemoteWsMod;
+  'room-claude.ts': typeof RoomClaudeMod;
+  'room.ts': typeof RoomMod;
+  'room/envelope.ts': typeof EnvelopeMod;
+  'room/store.ts': typeof StoreMod;
+  'text.ts': typeof TextMod;
 }
 /** The plugin test support the scripts tests load (plugin/sub-human/test/<key>). */
 export interface PluginTests {
-  'support/brands.ts': typeof import('../../plugin/sub-human/test/support/brands.ts');
-  'support/two-homes.ts': typeof import('../../plugin/sub-human/test/support/two-homes.ts');
+  'support/brands.ts': typeof BrandsMod;
+  'support/two-homes.ts': typeof TwoHomesMod;
 }
 
 /** Other plugin modules the scripts load (plugin/sub-human/<key>). */
 export interface PluginFiles {
-  'mcp/hold.ts': typeof import('../../plugin/sub-human/mcp/hold.ts');
-  'mcp/task.ts': typeof import('../../plugin/sub-human/mcp/task.ts');
-  'mod/register.ts': typeof import('../../plugin/sub-human/mod/register.ts');
+  'mcp/hold.ts': typeof HoldMod;
+  'mcp/task.ts': typeof TaskMod;
+  'mod/register.ts': typeof RegisterMod;
 }
 
 export const pluginLib = <K extends keyof PluginLibs>(name: K): PluginLibs[K] => require(path.join(PLUGIN, 'lib', name));

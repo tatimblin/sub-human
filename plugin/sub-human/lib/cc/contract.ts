@@ -76,7 +76,7 @@ function compareVersions(a: unknown, b: unknown): -1 | 0 | 1 | null {
 function degradedOn(version: unknown, entries: readonly ContractEntry[] = CONTRACT): { id: string; issue?: number; note: string }[] {
   const out: { id: string; issue?: number; note: string }[] = [];
   for (const e of entries) {
-    for (const d of e.degraded || []) {
+    for (const d of e.degraded ?? []) {
       const c = compareVersions(version, d.from);
       if (c !== null && c >= 0) out.push({ id: e.id, ...(d.issue !== undefined ? { issue: d.issue } : {}), note: d.note });
     }
@@ -165,7 +165,7 @@ function probe(buf: Buffer, { entries = CONTRACT }: { entries?: readonly Contrac
   return entries.map(e => {
     const missing = list(e.search).filter(s => text.indexOf(latin1(s)) < 0);
     for (const sh of list(e.shape)) if (!shapeIn(text, latin1(sh))) missing.push(`shape: ${sh}`);
-    for (const g of e.contains || []) missing.push(...containsMissing(text, g).map(m => `contains: ${m}`));
+    for (const g of e.contains ?? []) missing.push(...containsMissing(text, g).map(m => `contains: ${m}`));
     return { id: e.id, stability: e.stability, ok: missing.length === 0, missing, note: e.note };
   });
 }

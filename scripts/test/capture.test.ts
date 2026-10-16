@@ -6,12 +6,13 @@ import path from 'node:path';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { framer, finalise, parseSessions, verdict } from '../capture.ts';
 import { must } from './must.ts';
+import { parseJson } from '../lib/io.ts';
 
 const CAPTURE = path.join(import.meta.dirname, '..', 'capture.ts');
 const tmp = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'sh-cap-'));
 /** A capture line, as the tests read it. */
 interface CapLine { t: number, kind: string, session: string, ansi: string, scene?: string, beat?: string, caption?: string, room?: string, sessions: Record<string, { cols: number, rows: number }> }
-const lines = (f: string): CapLine[] => fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l));
+const lines = (f: string): CapLine[] => fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map(l => parseJson<CapLine>(l));
 const sleep = (ms: number): Promise<void> => new Promise(r => setTimeout(r, ms));
 
 test('capture: a frame only when the pane changed; sizes kept per session', () => {
@@ -97,7 +98,7 @@ test('capture: the poller records a real tmux pane, markers from another process
     assert.ok(fs1.some(o => o.ansi.includes('\x1b[31mred')), 'colours kept');
     assert.equal(fs1.at(-1)?.ansi.split('\n').length, 36);
     assert.deepEqual(ls.filter(o => o.kind === 'marker').map(o => [o.scene, o.beat, o.caption]), [['S1', 'open', 'alice opens a room']]);
-    const rj = JSON.parse(fs.readFileSync(path.join(take, 'run.json'), 'utf8'));
+    const rj = parseJson<{ scenes: [{ scene?: string, status?: string, endT: number, startT: number }] }>(fs.readFileSync(path.join(take, 'run.json'), 'utf8'));
     assert.equal(rj.scenes[0].scene, 'S1'); assert.equal(rj.scenes[0].status, 'ok');
     assert.ok(rj.scenes[0].endT >= rj.scenes[0].startT);
     assert.equal(fs.existsSync(env.CAPTURE_ACTIVE), false);

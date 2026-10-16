@@ -70,11 +70,15 @@ import type { Identity } from './identity.ts';
 import type { Wanted } from './remote/joining.ts';
 import { errCode, msgOf } from './errors.ts';
 import type { RoomCode, SeatName, MachineId } from './brand.ts';
+import type * as JoiningMod from './remote/joining.ts';
+import type * as GcMod from './gc.ts';
+import type * as WebhostMod from './remote/webhost.ts';
+import type * as ShimMod from './remote/shim.ts';
 
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 // loaded only by take(): the session-end hook and the remote server never need the link or the listener
-const joining = (): typeof import('./remote/joining.ts') => require('./remote/joining.ts');
-const gc = (): typeof import('./gc.ts') => require('./gc.ts');
+const joining = (): typeof JoiningMod => require('./remote/joining.ts');
+const gc = (): typeof GcMod => require('./gc.ts');
 
 /** enter()'s seat: the join hook's, or the remote server's for a seat on another machine. */
 interface EnterOpts {
@@ -107,10 +111,10 @@ function keepWorkdir(code: RoomCode, cwd: string | null | undefined): void {
 function ensureRoomClaude(code: RoomCode, cwd: string | null | undefined, by: string): string {
   let last: Member | null = null;
   try {
-    last = identity.readMembers(code).claude || null;
+    last = identity.readMembers(code).claude ?? null;
     const c = roomClaude.claimSpawn(code, { by });
     if (!c) return '';
-    seam.startDetached({ code, cwd: cwd || (room.open(code).store.kv.get(WORKDIR) as { cwd?: string } | null || {}).cwd, ...c });
+    seam.startDetached({ code, cwd: cwd || (room.open(code).store.kv.get<{ cwd?: string }>(WORKDIR) ?? {}).cwd, ...c });
   } catch (e) {
     return ` · the room's Claude could not start (${(msgOf(e) || String(e)).slice(0, 200)}); /sub-human still works, but there is no room task list`;
   }
@@ -160,7 +164,7 @@ function exit(code: RoomCode, name: SeatName, reason: string, { deadlineMs }: { 
 const CC_END_REASONS: ReadonlySet<string> = new Set(['prompt_input_exit', 'logout', 'other', 'clear', 'resume', 'bypass_permissions_disabled']);
 /** Some link the host records names this seat (lib/remote/host-links.ts LINKS_KEY; read, not imported). */
 function linked(s: { kv: { get<T>(key: string, dflt?: T): T | null } }, name: string): boolean {
-  const recs = s.kv.get<Record<string, { seats?: unknown } | null>>('remote/links') || {};
+  const recs = s.kv.get<Record<string, { seats?: unknown } | null>>('remote/links') ?? {};
   return Object.values(recs).some(l => !!l && Array.isArray(l.seats) && l.seats.includes(name));
 }
 const isLocal = (m: Member): boolean => validPid(m.pid) && identity.isMine(m.machine || identity.machineId());
@@ -297,7 +301,7 @@ function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd,
   const host = identity.isHost(code);
   const same = !!cur && cur.code === code && cur.name === name;
   // a link whose credentials a re-point replaced (lib/handoff.ts): the seat joins again over it, even if seated
-  const rebind = !host && !!(links.get(code) || {}).rebind;
+  const rebind = !host && !!(links.get(code) ?? {}).rebind;
   if (cur && same && !rebind) {
     joining().dropJoinAs(code);
     return { ok: true, me: cur, lead: 'already joined', msg: `you're already in ${cur.code} as ${name}, ${withWhom(code, name)}${ensureRoomClaude(code, cwd, name)}` };
@@ -311,7 +315,7 @@ function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd,
     if (isDefault && /^name taken/.test(r.error || '')) return no(`"${name}" is taken in room ${code}; pick another: /sub-human NAME${created ? '' : ` ${code}`}`);
     // item 11 R4: the name sits in the room with a key made elsewhere (a new home or machine); a key never moves
     if (/pinned to another key/.test(r.error || '')) {
-      const bound = !host && !!(links.get(code) || {}).token;
+      const bound = !host && !!(links.get(code) ?? {}).token;
       return no(`could not join ${code} as ${name}: ${name} is in this room with a key from another machine or sub-human folder, and a seat's key never moves. ${bound ? 'This connection is bound to that name: ask the host for a new invite; their card lets this machine in under a new name' : `Join under another name: /sub-human NAME ${code}`}`);
     }
     return no(`could not join ${code} as ${name}: ${r.error || 'unknown error'}${cur && !same ? `; you're still ${cur.name} in room ${cur.code}` : ''}`);
@@ -322,8 +326,8 @@ function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd,
   joining().dropJoinAs(code);
   try { gc().sweepRows(code); } catch { /* best effort: rows of ended sessions */ }
   if (host) {
-    try { (require('./remote/webhost.ts') as typeof import('./remote/webhost.ts')).ensure(code); } catch { /* best effort */ } // the listener after a reboot
-    try { (require('./remote/shim.ts') as typeof import('./remote/shim.ts')).refresh(); } catch { /* best effort */ } // the serve shim a login link runs
+    try { require<typeof WebhostMod>('./remote/webhost.ts').ensure(code); } catch { /* best effort */ } // the listener after a reboot
+    try { require<typeof ShimMod>('./remote/shim.ts').refresh(); } catch { /* best effort */ } // the serve shim a login link runs
   }
   const me: Identity = { code, name, role: 'member', pid, session_id: session_id || null, address: identity.address(name, code) };
   const msg = created

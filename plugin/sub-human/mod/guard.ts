@@ -125,6 +125,6 @@ export function registerGuard(on: On): void {
 
   on('tool.check', { tool: /^mcp__plugin_sub-human_room__/ }, async ($, e, next) => {
     const v = roomToolVerdict(e, seated(await helloOf($)));
-    return v || next(e);
-  }).catch((_$, e, next) => roomToolVerdict(e, false) || next(e));
+    return v ?? next(e);
+  }).catch((_$, e, next) => roomToolVerdict(e, false) ?? next(e));
 }

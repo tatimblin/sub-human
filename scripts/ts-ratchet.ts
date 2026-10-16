@@ -24,6 +24,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { parseJson } from './lib/io.ts';
 
 export type Kind = 'any' | 'as' | 'nonNull';
 /** The escapes of one file or directory. */
@@ -190,7 +191,7 @@ function main(argv: string[]): number {
   const now = countRepo();
   if (argv.includes('--print')) { process.stdout.write(`${JSON.stringify(now, null, 2)}\n`); return 0; }
   const exists = fs.existsSync(FILE);
-  const base: Record<string, Partial<Counts>> = exists ? JSON.parse(fs.readFileSync(FILE, 'utf8')).counts : {};
+  const base = exists ? parseJson<{ counts: Record<string, Partial<Counts>> }>(fs.readFileSync(FILE, 'utf8')).counts : {};
   const { rose, lower } = compare(base, now);
   if (rose.length && exists) {
     process.stderr.write(`ts-ratchet: more type escapes than scripts/ts-ratchet.tson allows:\n  ${rose.join('\n  ')}\n`);

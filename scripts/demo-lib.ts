@@ -733,7 +733,7 @@ async function planRun(o: Opts): Promise<number> {
   const scenes = all.filter(x => prev.includes(x) || add.includes(x));
   const seats = String(o.seats || '').split(' ').filter(Boolean);
   // --remote NAME=HOME: a seat on another machine (--film's jess, over ssh) and her sub-human home there
-  const remote = Object.fromEntries(String(o.remote || '').split(' ').filter(Boolean).map(kv => kv.split('=')).filter(([k, v]) => k && v));
+  const remote = Object.fromEntries(String(o.remote || '').split(' ').filter(Boolean).map((kv): [string, string] => { const [k = '', v = ''] = kv.split('='); return [k, v]; }).filter(([k, v]) => k && v));
   writeJson(f, { scenes, partial: scenes.length < all.length, ...(seats.length ? { seats } : {}), ...(Object.keys(remote).length ? { remote } : {}) });
   return 0;
 }

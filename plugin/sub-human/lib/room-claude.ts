@@ -87,6 +87,7 @@ import type { Member, Members } from './room/types.ts';
 import type { RoomClaudePatch } from './identity.ts';
 import type { AgentJob } from './cc/bg.ts';
 import type { RoomCode } from './brand.ts';
+import { msgOf } from './errors.ts';
 
 /** What spawnPlan builds a launch from. */
 interface PlanOpts {
@@ -221,7 +222,7 @@ function findJob(code: RoomCode, { parsed = null, env = cleanEnv() }: { parsed?:
   const name = `claude.${code}`;
   const mine = list.filter((j): j is AgentJob & { id: string } => !!j.id && j.kind !== 'interactive' && !ENDED.has(j.state ?? '')
     && (j.name === name || (!!parsed && j.id === parsed)));
-  const pick = mine.find(j => j.id === parsed) || mine.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))[0];
+  const pick = mine.find(j => j.id === parsed) ?? mine.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))[0];
   return pick ? { id: pick.id, sessionId: pick.sessionId } : fallback;
 }
 
@@ -257,7 +258,7 @@ function stopJob(job: string | null | undefined): boolean {
 function stopStrays(code: RoomCode, keep: (string | null | undefined)[] = [],
   list: AgentJob[] | null = cc.jobs({ all: true, bin: claudeBin(), env: cleanEnv(), timeout: config.SPAWN_TIMEOUT_MS })): string[] {
   const name = `claude.${code}`;
-  const strays = (list || []).filter(j => !!j.id && j.kind !== 'interactive' && j.name === name && !keep.includes(j.id)
+  const strays = (list ?? []).filter(j => !!j.id && j.kind !== 'interactive' && j.name === name && !keep.includes(j.id)
     && (!!j.pid || !ENDED.has(j.state ?? ''))).map(j => j.id as string);
   for (const id of strays) stopJob(id);
   return strays;
@@ -269,7 +270,7 @@ function spawn(opts: SpawnOpts): SpawnResult {
   if (prevJob) stopJob(prevJob); // a respawn never leaves the old job running beside the new one
   if (claim) {
     // nor one the record lost; only while this claim is current (a stale starter must not stop the new job)
-    const o = (() => { try { return identity.readMembers(code).claude || null; } catch { return null; } })();
+    const o = (() => { try { return identity.readMembers(code).claude ?? null; } catch { return null; } })();
     if (o && o.claim === claim && !o.closing) stopStrays(code, [prevJob]);
   }
   const r = spawnSync(plan.bin, plan.args, {
@@ -324,7 +325,7 @@ async function watchStart(code: RoomCode, job: string, {
   jobs = () => cc.jobs({ all: true, bin: claudeBin(), env: cleanEnv(), timeout: config.SPAWN_TIMEOUT_MS }),
   stop = stopJob,
 }: { pollMs?: number, bindMs?: number, jobs?: () => AgentJob[] | null, stop?: (job: string) => unknown } = {}): Promise<WatchResult> {
-  const read = (): Member | null => { try { return identity.readMembers(code).claude || null; } catch { return null; } };
+  const read = (): Member | null => { try { return identity.readMembers(code).claude ?? null; } catch { return null; } };
   let deadline = 0; // from the first read: spawned_at + bindMs
   for (;;) {
     const o = read();
@@ -332,7 +333,7 @@ async function watchStart(code: RoomCode, job: string, {
     deadline ||= (Date.parse(o.spawned_at || '') || clock.now()) + bindMs;
     await clock.sleep(Math.min(pollMs, Math.max(0, deadline - clock.now())));
     if (!waitingOn(read(), job)) continue; // the top of the loop says which
-    const state = (jobs() || []).find(j => j.id === job)?.state || null;
+    const state = (jobs() ?? []).find(j => j.id === job)?.state || null;
     const failed = !!state && ENDED.has(state);
     if (!failed && clock.now() <= deadline) continue;
     const reason = state === 'done' ? `job ${job} ended without taking its seat`
@@ -420,7 +421,7 @@ async function reap(code: RoomCode, {
   stopStrays(code, [job]); // a job the record lost would outlive the room
   // `claude stop` answering is not the process gone (live: the room's Claude, its MCP server and tail ran on for
   // minutes after stopped_at): the bound process, by its pid and start time, ends here if it is still up
-  await ensureGone(identity.readMembers(code).claude || o);
+  await ensureGone(identity.readMembers(code).claude ?? o);
   identity.updateRoomClaude(code, () => ({ stopped_at: new Date().toISOString() }));
   try { identity.leave(code, identity.ROOM_CLAUDE, {}); } catch { /* already left */ }
   try { identity.unindexClosed(code); } catch { /* the next look at the open rooms drops it */ } // stage 8e I.1
@@ -462,7 +463,7 @@ function watchdog(code: RoomCode, { now = clock.now(), orphanMs = orphanMsDefaul
   };
   // judged on a plain read first: the tick that changes nothing (the usual one, every TAIL_HEALTH_MS) takes no lock
   const seen = identity.readMembers(code) || {};
-  if (judge(seen.claude || null, seen)) identity.updateRoomClaude(code, judge);
+  if (judge(seen.claude ?? null, seen)) identity.updateRoomClaude(code, judge);
   if (state === 'reaping') reaper(code, { claimed: true });
   return state;
 }
@@ -487,7 +488,7 @@ if (import.meta.main) {
     process.exitCode = r.ok ? 0 : 1;
     // this helper outlives the join hook, so it watches the job until it binds (or tells the room it did not)
     if (r.ok) watchStart(code, r.job).catch(() => { /* the bind deadline still respawns */ }); // no top-level await: tests require() this
-  } else if (cmd === 'reap') reap(code, { claimed: extra === '--claimed' }).then(r => process.stdout.write(r + '\n'), e => die(e.message));
+  } else if (cmd === 'reap') reap(code, { claimed: extra === '--claimed' }).then(r => process.stdout.write(r + '\n'), (e: unknown) => die(msgOf(e)));
   else if (cmd === 'watchdog') process.stdout.write(watchdog(code) + '\n');
   else if (cmd === 'release') process.stdout.write((JOB_RE.test(String(extra)) && stopJob(extra) ? 'stopped' : 'not-stopped') + '\n');
   else die(`unknown command ${cmd}`);

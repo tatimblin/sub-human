@@ -187,8 +187,11 @@ function titleText(p: Entry): string {
  * The proposal hash names, as people see it: its title in quotes and its short hash, '"Ship v3 Monday" (3fa2c1)'
  * (revisions can share a title), from the proposal entry in entries; null without entries or that entry.
  */
+// Array.isArray, without its any[] (a readonly list stays the reader's type)
+const isList = (v: readonly Readonly<Entry>[] | undefined): v is readonly Readonly<Entry>[] => Array.isArray(v);
+
 function proposalLabel(hash: string | undefined, entries: readonly Readonly<Entry>[] | undefined): string | null {
-  if (!hash || !Array.isArray(entries)) return null;
+  if (!hash || !isList(entries)) return null;
   const p = entries.find(x => x && x.kind === 'proposal' && x.hash === hash);
   const t = p && titleText(p);
   return t ? `"${t}" (${hash.slice(0, 6)})` : null;
@@ -196,7 +199,7 @@ function proposalLabel(hash: string | undefined, entries: readonly Readonly<Entr
 
 /** The proposals entry e retired (lib/room/consent.ts superseded: same sender, same title), each labelled; [] without entries. */
 function retiredBy(e: Entry, entries: readonly Readonly<Entry>[] | undefined, trust: Trust): string[] {
-  if (!Array.isArray(entries) || !e.hash) return [];
+  if (!isList(entries) || !e.hash) return [];
   const before = entries.filter(x => x && x.id < e.id);
   const was = fold(before, trust).superseded;
   return [...fold([...before, e], trust).superseded].filter(([old, by]) => by === e.hash && !was.has(old))
@@ -217,7 +220,7 @@ function decisionText(n: Entry, entries: readonly Readonly<Entry>[] | undefined)
   const m = /^objected: ([^·]*?)(?: · agreed: (.*))?$/.exec(s);
   if (!label || !entries) return m ? `not agreed (${s})` : `decided (${s})`; // no title to name it by (a label means entries are there)
   if (!m) return /^agreed: /.test(s) ? `${label} agreed (${s.slice(8)})` : `${label} decided (${s})`;
-  const refs = new Set(n.refs || []);
+  const refs = new Set(n.refs ?? []);
   const objs = entries.filter(x => x && refs.has(x.id) && x.kind === 'objection');
   const by = (m[1] ?? '').split(/,\s*/).filter(Boolean).map(name => {
     const o = objs.find(x => x.from === name);
@@ -337,7 +340,7 @@ function stateLine(me: LaneViewer | null | undefined, entries: readonly Readonly
     parts.push(s);
   }
   if (open.length > shown.length) parts.push(`+${open.length - shown.length} more open`);
-  const away = Object.values(members || {}).filter(m => m && (m.left_at || m.lapsed_at) && m.name !== name).map(m => m.name);
+  const away = Object.values(members ?? {}).filter(m => m && (m.left_at || m.lapsed_at) && m.name !== name).map(m => m.name);
   if (away.length) parts.push(`away: ${away.join(', ')}`);
   return `room now: ${parts.join(' · ')}`;
 }
@@ -354,7 +357,7 @@ function fmt(e: Entry, { trust = NO_TRUST }: { trust?: Trust } = {}): string {
 // ---------- the compaction digest ----------
 /** The ordered digest sections; items carry an id so the cap can trim the oldest first. */
 function digestSections(entries: readonly Readonly<Entry>[] = [], { members = {}, code = null, trust = NO_TRUST }: DigestCtx = {}): DigestSection[] {
-  members = members || {};
+  members = members ?? {};
   const memberLines = Object.values(members).map(m => {
     const last = entries.filter(e => e.from === m.name && e.via !== 'system').at(-1);
     return { text: `  ${m.name} (${m.role})${m.left_at ? ' LEFT' : ''} last post ${last ? `#${last.id} ${String(last.at).slice(11, 19)}` : '-'}` };
@@ -447,7 +450,7 @@ const settleMs = () => envMs('SUB_HUMAN_LEAVE_MS');
 const isMove = (e: Entry | null | undefined) => !!e && e.via === 'system' && (e.kind === 'member_joined' || e.kind === 'member_left');
 
 function joinLeave(es: readonly Readonly<Entry>[] | null | undefined, viewer: string | null | undefined, { now = clock.now(), settle = settleMs() }: { now?: number; settle?: number } = {}): Notice[] {
-  const list = (es || []).filter(e => isMove(e) && e.from !== viewer && e.from !== ROOM_CLAUDE);
+  const list = (es ?? []).filter(e => isMove(e) && e.from !== viewer && e.from !== ROOM_CLAUDE);
   const drop = new Set<number>();
   const next = new Map<string, Entry>(); // name -> its next join, walking back
   for (let i = list.length - 1; i >= 0; i--) {
@@ -475,7 +478,7 @@ function rowSegment(es: readonly Readonly<Entry>[] | null | undefined, viewer: s
   const fresh = (x: Notice) => now - Date.parse(x.at) - (x.kind === 'member_left' ? settle : 0) < ROW_NOTICE_MS;
   // only the log's last ROW_NOTICE_MS + settle can hold a fresh notice, or the rejoin that cancels one: the log is in
   // time order, so read back to there
-  const list = es || [];
+  const list = es ?? [];
   let from = list.length;
   for (let e = list[from - 1]; e && !(now - Date.parse(e.at) > ROW_NOTICE_MS + 2 * settle); e = list[from - 1]) from--;
   const n = joinLeave(list.slice(from), viewer, { now, settle }).filter(x => x.settled && fresh(x)).at(-1);

@@ -232,8 +232,10 @@ export function clearPulls(held: Pulls | null | undefined, upTo: number): Pulls 
 }
 
 /** The mid-turn wakes ({text, at}) after the main loop's last finished tool call: no request followed them. */
-export function unread(wakes: readonly { text: string; at: unknown }[] | null | undefined, lastToolDone: unknown): string[] {
-  return (Array.isArray(wakes) ? wakes : []).filter(w => !(Number(lastToolDone) > Number(w.at))).map(w => w.text);
+type Wakes = readonly { text: string; at: unknown }[];
+const isWakes = (v: Wakes | null | undefined): v is Wakes => Array.isArray(v); // Array.isArray without its any[]
+export function unread(wakes: Wakes | null | undefined, lastToolDone: unknown): string[] {
+  return (isWakes(wakes) ? wakes : []).filter(w => !(Number(lastToolDone) > Number(w.at))).map(w => w.text);
 }
 
 /** MOD_RESTART_MS doubling to MOD_RESTART_MAX_MS; nextFails starts over after a steady run. */

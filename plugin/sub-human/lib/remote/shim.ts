@@ -43,7 +43,7 @@ import path from 'node:path';
 import { home, isTempPath, allowTmpRoot } from '../home.ts';
 import { writeFileAtomic } from '../io.ts';
 
-const PLAIN_PATH_RE: RegExp = /^\/[A-Za-z0-9_\/.@+,:-]+$/;
+const PLAIN_PATH_RE: RegExp = /^\/[A-Za-z0-9_/.@+,:-]+$/;
 
 const binDir = (h: string = home()): string => path.join(path.resolve(h), 'bin');
 const shimPath = (h?: string): string => path.join(binDir(h), 'serve');

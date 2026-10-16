@@ -141,14 +141,14 @@ function dormant(st: LinkStateView): 'closed' | 'no-seat' | null {
 
 async function diagnoseLink(code: RoomCode, { quick, timeoutMs, env }: { quick: boolean; timeoutMs: number; env: NodeJS.ProcessEnv }): Promise<LinkReport> {
   const links = lib('room/links.ts');
-  const l: Partial<Link> = links.get(code) || {};
+  const l: Partial<Link> = links.get(code) ?? {};
   const spec: LinkSpec | undefined = l.transport;
-  const t: LinkTransportView = spec || {}; // what the report shows of it
+  const t: LinkTransportView = spec ?? {}; // what the report shows of it
   let describe = t.kind || '?';
   try { if (spec) describe = lib('remote/transports/index.ts').describe(spec); } catch { /* kind unknown */ }
   let daemon: LinkReport['daemon'] = { running: false };
   try { const s = lib('remote/link-socket.ts').status(code); daemon = { running: !!s.running, pid: s.pid || null }; } catch { /* no mirror */ }
-  const st: LinkStateView = lib('room/link-state.ts').read(code) || { state: 'offline' };
+  const st: LinkStateView = lib('room/link-state.ts').read(code) ?? { state: 'offline' };
   if (st.pid) daemon = { running: lib('io.ts').isAlive(st.pid), pid: st.pid }; // the state record's own pid wins
   const recent = lastLogError(code);
   const out: LinkReport = { code, transport: { kind: t.kind, describe, user: t.user, host: t.host, port: t.port, home: t.home, ...(t.login === true ? { login: true } : {}) },
@@ -163,12 +163,12 @@ async function diagnoseLink(code: RoomCode, { quick, timeoutMs, env }: { quick: 
   const ended = st.state === 'stopped' && !!st.lastReason && REVOKED.has(st.lastReason);
   if (!quick && quiet !== 'closed' && !ended) { // a closed room's host has nothing for it: no hello; a seatless one's may say it closed
     const r: HelloProbe = spec ? await helloProbe(spec, code, { timeoutMs, env }) : { ok: false, ms: 0, skipped: true, error: 'the link file names no transport' };
-    const reply: HelloReply = r.reply || {};
+    const reply: HelloReply = r.reply ?? {};
     const hostTime = replyTime(reply);
     out.reach = {
       ok: r.ok, ms: r.ms, error: r.error, ...(r.code ? { code: r.code } : {}), skipped: !!r.skipped, hint: r.ok ? null : (spec && spec.kind === 'ssh' ? (spec.login === true && lib('remote/transports/ssh.ts').loginFailure(r.stderr ?? '', spec, code)) || sshHint(r.stderr, { code, transport: spec }) : null),
       stderr: r.stderr || '',
-      protocol: r.ok ? { v: reply.v, proto: reply.proto || null, server: typeof reply.server === 'string' ? reply.server : null } : null,
+      protocol: r.ok ? { v: reply.v, proto: reply.proto ?? null, server: typeof reply.server === 'string' ? reply.server : null } : null,
       skewMs: r.ok && hostTime !== null && r.t0 !== undefined && r.t1 !== undefined ? Math.round(hostTime - (r.t0 + r.t1) / 2) : null, // an answer carries t0 and t1
     };
     if (r.ok && reply.closed === true) out.closed = true;
@@ -217,7 +217,7 @@ function linkChecks(d: LinkReport): Check[] {
     const local = `${span(protocol.PROTO)} (sub-human ${protocol.PLUGIN_VERSION})`;
     if (r.skipped) bits.push(r.error);
     else if (r.ok) {
-      const p: Partial<NonNullable<Reach['protocol']>> = r.protocol || {};
+      const p: Partial<NonNullable<Reach['protocol']>> = r.protocol ?? {};
       const host = `${p.proto ? span(p.proto) : p.v} (sub-human ${p.server || '?'})`;
       bits.push(`host reachable in ${r.ms} ms; protocol here ${local}, host ${host}, speaking v${p.v}`);
     } else {

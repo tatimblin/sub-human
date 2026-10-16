@@ -77,8 +77,8 @@ function scanAuthorizedKeys(file: string): AuthorizedKeysScan {
 function checkAuthorizedKeys(scan: AuthorizedKeysScan): Check {
   const h = path.resolve(lib('home.ts').home());
   if (!scan.exists) return check({ id: 'authorized_keys', status: 'info', title: 'authorized_keys', detail: `${tilde(scan.file)}: none (this machine hosts no room over SSH)` });
-  const doors = scan.doors || [];
-  const otherDoors = scan.otherDoors || [];
+  const doors = scan.doors ?? [];
+  const otherDoors = scan.otherDoors ?? [];
   const others = [...new Set(otherDoors)];
   const otherNote = others.length ? ` (and ${others.length === 1 ? 'a line' : `${otherDoors.length} lines`} of another sub-human folder's, room ${others.join(', ')}: not this home's, not touched)` : '';
   if (doors.length) {
@@ -110,7 +110,7 @@ function checkSsh({ needed, version }: { needed: boolean; version: string | null
  */
 function sshHint(stderr: unknown, link: { code?: string; transport?: LinkTransportView } = {}): string | null {
   const code = link.code || 'CODE';
-  const t = link.transport || {};
+  const t = link.transport ?? {};
   const newInvite = `ask the host for a new invite (/sub-human invite${t.via ? ` --via ${t.via}` : ''}) and type the line it shows`;
   const p = lib('remote/transports/ssh.ts').classify(stderr);
   if (!p) return null;

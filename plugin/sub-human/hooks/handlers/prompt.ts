@@ -38,10 +38,10 @@ function merge(outputs: (HookOutput | null | undefined)[]): HookOutput | null {
     if (!hso) continue;
     const { additionalContext, hookEventName, ...rest } = hso;
     if (additionalContext) contexts.push(additionalContext);
-    merged.hookSpecificOutput = { ...rest, ...(merged.hookSpecificOutput || {}), hookEventName: EVENT } satisfies HookSpecificOutput;
+    merged.hookSpecificOutput = { ...rest, ...(merged.hookSpecificOutput ?? {}), hookEventName: EVENT } satisfies HookSpecificOutput;
   }
   if (contexts.length) {
-    merged.hookSpecificOutput = { ...(merged.hookSpecificOutput || { hookEventName: EVENT }), additionalContext: contexts.join('\n\n') };
+    merged.hookSpecificOutput = { ...(merged.hookSpecificOutput ?? { hookEventName: EVENT }), additionalContext: contexts.join('\n\n') };
   }
   return merged;
 }
@@ -64,7 +64,7 @@ export function handle(input: Parameters<typeof atRoom.handle>[0]): Reply | null
   if (!failed) {
     let open: boolean | undefined;
     try { open = consent.reviewOpen(input); } catch (err) { logError(err, 'consent'); }
-    if (open !== undefined) o = { ...(o || {}), subHuman: { reviewOpen: open } };
+    if (open !== undefined) o = { ...(o ?? {}), subHuman: { reviewOpen: open } };
   }
   if (o) out(o);
   return !o && failed ? { kind: 'classic', exit: 1 } : null;

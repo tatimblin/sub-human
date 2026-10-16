@@ -37,7 +37,7 @@ const TOOL: ToolDefinition = {
 };
 
 function create(ctx: Partial<Pick<PluginContext, 'text'>> = {}): PluginApi {
-  const text = ctx.text || ((s: unknown, isError?: boolean): ToolResult => ({ content: [{ type: 'text', text: String(s) }], ...(isError ? { isError: true } : {}) }));
+  const text = ctx.text ?? ((s: unknown, isError?: boolean): ToolResult => ({ content: [{ type: 'text', text: String(s) }], ...(isError ? { isError: true } : {}) }));
 
   function roomClaudeLive(code: RoomCode) {
     const o = identity.readMembers(code).claude;

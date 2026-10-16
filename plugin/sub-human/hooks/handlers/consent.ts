@@ -32,6 +32,23 @@ import type { AdmissionRequest } from '../../lib/remote/admission.ts';
 import type { Identity } from '../../lib/identity.ts';
 import type { ConsentEffect, ConsentEvent, Pending, Say, State, Target } from '../../lib/consent/review.ts';
 import type { CardResponse } from '../../lib/consent/card.ts';
+import type * as SeatMod from '../seat.ts';
+import type * as RoomMod from '../../lib/room.ts';
+import type * as IdentityMod from '../../lib/identity.ts';
+import type * as NodeFsMod from 'node:fs';
+import type * as ProposalMod from '../../lib/proposal.ts';
+import type * as ReviewMod from '../../lib/consent/review.ts';
+import type * as CardMod from '../../lib/consent/card.ts';
+import type * as TranscriptMod from '../../lib/cc/transcript.ts';
+import type * as EnvMod from '../../lib/cc/env.ts';
+import type * as IoMod from '../../lib/io.ts';
+import type * as ConfigMod from '../../lib/config.ts';
+import type * as LibEnvMod from '../../lib/env.ts';
+import type * as HandoffMod from '../../lib/handoff.ts';
+import type * as EnvelopeMod from '../../lib/room/envelope.ts';
+import type * as StoreMod from '../../lib/room/store.ts';
+import type * as SeatKeyMod from '../seat-key.ts';
+import type * as AdmissionMod from '../../lib/remote/admission.ts';
 
 /** The tool call's input, as far as consent reads it (untrusted: each field checked). */
 interface ConsentToolInput { plan?: unknown; questions?: CardQuestion[]; planFilePath?: unknown }
@@ -45,7 +62,7 @@ type JoinRequest = AdmissionRequest;
 
 // The rest of this file's modules load only past the quiet exit in handle(), so they are required (createRequire:
 // require(esm) is synchronous and caches like an import) by load(), not imported: a static import would load them first.
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 /** A room tool call outside plan mode, other than post: the reducer acts on one only while a review is open (plan
  * mode) or, for post, while a note waits for its card, so nothing else needs loading. */
@@ -54,43 +71,43 @@ const quiet = (input: ConsentIn | undefined): boolean => !!input && input.hook_e
 const POST_TOOL = /^mcp__plugin_sub-human_room__post$/;
 
 /** The output helpers (hooks/reply.ts), the seat, the room and identity: what this file calls `c.`. */
-type C = typeof reply & { whoami: typeof import('../seat.ts')['whoami']; room: typeof import('../../lib/room.ts'); identity: typeof import('../../lib/identity.ts') };
+type C = typeof reply & { whoami: typeof SeatMod['whoami']; room: typeof RoomMod; identity: typeof IdentityMod };
 // The slots load() fills before any reader runs (handle() calls it past the quiet exit); T7's lazy() replaces them.
 /* oxlint-disable typescript/no-non-null-assertion -- definite assignment: load() fills each slot before use */
-let fs!: typeof import('node:fs');
+let fs!: typeof NodeFsMod;
 let c!: C;
-let proposal!: typeof import('../../lib/proposal.ts');
-let review!: typeof import('../../lib/consent/review.ts');
-let card!: typeof import('../../lib/consent/card.ts');
-let cc!: typeof import('../../lib/cc/transcript.ts');
-let ccEnv!: typeof import('../../lib/cc/env.ts');
-let writeFileAtomic!: typeof import('../../lib/io.ts')['writeFileAtomic'];
-let config!: typeof import('../../lib/config.ts');
+let proposal!: typeof ProposalMod;
+let review!: typeof ReviewMod;
+let card!: typeof CardMod;
+let cc!: typeof TranscriptMod;
+let ccEnv!: typeof EnvMod;
+let writeFileAtomic!: typeof IoMod['writeFileAtomic'];
+let config!: typeof ConfigMod;
 /** lib/env.ts, past the quiet exit (require: cached after the first). */
-const env = (): typeof import('../../lib/env.ts') => require('../../lib/env.ts');
-let handoff!: typeof import('../../lib/handoff.ts');
-let envelope!: typeof import('../../lib/room/envelope.ts');
-let roomStore!: typeof import('../../lib/room/store.ts');
+const env = (): typeof LibEnvMod => require('../../lib/env.ts');
+let handoff!: typeof HandoffMod;
+let envelope!: typeof EnvelopeMod;
+let roomStore!: typeof StoreMod;
 /* oxlint-enable typescript/no-non-null-assertion */
 
 /** Everything past the quiet exit, once. It signs the person's answers (via=human), so it arms the seat-key signer. */
 function load() {
   if (c) return;
   fs = require('node:fs');
-  c = { ...reply, whoami: (require('../seat.ts') as typeof import('../seat.ts')).whoami, room: require('../../lib/room.ts'), identity: require('../../lib/identity.ts') };
+  c = { ...reply, whoami: require<typeof SeatMod>('../seat.ts').whoami, room: require('../../lib/room.ts'), identity: require('../../lib/identity.ts') };
   proposal = require('../../lib/proposal.ts');
   review = require('../../lib/consent/review.ts');
   card = require('../../lib/consent/card.ts');
   cc = require('../../lib/cc/transcript.ts');
   ccEnv = require('../../lib/cc/env.ts');
-  ({ writeFileAtomic } = require('../../lib/io.ts') as typeof import('../../lib/io.ts'));
+  ({ writeFileAtomic } = require<typeof IoMod>('../../lib/io.ts'));
   config = require('../../lib/config.ts');
   handoff = require('../../lib/handoff.ts');
   envelope = require('../../lib/room/envelope.ts');
   roomStore = require('../../lib/room/store.ts');
-  (require('../seat-key.ts') as typeof import('../seat-key.ts')).arm();
+  require<typeof SeatKeyMod>('../seat-key.ts').arm();
 }
-const admission = (): typeof import('../../lib/remote/admission.ts') => require('../../lib/remote/admission.ts');
+const admission = (): typeof AdmissionMod => require('../../lib/remote/admission.ts');
 
 /** A one-question card's question (confirmCard, the handoff's and the admission's cards each build exactly one). */
 function firstQuestion(cd: Card): Card['questions'][number] {
@@ -128,7 +145,7 @@ const reviewable = (input: ConsentIn) => REVIEW_MODES.includes(String(input.perm
 
 /** The transcript's lines, read once per hook run (the tail: the review is always recent). */
 function lines(input: ConsentIn): string[] {
-  if (!input._lines) input._lines = cc.readLines(input.transcript_path, { tailBytes: config.TRANSCRIPT_TAIL_BYTES });
+  input._lines ??= cc.readLines(input.transcript_path, { tailBytes: config.TRANSCRIPT_TAIL_BYTES });
   return input._lines;
 }
 /** The session's plan file (cc.planFile: tool_input only on ExitPlanMode, where Claude Code injects it) and what it holds. */
@@ -154,7 +171,7 @@ function polled<T>(input: ConsentIn, read: () => T | null): T | null {
   }
 }
 const blank = (v: unknown) => v == null || (typeof v === 'string' && !v.trim());
-const responseOf = (input: ConsentIn): ToolResponse => (input.tool_response && typeof input.tool_response === 'object' ? input.tool_response as ToolResponse : {});
+const responseOf = (input: ConsentIn): ToolResponse => (input.tool_response && typeof input.tool_response === 'object' ? input.tool_response : {});
 
 /**
  * How the review's dialog closed (cc.planAnswer), when the reducer needs it for this event (review.answerNeeded):
@@ -182,7 +199,7 @@ const isPending = (me: Identity, hash: string | undefined) => !!hash && proposal
 interface Call { text: string; tokens: string[]; words: string[] }
 function callOf(input: unknown): Call {
   const text = JSON.stringify(input || {});
-  return { text, tokens: text.match(/[0-9a-f]{6,12}/g) || [], words: text.match(/\b[0-9a-f]{6,12}\b/g) || [] };
+  return { text, tokens: text.match(/[0-9a-f]{6,12}/g) ?? [], words: text.match(/\b[0-9a-f]{6,12}\b/g) ?? [] };
 }
 /** Pending proposals the call names (a hash, or a 6–12 hex prefix of exactly one), oldest first. */
 const named = (pending: Proposal[], call: Call): Proposal[] => pending.filter(p => call.text.includes(p.hash)
@@ -209,7 +226,7 @@ function admitAsked(me: Identity, call: Call): JoinRequest | null {
   const adm = admission();
   const reqs = adm.pending(me.code).filter(q => adm.targets(me.code, q).includes(me.name));
   const hit = reqs.find(q => call.text.includes(q.ref) || call.text.includes(adm.question(q, me.code)) || call.words.some(t => q.ref.startsWith(t)));
-  return hit || (/\badmit\b/i.test(call.text) && reqs.length === 1 ? reqs[0] ?? null : null);
+  return hit ?? (/\badmit\b/i.test(call.text) && reqs.length === 1 ? reqs[0] ?? null : null);
 }
 
 // ---------- running a step ----------
@@ -299,13 +316,13 @@ function preAsk(input: ConsentIn, me: Identity) {
     const noteNamed = !!cf && ((Array.isArray(qs) && qs.some(x => x && x.question === q)) || call.tokens.some(t => cf.hash.startsWith(t)));
     return { type: 'ask', admit: ad ? ad.ref : null, handoff: !!ho, noteNamed,
       live: !!cf && proposal.answerableFor(me).some(p => p.hash === cf.hash), hit: pendingOf(me, hit), reviewable: reviewable(input) };
-  }, { admit: ad || undefined, handoff: ho || undefined, card: hit });
+  }, { admit: ad ?? undefined, handoff: ho ?? undefined, card: hit });
 }
 
 function postAsk(input: ConsentIn, me: Identity) {
   const r = responseOf(input);
   if (postAdmit(input, me, r) || postHandoff(input, me, r)) return;
-  const asked = [...(Array.isArray(r.questions) ? r.questions as CardQuestion[] : []), ...((input.tool_input && input.tool_input.questions) || [])]
+  const asked = [...(Array.isArray(r.questions) ? r.questions as CardQuestion[] : []), ...((input.tool_input && input.tool_input.questions) ?? [])]
     .some(q => q && proposal.QUESTION_RE.test(String(q.question)));
   const keys = r.answers && typeof r.answers === 'object' ? Object.keys(r.answers).filter(k => proposal.QUESTION_RE.test(k)) : [];
   const answerable = proposal.answerableFor(me);
@@ -348,7 +365,7 @@ function postHandoff(input: ConsentIn, me: Identity, r: ToolResponse): boolean {
  * was not that card. */
 function postAdmit(input: ConsentIn, me: Identity, r: ToolResponse): boolean {
   if (!c.identity.isHost(me.code)) return false;
-  const asked = [...(Array.isArray(r.questions) ? r.questions as CardQuestion[] : []), ...((input.tool_input && input.tool_input.questions) || [])];
+  const asked = [...(Array.isArray(r.questions) ? r.questions as CardQuestion[] : []), ...((input.tool_input && input.tool_input.questions) ?? [])];
   const m = asked.map(q => /\(admit ([0-9a-f]{12})\)$/.exec(String(q && q.question))).find(Boolean);
   const ref = m && m[1];
   if (!ref) return false; // the group always matches when m does
@@ -404,7 +421,7 @@ function preEnter(input: ConsentIn, me: Identity) {
     // plugin's prompt keeps the earlier pick); a superseded hash names its latest revision (replaced).
     const said = cc.lastHumanPrompt(lines(input));
     const replaced = said ? proposal.replacedIn(ps, said.text, me.code) : null;
-    const hit = said ? proposal.namedIn(ps, said.text, me.code) || (replaced && replaced.p) : null;
+    const hit = said ? proposal.namedIn(ps, said.text, me.code) ?? (replaced && replaced.p) : null;
     const propose = !!said && proposal.proposeIntent(said.text);
     return { type: 'enter', ...base, pending: pendingOf(me, ps), said, named: hit ? hit.hash : null,
       replaced: replaced ? { old: replaced.old, hash: replaced.p.hash } : null, kept: proposal.readPick(me),
@@ -437,7 +454,7 @@ function preExit(input: ConsentIn, me: Identity) {
     if (!r) {
       // no review opened (plan mode by hand, EnterPlanMode skipped), and the plan is a proposal's name: its review
       // opens here (lib/consent/review.ts exit with stub), else the call is denied: never a bare view of the name
-      const ti: ConsentToolInput = input.tool_input || {};
+      const ti: ConsentToolInput = input.tool_input ?? {};
       const plan = planOf(input);
       const own = modelInput(input);
       const word = stubHash(ti.plan) || stubHash(plan.text) || stubHash(own && own.plan);
@@ -450,7 +467,7 @@ function preExit(input: ConsentIn, me: Identity) {
     }
     if (r.phase !== 'entering') return ev;
     const p = proposal.pendingFor(me).filter(x => proposal.viewable(x, me.code)).find(x => x.hash === r.hash);
-    const ti: ConsentToolInput = input.tool_input || {};
+    const ti: ConsentToolInput = input.tool_input ?? {};
     // A blank plan: the call's transcript line may not be written yet (2.1.292 runs this hook first), so wait for it.
     const own = blank(ti.plan) && input.tool_use_id ? polled(input, () => modelInput(input)) : modelInput(input);
     return { ...ev, shown: p ? { hash: p.hash, from: p.from || null } : null, text: p ? proposal.read(me.code, p.hash) : null,
@@ -462,7 +479,7 @@ function postExit(input: ConsentIn, me: Identity) {
   step(input, me, st => {
     const r = st.review;
     const res = responseOf(input);
-    const ti: ConsentToolInput = input.tool_input || {};
+    const ti: ConsentToolInput = input.tool_input ?? {};
     const ev = { type: 'exited' as const, toolUseId: input.tool_use_id || null, mode: input.permission_mode, ...answerFacts(input, me, r, 'exited'),
       response: { plan: res.plan, edited: !!res.planWasEdited, isAgent: !!res.isAgent, filePath: res.filePath }, callPlan: ti.plan,
       pending: [] as Pending[], callNames: [] as string[], reviewable: reviewable(input), proposed: false };
@@ -488,7 +505,7 @@ function rejectedExit(input: ConsentIn, me: Identity) {
   step(input, me, st => {
     const id = input.tool_use_id || null;
     const fromDisk = id ? cc.planAnswer(lines(input), id) : null;
-    const answer = fromDisk || cc.rejectionAnswer(typeof input.error === 'string' ? input.error : '');
+    const answer = fromDisk ?? cc.rejectionAnswer(typeof input.error === 'string' ? input.error : '');
     return { type: 'rejected', toolUseId: id, answer, target: st.review ? targetOf(me, st.review.hash) : null };
   });
 }
@@ -557,7 +574,7 @@ function shimDispatch(input: ConsentIn) {
   const r = c.capture(() => dispatch(input));
   if (r.threw) throw r.error;
   const outputs = r.outputs.filter(Boolean);
-  const last = outputs.pop() || {};
+  const last = outputs.pop() ?? {};
   for (const o of outputs) process.stdout.write(JSON.stringify(o) + '\n');
   c.out({ ...last, subHuman: { reviewOpen: reviewOpen(input), noteWaits: noteWaits(input) } });
 }

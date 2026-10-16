@@ -32,8 +32,11 @@ import { handoff } from './handoff.ts';
 import { bare, bindRoomClaude, join, named } from './join.ts';
 import type { Answer, VerbCtx, OpenVerb, Verb } from './types.ts';
 import type { Identity } from '../identity.ts';
+import type * as ContractMod from '../cc/contract.ts';
+import type * as BgMod from '../cc/bg.ts';
+import type * as EnvMod from '../cc/env.ts';
 
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 export const TABLE: Readonly<Record<string, Verb>> = Object.freeze({ '': bare, join, invite, admit, kick, leave, handoff });
 export const OPEN: Readonly<Record<string, OpenVerb>> = Object.freeze({ help, doctor });
@@ -42,7 +45,7 @@ export const OPEN: Readonly<Record<string, OpenVerb>> = Object.freeze({ help, do
 export type Session = Omit<VerbCtx, 'pid' | 'cur'> & { pid: number | null; seat(): Identity | null };
 
 export function noModule(pid: number | null): string {
-  const cc: typeof import('../cc/contract.ts') & typeof import('../cc/bg.ts') & typeof import('../cc/env.ts') =
+  const cc: typeof ContractMod & typeof BgMod & typeof EnvMod =
     { ...require('../cc/contract.ts'), ...require('../cc/bg.ts'), ...require('../cc/env.ts') };
   let v: string | null = null;
   try { v = cc.runningVersion(pid); } catch { /* unknown */ }

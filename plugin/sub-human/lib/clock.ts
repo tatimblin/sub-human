@@ -32,7 +32,7 @@ interface TimerHandle {
   refresh(): TimerHandle;
   [Symbol.toPrimitive](): number;
 }
-type TimerCallback = (...args: any[]) => void; // any: a timer passes the caller's extra args through untouched
+type TimerCallback = (...args: unknown[]) => void; // a timer passes the caller's extra args through untouched
 type ClearArg = TimerHandle | number | null | undefined;
 
 /** The methods code that waits calls (default: the real clock). */
@@ -115,7 +115,7 @@ function createFake({ now: start = 0 }: { now?: number } = {}): FakeClock {
     clearTimeout: clear,
     setInterval: (fn, ms, ...a) => add(fn, ms, a, true),
     clearInterval: clear,
-    sleep: ms => new Promise<void>(r => add(r, ms, [], false)),
+    sleep: ms => new Promise<void>(r => add(() => r(), ms, [], false)),
 
     advance(ms) {
       const until = now + Math.max(0, Number(ms) || 0);

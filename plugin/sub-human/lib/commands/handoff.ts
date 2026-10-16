@@ -14,9 +14,10 @@ import { createRequire } from 'node:module';
 import { HELP_HINT, refused, say } from './answer.ts';
 import { msgOf } from '../errors.ts';
 import type { Verb } from './types.ts';
+import type * as WebhostMod from '../remote/webhost.ts';
 
-const require = createRequire(import.meta.url);
-const webhost = (): typeof import('../remote/webhost.ts') => require('../remote/webhost.ts');
+const require: <M>(id: string) => M = createRequire(import.meta.url);
+const webhost = (): typeof WebhostMod => require('../remote/webhost.ts');
 
 export const handoff: Verb = (argv, { cur }) => {
   if (!cur) return refused('join a room first (/sub-human); then /sub-human handoff NAME asks NAME to host it.');

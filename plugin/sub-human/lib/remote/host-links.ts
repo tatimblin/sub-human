@@ -97,7 +97,7 @@ function linkKnown(store: AuthStore, id: unknown): boolean {
 function verifyToken(store: AuthStore, token: unknown): LinkRecord | null {
   if (typeof token !== 'string' || !token) return null;
   const digest = sha256(token);
-  return Object.values(links(store)).find(l => l.token_sha256 === digest) || null;
+  return Object.values(links(store)).find(l => l.token_sha256 === digest) ?? null;
 }
 
 /** A link bound to a key (made over the web under protocol 3) is reached only with that key; any other by its token. */
@@ -111,7 +111,8 @@ function bindSeat(store: AuthStore, linkId: string, name: string): LinkRecord {
     if (link.bound) throw new RoomError('AUTH', notBound(link, name), 'NOT_BOUND');
     return { ...cur, [linkId]: { ...link, seats: [...link.seats, name] } };
   });
-  const link = (next || (store.kv.get(LINKS_KEY) as Links))[linkId];
+  // oxlint-disable-next-line typescript/no-unnecessary-type-assertion -- it strips null, which tsc needs (a gone document throws, as before)
+  const link = (next ?? (store.kv.get<Links>(LINKS_KEY) as Links))[linkId];
   if (!link) throw new RoomError('AUTH', `no link ${linkId} in room ${store.code}`, 'LINK_REVOKED'); // gone since the update
   return link;
 }
@@ -158,11 +159,11 @@ function revokeLink(store: AuthStore, id: string, { now = Date.now() }: { now?: 
 function wasRevoked(store: AuthStore, token: unknown): boolean {
   if (typeof token !== 'string' || !token) return false;
   const digest = sha256(token);
-  const all = (store.kv.get(REVOKED_KEY, null) || {}) as Record<string, { token_sha256?: string }>;
+  const all = store.kv.get<Record<string, { token_sha256?: string }>>(REVOKED_KEY, null) ?? {};
   return Object.values(all).some(r => r && r.token_sha256 === digest);
 }
 
-const links = (store: AuthStore): Links => store.kv.get(LINKS_KEY, null) || {};
+const links = (store: AuthStore): Links => store.kv.get(LINKS_KEY, null) ?? {};
 
 /** A reported machine id (a joiner that derives none: a 0.5 beta's) may not be this host's own or another link's. */
 function taken(store: AuthStore, machine: string, id: string): void {

@@ -44,7 +44,9 @@ import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
 import { spawn, spawnSync } from 'node:child_process';
 
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
+/** JSON.parse typed as what the caller expects (this lab's own files and the plugin's output: not checked). */
+const parseJson: <T = unknown>(text: string) => T = JSON.parse;
 
 // The plugin in /plugin is the current one or the previous release (devbox-old), so its modules are typed here by
 // the few members this file uses, not by the repo's plugin sources (which may not be what the container holds).
@@ -105,7 +107,7 @@ const lib = <K extends keyof Libs>(name: K): Libs[K] => require(path.join(PLUGIN
 const hookArgv = (script: string): string[] => (fs.existsSync(path.join(PLUGIN, 'hooks', 'run.ts')) ? [path.join(PLUGIN, 'hooks', 'run.ts'), script] : [path.join(PLUGIN, pick(`hooks/${script}.ts`))]);
 /** The join hook's source: hooks/handlers/join.ts, else the older hooks/join.ts|.js. */
 const joinSrc = (): string => (fs.existsSync(path.join(PLUGIN, 'hooks', 'handlers', 'join.ts')) ? 'hooks/handlers/join.ts' : 'hooks/join.ts');
-const load = (): State => { try { return JSON.parse(fs.readFileSync(STATE, 'utf8')); } catch { return { seats: {} }; } };
+const load = (): State => { try { return parseJson<State>(fs.readFileSync(STATE, 'utf8')); } catch { return { seats: {} }; } };
 const save = (s: State): void => fs.writeFileSync(STATE, JSON.stringify(s, null, 2) + '\n', { mode: 0o600 });
 const seatOf = (name: string): Seat => { const s = load().seats[name]; if (!s) throw new Error(`no seat ${name} on this machine`); return s; };
 const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
@@ -126,7 +128,7 @@ function hook(script: string, input: Record<string, unknown>, seat: Seat): { sta
     input: JSON.stringify({ ...input, session_id: seat.sid, cwd: CWD }), env: baseEnv(seat), cwd: CWD, encoding: 'utf8', timeout: 30_000,
   });
   let json: HookJson | null = null;
-  try { json = r.stdout.trim() ? JSON.parse(r.stdout) : null; } catch { json = { raw: r.stdout }; }
+  try { json = r.stdout.trim() ? parseJson<HookJson>(r.stdout) : null; } catch { json = { raw: r.stdout }; }
   return { status: r.status, json, stderr: (r.stderr || '').slice(-4000), ms: Date.now() - t0, t0 };
 }
 
@@ -236,7 +238,7 @@ const cmds: Record<string, (...args: string[]) => unknown> = {
 
   linkfile(code) {
     let l: Record<string, unknown>;
-    try { l = JSON.parse(fs.readFileSync(path.join(HOME, 'links', `${code}.json`), 'utf8')); } catch { return { exists: false }; }
+    try { l = parseJson<typeof l>(fs.readFileSync(path.join(HOME, 'links', `${code}.json`), 'utf8')); } catch { return { exists: false }; }
     return {
       exists: true, token: typeof l.token === 'string', invite: typeof l.invite === 'string', pin: typeof l.pin === 'string',
       pin_wanted: l.pin_wanted || null, awaiting: l.awaiting || null, refused: l.refused || null, transport: l.transport,
@@ -308,7 +310,7 @@ const cmds: Record<string, (...args: string[]) => unknown> = {
     const seat = seatOf(name);
     let text = '';
     try { text = fs.readFileSync(seat.events, 'utf8'); } catch { /* none yet */ }
-    return { pid: seat.pid, alive: alive(seat.pid), events: text.split('\n').filter(Boolean).map(l => JSON.parse(l)) };
+    return { pid: seat.pid, alive: alive(seat.pid), events: text.split('\n').filter(Boolean).map(l => parseJson(l)) };
   },
 
   dump(code) {
@@ -345,7 +347,7 @@ const cmds: Record<string, (...args: string[]) => unknown> = {
     const files = ['lib/remote/ws.ts', 'lib/remote/transports/ws.ts', 'lib/remote/listener.ts', 'lib/remote/outbox.ts', 'lib/remote/doctor.ts', 'lib/doctor.ts',
       'lib/remote/seal.js', 'lib/remote/handoff.ts', 'lib/remote/noise.ts', 'lib/remote/tailscale.ts', 'lib/remote/enroll.ts'].map(pick).filter(f => fs.existsSync(path.join(PLUGIN, f)));
     let version: unknown = null;
-    try { version = JSON.parse(src('.claude-plugin/plugin.json')).version; } catch { /* none */ }
+    try { version = parseJson<{ version?: unknown }>(src('.claude-plugin/plugin.json')).version; } catch { /* none */ }
     return {
       version, cli: [...words], kinds, ops: protocol.OPS || [], protocolVersion: protocol.VERSION,
       protocolExports: Object.keys(protocol), files, cliPath: CLI,

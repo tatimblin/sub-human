@@ -670,7 +670,7 @@ function resolveSelf(): Identity | null {
   while (pid > 1 && !seen.has(pid)) {
     seen.add(pid);
     if (fs.existsSync(byPidFile(pid))) { const r = resolveByPid(pid); if (r) return r; }
-    if (!table) table = parentTable();
+    table ??= parentTable();
     const pp = pid === process.pid ? process.ppid : table.get(pid);
     if (!pp) break;
     pid = pp;
@@ -750,9 +750,9 @@ function updateRoomClaude(code: RoomCode, fn: (current: Member | null, members: 
   let rec: Member | null = null;
   membersOf(code).update(members => {
     rec = null;
-    const patch = fn(members.claude || null, members);
+    const patch = fn(members.claude ?? null, members);
     if (!patch) return null;
-    const next = { name: ROOM_CLAUDE, role: ROOM_CLAUDE, pid: null, ...(members.claude || {}) as Partial<Member>, ...patch } as Member; // a patch keeps name and role
+    const next = { name: ROOM_CLAUDE, role: ROOM_CLAUDE, pid: null, ...(members.claude ?? {}) as Partial<Member>, ...patch } as Member; // a patch keeps name and role
     for (const k of Object.keys(next) as (keyof Member)[]) if (next[k] === undefined) delete next[k];
     members.claude = rec = next;
     return members;

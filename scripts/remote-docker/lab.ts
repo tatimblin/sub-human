@@ -46,8 +46,9 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
+import { parseJson } from '../lib/io.ts';
 
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 // ---------- what lab/seat-cli.ts prints (one JSON object per command; its shapes, as the scenarios read them) ----------
 /** A hook's JSON answer. */
@@ -71,6 +72,10 @@ export interface Admitted { ok: boolean, question?: string, out?: string, ref?: 
 export interface SeatEvent { t: number, ev?: unknown, raw?: string, stderr?: string, tail_exit?: number | null }
 /** The link daemon's status (lib/remote/link-socket.ts status). */
 export interface LinkStatus { state?: string, reason?: string, error?: string, queued?: unknown, flush?: { unsent?: unknown[] } | null, [k: string]: unknown }
+/** A joiner's link file as written (links/CODE.json, secrets and all), as the scenarios read it. */
+export interface LinkJson { token: string, invite?: unknown, transport: { kind?: string, link: string, login?: boolean, via?: string, key?: unknown, alias?: unknown, knownHosts?: unknown, [k: string]: unknown } }
+/** A room's members.json, as the scenarios read it. */
+export type MembersFile = Record<string, { account?: unknown, machine?: string, [k: string]: unknown } | undefined>;
 /** One line of a room log. */
 export interface LogLine { id?: number, kind?: string, from?: string, via?: string, to?: string, text?: string, machine?: string, nonce?: string, [k: string]: unknown }
 /** dump: one room on one machine. */
@@ -161,7 +166,7 @@ export class Lab {
     const run = <T>(...args: string[]): T => {
       const r = this.exec(svc, ['node', '/lab/seat-cli.ts', ...args], { user, env: { SUB_HUMAN_HOME: subHome, ...env }, allowFail: true, timeout: 60_000 });
       if (r.status !== 0) throw new Error(`seat-cli ${svc} ${args[0]} failed (${r.status}): ${(r.stderr || '').slice(-1500)}`);
-      return JSON.parse(r.stdout.trim().split('\n').pop() ?? '');
+      return parseJson<T>(r.stdout.trim().split('\n').pop() ?? '');
     };
     const cli = (args: string[], o: ExecOpts = {}): SpawnSyncReturns<string> => this.exec(svc, ['sh', '-c', 'node "$(ls /plugin/scripts/sub-human /plugin/bin/sub-human 2>/dev/null | head -1)" "$@"', 'sub-human', ...args],
       { user, allowFail: true, ...o, env: { SUB_HUMAN_HOME: subHome, ...env, ...(o.env || {}) } });

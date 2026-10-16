@@ -9,6 +9,7 @@ import { build, isNoise, classify, freshLines, capLines, mergePanes } from '../w
 import type { Line } from '../walkthrough.ts';
 import { opts, KEY_BYTES } from '../demo-lib.ts';
 import { must } from './must.ts';
+import { parseJson } from '../lib/io.ts';
 
 /** A pane line with only its text (and red) given. */
 const L = (text: string, red = false): Line => ({ text, html: '', red, row: false });
@@ -26,7 +27,7 @@ test('snap: writes svg + txt, appends index, log excerpt since the previous scen
   snap('sh-claude', 'S4', 'alice posts', { dir, capture: cap('x\n'), room: 'otter-4821', entries: log });
   snap('sh-claude', 'S4', 'bob posts', { dir, capture: cap('y\n'), room: 'otter-4821', entries: log });
 
-  const idx: SnapRecord[] = JSON.parse(fs.readFileSync(path.join(dir, 'index.json'), 'utf8'));
+  const idx = parseJson<SnapRecord[]>(fs.readFileSync(path.join(dir, 'index.json'), 'utf8'));
   const logOf = (r: SnapRecord | undefined): LogExcerpt[] => must(r, 'an index record').log ?? [];
   assert.equal(idx.length, 4);
   assert.deepEqual(idx.map(r => r.svg), ['S1-sh-claude.svg', 'S1-sh-alice.svg', 'S4-sh-claude.svg', 'S4-2-sh-claude.svg']);

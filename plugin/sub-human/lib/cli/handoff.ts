@@ -36,8 +36,10 @@ import { createRequire } from 'node:module';
 import type { CliIo, FlagSpec, Flags, Parsed } from './types.ts';
 import { errCode, msgOf } from '../errors.ts';
 import type { RoomCode } from '../brand.ts';
+import type * as WebhostMod from '../remote/webhost.ts';
+import type * as HostMod from './host.ts';
 
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 const cli = (args: string) => textMod.cliLine(args);
 
 /** args.parse, dying on its error (usage, exit 2). */
@@ -74,7 +76,7 @@ const LOCATOR_FLAGS = { ssh: 1, via: 1, url: 1 } as const satisfies FlagSpec;
 function locatorOf(flags: Flags<typeof LOCATOR_FLAGS>, die: CliIo['die'], code: RoomCode) {
   if (flags.url !== undefined) {
     if (flags.ssh !== undefined || flags.via !== undefined) die('--ssh/--via and --url are two ways in; pick one');
-    const webhost: typeof import('../remote/webhost.ts') = require('../remote/webhost.ts');
+    const webhost: typeof WebhostMod = require('../remote/webhost.ts');
     try { return webhost.webLocator(flags.url, code); } catch (e) { die(msgOf(e)); }
   }
   if (flags.ssh === undefined) {
@@ -101,7 +103,7 @@ function showStatus(code: RoomCode, { out }: CliIo) {
   out(`room ${code}: ${st.isHost ? 'hosted on this machine' : 'hosted on another machine'}${h.host ? ` (${h.host}'s machine since #${h.id})` : ''}`);
   const d = st.doc;
   if (d) out(`last handoff ask: ${d.from} -> ${d.to}: ${d.state}${d.state === 'asked' ? ` until ${d.expires_at}` : ''}`);
-  for (const m of st.machines || []) {
+  for (const m of st.machines ?? []) {
     out(`  ${m.seats.join(', ')}: ${m.connected ? 'reconnected here' : `not reconnected yet. If they cannot reach this machine, give them a new invite (/sub-human invite in the room here); they type the line it shows`}`);
   }
 }
@@ -154,7 +156,7 @@ function promoteCmd(args: readonly string[], ctx: CliIo): void {
   // inside Claude Code (its ! shell) the PINs are masked: that output would land in the conversation. The machine
   // runs demote CODE and pastes the line and its PIN: never in argv
   const lines = r.invites.map(x => `  ${x.seats.join(', ')}: run ${textMod.cliLine(`demote ${code}`, { elsewhere: true })} and paste: ${x.invite} ${x.pin}`);
-  const host: typeof import('./host.ts') = require('./host.ts');
+  const host: typeof HostMod = require('./host.ts');
   out(host.maskPins(lines.join('\n'), r.invites.map(x => x.pin)));
   out('(the old host runs its line too when it is back: its own lines are kept aside, never merged)');
 }
@@ -194,7 +196,7 @@ function demoteCmd(args: readonly string[], ctx: CliIo): void {
   let r;
   try { r = handoff.demote(code, { invite, pin }); } catch (e) { die(`could not demote: ${msgOf(e)}`, 1); }
   out(`room ${code}: this machine follows its new host now${r.orphan ? `; its own log is kept in ${r.orphan}` : ''}.${r.follower ? ' Type /sub-human in your session to join it again.' : ''}`);
-  const t = (links.get(code) || {}).transport;
+  const t = (links.get(code) ?? {}).transport;
   if (t && t.kind === 'ssh') out('Over ssh this machine reaches the new host through your own ssh login to it: if it cannot connect, ask them for an invite over the web (/sub-human invite --web there) and type the line it shows in your session.');
 }
 

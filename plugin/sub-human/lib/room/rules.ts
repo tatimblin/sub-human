@@ -54,7 +54,7 @@ function normalize(e: Entry): Entry {
   if (n.kind === 'plan_rev') { n.kind = 'proposal'; if (n.plan_hash && !n.hash) n.hash = n.plan_hash; }
   else if (n.plan_hash && !n.proposal_hash) n.proposal_hash = n.plan_hash;
   delete n.plan_hash;
-  if (n.to == null) n.to = 'room';
+  n.to ??= 'room';
   return n;
 }
 
@@ -119,7 +119,7 @@ function scanTail(newest: Iterable<Entry>, p: Payload, now: number): { last: num
   const max = rateMax(p), b = bucket(p);
   let last: number | null = null, recent = 0, replayed = false;
   for (const e of newest) {
-    if (last === null) last = e.id || 0;
+    last ??= e.id || 0;
     const age = now - Date.parse(e.at);
     if (!span || age >= span) break;
     if (age < rate && e.from === p.from && e.via === p.via && bucket(e) === b && ++recent >= max && !p.nonce) break;
@@ -149,7 +149,7 @@ function checkPin(p: Payload, keys: Pick<TrustCtx, 'code' | 'pins'>): void {
 // ---------- the host ----------
 function hostState(entries: Iterable<Entry | null | undefined> | null | undefined): HostState {
   let h: HostState = { epoch: 0 };
-  for (const e of entries || []) h = hostStep(h, e);
+  for (const e of entries ?? []) h = hostStep(h, e);
   return h;
 }
 /** hostState one entry further. */

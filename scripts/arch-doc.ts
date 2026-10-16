@@ -21,6 +21,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { REPO, PLUGIN, pluginFile } from './lib/paths.ts';
+import { parseJson } from './lib/io.ts';
 
 /** hooks/hooks.json, as far as this reads it. */
 interface HooksJson { hooks: Record<string, { matcher?: string, hooks: { command?: string, timeout?: number, async?: boolean, asyncRewake?: boolean }[] }[]> }
@@ -53,7 +54,7 @@ export function firstSentence(s: unknown, min = 50): string {
 
 // ---------- hooks ----------
 function hooksSection(): string {
-  const cfg: HooksJson['hooks'] = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')).hooks;
+  const cfg = parseJson<HooksJson>(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')).hooks;
   const rows: string[][] = [];
   for (const [event, groups] of Object.entries(cfg)) {
     for (const g of groups) {
@@ -101,7 +102,7 @@ function listTools(): Promise<ListedTool[]> {
       buf += d;
       for (const line of buf.split('\n').slice(0, -1)) {
         let m: { id?: number, error?: { message: string }, result?: { tools: ListedTool[] } };
-        try { m = JSON.parse(line); } catch { continue; }
+        try { m = parseJson<typeof m>(line); } catch { continue; }
         if (m.id === 2) finish(m.error ? new Error(m.error.message) : null, m.result?.tools);
       }
       buf = buf.slice(buf.lastIndexOf('\n') + 1);
@@ -112,7 +113,7 @@ function listTools(): Promise<ListedTool[]> {
 }
 
 async function mcpSection(): Promise<string> {
-  const mcp: Record<string, unknown> = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.mcp.json'), 'utf8')).mcpServers;
+  const mcp = parseJson<{ mcpServers: Record<string, unknown> }>(fs.readFileSync(path.join(PLUGIN, '.mcp.json'), 'utf8')).mcpServers;
   const serverName = Object.keys(mcp)[0];
   const owner: Record<string, string> = {};
   for (const f of ['hold.ts', 'task.ts'] as const) owner[pluginFile(`mcp/${f}`).TOOL.name] = `mcp/${f}`;
@@ -128,7 +129,7 @@ async function mcpSection(): Promise<string> {
 
 // ---------- cc contract ----------
 function ccSection(): string {
-  const { probed, entries }: ContractJson = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'lib', 'cc', 'contract.json'), 'utf8'));
+  const { probed, entries } = parseJson<ContractJson>(fs.readFileSync(path.join(PLUGIN, 'lib', 'cc', 'contract.json'), 'utf8'));
   const degraded = (c: ContractJson['entries'][number]): string => (c.degraded || []).map(d => ` **Reported changed from ${d.from}${d.issue ? ` (#${d.issue})` : ''}:** ${d.note}`).join('');
   const rows = entries.map(c => [code(c.id), `§${c.section}`, c.stability, `${c.since}–${probed}`, cell(c.note + degraded(c))]);
   return table(['Id', '§', 'Stability', 'Checked on', 'Note'], rows);

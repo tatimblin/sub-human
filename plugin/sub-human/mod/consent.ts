@@ -77,9 +77,9 @@ export function registerConsent(on: On): void {
       const payload = rejectedPayload(e, { sid, cwd: await $.session.cwd().catch(() => undefined), facts: facts.of(sid), text });
       const { result, ...said } = toClassic('PostToolUseFailure', await runConsent($, payload, sid));
       await apply($, said);
-      const lines = result.additionalContext || [];
+      const lines = result.additionalContext ?? [];
       if (!lines.length) return r;
-      return r.deny !== undefined ? { deny: [r.deny, ...lines].join('\n\n') } : { ...r, context: [...(r.context || []), ...lines] };
+      return r.deny !== undefined ? { deny: [r.deny, ...lines].join('\n\n') } : { ...r, context: [...(r.context ?? []), ...lines] };
     } catch { return r; }
   }).catch((_$, e, next) => next(e)); // the flag stays as it was; past next, a failure returns the refusal as it came
 

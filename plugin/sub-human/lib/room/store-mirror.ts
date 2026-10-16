@@ -64,7 +64,7 @@ import { SEAT_BEAT_MS } from '../config.ts';
 import type { LockOpts } from '../lock.ts';
 import type {
   AppendOpts, BlobsApi, ChainCheck, ChainVerify, Entry, EntryInput, HostState, JoinOutcome, KvApi, Members, MembersApi,
-  Payload, Placed, PlaceOpts, PresenceInput, ReadViewOpts, RoomStore, SeatRecord, SnapshotWire, Tailer, TailerFs, Trust,
+  Payload, Placed, PlaceOpts, Presence, PresenceInput, ReadViewOpts, RoomStore, SeatRecord, SnapshotWire, Tailer, TailerFs, Trust,
 } from './types.ts';
 import type { KeyObject } from 'node:crypto';
 import type { Bridge } from '../remote/bridge.ts';
@@ -107,12 +107,15 @@ class MirrorRoomStore implements RoomStore {
     this.blobs = {
       ...local.blobs,
       put: (name, bytes) => local.blobs.put(this._call('blob.put', { name, bytes: Buffer.from(bytes).toString('base64') }).ref, bytes),
-      get: ref => local.blobs.get(ref) || this._fetch(ref),
+      get: ref => local.blobs.get(ref) ?? this._fetch(ref),
     };
-    // F keeps each kv call's own signature (kv.update is generic)
-    const only = <F extends (key: string, ...a: any[]) => unknown>(what: string, fn: F): F =>
-      ((key: string, ...a: unknown[]) => { if (streamed(key)) throw hostOnly(`${what}("${key}")`); return fn(key, ...a); }) as F;
-    this.kv = { ...local.kv, set: only('kv.set', local.kv.set), update: only('kv.update', local.kv.update), delete: only('kv.delete', local.kv.delete) };
+    const only = (what: string, key: string): void => { if (streamed(key)) throw hostOnly(`${what}("${key}")`); };
+    this.kv = {
+      ...local.kv,
+      set: (key, value, opts) => { only('kv.set', key); local.kv.set(key, value, opts); },
+      update: (key, fn, opts) => { only('kv.update', key); return local.kv.update(key, fn, opts); },
+      delete: key => { only('kv.delete', key); local.kv.delete(key); },
+    };
   }
 
   get dir(): string { return this.local.dir; }
@@ -161,7 +164,7 @@ class MirrorRoomStore implements RoomStore {
 
   /** One op over the bridge to this room's link daemon (the socket it recorded, then the computed paths). */
   _call<M extends RelayOp>(op: M, params: RelayParams[M], { deadlineMs }: { deadlineMs?: number | undefined } = {}): RelayApi[M]['result'] {
-    bridge = bridge || createBridge<RelayApi>({ handler: HANDLER });
+    bridge = bridge ?? createBridge<RelayApi>({ handler: HANDLER });
     try {
       return bridge.call(op, { socket: socketPaths(this.dir, this._linkDoc()), params }, { deadlineMs });
     } catch (e) {
@@ -190,7 +193,7 @@ class MirrorRoomStore implements RoomStore {
     const m = this.members.read()[name];
     if (!m || m.left_at) return false;
     const fresh = Date.parse(String(m.seen_at)) > Date.now() - SEAT_BEAT_MS;
-    const cur = presence && this.local.kv.get(`presence/${name}`);
+    const cur = presence && this.local.kv.get<Presence>(`presence/${name}`);
     if (fresh && (!presence || (cur && cur.state === presence.state && (cur.detail || null) === (presence.detail || null)))) return true;
     return this._call('beat', { name, presence }).ok;
   }

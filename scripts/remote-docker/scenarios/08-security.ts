@@ -9,7 +9,8 @@
 //   - /sub-human kick bob: the link's token is gone, its serve is stopped, bob's link stops (AUTH:
 //     it does not redial, and a post is refused, not queued); bea's link is untouched
 import { WAN, JUMP, waitState } from './_lib.ts';
-import type { Joined, SeatDriver, T } from '../lab.ts';
+import type { Joined, LinkJson, SeatDriver, T } from '../lab.ts';
+import { parseJson } from '../../lib/io.ts';
 
 export const id = 'security';
 export const title = 'nothing of sub-human\'s in authorized_keys; stores 0700; no secrets in logs; kick';
@@ -25,7 +26,7 @@ export async function run(t: T): Promise<void> {
   host.say('alice', 'security hello back');
   const secrets: string[] = [];
   const pairs: [Joined, string][] = [[a, 'joiner-a'], [b, 'joiner-b']];
-  const tokens: string[] = pairs.map(([j, svc]) => JSON.parse(lab.exec(svc, ['cat', `${j.seat.home}/links/${code}.json`]).stdout).token);
+  const tokens: string[] = pairs.map(([j, svc]) => parseJson<LinkJson>(lab.exec(svc, ['cat', `${j.seat.home}/links/${code}.json`]).stdout).token);
   // the evidence itself is redacted, so register them only after reading
   const all = [...secrets, ...tokens].filter(Boolean);
   t.log(`${tokens.length} link tokens collected (redacted in this evidence)`);

@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { blank, countSource, bucketOf, countRepo, compare } from '../ts-ratchet.ts';
+import type { Counts } from '../ts-ratchet.ts';
+import { parseJson } from '../lib/io.ts';
 import { absolutize } from '../typecheck-shim.ts';
 import { PLUGIN } from '../lib/paths.ts';
 
@@ -79,7 +81,7 @@ test('countRepo and compare: per directory; a rise is named, a drop can be writt
 });
 
 test('the committed ratchet holds for this tree', () => {
-  const file = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'ts-ratchet.json'), 'utf8'));
+  const file = parseJson<{ counts: Record<string, Partial<Counts>> }>(fs.readFileSync(path.join(import.meta.dirname, '..', 'ts-ratchet.json'), 'utf8'));
   assert.deepEqual(compare(file.counts, countRepo()).rose, []);
 });
 

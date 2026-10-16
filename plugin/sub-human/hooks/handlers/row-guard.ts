@@ -13,7 +13,7 @@ import { deny } from '../reply.ts';
 import type { AgentCall, WithToolInput } from '../types.ts';
 
 export function handle(input: WithToolInput<'PreToolUse', AgentCall>): void {
-  const ti: AgentCall = input.tool_input || {};
+  const ti: AgentCall = input.tool_input ?? {};
   const type = String(ti.subagent_type || '');
   if (type !== rows.PARTICIPANT && type !== rows.ROOM_AGENT) return;
   const me = resolveSeat(input, { ancestry: true });

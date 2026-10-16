@@ -112,7 +112,7 @@ import {
   FOLLOW_POLL_MS, REPLAY_BATCH, PROPOSAL_FILE_MAX, LINK_SILENT_MS, LINK_FRAME_MAX_BYTES, LINK_AUTH_WAIT_MS,
 } from '../config.ts';
 import type {
-  DecodedFrame, ErrorFrame, EventData, EventName, FrameId, IncomingRequest, LinkRecord, Op, OpResults, ProtoRange, WireParams,
+  DecodedFrame, ErrorFrame, EventData, EventName, FrameId, IncomingRequest, LinkRecord, Links, Op, OpResults, ProtoRange, WireParams,
 } from './types-core.ts';
 import type { Transport } from './types-rest.ts';
 import type { Members, Payload, PresenceInput, RoomStore, SnapshotWire } from '../room/types.ts';
@@ -151,7 +151,7 @@ function redeem(s: Session, invite: unknown, machine: MachineId, pin: unknown, p
   let secret: string;
   const opts = { machine, pin, proven, peerKey: s.peer, as: asked, ...(s.login ? (linkId ? { newId: linkId } : {}) : linkId ? { reserved: linkId } : {}) }; // login: a linkId (serve checks)
   if (word) { // an invite line's SECRET (protocol 3)
-    const skew = () => new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: s.version, proto: s.proto }, joiner: s.peerVersion || { version: null, proto: { min: 1, max: s.v ?? 1 } }, need: 3 }), 'SKEW');
+    const skew = () => new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: s.version, proto: s.proto }, joiner: s.peerVersion ?? { version: null, proto: { min: 1, max: s.v ?? 1 } }, need: 3 }), 'SKEW');
     if ((s.v ?? 0) < 3) throw skew();
     if (s.via === 'ws' && !s.peer) throw skew(); // over the web protocol 3 is XK, a key of the link's own: NK is an older joiner's
     secret = inviteSecret.idOf(word.secret);
@@ -558,7 +558,7 @@ class Session {
    * so the daemon stops with the reason instead of redialing a key that no longer gets in (`/sub-human kick`
    * stops this serve with SIGTERM: scripts/sub-human serve calls this first). */
   revoked(): boolean {
-    if (!this.link || (this.store.kv.get(hostLinks.LINKS_KEY, null) || {})[this.link.id]) return false;
+    if (!this.link || (this.store.kv.get<Links>(hostLinks.LINKS_KEY, null) ?? {})[this.link.id]) return false;
     this.endRevoked();
     return true;
   }

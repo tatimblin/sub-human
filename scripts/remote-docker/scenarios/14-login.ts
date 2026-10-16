@@ -7,7 +7,8 @@
 // key the host restricted to another link (its forced-command line) cannot use the login path: AUTH, no link. kick
 // ends it.
 import { WAN, delivered, converge, waitState } from './_lib.ts';
-import type { T } from '../lab.ts';
+import type { LinkJson, MembersFile, T } from '../lab.ts';
+import { parseJson } from '../../lib/io.ts';
 
 const AK = '/home/host/.ssh/authorized_keys';
 
@@ -35,7 +36,7 @@ export async function run(t: T): Promise<void> {
   const firstMs = Date.now() - t0;
   t.log(`first join (${firstMs} ms): ${first.out}`);
   t.check('a host ssh does not know yet: the join stops at once with the exact ssh to run once', !first.ok && /Run `ssh host@devbox` once in a terminal/.test(first.out) && firstMs < 15_000, `${firstMs} ms: ${first.out.slice(0, 160)}`);
-  const linksOf = () => JSON.parse(lab.exec('devbox', ['cat', `/home/host/.sub-human/rooms/${code}/remote/links.json`], { allowFail: true }).stdout || '{}');
+  const linksOf = () => parseJson<Record<string, unknown>>(lab.exec('devbox', ['cat', `/home/host/.sub-human/rooms/${code}/remote/links.json`], { allowFail: true }).stdout || '{}');
   t.check('nothing was linked on the host', !Object.keys(linksOf()).length);
 
   // the person checks and accepts the key once, by hand
@@ -44,7 +45,7 @@ export async function run(t: T): Promise<void> {
   const j = seat.login('bob', 'host@devbox', code, ...opts);
   t.log(`join (${j.ms} ms): ok ${j.ok} ${j.out}`);
   if (!t.check('join host@devbox CODE --as bob links and takes the seat in one step', j.ok, j.out || `${j.ms} ms`)) return;
-  const lf = JSON.parse(lab.exec('joiner-a', ['cat', `${seat.home}/links/${code}.json`], { user: 'joiner' }).stdout);
+  const lf = parseJson<LinkJson>(lab.exec('joiner-a', ['cat', `${seat.home}/links/${code}.json`], { user: 'joiner' }).stdout);
   t.ev.secret(lf.token);
   const id = lf.transport && lf.transport.link;
   t.check('the link file holds a login transport and a token, no invite, no key of its own',
@@ -61,7 +62,7 @@ export async function run(t: T): Promise<void> {
   t.check('posts flow both ways', a.ok && b.ok && d1.ok && d2.ok, `up ${d1.ok ? d1.t - a.t0 : null} ms, down ${d2.ok ? d2.t - b.t0 : null} ms`);
   const c = await converge(t, host, code, [seat]);
   t.check('mirror byte-identical to the host log, chains verify', c.ok, c.detail);
-  const ms = JSON.parse(host.dump(code).members || '{}');
+  const ms = parseJson<MembersFile>(host.dump(code).members || '{}');
   t.check('by default the login seat is its own person: no account (login-same-person is off)', !!ms.bob && ms.bob.account === undefined, JSON.stringify(ms.bob || null));
   t.check('its machine id is the one the joiner\'s machine key gives, not its home\'s', /^k[0-9a-f]{15}$/.test((ms.bob && ms.bob.machine) || ''), (ms.bob && ms.bob.machine) || 'none');
   const opt = host.options(code, 'login-same-person', 'on');

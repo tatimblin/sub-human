@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as paths from '../lib/paths.ts';
-import { readJson, readText } from '../lib/io.ts';
+import { parseJson, readJson, readText } from '../lib/io.ts';
 import type { Ctx, Det } from './context.ts';
 import type { LogEntry } from './log.ts';
 
@@ -55,7 +55,7 @@ export function run(x: Ctx, { det }: { det: Det }): void {
 
   const mirror = readText(x.stateFile('S11', 'mirror-log.jsonl'));
   const hostLog = readText(path.join(x.roomDir, 'log.jsonl')) || '';
-  const ids = (mirror || '').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l).id; } catch { return null; } });
+  const ids = (mirror || '').split('\n').filter(Boolean).map(l => { try { return parseJson<{ id?: number }>(l).id; } catch { return null; } });
   const prefix = !!mirror && hostLog.startsWith(mirror);
   det('carol\'s mirror is the host\'s log byte for byte, through the decision (her copy at the end of the scene)',
     prefix && !!dec && ids.includes(dec.id),
