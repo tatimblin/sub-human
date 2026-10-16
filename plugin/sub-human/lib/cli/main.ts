@@ -30,15 +30,17 @@
  *   sub-human read [N[,M] | --id N[,M]] [--json] [--room CODE]
  *       entries in full: by id, or this session's unseen entries (cursor read-<name>)
  *   sub-human digest [--room CODE]     the compaction digest (<= 9,500 chars)
- *   sub-human who                      this session's identity: "<name> (<role>) in <code>"
+ *   sub-human who [--room CODE]        this session's identity: "<name> (<role>) in <code>"; with --room, each person in that room
  *   sub-human show HASH [--room CODE]  a proposal's stored text (lib/proposal.ts read(code, hash), plans/<HASH>.md)
  *   sub-human tasks [--json] [--room CODE]
  *       the room's shared task list (lib/tasks.ts list(code), the room Claude's native list mirrored to
- *       the room document `tasks`): "#2 in_progress  bob  parser tests". --json prints the array.
+ *       the room document `tasks`): "#2  in progress  bob  parser tests" (the rows' words: open, in progress, done). --json prints the array.
  *   sub-human watch NAME [--room CODE] [--follow|--no-follow]
  *       NAME's thread: their own words, their Claude's posts (labelled "NAME's Claude"), their answers,
  *       their joins/leaves, and entries addressed to them. The room Claude's posts are labelled
  *       "claude". Follows live when stdout is a terminal (or with --follow).
+ *   sub-human verify CODE             a room's log checked (lib/cli/doctor/rooms.ts): its hash chain over every segment
+ *       and every person's line against the keys the room pins; exit 1 when the chain breaks or a line does not verify
  *   sub-human agent-statusline
  *       Claude Code's subagentStatusLine command (statusline/*). Never fails: on any error it prints
  *       nothing and exits 0.
@@ -243,7 +245,16 @@ function show(args: readonly string[]) {
   process.stdout.write(text.endsWith('\n') ? text : text + '\n');
 }
 
-function who() {
+function who(args: readonly string[] = []) {
+  const { flags, rest } = parseFlags(args, { room: 1 });
+  if (rest.length) die('usage: sub-human who [--room CODE]');
+  if (flags.room !== undefined) { // the room's people: who is in it, by name and role
+    const { code } = openRoom(flags.room);
+    const ms = Object.values(identity.readMembers(code) || {}).filter(m => m && m.name && !m.left_at);
+    if (!ms.length) return console.log(`(nobody in room ${code})`);
+    for (const m of ms) console.log(`${m.name} (${m.role}${m.lapsed_at ? ', away' : ''}) in ${code}`);
+    return;
+  }
   const me = identity.resolveSelf();
   if (!me) die(NOT_IN_ROOM, 1);
   console.log(`${me.name} (${me.role}) in ${me.code}`);
@@ -261,12 +272,14 @@ function tasksCmd(args: readonly string[]) {
   list = list.filter(t => t && !(t.metadata && t.metadata._internal));
   if (flags.json) return console.log(JSON.stringify(list));
   if (!list.length) return console.log(`(no tasks in room ${code})`);
-  const w = Math.max(...list.map(t => String(t.status || '').length));
+  // the rows' words (lib/tasks.ts summary: "tasks 3 open"): open, in progress, done
+  const word = (s: unknown) => ({ pending: 'open', in_progress: 'in progress', completed: 'done' } as Record<string, string>)[String(s)] || String(s || '');
+  const w = Math.max(...list.map(t => word(t.status).length));
   const o = Math.max(...list.map(t => String(t.owner || '-').length));
   for (const t of list) {
     const blocked = Array.isArray(t.blockedBy) && t.blockedBy.length ? `  (blocked by ${t.blockedBy.map((b: string | number) => '#' + b).join(',')})` : '';
     const subject = String(t.subject ?? '').replace(/\s+/g, ' ');
-    console.log(`#${t.id}  ${String(t.status || '').padEnd(w)}  ${String(t.owner || '-').padEnd(o)}  ${subject}${blocked}`);
+    console.log(`#${t.id}  ${word(t.status).padEnd(w)}  ${String(t.owner || '-').padEnd(o)}  ${subject}${blocked}`);
   }
 }
 
@@ -419,8 +432,10 @@ function linkCmd(args: readonly string[]) {
 function forgetLink(code: string, s: MirrorRoomStore, force: boolean) {
   const st = (require('../room/link-state.ts') as typeof import('../room/link-state.ts')).read(code);
   const why = st?.lastError || '';
-  if (!force && st?.lastReason !== 'ROOM_CLOSED' && st?.lastReason !== 'NO_SEAT') {
-    die(`room ${code}: the connection did not stop because the room closed or no seat of this machine is left (${why || 'no reason on record'}); add --force to forget it anyway`, 1);
+  // dormant (the room closed, no seat left) or spent (the host removed this machine: its token gets nowhere now)
+  const ended = ['ROOM_CLOSED', 'NO_SEAT', 'LINK_REVOKED', 'TOKEN_UNKNOWN', 'KEY_REVOKED'];
+  if (!force && !ended.includes(String(st?.lastReason))) {
+    die(`room ${code}: the connection did not stop because the room closed, no seat of this machine is left or the host removed it (${why || 'no reason on record'}); add --force to forget it anyway`, 1);
   }
   const store: typeof import('../room/store.ts') = require('../room/store.ts');
   const links: typeof import('../room/links.ts') = require('../room/links.ts');
@@ -457,12 +472,22 @@ const USAGE = [
   '  joiner:     prime ROOM | link CODE [--reset | --forget [--force]]',
   '  moving:     handoff NAME | promote CODE | demote CODE [--from FILE] (INVITE PIN on stdin)',
   '  room:       options CODE [login-same-person on|off]',
-  '  checks:     doctor [--fix] [--bundle [FILE]]',
+  '  checks:     doctor [--fix] [--bundle [FILE]] | verify CODE',
   '  internal:   tail | serve --stdio CODE [--link ID [--login]] | agent-statusline',
   '              serve --stdio CODE --via ws [--peer KEY] (the web listener\'s child)',
 ].join('\n');
 const doctor: Command = args => (require('./doctor.ts') as typeof import('./doctor.ts')).main(args).then(c => process.exit(c), (e: Error) => die(e.message, 2));
-const cmds: Record<string, Command> = { doctor, tail, read, digest, show, who, tasks: tasksCmd, watch, serve, link: linkCmd, options: optionsCmd, 'agent-statusline': agentStatusline };
+/** verify CODE: a room's log checked (doctor/rooms.ts): its hash chain and every person's line; exit 1 when either fails. */
+const verify: Command = args => {
+  const code = args[0];
+  if (!code || args.length > 1) die('usage: sub-human verify CODE');
+  if (!identity.roomExists(code)) die(`no room ${code} on this machine`, 1);
+  const r: typeof import('./doctor/rooms.ts') = require('./doctor/rooms.ts');
+  const v = r.verifyRoom(code);
+  console.log(`room ${code}: ${r.verifyText(v)}`);
+  process.exit(v.chain.ok && !v.unverified.length ? 0 : 1);
+};
+const cmds: Record<string, Command> = { doctor, verify, tail, read, digest, show, who, tasks: tasksCmd, watch, serve, link: linkCmd, options: optionsCmd, 'agent-statusline': agentStatusline };
 // lib/cli/*: each returns the exit code
 const viaCli = (fn: 'invite' | 'admit' | 'kick' | 'prime'): Command => a => process.exit((require('./host.ts') as typeof import('./host.ts'))[fn](a));
 Object.assign(cmds, { invite: viaCli('invite'), admit: viaCli('admit'), kick: viaCli('kick'), prime: viaCli('prime') });

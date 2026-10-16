@@ -345,7 +345,7 @@ test('review: "Tell Claude what to change" records an objection with the note by
   assert.deepEqual(answers(w), []);
   // Feedback: nothing recorded yet; the note waits for bob's Send on the confirm card.
   const obj = run(said(note), true);
-  assert.match(obj!, /left a note on [0-9a-f]{12}, unrecorded.*call AskUserQuestion with "objection /);
+  assert.match(obj!, /note on [0-9a-f]{12} waits for Send or Discard.*call AskUserQuestion with "objection /);
   assert.deepEqual(answers(w), []);
   assert.equal(waiting(w)!.note, note);
   assert.equal(review(w), null);
@@ -371,7 +371,7 @@ test('review: a room tool call after "Tell Claude what to change" records the ob
   // bob's Claude tries to post his note itself: denied, the note waits for bob's Send (nothing recorded), exit next.
   const r = w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__post', { permission_mode: 'plan', tool_input: { kind: 'say', text: note }, transcript_path: tp }), { as: 'bob' });
   assert.equal(decision(r), 'deny');
-  assert.match(reason(r)!, /bob left a note on .*, unrecorded.*Post nothing about the review\. First call ExitPlanMode now/);
+  assert.match(reason(r)!, /Nothing is recorded yet: bob's note on .* waits for Send or Discard.*Post nothing about the review\. First call ExitPlanMode now/);
   assert.doesNotMatch(reason(r)!, /#\d/);
   assert.deepEqual(answers(w), []);
   assert.equal(waiting(w)!.note, note);
@@ -427,7 +427,7 @@ test('review: a hook that runs while the dialog is open (no rejection line yet) 
   assert.equal(waiting(w)!.note, note, 'the note waits byte-exact (confirm)');
   assert.equal((hso(w.hook('consent', ev('PermissionRequest', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {} }), { as: 'bob' })).decision as PermDecision).behavior, 'allow');
   const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: {}, tool_use_id: 'tu2', tool_response: { plan: null, filePath: file }, transcript_path: tp }), { as: 'bob' });
-  assert.match(ctx(post)!, new RegExp(`bob left a note on ${hash}, unrecorded\\. .*call AskUserQuestion with "objection ${hash}"`));
+  assert.match(ctx(post)!, new RegExp(`Nothing is recorded yet: bob's note on ${hash} waits for Send or Discard on its card\\. Next, call AskUserQuestion with "objection ${hash}"`));
   assert.deepEqual(answers(w), [], 'a note alone records nothing');
   assert.equal(review(w), null);
   // The card: bob's Send records the objection with his note.
@@ -456,7 +456,7 @@ test('review: the closing ExitPlanMode waits for a rejection line Claude Code ha
   fs.writeFileSync(rows, rejectionRows('tu1', note));
   const writer = spawn('sh', ['-c', `sleep 0.3; cat "${rows}" >> "${a.tp}"`], { stdio: 'ignore' });
   const late = close(a.tp, a.file, { SUB_HUMAN_EXIT_INPUT_WAIT_MS: '5000' });
-  assert.match(late!, /left a note on [0-9a-f]{12}, unrecorded/);
+  assert.match(late!, /note on [0-9a-f]{12} waits for Send or Discard/);
   assert.equal(waiting(w)!.note, note);
   writer.kill();
   confirm(w, hash, 'Discard');
@@ -954,6 +954,43 @@ test('pick: the model hand-writes the proposal into the plan file without a hook
   assert.equal(review(w)!.hash, v3);
 });
 
+test('G (live verify, verify1/04 and verify4/c2): bob asks his Claude to propose; the propose tool makes it; his EnterPlanMode then opens the review of it with its text', () => {
+  const { w, file, tp } = two();
+  const me = { code: w.code, name: 'bob', role: 'member' } as Seat;
+  fs.appendFileSync(tp, JSON.stringify({ type: 'user', message: { role: 'user', content: "Propose this to the room with the propose tool, title 'Readme pass', text: 1. bob reviews the README. 2. alice fixes typos." }, timestamp: new Date(Date.now() - 2000).toISOString() }) + '\n');
+  const mine = w.lib(() => proposal.create(me, { text: '# Readme pass\n\n1. bob reviews the README.\n2. alice fixes typos.\n', approvers: ['alice', 'bob'] })).hash;
+  const pre = w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'auto', tool_input: {}, transcript_path: tp }), { as: 'bob' });
+  assert.equal(decision(pre), 'allow', 'no "no room review now" once the proposal exists');
+  assert.equal(review(w)!.hash, mine, 'the proposal just made, not the newest of alice\'s');
+  const exit = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: `proposal ${mine}` }, tool_use_id: 'tu1', transcript_path: tp }), { as: 'bob' });
+  assert.equal(decision(exit), 'ask');
+  assert.match(String((hso(exit).updatedInput as { plan?: unknown }).plan), /^# Readme pass/, 'the text, never a bare "proposal HASH"');
+  assert.match(fs.readFileSync(file, 'utf8'), /^# Readme pass/);
+  // Esc, then a prompt: the review asks the model to leave plan mode (the mode comes back), nothing recorded
+  const later = say(w, 'later', tp);
+  void later;
+  assert.deepEqual(answers(w), []);
+});
+
+test('H (live verify, verify1/08): plan mode by hand, the model skips EnterPlanMode and calls ExitPlanMode with "proposal HASH": the review opens there, and Yes records', () => {
+  const { w, v3, file } = two();
+  fs.writeFileSync(file, `proposal ${v3}`);
+  const tp = transcript(w, file, null, { id: 'tu7', input: { plan: `proposal ${v3}` } });
+  const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: `proposal ${v3}`, planFilePath: file }, tool_use_id: 'tu7', transcript_path: tp }), { as: 'bob' });
+  assert.equal(decision(pre), 'ask', pre.stdout);
+  assert.equal((hso(pre).updatedInput as { plan?: unknown }).plan, 'Ship v3 Monday');
+  assert.equal(review(w)!.keepMode, true);
+  const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: { plan: 'Ship v3 Monday' }, tool_use_id: 'tu7', tool_response: { plan: 'Ship v3 Monday', filePath: file }, transcript_path: tp }), { as: 'bob' });
+  assert.match(ctx(post)!, /bob agreed to proposal/);
+  assert.doesNotMatch(ctx(post)!, /restore/, 'the person chose plan mode: nothing to put back');
+  assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.proposal_hash]), [['signoff', 'human', v3]]);
+  assert.equal(fs.readFileSync(file, 'utf8'), `proposal ${v3}`, 'the plan file as it was');
+  // a stub for a proposal that is not bob's to answer (answered now): denied, never a bare view
+  const again = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: `proposal ${v3}` }, tool_use_id: 'tu8', transcript_path: tp }), { as: 'bob' });
+  assert.equal(decision(again), 'deny');
+  assert.match(String(hso(again).permissionDecisionReason), /nothing was shown and nothing is recorded/);
+});
+
 test('phone: a Remote Control deny with a note is bob\'s objection with that note; a bare deny records nothing', () => {
   const run = (note: string | null) => {
     const { w, v2, file, tp } = two();
@@ -969,7 +1006,7 @@ test('phone: a Remote Control deny with a note is bob\'s objection with that not
   };
   const withNote = run('This is hello world. I want v3 plan');
   assert.deepEqual(withNote.a, [], 'the note waits for bob\'s Send');
-  assert.match(withNote.post!, /left a note on [0-9a-f]{12}, unrecorded/);
+  assert.match(withNote.post!, /note on [0-9a-f]{12} waits for Send or Discard/);
   const bare = run(null);
   assert.deepEqual(bare.a, []);
   assert.match(bare.post!, /closed the review of proposal [0-9a-f]{12} without answering; nothing was recorded/);

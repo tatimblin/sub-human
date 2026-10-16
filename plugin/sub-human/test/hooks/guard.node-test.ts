@@ -187,3 +187,57 @@ test('guard: hold is allowed for row subagents only', () => {
   assert.equal(decide('mcp__plugin_sub-human_room__hold', { room: w.code }, { w, seated: true, agentId: 'a1' }), 'allow');
   assert.equal(decide('mcp__plugin_sub-human_room__hold', { room: w.code }, { w, seated: false }), 'deny');
 });
+
+test('guard (live verify, stage 8c): Bash that reaches the home by a glob, a ?, a brace, a cd, or a walker above it is denied', () => {
+  const ctx: GuardCtx = { home: '/tmp/shv4/home', realHome: '/private/tmp/shv4/home', userHome: '/Users/me', cwd: '/tmp/shv4/alice', claudeDir: '/Users/me/.claude', sid: 'aaaaaaaa-0000-4000-8000-000000000001' };
+  const deny = (cmd: string) => assert.ok(g.bashVerdict(cmd, ctx), `should deny: ${cmd}`);
+  const allow = (cmd: string) => assert.equal(g.bashVerdict(cmd, ctx), null, `should allow: ${cmd}`);
+  // the live finds: each printed a seat key's path or contents
+  deny('grep -rl PRIVATE /tmp/shv4');
+  deny('cat /tmp/shv4/h*e/keys/*/*.key');
+  deny('cat /tmp/shv4/hom?/keys/x/bob.key');
+  deny('cd /tmp/shv4 && cat home/keys/*/*');
+  deny('find /tmp -name "*.key" -exec cat {} +');
+  deny('rg -uu PRIVATE /tmp');
+  // more of the same shapes
+  deny('cat /tmp/shv4/{home,x}/keys/a/b.key');
+  deny('cat /private/tmp/*/home/sessions/mods/x.json');
+  deny('ls /tmp/shv4 | xargs -I{} cat {}/keys/a/b.key');
+  deny('tar czf /tmp/out.tgz /tmp/shv4');
+  deny('cp -r /tmp/shv4 /tmp/copy');
+  deny('python3 -c "import os; print(list(os.walk(\'/tmp\')))"');
+  deny('cd .. && grep -r PRIVATE .');
+  deny('grep -r PRIVATE ..');
+  deny('ssh-keygen -y -f /tmp/shv4/home/keys/a/bob.key');
+  deny('find / -name "*.key"');
+  // Claude Code's history and this session's transcript: an invite line and its PIN can be in them
+  deny('cat ~/.claude/history.jsonl');
+  deny('grep 4829 ~/.claude/projects/*/*.jsonl');
+  deny('grep -r 4829 ~/.claude');
+  deny('tail -n 5 /Users/me/.claude/projects/-tmp-shv4/aaaaaaaa-0000-4000-8000-000000000001.jsonl');
+  // what a session does every day
+  allow('grep -r foo src');
+  allow('cat /tmp/other/notes.txt');
+  allow('ls /tmp');
+  allow('cat README.md');
+  allow('find . -name "*.ts"');
+  allow('rg TODO');
+  allow('npm test');
+  allow('git log --oneline -5');
+  allow("sed -n '1,20p' notes.txt");
+  allow('cd ../bob && cat README.md');
+  allow('ls ~/.claude/projects');
+});
+
+test('guard (live verify, stage 8c): Read of the module lease (sessions/), the prompt history and this session\'s transcript is denied', () => {
+  const ctx: GuardCtx = { home: '/tmp/shv4/home', realHome: '/tmp/shv4/home', userHome: '/Users/me', claudeDir: '/Users/me/.claude', sid: 'aaaaaaaa-0000-4000-8000-000000000001' };
+  assert.ok(g.readVerdict(['/tmp/shv4/home/sessions/mods/aaaaaaaa-0000-4000-8000-000000000001.json'], ctx));
+  assert.ok(g.readVerdict(['/tmp/shv4/home/sessions/by-sid/x.json'], ctx));
+  assert.ok(g.readVerdict([], {}, '~/.sub-human/sessions/mods/x.json'), 'before the hello, by its spelling');
+  assert.ok(g.readVerdict(['/Users/me/.claude/history.jsonl'], ctx));
+  assert.ok(g.readVerdict([], {}, '~/.claude/history.jsonl'), 'before the hello, by its name');
+  assert.ok(g.readVerdict(['/Users/me/.claude/projects/-w/aaaaaaaa-0000-4000-8000-000000000001.jsonl'], ctx));
+  assert.equal(g.readVerdict(['/Users/me/.claude/projects/-w/bbbbbbbb-0000-4000-8000-000000000002.jsonl'], ctx), null, 'another session\'s transcript reads');
+  assert.equal(g.readVerdict(['/tmp/shv4/home/rooms/x/log.jsonl'], ctx), null, 'the room log reads');
+  assert.ok(g.searchVerdict('Grep', ['/Users/me/.claude'], ctx), 'a Grep above the history');
+});

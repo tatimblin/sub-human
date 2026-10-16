@@ -21,6 +21,9 @@ test('presence: Notification idle_prompt / permission_prompt and StopFailure wri
   // the hooks module's "Working" (mod/prompt.ts on the person's prompt, since at-room no longer runs for each)
   w.hook('presence', { hook_event_name: 'Working' }, { as: 'alice' });
   assert.equal(read().state, 'working');
+  // the module's turn end after a working turn (mod/deliver.ts turn.complete): idle
+  w.hook('presence', { hook_event_name: 'TurnEnd' }, { as: 'alice' });
+  assert.equal(read().state, 'idle');
   assert.equal(w.entries().length, 0, 'presence never touches the log');
 });
 

@@ -148,7 +148,8 @@ function redeemShort(cur: Invites, key: string, secret: string, inv: ShortInvite
 }): { next?: Invites; err: CodedError | null; made?: { id: string; machine: string; seats: string[]; key: string | null }; adm?: AdmissionRecord } {
   const ref = key.slice(0, 12);
   if (inv.v !== 4) return { err: authError('this invite was made by an older sub-human on the host; ask them for a new one (/sub-human invite)', 'INVITE_UNKNOWN') };
-  if (inv.burnt_at) return { err: authError('this invite no longer works (too many wrong PINs, expired, or cancelled); ask the host for a new one', 'INVITE_BURNT') };
+  // burnt, or no try left (a record whose last wrong PIN did not mark it burnt): it takes no PIN, right or wrong
+  if (inv.burnt_at || !(Number(inv.tries) > 0)) return { err: authError('this invite no longer works (too many wrong PINs, expired, or cancelled); ask the host for a new one', 'INVITE_BURNT') };
   if (inv.used_at) {
     const slot = admissionSlot(secret);
     const adm = cur[slot];

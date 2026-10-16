@@ -237,7 +237,7 @@ test('protocol skew: no common version is PROTOCOL naming the side that must upd
     /host runs sub-human 0\.4\.0 \(protocol 3–4\); you run 0\.9\.0 \(protocol 5–6\)\. The host must update/);
   // a joiner that speaks only protocol 1 meets a host that dropped it: the message reaches it as the error it shows
   const r = await rawHello(t, host, { proto: { min: 1, max: 1 } }, { proto: { min: 2, max: 3 }, version: '0.5.0' });
-  assert.deepEqual([r.error!.code, r.error!.reason, /you run an unknown sub-human version \(protocol 1\)\. Update your plugin/.test(r.error!.message)], ['PROTOCOL', 'SKEW', true]);
+  assert.deepEqual([r.error!.code, r.error!.reason, /you run an older sub-human \(protocol 1\)\. Update your plugin/.test(r.error!.message)], ['PROTOCOL', 'SKEW', true]);
   // a reply outside this end's range is refused here too
   await fails(at({ proto: { min: 1, max: 1 } }, { proto: { min: 1, max: 1 } }).then(() => at({ proto: { min: protocol.PROTO.max + 1, max: protocol.PROTO.max + 1 } }, {})), /must update|Update your plugin/);
   // this version and 0.5.0-beta.15: protocol 3 against 1–2 settles on 2 both ways (a link made before keeps working)
@@ -517,6 +517,9 @@ test('quotas: the log counts a seat\'s posts by via; a link window drops what ha
   assert.equal(quota.fromLog(es, { from: 'bob', via: 'agent', windowMs: 60_000, now }), 29, 'the one older than the window is not counted');
   quota.checkLog(es, { from: 'bob', via: 'agent', op: 'append.agent', now });
   assert.throws(() => quota.checkLog([...es, { from: 'bob', via: 'agent', at: at(10) } as Entry], { from: 'bob', via: 'agent', op: 'append.agent', now }), (e: CodedError) => e.reason === 'QUOTA' && /bob posted 30 times in 1 min/.test(e.message));
+  // the retry is when the oldest counted line leaves the window, not the window itself
+  const late = Array.from({ length: 30 }, () => ({ from: 'bob', via: 'agent', at: at(50_000) })) as Entry[];
+  assert.throws(() => quota.checkLog(late, { from: 'bob', via: 'agent', op: 'append.agent', now }), (e: CodedError) => /try again in 10 s/.test(e.message));
   const s = new MemoryRoomStore('otter-1234');
   const seatQ = config.LINK_QUOTAS.seat;
   for (let i = 0; i < seatQ.max; i++) quota.charge(s, 'abcdef012345', 'seat', { now });
@@ -527,4 +530,65 @@ test('quotas: the log counts a seat\'s posts by via; a link window drops what ha
   for (let i = 0; i < config.LINK_QUOTAS.ping.max; i++) w.take('ping', now);
   assert.throws(() => w.take('ping', now), (e: CodedError) => e.reason === 'QUOTA');
   w.take('beat', now);
+});
+
+test('kick (pipe): a `serve --stdio CODE` child names no link, yet the kick ends its stream with LINK_REVOKED, refuses its ops and closes it; the old token\'s hello says LINK_REVOKED', async t => {
+  const { code, host } = hostRoom(t);
+  const hosting = await import('../lib/remote/hosting.ts');
+  const ak = path.join(h.tmpDir('sh-ak-', t), 'authorized_keys');
+  const { invite } = invites.mintFor(host, { locator: 'pipe:test', machine: REMOTE, seats: [] });
+  const tr = pipe.spawn(process.execPath, [h.BIN, 'serve', '--stdio', code], { env: h.childEnv() });
+  let closed = false;
+  tr.onClose(() => { closed = true; });
+  const c = await client.connect(tr, { machine: REMOTE, invite });
+  t.after(() => c.close());
+  assert.deepEqual(await c.join(seat(code, 'bob')), { ok: true });
+  const ends: { reason: string; message?: string }[] = [];
+  const sub = c.subscribe(0, store.hash12(''), ({ ev, data }) => { if (ev === 'end') ends.push(data as { reason: string; message?: string }); });
+  await sub.ready;
+  const r = hosting.kick(code, 'bob', { file: ak });
+  assert.deepEqual(r.seats, ['bob']);
+  assert.ok(await h.until(() => ends.length > 0, 5000, 20), 'the stream ends without a SIGTERM reaching this serve');
+  assert.equal(ends[0].reason, 'AUTH');
+  assert.match(ends[0].message!, /removed this machine from room .*kick/);
+  await assert.rejects(c.append(signed(code, 'bob', { kind: 'say', text: 'after the kick' })), (e: CodedError) => ['AUTH', 'OFFLINE'].includes(e.code!));
+  assert.ok(await h.until(() => closed, 5000, 20), 'the serve closes the connection');
+  assert.ok(!host.readAll().some(e => e.text === 'after the kick'), 'nothing posted over the revoked link');
+  // the old token at a new connection: LINK_REVOKED (what the joiner's daemon stops with, and doctor reads)
+  await assert.rejects(client.connect(served(t, host), { machine: REMOTE, token: c.token! }), (e: CodedError) => e.code === 'AUTH' && e.reason === 'LINK_REVOKED');
+});
+
+test('kick (memory): a connection that holds a revoked link gets AUTH LINK_REVOKED on every op; its join takes no seat (no ghost seat)', async t => {
+  const { code, host } = hostRoom(t);
+  const c = await linked(t, host);
+  assert.deepEqual(await c.join(seat(code, 'bob')), { ok: true });
+  hostLinks.revokeLink(host, c.link!); // another process's kick: this session only reads the store
+  seats.exit(code, 'bob', 'removed by the host');
+  await assert.rejects(c.join(seat(code, 'bob')), (e: CodedError) => e.code === 'AUTH' && e.reason === 'LINK_REVOKED');
+  await assert.rejects(c.beat('bob'), (e: CodedError) => e.code === 'AUTH' && e.reason === 'LINK_REVOKED');
+  await assert.rejects(c.append(signed(code, 'bob', { kind: 'say', text: 'ghost' })), (e: CodedError) => e.code === 'AUTH' && e.reason === 'LINK_REVOKED');
+  const bob = identity.readMembers(code).bob;
+  assert.ok(bob.left_at, 'the seat stays left');
+  assert.ok(!host.readAll().some(e => e.kind === 'member_joined' && e.from === 'bob' && /rejoined/.test(String(e.text))), 'no "bob rejoined"');
+});
+
+test('a seat refused at join gives its link binding back; a seat of another machine that no link names leaves at the sweep', async t => {
+  const { code, host } = hostRoom(t);
+  const c = await linked(t, host);
+  const wrong = seat(code, 'carol');
+  await rejects(c.join({ ...wrong, pubkey: seat(code, 'dave').pubkey }), 'AUTH'); // a proof for another key
+  assert.deepEqual(hostLinks.links(host)[c.link!].seats, [], 'not bound');
+  // a ghost: a remote seat whose link is gone (a kick raced its join before this fix), its lease past the settle
+  assert.equal(seats.enter({ code, name: 'ghost', machine: 'ghost0machine001', pubkey: seat(code, 'ghost').pubkey }).ok, true);
+  host.members.update(ms => { ms.ghost.seen_at = new Date(Date.now() - 3_600_000).toISOString(); return ms; });
+  assert.deepEqual(seats.sweep(code), ['ghost']);
+  const g = identity.readMembers(code).ghost;
+  assert.ok(g.left_at && !g.lapsed_at, 'left, not lapsed');
+  assert.match(String(host.readAll().at(-1)!.text), /ghost left \(its connection was ended\)/);
+  // a lapsed seat over a live link stays seated (its next beat renews it)
+  assert.deepEqual(await c.join(seat(code, 'erin')), { ok: true });
+  host.members.update(ms => { ms.erin.seen_at = new Date(Date.now() - 3_600_000).toISOString(); return ms; });
+  assert.deepEqual(seats.sweep(code), ['erin']);
+  const e = identity.readMembers(code).erin;
+  assert.ok(e.lapsed_at && !e.left_at);
 });

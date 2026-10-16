@@ -42,7 +42,7 @@ const result = text => `${fg(GRAY, '  ⎿  ')}${text}`;
 const code = s => fg(CODE, s);
 const roomRow = (who, text) => `${fg(GRAY, '⏺')} ${fg(GRAY, 'sub-human: ')}${bold(who + ':')} ${text}`;
 // an @room's receipt (wake: an @claude's), as the stop's warning row draws it (plugin hooks/at-room.ts)
-const SENT = `✓ sent to room ${ROOM} (Claude wasn't asked)`, WOKE = "✓ sent; the room's Claude will answer";
+const SENT = `✓ sent to room ${ROOM} (Claude wasn't asked)`, WOKE = "✓ sent; the room's Claude was woken";
 const hookSent = (wake = false) => bullet(fg(YELLOW, `Operation stopped by hook: ${wake ? WOKE : SENT}`), YELLOW);
 
 const SPIN = ['·', '✢', '✳', '✶', '✻', '✽', '✻', '✶', '✳', '✢'];

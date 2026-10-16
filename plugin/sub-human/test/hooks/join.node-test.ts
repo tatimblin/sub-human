@@ -709,8 +709,13 @@ test('SECURITY through the module: an invite and anything a PIN may be typed in 
   const w = new World({ claude: 'sleep', alice: 'sleep' });
   const inv = viaModule(w, 'alice', 'invite --pipe').json!.subHuman!;
   assert.equal(inv.shareable, false);
-  assert.match(inv.say!, new RegExp(`/sub-human join pipe:\\S+ ${w.code} [0-9a-z]{39}`));
-  assert.match(inv.say!, /apart from the line \(say it, or send it another way\): \d{4}/);
+  // the line and the PIN are pinned (the module's status line: no transcript row holds them); the notices say where
+  assert.doesNotMatch(inv.say!, new RegExp(`[0-9a-z]{39}`));
+  assert.doesNotMatch(inv.say!, /: \d{4}\b/);
+  assert.match(inv.say!, /pinned under the prompt until \d\d:\d\d: Claude Code saves neither in this conversation/);
+  assert.match(inv.pinned!.status, new RegExp(`/sub-human join pipe:\\S+ ${w.code} [0-9a-z]{39}`));
+  assert.match(inv.pinned!.status, /apart from the line \(say it, or send it another way\): \d{4}$/);
+  assert.ok(inv.pinned!.ms > 14 * 60_000 && inv.pinned!.ms <= 15 * 60_000);
   for (const args of ['join dev vole-1234 48291', `join dev vole-1234 ${SECRET} --frob`, `x ${w.code} 4829`, `x ${SECRET}`, 'join 4829', 'admit']) {
     const r = viaModule(w, 'me', args).json!.subHuman!;
     assert.equal(r.shareable, false, args);
@@ -782,6 +787,9 @@ test('a word of digits is no name: /sub-human 4829 says it looks like a PIN, hid
     assert.equal(r.json!.hookSpecificOutput!.suppressOriginalPrompt, true, args);
     assert.match(r.json!.reason!, /"4829" looks like a PIN, not a name: a PIN goes in as \/sub-human join PIN once an invite line asks for it/, args);
   }
+  // a PIN where a room goes (live: "/sub-human --as 4829" said it "isn't a room")
+  const r = w.hook('join', expand('--as 4829'), { as: 'me' });
+  assert.match(r.json!.reason!, /"4829" looks like a PIN, not a room/);
   assert.equal(fs.existsSync(path.join(w.home, 'rooms')) && fs.readdirSync(path.join(w.home, 'rooms')).length, false, 'no room opened');
 });
 

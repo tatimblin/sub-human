@@ -59,6 +59,10 @@ function nonceFor($: EngineInterface, sid: string): Promise<string | null> {
  * module sees notes the session's transcript path and permission mode; tool.call stashes the call's agentId. Module
  * state: a reload forgets it until the next event. */
 export const facts = factsBook();
+/** The last presence the module wrote or saw for seat (address|sid): mod/prompt.ts writes "working" for a typed prompt,
+ * idle on a notification; turn.complete below writes "idle" when the turn that ends was a "working" one (an
+ * idle_prompt notification may never come: seen live, every member stuck on "working"). Lost on reload. */
+export const presence: { last: string | null; seat: string | null } = { last: null, seat: null };
 
 /** The session id whose lease this module process has written (mod-hello ran for it): join and at-room need one. */
 let leased: string | null = null;
@@ -267,6 +271,13 @@ function stopChild(sid?: string) {
   try { if (c.stream) void c.stream.return(undefined).catch(() => {}); } catch { /* already gone */ }
 }
 
+/** The child as the hello wants it: started (or kept) for a seat or a join waiting for its card; stopped once the
+ * hello is sure the session has none (a /sub-human leave, a join refused). */
+function childFor($: EngineInterface, sid: string, hello: ReturnType<typeof asHello>) {
+  if (spawnWanted(hello)) ensureChild($, sid);
+  else stopChild(sid);
+}
+
 /** Start the child for sid unless it already runs for it; stops one for another session id. */
 function ensureChild($: EngineInterface, sid: unknown) {
   if (typeof sid !== 'string' || !sid) return;
@@ -336,7 +347,12 @@ async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
   const actions = route(ev, { turnRunning: turns.running !== null, role, rows, remote: remote && role === 'member' });
   for (const a of actions) {
     switch (a.do) {
-      case 'seat': c.seat = a.seat; break;
+      case 'seat': {
+        c.seat = a.seat;
+        // no seat: once the hello says this session has none and waits for no join, the tail has nothing to deliver
+        if (!a.seat) { const h = asHello((await $.state.get(HELLO)).value); if (h && h.sid === c.sid && !spawnWanted(h)) stopChild(c.sid); }
+        break;
+      }
       case 'log': $.ui.log(a.text); break;
       case 'append': if (!(await appendRow($, a.text))) await noteError($); break; // refused or failed: lost
       case 'hold-rows': await $.state.set(ROWS, a.text); break;
@@ -346,6 +362,15 @@ async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
       default: break;
     }
   }
+}
+
+/** An invite's line and PIN on this plugin's status line, under the prompt (Claude Code saves it in no transcript, as it
+ * does a notice), until the invite's life is over; a newer one replaces it. */
+let pinnedAt = 0;
+function pinStatus($: EngineInterface, { status, ms }: { status: string; ms: number }): void {
+  const mine = ++pinnedAt;
+  $.ui.status(status);
+  try { $.clock.after(ms, () => { if (mine === pinnedAt) $.ui.status(undefined); }); } catch { /* it stays until the next one replaces it */ }
 }
 
 export function registerDeliver(on: On) {
@@ -384,10 +409,11 @@ export function registerDeliver(on: On) {
         return r;
       } finally { joined = null; }
     }
-    const { result, logs } = answerOf(reply, { bridge: e.origin.kind === 'bridge' });
+    const { result, logs, status } = answerOf(reply, { bridge: e.origin.kind === 'bridge' });
     for (const line of logs) $.ui.log(line);
+    if (status) pinStatus($, status);
     try { await refresh($, sid); } catch { /* the next refresh tries again */ }
-    try { if (spawnWanted(asHello((await $.state.get(HELLO)).value))) ensureChild($, sid); } catch { /* next start tries again */ }
+    try { childFor($, sid, asHello((await $.state.get(HELLO)).value)); } catch { /* next start tries again */ }
     return result;
   }).catch(($, e, next) => next(e)); // unsure: the classic hook beneath answers, as without the module
 
@@ -400,7 +426,7 @@ export function registerDeliver(on: On) {
     else { try { await ensureLease($, e.session_id); } catch { /* the join beneath says what is missing */ } }
     const r = took ? { additionalContext: [took.context] } : await next(e);
     try { await refresh($, e.session_id); } catch { /* the next refresh tries again */ }
-    try { if (spawnWanted(asHello((await $.state.get(HELLO)).value))) ensureChild($, e.session_id); } catch { /* next start tries again */ }
+    try { childFor($, e.session_id, asHello((await $.state.get(HELLO)).value)); } catch { /* next start tries again */ }
     return r;
   }).catch(($, e, next) => next(e)); // never in the join's way: what ran beneath stands, or runs
 
@@ -421,8 +447,11 @@ export function registerDeliver(on: On) {
       } catch { /* the rows come with the next prompt (the restore's context) */ }
     }
     try {
-      const { value: hello } = await $.state.get(HELLO);
-      if (spawnWanted(asHello(hello))) ensureChild($, e.session_id);
+      // this session's hello first: one not said yet (classic.SessionStart can run before session.start's) is no seat
+      // to start a tail for, only a hello not known
+      let hello = asHello((await $.state.get(HELLO)).value);
+      if (!hello || hello.sid !== e.session_id) { await startHello($, e.session_id).catch(() => {}); hello = asHello((await $.state.get(HELLO)).value); }
+      childFor($, e.session_id, hello);
     } catch { /* the next session.start or join starts it */ }
     return mergeClassic(ours, await next(e));
   }).catch(($, e, next) => next(e));
@@ -444,6 +473,14 @@ export function registerDeliver(on: On) {
     if (e.agentId === undefined) {
       for (const text of turns.complete(e.turnId)) void submitWake($, text, { appended: true });
       if (turns.running === null) scheduleRelay(relayIo($));
+      // the turn the person's prompt started is over: back at the prompt (node hooks/run.ts presence, not awaited)
+      if (presence.last === 'working') {
+        presence.last = 'idle';
+        void (async () => {
+          const root = $.plugin.root, sid = await $.session.id();
+          await $.process.run(shimArgv(root, 'presence'), { stdin: JSON.stringify({ hook_event_name: 'TurnEnd', session_id: sid }), env: shimEnv({ session_id: sid }, root), timeoutMs: SHIM_TIMEOUT_MS });
+        })().catch(() => { presence.last = null; });
+      }
     }
     return next(e);
   });

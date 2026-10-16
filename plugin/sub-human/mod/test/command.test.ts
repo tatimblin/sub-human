@@ -49,6 +49,21 @@ test('typed here: join.ts runs once through the shim with the nonce; an invite c
   expect(seen.logs).toEqual(['invite to room otter-4821 for one machine …', '  /sub-human join me@box otter-4821 4821'])
 })
 
+test('an invite\'s line and PIN go to the status line (saved in no transcript), the notices say where they are', async ($, on) => {
+  const say = 'invite to room otter-4821 for one machine … are pinned under the prompt until 12:15 …'
+  const seen = world($, on, { join: { subHuman: { say, refused: false, shareable: false, pinned: { status: 'invite to otter-4821 until 12:15: /sub-human join me@box otter-4821 SECRET  ·  its PIN, apart from the line (say it, or send it another way): 4821', ms: 900000 } } } })
+  const statuses: (string | undefined)[] = []
+  on('ui.status', ($: any, e: any) => { statuses.push(e.text); return { value: undefined } })
+  await start($)
+  const r: any = await typed($, 'invite')
+  expect(r.text).toBeUndefined()
+  expect(seen.logs.join('\n')).not.toContain(': 4821')
+  expect(seen.logs.join('\n')).not.toContain('SECRET')
+  expect(statuses.length).toBe(1)
+  expect(statuses[0]).toContain('/sub-human join me@box otter-4821 SECRET')
+  expect(statuses[0]).toContain(': 4821')
+})
+
 test('a reply with no secret is a notice here (the model never reads it, so never repeats it), and the output row through Remote Control', async ($, on) => {
   const seen = world($, on, { join: { subHuman: { say: 'left otter-4821 · /sub-human joins again', refused: false, shareable: true } } })
   await start($)
@@ -92,4 +107,19 @@ test('in the room\'s Claude (SUB_HUMAN_ROOM set) the launch /sub-human is the cl
   await start($)
   await typed($, '')
   expect([seen.joins.length, seen.ran]).toEqual([0, 1])
+})
+
+test('the room\'s Claude: a typed /clear is answered with the refusal and never runs', async ($, on) => {
+  const seen = world($, on, { room: 'otter-4821' })
+  await start($)
+  const r: any = await $.command.run({ command: 'clear', args: '', origin: { kind: 'composer' } } as any)
+  expect(r.text).toMatch(/the room's Claude takes no typed input, commands included/)
+  expect(seen.ran).toBe(0)
+})
+
+test('a member\'s session: /clear runs as usual', async ($, on) => {
+  const seen = world($, on)
+  await start($)
+  await $.command.run({ command: 'clear', args: '', origin: { kind: 'composer' } } as any)
+  expect(seen.ran).toBe(1)
 })

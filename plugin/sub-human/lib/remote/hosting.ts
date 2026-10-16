@@ -20,7 +20,9 @@
  *       link (kick)
  *   kick(code, name, {file?}) -> {id, seats, keys, text}   end the link NAME joined over: its token (and key) stops
  *       working (hostLinks.revokeLink, which also burns an invite reserved for it), its seats leave ("removed by the
- *       host"), its running `serve` processes are stopped, and a room line says so. A link an admit let in before
+ *       host"), and a room line says so. Every live `serve` of the link sees its record go (lib/remote/server.ts held:
+ *       the stream ends AUTH LINK_REVOKED, every op is refused, the connection closes), whatever its argv; one that
+ *       names `--link ID` (ssh) is also sent SIGTERM. A link an admit let in before
  *       protocol 3 also loses its authorized_keys line (keys: how many; nothing adds one any more). A joiner still
  *       waiting for the card: its reserved link. A link made over this account's own ssh login (hostLinks.loginLink):
  *       its token goes and its serve is stopped, and the text says that login can link again
@@ -58,6 +60,7 @@ import * as admission from './admission.ts';
 import * as sshkeys from './sshkeys.ts';
 import * as inviteSecret from './invite-secret.ts';
 import * as machineKey from './machine-key.ts';
+import * as protocol from './protocol.ts';
 import { RoomError } from '../room/validate.ts';
 import { INVITE_TTL_MS, LINK_JOIN_WAIT_MS } from '../config.ts';
 import * as linkSocketMod from './link-socket.ts';
@@ -72,6 +75,7 @@ import { createRequire } from 'node:module';
 import type { LinkSpec } from './types-rest.ts';
 import type { InviteRecord, Invites, ParsedInvite, ShortInvite } from './types-core.ts';
 import type { Link, RoomStore } from '../room/types.ts';
+import type { Pinned } from '../commands/types.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -86,6 +90,8 @@ export interface HostedInvite {
   word: string;
   line: string;
   text: string;
+  /** the line and the PIN for the status line, and the text without them (lib/commands/types.ts Pinned) */
+  pinned: Pinned;
 }
 
 /** What ending a link did. */
@@ -165,18 +171,39 @@ function reachHints(dest: string, defaulted: boolean): string[] {
  * The text an invite is shown with: the one line the joiner types, the PIN apart from it, and what happens next on
  * this side (the card).
  */
-function inviteText({ code, how, line, pin, ref, extra = [] }: { code: string; how: string; line: string; pin: string; ref: string; extra?: string[] }): string {
+/** The clock time an invite stops working, as the person reads it (their local time). */
+const until = (expiresAt: string): string => { const d = new Date(expiresAt); return Number.isNaN(d.getTime()) ? '' : d.toTimeString().slice(0, 5); };
+
+/**
+ * The invite's text and its pinned form: the line and the PIN on one status line (drawn under the prompt, never saved
+ * in the conversation's transcript), and the text that says where they are instead.
+ */
+function invitePinned({ code, how, line, pin, ref, expires_at, extra = [] }: { code: string; how: string; line: string; pin: string; ref: string; expires_at: string; extra?: string[] }): Pinned {
+  const at = until(expires_at);
+  return {
+    status: `invite to ${code}${at ? ` until ${at}` : ''}: ${line}  ·  its PIN, apart from the line (say it, or send it another way): ${pin}`,
+    text: inviteText({ code, how, line: '', pin: '', ref, extra, pinned: at || 'it expires' }),
+    ms: Math.max(0, Date.parse(expires_at) - Date.now()) || INVITE_TTL_MS,
+  };
+}
+
+function inviteText({ code, how, line, pin, ref, extra = [], pinned }: { code: string; how: string; line: string; pin: string; ref: string; extra?: string[]; pinned?: string }): string {
+  const send = pinned
+    ? [`invite to room ${code} for one machine, ${how}. It works once, for ${minutes(INVITE_TTL_MS)} minutes. The line to send them and its PIN are pinned under the prompt until ${pinned}: Claude Code saves neither in this conversation. Send the line; tell them the PIN apart from it (say it, or send it another way).`]
+    : [
+      `invite to room ${code} for one machine, ${how}. It works once, for ${minutes(INVITE_TTL_MS)} minutes; send them this line:`,
+      '',
+      `  ${line}`,
+      '',
+      `and tell them its PIN apart from the line (say it, or send it another way): ${pin}`,
+    ];
   return [
-    `invite to room ${code} for one machine, ${how}. It works once, for ${minutes(INVITE_TTL_MS)} minutes; send them this line:`,
-    '',
-    `  ${line}`,
-    '',
-    `and tell them its PIN apart from the line (say it, or send it another way): ${pin}`,
+    ...send,
     'Their machine asks them for the PIN once this one has answered; the line alone gets nobody in, nor does the PIN. After 5 wrong PINs the invite stops working.',
     'When they have typed both, a card here asks you to let them in; nothing gets in before you answer.',
     `Sent it to the wrong place? /sub-human invite --cancel ${ref} cancels just this invite.`,
     ...extra,
-    `They need a sub-human newer than 0.5.0-beta.15 (an older one says the PIN must be 4 digits): /plugin update sub-human.`,
+    `They need sub-human ${protocol.PLUGIN_VERSION} or newer (an older one says the PIN must be 4 digits, or that the invite is from a newer version): /plugin update sub-human.`,
   ].join('\n');
 }
 
@@ -193,7 +220,11 @@ function hostInvite(code: string, { ssh = true, via, pipe = false, by = null, no
     const r = invites.mintInvite(store, { kind: 'pipe', locator, by, now });
     const word = machineWord(r.secret);
     const line = `/sub-human join ${locator} ${code} ${word}`;
-    return { pin: r.pin, ref: r.ref, expires_at: r.expires_at, short: true, locator, word, line, text: inviteText({ code, how: 'from another sub-human folder on this machine', line, pin: r.pin, ref: r.ref }) };
+    const how = 'from another sub-human folder on this machine';
+    return {
+      pin: r.pin, ref: r.ref, expires_at: r.expires_at, short: true, locator, word, line, text: inviteText({ code, how, line, pin: r.pin, ref: r.ref }),
+      pinned: invitePinned({ code, how, line, pin: r.pin, ref: r.ref, expires_at: r.expires_at }),
+    };
   }
   const dest = ssh === true ? selfAddress() : String(ssh);
   if (sshT().placeholder(dest)) throw new RoomError('INVALID', `"${dest}" still has an example's placeholder: give the address the other machine reaches this one at (user@host, or set SUB_HUMAN_SSH_ADDR)`);
@@ -209,15 +240,16 @@ function hostInvite(code: string, { ssh = true, via, pipe = false, by = null, no
   const r = invites.mintInvite(store, { kind: 'ssh', locator, by, now });
   const word = machineWord(r.secret);
   const line = `/sub-human join ${dest} ${code} ${word}${via ? ` --via ${via}` : ''}${ownHome ? '' : ` --home ${h}`}`;
+  const parts = {
+    code, how: `over ssh ${dest}${via ? ` via ${via}` : ''}`, line, pin: r.pin, ref: r.ref,
+    extra: [
+      `Over ssh this needs their own ssh login to this account (${os.userInfo().username}), set up as for any ssh login: sub-human writes nothing to authorized_keys. No login here? Invite them over the web: /sub-human invite --web`,
+      ...reachHints(dest, ssh === true && !process.env.SUB_HUMAN_SSH_ADDR),
+    ],
+  };
   return {
     pin: r.pin, ref: r.ref, expires_at: r.expires_at, short: true, locator, word, line,
-    text: inviteText({
-      code, how: `over ssh ${dest}${via ? ` via ${via}` : ''}`, line, pin: r.pin, ref: r.ref,
-      extra: [
-        `Over ssh this needs their own ssh login to this account (${os.userInfo().username}), set up as for any ssh login: sub-human writes nothing to authorized_keys. No login here? Invite them over the web: /sub-human invite --web`,
-        ...reachHints(dest, ssh === true && !process.env.SUB_HUMAN_SSH_ADDR),
-      ],
-    }),
+    text: inviteText(parts), pinned: invitePinned({ ...parts, expires_at: r.expires_at }),
   };
 }
 
@@ -348,7 +380,7 @@ function joinText(code: string, name: string, o: Outcome, { tells = false }: { t
   if (o.state === 'refused') return `could not join room ${code}: ${o.reason}`;
   if (o.state === 'pin') {
     const w = lf.pin_wanted || { at: '' };
-    const left = typeof w.left === 'number' ? ` (${w.left} ${w.left === 1 ? 'try' : 'tries'} left)` : '';
+    const left = typeof w.left === 'number' ? ` (${w.left} PIN ${w.left === 1 ? 'try' : 'tries'} left)` : '';
     return `${o.reason ? `${o.reason}` : `the host's machine has your invite${left}. Type the 4-digit PIN they told you`}: /sub-human join PIN`;
   }
   if (lf.awaiting) {
@@ -382,5 +414,5 @@ function givePin(code: string, pin: string): void {
 }
 
 export {
-  hostInvite, inviteText, cancelInvite, kick, linkTransport, joinInvite, joinLine, givePin, outcome, joinText, shimReady, remoteLogin,
+  hostInvite, inviteText, invitePinned, cancelInvite, kick, linkTransport, joinInvite, joinLine, givePin, outcome, joinText, shimReady, remoteLogin,
 };

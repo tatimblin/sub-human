@@ -29,6 +29,8 @@ const SKEW_WARN_MS = 2 * 60 * 1000;
 const SPENT: ReadonlySet<string> = new Set(['INVITE_UNKNOWN', 'INVITE_USED', 'INVITE_BURNT', 'INVITE_EXPIRED', 'PIN_LAST', 'ADMIT_REFUSED',
   'ADMIT_LAPSED', 'ADMIT_REVOKED', 'ADMIT_LATE', 'KEY_REVOKED', 'LINK_REVOKED', 'TOKEN_UNKNOWN']);
 /** Over a login link, the host ended it: the person joins again over their ssh login. */
+/** A link the host ended (kick), or whose token it no longer knows: nothing to dial (lib/remote/link.ts drops the token). */
+const REVOKED: ReadonlySet<string> = new Set(['LINK_REVOKED', 'TOKEN_UNKNOWN', 'KEY_REVOKED']);
 const LOGIN_ENDED: ReadonlySet<string> = new Set(['LINK_REVOKED', 'TOKEN_UNKNOWN']);
 
 const lastLogError = (code: string): string[] => {
@@ -153,7 +155,10 @@ async function diagnoseLink(code: string, { quick, timeoutMs, env }: { quick: bo
   const quiet = dormant(st);
   // the mirror's last word: the host stopped the room's Claude (it closed the room) before this link stopped
   try { if (lib('identity.ts').readMembers(code).claude?.stopped_at) out.closed = true; } catch { /* no mirror */ }
-  if (!quick && quiet !== 'closed') { // a closed room's host has nothing for it: no hello; a seatless one's may say it closed
+  // a link the host ended (kicked: its token gets nowhere) is not dialed: a hello with no credential is answered, and
+  // "reachable, speaking v3" read as a healthy link (live)
+  const ended = st.state === 'stopped' && !!st.lastReason && REVOKED.has(st.lastReason);
+  if (!quick && quiet !== 'closed' && !ended) { // a closed room's host has nothing for it: no hello; a seatless one's may say it closed
     const r: HelloProbe = spec ? await helloProbe(spec, code, { timeoutMs, env }) : { ok: false, ms: 0, skipped: true, error: 'the link file names no transport' };
     const reply: HelloReply = r.reply || {};
     const hostTime = replyTime(reply);
@@ -177,6 +182,7 @@ function linkChecks(d: LinkReport): Check[] {
   const lastError = d.state.lastError || (d.recent.length ? d.recent.at(-1)!.replace(/^\S+ sub-human link \S+: /, '') : null);
   const why = d.state.lastReason || null;
   if (lastError && d.state.state !== 'online') bits.push(`last error: ${lastError}`);
+  if (d.state.state === 'stopped' && why && REVOKED.has(why)) bits.push('the host ended this machine\'s link: not dialed');
   if (d.moved) {
     const where = `${d.moved.host || 'another'}'s machine`;
     bits.push(d.moved.reached ? `the room moved to ${where}; this machine follows it` : `the room moved to ${where}; not reached from here yet`);

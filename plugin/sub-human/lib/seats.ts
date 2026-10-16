@@ -32,7 +32,8 @@
  *       seat whose pid died exits ("session ended"); any other seat whose lease is SEAT_LEASE_MS + LEAVE_SETTLE_MS old
  *       (name: only that seat, as soon as it is not seatAlive) gets lapsed_at, and the one caller that set it logs
  *       member_left "NAME left (connection lost)". A lapsed seat stays seated: its next beat renews it (lib/remote/link.ts
- *       keepSeats) and back() logs it. The room's Claude, left seats and lapsed ones are not swept; a lapsed seat
+ *       keepSeats) and back() logs it; a seat of another machine that no host link names (revoked: no beat can renew
+ *       it) exits instead ("its connection was ended"), lapsed already or not. The room's Claude, left seats and lapsed ones are not swept; a lapsed seat
  *       whose lease is fresh again (a beat that did not run back) is given back. Returns the names it ended.
  *   back(code, name) -> bool   on the host: clears lapsed_at and, when it was set, logs member_joined "NAME rejoined"
  *       (the remote server runs it after each beat). false when the seat had not lapsed.
@@ -137,10 +138,19 @@ function exit(code: string, name: string, reason: string, { deadlineMs }: { dead
   }
   if (!identity.isHost(code)) return true;
   try { if (!identity.liveMembers(code).length) roomClaude.reapDetached(code); } catch { /* the room Claude's watchdog closes it */ }
-  room.open(code).append({ kind: 'member_left', text: `${name} left (${reason})` }, asSystem(name));
+  // Claude Code's SessionEnd token ("prompt_input_exit", "logout", "other") is written in words, as render reads it
+  const why = CC_END_REASONS.has(reason) || /^[a-z]+(?:_[a-z]+)+$/.test(reason) ? 'session ended' : reason;
+  room.open(code).append({ kind: 'member_left', text: `${name} left (${why})` }, asSystem(name));
   return true;
 }
 
+/** Claude Code's SessionEnd reasons (hooks/handlers/session-end.ts passes them): a leave's line says "session ended". */
+const CC_END_REASONS: ReadonlySet<string> = new Set(['prompt_input_exit', 'logout', 'other', 'clear', 'resume', 'bypass_permissions_disabled']);
+/** Some link the host records names this seat (lib/remote/host-links.ts LINKS_KEY; read, not imported). */
+function linked(s: { kv: { get<T>(key: string, dflt?: T): T | null } }, name: string): boolean {
+  const recs = s.kv.get<Record<string, { seats?: unknown } | null>>('remote/links') || {};
+  return Object.values(recs).some(l => !!l && Array.isArray(l.seats) && l.seats.includes(name));
+}
 const isLocal = (m: Member): boolean => validPid(m.pid) && identity.isMine(m.machine || identity.machineId());
 
 function sweep(code: string, { now = Date.now(), name }: { now?: number; name?: string } = {}): string[] {
@@ -156,9 +166,16 @@ function sweep(code: string, { now = Date.now(), name }: { now?: number; name?: 
   pidStarts(all.filter((m): m is Member => !!m && !m.left_at && isLocal(m)).map(m => m.pid as number));
   for (const m of all) {
     if (!m || !m.name || m.role === 'claude' || m.left_at || (name !== undefined && m.name !== name)) continue;
-    if (m.lapsed_at) { if (identity.seatAlive(m)) back(code, m.name); continue; }
-    if (identity.seatAlive(m)) continue;
+    if (m.lapsed_at && identity.seatAlive(m)) { back(code, m.name); continue; }
+    if (!m.lapsed_at && identity.seatAlive(m)) continue;
     if (isLocal(m)) { if (exit(code, m.name, 'session ended')) out.push(m.name); continue; }
+    // a seat of another machine that no link of the host names (its link was revoked, or a join a kick raced left
+    // it behind): no beat can ever renew it, so it leaves instead of lapsing, and the room can close for good
+    if (!identity.isMine(m.machine || identity.machineId()) && (m.lapsed_at || lapsed(m)) && !linked(s, m.name)) {
+      if (exit(code, m.name, 'its connection was ended')) out.push(m.name);
+      continue;
+    }
+    if (m.lapsed_at) continue;
     let set = false;
     s.members.update(ms => {
       set = false; // update may run fn more than once

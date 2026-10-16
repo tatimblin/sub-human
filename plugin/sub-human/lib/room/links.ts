@@ -25,6 +25,7 @@
  *              (lib/remote/link.ts), so no spent secret stays here
  *   join_as    the name the seat takes once the host lets an invite in (lib/remote/joining.ts: a bare /sub-human takes it)
  *   join_sid   the session that typed that join: its tail tells the person when the host let it in
+ *   join_told  what the join command last told the person, which the tail does not say again
  *   awaiting   {at, ref, check, expires_at}: the PIN held and the host person's card decides (no secret in it)
  *   moved      {epoch, host, locator, at?, reached_at?, demoted?}: a handoff or promote re-pointed this link
  * The resume point is the mirror itself (its last line and that line's hash), not a field here.

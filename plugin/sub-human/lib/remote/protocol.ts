@@ -111,7 +111,9 @@ function negotiate(a: ProtoRange, b: ProtoRange): number | null {
   return v >= Math.max(a.min, b.min) ? v : null;
 }
 const span = (r: ProtoRange): string => (r.min === r.max ? `${r.min}` : `${r.min}–${r.max}`);
-const runs = (who: string, x: PeerVersion): string => `${who} ${x.version && x.version !== '?' ? `sub-human ${x.version}` : 'an unknown sub-human version'} (protocol ${span(x.proto)})`;
+/** A peer that names no version (0.5.0-beta.15 and before never did): older or newer than this one, by its protocol. */
+const unnamed = (x: PeerVersion): string => (x.proto.max < PROTO.max ? 'an older sub-human' : x.proto.max > PROTO.max ? 'a newer sub-human' : 'a sub-human of no named version');
+const runs = (who: string, x: PeerVersion): string => `${who} ${x.version && x.version !== '?' ? `sub-human ${x.version}` : unnamed(x)} (protocol ${span(x.proto)})`;
 /** @returns {string} */
 function skewMessage({ host, joiner, need }: { host: PeerVersion; joiner: PeerVersion; need?: number }): string {
   const joinerBehind = need !== undefined ? joiner.proto.max < need : joiner.proto.max < host.proto.min;

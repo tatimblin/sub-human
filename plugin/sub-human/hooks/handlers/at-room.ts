@@ -5,8 +5,10 @@
 // handle(input) under mod/prompt.ts's shim. In: the payload plus `sub_human_origin` and `sub_human_nonce`. An origin
 // counts only with this session's lease nonce, and only a typed one (composer, sdk, bridge; cc CONTRACT
 // prompt-origin-composer) may post: anything that can run node can claim an origin, only a lease reader the nonce.
-// Out: continue:false + "✓ sent" (the person's row stays, the model sees it next turn), or decision:block +
-// suppressOriginalPrompt (refused text never reaches the model). Failure: no origin, a bad nonce or no seat
+// Out: continue:false + "✓ sent" (the person's row stays, the model sees it next turn); a refusal of the person's own
+// typed words (no seat, nothing after the tag, the room refused it) is a stop too, with the reason (refuse); decision:
+// block + suppressOriginalPrompt only where the text must never reach the model as the person's (the room's Claude, no
+// or another origin). Failure: no origin, a bad nonce or no seat
 // refuses, and the person types it again. In the room's Claude, a typed prompt is refused (it takes no typed input); with
 // no origin it runs, so a reload never loses the room Claude's wakes. It writes no presence: the module is its one writer
 // (mod/prompt.ts, through hooks/handlers/presence.ts).
@@ -30,7 +32,7 @@ import type { HookSpecificOutput, PromptIn } from '../types.ts';
 import type { Identity } from '../../lib/identity.ts';
 import type { TranscriptEntry } from '../../lib/cc/transcript.ts';
 // how a prompt is read is the module's (mod/core): one parser, one list of typed origins, one wording per refusal
-import { parse, parseClaude, TYPED_ORIGINS, NO_ORIGIN, NOT_IN_ROOM } from '../../mod/core/prompt.ts';
+import { parse, parseClaude, unwrapLead, TYPED_ORIGINS, NO_ORIGIN, NOT_IN_ROOM } from '../../mod/core/prompt.ts';
 import { attested as leaseAttests } from '../../mod/core/state.ts';
 
 // it signs the person's own words (via=human): the seat-key signer, in this process only (hooks/seat-key.ts)
@@ -45,6 +47,13 @@ const block = (reason: string, extra: Partial<HookSpecificOutput> = {}) => out({
   decision: 'block', reason, ...phoneNote(reason),
   hookSpecificOutput: { hookEventName: 'UserPromptSubmit', suppressOriginalPrompt: true, ...extra },
 });
+
+/** A refusal of the person's own typed words, to type again (no seat, nothing after the tag, the room refused or the
+ * outcome is unknown): a stop with the reason, as "✓ sent" is (cc CONTRACT ups-stop-frame; mod/prompt.ts draws its
+ * warning row as the reason alone). A block would draw "UserPromptSubmit operation blocked by hook:" and put the
+ * prompt back in the input, where refusals piled up and a later Enter sent them all. block stays for a prompt whose
+ * words must not reach the model as the person's (the room's Claude, no or another origin). */
+const refuse = (reason: string) => out({ continue: false, stopReason: reason, ...phoneNote(reason), hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
 
 const TAIL_BYTES = config.TRANSCRIPT_TAIL_BYTES;
 /** The last TAIL_BYTES of a JSONL transcript as parsed entries (oldest first); [] when unreadable. */
@@ -117,15 +126,16 @@ function handle(input: PromptIn): void {
   if (raw === null && (wake === null || !me)) return; // outside a room, @claude is an ordinary prompt
 
   // not in a room first: typing it again would not help there
-  if (!me) return block(NOT_IN_ROOM);
+  if (!me) return refuse(NOT_IN_ROOM);
   const origin = claimed !== null && attested(input) ? claimed : null;
   if (origin === null) return block(NO_ORIGIN.replace('@room', tag));
   if (!TYPED_ORIGINS.includes(origin)) {
     return block(`✗ not posted: this prompt wasn't typed by you (it came from "${origin.slice(0, 40)}"). Only your own typed ${tag} posts as your words.`);
   }
   // A long paste arrives wrapped in <pasted_content>: post the person's text, marked normalized.
-  const { text, normalized } = cc.unwrapPasted(raw !== null ? raw : wake);
-  if (!text.trim()) return block(`✗ not posted: there is nothing after ${tag}.`);
+  const { text, normalized: inner } = cc.unwrapPasted(raw !== null ? raw : wake);
+  const normalized = inner || unwrapLead(prompt).unwrapped; // a paste that started the prompt held the tag
+  if (!text.trim()) return refuse(`✗ not posted: there is nothing after ${tag}.`);
   const entry: { kind: 'say'; text: string; to?: string; normalized?: true; drafted?: 'agent' } = { kind: 'say', text };
   if (wake !== null) entry.to = identity.ROOM_CLAUDE;
   if (normalized) entry.normalized = true;
@@ -134,8 +144,8 @@ function handle(input: PromptIn): void {
   try { placed = room.open(me.code).append(entry, { via: 'human', from: me.name, queue: true }); } catch (err) {
     if (!(err instanceof room.RoomError)) throw err;
     // it went out but no answer came in time: it may still land, so never "not posted" (typing it again would post twice)
-    if (err.unknown) return block(`⧗ not confirmed: ${err.message}. Watch the room for it before you type it again.`);
-    return block(`✗ not posted: ${err.message}`); // OFFLINE (the outbox full, the daemon gone), RATE, AUTH
+    if (err.unknown) return refuse(`⧗ not confirmed: ${err.message}. Watch the room for it before you type it again.`);
+    return refuse(`✗ not posted: ${err.message}`); // OFFLINE (the outbox full, the daemon gone), RATE, AUTH
   }
   if (placed && placed.slow) { // sent, the host slow to answer: the daemon holds it under its nonce until it does
     const q = `⧗ sending (slow connection): room ${me.code} hasn't confirmed this post yet; it shows in the room once the host has it. No need to type it again`;
@@ -148,7 +158,7 @@ function handle(input: PromptIn): void {
   // @claude on the host with no room's Claude running (it stopped, or never bound): start it, as a rejoin would
   const start = wake !== null ? seats.ensureRoomClaude(me.code, input.cwd, me.name) : '';
   // it names who reads it, so under the stop's frame (cc CONTRACT ups-stop-frame) it reads as done, not as an error
-  const head = wake !== null ? "✓ sent; the room's Claude will answer" : `✓ sent to room ${me.code} (Claude wasn't asked)`;
+  const head = wake !== null ? "✓ sent; the room's Claude was woken" : `✓ sent to room ${me.code} (Claude wasn't asked)`;
   const sent = `${head}${normalized ? ' (pasted text unwrapped)' : ''}${entry.drafted ? " (Claude's wording)" : ''}${start}`;
   out({ continue: false, stopReason: sent, hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
 }

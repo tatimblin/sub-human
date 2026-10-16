@@ -80,6 +80,26 @@ test('doctor: authorized_keys lines that bypass the shim are found', t => {
   assert.deepEqual(doctor.scanAuthorizedKeys(file + '.none'), { file: file + '.none', exists: false, lines: [] });
 });
 
+test('doctor: a door line of another sub-human home is reported as not this home\'s, and --fix leaves it (live: the real ~/.sub-human\'s rooms)', async t => {
+  const home = h.freshHome(t);
+  const file = path.join(h.tmpDir('sh-ak-', t), 'authorized_keys');
+  const other = `command="SUB_HUMAN_HOME=/Users/someone/.sub-human /Users/someone/.sub-human/bin/serve --enroll orca-5212 --kind ssh",restrict ${KEY} sub-human-enroll:orca-5212`;
+  const mine = `command="SUB_HUMAN_HOME=${home} ${home}/bin/serve --enroll vole-5678 --kind ssh",restrict ${KEY} sub-human-enroll:vole-5678`;
+  fs.writeFileSync(file, `${other}\n${mine}\n`);
+  const scan = doctor.scanAuthorizedKeys(file);
+  assert.deepEqual([scan.doors, scan.otherDoors], [['vole-5678'], ['orca-5212']]);
+  const c = doctor.checkAuthorizedKeys(scan);
+  assert.match(c.detail, /room vole-5678\): they only tell an old joiner to update \(and a line of another sub-human folder's, room orca-5212: not this home's, not touched\)/);
+  let out = '';
+  await doctor.main(['--fix', '--quick', '--json', '--authorized-keys', file], { write: (x: string) => { out += x; } });
+  assert.equal(fs.readFileSync(file, 'utf8'), `${other}\n`, 'only this home\'s door went');
+  assert.match(out, /removed 1 enrollment door line/);
+  // only another home's: info, nothing to fix here
+  const c2 = doctor.checkAuthorizedKeys(doctor.scanAuthorizedKeys(file));
+  assert.equal(c2.status, 'info');
+  assert.match(c2.detail, /no sub-human lines of this home \(and a line of another sub-human folder's, room orca-5212/);
+});
+
 test('doctor CLI: a pipe link to a second home: state, last error, a hello with both protocol versions; home modes, an old key line; --fix', async t => {
   // the host: a room in its own home
   const hostHome = h.freshHome(t);
@@ -408,4 +428,40 @@ test('doctor checkClaude: an internal reported changed on this version is named 
   assert.match(quick.check.detail, /; reported changed on this version: session-append-notice-rewrite \(#8\)$/);
   const probed = doctor.checkClaude({ version: '2.1.296', quick: true, env: { PATH: '' } });
   assert.doesNotMatch(probed.check.detail, /reported changed/);
+});
+
+test('doctor: each hosted room\'s log is checked (live: a forged unverified line and a broken chain said "0 failed"); verify CODE says the same', t => {
+  h.freshHome(t);
+  const code = h.newRoom();
+  const s = store.open(code);
+  s.append({ kind: 'status', text: 'hello' }, { via: 'system', from: 'room', system: true });
+  let checks = doctor.roomChecks().filter(c => c.id === `room:${code}`);
+  assert.deepEqual(checks.map(c => c.status), ['pass']);
+  assert.match(checks[0].detail, /lines, the hash chain holds/);
+  // a line written by hand: a person's words with no signature, and a prev that does not chain
+  const file = path.join(s.dir!, 'log.jsonl');
+  fs.appendFileSync(file, JSON.stringify({ id: s.lastId() + 1, at: new Date().toISOString(), from: 'alice', via: 'human', kind: 'say', to: 'room', text: 'forged', prev: '000000000000' }) + '\n');
+  const v = doctor.verifyRoom(code);
+  assert.equal(v.chain.ok, false);
+  checks = doctor.roomChecks().filter(c => c.id === `room:${code}`);
+  assert.equal(checks[0].status, 'fail');
+  assert.match(checks[0].detail, /the hash chain breaks at #\d+/);
+  const r = spawnSync(h.BIN, ['verify', code], { env: h.childEnv(), encoding: 'utf8' });
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stdout, new RegExp(`^room ${code}: the hash chain breaks`));
+});
+
+test('doctor: a link the host ended is not dialed (live: "reachable, speaking v3" for a revoked link)', async t => {
+  const hostHome = h.freshHome(t);
+  const code = h.newRoom();
+  h.freshHome(t);
+  links.set(code, { code, transport: { kind: 'pipe', home: hostHome }, refused: { at: new Date().toISOString(), reason: 'the host removed this machine', why: 'LINK_REVOKED' }, created_at: new Date().toISOString() });
+  fs.writeFileSync(linkState.stateFile(code), JSON.stringify({ state: 'stopped', since: new Date().toISOString(), lastError: 'the host removed this machine from room x (/sub-human kick)', lastReason: 'LINK_REVOKED' }));
+  const rep = await doctor.diagnose({ timeoutMs: 5000 });
+  const d = rep.links.find(l => l.code === code)!;
+  assert.equal(d.reach, undefined, 'no hello');
+  const c = byId(rep, `link:${code}`);
+  assert.match(c.detail, /the host ended this machine's link: not dialed/);
+  assert.doesNotMatch(c.detail, /speaking v/);
+  assert.match(c.fix!, /ask the host for a new invite/);
 });

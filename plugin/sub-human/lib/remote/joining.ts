@@ -26,7 +26,8 @@
  *   pendingNews(sid) -> {code, name, state, text} | null   the invite join this session started: 'waiting' (dialing,
  *       or the host's card has not answered), 'pin' (the host asks for the PIN: text says to type it), 'linked' (the
  *       host let this machine in: text says to type /sub-human) or 'refused' (text: its reason); null when there is
- *       none. The seatless session's tail (lib/tail.ts) says each once
+ *       none. The seatless session's tail (lib/tail.ts) says each once; text '' when the command's own answer said
+ *       the same (join_told, written by the join step), so the person reads it once
  *   noSecret(dest, code) -> string     a pipe join without its SECRET: the line the host sent has one
  */
 import * as identity from '../identity.ts';
@@ -50,6 +51,8 @@ export interface Wanted { name: string; code: string | null; isDefault?: boolean
 /** What a join step ends in. */
 export type Step = { kind: 'take'; want: Wanted } | { kind: 'say'; text: string; refused: boolean };
 
+/** A stopped link whose token never gets in again (lib/remote/link.ts drops it): a new invite line replaces it. */
+const SPENT_REASONS: ReadonlySet<string> = new Set(['LINK_REVOKED', 'TOKEN_UNKNOWN', 'KEY_REVOKED']);
 const take = (want: Wanted): Step => ({ kind: 'take', want });
 const say = (text: string, refused = false): Step => ({ kind: 'say', text, refused });
 const refuse = (text: string): Step => say(text, true);
@@ -76,13 +79,22 @@ const sameLogin = (a: LinkSpec | undefined, b: SshSpec) => !!a && !!b && a.kind 
 /** Where an invite join stands (hosting.joinText), as a step: a refusal when it was refused. tells: this session's tail
  * says what the host answers (the session that typed the line). */
 function stands(code: string, name: string, o: Outcome, tells = false): Step {
-  return say(hosting.joinText(code, name, o, { tells }), o.state === 'refused');
+  const text = hosting.joinText(code, name, o, { tells });
+  told(code, text);
+  return say(text, o.state === 'refused');
+}
+
+/** What the person was just told about this join (the command's own answer): the tail does not say it again. */
+function told(code: string, text: string): void {
+  try { const l = links.get(code); if (l) links.set(code, { ...l, join_told: text }); } catch { /* the tail may repeat it */ }
 }
 
 export function linkLine({ name, code, word, transport, sid }: { name: string; code: string; word: string; transport: LinkSpec; sid?: string | null }): Step {
   if (identity.roomExists(code) && identity.isHost(code)) return refuse(`room ${code} is hosted on this machine; join it with /sub-human ${name} ${code}.`);
   const cur: Link | null = links.get(code);
-  if (cur && cur.token && locatorOf(cur.transport) === locatorOf(transport)) {
+  // a link that stopped as spent (kicked: its token gets nowhere now) is replaced by the new line, never re-seated over
+  const spent = !!cur && SPENT_REASONS.has(String((linkSocket.stopReason(linkSocket.status(code)) || {}).why || ''));
+  if (cur && cur.token && !spent && locatorOf(cur.transport) === locatorOf(transport)) {
     return say(`this machine is in room ${code} already; /sub-human ${name} ${code} takes your place there.`);
   }
   if (cur) restartLink(code); // a pending join replaced, or the room's host moved: dial with the new file
@@ -138,7 +150,7 @@ export function linkLogin({ dest: typed, code, via, home, name, isDefault }: {
 }
 
 /** A pipe join (a second sub-human folder on this machine) has no login path: the invite line has a SECRET. */
-export const noSecret = (dest: string, code: string): string => `that looks like an invite line without its SECRET: /sub-human join ${dest} ${code} SECRET (the long word the host sent with it).`;
+export const noSecret = (dest: string, code: string): string => `that looks like an invite line without its SECRET: /sub-human join ${dest} ${code} SECRET (the long word the host sent with it). If the host's line ended with a 4-digit PIN instead, it comes from an older sub-human on the host: ask them to update (/plugin update sub-human) and invite you again.`;
 
 /** The invite joins this machine started, waiting to take their seat (join_as), newest first. */
 function pendingJoins(): Link[] {
@@ -153,7 +165,7 @@ export function finishJoin(l: Link): Step {
   const why = linkSocket.stopReason(linkSocket.status(code));
   if (l.pin_wanted && !l.token) return stands(code, name, { state: 'pin', ...(l.pin_wanted.message ? { reason: l.pin_wanted.message } : {}) });
   if (why && !l.token) {
-    try { const { join_as: _gone, join_sid: _sid, ...rest } = links.get(code) || l; links.set(code, rest); } catch { /* no credential left: nothing to keep */ }
+    try { const { join_as: _gone, join_sid: _sid, join_told: _told, ...rest } = links.get(code) || l; links.set(code, rest); } catch { /* no credential left: nothing to keep */ }
     return refuse(`could not join room ${code}: ${why.reason}`);
   }
   if (l.token) return take({ name, code, pending: true });
@@ -166,6 +178,10 @@ export function finishJoin(l: Link): Step {
 export function ensureLinked(code: string, name: string): Step | null {
   if (identity.isHost(code)) return null;
   const pending = links.get(code);
+  // a link the host ended (kicked: lib/remote/link.ts dropped its token): no seat over it; a new invite line replaces it
+  if (pending && !pending.token && pending.refused && typeof pending.invite !== 'string' && !(pending.transport && 'login' in pending.transport && pending.transport.login === true)) {
+    return refuse(`could not join ${code}: ${pending.refused.reason}`);
+  }
   if (pending && !pending.token && (pending.pin !== undefined || pending.pin_wanted || pending.awaiting || typeof pending.invite === 'string')) {
     // a join not let in yet: never started again after a refusal or while it waits for its PIN (a PIN is typed)
     if (pending.pin_wanted && pending.pin === undefined) return stands(code, name, { state: 'pin', ...(pending.pin_wanted.message ? { reason: pending.pin_wanted.message } : {}) });
@@ -185,7 +201,7 @@ export function ensureLinked(code: string, name: string): Step | null {
 export function dropJoinAs(code: string): void {
   try {
     const l = identity.isHost(code) ? null : links.get(code);
-    if (l && (l.join_as !== undefined || l.join_sid !== undefined)) { const { join_as: _done, join_sid: _sid, ...rest } = l; links.set(code, rest); }
+    if (l && (l.join_as !== undefined || l.join_sid !== undefined)) { const { join_as: _done, join_sid: _sid, join_told: _told, ...rest } = l; links.set(code, rest); }
   } catch { /* a stale join_as only names the seat again */ }
 }
 
@@ -197,12 +213,14 @@ export function pendingNews(sid: string | null | undefined): News | null {
   const l = pendingJoins().find(j => j.join_sid === sid);
   if (!l) return null;
   const code = l.code, name = String(l.join_as);
+  // the command's own answer said it already (join_told): nothing new for the tail to say
+  const fresh = (n: News): News => (n.text && n.text.replace(/^✗ /, '') === l.join_told ? { ...n, text: '' } : n);
   if (l.pin_wanted && !l.token && l.pin === undefined) {
-    return { code, name, state: 'pin', text: hosting.joinText(code, name, { state: 'pin', ...(l.pin_wanted.message ? { reason: l.pin_wanted.message } : {}) }) };
+    return fresh({ code, name, state: 'pin', text: hosting.joinText(code, name, { state: 'pin', ...(l.pin_wanted.message ? { reason: l.pin_wanted.message } : {}) }) });
   }
   const st = linkSocket.status(code);
   const stopped = linkSocket.stopReason(st);
-  if (stopped && !l.token) return { code, name, state: 'refused', text: `could not join room ${code}: ${stopped.reason}` };
-  if (l.token && st.state === 'online') return { code, name, state: 'linked', text: hosting.joinText(code, name, { state: 'linked' }) };
+  if (stopped && !l.token) return fresh({ code, name, state: 'refused', text: `✗ could not join room ${code}: ${stopped.reason}` });
+  if (l.token && st.state === 'online') return fresh({ code, name, state: 'linked', text: hosting.joinText(code, name, { state: 'linked' }) });
   return { code, name, state: 'waiting', text: '' };
 }

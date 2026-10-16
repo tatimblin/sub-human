@@ -41,7 +41,8 @@
  *       is skipped: two streams overlap during a swap); a proposal's plan is fetched once. A stream's end on the live
  *       connection is an event: closed (the room's Claude stopped) stops it (ROOM_CLOSED), moved redials the new host
  *       (or, this machine being the new host, waits for the accepting hook to stop it, HANDOFF_SELF_STOP_MS at most),
- *       anything else is lost (FORK: LOG_RESET, AUTH: LINK_REVOKED).
+ *       anything else is lost (FORK: LOG_RESET, AUTH: LINK_REVOKED). A link stopped LINK_REVOKED, TOKEN_UNKNOWN or
+ *       KEY_REVOKED drops its token from the link file (refused says why): a new invite line replaces it.
  *       A hook's op while not online is refused OFFLINE at once (before the first connection it waits for it), except an
  *       append marked {queue: true} (lib/room/store-mirror.ts, for an @room post) whose payload is outbox.queueable
  *       (lib/remote/outbox.ts): it is kept in the outbox and answered {queued: n}. Answers, consent, proposals and
@@ -125,6 +126,19 @@ const outboxMod = (): typeof import('./outbox.ts') => require('./outbox.ts');
 const ROOM_CLOSED_REASON = 'the room was closed';
 const NO_SEAT_REASON = 'no seat of this machine is left in the room';
 const nextDelay = engine.nextDelay;
+
+/** The reasons a link's token never gets in again (kicked, or the host forgot it): the token goes from the link file. */
+const SPENT: ReadonlySet<string> = new Set(['LINK_REVOKED', 'TOKEN_UNKNOWN', 'KEY_REVOKED']);
+/** A link stopped as spent keeps no token: a new invite line for the room replaces it (lib/remote/joining.ts linkLine),
+ * and `sub-human link CODE --forget` needs no --force. The refusal stays in the file for doctor. */
+function dropToken(code: string, why: string, reason: Reason): void {
+  try {
+    const l = linksMod.get(code);
+    if (!l || !l.token) return;
+    const { token: _spent, ...rest } = l;
+    linksMod.set(code, { ...rest, refused: { at: new Date().toISOString(), reason: why, why: reason } });
+  } catch { /* a link file that cannot be written: the next join line replaces it anyway */ }
+}
 
 // ---------- reconnect: timings, wake, network change ----------
 /** Every timing the daemon uses, from lib/config.ts and the SUB_HUMAN_LINK_*_MS overrides tests and the lab use, then `over`. */
@@ -326,6 +340,7 @@ async function serveMirror({
         log(fx.msg);
         break;
       case 'finish':
+        if (st.lastReason && SPENT.has(st.lastReason)) dropToken(mirror.code, st.lastError || fx.why, st.lastReason);
         for (const u of unwatch.splice(0)) u();
         if (srv) srv.close();
         fs.rmSync(path.dirname(sockFile), { recursive: true, force: true });
@@ -535,9 +550,12 @@ function idleWatch(link: RunningLink, mirror: MirrorRoomStore, idleMs: number, {
       && (leaseFresh(m) || (live ??= identity.localSeats(mirror.code)).includes(m.name)));
   };
   // an invite not redeemed yet (waiting for the host person's card): kept trying for the invite's life and the card's
+  // and a join the host let in whose person has not typed /sub-human yet (join_as): kept for as long too, so a
+  // let-in machine's link does not stop NO_SEAT a minute later
   const redeeming = () => {
     const l: Link | null = linksMod.get(mirror.code);
-    return !!l && !l.token && typeof l.invite === 'string' && now() - Date.parse(l.created_at ?? '') < config.INVITE_TTL_MS + config.ADMIT_TTL_MS;
+    const young = !!l && now() - Date.parse(l.created_at ?? '') < config.INVITE_TTL_MS + config.ADMIT_TTL_MS;
+    return young && ((!l!.token && typeof l!.invite === 'string') || (!!l!.token && typeof l!.join_as === 'string'));
   };
   const seated = () => {
     const s = link.state();

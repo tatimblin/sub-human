@@ -706,6 +706,7 @@ function runTail({
     try { n = d.pendingNews(sid); } catch (e) { log('pending join', e); return false; }
     if (!n) return false;
     if (n.state === 'waiting') return true;
+    if (!n.text) return false; // the command's own answer said it
     const key = `${n.code}/${n.state}/${n.text}`; // a PIN asked for again (wrong, too soon) is news again
     if (key === told) return false;
     told = key;

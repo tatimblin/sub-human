@@ -19,10 +19,35 @@ type SeatedLike = Pick<Hello, 'seat'> | { seat?: unknown } | null | undefined;
  * through Remote Control). Only these may post @room. */
 export const TYPED_ORIGINS: readonly string[] = Object.freeze(['composer', 'sdk', 'bridge']);
 
-/** "@room TEXT" -> TEXT; anything else null (hooks/handlers/at-room.ts posts TEXT). */
+/**
+ * A slash command a person typed into the room's Claude (code: its room, from SUB_HUMAN_ROOM): the refusal its
+ * command.run answers in place of running it (/clear would wipe its conversation and rebind its seat), or null. Its own
+ * launch (/sub-human, through the SDK) and every other origin run.
+ */
+export function roomClaudeCommand(command: unknown, origin: { kind?: unknown } | null | undefined, code: unknown): string | null {
+  if (typeof code !== 'string' || !code) return null;
+  const kind = origin && origin.kind;
+  if (kind !== 'composer' && kind !== 'bridge') return null;
+  if (command === 'sub-human' || command === 'sub-human:sub-human') return null; // at-room's own refusal answers it
+  return `✗ the room's Claude takes no typed input, commands included; type @claude in your own session, or ask your Claude to message claude.${code}`;
+}
+
+/** A paste at the very start of a prompt, as Claude Code wraps a long one (lib/cc/transcript.ts PASTED_RE, cc CONTRACT
+ * `<pasted_content id="`): "\n\n<pasted_content id=N>\nBODY\n</pasted_content id=N>\n…". */
+const LEAD_PASTE = /^\s*<pasted_content id="?(\w+)"?>\n([\s\S]*?)\n?<\/pasted_content id="?\1"?>\n?/;
+
+/** The prompt with a paste that starts it unwrapped (its body in its place), so a pasted "@room …" is still an @room;
+ * unwrapped: there was one. */
+export function unwrapLead(prompt: string): { text: string; unwrapped: boolean } {
+  const m = LEAD_PASTE.exec(prompt);
+  return m ? { text: m[2] + prompt.slice(m[0].length), unwrapped: true } : { text: prompt, unwrapped: false };
+}
+
+/** "@room TEXT" -> TEXT, also when a paste starts the prompt (live, a pasted "@room …" went to the model as a plain
+ * prompt); anything else null (hooks/handlers/at-room.ts posts TEXT). */
 export function parse(prompt: unknown): string | null {
   if (typeof prompt !== 'string') return null;
-  return tagged(prompt, /^@room(?=\s|$)/);
+  return tagged(unwrapLead(prompt).text, /^@room(?=\s|$)/);
 }
 
 /** The text after a leading tag: the tag, then one whitespace character (a space, or the newline Ctrl+J
@@ -39,7 +64,7 @@ export const isAtRoom = (text: unknown) => parse(text) !== null;
  * it is a plain prompt. */
 export function parseClaude(prompt: unknown): string | null {
   if (typeof prompt !== 'string') return null;
-  return tagged(prompt, /^@claude(?=\s|$)/);
+  return tagged(unwrapLead(prompt).text, /^@claude(?=\s|$)/);
 }
 
 export const isAtClaude = (text: unknown) => parseClaude(text) !== null;
@@ -79,7 +104,7 @@ export const NOT_IN_ROOM = '✗ not posted: this session isn\'t in a room. Join 
 /** An @room in a session whose hello is this session's and has no seat: at-room's refusal, given without a node start
  * (at-room would say the same: there is no seat to sign it with). null otherwise. */
 export const unseatedRefusal = (e: { session_id?: unknown; prompt?: unknown } | null | undefined, hello: Hello | null | undefined): ShimResult | null => (
-  e && hello && hello.sid === e.session_id && !hello.seat && isAtRoom(e.prompt) ? { block: NOT_IN_ROOM, suppressOriginalPrompt: true } : null);
+  e && hello && hello.sid === e.session_id && !hello.seat && isAtRoom(e.prompt) ? { preventContinuation: true, stopReason: NOT_IN_ROOM } : null);
 
 export const failClosed = (prompt: unknown, hello?: SeatedLike): ShimResult | null => (posts(prompt, hello)
   ? { block: isAtRoom(prompt) ? GATE_FAILED : GATE_FAILED.replace('@room', '@claude'), suppressOriginalPrompt: true } : null);
@@ -104,11 +129,17 @@ export function needsNode(
 }
 
 /** The session title (members; the room's Claude keeps its launch name), once per {sid, addr}: a /clear or a room switch
- * titles again. */
+ * titles again. After a leave (no seat now, the session titled NAME.CODE) the title is NAME alone: the address goes
+ * with the seat, so no Claude sends to a session that left. */
 export function titleFor(hello: Hello | null | undefined, sid: unknown, titled: unknown): string | null {
-  if (!hello || !hello.seat || hello.seat.role === 'claude' || typeof sid !== 'string' || hello.sid !== sid) return null;
-  const addr = hello.seat.addr;
+  if (!hello || typeof sid !== 'string' || hello.sid !== sid) return null;
   const t = titled && typeof titled === 'object' ? titled as { sid?: unknown; addr?: unknown } : null;
+  if (!hello.seat) {
+    const was = t && t.sid === sid && typeof t.addr === 'string' ? /^([A-Za-z0-9._-]{1,32})\.[a-z]+-\d{4}$/.exec(t.addr) : null;
+    return was ? was[1] : null;
+  }
+  if (hello.seat.role === 'claude') return null;
+  const addr = hello.seat.addr;
   return t && t.sid === sid && t.addr === addr ? null : addr;
 }
 

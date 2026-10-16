@@ -109,6 +109,8 @@ export interface AuthorizedKeysScan {
   exists: boolean;
   lines: KeyLine[];
   doors?: string[];
+  /** door lines of another sub-human home (their forced command names it): reported, never removed */
+  otherDoors?: string[];
 }
 
 /** diagnose(opts) -> Report */

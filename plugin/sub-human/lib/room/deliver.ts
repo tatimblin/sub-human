@@ -18,7 +18,9 @@
  *       (and is not decided); a decision on a proposal I am in; a `task` assigning me (owner me) that someone else
  *       asked for (its req is not mine); an objection on my own proposal.
  *     member notice: another person's say (not to me, no @me), another member's join or leave (not the room
- *       Claude's), a host_changed. Everything else that is not mine is context.
+ *       Claude's), a host_changed; and what asks the person, not the model: the room line that the log waits to split
+ *       (restart the old sessions), a decision on a proposal I am in that needs no wake, another approver's objection
+ *       on a proposal I approve. Everything else that is not mine is context.
  *     the room's Claude (role claude) wake: to=claude only (a person's leading @claude tag; an "@claude" inside the
  *       text is just words); task_req; an objection on its own proposal; another member's member_joined whose row
  *       note says no row is running (or is unknown). Everything else is context, decisions included: an objected
@@ -32,7 +34,7 @@
  *   mentions(text, name) -> bool   "@name" anywhere in the text (case-insensitive, not part of a longer name)
  */
 
-import { normalize } from './rules.ts';
+import { normalize, ROTATION_HELD_TEXT } from './rules.ts';
 import { proposal, answered, decided, approversOf } from './consent.ts';
 import { NO_TRUST } from './trust.ts';
 import type { Delivery, Entry, Lane, LaneViewer, Trust } from './types.ts';
@@ -103,6 +105,21 @@ function quietDecision(name: string, d: Entry, entries: readonly Entry[], trust:
 /** A member's pushed entry that is group chat, not a request: another person's own words not addressed to me. */
 const chat = (me: LaneViewer, e: Entry): boolean => e.via === 'human' && e.kind === 'say' && e.to !== me.name && !mentions(e.text, String(me.name));
 
+/** A room line that asks the people to act (the log waiting to split: restart the old sessions): a notice. */
+const asksPeople = (e: Entry): boolean => e.kind === 'status' && e.via === 'system' && e.from === 'room' && e.text === ROTATION_HELD_TEXT;
+
+/**
+ * A pulled entry the person must see, though their Claude needs no wake: the outcome of a proposal they are in (a
+ * decision their own answer completed, or an objected one they did not write) and another approver's objection on a
+ * proposal they approve. Live, these reached only the model as context.
+ */
+function personSees(name: string, e: Entry, entries: readonly Entry[] | undefined, trust: Trust): boolean {
+  if (!entries || !e.proposal_hash) return false;
+  if (e.kind !== 'decision' && e.kind !== 'objection') return false;
+  const p = proposal(e.proposal_hash, entries, trust);
+  return e.kind === 'decision' ? inProposal(p, name) : !!p && approversOf(p).includes(name);
+}
+
 function deliver(me: LaneViewer | null | undefined, e: Entry, { entries, trust = NO_TRUST, note = '' }: DeliverState = {}): Delivery {
   const l = lane(me, e, entries, trust);
   const name = me && me.name;
@@ -113,6 +130,7 @@ function deliver(me: LaneViewer | null | undefined, e: Entry, { entries, trust =
   }
   if (isHostMove(e) || (isMove(e) && e.via === 'system' && e.from !== name && e.from !== 'claude')) return 'notice';
   if (l === 'push') return me && (isMove(e) || chat(me, e)) ? 'notice' : 'wake';
+  if (l === 'pull' && me && (asksPeople(e) || personSees(String(name), e, entries, trust))) return 'notice';
   return l === 'pull' ? 'context' : 'none';
 }
 

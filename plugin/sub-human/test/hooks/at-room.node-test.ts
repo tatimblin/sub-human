@@ -56,6 +56,15 @@ const blocked = (r: HookRun) => {
   assert.equal(hso(r).suppressOriginalPrompt, true);
   assert.equal((r.json as Record<string, unknown>).suppressOriginalPrompt, undefined, 'only inside hookSpecificOutput');
 };
+/** A refusal of the person's own words (type it again): a stop with the reason, never a block (no "blocked by hook"
+ * frame, nothing put back in the input); returns the reason. */
+const refusedStop = (r: HookRun): string => {
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.json!.continue, false);
+  assert.equal(r.json!.decision, undefined, 'no block: its frame and the prompt put back in the input');
+  assert.equal(hso(r).suppressOriginalPrompt, undefined);
+  return r.json!.stopReason!;
+};
 /** A post: continue:false with the receipt as stopReason (docs/archive/fixes/D #9); never a block. */
 const posted = (r: HookRun): string => {
   assert.equal(r.code, 0, r.stderr);
@@ -137,12 +146,10 @@ test('room Claude and non-members are refused; an empty post is refused', () => 
   assert.equal(r.json!.reason, `the room's Claude takes no typed input; type @claude in your own session, or ask your Claude to message claude.${w.code}`);
   const w2 = new World({ claude: 'sleep', alice: 'act' });
   r = atRoom(w2, submit('@room    '), { as: 'alice' });
-  blocked(r);
-  assert.match(r.json!.reason!, /^✗ not posted: there is nothing after @room/);
+  assert.match(refusedStop(r), /^✗ not posted: there is nothing after @room/);
   const w3 = new World({ claude: 'sleep' });
   r = atRoom(w3, submit('@room hi'));
-  blocked(r);
-  assert.match(r.json!.reason!, /^✗ not posted: this session isn't in a room\. Join one first: \/sub-human$/);
+  assert.match(refusedStop(r), /^✗ not posted: this session isn't in a room\. Join one first: \/sub-human$/);
   assert.equal(w.entries().length + w2.entries().length + w3.entries().length, 0);
 });
 
@@ -153,6 +160,14 @@ test('receipt is "✓ sent to room CODE (Claude wasn\'t asked)" plus the unwrap 
   r = atRoom(w, submit('@room \n\n<pasted_content id="1">\nA\n</pasted_content id="1">\n'), { as: 'alice' });
   assert.equal(r.json!.stopReason, `✓ sent to room ${w.code} (Claude wasn't asked) (pasted text unwrapped)`);
   assert.equal(r.json!.systemMessage, undefined, 'systemMessage is not rendered with continue:false');
+});
+
+test('a paste that starts the prompt with @room posts its body (unwrapped), as a typed @room would', () => {
+  const w = new World({ claude: 'sleep', alice: 'act' });
+  const r = atRoom(w, submit('\n\n<pasted_content id="1">\n@room the long notes\nline two\n</pasted_content id="1">\n'), { as: 'alice' });
+  assert.equal(posted(r), `✓ sent to room ${w.code} (Claude wasn't asked) (pasted text unwrapped)`);
+  const e = w.entries().at(-1)!;
+  assert.deepEqual([e.text, e.normalized], ['the long notes\nline two', true]);
 });
 
 test('a receipt is a one-line stop (continue:false), so the module shows its warning row as the receipt alone', async () => {
@@ -173,7 +188,7 @@ test('a receipt is a one-line stop (continue:false), so the module shows its war
 
 test('@claude: only a leading tag posts the words to=claude (the wake); "@room @claude", a mid-text tag and other prompts are not wakes', () => {
   const w = new World({ claude: 'sleep', alice: 'act' });
-  assert.equal(posted(atRoom(w, submit('@claude let us plan cursor paging'), { as: 'alice' })), "✓ sent; the room's Claude will answer");
+  assert.equal(posted(atRoom(w, submit('@claude let us plan cursor paging'), { as: 'alice' })), "✓ sent; the room's Claude was woken");
   posted(atRoom(w, submit('@room @claude this is a plain post'), { as: 'alice' }));
   posted(atRoom(w, submit('@room ask @claude later'), { as: 'alice' }));
   for (const p of ['please ask @claude', '@claudette hi', '@Claude hi', ' @claude hi', 'claude: hi', '@orch hi']) { // no 0.4.x alias
@@ -202,7 +217,7 @@ test('@claude on the host with no room\'s Claude running starts it (a stopped on
   assert.equal(w.members().claude, undefined, '@room starts nothing');
   const r = atRoom(w, submit('@claude add a task: test'), { as: 'alice', env });
   posted(r);
-  assert.match(r.json!.stopReason!, /^✓ sent; the room's Claude will answer · starting the room's Claude…$/);
+  assert.match(r.json!.stopReason!, /^✓ sent; the room's Claude was woken · starting the room's Claude…$/);
   assert.ok(['pending', '0b500131'].includes(w.members().claude!.job!), 'claimed');
   const end = Date.now() + 8000;
   while (!bg() && Date.now() < end) await new Promise(res => setTimeout(res, 30));
@@ -215,8 +230,7 @@ test('@claude on the host with no room\'s Claude running starts it (a stopped on
 test('@claude: refused like @room when empty, forged or unattested; the room\'s Claude cannot type it; outside a room it passes through untouched', () => {
   const w = new World({ claude: 'sleep', alice: 'act' });
   let r = atRoom(w, submit('@claude'), { as: 'alice' });
-  blocked(r);
-  assert.match(r.json!.reason!, /^✗ not posted: there is nothing after @claude\.$/);
+  assert.match(refusedStop(r), /^✗ not posted: there is nothing after @claude\.$/);
   r = atRoom(w, submit('@claude forged words', 'peer'), { as: 'alice' });
   blocked(r);
   assert.match(r.json!.reason!, /Only your own typed @claude posts as your words\.$/);
@@ -244,8 +258,7 @@ test('typed through Remote Control (origin bridge), a refusal is also the system
   posted(sent);
   assert.equal(sent.json!.systemMessage, undefined, 'no relay (a model turn) for a post that went through');
   const empty = atRoom(w, submit('@room', 'bridge'), { as: 'alice' });
-  blocked(empty);
-  assert.equal(empty.json!.systemMessage, `sub-human: ${empty.json!.reason}`);
+  assert.equal(empty.json!.systemMessage, `sub-human: ${refusedStop(empty)}`);
   const here = atRoom(w, submit('@room from the terminal'), { as: 'alice' });
   posted(here);
   assert.equal(here.json!.systemMessage, undefined);

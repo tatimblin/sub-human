@@ -46,7 +46,14 @@ function fromLog(entries: readonly Entry[], { from, via, windowMs, now = Date.no
 
 function checkLog(entries: readonly Entry[], { from, via, op, now = Date.now() }: { from: string; via: string; op: 'append.human' | 'append.agent'; now?: number }): void {
   const q = LINK_QUOTAS[op];
-  if (fromLog(entries, { from, via, windowMs: q.windowMs, now }) >= q.max) throw over(op, `${from} posted`, q.windowMs);
+  if (fromLog(entries, { from, via, windowMs: q.windowMs, now }) < q.max) return;
+  // the wait: until the oldest line that still counts (the max-th newest) leaves the window
+  let n = 0, at = now;
+  for (let i = entries.length - 1; i >= 0 && n < q.max; i--) {
+    const e = entries[i];
+    if (e.from === from && e.via === via) { n++; at = Date.parse(e.at); }
+  }
+  throw over(op, `${from} posted`, q.windowMs - (now - at));
 }
 
 function charge(store: Pick<AuthStore, 'kv'>, linkId: string, op: Op, { now = Date.now() }: { now?: number } = {}): void {

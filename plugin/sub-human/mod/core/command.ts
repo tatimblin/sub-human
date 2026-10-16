@@ -87,16 +87,23 @@ export function readReply(run: RunOutput | null | undefined): JoinReply {
   if (say.joined === true && typeof hso.additionalContext === 'string' && hso.additionalContext) {
     return { kind: 'joined', context: hso.additionalContext, lines: noticeLines(say.say) };
   }
-  return { kind: 'say', lines: noticeLines(say.say), refused: say.refused === true, shareable: say.shareable === true };
+  const p = say.pinned && typeof say.pinned === 'object' ? say.pinned as { status?: unknown; ms?: unknown } : null;
+  const pinned = p && typeof p.status === 'string' && p.status ? { status: p.status.replace(/\n/g, ' '), ms: Math.min(Number(p.ms) > 0 ? Number(p.ms) : PINNED_MS, PINNED_MS) } : null;
+  return { kind: 'say', lines: noticeLines(say.say), refused: say.refused === true, shareable: say.shareable === true, ...(pinned ? { pinned } : {}) };
 }
 
+/** The longest a pinned invite stays on the status line (an invite's life: lib/config.ts INVITE_TTL_MS). */
+export const PINNED_MS = 15 * 60_000;
+
 /**
- * How a reply goes out: {result, logs}. Here: notices only, result {} (no row, no echo, nothing for the model). Through
+ * How a reply goes out: {result, logs, status?}. status: an invite's line and PIN, for $.ui.status (Claude Code draws
+ * it under the prompt and saves it nowhere; a notice is a transcript row) for status.ms. Here: notices only, result {} (no row, no echo, nothing for the model). Through
  * Remote Control: a shareable reply is the command's output row (result {text}); one that is not (none should be: the
  * module answers only prompts that hold no secret there) says where it is instead.
  */
-export function answerOf(reply: JoinReply, { bridge = false } = {}): { result: { text?: string }; logs: string[] } {
-  if (!bridge) return { result: {}, logs: reply.lines };
+export function answerOf(reply: JoinReply, { bridge = false } = {}): { result: { text?: string }; logs: string[]; status?: { status: string; ms: number } } {
+  const status = reply.kind === 'say' && reply.pinned ? { status: reply.pinned } : {};
+  if (!bridge) return { result: {}, logs: reply.lines, ...status };
   if (reply.kind === 'say' && reply.shareable && reply.lines.length) return { result: { text: reply.lines.join('\n') }, logs: [] };
-  return { result: { text: 'the reply is on the terminal of the machine this session runs on.' }, logs: reply.lines };
+  return { result: { text: 'the reply is on the terminal of the machine this session runs on.' }, logs: reply.lines, ...status };
 }

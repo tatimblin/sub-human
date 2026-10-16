@@ -22,6 +22,9 @@ test('prompt: titleFor titles once per session id and address, so a room switch 
   assert.equal(titleFor({ sid: 's1', seat: seat('otter-4821', 'claude') } as Hello, 's1', undefined), null, 'the room\'s Claude keeps its launch name');
   assert.equal(titleFor({ sid: 's1', seat: null } as Hello, 's1', undefined), null);
   assert.equal(titleFor(null, 's1', undefined), null);
+  // after a /sub-human leave the address goes: the title is the name alone, once
+  assert.equal(titleFor({ sid: 's1', seat: null } as Hello, 's1', { sid: 's1', addr: 'alice.otter-4821' }), 'alice');
+  assert.equal(titleFor({ sid: 's1', seat: null } as Hello, 's1', { sid: 's1', addr: 'alice' }), null);
 });
 
 test('prompt: the origin hand-off gives a kind only to the prompt whose text it was pushed with', async () => {
@@ -78,7 +81,7 @@ test('prompt: receiptBook keeps only an @room stop\'s own warning row, as the re
   const book = receiptBook(2);
   const notice = (text: string) => ({ type: 'system', name: 'informational', content: [{ type: 'text', text }] });
   // hooks/handlers/at-room.ts's receipts: the whole stop reason is matched, so an @room's and an @claude's never cross
-  const SENT = "✓ sent to room otter-4821 (Claude wasn't asked)", WAKE = "✓ sent; the room's Claude will answer";
+  const SENT = "✓ sent to room otter-4821 (Claude wasn't asked)", WAKE = "✓ sent; the room's Claude was woken";
   assert.equal(book.rewrite(notice(`${STOP_FRAME}${SENT}`)), null, 'nothing waiting: the engine\'s words stay');
   book.expect(SENT);
   assert.equal(book.rewrite(notice(`${STOP_FRAME}${WAKE}`)), null, 'another receipt');
@@ -94,4 +97,25 @@ test('prompt: receiptBook keeps only an @room stop\'s own warning row, as the re
   assert.equal(book.size, 1);
   assert.equal(book.rewrite(null), null);
   assert.equal(book.rewrite({ type: 'system', content: [{ type: 'text', text: `${STOP_FRAME}b` }, { type: 'text', text: 'x' }] }), null, 'one text block only');
+});
+
+test('prompt: roomClaudeCommand refuses a command a person types into the room\'s Claude (/clear too); its launch and other origins run', async () => {
+  const { roomClaudeCommand } = await load();
+  assert.match(roomClaudeCommand('clear', { kind: 'composer' }, 'otter-4821')!, /^✗ the room's Claude takes no typed input, commands included; .*claude\.otter-4821$/);
+  assert.ok(roomClaudeCommand('compact', { kind: 'bridge' }, 'otter-4821'));
+  assert.equal(roomClaudeCommand('sub-human', { kind: 'composer' }, 'otter-4821'), null, 'its launch: at-room answers a typed one');
+  assert.equal(roomClaudeCommand('clear', { kind: 'sdk' }, 'otter-4821'), null, 'the launcher, not a person');
+  assert.equal(roomClaudeCommand('clear', { kind: 'composer' }, undefined), null, 'a member\'s session');
+});
+
+test('prompt: a paste that starts the prompt is unwrapped before the tag is read (live: a pasted "@room …" went to the model)', async () => {
+  const { parse, parseClaude, isAtRoom, unwrapLead } = await load();
+  const pasted = '\n\n<pasted_content id="1">\n@room the long notes\nline two\n</pasted_content id="1">\n';
+  assert.equal(isAtRoom(pasted), true);
+  assert.equal(parse(pasted), 'the long notes\nline two');
+  assert.equal(parse(`${pasted}and after`), 'the long notes\nline twoand after', 'the text after the paste follows its body');
+  assert.equal(parseClaude('<pasted_content id="2">\n@claude plan it\n</pasted_content id="2">'), 'plan it');
+  assert.equal(parse('<pasted_content id="1">\nnot a tag @room\n</pasted_content id="1">'), null);
+  assert.equal(parse('hello <pasted_content id="1">\n@room x\n</pasted_content id="1">'), null, 'a paste later in the prompt is just words');
+  assert.deepEqual(unwrapLead('@room plain'), { text: '@room plain', unwrapped: false });
 });

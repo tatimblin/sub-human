@@ -166,6 +166,10 @@ test('cli: who / read / digest resolve by session id, then ancestry', () => {
   assert.equal(r.stdout, `alice (member) in ${code}\n`, 'nearest registered ancestor');
   r = cli(['who'], { CLAUDE_CODE_SESSION_ID: 'sbob' });
   assert.equal(r.stdout, `bob (member) in ${code}\n`, 'the session id wins');
+  // --room: that room's people (live: it was ignored)
+  r = cli(['who', '--room', code]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(r.stdout.trim().split('\n').sort(), [`alice (member) in ${code}`, `bob (member) in ${code}`]);
   R = room.open(code);
   say('bob', 'line one\n  line `two` $(x)');
   say('bob', 'second');
@@ -239,7 +243,7 @@ test('cli tasks: the room list from lib/tasks.ts list(code), plain and --json', 
   fs.writeFileSync(path.join(R.store.dir!, 'tasks.json'), JSON.stringify(list));
   r = cli(['tasks']);
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(r.stdout, '#2  in_progress  bob  parser tests\n#3  pending      -    docs  (blocked by #2)\n');
+  assert.equal(r.stdout, '#2  in progress  bob  parser tests\n#3  open         -    docs  (blocked by #2)\n', 'the rows\' words: open, in progress, done');
   r = cli(['tasks', '--json', '--room', code]);
   assert.deepEqual(JSON.parse(r.stdout).map((t: { id: string }) => t.id), ['2', '3']);
   assert.equal(cli(['tasks', '--room', 'nope-0000']).status, 1);
@@ -310,7 +314,7 @@ test('cli link CODE --forget: refused on a room hosted here, while the daemon ru
   links.writeState(code, stopped('AUTH: unknown link token'));
   const r2 = cli(['link', code, '--forget']);
   assert.equal(r2.status, 1);
-  assert.match(r2.stderr, /did not stop because the room closed or no seat of this machine is left \(AUTH: unknown link token\); add --force/);
+  assert.match(r2.stderr, /did not stop because the room closed, no seat of this machine is left or the host removed it \(AUTH: unknown link token\); add --force/);
   assert.ok(links.has(code) && fs.existsSync(s.logFile), 'nothing moved');
   assert.equal(cli(['link', code, '--reset', '--forget']).status, 2, 'one at a time');
 

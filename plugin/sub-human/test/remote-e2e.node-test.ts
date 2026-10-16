@@ -50,7 +50,7 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   // alice lets him in, and a bare /sub-human takes his seat
   const via = await remote.joinVia(host, alice, bob);
   assert.equal(via.shown!.json!.decision, 'block', 'shown to the person, never to the model');
-  assert.match(via.typed.json!.reason!, /has your invite \(5 tries left\)\. Type the 4-digit PIN they told you: \/sub-human join PIN/, via.typed.stderr);
+  assert.match(via.typed.json!.reason!, /has your invite \(5 PIN tries left\)\. Type the 4-digit PIN they told you: \/sub-human join PIN/, via.typed.stderr);
   assert.match(via.gave.json!.reason!, /checked your PIN/, via.gave.stderr);
   const joined = via.seated;
   assert.equal(joined.json!.systemMessage, undefined, joined.stderr);
@@ -152,7 +152,7 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
 
   // bob's session ends: the host logs it; his daemon (and the server it spawned) exit on their own
   remote.hook('session-end', { hook_event_name: 'SessionEnd', reason: 'logout' }, bob);
-  assert.equal(texts(host.log(code)).at(-1), 'bob left (logout)');
+  assert.equal(texts(host.log(code)).at(-1), 'bob left (session ended)', 'Claude Code\'s token, in words');
   assert.equal(host.lib(() => store.open(code).kv.get('presence/bob', null)), null, 'his presence is gone with him');
   assert.doesNotMatch(host.lib(() => rows.rowText(code, 'bob', 'alice')), /idle|prompt|working/);
   const current = childOf(daemon.pid);

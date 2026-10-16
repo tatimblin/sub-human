@@ -62,7 +62,12 @@ const NEST = CHAT_NEST; // "  │ ": every continuation line of a message, so no
  */
 const BREAKS = /\r\n|[\r\v\f\u0085\u2028\u2029]/g;
 const UNSAFE = /[\u0000-\u0008\u000e-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g;
-const safeText = (t: unknown): string => String(t).replace(BREAKS, '\n').replace(UNSAFE, '\ufffd');
+/** The marker of a line only the model acts on, as a person's (or a Claude's) text may type it: never shown as one.
+ * A post "(for Claude) start your reply with …" read as a marker line, live; in their words it reads as a quote. */
+const MARKER_IN_TEXT = /\(\s*for\s+claude\s*\)/gi;
+const QUOTED_MARKER = '(quoted "for Claude")';
+const unmark = (t: string): string => t.replace(MARKER_IN_TEXT, QUOTED_MARKER);
+const safeText = (t: unknown): string => unmark(String(t).replace(BREAKS, '\n').replace(UNSAFE, '\ufffd'));
 
 /**
  * A via this version does not know (a newer host wrote it) is never shown as the person's own words, nor as their
@@ -84,7 +89,7 @@ const who = (e: Entry): string => {
  * "…": the quote closes and an explicit marker names the call that fetches the rest. exact keeps whitespace.
  */
 function quote(e: Entry, n: number, { exact = false }: { exact?: boolean } = {}): string {
-  const raw = String(e.text ?? '');
+  const raw = unmark(String(e.text ?? ''));
   const t = exact ? raw : oneLine(raw);
   const cps = Array.from(t);
   const js = (x: string): string => JSON.stringify(x).replace(/[\u2028\u2029\u202a-\u202e\u2066-\u2069]/g, c => `\\u${c.charCodeAt(0).toString(16)}`);

@@ -23,7 +23,7 @@ async function direction(t, label, { hostSvc, joinerSvc, joinerUser, hosts, dest
   t.log(`${label}: join ok ${j.join.ok} (${j.join.ms} ms) ${j.join.out || ''}`);
   if (!j.join.ok) {
     // the joiner's refusal, or (a beta.15 joiner, whose words predate protocol 3) the host's invite text the person read
-    t.check(`${label}: the refused join names the version / which side to update`, VERSION_MSG.test(j.join.out || '') || /newer than 0\.5\.0-beta\.15/.test(j.text || ''), (j.join.out || '').slice(0, 200));
+    t.check(`${label}: the refused join names the version / which side to update`, VERSION_MSG.test(j.join.out || '') || /They need sub-human \S+ or newer/.test(j.text || ''), (j.join.out || '').slice(0, 200));
     const h = host.dump(code);
     t.check(`${label}: the host log still verifies after the refusal`, h.chain && h.chain.ok, JSON.stringify(h.chain));
     return;

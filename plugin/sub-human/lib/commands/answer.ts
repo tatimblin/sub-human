@@ -8,12 +8,12 @@
  *                               hosted elsewhere); null when it can
  */
 import * as identity from '../identity.ts';
-import type { Answer } from './types.ts';
+import type { Answer, Pinned } from './types.ts';
 import type { Identity } from '../identity.ts';
 
 export const say = (text: string): Answer => ({ kind: 'say', text });
 export const refused = (text: string): Answer => ({ kind: 'refused', text });
-export const secret = (text: string, { refused: r = false } = {}): Answer => ({ kind: 'secret', text, refused: r });
+export const secret = (text: string, { refused: r = false, pinned }: { refused?: boolean; pinned?: Pinned } = {}): Answer => ({ kind: 'secret', text, refused: r, ...(pinned ? { pinned } : {}) });
 export const msgOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
 export const HELP_HINT = 'All commands: /sub-human help';

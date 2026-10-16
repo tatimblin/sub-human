@@ -62,7 +62,7 @@ for (const [handler, timeoutS] of TIMEOUTS) {
       assert.ok(Date.now() - t0 < timeoutS * 1000, `${what}: took ${Date.now() - t0} ms`);
       if (handler === 'row-rewake' && r.status === 2) {
         // its one way to speak (asyncRewake): the seat, found by CLAUDE_PID, has no rows, so it asks for them
-        assert.match(r.stderr, /^sub-human: this session was resumed and its rows did not survive it/, what);
+        assert.match(r.stderr, /^sub-human: this session was resumed, and its rows are NOT running/, what);
       } else {
         assert.ok(r.status === 0 || r.status === 1, `${what}: exit ${r.status} (2 would block the session) ${r.stderr}`);
       }

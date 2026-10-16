@@ -278,3 +278,31 @@ test('listener: one source holds at most 8 connections at once (the front\'s X-F
   assert.equal(other.code(), null, 'another source is not held back');
   assert.ok(held.every(x => x.code() === null), 'the eight stay (each waits for its handshake)');
 });
+
+test('kick: the listener\'s child (`serve --stdio CODE --via ws --peer KEY`) names no link; a kick still ends its stream AUTH and closes it', async t => {
+  h.freshHome(t);
+  const code = h.newRoom();
+  const store = await import('../lib/room/store.ts');
+  const hostLinks = await import('../lib/remote/host-links.ts');
+  const client = await import('../lib/remote/client.ts');
+  const pipe = await import('../lib/remote/transports/pipe.ts');
+  const seatKey = await import('../hooks/seat-key.ts');
+  const hosting = await import('../lib/remote/hosting.ts');
+  const host = store.open(code);
+  const peer = crypto.randomBytes(32).toString('base64url');
+  const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: 'web0machine00001', seats: [], key: peer });
+  const tr = pipe.spawn(process.execPath, [h.BIN, 'serve', '--stdio', code, '--via', 'ws', '--peer', peer], { env: { ...h.childEnv(), SUB_HUMAN_CLAUDE: '/usr/bin/false' } });
+  let closed = false;
+  tr.onClose(() => { closed = true; });
+  const c = await client.connect(tr, { machine: 'web0machine00001', token });
+  t.after(() => c.close());
+  const key = seatKey.ensure(code, 'carol');
+  const pubkey = seatKey.publicPem(code, 'carol');
+  assert.deepEqual(await c.join({ name: 'carol', pubkey, proof: hostLinks.proveSeat(key, { room: code, name: 'carol', pubkey }) }), { ok: true });
+  const ends: string[] = [];
+  const sub = c.subscribe(0, store.hash12(''), ({ ev, data }) => { if (ev === 'end') ends.push((data as { reason: string }).reason); });
+  await sub.ready;
+  hosting.kick(code, 'carol', { file: path.join(h.tmpDir('sh-ak-', t), 'authorized_keys') });
+  assert.ok(await h.until(() => ends.length > 0 && closed, 5000, 20), `ended ${JSON.stringify(ends)}, closed ${closed}`);
+  assert.deepEqual(ends, ['AUTH']);
+});

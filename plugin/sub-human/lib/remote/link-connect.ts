@@ -86,7 +86,7 @@ function keepAnswer(code: string, e: CodedError, word: { secret: Buffer }, sentP
   const { pin, pin_wanted, ...rest } = cur;
   const at = new Date().toISOString();
   if (e.code === 'AUTH' && (e.reason === 'PIN_NEEDED' || e.reason === 'PIN_WRONG' || e.reason === 'PIN_THROTTLED')) {
-    const left = /\(([0-9]+) tr(?:y|ies) left\)/.exec(String(e.message));
+    const left = /\(([0-9]+) (?:PIN )?tr(?:y|ies) left\)/.exec(String(e.message)); // the host's wording, any version
     linksMod.set(code, { ...rest, pin_wanted: { at, ...(left ? { left: Number(left[1]) } : {}), ...(e.reason !== 'PIN_NEEDED' ? { why: e.reason, message: String(e.message).slice(0, 300) } : {}) } });
     return true;
   }

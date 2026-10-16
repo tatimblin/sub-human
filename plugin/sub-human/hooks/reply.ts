@@ -75,7 +75,12 @@ export function render(reply: Reply | null | undefined | void): Rendered {
       const refused = reply.kind === 'refused' || (reply.kind === 'secret' && reply.refused !== false);
       const secret = reply.kind === 'secret';
       const t = `${refused ? '✗ ' : ''}${reply.text}`;
-      if (reply.module) return { outputs: [{ subHuman: { say: t, refused, shareable: !secret } }], exit: 0, stderr: '' };
+      if (reply.module) {
+        // an invite: its line and PIN go to the module's status line (not a transcript row), the text without them
+        const pin = reply.kind === 'secret' && reply.pinned ? reply.pinned : null;
+        const say = pin ? `${refused ? '✗ ' : ''}${pin.text}` : t;
+        return { outputs: [{ subHuman: { say, refused, shareable: !secret, ...(pin ? { pinned: { status: pin.status, ms: pin.ms } } : {}) } }], exit: 0, stderr: '' };
+      }
       return {
         outputs: [{
           decision: 'block', reason: `sub-human: ${t}`,

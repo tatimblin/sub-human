@@ -9,15 +9,20 @@ import type { Identity } from '../identity.ts';
  *   say      what the person asked for (help, who is here, done)
  *   refused  a refusal ("✗ " before it)
  *   secret   only the person may read it (an invite with its PIN): the typed prompt is kept out of the conversation;
- *            refused (default false) puts "✗ " before it
+ *            refused (default false) puts "✗ " before it; pinned: the line and the PIN apart, for the module (Pinned)
  *   joined   a seat taken: me, lead (the mechanics block's last line) and say (the person's one line)
  * The router (index.ts run) makes every say and refused of a prompt that may hold a PIN a secret, before any verb ran.
  */
 export type Answer =
   | { kind: 'say'; text: string }
   | { kind: 'refused'; text: string }
-  | { kind: 'secret'; text: string; refused?: boolean }
+  | { kind: 'secret'; text: string; refused?: boolean; pinned?: Pinned }
   | { kind: 'joined'; me: Identity; lead: string; say: string };
+
+/** An invite's secret part, for the hooks module to draw where Claude Code saves nothing ($.ui.status, under the prompt):
+ * status, the one line with the invite line and its PIN; text, what the notices say instead (no secret in it); ms, how
+ * long the status stays (the invite's life). The classic hook still shows the whole text (Answer secret's text). */
+export interface Pinned { status: string; text: string; ms: number }
 
 /** What every verb is handed. pid and cur are known only once the hooks module's lease checked (the verbs marked
  * `open` run before: help, doctor). */

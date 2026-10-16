@@ -40,8 +40,8 @@ function checkShim({ needed }: { needed: boolean }): Check {
   const stale = root && path.resolve(root) !== path.resolve(shim.pluginRoot());
   if (!problems.length) {
     return check('shim', stale ? 'warn' : 'pass', 'serve shim',
-      stale ? `runs ${tilde(root)}, not this install (${tilde(shim.pluginRoot())})` : `runs ${tilde(root)} with ${tilde(node)}`,
-      stale ? 'start Claude Code once on this machine (it refreshes it), or run ' + cli('doctor --fix') + ' in a terminal' : undefined);
+      stale ? `runs ${tilde(root)} (sub-human ${shim.versionOf(root) || '?'}), not this install (${tilde(shim.pluginRoot())}, sub-human ${shim.versionOf(shim.pluginRoot()) || '?'})` : `runs ${tilde(root)} with ${tilde(node)}`,
+      stale ? `to serve from this install, run ${cli('doctor --fix')} in a terminal (it points the shim here); a newer install takes it by itself at its next join` : undefined);
   }
   return check('shim', 'fail', 'serve shim', problems.join('; '), 'start Claude Code once on this machine (it rewrites it), or run ' + cli('doctor --fix') + ' in a terminal');
 }
@@ -49,13 +49,23 @@ function checkShim({ needed }: { needed: boolean }): Check {
 // command="SUB_HUMAN_HOME=<home> <...> --stdio CODE --link ID",restrict <type> <key> sub-human:CODE:ID
 const KEY_LINE_RE = /^command="SUB_HUMAN_HOME=(\S+) (.+?) --stdio (\S+) --link ([0-9a-f]{12})",restrict (\S+) (\S+) sub-human:(\S+):(\S+)\s*$/;
 
+/** A door line's home (its forced command's SUB_HUMAN_HOME) is this one, by path; a line naming none is this home's
+ * when its room is. Another home's line (a second sub-human folder, the person's own ~/.sub-human) is left alone. */
+function ownDoor(line: string, code: string): boolean {
+  const h = /command="SUB_HUMAN_HOME=(\S+) /.exec(line);
+  const home = lib('home.ts').home();
+  const real = (p: string) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  if (h) return real(h[1]) === real(home);
+  try { return lib('identity.ts').roomExists(code); } catch { return false; }
+}
+
 function scanAuthorizedKeys(file: string): AuthorizedKeysScan {
   const text = readText(file);
   if (text === null) return { file, exists: false, lines: [] };
-  const lines: KeyLine[] = [], doors: string[] = [];
+  const lines: KeyLine[] = [], doors: string[] = [], otherDoors: string[] = [];
   for (const l of text.split('\n')) {
     const door = / sub-human-enroll:(\S+)\s*$/.exec(l);
-    if (door) { doors.push(door[1]); continue; }
+    if (door) { (ownDoor(l, door[1]) ? doors : otherDoors).push(door[1]); continue; }
     if (!/\bsub-human:/.test(l) && !/ serve --stdio /.test(l)) continue;
     const m = KEY_LINE_RE.exec(l.trim());
     if (!m) { lines.push({ ok: false, parse: false, raw: l }); continue; }
@@ -63,19 +73,21 @@ function scanAuthorizedKeys(file: string): AuthorizedKeysScan {
     const shimmed = run === path.join(home, 'bin', 'serve');
     lines.push({ ok: shimmed, home, code, id, type, key, shimmed });
   }
-  return { file, exists: true, lines, doors };
+  return { file, exists: true, lines, doors, ...(otherDoors.length ? { otherDoors } : {}) };
 }
 
 function checkAuthorizedKeys(scan: AuthorizedKeysScan): Check {
   const h = path.resolve(lib('home.ts').home());
   if (!scan.exists) return check('authorized_keys', 'info', 'authorized_keys', `${tilde(scan.file)}: none (this machine hosts no room over SSH)`);
   const doors = scan.doors || [];
+  const others = [...new Set(scan.otherDoors || [])];
+  const otherNote = others.length ? ` (and ${others.length === 1 ? 'a line' : `${scan.otherDoors!.length} lines`} of another sub-human folder's, room ${others.join(', ')}: not this home's, not touched)` : '';
   if (doors.length) {
     return check('authorized_keys', 'warn', 'authorized_keys',
-      `${doors.length} enrollment door line(s) an older sub-human's ssh invite left (room ${[...new Set(doors)].join(', ')}): they only tell an old joiner to update`,
+      `${doors.length} enrollment door line(s) an older sub-human's ssh invite left (room ${[...new Set(doors)].join(', ')}): they only tell an old joiner to update${otherNote}`,
       `run ${cli('doctor --fix')} in a terminal (it removes them), or delete the lines ending sub-human-enroll:ROOM from ${tilde(scan.file)}`);
   }
-  if (!scan.lines.length) return check('authorized_keys', 'info', 'authorized_keys', `${tilde(scan.file)}: no sub-human lines`);
+  if (!scan.lines.length) return check('authorized_keys', 'info', 'authorized_keys', `${tilde(scan.file)}: no sub-human lines of this home${otherNote}`);
   const old = scan.lines.filter(l => !l.ok);
   if (!old.length) return check('authorized_keys', 'pass', 'authorized_keys', `${scan.lines.length} sub-human line(s) an older sub-human wrote for its links, all through the shim (each goes when its link is kicked)`);
   const fixes = old.map(l => (l.parse === false ? `edit the unreadable sub-human line by hand in ${tilde(scan.file)}`

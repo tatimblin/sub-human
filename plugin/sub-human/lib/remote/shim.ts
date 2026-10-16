@@ -33,7 +33,9 @@
  *                                    outside the plugin cache leaves an existing pointer to another live install
  *                                    alone (passive(): whether it would write)
  *   passive(root) -> bool            a passive refresh from root may write: root is in the plugin cache, or the
- *                                    pointer is missing, names root, or names a root with no CLI any more
+ *                                    pointer is missing, names root, names a root with no CLI any more, or names
+ *                                    a root outside the cache whose plugin version is older than root's (newer(a, b),
+ *                                    versionOf(root)): never an installed plugin's
  *   PLAIN_PATH_RE                    a path an ssh remote command can carry plainly (no shell or sshd specials)
  */
 import fs from 'node:fs';
@@ -86,12 +88,37 @@ function writeIfChanged(file: string, body: string, mode: number): boolean {
 
 const hasCli = (root: string): boolean => ['scripts/sub-human', 'bin/sub-human'].some(c => fs.existsSync(path.join(root, c)));
 
+/** The plugin version a root says (.claude-plugin/plugin.json), or null. */
+function versionOf(root: string): string | null {
+  try { const v = JSON.parse(fs.readFileSync(path.join(root, '.claude-plugin', 'plugin.json'), 'utf8')).version; return typeof v === 'string' ? v : null; } catch { return null; }
+}
+
+/** a > b as plugin versions: major.minor.patch, then a release over its prereleases, then the prerelease's parts
+ * (numbers as numbers: beta.16 > beta.15). Unreadable: false. */
+function newer(a: string | null, b: string | null): boolean {
+  const parse = (v: string) => { const m = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/.exec(v); return m ? { n: [+m[1], +m[2], +m[3]], pre: m[4] ? m[4].split('.') : null } : null; };
+  const x = a ? parse(a) : null, y = b ? parse(b) : null;
+  if (!x || !y) return false;
+  for (let i = 0; i < 3; i++) if (x.n[i] !== y.n[i]) return x.n[i] > y.n[i];
+  if (!x.pre || !y.pre) return !x.pre && !!y.pre;
+  for (let i = 0; i < Math.max(x.pre.length, y.pre.length); i++) {
+    const p = x.pre[i], q = y.pre[i];
+    if (p === undefined || q === undefined) return q === undefined && p !== undefined;
+    if (p === q) continue;
+    const pn = /^\d+$/.test(p), qn = /^\d+$/.test(q);
+    return pn && qn ? +p > +q : pn !== qn ? qn : p > q;
+  }
+  return false;
+}
+
 function passive(root: string): boolean {
   root = path.resolve(root);
   if (cacheDirOf(root)) return true;
   let cur;
   try { cur = fs.readFileSync(pointerPath(), 'utf8').split('\n')[0]; } catch { return true; }
-  return !cur || path.resolve(cur) === root || !hasCli(cur);
+  // a newer plugin than a recorded root that is itself outside the cache (a --plugin-dir checkout ahead of an older
+  // --plugin-dir run): this one serves. An installed plugin's pointer is never taken by a dev run
+  return !cur || path.resolve(cur) === root || !hasCli(cur) || (!cacheDirOf(cur) && newer(versionOf(root), versionOf(cur)));
 }
 
 function refresh({ root = pluginRoot(), node = process.execPath, env = process.env, force = false }: {
@@ -108,5 +135,5 @@ function refresh({ root = pluginRoot(), node = process.execPath, env = process.e
 }
 
 export {
-  shimPath, pointerPath, pluginRoot, cacheDirOf, shimBody, refresh, passive, PLAIN_PATH_RE,
+  shimPath, pointerPath, pluginRoot, cacheDirOf, shimBody, refresh, passive, newer, versionOf, PLAIN_PATH_RE,
 };

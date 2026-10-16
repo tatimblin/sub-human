@@ -25,6 +25,18 @@ async function helloOf($: EngineInterface): Promise<Hello | Record<string, never
   return asHello(value) ?? {};
 }
 
+/** The hello plus where Claude Code keeps its prompt history and this session's transcript (claudeDir, sid): the
+ * guards deny reading them, since an invite line and its PIN can be in them. Unknown: left out. */
+async function withTalk($: EngineInterface, h: Hello | Record<string, never>): Promise<GuardCtx> {
+  const ctx: GuardCtx = { ...h };
+  try {
+    const dir = await $.env.get('CLAUDE_CONFIG_DIR');
+    ctx.claudeDir = typeof dir === 'string' && dir.startsWith('/') ? dir : typeof h.userHome === 'string' ? `${h.userHome.replace(/\/+$/, '')}/.claude` : null;
+  } catch { ctx.claudeDir = typeof h.userHome === 'string' ? `${h.userHome.replace(/\/+$/, '')}/.claude` : null; }
+  if (typeof ctx.sid !== 'string') { try { ctx.sid = await $.session.id(); } catch { /* unknown: the history alone */ } }
+  return ctx;
+}
+
 /** Where p lands (every link resolved), or undefined when it cannot be stat'ed. */
 async function realOf($: EngineInterface, p: string): Promise<string | undefined> {
   const s = await $.fs.stat(p, { resolve: true }).catch(() => undefined);
@@ -45,9 +57,10 @@ async function placed($: EngineInterface, abs: string): Promise<string | undefin
 export function registerGuard(on: On) {
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const h = await helloOf($);
-    const ctx: GuardCtx & { pluginRoot: string } = { ...h, pluginRoot: h.pluginRoot || $.plugin.root };
-    if (needsCwd(e.command)) {
-      ctx.cwd = await $.session.cwd();
+    const ctx: GuardCtx & { pluginRoot: string } = { ...(await withTalk($, h)), pluginRoot: h.pluginRoot || $.plugin.root };
+    // the cwd: relative words, a walker with no path word and the plugin's modules resolve against it
+    try { ctx.cwd = await $.session.cwd(); } catch { ctx.cwd = null; }
+    if (needsCwd(e.command) && ctx.cwd) {
       ctx.realCwd = await realOf($, ctx.cwd);
       ctx.realPluginRoot = await realOf($, ctx.pluginRoot);
     }
@@ -83,7 +96,7 @@ export function registerGuard(on: On) {
     const cwd = p.startsWith('/') || p.startsWith('~') ? undefined : await $.session.cwd();
     const abs = absTarget(p, { cwd, userHome: h.userHome });
     const candidates = abs ? [abs, await placed($, abs)] : [];
-    return readVerdict(candidates, h, p) ? { deny: READ_DENY(p) } : next(e);
+    return readVerdict(candidates, await withTalk($, h), p) ? { deny: READ_DENY(p) } : next(e);
   }).catch(($, e, next) => {
     if (next.called) return next(e);
     return readVerdict([], {}, writeTarget(e) || '') ? { deny: READ_DENY(writeTarget(e)) } : next(e);
@@ -100,7 +113,7 @@ export function registerGuard(on: On) {
       const abs = p ? absTarget(p, { cwd, userHome: h.userHome }) : absTarget(cwd || '', {});
       if (abs) candidates.push(abs, await placed($, abs));
     }
-    return searchVerdict(e.tool, candidates, h, targets.join(' ')) ? { deny: READ_DENY(targets.at(-1) || null, e.tool) } : next(e);
+    return searchVerdict(e.tool, candidates, await withTalk($, h), targets.join(' ')) ? { deny: READ_DENY(targets.at(-1) || null, e.tool) } : next(e);
   }).catch(($, e, next) => {
     if (next.called) return next(e);
     const targets = searchTargets(e.tool, e as SearchInput);

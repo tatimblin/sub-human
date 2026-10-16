@@ -147,8 +147,8 @@ test('shim: the stdout -> ClassicResult table covers every output shape the hook
     ['a field the event does not read is dropped', 'Stop',
       ok({ hookSpecificOutput: { hookEventName: 'Stop', additionalContext: 'x', sessionTitle: 't', suppressOriginalPrompt: true } }),
       { result: { additionalContext: ['x'] } }],
-    ['a log line before the JSON', 'UserPromptSubmit', ok('warming up\n{"continue":false,"stopReason":"✓ sent; the room\u0027s Claude will answer"}'),
-      { result: { preventContinuation: true, stopReason: "✓ sent; the room's Claude will answer" } }],
+    ['a log line before the JSON', 'UserPromptSubmit', ok('warming up\n{"continue":false,"stopReason":"✓ sent; the room\u0027s Claude was woken"}'),
+      { result: { preventContinuation: true, stopReason: "✓ sent; the room's Claude was woken" } }],
   ];
   for (const [what, event, run, want] of T) assert.deepEqual(toClassic(event, run), want, what);
   assert.deepEqual(shimEnv({ session_id: 's1' }, '/p'), { CLAUDE_PLUGIN_ROOT: '/p', CLAUDE_PID: '', SUB_HUMAN_VIA: 'module', CLAUDE_CODE_SESSION_ID: 's1' });
@@ -617,7 +617,7 @@ test('seat: the home and the session index the module checks without node are li
 test('prompt: an @room in a session surely without a seat is refused in at-room\'s words, without node', async () => {
   const p = await load('mod/core/prompt.ts');
   const unseated = { sid: 's1', seat: null } as Hello;
-  assert.deepEqual(p.unseatedRefusal({ session_id: 's1', prompt: '@room hi' }, unseated), { block: p.NOT_IN_ROOM, suppressOriginalPrompt: true });
+  assert.deepEqual(p.unseatedRefusal({ session_id: 's1', prompt: '@room hi' }, unseated), { preventContinuation: true, stopReason: p.NOT_IN_ROOM }, 'a stop: no "blocked by hook" frame, nothing put back in the input');
   assert.equal(p.unseatedRefusal({ session_id: 's1', prompt: '@claude hi' }, unseated), null, 'outside a room @claude is a prompt');
   assert.equal(p.unseatedRefusal({ session_id: 's2', prompt: '@room hi' }, unseated), null, 'not this session\'s hello: node decides');
   assert.equal(p.unseatedRefusal({ session_id: 's1', prompt: '@room hi' }, { sid: 's1', seat: { name: 'a', code: 'otter-4821', role: 'member', addr: 'a.otter-4821' } } as Hello), null);
