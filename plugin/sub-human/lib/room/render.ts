@@ -82,7 +82,8 @@ const otherVia = (e: Entry): string | null => (e.via !== undefined && !KNOWN_VIA
 
 const who = (e: Entry): string => {
   if (e.via === 'system') return 'room';
-  if (otherVia(e)) return otherVia(e)!;
+  const other = otherVia(e);
+  if (other) return other;
   const from = e.from;
   return e.via === 'agent' && from !== ROOM_CLAUDE ? `${from}'s Claude` : from;
 };
@@ -145,7 +146,8 @@ function line(e: Entry, { full = false, trust = NO_TRUST }: { full?: boolean; tr
 /** Who an entry is from, as a group chat names them: "bob", "bob's Claude", "claude", "room". */
 function chatWho(e: Entry, trust: Trust): string {
   if (e.via === 'system') return 'room';
-  if (otherVia(e)) return otherVia(e)!;
+  const other = otherVia(e);
+  if (other) return other;
   if (e.from === ROOM_CLAUDE) return ROOM_CLAUDE;
   if (e.via === 'agent') return `${e.from}'s Claude`;
   if (unverified(trust, e)) return `${e.from} ${UNVERIFIED}`;
@@ -213,11 +215,11 @@ function decisionText(n: Entry, entries: readonly Readonly<Entry>[] | undefined)
   const label = proposalLabel(n.proposal_hash, entries);
   const s = String(n.text ?? '').replace(/\s*\(proposal [0-9a-f]+\)\s*$/, '');
   const m = /^objected: ([^·]*?)(?: · agreed: (.*))?$/.exec(s);
-  if (!label) return m ? `not agreed (${s})` : `decided (${s})`; // no title to name it by
+  if (!label || !entries) return m ? `not agreed (${s})` : `decided (${s})`; // no title to name it by (a label means entries are there)
   if (!m) return /^agreed: /.test(s) ? `${label} agreed (${s.slice(8)})` : `${label} decided (${s})`;
   const refs = new Set(n.refs || []);
-  const objs = entries!.filter(x => x && refs.has(x.id) && x.kind === 'objection'); // a label means entries are there
-  const by = m[1].split(/,\s*/).filter(Boolean).map(name => {
+  const objs = entries.filter(x => x && refs.has(x.id) && x.kind === 'objection');
+  const by = (m[1] ?? '').split(/,\s*/).filter(Boolean).map(name => {
     const o = objs.find(x => x.from === name);
     const note = o ? oneLine(safeText(noteOf(o))) : '';
     return note ? `${name}: ${note}` : name;
@@ -297,7 +299,7 @@ function chatLines(e: Entry, { viewer, entries, trust = NO_TRUST }: { viewer?: s
   if (!lines.length) return [head];
   const more = Math.max(0, lines.length - CHAT_LINES_MAX);
   if (more) lines = lines.slice(0, CHAT_LINES_MAX);
-  lines[0] = `${head}: ${lines[0].replace(/^\s+/, '')}`;
+  lines[0] = `${head}: ${(lines[0] ?? '').replace(/^\s+/, '')}`; // lines is not empty
   const nested = CHAT_WRAP - NEST.length;
   const out: string[] = [];
   lines.forEach((l, i) => wrap(l, i ? nested : CHAT_WRAP, nested).forEach((piece, j) => out.push(i || j ? NEST + piece : piece)));
@@ -415,10 +417,11 @@ function digest(entries: readonly Readonly<Entry>[] = [], ctx: DigestCtx = {}): 
   let trimmed = 0;
   let text = renderSections(sections, trimmed);
   while (text.length > DIGEST_CAP) {
-    let oldest: { s: DigestSection; i: number } | null = null;
+    let oldest: { s: DigestSection; i: number; id: number } | null = null;
     for (const s of sections) {
       const i = s.lines.findIndex(l => l.id != null);
-      if (i >= 0 && (!oldest || s.lines[i].id! < oldest.s.lines[oldest.i].id!)) oldest = { s, i }; // findIndex: id set
+      const id = s.lines[i]?.id;
+      if (id != null && (!oldest || id < oldest.id)) oldest = { s, i, id };
     }
     if (!oldest) { const tag = '\n[digest cut at the cap: sub-human digest]'; return text.slice(0, DIGEST_CAP - tag.length) + tag; }
     oldest.s.lines.splice(oldest.i, 1);
@@ -449,6 +452,7 @@ function joinLeave(es: readonly Readonly<Entry>[] | null | undefined, viewer: st
   const next = new Map<string, Entry>(); // name -> its next join, walking back
   for (let i = list.length - 1; i >= 0; i--) {
     const l = list[i];
+    if (!l) continue; // i < list.length
     if (l.kind === 'member_joined') { next.set(l.from, l); continue; }
     const back = next.get(l.from);
     if (back && Date.parse(back.at) - Date.parse(l.at) < settle) { drop.add(l.id); drop.add(back.id); }
@@ -473,7 +477,7 @@ function rowSegment(es: readonly Readonly<Entry>[] | null | undefined, viewer: s
   // time order, so read back to there
   const list = es || [];
   let from = list.length;
-  while (from > 0 && !(now - Date.parse(list[from - 1].at) > ROW_NOTICE_MS + 2 * settle)) from--;
+  for (let e = list[from - 1]; e && !(now - Date.parse(e.at) > ROW_NOTICE_MS + 2 * settle); e = list[from - 1]) from--;
   const n = joinLeave(list.slice(from), viewer, { now, settle }).filter(x => x.settled && fresh(x)).at(-1);
   if (!n) return '';
   return n.kind === 'member_left' ? `−${n.name} left${n.why}` : `+${n.name} ${n.rejoin ? 'rejoined' : 'joined'}`;

@@ -191,8 +191,9 @@ function sweep(code: RoomCode, { now = Date.now(), name }: { now?: number; name?
     let set = false;
     s.members.update(ms => {
       set = false; // update may run fn more than once
-      if (!lapsed(ms[m.name])) return null;
-      ms[m.name].lapsed_at = new Date(now).toISOString();
+      const seat = ms[m.name];
+      if (!lapsed(seat)) return null;
+      seat.lapsed_at = new Date(now).toISOString();
       set = true;
       return ms;
     });
@@ -316,7 +317,8 @@ function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd,
     return no(`could not join ${code} as ${name}: ${r.error || 'unknown error'}${cur && !same ? `; you're still ${cur.name} in room ${cur.code}` : ''}`);
   }
   if (cur && !same) exit(cur.code, cur.name, 'switched rooms'); // exactly as exiting the session would
-  if (rebind) { const { rebind: _done, ...l } = links.get(code)!; links.set(code, l); } // rebind: read from it
+  const linked = rebind ? links.get(code) : null; // rebind: read from it above
+  if (linked) { const { rebind: _done, ...l } = linked; links.set(code, l); }
   joining().dropJoinAs(code);
   try { gc().sweepRows(code); } catch { /* best effort: rows of ended sessions */ }
   if (host) {

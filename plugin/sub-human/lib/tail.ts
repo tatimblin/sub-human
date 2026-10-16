@@ -288,9 +288,10 @@ function pullText(lines: string[]): string | null {
   const kept: string[] = [];
   let size = PULL_HEAD.length + PULL_END.length + 1;
   for (let i = lines.length - 1; i >= 0; i--) {
-    if (size + lines[i].length + 1 > config.PULL_CAP - 80) break;
-    kept.unshift(lines[i]);
-    size += lines[i].length + 1;
+    const l = lines[i];
+    if (l === undefined || size + l.length + 1 > config.PULL_CAP - 80) break; // i < lines.length
+    kept.unshift(l);
+    size += l.length + 1;
   }
   const dropped = lines.length - kept.length;
   const more = dropped ? [pullDroppedLine(dropped)] : [];
@@ -373,7 +374,8 @@ function remindersText(me: Identity, rm: Pick<TailRoom, 'readView'>, { proposal 
   // Only the one a review opens next (the person's pick, else the newest; hooks/handlers/consent.ts) is to be opened, the
   // others listed by short hash and title ("…, else the newest"), so the model is never told to open a proposal the
   // hooks will not show, and the person can name another.
-  const p = proposal.picked(me, ps)!; // ps is not empty
+  const p = proposal.picked(me, ps);
+  if (!p) return null; // ps is not empty: never
   // A note of the person's waits on it (hooks/handlers/consent.ts): reopening the review would drop the note, so point at the
   // confirm card instead. Until its no-answer close was told or the card offered again (stage told or reoffered), the
   // prompt may also carry consent's reoffer: this line then says the same (showConfirm), never a softer "if asked"
@@ -466,7 +468,9 @@ function flushBatch(ready: Item[], { me, rm, judge, joinNote, leaveMs, session, 
   me: Identity, rm: TailRoom, judge: Judge, joinNote: (e: Entry) => string, leaveMs: number, session: SessionLib,
   emit: (events: TailEvent[], done?: () => void) => unknown, cursor: Cursor,
 }): unknown {
-  const entries = rm.readView({ after: ready[0].e.id - 1 });
+  const [head] = ready;
+  if (!head) return undefined; // the batcher flushes a batch that is not empty
+  const entries = rm.readView({ after: head.e.id - 1 });
   const done = () => { for (const p of ready) cursor.release(p.e.id); cursor.save(); };
   const seen = me.role === 'claude' || !rm.store ? new Set<number>() : session.shown(rm.store, me.name);
   const { events, moved } = formatNdBatch(ready, { me, room: rm, entries, judge, joinNote, leaveMs, seen });
@@ -506,7 +510,8 @@ function startSession(me: Identity, ctx: TailCtx): Session {
   const tailer = rm.tailer({ fs });
   const last = rm.lastId();
   // the seat's delivery cursor: its session document's (lib/room/session.ts)
-  const store = rm.store!; // a session's room always has its store (tests' fakes spread a real one)
+  const store = rm.store;
+  if (!store) throw new TypeError(`room ${me.code} has no store`); // never: a session's room always has its store (tests' fakes spread a real one)
   const saveCursor = (id: number) => session.put(store, me.name, 'cursor', id);
   const after = startCursor(rm, session.get(store, me.name, 'cursor') || 0, me, last);
   saveCursor(after);
@@ -533,9 +538,9 @@ function startSession(me: Identity, ctx: TailCtx): Session {
   const hold = (e: Entry) => ({ e, timer: clock.setTimeout(settled(e), t.leaveMs) });
   function onEntry(e: Entry): void {
     cursor.saw(e.id);
-    if (e.kind === 'member_joined' && held.has(e.from)) {
+    const h = e.kind === 'member_joined' ? held.get(e.from) : undefined;
+    if (h) {
       // left and back within leaveMs: neither notice is sent
-      const h = held.get(e.from)!; // has() above
       clock.clearTimeout(h.timer);
       held.delete(e.from);
       cursor.release(h.e.id);
@@ -597,9 +602,8 @@ function startSession(me: Identity, ctx: TailCtx): Session {
   // A planned handoff: the ask waiting for this seat (a wake, once), or the asker told it was declined or expired.
   let askKey: string | null = null;
   let invitesKey: string | null = null;
-  function handoffHealth() {
+  function handoffHealth(store: NonNullable<TailRoom['store']>) {
     const ho = deps.handoff();
-    const store = rm.store!; // health() calls this only with a store
     if (!store.isHost) {
       const a = ho.pendingAsk(s.code, me.name, clock.now());
       if (!a || a.told_at) return;
@@ -636,8 +640,8 @@ function startSession(me: Identity, ctx: TailCtx): Session {
     }
   }
   // the room's open invite lines, said when the set changes (the module unpins one that is over)
-  function inviteHealth() {
-    const all = (rm.store!.kv.get('remote/invites', null) || {}) as Record<string, unknown>;
+  function inviteHealth(store: NonNullable<TailRoom['store']>) {
+    const all = (store.kv.get('remote/invites', null) || {}) as Record<string, unknown>;
     const inv = deps.invites();
     const open = Object.entries(all).filter(([, i]) => inv.inviteOpen(i, clock.now())).map(([k]) => k.slice(0, 12)).sort();
     const key = open.join(',');
@@ -649,9 +653,9 @@ function startSession(me: Identity, ctx: TailCtx): Session {
     try { deps.heartbeat(me); } catch (e) { log('seat heartbeat', e); } // the seat's lease (identity.heartbeat)
     sendRows();
     if (s.moved()) return; // the room changed kind under this session: the next check starts it again
-    if (rm.store && me.role !== 'claude') { try { handoffHealth(); } catch (e) { log('handoff', e); } }
+    if (rm.store && me.role !== 'claude') { try { handoffHealth(rm.store); } catch (e) { log('handoff', e); } }
     if (rm.store && rm.store.isHost && me.role !== 'claude') { try { admitHealth(); } catch (e) { log('admission', e); } }
-    if (rm.store && rm.store.isHost && me.role !== 'claude') { try { inviteHealth(); } catch (e) { log('invites', e); } }
+    if (rm.store && rm.store.isHost && me.role !== 'claude') { try { inviteHealth(rm.store); } catch (e) { log('invites', e); } }
     if (rm.store && !rm.store.isHost) linkHealth();
     const r = rm.verifyChain(); // the active segment's new lines only, from this process's checkpoint
     if (r.ok) breakKey = null;
@@ -680,7 +684,7 @@ function startSession(me: Identity, ctx: TailCtx): Session {
 
   s.stalled = () => clock.now() - s.lastTick > t.stallMs;
   // (a room without a store throws: the catch)
-  s.moved = () => { try { return !!rm.store && deps.openRoom(me.code).store!.isHost !== rm.store.isHost; } catch { return false; } };
+  s.moved = () => { try { if (!rm.store) return false; const there = deps.openRoom(me.code).store; return !!there && there.isHost !== rm.store.isHost; } catch { return false; } };
   s.killPoll = () => pollLoop.stop(); // tests: simulate a poll loop that died
   s.stop = () => {
     pollLoop.stop();
@@ -704,6 +708,12 @@ interface TailOpts {
   maxSeconds?: number | null;
   sid?: string | null;
 }
+/** A dep the caller gave, else a module loaded at its first use (once). */
+function getter<M extends object>(given: M | undefined, load: () => M): () => M {
+  if (given) return () => given;
+  let m: M | undefined;
+  return () => m || (m = load());
+}
 function runTail({
   clock = realClock, write, err = s => process.stderr.write(s), lookup, timings: tm = timings(), fs = nodeFs,
   deps = {}, maxSeconds = null, sid = null,
@@ -713,13 +723,13 @@ function runTail({
     heartbeat: deps.heartbeat || ((me: Identity) => (require('./identity.ts') as typeof import('./identity.ts')).heartbeat(me)),
     rows: deps.rows || (require('./rows.ts') as RowsLib),
     session: deps.session || (require('./room/session.ts') as SessionLib),
-    roomClaude: deps.roomClaude ? () => deps.roomClaude! : (() => { let o: RoomClaudeLib | undefined; return () => o || (o = require('./room-claude.ts') as RoomClaudeLib); })(),
+    roomClaude: getter(deps.roomClaude, () => require('./room-claude.ts') as RoomClaudeLib),
     identity: deps.identity || (require('./identity.ts') as IdentityLib),
     proposal: deps.proposal || (require('./proposal.ts') as ProposalLib),
     linkStatus: deps.linkStatus || ((code: RoomCode) => (require('./remote/link-socket.ts') as typeof import('./remote/link-socket.ts')).status(code)),
-    handoff: deps.handoff ? () => deps.handoff! : (() => { let m: HandoffLib | undefined; return () => m || (m = require('./handoff.ts') as HandoffLib); })(),
-    admission: deps.admission ? () => deps.admission! : (() => { let m: AdmissionLib | undefined; return () => m || (m = require('./remote/admission.ts') as AdmissionLib); })(),
-    invites: deps.invites ? () => deps.invites! : (() => { let m: InvitesLib | undefined; return () => m || (m = require('./remote/invites.ts') as InvitesLib); })(),
+    handoff: getter(deps.handoff, () => require('./handoff.ts') as HandoffLib),
+    admission: getter(deps.admission, () => require('./remote/admission.ts') as AdmissionLib),
+    invites: getter(deps.invites, () => require('./remote/invites.ts') as InvitesLib),
     sweepSeats: deps.sweepSeats || ((code: RoomCode) => (require('./seats.ts') as typeof import('./seats.ts')).sweep(code)),
     pendingNews: deps.pendingNews || ((s: string) => {
       // a cheap look first: the link files (most unseated tails have no pending join); the link code only when one is

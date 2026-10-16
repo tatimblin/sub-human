@@ -464,7 +464,7 @@ function demote(code: RoomCode, { invite, pin }: { invite: string; pin?: string 
     const st = linkSocket().status(code);
     if (st.running) { try { process.kill(st.pid, 'SIGTERM'); } catch { /* gone */ } }
     hosting().joinInvite({ inv, invite, pin });
-    links.set(code, { ...links.get(code)!, rebind: true, moved: { locator: inv.locator, host: 'the new host', at: iso(Date.now()) } }); // written just above
+    links.set(code, { ...(links.get(code) ?? cur), rebind: true, moved: { locator: inv.locator, host: 'the new host', at: iso(Date.now()) } }); // written just above
     for (const until = Date.now() + 2000; st.running && Date.now() < until && ioMod.isAlive(st.pid);) ioMod.sleepSync(20);
     linkSocket().start(code);
     return { orphan: null, follower: true };
@@ -477,7 +477,8 @@ function demote(code: RoomCode, { invite, pin }: { invite: string; pin?: string 
   const moved = { demoted: true, locator: inv.locator, host: 'the new host' };
   // the joiner's side of an sh2 invite (its PIN; over ssh this person's own ssh login to the new host)
   hosting().joinInvite({ inv, invite, pin });
-  links.set(code, { ...links.get(code)!, moved }); // joinInvite wrote it
+  const joined = links.get(code); // joinInvite wrote it
+  if (joined) links.set(code, { ...joined, moved });
   store.forget(code);
   linkSocket().start(code);
   return { orphan };

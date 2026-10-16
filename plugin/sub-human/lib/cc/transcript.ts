@@ -117,8 +117,9 @@ const asEntry = (l: TranscriptLine): TranscriptEntry | null => { if (l && typeof
 function planFile(lines: readonly TranscriptLine[], toolInput?: { planFilePath?: unknown } | null, env: Env = process.env): string | null {
   let att: string | null = null;
   for (let k = lines.length - 1; k >= 0 && !att; k--) {
-    if (!lineHas(lines[k], '"plan_mode"', 'planFilePath')) continue;
-    const e = asEntry(lines[k]);
+    const line = lines[k];
+    if (line === undefined || !lineHas(line, '"plan_mode"', 'planFilePath')) continue;
+    const e = asEntry(line);
     const a = e && e.attachment;
     if (a && a.type === 'plan_mode' && typeof a.planFilePath === 'string' && a.planFilePath) att = a.planFilePath;
   }
@@ -164,13 +165,15 @@ const NOTE = '\n\nNote: The user\'s next message';
 function planAnswer(lines: readonly TranscriptLine[], toolUseId: string | null | undefined): { note: string | null } | null {
   if (!toolUseId) return null;
   for (let k = lines.length - 1; k >= 0; k--) {
-    if (!lineHas(lines[k], toolUseId, 'tool_result')) continue;
-    const e = asEntry(lines[k]);
-    const msg = e && e.message;
+    const line = lines[k];
+    if (line === undefined || !lineHas(line, toolUseId, 'tool_result')) continue;
+    const e = asEntry(line);
+    if (!e) continue; // no entry: no block
+    const msg = e.message;
     const block = (msg && Array.isArray(msg.content) ? msg.content as (ContentBlock | null)[] : []).find(b => b && b.type === 'tool_result' && b.tool_use_id === toolUseId);
     if (!block) continue;
     if (!block.is_error) return { note: null };
-    if (typeof e!.userFeedback === 'string') return { note: e!.userFeedback }; // e is set: block came from its message
+    if (typeof e.userFeedback === 'string') return { note: e.userFeedback };
     return rejectionAnswer(contentText(block.content));
   }
   return null;
@@ -202,8 +205,9 @@ const planFeedback = (lines: readonly TranscriptLine[], toolUseId: string | null
 function toolUseInput(lines: readonly TranscriptLine[], toolUseId: string | null | undefined): unknown {
   if (!toolUseId) return null;
   for (let k = lines.length - 1; k >= 0; k--) {
-    if (!lineHas(lines[k], toolUseId, '"tool_use"')) continue;
-    const e = asEntry(lines[k]);
+    const line = lines[k];
+    if (line === undefined || !lineHas(line, toolUseId, '"tool_use"')) continue;
+    const e = asEntry(line);
     const c = e && e.message && e.message.content;
     const b = (Array.isArray(c) ? c as (ContentBlock | null)[] : []).find(x => x && x.type === 'tool_use' && x.id === toolUseId);
     if (b) return b.input;
@@ -222,8 +226,9 @@ function toolUseInput(lines: readonly TranscriptLine[], toolUseId: string | null
  */
 function lastHumanPrompt(lines: readonly TranscriptLine[]): { text: string; at: number } | null {
   for (let k = lines.length - 1; k >= 0; k--) {
-    if (!lineHas(lines[k], '"user"')) continue;
-    const e = asEntry(lines[k]);
+    const line = lines[k];
+    if (line === undefined || !lineHas(line, '"user"')) continue;
+    const e = asEntry(line);
     if (!e || e.type !== 'user' || e.isMeta || e.isSidechain || e.isCompactSummary || !e.message) continue;
     const c = e.message.content;
     if (Array.isArray(c) && c.some((b: ContentBlock | null) => b && b.type === 'tool_result')) continue;

@@ -113,19 +113,23 @@ function presenceDoc({ state, detail }: Partial<PresenceInput> = {}, now: number
   return v;
 }
 
-const seated = (ms: Members, name: string): boolean => !!ms[name] && !ms[name].left_at;
+/** name's seat in ms while it has not left, else null. */
+const seatOf = (ms: Members, name: string): Member | null => { const m = ms[name]; return m && !m.left_at ? m : null; };
+const seated = (ms: Members, name: string): boolean => !!seatOf(ms, name);
 
 function ops(s: OpsStore): Pick<MembersApi, 'join' | 'leave' | 'beat'> {
   return {
     join(rec) {
-      let result!: JoinOutcome; // set by the fold: update runs fn at least once
+      // oxlint-disable-next-line typescript/no-non-null-assertion -- set inside the update callback, which runs at least once
+      let result!: JoinOutcome;
       s.members.update(ms => { const r = joinFold(ms, rec, s.code, Date.now()); result = r.result; return r.next; });
       return result;
     },
     leave(name) {
       const left = s.members.update(ms => {
-        if (!seated(ms, name)) return null;
-        ms[name].left_at = new Date().toISOString();
+        const m = seatOf(ms, name);
+        if (!m) return null;
+        m.left_at = new Date().toISOString();
         return ms;
       }) != null;
       // their last presence ("permission", "working") is not theirs any more: rows and mirrors drop it
@@ -134,11 +138,12 @@ function ops(s: OpsStore): Pick<MembersApi, 'join' | 'leave' | 'beat'> {
     },
     beat(name, { presence, now = Date.now() } = {}) {
       const doc = presence === undefined ? null : presenceDoc(presence, now);
-      const stale = (ms: Members) => seated(ms, name) && !(Date.parse(String(ms[name].seen_at)) > now - SEAT_BEAT_MS);
+      const stale = (m: Member | null): m is Member => !!m && !(Date.parse(String(m.seen_at)) > now - SEAT_BEAT_MS);
       if (!seated(s.members.read(), name)) return false;
       s.members.update(ms => {
-        if (!stale(ms)) return null;
-        ms[name].seen_at = new Date(now).toISOString();
+        const m = seatOf(ms, name);
+        if (!stale(m)) return null;
+        m.seen_at = new Date(now).toISOString();
         return ms;
       });
       if (doc) s.kv.set(`presence/${name}`, doc);

@@ -60,7 +60,8 @@ function sweep({ now = Date.now(), budgetMs = GC_BUDGET_MS, force = false, keep 
   // claim the sweep first: a second join meanwhile does not run one too
   writeJsonAtomic(stateFile(), { at: new Date(now).toISOString(), ...(prev && prev.after ? { after: prev.after } : {}) }, { compact: true });
   const codes = store.listRooms().sort();
-  const start = prev && prev.after ? codes.findIndex(c => c > prev.after!) : 0;
+  const after = prev && prev.after;
+  const start = after ? codes.findIndex(c => c > after) : 0;
   const order = start > 0 ? [...codes.slice(start), ...codes.slice(0, start)] : codes;
   let last: string | undefined;
   let done = true;

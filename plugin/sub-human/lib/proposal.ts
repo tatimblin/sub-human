@@ -163,7 +163,7 @@ function sameOf(approvers: string[], ms: Members): string[][] {
   const by = new Map<string, string[]>();
   for (const n of approvers) {
     const m = ms[n], who = personOf(m);
-    if (!who || (m.machine === who && ownerOf(ms, who) !== n)) continue;
+    if (!m || !who || (m.machine === who && ownerOf(ms, who) !== n)) continue; // no seat: no person (personOf)
     by.set(who, [...(by.get(who) || []), n]);
   }
   return [...by.values()].filter(g => g.length > 1);
@@ -209,7 +209,7 @@ function title(code: RoomCode, hash: string, entry?: Pick<Entry, 'text'> | null)
   const t = planTitle(read(code, hash));
   if (t) { titles.set(hash, t); return t; }
   const m = entry && /^proposal [0-9a-f]{6,64}:\s*(.+)/.exec(String(entry.text || ''));
-  return m ? m[1].trim() : '';
+  return (m?.[1] ?? '').trim();
 }
 
 // ---------- the card ----------
@@ -225,7 +225,7 @@ function summary(text: string): string {
     if (len + s.length + 1 > SUMMARY_MAX) break;
     out.push(s); len += s.length + 1; used++;
   }
-  while (out.length && !out[out.length - 1].trim()) out.pop();
+  while (out.length && !out.at(-1)?.trim()) out.pop();
   const rest = lines.length - used;
   return out.join('\n') + (rest > 0 ? `\n… (${rest} more lines)` : '');
 }
@@ -275,14 +275,15 @@ function namedIn(ps: Proposal[], prompt: string | null | undefined, code: RoomCo
   const s = String(prompt || '').toLowerCase();
   const hex = s.match(/\b[0-9a-f]{6,12}\b/g) || [];
   const byHash = ps.filter(p => hex.some(t => p.hash.startsWith(t) && ps.filter(q => q.hash.startsWith(t)).length === 1));
-  if (byHash.length) return byHash[0];
+  const [first] = byHash;
+  if (first) return first;
   const words = [...new Set(wordsOf(s))].filter(w => !STOP_WORDS.has(w));
   if (!words.length || !ps.length) return null;
   for (const field of [(p: Proposal) => title(code, p.hash, p.entry), (p: Proposal) => read(code, p.hash) || '']) {
     const sets = ps.map(p => new Set(wordsOf(field(p))));
     const scores = sets.map((set, i) => words.filter(w => set.has(w) && sets.every((o, j) => j === i || !o.has(w))).length);
     const max = Math.max(...scores);
-    if (max > 0 && scores.filter(x => x === max).length === 1) return ps[scores.indexOf(max)];
+    if (max > 0 && scores.filter(x => x === max).length === 1) return ps[scores.indexOf(max)] ?? null; // max is one of the scores
   }
   return null;
 }
@@ -298,11 +299,12 @@ function replacedIn(ps: Proposal[], prompt: string | null | undefined, code: Roo
   const f = room.open(code).fold();
   for (const t of hex) {
     const named = [...f.superseded.keys()].filter(h => h.startsWith(t));
-    if (named.length !== 1 || [...f.proposals.keys()].filter(h => h.startsWith(t)).length !== 1) continue;
-    let h = named[0];
-    for (let i = 0; i < 64 && f.superseded.has(h); i++) h = f.superseded.get(h)!; // a chain of revisions, bounded
+    const [old] = named;
+    if (old === undefined || named.length !== 1 || [...f.proposals.keys()].filter(h => h.startsWith(t)).length !== 1) continue;
+    let h = old;
+    for (let i = 0, next = f.superseded.get(h); i < 64 && next !== undefined; i++, next = f.superseded.get(h)) h = next; // a chain of revisions, bounded
     const p = ps.find(x => x.hash === h);
-    if (p) return { old: named[0], p };
+    if (p) return { old, p };
   }
   return null;
 }
@@ -494,7 +496,7 @@ function decide(code: RoomCode, hash: string): Entry | null {
       ? `objected: ${people(m, m.objected)}${m.agreed.length ? ` · agreed: ${people(m, m.agreed)}` : ''} (proposal ${hash})`
       : `agreed: ${people(m, m.agreed)} (proposal ${hash})`;
     // complete: every approver has answered (a person's seats share one answer)
-    const refs = [...new Set(cur.approvers.map((n: string) => m.answers[n]!.id))];
+    const refs = [...new Set(cur.approvers.flatMap((n: string) => { const a = m.answers[n]; return a ? [a.id] : []; }))]; // complete: each one there
     return r.append({ kind: 'decision', text, proposal_hash: hash, refs: [cur.id, ...refs] }, { via: 'system', from: 'room', system: true });
   });
 }

@@ -65,7 +65,10 @@ function compareVersions(a: unknown, b: unknown): -1 | 0 | 1 | null {
   const parse = (v: unknown): number[] | null => { const m = /^(\d+)\.(\d+)\.(\d+)/.exec(String(v || '')); return m ? m.slice(1).map(Number) : null; };
   const x = parse(a), y = parse(b);
   if (!x || !y) return null;
-  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1;
+  for (const [i, p] of x.entries()) {
+    const q = y[i];
+    if (q !== undefined && p !== q) return p < q ? -1 : 1; // three numbers each
+  }
   return 0;
 }
 
@@ -103,9 +106,8 @@ function* shapeAt(text: string, shape: string): Generator<number> {
     for (let at = text.indexOf(shape); at >= 0; at = text.indexOf(shape, at + 1)) yield at;
     return;
   }
-  let k = 0;
-  for (let i = 1; i < parts.length; i++) if (parts[i].length > parts[k].length) k = i;
-  const anchor = parts[k];
+  let k = 0, anchor = parts[0] ?? ''; // split gives one part at least
+  for (const [i, p] of parts.entries()) if (p.length > anchor.length) { k = i; anchor = p; }
   const re = new RegExp(shapeRe(shape).source, 'g');
   if (!anchor) { for (const m of text.matchAll(re)) yield m.index; return; }
   const before = parts.slice(0, k).join('').length + k * IDENT_MAX;
@@ -207,7 +209,7 @@ function binaryVersion(buf: Buffer): string | null {
   const i = buf.indexOf('VERSION:"');
   if (i < 0) return null;
   const v = /^(\d+\.\d+\.\d+[^"]*)"/.exec(buf.toString('latin1', i + 9, i + 40));
-  return v ? v[1] : null;
+  return v?.[1] ?? null;
 }
 
 export { CONTRACT, PROBED_VERSION, MIN_VERSION, compareVersions, degradedOn, shapeRe, arrayAt, probe, locateBinary, binaryVersion };

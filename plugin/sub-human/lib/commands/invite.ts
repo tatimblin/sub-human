@@ -16,9 +16,9 @@ const webhost = (): typeof import('../remote/webhost.ts') => require('../remote/
 
 export const INVITE_USAGE: string = `usage: /sub-human invite (an ssh line; --web for the web). ${HELP_HINT}`;
 
-export const invite: Verb = (argv, { cur }) => {
-  const why = hostOnly(cur, 'invite');
-  if (why || !cur) return refused(why!);
+export const invite: Verb = (argv, { cur: seat }) => {
+  const cur = hostOnly(seat, 'invite');
+  if (typeof cur === 'string') return refused(cur);
   const p = parse(argv, { ssh: '?', via: 1, web: 0, public: 0, url: 1, port: 1, pipe: 0, stop: 0, cancel: '?' });
   const f = p.flags;
   const bad = p.error ? p.error.split(' ')[0] : p.rest.length ? p.rest[0] : f.port !== undefined && !/^[0-9]{1,5}$/.test(f.port) ? '--port' : null;

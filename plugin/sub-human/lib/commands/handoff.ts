@@ -21,11 +21,11 @@ const webhost = (): typeof import('../remote/webhost.ts') => require('../remote/
 export const handoff: Verb = (argv, { cur }) => {
   if (!cur) return refused('join a room first (/sub-human); then /sub-human handoff NAME asks NAME to host it.');
   const p = parse(argv, { via: 1 });
-  if (p.error || p.rest.length < 1 || p.rest.length > 2) return refused(`usage: /sub-human handoff NAME. ${HELP_HINT}`);
   const [to, dest] = p.rest;
+  if (p.error || to === undefined || p.rest.length > 2) return refused(`usage: /sub-human handoff NAME. ${HELP_HINT}`);
   const via = p.flags.via;
   let locator: string | undefined | null;
-  if (/^https?:\/\//.test(dest || '')) { // a front to the new host's web listener (lib/remote/webhost.ts)
+  if (dest !== undefined && /^https?:\/\//.test(dest)) { // a front to the new host's web listener (lib/remote/webhost.ts)
     if (via !== undefined) return refused('--via goes with an ssh address (USER@HOST --via JUMP), not a web address.');
     try { locator = webhost().webLocator(dest, cur.code); } catch (e) { return refused(msgOf(e)); }
   } else {

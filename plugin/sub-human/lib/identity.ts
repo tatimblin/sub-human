@@ -353,7 +353,13 @@ function rebindSession(pid: unknown, sid: unknown): boolean {
     m.session_id = sid;
     writeIndexes(who.code, m);
   };
-  if (!isHost(who.code)) { swap(indexedSeat(readJson(byPidFile(pid), SEAT_INDEX, null)!)!); return true; } // resolveByPid found this seat
+  if (!isHost(who.code)) { // resolveByPid found this seat (unless it went meanwhile)
+    const idx = readJson(byPidFile(pid), SEAT_INDEX, null);
+    const m = idx && indexedSeat(idx);
+    if (!m) return false;
+    swap(m);
+    return true;
+  }
   let ok = false;
   membersOf(who.code).update(members => {
     const m = members[who.name];
@@ -713,7 +719,8 @@ function openRooms(): RoomCode[] {
   for (const { code, ms } of allMembers()) {
     if (ms.claude && ms.claude.closing) continue;
     const live = Object.values(ms).filter(m => isMember(m) && seatAlive(m));
-    if (live.length) open.push({ code, at: live.map(m => m.joined_at || '').sort().at(-1)! }); // live is not empty
+    const at = live.map(m => m.joined_at || '').sort().at(-1);
+    if (at !== undefined) open.push({ code, at }); // live is not empty
   }
   return open.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0)).map(r => r.code);
 }

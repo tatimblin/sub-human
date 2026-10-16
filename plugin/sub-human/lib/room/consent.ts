@@ -67,7 +67,7 @@ type Entries = readonly (Entry | null | undefined)[];
 const isProposal = (e: EntryOf<'proposal'>): e is ProposalEntry => isHash(e.hash);
 
 /** The title a proposal entry carries ("proposal HASH: title"), '' for none. */
-const titleOf = (e: Pick<Entry, 'text'>): string => { const m = /^proposal [0-9a-f]{6,64}:\s*(.+)/.exec(String(e.text ?? '')); return m ? m[1].trim() : ''; };
+const titleOf = (e: Pick<Entry, 'text'>): string => { const m = /^proposal [0-9a-f]{6,64}:\s*(.+)/.exec(String(e.text ?? '')); return (m?.[1] ?? '').trim(); };
 
 /** The last few folds per trust: (length, first, last entry) -> F. */
 const MEMO_SLOTS = 4;
@@ -136,17 +136,19 @@ function compute(list: Entries, trust: Trust): Fold {
       case 'signoff': case 'objection': case 'revoke': {
         if (e.via !== 'human' || typeof e.from !== 'string' || trust(raw) === 'unverified') break;
         const mark = (a: Stance | null) => {
-          if (!latest.has(h)) latest.set(h, new Map());
-          latest.get(h)!.set(e.from, { at: ++seq, a });
+          let marks = latest.get(h);
+          if (!marks) latest.set(h, marks = new Map());
+          marks.set(e.from, { at: ++seq, a });
         };
         if (e.kind !== 'revoke') {
-          if (!answers.has(h)) answers.set(h, new Map());
+          let byName = answers.get(h);
+          if (!byName) answers.set(h, byName = new Map());
           const a: Stance = { kind: e.kind, id: e.id, entry: e };
-          answers.get(h)!.set(e.from, a);
+          byName.set(e.from, a);
           mark(a);
-        } else if (answers.has(h)) {
-          answers.get(h)!.delete(e.from);
-          mark(null);
+        } else {
+          const byName = answers.get(h);
+          if (byName) { byName.delete(e.from); mark(null); }
         }
         break;
       }

@@ -126,6 +126,7 @@ const { NAME_RE, SID_SAFE, oneLine } = text;
 function lastWhere(es: readonly Readonly<Entry>[], pick: (e: Entry) => boolean, after = 0): Entry | null {
   for (let i = es.length - 1; i >= 0; i--) {
     const e = es[i];
+    if (!e) continue; // i < es.length
     if (typeof e.id === 'number' && e.id <= after) return null;
     if (pick(e)) return e;
   }
@@ -136,6 +137,7 @@ function countAfter(es: readonly Readonly<Entry>[], pick: (e: Entry) => boolean,
   let n = 0;
   for (let i = es.length - 1; i >= 0; i--) {
     const e = es[i];
+    if (!e) continue; // i < es.length
     if (typeof e.id === 'number' && e.id <= after) break;
     if (typeof e.id === 'number' && pick(e)) n++;
   }
@@ -252,16 +254,16 @@ function parseSpawn(input: unknown, members: MemberInput, code?: string | null):
   const fields = [call.prompt, call.description, call.name].map(x => (typeof x === 'string' ? x.trim() : ''));
   if (type === PARTICIPANT || type === 'participant') {
     for (const f of fields) {
-      const m = /\bmember:\s*([A-Za-z0-9_.-]{1,32})/.exec(f);
-      if (m) return { kind: 'participant', name: m[1] };
+      const name = /\bmember:\s*([A-Za-z0-9_.-]{1,32})/.exec(f)?.[1];
+      if (name !== undefined) return { kind: 'participant', name };
     }
     for (const f of fields) if (NAME_RE.test(f) && (!known.size || known.has(f))) return { kind: 'participant', name: f };
     return null;
   }
   if (type === ROOM_AGENT || type === 'room') {
     for (const f of fields) {
-      const m = /\broom:\s*([a-z]+-\d{4})/.exec(f) || /^([a-z]+-\d{4})$/.exec(f);
-      if (m) return { kind: 'room', name: m[1] };
+      const name = (/\broom:\s*([a-z]+-\d{4})/.exec(f) || /^([a-z]+-\d{4})$/.exec(f))?.[1];
+      if (name !== undefined) return { kind: 'room', name };
     }
     return code ? { kind: 'room', name: code } : null;
   }
@@ -380,10 +382,11 @@ const SEP = ' · ';
 /** Join segments with " · ", keeping whole segments while they fit in ROW_MAX; a lone first one is clipped. */
 function fit(parts: (string | null | undefined | false)[]): string {
   const ps = parts.filter((p): p is string => !!p);
-  if (!ps.length) return '';
-  let out = ps[0], len = plainLen(ps[0]);
-  if (len > ROW_MAX) return clip(ps[0].replace(/\x1b\[[0-9;]*m/g, ''));
-  for (const p of ps.slice(1)) {
+  const [first, ...rest] = ps;
+  if (first === undefined) return '';
+  let out = first, len = plainLen(first);
+  if (len > ROW_MAX) return clip(first.replace(/\x1b\[[0-9;]*m/g, ''));
+  for (const p of rest) {
     const l = plainLen(p);
     if (len + SEP.length + l > ROW_MAX) break;
     out += SEP + p; len += SEP.length + l;
@@ -501,8 +504,9 @@ function roomText({ code, viewer, es, ms, now, c }: RowCtx, summary: string, lin
   const ps = proposals(es, code);
   const need = viewer ? awaiting(ps, viewer) : [];
   const p = viewer ? latestFor(ps, viewer) : ps.at(-1);
-  if (need.length) {
-    parts.push(c.warn(`⚠ your answer needed ${need[need.length - 1].name}${need.length > 1 ? ` +${need.length - 1}` : ''}`));
+  const needs = need.at(-1);
+  if (needs) {
+    parts.push(c.warn(`⚠ your answer needed ${needs.name}${need.length > 1 ? ` +${need.length - 1}` : ''}`));
   } else if (p) {
     const v = viewer && p.verdict[viewer];
     const n = `${p.agreed}/${p.people}`;

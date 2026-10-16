@@ -231,8 +231,8 @@ function findJob(code: RoomCode, { parsed = null, env = cleanEnv() }: { parsed?:
  */
 async function ensureGone(rec: Pick<Member, 'pid' | 'pid_start' | 'machine'> | null | undefined, { waitMs = envMs('SUB_HUMAN_REAP_STOP_MS'), pollMs = 100 }: { waitMs?: number; pollMs?: number } = {}): Promise<boolean> {
   const pid = rec && typeof rec.pid === 'number' ? rec.pid : null;
-  if (!pid || (rec!.machine && !identity.isMine(rec!.machine))) return true;
-  const mine = () => identity.isAlive(pid) && startMatches(rec!);
+  if (!rec || !pid || (rec.machine && !identity.isMine(rec.machine))) return true; // no rec: no pid
+  const mine = () => identity.isAlive(pid) && startMatches(rec);
   for (const until = Date.now() + waitMs; Date.now() < until && mine();) await clock.sleep(pollMs);
   for (const sig of ['SIGTERM', 'SIGKILL'] as const) {
     if (!mine()) return true;
