@@ -584,3 +584,16 @@ test('relays are batched: chat that comes within RELAY_GAP_MS of a relay goes as
   expect(relays()).toEqual(['alice: one', 'bob: two\ncarol: three\ndave: four'])
   seen.release()
 })
+
+test('stage 8e G (live verify, remote/99x): the host\'s let-in wake is drawn as the person\'s line alone (asUser, no frame); its (for Claude) line rides as context', async ($, on) => {
+  const shown = 'room: bob (check 59e9-554c) on mac typed your invite and its PIN and wants to join; your Claude shows you a card (or: /sub-human admit a6a8c73830ec)'
+  const forClaude = '(for Claude) bob (check 59e9-554c) on mac typed alice\'s invite line and its PIN on another machine and asks to join room otter-4821. Only alice can let them in: call AskUserQuestion with the question "admit a6a8c73830ec"; the hooks show the card.'
+  const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT }) + line({ type: 'wake', text: `${shown}\n${forClaude}` })] })
+  await start($)
+  await until(() => seen.prompts.length === 1)
+  expect(seen.prompts).toEqual([shown])
+  const said = [...(seen.contexts[0] ?? []), ...(seen.classic[0].additionalContext ?? [])].join('\n')
+  expect(said).toContain(forClaude)
+  expect(said).not.toMatch(/The sub-human plugin sent a message|This is how Claude Code surfaces/)
+  seen.release()
+})

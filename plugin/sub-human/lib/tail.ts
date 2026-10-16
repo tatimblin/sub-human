@@ -54,10 +54,10 @@
  *                             again: one quiet line, no "left"/"joined" (the daemon renews the seat's lapsed lease)
  *   {type:'invites', open}    on the host, the refs of the room's open invite lines, each time the set changes: the
  *                             module takes an invite off its status line once it is used, burnt, cancelled or expired
- *   An invite's join request (lib/remote/admission.ts), on the host: a chat line for the person and a wake that
- *   tells Claude to open the card ("admit REF"), once per seat it is for; a request that lapsed is a health line.
- *   A planned handoff (lib/handoff.ts): the ask waiting for this seat (its machine's mirror) is a chat line for the
- *   person and a wake that tells Claude to open the card, once; the asker gets a health line when the ask is
+ *   An invite's join request (lib/remote/admission.ts), on the host: one wake, its line for the person (drawn as the
+ *   prompt) and a (for Claude) line that tells Claude to open the card ("admit REF"), once per seat it is for; a request that lapsed is a health line.
+ *   A planned handoff (lib/handoff.ts): the ask waiting for this seat (its machine's mirror) is one wake, a line for the
+ *   person and a (for Claude) line that tells Claude to open the card, once; the asker gets a health line when the ask is
  *   declined or expires; host_changed is a chat line for every member. A session whose room changed kind (a
  *   mirror that became the host, or the reverse) is started again over the new store.
  * A session with no seat that started an invite join (its link file's join_sid; the hooks module starts the tail for
@@ -581,9 +581,9 @@ function startSession(me: Identity, ctx: Ctx): Session {
       const a = ho.pendingAsk(s.code, me.name, clock.now());
       if (!a || a.told_at) return;
       ho.markTold(s.code, a.id);
+      // one wake: its line for the person is drawn as the prompt (asUser), the (for Claude) line rides as context
       emit([
-        { type: 'chat', lines: [`room: ${a.from} asks you to host room ${s.code} on this machine; your Claude shows you a card`] },
-        { type: 'wake', text: `${FOR_CLAUDE} ${a.from} asks ${me.name} to host room ${s.code} on this machine (the room's Claude would then run on ${me.name}'s model account, and this machine must stay reachable). Only ${me.name} can answer: call AskUserQuestion with the question "handoff ${a.id}"; the hooks show the card. Don't answer for ${me.name} or post about it.` },
+        { type: 'wake', text: `room: ${a.from} asks you to host room ${s.code} on this machine; your Claude shows you a card\n${FOR_CLAUDE} ${a.from} asks ${me.name} to host room ${s.code} on this machine (the room's Claude would then run on ${me.name}'s model account, and this machine must stay reachable). Only ${me.name} can answer: call AskUserQuestion with the question "handoff ${a.id}"; the hooks show the card. Don't answer for ${me.name} or post about it.` },
       ]);
       return;
     }
@@ -605,9 +605,10 @@ function startSession(me: Identity, ctx: Ctx): Session {
     for (const q of adm.pending(s.code, { now: clock.now() })) {
       if ((q.told || []).includes(me.name) || !adm.targets(s.code, q).includes(me.name)) continue;
       adm.markTold(s.code, q.ref, me.name);
+      // one wake (stage 8e G): its line for the person is drawn as the prompt (asUser, no frame), the (for Claude) line
+      // rides as context, as every member wake (mod/core/deliver.ts wakeParts)
       emit([
-        { type: 'chat', lines: [`room: ${adm.describe(q)} typed your invite and its PIN and wants to join; your Claude shows you a card (or: /sub-human admit ${q.ref})`] },
-        { type: 'wake', text: `${FOR_CLAUDE} ${adm.describe(q)} typed ${me.name}'s invite line and its PIN on another machine and asks to join room ${s.code}. Only ${me.name} can let them in: call AskUserQuestion with the question "admit ${q.ref}"; the hooks show the card. Don't answer for ${me.name} or post about it.` },
+        { type: 'wake', text: `room: ${adm.describe(q)} typed your invite and its PIN and wants to join; your Claude shows you a card (or: /sub-human admit ${q.ref})\n${FOR_CLAUDE} ${adm.describe(q)} typed ${me.name}'s invite line and its PIN on another machine and asks to join room ${s.code}. Only ${me.name} can let them in: call AskUserQuestion with the question "admit ${q.ref}"; the hooks show the card. Don't answer for ${me.name} or post about it.` },
       ]);
     }
   }

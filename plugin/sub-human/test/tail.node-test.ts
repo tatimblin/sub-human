@@ -439,6 +439,25 @@ test('tail: the health tick renews the seat lease (identity.heartbeat)', () => {
   assert.ok(beats.length >= 2 && beats.every(b => b === `${code}/alice`), beats.join(','));
 });
 
+test('stage 8e G (live verify, remote/99x): an invite\'s join request is one wake for the host\'s seat: its first line the person\'s, the rest (for Claude); no chat line of its own', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  sys(code, 'member_joined', 'alice');
+  const q = { ref: 'a6a8c73830ec', told: [] as string[] };
+  const adm = {
+    lapse: () => [], pending: () => (q.told.length ? [] : [q]), targets: () => ['alice'], describe: () => 'bob (check 59e9-554c) on mac',
+    markTold: (_c: string, _r: string, n: string) => { q.told.push(n); },
+  } as unknown as NonNullable<TailOpts['deps']>['admission'];
+  const t = startTail({ deps: { admission: adm } });
+  t.advance(FAST.healthMs * 2 + 100);
+  const wakes = t.of('wake');
+  assert.equal(wakes.length, 1, t.out);
+  const [shown, ...rest] = wakes[0].text.split('\n');
+  assert.equal(shown, 'room: bob (check 59e9-554c) on mac typed your invite and its PIN and wants to join; your Claude shows you a card (or: /sub-human admit a6a8c73830ec)');
+  assert.ok(rest.length && rest.every(l => l.startsWith('(for Claude) ')), rest.join('|'));
+  assert.equal(t.of('chat').length, 0);
+});
+
 test('tail: on the host the health tick sweeps the seats (lib/seats.ts sweep); a room hosted elsewhere never does', () => {
   h.freshHome();
   const { code } = h.register('alice');

@@ -135,7 +135,8 @@ test('handoff e2e: planned, A to B with C following; the room\'s Claude moves; t
   const woke = (await B.tail(bob, 2)).split('\n').filter(Boolean).map(l => JSON.parse(l));
   const id = ask(B, code)!.id;
   assert.match(woke.find(e => e.type === 'wake').text, new RegExp(`call AskUserQuestion with the question "handoff ${id}"`));
-  assert.match(woke.filter(e => e.type === 'chat').flatMap(e => e.lines).join('\n'), /alice asks you to host room/);
+  // one wake: its first line is the person's (drawn as the prompt), the rest for Claude
+  assert.match(woke.find(e => e.type === 'wake').text, /^room: alice asks you to host room \S+ on this machine; your Claude shows you a card\n\(for Claude\) /);
 
   // the card says what it costs; bob agrees on it
   const { card, post } = answerCard(B, bob, id, 'Host it here');
