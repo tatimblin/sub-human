@@ -1,5 +1,5 @@
 // Wiring: the room task mirror and gate (mod/tasks.ts). Run with `npm run test:mods`.
-// hooks/tasks.ts runs only for the room's Claude (or an unknown seat); its exit 2 blocks the completion; a member's own
+// hooks/handlers/tasks.ts runs only for the room's Claude (or an unknown seat); its exit 2 blocks the completion; a member's own
 // native tasks start no node. A failed gate blocks wherever tasksNeeded holds.
 import { test, expect } from 'claude-code/testing'
 import { seatOf, helloOf, ran, scriptOf, session, start as startOf } from './support.ts'
@@ -29,7 +29,7 @@ const start = ($: any) => startOf($, false)
 const created = ($: any) => $.classic.PostToolUse({ session_id: SID, tool_name: 'TaskCreate', tool_input: { subject: 'x' }, tool_response: { task: { id: '2', subject: 'x' } }, tool_use_id: 't1' } as any)
 const completed = ($: any) => $.classic.TaskCompleted({ session_id: SID, task_id: '2', task_subject: 'x' } as any)
 
-test('the room\'s Claude: the mirror and the gate run hooks/tasks.ts; exit 2 blocks the completion with its reason', async ($, on) => {
+test('the room\'s Claude: the mirror and the gate run hooks/handlers/tasks.ts; exit 2 blocks the completion with its reason', async ($, on) => {
   const seen = world(on, { exitCode: 2, stderr: 'only bob may complete #2; ask them\nNothing in that TaskUpdate was saved.' })
   await start($)
   await created($)

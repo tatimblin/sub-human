@@ -1,4 +1,4 @@
-// hooks/session-restore.ts: after /clear the rows survive, so a seat with live holds gets no row calls
+// hooks/handlers/session-restore.ts: after /clear the rows survive, so a seat with live holds gets no row calls
 // (a re-spawn duplicated the room row in the S11 demo run); without live holds, and on resume, it gets them.
 import test from 'node:test';
 import assert from 'node:assert';
@@ -8,10 +8,10 @@ import { PLUGIN, newRoom, register, childEnv, spawnSleeper } from './helpers.ts'
 import * as rows from '../lib/rows.ts';
 import * as roomLib from '../lib/room.ts';
 
-const HOOK = path.join(PLUGIN, 'hooks', 'session-restore.ts');
+const RUN = path.join(PLUGIN, 'hooks', 'run.ts');
 
 function restore(pid: number | undefined, source: string, sid: string): string {
-  const r = spawnSync(process.execPath, [HOOK], {
+  const r = spawnSync(process.execPath, [RUN, 'session-restore'], {
     input: JSON.stringify({ hook_event_name: 'SessionStart', source, session_id: sid, cwd: process.cwd() }),
     env: childEnv({ CLAUDE_PID: String(pid) }), encoding: 'utf8',
   });

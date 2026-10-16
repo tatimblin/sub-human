@@ -72,6 +72,7 @@ import type { Clock, TimerHandle } from './clock.ts';
 import type { Entry } from './room/types.ts';
 import type { Identity } from './identity.ts';
 import type { Room } from './room.ts';
+import { FOR_CLAUDE } from '../mod/core/constants.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -153,7 +154,6 @@ interface FormatCtx {
 type Cursor = ReturnType<typeof cursorKeeper>;
 
 const { envMs } = config;
-const FOR_CLAUDE = '(for Claude)';
 const DOOR_SWEEP_MS = 30_000;
 const SPAWN_NOTE = /no row running|is not running/;
 const STATE_KINDS = new Set(['proposal', 'signoff', 'objection', 'decision']);
@@ -352,11 +352,11 @@ function remindersText(me: Identity, rm: Pick<TailRoom, 'readView'>, { proposal 
   const es = rm.readView({ after: Infinity });
   const ps = proposal.pendingFor(me, es) || [];
   if (!ps.length) return null;
-  // Only the one a review opens next (the person's pick, else the newest; hooks/consent.ts) is to be opened, the
+  // Only the one a review opens next (the person's pick, else the newest; hooks/handlers/consent.ts) is to be opened, the
   // others listed by short hash and title ("…, else the newest"), so the model is never told to open a proposal the
   // hooks will not show, and the person can name another.
   const p = proposal.picked(me, ps)!; // ps is not empty
-  // A note of the person's waits on it (hooks/consent.ts): reopening the review would drop the note, so point at the
+  // A note of the person's waits on it (hooks/handlers/consent.ts): reopening the review would drop the note, so point at the
   // confirm card instead. Until its no-answer close was told or the card offered again (again), the prompt may also
   // carry consent's reoffer: this line then says the same (showConfirm), never a softer "if asked" beside it. A card
   // shown (asked) and not yet offered again was interrupted (an answer or a told close sets again).

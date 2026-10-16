@@ -9,7 +9,7 @@
  *
  *   setup [SEAT]          a sleeper for SEAT (default alice), then `/sub-human SEAT` (opens the room; the room Claude's
  *                         `claude` is a stub)
- *   say TEXT              the seat's `@room TEXT` through hooks/prompt.ts (signed with its seat key)
+ *   say TEXT              the seat's `@room TEXT` through hooks/run.ts prompt (signed with its seat key)
  *   to NAME TEXT          a post the seat's Claude addresses to NAME (via=agent, store.append)
  *   dump                  {code, machine, home, log, members (raw members.json), entries: [{id, from, kind, v2, trust}],
  *                         files: [path relative to the room dir]}
@@ -34,7 +34,7 @@ function hook(script, input, seat) {
     ...process.env, SUB_HUMAN_HOME: HOME, HOME: '/home/host', CLAUDE_PLUGIN_ROOT: PLUGIN, CLAUDE_PID: String(seat.pid),
     SUB_HUMAN_CLAUDE: '/usr/local/bin/claude', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0',
   };
-  const r = spawnSync(process.execPath, [path.join(PLUGIN, 'hooks', `${script}.ts`)], {
+  const r = spawnSync(process.execPath, [path.join(PLUGIN, 'hooks', 'run.ts'), script], {
     input: JSON.stringify({ ...input, session_id: seat.sid, cwd: CWD }), env, cwd: CWD, encoding: 'utf8', timeout: 30_000,
   });
   return { status: r.status, json: r.stdout.trim() ? JSON.parse(r.stdout) : null, stderr: r.stderr };
@@ -49,7 +49,7 @@ const cmds = {
     const sleeper = spawn('sleep', ['86400'], { detached: true, stdio: 'ignore' });
     sleeper.unref();
     const seat = { name, pid: sleeper.pid, sid: crypto.randomUUID(), nonce: crypto.randomBytes(16).toString('hex') };
-    // the hooks module's hello lease (hooks/mod-hello.ts writes it on session.start; join requires it)
+    // the hooks module's hello lease (hooks/handlers/mod-hello.ts writes it; join requires it)
     lib('identity.ts').writeModLease(seat.sid, { pid: seat.pid, nonce: seat.nonce });
     const r = hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: name }, seat);
     const code = lib('room/store.ts').listRooms()[0];
@@ -60,7 +60,7 @@ const cmds = {
 
   say(text) {
     const { seat } = state();
-    // typed: the origin and the session's nonce, as the hooks module hands them to hooks/prompt.ts
+    // typed: the origin and the session's nonce, as the hooks module hands them to hooks/run.ts prompt
     const r = hook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: `@room ${text}`, prompt_id: crypto.randomUUID(),
       sub_human_origin: 'composer', sub_human_nonce: seat.nonce }, seat);
     return { ok: !!(r.json && r.json.continue === false), out: r.json, stderr: r.stderr };

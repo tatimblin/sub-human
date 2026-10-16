@@ -1,18 +1,18 @@
-// hooks/prompt.ts: the one UserPromptSubmit process (at-room.ts handle, then consent.ts onPrompt) and how their
+// hooks/handlers/prompt.ts: the one UserPromptSubmit process (at-room.ts handle, then consent.ts onPrompt) and how their
 // outputs merge: a stopped prompt (@room post, refusal) goes out alone; otherwise one output with both contexts.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { World, PLUGIN, HOOKS, room, hso, ctx, identity } from './helpers.ts';
-import { merge } from '../../hooks/prompt.ts';
+import { merge } from '../../hooks/handlers/prompt.ts';
 import type { HookOutput } from '../../hooks/types.ts';
 import type * as Register from '../../mod/register.ts';
 import type { Review } from '../../lib/types-app.ts';
 
 const NONCE = 'abcdef01'.repeat(4);
 const ev = (extra = {}) => ({ hook_event_name: 'UserPromptSubmit', sub_human_origin: 'composer', sub_human_nonce: NONCE, prompt_id: 'p1', ...extra });
-/** The module's lease for `as`'s session, holding the nonce ev() carries (hooks/mod-hello.ts writes the real one). */
+/** The module's lease for `as`'s session, holding the nonce ev() carries (hooks/handlers/mod-hello.ts writes the real one). */
 const lease = (w: World, as: string) => w.lib(() => identity.writeModLease(w.sid[as], { nonce: NONCE }));
 const ctxOut = (text: string): HookOutput => ({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: text } });
 
@@ -38,7 +38,7 @@ test('prompt: no hooks.json UserPromptSubmit entry; the module runs prompt.ts (m
   assert.equal(JSON.parse(fs.readFileSync(path.join(HOOKS, 'hooks.json'), 'utf8')).hooks.UserPromptSubmit, undefined);
   const { HOOKS: MOD } = await import(path.join(PLUGIN, 'mod', 'register.ts')) as typeof Register;
   assert.ok(MOD.some(h => h.event === 'classic.UserPromptSubmit' && h.file === 'mod/prompt.ts'));
-  assert.match(fs.readFileSync(path.join(PLUGIN, 'mod', 'prompt.ts'), 'utf8'), /shimArgv\(root, 'prompt\.ts'\)/);
+  assert.match(fs.readFileSync(path.join(PLUGIN, 'mod', 'prompt.ts'), 'utf8'), /shimArgv\(root, 'prompt'\)/);
 });
 
 test('prompt: consent\'s subHuman {reviewOpen} rides on the one output (only the mod runs prompt.ts)', () => {

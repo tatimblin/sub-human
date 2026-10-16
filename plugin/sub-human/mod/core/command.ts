@@ -3,7 +3,7 @@
  * registers the command.run hook). Claude Code draws a UserPromptExpansion hook's block as "UserPromptExpansion
  * operation blocked by hook: …" (cc CONTRACT expansion-block-frame), so good news and invites read as failures. The
  * module answers the command itself instead (cc CONTRACT command-run-every-command, command-run-empty-answer): it runs
- * hooks/join.ts through the shim (sub_human_via "command.run" and the session's nonce) and shows its reply:
+ * hooks/handlers/join.ts through the shim (sub_human_via "command.run" and the session's nonce) and shows its reply:
  *   - typed here: {} (no row, no echo, nothing for the model) and the lines as $.ui.log notices. An output row ({text})
  *     would also be read by the model, which then repeats it on its next turn (seen live: "You've left …" under
  *     "left vole-8126"), and a reply that may hold a PIN must never reach it;
@@ -20,8 +20,8 @@ import type { JoinReply, HookJson, HookJsonSpecific, OriginLike, RunOutput, SubH
 /** The command as command.run names it (a plugin skill's name, or its bare form). */
 export const COMMANDS = Object.freeze(['sub-human:sub-human', 'sub-human']);
 
-/** A copy of hooks/join.ts's rule (test/mod-core-command.node-test.ts asserts they agree): `join`, `invite` and `admit`,
- * and any word of 3-10 digits, may carry a PIN. */
+/** The one rule for a prompt that may carry a PIN (hooks/handlers/join.ts answers it hidden, the module leaves it to the
+ * classic hook through Remote Control): `join`, `invite` and `admit`, and any word of 3-10 digits. */
 const SECRET_VERBS = ['join', 'invite', 'admit'];
 const DIGITS = /^[0-9]{3,10}$/;
 const words = (args: unknown) => String(args ?? '').trim().split(/\s+/).filter(Boolean);
@@ -40,7 +40,7 @@ export function answersItself(e: { args?: unknown; origin?: OriginLike } | null 
   return kind === 'composer' || (kind === 'bridge' && !mayHoldSecret(e.args));
 }
 
-/** hooks/join.ts's stdin: the UserPromptExpansion payload Claude Code would give it, marked as the module's. */
+/** hooks/handlers/join.ts's stdin: the UserPromptExpansion payload Claude Code would give it, marked as the module's. */
 export function joinPayload({ sid, cwd, args, nonce }: { sid: unknown; cwd: unknown; args: unknown; nonce: unknown }) {
   return {
     hook_event_name: 'UserPromptExpansion', session_id: sid, cwd, expansion_type: 'slash_command',

@@ -1,7 +1,7 @@
 // sub-human's types contract (plugin.json "types"): the $.state values its hooks module keeps.
 // Self-contained: no import or reference (claude plugin validate checks it).
 
-/** This session's seat, as hooks/mod-hello.ts found it. */
+/** This session's seat, as hooks/handlers/mod-hello.ts found it. */
 export type SubHumanSeat = {
   name: string;
   code: string;
@@ -10,7 +10,8 @@ export type SubHumanSeat = {
   addr: string;
 };
 
-/** What hooks/mod-hello.ts answered (mod/core/seat.ts parseHello). */
+/** What hooks/handlers/mod-hello.ts answered (mod/core/seat.ts parseHello), or what the module knows without it
+ * (mod/core/seat.ts localHello: no session index, so no seat). */
 export type SubHumanHello = {
   sid: string | null;
   home: string;
@@ -18,13 +19,16 @@ export type SubHumanHello = {
   userHome: string | null;
   pluginRoot: string | null;
   seat: SubHumanSeat | null;
+  /** A SessionStart (clear, compact, resume) has a seat to put this session back in: the seat this session id last
+   * held, or one this claude process holds. */
+  restorable?: boolean;
 };
 
 declare module 'claude-code' {
   interface PluginState {
     'sub-human': {
       hello: SubHumanHello;
-      /** False only when hooks/consent.ts said no room review is open and no EnterPlanMode / ExitPlanMode ran
+      /** False only when hooks/handlers/consent.ts said no room review is open and no EnterPlanMode / ExitPlanMode ran
        * since (mod/consent.ts); unset or true: consent runs. */
       reviewMaybeOpen: boolean;
       /** What the person's next prompt carries for Claude (pending-proposal reminders, missing row calls): the

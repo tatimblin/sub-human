@@ -1,18 +1,20 @@
-#!/usr/bin/env node
-// SubagentStop: keep a row agent holding while its row is still wanted (cheap insurance).
+// plugin/sub-human/hooks/handlers/row-hold.ts: SubagentStop: keep a row agent holding while its row is still wanted (cheap insurance).
 // A row agent only stops on its own when `hold` returned something other than its instruction (an error,
 // an MCP timeout, a server restart) and the row's model gave up. Then, if the row's participant (or, for the room row,
 // this seat) is still in the room, block the stop and tell it to hold again; at most MAX_BLOCKS per agent.
 // A participant row is wanted while this seat is in the room, even after its member left (it reads "left").
 // An Esc-kill does NOT fire SubagentStop; hold.ts's RESPAWN covers that. A row that stops for good
 // (STOP: this seat left, or a duplicate) is dropped from the row map.
-import { identity, rows, run, out, resolveSeat } from './common.ts';
-import type { HookIn } from './types.ts';
-import type { Member } from '../lib/room/types.ts';
+import * as identity from '../../lib/identity.ts';
+import * as rows from '../../lib/rows.ts';
+import { resolveSeat } from '../seat.ts';
+import { out } from '../reply.ts';
+import type { HookIn } from '../types.ts';
+import type { Member } from '../../lib/room/types.ts';
 
 const MAX_BLOCKS = 5;
 
-run((input: HookIn<'SubagentStop'>) => {
+export function handle(input: HookIn<'SubagentStop'>) {
   const type = String(input.agent_type || '');
   const id = input.agent_id ? String(input.agent_id) : '';
   if ((type !== rows.PARTICIPANT && type !== rows.ROOM_AGENT) || !id) return;
@@ -38,4 +40,7 @@ run((input: HookIn<'SubagentStop'>) => {
   } else if (!wanted) {
     rows.forgetRow(me.code, id);
   }
-}, () => {}); // never disturb the session
+}
+
+/** Never disturb the session: logged, the stop goes on. */
+export const fail = () => null;

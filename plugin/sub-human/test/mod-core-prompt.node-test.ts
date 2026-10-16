@@ -3,7 +3,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import * as atRoom from '../hooks/at-room.ts';
 import type { Hello, HelloSeat, RunOutput } from '../mod/core/types.ts';
 
 const PLUGIN = path.join(import.meta.dirname, '..');
@@ -38,23 +37,20 @@ test('prompt: the origin hand-off gives a kind only to the prompt whose text it 
   assert.equal(q.take('@room two'), 'composer');
 });
 
-test('prompt: parse and parseClaude take the tag with one whitespace character after it (a newline too), as hooks/at-room.ts does', async () => {
+test('prompt: parse and parseClaude take the tag with one whitespace character after it (a newline too), as hooks/handlers/at-room.ts does', async () => {
   const p = await load();
   const rooms: [string, string | null][] = [['@room hi', 'hi'], ['@room', ''], ['@room\nhi', 'hi'], ['@Room hi', null], ['@room  x', ' x'], ['@roommate hi', null], ['room: hi', null], [' @room hi', null]];
   for (const [text, want] of rooms) {
     assert.equal(p.parse(text), want, JSON.stringify(text));
-    assert.equal(atRoom.parse(text), want, JSON.stringify(text));
   }
   const claudes: [string, string | null][] = [['@claude plan', 'plan'], ['@claude\nplan', 'plan'], ['@Claude', null], ['@claude', ''], ['@claudette', null]];
   for (const [text, want] of claudes) {
     assert.equal(p.parseClaude(text), want, JSON.stringify(text));
-    assert.equal(atRoom.parseClaude(text), want, JSON.stringify(text));
   }
 });
 
 test('prompt: an @room the shim could not handle is refused, never let through; one wording with at-room\'s', async () => {
   const p = await load();
-  assert.equal(p.GATE_FAILED, atRoom.NO_ORIGIN);
   assert.deepEqual(p.failClosed('@room ship it'), { block: p.GATE_FAILED, suppressOriginalPrompt: true });
   assert.equal(p.failClosed('room:ship it'), null, 'there is no room: tag');
   assert.equal(p.failClosed('ship it'), null);
@@ -81,7 +77,7 @@ test('prompt: receiptBook keeps only an @room stop\'s own warning row, as the re
   const { receiptBook, STOP_FRAME } = await load();
   const book = receiptBook(2);
   const notice = (text: string) => ({ type: 'system', name: 'informational', content: [{ type: 'text', text }] });
-  // hooks/at-room.ts's receipts: the whole stop reason is matched, so an @room's and an @claude's never cross
+  // hooks/handlers/at-room.ts's receipts: the whole stop reason is matched, so an @room's and an @claude's never cross
   const SENT = "✓ sent to room otter-4821 (Claude wasn't asked)", WAKE = "✓ sent; the room's Claude will answer";
   assert.equal(book.rewrite(notice(`${STOP_FRAME}${SENT}`)), null, 'nothing waiting: the engine\'s words stay');
   book.expect(SENT);

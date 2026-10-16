@@ -9,7 +9,7 @@
  *   - <home>/bin/current holds three lines: the plugin root, the node that last ran it, and the plugin cache dir
  *     the root's version sits in (empty outside the cache). refresh() rewrites it (only on a change), so it follows
  *     plugin updates and node upgrades. Forced (force: true) by the commands that make a forced command: `host
- *     --ssh`, `admit`, `authorize` and `doctor --fix`. Passive (every SessionStart, hooks/row-launcher.ts, and
+ *     --ssh`, `admit`, `authorize` and `doctor --fix`. Passive (every join and restore, hooks/launcher.ts, and
  *     every CLI run, scripts/sub-human): only from an installed plugin (a root under the Claude Code plugin cache),
  *     or when the recorded root is gone or none is recorded, or for the recorded root itself (a new node). So a dev
  *     checkout or a worktree run without SUB_HUMAN_HOME never takes over the pointer of the real home;

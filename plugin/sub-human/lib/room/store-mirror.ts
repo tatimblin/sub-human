@@ -14,7 +14,7 @@
  *   append(entry, opts) = place(toPayload(...))   signed here (the hook's signer, via=human), placed by the host:
  *                            op `append`. The placed entry is returned once the mirror holds it (the host streams
  *                            a write's lines before its reply: read-your-writes). A via=system payload is refused
- *                            by the host (AUTH): the host writes the room's own entries. opts.queue (hooks/at-room.ts
+ *                            by the host (AUTH): the host writes the room's own entries. opts.queue (hooks/handlers/at-room.ts
  *                            only): with the link down the daemon queues an @room post instead of refusing it
  *                            (lib/remote/outbox.ts); the signed payload is returned with queued: n and no id. Online, a post the host
  *                            has not answered in time comes back queued: n, slow: true (in flight, kept under

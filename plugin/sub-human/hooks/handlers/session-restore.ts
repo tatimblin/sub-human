@@ -1,5 +1,4 @@
-#!/usr/bin/env node
-// SessionStart(compact|clear|resume): put this session back in its seat and re-inject the room context.
+// plugin/sub-human/hooks/handlers/session-restore.ts: SessionStart(compact|clear|resume): put this session back in its seat and re-inject the room context.
 //   compact  same session id, same process: re-inject only.
 //   clear    new session id, same claude process (CLAUDE_PID): rebind the new id to the seat found by pid.
 //   resume   a new claude process with the old session id. If the seat is still live, rebind the new pid;
@@ -7,21 +6,26 @@
 //            member_joined "rejoined (resumed)" with the seat's pubkey and machine (lib/seats.ts). In a room hosted
 //            elsewhere the link daemon is started first and the host logs the rejoin (lib/remote/server.ts).
 //            A room that is closing (the reaper is stopping its room Claude) is not rejoined.
-// Context = the same mechanics block as join (common.ts contextBlock: the role template filled + ROWS, i.e.
+// Context = the same mechanics block as join (hooks/context.ts contextBlock: the role template filled + ROWS, i.e.
 // lib/rows.ts rowCalls(), which lists only the rows with no live hold: rows survive /clear and compaction, and
 // a re-spawn would duplicate the room row). On --resume the hold server is new, so every row is
 // listed. sessionTitle = the native address NAME.CODE (SendMessage / ListAgents reach the session by it:
 // cc CONTRACT session-title-address).
-// A plan-view review left behind (hooks/consent.ts; members/NAME/review.json) is closed here: after clear or
+// A plan-view review left behind (hooks/handlers/consent.ts; members/NAME/review.json) is closed here: after clear or
 // resume always, after compact only when it is older than REVIEW_STALE_MS. The session plan file gets the
 // person's own text back (lib/proposal.ts restoreStale) and the review state is cleared.
-import { identity, room, run, out, whoami, presence, contextBlock, seatTitle, logError } from './common.ts';
-import * as rows from '../lib/rows.ts';
-import * as proposal from '../lib/proposal.ts';
-import * as link from '../lib/remote/link.ts';
-import * as seatKey from './seat-key.ts';
-import type { HookIn } from './types.ts';
-import type { Identity } from '../lib/identity.ts';
+import * as identity from '../../lib/identity.ts';
+import * as room from '../../lib/room.ts';
+import * as rows from '../../lib/rows.ts';
+import * as proposal from '../../lib/proposal.ts';
+import * as link from '../../lib/remote/link.ts';
+import * as seatKey from '../seat-key.ts';
+import { whoami } from '../seat.ts';
+import { contextBlock, seatTitle } from '../context.ts';
+import { out, logError } from '../reply.ts';
+import * as launcher from '../launcher.ts';
+import type { HookIn } from '../types.ts';
+import type { Identity } from '../../lib/identity.ts';
 
 const RECREATE = 'Your rows are not running (they do not survive --resume). Create them now, exactly as written:\n';
 const PARTIAL = 'Your other rows are still running; only the rows below are missing. Make only these calls, exactly as written:\n';
@@ -59,13 +63,13 @@ function reseat(input: HookIn<'SessionStart'>): Identity | null {
   return { ...last, pid, session_id: input.session_id ?? null };
 }
 
-run((input: HookIn<'SessionStart'>) => {
+export function handle(input: HookIn<'SessionStart'>) {
   const me = reseat(input);
   if (!me) return;
   try {
     proposal.restoreStale(me, { force: input.source === 'clear' || input.source === 'resume' });
   } catch (err) { logError(err, 'session-restore: review'); }
-  presence(me, 'working');
+  launcher.refresh(); // the row status line's launcher and the serve shim, for this seat's rows
   const text = contextBlock(me, `restored after ${input.source || 'start'}`, { rowsLead: rowsLead(me) });
   out({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: text, sessionTitle: seatTitle(me) } });
-});
+}

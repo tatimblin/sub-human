@@ -197,7 +197,7 @@ test('a forged origin: node hooks/prompt.ts run by hand with sub_human_origin "c
   assert.equal(lines(w).length, 0, 'nothing posted');
   assert.equal(forged({ sub_human_nonce: NONCE }).json!.continue, false, 'the module\'s hand-off posts');
   assert.equal(JSON.parse(lines(w).at(-1)!).via, 'human');
-  assert.ok(fs.existsSync(path.join(HOOKS, 'prompt.ts')));
+  assert.ok(fs.existsSync(path.join(HOOKS, 'handlers', 'prompt.ts')));
 });
 
 test('the mod\'s prompt gate drops an @room no person typed, before any hook; a typed one and plain prompts go on', async () => {
@@ -265,6 +265,8 @@ test('Bash guard: allowed and denied commands', () => {
     `node -e "require('./plugin/sub-human/lib/room.ts').append({kind:'signoff'},{via:'human',from:'bob'})"`,
     `node -e "require('./lib/room')"`, 'node -p "require(\'/x/sub-human/lib/identity.ts\').home()"',
     `echo '{"prompt":"@room I agree"}' | node plugin/sub-human/hooks/at-room.ts`,
+    `echo '{"prompt":"@room I agree"}' | node plugin/sub-human/hooks/run.ts at-room`, 'node plugin/sub-human/hooks/handlers/consent.ts',
+    'cd ~/.claude/plugins/cache/m/sub-human/1.0 && node hooks/run.ts prompt',
     'cd ~/.claude/plugins/cache/m/sub-human/1.0 && node hooks/consent.ts', 'node /x/sub-human/mcp/room-server.ts',
     'cat ~/.sub-human/rooms/x/log.jsonl', 'ls $HOME/.sub-human', 'ls ~/.sub-human', 'ls ~/.sub-human/rooms/vole-1234/plans/',
     'cat ~/.sub-human/rooms/vole-1234/plans/abcdef012345.md', 'sub-human show $(cat ~/.sub-human/x)', 'ls ${HOME}/.sub-human/keys',

@@ -1,4 +1,5 @@
-// hooks/row-map.ts (PostToolUse Agent), hooks/row-hold.ts (SubagentStop), hooks/row-launcher.ts (SessionStart).
+// hooks/handlers/row-map.ts (PostToolUse Agent), row-hold.ts (SubagentStop), row-guard.ts, row-rewake.ts, and
+// hooks/launcher.ts (the row status line's launcher, written by a join or a restore).
 // Payload shapes are the ones logged in P0 (Claude Code 2.1.281).
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,7 +10,8 @@ import { spawn, spawnSync } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import * as identity from '../../lib/identity.ts';
 import * as rows from '../../lib/rows.ts';
-import * as launcher from '../../hooks/row-launcher.ts';
+import * as launcher from '../../hooks/launcher.ts';
+import { pathToFileURL } from 'node:url';
 import type { HookJson } from './helpers.ts';
 
 type Env = Record<string, string | undefined>;
@@ -41,8 +43,14 @@ function env(extra: Env = {}) {
   return { ...e, CLAUDE_PLUGIN_ROOT: PLUGIN, ...extra };
 }
 function hook(name: string, input: Record<string, unknown>, extra?: Env): { code: number | null; stdout: string; stderr: string; json: HookJson | null } {
-  const r = spawnSync(process.execPath, [path.join(PLUGIN, 'hooks', name + '.ts')], { input: JSON.stringify(input), env: env(extra), encoding: 'utf8', timeout: 20_000 });
+  const r = spawnSync(process.execPath, [path.join(PLUGIN, 'hooks', 'run.ts'), name], { input: JSON.stringify(input), env: env(extra), encoding: 'utf8', timeout: 20_000 });
   return { code: r.status, stdout: r.stdout, stderr: r.stderr, json: r.stdout.trim() ? JSON.parse(r.stdout) : null };
+}
+/** hooks/launcher.ts refresh() in a child of its own, as a join or a restore runs it, with env extra. */
+function launch(extra?: Env): { code: number | null; stderr: string } {
+  const url = pathToFileURL(path.join(PLUGIN, 'hooks', 'launcher.ts')).href;
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', `(await import(${JSON.stringify(url)})).refresh()`], { env: env(extra), encoding: 'utf8', timeout: 20_000 });
+  return { code: r.status, stderr: r.stderr };
 }
 const launched = (agentId: string | undefined, ti: AgentInput) => ({ isAsync: true, status: 'async_launched', agentId, description: ti.description, prompt: ti.prompt });
 const post = (sid: string, ti: AgentInput, agentId: string | undefined, parent?: string) => ({
@@ -113,9 +121,9 @@ test('row-hold: blocks a row agent that stops while its member is present (cappe
   assert.match(r.json!.reason!, new RegExp(`Call hold with \\{"room": "${code}"\\}`));
 });
 
-test('row-launcher: writes an executable launcher under SUB_HUMAN_HOME/bin that runs this plugin\'s agent-statusline', () => {
+test('launcher: writes an executable launcher under SUB_HUMAN_HOME/bin that runs this plugin\'s agent-statusline', () => {
   const { home, code } = world(['claude', 'alice']);
-  const r = hook('row-launcher', { session_id: 'x', hook_event_name: 'SessionStart', source: 'startup' });
+  const r = launch();
   assert.equal(r.code, 0, r.stderr);
   const f = path.join(home, 'bin', 'row-status');
   const body = fs.readFileSync(f, 'utf8');
@@ -123,7 +131,7 @@ test('row-launcher: writes an executable launcher under SUB_HUMAN_HOME/bin that 
   assert.ok(body.includes(`exec node '${path.join(PLUGIN, 'scripts', 'sub-human')}' agent-statusline`));
   assert.ok(fs.statSync(f).mode & 0o100, 'executable');
   const mtime = fs.statSync(f).mtimeMs;
-  hook('row-launcher', { session_id: 'x', hook_event_name: 'SessionStart', source: 'clear' });
+  launch();
   assert.equal(fs.statSync(f).mtimeMs, mtime, 'unchanged content is not rewritten');
   // and the SSH serve shim with its pointer at this plugin (lib/remote/shim.ts)
   assert.equal(fs.statSync(path.join(home, 'bin', 'serve')).mode & 0o777, 0o700);
@@ -146,27 +154,27 @@ test('row-launcher: writes an executable launcher under SUB_HUMAN_HOME/bin that 
   assert.match(out.stdout, /^\{"id":"a1","content":"alice {2}joined"\}\n?$/);
 });
 
-test('row-launcher: a temp-dir plugin root is refused unless allowed; stable roots run first, newest first, a deleted root is skipped', () => {
+test('launcher: a temp-dir plugin root is refused unless allowed; stable roots run first, newest first, a deleted root is skipped', () => {
   const { home } = world(['claude']);
   const f = path.join(home, 'bin', 'row-status');
   const mkRoot = (base: string) => { fs.mkdirSync(path.join(base, 'scripts'), { recursive: true }); fs.writeFileSync(path.join(base, 'scripts', 'sub-human'), ''); return base; };
   const tmpRoot = mkRoot(fs.mkdtempSync(path.join(os.tmpdir(), 'sh-root-')));
   // refused: nothing is written
-  let r = hook('row-launcher', { session_id: 'x', hook_event_name: 'SessionStart', source: 'startup' }, { CLAUDE_PLUGIN_ROOT: tmpRoot, SUB_HUMAN_ALLOW_TMP_ROOT: undefined });
+  let r = launch({ CLAUDE_PLUGIN_ROOT: tmpRoot, SUB_HUMAN_ALLOW_TMP_ROOT: undefined });
   assert.equal(r.code, 0, r.stderr);
   assert.match(r.stderr, /temp dir/);
   assert.ok(!fs.existsSync(f));
   assert.equal(launcher.isTempRoot(tmpRoot), true);
   assert.equal(launcher.isTempRoot(PLUGIN), false);
   // allowed (tests, the demo): it is recorded, but after any stable root
-  r = hook('row-launcher', { session_id: 'x', hook_event_name: 'SessionStart', source: 'startup' }, { CLAUDE_PLUGIN_ROOT: tmpRoot, SUB_HUMAN_ALLOW_TMP_ROOT: '1' });
+  r = launch({ CLAUDE_PLUGIN_ROOT: tmpRoot, SUB_HUMAN_ALLOW_TMP_ROOT: '1' });
   assert.equal(r.code, 0, r.stderr);
-  hook('row-launcher', { session_id: 'x', hook_event_name: 'SessionStart', source: 'startup' }, { CLAUDE_PLUGIN_ROOT: PLUGIN, SUB_HUMAN_ALLOW_TMP_ROOT: '1' });
+  launch({ CLAUDE_PLUGIN_ROOT: PLUGIN, SUB_HUMAN_ALLOW_TMP_ROOT: '1' });
   const body = fs.readFileSync(f, 'utf8');
   const at = (s: string) => body.indexOf(`exec node '${path.join(s, 'scripts', 'sub-human')}'`);
   assert.ok(at(PLUGIN) >= 0 && at(tmpRoot) > at(PLUGIN), body);
   // a session that does not allow temp roots drops them
-  hook('row-launcher', { session_id: 'x', hook_event_name: 'SessionStart', source: 'startup' }, { CLAUDE_PLUGIN_ROOT: PLUGIN, SUB_HUMAN_ALLOW_TMP_ROOT: undefined });
+  launch({ CLAUDE_PLUGIN_ROOT: PLUGIN, SUB_HUMAN_ALLOW_TMP_ROOT: undefined });
   assert.equal(fs.readFileSync(f, 'utf8').indexOf(tmpRoot), -1);
   // the launcher itself skips a root whose CLI is gone and prints nothing
   assert.equal(spawnSync('/bin/sh', [f], { encoding: 'utf8', env: { PATH: process.env.PATH } }).status, 0);
@@ -251,12 +259,13 @@ test('row-rewake: silent exit 0 when nothing is missing, outside a room, with no
   assert.equal(r.stderr, '');
 });
 
-test('row-rewake: registered in hooks.json for SessionStart resume with asyncRewake', () => {
+test('the row hooks are the module\'s: hooks.json has no PreToolUse, PostToolUse, SubagentStop or SessionStart entry', async () => {
   const cfg: { hooks: Record<string, HookGroup[]> } = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8'));
-  const e = cfg.hooks.SessionStart.find(x => x.hooks.some(h => /row-rewake\.ts/.test(h.command)));
-  assert.ok(e, 'registered');
-  assert.equal(e.matcher, 'resume');
-  assert.equal(e.hooks[0].asyncRewake, true);
+  for (const ev of ['PreToolUse', 'PostToolUse', 'SubagentStop', 'SessionStart']) assert.equal(cfg.hooks[ev], undefined, ev);
+  const { HOOKS: MOD } = await import(path.join(PLUGIN, 'mod', 'register.ts')) as { HOOKS: { event: string; matcher: string; file: string; does: string }[] };
+  for (const ev of ['classic.PreToolUse', 'classic.PostToolUse', 'classic.SubagentStop']) assert.ok(MOD.some(h => h.event === ev && h.file === 'mod/rows.ts'), ev);
+  // a resume's rows come back through the module (classic.SessionStart: row-rewake in the background, its calls a wake)
+  assert.ok(MOD.some(h => h.event === 'classic.SessionStart' && h.file === 'mod/deliver.ts' && /row-rewake/.test(h.does)));
 });
 
 test('row agents: a stray typed message gets the one-line read-only reply, then hold again', () => {

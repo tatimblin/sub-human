@@ -21,9 +21,9 @@
  *   login NAME DEST CODE [SSH_OPT…]   `/sub-human join DEST CODE --as NAME`: a link over the person's own ssh login to
  *                                 DEST (no invite), with SSH_OPT… as for join: {ok, out, ms, code}; ok: the seat joined
  *   rejoin NAME CODE              `/sub-human NAME CODE` (a room hosted here, or one this machine links to)
- *   say NAME TEXT                 NAME's `@room TEXT` through hooks/prompt.ts: {ok, ms, t0, out}
- *   prompt NAME TEXT              any typed prompt through hooks/prompt.ts (e.g. a slash-free command)
- *   expand NAME ARGS              any `/sub-human ARGS` through hooks/join.ts (invite --ssh, kick, handoff, …)
+ *   say NAME TEXT                 NAME's `@room TEXT` through the prompt hook: {ok, ms, t0, out}
+ *   prompt NAME TEXT              any typed prompt through the prompt hook (e.g. a slash-free command)
+ *   expand NAME ARGS              any `/sub-human ARGS` through the join hook (invite --ssh, kick, handoff, …)
  *   leave NAME                    SessionEnd for NAME, then its seat process stops
  *   short NAME DEST CODE|- PIN [--via J] [SSH_OPT…]   `/sub-human join DEST [CODE] PIN [--via J] --as NAME` (an
  *                                 invite's line; '-' for a URL): {ok, waiting, out, hidden}: ok once the host checked
@@ -53,6 +53,10 @@ if (!HOME) { console.error('seat-cli: SUB_HUMAN_HOME is not set'); process.exit(
 /** A plugin file by its .ts name, or its .js one in a plugin from before the TypeScript migration (devbox-old). */
 const pick = rel => { const ts = rel.replace(/\.js$/, '.ts'); return fs.existsSync(path.join(PLUGIN, ts)) ? ts : ts.replace(/\.ts$/, '.js'); };
 const lib = name => require(path.join(PLUGIN, pick(path.join('lib', name))));
+/** node's argv for hook `script`: hooks/run.ts SCRIPT (0.5.0-beta.16+), else the older hooks/SCRIPT.ts|.js. */
+const hookArgv = script => (fs.existsSync(path.join(PLUGIN, 'hooks', 'run.ts')) ? [path.join(PLUGIN, 'hooks', 'run.ts'), script] : [path.join(PLUGIN, pick(`hooks/${script}.ts`))]);
+/** The join hook's source: hooks/handlers/join.ts, else the older hooks/join.ts|.js. */
+const joinSrc = () => (fs.existsSync(path.join(PLUGIN, 'hooks', 'handlers', 'join.ts')) ? 'hooks/handlers/join.ts' : 'hooks/join.ts');
 const load = () => { try { return JSON.parse(fs.readFileSync(STATE, 'utf8')); } catch { return { seats: {} }; } };
 const save = s => fs.writeFileSync(STATE, JSON.stringify(s, null, 2) + '\n', { mode: 0o600 });
 const seatOf = name => { const s = load().seats[name]; if (!s) throw new Error(`no seat ${name} on this machine`); return s; };
@@ -70,7 +74,7 @@ function baseEnv(seat) {
 
 function hook(script, input, seat) {
   const t0 = Date.now();
-  const r = spawnSync(process.execPath, [path.join(PLUGIN, pick(`hooks/${script}.ts`))], {
+  const r = spawnSync(process.execPath, hookArgv(script), {
     input: JSON.stringify({ ...input, session_id: seat.sid, cwd: CWD }), env: baseEnv(seat), cwd: CWD, encoding: 'utf8', timeout: 30_000,
   });
   let json = null;
@@ -290,7 +294,7 @@ const cmds = {
       protocolExports: Object.keys(protocol), files, cliPath: CLI,
       src: {
         auth: { sh2: /\bsh2\b/.test(src('lib/remote/auth.ts')), pin: /\bpin\b/i.test(src('lib/remote/auth.ts')) },
-        join: { hostSsh: /host\s+--ssh|--ssh\b/.test(src('hooks/join.ts')), urlPin: /https?:\/\//.test(src('hooks/join.ts')) && /\bpin\b/i.test(src('hooks/join.ts')), login: /\bloginSpec\b/.test(src('hooks/join.ts')) },
+        join: { hostSsh: /host\s+--ssh|--ssh\b/.test(src(joinSrc())), urlPin: /https?:\/\//.test(src(joinSrc())) && /\bpin\b/i.test(src(joinSrc())), login: /\bloginSpec\b/.test(src(joinSrc())) },
         // a seat kept across an outage: the daemon renews this machine's seats on every reconnect (keepSeats/beat)
         link: { rejoin: /rejoin|keepSeats|localSeats/i.test(src('lib/remote/link.ts')), outbox: /outbox/i.test(src('lib/remote/link.ts')), ping: /\bping\b/.test(src('lib/remote/link.ts')), wake: /\bwake\b/i.test(src('lib/remote/link.ts')) },
         // the hello's version range: protocol.PROTO {min, max} and skewMessage (which side updates)

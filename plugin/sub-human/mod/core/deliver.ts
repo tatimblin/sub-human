@@ -8,21 +8,15 @@
  * Failure: pull is at most once (PULL_DELIVERY): the tail's cursor moves when the line is written, so a mod lost
  * between that write and the append drops it; a malformed event parses to null and is ignored.
  */
-import { FOR_CLAUDE } from './chat.ts';
+import { FOR_CLAUDE, MOD_RESTART_MS, MOD_RESTART_MAX_MS, MOD_RESTART_STEADY_MS, MOD_DELIVERY_ERROR_LOG_MS } from './constants.ts';
 import { shimEnv } from './shim.ts';
 import type { DeliverAction, Hello, TailEvent } from './types.ts';
 
-// Equal to lib/config.ts's entries of the same name (test/mod-core-deliver.node-test.ts): mod/ imports no CommonJS.
-/** The tail child's first restart delay, doubled per failure in a row up to MOD_RESTART_MAX_MS. */
-export const MOD_RESTART_MS = 1000;
-export const MOD_RESTART_MAX_MS = 60_000;
-/** A child that ran this long before it exited was healthy: its restart starts the backoff over. */
-export const MOD_RESTART_STEADY_MS = 60_000;
+// the backoff and the notice's window are mod/core/constants.ts's (lib/config.ts re-exports them)
+export { MOD_RESTART_MS, MOD_RESTART_MAX_MS, MOD_RESTART_STEADY_MS, MOD_DELIVERY_ERROR_LOG_MS };
 /** The tail child's failures in a row before the person is told: a restart resumes from the child's cursor, so
  * one exit loses nothing; a child that keeps failing leaves the room unheard. */
 export const MOD_RESTART_TELL_FAILS = 3;
-/** At most one delivery-error notice per this long, however many failures it covers. */
-export const MOD_DELIVERY_ERROR_LOG_MS = 300_000;
 /** A relay waits this long after the hook that asked for it (a prompt cannot be submitted from inside one). */
 export const RELAY_AFTER_MS = 250;
 /** At most one relay per this long: lines that come sooner wait and go together (on top of the tail's settle). */
@@ -82,7 +76,11 @@ export const tailArgv = (root: unknown) => ['node', `${root}/scripts/sub-human`,
 
 // The same env a shimmed hook gets (an empty CLAUDE_PID: a child of the mod inherits whatever claude inherited,
 // cc CONTRACT process-run-stdin); a child with no session id looks its seat up by nothing rather than by ''.
-export const tailEnv = (sid: unknown, root: unknown) => shimEnv(typeof sid === 'string' && sid ? { session_id: sid } : {}, root);
+export const tailEnv = (sid: unknown, root: unknown) => {
+  // the tail is no hook: it finds its seat by CLAUDE_CODE_SESSION_ID (lib/identity.ts resolveSelf), not by its parent
+  const { SUB_HUMAN_VIA: _via, ...env } = shimEnv(typeof sid === 'string' && sid ? { session_id: sid } : {}, root);
+  return env;
+};
 
 /** {push(text) -> [line]}: whole lines out of the pieces $.process.spawn streams. */
 export function lineBuffer() {
@@ -218,3 +216,12 @@ export function turnLedger() {
 
 /** Start the tail child unless the hello is sure the session has no seat. */
 export const spawnWanted = (hello: Hello | null | undefined) => !hello || !!hello.seat;
+
+/** row-rewake's budget (its asyncRewake command hook had 30 s: it waits for the seat up to REWAKE_WAIT_MS). */
+export const REWAKE_TIMEOUT_MS = 30_000;
+/** What the person sees of a rewake (the rest is for the model). */
+export const REWAKE_SHOWN = "sub-human: restoring this session's rows";
+
+/** row-rewake's stderr as a wake: one line the person sees (mod/render.ts draws a sub-human prompt without its "(for
+ * Claude)" lines), the row calls for the model. */
+export const rewakePrompt = (stderr: unknown): string => [REWAKE_SHOWN, ...String(stderr ?? '').trim().split('\n').map(l => `${FOR_CLAUDE} ${l}`)].join('\n');

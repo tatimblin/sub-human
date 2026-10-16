@@ -11,7 +11,8 @@
 //   ensure(code, name) -> KeyObject   the seat's private key, created on first use (join.ts creates it at join;
 //                                     a hook creates it lazily for a seat that joined before keys existed)
 //   publicPem(code, name) -> string   the seat's public key as SPKI PEM, for member_joined (creates it like ensure)
-//   arm()                             install ensure() as this process's signer (hooks/common.ts, every hook)
+//   arm()                             install ensure() as this process's signer: only the handlers that sign call it
+//                                     (hooks/handlers/at-room.ts, consent.ts, join.ts), as they load
 //
 // The room MCP server, the CLI and the tail never require this file (test/security.node-test.ts checks it), so
 // they cannot sign. The Bash guard (mod/guard.ts, the hooks module) denies commands that name the keys or run these hooks.

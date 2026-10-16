@@ -8,6 +8,9 @@
  *   asHello(value) -> hello|null the stored hello, or null when absent (none yet, or not an object)
  *   asNonce(value, sid) -> string|null   the nonce kept for session id sid, or null
  *   mintNonce() -> string        32 hex characters from crypto.getRandomValues (the module runtime has it)
+ *   attested(lease, sid, nonce) -> bool   node's check that a payload came from this session's module: the nonce beside
+ *                                it is the one this session's lease holds (hooks/handlers/at-room.ts and join.ts read
+ *                                the lease, lib/identity.ts readModLease, and hand it in)
  */
 import type { Hello } from './types.ts';
 
@@ -28,3 +31,9 @@ export function mintNonce(): string {
   crypto.getRandomValues(b);
   return Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
 }
+
+/** This session's lease, as lib/identity.ts readModLease returns it (untrusted until checked). */
+type LeaseLike = { session_id?: unknown; nonce?: unknown } | null | undefined;
+
+export const attested = (lease: LeaseLike, sid: unknown, nonce: unknown): boolean => typeof sid === 'string'
+  && typeof nonce === 'string' && !!lease && lease.session_id === sid && typeof lease.nonce === 'string' && lease.nonce === nonce;

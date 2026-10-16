@@ -54,9 +54,9 @@
  *   replacedIn(ps, prompt, code) -> {old, p}|null   the words name no pending hash but a superseded one (old) whose
  *                                  latest revision p is among ps: a review opens p, and says so
  *   proposeIntent(prompt) -> bool  the person's words ask their Claude to propose something ("propose to alice: …"):
- *                                  no review opens on such a prompt (hooks/consent.ts Pre(EnterPlanMode))
+ *                                  no review opens on such a prompt (hooks/handlers/consent.ts Pre(EnterPlanMode))
  *   choose(me, ps, prompt) -> p    store that pick (namedIn, else replacedIn's p; members/NAME/pick) and return it,
- *                                  else the newest (hooks/consent.ts)
+ *                                  else the newest (hooks/handlers/consent.ts)
  *   picked(me, ps) -> p            Pre(EnterPlanMode): the stored pick when still among ps, else the newest
  *   read(code, hash) -> string|null  the stored plan (the room blob plans/<hash>.md)
  * The plan-view review state (the room document members/NAME/review): readReview, writeReview, clearReview, withReview(me, fn)
@@ -64,7 +64,7 @@
  * A review's note waiting for the person's Send (the room document members/NAME/confirm): readConfirm, writeConfirm,
  *   clearConfirm; confirmCard(c) -> the AskUserQuestion input (Send, Discard), confirmQuestion(c) its question,
  *   confirmCall(hash) -> how the model opens that card, showConfirm(name, hash, interrupted?) -> the line telling it to
- *   open the card now, before anything else, and after an Esc that the Esc was no answer (hooks/consent.ts reoffer and
+ *   open the card now, before anything else, and after an Esc that the Esc was no answer (hooks/handlers/consent.ts reoffer and
  *   lib/tail.ts remindersText say the same); repeatsNote(c,
  *   text) -> bool: a post carries that note (case, spacing and quote marks aside; a note under 12 chars only when
  *   equal), so posting it would relay it twice.
@@ -306,7 +306,7 @@ const PROPOSE_RE = new RegExp('^\\s*(?:@\\S+\\s+)?(?:(?:ok(?:ay)?|now|so|please|
 const proposeIntent = (prompt: string | null | undefined): boolean => PROPOSE_RE.test(String(prompt || ''));
 
 /**
- * members/NAME/pick: {hash|null, at}, the proposal the person's latest prompt named (hooks/consent.ts reads it from
+ * members/NAME/pick: {hash|null, at}, the proposal the person's latest prompt named (hooks/handlers/consent.ts reads it from
  * the transcript at Pre(EnterPlanMode), or a card call named). A review opens that one while pending, else the newest.
  */
 const pickKey = (me: Me) => `members/${me.name}/pick`;
@@ -326,7 +326,7 @@ function picked(me: Me, ps: Proposal[]): Proposal | null {
 
 /** How the model opens proposal hash for its person: the plan view (the hooks fall back to the card). */
 const openCall = (hash: string) => `call EnterPlanMode, then ExitPlanMode with plan "proposal ${hash}"`;
-/** How the model shows the person the confirm card for a waiting note (hooks/consent.ts builds it). */
+/** How the model shows the person the confirm card for a waiting note (hooks/handlers/consent.ts builds it). */
 const confirmCall = (hash: string) => `call AskUserQuestion with the question "objection ${hash}"`;
 /**
  * The model is to show that card now: one wording for every line that says so on the same prompt, so none is softer.
@@ -474,7 +474,7 @@ function decide(code: string, hash: string): Entry | null {
   });
 }
 
-// ---------- the plan-view review state (hooks/consent.ts, hooks/session-restore.ts) ----------
+// ---------- the plan-view review state (hooks/handlers/consent.ts, hooks/handlers/session-restore.ts) ----------
 /**
  * members/NAME/review: {phase, mode, at, hash?, from?, file?, backup?, restored?, tool_use_id?, …}.
  * `backup` is the session plan file's text before the review overwrote it, even when that is the proposal's own
@@ -520,7 +520,7 @@ function restoreStale(me: Me | null | undefined, { force = false, now = Date.now
   });
 }
 
-// ---------- a review's note, waiting for the person's Send (hooks/consent.ts) ----------
+// ---------- a review's note, waiting for the person's Send (hooks/handlers/consent.ts) ----------
 /**
  * members/NAME/confirm: {hash, note, from, title, at, asked?}. A plan review rejected with a note ("Tell Claude what
  * to change", a phone deny with a note or "Suggest edits": Claude Code writes them alike, and a phone message typed

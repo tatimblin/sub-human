@@ -1,17 +1,17 @@
 // Wiring: the prompt gate and the UserPromptSubmit shim (mod/prompt.ts). Run with `npm run test:mods`.
 // The gate's table and the prefilter are tested in node (test/mod-core.node-test.ts, test/hooks/security.node-test.ts); this
 // checks the hooks: a peer @room is dropped before anything beneath runs, an unseated prompt starts no node, a
-// seated one runs hooks/prompt.ts with the origin in its stdin, and the shim's answer and notices reach the session.
+// seated one runs hooks/handlers/prompt.ts with the origin in its stdin, and the shim's answer and notices reach the session.
 import { test, expect, mock } from 'claude-code/testing'
 import { SEAT, OUT, ran, scriptOf, session, start } from './support.ts'
 
 const SID = 'sid-p'
 const NONCE = /^[0-9a-f]{32}$/
-/** An @room's receipt (hooks/at-room.ts): the stop reason the shim answers with. */
+/** An @room's receipt (hooks/handlers/at-room.ts): the stop reason the shim answers with. */
 const SENT = `✓ sent to room ${SEAT.code} (Claude wasn't asked)`
 
 /**
- * The engine beneath the plugin: a session, mod-hello answering `hello`, hooks/prompt.ts answering `prompt`, and a
+ * The engine beneath the plugin: a session, mod-hello answering `hello`, hooks/handlers/prompt.ts answering `prompt`, and a
  * core that, like the engine's, runs the UserPromptSubmit hooks inside prompt.submit (cc CONTRACT
  * prompt-submit-ups-order). Returns what ran: the scripts and their stdin, the classic results, the logged lines.
  */
@@ -27,6 +27,7 @@ function world(engine: any, on: any, { hello = OUT as any, prompt = '', exitCode
     if (script === 'presence.ts') { seen.presence.push({ stdin: JSON.parse(e.init.stdin), env: e.init.env }); return ran('') }
     seen.scripts.push(script)
     if (script === 'mod-hello.ts') { seen.hellos.push(JSON.parse(e.init.stdin)); return ran(seen.hello ? JSON.stringify(seen.hello) : '', seen.hello ? 0 : 1) }
+    if (script !== 'prompt.ts') return ran('') // session-restore after a /clear: nothing to say here
     seen.stdin.push(JSON.parse(e.init.stdin))
     seen.env.push(e.init.env)
     return ran(prompt, exitCode)
@@ -55,15 +56,17 @@ test('a peer @room is dropped before any hook beneath runs; the reason is the dr
   expect(seen.scripts).toEqual(['mod-hello.ts'])
 })
 
-test('an unseated session starts no node for a plain prompt; an @room there still reaches node (its refusal)', async ($, on) => {
-  const seen = world($, on, { hello: { ...OUT, seat: null }, prompt: JSON.stringify({ decision: 'block', reason: '✗ not posted: this session is not in a room.', hookSpecificOutput: { hookEventName: 'UserPromptSubmit', suppressOriginalPrompt: true } }) })
+test('an unseated session starts no node for a prompt: an @room there is refused by the module, in at-room\'s words', async ($, on) => {
+  const seen = world($, on, { hello: { ...OUT, seat: null } })
   await start($)
   await submit($, 'hello there')
   await submit($, '/sub-human alice')
   expect(seen.scripts).toEqual(['mod-hello.ts'])
   await submit($, '@room hi')
-  expect(seen.scripts).toEqual(['mod-hello.ts', 'prompt.ts'])
-  expect(seen.classic.at(-1).block).toMatch(/not in a room/)
+  await submit($, '@claude hi') // outside a room an ordinary prompt
+  expect(seen.scripts).toEqual(['mod-hello.ts'])
+  expect(seen.classic.at(-2)).toEqual({ block: "✗ not posted: this session isn't in a room. Join one first: /sub-human", suppressOriginalPrompt: true })
+  expect(seen.classic.at(-1).block).toBeUndefined()
 })
 
 test('before the hello (or after it failed) every prompt runs node: the mod does not know', async ($, on) => {
@@ -73,7 +76,7 @@ test('before the hello (or after it failed) every prompt runs node: the mod does
   expect(seen.scripts).toEqual(['mod-hello.ts', 'prompt.ts'])
 })
 
-test('a seated prompt runs hooks/prompt.ts with the origin, the session env and shim mode; its answer and notice come back', async ($, on) => {
+test('a seated prompt runs hooks/handlers/prompt.ts with the origin, the session env and shim mode; its answer and notice come back', async ($, on) => {
   const out = { systemMessage: 'bob joined', subHuman: { reviewOpen: false }, hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: 'Room since your last turn: …', sessionTitle: 'alice.otter-4821' } }
   const seen = world($, on, { prompt: JSON.stringify(out) })
   await start($)

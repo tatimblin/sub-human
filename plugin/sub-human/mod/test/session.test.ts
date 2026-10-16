@@ -1,0 +1,88 @@
+// Wiring: the session's hello and its SessionStart (mod/deliver.ts). Run with `npm run test:mods`.
+// A session with no session index starts no node at its start: the hello is the module's own (the home from the
+// environment, no seat), and its lease is written when /sub-human first runs. A /clear, compact or resume puts a seat
+// back through node session-restore, then says hello; a resume also runs row-rewake in the background, whose row calls
+// become a wake. A session surely without a seat does none of it.
+import { test, expect } from 'claude-code/testing'
+import { SEAT, helloOf, ran, scriptOf, session, start } from './support.ts'
+
+const SID = 'sid-s'
+const HOME = '/u/.sub-human'
+
+/** The engine beneath: HOME=/u, a session index for SID only when `indexed`, mod-hello answering for `seat`, the
+ * other scripts answering from `answer` ({stdout, exitCode, stderr}); what ran, the prompts submitted, the writes
+ * the guard let through. */
+function world(engine: any, on: any, { indexed = false, seat = null as any, answer = {} as Record<string, any> } = {}) {
+  const seen = { runs: [] as string[], stdin: {} as Record<string, any>, prompts: [] as string[], logs: [] as string[] }
+  session(on, SID)
+  on('session.cwd', () => ({ value: '/w' }))
+  on('env.get', ($: any, e: any) => ({ value: e.name === 'HOME' ? '/u' : undefined }))
+  on('fs.exists', ($: any, e: any) => ({ value: indexed && e.path === `${HOME}/sessions/by-sid/${SID}.json` }))
+  on('fs.stat', ($: any, e: any) => ({ value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: false, realPath: e.path } }))
+  on('ui.log', ($: any, e: any) => { seen.logs.push(e.text); return { value: undefined } })
+  on('process.run', ($: any, e: any) => {
+    const script = scriptOf(e)
+    seen.runs.push(script)
+    seen.stdin[script] = JSON.parse(e.init.stdin)
+    if (script === 'mod-hello.ts') return ran(JSON.stringify(helloOf(seat)))
+    const a = answer[script] || {}
+    return ran(a.stdout || '', a.exitCode ?? 0, a.stderr || '')
+  })
+  on('process.spawn', async function* () { return { value: { code: 0, signal: null } } })
+  on('prompt.submit', ($: any, e: any) => { seen.prompts.push(e.text); return { text: e.text } })
+  on('classic.SessionStart', () => ({}))
+  on('classic.UserPromptExpansion', () => ({}))
+  on('command.run', () => ({ text: undefined }))
+  on('tool.check', () => ({ decision: 'allow' }))
+  on('tool.call', () => ({ result: 'ok', text: 'ok' }))
+  return seen
+}
+const until = async (cond: () => boolean, ms = 3000) => {
+  const t0 = Date.now()
+  while (!cond()) { if (Date.now() - t0 > ms) throw new Error('timed out'); await new Promise(r => setTimeout(r, 10)) }
+}
+
+test('no session index: no node at session start, the guard still knows the home; /sub-human writes the lease first, then joins', async ($, on) => {
+  const seen = world($, on)
+  await start($)
+  await new Promise(r => setTimeout(r, 30))
+  expect(seen.runs).toEqual([])
+  // the home came from the environment: a write into it is denied as one into the store
+  const w: any = await $.tool.call({ tool: 'Write', file_path: `${HOME}/rooms/otter-4821/log.jsonl`, content: 'x' } as any)
+  expect(w.deny).toMatch(/sub-human/)
+  await $.command.run({ command: 'sub-human:sub-human', args: 'help', origin: { kind: 'composer' } } as any)
+  expect(seen.runs).toEqual(['mod-hello.ts', 'join.ts', 'mod-hello.ts'])
+  expect(seen.stdin['join.ts'].sub_human_nonce).toBe(seen.stdin['mod-hello.ts'].nonce)
+})
+
+test('a session index: mod-hello at session start', async ($, on) => {
+  const seen = world($, on, { indexed: true, seat: SEAT })
+  await start($)
+  expect(seen.runs[0]).toBe('mod-hello.ts')
+})
+
+test('a resumed seat: session-restore puts it back (its context and title), then the hello, then row-rewake, whose calls are a wake', async ($, on) => {
+  const restore = { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: 'SUB-HUMAN: you are alice', sessionTitle: SEAT.addr } }
+  const calls = 'sub-human: this session was resumed and its rows did not survive it. Re-create them now, exactly as written:\nAgent({subagent_type: "sub-human:room"})\nWrite no text: make only these calls and end your turn.'
+  const seen = world($, on, { indexed: true, seat: SEAT, answer: { 'session-restore.ts': { stdout: JSON.stringify(restore) }, 'row-rewake.ts': { exitCode: 2, stderr: calls } } })
+  await start($)
+  seen.runs.length = 0
+  const r: any = await $.classic.SessionStart({ session_id: SID, source: 'resume', cwd: '/w', transcript_path: '/t.jsonl' } as any)
+  expect(r.additionalContext).toEqual(['SUB-HUMAN: you are alice'])
+  expect(r.sessionTitle).toBe(SEAT.addr)
+  await until(() => seen.prompts.length === 1)
+  expect(seen.runs.slice(0, 2)).toEqual(['session-restore.ts', 'mod-hello.ts'])
+  expect(seen.runs).toContain('row-rewake.ts')
+  expect(seen.stdin['row-rewake.ts'].source).toBe('resume')
+  const lines = seen.prompts[0].split('\n')
+  expect(lines[0]).toBe("sub-human: restoring this session's rows")
+  expect(lines.slice(1).every(l => l.startsWith('(for Claude) '))).toBe(true)
+  expect(lines[2]).toBe('(for Claude) Agent({subagent_type: "sub-human:room"})')
+})
+
+test('a session surely without a seat: compact, clear and resume start no node', async ($, on) => {
+  const seen = world($, on)
+  await start($)
+  for (const source of ['compact', 'clear', 'resume', 'startup']) await $.classic.SessionStart({ session_id: SID, source } as any)
+  expect(seen.runs).toEqual([])
+})

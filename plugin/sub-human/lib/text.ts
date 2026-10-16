@@ -1,5 +1,6 @@
 /**
- * plugin/sub-human/lib/text.ts: the string helpers and name patterns every module shares. Zero dependencies.
+ * plugin/sub-human/lib/text.ts: the string helpers and name patterns every module shares. Zero dependencies beyond
+ * mod/core/seat.ts, which owns the patterns.
  *
  *   clip(s, n) -> string     at most n code points; a longer string keeps n - 1 and ends in "…". Counting code
  *                            points (not UTF-16 units) never splits a surrogate pair, so an emoji is never halved.
@@ -17,9 +18,8 @@
 import os from 'node:os';
 import path from 'node:path';
 
-const NAME_RE = /^[A-Za-z0-9_.-]{1,32}$/;
-const CODE_RE = /^[a-z]+-\d{4}$/;
-const SID_SAFE = /^[A-Za-z0-9_-]{1,128}$/;
+// owned by mod/core/seat.ts (the hooks module parses names and codes too)
+import { NAME_RE, CODE_RE, SID_SAFE } from '../mod/core/seat.ts';
 
 function clip(s: unknown, n: number): string {
   const str = String(s);

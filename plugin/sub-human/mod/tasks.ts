@@ -1,9 +1,9 @@
 /**
- * plugin/sub-human/mod/tasks.ts: the room task list's mirror and gate, run only where they act. hooks/tasks.ts
+ * plugin/sub-human/mod/tasks.ts: the room task list's mirror and gate, run only where they act. hooks/handlers/tasks.ts
  * acts only for the room's Claude, so a member's own native task list costs no node start.
- *   - classic.PostToolUse TaskCreate|TaskUpdate: node hooks/tasks.ts (the mirror) when tasksNeeded
+ *   - classic.PostToolUse TaskCreate|TaskUpdate: node hooks/handlers/tasks.ts (the mirror) when tasksNeeded
  *     (mod/core/prefilter.ts: the room's Claude, or unsure).
- *   - classic.TaskCompleted: node hooks/tasks.ts (the gate) when tasksNeeded. Its exit 2 becomes block, which
+ *   - classic.TaskCompleted: node hooks/handlers/tasks.ts (the gate) when tasksNeeded. Its exit 2 becomes block, which
  *     drops every field of that TaskUpdate as the command hook's did (cc CONTRACT task-completed-block-drops-
  *     fields, hook-exit2-blocks). If the shim fails wherever tasksNeeded holds, its .catch blocks: the gate
  *     fails closed, as tasks.ts does. Only a session surely not the room's Claude lets the completion go on.
@@ -27,13 +27,13 @@ async function roomEnvOf($: EngineInterface) {
   return $.env.get('SUB_HUMAN_ROOM');
 }
 
-/** node hooks/tasks.ts for this event, or null when the session is surely not the room's Claude. */
+/** node hooks/handlers/tasks.ts for this event, or null when the session is surely not the room's Claude. */
 async function runTasks(
   $: EngineInterface, e: ClassicHookInputs['PostToolUse'] | ClassicHookInputs['TaskCompleted'], event: string,
 ): Promise<ShimResult | null> {
   if (!tasksNeeded(await helloOf($), e.session_id, await roomEnvOf($))) return null;
   const root = $.plugin.root;
-  const run = await $.process.run(shimArgv(root, 'tasks.ts'), {
+  const run = await $.process.run(shimArgv(root, 'tasks'), {
     stdin: JSON.stringify(e),
     env: shimEnv(e, root),
     timeoutMs: SHIM_TIMEOUT_MS,

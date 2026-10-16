@@ -37,7 +37,7 @@ const HOSTILE = [
   'multi\n  indented\n\ttabbed\nlast line with trailing spaces   ',
 ];
 
-/** The module's nonce for every session here (hooks/mod-hello.ts writes the real one to the lease). */
+/** The module's nonce for every session here (hooks/handlers/mod-hello.ts writes the real one to the lease). */
 const NONCE = '0123456789abcdef'.repeat(2);
 /** A prompt as the mod's shim hands it over: with its origin (composer: the person's own Enter) and the nonce. */
 const submit = (prompt: string, origin: string | null = 'composer'): HookInput => ({ ...fixture('user-prompt-submit'), prompt, ...(origin ? { sub_human_origin: origin, sub_human_nonce: NONCE } : {}) });
@@ -325,16 +325,15 @@ test('drafted:"agent" when the posted text is verbatim in Claude\'s last message
   assert.deepEqual(w.entries().map(e => e.drafted), ['agent', undefined, 'agent', undefined, undefined]);
 });
 
-test('a plain prompt outputs nothing (the title, digest and rows are the mod\'s); presence only without an origin', () => {
+test('a plain prompt outputs nothing (the title, digest and rows are the mod\'s) and writes no presence (the mod is its one writer)', () => {
   const w = new World({ claude: 'sleep', alice: 'act' });
   rowsRunning(w, 'alice', { room: true });
   const r = atRoom(w, submit('hello'), { as: 'alice' });
   assert.equal(r.code, 0, r.stderr);
   assert.equal(r.stdout, '');
-  // with an origin the mod is the one writer of "working" (mod/prompt.ts)
   assert.equal(w.lib(() => room.open(w.code).store.kv.get('presence/alice', null)), null);
   assert.equal(atRoom(w, submit('hello again', null), { as: 'alice' }).stdout, '');
-  assert.equal(w.lib(() => room.open(w.code).store.kv.get('presence/alice')).state, 'working');
+  assert.equal(w.lib(() => room.open(w.code).store.kv.get('presence/alice', null)), null, 'no origin either (mod/prompt.ts writes "working")');
   // non-members get nothing
   const w3 = new World({ claude: 'sleep' });
   assert.equal(atRoom(w3, submit('hi')).stdout, '');

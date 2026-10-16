@@ -9,7 +9,7 @@ import { OUT, ran, scriptOf, session, start } from './support.ts'
 
 const SID = 'sid-c'
 
-/** The engine beneath: a session (its cwd), mod-hello, hooks/join.ts answering `join`, and the command itself (when the
+/** The engine beneath: a session (its cwd), mod-hello, hooks/handlers/join.ts answering `join`, and the command itself (when the
  * hook passes it on: `ran` counts it, and a join's expansion raises classic.UserPromptExpansion as the engine does). */
 function world(engine: any, on: any, { join = {} as any, room = undefined as string | undefined } = {}) {
   const seen = { joins: [] as any[], logs: [] as string[], ran: 0, expansions: [] as any[], hellos: 0 }

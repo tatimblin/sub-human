@@ -1,6 +1,5 @@
-#!/usr/bin/env node
 /**
- * plugin/sub-human/hooks/consent.ts: consent. A proposal opens in Claude Code's own plan-approval dialog (the
+ * plugin/sub-human/hooks/handlers/consent.ts: consent. A proposal opens in Claude Code's own plan-approval dialog (the
  * native, scrollable plan view: PgUp/PgDn read all of it); the AskUserQuestion card is the fallback.
  *
  * The review phases (review.json, every read-modify-write under proposal.withReview). The hooks pick the proposal
@@ -52,10 +51,10 @@
  */
 
 import { createRequire } from 'node:module';
-import { readInput } from '../lib/io.ts';
-import type { AnyHookIn, CardQuestion, HookOutput, Recorded } from './types.ts';
-import type { Card, Confirm, HandoffAskDoc, Proposal, Review } from '../lib/types-app.ts';
-import type { Identity } from '../lib/identity.ts';
+import * as reply from '../reply.ts';
+import type { AnyHookIn, CardQuestion, HookOutput, Recorded } from '../types.ts';
+import type { Card, Confirm, HandoffAskDoc, Proposal, Review } from '../../lib/types-app.ts';
+import type { Identity } from '../../lib/identity.ts';
 
 /** The tool call's input, as far as consent reads it (untrusted: each field checked). */
 interface ConsentToolInput { plan?: unknown; questions?: CardQuestion[]; planFilePath?: unknown }
@@ -77,33 +76,44 @@ type ConsentIn = Omit<AnyHookIn, 'tool_input'> & { tool_input?: ConsentToolInput
 /** One question of a card the hooks built. */
 type CardSpec = Card['questions'][number];
 /** A short code's join request waiting on the host (lib/remote/admission.ts pending). */
-type JoinRequest = ReturnType<typeof import('../lib/remote/admission.ts')['pending']>[number];
+type JoinRequest = ReturnType<typeof import('../../lib/remote/admission.ts')['pending']>[number];
 
-// The rest of this file's modules load only past the quiet exit below, so they are required (createRequire:
-// require(esm) is synchronous and caches like an import), not imported: a static import would load them first.
+// The rest of this file's modules load only past the quiet exit in handle(), so they are required (createRequire:
+// require(esm) is synchronous and caches like an import) by load(), not imported: a static import would load them first.
 const require = createRequire(import.meta.url);
 
 /** A room tool call outside plan mode: preRoomTool acts only in plan mode, so nothing else needs loading. */
 const quiet = (input: AnyHookIn | undefined) => !!input && input.hook_event_name === 'PreToolUse' && input.permission_mode !== 'plan'
   && /^mcp__plugin_sub-human_room__/.test(String(input.tool_name || ''));
 
-/** Run as a hook: the stdin payload (or the error reading it), read before the rest of the file loads. */
-let entry: { input?: ConsentIn; error?: unknown } | null = null;
-if (import.meta.main) {
-  try { entry = { input: readInput() }; } catch (err) { entry = { error: err }; }
-  if (quiet(entry.input)) process.exit(0);
-}
+/** The output helpers (hooks/reply.ts), the seat, the room and identity: what this file calls `c.`. */
+type C = typeof reply & { whoami: typeof import('../seat.ts')['whoami']; room: typeof import('../../lib/room.ts'); identity: typeof import('../../lib/identity.ts') };
+let fs!: typeof import('node:fs');
+let c!: C;
+let proposal!: typeof import('../../lib/proposal.ts');
+let cc!: typeof import('../../lib/cc.ts');
+let writeFileAtomic!: typeof import('../../lib/io.ts')['writeFileAtomic'];
+let config!: typeof import('../../lib/config.ts');
+let TRANSCRIPT_TAIL_BYTES!: number;
+let handoff!: typeof import('../../lib/handoff.ts');
+let envelope!: typeof import('../../lib/room/envelope.ts');
+let roomStore!: typeof import('../../lib/room/store.ts');
 
-const fs: typeof import('node:fs') = require('node:fs');
-const c: typeof import('./common.ts') = require('./common.ts');
-const proposal: typeof import('../lib/proposal.ts') = require('../lib/proposal.ts');
-const cc: typeof import('../lib/cc.ts') = require('../lib/cc.ts');
-const { writeFileAtomic }: typeof import('../lib/io.ts') = require('../lib/io.ts');
-const config: typeof import('../lib/config.ts') = require('../lib/config.ts');
-const { TRANSCRIPT_TAIL_BYTES } = config;
-const handoff: typeof import('../lib/handoff.ts') = require('../lib/handoff.ts');
-const envelope: typeof import('../lib/room/envelope.ts') = require('../lib/room/envelope.ts');
-const roomStore: typeof import('../lib/room/store.ts') = require('../lib/room/store.ts');
+/** Everything past the quiet exit, once. It signs the person's answers (via=human), so it arms the seat-key signer. */
+function load() {
+  if (c) return;
+  fs = require('node:fs');
+  c = { ...reply, whoami: (require('../seat.ts') as typeof import('../seat.ts')).whoami, room: require('../../lib/room.ts'), identity: require('../../lib/identity.ts') };
+  proposal = require('../../lib/proposal.ts');
+  cc = require('../../lib/cc.ts');
+  ({ writeFileAtomic } = require('../../lib/io.ts') as typeof import('../../lib/io.ts'));
+  config = require('../../lib/config.ts');
+  ({ TRANSCRIPT_TAIL_BYTES } = config);
+  handoff = require('../../lib/handoff.ts');
+  envelope = require('../../lib/room/envelope.ts');
+  roomStore = require('../../lib/room/store.ts');
+  (require('../seat-key.ts') as typeof import('../seat-key.ts')).arm();
+}
 
 const RECORDED = 'Recorded. The room shows it (and any note) already: post nothing about it. Agreeing is not a go-ahead to build; wait for the decision and your people.';
 /** Answers this run could not record, for the person (dispatch puts them in the output's systemMessage). */
@@ -192,7 +202,7 @@ function admitAsked(me: Identity, input: unknown): JoinRequest | null {
   if (named.length) return named[0];
   return /\badmit\b/i.test(s) && reqs.length === 1 ? reqs[0] : null;
 }
-const admission = (): typeof import('../lib/remote/admission.ts') => require('../lib/remote/admission.ts');
+const admission = (): typeof import('../../lib/remote/admission.ts') => require('../../lib/remote/admission.ts');
 
 function pre(input: ConsentIn, me: Identity) {
   const ad = admitAsked(me, input.tool_input);
@@ -270,7 +280,7 @@ const answerOf = (input: ConsentIn, toolUseId: string | null | undefined, wait =
 };
 
 /** How the model shows the person the confirm card for a waiting note (lib/proposal.ts). */
-const { confirmCall } = proposal;
+const confirmCall = (hash: string) => proposal.confirmCall(hash);
 
 /**
  * The dialog closed: a note never counts on its own. "Tell Claude what to change", a phone deny with a note and a
@@ -779,13 +789,14 @@ function route(input: ConsentIn) {
   if (ev === 'UserPromptSubmit') return locked(prompt);
 }
 
-/** The UserPromptSubmit handler (hooks/prompt.ts runs it after at-room.ts's, in one process). */
-const onPrompt = (input: ConsentIn) => dispatch({ ...input, hook_event_name: 'UserPromptSubmit' });
+/** The UserPromptSubmit handler (hooks/handlers/prompt.ts runs it after at-room.ts's, in one process). */
+const onPrompt = (input: ConsentIn) => { load(); dispatch({ ...input, hook_event_name: 'UserPromptSubmit' }); };
 
 /** True when this session's seat has a room review on record (review.json), or a note whose confirm card was never
  * shown (Stop nudges once), or one the next prompt offers again (reoffer), so the module still runs node; false with
  * no seat. */
 function reviewOpen(input: ConsentIn): boolean {
+  load();
   const me = c.whoami(input);
   if (!me) return false;
   if (readReview(me)) return true;
@@ -809,12 +820,14 @@ function shimDispatch(input: ConsentIn) {
 
 const SHIM = () => process.env.SUB_HUMAN_SHIM === '1';
 
-export { dispatch, onPrompt, reviewOpen, SHIM, quiet };
-
-// the error is logged; never block a question or a plan
-if (entry) {
-  try {
-    if (entry.error) throw entry.error;
-    (SHIM() ? shimDispatch : dispatch)(entry.input || {});
-  } catch (err) { c.logError(err); }
+/** Every event consent handles, as a hook (hooks/run.ts consent). */
+function handle(input: ConsentIn) {
+  if (quiet(input)) return;
+  load();
+  (SHIM() ? shimDispatch : dispatch)(input);
 }
+
+/** The error is logged; never block a question or a plan. */
+const fail = () => null;
+
+export { handle, fail, dispatch, onPrompt, reviewOpen, SHIM, quiet };

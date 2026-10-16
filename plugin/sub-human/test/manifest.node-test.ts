@@ -26,7 +26,6 @@ const PLUGIN = h.PLUGIN;
 const readJson = <T>(rel: string): T => JSON.parse(fs.readFileSync(path.join(PLUGIN, rel), 'utf8'));
 const hooks = readJson<HooksJson>('hooks/hooks.json').hooks;
 const TOOL_EVENTS = new Set(['PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PermissionRequest', 'PermissionDenied']);
-const ROOM = 'mcp__plugin_sub-human_room__';
 
 function* allHooks() {
   for (const [event, groups] of Object.entries(hooks)) {
@@ -34,11 +33,16 @@ function* allHooks() {
   }
 }
 /** The hook's script: the last plugin path in its command (the first is the compile-cache preload). */
+/** The handler file a hooks.json command runs: `node … hooks/run.ts NAME` -> hooks/handlers/NAME.ts. */
 const scriptOf = (cmd: string) => {
-  const m = [...cmd.matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}\/([^"\s]+)/g)].at(-1);
-  return m && m[1];
+  const m = /\$\{CLAUDE_PLUGIN_ROOT\}\/hooks\/run\.ts" ([a-z-]+)$/.exec(cmd);
+  return m ? `hooks/handlers/${m[1]}.ts` : null;
 };
 const PRELOAD = 'node --import "${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js" ';
+// the join alone checks for node first, so a missing one says what to do (it is the first thing a person runs)
+const NODE_CHECK = /^v=\$\(node -v 2>\/dev\/null\); case "\$v" in [\s\S]+? >&2; exit 2;; esac; exec /;
+// SessionEnd starts node only when this session may hold a lease or a seat (its files under <home>/sessions)
+const SEAT_CHECK = /^h="\$\{SUB_HUMAN_HOME:-\$HOME\/\.sub-human\}\/sessions"; [\s\S]+?\|\| \{ while IFS= read -r _; do :; done; exit 0; \}; exec /;
 // Top-level alternatives of a regex (splits on | outside parentheses and classes).
 function alternatives(re: string) {
   const out: string[] = [];
@@ -73,19 +77,18 @@ test('hooks.json: the join with no node on PATH, or one older than 24.3, says wh
   for (const v of ['v24.3.0', 'v24.15.0', 'v25.0.0', 'v26.1.0', 'v30.0.0', 'v100.0.0']) {
     fake(v);
     assert.equal(execFileSync('/bin/sh', ['-c', join], { env: { PATH: bin, CLAUDE_PLUGIN_ROOT: PLUGIN }, encoding: 'utf8' }),
-      `ran --import ${PLUGIN}/hooks/compile-cache.js ${PLUGIN}/hooks/join.ts\n`, v);
+      `ran --import ${PLUGIN}/hooks/compile-cache.js ${PLUGIN}/hooks/run.ts join\n`, v);
   }
 });
 
 test('hooks.json: every command runs node on a script that exists in the plugin', () => {
   for (const { event, hook } of allHooks()) {
     assert.equal(hook.type, 'command', event);
-    // the join alone checks for node first, so a missing one says what to do (it is the first thing a person runs)
-    const NODE_CHECK = /^v=\$\(node -v 2>\/dev\/null\); case "\$v" in [\s\S]+? >&2; exit 2;; esac; exec /;
-    if (event === 'UserPromptExpansion') assert.match(hook.command, NODE_CHECK, hook.command);
+    const check = event === 'UserPromptExpansion' ? NODE_CHECK : SEAT_CHECK;
+    assert.match(hook.command, check, hook.command);
     // the compile cache preloaded, then the hook (hooks/compile-cache.js)
-    assert.ok(hook.command.replace(NODE_CHECK, '').startsWith(PRELOAD), `${event}: ${hook.command}`);
-    assert.match(hook.command.replace(NODE_CHECK, '').slice(PRELOAD.length), /^"\$\{CLAUDE_PLUGIN_ROOT\}\/[^"]+\.ts"$/, `${event}: ${hook.command}`);
+    assert.ok(hook.command.replace(check, '').startsWith(PRELOAD), `${event}: ${hook.command}`);
+    assert.match(hook.command.replace(check, '').slice(PRELOAD.length), /^"\$\{CLAUDE_PLUGIN_ROOT\}\/hooks\/run\.ts" [a-z-]+$/, `${event}: ${hook.command}`);
     const rel = scriptOf(hook.command);
     assert.ok(fs.existsSync(path.join(PLUGIN, rel!)), `${event}: ${rel} is missing`);
   }
@@ -96,7 +99,7 @@ test('every ${CLAUDE_PLUGIN_ROOT}/ path in hooks.json and .mcp.json, and every m
   const collect = (s: unknown) => { for (const m of String(s).matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}\/([^"'\s]+)/g)) paths.push(m[1]); };
   for (const { hook } of allHooks()) collect(hook.command);
   for (const srv of Object.values(readJson<McpJson>('.mcp.json').mcpServers)) { collect(srv.command); (srv.args || []).forEach(collect); }
-  assert.ok(paths.includes('mcp/room-server.ts') && paths.includes('hooks/compile-cache.js') && paths.includes('hooks/join.ts'), paths.join(' '));
+  assert.ok(paths.includes('mcp/room-server.ts') && paths.includes('hooks/compile-cache.js') && paths.includes('hooks/run.ts'), paths.join(' '));
   for (const rel of paths) assert.ok(fs.existsSync(path.join(PLUGIN, rel)), `${rel} is missing`);
   for (const rel of readJson<HooksJson>('hooks/hooks.json').modules) assert.ok(fs.existsSync(path.join(PLUGIN, 'hooks', rel)), `module ${rel} is missing`);
 });
@@ -112,16 +115,44 @@ test('hooks.json: every matcher is an exact-name list or an anchored regex (bina
   }
 });
 
-test('hooks.json: tool matchers select exactly the intended tools; the store guard is the module\'s, not a command hook', () => {
-  const pre = hooks.PreToolUse.map(g => g.matcher);
-  assert.ok(!hooks.PreToolUse.some(g => /hooks\/guard\.ts/.test(g.hooks[0].command)), 'the store guard is mod/guard.ts');
-  assert.ok(!fs.existsSync(path.join(PLUGIN, 'hooks', 'guard.ts')));
+test('hooks.json: only the /sub-human expansion and SessionEnd are command hooks; everything else is the module\'s', () => {
+  assert.deepEqual(Object.keys(hooks).sort(), ['SessionEnd', 'UserPromptExpansion']);
+  assert.ok(!fs.existsSync(path.join(PLUGIN, 'hooks', 'guard.ts')), 'the store guard is mod/guard.ts');
   assert.deepEqual(readJson<HooksJson>('hooks/hooks.json').modules, ['../mod/register.ts']);
-  const consent = hooks.PreToolUse.find(g => /hooks\/consent\.ts/.test(g.hooks[0].command))!.matcher!;
   const m = (x: string, name: string) => cc.matcherMatches(x, name);
-  for (const t of ['AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode', ROOM + 'propose']) assert.ok(m(consent, t), `consent misses ${t}`);
-  for (const t of ['mcp__x__ExitPlanMode', 'ExitPlanModeV2', 'Edit']) assert.ok(!m(consent, t), `consent wrongly matches ${t}`);
-  assert.ok(pre.includes('Agent|Task') && !m('Agent|Task', 'TaskCreate'));
+  const upe = hooks.UserPromptExpansion[0].matcher!;
+  for (const t of ['sub-human', 'sub-human:sub-human']) assert.ok(m(upe, t), t);
+  for (const t of ['sub-humans', 'x:sub-human', 'sub-human:sub-human:x']) assert.ok(!m(upe, t), t);
+});
+
+test('hooks.json: SessionEnd starts node only for a session with a lease, a session index or a seat by pid (or no session id)', () => {
+  const end = hooks.SessionEnd[0].hooks[0].command;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-end-'));
+  const bin = path.join(tmp, 'bin'), log = path.join(tmp, 'ran'), home = path.join(tmp, 'home');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'node'), `#!/bin/sh\necho "$*" >> ${JSON.stringify(log)}\n`, { mode: 0o755 });
+  const ran = (env: Record<string, string>) => {
+    try { fs.rmSync(log); } catch { /* none */ }
+    const r = spawnSync('/bin/sh', ['-c', end], { input: '{"hook_event_name":"SessionEnd","session_id":"s1"}', encoding: 'utf8',
+      env: { PATH: `${bin}:/usr/bin:/bin`, HOME: tmp, SUB_HUMAN_HOME: home, CLAUDE_PLUGIN_ROOT: PLUGIN, CLAUDE_PID: '4242', CLAUDE_CODE_SESSION_ID: 's1', ...env } });
+    assert.equal(r.status, 0, r.stderr);
+    return fs.existsSync(log);
+  };
+  assert.equal(ran({}), false, 'no files: no node');
+  assert.equal(ran({ CLAUDE_CODE_SESSION_ID: '' }), true, 'no session id: unsure, node runs');
+  for (const f of ['mods/s1.json', 'by-sid/s1.json', 'by-pid/4242.json']) {
+    const p = path.join(home, 'sessions', f);
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, '{}');
+    assert.equal(ran({}), true, f);
+    fs.rmSync(p);
+  }
+  // the default home, as lib/home.ts has it
+  fs.mkdirSync(path.join(tmp, '.sub-human', 'sessions', 'mods'), { recursive: true });
+  fs.writeFileSync(path.join(tmp, '.sub-human', 'sessions', 'mods', 's1.json'), '{}');
+  assert.equal(ran({ SUB_HUMAN_HOME: '' }), true, '~/.sub-human');
+  assert.match(fs.readFileSync(log, 'utf8'), /hooks\/run\.ts session-end$/m);
+  fs.rmSync(tmp, { recursive: true, force: true });
 });
 
 test('hooks.json: every blocking hook has a timeout (<= 10 s, row-rewake aside); SessionEnd >= 3 s', () => {
@@ -134,10 +165,10 @@ test('hooks.json: every blocking hook has a timeout (<= 10 s, row-rewake aside);
 });
 
 test('budgets: the join\'s waits fit its hook timeout, and every lock gives up before the hook it runs in is killed', () => {
-  const timeoutOf = (script: string) => Math.min(...[...allHooks()].filter(x => scriptOf(x.hook.command) === `hooks/${script}`).map(x => x.hook.timeout));
+  const timeoutOf = (script: string) => Math.min(...[...allHooks()].filter(x => scriptOf(x.hook.command) === `hooks/handlers/${script}`).map(x => x.hook.timeout));
   const join = timeoutOf('join.ts') * 1000;
   assert.equal(join, SHIM_TIMEOUT_MS, 'the module runs join.ts under the same budget');
-  // a re-join over a new link: stop the old daemon (1 s, hooks/join.ts restartLink), start the new one, wait for its
+  // a re-join over a new link: stop the old daemon (1 s, hooks/handlers/join.ts restartLink), start the new one, wait for its
   // first answer; with a second for node's start and the store, it ends before the hook is killed
   const NODE_START_MS = 1000, RESTART_MS = 1000;
   const waits = RESTART_MS + config.LINK_START_MS + config.LINK_JOIN_WAIT_MS + NODE_START_MS;
@@ -150,9 +181,8 @@ test('budgets: the join\'s waits fit its hook timeout, and every lock gives up b
   assert.ok(config.LINK_CALL_END_MS < timeoutOf('session-end.ts') * 1000);
 });
 
-test('hooks.json: async only on hooks whose output nothing reads', () => {
-  const asyncScripts = [...allHooks()].filter(x => x.hook.async).map(x => `${x.event}:${scriptOf(x.hook.command)}`).sort();
-  assert.deepEqual(asyncScripts, ['Notification:hooks/presence.ts', 'SessionStart:hooks/row-launcher.ts', 'StopFailure:hooks/presence.ts']);
+test('hooks.json: no async hooks (the module runs presence and the rewake in the background)', () => {
+  assert.deepEqual([...allHooks()].filter(x => x.hook.async || x.hook.asyncRewake).map(x => x.event), []);
 });
 
 test('no Monitor: the hooks module\'s tail child is the only delivery', () => {

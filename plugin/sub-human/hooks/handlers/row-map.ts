@@ -1,16 +1,17 @@
-#!/usr/bin/env node
-// PostToolUse(Agent|Task): record which panel row a spawned row agent is, for the subagentStatusLine.
+// plugin/sub-human/hooks/handlers/row-map.ts: PostToolUse(Agent|Task): record which panel row a spawned row agent is, for the subagentStatusLine.
 //   the room document rows/<session_id>  {byAgent: {<child agentId>: {kind: participant|room, name, parent, at}}}
 // The child id is tool_response.agentId. When a room agent spawns a participant, the hook input's
 // agent_id / agent_type are the spawning room, so parent = that id (nested row). The model may drop `name`:
 // the participant comes from the prompt ("member: NAME"), else the description. Silent; never blocks.
-import { identity, rows, run, resolveSeat } from './common.ts';
-import type { AgentCall, WithToolInput } from './types.ts';
+import * as identity from '../../lib/identity.ts';
+import * as rows from '../../lib/rows.ts';
+import { resolveSeat } from '../seat.ts';
+import type { AgentCall, WithToolInput } from '../types.ts';
 
 /** The Agent tool's response, as far as the row map reads it. */
 interface SpawnResponse { agentId?: unknown; agent_id?: unknown; data?: { agentId?: unknown } }
 
-run((input: WithToolInput<'PostToolUse', AgentCall>) => {
+export function handle(input: WithToolInput<'PostToolUse', AgentCall>) {
   const ti: AgentCall = input.tool_input || {};
   const type = String(ti.subagent_type || '');
   if (type !== rows.PARTICIPANT && type !== rows.ROOM_AGENT) return;
@@ -24,4 +25,7 @@ run((input: WithToolInput<'PostToolUse', AgentCall>) => {
     kind: spawn.kind, name: spawn.name,
     parent: input.agent_id ? String(input.agent_id) : null,
   });
-}, () => {}); // never disturb the session
+}
+
+/** Never disturb the session. */
+export const fail = () => null;

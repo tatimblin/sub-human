@@ -2,7 +2,7 @@
  * plugin/sub-human/lib/room/consent.ts: the one fold of the room log into proposal / consent state. Pure apart from
  * store.ts humanTrust (reads the seats' public keys), CommonJS, zero dependencies beyond store.ts.
  * stateLine and lane() (lanes.ts, render.ts), the rows (lib/rows.ts) and the consent gate (lib/proposal.ts,
- * hooks/consent.ts) all read this, so they cannot disagree.
+ * hooks/handlers/consent.ts) all read this, so they cannot disagree.
  *
  *   fold(entries) -> F   memoized per entries array (same array, same length and last id -> same F)
  *     F.proposals  Map hash -> {id, hash, from, approvers, same, path, entry}   the LATEST proposal entry per hash,

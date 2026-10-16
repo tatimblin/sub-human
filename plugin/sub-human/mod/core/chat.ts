@@ -4,11 +4,10 @@
  * or null so the engine draws the row itself.
  */
 import { parseAddr } from './seat.ts';
+import { CHAT_NEST as NEST, CHAT_LINES_MAX, FOR_CLAUDE } from './constants.ts';
 
-// Copies of lib/config.ts / lib/room/render.ts (asserted equal in node): mod/ imports no CommonJS.
-export const NEST = '  │ ';
-export const FOR_CLAUDE = '(for Claude)';
-export const CHAT_LINES_MAX = 20;
+// one copy with lib/room/render.ts: mod/core/constants.ts owns them
+export { NEST, CHAT_LINES_MAX, FOR_CLAUDE };
 
 /** Control and bidi characters never reach the drawing (as lib/room/render.ts safeText). */
 const UNSAFE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/g;

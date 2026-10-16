@@ -1,5 +1,4 @@
-#!/usr/bin/env node
-// SessionStart(resume), registered with "asyncRewake": true. Rows are in-memory tasks, so
+// plugin/sub-human/hooks/handlers/row-rewake.ts: SessionStart(resume), registered with "asyncRewake": true. Rows are in-memory tasks, so
 // --continue / --resume restores none of them, and session-restore.ts's additionalContext is read only on
 // the next prompt. This hook runs in the background and, when this seat is missing rows, exits 2 with the
 // exact Agent calls on stderr: Claude Code then wakes the model with that text and no user prompt (verified
@@ -9,11 +8,13 @@
 // It runs concurrently with session-restore.ts, which may re-join the seat (resume after session-end), so
 // it polls up to SUB_HUMAN_REWAKE_WAIT_MS (REWAKE_WAIT_MS, 3000; 0 = no wait) for the seat, preferring the
 // moment it is bound to this claude process (CLAUDE_PID).
-import { identity, rows, run, resolveSeat } from './common.ts';
-import { sleepSync } from '../lib/io.ts';
-import * as config from '../lib/config.ts';
-import type { HookIn } from './types.ts';
-import type { Identity } from '../lib/identity.ts';
+import * as identity from '../../lib/identity.ts';
+import * as rows from '../../lib/rows.ts';
+import { resolveSeat } from '../seat.ts';
+import { sleepSync } from '../../lib/io.ts';
+import * as config from '../../lib/config.ts';
+import type { HookIn, Reply } from '../types.ts';
+import type { Identity } from '../../lib/identity.ts';
 
 const LEAD = 'sub-human: this session was resumed and its rows did not survive it. Re-create them now, exactly as written:\n';
 const TAIL = '\nWrite no text: make only these calls and end your turn.';
@@ -42,10 +43,13 @@ function rewakeText(me: Identity): string {
   return LEAD + calls + TAIL;
 }
 
-// Exit 2 with the text on stderr wakes the model; on any error run() logs it and the hook exits 0.
-run((input: HookIn<'SessionStart'>) => {
-  if (input.source && input.source !== 'resume') return;
+/** Exit 2 with the text on stderr wakes the model. */
+export function handle(input: HookIn<'SessionStart'>): Reply | null {
+  if (input.source && input.source !== 'resume') return null;
   const me = findSeat(input);
   const text = me ? rewakeText(me) : '';
-  if (text) { process.stderr.write(text + '\n'); process.exitCode = 2; }
-}, () => { process.exitCode = 0; });
+  return text ? { kind: 'classic', exit: 2, stderr: text } : null;
+}
+
+/** Any error: logged, exit 0 (no wake). */
+export const fail = () => null;

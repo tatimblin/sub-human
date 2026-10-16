@@ -1,7 +1,7 @@
 /**
  * plugin/sub-human/lib/remote/admission.ts: the host person's consent to a machine that typed an invite's PIN. The PIN
  * proved only that the joiner knows it (lib/remote/enroll.ts); nothing gets in until a person on the host answers "Let
- * in" on the card their own Claude Code shows (hooks/consent.ts, like the handoff card: only the answer on the card as
+ * in" on the card their own Claude Code shows (hooks/handlers/consent.ts, like the handoff card: only the answer on the card as
  * the hooks built it counts, never the model's), or runs `sub-human admit REF` in a shell (headless hosts), or types
  * `/sub-human admit REF`. Then, over ssh, the joiner's link key gets the forced-command line for its one link
  * (lib/remote/shim.ts authorizedLine), and the joiner's link redeems its

@@ -1,6 +1,5 @@
-#!/usr/bin/env node
 /**
- * plugin/sub-human/hooks/tasks.ts: the room task list's mirror and gate. Room Claude only: in any other session it
+ * plugin/sub-human/hooks/handlers/tasks.ts: the room task list's mirror and gate. Room Claude only: in any other session it
  * exits 0 at once, so members' private task lists are never touched.
  *
  * PostToolUse TaskCreate|TaskUpdate (mirror): appends a `task` entry via system
@@ -15,20 +14,20 @@
  * Every room Claude run then reconciles: a native task the log has no `task` entry for gets an `add` snapshot, so a
  *   lost mirror run is repaired by the next one.
  *
- * The room's Claude: the session resolves (common.ts resolveSeat) to the room's Claude seat, or (before binding)
+ * The room's Claude: the session resolves (hooks/seat.ts resolveSeat) to the room's Claude seat, or (before binding)
  * SUB_HUMAN_ROOM is set and agent_type is sub-human:room-claude.
  */
 
 import fs from 'node:fs';
-import { resolveSeat } from './common.ts';
-import * as identity from '../lib/identity.ts';
-import * as room from '../lib/room.ts';
-import * as tasks from '../lib/tasks.ts';
-import * as cc from '../lib/cc.ts';
-import { readJson } from '../lib/io.ts';
-import type { AnyHookIn, HookIn } from './types.ts';
-import type { RawTask } from '../lib/tasks.ts';
-import type { Task } from '../lib/types-app.ts';
+import { resolveSeat } from '../seat.ts';
+import * as identity from '../../lib/identity.ts';
+import * as room from '../../lib/room.ts';
+import * as tasks from '../../lib/tasks.ts';
+import * as cc from '../../lib/cc.ts';
+import { readJson } from '../../lib/io.ts';
+import type { AnyHookIn, HookIn, Reply } from '../types.ts';
+import type { RawTask } from '../../lib/tasks.ts';
+import type { Task } from '../../lib/types-app.ts';
 
 /** Anything that may carry task metadata (a call's input, a native task file). */
 type WithMeta = { metadata?: { _internal?: unknown; req?: unknown } | null } | null | undefined;
@@ -178,7 +177,7 @@ function reconcile(code: string) {
   });
 }
 
-function gateHook(code: string, input: TasksIn) {
+function gateHook(code: string, input: TasksIn): Reply | null {
   const id = String(input.task_id || '');
   const native: NativeTask = readNative(code, id) || {};
   const log = room.open(code).readAll();
@@ -191,42 +190,37 @@ function gateHook(code: string, input: TasksIn) {
   };
   if (internal(native)) task.owner = 'room';
   const r = tasks.gate(code, task, log);
-  if (r.ok) return;
-  process.stderr.write(`${r.reason}\n${RETRY}\n`);
-  process.exitCode = 2;
+  if (r.ok) return null;
+  return { kind: 'classic', exit: 2, stderr: `${r.reason}\n${RETRY}` };
 }
 
-let input: TasksIn = {};
-let code: string | null = null;
-let raw = '';
-try { raw = fs.readFileSync(0, 'utf8'); } catch { /* no stdin */ }
-try {
-  input = raw.trim() ? (JSON.parse(raw) || {}) : {};
-  code = roomClaudeRoom(input);
-} catch (err) {
-  // the gate fails closed: an input it cannot read for a TaskCompleted blocks (exit 2), as a failure inside it does
-  code = null;
-  if (/"TaskCompleted"/.test(raw)) {
-    process.stderr.write(`sub-human task gate failed closed: ${err instanceof Error ? err.message : err}\n`);
-    process.exitCode = 2;
-  } else {
-    process.stderr.write(`sub-human tasks: ${err instanceof Error ? err.message : err}\n`);
-    process.exitCode = 1;
-  }
-}
-if (code) {
+const msg = (err: unknown) => (err instanceof Error ? err.message : String(err));
+/** The gate fails closed: exit 2 blocks the completion, with why. */
+const gateFailed = (err: unknown): Reply => ({ kind: 'classic', exit: 2, stderr: `sub-human task gate failed closed: ${msg(err)}` });
+
+export function handle(input: TasksIn): Reply | null {
+  const code = roomClaudeRoom(input);
+  if (!code) return null;
+  let reply: Reply | null = null;
   try {
-    if (input.hook_event_name === 'TaskCompleted') gateHook(code, input);
+    if (input.hook_event_name === 'TaskCompleted') reply = gateHook(code, input);
     else if (input.tool_name === 'TaskCreate' || input.tool_name === 'TaskUpdate') mirror(code, input);
   } catch (err) {
-    if (input.hook_event_name === 'TaskCompleted') {
-      process.stderr.write(`sub-human task gate failed closed: ${err instanceof Error ? err.message : err}\n`);
-      process.exitCode = 2;
-    } else {
-      process.stderr.write(`sub-human tasks mirror: ${err instanceof Error && err.stack || err}\n`);
-      process.exitCode = 1;
-    }
+    reply = input.hook_event_name === 'TaskCompleted' ? gateFailed(err)
+      : { kind: 'classic', exit: 1, stderr: `sub-human tasks mirror: ${err instanceof Error && err.stack || err}` };
   }
   // after the call's own entry, so that entry keeps its precise op; a failure here never changes the gate's verdict
-  try { reconcile(code); } catch (err) { process.stderr.write(`sub-human tasks reconcile: ${err instanceof Error && err.stack || err}\n`); }
+  try { reconcile(code); } catch (err) {
+    const why = `sub-human tasks reconcile: ${err instanceof Error && err.stack || err}`;
+    if (reply && reply.kind === 'classic') reply = { ...reply, stderr: `${reply.stderr || ''}\n${why}`.trim() };
+    else process.stderr.write(`${why}\n`);
+  }
+  return reply;
+}
+
+/** A stdin it cannot read (raw: what came), or a throw before the gate ran: for a TaskCompleted the gate fails closed
+ * (exit 2, read from the raw text when it does not parse), as a failure inside it does; anything else exits 1. */
+export function fail(err: unknown, input: TasksIn, raw: string): Reply {
+  if (input.hook_event_name === 'TaskCompleted' || /"TaskCompleted"/.test(raw)) return gateFailed(err);
+  return { kind: 'classic', exit: 1, stderr: `sub-human tasks: ${msg(err)}` };
 }

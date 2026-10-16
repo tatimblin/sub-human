@@ -1,4 +1,4 @@
-// hooks/tasks.ts reconcile: a lost mirror run leaves a native task with no `task` entry; the next room Claude run of
+// hooks/handlers/tasks.ts reconcile: a lost mirror run leaves a native task with no `task` entry; the next room Claude run of
 // tasks.ts (mirror or gate) appends its snapshot, and never resurrects a task the log deleted.
 import test from 'node:test';
 import assert from 'node:assert/strict';

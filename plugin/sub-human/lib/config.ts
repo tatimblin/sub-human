@@ -107,13 +107,11 @@ export const REWAKE_WAIT_MS = 3000;            // SUB_HUMAN_REWAKE_WAIT_MS (allo
 export const REWAKE_POLL_MS = 100;
 export const ROW_SPAWN_GRACE_MS = 60_000;      // a row spawned this recently may not hold yet: never re-listed
 
-// ---------- hooks module (mod/, hooks/mod-hello.ts) ----------
+// ---------- hooks module (mod/, hooks/handlers/mod-hello.ts) ----------
 // A lease not from the joining claude process counts this long after it was written (the pid match is the real check).
 export const MOD_LEASE_FRESH_MS = 120_000;
-export const MOD_RESTART_MS = 1000;            // the tail child restarts after this, doubling per failure
-export const MOD_RESTART_MAX_MS = 60_000;
-export const MOD_RESTART_STEADY_MS = 60_000;   // a child that ran this long starts the backoff over
-export const MOD_DELIVERY_ERROR_LOG_MS = 300_000; // the delivery-error notice shows at most once per this
+// the tail child's restart backoff and the delivery-error notice's window: owned by mod/core (the module reads them too)
+export { MOD_RESTART_MS, MOD_RESTART_MAX_MS, MOD_RESTART_STEADY_MS, MOD_DELIVERY_ERROR_LOG_MS } from '../mod/core/constants.ts';
 
 // ---------- remote rooms (lib/remote/bridge.ts) ----------
 // A hook's synchronous call over the link gives up (OFFLINE) after this, well inside the hook timeout.
@@ -214,8 +212,9 @@ export const ENTRY_REFS_MAX = 50;              // refs per entry (validate)
 export const ENTRY_STR_MAX = 4000;             // any other string field, JS .length (validate)
 export const ENTRY_LIST_MAX = 50;              // approvers / blockedBy entries (validate)
 export const LOG_LINE_MAX_BYTES = 64 * 1024;   // one serialized log line, UTF-8 bytes (append refuses longer)
-export const CHAT_LINES_MAX = 20;              // text lines shown per chat message; the rest is "[+N more lines: read(...)]"
-export const CHAT_NEST = '  │ ';              // the prefix of every continuation line of a chat message
+// text lines shown per chat message (the rest is "[+N more lines: read(...)]") and every continuation line's prefix:
+// owned by mod/core, which draws chat too
+export { CHAT_LINES_MAX, CHAT_NEST } from '../mod/core/constants.ts';
 
 // ---------- size caps (code points unless noted) ----------
 export const CONTEXT_CAP = 9500;               // hook additionalContext (the CLI caps SessionStart / prompt context at 10k)
@@ -245,12 +244,12 @@ export const TASK_EVIDENCE_MAX = 2000;
 export const TASK_REQ_DETAIL_SHOWN = 200;      // a task_req entry's text shows this much of the detail
 export const TASK_REQ_EVIDENCE_SHOWN = 400;
 
-// ---------- consent (lib/room/consent.ts, lib/proposal.ts, lib/rows.ts, hooks/consent.ts, hooks/session-restore.ts) ----------
+// ---------- consent (lib/room/consent.ts, lib/proposal.ts, lib/rows.ts, hooks/handlers/consent.ts, hooks/handlers/session-restore.ts) ----------
 export const ROW_TITLE_MAX = 24;               // a proposal's title in a panel row ("✔ decided Cursor paging")
 export const REVIEW_LOCK_TIMEOUT_MS = 3000;    // members/NAME/review.json read-modify-write lock (hooks time out at 5-10 s)
 // Pre(ExitPlanMode) needs the model's own input from the transcript, which 2.1.292 may not have written yet
 // when the hook runs (and tool_input.plan is the plan file's text, empty before the review): poll this long. The
-// review's closing ExitPlanMode polls as long for the dialog's rejection line (hooks/consent.ts resolveShown).
+// review's closing ExitPlanMode polls as long for the dialog's rejection line (hooks/handlers/consent.ts resolveShown).
 export const EXIT_INPUT_WAIT_MS = 1500;        // SUB_HUMAN_EXIT_INPUT_WAIT_MS
 export const EXIT_INPUT_POLL_MS = 50;
 export const REVIEW_STALE_MS = 30 * 60 * 1000; // a plan-view review open this long is stuck: session-restore restores the plan file
