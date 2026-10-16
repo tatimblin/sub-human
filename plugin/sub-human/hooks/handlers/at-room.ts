@@ -165,6 +165,6 @@ function handle(input: PromptIn): void {
   out({ continue: false, stopReason: sent, hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
 }
 
-// hooks/handlers/prompt.ts calls handle(); `hooks/run.ts at-room` is for the tests and scripts/demo-lib.js
+// hooks/handlers/prompt.ts calls handle(); `hooks/run.ts at-room` is for the tests and scripts/demo-lib.ts
 // synthetic-claude-prompt.
 export { handle };

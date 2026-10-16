@@ -1,23 +1,24 @@
 {
   "name": "sub-human-repo",
   "private": true,
-  "description": "Dev scripts for the sub-human Claude Code plugin (the plugin has no dependencies; typescript and @types/node only check its types).",
+  "description": "Dev scripts for the sub-human Claude Code plugin (the plugin has no dependencies; typescript, @types/node and oxlint only check its types and lint it).",
   "engines": {
     "node": ">=24.3"
   },
   "scripts": {
     "test": "npm run --silent typecheck && npm run --silent test:plugin && npm run --silent test:scripts && npm run --silent test:mods",
     "test:plugin": "node --test --import ./plugin/sub-human/test/helpers.ts 'plugin/sub-human/test/**/*.node-test.ts'",
-    "test:scripts": "node --test --import ./plugin/sub-human/test/helpers.ts scripts/test",
-    "test:mods": "node scripts/test-mods.js",
+    "test:scripts": "node --test --import ./plugin/sub-human/test/helpers.ts 'scripts/test/**/*.test.ts'",
+    "test:mods": "node scripts/test-mods.ts",
     "test:thread-store": "SUB_HUMAN_TEST_THREAD_STORE=1 NODE_OPTIONS=\"--import $PWD/plugin/sub-human/test/support/thread-store.ts\" node --test 'plugin/sub-human/test/hooks/*.node-test.ts'",
-    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.runtime.json && node scripts/typecheck-shim.js",
-    "lint": "node scripts/lint.js",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.runtime.json && tsc -p scripts/tsconfig.json && node scripts/typecheck-shim.ts",
+    "lint": "node scripts/lint.ts",
     "validate": "claude plugin validate plugin/sub-human --strict",
-    "probe": "node scripts/probe-cc.js",
-    "docs": "node scripts/arch-doc.js",
-    "test:remote-docker": "node --test scripts/remote-docker/remote-docker.test.js",
-    "test:remote-docker:mac": "LAB_MAC=1 node --test scripts/remote-docker/remote-docker.test.js"
+    "probe": "node scripts/probe-cc.ts",
+    "typings": "node scripts/typings.ts",
+    "docs": "node scripts/arch-doc.ts",
+    "test:remote-docker": "node --test scripts/remote-docker/remote-docker.test.ts",
+    "test:remote-docker:mac": "LAB_MAC=1 node --test scripts/remote-docker/remote-docker.test.ts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

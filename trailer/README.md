@@ -61,7 +61,7 @@ itself)`, so a missing text falls back to the marker rather than dropping the se
   completion menus (they list the machine's own skills, MCP servers and other sessions), and clears the prompt's
   dim suggestion (it reads as typed text). It drops the update nag,
   and answers "session S's screen at time t" (its latest frame with `t' <= t`).
-- `src/lib/ansi.ts` is a port of `../scripts/ansi-svg.js` (same palette, cell widths and SGR handling).
+- `src/lib/ansi.ts` is a port of `../scripts/ansi-svg.ts` (same palette, cell widths and SGR handling).
   `npm run check:ansi [capture.jsonl | screen.ansi …]` proves the two read every screen identically.
 - `src/components/Terminal.tsx` draws a screen on a fixed cell grid in bundled JetBrains Mono, with Noto Sans
   Symbols for the glyphs it lacks (⏺ ⎿ ⏵ ✻ …). Runs that might not advance one cell are pinned to their cells.
