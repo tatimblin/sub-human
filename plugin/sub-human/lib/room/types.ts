@@ -12,24 +12,29 @@ import type { Reason } from '../reasons.ts';
 import type nodeFs from 'node:fs';
 import type { LockOpts } from '../lock.ts';
 import type { LinkSpec } from '../remote/types-rest.ts';
+import type { AGENT_KINDS, HUMAN_KINDS, LEGACY_KINDS, SYSTEM_KINDS, TASK_OPS, VIAS } from './validate.ts';
+import type { PRESENCE_STATES } from './members.ts';
+import type { STATE_WORDS } from './link-state.ts';
 import type { WireCode } from '../remote/types-core.ts';
 
 // ---------- the log entry ----------
 
-/** Who wrote an entry (validate.ts VIAS). A line from a newer host may carry another (render.ts shows it as such). */
-export type Via = 'human' | 'agent' | 'system';
-/** Kinds a model's Claude writes (via agent). */
-export type AgentKind = 'say' | 'question' | 'status' | 'proposal' | 'task_req';
-/** Kinds a person writes (via human, signed). */
-export type HumanKind = 'say' | 'signoff' | 'objection' | 'proposal';
-/** Kinds only the plugin's hooks write (via system). */
-export type SystemKind = 'decision' | 'member_joined' | 'member_left' | 'task' | 'host_changed' | 'status';
+/** Who wrote an entry (validate.ts VIAS, its source). A line from a newer host may carry another (render.ts shows it as such). */
+export type Via = (typeof VIAS)[number];
+/** Kinds a model's Claude writes (via agent; validate.ts AGENT_KINDS). */
+export type AgentKind = (typeof AGENT_KINDS)[number];
+/** Kinds a person writes (via human, signed; validate.ts HUMAN_KINDS). */
+export type HumanKind = (typeof HUMAN_KINDS)[number];
+/** Kinds only the plugin's hooks write (via system; validate.ts SYSTEM_KINDS). */
+export type SystemKind = (typeof SYSTEM_KINDS)[number];
 /** Every kind validate() accepts (envelope v3). */
 export type Kind = AgentKind | HumanKind | SystemKind;
-/** Kinds only logs from before envelope v3 hold; store.ts normalize() maps all but revoke for display. */
-export type LegacyKind = 'concern' | 'agree' | 'plan_rev' | 'revoke';
+/** Kinds only logs from before envelope v3 hold (validate.ts LEGACY_KINDS); store.ts normalize() maps all but revoke for display. */
+export type LegacyKind = (typeof LEGACY_KINDS)[number];
+/** Every kind this version reads: a log line's kind is one of these, or a newer host's (validate.ts parseEntry). */
+export type KnownKind = Kind | LegacyKind;
 /** A task_req's op (validate.ts TASK_OPS). A `task` entry's op is any short word. */
-export type TaskOp = 'add' | 'claim' | 'release' | 'done';
+export type TaskOp = (typeof TASK_OPS)[number];
 /** A signed acceptance or request carried by host_changed (lib/handoff.ts makes them; validate.ts caps their size). */
 export type HostProof = Record<string, unknown>;
 
@@ -215,24 +220,14 @@ export interface QueuedPost extends Payload {
 /** What place() / append() return with opts.queue: the placed entry, or the post a mirror queued. */
 export type Placed = (Entry & { queued?: undefined; slow?: undefined }) | QueuedPost;
 
-// Per-kind entries: the fields each kind is written with (validate.ts). A reader of the log still checks: these
-// describe what this version writes, not what an older or hand-edited log may hold.
-export interface ChatEntry extends Entry { kind: 'say' | 'question' | 'status' }
-export interface ProposalEntry extends Entry { kind: 'proposal'; hash: string }
-export interface SignoffEntry extends Entry { kind: 'signoff'; via: 'human'; proposal_hash: string }
-export interface ObjectionEntry extends Entry { kind: 'objection' }
-export interface DecisionEntry extends Entry { kind: 'decision'; via: 'system'; proposal_hash: string }
-export interface MemberJoinedEntry extends Entry { kind: 'member_joined'; via: 'system' }
-export interface MemberLeftEntry extends Entry { kind: 'member_left'; via: 'system' }
-export interface TaskReqEntry extends Entry { kind: 'task_req'; op: TaskOp; by: string }
-export interface TaskEntry extends Entry { kind: 'task'; via: 'system' }
-export interface HostChangedEntry extends Entry {
-  kind: 'host_changed'; via: 'system'; epoch: number; host: string; machine: string; locator: string;
-}
-/** Every entry this version writes, by kind. */
-export type KnownEntry =
-  | ChatEntry | ProposalEntry | SignoffEntry | ObjectionEntry | DecisionEntry | MemberJoinedEntry | MemberLeftEntry
-  | TaskReqEntry | TaskEntry | HostChangedEntry;
+// Per-kind entries. Only the kind is known (validate.ts parseEntry and isKindOf check nothing else): the other fields
+// are as optional as Entry's, since an older or hand-edited log may lack what this version writes (validate.ts says what).
+/** An entry of kind K. */
+export type EntryOf<K extends KnownKind> = Entry & { kind: K };
+/** An entry of a kind this version knows, by kind: a reader switches on its kind and ends in assertNever. */
+export type KnownEntry = { [K in KnownKind]: EntryOf<K> }[KnownKind];
+/** A proposal whose hash the fold checked (consent.ts). */
+export type ProposalEntry = EntryOf<'proposal'> & { hash: string };
 
 /** Who holds the room by its log (store.ts hostState): the last host_changed entry, else epoch 0. */
 export interface HostState {
@@ -330,8 +325,8 @@ export type JoinResult =
   | { ok: true; rejoin?: boolean; error?: undefined; code?: undefined }
   | { ok: false; error: string; code?: WireCode; rejoin?: undefined };
 
-/** A seat's presence state (members.ts PRESENCE_STATES). */
-export type PresenceState = 'working' | 'idle' | 'permission' | 'error';
+/** A seat's presence state (members.ts PRESENCE_STATES, its source). */
+export type PresenceState = (typeof PRESENCE_STATES)[number];
 /** The document presence/<name> (members.beat). */
 export interface Presence {
   state: PresenceState;
@@ -616,8 +611,8 @@ export interface Link {
   created_at?: string;
 }
 
-/** The one link vocabulary (link-state.ts STATES). */
-export type LinkStateWord = 'online' | 'connecting' | 'offline' | 'fork' | 'stopped';
+/** The one link vocabulary (link-state.ts STATE_WORDS, its source). */
+export type LinkStateWord = (typeof STATE_WORDS)[number];
 
 /** The link daemon's state record, <home>/links/<code>.state.json (links.ts LinkState); read defensively. */
 export interface LinkStateRecord {

@@ -94,7 +94,7 @@ import { isReason, reasonOf } from '../reasons.ts';
 import { isObj } from '../decode.ts';
 import { errCode } from '../errors.ts';
 import type {
-  FrameId, Op, EventName, ProtoRange, PeerVersion, OpParams, RequestFrame, AnyRequest, ResultFrame,
+  FrameId, ProtoRange, PeerVersion, OpParams, RequestFrame, AnyRequest, ResultFrame,
   ErrorFrame, EventData, EventFrame, DecodedFrame, Caps, IncomingRequest, IncomingEvent,
 } from './types-core.ts';
 
@@ -132,8 +132,12 @@ function skewMessage({ host, joiner, need }: { host: PeerVersion; joiner: PeerVe
   const what = need !== undefined ? ` (this needs protocol ${need})` : '';
   return `${runs('host runs', host)}; ${runs('you run', joiner).replace(/^you run sub-human /, 'you run ')}${what}. ${fix}`;
 }
-const OPS: Op[] = ['hello', 'join', 'leave', 'beat', 'append', 'subscribe', 'blob.get', 'blob.put', 'ping', 'handoff.accept', 'handoff.refuse'];
-const EVENTS: EventName[] = ['entry', 'doc', 'end', 'handoff', 'moved', 'snapshot'];
+/** The ops this end serves, the source of Op (types-core.ts re-exports it; OpParams and OpResults are keyed by it). */
+const OPS = ['hello', 'join', 'leave', 'beat', 'append', 'subscribe', 'blob.get', 'blob.put', 'ping', 'handoff.accept', 'handoff.refuse'] as const;
+export type Op = typeof OPS[number];
+/** The events a stream carries, the source of EventName (types-core.ts EventData is keyed by it). */
+const EVENTS = ['entry', 'doc', 'end', 'handoff', 'moved', 'snapshot'] as const;
+export type EventName = typeof EVENTS[number];
 const FIELDS: string[] = ['same'];
 const CAPS: Readonly<Caps> = Object.freeze({ ops: OPS, fields: FIELDS, snapshot: true });
 /** The RoomError codes, the source of WireCode: on both ends and on the wire. */

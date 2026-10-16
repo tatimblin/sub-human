@@ -30,7 +30,7 @@
  *   isDown(st) -> bool               connecting after a first failure, offline, fork or stopped: worth leading a row with
  *   stoppedForGood(st) -> bool       stopped: who this copy shows in the room is stale (the row shows no count)
  *   stateFile(code) -> string        <home>/links/<code>.state.json
- *   STATES                           Set of the five words
+ *   STATE_WORDS, STATES, isState     the five words (the source of LinkStateWord), as a Set, and its guard
  */
 import { isAlive } from '../io.ts';
 import { isReason } from '../reasons.ts';
@@ -42,9 +42,12 @@ import type { LinkStatus } from '../remote/link-socket.ts';
 const require = createRequire(import.meta.url);
 
 
-const STATES = new Set<LinkStateWord>(['online', 'connecting', 'offline', 'fork', 'stopped']) as ReadonlySet<string>;
-const FOR_GOOD: ReadonlySet<string> = new Set<LinkStateWord>(['fork', 'stopped']);
-const isState = (s: unknown): s is LinkStateWord => STATES.has(s as string);
+/** The words, the source of LinkStateWord (lib/room/types.ts). */
+const STATE_WORDS = ['online', 'connecting', 'offline', 'fork', 'stopped'] as const;
+const STATES: ReadonlySet<unknown> = new Set(STATE_WORDS);
+const FOR_GOOD: ReadonlySet<unknown> = new Set<LinkStateWord>(['fork', 'stopped']);
+const isState = (s: unknown): s is LinkStateWord => STATES.has(s);
+const isForGood = (s: unknown): s is 'fork' | 'stopped' => FOR_GOOD.has(s);
 
 const stateFile = (code: unknown): string => links.stateFile(code);
 
@@ -53,7 +56,7 @@ const str = (x: unknown): string | undefined => (typeof x === 'string' && x ? x 
 const clean = <O extends object>(o: O): O => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as O; // only undefined fields dropped
 
 function normalize(state: unknown, detail?: unknown): LinkStateWord {
-  if (FOR_GOOD.has(detail as string)) return detail as LinkStateWord;
+  if (isForGood(detail)) return detail;
   return isState(state) ? state : 'offline';
 }
 
@@ -76,7 +79,7 @@ function readLink(code: string): LinkState | null {
   const doc = linkDoc(code);
   let f = null;
   try { f = links.readState(code); } catch { f = null; }
-  if (f && typeof f === 'object' && STATES.has(f.state as string)) {
+  if (f && typeof f === 'object' && STATES.has(f.state)) {
     const pid = num(f.pid);
     const dead = pid ? !isAlive(pid) : !!(doc && doc.pid && !doc.running);
     const st: LinkState = clean({
@@ -124,4 +127,4 @@ function isDown(st: Partial<LinkState> | null | undefined): boolean {
   return state === 'offline' || FOR_GOOD.has(state) || (state === 'connecting' && (st.attempt ?? 0) > 1);
 }
 
-export { read, normalize, indicator, isDown, stoppedForGood, stateFile, STATES, seam };
+export { read, normalize, indicator, isDown, stoppedForGood, stateFile, STATES, STATE_WORDS, isState, seam };

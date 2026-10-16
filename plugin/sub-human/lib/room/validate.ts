@@ -26,26 +26,47 @@ import type { Reason } from '../reasons.ts';
 import { CODED } from '../errors.ts';
 import type { WireCode } from '../remote/types-core.ts';
 import { ENTRY_TEXT_MAX_BYTES, ENTRY_REFS_MAX, ENTRY_STR_MAX, ENTRY_LIST_MAX } from '../config.ts';
-import type { EntryInput, HostFields, Kind, TaskFields, TaskOp, Validated, ValidateOpts, Via } from './types.ts';
+import type { Entry, EntryInput, EntryOf, HostFields, Kind, KnownEntry, KnownKind, TaskFields, TaskOp, Validated, ValidateOpts, Via } from './types.ts';
 
-const AGENT_KINDS: readonly string[] = ['say', 'question', 'status', 'proposal', 'task_req'];
-const HUMAN_KINDS: readonly string[] = ['say', 'signoff', 'objection', 'proposal'];
-const SYSTEM_ONLY_KINDS: readonly string[] = ['decision', 'member_joined', 'member_left', 'task', 'host_changed'];
-const TASK_OPS: readonly string[] = ['add', 'claim', 'release', 'done'];
-const SYSTEM_KINDS = [...SYSTEM_ONLY_KINDS, 'status'];
-const KINDS = [...new Set([...AGENT_KINDS, ...HUMAN_KINDS, ...SYSTEM_KINDS])];
-const KINDS_BY_VIA: Record<Via, readonly string[]> = { agent: AGENT_KINDS, human: HUMAN_KINDS, system: SYSTEM_KINDS };
-const VIAS: readonly string[] = ['human', 'agent', 'system'];
-const isVia = (v: unknown): v is Via => VIAS.includes(v as string);
-const isKind = (k: unknown): k is Kind => KINDS.includes(k as string);
-const isTaskOp = (op: unknown): op is TaskOp => TASK_OPS.includes(op as string);
+// The tables are the source of their unions (lib/room/types.ts Via, Kind, LegacyKind, TaskOp), on lib/reasons.ts's
+// pattern: a word added here is a member there, and every switch over it must handle it.
+const AGENT_KINDS = ['say', 'question', 'status', 'proposal', 'task_req'] as const;
+const HUMAN_KINDS = ['say', 'signoff', 'objection', 'proposal'] as const;
+const SYSTEM_ONLY_KINDS = ['decision', 'member_joined', 'member_left', 'task', 'host_changed'] as const;
+const SYSTEM_KINDS = [...SYSTEM_ONLY_KINDS, 'status'] as const;
+/** Kinds only logs from before envelope v3 hold (rules.ts normalize maps all but revoke). */
+const LEGACY_KINDS = ['concern', 'agree', 'plan_rev', 'revoke'] as const;
+const TASK_OPS = ['add', 'claim', 'release', 'done'] as const;
+const VIAS = ['human', 'agent', 'system'] as const;
+const KINDS: readonly Kind[] = [...new Set([...AGENT_KINDS, ...HUMAN_KINDS, ...SYSTEM_KINDS])];
+const KINDS_BY_VIA: Record<Via, readonly Kind[]> = { agent: AGENT_KINDS, human: HUMAN_KINDS, system: SYSTEM_KINDS };
+const VIA_SET: ReadonlySet<unknown> = new Set(VIAS);
+const KIND_SET: ReadonlySet<unknown> = new Set(KINDS);
+const KNOWN_SET: ReadonlySet<unknown> = new Set([...KINDS, ...LEGACY_KINDS]);
+const TASK_OP_SET: ReadonlySet<unknown> = new Set(TASK_OPS);
+const SYSTEM_ONLY_SET: ReadonlySet<Kind> = new Set(SYSTEM_ONLY_KINDS);
+const isVia = (v: unknown): v is Via => VIA_SET.has(v);
+const isKind = (k: unknown): k is Kind => KIND_SET.has(k);
+const isTaskOp = (op: unknown): op is TaskOp => TASK_OP_SET.has(op);
+
+/**
+ * A log line by its kind, for a reader that branches over several: the entry itself (no copy) as a KnownEntry, whose
+ * kind is one this version knows (Kind or LegacyKind), or null for a kind a newer host wrote. The reader handles null
+ * (its graceful default), then switches on the kind and ends in assertNever. Only the kind is checked: each kind's
+ * other fields are as optional as Entry's, since an older or hand-edited log may lack them.
+ */
+const parseEntry = <E extends Entry>(e: E): (E & KnownEntry) | null => (isKnown(e) ? e : null);
+function isKnown<E extends Entry>(e: E): e is E & KnownEntry { return KNOWN_SET.has(e.kind); }
+/** A single-kind filter that narrows: isKindOf(e, 'say') is e.kind === 'say', typed EntryOf<'say'>. */
+const isKindOf = <K extends KnownKind, E extends Entry>(e: E | null | undefined, kind: K): e is E & EntryOf<K> => !!e && e.kind === kind;
+
 /** a hash a caller may name: 6-64 hex (a proposal's is 12, lib/text.ts HASH_RE; older logs hold longer ones) */
 const HASH_ARG_RE = /^[0-9a-f]{6,64}$/;
 const HOST_FIELDS = ['epoch', 'host', 'locator', 'accept', 'ask', 'promoted'];
 const TASK_FIELDS = ['op', 'task_id', 'subject', 'detail', 'evidence', 'owner', 'status', 'req', 'blockedBy'];
 const ENTRY_FIELDS = new Set(['kind', 'text', 'to', 'refs', 'hash', 'approvers', 'same', 'path', 'proposal_hash', 'normalized',
   'edit_path', 'drafted', 'id', 'by', 'pubkey', 'machine', ...HOST_FIELDS, ...TASK_FIELDS]);
-const TASK_KINDS = ['task_req', 'task'];
+const TASK_KINDS: ReadonlySet<unknown> = new Set(['task_req', 'task']);
 const PEM_RE = /^-----BEGIN PUBLIC KEY-----\n[A-Za-z0-9+/=\n]{1,512}-----END PUBLIC KEY-----\n$/;
 const MACHINE_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -80,7 +101,7 @@ function validate(entry: EntryInput, opts: ValidateOpts): Validated {
   }
   const via = opts.via || (opts.system === true ? 'system' : undefined);
   const { kind, to = 'room', refs, hash, approvers, path: ppath, proposal_hash, normalized, edit_path, drafted, pubkey, machine } = entry;
-  const isTask = TASK_KINDS.includes(kind);
+  const isTask = TASK_KINDS.has(kind);
   if (entry.id !== undefined && !isTask) bad('field "id" is not settable by callers');
   if (entry.by !== undefined && !(kind === 'task_req' && entry.by === opts.from)) bad('field "by" is not settable by callers (task_req stamps it)');
   for (const k of TASK_FIELDS) if (fields[k] !== undefined && !isTask) bad(`field "${k}" is only for task_req and task entries`);
@@ -91,7 +112,7 @@ function validate(entry: EntryInput, opts: ValidateOpts): Validated {
   if (!isVia(via)) bad(`via must be one of ${VIAS.join(', ')}`);
   if (!isKind(kind)) bad(`unknown kind "${kind}". Use one of: ${KINDS_BY_VIA[via].join(', ')}`);
   if (via === 'system' && opts.system !== true) bad('via "system" is written only by the plugin\'s hooks');
-  if (SYSTEM_ONLY_KINDS.includes(kind)) {
+  if (SYSTEM_ONLY_SET.has(kind)) {
     if (opts.system !== true) bad(`${kind} is written only by the plugin's hooks`);
     if (via !== 'system') bad(`${kind} must be via "system"`);
   } else if (!KINDS_BY_VIA[via].includes(kind)) {
@@ -217,4 +238,4 @@ function taskText(kind: string, t: TaskFields): string {
   return (head || 'task') + (tail ? `: ${tail}` : '');
 }
 
-export { RoomError, validate };
+export { RoomError, validate, parseEntry, isKindOf, isVia, isKind, isTaskOp, KINDS, LEGACY_KINDS, AGENT_KINDS, HUMAN_KINDS, SYSTEM_KINDS, SYSTEM_ONLY_KINDS, TASK_OPS, VIAS };
