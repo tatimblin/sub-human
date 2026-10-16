@@ -795,6 +795,17 @@
    "note": "Every title a session is given (a hook's sessionTitle among them) is kept in its transcript as {\"type\":\"custom-title\",\"customTitle\":TITLE}, the last one winning. A seated session's title is its address NAME.CODE, so the transcript an agent-view fork continued (session-fork-continued-in) says the seat it came from even when this process's sub-human folder has no record of it (lib/cc/transcript.ts lastTitle, lib/identity.ts forkedAway)."
   },
   {
+   "id": "subagent-handback-message",
+   "section": 8,
+   "stability": "incidental",
+   "since": "2.1.296",
+   "search": [
+    "[Subagent hand-back] The text below is the final report of a subagent this session delegated to.",
+    "</agent-message>"
+   ],
+   "note": "A background agent's final report reaches the main conversation as a message of its own (origin peer, \"Another Claude session sent a message:\" then <agent-message from=\"AGENT_ID\"> with the \"[Subagent hand-back]\" frame and the indented report), which starts a model turn. A room row ends with the word left (its seat left the room) or error: mod/rows.ts takes the hand-back of a row it saw spawned (session.receive consumed, else prompt.submit drop), so a row ending wakes no model (mod/core/rows.ts handbackFrom)."
+  },
+  {
    "id": "plugin-settings-allowlist",
    "section": 9,
    "stability": "API",

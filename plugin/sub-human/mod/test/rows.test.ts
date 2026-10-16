@@ -89,3 +89,22 @@ test('a row hook that fails leaves the call and the stop as they were', async ($
   const s: any = await stopped($, 'sub-human:room')
   expect(s.block).toBeUndefined()
 })
+
+test('stage 8e I.2 (live verify, remote/16b): a row\'s hand-back ("left" after a leave) starts no turn: taken at session.receive, dropped as a prompt; another agent\'s passes', async ($, on) => {
+  world(on, { seat: null })
+  const entered: string[] = []
+  on('prompt.submit', ($: any, e: any) => { entered.push(e.text); return { text: e.text } })
+  on('session.receive', ($: any, e: any) => ({ text: e.text }))
+  await start($)
+  await posted($, ROW, { tool_response: { agentId: 'a63b1121195617e7f' } }) // the room row, spawned
+  await posted($, { subagent_type: 'Explore', prompt: 'look', description: 'look' }, { tool_response: { agentId: 'a0000000000000001' } })
+  const handback = (id: string) => `Another Claude session sent a message:\n<agent-message from="${id}">\n[Subagent hand-back] The text below is the final report of a subagent this session delegated to. … The report follows:\n  left\n</agent-message>`
+  const got: any = await $.session.receive({ origin: { kind: 'peer' }, text: handback('a63b1121195617e7f') } as any)
+  expect(got.consumed).toBe('sub-human: a room row ended')
+  await posted($, ROW, { tool_response: { agentId: 'a63b1121195617e7f' } })
+  const r: any = await $.prompt.submit({ text: handback('a63b1121195617e7f'), origin: { kind: 'peer' }, wait: false } as any)
+  expect(r.drop).toBe('sub-human: a room row ended')
+  const other: any = await $.prompt.submit({ text: handback('a0000000000000001'), origin: { kind: 'peer' }, wait: false } as any)
+  expect(other.drop).toBeUndefined()
+  expect(entered).toEqual([handback('a0000000000000001')])
+})

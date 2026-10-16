@@ -9,11 +9,15 @@
  *     denied); next(e) always runs, ours above it (mergePre; cc CONTRACT classic-chain-order).
  *   - classic.PostToolUse Agent|Task (the old name): node row-map (which panel row the spawned agent is).
  *   - classic.SubagentStop: node row-hold (a row that gave up is told to hold again; its block continues it).
+ *   - session.receive / prompt.submit: a row's hand-back (its final report, "left" or "error", which Claude Code
+ *     delivers to the main conversation as a message of its own) is taken: a row ending starts no model turn (stage 8e
+ *     I.2: "Still in room" after a leave). The row agents' ids are noted as they are spawned (classic.PostToolUse).
  * Failure: each .catch passes the event on as it is: the rows never disturb the session.
  */
 import { shimArgv, shimEnv, toClassic, toPre, mergePre, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { rowsNeeded } from './core/prefilter.ts';
 import { mergeClassic } from './core/prompt.ts';
+import { isRow, spawnedId, handbackFrom } from './core/rows.ts';
 import { prePayload } from './core/facts.ts';
 import { asHello } from './core/state.ts';
 import { facts } from './deliver.ts';
@@ -25,6 +29,13 @@ async function needed($: EngineInterface, sid: unknown, agentType: unknown): Pro
   const { value } = await $.state.get(HELLO);
   return rowsNeeded(asHello(value), sid, agentType);
 }
+
+/** The row agents this session spawned (module state: a reload forgets them, and their hand-back then reads as any
+ * agent's). */
+const rowAgents = new Set<string>();
+/** The row agent a delivery is the hand-back of, or null. */
+const rowHandback = (text: unknown): string | null => { const id = handbackFrom(text); return id && rowAgents.has(id) ? id : null; };
+const ROW_ENDED = 'sub-human: a room row ended';
 
 const typeOf = (input: unknown) => (input && typeof input === 'object' ? (input as { subagent_type?: unknown }).subagent_type : undefined);
 
@@ -44,10 +55,25 @@ export function registerRows(on: On) {
   }).catch(($, e, next) => next(e)); // never disturb the session: the spawn goes on (hold.ts stops a duplicate itself)
 
   on('classic.PostToolUse', { tool_name: ['Agent', 'Task'] }, async ($, e, next) => {
+    if (isRow(typeOf(e.tool_input))) { const id = spawnedId(e.tool_response); if (id) rowAgents.add(id); }
     if (!(await needed($, e.session_id, typeOf(e.tool_input)))) return next(e);
     const root = $.plugin.root;
     const run = await $.process.run(shimArgv(root, 'row-map'), { stdin: JSON.stringify(e), env: shimEnv(e, root), timeoutMs: SHIM_TIMEOUT_MS });
     return mergeClassic(toClassic('PostToolUse', run).result, await next(e));
+  }).catch(($, e, next) => next(e));
+
+  // a row's hand-back is no turn: taken before it is queued, or dropped as a prompt where it was not
+  on('session.receive', { origin: { kind: 'peer' } }, ($, e, next) => {
+    const id = e.origin.kind === 'peer' ? rowHandback(e.text) : null;
+    if (!id) return next(e);
+    rowAgents.delete(id);
+    return { consumed: ROW_ENDED };
+  }).catch(($, e, next) => next(e));
+  on('prompt.submit', { origin: { kind: 'peer' } }, ($, e, next) => {
+    const id = e.origin && e.origin.kind === 'peer' ? rowHandback(e.text) : null;
+    if (!id) return next(e);
+    rowAgents.delete(id);
+    return { drop: ROW_ENDED };
   }).catch(($, e, next) => next(e));
 
   on('classic.SubagentStop', async ($, e, next) => {
