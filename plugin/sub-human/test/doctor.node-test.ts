@@ -17,7 +17,7 @@ import * as store from '../lib/room/store.ts';
 import type { Check, KeyLine, LinkReport, LinkStateView, Reach, Report } from '../lib/cli/types.ts';
 import type { AgentJob } from '../lib/cc/bg.ts';
 import type { MirrorRoomStore } from '../lib/room/store-mirror.ts';
-import { rc } from './support/brands.ts';
+import { rc, mid } from './support/brands.ts';
 
 const KEY_B64 = crypto.randomBytes(51).toString('base64').replace(/=+$/, '');
 const KEY = `ssh-ed25519 ${KEY_B64}`;
@@ -252,7 +252,7 @@ test('doctor: a room whose claude job started but never took its seat (e.g. bloc
   h.freshHome(t);
   const { code } = h.register('alice', 'member', process.pid);
   const old = new Date(Date.now() - 5 * 60_000).toISOString();
-  identity.updateRoomClaude(code, () => ({ job: 'job12345', spawned_at: old, pid: 4242, machine: 'another-machine', left_at: undefined }));
+  identity.updateRoomClaude(code, () => ({ job: 'job12345', spawned_at: old, pid: 4242, machine: mid('another-machine'), left_at: undefined }));
   const [c] = doctor.checkRoomClaudes({ jobs: () => null });
   assert.equal(c.id, `room-claude:${code}`);
   assert.equal(c.status, 'fail');

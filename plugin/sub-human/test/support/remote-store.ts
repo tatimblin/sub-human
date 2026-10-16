@@ -22,9 +22,10 @@ import * as server from '../../lib/remote/server.ts';
 import * as client from '../../lib/remote/client.ts';
 import * as memory from '../../lib/remote/transports/memory.ts';
 import type { RoomCode } from '../../lib/brand.ts';
+import { mid } from './brands.ts';
 
 const NAMES = ['alice', 'bob', 'carol', 'dave'];
-const MACHINE = 'remote0machine01';
+const MACHINE = mid('remote0machine01');
 
 /** What the worker is started with. ready: 0 while starting, 1 online, 2 failed. */
 interface WorkerData { code: RoomCode; dir: string; home: string | undefined; ready: Int32Array }

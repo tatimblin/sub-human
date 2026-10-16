@@ -69,7 +69,7 @@ import type { JoinResult, Member } from './room/types.ts';
 import type { Identity } from './identity.ts';
 import type { Wanted } from './remote/joining.ts';
 import { errCode, msgOf } from './errors.ts';
-import type { RoomCode, SeatName } from './brand.ts';
+import type { RoomCode, SeatName, MachineId } from './brand.ts';
 
 const require = createRequire(import.meta.url);
 // loaded only by take(): the session-end hook and the remote server never need the link or the listener
@@ -81,7 +81,7 @@ interface EnterOpts {
   code: RoomCode;
   name: SeatName;
   role?: string;
-  machine?: string | null;
+  machine?: MachineId | null;
   account?: string;
   pid?: number | null;
   session_id?: string | null;

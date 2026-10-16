@@ -17,7 +17,7 @@ import type { HookJson, HookRun } from './helpers.ts';
 import type { Identity } from '../../lib/identity.ts';
 import type { Member, Role } from '../../lib/room/types.ts';
 import type { RoomCode } from '../../lib/brand.ts';
-import { rc, sn } from '../support/brands.ts';
+import { rc, sn, mid } from '../support/brands.ts';
 
 /** An invite line's SECRET word (lib/remote/invite-secret.ts): well formed, naming no host this test has. */
 const SECRET = inviteSecret.encode(Buffer.alloc(16, 1), Buffer.alloc(8, 2));
@@ -771,8 +771,8 @@ test('the block lists the room\'s Claude only while it runs or is starting: neve
   assert.equal(others({ job: 'pending', spawned_at: iso(now - 1000) }), 'starting');
   assert.equal(others({ job: 'pending', spawned_at: iso(now - 10 * 60_000) }), null, 'a stale claim');
   assert.equal(others({ job: 'j1', spawned_at: iso(now - 1000) }), 'starting', 'spawned, not bound yet');
-  assert.equal(others({ job: 'j1', spawned_at: iso(now - 10 * 60_000), joined_at: iso(now - 9 * 60_000), seen_at: iso(now - 1000), machine: 'm-host' }), 'live', 'another machine\'s claude: its lease');
-  assert.equal(others({ job: 'j1', spawned_at: iso(now - 10 * 60_000), joined_at: iso(now - 9 * 60_000), seen_at: iso(now - 5 * 60_000), machine: 'm-host' }), null, 'its lease ran out');
+  assert.equal(others({ job: 'j1', spawned_at: iso(now - 10 * 60_000), joined_at: iso(now - 9 * 60_000), seen_at: iso(now - 1000), machine: mid('m-host') }), 'live', 'another machine\'s claude: its lease');
+  assert.equal(others({ job: 'j1', spawned_at: iso(now - 10 * 60_000), joined_at: iso(now - 9 * 60_000), seen_at: iso(now - 5 * 60_000), machine: mid('m-host') }), null, 'its lease ran out');
   assert.equal(others({ job: 'j1', closing: true as unknown as string /* deliberate: any truthy closing counts */, seen_at: iso(now), joined_at: iso(now) }), null);
   // the block itself: a room whose room Claude failed to start does not say "with … room Claude"
   withHome(w.home, () => identity.updateRoomClaude(w.code, () => ({ name: sn('claude'), role: 'claude', job: null, spawn_error: 'exit 1', pid: null })));

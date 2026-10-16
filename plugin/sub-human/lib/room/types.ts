@@ -16,7 +16,7 @@ import type { AGENT_KINDS, HUMAN_KINDS, LEGACY_KINDS, SYSTEM_KINDS, TASK_OPS, VI
 import type { PRESENCE_STATES } from './members.ts';
 import type { STATE_WORDS } from './link-state.ts';
 import type { WireCode } from '../remote/types-core.ts';
-import type { RoomCode, SeatName } from '../brand.ts';
+import type { RoomCode, SeatName, SessionId, MachineId } from '../brand.ts';
 
 // ---------- the log entry ----------
 
@@ -270,7 +270,7 @@ export interface Member {
   name: SeatName;
   role: Role;
   /** null: this machine's id could not be read when the seat joined */
-  machine?: string | null;
+  machine?: MachineId | null;
   /**
    * the person behind the seat, as the host knows it: the host's machine id for a seat of the host account (one on
    * the host, or one over a login link, lib/seats.ts enter); none for an invite's seat. Seats with one account are
@@ -288,7 +288,7 @@ export interface Member {
   lapsed_at?: string;
   pid?: number | null;
   pid_start?: number;
-  session_id?: string | null;
+  session_id?: SessionId | null;
   cwd?: string | null;
   // the room's Claude's bookkeeping (lib/room-claude.ts)
   /** its `claude --bg` job id; "pending" while a spawn is claimed; null after a failed spawn */
@@ -310,11 +310,11 @@ export type Members = Record<string, Member>;
 export interface SeatRecord {
   name: SeatName;
   role: Role;
-  machine?: string | null;
+  machine?: MachineId | null;
   account?: string;
   pid?: number;
   pid_start?: number;
-  session_id?: string | null;
+  session_id?: SessionId | null;
   cwd?: string | null;
   /** what log the seat's code reads (lib/room/members.ts LOG_V) */
   log_v?: number;

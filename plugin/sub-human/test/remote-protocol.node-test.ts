@@ -23,7 +23,7 @@ import type { DecodedFrame, SignedPayload } from '../lib/remote/types-core.ts';
 import type { RoomError } from '../lib/room/validate.ts';
 import { isErrno } from '../lib/errors.ts';
 import type { KindEntry, MemorySpec, PipeSpec, SpecBase, SshSpec, Transport } from '../lib/remote/types-rest.ts';
-import { rc, sn } from './support/brands.ts';
+import { rc, sn, mid } from './support/brands.ts';
 
 /** The test's own socket kind: a unix socket path. */
 interface UnixSpec extends SpecBase { path: string }
@@ -165,17 +165,17 @@ test('flaky: seeded drops and duplicates replay the same; cutAfter closes both e
 test('auth: a bound invite is one string for one machine, redeemed once for a token; the host keeps only digests; a link writes only as its seats', t => {
   h.freshHome(t);
   const s = new MemoryRoomStore(CODE);
-  const { invite, secret } = invites.mintFor(s, { locator: 'pipe:node serve', machine: 'm-remote', seats: [] });
+  const { invite, secret } = invites.mintFor(s, { locator: 'pipe:node serve', machine: mid('m-remote'), seats: [] });
   assert.match(invite, /^sh2\.otter-1234\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{22}\.0$/);
   assert.deepEqual(invites.parseInvite(invite), { v: 2, code: CODE, locator: 'pipe:node serve', secret, hostKey: null });
   for (const bad of ['', `sh1.otter-1234.cGlwZQ.${secret}`, 'sh2.otter-1234.cGlwZQ.' + secret, `sh2.Otter.cGlwZQ.${secret}.0`, `sh2.otter-1234..${secret}.0`,
     'sh2.otter-1234.cGlwZQ.short.0', null, `sh2.otter-1234.cGlwZQ.${secret}.short-key`, `sh2.otter-1234.cG!wZQ.${secret}.0`]) {
     assert.equal(invites.parseInvite(bad), null, String(bad));
   }
-  assert.throws(() => invites.redeemInvite(s, secret, { machine: 'm-other' }), (e: RoomError) => e.code === 'AUTH' && e.reason === 'INVITE_OTHER_MACHINE');
-  const { token, link } = invites.redeemInvite(s, secret, { machine: 'm-remote' });
-  assert.throws(() => invites.redeemInvite(s, secret, { machine: 'm-remote' }), (e: RoomError) => e.code === 'AUTH' && e.reason === 'INVITE_USED', 'single use');
-  assert.throws(() => invites.redeemInvite(s, 'never-minted-secret-0', { machine: 'm' }), (e: RoomError) => e.code === 'AUTH' && e.reason === 'INVITE_UNKNOWN');
+  assert.throws(() => invites.redeemInvite(s, secret, { machine: mid('m-other') }), (e: RoomError) => e.code === 'AUTH' && e.reason === 'INVITE_OTHER_MACHINE');
+  const { token, link } = invites.redeemInvite(s, secret, { machine: mid('m-remote') });
+  assert.throws(() => invites.redeemInvite(s, secret, { machine: mid('m-remote') }), (e: RoomError) => e.code === 'AUTH' && e.reason === 'INVITE_USED', 'single use');
+  assert.throws(() => invites.redeemInvite(s, 'never-minted-secret-0', { machine: mid('m') }), (e: RoomError) => e.code === 'AUTH' && e.reason === 'INVITE_UNKNOWN');
   const stored = JSON.stringify([s.kv.get(invites.INVITES_KEY), s.kv.get(hostLinks.LINKS_KEY)]);
   assert.ok(!stored.includes(secret) && !stored.includes(token), 'only sha256 digests on the host');
   assert.deepEqual(hostLinks.verifyToken(s, token), link);
@@ -192,41 +192,41 @@ test('auth: an sh2 invite with a PIN (a promote\'s, handed out by hand) carries 
   const s = new MemoryRoomStore(CODE);
   const hostKey = crypto.generateKeyPairSync('ed25519').publicKey.export({ format: 'jwk' }).x;
   const t0 = Date.parse('2026-10-08T12:00:00Z');
-  const mint = (opts: { now?: number } = {}) => invites.mintFor(s, { locator: 'ssh:me@far:2222', machine: 'm', seats: ['bob'], pin: true, hostKey, now: t0, ...opts });
+  const mint = (opts: { now?: number } = {}) => invites.mintFor(s, { locator: 'ssh:me@far:2222', machine: mid('m'), seats: ['bob'], pin: true, hostKey, now: t0, ...opts });
   const a = mint();
   assert.match(a.invite, /^sh2\.otter-1234\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/);
   assert.match(a.pin!, /^[0-9]{6}$/);
   assert.ok(!a.invite.includes(a.pin!) || !a.invite.split('.').includes(a.pin!), 'the PIN is not a part of the invite');
   assert.equal(Buffer.from(a.secret, 'base64url').length, 16, '128 bits');
   assert.deepEqual(invites.parseInvite(a.invite), { v: 2, code: CODE, locator: 'ssh:me@far:2222', secret: a.secret, hostKey });
-  assert.equal(invites.parseInvite(invites.mintFor(s, { locator: 'pipe:/h', machine: 'm', seats: [], pin: true }).invite)!.hostKey, null, 'no key: "0"');
+  assert.equal(invites.parseInvite(invites.mintFor(s, { locator: 'pipe:/h', machine: mid('m'), seats: [], pin: true }).invite)!.hostKey, null, 'no key: "0"');
   const stored = JSON.stringify(s.kv.get(invites.INVITES_KEY));
   assert.ok(!stored.includes(a.secret) && !stored.includes(`"${a.pin}"`), 'neither the secret nor the PIN in clear on the host');
 
   // no PIN or a wrong one: a try each, and the room line the server posts; the right one redeems and burns the invite
   const wrong = String((Number(a.pin) + 1) % 1e6).padStart(6, '0');
-  assert.throws(() => invites.redeemInvite(s, a.secret, { machine: 'm', now: t0 }), (e: RoomError) => e.code === 'AUTH' && /needs its PIN/.test(e.message) && /4 tries left/.test(e.note!));
-  assert.throws(() => invites.redeemInvite(s, a.secret, { machine: 'm', pin: wrong, now: t0 }), (e: RoomError) => /wrong PIN \(3 tries left\)\. Check the digits with the host, then type the join line again/.test(e.message));
-  const ok = invites.redeemInvite(s, a.secret, { machine: 'm', pin: a.pin, now: t0 + 60_000 });
+  assert.throws(() => invites.redeemInvite(s, a.secret, { machine: mid('m'), now: t0 }), (e: RoomError) => e.code === 'AUTH' && /needs its PIN/.test(e.message) && /4 tries left/.test(e.note!));
+  assert.throws(() => invites.redeemInvite(s, a.secret, { machine: mid('m'), pin: wrong, now: t0 }), (e: RoomError) => /wrong PIN \(3 tries left\)\. Check the digits with the host, then type the join line again/.test(e.message));
+  const ok = invites.redeemInvite(s, a.secret, { machine: mid('m'), pin: a.pin, now: t0 + 60_000 });
   assert.equal(typeof ok.token, 'string');
-  assert.throws(() => invites.redeemInvite(s, a.secret, { machine: 'm', pin: a.pin, now: t0 }), (e: RoomError) => /used already/.test(e.message), 'single use');
+  assert.throws(() => invites.redeemInvite(s, a.secret, { machine: mid('m'), pin: a.pin, now: t0 }), (e: RoomError) => /used already/.test(e.message), 'single use');
 
   // five wrong PINs burn it: the right one no longer works
   const b = mint();
   const bad = String((Number(b.pin) + 7) % 1e6).padStart(6, '0');
-  for (let i = 4; i >= 1; i--) assert.throws(() => invites.redeemInvite(s, b.secret, { machine: 'm', pin: bad, now: t0 }), (e: RoomError) => e.message.includes(`(${i} ${i === 1 ? 'try' : 'tries'} left)`));
-  assert.throws(() => invites.redeemInvite(s, b.secret, { machine: 'm', pin: bad, now: t0 }), (e: RoomError) => /last try: this invite no longer works/.test(e.message) && /burnt/.test(e.note!));
-  assert.throws(() => invites.redeemInvite(s, b.secret, { machine: 'm', pin: b.pin, now: t0 }), (e: RoomError) => /this invite no longer works/.test(e.message), 'burnt, said so');
+  for (let i = 4; i >= 1; i--) assert.throws(() => invites.redeemInvite(s, b.secret, { machine: mid('m'), pin: bad, now: t0 }), (e: RoomError) => e.message.includes(`(${i} ${i === 1 ? 'try' : 'tries'} left)`));
+  assert.throws(() => invites.redeemInvite(s, b.secret, { machine: mid('m'), pin: bad, now: t0 }), (e: RoomError) => /last try: this invite no longer works/.test(e.message) && /burnt/.test(e.note!));
+  assert.throws(() => invites.redeemInvite(s, b.secret, { machine: mid('m'), pin: b.pin, now: t0 }), (e: RoomError) => /this invite no longer works/.test(e.message), 'burnt, said so');
 
   // 15 minutes: an expired invite burns, PIN or not
   const c = mint();
-  assert.throws(() => invites.redeemInvite(s, c.secret, { machine: 'm', pin: c.pin, now: t0 + 15 * 60_000 + 1 }), (e: RoomError) => /expired/.test(e.message));
-  assert.throws(() => invites.redeemInvite(s, c.secret, { machine: 'm', pin: c.pin, now: t0 }), (e: RoomError) => /this invite no longer works/.test(e.message));
+  assert.throws(() => invites.redeemInvite(s, c.secret, { machine: mid('m'), pin: c.pin, now: t0 + 15 * 60_000 + 1 }), (e: RoomError) => /expired/.test(e.message));
+  assert.throws(() => invites.redeemInvite(s, c.secret, { machine: mid('m'), pin: c.pin, now: t0 }), (e: RoomError) => /this invite no longer works/.test(e.message));
 
   // only its machine redeems it; revoking its link kills the token
   const d = mint();
-  assert.throws(() => invites.redeemInvite(s, d.secret, { machine: 'other', pin: d.pin, now: t0 }), (e: RoomError) => /another machine/.test(e.message));
-  const dl = invites.redeemInvite(s, d.secret, { machine: 'm', pin: d.pin, now: t0 });
+  assert.throws(() => invites.redeemInvite(s, d.secret, { machine: mid('other'), pin: d.pin, now: t0 }), (e: RoomError) => /another machine/.test(e.message));
+  const dl = invites.redeemInvite(s, d.secret, { machine: mid('m'), pin: d.pin, now: t0 });
   assert.deepEqual(hostLinks.revokeLink(s, dl.link.id)!.link!.id, dl.link.id);
   assert.equal(hostLinks.verifyToken(s, dl.token), null, 'the token is dead');
   assert.equal(hostLinks.revokeLink(s, dl.link.id), null, 'nothing left to revoke');

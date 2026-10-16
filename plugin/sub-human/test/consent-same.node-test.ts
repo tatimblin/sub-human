@@ -16,7 +16,7 @@ import { machineId } from '../lib/home.ts';
 import { MemoryRoomStore } from './support/memory-store.ts';
 import type { Entry, EntryInput, Member, Trust } from '../lib/room/types.ts';
 import type { RoomCode } from '../lib/brand.ts';
-import { rc, sn } from './support/brands.ts';
+import { rc, sn, mid } from './support/brands.ts';
 
 const H = 'abcdef012345';
 let id = 0;
@@ -95,9 +95,9 @@ test('create: the approvers are grouped by account; an invite\'s seat never merg
   const HOST = machineId()!;
   const code = seated(t, {
     tristan: { machine: HOST, account: HOST },     // on the host
-    laptop: { machine: 'laptop0machine1', account: HOST }, // over a login link
-    bob: { machine: 'shared0machine1' },          // two invites from one machine: two people
-    carol: { machine: 'shared0machine1' },
+    laptop: { machine: mid('laptop0machine1'), account: HOST }, // over a login link
+    bob: { machine: mid('shared0machine1') },          // two invites from one machine: two people
+    carol: { machine: mid('shared0machine1') },
   });
   const r = proposal.create({ code, name: sn('carol') }, { text: '# Ship v3\n' });
   assert.deepEqual([r.approvers, r.entry!.same], [['tristan', 'laptop', 'bob', 'carol'], [['tristan', 'laptop']]]);
@@ -119,7 +119,7 @@ test('create: several seats on the host are several people: login seats are the 
   const code = seated(t, {
     alice: { machine: HOST, account: HOST },
     tristan: { machine: HOST, account: HOST, owner: true },
-    laptop: { machine: 'laptop0machine1', account: HOST },
+    laptop: { machine: mid('laptop0machine1'), account: HOST },
   });
   const r = proposal.create({ code, name: sn('alice') }, { text: '# Ship v3\n' });
   assert.deepEqual([r.approvers, r.entry!.same], [['alice', 'tristan', 'laptop'], [['tristan', 'laptop']]], 'alice stays her own');
@@ -137,9 +137,9 @@ test('create: a room from before the owner field: the earliest-joined host seat 
     alice: { machine: HOST, account: HOST, joined_at: '2026-01-02T00:00:00.000Z' },
     tristan: { machine: HOST, account: HOST, joined_at: '2026-01-01T00:00:00.000Z' },
     gone: { machine: HOST, account: HOST, joined_at: '2025-12-31T00:00:00.000Z', left_at: '2026-01-01T00:00:00.000Z' },
-    phone: { machine: 'phone0machine01', account: HOST },
-    tablet: { machine: 'tablet0machine1', account: HOST },
-    guest: { machine: 'phone0machine01' },
+    phone: { machine: mid('phone0machine01'), account: HOST },
+    tablet: { machine: mid('tablet0machine1'), account: HOST },
+    guest: { machine: mid('phone0machine01') },
   });
   const r = proposal.create({ code, name: sn('alice') }, { text: '# Ship v3\n' });
   assert.deepEqual(r.entry!.same, [['tristan', 'phone', 'tablet']], 'an invite seat from the same machine stays its own');
@@ -153,13 +153,13 @@ test('members.join: the first person\'s seat on the host is the owner, kept acro
   assert.equal(s.members.join({ name: sn('claude'), role: 'claude', machine: HOST }).ok, true, 'the room\'s Claude is no one\'s');
   s.members.join({ name: sn('tristan'), role: 'member', machine: HOST, account: HOST });
   s.members.join({ name: sn('alice'), role: 'member', machine: HOST, account: HOST });
-  s.members.join({ name: sn('laptop'), role: 'member', machine: 'laptop0machine1', account: HOST });
+  s.members.join({ name: sn('laptop'), role: 'member', machine: mid('laptop0machine1'), account: HOST });
   s.members.join({ name: sn('tristan'), role: 'member', machine: HOST, account: HOST });
   const ms = s.members.read();
   assert.deepEqual(['claude', 'tristan', 'alice', 'laptop'].map(n => !!ms[n].owner), [false, true, false, false]);
   h.freshHome(t);
   const c2 = h.newRoom();
-  store.open(c2).members.join({ name: sn('guest'), role: 'member', machine: 'far0machine0001' });
+  store.open(c2).members.join({ name: sn('guest'), role: 'member', machine: mid('far0machine0001') });
   store.open(c2).members.join({ name: sn('bob'), role: 'member', machine: HOST, account: HOST });
   assert.equal(store.open(c2).members.read().bob.owner, undefined, 'a person was there first');
 });
@@ -178,7 +178,7 @@ test('create: a mirror writes same only while its host\'s caps list it (the link
 });
 
 test('17: a proposal\'s title drops a numbered-list marker ("1. Add an MIT LICENSE file" is "Add an MIT LICENSE file"), as it drops a heading\'s', t => {
-  const code = seated(t, { alice: { machine: machineId()!, account: machineId()! }, bob: { machine: 'other0machine1' } });
+  const code = seated(t, { alice: { machine: machineId()!, account: machineId()! }, bob: { machine: mid('other0machine1') } });
   // stage 8e F (live verify, locala/17): markers after a heading's ("# 1. Add X") go too (bob's: the rate limit is per seat)
   for (const [text, want, name] of [['1. Add an MIT LICENSE file\n2. Link it\n', 'Add an MIT LICENSE file', 'alice'], ['12) Ship v3\n', 'Ship v3', 'alice'], ['## Ship v4\n', 'Ship v4', 'alice'], ['2026 plans\n', '2026 plans', 'alice'],
     ['# 1. Add X\n', 'Add X', 'bob'], ['## 2) - Add Y\n', 'Add Y', 'bob'], ['> # Z\n', 'Z', 'bob']] as const) {

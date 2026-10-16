@@ -24,9 +24,9 @@ import * as seatKey from '../hooks/seat-key.ts';
 import type { FsRoomStore } from '../lib/room/store.ts';
 import type { Transport } from '../lib/remote/types-rest.ts';
 import type { DecodedFrame } from '../lib/remote/types-core.ts';
-import { sn } from './support/brands.ts';
+import { sn, mid } from './support/brands.ts';
 
-const REMOTE = 'remote0machine01';
+const REMOTE = mid('remote0machine01');
 
 /** Options of a rig: the host's segment size while it writes, an older host (its hello lists no snapshot cap), a
  * change to each frame the mirror receives, and room entries written before the n lines. */

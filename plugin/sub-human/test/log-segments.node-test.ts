@@ -19,7 +19,7 @@ import * as identityMod from '../lib/identity.ts';
 import type { Entry, RoomStore } from '../lib/room/types.ts';
 import type { FsRoomStore } from '../lib/room/store.ts';
 import type { RoomCode } from '../lib/brand.ts';
-import { sn } from './support/brands.ts';
+import { sn, mid } from './support/brands.ts';
 
 const hash12 = (s: string) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 12);
 const H = 'abcdef012345';
@@ -203,7 +203,7 @@ test('rotation guard: a live seat without log_v (an older plugin\'s) holds the r
   assert.match(held[0].text!, /restart those sessions/i);
   assert.ok(s.validateChain().ok);
   // another machine's seat without log_v never holds it (it reads its own mirror), nor a seat that left
-  s.members.update(ms => ({ ...ms, bob: { ...ms.bob!, machine: 'k0123456789abcde', pid: undefined } }));
+  s.members.update(ms => ({ ...ms, bob: { ...ms.bob!, machine: mid('k0123456789abcde'), pid: undefined } }));
   note(s, 'after bob is remote');
   assert.ok(fs.existsSync(path.join(s.dir!, 'log-0001.jsonl')), 'rotated');
   assert.equal(s.kv.get('log/rotation-held'), null, 'the held note is cleared by the rotation');

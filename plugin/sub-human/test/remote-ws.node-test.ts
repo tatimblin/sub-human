@@ -16,7 +16,7 @@ import type { AddressInfo } from 'node:net';
 import * as h from './helpers.ts';
 import * as ws from '../lib/remote/ws.ts';
 import { isAlive } from '../lib/io.ts';
-import { rc, sn } from './support/brands.ts';
+import { rc, sn, mid } from './support/brands.ts';
 
 /** The next `ev` from an emitter: its listener's arguments (A: what that event carries). */
 const once = <A extends unknown[] = unknown[]>(em: EventEmitter, ev: string) => new Promise<A>(r => em.once(ev, (...a: unknown[]) => r(a as A)));
@@ -291,11 +291,11 @@ test('kick: the listener\'s child (`serve --stdio CODE --via ws --peer KEY`) nam
   const hosting = await import('../lib/remote/hosting.ts');
   const host = store.open(code);
   const peer = crypto.randomBytes(32).toString('base64url');
-  const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: 'web0machine00001', seats: [], key: peer });
+  const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: mid('web0machine00001'), seats: [], key: peer });
   const tr = pipe.spawn(process.execPath, [h.BIN, 'serve', '--stdio', code, '--via', 'ws', '--peer', peer], { env: { ...h.childEnv(), SUB_HUMAN_CLAUDE: '/usr/bin/false' } });
   let closed = false;
   tr.onClose(() => { closed = true; });
-  const c = await client.connect(tr, { machine: 'web0machine00001', token });
+  const c = await client.connect(tr, { machine: mid('web0machine00001'), token });
   t.after(() => c.close());
   const key = seatKey.ensure(code, sn('carol'));
   const pubkey = seatKey.publicPem(code, sn('carol'));

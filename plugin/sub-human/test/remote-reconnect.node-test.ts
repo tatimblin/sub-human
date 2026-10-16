@@ -33,7 +33,7 @@ import type { DecodedFrame, Flush, RunningLink, SignedPayload } from '../lib/rem
 import type { SshSpec, Transport } from '../lib/remote/types-rest.ts';
 import type { Entry, EntryInput, Link, LinkStateRecord, RoomStore } from '../lib/room/types.ts';
 import type { RoomCode } from '../lib/brand.ts';
-import { sn } from './support/brands.ts';
+import { sn, mid } from './support/brands.ts';
 
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
 
@@ -42,7 +42,7 @@ type Ifaces = Parameters<typeof link.netSignature>[0];
 /** What test/support/mirror-probe.ts prints. */
 interface ProbeOut { code?: string; message: string; unknown?: boolean }
 
-const REMOTE = 'remote0machine01';
+const REMOTE = mid('remote0machine01');
 const FAST = { pingMs: 40, pongMs: 60, deadMs: 250 };
 const signed = (code: RoomCode, name: string, entry: EntryInput) => store.toPayload(code, entry, { via: 'human', from: name });
 const say = (code: RoomCode, text: string) => signed(code, 'bob', { kind: 'say', text });

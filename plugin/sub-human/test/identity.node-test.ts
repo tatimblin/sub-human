@@ -11,7 +11,7 @@ import * as lockLib from '../lib/lock.ts';
 import { pidStart } from '../lib/lock.ts';
 import * as config from '../lib/config.ts';
 import type { Member } from '../lib/room/types.ts';
-import { rc, sn } from './support/brands.ts';
+import { rc, sn, mid } from './support/brands.ts';
 
 type JoinRequest = NonNullable<Parameters<typeof identity.join>[0]>;
 
@@ -374,12 +374,12 @@ test('identity: a seat of another machine is judged by its lease, whatever its p
   h.freshHome();
   const code = h.newRoom();
   const fresh = new Date().toISOString(), stale = new Date(Date.now() - config.SEAT_LEASE_MS - 1).toISOString();
-  const far: Member = { name: sn('zed'), role: 'member', machine: 'far-away', pid: process.pid };
+  const far: Member = { name: sn('zed'), role: 'member', machine: mid('far-away'), pid: process.pid };
   assert.equal(identity.seatAlive({ ...far, seen_at: fresh }), true);
   assert.equal(identity.seatAlive({ ...far, seen_at: stale }), false, 'a live pid here says nothing about another machine');
   assert.equal(identity.seatAlive({ ...far, pid: await h.deadPid(), seen_at: fresh }), true);
   // the remote server's join: no pid, no session index on this machine
-  assert.deepEqual(identity.join({ code, name: sn('zed'), role: 'member', machine: 'far-away' }), { ok: true });
+  assert.deepEqual(identity.join({ code, name: sn('zed'), role: 'member', machine: mid('far-away') }), { ok: true });
   const z = identity.readMembers(code).zed;
   assert.deepEqual([z.machine, z.pid, z.session_id], ['far-away', undefined, undefined]);
   assert.deepEqual(identity.liveMembers(code), ['zed']);

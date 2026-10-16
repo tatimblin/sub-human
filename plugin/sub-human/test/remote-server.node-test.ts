@@ -31,7 +31,7 @@ import type { RoomError } from '../lib/room/validate.ts';
 import type { Transport } from '../lib/remote/types-rest.ts';
 import type { Entry, EntryInput, Members, Presence, RoomStore } from '../lib/room/types.ts';
 import type { RoomCode } from '../lib/brand.ts';
-import { rc, sn } from './support/brands.ts';
+import { rc, sn, mid } from './support/brands.ts';
 
 /** server.serve's options. */
 type ServeOpts = Parameters<typeof server.serve>[1];
@@ -39,7 +39,7 @@ type ServeOpts = Parameters<typeof server.serve>[1];
 // Never launch a real room Claude: a remote join on the host starts one as a local join does.
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
 
-const REMOTE = 'remote0machine01';
+const REMOTE = mid('remote0machine01');
 const H = 'abcdef012345';
 
 /** A fresh home with one room; host = its store as the server sees it. */
@@ -398,7 +398,7 @@ test('remote (pipe): `serve --stdio CODE --link ID` (the SSH forced command) tak
   const { code, host } = hostRoom(t);
   const serveAs = (id?: string) => pipe.spawn(process.execPath, [h.BIN, 'serve', '--stdio', code, ...(id ? ['--link', id] : [])], { env: h.childEnv() });
   const a = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: REMOTE, seats: [] });
-  const b = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: 'other0machine001', seats: [] });
+  const b = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: mid('other0machine001'), seats: [] });
   assert.equal(hostLinks.linkKnown(host, a.link.id), true);
   assert.equal(hostLinks.linkKnown(host, 'ffffffffffff'), false);
   // a token presented over another link's forced command: AUTH; over its own: in
@@ -582,7 +582,7 @@ test('a seat refused at join gives its link binding back; a seat of another mach
   await rejects(c.join({ ...wrong, pubkey: seat(code, 'dave').pubkey }), 'AUTH'); // a proof for another key
   assert.deepEqual(hostLinks.links(host)[c.link!].seats, [], 'not bound');
   // a ghost: a remote seat whose link is gone (a kick raced its join before this fix), its lease past the settle
-  assert.equal(seats.enter({ code, name: sn('ghost'), machine: 'ghost0machine001', pubkey: seat(code, 'ghost').pubkey }).ok, true);
+  assert.equal(seats.enter({ code, name: sn('ghost'), machine: mid('ghost0machine001'), pubkey: seat(code, 'ghost').pubkey }).ok, true);
   host.members.update(ms => { ms.ghost.seen_at = new Date(Date.now() - 3_600_000).toISOString(); return ms; });
   assert.deepEqual(seats.sweep(code), ['ghost']);
   const g = identity.readMembers(code).ghost;

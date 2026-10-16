@@ -117,8 +117,8 @@ import type {
 import type { Transport } from './types-rest.ts';
 import type { Members, Payload, PresenceInput, RoomStore, SnapshotWire } from '../room/types.ts';
 import type { Change } from '../room/watch.ts';
-import type { RoomCode, SeatName } from '../brand.ts';
-import { isSeatName } from '../text.ts';
+import type { RoomCode, SeatName, MachineId } from '../brand.ts';
+import { isSeatName, isMachineId } from '../text.ts';
 
 type Log = (msg: string) => void;
 /** What hello's credential gives: the link (null: answered, but still unauthenticated) and a new token, once. */
@@ -129,7 +129,6 @@ interface Stream { tick(): void; stop(): void; end(reason: EventData['end']['rea
  * its id. */
 type OpHandlers = { [K in Op]: (s: Session, params: WireParams<K>, id: FrameId | undefined) => OpResults[K] };
 
-const MACHINE_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const ANSWERS = new Set(['signoff', 'objection']);
 const WRITES = new Set(['join', 'leave', 'beat', 'append', 'handoff.accept', 'handoff.refuse']);
 const WHILE_MOVED = new Set(['hello', 'subscribe', 'blob.get', 'ping']); // what a host the room moved away from still serves
@@ -144,7 +143,7 @@ function own(s: Session, name: unknown): asserts name is SeatName {
   if (!isSeatName(name) || !hostLinks.mayWriteAs(s.link, name)) throw authError(`${String(name)} has not joined over this link`, 'NOT_JOINED');
 }
 
-function redeem(s: Session, invite: unknown, machine: string, pin: unknown, proven: string | null, as: unknown): Credential {
+function redeem(s: Session, invite: unknown, machine: MachineId, pin: unknown, proven: MachineId | null, as: unknown): Credential {
   const { store, linkId } = s;
   const word = inviteSecret.decode(invite);
   const asked = as && typeof as === 'object' && typeof (as as { name?: unknown }).name === 'string'
@@ -178,7 +177,7 @@ function redeem(s: Session, invite: unknown, machine: string, pin: unknown, prov
 const roomLine = (s: Session, text: string): void => room.roomLine(s.store, text, msg => s.log(`sub-human serve: ${msg}`));
 
 /** hello {login: true}: a new link for a connection over the host account's own ssh login (Session.login), else AUTH. */
-function viaLogin(s: Session, machine: string, proven: string | null): Credential {
+function viaLogin(s: Session, machine: MachineId, proven: MachineId | null): Credential {
   if (!s.login || !s.linkId) {
     throw authError(`this connection did not arrive over the host account's own ssh login${s.linkId ? ` (it came through a key that was let in for one other connection, and reaches only that one)` : ''}; join with an invite instead (/sub-human invite on the host)`, 'LOGIN_ONLY');
   }
@@ -307,7 +306,7 @@ const OPS: OpHandlers = {
     if (v === null || v < (typeof params.v === 'number' && Number.isInteger(params.v) ? params.v : 1)) {
       throw new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: s.version, proto: s.proto }, joiner: { version: client, proto: theirs } }), 'SKEW');
     }
-    if (typeof machine !== 'string' || !MACHINE_RE.test(machine)) throw invalid('hello needs this machine\'s id');
+    if (!isMachineId(machine)) throw invalid('hello needs this machine\'s id');
     const mine = epochOf(s.store);
     if (typeof epoch === 'number' && Number.isInteger(epoch) && epoch > mine) {
       throw stale(`room ${s.store.code} has moved away from this machine to a newer host. Run /sub-human doctor to see where it is`);

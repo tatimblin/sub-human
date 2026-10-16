@@ -67,7 +67,7 @@ import type { ReasonFor } from '../reasons.ts';
 import type {
   AuthStore, BoundInvite, Invites, InviteRecord, ShortInvite, AdmissionRecord, LinkRecord, ParsedInvite, ShortKind,
 } from './types-core.ts';
-import type { RoomCode } from '../brand.ts';
+import type { RoomCode, MachineId } from '../brand.ts';
 
 /** A redeemed invite: the link's token (once, in clear), its record, and what kind of invite it was. */
 interface Redeemed { token: string; link: LinkRecord; handoff: boolean; admission?: AdmissionRecord }
@@ -97,7 +97,7 @@ const authError = (msg: string, reason: ReasonFor<'AUTH'>, note: string | null =
 };
 
 function mintFor(store: AuthStore, { locator, machine, seats, pin: withPin = false, hostKey = null, now = Date.now() }: {
-  locator: string; machine: string; seats: string[]; pin?: boolean; hostKey?: string | null; now?: number;
+  locator: string; machine: MachineId; seats: string[]; pin?: boolean; hostKey?: string | null; now?: number;
 }): { invite: string; secret: string; pin?: string; expires_at?: string } {
   if (hostKey !== null && !HOST_KEY_RE.test(String(hostKey))) throw new RoomError('INVALID', 'hostKey must be a 32-byte public key, base64url');
   const secret = crypto.randomBytes(16).toString('base64url'); // 128 bits
@@ -150,8 +150,8 @@ const backoff = (n: number): number => testMs('SUB_HUMAN_PIN_BACKOFF_MS') * 2 **
  * write (next), the link to make once the update is done (made), and the error to throw after (err).
  */
 function redeemShort(cur: Invites, key: string, secret: string, inv: ShortInvite, { pin, proven, peerKey, as, linkId, now }: {
-  pin: unknown; proven: string | null; peerKey: string | null; as: Asked | null; linkId: string | undefined; now: number;
-}): { next?: Invites; err: RoomError | null; made?: { id: string; machine: string; seats: string[]; key: string | null }; adm?: AdmissionRecord } {
+  pin: unknown; proven: MachineId | null; peerKey: string | null; as: Asked | null; linkId: string | undefined; now: number;
+}): { next?: Invites; err: RoomError | null; made?: { id: string; machine: MachineId; seats: string[]; key: string | null }; adm?: AdmissionRecord } {
   const ref = key.slice(0, 12);
   if (inv.v !== 4) return { err: authError('this invite was made by an older sub-human on the host; ask them for a new one (/sub-human invite)', 'INVITE_UNKNOWN') };
   // burnt, or no try left (a record whose last wrong PIN did not mark it burnt): it takes no PIN, right or wrong
@@ -210,10 +210,10 @@ function redeemShort(cur: Invites, key: string, secret: string, inv: ShortInvite
 }
 
 function redeemInvite(store: AuthStore, secret: string, { machine, pin, proven = null, peerKey = null, as = null, reserved, newId, now = Date.now() }: {
-  machine: string; pin?: unknown; proven?: string | null; peerKey?: string | null; as?: Asked | null; reserved?: string; newId?: string; now?: number;
+  machine: MachineId; pin?: unknown; proven?: MachineId | null; peerKey?: string | null; as?: Asked | null; reserved?: string; newId?: string; now?: number;
 }): Redeemed {
   const key = sha256(secret);
-  let link = null as { id: string; seats: string[]; bound: boolean; machine: string; key: string | null } | null; // (as: set in the update)
+  let link = null as { id: string; seats: string[]; bound: boolean; machine: MachineId; key: string | null } | null; // (as: set in the update)
   let err = null as RoomError | null, handoff = false, adm = null as AdmissionRecord | null; // (as: set in the update)
   store.kv.update(INVITES_KEY, (stored: Invites | null) => {
     err = null;

@@ -133,7 +133,7 @@ import { readJson, writeJsonAtomic, isAlive, validPid } from './io.ts';
 import { obj, str, num, opt, nullable, refine, unknown_ } from './decode.ts';
 import { home, roomDir, machineId, machineIn, isMine } from './home.ts';
 import { pidStart, pidStarts } from './lock.ts';
-import { NAME_RE, CODE_RE, SID_SAFE as SID_RE, isRoomCode, isSeatName, isSessionId } from './text.ts';
+import { NAME_RE, CODE_RE, isRoomCode, isSeatName, isSessionId } from './text.ts';
 import { sidIndex } from '../mod/core/seat.ts';
 import { SEAT_BEAT_MS, MOD_LEASE_FRESH_MS, SESSION_INDEX_TTL_MS } from './config.ts';
 import {
@@ -161,32 +161,32 @@ interface SeatIndex {
   role?: string;
   pid?: number | null;
   pid_start?: number;
-  session_id?: string | null;
+  session_id?: SessionId | null;
   address?: string;
 }
 /** A session index record as read (indexRec; the same since 0.5.0-beta.4): code and name are what every reader needs. */
 const SEAT_INDEX = obj({
   code: refine(str, isRoomCode, 'a room code'), name: refine(str, isSeatName, 'a seat name'), role: opt(str), pid: opt(nullable(num)), pid_start: opt(num),
-  session_id: opt(nullable(str)), address: opt(str),
+  session_id: opt(nullable(refine(str, isSessionId, 'a session id'))), address: opt(str),
 });
 
 /** The hooks module's lease, <home>/sessions/mods/<sid>.json (see the header). */
 interface ModLease {
-  session_id: string;
+  session_id: SessionId;
   pid?: number | null;
   pid_start?: number;
   at?: string;
   nonce?: string;
 }
 /** A lease as read (writeModLease). */
-const MOD_LEASE = obj({ session_id: str, pid: opt(nullable(num)), pid_start: opt(num), at: opt(str), nonce: opt(str) });
+const MOD_LEASE = obj({ session_id: refine(str, isSessionId, 'a session id'), pid: opt(nullable(num)), pid_start: opt(num), at: opt(str), nonce: opt(str) });
 
 /** join()'s argument. */
 interface JoinRequest {
   code: RoomCode;
   name: SeatName;
   role: string;
-  machine?: string | null;
+  machine?: MachineId | null;
   /** the person behind the seat (lib/seats.ts enter); kept on the record, never sent by a mirror */
   account?: string;
   pid?: number | string | null;
@@ -241,13 +241,13 @@ function defaultName({ cwd = process.cwd(), env = process.env }: { cwd?: string;
 
 // ---------- location ----------
 import * as store from './room/store.ts';
-import type { RoomCode, SeatName } from './brand.ts';
+import type { RoomCode, SeatName, SessionId, MachineId } from './brand.ts';
 const roomExists = (code: unknown): code is RoomCode => store.roomExists(code);
 const byPidDir = (): string => path.join(home(), 'sessions', 'by-pid');
 const byPidFile = (pid: unknown): string => path.join(byPidDir(), `${Number(pid)}.json`);
 // the path is mod/core/seat.ts sidIndex's: the hooks module checks it for a seat without node
-const bySidFile = (sid: string): string => sidIndex(path.resolve(home()), sid) || path.join(home(), 'sessions', 'by-sid', `${sid}.json`);
-const modLeaseFile = (sid: string): string => path.join(home(), 'sessions', 'mods', `${sid}.json`);
+const bySidFile = (sid: SessionId): string => sidIndex(path.resolve(home()), sid) || path.join(home(), 'sessions', 'by-sid', `${sid}.json`);
+const modLeaseFile = (sid: SessionId): string => path.join(home(), 'sessions', 'mods', `${sid}.json`);
 const address = (name: string, code: RoomCode): string => `${name}.${code}`;
 /** The room's members document (lib/room/store.ts members: read(), the ops join/leave/beat, update(fn) atomic). */
 const membersOf = (code: RoomCode): MembersApi => store.open(code).members;
@@ -301,7 +301,7 @@ function retirePrevious(code: RoomCode, name: SeatName, pid: number): void {
 }
 
 /** The record members.join stores for a seat of this machine: its pid, start time, session and cwd too. */
-function localSeat({ name, role, machine, pid, session_id, cwd }: { name: SeatName; role: Role; machine: string | null; pid: number; session_id?: string | null; cwd?: string | null }): SeatRecord {
+function localSeat({ name, role, machine, pid, session_id, cwd }: { name: SeatName; role: Role; machine: MachineId | null; pid: number; session_id?: SessionId | null; cwd?: string | null }): SeatRecord {
   const start = pidStart(pid);
   return { name, role, machine, pid, ...(start != null ? { pid_start: start } : {}), session_id: session_id || null, cwd: cwd || null };
 }
@@ -315,7 +315,7 @@ function join({ code, name, role, machine = machineIn(code), account, pid: pidAr
   const local = isMine(machine);
   const pid = Number(pidArg);
   if (local && !validPid(pid)) return fail(`invalid pid "${pid}"`);
-  if (session_id != null && (typeof session_id !== 'string' || !SID_RE.test(session_id))) return fail('invalid session_id');
+  if (session_id != null && !isSessionId(session_id)) return fail('invalid session_id');
 
   const seatRole = role as Role; // one of ROLES
   // log_v: what this code reads (a seat of this machine), or what a remote seat's join said (lib/room/members.ts
@@ -345,7 +345,7 @@ function leave(code: RoomCode, name: SeatName, opts?: { reason?: string; deadlin
 }
 
 function rebindSession(pid: unknown, sid: unknown): boolean {
-  if (typeof sid !== 'string' || !SID_RE.test(sid)) return false;
+  if (!isSessionId(sid)) return false;
   const who = resolveByPid(pid);
   if (!who) return false;
   const swap = (m: Member): void => {
@@ -389,7 +389,7 @@ function resolveByPid(pidArg: unknown): Identity | null {
 }
 
 function resolveBySession(sid: unknown): Identity | null {
-  if (typeof sid !== 'string' || !SID_RE.test(sid)) return null;
+  if (!isSessionId(sid)) return null;
   const rec = readJson(bySidFile(sid), SEAT_INDEX, null);
   if (!rec || !roomExists(rec.code)) return null;
   const m = indexedSeat(rec);
@@ -400,7 +400,7 @@ function resolveBySession(sid: unknown): Identity | null {
 const NONCE_RE = /^[0-9a-f]{32}$/;
 
 function writeModLease(sid: unknown, { pid: pidArg, nonce }: { pid?: unknown; nonce?: unknown } = {}): boolean {
-  if (typeof sid !== 'string' || !SID_RE.test(sid)) return false;
+  if (!isSessionId(sid)) return false;
   const pid = Number(pidArg);
   const rec: ModLease = { session_id: sid, pid: validPid(pid) ? pid : null };
   const start = rec.pid ? pidStart(pid) : null;
@@ -412,7 +412,7 @@ function writeModLease(sid: unknown, { pid: pidArg, nonce }: { pid?: unknown; no
 }
 
 function readModLease(sid: unknown): ModLease | null {
-  if (typeof sid !== 'string' || !SID_RE.test(sid)) return null;
+  if (!isSessionId(sid)) return null;
   return readJson(modLeaseFile(sid), MOD_LEASE, null);
 }
 
@@ -434,7 +434,7 @@ function modLeaseOk(sid: unknown, pid: unknown, now = Date.now()): boolean {
 }
 
 function deleteModLease(sid: unknown): boolean {
-  if (typeof sid !== 'string' || !SID_RE.test(sid)) return false;
+  if (!isSessionId(sid)) return false;
   rm(modLeaseFile(sid));
   return true;
 }
@@ -535,7 +535,7 @@ function adoptLocalSeats(code: RoomCode): string[] {
 }
 
 function lastSeat(sid: unknown): { code: RoomCode; name: SeatName; role: Role; address: string } | null {
-  if (typeof sid !== 'string' || !SID_RE.test(sid)) return null;
+  if (!isSessionId(sid)) return null;
   const rec = readJson(bySidFile(sid), SEAT_INDEX, null);
   if (!rec || !roomExists(rec.code)) return null; // SEAT_INDEX checked the name
   const name = rec.name;
@@ -543,15 +543,15 @@ function lastSeat(sid: unknown): { code: RoomCode; name: SeatName; role: Role; a
   return { code: rec.code, name, role, address: address(name, rec.code) };
 }
 
-type ForkParent = { sid: string; code: RoomCode; name: SeatName; role: Role };
+type ForkParent = { sid: SessionId; code: RoomCode; name: SeatName; role: Role };
 
 function forkParent(sid: unknown, dir: string | null | undefined): ForkParent | null {
-  if (typeof sid !== 'string' || !SID_RE.test(sid) || typeof dir !== 'string' || !dir) return null;
+  if (!isSessionId(sid) || typeof dir !== 'string' || !dir) return null;
   let names: string[];
   try { names = fs.readdirSync(path.dirname(bySidFile(sid))); } catch { return null; }
   for (const f of names) {
     const old = f.replace(/\.json$/, '');
-    if (old === sid || !SID_RE.test(old)) continue;
+    if (old === sid || !isSessionId(old)) continue;
     const transcript = path.join(dir, `${old}.jsonl`);
     if (!fs.existsSync(transcript)) continue; // not a session of this directory
     const rec = readJson(bySidFile(old), SEAT_INDEX, null);
@@ -577,12 +577,12 @@ const isAddress = (title: string): boolean => { const i = title.lastIndexOf('.')
 type ForkedAway = { sid: string; title: string; home?: string };
 const realish = (p: string): string => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
 function forkedAway(sid: unknown, dir: string | null | undefined, now = Date.now()): ForkedAway | null {
-  if (typeof sid !== 'string' || !SID_RE.test(sid) || typeof dir !== 'string' || !dir) return null;
+  if (!isSessionId(sid) || typeof dir !== 'string' || !dir) return null;
   let names: string[];
   try { names = fs.readdirSync(dir).filter(f => f.endsWith('.jsonl')); } catch { return null; }
   for (const f of names) {
     const old = f.slice(0, -'.jsonl'.length);
-    if (old === sid || !SID_RE.test(old)) continue;
+    if (old === sid || !isSessionId(old)) continue;
     const file = path.join(dir, f);
     try { if (now - fs.statSync(file).mtimeMs > FORK_SCAN_MS) continue; } catch { continue; }
     if (continuedIn(file) !== sid) continue;
@@ -595,15 +595,15 @@ function forkedAway(sid: unknown, dir: string | null | undefined, now = Date.now
 }
 /** A fork record as read (markForked); home is kept only when a string. */
 const FORKED = obj({ sid: str, title: str, home: opt(unknown_) });
-const forkedFile = (sid: string): string => path.join(home(), 'sessions', 'forked', `${sid}.json`);
+const forkedFile = (sid: SessionId): string => path.join(home(), 'sessions', 'forked', `${sid}.json`);
 /** Record that session sid is such a fork (session-restore), so a bare /sub-human there opens no room (lib/seats.ts). */
 function markForked(sid: string, f: ForkedAway): void {
-  if (!SID_RE.test(sid)) return;
+  if (!isSessionId(sid)) return;
   writeJsonAtomic(forkedFile(sid), { ...f, at: new Date().toISOString() });
 }
 /** The fork record of session sid (markForked), or null. */
 function forkedOf(sid: unknown): ForkedAway | null {
-  if (typeof sid !== 'string' || !SID_RE.test(sid)) return null;
+  if (!isSessionId(sid)) return null;
   const r = readJson(forkedFile(sid), FORKED, null);
   return r && { sid: r.sid, title: r.title, ...(typeof r.home === 'string' ? { home: r.home } : {}) };
 }

@@ -28,7 +28,7 @@ import { remoteStore, MACHINE } from './support/remote-store.ts';
 import { machineId } from '../lib/home.ts';
 import * as identity from '../lib/identity.ts';
 import type { Entry, EntryInput, Member, Members, Payload, RoomStore, Via } from '../lib/room/types.ts';
-import { rc, sn } from './support/brands.ts';
+import { rc, sn, mid } from './support/brands.ts';
 
 type Err = Error & { code?: string };
 /** A store under test and how to change its log around it. */
@@ -148,14 +148,14 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     const s = B.make(t);
     const here = machineId();
     assert.equal(s.isHost, true);
-    assert.deepEqual(s.members.join({ name: sn('alice'), role: 'member', machine: 'far-away' }), { ok: true });
+    assert.deepEqual(s.members.join({ name: sn('alice'), role: 'member', machine: mid('far-away') }), { ok: true });
     const a = s.members.read().alice;
     assert.deepEqual([a.machine, typeof a.joined_at, a.seen_at === a.joined_at], ['far-away', 'string', true]);
     // alice's seat on another machine has a fresh lease: taken from here, whatever pid asks; her own machine rejoins
     const taken = s.members.join({ name: sn('alice'), role: 'member', machine: here, pid: process.pid });
     assert.equal(taken.ok, false);
     assert.match(taken.error!, /name taken: "alice" is already in otter-1234/);
-    assert.deepEqual(s.members.join({ name: sn('alice'), role: 'member', machine: 'far-away' }), { ok: true, rejoin: true });
+    assert.deepEqual(s.members.join({ name: sn('alice'), role: 'member', machine: mid('far-away') }), { ok: true, rejoin: true });
     // a stale lease frees the name
     s.members.update(ms => { ms.alice.seen_at = new Date(Date.now() - config.SEAT_LEASE_MS - 1).toISOString(); return ms; });
     assert.deepEqual(s.members.join({ name: sn('alice'), role: 'member', machine: here, pid: process.pid }), { ok: true, rejoin: true });

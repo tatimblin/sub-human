@@ -25,7 +25,7 @@
  * append() also refuses a serialized line over LOG_LINE_MAX_BYTES.
  */
 
-import { NAME_RE } from '../text.ts';
+import { NAME_RE, isMachineId } from '../text.ts';
 import type { Reason } from '../reasons.ts';
 import { CODED } from '../errors.ts';
 import type { WireCode } from '../remote/types-core.ts';
@@ -72,7 +72,6 @@ const ENTRY_FIELDS = new Set(['kind', 'text', 'to', 'refs', 'hash', 'approvers',
   'edit_path', 'drafted', 'id', 'by', 'pubkey', 'machine', ...HOST_FIELDS, ...TASK_FIELDS]);
 const TASK_KINDS: ReadonlySet<unknown> = new Set(['task_req', 'task']);
 const PEM_RE = /^-----BEGIN PUBLIC KEY-----\n[A-Za-z0-9+/=\n]{1,512}-----END PUBLIC KEY-----\n$/;
-const MACHINE_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 /**
  * A room error, code: INVALID | RATE | LOCK | NO_ROOM | AUTH | STALE | HOST_ONLY, and over a link the protocol's codes
@@ -160,7 +159,7 @@ function validate(entry: EntryInput, opts: ValidateOpts): Validated {
   if (kind !== 'member_joined' && kind !== 'host_changed' && machine !== undefined) bad('machine is only for member_joined and host_changed');
   const host = hostFields(kind, entry);
   if (pubkey !== undefined && (typeof pubkey !== 'string' || !PEM_RE.test(pubkey))) bad('pubkey must be a PEM public key');
-  if (machine !== undefined && (typeof machine !== 'string' || !MACHINE_RE.test(machine))) bad('invalid machine id');
+  if (machine !== undefined && !isMachineId(machine)) bad('invalid machine id');
   return { via, kind, text, to, refs, hash, approvers, same, path: ppath, proposal_hash, normalized, edit_path, drafted, task, pubkey, machine, host };
 }
 
@@ -188,7 +187,7 @@ function hostFields(kind: string, entry: EntryInput): HostFields | null {
   const { epoch, host, machine, locator, accept, ask, promoted } = entry;
   if (typeof epoch !== 'number' || !Number.isInteger(epoch) || epoch < 1) bad('host_changed needs epoch, a positive integer');
   if (typeof host !== 'string' || !NAME_RE.test(host)) bad('host_changed needs host, the new host\'s seat name');
-  if (typeof machine !== 'string' || !MACHINE_RE.test(machine)) bad('host_changed needs the new host\'s machine id');
+  if (!isMachineId(machine)) bad('host_changed needs the new host\'s machine id');
   if (typeof locator !== 'string' || !locator || locator.length > 1024) bad('host_changed needs locator');
   for (const [k, v] of [['accept', accept], ['ask', ask]]) {
     if (v === undefined) continue;

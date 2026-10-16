@@ -33,7 +33,7 @@ import * as machineKey from '../lib/remote/machine-key.ts';
 import { MemoryRoomStore } from './support/memory-store.ts';
 import * as linksLib from '../lib/room/links.ts';
 import type { RoomCode } from '../lib/brand.ts';
-import { rc, sn } from './support/brands.ts';
+import { rc, sn, mid } from './support/brands.ts';
 
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
 
@@ -122,7 +122,7 @@ test('server: a hello {login} makes a link only in a `serve --login` session, un
     const [a, b] = memory.pair();
     const srv = server.serve(b, { store: host, ...ctx });
     t.after(() => srv.close());
-    const c = await client.connect(a, { machine: 'remote0machine01', ...opts });
+    const c = await client.connect(a, { machine: mid('remote0machine01'), ...opts });
     t.after(() => c.close());
     return c;
   };
@@ -145,7 +145,7 @@ test('server: a hello {login} makes a link only in a `serve --login` session, un
   // an old host answers a login hello without a token: PROTOCOL, never a link with no credential
   const [a, b] = memory.pair();
   b.onFrame(f => b.send(protocol().reply(f.id, { v: 1, proto: { min: 1, max: 9 }, server: '0.4.0', caps: [], room: code, link: null })));
-  await assert.rejects(client.connect(a, { machine: 'remote0machine01', login: true }), (e: Error & { code?: string }) => e.code === 'PROTOCOL' && /makes no link over an ssh login/.test(e.message));
+  await assert.rejects(client.connect(a, { machine: mid('remote0machine01'), login: true }), (e: Error & { code?: string }) => e.code === 'PROTOCOL' && /makes no link over an ssh login/.test(e.message));
 });
 const protocol = () => protocolLib;
 
@@ -161,7 +161,7 @@ test('server: a login link\'s seat is the host person\'s own only when the room 
     const [a, b] = memory.pair();
     const srv = server.serve(b, { store: host, ...ctx });
     t.after(() => srv.close());
-    const c = await client.connect(a, { machine: 'remote0machine01', ...opts });
+    const c = await client.connect(a, { machine: mid('remote0machine01'), ...opts });
     t.after(() => c.close());
     return c;
   };
@@ -173,7 +173,7 @@ test('server: a login link\'s seat is the host person\'s own only when the room 
   assert.throws(() => options.set(host, 'everything', true), (e: RoomError) => e.code === 'INVALID');
   options.set(host, 'login-same-person', true);
   await seat(await open({ linkId: 'aaaaaaaaaaaa', login: true }, { login: true, machineKey: machineKey.proof(code) }), 'desk'); // another machine
-  const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: 'remote0machine02', seats: [] });
+  const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: mid('remote0machine02'), seats: [] });
   await seat(await open({}, { token }), 'guest');
   const ms = host.members.read();
   assert.deepEqual([ms.desk.account], [machineIn(code)]);
@@ -202,10 +202,10 @@ test('server: a hello\'s machine key gives the id the host records; one only rep
   await assert.rejects(serveLogin('aaaaaaaaaaa2', { machine: machineIn(code)!, machineKey: { ...proof, sig: proof.sig.replace(/^./, ch => (ch === 'A' ? 'B' : 'A')) } }), (e: RoomError) => e.code === 'AUTH' && e.reason === 'MACHINE_TAKEN');
   // only reported: the host's own id, or another link's, is refused
   await assert.rejects(serveLogin('aaaaaaaaaaa3', { machine: machineIn(code)! }), (e: RoomError) => e.reason === 'MACHINE_TAKEN');
-  const c4 = await serveLogin('aaaaaaaaaaa4', { machine: 'remote0machine09' });
+  const c4 = await serveLogin('aaaaaaaaaaa4', { machine: mid('remote0machine09') });
   assert.equal(c4.machine, 'remote0machine09');
   c4.close();
-  await assert.rejects(serveLogin('aaaaaaaaaaa5', { machine: 'remote0machine09' }), (e: RoomError) => e.reason === 'MACHINE_TAKEN');
+  await assert.rejects(serveLogin('aaaaaaaaaaa5', { machine: mid('remote0machine09') }), (e: RoomError) => e.reason === 'MACHINE_TAKEN');
   assert.equal(machineKey.verify({ ...proof, ts: proof.ts - 60 * 60_000 }, code), null, 'an old proof');
   assert.equal(machineKey.verify(proof, rc('vole-9999')), null, 'another room\'s');
 });

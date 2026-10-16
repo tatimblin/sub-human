@@ -2,10 +2,11 @@
  * plugin/sub-human/test/support/brands.ts: a test's branded literals (lib/brand.ts), through the real constructors:
  * each throws on a value its validator refuses, so a test cannot hold a brand the code would not make.
  *
- *   rc('otter-4821') -> RoomCode;  sn('alice') -> SeatName
+ *   rc('otter-4821') -> RoomCode;  sn('alice') -> SeatName;  sid('s1') -> SessionId;  mid('far0machine') -> MachineId
  */
-import { roomCode, seatName } from '../../mod/core/seat.ts';
-import type { RoomCode, SeatName } from '../../lib/brand.ts';
+import { roomCode, seatName, sessionId } from '../../mod/core/seat.ts';
+import { isMachineId } from '../../lib/text.ts';
+import type { MachineId, RoomCode, SeatName, SessionId } from '../../lib/brand.ts';
 
 function must<T>(v: T | null, what: string, raw: unknown): T {
   if (v === null) throw new TypeError(`test/support/brands.ts: ${JSON.stringify(raw)} is not a ${what}`);
@@ -14,3 +15,5 @@ function must<T>(v: T | null, what: string, raw: unknown): T {
 
 export const rc = (v: string): RoomCode => must(roomCode(v), 'room code', v);
 export const sn = (v: string): SeatName => must(seatName(v), 'seat name', v);
+export const sid = (v: string): SessionId => must(sessionId(v), 'session id', v);
+export const mid = (v: string): MachineId => must(isMachineId(v) ? v : null, 'machine id', v);

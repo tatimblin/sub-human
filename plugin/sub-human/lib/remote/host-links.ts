@@ -47,6 +47,7 @@ import { isMine } from '../home.ts';
 import { isObj } from '../decode.ts';
 import type { KeyObject } from 'node:crypto';
 import type { AuthStore, LinkRecord, Links, SignedPayload } from './types-core.ts';
+import type { MachineId } from '../brand.ts';
 
 /** A seat a proof is for. */
 interface SeatRef { room: string; name: string; pubkey: string }
@@ -60,7 +61,7 @@ const sha256 = (s: unknown): string => crypto.createHash('sha256').update(String
 const iso = (now: number): string => new Date(now).toISOString();
 
 function create(store: AuthStore, { id, machine, seats, bound = false, login = false, label, key = null, check = false, now = Date.now() }: {
-  id: string; machine: string; seats: string[]; bound?: boolean; login?: boolean; label?: string; key?: string | null; check?: boolean; now?: number;
+  id: string; machine: MachineId; seats: string[]; bound?: boolean; login?: boolean; label?: string; key?: string | null; check?: boolean; now?: number;
 }): { token: string; link: LinkRecord } {
   const token = crypto.randomBytes(24).toString('base64url');
   if (check) taken(store, machine, id);
@@ -76,7 +77,7 @@ function create(store: AuthStore, { id, machine, seats, bound = false, login = f
   return { token, link };
 }
 
-function loginLink(store: AuthStore, { id, machine, proven = null, now = Date.now() }: { id: string; machine: string; proven?: string | null; now?: number }): { token: string; link: LinkRecord } {
+function loginLink(store: AuthStore, { id, machine, proven = null, now = Date.now() }: { id: string; machine: MachineId; proven?: MachineId | null; now?: number }): { token: string; link: LinkRecord } {
   if (!store.isHost) throw new RoomError('HOST_ONLY', 'only the host of a room links machines to it');
   if (!LINK_ID_RE.test(String(id))) throw new RoomError('INVALID', 'a login link needs its id (12 hex)');
   if (linkKnown(store, id)) throw new RoomError('AUTH', `link ${id} exists already in room ${store.code}; it says hello with its token (join again for a new link)`);

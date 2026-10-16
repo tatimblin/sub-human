@@ -29,10 +29,10 @@ test('seats.exit: Claude Code\'s SessionEnd token is written in words (live: "bo
 
 import * as hostLinksForSeats from '../lib/remote/host-links.ts';
 import type { RoomCode } from '../lib/brand.ts';
-import { sn } from './support/brands.ts';
+import { sn, sid, mid } from './support/brands.ts';
 /** A remote seat's link on the host (lib/remote/server.ts binds every remote seat to one; the sweep lets a seat no
  * link names leave). */
-const linkFor = (code: RoomCode, name: string) => hostLinksForSeats.create(store.open(code), { id: hostLinksForSeats.newLinkId(), machine: 'far-away', seats: [name] });
+const linkFor = (code: RoomCode, name: string) => hostLinksForSeats.create(store.open(code), { id: hostLinksForSeats.newLinkId(), machine: mid('far-away'), seats: [name] });
 
 const H = 'abcdef012345';
 
@@ -82,7 +82,7 @@ test('seats: the room\'s Claude runs in the room\'s working directory (the first
   identity.updateRoomClaude(code, () => ({ stopped_at: new Date().toISOString() })); // the room's Claude is gone: the next join starts one
   // the remote server's enter: a seat of another machine, no cwd, in a process whose cwd is not the project
   if (!Object.values(hostLinksForSeats.links(store.open(code))).some(k => k.seats.includes('bob'))) linkFor(code, 'bob');
-  assert.equal(seats.enter({ code, name: sn('bob'), machine: 'far-away', pubkey: seatKey.publicPem(code, sn('bob')) }).ok, true);
+  assert.equal(seats.enter({ code, name: sn('bob'), machine: mid('far-away'), pubkey: seatKey.publicPem(code, sn('bob')) }).ok, true);
   assert.notEqual(process.cwd(), '/work/project');
   assert.deepEqual(started, ['/work/project', '/work/project']);
 });
@@ -162,7 +162,7 @@ test('decide on the host: once every approver answered, exactly once; an incompl
 });
 
 test('members.publicView: other machines never see a seat\'s pid, pid_start, session_id or cwd', () => {
-  const ms: Members = { alice: { name: sn('alice'), role: 'member', machine: 'm1', pid: 42, pid_start: 7, session_id: 's', cwd: '/x', joined_at: 'j', seen_at: 's' } };
+  const ms: Members = { alice: { name: sn('alice'), role: 'member', machine: mid('m1'), pid: 42, pid_start: 7, session_id: sid('s'), cwd: '/x', joined_at: 'j', seen_at: 's' } };
   assert.deepEqual(members.publicView(ms), { alice: { name: 'alice', role: 'member', machine: 'm1', joined_at: 'j', seen_at: 's' } });
   assert.equal(ms.alice.pid, 42, 'the document itself is unchanged');
   assert.deepEqual(members.LOCAL_FIELDS, ['pid', 'pid_start', 'session_id', 'cwd']);
@@ -171,7 +171,7 @@ test('members.publicView: other machines never see a seat\'s pid, pid_start, ses
 /** A seat on another machine (no pid: it lives by its lease) whose lease ran out ago ms before now. */
 function farSeat(code: RoomCode, mem: MemoryRoomStore, name: string, ago = config.SEAT_LEASE_MS + config.LEAVE_SETTLE_MS + 1000) {
   if (!Object.values(hostLinksForSeats.links(store.open(code))).some(k => k.seats.includes(name))) linkFor(code, name);
-  assert.equal(seats.enter({ code, name: sn(name), machine: 'far-away', pubkey: seatKey.publicPem(code, sn(name)) }).ok, true);
+  assert.equal(seats.enter({ code, name: sn(name), machine: mid('far-away'), pubkey: seatKey.publicPem(code, sn(name)) }).ok, true);
   mem.members.update(ms => { ms[name].seen_at = new Date(Date.now() - ago).toISOString(); return ms; });
 }
 const moves = (mem: MemoryRoomStore) => mem.readAll().filter(e => e.kind === 'member_joined' || e.kind === 'member_left').map(e => e.text);
@@ -204,7 +204,7 @@ test('seats.enter: a seat whose earlier record lapsed unswept is logged left bef
   const { code, mem } = memoryRoom(t, { isHost: true });
   farSeat(code, mem, 'bob', config.SEAT_LEASE_MS + 1000); // past its lease, not yet past the settle
   if (!Object.values(hostLinksForSeats.links(store.open(code))).some(k => k.seats.includes('bob'))) linkFor(code, 'bob');
-  assert.equal(seats.enter({ code, name: sn('bob'), machine: 'far-away', pubkey: seatKey.publicPem(code, sn('bob')) }).rejoin, true);
+  assert.equal(seats.enter({ code, name: sn('bob'), machine: mid('far-away'), pubkey: seatKey.publicPem(code, sn('bob')) }).rejoin, true);
   assert.deepEqual(moves(mem), ['bob joined', 'bob left (connection lost)', 'bob rejoined']);
   assert.equal(mem.members.read().bob.lapsed_at, undefined, 'the join wrote a fresh record');
 });

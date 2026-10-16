@@ -91,7 +91,8 @@ import type { LinkSpec } from './remote/types-rest.ts';
 import type { MirrorRoomStore } from './room/store-mirror.ts';
 import type { Identity } from './identity.ts';
 import { msgOf } from './errors.ts';
-import type { RoomCode, SeatName } from './brand.ts';
+import type { RoomCode, SeatName, MachineId } from './brand.ts';
+import { isMachineId } from './text.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -111,7 +112,6 @@ const WORKDIR = 'workdir';
 const YES = 'Host it here';
 const NO = 'Not now';
 const ID_RE = /^[0-9a-f]{12}$/;
-const MACHINE_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 const iso = (ms: number) => new Date(ms).toISOString();
 const err = (code: WireCode, msg: string) => new RoomError(code, msg);
@@ -194,7 +194,7 @@ function checkInvites(code: RoomCode, locator: string, given: unknown): asserts 
   if (!given || typeof given !== 'object' || Array.isArray(given)) throw err('INVALID', 'handoff.accept needs {invites: {machine: invite}}');
   for (const [m, inv] of Object.entries(given)) {
     const p = invites.parseInvite(inv);
-    if (!MACHINE_RE.test(m) || !p || p.code !== code || p.locator !== locator) throw err('INVALID', `the invite for machine ${m} is not one to room ${code} at ${locator}`);
+    if (!isMachineId(m) || !p || p.code !== code || p.locator !== locator) throw err('INVALID', `the invite for machine ${m} is not one to room ${code} at ${locator}`);
   }
 }
 
@@ -324,8 +324,8 @@ function card(a: Pick<HandoffAsk, 'id' | 'from'>, code: RoomCode): Card {
 }
 
 /** Every other machine with a seat in the room: machine -> [seat names] (the old host's included). */
-function machinesOf(s: Store): Map<string, string[]> {
-  const by = new Map<string, string[]>();
+function machinesOf(s: Store): Map<MachineId, string[]> {
+  const by = new Map<MachineId, string[]>();
   for (const m of Object.values(s.members.read() as Members)) {
     if (!m || !m.name || m.left_at || m.role === 'claude' || !m.machine || isMine(m.machine)) continue;
     const seats = by.get(m.machine) || [];
@@ -336,7 +336,7 @@ function machinesOf(s: Store): Map<string, string[]> {
 }
 
 /** One sh2 invite per other machine (invites.mintFor): PIN-less over a link (a handoff), with a PIN by hand (promote). */
-function mintAll(s: Store, locator: string, { pin = false, machines = machinesOf(s) }: { pin?: boolean, machines?: Map<string, string[]> } = {}): Minted[] {
+function mintAll(s: Store, locator: string, { pin = false, machines = machinesOf(s) }: { pin?: boolean, machines?: Map<MachineId, string[]> } = {}): Minted[] {
   const out: Minted[] = [];
   for (const [machine, seats] of machines) {
     const m = invites.mintFor(s, { locator, machine, seats, pin, hostKey: hostKeyFor(locator) });

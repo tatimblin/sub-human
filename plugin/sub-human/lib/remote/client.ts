@@ -58,6 +58,7 @@ import { LINK_CALL_MS } from '../config.ts';
 import type { DecodedFrame, HelloResult, Op, OpResults, ProtoRange, StreamEvent } from './types-core.ts';
 import type { Entry } from '../room/types.ts';
 import type { Transport } from './types-rest.ts';
+import type { MachineId } from '../brand.ts';
 
 /** The server's caps, from its hello. */
 interface ServerCaps {
@@ -79,7 +80,7 @@ type HelloReply = Pick<HelloResult, 'v' | 'link' | 'room'> & Partial<Pick<HelloR
 
 export interface ConnectOpts {
   /** this machine's id (home.machineId; null when it could not be read: the host refuses the hello) */
-  machine: string | null;
+  machine: MachineId | null;
   /** this home's machine key's proof (lib/remote/machine-key.ts): the host derives the machine's id from it */
   machineKey?: { key: string; ts: number; sig: string };
   token?: string;

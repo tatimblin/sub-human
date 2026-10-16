@@ -21,12 +21,12 @@ import type { RoomStore } from '../lib/room/types.ts';
 import type { Client, ConnectOpts } from '../lib/remote/client.ts';
 import type { AppendResult, HandoffAcceptResult, HandoffAsk, MovedEventData, StreamEvent } from '../lib/remote/types-core.ts';
 import type { RoomCode } from '../lib/brand.ts';
-import { sn } from './support/brands.ts';
+import { sn, mid } from './support/brands.ts';
 
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
 
-const REMOTE = 'remote0machine01';
-const OTHER = 'other00machine02';
+const REMOTE = mid('remote0machine01');
+const OTHER = mid('other00machine02');
 const sys = (from: string) => ({ via: 'system', from, system: true });
 const rejects = (p: Promise<unknown>, code: string, re?: RegExp) => assert.rejects(p, (e: Error & { code?: string }) => e.code === code && (!re || re.test(e.message)), `expected ${code}`);
 const moveTo = (machine: string, epoch = 1, host = 'bob') => ({ kind: 'host_changed', text: 'moved', epoch, host, machine, locator: 'pipe:/elsewhere' });

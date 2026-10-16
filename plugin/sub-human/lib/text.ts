@@ -9,6 +9,8 @@
  *   CODE_RE                  a room code: "otter-4821"
  *   SID_SAFE                 a session id safe to use in a file name
  *   HASH_RE                  a proposal's hash: 12 lowercase hex (sha256/12 of the plan bytes, lib/proposal.ts)
+ *   MACHINE_RE, isMachineId(v)   a machine id: this home's 16 hex (lib/home.ts), a machine key's k + 15 hex
+ *                            (lib/remote/machine-key.ts), a peer's word; the guard makes the MachineId brand
  *   hash12(data) -> string   the first 12 hex of sha256(data): a proposal's hash, and the log's prev chain
  *   isProposalHash(v), planHash(data) -> ProposalHash   the brand's guard (HASH_RE) and hash12 as one (lib/brand.ts);
  *                            isSeatName, isRoomCode, isSessionId, seatName, roomCode, sessionId: mod/core/seat.ts's
@@ -33,9 +35,11 @@ import path from 'node:path';
 // owned by mod/core/seat.ts (the hooks module parses names and codes too)
 import { NAME_RE, CODE_RE, SID_SAFE, homeOf, isSeatName, isRoomCode, isSessionId, seatName, roomCode, sessionId } from '../mod/core/seat.ts';
 import { envStr } from './env.ts';
-import type { ProposalHash } from './brand.ts';
+import type { MachineId, ProposalHash } from './brand.ts';
 
 const HASH_RE = /^[0-9a-f]{12}$/;
+const MACHINE_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const isMachineId = (v: unknown): v is MachineId => typeof v === 'string' && MACHINE_RE.test(v);
 const hash12 = (data: crypto.BinaryLike): string => crypto.createHash('sha256').update(data).digest('hex').slice(0, 12);
 const isProposalHash = (v: unknown): v is ProposalHash => typeof v === 'string' && HASH_RE.test(v);
 /** hash12(data) as a proposal's hash. */
@@ -84,6 +88,7 @@ function cliCmd(args = ''): string {
 const localHm = (iso: unknown): string => { const d = new Date(String(iso)); return Number.isNaN(d.getTime()) ? '' : d.toTimeString().slice(0, 5); };
 
 export {
-  clip, oneLine, cliLine, cliCmd, homePrefix, localHm, NAME_RE, CODE_RE, SID_SAFE, HASH_RE, hash12, isProposalHash, planHash,
+  clip, oneLine, cliLine, cliCmd, homePrefix, localHm, NAME_RE, CODE_RE, SID_SAFE, HASH_RE, MACHINE_RE, hash12, isProposalHash, planHash,
+  isMachineId,
   isSeatName, isRoomCode, isSessionId, seatName, roomCode, sessionId,
 };

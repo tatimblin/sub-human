@@ -14,7 +14,7 @@
 import type { Reason } from '../reasons.ts';
 import type { Op, EventName } from './protocol.ts';
 import type { Entry, LinkStateWord, Payload, PresenceInput, RoomStore, SnapshotWire } from '../room/types.ts';
-import type { RoomCode } from '../brand.ts';
+import type { RoomCode, MachineId } from '../brand.ts';
 
 // ---------- the wire protocol ----------
 
@@ -258,14 +258,14 @@ interface InviteLife {
  */
 export interface BoundInvite extends InviteLife {
   v: 2; admission?: undefined; short?: undefined; prs?: undefined;
-  machine: string; seats: string[]; expires_at: string;
+  machine: MachineId; seats: string[]; expires_at: string;
   handoff?: true;
   pin_sha256?: string;
   tries?: number;
 }
 export type ShortKind = 'ssh' | 'ws' | 'pipe';
 /** The joiner an invite line's PIN let through to the card (lib/remote/invites.ts): key, a web link's Noise key. */
-export interface Joiner { machine: string; name: string; label: string; key: string | null }
+export interface Joiner { machine: MachineId; name: string; label: string; key: string | null }
 /**
  * An invite line's record (protocol 3, v 4): the line carries its 128-bit secret (the record's key is that secret's
  * sha256), and the PIN is checked here online (pin_sha256 = sha256(secret:PIN)), INVITE_PIN_TRIES tries, throttled
@@ -292,7 +292,7 @@ export type AdmitState = 'asked' | 'let-in' | 'refused' | 'lapsed';
 export interface AdmissionRecord extends InviteLife {
   v: 2; admission: true; short?: undefined; handoff?: undefined; seats?: undefined; prs?: undefined;
   from: string; kind: ShortKind; by: string | null; door_file?: string | null;
-  machine: string; name: string; label?: string; key: string | null; link: string; admit: AdmitState;
+  machine: MachineId; name: string; label?: string; key: string | null; link: string; admit: AdmitState;
   expires_at: string;
   admitted_at?: string; admitted_by?: string | null; admit_sig?: unknown; admitted_until?: string;
   refused_at?: string; refused_by?: string | null;
@@ -312,7 +312,7 @@ export type Invites = Record<string, InviteRecord>;
 export interface LinkRecord {
   id: string;
   token_sha256: string;
-  machine: string;
+  machine: MachineId;
   seats: string[];
   created_at: string;
   login?: true;

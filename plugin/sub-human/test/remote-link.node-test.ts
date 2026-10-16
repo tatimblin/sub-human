@@ -35,7 +35,7 @@ import type { LinkStatus } from '../lib/remote/link-socket.ts';
 import type { RunningLink } from '../lib/remote/types-core.ts';
 import type { SshSpec } from '../lib/remote/types-rest.ts';
 import type { Link, LinkStateWord } from '../lib/room/types.ts';
-import { rc, sn } from './support/brands.ts';
+import { rc, sn, mid } from './support/brands.ts';
 
 const mode = (p: string) => fs.statSync(p).mode & 0o777;
 
@@ -227,12 +227,12 @@ test('link: a mirror that is not the host\'s prefix is a FORK: the daemon stops 
   const mirror = new MirrorRoomStore(code, { dir: h.tmpDir('sh-mirror-', t) });
   t.after(() => fs.rmSync(path.dirname(linkSocket.socketPath(mirror.dir)), { recursive: true, force: true }));
   mirror.applyLine(JSON.stringify({ id: 1, at: new Date().toISOString(), from: 'room', via: 'system', kind: 'status', to: 'room', text: 'not the host\'s', prev: store.hash12('') }));
-  const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: 'm1', seats: [] });
+  const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: mid('m1'), seats: [] });
   const sessions: ReturnType<typeof server.serve>[] = [];
   const connect = () => {
     const [a, b] = memory.pair();
     sessions.push(server.serve(b, { store: host }));
-    return client.connect(a, { machine: 'm1', token });
+    return client.connect(a, { machine: mid('m1'), token });
   };
   t.after(() => sessions.forEach(s => s.close()));
   const logged: string[] = [];
@@ -278,7 +278,7 @@ test('skew: a newer host\'s unknown entry kind, via and fields, an unknown docum
       for (const l of lines) b.send(protocol.event(f.id!, 'entry', l));
       return b.send(protocol.event(f.id!, 'doc', { key: 'presence/bob', value: { state: 'idle', mood: 'new field' } }));
     });
-    return client.connect(a, { machine: 'm1', token: 'tok' });
+    return client.connect(a, { machine: mid('m1'), token: 'tok' });
   };
   const logged: string[] = [];
   const l = await link.serveMirror({ mirror, connect, log: m => logged.push(m) });
