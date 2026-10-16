@@ -40,6 +40,7 @@ import { envMs } from '../lib/env.ts';
 import * as linkState from '../lib/room/link-state.ts';
 import type { CallMeta, JsonRpcId, Me, PluginApi, PluginContext, ProgressToken, ToolArgs, ToolDefinition, ToolResult } from './types.ts';
 import type { Entry, Members } from '../lib/room/types.ts';
+import { msgOf } from '../lib/errors.ts';
 
 /** This machine's link to room code was ended by the host (a kick: its link-state stopped with a revocation). */
 const removedByHost = (code: string): boolean => {
@@ -260,7 +261,7 @@ class HoldServer {
     if (seat && now - (seat.savedAt || 0) >= this.BEAT_MS / 2) {
       seat.savedAt = now;
       this.saveSeat();
-      try { this.ctx.identity.heartbeat && this.ctx.identity.heartbeat(this.me || seat, now); } catch (e) { this.log('heartbeat', (e as Error).message); }
+      try { this.ctx.identity.heartbeat && this.ctx.identity.heartbeat(this.me || seat, now); } catch (e) { this.log('heartbeat', msgOf(e)); }
     }
   }
 
@@ -276,7 +277,7 @@ class HoldServer {
 
   startTimer() {
     if (this.timer) return;
-    this.timer = setInterval(() => { try { this.tick(); } catch (e) { this.log('tick error', (e as Error).message); } }, this.POLL_MS);
+    this.timer = setInterval(() => { try { this.tick(); } catch (e) { this.log('tick error', msgOf(e)); } }, this.POLL_MS);
     if (this.timer.unref) this.timer.unref();
   }
   stopTimer() { if (this.timer) { clearInterval(this.timer); this.timer = null; } }

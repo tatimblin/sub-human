@@ -47,6 +47,7 @@ import { RoomError } from '../room/validate.ts';
 import { envStr } from '../env.ts';
 import { arr, decode, isObj, num, obj, objAs, opt, str } from '../decode.ts';
 import type { TailscaleRec } from './types-rest.ts';
+import { errCode, msgOf } from '../errors.ts';
 
 /** What the CLI's output says (classify). */
 type Classified =
@@ -184,7 +185,7 @@ function watch({ bin: b, args, timeoutMs = SERVE_MS, env = process.env }: {
     const timer = setTimeout(() => finish('timeout'), timeoutMs);
     try {
       child = spawn(b, args, { env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
-    } catch (e) { finish('error', { error: (e as Error).message }); return; }
+    } catch (e) { finish('error', { error: msgOf(e) }); return; }
     const onData = (d: Buffer) => {
       text += d;
       const c = classify(text);
@@ -204,7 +205,7 @@ function watchSync({ bin: b, args, timeoutMs = SERVE_MS }: { bin: string; args: 
   let w: Watched | null = null;
   try { w = decode(objAs<Watched>(), JSON.parse(String(r.stdout).trim().split('\n').at(-1) ?? '')); } catch { /* below */ } // watch()'s own line
   if (w) return w;
-  return { ok: false, status: null, text: String(r.stderr || '').trim(), reason: r.error && (r.error as NodeJS.ErrnoException).code === 'ETIMEDOUT' ? 'timeout' : 'error', error: r.error ? r.error.message : 'no result' };
+  return { ok: false, status: null, text: String(r.stderr || '').trim(), reason: errCode(r.error) === 'ETIMEDOUT' ? 'timeout' : 'error', error: r.error ? r.error.message : 'no result' };
 }
 
 const serveMs = (): number => SERVE_MS;

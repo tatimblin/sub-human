@@ -34,6 +34,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { isAlive, sleepSync } from './io.ts';
 import * as config from './config.ts';
+import { errCode } from './errors.ts';
 
 const HOST = os.hostname();
 
@@ -128,7 +129,7 @@ function breakStale(lock: string, staleMs: number): boolean {
   const brk = lock + '.break';
   let fd: number;
   try { fd = fs.openSync(brk, 'wx'); } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
+    if (errCode(e) !== 'EEXIST') throw e;
     // Another waiter is breaking it right now, or one crashed doing so.
     try { if (Date.now() - fs.statSync(brk).mtimeMs > config.LOCK_BREAK_STALE_MS) fs.unlinkSync(brk); } catch { /* gone */ }
     return false;
@@ -138,7 +139,7 @@ function breakStale(lock: string, staleMs: number): boolean {
     if (!j) return true;          // already gone: retry now
     if (!j.stale) return false;   // broken and re-taken meanwhile: wait for the new owner
     const victim = `${lock}.stale.${process.pid}.${rand()}`;
-    try { fs.renameSync(lock, victim); } catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return true; throw e; }
+    try { fs.renameSync(lock, victim); } catch (e) { if (errCode(e) === 'ENOENT') return true; throw e; }
     let same = false;
     try {
       const st = fs.lstatSync(victim);
@@ -177,7 +178,7 @@ function withLock<T>(lock: string, fn: () => T, { timeoutMs = config.LOCK_TIMEOU
   let fd: number;
   for (;;) {
     try { fd = fs.openSync(lock, 'wx', 0o600); break; } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
+      if (errCode(e) !== 'EEXIST') throw e;
       const j = judge(lock, staleMs);
       if (!j) continue; // released between our open and our look
       if (j.stale && breakStale(lock, staleMs)) continue;

@@ -44,11 +44,11 @@ import * as storeMod from '../room/store.ts';
 import * as config from '../config.ts';
 import { envStr } from '../env.ts';
 import { RoomError } from '../room/validate.ts';
-import { isReason } from '../reasons.ts';
+import { isReason, reasonOf } from '../reasons.ts';
+import { errCode, msgOf } from '../errors.ts';
 import type { Reason } from '../reasons.ts';
 import { createRequire } from 'node:module';
 import type { Client } from './client.ts';
-import type { CodedError } from './types-core.ts';
 import type { SshSpec } from './types-rest.ts';
 import type { Link } from '../room/types.ts';
 
@@ -81,17 +81,18 @@ function scrubRefused(code: string, reason: unknown, why: Reason | null | undefi
 }
 
 /** What an invite line's host answered, kept in the link file (see the header); false: not one of those answers. */
-function keepAnswer(code: string, e: CodedError, word: { secret: Buffer }, sentPin: boolean, ownKey: string | null = null): boolean {
+function keepAnswer(code: string, e: unknown, word: { secret: Buffer }, sentPin: boolean, ownKey: string | null = null): boolean {
   const cur: Link | null = linksMod.get(code);
   if (!cur || cur.token) return false;
   const { pin, pin_wanted, ...rest } = cur;
   const at = new Date().toISOString();
-  if (e.code === 'AUTH' && (e.reason === 'PIN_NEEDED' || e.reason === 'PIN_WRONG' || e.reason === 'PIN_THROTTLED')) {
-    const left = /\(([0-9]+) (?:PIN )?tr(?:y|ies) left\)/.exec(String(e.message)); // the host's wording, any version
-    linksMod.set(code, { ...rest, pin_wanted: { at, ...(left ? { left: Number(left[1]) } : {}), ...(e.reason !== 'PIN_NEEDED' ? { why: e.reason, message: String(e.message).slice(0, 300) } : {}) } });
+  const why = reasonOf(e);
+  if (errCode(e) === 'AUTH' && (why === 'PIN_NEEDED' || why === 'PIN_WRONG' || why === 'PIN_THROTTLED')) {
+    const left = /\(([0-9]+) (?:PIN )?tr(?:y|ies) left\)/.exec(msgOf(e)); // the host's wording, any version
+    linksMod.set(code, { ...rest, pin_wanted: { at, ...(left ? { left: Number(left[1]) } : {}), ...(why !== 'PIN_NEEDED' ? { why, message: msgOf(e).slice(0, 300) } : {}) } });
     return true;
   }
-  if (e.code === 'OFFLINE' && e.reason === 'ADMIT_WAITING') {
+  if (errCode(e) === 'OFFLINE' && why === 'ADMIT_WAITING') {
     if (sentPin || !cur.awaiting) {
       const ref = secretMod().admissionRef(word.secret);
       // the check the host's card shows: this machine's proven id and, over the web, this link's own key
@@ -160,13 +161,12 @@ async function connectLink(code: string): Promise<Client> {
   const own = isWeb(l.transport) && l.transport.clientKey ? linkKey(code) : undefined; // XK: this link's own key
   const t = transports().open(l.transport, { code, ...(own ? { clientKey: own } : {}) });
   let c: Client;
-  try { c = await clientMod().connect(t, opts); } catch (err) {
-    const e = err as CodedError;
+  try { c = await clientMod().connect(t, opts); } catch (e) {
     // an invite line's PIN steps: kept in the link file (the join asks for the PIN again, or waits for the card)
-    if (word && e && keepAnswer(code, e, word, sentPin, own ? own.pub.toString('base64url') : null)) throw e;
+    if (word && keepAnswer(code, e, word, sentPin, own ? own.pub.toString('base64url') : null)) throw e;
     // the host refused the invite (a wrong PIN, burnt, used, expired): it and its PIN are spent here too, so the link
     // file keeps no secret in clear (a new join writes a fresh one)
-    if (!l.token && typeof l.invite === 'string' && e && e.code === 'AUTH') scrubRefused(code, e.message, e.reason);
+    if (!l.token && typeof l.invite === 'string' && errCode(e) === 'AUTH') scrubRefused(code, msgOf(e), reasonOf(e));
     throw login ? await loginRefused(l, t, e, code) : await keyRefused(l, t, e);
   }
   if (c.machine && c.machine !== homeMod.machineIn(code)) homeMod.setMachineIn(code, c.machine);
@@ -189,8 +189,9 @@ async function stderrOf(t: TransportLike | Promise<TransportLike>): Promise<stri
   return tr.stderr();
 }
 
-async function keyRefused(l: Link, t: TransportLike | Promise<TransportLike>, e: CodedError | null | undefined): Promise<CodedError | null | undefined> {
-  if (!e || e.code !== 'OFFLINE' || !l.token || !l.transport || l.transport.kind !== 'ssh' || !l.transport.key) return e;
+/** What connect threw (e, anything), or AUTH KEY_REVOKED when ssh refused this link's own key. */
+async function keyRefused(l: Link, t: TransportLike | Promise<TransportLike>, e: unknown): Promise<unknown> {
+  if (errCode(e) !== 'OFFLINE' || !l.token || !l.transport || l.transport.kind !== 'ssh' || !l.transport.key) return e;
   const err = await stderrOf(t);
   const p = err === null ? null : ssh().classify(err);
   return p && p.kind === 'denied' && p.publickey
@@ -198,8 +199,9 @@ async function keyRefused(l: Link, t: TransportLike | Promise<TransportLike>, e:
     : e;
 }
 
-async function loginRefused(l: Link, t: TransportLike | Promise<TransportLike>, e: CodedError | null | undefined, code: string): Promise<CodedError | null | undefined> {
-  if (!e || e.code !== 'OFFLINE' || l.transport.kind !== 'ssh') return e; // a login link is ssh
+/** What connect threw (e, anything), or AUTH with why when ssh says why a login link cannot work yet. */
+async function loginRefused(l: Link, t: TransportLike | Promise<TransportLike>, e: unknown, code: string): Promise<unknown> {
+  if (errCode(e) !== 'OFFLINE' || l.transport.kind !== 'ssh') return e; // a login link is ssh
   const err = await stderrOf(t);
   const why = err === null ? null : ssh().loginProblem(err, l.transport, code, { first: !l.token });
   return why ? new RoomError('AUTH', why.message, why.reason) : e;

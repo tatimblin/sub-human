@@ -64,6 +64,7 @@ import type { KeyPair } from './noise.ts';
 import type { FrameId } from './types-core.ts';
 import type { Duplex } from 'node:stream';
 import type { Conn } from './ws.ts';
+import { msgOf, stackOf } from '../errors.ts';
 
 
 /** The listener's status (status()). */
@@ -185,7 +186,7 @@ function untailscale(rec: ServedRoom | null, log: (msg: string) => void = () => 
     const r = (require('./tailscale.ts') as typeof import('./tailscale.ts')).off(rec.tailscale);
     log(`tailscale ${rec.tailscale.funnel ? 'funnel' : 'serve'} ${rec.tailscale.path} off: ${r.ok ? 'done' : r.error}`);
     return r;
-  } catch (e) { log(`tailscale off: ${(e as Error).message}`); return { ok: false, error: (e as Error).message }; }
+  } catch (e) { log(`tailscale off: ${msgOf(e)}`); return { ok: false, error: msgOf(e) }; }
 }
 
 async function run({ port = defaultPort(), log = (msg: string): unknown => process.stderr.write(`${new Date().toISOString()} sub-human listen: ${msg}\n`), closedCheckMs = envNum('SUB_HUMAN_LISTEN_CHECK_MS') || CLOSED_CHECK_MS, idleMs = LISTEN_IDLE_MS }: {
@@ -243,7 +244,7 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
     } catch (e) {
       preauth--;
       conns--;
-      log(`refused a connection from ${who}: ${(e as Error).message}`);
+      log(`refused a connection from ${who}: ${msgOf(e)}`);
       return;
     }
     preauth--;
@@ -253,7 +254,7 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
     try {
       child = spawn(shimCmd(), args, { env: { ...process.env, SUB_HUMAN_HOME: home() }, stdio: ['pipe', 'pipe', 'pipe'] });
     } catch (e) {
-      log(`room ${code}: could not start serve: ${(e as Error).message}`);
+      log(`room ${code}: could not start serve: ${msgOf(e)}`);
       ch.duplex.destroy();
       conns--;
       return;
@@ -307,7 +308,7 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
     maxPayload: (require('./noise.ts') as typeof import('./noise.ts')).MAX_MESSAGE + 64,
     pingMs: WS_PING_MS,
     accept: () => (preauth >= PREAUTH_MAX || conns >= LISTEN_MAX ? 503 : true),
-    onConnection: (conn, req) => { onConnection(conn, req).catch((e: Error) => log(`connection: ${e.stack || e}`)); },
+    onConnection: (conn, req) => { onConnection(conn, req).catch((e: unknown) => log(`connection: ${stackOf(e)}`)); },
   });
   const real = (srv.address() as AddressInfo).port; // a TCP listener
   update(cur => { mine = true; return { ...cur, pid: process.pid, port: real, started_at: new Date().toISOString(), conns: 0, rooms: cur.rooms || {} }; });

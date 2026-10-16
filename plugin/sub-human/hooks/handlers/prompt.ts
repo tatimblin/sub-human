@@ -56,7 +56,7 @@ export function handle(input: Parameters<typeof atRoom.handle>[0]): Reply | null
     // plan mode not put back (stage 8e I.4); the next prompt that starts a turn takes the step
     if (where === 'consent' && outputs.some(stops)) continue;
     const r = capture(fn);
-    if (r.error) { logError(r.error, where); failed = true; }
+    if (r.threw) { logError(r.error, where); failed = true; }
     outputs.push(...r.outputs);
   }
   let o = merge(outputs);

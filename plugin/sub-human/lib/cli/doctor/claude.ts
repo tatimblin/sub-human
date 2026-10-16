@@ -21,6 +21,7 @@ import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { lib, cli, check, tilde, truthy } from './check.ts';
 import type { Check, Report } from '../types.ts';
+import { msgOf } from '../../errors.ts';
 
 /** A Claude Code settings file, as the hooks and Remote Control checks read it. */
 interface Settings {
@@ -66,7 +67,7 @@ function checkClaude({ version, quick, env }: { version: string | null; quick: b
     if (!bv) return cannot(`${tilde(bin)} is not the Claude Code binary (a launcher script?); set CLAUDE_BIN to it`);
     if (cc.compareVersions(bv, version) !== 0) return cannot(`${tilde(bin)} is ${bv} while \`claude --version\` says ${version}; set CLAUDE_BIN to the ${version} binary`);
     results = cc.probe(buf);
-  } catch (e) { return cannot((e as Error).message); }
+  } catch (e) { return cannot(msgOf(e)); }
   const missing = results.filter(r => !r.ok).map(r => r.id);
   // every entry missing is a probe that read the wrong thing, not every internal changed at once
   if (missing.length === results.length) return cannot(`none of the ${results.length} internals was found in ${tilde(bin)}; set CLAUDE_BIN to the Claude Code binary`);

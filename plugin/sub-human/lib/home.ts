@@ -33,6 +33,7 @@ import { CODE_RE } from './text.ts';
 import { homeOf } from '../mod/core/seat.ts';
 import { isObj } from './decode.ts';
 import { envFlag, envStr } from './env.ts';
+import { errCode } from './errors.ts';
 
 // the rule is mod/core/seat.ts homeOf's: the hooks module finds the store without node by the same one
 const home = (): string => homeOf(envStr('SUB_HUMAN_HOME'), os.homedir()) || path.join(os.homedir(), '.sub-human');
@@ -54,7 +55,7 @@ function readOrMakeId(file: string): string | null {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify({ id: crypto.randomBytes(8).toString('hex') }) + '\n', { mode: 0o600 });
-  try { fs.linkSync(tmp, file); } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e; } finally { fs.rmSync(tmp, { force: true }); }
+  try { fs.linkSync(tmp, file); } catch (e) { if (errCode(e) !== 'EEXIST') throw e; } finally { fs.rmSync(tmp, { force: true }); }
   return readId(file);
 }
 const machines = new Map<string, string | null>(); // home -> id
