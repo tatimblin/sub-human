@@ -102,7 +102,9 @@ import * as members from '../room/members.ts';
 import * as envelope from '../room/envelope.ts';
 import * as room from '../room.ts';
 import { RoomError, hash12 } from '../room/store.ts';
-import type { Reason } from '../reasons.ts';
+import type { ReasonFor } from '../reasons.ts';
+import { reasonOf } from '../reasons.ts';
+import { errCode, msgOf, stackOf } from '../errors.ts';
 import { machineIn } from '../home.ts';
 import * as options from '../room/options.ts';
 import { isObj } from '../decode.ts';
@@ -110,7 +112,7 @@ import {
   FOLLOW_POLL_MS, REPLAY_BATCH, PROPOSAL_FILE_MAX, LINK_SILENT_MS, LINK_FRAME_MAX_BYTES, LINK_AUTH_WAIT_MS,
 } from '../config.ts';
 import type {
-  CodedError, DecodedFrame, ErrorFrame, EventData, EventName, FrameId, IncomingRequest, LinkRecord, Op, OpResults, ProtoRange, WireParams,
+  DecodedFrame, ErrorFrame, EventData, EventName, FrameId, IncomingRequest, LinkRecord, Op, OpResults, ProtoRange, WireParams,
 } from './types-core.ts';
 import type { Transport } from './types-rest.ts';
 import type { Members, Payload, PresenceInput, RoomStore, SnapshotWire } from '../room/types.ts';
@@ -130,10 +132,9 @@ const ANSWERS = new Set(['signoff', 'objection']);
 const WRITES = new Set(['join', 'leave', 'beat', 'append', 'handoff.accept', 'handoff.refuse']);
 const WHILE_MOVED = new Set(['hello', 'subscribe', 'blob.get', 'ping']); // what a host the room moved away from still serves
 const epochOf = (store: RoomStore): number => store.hostState().epoch;
-const stale = (msg: string, reason: Reason = 'MOVED_AWAY'): CodedError => new RoomError('STALE', msg, reason);
-const WIRE_CODES: Set<string> = new Set(Object.values(protocol.CODES));
-const authError = (msg: string, reason: Reason | null = null): CodedError => new RoomError('AUTH', msg, reason);
-const invalid = (msg: string): CodedError => new RoomError('INVALID', msg);
+const stale = (msg: string, reason: ReasonFor<'STALE'> = 'MOVED_AWAY'): RoomError => new RoomError('STALE', msg, reason);
+const authError = (msg: string, reason: ReasonFor<'AUTH'> | null = null): RoomError => new RoomError('AUTH', msg, reason);
+const invalid = (msg: string): RoomError => new RoomError('INVALID', msg);
 
 /** name is a seat of this link (one it joined): AUTH NOT_JOINED otherwise. */
 function own(s: Session, name: unknown): asserts name is string {
@@ -161,7 +162,7 @@ function redeem(s: Session, invite: unknown, machine: string, pin: unknown, prov
   try {
     r = invites.redeemInvite(store, secret, opts);
   } catch (e) {
-    if ((e as CodedError).note) roomLine(s, (e as CodedError).note!);
+    if (e instanceof RoomError && e.note) roomLine(s, e.note); // an invite's PIN tries
     throw e;
   }
   if (r.admission) roomLine(s, `${r.admission.name}'s machine (${r.admission.label || machine}) joined the room, let in by ${r.admission.admitted_by || 'the host'}; undo with: /sub-human kick ${r.admission.name}`);
@@ -269,7 +270,7 @@ function stream(s: Session, id: FrameId | undefined, after: number, snap: Snapsh
     if (isStopped && !wasStopped) return end('closed');
     wasStopped = isStopped;
   }
-  const safeTick = (change: Change | null, now = false) => { try { tick(change, now); } catch (e) { s.log(`sub-human serve: subscribe: ${e && (e as Error).stack || e}`); } };
+  const safeTick = (change: Change | null, now = false) => { try { tick(change, now); } catch (e) { s.log(`sub-human serve: subscribe: ${stackOf(e)}`); } };
   const first = setImmediate(() => { if (snap) send('snapshot', snap); safeTick(null); }); // after the subscribe reply
   const unwatch = typeof s.store.watch === 'function' ? s.store.watch(c => safeTick(c)) : null;
   const timer = unwatch ? null : setInterval(() => safeTick(null), FOLLOW_POLL_MS);
@@ -387,7 +388,7 @@ const OPS: OpHandlers = {
     if (payload.via === 'human' || payload.via === 'agent') quota.checkLog(s.store.readAll(), { from: payload.from, via: payload.via, op: payload.via === 'human' ? 'append.human' : 'append.agent' });
     const entry = s.store.place(payload as Partial<Payload> as Payload); // place() checks every field (rules.ts admit, validate.ts)
     if (ANSWERS.has(entry.kind) && entry.proposal_hash) {
-      try { proposal.decide(s.store.code, entry.proposal_hash); } catch (e) { s.log(`sub-human serve: decide: ${e && (e as Error).stack || e}`); }
+      try { proposal.decide(s.store.code, entry.proposal_hash); } catch (e) { s.log(`sub-human serve: decide: ${stackOf(e)}`); }
     }
     return { entry };
   },
@@ -511,7 +512,7 @@ class Session {
     this.transport.send(out);
     const later = this.later;
     this.later = null;
-    if (later) setImmediate(() => { try { later(); } catch (e) { this.log(`sub-human serve: after ${f.op}: ${e && (e as Error).stack || e}`); } });
+    if (later) setImmediate(() => { try { later(); } catch (e) { this.log(`sub-human serve: after ${f.op}: ${stackOf(e)}`); } });
   }
 
   run({ id, op, params }: IncomingRequest): unknown {
@@ -542,10 +543,10 @@ class Session {
   }
 
   failure(f: IncomingRequest, err: unknown): ErrorFrame {
-    const e = err as CodedError | null | undefined; // anything an op threw
-    if (e && WIRE_CODES.has(e.code!)) return protocol.error(f.id, e.code!, e.message, e.reason);
-    this.log(`sub-human serve: ${f.op}: ${e && e.stack || e}`);
-    return protocol.error(f.id, 'INVALID', (e && e.message) || String(e));
+    const code = errCode(err); // anything an op threw
+    if (protocol.isWireCode(code)) return protocol.error(f.id, code, msgOf(err), reasonOf(err));
+    this.log(`sub-human serve: ${f.op}: ${stackOf(err)}`);
+    return protocol.error(f.id, 'INVALID', msgOf(err) || String(err));
   }
 
   /** True when the host revoked this session's link (its record is gone): every stream then ends {reason: 'AUTH'},

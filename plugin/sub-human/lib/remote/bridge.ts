@@ -13,7 +13,7 @@
  *       loaded on the worker at the first call (a load error fails the call). call() posts {id, method, params}, then
  *       Atomics.wait()s on a SharedArrayBuffer counter the worker bumps after each reply, and takes the reply
  *       with receiveMessageOnPort(). Params and results are structured clones. A handler that throws or rejects
- *       rethrows here as RoomError (its string code, else INVALID, with its reason and unknown flag). Past deadlineMs
+ *       rethrows here as RoomError (its code when one of protocol CODES, else INVALID, with its reason and unknown flag). Past deadlineMs
  *       (default LINK_CALL_MS; SessionEnd passes LINK_CALL_END_MS): RoomError OFFLINE, reason UNKNOWN_OUTCOME (the
  *       handler may have sent it on, so its outcome is unknown); the call is abandoned (its late reply is
  *       dropped) and nothing is retried. The worker and its port are unref'd, so a hook exits when its body
@@ -29,9 +29,10 @@ import { Worker, MessageChannel, isMainThread, workerData, receiveMessageOnPort 
 import type { MessagePort } from 'node:worker_threads';
 import * as config from '../config.ts';
 import { RoomError } from '../room/validate.ts';
-import { isReason } from '../reasons.ts';
+import { isReason, reasonOf } from '../reasons.ts';
+import { errCode, msgOf } from '../errors.ts';
+import { isWireCode } from './protocol.ts';
 import { createRequire } from 'node:module';
-import type { CodedError } from './types-core.ts';
 
 // The worker loads its handler by path (createRequire: require(esm) is synchronous and caches like an import).
 const require = createRequire(import.meta.url);
@@ -88,7 +89,7 @@ function createBridge<A extends Api>({ handler, deadlineMs = config.LINK_CALL_MS
 
 function settle({ result, error }: Reply): unknown {
   if (error) {
-    const e = new RoomError(error.code || 'INVALID', error.message, isReason(error.reason) ? error.reason : null);
+    const e = new RoomError(isWireCode(error.code) ? error.code : 'INVALID', error.message, isReason(error.reason) ? error.reason : null);
     if (error.unknown === true) e.unknown = true;
     throw e;
   }
@@ -97,10 +98,10 @@ function settle({ result, error }: Reply): unknown {
 
 // ---------- the worker ----------
 const failure = (id: number, err: unknown): Reply => {
-  const e = err as CodedError | null | undefined; // anything thrown: read with care
+  const reason = reasonOf(err);
   return { id, error: {
-    code: e && typeof e.code === 'string' ? e.code : undefined, message: String((e && e.message) || e),
-    ...(isReason(e && e.reason) ? { reason: e!.reason } : {}), ...(e && e.unknown === true ? { unknown: true } : {}),
+    code: errCode(err), message: msgOf(err) || String(err),
+    ...(reason ? { reason } : {}), ...(err instanceof RoomError && err.unknown === true ? { unknown: true } : {}),
   } };
 };
 

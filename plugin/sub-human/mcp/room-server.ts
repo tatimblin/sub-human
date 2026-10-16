@@ -64,6 +64,7 @@ const MESSAGE = objAs<JsonRpcIncoming>();
 import { createRequire } from 'node:module';
 import type { Entry, EntryInput } from '../lib/room/types.ts';
 import type { CallMeta, CallToolParams, JsonRpcId, JsonRpcIncoming, JsonRpcOutgoing, Me, OutgoingRequest, PluginApi, PluginContext, ProgressToken, ToolArgs, ToolDefinition, ToolResult } from './types.ts';
+import { msgOf, stackOf } from '../lib/errors.ts';
 
 // loadPlugins() requires each plug-in by path (createRequire: require(esm) is synchronous).
 const require = createRequire(import.meta.url);
@@ -301,7 +302,7 @@ function loadPlugins(): Plugin[] {
       out.push({ file, api, anonymous: new Set(Array.isArray(api.anonymous) ? api.anonymous : []) });
       log('plugin loaded', file, api.tools.map(t => t.name));
     } catch (e) {
-      log('plugin failed', file, (e as Error | null) && (e as Error).stack || String(e));
+      log('plugin failed', file, stackOf(e));
     }
   }
   return out;
@@ -336,7 +337,7 @@ function callTool(id: JsonRpcId, params: CallToolParams | undefined) {
   const owner = isCore ? null : ownerOf(name);
   if (!isCore && !owner) { cancelHandlers.delete(id); return fail(id, -32602, `unknown tool ${name}`); }
   let me: Me | null = null;
-  try { me = whoami(); } catch (e) { log('whoami failed', (e as Error | null) && (e as Error).message); }
+  try { me = whoami(); } catch (e) { log('whoami failed', msgOf(e)); }
   // owner: a plug-in lists the tool by this name, so name is a string
   if (!me && !(owner && owner.anonymous.has(name!))) return settle(id, text('not in a room; run /sub-human', true));
   if (isCore) {
@@ -344,14 +345,14 @@ function callTool(id: JsonRpcId, params: CallToolParams | undefined) {
     let r;
     try {
       r = name === 'post' ? post(self, args) : name === 'read' ? read(self, args) : propose(self, args);
-    } catch (e) { r = text(`refused: ${(e as Error).message}`, true); }
+    } catch (e) { r = text(`refused: ${msgOf(e)}`, true); }
     return settle(id, r);
   }
   let r;
   // not core: owner is the plug-in that lists the tool
-  try { r = owner!.api.call(name!, me, args, meta); } catch (e) { return settle(id, text(`error: ${(e as Error).message}`, true)); }
+  try { r = owner!.api.call(name!, me, args, meta); } catch (e) { return settle(id, text(`error: ${msgOf(e)}`, true)); }
   if (r && typeof (r as Promise<ToolResult>).then === 'function') {
-    (r as Promise<ToolResult>).then(v => settle(id, v), (e: unknown) => settle(id, text(`error: ${(e as Error | null) && (e as Error).message || e}`, true)));
+    (r as Promise<ToolResult>).then(v => settle(id, v), (e: unknown) => settle(id, text(`error: ${msgOf(e) || String(e)}`, true)));
   } else settle(id, r as ToolResult | null);
 }
 
@@ -388,7 +389,7 @@ function handle(msg: JsonRpcIncoming | null) {
       if (fns) {
         cancelled.add(rid);
         cancelHandlers.delete(rid);
-        for (const fn of fns) { try { fn(params!.reason); } catch (e) { log('onCancel handler failed', (e as Error | null) && (e as Error).message); } } // params: it held rid
+        for (const fn of fns) { try { fn(params!.reason); } catch (e) { log('onCancel handler failed', msgOf(e)); } } // params: it held rid
       }
       return;
     }
@@ -399,7 +400,7 @@ function handle(msg: JsonRpcIncoming | null) {
     case 'tools/call':
       // Register a cancel slot before the call so a plug-in's onCancel and a late settle agree.
       if (!cancelHandlers.has(id)) cancelHandlers.set(id, []);
-      try { return callTool(id, params); } catch (e) { return settle(id, text(`error: ${(e as Error).message}`, true)); }
+      try { return callTool(id, params); } catch (e) { return settle(id, text(`error: ${msgOf(e)}`, true)); }
     default:
       if (!isNote) fail(id, -32601, `method not found: ${method}`);
   }
@@ -420,9 +421,8 @@ process.stdin.on('data', (chunk: string) => {
     let msg: JsonRpcIncoming | null;
     try { msg = decode(MESSAGE, JSON.parse(line)); } catch { send({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } }); continue; }
     try { handle(msg); } catch (e) {
-      const err = e as Error | null;
-      log('handle failed', err && err.stack);
-      if (msg && msg.id != null && msg.method) fail(msg.id, -32603, String(err && err.message));
+      log('handle failed', stackOf(e));
+      if (msg && msg.id != null && msg.method) fail(msg.id, -32603, msgOf(e));
     }
   }
 });

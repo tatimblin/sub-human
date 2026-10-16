@@ -493,7 +493,7 @@ function dispatch(input: ConsentIn) {
   const note = unsent.length ? { systemMessage: `sub-human: ${unsent.join(' ')}` } : null;
   r.outputs.forEach((o, i) => c.out(note && i === 0 ? { ...o, ...note } : o));
   if (note && !r.outputs.length) c.out(note);
-  if (r.error) throw r.error;
+  if (r.threw) throw r.error;
 }
 
 function route(input: ConsentIn) {
@@ -540,7 +540,7 @@ function noteWaits(input: ConsentIn): boolean {
  */
 function shimDispatch(input: ConsentIn) {
   const r = c.capture(() => dispatch(input));
-  if (r.error) throw r.error;
+  if (r.threw) throw r.error;
   const outputs = r.outputs.filter(Boolean);
   const last = outputs.pop() || {};
   for (const o of outputs) process.stdout.write(JSON.stringify(o) + '\n');

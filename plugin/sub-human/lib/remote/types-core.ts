@@ -30,9 +30,8 @@ export type Op =
 /** The ops the link daemon relays for its hooks (lib/remote/link.ts RELAY). */
 export type RelayOp = 'join' | 'leave' | 'beat' | 'append' | 'blob.get' | 'blob.put' | 'handoff.accept' | 'handoff.refuse';
 
-/** The RoomError codes on both ends and on the wire (protocol.CODES). */
-export type WireCode =
-  | 'INVALID' | 'RATE' | 'LOCK' | 'NO_ROOM' | 'OFFLINE' | 'HOST_ONLY' | 'AUTH' | 'FORK' | 'PROTOCOL' | 'STALE';
+/** The RoomError codes on both ends and on the wire (protocol.CODE_NAMES is its source). */
+export type { WireCode } from './protocol.ts';
 
 /** What an end serves (protocol.CAPS), in a hello reply. */
 export interface Caps {
@@ -337,17 +336,8 @@ export interface ParsedInvite { v: 2; code: string; locator: string; secret: str
 /** The store invites.ts, host-links.ts and admission.ts read and write (lib/room/store.ts FsRoomStore, or a mirror's): its code, role and documents. */
 export type AuthStore = Pick<RoomStore, 'code' | 'isHost' | 'kv'>;
 
-/** A RoomError as it is thrown and caught: the code, and what callers attach. */
-export interface CodedError extends Error {
-  code?: string;
-  /** lib/reasons.ts: which failure exactly */
-  reason?: Reason;
-  note?: string | null;
-  /** lib/remote/link.ts: no daemon answers on the socket */
-  notListening?: boolean;
-  /** lib/remote/bridge.ts: the call went out and its outcome is unknown */
-  unknown?: boolean;
-}
+/** An error thrown with a code of ours: RoomError | NoiseError (lib/errors.ts isCoded). */
+export type { CodedError } from '../errors.ts';
 
 // ---------- the link daemon (lib/remote/link.ts) ----------
 

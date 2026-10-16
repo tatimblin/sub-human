@@ -5,6 +5,7 @@
 // (test/support/fake-ssh.ts): it runs the remote command in the host user's login shell, or, like an authorized_keys
 // line, a forced command with SSH_ORIGINAL_COMMAND set. Checked: the join links and seats in one step, the room hears it, kick ends it; an
 // unknown host key, a missing shim and a restricted key each stop the join with what to do, and mint no link.
+import type { RoomError } from '../lib/room/validate.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -30,7 +31,6 @@ import { machineIn } from '../lib/home.ts';
 import * as options from '../lib/room/options.ts';
 import * as machineKey from '../lib/remote/machine-key.ts';
 import { MemoryRoomStore } from './support/memory-store.ts';
-import type { CodedError } from '../lib/remote/types-core.ts';
 import * as linksLib from '../lib/room/links.ts';
 
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
@@ -167,8 +167,8 @@ test('server: a login link\'s seat is the host person\'s own only when the room 
   await seat(await open({ linkId: ID, login: true }, { login: true }), 'laptop');
   assert.deepEqual([host.members.read().laptop.machine, host.members.read().laptop.account], ['remote0machine01', undefined]);
   // the host person's option: such a seat is theirs
-  assert.throws(() => options.set(new MemoryRoomStore(code, { isHost: false }), 'login-same-person', true), (e: CodedError) => e.code === 'HOST_ONLY');
-  assert.throws(() => options.set(host, 'everything', true), (e: CodedError) => e.code === 'INVALID');
+  assert.throws(() => options.set(new MemoryRoomStore(code, { isHost: false }), 'login-same-person', true), (e: RoomError) => e.code === 'HOST_ONLY');
+  assert.throws(() => options.set(host, 'everything', true), (e: RoomError) => e.code === 'INVALID');
   options.set(host, 'login-same-person', true);
   await seat(await open({ linkId: 'aaaaaaaaaaaa', login: true }, { login: true, machineKey: machineKey.proof(code) }), 'desk'); // another machine
   const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: 'remote0machine02', seats: [] });
@@ -197,13 +197,13 @@ test('server: a hello\'s machine key gives the id the host records; one only rep
   assert.deepEqual([hostLinks.links(host).aaaaaaaaaaa1.machine, hostLinks.links(host).aaaaaaaaaaa1.label], [machineKey.idOf(proof.key), 'remote0machine01']);
   c1.close();
   // a forged proof is no proof: the reported id, checked
-  await assert.rejects(serveLogin('aaaaaaaaaaa2', { machine: machineIn(code)!, machineKey: { ...proof, sig: proof.sig.replace(/^./, ch => (ch === 'A' ? 'B' : 'A')) } }), (e: CodedError) => e.code === 'AUTH' && e.reason === 'MACHINE_TAKEN');
+  await assert.rejects(serveLogin('aaaaaaaaaaa2', { machine: machineIn(code)!, machineKey: { ...proof, sig: proof.sig.replace(/^./, ch => (ch === 'A' ? 'B' : 'A')) } }), (e: RoomError) => e.code === 'AUTH' && e.reason === 'MACHINE_TAKEN');
   // only reported: the host's own id, or another link's, is refused
-  await assert.rejects(serveLogin('aaaaaaaaaaa3', { machine: machineIn(code)! }), (e: CodedError) => e.reason === 'MACHINE_TAKEN');
+  await assert.rejects(serveLogin('aaaaaaaaaaa3', { machine: machineIn(code)! }), (e: RoomError) => e.reason === 'MACHINE_TAKEN');
   const c4 = await serveLogin('aaaaaaaaaaa4', { machine: 'remote0machine09' });
   assert.equal(c4.machine, 'remote0machine09');
   c4.close();
-  await assert.rejects(serveLogin('aaaaaaaaaaa5', { machine: 'remote0machine09' }), (e: CodedError) => e.reason === 'MACHINE_TAKEN');
+  await assert.rejects(serveLogin('aaaaaaaaaaa5', { machine: 'remote0machine09' }), (e: RoomError) => e.reason === 'MACHINE_TAKEN');
   assert.equal(machineKey.verify({ ...proof, ts: proof.ts - 60 * 60_000 }, code), null, 'an old proof');
   assert.equal(machineKey.verify(proof, 'vole-9999'), null, 'another room\'s');
 });

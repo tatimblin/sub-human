@@ -11,6 +11,7 @@
 
 import { parse } from './args.ts';
 import { createRequire } from 'node:module';
+import { msgOf } from '../errors.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -34,8 +35,8 @@ function listen(args: readonly string[]): number | null {
       say(`${r.started ? 'started' : 'already running'}: pid ${r.pid} on 127.0.0.1:${r.port}`);
       return 0;
     }
-  } catch (e) { return fail((e as Error).message); }
-  L.run(port !== undefined ? { port } : {}).then(() => process.exit(0), (e: Error) => { fail(e.message); process.exit(1); });
+  } catch (e) { return fail(msgOf(e)); }
+  L.run(port !== undefined ? { port } : {}).then(() => process.exit(0), (e: unknown) => { fail(msgOf(e)); process.exit(1); });
   return null; // the daemon keeps running
 }
 

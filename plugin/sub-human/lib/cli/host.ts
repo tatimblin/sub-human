@@ -31,6 +31,7 @@ import { spawnSync } from 'node:child_process';
 import { parse } from './args.ts';
 import PathMod from 'node:path';
 import { createRequire } from 'node:module';
+import { msgOf } from '../errors.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -79,7 +80,7 @@ function invite(args: readonly string[]): number {
       : hosting.hostInvite(code, { ssh: f.pipe ? undefined : f.ssh === undefined ? true : f.ssh, via: f.via, pipe: !!f.pipe });
     say(maskPins(r.text, [r.pin, r.word]));
     return 0;
-  } catch (e) { return fail((e as Error).message); }
+  } catch (e) { return fail(msgOf(e)); }
 }
 
 function kick(args: readonly string[]): number {
@@ -89,7 +90,7 @@ function kick(args: readonly string[]): number {
     const hosting: typeof import('../remote/hosting.ts') = require('../remote/hosting.ts');
     say(hosting.kick(hostedRoom(f.room), rest[0], f.file ? { file: f.file } : {}).text);
     return 0;
-  } catch (e) { return fail((e as Error).message); }
+  } catch (e) { return fail(msgOf(e)); }
 }
 
 function ask(question: string): string {
@@ -107,7 +108,7 @@ function admit(args: readonly string[]): number {
   const adm: typeof import('../remote/admission.ts') = require('../remote/admission.ts');
   const text: typeof import('../text.ts') = require('../text.ts');
   let code;
-  try { code = hostedRoom(p.flags.room); } catch (e) { return fail((e as Error).message); }
+  try { code = hostedRoom(p.flags.room); } catch (e) { return fail(msgOf(e)); }
   if (!p.rest.length) {
     const reqs = adm.pending(code);
     if (!reqs.length) { say(`nobody is waiting to join room ${code}`); return 0; }
@@ -124,7 +125,7 @@ function admit(args: readonly string[]): number {
   try {
     say((p.flags.refuse ? adm.refuse(code, req.ref, { by: null }) : adm.letIn(code, req.ref, { by: null })).text);
     return 0;
-  } catch (e) { return fail((e as Error).message); }
+  } catch (e) { return fail(msgOf(e)); }
 }
 
 function prime(args: readonly string[]): number {
@@ -144,7 +145,7 @@ function prime(args: readonly string[]): number {
     if (r.status !== 0) return fail(`ssh exited ${r.status}; the room still connects on its own, without the shared connection`);
     say(`room ${code}: its connection now rides this ssh login for ${p.flags.persist || '8h'} (after that it reconnects on its own; prime again for another MFA prompt)`);
     return 0;
-  } catch (e) { return fail((e as Error).message); }
+  } catch (e) { return fail(msgOf(e)); }
 }
 
 export { invite, kick, admit, prime, hostedRoom, inClaudeCode, maskPins, PIN_HIDDEN };

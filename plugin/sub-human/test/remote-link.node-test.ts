@@ -32,7 +32,7 @@ import * as realClock from '../lib/clock.ts';
 import * as config from '../lib/config.ts';
 import type { Clock } from '../lib/clock.ts';
 import type { LinkStatus } from '../lib/remote/link-socket.ts';
-import type { CodedError, RunningLink } from '../lib/remote/types-core.ts';
+import type { RunningLink } from '../lib/remote/types-core.ts';
 import type { SshSpec } from '../lib/remote/types-rest.ts';
 import type { Link, LinkStateWord } from '../lib/room/types.ts';
 
@@ -48,9 +48,9 @@ test('links: one private file per room; get, set, remove, list; a bad code or sh
   links.set('otter-0001', { ...l, code: 'otter-0001', invite: undefined, token: 't' });
   assert.deepEqual(links.list(), ['otter-0001', 'vole-1234']);
   assert.equal(links.get('../x'), null);
-  assert.throws(() => links.set('../x', l), (e: CodedError) => e.code === 'INVALID');
-  assert.throws(() => links.set('vole-1234', { ...l, invite: undefined }), (e: CodedError) => e.code === 'INVALID', 'no credential');
-  assert.throws(() => links.set('vole-1234', { ...l, code: 'otter-0001' }), (e: CodedError) => e.code === 'INVALID');
+  assert.throws(() => links.set('../x', l), (e: RoomError) => e.code === 'INVALID');
+  assert.throws(() => links.set('vole-1234', { ...l, invite: undefined }), (e: RoomError) => e.code === 'INVALID', 'no credential');
+  assert.throws(() => links.set('vole-1234', { ...l, code: 'otter-0001' }), (e: RoomError) => e.code === 'INVALID');
   assert.equal(links.remove('vole-1234'), true);
   assert.equal(links.remove('vole-1234'), false);
   assert.deepEqual(links.list(), ['otter-0001']);
@@ -107,8 +107,8 @@ test('link: the socket path is short whatever the home; locators name a home, ne
   assert.equal(linkConnect.pipeLocator('/a/home'), 'pipe:/a/home');
   assert.deepEqual(linkConnect.transportOf('pipe:/a/home'), { kind: 'pipe', home: '/a/home' });
   for (const bad of ['pipe:relative', 'pipe:', '', 'tcp:host:22']) assert.equal(linkConnect.transportOf(bad), null, bad);
-  await assert.rejects(linkSocket.handle('append', { socket: path.join(h.tmpDir('sh-sock-', t), 'none.sock'), params: {} }), (e: CodedError) => e.code === 'OFFLINE');
-  await assert.rejects(linkSocket.handle('subscribe', { socket: '/x', params: {} }), (e: CodedError) => e.code === 'PROTOCOL', 'only the hooks\' ops are relayed');
+  await assert.rejects(linkSocket.handle('append', { socket: path.join(h.tmpDir('sh-sock-', t), 'none.sock'), params: {} }), (e: RoomError) => e.code === 'OFFLINE');
+  await assert.rejects(linkSocket.handle('subscribe', { socket: '/x', params: {} }), (e: RoomError) => e.code === 'PROTOCOL', 'only the hooks\' ops are relayed');
 });
 
 test('link: handle tries each socket in order; a missing one, or one in a directory open to others, is skipped', async t => {
@@ -124,7 +124,7 @@ test('link: handle tries each socket in order; a missing one, or one in a direct
   await serve(path.join(mine, 'l.sock'), { ok: true, who: 'the daemon' });
   const r = await linkSocket.handle('beat', { socket: [path.join(open, 'l.sock'), path.join(mine, 'none.sock'), path.join(mine, 'l.sock')], params: {} });
   assert.deepEqual(r, { ok: true, who: 'the daemon' });
-  await assert.rejects(linkSocket.handle('beat', { socket: [path.join(open, 'l.sock')], params: {} }), (e: CodedError) => e.code === 'OFFLINE', 'never one in an open directory');
+  await assert.rejects(linkSocket.handle('beat', { socket: [path.join(open, 'l.sock')], params: {} }), (e: RoomError) => e.code === 'OFFLINE', 'never one in an open directory');
 });
 
 test('link: an ssh locator is a plain user@host[:port]; an invite can name neither an ssh option nor a command', () => {
@@ -153,8 +153,8 @@ test('link: the ssh command: BatchMode, this machine\'s own options, the port, "
     if (old === undefined) delete process.env.SUB_HUMAN_SSH_OPTS; else process.env.SUB_HUMAN_SSH_OPTS = old;
   }
   // a link file edited by hand is checked again
-  assert.throws(() => linkConnect.sshCommand({ kind: 'ssh', user: '-oProxyCommand=sh', host: 'far' }, 'vole-1234', []), (e: CodedError) => e.code === 'INVALID');
-  assert.throws(() => linkConnect.sshCommand({ kind: 'ssh', user: 'me', host: 'far' }, 'vole-1234; id', []), (e: CodedError) => e.code === 'INVALID');
+  assert.throws(() => linkConnect.sshCommand({ kind: 'ssh', user: '-oProxyCommand=sh', host: 'far' }, 'vole-1234', []), (e: RoomError) => e.code === 'INVALID');
+  assert.throws(() => linkConnect.sshCommand({ kind: 'ssh', user: 'me', host: 'far' }, 'vole-1234; id', []), (e: RoomError) => e.code === 'INVALID');
 });
 
 test('ssh: a ProxyJump rides the locator (?via=), as plain as the destination; the link\'s own options pin the host key and the key; prime opens a ControlMaster the daemon rides under BatchMode', t => {
@@ -179,14 +179,14 @@ test('ssh: a ProxyJump rides the locator (?via=), as plain as the destination; t
   assert.deepEqual(prime.slice(0, 6), ['ssh', '-M', '-N', '-f', '-o', 'ControlPersist=8h']);
   assert.ok(!prime.includes('BatchMode=yes'), 'the person answers the MFA prompt once');
   assert.ok(prime.includes(`ControlPath=${cp}`) && prime.includes('HostKeyAlias=sub-human-vole-1234'));
-  assert.throws(() => ssh.primeCommand(spec, 'vole-1234', { persist: '8h; id' }), (e: CodedError) => e.code === 'INVALID');
+  assert.throws(() => ssh.primeCommand(spec, 'vole-1234', { persist: '8h; id' }), (e: RoomError) => e.code === 'INVALID');
   // the primed master too: SUB_HUMAN_SSH_OPTS after every pinned option, and before the destination
   const primeOpts = ssh.primeCommand(spec, 'vole-1234', { opts: ['-o', 'StrictHostKeyChecking=no', '-o', `ControlPath=/tmp/elsewhere`] });
   assert.ok(primeOpts.indexOf('StrictHostKeyChecking=yes') < primeOpts.indexOf('StrictHostKeyChecking=no'), primeOpts.join(' '));
   assert.ok(primeOpts.indexOf(`ControlPath=${cp}`) < primeOpts.indexOf('ControlPath=/tmp/elsewhere'), primeOpts.join(' '));
   assert.ok(primeOpts.indexOf('StrictHostKeyChecking=no') < primeOpts.indexOf('--'), 'options before the destination');
   for (const bad of [{ key: '-oProxyCommand=x' }, { knownHosts: 'relative' }, { knownHosts: '/k/kh', alias: 'a b' }, { via: '-x' }]) {
-    assert.throws(() => ssh.command({ ...spec, ...bad }, 'vole-1234', []), (e: CodedError) => e.code === 'INVALID', JSON.stringify(bad));
+    assert.throws(() => ssh.command({ ...spec, ...bad }, 'vole-1234', []), (e: RoomError) => e.code === 'INVALID', JSON.stringify(bad));
   }
 });
 
@@ -198,20 +198,20 @@ test('mirror: applyLine appends a host line only when it chains; applyDoc writes
   const lines = () => fs.readFileSync(host.logFile, 'utf8').split('\n').filter(Boolean);
   host.append({ kind: 'status', text: 'one' }, { via: 'system', from: 'room', system: true });
   host.append({ kind: 'status', text: 'two' }, { via: 'system', from: 'room', system: true });
-  assert.throws(() => mirror.applyLine(lines()[1]), (e: CodedError) => e.code === 'FORK', 'a gap');
+  assert.throws(() => mirror.applyLine(lines()[1]), (e: RoomError) => e.code === 'FORK', 'a gap');
   assert.equal(mirror.applyLine(lines()[0]).text, 'one');
-  assert.throws(() => mirror.applyLine(lines()[0]), (e: CodedError) => e.code === 'FORK', 'a duplicate');
-  assert.throws(() => mirror.applyLine(JSON.stringify({ ...JSON.parse(lines()[1]), prev: '000000000000' })), (e: CodedError) => e.code === 'FORK');
+  assert.throws(() => mirror.applyLine(lines()[0]), (e: RoomError) => e.code === 'FORK', 'a duplicate');
+  assert.throws(() => mirror.applyLine(JSON.stringify({ ...JSON.parse(lines()[1]), prev: '000000000000' })), (e: RoomError) => e.code === 'FORK');
   mirror.applyLine(lines()[1]);
   assert.equal(fs.readFileSync(mirror.logFile, 'utf8'), fs.readFileSync(host.logFile, 'utf8'));
-  assert.throws(() => mirror.applyLine('{nope'), (e: CodedError) => e.code === 'PROTOCOL');
+  assert.throws(() => mirror.applyLine('{nope'), (e: RoomError) => e.code === 'PROTOCOL');
   mirror.applyDoc('members', { bob: { name: 'bob' } });
   mirror.applyDoc('presence/bob', { state: 'idle' });
   assert.deepEqual([mirror.members.read(), mirror.kv.get('presence/bob')], [{ bob: { name: 'bob' } }, { state: 'idle' }]);
   mirror.applyDoc('members', { bob: { name: 'bob' } });
   mirror.applyDoc('presence/bob', null);
   assert.deepEqual(mirror.kv.list('presence/'), []);
-  assert.throws(() => mirror.applyDoc('rows/x', {}), (e: CodedError) => e.code === 'PROTOCOL');
+  assert.throws(() => mirror.applyDoc('rows/x', {}), (e: RoomError) => e.code === 'PROTOCOL');
   mirror.reset();
   assert.deepEqual([mirror.readAll(), mirror.members.read()], [[], {}]);
 });

@@ -18,12 +18,13 @@ import os from 'node:os';
 import path from 'node:path';
 import * as io from '../io.ts';
 import { envStr } from '../env.ts';
+import { errCode } from '../errors.ts';
 
 const authorizedKeysFile = (): string => envStr('SUB_HUMAN_AUTHORIZED_KEYS') || path.join(os.homedir(), '.ssh', 'authorized_keys');
 const ENROLL_TAG = (code: string): string => `sub-human-enroll:${code}`;
 
 function readText(file: string): string {
-  try { return fs.readFileSync(file, 'utf8'); } catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return ''; throw e; }
+  try { return fs.readFileSync(file, 'utf8'); } catch (e) { if (errCode(e) === 'ENOENT') return ''; throw e; }
 }
 
 function removeTagged(file: string, tag: string): number {

@@ -126,6 +126,7 @@ import { isObj } from '../decode.ts';
 import { parse as parseArgs } from './args.ts';
 import type { CliIo, FlagSpec, Parsed } from './types.ts';
 import type { MirrorRoomStore } from '../room/store-mirror.ts';
+import { errCode, msgOf, stackOf } from '../errors.ts';
 
 // Each command's own modules load when it runs (createRequire: require(esm) is synchronous), so the tail and
 // agent-statusline (run often) never load the remote stack, doctor or the host commands.
@@ -183,8 +184,7 @@ function tail(args: readonly string[]) {
   });
   // A stray error is logged and the loop carries on (each restart by the mod costs a backoff).
   const lastResort = (e: unknown) => {
-    const err = e as { stack?: unknown } | null | undefined;
-    try { process.stderr.write(`sub-human tail: unexpected error: ${err && err.stack || e}\n`); } catch { /* closed */ }
+    try { process.stderr.write(`sub-human tail: unexpected error: ${stackOf(e)}\n`); } catch { /* closed */ }
   };
   process.on('uncaughtException', lastResort);
   process.on('unhandledRejection', lastResort);
@@ -273,7 +273,7 @@ function tasksCmd(args: readonly string[]) {
   const { flags } = parseFlags(args, { json: 0, room: 1 });
   const { code } = openRoom(flags.room);
   let list;
-  try { list = taskList(code); } catch (e) { die(`the room task list is unavailable: ${(e as Error).message}`, 1); }
+  try { list = taskList(code); } catch (e) { die(`the room task list is unavailable: ${msgOf(e)}`, 1); }
   list = list.filter(t => t && !(t.metadata && t.metadata._internal));
   if (flags.json) return console.log(JSON.stringify(list));
   if (!list.length) return console.log(`(no tasks in room ${code})`);
@@ -422,7 +422,7 @@ function linkCmd(args: readonly string[]) {
   const s = opened as MirrorRoomStore; // not the host: the room's mirror
   if (!flags.reset && !flags.forget) {
     const link: typeof import('../remote/link.ts') = require('../remote/link.ts');
-    return link.run({ code }).then(() => process.exit(0), (e: Error) => die(e.message, 1));
+    return link.run({ code }).then(() => process.exit(0), (e: unknown) => die(msgOf(e), 1));
   }
   const linkSocket: typeof import('../remote/link-socket.ts') = require('../remote/link-socket.ts');
   const st = linkSocket.status(code);
@@ -475,7 +475,7 @@ function tellHostLeaving(code: string, s: MirrorRoomStore, state: unknown): stri
   for (const n of names) {
     const ms = until - Date.now();
     if (ms <= 0) { why = 'no answer in time'; break; }
-    try { if (s.members.leave(n, { reason: 'left', deadlineMs: ms })) told.push(n); } catch (e) { why = String((e as Error).message || e).split('\n')[0]; break; }
+    try { if (s.members.leave(n, { reason: 'left', deadlineMs: ms })) told.push(n); } catch (e) { why = (msgOf(e) || String(e)).split('\n')[0]; break; }
   }
   const missed = [...names].filter(n => !told.includes(n));
   const heard = told.length ? `; the host was told ${told.join(', ')} left` : '';
@@ -489,7 +489,7 @@ function setAsideLinkFiles(code: string, archive: string | null) {
   for (const [file, name] of [[links.logFile(code), 'link.log'], [links.stateFile(code), 'link.state.json']]) {
     try {
       if (archive) fs.renameSync(file, path.join(archive, name)); else fs.rmSync(file, { force: true });
-    } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') { try { fs.rmSync(file, { force: true }); } catch { /* left */ } } }
+    } catch (e) { if (errCode(e) !== 'ENOENT') { try { fs.rmSync(file, { force: true }); } catch { /* left */ } } }
   }
 }
 
@@ -506,7 +506,7 @@ function forgetLink(code: string, s: MirrorRoomStore, force: boolean, stopped?: 
   const { roomsDir } = require('../home.ts') as typeof import('../home.ts');
   s.setAside(); // a demote's idiom: the log is kept beside the outbox, never merged
   let archive: string | null = path.join(roomsDir(), `${code}.forgotten-${new Date().toISOString().replace(/[:.]/g, '-')}`);
-  try { fs.renameSync(s.dir, archive); } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; archive = null; }
+  try { fs.renameSync(s.dir, archive); } catch (e) { if (errCode(e) !== 'ENOENT') throw e; archive = null; }
   setAsideLinkFiles(code, archive);
   links.remove(code);
   store.forget(code);
@@ -551,7 +551,7 @@ const USAGE = [
   '  internal:   tail | serve --stdio CODE [--link ID [--login]] | agent-statusline',
   '              serve --stdio CODE --via ws [--peer KEY] (the web listener\'s child)',
 ].join('\n');
-const doctor: Command = args => (require('./doctor.ts') as typeof import('./doctor.ts')).main(args).then(c => process.exit(c), (e: Error) => die(e.message, 2));
+const doctor: Command = args => (require('./doctor.ts') as typeof import('./doctor.ts')).main(args).then(c => process.exit(c), (e: unknown) => die(msgOf(e), 2));
 /** verify CODE: a room's log checked (doctor/rooms.ts): its hash chain and every person's line; exit 1 when either fails. */
 const verify: Command = args => {
   const code = args[0];
@@ -582,7 +582,7 @@ function main([cmd, ...args]: string[] = process.argv.slice(2)) {
   try {
     (cmds[cmd] || (() => die(USAGE)))(args);
   } catch (e) {
-    die((e as Error).message, 2);
+    die(msgOf(e), 2);
   }
 }
 

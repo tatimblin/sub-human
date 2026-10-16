@@ -72,6 +72,7 @@ import { RoomError } from './validate.ts';
 import { CHAT_KINDS } from './rules.ts';
 import * as snapshot from './snapshot.ts';
 import { isObj } from '../decode.ts';
+import { errCode } from '../errors.ts';
 import type { ChainCheck, ChainVerify, Entry, LogSnapshot, SnapshotWire, Tailer, TailerFs, WindowItem } from './types.ts';
 
 const fs = nodeFs;
@@ -116,7 +117,6 @@ interface ViewState { dev: number; ino: number; snap: LogSnapshot | null; cp: Ch
 /** verifyChain's own checkpoint (no marks). */
 interface Verified { dev: number; ino: number; snap: LogSnapshot | null; cp: Checkpoint }
 
-const errCode = (e: unknown): string | undefined => (e as NodeJS.ErrnoException | null)?.code;
 const TAIL_CHUNK = 64 * 1024;
 const TAIL_CHECK = 64;              // bytes before the cached end compared on growth
 const EMPTY: readonly Entry[] = Object.freeze([]);

@@ -49,6 +49,7 @@ import { createRequire } from 'node:module';
 import type { KindEntry, OpenCtx, Refusal, SpecBase, Transport, WsAddr, WsHello, WsSpec } from '../types-rest.ts';
 import type { CipherState, KeyPair } from '../noise.ts';
 import type { Conn } from '../ws.ts';
+import { errCode, msgOf } from '../../errors.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -91,7 +92,7 @@ function channel(conn: Conn, { send, recv }: { send: CipherState; recv: CipherSt
       try {
         for (let o = 0; o < chunk.length; o += MAX_PLAINTEXT) conn.send(send.encrypt(chunk.subarray(o, o + MAX_PLAINTEXT)));
         cb();
-      } catch (e) { cb(e as Error); }
+      } catch (e) { cb(e instanceof Error ? e : new Error(msgOf(e))); }
     },
     read() {},
     final(cb) { conn.close(1000, 'done'); cb(); },
@@ -159,7 +160,8 @@ function firstAny(conn: Conn, timeoutMs: number): Promise<{ data: Buffer; binary
   });
 }
 
-const refusalCode = (c: unknown): c is string => ['OFFLINE', 'AUTH', 'PROTOCOL', 'NO_ROOM'].includes(c as string);
+const REFUSAL_CODES = ['OFFLINE', 'AUTH', 'PROTOCOL', 'NO_ROOM'] as const;
+const refusalCode = (c: unknown): c is typeof REFUSAL_CODES[number] => REFUSAL_CODES.some(x => x === c);
 
 async function clientChannel(conn: Conn, { rs, code, s = null, timeoutMs = HANDSHAKE_MS }: { rs: Buffer; code: string; s?: KeyPair | null; timeoutMs?: number }): Promise<Duplex> {
   const xk = !!s;
@@ -196,7 +198,7 @@ async function serverChannel(conn: Conn, { s, check = () => null, timeoutMs = HA
   }
   const xk = hs.pattern === 'XK';
   const refusal = !hello || hello.v !== (xk ? 3 : 1) || typeof hello.room !== 'string'
-    ? { code: 'PROTOCOL', message: 'a handshake with no room' }
+    ? { code: 'PROTOCOL' as const, message: 'a handshake with no room' }
     : check(hello);
   const after = xk && !refusal ? collector(conn) : null; // before message 2: message 3 and what follows it may come at once
   conn.send(hs.writeMessage(Buffer.from(JSON.stringify(refusal ? { error: refusal } : { ok: true }))));
@@ -208,7 +210,7 @@ async function serverChannel(conn: Conn, { s, check = () => null, timeoutMs = HA
   try { hs.readMessage(await after.next(timeoutMs, 'the joiner\'s message 3')); } catch (e) {
     after.rest();
     conn.close(4401, 'handshake failed');
-    throw (e as { code?: string }).code === 'OFFLINE' ? e : new RoomError('AUTH', 'a Noise message 3 that does not decrypt');
+    throw errCode(e) === 'OFFLINE' ? e : new RoomError('AUTH', 'a Noise message 3 that does not decrypt');
   }
   return { duplex: channel(conn, hs.split(), after.rest()), hello: hello as WsHello, peer: hs.remoteStatic };
 }
@@ -218,7 +220,7 @@ async function fetchKey(spec: WsAddr & SpecBase, { timeoutMs = envMs('SUB_HUMAN_
   const s = parse(`//${hostPort(spec)}${spec.path}`);
   if (!s) throw new RoomError('INVALID', 'the link\'s WebSocket URL is not a plain host[:port]/path');
   let conn: Conn;
-  try { conn = await ws().connect(urlOf({ ...s, kind: spec.kind }), { maxPayload: 4096, timeoutMs }); } catch (e) { throw new RoomError('OFFLINE', (e as Error).message); }
+  try { conn = await ws().connect(urlOf({ ...s, kind: spec.kind }), { maxPayload: 4096, timeoutMs }); } catch (e) { throw new RoomError('OFFLINE', msgOf(e)); }
   try {
     conn.send(JSON.stringify({ op: 'key', v: 3 }));
     const m = await firstAny(conn, HANDSHAKE_MS);
@@ -242,7 +244,7 @@ const kind: Required<KindEntry<WsSpec>> = {
     let conn: Conn;
     try {
       conn = await ws().connect(url, { maxPayload: noise().MAX_MESSAGE + 64, timeoutMs: envMs('SUB_HUMAN_WS_CONNECT_MS') });
-    } catch (e) { throw new RoomError('OFFLINE', (e as Error).message); }
+    } catch (e) { throw new RoomError('OFFLINE', msgOf(e)); }
     try {
       const duplex = await clientChannel(conn, { rs: Buffer.from(spec.hostKey, 'base64url'), code: ctx.code, s: own });
       return (require('./index.ts') as typeof import('./index.ts')).fromDuplex(duplex);

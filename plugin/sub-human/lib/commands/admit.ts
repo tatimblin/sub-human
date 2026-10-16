@@ -5,7 +5,8 @@
 import * as envelope from '../room/envelope.ts';
 import * as store from '../room/store.ts';
 import { createRequire } from 'node:module';
-import { HELP_HINT, hostOnly, msgOf, refused, say } from './answer.ts';
+import { HELP_HINT, hostOnly, refused, say } from './answer.ts';
+import { msgOf } from '../errors.ts';
 import type { Verb } from './types.ts';
 import type { Signer } from '../remote/admission.ts';
 

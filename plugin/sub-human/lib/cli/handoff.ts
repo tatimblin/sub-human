@@ -34,6 +34,7 @@ import { parse } from './args.ts';
 import * as textMod from '../text.ts';
 import { createRequire } from 'node:module';
 import type { CliIo, FlagSpec, Flags, Parsed } from './types.ts';
+import { errCode, msgOf } from '../errors.ts';
 
 const require = createRequire(import.meta.url);
 const cli = (args: string) => textMod.cliLine(args);
@@ -73,7 +74,7 @@ function locatorOf(flags: Flags<typeof LOCATOR_FLAGS>, die: CliIo['die'], code: 
   if (flags.url !== undefined) {
     if (flags.ssh !== undefined || flags.via !== undefined) die('--ssh/--via and --url are two ways in; pick one');
     const webhost: typeof import('../remote/webhost.ts') = require('../remote/webhost.ts');
-    try { return webhost.webLocator(flags.url, code); } catch (e) { die((e as Error).message); }
+    try { return webhost.webLocator(flags.url, code); } catch (e) { die(msgOf(e)); }
   }
   if (flags.ssh === undefined) {
     if (flags.via !== undefined) die('--via is for an ssh address (USER@HOST[:PORT] --via JUMP)');
@@ -117,7 +118,7 @@ function handoffCmd(args: readonly string[], ctx: CliIo) {
   const to = rest[0];
   const from = seatOf(code, flags.as, die);
   let d;
-  try { d = handoff.ask(code, { from, to, locator: locatorOf(flags, die, code) }); } catch (e) { die(`could not hand room ${code} off: ${(e as Error).message}`, 1); }
+  try { d = handoff.ask(code, { from, to, locator: locatorOf(flags, die, code) }); } catch (e) { die(`could not hand room ${code} off: ${msgOf(e)}`, 1); }
   out(`asked ${to} to host room ${code}; their Claude shows them a card until ${d.expires_at}.`);
   out(`If ${to} agrees, the room and its Claude move to their machine (on ${to}'s Claude account), and this machine stays in it. ${cli(`handoff --status --room ${code}`)} shows how it went.`);
 }
@@ -144,7 +145,7 @@ function promoteCmd(args: readonly string[], ctx: CliIo) {
   }
   const name = seatOf(code, flags.as, die);
   let r;
-  try { r = handoff.promote(code, { name, locator: locatorOf(flags, die, code), force: !!flags.force, cwd: process.cwd() }); } catch (e) { die(`could not promote: ${(e as Error).message}`, 1); }
+  try { r = handoff.promote(code, { name, locator: locatorOf(flags, die, code), force: !!flags.force, cwd: process.cwd() }); } catch (e) { die(`could not promote: ${msgOf(e)}`, 1); }
   out(`this machine hosts room ${code} now${r.note}`);
   if (!r.invites.length) return out('no other machine had a seat in the room.');
   out('Give each machine its line, and its PIN some other way (each is single-use, lasts 15 minutes and only works on that machine); they run it in a terminal, then /sub-human in their session:');
@@ -163,8 +164,8 @@ function readLine(fd = 0): string {
   for (;;) {
     let n = 0;
     try { n = fs.readSync(fd, buf, 0, buf.length, null); } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === 'EAGAIN') continue;
-      if ((e as NodeJS.ErrnoException).code === 'EOF') break;
+      if (errCode(e) === 'EAGAIN') continue;
+      if (errCode(e) === 'EOF') break;
       throw e;
     }
     if (!n) break;
@@ -184,12 +185,12 @@ function demoteCmd(args: readonly string[], ctx: CliIo) {
   if (!identity.roomExists(code)) die(`no room "${code}"`, 1);
   if (flags.from === undefined && process.stdin.isTTY) ctx.err(`paste the invite line for room ${code} and its PIN, then press Enter:`);
   let text = '';
-  try { text = flags.from !== undefined ? fs.readFileSync(flags.from, 'utf8') : readLine(); } catch (e) { die(`could not read the invite: ${(e as Error).message}`, 1); }
+  try { text = flags.from !== undefined ? fs.readFileSync(flags.from, 'utf8') : readLine(); } catch (e) { die(`could not read the invite: ${msgOf(e)}`, 1); }
   const words = text.trim().split(/\s+/).filter(Boolean);
   const invite = words.find(w => w.startsWith('sh2.')) || '', pin = words.find(w => /^[0-9]{6}$/.test(w));
   if (!invite) die('that is not an invite line (it starts sh2.); paste the line promote printed for this machine, then its PIN', 1);
   let r;
-  try { r = handoff.demote(code, invite, pin); } catch (e) { die(`could not demote: ${(e as Error).message}`, 1); }
+  try { r = handoff.demote(code, invite, pin); } catch (e) { die(`could not demote: ${msgOf(e)}`, 1); }
   out(`room ${code}: this machine follows its new host now${r.orphan ? `; its own log is kept in ${r.orphan}` : ''}.${r.follower ? ' Type /sub-human in your session to join it again.' : ''}`);
   const t = (links.get(code) || {}).transport;
   if (t && t.kind === 'ssh') out('Over ssh this machine reaches the new host through your own ssh login to it: if it cannot connect, ask them for an invite over the web (/sub-human invite --web there) and type the line it shows in your session.');

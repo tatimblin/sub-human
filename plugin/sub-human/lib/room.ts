@@ -36,6 +36,7 @@ import * as delivery from './room/deliver.ts';
 import { DIGEST_CAP, TAIL_MAX, CHAT_MAX, CHAT_WRAP, CHAT_LINES_MAX, CHAT_NEST } from './config.ts';
 import type { AppendOpts, Delivery, Entry, EntryInput, LaneViewer, ReadViewOpts, RoomStore, TailerFs, Trust } from './room/types.ts';
 import type { DeliverState } from './room/deliver.ts';
+import { msgOf } from './errors.ts';
 
 type Entries = readonly Entry[];
 const { trustOf } = store;
@@ -52,7 +53,7 @@ const { approversOf } = consent;
 
 /** A status line from the room itself (via system), best effort: the action it reports stands either way. */
 function roomLine(s: Pick<RoomStore, 'append'>, text: string, log?: (msg: string) => void): void {
-  try { s.append({ kind: 'status', text }, { via: 'system', from: 'room', system: true }); } catch (e) { if (log) log(`room line: ${e && (e as Error).message}`); }
+  try { s.append({ kind: 'status', text }, { via: 'system', from: 'room', system: true }); } catch (e) { if (log) log(`room line: ${msgOf(e)}`); }
 }
 
 /** The store of a room this machine hosts: NO_ROOM when there is none here, HOST_ONLY when it is hosted elsewhere. */

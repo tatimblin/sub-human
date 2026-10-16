@@ -2,7 +2,6 @@
  * plugin/sub-human/lib/commands/answer.ts: the verbs' answers (types.ts Answer) and the words they share.
  *
  *   say(text) / refused(text) / secret(text, {refused}?) -> Answer
- *   msgOf(err) -> string        a caught error's message (what a refusal says)
  *   HELP_HINT, USAGE            the pointer to /sub-human help, and the bare command's usage
  *   hostOnly(cur, what) -> string | null   why a host-only verb cannot run in this session (no seat, or the room is
  *                               hosted elsewhere); null when it can
@@ -14,7 +13,6 @@ import type { Identity } from '../identity.ts';
 export const say = (text: string): Answer => ({ kind: 'say', text });
 export const refused = (text: string): Answer => ({ kind: 'refused', text });
 export const secret = (text: string, { refused: r = false, pinned }: { refused?: boolean; pinned?: Pinned } = {}): Answer => ({ kind: 'secret', text, refused: r, ...(pinned ? { pinned } : {}) });
-export const msgOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
 export const HELP_HINT = 'All commands: /sub-human help';
 export const USAGE = `usage: /sub-human [NAME] joins or opens a room. ${HELP_HINT}`;

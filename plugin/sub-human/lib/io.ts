@@ -26,6 +26,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import TtyMod from 'node:tty';
 import type { Decoder } from './decode.ts';
+import { errCode } from './errors.ts';
 
 /** The file's parsed JSON: unknown until decoded; undefined when the file is missing or unparseable. */
 function readJsonRaw(file: string): unknown {
@@ -74,7 +75,7 @@ const validPid = (pid: unknown): pid is number => Number.isInteger(pid) && (pid 
 function isAlive(pid: unknown): boolean {
   const n = Number(pid);
   if (!Number.isInteger(n) || n <= 0) return false;
-  try { process.kill(n, 0); return true; } catch (e) { return (e as NodeJS.ErrnoException).code === 'EPERM'; }
+  try { process.kill(n, 0); return true; } catch (e) { return errCode(e) === 'EPERM'; }
 }
 
 const sleepSync = (ms: number): void => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); };

@@ -11,13 +11,14 @@
 import { spawnSync } from 'node:child_process';
 import { lib, cli, check, tilde } from './check.ts';
 import type { Check } from '../types.ts';
+import { msgOf } from '../../errors.ts';
 
 type ListenerStatus = import('../../remote/listener.ts').ListenStatus;
 
 /** The host's web listener and the rooms it serves (lib/remote/listener.ts), with their Tailscale paths. */
 function checkListener({ quick = false } = {}): Check[] {
   let st: ListenerStatus;
-  try { st = lib('remote/listener.ts').status(); } catch (e) { return [check('listener', 'warn', 'listener', `could not read its state: ${(e as Error).message}`)]; }
+  try { st = lib('remote/listener.ts').status(); } catch (e) { return [check('listener', 'warn', 'listener', `could not read its state: ${msgOf(e)}`)]; }
   const codes = Object.keys(st.rooms || {});
   if (!codes.length && !st.running) return [check('listener', 'info', 'listener', 'no room is served over the web here (/sub-human invite --web or --url starts it)')];
   const out = [st.running

@@ -84,11 +84,13 @@ import * as identityMod from './identity.ts';
 import * as ioMod from './io.ts';
 import { createRequire } from 'node:module';
 import type { Card, HandoffAskDoc, HandoffDoc } from './types-app.ts';
+import type { WireCode } from './remote/types-core.ts';
 import type { Entry, EntryInput, HostProof, HostState, Link, Member, Members } from './room/types.ts';
 import type { HandoffAsk, BoundInvite, Invites, LinkRecord, MovedEventData, PrivateEvent } from './remote/types-core.ts';
 import type { LinkSpec } from './remote/types-rest.ts';
 import type { MirrorRoomStore } from './room/store-mirror.ts';
 import type { Identity } from './identity.ts';
+import { msgOf } from './errors.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -111,7 +113,7 @@ const ID_RE = /^[0-9a-f]{12}$/;
 const MACHINE_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 const iso = (ms: number) => new Date(ms).toISOString();
-const err = (code: string, msg: string) => new RoomError(code, msg);
+const err = (code: WireCode, msg: string) => new RoomError(code, msg);
 const linkSocket = (): typeof import('./remote/link-socket.ts') => require('./remote/link-socket.ts');
 const linkConnect = (): typeof import('./remote/link-connect.ts') => require('./remote/link-connect.ts');
 const identity = () => identityMod;
@@ -273,7 +275,7 @@ function onMoved(mirror: Store, data: MovedEventData | null | undefined): { self
   if (!data.invite) return { stop: true, reason: `room ${code} moved to ${data.host}'s machine, and no invite came for this machine; ${how}` };
   const cur: Partial<Link> = links.get(code) || {};
   let f: Follow;
-  try { f = followLink(code, data.locator, data.invite); } catch (e) { return { stop: true, reason: `room ${code} moved to ${data.host}'s machine, and this machine could not follow it: ${(e as Error).message}; ${how}` }; }
+  try { f = followLink(code, data.locator, data.invite); } catch (e) { return { stop: true, reason: `room ${code} moved to ${data.host}'s machine, and this machine could not follow it: ${msgOf(e)}; ${how}` }; }
   if (!f.transport) return { stop: true, reason: `room ${code} moved to ${data.host}'s machine at "${data.locator}", which this machine cannot use; ${how}` };
   links.set(code, {
     code, transport: f.transport, invite: data.invite, created_at: cur.created_at || iso(Date.now()),
@@ -353,7 +355,7 @@ function accept(me: Pick<Identity, 'code' | 'name'>, { cwd, sign }: { cwd?: stri
   if (s.hostState().epoch + 1 !== a.epoch) return { ok: false, error: 'the room changed hosts since this ask' };
   const locator: string = a.locator || linkConnect().pipeLocator();
   if (!transportOf(locator)) return { ok: false, error: `"${locator}" is not a locator this machine knows` };
-  try { serveWeb(code, locator); } catch (e) { return { ok: false, error: `could not serve room ${code} over the web here: ${(e as Error).message}` }; }
+  try { serveWeb(code, locator); } catch (e) { return { ok: false, error: `could not serve room ${code} over the web here: ${msgOf(e)}` }; }
   const invites = Object.fromEntries(mintAll(s, locator).map(x => [x.machine, x.invite]));
   const proof = sign({ kind: 'host_accept', id: a.id, epoch: a.epoch, locator });
   try {

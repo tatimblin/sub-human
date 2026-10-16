@@ -83,6 +83,7 @@ import type { Delivery, Entry } from './room/types.ts';
 import type { Identity } from './identity.ts';
 import type { Room } from './room.ts';
 import { FOR_CLAUDE, PULL_HEAD, PULL_END, pullDroppedLine } from '../mod/core/constants.ts';
+import { msgOf } from './errors.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -394,7 +395,7 @@ function errorLog(err: (s: string) => unknown, clock: Clock, everyMs: number): L
     if (x && now - x.at < everyMs) { x.held++; return; }
     const more = x && x.held ? ` (+${x.held} more since)` : '';
     last.set(where, { at: now, held: 0 });
-    try { err(`sub-human tail: ${where} failed: ${e && (e as Error).message || e}${more}; retrying\n`); } catch { /* stderr closed */ }
+    try { err(`sub-human tail: ${where} failed: ${msgOf(e) || String(e)}${more}; retrying\n`); } catch { /* stderr closed */ }
   };
 }
 

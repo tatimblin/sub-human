@@ -89,7 +89,7 @@ import * as identityMod from '../identity.ts';
 import * as membersMod from '../room/members.ts';
 import { createRequire } from 'node:module';
 import type { Reason } from '../reasons.ts';
-import type { CodedError, LinkDoc, LinkTimings, MovedEventData, RunningLink, SignedPayload, StreamEvent, Flush } from './types-core.ts';
+import type { LinkDoc, LinkTimings, MovedEventData, RunningLink, SignedPayload, StreamEvent, Flush } from './types-core.ts';
 import type { Clock, TimerHandle } from '../clock.ts';
 import type { Entry, Link } from '../room/types.ts';
 import type { MirrorRoomStore } from '../room/store-mirror.ts';
@@ -97,6 +97,7 @@ import type { Client } from './client.ts';
 import type { Outbox, OutboxItem } from './outbox.ts';
 import type { EngineEvent, EngineState, Effect, Failure, TimerName } from './link-engine.ts';
 import type net from 'node:net';
+import { errCode, msgOf } from '../errors.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -213,8 +214,7 @@ function held(mirror: MirrorRoomStore, line: string): boolean {
 const placedAlready = (e: unknown): boolean => reasonOf(e) === 'PLACED_ALREADY';
 const clip = (s: string, n = 200): string => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const failure = (e: unknown): Failure => {
-  const x = e as CodedError | null | undefined;
-  return { code: (x && x.code) || null, reason: reasonOf(x), message: String((x && x.message) || x) };
+  return { code: errCode(e) || null, reason: reasonOf(e), message: msgOf(e) || String(e) };
 };
 
 async function serveMirror({
@@ -248,7 +248,7 @@ async function serveMirror({
       ...(st.code ? { code: st.code } : {}), ...(st.why ? { why: st.why } : {}), ...(fields.length ? { fields } : {}),
       ...(box.size() ? { queued: box.size() } : {}), ...(flushed ? { flush: flushed } : {}),
     };
-    try { mirror.kv.set('link', doc); } catch (e) { log(`status: ${(e as Error).message}`); }
+    try { mirror.kv.set('link', doc); } catch (e) { log(`status: ${msgOf(e)}`); }
     const p = engine.shown(st);
     if (p !== pub) { pub = p; pubSince = iso(clock.now()); }
     const rec = {
@@ -256,7 +256,7 @@ async function serveMirror({
       ...(st.code ? { lastCode: st.code } : {}), ...(st.prevError ? { prevError: st.prevError } : {}), rttMs: st.rttMs, queued: box.size(),
       pid: process.pid, detail: st.phase, at: iso(clock.now()),
     };
-    try { saveState(rec); } catch (e) { log(`state: ${(e as Error).message}`); }
+    try { saveState(rec); } catch (e) { log(`state: ${msgOf(e)}`); }
   }
 
   /** One event through the engine, then its effects, in order. */
@@ -402,12 +402,12 @@ async function serveMirror({
       req.then(r => {
         if (!slow) { clock.clearTimeout(t); resolve(r); return; }
         if (box.remove(payload.nonce)) { log('slow link: the @room post that was in flight landed'); publish(); }
-      }, (e: CodedError) => {
+      }, (e: unknown) => {
         if (!slow) { clock.clearTimeout(t); reject(e); return; }
         if (placedAlready(e)) { if (box.remove(payload.nonce)) publish(); return; }
-        if (e.code === 'OFFLINE' && (c.closed || id !== st.conn)) return; // kept: the next connection sends it again
+        if (errCode(e) === 'OFFLINE' && (c.closed || id !== st.conn)) return; // kept: the next connection sends it again
         if (!box.remove(payload.nonce)) return;
-        const why = e.code === 'OFFLINE' ? 'the host never answered' : e.message;
+        const why = errCode(e) === 'OFFLINE' ? 'the host never answered' : msgOf(e);
         flushed = { at: iso(clock.now()), sent: 0, unsent: [{ text: clip(String(payload.text || '')), why }] };
         log(`a slow @room post was not placed: ${why}`);
         publish();
@@ -421,15 +421,15 @@ async function serveMirror({
     if (e.kind !== 'proposal' || !e.hash) return;
     const ref = mirror.blobs.ref(e.path) || `plans/${e.hash}.md`;
     if (mirror.blobs.has(ref)) return;
-    c.blobGet(ref).then(b => b && mirror.applyBlob(ref, b), (err: Error) => log(`plan ${ref}: ${err.message}`));
+    c.blobGet(ref).then(b => b && mirror.applyBlob(ref, b), (err: unknown) => log(`plan ${ref}: ${msgOf(err)}`));
   }
 
   // A document this version does not stream (a newer host's) is skipped, not fatal: the mirror never takes it.
   function applyDoc(data: StreamEvent<'doc'>['data']) {
     if (!data || typeof data.key !== 'string') return log('skipped: a document with no key');
     try { mirror.applyDoc(data.key, data.value); } catch (e) {
-      if ((e as CodedError).code !== 'PROTOCOL') throw e;
-      log(`skipped: ${(e as Error).message}`);
+      if (errCode(e) !== 'PROTOCOL') throw e;
+      log(`skipped: ${msgOf(e)}`);
     }
   }
 
@@ -454,10 +454,9 @@ async function serveMirror({
           dispatch({ type: 'lost', conn: id, error: { code: data.reason, reason, message }, offline: handoff().whyOffline(mirror.code, message) });
         }
       }
-    } catch (err) {
-      const e = err as CodedError;
-      const fork = e.code === 'FORK';
-      dispatch({ type: 'stop', phase: fork ? 'fork' : 'stopped', why: e.message, code: fork ? 'FORK' : null, reason: reasonOf(e) || (fork ? 'NOT_CHAINED' : null) });
+    } catch (e) {
+      const fork = errCode(e) === 'FORK';
+      dispatch({ type: 'stop', phase: fork ? 'fork' : 'stopped', why: msgOf(e), code: fork ? 'FORK' : null, reason: reasonOf(e) || (fork ? 'NOT_CHAINED' : null) });
     }
   }
 
@@ -474,7 +473,7 @@ async function serveMirror({
    * quietly: a beat writes no log line (no "left", no "joined"); its pinned key and its link binding never changed. */
   async function keepSeats(c: Client) {
     let names: string[] = [];
-    try { names = localSeats(); } catch (e) { log(`seats: ${(e as Error).message}`); }
+    try { names = localSeats(); } catch (e) { log(`seats: ${msgOf(e)}`); }
     const { leaseFresh } = membersMod;
     for (const name of names) {
       const m = mirror.members.read()[name];
@@ -483,8 +482,8 @@ async function serveMirror({
         if (!r || !r.ok) log(`seat ${name} is not in room ${mirror.code} on the host any more; /sub-human ${name} ${mirror.code} joins again`);
         else if (m && !leaseFresh(m)) log(`seat ${name}: its lease had lapsed on the host; renewed`);
       } catch (e) {
-        if ((e as CodedError).code === 'OFFLINE') throw e;
-        log(`seat ${name}: ${(e as Error).message}`);
+        if (errCode(e) === 'OFFLINE') throw e;
+        log(`seat ${name}: ${msgOf(e)}`);
       }
     }
   }
@@ -503,11 +502,10 @@ async function serveMirror({
       try {
         await c.append(x.payload);
         sent++;
-      } catch (err) {
-        const e = err as CodedError;
-        if (e.code === 'OFFLINE' || e.code === 'LOCK') { note(); throw e; }
+      } catch (e) {
+        if (errCode(e) === 'OFFLINE' || errCode(e) === 'LOCK') { note(); throw e; }
         if (placedAlready(e)) sent++;
-        else drop(x, e.message);
+        else drop(x, msgOf(e));
       }
       box.remove(x.payload.nonce); // by nonce: a slow post's late answer may have taken it out meanwhile
     }

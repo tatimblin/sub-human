@@ -13,7 +13,7 @@
  *   write(rendered)                 the edge: stdout lines, stderr, process.exitCode
  *   out(obj)                        a classic handler's one output line; collected by capture(), which run.ts and the
  *                                   handlers that merge outputs (prompt, consent) wrap around a handler
- *   capture(fn) -> {outputs, error} fn's out() lines, also when it threw (error)
+ *   capture(fn) -> {outputs, threw, error}   fn's out() lines, also when it threw (threw, and what: error)
  *   pre(decision, reason, extra?), deny(reason), context(event, text, top?)   output helpers
  *   logError(err, where?)           stderr, which Claude Code shows to the person only, never to the model
  */
@@ -30,19 +30,22 @@ export const out = (obj: HookOutput | null | undefined): void => {
 };
 
 /** Run fn with out() collecting instead of writing; the lines it gave, also when it threw. */
-export function capture(fn: () => void): { outputs: HookOutput[]; error: unknown } {
+/** What capture saw: the out() lines, and whether fn threw (error: what it threw, null when it did not). */
+export interface Captured<T = void> { outputs: HookOutput[]; value?: T; threw: boolean; error: unknown }
+
+export function capture(fn: () => void): Captured {
   const prev = sink;
   const got: HookOutput[] = [];
   sink = got;
-  try { fn(); return { outputs: got, error: null }; } catch (error) { return { outputs: got, error }; } finally { sink = prev; }
+  try { fn(); return { outputs: got, threw: false, error: null }; } catch (error) { return { outputs: got, threw: true, error }; } finally { sink = prev; }
 }
 
 /** capture for a handler that may return a promise. */
-export async function captureAsync<T>(fn: () => T | Promise<T>): Promise<{ outputs: HookOutput[]; value?: T; error: unknown }> {
+export async function captureAsync<T>(fn: () => T | Promise<T>): Promise<Captured<T>> {
   const prev = sink;
   const got: HookOutput[] = [];
   sink = got;
-  try { const value = await fn(); return { outputs: got, value, error: null }; } catch (error) { return { outputs: got, error }; } finally { sink = prev; }
+  try { const value = await fn(); return { outputs: got, value, threw: false, error: null }; } catch (error) { return { outputs: got, threw: true, error }; } finally { sink = prev; }
 }
 
 /** PreToolUse decisions; the reason reaches the model. */

@@ -23,6 +23,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import * as store from '../lib/room/store.ts';
 import { writeFileAtomic } from '../lib/io.ts';
+import { errCode } from '../lib/errors.ts';
 
 const keyPath = (code: string, name: string): string => store.pubPath(name, code).replace(/\.pub$/, '.key');
 
@@ -36,7 +37,7 @@ function createOnce(file: string, data: string): boolean {
   const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
   const fd = fs.openSync(tmp, 'wx', 0o600);
   try { fs.writeSync(fd, data); } finally { fs.closeSync(fd); }
-  try { fs.linkSync(tmp, file); return true; } catch (e) { if ((e as NodeJS.ErrnoException).code === 'EEXIST') return false; throw e; } finally {
+  try { fs.linkSync(tmp, file); return true; } catch (e) { if (errCode(e) === 'EEXIST') return false; throw e; } finally {
     try { fs.unlinkSync(tmp); } catch { /* gone */ }
   }
 }
@@ -49,7 +50,7 @@ function ensure(code: string, name: string): crypto.KeyObject {
   if (hit) return hit;
   mkdir700(path.dirname(file));
   let pem: string | null = null;
-  try { pem = fs.readFileSync(file, 'utf8'); } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
+  try { pem = fs.readFileSync(file, 'utf8'); } catch (e) { if (errCode(e) !== 'ENOENT') throw e; }
   if (!pem) {
     const { privateKey } = crypto.generateKeyPairSync('ed25519');
     createOnce(file, privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()); // PEM: always a string

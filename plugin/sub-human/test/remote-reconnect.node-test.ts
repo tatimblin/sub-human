@@ -25,10 +25,11 @@ import * as memory from '../lib/remote/transports/memory.ts';
 import * as clock from '../lib/clock.ts';
 import { leaseFresh } from '../lib/room/members.ts';
 import { RoomError } from '../lib/room/validate.ts';
+import { errCode, msgOf } from '../lib/errors.ts';
 import { MirrorRoomStore } from '../lib/room/store-mirror.ts';
 import * as seatKey from '../hooks/seat-key.ts';
 import type { Client } from '../lib/remote/client.ts';
-import type { CodedError, DecodedFrame, Flush, RunningLink, SignedPayload } from '../lib/remote/types-core.ts';
+import type { DecodedFrame, Flush, RunningLink, SignedPayload } from '../lib/remote/types-core.ts';
 import type { SshSpec, Transport } from '../lib/remote/types-rest.ts';
 import type { Entry, EntryInput, Link, LinkStateRecord, RoomStore } from '../lib/room/types.ts';
 
@@ -124,7 +125,7 @@ test('outbox: only a signed @room or @claude post by a person is queueable; at m
   const dir = h.tmpDir('sh-outbox-', t);
   const box = outbox.open(dir, { max: 3, ageMs: 1000 });
   assert.deepEqual([box.add(p as SignedPayload, 0), box.add(say(code, 'two') as SignedPayload, 500), box.add(say(code, 'three') as SignedPayload, 900)], [1, 2, 3]);
-  assert.throws(() => box.add(say(code, 'four') as SignedPayload), (e: CodedError) => e.code === 'OFFLINE' && /3 @room posts are queued already/.test(e.message));
+  assert.throws(() => box.add(say(code, 'four') as SignedPayload), (e: RoomError) => e.code === 'OFFLINE' && /3 @room posts are queued already/.test(e.message));
   assert.equal(fs.statSync(box.file).mode & 0o777, 0o600);
   assert.deepEqual(outbox.open(dir).items().map(x => x.payload.text), ['hi', 'two', 'three'], 'kept on disk');
   assert.deepEqual(box.expire(1600).map(x => x.payload.text), ['hi', 'two']);
@@ -245,7 +246,7 @@ test('link: no pong within deadMs and no new connection: the link is dead (OFFLI
   const down = r.states.findLast(s => s.state !== 'online')!;
   assert.match(down.lastError!, /no pong within 250 ms|no route to host/);
   assert.ok(r.conns[0].c.closed);
-  await assert.rejects(r.hook('append', { payload: say(r.code, 'x') }), (e: CodedError) => e.code === 'OFFLINE');
+  await assert.rejects(r.hook('append', { payload: say(r.code, 'x') }), (e: RoomError) => e.code === 'OFFLINE');
   await h.until(() => r.states.at(-1)!.state === 'offline' && r.states.at(-1)!.attempt! >= 2, 3000, 5);
   r.refuse = false;
   await h.until(() => l.state() === 'online', 3000, 5);
@@ -292,11 +293,11 @@ test('link: offline, an @room post is queued (consent and agents\' posts are not
   const posts = ['one', 'two', 'three'].map(text => say(r.code, text));
   for (const [i, p] of posts.entries()) assert.deepEqual(await r.hook('append', { payload: p, queue: true }), { queued: i + 1 });
   await assert.rejects(r.hook('append', { payload: signed(r.code, 'bob', { kind: 'signoff', proposal_hash: 'abcdef012345' }), queue: true }),
-    (e: CodedError) => e.code === 'OFFLINE', 'consent is never queued');
+    (e: RoomError) => e.code === 'OFFLINE', 'consent is never queued');
   await assert.rejects(r.hook('append', { payload: store.toPayload(r.code, { kind: 'say', text: 'agent' }, { via: 'agent', from: 'bob' }), queue: true }),
-    (e: CodedError) => e.code === 'OFFLINE', 'an agent\'s post is never queued');
-  await assert.rejects(r.hook('append', { payload: say(r.code, 'not marked') }), (e: CodedError) => e.code === 'OFFLINE', 'only a post the hook marks queue');
-  await assert.rejects(r.hook('beat', { name: 'bob' }), (e: CodedError) => e.code === 'OFFLINE');
+    (e: RoomError) => e.code === 'OFFLINE', 'an agent\'s post is never queued');
+  await assert.rejects(r.hook('append', { payload: say(r.code, 'not marked') }), (e: RoomError) => e.code === 'OFFLINE', 'only a post the hook marks queue');
+  await assert.rejects(r.hook('beat', { name: 'bob' }), (e: RoomError) => e.code === 'OFFLINE');
   assert.equal(r.mirror.kv.get('link').queued, 3);
   assert.equal(r.states.at(-1)!.queued, 3);
   // "two" reached the host before the link died (its reply was lost): it must not land twice
@@ -487,7 +488,7 @@ test('link: a slow link\'s @room post is "sending", kept under its nonce; the la
   await h.until(() => posts(r.host).length === 1 && box(r).size() === 0, 3000, 5);
   assert.deepEqual(posts(r.host), ['slow one'], 'the late copy is the post, once');
   r.slowMs = 0;
-  await assert.rejects(r.hook('append', { payload: p, queue: true }), (e: CodedError) => e.code === 'AUTH' && /placed already/.test(e.message), 'a resend is a replay');
+  await assert.rejects(r.hook('append', { payload: p, queue: true }), (e: RoomError) => e.code === 'AUTH' && /placed already/.test(e.message), 'a resend is a replay');
   await h.until(r.same, 3000, 5);
   assert.deepEqual(posts(r.host), ['slow one']);
   assert.match(r.logged.join('\n'), /slow link: an @room post has no answer within 80 ms/);
@@ -502,14 +503,14 @@ test('link: an op that is never queued times out with an unknown outcome; retryi
   await h.until(() => l.state() === 'online', 3000, 5);
   r.slowMs = 400;
   const agent = store.toPayload(r.code, { kind: 'say', text: 'an agent post' }, { via: 'agent', from: 'bob' });
-  await assert.rejects(r.hook('append', { payload: agent, queue: true }), (e: CodedError) => e.code === 'OFFLINE' && protocol.unknownOutcome(e) && !/nothing was sent/.test(e.message));
+  await assert.rejects(r.hook('append', { payload: agent, queue: true }), (e: RoomError) => e.code === 'OFFLINE' && protocol.unknownOutcome(e) && !/nothing was sent/.test(e.message));
   const once = signed(r.code, 'bob', { kind: 'say', text: 'signed once' }); // not marked queue: as an answer is sent
-  await assert.rejects(r.hook('append', { payload: once }), (e: CodedError) => protocol.unknownOutcome(e));
+  await assert.rejects(r.hook('append', { payload: once }), (e: RoomError) => protocol.unknownOutcome(e));
   assert.equal(box(r).size(), 0, 'never queued');
   await h.until(() => posts(r.host).length === 2, 3000, 5);
   r.slowMs = 0;
   // a retry of the same signed payload (its nonce) is refused as placed already: it can never land twice
-  await assert.rejects(r.hook('append', { payload: once }), (e: CodedError) => e.code === 'AUTH' && /placed already/.test(e.message));
+  await assert.rejects(r.hook('append', { payload: once }), (e: RoomError) => e.code === 'AUTH' && /placed already/.test(e.message));
   assert.deepEqual(posts(r.host), ['an agent post', 'signed once']);
 });
 
@@ -603,7 +604,7 @@ test('link: the host revokes the link: its serve ends the stream AUTH, the daemo
   assert.match(await l.done, /the host removed this machine from room \S+ \(\/sub-human kick\)/);
   assert.equal(l.state(), 'stopped');
   assert.equal(r.mirror.kv.get('link').code, 'AUTH');
-  await assert.rejects(r.hook('append', { payload: say(r.code, 'after revoke'), queue: true }), (e: CodedError) => e.code === 'OFFLINE');
+  await assert.rejects(r.hook('append', { payload: say(r.code, 'after revoke'), queue: true }), (e: RoomError) => e.code === 'OFFLINE');
   assert.equal(box(r).size(), 0, 'not queued: the link is gone for good');
 });
 
@@ -613,9 +614,9 @@ test('link: an ssh link with its own key and a token that ssh now refuses is AUT
   const sshTo: SshSpec = { kind: 'ssh', user: 'host', host: 'devbox', key: '/k/id_ed25519' };
   const own = { token: 'tok', transport: sshTo } as Link; // the fields keyRefused reads (no code)
   const e1 = await linkConnect.keyRefused(own, denied, off);
-  assert.deepEqual([e1!.code, /revoked/.test(e1!.message)], ['AUTH', true]);
+  assert.deepEqual([errCode(e1), /revoked/.test(msgOf(e1))], ['AUTH', true]);
   assert.equal(await linkConnect.keyRefused({ ...own, token: undefined, invite: 'sh2.x' }, denied, off), off, 'not admitted yet: keep trying');
   assert.equal(await linkConnect.keyRefused({ ...own, transport: { ...sshTo, key: undefined } }, denied, off), off, 'the user\'s own keys: maybe an agent not loaded');
   assert.equal(await linkConnect.keyRefused(own, { stderr: () => 'ssh: connect to host devbox port 22: Connection refused' }, off), off);
-  assert.equal(await linkConnect.keyRefused(own, Promise.resolve(denied), off).then(e => e!.code), 'AUTH', 'an async transport');
+  assert.equal(await linkConnect.keyRefused(own, Promise.resolve(denied), off).then(errCode), 'AUTH', 'an async transport');
 });

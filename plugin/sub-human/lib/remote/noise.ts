@@ -47,6 +47,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { CODED, errCode, msgOf } from '../errors.ts';
 
 /** A pattern's message tokens (both patterns here have the pre-message <- s). */
 type Token = 'e' | 's' | 'ee' | 'es' | 'se';
@@ -64,6 +65,7 @@ const EMPTY = Buffer.alloc(0);
 class NoiseError extends Error {
   code: 'NOISE';
   constructor(msg: string) { super(msg); this.code = 'NOISE'; }
+  get [CODED](): true { return true; }
 }
 
 /** A raw X25519 pair: 32-byte Buffers. */
@@ -98,7 +100,7 @@ function dh(priv: Buffer | null, pub: Buffer | null): Buffer {
     out = crypto.diffieHellman({ privateKey: privObj(check32(priv, 'a private key')), publicKey: pubObj(check32(pub, 'a public key')) });
   } catch (e) {
     if (e instanceof NoiseError) throw e;
-    throw new NoiseError(`X25519 failed (${(e as Error).message}): a bad or low-order public key`); // OpenSSL refuses an all-zero result itself
+    throw new NoiseError(`X25519 failed (${msgOf(e)}): a bad or low-order public key`); // OpenSSL refuses an all-zero result itself
   }
   if (out.every(b => b === 0)) throw new NoiseError('X25519 gave an all-zero secret (a low-order public key)');
   return out;
@@ -291,13 +293,13 @@ function loadOrCreateStatic(file: string): KeyPair {
     if (b64(kp.pub) !== j.pub) throw new NoiseError(`${file}: its public key does not match its private key`);
     return kp;
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+    if (errCode(e) !== 'ENOENT') throw e;
   }
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const kp = generateKeyPair();
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify({ v: 1, kind: 'x25519', priv: b64(kp.priv), pub: b64(kp.pub), created_at: new Date().toISOString() }) + '\n', { mode: 0o600 });
-  try { fs.linkSync(tmp, file); } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e; } finally { fs.rmSync(tmp, { force: true }); }
+  try { fs.linkSync(tmp, file); } catch (e) { if (errCode(e) !== 'EEXIST') throw e; } finally { fs.rmSync(tmp, { force: true }); }
   return loadOrCreateStatic(file); // the first of two racing processes wins; both read it
 }
 

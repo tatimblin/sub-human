@@ -23,6 +23,7 @@ import type { Check, CheckStatus, HelloReply, HelloProbe, LinkReport, LinkStateV
 import type { Link } from '../../room/types.ts';
 import type { ProtoRange } from '../../remote/types-core.ts';
 import type { LinkSpec, Transport } from '../../remote/types-rest.ts';
+import { errCode, msgOf } from '../../errors.ts';
 
 const SKEW_WARN_MS = 2 * 60 * 1000;
 /** The reasons that mean the link's invite or credential is spent: only a new invite helps. */
@@ -60,7 +61,7 @@ function helloProbe(spec: LinkSpec, code: string, { timeoutMs = DOCTOR_HELLO_MS,
     } else if (spec.kind === 'pipe' && typeof spec.home === 'string') {
       cmd = { argv: [process.execPath, BIN, 'serve', '--stdio', code], env: { ...env, SUB_HUMAN_HOME: spec.home } };
     }
-  } catch (e) { return Promise.resolve({ ok: false, ms: 0, error: (e as Error).message }); }
+  } catch (e) { return Promise.resolve({ ok: false, ms: 0, error: msgOf(e) }); }
   if (!cmd && (spec.kind === 'wss' || spec.kind === 'ws')) return webHelloProbe(spec, code, { timeoutMs });
   if (!cmd) return Promise.resolve({ ok: false, ms: 0, skipped: true, error: `no reachability check for the ${spec.kind} transport` });
   const params = { proto: protocol.PROTO, client: protocol.PLUGIN_VERSION, caps: {}, machine: lib('home.ts').machineId() };
@@ -111,8 +112,8 @@ async function webHelloProbe(spec: LinkSpec, code: string, { timeoutMs = DOCTOR_
     }), deadline]);
     return { ok: true, ms: Date.now() - t0, t0, t1: Date.now(), reply };
   } catch (e) {
-    const err = e as Error & { code?: string };
-    return { ok: false, ms: Date.now() - t0, error: err.message, ...(err.code ? { code: err.code } : {}) };
+    const code = errCode(e);
+    return { ok: false, ms: Date.now() - t0, error: msgOf(e), ...(code ? { code } : {}) };
   } finally { if (t) t.close(); }
 }
 

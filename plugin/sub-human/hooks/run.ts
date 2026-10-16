@@ -67,15 +67,15 @@ async function main(name: string | undefined): Promise<void> {
   let raw = '';
   if (!tty.isatty(0)) { try { raw = fs.readFileSync(0, 'utf8'); } catch { /* no stdin */ } }
   let input: HookBase = {};
-  let parseError: unknown = null;
+  let parseError: Error | null = null;
   if (raw.trim()) {
-    try { input = payload(JSON.parse(raw)); } catch (err) { parseError = err; }
+    try { input = payload(JSON.parse(raw)); } catch (err) { parseError = err instanceof Error ? err : new Error(String(err)); } // a SyntaxError
   }
   if (process.env.SUB_HUMAN_VIA === 'module' && !process.env.CLAUDE_PID && name !== 'join') process.env.CLAUDE_PID = String(process.ppid);
   await run(name, input, raw, parseError);
 }
 
-async function run<K extends Name>(name: K, base: HookBase, raw: string, parseError: unknown): Promise<void> {
+async function run<K extends Name>(name: K, base: HookBase, raw: string, parseError: Error | null): Promise<void> {
   // The handler's own fields are as Claude Code (or the module) sent them: its input type makes each optional, and it
   // checks each before use. The base fields are checked above.
   const input = base as InputOf<K>;
@@ -89,7 +89,7 @@ async function run<K extends Name>(name: K, base: HookBase, raw: string, parseEr
   });
   let reply: Reply | null | void = got.value;
   let exit = 0;
-  if (got.error) {
+  if (got.threw) {
     const { h } = loaded;
     try { reply = h && h.fail ? h.fail(got.error, input, raw) : null; } catch (err) { logError(err, `${name} fail`); reply = null; }
     if (!h || !h.fail) exit = 1;

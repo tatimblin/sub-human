@@ -58,16 +58,16 @@ function checkLog(entries: readonly Entry[], { from, via, op, now = Date.now() }
 
 function charge(store: Pick<AuthStore, 'kv'>, linkId: string, op: Op, { now = Date.now() }: { now?: number } = {}): void {
   const q = LINK_QUOTAS[op];
-  let err: RoomError | null = null;
+  const refused: { err: RoomError | null } = { err: null }; // set inside update (it may run again)
   store.kv.update(QUOTA_KEY, (cur: Counts | null) => {
-    err = null;
+    refused.err = null;
     const mine = { ...(cur && cur[linkId]) };
     const times = (mine[op] || []).filter(t => now - t < q.windowMs);
-    if (times.length >= q.max) { err = over(op, `this connection's ${op}`, q.windowMs - (now - times[0])); return undefined; }
+    if (times.length >= q.max) { refused.err = over(op, `this connection's ${op}`, q.windowMs - (now - times[0])); return undefined; }
     mine[op] = [...times, now];
     return { ...cur, [linkId]: mine };
   });
-  if (err) throw err;
+  if (refused.err) throw refused.err;
 }
 
 /** A connection's own windows: take(op) counts one, RATE QUOTA when the op's max is reached in its window. */

@@ -22,7 +22,8 @@ import * as memory from '../lib/remote/transports/memory.ts';
 import * as config from '../lib/config.ts';
 import * as env from '../lib/env.ts';
 import type { RoomStore } from '../lib/room/types.ts';
-import type { CodedError, Invites, ShortInvite, AdmissionRecord } from '../lib/remote/types-core.ts';
+import type { Invites, ShortInvite, AdmissionRecord } from '../lib/remote/types-core.ts';
+import type { RoomError } from '../lib/room/validate.ts';
 import type { ConnectOpts } from '../lib/remote/client.ts';
 
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
@@ -60,7 +61,7 @@ function dial(t: TestContext, host: RoomStore, m: ReturnType<typeof machine>, op
   t.after(() => srv.close());
   return client.connect(a, { machine: m.id, machineKey: m.proof(host.code), signMachine: (ch: string) => m.proofFor(host.code, ch), ...opts });
 }
-const refused = async (p: Promise<unknown>): Promise<CodedError> => { try { await p; } catch (e) { return e as CodedError; } throw new Error('it was not refused'); };
+const refused = async (p: Promise<unknown>): Promise<RoomError> => { try { await p; } catch (e) { return e as RoomError; } throw new Error('it was not refused'); };
 
 /** The checkHost an invite line's joiner runs over ssh and a pipe (lib/remote/link-connect.ts). */
 const checkHost = (code: string, word: string) => (host: { key: string; sig: string } | null, nonce: string) => {
@@ -108,7 +109,7 @@ test('the PIN online: none asked for (free), a wrong one costs a try and a room 
   const carol = machine(), mallory = machine();
   const as = { name: 'carol', label: 'carols-mbp' };
   let now = Date.parse('2026-10-15T12:00:00Z');
-  const redeem = (m: ReturnType<typeof machine>, pin?: string) => { try { invites.redeemInvite(host, r.id, { machine: m.id, proven: m.id, as, pin, now }); return null; } catch (e) { return e as CodedError; } };
+  const redeem = (m: ReturnType<typeof machine>, pin?: string) => { try { invites.redeemInvite(host, r.id, { machine: m.id, proven: m.id, as, pin, now }); return null; } catch (e) { return e as RoomError; } };
   assert.equal(redeem(carol)!.reason, 'PIN_NEEDED');
   assert.match(redeem(carol)!.message, /5 tries left/);
   assert.equal(recordOf(host, r.ref).tries, 5, 'asking for the PIN costs nothing');
@@ -152,20 +153,20 @@ test('five wrong PINs burn the invite; the right one after that is refused; a 0.
   const r = mint(host);
   let now = Date.parse('2026-10-15T12:00:00Z');
   const wrong = String((Number(r.pin) + 3) % 10_000).padStart(4, '0');
-  let last: CodedError | null = null;
+  let last: RoomError | null = null;
   for (let i = 0; i < 5; i++) {
     const m = machine(); // a fresh source each time: the invite's own wait still applies
-    try { invites.redeemInvite(host, r.id, { machine: m.id, proven: m.id, as: { name: 'x', label: 'x' }, pin: wrong, now }); } catch (e) { last = e as CodedError; }
+    try { invites.redeemInvite(host, r.id, { machine: m.id, proven: m.id, as: { name: 'x', label: 'x' }, pin: wrong, now }); } catch (e) { last = e as RoomError; }
     now += 60_000;
   }
   assert.equal(last!.reason, 'PIN_LAST');
   assert.match(String(last!.note), /burnt after its last wrong PIN/);
   const m = machine();
-  assert.throws(() => invites.redeemInvite(host, r.id, { machine: m.id, proven: m.id, as: { name: 'x', label: 'x' }, pin: r.pin, now }), (e: CodedError) => e.reason === 'INVITE_BURNT');
+  assert.throws(() => invites.redeemInvite(host, r.id, { machine: m.id, proven: m.id, as: { name: 'x', label: 'x' }, pin: r.pin, now }), (e: RoomError) => e.reason === 'INVITE_BURNT');
   // no try left but no burnt_at (a record whose last wrong PIN was not marked): the right PIN is refused all the same
   const z = mint(host);
   host.kv.update(invites.INVITES_KEY, (cur: Invites | null) => { const k = crypto.createHash('sha256').update(z.id).digest('hex'); return { ...cur, [k]: { ...(cur![k] as ShortInvite), tries: 0 } }; });
-  assert.throws(() => invites.redeemInvite(host, z.id, { machine: m.id, proven: m.id, as: { name: 'x', label: 'x' }, pin: z.pin, now: Date.now() }), (e: CodedError) => e.reason === 'INVITE_BURNT');
+  assert.throws(() => invites.redeemInvite(host, z.id, { machine: m.id, proven: m.id, as: { name: 'x', label: 'x' }, pin: z.pin, now: Date.now() }), (e: RoomError) => e.reason === 'INVITE_BURNT');
   // a record a 0.5.0-beta.15 host left (v 3, its PIN in clear): never redeemed
   const old = crypto.randomBytes(16).toString('base64url');
   host.kv.update(invites.INVITES_KEY, (cur: Invites | null) => ({ ...cur, [crypto.createHash('sha256').update(old).digest('hex')]: { v: 3, short: true, kind: 'ssh', locator: 'ssh:me@box', host_key: null, by: null, door_file: null, created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 60_000).toISOString(), tries: 5, prs: '1234' } as ShortInvite }));
