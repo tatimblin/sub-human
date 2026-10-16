@@ -1,85 +1,117 @@
 /**
- * plugin/sub-human/lib/room/log-io.ts: the bytes of a room log, <room>/log.jsonl, and its checkpoint <room>/log.idx.
+ * plugin/sub-human/lib/room/log-io.ts: the bytes of a room log, in segments (log.jsonl, log-NNNN.jsonl) and its snapshot.
  * Only lib/room/fs-store.ts imports this file (test/store-bypass.node-test.ts checks it): every other module reads a
- * log through a RoomStore. One JSON entry per line, appended under <log>.lock; nothing here knows what an entry means
- * beyond its id, its prev (the chain) and whether its kind is a chat kind (rules.ts CHAT_KINDS).
+ * log through a RoomStore. One JSON entry per line, appended under <room>/log.jsonl.lock; nothing here knows what an
+ * entry means beyond its id, its prev (the chain), its at and whether its kind is a chat kind (rules.ts CHAT_KINDS).
+ * Every call takes the room's directory.
  *
- * Reading (every call takes the log file; the caches are per file, for this process):
- *   readAll(file) -> readonly Entry[]   every parseable entry, in order. Cached: a repeat call re-reads nothing when
- *       the file is unchanged and parses only the appended bytes when it grew (same inode, the bytes before the old
- *       end unchanged); a shrink, a new inode, a same-size rewrite or a changed tail drops the cache and re-reads. The
- *       array is the cache itself, frozen: callers never change it (a grown log gives a new array). A last line with
- *       no newline yet is parsed, never cached.
- *   lastId(file), lineHash(file, id) -> hash12 of the stored line (id 0: hash12(''); null: no such line)
- *   tailer(file, {fs, after}?)          entries appended after the moment it was made (after: an id, from the first
- *       line after it instead), parsed and verbatim; reset: the log shrank and reading began again
- *   validateChain(file)                 the whole prev chain
- *   verifyChain(file, idx, {fromOffset, prev, save}?)   incremental from the checkpoint in log.idx (byte 0 when there
- *       is none or it no longer matches); save: true writes the advanced checkpoint, 'lazy' only once it is
- *       IDX_SAVE_BYTES past the saved one (or IDX_SAVE_MS older), false never. log.idx is parsed once per change on
- *       disk, not per call.
- *   readView(file, idx, {after})        every non-chat entry and every entry with id > after, in log order: the same
- *       answer as readAll() for the entries after `after`, without parsing the whole log. It keeps this process's own
- *       checkpoint (in memory, started from log.idx), advances it over each new line it checks, and never writes
- *       log.idx (verifyChain does).
- *   nonChat(file, idx) -> {marked, rest}   the non-chat entries: those in the verified prefix (`marked`: the same
- *       objects, in a prefix-stable array, from call to call) and after it (past a chain break, or a line without its
- *       newline). What the store derives its pinned keys and host from, one new line at a time.
+ * The files (<room>/):
+ *   log.jsonl         the active segment: every append goes here. A room from before segments has only this file,
+ *                     and reads as it always did; it rotates like any other once it passes the size.
+ *   log-NNNN.jsonl    a sealed segment (0001, 0002, ...), never written again. Rotation: once an append leaves
+ *                     log.jsonl at config.segmentMaxBytes() or more (1 MiB), and only when every line of it chains,
+ *                     log.jsonl is linked as the next log-NNNN.jsonl, snapshot.json is written, and log.jsonl is
+ *                     replaced by a file holding only the sealed segment's last line: a segment's first line repeats
+ *                     the previous segment's last (the carry line), so the chain runs on across files, an older
+ *                     plugin's appender still finds the right id and prev, and every reader skips that repeat.
+ *   snapshot.json     the sealed lines in short (lib/room/snapshot.ts: chain head, non-chat entries, the window of
+ *                     recent lines a placement needs, pins, host) plus where they are kept (seg, segs, held, base).
+ *                     A mirror that began from its host's snapshot (install) holds no line before it: held > 1.
+ *   log.idx           retired (the checkpoint before segments): never read; removed at the first rotation.
+ * Sealed segments are kept: an older peer's first sync replays the whole log, and readAll() still gives every line.
+ * A crash between the steps of a rotation is finished by the next append (settle).
+ *
+ * Reading:
+ *   readAll(dir) -> readonly Entry[]   every entry this machine holds, in order: the snapshot's non-chat entries
+ *       before `held` (a mirror that began from a snapshot), the sealed segments, the active segment (carry lines
+ *       skipped). Cached: sealed segments are parsed once; the active one as before (a repeat call re-reads nothing
+ *       when unchanged and parses only the appended bytes when it grew; a shrink, a new inode, a same-size rewrite or
+ *       a changed tail drops that cache). Frozen; a grown log gives a new array. A last line with no newline yet is
+ *       parsed, never cached.
+ *   readView(dir, {after})   every non-chat entry and every entry with id > after, in log order: the snapshot's
+ *       entries, then the active segment through this process's in-memory checkpoint (only its new lines are
+ *       parsed). An `after` before the snapshot reads the sealed segments too.
+ *   nonChat(dir) -> {marked, rest}   the non-chat entries: the snapshot's and the active segment's verified prefix
+ *       (`marked`: the same objects, in a prefix-stable array while the snapshot stands) and after it (past a chain
+ *       break, or a line without its newline). What the store derives its pinned keys and host from.
+ *   recentFrom(dir) -> id    the snapshot's id (0: none): readView({after: it}) parses only the active segment
+ *   snapshotOf(dir) -> SnapshotWire & {held} | null
+ *   lastId(dir), lineHash(dir, id) -> hash12 of the stored line (id 0: hash12(''); null: no such line here)
+ *   tailer(dir, {fs, after}?)   entries appended after the moment it was made (after: an id, from the first line after
+ *       it instead), parsed and verbatim, across segments; a rotation is followed (the rest of the old file, then the
+ *       new one, carry skipped); reset: the log was replaced or shrank and reading began again
+ *   validateChain(dir)       the whole prev chain over every segment this machine holds (a carry line must repeat
+ *       the line before it)
+ *   verifyChain(dir, {fromOffset, prev}?)   incremental over the active segment from this process's own checkpoint
+ *       (in memory; the snapshot vouches for the sealed lines: a segment is sealed only once it chains)
  * Writing:
- *   appendLocked(file, place) -> Entry  under the log lock: read only the log's tail, place({newest, prevLine}) ->
- *       {e, line}, then write the line (after a newline when the last line has none). RoomError LOCK on timeout.
- *   appendVerbatim(file, line)          a line as another machine stored it (the mirror's one writer)
- *   forget(file)                        drop this process's caches of file (it was moved aside or reset)
- *
- * log.idx = {v:1, offset, id, hash, count, marks}: the log's first `offset` bytes (`count` lines, last id `id`) were
- * checked to chain, and hash = hash12 of the line that ends at offset (the next line's prev). marks = [[id, offset,
- * length], ...] for every line in that prefix whose kind is not a chat kind: the lines that decide lanes, proposals,
- * answers, notices. A cache, trusted only while the line before `offset` still hashes to `hash`; rebuilt otherwise.
+ *   appendLocked(dir, place) -> Entry   under the log lock: read only the log's tail (newest first, then the
+ *       snapshot's window), place({newest, prevLine}) -> {e, line}, write the line, then rotate when due
+ *   appendVerbatim(dir, line)           a line as another machine stored it (the mirror's one writer); rotates too
+ *   rotate(dir) -> bool                 seal the active segment now (false: nothing to seal, or it does not chain)
+ *   install(dir, wire)                  a mirror's start from its host's snapshot: snapshot.json and a log.jsonl
+ *                                       holding only the snapshot's line (RoomError PROTOCOL when a log is there)
+ *   setAside(dir, to) -> bool           every line held moved to file `to`, one log again (a demoted host's)
+ *   remove(dir)                         every log file gone (a mirror's reset)
+ *   forget(dir)                         drop this process's caches of the room's log
  */
 
 import nodeFs from 'node:fs';
+import path from 'node:path';
 import { withLock } from '../lock.ts';
-import { writeJsonAtomic, readJson } from '../io.ts';
+import { writeFileAtomic, writeJsonAtomic, readJson } from '../io.ts';
 import { hash12 } from '../text.ts';
+import { segmentMaxBytes, SNAPSHOT_WINDOW_MAX } from '../config.ts';
 import { RoomError } from './validate.ts';
 import { CHAT_KINDS } from './rules.ts';
-import type { ChainCheck, ChainVerify, Entry, Tailer, TailerFs } from './types.ts';
+import * as snapshot from './snapshot.ts';
+import type { ChainCheck, ChainVerify, Entry, LogSnapshot, SnapshotWire, Tailer, TailerFs, WindowItem } from './types.ts';
 
 const fs = nodeFs;
+const ACTIVE = 'log.jsonl';
+const SNAP = 'snapshot.json';
+const IDX = 'log.idx'; // retired
+const SEG_RE = /^log-(\d{4,})\.jsonl$/;
+const activeFile = (dir: string): string => path.join(dir, ACTIVE);
+const snapFile = (dir: string): string => path.join(dir, SNAP);
+const segFile = (dir: string, n: number): string => path.join(dir, `log-${String(n).padStart(4, '0')}.jsonl`);
 
-/** <room>/log.idx: the verified prefix of the log and the byte ranges of its non-chat lines. */
+/** The active segment's checked prefix: its first `offset` bytes chain; marks: its non-chat lines [id, offset, length]. */
 interface Checkpoint {
-  v: 1;
   offset: number;
+  /** the last id checked (the snapshot's at offset 0: the carry line to come repeats it) */
   id: number;
+  /** hash12 of the line that ends at offset (the next line's prev) */
   hash: string;
+  /** lines of the whole log up to offset (the snapshot's count first) */
   count: number;
-  /** [id, offset, length] per non-chat line in the prefix */
+  /** the first id after the snapshot (0: none yet) */
+  first: number;
   marks: [number, number, number][];
 }
-/** One line of the log, found by lineAt: its byte range and id (null for a line without one). */
+/** One line of a file, found by lineAt: its byte range and id (null for a line without one). */
 interface LineSpan { start: number; end: number; id: number | null }
 /** Where a chain check broke: an id whose prev does not chain, or a corrupt line (badAt null, line 1-based). */
 interface ChainBreak { badAt: number | null; line?: number }
-/** readAll's cache of one log file. */
+/** readActive's cache of the active segment. */
 interface ReadCache { dev: number; ino: number; size: number; mtimeMs: number; offset: number; tail: Buffer; entries: readonly Entry[]; all: readonly Entry[] }
-/** This process's view of one log: its checkpoint and the parsed entries of its marks (same order). */
-interface ViewState { dev: number; ino: number; cp: Checkpoint; marked: readonly Entry[] | null; checked: string }
-/** verifyChain's cache of log.idx as last read or written: its stat key and checkpoint. */
-interface DiskCp { key: string; cp: Checkpoint | null; savedAt: number }
-type SaveMode = boolean | 'lazy';
+/** This process's view of a room's active segment: its checkpoint and the parsed entries of its marks (same order). */
+interface ViewState { dev: number; ino: number; snap: LogSnapshot | null; cp: Checkpoint; marked: readonly Entry[] | null; checked: string; joined: readonly Entry[] | null }
+/** verifyChain's own checkpoint (no marks). */
+interface Verified { dev: number; ino: number; snap: LogSnapshot | null; cp: Checkpoint }
 
 const errCode = (e: unknown): string | undefined => (e as NodeJS.ErrnoException | null)?.code;
 const TAIL_CHUNK = 64 * 1024;
 const TAIL_CHECK = 64;              // bytes before the cached end compared on growth
-const IDX_SAVE_BYTES = 64 * 1024;   // verifyChain({save: 'lazy'}): write log.idx once the checkpoint is this far ahead
-const IDX_SAVE_MS = 60_000;         // … or this old
+const EMPTY: readonly Entry[] = Object.freeze([]);
 
-const readCache = new Map<string, ReadCache>();
-const views = new Map<string, ViewState>();
-const disk = new Map<string, DiskCp>();
-
-const ZERO = (): Checkpoint => ({ v: 1, offset: 0, id: 0, hash: hash12(''), count: 0, marks: [] });
+const readCache = new Map<string, ReadCache>();   // active file -> its readAll cache
+const views = new Map<string, ViewState>();       // dir -> readView's view
+const verified = new Map<string, Verified>();     // dir -> verifyChain's checkpoint
+const snaps = new Map<string, { key: string; snap: LogSnapshot | null }>(); // dir -> snapshot.json as last read
+const segCache = new Map<string, { key: string; entries: readonly Entry[] }>(); // sealed file -> its entries
+const prefixes = new Map<string, { snap: LogSnapshot; entries: readonly Entry[] }>(); // dir -> what readAll holds before the active segment
+const alls = new Map<string, { prefix: readonly Entry[]; act: readonly Entry[]; all: readonly Entry[] }>();
 
 function parseLines(text: string): Entry[] {
   const out: Entry[] = [];
@@ -89,14 +121,47 @@ function parseLines(text: string): Entry[] {
   }
   return out;
 }
-const parse = (buf: Buffer): Entry | null => { try { const e = JSON.parse(buf.toString('utf8')); return e && typeof e === 'object' ? e : null; } catch { return null; } };
+const parse = (buf: Buffer | string): Entry | null => { try { const e = JSON.parse(buf.toString()); return e && typeof e === 'object' ? e : null; } catch { return null; } };
+const statKey = (f: string): string => { try { const st = fs.statSync(f); return `${st.ino}:${st.size}:${st.mtimeMs}`; } catch { return ''; } };
 
 /** Open file for reading, or null when it does not exist. */
 function openRead(file: string): number | null {
   try { return fs.openSync(file, 'r'); } catch (e) { if (errCode(e) === 'ENOENT') return null; throw e; }
 }
 
-/** The log's non-empty lines read backwards from byte `end` (newest first), as strings. Reads TAIL_CHUNK at a time. */
+// ---------- the snapshot ----------
+const isInt = (n: unknown, min = 0): n is number => Number.isInteger(n) && (n as number) >= min;
+function validSnap(x: unknown): x is LogSnapshot {
+  const s = x as LogSnapshot | null;
+  return !!s && s.v === 1 && isInt(s.seg) && Array.isArray(s.segs) && isInt(s.held, 1) && isInt(s.base) && isInt(s.id, 1)
+    && typeof s.hash === 'string' && typeof s.line === 'string' && isInt(s.count, 1) && Array.isArray(s.entries)
+    && Array.isArray(s.window) && !!s.pins && typeof s.pins === 'object' && !!s.host && typeof s.host === 'object';
+}
+/** snapshot.json as last written (parsed once per change on disk); null when absent or not a snapshot. */
+function loadSnap(dir: string): LogSnapshot | null {
+  const key = statKey(snapFile(dir));
+  const hit = snaps.get(dir);
+  if (hit && hit.key === key) return hit.snap;
+  const x = key ? readJson(snapFile(dir)) : null;
+  const snap = validSnap(x) ? x : null;
+  snaps.set(dir, { key, snap });
+  return snap;
+}
+/** The sealed segments on disk, by number (a snapshot that went missing is rebuilt from them). */
+function sealedOnDisk(dir: string): number[] {
+  let names: string[] = [];
+  try { names = fs.readdirSync(dir); } catch { return []; }
+  return names.map(n => SEG_RE.exec(n)).filter(m => !!m).map(m => Number(m![1])).sort((a, b) => a - b);
+}
+/** The snapshot; one that is missing or unreadable while sealed segments exist is rebuilt from them (under the lock). */
+function snapOf(dir: string): LogSnapshot | null {
+  const snap = loadSnap(dir);
+  if (snap || !fs.existsSync(segFile(dir, 1))) return snap;
+  return withLock(activeFile(dir) + '.lock', () => loadSnap(dir) || rebuild(dir), { ErrorClass: LockError });
+}
+
+// ---------- line helpers ----------
+/** The file's non-empty lines read backwards from byte `end` (newest first), as strings. Reads TAIL_CHUNK at a time. */
 function* linesBackward(fd: number, end: number): Generator<string, void, undefined> {
   let pos = end;
   let carry = Buffer.alloc(0);
@@ -146,20 +211,6 @@ function lineBefore(fd: number, off: number): string {
 }
 const readRange = (fd: number, off: number, len: number): Buffer => { const b = Buffer.allocUnsafe(len); fs.readSync(fd, b, 0, len, off); return b; };
 
-/** One backward read from byte `end`: the last line (the next entry's prev) and the parseable entries, newest first. */
-function tailFrom(fd: number, end: number): { prevLine: string; newest: Generator<Entry> } {
-  const lines = linesBackward(fd, end);
-  const first = lines.next();
-  function* newest(): Generator<Entry> {
-    for (let n = first; !n.done; n = lines.next()) {
-      let e: Entry | null = null;
-      try { e = JSON.parse(n.value as string); } catch { /* corrupt line: skip */ }
-      if (e && typeof e === 'object') yield e;
-    }
-  }
-  return { prevLine: first.done ? '' : first.value, newest: newest() };
-}
-
 /** The first line starting at or after byte pos (< end): {start, end, id} (id null for a line without one), or null. */
 function lineAt(fd: number, pos: number, end: number): LineSpan | null {
   const W = 4096;
@@ -191,7 +242,7 @@ function lineAt(fd: number, pos: number, end: number): LineSpan | null {
   return { start, end: nl < 0 ? end : nl + 1, id: m ? Number(m[1]) : null };
 }
 
-/** Byte offset of the first line in [0, end) whose id is > after (ids rise through the log), or end. */
+/** Byte offset of the first line in [0, end) whose id is > after (ids rise through a file), or end. */
 function offsetAfter(fd: number, end: number, after: number): number {
   let lo = 0, hi = end;
   const idAt = (pos: number): LineSpan | null => { let L = lineAt(fd, pos, end); while (L && L.id === null) L = lineAt(fd, L.end, end); return L; };
@@ -222,11 +273,19 @@ function endOffset(xfs: TailerFs, file: string): number {
     return 0;
   } finally { xfs.closeSync(fd); }
 }
+/** The byte offset of the first complete line of file whose id is > after (the end of its complete lines when none is). */
+function offsetAfterId(file: string, after: number): number {
+  const end = endOffset(fs, file);
+  if (!end) return 0;
+  const fd = fs.openSync(file, 'r');
+  try { return offsetAfter(fd, end, after); } finally { fs.closeSync(fd); }
+}
 
 // ---------- readAll ----------
-function readAll(file: string): readonly Entry[] {
+/** Every parseable entry of the active segment (carry line included), cached as described above. */
+function readActive(file: string): readonly Entry[] {
   const fd = openRead(file);
-  if (fd === null) { readCache.delete(file); return []; }
+  if (fd === null) { readCache.delete(file); return EMPTY; }
   try {
     const st = fs.fstatSync(fd);
     let c: ReadCache | null | undefined = readCache.get(file);
@@ -255,21 +314,83 @@ function readAll(file: string): readonly Entry[] {
   } finally { fs.closeSync(fd); }
 }
 
-/** The id of the last parseable line, from a read of the log's tail only. */
-function lastId(file: string): number {
-  const fd = openRead(file);
-  if (fd === null) return 0;
-  try {
-    for (const l of linesBackward(fd, fs.fstatSync(fd).size)) {
-      try { return JSON.parse(l).id || 0; } catch { /* corrupt: keep looking */ }
-    }
-    return 0;
-  } finally { fs.closeSync(fd); }
+/** A sealed segment's entries, parsed once per file (it never changes). */
+function segEntries(file: string): readonly Entry[] {
+  const key = statKey(file);
+  const hit = segCache.get(file);
+  if (hit && hit.key === key) return hit.entries;
+  let text = '';
+  try { text = fs.readFileSync(file, 'utf8'); } catch { /* missing: nothing held */ }
+  const entries = Object.freeze(parseLines(text));
+  segCache.set(file, { key, entries });
+  return entries;
 }
 
-function lineHash(file: string, id: number): string | null {
-  if (id === 0) return hash12('');
-  if (!Number.isInteger(id) || id < 0) return null;
+/** What readAll holds before the active segment: the snapshot's entries before `held`, then each sealed segment
+ * (its first entry skipped when it repeats the one before: the carry line). */
+function prefixOf(dir: string, snap: LogSnapshot): readonly Entry[] {
+  const hit = prefixes.get(dir);
+  if (hit && hit.snap === snap) return hit.entries;
+  const out: Entry[] = snap.entries.filter(e => e.id < snap.held);
+  let last = snap.held - 1;
+  for (let n = 1; n <= snap.seg; n++) {
+    const es = segEntries(segFile(dir, n));
+    for (let i = 0; i < es.length; i++) {
+      if (i === 0 && !(es[i].id > last)) continue;
+      out.push(es[i]);
+      if (es[i].id > last) last = es[i].id;
+    }
+  }
+  const entries = Object.freeze(out);
+  prefixes.set(dir, { snap, entries });
+  return entries;
+}
+
+/** The active segment's entries after the snapshot (its carry line, and lines a rotation in flight sealed, left out). */
+function afterSnap(act: readonly Entry[], S: number): readonly Entry[] {
+  let i = 0;
+  while (i < act.length && !(act[i].id > S)) i++;
+  return i ? Object.freeze(act.slice(i)) : act;
+}
+
+/** fn(snap), read again while a rotation changed snapshot.json under it (the snapshot and the active file agree). */
+function settled<R>(dir: string, fn: (snap: LogSnapshot | null) => R): R {
+  for (let i = 0; ; i++) {
+    const snap = snapOf(dir);
+    const r = fn(snap);
+    if (i >= 3 || loadSnap(dir) === snap) return r;
+  }
+}
+
+function readAll(dir: string): readonly Entry[] {
+  return settled(dir, snap => {
+    const act = readActive(activeFile(dir));
+    const prefix = snap ? prefixOf(dir, snap) : EMPTY;
+    const c = alls.get(dir);
+    if (c && c.prefix === prefix && c.act === act) return c.all;
+    const tail = snap ? afterSnap(act, snap.id) : act;
+    const all = prefix.length ? Object.freeze(prefix.concat(tail)) : tail;
+    alls.set(dir, { prefix, act, all });
+    return all;
+  });
+}
+
+/** The id of the last parseable line, from a read of the active segment's tail only. */
+function lastId(dir: string): number {
+  const snap = snapOf(dir);
+  const fd = openRead(activeFile(dir));
+  let id = 0;
+  if (fd !== null) {
+    try {
+      for (const l of linesBackward(fd, fs.fstatSync(fd).size)) {
+        try { id = JSON.parse(l).id || 0; break; } catch { /* corrupt: keep looking */ }
+      }
+    } finally { fs.closeSync(fd); }
+  }
+  return Math.max(id, snap ? snap.id : 0);
+}
+
+function lineHashIn(file: string, id: number): string | null {
   const fd = openRead(file);
   if (fd === null) return null;
   try {
@@ -280,91 +401,160 @@ function lineHash(file: string, id: number): string | null {
     return hash12(b[b.length - 1] === 10 ? b.subarray(0, -1) : b);
   } finally { fs.closeSync(fd); }
 }
-
-/** The byte offset of the first complete line whose id is > after (the end of the complete lines when none is). */
-function offsetAfterId(file: string, after: number): number {
-  const end = endOffset(fs, file);
-  if (!end) return 0;
-  const fd = fs.openSync(file, 'r');
-  try { return offsetAfter(fd, end, after); } finally { fs.closeSync(fd); }
+function lineHash(dir: string, id: number): string | null {
+  if (id === 0) return hash12('');
+  if (!Number.isInteger(id) || id < 0) return null;
+  const snap = snapOf(dir);
+  if (!snap || id > snap.id) return lineHashIn(activeFile(dir), id);
+  if (id === snap.id) return snap.hash;
+  const seg = snap.segs.find(([, first, last]) => id >= first && id <= last);
+  return seg ? lineHashIn(segFile(dir, seg[0]), id) : null;
 }
 
-function tailer(file: string, { fs: xfs = nodeFs, after }: { fs?: TailerFs; after?: number } = {}): Tailer {
-  let offset = after === undefined ? endOffset(xfs, file) : offsetAfterId(file, after);
+// ---------- the tailer ----------
+function tailer(dir: string, { fs: xfs = nodeFs, after }: { fs?: TailerFs; after?: number } = {}): Tailer {
+  const act = activeFile(dir);
+  const inoOf = (f: string): number | null => { try { return xfs.statSync(f).ino; } catch { return null; } };
+  let cur = 0;                 // 0: the active segment; n: sealed segment n
+  let offset = 0;
+  let ino: number | null = null; // the active file's, while cur is 0
+  let last = 0;                // the newest id passed on: a file's first line that repeats it (a carry) is skipped
+  if (after === undefined) {
+    offset = endOffset(xfs, act);
+    ino = inoOf(act);
+    last = lastId(dir);
+  } else {
+    const snap = snapOf(dir);
+    const seg = snap && after < snap.id ? snap.segs.find(([, , l]) => l > after) : undefined;
+    if (seg) cur = seg[0];
+    offset = offsetAfterId(cur ? segFile(dir, cur) : act, after);
+    if (!cur) ino = inoOf(act);
+    last = after;
+  }
+  /** Read the complete lines of file in [offset, size) into the poll's output. */
+  function read(file: string, size: number, out: { entries: Entry[]; lines: string[] }): void {
+    const fd = xfs.openSync(file, 'r');
+    let buf: Buffer;
+    try {
+      buf = Buffer.allocUnsafe(size - offset);
+      xfs.readSync(fd, buf, 0, buf.length, offset);
+    } finally { xfs.closeSync(fd); }
+    let pos = 0;
+    for (let nl: number; (nl = buf.indexOf(10, pos)) >= 0; pos = nl + 1) {
+      const at = offset + pos;
+      if (nl > pos) {
+        const line = buf.toString('utf8', pos, nl);
+        let e: Entry | null = null;
+        try { e = JSON.parse(line); } catch { /* corrupt: passed on as a line */ }
+        if (!(at === 0 && e && !(e.id > last))) { // a carry line: the previous file's last, passed on already
+          out.lines.push(line);
+          if (e) { out.entries.push(e); if (e.id > last) last = e.id; }
+        }
+      }
+    }
+    offset += pos;
+  }
+  /** The sealed segment the active file of inode `old` became (a rotation), else 0. */
+  function sealedAs(old: number): number {
+    const snap = snapOf(dir);
+    for (let n = snap ? snap.seg : 0; n >= 1 && snap && n > snap.seg - 4; n--) if (inoOf(segFile(dir, n)) === old) return n;
+    return 0;
+  }
   return {
     get offset() { return offset; },
     poll() {
-      let st: nodeFs.Stats;
-      try { st = xfs.statSync(file); } catch (e) { if (errCode(e) === 'ENOENT') return { entries: [], lines: [], reset: false }; throw e; }
+      const out = { entries: [] as Entry[], lines: [] as string[] };
       let reset = false;
-      if (st.size < offset) { offset = 0; reset = true; }
-      if (st.size === offset) return { entries: [], lines: [], reset };
-      const fd = xfs.openSync(file, 'r');
-      let buf: Buffer;
-      try {
-        buf = Buffer.allocUnsafe(st.size - offset);
-        xfs.readSync(fd, buf, 0, buf.length, offset);
-      } finally { xfs.closeSync(fd); }
-      const entries: Entry[] = [], lines: string[] = [];
-      let pos = 0;
-      for (let nl: number; (nl = buf.indexOf(10, pos)) >= 0; pos = nl + 1) {
-        if (nl > pos) {
-          const line = buf.toString('utf8', pos, nl);
-          lines.push(line);
-          try { entries.push(JSON.parse(line)); } catch { /* corrupt */ }
+      const restart = () => { offset = 0; last = 0; reset = true; };
+      for (let guard = 0; guard < 100_000; guard++) {
+        if (cur > 0) {
+          const f = segFile(dir, cur);
+          let size = -1;
+          try { size = xfs.statSync(f).size; } catch (e) { if (errCode(e) !== 'ENOENT') throw e; }
+          if (size < 0) { cur = 0; ino = null; restart(); continue; } // set aside or reset under the tailer
+          if (size > offset) read(f, size, out);
+          const snap = snapOf(dir);
+          if (snap && cur < snap.seg) cur++; else { cur = 0; ino = inoOf(act); }
+          offset = 0;
+          continue;
         }
-        offset += nl + 1 - pos;
+        let st: nodeFs.Stats;
+        try { st = xfs.statSync(act); } catch (e) { if (errCode(e) === 'ENOENT') return { ...out, reset }; throw e; }
+        if (ino !== null && st.ino !== ino) {
+          const n = sealedAs(ino);
+          ino = null;
+          if (n) { cur = n; continue; } // rotated: the rest of the old file, then on
+          restart();
+        }
+        ino = st.ino;
+        if (st.size < offset) restart();
+        if (st.size > offset) read(act, st.size, out);
+        return { ...out, reset };
       }
-      return { entries, lines, reset };
+      return { ...out, reset };
     },
   };
 }
 
 // ---------- the chain ----------
-function validateChain(file: string): ChainCheck {
-  let raw = '';
-  try { raw = fs.readFileSync(file, 'utf8'); } catch { return { ok: true, count: 0 }; }
-  const lines = raw.split('\n').filter(Boolean);
-  let prev = '';
-  for (let i = 0; i < lines.length; i++) {
-    let e: Entry;
-    try { e = JSON.parse(lines[i]); } catch { return { ok: false, badAt: null, line: i + 1, count: lines.length }; }
-    if (e.prev !== undefined && e.prev !== hash12(prev)) return { ok: false, badAt: e.id, count: lines.length };
-    prev = lines[i];
+/** Every line this machine holds, in order, each file's carry line flagged. */
+function* heldLines(dir: string, snap: LogSnapshot | null): Generator<{ line: string; carry: boolean; first: boolean }> {
+  const files = [...Array.from({ length: snap ? snap.seg : 0 }, (_, i) => segFile(dir, i + 1)), activeFile(dir)];
+  let last = snap ? snap.held - 1 : 0;
+  let first = true;
+  for (const f of files) {
+    let raw = '';
+    try { raw = fs.readFileSync(f, 'utf8'); } catch { continue; }
+    let i = 0;
+    for (const line of raw.split('\n')) {
+      if (!line) continue;
+      const e = parse(line);
+      const carry = i++ === 0 && !!e && !(e.id > last) && !!snap;
+      if (e && e.id > last) last = e.id;
+      yield { line, carry, first };
+      first = false;
+    }
   }
-  return { ok: true, count: lines.length };
 }
 
-/** cp still describes the log open at fd (size bytes): its offset a line boundary whose line before hashes to cp.hash. */
-const holds = (fd: number, size: number, cp: Checkpoint): boolean => cp.offset <= size && atBoundary(fd, cp.offset)
-  && hash12(cp.offset ? lineBefore(fd, cp.offset) : '') === cp.hash;
+function validateChain(dir: string): ChainCheck {
+  const snap = snapOf(dir);
+  let prev: string | null = snap && snap.held > 1 ? null : ''; // a mirror from a snapshot: its first line is the anchor
+  let count = snap ? snap.base : 0;
+  let before = '';
+  for (const { line, carry, first } of heldLines(dir, snap)) {
+    const e = parse(line);
+    if (prev === null && first) { prev = line; before = line; continue; }
+    if (carry) {
+      if (line !== before) return { ok: false, badAt: e ? e.id : null, count };
+      continue;
+    }
+    count++;
+    if (!e) return { ok: false, badAt: null, line: count, count };
+    if (e.prev !== undefined && e.prev !== hash12(prev as string)) return { ok: false, badAt: e.id, count };
+    prev = line;
+    before = line;
+  }
+  return { ok: true, count };
+}
 
-/** log.idx as saved, parsed once per change on disk; null when absent or not a checkpoint. */
-function savedCp(idx: string): Checkpoint | null {
-  let key = '';
-  try { const st = fs.statSync(idx); key = `${st.ino}:${st.size}:${st.mtimeMs}`; } catch { /* none */ }
-  const hit = disk.get(idx);
-  if (hit && hit.key === key) return hit.cp;
-  const x = key ? readJson(idx) : null;
-  const cp = x && x.v === 1 && Number.isInteger(x.offset) && x.offset >= 0 && typeof x.hash === 'string' && Array.isArray(x.marks)
-    && Number.isInteger(x.count) && Number.isInteger(x.id) ? x as Checkpoint : null;
-  disk.set(idx, { key, cp, savedAt: hit ? hit.savedAt : 0 });
-  return cp;
-}
-function saveCp(idx: string, cp: Checkpoint): void {
-  try { writeJsonAtomic(idx, cp, { compact: true }); } catch { return; } // read-only: the next call rescans
-  let key = '';
-  try { const st = fs.statSync(idx); key = `${st.ino}:${st.size}:${st.mtimeMs}`; } catch { /* gone */ }
-  disk.set(idx, { key, cp, savedAt: Date.now() });
-}
+/** Where the active segment's checking starts: after the snapshot (its carry line first), else byte 0. */
+const startCp = (snap: LogSnapshot | null): Checkpoint => ({
+  offset: 0, id: snap ? snap.id : 0, hash: snap ? snap.hash : hash12(''), count: snap ? snap.count : 0, first: 0, marks: [],
+});
+
+/** cp still describes the file open at fd (size bytes): its offset a line boundary whose line before hashes to cp.hash. */
+const holds = (fd: number, size: number, cp: Checkpoint): boolean => cp.offset === 0 || (cp.offset <= size && atBoundary(fd, cp.offset)
+  && hash12(lineBefore(fd, cp.offset)) === cp.hash);
 
 /**
- * Parse the complete lines in [cp.offset, size), checking the chain from cp. Returns the parsed lines ([{off, e}],
- * corrupt ones left out), the checkpoint advanced over every line that chains (it stops at the first break), the
- * non-chat entries it added to the marks, and the break ({badAt} or {line}) if any. A last line without its newline
- * is not scanned.
+ * Parse the complete lines of the active segment in [cp.offset, size), checking the chain from cp. Returns the parsed
+ * lines ([{off, e}], corrupt ones and the carry left out), the checkpoint advanced over every line that chains (it
+ * stops at the first break), the non-chat entries it added to the marks (mark: false keeps none), and the break
+ * ({badAt} or {line}) if any. At byte 0 after a snapshot, the first line must be the snapshot's own (the carry). A
+ * last line without its newline is not scanned.
  */
-function scan(fd: number, size: number, cp: Checkpoint): { out: { off: number; e: Entry }[]; next: Checkpoint; added: Entry[]; bad: ChainBreak | null; complete: number } {
+function scan(fd: number, size: number, cp: Checkpoint, mark = true): { out: { off: number; e: Entry }[]; next: Checkpoint; added: Entry[]; bad: ChainBreak | null; complete: number } {
   const start = cp.offset;
   const buf = Buffer.allocUnsafe(size - start);
   fs.readSync(fd, buf, 0, buf.length, start);
@@ -379,17 +569,24 @@ function scan(fd: number, size: number, cp: Checkpoint): { out: { off: number; e
       const l = buf.toString('utf8', pos, nl);
       let e: Entry | null = null;
       try { const v = JSON.parse(l); e = v && typeof v === 'object' ? v : null; } catch { if (!bad) bad = { badAt: null, line: next.count + 1 }; }
+      if (!bad && start + pos === 0 && cp.id > 0 && e && !(e.id > cp.id)) { // the carry line: the snapshot's own, verbatim
+        if (hash12(l) !== cp.hash) bad = { badAt: e.id };
+        pos = nl + 1;
+        if (!bad) next.offset = start + pos;
+        continue;
+      }
       if (e) {
         out.push({ off: start + pos, e });
         if (!bad && e.prev !== undefined && e.prev !== next.hash) bad = { badAt: e.id };
       }
       if (!bad) {
-        if (e && !CHAT_KINDS.has(e.kind)) {
+        if (e && mark && !CHAT_KINDS.has(e.kind)) {
           if (!grown) { next.marks = cp.marks.slice(); grown = true; }
           next.marks.push([e.id, start + pos, nl - pos]);
           added.push(e);
         }
         next.hash = hash12(l); next.id = (e && e.id) || next.id; next.count++;
+        if (!next.first && e && e.id) next.first = e.id;
       }
     }
     pos = nl + 1;
@@ -398,28 +595,27 @@ function scan(fd: number, size: number, cp: Checkpoint): { out: { off: number; e
   return { out, next, added, bad, complete: start + cut + 1 };
 }
 
-function verifyChain(file: string, idx: string, { fromOffset, prev, save = true }: { fromOffset?: number; prev?: string; save?: SaveMode } = {}): ChainVerify {
-  const fd = openRead(file);
-  if (fd === null) return { ok: true, count: 0, checked: 0, offset: 0, id: 0, hash: hash12(''), from: 0 };
+function verifyChain(dir: string, { fromOffset, prev }: { fromOffset?: number; prev?: string } = {}): ChainVerify {
+  const snap = snapOf(dir);
+  const fd = openRead(activeFile(dir));
+  const head = startCp(snap);
+  if (fd === null) return { ok: true, count: head.count, checked: 0, offset: 0, id: head.id, hash: head.hash, from: 0 };
   try {
-    const size = fs.fstatSync(fd).size;
+    const st = fs.fstatSync(fd);
+    const size = st.size;
     let cp: Checkpoint;
     if (fromOffset !== undefined) {
       if (!Number.isInteger(fromOffset) || fromOffset < 0 || fromOffset > size || !atBoundary(fd, fromOffset)) {
         const error = 'fromOffset is not a line boundary of the log';
         return { ok: false, badAt: null, count: 0, checked: 0, offset: fromOffset, from: fromOffset, error };
       }
-      cp = { ...ZERO(), offset: fromOffset, hash: typeof prev === 'string' ? prev : hash12(fromOffset ? lineBefore(fd, fromOffset) : '') };
+      cp = fromOffset === 0 ? head : { ...head, offset: fromOffset, id: 0, hash: typeof prev === 'string' ? prev : hash12(lineBefore(fd, fromOffset)) };
     } else {
-      const saved = savedCp(idx);
-      cp = saved && holds(fd, size, saved) ? saved : ZERO();
+      const v = verified.get(dir);
+      cp = v && v.snap === snap && v.dev === st.dev && v.ino === st.ino && holds(fd, size, v.cp) ? v.cp : head;
     }
-    const { next, bad } = scan(fd, size, cp);
-    if (fromOffset === undefined && save && next.offset > cp.offset) {
-      const d = disk.get(idx);
-      const due = save === true || next.offset - cp.offset >= IDX_SAVE_BYTES || Date.now() - (d ? d.savedAt : 0) >= IDX_SAVE_MS;
-      if (due) saveCp(idx, next);
-    }
+    const { next, bad } = scan(fd, size, cp, false);
+    if (fromOffset === undefined) verified.set(dir, { dev: st.dev, ino: st.ino, snap, cp: next });
     const r: ChainVerify = { ok: !bad, count: next.count, checked: next.count - cp.count, offset: next.offset, id: next.id, hash: next.hash, from: cp.offset };
     return bad ? { ...r, ...bad } : r;
   } finally { fs.closeSync(fd); }
@@ -441,39 +637,40 @@ function readMarks(fd: number, marks: readonly [number, number, number][]): (Ent
 }
 
 /**
- * This process's checkpoint of the log open at fd, advanced over the complete lines after it: the view state, plus
- * what the advance read ([{off, e}] past the old checkpoint, its first break, and where the complete lines end).
+ * This process's checkpoint of the active segment open at fd, advanced over the complete lines after it: the view
+ * state, plus what the advance read ([{off, e}] past the old checkpoint, its first break, and where the complete lines
+ * end). A new snapshot (a rotation) or another file starts it again after the snapshot.
  */
-function advance(file: string, idx: string, fd: number, size: number): { v: ViewState; out: { off: number; e: Entry }[]; complete: number } {
+function advance(dir: string, snap: LogSnapshot | null, fd: number, size: number): { v: ViewState; out: { off: number; e: Entry }[]; bad: ChainBreak | null; complete: number } {
   const st = fs.fstatSync(fd);
   const key = `${size}:${st.mtimeMs}`;
-  let v = views.get(file);
-  if (v && v.checked !== key && (v.dev !== st.dev || v.ino !== st.ino || !holds(fd, size, v.cp))) v = undefined;
+  let v = views.get(dir);
+  if (v && (v.snap !== snap || (v.checked !== key && (v.dev !== st.dev || v.ino !== st.ino || !holds(fd, size, v.cp))))) v = undefined;
   if (!v) {
-    const saved = savedCp(idx);
-    v = { dev: st.dev, ino: st.ino, cp: saved && holds(fd, size, saved) ? saved : ZERO(), marked: null, checked: key };
-    views.set(file, v);
+    v = { dev: st.dev, ino: st.ino, snap, cp: startCp(snap), marked: [], checked: key, joined: null };
+    views.set(dir, v);
   }
   v.checked = key;
   if (!v.marked) {
     const got = readMarks(fd, v.cp.marks);
-    if (got.some(e => !e)) { v.cp = ZERO(); v.marked = []; } // a marked line no longer parses: rebuild from byte 0
+    if (got.some(e => !e)) { v.cp = startCp(snap); v.marked = []; } // a marked line no longer parses: from the start
     else v.marked = Object.freeze(got as Entry[]);
   }
-  const { out, next, added, complete } = scan(fd, size, v.cp);
+  const { out, next, added, bad, complete } = scan(fd, size, v.cp);
   if (next.offset > v.cp.offset) {
     v.cp = next;
-    if (added.length) v.marked = Object.freeze(v.marked.concat(added));
+    if (added.length) { v.marked = Object.freeze(v.marked!.concat(added)); v.joined = null; }
   }
-  return { v, out, complete };
+  return { v, out, bad, complete };
 }
 
-function readView(file: string, idx: string, { after }: { after: number }): Entry[] {
-  const fd = openRead(file);
+/** The active segment's view: its non-chat entries and every entry with id > after (after >= the snapshot's id). */
+function activeView(dir: string, snap: LogSnapshot | null, after: number): Entry[] {
+  const fd = openRead(activeFile(dir));
   if (fd === null) return [];
   try {
     const size = fs.fstatSync(fd).size;
-    const { v, out, complete } = advance(file, idx, fd, size);
+    const { v, out, complete } = advance(dir, snap, fd, size);
     const cp = v.cp, marks = cp.marks, marked = v.marked!;
     const res: Entry[] = [];
     // the prefix: marked lines, and (after < cp.id) every line from the first with id > after
@@ -488,7 +685,7 @@ function readView(file: string, idx: string, { after }: { after: number }): Entr
         if (nl < 0) nl = buf.length;
         if (nl > pos) {
           if (k < marks.length && marks[k][1] === from + pos) res.push(marked[k++]);
-          else { const e = parse(buf.subarray(pos, nl)); if (e) res.push(e); }
+          else { const e = parse(buf.subarray(pos, nl)); if (e && e.id > after) res.push(e); }
         }
         pos = nl + 1;
       }
@@ -504,41 +701,222 @@ function readView(file: string, idx: string, { after }: { after: number }): Entr
   } finally { fs.closeSync(fd); }
 }
 
-function nonChat(file: string, idx: string): { marked: readonly Entry[]; rest: Entry[] } {
-  const fd = openRead(file);
-  if (fd === null) return { marked: [], rest: [] };
-  try {
-    const size = fs.fstatSync(fd).size;
-    const { v, out, complete } = advance(file, idx, fd, size);
-    const rest = out.filter(x => x.off >= v.cp.offset && !CHAT_KINDS.has(x.e.kind)).map(x => x.e);
-    if (size > complete) { const e = parse(readRange(fd, complete, size - complete)); if (e && !CHAT_KINDS.has(e.kind)) rest.push(e); }
-    return { marked: v.marked!, rest };
-  } finally { fs.closeSync(fd); }
+function readView(dir: string, { after }: { after: number }): Entry[] {
+  return settled(dir, snap => {
+    const S = snap ? snap.id : 0;
+    const tail = activeView(dir, snap, Math.max(after, S));
+    if (!snap) return tail;
+    if (after >= S) return snap.entries.length ? snap.entries.concat(tail) : tail;
+    // a reader behind the snapshot: the sealed segments' chat after `after` too
+    const head = prefixOf(dir, snap).filter(e => !CHAT_KINDS.has(e.kind) || e.id > after);
+    return head.concat(tail);
+  });
+}
+
+function nonChat(dir: string): { marked: readonly Entry[]; rest: Entry[] } {
+  return settled(dir, snap => {
+    const fd = openRead(activeFile(dir));
+    if (fd === null) return { marked: snap ? snap.entries : EMPTY, rest: [] };
+    try {
+      const size = fs.fstatSync(fd).size;
+      const { v, out, complete } = advance(dir, snap, fd, size);
+      const rest = out.filter(x => x.off >= v.cp.offset && !CHAT_KINDS.has(x.e.kind)).map(x => x.e);
+      if (size > complete) { const e = parse(readRange(fd, complete, size - complete)); if (e && !CHAT_KINDS.has(e.kind)) rest.push(e); }
+      if (!v.joined) v.joined = snap && snap.entries.length ? Object.freeze(snap.entries.concat(v.marked!)) : v.marked!;
+      return { marked: v.joined, rest };
+    } finally { fs.closeSync(fd); }
+  });
+}
+
+const recentFrom = (dir: string): number => { const s = snapOf(dir); return s ? s.id : 0; };
+function snapshotOf(dir: string): (SnapshotWire & { held: number }) | null {
+  const s = snapOf(dir);
+  return s ? { ...snapshot.toWire(s), held: s.held } : null;
 }
 
 // ---------- writing ----------
 /** The log lock's timeout: RoomError LOCK with withLock's message (RoomError itself takes the code first). */
 class LockError extends RoomError { constructor(message: string) { super('LOCK', message); } }
 
-function appendLocked(file: string, place: (tail: { newest: Iterable<Entry>; prevLine: string }) => { e: Entry; line: string }): Entry {
-  return withLock(file + '.lock', () => {
-    const fd = fs.openSync(file, 'a+', 0o600);
+/**
+ * One backward read of the active segment from byte `end`: the last line (the next entry's prev) and the parseable
+ * entries, newest first, then the snapshot's window (what a placement looks back over across a rotation).
+ */
+function tailFrom(fd: number, end: number, snap: LogSnapshot | null): { prevLine: string; newest: Generator<Entry> } {
+  const lines = linesBackward(fd, end);
+  const first = lines.next();
+  function* newest(): Generator<Entry> {
+    let low = Infinity;
+    for (let n = first; !n.done; n = lines.next()) {
+      let e: Entry | null = null;
+      try { e = JSON.parse(n.value as string); } catch { /* corrupt line: skip */ }
+      if (e && typeof e === 'object') { if (e.id < low) low = e.id; yield e; }
+    }
+    if (!snap) return;
+    for (let i = snap.window.length - 1; i >= 0; i--) {
+      const w: WindowItem = snap.window[i];
+      if (w.id < low) yield w as Entry; // the fields scanTail reads
+    }
+  }
+  return { prevLine: first.done ? (snap ? snap.line : '') : first.value, newest: newest() };
+}
+
+/** Under the lock: the snapshot, with a rotation a crash interrupted finished (the active file still the sealed one, or
+ * gone): log.jsonl becomes the snapshot's line alone again. */
+function settle(dir: string): LogSnapshot | null {
+  const snap = loadSnap(dir) || (fs.existsSync(segFile(dir, 1)) ? rebuild(dir) : null);
+  if (!snap) return null;
+  const act = activeFile(dir);
+  let ino: number | null = null;
+  try { ino = fs.statSync(act).ino; } catch { /* gone */ }
+  let sealedIno: number | null = null;
+  try { if (snap.seg) sealedIno = fs.statSync(segFile(dir, snap.seg)).ino; } catch { /* gone */ }
+  if (ino === null || (sealedIno !== null && ino === sealedIno)) {
+    writeFileAtomic(act, snap.line + '\n', { mode: 0o600 });
+    forget(dir);
+  }
+  return snap;
+}
+
+function appendLocked(dir: string, place: (tail: { newest: Iterable<Entry>; prevLine: string }) => { e: Entry; line: string }): Entry {
+  const act = activeFile(dir);
+  return withLock(act + '.lock', () => {
+    const snap = settle(dir);
+    const fd = fs.openSync(act, 'a+', 0o600);
+    let e: Entry, end: number;
     try {
       const size = fs.fstatSync(fd).size;
       let endsNl = true;
       if (size) { const b = Buffer.alloc(1); fs.readSync(fd, b, 0, 1, size - 1); endsNl = b[0] === 10; }
-      const { e, line } = place(tailFrom(fd, size));
-      fs.writeSync(fd, (endsNl ? '' : '\n') + line + '\n');
-      return e;
+      const r = place(tailFrom(fd, size, snap));
+      const text = (endsNl ? '' : '\n') + r.line + '\n';
+      fs.writeSync(fd, text);
+      e = r.e;
+      end = size + Buffer.byteLength(text);
     } finally { fs.closeSync(fd); }
+    if (end >= segmentMaxBytes()) { try { rotate(dir, true); } catch { /* sealed at the next append instead */ } }
+    return e;
   }, { ErrorClass: LockError });
 }
 
-const appendVerbatim = (file: string, line: string): void => fs.appendFileSync(file, line + '\n', { mode: 0o600 });
+function appendVerbatim(dir: string, line: string): void {
+  const act = activeFile(dir);
+  withLock(act + '.lock', () => {
+    settle(dir);
+    fs.appendFileSync(act, line + '\n', { mode: 0o600 });
+    let size = 0;
+    try { size = fs.statSync(act).size; } catch { /* gone */ }
+    if (size >= segmentMaxBytes()) { try { rotate(dir, true); } catch { /* the next line tries again */ } }
+  }, { ErrorClass: LockError });
+}
 
-function forget(file: string): void { readCache.delete(file); views.delete(file); }
+/** The snapshot of the sealed segments on disk, written (a snapshot.json lost or unreadable: under the lock). */
+function rebuild(dir: string): LogSnapshot | null {
+  let snap: LogSnapshot | null = null;
+  for (const n of sealedOnDisk(dir)) {
+    if (n !== (snap ? snap.seg : 0) + 1) break;
+    let lines: string[] = [];
+    try { lines = fs.readFileSync(segFile(dir, n), 'utf8').split('\n').filter(Boolean); } catch { break; }
+    const prev: LogSnapshot | null = snap;
+    const S: number = prev ? prev.id : 0;
+    const real: string[] = lines.filter((l, i) => !(i === 0 && prev && !((parse(l) || { id: 0 }).id > S)));
+    const es: Entry[] = real.map(l => parse(l)).filter((e): e is Entry => !!e);
+    if (!es.length) break;
+    const wire = snapshot.extend(prev, { nonChat: es.filter(e => !CHAT_KINDS.has(e.kind)), recent: es.slice(-SNAPSHOT_WINDOW_MAX), line: real.at(-1)!, lines: real.length });
+    snap = { v: 1, ...wire, seg: n, segs: [...(snap ? snap.segs : []), [n, es[0].id, wire.id]], held: snap ? snap.held : es[0].id, base: snap ? snap.base : 0, at: new Date().toISOString() };
+  }
+  if (snap) { writeJsonAtomic(snapFile(dir), snap, { compact: true }); forget(dir); }
+  return snap;
+}
+
+/**
+ * Seal the active segment: link it as the next log-NNNN.jsonl, write snapshot.json, replace log.jsonl with the sealed
+ * last line. Nothing is sealed when the segment does not chain to the end (a break, a line without its newline) or
+ * holds no line after the snapshot. locked: the caller holds the log lock.
+ */
+function rotate(dir: string, locked = false): boolean {
+  const act = activeFile(dir);
+  if (!locked) return withLock(act + '.lock', () => rotate(dir, true), { ErrorClass: LockError });
+  const snap = settle(dir);
+  const fd = openRead(act);
+  if (fd === null) return false;
+  let next: LogSnapshot;
+  try {
+    const size = fs.fstatSync(fd).size;
+    const { v, bad } = advance(dir, snap, fd, size);
+    const S = snap ? snap.id : 0;
+    if (bad || v.cp.offset !== size || !(v.cp.id > S) || !v.cp.first) return false;
+    const line = lineBefore(fd, size);
+    const lastAt = Date.parse((parse(line) as Entry).at);
+    const recent: Entry[] = [];
+    for (const l of linesBackward(fd, size)) {
+      const e = parse(l);
+      if (!e || !(e.id > S) || Date.parse(e.at) < lastAt - snapshot.WINDOW_MS || recent.length >= SNAPSHOT_WINDOW_MAX) break;
+      recent.push(e);
+    }
+    recent.reverse();
+    const wire = snapshot.extend(snap, { nonChat: v.marked!, recent, line, lines: v.cp.count - (snap ? snap.count : 0) });
+    const n = (snap ? snap.seg : 0) + 1;
+    next = {
+      v: 1, ...wire, seg: n, segs: [...(snap ? snap.segs : []), [n, v.cp.first, wire.id]],
+      held: snap ? snap.held : v.cp.first, base: snap ? snap.base : 0, at: new Date().toISOString(),
+    };
+  } finally { fs.closeSync(fd); }
+  const sealed = segFile(dir, next.seg);
+  fs.rmSync(sealed, { force: true }); // a name left by a rotation a crash cut short: no snapshot names it
+  try { fs.linkSync(act, sealed); } catch { fs.copyFileSync(act, sealed); } // a file system without hard links
+  writeJsonAtomic(snapFile(dir), next, { compact: true });
+  writeFileAtomic(act, next.line + '\n', { mode: 0o600 });
+  fs.rmSync(path.join(dir, IDX), { force: true });
+  forget(dir);
+  return true;
+}
+
+function install(dir: string, wire: SnapshotWire): void {
+  const act = activeFile(dir);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  withLock(act + '.lock', () => {
+    let size = 0;
+    try { size = fs.statSync(act).size; } catch { /* none */ }
+    if (size || loadSnap(dir) || fs.existsSync(segFile(dir, 1))) throw new RoomError('PROTOCOL', 'a snapshot arrived for a mirror that holds lines already');
+    const snap: LogSnapshot = { v: 1, ...snapshot.toWire(wire), seg: 0, segs: [], held: wire.id + 1, base: wire.count, at: new Date().toISOString() };
+    writeJsonAtomic(snapFile(dir), snap, { compact: true });
+    writeFileAtomic(act, wire.line + '\n', { mode: 0o600 });
+    forget(dir);
+  }, { ErrorClass: LockError });
+}
+
+/** Every log file of the room (active, sealed, snapshot, the retired log.idx). */
+function logFiles(dir: string): string[] {
+  return [activeFile(dir), snapFile(dir), path.join(dir, IDX), ...sealedOnDisk(dir).map(n => segFile(dir, n))];
+}
+
+/** Every line held moved to `to` as one log (the carry lines left out); false with no log. */
+function setAside(dir: string, to: string): boolean {
+  const snap = loadSnap(dir);
+  if (!snap && !sealedOnDisk(dir).length) {
+    if (!fs.existsSync(activeFile(dir))) return false;
+    fs.renameSync(activeFile(dir), to);
+  } else {
+    const fd = fs.openSync(to, 'wx', 0o600);
+    try { for (const { line, carry } of heldLines(dir, snap)) if (!carry) fs.writeSync(fd, line + '\n'); } finally { fs.closeSync(fd); }
+  }
+  remove(dir);
+  return true;
+}
+
+function remove(dir: string): void {
+  for (const f of logFiles(dir)) fs.rmSync(f, { force: true });
+  forget(dir);
+}
+
+function forget(dir: string): void {
+  const act = activeFile(dir);
+  readCache.delete(act); views.delete(dir); verified.delete(dir); snaps.delete(dir); prefixes.delete(dir); alls.delete(dir);
+  for (const k of [...segCache.keys()]) if (path.dirname(k) === dir) segCache.delete(k);
+}
 
 export {
-  readAll, lastId, lineHash, offsetAfterId, tailer, validateChain, verifyChain, readView, nonChat, appendLocked,
-  appendVerbatim, forget,
+  activeFile, readAll, lastId, lineHash, tailer, validateChain, verifyChain, readView, nonChat, recentFrom, snapshotOf,
+  appendLocked, appendVerbatim, rotate, install, setAside, remove, forget,
 };

@@ -316,6 +316,46 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.equal(v3.badAt, 4);
   });
 
+  test(`store contract (${name}): the log rotates into segments behind the same reads; the chain, pins and nonces carry across`, t => {
+    h.freshHome(t);
+    const was = process.env.SUB_HUMAN_SEGMENT_BYTES;
+    process.env.SUB_HUMAN_SEGMENT_BYTES = '2048'; // a rotation every few lines (read at each append; a host on a worker copies it at its start)
+    t.after(() => { if (was === undefined) delete process.env.SUB_HUMAN_SEGMENT_BYTES; else process.env.SUB_HUMAN_SEGMENT_BYTES = was; });
+    const s = B.make(t);
+    const words = (i: number) => `line ${i} ${'x'.repeat(200)}`;
+    say(s, 'alice', words(1));
+    const replay = placed(s.readAll()[0]);
+    for (let i = 2; i <= 14; i++) say(s, 'alice', words(i));
+    const all = s.readAll();
+    assert.deepEqual(all.map(e => e.id), Array.from({ length: 14 }, (_, i) => i + 1), 'every line, once, in order');
+    for (let i = 1; i < all.length; i++) assert.equal(all[i].prev, store.hash12(JSON.stringify(all[i - 1])), `#${i + 1} chains to #${i}`);
+    for (let i = 1; i < all.length; i++) assert.equal(s.lineHash(all[i - 1].id), all[i].prev, `lineHash(${i})`);
+    assert.deepEqual(s.validateChain(), { ok: true, count: 14 });
+    assert.equal(s.verifyChain().ok, true);
+    assert.equal(s.lastId(), 14);
+    const tl = s.tailer({ after: 2 }).poll();
+    assert.deepEqual(tl.entries.map(e => e.id), Array.from({ length: 12 }, (_, i) => i + 3), 'a tailer from a sealed segment runs on to the end');
+    for (let i = 1; i < tl.lines.length; i++) assert.equal(JSON.parse(tl.lines[i]).prev, store.hash12(tl.lines[i - 1]), 'verbatim across segments');
+    for (const after of [3, 9, 13, Infinity]) {
+      const want = all.filter(e => !store.CHAT_KINDS.has(e.kind) || e.id > after).map(e => e.id);
+      assert.deepEqual(s.readView({ after }).map(e => e.id), want, `readView after ${after}`);
+    }
+    assert.equal(s.trust(all[0]), 'verified', 'a sealed line still verifies against its pinned or local key');
+    assert.throws(() => s.place(replay), (e: Err) => e.code === 'AUTH' && /nonce/.test(e.message), 'a nonce placed before the rotation is still refused');
+    if (s.dir && name !== 'memory') {
+      assert.ok(fs.existsSync(path.join(s.dir, 'log-0001.jsonl')) && fs.existsSync(path.join(s.dir, 'snapshot.json')), 'sealed segments and a snapshot');
+      const snap = s.snapshot()!;
+      assert.ok(snap && snap.id > 1 && snap.id < 14, `the snapshot stands for sealed lines (${snap && snap.id})`);
+      assert.equal(s.recentFrom(), snap.id);
+      assert.equal(snap.hash, s.lineHash(snap.id));
+    } else assert.deepEqual([s.snapshot(), s.recentFrom()], [null, 0], 'a store that keeps no segments');
+    // a tailer made now follows the next rotations: each new line once
+    const live = s.tailer();
+    for (let i = 15; i <= 22; i++) say(s, 'alice', words(i));
+    assert.deepEqual(live.poll().entries.map(e => e.id), Array.from({ length: 8 }, (_, i) => i + 15));
+    assert.deepEqual(s.readAll().map(e => e.id), Array.from({ length: 22 }, (_, i) => i + 1));
+  });
+
   test(`store contract (${name}): cursors default to 0, persist, and refuse unsafe names`, t => {
     h.freshHome(t);
     const s = B.make(t);

@@ -448,3 +448,57 @@ test('the forced-command line a host writes for a link: the stable shim, restric
   assert.equal(fs.statSync(ak).mode & 0o777, 0o600);
   assert.throws(() => sshkeys.appendAuthorized(ak, shim.authorizedLine(code, '0123456789ab', KEY, home), KEY), (e: CodedError) => e.code === 'INVALID', 'one key, one link');
 });
+
+test('remote (memory): subscribe {snapshot: true} gets the snapshot first only from a host that has one, only after 0, and only when it fits a frame', async t => {
+  const { code, host } = hostRoom(t);
+  const c = await linked(t, host);
+  assert.equal(c.snapshots(), true, 'this host\'s caps offer it');
+  const events = (after: number, opts: { snapshot?: boolean } = {}) => {
+    const got: { ev: string; data: unknown }[] = [];
+    const sub = c.subscribe(after, store.open(code).lineHash(after), e => got.push(e), opts);
+    return { got, sub };
+  };
+  const status = (i: number, n = 40) => host.append({ kind: 'status', text: `s${i} ${'x'.repeat(n)}` }, { via: 'system', from: 'claude', system: true });
+  for (let i = 0; i < 5; i++) status(i);
+  // no snapshot yet: the whole log, as before
+  let r = events(0, { snapshot: true });
+  await r.sub.ready;
+  assert.ok(await h.until(() => r.got.filter(e => e.ev === 'entry').length === 5, 3000, 10));
+  assert.ok(!r.got.some(e => e.ev === 'snapshot'));
+  r.sub.stop();
+  // rotated: the snapshot first, then the lines after its id
+  const was = process.env.SUB_HUMAN_SEGMENT_BYTES;
+  process.env.SUB_HUMAN_SEGMENT_BYTES = '1024';
+  t.after(() => { if (was === undefined) delete process.env.SUB_HUMAN_SEGMENT_BYTES; else process.env.SUB_HUMAN_SEGMENT_BYTES = was; });
+  for (let i = 5; i < 40; i++) status(i);
+  const snap = host.snapshot()!;
+  assert.ok(snap && snap.id > 5 && snap.id < 40);
+  r = events(0, { snapshot: true });
+  await r.sub.ready;
+  assert.ok(await h.until(() => r.got.filter(e => e.ev === 'entry').length === 40 - snap.id, 3000, 10));
+  assert.equal(r.got[0].ev, 'snapshot', 'first');
+  assert.deepEqual([(r.got[0].data as { id: number }).id, (r.got[0].data as { hash: string }).hash], [snap.id, snap.hash]);
+  r.sub.stop();
+  // after > 0: a resume, never a snapshot; without the flag: every line (an older mirror)
+  r = events(3, { snapshot: true });
+  await r.sub.ready;
+  assert.ok(await h.until(() => r.got.filter(e => e.ev === 'entry').length === 37, 3000, 10));
+  assert.ok(!r.got.some(e => e.ev === 'snapshot'));
+  r.sub.stop();
+  r = events(0);
+  await r.sub.ready;
+  assert.ok(await h.until(() => r.got.filter(e => e.ev === 'entry').length === 40, 3000, 10));
+  assert.ok(!r.got.some(e => e.ev === 'snapshot'));
+  r.sub.stop();
+  // a snapshot over a frame (its non-chat entries): the whole log instead
+  delete process.env.SUB_HUMAN_SEGMENT_BYTES;
+  for (let i = 0; i < 40; i++) host.append({ kind: 'task_req', text: `task ${i}`, op: 'add', subject: `t${i}`, detail: 'd'.repeat(1900) }, { via: 'agent', from: `a${i}` });
+  for (let i = 0; i < 500; i++) host.append({ kind: 'task', text: `task ${i}`, op: 'update', id: i + 1, subject: 's'.repeat(400), detail: 'd'.repeat(1900), status: 'pending' }, { via: 'system', from: 'claude', system: true });
+  assert.ok((host as store.FsRoomStore).rotate(), 'sealed now');
+  assert.ok(JSON.stringify(host.snapshot()).length > config.LINK_FRAME_MAX_BYTES, 'too big for one frame');
+  const total = host.lastId();
+  r = events(0, { snapshot: true });
+  await r.sub.ready;
+  assert.ok(await h.until(() => r.got.filter(e => e.ev === 'entry').length === total, 5000, 10), `${r.got.length} of ${total}`);
+  assert.ok(!r.got.some(e => e.ev === 'snapshot'));
+});

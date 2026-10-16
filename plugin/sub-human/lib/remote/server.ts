@@ -31,8 +31,11 @@
  *         append     own `from` only; store.place() (validate, rate, replay, verify against the pinned key); a
  *                    signoff or objection is followed by lib/proposal.ts decide() (host only, idempotent). A system
  *                    kind from a link is AUTH (the host writes those)
- *         subscribe  {after, hash}: hash12 of the host's line `after` must equal hash (store.lineHash), else
- *                    FORK; then event 'entry' per line in id order (store.tailer({after}), verbatim), event
+ *         subscribe  {after, hash, snapshot?}: hash12 of the host's line `after` must equal hash (store.lineHash),
+ *                    else FORK (also for a line before the first this host holds: a host that began from a
+ *                    snapshot cannot replay what came before it). snapshot: true with after 0, and a snapshot that
+ *                    fits a frame (store.snapshot(); protocol.ts snapshot): event 'snapshot' first, and the lines
+ *                    from after its id. Then event 'entry' per line in id order (store.tailer({after}), verbatim), event
  *                    'doc' for members (lib/room/members.ts publicView), presence/NAME and tasks when they
  *                    change (all three at the start), 'end' {reason: 'closed'} when the room's Claude is stopped
  *                    or {reason: 'FORK'} when the host log is reset, or {reason: 'AUTH', message} when the
@@ -70,12 +73,14 @@ import * as envelope from '../room/envelope.ts';
 import * as room from '../room.ts';
 import { RoomError, hash12 } from '../room/store.ts';
 import { machineId } from '../home.ts';
-import { FOLLOW_POLL_MS, PROPOSAL_FILE_MAX, LINK_SILENT_MS, LINK_HUMAN_RATE_MAX, LINK_BLOBS_MAX, RATE_WINDOW_MS, envMs } from '../config.ts';
+import {
+  FOLLOW_POLL_MS, PROPOSAL_FILE_MAX, LINK_SILENT_MS, LINK_HUMAN_RATE_MAX, LINK_BLOBS_MAX, LINK_FRAME_MAX_BYTES, RATE_WINDOW_MS, envMs,
+} from '../config.ts';
 import type {
   CodedError, DecodedFrame, ErrorFrame, EventData, EventName, FrameId, IncomingRequest, LinkRecord, Op, OpParams, OpResults, ProtoRange,
 } from './types-core.ts';
 import type { Transport } from './types-rest.ts';
-import type { Members, RoomStore } from '../room/types.ts';
+import type { Members, RoomStore, SnapshotWire } from '../room/types.ts';
 
 type Log = (msg: string) => void;
 /** What hello's credential gives: the link (null: answered, but still unauthenticated) and a new token, once. */
@@ -158,8 +163,10 @@ function docsOf(store: RoomStore): Map<string, unknown> {
 }
 const stopped = (ms: Members): boolean => !!(ms.claude && ms.claude.stopped_at);
 
-/** Stream subscribe request `id`'s events from the line after `after`. Returns {tick() (poll now), stop()}. */
-function stream(s: Session, id: FrameId | undefined, after: number): Stream {
+/** Stream subscribe request `id`'s events from the line after `after` (with snap: the snapshot first, then the lines
+ * after its id). Returns {tick() (poll now), stop()}. */
+function stream(s: Session, id: FrameId | undefined, after: number, snap: SnapshotWire | null = null): Stream {
+  if (snap) after = snap.id;
   const tailer = s.store.tailer({ after });
   const sent = new Map<string, string>(); // doc key -> the JSON last sent
   const priv = { lastId: after }; // the private events sent (lib/handoff.ts streamEvent)
@@ -188,11 +195,18 @@ function stream(s: Session, id: FrameId | undefined, after: number): Stream {
     wasStopped = now;
   }
   const safeTick = () => { try { tick(); } catch (e) { s.log(`sub-human serve: subscribe: ${e && (e as Error).stack || e}`); } };
-  const first = setImmediate(safeTick); // after the subscribe reply
+  const first = setImmediate(() => { if (snap) send('snapshot', snap); safeTick(); }); // after the subscribe reply
   const timer = setInterval(safeTick, FOLLOW_POLL_MS);
   const self: Stream = { tick: safeTick, stop, end };
   function stop() { clearImmediate(first); clearInterval(timer); s.streams.delete(self); }
   return self;
+}
+
+/** The snapshot as the wire carries it, when its event fits one frame (else the whole log is replayed, as to anyone). */
+function fits(id: FrameId | undefined, held: (SnapshotWire & { held: number }) | null): SnapshotWire | null {
+  if (!held) return null;
+  const { held: _, ...wire } = held;
+  return Buffer.byteLength(protocol.encode(protocol.event(id as FrameId, 'snapshot', wire))) < LINK_FRAME_MAX_BYTES ? wire : null;
 }
 
 // ---------- ops ----------
@@ -268,13 +282,18 @@ const OPS: OpHandlers = {
     return { entry };
   },
 
-  subscribe(s, { after, hash }, id) {
+  subscribe(s, { after, hash, snapshot }, id) {
     if (!Number.isInteger(after) || after < 0) throw invalid('subscribe needs {after: id, hash}');
     if (s.store.lineHash(after) !== hash) {
       throw new RoomError('FORK', `the host's line ${after} is not the mirror's; re-mirror with sub-human link --reset ${s.store.code}`);
     }
+    const held = s.store.snapshot();
+    const snap = snapshot === true && after === 0 ? fits(id, held) : null;
+    if (!snap && held && after < held.held - 1) {
+      throw new RoomError('FORK', `this host holds room ${s.store.code}'s log only from line ${held.held - 1} (it began from its host's snapshot) and cannot replay the lines before; update sub-human on this machine, then sub-human link --reset ${s.store.code}`);
+    }
     for (const st of [...s.streams]) st.stop(); // one stream per connection: a new subscribe replaces the old (each is a poller)
-    s.streams.add(stream(s, id, after));
+    s.streams.add(stream(s, id, after, snap));
     return { ok: true };
   },
 

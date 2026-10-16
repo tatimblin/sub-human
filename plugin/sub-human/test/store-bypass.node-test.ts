@@ -51,7 +51,7 @@ function importers(target: string): string[] {
 }
 
 /** The store's own files: the only ones that may know a room's files (lib/room/store.ts lists them). */
-const STORE_FILES = ['lib/room/fs-store.ts', 'lib/room/log-io.ts', 'lib/room/keys.ts', 'lib/room/registry.ts', 'lib/room/store-mirror.ts', 'lib/room/store.ts'];
+const STORE_FILES = ['lib/room/fs-store.ts', 'lib/room/log-io.ts', 'lib/room/snapshot.ts', 'lib/room/keys.ts', 'lib/room/registry.ts', 'lib/room/store-mirror.ts', 'lib/room/store.ts'];
 
 test('store seam: only lib/room/fs-store.ts imports the log\'s bytes (lib/room/log-io.ts)', () => {
   assert.deepEqual(importers('lib/room/log-io.ts'), ['lib/room/fs-store.ts']);
@@ -85,7 +85,7 @@ const ALLOWED = [
   { rel: 'mod/send.ts', line: /^\s*\$\.fs\.read\(`\$\{hello\.home\}\/rooms\/\$\{seat\.code\}\/members\.json`\)\.then\(parse, \(\) => null\),$/ },
 ];
 const allowed = (rel: string, l: string): boolean => ALLOWED.some(a => a.rel === rel && a.line.test(l));
-const FILE_NAMES = /['"`/][^'"`\n]*\b(log\.jsonl|log\.idx|log\.moved|members\.json|tasks\.json|review\.json|session\.json|holds-[^'"`]*\.json|\.cursor)\b/;
+const FILE_NAMES = /['"`/][^'"`\n]*\b(log\.jsonl|log\.idx|log\.moved|log-(?:\d+|\$\{[^}]*\})\.jsonl|snapshot\.json|members\.json|tasks\.json|review\.json|session\.json|holds-[^'"`]*\.json|\.cursor)\b/;
 const SEGMENTS = /path\.join\([^\n]*?['"`](rows|presence|plans|members|keys)['"`]/;
 
 test('store seam: no module outside the store\'s files names a room file or builds a path into a room', () => {
@@ -108,6 +108,7 @@ test('store seam: the lexical checks do catch a bypass', () => {
   assert.ok(FILE_NAMES.test('`${code}/members.json`'));
   assert.ok(SEGMENTS.test("path.join(identity.roomDir(code), 'rows', x)"));
   assert.ok(!FILE_NAMES.test("kv.get('tasks')"));
+  assert.ok(FILE_NAMES.test("path.join(dir, 'snapshot.json')") && FILE_NAMES.test('`log-0001.jsonl`'), 'a segment or the snapshot');
   assert.equal(stripComments('a // log.jsonl\nb'), 'a \nb');
 });
 

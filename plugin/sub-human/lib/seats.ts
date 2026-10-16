@@ -42,7 +42,9 @@
  *       joined" (unless a re-pointed link must rebind it); another seat of this session leaves first ("switched rooms");
  *       pubkey(code, name) is the seat key's public half (hooks/seat-key.ts, which only the join hook loads). Taken:
  *       {ok: true, me, lead, msg} (lead: the mechanics block's last line; msg: the line for the person) or
- *       {ok: false, text, refused} (a refusal, or where a join not let in yet stands)
+ *       {ok: false, text, refused} (a refusal, or where a join not let in yet stands). Every take first runs
+ *       lib/gc.ts sweep (closed rooms, ended sessions' indexes; at most every GC_EVERY_MS, within GC_BUDGET_MS), and
+ *       a seat taken sweeps its room's row maps of ended sessions (gc.sweepRows)
  *   withWhom(code, name) -> string   "with bob, carol", "4 others here" or "nobody else here yet" (the people only)
  */
 
@@ -61,6 +63,7 @@ import type { Wanted } from './remote/joining.ts';
 const require = createRequire(import.meta.url);
 // loaded only by take(): the session-end hook and the remote server never need the link or the listener
 const joining = (): typeof import('./remote/joining.ts') => require('./remote/joining.ts');
+const gc = (): typeof import('./gc.ts') => require('./gc.ts');
 
 /** enter()'s seat: the join hook's, or the remote server's for a seat on another machine. */
 interface EnterOpts {
@@ -209,6 +212,7 @@ function sweepOrphans(): void {
 
 function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd, cur, pubkey }: TakeCtx): Taken {
   let created = false;
+  try { gc().sweep({ keep: code }); } catch { /* the next join sweeps (lib/gc.ts: at most every GC_EVERY_MS, within GC_BUDGET_MS) */ }
   if (!code) {
     sweepOrphans();
     const open: string[] = identity.openRooms();
@@ -246,6 +250,7 @@ function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd,
   }
   if (rebind) { const { rebind: _done, ...l } = links.get(code)!; links.set(code, l); } // rebind: read from it
   joining().dropJoinAs(code);
+  try { gc().sweepRows(code); } catch { /* best effort: rows of ended sessions */ }
   if (host) {
     try { (require('./remote/webhost.ts') as typeof import('./remote/webhost.ts')).ensure(code); } catch { /* best effort */ } // the listener after a reboot
     try { (require('./remote/shim.ts') as typeof import('./remote/shim.ts')).refresh(); } catch { /* best effort */ } // the serve shim a login link runs

@@ -15,7 +15,10 @@
  *                                    {id, from, to, epoch, locator?, expires_at}; private to that link, never in the
  *                                    log), 'moved' (data: {epoch, host, machine, locator, invite | null}: the room
  *                                    moved, after its host_changed line; invite is this link's machine's single-use
- *                                    sh2 invite to the new host, private to that link: lib/handoff.ts)
+ *                                    sh2 invite to the new host, private to that link: lib/handoff.ts), 'snapshot'
+ *                                    (data: the host log's snapshot, lib/room/snapshot.ts SnapshotWire: its chain head
+ *                                    and line, count, non-chat entries, window, pins, host), sent first and only to a
+ *                                    subscribe {after: 0, snapshot: true}; the stream's lines then start after its id
  *   epoch                            hello and append may carry the mirror's host epoch (lib/handoff.ts); the hello
  *                                    reply carries the server's. A hello from a later epoch, or an append from another,
  *                                    is STALE (a host the room moved away from, or a copy not caught up)
@@ -33,7 +36,14 @@
  *   skewMessage({host, joiner}) -> string   {version, proto} each: "host runs sub-human 0.4.0 (protocol 3–4); you run
  *                                    0.3.0 (protocol 2). Update your plugin: /plugin update sub-human" (or "The host
  *                                    must update …" when the joiner is the newer side)
- *   CAPS                             what this end serves: {ops: OPS, fields: FIELDS}
+ *   CAPS                             what this end serves: {ops: OPS, fields: FIELDS, snapshot: true}
+ *   snapshot                         a first sync from the host's snapshot instead of every line (additive, gated by
+ *                                    caps, not by v): a mirror with an empty log asks subscribe {after: 0, hash,
+ *                                    snapshot: true} only of a host whose caps say snapshot: true; such a host with a
+ *                                    snapshot that fits a frame sends the 'snapshot' event, then the lines after it
+ *                                    (else the whole log, as to anyone). An older peer on either side never asks or
+ *                                    never answers, and gets or gives today's replay. The mirror checks the snapshot,
+ *                                    and the lines that follow must chain to its head: FORK otherwise
  *   FIELDS                           entry fields this end's validate accepts that an older host refuses (lib/room/validate.ts):
  *                                    'same' (a proposal's seats that are one person). Gated by caps: a mirror writes one
  *                                    only while its host's hello listed it (the link daemon's document `link` fields,
@@ -56,7 +66,7 @@
  *   decoder() -> {push(chunk) -> frame[]}   buffers partial lines; a malformed line, or one longer than
  *                                    LINK_FRAME_MAX_BYTES, is a PROTOCOL error frame (id null) in its place
  *   isRequest(f), isReply(f), isEvent(f)
- *   EVENTS                           the event names a stream carries: entry doc end handoff moved
+ *   EVENTS                           the event names a stream carries: entry doc end handoff moved snapshot
  */
 
 import { StringDecoder } from 'node:string_decoder';
@@ -97,9 +107,9 @@ function skewMessage({ host, joiner }: { host: PeerVersion; joiner: PeerVersion 
   return `${runs('host runs', host)}; ${runs('you run', joiner).replace(/^you run sub-human /, 'you run ')}. ${fix}`;
 }
 const OPS: Op[] = ['hello', 'join', 'leave', 'beat', 'append', 'subscribe', 'blob.get', 'blob.put', 'ping', 'handoff.accept', 'handoff.refuse'];
-const EVENTS: EventName[] = ['entry', 'doc', 'end', 'handoff', 'moved'];
+const EVENTS: EventName[] = ['entry', 'doc', 'end', 'handoff', 'moved', 'snapshot'];
 const FIELDS: string[] = ['same'];
-const CAPS: Readonly<Caps> = Object.freeze({ ops: OPS, fields: FIELDS });
+const CAPS: Readonly<Caps> = Object.freeze({ ops: OPS, fields: FIELDS, snapshot: true });
 const CODES: Readonly<{ [C in WireCode]: C }> = Object.freeze({
   INVALID: 'INVALID', RATE: 'RATE', LOCK: 'LOCK', NO_ROOM: 'NO_ROOM',
   OFFLINE: 'OFFLINE', HOST_ONLY: 'HOST_ONLY', AUTH: 'AUTH', FORK: 'FORK', PROTOCOL: 'PROTOCOL', STALE: 'STALE',

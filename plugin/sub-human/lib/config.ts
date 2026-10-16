@@ -56,7 +56,7 @@ export const WATCH_POLL_MS = 500;              // `sub-human watch --follow` pol
 
 // ---------- the tail loop's health (lib/tail.ts) ----------
 // The tail never exits on an error (each restart by the mod costs a backoff): it logs (rate-limited), backs
-// off and carries on. Every TAIL_HEALTH_MS it checks the log's hash chain from the log.idx checkpoint and,
+// off and carries on. Every TAIL_HEALTH_MS it checks the log's hash chain from its in-memory checkpoint and,
 // while it is the room's Claude, runs roomClaude.watchdog(code).
 export const TAIL_HEALTH_MS = 5000;            // SUB_HUMAN_TAIL_HEALTH_MS
 export const TAIL_BACKOFF_MS = 1000;           // SUB_HUMAN_TAIL_BACKOFF_MS: first retry delay after an error, doubled per failure
@@ -209,12 +209,36 @@ export const RATE_HUMAN_MAX = 300;             // via=human entries per seat per
 export const LINK_HUMAN_RATE_MAX = 30;          // via=human entries per seat per RATE_WINDOW_MS, over a link
 export const LINK_BLOBS_MAX = 40;               // blob.put per connection (a proposal's plan each; the daemon reconnects)
 
+// ---------- what a home stops keeping (lib/gc.ts; it runs from the join path) ----------
+// A closed room (no seat alive, no link to it, its room Claude stopped) nobody touched in this long is deleted, with its
+// seat keys; so are the folders `sub-human link --forget` set aside. A session index (sessions/by-sid, by-pid) not
+// written in this long whose process is gone, and a session's agent -> row map (rooms/CODE/rows/<session>) whose newest
+// row is this old, go too.
+export const ROOM_GC_MS = 30 * 24 * 60 * 60_000;      // SUB_HUMAN_ROOM_GC_MS
+export const SESSION_INDEX_TTL_MS = 30 * 24 * 60 * 60_000;
+export const ROWS_TTL_MS = 7 * 24 * 60 * 60_000;
+export const GC_EVERY_MS = 6 * 60 * 60_000;           // at most one sweep of the home this often (<home>/gc.json)
+export const GC_BUDGET_MS = 250;                      // a sweep stops when it has run this long; the next one goes on
+
 // ---------- room log integrity (lib/room/{store,validate,render}.js) ----------
 export const ENTRY_TEXT_MAX_BYTES = 16 * 1024; // an entry's text, UTF-8 bytes (validate)
 export const ENTRY_REFS_MAX = 50;              // refs per entry (validate)
 export const ENTRY_STR_MAX = 4000;             // any other string field, JS .length (validate)
 export const ENTRY_LIST_MAX = 50;              // approvers / blockedBy entries (validate)
 export const LOG_LINE_MAX_BYTES = 64 * 1024;   // one serialized log line, UTF-8 bytes (append refuses longer)
+// The log in segments (lib/room/log-io.ts): once the active segment, log.jsonl, holds this many bytes, the line that
+// crosses it seals it as log-NNNN.jsonl and writes snapshot.json. A reader starts from the snapshot and parses only the
+// active segment, so this bounds a cold reader's parse (about 5,000 lines; a few ms) and a rotation's own cost.
+export const SEGMENT_MAX_BYTES = 1024 * 1024;
+/** SEGMENT_MAX_BYTES, or SUB_HUMAN_SEGMENT_BYTES (tests rotate after a few lines), read at each append. */
+export function segmentMaxBytes(): number {
+  const n = Number(process.env.SUB_HUMAN_SEGMENT_BYTES);
+  return Number.isInteger(n) && n >= 256 ? n : SEGMENT_MAX_BYTES;
+}
+// What a snapshot keeps of its last lines for the next placement (rules.ts scanTail): every entry this close before
+// its last line (the rate window, and the nonce window of 2 * SIG_SKEW_MS), at most SNAPSHOT_WINDOW_MAX of them.
+export const SNAPSHOT_WINDOW_MAX = 20_000;
+
 // text lines shown per chat message (the rest is "[+N more lines: read(...)]") and every continuation line's prefix:
 // owned by mod/core, which draws chat too
 export { CHAT_LINES_MAX, CHAT_NEST } from '../mod/core/constants.ts';

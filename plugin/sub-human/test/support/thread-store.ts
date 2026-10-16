@@ -29,14 +29,14 @@ import { home } from '../../lib/home.ts';
 import type { LockOpts } from '../../lib/lock.ts';
 import type {
   AppendOpts, BlobsApi, ChainCheck, ChainVerify, Entry, EntryInput, HostState, KvApi, KvUpdateOpts, Members, MembersApi,
-  Payload, PlaceOpts, Placed, ReadViewOpts, RoomStore, Tailer, Trust,
+  Payload, PlaceOpts, Placed, ReadViewOpts, RoomStore, SnapshotWire, Tailer, Trust,
 } from '../../lib/room/types.ts';
 
 const { FsRoomStore, blobRef } = store;
 type FsStore = InstanceType<typeof FsRoomStore>;
 
 /** What crosses the bridge per call: the method's args, and where this thread finds the room. */
-interface CallParams { code: string; dir: string; home: string; args: unknown[] }
+interface CallParams { code: string; dir: string; home: string; seg?: string; args: unknown[] }
 
 // ---------- the calling thread ----------
 let bridge: Bridge | null = null;
@@ -55,7 +55,9 @@ class ThreadRoomStore implements RoomStore {
   lastId: () => number;
   lineHash: (id: number) => string | null;
   validateChain: () => ChainCheck;
-  verifyChain: (opts?: { fromOffset?: number; prev?: string; save?: boolean }) => ChainVerify;
+  verifyChain: (opts?: { fromOffset?: number; prev?: string }) => ChainVerify;
+  recentFrom: () => number;
+  snapshot: () => (SnapshotWire & { held: number }) | null;
   getCursor: (reader: string) => number;
   setCursor: (reader: string, id: number) => void;
   hostState: () => HostState;
@@ -95,13 +97,15 @@ class ThreadRoomStore implements RoomStore {
     this.lineHash = fwd('lineHash');
     this.validateChain = fwd('validateChain');
     this.verifyChain = fwd('verifyChain');
+    this.recentFrom = fwd('recentFrom');
+    this.snapshot = fwd('snapshot');
     this.getCursor = fwd('getCursor');
     this.setCursor = fwd('setCursor');
     this.hostState = fwd('hostState');
     this.setAside = fwd('setAside');
   }
   get dir() { return this._local.dir; }
-  _call(method: string, args: unknown[]) { return send(method, { code: this.code, dir: this._local.dir, home: home(), args }); }
+  _call(method: string, args: unknown[]) { return send(method, { code: this.code, dir: this._local.dir, home: home(), seg: process.env.SUB_HUMAN_SEGMENT_BYTES, args }); }
 
   readAll(): readonly Entry[] { return this._call('readAll', []); }
   readById(ids: number | string | readonly (number | string)[]): Entry[] { return this._call('readById', [ids]); }
@@ -181,8 +185,9 @@ const OPS: Record<string, (s: FsStore, args: any[]) => unknown> = { // any: each
   'tailer.poll'(_s, [id]) { return tailers.get(id)?.poll(); },
 };
 
-function handle(method: string, { code, dir, home: h, args }: CallParams): unknown {
+function handle(method: string, { code, dir, home: h, seg, args }: CallParams): unknown {
   process.env.SUB_HUMAN_HOME = h;
+  if (seg) process.env.SUB_HUMAN_SEGMENT_BYTES = seg; else delete process.env.SUB_HUMAN_SEGMENT_BYTES; // the caller's segment size
   let s = stores.get(dir);
   if (!s) { s = new FsRoomStore(code, { dir }); stores.set(dir, s); }
   if (OPS[method]) return OPS[method](s, args);

@@ -167,15 +167,14 @@ test('readAll: cached per process, sees appends from other processes, rewrites a
 });
 
 // ---------- incremental verification ----------
-test('verifyChain: checks only new bytes from log.idx, never passes a break, rebuilds on reset', () => {
+test('verifyChain: checks only new bytes from its checkpoint, never passes a break, rebuilds on reset', () => {
   fresh();
-  const idx = () => JSON.parse(fs.readFileSync(path.join(R.store.dir!, 'log.idx'), 'utf8'));
   assert.deepEqual(R.verifyChain(), { ok: true, count: 0, checked: 0, offset: 0, id: 0, hash: room.hash12(''), from: 0 });
   for (let i = 0; i < 5; i++) say('alice', `m${i}`);
   let r = R.verifyChain();
   assert.equal(r.ok, true); assert.equal(r.checked, 5); assert.equal(r.count, 5); assert.equal(r.id, 5);
   assert.equal(r.offset, fs.statSync((R.store as FsRoomStore).logFile).size);
-  assert.equal(idx().offset, r.offset);
+  assert.ok(!fs.existsSync(path.join(R.store.dir!, 'log.idx')), 'the checkpoint is in memory: log.idx is retired');
   r = R.verifyChain();
   assert.equal(r.checked, 0, 'nothing new');
   say('bob', 'six'); say('bob', 'seven');
@@ -187,12 +186,12 @@ test('verifyChain: checks only new bytes from log.idx, never passes a break, reb
   assert.deepEqual([r.ok, r.checked], [true, 0]);
   fs.writeFileSync((R.store as FsRoomStore).logFile, fs.readFileSync((R.store as FsRoomStore).logFile, 'utf8').replace(/\{"id":8$/, ''));
   // a forged line appended after the checkpoint is caught, and the checkpoint stays before it
-  const before = idx().offset;
+  const before = R.verifyChain().offset;
   fs.appendFileSync((R.store as FsRoomStore).logFile, JSON.stringify({ id: 8, at: new Date().toISOString(), from: 'bob', via: 'human', kind: 'signoff', to: 'room', proposal_hash: H1, prev: 'ffffffffffff' }) + '\n');
   r = R.verifyChain();
-  assert.deepEqual([r.ok, r.badAt], [false, 8]);
-  assert.equal(idx().offset, before);
-  assert.equal(R.verifyChain().badAt, 8, 'still caught on the next call');
+  assert.deepEqual([r.ok, r.badAt, r.offset], [false, 8, before]);
+  r = R.verifyChain();
+  assert.deepEqual([r.badAt, r.from], [8, before], 'still caught on the next call, from the same checkpoint');
   // explicit fromOffset
   assert.equal(R.verifyChain({ fromOffset: 3 }).ok, false, 'not a line boundary');
   assert.equal(R.verifyChain({ fromOffset: 0 }).badAt, 8);

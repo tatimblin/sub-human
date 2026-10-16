@@ -81,6 +81,9 @@ function roomOver(s: RoomStore) {
     readAfter: (id: number, f?: (e: Entry) => boolean) => s.readAfter(id, f),
     lastId: () => s.lastId(),
     readView: (opts?: ReadViewOpts) => s.readView(opts),
+    /** every non-chat entry, and every line since the log's last rotation (all of it before any): a cold reader's
+     * cheap view of what is recent (the status line) */
+    readRecent: (): Entries => { const k = s.recentFrom(); return k > 0 ? s.readView({ after: k }) : s.readAll(); },
     tailer: (opts?: { fs?: TailerFs; after?: number }) => s.tailer(opts),
     validateChain: () => s.validateChain(),
     verifyChain: (opts?: Parameters<RoomStore['verifyChain']>[0]) => s.verifyChain(opts),
