@@ -605,6 +605,8 @@ export interface Link {
   refused?: { at: string; reason: string; why?: string };
   rebind?: unknown;
   join_as?: string;
+  /** the name this machine asked for, when the host's card let it in as join_as instead (its own sat in the room from another machine) */
+  join_renamed?: string;
   /** the session that typed the PIN join (lib/remote/joining.ts pendingNews: its tail says when the host let it in) */
   join_sid?: string;
   /** what the join command last told the person (lib/remote/joining.ts): the tail does not repeat it */

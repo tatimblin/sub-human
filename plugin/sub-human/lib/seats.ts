@@ -284,6 +284,11 @@ function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd,
   const r = enter({ code, name, pid, session_id, cwd, pubkey: key, keepPrevious: !!cur && !same });
   if (!r.ok) {
     if (isDefault && /^name taken/.test(r.error || '')) return no(`"${name}" is taken in room ${code}; pick another: /sub-human NAME${created ? '' : ` ${code}`}`);
+    // item 11 R4: the name sits in the room with a key made elsewhere (a new home or machine); a key never moves
+    if (/pinned to another key/.test(r.error || '')) {
+      const bound = !host && !!(links.get(code) || {}).token;
+      return no(`could not join ${code} as ${name}: ${name} is in this room with a key from another machine or sub-human folder, and a seat's key never moves. ${bound ? 'This connection is bound to that name: ask the host for a new invite; their card lets this machine in under a new name' : `Join under another name: /sub-human NAME ${code}`}`);
+    }
     return no(`could not join ${code} as ${name}: ${r.error || 'unknown error'}${cur && !same ? `; you're still ${cur.name} in room ${cur.code}` : ''}`);
   }
   if (cur && !same) exit(cur.code, cur.name, 'switched rooms'); // exactly as exiting the session would

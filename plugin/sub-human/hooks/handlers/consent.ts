@@ -347,8 +347,9 @@ function postAdmit(input: ConsentIn, me: Identity, r: ToolResponse): boolean {
       adm.refuse(me.code, req.ref, { by: me.name });
       return say(S.admitRefused(me.name, req.name)), true;
     }
-    const res = adm.letIn(me.code, req.ref, { by: me.name, sign: p => envelope.sign(p, roomStore.humanKey(me.code, me.name), { room: me.code, from: me.name }) });
-    say(S.admitLetIn(me.name, req.name, me.code), { systemMessage: `sub-human: ${res.text}` });
+    const as = /^Let in as (\S+)$/.exec(String(got.label));
+    const res = adm.letIn(me.code, req.ref, { by: me.name, ...(as ? { as: as[1] } : {}), sign: p => envelope.sign(p, roomStore.humanKey(me.code, me.name), { room: me.code, from: me.name }) });
+    say(S.admitLetIn(me.name, as ? as[1] : req.name, me.code), { systemMessage: `sub-human: ${res.text}` });
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
     say(S.admitFailed(me.name, why), { systemMessage: `sub-human: ${req.name} was not let in: ${why}` });

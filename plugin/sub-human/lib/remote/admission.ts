@@ -27,9 +27,13 @@
  *   describe(req) -> "carol (check 3f9c-2a71) on carols-mbp"   the check of the machine whose key the PIN came with
  *                                              (invite-secret.ts joinCheck): the joiner's screen shows the same
  *   question(req, code) -> string             the card's question (it names the ref)
- *   card(req, code) -> AskUserQuestion input  LET_IN / REFUSE
- *   letIn(code, ref, {by?, sign?, now?}) -> {id, text}   the person's yes: the record let in (signed with their seat key
- *                                              when sign is given), a room line
+ *   taken(code, req) -> alt | null            the name the request asks for sits in the room from another machine (its
+ *                                              key never moves there: the seat would be refused, "pinned to another
+ *                                              key"): the free name to let it in as instead (NAME2, NAME3, …), else null
+ *   card(req, code) -> AskUserQuestion input  LET_IN / REFUSE; for a taken name "Let in as ALT" / REFUSE
+ *   letIn(code, ref, {by?, sign?, as?, now?}) -> {id, text}   the person's yes: the record let in (signed with their
+ *                                              seat key when sign is given), a room line; a taken name is let in as its
+ *                                              alt (as: the card's), which the joiner's hello then learns (lib/remote/server.ts)
  *   refuse(code, ref, {by?, now?}) -> {text}  the person's no: burnt, a room line
  *   markTold(code, ref, name)                 the tail woke name's Claude for it
  *   lapse(code, {now?}) -> [request]          requests past their time, burnt now (the tail tells the host)
@@ -88,8 +92,8 @@ function admissions(store: AuthStore, { now = Date.now(), all = false }: { now?:
  * The host person's answer to an admission: 'let-in' (the joiner may redeem it for HANDOFF_INVITE_MS) or 'refused'
  * (burnt). AUTH when it is not waiting any more (answered, lapsed, revoked).
  */
-function decide(store: AuthStore, ref: string, { decision, by = null, sig = null, now = Date.now() }: {
-  decision: 'let-in' | 'refused'; by?: string | null; sig?: unknown; now?: number;
+function decide(store: AuthStore, ref: string, { decision, by = null, sig = null, as, now = Date.now() }: {
+  decision: 'let-in' | 'refused'; by?: string | null; sig?: unknown; as?: string; now?: number;
 }): AdmissionRequest {
   if (!store.isHost) throw new RoomError('HOST_ONLY', 'only the host of a room lets machines in');
   let out = null as AdmissionRequest | null; // (as: set in the update)
@@ -101,7 +105,7 @@ function decide(store: AuthStore, ref: string, { decision, by = null, sig = null
     if (now > Date.parse(inv.expires_at)) throw new RoomError('AUTH', 'that join request lapsed; send them a new invite (/sub-human invite)', 'ADMIT_LAPSED');
     const at = iso(now);
     const next: AdmissionRecord = decision === 'let-in'
-      ? { ...inv, admit: 'let-in', admitted_at: at, admitted_by: by, ...(sig ? { admit_sig: sig } : {}), admitted_until: iso(now + HANDOFF_INVITE_MS) }
+      ? { ...inv, ...(as ? { name: as, asked_as: inv.name } : {}), admit: 'let-in', admitted_at: at, admitted_by: by, ...(sig ? { admit_sig: sig } : {}), admitted_until: iso(now + HANDOFF_INVITE_MS) }
       : { ...inv, admit: 'refused', refused_at: at, refused_by: by, burnt_at: at };
     out = { ...next, slot: hit[0], ref: hit[0].slice(0, 12) };
     return { ...cur, [hit[0]]: next };
@@ -156,7 +160,34 @@ const fp = (req: AdmissionRequest): string => secretLib().joinCheck(req.machine,
 const describe = (req: AdmissionRequest): string => `${req.name} (${fp(req)}) on ${req.label || 'another machine'}`;
 const question = (req: AdmissionRequest, code: string): string => `Let ${describe(req)} join room ${code}? (admit ${req.ref})`;
 
+function taken(code: string, req: AdmissionRequest): string | null {
+  let ms: Record<string, { name?: string; role?: string; machine?: string | null } | undefined>;
+  try { ms = (require('../identity.ts') as typeof import('../identity.ts')).readMembers(code) || {}; } catch { return null; }
+  const m = ms[req.name];
+  if (!m || m.role === 'claude' || !m.machine || m.machine === req.machine) return null;
+  const { NAME_RE }: typeof import('../text.ts') = require('../text.ts');
+  for (let i = 2; i < 100; i++) {
+    const alt = `${req.name.slice(0, 30)}${i}`;
+    if (NAME_RE.test(alt) && !ms[alt]) return alt;
+  }
+  return null;
+}
+
 function card(req: AdmissionRequest, code: string): Card {
+  const alt = taken(code, req);
+  if (alt) {
+    return {
+      questions: [{
+        question: question(req, code),
+        header: 'Join',
+        multiSelect: false,
+        options: [
+          { label: `Let in as ${alt}`, description: `${req.name} already sits in room ${code} from another machine, and a seat's key never moves to a new one: this machine (${fp(req)} on their screen) joins as ${alt} only. Undo any time: /sub-human kick ${alt}.` },
+          { label: REFUSE, description: 'Nothing gets in; their join stops. The invite is used up either way.' },
+        ],
+      }],
+    };
+  }
   return {
     questions: [{
       question: question(req, code),
@@ -171,14 +202,17 @@ function card(req: AdmissionRequest, code: string): Card {
 }
 
 
-function letIn(code: string, ref: string, { by = null, sign = null, now = Date.now() }: {
-  by?: string | null; sign?: Signer | null; now?: number;
+function letIn(code: string, ref: string, { by = null, sign = null, as, now = Date.now() }: {
+  by?: string | null; sign?: Signer | null; as?: string; now?: number;
 } = {}): { id: string; text: string } {
   const store = hostStore(code);
   const req = find(code, ref);
   if (!req) throw new RoomError('INVALID', `room ${code} has no join request ${ref} (/sub-human admit lists them)`);
+  // a name that sits here from another machine is let in as the free one the card offered (never as the taken one)
+  const alt = taken(code, req);
+  if (as !== undefined && as !== alt) throw new RoomError('INVALID', `${req.name} can be let in as ${alt || req.name} only now; ask again (/sub-human admit ${req.ref})`);
   const sig = sign ? sign({ kind: 'admit', ref: req.ref, link: req.link, key: req.key || null, machine: req.machine }) : null;
-  const rec = decide(store, req.ref, { decision: 'let-in', by, sig, now });
+  const rec = decide(store, req.ref, { decision: 'let-in', by, sig, now, ...(alt ? { as: alt } : {}) });
   roomLib().roomLine(store, `${by || 'the host'} let ${describe(rec)} in; undo with: /sub-human kick ${rec.name}`);
   return { id: rec.link, text: `let in: ${describe(rec)} joins room ${code} within seconds, as ${rec.name} only. Undo: /sub-human kick ${rec.name}` };
 }
@@ -207,6 +241,6 @@ function markTold(code: string, ref: string, name: string): void {
 const lapse = (code: string, { now = Date.now() }: { now?: number } = {}): AdmissionRequest[] => lapseAdmissions(hostStore(code), { now });
 
 export {
-  check, admissions, decide, lapseAdmissions, WAITING, pending, find, targets, describe, question, card, letIn, refuse, markTold, lapse, LET_IN, REFUSE,
+  check, admissions, decide, lapseAdmissions, WAITING, pending, find, targets, describe, question, taken, card, letIn, refuse, markTold, lapse, LET_IN, REFUSE,
 };
 export type { Signer, Slotted, AdmissionRequest };

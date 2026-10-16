@@ -389,7 +389,12 @@ function outcome(code: string, { waitMs = LINK_JOIN_WAIT_MS }: { waitMs?: number
 
 function joinText(code: string, name: string, o: Outcome, { tells = false }: { tells?: boolean } = {}): string {
   const lf: Partial<Link> = links().get(code) || {};
-  if (o.state === 'linked') return `the host let you in to room ${code}: type /sub-human to join it as ${name}`;
+  if (o.state === 'linked') {
+    // the card may have let this machine in under another name (its own sits in the room from another machine)
+    const as = typeof lf.join_as === 'string' ? lf.join_as : name;
+    const why = lf.join_renamed ? ` (${lf.join_renamed} is in the room from another machine, and a seat's key never moves, so the host let this machine in as ${as})` : '';
+    return `the host let you in to room ${code}: type /sub-human to join it as ${as}${why}`;
+  }
   if (o.state === 'refused') return `could not join room ${code}: ${o.reason}`;
   if (o.state === 'pin') {
     const w = lf.pin_wanted || { at: '' };

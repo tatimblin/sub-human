@@ -172,7 +172,10 @@ async function connectLink(code: string): Promise<Client> {
   if (!l.token) {
     const cur = linksMod.get(code) || l;
     const { invite, pin, awaiting, pin_wanted, ...rest } = cur; // the invite and its PIN are spent with it
-    linksMod.set(code, { ...rest, token: c.token!, ...(rest.moved ? { moved: { ...rest.moved, reached_at: new Date().toISOString() } } : {}) }); // c.token: hello gives one for an invite or a login
+    // the host's card may have let this machine in under another name than it asked for (its own sits there from
+    // another machine): the seat takes the one the link is bound to
+    const as = c.as && typeof rest.join_as === 'string' && c.as !== rest.join_as ? { join_as: c.as, join_renamed: rest.join_as } : {};
+    linksMod.set(code, { ...rest, ...as, token: c.token!, ...(rest.moved ? { moved: { ...rest.moved, reached_at: new Date().toISOString() } } : {}) }); // c.token: hello gives one for an invite or a login
   }
   return c;
 }

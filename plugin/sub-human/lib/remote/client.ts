@@ -73,7 +73,7 @@ interface Pending {
 }
 
 /** The server's answer to hello (types-core HelloResult), read defensively: what a host may leave out is optional. */
-type HelloReply = Pick<HelloResult, 'v' | 'link' | 'room'> & Partial<Pick<HelloResult, 'proto' | 'server' | 'token' | 'epoch' | 'machine'>> & {
+type HelloReply = Pick<HelloResult, 'v' | 'link' | 'room'> & Partial<Pick<HelloResult, 'proto' | 'server' | 'token' | 'epoch' | 'machine' | 'as'>> & {
   caps: ServerCaps | null;
 };
 
@@ -117,6 +117,8 @@ class Client {
   epoch: number | null;
   /** this machine's id in the room as the host records it (its hello's reply; null from a host that sends none) */
   machine: string | null = null;
+  /** the name the host bound the link to, with a fresh token (its hello's reply; null otherwise) */
+  as: string | null = null;
   declare v: number;
   declare serverVersion: string | null;
 
@@ -240,7 +242,7 @@ async function connect(transport: Transport | Promise<Transport>, opts: ConnectO
     const r: HelloReply = await c._request('hello', { ...base, ...bound, ...cred }, ++c.seq, helloMs);
     if (!inRange(r)) throw skew(r);
     if (cred.login && !r.token) throw new RoomError('PROTOCOL', `the host's sub-human (${r.server || 'an unknown version'}) makes no link over an ssh login; update it there, or join with an invite`, 'SKEW');
-    Object.assign(c, { token: r.token || token || null, link: r.link, room: r.room, serverCaps: r.caps, v: r.v, serverVersion: r.server || null, epoch: Number.isInteger(r.epoch) ? r.epoch : 0, machine: typeof r.machine === 'string' && r.machine ? r.machine : null });
+    Object.assign(c, { token: r.token || token || null, link: r.link, room: r.room, serverCaps: r.caps, v: r.v, serverVersion: r.server || null, epoch: Number.isInteger(r.epoch) ? r.epoch : 0, machine: typeof r.machine === 'string' && r.machine ? r.machine : null, as: typeof r.as === 'string' && r.as ? r.as : null });
   } catch (e) {
     c.close();
     throw e;
