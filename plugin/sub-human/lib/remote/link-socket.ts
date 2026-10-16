@@ -37,6 +37,7 @@ import { RoomError } from '../room/validate.ts';
 import { isReason } from '../reasons.ts';
 import { isAlive, sleepSync } from '../io.ts';
 import { hash12 } from '../text.ts';
+import { isObj } from '../decode.ts';
 import * as config from '../config.ts';
 import { createRequire } from 'node:module';
 import type { Reason } from '../reasons.ts';
@@ -155,7 +156,7 @@ async function answer(f: DecodedFrame | ErrorFrame, relay: Relay): Promise<Reply
   const g = f as { id?: FrameId; op?: unknown }; // the frame as it came, for the error
   try {
     if (!protocol.isRequest(f) || !RELAY.has(f.op)) throw new RoomError('PROTOCOL', `not an op a hook may relay: ${g.op}`);
-    return protocol.reply(f.id, await relay(f.op, f.params));
+    return protocol.reply(f.id, await relay(f.op, isObj(f.params) ? f.params : {}));
   } catch (err) {
     const e = err as CodedError;
     return protocol.error(g.id ?? null, (protocol.CODES as Record<string, string | undefined>)[e.code!] ? e.code! : 'INVALID', e.message, e.reason);

@@ -169,9 +169,14 @@ export interface AnyRequest { id: FrameId; op: string; params: object }
 export interface IncomingRequest {
   id?: FrameId;
   op: string;
-  /** any: unchecked JSON from the peer; each op checks the fields it uses. */
-  params?: any;
+  /** unchecked JSON from the peer: the server reads it as WireParams of the op (lib/remote/server.ts run). */
+  params?: unknown;
 }
+/** An op's params as they arrive: an object whose fields are the op's (OpParams), each unknown until the op checks
+ * it (lib/remote/server.ts OPS). A peer may send other fields, or the wrong types. */
+export type WireParams<O extends Op> = { [K in keyof OpParams[O]]?: unknown };
+/** A decoded frame shaped as an event this end knows (protocol.isEvent): data as the peer sent it. */
+export interface IncomingEvent { id?: FrameId; ev: EventName; data?: unknown }
 
 /** A reply: result or error (the other key absent, so `f.error ? … : f.result` reads either). id: the request's,
  * absent when the request had none (JSON drops an undefined id). */
