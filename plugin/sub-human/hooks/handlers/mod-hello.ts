@@ -3,14 +3,17 @@
 // $.process.run (HOOKS in mod/register.ts says when: a session that may have a seat, and before a join). stdin:
 // {session_id, nonce?}. Writes the module's lease for the session (lib/identity.ts writeModLease) with the nonce at-room
 // checks an origin against; the claude pid is our parent (hooks/run.ts sets CLAUDE_PID to it). Prints {home, realHome,
-// userHome, pluginRoot, seat: {name, code, role, addr} | null, restorable} on one line; restorable: a SessionStart
-// restore has a seat to put this session back in (lib/identity.ts lastSeat of this session id, or a seat this claude
-// process holds: a /clear).
-// Loads lib/identity.ts only (no seat key). Failure: an unreadable payload still prints the home, seat null, no lease.
+// userHome, pluginRoot, seat: {name, code, role, addr} | null, restorable, pending} on one line; restorable: a
+// SessionStart restore has a seat to put this session back in (lib/identity.ts lastSeat of this session id, or a seat
+// this claude process holds: a /clear); pending: no seat, and a join this session started with a PIN waits for the
+// host's card (a link file's join_sid, lib/room/links.ts), so the module starts the tail that says when it let them in.
+// Loads lib/identity.ts and lib/room/links.ts only (no seat key). Failure: an unreadable payload still prints the home,
+// seat null, no lease.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import * as identity from '../../lib/identity.ts';
+import * as links from '../../lib/room/links.ts';
 import type { Identity } from '../../lib/identity.ts';
 import type { Reply } from '../types.ts';
 import type { PluginState } from 'claude-code';
@@ -36,7 +39,11 @@ function hello(input: HelloIn): Hello {
   }
   let restorable = !!seat;
   try { restorable = restorable || !!(sid && identity.lastSeat(sid)) || !!identity.resolveByPid(identity.claudePid() || process.ppid); } catch { /* not known: false */ }
-  return { home, realHome: real(home), userHome: os.homedir(), pluginRoot: PLUGIN_ROOT, seat, restorable };
+  let pending = false;
+  try {
+    pending = !seat && !!sid && links.list().some(c => { const l = links.get(c); return !!l && l.join_sid === sid && typeof l.join_as === 'string'; });
+  } catch { /* not known: false */ }
+  return { home, realHome: real(home), userHome: os.homedir(), pluginRoot: PLUGIN_ROOT, seat, restorable, pending };
 }
 
 const answer = (input: HelloIn): Reply => ({ kind: 'classic', outputs: [hello(input)] });

@@ -642,3 +642,42 @@ test('remindersText: a note of mine waiting on the picked proposal points at the
   assert.equal(tailLib.remindersText(me, room.open(code)),
     'proposal dddddddddddd: alice\'s note waits to be sent or discarded; if alice asks, call AskUserQuestion with the question "objection dddddddddddd". Don\'t reopen the review (that drops the note).');
 });
+
+test('tail: a session with no seat and a PIN join waiting looks again every resolveMs and says once that the host let it in (or why it stopped)', () => {
+  h.freshHome();
+  const clock = createFake({ now: Date.now() });
+  const out: string[] = [];
+  let news: { state: 'waiting' | 'linked' | 'refused'; code: string; text: string } | null = { state: 'waiting', code: 'vole-1234', text: '' };
+  let asked = 0;
+  tailLib.runTail({
+    clock, lookup: () => null, timings: { ...FAST, resolveMs: 100, unseatedMs: 5000 }, sid: 'sid-1', err: () => {},
+    write: (s, d) => { out.push(s); d(); },
+    deps: { pendingNews: (sid: string) => { asked++; assert.equal(sid, 'sid-1'); return news; } },
+  });
+  const chat = () => out.flatMap(s => s.split('\n').filter(Boolean)).map(l => JSON.parse(l)).filter(e => e.type === 'chat');
+  clock.advance(350);
+  assert.ok(asked >= 3, `waiting: asked again every resolveMs (${asked})`);
+  assert.deepEqual(chat(), []);
+  news = { state: 'linked', code: 'vole-1234', text: 'the host let you in to room vole-1234: type /sub-human to join it as bob' };
+  clock.advance(100);
+  clock.advance(20_000);
+  assert.deepEqual(chat(), [{ type: 'chat', lines: [news.text] }], 'said once');
+  const before = asked;
+  clock.advance(10_000);
+  assert.ok(asked - before <= 2, 'no longer waiting: back to the unseated pace');
+  news = { state: 'refused', code: 'vole-1234', text: 'could not join room vole-1234: the host refused to let this machine in' };
+  clock.advance(5000);
+  assert.equal(chat().length, 2);
+  assert.deepEqual(chat()[1].lines, [news.text]);
+});
+
+test('tail: a session with no seat and no join of its own says nothing (and never looks without a session id)', () => {
+  h.freshHome();
+  const clock = createFake({ now: Date.now() });
+  const out: string[] = [];
+  let asked = 0;
+  tailLib.runTail({ clock, lookup: () => null, timings: FAST, sid: null, err: () => {}, write: (s, d) => { out.push(s); d(); }, deps: { pendingNews: () => { asked++; return null; } } });
+  clock.advance(30_000);
+  assert.equal(asked, 0);
+  assert.equal(out.join('').includes('"chat"'), false);
+});

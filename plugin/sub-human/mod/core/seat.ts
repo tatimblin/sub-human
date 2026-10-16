@@ -3,7 +3,7 @@
  * functions. The module keeps the parsed hello in $.state (sub-human/hello) so a hot reload keeps it.
  *
  *   parseHello(stdout, sid) -> hello | null
- *       hello = {sid, home, realHome, userHome, pluginRoot, seat: {name, code, role, addr} | null, restorable}. null
+ *       hello = {sid, home, realHome, userHome, pluginRoot, seat: {name, code, role, addr} | null, restorable, pending}. null
  *       when the output is not a hello (then the module "does not know" and every prefilter runs node).
  *   homeOf(subHumanHome, userHome) -> string | null   where the store lives: SUB_HUMAN_HOME, else ~/.sub-human (lib/home.ts
  *       home() is this rule)
@@ -41,7 +41,7 @@ function parseSeat(x: unknown): HelloSeat | null {
 }
 
 export function parseHello(stdout: unknown, sid: unknown): Hello | null {
-  let o: { home?: unknown; realHome?: unknown; userHome?: unknown; pluginRoot?: unknown; seat?: unknown; restorable?: unknown } | null;
+  let o: { home?: unknown; realHome?: unknown; userHome?: unknown; pluginRoot?: unknown; seat?: unknown; restorable?: unknown; pending?: unknown } | null;
   try { o = JSON.parse(String(stdout || '').trim()); } catch { return null; }
   const home = o && typeof o === 'object' ? ABS(o.home) : null;
   if (!o || !home) return null;
@@ -53,6 +53,7 @@ export function parseHello(stdout: unknown, sid: unknown): Hello | null {
     pluginRoot: ABS(o.pluginRoot),
     seat: parseSeat(o.seat),
     restorable: o.restorable === true,
+    pending: o.pending === true,
   };
 }
 
@@ -65,7 +66,7 @@ export const sidIndex = (home: unknown, sid: unknown): string | null => (ABS(hom
   ? `${String(home).replace(/\/+$/, '')}/sessions/by-sid/${sid}.json` : null);
 
 export function localHello({ sid, home, realHome, userHome, pluginRoot }: { sid: string; home: string; realHome?: string | null; userHome?: string | null; pluginRoot?: string | null }): Hello {
-  return { sid, home, realHome: ABS(realHome) || home, userHome: ABS(userHome), pluginRoot: ABS(pluginRoot), seat: null, restorable: false };
+  return { sid, home, realHome: ABS(realHome) || home, userHome: ABS(userHome), pluginRoot: ABS(pluginRoot), seat: null, restorable: false, pending: false };
 }
 
 export const seated = (hello: Hello | { seat?: unknown } | null | undefined): boolean => !!(hello && hello.seat);

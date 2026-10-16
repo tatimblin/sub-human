@@ -92,8 +92,10 @@ test('guard: the write tools hooked in mod/guard.ts are mod/core/guard.ts WRITE_
 test('seat: parseHello keeps a good answer, refuses anything else; parseAddr reads NAME.CODE', async () => {
   const { parseHello, parseAddr, seated } = await load('mod/core/seat.ts');
   const out = { home: '/h', realHome: '/private/h', userHome: '/u', pluginRoot: '/p', seat: { name: 'alice', code: 'otter-4821', role: 'member' } };
-  assert.deepEqual(parseHello(JSON.stringify(out) + '\n', 's1'), { sid: 's1', ...out, seat: { ...out.seat, addr: 'alice.otter-4821' }, restorable: false });
+  assert.deepEqual(parseHello(JSON.stringify(out) + '\n', 's1'), { sid: 's1', ...out, seat: { ...out.seat, addr: 'alice.otter-4821' }, restorable: false, pending: false });
   assert.equal(parseHello(JSON.stringify({ ...out, restorable: true }), 's1')!.restorable, true);
+  assert.equal(parseHello(JSON.stringify({ ...out, pending: true }), 's1')!.pending, true);
+  assert.equal(parseHello(JSON.stringify({ ...out, pending: 'yes' }), 's1')!.pending, false, 'only true is true');
   assert.equal(parseHello('', 's1'), null);
   assert.equal(parseHello('not json', 's1'), null);
   assert.equal(parseHello(JSON.stringify({ home: 'relative' }), 's1'), null);
@@ -295,6 +297,7 @@ test('deliver: unread, restartDelay, spawnWanted', async () => {
   assert.equal(d.spawnWanted(null), true, 'unsure: start it');
   assert.equal(d.spawnWanted({ seat: null } as Hello), false); // a hello as spawnWanted reads it: the seat only
   assert.equal(d.spawnWanted({ seat: { name: 'a' } } as Hello), true);
+  assert.equal(d.spawnWanted({ seat: null, pending: true } as Hello), true, 'a PIN join waiting for the host\'s card: its tail says when it let them in');
 });
 
 test('prompt: the origin queue hands prompt.submit\'s origin to the classic hook; mergeClassic keeps ours on top', async () => {
@@ -448,7 +451,7 @@ test('mod-hello: prints the home and this session\'s seat, and writes the lease 
   assert.equal(r.code, 0, r.stderr);
   assert.deepEqual(r.json, {
     home: w.home, realHome: fs.realpathSync(w.home), userHome: w.userHome, pluginRoot: PLUGIN,
-    seat: { name: 'alice', code: w.code, role: 'member', addr: `alice.${w.code}` }, restorable: true,
+    seat: { name: 'alice', code: w.code, role: 'member', addr: `alice.${w.code}` }, restorable: true, pending: false,
   });
   const lease = path.join(w.home, 'sessions', 'mods', `${w.sid.alice}.json`);
   assert.equal(fs.statSync(lease).mode & 0o777, 0o600);
@@ -466,6 +469,7 @@ test('mod-hello: an unseated session gets seat null (and a lease); a bad payload
   const hello = r.json as unknown as Hello; // mod-hello prints a hello, not a hook answer
   assert.equal(hello.seat, null);
   assert.equal(hello.restorable, false, 'no seat for this session id, and none for this process');
+  assert.equal(hello.pending, false, 'no join of this session waits for a host');
   assert.equal(hello.home, w.home);
   assert.ok(fs.existsSync(path.join(w.home, 'sessions', 'mods', `${sid}.json`)));
   const bad = w.hook('mod-hello', { session_id: '../../x' });
@@ -597,7 +601,7 @@ test('seat: the home and the session index the module checks without node are li
     assert.ok(fs.existsSync(s.sidIndex(path.resolve(identity.home()), w.sid.alice)!), 'a seat\'s index is where the module looks');
   });
   w.dispose();
-  assert.deepEqual(s.localHello({ sid: 's1', home: '/h', userHome: '/u', pluginRoot: '/p' }), { sid: 's1', home: '/h', realHome: '/h', userHome: '/u', pluginRoot: '/p', seat: null, restorable: false });
+  assert.deepEqual(s.localHello({ sid: 's1', home: '/h', userHome: '/u', pluginRoot: '/p' }), { sid: 's1', home: '/h', realHome: '/h', userHome: '/u', pluginRoot: '/p', seat: null, restorable: false, pending: false });
 });
 
 test('prompt: an @room in a session surely without a seat is refused in at-room\'s words, without node', async () => {

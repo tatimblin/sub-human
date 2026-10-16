@@ -825,7 +825,7 @@ const CONTRACT: readonly ContractEntry[] = Object.freeze([
       'if(!~.fills)~.keep([~]);return ~(~),{message:~,uuid:~.uuid}', 'return ~.subtype==="local_command"?"command":"notice"'],
     note: 'Every system row the engine adds (door "notice"), the stop\'s warning row included, passes session.append before it is kept, and a rewrite of its one text block is the row the screen draws and the transcript keeps (so --resume draws it too); its level stays (a warning: an amber ⏺). Seen live on 2.1.292: "Operation stopped by hook: ✓ sent" rewritten to "✓ sent" drew "⏺ ✓ sent" and was stored so. On 2.1.300 it was reported not to rewrite (the frame stayed): the receipt\'s words read as a delivery under the frame too (hooks/handlers/at-room.ts). The d.ts says only that the screen "may show the row just before its rewrite".' },
   { id: 'modules-switch-cache', section: 10, stability: 'incidental', search: ['cachedGrowthBookFeatures', '"tengu_plugin_hooks_modules"'],
-    note: 'Claude Code caches the hooks modules rollout switch in the global config\'s cachedGrowthBookFeatures (cc.modulesSwitch): false there explains a session with no module (hooks/handlers/join.ts noModule, doctor).' },
+    note: 'Claude Code caches the hooks modules rollout switch in the global config\'s cachedGrowthBookFeatures (cc.modulesSwitch): false there explains a session with no module (lib/commands/index.ts noModule, doctor).' },
   { id: 'fs-write-plain', section: 10, stability: 'incidental', search: '$.fs.write (',
     shape: 'await ~(~(~),{recursive:!0}),await ~(~,~.text,"utf8"),~(`$.fs.write (',
     note: '$.fs.write is mkdir -p plus writeFile: not atomic, no mode, no lock. The mod never writes room state.' },
@@ -921,7 +921,7 @@ function exeState(pid: unknown, { readlink = fs.readlinkSync, exists = fs.exists
 /**
  * The version of the Claude Code process pid runs, or null: its executable's path (exeState, symlinks resolved) when
  * the path names one (the cask's …/2.1.292/claude, the installer's versions/2.1.292), else `<that binary>
- * --version` while it still exists. Used only to word a refusal (hooks/handlers/join.ts noModule).
+ * --version` while it still exists. Used only to word a refusal (lib/commands/index.ts noModule).
  */
 function runningVersion(pid: unknown, { timeoutMs = 3000 }: { timeoutMs?: number } = {}): string | null {
   const st = exeState(pid, { timeoutMs });

@@ -530,6 +530,8 @@ export interface Link {
   request?: unknown;
   rebind?: unknown;
   join_as?: string;
+  /** the session that typed the PIN join (lib/remote/joining.ts pendingNews: its tail says when the host let it in) */
+  join_sid?: string;
   moved?: { epoch?: number; host: string; locator: string; at?: string; reached_at?: string; demoted?: boolean };
   created_at?: string;
 }

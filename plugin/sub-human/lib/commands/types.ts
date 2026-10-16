@@ -1,0 +1,44 @@
+/**
+ * plugin/sub-human/lib/commands/types.ts: the shapes of the /sub-human command table (lib/commands/index.ts). Types
+ * only (import type).
+ */
+import type { Identity } from '../identity.ts';
+
+/**
+ * What a verb answers. The join hook (hooks/handlers/join.ts) turns it into the hook's one Reply (hooks/types.ts):
+ *   say      what the person asked for (help, who is here, done)
+ *   refused  a refusal ("✗ " before it)
+ *   secret   only the person may read it (an invite with its PIN): the typed prompt is kept out of the conversation;
+ *            refused (default false) puts "✗ " before it
+ *   joined   a seat taken: me, lead (the mechanics block's last line) and say (the person's one line)
+ * The router (index.ts run) makes every say and refused of a prompt that may hold a PIN a secret, before any verb ran.
+ */
+export type Answer =
+  | { kind: 'say'; text: string }
+  | { kind: 'refused'; text: string }
+  | { kind: 'secret'; text: string; refused?: boolean }
+  | { kind: 'joined'; me: Identity; lead: string; say: string };
+
+/** What every verb is handed. pid and cur are known only once the hooks module's lease checked (the verbs marked
+ * `open` run before: help, doctor). */
+export interface Ctx {
+  /** the session id the prompt came from */
+  sid: string | undefined;
+  /** the session's working directory */
+  cwd: string;
+  /** the session's claude process */
+  pid: number;
+  /** the seat this session holds now, or null */
+  cur: Identity | null;
+  /** the session runs the room's Claude agent (agent_type sub-human:room-claude) */
+  roomClaudeAgent: boolean;
+  /** the seat key's public half for a seat about to be taken (hooks/seat-key.ts publicPem; only the join hook loads it) */
+  pubkey(code: string, name: string): string;
+  /** this process runs as the plugin's hook: the root of scripts/sub-human (doctor runs it) */
+  pluginRoot: string;
+}
+
+/** One verb: its words after the verb, and the context. */
+export type Verb = (args: string[], ctx: Ctx) => Answer;
+/** A verb that runs before the hooks module's lease is checked: it reads nothing of the session. */
+export type OpenVerb = (args: string[], ctx: Pick<Ctx, 'cwd' | 'pluginRoot'>) => Answer;

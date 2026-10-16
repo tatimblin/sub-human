@@ -215,7 +215,7 @@ export function turnLedger() {
 }
 
 /** Start the tail child unless the hello is sure the session has no seat. */
-export const spawnWanted = (hello: Hello | null | undefined) => !hello || !!hello.seat;
+export const spawnWanted = (hello: Hello | null | undefined) => !hello || !!hello.seat || hello.pending === true;
 
 /** row-rewake's budget (its asyncRewake command hook had 30 s: it waits for the seat up to REWAKE_WAIT_MS). */
 export const REWAKE_TIMEOUT_MS = 30_000;

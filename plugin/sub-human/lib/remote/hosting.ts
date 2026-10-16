@@ -33,9 +33,15 @@
  *   outcome(code, {waitMs?}) -> {state: 'linked' | 'refused' | 'waiting', reason?}   the link daemon's first hello,
  *       watched for up to waitMs (LINK_JOIN_WAIT_MS): linked, refused (its reason: a wrong PIN, an expired invite, a
  *       protocol skew), or waiting (the host's card not answered yet, or slow)
- *   joinShort({code, transport, pin, name}) -> {code}   a short invite's link file before the PAKE (the daemon runs it);
- *       join_as: the name the seat takes once the host lets this machine in (a bare /sub-human finishes the join)
- *   joinText(code, name, outcome) -> string   what the joiner's person reads next
+ *   joinShort({code, transport, pin, name, sid?}) -> {code}   a short invite's link file before the PAKE (the daemon
+ *       runs it); join_as: the name the seat takes once the host lets this machine in (a bare /sub-human finishes the
+ *       join); join_sid: the session that typed it, whose tail tells the person when that happened
+ *       (lib/remote/joining.ts pendingNews)
+ *   joinText(code, name, outcome, {tells}?) -> string   what the joiner's person reads next; tells: this session's tail
+ *       says when the host lets them in (the session that typed the PIN)
+ *   remoteLogin() -> 'on' | 'off' | null   whether this machine takes ssh logins (macOS: Remote Login, launchctl;
+ *       Linux: an sshd process or an active ssh socket unit); null when it cannot tell. SUB_HUMAN_REMOTE_LOGIN=on|off
+ *       says it instead (tests). No network: an ssh invite then carries a hint when it is off
  */
 
 import os from 'node:os';
@@ -118,6 +124,42 @@ function shimReady(): { shim: typeof import('./shim.ts'); h: string } {
 
 const selfAddress = (): string => process.env.SUB_HUMAN_SSH_ADDR || `${os.userInfo().username}@${os.hostname()}`;
 
+function remoteLogin(): 'on' | 'off' | null {
+  const forced = process.env.SUB_HUMAN_REMOTE_LOGIN;
+  if (forced === 'on' || forced === 'off') return forced;
+  const run = (cmd: string, args: string[]) => spawnSync(cmd, args, { encoding: 'utf8', timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'] });
+  try {
+    if (process.platform === 'darwin') {
+      const r = run('launchctl', ['print-disabled', 'system']);
+      if (r.status !== 0 || typeof r.stdout !== 'string') return null;
+      const m = /"com\.openssh\.sshd"\s*=>\s*(enabled|disabled|true|false)/.exec(r.stdout);
+      // launchd's sshd plist is disabled by default: no line means Remote Login was never turned on
+      return !m ? 'off' : m[1] === 'enabled' || m[1] === 'false' ? 'on' : 'off';
+    }
+    if (process.platform === 'linux') {
+      if (run('pgrep', ['-x', 'sshd']).status === 0) return 'on';
+      const unit = run('systemctl', ['is-active', 'ssh.socket', 'sshd.socket', 'ssh.service', 'sshd.service']);
+      if (unit.error) return null;
+      return /^active$/m.test(String(unit.stdout || '')) ? 'on' : 'off';
+    }
+  } catch { /* cannot tell */ }
+  return null;
+}
+
+/** What an ssh invite to this machine's own default address adds: the name it guessed, and Remote Login off (an
+ * address the person gave, or SUB_HUMAN_SSH_ADDR, may well reach another sshd: no hint then). */
+function reachHints(dest: string, defaulted: boolean): string[] {
+  if (!defaulted) return [];
+  const host = dest.split('@').pop() || dest;
+  const out = [`${host} is this machine's own name${/\.local$/i.test(host) ? ', which only machines on the same local network can reach' : ''}. If they reach it by another name, invite with /sub-human invite --ssh USER@HOST (or set SUB_HUMAN_SSH_ADDR; an alias from their ssh config works too).`];
+  if (remoteLogin() === 'off') {
+    out.push(process.platform === 'darwin'
+      ? 'Remote Login is off on this Mac, so their ssh to it will fail: turn it on (System Settings > General > Sharing > Remote Login), or invite over the web: /sub-human invite --web'
+      : 'no ssh server is running on this machine, so their ssh to it will fail: start sshd, or invite over the web: /sub-human invite --web');
+  }
+  return out;
+}
+
 /**
  * The text a short invite is shown with: the one line the joiner types (the PIN is the whole secret), and what
  * happens next on this side (the card).
@@ -171,7 +213,10 @@ function hostInvite(code: string, { ssh = true, via, pipe = false, by = null, no
     ...r, short: true, locator, hostKey, line,
     text: shortText({
       code, how: `over ssh ${dest}${via ? ` via ${via}` : ''}`, line, ref: r.ref,
-      extra: [`Their machine checks it reached this one (ssh host key ${sshkeys.fingerprint(hostKey)}) as part of the PIN check. Until you let them in they get nothing: while the invite is open, ssh here only checks PINs.`],
+      extra: [
+        `Their machine checks it reached this one (ssh host key ${sshkeys.fingerprint(hostKey)}) as part of the PIN check. Until you let them in they get nothing: while the invite is open, ssh here only checks PINs.`,
+        ...reachHints(dest, ssh === true && !process.env.SUB_HUMAN_SSH_ADDR),
+      ],
     }),
   };
 }
@@ -304,18 +349,19 @@ function outcome(code: string, { waitMs = LINK_JOIN_WAIT_MS }: { waitMs?: number
   }
 }
 
-function joinText(code: string, name: string, o: Outcome): string {
+function joinText(code: string, name: string, o: Outcome, { tells = false }: { tells?: boolean } = {}): string {
   const lf: Partial<Link> = links().get(code) || {};
   if (o.state === 'linked') return `the host let you in to room ${code}: type /sub-human to join it as ${name}`;
   if (o.state === 'refused') return `could not join room ${code}: ${o.reason}`;
   if (lf.awaiting) {
     return `the host's machine checked your PIN. A card there now asks them to let you in as ${name} (${lf.awaiting.check}). `
-      + `Once they do, type /sub-human to join (the request waits ${minutes(configMod.ADMIT_TTL_MS)} minutes)`;
+      + (tells ? 'This session tells you when they do; then type /sub-human to join' : 'Once they do, type /sub-human to join')
+      + ` (the request waits ${minutes(configMod.ADMIT_TTL_MS)} minutes)`;
   }
   const t: { kind?: string; host?: string } = lf.transport || {};
   const cert = t.kind === 'wss' && /\.ts\.net$/i.test(String(t.host || '')) && !o.reason
     ? ' (Tailscale may be issuing a certificate: the first connection to a ts.net name can take ~20 s; it keeps trying)' : '';
-  return `still connecting to room ${code}${o.reason ? ` (${o.reason})` : cert}; type /sub-human in a moment`;
+  return `still connecting to room ${code}${o.reason ? ` (${o.reason})` : cert}; ${tells ? 'this session tells you when the host lets you in, or ' : ''}type /sub-human in a moment`;
 }
 
 /**
@@ -323,11 +369,11 @@ function joinText(code: string, name: string, o: Outcome): string {
  * the host's door, the PIN (enroll, 0600, dropped once the host answered) and join_as, the seat's name. The daemon
  * runs the PAKE (lib/remote/enroll.ts enrollLink).
  */
-function joinShort({ code, transport, pin, name }: { code: string; transport: LinkSpec; pin: string; name: string }): { code: string } {
-  links().set(code, { code, transport, enroll: { pin, name }, join_as: name, created_at: new Date().toISOString() });
+function joinShort({ code, transport, pin, name, sid }: { code: string; transport: LinkSpec; pin: string; name: string; sid?: string | null }): { code: string } {
+  links().set(code, { code, transport, enroll: { pin, name }, join_as: name, ...(sid ? { join_sid: sid } : {}), created_at: new Date().toISOString() });
   return { code };
 }
 
 export {
-  hostInvite, cancelInvite, kick, linkTransport, joinInvite, joinShort, outcome, joinText, shimReady, shortText,
+  hostInvite, cancelInvite, kick, linkTransport, joinInvite, joinShort, outcome, joinText, shimReady, shortText, remoteLogin,
 };

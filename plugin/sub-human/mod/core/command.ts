@@ -20,12 +20,14 @@ import type { JoinReply, HookJson, HookJsonSpecific, OriginLike, RunOutput, SubH
 /** The command as command.run names it (a plugin skill's name, or its bare form). */
 export const COMMANDS = Object.freeze(['sub-human:sub-human', 'sub-human']);
 
-/** The one rule for a prompt that may carry a PIN (hooks/handlers/join.ts answers it hidden, the module leaves it to the
+/** The one rule for a prompt that may carry a PIN (lib/commands/index.ts answers it hidden, the module leaves it to the
  * classic hook through Remote Control): `join`, `invite` and `admit`, and any word of 3-10 digits. */
 const SECRET_VERBS = ['join', 'invite', 'admit'];
 const DIGITS = /^[0-9]{3,10}$/;
 const words = (args: unknown) => String(args ?? '').trim().split(/\s+/).filter(Boolean);
 export const mayHoldSecret = (args: unknown) => { const a = words(args); return SECRET_VERBS.includes(a[0]) || a.some(w => DIGITS.test(w)); };
+/** A word of the prompt is PIN-shaped (3-10 digits): lib/commands/index.ts never hands such a prompt a seat's block. */
+export const hasPinWord = (args: unknown) => words(args).some(w => DIGITS.test(w));
 
 /**
  * Whether the module answers this run itself. Typed here (composer): yes. Typed through Remote Control (bridge): only

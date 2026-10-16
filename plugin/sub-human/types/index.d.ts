@@ -22,6 +22,9 @@ export type SubHumanHello = {
   /** A SessionStart (clear, compact, resume) has a seat to put this session back in: the seat this session id last
    * held, or one this claude process holds. */
   restorable?: boolean;
+  /** This session started a join with a PIN that waits for the host's card (a link file's join_sid): its tail says
+   * when the host let it in, so the module starts one though the session has no seat. */
+  pending?: boolean;
 };
 
 declare module 'claude-code' {
