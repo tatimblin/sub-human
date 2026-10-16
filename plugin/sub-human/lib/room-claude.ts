@@ -416,6 +416,7 @@ async function reap(code: string, {
   await ensureGone((identity.readMembers(code) as Members).claude || o);
   identity.updateRoomClaude(code, () => ({ stopped_at: new Date().toISOString() }));
   try { identity.leave(code, 'claude', {}); } catch { /* already left */ }
+  try { identity.unindexClosed(code); } catch { /* the next look at the open rooms drops it */ } // stage 8e I.1
   return 'stopped';
 }
 

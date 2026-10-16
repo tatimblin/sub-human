@@ -322,6 +322,7 @@ function join({ code, name, role, machine = machineIn(code), account, pid: pidAr
 function leave(code: string, name: string, opts?: { reason?: string; deadlineMs?: number }): boolean {
   if (!roomExists(code)) return false;
   if (!membersOf(code).leave(name, opts)) return false;
+  try { unindexClosed(code); } catch { /* the next look at the open rooms drops it */ }
   const m = readMembers(code)[name];
   if (m && m.left_at && validPid(m.pid)) {
     const p: SeatIndex | null = readJson(byPidFile(m.pid));
@@ -671,6 +672,12 @@ function allMembers(): { code: string; ms: Members }[] {
   return open;
 }
 
+/** code off the open-rooms index once it is closed for good (the reaper, a leave): open-rooms.json lists no closed
+ * room until the next look (stage 8e I.1). */
+function unindexClosed(code: string): void {
+  if (roomExists(code) && closedForGood(readMembers(code))) store.unindexRooms([code]);
+}
+
 function openRooms(): string[] {
   const open: { code: string; at: string }[] = [];
   for (const { code, ms } of allMembers()) {
@@ -725,7 +732,7 @@ function writePresence(code: string, name: string, state: string, detail?: strin
 
 export {
   NAME_RE, CODE_RE, RESERVED, VERBS, ROOM_CLAUDE, ANIMALS, PRESENCE_STATES, normalizeName, defaultName, home,
-  roomDir, machineId, machineIn, isMine, newCode, roomExists, isHost, openRooms, closedForGood, orphanRooms, roomOpen, roomClosing, address,
+  roomDir, machineId, machineIn, isMine, newCode, roomExists, isHost, openRooms, unindexClosed, closedForGood, orphanRooms, roomOpen, roomClosing, address,
   readMembers, join, leave, rebindSession, updateRoomClaude, liveMembers, seatAlive, heartbeat,
   leaseFresh, isAlive, claudePid, resolveByPid, resolveBySession, resolveSelf, lastSeat, forkParent, forkedAway, markForked, forkedOf, adoptFork, localSeats, adoptLocalSeats, dropSeatIndexes,
   MOD_LEASE_FRESH_MS, writeModLease, readModLease, modLeaseOk, deleteModLease, pruneModLeases, pruneSessionIndexes, writePresence,

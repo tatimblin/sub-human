@@ -50,7 +50,9 @@ test('openRooms: judges only the indexed rooms and drops the ones closed for goo
   const closed = await Promise.all([1, 2, 3].map(() => roomWith()));
   const open = await roomWith({ live: true });
   const lapsed = await roomWith({ left: false }); // a seat that never left (its process gone): not closed for good
-  assert.ok(closed.every(c => indexed()[c]), 'indexed when made');
+  // stage 8e I.1: the leave that closed each for good took it off the index at once, before any look
+  assert.ok(closed.every(c => !indexed()[c]), 'closed: off the index at its leave');
+  assert.ok(indexed()[open] && indexed()[lapsed], 'indexed when made');
   assert.deepEqual(identity.openRooms(), [open]);
   assert.deepEqual(Object.keys(indexed()).sort(), [open, lapsed].sort(), 'closed for good: out of the index');
   // a room outside the index is never judged, even with a live seat written around the join
