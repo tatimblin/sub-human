@@ -98,7 +98,7 @@ test('an invite over pipe: the host sees the line and the PIN apart; the line, t
   assert.ok(hiddenBlock(linked), linked.stderr);
   assert.ok(!modelSees(linked).includes(pin), 'the PIN is in nothing the model or Remote Control get');
   assert.ok(!linked.json!.reason!.includes(pin), 'and not echoed');
-  assert.match(linked.json!.reason!, /checked your PIN\. A card there now asks them to let you in as bob \(check [0-9a-f]{4}-[0-9a-f]{4}\)\. This session tells you when they do; then type \/sub-human/);
+  assert.match(linked.json!.reason!, /checked your PIN\. A card there now asks them to let you in \(check [0-9a-f]{4}-[0-9a-f]{4}\)\. This session tells you when they do; then type \/sub-human/);
   const lf = JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.json`), 'utf8'));
   assert.equal('pin' in lf, false, 'the PIN left the link file once the host answered');
   assert.equal('pin_wanted' in lf, false);
