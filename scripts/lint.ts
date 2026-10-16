@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 /**
  * lint: npm run lint. Two parts, and it fails when either does:
- *   1. oxlint with its type-aware rules (oxlint-tsgolint, built on tsgo) over the repo (.oxlintrc.json). Its rules
- *      warn for now, so only a parse error or a rule set to "error" fails it.
- *   2. the ratchet (scripts/ts-ratchet.ts): the type escapes per directory may not rise above scripts/ts-ratchet.tson.
+ *   1. oxlint with its type-aware rules (oxlint-tsgolint, built on tsgo) over the repo (.oxlintrc.json). On the plugin
+ *      and the scripts the type-safety rules are errors (no-explicit-any, no-non-null-assertion, the no-unsafe-*
+ *      family, the promise rules, consistent-type-imports, ...): one fails the run. no-unsafe-type-assertion and
+ *      prefer-nullish-coalescing, and the correctness category, warn.
+ *   2. the ratchet (scripts/ts-ratchet.ts): the type escapes per directory may not rise above scripts/ts-ratchet.json.
+ *      Lint bans `any` and `!` but not a cast, and allows a reasoned disable; the ratchet caps all three.
  *
  * tsgolint types each file by the nearest tsconfig.json whose project holds it, and takes no tsconfig of ours
  * (oxlint's --tsconfig is only for import resolution). Claude Code writes its own plugin/sub-human/tsconfig.json

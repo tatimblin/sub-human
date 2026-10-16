@@ -6,9 +6,7 @@
   // the built-in tool inputs) that a plugin file leans on.
   "extends": "../tsconfig.json",
   "compilerOptions": {
-    "resolveJsonModule": true,
-    "exactOptionalPropertyTypes": true,
-    "noUncheckedIndexedAccess": true
+    "resolveJsonModule": true
   },
   "include": [".", "../plugin/sub-human/types", "../typings/claude-code-tools", "../typings/claude-code-mcp"],
   "exclude": []

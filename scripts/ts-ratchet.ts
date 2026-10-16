@@ -10,9 +10,9 @@
  * A lexical scan, not the compiler's (tsc 7 has no JS API): `<T>x` casts and `as` in a mapped type's key are not
  * told apart; neither appears in this repo.
  *
- *   node scripts/ts-ratchet.ts            compare with scripts/ts-ratchet.tson: exit 1 when a count rose (and say
+ *   node scripts/ts-ratchet.ts            compare with scripts/ts-ratchet.json: exit 1 when a count rose (and say
  *                                         where), 0 otherwise (and name the counts that can be lowered)
- *   node scripts/ts-ratchet.ts --update   write the counts to scripts/ts-ratchet.tson when none rose (exit 1 if one
+ *   node scripts/ts-ratchet.ts --update   write the counts to scripts/ts-ratchet.json when none rose (exit 1 if one
  *                                         did: the file only goes down; with no file, the counts as they are)
  *   node scripts/ts-ratchet.ts --print    print the counts as JSON
  *
@@ -194,13 +194,13 @@ function main(argv: string[]): number {
   const base = exists ? parseJson<{ counts: Record<string, Partial<Counts>> }>(fs.readFileSync(FILE, 'utf8')).counts : {};
   const { rose, lower } = compare(base, now);
   if (rose.length && exists) {
-    process.stderr.write(`ts-ratchet: more type escapes than scripts/ts-ratchet.tson allows:\n  ${rose.join('\n  ')}\n`);
+    process.stderr.write(`ts-ratchet: more type escapes than scripts/ts-ratchet.json allows:\n  ${rose.join('\n  ')}\n`);
     return 1;
   }
   if (argv.includes('--update')) {
     const doc = { note: 'Type escapes per directory (scripts/ts-ratchet.ts). Counts only go down: npm run lint fails when one rises; node scripts/ts-ratchet.ts --update writes lower ones.', counts: now };
     fs.writeFileSync(FILE, `${JSON.stringify(doc, null, 2)}\n`);
-    process.stdout.write(`ts-ratchet: wrote scripts/ts-ratchet.tson${!exists ? ' (new)' : lower.length ? `:\n  ${lower.join('\n  ')}` : ' (no change)'}\n`);
+    process.stdout.write(`ts-ratchet: wrote scripts/ts-ratchet.json${!exists ? ' (new)' : lower.length ? `:\n  ${lower.join('\n  ')}` : ' (no change)'}\n`);
     return 0;
   }
   process.stdout.write(lower.length

@@ -3,17 +3,17 @@
   "counts": {
     "hooks": {
       "any": 0,
-      "as": 14,
+      "as": 9,
       "nonNull": 12
     },
     "lib": {
-      "any": 5,
-      "as": 208,
+      "any": 0,
+      "as": 143,
       "nonNull": 2
     },
     "mcp": {
-      "any": 1,
-      "as": 6,
+      "any": 0,
+      "as": 5,
       "nonNull": 2
     },
     "mod/core": {
@@ -22,24 +22,24 @@
       "nonNull": 0
     },
     "mod/test": {
-      "any": 380,
-      "as": 177,
+      "any": 0,
+      "as": 0,
       "nonNull": 0
     },
     "mod": {
       "any": 0,
-      "as": 11,
+      "as": 10,
       "nonNull": 0
     },
     "statusline": {
       "any": 0,
-      "as": 1,
+      "as": 0,
       "nonNull": 0
     },
     "test": {
-      "any": 2,
-      "as": 489,
-      "nonNull": 1496
+      "any": 0,
+      "as": 284,
+      "nonNull": 0
     },
     "scripts": {
       "any": 0,
