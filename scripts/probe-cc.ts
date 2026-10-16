@@ -11,6 +11,9 @@
  * stands for one minified identifier) and every `contains` group (the array at that place holds those names).
  * Prints the version and PASS/FAIL per entry, and the entries reported degraded on that version; exits 1 on any
  * FAIL, 2 when no binary is found.
+ * It also fails (a FAIL `typings` line; `typings` in --json) when the committed typings snapshot,
+ * typings/claude-code/index.d.ts, was written by another Claude Code than contract.json `probed`: refresh it with
+ * `npm run typings` (scripts/typings.ts) after a session has loaded the plugin on the probed version.
  * Extra entries ({id, search, shape?, stability?, note?}[]) come from --extra FILE or $CC_PROBE_EXTRA (JSON text);
  * the tests use that to feed a mutated string and expect a failure. --only limits the run to those CONTRACT ids
  * (extras always run). --json also reports `ms` (wall)
@@ -19,12 +22,21 @@
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { PLUGIN, pluginLib } from './lib/paths.ts';
+import { PLUGIN, REPO, pluginLib } from './lib/paths.ts';
+import { writtenBy } from './typings.ts';
 import type { ContractEntry } from '../plugin/sub-human/lib/cc/contract.ts';
 
 const CONTRACT_JSON = path.join(PLUGIN, 'lib', 'cc', 'contract.json');
 const contract: { probed: string, entries: ContractEntry[] } = JSON.parse(fs.readFileSync(CONTRACT_JSON, 'utf8'));
 const cc = pluginLib('cc/contract.ts');
+export const TYPINGS = path.join(REPO, 'typings', 'claude-code', 'index.d.ts');
+
+/** Whether the typings snapshot was written by the probed Claude Code. */
+export function typingsCheck(file = TYPINGS, probed = contract.probed): { ok: boolean, version: string | null, probed: string } {
+  let version: string | null = null;
+  try { version = writtenBy(fs.readFileSync(file, 'utf8')); } catch { /* missing: version stays null */ }
+  return { ok: version === probed, version, probed };
+}
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(name);
@@ -69,12 +81,13 @@ function main(): never {
   const results = cc.probe(buf, { entries });
   const degraded = cc.degradedOn(ver, contract.entries);
   const failed = results.filter(r => !r.ok);
-  const ok = failed.length === 0;
+  const typings = typingsCheck();
+  const ok = failed.length === 0 && typings.ok;
   const ms = Date.now() - t0;
   const cpu = process.cpuUsage();
   const cpuMs = Math.round((cpu.user + cpu.system) / 1000);
   if (json) {
-    process.stdout.write(JSON.stringify({ ok, bin, version: ver, probed: contract.probed, ms, cpuMs, results, degraded }, null, 1) + '\n');
+    process.stdout.write(JSON.stringify({ ok, bin, version: ver, probed: contract.probed, typings, ms, cpuMs, results, degraded }, null, 1) + '\n');
   } else {
     process.stdout.write(`claude ${ver}  ${bin}\n`);
     for (const r of results) {
@@ -82,6 +95,9 @@ function main(): never {
       for (const m of r.missing) process.stdout.write(`      missing: ${JSON.stringify(m).slice(0, 160)}\n`);
     }
     for (const d of degraded) process.stdout.write(`NOTE  ${d.id.padEnd(34)} reported changed on ${ver}${d.issue ? ` (#${d.issue})` : ''}: ${d.note}\n`);
+    process.stdout.write(typings.ok
+      ? `PASS  ${'typings'.padEnd(34)} typings/claude-code written by ${typings.version}\n`
+      : `FAIL  ${'typings'.padEnd(34)} typings/claude-code written by ${typings.version ?? '(unreadable)'}, contract.json probed ${typings.probed}: npm run typings\n`);
     process.stdout.write(`${results.length - failed.length}/${results.length} pass in ${ms} ms\n`);
   }
   process.exit(ok ? 0 : 1);
