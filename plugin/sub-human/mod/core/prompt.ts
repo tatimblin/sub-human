@@ -190,35 +190,37 @@ export function mergeClassic(ours: ShimResult | null = {}, theirs: ShimResult | 
  * CONTRACT ups-stop-frame). An @room's receipt ("✓ sent", "⧗ queued: …") is such a stop. */
 export const STOP_FRAME = 'Operation stopped by hook: ';
 
-/** What the model reads in place of a receipt's stop row: the person's @room line was the room's, not a request. */
-export const RECEIPT_FOR_MODEL = (receipt: string) => `sub-human: the person's @room line above went to the room, not to you (${receipt}); nothing is asked of you.`;
+/** What the model reads in place of a receipt's stop row: the person's @room (or @claude) line was the room's, not a
+ * request; tag names the one they typed. */
+export const RECEIPT_FOR_MODEL = (receipt: string, tag: '@room' | '@claude' = '@room') => `sub-human: the person's ${tag} line above went to the room, not to you (${receipt}); nothing is asked of you.`;
 
 /** A row as session.append hands it, as far as receiptBook reads it. */
 type RowLike = { type?: unknown; content?: unknown };
 
 /**
  * The receipts this module's prompt hook stopped a prompt with, waiting for their warning row (session.append, door
- * notice). expect(reason) as the stop leaves the hook; rewrite(row) answers that row with the frame cut off, the
+ * notice). expect(reason, tag?) as the stop leaves the hook (tag: what the person typed, @room or @claude); rewrite(row) answers that row with the frame cut off, the
  * receipt alone (cc CONTRACT session-append-notice-rewrite), or null for any other row. Only a system row that is
  * exactly the frame around a waiting receipt is ours: another plugin's stop, a second copy, or a row after a reload
  * keeps the engine's words. modelRow(row) answers the stop's isMeta user row (the model's copy) in RECEIPT_FOR_MODEL's
  * words, leaving the receipt waiting. A receipt whose row never came (a block beneath won) is forgotten after `max` more.
  */
 export function receiptBook(max = 8) {
-  const waiting: string[] = [];
+  const waiting: { reason: string; tag: '@room' | '@claude' }[] = [];
+  const find = (reason: string) => waiting.findIndex(w => w.reason === reason);
   return {
-    expect(reason: unknown) {
+    expect(reason: unknown, tag: '@room' | '@claude' = '@room') {
       if (typeof reason !== 'string' || !reason) return;
-      waiting.push(reason);
+      waiting.push({ reason, tag });
       if (waiting.length > max) waiting.shift();
     },
     rewrite<M extends RowLike>(row: M | null | undefined): M | null {
       if (!row || row.type !== 'system' || !Array.isArray(row.content) || row.content.length !== 1) return null;
       const block = row.content[0] as { type?: unknown; text?: unknown } | null;
       if (!block || block.type !== 'text' || typeof block.text !== 'string' || !block.text.startsWith(STOP_FRAME)) return null;
-      const i = waiting.indexOf(block.text.slice(STOP_FRAME.length));
+      const i = find(block.text.slice(STOP_FRAME.length));
       if (i < 0) return null;
-      const [reason] = waiting.splice(i, 1);
+      const [{ reason }] = waiting.splice(i, 1);
       return { ...row, content: [{ type: 'text', text: reason }] };
     },
     /** The stop's model row (an isMeta user row, the frame around a waiting receipt) in RECEIPT_FOR_MODEL's words; the
@@ -227,8 +229,9 @@ export function receiptBook(max = 8) {
       if (!row || row.type !== 'user' || row.isMeta !== true) return null;
       const text = typeof row.content === 'string' ? row.content
         : Array.isArray(row.content) && row.content.length === 1 && row.content[0] && (row.content[0] as { type?: unknown }).type === 'text' ? (row.content[0] as { text?: unknown }).text : null;
-      if (typeof text !== 'string' || !text.startsWith(STOP_FRAME) || !waiting.includes(text.slice(STOP_FRAME.length))) return null;
-      const said = RECEIPT_FOR_MODEL(text.slice(STOP_FRAME.length));
+      const i = typeof text === 'string' && text.startsWith(STOP_FRAME) ? find(text.slice(STOP_FRAME.length)) : -1;
+      if (i < 0) return null;
+      const said = RECEIPT_FOR_MODEL(waiting[i].reason, waiting[i].tag);
       return { ...row, content: typeof row.content === 'string' ? said : [{ type: 'text', text: said }] };
     },
     get size() { return waiting.length; },

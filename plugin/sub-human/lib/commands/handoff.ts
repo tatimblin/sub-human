@@ -9,6 +9,7 @@ import * as envelope from '../room/envelope.ts';
 import * as store from '../room/store.ts';
 import * as linkConnect from '../remote/link-connect.ts';
 import { parse } from '../cli/args.ts';
+import { localHm } from '../text.ts';
 import { createRequire } from 'node:module';
 import { HELP_HINT, msgOf, refused, say } from './answer.ts';
 import type { Verb } from './types.ts';
@@ -42,5 +43,5 @@ export const handoff: Verb = (argv, { cur }) => {
     if (!(e instanceof room.RoomError)) throw e;
     return refused(`could not hand room ${cur.code} over: ${e.message}.`);
   }
-  return say(`asked ${to} to host room ${cur.code}: a card asks them until ${d.expires_at.slice(11, 16)} UTC, and nothing moves unless they agree. If they do, the room and its Claude move to ${to}'s machine (on ${to}'s Claude account), and you stay in it.`);
+  return say(`asked ${to} to host room ${cur.code}: a card asks them until ${localHm(d.expires_at)}, and nothing moves unless they agree. If they do, the room and its Claude move to ${to}'s machine (on ${to}'s Claude account), and you stay in it.`);
 };

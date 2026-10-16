@@ -286,7 +286,7 @@ test('cli watch NAME: their words, their Claude, sign-offs, joins/leaves, the ro
   assert.equal(cli(['watch']).status, 2);
 });
 
-test('cli link CODE --forget: refused on a room hosted here, while the daemon runs, and for a live link without --force; then the copy is archived and the link removed', () => {
+test('cli link CODE --forget: refused on a room hosted here, and for a link stopped for another reason without --force; then the copy is archived and the link removed', () => {
   const stopped = (lastError: string, lastReason?: string) => ({ state: 'stopped', since: new Date().toISOString(), attempt: 0, lastError, ...(lastReason ? { lastReason } : {}), rttMs: null, queued: 0, detail: 'stopped', at: new Date().toISOString() });
   h.freshHome();
   const hosted = h.newRoom();
@@ -304,12 +304,6 @@ test('cli link CODE --forget: refused on a room hosted here, while the daemon ru
   fs.mkdirSync(s.dir!, { recursive: true, mode: 0o700 });
   fs.writeFileSync(s.logFile, '{"id":1}\n');
   fs.writeFileSync(path.join(s.dir!, 'outbox.json'), '[]');
-  // the daemon runs: its document `link` names a live pid
-  s.kv.set('link', { pid: process.pid, state: 'online', since: new Date().toISOString() });
-  const r1 = cli(['link', code, '--forget']);
-  assert.equal(r1.status, 1);
-  assert.match(r1.stderr, new RegExp(`the connection to room ${code} is running \\(pid ${process.pid}\\); it forgets the room only once stopped`));
-  s.kv.delete('link');
   // stopped for another reason: only --force forgets it
   links.writeState(code, stopped('AUTH: unknown link token'));
   const r2 = cli(['link', code, '--forget']);
@@ -332,6 +326,9 @@ test('cli link CODE --forget: refused on a room hosted here, while the daemon ru
   assert.equal(links.has(code), false);
   assert.equal(fs.existsSync(links.dirOf(code)), false);
   assert.equal(fs.existsSync(s.dir!), false);
+  // verify12 remote/07d: the link's own state file goes with the copy, none stays in links/
+  assert.equal(fs.existsSync(links.stateFile(code)), false);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(archive, 'link.state.json'), 'utf8')).lastReason, 'ROOM_CLOSED');
   store.forget(code); // this process's cache (the CLI dropped its own)
   assert.equal(store.roomExists(code), false);
   assert.deepEqual(store.listRooms(), [hosted], 'no listing sees the archive, and nothing opens it as a room hosted here');
@@ -355,9 +352,11 @@ test('cli link CODE --forget: refused on a room hosted here, while the daemon ru
   const other = h.newRoom();
   links.set(other, { code: other, transport: { kind: 'pipe', home: '/h' }, token: 't' });
   fs.rmSync(path.join(roomsDir(), other), { recursive: true, force: true }); // newCode() reserved it
+  fs.writeFileSync(links.logFile(other), 'a daemon line\n');
   const r4 = cli(['link', other, '--forget', '--force']);
   assert.equal(r4.status, 0, r4.stderr);
   assert.match(r4.stdout, /forgotten \(this machine had no copy of it\)/);
+  assert.equal(fs.existsSync(links.logFile(other)), false, 'no copy to keep it beside: the log goes');
   assert.equal(links.has(other), false);
   assert.equal(store.roomExists(other), false);
 });
@@ -414,4 +413,60 @@ test('R1 (live verify, verify6/12): after link CODE --forget, a process still ho
   assert.equal(d.status, 0, d.stderr);
   assert.match(d.stdout, new RegExp(`^room ${code}: a leftover folder .* is set aside at .*${code}\\.forgotten-`));
   assert.equal(fs.existsSync(after.dir!), false);
+});
+
+test('cli link CODE --forget (stage 8f item 3): a daemon still running is stopped first, then the room is forgotten in the same step', () => {
+  h.freshHome();
+  const code = h.newRoom();
+  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: 't' });
+  const s = store.open(code) as FsRoomStore;
+  fs.mkdirSync(s.dir!, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(s.logFile, '{"id":1}\n');
+  // a stand-in daemon: its document `link` names a live pid, online (no stop reason on record)
+  // started through a shell that exits, so it is reaped once it stops, as the detached daemon is
+  const pid = Number(spawnSync('sh', ['-c', `'${process.execPath}' -e 'setInterval(() => {}, 1000)' >/dev/null 2>&1 & echo $!`], { encoding: 'utf8' }).stdout.trim());
+  assert.ok(pid > 0 && identity.isAlive(pid));
+  s.kv.set('link', { pid, state: 'online', since: new Date().toISOString() });
+  const r = cli(['link', code, '--forget']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, new RegExp(`^room ${code}: its connection \\(pid ${pid}\\) stopped, and forgotten; this machine's copy is kept at `, 'm'));
+  assert.equal(identity.isAlive(pid), false, 'the daemon is gone');
+  assert.equal(links.has(code), false);
+  assert.equal(fs.existsSync(s.dir!), false);
+  store.forget(code);
+});
+
+test('cli link CODE --forget on a link that is not online (verify12 remote/05b): the host is not tried, and the line says it sees the seat lapse', () => {
+  h.freshHome();
+  const code = h.newRoom();
+  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: 't' });
+  const s = store.open(code) as FsRoomStore;
+  fs.mkdirSync(s.dir!, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(s.logFile, '{"id":1}\n');
+  // bob's seat, this machine's, as the host's document (sent to the mirror) has it
+  const mirrorLocal = (store.open(code) as unknown as { local: FsRoomStore }).local;
+  mirrorLocal.members.update(() => ({ bob: { name: 'bob', role: 'member', machine: identity.machineId(), joined_at: new Date().toISOString() } } as never));
+  const pid = Number(spawnSync('sh', ['-c', `'${process.execPath}' -e 'setInterval(() => {}, 1000)' >/dev/null 2>&1 & echo $!`], { encoding: 'utf8' }).stdout.trim());
+  s.kv.set('link', { pid, state: 'connecting', since: new Date().toISOString() });
+  const t0 = Date.now();
+  const r = cli(['link', code, '--forget']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(Date.now() - t0 < 5000);
+  assert.match(r.stdout, /forgotten; this machine's copy is kept at \S+; the host was not told bob left \(the connection was connecting\): it sees the seat lapse$/m);
+  assert.equal(identity.isAlive(pid), false);
+  store.forget(code);
+});
+
+test('cliLine: a sub-human folder other than ~/.sub-human is named before the command, so a terminal acts on it (verify12 remote/05a)', () => {
+  const was = process.env.SUB_HUMAN_HOME;
+  try {
+    process.env.SUB_HUMAN_HOME = '/tmp/x home';
+    assert.match(textMod.cliLine('link vole-1234 --forget'), /^SUB_HUMAN_HOME='\/tmp\/x home' node \S+\/scripts\/sub-human link vole-1234 --forget$/);
+    process.env.SUB_HUMAN_HOME = path.join(os.homedir(), '.sub-human');
+    assert.match(textMod.cliLine('doctor'), /^node /, 'the default folder: no prefix');
+    delete process.env.SUB_HUMAN_HOME;
+    assert.match(textMod.cliLine('doctor'), /^node /);
+    assert.equal(textMod.homePrefix('/srv/sh', '/u'), 'SUB_HUMAN_HOME=/srv/sh ');
+    assert.equal(textMod.homePrefix('/u/.sub-human/', '/u'), '');
+  } finally { if (was === undefined) delete process.env.SUB_HUMAN_HOME; else process.env.SUB_HUMAN_HOME = was; }
 });

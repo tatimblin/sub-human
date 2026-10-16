@@ -12,13 +12,15 @@
  *   - session.receive / prompt.submit: a row's hand-back (its final report, "left" or "error", which Claude Code
  *     delivers to the main conversation as a message of its own) and its "finished" task notification are taken: a row
  *     ending starts no model turn (stage 8e I.2: "Still in room" after a leave). The row agents' ids are noted as they
- *     are spawned (classic.PostToolUse).
+ *     are spawned (classic.PostToolUse); a hand-back whose report is a row's last word (`left`, `error`) is a row's
+ *     too, also one this process never saw spawned (the agent view's fork: its "type /sub-human again" contradicted
+ *     the fork's refusal, stage 8f item 1).
  * Failure: each .catch passes the event on as it is: the rows never disturb the session.
  */
 import { shimArgv, shimEnv, toClassic, toPre, mergePre, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { rowsNeeded } from './core/prefilter.ts';
 import { mergeClassic } from './core/prompt.ts';
-import { isRow, spawnedId, handbackFrom, finishedFrom } from './core/rows.ts';
+import { isRow, spawnedId, handbackFrom, finishedFrom, rowReportFrom } from './core/rows.ts';
 import { prePayload } from './core/facts.ts';
 import { asHello } from './core/state.ts';
 import { facts } from './deliver.ts';
@@ -34,11 +36,19 @@ async function needed($: EngineInterface, sid: unknown, agentType: unknown): Pro
 /** The row agents this session spawned (module state: a reload forgets them, and their hand-back then reads as any
  * agent's). */
 const rowAgents = new Set<string>();
-/** The row agent a delivery is the hand-back of, or null. */
-const rowHandback = (text: unknown): string | null => { const id = handbackFrom(text); return id && rowAgents.has(id) ? id : null; };
+/** The row agent a delivery is the hand-back of, or null: one this process saw spawned, or one whose report is a row's
+ * last word (a fork's or a reload's row, never seen spawned here: its "finished" notification is then taken too). */
+const rowHandback = (text: unknown): string | null => {
+  const id = handbackFrom(text);
+  if (id && rowAgents.has(id)) return id;
+  const row = rowReportFrom(text);
+  if (row) rowAgents.add(row);
+  return row;
+};
 /** The row agent a task notification says finished, or null (live: after the hand-back, it started the turn). */
 const rowFinished = (text: unknown): string | null => { const id = finishedFrom(text); return id && rowAgents.has(id) ? id : null; };
-const ROW_ENDED = 'sub-human: a room row ended (no turn for it)';
+/** Why a row's hand-back starts no turn: Claude Code draws it as "Prompt dropped by a hook: …" when it came as a prompt. */
+const ROW_ENDED = 'sub-human: row ended, nothing to do';
 
 const typeOf = (input: unknown) => (input && typeof input === 'object' ? (input as { subagent_type?: unknown }).subagent_type : undefined);
 
@@ -66,9 +76,10 @@ export function registerRows(on: On) {
   }).catch(($, e, next) => next(e));
 
   // a row's hand-back is no turn: taken before it is queued, or dropped as a prompt where it was not
-  on('session.receive', { origin: { kind: 'peer' } }, ($, e, next) => {
-    const id = e.origin.kind === 'peer' ? rowHandback(e.text) : null;
-    return id ? { consumed: ROW_ENDED } : next(e);
+  on('session.receive', { origin: [{ kind: 'peer' }, { kind: 'task-notification' }] }, ($, e, next) => {
+    const id = e.origin.kind === 'peer' ? rowHandback(e.text) : e.origin.kind === 'task-notification' ? rowFinished(e.text) : null;
+    if (id && e.origin.kind === 'task-notification') rowAgents.delete(id);
+    return id ? { consumed: ROW_ENDED } : next(e); // taken quietly: nothing queued, shown or read
   }).catch(($, e, next) => next(e));
   on('prompt.submit', { origin: [{ kind: 'peer' }, { kind: 'task-notification' }] }, ($, e, next) => {
     // the hand-back first (the agent id stays noted: its "finished" notification follows), then that notification

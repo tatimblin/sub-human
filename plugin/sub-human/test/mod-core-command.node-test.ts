@@ -59,11 +59,42 @@ test('command: a reply is read as a join, a notice, or a failure (one line point
   assert.deepEqual(joined, { kind: 'joined', context: 'SUB-HUMAN: …', lines: ['joined vole-1234 as bob, with alice'] });
   const say = readReply(ran({ subHuman: { say: 'invite to room vole-1234 …\n\n  /sub-human join me@box vole-1234 4821\n', refused: false, shareable: false } }));
   assert.deepEqual(say, { kind: 'say', lines: ['invite to room vole-1234 …', '  /sub-human join me@box vole-1234 4821'], refused: false, shareable: false }, 'blank lines dropped');
-  for (const r of [ran({ decision: 'block', reason: 'sub-human: x' }), ran('', 1), ran('not json'), null]) {
+  for (const r of [ran({ decision: 'block', reason: 'sub-human: x' }), ran('not json'), null]) {
     const f = readReply(r);
     assert.equal(f.kind, 'failed');
     assert.deepEqual(f.lines, ['✗ /sub-human did not finish here. Run /sub-human doctor.']);
   }
+  assert.deepEqual(readReply(ran('', 1)).lines, ['✗ /sub-human did not finish here (exit 1). Run /sub-human doctor.'], 'an exit with nothing on stderr says its code');
+});
+
+test('verify12 local/37: a run that did not answer says how long it ran and what stderr said last; a PIN- or SECRET-shaped word in it is masked', async () => {
+  const { readReply, failDetail, lastLine } = await load();
+  const run = { exitCode: 1, stdout: '', stderr: 'TypeError: x\n    at f (a.ts:1)\nsub-human: room vole-1234 is locked (members.json)\n\n' };
+  assert.deepEqual(readReply(run, { ms: 10_012 }).lines, ['✗ /sub-human did not finish here (after 10.0 s: room vole-1234 is locked (members.json)). Run /sub-human doctor.']);
+  assert.deepEqual(readReply(null, { ms: 10_000, error: new Error('process timed out\nafter 10000 ms') }).lines,
+    ['✗ /sub-human did not finish here (after 10.0 s: after 10000 ms). Run /sub-human doctor.'], 'a rejection: its message\'s last line');
+  assert.equal(failDetail({ ms: 250, exitCode: 0 }), 'after 0.3 s');
+  assert.equal(failDetail({}), '');
+  assert.equal(lastLine(`join dev vole-1234 4821 2hmejp4am3wm6rh3767dwrkeg99yyp05ry9js2b.`), 'join dev vole-1234 … …');
+  assert.equal(lastLine('x'.repeat(400)).length, 160);
+});
+
+test('a lease that did not hold the nonce is read as stale (nothing ran: the module says hello and asks again); a seat gone after a failure is said', async () => {
+  const { readReply, goneAfter, leftName, failLogLine, appendCapped } = await load();
+  const stale = readReply(ran({ subHuman: { lease: 'stale' } }));
+  assert.equal(stale.kind, 'stale');
+  assert.match(stale.lines[0], /lease did not hold/);
+  assert.equal(readReply(ran({ subHuman: { lease: 'stale', say: 'x' } })).kind, 'say', 'a reply with a say is that reply');
+  const failed = readReply(null);
+  const seat = { name: 'bob', code: 'vole-1234', role: 'member' };
+  assert.equal(goneAfter(failed, seat, null), 'this session\'s seat in vole-1234 is gone: the command finished after the wait · /sub-human joins again');
+  assert.equal(goneAfter(failed, seat, { code: 'vole-1234' }), null, 'still seated: nothing to say');
+  assert.equal(goneAfter({ kind: 'say', lines: [], refused: false, shareable: true }, seat, null), null, 'a reply that came says it itself');
+  assert.equal(leftName('leave', failed, seat), null);
+  assert.equal(leftName('leave', failed, seat, { gone: true }), 'bob', 'a leave that finished after the wait is a leave');
+  assert.equal(failLogLine(0, 'join dev vole-1234 4821', '✗ /sub-human did not finish here.'), '1970-01-01T00:00:00.000Z /sub-human join: /sub-human did not finish here.');
+  assert.equal(failLogLine(null, 'Bob vole-1234', 'x'), '- /sub-human NAME: x', 'a name is not logged');
+  assert.equal(appendCapped('a\nb\n', 'c', 2), 'b\nc\n');
 });
 
 test('command: here every reply is notices with an empty answer (no row, nothing for the model to repeat); through Remote Control only a shareable one is the output row', async () => {

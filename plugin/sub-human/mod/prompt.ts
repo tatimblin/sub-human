@@ -231,7 +231,7 @@ export function registerPrompt(on: On) {
         presence.pending = null; // stopped: no turn, no "working"
         if (origins.take(e.prompt) === 'bridge') relay(refused.stopReason);
         const merged = mergeClassic({ ...refused, ...top }, await next(e));
-        if (!merged.block) receipts.expect(merged.stopReason); // its warning row is the refusal alone, no frame
+        if (!merged.block) receipts.expect(merged.stopReason, isAtClaude(e.prompt) ? '@claude' : '@room'); // its warning row is the refusal alone, no frame
         return merged;
       }
       if (!needsNode(e, hello, { delivering: delivering(e.session_id), reviewFlag })) {
@@ -241,7 +241,7 @@ export function registerPrompt(on: On) {
       }
       const ours = await runPrompt($, e, origins.take(e.prompt), hello);
       const merged = mergeClassic(mergeClassic(ours, top), await next(e)); // both contexts kept (a wake's and node's)
-      if (ours.preventContinuation && !merged.block) receipts.expect(merged.stopReason);
+      if (ours.preventContinuation && !merged.block) receipts.expect(merged.stopReason, isAtClaude(e.prompt) ? '@claude' : '@room');
       if (merged.block || merged.preventContinuation) presence.pending = null; // stopped or refused: no turn, no "working"
       return merged;
     })();

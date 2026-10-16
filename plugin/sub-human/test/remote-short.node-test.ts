@@ -318,3 +318,47 @@ test('kick over pipe: the joiner\'s daemon stops LINK_REVOKED with the host\'s r
   assert.equal(f.status, 0, f.stderr);
   assert.match(f.stdout, /forgotten/);
 });
+
+test('verify12 remote/05b: link CODE --forget on a live link tells the host this machine\'s seats left before it stops (not "connection lost" minutes later); the link\'s log and state go with the copy', async t => {
+  const { host, remote, alice, bob, code } = room(t);
+  stopDaemon(t, remote, code);
+  await remote.joinVia(host, alice, bob);
+  await until(() => remote.lib(() => linkSocket.status(code)).state === 'online', 10000, 'online');
+  assert.ok(fs.existsSync(path.join(remote.home, 'links', `${code}.log`)) && fs.existsSync(path.join(remote.home, 'links', `${code}.state.json`)));
+  const t0 = Date.now();
+  const f = spawnSync(process.execPath, [h.BIN, 'link', code, '--forget'], { env: remote.env(null), encoding: 'utf8' });
+  assert.equal(f.status, 0, f.stderr);
+  assert.ok(Date.now() - t0 < 8000, 'bounded');
+  assert.match(f.stdout, /stopped, and forgotten; this machine's copy is kept at (\S+); the host was told bob left$/m);
+  const archive = /kept at (\S+);/.exec(f.stdout)![1];
+  const hostMembers = host.lib(() => identityLib.readMembers(code));
+  assert.ok(hostMembers.bob.left_at, 'the host has bob\'s leave at once');
+  assert.match(host.log(code), /"text":"bob left"/);
+  assert.doesNotMatch(host.log(code), /bob left \(connection lost\)/);
+  assert.deepEqual(fs.readdirSync(path.join(remote.home, 'links')).filter(n => n.startsWith(code)), [], 'nothing of the link stays in links/');
+  assert.ok(fs.existsSync(path.join(archive, 'link.log')) && fs.existsSync(path.join(archive, 'link.state.json')));
+});
+
+test('a re-invite after a kick (stage 8f item 2): the session that typed the new line and PIN is told when the host lets it in, and never that the old link\'s kick refused its join', async t => {
+  const { host, remote, alice, bob, code } = room(t);
+  stopDaemon(t, remote, code);
+  await remote.joinVia(host, alice, bob);
+  await until(() => remote.lib(() => linkSocket.status(code)).state === 'online', 10000, 'online');
+  // bob's tail runs all along, as the hooks module's child does (live: it said "down … waiting for the host" and then nothing)
+  const tailing = remote.tail(bob, 25);
+  await sleep(1500);
+  assert.match(host.join(alice, 'kick bob').json!.reason || '', /bob is out of room/);
+  await until(() => remote.lib(() => linkSocket.stopReason(linkSocket.status(code))), 10000, 'the daemon stopping');
+  const m = shown(host.join(alice, 'invite --pipe').json!.reason!)!;
+  await typeLine(remote, bob, code, m.line, 'bob');
+  const gave = remote.join(bob, `join ${m.pin}`);
+  assert.match(gave.json!.reason!, /This session tells you when they do/, gave.stdout);
+  const ref = await until(() => host.lib(() => admission.pending(code))[0], 8000, 'the request').then(r => r.ref);
+  card(host, alice, ref, 'Let in');
+  await until(() => remote.lib(() => linkSocket.status(code)).state === 'online', 10000, 'the link online again');
+  const told = (await tailing).split('\n').filter(Boolean).map(l => JSON.parse(l));
+  const chat = told.filter(e => e.type === 'chat').flatMap(e => e.lines as string[]);
+  assert.equal(chat.filter(l => l.startsWith(`the host let you in to room ${code}`)).length, 1, JSON.stringify(told));
+  // the kick's stop is no answer to the new line: its join is never said to be refused (live, verify11)
+  assert.equal(chat.filter(l => l.startsWith('✗ could not join')).length, 0, JSON.stringify(told));
+});

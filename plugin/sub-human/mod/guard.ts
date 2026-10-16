@@ -65,7 +65,7 @@ export function registerGuard(on: On) {
       ctx.realPluginRoot = await realOf($, ctx.pluginRoot);
     }
     const why = bashVerdict(e.command, ctx);
-    return why ? { deny: denyText(why, ctx.pluginRoot) } : next(e);
+    return why ? { deny: denyText(why, ctx.pluginRoot, ctx) } : next(e);
   }).catch(($, e, next) => {
     if (next.called) return next(e);
     const why = bashVerdict(e.command, {}); // the string rules need no $

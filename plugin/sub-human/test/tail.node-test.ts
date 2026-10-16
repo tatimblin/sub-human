@@ -509,7 +509,7 @@ test('tail: a member batch is chat + pull, a line to me is a wake; it says its s
   const pull = t.of('pull')[0].text.split('\n');
   assert.equal(pull[0], tailLib.PULL_HEAD);
   assert.deepEqual(pull.slice(1, -1), ['bob joined', 'bob: bob says hi', "bob's Claude: bob claude chatter"], 'the pull lane plus the chat copy');
-  assert.equal(pull.at(-1), "end of room context; the person's own words are their prompt.", 'stage 8e B: the context says where it ends');
+  assert.equal(pull.at(-1), "end of room context; the prompt it came with is the person's own words, unless the sub-human plugin sent it (then it is room lines).", 'stage 8e B: the context says where it ends');
   const wake = t.of('wake')[0].text.split('\n');
   assert.deepEqual(wake.slice(0, 4), ['bob: @alice can you look?', "bob's Claude (to you): q for alice", `(for Claude) to answer bob's Claude: SendMessage bob.${code}`, 'claude proposed: claude proposes (bbbbbb)']);
   assert.ok(wake[4].startsWith(`(for Claude) room now: proposal ${H2.slice(0, 6)}`), wake[3]);
@@ -732,5 +732,24 @@ test('tail (item 15): a seated session (a kicked machine whose copy still shows 
   const t = startNd({ sid: 'sid-b', deps: { pendingNews: () => ({ state: 'linked', code, text }) } });
   t.advance(FAST.resolveMs * 3 + 100);
   assert.deepEqual(t.of('chat').filter(e => e.lines.includes(text)).length, 1, 'said once');
+  t.stop();
+});
+
+test('tail (stage 8f item 2, live verify, verify10/remote/05f): a second join\'s let-in is said even word for word the first one\'s, once the first took its seat', () => {
+  h.freshHome();
+  const { code } = h.register('bob');
+  sys(code, 'member_joined', 'bob');
+  const text = `the host let you in to room ${code}: type /sub-human to join it as bob`;
+  let news: { state: 'waiting' | 'linked'; code: string; text: string } | null = { state: 'linked', code, text };
+  const t = startNd({ sid: 'sid-b', deps: { pendingNews: () => news } });
+  t.advance(FAST.resolveMs * 3 + 100);
+  // bob took the seat (no join waits), was kicked, typed a new invite line and PIN: waiting, then let in again
+  news = null;
+  t.advance(FAST.resolveMs * 3 + 100);
+  news = { state: 'waiting', code, text: '' };
+  t.advance(FAST.resolveMs * 3 + 100);
+  news = { state: 'linked', code, text };
+  t.advance(FAST.resolveMs * 3 + 100);
+  assert.equal(t.of('chat').filter(e => e.lines.includes(text)).length, 2, 'said for each join');
   t.stop();
 });

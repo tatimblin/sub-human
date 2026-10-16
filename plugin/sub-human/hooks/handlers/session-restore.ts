@@ -11,10 +11,12 @@
 //            session it went on in, written just after the job starts: waited for up to FORK_RECORD_WAIT_MS. The
 //            seat the old session holds moves here (identity.adoptFork: no leave, no log line); its rows ended with
 //            the old session, so every row is listed. A fork with no such record (claude --resume X --fork-session
-//            typed by hand) takes no seat: the session it came from may still hold it. A fork whose old session held
-//            a seat this sub-human folder has no record of (its title an address NAME.CODE: SUB_HUMAN_HOME was set
-//            only in the shell, and the bg job drops it) is recorded (identity.markForked) and the person told why;
-//            a bare /sub-human there then opens no room (lib/seats.ts take).
+//            typed by hand) takes no seat: the session it came from may still hold it. A fork whose old session sat
+//            in another sub-human folder (the hidden notice the hooks module appends names it, also after a leave;
+//            else its title an address NAME.CODE: SUB_HUMAN_HOME was set only in the shell, and the bg job drops it)
+//            is recorded (identity.markForked) and the person told why and how to get back; /sub-human there then
+//            opens no room and joins none this folder lacks (lib/seats.ts take). The fork does not adopt that folder
+//            for itself: its room server, status line and Bash all find the store by SUB_HUMAN_HOME, which it lacks.
 // Context = the same mechanics block as join (hooks/context.ts contextBlock: the role template filled + ROWS, i.e.
 // lib/rows.ts rowCalls(), which lists only the rows with no live hold: rows survive /clear and compaction, and
 // a re-spawn would duplicate the room row). On --resume the hold server is new, so every row is

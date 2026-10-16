@@ -718,13 +718,15 @@ function runTail({
     try { write(JSON.stringify(ev) + '\n', () => {}); } catch (e) { log('seat event', e); }
   };
   let sess: Session | null = null, timer: TimerHandle | null = null, stopped = false;
-  // an invite join this session started: what became of it, said once per state and text (waiting: look again soon)
+  // an invite join this session started: what became of it, said once per state and text (waiting: look again soon);
+  // once no join waits (its seat taken), the next join's news is new, even word for word the last one's (stage 8f item 2:
+  // a re-invite after a kick let the machine in, and "the host let you in" was never said again)
   let told: string | null = null;
   const news = (): boolean => {
     if (!sid) return false;
     let n: ReturnType<TailDeps['pendingNews']> = null;
     try { n = d.pendingNews(sid); } catch (e) { log('pending join', e); return false; }
-    if (!n) return false;
+    if (!n) { told = null; return false; }
     if (n.state === 'waiting') return true;
     if (!n.text) return false; // the command's own answer said it
     const key = `${n.code}/${n.state}/${n.text}`; // a PIN asked for again (wrong, too soon) is news again

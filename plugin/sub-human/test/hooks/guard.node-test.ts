@@ -101,6 +101,11 @@ test('guard: doctor --bundle / --fix in a session gets its own reason: a person\
     assert.match(t, /\/sub-human doctor is the read-only check/);
   }
   assert.match(g.denyText(g.DOCTOR_WHY, undefined), /person's step: they run it in a terminal outside Claude Code/);
+  // a sub-human folder other than ~/.sub-human is named, so the terminal acts on it (verify12 remote/05a)
+  assert.ok(g.denyText(g.DOCTOR_WHY, '/p', { home: '/tmp/sh home', userHome: '/u' }).includes("they run `SUB_HUMAN_HOME='/tmp/sh home' node /p/scripts/sub-human doctor --bundle`"));
+  assert.ok(g.denyText(g.DOCTOR_WHY, '/p', { home: '/u/.sub-human', userHome: '/u' }).includes('they run `node /p/scripts/sub-human doctor --bundle`'));
+  assert.equal(g.homeEnv('/srv/sh/', '/u'), 'SUB_HUMAN_HOME=/srv/sh/ ');
+  assert.equal(g.homeEnv('relative', '/u'), '');
   assert.equal(g.bashVerdict('sub-human doctor --quick'), null, 'the read-only doctor stays allowed');
 });
 
@@ -286,4 +291,32 @@ test('stage 8e A (live verify, verify8/guard/04, 06): a $ inside single quotes, 
   }
   assert.equal(g.ansiC("echo 'a$' $'\\x41'"), "echo 'a$' A");
   assert.equal(g.ansiC("echo \"$'x\""), "echo \"$'x\"", 'inside double quotes $\' is literal');
+});
+
+test('stage 8f item 5: $\'…\' inside ${…} in double quotes, $"…" strings and a case pattern inside $(…) are read as the shell reads them; a quoted heredoc\'s body is literal', () => {
+  const ctx: GuardCtx = { home: '/tmp/shv11/home', realHome: '/private/tmp/shv11/home', userHome: '/Users/u', cwd: '/tmp/w' };
+  const deny = (cmd: string) => assert.ok(g.bashVerdict(cmd, ctx), `should deny: ${cmd}`);
+  const allow = (cmd: string) => assert.equal(g.bashVerdict(cmd, ctx), null, `should allow: ${cmd}`);
+  // bash decodes $'…' inside "${…}"; with u unset the word is the store
+  assert.equal(g.ansiC("cat \"/t/${u:-$'\\x68'}ome\""), 'cat "/t/${u:-h}ome"');
+  deny("cat \"/tmp/shv11/${u:-$'\\x68'}ome/keys/k\"");
+  deny("cat /tmp/shv11/${u:-home}/keys/k");
+  // $"…" is a double-quoted string (a locale lookup): /x/$"home" is /x/home
+  assert.equal(g.ansiC('cat /t/$"home"/k'), 'cat /t/"home"/k');
+  deny('cat /tmp/shv11/$"home"/keys/k');
+  assert.equal(g.ansiC('echo "A$"B"C"'), 'echo "A$"B"C"', 'inside double quotes $" is a $ and the closing quote');
+  // a case pattern's ) inside $(…) in double quotes does not close the $(
+  deny("x=\"$(case a in a) cat /tmp/shv11/$'\\x68'ome/keys/k;; esac)\"");
+  deny("x=\"$(case a in (a) cat /tmp/shv11/$'\\x68'ome/keys/k;; esac) $'\\x68'\"");
+  assert.equal(g.ansiC("echo \"$(case a in a) echo x;; esac) $'q'\""), "echo \"$(case a in a) echo x;; esac) $'q'\"", 'after esac) the double quotes hold again');
+  // a quoted heredoc's body is literal: a lone $' in a commit message is fine
+  allow("git commit -m \"$(cat <<'EOF'\nGuard: read $' only unquoted\nEOF\n)\"");
+  allow("cat > s.sh <<'EOF'\nIFS=$'\\n'\necho $'\nEOF");
+  allow("cat <<-\"EOF\"\n\t$'x\n\tEOF\necho done");
+  allow("cat <<EOF\n$'x\nEOF");
+  // an unquoted heredoc's body still runs its $(…): a path there is read as the shell reads it
+  deny("cat <<EOF\n$(cat /tmp/shv11/$'\\x68'ome/keys/k)\nEOF");
+  // and the line after the heredoc is the shell's again
+  deny("cat <<'EOF'\n$'\nEOF\ncat /tmp/shv11/$'\\x68'ome/keys/k");
+  allow("cat <<< 'a$'");
 });

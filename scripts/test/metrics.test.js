@@ -93,7 +93,7 @@ test('chat: Claude Code\'s synthetic "No response requested." and a queued promp
 });
 
 test('chat: the room context beside a prompt (stage 8e) counts as a pull and starts no chat turn', () => {
-  const ctx = { type: 'attachment', attachment: { type: 'hook_additional_context', hookEvent: 'UserPromptSubmit', content: ['sub-human room context: what happened in the room since your last turn (…):\nbob joined\nend of room context; the person\'s own words are their prompt.'] } };
+  const ctx = { type: 'attachment', attachment: { type: 'hook_additional_context', hookEvent: 'UserPromptSubmit', content: ['sub-human room context: what happened in the room since your last turn (…):\nbob joined\nend of room context; the prompt it came with is the person\'s own words, unless the sub-human plugin sent it (then it is room lines).'] } };
   const m = seatTranscriptMetrics([{ es: [human, ctx, a('m1'), end] }]);
   assert.equal(m.chat.pulls, 1);
   assert.equal(m.chat.turns, 0);

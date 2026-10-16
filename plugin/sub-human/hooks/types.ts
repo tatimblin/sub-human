@@ -58,6 +58,9 @@ export interface SubHumanReport {
   /** an invite's line and PIN for the module's status line (never saved in the transcript) and how long it stays;
    * say then holds the text without them */
   pinned?: PinnedReport;
+  /** join: run by the module (sub_human_via "command.run") with a nonce this session's lease does not hold: nothing
+   * ran; the module says hello again (which rewrites the lease) and asks once more */
+  lease?: 'stale';
 }
 
 /** An invite's pinned form as the module gets it (lib/commands/types.ts Pinned, less the text: say holds it). cut: the

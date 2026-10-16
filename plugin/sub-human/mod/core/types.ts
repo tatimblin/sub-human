@@ -34,7 +34,7 @@ export interface HookJson {
 export interface HookJsonSpecific { additionalContext?: unknown; sessionTitle?: unknown; suppressOriginalPrompt?: unknown }
 
 /** What a shimmed hook reports to the module beside its output (hooks/types.ts SubHumanReport), as read. */
-export interface SubHumanReport { say?: unknown; refused?: unknown; shareable?: unknown; joined?: unknown; reviewOpen?: unknown; noteWaits?: unknown; pinned?: unknown }
+export interface SubHumanReport { say?: unknown; refused?: unknown; shareable?: unknown; joined?: unknown; reviewOpen?: unknown; noteWaits?: unknown; pinned?: unknown; lease?: unknown }
 
 /** A prompt's origin as the pure functions read it (PromptOrigin: its kind, and a plugin's name). */
 export interface OriginLike { kind?: unknown; name?: unknown }
@@ -97,4 +97,5 @@ export interface PinnedStatus { status: string; ms: number; short?: string; cut?
 export type JoinReply =
   | { kind: 'joined'; context: string; lines: string[] }
   | { kind: 'say'; lines: string[]; refused: boolean; shareable: boolean; pinned?: PinnedStatus }
+  | { kind: 'stale'; lines: string[] }
   | { kind: 'failed'; lines: string[] };

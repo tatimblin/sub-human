@@ -13,7 +13,9 @@
  *     beneath in place of a second run (takeJoined), and a one-line confirmation as a notice.
  * In: command.run's {command, args, origin}. Out: whether the module answers, the shim's stdin, the reply read, the
  * answer and the notices. Failure: a shim that did not answer (timeout, crash) is one refusal notice pointing to the
- * doctor; the command is not run a second time.
+ * doctor, with how long it ran and the last line it wrote on stderr (failDetail: so the next one can be explained);
+ * the command is not run a second time. A reply that says this session's lease did not hold (join.ts: {subHuman:
+ * {lease: 'stale'}}, nothing run) is read as 'stale': the module says hello again and runs it once more.
  */
 import type { JoinReply, HookJson, HookJsonSpecific, OriginLike, PinnedStatus, RunOutput, SubHumanReport } from './types.ts';
 
@@ -64,6 +66,61 @@ export const noticeLines = (text: unknown) => String(text ?? '').split('\n').fil
 
 const FAILED = '✗ /sub-human did not finish here. Run /sub-human doctor.';
 
+/** A lease that did not hold even after the module said hello again (mod/deliver.ts runs it twice at most). */
+export const STALE = '✗ /sub-human did not finish here (this session\'s hooks-module lease did not hold). Run /sub-human doctor.';
+
+/** How a shim run that did not answer went, for the refusal: its time and stderr's last line (a word that could be a
+ * PIN or an invite's SECRET masked: the notice is a transcript row). */
+export interface FailInfo { ms?: number | null; stderr?: unknown; exitCode?: unknown; error?: unknown }
+
+/** The last stderr line (or the rejection's message), its "sub-human: " lead dropped, secret-shaped words masked,
+ * at most 160 characters; '' when there is none. */
+export function lastLine(text: unknown): string {
+  const line = String(text ?? '').split('\n').map(l => l.trim()).filter(Boolean).at(-1) || '';
+  const parts = line.replace(/^sub-human: /, '').split(/(\s+)/);
+  // a number with its unit after it ("10000 ms") is a measure, not a PIN
+  const unit = (i: number) => /^(ms|s|bytes|KiB|MiB)\b/.test(parts[i + 2] || '');
+  const masked = parts.map((w, i) => (secretShaped(w.replace(/[.,;:)("']+$|^[("']+/g, '')) && !unit(i) ? '…' : w)).join('');
+  return masked.length > 160 ? `${masked.slice(0, 159)}…` : masked;
+}
+
+/** "after 10.0 s: LINE" (or ": exit N" when stderr said nothing), '' when nothing is known. */
+export function failDetail(f: FailInfo | null | undefined): string {
+  if (!f) return '';
+  const secs = typeof f.ms === 'number' && Number.isFinite(f.ms) && f.ms >= 0 ? `after ${(f.ms / 1000).toFixed(1)} s` : '';
+  const err = f.error === undefined ? '' : lastLine(f.error instanceof Error ? f.error.message : f.error);
+  const line = lastLine(f.stderr) || err;
+  const code = Number(f.exitCode);
+  const why = line || (f.exitCode != null && Number.isFinite(code) && code !== 0 ? `exit ${code}` : '');
+  return [secs, why].filter(Boolean).join(': ');
+}
+
+/** The module's own log of the runs that did not answer, in the sub-human folder (mod/deliver.ts appends to it). */
+export const MODULE_LOG = 'module.log';
+/** How many lines it keeps. */
+export const MODULE_LOG_LINES = 50;
+
+/** One line of it: when, the command's first word only (the rest may hold a PIN), and the refusal's detail. */
+export function failLogLine(at: number | null, args: unknown, line: string): string {
+  const verb = words(args)[0] || '';
+  const said = /^[a-z]+$/.test(verb) ? verb : verb ? 'NAME' : '';
+  const when = typeof at === 'number' && Number.isFinite(at) ? new Date(at).toISOString() : '-';
+  return `${when} /sub-human${said ? ` ${said}` : ''}: ${line.replace(/^✗ /, '')}`;
+}
+
+/** text (the log so far) with line added, only the last MODULE_LOG_LINES kept. */
+export function appendCapped(text: unknown, line: string, max = MODULE_LOG_LINES): string {
+  const lines = String(text ?? '').split('\n').filter(Boolean);
+  lines.push(line);
+  return lines.slice(-max).join('\n') + '\n';
+}
+
+/** The refusal of a run that did not answer: "✗ /sub-human did not finish here (after 10.0 s: LINE). Run /sub-human doctor." */
+export const failedLine = (f?: FailInfo | null) => {
+  const d = failDetail(f);
+  return d ? `✗ /sub-human did not finish here (${d}). Run /sub-human doctor.` : FAILED;
+};
+
 /** The last stdout line that parses as a JSON object, or null. */
 function lastJson(stdout: unknown): HookJson | null {
   for (const line of String(stdout || '').trim().split('\n').reverse()) {
@@ -74,15 +131,18 @@ function lastJson(stdout: unknown): HookJson | null {
 
 /**
  * join.ts's answer: {kind: 'joined', context, lines} (a seat taken: the mechanics block and the confirmation),
- * {kind: 'say', lines, refused, shareable}, or {kind: 'failed', lines} when it did not answer as the module asked
- * (exit other than 0, no subHuman reply).
+ * {kind: 'say', lines, refused, shareable}, {kind: 'stale'} (this session's lease did not hold the nonce: nothing ran),
+ * or {kind: 'failed', lines} when it did not answer as the module asked (exit other than 0, a rejected run: error, no
+ * subHuman reply), the line saying how long it ran (ms) and what stderr said last.
  */
-export function readReply(run: RunOutput | null | undefined): JoinReply {
-  if (!run || run.exitCode !== 0) return { kind: 'failed', lines: [FAILED] };
+export function readReply(run: RunOutput | null | undefined, { ms = null, error }: { ms?: number | null; error?: unknown } = {}): JoinReply {
+  const failed = (): JoinReply => ({ kind: 'failed', lines: [failedLine({ ms, error, stderr: run && run.stderr, exitCode: run && run.exitCode })] });
+  if (!run || run.exitCode !== 0) return failed();
   const o = lastJson(run.stdout);
   const sub = o && o.subHuman && typeof o.subHuman === 'object' ? o.subHuman as SubHumanReport : null;
+  if (sub && sub.lease === 'stale' && typeof sub.say !== 'string') return { kind: 'stale', lines: [STALE] };
   const say = sub && typeof sub.say === 'string' ? sub : null;
-  if (!o || !say) return { kind: 'failed', lines: [FAILED] };
+  if (!o || !say) return failed();
   const hso: HookJsonSpecific = o.hookSpecificOutput && typeof o.hookSpecificOutput === 'object' ? o.hookSpecificOutput : {};
   if (say.joined === true && typeof hso.additionalContext === 'string' && hso.additionalContext) {
     return { kind: 'joined', context: hso.additionalContext, lines: noticeLines(say.say) };
@@ -111,11 +171,20 @@ export function pinFor(p: PinnedStatus, lines: string[], columns: unknown): { st
   return { status: p.short, lines: p.cut };
 }
 
+/** A command that did not answer (failed, or a lease that would not hold) whose seat is gone once the module looked
+ * again: it finished after the wait (a leave the shim gave up on). The notice says so, so no stale seat is shown. */
+export function goneAfter(reply: JoinReply, before: { name?: unknown; code?: unknown } | null | undefined, after: { code?: unknown } | null | undefined): string | null {
+  if (reply.kind !== 'failed' && reply.kind !== 'stale') return null;
+  if (!before || typeof before.code !== 'string' || (after && after.code === before.code)) return null;
+  return `this session's seat in ${before.code} is gone: the command finished after the wait · /sub-human joins again`;
+}
+
 /** A `/sub-human leave` that went through: the name of the seat it ended (the session is titled with it alone, its
  * address gone with the seat: mod/deliver.ts renames it at once, item 12), else null. A member's seat only. */
-export function leftName(args: unknown, reply: JoinReply, seat: { name?: unknown; role?: unknown } | null | undefined): string | null {
+export function leftName(args: unknown, reply: JoinReply, seat: { name?: unknown; role?: unknown } | null | undefined, { gone = false }: { gone?: boolean } = {}): string | null {
   const a = words(args);
-  if (a.length !== 1 || a[0] !== 'leave' || reply.kind !== 'say' || reply.refused || !seat || seat.role === 'claude') return null;
+  const went = reply.kind === 'say' ? !reply.refused : gone; // gone: the seat went though the reply did not come
+  if (a.length !== 1 || a[0] !== 'leave' || !went || !seat || seat.role === 'claude') return null;
   return typeof seat.name === 'string' && /^[A-Za-z0-9._-]{1,32}$/.test(seat.name) ? seat.name : null;
 }
 

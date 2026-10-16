@@ -151,6 +151,10 @@ test('rowText (room row): answer needed, agreed, objected, decided, mail and the
   // stage 8e I.3: alice's Claude answered it: read, the count goes
   const replied = [...es, ...mk([{}, {}, {}, { kind: 'say', from: 'alice', via: 'agent', to: 'claude' }]).slice(3)];
   assert.equal(rows.rowText(code, code, 'alice', o({ entries: replied })), '⚠ your answer needed 593da0');
+  // stage 8f item 4: the room's Claude answering alice's own @claude is no mail left for her; bob's line after it is
+  const answered = mk([{ kind: 'say', from: 'alice', via: 'human', to: 'claude' }, { kind: 'say', from: 'claude', via: 'agent', to: 'alice' }]);
+  assert.equal(rows.rowText(code, code, 'alice', { entries: answered, taskSummary: '' }), '2 here');
+  assert.equal(rows.rowText(code, code, 'alice', { entries: [...answered, ...mk([{}, {}, { kind: 'say', from: 'bob', via: 'human', to: 'alice' }]).slice(2)], taskSummary: '' }), '2 here · ✉ 1 for you');
   es.push(...mk([{}, {}, {}, answer('alice', 'objection')]).slice(3));
   assert.equal(rows.rowText(code, code, 'alice', o()), '✖ objected');
   assert.equal(rows.rowText(code, code, 'bob', o()), '✓ agreed 593da0 1/2 · ✖ 1 objection');

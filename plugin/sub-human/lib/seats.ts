@@ -48,8 +48,9 @@
  *       lib/gc.ts sweep (closed rooms, ended sessions' indexes; at most every GC_EVERY_MS, within GC_BUDGET_MS), and
  *       a seat taken sweeps its room's row maps of ended sessions (gc.sweepRows)
  *   withWhom(code, name) -> string   "with bob, carol", "4 others here" or "nobody else here yet" (the people only)
- *   forkedText(f, sid) -> string   why a bare /sub-human opens no room in a fork of a seated session whose sub-human
- *       folder this process does not have (identity.forkedOf: session-restore recorded it), and how to get it back
+ *   forkedText(f, sid) -> string   why /sub-human opens no room (and joins none this folder lacks) in a fork of a session
+ *       whose sub-human folder this process does not have (identity.forkedOf: session-restore recorded it), and how to
+ *       get back (claude stop, then claude --resume with SUB_HUMAN_HOME)
  *   liveSeatHere(cwd, name) -> code|null   an open room where name's seat is live and was taken from cwd (another
  *       session of this folder holds it): a bare /sub-human opens no second room for that person
  */
@@ -252,19 +253,25 @@ function sweepOrphans(): void {
 }
 
 /**
- * Why a bare /sub-human opens no room in a fork of a seated session whose sub-human folder this process does not have
- * (stage 8e E: one opened a second room in the default folder live): the seat it continues, and how to get it back.
+ * Why /sub-human opens no room in a fork of a session whose sub-human folder this process does not have (stage 8e E:
+ * one opened a second room in the default folder live; 8f item 1: also after a leave): where it sat, and how to get
+ * back. `claude --resume` refuses a session that runs in the background, so the way back stops it first.
  */
-function forkedText(f: Pick<identity.ForkedAway, 'title'>, sid: string | null | undefined): string {
-  return `this session continues ${f.title} (the agent view moved it here), but that seat is not in this session's sub-human folder (${identity.home()}): `
-    + `SUB_HUMAN_HOME was set only in your shell, and Claude Code's background job does not get it. Set it in your Claude Code settings "env", `
-    + `or go back with SUB_HUMAN_HOME=<that folder> claude --resume ${sid || 'SESSION'}. A bare /sub-human opens no room here; /sub-human NAME ROOM still joins one by name.`;
+function forkedText(f: Pick<identity.ForkedAway, 'title' | 'home'>, sid: string | null | undefined): string {
+  const id = sid || 'SESSION';
+  const seated = /^[A-Za-z0-9_.-]+\.[a-z]+-\d{4}$/.test(f.title) ? `seated as ${f.title} ` : '';
+  const from = f.home ? `a session ${seated}in sub-human folder ${f.home}` : `a session ${seated}in another sub-human folder`;
+  return `the agent view moved this conversation here from ${from}, but this session's folder is ${identity.home()}: `
+    + `SUB_HUMAN_HOME was set only in your shell, and Claude Code's background job does not get it. /sub-human opens or joins no room here. `
+    + `To go back, in a terminal: claude stop ${id.slice(0, 8)}, then SUB_HUMAN_HOME=${f.home || '<that folder>'} claude --resume ${id}, and type /sub-human there. `
+    + `For next time, set SUB_HUMAN_HOME in your Claude Code settings "env".`;
 }
 
 function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd, cur, pubkey }: TakeCtx): Taken {
   let created = false;
-  // a fork of a seated session whose folder is not this one: no room is opened or joined without its name (stage 8e E)
-  if (!code && !cur) { const f = identity.forkedOf(session_id); if (f) return no(forkedText(f, session_id)); }
+  // a fork of a session whose folder is not this one: no room opened here, none joined that this folder does not have
+  // (stage 8e E, 8f item 1: "/sub-human NAME ROOM" said "no room ROOM on this machine … open a new room")
+  if (!cur && (!code || !identity.roomExists(code))) { const f = identity.forkedOf(session_id); if (f) return no(forkedText(f, session_id)); }
   try { gc().sweep({ keep: code }); } catch { /* the next join sweeps (lib/gc.ts: at most every GC_EVERY_MS, within GC_BUDGET_MS) */ }
   if (!code) {
     sweepOrphans();

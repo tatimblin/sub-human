@@ -5,25 +5,29 @@
 // mechanics block handed to the expansion hook in place of a second join; the room's Claude, the SDK and a reply that
 // failed take the paths they should.
 import { test, expect, mock } from 'claude-code/testing'
-import { OUT, ran, scriptOf, session, start } from './support.ts'
+import { OUT, SEAT, helloOf, ran, scriptOf, session, start } from './support.ts'
 
 const SID = 'sid-c'
 
 /** The engine beneath: a session (its cwd), mod-hello, hooks/handlers/join.ts answering `join`, and the command itself (when the
  * hook passes it on: `ran` counts it, and a join's expansion raises classic.UserPromptExpansion as the engine does). */
-function world(engine: any, on: any, { join = {} as any, room = undefined as string | undefined } = {}) {
-  const seen = { joins: [] as any[], logs: [] as string[], ran: 0, expansions: [] as any[], hellos: 0, commands: [] as string[] }
+function world(engine: any, on: any, { join = {} as any, room = undefined as string | undefined, hello = undefined as any } = {}) {
+  const seen = { joins: [] as any[], logs: [] as string[], ran: 0, expansions: [] as any[], hellos: 0, commands: [] as string[], files: {} as Record<string, string> }
+  on('fs.read', ($: any, e: any) => { if (e.path in seen.files) return { value: seen.files[e.path] }; throw new Error('ENOENT') })
+  on('fs.write', ($: any, e: any) => { seen.files[e.path] = e.text; return { value: undefined } })
   session(on, SID)
   on('session.cwd', () => ({ value: '/w' }))
   on('env.get', ($: any, e: any) => ({ value: e.name === 'SUB_HUMAN_ROOM' ? room : undefined }))
   on('ui.log', ($: any, e: any) => { seen.logs.push(e.text); return { value: undefined } })
   on('process.run', ($: any, e: any) => {
     const script = scriptOf(e)
-    if (script === 'mod-hello.ts') { seen.hellos++; return ran(JSON.stringify(OUT)) }
+    if (script === 'mod-hello.ts') { seen.hellos++; return ran(JSON.stringify(hello ? hello(seen) : OUT)) }
     if (script === 'join.ts') {
       const stdin = JSON.parse(e.init.stdin)
       seen.joins.push({ stdin, env: e.init.env })
-      const j = typeof join === 'function' ? join(stdin) : join
+      const j = typeof join === 'function' ? join(stdin, seen) : join
+      if (j && j.reject) throw new Error(j.reject)
+      if (j && j.run) return j.run
       return ran(typeof j === 'string' ? j : JSON.stringify(j))
     }
     return ran('')
@@ -127,7 +131,57 @@ test('the room\'s Claude, the SDK and a PIN typed through Remote Control go to t
   const r: any = await typed($, 'help')
   expect([seen.joins.length, seen.ran]).toEqual([1, 2])
   expect(r.text).toBeUndefined()
-  expect(seen.logs).toEqual(['✗ /sub-human did not finish here. Run /sub-human doctor.'])
+  expect(seen.logs.length).toBe(1)
+  expect(seen.logs[0]).toMatch(/^✗ \/sub-human did not finish here(?: \(after \d+\.\d s\))?\. Run \/sub-human doctor\.$/)
+})
+
+test('verify12 local/37: a shim that failed says how long it ran and stderr\'s last line (a PIN-shaped word masked), and the module log keeps it', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const seen = world($, on, { join: () => ({ run: ran('', 1, 'Error: x\n    at y\nsub-human: room otter-4821 is locked (members.json) 4821\n') }) })
+  await start($)
+  const p = typed($, 'leave')
+  await p
+  expect(seen.logs[0]).toBe('✗ /sub-human did not finish here (after 0.0 s: room otter-4821 is locked (members.json) …). Run /sub-human doctor.')
+  expect(seen.ran).toBe(0)
+  await clock.advance(10)
+  const log = seen.files['/u/.sub-human/module.log']
+  expect(log).toMatch(/^1970-01-01T00:00:00\.000Z \/sub-human leave: \/sub-human did not finish here \(after 0\.0 s: room otter-4821 is locked/)
+})
+
+test('a run that rejects (the shim\'s timeout) is one refusal with its time and reason, and the classic hook beneath does not run it a second time', async ($, on) => {
+  const seen = world($, on, { join: () => ({ reject: 'process timed out after 10000 ms' }) })
+  await start($)
+  const r: any = await typed($, 'help')
+  expect(r.text).toBeUndefined()
+  expect([seen.joins.length, seen.ran, seen.expansions.length]).toEqual([1, 0, 0])
+  // (the harness turns a throwing process.run hook into "no implementation"; the engine's own is "timed out")
+  expect(seen.logs).toEqual([expect.stringMatching(/^✗ \/sub-human did not finish here \((?:after \d+\.\d s: )?\S.*\)\. Run \/sub-human doctor\.$/)])
+})
+
+test('a lease that lost the nonce (join.ts ran nothing): the module says hello again and runs it once more', async ($, on) => {
+  const seen = world($, on, { join: (stdin: any, s: any) => (s.joins.length === 1 ? { subHuman: { lease: 'stale' } } : { subHuman: { say: 'left otter-4821 · /sub-human joins again', refused: false, shareable: true } }) })
+  await start($)
+  const hellos = seen.hellos
+  await typed($, 'leave')
+  expect(seen.joins.length).toBe(2)
+  expect(seen.hellos).toBeGreaterThan(hellos)
+  expect(seen.joins[1].stdin.sub_human_nonce).toBe(seen.joins[0].stdin.sub_human_nonce)
+  expect(seen.logs).toEqual(['left otter-4821 · /sub-human joins again'])
+})
+
+test('a leave whose shim gave up but whose handler finished: the seat is gone, the notice says so and the session is titled with the name', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  let left = false
+  const seen = world($, on, {
+    hello: () => helloOf(left ? null : SEAT),
+    join: () => { left = true; return { reject: 'process timed out after 10000 ms' } },
+  })
+  await start($)
+  await typed($, 'leave')
+  expect(seen.logs[0]).toMatch(/^✗ \/sub-human did not finish here/)
+  expect(seen.logs[1]).toBe('this session\'s seat in otter-4821 is gone: the command finished after the wait · /sub-human joins again')
+  await clock.advance(200)
+  expect(seen.commands).toContain('rename alice')
 })
 
 test('in the room\'s Claude (SUB_HUMAN_ROOM set) the launch /sub-human is the classic hook\'s', async ($, on) => {
