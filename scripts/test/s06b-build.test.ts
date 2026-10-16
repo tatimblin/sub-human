@@ -8,6 +8,9 @@ import * as mod from '../checks/s06b-build.ts';
 import type { Ctx } from '../checks/context.ts';
 import type { LogEntry } from '../checks/log.ts';
 import type { TEntry } from '../metrics.ts';
+import { pluginTest } from '../lib/paths.ts';
+
+const { eid, tid } = pluginTest('support/brands.ts');
 
 // a scene module reads only part of the context: a test hands it that part
 const asCtx = (p: Partial<Ctx>): Ctx => p as Ctx;
@@ -52,11 +55,11 @@ function world({ A = 'tristan', B = 'jess', gitLog, reflogB = REFLOG, tapB = TAP
     { id: '2', subject: 'paging store: listTasks in src/store.js', status: 'completed', owner: A },
     { id: '3', subject: 'paging handler: GET /tasks in src/server.js', status: 'completed', owner: B },
   ]));
-  const e = (id: number, from: string, kind: string, f: Partial<LogEntry>): LogEntry => ({ id, from, kind, via: from === 'claude' ? 'system' : 'agent', at: at(id), text: '', ...f });
+  const e = (id: number, from: string, kind: string, f: Partial<LogEntry>): LogEntry => ({ id: eid(id), from, kind, via: from === 'claude' ? 'system' : 'agent', at: at(id), text: '', ...f });
   const log = [
-    e(10, A, 'task_req', { op: 'claim', task_id: '2' }), e(11, B, 'task_req', { op: 'claim', task_id: '3' }),
-    e(12, A, 'task_req', { op: 'done', task_id: '2', evidence: 'npm test 6/6' }), e(13, 'claude', 'task', { op: 'update', task_id: '2', status: 'completed' }),
-    e(44, doneFrom ?? B, 'task_req', { op: 'done', task_id: '3', evidence: 'npm test 9/9' }), e(45, 'claude', 'task', { op: 'update', task_id: '3', status: 'completed' }),
+    e(10, A, 'task_req', { op: 'claim', task_id: tid('2') }), e(11, B, 'task_req', { op: 'claim', task_id: tid('3') }),
+    e(12, A, 'task_req', { op: 'done', task_id: tid('2'), evidence: 'npm test 6/6' }), e(13, 'claude', 'task', { op: 'update', task_id: tid('2'), status: 'completed' }),
+    e(44, doneFrom ?? B, 'task_req', { op: 'done', task_id: tid('3'), evidence: 'npm test 9/9' }), e(45, 'claude', 'task', { op: 'update', task_id: tid('3'), status: 'completed' }),
   ];
   // B's transcript: the peer message from A's Claude (Claude Code's origin {kind: peer, name: A.CODE})
   const transcripts: Record<string, TEntry[]> = { [B]: handoffAt == null ? [] : [{ type: 'user', timestamp: at(handoffAt), origin: { kind: 'peer', name: `${A}.husky-7354`, body: handoffText }, message: { content: handoffText } }] };

@@ -44,6 +44,7 @@ export interface PluginLibs {
 }
 /** The plugin test support the scripts tests load (plugin/sub-human/test/<key>). */
 export interface PluginTests {
+  'support/brands.ts': typeof import('../../plugin/sub-human/test/support/brands.ts');
   'support/two-homes.ts': typeof import('../../plugin/sub-human/test/support/two-homes.ts');
 }
 

@@ -35,7 +35,7 @@
 import path from 'node:path';
 import * as config from '../config.ts';
 import { hash12 } from '../text.ts';
-import { RoomError, validate } from './validate.ts';
+import { RoomError, validate, nextEntryId } from './validate.ts';
 import * as envelope from './envelope.ts';
 import { humanKey, publicKey } from './trust.ts';
 import type { Entry, EntryInput, HostState, Payload, PlaceOpts, TrustCtx, Validated, ValidateOpts } from './types.ts';
@@ -190,7 +190,7 @@ function placeAfter(p: Payload, { keys, host, machine, newest, prevLine, now }: 
   if (p.via === 'human') checkSigned(p, keys, now);
   checkPin(p, keys);
   const { sig, ...rest } = p;
-  const e: Entry = { id: (t.last || 0) + 1, at: new Date(now).toISOString(), ...rest, prev: hash12(prevLine || '') };
+  const e: Entry = { id: nextEntryId(t.last || 0), at: new Date(now).toISOString(), ...rest, prev: hash12(prevLine || '') };
   if (sig !== undefined) e.sig = sig;
   const line = JSON.stringify(e);
   const bytes = Buffer.byteLength(line, 'utf8');

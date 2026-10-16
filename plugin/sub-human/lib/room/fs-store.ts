@@ -45,7 +45,7 @@ import type {
   AppendOpts, BlobsApi, ChainCheck, ChainVerify, Entry, EntryInput, HostState, KvApi, KvUpdateOpts, Members, MembersApi,
   Payload, Placed, PlaceOpts, ReadViewOpts, RoomStore, SnapshotWire, Tailer, TailerFs, Trust, TrustCtx,
 } from './types.ts';
-import type { RoomCode } from '../brand.ts';
+import type { RoomCode, EntryId } from '../brand.ts';
 
 const fs = nodeFs;
 const require = createRequire(import.meta.url);
@@ -143,8 +143,8 @@ class FsRoomStore implements RoomStore {
 
   // ----- reading -----
   readAll(): readonly Entry[] { return logIo.readAll(this.dir); }
-  readById(ids: number | string | readonly (number | string)[]): Entry[] {
-    const want = (Array.isArray(ids) ? ids : [ids]).map(Number);
+  readById(ids: EntryId | readonly EntryId[]): Entry[] {
+    const want: readonly EntryId[] = typeof ids === 'number' ? [ids] : ids;
     const byId = new Map(this.readAll().map(e => [e.id, e]));
     return want.filter(i => byId.has(i)).map(i => byId.get(i)!);
   }

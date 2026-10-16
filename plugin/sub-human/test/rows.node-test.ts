@@ -10,7 +10,7 @@ import * as session from '../lib/room/session.ts';
 import type { Identity } from '../lib/identity.ts';
 import type { Entry, Member, Members } from '../lib/room/types.ts';
 import type { Task } from '../lib/types-app.ts';
-import { rc, sn } from './support/brands.ts';
+import { rc, sn, eid } from './support/brands.ts';
 
 /** A seat as rows reads it. */
 type Seat = Pick<Identity, 'code' | 'name' | 'role'>;
@@ -159,7 +159,7 @@ test('rowText (room row): answer needed, agreed, objected, decided, mail and the
   es.push(...mk([{}, {}, {}, answer('alice', 'objection')]).slice(3));
   assert.equal(rows.rowText(code, { viewer: 'alice', ...o() }), '✖ objected');
   assert.equal(rows.rowText(code, { viewer: 'bob', ...o() }), '✓ agreed 593da0 1/2 · ✖ 1 objection');
-  es.push({ id: 5, at: new Date().toISOString(), ...decision() });
+  es.push({ id: eid(5), at: new Date().toISOString(), ...decision() });
   assert.equal(rows.rowText(code, { viewer: 'bob', ...o() }), '✖ blocked 593da0', 'alice objected');
   assert.equal(rows.rowText(code, { viewer: 'bob', ...o({ taskSummary: 'tasks 3 open · #2 you · #4 bob' }) }), '✖ blocked 593da0 · tasks 3 open · #2 you · #4 bob');
   const agreedEs = mk([prop(['alice', 'bob']), answer('bob', 'signoff'), answer('alice', 'signoff'), decision()]);
@@ -174,7 +174,7 @@ test('rowText (room row): answer needed, agreed, objected, decided, mail and the
 test('rowText: every fixture stays within ROW_MAX; segments that do not fit are dropped whole', () => {
   const { code } = makeRoom([{ name: sn('claude') }, { name: sn('alice') }, { name: sn('bob') }]);
   const long = 'tasks 12 open · #2 you · #4 bob · #7 carol · #9 dave · #11 erin · #13 frank';
-  const es = [prop(['alice', 'bob']), { kind: 'say', from: 'claude', via: 'agent', to: 'alice' }].map((e, i): Entry => ({ id: i + 1, at: new Date().toISOString(), text: 'x', ...e }));
+  const es = [prop(['alice', 'bob']), { kind: 'say', from: 'claude', via: 'agent', to: 'alice' }].map((e, i): Entry => ({ id: eid(i + 1), at: new Date().toISOString(), text: 'x', ...e }));
   const room = rows.rowText(code, { viewer: 'alice', entries: es, taskSummary: long });
   assert.equal(room, '⚠ your answer needed 593da0 · ✉ 1 for you', 'the summary does not fit: dropped, not cut');
   fitsRow(room);

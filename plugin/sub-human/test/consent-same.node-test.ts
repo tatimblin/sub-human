@@ -16,13 +16,13 @@ import { machineId } from '../lib/home.ts';
 import { MemoryRoomStore } from './support/memory-store.ts';
 import type { Entry, EntryInput, Member, Trust } from '../lib/room/types.ts';
 import type { RoomCode } from '../lib/brand.ts';
-import { rc, sn, mid } from './support/brands.ts';
+import { rc, sn, mid, eid } from './support/brands.ts';
 
 const H = 'abcdef012345';
 let id = 0;
 const at = '2026-01-01T00:00:00.000Z';
-const prop = (approvers: string[], same?: string[][], from = 'carol'): Entry => ({ id: ++id, at, kind: 'proposal', via: 'agent', from, text: `proposal ${H}: Ship`, hash: H, approvers, ...(same ? { same } : {}) });
-const ans = (from: string, kind: string): Entry => ({ id: ++id, at, kind, via: 'human', from, proposal_hash: H });
+const prop = (approvers: string[], same?: string[][], from = 'carol'): Entry => ({ id: eid(++id), at, kind: 'proposal', via: 'agent', from, text: `proposal ${H}: Ship`, hash: H, approvers, ...(same ? { same } : {}) });
+const ans = (from: string, kind: string): Entry => ({ id: eid(++id), at, kind, via: 'human', from, proposal_hash: H });
 /** These hand-made answers carry no signature: judged as a room from before seat keys would (legacy: they count). */
 const LEGACY: Trust = e => (e && e.via === 'human' ? 'legacy' : null);
 

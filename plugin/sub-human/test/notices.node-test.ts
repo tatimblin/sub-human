@@ -24,7 +24,7 @@ import type { Entry, Member, Members } from '../lib/room/types.ts';
 import type { Me, ToolResult } from '../mcp/types.ts';
 import * as hostLinksForSeats from '../lib/remote/host-links.ts';
 import type { RoomCode } from '../lib/brand.ts';
-import { rc, sn, mid } from './support/brands.ts';
+import { rc, sn, mid, eid } from './support/brands.ts';
 /** A remote seat's link on the host (lib/remote/server.ts binds every remote seat to one; the sweep lets a seat no
  * link names leave). */
 const linkFor = (code: RoomCode, name: string) => hostLinksForSeats.create(room.open(code).store, { id: hostLinksForSeats.newLinkId(), machine: mid('far-away'), seats: [name] });
@@ -41,13 +41,13 @@ type NoticeIn = Parameters<typeof render.noticeText>[0];
 const CODE = rc('stoat-3644');
 const T0 = Date.parse('2026-10-05T10:00:00.000Z');
 const at = (s: number) => new Date(T0 + s * 1000).toISOString();
-const mv = (id: number, kind: string, from: string, s: number, text?: string): Entry => ({ id, at: at(s), from, via: 'system', kind, to: 'room', text: text || `${from} ${kind === 'member_left' ? 'left' : 'joined'}` });
+const mv = (id: number, kind: string, from: string, s: number, text?: string): Entry => ({ id: eid(id), at: at(s), from, via: 'system', kind, to: 'room', text: text || `${from} ${kind === 'member_left' ? 'left' : 'joined'}` });
 const MEMBERS: Members = { claude: { name: sn('claude'), role: 'claude' }, alice: { name: sn('alice'), role: 'member' }, bob: { name: sn('bob'), role: 'member' } };
 
 test('notices.joinLeave: others only, leaves settle after 8 s, a quick leave + rejoin is no notice', () => {
   const es: Entry[] = [
     mv(1, 'member_joined', 'alice', 0), mv(2, 'member_joined', 'claude', 1), mv(3, 'member_joined', 'bob', 10),
-    { id: 4, at: at(11), from: 'bob', via: 'human', kind: 'say', text: 'hi' },
+    { id: eid(4), at: at(11), from: 'bob', via: 'human', kind: 'say', text: 'hi' },
     mv(5, 'member_left', 'bob', 20), mv(6, 'member_joined', 'bob', 25, 'bob rejoined'), // back in 5 s: nothing
     mv(7, 'member_left', 'bob', 40), mv(8, 'member_joined', 'bob', 60, 'bob rejoined (resumed)'), // away 20 s
     mv(9, 'member_left', 'bob', 100),

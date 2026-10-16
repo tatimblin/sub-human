@@ -17,7 +17,7 @@ import { World, fixture, PLUGIN, HOOKS, room, identity, sleeper, sid } from './h
 import type { HookInput } from './helpers.ts';
 import * as seatKeyLib from '../../hooks/seat-key.ts';
 import type * as Guard from '../../mod/core/guard.ts';
-import { sn } from '../support/brands.ts';
+import { sn, eid } from '../support/brands.ts';
 
 /** World.hook's options. */
 type HookOpts = NonNullable<Parameters<World['hook']>[2]>;
@@ -116,7 +116,7 @@ test('a hook-signed post verifies; editing any signed field breaks it; a keyless
     assert.equal(trust({ ...e, text: 'ship it now' }), 'unverified');
     assert.equal(trust({ ...e, from: 'bob' }), 'unverified');
     // legacy: a seat with no key at all (a pre-key log)
-    const legacy = { id: 9, at: e.at, from: 'carol', via: 'human', kind: 'say', to: 'room', text: 'old words' };
+    const legacy = { id: eid(9), at: e.at, from: 'carol', via: 'human', kind: 'say', to: 'room', text: 'old words' };
     assert.equal(room.chatLines(legacy, { viewer: 'alice' })[0], 'carol (unverified): old words');
   });
 });

@@ -16,7 +16,7 @@ import type { AGENT_KINDS, HUMAN_KINDS, LEGACY_KINDS, SYSTEM_KINDS, TASK_OPS, VI
 import type { PRESENCE_STATES } from './members.ts';
 import type { STATE_WORDS } from './link-state.ts';
 import type { WireCode } from '../remote/types-core.ts';
-import type { RoomCode, SeatName, SessionId, MachineId } from '../brand.ts';
+import type { RoomCode, SeatName, SessionId, MachineId, ProposalHash, EntryId, TaskId } from '../brand.ts';
 
 // ---------- the log entry ----------
 
@@ -42,7 +42,7 @@ export type HostProof = Record<string, unknown>;
 /** The task fields of a task_req / task entry, as validate.ts taskFields() stores them (task_id always a string). */
 export interface TaskFields {
   op?: string;
-  task_id?: string;
+  task_id?: TaskId;
   subject?: string;
   detail?: string;
   evidence?: string;
@@ -201,7 +201,7 @@ export interface Payload extends EntryFields, Partial<Envelope> {
  * legacy kind (LegacyKind) and plan_hash; a newer host's may carry a kind or via this version does not know.
  */
 export interface Entry extends EntryFields, Partial<Envelope> {
-  id: number;
+  id: EntryId;
   at: string;
   prev?: string;
   from: string;
@@ -228,7 +228,7 @@ export type EntryOf<K extends KnownKind> = Entry & { kind: K };
 /** An entry of a kind this version knows, by kind: a reader switches on its kind and ends in assertNever. */
 export type KnownEntry = { [K in KnownKind]: EntryOf<K> }[KnownKind];
 /** A proposal whose hash the fold checked (consent.ts). */
-export type ProposalEntry = EntryOf<'proposal'> & { hash: string };
+export type ProposalEntry = EntryOf<'proposal'> & { hash: ProposalHash };
 
 /** Who holds the room by its log (store.ts hostState): the last host_changed entry, else epoch 0. */
 export interface HostState {
@@ -485,7 +485,7 @@ export interface RoomStore {
   setAside(): string | null;
   /** the store's cached array: never change it, nor its entries */
   readAll(): readonly Entry[];
-  readById(ids: number | string | readonly (number | string)[]): Entry[];
+  readById(ids: EntryId | readonly EntryId[]): Entry[];
   readAfter(id: number, filter?: (e: Entry) => boolean): Entry[];
   lastId(): number;
   readView(opts?: ReadViewOpts): readonly Entry[];
@@ -512,8 +512,8 @@ export interface RoomStore {
 
 /** The latest proposal entry per hash. */
 export interface ProposalState {
-  id: number;
-  hash: string;
+  id: EntryId;
+  hash: ProposalHash;
   from: string;
   approvers: string[];
   /** the approvers that are one person: groups of 2+, disjoint (consent.ts groupsOf) */
@@ -525,7 +525,7 @@ export interface ProposalState {
 /** A person's current answer on a hash. */
 export interface Answer {
   kind: 'signoff' | 'objection';
-  id: number;
+  id: EntryId;
   entry: Entry;
 }
 

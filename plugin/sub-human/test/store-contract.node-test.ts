@@ -28,7 +28,7 @@ import { remoteStore, MACHINE } from './support/remote-store.ts';
 import { machineId } from '../lib/home.ts';
 import * as identity from '../lib/identity.ts';
 import type { Entry, EntryInput, Member, Members, Payload, RoomStore, Via } from '../lib/room/types.ts';
-import { rc, sn, mid } from './support/brands.ts';
+import { rc, sn, mid, eid } from './support/brands.ts';
 
 type Err = Error & { code?: string };
 /** A store under test and how to change its log around it. */
@@ -79,7 +79,7 @@ const H = 'abcdef012345';
 /** The next raw line of s: id and prev chained, as a writer around the store would make it. */
 const rawLine = (s: RoomStore, fields: Omit<Entry, 'id' | 'at' | 'prev'>): Entry => {
   const last = s.readAll().at(-1);
-  return { id: (last ? last.id : 0) + 1, at: new Date().toISOString(), ...fields, prev: store.hash12(last ? JSON.stringify(last) : '') };
+  return { id: eid((last ? last.id : 0) + 1), at: new Date().toISOString(), ...fields, prev: store.hash12(last ? JSON.stringify(last) : '') };
 };
 const placed = ({ id, at, prev, ...payload }: Entry): Payload => payload as Payload; // a stored line's payload
 
@@ -101,7 +101,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.deepEqual(all.map(e => e.id), [1, 2, 3]);
     assert.equal(all[1].prev, store.hash12(JSON.stringify(all[0])), 'prev = hash12 of the previous stored line');
     assert.equal(s.lastId(), 3);
-    assert.deepEqual(s.readById([3, 1, 9]).map(e => e.id), [3, 1]);
+    assert.deepEqual(s.readById([3, 1, 9].map(eid)).map(e => e.id), [3, 1]);
     assert.deepEqual(s.readAfter(1).map(e => e.id), [2, 3]);
     assert.deepEqual(s.readAfter(0, e => e.via === 'agent').map(e => e.id), [2, 3]);
   });

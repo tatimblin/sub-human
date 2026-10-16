@@ -9,6 +9,9 @@
  *   RoomError(code, message, reason?)   reason: lib/reasons.ts; code: INVALID | RATE | LOCK | NO_ROOM | AUTH (a signature, a replay or a pinned key refused)
  *   parseEntry(e) -> e as a KnownEntry | null   a log line by its kind (no copy); null: a kind a newer host wrote
  *   isKindOf(e, kind) -> bool       a single-kind filter that narrows (EntryOf<kind>)
+ *   isEntryId(v), entryId(v) -> EntryId | null   a log line's id (a positive safe integer; entryId reads 22 or "22"),
+ *       nextEntryId(last) the one after: the brand's constructors (lib/brand.ts); isTaskId(v), taskId(v) -> TaskId |
+ *       null a task's id as stored (a short id string; taskId also reads a positive integer)
  *   AGENT_KINDS HUMAN_KINDS SYSTEM_KINDS SYSTEM_ONLY_KINDS LEGACY_KINDS KINDS TASK_OPS VIAS   the tables, the source of
  *       lib/room/types.ts Kind, LegacyKind, TaskOp and Via; isKind, isVia, isTaskOp their guards
  * Rules: via "agent" writes say question status proposal task_req; via "human" say signoff objection proposal;
@@ -31,6 +34,7 @@ import { CODED } from '../errors.ts';
 import type { WireCode } from '../remote/types-core.ts';
 import { ENTRY_TEXT_MAX_BYTES, ENTRY_REFS_MAX, ENTRY_STR_MAX, ENTRY_LIST_MAX } from '../config.ts';
 import type { Entry, EntryInput, EntryOf, HostFields, Kind, KnownEntry, KnownKind, TaskFields, TaskOp, Validated, ValidateOpts, Via } from './types.ts';
+import type { EntryId, TaskId } from '../brand.ts';
 
 // The tables are the source of their unions (lib/room/types.ts Via, Kind, LegacyKind, TaskOp), on lib/reasons.ts's
 // pattern: a word added here is a member there, and every switch over it must handle it.
@@ -201,7 +205,19 @@ function hostFields(kind: string, entry: EntryInput): HostFields | null {
   return out;
 }
 
-const taskIdOk = (v: unknown): v is string | number => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(v)) || (typeof v === 'number' && Number.isInteger(v) && v > 0);
+const TASK_ID_RE = /^[A-Za-z0-9_-]{1,32}$/;
+const isTaskId = (v: unknown): v is TaskId => typeof v === 'string' && TASK_ID_RE.test(v);
+/** A task id as the model sent it (7 or "7"), as it is stored: a string. */
+const taskId = (v: unknown): TaskId | null => { const s = typeof v === 'number' && Number.isInteger(v) && v > 0 ? String(v) : v; return isTaskId(s) ? s : null; };
+const isEntryId = (v: unknown): v is EntryId => typeof v === 'number' && Number.isSafeInteger(v) && v > 0;
+/** An entry id as a person or the model typed it (22 or "22"), else null. */
+const entryId = (v: unknown): EntryId | null => { const n = Number(v); return isEntryId(n) ? n : null; };
+/** The id the store gives the line after last (0: none yet). */
+function nextEntryId(last: number): EntryId {
+  const id = last + 1;
+  if (!isEntryId(id)) throw new RoomError('INVALID', `no entry id follows ${last}`);
+  return id;
+}
 const optStr = (k: string, v: unknown, max: number): void => { if (v !== undefined && (typeof v !== 'string' || v.length > max)) bad(`${k} must be a string of at most ${max} chars`); };
 
 /** The task fields of a task_req / task entry, checked; the caller's `id` (the task id) becomes task_id. */
@@ -209,7 +225,7 @@ function taskFields(kind: string, entry: EntryInput): TaskFields {
   const t: TaskFields = {};
   const fields: Record<string, unknown> = entry;
   const tid = entry.task_id !== undefined ? entry.task_id : entry.id;
-  if (tid !== undefined) { if (!taskIdOk(tid)) bad('the task id must be a positive integer or a short id string'); t.task_id = String(tid); }
+  if (tid !== undefined) { const id = taskId(tid); if (!id) bad('the task id must be a positive integer or a short id string'); t.task_id = id; }
   if (entry.op !== undefined) t.op = entry.op;
   if (kind === 'task_req') {
     if (!isTaskOp(t.op)) bad(`task_req op must be one of: ${TASK_OPS.join(', ')}`);
@@ -224,7 +240,7 @@ function taskFields(kind: string, entry: EntryInput): TaskFields {
   const owner = entry.owner;
   if (owner !== undefined && owner !== null && !(typeof owner === 'string' && NAME_RE.test(owner))) bad(`invalid owner "${owner}"`);
   if (entry.req !== undefined && !(Number.isInteger(entry.req) && entry.req > 0)) bad('req must be a log id');
-  if (entry.blockedBy !== undefined && !(Array.isArray(entry.blockedBy) && entry.blockedBy.every(taskIdOk))) bad('blockedBy must be task ids');
+  if (entry.blockedBy !== undefined && !(Array.isArray(entry.blockedBy) && entry.blockedBy.every(b => taskId(b) !== null))) bad('blockedBy must be task ids');
   if (entry.blockedBy !== undefined && entry.blockedBy.length > ENTRY_LIST_MAX) bad(`too many blockedBy ids (the limit is ${ENTRY_LIST_MAX})`);
   // each was checked above (a string, a name, a log id)
   for (const k of ['subject', 'detail', 'evidence', 'status', 'owner', 'req'] as const) if (fields[k] !== undefined && fields[k] !== null) (t as Record<string, unknown>)[k] = fields[k];
@@ -241,4 +257,5 @@ function taskText(kind: string, t: TaskFields): string {
   return (head || 'task') + (tail ? `: ${tail}` : '');
 }
 
-export { RoomError, validate, parseEntry, isKindOf, isVia, isKind, isTaskOp, KINDS, LEGACY_KINDS, AGENT_KINDS, HUMAN_KINDS, SYSTEM_KINDS, SYSTEM_ONLY_KINDS, TASK_OPS, VIAS };
+export {
+  RoomError, validate, parseEntry, isKindOf, isEntryId, entryId, nextEntryId, isTaskId, taskId, isVia, isKind, isTaskOp, KINDS, LEGACY_KINDS, AGENT_KINDS, HUMAN_KINDS, SYSTEM_KINDS, SYSTEM_ONLY_KINDS, TASK_OPS, VIAS };

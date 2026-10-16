@@ -31,7 +31,7 @@ import type {
   AppendOpts, BlobsApi, ChainCheck, ChainVerify, Entry, EntryInput, HostState, KvApi, KvUpdateOpts, Members, MembersApi,
   Payload, PlaceOpts, Placed, ReadViewOpts, RoomStore, SnapshotWire, Tailer, Trust,
 } from '../../lib/room/types.ts';
-import type { RoomCode } from '../../lib/brand.ts';
+import type { RoomCode, EntryId } from '../../lib/brand.ts';
 
 const { FsRoomStore, blobRef } = store;
 type FsStore = InstanceType<typeof FsRoomStore>;
@@ -112,7 +112,7 @@ class ThreadRoomStore implements RoomStore {
   _call<R>(method: string, args: unknown[]): R { return send(method, { code: this.code, dir: this._local.dir, home: home(), seg: process.env.SUB_HUMAN_SEGMENT_BYTES, args }) as R; }
 
   readAll(): readonly Entry[] { return this._call('readAll', []); }
-  readById(ids: number | string | readonly (number | string)[]): Entry[] { return this._call('readById', [ids]); }
+  readById(ids: EntryId | readonly EntryId[]): Entry[] { return this._call('readById', [ids]); }
   readAfter(seq: number, filterFn: (e: Entry) => boolean = () => true) { return this.readAll().filter(e => e.id > seq && filterFn(e)); }
   readView(opts?: ReadViewOpts): readonly Entry[] { return this._call('readView', [opts]); }
   append(entry: EntryInput, opts: AppendOpts & { queue: true }): Placed;

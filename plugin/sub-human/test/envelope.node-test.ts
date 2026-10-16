@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 import type { KeyObject } from 'node:crypto';
 import * as envelope from '../lib/room/envelope.ts';
 import type { Entry } from '../lib/room/types.ts';
+import { eid } from './support/brands.ts';
 
 const CODE = 'otter-1234';
 const pair = () => crypto.generateKeyPairSync('ed25519');
@@ -30,8 +31,8 @@ test('envelope: sign adds room, from, nonce, ts and sigv 2; the sig verifies whe
   assert.equal(envelope.isV2(p), true);
   assert.equal(envelope.verify(p, publicKey), true);
   // placed at any id, time and prev: still the person's words
-  assert.equal(envelope.verify(line({ id: 1, at: new Date().toISOString(), ...p, prev: 'aaaaaaaaaaaa' }), publicKey), true);
-  assert.equal(envelope.verify(line({ id: 42, at: '2020-01-01T00:00:00.000Z', ...p, prev: 'bbbbbbbbbbbb' }), publicKey), true);
+  assert.equal(envelope.verify(line({ id: eid(1), at: new Date().toISOString(), ...p, prev: 'aaaaaaaaaaaa' }), publicKey), true);
+  assert.equal(envelope.verify(line({ id: eid(42), at: '2020-01-01T00:00:00.000Z', ...p, prev: 'bbbbbbbbbbbb' }), publicKey), true);
   // any signed field changed, or another key: no
   for (const k of ['text', 'from', 'room', 'nonce', 'kind']) assert.equal(envelope.verify({ ...p, [k]: 'other' }, publicKey), false, k);
   assert.equal(envelope.verify({ ...p, ts: now + 1 }, publicKey), false);
@@ -42,11 +43,11 @@ test('envelope: sign adds room, from, nonce, ts and sigv 2; the sig verifies whe
 
 test('envelope: a v1 entry (signed over the stored line minus sig, before sig v2) still verifies; its id is under the sig', () => {
   const { privateKey, publicKey } = pair();
-  const e: Entry = { id: 3, at: new Date().toISOString(), from: 'alice', via: 'human', kind: 'say', to: 'room', text: 'old', room: CODE, prev: 'aaaaaaaaaaaa' };
+  const e: Entry = { id: eid(3), at: new Date().toISOString(), from: 'alice', via: 'human', kind: 'say', to: 'room', text: 'old', room: CODE, prev: 'aaaaaaaaaaaa' };
   e.sig = crypto.sign(null, Buffer.from(JSON.stringify(e)), privateKey).toString('base64');
   assert.equal(envelope.isV2(e), false);
   assert.equal(envelope.verify(e, publicKey), true);
-  assert.equal(envelope.verify(line({ ...e, id: 4 }), publicKey), false, 'v1 covered its place too');
+  assert.equal(envelope.verify(line({ ...e, id: eid(4) }), publicKey), false, 'v1 covered its place too');
   assert.equal(envelope.verify(line({ ...e, text: 'new' }), publicKey), false);
 });
 

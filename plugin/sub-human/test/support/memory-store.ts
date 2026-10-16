@@ -20,7 +20,7 @@ import type {
   Placed, ReadViewOpts, RoomStore, Tailer, Trust, TrustCtx,
 } from '../../lib/room/types.ts';
 import type { KeyObject } from 'node:crypto';
-import type { RoomCode } from '../../lib/brand.ts';
+import type { RoomCode, EntryId } from '../../lib/brand.ts';
 
 const { RoomError, hash12, blobRef, checkKey, checkCursor, CHAT_KINDS } = store;
 const clone = <T,>(v: T): T => (v === undefined ? v : structuredClone(v));
@@ -119,9 +119,9 @@ class MemoryRoomStore implements RoomStore {
     if (!same) this._all = Object.freeze(out);
     return this._all;
   }
-  readById(ids: number | string | readonly (number | string)[]): Entry[] {
+  readById(ids: EntryId | readonly EntryId[]): Entry[] {
     const byId = new Map(this.readAll().map(e => [e.id, e]));
-    return (Array.isArray(ids) ? ids : [ids]).map(Number).flatMap(i => byId.get(i) || []);
+    return (typeof ids === 'number' ? [ids] : ids).flatMap(i => byId.get(i) || []);
   }
   readAfter(id: number, f: (e: Entry) => boolean = () => true) { return this.readAll().filter(e => e.id > id && f(e)); }
   lastId() { const es = this.readAll(); return es.at(-1)?.id || 0; }

@@ -11,7 +11,7 @@ import * as identity from '../lib/identity.ts';
 import type { Room } from '../lib/room.ts';
 import type { FsRoomStore } from '../lib/room/store.ts';
 import type { AppendOpts, Entry, EntryInput } from '../lib/room/types.ts';
-import { sn } from './support/brands.ts';
+import { sn, eid } from './support/brands.ts';
 
 let R: Room = null!; // the current test's room (fresh() opens it)
 function fresh() {
@@ -227,7 +227,7 @@ test('room: cursors persist per name and resume', () => {
   assert.throws(() => R.setCursor('../evil', 1), /cursor/);
   for (let i = 0; i < 5; i++) human('bob', 'say');
   assert.deepEqual(R.readAfter(R.getCursor('mcp-alice')).map(e => e.id), [4, 5]);
-  assert.deepEqual(R.readById([5, 2, 99]).map(e => e.id), [5, 2]);
+  assert.deepEqual(R.readById([5, 2, 99].map(eid)).map(e => e.id), [5, 2]);
   assert.equal(R.lastId(), 5);
 });
 

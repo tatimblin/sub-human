@@ -70,7 +70,7 @@ import type { KeyObject } from 'node:crypto';
 import type { Bridge } from '../remote/bridge.ts';
 import type { LinkDoc, RelayOp, RelayParams, RelayResults } from '../remote/types-core.ts';
 import { errCode, msgOf } from '../errors.ts';
-import type { RoomCode } from '../brand.ts';
+import type { RoomCode, EntryId } from '../brand.ts';
 
 /** The link daemon's socket as the bridge reaches it (lib/remote/link-socket.ts handle): each relayed op, sent with the
  * socket paths to try, answered as the daemon answers it (RelayResults). */
@@ -121,7 +121,7 @@ class MirrorRoomStore implements RoomStore {
 
   // ----- reads: the local store's -----
   readAll(): readonly Entry[] { return this.local.readAll(); }
-  readById(ids: number | string | readonly (number | string)[]): Entry[] { return this.local.readById(ids); }
+  readById(ids: EntryId | readonly EntryId[]): Entry[] { return this.local.readById(ids); }
   readAfter(id: number, filter?: (e: Entry) => boolean): Entry[] { return this.local.readAfter(id, filter); }
   lastId(): number { return this.local.lastId(); }
   readView(opts?: ReadViewOpts): readonly Entry[] { return this.local.readView(opts); }

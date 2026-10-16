@@ -127,7 +127,8 @@ import { parse as parseArgs } from './args.ts';
 import type { CliIo, FlagSpec, Parsed } from './types.ts';
 import type { MirrorRoomStore } from '../room/store-mirror.ts';
 import { errCode, msgOf, stackOf } from '../errors.ts';
-import type { RoomCode } from '../brand.ts';
+import type { RoomCode, EntryId } from '../brand.ts';
+import { entryId } from '../room/validate.ts';
 
 // Each command's own modules load when it runs (createRequire: require(esm) is synchronous), so the tail and
 // agent-statusline (run often) never load the remote stack, doctor or the host commands.
@@ -148,9 +149,9 @@ function parseFlags<S extends FlagSpec>(args: readonly string[], spec: S): Parse
   return p;
 }
 
-const intList = (s: string): number[] => String(s).split(',').filter(Boolean).map(x => {
-  const n = Number(x.replace(/^#/, ''));
-  if (!Number.isInteger(n) || n <= 0) die(`bad id "${x}"`);
+const intList = (s: string): EntryId[] => String(s).split(',').filter(Boolean).map(x => {
+  const n = entryId(x.replace(/^#/, ''));
+  if (n === null) die(`bad id "${x}"`);
   return n;
 });
 

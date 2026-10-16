@@ -83,14 +83,14 @@ import * as identity from './identity.ts';
 import * as room from './room.ts';
 import * as session from './room/session.ts';
 import { writeFileAtomic } from './io.ts';
-import { clip, oneLine, hash12, HASH_RE } from './text.ts';
+import { clip, oneLine, hash12, isProposalHash, planHash } from './text.ts';
 import * as config from './config.ts';
 import * as cc from './cc/env.ts';
 import { NEXT, showNote } from './consent/review.ts';
 import type { Card, Confirm, Proposal, Recheck, Review } from './types-app.ts';
 import type { Entry, Matrix, Member, Members, ProposalState, Trust } from './room/types.ts';
 import type { Identity } from './identity.ts';
-import type { RoomCode } from './brand.ts';
+import type { RoomCode, ProposalHash } from './brand.ts';
 
 /** Who acts: a seat's room and name are all these functions read. */
 type Me = Pick<Identity, 'code' | 'name'>;
@@ -109,16 +109,16 @@ class ProposalError extends Error {}
 function refuse(m: string): never { throw new ProposalError(m); }
 
 /** A plan's ref in the room's blob store: room-relative, so the room can live anywhere (lib/room/store.ts blobs). */
-const planRef = (hash: string) => `plans/${hash}.md`;
+const planRef = (hash: ProposalHash) => `plans/${hash}.md`;
 const blobs = (code: RoomCode) => room.open(code).store.blobs;
 /** Where a person can open the stored plan (a local file; the ref when the store has none). */
-const planPath = (code: RoomCode, hash: string): string => blobs(code).localPath(planRef(hash)) || planRef(hash);
+const planPath = (code: RoomCode, hash: ProposalHash): string => blobs(code).localPath(planRef(hash)) || planRef(hash);
 function read(code: RoomCode, hash: string | null | undefined): string | null {
-  if (typeof hash !== 'string' || !HASH_RE.test(hash)) return null;
+  if (!isProposalHash(hash)) return null;
   try { const b: Buffer | null = blobs(code).get(planRef(hash)); return b == null ? null : b.toString('utf8'); } catch { return null; }
 }
-function store(code: RoomCode, buf: Buffer): string {
-  const hash = hash12(buf);
+function store(code: RoomCode, buf: Buffer): ProposalHash {
+  const hash = planHash(buf);
   const b = blobs(code);
   if (!b.has(planRef(hash))) b.put(planRef(hash), buf);
   return hash;
@@ -392,7 +392,7 @@ function inside(abs: string, cwd: string | undefined): boolean {
 
 /** The propose tool's arguments (checked here, so unknown). */
 interface CreateArgs { text?: unknown, path?: unknown, approvers?: unknown }
-interface Created { hash: string, approvers: string[], path: string, entry: Entry | undefined, again: boolean, retired: string[] }
+interface Created { hash: ProposalHash, approvers: string[], path: string, entry: Entry | undefined, again: boolean, retired: string[] }
 
 function create(me: Me | null | undefined, args: CreateArgs = {}, { cwd }: { cwd?: string } = {}): Created {
   if (!me || !me.code || !me.name) refuse('not in a room; run /sub-human');
@@ -454,7 +454,7 @@ function choiceOf(c: unknown): 'Agree' | 'Object' | 'Not yet' | null {
 }
 
 type Answered = { entry: Entry, stale?: undefined } | { stale: true, why: string, entry?: undefined };
-function answer(me: Me, p: Pick<Proposal, 'hash'>, a: { choice?: unknown, notes?: unknown } = {}): Answered {
+function answer(me: Me, p: { hash: string }, a: { choice?: unknown, notes?: unknown } = {}): Answered {
   const r = room.open(me.code);
   const choice = choiceOf(a.choice);
   if (choice !== 'Agree' && choice !== 'Object') return { stale: true, why: 'no choice' };
