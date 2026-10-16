@@ -28,14 +28,17 @@ const same: true[] = [
   true satisfies Same<PresenceState, (typeof members.PRESENCE_STATES)[number]>,
 ];
 
+/** assertNever with a value the types say cannot come (a newer peer's, a lie): what it does at run time. */
+const reach = (x: unknown, what: string): unknown => Reflect.apply(assertNever, undefined, [x, what]);
+
 test('assertNever: throws, naming the union and the value no case took', () => {
   assert.equal(same.length, 9);
-  assert.throws(() => assertNever('poll' as never, 'entry kind'), /^Error: sub-human: unhandled entry kind: "poll"$/);
-  assert.throws(() => assertNever({ type: 'later' } as never, 'link event'), /unhandled link event: \{"type":"later"\}/);
+  assert.throws(() => reach('poll', 'entry kind'), /^Error: sub-human: unhandled entry kind: "poll"$/);
+  assert.throws(() => reach({ type: 'later' }, 'link event'), /unhandled link event: \{"type":"later"\}/);
   const cyclic: Record<string, unknown> = {};
   cyclic.self = cyclic;
-  assert.throws(() => assertNever(cyclic as never, 'x'), /unhandled x: \[object Object\]/, 'a value JSON cannot show: String(x)');
-  assert.throws(() => assertNever(undefined as never, 'x'), /unhandled x: undefined/);
+  assert.throws(() => reach(cyclic, 'x'), /unhandled x: \[object Object\]/, 'a value JSON cannot show: String(x)');
+  assert.throws(() => reach(undefined, 'x'), /unhandled x: undefined/);
 });
 
 test('tables: every kind is some via\'s, the guards accept exactly the table words', () => {
@@ -47,12 +50,13 @@ test('tables: every kind is some via\'s, the guards accept exactly the table wor
   ];
   for (const [is, words] of guards) {
     for (const w of words) assert.equal(is(w), true, w);
-    for (const x of ['', 'SAY', 'poll', 'constructor', null, undefined, 1, {}]) assert.equal(is(x), false, String(x));
+    for (const x of ['', 'SAY', 'poll', 'constructor', null, undefined, 1, {}]) assert.equal(is(x), false, JSON.stringify(x) ?? 'undefined');
   }
   for (const k of validate.LEGACY_KINDS) assert.equal(validate.isKind(k), false, `${k}: read, never written`);
   for (const ev of protocol.EVENTS) assert.equal(protocol.isEvent({ ev }), true, ev);
   assert.equal(protocol.isEvent({ ev: 'later' }), false);
-  assert.deepEqual([...linkState.STATES].sort(), [...linkState.STATE_WORDS].sort());
+  for (const w of linkState.STATE_WORDS) assert.ok(linkState.STATES.has(w), w);
+  assert.equal(linkState.STATES.size, linkState.STATE_WORDS.length);
 });
 
 const at = '2026-10-16T00:00:00.000Z';

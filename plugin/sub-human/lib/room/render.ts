@@ -237,19 +237,20 @@ function leftWhy(t: string): string {
   return ` (${/\s/.test(why) ? why : 'session ended'})`;
 }
 
+/** A line as its writer's words: a say, a question, a status, and a kind this version does not know. */
+function words(n: Entry, t: string, viewer: string | undefined, trust: Trust): { head: string; text: string } {
+  const to = n.to && n.to !== 'room' ? ` (to ${n.to === viewer ? 'you' : n.to})` : '';
+  return { head: `${chatWho(n, trust)}${to}`, text: t };
+}
+
 /** The human-facing sentence for an entry (may span lines). entries: the log so far, to name a proposal by title. */
 function chatBody(e: Entry, viewer: string | undefined, entries: readonly Entry[] | undefined, trust: Trust): { head: string; text: string } {
   const n = normalize(e);
   const t = String(n.text ?? '');
   const you = (x: string | undefined): string | undefined => (x && x === viewer ? 'you' : x);
   const about = () => proposalLabel(n.proposal_hash, entries) || 'the proposal';
-  /** a line as its writer's words (a say, a question, a status, and a kind this version does not know) */
-  const words = () => {
-    const to = n.to && n.to !== 'room' ? ` (to ${you(n.to)})` : '';
-    return { head: `${chatWho(n, trust)}${to}`, text: t };
-  };
   const k = parseEntry(n);
-  if (!k) return words(); // a newer host's kind
+  if (!k) return words(n, t, viewer, trust); // a newer host's kind
   switch (k.kind) {
     case 'member_joined': return { head: `${n.from} ${/\brejoined\b/.test(t) ? 'rejoined' : 'joined'}`, text: '' };
     case 'member_left': return { head: `${n.from} left${leftWhy(t)}`, text: '' };
@@ -271,7 +272,7 @@ function chatBody(e: Entry, viewer: string | undefined, entries: readonly Entry[
     }
     case 'task_req': return { head: chatWho(n, trust), text: `asks to ${n.op} task "${n.subject || n.task_id || '?'}"` };
     case 'say': case 'question': case 'status': case 'host_changed': case 'revoke': case 'concern': case 'agree': case 'plan_rev':
-      return words();
+      return words(n, t, viewer, trust);
     default: return assertNever(k, 'entry kind');
   }
 }
