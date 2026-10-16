@@ -23,11 +23,11 @@ const attempt = <T>(f: () => T): T | null => { try { return f(); } catch { retur
  * walk, so an unjoined session stays cheap and a hook never borrows the seat of whatever claude process happens to be
  * an ancestor.
  */
-export function resolveSeat(input: { session_id?: unknown } = {}, { ancestry = false } = {}): Identity | null {
+export function resolveSeat(input: { session_id?: unknown } = {}, { ancestry = false }: { ancestry?: boolean } = {}): Identity | null {
   let me: Identity | null = input && input.session_id ? attempt(() => identity.resolveBySession(input.session_id)) : null;
   if (!me) { const pid = identity.claudePid(); if (pid) me = attempt(() => identity.resolveByPid(pid)); }
   if (!me && ancestry) me = attempt(() => identity.resolveSelf());
   return me && me.code && me.name ? me : null;
 }
 
-export const whoami = (input: { session_id?: unknown } = {}) => resolveSeat(input);
+export const whoami = (input: { session_id?: unknown } = {}): identity.Identity | null => resolveSeat(input);

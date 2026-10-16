@@ -112,7 +112,7 @@ function reseat(input: HookIn<'SessionStart'>): Identity | null {
   return { ...last, pid, session_id: input.session_id ?? null };
 }
 
-export function handle(input: HookIn<'SessionStart'>) {
+export function handle(input: HookIn<'SessionStart'>): void {
   forkedAway = null;
   const me = reseat(input);
   if (!me) {

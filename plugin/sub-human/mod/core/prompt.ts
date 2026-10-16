@@ -58,7 +58,7 @@ export function tagged(prompt: string, tag: RegExp): string | null {
   return prompt.slice(m[0].length).replace(/^\s/, '');
 }
 
-export const isAtRoom = (text: unknown) => parse(text) !== null;
+export const isAtRoom = (text: unknown): boolean => parse(text) !== null;
 
 /** "@claude TEXT" -> TEXT; anything else null. In a room it posts like @room and wakes the room's Claude; outside one
  * it is a plain prompt. */
@@ -67,10 +67,10 @@ export function parseClaude(prompt: unknown): string | null {
   return tagged(unwrapLead(prompt).text, /^@claude(?=\s|$)/);
 }
 
-export const isAtClaude = (text: unknown) => parseClaude(text) !== null;
+export const isAtClaude = (text: unknown): boolean => parseClaude(text) !== null;
 
 /** A prompt that posts as the person's words: an @room, or an @claude in a seated session (hello.seat). */
-export const posts = (text: unknown, hello: SeatedLike) => isAtRoom(text) || (isAtClaude(text) && !!(hello && hello.seat));
+export const posts = (text: unknown, hello: SeatedLike): boolean => isAtRoom(text) || (isAtClaude(text) && !!(hello && hello.seat));
 
 const kindOf = (e: SubmitLike): string => (e && e.origin && typeof e.origin.kind === 'string' ? e.origin.kind : 'unclassified');
 
@@ -97,7 +97,7 @@ export function onRemote(origin: OriginLike | null | undefined): boolean | undef
  * person does the same thing either way (types it again). */
 export const GATE_FAILED = '✗ not posted: sub-human could not check who wrote this @room. Type it again.';
 /** at-room's name for it. */
-export const NO_ORIGIN = GATE_FAILED;
+export const NO_ORIGIN: string = GATE_FAILED;
 /** An @room typed in a session with no seat (at-room, and the module when it is sure there is none). */
 export const NOT_IN_ROOM = '✗ not posted: this session isn\'t in a room. Join one first: /sub-human';
 
@@ -110,7 +110,7 @@ export const failClosed = (prompt: unknown, hello?: SeatedLike): ShimResult | nu
   ? { block: isAtRoom(prompt) ? GATE_FAILED : GATE_FAILED.replace('@room', '@claude'), suppressOriginalPrompt: true } : null);
 
 /** The shim did not handle the prompt: any exit but 0 (answered) or 2 (blocked). */
-export const shimFailed = (run: RunOutput | null | undefined) => !run || (run.exitCode !== 0 && run.exitCode !== 2);
+export const shimFailed = (run: RunOutput | null | undefined): boolean => !run || (run.exitCode !== 0 && run.exitCode !== 2);
 
 /**
  * classic.UserPromptSubmit: false only when the mod is sure hooks/handlers/prompt.ts would do nothing it needs: the hello is
@@ -162,13 +162,13 @@ export function originKind(origin: OriginLike | null | undefined): string | unde
 export function originQueue() {
   const waiting: { text: unknown; kind: unknown }[] = [];
   return {
-    push(text: unknown, kind: unknown) { const item = { text, kind }; waiting.push(item); return item; },
-    drop(item: { text: unknown; kind: unknown }) { const i = waiting.indexOf(item); if (i >= 0) waiting.splice(i, 1); },
+    push(text: unknown, kind: unknown): { text: unknown; kind: unknown } { const item = { text, kind }; waiting.push(item); return item; },
+    drop(item: { text: unknown; kind: unknown }): void { const i = waiting.indexOf(item); if (i >= 0) waiting.splice(i, 1); },
     take(prompt: unknown): string | null {
       const hit = waiting.find(x => x.text === prompt);
       return hit && typeof hit.kind === 'string' ? hit.kind : null;
     },
-    get size() { return waiting.length; },
+    get size(): number { return waiting.length; },
   };
 }
 
@@ -209,7 +209,7 @@ export function receiptBook(max = 8) {
   const waiting: { reason: string; tag: '@room' | '@claude' }[] = [];
   const find = (reason: string) => waiting.findIndex(w => w.reason === reason);
   return {
-    expect(reason: unknown, tag: '@room' | '@claude' = '@room') {
+    expect(reason: unknown, tag: '@room' | '@claude' = '@room'): void {
       if (typeof reason !== 'string' || !reason) return;
       waiting.push({ reason, tag });
       if (waiting.length > max) waiting.shift();
@@ -234,6 +234,6 @@ export function receiptBook(max = 8) {
       const said = RECEIPT_FOR_MODEL(waiting[i].reason, waiting[i].tag);
       return { ...row, content: typeof row.content === 'string' ? said : [{ type: 'text', text: said }] };
     },
-    get size() { return waiting.length; },
+    get size(): number { return waiting.length; },
   };
 }

@@ -38,13 +38,13 @@
 import crypto from 'node:crypto';
 import type { InviteSecret } from '../brand.ts';
 
-type Role = 'listener' | 'machine';
-const ROLES: readonly Role[] = Object.freeze(['listener', 'machine']);
+type SecretRole = 'listener' | 'machine';
+const ROLES: readonly SecretRole[] = Object.freeze(['listener', 'machine']);
 const ALPHABET = '0123456789abcdefghjkmnpqrstvwxyz';
 const SECRET_BYTES = 16;
 const TAG_BYTES = 8;
-const WORD_LEN = Math.ceil(((SECRET_BYTES + TAG_BYTES) * 8) / 5); // 39
-const WORD_RE = new RegExp(`^[${ALPHABET}]{${WORD_LEN}}$`);
+const WORD_LEN: number = Math.ceil(((SECRET_BYTES + TAG_BYTES) * 8) / 5); // 39
+const WORD_RE: RegExp = new RegExp(`^[${ALPHABET}]{${WORD_LEN}}$`);
 const KEY_RE = /^[A-Za-z0-9_-]{43}$/;
 const LOOKALIKE: Readonly<Record<string, string>> = Object.freeze({ i: '1', l: '1', o: '0' });
 
@@ -54,7 +54,7 @@ const isInviteSecret = (v: unknown): v is InviteSecret => typeof v === 'string' 
 
 const mint = (): Buffer => crypto.randomBytes(SECRET_BYTES);
 
-function tagOf(secret: Buffer, role: Role, key: string): Buffer {
+function tagOf(secret: Buffer, role: SecretRole, key: string): Buffer {
   if (!Buffer.isBuffer(secret) || secret.length !== SECRET_BYTES) throw new TypeError('an invite secret is 16 bytes');
   if (!ROLES.includes(role) || !KEY_RE.test(String(key))) throw new TypeError('a host key tag needs a role and a 32-byte key, base64url');
   const msg = Buffer.concat([Buffer.from('sub-human host key v3\0'), Buffer.from(role), Buffer.from([0]), Buffer.from(key, 'base64url')]);
@@ -80,7 +80,7 @@ function decode(text: unknown): { secret: Buffer; tag: Buffer } | null {
   return { secret: bytes.subarray(0, SECRET_BYTES), tag: bytes.subarray(SECRET_BYTES) };
 }
 
-function keyHolds(d: { secret: Buffer; tag: Buffer }, role: Role, key: unknown): boolean {
+function keyHolds(d: { secret: Buffer; tag: Buffer }, role: SecretRole, key: unknown): boolean {
   if (!d || typeof key !== 'string' || !KEY_RE.test(key)) return false;
   return crypto.timingSafeEqual(tagOf(d.secret, role, key), d.tag);
 }
@@ -95,4 +95,4 @@ const joinCheck = (machine: string, key: string | null = null): string => {
 };
 
 export { ALPHABET, SECRET_BYTES, TAG_BYTES, WORD_LEN, WORD_RE, ROLES, mint, tagOf, encode, decode, keyHolds, idOf, admissionRef, joinCheck, isInviteSecret };
-export type { Role };
+export type { SecretRole };

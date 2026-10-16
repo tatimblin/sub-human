@@ -427,7 +427,7 @@ async function reap(code: RoomCode, {
   return 'stopped';
 }
 
-function reapDetached(code: RoomCode, { claimed = false } = {}): number | null | undefined {
+function reapDetached(code: RoomCode, { claimed = false }: { claimed?: boolean } = {}): number | null | undefined {
   identity.roomDir(code);
   if (!identity.isHost(code)) return null;
   return detached(claimed ? ['reap', code, '--claimed'] : ['reap', code]);

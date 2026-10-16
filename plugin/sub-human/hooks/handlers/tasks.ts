@@ -32,6 +32,7 @@ import type { RawTask } from '../../lib/tasks.ts';
 import type { Task } from '../../lib/types-app.ts';
 import type { Entry } from '../../lib/room/types.ts';
 import type { RoomCode } from '../../lib/brand.ts';
+import type { Room } from '../../lib/room.ts';
 
 /** Anything that may carry task metadata (a call's input, a native task file). */
 type WithMeta = { metadata?: { _internal?: unknown; req?: unknown } | null } | null | undefined;
@@ -106,7 +107,7 @@ function opFor(prev: TaskState | null, next: TaskState, created: boolean): strin
 const same = (a: TaskState | null, b: TaskState) => !!a && !!b && a.subject === b.subject && a.status === b.status && (a.owner || null) === (b.owner || null)
   && JSON.stringify(a.blockedBy || []) === JSON.stringify(b.blockedBy || []);
 
-type RoomHandle = ReturnType<typeof room.open>;
+type RoomHandle = Room;
 
 /** The call's change to the list as a `task` entry, appended to the log and to `log` (the event's one read). */
 function mirror(code: RoomCode, input: TasksIn, r: RoomHandle, log: Entry[]): boolean {

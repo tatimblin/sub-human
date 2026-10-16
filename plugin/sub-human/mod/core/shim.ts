@@ -7,12 +7,14 @@
  * mergePermission put ours above what the hooks beneath answered (next(e) always runs: cc CONTRACT classic-chain-order).
  * Failure: an exit other than 0 or 2 is a non-blocking error, so no result.
  */
-import type { HookJson, HookJsonSpecific, RunOutput, ShimResult, SubHumanReport } from './types.ts';
+import type { HookJson, HookJsonSpecific, RunOutput, ShimResult, SubHumanRead } from './types.ts';
 
 /** The hooks.json timeout the command hooks had. */
 export const SHIM_TIMEOUT_MS = 10_000;
 /** Added to the env of a hook that reports to the mod (its output then carries subHuman). */
-export const SHIM_MODE = Object.freeze({ SUB_HUMAN_SHIM: '1' });
+export const SHIM_MODE: Readonly<{
+  SUB_HUMAN_SHIM: "1";
+}> = Object.freeze({ SUB_HUMAN_SHIM: '1' });
 
 /** ClassicResultFields of the 2.1.292 d.ts, for the events a shim can carry. block / preventContinuation /
  * stopReason are every event's. */
@@ -30,11 +32,11 @@ const COMMON = ['block', 'preventContinuation', 'stopReason'];
 
 /** node on hooks/run.ts <handler> (hooks/handlers/<handler>.ts), the compile cache preloaded as hooks.json does it
  * (hooks/compile-cache.js). */
-export const shimArgv = (root: unknown, handler: string) => ['node', '--import', `${root}/hooks/compile-cache.js`, `${root}/hooks/run.ts`, handler];
+export const shimArgv = (root: unknown, handler: string): string[] => ['node', '--import', `${root}/hooks/compile-cache.js`, `${root}/hooks/run.ts`, handler];
 
 /** A command hook's systemMessage as a $.ui.log line: without its own "sub-human: " lead, which $.ui.log adds (cc
  * CONTRACT ui-log-notice), so no line reads "sub-human: sub-human: …". */
-export const asNotice = (text: unknown) => String(text ?? '').replace(/^sub-human: /gm, '');
+export const asNotice = (text: unknown): string => String(text ?? '').replace(/^sub-human: /gm, '');
 
 /** CLAUDE_PLUGIN_ROOT, the payload's session id, an empty CLAUDE_PID (a $.process.run child inherits whatever claude
  * itself inherited: cc CONTRACT process-run-stdin) and SUB_HUMAN_VIA=module, so hooks/run.ts gives a handler its
@@ -64,7 +66,7 @@ function parseOut(stdout: unknown): HookJson | null | undefined {
  *   systemMessage and subHuman -> beside the result (ClassicResult has no such fields; the caller uses them).
  * Only the fields the event reads (CLASSIC_FIELDS) are kept: a field the event does not read fails the hook.
  */
-export function toClassic(event: string, run: RunOutput = {}): { result: ShimResult; systemMessage?: string; subHuman?: SubHumanReport } {
+export function toClassic(event: string, run: RunOutput = {}): { result: ShimResult; systemMessage?: string; subHuman?: SubHumanRead } {
   const fields = new Set([...COMMON, ...(CLASSIC_FIELDS[event] || [])]);
   // a subset of r's own fields
   const keep = (r: ShimResult): ShimResult => Object.fromEntries(Object.entries(r).filter(([k, v]) => fields.has(k) && v !== undefined));
@@ -85,7 +87,7 @@ export function toClassic(event: string, run: RunOutput = {}): { result: ShimRes
   const title = typeof hso.sessionTitle === 'string' ? hso.sessionTitle : typeof o.sessionTitle === 'string' ? o.sessionTitle : undefined;
   if (title) r.sessionTitle = title;
   if (hso.suppressOriginalPrompt === true) r.suppressOriginalPrompt = true;
-  const out: { result: ShimResult; systemMessage?: string; subHuman?: SubHumanReport } = { result: keep(r) };
+  const out: { result: ShimResult; systemMessage?: string; subHuman?: SubHumanRead } = { result: keep(r) };
   if (typeof o.systemMessage === 'string' && o.systemMessage) out.systemMessage = o.systemMessage;
   if (o.subHuman && typeof o.subHuman === 'object' && !Array.isArray(o.subHuman)) out.subHuman = o.subHuman;
   return out;
@@ -111,7 +113,7 @@ export type PreResult = ({ allow: true } | { ask: string } | { deny: string } | 
  * updatedInput stands). allowReason: an allow's permissionDecisionReason, which a command hook's allow showed the
  * person and an answer cannot carry (the caller logs it). systemMessage and subHuman beside, as toClassic.
  */
-export function toPre(run: RunOutput = {}): { result: PreResult; allowReason?: string; systemMessage?: string; subHuman?: SubHumanReport } {
+export function toPre(run: RunOutput = {}): { result: PreResult; allowReason?: string; systemMessage?: string; subHuman?: SubHumanRead } {
   const code = Number(run.exitCode);
   if (code === 2) return { result: { deny: String(run.stderr || '').trim() || 'denied by sub-human' } };
   if (code !== 0) return { result: {} };
@@ -120,7 +122,7 @@ export function toPre(run: RunOutput = {}): { result: PreResult; allowReason?: s
   let allowReason: string | undefined;
   let updatedInput: Record<string, unknown> | undefined;
   const ctx: string[] = [];
-  const out: { systemMessage?: string; subHuman?: SubHumanReport } = {};
+  const out: { systemMessage?: string; subHuman?: SubHumanRead } = {};
   const rank = { allow: 1, ask: 2, deny: 3 } as const;
   for (const o of allJson(run.stdout)) {
     const h = (o.hookSpecificOutput && typeof o.hookSpecificOutput === 'object' ? o.hookSpecificOutput : {}) as Record<string, unknown>;
@@ -165,10 +167,10 @@ export function mergePre(ours: PreResult | null = {}, theirs: PreResult | null |
 export type PermissionAnswer = { decision?: Record<string, unknown> & { behavior: 'allow' | 'deny' } };
 
 /** A PermissionRequest command hook's output as classic.PermissionRequest's answer: its last decision, if any. */
-export function toPermission(run: RunOutput = {}): { result: PermissionAnswer; subHuman?: SubHumanReport } {
+export function toPermission(run: RunOutput = {}): { result: PermissionAnswer; subHuman?: SubHumanRead } {
   if (Number(run.exitCode) !== 0) return { result: {} };
   let decision: PermissionAnswer['decision'];
-  let subHuman: SubHumanReport | undefined;
+  let subHuman: SubHumanRead | undefined;
   for (const o of allJson(run.stdout)) {
     const h = (o.hookSpecificOutput && typeof o.hookSpecificOutput === 'object' ? o.hookSpecificOutput : {}) as Record<string, unknown>;
     const d = h.decision as { behavior?: unknown } | undefined;

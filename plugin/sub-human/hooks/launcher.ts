@@ -64,7 +64,7 @@ function orderRoots(rec: RootsRec | null): string[] {
  * Record root and rewrite the launcher. Returns the launcher path, or null when root was refused (a temp root
  * without SUB_HUMAN_ALLOW_TMP_ROOT=1); a refused root changes nothing.
  */
-function writeLauncher(root = process.env.CLAUDE_PLUGIN_ROOT || path.join(import.meta.dirname, '..'), { now = Date.now(), env = process.env } = {}) {
+function writeLauncher(root: string = process.env.CLAUDE_PLUGIN_ROOT || path.join(import.meta.dirname, '..'), { now = Date.now(), env = process.env }: { now?: number; env?: NodeJS.ProcessEnv } = {}): string | null {
   root = path.resolve(root);
   const temp = isTempRoot(root);
   if (temp && !allowTmp(env)) return null;
@@ -87,7 +87,7 @@ export { launcherBody, isTempRoot, writeLauncher };
 
 /** The launcher and the serve shim, best effort: a failure is a line on stderr (the rows fall back to their default
  * text) and never fails the hook it runs in. */
-export function refresh() {
+export function refresh(): void {
   try {
     if (!writeLauncher()) process.stderr.write('sub-human row-launcher: plugin root is under a temp dir; not used for the row status line (set SUB_HUMAN_ALLOW_TMP_ROOT=1 to allow)\n');
   } catch (e) { process.stderr.write(`sub-human row-launcher error: ${e instanceof Error && e.stack || e}\n`); /* rows fall back to their default text */ }

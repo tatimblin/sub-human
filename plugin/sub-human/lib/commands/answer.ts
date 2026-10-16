@@ -15,7 +15,7 @@ export const refused = (text: string): Answer => ({ kind: 'refused', text });
 export const secret = (text: string, { refused: r = false, pinned }: { refused?: boolean; pinned?: Pinned } = {}): Answer => ({ kind: 'secret', text, refused: r, ...(pinned ? { pinned } : {}) });
 
 export const HELP_HINT = 'All commands: /sub-human help';
-export const USAGE = `usage: /sub-human [NAME] joins or opens a room. ${HELP_HINT}`;
+export const USAGE: string = `usage: /sub-human [NAME] joins or opens a room. ${HELP_HINT}`;
 
 export const hostOnly = (cur: Identity | null, what: string): string | null => (!cur ? `join a room first (/sub-human); then /sub-human ${what}.`
   : !identity.isHost(cur.code) ? `room ${cur.code} is hosted on another machine; only its host can do that.` : null);

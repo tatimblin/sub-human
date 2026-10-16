@@ -30,9 +30,9 @@ import type { Entry, Envelope } from './types.ts';
 type Signable = object & Partial<Envelope>;
 
 const SIG_VERSION = 2;
-const SIG_SKEW_MS = 10 * 60 * 1000;
+const SIG_SKEW_MS: number = 10 * 60 * 1000;
 /** Stamped by the store when it places an entry; never under a v2 signature. */
-const PLACED_FIELDS = ['id', 'at', 'prev', 'sig'];
+const PLACED_FIELDS: readonly string[] = ['id', 'at', 'prev', 'sig'];
 
 /** v with the keys of every plain object sorted, so the same fields serialize to the same bytes. */
 function sorted(v: unknown): unknown {
@@ -94,7 +94,7 @@ function verify(e: Signable | null | undefined, pub: KeyObject | null | undefine
  * @param {number} [skewMs]
  * @returns {boolean}
  */
-const freshTs = (e: Signable | null | undefined, now = Date.now(), skewMs = SIG_SKEW_MS): boolean =>
+const freshTs = (e: Signable | null | undefined, now: number = Date.now(), skewMs: number = SIG_SKEW_MS): boolean =>
   !!e && typeof e.ts === 'number' && Number.isFinite(e.ts) && Math.abs(now - e.ts) <= skewMs;
 
 /**

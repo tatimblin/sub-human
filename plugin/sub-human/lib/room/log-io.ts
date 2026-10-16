@@ -26,7 +26,7 @@
  * A crash between the steps of a rotation is finished by the next append (settle).
  *
  * Reading:
- *   readAll(dir) -> readonly Entry[]   every entry this machine holds, in order: the snapshot's non-chat entries
+ *   readAll(dir) -> readonly Readonly<Entry>[]   every entry this machine holds, in order: the snapshot's non-chat entries
  *       before `held` (a mirror that began from a snapshot), the sealed segments, the active segment (carry lines
  *       skipped). Cached: sealed segments are parsed once; the active one as before (a repeat call re-reads nothing
  *       when unchanged and parses only the appended bytes when it grew; a shrink, a new inode, a same-size rewrite or
@@ -111,23 +111,23 @@ interface LineSpan { start: number; end: number; id: number | null }
 /** Where a chain check broke: an id whose prev does not chain, or a corrupt line (badAt null, line 1-based). */
 interface ChainBreak { badAt: number | null; line?: number }
 /** readActive's cache of the active segment. */
-interface ReadCache { dev: number; ino: number; size: number; mtimeMs: number; offset: number; tail: Buffer; entries: readonly Entry[]; all: readonly Entry[] }
+interface ReadCache { dev: number; ino: number; size: number; mtimeMs: number; offset: number; tail: Buffer; entries: readonly Readonly<Entry>[]; all: readonly Readonly<Entry>[] }
 /** This process's view of a room's active segment: its checkpoint and the parsed entries of its marks (same order). */
-interface ViewState { dev: number; ino: number; snap: LogSnapshot | null; cp: Checkpoint; marked: readonly Entry[] | null; checked: string; joined: readonly Entry[] | null }
+interface ViewState { dev: number; ino: number; snap: LogSnapshot | null; cp: Checkpoint; marked: readonly Readonly<Entry>[] | null; checked: string; joined: readonly Readonly<Entry>[] | null }
 /** verifyChain's own checkpoint (no marks). */
 interface Verified { dev: number; ino: number; snap: LogSnapshot | null; cp: Checkpoint }
 
 const TAIL_CHUNK = 64 * 1024;
 const TAIL_CHECK = 64;              // bytes before the cached end compared on growth
-const EMPTY: readonly Entry[] = Object.freeze([]);
+const EMPTY: readonly Readonly<Entry>[] = Object.freeze([]);
 
 const readCache = new Map<string, ReadCache>();   // active file -> its readAll cache
 const views = new Map<string, ViewState>();       // dir -> readView's view
 const verified = new Map<string, Verified>();     // dir -> verifyChain's checkpoint
 const snaps = new Map<string, { key: string; snap: LogSnapshot | null }>(); // dir -> snapshot.json as last read
-const segCache = new Map<string, { key: string; entries: readonly Entry[] }>(); // sealed file -> its entries
-const prefixes = new Map<string, { snap: LogSnapshot; entries: readonly Entry[] }>(); // dir -> what readAll holds before the active segment
-const alls = new Map<string, { prefix: readonly Entry[]; act: readonly Entry[]; all: readonly Entry[] }>();
+const segCache = new Map<string, { key: string; entries: readonly Readonly<Entry>[] }>(); // sealed file -> its entries
+const prefixes = new Map<string, { snap: LogSnapshot; entries: readonly Readonly<Entry>[] }>(); // dir -> what readAll holds before the active segment
+const alls = new Map<string, { prefix: readonly Readonly<Entry>[]; act: readonly Readonly<Entry>[]; all: readonly Readonly<Entry>[] }>();
 
 function parseLines(text: string): Entry[] {
   const out: Entry[] = [];
@@ -299,7 +299,7 @@ function offsetAfterId(file: string, after: number): number {
 
 // ---------- readAll ----------
 /** Every parseable entry of the active segment (carry line included), cached as described above. */
-function readActive(file: string): readonly Entry[] {
+function readActive(file: string): readonly Readonly<Entry>[] {
   const fd = openRead(file);
   if (fd === null) { readCache.delete(file); return EMPTY; }
   try {
@@ -331,7 +331,7 @@ function readActive(file: string): readonly Entry[] {
 }
 
 /** A sealed segment's entries, parsed once per file (it never changes). */
-function segEntries(file: string): readonly Entry[] {
+function segEntries(file: string): readonly Readonly<Entry>[] {
   const key = statKey(file);
   const hit = segCache.get(file);
   if (hit && hit.key === key) return hit.entries;
@@ -344,7 +344,7 @@ function segEntries(file: string): readonly Entry[] {
 
 /** What readAll holds before the active segment: the snapshot's entries before `held`, then each sealed segment
  * (its first entry skipped when it repeats the one before: the carry line). */
-function prefixOf(dir: string, snap: LogSnapshot): readonly Entry[] {
+function prefixOf(dir: string, snap: LogSnapshot): readonly Readonly<Entry>[] {
   const hit = prefixes.get(dir);
   if (hit && hit.snap === snap) return hit.entries;
   const out: Entry[] = snap.entries.filter(e => e.id < snap.held);
@@ -363,7 +363,7 @@ function prefixOf(dir: string, snap: LogSnapshot): readonly Entry[] {
 }
 
 /** The active segment's entries after the snapshot (its carry line, and lines a rotation in flight sealed, left out). */
-function afterSnap(act: readonly Entry[], S: number): readonly Entry[] {
+function afterSnap(act: readonly Readonly<Entry>[], S: number): readonly Readonly<Entry>[] {
   let i = 0;
   while (i < act.length && !(act[i].id > S)) i++;
   return i ? Object.freeze(act.slice(i)) : act;
@@ -378,7 +378,7 @@ function settled<R>(dir: string, fn: (snap: LogSnapshot | null) => R): R {
   }
 }
 
-function readAll(dir: string): readonly Entry[] {
+function readAll(dir: string): readonly Readonly<Entry>[] {
   return settled(dir, snap => {
     const act = readActive(activeFile(dir));
     const prefix = snap ? prefixOf(dir, snap) : EMPTY;
@@ -718,7 +718,7 @@ function activeView(dir: string, snap: LogSnapshot | null, after: number): Entry
   } finally { fs.closeSync(fd); }
 }
 
-function readView(dir: string, { after }: { after: number }): Entry[] {
+function readView(dir: string, { after }: { after: number }): readonly Readonly<Entry>[] {
   return settled(dir, snap => {
     const S = snap ? snap.id : 0;
     const tail = activeView(dir, snap, Math.max(after, S));
@@ -730,7 +730,7 @@ function readView(dir: string, { after }: { after: number }): Entry[] {
   });
 }
 
-function nonChat(dir: string): { marked: readonly Entry[]; rest: Entry[] } {
+function nonChat(dir: string): { marked: readonly Readonly<Entry>[]; rest: Entry[] } {
   return settled(dir, snap => {
     const fd = openRead(activeFile(dir));
     if (fd === null) return { marked: snap ? snap.entries : EMPTY, rest: [] };

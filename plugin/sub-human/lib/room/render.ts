@@ -185,7 +185,7 @@ function titleText(p: Entry): string {
  * The proposal hash names, as people see it: its title in quotes and its short hash, '"Ship v3 Monday" (3fa2c1)'
  * (revisions can share a title), from the proposal entry in entries; null without entries or that entry.
  */
-function proposalLabel(hash: string | undefined, entries: readonly Entry[] | undefined): string | null {
+function proposalLabel(hash: string | undefined, entries: readonly Readonly<Entry>[] | undefined): string | null {
   if (!hash || !Array.isArray(entries)) return null;
   const p = entries.find(x => x && x.kind === 'proposal' && x.hash === hash);
   const t = p && titleText(p);
@@ -193,7 +193,7 @@ function proposalLabel(hash: string | undefined, entries: readonly Entry[] | und
 }
 
 /** The proposals entry e retired (lib/room/consent.ts superseded: same sender, same title), each labelled; [] without entries. */
-function retiredBy(e: Entry, entries: readonly Entry[] | undefined, trust: Trust): string[] {
+function retiredBy(e: Entry, entries: readonly Readonly<Entry>[] | undefined, trust: Trust): string[] {
   if (!Array.isArray(entries) || !e.hash) return [];
   const before = entries.filter(x => x && x.id < e.id);
   const was = fold(before, trust).superseded;
@@ -209,7 +209,7 @@ const noteOf = (o: Entry): string => (o.text == null || /^Object$/.test(String(o
  * requested by bob: keep status · agreed: alice' (each objector's note from the answers the decision refs). Without
  * the proposal in entries: 'decided (agreed: bob)' / 'not agreed (objected: bob)'.
  */
-function decisionText(n: Entry, entries: readonly Entry[] | undefined): string {
+function decisionText(n: Entry, entries: readonly Readonly<Entry>[] | undefined): string {
   const label = proposalLabel(n.proposal_hash, entries);
   const s = String(n.text ?? '').replace(/\s*\(proposal [0-9a-f]+\)\s*$/, '');
   const m = /^objected: ([^·]*?)(?: · agreed: (.*))?$/.exec(s);
@@ -244,7 +244,7 @@ function words(n: Entry, t: string, viewer: string | undefined, trust: Trust): {
 }
 
 /** The human-facing sentence for an entry (may span lines). entries: the log so far, to name a proposal by title. */
-function chatBody(e: Entry, viewer: string | undefined, entries: readonly Entry[] | undefined, trust: Trust): { head: string; text: string } {
+function chatBody(e: Entry, viewer: string | undefined, entries: readonly Readonly<Entry>[] | undefined, trust: Trust): { head: string; text: string } {
   const n = normalize(e);
   const t = String(n.text ?? '');
   const you = (x: string | undefined): string | undefined => (x && x === viewer ? 'you' : x);
@@ -287,7 +287,7 @@ function chatBody(e: Entry, viewer: string | undefined, entries: readonly Entry[
  * call for the rest. \r, other controls and bidi overrides never reach the output (safeText).
  * viewer: the reader's name ("to you", "owner you"); entries: the log so far (a proposal's title).
  */
-function chatLines(e: Entry, { viewer, entries, trust = NO_TRUST }: { viewer?: string; entries?: readonly Entry[]; trust?: Trust } = {}): string[] {
+function chatLines(e: Entry, { viewer, entries, trust = NO_TRUST }: { viewer?: string; entries?: readonly Readonly<Entry>[]; trust?: Trust } = {}): string[] {
   const { head, text } = chatBody(e, viewer, entries, trust);
   if (!text) return [head];
   const cps = Array.from(text);
@@ -313,7 +313,7 @@ function waiting(m: Matrix): string {
 }
 
 /** "room now: proposal 3fa2c1 waiting on bob · you: answer needed · away: bob", from the log as it is now. */
-function stateLine(me: LaneViewer | null | undefined, entries: readonly Entry[] = [], { members = {}, ids = true, trust = NO_TRUST }: { members?: Members | null; ids?: boolean; trust?: Trust } = {}): string {
+function stateLine(me: LaneViewer | null | undefined, entries: readonly Readonly<Entry>[] = [], { members = {}, ids = true, trust = NO_TRUST }: { members?: Members | null; ids?: boolean; trust?: Trust } = {}): string {
   const parts: string[] = [];
   const name = (me && me.name) as string; // no seat: in no proposal
   const all = proposals(entries, trust);
@@ -351,7 +351,7 @@ function fmt(e: Entry, { trust = NO_TRUST }: { trust?: Trust } = {}): string {
 
 // ---------- the compaction digest ----------
 /** The ordered digest sections; items carry an id so the cap can trim the oldest first. */
-function digestSections(entries: readonly Entry[] = [], { members = {}, code = null, trust = NO_TRUST }: DigestCtx = {}): DigestSection[] {
+function digestSections(entries: readonly Readonly<Entry>[] = [], { members = {}, code = null, trust = NO_TRUST }: DigestCtx = {}): DigestSection[] {
   members = members || {};
   const memberLines = Object.values(members).map(m => {
     const last = entries.filter(e => e.from === m.name && e.via !== 'system').at(-1);
@@ -410,7 +410,7 @@ function renderSections(sections: DigestSection[], trimmed: number): string {
   return out.join('\n');
 }
 
-function digest(entries: readonly Entry[] = [], ctx: DigestCtx = {}): string {
+function digest(entries: readonly Readonly<Entry>[] = [], ctx: DigestCtx = {}): string {
   const sections = digestSections(entries, ctx);
   let trimmed = 0;
   let text = renderSections(sections, trimmed);
@@ -443,7 +443,7 @@ interface Notice {
 const settleMs = () => envMs('SUB_HUMAN_LEAVE_MS');
 const isMove = (e: Entry | null | undefined) => !!e && e.via === 'system' && (e.kind === 'member_joined' || e.kind === 'member_left');
 
-function joinLeave(es: readonly Entry[] | null | undefined, viewer: string | null | undefined, { now = clock.now(), settle = settleMs() } = {}): Notice[] {
+function joinLeave(es: readonly Readonly<Entry>[] | null | undefined, viewer: string | null | undefined, { now = clock.now(), settle = settleMs() }: { now?: number; settle?: number } = {}): Notice[] {
   const list = (es || []).filter(e => isMove(e) && e.from !== viewer && e.from !== ROOM_CLAUDE);
   const drop = new Set<number>();
   const next = new Map<string, Entry>(); // name -> its next join, walking back
@@ -466,7 +466,7 @@ function noticeText(n: Pick<Notice, 'kind' | 'name' | 'rejoin'> & { why?: string
   return `${n.name} ${n.rejoin ? 'rejoined' : 'joined'}`;
 }
 
-function rowSegment(es: readonly Entry[] | null | undefined, viewer: string | null | undefined, { now = clock.now() } = {}): string {
+function rowSegment(es: readonly Readonly<Entry>[] | null | undefined, viewer: string | null | undefined, { now = clock.now() }: { now?: number } = {}): string {
   const settle = settleMs();
   const fresh = (x: Notice) => now - Date.parse(x.at) - (x.kind === 'member_left' ? settle : 0) < ROW_NOTICE_MS;
   // only the log's last ROW_NOTICE_MS + settle can hold a fresh notice, or the rejoin that cancels one: the log is in

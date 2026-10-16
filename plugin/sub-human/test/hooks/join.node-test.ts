@@ -13,7 +13,7 @@ import * as common from '../../hooks/context.ts';
 import * as membersLib from '../../lib/room/members.ts';
 import * as linkSocket from '../../lib/remote/link-socket.ts';
 import * as inviteSecret from '../../lib/remote/invite-secret.ts';
-import type { HookJson, HookRun } from './helpers.ts';
+import type { HookLine, HookRun } from './helpers.ts';
 import type { Identity } from '../../lib/identity.ts';
 import type { Member, Role } from '../../lib/room/types.ts';
 import type { RoomCode } from '../../lib/brand.ts';
@@ -324,7 +324,7 @@ test('two concurrent joins start one claude: the second sees the pending claim',
   fs.chmodSync(bin, 0o755);
   const starters = () => spawnSync('ps', ['-Ao', 'args'], { encoding: 'utf8' }).stdout.split('\n')
     .filter(l => l.includes(path.join('lib', 'room-claude.ts')) && l.includes(` start ${w.code} `)).length;
-  const run = (who: string) => new Promise<HookJson>(res => {
+  const run = (who: string) => new Promise<HookLine>(res => {
     w.modLease(w.sid[who]);
     const env = baseEnv({ SUB_HUMAN_HOME: w.home, HOME: w.userHome, CLAUDE_PLUGIN_ROOT: PLUGIN, SUB_HUMAN_CLAUDE: bin, SUB_HUMAN_PLUGIN_DIR: '', CLAUDE_PID: String(w.pid[who]) });
     const p = sp(process.execPath, [path.join(HOOKS, 'run.ts'), 'join'], { env, cwd: w.cwd });

@@ -10,18 +10,28 @@
  * and the hook then reads it as it reads a missing field (consent: no review opens).
  * prePayload(e, facts) builds the classic PreToolUse payload from these.
  */
+import type { PrePayload, RejectedPayload } from './types.ts';
 
 /** A classic event's fields, as noteEvent reads them. */
 type EventLike = { session_id?: unknown; transcript_path?: unknown; permission_mode?: unknown; agent_id?: unknown } | null | undefined;
 /** What is known of a session. */
 export interface SessionFacts { transcript_path?: string; permission_mode?: string }
 
-export function factsBook(maxAgents = 64) {
+/** A session's facts, and the agentIds of the calls that run (factsBook). */
+export interface FactsBook {
+  noteEvent(e: EventLike): void;
+  of(sid: unknown): SessionFacts;
+  stashAgent(toolUseId: unknown, agentId: unknown): void;
+  agentOf(toolUseId: unknown): string | undefined;
+  dropAgent(toolUseId: unknown): void;
+}
+
+export function factsBook(maxAgents = 64): FactsBook {
   const bySid = new Map<string, SessionFacts>();
   const agents = new Map<string, string>();
   return {
     /** A main-loop classic event's transcript path and mode (a subagent's, with agent_id, is its own loop's). */
-    noteEvent(e: EventLike) {
+    noteEvent(e: EventLike): void {
       if (!e || typeof e.session_id !== 'string' || e.agent_id !== undefined) return;
       const cur = bySid.get(e.session_id) || {};
       const next: SessionFacts = { ...cur };
@@ -31,19 +41,19 @@ export function factsBook(maxAgents = 64) {
       if (bySid.size > 8) bySid.delete(bySid.keys().next().value as string); // a few session ids per process (/clear)
     },
     of: (sid: unknown): SessionFacts => (typeof sid === 'string' && bySid.get(sid)) || {},
-    stashAgent(toolUseId: unknown, agentId: unknown) {
+    stashAgent(toolUseId: unknown, agentId: unknown): void {
       if (typeof toolUseId !== 'string' || typeof agentId !== 'string') return;
       agents.set(toolUseId, agentId);
       if (agents.size > maxAgents) agents.delete(agents.keys().next().value as string);
     },
     agentOf: (toolUseId: unknown): string | undefined => (typeof toolUseId === 'string' ? agents.get(toolUseId) : undefined),
-    dropAgent(toolUseId: unknown) { if (typeof toolUseId === 'string') agents.delete(toolUseId); },
+    dropAgent(toolUseId: unknown): void { if (typeof toolUseId === 'string') agents.delete(toolUseId); },
   };
 }
 
 /** An ExitPlanMode the person refused, as the PostToolUseFailure payload consent reads (hooks/handlers/consent.ts
  * rejectedExit): the refusal's text as `error`; the mode is plan (the dialog was the plan view). */
-export function rejectedPayload(e: { tool_use_id?: unknown }, { sid, cwd, facts, text }: { sid: unknown; cwd?: unknown; facts: SessionFacts; text: string }) {
+export function rejectedPayload(e: { tool_use_id?: unknown }, { sid, cwd, facts, text }: { sid: unknown; cwd?: unknown; facts: SessionFacts; text: string }): RejectedPayload {
   return {
     hook_event_name: 'PostToolUseFailure', session_id: sid, ...(typeof cwd === 'string' ? { cwd } : {}),
     ...(facts.transcript_path ? { transcript_path: facts.transcript_path } : {}), permission_mode: 'plan',
@@ -59,7 +69,7 @@ const RESERVED = new Set(['tool', 'tool_use_id', 'agentId', 'consent']);
 export function prePayload(
   e: { tool?: unknown; tool_use_id?: unknown; [k: string]: unknown },
   { sid, cwd, facts, agentId }: { sid: unknown; cwd?: unknown; facts: SessionFacts; agentId?: string },
-) {
+): PrePayload {
   const tool_input = Object.fromEntries(Object.entries(e).filter(([k]) => !RESERVED.has(k)));
   return {
     hook_event_name: 'PreToolUse', session_id: sid, ...(typeof cwd === 'string' ? { cwd } : {}),

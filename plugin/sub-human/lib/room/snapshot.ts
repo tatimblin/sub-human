@@ -31,7 +31,7 @@ import { CHAT_KINDS, hostStep } from './rules.ts';
 import { decode, isObj, objAs } from '../decode.ts';
 import type { Entry, HostState, LogSnapshot, SnapshotWire, WindowItem } from './types.ts';
 
-const WINDOW_MS = Math.max(RATE_WINDOW_MS, 2 * SIG_SKEW_MS);
+const WINDOW_MS: number = Math.max(RATE_WINDOW_MS, 2 * SIG_SKEW_MS);
 
 function windowItem(e: Entry | WindowItem): WindowItem {
   const w: WindowItem = { id: e.id, at: e.at, from: e.from };
@@ -42,7 +42,7 @@ function windowItem(e: Entry | WindowItem): WindowItem {
 }
 
 /** pins and host carried over more entries: the first member_joined key per name pins it; host_changed moves the host. */
-function carry(pins: Record<string, string>, host: HostState, es: readonly Entry[]): { pins: Record<string, string>; host: HostState } {
+function carry(pins: Record<string, string>, host: HostState, es: readonly Readonly<Entry>[]): { pins: Record<string, string>; host: HostState } {
   let p = pins;
   for (const e of es) {
     host = hostStep(host, e);
@@ -53,9 +53,9 @@ function carry(pins: Record<string, string>, host: HostState, es: readonly Entry
   }
   return { pins: p, host };
 }
-const derive = (entries: readonly Entry[]): { pins: Record<string, string>; host: HostState } => carry({}, { epoch: 0 }, entries);
+const derive = (entries: readonly Readonly<Entry>[]): { pins: Record<string, string>; host: HostState } => carry({}, { epoch: 0 }, entries);
 
-function extend(prev: SnapshotWire | null, { nonChat, recent, line, lines }: { nonChat: readonly Entry[]; recent: readonly (Entry | WindowItem)[]; line: string; lines: number }): SnapshotWire {
+function extend(prev: SnapshotWire | null, { nonChat, recent, line, lines }: { nonChat: readonly Readonly<Entry>[]; recent: readonly (Entry | WindowItem)[]; line: string; lines: number }): SnapshotWire {
   const last = decodeEntry(JSON.parse(line));
   if (!last) throw new TypeError('extend: the last line is not an entry'); // the store's own line: never
   const { pins, host } = carry(prev ? prev.pins : {}, prev ? prev.host : { epoch: 0 }, nonChat);

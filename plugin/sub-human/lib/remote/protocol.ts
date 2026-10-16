@@ -99,7 +99,7 @@ import type {
 } from './types-core.ts';
 
 const PROTO: Readonly<ProtoRange> = Object.freeze({ min: 1, max: 3 });
-const VERSION = PROTO.max;
+const VERSION: number = PROTO.max;
 const PLUGIN_VERSION: string = (() => {
   let j: unknown;
   try { j = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '..', '.claude-plugin', 'plugin.json'), 'utf8')); } catch { return '?'; }
@@ -138,7 +138,7 @@ export type Op = typeof OPS[number];
 /** The events a stream carries, the source of EventName (types-core.ts EventData is keyed by it). */
 const EVENTS = ['entry', 'doc', 'end', 'handoff', 'moved', 'snapshot'] as const;
 export type EventName = typeof EVENTS[number];
-const FIELDS: string[] = ['same'];
+const FIELDS: readonly string[] = ['same'];
 const CAPS: Readonly<Caps> = Object.freeze({ ops: OPS, fields: FIELDS, snapshot: true });
 /** The RoomError codes, the source of WireCode: on both ends and on the wire. */
 const CODE_NAMES = ['INVALID', 'RATE', 'LOCK', 'NO_ROOM', 'OFFLINE', 'HOST_ONLY', 'AUTH', 'FORK', 'PROTOCOL', 'STALE'] as const;

@@ -92,7 +92,7 @@
  *                                        after a leave; with no such notice (a transcript from before it), its last
  *                                        title is an address NAME.CODE (lastTitle; CONTRACT transcript-custom-title)
  *   markForked(sid, f), forkedOf(sid)    <home>/sessions/forked/<sid>.json: session-restore's record of such a fork
- *   adoptFork(from, {pid, session_id, cwd}) -> JoinResult   move that seat to this process and session (no leave, no
+ *   adoptFork(from, {pid, session_id, cwd}) -> JoinOutcome  move that seat to this process and session (no leave, no
  *                                        log line: the person never left); the old session's indexes are dropped
  *   dropSeatIndexes(code) -> n           this machine's session indexes naming code removed (`link CODE --forget`)
  *   localSeats(code) -> [name]           this machine's seats in code that a live claude process holds, by the
@@ -141,7 +141,7 @@ import {
 } from './room/members.ts';
 import * as cc from './cc/env.ts';
 import { continuedIn, lastTitle, lastHome } from './cc/transcript.ts';
-import type { JoinResult, Member, Members, MembersApi, PresenceInput, Role, SeatRecord } from './room/types.ts';
+import type { JoinOutcome, Member, Members, MembersApi, PresenceInput, Role, SeatRecord } from './room/types.ts';
 
 /** A resolved seat (resolveBySession, resolveByPid, resolveSelf): address = NAME.CODE, the session title. */
 interface Identity {
@@ -207,7 +207,7 @@ type RoomClaudePatch = { [K in keyof Member]?: Member[K] | undefined };
 const VERBS: readonly string[] = ['invite', 'join', 'kick', 'leave', 'doctor', 'help', 'admit', 'handoff', 'promote', 'demote'];
 const RESERVED: readonly string[] = [ROOM_CLAUDE, 'room', 'all', 'system', 'host', ...VERBS];
 const ROLES: readonly string[] = [ROOM_CLAUDE, 'member'];
-const ANIMALS = [
+const ANIMALS: readonly string[] = [
   'otter', 'badger', 'beaver', 'bison', 'camel', 'cheetah', 'condor', 'coyote',
   'crane', 'dingo', 'dolphin', 'eagle', 'egret', 'falcon', 'ferret', 'finch',
   'gecko', 'gibbon', 'gopher', 'heron', 'hippo', 'husky', 'ibex', 'iguana',
@@ -269,13 +269,13 @@ function readMembers(code: RoomCode): Members {
   try { return membersOf(code).read(); } catch { return {}; }
 }
 
-const fail = (error: string): JoinResult => ({ ok: false, error });
+const fail = (error: string): JoinOutcome => ({ ok: false, error });
 
 /**
  * Renew me's lease (members seen_at), at most every SEAT_BEAT_MS: the tail's health tick and the hold server
  * call it. Only for the seat as me holds it (same pid when me has one; not left). Returns true when written.
  */
-function heartbeat(me: { code?: RoomCode; name?: string; pid?: number | null } | null | undefined, now = Date.now()): boolean {
+function heartbeat(me: { code?: RoomCode; name?: string; pid?: number | null } | null | undefined, now: number = Date.now()): boolean {
   if (!me || !me.code || !me.name || !roomExists(me.code)) return false;
   const m: Member | undefined = readMembers(me.code)[me.name]; // the cheap check, before the op (a mirror's document holds no pid)
   const stale = !!m && !m.left_at && (!validPid(me.pid) || m.pid == null || m.pid === me.pid) && !(Date.parse(String(m.seen_at)) > now - SEAT_BEAT_MS);
@@ -306,7 +306,7 @@ function localSeat({ name, role, machine, pid, session_id, cwd }: { name: SeatNa
   return { name, role, machine, pid, ...(start != null ? { pid_start: start } : {}), session_id: session_id || null, cwd: cwd || null };
 }
 
-function join({ code, name, role, machine = machineIn(code), account, pid: pidArg, session_id, cwd, log_v, keepPrevious = false }: JoinRequest = {} as JoinRequest): JoinResult {
+function join({ code, name, role, machine = machineIn(code), account, pid: pidArg, session_id, cwd, log_v, keepPrevious = false }: JoinRequest = {} as JoinRequest): JoinOutcome {
   if (!roomExists(code)) return fail(`no room "${code}"`);
   if (typeof name !== 'string' || !NAME_RE.test(name)) return fail(`invalid name "${name}" (letters, digits, . _ -, up to 32)`);
   if (!ROLES.includes(role)) return fail(`invalid role "${role}"`);
@@ -425,7 +425,7 @@ const leaseLive = (lease: ModLease | null): boolean => !!lease && validPid(lease
  * its start time, so a reused pid does not count), or recently. Any other lease is a leftover: a session id
  * resumed in a process whose module never said hello (--bare, hooks off) must not inherit the old one.
  */
-function modLeaseOk(sid: unknown, pid: unknown, now = Date.now()): boolean {
+function modLeaseOk(sid: unknown, pid: unknown, now: number = Date.now()): boolean {
   const lease = readModLease(sid);
   if (!lease || lease.session_id !== sid) return false;
   // a young lease lets it through on its own: asked first, it spares the ps a live check costs (a loaded machine)
@@ -440,7 +440,7 @@ function deleteModLease(sid: unknown): boolean {
 }
 
 /** Delete leases whose process is gone; a lease with no pid (or unreadable) once it is past the fresh window. */
-function pruneSessionIndexes(now = Date.now(), ttlMs = SESSION_INDEX_TTL_MS): number {
+function pruneSessionIndexes(now: number = Date.now(), ttlMs: number = SESSION_INDEX_TTL_MS): number {
   let n = 0;
   for (const dir of [byPidDir(), path.join(home(), 'sessions', 'by-sid')]) {
     let names: string[];
@@ -468,7 +468,7 @@ function pruneSessionIndexes(now = Date.now(), ttlMs = SESSION_INDEX_TTL_MS): nu
   return n;
 }
 
-function pruneModLeases(now = Date.now()): number {
+function pruneModLeases(now: number = Date.now()): number {
   const dir = path.join(home(), 'sessions', 'mods');
   let names: string[];
   try { names = fs.readdirSync(dir); } catch { return 0; }
@@ -576,7 +576,7 @@ const isAddress = (title: string): boolean => { const i = title.lastIndexOf('.')
  * nothing then); with no notice, a title that was a seat's address NAME.CODE. {sid, title, home?} or null. */
 type ForkedAway = { sid: string; title: string; home?: string };
 const realish = (p: string): string => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
-function forkedAway(sid: unknown, dir: string | null | undefined, now = Date.now()): ForkedAway | null {
+function forkedAway(sid: unknown, dir: string | null | undefined, now: number = Date.now()): ForkedAway | null {
   if (!isSessionId(sid) || typeof dir !== 'string' || !dir) return null;
   let names: string[];
   try { names = fs.readdirSync(dir).filter(f => f.endsWith('.jsonl')); } catch { return null; }
@@ -608,7 +608,7 @@ function forkedOf(sid: unknown): ForkedAway | null {
   return r && { sid: r.sid, title: r.title, ...(typeof r.home === 'string' ? { home: r.home } : {}) };
 }
 
-function adoptFork(from: ForkParent, { pid: pidArg, session_id, cwd }: { pid: unknown; session_id: string; cwd?: string | null }): JoinResult {
+function adoptFork(from: ForkParent, { pid: pidArg, session_id, cwd }: { pid: unknown; session_id: string; cwd?: string | null }): JoinOutcome {
   const pid = Number(pidArg);
   if (!validPid(pid)) return fail(`invalid pid "${pid}"`);
   const before = readJson(bySidFile(from.sid), SEAT_INDEX, null);
@@ -639,7 +639,7 @@ function adoptFork(from: ForkParent, { pid: pidArg, session_id, cwd }: { pid: un
   return r;
 }
 
-const claudePid = () => cc.claudePid();
+const claudePid = (): number | null => cc.claudePid();
 
 function parentTable(): Map<number, number> {
   const r = spawnSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' }, maxBuffer: 16 << 20 });

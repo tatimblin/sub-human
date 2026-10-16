@@ -16,7 +16,7 @@ import type { HookIn } from '../types.ts';
 
 const KEEP = new Set<string | undefined>(['clear', 'resume']);
 
-export function handle(input: HookIn<'SessionEnd'>) {
+export function handle(input: HookIn<'SessionEnd'>): void {
   // This session id is over in this process (a /clear or /resume continues under another id, and mod-hello writes
   // that id's lease): a later --resume of it must say hello again before it can join.
   try { identity.deleteModLease(input.session_id); } catch { /* the join sweep prunes it */ }

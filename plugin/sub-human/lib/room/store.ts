@@ -42,10 +42,10 @@
  *   setAside() -> string | null             move this room's log aside to orphaned-<time>.jsonl in its directory
  *                                           (and drop its checkpoint and members document): a demoted old host's
  *                                           lines, kept and never merged. The file's path, null with no log
- *   readAll() -> readonly Entry[]           every parseable entry, in order (legacy lines included). The store's
+ *   readAll() -> readonly Readonly<Entry>[]           every parseable entry, in order (legacy lines included). The store's
  *                                           cached array: never change it, nor the entries in it
  *   readById(ids), readAfter(id, filter?), lastId()
- *   readView({after}) -> readonly Entry[]   non-chat entries + entries with id > after: what a hook judges delivery
+ *   readView({after}) -> readonly Readonly<Entry>[]   non-chat entries + entries with id > after: what a hook judges delivery
  *                                           against, the same answer as readAll() for the entries after `after`
  *                                           (after <= 0: readAll(); Infinity: non-chat only)
  *   recentFrom() -> id                      the snapshot's id (0 before any rotation): readView({after: it}) reads

@@ -5,7 +5,7 @@
 import { say } from './answer.ts';
 import type { OpenVerb } from './types.ts';
 
-export const HELP = [
+export const HELP: string = [
   'commands:',
   '  /sub-human                    in a room: who is here; else join the open room, or open one, as your git name',
   '  /sub-human NAME [ROOM]        join (or open) a room as NAME; ROOM (like vole-8126) only when more than one is open',

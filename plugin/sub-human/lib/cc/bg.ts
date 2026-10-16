@@ -39,7 +39,7 @@ interface AgentJob {
  * @cc backgrounded \xB7
  * @stability incidental
  */
-const JOB_RE = /backgrounded\s*·\s*([0-9a-z]{4,40})\b/i;
+const JOB_RE: RegExp = /backgrounded\s*·\s*([0-9a-z]{4,40})\b/i;
 
 /**
  * The job id from `claude --bg` output, or null.

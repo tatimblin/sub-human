@@ -30,7 +30,11 @@ export function remotePeer(
   return typeof m.machine === 'string' && m.machine && m.machine !== thisMachine ? a.name : null;
 }
 
-export const postArgs = (name: string, text: string) => ({ kind: 'say', to: name, text });
+export const postArgs = (name: string, text: string): {
+  kind: string;
+  to: string;
+  text: string;
+} => ({ kind: 'say', to: name, text });
 
 /** The post's MCP result as a session.send answer: delivered, or not with the room's refusal as the reason. */
 export function postResult(

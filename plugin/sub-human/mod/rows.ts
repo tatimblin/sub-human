@@ -52,7 +52,7 @@ const ROW_ENDED = 'sub-human: row ended, nothing to do';
 
 const typeOf = (input: unknown) => (input && typeof input === 'object' ? (input as { subagent_type?: unknown }).subagent_type : undefined);
 
-export function registerRows(on: On) {
+export function registerRows(on: On): void {
   on('tool.call', { tool: 'Agent' }, async (_$, e, next) => {
     facts.stashAgent(e.tool_use_id, e.agentId);
     try { return await next(e); } finally { facts.dropAgent(e.tool_use_id); }

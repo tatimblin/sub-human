@@ -55,13 +55,13 @@ const sshT = (): typeof import('./transports/ssh.ts') => require('./transports/s
  * typed (a taken one says how to pick another). pending: a join the host let in. */
 export interface Wanted { name: SeatName; code: RoomCode | null; isDefault?: boolean; pending?: boolean }
 /** What a join step ends in. */
-export type Step = { kind: 'take'; want: Wanted } | { kind: 'say'; text: string; refused: boolean };
+export type JoinStep = { kind: 'take'; want: Wanted } | { kind: 'say'; text: string; refused: boolean };
 
 /** A stopped link whose token never gets in again (lib/remote/link.ts drops it): a new invite line replaces it. */
 const SPENT_REASONS: ReadonlySet<string> = new Set(['LINK_REVOKED', 'TOKEN_UNKNOWN', 'KEY_REVOKED']);
-const take = (want: Wanted): Step => ({ kind: 'take', want });
-const say = (text: string, refused = false): Step => ({ kind: 'say', text, refused });
-const refuse = (text: string): Step => say(text, true);
+const take = (want: Wanted): JoinStep => ({ kind: 'take', want });
+const say = (text: string, refused = false): JoinStep => ({ kind: 'say', text, refused });
+const refuse = (text: string): JoinStep => say(text, true);
 
 export const NO_START = (code: RoomCode) => `the connection to room ${code} did not start. Run /sub-human doctor.`;
 const SECRET_HINT = (dest: string, code: RoomCode) => `No invite, so this went over your own ssh login; if the host sent you an invite line, it ends with a long SECRET: /sub-human join ${dest} ${code} SECRET`;
@@ -88,7 +88,7 @@ const whereOf = (t: LinkSpec | null | undefined): string => (!t ? 'another way' 
  * stopped): the refusal, or null. A join never tears down a live link (stage 8e C: a mistyped host cut the seated
  * person off and rewrote the link file); the person forgets the old link first, on purpose.
  */
-function liveElsewhere(code: RoomCode, cur: Link | null, spent: boolean): Step | null {
+function liveElsewhere(code: RoomCode, cur: Link | null, spent: boolean): JoinStep | null {
   if (!cur || !cur.token || spent) return null;
   const st = linkSocket.status(code);
   if (!st.running || st.state === 'stopped' || st.state === 'fork') return null;
@@ -106,7 +106,7 @@ const sameLogin = (a: LinkSpec | undefined, b: SshSpec) => !!a && !!b && a.kind 
 
 /** Where an invite join stands (hosting.joinText), as a step: a refusal when it was refused. tells: this session's tail
  * says what the host answers (the session that typed the line). */
-function stands(code: RoomCode, name: SeatName, o: Outcome, tells = false): Step {
+function stands(code: RoomCode, name: SeatName, o: Outcome, tells = false): JoinStep {
   const text = hosting.joinText(code, name, o, { tells });
   told(code, text);
   return say(text, o.state === 'refused');
@@ -117,7 +117,7 @@ function told(code: RoomCode, text: string): void {
   try { const l = links.get(code); if (l) links.set(code, { ...l, join_told: text }); } catch { /* the tail may repeat it */ }
 }
 
-export function linkLine({ name, code, word, transport, sid }: { name: SeatName; code: RoomCode; word: InviteSecret; transport: LinkSpec; sid?: string | null }): Step {
+export function linkLine({ name, code, word, transport, sid }: { name: SeatName; code: RoomCode; word: InviteSecret; transport: LinkSpec; sid?: string | null }): JoinStep {
   if (identity.roomExists(code) && identity.isHost(code)) return refuse(`room ${code} is hosted on this machine; join it with /sub-human ${name} ${code}.`);
   const cur: Link | null = links.get(code);
   // a link that stopped as spent (kicked: its token gets nowhere now) is replaced by the new line, never re-seated over
@@ -142,7 +142,7 @@ export function pinJoin(sid?: string | null): PendingLink | null {
   return all.find(l => !!sid && l.join_sid === sid) || all[0] || null;
 }
 
-export function givePin(pin: Pin, sid?: string | null): Step {
+export function givePin(pin: Pin, sid?: string | null): JoinStep {
   const l = pinJoin(sid);
   if (!l) {
     const any = pendingJoins().find(j => typeof j.invite === 'string' && !j.awaiting);
@@ -157,7 +157,7 @@ export function givePin(pin: Pin, sid?: string | null): Step {
 
 export function linkLogin({ dest: typed, code, via, home, name, isDefault }: {
   dest: string; code: RoomCode; via: string | undefined; home: string | undefined; name: SeatName; isDefault: boolean;
-}): Step {
+}): JoinStep {
   const dest = sshT().withUser(typed);
   const spec = sshT().loginSpec(dest, { via, home });
   if (!spec) return refuse(`--home "${home}" isn't a plain absolute path (the sub-human folder on that machine, e.g. /home/you/.sub-human).`);
@@ -198,7 +198,7 @@ function pendingJoins(): PendingLink[] {
 
 export const pendingJoin = (): PendingLink | null => pendingJoins()[0] || null;
 
-export function finishJoin(l: PendingLink): Step {
+export function finishJoin(l: PendingLink): JoinStep {
   const code = l.code, name = l.join_as; // pendingJoin: a seat name
   const why = linkSocket.stopReason(linkSocket.status(code));
   if (l.pin_wanted && !l.token) return stands(code, name, { state: 'pin', ...(l.pin_wanted.message ? { reason: l.pin_wanted.message } : {}) });
@@ -213,7 +213,7 @@ export function finishJoin(l: PendingLink): Step {
   return stands(code, name, o);
 }
 
-export function ensureLinked(code: RoomCode, name: SeatName): Step | null {
+export function ensureLinked(code: RoomCode, name: SeatName): JoinStep | null {
   if (identity.isHost(code)) return null;
   const pending = links.get(code);
   // a link the host ended (kicked: lib/remote/link.ts dropped its token): no seat over it; a new invite line replaces it

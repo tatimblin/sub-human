@@ -35,7 +35,7 @@ import crypto from 'node:crypto';
 import { spawn, spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import type { TestContext } from 'node:test';
 import * as h from '../helpers.ts';
-import type { HookInput, HookJson } from '../hooks/helpers.ts';
+import type { HookInput, HookLine } from '../hooks/helpers.ts';
 import * as identity from '../../lib/identity.ts';
 import * as invites from '../../lib/remote/invites.ts';
 import * as store from '../../lib/room/store.ts';
@@ -51,7 +51,7 @@ const PROBE = path.join(import.meta.dirname, 'worker-probe.ts');
 /** A seat on a Machine: a live sleeper's pid standing in for its claude, a session id and the module's nonce. */
 interface Seat { name: string; pid: number; sid: string; nonce: string }
 /** A hook run on a Machine: spawnSync's result plus stdout parsed (null when it printed nothing). */
-type MachineRun = SpawnSyncReturns<string> & { json: HookJson | null };
+type MachineRun = SpawnSyncReturns<string> & { json: HookLine | null };
 type Env = Record<string, string | undefined>;
 
 class Machine {

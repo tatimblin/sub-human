@@ -85,7 +85,7 @@ import * as ioMod from './io.ts';
 import { createRequire } from 'node:module';
 import type { Card, HandoffAskDoc, HandoffDoc } from './types-app.ts';
 import type { WireCode } from './remote/types-core.ts';
-import type { Entry, EntryInput, HostProof, HostState, Link, Member } from './room/types.ts';
+import type { Entry, EntryInput, HostProof, HostState, Link, Member, RoomStore } from './room/types.ts';
 import type { HandoffAsk, BoundInvite, Invites, LinkRecord, MovedEventData, PrivateEvent } from './remote/types-core.ts';
 import type { LinkSpec } from './remote/types-rest.ts';
 import type { MirrorRoomStore } from './room/store-mirror.ts';
@@ -98,7 +98,7 @@ import { isInviteSecret } from './remote/invite-secret.ts';
 const require = createRequire(import.meta.url);
 
 /** A room's store (lib/room/store.ts open): the host's FsRoomStore or a mirror's. */
-type Store = ReturnType<typeof store.open>;
+type Store = RoomStore;
 /** A link the host's server knows (lib/remote/invites.ts, the host document remote/links): its machine and seats. */
 type LinkRec = Pick<LinkRecord, 'machine' | 'seats'>;
 /** One signed payload (lib/room/envelope.ts): the hook's seat key signs it. */
@@ -346,8 +346,8 @@ function mintAll(s: Store, locator: string, { pin = false, machines = machinesOf
   return out;
 }
 
-type Answer = { ok: true, epoch?: number, note?: string } | { ok: false, error: string };
-function accept(me: Pick<Identity, 'code' | 'name'>, { cwd, sign }: { cwd?: string, sign: Sign }): Answer {
+type HandoffAnswer = { ok: true, epoch?: number, note?: string } | { ok: false, error: string };
+function accept(me: Pick<Identity, 'code' | 'name'>, { cwd, sign }: { cwd?: string, sign: Sign }): HandoffAnswer {
   const code = me.code;
   const opened = store.open(code);
   if (opened.isHost) return { ok: false, error: `this machine hosts room ${code} already` };
@@ -370,7 +370,7 @@ function accept(me: Pick<Identity, 'code' | 'name'>, { cwd, sign }: { cwd?: stri
   return { ok: true, epoch: a.epoch, note: takeOver(code, { by: me.name, cwd, epoch: a.epoch }) };
 }
 
-function refuse(me: Pick<Identity, 'code' | 'name'>): Answer {
+function refuse(me: Pick<Identity, 'code' | 'name'>): HandoffAnswer {
   const s = store.open(me.code) as MirrorRoomStore; // an ask comes only to a mirror (its daemon writes it: onAsk)
   const a = pendingAsk(me.code, me.name);
   if (!a) return { ok: false, error: 'no handoff is waiting for you' };

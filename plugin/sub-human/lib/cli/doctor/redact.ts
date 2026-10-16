@@ -16,7 +16,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { lib } from './check.ts';
 import { webRooms, webHosts } from './listener.ts';
-import type { Report } from '../types.ts';
+import type { Bundle, Report } from '../types.ts';
 import type { Secret } from '../../brand.ts';
 
 /** A secret, hidden: what a line shows in its place. */
@@ -75,7 +75,7 @@ function redactor({ home = os.homedir(), shHome = lib('home.ts').home(), hosts =
 }
 
 /** The report as an allowlist: versions, config, check verdicts, link states and recent errors; no message text. */
-function bundle(report: Report, { salt, env = process.env }: { salt?: string; env?: NodeJS.ProcessEnv } = {}) {
+function bundle(report: Report, { salt, env = process.env }: { salt?: string; env?: NodeJS.ProcessEnv } = {}): Bundle {
   const links = report.links || [];
   const s = salt || crypto.randomBytes(8).toString('hex'); // per bundle: names hash the same within it, never across
   const red = redactor({

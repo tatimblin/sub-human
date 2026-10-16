@@ -27,7 +27,7 @@ function write(me: Identity | null, state: string, detail?: string) {
   try { if (me) identity.writePresence(me.code, me.name, { state, detail }); } catch { /* best-effort */ }
 }
 
-export function handle(input: PresenceIn) {
+export function handle(input: PresenceIn): void {
   const me = whoami(input);
   if (!me) return;
   if (input.hook_event_name === 'Working') return write(me, 'working');

@@ -136,7 +136,7 @@ function lastChange(c: RoomCode): number {
  * under keys/, which the Read guard covers), both touched now so that the aside TTL counts from today. A person can
  * rename both back to bring the room back; removeAside deletes them after the aside TTL.
  */
-function setAsideRoom(c: RoomCode, now = Date.now()): string {
+function setAsideRoom(c: RoomCode, now: number = Date.now()): string {
   const name = `${c}.gc-${new Date(now).toISOString().replace(/[:.]/g, '-')}`;
   const to = path.join(roomsDir(), name);
   fs.renameSync(roomDir(c), to);
@@ -149,7 +149,7 @@ function setAsideRoom(c: RoomCode, now = Date.now()): string {
   return name;
 }
 /** A leftover folder (isLeftover) set aside as a forgotten copy is: rooms/CODE.forgotten-TIME; its absolute path. */
-function setAsideLeftover(c: RoomCode, now = Date.now()): string {
+function setAsideLeftover(c: RoomCode, now: number = Date.now()): string {
   const to = path.join(roomsDir(), `${c}.forgotten-${new Date(now).toISOString().replace(/[:.]/g, '-')}`);
   fs.renameSync(roomDir(c), to);
   forget(c);

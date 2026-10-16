@@ -95,7 +95,7 @@ import type { Entry, Link } from '../room/types.ts';
 import type { MirrorRoomStore } from '../room/store-mirror.ts';
 import type { Client } from './client.ts';
 import type { Outbox, OutboxItem } from './outbox.ts';
-import type { EngineEvent, EngineState, Effect, Failure, TimerName } from './link-engine.ts';
+import type { EngineEvent, EngineState, EngineEffect, Failure, TimerName } from './link-engine.ts';
 import type net from 'node:net';
 import { errCode, msgOf } from '../errors.ts';
 import { assertNever } from '../../mod/core/never.ts';
@@ -129,7 +129,7 @@ const outboxMod = (): typeof import('./outbox.ts') => require('./outbox.ts');
 /** Why a link stopped for good with nothing wrong (reasons ROOM_CLOSED, NO_SEAT): a dormant link. */
 const ROOM_CLOSED_REASON = 'the room was closed';
 const NO_SEAT_REASON = 'no seat of this machine is left in the room';
-const nextDelay = engine.nextDelay;
+const nextDelay: (prev: number, base: number, cap: number, random?: () => number) => number = engine.nextDelay;
 
 /** The reasons a link's token never gets in again (kicked, or the host forgot it): the token goes from the link file. */
 const SPENT: ReadonlySet<string> = new Set(['LINK_REVOKED', 'TOKEN_UNKNOWN', 'KEY_REVOKED']);
@@ -276,7 +276,7 @@ async function serveMirror({
     dispatch({ type: 'dialFailed', dial, error: f, offline: handoff().whyOffline(mirror.code, f.message) });
   });
 
-  function effect(fx: Effect) {
+  function effect(fx: EngineEffect) {
     switch (fx.type) {
       case 'connect':
         dials.set(fx.dial, dials.get(fx.dial) || (() => {}));
@@ -419,7 +419,7 @@ async function serveMirror({
   }
 
   /** Every proposal's plan a snapshot names (as each line's are fetched as it arrives). */
-  function prefetchAll(c: Client, es: readonly Entry[]) { for (const e of es) prefetch(c, e); }
+  function prefetchAll(c: Client, es: readonly Readonly<Entry>[]) { for (const e of es) prefetch(c, e); }
   function prefetch(c: Client, e: Entry) {
     if (e.kind !== 'proposal' || !e.hash) return;
     const ref = mirror.blobs.ref(e.path) || `plans/${e.hash}.md`;

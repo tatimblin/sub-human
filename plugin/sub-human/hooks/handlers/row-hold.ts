@@ -14,7 +14,7 @@ import type { Member } from '../../lib/room/types.ts';
 
 const MAX_BLOCKS = 5;
 
-export function handle(input: HookIn<'SubagentStop'>) {
+export function handle(input: HookIn<'SubagentStop'>): void {
   const type = String(input.agent_type || '');
   const id = input.agent_id ? String(input.agent_id) : '';
   if ((type !== rows.PARTICIPANT && type !== rows.ROOM_AGENT) || !id) return;

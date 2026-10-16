@@ -23,18 +23,18 @@ import { LINK_QUOTAS } from '../config.ts';
 import type { AuthStore } from './types-core.ts';
 import type { Entry } from '../room/types.ts';
 
-type Op = keyof typeof LINK_QUOTAS;
-type Counts = Record<string, Partial<Record<Op, number[]>>>;
+type QuotaOp = keyof typeof LINK_QUOTAS;
+type Counts = Record<string, Partial<Record<QuotaOp, number[]>>>;
 
 const QUOTA_KEY = 'remote/quota';
 
-const over = (op: Op, what: string, retryMs: number): RoomError => {
+const over = (op: QuotaOp, what: string, retryMs: number): RoomError => {
   const q = LINK_QUOTAS[op];
   const per = q.windowMs >= 3_600_000 ? `${Math.round(q.windowMs / 3_600_000)} h` : q.windowMs >= 60_000 ? `${Math.round(q.windowMs / 60_000)} min` : `${Math.round(q.windowMs / 1000)} s`;
   return new RoomError('RATE', `quota: ${what} ${q.max} times in ${per}; try again in ${Math.max(1, Math.ceil(retryMs / 1000))} s`, 'QUOTA');
 };
 
-function fromLog(entries: readonly Entry[], { from, via, windowMs, now = Date.now() }: { from: string; via: string; windowMs: number; now?: number }): number {
+function fromLog(entries: readonly Readonly<Entry>[], { from, via, windowMs, now = Date.now() }: { from: string; via: string; windowMs: number; now?: number }): number {
   let n = 0;
   for (let i = entries.length - 1; i >= 0; i--) {
     const e = entries[i];
@@ -44,7 +44,7 @@ function fromLog(entries: readonly Entry[], { from, via, windowMs, now = Date.no
   return n;
 }
 
-function checkLog(entries: readonly Entry[], { from, via, op, now = Date.now() }: { from: string; via: string; op: 'append.human' | 'append.agent'; now?: number }): void {
+function checkLog(entries: readonly Readonly<Entry>[], { from, via, op, now = Date.now() }: { from: string; via: string; op: 'append.human' | 'append.agent'; now?: number }): void {
   const q = LINK_QUOTAS[op];
   if (fromLog(entries, { from, via, windowMs: q.windowMs, now }) < q.max) return;
   // the wait: until the oldest line that still counts (the max-th newest) leaves the window
@@ -56,7 +56,7 @@ function checkLog(entries: readonly Entry[], { from, via, op, now = Date.now() }
   throw over(op, `${from} posted`, q.windowMs - (now - at));
 }
 
-function charge(store: Pick<AuthStore, 'kv'>, linkId: string, op: Op, { now = Date.now() }: { now?: number } = {}): void {
+function charge(store: Pick<AuthStore, 'kv'>, linkId: string, op: QuotaOp, { now = Date.now() }: { now?: number } = {}): void {
   const q = LINK_QUOTAS[op];
   const refused: { err: RoomError | null } = { err: null }; // set inside update (it may run again)
   store.kv.update(QUOTA_KEY, (cur: Counts | null) => {
@@ -71,8 +71,8 @@ function charge(store: Pick<AuthStore, 'kv'>, linkId: string, op: Op, { now = Da
 }
 
 /** A connection's own windows: take(op) counts one, RATE QUOTA when the op's max is reached in its window. */
-function session(): { take(op: Op, now?: number): void } {
-  const seen = new Map<Op, number[]>();
+function session(): { take(op: QuotaOp, now?: number): void } {
+  const seen = new Map<QuotaOp, number[]>();
   return {
     take(op, now = Date.now()) {
       const q = LINK_QUOTAS[op];
@@ -85,4 +85,4 @@ function session(): { take(op: Op, now?: number): void } {
 }
 
 export { fromLog, checkLog, charge, session, QUOTA_KEY };
-export type { Op as QuotaOp };
+export type { QuotaOp as QuotaOp };

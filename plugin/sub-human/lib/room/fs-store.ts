@@ -63,7 +63,7 @@ interface Derived { n: number; last: Entry | null; pins: Map<string, KeyObject>;
 const NONE: Derived = { n: 0, last: null, pins: new Map(), host: { epoch: 0 } };
 
 /** Fold more non-chat entries into pins (first sight pins a name) and host. A new Derived; d is never changed. */
-function carry(d: Derived, es: readonly Entry[], from: number): Derived {
+function carry(d: Derived, es: readonly Readonly<Entry>[], from: number): Derived {
   let pins = d.pins, host = d.host;
   for (let i = from; i < es.length; i++) {
     const e = es[i];
@@ -78,14 +78,14 @@ function carry(d: Derived, es: readonly Entry[], from: number): Derived {
 }
 
 class FsRoomStore implements RoomStore {
-  declare code: RoomCode;
-  declare _dir: string | null;
-  declare isHost: boolean;
-  declare members: MembersApi;
-  declare blobs: BlobsApi;
-  declare kv: KvApi;
-  declare trust: Trust;
-  declare _keys: TrustCtx;
+  declare readonly code: RoomCode;
+  declare readonly _dir: string | null;
+  declare readonly isHost: boolean;
+  declare readonly members: MembersApi;
+  declare readonly blobs: BlobsApi;
+  declare readonly kv: KvApi;
+  declare readonly trust: Trust;
+  declare readonly _keys: TrustCtx;
   declare _derived: Derived;
 
   /** code: the room code; dir: its directory (default <home>/rooms/<code>, read at each call). */
@@ -142,15 +142,15 @@ class FsRoomStore implements RoomStore {
   exists(): boolean { return fs.existsSync(this.dir); }
 
   // ----- reading -----
-  readAll(): readonly Entry[] { return logIo.readAll(this.dir); }
-  readById(ids: EntryId | readonly EntryId[]): Entry[] {
+  readAll(): readonly Readonly<Entry>[] { return logIo.readAll(this.dir); }
+  readById(ids: EntryId | readonly EntryId[]): readonly Readonly<Entry>[] {
     const want: readonly EntryId[] = typeof ids === 'number' ? [ids] : ids;
     const byId = new Map(this.readAll().map(e => [e.id, e]));
     return want.filter(i => byId.has(i)).map(i => byId.get(i)!);
   }
-  readAfter(seq: number, filterFn: (e: Entry) => boolean = () => true): Entry[] { return this.readAll().filter(e => e.id > seq && filterFn(e)); }
+  readAfter(seq: number, filterFn: (e: Readonly<Entry>) => boolean = () => true): readonly Readonly<Entry>[] { return this.readAll().filter(e => e.id > seq && filterFn(e)); }
   lastId(): number { return logIo.lastId(this.dir); }
-  readView({ after = 0 }: ReadViewOpts = {}): readonly Entry[] {
+  readView({ after = 0 }: ReadViewOpts = {}): readonly Readonly<Entry>[] {
     return after > 0 ? logIo.readView(this.dir, { after }) : this.readAll();
   }
   recentFrom(): number { return logIo.recentFrom(this.dir); }

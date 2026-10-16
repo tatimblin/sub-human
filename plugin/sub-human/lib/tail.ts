@@ -93,12 +93,27 @@ const require = createRequire(import.meta.url);
 type TailRoom = Pick<Room, 'readView' | 'tailer' | 'lastId' | 'getCursor' | 'verifyChain' | 'deliver' | 'chatLines' | 'line' | 'stateLine'>
   & { store?: Room['store'] | null };
 /** What an entry is for this seat (lib/room/deliver.ts): entries is the log at flush time; note is the joinNote of a member_joined. */
-type Judge = (e: Entry, entries?: readonly Entry[], note?: string) => Delivery;
+type Judge = (e: Entry, entries?: readonly Readonly<Entry>[], note?: string) => Delivery;
 /** A rate-limited logger (errorLog): where it failed, and the error. */
 type Log = (where: string, e: unknown) => void;
 /** The tail's write: text (whole lines) and a callback once it is out. */
 type Write = (text: string, done: () => void) => unknown;
-type Timings = ReturnType<typeof timings>;
+/** The tail's timings (timings()): each from its SUB_HUMAN_* override, else lib/config.ts. */
+interface Timings {
+  resolveMs: number;
+  unseatedMs: number;
+  pollMs: number;
+  settleMs: number;
+  settleMaxMs: number;
+  roomClaudeSettleMs: number;
+  roomClaudeSettleMaxMs: number;
+  leaveMs: number;
+  healthMs: number;
+  backoffMs: number;
+  backoffMaxMs: number;
+  errorLogMs: number;
+  stallMs: number;
+}
 /** One item the Batcher holds: the entry, and when it was enqueued. */
 interface Item { e: Entry, away: boolean }
 type Pending<T> = T & { at: number };
@@ -135,7 +150,7 @@ type Deps = Omit<TailDeps, 'roomClaude' | 'handoff' | 'admission' | 'invites'> &
   invites(): InvitesLib;
 };
 /** What every session shares (runTail). */
-interface Ctx {
+interface TailCtx {
   clock: Clock;
   fs: typeof nodeFs;
   write: Write;
@@ -160,18 +175,24 @@ interface Session {
 interface FormatCtx {
   me: Identity;
   room: TailRoom;
-  entries: readonly Entry[];
+  entries: readonly Readonly<Entry>[];
   judge: Judge;
   joinNote(e: Entry): string;
   seen: Set<number>;
   leaveMs: number;
 }
-type Cursor = ReturnType<typeof cursorKeeper>;
+/** A seat's read cursor (cursorKeeper): saw each id, hold and release the ones in flight, save the highest done. */
+interface Cursor {
+  saw(id: number): void;
+  hold(id: number): void;
+  release(id: number): void;
+  save(): void;
+}
 
 const STATE_KINDS = new Set(['proposal', 'signoff', 'objection', 'decision']);
 const isMove = (e: Entry) => e.kind === 'member_joined' || e.kind === 'member_left';
 
-function timings() {
+function timings(): Timings {
   const resolveMs = envMs('SUB_HUMAN_RESOLVE_MS');
   const settleMs = envMs('SUB_HUMAN_SETTLE_MS');
   const settleMaxMs = envMs('SUB_HUMAN_SETTLE_MAX_MS');
@@ -221,15 +242,15 @@ class Batcher<T extends { e: { id: number } } = Item> {
     this.maxT = null;
     this.dead = false;
   }
-  enqueue(item: T) { this.pending.push({ ...item, at: this.clock.now() }); this.arm(); }
-  arm() {
+  enqueue(item: T): void { this.pending.push({ ...item, at: this.clock.now() }); this.arm(); }
+  arm(): void {
     if (this.dead) return;
     this.clock.clearTimeout(this.quietT);
     this.quietT = this.clock.setTimeout(() => this.flush(), this.settleMs);
     if (!this.maxT) this.maxT = this.clock.setTimeout(() => this.flush(), this.settleMaxMs);
   }
-  clear() { this.clock.clearTimeout(this.quietT); this.clock.clearTimeout(this.maxT); this.quietT = this.maxT = null; }
-  flush() {
+  clear(): void { this.clock.clearTimeout(this.quietT); this.clock.clearTimeout(this.maxT); this.quietT = this.maxT = null; }
+  flush(): void {
     this.clear();
     if (this.dead) return;
     const now = this.clock.now();
@@ -246,7 +267,7 @@ class Batcher<T extends { e: { id: number } } = Item> {
       this.onError(err);
     }
   }
-  stop() { this.dead = true; this.clear(); }
+  stop(): void { this.dead = true; this.clear(); }
 }
 
 // ---------- formatters ----------
@@ -417,7 +438,7 @@ function startCursor(rm: Pick<TailRoom, 'readView'>, saved: number, me: Identity
  *   hold(id), release(id)   in flight, or out
  *   save()       move the saved cursor as far as it may go; a failed write is retried by the next save
  */
-function cursorKeeper(write: (id: number) => void, after: number, { log, dead }: { log: Log, dead: () => boolean }) {
+function cursorKeeper(write: (id: number) => void, after: number, { log, dead }: { log: Log, dead: () => boolean }): Cursor {
   const inflight = new Set<number>();
   let processed = after, saved = after;
   return {
@@ -475,7 +496,7 @@ function timerLoop({ clock, t, log, s }: { clock: Clock, t: Timings, log: Log, s
   return { start: (now: boolean) => { if (now) tick(); else timer = clock.setTimeout(tick, everyMs); }, stop: () => clock.clearTimeout(timer) };
 }
 
-function startSession(me: Identity, ctx: Ctx): Session {
+function startSession(me: Identity, ctx: TailCtx): Session {
   const { clock, fs, write, log, t, deps, sid } = ctx;
   const { rows, session } = deps;
   const rm = deps.openRoom(me.code); // this session's room, held for its whole life (no re-binding)
@@ -708,7 +729,7 @@ function runTail({
     }),
   };
   const log = errorLog(err, clock, tm.errorLogMs);
-  const ctx: Ctx = { clock, fs, write, log, t: tm, deps: d, sid };
+  const ctx: TailCtx = { clock, fs, write, log, t: tm, deps: d, sid };
   // say which seat is followed, when that changes
   let seatSent: string | undefined;
   const sendSeat = (me: Identity | null) => {

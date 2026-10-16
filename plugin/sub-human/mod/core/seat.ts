@@ -23,11 +23,11 @@ import type { Hello, HelloSeat } from './types.ts';
 import type { RoomCode, SeatName, SessionId } from '../../lib/brand.ts';
 
 /** A seat name: letters, digits, . _ -, 1-32. */
-export const NAME_RE = /^[A-Za-z0-9_.-]{1,32}$/;
+export const NAME_RE: RegExp = /^[A-Za-z0-9_.-]{1,32}$/;
 /** A room code: "otter-4821". */
-export const CODE_RE = /^[a-z]+-\d{4}$/;
+export const CODE_RE: RegExp = /^[a-z]+-\d{4}$/;
 /** A session id safe to use in a file name. */
-export const SID_SAFE = /^[A-Za-z0-9_-]{1,128}$/;
+export const SID_SAFE: RegExp = /^[A-Za-z0-9_-]{1,128}$/;
 export const isSeatName = (v: unknown): v is SeatName => typeof v === 'string' && NAME_RE.test(v);
 export const isRoomCode = (v: unknown): v is RoomCode => typeof v === 'string' && CODE_RE.test(v);
 export const isSessionId = (v: unknown): v is SessionId => typeof v === 'string' && SID_SAFE.test(v);

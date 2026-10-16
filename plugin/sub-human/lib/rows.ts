@@ -107,7 +107,7 @@ interface RowProposal {
 /** rowText's options. */
 interface RowOpts {
   color?: boolean;
-  entries?: readonly Entry[];
+  entries?: readonly Readonly<Entry>[];
   members?: MemberInput;
   now?: number;
   tasks?: Task[];
@@ -123,7 +123,7 @@ const { NAME_RE, SID_SAFE, oneLine } = text;
 
 // ---------- small helpers ----------
 /** The log read back from its end (ids rise through it): the newest entry pick accepts, among those with id > after. */
-function lastWhere(es: readonly Entry[], pick: (e: Entry) => boolean, after = 0): Entry | null {
+function lastWhere(es: readonly Readonly<Entry>[], pick: (e: Entry) => boolean, after = 0): Entry | null {
   for (let i = es.length - 1; i >= 0; i--) {
     const e = es[i];
     if (typeof e.id === 'number' && e.id <= after) return null;
@@ -132,7 +132,7 @@ function lastWhere(es: readonly Entry[], pick: (e: Entry) => boolean, after = 0)
   return null;
 }
 /** How many entries with id > after pick accepts. */
-function countAfter(es: readonly Entry[], pick: (e: Entry) => boolean, after: number): number {
+function countAfter(es: readonly Readonly<Entry>[], pick: (e: Entry) => boolean, after: number): number {
   let n = 0;
   for (let i = es.length - 1; i >= 0; i--) {
     const e = es[i];
@@ -158,7 +158,7 @@ const storeOf = (code: RoomCode) => room.open(code).store;
  * readRecent; the whole log before one). A row looks back only over recent chat (the last post, the mail since the
  * viewer's last reply: everything in that window is after an older reply), so a cold status line parses one segment.
  */
-function readLog(code: RoomCode): readonly Entry[] {
+function readLog(code: RoomCode): readonly Readonly<Entry>[] {
   try { return room.open(code).readRecent(); } catch { return []; }
 }
 function memberList(members: MemberInput): Member[] {
@@ -396,7 +396,7 @@ function fit(parts: (string | null | undefined | false)[]): string {
  * {kind, id}} (approvers' current answers: a person's seats share one), decided (decision id or 0), agreed (count of
  * people), objectors (one seat per person), also, people (count), superseded (a revision retired it), name (title)}.
  */
-function proposals(es: readonly Entry[], code: RoomCode | null | undefined): RowProposal[] {
+function proposals(es: readonly Readonly<Entry>[], code: RoomCode | null | undefined): RowProposal[] {
   const f = code ? room.open(code).fold(es) : room.fold(es); // the room's store judges its people's answers
   return [...f.proposals.values()].map((fp): RowProposal => {
     const m = f.matrix(fp.hash);
@@ -432,7 +432,7 @@ function openTask(list: (Task | null | undefined)[], name: string): Task | null 
   return mine.find(t => t.status === 'in_progress') || mine[0] || null;
 }
 
-function presenceOf(code: RoomCode, name: SeatName, es: readonly Entry[], now: number): string | null {
+function presenceOf(code: RoomCode, name: SeatName, es: readonly Readonly<Entry>[], now: number): string | null {
   let p: { state?: unknown, at?: string } | null = null;
   try { p = kvOf(code).get(`presence/${name}`, null); } catch { p = null; }
   if (!p || typeof p.state !== 'string') return null;
@@ -453,7 +453,7 @@ function presenceOf(code: RoomCode, name: SeatName, es: readonly Entry[], now: n
 }
 
 /** What both row texts read: the room, who looks, its log and members, the time and the paint. */
-interface RowCtx { code: RoomCode; viewer: string | null | undefined; es: readonly Entry[]; ms: Member[]; now: number; c: Paint }
+interface RowCtx { code: RoomCode; viewer: string | null | undefined; es: readonly Readonly<Entry>[]; ms: Member[]; now: number; c: Paint }
 
 function participantText({ code, viewer, es, ms, now, c }: RowCtx, name: SeatName, taskList: Task[]): string {
   const m = ms.find(x => x.name === name);

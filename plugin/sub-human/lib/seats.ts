@@ -65,7 +65,7 @@ import { pidStarts } from './lock.ts';
 import * as links from './room/links.ts';
 import { roomClaudePresence } from './room/members.ts';
 import { createRequire } from 'node:module';
-import type { JoinResult, Member } from './room/types.ts';
+import type { JoinOutcome, Member } from './room/types.ts';
 import type { Identity } from './identity.ts';
 import type { Wanted } from './remote/joining.ts';
 import { errCode, msgOf } from './errors.ts';
@@ -93,7 +93,7 @@ interface EnterOpts {
   keepPrevious?: boolean;
 }
 /** identity.join's answer; note: what the join line adds (the room's Claude starting, or why it could not). */
-type EnterResult = JoinResult & { note?: string };
+type EnterResult = JoinOutcome & { note?: string };
 
 const asSystem = (name: string) => ({ via: 'system', from: name, system: true });
 const WORKDIR = 'workdir'; // the room's working directory: {cwd}
@@ -332,6 +332,6 @@ function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd,
 
 /** Test seam: the room's Claude starts through this object, which a test may stub (test/seats.node-test.ts); an ES
  * module's own exports are read-only. */
-const seam = { startDetached: (o: Parameters<typeof roomClaude.startDetached>[0]) => roomClaude.startDetached(o) };
+const seam = { startDetached: (o: Parameters<typeof roomClaude.startDetached>[0]): number | undefined => roomClaude.startDetached(o) };
 
 export { enter, exit, sweep, back, ensureRoomClaude, seam, take, withWhom, liveSeatHere, forkedText };

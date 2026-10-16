@@ -11,7 +11,7 @@ import type { AgentCall, WithToolInput } from '../types.ts';
 /** The Agent tool's response, as far as the row map reads it. */
 interface SpawnResponse { agentId?: unknown; agent_id?: unknown; data?: { agentId?: unknown } }
 
-export function handle(input: WithToolInput<'PostToolUse', AgentCall>) {
+export function handle(input: WithToolInput<'PostToolUse', AgentCall>): void {
   const ti: AgentCall = input.tool_input || {};
   const type = String(ti.subagent_type || '');
   if (type !== rows.PARTICIPANT && type !== rows.ROOM_AGENT) return;

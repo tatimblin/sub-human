@@ -127,6 +127,37 @@ export interface Report {
   probe: { total: number; missing: string[] } | null;
 }
 
+/** doctor --bundle's file (lib/cli/doctor/redact.ts bundle): the report as an allowlist, every free text redacted,
+ * host, user and room names hashed with the bundle's salt. */
+export interface Bundle {
+  kind: string;
+  format: number;
+  generated_at: string;
+  note: string;
+  versions: Report['versions'];
+  config: {
+    /** lib/config.ts's numeric and boolean values, by name */
+    timings: Record<string, unknown>;
+    /** the SUB_HUMAN_*_MS knobs set in the env, as numbers */
+    env_overrides: Record<string, number>;
+    ssh_opts_set: boolean;
+    home_is_default: boolean;
+  };
+  checks: Check[];
+  links: {
+    room: string;
+    transport: { kind: string | undefined; host: string | undefined; user: string | undefined; port: number | undefined };
+    credential: string;
+    moved: { epoch: number | undefined; demoted: boolean; reached: boolean } | undefined;
+    daemon: { running: boolean };
+    state: Pick<LinkStateView, 'state' | 'since' | 'attempt' | 'rttMs' | 'queued' | 'lastError' | 'source'>;
+    reach: (Pick<Reach, 'ok' | 'ms' | 'skipped' | 'protocol' | 'skewMs'> & { error: string | undefined; ssh_error: string[] | undefined }) | undefined;
+    recent_errors: string[];
+  }[];
+  authorized_keys: { exists: boolean; lines: { through_shim: boolean; parsed: boolean; key: string | undefined }[] };
+  probe: Report['probe'];
+}
+
 /** doctor parseArgs(args) -> options */
 export interface DoctorOptions {
   quick: boolean;

@@ -95,7 +95,7 @@ import type { RoomCode, ProposalHash } from './brand.ts';
 /** Who acts: a seat's room and name are all these functions read. */
 type Me = Pick<Identity, 'code' | 'name'>;
 
-const QUESTION_RE = /^Agree to proposal ([0-9a-f]{12})\?$/;
+const QUESTION_RE: RegExp = /^Agree to proposal ([0-9a-f]{12})\?$/;
 const PREVIEW_MAX = config.PREVIEW_MAX;     // the card withholds a longer preview (JS .length)
 const PREVIEW_LINES = config.PREVIEW_LINES; // about 24 lines show at 50 rows; keep a margin
 const VIEW_MAX = config.VIEW_MAX;           // the plan dialog withholds approval above 200,000 chars
@@ -126,7 +126,7 @@ function store(code: RoomCode, buf: Buffer): ProposalHash {
 
 // the recent view: every non-chat entry (proposals, answers, decisions, revisions, revokes: all the consent fold reads)
 // and the lines since the last rotation
-const entriesOf = (me: Me, entries: readonly Entry[] | null | undefined): readonly Entry[] => entries || room.open(me.code).readRecent();
+const entriesOf = (me: Me, entries: readonly Readonly<Entry>[] | null | undefined): readonly Readonly<Entry>[] => entries || room.open(me.code).readRecent();
 const kvOf = (me: Me) => room.open(me.code).store.kv;
 const storeOf = (me: Me) => room.open(me.code).store;
 
@@ -178,18 +178,18 @@ function sameOk(code: RoomCode): boolean {
 
 // ---------- reading the log (lib/room/consent.ts fold: the same semantics as stateLine, lane and the rows) ----------
 const shape = (p: ProposalState): Proposal => ({ id: p.id, hash: p.hash, approvers: p.approvers, path: p.path, from: p.from });
-const proposals = (entries: readonly Entry[], trust: Trust = room.trustOf): Proposal[] => [...room.fold(entries, trust).proposals.values()].map(shape);
+const proposals = (entries: readonly Readonly<Entry>[], trust: Trust = room.trustOf): Proposal[] => [...room.fold(entries, trust).proposals.values()].map(shape);
 
-const decision = (hash: string, entries: readonly Entry[], trust: Trust = room.trustOf): Entry | null => room.fold(entries, trust).decisions.get(hash) || null;
+const decision = (hash: string, entries: readonly Readonly<Entry>[], trust: Trust = room.trustOf): Entry | null => room.fold(entries, trust).decisions.get(hash) || null;
 
 /** The answer matrix over p.approvers (the latest answer per person wins; an objection voids a signoff). */
-const matrix = (p: Pick<Proposal, 'hash' | 'approvers'>, entries: readonly Entry[], trust: Trust = room.trustOf): Matrix => room.fold(entries, trust).matrix(p.hash, p.approvers);
+const matrix = (p: Pick<Proposal, 'hash' | 'approvers'>, entries: readonly Readonly<Entry>[], trust: Trust = room.trustOf): Matrix => room.fold(entries, trust).matrix(p.hash, p.approvers);
 
-function pendingFor(me: Me | null | undefined, entries?: readonly Entry[] | null): Proposal[] {
+function pendingFor(me: Me | null | undefined, entries?: readonly Readonly<Entry>[] | null): Proposal[] {
   if (!me || !me.name) return [];
   return room.open(me.code).fold(entriesOf(me, entries)).pending(me.name).map(shape);
 }
-function answerableFor(me: Me | null | undefined, entries?: readonly Entry[] | null): Proposal[] {
+function answerableFor(me: Me | null | undefined, entries?: readonly Readonly<Entry>[] | null): Proposal[] {
   if (!me || !me.name) return [];
   return room.open(me.code).fold(entriesOf(me, entries)).answerable(me.name).map(shape);
 }
@@ -339,9 +339,9 @@ function picked(me: Me, ps: Proposal[]): Proposal | null {
 /** How the model opens proposal hash for its person (the plan view; the hooks fall back to the card), how it shows
  * the confirm card for a waiting note, and the line telling it to show that card now (after an Esc on it: that the
  * Esc was no answer): lib/consent/review.ts's lines, which the consent hook, the tail and the room server share. */
-const openCall = NEXT.open;
-const confirmCall = NEXT.note;
-const showConfirm = showNote;
+const openCall: (h: string) => string = NEXT.open;
+const confirmCall: (h: string) => string = NEXT.note;
+const showConfirm: typeof showNote = showNote;
 /** A proposal as a list item: `3fa2c1 "Ship v3 Monday"` (the short hash alone without a title or a room to read it from). */
 function listed(code: RoomCode | undefined, p: Pick<Proposal, 'hash' | 'entry'>): string {
   const t = code ? clip(title(code, p.hash, p.entry).replace(/\s+/g, ' ').trim(), TITLE_MAX) : '';
@@ -526,7 +526,7 @@ function restorePlan(st: Review | null | undefined): void {
  * plan file when it still holds the proposal's text (a file the person wrote since is left alone) and clear
  * the state. force: the session restarted (/clear, --resume). Returns 'restored' | 'cleared' | null.
  */
-function restoreStale(me: Me | null | undefined, { force = false, now = Date.now() } = {}): 'restored' | 'cleared' | null {
+function restoreStale(me: Me | null | undefined, { force = false, now = Date.now() }: { force?: boolean; now?: number } = {}): 'restored' | 'cleared' | null {
   if (!me || !me.code || !me.name) return null;
   return withReview(me, () => {
     const st = readReview(me);

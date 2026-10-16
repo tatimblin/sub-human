@@ -62,7 +62,7 @@ interface ReqFields {
 }
 type GateResult = { ok: true, req?: Entry } | { ok: false, reason: string };
 
-const OPS = ['add', 'claim', 'release', 'done'];
+const OPS: readonly string[] = ['add', 'claim', 'release', 'done'];
 const SUBJECT_MAX = config.TASK_SUBJECT_MAX;
 const DETAIL_MAX = config.TASK_DETAIL_MAX;
 const EVIDENCE_MAX = config.TASK_EVIDENCE_MAX;
@@ -114,7 +114,7 @@ function fold(entries: readonly (Entry | null | undefined)[] | null | undefined)
   return clean([...m.values()]);
 }
 
-const refold = (code: RoomCode, entries: readonly Entry[]): Task[] => writeList(code, fold(entries));
+const refold = (code: RoomCode, entries: readonly Readonly<Entry>[]): Task[] => writeList(code, fold(entries));
 
 /** metadata.req as a log id (a positive integer, or its digits), else null. */
 function metaReq(md: unknown): number | null {
@@ -210,7 +210,7 @@ const cites = (e: Entry, reqId: number) => (e.refs || []).includes(reqId) || new
  * [human] words citing that request. task.req (the native task's metadata.req) is tried first when it names
  * such a request. The room-open task completes only while the room is closing.
  */
-function gate(code: RoomCode, task: (RawTask & { req?: unknown }) | null | undefined, log: readonly Entry[] = [], { closing, trust }: { closing?: boolean; trust?: Trust } = {}): GateResult {
+function gate(code: RoomCode, task: (RawTask & { req?: unknown }) | null | undefined, log: readonly Readonly<Entry>[] = [], { closing, trust }: { closing?: boolean; trust?: Trust } = {}): GateResult {
   const id = String(task && task.id);
   if (isRoomTask(task, code)) {
     const c = closing === undefined ? isClosing(code) : closing;

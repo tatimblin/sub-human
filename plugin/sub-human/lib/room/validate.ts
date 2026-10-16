@@ -30,7 +30,7 @@
 
 import { NAME_RE, isMachineId } from '../text.ts';
 import type { Reason } from '../reasons.ts';
-import { CODED } from '../errors.ts';
+import { markCoded } from '../errors.ts';
 import type { WireCode } from '../remote/types-core.ts';
 import { ENTRY_TEXT_MAX_BYTES, ENTRY_REFS_MAX, ENTRY_STR_MAX, ENTRY_LIST_MAX } from '../config.ts';
 import type { Entry, EntryInput, EntryOf, HostFields, Kind, KnownEntry, KnownKind, TaskFields, TaskOp, Validated, ValidateOpts, Via } from './types.ts';
@@ -41,7 +41,7 @@ import type { EntryId, TaskId } from '../brand.ts';
 const AGENT_KINDS = ['say', 'question', 'status', 'proposal', 'task_req'] as const;
 const HUMAN_KINDS = ['say', 'signoff', 'objection', 'proposal'] as const;
 const SYSTEM_ONLY_KINDS = ['decision', 'member_joined', 'member_left', 'task', 'host_changed'] as const;
-const SYSTEM_KINDS = [...SYSTEM_ONLY_KINDS, 'status'] as const;
+const SYSTEM_KINDS: readonly ["decision", "member_joined", "member_left", "task", "host_changed", "status"] = [...SYSTEM_ONLY_KINDS, 'status'] as const;
 /** Kinds only logs from before envelope v3 hold (rules.ts normalize maps all but revoke). */
 const LEGACY_KINDS = ['concern', 'agree', 'plan_rev', 'revoke'] as const;
 const TASK_OPS = ['add', 'claim', 'release', 'done'] as const;
@@ -95,8 +95,8 @@ class RoomError extends Error {
     if (reason) this.reason = reason;
     if (reason === 'UNKNOWN_OUTCOME') this.unknown = true;
   }
-  get [CODED](): true { return true; }
 }
+markCoded(RoomError);
 
 function bad(msg: string): never { throw new RoomError('INVALID', msg); }
 

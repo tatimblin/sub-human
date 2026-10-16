@@ -41,7 +41,7 @@ import type { Delivery, Entry, Lane, LaneViewer, Trust } from './types.ts';
 
 /** What deliver() judges an entry against. */
 interface DeliverState {
-  entries?: readonly Entry[];
+  entries?: readonly Readonly<Entry>[];
   trust?: Trust;
   note?: string;
 }
@@ -55,7 +55,7 @@ const isHostMove = (e: Entry): boolean => e.kind === 'host_changed' && e.via ===
 /** The room Claude's row note says that row must be spawned (lib/rows.ts joinNote). */
 const SPAWN_NOTE = /no row running|is not running/;
 
-function lane(me: LaneViewer | null | undefined, e: Entry, entries?: readonly Entry[], trust: Trust = NO_TRUST): Lane {
+function lane(me: LaneViewer | null | undefined, e: Entry, entries?: readonly Readonly<Entry>[], trust: Trust = NO_TRUST): Lane {
   const name = (me && me.name) as string; // no seat: matches no from, to or approver
   const roomClaude = !!me && me.role === 'claude';
   const n = normalize(e);
@@ -90,7 +90,7 @@ function lane(me: LaneViewer | null | undefined, e: Entry, entries?: readonly En
  * A decision that needs no wake for name: name's answer completed it (consent told that Claude in the card's
  * reply), or it is an objected decision on a proposal name did not write.
  */
-function quietDecision(name: string, d: Entry, entries: readonly Entry[], trust: Trust): boolean {
+function quietDecision(name: string, d: Entry, entries: readonly Readonly<Entry>[], trust: Trust): boolean {
   const refs = new Set(d.refs || []);
   let last: Entry | null = null;
   for (const x of entries) if (refs.has(x.id) && (x.kind === 'signoff' || x.kind === 'objection') && (!last || x.id > last.id)) last = x;
@@ -113,7 +113,7 @@ const asksPeople = (e: Entry): boolean => e.kind === 'status' && e.via === 'syst
  * decision their own answer completed, or an objected one they did not write) and another approver's objection on a
  * proposal they approve. Live, these reached only the model as context.
  */
-function personSees(name: string, e: Entry, entries: readonly Entry[] | undefined, trust: Trust): boolean {
+function personSees(name: string, e: Entry, entries: readonly Readonly<Entry>[] | undefined, trust: Trust): boolean {
   if (!entries || !e.proposal_hash) return false;
   if (e.kind !== 'decision' && e.kind !== 'objection') return false;
   const p = proposal(e.proposal_hash, entries, trust);
