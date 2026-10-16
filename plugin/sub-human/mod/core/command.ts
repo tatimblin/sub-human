@@ -124,7 +124,7 @@ export const failedLine = (f?: FailInfo | null) => {
 /** The last stdout line that parses as a JSON object, or null. */
 function lastJson(stdout: unknown): HookJson | null {
   for (const line of String(stdout || '').trim().split('\n').reverse()) {
-    try { const o = JSON.parse(line); if (o && typeof o === 'object' && !Array.isArray(o)) return o; } catch { /* next */ }
+    try { const o: unknown = JSON.parse(line); if (o && typeof o === 'object' && !Array.isArray(o)) return o; } catch { /* next */ }
   }
   return null;
 }

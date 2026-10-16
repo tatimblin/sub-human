@@ -25,6 +25,7 @@ import * as room from '../../lib/room.ts';
 import * as tasks from '../../lib/tasks.ts';
 import * as cc from '../../lib/cc/env.ts';
 import { readJson } from '../../lib/io.ts';
+import { obj, str, opt, nullable, arr, unknown_ } from '../../lib/decode.ts';
 import type { AnyHookIn, HookIn, Reply } from '../types.ts';
 import type { RawTask } from '../../lib/tasks.ts';
 import type { Task } from '../../lib/types-app.ts';
@@ -39,6 +40,12 @@ interface NativeTask extends RawTask {
   description?: string;
   metadata?: { _internal?: unknown; req?: unknown } | null;
 }
+
+/** A native task file as read: Claude Code's; every field this file reads is optional. */
+const NATIVE_TASK = obj({
+  id: opt(unknown_), subject: opt(str), status: opt(str), owner: opt(nullable(str)), blockedBy: opt(arr(unknown_)),
+  description: opt(str), metadata: opt(nullable(obj({ _internal: opt(unknown_), req: opt(unknown_) }))),
+});
 
 /** A task's state in the mirror (lib/tasks.ts fold), and a `task` entry's fields. */
 type TaskState = Omit<Task, 'metadata'>;
@@ -76,7 +83,7 @@ function roomClaudeRoom(input: TasksIn): string | null {
 }
 
 const listId = (code: string): string => cc.taskListId() || `sh-${code}`;
-const readNative = (code: string, id: string): NativeTask | null => (/^\d+$/.test(String(id)) ? readJson(cc.taskFile(listId(code), id)) : null);
+const readNative = (code: string, id: string): NativeTask | null => (/^\d+$/.test(String(id)) ? readJson(cc.taskFile(listId(code), id), NATIVE_TASK, null) : null);
 const internal = (t: WithMeta) => !!(t && t.metadata && t.metadata._internal);
 const RETRY = 'Nothing in that TaskUpdate was saved. Resend its other fields without status; change status only in a TaskUpdate of its own.';
 

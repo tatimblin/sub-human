@@ -80,7 +80,9 @@ function checkClaude({ version, quick, env }: { version: string | null; quick: b
 
 function settingsFiles(env: NodeJS.ProcessEnv): Settings[] {
   const cc = lib('cc/env.ts');
-  return cc.userSettingsFiles(process.cwd(), env).map(f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } }).filter(Boolean);
+  // a settings file is read defensively: each check reads one field
+  return cc.userSettingsFiles(process.cwd(), env).map((f): unknown => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } })
+    .filter((s): s is Settings => !!s && typeof s === 'object');
 }
 
 function checkHooks(settings: Settings[], env = process.env): Check {

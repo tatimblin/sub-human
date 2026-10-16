@@ -205,7 +205,7 @@ function heldHead(mirror: MirrorRoomStore, snap: { id?: unknown; hash?: unknown 
 /** A host line the mirror holds already (the same id and bytes): two streams overlap while a link is swapped. */
 function held(mirror: MirrorRoomStore, line: string): boolean {
   let id: unknown;
-  try { id = JSON.parse(line).id; } catch { return false; }
+  try { const v: unknown = JSON.parse(line); id = v && typeof v === 'object' && 'id' in v ? v.id : undefined; } catch { return false; }
   return Number.isInteger(id) && (id as number) <= mirror.lastId() && mirror.lineHash(id as number) === hash12(line);
 }
 /** lib/room/rules.ts: its nonce is in the log, so an earlier try landed. */

@@ -95,7 +95,10 @@ import type {
 const PROTO: Readonly<ProtoRange> = Object.freeze({ min: 1, max: 3 });
 const VERSION = PROTO.max;
 const PLUGIN_VERSION: string = (() => {
-  try { return String(JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '..', '.claude-plugin', 'plugin.json'), 'utf8')).version || '?'); } catch { return '?'; }
+  let j: unknown;
+  try { j = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '..', '.claude-plugin', 'plugin.json'), 'utf8')); } catch { return '?'; }
+  const v = j && typeof j === 'object' && 'version' in j ? j.version : undefined;
+  return v ? String(v) : '?';
 })();
 
 const isVersion = (n: unknown): n is number => Number.isInteger(n) && (n as number) >= 1 && (n as number) <= 1000;

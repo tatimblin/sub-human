@@ -50,7 +50,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { RoomError } from '../room/validate.ts';
-import { isAlive, sleepSync } from '../io.ts';
+import { isAlive, readJson, sleepSync } from '../io.ts';
+import { isObj, objAs } from '../decode.ts';
 import * as ioMod from '../io.ts';
 import * as textMod from '../text.ts';
 import { createRequire } from 'node:module';
@@ -59,7 +60,7 @@ import type { IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { ListenState, Refusal, ServedRoom } from './types-rest.ts';
 import type { KeyPair } from './noise.ts';
-import type { DecodedFrame } from './types-core.ts';
+import type { FrameId } from './types-core.ts';
 import type { Duplex } from 'node:stream';
 import type { Conn } from './ws.ts';
 
@@ -99,7 +100,7 @@ const hostKey = (): string => staticKey().pub.toString('base64url');
 const defaultPort = (): number => Number(process.env.SUB_HUMAN_LISTEN_PORT) || DEFAULT_PORT;
 
 function read(): ListenState {
-  try { return JSON.parse(fs.readFileSync(stateFile(), 'utf8')) || {}; } catch { return {}; }
+  return readJson(stateFile(), objAs<ListenState>(), {});
 }
 
 /** Change the state file under its lock; fn(cur) returns the next state. */
@@ -281,9 +282,10 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
    */
   function textConn(conn: Conn, data: Buffer, who: unknown): void {
     const protocol: typeof import('./protocol.ts') = require('./protocol.ts');
-    let frame: DecodedFrame | null = null; // parsed JSON, checked below
-    try { frame = JSON.parse(data.toString('utf8')); } catch { /* refused below */ }
-    const id = frame && frame.id !== undefined ? frame.id : null;
+    let v: unknown = null;
+    try { v = JSON.parse(data.toString('utf8')); } catch { /* refused below */ }
+    const frame = isObj(v) ? v : null; // parsed JSON, checked below
+    const id: FrameId = frame && (typeof frame.id === 'number' || typeof frame.id === 'string') ? frame.id : null;
     if (frame && frame.op === 'key') conn.send(JSON.stringify({ v: 3, key: hostKey() }));
     else if (frame && frame.op === 'enroll.start') {
       const msg = protocol.skewMessage({ host: { version: protocol.PLUGIN_VERSION, proto: protocol.PROTO }, joiner: { version: null, proto: { min: 1, max: 2 } }, need: 3 });

@@ -130,6 +130,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 import { readJson, writeJsonAtomic, isAlive, validPid } from './io.ts';
+import { obj, str, num, opt, nullable, unknown_ } from './decode.ts';
 import { home, roomDir, machineId, machineIn, isMine } from './home.ts';
 import { pidStart, pidStarts } from './lock.ts';
 import { NAME_RE, CODE_RE, SID_SAFE as SID_RE } from './text.ts';
@@ -156,21 +157,29 @@ interface Identity {
 interface SeatIndex {
   code: string;
   name: string;
-  role: Role;
-  pid: number | null | undefined;
+  /** a Role as written; read as any string (lastSeat and forkParent read anything but "claude" as a member) */
+  role?: string;
+  pid?: number | null;
   pid_start?: number;
-  session_id: string | null;
-  address: string;
+  session_id?: string | null;
+  address?: string;
 }
+/** A session index record as read (indexRec; the same since 0.5.0-beta.4): code and name are what every reader needs. */
+const SEAT_INDEX = obj({
+  code: str, name: str, role: opt(str), pid: opt(nullable(num)), pid_start: opt(num),
+  session_id: opt(nullable(str)), address: opt(str),
+});
 
 /** The hooks module's lease, <home>/sessions/mods/<sid>.json (see the header). */
 interface ModLease {
   session_id: string;
-  pid: number | null;
+  pid?: number | null;
   pid_start?: number;
   at?: string;
   nonce?: string;
 }
+/** A lease as read (writeModLease). */
+const MOD_LEASE = obj({ session_id: str, pid: opt(nullable(num)), pid_start: opt(num), at: opt(str), nonce: opt(str) });
 
 /** join()'s argument. */
 interface JoinRequest {
@@ -282,7 +291,7 @@ function writeIndexes(code: string, m: Member | SeatRecord): void {
 
 /** One seat per claude process: the seat pid held before this join (another name or room) is left. */
 function retirePrevious(code: string, name: string, pid: number): void {
-  const prev: SeatIndex | null = readJson(byPidFile(pid));
+  const prev = readJson(byPidFile(pid), SEAT_INDEX, null);
   if (!prev || (prev.code === code && prev.name === name)) return;
   try {
     const m = indexedSeat(prev);
@@ -328,7 +337,7 @@ function leave(code: string, name: string, opts?: { reason?: string; deadlineMs?
   try { unindexClosed(code); } catch { /* the next look at the open rooms drops it */ }
   const m = readMembers(code)[name];
   if (m && m.left_at && validPid(m.pid)) {
-    const p: SeatIndex | null = readJson(byPidFile(m.pid));
+    const p = readJson(byPidFile(m.pid), SEAT_INDEX, null);
     if (p && p.code === code && p.name === name) rm(byPidFile(m.pid));
   }
   return true;
@@ -343,7 +352,7 @@ function rebindSession(pid: unknown, sid: unknown): boolean {
     m.session_id = sid;
     writeIndexes(who.code, m);
   };
-  if (!isHost(who.code)) { swap(indexedSeat(readJson(byPidFile(pid)))!); return true; } // resolveByPid found this seat
+  if (!isHost(who.code)) { swap(indexedSeat(readJson(byPidFile(pid), SEAT_INDEX, null)!)!); return true; } // resolveByPid found this seat
   let ok = false;
   membersOf(who.code).update(members => {
     const m = members[who.name];
@@ -371,7 +380,7 @@ function indexedSeat(idx: SeatIndex): Member | undefined {
 function resolveByPid(pidArg: unknown): Identity | null {
   const pid = Number(pidArg);
   if (!validPid(pid)) return null;
-  const rec: SeatIndex | null = readJson(byPidFile(pid));
+  const rec = readJson(byPidFile(pid), SEAT_INDEX, null);
   if (!rec || !roomExists(rec.code)) return null;
   const m = indexedSeat(rec);
   if (!m || m.left_at || m.pid !== pid || !startMatches(m)) return null;
@@ -380,7 +389,7 @@ function resolveByPid(pidArg: unknown): Identity | null {
 
 function resolveBySession(sid: unknown): Identity | null {
   if (typeof sid !== 'string' || !SID_RE.test(sid)) return null;
-  const rec: SeatIndex | null = readJson(bySidFile(sid));
+  const rec = readJson(bySidFile(sid), SEAT_INDEX, null);
   if (!rec || !roomExists(rec.code)) return null;
   const m = indexedSeat(rec);
   if (!m || m.left_at || m.session_id !== sid) return null;
@@ -403,7 +412,7 @@ function writeModLease(sid: unknown, { pid: pidArg, nonce }: { pid?: unknown; no
 
 function readModLease(sid: unknown): ModLease | null {
   if (typeof sid !== 'string' || !SID_RE.test(sid)) return null;
-  return readJson(modLeaseFile(sid));
+  return readJson(modLeaseFile(sid), MOD_LEASE, null);
 }
 
 const leaseYoung = (lease: ModLease | null, now: number): boolean => { const t = Date.parse(String(lease && lease.at)); return Number.isFinite(t) && now - t < MOD_LEASE_FRESH_MS; };
@@ -441,7 +450,7 @@ function pruneSessionIndexes(now = Date.now(), ttlMs = SESSION_INDEX_TTL_MS): nu
       let old = false;
       try { old = now - fs.statSync(file).mtimeMs >= ttlMs; } catch { continue; }
       if (!old) continue;
-      const rec: SeatIndex | null = readJson(file);
+      const rec = readJson(file, SEAT_INDEX, null);
       if (rec && validPid(rec.pid) && seatAlive({ ...rec, machine: machineId() } as Member)) continue; // a live session's
       rm(file);
       n++;
@@ -466,7 +475,7 @@ function pruneModLeases(now = Date.now()): number {
   for (const f of names) {
     if (!f.endsWith('.json')) continue;
     const file = path.join(dir, f);
-    const lease: ModLease | null = readJson(file);
+    const lease = readJson(file, MOD_LEASE, null);
     let gone: boolean;
     if (lease && validPid(lease.pid)) gone = !leaseLive(lease);
     else if (lease) gone = !leaseYoung(lease, now);
@@ -485,7 +494,7 @@ function dropSeatIndexes(code: string): number {
     try { names = fs.readdirSync(dir); } catch { continue; }
     for (const f of names) {
       if (!f.endsWith('.json')) continue;
-      const rec: SeatIndex | null = readJson(path.join(dir, f));
+      const rec = readJson(path.join(dir, f), SEAT_INDEX, null);
       if (rec && rec.code === code) { rm(path.join(dir, f)); n++; }
     }
   }
@@ -497,7 +506,7 @@ function localSeats(code: string): string[] {
   try { files = fs.readdirSync(byPidDir()); } catch { return []; }
   const names = new Set<string>();
   for (const f of files) {
-    const rec: SeatIndex | null = readJson(path.join(byPidDir(), f));
+    const rec = readJson(path.join(byPidDir(), f), SEAT_INDEX, null);
     if (!rec || rec.code !== code || !isAlive(rec.pid)) continue;
     const who = resolveByPid(rec.pid);
     if (who && who.code === code) names.add(who.name);
@@ -508,7 +517,7 @@ function localSeats(code: string): string[] {
 function adoptLocalSeats(code: string): string[] {
   let files: string[];
   try { files = fs.readdirSync(byPidDir()); } catch { return []; }
-  const recs = files.map((f): SeatIndex | null => readJson(path.join(byPidDir(), f))).filter((r): r is SeatIndex & { pid: number } => !!r && r.code === code && validPid(r.pid) && isAlive(r.pid));
+  const recs = files.map(f => readJson(path.join(byPidDir(), f), SEAT_INDEX, null)).filter((r): r is SeatIndex & { pid: number } => !!r && r.code === code && validPid(r.pid) && isAlive(r.pid));
   if (!recs.length) return [];
   const names: string[] = [];
   membersOf(code).update(ms => {
@@ -526,7 +535,7 @@ function adoptLocalSeats(code: string): string[] {
 
 function lastSeat(sid: unknown): { code: string; name: string; role: Role; address: string } | null {
   if (typeof sid !== 'string' || !SID_RE.test(sid)) return null;
-  const rec: SeatIndex | null = readJson(bySidFile(sid));
+  const rec = readJson(bySidFile(sid), SEAT_INDEX, null);
   if (!rec || !roomExists(rec.code) || !NAME_RE.test(String(rec.name))) return null;
   const name = rec.name;
   const role: Role = rec.role === ROOM_CLAUDE ? ROOM_CLAUDE : 'member';
@@ -544,7 +553,7 @@ function forkParent(sid: unknown, dir: string | null | undefined): ForkParent | 
     if (old === sid || !SID_RE.test(old)) continue;
     const transcript = path.join(dir, `${old}.jsonl`);
     if (!fs.existsSync(transcript)) continue; // not a session of this directory
-    const rec: SeatIndex | null = readJson(bySidFile(old));
+    const rec = readJson(bySidFile(old), SEAT_INDEX, null);
     if (!rec || !roomExists(rec.code) || !NAME_RE.test(String(rec.name))) continue;
     const m = indexedSeat(rec);
     if (!m || m.left_at || m.session_id !== old) continue;
@@ -583,6 +592,8 @@ function forkedAway(sid: unknown, dir: string | null | undefined, now = Date.now
   }
   return null;
 }
+/** A fork record as read (markForked); home is kept only when a string. */
+const FORKED = obj({ sid: str, title: str, home: opt(unknown_) });
 const forkedFile = (sid: string): string => path.join(home(), 'sessions', 'forked', `${sid}.json`);
 /** Record that session sid is such a fork (session-restore), so a bare /sub-human there opens no room (lib/seats.ts). */
 function markForked(sid: string, f: ForkedAway): void {
@@ -592,14 +603,14 @@ function markForked(sid: string, f: ForkedAway): void {
 /** The fork record of session sid (markForked), or null. */
 function forkedOf(sid: unknown): ForkedAway | null {
   if (typeof sid !== 'string' || !SID_RE.test(sid)) return null;
-  const r = readJson(forkedFile(sid)) as Partial<ForkedAway> | null;
-  return r && typeof r.title === 'string' && typeof r.sid === 'string' ? { sid: r.sid, title: r.title, ...(typeof r.home === 'string' ? { home: r.home } : {}) } : null;
+  const r = readJson(forkedFile(sid), FORKED, null);
+  return r && { sid: r.sid, title: r.title, ...(typeof r.home === 'string' ? { home: r.home } : {}) };
 }
 
 function adoptFork(from: ForkParent, { pid: pidArg, session_id, cwd }: { pid: unknown; session_id: string; cwd?: string | null }): JoinResult {
   const pid = Number(pidArg);
   if (!validPid(pid)) return fail(`invalid pid "${pid}"`);
-  const before: SeatIndex | null = readJson(bySidFile(from.sid));
+  const before = readJson(bySidFile(from.sid), SEAT_INDEX, null);
   if (isHost(from.code)) {
     // the old process still runs (as the agent view), so its pid is alive: the seat is handed over, not taken
     let moved = false;
@@ -620,7 +631,7 @@ function adoptFork(from: ForkParent, { pid: pidArg, session_id, cwd }: { pid: un
     rm(bySidFile(from.sid));
     const oldPid = before && validPid(before.pid) ? before.pid : null;
     if (oldPid && oldPid !== pid) {
-      const p: SeatIndex | null = readJson(byPidFile(oldPid));
+      const p = readJson(byPidFile(oldPid), SEAT_INDEX, null);
       if (p && p.code === from.code && p.name === from.name) rm(byPidFile(oldPid));
     }
   }

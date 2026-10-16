@@ -25,6 +25,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as identity from '../lib/identity.ts';
 import { writeFileAtomic, writeJsonAtomic, readJson } from '../lib/io.ts';
+import { objAs } from '../lib/decode.ts';
 
 const LAUNCHER = 'row-status';
 const ROOTS = 'roots.json';
@@ -68,7 +69,7 @@ function writeLauncher(root = process.env.CLAUDE_PLUGIN_ROOT || path.join(import
   const temp = isTempRoot(root);
   if (temp && !allowTmp(env)) return null;
   fs.mkdirSync(binDir(), { recursive: true, mode: 0o700 });
-  const rec: RootsRec = readJson(rootsPath(), {}) || {};
+  const rec = readJson(rootsPath(), objAs<RootsRec>(), {});
   for (const r of Object.keys(rec)) if (!fs.existsSync(cliOf(r)) || (rec[r] && rec[r].temp && !allowTmp(env) && r !== root)) delete rec[r];
   rec[root] = { at: now, temp };
   const ordered = orderRoots(rec).slice(0, ROOTS_MAX);

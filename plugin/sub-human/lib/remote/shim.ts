@@ -90,7 +90,9 @@ const hasCli = (root: string): boolean => ['scripts/sub-human', 'bin/sub-human']
 
 /** The plugin version a root says (.claude-plugin/plugin.json), or null. */
 function versionOf(root: string): string | null {
-  try { const v = JSON.parse(fs.readFileSync(path.join(root, '.claude-plugin', 'plugin.json'), 'utf8')).version; return typeof v === 'string' ? v : null; } catch { return null; }
+  let j: unknown;
+  try { j = JSON.parse(fs.readFileSync(path.join(root, '.claude-plugin', 'plugin.json'), 'utf8')); } catch { return null; }
+  return j && typeof j === 'object' && 'version' in j && typeof j.version === 'string' ? j.version : null;
 }
 
 /** a > b as plugin versions: major.minor.patch, then a release over its prereleases, then the prerelease's parts

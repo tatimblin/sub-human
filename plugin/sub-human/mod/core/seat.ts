@@ -41,8 +41,10 @@ function parseSeat(x: unknown): HelloSeat | null {
 }
 
 export function parseHello(stdout: unknown, sid: unknown): Hello | null {
-  let o: { home?: unknown; realHome?: unknown; userHome?: unknown; pluginRoot?: unknown; seat?: unknown; restorable?: unknown; pending?: unknown } | null;
-  try { o = JSON.parse(String(stdout || '').trim()); } catch { return null; }
+  let v: unknown;
+  try { v = JSON.parse(String(stdout || '').trim()); } catch { return null; }
+  // every field read is checked below
+  const o: { home?: unknown; realHome?: unknown; userHome?: unknown; pluginRoot?: unknown; seat?: unknown; restorable?: unknown; pending?: unknown } | null = v && typeof v === 'object' ? v : null;
   const home = o && typeof o === 'object' ? ABS(o.home) : null;
   if (!o || !home) return null;
   return {

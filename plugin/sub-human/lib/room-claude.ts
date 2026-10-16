@@ -72,7 +72,11 @@ import crypto from 'node:crypto';
 import { spawn as spawnChild, spawnSync } from 'node:child_process';
 import * as identity from './identity.ts';
 import * as room from './room.ts';
-import { readJson } from './io.ts';
+import { readJsonRaw } from './io.ts';
+import { decodeOr, isObj, obj, opt, str } from './decode.ts';
+
+/** `start CODE JSON`: what spawnStart hands the detached helper. */
+const START_ARGS = obj({ cwd: opt(str), claim: opt(str), prevJob: opt(str) });
 import * as config from './config.ts';
 import * as clock from './clock.ts';
 import * as cc from './cc/bg.ts';
@@ -366,8 +370,8 @@ function startDetached({ code, cwd, claim, prevJob = null }: { code: string, cwd
 function roomTaskDone(code: string): boolean {
   const dir = tasksDir(code);
   if (!fs.existsSync(dir)) return true;
-  const t: { status?: unknown } | null = readJson(path.join(dir, '1.json'));
-  return !t || t.status === 'completed';
+  const t = readJsonRaw(path.join(dir, '1.json'));
+  return !t || (isObj(t) && t.status === 'completed');
 }
 
 const hasLiveMember = (members: Members, alive: Alive = identity.seatAlive): boolean =>
@@ -472,8 +476,9 @@ if (import.meta.main) {
   if (cmd === 'cmd') process.stdout.write(command(spawnPlan({ code })) + '\n');
   else if (cmd === 'spawn') { const r = spawn({ code }); process.stdout.write(JSON.stringify(r) + '\n'); process.exitCode = r.ok ? 0 : 1; }
   else if (cmd === 'start') {
-    let o: { cwd?: string, claim?: string, prevJob?: string } = {};
-    try { o = JSON.parse(extra || '{}') || {}; } catch { die('start: bad JSON'); }
+    let v: unknown = {};
+    try { v = JSON.parse(extra || '{}'); } catch { die('start: bad JSON'); }
+    const o = decodeOr(START_ARGS, v || {}, {});
     const r = spawn({ code, cwd: o.cwd, claim: o.claim || null, prevJob: o.prevJob || null });
     process.stdout.write(JSON.stringify(r) + '\n');
     process.exitCode = r.ok ? 0 : 1;

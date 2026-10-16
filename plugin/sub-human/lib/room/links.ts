@@ -66,12 +66,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { home } from '../home.ts';
 import { readJson, writeJsonAtomic } from '../io.ts';
+import { objAs } from '../decode.ts';
 import { CODE_RE } from '../text.ts';
 import { RoomError } from './validate.ts';
 import type { Link, LinkStateRecord } from './types.ts';
 
 /** @returns {string} <home>/links */
 const linksDir = (): string => path.join(home(), 'links');
+
+/** A link record and its daemon's state record: this home's own (set, writeState); each reader checks its fields. */
+const LINK = objAs<Link>();
+const LINK_STATE = objAs<LinkStateRecord>();
 
 function fileOf(code: unknown, ext = 'json'): string {
   if (typeof code !== 'string' || !CODE_RE.test(code)) throw new RoomError('INVALID', `invalid room code "${code}"`);
@@ -82,7 +87,7 @@ function fileOf(code: unknown, ext = 'json'): string {
  * @param {string} code
  * @returns {object | null}
  */
-const get = (code: unknown): Link | null => (typeof code === 'string' && CODE_RE.test(code) ? readJson(fileOf(code)) : null);
+const get = (code: unknown): Link | null => (typeof code === 'string' && CODE_RE.test(code) ? readJson(fileOf(code), LINK, null) : null);
 
 /**
  * @param {string} code
@@ -148,7 +153,7 @@ const stateFile = (code: unknown): string => fileOf(code, 'state.json');
  * @param {string} code
  * @returns {object | null}
  */
-const readState = (code: unknown): LinkStateRecord | null => (typeof code === 'string' && CODE_RE.test(code) ? readJson(stateFile(code)) : null);
+const readState = (code: unknown): LinkStateRecord | null => (typeof code === 'string' && CODE_RE.test(code) ? readJson(stateFile(code), LINK_STATE, null) : null);
 
 /**
  * @param {string} code

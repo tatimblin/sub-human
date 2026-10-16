@@ -30,7 +30,8 @@ import nodeFs from 'node:fs';
 import path from 'node:path';
 import { roomDir, machineIn } from '../home.ts';
 import { withLock } from '../lock.ts';
-import { writeFileAtomic, writeJsonAtomic, readJson } from '../io.ts';
+import { writeFileAtomic, writeJsonAtomic, readJson, readJsonRaw } from '../io.ts';
+import { objAs } from '../decode.ts';
 import { RoomError } from './validate.ts';
 import * as envelope from './envelope.ts';
 import * as members from './members.ts';
@@ -53,6 +54,8 @@ const MOVED = 'log.moved';
 /** The kv document that says the room heard its log is waiting on older sessions (heldOnce); gone at the next rotation. */
 const ROTATION_HELD = 'log/rotation-held';
 const MEMBERS = 'members.json';
+/** members.json: the room's own document (name -> Member); each reader checks the fields it uses. */
+const MEMBERS_DOC = objAs<Members>();
 
 /** pins and host as of `n` marked entries (the last of them `last`): carried forward as the marked list grows. */
 interface Derived { n: number; last: Entry | null; pins: Map<string, KeyObject>; host: HostState }
@@ -112,7 +115,7 @@ class FsRoomStore implements RoomStore {
       localPath: ref => { const r = blobRef(ref); return r ? path.join(self.dir, r) : null; },
     };
     this.kv = {
-      get: (key, fallback = null) => readJson(self._kvFile(key), fallback),
+      get: (key, fallback = null) => self._kvGet(key, fallback),
       set: (key, value, opts) => self._kvSet(key, value, opts),
       update: (key, fn, opts) => self._kvUpdate(key, fn, opts),
       delete: key => { try { fs.unlinkSync(self._kvFile(key)); } catch { /* absent */ } },
@@ -209,7 +212,7 @@ class FsRoomStore implements RoomStore {
    */
   rotationOk(): boolean {
     let ms: Members | null = null;
-    try { ms = readJson(this._membersFile) as Members | null; } catch { ms = null; }
+    try { ms = readJson(this._membersFile, MEMBERS_DOC, null); } catch { ms = null; }
     if (!ms) return true;
     try { return !Object.values(ms).some(m => members.holdsRotation(m)); } catch { return false; }
   }
@@ -257,7 +260,7 @@ class FsRoomStore implements RoomStore {
   setCursor(name: string, n: number): void { this._mustExist(); writeFileAtomic(this._cursorFile(name), String(n)); }
 
   // ----- members -----
-  _readMembers(): Members { try { return readJson(this._membersFile, {}) || {}; } catch { return {}; } }
+  _readMembers(): Members { try { return readJson(this._membersFile, MEMBERS_DOC, {}); } catch { return {}; } }
   _updateMembers(fn: (current: Members) => Members | null | undefined): Members | null {
     const file = this._membersFile;
     this._mustExist();
@@ -285,6 +288,11 @@ class FsRoomStore implements RoomStore {
   // ----- kv -----
   _kvFile(key: string): string { return path.join(this.dir, `${checkKey(key)}.json`); }
   _kvSet(key: string, value: unknown, { compact = false }: { compact?: boolean } = {}): void { this._mustExist(); writeJsonAtomic(this._kvFile(key), value, { compact }); }
+  /** A kv document as stored (any JSON), else fallback. any: its reader types it (KvApi). */
+  _kvGet<T = any>(key: string, fallback: T | null): T | null {
+    const v = readJsonRaw(this._kvFile(key));
+    return v === undefined ? fallback : v as T; // a document of this home's own code: its reader checks it (KvApi)
+  }
   // any: a kv document is JSON from disk (KvApi)
   _kvUpdate<T = any>(key: string, fn: (current: T | null) => T | null | undefined, { compact = false, timeoutMs, staleMs }: KvUpdateOpts = {}): T | null | undefined {
     const file = this._kvFile(key);
@@ -293,7 +301,7 @@ class FsRoomStore implements RoomStore {
     if (timeoutMs !== undefined) lockOpts.timeoutMs = timeoutMs;
     if (staleMs !== undefined) lockOpts.staleMs = staleMs;
     return withLock(file + '.lock', () => {
-      const next = fn(readJson(file, null));
+      const next = fn(this._kvGet<T>(key, null));
       if (next === undefined) return undefined;
       if (next === null) { try { fs.unlinkSync(file); } catch { /* absent */ } return null; }
       writeJsonAtomic(file, next, { compact });

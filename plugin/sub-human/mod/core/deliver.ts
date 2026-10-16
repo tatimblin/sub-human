@@ -11,7 +11,7 @@
  */
 import { FOR_CLAUDE, PULL_HEAD, PULL_END, PULL_CAP, pullDroppedLine, MOD_RESTART_MS, MOD_RESTART_MAX_MS, MOD_RESTART_STEADY_MS, MOD_DELIVERY_ERROR_LOG_MS } from './constants.ts';
 import { shimEnv } from './shim.ts';
-import type { DeliverAction, Hello, Pulls, TailEvent } from './types.ts';
+import type { DeliverAction, Hello, Pulls, TailEvent, TailSeat } from './types.ts';
 
 // the backoff and the notice's window are mod/core/constants.ts's (lib/config.ts re-exports them)
 export { MOD_RESTART_MS, MOD_RESTART_MAX_MS, MOD_RESTART_STEADY_MS, MOD_DELIVERY_ERROR_LOG_MS };
@@ -113,21 +113,25 @@ export function lineBuffer() {
 }
 
 const str = (v: unknown): v is string => typeof v === 'string' && v !== '';
+const rec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
 /** A well-formed event of a known type, else null. */
 export function parseEvent(line: string): TailEvent | null {
-  let o: any; // parsed JSON: each field is checked below before it is used
+  let o: unknown; // parsed JSON: each field is checked below before it is used
   try { o = JSON.parse(line); } catch { return null; }
-  if (!o || typeof o !== 'object' || !TYPES.has(o.type)) return null;
-  switch (o.type) {
+  if (!rec(o) || typeof o.type !== 'string' || !TYPES.has(o.type)) return null;
+  const { type, text } = o;
+  switch (type) {
     case 'seat': {
-      const ok = o.seat && typeof o.seat === 'object' && str(o.seat.name) && str(o.seat.code);
-      return { type: 'seat', seat: ok ? o.seat : null };
+      const s = o.seat;
+      // the seat's other fields are the tail's own, as it sent them
+      return { type: 'seat', seat: rec(s) && str(s.name) && str(s.code) ? s as TailSeat : null };
     }
     case 'chat': return Array.isArray(o.lines) && o.lines.length ? { type: 'chat', lines: o.lines.map(String) } : null;
-    case 'rows': return { type: 'rows', text: str(o.text) ? o.text : null };
+    case 'rows': return { type: 'rows', text: str(text) ? text : null };
     case 'invites': return Array.isArray(o.open) ? { type: 'invites', open: o.open.filter((r: unknown) => typeof r === 'string') } : null;
-    default: return str(o.text) ? { type: o.type, text: o.text } : null;
+    case 'pull': case 'wake': case 'health': return str(text) ? { type, text } : null;
+    default: return null;
   }
 }
 

@@ -54,7 +54,7 @@ import { FsRoomStore } from './fs-store.ts';
 import { RoomError } from './validate.ts';
 import { reasonOf } from '../reasons.ts';
 import { blobRef, toPayload } from './rules.ts';
-import { problem } from './snapshot.ts';
+import { decodeEntry, problem } from './snapshot.ts';
 import { humanKey } from './trust.ts';
 import { createBridge } from '../remote/bridge.ts';
 import { proveSeat } from '../remote/host-links.ts';
@@ -202,11 +202,12 @@ class MirrorRoomStore implements RoomStore {
   // ----- the daemon's writes -----
   /** One verbatim host line into the mirror log (the daemon's subscribe stream). */
   applyLine(line: string): Entry {
-    let e: Entry;
-    try { e = JSON.parse(line); } catch { throw new RoomError('PROTOCOL', 'the host sent a log line that is not JSON'); }
+    let v: unknown;
+    try { v = JSON.parse(line); } catch { throw new RoomError('PROTOCOL', 'the host sent a log line that is not JSON'); }
+    const e = decodeEntry(v);
     const last = this.local.lastId();
-    if (!(e.id > last) || (e.prev !== undefined && e.prev !== this.local.lineHash(last))) {
-      throw new RoomError('FORK', `the host's line ${e.id} does not follow this mirror's line ${last}; re-mirror with sub-human link --reset ${this.code}`);
+    if (!e || !(e.id > last) || (e.prev !== undefined && e.prev !== this.local.lineHash(last))) {
+      throw new RoomError('FORK', `the host's line ${e?.id} does not follow this mirror's line ${last}; re-mirror with sub-human link --reset ${this.code}`);
     }
     this.local.appendVerbatim(line);
     return e;

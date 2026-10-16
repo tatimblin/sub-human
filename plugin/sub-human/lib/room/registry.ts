@@ -37,7 +37,8 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { home, roomsDir, roomDir, repairModes } from '../home.ts';
 import { withLock } from '../lock.ts';
-import { readJson, writeJsonAtomic } from '../io.ts';
+import { readJsonRaw, writeJsonAtomic } from '../io.ts';
+import { isObj } from '../decode.ts';
 import { CODE_RE } from '../text.ts';
 import { keyDir } from './keys.ts';
 import { FsRoomStore } from './fs-store.ts';
@@ -93,8 +94,8 @@ const listRooms = (): string[] => { try { return fs.readdirSync(roomsDir()).filt
 interface RoomIndex { v: 1; rooms: Record<string, string> }
 const indexFile = (): string => path.join(home(), 'open-rooms.json');
 const readIndex = (): RoomIndex | null => {
-  const x = readJson(indexFile()) as RoomIndex | null;
-  return x && x.v === 1 && x.rooms && typeof x.rooms === 'object' && !Array.isArray(x.rooms) ? x : null;
+  const x = readJsonRaw(indexFile());
+  return isObj(x) && x.v === 1 && isObj(x.rooms) ? { v: 1, rooms: x.rooms as Record<string, string> } : null; // rooms: code -> when, as written
 };
 /** Change the index under its lock (built from every room directory when there is none yet). fn: false writes nothing. */
 function updateIndex(fn: (rooms: Record<string, string>) => boolean): Record<string, string> {

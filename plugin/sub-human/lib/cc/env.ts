@@ -140,7 +140,9 @@ function userSettingsFiles(cwd: string | null | undefined, env: Env = process.en
  */
 function clearContextOnPlanAccept(cwd: string | null | undefined, env: Env = process.env): boolean {
   return userSettingsFiles(cwd, env).some(f => {
-    try { return JSON.parse(fs.readFileSync(f, 'utf8')).showClearContextOnPlanAccept === true; } catch { return false; }
+    let v: unknown;
+    try { v = JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return false; }
+    return !!v && typeof v === 'object' && 'showClearContextOnPlanAccept' in v && v.showClearContextOnPlanAccept === true;
   });
 }
 
@@ -157,9 +159,10 @@ const globalConfigFile = (env: Env = process.env): string => (env[ENV.CONFIG_DIR
  * undefined when unknown (no file, no entry: the default, on). Read only.
  */
 function modulesSwitch(env: Env = process.env): boolean | undefined {
-  let j;
+  let j: unknown;
   try { j = JSON.parse(fs.readFileSync(globalConfigFile(env), 'utf8')); } catch { return undefined; }
-  const v = j && j.cachedGrowthBookFeatures && j.cachedGrowthBookFeatures.tengu_plugin_hooks_modules;
+  const at = (o: unknown, k: string): unknown => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined);
+  const v = at(at(j, 'cachedGrowthBookFeatures'), 'tengu_plugin_hooks_modules');
   return typeof v === 'boolean' ? v : undefined;
 }
 

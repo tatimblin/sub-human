@@ -17,12 +17,18 @@
  *       malformed one, FORK for one whose line does not hash to its hash, or whose pins or host are not what its
  *       entries give. Never repaired: the mirror stops (lib/remote/link.ts)
  *   toWire(snap) -> SnapshotWire           the fields the wire carries (no segment bookkeeping)
+ *   asEntry(v) -> Entry | null             a parsed log line as an entry: any object (what every log reader has always
+ *                                          taken; lines are checked when placed and hash-chained, and each reader
+ *                                          checks the fields it uses)
+ *   decodeEntry(v) -> Entry | null         the same, with an id (a positive integer): the line a snapshot ends at, a
+ *                                          host's line for a mirror
  */
 
 import { RATE_WINDOW_MS, SNAPSHOT_WINDOW_MAX } from '../config.ts';
 import { hash12 } from '../text.ts';
 import { SIG_SKEW_MS, parseKey } from './envelope.ts';
 import { CHAT_KINDS, hostStep } from './rules.ts';
+import { decode, isObj, objAs } from '../decode.ts';
 import type { Entry, HostState, LogSnapshot, SnapshotWire, WindowItem } from './types.ts';
 
 const WINDOW_MS = Math.max(RATE_WINDOW_MS, 2 * SIG_SKEW_MS);
@@ -50,7 +56,8 @@ function carry(pins: Record<string, string>, host: HostState, es: readonly Entry
 const derive = (entries: readonly Entry[]): { pins: Record<string, string>; host: HostState } => carry({}, { epoch: 0 }, entries);
 
 function extend(prev: SnapshotWire | null, { nonChat, recent, line, lines }: { nonChat: readonly Entry[]; recent: readonly (Entry | WindowItem)[]; line: string; lines: number }): SnapshotWire {
-  const last = JSON.parse(line) as Entry;
+  const last = decodeEntry(JSON.parse(line));
+  if (!last) throw new TypeError('extend: the last line is not an entry'); // the store's own line: never
   const { pins, host } = carry(prev ? prev.pins : {}, prev ? prev.host : { epoch: 0 }, nonChat);
   const since = Date.parse(last.at) - WINDOW_MS;
   const fresh = (w: WindowItem) => !(Date.parse(w.at) < since); // an unreadable at stays: the scan stops at it anyway
@@ -67,8 +74,7 @@ function extend(prev: SnapshotWire | null, { nonChat, recent, line, lines }: { n
   };
 }
 
-const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x);
-const isId = (n: unknown): n is number => Number.isInteger(n) && (n as number) > 0;
+const isId = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n > 0;
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 const sortedHost = (h: HostState): HostState => Object.fromEntries(Object.entries(h).filter(([, v]) => v !== undefined).sort(([a], [b]) => (a < b ? -1 : 1))) as HostState;
 
@@ -95,4 +101,9 @@ function problem(w: unknown): { code: 'PROTOCOL' | 'FORK'; reason: string } | nu
 
 const toWire = ({ id, hash, line, count, entries, window, pins, host }: LogSnapshot | SnapshotWire): SnapshotWire => ({ id, hash, line, count, entries, window, pins, host });
 
-export { WINDOW_MS, windowItem, extend, derive, problem, toWire };
+// a log line: placed checked (validate.ts) and hash-chained; each reader checks the fields it uses
+const ENTRY = objAs<Entry>();
+const asEntry = (v: unknown): Entry | null => decode(ENTRY, v);
+const decodeEntry = (v: unknown): Entry | null => (isObj(v) && isId(v.id) ? decode(ENTRY, v) : null);
+
+export { WINDOW_MS, windowItem, extend, derive, problem, toWire, asEntry, decodeEntry };

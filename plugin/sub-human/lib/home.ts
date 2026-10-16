@@ -31,6 +31,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { CODE_RE } from './text.ts';
 import { homeOf } from '../mod/core/seat.ts';
+import { isObj } from './decode.ts';
 
 // the rule is mod/core/seat.ts homeOf's: the hooks module finds the store without node by the same one
 const home = (): string => homeOf(process.env.SUB_HUMAN_HOME, os.homedir()) || path.join(os.homedir(), '.sub-human');
@@ -40,7 +41,11 @@ function roomDir(code: unknown): string {
   return path.join(roomsDir(), code);
 }
 
-const readId = (file: string): string | null => { try { return JSON.parse(fs.readFileSync(file, 'utf8')).id || null; } catch { return null; } };
+const readId = (file: string): string | null => {
+  let v: unknown;
+  try { v = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+  return isObj(v) && typeof v.id === 'string' && v.id ? v.id : null;
+};
 /** The id in file, else a new one linked into place (the first of two racing processes wins; both read it). */
 function readOrMakeId(file: string): string | null {
   const cur = readId(file);
@@ -65,7 +70,8 @@ function roomIds(): Record<string, string> {
   const h = home(), now = Date.now();
   if (inRooms && inRooms.home === h && now - inRooms.at < 1000) return inRooms.map;
   let map: Record<string, string> = {};
-  try { const v = JSON.parse(fs.readFileSync(machinesFile(), 'utf8')); if (v && typeof v === 'object' && !Array.isArray(v)) map = v; } catch { /* none yet */ }
+  // code -> this machine's id there; machineIn checks each value
+  try { const v: unknown = JSON.parse(fs.readFileSync(machinesFile(), 'utf8')); if (isObj(v)) map = v as Record<string, string>; } catch { /* none yet */ }
   inRooms = { home: h, at: now, map };
   return map;
 }

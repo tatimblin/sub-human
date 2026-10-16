@@ -48,7 +48,9 @@ const NODE_MIN = [24, 3];
 const STORE_DIRS = ['rooms', 'sessions', 'links', 'keys', 'bin'];
 
 function pluginVersion(): string | null {
-  try { return JSON.parse(fs.readFileSync(path.join(PLUGIN_ROOT, '.claude-plugin', 'plugin.json'), 'utf8')).version || null; } catch { return null; }
+  let v: unknown;
+  try { v = JSON.parse(fs.readFileSync(path.join(PLUGIN_ROOT, '.claude-plugin', 'plugin.json'), 'utf8')); } catch { return null; }
+  return v && typeof v === 'object' && 'version' in v && typeof v.version === 'string' && v.version ? v.version : null;
 }
 
 function checkPlugin() {
