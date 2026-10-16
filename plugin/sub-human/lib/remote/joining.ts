@@ -129,7 +129,8 @@ export function linkLine({ name, code, word, transport, sid }: { name: SeatName;
   if (live) return live;
   if (cur) restartLink(code); // a pending join replaced, or a link that is down or stopped: dial with the new file
   try { hosting.joinLine({ code, transport, word, name, sid }); } catch (e) { putBack(code, cur); return refuse(msgOf(e)); }
-  if (cur) links.set(code, { ...links.get(code)!, rebind: true }); // a seat here joins again over the new link (joinLine wrote it)
+  const wrote = cur ? links.get(code) : null; // joinLine wrote it
+  if (wrote) links.set(code, { ...wrote, rebind: true }); // a seat here joins again over the new link
   if (!linkSocket.start(code)) { putBack(code, cur); return refuse(NO_START(code)); }
   const o = hosting.outcome(code);
   if (o.state === 'refused') putBack(code, cur);

@@ -92,7 +92,7 @@ function hostWeb(code: RoomCode, { tailscale = false, funnel = false, url, port,
     mode = funnel ? 'funnel' : 'tailscale';
   } else {
     if (served && served.tailscale) L.untailscale(served);
-    base = frontBase(url!); // checked above: one of tailscale and url
+    base = frontBase(url ?? ''); // checked above: one of tailscale and url (url is set here)
     mode = 'url';
   }
   const p = `${base.prefix}${roomPath}`;

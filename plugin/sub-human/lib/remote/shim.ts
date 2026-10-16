@@ -98,10 +98,15 @@ function versionOf(root: string): string | null {
 /** a > b as plugin versions: major.minor.patch, then a release over its prereleases, then the prerelease's parts
  * (numbers as numbers: beta.16 > beta.15). Unreadable: false. */
 function newer(a: string | null, b: string | null): boolean {
-  const parse = (v: string) => { const m = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/.exec(v); return m ? { n: [+m[1], +m[2], +m[3]], pre: m[4] ? m[4].split('.') : null } : null; };
+  const parse = (v: string) => {
+    const m = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/.exec(v);
+    if (!m) return null;
+    const [, maj = '', min = '', pat = '', pre] = m; // the first three groups always match
+    return { n: [+maj, +min, +pat], pre: pre ? pre.split('.') : null };
+  };
   const x = a ? parse(a) : null, y = b ? parse(b) : null;
   if (!x || !y) return false;
-  for (let i = 0; i < 3; i++) if (x.n[i] !== y.n[i]) return x.n[i] > y.n[i];
+  for (let i = 0; i < 3; i++) { const p = x.n[i] ?? 0, q = y.n[i] ?? 0; if (p !== q) return p > q; } // i < 3: both set
   if (!x.pre || !y.pre) return !x.pre && !!y.pre;
   for (let i = 0; i < Math.max(x.pre.length, y.pre.length); i++) {
     const p = x.pre[i], q = y.pre[i];

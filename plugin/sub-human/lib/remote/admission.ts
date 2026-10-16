@@ -77,7 +77,7 @@ function check(inv: AdmissionRecord, { machine, linkId, peerKey = null, now }: {
     if (now > Date.parse(inv.expires_at)) return { err: no('the host did not let this machine in in time; ask them for a new invite', 'ADMIT_LAPSED') }; // lapseAdmissions burns it, with a line
     return { err: new RoomError('OFFLINE', `${WAITING}; the link keeps trying`, 'ADMIT_WAITING') };
   }
-  if (now > Date.parse(inv.admitted_until!)) return { err: no('this machine was let in, but did not connect in time; ask the host for a new invite', 'ADMIT_LATE'), next: { ...inv, burnt_at: iso(now) } }; // admitted_until: set with 'let-in' (decide)
+  if (now > Date.parse(inv.admitted_until ?? '')) return { err: no('this machine was let in, but did not connect in time; ask the host for a new invite', 'ADMIT_LATE'), next: { ...inv, burnt_at: iso(now) } }; // admitted_until: set with 'let-in' (decide)
   return { err: null };
 }
 
@@ -97,21 +97,23 @@ function decide(store: AuthStore, ref: string, { decision, by = null, sig = null
   decision: 'let-in' | 'refused'; by?: string | null; sig?: unknown; as?: string; now?: number;
 }): AdmissionRequest {
   if (!store.isHost) throw new RoomError('HOST_ONLY', 'only the host of a room lets machines in');
-  let out = null as AdmissionRequest | null; // (as: set in the update)
+  const got: { out: AdmissionRequest | null } = { out: null }; // set in the update
   store.kv.update(INVITES_KEY, (cur: Invites | null) => {
-    const hit = Object.keys(cur || {}).filter(k => REF_RE.test(String(ref)) && k.startsWith(ref) && cur![k].admission); // cur: k is a key of it
-    if (hit.length !== 1) throw new RoomError('AUTH', `room ${store.code} has no join request ${ref} (/sub-human admit lists them)`);
-    const inv = cur![hit[0]] as AdmissionRecord; // hit: keys of admission records
+    const hit = Object.entries(cur || {}).filter((e): e is [string, AdmissionRecord] => REF_RE.test(String(ref)) && e[0].startsWith(ref) && !!e[1].admission);
+    const [only] = hit;
+    if (hit.length !== 1 || !only) throw new RoomError('AUTH', `room ${store.code} has no join request ${ref} (/sub-human admit lists them)`);
+    const [slot, inv] = only;
     if (inv.admit !== 'asked' || inv.burnt_at) throw new RoomError('AUTH', `that join request was ${inv.admit === 'let-in' ? 'let in already' : inv.admit === 'refused' ? 'refused already' : 'withdrawn (revoked or lapsed)'}`);
     if (now > Date.parse(inv.expires_at)) throw new RoomError('AUTH', 'that join request lapsed; send them a new invite (/sub-human invite)', 'ADMIT_LAPSED');
     const at = iso(now);
     const next: AdmissionRecord = decision === 'let-in'
       ? { ...inv, ...(as ? { name: as, asked_as: inv.name } : {}), admit: 'let-in', admitted_at: at, admitted_by: by, ...(sig ? { admit_sig: sig } : {}), admitted_until: iso(now + HANDOFF_INVITE_MS) }
       : { ...inv, admit: 'refused', refused_at: at, refused_by: by, burnt_at: at };
-    out = { ...next, slot: hit[0], ref: hit[0].slice(0, 12) };
-    return { ...cur, [hit[0]]: next };
+    got.out = { ...next, slot, ref: slot.slice(0, 12) };
+    return { ...cur, [slot]: next };
   });
-  return out!; // the update ran (or threw)
+  if (!got.out) throw new Error('the invites update did not run'); // it ran (or threw)
+  return got.out;
 }
 
 /** Mark lapsed (burn) every admission past its time that nobody answered; the records that lapsed now. */
@@ -232,8 +234,7 @@ function markTold(code: RoomCode, { ref, name }: { ref: string; name: SeatName }
   try {
     hostStore(code).kv.update(INVITES_KEY, (cur: Invites | null) => {
       const docs = cur || {};
-      const k = Object.keys(docs).find(x => x.startsWith(ref) && docs[x].admission);
-      const rec = k ? docs[k] : null;
+      const [k, rec] = Object.entries(docs).find(([x, d]) => x.startsWith(ref) && d.admission) ?? [];
       if (!k || !rec || !rec.admission || (rec.told || []).includes(name)) return undefined;
       return { ...cur, [k]: { ...rec, told: [...(rec.told || []), name] } };
     });

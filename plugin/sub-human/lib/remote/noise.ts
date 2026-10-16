@@ -108,9 +108,10 @@ function dh(priv: Buffer | null, pub: Buffer | null): Buffer {
 
 const sha256 = (...parts: Buffer[]): Buffer => { const h = crypto.createHash('sha256'); for (const p of parts) h.update(p); return h.digest(); };
 /** HKDF(ck, ikm, n) of the spec: RFC 5869 with salt ck and empty info, cut into n outputs of HASHLEN. */
-function hkdf(ck: Buffer, ikm: Buffer, n: number): Buffer[] {
-  const out = Buffer.from(crypto.hkdfSync('sha256', ikm, ck, EMPTY, HASHLEN * n));
-  return Array.from({ length: n }, (_, i) => out.subarray(i * HASHLEN, (i + 1) * HASHLEN));
+/** HKDF with two outputs (the only count Noise's mixKey and split take here). */
+function hkdf(ck: Buffer, ikm: Buffer): [Buffer, Buffer] {
+  const out = Buffer.from(crypto.hkdfSync('sha256', ikm, ck, EMPTY, HASHLEN * 2));
+  return [out.subarray(0, HASHLEN), out.subarray(HASHLEN, 2 * HASHLEN)];
 }
 
 function nonce(n: number): Buffer {
@@ -163,14 +164,14 @@ class SymmetricState {
   }
   mixHash(data: Buffer): void { this.h = sha256(this.h, data); }
   mixKey(ikm: Buffer): void {
-    const [ck, k] = hkdf(this.ck, ikm, 2);
+    const [ck, k] = hkdf(this.ck, ikm);
     this.ck = ck;
     this.cs = new CipherState(Buffer.from(k));
   }
   encryptAndHash(pt: Buffer): Buffer { const c = this.cs.encrypt(pt, this.h); this.mixHash(c); return c; }
   decryptAndHash(c: Buffer): Buffer { const pt = this.cs.decrypt(c, this.h); this.mixHash(c); return pt; }
   split(): [CipherState, CipherState] {
-    const [k1, k2] = hkdf(this.ck, EMPTY, 2);
+    const [k1, k2] = hkdf(this.ck, EMPTY);
     return [new CipherState(Buffer.from(k1)), new CipherState(Buffer.from(k2))];
   }
 }
@@ -210,7 +211,7 @@ class Handshake {
     this.e = null;
     this.re = null;
     this.step = 0; // messages made so far
-    this.ss.mixHash(initiator ? check32(rs, 'the pinned host key') : check32(s!.pub, 'the host key')); // pre-message <- s (a responder without s throws here)
+    this.ss.mixHash(initiator ? check32(rs, 'the pinned host key') : check32(s ? s.pub : null, 'the host key')); // pre-message <- s (a responder without s throws here)
   }
   get done(): boolean { return this.step >= this.messages.length; }
   get handshakeHash(): Buffer | null { return this.done ? Buffer.from(this.ss.h) : null; }
@@ -222,20 +223,22 @@ class Handshake {
 
   /** The DH a token names, from this side: es = DH(e_i, s_r), se = DH(s_i, e_r). */
   _dh(t: 'ee' | 'es' | 'se'): Buffer {
-    if (t === 'ee') return dh(this.e!.priv, this.re); // e and re: written or read by an earlier token
+    // e and re: written or read by an earlier token (dh refuses a missing key)
+    const e = this.e ? this.e.priv : null;
+    if (t === 'ee') return dh(e, this.re);
     const mineIsE = (t === 'es') === this.initiator;
-    return mineIsE ? dh(this.e!.priv, this.rs) : dh(this.s!.priv, this.re);
+    return mineIsE ? dh(e, this.rs) : dh(this.s ? this.s.priv : null, this.re);
   }
 
   writeMessage(payload: Buffer | string = EMPTY): Buffer {
     if (this.done || !this._myTurn()) throw new NoiseError('not this side\'s turn to write');
     const out: Buffer[] = [];
-    for (const t of this.messages[this.step]) {
+    for (const t of this.messages[this.step] ?? []) { // not done: the step names a message
       if (t === 'e') {
         this.e = this.fixedE ? keyPair(this.fixedE.priv) : generateKeyPair();
         this.ss.mixHash(this.e.pub);
         out.push(this.e.pub);
-      } else if (t === 's') out.push(this.ss.encryptAndHash(this.s!.pub)); // XK's initiator: checked in the constructor
+      } else if (t === 's') out.push(this.ss.encryptAndHash(check32(this.s && this.s.pub, 'the initiator\'s own key'))); // XK's initiator: checked in the constructor
       else this.ss.mixKey(this._dh(t));
     }
     out.push(this.ss.encryptAndHash(Buffer.from(payload)));
@@ -255,7 +258,7 @@ class Handshake {
       at += n;
       return b;
     };
-    for (const t of this.messages[this.step]) {
+    for (const t of this.messages[this.step] ?? []) { // not done: the step names a message
       if (t === 'e') {
         this.re = Buffer.from(take(DHLEN));
         this.ss.mixHash(this.re);

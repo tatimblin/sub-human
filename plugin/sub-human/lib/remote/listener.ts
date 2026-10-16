@@ -143,7 +143,9 @@ function removeRoom(code: string): ServedRoom | null {
 
 function start({ port = defaultPort() }: { port?: number } = {}): { pid: number; port: number; started: boolean } {
   const cur = status();
-  if (cur.running) return { pid: cur.pid!, port: cur.port!, started: false }; // a running listener has both
+  // running: isAlive took its pid, so it is set; its port is the state file's, written with the pid
+  // oxlint-disable-next-line typescript/no-non-null-assertion -- the port of a running listener's state file, read unchecked (objAs)
+  if (cur.running && cur.pid != null) return { pid: cur.pid, port: cur.port!, started: false };
   fs.mkdirSync(dir(), { recursive: true, mode: 0o700 });
   hostKey(); // made here, not raced by the daemon
   const fd = fs.openSync(logFile(), 'a', 0o600);
@@ -154,7 +156,7 @@ function start({ port = defaultPort() }: { port?: number } = {}): { pid: number;
   } finally { fs.closeSync(fd); }
   for (const until = Date.now() + LISTEN_START_MS; Date.now() < until; sleepSync(25)) {
     const s = status();
-    if (s.running && s.pid === child.pid && s.port === port) return { pid: s.pid!, port, started: true }; // running: a pid
+    if (s.running && typeof s.pid === 'number' && s.pid === child.pid && s.port === port) return { pid: s.pid, port, started: true }; // running: a pid
     if (!isAlive(child.pid)) break;
   }
   const tail = (() => { try { return fs.readFileSync(logFile(), 'utf8').trim().split('\n').slice(-2).join(' / '); } catch { return ''; } })();
@@ -163,8 +165,8 @@ function start({ port = defaultPort() }: { port?: number } = {}): { pid: number;
 
 function stop(): boolean {
   const s = status();
-  if (!s.running) return false;
-  const pid = s.pid!; // running: a pid
+  const { pid } = s;
+  if (!s.running || pid == null) return false; // running: a pid
   try { process.kill(pid, 'SIGTERM'); } catch { return false; }
   for (const until = Date.now() + 3000; Date.now() < until && isAlive(pid); sleepSync(25)) { /* wait */ }
   if (isAlive(pid)) try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ }
@@ -231,7 +233,8 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
     }
     bySource.set(who, (bySource.get(who) || 0) + 1);
     conn.on('close', () => { const n = (bySource.get(who) || 1) - 1; if (n > 0) bySource.set(who, n); else bySource.delete(who); });
-    const at = String(req.url || '').split('?')[0].split('/').filter(Boolean).pop();
+    const [p = ''] = String(req.url || '').split('?'); // split gives at least one part
+    const at = p.split('/').filter(Boolean).pop();
     const refusal = (code: string): Refusal | null => {
       if (!isRoomCode(code)) return { code: 'PROTOCOL', message: 'not a room code' };
       if (at && CODE_RE.test(at) && at !== code) return { code: 'PROTOCOL', message: `this URL is for room ${at}, not ${code}` };

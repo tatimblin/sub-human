@@ -235,9 +235,9 @@ async function serveMirror({
   const dials = new Map<number, () => void>(); // a dial's id -> resolve its wake() promise once it ends
   const unwatch: (() => void)[] = [];
   let pub: string | null = null, pubSince: string | null = null, flushed: Flush | null = null, movedHere = false;
-  let srv: net.Server | null = null, finish!: (why: string) => void, firstDone!: () => void;
-  const done = new Promise<string>(resolve => { finish = resolve; });
-  const first = new Promise<void>(resolve => { firstDone = resolve; });
+  let srv: net.Server | null = null;
+  const { promise: done, resolve: finish } = Promise.withResolvers<string>();
+  const { promise: first, resolve: firstDone } = Promise.withResolvers<void>();
   const iso = (ms: number) => new Date(ms).toISOString();
   const live = (): Client | null => (st.conn === null ? null : conns.get(st.conn) || null);
 
@@ -276,6 +276,13 @@ async function serveMirror({
     dispatch({ type: 'dialFailed', dial, error: f, offline: handoff().whyOffline(mirror.code, f.message) });
   });
 
+  /** A dial's client: the engine asks for one only once it connected (the client is in the map). */
+  const connOf = (dial: number): Client => {
+    const c = conns.get(dial);
+    if (!c) throw new Error(`the link engine asked for dial ${dial}, which has no client`);
+    return c;
+  };
+
   function effect(fx: EngineEffect) {
     switch (fx.type) {
       case 'connect':
@@ -283,7 +290,7 @@ async function serveMirror({
         stepOf(fx.dial, connect().then(c => { conns.set(fx.dial, c); }), () => ({ type: 'connected', dial: fx.dial }));
         break;
       case 'subscribe': {
-        const c = conns.get(fx.dial)!; // connected: the client is in the map
+        const c = connOf(fx.dial);
         const from = mirror.lastId();
         after.set(fx.dial, from);
         // an empty mirror starts from the host's snapshot when the host offers one (caps), else from every line
@@ -292,10 +299,10 @@ async function serveMirror({
         break;
       }
       case 'keepSeats':
-        stepOf(fx.dial, keepSeats(conns.get(fx.dial)!), () => ({ type: 'seated', dial: fx.dial }));
+        stepOf(fx.dial, keepSeats(connOf(fx.dial)), () => ({ type: 'seated', dial: fx.dial }));
         break;
       case 'flush': {
-        const c = conns.get(fx.dial)!;
+        const c = connOf(fx.dial);
         stepOf(fx.dial, flush(c), () => ({ type: 'flushed', dial: fx.dial, pings: typeof c.supports === 'function' && c.supports('ping') }));
         break;
       }
@@ -357,11 +364,11 @@ async function serveMirror({
     if (st.phase === 'connecting') await first;
     let p = params, queue: boolean | undefined = false;
     if (op === 'append' && p && p.queue) ({ queue, ...p } = p);
-    const queueable = queue && outboxMod().queueable(p.payload);
+    const post = queue && outboxMod().queueable(p.payload) ? p.payload : null; // an @room post the outbox may keep
     const id = st.conn, c = live();
     if (st.phase !== 'online' || id === null || !c) {
-      if (queueable && !engine.forGood(st)) {
-        const n = box.add(p.payload!, clock.now()); // queueable: a payload
+      if (post && !engine.forGood(st)) {
+        const n = box.add(post, clock.now());
         log(`offline: an @room post is queued (${n} waiting)`);
         publish();
         return { queued: n };
@@ -370,7 +377,7 @@ async function serveMirror({
     }
     const epoch = op === 'append' && typeof mirror.hostState === 'function' ? mirror.hostState().epoch : undefined;
     const sent = epoch === undefined ? p : { ...p, epoch };
-    return queueable ? sendPost(id, c, sent) : answerBy(c.request(op, sent), op);
+    return post ? sendPost(id, c, sent, post) : answerBy(c.request(op, sent), op);
   }
 
   /** The hook gives up at LINK_CALL_MS, so the daemon answers first (relayMs): an op the host has not answered by
@@ -390,8 +397,7 @@ async function serveMirror({
    * post; a refusal is dropped and reported (document `link` flush). A connection that closes first leaves it queued:
    * the next connection sends it again, and the host's nonce check makes that a no-op when the first copy landed.
    */
-  function sendPost(id: number, c: Client, sent: RelayParams): Promise<unknown> {
-    const payload = sent.payload!; // queueable: a signed post
+  function sendPost(id: number, c: Client, sent: RelayParams, payload: SignedPayload): Promise<unknown> {
     const req = c.request('append', sent, { ms: box.ageMs || config.LINK_OUTBOX_AGE_MS });
     return new Promise((resolve, reject) => {
       let slow = false;
@@ -564,8 +570,9 @@ function idleWatch(link: RunningLink, mirror: MirrorRoomStore, idleMs: number, {
   // let-in machine's link does not stop NO_SEAT a minute later
   const redeeming = () => {
     const l: Link | null = linksMod.get(mirror.code);
-    const young = !!l && now() - Date.parse(l.created_at ?? '') < config.INVITE_TTL_MS + config.ADMIT_TTL_MS;
-    return young && ((!l!.token && typeof l!.invite === 'string') || (!!l!.token && typeof l!.join_as === 'string'));
+    if (!l) return false;
+    const young = now() - Date.parse(l.created_at ?? '') < config.INVITE_TTL_MS + config.ADMIT_TTL_MS;
+    return young && ((!l.token && typeof l.invite === 'string') || (!!l.token && typeof l.join_as === 'string'));
   };
   const seated = () => {
     const s = link.state();

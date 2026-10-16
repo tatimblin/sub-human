@@ -237,7 +237,7 @@ async function connect(transport: Transport | Promise<Transport>, opts: ConnectO
       const nonce = checkHost ? crypto.randomBytes(18).toString('base64url') : undefined;
       const first: HelloReply & { host?: { key: string; sig: string }; challenge?: string } = await c._request('hello', { ...base, ...(nonce ? { nonce } : {}) }, ++c.seq, helloMs);
       if (!inRange(first)) throw skew(first);
-      if (checkHost) checkHost(first.host && typeof first.host === 'object' ? first.host : null, nonce!);
+      if (checkHost && nonce) checkHost(first.host && typeof first.host === 'object' ? first.host : null, nonce); // nonce: made with checkHost
       if (signMachine && typeof first.challenge === 'string') bound = { machine_key: signMachine(first.challenge) };
     }
     const r: HelloReply = await c._request('hello', { ...base, ...bound, ...cred }, ++c.seq, helloMs);

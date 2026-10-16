@@ -272,11 +272,13 @@ function linkIdOf(store: RoomStore, target: string): string {
   const all = hostLinks.links(store);
   if (hostLinks.LINK_ID_RE.test(target) && hostLinks.linkKnown(store, target)) return target;
   const hits = Object.values(all).filter(l => Array.isArray(l.seats) && l.seats.includes(target));
-  if (hits.length === 1) return hits[0].id;
+  const [hit] = hits;
+  if (hits.length === 1 && hit) return hit.id;
   if (hits.length > 1) throw new RoomError('INVALID', `${target} joined over ${hits.length} connections; ask them to leave the extra one, then kick again`);
   // an invite's joiner not linked yet (waiting for the card, or let in and not connected): its reserved link
   const asked = admission.admissions(store, { all: true }).filter(a => a.name === target && !a.used_at && !a.burnt_at);
-  if (asked.length === 1) return asked[0].link;
+  const [one] = asked;
+  if (asked.length === 1 && one) return one.link;
   throw new RoomError('INVALID', `nobody called "${target}" joined room ${store.code} from another machine`);
 }
 
@@ -306,9 +308,10 @@ function cancelInvite(code: RoomCode, ref?: string | null, { file = sshkeys.auth
   const store = hostStore(code);
   if (ref === undefined || ref === null || ref === '') {
     const open = openInvites(store, now);
-    if (!open.length) return { refs: [], text: `room ${code} has no open invite; nothing to cancel` };
+    const [only] = open;
+    if (!only) return { refs: [], text: `room ${code} has no open invite; nothing to cancel` };
     if (open.length > 1) return { refs: open.map(o => o.ref), text: `room ${code} has ${open.length} open invites; cancel one: ${open.map(o => `/sub-human invite --cancel ${o.ref} (until ${o.expires_at.slice(11, 16)} UTC)`).join(', ')}` };
-    ref = open[0].ref;
+    ref = only.ref;
   }
   const found = /^[0-9a-f]{12}$/.test(String(ref)) ? invites.findInvite(store, ref) : null;
   if (!found) throw new RoomError('INVALID', `room ${code} has no open invite ${ref}; /sub-human invite --cancel (no ID) lists the open ones`);
@@ -320,7 +323,7 @@ function endLink(code: RoomCode, store: RoomStore, id: string, { file = sshkeys.
   const r = hostLinks.revokeLink(store, id) || { link: null, invites: 0 };
   // a link an admit let in before protocol 3 has a forced-command line for it (where its admission says, else the
   // default file): it goes with the link. Nothing adds such a line any more
-  const doors = new Set([path.resolve(file), ...admission.admissions(store, { all: true }).filter(a => a.link === id && a.door_file).map(a => path.resolve(a.door_file!))]);
+  const doors = new Set([path.resolve(file), ...admission.admissions(store, { all: true }).flatMap(a => (a.link === id && a.door_file ? [path.resolve(a.door_file)] : []))]);
   let keys = 0;
   for (const f of doors) keys += sshkeys.removeAuthorized(f, code, id);
   spawnSync('pkill', ['-f', '--', `--stdio ${code} --link ${id}`], { stdio: 'ignore' });

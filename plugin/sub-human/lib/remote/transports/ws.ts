@@ -67,12 +67,14 @@ const ws = (): typeof import('../ws.ts') => require('../ws.ts');
 
 function parse(rest: string): WsAddr | null {
   const m = /^\/\/([^/:?#@\s]+)(?::([0-9]{1,5}))?(\/[^?#\s]*)?$/.exec(String(rest));
-  if (!m || !HOST_RE.test(m[1]) || m[1].includes('..')) return null;
-  const port = m[2] === undefined ? undefined : Number(m[2]);
+  if (!m) return null;
+  const [, host = '', pt, path] = m; // the host always matches
+  if (!HOST_RE.test(host) || host.includes('..')) return null;
+  const port = pt === undefined ? undefined : Number(pt);
   if (port !== undefined && !(port >= 1 && port <= 65535)) return null;
-  const p = m[3] || '/';
+  const p = path || '/';
   if (!PATH_RE.test(p) || /(^|\/)\.\.?(\/|$)/.test(p)) return null;
-  return { host: m[1].toLowerCase(), ...(port ? { port } : {}), path: p };
+  return { host: host.toLowerCase(), ...(port ? { port } : {}), path: p };
 }
 
 const hostPort = (s: { host: string; port?: number }): string => `${s.host}${s.port ? `:${s.port}` : ''}`;
@@ -123,13 +125,15 @@ function collector(conn: Conn): { next(timeoutMs: number, what: string): Promise
   return {
     async next(timeoutMs, what) {
       const until = Date.now() + timeoutMs;
-      while (!got.length) {
+      let m = got.shift();
+      while (m === undefined) {
         if (closed) throw new RoomError('OFFLINE', `${what}: ${closed}`);
         const left = until - Date.now();
         if (left <= 0) { conn.terminate(); throw new RoomError('OFFLINE', `${what}: no answer within ${timeoutMs} ms`); }
         await new Promise<void>(r => { const t = setTimeout(r, left); wake = () => { clearTimeout(t); wake = null; r(); }; });
+        m = got.shift();
       }
-      return got.shift()!; // got: not empty
+      return m;
     },
     rest() { conn.off('message', onMsg); conn.off('close', onClose); return got.splice(0); },
   };

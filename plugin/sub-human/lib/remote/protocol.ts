@@ -188,7 +188,7 @@ function decoder(): { push(chunk: string | Buffer): (DecodedFrame | ErrorFrame)[
     push(chunk: string | Buffer) {
       buf += typeof chunk === 'string' ? chunk : utf8.write(chunk);
       const lines = buf.split('\n');
-      buf = lines.pop() as string; // split gives at least one element
+      buf = lines.pop() ?? ''; // split gives at least one element
       const frames = lines.filter(Boolean).map(parseLine);
       if (Buffer.byteLength(buf, 'utf8') > LINK_FRAME_MAX_BYTES) { frames.push(parseLine(buf)); buf = ''; }
       return frames;

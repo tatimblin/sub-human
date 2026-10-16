@@ -149,7 +149,7 @@ function redeem(s: Session, invite: unknown, machine: MachineId, pin: unknown, p
   const asked = as && typeof as === 'object' && typeof (as as { name?: unknown }).name === 'string'
     ? { name: (as as { name: string }).name, label: String((as as { label?: unknown }).label ?? '') } : null;
   let secret: string;
-  const opts = { machine, pin, proven, peerKey: s.peer, as: asked, ...(s.login ? { newId: linkId! } : linkId ? { reserved: linkId } : {}) }; // login: a linkId (serve checks)
+  const opts = { machine, pin, proven, peerKey: s.peer, as: asked, ...(s.login ? (linkId ? { newId: linkId } : {}) : linkId ? { reserved: linkId } : {}) }; // login: a linkId (serve checks)
   if (word) { // an invite line's SECRET (protocol 3)
     const skew = () => new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: s.version, proto: s.proto }, joiner: s.peerVersion || { version: null, proto: { min: 1, max: s.v ?? 1 } }, need: 3 }), 'SKEW');
     if ((s.v ?? 0) < 3) throw skew();
@@ -334,7 +334,8 @@ const OPS: OpHandlers = {
     if (s.challenge) out.challenge = s.challenge;
     if (r.token) out.token = r.token;
     // the one name the card let in (maybe not the one asked for: lib/remote/admission.ts taken), so the joiner's seat takes it
-    if (r.token && r.link && r.link.bound && r.link.seats.length === 1) out.as = r.link.seats[0];
+    const [only] = r.link ? r.link.seats : [];
+    if (r.token && r.link && r.link.bound && r.link.seats.length === 1 && only !== undefined) out.as = only;
     if (stopped(s.store.members.read())) out.closed = true; // additive: an older host says nothing
     return out;
   },
@@ -347,14 +348,15 @@ const OPS: OpHandlers = {
     if (typeof name !== 'string') throw invalid(`invalid name "${String(name)}" (letters, digits, . _ -, up to 32)`);
     // s.link: run() lets no op but hello in without it. A bound link (the card let one name in; a handoff's seats) joins
     // its own seats only, before any seat is taken. A login link is the host account's own: its seat is that person's
-    if (!hostLinks.mayJoinAs(s.link, name)) throw authError(hostLinks.notBound(s.link!, name), 'NOT_BOUND');
+    const link = s.linked();
+    if (!hostLinks.mayJoinAs(link, name)) throw authError(hostLinks.notBound(link, name), 'NOT_BOUND');
     if (!isSeatName(name)) throw invalid(`invalid name "${name}" (letters, digits, . _ -, up to 32)`); // as identity.join says
     // a login link's seat is the host person's own (one person with the host's seats) only where the room says so
-    const account = s.link!.login && options.loginSamePerson(s.store) ? machineIn(s.store.code) ?? undefined : undefined;
+    const account = link.login && options.loginSamePerson(s.store) ? machineIn(s.store.code) ?? undefined : undefined;
     // bound first: a link revoked meanwhile is AUTH LINK_REVOKED before any seat exists (no seat with no link); a seat
     // then refused gives the binding back
-    const had = s.link!.seats.includes(name);
-    s.link = hostLinks.bindSeat(s.store, s.link!.id, name);
+    const had = link.seats.includes(name);
+    s.link = hostLinks.bindSeat(s.store, link.id, name);
     let r: ReturnType<typeof seats.enter>;
     try {
       r = seats.enter({ code: s.store.code, name, machine: s.link.machine, pubkey, ...(account ? { account } : {}), ...(typeof log_v === 'number' ? { log_v } : {}) });
@@ -417,12 +419,12 @@ const OPS: OpHandlers = {
   },
 
   'handoff.accept'(s, params) {
-    const r = handoff.serverAccept(s.store, s.link!, params); // s.link: run() lets no op but hello in without it
+    const r = handoff.serverAccept(s.store, s.linked(), params);
     s.later = () => handoff.afterMoved(s.store, { job: r.job });
     return { ok: true, epoch: r.epoch, entry: r.entry };
   },
 
-  'handoff.refuse'(s, params) { return handoff.serverRefuse(s.store, s.link!, params); }, // s.link: as above
+  'handoff.refuse'(s, params) { return handoff.serverRefuse(s.store, s.linked(), params); },
 
   'blob.put'(s, { name, bytes }) {
     if (typeof bytes !== 'string') throw invalid('blob.put needs {name, bytes: base64}');
@@ -430,7 +432,7 @@ const OPS: OpHandlers = {
     if (buf.length > PROPOSAL_FILE_MAX) throw invalid(`a blob is at most ${PROPOSAL_FILE_MAX} bytes`);
     if (name !== `plans/${hash12(buf)}.md`) throw invalid('a blob is named by its content: plans/<hash12 of the bytes>.md');
     if (s.store.blobs.has(name)) return { ref: name };
-    quota.charge(s.store, s.link!.id, 'blob.put');
+    quota.charge(s.store, s.linked().id, 'blob.put');
     s.store.blobs.put(name, buf);
     return { ref: name };
   },
@@ -524,8 +526,8 @@ class Session {
     // every op reads the link's record again: one the host revoked (a kick, in another process) gets nothing more
     if (op !== 'hello' && !this.held()) throw authError(revokedText(this.store.code), 'LINK_REVOKED');
     if (!WHILE_MOVED.has(op) && handoff.movedAway(this.store)) {
-      const h = this.store.hostState!(); // movedAway: only a store with hostState moves
-      throw stale(`room ${this.store.code} moved to ${h.host}'s machine; this machine takes no more messages for it`);
+      const host = this.store.hostState?.().host; // movedAway: only a store with hostState moves
+      throw stale(`room ${this.store.code} moved to ${host}'s machine; this machine takes no more messages for it`);
     }
     this.charge(op);
     const out = call(op, this, isObj(params) ? params : {}, id);
@@ -537,7 +539,7 @@ class Session {
    * counts the seat's own lines in the op; blob.put only a new blob, in the op. */
   charge(op: string): void {
     const take = (q: quota.QuotaOp) => this.quota.take(q);
-    const link = (q: quota.QuotaOp) => quota.charge(this.store, this.link!.id, q); // every op but hello runs with a link
+    const link = (q: quota.QuotaOp) => quota.charge(this.store, this.linked().id, q); // every op but hello runs with a link
     if (op === 'hello') take('hello.session');
     else if (op === 'join' || op === 'leave') link('seat');
     else if (op === 'subscribe') link('subscribe');
@@ -564,6 +566,12 @@ class Session {
   /** The session's link as the host's record has it now (a seat bound since, in another connection), true; false when
    * the record is gone: the streams end AUTH with the reason and the connection closes a moment later (whatever
    * process the kick ran in: pipe and web serves name no link in their argv). No link yet: true. */
+  /** This session's link: run() lets no op but hello in without one. */
+  linked(): LinkRecord {
+    if (!this.link) throw authError('say hello with this link\'s token first');
+    return this.link;
+  }
+
   held(): boolean {
     if (!this.link) return true;
     const cur = hostLinks.links(this.store)[this.link.id];

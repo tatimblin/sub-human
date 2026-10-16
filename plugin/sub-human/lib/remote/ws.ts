@@ -140,7 +140,7 @@ class Conn extends EventEmitter<ConnEvents> {
     const key = crypto.randomBytes(4);
     key.copy(h, o);
     const body = Buffer.allocUnsafe(len);
-    for (let i = 0; i < len; i++) body[i] = payload[i] ^ key[i & 3];
+    for (let i = 0; i < len; i++) body[i] = (payload[i] ?? 0) ^ (key[i & 3] ?? 0); // i < len: both defined
     return this.socket.write(Buffer.concat([h, body]));
   }
 
@@ -199,9 +199,10 @@ class Conn extends EventEmitter<ConnEvents> {
   _parse(): boolean {
     const b = this._buf;
     if (b.length < 2) return false;
-    const fin = (b[0] & 0x80) !== 0, rsv = b[0] & 0x70, op = b[0] & 0x0f;
-    const masked = (b[1] & 0x80) !== 0;
-    let len = b[1] & 0x7f, o = 2;
+    const b0 = b[0] ?? 0, b1 = b[1] ?? 0; // b.length >= 2
+    const fin = (b0 & 0x80) !== 0, rsv = b0 & 0x70, op = b0 & 0x0f;
+    const masked = (b1 & 0x80) !== 0;
+    let len = b1 & 0x7f, o = 2;
     if (rsv) return this._fail(1002, 'reserved bits set (no extension was negotiated)'), false;
     if (masked === this.client) return this._fail(1002, this.client ? 'a server frame was masked' : 'a client frame was not masked'), false;
     if (len === 126) { if (b.length < 4) return false; len = b.readUInt16BE(2); o = 4; } else if (len === 127) {
@@ -221,7 +222,7 @@ class Conn extends EventEmitter<ConnEvents> {
     if (masked) {
       const key = b.subarray(mo, mo + 4);
       const out = Buffer.allocUnsafe(len);
-      for (let i = 0; i < len; i++) out[i] = payload[i] ^ key[i & 3];
+      for (let i = 0; i < len; i++) out[i] = (payload[i] ?? 0) ^ (key[i & 3] ?? 0); // i < len: both defined
       payload = out;
     } else payload = Buffer.from(payload);
     this._buf = b.subarray(o + len);
@@ -238,7 +239,8 @@ class Conn extends EventEmitter<ConnEvents> {
     f.parts.push(payload);
     if (!fin) return true;
     this._frags = null;
-    const data = f.parts.length === 1 ? f.parts[0] : Buffer.concat(f.parts);
+    const first = f.parts[0];
+    const data = first && f.parts.length === 1 ? first : Buffer.concat(f.parts);
     if (f.op === OP.text) {
       try { utf8.decode(data); } catch { return this._fail(1007, 'a text message that is not UTF-8'), false; }
     }
@@ -310,7 +312,7 @@ function proxyFor(url: string, env: NodeJS.ProcessEnv = process.env): string | n
   const no = String(env.NO_PROXY ?? env.no_proxy ?? '').split(/[\s,]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
   for (const n of no) {
     if (n === '*') return null;
-    const [nh, np] = n.split(/:(?=\d+$)/);
+    const [nh = '', np] = n.split(/:(?=\d+$)/); // split gives at least one part
     if (np && np !== port) continue;
     const d = nh.replace(/^\*?\./, '');
     if (host === d || host.endsWith(`.${d}`)) return null;
@@ -332,12 +334,12 @@ function readHead(socket: Duplex, what: string): Promise<Head> {
       const i = buf.indexOf('\r\n\r\n');
       if (i < 0) { if (buf.length > HEADER_MAX) { done(); reject(connectError(`${what}: an answer head over ${HEADER_MAX} bytes`)); } return; }
       done();
-      const lines = buf.subarray(0, i).toString('latin1').split('\r\n');
-      const m = /^HTTP\/1\.[01] (\d{3})/.exec(lines[0]);
+      const [line = '', ...rest] = buf.subarray(0, i).toString('latin1').split('\r\n'); // split gives at least one part
+      const m = /^HTTP\/1\.[01] (\d{3})/.exec(line);
       if (!m) return reject(connectError(`${what}: not an HTTP answer`));
       const headers: Record<string, string> = {};
-      for (const l of lines.slice(1)) { const k = l.indexOf(':'); if (k > 0) headers[l.slice(0, k).trim().toLowerCase()] = l.slice(k + 1).trim(); }
-      resolve({ status: Number(m[1]), headers, rest: buf.subarray(i + 4), line: lines[0] });
+      for (const l of rest) { const k = l.indexOf(':'); if (k > 0) headers[l.slice(0, k).trim().toLowerCase()] = l.slice(k + 1).trim(); }
+      resolve({ status: Number(m[1]), headers, rest: buf.subarray(i + 4), line });
     };
     const onEnd = () => { done(); reject(connectError(`${what}: the connection closed before an answer`)); };
     const onErr = (e: Error) => { done(); reject(connectError(`${what}: ${e.message}`)); };
