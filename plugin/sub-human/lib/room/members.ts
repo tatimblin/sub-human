@@ -120,9 +120,9 @@ const seated = (ms: Members, name: string): boolean => !!seatOf(ms, name);
 function ops(s: OpsStore): Pick<MembersApi, 'join' | 'leave' | 'beat'> {
   return {
     join(rec) {
-      // oxlint-disable-next-line typescript/no-non-null-assertion -- set inside the update callback, which runs at least once
-      let result!: JoinOutcome;
+      let result: JoinOutcome | null = null;
       s.members.update(ms => { const r = joinFold(ms, rec, s.code, Date.now()); result = r.result; return r.next; });
+      if (!result) throw new Error('members.update ran no fold'); // never: the update runs its callback at least once
       return result;
     },
     leave(name) {

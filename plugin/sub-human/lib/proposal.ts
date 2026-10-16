@@ -56,9 +56,9 @@
  *   replacedIn(ps, prompt, code) -> {old, p}|null   the words name no pending hash but a superseded one (old) whose
  *                                  latest revision p is among ps: a review opens p, and says so
  *   proposeIntent(prompt) -> bool  the person's words ask their Claude to propose something ("propose to alice: …"):
- *                                  no review opens on such a prompt (hooks/handlers/consent.ts Pre(EnterPlanMode))
+ *                                  no review opens on such a prompt (hooks/consent.ts Pre(EnterPlanMode))
  *   choose(me, ps, prompt) -> p    store that pick (namedIn, else replacedIn's p; members/NAME/pick) and return it,
- *                                  else the newest (hooks/handlers/consent.ts)
+ *                                  else the newest (hooks/consent.ts)
  *   picked(me, ps) -> p            Pre(EnterPlanMode): the stored pick when still among ps, else the newest
  *   readPick(me), writePick(me, hash|null)   the seat's session document's pick (lib/room/session.ts) as stored
  *   read(code, hash) -> string|null  the stored plan (the room blob plans/<hash>.md)
@@ -319,7 +319,7 @@ const PROPOSE_RE = new RegExp('^\\s*(?:@\\S+\\s+)?(?:(?:ok(?:ay)?|now|so|please|
 const proposeIntent = (prompt: string | null | undefined): boolean => PROPOSE_RE.test(String(prompt || ''));
 
 /**
- * The session's pick: {hash|null, at}, the proposal the person's latest prompt named (hooks/handlers/consent.ts reads it from
+ * The session's pick: {hash|null, at}, the proposal the person's latest prompt named (hooks/consent.ts reads it from
  * the transcript at Pre(EnterPlanMode), or a card call named). A review opens that one while pending, else the newest.
  */
 const readPick = (me: Me): { hash: string | null, at: number } | null => { try { return session.get(storeOf(me), me.name, 'pick') ?? null; } catch { return null; } };
@@ -330,7 +330,7 @@ function choose(me: Me, ps: Proposal[], prompt: string | null | undefined): Prop
   writePick(me, hit ? hit.hash : null);
   return hit ?? ps.at(-1) ?? null;
 }
-/** Record the person's pick (null: their words named none); hooks/handlers/consent.ts's pick effect. */
+/** Record the person's pick (null: their words named none); hooks/consent.ts's pick effect. */
 const writePick = (me: Me, hash: string | null): void => session.put(storeOf(me), me.name, 'pick', { hash, at: Date.now() });
 /** The proposal a review opens among ps (pending, oldest first): the person's pick when it is one of them, else the newest. */
 function picked(me: Me, ps: Proposal[]): Proposal | null {
@@ -501,7 +501,7 @@ function decide(code: RoomCode, hash: string): Entry | null {
   });
 }
 
-// ---------- the plan-view review state (hooks/handlers/consent.ts, hooks/handlers/session-restore.ts) ----------
+// ---------- the plan-view review state (hooks/consent.ts, hooks/handlers/session-restore.ts) ----------
 /**
  * The session's review: {phase, mode, at, hash?, from?, file?, backup?, restored?, tool_use_id?, …}.
  * `backup` is the session plan file's text before the review overwrote it, even when that is the proposal's own
@@ -547,7 +547,7 @@ function restoreStale(me: Me | null | undefined, { force = false, now = Date.now
   });
 }
 
-// ---------- a review's note, waiting for the person's Send (hooks/handlers/consent.ts) ----------
+// ---------- a review's note, waiting for the person's Send (hooks/consent.ts) ----------
 /**
  * The session's confirm: {hash, note, from, title, at, stage} (lib/consent/review.ts: where its card stands). A plan review rejected with a note ("Tell Claude what
  * to change", a phone deny with a note or "Suggest edits": Claude Code writes them alike, and a phone message typed

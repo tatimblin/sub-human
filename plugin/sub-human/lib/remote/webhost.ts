@@ -26,7 +26,6 @@
  */
 
 import { RoomError } from '../room/validate.ts';
-import { createRequire } from 'node:module';
 import type { TailscaleRec } from './types-rest.ts';
 import type { HostedInvite } from './hosting.ts';
 import type { RoomStore } from '../room/types.ts';
@@ -34,16 +33,20 @@ import type { RoomCode } from '../brand.ts';
 import type * as ListenerMod from './listener.ts';
 import type * as TailscaleMod from './tailscale.ts';
 import type * as WsMod from './transports/ws.ts';
-import type * as RoomMod from '../room.ts';
 import type * as InvitesMod from './invites.ts';
 import type * as InviteSecretMod from './invite-secret.ts';
 import type * as HostingMod from './hosting.ts';
+import { lazy } from '../io.ts';
+import * as room from '../room.ts';
 
-const require: <M>(id: string) => M = createRequire(import.meta.url);
+// the listener, tailscale and the invite code only when a room is served over the web (start cost: hooks load this file)
+const inviteSecretLib = lazy<typeof InviteSecretMod>(import.meta.url, './invite-secret.ts');
+const hostingLib = lazy<typeof HostingMod>(import.meta.url, './hosting.ts');
+const invitesLib = lazy<typeof InvitesMod>(import.meta.url, './invites.ts');
 
-const listener = (): typeof ListenerMod => require('./listener.ts');
-const ts = (): typeof TailscaleMod => require('./tailscale.ts');
-const wsT = (): typeof WsMod => require('./transports/ws.ts');
+const listener = lazy<typeof ListenerMod>(import.meta.url, './listener.ts');
+const ts = lazy<typeof TailscaleMod>(import.meta.url, './tailscale.ts');
+const wsT = lazy<typeof WsMod>(import.meta.url, './transports/ws.ts');
 
 /** A front's base URL, checked. */
 export interface FrontBase {
@@ -61,7 +64,7 @@ export interface WebInvite extends HostedInvite {
   port: number;
 }
 
-const hostStore = (code: RoomCode): RoomStore => require<typeof RoomMod>('../room.ts').hostStore(code);
+const hostStore = (code: RoomCode): RoomStore => room.hostStore(code);
 
 /** The front's base URL, checked: http(s)://host[:port][/prefix], nothing else. */
 function frontBase(text: string): FrontBase {
@@ -115,11 +118,11 @@ function hostWeb(code: RoomCode, { tailscale = false, funnel = false, url, port,
     'Stop serving it with /sub-human invite --stop (closing the room does too).',
   ];
   // the URL and the line's SECRET, its tag naming the listener's key; the PIN told apart
-  const r = require<typeof InvitesMod>('./invites.ts').mintInvite(store, { kind: 'ws', locator, by, now });
-  const secret: typeof InviteSecretMod = require('./invite-secret.ts');
+  const r = invitesLib().mintInvite(store, { kind: 'ws', locator, by, now });
+  const secret = inviteSecretLib();
   const word = secret.encode(r.secret, secret.tagOf(r.secret, 'listener', hostKey));
   const line = `/sub-human join ${joinBase} ${word}`;
-  const hosting: typeof HostingMod = require('./hosting.ts');
+  const hosting = hostingLib();
   const parts = {
     code, how: `over the web through ${how} to this machine's listener on 127.0.0.1:${lport}`, line, pin: r.pin, ref: r.ref,
     extra: [`Their machine checks this one's key (${hostKey.slice(0, 12)}…, named in the line) before it sends anything, so nothing in between can read along.`, ...notes],

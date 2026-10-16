@@ -74,7 +74,6 @@ import * as homeMod from '../home.ts';
 import * as seatsMod from '../seats.ts';
 import * as ioMod from '../io.ts';
 import * as configMod from '../config.ts';
-import { createRequire } from 'node:module';
 import type { LinkSpec } from './types-rest.ts';
 import type { InviteRecord, Invites, ParsedInvite, ShortInvite } from './types-core.ts';
 import type { Link, RoomStore } from '../room/types.ts';
@@ -82,8 +81,11 @@ import type { Pinned } from '../commands/types.ts';
 import type { RoomCode, SeatName, InviteSecret, Pin } from '../brand.ts';
 import type * as SshMod from './transports/ssh.ts';
 import type * as ShimMod from './shim.ts';
+import { lazy } from '../io.ts';
 
-const require: <M>(id: string) => M = createRequire(import.meta.url);
+// the serve shim and the ssh transport only for an ssh invite (start cost: the join hook loads this file)
+const shimLib = lazy<typeof ShimMod>(import.meta.url, './shim.ts');
+const sshT = lazy<typeof SshMod>(import.meta.url, './transports/ssh.ts');
 
 /** An invite line as hostInvite (and webhost.ts hostWeb) returns it: the PIN, its ref, when it lapses, the line. */
 export interface HostedInvite {
@@ -115,7 +117,6 @@ export interface Outcome {
   reason?: string | undefined;
 }
 
-const sshT = (): typeof SshMod => require('./transports/ssh.ts');
 const linkSocket = () => linkSocketMod;
 const linkConnect = () => linkConnectMod;
 const links = () => linksMod;
@@ -128,7 +129,7 @@ const roomLine = (code: RoomCode, text: string): void => roomMod.roomLine(roomOf
 
 /** The stable serve shim (an ssh login runs it); the home path it carries. */
 function shimReady(): { shim: typeof ShimMod; h: string } {
-  const shim: typeof ShimMod = require('./shim.ts');
+  const shim = shimLib();
   if (!shim.refresh({ force: true })) throw new RoomError('INVALID', `the plugin is installed under a temp folder (${shim.pluginRoot()}), which ssh would run from; install it normally (or set SUB_HUMAN_ALLOW_TMP_ROOT=1 to allow it)`);
   const h = path.resolve(homeMod.home());
   if (!shim.PLAIN_PATH_RE.test(h)) throw new RoomError('INVALID', `the sub-human folder "${h}" has characters ssh cannot carry plainly; move it (SUB_HUMAN_HOME) and try again`);

@@ -34,10 +34,9 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { createRequire } from 'node:module';
 import { home, roomsDir, roomDir, repairModes } from '../home.ts';
 import { withLock } from '../lock.ts';
-import { readJsonRaw, writeJsonAtomic } from '../io.ts';
+import { readJsonRaw, writeJsonAtomic, lazy } from '../io.ts';
 import { isObj } from '../decode.ts';
 import { errCode } from '../errors.ts';
 import { isRoomCode } from '../text.ts';
@@ -49,12 +48,15 @@ import type { RoomCode } from '../brand.ts';
 import type * as LinksMod from './links.ts';
 import type * as StoreMirrorMod from './store-mirror.ts';
 
-const require: <M>(id: string) => M = createRequire(import.meta.url);
+// Lazy for start cost: links.ts loads at the first open (a hook with no seat opens no room), the mirror (the bridge,
+// the link socket) only for a room hosted elsewhere.
+const linksLib = lazy<typeof LinksMod>(import.meta.url, './links.ts');
+const mirrorLib = lazy<typeof StoreMirrorMod>(import.meta.url, './store-mirror.ts');
 
 let backend: ((code: RoomCode) => RoomStore) | null = null; // tests: code -> RoomStore
 const stores = new Map<string, RoomStore>(); // home \0 code -> FsRoomStore | MirrorRoomStore
-/** A room hosted elsewhere: the link registry knows it (required here, not at load: links.ts reads this module's rooms). */
-const linked = (c: string): boolean => require<typeof LinksMod>('./links.ts').has(c);
+/** A room hosted elsewhere: the link registry knows it. */
+const linked = (c: string): boolean => linksLib().has(c);
 
 function open(c: RoomCode, { dir }: { dir?: string | undefined } = {}): RoomStore {
   if (backend) return backend(c);
@@ -63,8 +65,7 @@ function open(c: RoomCode, { dir }: { dir?: string | undefined } = {}): RoomStor
   let s = stores.get(k);
   if (!s || s.isHost === linked(c)) { // none yet, or a handoff wrote or removed the link since
     repairModes(); // a home an older version made 0755 (once per home and process)
-    const mirror: typeof StoreMirrorMod | null = linked(c) ? require('./store-mirror.ts') : null;
-    s = mirror ? new mirror.MirrorRoomStore(c) : new FsRoomStore(c);
+    s = linked(c) ? new (mirrorLib().MirrorRoomStore)(c) : new FsRoomStore(c);
     stores.set(k, s);
   }
   return s;

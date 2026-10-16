@@ -20,11 +20,21 @@
  *                                         strict: a parse error throws; otherwise it gives {}. The caller decodes it. scripts/sub-human
  *                                         reads with it (the hooks read stdin in hooks/run.ts); the CLI must never
  *                                         load a hook handler that arms the human signer (at-room, consent, join).
+ *   lazy<typeof XMod>(import.meta.url, './x.ts') -> () => XMod
+ *                                         a module loaded at the first call and kept (createRequire relative to the
+ *                                         caller's import.meta.url: require(esm) is synchronous and caches like an
+ *                                         import). The type is the namespace of `import type * as XMod from './x.ts'`
+ *                                         (erased), with the same specifier: scripts/test/lazy.test.ts checks every
+ *                                         call. Here, not in a module of its own, so no hook loads one more file.
+ *   loadAt<M>(import.meta.url, id) -> M   a module whose path is computed at run time (a transport kind, a room
+ *                                         plug-in, the bridge's handler, a doctor lib); the caller names what it
+ *                                         expects, and scripts/test/lazy.test.ts allows it only in those files.
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import TtyMod from 'node:tty';
+import { createRequire } from 'node:module';
 import type { Decoder } from './decode.ts';
 import { errCode } from './errors.ts';
 
@@ -92,4 +102,17 @@ function readInput({ strict = true }: { strict?: boolean } = {}): unknown {
   }
 }
 
-export { readJson, readJsonRaw, writeFileAtomic, writeJsonAtomic, validPid, isAlive, sleepSync, readInput };
+/** A module that loads at its first use: past an early exit (a hook, the CLI's commands, the status line), or across
+ * an import cycle. Memoized, and require's own cache holds it too. */
+function lazy<M>(from: string, spec: string): () => M {
+  let got: { mod: M } | null = null;
+  return () => (got ??= { mod: loadAt<M>(from, spec) }).mod;
+}
+
+/** A module by a path computed at run time, from the caller's import.meta.url (see lazy). */
+function loadAt<M>(from: string, id: string): M {
+  const load: <T>(id: string) => T = createRequire(from);
+  return load<M>(id);
+}
+
+export { readJson, readJsonRaw, writeFileAtomic, writeJsonAtomic, validPid, isAlive, sleepSync, readInput, lazy, loadAt };

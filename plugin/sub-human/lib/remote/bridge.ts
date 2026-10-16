@@ -33,10 +33,7 @@ import { isReason, reasonOf } from '../reasons.ts';
 import { errCode, msgOf } from '../errors.ts';
 import { isWireCode } from './protocol.ts';
 import { isObj } from '../decode.ts';
-import { createRequire } from 'node:module';
-
-// The worker loads its handler by path (createRequire: require(esm) is synchronous and caches like an import).
-const require: <M>(id: string) => M = createRequire(import.meta.url);
+import { loadAt } from '../io.ts';
 
 const ENTRY = 'sub-human.bridge';
 
@@ -111,7 +108,7 @@ function serve({ handler, replies, port }: { handler: string; replies: Int32Arra
   const answer = async ({ id, method, params }: Call): Promise<void> => {
     let reply: BridgeReply;
     try {
-      handle = handle ?? require<{ handle: Handle }>(handler).handle; // at the first call: a preload may be requiring this file
+      handle = handle ?? loadAt<{ handle: Handle }>(import.meta.url, handler).handle; // by path, at the first call: a preload may be requiring this file
       reply = { id, result: await handle(method, params) };
     } catch (e) { reply = failure(id, e); }
     try { port.postMessage(reply); } catch (e) { port.postMessage(failure(id, e)); } // a result that does not clone

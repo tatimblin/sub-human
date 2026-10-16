@@ -31,7 +31,7 @@ declare module 'claude-code' {
   interface PluginState {
     'sub-human': {
       hello: SubHumanHello;
-      /** False only when hooks/handlers/consent.ts said no room review is open and no EnterPlanMode / ExitPlanMode ran
+      /** False only when hooks/consent.ts said no room review is open and no EnterPlanMode / ExitPlanMode ran
        * since (mod/consent.ts); unset or true: consent runs. */
       reviewMaybeOpen: boolean;
       /** What the person's next prompt carries for Claude (pending-proposal reminders, missing row calls): the

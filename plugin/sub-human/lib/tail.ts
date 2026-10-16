@@ -74,7 +74,13 @@ import * as realClock from './clock.ts';
 import * as config from './config.ts';
 import { envMs, envStr } from './env.ts';
 import { stageOf } from './consent/review.ts';
-import { createRequire } from 'node:module';
+import { lazy } from './io.ts';
+import * as rowsMod from './rows.ts';
+import * as identityMod from './identity.ts';
+import * as proposalMod from './proposal.ts';
+import * as sessionMod from './room/session.ts';
+import * as roomMod from './room.ts';
+import * as linksMod from './room/links.ts';
 import type { TailEvent, TailSeat } from './types-app.ts';
 import type { LinkStatus } from './remote/link-socket.ts';
 import type { Flush } from './remote/types-core.ts';
@@ -85,21 +91,23 @@ import type { Room } from './room.ts';
 import { FOR_CLAUDE, PULL_HEAD, PULL_END, pullDroppedLine } from '../mod/core/constants.ts';
 import { msgOf } from './errors.ts';
 import type { RoomCode } from './brand.ts';
-import type * as RowsMod from './rows.ts';
-import type * as IdentityMod from './identity.ts';
-import type * as ProposalMod from './proposal.ts';
-import type * as SessionMod from './room/session.ts';
 import type * as RoomClaudeMod from './room-claude.ts';
 import type * as HandoffMod from './handoff.ts';
 import type * as AdmissionMod from './remote/admission.ts';
 import type * as InvitesMod from './remote/invites.ts';
-import type * as RoomMod from './room.ts';
 import type * as LinkSocketMod from './remote/link-socket.ts';
 import type * as SeatsMod from './seats.ts';
-import type * as LinksMod from './room/links.ts';
 import type * as JoiningMod from './remote/joining.ts';
 
-const require: <M>(id: string) => M = createRequire(import.meta.url);
+// The tail starts with every session: what only a room's Claude, a host, a handoff or a pending join reads loads at
+// its first use (start cost).
+const roomClaudeLib = lazy<typeof RoomClaudeMod>(import.meta.url, './room-claude.ts');
+const linkSocketLib = lazy<typeof LinkSocketMod>(import.meta.url, './remote/link-socket.ts');
+const handoffLib = lazy<typeof HandoffMod>(import.meta.url, './handoff.ts');
+const admissionLib = lazy<typeof AdmissionMod>(import.meta.url, './remote/admission.ts');
+const invitesLib = lazy<typeof InvitesMod>(import.meta.url, './remote/invites.ts');
+const seatsLib = lazy<typeof SeatsMod>(import.meta.url, './seats.ts');
+const joiningLib = lazy<typeof JoiningMod>(import.meta.url, './remote/joining.ts');
 
 // ---------- types ----------
 /** The room as a session reads it (lib/room.ts open): the calls made here. Tests hand in fakes. */
@@ -131,10 +139,10 @@ interface Timings {
 interface Item { e: Entry, away: boolean }
 type Pending<T> = T & { at: number };
 
-type RowsLib = Pick<typeof RowsMod, 'joinNote' | 'missingRows' | 'rowsNeeded' | 'readHolds' | 'sessionRowMap' | 'rowCalls'>;
-type IdentityLib = Pick<typeof IdentityMod, 'readMembers' | 'heartbeat'>;
-type ProposalLib = Pick<typeof ProposalMod, 'pendingFor' | 'picked' | 'reminder' | 'readConfirm' | 'confirmCall' | 'showConfirm'>;
-type SessionLib = Pick<typeof SessionMod, 'shown' | 'markShown' | 'get' | 'put'>;
+type RowsLib = Pick<typeof rowsMod, 'joinNote' | 'missingRows' | 'rowsNeeded' | 'readHolds' | 'sessionRowMap' | 'rowCalls'>;
+type IdentityLib = Pick<typeof identityMod, 'readMembers' | 'heartbeat'>;
+type ProposalLib = Pick<typeof proposalMod, 'pendingFor' | 'picked' | 'reminder' | 'readConfirm' | 'confirmCall' | 'showConfirm'>;
+type SessionLib = Pick<typeof sessionMod, 'shown' | 'markShown' | 'get' | 'put'>;
 type RoomClaudeLib = Pick<typeof RoomClaudeMod, 'watchdog'>;
 type HandoffLib = Pick<typeof HandoffMod, 'pendingAsk' | 'markTold' | 'hostDoc'>;
 type AdmissionLib = Pick<typeof AdmissionMod, 'lapse' | 'pending' | 'targets' | 'describe' | 'markTold'>;
@@ -360,7 +368,7 @@ const SPAWN_GRACE_MS = config.ROW_SPAWN_GRACE_MS;
  * tail sends it as a `rows` event, so the person's next prompt carries it.
  */
 function missingRowsText(me: Identity, sid: string | null, {
-  now = Date.now(), rows = require<RowsLib>('./rows.ts'), identity = require<IdentityLib>('./identity.ts'),
+  now = Date.now(), rows = rowsMod, identity = identityMod,
 }: { now?: number, rows?: RowsLib, identity?: IdentityLib } = {}): string | null {
   try {
     const members = identity.readMembers(me.code);
@@ -379,17 +387,17 @@ function missingRowsText(me: Identity, sid: string | null, {
 }
 
 /** lib/proposal.ts reminder() for each proposal that names this member and awaits their answer; null for the room's Claude or none. */
-function remindersText(me: Identity, rm: Pick<TailRoom, 'readView'>, { proposal = require<ProposalLib>('./proposal.ts') }: { proposal?: ProposalLib } = {}): string | null {
+function remindersText(me: Identity, rm: Pick<TailRoom, 'readView'>, { proposal = proposalMod }: { proposal?: ProposalLib } = {}): string | null {
   if (me.role === 'claude') return null;
   const es = rm.readView({ after: Infinity });
   const ps = proposal.pendingFor(me, es) || [];
   if (!ps.length) return null;
-  // Only the one a review opens next (the person's pick, else the newest; hooks/handlers/consent.ts) is to be opened, the
+  // Only the one a review opens next (the person's pick, else the newest; hooks/consent.ts) is to be opened, the
   // others listed by short hash and title ("…, else the newest"), so the model is never told to open a proposal the
   // hooks will not show, and the person can name another.
   const p = proposal.picked(me, ps);
   if (!p) return null; // ps is not empty: never
-  // A note of the person's waits on it (hooks/handlers/consent.ts): reopening the review would drop the note, so point at the
+  // A note of the person's waits on it (hooks/consent.ts): reopening the review would drop the note, so point at the
   // confirm card instead. Until its no-answer close was told or the card offered again (stage told or reoffered), the
   // prompt may also carry consent's reoffer: this line then says the same (showConfirm), never a softer "if asked"
   // beside it. A card shown (stage asked) and not yet offered again was interrupted (lib/consent/review.ts).
@@ -721,34 +729,29 @@ interface TailOpts {
   maxSeconds?: number | null;
   sid?: string | null;
 }
-/** A dep the caller gave, else a module loaded at its first use (once). */
-function getter<M extends object>(given: M | undefined, load: () => M): () => M {
-  if (given) return () => given;
-  let m: M | undefined;
-  return () => m || (m = load());
-}
+/** A dep the caller gave, as the getter a lazily loaded one is. */
+const constant = <M>(given: M): (() => M) => () => given;
 function runTail({
   clock = realClock, write, err = s => process.stderr.write(s), lookup, timings: tm = timings(), fs = nodeFs,
   deps = {}, maxSeconds = null, sid = null,
 }: TailOpts): { stop(): void, session(): Session | null } {
   const d: Deps = {
-    openRoom: deps.openRoom ?? (() => { const r: typeof RoomMod = require('./room.ts'); return (code: RoomCode) => r.open(code); })(),
-    heartbeat: deps.heartbeat ?? ((me: Identity) => require<typeof IdentityMod>('./identity.ts').heartbeat(me)),
-    rows: deps.rows ?? require<RowsLib>('./rows.ts'),
-    session: deps.session ?? require<SessionLib>('./room/session.ts'),
-    roomClaude: getter(deps.roomClaude, () => require<RoomClaudeLib>('./room-claude.ts')),
-    identity: deps.identity ?? require<IdentityLib>('./identity.ts'),
-    proposal: deps.proposal ?? require<ProposalLib>('./proposal.ts'),
-    linkStatus: deps.linkStatus ?? ((code: RoomCode) => require<typeof LinkSocketMod>('./remote/link-socket.ts').status(code)),
-    handoff: getter(deps.handoff, () => require<HandoffLib>('./handoff.ts')),
-    admission: getter(deps.admission, () => require<AdmissionLib>('./remote/admission.ts')),
-    invites: getter(deps.invites, () => require<InvitesLib>('./remote/invites.ts')),
-    sweepSeats: deps.sweepSeats ?? ((code: RoomCode) => require<typeof SeatsMod>('./seats.ts').sweep(code)),
+    openRoom: deps.openRoom ?? ((code: RoomCode) => roomMod.open(code)),
+    heartbeat: deps.heartbeat ?? ((me: Identity) => identityMod.heartbeat(me)),
+    rows: deps.rows ?? rowsMod,
+    session: deps.session ?? sessionMod,
+    roomClaude: deps.roomClaude ? constant(deps.roomClaude) : roomClaudeLib,
+    identity: deps.identity ?? identityMod,
+    proposal: deps.proposal ?? proposalMod,
+    linkStatus: deps.linkStatus ?? ((code: RoomCode) => linkSocketLib().status(code)),
+    handoff: deps.handoff ? constant(deps.handoff) : handoffLib,
+    admission: deps.admission ? constant(deps.admission) : admissionLib,
+    invites: deps.invites ? constant(deps.invites) : invitesLib,
+    sweepSeats: deps.sweepSeats ?? ((code: RoomCode) => seatsLib().sweep(code)),
     pendingNews: deps.pendingNews ?? ((s: string) => {
       // a cheap look first: the link files (most unseated tails have no pending join); the link code only when one is
-      const links = require<typeof LinksMod>('./room/links.ts');
-      if (!links.list().some(c => { const l = links.get(c); return !!l && l.join_sid === s; })) return null;
-      return require<typeof JoiningMod>('./remote/joining.ts').pendingNews(s);
+      if (!linksMod.list().some(c => { const l = linksMod.get(c); return !!l && l.join_sid === s; })) return null;
+      return joiningLib().pendingNews(s);
     }),
   };
   const log = errorLog(err, clock, tm.errorLogMs);

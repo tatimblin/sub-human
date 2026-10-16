@@ -24,13 +24,12 @@
  * documents named). rotate() seals the active segment now (tests; an append rotates on its own when due).
  */
 
-import { createRequire } from 'node:module';
 import type { Change } from './watch.ts';
 import nodeFs from 'node:fs';
 import path from 'node:path';
 import { roomDir, machineIn } from '../home.ts';
 import { withLock } from '../lock.ts';
-import { writeFileAtomic, writeJsonAtomic, readJson, readJsonRaw } from '../io.ts';
+import { writeFileAtomic, writeJsonAtomic, readJson, readJsonRaw, lazy } from '../io.ts';
 import { objAs } from '../decode.ts';
 import { RoomError } from './validate.ts';
 import * as envelope from './envelope.ts';
@@ -50,9 +49,10 @@ import type * as WatchMod from './watch.ts';
 import type * as LinksMod from './links.ts';
 
 const fs = nodeFs;
-const require: <M>(id: string) => M = createRequire(import.meta.url);
 /** lib/room/watch.ts: only the host's streams watch a room (lib/remote/server.ts), never a hook or the status line. */
-const roomWatch = (): typeof WatchMod => require('./watch.ts');
+const roomWatch = lazy<typeof WatchMod>(import.meta.url, './watch.ts');
+/** lib/room/links.ts: only a room whose folder is missing asks it (start cost: every hook opens this module). */
+const linksLib = lazy<typeof LinksMod>(import.meta.url, './links.ts');
 const MOVED = 'log.moved';
 /** The kv document that says the room heard its log is waiting on older sessions (heldOnce); gone at the next rotation. */
 const ROTATION_HELD = 'log/rotation-held';
@@ -136,7 +136,7 @@ class FsRoomStore implements RoomStore {
    */
   _mustExist(): void {
     if (this._dir || fs.existsSync(this.dir)) return;
-    if (require<typeof LinksMod>('./links.ts').has(this.code)) return;
+    if (linksLib().has(this.code)) return;
     throw new RoomError('NO_ROOM', `no room ${this.code} on this machine`);
   }
   /** the active segment (tests write around the store through it) */

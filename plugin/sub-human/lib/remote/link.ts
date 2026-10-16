@@ -87,7 +87,6 @@ import * as linksMod from '../room/links.ts';
 import * as homeMod from '../home.ts';
 import * as identityMod from '../identity.ts';
 import * as membersMod from '../room/members.ts';
-import { createRequire } from 'node:module';
 import type { Reason } from '../reasons.ts';
 import type { LinkDoc, LinkTimings, MovedEventData, RunningLink, SignedPayload, StreamEvent, Flush } from './types-core.ts';
 import type { Clock, TimerHandle } from '../clock.ts';
@@ -102,8 +101,8 @@ import { assertNever } from '../../mod/core/never.ts';
 import type { RoomCode } from '../brand.ts';
 import type * as HandoffMod from '../handoff.ts';
 import type * as OutboxMod from './outbox.ts';
+import { lazy } from '../io.ts';
 
-const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 /** One relayed op's params as a hook sends them: an append may carry {queue: true}. */
 type RelayParams = { queue?: boolean; payload?: SignedPayload; [field: string]: unknown };
@@ -126,8 +125,9 @@ interface ServeMirrorOptions {
 }
 
 const HANDOFF_SELF_STOP_MS = 10_000;
-const handoff = (): typeof HandoffMod => require('../handoff.ts');
-const outboxMod = (): typeof OutboxMod => require('./outbox.ts');
+// the handoff and the outbox only when the link daemon needs them (start cost)
+const handoff = lazy<typeof HandoffMod>(import.meta.url, '../handoff.ts');
+const outboxMod = lazy<typeof OutboxMod>(import.meta.url, './outbox.ts');
 /** Why a link stopped for good with nothing wrong (reasons ROOM_CLOSED, NO_SEAT): a dormant link. */
 const ROOM_CLOSED_REASON = 'the room was closed';
 const NO_SEAT_REASON = 'no seat of this machine is left in the room';

@@ -1,4 +1,4 @@
-// hooks/handlers/consent.ts and lib/proposal.ts: the hash-gated card rewrite, what Post records and drops, decisions.
+// hooks/consent.ts (and its entry, hooks/handlers/consent.ts) and lib/proposal.ts: the hash-gated card rewrite, what Post records and drops, decisions.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

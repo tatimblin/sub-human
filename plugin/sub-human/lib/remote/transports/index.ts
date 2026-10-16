@@ -40,10 +40,11 @@ import type { Duplex, Readable } from 'node:stream';
 import type { KindEntry, LineTransport, LinkSpec, MemorySpec, OpenCtx, SpecBase, Transport } from '../types-rest.ts';
 import type { DecodedFrame } from '../types-core.ts';
 import { RoomError } from '../../room/validate.ts';
-import { createRequire } from 'node:module';
+import { lazy } from '../../io.ts';
 import type * as MemoryMod from './memory.ts';
-
-const require: <M>(id: string) => M = createRequire(import.meta.url);
+import type * as PipeMod from './pipe.ts';
+import type * as SshMod from './ssh.ts';
+import type * as WsMod from './ws.ts';
 
 interface Registered {
   open: KindEntry['open'];
@@ -123,16 +124,19 @@ function fromDuplex(stream: Duplex, { readable = stream }: { readable?: Readable
 export { register, kinds, get, parse, open, describe, lineTransport, fromDuplex };
 
 // ---------- the built-in kinds ----------
-// Their modules import this one (lineTransport), so each loads on first use, through its `kind` export: a
-// require (createRequire; require(esm) is synchronous) so no kind's code loads until a link or invite needs it.
-type KindModule = { kind: Required<KindEntry> };
-const lazy = (file: string): KindEntry => ({
-  open: (spec, ctx) => require<KindModule>(file).kind.open(spec, ctx),
-  parse: rest => require<KindModule>(file).kind.parse(rest),
-  describe: spec => require<KindModule>(file).kind.describe(spec),
+// Their modules import this one (lineTransport): a cycle, and no kind's code need load until a link or invite uses it,
+// so each loads at its first use, through its `kind` export.
+const memory = lazy<typeof MemoryMod>(import.meta.url, './memory.ts');
+const pipe = lazy<typeof PipeMod>(import.meta.url, './pipe.ts');
+const ssh = lazy<typeof SshMod>(import.meta.url, './ssh.ts');
+const ws = lazy<typeof WsMod>(import.meta.url, './ws.ts');
+const kindOf = (load: () => { kind: Required<KindEntry> }): KindEntry => ({
+  open: (spec, ctx) => load().kind.open(spec, ctx),
+  parse: rest => load().kind.parse(rest),
+  describe: spec => load().kind.describe(spec),
 });
-register<MemorySpec>('memory', { open: spec => require<typeof MemoryMod>('./memory.ts').over(spec.port), describe: () => 'memory' });
-register('pipe', lazy('./pipe.ts'));
-register('ssh', lazy('./ssh.ts'));
-register('wss', lazy('./ws.ts')); // ./ws.ts: a Noise channel in a WebSocket, through a TLS front
-register('ws', lazy('./ws.ts'));
+register<MemorySpec>('memory', { open: spec => memory().over(spec.port), describe: () => 'memory' });
+register('pipe', kindOf(pipe));
+register('ssh', kindOf(ssh));
+register('wss', kindOf(ws)); // ./ws.ts: a Noise channel in a WebSocket, through a TLS front
+register('ws', kindOf(ws));

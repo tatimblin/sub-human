@@ -2,7 +2,7 @@
 // /sub-human invite --pipe shows `/sub-human join pipe:HOME ROOM SECRET` and, apart from it, a 4-digit PIN, to the
 // person only; the joiner types the line (a hidden step: the model never sees the SECRET), the link daemon checks the
 // host's key against it and shows the host the SECRET, the host asks for the PIN, and the joiner types `/sub-human join
-// PIN` (hidden too); then the host's tail wakes the host seat's Claude, whose card (hooks/handlers/consent.ts) is the
+// PIN` (hidden too); then the host's tail wakes the host seat's Claude, whose card (hooks/consent.ts) is the
 // only way in: Let in links the machine (a bare /sub-human then takes the seat), Refuse stops it, an AFK card records
 // nothing, and a request nobody answers lapses. A wrong PIN costs a try with a room line and is asked for again, the
 // fifth burns the invite; neither the SECRET nor the PIN is ever in a log, a link file after the host answered it, or

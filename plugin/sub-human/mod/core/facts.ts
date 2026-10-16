@@ -51,7 +51,7 @@ export function factsBook(maxAgents = 64): FactsBook {
   };
 }
 
-/** An ExitPlanMode the person refused, as the PostToolUseFailure payload consent reads (hooks/handlers/consent.ts
+/** An ExitPlanMode the person refused, as the PostToolUseFailure payload consent reads (hooks/consent.ts
  * rejectedExit): the refusal's text as `error`; the mode is plan (the dialog was the plan view). */
 export function rejectedPayload(e: { tool_use_id?: unknown }, { sid, cwd, facts, text }: { sid: unknown; cwd?: unknown; facts: SessionFacts; text: string }): RejectedPayload {
   return {

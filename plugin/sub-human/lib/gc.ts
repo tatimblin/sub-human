@@ -23,21 +23,19 @@
  */
 
 import path from 'node:path';
-import { createRequire } from 'node:module';
 import * as store from './room/store.ts';
 import * as links from './room/links.ts';
 import * as identity from './identity.ts';
 import { home } from './home.ts';
-import { readJson, writeJsonAtomic } from './io.ts';
+import { readJson, writeJsonAtomic, lazy } from './io.ts';
 import { obj, str, opt } from './decode.ts';
 import { GC_BUDGET_MS, GC_EVERY_MS } from './config.ts';
 import { envMs } from './env.ts';
 import type { RoomCode } from './brand.ts';
 import type * as RowsMod from './rows.ts';
 
-const require: <M>(id: string) => M = createRequire(import.meta.url);
 // lib/rows.ts loads the consent fold and the tasks: only a join that sweeps a room's rows needs it
-const rows = (): typeof RowsMod => require('./rows.ts');
+const rows = lazy<typeof RowsMod>(import.meta.url, './rows.ts');
 
 /** <home>/gc.json: when the last sweep started, and the room after which the next one goes on. */
 /** <home>/gc.json: when the last sweep began, and the room it stopped after. */

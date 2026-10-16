@@ -10,14 +10,14 @@ import * as store from '../room/store.ts';
 import * as linkConnect from '../remote/link-connect.ts';
 import { parse } from '../cli/args.ts';
 import { localHm } from '../text.ts';
-import { createRequire } from 'node:module';
 import { HELP_HINT, refused, say } from './answer.ts';
 import { msgOf } from '../errors.ts';
 import type { Verb } from './types.ts';
 import type * as WebhostMod from '../remote/webhost.ts';
+import { lazy } from '../io.ts';
 
-const require: <M>(id: string) => M = createRequire(import.meta.url);
-const webhost = (): typeof WebhostMod => require('../remote/webhost.ts');
+// the web listener only for a handoff over the web (start cost: /sub-human loads this file)
+const webhost = lazy<typeof WebhostMod>(import.meta.url, '../remote/webhost.ts');
 
 export const handoff: Verb = (argv, { cur }) => {
   if (!cur) return refused('join a room first (/sub-human); then /sub-human handoff NAME asks NAME to host it.');

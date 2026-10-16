@@ -45,7 +45,6 @@
 import { Duplex } from 'node:stream';
 import { RoomError } from '../../room/validate.ts';
 import { envMs } from '../../env.ts';
-import { createRequire } from 'node:module';
 import type { KindEntry, OpenCtx, Refusal, SpecBase, Transport, WsAddr, WsHello, WsSpec } from '../types-rest.ts';
 import type { CipherState, KeyPair } from '../noise.ts';
 import type { Conn } from '../ws.ts';
@@ -54,8 +53,10 @@ import type { RoomCode } from '../../brand.ts';
 import type * as NoiseMod from '../noise.ts';
 import type * as WsMod from '../ws.ts';
 import type * as TransportsMod from './index.ts';
+import { lazy } from '../../io.ts';
 
-const require: <M>(id: string) => M = createRequire(import.meta.url);
+// the transport table only to wrap a connection (start cost)
+const transportsLib = lazy<typeof TransportsMod>(import.meta.url, './index.ts');
 
 const HOST_RE = /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,62})(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}))*\.?$/;
 const PATH_RE = /^\/[A-Za-z0-9._~/-]{0,200}$/;
@@ -65,8 +66,8 @@ const PROLOGUE3: Buffer = Buffer.from('sub-human ws3');
 const HANDSHAKE_MS = 10_000;
 
 // lib/remote/noise.ts and lib/remote/ws.ts, loaded on first use
-const noise = (): typeof NoiseMod => require('../noise.ts');
-const ws = (): typeof WsMod => require('../ws.ts');
+const noise = lazy<typeof NoiseMod>(import.meta.url, '../noise.ts');
+const ws = lazy<typeof WsMod>(import.meta.url, '../ws.ts');
 
 function parse(rest: string): WsAddr | null {
   const m = /^\/\/([^/:?#@\s]+)(?::([0-9]{1,5}))?(\/[^?#\s]*)?$/.exec(String(rest));
@@ -255,7 +256,7 @@ const kind: Required<KindEntry<WsSpec>> = {
     } catch (e) { throw new RoomError('OFFLINE', msgOf(e)); }
     try {
       const duplex = await clientChannel(conn, { rs: Buffer.from(spec.hostKey, 'base64url'), code: ctx.code, s: own });
-      return require<typeof TransportsMod>('./index.ts').fromDuplex(duplex);
+      return transportsLib().fromDuplex(duplex);
     } catch (e) {
       conn.terminate();
       throw e;

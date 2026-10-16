@@ -83,7 +83,7 @@ async function posts(_t: TestContext, { host, remote, alice, bob, code }: Rig, t
   assert.equal(remote.log(code), host.log(code), 'the mirror is byte-identical');
 }
 
-/** The join request's card on the host, answered by the person (hooks/handlers/consent.ts), as in test/remote-short.node-test.ts. */
+/** The join request's card on the host, answered by the person (hooks/consent.ts), as in test/remote-short.node-test.ts. */
 // the card the hooks built (consent's PreToolUse updatedInput)
 interface Card { questions: { question: string }[] }
 

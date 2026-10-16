@@ -1,7 +1,7 @@
 /**
  * plugin/sub-human/lib/remote/admission.ts: the host person's consent to a machine that typed an invite line and its
  * PIN. The line and the PIN proved only that the joiner holds both (lib/remote/invites.ts); nothing gets in until a
- * person on the host answers "Let in" on the card their own Claude Code shows (hooks/handlers/consent.ts, like the
+ * person on the host answers "Let in" on the card their own Claude Code shows (hooks/consent.ts, like the
  * handoff card: only the answer on the card as the hooks built it counts, never the model's), or runs `sub-human admit
  * REF` in a shell (headless hosts), or types `/sub-human admit REF`. Then the joiner's link redeems its invite (check,
  * below, from lib/remote/invites.ts redeemInvite): on the machine its key proved, and over the web with the Noise key
@@ -43,18 +43,17 @@
 import { INVITES_KEY } from './invites.ts';
 import { RoomError } from '../room/validate.ts';
 import { HANDOFF_INVITE_MS } from '../config.ts';
-import { createRequire } from 'node:module';
 import type { AdmissionRecord, AuthStore, InviteRecord, Invites } from './types-core.ts';
 import type { RoomStore } from '../room/types.ts';
 import type { Card } from '../types-app.ts';
 import type { RoomCode, SeatName } from '../brand.ts';
 import type * as RoomMod from '../room.ts';
-import type * as InviteSecretMod from './invite-secret.ts';
-import type * as IdentityMod from '../identity.ts';
-import type * as HomeMod from '../home.ts';
-import type * as TextMod from '../text.ts';
+import { lazy } from '../io.ts';
+import * as identity from '../identity.ts';
+import { isMine } from '../home.ts';
+import { NAME_RE } from '../text.ts';
+import * as inviteSecret from './invite-secret.ts';
 
-const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 /** A record with where it is: its kv key (slot) and ref. */
 type Slotted<T> = T & { slot: string; ref: string };
@@ -147,16 +146,14 @@ type Signer = (rec: { kind: 'admit'; ref: string; link: string; key: string | nu
 const LET_IN = 'Let in';
 const REFUSE = 'Refuse';
 
-const roomLib = (): typeof RoomMod => require('../room.ts');
-const secretLib = (): typeof InviteSecretMod => require('./invite-secret.ts');
+// lib/room.ts only on the host's own calls (start cost: a mirror's worker loads this file through invites.ts)
+const roomLib = lazy<typeof RoomMod>(import.meta.url, '../room.ts');
 const hostStore = (code: RoomCode): RoomStore => roomLib().hostStore(code, { what: 'only its host can let people in' });
 
 const pending = (code: RoomCode, { now = Date.now() }: { now?: number } = {}): AdmissionRequest[] => admissions(hostStore(code), { now });
 const find = (code: RoomCode, ref: string): AdmissionRequest | null => admissions(hostStore(code), { all: true }).find(r => r.ref === ref || (ref && ref.length >= 6 && r.ref.startsWith(ref))) ?? null;
 
 function targets(code: RoomCode, req: AdmissionRequest): SeatName[] {
-  const identity: typeof IdentityMod = require('../identity.ts');
-  const { isMine }: typeof HomeMod = require('../home.ts');
   const here = Object.values(identity.readMembers(code) || {})
     .filter(m => !!m && !!m.name && !m.left_at && m.role !== 'claude' && (!m.machine || isMine(m.machine))).map(m => m.name);
   const by = here.find(n => n === req.by);
@@ -165,16 +162,15 @@ function targets(code: RoomCode, req: AdmissionRequest): SeatName[] {
 
 /** What the card and the joiner's screen both show, to compare: the check of the machine (and web key) that proved
  *  itself with the PIN (lib/remote/invite-secret.ts joinCheck), never something the line alone gives. */
-const fp = (req: AdmissionRequest): string => secretLib().joinCheck(req.machine, req.key);
+const fp = (req: AdmissionRequest): string => inviteSecret.joinCheck(req.machine, req.key);
 const describe = (req: AdmissionRequest): string => `${req.name} (${fp(req)}) on ${req.label || 'another machine'}`;
 const question = (req: AdmissionRequest, code: RoomCode): string => `Let ${describe(req)} join room ${code}? (admit ${req.ref})`;
 
 function taken(code: RoomCode, req: AdmissionRequest): string | null {
   let ms: Record<string, { name?: string; role?: string; machine?: string | null } | undefined>;
-  try { ms = require<typeof IdentityMod>('../identity.ts').readMembers(code) || {}; } catch { return null; }
+  try { ms = identity.readMembers(code) || {}; } catch { return null; }
   const m = ms[req.name];
   if (!m || m.role === 'claude' || !m.machine || m.machine === req.machine) return null;
-  const { NAME_RE }: typeof TextMod = require('../text.ts');
   for (let i = 2; i < 100; i++) {
     const alt = `${req.name.slice(0, 30)}${i}`;
     if (NAME_RE.test(alt) && !ms[alt]) return alt;

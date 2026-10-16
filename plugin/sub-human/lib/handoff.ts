@@ -15,7 +15,7 @@
  *      streamed) {id, state: 'asked', from, to, epoch: next, locator?, ask?, at, expires_at}. A's server sends it to
  *      B's link only, as a private 'handoff' event (lib/remote/protocol.ts); B's daemon keeps it in B's mirror
  *      (onAsk: the session-local document `handoff`); B's tail wakes B's Claude, which opens the card.
- *   2. the card (hooks/handlers/consent.ts, AskUserQuestion; only B's own answer on the card as the hooks built it counts):
+ *   2. the card (hooks/consent.ts, AskUserQuestion; only B's own answer on the card as the hooks built it counts):
  *      it says the room's Claude then runs on B's model account (billing, rate limits) and that B's machine must stay
  *      reachable. "Not now": refuse (op handoff.refuse; A's tail tells the asker). "Host it here": accept.
  *   3. accept (B's hook): mints one single-use invite to B per other machine with a seat in the room (A's included;
@@ -77,12 +77,11 @@ import * as invites from './remote/invites.ts';
 import * as hostLinks from './remote/host-links.ts';
 import { RoomError } from './room/validate.ts';
 import { machineId, machineIn, isMine } from './home.ts';
-import { isAlive, sleepSync } from './io.ts';
+import { isAlive, sleepSync, lazy } from './io.ts';
 import { isObj } from './decode.ts';
 import * as config from './config.ts';
 import * as identityMod from './identity.ts';
 import * as ioMod from './io.ts';
-import { createRequire } from 'node:module';
 import type { Card, HandoffAskDoc, HandoffDoc } from './types-app.ts';
 import type { WireCode } from './remote/types-core.ts';
 import type { Entry, EntryInput, HostProof, HostState, Link, Member, RoomStore } from './room/types.ts';
@@ -102,7 +101,12 @@ import type * as WebhostMod from './remote/webhost.ts';
 import type * as RoomClaudeMod from './room-claude.ts';
 import type * as SeatsMod from './seats.ts';
 
-const require: <M>(id: string) => M = createRequire(import.meta.url);
+// Loaded at first use (start cost: the consent hook and the CLI load this file): each serves one step of a handoff.
+const seatsLib = lazy<typeof SeatsMod>(import.meta.url, './seats.ts');
+const listenerLib = lazy<typeof ListenerMod>(import.meta.url, './remote/listener.ts');
+const webhostLib = lazy<typeof WebhostMod>(import.meta.url, './remote/webhost.ts');
+const roomClaudeLib = lazy<typeof RoomClaudeMod>(import.meta.url, './room-claude.ts');
+const hostingLib = lazy<typeof HostingMod>(import.meta.url, './remote/hosting.ts');
 
 /** A room's store (lib/room/store.ts open): the host's FsRoomStore or a mirror's. */
 type Store = RoomStore;
@@ -123,15 +127,15 @@ const ID_RE = /^[0-9a-f]{12}$/;
 
 const iso = (ms: number) => new Date(ms).toISOString();
 const err = (code: WireCode, msg: string) => new RoomError(code, msg);
-const linkSocket = (): typeof LinkSocketMod => require('./remote/link-socket.ts');
-const linkConnect = (): typeof LinkConnectMod => require('./remote/link-connect.ts');
+const linkSocket = lazy<typeof LinkSocketMod>(import.meta.url, './remote/link-socket.ts');
+const linkConnect = lazy<typeof LinkConnectMod>(import.meta.url, './remote/link-connect.ts');
 const identity = () => identityMod;
 const transportOf = (locator: unknown) => (typeof locator === 'string' ? linkConnect().transportOf(locator) : null);
 // A next host reached over the web (wss/ws, lib/remote/transports/ws.ts): its invites pin its listener's X25519 key,
 // and the link file that follows one carries that key and a key of the link's own (XK). Over ssh a follower reaches
 // the new host through its person's own ssh login to it: nothing is pinned or let in by the plugin.
 const isWeb = (locator: unknown) => /^wss?:/.test(String(locator));
-const hostKeyFor = (locator: string): string | null => (isWeb(locator) ? require<typeof ListenerMod>('./remote/listener.ts').hostKey() : null);
+const hostKeyFor = (locator: string): string | null => (isWeb(locator) ? listenerLib().hostKey() : null);
 /**
  * The link file that follows the room to locator with invite (lib/remote/hosting.ts linkTransport): over ssh the
  * person's own ssh login to the new host (mux kept); over the web the listener key the invite pins and a fresh key of
@@ -140,12 +144,11 @@ const hostKeyFor = (locator: string): string | null => (isWeb(locator) ? require
 function followLink(code: RoomCode, locator: string | undefined, invite: unknown): Follow {
   const inv = typeof invite === 'string' ? invites.parseInvite(invite) : null;
   if (!inv || inv.code !== code || inv.locator !== locator || !transportOf(locator)) return { transport: transportOf(locator) };
-  const hosting: typeof HostingMod = require('./remote/hosting.ts');
-  return { transport: hosting.linkTransport({ inv, cur: links.get(code) }) };
+  return { transport: hostingLib().linkTransport({ inv, cur: links.get(code) }) };
 }
 /** This machine, about to host CODE at a web locator: its listener up, the room in its served set. */
 function serveWeb(code: RoomCode, locator: string): void {
-  if (isWeb(locator)) require<typeof WebhostMod>('./remote/webhost.ts').serveAt(code, locator);
+  if (isWeb(locator)) webhostLib().serveAt(code, locator);
 }
 const askMs = () => config.HANDOFF_ASK_MS;
 const expired = (doc: { expires_at?: string | undefined } | null | undefined, now: number = Date.now()) => !(Date.parse((doc && doc.expires_at) as string) > now);
@@ -255,7 +258,7 @@ function serverRefuse(s: Store, link: LinkRec, { id }: { id?: unknown } = {}, no
 
 /** The old host after its reply: stop its room Claude job, then mirror the new host (a link holding its own invite). */
 function afterMoved(s: Store, { job }: { job?: string | null } = {}): boolean {
-  if (job) { try { require<typeof RoomClaudeMod>('./room-claude.ts').releaseDetached(s.code, job); } catch { /* the job ends with its session */ } }
+  if (job) { try { roomClaudeLib().releaseDetached(s.code, job); } catch { /* the job ends with its session */ } }
   const d = hostDoc(s);
   const me = machineIn(s.code);
   const invite = d && d.invites && me ? d.invites[me] : null;
@@ -420,8 +423,7 @@ function takeOver(code: RoomCode, { by, cwd, epoch, entry }: { by: string, cwd?:
   // the old host's room Claude goes with its holder: its machine and lease too. Else claimSpawn clears left_at and the new
   // job's bind meets a record on another machine with a fresh lease, still holding the name ("name taken")
   identity().updateRoomClaude(code, () => ({ job: null, pid: null, pid_start: undefined, machine: undefined, seen_at: undefined, claim: undefined, closing: undefined, left_at: now, stopped_at: now }));
-  const seats: typeof SeatsMod = require('./seats.ts');
-  return seats.ensureRoomClaude(code, cwd, by);
+  return seatsLib().ensureRoomClaude(code, cwd, by);
 }
 
 // ---------- promote / demote ----------
@@ -464,26 +466,25 @@ function demote(code: RoomCode, { invite, pin }: { invite: string; pin?: string 
   if (!transport) throw err('INVALID', `this machine cannot use "${inv.locator}"`);
   // without it the link's hello would spend one of the invite's tries on a missing PIN
   if (!invites.isPromotePin(pin)) throw err('INVALID', 'this invite needs the 6-digit PIN that came with it: sub-human demote CODE INVITE PIN');
-  const hosting = (): typeof HostingMod => require('./remote/hosting.ts');
   if (!s.isHost) { // a member's machine follows the promoted room: its link re-pointed, its seats join again over it
     const cur = links.get(code);
     if (!cur) throw err('INVALID', `this machine has no copy of room ${code}`);
     const st = linkSocket().status(code);
     if (st.running) { try { process.kill(st.pid, 'SIGTERM'); } catch { /* gone */ } }
-    hosting().joinInvite({ inv, invite, pin });
+    hostingLib().joinInvite({ inv, invite, pin });
     links.set(code, { ...(links.get(code) ?? cur), rebind: true, moved: { locator: inv.locator, host: 'the new host', at: iso(Date.now()) } }); // written just above
     for (const until = Date.now() + 2000; st.running && Date.now() < until && ioMod.isAlive(st.pid);) ioMod.sleepSync(20);
     linkSocket().start(code);
     return { orphan: null, follower: true };
   }
   const o: Member | undefined = s.members.read().claude;
-  if (o && o.job && o.job !== 'pending') { try { require<typeof RoomClaudeMod>('./room-claude.ts').releaseDetached(code, o.job); } catch { /* ends with its session */ } }
+  if (o && o.job && o.job !== 'pending') { try { roomClaudeLib().releaseDetached(code, o.job); } catch { /* ends with its session */ } }
   const orphan: string | null = s.setAside();
   for (const k of [hostLinks.LINKS_KEY, invites.INVITES_KEY, HOST_DOC, WORKDIR, 'tasks']) s.kv.delete(k);
   for (const k of s.kv.list('presence/')) s.kv.delete(k);
   const moved = { demoted: true, locator: inv.locator, host: 'the new host' };
   // the joiner's side of an sh2 invite (its PIN; over ssh this person's own ssh login to the new host)
-  hosting().joinInvite({ inv, invite, pin });
+  hostingLib().joinInvite({ inv, invite, pin });
   const joined = links.get(code); // joinInvite wrote it
   if (joined) links.set(code, { ...joined, moved });
   store.forget(code);

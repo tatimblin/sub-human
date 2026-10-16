@@ -19,7 +19,9 @@
  *             (the running binary's version), its modules switched off (cc.modulesSwitch), else the doctor
  */
 import * as identity from '../identity.ts';
-import { createRequire } from 'node:module';
+import * as contract from '../cc/contract.ts';
+import * as bg from '../cc/bg.ts';
+import * as ccEnv from '../cc/env.ts';
 import { mayHoldSecret, hasPinWord } from '../../mod/core/command.ts';
 import { refused, secret } from './answer.ts';
 import { help } from './help.ts';
@@ -32,11 +34,6 @@ import { handoff } from './handoff.ts';
 import { bare, bindRoomClaude, join, named } from './join.ts';
 import type { Answer, VerbCtx, OpenVerb, Verb } from './types.ts';
 import type { Identity } from '../identity.ts';
-import type * as ContractMod from '../cc/contract.ts';
-import type * as BgMod from '../cc/bg.ts';
-import type * as EnvMod from '../cc/env.ts';
-
-const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 export const TABLE: Readonly<Record<string, Verb>> = Object.freeze({ '': bare, join, invite, admit, kick, leave, handoff });
 export const OPEN: Readonly<Record<string, OpenVerb>> = Object.freeze({ help, doctor });
@@ -45,8 +42,7 @@ export const OPEN: Readonly<Record<string, OpenVerb>> = Object.freeze({ help, do
 export type Session = Omit<VerbCtx, 'pid' | 'cur'> & { pid: number | null; seat(): Identity | null };
 
 export function noModule(pid: number | null): string {
-  const cc: typeof ContractMod & typeof BgMod & typeof EnvMod =
-    { ...require('../cc/contract.ts'), ...require('../cc/bg.ts'), ...require('../cc/env.ts') };
+  const cc = { ...contract, ...bg, ...ccEnv };
   let v: string | null = null;
   try { v = cc.runningVersion(pid); } catch { /* unknown */ }
   if (v && (cc.compareVersions(v, cc.MIN_VERSION) ?? 0) < 0) return `sub-human needs Claude Code ${cc.MIN_VERSION} or newer, and this is ${v}. Update it (claude update), restart claude, then type /sub-human again.`;

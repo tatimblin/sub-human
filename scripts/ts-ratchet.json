@@ -4,17 +4,17 @@
     "hooks": {
       "any": 0,
       "as": 9,
-      "nonNull": 12
+      "nonNull": 0
     },
     "lib": {
       "any": 0,
       "as": 143,
-      "nonNull": 2
+      "nonNull": 0
     },
     "mcp": {
       "any": 0,
       "as": 5,
-      "nonNull": 2
+      "nonNull": 0
     },
     "mod/core": {
       "any": 0,

@@ -78,7 +78,7 @@ export interface Card {
     options: { label: string, description: string, preview?: string }[];
   }[];
 }
-/** members/NAME/review: the plan-view review state (hooks/handlers/consent.ts writes it). */
+/** members/NAME/review: the plan-view review state (hooks/consent.ts writes it). */
 export interface Review {
   phase: 'entering' | 'shown' | 'exiting' | 'restore';
   mode?: string | undefined;
@@ -91,7 +91,7 @@ export interface Review {
   tool_use_id?: string | null;
   said?: string;
   resolved?: boolean;
-  /** closed while its dialog's tool_result was not on disk yet: the answer is read again later (hooks/handlers/consent.ts resolveShown) */
+  /** closed while its dialog's tool_result was not on disk yet: the answer is read again later (hooks/consent.ts resolveShown) */
   unread?: boolean;
   foreign?: boolean;
   card?: string | undefined;

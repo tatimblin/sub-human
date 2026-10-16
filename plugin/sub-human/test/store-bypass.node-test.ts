@@ -37,12 +37,13 @@ function stripComments(src: string): string {
 }
 
 // ---------- structure: who imports what ----------
-/** The plugin files rel imports (import ... from, export ... from, import(), require()), as plugin-relative paths. */
+/** The plugin files rel imports (import ... from, export ... from, import(), require(), lib/io.ts lazy), as
+ * plugin-relative paths. */
 function importsOf(rel: string, code: string): string[] {
   const out = new Set<string>();
-  const re = /\b(?:from|import|require)\s*\(?\s*['"](\.{1,2}\/[^'"]+)['"]/g;
+  const re = /(?:\b(?:from|import|require)\s*\(?|\blazy<[^>]*>\(import\.meta\.url,)\s*['"](\.{1,2}\/[^'"]+)['"]/g;
   for (let m; (m = re.exec(code));) out.add(path.normalize(path.join(path.dirname(rel), must(m[1]))));
-  // createRequire's lazy loads by a joined path: require(path.join(import.meta.dirname, '…', 'x.ts'))
+  // a load by a joined path: loadAt(import.meta.url, path.join(import.meta.dirname, '…', 'x.ts'))
   const joined = /path\.join\(import\.meta\.dirname((?:\s*,\s*['"][^'"]+['"])+)\)/g;
   for (let m; (m = joined.exec(code));) out.add(path.normalize(path.join(path.dirname(rel), ...[...must(m[1]).matchAll(/['"]([^'"]+)['"]/g)].map(x => must(x[1])))));
   return [...out];
@@ -68,6 +69,7 @@ test('store seam: FsRoomStore is opened by the registry, composed by the mirror 
 
 test('store seam: the import scan finds a bypass', () => {
   assert.deepEqual(importsOf('lib/x.ts', "import * as io from './room/log-io.ts';"), ['lib/room/log-io.ts']);
+  assert.deepEqual(importsOf('lib/x.ts', "const io = lazy<typeof IoMod>(import.meta.url, './room/log-io.ts');"), ['lib/room/log-io.ts']);
   assert.deepEqual(importsOf('mcp/x.ts', "const io = require('../lib/room/log-io.ts');"), ['lib/room/log-io.ts']);
   assert.deepEqual(importsOf('lib/room/x.ts', "export { readAll } from './log-io.ts';"), ['lib/room/log-io.ts']);
   assert.deepEqual(importsOf('lib/room/x.ts', "const io = await import('./log-io.ts');"), ['lib/room/log-io.ts']);

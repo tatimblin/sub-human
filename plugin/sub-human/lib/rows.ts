@@ -62,9 +62,8 @@ import * as room from './room.ts';
 import * as tasks from './tasks.ts';
 import * as session from './room/session.ts';
 import { rowSegment } from './room/render.ts';
-import { isAlive } from './io.ts';
+import { isAlive, lazy } from './io.ts';
 import * as text from './text.ts';
-import { createRequire } from 'node:module';
 import * as linkState from './room/link-state.ts';
 import {
   ROW_MAX, ROW_TITLE_MAX, PRESENCE_STALE_MS, HOLDS_STALE_MS, MISSING_GRACE_MS, ROWS_LOCK_TIMEOUT_MS, ROWS_LOCK_STALE_MS, ROWS_TTL_MS,
@@ -77,10 +76,9 @@ import { PARTICIPANT, ROOM_AGENT } from '../mod/core/rows.ts';
 import type { RoomCode, SeatName } from './brand.ts';
 import type * as ProposalMod from './proposal.ts';
 
-const require: <M>(id: string) => M = createRequire(import.meta.url);
 // lib/proposal.ts loads the consent reducer: only a row that names a pending proposal's title needs it (the status
 // line runs every 5 s and draws most rows without one)
-const proposalLib = (): typeof ProposalMod => require('./proposal.ts');
+const proposalLib = lazy<typeof ProposalMod>(import.meta.url, './proposal.ts');
 
 /** members as callers hand them over: readMembers(code) (by name) or a list. */
 type MemberInput = Members | Member[] | null | undefined;

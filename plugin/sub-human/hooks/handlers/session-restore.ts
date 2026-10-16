@@ -22,7 +22,7 @@
 // a re-spawn would duplicate the room row). On --resume the hold server is new, so every row is
 // listed. sessionTitle = the native address NAME.CODE (SendMessage / ListAgents reach the session by it:
 // cc CONTRACT session-title-address).
-// A plan-view review left behind (hooks/handlers/consent.ts; members/NAME/review.json) is closed here: after clear or
+// A plan-view review left behind (hooks/consent.ts; members/NAME/review.json) is closed here: after clear or
 // resume always, after compact only when it is older than REVIEW_STALE_MS. The session plan file gets the
 // person's own text back (lib/proposal.ts restoreStale) and the review state is cleared.
 import path from 'node:path';
