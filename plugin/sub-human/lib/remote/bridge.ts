@@ -6,7 +6,9 @@
  * signed on the calling thread first. Its proof gate runs the hook suites
  * over a FsRoomStore proxied through this bridge (test/support/thread-store.ts).
  *
- *   createBridge({handler, deadlineMs?}) -> {call(method, params, {deadlineMs}?) -> result, close()}
+ *   createBridge<A>({handler, deadlineMs?}) -> {call(method, params, {deadlineMs}?) -> result, close()}
+ *       A (Api): each method's params and result, as the handler module answers them (lib/room/store-mirror.ts
+ *       RelayApi; the test thread store's own)
  *       handler: the absolute path of a module exporting handle(method, params) -> result | Promise<result>,
  *       loaded on the worker at the first call (a load error fails the call). call() posts {id, method, params}, then
  *       Atomics.wait()s on a SharedArrayBuffer counter the worker bumps after each reply, and takes the reply
@@ -50,12 +52,15 @@ interface Reply {
 /** A handler module: handle(method, params) -> result | Promise<result>. */
 type Handle = (method: string, params: unknown) => unknown;
 
-export interface Bridge {
-  call(method: string, params: unknown, opts?: { deadlineMs?: number }): any; // any: the handler's result, per method
+/** A handler module's methods: each one's params and result (structured clones across the port). */
+export type Api = Record<string, { params: unknown; result: unknown }>;
+
+export interface Bridge<A extends Api> {
+  call<M extends keyof A & string>(method: M, params: A[M]['params'], opts?: { deadlineMs?: number }): A[M]['result'];
   close(): void;
 }
 
-function createBridge({ handler, deadlineMs = config.LINK_CALL_MS }: { handler: string; deadlineMs?: number }): Bridge {
+function createBridge<A extends Api>({ handler, deadlineMs = config.LINK_CALL_MS }: { handler: string; deadlineMs?: number }): Bridge<A> {
   const replies = new Int32Array(new SharedArrayBuffer(4));
   const { port1: port, port2 } = new MessageChannel();
   const worker = new Worker(import.meta.filename, { workerData: { [ENTRY]: true, handler, replies, port: port2 }, transferList: [port2] });
@@ -77,7 +82,8 @@ function createBridge({ handler, deadlineMs = config.LINK_CALL_MS }: { handler: 
     }
   }
 
-  return { call, close() { port.close(); worker.terminate(); } };
+  // the handler module answers each method as A says (the one place a reply is read as its type)
+  return { call: call as Bridge<A>['call'], close() { port.close(); worker.terminate(); } };
 }
 
 function settle({ result, error }: Reply): unknown {

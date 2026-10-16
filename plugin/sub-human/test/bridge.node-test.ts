@@ -19,6 +19,17 @@ import type { Member } from '../lib/room/types.ts';
 const BRIDGE = path.join(h.LIB, 'remote', 'bridge.ts');
 const THREAD_STORE = path.join(import.meta.dirname, 'support', 'thread-store.ts');
 
+/** The handler module's methods, as the tests call them. */
+type TestApi = {
+  echo: { params: unknown; result: { got: unknown; buf: Uint8Array } };
+  later: { params: { ms: number }; result: number };
+  throws: { params: { why: string; code?: string }; result: never };
+  hang: { params: object; result: never };
+  fn: { params: object; result: never };
+  callerFlag: { params: { flag: Int32Array }; result: string };
+  [method: string]: { params: unknown; result: unknown };
+};
+
 /** A handler module in a temp dir: handle(method, params) runs HANDLERS[method]. */
 function handlerFile(t: TestContext) {
   const file = path.join(h.tmpDir('sh-bridge-', t), 'handler.js');
@@ -38,7 +49,7 @@ function handlerFile(t: TestContext) {
 }
 
 test('bridge: a call returns the handler\'s result (a structured clone); a throw is RoomError with its code, else INVALID', t => {
-  const b = createBridge({ handler: handlerFile(t) });
+  const b = createBridge<TestApi>({ handler: handlerFile(t) });
   t.after(() => b.close());
   const r = b.call('echo', { a: [1, { b: 'c' }] });
   assert.deepEqual(r.got, { a: [1, { b: 'c' }] });
@@ -57,7 +68,7 @@ test('bridge: a handler that does not load fails the call with its load error', 
 });
 
 test('bridge: no answer by the deadline is OFFLINE; nothing is retried, the late reply is dropped, the next call gets its own', t => {
-  const b = createBridge({ handler: handlerFile(t), deadlineMs: 150 });
+  const b = createBridge<TestApi>({ handler: handlerFile(t), deadlineMs: 150 });
   t.after(() => b.close());
   const t0 = Date.now();
   assert.throws(() => b.call('later', { ms: 400 }), (e: RoomError) => e.code === 'OFFLINE' && /later: no answer within 150 ms/.test(e.message));

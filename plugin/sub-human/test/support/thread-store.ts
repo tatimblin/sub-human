@@ -39,9 +39,10 @@ type FsStore = InstanceType<typeof FsRoomStore>;
 interface CallParams { code: string; dir: string; home: string; seg?: string; args: unknown[] }
 
 // ---------- the calling thread ----------
-let bridge: Bridge | null = null;
-// any: the bridge's result, per method (lib/remote/bridge.ts Bridge.call); each caller below names its type
-const send = (method: string, params: CallParams) => (bridge || (bridge = createBridge({ handler: import.meta.filename }))).call(method, params);
+/** Every store method by name; its result is the method's own (each caller below names its type). */
+type StoreCalls = Record<string, { params: CallParams; result: unknown }>;
+let bridge: Bridge<StoreCalls> | null = null;
+const send = (method: string, params: CallParams): unknown => (bridge || (bridge = createBridge<StoreCalls>({ handler: import.meta.filename }))).call(method, params);
 const toBuffer = (b: Uint8Array | null) => (b ? Buffer.from(b.buffer, b.byteOffset, b.byteLength) : null);
 
 class ThreadRoomStore implements RoomStore {
@@ -69,7 +70,8 @@ class ThreadRoomStore implements RoomStore {
     this.code = code;
     this._local = new FsRoomStore(code, { dir }); // this thread's view: the room's directory and its lock files
     this.trust = store.trustOver({ code, pins: () => this.pins(), localKey: n => store.localKey(n, code), hasLocalKey: n => store.hasLocalKey(n, code) });
-    const fwd = (method: string) => (...args: unknown[]) => this._call(method, args);
+    // each forwarded method returns what that method returns on the worker (never: assignable to its declared type)
+    const fwd = (method: string) => (...args: unknown[]): never => this._call<never>(method, args);
     this.members = {
       read: fwd('members.read'),
       update: fn => this._updateMembers(fn),
@@ -105,7 +107,8 @@ class ThreadRoomStore implements RoomStore {
     this.setAside = fwd('setAside');
   }
   get dir() { return this._local.dir; }
-  _call(method: string, args: unknown[]) { return send(method, { code: this.code, dir: this._local.dir, home: home(), seg: process.env.SUB_HUMAN_SEGMENT_BYTES, args }); }
+  /** The store method's result on the worker, as that method gives it (R: its type). */
+  _call<R>(method: string, args: unknown[]): R { return send(method, { code: this.code, dir: this._local.dir, home: home(), seg: process.env.SUB_HUMAN_SEGMENT_BYTES, args }) as R; }
 
   readAll(): readonly Entry[] { return this._call('readAll', []); }
   readById(ids: number | string | readonly (number | string)[]): Entry[] { return this._call('readById', [ids]); }

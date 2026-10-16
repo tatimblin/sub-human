@@ -145,6 +145,13 @@ export interface BlobPutResult { ref: string }
 export interface PingResult { pong: number }
 export interface HandoffAcceptResult { ok: true; epoch: number; entry: Entry }
 
+/** What a hook hands the link daemon for each op it relays (lib/remote/link-socket.ts handle). */
+export type RelayParams = { [M in RelayOp]: M extends 'append' ? RelayAppendParams : OpParams[M] };
+/** An @room post the daemon's outbox holds instead of an answer: the link is down, or the host slow (lib/remote/link.ts). */
+export interface QueuedReply { queued: number; slow?: true }
+/** The daemon's answer to each relayed op: the host's result, or, for a queueable append, QueuedReply. */
+export type RelayResults = { [M in RelayOp]: M extends 'append' ? AppendResult | QueuedReply : OpResults[M] };
+
 /** Each op's result. */
 export interface OpResults {
   hello: HelloResult;

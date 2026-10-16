@@ -67,17 +67,18 @@ import type {
   Payload, Placed, PlaceOpts, PresenceInput, ReadViewOpts, RoomStore, SeatRecord, SnapshotWire, Tailer, TailerFs, Trust,
 } from './types.ts';
 import type { KeyObject } from 'node:crypto';
+import type { Bridge } from '../remote/bridge.ts';
+import type { LinkDoc, RelayOp, RelayParams, RelayResults } from '../remote/types-core.ts';
 
-/** The bridge to this room's link daemon (lib/remote/bridge.ts), one per process. */
-type Bridge = { call(method: string, params: object, opts?: { deadlineMs?: number }): unknown; close(): void };
-// any: a reply is the daemon's JSON over the wire, as each op shapes it (lib/remote/link.ts)
-type Reply = any;
+/** The link daemon's socket as the bridge reaches it (lib/remote/link-socket.ts handle): each relayed op, sent with the
+ * socket paths to try, answered as the daemon answers it (RelayResults). */
+type RelayApi = { [M in RelayOp]: { params: { socket: string[]; params: RelayParams[M] }; result: RelayResults[M] } };
 
 const HANDLER = path.join(import.meta.dirname, '..', 'remote', 'link-socket.ts');
 const streamed = (key: string): boolean => key === 'members' || key === 'tasks' || /^presence\/[^/]+$/.test(key);
 const hostOnly = (what: string): RoomError => new RoomError('HOST_ONLY', `${what} runs only on the room's host`);
 
-let bridge: Bridge | null = null; // one per process, started by its first op
+let bridge: Bridge<RelayApi> | null = null; // one per process, started by its first op
 
 class MirrorRoomStore implements RoomStore {
   readonly code: string;
@@ -146,19 +147,19 @@ class MirrorRoomStore implements RoomStore {
   place(payload: Payload, opts: PlaceOpts & { queue: true }): Placed;
   place(payload: Payload, opts?: PlaceOpts): Entry;
   place(payload: Payload, { queue }: PlaceOpts = {}): Placed {
-    const r: Reply = this._call('append', queue ? { payload, queue: true } : { payload });
-    return r.queued ? { ...payload, queued: r.queued, ...(r.slow ? { slow: true } : {}) } : r.entry;
+    const r = this._call('append', queue ? { payload, queue: true } : { payload });
+    return 'entry' in r ? r.entry : { ...payload, queued: r.queued, ...(r.slow ? { slow: true } : {}) };
   }
 
   /** An op the daemon relays to the host as it is (lib/handoff.ts: handoff.accept, handoff.refuse). */
-  request(op: string, params?: object, opts?: { deadlineMs?: number }): Reply { return this._call(op, params, opts); }
+  request<M extends RelayOp>(op: M, params: RelayParams[M], opts?: { deadlineMs?: number }): RelayApi[M]['result'] { return this._call(op, params, opts); }
 
   /** The daemon's document `link` (its socket path first: lib/remote/link.ts socketPaths), null when unreadable. */
-  _linkDoc(): Reply { try { return this.local.kv.get('link'); } catch { return null; } }
+  _linkDoc(): LinkDoc | null { try { return this.local.kv.get<LinkDoc>('link'); } catch { return null; } }
 
   /** One op over the bridge to this room's link daemon (the socket it recorded, then the computed paths). */
-  _call(op: string, params?: object, { deadlineMs }: { deadlineMs?: number } = {}): Reply {
-    bridge = bridge || (createBridge({ handler: HANDLER }) as Bridge);
+  _call<M extends RelayOp>(op: M, params: RelayParams[M], { deadlineMs }: { deadlineMs?: number } = {}): RelayApi[M]['result'] {
+    bridge = bridge || createBridge<RelayApi>({ handler: HANDLER });
     try {
       return bridge.call(op, { socket: socketPaths(this.dir, this._linkDoc()), params }, { deadlineMs });
     } catch (e) {
