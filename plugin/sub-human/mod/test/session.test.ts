@@ -109,3 +109,13 @@ test('a fork with nothing to take back: session-restore says nothing, no tail ch
   expect(r.additionalContext).toBeUndefined()
   expect(seen.runs).toEqual(['session-restore.ts', 'mod-hello.ts'])
 })
+
+test('stage 8e E: a fork whose seat is in another sub-human folder: session-restore\'s notice reaches the person, no seat, no tail child', async ($, on) => {
+  const said = 'sub-human: this session continues alice.otter-4821 (the agent view moved it here), but that seat is not in this session\'s sub-human folder (/u/.sub-human): …'
+  const seen = world($, on, { answer: { 'session-restore.ts': { stdout: JSON.stringify({ systemMessage: said }) } } })
+  await start($)
+  const r: any = await $.classic.SessionStart({ session_id: SID, source: 'fork', cwd: '/w', transcript_path: '/t.jsonl' } as any)
+  expect(r.additionalContext).toBeUndefined()
+  expect(seen.logs).toEqual([said.replace(/^sub-human: /, '')])
+  expect(seen.runs).toEqual(['session-restore.ts', 'mod-hello.ts'])
+})

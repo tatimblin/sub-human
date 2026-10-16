@@ -193,3 +193,34 @@ test('session-restore: a fork waits for the continued-in record Claude Code writ
   assert.match(ctx(r)!, /restored after the agent view/);
   assert.equal(w.members().alice.session_id, NEW_SID);
 });
+
+test('stage 8e E (live verify, locala/01a): a fork whose seat is in a sub-human folder this process does not have (SUB_HUMAN_HOME only in the shell): told why, recorded, and a bare /sub-human there opens no room; /sub-human NAME ROOM still joins', () => {
+  const w = new World({ claude: 'sleep', alice: 'sleep' });
+  const oldSid = w.sid.alice;
+  // the bg job's own folder: the default one, which has no record of alice's seat
+  const fork = new World({}, { room: false });
+  fork.pid.me = process.pid; fork.sid.me = NEW_SID;
+  const dir = fs.mkdtempSync(path.join(fork.home, '..', 'proj-'));
+  const lines = [{ type: 'user', sessionId: oldSid, message: { content: 'hi' } }, { type: 'custom-title', customTitle: `alice.${w.code}`, sessionId: oldSid },
+    { type: 'continued-in', sessionId: oldSid, continuedInSessionId: NEW_SID }];
+  fs.writeFileSync(path.join(dir, `${oldSid}.jsonl`), lines.map(l => JSON.stringify(l)).join('\n') + '\n');
+  const transcript = path.join(dir, `${NEW_SID}.jsonl`);
+  const r = fork.hook('session-restore', { ...fixture('session-start-clear'), source: 'fork', session_id: NEW_SID, transcript_path: transcript }, { as: 'me', session: false, env: { SUB_HUMAN_FORK_WAIT_MS: '1' } });
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(ctx(r), undefined, 'no seat taken');
+  assert.match(r.json!.systemMessage!, new RegExp(`^sub-human: this session continues alice\\.${w.code} \\(the agent view moved it here\\), but that seat is not in this session's sub-human folder .*Claude Code settings "env".*claude --resume ${NEW_SID}`));
+  assert.deepEqual(fork.lib(() => identity.forkedOf(NEW_SID)), { sid: oldSid, title: `alice.${w.code}` });
+  // a bare /sub-human (and /sub-human NAME) there: refused, no room opened in this folder
+  const expand = (args: string) => ({ ...fixture('user-prompt-expansion'), session_id: NEW_SID, command_args: args, prompt: `/sub-human:sub-human ${args}`.trim() });
+  for (const args of ['', 'alice']) {
+    const j = fork.hook('join', expand(args), { as: 'me' });
+    assert.equal(j.json!.decision, 'block', `${args}: ${j.stdout}`);
+    assert.match(j.json!.reason!, /this session continues alice\..* A bare \/sub-human opens no room here/);
+  }
+  assert.equal(fs.existsSync(path.join(fork.home, 'rooms')) ? fs.readdirSync(path.join(fork.home, 'rooms')).length : 0, 0, 'no second room');
+  // a fork of a session that held no seat (its title no address) is no such fork
+  const plain = new World({}, { room: false });
+  const dir2 = fs.mkdtempSync(path.join(plain.home, '..', 'proj-'));
+  fs.writeFileSync(path.join(dir2, `${oldSid}.jsonl`), [{ type: 'custom-title', customTitle: 'alice' }, { type: 'continued-in', continuedInSessionId: NEW_SID }].map(l => JSON.stringify(l)).join('\n') + '\n');
+  assert.equal(plain.lib(() => identity.forkedAway(NEW_SID, dir2)), null);
+});

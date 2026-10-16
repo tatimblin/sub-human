@@ -784,6 +784,17 @@
    "note": "← (the agent view) backgrounds the session: Claude Code starts a bg job `claude --resume <transcript> --fork-session` (a new session id, SessionStart source \"fork\") and then appends {\"type\":\"continued-in\",\"continuedInSessionId\":NEW} to the old transcript, in the same projects directory (<configDir>/projects/<cwd, every non-alphanumeric as '-'>). The old process stays up as the agent view, its in-process rows end, and the job keeps only the daemon's env allowlist (SUB_HUMAN_HOME is dropped). session-restore moves the seat to the fork the record names (lib/identity.ts forkParent, adoptFork)."
   },
   {
+   "id": "transcript-custom-title",
+   "section": 8,
+   "stability": "incidental",
+   "since": "2.1.296",
+   "search": [
+    "\"type\":\"custom-title\"",
+    "\"custom-title\":\"last-wins\""
+   ],
+   "note": "Every title a session is given (a hook's sessionTitle among them) is kept in its transcript as {\"type\":\"custom-title\",\"customTitle\":TITLE}, the last one winning. A seated session's title is its address NAME.CODE, so the transcript an agent-view fork continued (session-fork-continued-in) says the seat it came from even when this process's sub-human folder has no record of it (lib/cc/transcript.ts lastTitle, lib/identity.ts forkedAway)."
+  },
+  {
    "id": "plugin-settings-allowlist",
    "section": 9,
    "stability": "API",

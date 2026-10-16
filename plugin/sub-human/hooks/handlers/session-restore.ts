@@ -11,7 +11,10 @@
 //            session it went on in, written just after the job starts: waited for up to FORK_RECORD_WAIT_MS. The
 //            seat the old session holds moves here (identity.adoptFork: no leave, no log line); its rows ended with
 //            the old session, so every row is listed. A fork with no such record (claude --resume X --fork-session
-//            typed by hand) takes no seat: the session it came from may still hold it.
+//            typed by hand) takes no seat: the session it came from may still hold it. A fork whose old session held
+//            a seat this sub-human folder has no record of (its title an address NAME.CODE: SUB_HUMAN_HOME was set
+//            only in the shell, and the bg job drops it) is recorded (identity.markForked) and the person told why;
+//            a bare /sub-human there then opens no room (lib/seats.ts take).
 // Context = the same mechanics block as join (hooks/context.ts contextBlock: the role template filled + ROWS, i.e.
 // lib/rows.ts rowCalls(), which lists only the rows with no live hold: rows survive /clear and compaction, and
 // a re-spawn would duplicate the room row). On --resume the hold server is new, so every row is
@@ -32,6 +35,7 @@ import * as linkSocket from '../../lib/remote/link-socket.ts';
 import * as seatKey from '../seat-key.ts';
 import { whoami } from '../seat.ts';
 import { contextBlock, seatTitle } from '../context.ts';
+import { forkedText } from '../../lib/seats.ts';
 import { out, logError } from '../reply.ts';
 import * as launcher from '../launcher.ts';
 import type { HookIn } from '../types.ts';
@@ -47,18 +51,31 @@ function rowsLead(me: Identity): string {
   return rows.rowsNeeded(me.code, me, { held }).length ? PARTIAL : '';
 }
 
-/** The seat the conversation left behind when ← moved it here (see the header), or null. */
-function forkParentOf(input: HookIn<'SessionStart'>): identity.ForkParent | null {
+/** The seat the conversation left behind when ← moved it here (see the header), or one it held in another sub-human
+ * folder (away: its SUB_HUMAN_HOME was only in the shell, which Claude Code's bg job drops), or null. */
+function forkOrigin(input: HookIn<'SessionStart'>): { parent: identity.ForkParent } | { away: identity.ForkedAway } | null {
   const dir = typeof input.transcript_path === 'string' && input.transcript_path ? path.dirname(input.transcript_path) : projectDir(input.cwd);
   if (!dir || !input.session_id) return null;
   for (const until = Date.now() + config.envMs('SUB_HUMAN_FORK_WAIT_MS', config.FORK_RECORD_WAIT_MS); ; sleepSync(100)) {
     const p = identity.forkParent(input.session_id, dir);
-    if (p || Date.now() >= until) return p;
+    if (p) return { parent: p };
+    const away = identity.forkedAway(input.session_id, dir);
+    if (away) return { away };
+    if (Date.now() >= until) return null;
   }
 }
 
+/** A fork whose seat is in another sub-human folder (stage 8e E): recorded, so a bare /sub-human here opens no room. */
+let forkedAway: identity.ForkedAway | null = null;
+
 function adopt(input: HookIn<'SessionStart'>, pid: number): Identity | null {
-  const from = forkParentOf(input);
+  const origin = forkOrigin(input);
+  if (origin && 'away' in origin && input.session_id) {
+    forkedAway = origin.away;
+    try { identity.markForked(input.session_id, origin.away); } catch (err) { logError(err, 'session-restore: fork'); }
+    return null;
+  }
+  const from = origin && 'parent' in origin ? origin.parent : null;
   if (!from || !input.session_id) return null;
   if (!identity.isHost(from.code) && !linkSocket.start(from.code)) return null;
   const r = identity.adoptFork(from, { pid, session_id: input.session_id, cwd: input.cwd });
@@ -94,8 +111,13 @@ function reseat(input: HookIn<'SessionStart'>): Identity | null {
 }
 
 export function handle(input: HookIn<'SessionStart'>) {
+  forkedAway = null;
   const me = reseat(input);
-  if (!me) return;
+  if (!me) {
+    // the person learns now why the room is gone here, and how to get it back
+    if (forkedAway) out({ systemMessage: `sub-human: ${forkedText(forkedAway, input.session_id)}` });
+    return;
+  }
   try {
     proposal.restoreStale(me, { force: input.source === 'clear' || input.source === 'resume' || input.source === 'fork' });
   } catch (err) { logError(err, 'session-restore: review'); }

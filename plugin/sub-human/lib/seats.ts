@@ -48,6 +48,8 @@
  *       lib/gc.ts sweep (closed rooms, ended sessions' indexes; at most every GC_EVERY_MS, within GC_BUDGET_MS), and
  *       a seat taken sweeps its room's row maps of ended sessions (gc.sweepRows)
  *   withWhom(code, name) -> string   "with bob, carol", "4 others here" or "nobody else here yet" (the people only)
+ *   forkedText(f, sid) -> string   why a bare /sub-human opens no room in a fork of a seated session whose sub-human
+ *       folder this process does not have (identity.forkedOf: session-restore recorded it), and how to get it back
  *   liveSeatHere(cwd, name) -> code|null   an open room where name's seat is live and was taken from cwd (another
  *       session of this folder holds it): a bare /sub-human opens no second room for that person
  */
@@ -249,8 +251,20 @@ function sweepOrphans(): void {
   for (const c of identity.orphanRooms()) { try { roomClaude.watchdog(c); } catch { /* next join retries */ } }
 }
 
+/**
+ * Why a bare /sub-human opens no room in a fork of a seated session whose sub-human folder this process does not have
+ * (stage 8e E: one opened a second room in the default folder live): the seat it continues, and how to get it back.
+ */
+function forkedText(f: Pick<identity.ForkedAway, 'title'>, sid: string | null | undefined): string {
+  return `this session continues ${f.title} (the agent view moved it here), but that seat is not in this session's sub-human folder (${identity.home()}): `
+    + `SUB_HUMAN_HOME was set only in your shell, and Claude Code's background job does not get it. Set it in your Claude Code settings "env", `
+    + `or go back with SUB_HUMAN_HOME=<that folder> claude --resume ${sid || 'SESSION'}. A bare /sub-human opens no room here; /sub-human NAME ROOM still joins one by name.`;
+}
+
 function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd, cur, pubkey }: TakeCtx): Taken {
   let created = false;
+  // a fork of a seated session whose folder is not this one: no room is opened or joined without its name (stage 8e E)
+  if (!code && !cur) { const f = identity.forkedOf(session_id); if (f) return no(forkedText(f, session_id)); }
   try { gc().sweep({ keep: code }); } catch { /* the next join sweeps (lib/gc.ts: at most every GC_EVERY_MS, within GC_BUDGET_MS) */ }
   if (!code) {
     sweepOrphans();
@@ -311,4 +325,4 @@ function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd,
  * module's own exports are read-only. */
 const seam = { startDetached: (o: Parameters<typeof roomClaude.startDetached>[0]) => roomClaude.startDetached(o) };
 
-export { enter, exit, sweep, back, ensureRoomClaude, seam, take, withWhom, liveSeatHere };
+export { enter, exit, sweep, back, ensureRoomClaude, seam, take, withWhom, liveSeatHere, forkedText };

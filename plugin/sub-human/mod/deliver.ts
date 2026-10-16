@@ -23,7 +23,7 @@ import {
 } from './core/deliver.ts';
 import { parseHello, localHello, homeOf, sidIndex } from './core/seat.ts';
 import { answersItself, joinPayload, readReply, answerOf, cancels, leftName, CONFIRM_AFTER_MS } from './core/command.ts';
-import { shimArgv, shimEnv, toClassic, SHIM_TIMEOUT_MS } from './core/shim.ts';
+import { shimArgv, shimEnv, toClassic, asNotice, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { restoreNeeded } from './core/prefilter.ts';
 import { mergeClassic } from './core/prompt.ts';
 import { factsBook } from './core/facts.ts';
@@ -503,7 +503,10 @@ export function registerDeliver(on: On) {
     if (restoreNeeded(asHello((await $.state.get(HELLO)).value), e.session_id, e.source)) {
       const root = $.plugin.root;
       const run = await $.process.run(shimArgv(root, 'session-restore'), { stdin: JSON.stringify(e), env: shimEnv(e, root), timeoutMs: SHIM_TIMEOUT_MS });
-      ours = toClassic('SessionStart', run).result;
+      const said = toClassic('SessionStart', run);
+      ours = said.result;
+      // a notice for the person (a fork whose seat is in a sub-human folder this process does not have)
+      if (said.systemMessage) for (const line of asNotice(said.systemMessage).split('\n')) if (line.trim()) $.ui.log(line);
       try { await $.state.set(REVIEW, true); await refresh($, e.session_id); } catch { /* the next refresh tries again */ }
       try {
         const hello = asHello((await $.state.get(HELLO)).value);

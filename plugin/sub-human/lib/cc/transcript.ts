@@ -10,6 +10,7 @@
  *   planFeedback(lines, toolUseId), toolUseInput(lines, toolUseId), lastHumanPrompt(lines) -> {text, at}|null
  *   contentText(content), SAID, NOTE, PASTED_RE, unwrapPasted(text)
  *   continuedIn(file) -> sid|null        the session a backgrounded session went on in (its last continued-in record)
+ *   lastTitle(file) -> title|null        the session's title as its transcript keeps it (its last custom-title record)
  */
 
 import fs from 'node:fs';
@@ -263,8 +264,25 @@ function continuedIn(file: unknown): string | null {
   return out;
 }
 
+/**
+ * The session's title as its transcript keeps it, or null: Claude Code writes {"type":"custom-title","customTitle":T}
+ * for each title set (a hook's sessionTitle among them: the seat's address NAME.CODE), and the last one wins. Reads
+ * the last 256 KiB.
+ * @cc "type":"custom-title"
+ * @stability incidental
+ */
+function lastTitle(file: unknown): string | null {
+  let out: string | null = null;
+  for (const l of readLines(file, { tailBytes: 256 * 1024 })) {
+    if (!l.includes('"custom-title"')) continue;
+    const e = asEntry(l);
+    if (e && e.type === 'custom-title' && typeof e.customTitle === 'string') out = e.customTitle;
+  }
+  return out;
+}
+
 export {
   readLines, readEntries, parseLines, planFile, planAnswer, planFeedback, toolUseInput, lastHumanPrompt, contentText,
-  SAID, NOTE, PASTED_RE, unwrapPasted, continuedIn, rejectionAnswer,
+  SAID, NOTE, PASTED_RE, unwrapPasted, continuedIn, lastTitle, rejectionAnswer,
 };
 export type { TranscriptEntry, TranscriptLine, ContentBlock };
