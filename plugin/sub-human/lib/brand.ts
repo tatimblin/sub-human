@@ -6,19 +6,19 @@
  * cast makes a brand:
  *
  *   RoomCode       "otter-4821"           mod/core/seat.ts isRoomCode / roomCode (CODE_RE)
- *   SeatName       "bob"                  mod/core/seat.ts isSeatName / seatName (NAME_RE)
+ *   SeatName       "bob"                  mod/core/seat.ts isSeatName / seatName (NAME_RE); namedSeat("claude")
  *   SessionId      Claude Code's session  mod/core/seat.ts isSessionId / sessionId (SID_SAFE: safe in a file name)
- *   MachineId      16 hex, or a peer's    lib/home.ts isMachineId (MACHINE_RE)
+ *   MachineId      16 hex, k + 15 hex     lib/text.ts isMachineId (MACHINE_RE); lib/remote/machine-key.ts idOf
  *   ProposalHash   12 hex                 lib/text.ts isProposalHash / planHash (HASH_RE, hash12)
- *   EntryId        1, 2, …                lib/room/validate.ts isEntryId / entryId (a positive safe integer)
- *   TaskId         a task's id            lib/tasks.ts isTaskId (digits, as the task list names them)
- *   Pin            4 or 6 digits          lib/remote/invites.ts isPin
- *   InviteSecret   an invite line's word  lib/remote/invite-secret.ts isInviteSecret (WORD_RE, or an sh2 invite)
+ *   EntryId        1, 2, …                lib/room/validate.ts isEntryId / entryId / nextEntryId (a positive safe integer)
+ *   TaskId         "7", "a1"              lib/room/validate.ts isTaskId / taskId (a short id string)
+ *   Pin            4 or 6 digits          lib/remote/invites.ts isPin / isShortPin / isPromotePin
+ *   InviteSecret   an invite line's word  lib/remote/invite-secret.ts isInviteSecret (WORD_RE, or an sh2 invite's shape)
  *   LinkToken      a link's bearer token  lib/remote/host-links.ts isLinkToken (32 base64url)
  *
  * The secrets (Pin, InviteSecret, LinkToken) go into a line a person or a log reads only through lib/cli/doctor/
- * redact.ts redact(); test/secrets.node-test.ts checks that the records a join writes hold none outside the files
- * that must (the link record, the joiner's link socket hello).
+ * redact.ts redact(), but for the reply that hands one over; test/secrets.node-test.ts checks that after an invite
+ * join no file of either home holds one but the joiner's link record (its token).
  */
 
 declare const brand: unique symbol;

@@ -30,8 +30,13 @@
  *                                       the joiner's machine key proves and, over the web, its link's XK key, so a
  *                                       thief holding the same line and PIN shows another check than the real joiner
  *   ROLES                               'listener', 'machine'
+ *   isInviteSecret(v)                   v is an invite credential as a joiner keeps it: a word encode() made (WORD_RE), or
+ *                                       an sh2 invite (lib/remote/invites.ts formatInvite: a handoff's, a promote's).
+ *                                       The guard that makes the InviteSecret brand (lib/brand.ts): a secret, which
+ *                                       a line a person or a log reads shows only through lib/cli/doctor/redact.ts redact()
  */
 import crypto from 'node:crypto';
+import type { InviteSecret } from '../brand.ts';
 
 type Role = 'listener' | 'machine';
 const ROLES: readonly Role[] = Object.freeze(['listener', 'machine']);
@@ -43,6 +48,10 @@ const WORD_RE = new RegExp(`^[${ALPHABET}]{${WORD_LEN}}$`);
 const KEY_RE = /^[A-Za-z0-9_-]{43}$/;
 const LOOKALIKE: Readonly<Record<string, string>> = Object.freeze({ i: '1', l: '1', o: '0' });
 
+/** An sh2 invite's shape (lib/remote/invites.ts formatInvite; parseInvite reads it). */
+const SH2_RE = /^sh2\.[a-z]+-\d{4}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{16,128}\.(?:0|[A-Za-z0-9_-]{43})$/;
+const isInviteSecret = (v: unknown): v is InviteSecret => typeof v === 'string' && (WORD_RE.test(v) || SH2_RE.test(v));
+
 const mint = (): Buffer => crypto.randomBytes(SECRET_BYTES);
 
 function tagOf(secret: Buffer, role: Role, key: string): Buffer {
@@ -52,10 +61,11 @@ function tagOf(secret: Buffer, role: Role, key: string): Buffer {
   return crypto.createHmac('sha256', secret).update(msg).digest().subarray(0, TAG_BYTES);
 }
 
-function encode(secret: Buffer, tag: Buffer): string {
+function encode(secret: Buffer, tag: Buffer): InviteSecret {
   const bytes = Buffer.concat([secret, tag]);
   let n = BigInt(`0x${bytes.toString('hex')}`), out = '';
   for (let i = 0; i < WORD_LEN; i++) { out = ALPHABET[Number(n & 31n)] + out; n >>= 5n; }
+  if (!isInviteSecret(out)) throw new TypeError('an invite word is WORD_LEN characters of ALPHABET'); // it always is
   return out;
 }
 
@@ -84,5 +94,5 @@ const joinCheck = (machine: string, key: string | null = null): string => {
   return `check ${h.slice(0, 4)}-${h.slice(4, 8)}`;
 };
 
-export { ALPHABET, SECRET_BYTES, TAG_BYTES, WORD_LEN, WORD_RE, ROLES, mint, tagOf, encode, decode, keyHolds, idOf, admissionRef, joinCheck };
+export { ALPHABET, SECRET_BYTES, TAG_BYTES, WORD_LEN, WORD_RE, ROLES, mint, tagOf, encode, decode, keyHolds, idOf, admissionRef, joinCheck, isInviteSecret };
 export type { Role };

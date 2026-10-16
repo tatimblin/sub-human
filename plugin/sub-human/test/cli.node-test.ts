@@ -20,7 +20,7 @@ import { roomsDir } from '../lib/home.ts';
 import type { Room } from '../lib/room.ts';
 import type { FsRoomStore } from '../lib/room/store.ts';
 import type { EntryInput, Via } from '../lib/room/types.ts';
-import { sn } from './support/brands.ts';
+import { sn, tokenOf } from './support/brands.ts';
 let R!: Room; // the room under test
 
 // tail looks its seat up by CLAUDE_PID when it has no session id (no ps walk).
@@ -300,7 +300,7 @@ test('cli link CODE --forget: refused on a room hosted here, and for a link stop
   assert.ok(store.roomExists(hosted), 'a room hosted here is untouched');
 
   const code = h.newRoom();
-  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: 't' });
+  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: tokenOf('t') });
   const s = store.open(code) as FsRoomStore; // a room on disk: the fs store, with its logFile
   assert.equal(s.isHost, false);
   fs.mkdirSync(s.dir!, { recursive: true, mode: 0o700 });
@@ -346,13 +346,13 @@ test('cli link CODE --forget: refused on a room hosted here, and for a link stop
 
   // a seatless stop forgets too; --force any link, here one with no copy on disk
   const seatless = h.newRoom();
-  links.set(seatless, { code: seatless, transport: { kind: 'pipe', home: '/h' }, token: 't' });
+  links.set(seatless, { code: seatless, transport: { kind: 'pipe', home: '/h' }, token: tokenOf('t') });
   fs.mkdirSync(store.open(seatless).dir!, { recursive: true, mode: 0o700 });
   links.writeState(seatless, stopped(linkMod.NO_SEAT_REASON, 'NO_SEAT'));
   assert.equal(cli(['link', seatless, '--forget']).status, 0);
   assert.equal(links.has(seatless), false);
   const other = h.newRoom();
-  links.set(other, { code: other, transport: { kind: 'pipe', home: '/h' }, token: 't' });
+  links.set(other, { code: other, transport: { kind: 'pipe', home: '/h' }, token: tokenOf('t') });
   fs.rmSync(path.join(roomsDir(), other), { recursive: true, force: true }); // newCode() reserved it
   fs.writeFileSync(links.logFile(other), 'a daemon line\n');
   const r4 = cli(['link', other, '--forget', '--force']);
@@ -368,7 +368,7 @@ test('R1 (live verify, verify6/12): after link CODE --forget, a process still ho
   const stopped = { state: 'stopped', since: new Date().toISOString(), attempt: 0, lastError: 'the host removed this machine', lastReason: 'LINK_REVOKED', rttMs: null, queued: 0, detail: 'stopped', at: new Date().toISOString() };
   h.freshHome();
   const code = h.newRoom();
-  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: 't' });
+  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: tokenOf('t') });
   const s = store.open(code) as FsRoomStore;
   fs.mkdirSync(s.dir!, { recursive: true, mode: 0o700 });
   fs.writeFileSync(s.logFile, '{"id":1}\n');
@@ -420,7 +420,7 @@ test('R1 (live verify, verify6/12): after link CODE --forget, a process still ho
 test('cli link CODE --forget (stage 8f item 3): a daemon still running is stopped first, then the room is forgotten in the same step', () => {
   h.freshHome();
   const code = h.newRoom();
-  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: 't' });
+  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: tokenOf('t') });
   const s = store.open(code) as FsRoomStore;
   fs.mkdirSync(s.dir!, { recursive: true, mode: 0o700 });
   fs.writeFileSync(s.logFile, '{"id":1}\n');
@@ -441,7 +441,7 @@ test('cli link CODE --forget (stage 8f item 3): a daemon still running is stoppe
 test('cli link CODE --forget on a link that is not online (verify12 remote/05b): the host is not tried, and the line says it sees the seat lapse', () => {
   h.freshHome();
   const code = h.newRoom();
-  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: 't' });
+  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: tokenOf('t') });
   const s = store.open(code) as FsRoomStore;
   fs.mkdirSync(s.dir!, { recursive: true, mode: 0o700 });
   fs.writeFileSync(s.logFile, '{"id":1}\n');

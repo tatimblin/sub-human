@@ -33,7 +33,7 @@ import type { DecodedFrame, Flush, RunningLink, SignedPayload } from '../lib/rem
 import type { SshSpec, Transport } from '../lib/remote/types-rest.ts';
 import type { Entry, EntryInput, Link, LinkStateRecord, RoomStore } from '../lib/room/types.ts';
 import type { RoomCode } from '../lib/brand.ts';
-import { sn, mid } from './support/brands.ts';
+import { sn, mid, tokenOf, wordOf } from './support/brands.ts';
 
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
 
@@ -614,10 +614,10 @@ test('link: an ssh link with its own key and a token that ssh now refuses is AUT
   const off = new RoomError('OFFLINE', 'the link closed');
   const denied = { stderr: () => 'host@devbox: Permission denied (publickey).\r\n' };
   const sshTo: SshSpec = { kind: 'ssh', user: 'host', host: 'devbox', key: '/k/id_ed25519' };
-  const own = { token: 'tok', transport: sshTo } as Link; // the fields keyRefused reads (no code)
+  const own = { token: tokenOf('tok'), transport: sshTo } as Link; // the fields keyRefused reads (no code)
   const e1 = await linkConnect.keyRefused(own, denied, off);
   assert.deepEqual([errCode(e1), /revoked/.test(msgOf(e1))], ['AUTH', true]);
-  assert.equal(await linkConnect.keyRefused({ ...own, token: undefined, invite: 'sh2.x' }, denied, off), off, 'not admitted yet: keep trying');
+  assert.equal(await linkConnect.keyRefused({ ...own, token: undefined, invite: wordOf('sh2.x') }, denied, off), off, 'not admitted yet: keep trying');
   assert.equal(await linkConnect.keyRefused({ ...own, transport: { ...sshTo, key: undefined } }, denied, off), off, 'the user\'s own keys: maybe an agent not loaded');
   assert.equal(await linkConnect.keyRefused(own, { stderr: () => 'ssh: connect to host devbox port 22: Connection refused' }, off), off);
   assert.equal(await linkConnect.keyRefused(own, Promise.resolve(denied), off).then(errCode), 'AUTH', 'an async transport');

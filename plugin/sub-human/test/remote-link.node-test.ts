@@ -35,18 +35,18 @@ import type { LinkStatus } from '../lib/remote/link-socket.ts';
 import type { RunningLink } from '../lib/remote/types-core.ts';
 import type { SshSpec } from '../lib/remote/types-rest.ts';
 import type { Link, LinkStateWord } from '../lib/room/types.ts';
-import { rc, sn, mid } from './support/brands.ts';
+import { rc, sn, mid, tokenOf, wordOf } from './support/brands.ts';
 
 const mode = (p: string) => fs.statSync(p).mode & 0o777;
 
 test('links: one private file per room; get, set, remove, list; a bad code or shape is refused', t => {
   const home = h.freshHome(t);
-  const l: Link = { code: rc('vole-1234'), transport: { kind: 'pipe', home: '/h' }, invite: 'sh1.x', created_at: 'now' };
+  const l: Link = { code: rc('vole-1234'), transport: { kind: 'pipe', home: '/h' }, invite: wordOf('sh1.x'), created_at: 'now' };
   assert.equal(links.get(rc('vole-1234')), null);
   assert.deepEqual(links.set(rc('vole-1234'), l), l);
   assert.deepEqual(links.get(rc('vole-1234')), l);
   assert.deepEqual([mode(links.linksDir()), mode(path.join(home, 'links', 'vole-1234.json'))], [0o700, 0o600]);
-  links.set(rc('otter-0001'), { ...l, code: rc('otter-0001'), invite: undefined, token: 't' });
+  links.set(rc('otter-0001'), { ...l, code: rc('otter-0001'), invite: undefined, token: tokenOf('t') });
   assert.deepEqual(links.list(), [rc('otter-0001'), rc('vole-1234')]);
   assert.equal(links.get('../x'), null);
   // @ts-expect-error: not a room code, refused at run time
@@ -66,7 +66,7 @@ test('store modes: a new home and every store directory are 0700; a home an olde
   h.register('alice', 'member', process.pid, code);
   store.open(code).append({ kind: 'status', text: 'x' }, { via: 'system', from: 'room', system: true });
   writeJsonAtomic(path.join(home, 'rooms', code, 'presence', 'alice.json'), { state: 'idle' });
-  links.set(rc('vole-1234'), { code: rc('vole-1234'), transport: { kind: 'pipe', home: '/x' }, invite: 'i', created_at: 'now' });
+  links.set(rc('vole-1234'), { code: rc('vole-1234'), transport: { kind: 'pipe', home: '/x' }, invite: wordOf('i'), created_at: 'now' });
   const dirs = [home, ...fs.readdirSync(home, { recursive: true }).map(f => path.join(home, f as string)).filter(f => fs.statSync(f).isDirectory())];
   assert.ok(dirs.length >= 6, dirs.join(' '));
   for (const d of dirs) assert.equal(mode(d), 0o700, d);
@@ -84,7 +84,7 @@ test('store modes: a new home and every store directory are 0700; a home an olde
 test('store.open: a linked code is a mirror (isHost false) and exists before its directory does', t => {
   h.freshHome(t);
   assert.equal(store.roomExists(rc('vole-1234')), false);
-  links.set(rc('vole-1234'), { code: rc('vole-1234'), transport: { kind: 'pipe', home: '/h' }, token: 't' });
+  links.set(rc('vole-1234'), { code: rc('vole-1234'), transport: { kind: 'pipe', home: '/h' }, token: tokenOf('t') });
   assert.equal(store.roomExists(rc('vole-1234')), true);
   const s = store.open(rc('vole-1234'));
   assert.ok(s instanceof MirrorRoomStore);
@@ -278,7 +278,7 @@ test('skew: a newer host\'s unknown entry kind, via and fields, an unknown docum
       for (const l of lines) b.send(protocol.event(f.id!, 'entry', l));
       return b.send(protocol.event(f.id!, 'doc', { key: 'presence/bob', value: { state: 'idle', mood: 'new field' } }));
     });
-    return client.connect(a, { machine: mid('m1'), token: 'tok' });
+    return client.connect(a, { machine: mid('m1'), token: tokenOf('tok') });
   };
   const logged: string[] = [];
   const l = await link.serveMirror({ mirror, connect, log: m => logged.push(m) });
@@ -319,7 +319,7 @@ test('link: a lost connection is retried with decorrelated jitter: each delay in
 test('link: the daemon stops with no seat of this machine left, offline too (by the live session indexes); never while connecting', async t => {
   const home = h.freshHome(t);
   const code = rc('vole-1234');
-  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: 't' });
+  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: tokenOf('t') });
   store.createRoom(code);
   const mirror = store.open(code) as MirrorRoomStore; // linked above: a mirror
   const seat = (extra = {}) => ({ bob: { name: 'bob', role: 'member', machine: identity.machineId(), joined_at: new Date().toISOString(), seen_at: new Date().toISOString(), ...extra } });
@@ -364,7 +364,7 @@ test('link: the daemon stops with no seat of this machine left, offline too (by 
 test('link: online, a seat whose lease lapsed during a pause but whose claude process lives keeps the daemon (issue #7); a dead or left one stops it; a late tick is a sleep, not idle', async t => {
   const home = h.freshHome(t);
   const code = rc('vole-1234');
-  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: 't' });
+  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: tokenOf('t') });
   store.createRoom(code);
   const mirror = store.open(code) as MirrorRoomStore; // linked above: a mirror
   const seat = (extra = {}) => ({ bob: { name: 'bob', role: 'member', machine: identity.machineId(), joined_at: new Date().toISOString(), seen_at: new Date(0).toISOString(), ...extra } });
@@ -430,7 +430,7 @@ test('tail: one line for a link that is not online, keyed fork, stopped or offli
 test('link: a join the host let in whose person has not typed /sub-human yet keeps its daemon (live: NO_SEAT after 60 s)', async t => {
   h.freshHome(t);
   const code = rc('vole-4321');
-  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: 't', join_as: 'bob', join_sid: 'sid-1', created_at: new Date().toISOString() });
+  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: tokenOf('t'), join_as: 'bob', join_sid: 'sid-1', created_at: new Date().toISOString() });
   store.createRoom(code);
   const mirror = store.open(code) as MirrorRoomStore;
   let stopped: string | null = null;
@@ -438,7 +438,7 @@ test('link: a join the host let in whose person has not typed /sub-human yet kee
   t.after(unwatch);
   await h.sleep(500);
   assert.equal(stopped, null, 'let in, its seat not taken yet: kept');
-  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: 't' }); // the seat taken: join_as gone
+  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: tokenOf('t') }); // the seat taken: join_as gone
   await h.until(() => stopped, 3000, 20);
   assert.equal(stopped, link.NO_SEAT_REASON);
 });
@@ -449,7 +449,7 @@ test('join news: what the join command already said is not said again by the tai
   const hosting = await import('../lib/remote/hosting.ts');
   const code = rc('vole-9876');
   const pin = { at: new Date().toISOString(), left: 5 };
-  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, invite: 'x'.repeat(39), join_as: 'bob', join_sid: 'sid-1', pin_wanted: pin, created_at: new Date().toISOString() });
+  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, invite: wordOf('x'), join_as: 'bob', join_sid: 'sid-1', pin_wanted: pin, created_at: new Date().toISOString() });
   const said = hosting.joinText(code, sn('bob'), { state: 'pin' });
   links.set(code, { ...links.get(code)!, join_told: said });
   const n = joining.pendingNews('sid-1')!;

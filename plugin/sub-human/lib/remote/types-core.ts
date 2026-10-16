@@ -14,7 +14,7 @@
 import type { Reason } from '../reasons.ts';
 import type { Op, EventName } from './protocol.ts';
 import type { Entry, LinkStateWord, Payload, PresenceInput, RoomStore, SnapshotWire } from '../room/types.ts';
-import type { RoomCode, MachineId } from '../brand.ts';
+import type { RoomCode, MachineId, LinkToken, InviteSecret, Pin } from '../brand.ts';
 
 // ---------- the wire protocol ----------
 
@@ -66,10 +66,10 @@ export interface HelloParams {
   machine: string;
   /** Its machine key's proof (lib/remote/machine-key.ts): the host records the id the key gives, not the reported one. */
   machine_key?: { key: string; ts: number; sig: string };
-  token?: string;
+  token?: LinkToken;
   /** an sh2 invite (a handoff's, a promote's), or an invite line's SECRET word (protocol 3) */
-  invite?: string;
-  pin?: string;
+  invite?: InviteSecret;
+  pin?: Pin;
   /** protocol 3: the seat an invite line's PIN asks for, and this machine's short name (both as the joiner says) */
   as?: { name: string; label: string };
   /** protocol 3: a fresh random word; the reply's host proves the host home's machine key over it */
@@ -121,7 +121,7 @@ export interface HelloResult {
   /** The host's clock (ms), for the skew sub-human doctor reports. */
   time: number;
   /** Once, for a redeemed invite or a login link. */
-  token?: string;
+  token?: LinkToken;
   /** The room was closed (its Claude stopped); absent while it is open, and from an older host. */
   closed?: boolean;
   /** This machine's id in the room as the host records it for the link (lib/remote/host-links.ts); additive. */

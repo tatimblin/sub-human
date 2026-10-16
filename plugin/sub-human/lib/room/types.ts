@@ -16,7 +16,7 @@ import type { AGENT_KINDS, HUMAN_KINDS, LEGACY_KINDS, SYSTEM_KINDS, TASK_OPS, VI
 import type { PRESENCE_STATES } from './members.ts';
 import type { STATE_WORDS } from './link-state.ts';
 import type { WireCode } from '../remote/types-core.ts';
-import type { RoomCode, SeatName, SessionId, MachineId, ProposalHash, EntryId, TaskId } from '../brand.ts';
+import type { RoomCode, SeatName, SessionId, MachineId, ProposalHash, EntryId, TaskId, LinkToken, InviteSecret, Pin } from '../brand.ts';
 
 // ---------- the log entry ----------
 
@@ -591,11 +591,11 @@ export interface Link {
   /** how the daemon reaches the host's server (lib/remote/link.ts transportOf); a login link (`/sub-human join
    * USER@HOST ROOM`) is an ssh spec with login: the person's own ssh login admits it */
   transport: LinkSpec;
-  token?: string;
+  token?: LinkToken;
   /** an sh2 invite (a handoff's, a promote's), or an invite line's SECRET word (protocol 3), until the token */
-  invite?: string;
+  invite?: InviteSecret;
   /** the PIN, from the moment it is typed until the host answered it (held, wrong, or throttled) */
-  pin?: string;
+  pin?: Pin;
   /** an invite line's host asked for its PIN (left: tries; why/message: the last wrong or throttled one) */
   pin_wanted?: { at: string; left?: number; why?: string; message?: string };
   awaiting?: { at: string; ref: string; check: string; expires_at: string };

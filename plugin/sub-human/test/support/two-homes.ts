@@ -43,7 +43,7 @@ import * as links from '../../lib/room/links.ts';
 import * as homeMod from '../../lib/home.ts';
 import * as linkConnect from '../../lib/remote/link-connect.ts';
 import * as admission from '../../lib/remote/admission.ts';
-import type { RoomCode } from '../../lib/brand.ts';
+import type { RoomCode, InviteSecret } from '../../lib/brand.ts';
 import { roomCode } from '../../lib/text.ts';
 
 const PROBE = path.join(import.meta.dirname, 'worker-probe.ts');
@@ -92,13 +92,13 @@ class Machine {
 
   join(seat: Seat, args: string): MachineRun { this.lease(seat); return this.hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: args }, seat); }
   /** A bound invite (no PIN, no card) to room code hosted here, for the second home `joiner` on this machine (pipe). */
-  inviteFor(code: RoomCode, joiner: Machine): string {
+  inviteFor(code: RoomCode, joiner: Machine): InviteSecret {
     const machine = joiner.lib(() => homeMod.machineId())!;
     return this.lib(() => invites.mintFor(store.open(code), { locator: `pipe:${this.home}`, machine, seats: [] }).invite);
   }
 
   /** This machine's link file for that invite (the join over it is then `NAME CODE`). */
-  linkInvite(code: RoomCode, invite: string): void {
+  linkInvite(code: RoomCode, invite: InviteSecret): void {
     const inv = invites.parseInvite(invite);
     if (!inv) throw new Error(`not an invite: ${invite}`);
     const transport = linkConnect.transportOf(inv.locator);

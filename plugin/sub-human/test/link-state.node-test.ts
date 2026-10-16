@@ -11,12 +11,12 @@ import * as ls from '../lib/room/link-state.ts';
 import * as rows from '../lib/rows.ts';
 import { agentStatusline } from '../statusline/segments.ts';
 import type { LinkState, Members } from '../lib/room/types.ts';
-import { rc } from './support/brands.ts';
+import { rc, tokenOf } from './support/brands.ts';
 
 const CODE = rc('vole-4321');
 function linked(t: TestContext) {
   h.freshHome(t);
-  links.set(CODE, { code: CODE, transport: { kind: 'pipe', home: '/elsewhere' }, token: 't', created_at: 'now' });
+  links.set(CODE, { code: CODE, transport: { kind: 'pipe', home: '/elsewhere' }, token: tokenOf('t'), created_at: 'now' });
   store.createRoom(CODE);
 }
 const writeState = (st: unknown) => fs.writeFileSync(ls.stateFile(CODE), JSON.stringify(st));

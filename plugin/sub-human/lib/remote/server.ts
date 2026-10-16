@@ -117,12 +117,12 @@ import type {
 import type { Transport } from './types-rest.ts';
 import type { Members, Payload, PresenceInput, RoomStore, SnapshotWire } from '../room/types.ts';
 import type { Change } from '../room/watch.ts';
-import type { RoomCode, SeatName, MachineId } from '../brand.ts';
+import type { RoomCode, SeatName, MachineId, LinkToken } from '../brand.ts';
 import { isSeatName, isMachineId } from '../text.ts';
 
 type Log = (msg: string) => void;
 /** What hello's credential gives: the link (null: answered, but still unauthenticated) and a new token, once. */
-interface Credential { link: LinkRecord | null; token?: string }
+interface Credential { link: LinkRecord | null; token?: LinkToken }
 /** A subscribe stream of a session. */
 interface Stream { tick(): void; stop(): void; end(reason: EventData['end']['reason'], message?: string): void }
 /** Each op's handler: the session, the request's params (as the peer sent them: each field checked before use) and

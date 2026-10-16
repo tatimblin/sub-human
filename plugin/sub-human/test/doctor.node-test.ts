@@ -17,7 +17,7 @@ import * as store from '../lib/room/store.ts';
 import type { Check, KeyLine, LinkReport, LinkStateView, Reach, Report } from '../lib/cli/types.ts';
 import type { AgentJob } from '../lib/cc/bg.ts';
 import type { MirrorRoomStore } from '../lib/room/store-mirror.ts';
-import { rc, mid } from './support/brands.ts';
+import { rc, mid, tokenOf } from './support/brands.ts';
 
 const KEY_B64 = crypto.randomBytes(51).toString('base64').replace(/=+$/, '');
 const KEY = `ssh-ed25519 ${KEY_B64}`;
@@ -108,7 +108,7 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   // this machine: another home, linked to that room over the pipe transport, with no daemon running
   const home = h.freshHome(t);
   const user = h.tmpDir('sh-user-', t);
-  links.set(code, { code, transport: { kind: 'pipe', home: hostHome }, token: 'tok-' + crypto.randomBytes(16).toString('hex'), created_at: new Date().toISOString(), moved: { epoch: 2, host: 'carolyn', locator: 'pipe:' + hostHome } });
+  links.set(code, { code, transport: { kind: 'pipe', home: hostHome }, token: tokenOf('tok-' + crypto.randomBytes(16).toString('hex')), created_at: new Date().toISOString(), moved: { epoch: 2, host: 'carolyn', locator: 'pipe:' + hostHome } });
   fs.writeFileSync(linkState.stateFile(code), JSON.stringify({ state: 'offline', since: new Date(Date.now() - 120_000).toISOString(), attempt: 4, lastError: 'no route to host', queued: 2 }));
   fs.writeFileSync(links.logFile(code), `2026-10-08T10:00:00.000Z sub-human link ${code}: offline: ssh exited 255\n`);
   fs.chmodSync(home, 0o755);
@@ -337,7 +337,7 @@ test('doctor: a seatless link gets a hello, whose closed (or the mirror\'s stopp
   const hostHome = h.freshHome(t);
   const code = h.newRoom();
   const home = h.freshHome(t);
-  links.set(code, { code, transport: { kind: 'pipe', home: hostHome }, token: 'tok-x', created_at: new Date().toISOString() });
+  links.set(code, { code, transport: { kind: 'pipe', home: hostHome }, token: tokenOf('tok-x'), created_at: new Date().toISOString() });
   fs.writeFileSync(linkState.stateFile(code), JSON.stringify({ state: 'stopped', since: new Date().toISOString(), lastError: linkMod.NO_SEAT_REASON, lastReason: 'NO_SEAT' }));
   const env = { ...process.env, PATH: path.join(home, 'bin') }; // no claude: the internals probe is not run
   const ak = path.join(home, 'authorized_keys');
@@ -364,7 +364,7 @@ test('doctor: a dormant link gets no hello', async t => {
   h.freshHome(t);
   const code = h.newRoom();
   const gone = path.join(h.tmpDir('sh-gone-', t), 'nohome');
-  links.set(code, { code, transport: { kind: 'pipe', home: gone }, token: 'tok-x', created_at: new Date().toISOString() });
+  links.set(code, { code, transport: { kind: 'pipe', home: gone }, token: tokenOf('tok-x'), created_at: new Date().toISOString() });
   fs.writeFileSync(linkState.stateFile(code), JSON.stringify({ state: 'stopped', since: new Date().toISOString(), lastError: 'the room was closed', lastReason: 'ROOM_CLOSED' }));
   const env = { ...process.env, PATH: path.join(gone, 'bin') }; // no claude: the internals probe is not run
   const rep = await doctor.diagnose({ timeoutMs: 5000, authorizedKeys: path.join(gone, 'authorized_keys'), env });

@@ -91,8 +91,9 @@ import type { LinkSpec } from './remote/types-rest.ts';
 import type { MirrorRoomStore } from './room/store-mirror.ts';
 import type { Identity } from './identity.ts';
 import { msgOf } from './errors.ts';
-import type { RoomCode, SeatName, MachineId } from './brand.ts';
+import type { RoomCode, SeatName, MachineId, InviteSecret, Pin } from './brand.ts';
 import { isMachineId } from './text.ts';
+import { isInviteSecret } from './remote/invite-secret.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -104,7 +105,7 @@ type LinkRec = Pick<LinkRecord, 'machine' | 'seats'>;
 type Sign = (payload: Record<string, unknown>) => HostProof;
 /** followLink: the link file's transport (null: a locator this machine cannot use). */
 interface Follow { transport: LinkSpec | null }
-interface Minted { machine: string, seats: string[], invite: string, pin?: string }
+interface Minted { machine: string, seats: string[], invite: InviteSecret, pin?: Pin }
 
 const HOST_DOC = 'remote/handoff';
 const ASK_DOC = 'handoff';
@@ -251,7 +252,7 @@ function afterMoved(s: Store, { job }: { job?: string | null } = {}): boolean {
   const d = hostDoc(s);
   const me = machineIn(s.code);
   const invite = d && d.invites && me ? d.invites[me] : null;
-  if (!d || !invite || !d.locator) return false;
+  if (!d || !isInviteSecret(invite) || !d.locator) return false;
   const f = followLink(s.code, d.locator, invite);
   if (!f.transport) return false;
   links.set(s.code, { code: s.code, transport: f.transport, invite, created_at: iso(Date.now()), moved: { epoch: d.epoch, host: d.to, locator: d.locator } });
@@ -273,7 +274,7 @@ function onMoved(mirror: Store, data: MovedEventData | null | undefined): { self
   }
   if (isMine(data.machine)) return { self: true, stop: true, reason: `this machine hosts room ${code} now` };
   const how = `ask ${data.host} for an invite (/sub-human invite, there) and type the line it shows here`;
-  if (!data.invite) return { stop: true, reason: `room ${code} moved to ${data.host}'s machine, and no invite came for this machine; ${how}` };
+  if (!isInviteSecret(data.invite)) return { stop: true, reason: `room ${code} moved to ${data.host}'s machine, and no invite came for this machine; ${how}` };
   const cur: Partial<Link> = links.get(code) || {};
   let f: Follow;
   try { f = followLink(code, data.locator, data.invite); } catch (e) { return { stop: true, reason: `room ${code} moved to ${data.host}'s machine, and this machine could not follow it: ${msgOf(e)}; ${how}` }; }
@@ -450,11 +451,11 @@ function promote(code: RoomCode, { name, locator, force = false, cwd, now = Date
 function demote(code: RoomCode, invite: string, pin?: string): { orphan: string | null, follower?: boolean } {
   const s = store.open(code);
   const inv = invites.parseInvite(invite);
-  if (!inv || inv.code !== code) throw err('INVALID', `that is not an invite to room ${code}`);
+  if (!inv || inv.code !== code || !isInviteSecret(invite)) throw err('INVALID', `that is not an invite to room ${code}`);
   const transport = transportOf(inv.locator);
   if (!transport) throw err('INVALID', `this machine cannot use "${inv.locator}"`);
   // without it the link's hello would spend one of the invite's tries on a missing PIN
-  if (!invites.PIN_RE.test(String(pin || ''))) throw err('INVALID', 'this invite needs the 6-digit PIN that came with it: sub-human demote CODE INVITE PIN');
+  if (!invites.isPromotePin(pin)) throw err('INVALID', 'this invite needs the 6-digit PIN that came with it: sub-human demote CODE INVITE PIN');
   const hosting = (): typeof import('./remote/hosting.ts') => require('./remote/hosting.ts');
   if (!s.isHost) { // a member's machine follows the promoted room: its link re-pointed, its seats join again over it
     const cur = links.get(code);

@@ -53,6 +53,7 @@
  *                                      or 'used' (then nothing changes). AUTH for no invite with that ref
  *   burnFor(store, linkId, {now?}) -> n   burn every invite reserved for that link (host-links.ts revokeLink)
  *   PIN_RE /^[0-9]{6}$/ (a promote's), SHORT_PIN_RE /^[0-9]{4}$/, INVITE_PREFIX 'sh2', INVITES_KEY 'remote/invites'
+  *   isPin(v), isShortPin(v) (4 digits), isPromotePin(v) (6)   a PIN: the guards that makes the Pin brand (lib/brand.ts), a secret (lib/cli/doctor/redact.ts redact)
  */
 
 import crypto from 'node:crypto';
@@ -67,16 +68,25 @@ import type { ReasonFor } from '../reasons.ts';
 import type {
   AuthStore, BoundInvite, Invites, InviteRecord, ShortInvite, AdmissionRecord, LinkRecord, ParsedInvite, ShortKind,
 } from './types-core.ts';
-import type { RoomCode, MachineId } from '../brand.ts';
+import type { RoomCode, MachineId, Pin, InviteSecret, LinkToken } from '../brand.ts';
 
 /** A redeemed invite: the link's token (once, in clear), its record, and what kind of invite it was. */
-interface Redeemed { token: string; link: LinkRecord; handoff: boolean; admission?: AdmissionRecord }
+interface Redeemed { token: LinkToken; link: LinkRecord; handoff: boolean; admission?: AdmissionRecord }
 /** What a joiner asks to sit as (the hello's as): its seat's name and its machine's short name, as it says. */
 interface Asked { name: string; label: string }
 
 const INVITE_PREFIX = 'sh2';
 const PIN_RE = /^[0-9]{6}$/;
 const SHORT_PIN_RE = /^[0-9]{4}$/;
+const isPromotePin = (v: unknown): v is Pin => typeof v === 'string' && PIN_RE.test(v);
+const isShortPin = (v: unknown): v is Pin => typeof v === 'string' && SHORT_PIN_RE.test(v);
+const isPin = (v: unknown): v is Pin => isPromotePin(v) || isShortPin(v);
+/** A fresh PIN of n digits. */
+function newPin(n: 4 | 6): Pin {
+  const pin = String(crypto.randomInt(0, 10 ** n)).padStart(n, '0');
+  if (!isPin(pin)) throw new Error('a PIN is 4 or 6 digits'); // it always is
+  return pin;
+}
 const HOST_KEY_RE = /^[A-Za-z0-9_-]{43}$/; // 32 bytes, base64url
 const REF_RE = /^[0-9a-f]{12}$/;
 const LABEL_RE = /^[A-Za-z0-9._-]{1,64}$/;
@@ -98,11 +108,11 @@ const authError = (msg: string, reason: ReasonFor<'AUTH'>, note: string | null =
 
 function mintFor(store: AuthStore, { locator, machine, seats, pin: withPin = false, hostKey = null, now = Date.now() }: {
   locator: string; machine: MachineId; seats: string[]; pin?: boolean; hostKey?: string | null; now?: number;
-}): { invite: string; secret: string; pin?: string; expires_at?: string } {
+}): { invite: InviteSecret; secret: string; pin?: Pin; expires_at?: string } {
   if (hostKey !== null && !HOST_KEY_RE.test(String(hostKey))) throw new RoomError('INVALID', 'hostKey must be a 32-byte public key, base64url');
   const secret = crypto.randomBytes(16).toString('base64url'); // 128 bits
   const bound = { v: 2 as const, created_at: iso(now), machine, seats: [...seats] };
-  const pin = withPin ? String(crypto.randomInt(0, 1_000_000)).padStart(6, '0') : null;
+  const pin = withPin ? newPin(6) : null;
   const rec: BoundInvite = pin === null
     ? { ...bound, handoff: true, expires_at: iso(now + HANDOFF_INVITE_MS) }
     : { ...bound, expires_at: iso(now + INVITE_TTL_MS), tries: INVITE_PIN_TRIES, pin_sha256: pinDigest(secret, pin) };
@@ -260,12 +270,12 @@ function redeemInvite(store: AuthStore, secret: string, { machine, pin, proven =
  */
 function mintInvite(store: AuthStore, { kind, locator, by = null, now = Date.now() }: {
   kind: string; locator: string; by?: string | null; now?: number;
-}): { secret: Buffer; pin: string; ref: string; expires_at: string } {
+}): { secret: Buffer; pin: Pin; ref: string; expires_at: string } {
   if (!store.isHost) throw new RoomError('HOST_ONLY', 'only the host of a room mints its invites');
   if (!(KINDS as readonly string[]).includes(kind)) throw new RoomError('INVALID', `no invite over "${kind}"`);
   const raw = crypto.randomBytes(16);
   const secret = raw.toString('base64url');
-  const pin = String(crypto.randomInt(0, 10_000)).padStart(4, '0');
+  const pin = newPin(4);
   let out = null as { ref: string; expires_at: string } | null; // (as: set in the update)
   store.kv.update(INVITES_KEY, (cur: Invites | null) => {
     const live = Object.values(cur || {}).filter(i => inviteOpen(i, now));
@@ -280,8 +290,11 @@ function mintInvite(store: AuthStore, { kind, locator, by = null, now = Date.now
 }
 
 // ---------- the sh2 invite string (bound invites: a handoff's, a promote's) ----------
-const formatInvite = ({ code, locator, secret, hostKey = null }: { code: RoomCode; locator: string; secret: string; hostKey?: string | null }): string =>
-  [INVITE_PREFIX, code, Buffer.from(locator).toString('base64url'), secret, hostKey || '0'].join('.');
+function formatInvite({ code, locator, secret, hostKey = null }: { code: RoomCode; locator: string; secret: string; hostKey?: string | null }): InviteSecret {
+  const invite = [INVITE_PREFIX, code, Buffer.from(locator).toString('base64url'), secret, hostKey || '0'].join('.');
+  if (!secretMod.isInviteSecret(invite)) throw new RoomError('INVALID', 'not an sh2 invite'); // mintFor's always is
+  return invite;
+}
 
 function parseInvite(text: unknown): ParsedInvite | null {
   const parts = typeof text === 'string' ? text.trim().split('.') : [];
@@ -342,6 +355,6 @@ const reserves = (store: AuthStore, id: string): boolean => Object.values((store
 
 export {
   INVITE_PREFIX, PIN_RE, SHORT_PIN_RE, INVITES_KEY, mintFor, redeemInvite, formatInvite, parseInvite, inviteRef, findInvite,
-  burnInvite, burnFor, reserves, mintInvite, inviteOpen, admissionSlot,
+  burnInvite, burnFor, reserves, mintInvite, inviteOpen, admissionSlot, isPin, isShortPin, isPromotePin,
 };
 export type { Redeemed, Asked };

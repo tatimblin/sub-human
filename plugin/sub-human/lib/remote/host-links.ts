@@ -33,6 +33,8 @@
  *   wasRevoked(store, token) -> bool          the token is one of a link the host revoked (kick)
  *   links(store) -> {id: link};  linkKnown(store, id) -> bool (a link, or an invite's reserved link, with that id)
  *   newLinkId() -> 12 hex;  LINK_ID_RE /^[0-9a-f]{12}$/;  LINKS_KEY 'remote/links'
+ *   isLinkToken(v)   a link's token as create() makes one (24 random bytes, base64url): the guard that makes the
+ *                    LinkToken brand (lib/brand.ts), a secret (lib/cli/doctor/redact.ts redact)
  *   proveSeat(key, {room, name, pubkey}) -> proof   the joining hook's half (it holds the seat's private key):
  *       {kind: 'join', pubkey} signed (sig v2) for room and name
  *   checkSeatProof(proof, {room, name, pubkey})    the server's half: AUTH unless proof is a fresh join proof for this
@@ -47,7 +49,7 @@ import { isMine } from '../home.ts';
 import { isObj } from '../decode.ts';
 import type { KeyObject } from 'node:crypto';
 import type { AuthStore, LinkRecord, Links, SignedPayload } from './types-core.ts';
-import type { MachineId } from '../brand.ts';
+import type { MachineId, LinkToken } from '../brand.ts';
 
 /** A seat a proof is for. */
 interface SeatRef { room: string; name: string; pubkey: string }
@@ -56,14 +58,17 @@ const LINKS_KEY = 'remote/links';
 const REVOKED_KEY = 'remote/revoked';
 const REVOKED_KEEP = 200;
 const LINK_ID_RE = /^[0-9a-f]{12}$/;
+const TOKEN_RE = /^[A-Za-z0-9_-]{32}$/;
+const isLinkToken = (v: unknown): v is LinkToken => typeof v === 'string' && TOKEN_RE.test(v);
 const newLinkId = (): string => crypto.randomBytes(6).toString('hex');
 const sha256 = (s: unknown): string => crypto.createHash('sha256').update(String(s)).digest('hex');
 const iso = (now: number): string => new Date(now).toISOString();
 
 function create(store: AuthStore, { id, machine, seats, bound = false, login = false, label, key = null, check = false, now = Date.now() }: {
   id: string; machine: MachineId; seats: string[]; bound?: boolean; login?: boolean; label?: string; key?: string | null; check?: boolean; now?: number;
-}): { token: string; link: LinkRecord } {
+}): { token: LinkToken; link: LinkRecord } {
   const token = crypto.randomBytes(24).toString('base64url');
+  if (!isLinkToken(token)) throw new Error('a link token is 32 base64url characters'); // it always is
   if (check) taken(store, machine, id);
   const link: LinkRecord = {
     id, token_sha256: sha256(token), machine, seats: [...seats], created_at: iso(now),
@@ -77,7 +82,7 @@ function create(store: AuthStore, { id, machine, seats, bound = false, login = f
   return { token, link };
 }
 
-function loginLink(store: AuthStore, { id, machine, proven = null, now = Date.now() }: { id: string; machine: MachineId; proven?: MachineId | null; now?: number }): { token: string; link: LinkRecord } {
+function loginLink(store: AuthStore, { id, machine, proven = null, now = Date.now() }: { id: string; machine: MachineId; proven?: MachineId | null; now?: number }): { token: LinkToken; link: LinkRecord } {
   if (!store.isHost) throw new RoomError('HOST_ONLY', 'only the host of a room links machines to it');
   if (!LINK_ID_RE.test(String(id))) throw new RoomError('INVALID', 'a login link needs its id (12 hex)');
   if (linkKnown(store, id)) throw new RoomError('AUTH', `link ${id} exists already in room ${store.code}; it says hello with its token (join again for a new link)`);
@@ -171,5 +176,5 @@ function checkSeatProof(proof: unknown, { room, name, pubkey }: { room: string; 
 
 export {
   LINKS_KEY, REVOKED_KEY, LINK_ID_RE, newLinkId, create, loginLink, linkKnown, verifyToken, keyHolds, bindSeat, unbindSeat, mayWriteAs,
-  notBound, mayJoinAs, revokeLink, wasRevoked, links, proveSeat, checkSeatProof,
+  notBound, mayJoinAs, revokeLink, wasRevoked, links, proveSeat, checkSeatProof, isLinkToken,
 };

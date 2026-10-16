@@ -79,19 +79,19 @@ import type { LinkSpec } from './types-rest.ts';
 import type { InviteRecord, Invites, ParsedInvite, ShortInvite } from './types-core.ts';
 import type { Link, RoomStore } from '../room/types.ts';
 import type { Pinned } from '../commands/types.ts';
-import type { RoomCode, SeatName } from '../brand.ts';
+import type { RoomCode, SeatName, InviteSecret, Pin } from '../brand.ts';
 
 const require = createRequire(import.meta.url);
 
 /** An invite line as hostInvite (and webhost.ts hostWeb) returns it: the PIN, its ref, when it lapses, the line. */
 export interface HostedInvite {
-  pin: string;
+  pin: Pin;
   ref: string;
   expires_at: string;
   short: true;
   locator: string;
   /** the SECRET word, as the line carries it */
-  word: string;
+  word: InviteSecret;
   line: string;
   text: string;
   /** the line and the PIN for the status line, and the text without them (lib/commands/types.ts Pinned) */
@@ -223,7 +223,7 @@ function inviteText({ code, how, line, pin, ref, extra = [], pinned, cut = false
 }
 
 /** An invite line's SECRET word for this home's machine key (ssh, a pipe). */
-const machineWord = (secret: Buffer): string => inviteSecret.encode(secret, inviteSecret.tagOf(secret, 'machine', machineKey.publicKey()));
+const machineWord = (secret: Buffer): InviteSecret => inviteSecret.encode(secret, inviteSecret.tagOf(secret, 'machine', machineKey.publicKey()));
 
 function hostInvite(code: RoomCode, { ssh = true, via, pipe = false, by = null, now = Date.now() }: {
   ssh?: true | string; via?: string; pipe?: boolean; by?: string | null; now?: number;
@@ -364,7 +364,7 @@ function linkTransport({ inv, cur = null }: { inv: ParsedInvite; cur?: Link | nu
   return transport;
 }
 
-function joinInvite({ inv, invite, pin }: { inv: ParsedInvite; invite: string; pin?: string }): { code: RoomCode } {
+function joinInvite({ inv, invite, pin }: { inv: ParsedInvite; invite: InviteSecret; pin?: Pin }): { code: RoomCode } {
   const transport = linkTransport({ inv, cur: links().get(inv.code) });
   if (!transport) throw new RoomError('INVALID', `this invite reaches its room through "${inv.locator.split(':')[0]}", which this machine cannot use`);
   links().set(inv.code, { code: inv.code, transport, invite, pin, created_at: new Date().toISOString() });
@@ -420,7 +420,7 @@ function joinText(code: RoomCode, name: SeatName, o: Outcome, { tells = false }:
  * (a web one with a fresh key of the link's own), the SECRET word and join_as. The daemon dials (lib/remote/link-
  * connect.ts connectLink): the host key the line names first, then the SECRET; the host asks for the PIN.
  */
-function joinLine({ code, transport, word, name, sid }: { code: RoomCode; transport: LinkSpec; word: string; name: string; sid?: string | null }): { code: RoomCode } {
+function joinLine({ code, transport, word, name, sid }: { code: RoomCode; transport: LinkSpec; word: InviteSecret; name: string; sid?: string | null }): { code: RoomCode } {
   const t: LinkSpec = transport.kind === 'wss' || transport.kind === 'ws'
     ? { ...transport, clientKey: linkConnect().linkKey(code, { fresh: true }).pub.toString('base64url') } : transport;
   links().set(code, { code, transport: t, invite: word, join_as: name, ...(sid ? { join_sid: sid } : {}), created_at: new Date().toISOString() });
@@ -428,7 +428,7 @@ function joinLine({ code, transport, word, name, sid }: { code: RoomCode; transp
 }
 
 /** The PIN, typed when the host asked for it: into the link file, until the host answered it. */
-function givePin(code: RoomCode, pin: string): void {
+function givePin(code: RoomCode, pin: Pin): void {
   const l = links().get(code);
   if (!l || typeof l.invite !== 'string') throw new RoomError('INVALID', `this machine has no invite to room ${code} waiting for a PIN`);
   links().set(code, { ...l, pin });

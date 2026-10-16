@@ -31,7 +31,7 @@ import type { RoomError } from '../lib/room/validate.ts';
 import type { Transport } from '../lib/remote/types-rest.ts';
 import type { Entry, EntryInput, Members, Presence, RoomStore } from '../lib/room/types.ts';
 import type { RoomCode } from '../lib/brand.ts';
-import { rc, sn, mid } from './support/brands.ts';
+import { rc, sn, mid, inv } from './support/brands.ts';
 
 /** server.serve's options. */
 type ServeOpts = Parameters<typeof server.serve>[1];
@@ -161,11 +161,12 @@ test('remote (memory): no token gets AUTH on every op but hello; a bad token, a 
   assert.deepEqual(host.readAll(), [], 'nothing written');
 
   const hello = (opts: Partial<ConnectOpts>) => client.connect(served(t, host), { machine: REMOTE, ...opts });
+  // @ts-expect-error: not a link token, refused at run time
   await rejects(hello({ token: 'not-a-token' }), 'AUTH');
   const { invite } = invites.mintFor(host, { locator: 'pipe:test', machine: REMOTE, seats: [] });
   const [pre, c, loc, secret, key] = invite.split('.');
-  await rejects(hello({ invite: [pre, c, loc, secret.replace(/^./, (ch: string) => (ch === 'A' ? 'B' : 'A')), key].join('.') }), 'AUTH');
-  await rejects(hello({ invite: [pre, rc('vole-1234'), loc, secret, key].join('.') }), 'AUTH');
+  await rejects(hello({ invite: inv([pre, c, loc, secret.replace(/^./, (ch: string) => (ch === 'A' ? 'B' : 'A')), key].join('.')) }), 'AUTH');
+  await rejects(hello({ invite: inv([pre, rc('vole-1234'), loc, secret, key].join('.')) }), 'AUTH');
   (await hello({ invite })).close();
   await rejects(hello({ invite }), 'AUTH');
 

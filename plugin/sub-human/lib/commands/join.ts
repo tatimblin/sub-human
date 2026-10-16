@@ -40,7 +40,7 @@ import { HELP_HINT, USAGE, refused, say } from './answer.ts';
 import type { Answer, Ctx, Verb } from './types.ts';
 import type { Identity } from '../identity.ts';
 import type { Step, Wanted } from '../remote/joining.ts';
-import type { SeatName } from '../brand.ts';
+import type { SeatName, InviteSecret } from '../brand.ts';
 
 const require = createRequire(import.meta.url);
 const wsT = (): typeof import('../remote/transports/ws.ts') => require('../remote/transports/ws.ts');
@@ -142,7 +142,7 @@ export const named: Verb = (args, ctx) => {
 };
 
 /** An invite line's SECRET word, or why it is not one (an old line's PIN, a cut paste). */
-function secretOf(word: string | undefined): { word: string } | { error: string } {
+function secretOf(word: string | undefined): { word: InviteSecret } | { error: string } {
   if (word === undefined) return { error: JOIN_USAGE };
   if (invites.SHORT_PIN_RE.test(word)) return { error: OLD_LINE };
   const d = inviteSecret.decode(word);
@@ -177,7 +177,7 @@ export const join: Verb = (argv, ctx) => {
   const r = p.rest;
   const { via, home } = p.flags;
   if (/^https?:\/\//.test(r[0] || '')) return joinWeb(r, p.flags, ctx);
-  if (r.length === 1 && invites.SHORT_PIN_RE.test(r[0])) { // `/sub-human join 4829`: the PIN an invite line's host asked for
+  if (r.length === 1 && invites.isShortPin(r[0])) { // `/sub-human join 4829`: the PIN an invite line's host asked for
     if (via !== undefined || home !== undefined || p.flags.as !== undefined) return refused('the PIN goes alone: /sub-human join PIN (the name went with the line)');
     return then(joining.givePin(r[0], ctx.sid), ctx);
   }

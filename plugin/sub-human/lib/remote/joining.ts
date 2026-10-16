@@ -45,7 +45,7 @@ import type { Link } from '../room/types.ts';
 import type { LinkSpec, SshSpec } from './types-rest.ts';
 import type { Outcome } from './hosting.ts';
 import { msgOf } from '../errors.ts';
-import type { RoomCode, SeatName } from '../brand.ts';
+import type { RoomCode, SeatName, InviteSecret, Pin } from '../brand.ts';
 
 const require = createRequire(import.meta.url);
 const wsT = (): typeof import('./transports/ws.ts') => require('./transports/ws.ts');
@@ -117,7 +117,7 @@ function told(code: RoomCode, text: string): void {
   try { const l = links.get(code); if (l) links.set(code, { ...l, join_told: text }); } catch { /* the tail may repeat it */ }
 }
 
-export function linkLine({ name, code, word, transport, sid }: { name: SeatName; code: RoomCode; word: string; transport: LinkSpec; sid?: string | null }): Step {
+export function linkLine({ name, code, word, transport, sid }: { name: SeatName; code: RoomCode; word: InviteSecret; transport: LinkSpec; sid?: string | null }): Step {
   if (identity.roomExists(code) && identity.isHost(code)) return refuse(`room ${code} is hosted on this machine; join it with /sub-human ${name} ${code}.`);
   const cur: Link | null = links.get(code);
   // a link that stopped as spent (kicked: its token gets nowhere now) is replaced by the new line, never re-seated over
@@ -142,7 +142,7 @@ export function pinJoin(sid?: string | null): PendingLink | null {
   return all.find(l => !!sid && l.join_sid === sid) || all[0] || null;
 }
 
-export function givePin(pin: string, sid?: string | null): Step {
+export function givePin(pin: Pin, sid?: string | null): Step {
   const l = pinJoin(sid);
   if (!l) {
     const any = pendingJoins().find(j => typeof j.invite === 'string' && !j.awaiting);
