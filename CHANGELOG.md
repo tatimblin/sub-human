@@ -176,6 +176,15 @@ An independent verifier's remaining findings on stage 8e (real Claude Code 2.1.2
 ### Tests
 - **The plugin's node tests are TypeScript** (`plugin/sub-human/test/**/*.node-test.ts`, checked by `npm run typecheck` through `tsconfig.test.json`), named so `claude plugin test` never collects them; new cases for unreadable hook stdin, the join's time budget, a mirror's first sync of a large log and of a host log with a corrupt line, a forged line in MCP `read`, and a model-supplied `planFilePath`.
 
+### TypeScript
+- **Stricter compiler flags**: `noImplicitOverride`, `noFallthroughCasesInSwitch`, `isolatedModules`, `noImplicitReturns` and `noUnusedParameters` (45 unused parameters take a `_` prefix; two implicit returns return explicitly). No behaviour change.
+- **One project for the whole plugin**: the root `tsconfig.json` now holds the runtime, its node tests, the hooks module's wiring tests (`mod/test`, unchecked until now) and the two plain JavaScript files; `tsconfig.runtime.json` checks the runtime alone. `tsconfig.test.json` goes.
+- **`mod/test` is typechecked**, strict with no relaxation: `support.ts` is typed against `claude-code` and `claude-code/testing`, and the render test's engine row returns an element.
+- **The plugin's JavaScript is typechecked**: `hooks/compile-cache.js` and `lib/cache-dir.js` stay plain JS with `// @ts-check` and JSDoc; `scripts/typecheck-shim.js` checks the extensionless `scripts/sub-human` through a temporary copy.
+- **`npm run lint`**: oxlint 1.88.0 with type-aware rules (oxlint-tsgolint 7.0.2004, pinned dev dependencies; `.oxlintrc.json`, all warnings for now), then the ratchet. CI runs it once and no longer runs the typecheck twice.
+- **The type-escape ratchet**: `scripts/ts-ratchet.json` holds the explicit `any`, `as` casts and non-null `!` per directory (`scripts/ts-ratchet.js` counts them); `npm run lint` fails when a count rises, and `--update` writes lower ones.
+- **The lab's `15-short.js` parses again** (an unescaped quote the linter's parser found).
+
 ## 0.5.0-beta.15 (2026-10-14), private beta
 
 Tested on Claude Code 2.1.296 with Node 24, on macOS.
