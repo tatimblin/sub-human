@@ -28,7 +28,7 @@
  *                                 (RoomError INVALID for another state). false, writing nothing, for a seat that is
  *                                 absent or left. now: tests only (the host's clock otherwise).
  *   publicView(members) -> members   the document as other machines see it: LOCAL_FIELDS stripped
- *   ROOM_CLAUDE ("claude"), PRESENCE_STATES, LOCAL_FIELDS
+ *   ROOM_CLAUDE ("claude"), PRESENCE_STATES (the source of PresenceState) and isPresenceState, LOCAL_FIELDS
  *   LOG_V (2)                     what a seat's code reads: 2, the log in segments with a snapshot (lib/room/log-io.ts).
  *                                 A seat records it at join (log_v; the room's Claude's record at spawn too); a seat
  *                                 without it runs an older plugin (0.5.0-beta.15 or before), which reads one log.jsonl
@@ -55,7 +55,10 @@ interface OpsStore {
 /** What seatAlive and friends read of a record: a seat, the room's Claude's, or a session index's (lib/identity.ts). */
 type SeatLike = Partial<Member>;
 
-const PRESENCE_STATES: readonly PresenceState[] = ['working', 'idle', 'permission', 'error'];
+/** The presence states, the source of PresenceState (lib/room/types.ts). */
+const PRESENCE_STATES = ['working', 'idle', 'permission', 'error'] as const;
+const PRESENCE_SET: ReadonlySet<unknown> = new Set(PRESENCE_STATES);
+const isPresenceState = (s: unknown): s is PresenceState => PRESENCE_SET.has(s);
 /** The room's Claude: its member name, role and SendMessage name (claude.CODE). */
 const ROOM_CLAUDE = 'claude';
 const LOCAL_FIELDS = ['pid', 'pid_start', 'session_id', 'cwd'] as const;
@@ -102,8 +105,8 @@ function joinFold(ms: Members, rec: SeatRecord, code: string, now: number): { ne
 }
 
 function presenceDoc({ state, detail }: Partial<PresenceInput> = {}, now: number): Presence {
-  if (!PRESENCE_STATES.includes(state as PresenceState)) throw new RoomError('INVALID', `invalid presence state "${state}"`);
-  const v: Presence = { state: state as PresenceState, at: new Date(now).toISOString() };
+  if (!isPresenceState(state)) throw new RoomError('INVALID', `invalid presence state "${state}"`);
+  const v: Presence = { state, at: new Date(now).toISOString() };
   if (detail) v.detail = String(detail).slice(0, PRESENCE_DETAIL_MAX);
   return v;
 }
@@ -167,6 +170,6 @@ function roomClaudePresence(o: SeatLike | null | undefined, now = Date.now()): '
 }
 
 export {
-  PRESENCE_STATES, LOCAL_FIELDS, ROOM_CLAUDE, LOG_V, readsSegments, holdsRotation, seatAlive,
+  PRESENCE_STATES, isPresenceState, LOCAL_FIELDS, ROOM_CLAUDE, LOG_V, readsSegments, holdsRotation, seatAlive,
   roomClaudePresence, leaseFresh, startMatches, ops, publicView,
 };

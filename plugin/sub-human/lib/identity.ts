@@ -137,11 +137,11 @@ import { NAME_RE, CODE_RE, SID_SAFE as SID_RE } from './text.ts';
 import { sidIndex } from '../mod/core/seat.ts';
 import { SEAT_BEAT_MS, MOD_LEASE_FRESH_MS, SESSION_INDEX_TTL_MS } from './config.ts';
 import {
-  seatAlive, leaseFresh, startMatches, PRESENCE_STATES, ROOM_CLAUDE, LOG_V,
+  seatAlive, leaseFresh, startMatches, PRESENCE_STATES, isPresenceState, ROOM_CLAUDE, LOG_V,
 } from './room/members.ts';
 import * as cc from './cc/env.ts';
 import { continuedIn, lastTitle, lastHome } from './cc/transcript.ts';
-import type { JoinResult, Member, Members, MembersApi, PresenceState, Role, SeatRecord } from './room/types.ts';
+import type { JoinResult, Member, Members, MembersApi, Role, SeatRecord } from './room/types.ts';
 
 /** A resolved seat (resolveBySession, resolveByPid, resolveSelf): address = NAME.CODE, the session title. */
 interface Identity {
@@ -754,7 +754,7 @@ function updateRoomClaude(code: string, fn: (current: Member | null, members: Me
 
 // ---------- presence ----------
 function writePresence(code: string, name: string, state: string, detail?: string | null): boolean {
-  if (!NAME_RE.test(String(name)) || !PRESENCE_STATES.includes(state as PresenceState)) return false;
+  if (!NAME_RE.test(String(name)) || !isPresenceState(state)) return false;
   try { return membersOf(code).beat(name, { presence: { state, detail } }); } catch { return false; }
 }
 

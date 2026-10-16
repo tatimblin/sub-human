@@ -12,6 +12,7 @@
  */
 
 import type { Reason } from '../reasons.ts';
+import type { Op, EventName } from './protocol.ts';
 import type { Entry, LinkStateWord, Payload, PresenceInput, RoomStore, SnapshotWire } from '../room/types.ts';
 
 // ---------- the wire protocol ----------
@@ -22,10 +23,8 @@ export type FrameId = number | string | null;
 /** The versions one end speaks (protocol.PROTO). */
 export interface ProtoRange { min: number; max: number }
 
-/** The ops a room's server serves (protocol.OPS). */
-export type Op =
-  | 'hello' | 'join' | 'leave' | 'beat' | 'append' | 'subscribe' | 'blob.get' | 'blob.put' | 'ping'
-  | 'handoff.accept' | 'handoff.refuse';
+/** The ops a room's server serves, and the events a stream carries (protocol.OPS and protocol.EVENTS are their source). */
+export type { Op, EventName };
 
 /** The ops the link daemon relays for its hooks (lib/remote/link.ts RELAY). */
 export type RelayOp = 'join' | 'leave' | 'beat' | 'append' | 'blob.get' | 'blob.put' | 'handoff.accept' | 'handoff.refuse';
@@ -204,7 +203,7 @@ export interface HandoffAsk { id: string; from: string; to: string; epoch: numbe
 /** The room moved (after its host_changed line); invite: this link's machine's single-use sh2 invite to the new host. */
 export interface MovedEventData { epoch: number; host: string; machine: string; locator: string; invite: string | null }
 
-/** Each event's data. */
+/** Each event's data, keyed by EventName (protocol.EVENTS): a name with no data here does not compile. */
 export interface EventData {
   entry: EntryLine;
   doc: DocEventData;
@@ -213,7 +212,6 @@ export interface EventData {
   moved: MovedEventData;
   snapshot: SnapshotWire;
 }
-export type EventName = keyof EventData;
 /** A subscribe stream's event: {id, ev, data}, discriminated on ev. */
 export type EventFrame<E extends EventName = EventName> = { [K in E]: { id: FrameId; ev: K; data: EventData[K] } }[E];
 /** A link's private event on its subscribe stream (lib/handoff.ts streamEvent); end: the stream ends after it. */

@@ -74,7 +74,7 @@ export function render(reply: Reply | null | undefined | void): Rendered {
       if (reply.module) return { outputs: [{ hookSpecificOutput: hso, subHuman: { say: reply.say, joined: true, shareable: true } }], exit: 0, stderr: '' };
       return { outputs: [{ ...(reply.warn ? { systemMessage: reply.warn } : {}), hookSpecificOutput: hso }], exit: 0, stderr: '' };
     }
-    default: {
+    case 'say': case 'refused': case 'secret': {
       const refused = reply.kind === 'refused' || (reply.kind === 'secret' && reply.refused !== false);
       const secret = reply.kind === 'secret';
       const t = `${refused ? '✗ ' : ''}${reply.text}`;
@@ -92,6 +92,10 @@ export function render(reply: Reply | null | undefined | void): Rendered {
         }],
         exit: 0, stderr: '',
       };
+    }
+    default: { // mod/core/never.ts assertNever, inline: every hook loads this file, and only it beside its handler
+      const none: never = reply;
+      throw new Error(`sub-human: unhandled reply: ${JSON.stringify(none)}`);
     }
   }
 }

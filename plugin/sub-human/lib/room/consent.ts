@@ -57,12 +57,15 @@
  */
 
 import { normalize } from './rules.ts';
+import { parseEntry } from './validate.ts';
+import { assertNever } from '../../mod/core/never.ts';
 import { HASH_RE } from '../text.ts';
-import type { Answer, Entry, Fold, Matrix, ProposalEntry, ProposalState, Trust } from './types.ts';
+import type { Answer, Entry, EntryOf, Fold, Matrix, ProposalEntry, ProposalState, Trust } from './types.ts';
 
 type Entries = readonly (Entry | null | undefined)[];
 const isHash = (h: unknown): h is string => typeof h === 'string' && HASH_RE.test(h);
-const ANSWER_KINDS = new Set(['signoff', 'objection']);
+/** A proposal entry with a hash the fold can key it by. */
+const isProposal = (e: EntryOf<'proposal'>): e is ProposalEntry => isHash(e.hash);
 
 /** The title a proposal entry carries ("proposal HASH: title"), '' for none. */
 const titleOf = (e: Pick<Entry, 'text'>): string => { const m = /^proposal [0-9a-f]{6,64}:\s*(.+)/.exec(String(e.text ?? '')); return m ? m[1].trim() : ''; };
@@ -111,9 +114,10 @@ function compute(list: Entries, trust: Trust): Fold {
     // only a proposal or a line naming one (current or legacy fields) can change the state: the rest is passed over
     // without normalizing (most of a log is chat)
     if (!raw || (raw.kind !== 'proposal' && raw.kind !== 'plan_rev' && raw.proposal_hash === undefined && raw.plan_hash === undefined)) continue;
-    const e = normalize(raw);
+    const e = parseEntry(normalize(raw));
+    if (!e) continue; // a newer host's kind: no state this version folds
     if (e.kind === 'proposal') {
-      if (!isHash(e.hash)) continue;
+      if (!isProposal(e)) continue;
       proposals.delete(e.hash);
       superseded.delete(e.hash);
       const t = titleOf(e);
@@ -123,25 +127,35 @@ function compute(list: Entries, trust: Trust): Fold {
         }
       }
       const approvers = Array.isArray(e.approvers) ? e.approvers : [];
-      proposals.set(e.hash, { id: e.id, hash: e.hash, from: e.from, approvers, same: groupsOf(e.same, approvers), path: e.path || null, entry: e as ProposalEntry });
+      proposals.set(e.hash, { id: e.id, hash: e.hash, from: e.from, approvers, same: groupsOf(e.same, approvers), path: e.path || null, entry: e });
       continue;
     }
     const h = e.proposal_hash;
     if (!isHash(h)) continue;
-    if (e.kind === 'decision') { if (e.via === 'system') decisions.set(h, e); continue; }
-    if (e.via !== 'human' || typeof e.from !== 'string' || trust(raw) === 'unverified') continue;
-    const mark = (a: Answer | null) => {
-      if (!latest.has(h)) latest.set(h, new Map());
-      latest.get(h)!.set(e.from, { at: ++seq, a });
-    };
-    if (ANSWER_KINDS.has(e.kind)) {
-      if (!answers.has(h)) answers.set(h, new Map());
-      const a: Answer = { kind: e.kind as Answer['kind'], id: e.id, entry: e };
-      answers.get(h)!.set(e.from, a);
-      mark(a);
-    } else if (e.kind === 'revoke' && answers.has(h)) {
-      answers.get(h)!.delete(e.from);
-      mark(null);
+    switch (e.kind) {
+      case 'decision': if (e.via === 'system') decisions.set(h, e); break;
+      case 'signoff': case 'objection': case 'revoke': {
+        if (e.via !== 'human' || typeof e.from !== 'string' || trust(raw) === 'unverified') break;
+        const mark = (a: Answer | null) => {
+          if (!latest.has(h)) latest.set(h, new Map());
+          latest.get(h)!.set(e.from, { at: ++seq, a });
+        };
+        if (e.kind !== 'revoke') {
+          if (!answers.has(h)) answers.set(h, new Map());
+          const a: Answer = { kind: e.kind, id: e.id, entry: e };
+          answers.get(h)!.set(e.from, a);
+          mark(a);
+        } else if (answers.has(h)) {
+          answers.get(h)!.delete(e.from);
+          mark(null);
+        }
+        break;
+      }
+      // a line that names a proposal and decides nothing (a say about it, an agree or concern normalize left as is)
+      case 'say': case 'question': case 'status': case 'task_req': case 'member_joined': case 'member_left': case 'task':
+      case 'host_changed': case 'concern': case 'agree': case 'plan_rev':
+        break;
+      default: assertNever(e, 'entry kind');
     }
   }
 

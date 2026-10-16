@@ -49,6 +49,7 @@
  *   FATAL                   the codes a dial never survives: FORK, AUTH, PROTOCOL
  */
 
+import { assertNever } from '../../mod/core/never.ts';
 import type { Reason } from '../reasons.ts';
 import type { LinkTimings } from './types-core.ts';
 import type { LinkStateWord } from '../room/types.ts';
@@ -301,6 +302,7 @@ function step(state: EngineState, event: EngineEvent, ctx: Ctx): { state: Engine
     case 'stop':
       stop(event.phase, event.why, event.code ?? null, event.reason ?? null);
       break;
+    default: return assertNever(event, 'link event');
   }
   return { state: s, effects: fx };
 }
