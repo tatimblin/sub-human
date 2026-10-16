@@ -3,7 +3,7 @@
  * wire, a child's stdout): `unknown` until a decoder accepts it. Zero dependencies; load it only where data is decoded
  * (lib/io.ts readJson takes a decoder by type alone).
  *
- *   Result<T, E>                 {ok: true, value} | {ok: false, error}
+ *   Result<T, E>                 {ok: true, value} | {ok: false, error} (lib/errors.ts's, re-exported)
  *   Decoder<T>                   (v: unknown) -> Result<T, DecodeError>; error.at is where (".a.b[2]"), expected what
  *   Infer<D>                     the type a decoder gives
  *   str num int bool             a string; a number (finite); an integer; a boolean
@@ -30,8 +30,8 @@
  * their decoders list a field as required only where every version wrote it, and leave unknown keys alone.
  */
 
-/** A value or an error. */
-export type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };
+import type { Result } from './errors.ts';
+export type { Result }; // lib/errors.ts: the one Result
 
 /** Where a decoder refused, and what it wanted there. */
 export interface DecodeError { at: string; expected: string }

@@ -7,7 +7,8 @@
 import * as hosting from '../remote/hosting.ts';
 import { parse } from '../cli/args.ts';
 import { createRequire } from 'node:module';
-import { HELP_HINT, hostOnly, msgOf, refused, say, secret } from './answer.ts';
+import { HELP_HINT, hostOnly, refused, say, secret } from './answer.ts';
+import { msgOf } from '../errors.ts';
 import type { Verb } from './types.ts';
 
 const require = createRequire(import.meta.url);

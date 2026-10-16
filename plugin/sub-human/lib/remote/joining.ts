@@ -44,6 +44,7 @@ import { createRequire } from 'node:module';
 import type { Link } from '../room/types.ts';
 import type { LinkSpec, SshSpec } from './types-rest.ts';
 import type { Outcome } from './hosting.ts';
+import { msgOf } from '../errors.ts';
 
 const require = createRequire(import.meta.url);
 const wsT = (): typeof import('./transports/ws.ts') => require('./transports/ws.ts');
@@ -60,7 +61,6 @@ const SPENT_REASONS: ReadonlySet<string> = new Set(['LINK_REVOKED', 'TOKEN_UNKNO
 const take = (want: Wanted): Step => ({ kind: 'take', want });
 const say = (text: string, refused = false): Step => ({ kind: 'say', text, refused });
 const refuse = (text: string): Step => say(text, true);
-const msgOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
 export const NO_START = (code: string) => `the connection to room ${code} did not start. Run /sub-human doctor.`;
 const SECRET_HINT = (dest: string, code: string) => `No invite, so this went over your own ssh login; if the host sent you an invite line, it ends with a long SECRET: /sub-human join ${dest} ${code} SECRET`;

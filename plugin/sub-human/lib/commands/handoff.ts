@@ -11,7 +11,8 @@ import * as linkConnect from '../remote/link-connect.ts';
 import { parse } from '../cli/args.ts';
 import { localHm } from '../text.ts';
 import { createRequire } from 'node:module';
-import { HELP_HINT, msgOf, refused, say } from './answer.ts';
+import { HELP_HINT, refused, say } from './answer.ts';
+import { msgOf } from '../errors.ts';
 import type { Verb } from './types.ts';
 
 const require = createRequire(import.meta.url);

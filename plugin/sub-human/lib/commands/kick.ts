@@ -3,7 +3,8 @@
  * (lib/remote/hosting.ts kick).
  */
 import * as hosting from '../remote/hosting.ts';
-import { HELP_HINT, hostOnly, msgOf, refused, say } from './answer.ts';
+import { HELP_HINT, hostOnly, refused, say } from './answer.ts';
+import { msgOf } from '../errors.ts';
 import type { Verb } from './types.ts';
 
 export const kick: Verb = (argv, { cur }) => {

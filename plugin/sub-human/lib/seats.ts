@@ -68,6 +68,7 @@ import { createRequire } from 'node:module';
 import type { JoinResult, Member } from './room/types.ts';
 import type { Identity } from './identity.ts';
 import type { Wanted } from './remote/joining.ts';
+import { errCode, msgOf } from './errors.ts';
 
 const require = createRequire(import.meta.url);
 // loaded only by take(): the session-end hook and the remote server never need the link or the listener
@@ -110,7 +111,7 @@ function ensureRoomClaude(code: string, cwd: string | null | undefined, by: stri
     if (!c) return '';
     seam.startDetached({ code, cwd: cwd || (room.open(code).store.kv.get(WORKDIR) as { cwd?: string } | null || {}).cwd, ...c });
   } catch (e) {
-    return ` · the room's Claude could not start (${String((e as Error).message || e).slice(0, 200)}); /sub-human still works, but there is no room task list`;
+    return ` · the room's Claude could not start (${(msgOf(e) || String(e)).slice(0, 200)}); /sub-human still works, but there is no room task list`;
   }
   const failed = last && last.spawn_error ? ` (the last start failed: ${last.spawn_error})` : '';
   return ` · starting the room's Claude…${failed}`;
@@ -129,9 +130,9 @@ function enter({ code, name, role = 'member', machine = identity.machineIn(code)
     // machine null: this machine's id could not be read; the seat joins without one (validate refuses a null machine)
     room.open(code).append({ kind: 'member_joined', text: `${name} ${r.rejoin ? 'rejoined' : 'joined'}`, pubkey, ...(machine ? { machine } : {}) }, asSystem(name));
   } catch (e) {
-    if ((e as { code?: unknown }).code !== 'AUTH') throw e;
+    if (errCode(e) !== 'AUTH') throw e;
     identity.leave(code, name, {});
-    return { ok: false, error: (e as Error).message, code: 'AUTH' };
+    return { ok: false, error: msgOf(e), code: 'AUTH' };
   }
   return { ...r, note: ensureRoomClaude(code, cwd, name) };
 }
@@ -223,7 +224,6 @@ export type Taken = { ok: true; me: Identity; lead: string; msg: string } | { ok
 interface TakeCtx { pid: number; session_id: string | undefined; cwd: string; cur: Identity | null; pubkey(code: string, name: string): string }
 
 const no = (text: string, refused = true): Taken => ({ ok: false, text, refused });
-const msgOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
 /** Who else is in the room, live (the room's Claude only while it runs). */
 function others(code: string, name: string): string[] {

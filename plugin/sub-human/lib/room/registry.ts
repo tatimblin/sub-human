@@ -39,6 +39,7 @@ import { home, roomsDir, roomDir, repairModes } from '../home.ts';
 import { withLock } from '../lock.ts';
 import { readJsonRaw, writeJsonAtomic } from '../io.ts';
 import { isObj } from '../decode.ts';
+import { errCode } from '../errors.ts';
 import { CODE_RE } from '../text.ts';
 import { keyDir } from './keys.ts';
 import { FsRoomStore } from './fs-store.ts';
@@ -46,7 +47,6 @@ import { NO_TRUST } from './trust.ts';
 import type { Entry, HumanTrust, RoomStore } from './types.ts';
 
 const require = createRequire(import.meta.url);
-const errCode = (e: unknown): string | undefined => (e as NodeJS.ErrnoException | null)?.code;
 
 let backend: ((code: string) => RoomStore) | null = null; // tests: code -> RoomStore
 const stores = new Map<string, RoomStore>(); // home \0 code -> FsRoomStore | MirrorRoomStore
