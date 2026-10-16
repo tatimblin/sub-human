@@ -42,6 +42,19 @@
         "typescript/prefer-nullish-coalescing": "warn",
         "typescript/only-throw-error": "warn"
       }
+    },
+    {
+      "files": [
+        "plugin/sub-human/lib/**",
+        "plugin/sub-human/hooks/**",
+        "plugin/sub-human/mcp/**",
+        "plugin/sub-human/statusline/**",
+        "plugin/sub-human/mod/*.ts",
+        "plugin/sub-human/mod/core/**"
+      ],
+      "rules": {
+        "typescript/switch-exhaustiveness-check": "error"
+      }
     }
   ]
 }

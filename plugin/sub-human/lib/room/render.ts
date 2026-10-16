@@ -38,6 +38,8 @@
  */
 
 import { normalize } from './rules.ts';
+import { parseEntry } from './validate.ts';
+import { assertNever } from '../../mod/core/never.ts';
 import { ROOM_CLAUDE } from './members.ts';
 import { fold, proposals, answers, answered, decided, approversOf } from './consent.ts';
 import { NO_TRUST, unverified } from './trust.ts';
@@ -241,7 +243,14 @@ function chatBody(e: Entry, viewer: string | undefined, entries: readonly Entry[
   const t = String(n.text ?? '');
   const you = (x: string | undefined): string | undefined => (x && x === viewer ? 'you' : x);
   const about = () => proposalLabel(n.proposal_hash, entries) || 'the proposal';
-  switch (n.kind) {
+  /** a line as its writer's words (a say, a question, a status, and a kind this version does not know) */
+  const words = () => {
+    const to = n.to && n.to !== 'room' ? ` (to ${you(n.to)})` : '';
+    return { head: `${chatWho(n, trust)}${to}`, text: t };
+  };
+  const k = parseEntry(n);
+  if (!k) return words(); // a newer host's kind
+  switch (k.kind) {
     case 'member_joined': return { head: `${n.from} ${/\brejoined\b/.test(t) ? 'rejoined' : 'joined'}`, text: '' };
     case 'member_left': return { head: `${n.from} left${leftWhy(t)}`, text: '' };
     case 'proposal': {
@@ -261,10 +270,9 @@ function chatBody(e: Entry, viewer: string | undefined, entries: readonly Entry[
       return { head: 'room', text: `task "${n.subject || n.task_id || '?'}"${status}${n.owner ? `, owner ${you(n.owner)}` : ''}` };
     }
     case 'task_req': return { head: chatWho(n, trust), text: `asks to ${n.op} task "${n.subject || n.task_id || '?'}"` };
-    default: {
-      const to = n.to && n.to !== 'room' ? ` (to ${you(n.to)})` : '';
-      return { head: `${chatWho(n, trust)}${to}`, text: t };
-    }
+    case 'say': case 'question': case 'status': case 'host_changed': case 'revoke': case 'concern': case 'agree': case 'plan_rev':
+      return words();
+    default: return assertNever(k, 'entry kind');
   }
 }
 
