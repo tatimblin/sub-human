@@ -1,7 +1,8 @@
 // Wiring: the in-process store guard (mod/guard.ts). Run with `npm run test:mods`.
 // The verdict tables are tested in node (test/hooks/guard.node-test.ts, security.node-test.ts); this checks the hooks: what
 // each denies through $.tool.call, the realPath walk through $.fs.stat, the tool.check allow, and the .catch.
-import { test, expect } from 'claude-code/testing'
+import type { On, ToolCallArgs, ToolCallResult } from 'claude-code'
+import { test, expect, type Engine } from 'claude-code/testing'
 import { OUT, ran, session, start } from './support.ts'
 
 const HOME = OUT.home
@@ -10,26 +11,31 @@ const LINKS: Record<string, string> = { '/tmp/link': HOME, '/w': '/w' }
 const EXISTS = new Set(['/', '/u', HOME, `${HOME}/rooms`, '/tmp', '/tmp/link', '/tmp/link/rooms', '/w'])
 
 /** The engine beneath the plugin: a session, a disk with one link into the store, and a tool that runs. */
-function world(on: any, { cwd = true } = {}) {
+function world(on: On, { cwd = true } = {}) {
   const ran_: string[] = []
   session(on, 'sid-g')
   on('session.cwd', () => (cwd ? { value: '/w' } : { deny: 'no cwd here' }))
   on('tool.check', () => ({ decision: 'ask' }))
   on('process.run', () => ran(JSON.stringify(OUT)))
-  on('fs.stat', (_$: any, e: any) => {
+  on('fs.stat', (_$, e) => {
     if (!EXISTS.has(e.path)) return { deny: 'ENOENT' }
     const link = Object.keys(LINKS).find(l => e.path === l || e.path.startsWith(l + '/'))
     const realPath = link ? LINKS[link] + e.path.slice(link.length) : e.path
     return { value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: !!link && link !== '/w', ...(e.resolve ? { realPath } : {}) } }
   })
-  on('tool.call', (_$: any, e: any) => { ran_.push(e.tool); return { result: 'ran', text: 'ran' } })
+  on('tool.call', (_$, e) => { ran_.push(e.tool); return { result: 'ran', text: 'ran' } })
   return ran_
 }
 /** session.start: the module runs mod-hello and keeps the home and seat. */
-const hello = ($: any) => start($, false)
-const call = ($: any, input: any) => $.tool.call(input)
+const hello = ($: Engine) => start($, false)
+/** A Grep or Glob call: neither is in this build's typed tool list, but the guard still matches them by name. */
+type Search = { tool: 'Grep' | 'Glob'; pattern: string; path?: string; output_mode?: string }
+const call = ($: Engine, input: ToolCallArgs) => $.tool.call(input)
+const search = ($: Engine, input: Search) =>
+  // @ts-expect-error -- deliberate: a tool call the typings do not list
+  $.tool.call(input)
 /** A guard's deny: the call resolves { deny } (or, as a session sees it, errored with the reason as text). */
-const denied = (r: any) => /ROOM-GUARD|sub-human: hold/.test(String(r.deny ?? (r.isError ? r.text : '')))
+const denied = (r: ToolCallResult) => /ROOM-GUARD|sub-human: hold/.test(String(r.deny ?? (r.isError ? r.text : '')))
 
 test('Bash: a command that names the store is denied, before and after mod-hello; other commands run', async ($, on) => {
   const before = world(on)
@@ -74,21 +80,21 @@ test('Read, Grep, Glob: the secret directories are denied, by path, through a sy
   expect(denied(await call($, { tool: 'Read', file_path: `${HOME}/listen/host-x25519.json` }))).toBe(true)
   expect(denied(await call($, { tool: 'Read', file_path: '/tmp/link/links/abc-1234.json' }))).toBe(true)
   expect(denied(await call($, { tool: 'Read', file_path: `${HOME}/rooms/a/log.jsonl` }))).toBe(false)
-  expect(denied(await call($, { tool: 'Grep', pattern: '.', path: `${HOME}/keys`, output_mode: 'content' }))).toBe(true)
-  expect(denied(await call($, { tool: 'Grep', pattern: '.', path: '/tmp/link/links' }))).toBe(true)
-  expect(denied(await call($, { tool: 'Grep', pattern: 'PRIVATE', path: '/u' }))).toBe(true)
-  expect(denied(await call($, { tool: 'Grep', pattern: 'x' }))).toBe(false) // the cwd, /w
-  expect(denied(await call($, { tool: 'Glob', pattern: '*', path: `${HOME}/links` }))).toBe(true)
-  expect(denied(await call($, { tool: 'Glob', pattern: 'keys/**', path: HOME }))).toBe(true)
-  expect(denied(await call($, { tool: 'Glob', pattern: '**/*.ts' }))).toBe(false)
+  expect(denied(await search($, { tool: 'Grep', pattern: '.', path: `${HOME}/keys`, output_mode: 'content' }))).toBe(true)
+  expect(denied(await search($, { tool: 'Grep', pattern: '.', path: '/tmp/link/links' }))).toBe(true)
+  expect(denied(await search($, { tool: 'Grep', pattern: 'PRIVATE', path: '/u' }))).toBe(true)
+  expect(denied(await search($, { tool: 'Grep', pattern: 'x' }))).toBe(false) // the cwd, /w
+  expect(denied(await search($, { tool: 'Glob', pattern: '*', path: `${HOME}/links` }))).toBe(true)
+  expect(denied(await search($, { tool: 'Glob', pattern: 'keys/**', path: HOME }))).toBe(true)
+  expect(denied(await search($, { tool: 'Glob', pattern: '**/*.ts' }))).toBe(false)
   expect(r).toEqual(['Read', 'Grep', 'Glob'])
 })
 
 test('Grep: before mod-hello, a search of ~/.sub-human is denied by its spelling', async ($, on) => {
   world(on)
-  expect(denied(await call($, { tool: 'Grep', pattern: '.', path: '~/.sub-human/keys' }))).toBe(true)
-  expect(denied(await call($, { tool: 'Glob', pattern: '/u/.sub-human/links/*' }))).toBe(true)
-  expect(denied(await call($, { tool: 'Grep', pattern: '.', path: '/w' }))).toBe(false)
+  expect(denied(await search($, { tool: 'Grep', pattern: '.', path: '~/.sub-human/keys' }))).toBe(true)
+  expect(denied(await search($, { tool: 'Glob', pattern: '/u/.sub-human/links/*' }))).toBe(true)
+  expect(denied(await search($, { tool: 'Grep', pattern: '.', path: '/w' }))).toBe(false)
 })
 
 test('a guard that fails denies only a call that mentions sub-human', async ($, on) => {
@@ -101,7 +107,7 @@ test('a guard that fails denies only a call that mentions sub-human', async ($, 
 test('hold is denied to the main thread', async ($, on) => {
   const r = world(on)
   await hello($)
-  const res: any = await call($, { tool: 'mcp__plugin_sub-human_room__hold', member: 'bob' })
+  const res = await call($, { tool: 'mcp__plugin_sub-human_room__hold', member: 'bob' })
   expect(denied(res)).toBe(true)
   expect(String(res.deny ?? res.text)).toMatch(/hold is for row agents only/)
   expect(r).toEqual([])

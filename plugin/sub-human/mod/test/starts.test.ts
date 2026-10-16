@@ -3,85 +3,89 @@
 // /sub-human expansion; SessionEnd, whose shell check starts node only for a session with a lease or a seat:
 // test/manifest.node-test.ts) this is the node-start table in docs/ARCHITECTURE.md "Performance". The target, held
 // here: a session with no seat starts no node on any event but /sub-human.
-import { test, expect } from 'claude-code/testing'
-import { SEAT, helloOf, ran, scriptOf, session, start } from './support.ts'
+import type { EventName, On, ToolCallArgs } from 'claude-code'
+import { test, expect, type Engine } from 'claude-code/testing'
+import { SEAT, helloOf, ran, scriptOf, session, start, type Seat } from './support.ts'
 
 const SID = 'sid-n'
 const HOME = '/u/.sub-human'
 
 /** The engine beneath: every node start counted (by script), the hello answered for `seat`, every other script
  * answering nothing (consent: no review open), the tail child idle until the test ends, every tool allowed and run. */
-function world(engine: any, on: any, seat: any) {
-  const seen = { runs: [] as string[], spawns: 0, release: () => {} }
+function world(engine: Engine, on: On, seat: Seat | null) {
+  const seen: { runs: string[]; spawns: number; release: () => void } = { runs: [], spawns: 0, release: () => {} }
   const held = new Promise<void>(r => { seen.release = r })
   session(on, SID)
   on('session.cwd', () => ({ value: '/w' }))
-  on('env.get', (_$: any, e: any) => ({ value: e.name === 'HOME' ? '/u' : undefined }))
-  on('fs.exists', (_$: any, e: any) => ({ value: !!seat && e.path === `${HOME}/sessions/by-sid/${SID}.json` }))
-  on('fs.stat', (_$: any, e: any) => ({ value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: false, realPath: e.path } }))
+  on('env.get', (_$, e) => ({ value: e.name === 'HOME' ? '/u' : undefined }))
+  on('fs.exists', (_$, e) => ({ value: !!seat && e.path === `${HOME}/sessions/by-sid/${SID}.json` }))
+  on('fs.stat', (_$, e) => ({ value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: false, realPath: e.path } }))
   on('ui.log', () => ({ value: undefined }))
-  on('process.run', (_$: any, e: any) => {
+  on('process.run', (_$, e) => {
     const script = scriptOf(e)
     seen.runs.push(script)
     if (script === 'mod-hello.ts') return ran(JSON.stringify(helloOf(seat)))
     if (script === 'consent.ts' || script === 'prompt.ts') return ran(JSON.stringify({ subHuman: { reviewOpen: false } }))
     return ran('')
   })
-  on('process.spawn', async function* () { seen.spawns++; await held; return { value: { code: 0, signal: null } } })
-  on('prompt.submit', async (_$: any, e: any) => {
+  on('process.spawn', async function* () { yield* []; seen.spawns++; await held; return { value: { code: 0, signal: null } } })
+  on('prompt.submit', async (_$, e) => {
     await engine.classic.UserPromptSubmit({ prompt: e.text, session_id: SID, permission_mode: 'default' })
     return { text: e.text }
   })
-  on('command.run', () => ({ text: undefined }))
-  on('session.end', (_$: any, e: any) => ({ sessionId: e.sessionId }))
+  on('command.run', () => ({}))
+  on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
   on('tool.check', () => ({ decision: 'allow' }))
   on('tool.call', () => ({ result: 'ok', text: 'ok' }))
-  for (const ev of ['UserPromptSubmit', 'UserPromptExpansion', 'PostToolUse', 'PermissionRequest', 'SubagentStop', 'Stop',
-    'TaskCompleted', 'Notification', 'StopFailure', 'SessionStart']) on(`classic.${ev}`, () => ({}))
+  const classic: EventName[] = ['classic.UserPromptSubmit', 'classic.UserPromptExpansion', 'classic.PostToolUse', 'classic.PermissionRequest',
+    'classic.SubagentStop', 'classic.Stop', 'classic.TaskCompleted', 'classic.Notification', 'classic.StopFailure', 'classic.SessionStart']
+  for (const ev of classic) on(ev, () => ({}))
   return seen
 }
 
 const base = { session_id: SID, cwd: '/w', transcript_path: '/t.jsonl', permission_mode: 'default' }
 /** A main-loop tool call as the engine runs it (tool.call, then classic.PostToolUse), and only its PostToolUse. */
-const call = async ($: any, tool: string, input: any = {}) => {
-  await $.tool.call({ tool, ...input } as any)
-  await $.classic.PostToolUse({ ...base, tool_name: tool, tool_input: input, tool_response: {}, tool_use_id: `tu-${tool}` } as any)
+const call = async ($: Engine, input: ToolCallArgs) => {
+  await $.tool.call(input)
+  const { tool, ...args } = input
+  await $.classic.PostToolUse({ ...base, tool_name: tool, tool_input: args, tool_response: {}, tool_use_id: `tu-${tool}` })
 }
 /** Each event, as the engine raises it. */
-const EVENTS: [string, ($: any) => Promise<unknown>][] = [
+const EVENTS: [string, ($: Engine) => Promise<unknown>][] = [
   // the prompt, then the turn it starts (presence "working" is written there: a stopped prompt starts none)
-  ['a plain prompt', async $ => { await $.prompt.submit({ text: 'hello', origin: { kind: 'composer' }, wait: false }); await $.turn.start({ text: 'hello', turnId: 'tp' } as any).catch(() => {}) }],
+  ['a plain prompt', async $ => { await $.prompt.submit({ text: 'hello', origin: { kind: 'composer' }, wait: false }); await $.turn.start({ text: 'hello', turnId: 'tp' }).catch(() => {}) }],
   ['an @room', $ => $.prompt.submit({ text: '@room hi', origin: { kind: 'composer' }, wait: false })],
-  ['Bash, Read, Write', async $ => { await call($, 'Bash', { command: 'ls' }); await call($, 'Read', { file_path: '/w/a' }); await call($, 'Write', { file_path: '/w/a', content: '' }) }],
-  ['Agent (Explore)', $ => call($, 'Agent', { subagent_type: 'Explore', prompt: 'look', description: 'look' })],
-  ['Agent (a row)', $ => call($, 'Agent', { subagent_type: 'sub-human:room', prompt: 'room: otter-4821', description: 'otter-4821' })],
-  ['SubagentStop (Explore)', $ => $.classic.SubagentStop({ ...base, agent_id: 'a1', agent_type: 'Explore', stop_hook_active: false, last_assistant_message: 'done' } as any)],
-  ['SubagentStop (a row)', $ => $.classic.SubagentStop({ ...base, agent_id: 'a2', agent_type: 'sub-human:room', stop_hook_active: false, last_assistant_message: 'x' } as any)],
-  ['AskUserQuestion', $ => call($, 'AskUserQuestion', { questions: [] })],
-  ['EnterPlanMode', $ => call($, 'EnterPlanMode')],
+  ['Bash, Read, Write', async $ => { await call($, { tool: 'Bash', command: 'ls' }); await call($, { tool: 'Read', file_path: '/w/a' }); await call($, { tool: 'Write', file_path: '/w/a', content: '' }) }],
+  ['Agent (Explore)', $ => call($, { tool: 'Agent', subagent_type: 'Explore', prompt: 'look', description: 'look' })],
+  ['Agent (a row)', $ => call($, { tool: 'Agent', subagent_type: 'sub-human:room', prompt: 'room: otter-4821', description: 'otter-4821' })],
+  ['SubagentStop (Explore)', $ => $.classic.SubagentStop({ ...base, agent_id: 'a1', agent_transcript_path: '/t/a1.jsonl', agent_type: 'Explore', stop_hook_active: false, last_assistant_message: 'done' })],
+  ['SubagentStop (a row)', $ => $.classic.SubagentStop({ ...base, agent_id: 'a2', agent_transcript_path: '/t/a2.jsonl', agent_type: 'sub-human:room', stop_hook_active: false, last_assistant_message: 'x' })],
+  ['AskUserQuestion', $ => call($, { tool: 'AskUserQuestion', questions: [] })],
+  ['EnterPlanMode', $ => call($, { tool: 'EnterPlanMode' })],
   ['ExitPlanMode', async $ => {
-    await $.tool.call({ tool: 'ExitPlanMode' } as any)
-    await $.classic.PermissionRequest({ ...base, tool_name: 'ExitPlanMode', tool_input: {} } as any)
-    await $.classic.PostToolUse({ ...base, tool_name: 'ExitPlanMode', tool_input: {}, tool_response: {}, tool_use_id: 'tu-x' } as any)
+    await $.tool.call({ tool: 'ExitPlanMode' })
+    await $.classic.PermissionRequest({ ...base, tool_name: 'ExitPlanMode', tool_input: {} })
+    await $.classic.PostToolUse({ ...base, tool_name: 'ExitPlanMode', tool_input: {}, tool_response: {}, tool_use_id: 'tu-x' })
   }],
-  ['a room MCP tool', $ => call($, 'mcp__plugin_sub-human_room__read', {})],
-  ['the room post tool', $ => call($, 'mcp__plugin_sub-human_room__post', { text: 'hi' })],
-  ['TaskCreate', $ => $.classic.PostToolUse({ ...base, tool_name: 'TaskCreate', tool_input: { subject: 'x' }, tool_response: {}, tool_use_id: 'tu-t' } as any)],
-  ['TaskCompleted', $ => $.classic.TaskCompleted({ ...base, task_id: '2', task_subject: 'x' } as any)],
-  ['turn end (Stop)', $ => $.classic.Stop({ ...base, stop_hook_active: false } as any)],
-  ['Notification idle_prompt', $ => $.classic.Notification({ ...base, notification_type: 'idle_prompt', message: 'idle' } as any)],
-  ['StopFailure', $ => $.classic.StopFailure({ ...base, error: 'rate_limit' } as any)],
-  ['/compact', $ => $.classic.SessionStart({ ...base, source: 'compact' } as any)],
+  ['a room MCP tool', $ => call($, { tool: 'mcp__plugin_sub-human_room__read' })],
+  ['the room post tool', $ => call($, { tool: 'mcp__plugin_sub-human_room__post', text: 'hi' })],
+  ['TaskCreate', $ => $.classic.PostToolUse({ ...base, tool_name: 'TaskCreate', tool_input: { subject: 'x' }, tool_response: {}, tool_use_id: 'tu-t' })],
+  ['TaskCompleted', $ => $.classic.TaskCompleted({ ...base, task_id: '2', task_subject: 'x' })],
+  ['turn end (Stop)', $ => $.classic.Stop({ ...base, stop_hook_active: false })],
+  ['Notification idle_prompt', $ => $.classic.Notification({ ...base, notification_type: 'idle_prompt', message: 'idle' })],
+  ['StopFailure', $ => $.classic.StopFailure({ ...base, error: 'rate_limit' })],
+  ['/compact', $ => $.classic.SessionStart({ ...base, source: 'compact' })],
   ['/clear', async $ => {
-    await $.session.end({ reason: 'clear', sessionId: SID, resume: { id: SID } } as any)
-    await $.classic.SessionStart({ ...base, source: 'clear' } as any)
+    await $.session.end({ reason: 'clear', sessionId: SID, resume: { id: SID } })
+    await $.classic.SessionStart({ ...base, source: 'clear' })
   }],
-  ['--resume', $ => $.classic.SessionStart({ ...base, source: 'resume' } as any)],
-  ['/sub-human', $ => $.command.run({ command: 'sub-human:sub-human', args: 'help', origin: { kind: 'composer' } } as any)],
+  ['--resume', $ => $.classic.SessionStart({ ...base, source: 'resume' })],
+  // @ts-expect-error -- deliberate: no presentation, as these tests have always raised /sub-human
+  ['/sub-human', $ => $.command.run({ command: 'sub-human:sub-human', args: 'help', origin: { kind: 'composer' } })],
 ]
 
 /** {event: node starts}, session start first. */
-async function measure($: any, on: any, seat: any) {
+async function measure($: Engine, on: On, seat: Seat | null) {
   const seen = world($, on, seat)
   const counts: Record<string, number> = {}
   const n = () => seen.runs.length + seen.spawns
@@ -95,7 +99,7 @@ async function measure($: any, on: any, seat: any) {
     counts[name] = n() - before
   }
   before = n()
-  await $.session.end({ reason: 'other', sessionId: SID, resume: { id: SID } } as any)
+  await $.session.end({ reason: 'other', sessionId: SID, resume: { id: SID } })
   counts['session end'] = n() - before
   seen.release()
   return counts

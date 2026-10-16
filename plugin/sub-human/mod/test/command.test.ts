@@ -4,56 +4,65 @@
 // (a secret) or the command's output (none), never as the command running; a join expands as before with the
 // mechanics block handed to the expansion hook in place of a second join; the room's Claude, the SDK and a reply that
 // failed take the paths they should.
-import { test, expect, mock } from 'claude-code/testing'
-import { OUT, SEAT, helloOf, ran, scriptOf, session, start } from './support.ts'
+import type { CommandRunInput, EventOf, On } from 'claude-code'
+import { test, expect, mock, type Engine } from 'claude-code/testing'
+import { OUT, SEAT, helloOf, must, ran, scriptOf, session, start, stdinOf } from './support.ts'
 
 const SID = 'sid-c'
 
 /** The engine beneath: a session (its cwd), mod-hello, hooks/handlers/join.ts answering `join`, and the command itself (when the
  * hook passes it on: `ran` counts it, and a join's expansion raises classic.UserPromptExpansion as the engine does). */
-function world(engine: any, on: any, { join = {} as any, room = undefined as string | undefined, hello = undefined as any } = {}) {
-  const seen = { joins: [] as any[], logs: [] as string[], ran: 0, expansions: [] as any[], hellos: 0, commands: [] as string[], files: {} as Record<string, string> }
-  on('fs.read', (_$: any, e: any) => { if (e.path in seen.files) return { value: seen.files[e.path] }; throw new Error('ENOENT') })
-  on('fs.write', (_$: any, e: any) => { seen.files[e.path] = e.text; return { value: undefined } })
+type Seen = { joins: { stdin: Record<string, unknown>; env: Record<string, string> | undefined }[]; logs: string[]; ran: number; expansions: EventOf['classic.UserPromptExpansion'][]; hellos: number; commands: string[]; files: Record<string, string> }
+/** What join.ts answers: its JSON (a string as is), a process.run result, or a rejection. */
+type Reply = string | { reject?: string; run?: ReturnType<typeof ran>; subHuman?: object; hookSpecificOutput?: object }
+type Options = { join?: Reply | ((stdin: Record<string, unknown>, seen: Seen) => Reply); room?: string; hello?: (seen: Seen) => ReturnType<typeof helloOf> }
+function world(engine: Engine, on: On, { join = {}, room, hello }: Options = {}) {
+  const seen: Seen = { joins: [], logs: [], ran: 0, expansions: [], hellos: 0, commands: [], files: {} }
+  on('fs.read', (_$, e) => { const text = seen.files[e.path]; if (text !== undefined) return { value: text }; throw new Error('ENOENT') })
+  on('fs.write', (_$, e) => { seen.files[e.path] = e.text; return { value: undefined } })
   session(on, SID)
   on('session.cwd', () => ({ value: '/w' }))
-  on('env.get', (_$: any, e: any) => ({ value: e.name === 'SUB_HUMAN_ROOM' ? room : undefined }))
-  on('ui.log', (_$: any, e: any) => { seen.logs.push(e.text); return { value: undefined } })
-  on('process.run', (_$: any, e: any) => {
+  on('env.get', (_$, e) => ({ value: e.name === 'SUB_HUMAN_ROOM' ? room : undefined }))
+  on('ui.log', (_$, e) => { seen.logs.push(e.text); return { value: undefined } })
+  on('process.run', (_$, e) => {
     const script = scriptOf(e)
     if (script === 'mod-hello.ts') { seen.hellos++; return ran(JSON.stringify(hello ? hello(seen) : OUT)) }
     if (script === 'join.ts') {
-      const stdin = JSON.parse(e.init.stdin)
-      seen.joins.push({ stdin, env: e.init.env })
+      const stdin = stdinOf(e)
+      seen.joins.push({ stdin, env: e.init?.env })
       const j = typeof join === 'function' ? join(stdin, seen) : join
-      if (j && j.reject) throw new Error(j.reject)
-      if (j && j.run) return j.run
+      if (typeof j !== 'string' && j.reject) throw new Error(j.reject)
+      if (typeof j !== 'string' && j.run) return j.run
       return ran(typeof j === 'string' ? j : JSON.stringify(j))
     }
     return ran('')
   })
-  on('classic.UserPromptExpansion', (_$: any, e: any) => { seen.expansions.push(e); return { additionalContext: ['from the classic join hook'] } })
-  on('command.run', async (_$: any, e: any) => {
+  on('classic.UserPromptExpansion', (_$, e) => { seen.expansions.push(e); return { additionalContext: ['from the classic join hook'] } })
+  on('command.run', async (_$, e) => {
     seen.commands.push(`${e.command} ${e.args ?? ''}`.trim())
     if (e.command === 'rename') return { text: `Session renamed to: ${e.args}` }
     seen.ran++
-    const r = await engine.classic.UserPromptExpansion({ expansion_type: 'slash_command', command_name: 'sub-human:sub-human', command_args: e.args, prompt: `/sub-human ${e.args}`.trim(), session_id: SID } as any)
-    return { text: undefined, context: r.additionalContext }
+    const r = await engine.classic.UserPromptExpansion({ expansion_type: 'slash_command', command_name: 'sub-human:sub-human', command_args: e.args, prompt: `/sub-human ${e.args}`.trim(), session_id: SID })
+    return r.additionalContext ? { context: r.additionalContext } : {}
   })
   return seen
 }
-const typed = ($: any, args: string, kind = 'composer') => $.command.run({ command: 'sub-human:sub-human', args, origin: { kind } } as any)
+/** A command.run with no presentation unless given, as these tests have always raised it. */
+const command = ($: Engine, input: Omit<CommandRunInput, 'presentation'> & Partial<Pick<CommandRunInput, 'presentation'>>) =>
+  // @ts-expect-error -- deliberate: an input without presentation (the module reads it only to fit the invite's pin)
+  $.command.run(input)
+const typed = ($: Engine, args: string, kind: 'composer' | 'bridge' | 'sdk' = 'composer') => command($, { command: 'sub-human:sub-human', args, origin: { kind } })
 
 test('typed here: join.ts runs once through the shim with the nonce; an invite comes back as notices only (no output row, no command run)', async ($, on) => {
   const say = 'invite to room otter-4821 for one machine …\n\n  /sub-human join me@box otter-4821 4821\n'
   const seen = world($, on, { join: { subHuman: { say, refused: false, shareable: false } } })
   await start($)
-  const r: any = await typed($, 'invite')
+  const r = await typed($, 'invite')
   expect(seen.joins.length).toBe(1)
-  const { stdin, env } = seen.joins[0]
+  const { stdin, env } = must(seen.joins[0], 'the join')
   expect([stdin.sub_human_via, stdin.command_args, stdin.session_id, stdin.cwd]).toEqual(['command.run', 'invite', SID, '/w'])
   expect(stdin.sub_human_nonce).toMatch(/^[0-9a-f]{32}$/)
-  expect(env.CLAUDE_PID).toBe('')
+  expect(env?.CLAUDE_PID).toBe('')
   expect(seen.ran).toBe(0)
   expect(r.text).toBeUndefined()
   expect(JSON.stringify(r)).not.toContain('4821')
@@ -64,9 +73,9 @@ test('an invite\'s line and PIN go to the status line (saved in no transcript), 
   const say = 'invite to room otter-4821 for one machine … are pinned under the prompt until 12:15 …'
   const seen = world($, on, { join: { subHuman: { say, refused: false, shareable: false, pinned: { status: 'invite to otter-4821 until 12:15: /sub-human join me@box otter-4821 SECRET  ·  its PIN, apart from the line (say it, or send it another way): 4821', ms: 900000 } } } })
   const statuses: (string | undefined)[] = []
-  on('ui.status', (_$: any, e: any) => { statuses.push(e.text); return { value: undefined } })
+  on('ui.status', (_$, e) => { statuses.push(e.text); return { value: undefined } })
   await start($)
-  const r: any = await typed($, 'invite')
+  const r = await typed($, 'invite')
   expect(r.text).toBeUndefined()
   expect(seen.logs.join('\n')).not.toContain(': 4821')
   expect(seen.logs.join('\n')).not.toContain('SECRET')
@@ -81,16 +90,16 @@ test('item 2 (D): a terminal narrower than the whole line pins the PIN and SECRE
   const status = `PIN 4821 · /sub-human join tristan@box.example otter-4821 ${word} --home /Users/tristan/.sub-human`
   const pinned = { status, ms: 900000, short: `PIN 4821 · SECRET ${word}`, cut: 'invite to room otter-4821 … Send them this line with SECRET replaced by the word under the prompt:\n  /sub-human join tristan@box.example otter-4821 SECRET --home /Users/tristan/.sub-human\nand tell them the PIN apart', ref }
   const cancel = { subHuman: { say: `invite ${ref} cancelled`, refused: false, shareable: true } }
-  const seen = world($, on, { join: (stdin: any) => (String(stdin.command_args).startsWith('invite --cancel') ? cancel : { subHuman: { say: 'invite to room otter-4821 … pinned under the prompt until 12:15 …', refused: false, shareable: false, pinned } }) })
+  const seen = world($, on, { join: stdin => (String(stdin.command_args).startsWith('invite --cancel') ? cancel : { subHuman: { say: 'invite to room otter-4821 … pinned under the prompt until 12:15 …', refused: false, shareable: false, pinned } }) })
   const statuses: (string | undefined)[] = []
-  on('ui.status', (_$: any, e: any) => { statuses.push(e.text); return { value: undefined } })
+  on('ui.status', (_$, e) => { statuses.push(e.text); return { value: undefined } })
   await start($)
-  await $.command.run({ command: 'sub-human:sub-human', args: 'invite', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 100 } } as any)
+  await $.command.run({ command: 'sub-human:sub-human', args: 'invite', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 100 } })
   expect(statuses).toEqual([`PIN 4821 · SECRET ${word}`])
   expect(seen.logs.some(l => l.includes('otter-4821 SECRET --home'))).toBe(true)
   expect(seen.logs.join('\n')).not.toContain(word)
   expect(seen.logs.join('\n')).not.toContain('4821 ·')
-  await $.command.run({ command: 'sub-human:sub-human', args: 'invite', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 200 } } as any)
+  await $.command.run({ command: 'sub-human:sub-human', args: 'invite', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 200 } })
   expect(statuses[1]).toBe(status) // wide enough: the whole line, the PIN first
   await typed($, 'invite --cancel')
   expect(statuses.at(-1)).toBeUndefined()
@@ -99,10 +108,10 @@ test('item 2 (D): a terminal narrower than the whole line pins the PIN and SECRE
 test('a reply with no secret is a notice here (the model never reads it, so never repeats it), and the output row through Remote Control', async ($, on) => {
   const seen = world($, on, { join: { subHuman: { say: 'left otter-4821 · /sub-human joins again', refused: false, shareable: true } } })
   await start($)
-  const r: any = await typed($, 'leave')
+  const r = await typed($, 'leave')
   expect(r.text).toBeUndefined()
   expect(seen.logs).toEqual(['left otter-4821 · /sub-human joins again'])
-  const phone: any = await typed($, 'leave', 'bridge')
+  const phone = await typed($, 'leave', 'bridge')
   expect(phone.text).toMatch(/left otter-4821 · \/sub-human joins again$/)
   expect(seen.logs.length).toBe(1)
   expect(seen.ran).toBe(0)
@@ -112,7 +121,7 @@ test('a join that worked expands as before: the mechanics block reaches the expa
   const clock = mock.clock(on, { now: 0 })
   const seen = world($, on, { join: { hookSpecificOutput: { hookEventName: 'UserPromptExpansion', additionalContext: 'SUB-HUMAN: you are alice…' }, subHuman: { say: 'joined otter-4821 as alice, with bob · @room to talk', joined: true, shareable: true } } })
   await start($)
-  const r: any = await typed($, 'alice')
+  const r = await typed($, 'alice')
   expect(seen.ran).toBe(1)
   expect(seen.expansions).toEqual([]) // the classic join hook beneath never ran: the module answered with join.ts's block
   expect(r.context).toEqual(['SUB-HUMAN: you are alice…'])
@@ -128,7 +137,7 @@ test('the room\'s Claude, the SDK and a PIN typed through Remote Control go to t
   expect([seen.joins.length, seen.ran]).toEqual([0, 1])
   await typed($, 'join dev otter-4821 4821', 'bridge')
   expect([seen.joins.length, seen.ran]).toEqual([0, 2])
-  const r: any = await typed($, 'help')
+  const r = await typed($, 'help')
   expect([seen.joins.length, seen.ran]).toEqual([1, 2])
   expect(r.text).toBeUndefined()
   expect(seen.logs.length).toBe(1)
@@ -151,7 +160,7 @@ test('verify12 local/37: a shim that failed says how long it ran and stderr\'s l
 test('a run that rejects (the shim\'s timeout) is one refusal with its time and reason, and the classic hook beneath does not run it a second time', async ($, on) => {
   const seen = world($, on, { join: () => ({ reject: 'process timed out after 10000 ms' }) })
   await start($)
-  const r: any = await typed($, 'help')
+  const r = await typed($, 'help')
   expect(r.text).toBeUndefined()
   expect([seen.joins.length, seen.ran, seen.expansions.length]).toEqual([1, 0, 0])
   // (the harness turns a throwing process.run hook into "no implementation"; the engine's own is "timed out")
@@ -159,13 +168,13 @@ test('a run that rejects (the shim\'s timeout) is one refusal with its time and 
 })
 
 test('a lease that lost the nonce (join.ts ran nothing): the module says hello again and runs it once more', async ($, on) => {
-  const seen = world($, on, { join: (_stdin: any, s: any) => (s.joins.length === 1 ? { subHuman: { lease: 'stale' } } : { subHuman: { say: 'left otter-4821 · /sub-human joins again', refused: false, shareable: true } }) })
+  const seen = world($, on, { join: (_stdin, s) => (s.joins.length === 1 ? { subHuman: { lease: 'stale' } } : { subHuman: { say: 'left otter-4821 · /sub-human joins again', refused: false, shareable: true } }) })
   await start($)
   const hellos = seen.hellos
   await typed($, 'leave')
   expect(seen.joins.length).toBe(2)
   expect(seen.hellos).toBeGreaterThan(hellos)
-  expect(seen.joins[1].stdin.sub_human_nonce).toBe(seen.joins[0].stdin.sub_human_nonce)
+  expect(must(seen.joins[1], 'the second join').stdin.sub_human_nonce).toBe(must(seen.joins[0], 'the first join').stdin.sub_human_nonce)
   expect(seen.logs).toEqual(['left otter-4821 · /sub-human joins again'])
 })
 
@@ -194,7 +203,7 @@ test('in the room\'s Claude (SUB_HUMAN_ROOM set) the launch /sub-human is the cl
 test('the room\'s Claude: a typed /clear is answered with the refusal and never runs', async ($, on) => {
   const seen = world($, on, { room: 'otter-4821' })
   await start($)
-  const r: any = await $.command.run({ command: 'clear', args: '', origin: { kind: 'composer' } } as any)
+  const r = await command($, { command: 'clear', args: '', origin: { kind: 'composer' } })
   expect(r.text).toMatch(/the room's Claude takes no typed input, commands included/)
   expect(seen.ran).toBe(0)
 })
@@ -202,7 +211,7 @@ test('the room\'s Claude: a typed /clear is answered with the refusal and never 
 test('a member\'s session: /clear runs as usual', async ($, on) => {
   const seen = world($, on)
   await start($)
-  await $.command.run({ command: 'clear', args: '', origin: { kind: 'composer' } } as any)
+  await command($, { command: 'clear', args: '', origin: { kind: 'composer' } })
   expect(seen.ran).toBe(1)
 })
 
