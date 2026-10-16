@@ -75,8 +75,9 @@ const PLUGINS = ['hold.ts', 'task.ts'];
 const POST_KINDS = ['say', 'question', 'status'];
 const RELAY_WINDOW_MS = 10 * 60_000; // a post repeating the person's objection sent this recently is refused (relayed)
 // MCP revisions this server speaks (newest first): answer with the client's when listed, else our newest.
-const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
-const negotiateProtocol = (v: unknown): string => (typeof v === 'string' && PROTOCOL_VERSIONS.includes(v) ? v : PROTOCOL_VERSIONS[0]);
+const NEWEST_PROTOCOL = '2025-11-25';
+const PROTOCOL_VERSIONS: readonly string[] = [NEWEST_PROTOCOL, '2025-06-18', '2025-03-26', '2024-11-05'];
+const negotiateProtocol = (v: unknown): string => (typeof v === 'string' && PROTOCOL_VERSIONS.includes(v) ? v : NEWEST_PROTOCOL);
 // serverInfo.version follows the plugin manifest, so one bump versions both.
 const VERSION: string = (() => {
   let j: unknown;
@@ -263,7 +264,8 @@ function read(me: Me, args: ToolArgs) {
   }
   const cursor = `mcp-${me.name}`;
   const all = r.readAfter(r.getCursor(cursor));
-  if (all.length) r.setCursor(cursor, all.at(-1)!.id);
+  const last = all.at(-1);
+  if (last) r.setCursor(cursor, last.id);
   const unseen = all.filter((e: { from?: string; via?: string }) => !(e.from === me.name && e.via === 'agent'));
   return lines(r, unseen.length > READ_MAX ? unseen.slice(-READ_MAX) : unseen, '(nothing new)');
 }
@@ -337,22 +339,21 @@ function callTool(id: JsonRpcId, params: CallToolParams | undefined) {
   const meta: CallMeta = { id, progressToken: params && params._meta ? params._meta.progressToken : undefined };
   const isCore = CORE.some(t => t.name === name);
   const owner = isCore ? null : ownerOf(name);
-  if (!isCore && !owner) { cancelHandlers.delete(id); return fail(id, -32602, `unknown tool ${name}`); }
+  // not core: owner is the plug-in that lists the tool, by this name (so name is a string)
+  if (!isCore && (!owner || name === undefined)) { cancelHandlers.delete(id); return fail(id, -32602, `unknown tool ${name}`); }
   let me: Me | null = null;
   try { me = whoami(); } catch (e) { log('whoami failed', msgOf(e)); }
-  // owner: a plug-in lists the tool by this name, so name is a string
-  if (!me && !(owner && owner.anonymous.has(name!))) return settle(id, text('not in a room; run /sub-human', true));
-  if (isCore) {
-    const self = me!; // a core tool never runs without one (returned above)
+  if (!owner || name === undefined) { // a core tool
+    if (!me) return settle(id, text('not in a room; run /sub-human', true));
     let r;
     try {
-      r = name === 'post' ? post(self, args) : name === 'read' ? read(self, args) : propose(self, args);
+      r = name === 'post' ? post(me, args) : name === 'read' ? read(me, args) : propose(me, args);
     } catch (e) { r = text(`refused: ${msgOf(e)}`, true); }
     return settle(id, r);
   }
+  if (!me && !owner.anonymous.has(name)) return settle(id, text('not in a room; run /sub-human', true));
   let r;
-  // not core: owner is the plug-in that lists the tool
-  try { r = owner!.api.call(name!, me, args, meta); } catch (e) { return settle(id, text(`error: ${msgOf(e)}`, true)); }
+  try { r = owner.api.call(name, me, args, meta); } catch (e) { return settle(id, text(`error: ${msgOf(e)}`, true)); }
   if (r && typeof (r as Promise<ToolResult>).then === 'function') {
     (r as Promise<ToolResult>).then(v => settle(id, v), (e: unknown) => settle(id, text(`error: ${msgOf(e) || String(e)}`, true)));
   } else settle(id, r as ToolResult | null);
@@ -385,13 +386,13 @@ function handle(msg: JsonRpcIncoming | null) {
     case 'notifications/initialized':
       return;
     case 'notifications/cancelled': {
-      const rid = params && params.requestId;
-      if (rid == null) return;
+      if (!params || params.requestId == null) return;
+      const rid = params.requestId;
       const fns = cancelHandlers.get(rid);
       if (fns) {
         cancelled.add(rid);
         cancelHandlers.delete(rid);
-        for (const fn of fns) { try { fn(params!.reason); } catch (e) { log('onCancel handler failed', msgOf(e)); } } // params: it held rid
+        for (const fn of fns) { try { fn(params.reason); } catch (e) { log('onCancel handler failed', msgOf(e)); } }
       }
       return;
     }

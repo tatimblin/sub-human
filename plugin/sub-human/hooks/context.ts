@@ -93,10 +93,11 @@ function rowCalls(me: Identity, all = false): string {
 function compactRows(text: string, me: Identity): string {
   const calls = text.split('\n').map(l => l.trim()).filter(l => /^Agent\(\{.*\}\)$/.test(l));
   const tail = me.role === 'claude' ? '\nOn member_joined, follow its "row:" note.' : '';
-  if (!calls.length) return `Your rows are running; make no Agent call for them.${tail}`;
+  const [call0] = calls;
+  if (call0 === undefined) return `Your rows are running; make no Agent call for them.${tail}`;
   const who = calls.map(c => /subagent_type: "sub-human:participant", description: "([^"]+)"/.exec(c)).filter(m => m !== null).map(m => m[1]);
   if (who.length > 1 && who.length === calls.length) {
-    const pattern = calls[0].split(`"${who[0]}"`).join('"NAME"').split(` ${who[0]}"`).join(' NAME"');
+    const pattern = call0.split(`"${who[0]}"`).join('"NAME"').split(` ${who[0]}"`).join(' NAME"');
     return `Make one Agent call per name, all in one message, now; write nothing about them:\n${pattern}\nNAME = ${who.join(', ')}${tail}`;
   }
   return `Make ${calls.length === 1 ? 'this Agent call' : 'these Agent calls, in one message,'} now, exactly as written; write nothing about it:\n${calls.join('\n')}${tail}`;

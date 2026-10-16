@@ -204,9 +204,10 @@ export function holdPull(prev: Pulls | null | undefined, text: string, cap: numb
   base.dropped += dropped;
   if (lines.length) base.items.push({ id: base.next++, lines });
   let size = base.items.reduce((n, i) => n + i.lines.reduce((m, l) => m + l.length + 1, 0), 0);
-  while (size > cap && base.items.length) {
+  while (size > cap) {
     const first = base.items[0];
-    const l = first.lines.shift() as string;
+    if (!first) break;
+    const l = first.lines.shift() as string; // an item holds a line until its last goes (below)
     size -= l.length + 1;
     base.dropped++;
     if (!first.lines.length) base.items.shift();
@@ -216,10 +217,11 @@ export function holdPull(prev: Pulls | null | undefined, text: string, cap: numb
 
 /** The context the next prompt carries for held: {text, upTo} (the newest id it holds, for clearPulls), or null. */
 export function pullContext(held: Pulls | null | undefined): { text: string; upTo: number } | null {
-  if (!held || !Array.isArray(held.items) || !held.items.length) return null;
+  const last = held && Array.isArray(held.items) ? held.items.at(-1) : undefined;
+  if (!held || !last) return null; // items: holdPull's own, objects each
   const lines = held.items.flatMap(i => i.lines);
   const more = held.dropped ? [pullDroppedLine(held.dropped)] : [];
-  return { text: [PULL_HEAD, ...more, ...lines, PULL_END].join('\n'), upTo: held.items[held.items.length - 1].id };
+  return { text: [PULL_HEAD, ...more, ...lines, PULL_END].join('\n'), upTo: last.id };
 }
 
 /** held without the items a prompt carried (ids up to upTo); null once none is left. */

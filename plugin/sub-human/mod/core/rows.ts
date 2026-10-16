@@ -29,18 +29,18 @@ export function spawnedId(response: unknown): string | null {
 const HANDBACK = /<agent-message from="([\w-]+)">\s*\[Subagent hand-back\]/;
 export function handbackFrom(text: unknown): string | null {
   const m = HANDBACK.exec(String(text ?? ''));
-  return m ? m[1] : null;
+  return m?.[1] ?? null; // the group always matches when m does
 }
 
 /** The report inside a hand-back's frame (the harness indents each of its lines) is exactly a row's last word. */
 const ROW_REPORT = /<agent-message from="([\w-]+)">\s*\[Subagent hand-back\][^\n]*\n\s*(left|error)\s*<\/agent-message>/;
 export function rowReportFrom(text: unknown): string | null {
   const m = ROW_REPORT.exec(String(text ?? ''));
-  return m ? m[1] : null;
+  return m?.[1] ?? null; // the group always matches when m does
 }
 
 const FINISHED = /^\s*<task-notification>\s*<task-id>([\w-]+)<\/task-id>[\s\S]*?<status>(?:completed|failed|killed)<\/status>/;
 export function finishedFrom(text: unknown): string | null {
   const m = FINISHED.exec(String(text ?? ''));
-  return m ? m[1] : null;
+  return m?.[1] ?? null; // the group always matches when m does
 }

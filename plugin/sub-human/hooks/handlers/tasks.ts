@@ -93,7 +93,8 @@ const RETRY = 'Nothing in that TaskUpdate was saved. Resend its other fields wit
 /** Legacy: the req number cited in a description, "(req #14 by bob)" or "evidence (#15): …"; the last wins. */
 function reqNumber(desc: string | null | undefined): number | null {
   const all = [...String(desc || '').matchAll(/(?:req #|evidence \(#)(\d+)/g)];
-  return all.length ? Number(all[all.length - 1][1]) : null;
+  const last = all.at(-1);
+  return last ? Number(last[1]) : null;
 }
 
 function opFor(prev: TaskState | null, next: TaskState, created: boolean): string {
@@ -161,7 +162,7 @@ function record(r: RoomHandle, t: TaskRecord): Entry {
 function nativeTasks(code: RoomCode): NativeTask[] {
   let names: string[] = [];
   try { names = fs.readdirSync(cc.tasksDir(listId(code))); } catch { return []; }
-  return names.map(n => /^(\d+)\.json$/.exec(n)).filter(m => m !== null).map(m => readNative(code, m[1])).filter(t => t !== null)
+  return names.filter(n => /^\d+\.json$/.test(n)).map(n => readNative(code, n.slice(0, -'.json'.length))).filter(t => t !== null)
     .sort((a, b) => Number(a.id) - Number(b.id));
 }
 

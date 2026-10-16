@@ -44,8 +44,10 @@ const ABS = (v: unknown): string | null => typeof v === 'string' && v.startsWith
 export function parseAddr(addr: unknown): { name: string; code: string } | null {
   if (typeof addr !== 'string') return null;
   const m = /^(.+)\.([a-z]+-\d{4})$/.exec(addr.trim());
-  if (!m || !NAME_RE.test(m[1]) || !CODE_RE.test(m[2])) return null;
-  return { name: m[1], code: m[2] };
+  if (!m) return null;
+  const [, name = '', code = ''] = m; // both groups always match when m does
+  if (!NAME_RE.test(name) || !CODE_RE.test(code)) return null;
+  return { name, code };
 }
 
 function parseSeat(x: unknown): HelloSeat | null {

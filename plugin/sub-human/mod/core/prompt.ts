@@ -136,7 +136,7 @@ export function titleFor(hello: Hello | null | undefined, sid: unknown, titled: 
   const t = titled && typeof titled === 'object' ? titled as { sid?: unknown; addr?: unknown } : null;
   if (!hello.seat) {
     const was = t && t.sid === sid && typeof t.addr === 'string' ? /^([A-Za-z0-9._-]{1,32})\.[a-z]+-\d{4}$/.exec(t.addr) : null;
-    return was ? was[1] : null;
+    return was?.[1] ?? null; // the group always matches when was does
   }
   if (hello.seat.role === 'claude') return null;
   const addr = hello.seat.addr;
@@ -219,9 +219,10 @@ export function receiptBook(max = 8) {
       const block = row.content[0] as { type?: unknown; text?: unknown } | null;
       if (!block || block.type !== 'text' || typeof block.text !== 'string' || !block.text.startsWith(STOP_FRAME)) return null;
       const i = find(block.text.slice(STOP_FRAME.length));
-      if (i < 0) return null;
-      const [{ reason }] = waiting.splice(i, 1);
-      return { ...row, content: [{ type: 'text', text: reason }] };
+      const w = waiting[i]; // none at -1: no receipt waits for it
+      if (!w) return null;
+      waiting.splice(i, 1);
+      return { ...row, content: [{ type: 'text', text: w.reason }] };
     },
     /** The stop's model row (an isMeta user row, the frame around a waiting receipt) in RECEIPT_FOR_MODEL's words; the
      * receipt stays waiting for its warning row. null: any other row. */
@@ -230,8 +231,9 @@ export function receiptBook(max = 8) {
       const text = typeof row.content === 'string' ? row.content
         : Array.isArray(row.content) && row.content.length === 1 && row.content[0] && (row.content[0] as { type?: unknown }).type === 'text' ? (row.content[0] as { text?: unknown }).text : null;
       const i = typeof text === 'string' && text.startsWith(STOP_FRAME) ? find(text.slice(STOP_FRAME.length)) : -1;
-      if (i < 0) return null;
-      const said = RECEIPT_FOR_MODEL(waiting[i].reason, waiting[i].tag);
+      const w = waiting[i]; // none at -1
+      if (!w) return null;
+      const said = RECEIPT_FOR_MODEL(w.reason, w.tag);
       return { ...row, content: typeof row.content === 'string' ? said : [{ type: 'text', text: said }] };
     },
     get size(): number { return waiting.length; },

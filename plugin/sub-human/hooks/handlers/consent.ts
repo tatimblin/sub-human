@@ -27,7 +27,7 @@
 import { createRequire } from 'node:module';
 import * as reply from '../reply.ts';
 import type { AnyHookIn, CardQuestion, HookOutput, Recorded } from '../types.ts';
-import type { HandoffAskDoc, Proposal, Review } from '../../lib/types-app.ts';
+import type { Card, HandoffAskDoc, Proposal, Review } from '../../lib/types-app.ts';
 import type { AdmissionRequest } from '../../lib/remote/admission.ts';
 import type { Identity } from '../../lib/identity.ts';
 import type { ConsentEffect, ConsentEvent, Pending, Say, State, Target } from '../../lib/consent/review.ts';
@@ -55,6 +55,8 @@ const POST_TOOL = /^mcp__plugin_sub-human_room__post$/;
 
 /** The output helpers (hooks/reply.ts), the seat, the room and identity: what this file calls `c.`. */
 type C = typeof reply & { whoami: typeof import('../seat.ts')['whoami']; room: typeof import('../../lib/room.ts'); identity: typeof import('../../lib/identity.ts') };
+// The slots load() fills before any reader runs (handle() calls it past the quiet exit); T7's lazy() replaces them.
+/* oxlint-disable typescript/no-non-null-assertion -- definite assignment: load() fills each slot before use */
 let fs!: typeof import('node:fs');
 let c!: C;
 let proposal!: typeof import('../../lib/proposal.ts');
@@ -69,6 +71,7 @@ const env = (): typeof import('../../lib/env.ts') => require('../../lib/env.ts')
 let handoff!: typeof import('../../lib/handoff.ts');
 let envelope!: typeof import('../../lib/room/envelope.ts');
 let roomStore!: typeof import('../../lib/room/store.ts');
+/* oxlint-enable typescript/no-non-null-assertion */
 
 /** Everything past the quiet exit, once. It signs the person's answers (via=human), so it arms the seat-key signer. */
 function load() {
@@ -88,6 +91,13 @@ function load() {
   (require('../seat-key.ts') as typeof import('../seat-key.ts')).arm();
 }
 const admission = (): typeof import('../../lib/remote/admission.ts') => require('../../lib/remote/admission.ts');
+
+/** A one-question card's question (confirmCard, the handoff's and the admission's cards each build exactly one). */
+function firstQuestion(cd: Card): Card['questions'][number] {
+  const [q] = cd.questions;
+  if (!q) throw new Error('a card with no question'); // never: each builder writes one
+  return q;
+}
 
 /** Answers this run could not record, and the reducer's notices, for the person (dispatch puts them in the output's
  * systemMessage). */
@@ -183,8 +193,9 @@ const named = (pending: Proposal[], call: Call): Proposal[] => pending.filter(p 
  * something else (no "propos…") or an ambiguous one (two pending) must not become a consent card.
  */
 function onlyPending(pending: Proposal[], call: Call): Proposal[] {
-  if (pending.length !== 1 || !/propos/i.test(call.text)) return [];
-  return call.words.some(t => /[a-f]/.test(t) && /\d/.test(t) && !pending[0].hash.startsWith(t)) ? [] : pending;
+  const [only] = pending;
+  if (!only || pending.length !== 1 || !/propos/i.test(call.text)) return [];
+  return call.words.some(t => /[a-f]/.test(t) && /\d/.test(t) && !only.hash.startsWith(t)) ? [] : pending;
 }
 /** The handoff waiting for me, when this card call is about it (it says "handoff", or carries the card's question). */
 function handoffAsked(me: Identity, call: Call): HandoffAskDoc | null {
@@ -198,7 +209,7 @@ function admitAsked(me: Identity, call: Call): JoinRequest | null {
   const adm = admission();
   const reqs = adm.pending(me.code).filter(q => adm.targets(me.code, q).includes(me.name));
   const hit = reqs.find(q => call.text.includes(q.ref) || call.text.includes(adm.question(q, me.code)) || call.words.some(t => q.ref.startsWith(t)));
-  return hit || (/\badmit\b/i.test(call.text) && reqs.length === 1 ? reqs[0] : null);
+  return hit || (/\badmit\b/i.test(call.text) && reqs.length === 1 ? reqs[0] ?? null : null);
 }
 
 // ---------- running a step ----------
@@ -301,11 +312,11 @@ function postAsk(input: ConsentIn, me: Identity) {
   const options = ['Not yet', 'Agree', 'Object'].map(label => ({ label, description: '' }));
   step(input, me, st => ({
     type: 'answered',
-    note: st.note ? card.answerCard(proposal.confirmCard(st.note).questions[0], r, input.tool_input) : { kind: 'absent' },
+    note: st.note ? card.answerCard(firstQuestion(proposal.confirmCard(st.note)), r, input.tool_input) : { kind: 'absent' },
     target: st.note ? targetOf(me, st.note.hash) : null,
     afk: !!(r.afkTimeoutMs || r.followUp), asked,
     answers: keys.map(k => {
-      const hash = k.match(proposal.QUESTION_RE)![1]; // keys passed QUESTION_RE
+      const [, hash = ''] = proposal.QUESTION_RE.exec(k) ?? []; // keys passed QUESTION_RE (its group always matches)
       return { hash, answer: card.answerCard({ question: k, options }, r, input.tool_input, { exact: false }), live: answerable.some(p => p.hash === hash) };
     }),
   }));
@@ -316,7 +327,7 @@ function postAsk(input: ConsentIn, me: Identity) {
 function postHandoff(input: ConsentIn, me: Identity, r: ToolResponse): boolean {
   const a = handoff.pendingAsk(me.code, me.name);
   if (!a) return false;
-  const got = card.answerCard(handoff.card(a, me.code).questions[0], r, input.tool_input);
+  const got = card.answerCard(firstQuestion(handoff.card(a, me.code)), r, input.tool_input);
   if (got.kind === 'absent') return false;
   const say = (t: string, top?: HookOutput) => c.context('PostToolUse', t, top);
   const S = review.SAY;
@@ -339,22 +350,23 @@ function postAdmit(input: ConsentIn, me: Identity, r: ToolResponse): boolean {
   if (!c.identity.isHost(me.code)) return false;
   const asked = [...(Array.isArray(r.questions) ? r.questions as CardQuestion[] : []), ...((input.tool_input && input.tool_input.questions) || [])];
   const m = asked.map(q => /\(admit ([0-9a-f]{12})\)$/.exec(String(q && q.question))).find(Boolean);
-  if (!m) return false;
+  const ref = m && m[1];
+  if (!ref) return false; // the group always matches when m does
   const adm = admission();
-  const req = adm.find(me.code, m[1]);
+  const req = adm.find(me.code, ref);
   const say = (t: string, top?: HookOutput) => c.context('PostToolUse', t, top);
   const S = review.SAY;
-  if (!req) return say(S.admitUnknown(m[1], me.code)), true;
-  const got = card.answerCard(adm.card(req, me.code).questions[0], r, input.tool_input);
+  if (!req) return say(S.admitUnknown(ref, me.code)), true;
+  const got = card.answerCard(firstQuestion(adm.card(req, me.code)), r, input.tool_input);
   if (got.kind !== 'answer') return say(S.admitNoAnswer(me.name, req.name, req.ref)), true;
   try {
     if (got.label === adm.REFUSE) {
       adm.refuse(me.code, req.ref, { by: me.name });
       return say(S.admitRefused(me.name, req.name)), true;
     }
-    const as = /^Let in as (\S+)$/.exec(String(got.label));
-    const res = adm.letIn(me.code, req.ref, { by: me.name, ...(as ? { as: as[1] } : {}), sign: p => envelope.sign(p, roomStore.humanKey(me.code, me.name), { room: me.code, from: me.name }) });
-    say(S.admitLetIn(me.name, as ? as[1] : req.name, me.code), { systemMessage: `sub-human: ${res.text}` });
+    const [, as] = /^Let in as (\S+)$/.exec(String(got.label)) ?? [];
+    const res = adm.letIn(me.code, req.ref, { by: me.name, ...(as ? { as } : {}), sign: p => envelope.sign(p, roomStore.humanKey(me.code, me.name), { room: me.code, from: me.name }) });
+    say(S.admitLetIn(me.name, as ? as : req.name, me.code), { systemMessage: `sub-human: ${res.text}` });
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
     say(S.admitFailed(me.name, why), { systemMessage: `sub-human: ${req.name} was not let in: ${why}` });
@@ -413,7 +425,7 @@ function ownSince(me: Identity, ps: Proposal[], at: number): string | null {
 /** "proposal HASH" (the stub the model is told to pass), as a plan's whole text: the hash, or null. */
 const stubHash = (t: unknown): string | null => {
   const m = typeof t === 'string' ? /^\s*(?:the room )?proposal\s+([0-9a-f]{6,12})\s*\.?\s*$/i.exec(t) : null;
-  return m ? m[1] : null;
+  return m?.[1] ?? null; // the group always matches when m does
 };
 
 function preExit(input: ConsentIn, me: Identity) {
