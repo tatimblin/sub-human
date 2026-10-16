@@ -799,8 +799,11 @@ test('a word of digits is no name: /sub-human 4829 says it looks like a PIN, hid
     assert.equal(r.json!.hookSpecificOutput!.suppressOriginalPrompt, true, args);
     assert.match(r.json!.reason!, /"4829" looks like a PIN, not a name: a PIN goes in as \/sub-human join PIN once an invite line asks for it/, args);
   }
-  // a PIN where a room goes (live: "/sub-human --as 4829" said it "isn't a room")
-  const r = w.hook('join', expand('--as 4829'), { as: 'me' });
+  // "/sub-human --as 4829": given as a name, so it is no name (live round two: it said "not a room")
+  let r = w.hook('join', expand('--as 4829'), { as: 'me' });
+  assert.match(r.json!.reason!, /"4829" looks like a PIN, not a name/);
+  // and a PIN where a room goes is no room
+  r = w.hook('join', expand('dana 4829'), { as: 'me' });
   assert.match(r.json!.reason!, /"4829" looks like a PIN, not a room/);
   assert.equal(fs.existsSync(path.join(w.home, 'rooms')) && fs.readdirSync(path.join(w.home, 'rooms')).length, false, 'no room opened');
 });

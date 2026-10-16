@@ -193,8 +193,9 @@ function answerableFor(me: Me | null | undefined, entries?: readonly Entry[] | n
   return room.open(me.code).fold(entriesOf(me, entries)).answerable(me.name).map(shape);
 }
 
-/** A proposal's title: the first non-empty line of its text, heading / list / quote markers dropped. */
-const planTitle = (text: string | null | undefined) => String(text || '').split('\n').map(l => l.replace(/^\s*(#{1,6}\s+|[-*+>]\s+)/, '').trim()).find(Boolean) || '';
+/** A proposal's title: the first non-empty line of its text, heading / list / numbered-list / quote markers dropped
+ * ("1. Add an MIT LICENSE file" is titled "Add an MIT LICENSE file"). */
+const planTitle = (text: string | null | undefined) => String(text || '').split('\n').map(l => l.replace(/^\s*(#{1,6}\s+|[-*+>]\s+|\d{1,3}[.)]\s+)/, '').trim()).find(Boolean) || '';
 const titles = new Map<string, string>(); // hash -> title: plans are content-addressed, so a hash's title never changes
 /**
  * The title people see for proposal hash: the stored plan's first line, else the entry's "proposal HASH: title"

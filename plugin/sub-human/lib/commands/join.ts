@@ -10,7 +10,7 @@
  *             let in (a link file's join_as), else join the one open room, or open one, as the default name. Never a
  *             new room while the default name's seat is live in another session of this folder (seats.liveSeatHere):
  *             that is refused with where the seat is
- *   named     `/sub-human NAME [ROOM]`: join ROOM (else the one open room, else a new one) as NAME, leaving any other
+ *   named     `/sub-human NAME [ROOM]` (or `--as NAME`): join ROOM (else the one open room, else a new one) as NAME, leaving any other
  *             room; `/sub-human ROOM` (a room code alone): that room as the default name, never a person named after it.
  *             A word of digits is no name (it looks like a PIN)
  *   join      `/sub-human join …`: ROOM (a room code alone): that room on this machine, as `/sub-human ROOM`;
@@ -114,6 +114,13 @@ export const bare: Verb = (_args, ctx) => {
 };
 
 export const named: Verb = (args, ctx) => {
+  // `/sub-human --as NAME`: the name the join flag gives, as `/sub-human NAME` (a PIN-shaped word is no name)
+  if (args[0] === '--as') {
+    if (args.length !== 2) return refused(USAGE);
+    const n = nameFor(args[1], ctx.cwd);
+    if ('error' in n) return refused(n.error);
+    return seat({ name: n.name, code: ctx.cur && ctx.cur.name === n.name ? ctx.cur.code : null }, ctx);
+  }
   if (args.length > 2) return refused(USAGE);
   if (args.length === 1 && identity.CODE_RE.test(args[0])) { // `/sub-human vole-8126`: that room, as the default name
     const name = identity.defaultName({ cwd: ctx.cwd });
