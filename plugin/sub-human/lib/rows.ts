@@ -182,7 +182,7 @@ function rowCalls(me: Me | null | undefined, members: MemberInput, { only = null
   if (me.role === 'claude') {
     const all = others.filter(m => !isRoomClaude(m)).map(m => m.name);
     const names = want ? all.filter(n => want.has(n)) : all;
-    const lines = ['PARTICIPANT ROWS (do this now; it costs nothing while they wait):'];
+    const lines = ['PARTICIPANT ROWS (one row per person; a row shows that person, not you. Do this now; it costs nothing while they wait):'];
     if (names.length) {
       lines.push(`Make exactly these Agent tool calls, all in ONE message, then carry on (write nothing about them):`);
       for (const n of names) lines.push(participantCall(n));

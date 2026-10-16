@@ -206,6 +206,11 @@ test('the default name: git user.name, else the local part of user.email, else $
   // taken: refused with the hint; an explicit NAME always wins
   const w3 = new World({ claude: 'sleep', dana: 'sleep' });
   w3.pid.me = process.ppid; w3.sid.me = 'aaaaaaaa-0000-4000-8000-000000000017';
+  // that dana sits in another folder (the same folder's live seat is this person's own: see the fork test below)
+  const mf = path.join(w3.home, 'rooms', w3.code, 'members.json');
+  const ms = JSON.parse(fs.readFileSync(mf, 'utf8'));
+  ms.dana.cwd = '/elsewhere';
+  fs.writeFileSync(mf, JSON.stringify(ms));
   r = w3.hook('join', expand(''), { as: 'me', env: { ...NO_GIT, USER: 'dana' } });
   assert.equal(r.json!.decision, 'block');
   assert.match(r.json!.reason!, new RegExp(`^sub-human: ✗ "dana" is taken in room ${w3.code}; pick another: /sub-human NAME ${w3.code}$`));
