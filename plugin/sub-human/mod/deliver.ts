@@ -29,6 +29,7 @@ import { restoreNeeded } from './core/prefilter.ts';
 import { mergeClassic } from './core/prompt.ts';
 import { factsBook } from './core/facts.ts';
 import { asHello, asNonce, mintNonce } from './core/state.ts';
+import { assertNever } from './core/never.ts';
 import type { EngineInterface, On, SessionAppendArgs } from 'claude-code';
 import type { JoinReply, Pulls, RelayIo, TailEvent, TailSeat } from './core/types.ts';
 
@@ -442,7 +443,7 @@ async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
       case 'mid-turn-wake': await midTurnWake($, a.text); break;
       case 'relay': queueRelay(relayIo($), a.lines); break;
       case 'invites': if (pinnedRef && !a.open.includes(pinnedRef)) unpin($); break;
-      default: break;
+      default: assertNever(a, 'delivery action');
     }
   }
 }

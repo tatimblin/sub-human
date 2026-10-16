@@ -98,6 +98,7 @@ import type { Outbox, OutboxItem } from './outbox.ts';
 import type { EngineEvent, EngineState, Effect, Failure, TimerName } from './link-engine.ts';
 import type net from 'node:net';
 import { errCode, msgOf } from '../errors.ts';
+import { assertNever } from '../../mod/core/never.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -347,6 +348,7 @@ async function serveMirror({
         fs.rmSync(path.dirname(sockFile), { recursive: true, force: true });
         finish(fx.why);
         break;
+      default: assertNever(fx, 'link effect');
     }
   }
 
@@ -437,22 +439,27 @@ async function serveMirror({
     if (engine.forGood(st)) return;
     const c = conns.get(id);
     try {
-      if (ev === 'entry') { if (!held(mirror, data)) { const e = mirror.applyLine(data); if (c) prefetch(c, e); } }
-      else if (ev === 'snapshot') { if (!heldHead(mirror, data)) { mirror.applySnapshot(data); if (c) prefetchAll(c, data.entries); } }
-      else if (ev === 'doc') applyDoc(data);
-      else if (ev === 'handoff') handoff().onAsk(mirror, data);
-      else if (ev === 'moved') moved(data);
-      else if (ev === 'end' && id === st.conn) {
-        if (data.reason === 'closed') {
-          try { storeMod.unindexRooms([mirror.code]); } catch { /* the next look at the open rooms drops it */ } // closed: no open room here (stage 8e I.1)
-          dispatch({ type: 'stop', phase: 'stopped', why: ROOM_CLOSED_REASON, reason: 'ROOM_CLOSED' });
-        }
-        else if (data.reason === 'moved') { if (!movedHere) dispatch({ type: 'movedAway', conn: id }); } // the new host here: the accepting hook's reply is still to come
-        else {
-          const message = data.message ? String(data.message).slice(0, 200) : data.reason === 'FORK' ? 'the host log was reset' : 'the connection to the host closed';
-          const reason: Reason | null = data.reason === 'FORK' ? 'LOG_RESET' : data.reason === 'AUTH' ? 'LINK_REVOKED' : null;
-          dispatch({ type: 'lost', conn: id, error: { code: data.reason, reason, message }, offline: handoff().whyOffline(mirror.code, message) });
-        }
+      // ev is one of protocol.EVENTS: the client hands on no other (client.ts isEvent)
+      switch (ev) {
+        case 'entry': if (!held(mirror, data)) { const e = mirror.applyLine(data); if (c) prefetch(c, e); } break;
+        case 'snapshot': if (!heldHead(mirror, data)) { mirror.applySnapshot(data); if (c) prefetchAll(c, data.entries); } break;
+        case 'doc': applyDoc(data); break;
+        case 'handoff': handoff().onAsk(mirror, data); break;
+        case 'moved': moved(data); break;
+        case 'end':
+          if (id !== st.conn) break;
+          if (data.reason === 'closed') {
+            try { storeMod.unindexRooms([mirror.code]); } catch { /* the next look at the open rooms drops it */ } // closed: no open room here (stage 8e I.1)
+            dispatch({ type: 'stop', phase: 'stopped', why: ROOM_CLOSED_REASON, reason: 'ROOM_CLOSED' });
+          }
+          else if (data.reason === 'moved') { if (!movedHere) dispatch({ type: 'movedAway', conn: id }); } // the new host here: the accepting hook's reply is still to come
+          else {
+            const message = data.message ? String(data.message).slice(0, 200) : data.reason === 'FORK' ? 'the host log was reset' : 'the connection to the host closed';
+            const reason: Reason | null = data.reason === 'FORK' ? 'LOG_RESET' : data.reason === 'AUTH' ? 'LINK_REVOKED' : null;
+            dispatch({ type: 'lost', conn: id, error: { code: data.reason, reason, message }, offline: handoff().whyOffline(mirror.code, message) });
+          }
+          break;
+        default: assertNever(ev, 'stream event');
       }
     } catch (e) {
       const fork = errCode(e) === 'FORK';

@@ -19,6 +19,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { lib, cli, check, tilde, isExec, readText } from './check.ts';
+import { assertNever } from '../../../mod/core/never.ts';
 import type { AuthorizedKeysScan, Check, KeyLine, LinkTransportView } from '../types.ts';
 
 function checkShim({ needed }: { needed: boolean }): Check {
@@ -118,7 +119,8 @@ function sshHint(stderr: unknown, link: { code?: string; transport?: LinkTranspo
   const t = link.transport || {};
   const newInvite = `ask the host for a new invite (/sub-human invite${t.via ? ` --via ${t.via}` : ''}) and type the line it shows`;
   const p = lib('remote/transports/ssh.ts').classify(stderr);
-  switch (p && p.kind) {
+  if (!p) return null;
+  switch (p.kind) {
     case 'mfa': return `the host or a jump host wants an interactive login (MFA): run ${cli(`prime ${code}`)} once in a terminal; the connection then rides that login for hours`;
     case 'denied': {
       const why = t.key
@@ -133,7 +135,8 @@ function sshHint(stderr: unknown, link: { code?: string; transport?: LinkTranspo
     case 'refused': return 'nothing listens for ssh on that port';
     case 'timeout': return `the host does not answer (asleep, offline or firewalled)${t.via ? '' : '; behind a bastion, the invite needs --via JUMP (/sub-human invite --via JUMP)'}`;
     case 'no-plugin': return 'the host found no sub-human plugin or node to run: on the host, start Claude Code once';
-    default: return null;
+    case 'no-shim': case 'old-host': case 'no-room': case 'not-hosted': case 'serve-refused': return null;
+    default: return assertNever(p, 'ssh problem');
   }
 }
 

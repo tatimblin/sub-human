@@ -65,6 +65,7 @@
 
 import { hash12 } from '../text.ts';
 import { YES_GUARD_MS } from '../config.ts';
+import { assertNever } from '../../mod/core/never.ts';
 import type { Confirm, NoteStage, Recheck, Review } from '../types-app.ts';
 import type { CardAnswer } from './card.ts';
 
@@ -304,7 +305,8 @@ export function answerNeeded(r: Review | null, ev: { type: Event['type']; toolUs
     case 'stop': return ev.mode === 'plan' && r.phase !== 'restore' && r.phase !== 'entering' ? 'now' : null;
     case 'roomTool': return r.phase === 'shown' || r.phase === 'exiting' ? 'now' : null;
     case 'prompt': return (ev.mode === 'plan' && r.phase !== 'restore') || r.unread ? 'now' : null;
-    default: return null;
+    case 'enter': case 'entered': case 'planFailed': case 'permission': case 'rejected': case 'ask': case 'answered': return null;
+    default: return assertNever(ev.type, 'consent event');
   }
 }
 
@@ -632,6 +634,7 @@ export function reduce(state: State, ev: Event, ctx: Ctx): Step {
       parts.push(DONE);
       return { state, effects, say: ctxSay(...parts) };
     }
+    default: return assertNever(ev, 'consent event');
   }
 }
 

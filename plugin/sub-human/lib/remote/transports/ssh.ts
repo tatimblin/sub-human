@@ -59,6 +59,7 @@ import { RoomError } from '../../room/validate.ts';
 import childProcess from 'node:child_process';
 import * as textMod from '../../text.ts';
 import { envStr } from '../../env.ts';
+import { assertNever } from '../../../mod/core/never.ts';
 
 /** SUB_HUMAN_SSH_OPTS: extra ssh options, space separated. */
 const sshOpts = (): string[] => String(envStr('SUB_HUMAN_SSH_OPTS') || '').split(/\s+/).filter(Boolean);
@@ -220,8 +221,9 @@ function loginProblem(stderr: string, spec: SshSpec, code: string, { first = fal
   const home = spec.remoteHome || '~/.sub-human';
   const { cliLine } = textMod;
   const p = classify(stderr);
-  if (p && p.kind === 'mfa' && !/Permission denied/i.test(String(stderr || ''))) return null; // a prompt BatchMode refused: may pass once primed
-  switch (p && p.kind) {
+  if (!p) return null;
+  if (p.kind === 'mfa' && !/Permission denied/i.test(String(stderr || ''))) return null; // a prompt BatchMode refused: may pass once primed
+  switch (p.kind) {
     case 'host-key': return { reason: 'SSH_HOST_KEY', message: `ssh doesn't know ${where}'s host key yet (or it changed), and sub-human never answers ssh's questions. Run \`${once}\` once in a terminal, check and accept the key, then join again` };
     case 'denied': case 'mfa': return { reason: 'SSH_DENIED', message: `${where} refused your ssh login: sub-human logs in with your ssh keys or agent only, never a password. Check that \`${once}\` logs in without one, then join again; behind MFA, run \`${cliLine(`prime ${code}`)}\` in a terminal first` };
     case 'no-shim': return { reason: 'SSH_NO_SHIM', message: `${where} isn't set up for joining yet (no ${home}/bin/serve). On that machine, open the room in Claude Code (/sub-human), then join again${spec.remoteHome ? '' : '; if its sub-human folder is somewhere else, add --home PATH'}` };
@@ -229,11 +231,12 @@ function loginProblem(stderr: string, spec: SshSpec, code: string, { first = fal
     case 'no-plugin': return { reason: 'SSH_NO_SHIM', message: `${where} found no sub-human plugin or node to run: on that machine, start Claude Code once, then join again` };
     case 'no-room': return { reason: 'SSH_NO_ROOM', message: `room ${code} isn't open on ${where} (nothing by that name in ${home}): check the room's name, or open it there first` };
     case 'not-hosted': return { reason: 'SSH_NO_ROOM', message: `${where} only holds a copy of room ${code}; join the machine that hosts it` };
-    case 'serve-refused': return { reason: 'SSH_NO_ROOM', message: (p as { detail: string }).detail };
+    case 'serve-refused': return { reason: 'SSH_NO_ROOM', message: p.detail };
     // a name ssh cannot resolve on the first connection is a typo or a missing alias, not a network blip: say so and
     // stop (item 15); a link that connected before keeps retrying (a laptop offline resolves nothing for a while)
     case 'dns': return first ? { reason: 'SSH_HOST_UNKNOWN', message: `ssh cannot find ${spec.host} (${(/(Could not resolve hostname[^\n]*|Name or service not known|nodename nor servname[^\n]*)/i.exec(String(stderr || '')) || ['no such host'])[0].trim()}): check the name, or use an alias from your ~/.ssh/config, then join again` } : null;
-    default: return null;
+    case 'refused': case 'timeout': return null;
+    default: return assertNever(p, 'ssh problem');
   }
 }
 

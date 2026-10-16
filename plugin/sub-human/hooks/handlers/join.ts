@@ -27,6 +27,7 @@ import PathMod from 'node:path';
 // the module's rules (mod/core): the command's names, which prompt may hold a PIN, and the nonce check
 import { COMMANDS, mayHoldSecret } from '../../mod/core/command.ts';
 import { attested as leaseAttests } from '../../mod/core/state.ts';
+import { assertNever } from '../../mod/core/never.ts';
 import type { JoinIn, Reply } from '../types.ts';
 import type { Answer } from '../../lib/commands/types.ts';
 
@@ -60,7 +61,8 @@ function toReply(a: Answer, input: JoinIn, module: boolean): Reply {
       return { kind: 'joined', context: contextBlock(a.me, a.lead), say: module ? `${a.say}${bypass}` : a.say, warn, module };
     }
     case 'secret': return { kind: 'secret', text: a.text, refused: a.refused === true, module, ...(a.pinned ? { pinned: a.pinned } : {}) };
-    default: return { kind: a.kind, text: a.text, module };
+    case 'say': case 'refused': return { kind: a.kind, text: a.text, module };
+    default: return assertNever(a, 'answer');
   }
 }
 

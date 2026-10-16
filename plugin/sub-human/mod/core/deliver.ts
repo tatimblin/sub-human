@@ -11,6 +11,7 @@
  */
 import { FOR_CLAUDE, PULL_HEAD, PULL_END, PULL_CAP, pullDroppedLine, MOD_RESTART_MS, MOD_RESTART_MAX_MS, MOD_RESTART_STEADY_MS, MOD_DELIVERY_ERROR_LOG_MS } from './constants.ts';
 import { shimEnv } from './shim.ts';
+import { assertNever } from './never.ts';
 import type { DeliverAction, Hello, Pulls, TailEvent } from './types.ts';
 
 // the backoff and the notice's window are mod/core/constants.ts's (lib/config.ts re-exports them)
@@ -86,7 +87,9 @@ export function relayQueue(gap = RELAY_GAP_MS) {
     get size() { return lines.length; },
   };
 }
-const TYPES = new Set(['seat', 'chat', 'pull', 'wake', 'rows', 'health', 'invites']);
+/** Every event type the tail writes, keyed so a type added to TailEvent and not here (or here and not there) does not compile. */
+const TYPES: { readonly [T in TailEvent['type']]: true } = { seat: true, chat: true, pull: true, wake: true, rows: true, health: true, invites: true };
+const isType = (t: unknown): t is TailEvent['type'] => typeof t === 'string' && Object.hasOwn(TYPES, t);
 
 export const tailArgv = (root: unknown) => ['node', `${root}/scripts/sub-human`, 'tail', '--ndjson'];
 
@@ -119,7 +122,7 @@ const rec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'o
 export function parseEvent(line: string): TailEvent | null {
   let o: unknown; // parsed JSON: each field is checked below before it is used
   try { o = JSON.parse(line); } catch { return null; }
-  if (!rec(o) || typeof o.type !== 'string' || !TYPES.has(o.type)) return null;
+  if (!rec(o) || !isType(o.type)) return null;
   const { type, text } = o;
   switch (type) {
     case 'seat': {
@@ -131,7 +134,7 @@ export function parseEvent(line: string): TailEvent | null {
     case 'rows': return { type: 'rows', text: str(text) ? text : null };
     case 'invites': return Array.isArray(o.open) ? { type: 'invites', open: o.open.filter((r: unknown) => typeof r === 'string') } : null;
     case 'pull': case 'wake': case 'health': return str(text) ? { type, text } : null;
-    default: return null;
+    default: return assertNever(type, 'tail event');
   }
 }
 
@@ -176,7 +179,7 @@ export function route(
       if (!turnRunning) return [{ do: 'submit', text, seen }];
       return [...logLines(seen), { do: 'mid-turn-wake', text }];
     }
-    default: return [];
+    default: return assertNever(ev, 'tail event');
   }
 }
 
