@@ -44,6 +44,7 @@ import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { RoomError } from '../room/validate.ts';
+import { envStr } from '../env.ts';
 import { arr, decode, isObj, num, obj, objAs, opt, str } from '../decode.ts';
 import type { TailscaleRec } from './types-rest.ts';
 
@@ -80,7 +81,8 @@ const LOGGED_OUT_RE = /Logged out\.|NeedsLogin|not logged in|Log in at:|To authe
 const STOPPED_RE = /Tailscale is stopped\./i;
 
 function bin(env: NodeJS.ProcessEnv = process.env): string | null {
-  if (env.SUB_HUMAN_TAILSCALE) return env.SUB_HUMAN_TAILSCALE;
+  const set = envStr('SUB_HUMAN_TAILSCALE', env);
+  if (set) return set;
   for (const d of String(env.PATH || '').split(path.delimiter).filter(Boolean)) {
     const p = path.join(d, 'tailscale');
     try { fs.accessSync(p, fs.constants.X_OK); if (fs.statSync(p).isFile()) return p; } catch { /* next */ }
@@ -226,7 +228,7 @@ function on({ bin: b, path: p, port, funnel = false, timeoutMs = serveMs() }: {
  * not matter (the listener refuses a plain GET). Off with SUB_HUMAN_TAILSCALE_WARM=0. Returns the child's pid, or null.
  */
 function warm(url: string, { timeoutMs = WARM_MS, env = process.env }: { timeoutMs?: number; env?: NodeJS.ProcessEnv } = {}): number | null {
-  if (env.SUB_HUMAN_TAILSCALE_WARM === '0' || !/^https:\/\/[A-Za-z0-9.-]+(:\d+)?\/[A-Za-z0-9._~/-]*$/.test(String(url))) return null;
+  if (envStr('SUB_HUMAN_TAILSCALE_WARM', env) === '0' || !/^https:\/\/[A-Za-z0-9.-]+(:\d+)?\/[A-Za-z0-9._~/-]*$/.test(String(url))) return null;
   const code = `const r=require('node:https').get(${JSON.stringify(url)},{timeout:${Number(timeoutMs)}},s=>{s.resume();s.on('end',()=>process.exit(0))});`
     + 'r.on(\'timeout\',()=>r.destroy());r.on(\'error\',()=>process.exit(0));';
   try {

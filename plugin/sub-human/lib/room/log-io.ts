@@ -9,7 +9,7 @@
  *   log.jsonl         the active segment: every append goes here. A room from before segments has only this file,
  *                     and reads as it always did; it rotates like any other once it passes the size.
  *   log-NNNN.jsonl    a sealed segment (0001, 0002, ...), never written again. Rotation: once an append leaves
- *                     log.jsonl at config.segmentMaxBytes() or more (1 MiB), and only when every line of it chains,
+ *                     log.jsonl at env.segmentMaxBytes() or more (1 MiB), and only when every line of it chains,
  *                     log.jsonl is linked as the next log-NNNN.jsonl, snapshot.json is written, and log.jsonl is
  *                     replaced by a file holding only the sealed segment's last line: a segment's first line repeats
  *                     the previous segment's last (the carry line), so the chain runs on across files, an older
@@ -66,7 +66,8 @@ import path from 'node:path';
 import { withLock } from '../lock.ts';
 import { writeFileAtomic, writeJsonAtomic, readJsonRaw } from '../io.ts';
 import { hash12 } from '../text.ts';
-import { segmentMaxBytes, SNAPSHOT_WINDOW_MAX } from '../config.ts';
+import { SNAPSHOT_WINDOW_MAX } from '../config.ts';
+import { segmentMaxBytes } from '../env.ts';
 import { RoomError } from './validate.ts';
 import { CHAT_KINDS } from './rules.ts';
 import * as snapshot from './snapshot.ts';

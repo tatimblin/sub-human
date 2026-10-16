@@ -30,6 +30,7 @@ import path from 'node:path';
 
 // owned by mod/core/seat.ts (the hooks module parses names and codes too)
 import { NAME_RE, CODE_RE, SID_SAFE, homeOf } from '../mod/core/seat.ts';
+import { envStr } from './env.ts';
 
 const HASH_RE = /^[0-9a-f]{12}$/;
 const hash12 = (data: crypto.BinaryLike): string => crypto.createHash('sha256').update(data).digest('hex').slice(0, 12);
@@ -59,7 +60,8 @@ function cliLine(args = '', { elsewhere = false }: { elsewhere?: boolean } = {})
   const home = os.homedir();
   const shown = home && (root === home || root.startsWith(home + path.sep)) ? `~${root.slice(home.length)}` : root;
   const q = /[^\w@%+=:,./~-]/.test(shown) ? shellWord(root) : shown;
-  const env = process.env.SUB_HUMAN_HOME && !elsewhere ? homePrefix(process.env.SUB_HUMAN_HOME, home) : '';
+  const set = envStr('SUB_HUMAN_HOME');
+  const env = set && !elsewhere ? homePrefix(set, home) : '';
   return `${env}node ${q}/scripts/sub-human${args ? ` ${args}` : ''}`;
 }
 

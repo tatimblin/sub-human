@@ -59,6 +59,7 @@ import * as identity from './identity.ts';
 import * as room from './room.ts';
 import * as roomClaude from './room-claude.ts';
 import * as config from './config.ts';
+import { envMs } from './env.ts';
 import { validPid } from './io.ts';
 import { pidStarts } from './lock.ts';
 import * as links from './room/links.ts';
@@ -165,7 +166,7 @@ const isLocal = (m: Member): boolean => validPid(m.pid) && identity.isMine(m.mac
 function sweep(code: string, { now = Date.now(), name }: { now?: number; name?: string } = {}): string[] {
   const s = room.open(code).store;
   if (!s || !s.isHost) return [];
-  const after = config.SEAT_LEASE_MS + config.envMs('SUB_HUMAN_LEAVE_MS', config.LEAVE_SETTLE_MS);
+  const after = config.SEAT_LEASE_MS + envMs('SUB_HUMAN_LEAVE_MS');
   // lapsed: the lease is past the settle (a named seat: not alive), and the seat is still neither left nor lapsed
   const lapsed = (m: Member | undefined): m is Member => !!m && !m.left_at && !m.lapsed_at && !identity.seatAlive(m)
     && (name !== undefined || !(now - Date.parse(String(m.seen_at)) < after));

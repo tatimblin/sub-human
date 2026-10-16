@@ -80,6 +80,7 @@ import { RoomError } from '../room/validate.ts';
 import { reasonOf } from '../reasons.ts';
 import { hash12 } from '../text.ts';
 import * as config from '../config.ts';
+import { envMs } from '../env.ts';
 import * as realClock from '../clock.ts';
 import * as storeMod from '../room/store.ts';
 import * as linksMod from '../room/links.ts';
@@ -143,13 +144,13 @@ function dropToken(code: string, why: string, reason: Reason): void {
 // ---------- reconnect: timings, wake, network change ----------
 /** Every timing the daemon uses, from lib/config.ts and the SUB_HUMAN_LINK_*_MS overrides tests and the lab use, then `over`. */
 const linkTimings = (over: Partial<LinkTimings> = {}): LinkTimings => ({
-  retryMs: config.envMs('SUB_HUMAN_LINK_RETRY_MS', config.LINK_RETRY_MS),
-  retryMaxMs: config.envMs('SUB_HUMAN_LINK_RETRY_MAX_MS', config.LINK_RETRY_MAX_MS),
-  pingMs: config.envMs('SUB_HUMAN_LINK_PING_MS', config.LINK_PING_MS),
-  pongMs: config.envMs('SUB_HUMAN_LINK_PONG_MS', config.LINK_PONG_MS),
-  deadMs: config.envMs('SUB_HUMAN_LINK_DEAD_MS', config.LINK_DEAD_MS),
-  wakeTickMs: config.envMs('SUB_HUMAN_LINK_WAKE_TICK_MS', config.LINK_WAKE_TICK_MS),
-  wakeGapMs: config.envMs('SUB_HUMAN_LINK_WAKE_GAP_MS', config.LINK_WAKE_GAP_MS),
+  retryMs: envMs('SUB_HUMAN_LINK_RETRY_MS'),
+  retryMaxMs: envMs('SUB_HUMAN_LINK_RETRY_MAX_MS'),
+  pingMs: envMs('SUB_HUMAN_LINK_PING_MS'),
+  pongMs: envMs('SUB_HUMAN_LINK_PONG_MS'),
+  deadMs: envMs('SUB_HUMAN_LINK_DEAD_MS'),
+  wakeTickMs: envMs('SUB_HUMAN_LINK_WAKE_TICK_MS'),
+  wakeGapMs: envMs('SUB_HUMAN_LINK_WAKE_GAP_MS'),
   netPollMs: config.LINK_NET_POLL_MS,
   relayMs: config.LINK_RELAY_MS,
   ...Object.fromEntries(Object.entries(over).filter(([, v]) => v !== undefined)),
@@ -540,7 +541,7 @@ async function serveMirror({
 
 function idleWatch(link: RunningLink, mirror: MirrorRoomStore, idleMs: number, {
   now = Date.now,
-  gapMs = config.envMs('SUB_HUMAN_LINK_WAKE_GAP_MS', config.LINK_WAKE_GAP_MS),
+  gapMs = envMs('SUB_HUMAN_LINK_WAKE_GAP_MS'),
 }: { now?: () => number; gapMs?: number } = {}): () => void {
   const { isMine } = homeMod;
   const { leaseFresh } = membersMod;
@@ -585,7 +586,7 @@ async function run({ code, log = msg => process.stderr.write(`${new Date().toISO
   const mirror = opened as MirrorRoomStore; // not the host: open() gave the room's mirror
   store.createRoom(code);
   const link = await serveMirror({ mirror, connect: () => connectLink(code), log });
-  const unwatch = idleWatch(link, mirror, config.envMs('SUB_HUMAN_LINK_IDLE_MS', config.LINK_IDLE_MS));
+  const unwatch = idleWatch(link, mirror, envMs('SUB_HUMAN_LINK_IDLE_MS'));
   for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.once(sig, () => link.stop(`stopped by ${sig}`));
   process.on('SIGUSR2', () => link.wake('SIGUSR2'));
   const why = await link.done;

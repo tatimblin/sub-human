@@ -35,6 +35,7 @@ import { SECRET_WORD } from '../../mod/core/command.ts';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { projectDir } from '../cc/env.ts';
+import { envStr } from '../env.ts';
 import { HELP_HINT, USAGE, refused, say } from './answer.ts';
 import type { Answer, Ctx, Verb } from './types.ts';
 import type { Identity } from '../identity.ts';
@@ -226,7 +227,7 @@ export function bindRoomClaude(args: string[], ctx: Ctx): Answer {
   if (args.length > 1 || (args[0] && !identity.CODE_RE.test(args[0]))) {
     return refused('this session runs the room\'s Claude agent; people join from their own sessions with /sub-human.');
   }
-  const code = process.env.SUB_HUMAN_ROOM || args[0] || null;
+  const code = envStr('SUB_HUMAN_ROOM') || args[0] || null;
   if (cur && cur.role === 'claude' && (!code || cur.code === code)) return { kind: 'joined', me: cur, lead: 'room already open', say: `claude of room ${cur.code}` };
   if (cur) return refused(`this session is already ${cur.name} in room ${cur.code}.`);
   const fresh = !code;

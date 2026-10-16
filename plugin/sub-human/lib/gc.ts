@@ -30,7 +30,8 @@ import * as identity from './identity.ts';
 import { home } from './home.ts';
 import { readJson, writeJsonAtomic } from './io.ts';
 import { obj, str, opt } from './decode.ts';
-import { GC_BUDGET_MS, GC_EVERY_MS, ROOM_GC_MS, envMs } from './config.ts';
+import { GC_BUDGET_MS, GC_EVERY_MS } from './config.ts';
+import { envMs } from './env.ts';
 
 const require = createRequire(import.meta.url);
 // lib/rows.ts loads the consent fold and the tasks: only a join that sweeps a room's rows needs it
@@ -53,7 +54,7 @@ function sweep({ now = Date.now(), budgetMs = GC_BUDGET_MS, force = false, keep 
   const prev = readJson(stateFile(), GC_STATE, null);
   if (!force && prev && now - Date.parse(prev.at) < GC_EVERY_MS) return null;
   const until = Date.now() + budgetMs;
-  const ttl = envMs('SUB_HUMAN_ROOM_GC_MS', ROOM_GC_MS);
+  const ttl = envMs('SUB_HUMAN_ROOM_GC_MS');
   const out = { rooms: [] as string[], aside: [] as string[], sessions: 0 };
   // claim the sweep first: a second join meanwhile does not run one too
   writeJsonAtomic(stateFile(), { at: new Date(now).toISOString(), ...(prev && prev.after ? { after: prev.after } : {}) }, { compact: true });

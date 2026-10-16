@@ -58,6 +58,10 @@ import path from 'node:path';
 import { RoomError } from '../../room/validate.ts';
 import childProcess from 'node:child_process';
 import * as textMod from '../../text.ts';
+import { envStr } from '../../env.ts';
+
+/** SUB_HUMAN_SSH_OPTS: extra ssh options, space separated. */
+const sshOpts = (): string[] => String(envStr('SUB_HUMAN_SSH_OPTS') || '').split(/\s+/).filter(Boolean);
 import CryptoMod from 'node:crypto';
 import FsMod from 'node:fs';
 import { createRequire } from 'node:module';
@@ -90,7 +94,7 @@ function dest(text: string): SshDest | null {
  * Port, ProxyJump and keys still apply. opts (default SUB_HUMAN_SSH_OPTS, as every ssh this machine runs: a `-F FILE`
  * there is the config the link's ssh reads too) go before -G. Anything else, or no ssh, comes back unchanged.
  */
-function withUser(text: string, { bin = 'ssh', opts = String(process.env.SUB_HUMAN_SSH_OPTS || '').split(/\s+/).filter(Boolean) }: { bin?: string; opts?: string[] } = {}): string {
+function withUser(text: string, { bin = 'ssh', opts = sshOpts() }: { bin?: string; opts?: string[] } = {}): string {
   const t = String(text);
   if (t.includes('@') || !new RegExp(`^${SSH_HOST}(?::[0-9]{1,5})?$`).test(t)) return t;
   const host = t.replace(/:[0-9]+$/, '');
@@ -160,7 +164,7 @@ function checked(spec: SshSpec, code: string): { d: SshDest; local: string[]; ta
   return { d, local, tail: [...(spec.via !== undefined ? ['-J', spec.via] : []), ...(d.port ? ['-p', String(d.port)] : []), '--', `${d.user}@${d.host}`] };
 }
 
-function command(spec: SshSpec, code: string, opts: string[] = String(process.env.SUB_HUMAN_SSH_OPTS || '').split(/\s+/).filter(Boolean)): string[] {
+function command(spec: SshSpec, code: string, opts: string[] = sshOpts()): string[] {
   const { local, tail } = checked(spec, code);
   const mux = spec.mux === true ? ['-o', 'ControlMaster=no'] : [];
   // ssh takes an option's first value: the pinned ones (local: the link's key, known_hosts, StrictHostKeyChecking; mux)
@@ -236,7 +240,7 @@ function loginProblem(stderr: string, spec: SshSpec, code: string, { first = fal
 /** loginProblem's words alone. */
 const loginFailure = (stderr: string, spec: SshSpec, code: string): string | null => loginProblem(stderr, spec, code)?.message ?? null;
 
-function primeCommand(spec: SshSpec, code: string, { persist = '8h', opts = String(process.env.SUB_HUMAN_SSH_OPTS || '').split(/\s+/).filter(Boolean) }: { persist?: string; opts?: string[] } = {}): string[] {
+function primeCommand(spec: SshSpec, code: string, { persist = '8h', opts = sshOpts() }: { persist?: string; opts?: string[] } = {}): string[] {
   if (!/^[0-9]{1,5}[smhd]?$/.test(persist)) throw new RoomError('INVALID', `--persist "${persist}" is not a time (e.g. 8h)`);
   const { local, tail } = checked({ ...spec, mux: true }, code);
   // as in command(): the pinned options (the master's ControlPath, the link's key and known_hosts) before the env's

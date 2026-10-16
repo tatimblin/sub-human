@@ -20,6 +20,7 @@ import * as server from '../lib/remote/server.ts';
 import * as client from '../lib/remote/client.ts';
 import * as memory from '../lib/remote/transports/memory.ts';
 import * as config from '../lib/config.ts';
+import * as env from '../lib/env.ts';
 import type { RoomStore } from '../lib/room/types.ts';
 import type { CodedError, Invites, ShortInvite, AdmissionRecord } from '../lib/remote/types-core.ts';
 import type { ConnectOpts } from '../lib/remote/client.ts';
@@ -245,9 +246,9 @@ test('the PIN\'s backoff and the card\'s wait take their SUB_HUMAN_* overrides o
   });
   process.env.SUB_HUMAN_PIN_BACKOFF_MS = '1';
   process.env.SUB_HUMAN_ADMIT_TTL_MS = '1';
-  assert.equal(config.testMs('SUB_HUMAN_PIN_BACKOFF_MS', config.PIN_BACKOFF_MS), 1, 'under the tests');
+  assert.equal(env.testMs('SUB_HUMAN_PIN_BACKOFF_MS'), 1, 'under the tests');
   delete process.env.SUB_HUMAN_TEST;
-  assert.equal(config.testMs('SUB_HUMAN_PIN_BACKOFF_MS', config.PIN_BACKOFF_MS), config.PIN_BACKOFF_MS, 'a person\'s env cannot make the backoff 1 ms');
+  assert.equal(env.testMs('SUB_HUMAN_PIN_BACKOFF_MS'), config.PIN_BACKOFF_MS, 'a person\'s env cannot make the backoff 1 ms');
   // a wrong PIN outside the tests: the invite's wait is the real one
   const { host } = hostRoom(t);
   const r = mint(host);

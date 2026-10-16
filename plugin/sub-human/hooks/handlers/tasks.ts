@@ -25,6 +25,7 @@ import * as room from '../../lib/room.ts';
 import * as tasks from '../../lib/tasks.ts';
 import * as cc from '../../lib/cc/env.ts';
 import { readJson } from '../../lib/io.ts';
+import { envStr } from '../../lib/env.ts';
 import { obj, str, opt, nullable, arr, unknown_ } from '../../lib/decode.ts';
 import type { AnyHookIn, HookIn, Reply } from '../types.ts';
 import type { RawTask } from '../../lib/tasks.ts';
@@ -77,7 +78,7 @@ type TasksIn = Omit<AnyHookIn, 'tool_input' | 'tool_response'> & Omit<HookIn<'Ta
 function roomClaudeRoom(input: TasksIn): string | null {
   const me = resolveSeat(input);
   if (me) return me.role === 'claude' ? me.code : null;
-  const code = process.env.SUB_HUMAN_ROOM;
+  const code = envStr('SUB_HUMAN_ROOM');
   if (code && identity.CODE_RE.test(code) && input.agent_type === 'sub-human:room-claude' && identity.roomExists(code)) return code;
   return null;
 }

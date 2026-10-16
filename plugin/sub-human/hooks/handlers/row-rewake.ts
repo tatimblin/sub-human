@@ -13,6 +13,7 @@ import * as rows from '../../lib/rows.ts';
 import { resolveSeat } from '../seat.ts';
 import { sleepSync } from '../../lib/io.ts';
 import * as config from '../../lib/config.ts';
+import { envMs } from '../../lib/env.ts';
 import type { HookIn, Reply } from '../types.ts';
 import type { Identity } from '../../lib/identity.ts';
 
@@ -23,7 +24,7 @@ const LEAD = 'sub-human: this session was resumed, and its rows are NOT running:
   + 'The conversation may still list them as running; that list is from before the resume (the hooks checked: no row holds). '
   + 'Re-create them now, exactly as written:\n';
 const TAIL = '\nWrite no text: make only these calls and end your turn.';
-const WAIT_MS = config.envMs('SUB_HUMAN_REWAKE_WAIT_MS', config.REWAKE_WAIT_MS, { allowZero: true });
+const WAIT_MS = envMs('SUB_HUMAN_REWAKE_WAIT_MS');
 
 function findSeat(input: HookIn<'SessionStart'>): Identity | null {
   const pid = identity.claudePid();

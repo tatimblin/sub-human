@@ -17,8 +17,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import * as io from '../io.ts';
+import { envStr } from '../env.ts';
 
-const authorizedKeysFile = (): string => process.env.SUB_HUMAN_AUTHORIZED_KEYS || path.join(os.homedir(), '.ssh', 'authorized_keys');
+const authorizedKeysFile = (): string => envStr('SUB_HUMAN_AUTHORIZED_KEYS') || path.join(os.homedir(), '.ssh', 'authorized_keys');
 const ENROLL_TAG = (code: string): string => `sub-human-enroll:${code}`;
 
 function readText(file: string): string {

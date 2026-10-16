@@ -32,9 +32,10 @@ import crypto from 'node:crypto';
 import { CODE_RE } from './text.ts';
 import { homeOf } from '../mod/core/seat.ts';
 import { isObj } from './decode.ts';
+import { envFlag, envStr } from './env.ts';
 
 // the rule is mod/core/seat.ts homeOf's: the hooks module finds the store without node by the same one
-const home = (): string => homeOf(process.env.SUB_HUMAN_HOME, os.homedir()) || path.join(os.homedir(), '.sub-human');
+const home = (): string => homeOf(envStr('SUB_HUMAN_HOME'), os.homedir()) || path.join(os.homedir(), '.sub-human');
 const roomsDir = (): string => path.join(home(), 'rooms');
 function roomDir(code: unknown): string {
   if (typeof code !== 'string' || !CODE_RE.test(code)) throw new Error(`invalid room code "${code}"`);
@@ -117,6 +118,6 @@ function isTempPath(p: string): boolean {
   const cands = [path.resolve(p), realish(p)];
   return TMP_DIRS().some(t => cands.some(c => c === t || c.startsWith(t + path.sep)));
 }
-const allowTmpRoot = (env: NodeJS.ProcessEnv = process.env): boolean => env.SUB_HUMAN_ALLOW_TMP_ROOT === '1';
+const allowTmpRoot = (env: NodeJS.ProcessEnv = process.env): boolean => envFlag('SUB_HUMAN_ALLOW_TMP_ROOT', env);
 
 export { home, roomsDir, roomDir, machineId, machineIn, isMine, setMachineIn, repairModes, isTempPath, allowTmpRoot };

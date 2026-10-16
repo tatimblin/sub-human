@@ -57,6 +57,7 @@ import { SAY } from '../lib/consent/review.ts';
 import * as cc from '../lib/cc/env.ts';
 import { cliCmd } from '../lib/text.ts';
 import { decode, objAs } from '../lib/decode.ts';
+import { envFlag } from '../lib/env.ts';
 
 /** A JSON-RPC message from Claude Code: an object, each field checked by handle(). */
 const MESSAGE = objAs<JsonRpcIncoming>();
@@ -95,7 +96,7 @@ const text = (s: unknown, isError?: boolean): ToolResult => ({ content: [{ type:
 const json = (v: unknown) => text(JSON.stringify(v));
 
 function log(...a: unknown[]) {
-  if (process.env.SUB_HUMAN_DEBUG !== '1') return;
+  if (!envFlag('SUB_HUMAN_DEBUG')) return;
   try {
     const line = a.map(x => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ');
     fs.mkdirSync(identity.home(), { recursive: true, mode: 0o700 });

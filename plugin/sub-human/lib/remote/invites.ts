@@ -58,7 +58,8 @@
 import crypto from 'node:crypto';
 import { RoomError } from '../room/validate.ts';
 import { CODE_RE, NAME_RE } from '../text.ts';
-import { INVITE_TTL_MS, INVITE_PIN_TRIES, HANDOFF_INVITE_MS, SHORT_LIVE_MAX, ADMIT_TTL_MS, PIN_BACKOFF_MS, testMs } from '../config.ts';
+import { INVITE_TTL_MS, INVITE_PIN_TRIES, HANDOFF_INVITE_MS, SHORT_LIVE_MAX } from '../config.ts';
+import { testMs } from '../env.ts';
 import * as hostLinks from './host-links.ts';
 import * as admission from './admission.ts';
 import * as secretMod from './invite-secret.ts';
@@ -137,7 +138,7 @@ const inviteOpen = (inv: unknown, now = Date.now()): inv is ShortInvite => {
 };
 
 /** The wait after the n-th wrong PIN (n >= 1): PIN_BACKOFF_MS, doubling. */
-const backoff = (n: number): number => testMs('SUB_HUMAN_PIN_BACKOFF_MS', PIN_BACKOFF_MS) * 2 ** Math.min(Math.max(0, n - 1), 10);
+const backoff = (n: number): number => testMs('SUB_HUMAN_PIN_BACKOFF_MS') * 2 ** Math.min(Math.max(0, n - 1), 10);
 
 /**
  * An invite line's PIN step and its redemption, inside the invites update (see the header). Returns the records to
@@ -194,7 +195,7 @@ function redeemShort(cur: Invites, key: string, secret: string, inv: ShortInvite
   const joiner = { machine: proven, name: as.name, label, key: peerKey };
   const adm: AdmissionRecord = {
     v: 2, admission: true, from: ref, kind: inv.kind, by: inv.by || null, machine: proven, name: as.name, label,
-    key: peerKey, link: id, admit: 'asked', created_at: iso(now), expires_at: iso(now + testMs('SUB_HUMAN_ADMIT_TTL_MS', ADMIT_TTL_MS)),
+    key: peerKey, link: id, admit: 'asked', created_at: iso(now), expires_at: iso(now + testMs('SUB_HUMAN_ADMIT_TTL_MS')),
   };
   const next = { ...cur, [key]: { ...inv, used_at: iso(now), link: id, enrolled: { at: iso(now), ...joiner } }, [admissionSlot(secret)]: adm };
   const waiting = Object.assign(new RoomError('OFFLINE', `${admission.WAITING}; the link keeps trying`, 'ADMIT_WAITING'), {

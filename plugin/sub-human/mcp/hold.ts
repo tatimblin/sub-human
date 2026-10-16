@@ -36,6 +36,7 @@ import { joinLeave, noticeText } from '../lib/room/render.ts';
 import * as room from '../lib/room.ts';
 import * as strs from '../lib/text.ts';
 import * as config from '../lib/config.ts';
+import { envMs } from '../lib/env.ts';
 import * as linkState from '../lib/room/link-state.ts';
 import type { CallMeta, JsonRpcId, Me, PluginApi, PluginContext, ProgressToken, ToolArgs, ToolDefinition, ToolResult } from './types.ts';
 import type { Entry, Members } from '../lib/room/types.ts';
@@ -65,7 +66,6 @@ type RoomHold = Extract<Hold, { kind: 'room' }>;
 /** The seat this server serves (for rows/holds-<me> and the lease). */
 interface Seat { code: string; name: string; pid?: number | null; savedAt?: number }
 
-const { envMs } = config;
 const { NAME_RE, oneLine } = strs;
 const ANNOUNCE_MAX = 3;
 const MSG_MAX = config.HOLD_MSG_MAX; // + HINT fits the two lines a row view shows at 120 columns (at 200 the hint was cut off)
@@ -111,12 +111,12 @@ class HoldServer {
 
   constructor(ctx: HoldContext) {
     this.ctx = ctx;
-    this.BEAT_MS = envMs('SUB_HUMAN_HOLD_BEAT_MS', config.HOLD_BEAT_MS);
-    this.POLL_MS = envMs('SUB_HUMAN_HOLD_POLL_MS', config.HOLD_POLL_MS);
-    this.GRACE_MS = envMs('SUB_HUMAN_HOLD_GRACE_MS', config.HOLD_GRACE_MS);
-    this.RESPAWN_MS = envMs('SUB_HUMAN_HOLD_RESPAWN_MS', config.HOLD_RESPAWN_MS);
-    this.WHO_MS = envMs('SUB_HUMAN_HOLD_WHO_MS', config.HOLD_WHO_MS);
-    this.ROOM_GAP_MS = envMs('SUB_HUMAN_HOLD_ROOM_GAP_MS', config.HOLD_ROOM_GAP_MS);
+    this.BEAT_MS = envMs('SUB_HUMAN_HOLD_BEAT_MS');
+    this.POLL_MS = envMs('SUB_HUMAN_HOLD_POLL_MS');
+    this.GRACE_MS = envMs('SUB_HUMAN_HOLD_GRACE_MS');
+    this.RESPAWN_MS = envMs('SUB_HUMAN_HOLD_RESPAWN_MS');
+    this.WHO_MS = envMs('SUB_HUMAN_HOLD_WHO_MS');
+    this.ROOM_GAP_MS = envMs('SUB_HUMAN_HOLD_ROOM_GAP_MS');
     this.holds = new Map();     // request id -> hold
     this.expect = new Map();    // `${code}/${name}` -> {at, n}: announced or expected, no hold seen yet
     this.respawn = new Map();   // code -> Set(names) waiting for the next room hold

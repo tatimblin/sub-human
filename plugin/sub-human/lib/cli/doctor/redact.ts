@@ -80,13 +80,13 @@ function bundle(report: Report, { salt, env = process.env }: { salt?: string; en
   });
   const config = lib('config.ts');
   const timings = Object.fromEntries(Object.entries(config).filter(([k, v]) => /^[A-Z][A-Z0-9_]+$/.test(k) && (typeof v === 'number' || typeof v === 'boolean')));
-  const overrides = Object.fromEntries(Object.entries(env).filter(([k]) => config.TIMING_ENV_RE.test(k)).map(([k, v]) => [k, Number(v)]));
+  const overrides = Object.fromEntries(Object.entries(env).filter(([k]) => lib('env.ts').TIMING_ENV_RE.test(k)).map(([k, v]) => [k, Number(v)]));
   const opt = <T>(x: T): T | undefined => (x === undefined || x === null ? undefined : x);
   return {
     kind: 'sub-human-doctor-bundle', format: 1, generated_at: report.generated_at,
     note: 'redacted: no messages, keys, tokens or invites; paths under $HOME are ~, host and user names hashed',
     versions: { ...report.versions, os: red(report.versions.os), ssh: red(report.versions.ssh || '') || null },
-    config: { timings, env_overrides: overrides, ssh_opts_set: !!env.SUB_HUMAN_SSH_OPTS, home_is_default: !env.SUB_HUMAN_HOME },
+    config: { timings, env_overrides: overrides, ssh_opts_set: !!lib('env.ts').envStr('SUB_HUMAN_SSH_OPTS', env), home_is_default: !lib('env.ts').envStr('SUB_HUMAN_HOME', env) },
     checks: report.checks.map(x => ({ id: red(x.id), status: x.status, title: red(x.title), detail: red(x.detail), ...(x.fix ? { fix: red(x.fix) } : {}) })),
     links: links.map(d => ({
       room: `room-${hash8(d.code, s)}`,

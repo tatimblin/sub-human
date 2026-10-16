@@ -30,6 +30,7 @@ interface Libs {
   'cc/env.ts': typeof import('../../cc/env.ts');
   'cc/bg.ts': typeof import('../../cc/bg.ts');
   'config.ts': typeof import('../../config.ts');
+  'env.ts': typeof import('../../env.ts');
   'identity.ts': typeof import('../../identity.ts');
   'room/links.ts': typeof import('../../room/links.ts');
   'room/link-state.ts': typeof import('../../room/link-state.ts');
