@@ -6,10 +6,10 @@
 //      and, still in plan mode, the model is told to exit it first (additionalContext).
 // Both run on the same input, in that order, each guarded: a throw in one is logged and the other still runs.
 // Merging (what Claude Code did with the two hooks' outputs): when at-room stops the prompt (decision "block":
-// the prompt is erased; continue:false: no model turn runs) its output goes out alone, since no turn reads any
-// context (consent's side effects are already done, and it says the same on the next prompt), but with every
-// systemMessage (consent's tells the person an answer was not recorded). Otherwise one output: at-room's fields,
-// with both additionalContext texts and both systemMessages joined (at-room's first). No output at all when
+// the prompt is erased; continue:false: no model turn runs) consent does not run for it (its step would move the
+// review while what it says reaches no model: the next prompt that starts a turn takes it) and at-room's output goes
+// out alone. Otherwise one output: at-room's fields, with both additionalContext texts and both systemMessages
+// joined (at-room's first). No output at all when
 // neither had any. Exit 1 (Claude Code shows stderr to the person) only when a handler threw and nothing is output.
 // It runs only through mod/prompt.ts (the classic.UserPromptSubmit shim; no hooks.json entry), which adds
 // sub_human_origin to its stdin. Its output also carries consent's subHuman {reviewOpen} for the mod.
@@ -51,6 +51,10 @@ export function handle(input: Parameters<typeof atRoom.handle>[0]): Reply | null
   let failed = false;
   const handlers: [string, () => void][] = [['at-room', () => atRoom.handle(input)], ['consent', () => consent.onPrompt(input)]];
   for (const [where, fn] of handlers) {
+    // a prompt at-room stopped starts no turn: consent's step for it would move the review (Esc on the view, then
+    // "exit plan mode first") while what it says reaches no model, so the next prompt would find it moved on and
+    // plan mode not put back (stage 8e I.4); the next prompt that starts a turn takes the step
+    if (where === 'consent' && outputs.some(stops)) continue;
     const r = capture(fn);
     if (r.error) { logError(r.error, where); failed = true; }
     outputs.push(...r.outputs);
