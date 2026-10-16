@@ -190,7 +190,7 @@ function needsSpawnRec(o: Member | null | undefined, now: number = clock.now()):
   if (!o.job) return true;
   return now - Date.parse(o.spawned_at || '0') > config.ROOM_CLAUDE_BIND_MS;
 }
-const needsSpawn = (code: RoomCode, now: number = clock.now()): boolean => needsSpawnRec((identity.readMembers(code) as Members).claude, now);
+const needsSpawn = (code: RoomCode, now: number = clock.now()): boolean => needsSpawnRec(identity.readMembers(code).claude, now);
 
 /** A claim on the room's Claude's start: prevJob is the old job to stop first. */
 interface Claim { claim: string, prevJob: string | null }
@@ -269,7 +269,7 @@ function spawn(opts: SpawnOpts): SpawnResult {
   if (prevJob) stopJob(prevJob); // a respawn never leaves the old job running beside the new one
   if (claim) {
     // nor one the record lost; only while this claim is current (a stale starter must not stop the new job)
-    const o = (() => { try { return (identity.readMembers(code) as Members).claude || null; } catch { return null; } })();
+    const o = (() => { try { return identity.readMembers(code).claude || null; } catch { return null; } })();
     if (o && o.claim === claim && !o.closing) stopStrays(code, [prevJob]);
   }
   const r = spawnSync(plan.bin, plan.args, {
@@ -324,7 +324,7 @@ async function watchStart(code: RoomCode, job: string, {
   jobs = () => cc.jobs({ all: true, bin: claudeBin(), env: cleanEnv(), timeout: config.SPAWN_TIMEOUT_MS }),
   stop = stopJob,
 }: { pollMs?: number, bindMs?: number, jobs?: () => AgentJob[] | null, stop?: (job: string) => unknown } = {}): Promise<WatchResult> {
-  const read = (): Member | null => { try { return (identity.readMembers(code) as Members).claude || null; } catch { return null; } };
+  const read = (): Member | null => { try { return identity.readMembers(code).claude || null; } catch { return null; } };
   let deadline = 0; // from the first read: spawned_at + bindMs
   for (;;) {
     const o = read();
@@ -400,7 +400,7 @@ async function reap(code: RoomCode, {
   if (!identity.roomExists(code)) return 'no-claude';
   let o: Member | undefined;
   if (claimed) {
-    o = (identity.readMembers(code) as Members).claude;
+    o = identity.readMembers(code).claude;
     if (!o || !o.closing || o.stopped_at) return 'no-claude';
   } else {
     await clock.sleep(graceMs);
@@ -414,13 +414,13 @@ async function reap(code: RoomCode, {
   const deadline = Date.now() + waitMs;
   while (Date.now() < deadline && !roomTaskDone(code)) await clock.sleep(Math.min(pollMs, Math.max(0, deadline - Date.now())));
   // A start in flight records its job after this; it sees closing and stops that job itself.
-  let job = (identity.readMembers(code) as Members).claude?.job || o.job;
-  if (job === PENDING && (identity.readMembers(code) as Members).claude?.pid) job = findJob(code)?.id; // bound, starter died
+  let job = identity.readMembers(code).claude?.job || o.job;
+  if (job === PENDING && identity.readMembers(code).claude?.pid) job = findJob(code)?.id; // bound, starter died
   stopJob(job);
   stopStrays(code, [job]); // a job the record lost would outlive the room
   // `claude stop` answering is not the process gone (live: the room's Claude, its MCP server and tail ran on for
   // minutes after stopped_at): the bound process, by its pid and start time, ends here if it is still up
-  await ensureGone((identity.readMembers(code) as Members).claude || o);
+  await ensureGone(identity.readMembers(code).claude || o);
   identity.updateRoomClaude(code, () => ({ stopped_at: new Date().toISOString() }));
   try { identity.leave(code, identity.ROOM_CLAUDE, {}); } catch { /* already left */ }
   try { identity.unindexClosed(code); } catch { /* the next look at the open rooms drops it */ } // stage 8e I.1

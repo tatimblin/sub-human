@@ -85,7 +85,7 @@ import * as ioMod from './io.ts';
 import { createRequire } from 'node:module';
 import type { Card, HandoffAskDoc, HandoffDoc } from './types-app.ts';
 import type { WireCode } from './remote/types-core.ts';
-import type { Entry, EntryInput, HostProof, HostState, Link, Member, Members } from './room/types.ts';
+import type { Entry, EntryInput, HostProof, HostState, Link, Member } from './room/types.ts';
 import type { HandoffAsk, BoundInvite, Invites, LinkRecord, MovedEventData, PrivateEvent } from './remote/types-core.ts';
 import type { LinkSpec } from './remote/types-rest.ts';
 import type { MirrorRoomStore } from './room/store-mirror.ts';
@@ -148,7 +148,7 @@ function ask(code: RoomCode, { from, to, locator, sign, now = Date.now() }: { fr
   const s = store.open(code);
   if (!s.isHost) throw err('HOST_ONLY', `room ${code} is hosted on another machine; only its host hands it off`);
   if (movedAway(s)) throw err('STALE', `room ${code} moved to another machine already`);
-  const m: Member | undefined = (s.members.read() as Members)[to];
+  const m: Member | undefined = s.members.read()[to];
   if (!m || m.left_at || m.role === 'claude') throw err('INVALID', `${to} is not in room ${code}`);
   if (isMine(m.machine || machineId())) throw err('INVALID', `${to} is on this machine; a handoff moves the room to another machine`);
   if (!members.seatAlive(m)) throw err('OFFLINE', `${to} is not online; a handoff needs their answer`);
@@ -327,7 +327,7 @@ function card(a: Pick<HandoffAsk, 'id' | 'from'>, code: RoomCode): Card {
 /** Every other machine with a seat in the room: machine -> [seat names] (the old host's included). */
 function machinesOf(s: Store): Map<MachineId, string[]> {
   const by = new Map<MachineId, string[]>();
-  for (const m of Object.values(s.members.read() as Members)) {
+  for (const m of Object.values(s.members.read())) {
     if (!m || !m.name || m.left_at || m.role === 'claude' || !m.machine || isMine(m.machine)) continue;
     const seats = by.get(m.machine) || [];
     if (!by.has(m.machine)) by.set(m.machine, seats);
@@ -427,7 +427,7 @@ function promote(code: RoomCode, { name, locator, force = false, cwd, now = Date
   const gate = config.PROMOTE_OFFLINE_MS;
   const down = now - (Date.parse(st.since || '') || now);
   if (!force && down < gate) throw err('INVALID', `the link to room ${code}'s host has been down ${Math.round(down / 1000)} s; promote only after ${Math.round(gate / 60_000)} min (or --force)`);
-  const m: Member | undefined = (s.members.read() as Members)[name];
+  const m: Member | undefined = s.members.read()[name];
   if (!m || m.left_at || !isMine(m.machine)) throw err('INVALID', `${name} isn't in room ${code} on this machine`);
   const full = s.validateChain();
   if (!full.ok || !s.lastId()) throw err('FORK', `this machine's copy of room ${code} is empty or does not chain; it cannot become the room`);
@@ -468,7 +468,7 @@ function demote(code: RoomCode, { invite, pin }: { invite: string; pin?: string 
     linkSocket().start(code);
     return { orphan: null, follower: true };
   }
-  const o: Member | undefined = (s.members.read() as Members).claude;
+  const o: Member | undefined = s.members.read().claude;
   if (o && o.job && o.job !== 'pending') { try { (require('./room-claude.ts') as typeof import('./room-claude.ts')).releaseDetached(code, o.job); } catch { /* ends with its session */ } }
   const orphan: string | null = s.setAside();
   for (const k of [hostLinks.LINKS_KEY, invites.INVITES_KEY, HOST_DOC, WORKDIR, 'tasks']) s.kv.delete(k);

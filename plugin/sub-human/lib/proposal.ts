@@ -131,7 +131,7 @@ const kvOf = (me: Me) => room.open(me.code).store.kv;
 const storeOf = (me: Me) => room.open(me.code).store;
 
 function humans(code: RoomCode): string[] {
-  return Object.values((identity.readMembers(code) || {}) as Members)
+  return Object.values(identity.readMembers(code) || {})
     .filter((m): m is Member => !!m && !!m.name && m.role !== 'claude' && !m.left_at).map(m => m.name);
 }
 
