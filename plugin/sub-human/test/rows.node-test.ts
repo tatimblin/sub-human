@@ -148,6 +148,9 @@ test('rowText (room row): answer needed, agreed, objected, decided, mail and the
   const o = (extra?: RowOpts): RowOpts => ({ entries: es, taskSummary: '', ...extra });
   assert.equal(rows.rowText(code, code, 'alice', o()), '⚠ your answer needed 593da0 · ✉ 1 for you');
   assert.equal(rows.rowText(code, code, 'bob', o()), '✓ agreed 593da0 1/2');
+  // stage 8e I.3: alice's Claude answered it: read, the count goes
+  const replied = [...es, ...mk([{}, {}, {}, { kind: 'say', from: 'alice', via: 'agent', to: 'claude' }]).slice(3)];
+  assert.equal(rows.rowText(code, code, 'alice', o({ entries: replied })), '⚠ your answer needed 593da0');
   es.push(...mk([{}, {}, {}, answer('alice', 'objection')]).slice(3));
   assert.equal(rows.rowText(code, code, 'alice', o()), '✖ objected');
   assert.equal(rows.rowText(code, code, 'bob', o()), '✓ agreed 593da0 1/2 · ✖ 1 objection');
