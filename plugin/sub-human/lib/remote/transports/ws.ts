@@ -44,7 +44,7 @@
 
 import { Duplex } from 'node:stream';
 import { RoomError } from '../../room/validate.ts';
-import * as configMod from '../../config.ts';
+import { envMs } from '../../env.ts';
 import { createRequire } from 'node:module';
 import type { KindEntry, OpenCtx, Refusal, SpecBase, Transport, WsAddr, WsHello, WsSpec } from '../types-rest.ts';
 import type { CipherState, KeyPair } from '../noise.ts';
@@ -214,7 +214,7 @@ async function serverChannel(conn: Conn, { s, check = () => null, timeoutMs = HA
 }
 
 /** The listener's X25519 key, as it says it (a TEXT request): checked by the caller against an invite line's tag. */
-async function fetchKey(spec: WsAddr & SpecBase, { timeoutMs = configMod.envMs('SUB_HUMAN_WS_CONNECT_MS', configMod.WS_CONNECT_MS) }: { timeoutMs?: number } = {}): Promise<string> {
+async function fetchKey(spec: WsAddr & SpecBase, { timeoutMs = envMs('SUB_HUMAN_WS_CONNECT_MS') }: { timeoutMs?: number } = {}): Promise<string> {
   const s = parse(`//${hostPort(spec)}${spec.path}`);
   if (!s) throw new RoomError('INVALID', 'the link\'s WebSocket URL is not a plain host[:port]/path');
   let conn: Conn;
@@ -241,8 +241,7 @@ const kind: Required<KindEntry<WsSpec>> = {
     const url = urlOf({ ...s, kind: spec.kind });
     let conn: Conn;
     try {
-      const config = configMod;
-      conn = await ws().connect(url, { maxPayload: noise().MAX_MESSAGE + 64, timeoutMs: config.envMs('SUB_HUMAN_WS_CONNECT_MS', config.WS_CONNECT_MS) });
+      conn = await ws().connect(url, { maxPayload: noise().MAX_MESSAGE + 64, timeoutMs: envMs('SUB_HUMAN_WS_CONNECT_MS') });
     } catch (e) { throw new RoomError('OFFLINE', (e as Error).message); }
     try {
       const duplex = await clientChannel(conn, { rs: Buffer.from(spec.hostKey, 'base64url'), code: ctx.code, s: own });

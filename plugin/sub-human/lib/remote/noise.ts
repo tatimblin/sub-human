@@ -285,7 +285,8 @@ function loadOrCreateStatic(file: string): KeyPair {
     const st = fs.statSync(file);
     if (typeof process.getuid === 'function' && st.uid !== process.getuid()) throw new NoiseError(`${file} is not this user's`);
     if (st.mode & 0o077) throw new NoiseError(`${file} is readable by others; chmod 600 it (or delete it to make a new host key)`);
-    const j = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const j: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!j || typeof j !== 'object' || !('priv' in j) || !('pub' in j)) throw new NoiseError(`${file} is not a host key file`);
     const kp = keyPair(Buffer.from(String(j.priv), 'base64url'));
     if (b64(kp.pub) !== j.pub) throw new NoiseError(`${file}: its public key does not match its private key`);
     return kp;

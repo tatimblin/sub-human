@@ -50,7 +50,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { RoomError } from '../room/validate.ts';
-import { isAlive, sleepSync } from '../io.ts';
+import { isAlive, readJson, sleepSync } from '../io.ts';
+import { isObj, objAs } from '../decode.ts';
+import { envNum } from '../env.ts';
 import * as ioMod from '../io.ts';
 import * as textMod from '../text.ts';
 import { createRequire } from 'node:module';
@@ -59,7 +61,7 @@ import type { IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { ListenState, Refusal, ServedRoom } from './types-rest.ts';
 import type { KeyPair } from './noise.ts';
-import type { DecodedFrame } from './types-core.ts';
+import type { FrameId } from './types-core.ts';
 import type { Duplex } from 'node:stream';
 import type { Conn } from './ws.ts';
 
@@ -96,10 +98,10 @@ const logFile = (): string => path.join(dir(), 'listen.log');
 const keyFile = (): string => path.join(dir(), 'host-x25519.json');
 const staticKey = (): KeyPair => (require('./noise.ts') as typeof import('./noise.ts')).loadOrCreateStatic(keyFile());
 const hostKey = (): string => staticKey().pub.toString('base64url');
-const defaultPort = (): number => Number(process.env.SUB_HUMAN_LISTEN_PORT) || DEFAULT_PORT;
+const defaultPort = (): number => envNum('SUB_HUMAN_LISTEN_PORT') || DEFAULT_PORT;
 
 function read(): ListenState {
-  try { return JSON.parse(fs.readFileSync(stateFile(), 'utf8')) || {}; } catch { return {}; }
+  return readJson(stateFile(), objAs<ListenState>(), {});
 }
 
 /** Change the state file under its lock; fn(cur) returns the next state. */
@@ -186,7 +188,7 @@ function untailscale(rec: ServedRoom | null, log: (msg: string) => void = () => 
   } catch (e) { log(`tailscale off: ${(e as Error).message}`); return { ok: false, error: (e as Error).message }; }
 }
 
-async function run({ port = defaultPort(), log = (msg: string): unknown => process.stderr.write(`${new Date().toISOString()} sub-human listen: ${msg}\n`), closedCheckMs = Number(process.env.SUB_HUMAN_LISTEN_CHECK_MS) || CLOSED_CHECK_MS, idleMs = LISTEN_IDLE_MS }: {
+async function run({ port = defaultPort(), log = (msg: string): unknown => process.stderr.write(`${new Date().toISOString()} sub-human listen: ${msg}\n`), closedCheckMs = envNum('SUB_HUMAN_LISTEN_CHECK_MS') || CLOSED_CHECK_MS, idleMs = LISTEN_IDLE_MS }: {
   port?: number; log?: (msg: string) => unknown; closedCheckMs?: number; idleMs?: number;
 } = {}): Promise<{ why: string; port: number }> {
   const ws: typeof import('./ws.ts') = require('./ws.ts');
@@ -281,9 +283,10 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
    */
   function textConn(conn: Conn, data: Buffer, who: unknown): void {
     const protocol: typeof import('./protocol.ts') = require('./protocol.ts');
-    let frame: DecodedFrame | null = null; // parsed JSON, checked below
-    try { frame = JSON.parse(data.toString('utf8')); } catch { /* refused below */ }
-    const id = frame && frame.id !== undefined ? frame.id : null;
+    let v: unknown = null;
+    try { v = JSON.parse(data.toString('utf8')); } catch { /* refused below */ }
+    const frame = isObj(v) ? v : null; // parsed JSON, checked below
+    const id: FrameId = frame && (typeof frame.id === 'number' || typeof frame.id === 'string') ? frame.id : null;
     if (frame && frame.op === 'key') conn.send(JSON.stringify({ v: 3, key: hostKey() }));
     else if (frame && frame.op === 'enroll.start') {
       const msg = protocol.skewMessage({ host: { version: protocol.PLUGIN_VERSION, proto: protocol.PROTO }, joiner: { version: null, proto: { min: 1, max: 2 } }, need: 3 });

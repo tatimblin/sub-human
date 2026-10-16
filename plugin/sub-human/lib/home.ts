@@ -31,16 +31,22 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { CODE_RE } from './text.ts';
 import { homeOf } from '../mod/core/seat.ts';
+import { isObj } from './decode.ts';
+import { envFlag, envStr } from './env.ts';
 
 // the rule is mod/core/seat.ts homeOf's: the hooks module finds the store without node by the same one
-const home = (): string => homeOf(process.env.SUB_HUMAN_HOME, os.homedir()) || path.join(os.homedir(), '.sub-human');
+const home = (): string => homeOf(envStr('SUB_HUMAN_HOME'), os.homedir()) || path.join(os.homedir(), '.sub-human');
 const roomsDir = (): string => path.join(home(), 'rooms');
 function roomDir(code: unknown): string {
   if (typeof code !== 'string' || !CODE_RE.test(code)) throw new Error(`invalid room code "${code}"`);
   return path.join(roomsDir(), code);
 }
 
-const readId = (file: string): string | null => { try { return JSON.parse(fs.readFileSync(file, 'utf8')).id || null; } catch { return null; } };
+const readId = (file: string): string | null => {
+  let v: unknown;
+  try { v = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+  return isObj(v) && typeof v.id === 'string' && v.id ? v.id : null;
+};
 /** The id in file, else a new one linked into place (the first of two racing processes wins; both read it). */
 function readOrMakeId(file: string): string | null {
   const cur = readId(file);
@@ -65,7 +71,8 @@ function roomIds(): Record<string, string> {
   const h = home(), now = Date.now();
   if (inRooms && inRooms.home === h && now - inRooms.at < 1000) return inRooms.map;
   let map: Record<string, string> = {};
-  try { const v = JSON.parse(fs.readFileSync(machinesFile(), 'utf8')); if (v && typeof v === 'object' && !Array.isArray(v)) map = v; } catch { /* none yet */ }
+  // code -> this machine's id there; machineIn checks each value
+  try { const v: unknown = JSON.parse(fs.readFileSync(machinesFile(), 'utf8')); if (isObj(v)) map = v as Record<string, string>; } catch { /* none yet */ }
   inRooms = { home: h, at: now, map };
   return map;
 }
@@ -111,6 +118,6 @@ function isTempPath(p: string): boolean {
   const cands = [path.resolve(p), realish(p)];
   return TMP_DIRS().some(t => cands.some(c => c === t || c.startsWith(t + path.sep)));
 }
-const allowTmpRoot = (env: NodeJS.ProcessEnv = process.env): boolean => env.SUB_HUMAN_ALLOW_TMP_ROOT === '1';
+const allowTmpRoot = (env: NodeJS.ProcessEnv = process.env): boolean => envFlag('SUB_HUMAN_ALLOW_TMP_ROOT', env);
 
 export { home, roomsDir, roomDir, machineId, machineIn, isMine, setMachineIn, repairModes, isTempPath, allowTmpRoot };

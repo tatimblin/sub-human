@@ -9,7 +9,7 @@
  *   log.jsonl         the active segment: every append goes here. A room from before segments has only this file,
  *                     and reads as it always did; it rotates like any other once it passes the size.
  *   log-NNNN.jsonl    a sealed segment (0001, 0002, ...), never written again. Rotation: once an append leaves
- *                     log.jsonl at config.segmentMaxBytes() or more (1 MiB), and only when every line of it chains,
+ *                     log.jsonl at env.segmentMaxBytes() or more (1 MiB), and only when every line of it chains,
  *                     log.jsonl is linked as the next log-NNNN.jsonl, snapshot.json is written, and log.jsonl is
  *                     replaced by a file holding only the sealed segment's last line: a segment's first line repeats
  *                     the previous segment's last (the carry line), so the chain runs on across files, an older
@@ -64,12 +64,14 @@
 import nodeFs from 'node:fs';
 import path from 'node:path';
 import { withLock } from '../lock.ts';
-import { writeFileAtomic, writeJsonAtomic, readJson } from '../io.ts';
+import { writeFileAtomic, writeJsonAtomic, readJsonRaw } from '../io.ts';
 import { hash12 } from '../text.ts';
-import { segmentMaxBytes, SNAPSHOT_WINDOW_MAX } from '../config.ts';
+import { SNAPSHOT_WINDOW_MAX } from '../config.ts';
+import { segmentMaxBytes } from '../env.ts';
 import { RoomError } from './validate.ts';
 import { CHAT_KINDS } from './rules.ts';
 import * as snapshot from './snapshot.ts';
+import { isObj } from '../decode.ts';
 import type { ChainCheck, ChainVerify, Entry, LogSnapshot, SnapshotWire, Tailer, TailerFs, WindowItem } from './types.ts';
 
 const fs = nodeFs;
@@ -83,7 +85,7 @@ const BASE = 'snapshot-base.json';
 const baseFile = (dir: string): string => path.join(dir, BASE);
 /** The snapshot an installed mirror began from (install), or null. */
 function loadBase(dir: string): LogSnapshot | null {
-  const x = readJson(baseFile(dir));
+  const x = readJsonRaw(baseFile(dir));
   return validSnap(x) && x.seg === 0 ? x : null;
 }
 /** A snapshot to rebuild: sealed segments, or the base an installed mirror began from. */
@@ -131,11 +133,11 @@ function parseLines(text: string): Entry[] {
   const out: Entry[] = [];
   for (const line of text.split('\n')) {
     if (!line) continue;
-    try { const e = JSON.parse(line); if (e && typeof e === 'object') out.push(e); } catch { /* torn or corrupt line: skip */ }
+    try { const e = snapshot.asEntry(JSON.parse(line)); if (e) out.push(e); } catch { /* torn or corrupt line: skip */ }
   }
   return out;
 }
-const parse = (buf: Buffer | string): Entry | null => { try { const e = JSON.parse(buf.toString()); return e && typeof e === 'object' ? e : null; } catch { return null; } };
+const parse = (buf: Buffer | string): Entry | null => { try { return snapshot.asEntry(JSON.parse(buf.toString())); } catch { return null; } };
 const statKey = (f: string): string => { try { const st = fs.statSync(f); return `${st.ino}:${st.size}:${st.mtimeMs}`; } catch { return ''; } };
 
 /** Open file for reading, or null when it does not exist. */
@@ -156,7 +158,7 @@ function loadSnap(dir: string): LogSnapshot | null {
   const key = statKey(snapFile(dir));
   const hit = snaps.get(dir);
   if (hit && hit.key === key) return hit.snap;
-  const x = key ? readJson(snapFile(dir)) : null;
+  const x = key ? readJsonRaw(snapFile(dir)) : null;
   const snap = validSnap(x) ? x : null;
   snaps.set(dir, { key, snap });
   return snap;
@@ -397,7 +399,7 @@ function lastId(dir: string): number {
   if (fd !== null) {
     try {
       for (const l of linesBackward(fd, fs.fstatSync(fd).size)) {
-        try { id = JSON.parse(l).id || 0; break; } catch { /* corrupt: keep looking */ }
+        try { const v: unknown = JSON.parse(l); if (v === null) continue; const x = isObj(v) ? v.id : undefined; id = typeof x === 'number' && x ? x : 0; break; } catch { /* corrupt: keep looking */ }
       }
     } finally { fs.closeSync(fd); }
   }
@@ -459,7 +461,7 @@ function tailer(dir: string, { fs: xfs = nodeFs, after }: { fs?: TailerFs; after
       if (nl > pos) {
         const line = buf.toString('utf8', pos, nl);
         let e: Entry | null = null;
-        try { e = JSON.parse(line); } catch { /* corrupt: passed on as a line */ }
+        try { e = snapshot.asEntry(JSON.parse(line)); } catch { /* corrupt: passed on as a line */ }
         if (!(at === 0 && e && !(e.id > last))) { // a carry line: the previous file's last, passed on already
           out.lines.push(line);
           if (e) { out.entries.push(e); if (e.id > last) last = e.id; }
@@ -583,7 +585,7 @@ function scan(fd: number, size: number, cp: Checkpoint, mark = true): { out: { o
     if (nl > pos) {
       const l = buf.toString('utf8', pos, nl);
       let e: Entry | null = null;
-      try { const v = JSON.parse(l); e = v && typeof v === 'object' ? v : null; } catch { if (!bad) bad = { badAt: null, line: next.count + 1 }; }
+      try { e = snapshot.asEntry(JSON.parse(l)); } catch { if (!bad) bad = { badAt: null, line: next.count + 1 }; }
       if (!bad && start + pos === 0 && cp.id > 0 && e && !(e.id > cp.id)) { // the carry line: the snapshot's own, verbatim
         if (hash12(l) !== cp.hash) bad = { badAt: e.id };
         pos = nl + 1;
@@ -764,8 +766,8 @@ function tailFrom(fd: number, end: number, snap: LogSnapshot | null): { prevLine
     let low = Infinity;
     for (let n = first; !n.done; n = lines.next()) {
       let e: Entry | null = null;
-      try { e = JSON.parse(n.value as string); } catch { /* corrupt line: skip */ }
-      if (e && typeof e === 'object') { if (e.id < low) low = e.id; yield e; }
+      try { e = snapshot.asEntry(JSON.parse(n.value as string)); } catch { /* corrupt line: skip */ }
+      if (e) { if (e.id < low) low = e.id; yield e; }
     }
     if (!snap) return;
     for (let i = snap.window.length - 1; i >= 0; i--) {

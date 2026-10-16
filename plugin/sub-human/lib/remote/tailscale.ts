@@ -44,6 +44,8 @@ import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { RoomError } from '../room/validate.ts';
+import { envStr } from '../env.ts';
+import { arr, decode, isObj, num, obj, objAs, opt, str } from '../decode.ts';
 import type { TailscaleRec } from './types-rest.ts';
 
 /** What the CLI's output says (classify). */
@@ -79,7 +81,8 @@ const LOGGED_OUT_RE = /Logged out\.|NeedsLogin|not logged in|Log in at:|To authe
 const STOPPED_RE = /Tailscale is stopped\./i;
 
 function bin(env: NodeJS.ProcessEnv = process.env): string | null {
-  if (env.SUB_HUMAN_TAILSCALE) return env.SUB_HUMAN_TAILSCALE;
+  const set = envStr('SUB_HUMAN_TAILSCALE', env);
+  if (set) return set;
   for (const d of String(env.PATH || '').split(path.delimiter).filter(Boolean)) {
     const p = path.join(d, 'tailscale');
     try { fs.accessSync(p, fs.constants.X_OK); if (fs.statSync(p).isFile()) return p; } catch { /* next */ }
@@ -133,12 +136,13 @@ function notUp(kind: string, funnel = false, detail = ''): Error {
 
 function self(b: string): { dnsName: string; online: boolean; backend: string | null } {
   const r = call(b, ['status', '--json']);
-  let j: { BackendState?: string; Self?: { DNSName?: string; Online?: boolean } } | null = null; // parsed JSON, read with care
+  let j: unknown = null; // parsed JSON, read with care
   try { j = JSON.parse(r.stdout); } catch { /* below */ }
-  const backend = j && j.BackendState;
+  const st = isObj(j) ? j : {};
+  const backend = typeof st.BackendState === 'string' ? st.BackendState : null;
   if (backend === 'NeedsLogin' || backend === 'NoState' || backend === 'NeedsMachineAuth') throw notUp('logged-out', false, `BackendState ${backend}`);
   if (backend === 'Stopped') throw notUp('stopped', false);
-  const s = j && j.Self;
+  const s = isObj(st.Self) ? st.Self : null;
   if (!s || !s.DNSName) {
     const c = classify(r.text);
     if (c && c.kind !== 'enable') throw notUp(c.kind, false, r.error || '');
@@ -159,6 +163,9 @@ const serveArgs = ({ path: p, port, funnel = false }: { path: string; port: numb
 const offArgs = ({ path: p, funnel = false }: { path: string; funnel?: boolean }): string[] => [funnel ? 'funnel' : 'serve', '--https=443', `--set-path=${checkPath(p)}`, 'off'];
 
 /** Run the CLI, reading its output as it comes: an enable URL or the deadline ends it (killed), else its exit. */
+/** `--watch JSON`: watchSync's argument to its child. */
+const WATCH_ARGS = obj({ bin: str, args: arr(str), timeoutMs: opt(num) });
+
 function watch({ bin: b, args, timeoutMs = SERVE_MS, env = process.env }: {
   bin: string; args: string[]; timeoutMs?: number; env?: NodeJS.ProcessEnv;
 }): Promise<Watched> {
@@ -194,9 +201,10 @@ function watch({ bin: b, args, timeoutMs = SERVE_MS, env = process.env }: {
 function watchSync({ bin: b, args, timeoutMs = SERVE_MS }: { bin: string; args: string[]; timeoutMs?: number }): Watched {
   const r = spawnSync(process.execPath, [import.meta.filename, '--watch', JSON.stringify({ bin: b, args, timeoutMs })],
     { encoding: 'utf8', timeout: timeoutMs + 5000, stdio: ['ignore', 'pipe', 'pipe'] });
-  try { return JSON.parse(String(r.stdout).trim().split('\n').at(-1)!); } catch {
-    return { ok: false, status: null, text: String(r.stderr || '').trim(), reason: r.error && (r.error as NodeJS.ErrnoException).code === 'ETIMEDOUT' ? 'timeout' : 'error', error: r.error ? r.error.message : 'no result' };
-  }
+  let w: Watched | null = null;
+  try { w = decode(objAs<Watched>(), JSON.parse(String(r.stdout).trim().split('\n').at(-1) ?? '')); } catch { /* below */ } // watch()'s own line
+  if (w) return w;
+  return { ok: false, status: null, text: String(r.stderr || '').trim(), reason: r.error && (r.error as NodeJS.ErrnoException).code === 'ETIMEDOUT' ? 'timeout' : 'error', error: r.error ? r.error.message : 'no result' };
 }
 
 const serveMs = (): number => SERVE_MS;
@@ -220,7 +228,7 @@ function on({ bin: b, path: p, port, funnel = false, timeoutMs = serveMs() }: {
  * not matter (the listener refuses a plain GET). Off with SUB_HUMAN_TAILSCALE_WARM=0. Returns the child's pid, or null.
  */
 function warm(url: string, { timeoutMs = WARM_MS, env = process.env }: { timeoutMs?: number; env?: NodeJS.ProcessEnv } = {}): number | null {
-  if (env.SUB_HUMAN_TAILSCALE_WARM === '0' || !/^https:\/\/[A-Za-z0-9.-]+(:\d+)?\/[A-Za-z0-9._~/-]*$/.test(String(url))) return null;
+  if (envStr('SUB_HUMAN_TAILSCALE_WARM', env) === '0' || !/^https:\/\/[A-Za-z0-9.-]+(:\d+)?\/[A-Za-z0-9._~/-]*$/.test(String(url))) return null;
   const code = `const r=require('node:https').get(${JSON.stringify(url)},{timeout:${Number(timeoutMs)}},s=>{s.resume();s.on('end',()=>process.exit(0))});`
     + 'r.on(\'timeout\',()=>r.destroy());r.on(\'error\',()=>process.exit(0));';
   try {
@@ -242,5 +250,7 @@ export {
 };
 
 if (import.meta.main && process.argv[2] === '--watch') {
-  watch(JSON.parse(process.argv[3])).then(r => { process.stdout.write(JSON.stringify(r) + '\n'); process.exit(0); });
+  const a = decode(WATCH_ARGS, JSON.parse(process.argv[3] ?? 'null'));
+  if (!a) process.exit(2); // watchSync's own argument: never
+  watch(a).then(r => { process.stdout.write(JSON.stringify(r) + '\n'); process.exit(0); });
 }

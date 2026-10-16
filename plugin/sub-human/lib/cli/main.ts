@@ -122,6 +122,7 @@ import * as cc from '../cc/env.ts';
 import type * as TailLib from '../tail.ts';
 import * as statusline from '../../statusline/index.ts';
 import { readInput } from '../io.ts';
+import { isObj } from '../decode.ts';
 import { parse as parseArgs } from './args.ts';
 import type { CliIo, FlagSpec, Parsed } from './types.ts';
 import type { MirrorRoomStore } from '../room/store-mirror.ts';
@@ -209,7 +210,8 @@ function tail(args: readonly string[]) {
 /** statusline agentStatusline(input) -> text ({"id","content"} lines); whatever goes wrong, print nothing and exit 0. */
 function agentStatusline() {
   try {
-    const out = statusline.agentStatusline(readInput({ strict: false }));
+    const input = readInput({ strict: false });
+    const out = statusline.agentStatusline(isObj(input) ? input : {});
     if (typeof out === 'string' && out) process.stdout.write(out.endsWith('\n') ? out : out + '\n');
   } catch { /* keep the default rendering */ }
 }

@@ -56,6 +56,11 @@ import * as proposal from '../lib/proposal.ts';
 import { SAY } from '../lib/consent/review.ts';
 import * as cc from '../lib/cc/env.ts';
 import { cliCmd } from '../lib/text.ts';
+import { decode, objAs } from '../lib/decode.ts';
+import { envFlag } from '../lib/env.ts';
+
+/** A JSON-RPC message from Claude Code: an object, each field checked by handle(). */
+const MESSAGE = objAs<JsonRpcIncoming>();
 import { createRequire } from 'node:module';
 import type { Entry, EntryInput } from '../lib/room/types.ts';
 import type { CallMeta, CallToolParams, JsonRpcId, JsonRpcIncoming, JsonRpcOutgoing, Me, OutgoingRequest, PluginApi, PluginContext, ProgressToken, ToolArgs, ToolDefinition, ToolResult } from './types.ts';
@@ -72,9 +77,10 @@ const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05
 const negotiateProtocol = (v: unknown): string => (typeof v === 'string' && PROTOCOL_VERSIONS.includes(v) ? v : PROTOCOL_VERSIONS[0]);
 // serverInfo.version follows the plugin manifest, so one bump versions both.
 const VERSION: string = (() => {
-  try {
-    return JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '.claude-plugin', 'plugin.json'), 'utf8')).version || '0.0.0';
-  } catch { return '0.0.0'; }
+  let j: unknown;
+  try { j = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '.claude-plugin', 'plugin.json'), 'utf8')); } catch { return '0.0.0'; }
+  const v = j && typeof j === 'object' && 'version' in j ? j.version : undefined;
+  return typeof v === 'string' && v ? v : '0.0.0';
 })();
 
 // ---------- transport ----------
@@ -90,7 +96,7 @@ const text = (s: unknown, isError?: boolean): ToolResult => ({ content: [{ type:
 const json = (v: unknown) => text(JSON.stringify(v));
 
 function log(...a: unknown[]) {
-  if (process.env.SUB_HUMAN_DEBUG !== '1') return;
+  if (!envFlag('SUB_HUMAN_DEBUG')) return;
   try {
     const line = a.map(x => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ');
     fs.mkdirSync(identity.home(), { recursive: true, mode: 0o700 });
@@ -412,7 +418,7 @@ process.stdin.on('data', (chunk: string) => {
     buf = buf.slice(nl + 1);
     if (!line) continue;
     let msg: JsonRpcIncoming | null;
-    try { msg = JSON.parse(line); } catch { send({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } }); continue; }
+    try { msg = decode(MESSAGE, JSON.parse(line)); } catch { send({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } }); continue; }
     try { handle(msg); } catch (e) {
       const err = e as Error | null;
       log('handle failed', err && err.stack);

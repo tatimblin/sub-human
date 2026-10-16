@@ -7,8 +7,10 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import * as h from './helpers.ts';
 import * as io from '../lib/io.ts';
+import * as decode from '../lib/decode.ts';
 import * as lock from '../lib/lock.ts';
 import * as config from '../lib/config.ts';
+import * as env from '../lib/env.ts';
 import * as text from '../lib/text.ts';
 
 test('text.clip counts code points and never splits a surrogate pair; oneLine', () => {
@@ -23,19 +25,24 @@ test('text.clip counts code points and never splits a surrogate pair; oneLine', 
   assert.ok(!text.SID_SAFE.test('../x'));
 });
 
-test('config.envMs: unset, empty, junk, negative and 0 give the fallback; allowZero takes 0', () => {
-  const k = 'SUB_HUMAN_TEST_ENVMS';
-  const at = (v: string | undefined): number => { if (v === undefined) delete process.env[k]; else process.env[k] = v; return config.envMs(k, 7); };
+test('env.envMs: unset, empty, junk, negative and 0 give the fallback; an allowZero knob takes 0', () => {
+  for (const [raw, want] of [[undefined, 7], ['', 7], ['  ', 7], ['abc', 7], ['-5', 7], ['Infinity', 7], ['0', 7], ['250', 250]] as const) {
+    assert.equal(env.parseMs(raw, 7), want, String(raw));
+  }
+  assert.equal(env.parseMs('0', 7, { allowZero: true }), 0);
+  const was = { p: process.env.SUB_HUMAN_POLL_MS, r: process.env.SUB_HUMAN_REAP_WAIT_MS };
   try {
-    assert.equal(at(undefined), 7);
-    assert.equal(at(''), 7);
-    assert.equal(at('abc'), 7);
-    assert.equal(at('-5'), 7);
-    assert.equal(at('0'), 7);
-    assert.equal(at('250'), 250);
-    process.env[k] = '0';
-    assert.equal(config.envMs(k, 7, { allowZero: true }), 0);
-  } finally { delete process.env[k]; }
+    delete process.env.SUB_HUMAN_POLL_MS;
+    assert.equal(env.envMs('SUB_HUMAN_POLL_MS'), config.TAIL_POLL_MS, 'unset: the table\'s default');
+    assert.equal(env.envMs('SUB_HUMAN_POLL_MS', 9), 9, 'unset: the caller\'s fallback');
+    process.env.SUB_HUMAN_POLL_MS = '0';
+    assert.equal(env.envMs('SUB_HUMAN_POLL_MS'), config.TAIL_POLL_MS, 'not an allowZero knob');
+    process.env.SUB_HUMAN_REAP_WAIT_MS = '0';
+    assert.equal(env.envMs('SUB_HUMAN_REAP_WAIT_MS'), 0, 'an allowZero knob');
+  } finally {
+    if (was.p === undefined) delete process.env.SUB_HUMAN_POLL_MS; else process.env.SUB_HUMAN_POLL_MS = was.p;
+    if (was.r === undefined) delete process.env.SUB_HUMAN_REAP_WAIT_MS; else process.env.SUB_HUMAN_REAP_WAIT_MS = was.r;
+  }
 });
 
 test('io.writeJsonAtomic: new files are 0600, an existing file keeps its mode, an explicit mode wins', () => {
@@ -51,7 +58,11 @@ test('io.writeJsonAtomic: new files are 0600, an existing file keeps its mode, a
   io.writeFileAtomic(f, 'x', { mode: 0o755 });
   assert.equal(fs.statSync(f).mode & 0o777, 0o755);
   assert.deepEqual(fs.readdirSync(path.dirname(f)), ['x.json'], 'no temp file left');
-  assert.equal(io.readJson(path.join(dir, 'missing.json'), 'fb'), 'fb');
+  assert.equal(io.readJson(path.join(dir, 'missing.json'), decode.str, 'fb'), 'fb');
+  fs.writeFileSync(path.join(dir, 'n.json'), '5');
+  assert.equal(io.readJson(path.join(dir, 'n.json'), decode.str, 'fb'), 'fb', 'a value the decoder refuses gives the fallback');
+  assert.equal(io.readJson(path.join(dir, 'n.json'), decode.num, null), 5);
+  assert.equal(io.readJsonRaw(path.join(dir, 'missing.json')), undefined);
   assert.equal(io.isAlive(process.pid), true);
   assert.equal(io.isAlive(0), false);
 });

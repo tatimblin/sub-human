@@ -592,3 +592,25 @@ test('a seat refused at join gives its link binding back; a seat of another mach
   const e = identity.readMembers(code).erin;
   assert.ok(e.lapsed_at && !e.left_at);
 });
+
+test('remote (memory): params of the wrong shape are refused by the op\'s own checks, with nothing bound or written', async t => {
+  const { code, host } = hostRoom(t);
+  const c = await linked(t, host);
+  const before = logLines(code).length;
+  await rejects(c.request('join', [1, 2]), 'INVALID'); // not an object: no pubkey
+  await rejects(c.request('join', { ...seat(code, 'alice'), pubkey: 5 }), 'INVALID');
+  // a proof signed over a name that is no seat name (a number): INVALID, and the link binds nothing
+  const key = seatKey.ensure(code, 'alice');
+  const pubkey = seatKey.publicPem(code, 'alice');
+  const proof = hostLinks.proveSeat(key, { room: code, name: 7 as unknown as string, pubkey }); // deliberate: a number
+  await rejects(c.request('join', { name: 7, pubkey, proof }), 'INVALID');
+  assert.deepEqual(Object.values(hostLinks.links(host)).map(l => l.seats), [[]]);
+  await rejects(c.request('leave', { name: ['alice'] }), 'AUTH');
+  await rejects(c.request('beat', { name: 1 }), 'AUTH');
+  await rejects(c.request('append', { payload: 'x' }), 'INVALID');
+  await rejects(c.request('append', { payload: { from: 3, kind: 'say', text: 'x' } }), 'AUTH');
+  await rejects(c.request('subscribe', { after: '0', hash: null }), 'INVALID');
+  assert.deepEqual(await c.request('blob.get', { ref: 42 }), { bytes: null });
+  await rejects(c.request('handoff.refuse', { id: {} }), 'INVALID');
+  assert.equal(logLines(code).length, before);
+});

@@ -13,6 +13,7 @@ import * as identity from '../lib/identity.ts';
 import * as proposal from '../lib/proposal.ts';
 import * as textMod from '../lib/text.ts';
 import * as store from '../lib/room/store.ts';
+import { MirrorRoomStore } from '../lib/room/store-mirror.ts';
 import * as links from '../lib/room/links.ts';
 import * as linkMod from '../lib/remote/link.ts';
 import { roomsDir } from '../lib/home.ts';
@@ -444,7 +445,9 @@ test('cli link CODE --forget on a link that is not online (verify12 remote/05b):
   fs.mkdirSync(s.dir!, { recursive: true, mode: 0o700 });
   fs.writeFileSync(s.logFile, '{"id":1}\n');
   // bob's seat, this machine's, as the host's document (sent to the mirror) has it
-  const mirrorLocal = (store.open(code) as unknown as { local: FsRoomStore }).local;
+  const opened = store.open(code);
+  assert.ok(opened instanceof MirrorRoomStore, 'a linked room opens as its mirror');
+  const mirrorLocal = opened.local;
   mirrorLocal.members.update(() => ({ bob: { name: 'bob', role: 'member', machine: identity.machineId(), joined_at: new Date().toISOString() } } as never));
   const pid = Number(spawnSync('sh', ['-c', `'${process.execPath}' -e 'setInterval(() => {}, 1000)' >/dev/null 2>&1 & echo $!`], { encoding: 'utf8' }).stdout.trim());
   s.kv.set('link', { pid, state: 'connecting', since: new Date().toISOString() });

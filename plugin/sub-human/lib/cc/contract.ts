@@ -54,7 +54,7 @@ interface ProbeResult { id: string; stability: string; ok: boolean; missing: str
 interface ContractFile { probed: string; min: string; entries: ContractEntry[] }
 
 const FILE = path.join(import.meta.dirname, 'contract.json');
-const data: ContractFile = JSON.parse(fs.readFileSync(FILE, 'utf8'));
+const data = JSON.parse(fs.readFileSync(FILE, 'utf8')) as ContractFile; // the plugin's own file (npm run probe checks it)
 const deepFreeze = <T>(o: T): T => { if (o && typeof o === 'object') { for (const v of Object.values(o)) deepFreeze(v); Object.freeze(o); } return o; };
 
 const CONTRACT: readonly ContractEntry[] = deepFreeze(data.entries);

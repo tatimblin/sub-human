@@ -43,7 +43,8 @@ import { fold, proposals, answers, answered, decided, approversOf } from './cons
 import { NO_TRUST, unverified } from './trust.ts';
 import { oneLine } from '../text.ts';
 import * as clock from '../clock.ts';
-import { TAIL_MAX, TEXT_MAX, CHAT_WRAP, CHAT_MAX, DIGEST_CAP, CHAT_LINES_MAX, CHAT_NEST, LEAVE_SETTLE_MS, ROW_NOTICE_MS, envMs } from '../config.ts';
+import { TAIL_MAX, TEXT_MAX, CHAT_WRAP, CHAT_MAX, DIGEST_CAP, CHAT_LINES_MAX, CHAT_NEST, ROW_NOTICE_MS } from '../config.ts';
+import { envMs } from '../env.ts';
 import type { Entry, LaneViewer, Matrix, Members, Trust } from './types.ts';
 import { FOR_CLAUDE } from '../../mod/core/constants.ts';
 
@@ -430,7 +431,7 @@ interface Notice {
   /** a leave's reason as the chat line gives it (" (connection lost)"), else '' */
   why: string;
 }
-const settleMs = () => envMs('SUB_HUMAN_LEAVE_MS', LEAVE_SETTLE_MS);
+const settleMs = () => envMs('SUB_HUMAN_LEAVE_MS');
 const isMove = (e: Entry | null | undefined) => !!e && e.via === 'system' && (e.kind === 'member_joined' || e.kind === 'member_left');
 
 function joinLeave(es: readonly Entry[] | null | undefined, viewer: string | null | undefined, { now = clock.now(), settle = settleMs() } = {}): Notice[] {

@@ -20,13 +20,15 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { readJson, writeJsonAtomic } from '../io.ts';
+import { readJsonRaw, writeJsonAtomic } from '../io.ts';
 import { RoomError } from '../room/validate.ts';
 import * as config from '../config.ts';
 import type { SignedPayload } from './types-core.ts';
 
 /** A queued @room post: the signed payload as the hook made it, and when it was queued. */
 interface OutboxItem { payload: SignedPayload; queued_at: string }
+/** An outbox item as read: one with a payload (the outbox's own write; load keeps no other). */
+const isItem = (x: unknown): x is OutboxItem => !!x && typeof x === 'object' && !!(x as { payload?: unknown }).payload;
 /** A signed @room post (queueable): its nonce and ts are fixed. */
 type QueuedPost = SignedPayload & { nonce: string; ts: number };
 
@@ -58,7 +60,7 @@ const queueable = (p: unknown): p is QueuedPost => {
  */
 function open(dir: string, { max = config.LINK_OUTBOX_MAX, ageMs = config.LINK_OUTBOX_AGE_MS }: { max?: number; ageMs?: number } = {}): Outbox {
   const file = path.join(dir, 'outbox.json');
-  const load = (): OutboxItem[] => { const v: unknown = readJson(file); return Array.isArray(v) ? v.filter(x => x && x.payload) : []; };
+  const load = (): OutboxItem[] => { const v = readJsonRaw(file); return Array.isArray(v) ? v.filter(isItem) : []; };
   let list = load();
   const save = () => {
     if (!list.length) { fs.rmSync(file, { force: true }); return; }

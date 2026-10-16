@@ -25,6 +25,8 @@ import * as room from '../../lib/room.ts';
 import * as tasks from '../../lib/tasks.ts';
 import * as cc from '../../lib/cc/env.ts';
 import { readJson } from '../../lib/io.ts';
+import { envStr } from '../../lib/env.ts';
+import { obj, str, opt, nullable, arr, unknown_ } from '../../lib/decode.ts';
 import type { AnyHookIn, HookIn, Reply } from '../types.ts';
 import type { RawTask } from '../../lib/tasks.ts';
 import type { Task } from '../../lib/types-app.ts';
@@ -39,6 +41,12 @@ interface NativeTask extends RawTask {
   description?: string;
   metadata?: { _internal?: unknown; req?: unknown } | null;
 }
+
+/** A native task file as read: Claude Code's; every field this file reads is optional. */
+const NATIVE_TASK = obj({
+  id: opt(unknown_), subject: opt(str), status: opt(str), owner: opt(nullable(str)), blockedBy: opt(arr(unknown_)),
+  description: opt(str), metadata: opt(nullable(obj({ _internal: opt(unknown_), req: opt(unknown_) }))),
+});
 
 /** A task's state in the mirror (lib/tasks.ts fold), and a `task` entry's fields. */
 type TaskState = Omit<Task, 'metadata'>;
@@ -70,13 +78,13 @@ type TasksIn = Omit<AnyHookIn, 'tool_input' | 'tool_response'> & Omit<HookIn<'Ta
 function roomClaudeRoom(input: TasksIn): string | null {
   const me = resolveSeat(input);
   if (me) return me.role === 'claude' ? me.code : null;
-  const code = process.env.SUB_HUMAN_ROOM;
+  const code = envStr('SUB_HUMAN_ROOM');
   if (code && identity.CODE_RE.test(code) && input.agent_type === 'sub-human:room-claude' && identity.roomExists(code)) return code;
   return null;
 }
 
 const listId = (code: string): string => cc.taskListId() || `sh-${code}`;
-const readNative = (code: string, id: string): NativeTask | null => (/^\d+$/.test(String(id)) ? readJson(cc.taskFile(listId(code), id)) : null);
+const readNative = (code: string, id: string): NativeTask | null => (/^\d+$/.test(String(id)) ? readJson(cc.taskFile(listId(code), id), NATIVE_TASK, null) : null);
 const internal = (t: WithMeta) => !!(t && t.metadata && t.metadata._internal);
 const RETRY = 'Nothing in that TaskUpdate was saved. Resend its other fields without status; change status only in a TaskUpdate of its own.';
 

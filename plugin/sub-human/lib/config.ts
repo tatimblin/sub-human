@@ -1,50 +1,8 @@
 /**
  * plugin/sub-human/lib/config.ts: every timing and size cap in one place, named. Zero dependencies.
- * Callers import the value they use; an env override is read by the caller through envMs() at the moment it
- * needs the value (tests set the env per child process, some per call).
- *
- * timingEnv(src) -> {name: value}   the SUB_HUMAN_*_MS overrides in src with a numeric value (lib/room-claude.ts passes
- *   them to the room's Claude, whose env the bg daemon would otherwise filter out)
- * envMs(name, fallback, {allowZero}?) -> number
- *   process.env[name] as a number of milliseconds, else fallback. Unset, empty, non-numeric, negative or
- *   infinite values give the fallback. 0 also gives the fallback, unless allowZero is set: only the waits
- *   where 0 means "do not wait" take it (REAP_GRACE_MS, REAP_WAIT_MS, REWAKE_WAIT_MS; the tests run the
- *   reaper and the rewake hook with no wait). Everywhere else 0 would mean a busy loop or an instant
- *   flush, so it is ignored.
+ * Callers import the value they use; an env override (SUB_HUMAN_<WHAT>_MS and the rest) is read through lib/env.ts,
+ * whose table names every knob with its default here.
  */
-
-/**
- * A timing the tests shorten that would weaken a guard if a person (or a steered model) set it: honoured only under
- * the test preload (test/helpers.ts sets SUB_HUMAN_TEST=1 for every test process and its children), else fallback.
- */
-function testMs(name: string, fallback: number): number {
-  return process.env.SUB_HUMAN_TEST === '1' ? envMs(name, fallback) : fallback;
-}
-
-function envMs(name: string, fallback: number, { allowZero = false }: { allowZero?: boolean } = {}): number {
-  const raw = process.env[name];
-  if (raw == null || String(raw).trim() === '') return fallback;
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n < 0) return fallback;
-  if (n === 0 && !allowZero) return fallback;
-  return n;
-}
-
-/** Every override envMs reads is named SUB_HUMAN_<WHAT>_MS (test/room-claude.node-test.ts checks the callers). */
-const TIMING_ENV_RE = /^SUB_HUMAN_[A-Z0-9_]+_MS$/;
-
-function timingEnv(src: Record<string, string | undefined> | null = process.env): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(src || {})) {
-    if (!TIMING_ENV_RE.test(k) || v == null || String(v).trim() === '') continue;
-    const n = Number(v);
-    if (Number.isFinite(n) && n >= 0) out[k] = String(v);
-  }
-  return out;
-}
-
-export { envMs, testMs, timingEnv, TIMING_ENV_RE };
-
 
 // ---------- the room tail (scripts/sub-human tail, the hooks module's child) ----------
 // Entries are batched into one set of events (at most one wake): flushed after SETTLE_MS of quiet, or
@@ -257,11 +215,6 @@ export const LOG_LINE_MAX_BYTES = 64 * 1024;   // one serialized log line, UTF-8
 // crosses it seals it as log-NNNN.jsonl and writes snapshot.json. A reader starts from the snapshot and parses only the
 // active segment, so this bounds a cold reader's parse (about 5,000 lines; a few ms) and a rotation's own cost.
 export const SEGMENT_MAX_BYTES = 1024 * 1024;
-/** SEGMENT_MAX_BYTES, or SUB_HUMAN_SEGMENT_BYTES (tests rotate after a few lines), read at each append. */
-export function segmentMaxBytes(): number {
-  const n = Number(process.env.SUB_HUMAN_SEGMENT_BYTES);
-  return Number.isInteger(n) && n >= 256 ? n : SEGMENT_MAX_BYTES;
-}
 // What a snapshot keeps of its last lines for the next placement (rules.ts scanTail): every entry this close before
 // its last line (the rate window, and the nonce window of 2 * SIG_SKEW_MS), at most SNAPSHOT_WINDOW_MAX of them.
 export const SNAPSHOT_WINDOW_MAX = 20_000;

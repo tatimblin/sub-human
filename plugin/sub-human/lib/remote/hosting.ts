@@ -65,6 +65,7 @@ import { SECRET_WORD } from '../../mod/core/command.ts';
 import { RoomError } from '../room/validate.ts';
 import { localHm } from '../text.ts';
 import { INVITE_TTL_MS, LINK_JOIN_WAIT_MS } from '../config.ts';
+import { envStr } from '../env.ts';
 import * as linkSocketMod from './link-socket.ts';
 import * as linkConnectMod from './link-connect.ts';
 import * as linksMod from '../room/links.ts';
@@ -131,10 +132,10 @@ function shimReady(): { shim: typeof import('./shim.ts'); h: string } {
   return { shim, h };
 }
 
-const selfAddress = (): string => process.env.SUB_HUMAN_SSH_ADDR || `${os.userInfo().username}@${os.hostname()}`;
+const selfAddress = (): string => envStr('SUB_HUMAN_SSH_ADDR') || `${os.userInfo().username}@${os.hostname()}`;
 
 function remoteLogin(): 'on' | 'off' | null {
-  const forced = process.env.SUB_HUMAN_REMOTE_LOGIN;
+  const forced = envStr('SUB_HUMAN_REMOTE_LOGIN');
   if (forced === 'on' || forced === 'off') return forced;
   const run = (cmd: string, args: string[]) => spawnSync(cmd, args, { encoding: 'utf8', timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'] });
   try {
@@ -257,7 +258,7 @@ function hostInvite(code: string, { ssh = true, via, pipe = false, by = null, no
     code, how: `over ssh ${dest}${via ? ` via ${via}` : ''}`, line, pin: r.pin, ref: r.ref,
     extra: [
       `Over ssh this needs their own ssh login to this account (${os.userInfo().username}), set up as for any ssh login: sub-human writes nothing to authorized_keys. No login here? Invite them over the web: /sub-human invite --web`,
-      ...reachHints(dest, ssh === true && !process.env.SUB_HUMAN_SSH_ADDR),
+      ...reachHints(dest, ssh === true && !envStr('SUB_HUMAN_SSH_ADDR')),
     ],
   };
   return {

@@ -17,6 +17,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import type { SpawnSyncOptionsWithStringEncoding } from 'node:child_process';
 import { CONTRACT } from './contract.ts';
+import { envStr } from '../env.ts';
 
 type Env = NodeJS.ProcessEnv;
 
@@ -99,7 +100,7 @@ interface JobsOpts {
  * @cc isAgentsJsonInvocation
  * @stability API
  */
-function jobs({ all = false, bin = process.env.SUB_HUMAN_CLAUDE || 'claude', env = process.env, timeout = 15_000, run = spawnSync }: JobsOpts = {}): AgentJob[] | null {
+function jobs({ all = false, bin = envStr('SUB_HUMAN_CLAUDE') || 'claude', env = process.env, timeout = 15_000, run = spawnSync }: JobsOpts = {}): AgentJob[] | null {
   let r;
   try { r = run(bin, agentsCmd(all), { env, encoding: 'utf8', timeout, stdio: ['ignore', 'pipe', 'pipe'] }); } catch { return null; }
   if (!r || r.error || r.status !== 0) return null;
@@ -130,7 +131,7 @@ function parseDaemonStatus(text: unknown): DaemonStatus | null {
  * @cc Show daemon pid, version, uptime
  * @stability incidental
  */
-function daemonStatus({ bin = process.env.SUB_HUMAN_CLAUDE || 'claude', env = process.env, timeout = 15_000, run = spawnSync }: Omit<JobsOpts, 'all'> = {}): DaemonStatus | null {
+function daemonStatus({ bin = envStr('SUB_HUMAN_CLAUDE') || 'claude', env = process.env, timeout = 15_000, run = spawnSync }: Omit<JobsOpts, 'all'> = {}): DaemonStatus | null {
   let r;
   try { r = run(bin, ['daemon', 'status'], { env, encoding: 'utf8', timeout, stdio: ['ignore', 'pipe', 'pipe'] }); } catch { return null; }
   if (!r || r.error) return null;

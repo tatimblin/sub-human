@@ -71,7 +71,7 @@ import type { CardAnswer } from './card.ts';
 /** recheck: a plan-view Yes that came as the view opened (within YES_GUARD_MS, or while the person had typed text in
  * the prompt), not recorded: the card asks once, and only its answer records (item 8). */
 export interface State { review: Review | null; note: Confirm | null; recheck?: Recheck | null }
-/** guardMs: YES_GUARD_MS unless the handler says otherwise (the tests shorten it: config.testMs). */
+/** guardMs: YES_GUARD_MS unless the handler says otherwise (the tests shorten it: env.testMs). */
 export interface Ctx { name: string; now: number; guardMs?: number }
 
 /** How the review's dialog closed (cc.planAnswer): note null for no note (Esc, a bare deny). */

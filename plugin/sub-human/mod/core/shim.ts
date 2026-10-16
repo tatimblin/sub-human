@@ -49,9 +49,9 @@ export function shimEnv(e: { session_id?: unknown } | null | undefined, root: un
 function parseOut(stdout: unknown): HookJson | null | undefined {
   const s = String(stdout || '').trim();
   if (!s) return null;
-  try { const o = JSON.parse(s); if (o && typeof o === 'object' && !Array.isArray(o)) return o; } catch { /* lines */ }
+  try { const o: unknown = JSON.parse(s); if (o && typeof o === 'object' && !Array.isArray(o)) return o; } catch { /* lines */ }
   for (const line of s.split('\n').reverse()) {
-    try { const o = JSON.parse(line); if (o && typeof o === 'object' && !Array.isArray(o)) return o; } catch { /* next */ }
+    try { const o: unknown = JSON.parse(line); if (o && typeof o === 'object' && !Array.isArray(o)) return o; } catch { /* next */ }
   }
   return undefined;
 }
@@ -97,7 +97,7 @@ function allJson(stdout: unknown): HookJson[] {
   for (const line of String(stdout || '').split('\n')) {
     const t = line.trim();
     if (!t) continue;
-    try { const o = JSON.parse(t); if (o && typeof o === 'object' && !Array.isArray(o)) out.push(o); } catch { /* not JSON */ }
+    try { const o: unknown = JSON.parse(t); if (o && typeof o === 'object' && !Array.isArray(o)) out.push(o); } catch { /* not JSON */ }
   }
   return out;
 }

@@ -77,7 +77,8 @@
  *   encode(frame) -> string          one line, newline-terminated
  *   decoder() -> {push(chunk) -> frame[]}   buffers partial lines; a malformed line, or one longer than
  *                                    LINK_FRAME_MAX_BYTES, is a PROTOCOL error frame (id null) in its place
- *   isRequest(f), isReply(f), isEvent(f)
+ *   isRequest(f), isReply(f), isEvent(f)   a frame's shape; isEvent: an ev in EVENTS (data unchecked)
+ *   isOp(op)                         one of OPS: an op this end serves
  *   EVENTS                           the event names a stream carries: entry doc end handoff moved snapshot
  */
 
@@ -87,23 +88,27 @@ import path from 'node:path';
 import { LINK_FRAME_MAX_BYTES } from '../config.ts';
 import { RoomError } from '../room/validate.ts';
 import { isReason, reasonOf } from '../reasons.ts';
+import { isObj } from '../decode.ts';
 import type {
   FrameId, Op, EventName, WireCode, ProtoRange, PeerVersion, OpParams, RequestFrame, AnyRequest, ResultFrame,
-  ErrorFrame, EventData, EventFrame, DecodedFrame, Caps, IncomingRequest,
+  ErrorFrame, EventData, EventFrame, DecodedFrame, Caps, IncomingRequest, IncomingEvent,
 } from './types-core.ts';
 
 const PROTO: Readonly<ProtoRange> = Object.freeze({ min: 1, max: 3 });
 const VERSION = PROTO.max;
 const PLUGIN_VERSION: string = (() => {
-  try { return String(JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '..', '.claude-plugin', 'plugin.json'), 'utf8')).version || '?'); } catch { return '?'; }
+  let j: unknown;
+  try { j = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '..', '.claude-plugin', 'plugin.json'), 'utf8')); } catch { return '?'; }
+  const v = j && typeof j === 'object' && 'version' in j ? j.version : undefined;
+  return v ? String(v) : '?';
 })();
 
 const isVersion = (n: unknown): n is number => Number.isInteger(n) && (n as number) >= 1 && (n as number) <= 1000;
 /** A hello's fields as they arrived: unchecked. */
-interface RangeFields { proto?: { min?: unknown; max?: unknown } | null }
+interface RangeFields { proto?: unknown }
 /** A hello's range, its proto when well formed; null otherwise (a hello with no proto is refused: PROTOCOL SKEW). */
 function rangeOf({ proto }: RangeFields = {}): ProtoRange | null {
-  return proto && isVersion(proto.min) && isVersion(proto.max) && proto.min <= proto.max ? { min: proto.min, max: proto.max } : null;
+  return isObj(proto) && isVersion(proto.min) && isVersion(proto.max) && proto.min <= proto.max ? { min: proto.min, max: proto.max } : null;
 }
 /** @returns {number | null} */
 function negotiate(a: ProtoRange, b: ProtoRange): number | null {
@@ -181,14 +186,15 @@ function decoder(): { push(chunk: string | Buffer): (DecodedFrame | ErrorFrame)[
   };
 }
 
-/** A decoded frame's fields, read before the guards below say which frame it is. */
-type Fields = { op?: unknown; ev?: unknown; id?: unknown } | null | undefined;
-/** A request by its shape: op a string (whether this end serves it is the server's check). */
-const isRequest = (f: unknown): f is IncomingRequest => !!f && typeof (f as Fields)!.op === 'string';
-const isReply = (f: unknown): f is ResultFrame | ErrorFrame => !!f && (f as Fields)!.op === undefined && (f as Fields)!.ev === undefined && ('result' in (f as object) || 'error' in (f as object));
-const isEvent = (f: unknown): f is EventFrame => !!f && typeof (f as Fields)!.ev === 'string';
+/** A request by its shape: op a string (whether this end serves it is the server's check: isOp). */
+const isRequest = (f: unknown): f is IncomingRequest => isObj(f) && typeof f.op === 'string';
+const isReply = (f: unknown): f is ResultFrame | ErrorFrame => isObj(f) && f.op === undefined && f.ev === undefined && ('result' in f || 'error' in f);
+/** An event this end knows (EVENTS), its data unchecked: the subscriber checks what it reads. */
+const isEvent = (f: unknown): f is IncomingEvent => isObj(f) && isEventName(f.ev);
+const isEventName = (ev: unknown): ev is EventName => EVENTS.some(e => e === ev);
+const isOp = (op: unknown): op is Op => OPS.some(o => o === op);
 
 export {
   PROTO, VERSION, PLUGIN_VERSION, rangeOf, negotiate, skewMessage, OPS, EVENTS, FIELDS, CAPS, CODES, UNKNOWN_OUTCOME,
-  unknownOutcome, request, reply, error, toError, event, encode, decoder, isRequest, isReply, isEvent,
+  unknownOutcome, request, reply, error, toError, event, encode, decoder, isRequest, isReply, isEvent, isOp,
 };

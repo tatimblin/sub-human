@@ -25,6 +25,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { home } from '../home.ts';
+import { readJson } from '../io.ts';
+import { obj, str } from '../decode.ts';
+import type { Infer } from '../decode.ts';
 import { SIG_SKEW_MS } from '../room/envelope.ts';
 import { machineKeyFile } from '../room/keys.ts';
 
@@ -37,21 +40,24 @@ const message = (room: string, ts: number): Buffer => Buffer.from(`sub-human mac
 const idOf = (key: string): string => `k${crypto.createHash('sha256').update(key).digest('hex').slice(0, 15)}`;
 
 let cached: { home: string; priv: crypto.KeyObject; pub: string } | null = null;
+/** <home>/keys/machine.json as read: {v, priv (PKCS#8 PEM), pub (base64url)}; null when missing or not one. */
+const KEY_REC = obj({ priv: str, pub: str });
+const readKey = (): Infer<typeof KEY_REC> | null => readJson(file(), KEY_REC, null);
 function load(): { priv: crypto.KeyObject; pub: string } {
   const h = home();
   if (cached && cached.home === h) return cached;
-  let rec: { priv?: string; pub?: string } | null = null;
-  try { rec = JSON.parse(fs.readFileSync(file(), 'utf8')); } catch { rec = null; }
-  if (!rec || typeof rec.priv !== 'string' || typeof rec.pub !== 'string') {
+  let rec = readKey();
+  if (!rec) {
     const kp = crypto.generateKeyPairSync('ed25519');
     rec = { priv: kp.privateKey.export({ format: 'pem', type: 'pkcs8' }).toString(), pub: kp.publicKey.export({ format: 'jwk' }).x! };
     fs.mkdirSync(path.dirname(file()), { recursive: true, mode: 0o700 });
     const tmp = `${file()}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify({ v: 1, ...rec }) + '\n', { mode: 0o600 });
     try { fs.linkSync(tmp, file()); } catch { /* another process made it first: read theirs */ } finally { fs.rmSync(tmp, { force: true }); }
-    rec = JSON.parse(fs.readFileSync(file(), 'utf8'));
+    rec = readKey();
+    if (!rec) throw new Error(`${file()}: not a machine key`); // another process's, unreadable
   }
-  cached = { home: h, priv: crypto.createPrivateKey(rec!.priv!), pub: rec!.pub! };
+  cached = { home: h, priv: crypto.createPrivateKey(rec.priv), pub: rec.pub };
   return cached;
 }
 

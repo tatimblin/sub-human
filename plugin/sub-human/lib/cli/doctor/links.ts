@@ -55,7 +55,7 @@ function helloProbe(spec: LinkSpec, code: string, { timeoutMs = DOCTOR_HELLO_MS,
   let cmd: { argv: string[]; env: NodeJS.ProcessEnv } | undefined;
   try {
     if (spec.kind === 'ssh') {
-      const extra = String(env.SUB_HUMAN_SSH_OPTS || '').split(/\s+/).filter(Boolean);
+      const extra = String(lib('env.ts').envStr('SUB_HUMAN_SSH_OPTS', env) || '').split(/\s+/).filter(Boolean);
       cmd = { argv: lib('remote/transports/ssh.ts').command(spec, code, [...extra, '-o', `ConnectTimeout=${Math.max(1, Math.ceil(timeoutMs / 1000))}`]), env };
     } else if (spec.kind === 'pipe' && typeof spec.home === 'string') {
       cmd = { argv: [process.execPath, BIN, 'serve', '--stdio', code], env: { ...env, SUB_HUMAN_HOME: spec.home } };

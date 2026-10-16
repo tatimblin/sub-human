@@ -29,14 +29,17 @@ import * as links from './room/links.ts';
 import * as identity from './identity.ts';
 import { home } from './home.ts';
 import { readJson, writeJsonAtomic } from './io.ts';
-import { GC_BUDGET_MS, GC_EVERY_MS, ROOM_GC_MS, envMs } from './config.ts';
+import { obj, str, opt } from './decode.ts';
+import { GC_BUDGET_MS, GC_EVERY_MS } from './config.ts';
+import { envMs } from './env.ts';
 
 const require = createRequire(import.meta.url);
 // lib/rows.ts loads the consent fold and the tasks: only a join that sweeps a room's rows needs it
 const rows = (): typeof import('./rows.ts') => require('./rows.ts');
 
 /** <home>/gc.json: when the last sweep started, and the room after which the next one goes on. */
-interface GcState { at: string; after?: string }
+/** <home>/gc.json: when the last sweep began, and the room it stopped after. */
+const GC_STATE = obj({ at: str, after: opt(str) });
 const stateFile = (): string => path.join(home(), 'gc.json');
 
 /** The host's records of the machines linked to this room (lib/remote/host-links.ts LINKS_KEY; not imported: GC
@@ -48,10 +51,10 @@ function hostLinked(code: string): boolean {
 }
 
 function sweep({ now = Date.now(), budgetMs = GC_BUDGET_MS, force = false, keep = null }: { now?: number; budgetMs?: number; force?: boolean; keep?: string | null } = {}): { rooms: string[]; aside: string[]; sessions: number } | null {
-  const prev = readJson(stateFile()) as GcState | null;
+  const prev = readJson(stateFile(), GC_STATE, null);
   if (!force && prev && now - Date.parse(prev.at) < GC_EVERY_MS) return null;
   const until = Date.now() + budgetMs;
-  const ttl = envMs('SUB_HUMAN_ROOM_GC_MS', ROOM_GC_MS);
+  const ttl = envMs('SUB_HUMAN_ROOM_GC_MS');
   const out = { rooms: [] as string[], aside: [] as string[], sessions: 0 };
   // claim the sweep first: a second join meanwhile does not run one too
   writeJsonAtomic(stateFile(), { at: new Date(now).toISOString(), ...(prev && prev.after ? { after: prev.after } : {}) }, { compact: true });

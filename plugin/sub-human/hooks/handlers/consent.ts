@@ -63,6 +63,8 @@ let cc!: typeof import('../../lib/cc/transcript.ts');
 let ccEnv!: typeof import('../../lib/cc/env.ts');
 let writeFileAtomic!: typeof import('../../lib/io.ts')['writeFileAtomic'];
 let config!: typeof import('../../lib/config.ts');
+/** lib/env.ts, past the quiet exit (require: cached after the first). */
+const env = (): typeof import('../../lib/env.ts') => require('../../lib/env.ts');
 let handoff!: typeof import('../../lib/handoff.ts');
 let envelope!: typeof import('../../lib/room/envelope.ts');
 let roomStore!: typeof import('../../lib/room/store.ts');
@@ -132,7 +134,7 @@ const modelInput = (input: ConsentIn): { plan?: unknown } | null => {
 };
 /** read() over the transcript, polling until it gives a value (or EXIT_INPUT_WAIT_MS passed); null then. */
 function polled<T>(input: ConsentIn, read: () => T | null): T | null {
-  const until = Date.now() + config.envMs('SUB_HUMAN_EXIT_INPUT_WAIT_MS', config.EXIT_INPUT_WAIT_MS);
+  const until = Date.now() + env().envMs('SUB_HUMAN_EXIT_INPUT_WAIT_MS');
   for (;;) {
     const v = read();
     if (v || Date.now() >= until) return v;
@@ -203,7 +205,7 @@ type Out = { say: Say | null; show?: { admit?: JoinRequest; handoff?: ReturnType
 /** The seat's state, reduce one event (made from it), run the effects, store the state, write the answer. */
 function step(input: ConsentIn, me: Identity, make: (st: State) => Event, show: Out['show'] = {}) {
   const start: State = { review: proposal.readReview(me), note: proposal.readConfirm(me), recheck: proposal.readRecheck(me) };
-  const ctx = { name: me.name, now: Date.now(), guardMs: config.testMs('SUB_HUMAN_YES_GUARD_MS', config.YES_GUARD_MS) };
+  const ctx = { name: me.name, now: Date.now(), guardMs: env().testMs('SUB_HUMAN_YES_GUARD_MS') };
   const first = review.reduce(start, make(start), ctx);
   if (first.notice) unsent.push(first.notice);
   let state = first.state;
@@ -545,7 +547,8 @@ function shimDispatch(input: ConsentIn) {
   c.out({ ...last, subHuman: { reviewOpen: reviewOpen(input), noteWaits: noteWaits(input) } });
 }
 
-const SHIM = () => process.env.SUB_HUMAN_SHIM === '1';
+/** Run by the hooks module (mod/core/shim.ts SHIM_MODE), past load(). */
+const SHIM = () => env().envFlag('SUB_HUMAN_SHIM');
 
 /** Every event consent handles, as a hook (hooks/run.ts consent). */
 function handle(input: ConsentIn) {

@@ -54,7 +54,7 @@ import { FsRoomStore } from './fs-store.ts';
 import { RoomError } from './validate.ts';
 import { reasonOf } from '../reasons.ts';
 import { blobRef, toPayload } from './rules.ts';
-import { problem } from './snapshot.ts';
+import { decodeEntry, problem } from './snapshot.ts';
 import { humanKey } from './trust.ts';
 import { createBridge } from '../remote/bridge.ts';
 import { proveSeat } from '../remote/host-links.ts';
@@ -67,17 +67,18 @@ import type {
   Payload, Placed, PlaceOpts, PresenceInput, ReadViewOpts, RoomStore, SeatRecord, SnapshotWire, Tailer, TailerFs, Trust,
 } from './types.ts';
 import type { KeyObject } from 'node:crypto';
+import type { Bridge } from '../remote/bridge.ts';
+import type { LinkDoc, RelayOp, RelayParams, RelayResults } from '../remote/types-core.ts';
 
-/** The bridge to this room's link daemon (lib/remote/bridge.ts), one per process. */
-type Bridge = { call(method: string, params: object, opts?: { deadlineMs?: number }): unknown; close(): void };
-// any: a reply is the daemon's JSON over the wire, as each op shapes it (lib/remote/link.ts)
-type Reply = any;
+/** The link daemon's socket as the bridge reaches it (lib/remote/link-socket.ts handle): each relayed op, sent with the
+ * socket paths to try, answered as the daemon answers it (RelayResults). */
+type RelayApi = { [M in RelayOp]: { params: { socket: string[]; params: RelayParams[M] }; result: RelayResults[M] } };
 
 const HANDLER = path.join(import.meta.dirname, '..', 'remote', 'link-socket.ts');
 const streamed = (key: string): boolean => key === 'members' || key === 'tasks' || /^presence\/[^/]+$/.test(key);
 const hostOnly = (what: string): RoomError => new RoomError('HOST_ONLY', `${what} runs only on the room's host`);
 
-let bridge: Bridge | null = null; // one per process, started by its first op
+let bridge: Bridge<RelayApi> | null = null; // one per process, started by its first op
 
 class MirrorRoomStore implements RoomStore {
   readonly code: string;
@@ -146,19 +147,19 @@ class MirrorRoomStore implements RoomStore {
   place(payload: Payload, opts: PlaceOpts & { queue: true }): Placed;
   place(payload: Payload, opts?: PlaceOpts): Entry;
   place(payload: Payload, { queue }: PlaceOpts = {}): Placed {
-    const r: Reply = this._call('append', queue ? { payload, queue: true } : { payload });
-    return r.queued ? { ...payload, queued: r.queued, ...(r.slow ? { slow: true } : {}) } : r.entry;
+    const r = this._call('append', queue ? { payload, queue: true } : { payload });
+    return 'entry' in r ? r.entry : { ...payload, queued: r.queued, ...(r.slow ? { slow: true } : {}) };
   }
 
   /** An op the daemon relays to the host as it is (lib/handoff.ts: handoff.accept, handoff.refuse). */
-  request(op: string, params?: object, opts?: { deadlineMs?: number }): Reply { return this._call(op, params, opts); }
+  request<M extends RelayOp>(op: M, params: RelayParams[M], opts?: { deadlineMs?: number }): RelayApi[M]['result'] { return this._call(op, params, opts); }
 
   /** The daemon's document `link` (its socket path first: lib/remote/link.ts socketPaths), null when unreadable. */
-  _linkDoc(): Reply { try { return this.local.kv.get('link'); } catch { return null; } }
+  _linkDoc(): LinkDoc | null { try { return this.local.kv.get<LinkDoc>('link'); } catch { return null; } }
 
   /** One op over the bridge to this room's link daemon (the socket it recorded, then the computed paths). */
-  _call(op: string, params?: object, { deadlineMs }: { deadlineMs?: number } = {}): Reply {
-    bridge = bridge || (createBridge({ handler: HANDLER }) as Bridge);
+  _call<M extends RelayOp>(op: M, params: RelayParams[M], { deadlineMs }: { deadlineMs?: number } = {}): RelayApi[M]['result'] {
+    bridge = bridge || createBridge<RelayApi>({ handler: HANDLER });
     try {
       return bridge.call(op, { socket: socketPaths(this.dir, this._linkDoc()), params }, { deadlineMs });
     } catch (e) {
@@ -202,11 +203,12 @@ class MirrorRoomStore implements RoomStore {
   // ----- the daemon's writes -----
   /** One verbatim host line into the mirror log (the daemon's subscribe stream). */
   applyLine(line: string): Entry {
-    let e: Entry;
-    try { e = JSON.parse(line); } catch { throw new RoomError('PROTOCOL', 'the host sent a log line that is not JSON'); }
+    let v: unknown;
+    try { v = JSON.parse(line); } catch { throw new RoomError('PROTOCOL', 'the host sent a log line that is not JSON'); }
+    const e = decodeEntry(v);
     const last = this.local.lastId();
-    if (!(e.id > last) || (e.prev !== undefined && e.prev !== this.local.lineHash(last))) {
-      throw new RoomError('FORK', `the host's line ${e.id} does not follow this mirror's line ${last}; re-mirror with sub-human link --reset ${this.code}`);
+    if (!e || !(e.id > last) || (e.prev !== undefined && e.prev !== this.local.lineHash(last))) {
+      throw new RoomError('FORK', `the host's line ${e?.id} does not follow this mirror's line ${last}; re-mirror with sub-human link --reset ${this.code}`);
     }
     this.local.appendVerbatim(line);
     return e;

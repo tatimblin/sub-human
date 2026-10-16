@@ -44,6 +44,7 @@ import { RoomError } from '../room/validate.ts';
 import * as envelope from '../room/envelope.ts';
 import * as invites from './invites.ts';
 import { isMine } from '../home.ts';
+import { isObj } from '../decode.ts';
 import type { KeyObject } from 'node:crypto';
 import type { AuthStore, LinkRecord, Links, SignedPayload } from './types-core.ts';
 
@@ -161,8 +162,8 @@ function taken(store: AuthStore, machine: string, id: string): void {
 
 const proveSeat = (key: KeyObject, { room, name, pubkey }: SeatRef): SignedPayload => envelope.sign({ kind: 'join', pubkey }, key, { room, from: name });
 
-function checkSeatProof(proof: SignedPayload | null | undefined, { room, name, pubkey }: SeatRef): void {
-  const ok = !!proof && proof.kind === 'join' && proof.room === room && proof.from === name && proof.pubkey === pubkey
+function checkSeatProof(proof: unknown, { room, name, pubkey }: { room: string; name: unknown; pubkey: string }): void {
+  const ok = isObj(proof) && proof.kind === 'join' && proof.room === room && proof.from === name && proof.pubkey === pubkey
     && envelope.isV2(proof) && envelope.freshTs(proof) && envelope.verify(proof, envelope.parseKey(pubkey));
   if (!ok) throw new RoomError('AUTH', `a join needs a fresh proof signed by ${name}'s own key`);
 }

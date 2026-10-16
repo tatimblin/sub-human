@@ -145,6 +145,13 @@ export interface BlobPutResult { ref: string }
 export interface PingResult { pong: number }
 export interface HandoffAcceptResult { ok: true; epoch: number; entry: Entry }
 
+/** What a hook hands the link daemon for each op it relays (lib/remote/link-socket.ts handle). */
+export type RelayParams = { [M in RelayOp]: M extends 'append' ? RelayAppendParams : OpParams[M] };
+/** An @room post the daemon's outbox holds instead of an answer: the link is down, or the host slow (lib/remote/link.ts). */
+export interface QueuedReply { queued: number; slow?: true }
+/** The daemon's answer to each relayed op: the host's result, or, for a queueable append, QueuedReply. */
+export type RelayResults = { [M in RelayOp]: M extends 'append' ? AppendResult | QueuedReply : OpResults[M] };
+
 /** Each op's result. */
 export interface OpResults {
   hello: HelloResult;
@@ -169,9 +176,14 @@ export interface AnyRequest { id: FrameId; op: string; params: object }
 export interface IncomingRequest {
   id?: FrameId;
   op: string;
-  /** any: unchecked JSON from the peer; each op checks the fields it uses. */
-  params?: any;
+  /** unchecked JSON from the peer: the server reads it as WireParams of the op (lib/remote/server.ts run). */
+  params?: unknown;
 }
+/** An op's params as they arrive: an object whose fields are the op's (OpParams), each unknown until the op checks
+ * it (lib/remote/server.ts OPS). A peer may send other fields, or the wrong types. */
+export type WireParams<O extends Op> = { [K in keyof OpParams[O]]?: unknown };
+/** A decoded frame shaped as an event this end knows (protocol.isEvent): data as the peer sent it. */
+export interface IncomingEvent { id?: FrameId; ev: EventName; data?: unknown }
 
 /** A reply: result or error (the other key absent, so `f.error ? … : f.result` reads either). id: the request's,
  * absent when the request had none (JSON drops an undefined id). */

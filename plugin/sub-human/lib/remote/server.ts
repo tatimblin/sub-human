@@ -105,14 +105,15 @@ import { RoomError, hash12 } from '../room/store.ts';
 import type { Reason } from '../reasons.ts';
 import { machineIn } from '../home.ts';
 import * as options from '../room/options.ts';
+import { isObj } from '../decode.ts';
 import {
   FOLLOW_POLL_MS, REPLAY_BATCH, PROPOSAL_FILE_MAX, LINK_SILENT_MS, LINK_FRAME_MAX_BYTES, LINK_AUTH_WAIT_MS,
 } from '../config.ts';
 import type {
-  CodedError, DecodedFrame, ErrorFrame, EventData, EventName, FrameId, IncomingRequest, LinkRecord, Op, OpParams, OpResults, ProtoRange,
+  CodedError, DecodedFrame, ErrorFrame, EventData, EventName, FrameId, IncomingRequest, LinkRecord, Op, OpResults, ProtoRange, WireParams,
 } from './types-core.ts';
 import type { Transport } from './types-rest.ts';
-import type { Members, RoomStore, SnapshotWire } from '../room/types.ts';
+import type { Members, Payload, PresenceInput, RoomStore, SnapshotWire } from '../room/types.ts';
 import type { Change } from '../room/watch.ts';
 
 type Log = (msg: string) => void;
@@ -120,8 +121,9 @@ type Log = (msg: string) => void;
 interface Credential { link: LinkRecord | null; token?: string }
 /** A subscribe stream of a session. */
 interface Stream { tick(): void; stop(): void; end(reason: EventData['end']['reason'], message?: string): void }
-/** Each op's handler: the session, the request's params (as the peer sent them) and its id. */
-type OpHandlers = { [K in Op]: (s: Session, params: OpParams[K], id: FrameId | undefined) => OpResults[K] };
+/** Each op's handler: the session, the request's params (as the peer sent them: each field checked before use) and
+ * its id. */
+type OpHandlers = { [K in Op]: (s: Session, params: WireParams<K>, id: FrameId | undefined) => OpResults[K] };
 
 const MACHINE_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const ANSWERS = new Set(['signoff', 'objection']);
@@ -133,8 +135,9 @@ const WIRE_CODES: Set<string> = new Set(Object.values(protocol.CODES));
 const authError = (msg: string, reason: Reason | null = null): CodedError => new RoomError('AUTH', msg, reason);
 const invalid = (msg: string): CodedError => new RoomError('INVALID', msg);
 
-function own(s: Session, name: string | undefined): void {
-  if (!hostLinks.mayWriteAs(s.link, name as string)) throw authError(`${name} has not joined over this link`, 'NOT_JOINED');
+/** name is a seat of this link (one it joined): AUTH NOT_JOINED otherwise. */
+function own(s: Session, name: unknown): asserts name is string {
+  if (typeof name !== 'string' || !hostLinks.mayWriteAs(s.link, name)) throw authError(`${String(name)} has not joined over this link`, 'NOT_JOINED');
 }
 
 function redeem(s: Session, invite: unknown, machine: string, pin: unknown, proven: string | null, as: unknown): Credential {
@@ -297,12 +300,12 @@ const OPS: OpHandlers = {
     const client = typeof params.client === 'string' ? params.client.slice(0, 32) : null;
     if (!theirs) throw new RoomError('PROTOCOL', `this hello names no protocol range (a sub-human before 0.5${client ? `: ${client}` : ''}): update it (/plugin update sub-human)`, 'SKEW');
     const v = protocol.negotiate(s.proto, theirs);
-    if (v === null || v < (Number.isInteger(params.v) ? params.v! : 1)) {
+    if (v === null || v < (typeof params.v === 'number' && Number.isInteger(params.v) ? params.v : 1)) {
       throw new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: s.version, proto: s.proto }, joiner: { version: client, proto: theirs } }), 'SKEW');
     }
     if (typeof machine !== 'string' || !MACHINE_RE.test(machine)) throw invalid('hello needs this machine\'s id');
     const mine = epochOf(s.store);
-    if (Number.isInteger(epoch) && epoch! > mine) {
+    if (typeof epoch === 'number' && Number.isInteger(epoch) && epoch > mine) {
       throw stale(`room ${s.store.code} has moved away from this machine to a newer host. Run /sub-human doctor to see where it is`);
     }
     s.link = null;
@@ -318,7 +321,7 @@ const OPS: OpHandlers = {
     const r: Credential = invite !== undefined ? redeem(s, invite, machine, pin, proven, as) : token !== undefined ? known(s, token)
       : params.login === true ? viaLogin(s, machine, proven) : { link: null };
     s.link = r.link;
-    if (caps && caps.ping === true) s.expireSilent();
+    if (isObj(caps) && caps.ping === true) s.expireSilent();
     // time: the host's clock (ms), so a joiner (sub-human doctor) can measure the skew that SIG_SKEW_MS bounds; additive
     const out: OpResults['hello'] = { v, proto: s.proto, server: s.version, caps: protocol.CAPS, room: s.store.code, link: r.link ? r.link.id : null, epoch: mine, time: Date.now() };
     if (r.link) out.machine = r.link.machine; // additive: this machine's id in the room, as the host records it
@@ -335,8 +338,10 @@ const OPS: OpHandlers = {
 
   join(s, { name, role = 'member', pubkey, proof, log_v }) {
     if (role !== 'member') throw invalid('a link joins members only');
-    if (!envelope.parseKey(pubkey)) throw invalid('join needs the seat\'s public key (Ed25519 SPKI PEM)');
+    if (typeof pubkey !== 'string' || !envelope.parseKey(pubkey)) throw invalid('join needs the seat\'s public key (Ed25519 SPKI PEM)');
     hostLinks.checkSeatProof(proof, { room: s.store.code, name, pubkey });
+    // a proof signed for a name that is no seat name: refused as identity.join would refuse it, before any binding
+    if (typeof name !== 'string') throw invalid(`invalid name "${String(name)}" (letters, digits, . _ -, up to 32)`);
     // s.link: run() lets no op but hello in without it. A bound link (the card let one name in; a handoff's seats) joins
     // its own seats only, before any seat is taken. A login link is the host account's own: its seat is that person's
     if (!hostLinks.mayJoinAs(s.link, name)) throw authError(hostLinks.notBound(s.link!, name), 'NOT_BOUND');
@@ -365,22 +370,22 @@ const OPS: OpHandlers = {
 
   beat(s, { name, presence }) {
     own(s, name);
-    const ok = s.store.members.beat(name, { presence });
+    const ok = s.store.members.beat(name, { presence: presence as PresenceInput | undefined }); // beat checks it (presenceDoc)
     if (ok) seats.back(s.store.code, name); // a seat that lapsed (seats.sweep) is back: "NAME rejoined"
     return { ok };
   },
 
   append(s, { payload, epoch }) {
-    if (!payload || typeof payload !== 'object') throw invalid('append needs {payload}');
+    if (!isObj(payload)) throw invalid('append needs {payload}');
     const mine = epochOf(s.store);
-    if (Number.isInteger(epoch) && epoch !== mine) {
-      throw epoch! < mine ? stale(`room ${s.store.code} changed hosts and this machine hasn't caught up yet; try again in a moment`, 'BEHIND')
+    if (typeof epoch === 'number' && Number.isInteger(epoch) && epoch !== mine) {
+      throw epoch < mine ? stale(`room ${s.store.code} changed hosts and this machine hasn't caught up yet; try again in a moment`, 'BEHIND')
         : stale(`room ${s.store.code} has moved away from this machine to a newer host. Run /sub-human doctor to see where it is`);
     }
     own(s, payload.from);
     if (payload.via === 'system') throw authError('a link never writes via "system"; the host writes the room\'s own entries');
-    if (payload.via === 'human' || payload.via === 'agent') quota.checkLog(s.store.readAll(), { from: payload.from!, via: payload.via, op: payload.via === 'human' ? 'append.human' : 'append.agent' });
-    const entry = s.store.place(payload);
+    if (payload.via === 'human' || payload.via === 'agent') quota.checkLog(s.store.readAll(), { from: payload.from, via: payload.via, op: payload.via === 'human' ? 'append.human' : 'append.agent' });
+    const entry = s.store.place(payload as Partial<Payload> as Payload); // place() checks every field (rules.ts admit, validate.ts)
     if (ANSWERS.has(entry.kind) && entry.proposal_hash) {
       try { proposal.decide(s.store.code, entry.proposal_hash); } catch (e) { s.log(`sub-human serve: decide: ${e && (e as Error).stack || e}`); }
     }
@@ -388,7 +393,7 @@ const OPS: OpHandlers = {
   },
 
   subscribe(s, { after, hash, snapshot }, id) {
-    if (!Number.isInteger(after) || after < 0) throw invalid('subscribe needs {after: id, hash}');
+    if (typeof after !== 'number' || !Number.isInteger(after) || after < 0) throw invalid('subscribe needs {after: id, hash}');
     if (s.store.lineHash(after) !== hash) {
       throw new RoomError('FORK', `the host's line ${after} is not the mirror's; re-mirror with sub-human link --reset ${s.store.code}`, 'NOT_CHAINED');
     }
@@ -403,7 +408,7 @@ const OPS: OpHandlers = {
   },
 
   'blob.get'(s, { ref }) {
-    const b = s.store.blobs.get(ref);
+    const b = typeof ref === 'string' ? s.store.blobs.get(ref) : null; // blobs.get refuses any other ref (blobRef)
     return { bytes: b ? b.toString('base64') : null };
   },
 
@@ -428,6 +433,9 @@ const OPS: OpHandlers = {
 
   ping() { return { pong: Date.now() }; },
 };
+
+/** One op's handler on the params as they came (an object; WireParams: every field unknown until the op checks it). */
+const call = <O extends Op>(op: O, s: Session, params: WireParams<O>, id: FrameId | undefined): OpResults[O] => OPS[op](s, params, id);
 
 // ---------- the session ----------
 class Session {
@@ -507,7 +515,7 @@ class Session {
   }
 
   run({ id, op, params }: IncomingRequest): unknown {
-    if (!Object.hasOwn(OPS, op)) throw new RoomError('PROTOCOL', `unknown op "${op}"`);
+    if (!protocol.isOp(op)) throw new RoomError('PROTOCOL', `unknown op "${op}"`);
     if (op !== 'hello' && !this.link) throw authError('say hello with this link\'s token first');
     // every op reads the link's record again: one the host revoked (a kick, in another process) gets nothing more
     if (op !== 'hello' && !this.held()) throw authError(revokedText(this.store.code), 'LINK_REVOKED');
@@ -516,8 +524,7 @@ class Session {
       throw stale(`room ${this.store.code} moved to ${h.host}'s machine; this machine takes no more messages for it`);
     }
     this.charge(op);
-    const ops = OPS as unknown as Record<string, (s: Session, params: object, id: FrameId | undefined) => unknown>; // op: one of OPS (checked above)
-    const out = ops[op](this, params && typeof params === 'object' ? params : {}, id);
+    const out = call(op, this, isObj(params) ? params : {}, id);
     if (op === 'hello' && this.link) quota.charge(this.store, this.link.id, 'hello'); // a link's hellos, across reconnects
     return out;
   }

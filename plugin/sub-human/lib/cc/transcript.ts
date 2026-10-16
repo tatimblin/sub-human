@@ -19,6 +19,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { plansDir } from './env.ts';
+import { decode, objAs } from '../decode.ts';
 import { HOME_MARK, homeMark } from '../../mod/core/constants.ts';
 
 type Env = NodeJS.ProcessEnv;
@@ -48,6 +49,8 @@ interface TranscriptEntry {
   promptId?: string;
   [field: string]: unknown;
 }
+/** A parsed line as a TranscriptEntry: an object (every field optional, checked where read). */
+const ENTRY = objAs<TranscriptEntry>();
 /** A transcript line: raw (a cheap substring prefilter, then parse) or already parsed. */
 type TranscriptLine = string | TranscriptEntry;
 
@@ -86,7 +89,7 @@ function parseLines(lines: readonly TranscriptLine[]): TranscriptEntry[] {
   const es: TranscriptEntry[] = [];
   for (const l of lines) {
     if (l && typeof l === 'object') { es.push(l); continue; }
-    try { es.push(JSON.parse(l)); } catch { /* torn line */ }
+    try { const e = decode(ENTRY, JSON.parse(l)); if (e) es.push(e); } catch { /* torn line */ }
   }
   return es;
 }
@@ -100,7 +103,7 @@ const readEntries = (file: unknown, opts?: { tailBytes?: number }): TranscriptEn
 
 // Lines may be raw strings (cheap substring prefilter, then parse) or already-parsed entries.
 const lineHas = (l: TranscriptLine, ...subs: string[]): boolean => typeof l !== 'string' || subs.every(s => l.includes(s));
-const asEntry = (l: TranscriptLine): TranscriptEntry | null => { if (l && typeof l === 'object') return l; try { return JSON.parse(l); } catch { return null; } };
+const asEntry = (l: TranscriptLine): TranscriptEntry | null => { if (l && typeof l === 'object') return l; try { return decode(ENTRY, JSON.parse(l)); } catch { return null; } };
 
 /**
  * The session's plan file, as Claude Code recorded it: the latest `plan_mode` attachment's planFilePath, else null.

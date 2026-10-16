@@ -11,7 +11,7 @@
  *       CLAUDE_CONFIG_DIR, provider, model, endpoint and credential-file keys). Nothing else from the parent
  *       (no CLAUDE_PID / session id, no SUB_HUMAN_*): the daemon would drop it anyway. The room Claude's own env
  *       comes from the --settings launch flag: SUB_HUMAN_HOME, SUB_HUMAN_ROOM, CLAUDE_CODE_TASK_LIST_ID=sh-CODE,
- *       CLAUDE_CODE_ENABLE_TODO_TOOLS=1, the spawner's SUB_HUMAN_*_MS timing overrides (config.timingEnv), plus
+ *       CLAUDE_CODE_ENABLE_TODO_TOOLS=1, the spawner's SUB_HUMAN_*_MS timing overrides (env.timingEnv), plus
  *       crossSessionInbound "accept". No --model: the room's Claude runs on the
  *       user's default model. cwd is the joiner's: --bg refuses an untrusted cwd (a fresh temp dir is never
  *       trusted). No file is written into ~/.claude: the room's Claude creates the "room CODE open" task.
@@ -72,8 +72,13 @@ import crypto from 'node:crypto';
 import { spawn as spawnChild, spawnSync } from 'node:child_process';
 import * as identity from './identity.ts';
 import * as room from './room.ts';
-import { readJson } from './io.ts';
+import { readJsonRaw } from './io.ts';
+import { decodeOr, isObj, obj, opt, str } from './decode.ts';
+
+/** `start CODE JSON`: what spawnStart hands the detached helper. */
+const START_ARGS = obj({ cwd: opt(str), claim: opt(str), prevJob: opt(str) });
 import * as config from './config.ts';
+import { envMs, envStr, timingEnv } from './env.ts';
 import * as clock from './clock.ts';
 import * as cc from './cc/bg.ts';
 import * as ccEnv from './cc/env.ts';
@@ -115,12 +120,12 @@ const CLOSE_TEXT = 'room closed: complete task 1';
 const PENDING = 'pending';
 const ENDED = new Set(['done', 'failed', 'stopped']);
 
-const claudeBin = () => process.env.SUB_HUMAN_CLAUDE || 'claude';
+const claudeBin = () => envStr('SUB_HUMAN_CLAUDE') || 'claude';
 const taskListId = (code: string) => `sh-${code}`;
 const tasksDir = (code: string): string => ccEnv.tasksDir(taskListId(code));
 const iso = (ms: number) => new Date(ms).toISOString();
 const claimMs = () => config.ROOM_CLAUDE_CLAIM_MS;
-const orphanMsDefault = () => config.envMs('SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS', config.ROOM_CLAUDE_ORPHAN_MS);
+const orphanMsDefault = () => envMs('SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS');
 
 /** The login basics plus the daemon's dispatch allowlist; USER/LOGNAME are needed to stay logged in. */
 function cleanEnv(src: NodeJS.ProcessEnv = process.env): Record<string, string> {
@@ -139,7 +144,8 @@ function cleanEnv(src: NodeJS.ProcessEnv = process.env): Record<string, string> 
 
 /** --plugin-dir only when the plugin was loaded from a directory (an installed plugin loads by itself). */
 function pluginDirFor(root: string = process.env.CLAUDE_PLUGIN_ROOT || PLUGIN_ROOT): string | null {
-  if (process.env.SUB_HUMAN_PLUGIN_DIR !== undefined) return process.env.SUB_HUMAN_PLUGIN_DIR || null;
+  const dir = envStr('SUB_HUMAN_PLUGIN_DIR');
+  if (dir !== undefined) return dir || null;
   let real = root;
   try { real = fs.realpathSync(root); } catch { /* as given */ }
   const installed = [path.join(ccEnv.configDir(), 'plugins'), path.join(os.homedir(), '.claude', 'plugins')]
@@ -152,7 +158,7 @@ function spawnPlan({ code, cwd, home = identity.home(), pluginDir = pluginDirFor
   const settings = {
     env: {
       // the room creator's timing overrides reach the room Claude's tail child (its watchdog and settle) and its reaper
-      ...config.timingEnv(env),
+      ...timingEnv(env),
       SUB_HUMAN_HOME: home,
       SUB_HUMAN_ROOM: code,
       CLAUDE_CODE_TASK_LIST_ID: taskListId(code),
@@ -222,7 +228,7 @@ function findJob(code: string, { parsed = null, env = cleanEnv() }: { parsed?: s
  * The room Claude's bound process (its record's pid, judged with its start time so a reused pid is never touched), gone:
  * waited for up to REAP_STOP_MS after `claude stop`, then SIGTERM, then SIGKILL. true when it is gone (or was never bound).
  */
-async function ensureGone(rec: Pick<Member, 'pid' | 'pid_start' | 'machine'> | null | undefined, { waitMs = config.envMs('SUB_HUMAN_REAP_STOP_MS', config.REAP_STOP_MS, { allowZero: true }), pollMs = 100 }: { waitMs?: number; pollMs?: number } = {}): Promise<boolean> {
+async function ensureGone(rec: Pick<Member, 'pid' | 'pid_start' | 'machine'> | null | undefined, { waitMs = envMs('SUB_HUMAN_REAP_STOP_MS'), pollMs = 100 }: { waitMs?: number; pollMs?: number } = {}): Promise<boolean> {
   const pid = rec && typeof rec.pid === 'number' ? rec.pid : null;
   if (!pid || (rec!.machine && !identity.isMine(rec!.machine))) return true;
   const mine = () => identity.isAlive(pid) && startMatches(rec!);
@@ -366,8 +372,8 @@ function startDetached({ code, cwd, claim, prevJob = null }: { code: string, cwd
 function roomTaskDone(code: string): boolean {
   const dir = tasksDir(code);
   if (!fs.existsSync(dir)) return true;
-  const t: { status?: unknown } | null = readJson(path.join(dir, '1.json'));
-  return !t || t.status === 'completed';
+  const t = readJsonRaw(path.join(dir, '1.json'));
+  return !t || (isObj(t) && t.status === 'completed');
 }
 
 const hasLiveMember = (members: Members, alive: Alive = identity.seatAlive): boolean =>
@@ -385,8 +391,8 @@ function claimClose(code: string, now: number = clock.now()): { rec: Member } | 
 }
 
 async function reap(code: string, {
-  graceMs = config.envMs('SUB_HUMAN_REAP_GRACE_MS', config.REAP_GRACE_MS, { allowZero: true }),
-  waitMs = config.envMs('SUB_HUMAN_REAP_WAIT_MS', config.REAP_WAIT_MS, { allowZero: true }),
+  graceMs = envMs('SUB_HUMAN_REAP_GRACE_MS'),
+  waitMs = envMs('SUB_HUMAN_REAP_WAIT_MS'),
   pollMs = config.REAP_POLL_MS,
   claimed = false,
 }: { graceMs?: number, waitMs?: number, pollMs?: number, claimed?: boolean } = {}): Promise<ReapResult> {
@@ -472,8 +478,9 @@ if (import.meta.main) {
   if (cmd === 'cmd') process.stdout.write(command(spawnPlan({ code })) + '\n');
   else if (cmd === 'spawn') { const r = spawn({ code }); process.stdout.write(JSON.stringify(r) + '\n'); process.exitCode = r.ok ? 0 : 1; }
   else if (cmd === 'start') {
-    let o: { cwd?: string, claim?: string, prevJob?: string } = {};
-    try { o = JSON.parse(extra || '{}') || {}; } catch { die('start: bad JSON'); }
+    let v: unknown = {};
+    try { v = JSON.parse(extra || '{}'); } catch { die('start: bad JSON'); }
+    const o = decodeOr(START_ARGS, v || {}, {});
     const r = spawn({ code, cwd: o.cwd, claim: o.claim || null, prevJob: o.prevJob || null });
     process.stdout.write(JSON.stringify(r) + '\n');
     process.exitCode = r.ok ? 0 : 1;

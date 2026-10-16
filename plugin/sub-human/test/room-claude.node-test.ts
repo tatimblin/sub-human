@@ -10,7 +10,7 @@ import * as h from './helpers.ts';
 import * as identity from '../lib/identity.ts';
 import * as roomClaude from '../lib/room-claude.ts';
 import * as cc from '../lib/cc/bg.ts';
-import * as config from '../lib/config.ts';
+import * as env from '../lib/env.ts';
 import * as room from '../lib/room.ts';
 import type { AgentJob } from '../lib/cc/bg.ts';
 
@@ -87,7 +87,7 @@ test('room-claude: the spawner\'s SUB_HUMAN_*_MS overrides go through --settings
   assert.ok(Object.keys(p.env).every(k => !k.startsWith('SUB_HUMAN')), 'the client env stays clean');
 });
 
-test('config: every override read through envMs matches the pattern the room\'s Claude forwards', () => {
+test('env: every override read through envMs matches the pattern the room\'s Claude forwards', () => {
   const root = path.join(h.LIB, '..');
   const names = new Set<string>();
   const walk = (d: string) => {
@@ -100,7 +100,7 @@ test('config: every override read through envMs matches the pattern the room\'s 
   };
   walk(root);
   assert.ok(names.size >= 20, `found ${names.size}`);
-  for (const n of names) assert.match(n, config.TIMING_ENV_RE, n);
+  for (const n of names) assert.match(n, env.TIMING_ENV_RE, n);
 });
 
 test('room-claude: an installed plugin gets no --plugin-dir; a directory plugin does', () => {

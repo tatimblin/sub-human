@@ -72,6 +72,7 @@
 import nodeFs from 'node:fs';
 import * as realClock from './clock.ts';
 import * as config from './config.ts';
+import { envMs, envStr } from './env.ts';
 import { stageOf } from './consent/review.ts';
 import { createRequire } from 'node:module';
 import type { TailEvent, TailSeat } from './types-app.ts';
@@ -165,26 +166,25 @@ interface FormatCtx {
 }
 type Cursor = ReturnType<typeof cursorKeeper>;
 
-const { envMs } = config;
 const STATE_KINDS = new Set(['proposal', 'signoff', 'objection', 'decision']);
 const isMove = (e: Entry) => e.kind === 'member_joined' || e.kind === 'member_left';
 
 function timings() {
-  const resolveMs = envMs('SUB_HUMAN_RESOLVE_MS', config.RESOLVE_MS);
-  const settleMs = envMs('SUB_HUMAN_SETTLE_MS', config.SETTLE_MS);
-  const settleMaxMs = envMs('SUB_HUMAN_SETTLE_MAX_MS', config.SETTLE_MAX_MS);
+  const resolveMs = envMs('SUB_HUMAN_RESOLVE_MS');
+  const settleMs = envMs('SUB_HUMAN_SETTLE_MS');
+  const settleMaxMs = envMs('SUB_HUMAN_SETTLE_MAX_MS');
   return {
     resolveMs,
     unseatedMs: envMs('SUB_HUMAN_UNSEATED_MS', Math.max(resolveMs, config.UNSEATED_MS)),
-    pollMs: envMs('SUB_HUMAN_POLL_MS', config.TAIL_POLL_MS),
+    pollMs: envMs('SUB_HUMAN_POLL_MS'),
     settleMs,
     settleMaxMs,
     // The headless room Claude waits longer (nobody watches its latency), so a burst of answers, task requests or a
     // join lands as one turn, unless the member values are set explicitly.
-    roomClaudeSettleMs: process.env.SUB_HUMAN_SETTLE_MS ? settleMs : config.ROOM_CLAUDE_SETTLE_MS,
-    roomClaudeSettleMaxMs: process.env.SUB_HUMAN_SETTLE_MAX_MS ? settleMaxMs : config.ROOM_CLAUDE_SETTLE_MAX_MS,
-    leaveMs: envMs('SUB_HUMAN_LEAVE_MS', config.LEAVE_SETTLE_MS),
-    healthMs: envMs('SUB_HUMAN_TAIL_HEALTH_MS', config.TAIL_HEALTH_MS),
+    roomClaudeSettleMs: envStr('SUB_HUMAN_SETTLE_MS') ? settleMs : config.ROOM_CLAUDE_SETTLE_MS,
+    roomClaudeSettleMaxMs: envStr('SUB_HUMAN_SETTLE_MAX_MS') ? settleMaxMs : config.ROOM_CLAUDE_SETTLE_MAX_MS,
+    leaveMs: envMs('SUB_HUMAN_LEAVE_MS'),
+    healthMs: envMs('SUB_HUMAN_TAIL_HEALTH_MS'),
     backoffMs: config.TAIL_BACKOFF_MS,
     backoffMaxMs: config.TAIL_BACKOFF_MAX_MS,
     errorLogMs: config.TAIL_ERROR_LOG_MS,

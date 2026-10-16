@@ -243,3 +243,21 @@ test('auth: a seat proof is signed by the seat key for this room, name and key, 
   ];
   for (const [p, s] of refused) assert.throws(() => hostLinks.checkSeatProof(p, s), (e: CodedError) => e.code === 'AUTH');
 });
+
+test('frames: isEvent takes only an event this end knows; isOp only an op it serves; isRequest and isReply by shape', () => {
+  assert.equal(protocol.isEvent({ id: 1, ev: 'entry', data: '{}' }), true);
+  assert.equal(protocol.isEvent({ id: 1, ev: 'later-kind', data: 1 }), false, 'a newer host\'s event is no event here');
+  assert.equal(protocol.isEvent({ id: 1, ev: 5 }), false);
+  assert.equal(protocol.isEvent(null), false);
+  assert.equal(protocol.isEvent([]), false);
+  for (const op of protocol.OPS) assert.equal(protocol.isOp(op), true, op);
+  assert.equal(protocol.isOp('hello.again'), false);
+  assert.equal(protocol.isOp('toString'), false);
+  assert.equal(protocol.isRequest({ id: 1, op: 'x' }), true);
+  assert.equal(protocol.isRequest({ id: 1, op: 1 }), false);
+  assert.equal(protocol.isReply({ id: 1, result: null }), true);
+  assert.equal(protocol.isReply({ id: 1, op: 'x', result: null }), false);
+  assert.equal(protocol.rangeOf({ proto: { min: 1, max: 2 } })?.max, 2);
+  assert.equal(protocol.rangeOf({ proto: 'x' }), null);
+  assert.equal(protocol.rangeOf({ proto: [1, 2] }), null);
+});

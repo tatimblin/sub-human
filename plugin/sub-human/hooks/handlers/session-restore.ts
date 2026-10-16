@@ -27,7 +27,7 @@
 // person's own text back (lib/proposal.ts restoreStale) and the review state is cleared.
 import path from 'node:path';
 import * as identity from '../../lib/identity.ts';
-import * as config from '../../lib/config.ts';
+import { envMs } from '../../lib/env.ts';
 import { sleepSync } from '../../lib/io.ts';
 import { projectDir } from '../../lib/cc/env.ts';
 import * as room from '../../lib/room.ts';
@@ -58,7 +58,7 @@ function rowsLead(me: Identity): string {
 function forkOrigin(input: HookIn<'SessionStart'>): { parent: identity.ForkParent } | { away: identity.ForkedAway } | null {
   const dir = typeof input.transcript_path === 'string' && input.transcript_path ? path.dirname(input.transcript_path) : projectDir(input.cwd);
   if (!dir || !input.session_id) return null;
-  for (const until = Date.now() + config.envMs('SUB_HUMAN_FORK_WAIT_MS', config.FORK_RECORD_WAIT_MS); ; sleepSync(100)) {
+  for (const until = Date.now() + envMs('SUB_HUMAN_FORK_WAIT_MS'); ; sleepSync(100)) {
     const p = identity.forkParent(input.session_id, dir);
     if (p) return { parent: p };
     const away = identity.forkedAway(input.session_id, dir);

@@ -78,6 +78,7 @@ import * as hostLinks from './remote/host-links.ts';
 import { RoomError } from './room/validate.ts';
 import { machineId, machineIn, isMine } from './home.ts';
 import { isAlive, sleepSync } from './io.ts';
+import { isObj } from './decode.ts';
 import * as config from './config.ts';
 import * as identityMod from './identity.ts';
 import * as ioMod from './io.ts';
@@ -194,15 +195,15 @@ function checkInvites(code: string, locator: string, given: unknown): asserts gi
   }
 }
 
-function checkAccept(s: Store, d: HandoffDoc, proof: Record<string, unknown> | null | undefined, locator: string): void {
+function checkAccept(s: Store, d: HandoffDoc, proof: unknown, locator: string): asserts proof is HostProof {
   const pub = store.publicKey(d.to, s);
-  const ok = !!proof && proof.kind === 'host_accept' && proof.room === s.code && proof.from === d.to && proof.id === d.id
+  const ok = isObj(proof) && proof.kind === 'host_accept' && proof.room === s.code && proof.from === d.to && proof.id === d.id
     && proof.epoch === d.epoch && proof.locator === locator && envelope.isV2(proof) && envelope.freshTs(proof) && envelope.verify(proof, pub);
   if (!ok) throw err('AUTH', `a handoff needs ${d.to}'s yes, signed with their own key`);
 }
 
-/** handoff.accept's params (the next host's hook, over its link). */
-interface AcceptParams { id?: string, accept?: Record<string, unknown>, locator?: string, invites?: unknown }
+/** handoff.accept's params (the next host's hook, over its link) as they arrive (lib/remote/server.ts): each checked here. */
+interface AcceptParams { id?: unknown, accept?: unknown, locator?: unknown, invites?: unknown }
 function serverAccept(s: Store, link: LinkRec, { id, accept: proof, locator, invites }: AcceptParams = {}, now: number = Date.now()): { entry: Entry, epoch: number, job: string | null } {
   const d = hostDoc(s);
   if (!d || d.id !== id) throw err('INVALID', 'no such handoff is waiting (it was replaced or withdrawn)');
@@ -211,7 +212,7 @@ function serverAccept(s: Store, link: LinkRec, { id, accept: proof, locator, inv
   if (expired(d, now)) throw err('INVALID', `the handoff ask expired; ask ${d.from} to hand off again`);
   if (s.hostState().epoch + 1 !== d.epoch) throw err('STALE', 'the room changed hosts since this was asked');
   const loc = d.locator || locator;
-  if (!loc || !transportOf(loc)) throw err('INVALID', `"${loc}" is not a locator the host knows`);
+  if (!loc || typeof loc !== 'string' || !transportOf(loc)) throw err('INVALID', `"${String(loc)}" is not a locator the host knows`);
   checkAccept(s, d, proof, loc);
   checkInvites(s.code, loc, invites);
   const entry: Entry = s.append({
@@ -233,7 +234,7 @@ function serverAccept(s: Store, link: LinkRec, { id, accept: proof, locator, inv
   return { entry, epoch: d.epoch, job };
 }
 
-function serverRefuse(s: Store, link: LinkRec, { id }: { id?: string } = {}, now: number = Date.now()): { ok: true } {
+function serverRefuse(s: Store, link: LinkRec, { id }: { id?: unknown } = {}, now: number = Date.now()): { ok: true } {
   const d = hostDoc(s);
   if (!d || d.id !== id || d.state !== 'asked') throw err('INVALID', 'no such handoff is waiting');
   if (!hostLinks.mayWriteAs(link, d.to)) throw err('AUTH', `${d.to} has not joined over this link`);

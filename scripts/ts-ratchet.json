@@ -3,13 +3,13 @@
   "counts": {
     "hooks": {
       "any": 0,
-      "as": 18,
+      "as": 16,
       "nonNull": 13
     },
     "lib": {
-      "any": 11,
+      "any": 5,
       "as": 322,
-      "nonNull": 124
+      "nonNull": 112
     },
     "mcp": {
       "any": 1,
@@ -17,7 +17,7 @@
       "nonNull": 12
     },
     "mod/core": {
-      "any": 1,
+      "any": 0,
       "as": 23,
       "nonNull": 0
     },
@@ -38,7 +38,7 @@
     },
     "test": {
       "any": 2,
-      "as": 492,
+      "as": 491,
       "nonNull": 1500
     },
     "scripts": {

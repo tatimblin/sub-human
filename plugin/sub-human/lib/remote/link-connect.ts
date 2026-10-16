@@ -42,6 +42,7 @@ import * as linksMod from '../room/links.ts';
 import * as homeMod from '../home.ts';
 import * as storeMod from '../room/store.ts';
 import * as config from '../config.ts';
+import { envStr } from '../env.ts';
 import { RoomError } from '../room/validate.ts';
 import { isReason } from '../reasons.ts';
 import type { Reason } from '../reasons.ts';
@@ -115,7 +116,7 @@ function linkKey(code: string, { fresh = false }: { fresh?: boolean } = {}): imp
  * SUB_HUMAN_MACHINE_LABEL names it instead of the host name (a machine whose host name says nothing, a demo).
  */
 function joinerLabel(env: NodeJS.ProcessEnv = process.env): string {
-  const n = String(env.SUB_HUMAN_MACHINE_LABEL || os.hostname() || '').split('.')[0].replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 64);
+  const n = String(envStr('SUB_HUMAN_MACHINE_LABEL', env) || os.hostname() || '').split('.')[0].replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 64);
   return /^[A-Za-z0-9._-]{1,64}$/.test(n) ? n : 'a-machine';
 }
 
