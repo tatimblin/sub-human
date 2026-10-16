@@ -207,3 +207,16 @@ test('gate: reads owner and metadata from the native task file', () => {
   w.writeNative({ id: '6', subject: 'parser tests', status: 'in_progress', owner: 'alice', metadata: { req: d.id } });
   assert.equal(w.run(completed(6, 'parser tests')).code, 0);
 });
+
+test('stage 8e I.8 (live verify, localb/09): a task its requester asked for themselves is theirs in its add entry; the owner TaskUpdate after it logs nothing more; one asked for another stays unowned until claimed', () => {
+  const w = world();
+  const mine = w.append({ kind: 'task_req', op: 'add', subject: 'write the parser tests', owner: 'bob', by: 'bob', text: 'task add for bob: write the parser tests' }, { via: 'agent', from: 'bob' });
+  w.run(create(2, 'write the parser tests', { metadata: { req: mine.id, by: 'bob' } }));
+  const add = w.taskEntries().at(-1)!;
+  assert.deepEqual([add.op, add.owner], ['add', 'bob']);
+  w.run(update(2, { owner: 'bob' }));
+  assert.equal(w.taskEntries().length, 1, 'the claim changes nothing the room did not see');
+  const other = w.append({ kind: 'task_req', op: 'add', subject: 'docs', owner: 'alice', by: 'bob', text: 'task add for alice: docs' }, { via: 'agent', from: 'bob' });
+  w.run(create(3, 'docs', { metadata: { req: other.id, by: 'bob' } }));
+  assert.equal(w.taskEntries().at(-1)!.owner ?? null, null);
+});
