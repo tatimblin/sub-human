@@ -1,6 +1,6 @@
 // Wiring: the room's delivery through the hooks module (mod/deliver.ts). Run with `npm run test:mods`.
-// The routing table and the turn ledger are tested in node (test/mod-core.test.js, test/mod-core-deliver.test.js);
-// the tail's events in test/tail.test.js. This checks the hooks: session.start spawns `node scripts/sub-human tail
+// The routing table and the turn ledger are tested in node (test/mod-core.node-test.ts, test/mod-core-deliver.node-test.ts);
+// the tail's events in test/tail.node-test.ts. This checks the hooks: session.start spawns `node scripts/sub-human tail
 // --ndjson` for a seated session, restarted with backoff and stopped at the session's end, and its events reach
 // the session: a chat event is a $.ui.log notice and starts no turn, a wake while idle submits one prompt (and logs
 // its visible lines when a hook drops it), a wake mid-turn goes to an append (and logs them) instead, and a failure
@@ -353,7 +353,7 @@ test('a /clear (a new session id) stops the old child and starts one for the new
 
 test('turn.start, a mid-turn wake, a tool call, turn.complete: the wake is delivered once, never twice', async ($, on) => {
   // appended mid-turn, and a tool call finished after it: the request that followed carried it, so the turn's end
-  // submits nothing (the ledger's rules are checked in node, test/mod-core-deliver.test.js)
+  // submits nothing (the ledger's rules are checked in node, test/mod-core-deliver.node-test.ts)
   const clock = mock.clock(on, { now: 1_000 })
   const { seen, go } = midTurn($, on)
   on('classic.PostToolUse', () => ({}))

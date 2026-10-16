@@ -22,7 +22,7 @@ function envMs(name: string, fallback: number, { allowZero = false }: { allowZer
   return n;
 }
 
-/** Every override envMs reads is named SUB_HUMAN_<WHAT>_MS (test/room-claude.test.js checks the callers). */
+/** Every override envMs reads is named SUB_HUMAN_<WHAT>_MS (test/room-claude.node-test.ts checks the callers). */
 const TIMING_ENV_RE = /^SUB_HUMAN_[A-Z0-9_]+_MS$/;
 
 function timingEnv(src: Record<string, string | undefined> | null = process.env): Record<string, string> {

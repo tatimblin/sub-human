@@ -4,7 +4,7 @@
  * group is ristretto255 from the vendored, hash-pinned @noble/curves (lib/vendor/noble, MANIFEST.json): decode,
  * encode, scalar multiplication and RFC 9496 element derivation. SHA-512 and HMAC-SHA-512 are node:crypto's. No
  * field arithmetic is written here; this file only strings the draft's steps together. Checked against the draft's
- * published vectors (Appendix A.1, A.3, B.3) in test/remote-cpace.test.js.
+ * published vectors (Appendix A.1, A.3, B.3) in test/remote-cpace.node-test.ts.
  *
  *   DSI                              b"CPaceRistretto255"
  *   prependLen(b), lvCat(...b)       the draft's LEB128 length-value encoding

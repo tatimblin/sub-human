@@ -13,7 +13,7 @@
 //   publicPem(code, name) -> string   the seat's public key as SPKI PEM, for member_joined (creates it like ensure)
 //   arm()                             install ensure() as this process's signer (hooks/common.ts, every hook)
 //
-// The room MCP server, the CLI and the tail never require this file (test/security.test.js checks it), so
+// The room MCP server, the CLI and the tail never require this file (test/security.node-test.ts checks it), so
 // they cannot sign. The Bash guard (mod/guard.ts, the hooks module) denies commands that name the keys or run these hooks.
 // Threat model: one machine, one OS user. This stops a model from forging a person; it is no defence against a
 // local user, who can read their own files.

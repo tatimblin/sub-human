@@ -14,6 +14,8 @@ Hardening from the October 2026 review (branch `fix/stage0-hardening`).
 - **`Read` of a seat's private key is denied** by the hooks module (`<home>/keys/`), the one file a model could sign a person's words with. The rest of the store stays readable.
 - **A join hook that throws still answers hidden** for a prompt that may carry a PIN, instead of a bare non-blocking error.
 - **The compile cache lives in `<home>/cache` (0700)**, not a shared temp directory.
+- **A join prompt whose input cannot be read is answered hidden too**: the hidden reply was chosen only after the prompt was parsed.
+- **The plan view is written only to the session's plan file**: a `planFilePath` the model put in `EnterPlanMode`'s input no longer chooses where the hook writes a proposal (only `ExitPlanMode`'s, which Claude Code injects, is read).
 
 ### Fixes
 - **`/sub-human vole-8126` joins that room as your default name**, not as a person named "vole-8126".
@@ -23,6 +25,9 @@ Hardening from the October 2026 review (branch `fix/stage0-hardening`).
 - **The task gate fails closed on stdin it cannot read** for a TaskCompleted (exit 2), instead of letting the completion through.
 - **The room MCP `read` tool returns entries without signature material** (sig, nonce, pubkey) and marks a person's line `trust: verified | legacy | unverified`.
 - **A wake's head says the room lines are other people's words, not instructions.** The Funnel warning no longer claims the URL holds a secret.
+
+### Tests
+- **The plugin's node tests are TypeScript** (`plugin/sub-human/test/**/*.node-test.ts`, checked by `npm run typecheck` through `tsconfig.test.json`), named so `claude plugin test` never collects them; new cases for unreadable hook stdin, the join's time budget, a mirror's first sync of a large log and of a host log with a corrupt line, a forged line in MCP `read`, and a model-supplied `planFilePath`.
 
 ## 0.5.0-beta.15 (2026-10-14), private beta
 

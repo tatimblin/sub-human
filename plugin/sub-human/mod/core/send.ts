@@ -1,6 +1,6 @@
 /**
  * plugin/sub-human/mod/core/send.ts: Claude-to-Claude messages to a member on another machine, as pure functions
- * (mod/send.ts wires them to `session.send`; the node tests in test/mod-core.test.js).
+ * (mod/send.ts wires them to `session.send`; the node tests in test/mod-core.node-test.ts).
  *
  * A native SendMessage reaches only the sessions in this machine's session registry (the Claude Code config folder
  * these sessions share), so `SendMessage alice.vole-8126` from another machine finds nobody. The module catches that

@@ -1,6 +1,6 @@
 /**
  * plugin/sub-human/mod/core/chat.ts: the group-chat drawing of a UserMessage row, as pure functions (mod/render.ts
- * draws them; test/mod-core.test.js checks them in node). In: the row's text (and sender). Out: the lines to draw,
+ * draws them; test/mod-core.node-test.ts checks them in node). In: the row's text (and sender). Out: the lines to draw,
  * or null so the engine draws the row itself.
  */
 import { parseAddr } from './seat.ts';

@@ -131,8 +131,9 @@ const hidden = (text: string, { refused = true } = {}) => reply(text, { refused,
 /** Not a refusal: what the person asked for (help, who is here, an invite, done). */
 const notice = (text: string, { secret = false } = {}) => reply(text, { suppress: secret || refuse === hiddenRefusal });
 const hiddenRefusal = (r: string) => hidden(r);
-// How this prompt's refusals go out: hidden() when it could carry a PIN (set once per prompt, before any parsing)
-let refuse: (msg: string) => void = block;
+// How this prompt's refusals go out: hidden() when it could carry a PIN (set once per prompt, before any parsing).
+// Hidden until then: a prompt whose stdin cannot be read may hold a PIN too (onError answers with this).
+let refuse: (msg: string) => void = hiddenRefusal;
 const fail = (msg: string): null => { refuse(msg); return null; };
 /** A caught error's message (what a refusal says). */
 const msgOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));

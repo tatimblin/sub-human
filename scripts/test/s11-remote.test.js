@@ -1,6 +1,6 @@
 'use strict';
 // S11's check (scripts/checks/s11-remote.js) over real evidence: two homes on this machine (the plugin's
-// test/support/two-homes.js), the real join, @room, card and session-end hooks, carol's link daemon over the pipe
+// test/support/two-homes.ts), the real join, @room, card and session-end hooks, carol's link daemon over the pipe
 // transport. What scripts/demo.sh S11 saves (state/S11/*) is made here the same way; the pane captures are stand-ins.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -13,7 +13,7 @@ const { runChecks, SCENES } = require('../checks.js');
 const { context, DEMO } = require('../checks/context.js');
 const { joinLineIn, admitCardState } = require('../lib/panes.js');
 
-const { Machine } = paths.pluginTest('support/two-homes.js');
+const { Machine } = paths.pluginTest('support/two-homes.ts');
 const store = paths.pluginLib('room/store.ts');
 const proposal = paths.pluginLib('proposal.ts');
 const link = paths.pluginLib('remote/link.ts');

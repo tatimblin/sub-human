@@ -32,7 +32,7 @@ function parse(prompt: string): string | null {
 }
 
 /** "@claude TEXT" -> TEXT (posted to=claude: a wake for the room's Claude); anything else null. A copy of
- * mod/core/prompt.ts parseClaude (test/mod-core.test.js asserts they agree). */
+ * mod/core/prompt.ts parseClaude (test/mod-core.node-test.ts asserts they agree). */
 function parseClaude(prompt: string): string | null {
   return tagged(prompt, /^@claude(?=\s|$)/);
 }
@@ -105,7 +105,7 @@ function roomClaudeRefusal(me: Identity, input: PromptIn, prompt: string, origin
   return LAUNCH.test(prompt) && firstPrompt(input) ? null : roomClaudeHint(me);
 }
 
-/** The same words as the mod's GATE_FAILED (test/mod-core-prompt.test.js): either way the person types it again. */
+/** The same words as the mod's GATE_FAILED (test/mod-core-prompt.node-test.ts): either way the person types it again. */
 const NO_ORIGIN = '✗ not posted: sub-human could not check who wrote this @room. Type it again.';
 
 /** True when the input carries this session's module nonce (its lease's): the origin beside it is the module's. */

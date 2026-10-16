@@ -1,5 +1,5 @@
 // Wiring: /sub-human answered by the module (command.run in mod/deliver.ts). Run with `npm run test:mods`.
-// The rules are tested in node (test/mod-core-command.test.js) and join.ts's replies in test/hooks/join.test.js; this
+// The rules are tested in node (test/mod-core-command.node-test.ts) and join.ts's replies in test/hooks/join.node-test.ts; this
 // checks the hook: typed here, join.ts runs once through the shim with the nonce and its reply comes back as notices
 // (a secret) or the command's output (none), never as the command running; a join expands as before with the
 // mechanics block handed to the expansion hook in place of a second join; the room's Claude, the SDK and a reply that

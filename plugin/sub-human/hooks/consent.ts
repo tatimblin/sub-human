@@ -238,7 +238,9 @@ function lines(input: ConsentIn): string[] {
   return input._lines;
 }
 /** The session's plan file: from the input (when it exists), else the transcript's latest plan_mode attachment. */
-const planFile = (input: ConsentIn): string | null => cc.planFile(lines(input), input.tool_input);
+// tool_input.planFilePath only on ExitPlanMode, where Claude Code injects it (cc CONTRACT exitplan-inject); on any
+// other call it would be the model's own key, a path of its choosing that showEarly would write the proposal to
+const planFile = (input: ConsentIn): string | null => cc.planFile(lines(input), input.tool_name === 'ExitPlanMode' ? input.tool_input : null);
 /** The input the model itself gave this call (Claude Code swaps ExitPlanMode's plan for the plan file's text). */
 const modelInput = (input: ConsentIn): { plan?: unknown } | null => {
   const v = cc.toolUseInput(lines(input), input.tool_use_id);

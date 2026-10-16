@@ -1,5 +1,5 @@
 // Wiring: the in-process store guard (mod/guard.ts). Run with `npm run test:mods`.
-// The verdict tables are tested in node (test/hooks/guard.test.js, security.test.js); this checks the hooks: what
+// The verdict tables are tested in node (test/hooks/guard.node-test.ts, security.node-test.ts); this checks the hooks: what
 // each denies through $.tool.call, the realPath walk through $.fs.stat, the tool.check allow, and the .catch.
 import { test, expect } from 'claude-code/testing'
 import { OUT, ran, session, start } from './support.ts'

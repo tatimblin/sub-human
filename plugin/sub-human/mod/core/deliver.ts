@@ -12,7 +12,7 @@ import { FOR_CLAUDE } from './chat.ts';
 import { shimEnv } from './shim.ts';
 import type { DeliverAction, Hello, TailEvent } from './types.ts';
 
-// Equal to lib/config.ts's entries of the same name (test/mod-core-deliver.test.js): mod/ imports no CommonJS.
+// Equal to lib/config.ts's entries of the same name (test/mod-core-deliver.node-test.ts): mod/ imports no CommonJS.
 /** The tail child's first restart delay, doubled per failure in a row up to MOD_RESTART_MAX_MS. */
 export const MOD_RESTART_MS = 1000;
 export const MOD_RESTART_MAX_MS = 60_000;

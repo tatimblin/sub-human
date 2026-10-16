@@ -1,8 +1,8 @@
 /**
  * plugin/sub-human/lib/room/store.ts: the RoomStore seam, and FsRoomStore, its implementation over the room
  * directory on this machine. Nothing outside lib/room/store*.js knows where a room's files are or what they are
- * called (test/store-bypass.test.js checks it); a store that keeps rooms off-machine implements the same
- * interface (test/support/memory-store.js is a second one; test/store-contract.test.js runs both).
+ * called (test/store-bypass.node-test.ts checks it); a store that keeps rooms off-machine implements the same
+ * interface (test/support/memory-store.ts is a second one; test/store-contract.node-test.ts runs both).
  * `from` is passed in by trusted callers that resolved identity first (lib/identity.ts); it is never taken from
  * env or from the model.
  *

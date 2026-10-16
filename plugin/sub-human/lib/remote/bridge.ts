@@ -4,7 +4,7 @@
  * synchronous, so a mirror's write (lib/room/store-mirror.ts) blocks here while the worker talks to the link
  * daemon's socket (lib/remote/link.ts handle). The worker never loads the signer: a via=human payload is
  * signed on the calling thread first. Its proof gate runs the hook suites
- * over a FsRoomStore proxied through this bridge (test/support/thread-store.js).
+ * over a FsRoomStore proxied through this bridge (test/support/thread-store.ts).
  *
  *   createBridge({handler, deadlineMs?}) -> {call(method, params, {deadlineMs}?) -> result, close()}
  *       handler: the absolute path of a module exporting handle(method, params) -> result | Promise<result>,
@@ -19,7 +19,7 @@
  *   Deadlock rule: the thread that calls never serves the handler's work. While call() waits, the calling
  *   thread runs nothing, so a handler that needs it (a server on the caller's event loop, a reply posted to
  *   the caller's port) cannot finish: the call ends OFFLINE at the deadline. Whatever the handler talks to
- *   lives on the worker, another thread, or another process (test/bridge.test.js checks the deadline holds).
+ *   lives on the worker, another thread, or another process (test/bridge.node-test.ts checks the deadline holds).
  *   This file is also the worker entry: on a worker started by createBridge it loads the handler and answers.
  */
 

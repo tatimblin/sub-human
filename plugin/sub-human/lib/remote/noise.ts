@@ -4,7 +4,7 @@
  * X25519 through crypto.diffieHellman on KeyObjects, ChaCha20-Poly1305 (12-byte nonce: 4 zero bytes and the 64-bit
  * little-endian counter), SHA-256, and the spec's HKDF, which is RFC 5869 HKDF-SHA256 with salt = ck and no info
  * (crypto.hkdfSync). No field arithmetic is written here. Checked against the cacophony and snow vectors
- * (test/remote-noise.test.js).
+ * (test/remote-noise.node-test.ts).
  *
  * NK: the responder (the host's listener) has a static key the initiator (the joiner's link daemon) knows already:
  * the invite pins it. Messages:   <- s   ...   -> e, es   <- e, ee
