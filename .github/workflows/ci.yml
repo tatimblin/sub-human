@@ -39,12 +39,15 @@ jobs:
         run: |
           git config --global user.name "sub-human CI"
           git config --global user.email "ci@sub-human.invalid"
-      - name: npm ci (typescript and @types/node, for the typecheck only)
+      - name: npm ci (typescript, @types/node and oxlint: the typecheck and the linter only)
         run: npm ci
-      - name: typecheck
-        run: npm run typecheck
-      - name: npm test (the typecheck again, ~1 s; the mods tests skip without Claude Code)
+      - name: npm test (the typecheck first; the mods tests skip without Claude Code)
         run: npm test
+      # oxlint's type-aware rules and the type-escape ratchet; the same on every node, so once.
+      # npm run validate needs the claude CLI, which CI does not install (as test:mods)
+      - name: lint
+        if: matrix.os == 'ubuntu-latest' && matrix.node == '24'
+        run: npm run lint
       - name: hook tests over the thread store
         run: npm run test:thread-store
       - name: version bumped with the plugin change

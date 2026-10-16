@@ -1,9 +1,0 @@
-{
-  // npm run typecheck, the plugin's plain JavaScript: the compile-cache preload and the cache directory it names
-  // (they load before any TypeScript is stripped, so they stay .js; each is // @ts-check with JSDoc). tsc takes no
-  // extensionless file, so scripts/typecheck-shim.js checks scripts/sub-human through a copy.
-  "extends": "./tsconfig.json",
-  "compilerOptions": { "allowJs": true, "checkJs": true },
-  "include": [],
-  "files": ["plugin/sub-human/hooks/compile-cache.js", "plugin/sub-human/lib/cache-dir.js"]
-}
