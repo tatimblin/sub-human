@@ -33,7 +33,7 @@
  *   STATE_WORDS, STATES, isState     the five words (the source of LinkStateWord), as a Set, and its guard
  */
 import { isAlive, lazy } from '../io.ts';
-import { isReason } from '../reasons.ts';
+import { isReason, REVOKED } from '../reasons.ts';
 import * as links from './links.ts';
 import type { LinkState, LinkStateWord } from './types.ts';
 import type { LinkStatus } from '../remote/link-socket.ts';
@@ -114,14 +114,12 @@ function indicator(st: Partial<LinkState> | null | undefined, { now = Date.now()
   const queued = (st.queued ?? 0) > 0 ? ` · ${st.queued} queued` : '';
   if (state === 'online') return '⇄ online';
   if (state === 'fork') return '✕ out of step: /sub-human doctor';
-  if (state === 'stopped') return `✕ ${REMOVED.has(String(st.lastReason)) ? 'removed by the host' : 'stopped'}${queued}`;
+  if (state === 'stopped') return `✕ ${REVOKED.has(String(st.lastReason)) ? 'removed by the host' : 'stopped'}${queued}`;
   if (state === 'connecting') return (st.attempt ?? 0) > 1 ? `… connecting (${st.attempt})${queued}` : `… connecting${queued}`;
   const t = st.since ? ago(st.since, now) : '';
   return `✕ offline${t ? ` ${t}` : ''}${queued}`;
 }
 
-/** A stop for good because the host ended this machine's link (`/sub-human kick`, a revoked key or token). */
-const REMOVED: ReadonlySet<string> = new Set(['LINK_REVOKED', 'KEY_REVOKED', 'TOKEN_UNKNOWN']);
 /** The link is stopped for good: what this copy shows of the room (who is here) is no longer the room's. */
 const stoppedForGood = (st: Partial<LinkState> | null | undefined): boolean => !!st && normalize(st.state, st.detail) === 'stopped';
 

@@ -181,26 +181,21 @@ test('ssh: a ProxyJump rides the locator (?via=), as plain as the destination; t
   assert.equal(linkConnect.sshLocator('me@far', { via: '-J' }), null);
 
   const home = h.freshHome(t);
-  const spec: SshSpec = { kind: 'ssh', user: 'me', host: 'far', via: 'bastion', key: '/k/id_ed25519', knownHosts: '/k/known_hosts', alias: 'sub-human-vole-1234' };
-  const local = ['-i', '/k/id_ed25519', '-o', 'IdentitiesOnly=yes', '-o', 'UserKnownHostsFile=/k/known_hosts', '-o', 'StrictHostKeyChecking=yes', '-o', 'HostKeyAlias=sub-human-vole-1234'];
-  assert.deepEqual(ssh.command(spec, rc('vole-1234'), []).slice(8), [...local, '-J', 'bastion', '--', 'me@far', 'sub-human serve --stdio vole-1234']);
-  // SUB_HUMAN_SSH_OPTS comes after the pinned options (ssh takes the first value), so it cannot weaken them
-  const withOpts = ssh.command(spec, rc('vole-1234'), ['-o', 'StrictHostKeyChecking=no']);
-  assert.ok(withOpts.indexOf('StrictHostKeyChecking=yes') < withOpts.indexOf('StrictHostKeyChecking=no'), withOpts.join(' '));
+  const spec: SshSpec = { kind: 'ssh', user: 'me', host: 'far', via: 'bastion' };
+  assert.deepEqual(ssh.command(spec, rc('vole-1234'), []).slice(8), ['-J', 'bastion', '--', 'me@far', 'sub-human serve --stdio vole-1234']);
   const cp = path.join(home, 'ssh', 'cm-%C');
   assert.deepEqual(ssh.command({ ...spec, mux: true }, rc('vole-1234'), []).slice(2, 10), ['-o', 'BatchMode=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2', '-o', 'ControlMaster=no']);
   assert.ok(ssh.command({ ...spec, mux: true }, rc('vole-1234'), []).includes(`ControlPath=${cp}`), 'rides the primed master; never becomes one');
   const prime = ssh.primeCommand(spec, rc('vole-1234'), { opts: [] });
   assert.deepEqual(prime.slice(0, 6), ['ssh', '-M', '-N', '-f', '-o', 'ControlPersist=8h']);
   assert.ok(!prime.includes('BatchMode=yes'), 'the person answers the MFA prompt once');
-  assert.ok(prime.includes(`ControlPath=${cp}`) && prime.includes('HostKeyAlias=sub-human-vole-1234'));
+  assert.ok(prime.includes(`ControlPath=${cp}`));
   assert.throws(() => ssh.primeCommand(spec, rc('vole-1234'), { persist: '8h; id' }), (e: RoomError) => e.code === 'INVALID');
   // the primed master too: SUB_HUMAN_SSH_OPTS after every pinned option, and before the destination
   const primeOpts = ssh.primeCommand(spec, rc('vole-1234'), { opts: ['-o', 'StrictHostKeyChecking=no', '-o', `ControlPath=/tmp/elsewhere`] });
-  assert.ok(primeOpts.indexOf('StrictHostKeyChecking=yes') < primeOpts.indexOf('StrictHostKeyChecking=no'), primeOpts.join(' '));
   assert.ok(primeOpts.indexOf(`ControlPath=${cp}`) < primeOpts.indexOf('ControlPath=/tmp/elsewhere'), primeOpts.join(' '));
   assert.ok(primeOpts.indexOf('StrictHostKeyChecking=no') < primeOpts.indexOf('--'), 'options before the destination');
-  for (const bad of [{ key: '-oProxyCommand=x' }, { knownHosts: 'relative' }, { knownHosts: '/k/kh', alias: 'a b' }, { via: '-x' }]) {
+  for (const bad of [{ via: '-x' }, { user: '-oProxyCommand=x' }]) {
     assert.throws(() => ssh.command({ ...spec, ...bad }, rc('vole-1234'), []), (e: RoomError) => e.code === 'INVALID', JSON.stringify(bad));
   }
 });

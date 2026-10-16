@@ -2,9 +2,7 @@
  * plugin/sub-human/lib/remote/transports/ssh.ts: the ssh kind, the pipe kind (./pipe.ts) with an `ssh` command in
  * front. Since protocol 3 every new ssh link is a login link: the person's own ssh login to the host account (their
  * keys, agent, ~/.ssh/config and known_hosts decide; the plugin writes no key and pins no host key) runs the host's
- * stable shim (remoteCommand), an invite line's or a plain `/sub-human join USER@HOST ROOM`'s alike. A link an admit let
- * in before protocol 3 (its own key, a pinned host key, a forced command on the host that ignores the remote command
- * named here) keeps working with the link options its file holds until it is kicked or invited again.
+ * stable shim (remoteCommand), an invite line's or a plain `/sub-human join USER@HOST ROOM`'s alike.
  *
  *   dest(text) -> {user, host, port?} | null   a plain user@host[:port]: a POSIX-ish user name and a host name or
  *                                  IPv4 address. Neither part may start with "-" (an option) or hold spaces, quotes,
@@ -21,9 +19,6 @@
  *       environment, never from an invite: for tests and setups that need -i KEY, -F FILE or a known_hosts file
  *       (ssh takes the first value of an option, so they win). Link options come from fields the joining machine
  *       wrote into its own link file (lib/room/links.ts), never from an invite:
- *         key         -i KEY -o IdentitiesOnly=yes          a link from before protocol 3: its own key (nothing makes one now)
- *         knownHosts  -o UserKnownHostsFile=F -o StrictHostKeyChecking=yes -o HostKeyAlias=ALIAS   that link's pinned
- *         alias       host key: no first-use prompt, nothing else accepted
  *         mux         -o ControlMaster=no -o ControlPath=<home>/ssh/cm-%C   ride a master `sub-human prime CODE` opened
  *                     (one MFA prompt for hours); with none open, ssh connects as usual. BatchMode stays on, so the
  *                     daemon never waits on a prompt and never becomes a master itself
@@ -34,8 +29,8 @@
  *       port?, via?, login: true, link, remoteHome?}. link: the link id this machine picks (12 hex, random by default;
  *       the host's server records the link under it, so `/sub-human kick` finds its serve process by its argv); home:
  *       the host's SUB_HUMAN_HOME when it is not ~/.sub-human (a plain absolute path). null when any part is not plain
- *   remoteCommand(spec, code) -> string   what ssh asks the host to run: `sub-human serve --stdio CODE` for a key an
- *       admit let in before protocol 3 (its forced command ignores it), else (login) `"$HOME"/.sub-human/bin/serve --stdio CODE --link ID
+ *   remoteCommand(spec, code) -> string   what ssh asks the host to run: `sub-human serve --stdio CODE` (a spec
+ *       that is not a login's: the tests' fake ssh), else (login) `"$HOME"/.sub-human/bin/serve --stdio CODE --link ID
  *       --login`, or `env SUB_HUMAN_HOME=H H/bin/serve …` with remoteHome. A forced-command key can never send --login:
  *       its line fixes the arguments (scripts/sub-human serve also refuses --login under SSH_ORIGINAL_COMMAND)
  *   loginCommand(spec) -> string     the plain `ssh [-p P] [-J V] user@host` a person runs once by hand (a host key to
@@ -80,7 +75,6 @@ const SSH_HOST = '[A-Za-z0-9](?:[A-Za-z0-9.-]{0,252})';
 const SSH_RE = new RegExp(`^(${SSH_USER})@(${SSH_HOST})(?::([0-9]{1,5}))?$`);
 const HOP_RE = new RegExp(`^(?:${SSH_USER}@)?${SSH_HOST}(?::([0-9]{1,5}))?$`);
 const LOCAL_PATH_RE = /^\/[^\0\n"'%]*$/;
-const ALIAS_RE = /^[A-Za-z0-9._-]{1,64}$/;
 const LINK_ID_RE = /^[0-9a-f]{12}$/;
 const HOME_RE = /^\/[A-Za-z0-9_/.@+,:-]+$/; // lib/remote/shim.ts PLAIN_PATH_RE: nothing a remote shell expands
 
@@ -154,11 +148,6 @@ function checked(spec: SshSpec, code: RoomCode): { d: SshDest; local: string[]; 
   if (!CODE_RE.test(code)) throw new RoomError('INVALID', `invalid room code "${code}"`);
   const local: string[] = [];
   const file = (k: string, v: unknown): string => { if (typeof v !== 'string' || !LOCAL_PATH_RE.test(v)) throw new RoomError('INVALID', `the link's ${k} is not a plain absolute path`); return v; };
-  if (spec.key !== undefined) local.push('-i', file('key', spec.key), '-o', 'IdentitiesOnly=yes');
-  if (spec.knownHosts !== undefined) {
-    if (typeof spec.alias !== 'string' || !ALIAS_RE.test(spec.alias)) throw new RoomError('INVALID', 'the link\'s pinned host key has no plain alias');
-    local.push('-o', `UserKnownHostsFile=${file('knownHosts', spec.knownHosts)}`, '-o', 'StrictHostKeyChecking=yes', '-o', `HostKeyAlias=${spec.alias}`);
-  }
   if (spec.login === true) {
     if (!LINK_ID_RE.test(String(spec.link))) throw new RoomError('INVALID', 'the login link names no link id (12 hex)');
     if (spec.remoteHome !== undefined && !HOME_RE.test(String(spec.remoteHome))) throw new RoomError('INVALID', 'the login link\'s remote home is not a plain absolute path');
@@ -174,7 +163,7 @@ function checked(spec: SshSpec, code: RoomCode): { d: SshDest; local: string[]; 
 function command(spec: SshSpec, code: RoomCode, opts: string[] = sshOpts()): [string, ...string[]] {
   const { local, tail } = checked(spec, code);
   const mux = spec.mux === true ? ['-o', 'ControlMaster=no'] : [];
-  // ssh takes an option's first value: the pinned ones (local: the link's key, known_hosts, StrictHostKeyChecking; mux)
+  // ssh takes an option's first value: the pinned ones (local: the mux ControlPath)
   // come before SUB_HUMAN_SSH_OPTS, so the environment adds options and never weakens those
   return ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2',
     ...mux, ...local, ...opts, ...tail, remoteCommand(spec, code)];
@@ -253,7 +242,7 @@ const loginFailure = (stderr: string, spec: SshSpec, code: RoomCode): string | n
 function primeCommand(spec: SshSpec, code: RoomCode, { persist = '8h', opts = sshOpts() }: { persist?: string; opts?: string[] } = {}): string[] {
   if (!/^[0-9]{1,5}[smhd]?$/.test(persist)) throw new RoomError('INVALID', `--persist "${persist}" is not a time (e.g. 8h)`);
   const { local, tail } = checked({ ...spec, mux: true }, code);
-  // as in command(): the pinned options (the master's ControlPath, the link's key and known_hosts) before the env's
+  // as in command(): the pinned options (the master's ControlPath) before the env's
   return ['ssh', '-M', '-N', '-f', '-o', `ControlPersist=${persist}`, '-o', 'ServerAliveInterval=15', ...local, ...opts, ...tail];
 }
 

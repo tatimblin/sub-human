@@ -58,20 +58,12 @@ function checkSsh({ needed, version }: { needed: boolean; version: string | null
 function sshHint(stderr: unknown, link: { code?: string; transport?: LinkTransportView } = {}): string | null {
   const code = link.code || 'CODE';
   const t = link.transport ?? {};
-  const newInvite = `ask the host for a new invite (/sub-human invite${t.via ? ` --via ${t.via}` : ''}) and type the line it shows`;
   const p = lib('remote/transports/ssh.ts').classify(stderr);
   if (!p) return null;
   switch (p.kind) {
     case 'mfa': return `the host or a jump host wants an interactive login (MFA): run ${cli(`prime ${code}`)} once in a terminal; the connection then rides that login for hours`;
-    case 'denied': {
-      const why = t.key
-        ? 'the host refused this link\'s own key (an older sub-human let it in): the host removed it. ' + newInvite
-        : 'the host refused your ssh login: joining over ssh needs a login of your own there (your key in its authorized_keys, as for any ssh). Without one, ask the host for an invite over the web (/sub-human invite --web)';
-      return `${why}. Behind a bastion with MFA, run ${cli(`prime ${code}`)} in a terminal first`;
-    }
-    case 'host-key': return t.knownHosts
-      ? `the host's ssh key is not the one its invite pinned (a reinstalled or different machine): check with the host, then ${newInvite}`
-      : 'the host key is unknown or changed: run `ssh USER@HOST` once by hand to check and accept it, then join again';
+    case 'denied': return `the host refused your ssh login: joining over ssh needs a login of your own there (your key in its authorized_keys, as for any ssh). Without one, ask the host for an invite over the web (/sub-human invite --web). Behind a bastion with MFA, run ${cli(`prime ${code}`)} in a terminal first`;
+    case 'host-key': return 'the host key is unknown or changed: run `ssh USER@HOST` once by hand to check and accept it, then join again';
     case 'dns': return `the host name does not resolve from here (VPN or tailnet down?)${t.via ? '' : '; if it is only reachable through a jump host, ask the host for an invite with --via JUMP (/sub-human invite --via JUMP)'}`;
     case 'refused': return 'nothing listens for ssh on that port';
     case 'timeout': return `the host does not answer (asleep, offline or firewalled)${t.via ? '' : '; behind a bastion, the invite needs --via JUMP (/sub-human invite --via JUMP)'}`;

@@ -18,9 +18,6 @@
  *       (AUTH) is scrubbed with its PIN (refused: {at, reason}). caps {ping: true}. The hello carries this home's
  *       machine key's proof (lib/remote/machine-key.ts): the host records the machine id the key gives and the reply
  *       says it; it is kept (home.ts setMachineIn) and every later hello reports it (home.ts machineIn)
- *   keyRefused(linkFile, transport, err) -> Promise<err'>   a dial of an ssh link with its own key (one an admit let in
- *       before protocol 3) and a token that ssh refused (classify: denied, publickey: the host revoked the key, `/sub-human
- *       kick`) is AUTH KEY_REVOKED, so the daemon stops; anything else is err
  *   loginRefused(linkFile, transport, err, code) -> Promise<err'>   a login link's ssh gave up for a reason only the
  *       person can fix (lib/remote/transports/ssh.ts loginProblem): AUTH with that reason, so the daemon stops and the
  *       join says what to run, instead of redialing a door that stays shut; anything else is err
@@ -177,7 +174,7 @@ async function connectLink(code: RoomCode): Promise<Client> {
     // the host refused the invite (a wrong PIN, burnt, used, expired): it and its PIN are spent here too, so the link
     // file keeps no secret in clear (a new join writes a fresh one)
     if (!l.token && typeof l.invite === 'string' && errCode(e) === 'AUTH') scrubRefused(code, msgOf(e), reasonOf(e));
-    throw login ? await loginRefused(l, t, e, code) : await keyRefused(l, t, e);
+    throw login ? await loginRefused(l, t, e, code) : e;
   }
   if (c.machine && c.machine !== homeMod.machineIn(code)) homeMod.setMachineIn(code, c.machine);
   if (!l.token) {
@@ -199,16 +196,6 @@ async function stderrOf(t: TransportLike | Promise<TransportLike>): Promise<stri
   return tr.stderr();
 }
 
-/** What connect threw (e, anything), or AUTH KEY_REVOKED when ssh refused this link's own key. */
-async function keyRefused(l: Link, t: TransportLike | Promise<TransportLike>, e: unknown): Promise<unknown> {
-  if (errCode(e) !== 'OFFLINE' || !l.token || !l.transport || l.transport.kind !== 'ssh' || !l.transport.key) return e;
-  const err = await stderrOf(t);
-  const p = err === null ? null : ssh().classify(err);
-  return p && p.kind === 'denied' && p.publickey
-    ? new RoomError('AUTH', 'the host no longer accepts this link\'s ssh key (it was revoked); ask the host for a new invite', 'KEY_REVOKED')
-    : e;
-}
-
 /** What connect threw (e, anything), or AUTH with why when ssh says why a login link cannot work yet. */
 async function loginRefused(l: Link, t: TransportLike | Promise<TransportLike>, e: unknown, code: RoomCode): Promise<unknown> {
   if (errCode(e) !== 'OFFLINE' || l.transport.kind !== 'ssh') return e; // a login link is ssh
@@ -217,4 +204,4 @@ async function loginRefused(l: Link, t: TransportLike | Promise<TransportLike>, 
   return why ? new RoomError('AUTH', why.message, why.reason) : e;
 }
 
-export { connectLink, keyRefused, loginRefused, linkKey, joinerLabel, pipeLocator, sshLocator, transportOf, sshCommand };
+export { connectLink, loginRefused, linkKey, joinerLabel, pipeLocator, sshLocator, transportOf, sshCommand };

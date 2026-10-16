@@ -300,7 +300,7 @@ test('a web invite: invite --url shows URL + SECRET and the PIN apart (no #, no 
   assert.match(lg, new RegExp(`room ${code}: a connection from 127\\.0\\.0\\.1 \\(key [A-Za-z0-9_-]{12}…\\); serve pid \\d+`));
 });
 
-test('a web invite: a 0.5.0-beta.15 joiner\'s PIN attempt is told it must update; a text message that is not a key request is refused', async t => {
+test('a web invite: a text message that is not a key request is refused; a key request gets the key', async t => {
   const R = await rig(t);
   const { port, host, alice, code } = R;
   host.join(alice, `invite --url http://127.0.0.1:${port}`);
@@ -313,10 +313,6 @@ test('a web invite: a 0.5.0-beta.15 joiner\'s PIN attempt is told it must update
       conn.send(text);
     });
   };
-  const old = await ask(JSON.stringify({ id: 1, op: 'enroll.start', params: { v: 1, room: code } }));
-  const e = JSON.parse(must(old.got[0])) as { id: number; error: { code: string; reason: string; message: string } };
-  assert.deepEqual([e.id, e.error.code, e.error.reason], [1, 'PROTOCOL', 'SKEW']);
-  assert.match(e.error.message, /^host runs sub-human \S+ \(protocol 1–3\); you run an older sub-human \(protocol 1–2\) \(this needs protocol 3\)\. Update your plugin: \/plugin update sub-human$/);
   const junk = await ask('hello');
   assert.match(must(junk.got[0]), /not a key request/);
   const key: unknown = JSON.parse(must((await ask(JSON.stringify({ op: 'key', v: 3 }))).got[0]));

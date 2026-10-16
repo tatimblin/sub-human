@@ -10,7 +10,7 @@
  *       A wss/ws link's hello goes over the real transport (the WebSocket and the pinned Noise handshake)
  *   linkChecks(report) -> [Check]   link:CODE and clock:CODE. A dormant link (stopped: ROOM_CLOSED, NO_SEAT) is info; a
  *       closed one gets no hello, and its fix: /sub-human reconnects if the host opens it again, `link CODE --forget`
- *       drops it. FORK: `link --reset`. A spent invite or an ended link (INVITE_*, PIN_LAST, ADMIT_*, KEY_REVOKED,
+ *       drops it. FORK: `link --reset`. A spent invite or an ended link (INVITE_*, PIN_LAST, ADMIT_*,
  *       LINK_REVOKED, TOKEN_UNKNOWN): a new invite; over a login link, join again; MOVED_AWAY: the new host's invite; a
  *       hello refused PROTOCOL: update the older side. clock:CODE: skew against the host (warn 2 min, fail SIG_SKEW_MS)
  *   helloProbe(spec, code, {timeoutMs, env}?) -> Promise<{ok, ms, reply?, error?, code?, stderr?}>
@@ -24,16 +24,13 @@ import type { Link } from '../../room/types.ts';
 import type { ProtoRange } from '../../remote/types-core.ts';
 import type { LinkSpec, Transport } from '../../remote/types-rest.ts';
 import { errCode, msgOf } from '../../errors.ts';
+import { REVOKED } from '../../reasons.ts';
 import type { RoomCode } from '../../brand.ts';
 
 const SKEW_WARN_MS = 2 * 60 * 1000;
 /** The reasons that mean the link's invite or credential is spent: only a new invite helps. */
 const SPENT: ReadonlySet<string> = new Set(['INVITE_UNKNOWN', 'INVITE_USED', 'INVITE_BURNT', 'INVITE_EXPIRED', 'PIN_LAST', 'ADMIT_REFUSED',
-  'ADMIT_LAPSED', 'ADMIT_REVOKED', 'ADMIT_LATE', 'KEY_REVOKED', 'LINK_REVOKED', 'TOKEN_UNKNOWN']);
-/** Over a login link, the host ended it: the person joins again over their ssh login. */
-/** A link the host ended (kick), or whose token it no longer knows: nothing to dial (lib/remote/link.ts drops the token). */
-const REVOKED: ReadonlySet<string> = new Set(['LINK_REVOKED', 'TOKEN_UNKNOWN', 'KEY_REVOKED']);
-const LOGIN_ENDED: ReadonlySet<string> = new Set(['LINK_REVOKED', 'TOKEN_UNKNOWN']);
+  'ADMIT_LAPSED', 'ADMIT_REVOKED', 'ADMIT_LATE', ...REVOKED]);
 
 const lastLogError = (code: RoomCode): string[] => {
   let text: string;
@@ -204,7 +201,7 @@ function linkChecks(d: LinkReport): Check[] {
   else if (d.moved && !d.moved.reached && d.state.state !== 'online') {
     const who = d.moved.host || 'its host';
     fix = `${d.transport.login ? `over ssh this machine follows through your own ssh login to ${who}'s machine; without one, ask` : 'Ask'} ${who} for an invite (/sub-human invite${d.transport.login ? ' --web' : ''} there) and type the line it shows`;
-  } else if (d.transport.login && why && LOGIN_ENDED.has(why)) {
+  } else if (d.transport.login && why && REVOKED.has(why)) {
     fix = `the host ended this connection: ask them first, then join again over your ssh login: /sub-human join ${d.transport.user}@${d.transport.host}${d.transport.port ? `:${d.transport.port}` : ''} ${d.code}`;
   } else if (why && SPENT.has(why)) {
     // the link's invite (or key) is spent: joining again or restarting the daemon would only reuse it

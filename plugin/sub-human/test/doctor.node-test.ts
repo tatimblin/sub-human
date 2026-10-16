@@ -55,9 +55,7 @@ test('doctor: node floor, Remote Control, ssh hints and argument errors', () => 
   assert.match(denied, /refused your ssh login: joining over ssh needs a login of your own there .* ask the host for an invite over the web \(\/sub-human invite --web\)/);
   assert.match(denied, /sub-human prime vole-1234/);
   assert.doesNotMatch(denied, /authorize\b|shk1|ssh-agent|SUB_HUMAN_SSH_OPTS|let in/, 'no sh1/sh2-era or admit-a-key advice');
-  assert.match(must(doctor.sshHint('Permission denied (publickey).', { code: rc('vole-1234'), transport: { key: '/x/id_ed25519' } })), /refused this link's own key \(an older sub-human let it in\): the host removed it\. ask the host for a new invite/);
   assert.match(must(doctor.sshHint('Permission denied (publickey,keyboard-interactive).', { code: rc('vole-1234') })), /interactive login \(MFA\): run SUB_HUMAN_HOME=\S+ node \S+\/scripts\/sub-human prime vole-1234 once in a terminal/);
-  assert.match(must(doctor.sshHint('Host key verification failed.', { transport: { knownHosts: '/x/known_hosts', via: 'jump' } })), /not the one its invite pinned.*\/sub-human invite --via jump/);
   assert.match(must(doctor.sshHint('Host key verification failed.')), /host key/);
   assert.match(must(doctor.sshHint('ssh: Could not resolve hostname box: nodename nor servname provided')), /does not resolve.*--via JUMP/);
   assert.match(must(doctor.sshHint('ssh: connect to host box port 22: Operation timed out')), /does not answer.*\/sub-human invite --via JUMP/);

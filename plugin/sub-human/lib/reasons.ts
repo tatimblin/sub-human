@@ -8,10 +8,9 @@
  * reads none; nothing here depends on a peer sending one). The bridge, the link daemon's socket and its state file
  * (lib/room/links.ts LinkState lastReason) carry it unchanged.
  *
- *   REASONS              every reason, by name (a frozen object: REASONS.PLACED_ALREADY === 'PLACED_ALREADY')
- *   isReason(x) -> bool  one of them
- *   reasonOf(err) -> Reason | null   the error's reason, when it is one of REASONS
- *   withReason(err, reason) -> err   sets it (returns the same error)
+ *   isReason(x) -> bool  one of REASON_CODE's
+ *   reasonOf(err) -> Reason | null   the error's reason, when it is one
+ *   REVOKED              the reasons a link stops with when the host ended it or forgot its token: it never gets in again
  *
  *   REASON_CODE          each reason's code (the source of Reason: a reason is added with the code it comes with);
  *                        null: a reason a link stops with, carried beside whatever code the stop had (OFFLINE by
@@ -24,7 +23,7 @@ export const REASON_CODE = {
   // AUTH
   PLACED_ALREADY: 'AUTH', // a signed entry's nonce is in the log: an earlier try landed
   INVITE_UNKNOWN: 'AUTH', INVITE_USED: 'AUTH', INVITE_BURNT: 'AUTH', INVITE_EXPIRED: 'AUTH', INVITE_OTHER_MACHINE: 'AUTH',
-  INVITE_OTHER_LINK: 'AUTH',
+  INVITE_OTHER_LINK: 'AUTH', // a login session's --link is not the one the invite's PIN asked for
   PIN_NEEDED: 'AUTH', // an invite line's host asks for its PIN: the joiner is asked
   PIN_WRONG: 'AUTH',
   PIN_LAST: 'AUTH', // a wrong PIN burnt it
@@ -35,7 +34,6 @@ export const REASON_CODE = {
   ADMIT_LATE: 'AUTH', // let in, but not redeemed in time
   TOKEN_UNKNOWN: 'AUTH',
   LINK_REVOKED: 'AUTH', // the host revoked the link
-  KEY_REVOKED: 'AUTH', // ssh refused a link's own key that once got in
   NOT_BOUND: 'AUTH', // a link let in as one name joins as another
   NOT_JOINED: 'AUTH', // a write as a seat that did not join over the link
   LOGIN_ONLY: 'AUTH', // a login hello that did not come over an ssh login
@@ -72,8 +70,6 @@ export type ReasonFor<C extends WireCode> = { [R in Reason]: (typeof REASON_CODE
 
 const NAMES = Object.keys(REASON_CODE) as Reason[]; // the object's own keys: Reason
 
-export const REASONS: Readonly<{ [R in Reason]: R }> = Object.freeze(Object.fromEntries(NAMES.map(n => [n, n])) as { [R in Reason]: R });
-
 const SET: ReadonlySet<string> = new Set(NAMES);
 
 export const isReason = (x: unknown): x is Reason => typeof x === 'string' && SET.has(x);
@@ -83,7 +79,5 @@ export const reasonOf = (err: unknown): Reason | null => {
   return isReason(r) ? r : null;
 };
 
-export function withReason<E extends object>(err: E, reason: Reason | null | undefined): E {
-  if (reason) Object.assign(err, { reason });
-  return err;
-}
+/** The host ended the link (kick) or no longer knows its token: the token never gets in again. */
+export const REVOKED: ReadonlySet<string> = new Set<Reason>(['LINK_REVOKED', 'TOKEN_UNKNOWN']);

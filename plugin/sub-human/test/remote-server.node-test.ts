@@ -397,24 +397,6 @@ test('remote (pipe): `sub-human serve --stdio CODE` as a child serves the host h
   assert.equal(closed, true);
 });
 
-test('remote (pipe): `serve --stdio CODE --link ID` (the SSH forced command) takes only that link\'s token; an invite over it stays unused', async t => {
-  const { code, host } = hostRoom(t);
-  const serveAs = (id?: string) => pipe.spawn(process.execPath, [h.BIN, 'serve', '--stdio', code, ...(id ? ['--link', id] : [])], { env: h.childEnv() });
-  const a = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: REMOTE, seats: [] });
-  const b = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: mid('other0machine001'), seats: [] });
-  assert.equal(hostLinks.linkKnown(host, a.link.id), true);
-  assert.equal(hostLinks.linkKnown(host, 'ffffffffffff'), false);
-  // a token presented over another link's forced command: AUTH; over its own: in
-  await rejects(client.connect(serveAs(b.link.id), { machine: REMOTE, token: a.token }), 'AUTH');
-  const ca = await client.connect(serveAs(a.link.id), { machine: REMOTE, token: a.token });
-  assert.equal(ca.link, a.link.id);
-  ca.close();
-  // an invite not reserved for that link, over its forced command: AUTH, and it stays unused
-  const c = invites.mintFor(host, { locator: 'ssh:me@far', machine: REMOTE, seats: [] });
-  await assert.rejects(client.connect(serveAs(a.link.id), { machine: REMOTE, invite: c.invite }), (e: RoomError) => e.code === 'AUTH' && e.reason === 'INVITE_OTHER_LINK');
-  assert.equal(invites.redeemInvite(host, c.secret, { machine: REMOTE }).link.id.length, 12, 'and stays unused');
-});
-
 test('remote (memory): subscribe {snapshot: true} gets the snapshot first only from a host that has one, only after 0, and only when it fits a frame', async t => {
   const { code, host } = hostRoom(t);
   const c = await linked(t, host);

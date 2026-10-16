@@ -22,7 +22,6 @@ import type { Client, ConnectOpts } from '../lib/remote/client.ts';
 import type { SshSpec } from '../lib/remote/types-rest.ts';
 import * as memory from '../lib/remote/transports/memory.ts';
 import * as ssh from '../lib/remote/transports/ssh.ts';
-import * as shim from '../lib/remote/shim.ts';
 import { Machine } from './support/two-homes.ts';
 import { fakeSsh } from './support/fake-ssh.ts';
 import * as protocolLib from '../lib/remote/protocol.ts';
@@ -125,7 +124,7 @@ test('ssh.loginFailure: what only the person can fix names the exact step; anyth
   assert.equal(ssh.loginProblem(dns, spec, rc('vole-1234')), null);
 });
 
-test('server: a hello {login} makes a link only in a `serve --login` session, under its --link id, once; a forced-command session refuses it', async t => {
+test('server: a hello {login} makes a link only in a `serve --login` session, under its --link id, once', async t => {
   h.freshHome(t);
   const code = h.newRoom();
   const host = store.open(code);
@@ -138,8 +137,7 @@ test('server: a hello {login} makes a link only in a `serve --login` session, un
     return c;
   };
   const authErr = (re: RegExp) => (e: Error & { code?: string }) => e.code === 'AUTH' && re.test(e.message);
-  // an authorized_keys line's session (--link, no --login): its key reaches that link only
-  await assert.rejects(dial({ linkId: ID }, { login: true }), authErr(/did not arrive over the host account's own ssh login \(it came through a key that was let in for one other connection/));
+  await assert.rejects(dial({ linkId: ID }, { login: true }), authErr(/did not arrive over the host account's own ssh login/));
   await assert.rejects(dial({}, { login: true }), authErr(/did not arrive over the host account's own ssh login/));
   assert.deepEqual(hostLinks.links(host), {}, 'nothing minted');
   const c = await dial({ linkId: ID, login: true }, { login: true });
@@ -345,18 +343,9 @@ test('login e2e: an unknown host key fails at once with the exact ssh to run onc
   assert.match(must(must(d.json).reason), new RegExp(`No invite, so this went over your own ssh login; if the host sent you an invite line, it ends with a long SECRET: /sub-human join me@devbox ${b.code} SECRET$`));
 });
 
-test('login e2e: a key restricted to another link (its forced command) cannot use the login path, nor can a pass-through forced command', t => {
+test('login e2e: a pass-through forced command cannot use the login path', t => {
   const s = setup(t);
-  // the line an admit wrote for another link before protocol 3: its arguments are fixed, so --login never reaches serve
-  const other = '0123456789ab';
-  const forced = (host: Machine) => `SUB_HUMAN_HOME=${host.home} ${shim.shimPath(host.home)} --stdio ${s.code} --link ${other}`;
-  const r1 = new Machine(t, 'restricted', { ...LINK_ENV, PATH: `${fakeSsh(t)}:${process.env.PATH}`, FAKE_SSH_HOME: s.host.user, FAKE_SSH_FORCED: forced(s.host) });
-  const carol = r1.seat('carol');
-  const j1 = r1.join(carol, `join me@devbox ${s.code} --as carol`);
-  stopDaemon(t, r1, s.code);
-  assert.equal(must(j1.json).decision, 'block');
-  assert.match(must(must(j1.json).reason), /did not arrive over the host account's own ssh login \(it came through a key that was let in for one other connection, and reaches only that one\)/);
-  // a forced command that passes the asked-for command through (sshd still sets SSH_ORIGINAL_COMMAND): refused too
+  // a forced command that passes the asked-for command through (sshd still sets SSH_ORIGINAL_COMMAND): refused
   const r2 = new Machine(t, 'passthru', { ...LINK_ENV, PATH: `${fakeSsh(t)}:${process.env.PATH}`, FAKE_SSH_HOME: s.host.user, FAKE_SSH_FORCED: 'eval "$SSH_ORIGINAL_COMMAND"' });
   const dan = r2.seat('dan');
   const j2 = r2.join(dan, `join me@devbox ${s.code} --as dan`);

@@ -41,11 +41,12 @@ import * as linkState from '../lib/room/link-state.ts';
 import type { CallMeta, JsonRpcId, Me, PluginApi, PluginContext, ProgressToken, ToolArgs, ToolDefinition, ToolResult } from './types.ts';
 import type { Entry, Members } from '../lib/room/types.ts';
 import { msgOf } from '../lib/errors.ts';
+import { REVOKED } from '../lib/reasons.ts';
 import type { RoomCode, SeatName } from '../lib/brand.ts';
 
 /** This machine's link to room code was ended by the host (a kick: its link-state stopped with a revocation). */
 const removedByHost = (code: RoomCode): boolean => {
-  try { const st = linkState.read(code); return linkState.stoppedForGood(st) && /^(?:LINK_REVOKED|KEY_REVOKED|TOKEN_UNKNOWN)$/.test(String(st && st.lastReason)); } catch { return false; }
+  try { const st = linkState.read(code); return linkState.stoppedForGood(st) && REVOKED.has(String(st && st.lastReason)); } catch { return false; }
 };
 
 /** What the hold server needs of the room-server ctx (the tests pass a fake one). */

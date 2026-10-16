@@ -257,7 +257,7 @@ interface InviteLife {
  * promote's, handed out by hand, needs its 6-digit PIN (pin_sha256 = sha256(secret:pin), tries left). One shape.
  */
 export interface BoundInvite extends InviteLife {
-  v: 2; admission?: undefined; short?: undefined; prs?: undefined;
+  v: 2; admission?: undefined; short?: undefined;
   machine: MachineId; seats: string[]; expires_at: string;
   handoff?: true;
   pin_sha256?: string;
@@ -270,28 +270,22 @@ export interface Joiner { machine: MachineId; name: string; label: string; key: 
  * An invite line's record (protocol 3, v 4): the line carries its 128-bit secret (the record's key is that secret's
  * sha256), and the PIN is checked here online (pin_sha256 = sha256(secret:PIN)), INVITE_PIN_TRIES tries, throttled
  * after each wrong one per invite (wrong, next_at) and per source machine (sources: the id its machine key proves).
- * v 3: a 4-digit-PIN short invite a 0.5.0-beta.15 host left (prs, the PIN in clear; host_key; door_file): read so
- * it is refused and its PIN dropped, never redeemed.
  */
 export interface ShortInvite extends InviteLife {
-  v: 3 | 4; short: true; admission?: undefined; handoff?: undefined; machine?: undefined; seats?: undefined;
+  v: 4; short: true; admission?: undefined; handoff?: undefined; machine?: undefined; seats?: undefined;
   kind: ShortKind; locator: string; by: string | null; expires_at: string; tries: number;
   pin_sha256?: string;
   wrong?: number; next_at?: string;
   sources?: Record<string, { wrong: number; next_at: string }>;
-  enrolled?: { at: string } & Joiner;
-  /** 0.5.0-beta.15's */
-  prs?: string; host_key?: string | null; door_file?: string | null; last_try_at?: string;
 }
 export type AdmitState = 'asked' | 'let-in' | 'refused' | 'lapsed';
 /**
  * An admission: an invite line's joiner whose PIN held, waiting for the host person's answer. key: the Noise key its
- * web connection proved (the link made from it is bound to that key), null over ssh or a pipe; from a 0.5.0-beta.15
- * enrollment it was the joiner's ssh link key (door_file: where its line went).
+ * web connection proved (the link made from it is bound to that key), null over ssh or a pipe.
  */
 export interface AdmissionRecord extends InviteLife {
-  v: 2; admission: true; short?: undefined; handoff?: undefined; seats?: undefined; prs?: undefined;
-  from: string; kind: ShortKind; by: string | null; door_file?: string | null;
+  v: 2; admission: true; short?: undefined; handoff?: undefined; seats?: undefined;
+  from: string; kind: ShortKind; by: string | null;
   machine: MachineId; name: string; label?: string; key: string | null; link: string; admit: AdmitState;
   expires_at: string;
   admitted_at?: string; admitted_by?: string | null; admit_sig?: unknown; admitted_until?: string;

@@ -26,12 +26,11 @@
  *   inviteOpen(record, now?) -> bool    an invite line's, not used, burnt or expired, a try left
  *
  * Redeeming (lib/remote/server.ts hello, the invite and its PIN in one hello):
- *   redeemInvite(store, secret, {machine, pin?, proven?, peerKey?, as?, reserved?, newId?, now?}) -> {token, link,
+ *   redeemInvite(store, secret, {machine, pin?, proven?, peerKey?, as?, newId?, now?}) -> {token, link,
  *       handoff, admission?}   secret: the secret as idOf gives it (base64url). machine: the id the hello reports;
  *       proven: the id the joiner's machine key gives (lib/remote/machine-key.ts); peerKey: the Noise key the
  *       connection proved (a web link's, XK), recorded on the link it makes; as: {name, label} the joiner asks to sit
- *       as; reserved: a forced command's --link (a link made before protocol 3: the invite must be that link's);
- *       newId: the id a new link takes (a login session's --link, so kick finds its serve).
+ *       as; newId: the id a new link takes (a login session's --link, so kick finds its serve).
  *     A bound invite redeems on its machine only (INVITE_OTHER_MACHINE), before expires_at, and with its PIN when it
  *       has one (a wrong one costs a try, the last burns it).
  *     An invite line's, open:  no pin: AUTH PIN_NEEDED (nothing charged: the joiner is asked for the PIN);
@@ -163,7 +162,6 @@ function redeemShort(cur: Invites, key: string, secret: string, inv: ShortInvite
   pin: unknown; proven: MachineId | null; peerKey: string | null; as: Asked | null; linkId: string | undefined; now: number;
 }): { next?: Invites; err: RoomError; made?: undefined; adm?: undefined } | { next: Invites; err: null; made: { id: string; machine: MachineId; seats: string[]; key: string | null }; adm: AdmissionRecord } {
   const ref = key.slice(0, 12);
-  if (inv.v !== 4) return { err: authError('this invite was made by an older sub-human on the host; ask them for a new one (/sub-human invite)', 'INVITE_UNKNOWN') };
   // burnt, or no try left (a record whose last wrong PIN did not mark it burnt): it takes no PIN, right or wrong
   if (inv.burnt_at || !(Number(inv.tries) > 0)) return { err: authError('this invite no longer works (too many wrong PINs, expired, or cancelled); ask the host for a new one', 'INVITE_BURNT') };
   if (inv.used_at) {
@@ -207,20 +205,19 @@ function redeemShort(cur: Invites, key: string, secret: string, inv: ShortInvite
       : { next, err: authError('wrong PIN, and that was the last try: this invite no longer works. Ask the host for a new one (/sub-human invite on their side)', 'PIN_LAST', `invite ${ref} burnt after its last wrong PIN`) };
   }
   const id = linkId || hostLinks.newLinkId();
-  const joiner = { machine: proven, name: as.name, label, key: peerKey };
   const adm: AdmissionRecord = {
     v: 2, admission: true, from: ref, kind: inv.kind, by: inv.by || null, machine: proven, name: as.name, label,
     key: peerKey, link: id, admit: 'asked', created_at: iso(now), expires_at: iso(now + testMs('SUB_HUMAN_ADMIT_TTL_MS')),
   };
-  const next = { ...cur, [key]: { ...inv, used_at: iso(now), link: id, enrolled: { at: iso(now), ...joiner } }, [admissionSlot(secret)]: adm };
+  const next = { ...cur, [key]: { ...inv, used_at: iso(now), link: id }, [admissionSlot(secret)]: adm };
   const waiting = Object.assign(new RoomError('OFFLINE', `${admission.WAITING}; the link keeps trying`, 'ADMIT_WAITING'), {
     note: `${as.name} on ${label} typed invite ${ref}'s PIN; waiting for ${inv.by || 'the host'} to let them in (the card, or /sub-human admit ${admissionSlot(secret).slice(0, 12)})`,
   });
   return { next, err: waiting };
 }
 
-function redeemInvite(store: AuthStore, secret: string, { machine, pin, proven = null, peerKey = null, as = null, reserved, newId, now = Date.now() }: {
-  machine: MachineId; pin?: unknown; proven?: MachineId | null; peerKey?: string | null; as?: Asked | null; reserved?: string; newId?: string; now?: number;
+function redeemInvite(store: AuthStore, secret: string, { machine, pin, proven = null, peerKey = null, as = null, newId, now = Date.now() }: {
+  machine: MachineId; pin?: unknown; proven?: MachineId | null; peerKey?: string | null; as?: Asked | null; newId?: string; now?: number;
 }): Redeemed {
   const key = sha256(secret);
   // set in the update (a property, so the closure's writes are seen after it)
@@ -229,23 +226,15 @@ function redeemInvite(store: AuthStore, secret: string, { machine, pin, proven =
     got.err = null;
     const cur = stored ?? {};
     const inv = cur[key];
-    if (inv && inv.admission) { // an admission of a short invite a 0.5.0-beta.15 host enrolled (its own secret)
-      got.adm = inv;
-      const r = admission.check(inv, { machine, linkId: reserved ?? newId, peerKey, now });
-      if (r.err) { got.err = r.err; return r.next ? { ...cur, [key]: r.next } : undefined; }
-      got.link = { id: inv.link, seats: [inv.name], bound: true, machine: proven || machine, key: null }; // the card let one name in: that seat and no other
-      return { ...cur, [key]: { ...inv, used_at: iso(now) } };
-    }
     if (inv && inv.short) {
-      const r = redeemShort(cur, key, secret, inv, { pin, proven, peerKey, as, linkId: reserved ?? newId, now });
+      const r = redeemShort(cur, key, secret, inv, { pin, proven, peerKey, as, linkId: newId, now });
       got.err = r.err;
       if (r.made) { got.adm = r.adm; got.link = { ...r.made, bound: true }; } // made: with the admission it came from
       return r.next;
     }
     if (inv && inv.burnt_at) throw authError('this invite no longer works (too many wrong PINs, expired, or cancelled); ask the host for a new one', 'INVITE_BURNT');
     if (inv && inv.used_at) throw authError('this invite was used already (each invite works once); ask the host for a new one', 'INVITE_USED');
-    if (!inv) throw authError('this invite is unknown or was used already; ask the host for a new one', 'INVITE_UNKNOWN');
-    if (reserved !== undefined && inv.link !== reserved) throw authError('this invite is for another connection', 'INVITE_OTHER_LINK');
+    if (!inv || inv.admission) throw authError('this invite is unknown or was used already; ask the host for a new one', 'INVITE_UNKNOWN'); // an admission's key is never a secret's
     if (inv.machine !== machine) throw authError('this invite is for another machine', 'INVITE_OTHER_MACHINE');
     const r = checkBound(inv, secret, pin, now);
     if (r.err) { got.err = r.err; return r.next ? { ...cur, [key]: r.next } : undefined; }
@@ -333,8 +322,7 @@ function burnInvite(store: AuthStore, ref: string, { now = Date.now() }: { now?:
     const [slot, inv] = only;
     if (inv.used_at) { burnt.out = { state: 'used', invite: inv }; return undefined; }
     if (inv.burnt_at) { burnt.out = { state: 'burnt already', invite: inv }; return undefined; }
-    const { prs, ...kept } = inv; // a 0.5.0-beta.15 short invite's PIN goes with it
-    const invite: InviteRecord = { ...kept, burnt_at: iso(now) };
+    const invite: InviteRecord = { ...inv, burnt_at: iso(now) };
     burnt.out = { state: 'burnt', invite };
     return { ...cur, [slot]: invite };
   });
@@ -349,7 +337,7 @@ function burnFor(store: AuthStore, id: string, { now = Date.now() }: { now?: num
     n = 0;
     const next: Invites = { ...cur };
     for (const [k, inv] of Object.entries(cur ?? {})) {
-      if (inv && inv.link === id && !inv.burnt_at) { const { prs, ...kept } = inv; next[k] = { ...kept, burnt_at: iso(now) }; n++; }
+      if (inv && inv.link === id && !inv.burnt_at) { next[k] = { ...inv, burnt_at: iso(now) }; n++; }
     }
     return n ? next : undefined;
   });

@@ -11,9 +11,7 @@
  *       child): the connection came over the web, and peer is the Noise key its XK handshake proved (none: an NK one,
  *       a link made under protocol 2)
  *       A Session over one transport (lib/remote/transports/*): unauthenticated until hello {token | invite}
- *       (lib/remote/invites.ts); every other op before that is AUTH. linkId without login (`serve --stdio CODE --link
- *       ID`, the ssh forced command an admit wrote before protocol 3): only that link's token, or the admission reserved
- *       for it, is accepted; any other is AUTH (and such an invite stays unused). login (`serve --stdio CODE --link ID --login`,
+ *       (lib/remote/invites.ts); every other op before that is AUTH. login (`serve --stdio CODE --link ID --login`,
  *       run over the host account's own ssh login, never by a forced command: their lines fix the arguments, and the
  *       CLI refuses --login under SSH_ORIGINAL_COMMAND): the connection is trusted as a process of the account owner,
  *       so a hello {login: true} with no token records link ID (hostLinks.loginLink) and returns its token, with a room
@@ -149,7 +147,7 @@ function redeem(s: Session, invite: unknown, machine: MachineId, pin: unknown, p
   const asked = as && typeof as === 'object' && typeof (as as { name?: unknown }).name === 'string'
     ? { name: (as as { name: string }).name, label: String((as as { label?: unknown }).label ?? '') } : null;
   let secret: string;
-  const opts = { machine, pin, proven, peerKey: s.peer, as: asked, ...(s.login ? (linkId ? { newId: linkId } : {}) : linkId ? { reserved: linkId } : {}) }; // login: a linkId (serve checks)
+  const opts = { machine, pin, proven, peerKey: s.peer, as: asked, ...(s.login && linkId ? { newId: linkId } : {}) };
   if (word) { // an invite line's SECRET (protocol 3)
     const skew = () => new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: s.version, proto: s.proto }, joiner: s.peerVersion ?? { version: null, proto: { min: 1, max: s.v ?? 1 } }, need: 3 }), 'SKEW');
     if ((s.v ?? 0) < 3) throw skew();
@@ -179,7 +177,7 @@ const roomLine = (s: Session, text: string): void => room.roomLine(s.store, text
 /** hello {login: true}: a new link for a connection over the host account's own ssh login (Session.login), else AUTH. */
 function viaLogin(s: Session, machine: MachineId, proven: MachineId | null): Credential {
   if (!s.login || !s.linkId) {
-    throw authError(`this connection did not arrive over the host account's own ssh login${s.linkId ? ` (it came through a key that was let in for one other connection, and reaches only that one)` : ''}; join with an invite instead (/sub-human invite on the host)`, 'LOGIN_ONLY');
+    throw authError('this connection did not arrive over the host account\'s own ssh login; join with an invite instead (/sub-human invite on the host)', 'LOGIN_ONLY');
   }
   const r = hostLinks.loginLink(s.store, { id: s.linkId, machine, proven }); // linkId: checked above
   roomLine(s, 'a machine linked over your SSH login');

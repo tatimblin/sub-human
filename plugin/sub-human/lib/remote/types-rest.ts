@@ -65,9 +65,6 @@ export interface SshSpec extends SpecBase, SshDest {
   kind: 'ssh';
   via?: string;
   /** link options this machine wrote into its own link file */
-  key?: string;
-  knownHosts?: string;
-  alias?: string;
   mux?: boolean;
   /** a login link */
   login?: boolean;

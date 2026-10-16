@@ -44,6 +44,7 @@ import type { Link } from '../room/types.ts';
 import type { LinkSpec, SshSpec } from './types-rest.ts';
 import type { Outcome } from './hosting.ts';
 import { msgOf } from '../errors.ts';
+import { REVOKED } from '../reasons.ts';
 import type { RoomCode, SeatName, InviteSecret, Pin } from '../brand.ts';
 import type * as WsMod from './transports/ws.ts';
 import type * as SshMod from './transports/ssh.ts';
@@ -58,8 +59,6 @@ export interface Wanted { name: SeatName; code: RoomCode | null; isDefault?: boo
 /** What a join step ends in. */
 export type JoinStep = { kind: 'take'; want: Wanted } | { kind: 'say'; text: string; refused: boolean };
 
-/** A stopped link whose token never gets in again (lib/remote/link.ts drops it): a new invite line replaces it. */
-const SPENT_REASONS: ReadonlySet<string> = new Set(['LINK_REVOKED', 'TOKEN_UNKNOWN', 'KEY_REVOKED']);
 const take = (want: Wanted): JoinStep => ({ kind: 'take', want });
 const say = (text: string, refused = false): JoinStep => ({ kind: 'say', text, refused });
 const refuse = (text: string): JoinStep => say(text, true);
@@ -122,7 +121,7 @@ export function linkLine({ name, code, word, transport, sid }: { name: SeatName;
   if (identity.roomExists(code) && identity.isHost(code)) return refuse(`room ${code} is hosted on this machine; join it with /sub-human ${name} ${code}.`);
   const cur: Link | null = links.get(code);
   // a link that stopped as spent (kicked: its token gets nowhere now) is replaced by the new line, never re-seated over
-  const spent = !!cur && SPENT_REASONS.has(String((linkSocket.stopReason(linkSocket.status(code)) ?? {}).why || ''));
+  const spent = !!cur && REVOKED.has(String((linkSocket.stopReason(linkSocket.status(code)) ?? {}).why || ''));
   if (cur && cur.token && !spent && locatorOf(cur.transport) === locatorOf(transport)) {
     return say(`this machine is in room ${code} already; /sub-human ${name} ${code} takes your place there.`);
   }

@@ -41,8 +41,8 @@
  *       is skipped: two streams overlap during a swap); a proposal's plan is fetched once. A stream's end on the live
  *       connection is an event: closed (the room's Claude stopped) stops it (ROOM_CLOSED), moved redials the new host
  *       (or, this machine being the new host, waits for the accepting hook to stop it, HANDOFF_SELF_STOP_MS at most),
- *       anything else is lost (FORK: LOG_RESET, AUTH: LINK_REVOKED). A link stopped LINK_REVOKED, TOKEN_UNKNOWN or
- *       KEY_REVOKED drops its token from the link file (refused says why): a new invite line replaces it.
+ *       anything else is lost (FORK: LOG_RESET, AUTH: LINK_REVOKED). A link stopped LINK_REVOKED or TOKEN_UNKNOWN
+ *       drops its token from the link file (refused says why): a new invite line replaces it.
  *       A hook's op while not online is refused OFFLINE at once (before the first connection it waits for it), except an
  *       append marked {queue: true} (lib/room/store-mirror.ts, for an @room post) whose payload is outbox.queueable
  *       (lib/remote/outbox.ts): it is kept in the outbox and answered {queued: n}. Answers, consent, proposals and
@@ -77,7 +77,7 @@ import * as engine from './link-engine.ts';
 import { socketPath, listen } from './link-socket.ts';
 import { connectLink } from './link-connect.ts';
 import { RoomError } from '../room/validate.ts';
-import { reasonOf } from '../reasons.ts';
+import { reasonOf, REVOKED } from '../reasons.ts';
 import { hash12 } from '../text.ts';
 import * as config from '../config.ts';
 import { envMs } from '../env.ts';
@@ -133,8 +133,6 @@ const ROOM_CLOSED_REASON = 'the room was closed';
 const NO_SEAT_REASON = 'no seat of this machine is left in the room';
 const nextDelay: (prev: number, base: number, cap: number, random?: () => number) => number = engine.nextDelay;
 
-/** The reasons a link's token never gets in again (kicked, or the host forgot it): the token goes from the link file. */
-const SPENT: ReadonlySet<string> = new Set(['LINK_REVOKED', 'TOKEN_UNKNOWN', 'KEY_REVOKED']);
 /** A link stopped as spent keeps no token: a new invite line for the room replaces it (lib/remote/joining.ts linkLine),
  * and `sub-human link CODE --forget` needs no --force. The refusal stays in the file for doctor. */
 function dropToken(code: RoomCode, why: string, reason: Reason): void {
@@ -353,7 +351,7 @@ async function serveMirror({
         log(fx.msg);
         break;
       case 'finish':
-        if (st.lastReason && SPENT.has(st.lastReason)) dropToken(mirror.code, st.lastError || fx.why, st.lastReason);
+        if (st.lastReason && REVOKED.has(st.lastReason)) dropToken(mirror.code, st.lastError || fx.why, st.lastReason);
         for (const u of unwatch.splice(0)) u();
         if (srv) srv.close();
         fs.rmSync(path.dirname(sockFile), { recursive: true, force: true });

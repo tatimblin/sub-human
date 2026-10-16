@@ -49,8 +49,7 @@
  *       stdout (lib/remote/transports/pipe.ts), errors on stderr; exits when stdin ends. A remote machine's
  *       link spawns it (a pipe), an ssh login runs it (--login), or the web listener (--via ws, with --peer KEY: the
  *       link's own Noise key its XK handshake proved). Without a link token or an invite it answers hello and nothing
- *       else. --link ID without --login (an ssh forced command an admit wrote before protocol 3): only that link's
- *       token (or the invite reserved for it) is accepted; any other is AUTH. A room this machine only mirrors is not served, unless
+ *       else. A room this machine only mirrors is not served, unless
  *       the room moved away from here (lib/handoff.ts): then this machine's old log is served read-only, so a
  *       member that reconnects late still gets the line that moved the room and its invite to the new host.
  *       --login: run over this account's own ssh login (`/sub-human join USER@HOST ROOM` on the other machine
@@ -109,6 +108,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { REVOKED } from '../reasons.ts';
 import * as identity from '../identity.ts';
 import * as room from '../room.ts';
 import * as tasks from '../tasks.ts';
@@ -389,6 +389,7 @@ function serve(args: readonly string[]) {
   const { LINK_ID_RE } = hostLinksLib();
   if (flags.link !== undefined && !LINK_ID_RE.test(flags.link)) die(`bad link id "${flags.link}"`);
   if (flags.login && flags.link === undefined) die('sub-human serve --login: names no --link ID');
+  if (flags.link !== undefined && !flags.login) die('sub-human serve --link ID goes with --login (an ssh login)');
   // --via ws and --peer: the web listener's child (the key its Noise XK handshake proved); never with an ssh login
   if (flags.via !== undefined && flags.via !== 'ws') die(`sub-human serve: --via ${flags.via}: only ws (the web listener)`);
   if (flags.peer !== undefined && (flags.via !== 'ws' || !/^[A-Za-z0-9_-]{43}$/.test(flags.peer))) die('sub-human serve: --peer KEY goes with --via ws, a 32-byte key in base64url');
@@ -506,8 +507,8 @@ function forgetLink(code: RoomCode, s: MirrorRoomStore, force: boolean, stopped?
   const st = linkState.read(code);
   const why = st?.lastError || '';
   // dormant (the room closed, no seat left) or spent (the host removed this machine: its token gets nowhere now)
-  const ended = ['ROOM_CLOSED', 'NO_SEAT', 'LINK_REVOKED', 'TOKEN_UNKNOWN', 'KEY_REVOKED'];
-  if (!force && !ended.includes(String(st?.lastReason))) {
+  const r = String(st?.lastReason);
+  if (!force && r !== 'ROOM_CLOSED' && r !== 'NO_SEAT' && !REVOKED.has(r)) {
     die(`room ${code}: the connection did not stop because the room closed, no seat of this machine is left or the host removed it (${why || 'no reason on record'}); add --force to forget it anyway`, 1);
   }
   s.setAside(); // a demote's idiom: the log is kept beside the outbox, never merged

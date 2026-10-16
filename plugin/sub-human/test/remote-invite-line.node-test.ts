@@ -180,10 +180,6 @@ test('five wrong PINs burn the invite; the right one after that is refused; a 0.
   const z = mint(host);
   host.kv.update(invites.INVITES_KEY, (cur: Invites | null) => { const k = crypto.createHash('sha256').update(z.id).digest('hex'); return { ...cur, [k]: { ...must(must(cur)[k]), tries: 0 } }; });
   assert.throws(() => invites.redeemInvite(host, z.id, { machine: m.id, proven: m.id, as: { name: 'x', label: 'x' }, pin: z.pin, now: Date.now() }), (e: RoomError) => e.reason === 'INVITE_BURNT');
-  // a record a 0.5.0-beta.15 host left (v 3, its PIN in clear): never redeemed
-  const old = crypto.randomBytes(16).toString('base64url');
-  host.kv.update(invites.INVITES_KEY, (cur: Invites | null) => ({ ...cur, [crypto.createHash('sha256').update(old).digest('hex')]: { v: 3, short: true, kind: 'ssh', locator: 'ssh:me@box', host_key: null, by: null, door_file: null, created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 60_000).toISOString(), tries: 5, prs: '1234' } as ShortInvite })); // deliberate: an older host's record (its PIN in clear)
-  assert.throws(() => invites.redeemInvite(host, old, { machine: m.id, proven: m.id, pin: '1234' }), /made by an older sub-human/);
 });
 
 test('over the web: the admission is bound to the Noise key the PIN\'s connection proved, the link too; a protocol-2 link keeps its token; an invite line needs protocol 3 and XK', async t => {

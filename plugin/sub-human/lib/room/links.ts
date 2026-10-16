@@ -9,8 +9,7 @@
  * Link = {code, transport: {kind: 'pipe', home} | …, token?, invite?, pin?, pin_wanted?, awaiting?, refused?, rebind?, moved?, created_at}
  *   transport  how the daemon reaches the host's server (lib/remote/link.ts transportOf: an invite's locator), plus
  *              what this machine adds: a web link's pinned listener key (hostKey) and its own Noise key (clientKey, the
- *              pair in dirOf(code), lib/remote/link-connect.ts linkKey); an ssh link made before protocol 3 its own ssh
- *              key and pinned known_hosts (key, knownHosts, alias: nothing makes those now), mux; or a login link's
+ *              pair in dirOf(code), lib/remote/link-connect.ts linkKey); an ssh link's mux; a login link's
  *              {kind: 'ssh', user, host, port?, via?, login: true, link, remoteHome?, mux?} (`/sub-human join USER@HOST
  *              ROOM`, ssh.ts loginSpec, and every ssh invite line: the person's own ssh login reaches the host)
  *   invite     the invite the daemon redeems at its first hello, until it holds the token: an sh2 invite (a

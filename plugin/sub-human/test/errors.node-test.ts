@@ -7,7 +7,7 @@ import { errCode, isCoded, isErrno, msgOf, stackOf } from '../lib/errors.ts';
 import { RoomError } from '../lib/room/validate.ts';
 import { NoiseError } from '../lib/remote/noise.ts';
 import * as protocol from '../lib/remote/protocol.ts';
-import { REASON_CODE, REASONS, isReason } from '../lib/reasons.ts';
+import { REASON_CODE, isReason } from '../lib/reasons.ts';
 
 const ROOT = path.join(import.meta.dirname, '..');
 const thrown = (fn: () => unknown): unknown => { try { fn(); } catch (e) { return e; } assert.fail('it did not throw'); };
@@ -73,8 +73,7 @@ test('CODES: one source (CODE_NAMES); a code this end does not know reads as INV
   assert.equal(protocol.toError({ code: 'STALE', message: 'm' }).code, 'STALE');
 });
 
-test('REASON_CODE: every reason has a code of CODES (or null: a stop reason), and REASONS is its keys', () => {
-  assert.deepEqual(Object.keys(REASONS).sort(), Object.keys(REASON_CODE).sort());
+test('REASON_CODE: every reason has a code of CODES (or null: a stop reason)', () => {
   for (const [r, c] of Object.entries(REASON_CODE)) {
     assert.ok(isReason(r));
     assert.ok(c === null || protocol.isWireCode(c), `${r}: ${String(c)}`);
