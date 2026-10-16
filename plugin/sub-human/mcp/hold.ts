@@ -61,7 +61,7 @@ interface HoldBase {
   code: RoomCode;
   started: number;
   name: string;
-  resolve?: (r: ToolResult) => void; // set as the call blocks, before it is in holds
+  resolve: (r: ToolResult) => void; // the blocked call's: set as the call blocks, before it is in holds
 }
 type Hold = (HoldBase & { kind: 'member' }) | (HoldBase & { kind: 'room'; moves: Set<number> });
 type RoomHold = Extract<Hold, { kind: 'room' }>;
@@ -173,8 +173,7 @@ class HoldServer {
     if (h.kind === 'room' && !/^STOP\b/.test(s)) this.roomEnded.set(h.code, Date.now());
     else if (h.kind === 'room') this.roomEnded.delete(h.code);
     this.log('RETURN', h.id, s);
-    // oxlint-disable-next-line typescript/no-non-null-assertion -- a hold is in holds only once hold() set its resolve (checked above)
-    h.resolve!(this.text(s));
+    h.resolve(this.text(s));
     this.saveSeat();
     if (!this.holds.size) this.stopTimer();
   }
@@ -289,8 +288,7 @@ class HoldServer {
     if (!this.holds.has(h.id)) return;
     this.holds.delete(h.id);
     this.log('CANCELLED', h.id, h.kind, h.name || h.code);
-    // oxlint-disable-next-line typescript/no-non-null-assertion -- a hold is in holds only once hold() set its resolve (checked above)
-    h.resolve!(this.text(`(cancelled)`));
+    h.resolve(this.text(`(cancelled)`));
     if (h.kind === 'room') this.roomEnded.delete(h.code);
     this.saveSeat();
     if (h.kind === 'room') { this.roomGone.set(h.code, Date.now()); this.respawn.delete(h.code); }
@@ -337,7 +335,7 @@ class HoldServer {
     const code = cur.code;
     const member = typeof args.member === 'string' ? args.member.trim().replace(/^@/, '') : '';
     const roomCode = typeof args.room === 'string' ? args.room.trim() : '';
-    const base = { id: meta.id, token: meta.progressToken, n: 0, msg: '', sentAt: 0, code, started: Date.now() };
+    const base = { id: meta.id, token: meta.progressToken, n: 0, msg: '', sentAt: 0, code, started: Date.now(), resolve: (_r: ToolResult): void => {} };
     let h: Hold;
 
     if (member) {

@@ -157,8 +157,7 @@ function removeRoom(code: string): ServedRoom | null {
 function start({ port = defaultPort() }: { port?: number } = {}): { pid: number; port: number; started: boolean } {
   const cur = status();
   // running: isAlive took its pid, so it is set; its port is the state file's, written with the pid
-  // oxlint-disable-next-line typescript/no-non-null-assertion -- the port of a running listener's state file, read unchecked (objAs)
-  if (cur.running && cur.pid != null) return { pid: cur.pid, port: cur.port!, started: false };
+  if (cur.running && cur.pid != null) return { pid: cur.pid, port: cur.port ?? port, started: false };
   fs.mkdirSync(dir(), { recursive: true, mode: 0o700 });
   hostKey(); // made here, not raced by the daemon
   const fd = fs.openSync(logFile(), 'a', 0o600);
