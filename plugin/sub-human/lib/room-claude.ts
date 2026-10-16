@@ -46,7 +46,8 @@
  *       wait graceMs (a quick rejoin cancels); claim members.json claude.closing under the lock (only one reaper
  *       wins); append a to=claude status "room closed: complete task 1" (the room Claude's tail child wakes it); wait up to
  *       waitMs for task 1 to complete (or the list to be cleaned up); `claude stop <job>` and any other live
- *       claude.CODE job (stopStrays); mark the room's Claude left.
+ *       claude.CODE job (stopStrays); the bound process (pid and start time) gone, ended here after REAP_STOP_MS if
+ *       `claude stop` left it running (ensureGone); mark the room's Claude stopped and left.
  *       claimed: the caller already set closing (watchdog): no grace, no claim. We never delete under ~/.claude.
  *   reapDetached(code, {claimed}?)   `node lib/room-claude.ts reap CODE [--claimed]`, detached, output ignored
  *   releaseDetached(code, job)   `node lib/room-claude.ts release CODE JOB`, detached: `claude stop JOB` and nothing else (a
@@ -76,7 +77,7 @@ import * as config from './config.ts';
 import * as clock from './clock.ts';
 import * as cc from './cc/bg.ts';
 import * as ccEnv from './cc/env.ts';
-import { LOG_V } from './room/members.ts';
+import { LOG_V, startMatches } from './room/members.ts';
 import type { Member, Members } from './room/types.ts';
 import type { RoomClaudePatch } from './identity.ts';
 import type { AgentJob } from './cc/bg.ts';
@@ -215,6 +216,23 @@ function findJob(code: string, { parsed = null, env = cleanEnv() }: { parsed?: s
     && (j.name === name || (!!parsed && j.id === parsed)));
   const pick = mine.find(j => j.id === parsed) || mine.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))[0];
   return pick ? { id: pick.id, sessionId: pick.sessionId } : fallback;
+}
+
+/**
+ * The room Claude's bound process (its record's pid, judged with its start time so a reused pid is never touched), gone:
+ * waited for up to REAP_STOP_MS after `claude stop`, then SIGTERM, then SIGKILL. true when it is gone (or was never bound).
+ */
+async function ensureGone(rec: Pick<Member, 'pid' | 'pid_start' | 'machine'> | null | undefined, { waitMs = config.envMs('SUB_HUMAN_REAP_STOP_MS', config.REAP_STOP_MS, { allowZero: true }), pollMs = 100 }: { waitMs?: number; pollMs?: number } = {}): Promise<boolean> {
+  const pid = rec && typeof rec.pid === 'number' ? rec.pid : null;
+  if (!pid || (rec!.machine && !identity.isMine(rec!.machine))) return true;
+  const mine = () => identity.isAlive(pid) && startMatches(rec!);
+  for (const until = Date.now() + waitMs; Date.now() < until && mine();) await clock.sleep(pollMs);
+  for (const sig of ['SIGTERM', 'SIGKILL'] as const) {
+    if (!mine()) return true;
+    try { process.kill(pid, sig); } catch { return !mine(); }
+    for (const until = Date.now() + 2000; Date.now() < until && mine();) await clock.sleep(pollMs);
+  }
+  return !mine();
 }
 
 function stopJob(job: string | null | undefined): boolean {
@@ -393,6 +411,9 @@ async function reap(code: string, {
   if (job === PENDING && (identity.readMembers(code) as Members).claude?.pid) job = findJob(code)?.id; // bound, starter died
   stopJob(job);
   stopStrays(code, [job]); // a job the record lost would outlive the room
+  // `claude stop` answering is not the process gone (live: the room's Claude, its MCP server and tail ran on for
+  // minutes after stopped_at): the bound process, by its pid and start time, ends here if it is still up
+  await ensureGone((identity.readMembers(code) as Members).claude || o);
   identity.updateRoomClaude(code, () => ({ stopped_at: new Date().toISOString() }));
   try { identity.leave(code, 'claude', {}); } catch { /* already left */ }
   return 'stopped';
