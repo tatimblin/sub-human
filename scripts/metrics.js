@@ -16,7 +16,8 @@
  *   wake (its text "sub-human: this session was resumed…"), followed in file order by an assistant message before
  *   the next user prompt. Adjacent triggers that start one turn count once. `plugin` counts the plugin prompts.
  * - chat: `notices` = the hooks module's $.ui.log rows (system, level notice, "sub-human: …": what the
- *   person sees), `pulls` = its isMeta copies for the model (origin plugin sub-human), and `turns` / `calls` = model
+ *   person sees), `pulls` = the room context for the model (since stage 8e a hook_additional_context beside the next
+ *   prompt, "sub-human room context: …"; before, an isMeta row of origin plugin sub-human), and `turns` / `calls` = model
  *   turns (and distinct assistant messages) that started with nothing but such rows since the previous turn ended:
  *   a chat burst should cost 0. `callsPerBurst` = calls / notices.
  * - injected: chars of hook additionalContext the seat's model received: `join` (UserPromptExpansion, the
@@ -158,6 +159,8 @@ function seatTranscriptMetrics(ts) {
         const ev = e.attachment.hookEvent || '?';
         inj.byEvent[ev] = (inj.byEvent[ev] || 0) + n;
         if (ev === 'UserPromptExpansion') inj.join += n;
+        // the room context rides beside a prompt (a turn of its own's start is the prompt, not this)
+        if ([].concat(e.attachment.content || []).some(c => String(c).startsWith('sub-human room context'))) chat.pulls++;
         continue;
       }
       if (e.isSidechain) continue;

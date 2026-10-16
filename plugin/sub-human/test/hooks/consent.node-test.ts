@@ -989,7 +989,8 @@ test('H (live verify, verify1/08): plan mode by hand, the model skips EnterPlanM
   assert.match(ctx(w.hook('consent', ev('PostToolUse', 'EnterPlanMode', { permission_mode: 'plan', tool_input: {}, tool_response: {} }), { as: 'bob' }))!, /bob's plan mode is back/);
   assert.equal(review(w), null);
   assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.proposal_hash]), [['signoff', 'human', v3]]);
-  assert.equal(fs.readFileSync(file, 'utf8'), `proposal ${v3}`, 'the plan file as it was');
+  // stage 8e I.6: the stub the model wrote is no plan of bob's: not put back (a closing ExitPlanMode would show its old hash)
+  assert.equal(fs.existsSync(file), false, 'the stub is not restored');
   // a stub for a proposal that is not bob's to answer (answered now): denied, never a bare view
   const again = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: `proposal ${v3}` }, tool_use_id: 'tu8', transcript_path: tp }), { as: 'bob' });
   assert.equal(decision(again), 'deny');
@@ -1145,11 +1146,14 @@ test('confirm: a card interrupted before bob answered (Pre, no Post) is offered 
   assert.equal(decision(w.hook('consent', preAsk({ questions: [{ question: `objection ${v3}` }] }), { as: 'bob' })), 'ask');
   const shown = stopOf(w, tp);
   assert.equal(ctx(shown), undefined, 'shown again: no renudge');
-  assert.equal(shown.json!.subHuman!.reviewOpen, false);
+  assert.equal(shown.json!.subHuman!.reviewOpen, true, 'stage 8e D: open until bob hears once what Send and Discard do');
   // offered again: from the next change on, the reminder waits for bob to ask
   assert.match(reminders(w)!, new RegExp(`^proposal ${v3}: bob's note waits to be sent or discarded; if bob asks`));
   const second = promptOf(w, tp);
   assert.equal(ctx(second), undefined, 'once');
+  assert.match(second.json!.systemMessage!, /^sub-human: your note on .* still waits, not sent\. On its card, Send posts it as your objection; Discard drops it and records nothing/);
+  assert.equal(second.json!.subHuman!.reviewOpen, false, 'told the person: nothing more is due');
+  assert.equal(promptOf(w, tp).json!.systemMessage, undefined, 'the person is told once');
   assert.equal(waiting(w)!.note, 'open rate limiting', 'the note still waits');
   assert.deepEqual(answers(w), []);
   // offered again and shown: Send still records it
@@ -1165,9 +1169,12 @@ test('confirm: an interrupted card the model does not show again after reoffer: 
   assert.equal(ctx(stopOf(w, tp, true)), undefined, 'a Stop already continued: nothing');
   const st = stopOf(w, tp);
   assert.equal(ctx(st), RENUDGE(v3));
-  assert.equal(st.json!.subHuman!.reviewOpen, false, 'nothing more is due: the module may skip node');
+  assert.equal(st.json!.subHuman!.reviewOpen, true, 'stage 8e D: open until bob hears once what Send and Discard do');
   assert.equal(ctx(stopOf(w, tp)), undefined, 'once');
-  assert.equal(ctx(promptOf(w, tp)), undefined, 'no third offer');
+  const third = promptOf(w, tp);
+  assert.equal(ctx(third), undefined, 'no third offer');
+  assert.match(third.json!.systemMessage!, /still waits, not sent/);
+  assert.equal(third.json!.subHuman!.reviewOpen, false, 'nothing more is due: the module may skip node');
   assert.match(reminders(w)!, new RegExp(`^proposal ${v3}: bob's note waits to be sent or discarded; if bob asks`));
   // shown after the nudge and interrupted again: the person's to ask for, never offered again
   assert.equal(decision(w.hook('consent', preAsk({ questions: [{ question: `objection ${v3}` }] }), { as: 'bob' })), 'ask');

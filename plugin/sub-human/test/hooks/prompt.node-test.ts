@@ -62,7 +62,7 @@ test('prompt: consent\'s subHuman {reviewOpen} rides on the one output (only the
   assert.deepEqual(n.json, { subHuman: { reviewOpen: false } });
 });
 
-test('prompt: an open review in plan mode adds consent\'s exit line to at-room\'s context; an @room post stops alone, the review still resolved', () => {
+test('prompt: an open review in plan mode adds consent\'s exit line to at-room\'s context; an @room post stops alone and leaves the review for the next prompt (stage 8e I.4)', () => {
   const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
   const bob = { code: w.code, name: 'bob' };
   const setReview = (st: Review) => w.lib(() => proposal.writeReview(bob, st));
@@ -73,14 +73,14 @@ test('prompt: an open review in plan mode adds consent\'s exit line to at-room\'
   assert.equal(r.code, 0, r.stderr);
   assert.match(ctx(r)!, /Before anything else, call ExitPlanMode now/, 'consent');
   assert.equal(getReview()!.phase, 'exiting');
-  // @room while the review is still open: the post's receipt alone; consent's side effect still ran
+  // @room while the review is still open: the post's receipt alone; consent takes no step (no turn reads it)
   setReview({ phase: 'shown', mode: 'auto', at: Date.now(), hash: 'abcdef012345' });
   const p = w.hook('prompt', ev({ prompt: '@room hello all', permission_mode: 'plan' }), { as: 'bob' });
   assert.equal(p.code, 0, p.stderr);
   assert.equal(p.json!.continue, false);
   assert.match(p.json!.stopReason!, /^✓ sent/);
   assert.equal(hso(p).additionalContext, undefined, 'no context on a stopped prompt');
-  assert.equal(getReview()!.phase, 'exiting');
+  assert.equal(getReview()!.phase, 'shown');
   assert.equal(w.entries().filter(e => e.kind === 'say' && e.text === 'hello all').length, 1);
   // not in plan mode: consent restores and clears; at-room's output stands as it was
   const q = w.hook('prompt', ev({ prompt: 'carry on', permission_mode: 'default' }), { as: 'bob' });
@@ -99,4 +99,17 @@ test('prompt: outside a room only the report is written; an @room there is refus
   assert.equal(b.json!.decision, undefined);
   assert.equal(b.json!.continue, false);
   assert.match(b.json!.stopReason!, /isn't in a room/);
+});
+
+test('stage 8e I.4: a prompt at-room stops (an @room) runs no consent step: a review left by Esc on the view stays as it was for the next prompt, which says "exit plan mode first" to a model that reads it', () => {
+  const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
+  const shim = { as: 'bob' };
+  lease(w, 'bob');
+  const shown: Review = { phase: 'shown', mode: 'plan', at: Date.now(), hash: 'abcdef012345' };
+  w.lib(() => proposal.writeReview({ code: w.code, name: 'bob' }, shown));
+  const s = w.hook('prompt', ev({ prompt: '@room back in a minute', permission_mode: 'plan' }), shim);
+  assert.equal(s.json!.continue, false, s.stdout);
+  assert.deepEqual(w.lib(() => proposal.readReview({ code: w.code, name: 'bob' })), shown, 'the review did not move');
+  const p = w.hook('prompt', ev({ prompt: 'ok, where were we', permission_mode: 'plan' }), shim);
+  assert.match(ctx(p)!, /ExitPlanMode/);
 });

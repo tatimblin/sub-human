@@ -64,7 +64,8 @@ const EVENTS: [string, ($: any) => Promise<unknown>][] = [
     await $.classic.PermissionRequest({ ...base, tool_name: 'ExitPlanMode', tool_input: {} } as any)
     await $.classic.PostToolUse({ ...base, tool_name: 'ExitPlanMode', tool_input: {}, tool_response: {}, tool_use_id: 'tu-x' } as any)
   }],
-  ['a room MCP tool', $ => call($, 'mcp__plugin_sub-human_room__post', { text: 'hi' })],
+  ['a room MCP tool', $ => call($, 'mcp__plugin_sub-human_room__read', {})],
+  ['the room post tool', $ => call($, 'mcp__plugin_sub-human_room__post', { text: 'hi' })],
   ['TaskCreate', $ => $.classic.PostToolUse({ ...base, tool_name: 'TaskCreate', tool_input: { subject: 'x' }, tool_response: {}, tool_use_id: 'tu-t' } as any)],
   ['TaskCompleted', $ => $.classic.TaskCompleted({ ...base, task_id: '2', task_subject: 'x' } as any)],
   ['turn end (Stop)', $ => $.classic.Stop({ ...base, stop_hook_active: false } as any)],
@@ -105,7 +106,7 @@ test('node starts per event: a session with no seat starts none on any event but
   expect(counts).toEqual({
     'session start': 0, 'a plain prompt': 0, 'an @room': 0, 'Bash, Read, Write': 0, 'Agent (Explore)': 0, 'Agent (a row)': 0,
     'SubagentStop (Explore)': 0, 'SubagentStop (a row)': 0, AskUserQuestion: 0, EnterPlanMode: 0, ExitPlanMode: 0,
-    'a room MCP tool': 0, TaskCreate: 0, TaskCompleted: 0, 'turn end (Stop)': 0, 'Notification idle_prompt': 0, StopFailure: 0,
+    'a room MCP tool': 0, 'the room post tool': 0, TaskCreate: 0, TaskCompleted: 0, 'turn end (Stop)': 0, 'Notification idle_prompt': 0, StopFailure: 0,
     '/compact': 0, '/clear': 0, '--resume': 0,
     // the lease (mod-hello: the join refuses a session without one), the join, the hello for what the join did
     '/sub-human': 3,
@@ -126,6 +127,7 @@ test('node starts per event: a seated member (before its tail child reports the 
     AskUserQuestion: 2, EnterPlanMode: 2, // consent Pre and Post
     ExitPlanMode: 2, // consent Pre and Post; PermissionRequest only while a review may be open (consent said none is)
     'a room MCP tool': 0, // consent only while a review may be open
+    'the room post tool': 1, // consent always: a note waiting for its card refuses it (stage 8e D)
     TaskCreate: 0, TaskCompleted: 0, // a member's own tasks
     'turn end (Stop)': 0, // consent only while a review may be open
     'Notification idle_prompt': 1, StopFailure: 1, // presence, not awaited

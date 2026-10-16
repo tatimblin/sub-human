@@ -402,7 +402,8 @@ function joinText(code: string, name: string, o: Outcome, { tells = false }: { t
     return `${o.reason ? `${o.reason}` : `the host's machine has your invite${left}. Type the 4-digit PIN they told you`}: /sub-human join PIN`;
   }
   if (lf.awaiting) {
-    return `the host's machine checked your PIN. A card there now asks them to let you in as ${name} (${lf.awaiting.check}). `
+    // no name yet: the host's card picks it (NAME2 when NAME sits in the room from another machine: stage 8e I.9)
+    return `the host's machine checked your PIN. A card there now asks them to let you in (${lf.awaiting.check}). `
       + (tells ? 'This session tells you when they do; then type /sub-human to join' : 'Once they do, type /sub-human to join')
       + ` (the request waits ${minutes(configMod.ADMIT_TTL_MS)} minutes)`;
   }

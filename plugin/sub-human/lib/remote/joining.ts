@@ -15,7 +15,9 @@
  *       too-soon PIN (asked again), or a refusal (the last try)
  *   linkLogin({dest, code, via, home, name, isDefault}) -> Step   `/sub-human join HOST ROOM` over the person's own ssh
  *       login: the link file, the daemon, then the seat once linked. Said explicitly (no SECRET is no invite), and a
- *       refused login says that an invite line ends with its SECRET
+ *       refused login says that an invite line ends with its SECRET. Either join, for a room this machine is linked
+ *       to live another way, is refused (`link CODE --forget` first); one that replaced a link that was down and
+ *       was refused puts the old link file back
  *   pendingJoin() -> Link | null       the newest invite join this machine started, waiting to take its seat
  *   pinJoin(sid?) -> Link | null       the invite join waiting for its PIN (this session's first, else the newest)
  *   finishJoin(link) -> Step           bare `/sub-human` with a pending join: the seat once the link is up
@@ -36,6 +38,7 @@ import * as linkConnect from './link-connect.ts';
 import * as links from '../room/links.ts';
 import * as hosting from './hosting.ts';
 import { sleepSync } from '../io.ts';
+import { cliLine } from '../text.ts';
 import { createRequire } from 'node:module';
 import type { Link } from '../room/types.ts';
 import type { LinkSpec, SshSpec } from './types-rest.ts';
@@ -74,6 +77,29 @@ export function restartLink(code: string): void {
 const locatorOf = (t: LinkSpec | null | undefined): string | null => (t && t.kind === 'ssh' ? linkConnect.sshLocator(`${t.user}@${t.host}${t.port ? `:${t.port}` : ''}`, t.via ? { via: t.via } : {}) : t && t.kind === 'pipe' ? linkConnect.pipeLocator(t.home)
   : t && (t.kind === 'wss' || t.kind === 'ws') ? wsT().urlOf(t) : null);
 
+/** Where a link goes, for a person: "ssh you@host", the URL, or another sub-human folder here. */
+const whereOf = (t: LinkSpec | null | undefined): string => (!t ? 'another way' : t.kind === 'ssh' ? `ssh ${t.user ? `${t.user}@` : ''}${t.host}${t.port ? `:${t.port}` : ''}${t.via ? ` via ${t.via}` : ''}`
+  : t.kind === 'pipe' ? 'another sub-human folder on this machine' : (t.kind === 'wss' || t.kind === 'ws') ? wsT().urlOf(t) : 'another way');
+
+/**
+ * A join another way while this machine's link to code is live (a token, not spent, its daemon running and not
+ * stopped): the refusal, or null. A join never tears down a live link (stage 8e C: a mistyped host cut the seated
+ * person off and rewrote the link file); the person forgets the old link first, on purpose.
+ */
+function liveElsewhere(code: string, cur: Link | null, spent: boolean): Step | null {
+  if (!cur || !cur.token || spent) return null;
+  const st = linkSocket.status(code);
+  if (!st.running || st.state === 'stopped' || st.state === 'fork') return null;
+  return refuse(`this machine is already linked to room ${code} through ${whereOf(cur.transport)}; a join another way would cut that link. To replace it, run \`${cliLine(`link ${code} --forget`)}\` in a terminal first (it ends this machine's seats there), then join again.`);
+}
+
+/** After a join another way was refused: the link file that worked before is put back (and its daemon started again),
+ * so a failed connect never leaves a link this machine had pointing at a host that refused it (stage 8e C). */
+function putBack(code: string, cur: Link | null): void {
+  if (!cur || !cur.token) return;
+  try { restartLink(code); links.set(code, cur); linkSocket.start(code); } catch { /* doctor says what the link file holds */ }
+}
+
 const sameLogin = (a: LinkSpec | undefined, b: SshSpec) => !!a && !!b && a.kind === 'ssh' && a.login === true && (['user', 'host', 'port', 'via', 'remoteHome'] as const).every(k => a[k] === b[k]); // a login link is ssh
 
 /** Where an invite join stands (hosting.joinText), as a step: a refusal when it was refused. tells: this session's tail
@@ -97,11 +123,15 @@ export function linkLine({ name, code, word, transport, sid }: { name: string; c
   if (cur && cur.token && !spent && locatorOf(cur.transport) === locatorOf(transport)) {
     return say(`this machine is in room ${code} already; /sub-human ${name} ${code} takes your place there.`);
   }
-  if (cur) restartLink(code); // a pending join replaced, or the room's host moved: dial with the new file
-  try { hosting.joinLine({ code, transport, word, name, sid }); } catch (e) { return refuse(msgOf(e)); }
+  const live = liveElsewhere(code, cur, spent);
+  if (live) return live;
+  if (cur) restartLink(code); // a pending join replaced, or a link that is down or stopped: dial with the new file
+  try { hosting.joinLine({ code, transport, word, name, sid }); } catch (e) { putBack(code, cur); return refuse(msgOf(e)); }
   if (cur) links.set(code, { ...links.get(code)!, rebind: true }); // a seat here joins again over the new link (joinLine wrote it)
-  if (!linkSocket.start(code)) return refuse(NO_START(code));
-  return stands(code, name, hosting.outcome(code), !!sid);
+  if (!linkSocket.start(code)) { putBack(code, cur); return refuse(NO_START(code)); }
+  const o = hosting.outcome(code);
+  if (o.state === 'refused') putBack(code, cur);
+  return stands(code, name, o, !!sid);
 }
 
 /** The invite joins this machine started that wait for their PIN (the host asked), this session's first, newest first. */
@@ -134,14 +164,17 @@ export function linkLogin({ dest: typed, code, via, home, name, isDefault }: {
   const at = sshT().kind.describe(spec); // "ssh you@host … (your ssh login)"
   const spent = (linkSocket.stopReason(linkSocket.status(code)) || {}).code === 'AUTH'; // kicked, or a host key changed: link anew
   if (cur && cur.token && sameLogin(cur.transport, spec) && !spent) return take({ name, code, isDefault }); // linked this way already: just the seat
-  if (cur) restartLink(code); // a link replaced (another way in, or a refused one): dial with the new file
+  const live = liveElsewhere(code, cur, spent);
+  if (live) return live;
+  if (cur) restartLink(code); // a link replaced (one down, stopped or refused): dial with the new file
   const mux = cur && cur.transport && cur.transport.kind === 'ssh' && cur.transport.mux === true && cur.transport.user === spec.user && cur.transport.host === spec.host && cur.transport.port === spec.port;
   try {
     links.set(code, { code, transport: { ...spec, ...(mux ? { mux: true } : {}) }, created_at: new Date().toISOString(), ...(cur ? { rebind: true } : {}) });
   } catch (e) { return refuse(msgOf(e)); }
-  if (!linkSocket.start(code)) return refuse(NO_START(code));
+  if (!linkSocket.start(code)) { putBack(code, cur); return refuse(NO_START(code)); }
   const o: Outcome = hosting.outcome(code);
   // no SECRET is no invite: the person's own ssh login is the way in, so a refusal says where an invite line differs
+  if (o.state === 'refused') putBack(code, cur);
   if (o.state === 'refused') return refuse(`could not reach room ${code} over ${at}: ${o.reason}. ${SECRET_HINT(typed, code)}`);
   if (o.state !== 'linked') {
     return say(`still connecting to room ${code} over ${at}${o.reason ? ` (${o.reason})` : ''}: no SECRET, so no invite. Type /sub-human ${name} ${code} in a moment; if it doesn't come up, /sub-human doctor says why.`);

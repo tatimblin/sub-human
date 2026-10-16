@@ -19,6 +19,7 @@
  * The note (Confirm.stage):
  *   waiting ─stop─► nudged ─prompt─► told        asked ─prompt (no Post: Esc)─► reoffered ─stop─► told
  *   waiting|nudged ─ask─► asked ─answered (no answer)─► told; reoffered ─ask─► told; Send / Discard ─► (none)
+ *   told ─prompt─► told, the person told once what Send and Discard do (explained); the note keeps waiting
  * A note whose proposal is no longer the seat's to answer is dropped wherever it is met.
  *
  * Events (each carries its facts; ctx {name, now}):
@@ -151,7 +152,16 @@ export const NEXT = {
 };
 
 /** The dialog's "Yes" that leaves the mode as it was (any other "Yes" works too; the mode is then set back). */
-const KEEP: Record<string, string | undefined> = { default: 'Yes, manually approve edits', auto: 'Yes, and use auto mode', acceptEdits: 'Yes, and auto-accept edits' };
+/** The plan view's "Yes" that leaves the person's mode as it is, by mode, from the options Claude Code 2.1.296 offers
+ * ("Yes, and use auto mode", "Yes, manually approve edits"; without auto mode "Yes, auto-accept edits" in the first
+ * place). A mode with no such option in every set (accept edits: the auto-mode set has none) is told "any Yes", since
+ * the review puts the mode back after a Yes that changed it (stage 8e H: the hint named "Yes, and auto-accept edits",
+ * which the dialog did not offer). */
+const KEEP: Record<string, string | undefined> = { default: 'Yes, manually approve edits', auto: 'Yes, and use auto mode' };
+/** A mode as the person reads it in the hint. */
+const MODE_WORDS: Record<string, string | undefined> = { plan: 'plan', acceptEdits: 'accept-edits', bypassPermissions: 'bypass-permissions', dontAsk: "don't-ask" };
+/** The dialog's Agree: the option that keeps the mode, else any Yes (the mode comes back). */
+const agreeHint = (mode: string | undefined) => (KEEP[String(mode)] ? `"${KEEP[String(mode)]}" keeps your mode` : `any "Yes" (your ${MODE_WORDS[String(mode)] || 'own'} mode comes back)`);
 const DONE = 'Return to what you were doing.';
 /** The note is the person's: the model neither posts it nor answers its card for them. */
 const keepNote = (_n: string) => 'Don\'t post or answer it yourself.';
@@ -183,7 +193,7 @@ export const SAY = {
   stubPlan: (n: string, h: string) => `Nothing recorded for proposal ${h}: that plan was only its name, not a review ${n} answered. ${NEXT.open(h)} to show it.`,
   /** the plan dialog's reason line: for the person, not the model */
   dialog: (n: string, h: string, from: string | null | undefined, mode: string | undefined) => `room proposal ${h}${from ? ` from ${from}` : ''}, for ${n} (PgUp/PgDn scroll). `
-    + `Agree: ${mode === 'plan' ? 'any "Yes" (your plan mode comes back)' : `"${KEEP[String(mode)] || 'Yes'}" keeps your mode`}. Object: "Tell Claude what to change" + why. Esc: decide later.`,
+    + `Agree: ${agreeHint(mode)}. Object: "Tell Claude what to change" + why. Esc: decide later.`,
   planView: (n: string, h: string) => `Open it in the plan view instead: ${NEXT.open(h)}. The hooks show ${n} the full proposal.`,
   unread: (n: string, h: string) => `${n}'s answer in the review of proposal ${h} is not on record yet; nothing was recorded.`,
   closed: (n: string, h: string) => `${n} closed the review of proposal ${h} without answering; nothing was recorded.`,
@@ -215,6 +225,8 @@ export const SAY = {
   renudge: (n: string, h: string) => `${n}'s note on ${h} still waits; Esc was no answer. First, ${NEXT.note(h)}. ${keepNote(n)}`,
   noteNoAnswer: (n: string, h: string) => `Nothing was recorded: the card closed without ${n}'s answer; the note waits. If ${n} asks, ${NEXT.note(h)}. ${DONE}`,
   noteOther: (h: string) => `proposal ${h}: no Send/Discard answer; nothing was recorded and the note waits. ${DONE}`,
+  /** the person's notice once the card went by unanswered again: what each button does; the note keeps waiting */
+  noteStillWaits: (title: string | null, h: string) => `your note on ${title ? `"${title}"` : `proposal ${h}`} still waits, not sent. On its card, Send posts it as your objection; Discard drops it and records nothing (the proposal stays unanswered). Esc keeps it waiting: ask your Claude for the card when you decide`,
   discarded: (n: string, h: string) => `${n} discarded the note; nothing was recorded and proposal ${h} still awaits ${n}'s answer. ${DONE}`,
   // the fallback card
   cardNoAnswer: (n: string) => `Nothing was recorded: the card closed without ${n}'s answer. Reopening it later is fine. ${DONE}`,
@@ -262,9 +274,10 @@ const staged = (cf: Confirm, stage: NoteStage): Confirm => {
 /** The card shown (Pre AskUserQuestion): an offer still due becomes asked; one offered again is the last. */
 const onShown = (s: NoteStage): NoteStage => (s === 'waiting' || s === 'nudged' || s === 'asked' ? 'asked' : 'told');
 
-/** The seat still has something consent must act on at a turn's end or the next prompt (the mod's reviewMaybeOpen). */
+/** The seat still has something consent must act on at a turn's end or the next prompt (the mod's reviewMaybeOpen): a
+ * note told already counts until the person heard once what Send and Discard do (noteAtPrompt: explained). */
 export function openOf(state: State): boolean {
-  return !!state.review || (!!state.note && stageOf(state.note) !== 'told');
+  return !!state.review || (!!state.note && (stageOf(state.note) !== 'told' || !state.note.explained));
 }
 
 // ---------- the review ----------
@@ -277,7 +290,7 @@ function restore(r: Review): [Review, Effect[]] {
 /** Back up the plan file and write the proposal there as early as its path is known (EnterPlanMode Pre, else Post). */
 function showEarly(r: Review, plan: PlanFile): [Review, Effect[]] {
   if (!plan.file || !r.hash || r.file) return [r, []];
-  const next: Review = { ...r, file: plan.file, backup: plan.text, restored: false };
+  const next: Review = { ...r, file: plan.file, backup: personsPlan(plan.text), restored: false };
   return [next, [{ do: 'save', review: next }, { do: 'writePlan', file: plan.file, hash: r.hash, early: true }]];
 }
 
@@ -316,6 +329,10 @@ function resolve(r: Review, note: Confirm | null, ev: { answer?: Answer | null; 
 
 /** A blank plan, or the "proposal <hash>" stub the model is told to pass: not a plan of its own. */
 const stub = (t: string) => !t.trim() || /^\s*(?:the room )?proposal\s+[0-9a-f]{6,12}\s*\.?\s*$/i.test(t);
+/** What a review backs up of the plan file: the person's own plan, never a stub a model wrote ("proposal HASH"), which a
+ * restore would put back for the closing ExitPlanMode to show as an older proposal's hash (stage 8e I.6): null, so
+ * the restore removes the file. */
+const personsPlan = (t: string | null | undefined): string | null => (typeof t === 'string' && !stub(t) ? t : null);
 
 /** Post(ExitPlanMode) with no review shown although its dialog was a pending proposal's: tell the model, pick it. */
 function unshown(ev: Extract<Event, { type: 'exited' }>, ctx: Ctx, hashes: string[]): { effects: Effect[]; say: Say } | null {
@@ -434,7 +451,7 @@ export function reduce(state: State, ev: Event, ctx: Ctx): Step {
         const { file: _f, backup: _b, ...rest } = back;
         review = rest;
       }
-      const backup = review.file === ev.plan.file && !review.restored ? review.backup ?? null : ev.plan.text;
+      const backup = review.file === ev.plan.file && !review.restored ? review.backup ?? null : personsPlan(ev.plan.text);
       // A plan of the model's own (not the proposal, not a stub) is never shown here: the model's input as sent, or the
       // plan Claude Code read from the file unless that is just what the file held before the review.
       const mine = (t: unknown) => typeof t === 'string' && !stub(t) && t !== ev.text && hash12(Buffer.from(t, 'utf8')) !== shownHash(review);
@@ -631,11 +648,16 @@ function noteAtStop(state: State, ev: Extract<Event, { type: 'stop' }>, ctx: Ctx
 }
 
 /** The next prompt with no review: a note whose card was interrupted (asked, no Post) or never shown though Stop
- * nudged is offered again, once. */
+ * nudged is offered again, once; one told already gets the person a notice of what Send and Discard do, once. */
 function noteAtPrompt(state: State, ev: Extract<Event, { type: 'prompt' }>, ctx: Ctx): Step {
   const cf = state.note;
   if (!cf) return none(state);
   const stage = stageOf(cf);
+  // offered and told already, and its card went by again: the person hears once what Send and Discard do (never a
+  // silent drop: the note keeps waiting)
+  if (stage === 'told' && !cf.explained && ev.live) {
+    return { state: { ...state, note: { ...cf, explained: true } }, effects: [], say: null, notice: SAY.noteStillWaits(cf.title, cf.hash) };
+  }
   if (stage !== 'asked' && stage !== 'nudged') return none(state);
   if (!ev.live) return { state: { ...state, note: null }, effects: [], say: null };
   const interrupted = stage === 'asked';

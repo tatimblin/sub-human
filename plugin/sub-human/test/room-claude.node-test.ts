@@ -183,6 +183,9 @@ test('room-claude: reap waits the grace, marks closing, tells the room\'s Claude
     // item 16: the stub's `claude stop` left the room Claude's process up (as the daemon did live): the reaper ended it
     assert.equal(identity.isAlive(o.pid), false, 'the bound process is gone before stopped_at is written');
     assert.ok(fs.existsSync(list), 'never deletes the task list');
+    // stage 8e I.1: closed for good, it is off the open-rooms index at once (no look at the open rooms needed)
+    const idx = JSON.parse(fs.readFileSync(path.join(identity.home(), 'open-rooms.json'), 'utf8')).rooms;
+    assert.equal(idx[code], undefined, JSON.stringify(idx));
     assert.deepEqual(identity.openRooms(), []);
   });
   o.kill();

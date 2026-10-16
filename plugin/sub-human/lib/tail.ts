@@ -15,7 +15,7 @@
  *       for the next batch. If onFlush throws, the batch goes back to pending and is retried after retryMs.
  *   formatRoomClaudeBatch(ready, ctx) -> lines     the room Claude's block: stateLine, then one full line per shown entry
  *   formatNdBatch(ready, ctx) -> {events, moved}   the hooks module's events for one batch (below)
- *   pullText(lines) -> text | null           "Room since your last turn" over lines, the newest kept under PULL_CAP
+ *   pullText(lines) -> text | null           the room context over lines (PULL_HEAD … PULL_END), the newest kept under PULL_CAP
  *   missingRowsText(me, sid, {now}?) -> text | null   the Agent calls for this seat's rows that run nowhere
  *   remindersText(me, rm) -> text | null     lib/proposal.ts reminder() for the proposal a review opens next (the
  *                                            person's pick, else the newest), the others awaiting me listed as
@@ -40,8 +40,8 @@
  *   {type:'chat', lines}      a member's group chat: people's words, joins and leaves
  *                             (the person sees them; no wake)
  *   {type:'pull', text}       for Claude, no wake: the pull lane plus a copy of the chat lines, under the
- *                             "Room since your last turn" head (PULL_CAP). At most once: the cursor moves when
- *                             the line is written, whether or not the mod then appended it
+ *                             room context's head and end (PULL_CAP); the module holds it for the person's next
+ *                             prompt. At most once: the cursor moves when the line is written
  *   {type:'wake', text}       what needs Claude now: to me / @me, a proposal for me, a decision on mine, a task
  *                             assigned to me, an objection to my proposal (members, with the room state line when
  *                             the batch moved a proposal); the room Claude's whole push block
@@ -54,10 +54,10 @@
  *                             again: one quiet line, no "left"/"joined" (the daemon renews the seat's lapsed lease)
  *   {type:'invites', open}    on the host, the refs of the room's open invite lines, each time the set changes: the
  *                             module takes an invite off its status line once it is used, burnt, cancelled or expired
- *   An invite's join request (lib/remote/admission.ts), on the host: a chat line for the person and a wake that
- *   tells Claude to open the card ("admit REF"), once per seat it is for; a request that lapsed is a health line.
- *   A planned handoff (lib/handoff.ts): the ask waiting for this seat (its machine's mirror) is a chat line for the
- *   person and a wake that tells Claude to open the card, once; the asker gets a health line when the ask is
+ *   An invite's join request (lib/remote/admission.ts), on the host: one wake, its line for the person (drawn as the
+ *   prompt) and a (for Claude) line that tells Claude to open the card ("admit REF"), once per seat it is for; a request that lapsed is a health line.
+ *   A planned handoff (lib/handoff.ts): the ask waiting for this seat (its machine's mirror) is one wake, a line for the
+ *   person and a (for Claude) line that tells Claude to open the card, once; the asker gets a health line when the ask is
  *   declined or expires; host_changed is a chat line for every member. A session whose room changed kind (a
  *   mirror that became the host, or the reverse) is started again over the new store.
  * A session with no seat that started an invite join (its link file's join_sid; the hooks module starts the tail for
@@ -81,7 +81,7 @@ import type { Clock, TimerHandle } from './clock.ts';
 import type { Delivery, Entry } from './room/types.ts';
 import type { Identity } from './identity.ts';
 import type { Room } from './room.ts';
-import { FOR_CLAUDE } from '../mod/core/constants.ts';
+import { FOR_CLAUDE, PULL_HEAD, PULL_END, pullDroppedLine } from '../mod/core/constants.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -258,20 +258,20 @@ function formatRoomClaudeBatch(ready: Item[], { me, room: rm, entries, judge, jo
   return out.length ? [rm.stateLine(me, entries), ...out] : [];
 }
 
-const PULL_HEAD = 'Room since your last turn (context for you, not for the user: mention it only if they ask):';
-/** The pull text: PULL_HEAD, then the newest lines that fit under PULL_CAP (a note says how many were left out). */
+/** The pull text: PULL_HEAD, then the newest lines that fit under PULL_CAP (a note says how many were left out), then
+ * PULL_END (mod/core/constants.ts: the module carries it as context beside the person's next prompt). */
 function pullText(lines: string[]): string | null {
   if (!lines.length) return null;
   const kept: string[] = [];
-  let size = PULL_HEAD.length;
+  let size = PULL_HEAD.length + PULL_END.length + 1;
   for (let i = lines.length - 1; i >= 0; i--) {
     if (size + lines[i].length + 1 > config.PULL_CAP - 80) break;
     kept.unshift(lines[i]);
     size += lines[i].length + 1;
   }
   const dropped = lines.length - kept.length;
-  const more = dropped ? [`(${dropped} earlier ${dropped === 1 ? 'line' : 'lines'} not shown: the room read tool has them)`] : [];
-  return [PULL_HEAD, ...more, ...kept].join('\n');
+  const more = dropped ? [pullDroppedLine(dropped)] : [];
+  return [PULL_HEAD, ...more, ...kept, PULL_END].join('\n');
 }
 
 /**
@@ -581,9 +581,9 @@ function startSession(me: Identity, ctx: Ctx): Session {
       const a = ho.pendingAsk(s.code, me.name, clock.now());
       if (!a || a.told_at) return;
       ho.markTold(s.code, a.id);
+      // one wake: its line for the person is drawn as the prompt (asUser), the (for Claude) line rides as context
       emit([
-        { type: 'chat', lines: [`room: ${a.from} asks you to host room ${s.code} on this machine; your Claude shows you a card`] },
-        { type: 'wake', text: `${FOR_CLAUDE} ${a.from} asks ${me.name} to host room ${s.code} on this machine (the room's Claude would then run on ${me.name}'s model account, and this machine must stay reachable). Only ${me.name} can answer: call AskUserQuestion with the question "handoff ${a.id}"; the hooks show the card. Don't answer for ${me.name} or post about it.` },
+        { type: 'wake', text: `room: ${a.from} asks you to host room ${s.code} on this machine; your Claude shows you a card\n${FOR_CLAUDE} ${a.from} asks ${me.name} to host room ${s.code} on this machine (the room's Claude would then run on ${me.name}'s model account, and this machine must stay reachable). Only ${me.name} can answer: call AskUserQuestion with the question "handoff ${a.id}"; the hooks show the card. Don't answer for ${me.name} or post about it.` },
       ]);
       return;
     }
@@ -605,9 +605,10 @@ function startSession(me: Identity, ctx: Ctx): Session {
     for (const q of adm.pending(s.code, { now: clock.now() })) {
       if ((q.told || []).includes(me.name) || !adm.targets(s.code, q).includes(me.name)) continue;
       adm.markTold(s.code, q.ref, me.name);
+      // one wake (stage 8e G): its line for the person is drawn as the prompt (asUser, no frame), the (for Claude) line
+      // rides as context, as every member wake (mod/core/deliver.ts wakeParts)
       emit([
-        { type: 'chat', lines: [`room: ${adm.describe(q)} typed your invite and its PIN and wants to join; your Claude shows you a card (or: /sub-human admit ${q.ref})`] },
-        { type: 'wake', text: `${FOR_CLAUDE} ${adm.describe(q)} typed ${me.name}'s invite line and its PIN on another machine and asks to join room ${s.code}. Only ${me.name} can let them in: call AskUserQuestion with the question "admit ${q.ref}"; the hooks show the card. Don't answer for ${me.name} or post about it.` },
+        { type: 'wake', text: `room: ${adm.describe(q)} typed your invite and its PIN and wants to join; your Claude shows you a card (or: /sub-human admit ${q.ref})\n${FOR_CLAUDE} ${adm.describe(q)} typed ${me.name}'s invite line and its PIN on another machine and asks to join room ${s.code}. Only ${me.name} can let them in: call AskUserQuestion with the question "admit ${q.ref}"; the hooks show the card. Don't answer for ${me.name} or post about it.` },
       ]);
     }
   }

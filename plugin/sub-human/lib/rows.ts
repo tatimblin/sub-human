@@ -508,7 +508,8 @@ function roomText(code: string, viewer: string | null | undefined, es: readonly 
     parts.push(c.dim(`${ms.filter(m => isActive(m) && !isRoomClaude(m)).length} here`));
   }
   if (viewer) {
-    const lastOwn = lastWhere(es, e => e.from === viewer && e.via === 'human')?.id || 0;
+    // read once the viewer or their Claude answered anything after it (stage 8e I.3: a Claude's reply left it stuck)
+    const lastOwn = lastWhere(es, e => e.from === viewer && (e.via === 'human' || e.via === 'agent'))?.id || 0;
     const mail = countAfter(es, e => e.to === viewer && e.from !== viewer, lastOwn);
     if (mail) parts.push(c.warn(`✉ ${mail} for you`));
   }

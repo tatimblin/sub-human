@@ -89,3 +89,26 @@ test('a row hook that fails leaves the call and the stop as they were', async ($
   const s: any = await stopped($, 'sub-human:room')
   expect(s.block).toBeUndefined()
 })
+
+test('stage 8e I.2 (live verify, remote/16b; shv9 carol): a row\'s hand-back ("left" after a leave) and its "finished" notification start no turn; another agent\'s pass', async ($, on) => {
+  world(on, { seat: null })
+  const entered: string[] = []
+  on('prompt.submit', ($: any, e: any) => { entered.push(e.text); return { text: e.text } })
+  on('session.receive', ($: any, e: any) => ({ text: e.text }))
+  await start($)
+  const ROWID = 'a8fbba36c5b5b5ae1', OTHER = 'a0000000000000001'
+  await posted($, ROW, { tool_response: { agentId: ROWID } }) // the room row, spawned
+  await posted($, { subagent_type: 'Explore', prompt: 'look', description: 'look' }, { tool_response: { agentId: OTHER } })
+  const handback = (id: string) => `Another Claude session sent a message:\n<agent-message from="${id}">\n[Subagent hand-back] The text below is the final report of a subagent this session delegated to. … The report follows:\n  left\n</agent-message>`
+  const finished = (id: string) => `<task-notification>\n<task-id>${id}</task-id>\n<output-file>/tmp/x.output</output-file>\n<status>completed</status>\n<summary>Agent "falcon-7297" finished</summary>\n</task-notification>`
+  const got: any = await $.session.receive({ origin: { kind: 'peer' }, text: handback(ROWID) } as any)
+  expect(got.consumed).toBe('sub-human: a room row ended (no turn for it)')
+  const r: any = await $.prompt.submit({ text: handback(ROWID), origin: { kind: 'peer' }, wait: false } as any)
+  expect(r.drop).toBe('sub-human: a room row ended (no turn for it)')
+  const n: any = await $.prompt.submit({ text: finished(ROWID), origin: { kind: 'task-notification' }, wait: false } as any)
+  expect(n.drop).toBe('sub-human: a room row ended (no turn for it)')
+  const other: any = await $.prompt.submit({ text: handback(OTHER), origin: { kind: 'peer' }, wait: false } as any)
+  const otherDone: any = await $.prompt.submit({ text: finished(OTHER), origin: { kind: 'task-notification' }, wait: false } as any)
+  expect([other.drop, otherDone.drop]).toEqual([undefined, undefined])
+  expect(entered).toEqual([handback(OTHER), finished(OTHER)])
+})

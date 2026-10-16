@@ -7,8 +7,8 @@
  *     (its call comes back denied or as an error: Claude Code runs no PostToolUse for it) goes to node consent at once,
  *     as a PostToolUseFailure with the refusal's text: a note there opens now, its line rides on the refusal the model
  *     reads, and the person gets a notice (lib/consent/review.ts rejected).
- *   - classic.PreToolUse AskUserQuestion|EnterPlanMode|ExitPlanMode and the room tools: node consent (a room tool only
- *     while a review may be open: mod/core/prefilter.ts consentPreNeeded); its event carries the call alone, so the
+ *   - classic.PreToolUse AskUserQuestion|EnterPlanMode|ExitPlanMode and the room tools: node consent (a room tool other
+ *     than post only while a review may be open: mod/core/prefilter.ts consentPreNeeded; post always, for a waiting note); its event carries the call alone, so the
  *     payload gets session_id, transcript_path and permission_mode from what the module last saw (mod/core/facts.ts).
  *     next(e) always runs and ours stands above it (mergePre): a module that answered without it would skip every
  *     other plugin's and the person's hooks (cc CONTRACT classic-chain-order). An allow's reason, which the command
@@ -25,7 +25,7 @@
 import {
   shimArgv, shimEnv, toClassic, toPre, mergePre, toPermission, mergePermission, SHIM_TIMEOUT_MS, SHIM_MODE, asNotice,
 } from './core/shim.ts';
-import { consentNeeded, consentPreNeeded, noteWaitsOf, reviewOpenOf, seatedOrUnsure } from './core/prefilter.ts';
+import { consentNeeded, consentPreNeeded, reviewOpenOf, seatedOrUnsure } from './core/prefilter.ts';
 import { mergeClassic } from './core/prompt.ts';
 import { prePayload, rejectedPayload } from './core/facts.ts';
 import { asHello } from './core/state.ts';
@@ -35,7 +35,6 @@ import type { Hello, RunOutput, SubHumanReport } from './core/types.ts';
 
 const HELLO = { plugin: 'sub-human', key: 'hello' } as const;
 const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' } as const;
-const NOTE = { plugin: 'sub-human', key: 'noteMaybeWaiting' } as const;
 
 async function helloOf($: EngineInterface): Promise<Hello | null> {
   const { value } = await $.state.get(HELLO);
@@ -61,8 +60,6 @@ async function apply($: EngineInterface, { systemMessage, subHuman }: { systemMe
   if (systemMessage) for (const line of asNotice(systemMessage).split('\n')) if (line.trim()) $.ui.log(line);
   const open = reviewOpenOf(subHuman);
   if (open !== undefined) await $.state.set(REVIEW, open);
-  const waits = noteWaitsOf(subHuman);
-  if (waits !== undefined) await $.state.set(NOTE, waits);
 }
 
 /** The prompt holds typed text (the last PromptHint drawn said isDraft): module state, lost on reload (then false). */
@@ -88,7 +85,7 @@ export function registerConsent(on: On) {
 
   on('classic.PreToolUse', { tool: ['AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode', /^mcp__plugin_sub-human_room__/] }, async ($, e, next) => {
     const sid = await $.session.id();
-    if (!consentPreNeeded(await helloOf($), sid, e.tool, await flagOf($), (await $.state.get(NOTE)).value)) return next(e);
+    if (!consentPreNeeded(await helloOf($), sid, e.tool, await flagOf($))) return next(e);
     // EnterPlanMode: the hooks beneath first, the plugin's own command hook among them, which notes the mode the call
     // is made in (this event carries none, and the module's last-seen mode is stale after a shift+tab: item 7 H)
     const first = e.tool === 'EnterPlanMode' ? await next(e) : null;

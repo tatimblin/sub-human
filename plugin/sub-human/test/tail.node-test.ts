@@ -439,6 +439,25 @@ test('tail: the health tick renews the seat lease (identity.heartbeat)', () => {
   assert.ok(beats.length >= 2 && beats.every(b => b === `${code}/alice`), beats.join(','));
 });
 
+test('stage 8e G (live verify, remote/99x): an invite\'s join request is one wake for the host\'s seat: its first line the person\'s, the rest (for Claude); no chat line of its own', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  sys(code, 'member_joined', 'alice');
+  const q = { ref: 'a6a8c73830ec', told: [] as string[] };
+  const adm = {
+    lapse: () => [], pending: () => (q.told.length ? [] : [q]), targets: () => ['alice'], describe: () => 'bob (check 59e9-554c) on mac',
+    markTold: (_c: string, _r: string, n: string) => { q.told.push(n); },
+  } as unknown as NonNullable<TailOpts['deps']>['admission'];
+  const t = startTail({ deps: { admission: adm } });
+  t.advance(FAST.healthMs * 2 + 100);
+  const wakes = t.of('wake');
+  assert.equal(wakes.length, 1, t.out);
+  const [shown, ...rest] = wakes[0].text.split('\n');
+  assert.equal(shown, 'room: bob (check 59e9-554c) on mac typed your invite and its PIN and wants to join; your Claude shows you a card (or: /sub-human admit a6a8c73830ec)');
+  assert.ok(rest.length && rest.every(l => l.startsWith('(for Claude) ')), rest.join('|'));
+  assert.equal(t.of('chat').length, 0);
+});
+
 test('tail: on the host the health tick sweeps the seats (lib/seats.ts sweep); a room hosted elsewhere never does', () => {
   h.freshHome();
   const { code } = h.register('alice');
@@ -489,7 +508,8 @@ test('tail: a member batch is chat + pull, a line to me is a wake; it says its s
   assert.deepEqual(t.of('chat')[0].lines, ['bob joined', 'bob: bob says hi']);
   const pull = t.of('pull')[0].text.split('\n');
   assert.equal(pull[0], tailLib.PULL_HEAD);
-  assert.deepEqual(pull.slice(1), ['bob joined', 'bob: bob says hi', "bob's Claude: bob claude chatter"], 'the pull lane plus the chat copy');
+  assert.deepEqual(pull.slice(1, -1), ['bob joined', 'bob: bob says hi', "bob's Claude: bob claude chatter"], 'the pull lane plus the chat copy');
+  assert.equal(pull.at(-1), "end of room context; the person's own words are their prompt.", 'stage 8e B: the context says where it ends');
   const wake = t.of('wake')[0].text.split('\n');
   assert.deepEqual(wake.slice(0, 4), ['bob: @alice can you look?', "bob's Claude (to you): q for alice", `(for Claude) to answer bob's Claude: SendMessage bob.${code}`, 'claude proposed: claude proposes (bbbbbb)']);
   assert.ok(wake[4].startsWith(`(for Claude) room now: proposal ${H2.slice(0, 6)}`), wake[3]);

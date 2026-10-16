@@ -263,3 +263,27 @@ test('R5 (live verify, verify6/07): ANSI-C quoting ($\'…\') is decoded as the 
   assert.equal(g.ansiC('no ansi here'), 'no ansi here');
   assert.equal(g.ansiC("$'open"), null);
 });
+
+test('stage 8e A (live verify, verify8/guard/04, 06): a $ inside single quotes, double quotes or after a backslash is no ANSI-C quote; everyday shell lines with $ are allowed', () => {
+  const ctx: GuardCtx = { home: '/tmp/shv8/x/home', realHome: '/private/tmp/shv8/x/home', userHome: '/Users/u', cwd: '/tmp/w', claudeDir: '/Users/u/.claude', sid: 'abcdef12-3456' };
+  // the three live false denies first, then everyday lines with $ (the stage 8c guard allowed each)
+  const everyday = [
+    "grep -n 'foo$' README.md", "grep -cE '^[0-9]+$' /etc/hosts", "printf '%s\\n' 'a$'",
+    "sed -i 's/ *$//' README.md", "awk '{print $1}' f", "awk '/end$/ {print $NF}' f", 'echo "$(git rev-parse HEAD)"',
+    'echo $?', 'ls $HOME/repos', 'cat "$HOME/.zshrc"', "echo \"cost: $'\"", "grep -E 'a$|b$' f && echo ok",
+    'x="$(date +%s)"; echo "$x"', "echo `echo 'a$'`", "find . -name '*.ts$'", "git log --format='%H$'",
+    "perl -ne 'print if /x$/' f", "echo \\$'x", "jq '.a | test(\"z$\")' f.json", "echo $$'x'",
+  ];
+  for (const cmd of everyday) {
+    assert.equal(g.bashVerdict(cmd, ctx), null, `should allow: ${cmd}`);
+    if (cmd !== "echo $$'x'") assert.equal(g.ansiC(cmd), cmd, `no ANSI-C word the shell reads: ${cmd}`);
+  }
+  assert.equal(g.bashVerdict("grep -n 'foo$' README.md", {}), null, 'in a session in no room too');
+  // the real ANSI-C paths stay denied, also inside $(…) in double quotes
+  for (const cmd of ["cat /tmp/shv8/x/ho$'\\x6d'e/rooms/AB/log.jsonl", "cat /tmp/shv8/x/ho$'\\155'e/x", "cat /tmp/shv8/x/ho$'m'e/x",
+    "cat /tmp/shv8/x/ho$'me/x", 'echo "$(cat /tmp/shv8/x/ho$\'m\'e/x)"', "echo `cat /tmp/shv8/x/ho$'m'e/x`"]) {
+    assert.ok(g.bashVerdict(cmd, ctx), `should deny: ${cmd}`);
+  }
+  assert.equal(g.ansiC("echo 'a$' $'\\x41'"), "echo 'a$' A");
+  assert.equal(g.ansiC("echo \"$'x\""), "echo \"$'x\"", 'inside double quotes $\' is literal');
+});

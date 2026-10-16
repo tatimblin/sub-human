@@ -85,6 +85,11 @@
  *                                        agent view) moved it into a bg job under a new id: a seat still held by an
  *                                        older session whose transcript, beside this one's in dir, says it continued
  *                                        in sid (lib/cc/transcript.ts continuedIn; CONTRACT session-fork-continued-in)
+ *   forkedAway(sid, dir) -> {sid, title}|null   a fork whose parent held a seat this folder has no record of (its
+ *                                        SUB_HUMAN_HOME was only in the shell, which the bg job drops): the parent
+ *                                        transcript continued in sid and its last title is an address NAME.CODE
+ *                                        (lib/cc/transcript.ts lastTitle; CONTRACT transcript-custom-title)
+ *   markForked(sid, f), forkedOf(sid)    <home>/sessions/forked/<sid>.json: session-restore's record of such a fork
  *   adoptFork(from, {pid, session_id, cwd}) -> JoinResult   move that seat to this process and session (no leave, no
  *                                        log line: the person never left); the old session's indexes are dropped
  *   dropSeatIndexes(code) -> n           this machine's session indexes naming code removed (`link CODE --forget`)
@@ -132,7 +137,7 @@ import {
   seatAlive, leaseFresh, startMatches, PRESENCE_STATES, ROOM_CLAUDE, LOG_V,
 } from './room/members.ts';
 import * as cc from './cc/env.ts';
-import { continuedIn } from './cc/transcript.ts';
+import { continuedIn, lastTitle } from './cc/transcript.ts';
 import type { JoinResult, Member, Members, MembersApi, PresenceState, Role, SeatRecord } from './room/types.ts';
 
 /** A resolved seat (resolveBySession, resolveByPid, resolveSelf): address = NAME.CODE, the session title. */
@@ -317,6 +322,7 @@ function join({ code, name, role, machine = machineIn(code), account, pid: pidAr
 function leave(code: string, name: string, opts?: { reason?: string; deadlineMs?: number }): boolean {
   if (!roomExists(code)) return false;
   if (!membersOf(code).leave(name, opts)) return false;
+  try { unindexClosed(code); } catch { /* the next look at the open rooms drops it */ }
   const m = readMembers(code)[name];
   if (m && m.left_at && validPid(m.pid)) {
     const p: SeatIndex | null = readJson(byPidFile(m.pid));
@@ -544,6 +550,44 @@ function forkParent(sid: unknown, dir: string | null | undefined): ForkParent | 
   return null;
 }
 
+/** How recently a transcript must have changed to be the one an agent-view fork continued (its continued-in record is
+ * written just after the fork starts): only those are read, however many sessions the folder keeps. */
+const FORK_SCAN_MS = 10 * 60_000;
+/** title is a seat's address NAME.CODE (the session title a seat sets). */
+const isAddress = (title: string): boolean => { const i = title.lastIndexOf('.'); return i > 0 && NAME_RE.test(title.slice(0, i)) && CODE_RE.test(title.slice(i + 1)); };
+
+/** A fork's parent seated in another sub-human folder (stage 8e E): sid's conversation came from a session whose
+ * transcript (beside this one's in dir) continued in sid and whose title was a seat's address NAME.CODE, so it held a
+ * seat; forkParent found none in this folder. {sid, title} or null. */
+type ForkedAway = { sid: string; title: string };
+function forkedAway(sid: unknown, dir: string | null | undefined, now = Date.now()): ForkedAway | null {
+  if (typeof sid !== 'string' || !SID_RE.test(sid) || typeof dir !== 'string' || !dir) return null;
+  let names: string[];
+  try { names = fs.readdirSync(dir).filter(f => f.endsWith('.jsonl')); } catch { return null; }
+  for (const f of names) {
+    const old = f.slice(0, -'.jsonl'.length);
+    if (old === sid || !SID_RE.test(old)) continue;
+    const file = path.join(dir, f);
+    try { if (now - fs.statSync(file).mtimeMs > FORK_SCAN_MS) continue; } catch { continue; }
+    if (continuedIn(file) !== sid) continue;
+    const title = lastTitle(file);
+    return title && isAddress(title) ? { sid: old, title } : null;
+  }
+  return null;
+}
+const forkedFile = (sid: string): string => path.join(home(), 'sessions', 'forked', `${sid}.json`);
+/** Record that session sid is such a fork (session-restore), so a bare /sub-human there opens no room (lib/seats.ts). */
+function markForked(sid: string, f: ForkedAway): void {
+  if (!SID_RE.test(sid)) return;
+  writeJsonAtomic(forkedFile(sid), { ...f, at: new Date().toISOString() });
+}
+/** The fork record of session sid (markForked), or null. */
+function forkedOf(sid: unknown): ForkedAway | null {
+  if (typeof sid !== 'string' || !SID_RE.test(sid)) return null;
+  const r = readJson(forkedFile(sid)) as Partial<ForkedAway> | null;
+  return r && typeof r.title === 'string' && typeof r.sid === 'string' ? { sid: r.sid, title: r.title } : null;
+}
+
 function adoptFork(from: ForkParent, { pid: pidArg, session_id, cwd }: { pid: unknown; session_id: string; cwd?: string | null }): JoinResult {
   const pid = Number(pidArg);
   if (!validPid(pid)) return fail(`invalid pid "${pid}"`);
@@ -628,6 +672,12 @@ function allMembers(): { code: string; ms: Members }[] {
   return open;
 }
 
+/** code off the open-rooms index once it is closed for good (the reaper, a leave): open-rooms.json lists no closed
+ * room until the next look (stage 8e I.1). */
+function unindexClosed(code: string): void {
+  if (roomExists(code) && closedForGood(readMembers(code))) store.unindexRooms([code]);
+}
+
 function openRooms(): string[] {
   const open: { code: string; at: string }[] = [];
   for (const { code, ms } of allMembers()) {
@@ -682,9 +732,9 @@ function writePresence(code: string, name: string, state: string, detail?: strin
 
 export {
   NAME_RE, CODE_RE, RESERVED, VERBS, ROOM_CLAUDE, ANIMALS, PRESENCE_STATES, normalizeName, defaultName, home,
-  roomDir, machineId, machineIn, isMine, newCode, roomExists, isHost, openRooms, closedForGood, orphanRooms, roomOpen, roomClosing, address,
+  roomDir, machineId, machineIn, isMine, newCode, roomExists, isHost, openRooms, unindexClosed, closedForGood, orphanRooms, roomOpen, roomClosing, address,
   readMembers, join, leave, rebindSession, updateRoomClaude, liveMembers, seatAlive, heartbeat,
-  leaseFresh, isAlive, claudePid, resolveByPid, resolveBySession, resolveSelf, lastSeat, forkParent, adoptFork, localSeats, adoptLocalSeats, dropSeatIndexes,
+  leaseFresh, isAlive, claudePid, resolveByPid, resolveBySession, resolveSelf, lastSeat, forkParent, forkedAway, markForked, forkedOf, adoptFork, localSeats, adoptLocalSeats, dropSeatIndexes,
   MOD_LEASE_FRESH_MS, writeModLease, readModLease, modLeaseOk, deleteModLease, pruneModLeases, pruneSessionIndexes, writePresence,
 };
-export type { Identity, SeatIndex, ModLease, JoinRequest, RoomClaudePatch, ForkParent };
+export type { Identity, SeatIndex, ModLease, JoinRequest, RoomClaudePatch, ForkParent, ForkedAway };

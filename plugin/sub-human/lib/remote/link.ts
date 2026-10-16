@@ -442,7 +442,10 @@ async function serveMirror({
       else if (ev === 'handoff') handoff().onAsk(mirror, data);
       else if (ev === 'moved') moved(data);
       else if (ev === 'end' && id === st.conn) {
-        if (data.reason === 'closed') dispatch({ type: 'stop', phase: 'stopped', why: ROOM_CLOSED_REASON, reason: 'ROOM_CLOSED' });
+        if (data.reason === 'closed') {
+          try { storeMod.unindexRooms([mirror.code]); } catch { /* the next look at the open rooms drops it */ } // closed: no open room here (stage 8e I.1)
+          dispatch({ type: 'stop', phase: 'stopped', why: ROOM_CLOSED_REASON, reason: 'ROOM_CLOSED' });
+        }
         else if (data.reason === 'moved') { if (!movedHere) dispatch({ type: 'movedAway', conn: id }); } // the new host here: the accepting hook's reply is still to come
         else {
           const message = data.message ? String(data.message).slice(0, 200) : data.reason === 'FORK' ? 'the host log was reset' : 'the connection to the host closed';

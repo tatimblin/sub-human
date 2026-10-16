@@ -161,7 +161,9 @@ test('openOf: a review on record, or a note consent must still offer (anything b
   assert.equal(review.openOf({ review: null, note: null }), false);
   assert.equal(review.openOf({ review: REVIEWS.restore, note: null }), true);
   for (const s of ['waiting', 'nudged', 'asked', 'reoffered'] as NoteStage[]) assert.equal(review.openOf({ review: null, note: note(s) }), true, s);
-  assert.equal(review.openOf({ review: null, note: note('told') }), false);
+  // stage 8e D: told, it stays open until the person heard once what Send and Discard do
+  assert.equal(review.openOf({ review: null, note: note('told') }), true);
+  assert.equal(review.openOf({ review: null, note: note('told', { explained: true }) }), false);
 });
 
 // ---------- the facts each branch reads ----------
@@ -412,6 +414,41 @@ test('M (live verify): while a note waits for its card the post tool is refused 
   assert.deepEqual([gone.state.note, gone.say], [null, null]);
   // a shown review is plan mode whatever mode the module last saw: any room tool is refused
   assert.equal(review.reduce({ review: REVIEWS.shown, note: null }, { type: 'roomTool', mode: 'auto', answer: { note: null }, target }, ctx).say!.to, 'deny');
+});
+
+test('stage 8e D (live verify, localb/03c-f): a note told already whose card went by again: the next prompt tells the person once what Send and Discard do; the note keeps waiting', () => {
+  const first = review.reduce({ review: null, note: note('told') }, PROMPT, ctx);
+  assert.equal(first.say, null, 'nothing more for the model');
+  assert.match(first.notice!, /^your note on "Ship v3 Monday" still waits, not sent\. On its card, Send posts it as your objection; Discard drops it and records nothing/);
+  assert.deepEqual([first.state.note!.stage, first.state.note!.explained], ['told', true]);
+  const again = review.reduce(first.state, PROMPT, ctx);
+  assert.equal(again.notice, undefined, 'once');
+  assert.equal(again.state.note!.hash, H, 'never dropped');
+  assert.equal(review.reduce({ review: null, note: note('told') }, { ...PROMPT, live: false } as Event, ctx).notice, undefined, 'a note no longer live says nothing');
+});
+
+test('stage 8e H (live verify, localb/07e): the plan view\'s hint names only a "Yes" the dialog offers: the one that keeps default or auto, else any Yes (the mode comes back)', () => {
+  const hint = (mode: string | undefined) => /Agree: (.*?)\. Object/.exec(review.SAY.dialog('bob', H, 'alice', mode))![1];
+  assert.deepEqual(['default', 'auto', 'acceptEdits', 'plan', 'bypassPermissions', 'dontAsk', undefined].map(hint), [
+    '"Yes, manually approve edits" keeps your mode', '"Yes, and use auto mode" keeps your mode', 'any "Yes" (your accept-edits mode comes back)',
+    'any "Yes" (your plan mode comes back)', 'any "Yes" (your bypass-permissions mode comes back)', 'any "Yes" (your don\'t-ask mode comes back)', 'any "Yes" (your own mode comes back)',
+  ]);
+  // every option it names is one the dialog shows (Claude Code 2.1.296: "Yes, and use auto mode", "Yes, manually approve edits")
+  for (const m of ['default', 'auto', 'acceptEdits', 'plan']) for (const named of review.SAY.dialog('bob', H, 'alice', m).match(/"Yes[^"]*"/g) || []) {
+    assert.ok(['"Yes"', '"Yes, and use auto mode"', '"Yes, manually approve edits"'].includes(named), `${m}: ${named}`);
+  }
+});
+
+test('stage 8e I.6 (live verify, localb/08c): a plan file that held only a stub ("proposal HASH") is backed up as nothing, so the restore never puts an older proposal\'s name back', () => {
+  for (const text of ['proposal a8ec03fc4da6', '  the room proposal a8ec03 ', '']) {
+    const s = review.reduce({ review: { phase: 'entering', mode: 'default', at: 1, hash: H }, note: null }, { type: 'entered', plan: { file: '/p/plan.md', text } } as Event, ctx);
+    const saved = s.effects.find(e => e.do === 'save') as Extract<Step['effects'][number], { do: 'save' }> | undefined;
+    assert.ok(saved, text);
+    assert.equal(saved.review.backup, null, text);
+  }
+  const own = review.reduce({ review: { phase: 'entering', mode: 'default', at: 1, hash: H }, note: null }, { type: 'entered', plan: { file: '/p/plan.md', text: '# my own plan\n' } } as Event, ctx);
+  const saved = own.effects.find(e => e.do === 'save') as Extract<Step['effects'][number], { do: 'save' }> | undefined;
+  assert.equal(saved && saved.review.backup, '# my own plan\n', 'the person\'s own plan is kept');
 });
 
 // ---------- item 8: a Yes as the view opened ----------

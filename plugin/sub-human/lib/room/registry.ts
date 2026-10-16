@@ -8,8 +8,8 @@
  *   forget(code)                 drop the cached store of room code (this home): the next open() decides its kind again
  *   setBackend(factory|null)     tests: every open() then returns factory(code)
  *   roomExists(code)             a room directory or a link; a leftover (isLeftover) is no room
- *   isLeftover(code) -> bool     a room directory with no link, no members document and no log, untouched for
- *                                LEFTOVER_MS: what a process still holding a forgotten room's seat wrote (item 9 R1),
+ *   isLeftover(code) -> bool     a room directory with no link, no members document and no log, made more than
+ *                                LEFTOVER_MS ago (its birth time, or its mtime when earlier or no birth time is kept): what a process still holding a forgotten room's seat wrote (item 9 R1),
  *                                never a room hosted here; `sub-human link CODE --forget` sets it aside
  *   setAsideLeftover(code, now?) -> path   that folder moved to rooms/CODE.forgotten-TIME
  *   createRoom(code) -> bool     private and exclusive: false when it exists already
@@ -67,13 +67,15 @@ function open(c: string, { dir }: { dir?: string } = {}): RoomStore {
 }
 const forget = (c: string): void => { stores.delete(`${home()}\0${c}`); };
 const setBackend = (fn: ((code: string) => RoomStore) | null | undefined): void => { backend = typeof fn === 'function' ? fn : null; };
-/** A just-made room has no members document or log for a moment: a folder younger than this is never a leftover. */
+/** A just-made room has no members document or log for a moment: a folder made less than this ago is never a
+ * leftover. Made, not written: a stray process's writes into a leftover kept its mtime young (stage 8e I.10). */
 const LEFTOVER_MS = 60_000;
 function isLeftover(c: string): boolean {
   const d = roomDir(c);
   let st: fs.Stats;
   try { st = fs.statSync(d); } catch { return false; }
-  if (!st.isDirectory() || Date.now() - st.mtimeMs < LEFTOVER_MS || linked(c)) return false;
+  const made = st.birthtimeMs > 0 ? Math.min(st.birthtimeMs, st.mtimeMs) : st.mtimeMs; // no birth time: the last write
+  if (!st.isDirectory() || Date.now() - made < LEFTOVER_MS || linked(c)) return false;
   return !['members.json', 'log.jsonl', 'snapshot.json', 'snapshot-base.json', 'log-0001.jsonl'].some(f => fs.existsSync(path.join(d, f)));
 }
 const roomExists = (c: unknown): boolean => typeof c === 'string' && CODE_RE.test(c) && ((fs.existsSync(roomDir(c)) && !isLeftover(c)) || linked(c));

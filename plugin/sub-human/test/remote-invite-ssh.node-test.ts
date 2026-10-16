@@ -75,7 +75,7 @@ test('ssh invite: the line names the person\'s own ssh login (and the host\'s fo
   assert.equal(fs.existsSync(remote.lib(() => links.dirOf(code))), false, 'no key of its own: nothing in a link folder');
 
   const gave = remote.join(bob, `join ${m.pin}`);
-  assert.match(gave.json!.reason!, /checked your PIN\. A card there now asks them to let you in as bob \(check [0-9a-f]{4}-[0-9a-f]{4}\)/);
+  assert.match(gave.json!.reason!, /checked your PIN\. A card there now asks them to let you in \(check [0-9a-f]{4}-[0-9a-f]{4}\)/);
   const req = host.lib(() => admission.pending(code))[0];
   assert.equal(req.link, t0.link, 'the request reserves the link id its login names');
   assert.equal(req.key, null);

@@ -266,11 +266,11 @@ test('deliver: the child\'s argv and env; lines out of pieces; only well-formed 
     assert.deepEqual(d.parseEvent(JSON.stringify(ev)), ev);
 });
 
-test('deliver: the routing table: chat is a notice, pull an append, wake a prompt when idle and an append mid-turn', async () => {
+test('deliver: the routing table: chat is a notice, pull held for the next prompt, wake a prompt when idle and an append mid-turn', async () => {
   const d = await load('mod/core/deliver.ts');
   // one $.ui.log per line: a notice is one line (a newline would be drawn as U+FFFD)
   assert.deepEqual(d.route({ type: 'chat', lines: ['bob: hi', '  │ more', 'carol joined'] }), [{ do: 'log', text: 'bob: hi' }, { do: 'log', text: '  │ more' }, { do: 'log', text: 'carol joined' }]);
-  assert.deepEqual(d.route({ type: 'pull', text: 'Room since…' }), [{ do: 'append', text: 'Room since…' }]);
+  assert.deepEqual(d.route({ type: 'pull', text: 'Room since…' }), [{ do: 'hold-pull', text: 'Room since…' }], 'stage 8e B: never a user row of its own');
   assert.deepEqual(d.route({ type: 'rows', text: null }), [{ do: 'hold-rows', text: null }]);
   assert.deepEqual(d.route({ type: 'seat', seat: null }), [{ do: 'seat', seat: null }]);
   const idle = d.route({ type: 'wake', text: 'room: decided\n(for Claude) room now: …' });
@@ -545,8 +545,11 @@ test('prefilter: rows, the restore and consent\'s PreToolUse start node only whe
   }
   assert.equal(f.restoreNeeded(seated, 's1', 'startup'), false);
   assert.equal(f.restoreNeeded(unseated, 's1', 'fork'), true, 'a fork (← the agent view): only node can find the seat it continues');
-  const room = 'mcp__plugin_sub-human_room__post';
+  const room = 'mcp__plugin_sub-human_room__read';
   assert.equal(f.consentPreNeeded(seated, 's1', room, false), false, 'no review may be open');
+  // stage 8e D: the post tool always reaches consent where a seat is (a waiting note refuses it)
+  assert.equal(f.consentPreNeeded(seated, 's1', 'mcp__plugin_sub-human_room__post', false), true);
+  assert.equal(f.consentPreNeeded(unseated, 's1', 'mcp__plugin_sub-human_room__post', false), false);
   assert.equal(f.consentPreNeeded(seated, 's1', room, true), true);
   assert.equal(f.consentPreNeeded(seated, 's1', room, undefined), true, 'unset counts as open');
   assert.equal(f.consentPreNeeded(unseated, 's1', room, true), false);

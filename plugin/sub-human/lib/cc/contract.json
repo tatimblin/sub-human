@@ -784,6 +784,29 @@
    "note": "← (the agent view) backgrounds the session: Claude Code starts a bg job `claude --resume <transcript> --fork-session` (a new session id, SessionStart source \"fork\") and then appends {\"type\":\"continued-in\",\"continuedInSessionId\":NEW} to the old transcript, in the same projects directory (<configDir>/projects/<cwd, every non-alphanumeric as '-'>). The old process stays up as the agent view, its in-process rows end, and the job keeps only the daemon's env allowlist (SUB_HUMAN_HOME is dropped). session-restore moves the seat to the fork the record names (lib/identity.ts forkParent, adoptFork)."
   },
   {
+   "id": "transcript-custom-title",
+   "section": 8,
+   "stability": "incidental",
+   "since": "2.1.296",
+   "search": [
+    "\"type\":\"custom-title\"",
+    "\"custom-title\":\"last-wins\""
+   ],
+   "note": "Every title a session is given (a hook's sessionTitle among them) is kept in its transcript as {\"type\":\"custom-title\",\"customTitle\":TITLE}, the last one winning. A seated session's title is its address NAME.CODE, so the transcript an agent-view fork continued (session-fork-continued-in) says the seat it came from even when this process's sub-human folder has no record of it (lib/cc/transcript.ts lastTitle, lib/identity.ts forkedAway)."
+  },
+  {
+   "id": "subagent-handback-message",
+   "section": 8,
+   "stability": "incidental",
+   "since": "2.1.296",
+   "search": [
+    "[Subagent hand-back] The text below is the final report of a subagent this session delegated to.",
+    "</agent-message>",
+    "A task-notification fires each time this agent stops with no live background children of its own."
+   ],
+   "note": "A background agent's final report reaches the main conversation as a message of its own (origin peer, \"Another Claude session sent a message:\" then <agent-message from=\"AGENT_ID\"> with the \"[Subagent hand-back]\" frame and the indented report), which starts a model turn; then a task notification (origin task-notification, <task-notification><task-id>AGENT_ID</task-id>…<status>completed</status>) starts another. A room row ends with the word left (its seat left the room) or error: mod/rows.ts takes the hand-back of a row it saw spawned and its task notification (session.receive consumed, else prompt.submit drop), so a row ending wakes no model (mod/core/rows.ts handbackFrom)."
+  },
+  {
    "id": "plugin-settings-allowlist",
    "section": 9,
    "stability": "API",
@@ -1062,7 +1085,7 @@
     "if(~.preventContinuation){let ~=~(~.stopReason);return ~.messages=[...~.messages,~(~),~(~)]",
     "var ~=(~)=>~(~,\"warning\",void 0,~);var ~=(~)=>~===void 0?~:`${~}: ${~}`;"
    ],
-   "note": "A UserPromptSubmit stop (continue:false, a function hook's preventContinuation) keeps the person's row and adds two: an isMeta user row the model reads and a system warning row the person sees, both \"Operation stopped by hook: <stopReason>\". Nothing else ends a typed non-slash prompt without a turn and without a frame: a prompt.submit drop draws \"Prompt dropped by a hook: <reason>\" (and loses the person's row), an answer without next \"Prompt not submitted: …\". An @room's receipt is such a stop; mod/prompt.ts rewrites its warning row (session-append-notice-rewrite)."
+   "note": "A UserPromptSubmit stop (continue:false, a function hook's preventContinuation) keeps the person's row and adds two: an isMeta user row the model reads and a system warning row the person sees, both \"Operation stopped by hook: <stopReason>\". Nothing else ends a typed non-slash prompt without a turn and without a frame: a prompt.submit drop draws \"Prompt dropped by a hook: <reason>\" (and loses the person's row), an answer without next \"Prompt not submitted: …\". An @room's receipt is such a stop; mod/prompt.ts rewrites its warning row (session-append-notice-rewrite) and words the isMeta copy as a receipt that asks the model nothing (a session.append text rewrite, which the typings allow for any row)."
   },
   {
    "id": "session-append-notice-rewrite",

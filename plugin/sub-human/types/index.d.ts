@@ -34,9 +34,6 @@ declare module 'claude-code' {
       /** False only when hooks/handlers/consent.ts said no room review is open and no EnterPlanMode / ExitPlanMode ran
        * since (mod/consent.ts); unset or true: consent runs. */
       reviewMaybeOpen: boolean;
-      /** False only when hooks/handlers/consent.ts said no note of this seat waits for its card (mod/consent.ts): while
-       * one may, a room post goes to consent, which refuses it (the card decides what the room gets). */
-      noteMaybeWaiting: boolean;
       /** What the person's next prompt carries for Claude (pending-proposal reminders, missing row calls): the
        * tail child's last rows event (mod/deliver.ts); null: nothing. */
       rows: string | null;
@@ -50,6 +47,9 @@ declare module 'claude-code' {
       /** This session's nonce (mod/deliver.ts, minted once per session id): mod-hello writes it to the lease and
        * mod/prompt.ts passes it with sub_human_origin, so at-room believes only an origin the module handed over. */
       nonce: { sid: string; value: string };
+      /** The room context waiting for the next prompt (mod/deliver.ts holds each pull event, mod/prompt.ts carries it
+       * as context and clears what it carried): each event's lines by id, and how many lines its cap left out. */
+      pulls: { next: number; items: { id: number; lines: string[] }[]; dropped: number } | null;
     };
   }
 }

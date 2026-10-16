@@ -131,6 +131,12 @@ function mirror(code: string, input: TasksIn, r: RoomHandle, log: Entry[]): bool
   if (!created && same(prev, next)) return false; // description- or metadata-only change: no log entry
   const req = tasks.metaReq(inp.metadata) || tasks.metaReq(native && native.metadata)
     || reqNumber(inp.description || (native && native.description));
+  // a task its requester asked for themselves is theirs from the start: TaskCreate takes no owner, so the room's Claude
+  // sets it with a TaskUpdate just after, and the room saw "owner none" in between (stage 8e I.8)
+  if (created && !next.owner && req) {
+    const asked = log.find(e => e.id === req && e.kind === 'task_req');
+    if (asked && asked.op === 'add' && typeof asked.owner === 'string' && asked.owner === asked.by) next.owner = asked.owner;
+  }
   log.push(record(r, { op, id, subject: next.subject, owner: next.owner, status: op === 'delete' ? 'deleted' : next.status,
     blockedBy: next.blockedBy || [], ...(req ? { req } : {}) }));
   return true;

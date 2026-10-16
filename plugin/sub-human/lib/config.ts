@@ -269,6 +269,7 @@ export const SNAPSHOT_WINDOW_MAX = 20_000;
 // text lines shown per chat message (the rest is "[+N more lines: read(...)]") and every continuation line's prefix:
 // owned by mod/core, which draws chat too
 export { CHAT_LINES_MAX, CHAT_NEST } from '../mod/core/constants.ts';
+export { PULL_CAP } from '../mod/core/constants.ts'; // the tail's room context (pull event)
 
 // ---------- size caps (code points unless noted) ----------
 export const CONTEXT_CAP = 9500;               // hook additionalContext (the CLI caps SessionStart / prompt context at 10k)
@@ -277,7 +278,6 @@ export const TAIL_MAX = 240;                   // room.line() compact form
 export const TEXT_MAX = 2000;                  // room.line({full}) text
 export const CHAT_WRAP = 400;                  // one chat output line
 export const CHAT_MAX = 1500;                  // one chat message shown; the rest stays in the log
-export const PULL_CAP = 1500;                  // the tail's "Room since your last turn" (pull event)
 export const BLOCK_MAX = 900;                  // the join / restore mechanics block, with 5 members
 export const ROW_MAX = 60;                     // a panel row's text
 export const HOLD_MSG_MAX = 140;               // a hold progress line (+ its hint fits two row-view lines at 120 columns)

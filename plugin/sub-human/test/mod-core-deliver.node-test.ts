@@ -136,3 +136,25 @@ test('deliver (item 5): a member\'s wake goes as its lines for the person, bare,
   assert.deepEqual(p.context.split('\n'), [d.WAKE_CONTEXT, d.WAKE_HEAD, '(for Claude) room now: proposal a1 waiting on bob']);
   assert.equal(d.wakeParts(`${d.WAKE_HEAD}\n(for Claude) only for the model`), null);
 });
+
+test('stage 8e B: the room context is held for the next prompt: events merge, the newest kept under PULL_CAP, and a prompt clears only what it carried', async () => {
+  const d = await load('mod/core/deliver.ts');
+  const { PULL_HEAD, PULL_END } = await import(path.join(import.meta.dirname, '..', 'mod/core/constants.ts')) as typeof import('../mod/core/constants.ts');
+  let held = d.holdPull(null, [PULL_HEAD, 'bob joined', PULL_END].join('\n'));
+  held = d.holdPull(held, [PULL_HEAD, '(2 earlier lines not shown: the room read tool has them)', 'bob: hi', PULL_END].join('\n'));
+  const ctx = d.pullContext(held)!;
+  assert.deepEqual(ctx.text.split('\n'), [PULL_HEAD, '(2 earlier lines not shown: the room read tool has them)', 'bob joined', 'bob: hi', PULL_END]);
+  assert.equal(ctx.upTo, 2);
+  // a third arrives after the prompt took its context: clearing what it carried keeps the third
+  const more = d.holdPull(held, `${PULL_HEAD}\ncarol joined\n${PULL_END}`);
+  assert.deepEqual(d.pullContext(d.clearPulls(more, ctx.upTo))!.text.split('\n'), [PULL_HEAD, 'carol joined', PULL_END]);
+  assert.equal(d.clearPulls(held, ctx.upTo), null);
+  assert.equal(d.pullContext(null), null);
+  // a session that never prompts again holds at most the cap, the oldest lines counted as left out
+  let big = null;
+  for (let i = 0; i < 100; i++) big = d.holdPull(big, `${PULL_HEAD}\nline ${i} ${'x'.repeat(40)}\n${PULL_END}`, 500);
+  const text = d.pullContext(big)!.text;
+  assert.ok(text.length < 500 + PULL_HEAD.length + PULL_END.length + 80, String(text.length));
+  assert.match(text, /\nline 99 /);
+  assert.match(text, /^.*\n\(\d+ earlier lines not shown/);
+});

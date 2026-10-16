@@ -97,6 +97,19 @@ test('agentStatusline: a member\'s room row and the nested rows inside it (after
   assert.match(colored, /\x1b\[33m⚠ your answer needed b7ca39\x1b\[0m/);
 });
 
+test('stage 8e I.7 (live verify, remote/16a): after this session left, its rows still get a label (the room row "you left", the others as before), never the row agent\'s own activity', () => {
+  const { code } = world(['claude', 'alice', 'bob']);
+  rows.recordRow(code, 'sid-alice', 'r1', { kind: 'room', name: code, parent: null });
+  rows.recordRow(code, 'sid-alice', 'c1', { kind: 'participant', name: 'bob', parent: 'r1' });
+  identity.leave(code, 'alice');
+  const tasks = [{ id: 'r1', status: 'running', description: 'Spawning participant row for bob' }, { id: 'c1', status: 'running', description: 'bob' }];
+  const out = agentStatusline({ session_id: 'sid-alice', tasks }, { env }).split('\n').filter(Boolean).map(l => JSON.parse(l));
+  assert.deepEqual(out.map(o => o.id), ['r1', 'c1']);
+  assert.equal(out[0].content, `${code}  you left · /sub-human joins again`);
+  assert.match(out[1].content, /^bob  /);
+  assert.equal(agentStatusline({ session_id: 'sid-never', tasks }, { env }), '', 'a session that held no seat: nothing');
+});
+
 test('agentStatusline: falls back to process ancestry in a child process', () => {
   const { code, add } = world(['claude', 'alice'], { selfName: 'alice' });
   add('claude', 'proposal', { ...prop(['alice']), via: 'system' });

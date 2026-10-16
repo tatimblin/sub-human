@@ -177,8 +177,10 @@ test('create: a mirror writes same only while its host\'s caps list it (the link
 
 test('17: a proposal\'s title drops a numbered-list marker ("1. Add an MIT LICENSE file" is "Add an MIT LICENSE file"), as it drops a heading\'s', t => {
   const code = seated(t, { alice: { machine: machineId()!, account: machineId()! }, bob: { machine: 'other0machine1' } });
-  for (const [text, want] of [['1. Add an MIT LICENSE file\n2. Link it\n', 'Add an MIT LICENSE file'], ['12) Ship v3\n', 'Ship v3'], ['## Ship v4\n', 'Ship v4'], ['2026 plans\n', '2026 plans']] as const) {
-    const r = proposal.create({ code, name: 'alice' }, { text });
+  // stage 8e F (live verify, locala/17): markers after a heading's ("# 1. Add X") go too (bob's: the rate limit is per seat)
+  for (const [text, want, name] of [['1. Add an MIT LICENSE file\n2. Link it\n', 'Add an MIT LICENSE file', 'alice'], ['12) Ship v3\n', 'Ship v3', 'alice'], ['## Ship v4\n', 'Ship v4', 'alice'], ['2026 plans\n', '2026 plans', 'alice'],
+    ['# 1. Add X\n', 'Add X', 'bob'], ['## 2) - Add Y\n', 'Add Y', 'bob'], ['> # Z\n', 'Z', 'bob']] as const) {
+    const r = proposal.create({ code, name }, { text });
     assert.equal(r.entry!.text, `proposal ${r.hash}: ${want}`, text);
     assert.equal(proposal.title(code, r.hash), want);
   }

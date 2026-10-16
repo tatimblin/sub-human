@@ -91,3 +91,10 @@ test('chat: Claude Code\'s synthetic "No response requested." and a queued promp
   const m = seatTranscriptMetrics([{ es: [human, a('m1'), end, note, pull, synth, queued, a('m2'), end] }]);
   assert.deepEqual([m.chat.turns, m.chat.calls], [0, 0]);
 });
+
+test('chat: the room context beside a prompt (stage 8e) counts as a pull and starts no chat turn', () => {
+  const ctx = { type: 'attachment', attachment: { type: 'hook_additional_context', hookEvent: 'UserPromptSubmit', content: ['sub-human room context: what happened in the room since your last turn (…):\nbob joined\nend of room context; the person\'s own words are their prompt.'] } };
+  const m = seatTranscriptMetrics([{ es: [human, ctx, a('m1'), end] }]);
+  assert.equal(m.chat.pulls, 1);
+  assert.equal(m.chat.turns, 0);
+});

@@ -39,8 +39,16 @@ function agentStatusline(input: StatuslineIn | null = {}, { env = process.env } 
     const list = input && input.tasks;
     const tasks: (PanelTask | null)[] = Array.isArray(list) ? list : [];
     if (!tasks.length) return '';
-    const me = seatOf(input);
-    if (!me) return '';
+    // a session that left keeps labelling its rows (they end a moment later): with nothing from here Claude Code shows
+    // the row agent's own activity ("Spawning participant row for bob": stage 8e I.7)
+    let me = seatOf(input);
+    let left = false;
+    if (!me) {
+      const last = input && typeof input.session_id === 'string' ? identity.lastSeat(input.session_id) : null;
+      if (!last) return '';
+      me = { ...last, pid: null, session_id: input!.session_id ?? null } as Identity;
+      left = true;
+    }
     const members: Members = identity.readMembers(me.code) || {};
     const map = rows.readRowMap(me.code);
     const opts = { entries: rows.readLog(me.code), members, color: useColor(env) };
@@ -56,7 +64,7 @@ function agentStatusline(input: StatuslineIn | null = {}, { env = process.env } 
       }
       let content: string;
       if (rec.kind === 'room') {
-        content = rows.rowLine(rec.name, dead(t) ? '⚠ room row stopped' : rows.rowText(me.code, me.code, me.name, opts));
+        content = rows.rowLine(rec.name, left ? 'you left · /sub-human joins again' : dead(t) ? '⚠ room row stopped' : rows.rowText(me.code, me.code, me.name, opts));
       } else if (dead(t) && members[rec.name] && !members[rec.name]!.left_at) {
         content = rows.rowLine(rec.name, rec.parent ? '(reconnecting)' : '⚠ row stopped');
       } else {

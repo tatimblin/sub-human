@@ -246,40 +246,70 @@ export function pathVerdict(cmd: string, ctx: GuardCtx = {}): string | null {
 
 const SIMPLE_ESC: Record<string, string> = { a: '\x07', b: '\b', e: '\x1b', E: '\x1b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v', '\\': '\\', "'": "'", '"': '"', '?': '?' };
 
+/** One ANSI-C quoted word's body decoded from cmd[j] (just past $'): [decoded, index past the closing '], or null. */
+function ansiWord(cmd: string, j: number): [string, number] | null {
+  let word = '';
+  for (;;) {
+    if (j >= cmd.length) return null; // unterminated
+    const ch = cmd[j];
+    if (ch === "'") return [word, j + 1];
+    if (ch !== '\\') { word += ch; j++; continue; }
+    const e = cmd[j + 1];
+    if (e === undefined) return null;
+    let m: RegExpExecArray | null;
+    const rest = cmd.slice(j + 1);
+    if (SIMPLE_ESC[e] !== undefined) { word += SIMPLE_ESC[e]; j += 2; }
+    else if ((m = /^x([0-9a-fA-F]{1,2})/.exec(rest))) { word += String.fromCharCode(parseInt(m[1], 16)); j += 1 + m[0].length; }
+    else if ((m = /^u([0-9a-fA-F]{1,4})/.exec(rest))) { word += String.fromCodePoint(parseInt(m[1], 16)); j += 1 + m[0].length; }
+    else if ((m = /^U([0-9a-fA-F]{1,8})/.exec(rest))) { const n = parseInt(m[1], 16); if (n > 0x10ffff) return null; word += String.fromCodePoint(n); j += 1 + m[0].length; }
+    else if ((m = /^([0-7]{1,3})/.exec(rest))) { word += String.fromCharCode(parseInt(m[1], 8) & 0xff); j += 1 + m[0].length; }
+    else if ((m = /^c(.)/.exec(rest))) { word += String.fromCharCode(m[1].charCodeAt(0) & 0x1f); j += 3; }
+    else { word += '\\' + e; j += 2; }
+  }
+}
+
 /**
  * The command with each ANSI-C quoted word ($'…') decoded as bash and zsh read it (\xHH, \NNN octal, \uHHHH,
  * \UHHHHHHHH, \cX and the one-letter escapes; an unknown escape keeps its backslash), so `cat /h/$'\x68'ost/keys/…`
  * is placed as /h/host/keys/… (item 14 R5). null: a $'…' this cannot read whole (unterminated): denied.
+ * A $' counts only where the shell reads one: unquoted (also inside $(…) or `…` in double quotes), never inside
+ * '…' (where $ is literal: grep 'foo$'), inside "…", after a backslash, or as the second $ of $$ (stage 8e A).
  */
 export function ansiC(cmd: string): string | null {
   if (!cmd.includes("$'")) return cmd;
   let out = '';
+  // the contexts open at i: 'u' unquoted, 'd' double quotes, 'p' a $( in double quotes (unquoted inside), 'b' a backtick
+  const ctx: string[] = ['u'];
+  const depth: number[] = [0];
   let i = 0;
   while (i < cmd.length) {
-    const at = cmd.indexOf("$'", i);
-    if (at < 0) { out += cmd.slice(i); break; }
-    out += cmd.slice(i, at);
-    let j = at + 2;
-    let word = '';
-    for (;;) {
-      if (j >= cmd.length) return null; // unterminated
-      const ch = cmd[j];
-      if (ch === "'") { j++; break; }
-      if (ch !== '\\') { word += ch; j++; continue; }
-      const e = cmd[j + 1];
-      if (e === undefined) return null;
-      let m: RegExpExecArray | null;
-      const rest = cmd.slice(j + 1);
-      if (SIMPLE_ESC[e] !== undefined) { word += SIMPLE_ESC[e]; j += 2; }
-      else if ((m = /^x([0-9a-fA-F]{1,2})/.exec(rest))) { word += String.fromCharCode(parseInt(m[1], 16)); j += 1 + m[0].length; }
-      else if ((m = /^u([0-9a-fA-F]{1,4})/.exec(rest))) { word += String.fromCodePoint(parseInt(m[1], 16)); j += 1 + m[0].length; }
-      else if ((m = /^U([0-9a-fA-F]{1,8})/.exec(rest))) { const n = parseInt(m[1], 16); if (n > 0x10ffff) return null; word += String.fromCodePoint(n); j += 1 + m[0].length; }
-      else if ((m = /^([0-7]{1,3})/.exec(rest))) { word += String.fromCharCode(parseInt(m[1], 8) & 0xff); j += 1 + m[0].length; }
-      else if ((m = /^c(.)/.exec(rest))) { word += String.fromCharCode(m[1].charCodeAt(0) & 0x1f); j += 3; }
-      else { word += '\\' + e; j += 2; }
+    const c = cmd[i];
+    const top = ctx[ctx.length - 1];
+    if (c === '\\') { out += cmd.slice(i, i + 2); i += 2; continue; }
+    if (top === 'd') {
+      if (c === '"') ctx.pop();
+      else if (c === '$' && cmd[i + 1] === '(') { ctx.push('p'); depth.push(0); out += '$('; i += 2; continue; }
+      else if (c === '`') ctx.push('b');
+      out += c; i++; continue;
     }
-    out += word;
-    i = j;
+    // unquoted: u, p, b
+    if (c === '$' && cmd[i + 1] === '$') { out += '$$'; i += 2; continue; }
+    if (c === '$' && cmd[i + 1] === "'") {
+      const w = ansiWord(cmd, i + 2);
+      if (!w) return null;
+      out += w[0]; i = w[1]; continue;
+    }
+    if (c === "'") {
+      const close = cmd.indexOf("'", i + 1);
+      const to = close < 0 ? cmd.length : close + 1;
+      out += cmd.slice(i, to); i = to; continue;
+    }
+    if (c === '"') ctx.push('d');
+    else if (c === '`' && top === 'b') { ctx.pop(); }
+    else if (c === '`') ctx.push('b');
+    else if (top === 'p' && c === '(') depth[depth.length - 1]++;
+    else if (top === 'p' && c === ')') { if (depth[depth.length - 1]-- === 0) { ctx.pop(); depth.pop(); } }
+    out += c; i++;
   }
   return out;
 }

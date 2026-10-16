@@ -126,7 +126,8 @@ test('an @room receipt shows as itself: its stop\'s warning row loses "Operation
   expect(await append($, `Operation stopped by hook: ${SENT}`)).toBe(`Operation stopped by hook: ${SENT}`) // nothing posted yet
   await submit($, '@room ship it')
   expect(seen.classic[0].stopReason).toBe(SENT)
-  expect(await append($, `Operation stopped by hook: ${SENT}`, 'user', 'note')).toBe(`Operation stopped by hook: ${SENT}`) // the model's copy
+  // stage 8e B: the model's copy says the line went to the room and asks nothing of it
+  expect(await append($, `Operation stopped by hook: ${SENT}`, 'user', 'note')).toBe(`sub-human: the person's @room line above went to the room, not to you (${SENT}); nothing is asked of you.`)
   expect(await append($, 'Operation stopped by hook: another plugin')).toBe('Operation stopped by hook: another plugin')
   expect(await append($, `Operation stopped by hook: ${SENT}`)).toBe(SENT)
   expect(await append($, `Operation stopped by hook: ${SENT}`)).toBe(`Operation stopped by hook: ${SENT}`) // once per stop
