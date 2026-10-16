@@ -87,15 +87,21 @@ On the host, in a session that is in the room:
 ```
 
 ```
-sub-human: invite to room vole-8126 for one machine, over ssh me@devbox.local. It works once, for 15 minutes; send them this line:
-sub-human:   /sub-human join me@devbox.local vole-8126 4f9k2m8q7r3t6v1w0x5y9z2a8b7c6d5e4f3g2h1
-sub-human: and tell them its PIN apart from the line (say it, or send it another way): 4829
+sub-human: invite to room vole-8126 for one machine, over ssh me@devbox.local. It works once, for 15 minutes. Its PIN and the line to send them are pinned under the prompt until 14:05: Claude Code saves neither in this conversation. Send the line; tell them the PIN apart from it (say it, or send it another way).
 sub-human: Their machine asks them for the PIN once this one has answered; the line alone gets nobody in, nor does the PIN. After 5 wrong PINs the invite stops working.
 sub-human: When they have typed both, a card here asks you to let them in; nothing gets in before you answer.
 sub-human: Sent it to the wrong place? /sub-human invite --cancel 3f9c2a1b7e0d cancels just this invite.
 sub-human: Over ssh this needs their own ssh login to this account (me), set up as for any ssh login: sub-human writes nothing to authorized_keys. No login here? Invite them over the web: /sub-human invite --web
 sub-human: They need a sub-human newer than 0.5.0-beta.15 (an older one says the PIN must be 4 digits): /plugin update sub-human.
 ```
+
+and under the prompt, on the plugin's status line:
+
+```
+⚠ sub-human: PIN 4829 · /sub-human join me@devbox.local vole-8126 4f9k2m8q7r3t6v1w0x5y9z2a8b7c6d5e4f3g2h1
+```
+
+The status line is one line, and Claude Code cuts it at the terminal's width. When the whole line does not fit, it holds only `PIN 4829 · SECRET 4f9k…` and the notice gives the line with the word `SECRET` in its place, to fill in as you send it; in a terminal outside Claude Code, `sub-human invite` prints a new invite whole. The status line goes at once when you cancel the invite, within a few seconds once it is used or burnt, and when it expires.
 
 These dim lines are shown to you, never to your Claude, and your `/sub-human invite` itself leaves no row. The line's last word is its **SECRET**: 39 characters (letters and digits only, so a chat app or mail client leaves it alone) that hold 128 bits of single-use randomness and a short tag of this machine's key. Send the line by any channel; tell the PIN by another (say it, a call, a second app). With no address given (no `--ssh`, no `SUB_HUMAN_SSH_ADDR`), the invite also says that it used this machine's own name (a Mac's `.local` name reaches only the same local network) and how to give another, and, when this machine takes no ssh logins (on a Mac, Remote Login is off in System Settings → General → Sharing), that their ssh will fail and `/sub-human invite --web` is the other way. When this machine's sub-human folder is not `~/.sub-human`, the line adds `--home PATH` (where their login finds it). The line carries no name (theirs comes from their git name, or `--as NAME`). `sub-human invite [--room ROOM] [--ssh [USER@HOST]] [--via JUMP]` prints the same in a terminal outside Claude Code; inside Claude Code (its `!` mode) it masks the SECRET and the PIN, because that output becomes part of the conversation. An address that still has an example's placeholder (`NAME@…`, `USER@…`, `YOU@…`) is refused.
 

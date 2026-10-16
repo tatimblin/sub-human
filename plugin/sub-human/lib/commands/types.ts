@@ -20,9 +20,12 @@ export type Answer =
   | { kind: 'joined'; me: Identity; lead: string; say: string };
 
 /** An invite's secret part, for the hooks module to draw where Claude Code saves nothing ($.ui.status, under the prompt):
- * status, the one line with the invite line and its PIN; text, what the notices say instead (no secret in it); ms, how
- * long the status stays (the invite's life). The classic hook still shows the whole text (Answer secret's text). */
-export interface Pinned { status: string; text: string; ms: number }
+ * status, the one line "PIN 4090 · <the invite line>"; text, what the notices say instead (no secret in it); ms, how
+ * long the status stays (the invite's life). When status is wider than the terminal (the module knows its width),
+ * short ("PIN 4090 · SECRET <word>") is pinned instead and cut is the notice text: the line with SECRET in place of
+ * the word. ref: the invite's, so the module takes it off once the invite is used, burnt or cancelled. The classic
+ * hook still shows the whole text (Answer secret's text). */
+export interface Pinned { status: string; text: string; ms: number; short?: string; cut?: string; ref?: string }
 
 /** What every verb is handed. pid and cur are known only once the hooks module's lease checked (the verbs marked
  * `open` run before: help, doctor). */

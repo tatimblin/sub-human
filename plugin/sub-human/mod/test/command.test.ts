@@ -20,7 +20,12 @@ function world(engine: any, on: any, { join = {} as any, room = undefined as str
   on('process.run', ($: any, e: any) => {
     const script = scriptOf(e)
     if (script === 'mod-hello.ts') { seen.hellos++; return ran(JSON.stringify(OUT)) }
-    if (script === 'join.ts') { seen.joins.push({ stdin: JSON.parse(e.init.stdin), env: e.init.env }); return ran(typeof join === 'string' ? join : JSON.stringify(join)) }
+    if (script === 'join.ts') {
+      const stdin = JSON.parse(e.init.stdin)
+      seen.joins.push({ stdin, env: e.init.env })
+      const j = typeof join === 'function' ? join(stdin) : join
+      return ran(typeof j === 'string' ? j : JSON.stringify(j))
+    }
     return ran('')
   })
   on('classic.UserPromptExpansion', ($: any, e: any) => { seen.expansions.push(e); return { additionalContext: ['from the classic join hook'] } })
@@ -62,6 +67,27 @@ test('an invite\'s line and PIN go to the status line (saved in no transcript), 
   expect(statuses.length).toBe(1)
   expect(statuses[0]).toContain('/sub-human join me@box otter-4821 SECRET')
   expect(statuses[0]).toContain(': 4821')
+})
+
+test('item 2 (D): a terminal narrower than the whole line pins the PIN and SECRET only, and the notices give the line with SECRET in its place; a cancel of that invite takes it off at once', async ($, on) => {
+  const ref = 'abcdef012345'
+  const word = '2hmejp4am3wm6rh3767dwrkeg99yyp05ry9js2b'
+  const status = `PIN 4821 · /sub-human join tristan@box.example otter-4821 ${word} --home /Users/tristan/.sub-human`
+  const pinned = { status, ms: 900000, short: `PIN 4821 · SECRET ${word}`, cut: 'invite to room otter-4821 … Send them this line with SECRET replaced by the word under the prompt:\n  /sub-human join tristan@box.example otter-4821 SECRET --home /Users/tristan/.sub-human\nand tell them the PIN apart', ref }
+  const cancel = { subHuman: { say: `invite ${ref} cancelled`, refused: false, shareable: true } }
+  const seen = world($, on, { join: (stdin: any) => (String(stdin.command_args).startsWith('invite --cancel') ? cancel : { subHuman: { say: 'invite to room otter-4821 … pinned under the prompt until 12:15 …', refused: false, shareable: false, pinned } }) })
+  const statuses: (string | undefined)[] = []
+  on('ui.status', ($: any, e: any) => { statuses.push(e.text); return { value: undefined } })
+  await start($)
+  await $.command.run({ command: 'sub-human:sub-human', args: 'invite', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 100 } } as any)
+  expect(statuses).toEqual([`PIN 4821 · SECRET ${word}`])
+  expect(seen.logs.some(l => l.includes('otter-4821 SECRET --home'))).toBe(true)
+  expect(seen.logs.join('\n')).not.toContain(word)
+  expect(seen.logs.join('\n')).not.toContain('4821 ·')
+  await $.command.run({ command: 'sub-human:sub-human', args: 'invite', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 200 } } as any)
+  expect(statuses[1]).toBe(status) // wide enough: the whole line, the PIN first
+  await typed($, 'invite --cancel')
+  expect(statuses.at(-1)).toBeUndefined()
 })
 
 test('a reply with no secret is a notice here (the model never reads it, so never repeats it), and the output row through Remote Control', async ($, on) => {

@@ -70,7 +70,7 @@ export function relayQueue(gap = RELAY_GAP_MS) {
     get size() { return lines.length; },
   };
 }
-const TYPES = new Set(['seat', 'chat', 'pull', 'wake', 'rows', 'health']);
+const TYPES = new Set(['seat', 'chat', 'pull', 'wake', 'rows', 'health', 'invites']);
 
 export const tailArgv = (root: unknown) => ['node', `${root}/scripts/sub-human`, 'tail', '--ndjson'];
 
@@ -110,6 +110,7 @@ export function parseEvent(line: string): TailEvent | null {
     }
     case 'chat': return Array.isArray(o.lines) && o.lines.length ? { type: 'chat', lines: o.lines.map(String) } : null;
     case 'rows': return { type: 'rows', text: str(o.text) ? o.text : null };
+    case 'invites': return Array.isArray(o.open) ? { type: 'invites', open: o.open.filter((r: unknown) => typeof r === 'string') } : null;
     default: return str(o.text) ? { type: o.type, text: o.text } : null;
   }
 }
@@ -128,7 +129,7 @@ export const logLines = (x: unknown): { do: 'log'; text: string }[] => (Array.is
 
 /**
  * [action], each {do:'log'|'append'|'mid-turn-wake', text} | {do:'submit', text, seen} | {do:'relay', lines} |
- * {do:'hold-rows', text|null} | {do:'seat', seat}. A mid-turn wake is appended now and handed to turnLedger, since the
+ * {do:'hold-rows', text|null} | {do:'seat', seat} | {do:'invites', open} (the room's open invite refs: the module unpins one not among them). A mid-turn wake is appended now and handed to turnLedger, since the
  * request in flight may not carry it. A submit's `seen` are the lines the person would see, logged when the submit
  * does not take the wake. remote (the person types from Remote Control): chat is relayed (queued: mod/deliver.ts
  * sends a batch once idle, at most one per RELAY_GAP_MS; drawn in the terminal as its chat lines, mod/render.ts),
@@ -147,6 +148,7 @@ export function route(
     case 'pull': return [{ do: 'append', text: ev.text }];
     case 'rows': return [{ do: 'hold-rows', text: ev.text }];
     case 'health': return [...logLines(ev.text), { do: 'append', text: `${FOR_CLAUDE} ${ev.text}` }];
+    case 'invites': return [{ do: 'invites', open: ev.open }];
     case 'wake': {
       // The room's Claude has no person to type: its rows calls ride on its wakes. A member's go with the person's prompt.
       const text = wakeText(ev.text, role === 'claude' ? rows : null);

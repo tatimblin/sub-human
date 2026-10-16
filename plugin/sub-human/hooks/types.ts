@@ -51,8 +51,12 @@ export interface SubHumanReport {
   reviewOpen?: boolean;
   /** an invite's line and PIN for the module's status line (never saved in the transcript) and how long it stays;
    * say then holds the text without them */
-  pinned?: { status: string; ms: number };
+  pinned?: PinnedReport;
 }
+
+/** An invite's pinned form as the module gets it (lib/commands/types.ts Pinned, less the text: say holds it). cut: the
+ * notice text when short is pinned in place of status (a terminal narrower than status). */
+export interface PinnedReport { status: string; ms: number; short?: string; cut?: string; ref?: string }
 
 /** One JSON output line of a command hook. */
 export interface HookOutput {
@@ -81,7 +85,7 @@ export interface HookOutput {
 export type Reply =
   | { kind: 'say'; text: string; module: boolean }
   | { kind: 'refused'; text: string; module: boolean }
-  | { kind: 'secret'; text: string; module: boolean; refused?: boolean; pinned?: { status: string; text: string; ms: number } }
+  | { kind: 'secret'; text: string; module: boolean; refused?: boolean; pinned?: import('../lib/commands/types.ts').Pinned }
   | { kind: 'joined'; context: string; say: string; warn?: string | null; module: boolean }
   | { kind: 'classic'; outputs?: object[]; exit?: number; stderr?: string };
 

@@ -20,7 +20,7 @@ import {
   relayQueue, rewakePrompt, DELIVERY_ERROR_NOTICE, MOD_RESTART_TELL_FAILS, RELAY_AFTER_MS, REWAKE_TIMEOUT_MS,
 } from './core/deliver.ts';
 import { parseHello, localHello, homeOf, sidIndex } from './core/seat.ts';
-import { answersItself, joinPayload, readReply, answerOf, CONFIRM_AFTER_MS } from './core/command.ts';
+import { answersItself, joinPayload, readReply, answerOf, cancels, CONFIRM_AFTER_MS } from './core/command.ts';
 import { shimArgv, shimEnv, toClassic, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { restoreNeeded } from './core/prefilter.ts';
 import { mergeClassic } from './core/prompt.ts';
@@ -359,6 +359,7 @@ async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
       case 'submit': void submitWake($, a.text, { seen: a.seen }); break; // not awaited: it resolves as the turn starts
       case 'mid-turn-wake': await midTurnWake($, a.text); break;
       case 'relay': queueRelay(relayIo($), a.lines); break;
+      case 'invites': if (pinnedRef && !a.open.includes(pinnedRef)) unpin($); break;
       default: break;
     }
   }
@@ -367,10 +368,19 @@ async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
 /** An invite's line and PIN on this plugin's status line, under the prompt (Claude Code saves it in no transcript, as it
  * does a notice), until the invite's life is over; a newer one replaces it. */
 let pinnedAt = 0;
-function pinStatus($: EngineInterface, { status, ms }: { status: string; ms: number }): void {
+/** The pinned invite's ref: the tail's `invites` event (the room's open invites) takes it off once it is not open. */
+let pinnedRef: string | null = null;
+function pinStatus($: EngineInterface, { status, ms, ref }: { status: string; ms: number; ref?: string }): void {
   const mine = ++pinnedAt;
+  pinnedRef = ref || null;
   $.ui.status(status);
-  try { $.clock.after(ms, () => { if (mine === pinnedAt) $.ui.status(undefined); }); } catch { /* it stays until the next one replaces it */ }
+  try { $.clock.after(ms, () => { if (mine === pinnedAt) unpin($); }); } catch { /* it stays until the next one replaces it */ }
+}
+/** The invite is over (used, burnt, cancelled or expired): off the status line now. */
+function unpin($: EngineInterface): void {
+  ++pinnedAt;
+  pinnedRef = null;
+  $.ui.status(undefined);
 }
 
 export function registerDeliver(on: On) {
@@ -409,9 +419,10 @@ export function registerDeliver(on: On) {
         return r;
       } finally { joined = null; }
     }
-    const { result, logs, status } = answerOf(reply, { bridge: e.origin.kind === 'bridge' });
+    const { result, logs, status } = answerOf(reply, { bridge: e.origin.kind === 'bridge', columns: e.presentation && e.presentation.columns });
     for (const line of logs) $.ui.log(line);
     if (status) pinStatus($, status);
+    else if (cancels(e.args, reply, pinnedRef)) unpin($);
     try { await refresh($, sid); } catch { /* the next refresh tries again */ }
     try { childFor($, sid, asHello((await $.state.get(HELLO)).value)); } catch { /* next start tries again */ }
     return result;

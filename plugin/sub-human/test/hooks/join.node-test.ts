@@ -713,9 +713,16 @@ test('SECURITY through the module: an invite and anything a PIN may be typed in 
   assert.doesNotMatch(inv.say!, new RegExp(`[0-9a-z]{39}`));
   assert.doesNotMatch(inv.say!, /: \d{4}\b/);
   assert.match(inv.say!, /pinned under the prompt until \d\d:\d\d: Claude Code saves neither in this conversation/);
-  assert.match(inv.pinned!.status, new RegExp(`/sub-human join pipe:\\S+ ${w.code} [0-9a-z]{39}`));
-  assert.match(inv.pinned!.status, /apart from the line \(say it, or send it another way\): \d{4}$/);
+  // item 2 (D): the PIN first and short, then the line; nothing before it that costs width
+  assert.match(inv.pinned!.status, new RegExp(`^PIN \\d{4} · /sub-human join pipe:\\S+ ${w.code} [0-9a-z]{39}$`));
   assert.ok(inv.pinned!.ms > 14 * 60_000 && inv.pinned!.ms <= 15 * 60_000);
+  // for a terminal too narrow for the line: the PIN and the SECRET alone, and notices with SECRET in the word's place
+  assert.match(inv.pinned!.short!, /^PIN \d{4} · SECRET [0-9a-z]{39}$/);
+  assert.match(inv.pinned!.cut!, new RegExp(`\\n  /sub-human join pipe:\\S+ ${w.code} SECRET\\n`));
+  const pin = /^PIN (\d{4})/.exec(inv.pinned!.status)![1];
+  assert.doesNotMatch(inv.pinned!.cut!, new RegExp(`[0-9a-z]{39}|PIN ${pin}|\\b${pin}\\b(?!.*${w.code})`));
+  assert.match(inv.pinned!.ref!, /^[0-9a-f]{12}$/);
+  assert.ok(inv.say!.includes(inv.pinned!.ref!), 'the notices name the ref --cancel takes');
   for (const args of ['join dev vole-1234 48291', `join dev vole-1234 ${SECRET} --frob`, `x ${w.code} 4829`, `x ${SECRET}`, 'join 4829', 'admit']) {
     const r = viaModule(w, 'me', args).json!.subHuman!;
     assert.equal(r.shareable, false, args);
