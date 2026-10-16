@@ -1128,7 +1128,7 @@ test('confirm: Stop nudges once when the card was never shown; shim mode reports
   assert.equal(ctx(again), undefined, 'once');
   assert.equal(again.json?.subHuman?.reviewOpen, true, 'the next prompt offers it again (reoffer)');
   assert.ok(waiting(w), 'still waiting for bob');
-  assert.equal(must(waiting(w)).asked, undefined, 'a nudge shows no card: not asked');
+  assert.equal(must(waiting(w)).stage, 'nudged', 'a nudge shows no card: not asked');
   // the model ignored the nudge: the next prompt offers it again, saying the card was never shown
   assert.equal(ctx(promptOf(w, tp)), REOFFER_UNSHOWN(v3));
   assert.equal(ctx(stopOf(w, tp)), undefined, 'never shown: the Stop nudge was spent already, no renudge');

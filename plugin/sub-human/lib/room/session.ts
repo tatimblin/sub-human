@@ -15,14 +15,10 @@
  *    holds    the seat's live row holds, as mcp/hold.ts wrote them (lib/rows.ts readHolds)
  *    blocks   {agentId: n}: how often hooks/handlers/row-hold.ts blocked that row's stop (the last BLOCKS_MAX)}
  *
- *   read(store, name) -> SessionDoc      the document; for a seat that has none yet, what an earlier sub-human kept in
- *                                        its separate documents (the cursor deliver-<name>, rows/notices-<name>,
- *                                        members/<name>/{review,confirm,pick}, rows/holds-<name>), so an upgrade loses
- *                                        no cursor and no open review
+ *   read(store, name) -> SessionDoc      the document ({v: 1} for a seat that has none yet)
  *   get(store, name, field), put(store, name, field, value)   one field (value undefined: removed)
  *   update(store, name, fn, opts?) -> SessionDoc   fn(doc) -> the next doc (undefined: no write); atomic (kv.update)
  *   shown(store, name) -> Set(ids), markShown(store, name, ids, via, {now}?)   the notices shown
- * A field written here wins over the older document for good: the first write migrates the rest with it.
  */
 
 import * as config from '../config.ts';
@@ -30,39 +26,23 @@ import * as clock from '../clock.ts';
 import type { KvApi, KvUpdateOpts } from './types.ts';
 import type { SessionDoc } from '../types-app.ts';
 
-/** What the session document needs of a store: its kv, and (for an upgrade) its per-reader cursors. */
-type SessionStore = { kv: KvApi; getCursor(reader: string): number };
+/** What the session document needs of a store: its kv. */
+type SessionStore = { kv: KvApi };
 
 const VIAS: readonly string[] = ['mod'];
 const BLOCKS_MAX = 64;
 const keyOf = (name: string) => `members/${name}/session`;
 
-/** What an earlier sub-human kept for this seat in separate documents. */
-function legacy(s: SessionStore, name: string): SessionDoc {
-  const d: SessionDoc = { v: 1 };
-  const get = <T>(key: string): T | null => { try { return s.kv.get<T>(key, null); } catch { return null; } };
-  let cursor = 0;
-  try { cursor = s.getCursor(`deliver-${name}`); } catch { /* none */ }
-  if (cursor > 0) d.cursor = cursor;
-  const n = get<Partial<NonNullable<SessionDoc['shown']>> & { shown?: number[] }>(`rows/notices-${name}`); // its writer's shape (an earlier sub-human)
-  if (n && (Array.isArray(n.shown) || Array.isArray(n.log))) d.shown = { ids: Array.isArray(n.shown) ? n.shown : [], log: Array.isArray(n.log) ? n.log : [] };
-  for (const [field, key] of [['review', `members/${name}/review`], ['confirm', `members/${name}/confirm`], ['pick', `members/${name}/pick`], ['holds', `rows/holds-${name}`]] as const) {
-    const v = get(key);
-    if (v) (d as unknown as Record<string, unknown>)[field] = v;
-  }
-  return d;
-}
-
 function read(s: SessionStore, name: string): SessionDoc {
   let d: SessionDoc | null = null;
   try { d = s.kv.get(keyOf(name), null); } catch { d = null; }
-  return d && d.v === 1 ? d : legacy(s, name);
+  return d && d.v === 1 ? d : { v: 1 };
 }
 
 function update(s: SessionStore, name: string, fn: (d: SessionDoc) => SessionDoc | undefined, opts: KvUpdateOpts = {}): SessionDoc {
   let out: SessionDoc = { v: 1 };
   s.kv.update<SessionDoc>(keyOf(name), cur => {
-    const next = fn(cur && cur.v === 1 ? { ...cur } : legacy(s, name));
+    const next = fn(cur && cur.v === 1 ? { ...cur } : { v: 1 });
     if (next !== undefined) out = next;
     return next;
   }, { compact: true, ...opts });

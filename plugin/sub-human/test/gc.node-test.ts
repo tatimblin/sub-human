@@ -166,7 +166,6 @@ test('gc: a room\'s row map of an ended session goes after ROWS_TTL_MS; a live s
   kv.set(`rows/${SID(3)}`, map(30));  // alice's live session: stays
   kv.set(`rows/${SID(4)}`, map(30));  // an ended session: goes
   kv.set(`rows/${SID(5)}`, map(1));   // recent: stays
-  kv.set('rows/holds-alice', { at: 0 }); // an earlier sub-human's per-seat document: not a row map, not touched here
   assert.equal(gc.sweepRows(code), 1);
-  assert.deepEqual(kv.list('rows/'), [`rows/${SID(3)}`, `rows/${SID(5)}`, 'rows/holds-alice'].sort());
+  assert.deepEqual(kv.list('rows/'), [`rows/${SID(3)}`, `rows/${SID(5)}`].sort());
 });

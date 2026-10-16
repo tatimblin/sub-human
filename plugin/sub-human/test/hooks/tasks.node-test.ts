@@ -140,8 +140,8 @@ test('gate: TaskCompleted exits 2 unless the owner asked for done; room task 1 u
 
   // closing: task 1 may complete
   const f = path.join(w.home, 'rooms', w.code, 'members.json');
-  const m = JSON.parse(fs.readFileSync(f, 'utf8')) as object; // members.json, spread back as it was
-  fs.writeFileSync(f, JSON.stringify({ ...m, closing: true }));
+  const m = JSON.parse(fs.readFileSync(f, 'utf8')) as { claude?: object }; // members.json, spread back as it was
+  fs.writeFileSync(f, JSON.stringify({ ...m, claude: { ...m.claude, closing: true } }));
   r = w.run(completed(1, `room ${w.code} open`));
   assert.equal(r.code, 0, r.stderr);
 });

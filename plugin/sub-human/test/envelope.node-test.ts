@@ -43,14 +43,12 @@ test('envelope: sign adds room, from, nonce, ts and sigv 2; the sig verifies whe
   assert.equal(envelope.verify({ ...p, sig: undefined }, publicKey), false);
 });
 
-test('envelope: a v1 entry (signed over the stored line minus sig, before sig v2) still verifies; its id is under the sig', () => {
+test('envelope: a sig without the v2 envelope (no sigv, no nonce) never verifies', () => {
   const { privateKey, publicKey } = pair();
   const e: Entry = { id: eid(3), at: new Date().toISOString(), from: 'alice', via: 'human', kind: 'say', to: 'room', text: 'old', room: CODE, prev: 'aaaaaaaaaaaa' };
-  e.sig = crypto.sign(null, Buffer.from(JSON.stringify(e)), privateKey).toString('base64');
+  e.sig = crypto.sign(null, Buffer.from(envelope.signable(e)), privateKey).toString('base64');
   assert.equal(envelope.isV2(e), false);
-  assert.equal(envelope.verify(e, publicKey), true);
-  assert.equal(envelope.verify(line({ ...e, id: eid(4) }), publicKey), false, 'v1 covered its place too');
-  assert.equal(envelope.verify(line({ ...e, text: 'new' }), publicKey), false);
+  assert.equal(envelope.verify(e, publicKey), false);
 });
 
 test('envelope: freshTs is the replay bound around the host clock', () => {

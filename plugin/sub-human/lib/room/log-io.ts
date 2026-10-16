@@ -21,7 +21,6 @@
  *                     snapshot.json is rebuilt from it and the sealed segments, so the host's entries before the mirror's
  *                     first line (its proposals, keys, host) survive. The first segment such a mirror seals starts at
  *                     that snapshot's line (its carry), so the anchor's hash is still found after a rotation.
- *   log.idx           retired (the checkpoint before segments): never read; removed at the first rotation.
  * Sealed segments are kept: an older peer's first sync replays the whole log, and readAll() still gives every line.
  * A crash between the steps of a rotation is finished by the next append (settle).
  *
@@ -49,10 +48,9 @@
  *   verifyChain(dir, {fromOffset, prev}?)   incremental over the active segment from this process's own checkpoint
  *       (in memory; the snapshot vouches for the sealed lines: a segment is sealed only once it chains)
  * Writing:
- *   appendLocked(dir, place, mayRotate?) -> Entry   under the log lock: read only the log's tail (newest first, then
- *       the snapshot's window), place({newest, prevLine}) -> {e, line}, write the line, then rotate when due and
- *       mayRotate() (fs-store.ts: no live seat of this machine runs code that reads only one log.jsonl) agrees
- *   appendVerbatim(dir, line, mayRotate?)   a line as another machine stored it (the mirror's one writer); rotates too
+ *   appendLocked(dir, place) -> Entry   under the log lock: read only the log's tail (newest first, then
+ *       the snapshot's window), place({newest, prevLine}) -> {e, line}, write the line, then rotate when due
+ *   appendVerbatim(dir, line)   a line as another machine stored it (the mirror's one writer); rotates too
  *   rotate(dir) -> bool                 seal the active segment now (false: nothing to seal, or it does not chain)
  *   install(dir, wire)                  a mirror's start from its host's snapshot: snapshot.json and a log.jsonl
  *                                       holding only the snapshot's line (RoomError PROTOCOL when a log is there)
@@ -78,7 +76,6 @@ import type { ChainCheck, ChainVerify, Entry, LogSnapshot, SnapshotWire, Tailer,
 const fs = nodeFs;
 const ACTIVE = 'log.jsonl';
 const SNAP = 'snapshot.json';
-const IDX = 'log.idx'; // retired
 const SEG_RE = /^log-(\d{4,})\.jsonl$/;
 const activeFile = (dir: string): string => path.join(dir, ACTIVE);
 const snapFile = (dir: string): string => path.join(dir, SNAP);
@@ -809,10 +806,7 @@ function settle(dir: string): LogSnapshot | null {
   return snap;
 }
 
-/** Whether a due rotation may run now (fs-store.ts rotationOk); called under the log lock, only when it is due. */
-type MayRotate = () => boolean;
-
-function appendLocked(dir: string, place: (tail: { newest: Iterable<Entry>; prevLine: string }) => { e: Entry; line: string }, mayRotate: MayRotate = () => true): Entry {
+function appendLocked(dir: string, place: (tail: { newest: Iterable<Entry>; prevLine: string }) => { e: Entry; line: string }): Entry {
   const act = activeFile(dir);
   return withLock(act + '.lock', () => {
     const snap = settle(dir);
@@ -828,19 +822,19 @@ function appendLocked(dir: string, place: (tail: { newest: Iterable<Entry>; prev
       e = r.e;
       end = size + Buffer.byteLength(text);
     } finally { fs.closeSync(fd); }
-    if (end >= segmentMaxBytes() && mayRotate()) { try { rotate(dir, true); } catch { /* sealed at the next append instead */ } }
+    if (end >= segmentMaxBytes()) { try { rotate(dir, true); } catch { /* sealed at the next append instead */ } }
     return e;
   }, { ErrorClass: LockError });
 }
 
-function appendVerbatim(dir: string, line: string, mayRotate: MayRotate = () => true): void {
+function appendVerbatim(dir: string, line: string): void {
   const act = activeFile(dir);
   withLock(act + '.lock', () => {
     settle(dir);
     fs.appendFileSync(act, line + '\n', { mode: 0o600 });
     let size = 0;
     try { size = fs.statSync(act).size; } catch { /* gone */ }
-    if (size >= segmentMaxBytes() && mayRotate()) { try { rotate(dir, true); } catch { /* the next line tries again */ } }
+    if (size >= segmentMaxBytes()) { try { rotate(dir, true); } catch { /* the next line tries again */ } }
   }, { ErrorClass: LockError });
 }
 
@@ -905,7 +899,6 @@ function rotate(dir: string, locked = false): boolean {
   try { fs.linkSync(act, sealed); } catch { fs.copyFileSync(act, sealed); } // a file system without hard links
   writeJsonAtomic(snapFile(dir), next, { compact: true });
   writeFileAtomic(act, next.line + '\n', { mode: 0o600 });
-  fs.rmSync(path.join(dir, IDX), { force: true });
   forget(dir);
   return true;
 }
@@ -925,9 +918,9 @@ function install(dir: string, wire: SnapshotWire): void {
   }, { ErrorClass: LockError });
 }
 
-/** Every log file of the room (active, sealed, snapshot, the retired log.idx). */
+/** Every log file of the room (active, sealed, snapshot). */
 function logFiles(dir: string): string[] {
-  return [activeFile(dir), snapFile(dir), baseFile(dir), path.join(dir, IDX), ...sealedOnDisk(dir).map(n => segFile(dir, n))];
+  return [activeFile(dir), snapFile(dir), baseFile(dir), ...sealedOnDisk(dir).map(n => segFile(dir, n))];
 }
 
 /** Every line held moved to `to` as one log (the carry lines left out); false with no log. */

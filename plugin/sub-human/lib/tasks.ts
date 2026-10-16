@@ -197,10 +197,9 @@ function reqOf(e: Partial<Entry> | null | undefined): ReqFields {
 
 // ---------- the TaskCompleted gate ----------
 function isClosing(code: RoomCode): boolean {
-  // members.json, plus the older room-wide closing marks (a top-level `closing`, `_room`)
-  let m: Members & { closing?: unknown } = {};
+  let m: Members = {};
   try { m = identity.readMembers(code) || {}; } catch { return false; }
-  return !!(m.closing || (m.claude && m.claude.closing) || (m._room && m._room.closing));
+  return !!(m.claude && m.claude.closing);
 }
 
 const cites = (e: Entry, reqId: number) => (e.refs ?? []).includes(reqId) || new RegExp(`(^|[^\\d])#${reqId}(?!\\d)`).test(String(e.text || ''));

@@ -276,7 +276,7 @@ function chatBody(e: Entry, viewer: string | undefined, entries: readonly Readon
       return { head: 'room', text: `task "${n.subject || n.task_id || '?'}"${status}${n.owner ? `, owner ${you(n.owner)}` : ''}` };
     }
     case 'task_req': return { head: chatWho(n, trust), text: `asks to ${n.op} task "${n.subject || n.task_id || '?'}"` };
-    case 'say': case 'question': case 'status': case 'host_changed': case 'revoke': case 'concern': case 'agree': case 'plan_rev':
+    case 'say': case 'question': case 'status': case 'host_changed':
       return words(n, t, viewer, trust);
     default: return assertNever(k, 'entry kind');
   }

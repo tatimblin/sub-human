@@ -71,7 +71,7 @@ test('links: one private file per room; get, set, remove, list; a bad code or sh
   assert.equal(links.logFile(rc('otter-0001')), path.join(home, 'links', 'otter-0001.log'));
 });
 
-test('store modes: a new home and every store directory are 0700; a home an older version made 0755 is repaired on open', t => {
+test('store modes: a new home and every store directory are 0700', t => {
   const home = h.freshHome(t);
   fs.rmSync(home, { recursive: true });
   const code = h.newRoom();
@@ -82,15 +82,6 @@ test('store modes: a new home and every store directory are 0700; a home an olde
   const dirs = [home, ...fs.readdirSync(home, { recursive: true }).map(f => path.join(home, f as string)).filter(f => fs.statSync(f).isDirectory())];
   assert.ok(dirs.length >= 6, dirs.join(' '));
   for (const d of dirs) assert.equal(mode(d), 0o700, d);
-  // an old home: 0755 everywhere
-  const old = h.freshHome(t);
-  for (const d of [old, path.join(old, 'rooms'), path.join(old, 'sessions'), path.join(old, 'rooms', rc('vole-1234'))]) {
-    fs.mkdirSync(d, { recursive: true });
-    fs.chmodSync(d, 0o755);
-  }
-  store.open(rc('vole-1234'));
-  for (const d of [old, path.join(old, 'rooms'), path.join(old, 'sessions')]) assert.equal(mode(d), 0o700, d);
-  assert.equal(mode(path.join(old, 'rooms', rc('vole-1234'))), 0o755, 'below the home only new directories: the home closes them');
 });
 
 test('store.open: a linked code is a mirror (isHost false) and exists before its directory does', t => {

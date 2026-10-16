@@ -6,14 +6,12 @@
  *
  * sig v2 covers the payload, not its place in the log: the entry without id, at, prev and sig, plus room,
  * from, nonce and ts, as JSON with sorted keys. The server stamps id, at and prev afterwards, so a signature
- * made on one machine stays valid wherever the line lands. v1 (the stored line in its key order, minus sig,
- * made after id/prev were stamped; logs from before sig v2) still verifies.
+ * made on one machine stays valid wherever the line lands.
  *
  *   SIG_VERSION = 2
  *   signable(e) -> string            the bytes a v2 sig covers (sorted keys; id, at, prev, sig left out)
- *   signedBytes(e) -> string         what e's sig covers: signable(e) for v2, the v1 form otherwise
  *   sign(payload, key, {room, from, now?}) -> payload with room, from, nonce, ts, sigv: 2, sig (base64)
- *   verify(e, pub) -> bool           v2 when e.sigv === 2 (or e.nonce is set), else v1
+ *   verify(e, pub) -> bool           a v2 sig (e.sigv === 2, or e.nonce set) over signable(e)
  *   isV2(e) -> bool
  *   newNonce() -> string             16 random bytes, hex
  *   freshTs(e, now?, skewMs?) -> bool   |now - e.ts| <= skewMs (SIG_SKEW_MS): the replay bound, with the nonce
@@ -56,11 +54,6 @@ function signable(e: object): string {
 
 const isV2 = (e: Signable | null | undefined): boolean => !!e && (e.sigv === SIG_VERSION || typeof e.nonce === 'string');
 
-/** v1: the stored entry without sig, in its stored key order. */
-const v1Bytes = (e: Signable): string => { const { sig, ...rest } = e; return JSON.stringify(rest); };
-
-/** What e's signature covers, by its version. */
-const signedBytes = (e: Signable): string => (isV2(e) ? signable(e) : v1Bytes(e));
 
 /** @returns {string} 16 random bytes as hex */
 const newNonce = (): string => crypto.randomBytes(16).toString('hex');
@@ -78,14 +71,14 @@ function sign<P extends object>(payload: P, key: KeyObject, { room, from, now = 
 }
 
 /**
- * Whether e's sig verifies against pub: v2 over signable(e), v1 over the stored line minus sig.
+ * Whether e's v2 sig verifies against pub, over signable(e).
  * @param {object} e
  * @param {import('node:crypto').KeyObject} pub
  * @returns {boolean}
  */
 function verify(e: Signable | null | undefined, pub: KeyObject | null | undefined): boolean {
-  if (!e || typeof e.sig !== 'string' || !pub) return false;
-  try { return crypto.verify(null, Buffer.from(signedBytes(e), 'utf8'), pub, Buffer.from(e.sig, 'base64')); } catch { return false; }
+  if (!e || typeof e.sig !== 'string' || !pub || !isV2(e)) return false;
+  try { return crypto.verify(null, Buffer.from(signable(e), 'utf8'), pub, Buffer.from(e.sig, 'base64')); } catch { return false; }
 }
 
 /**
@@ -131,6 +124,6 @@ function pinnedKeys(entries: readonly (Entry | null | undefined)[] | null | unde
 const keyed = (entries: readonly (Entry | null | undefined)[] | null | undefined): boolean => pinnedKeys(entries).size > 0;
 
 export {
-  SIG_VERSION, SIG_SKEW_MS, PLACED_FIELDS, signable, signedBytes, sign, verify, isV2, newNonce, freshTs, parseKey,
+  SIG_VERSION, SIG_SKEW_MS, PLACED_FIELDS, signable, sign, verify, isV2, newNonce, freshTs, parseKey,
   pinnedKeys, keyed,
 };

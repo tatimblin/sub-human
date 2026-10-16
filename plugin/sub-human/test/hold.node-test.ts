@@ -5,12 +5,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import crypto from 'node:crypto';
 import * as identity from '../lib/identity.ts';
 import * as rows from '../lib/rows.ts';
 import * as hold from '../mcp/hold.ts';
 import * as linkStateMod from '../lib/room/link-state.ts';
 import * as seatKey from '../hooks/seat-key.ts';
+import * as envelope from '../lib/room/envelope.ts';
 import type { JsonRpcId, Me, ProgressToken, ToolArgs, ToolResult } from '../mcp/types.ts';
 import type { LinkState, Member } from '../lib/room/types.ts';
 import { rc, sn } from './support/brands.ts';
@@ -43,8 +43,8 @@ function setup(names: string[], self: string) {
   let id = 0;
   // signed as the at-room hook signs a person's post (hooks/seat-key.ts), so it reads as theirs, not "(unverified)"
   const add = (from: string, kind: string, extra: Record<string, unknown> = {}) => {
-    const e: Record<string, unknown> = { id: ++id, at: new Date().toISOString(), from, via: 'human', kind, text: `${kind} ${id}`, to: 'room', ...extra };
-    if (e.via === 'human') { e.room = code; e.sig = crypto.sign(null, Buffer.from(JSON.stringify(e)), seatKey.ensure(code, sn(from))).toString('base64'); }
+    const p: Record<string, unknown> = { from, via: 'human', kind, text: `${kind} ${++id}`, to: 'room', ...extra };
+    const e = { id, at: new Date().toISOString(), ...(p.via === 'human' ? envelope.sign(p, seatKey.ensure(code, sn(from)), { room: code, from }) : p) };
     fs.appendFileSync(path.join(dir, 'log.jsonl'), JSON.stringify(e) + '\n');
   };
   let me: FakeMe | null = { code, name: sn(self), role: self === 'claude' ? 'claude' : 'member' };

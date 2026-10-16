@@ -653,20 +653,19 @@ test('remindersText: a note of mine waiting on the picked proposal points at the
   assert.match(must(tailLib.remindersText(me, room.open(code))), /^proposal dddddddddddd still awaits alice's answer/);
   // waiting, not yet offered again: show it now, as consent's reoffer on the same prompt says (never a softer line)
   const cf = { hash: 'dddddddddddd', note: 'open rate limiting', from: 'bob', title: 'Ship v3 Monday', at: Date.now() };
-  // each stage as this version writes it (stage) and as an earlier one did (flags: lib/consent/review.ts stageOf)
-  for (const extra of [{}, { nudged: Date.now() }, { stage: 'waiting' as const }, { stage: 'nudged' as const }]) {
+  for (const extra of [{}, { stage: 'waiting' as const }, { stage: 'nudged' as const }]) {
     proposal.writeConfirm(me, { ...cf, ...extra });
     assert.equal(tailLib.remindersText(me, room.open(code)),
       'proposal dddddddddddd: alice\'s note is not recorded yet. First, call AskUserQuestion with "objection dddddddddddd". Don\'t reopen the review (that drops the note).');
   }
   // shown and interrupted (asked, no answer): the Esc is said to be no answer, as consent's reoffer says it
-  for (const extra of [{ asked: Date.now() }, { stage: 'asked' as const }]) {
+  for (const extra of [{ stage: 'asked' as const }]) {
     proposal.writeConfirm(me, { ...cf, ...extra });
     assert.equal(tailLib.remindersText(me, room.open(code)),
       'proposal dddddddddddd: alice\'s note is not recorded yet. Esc was no answer, not a decline. First, call AskUserQuestion with "objection dddddddddddd". Don\'t reopen the review (that drops the note).');
   }
   // offered again (or its no-answer close told): the card is alice's to ask for
-  for (const extra of [{ asked: Date.now(), again: Date.now() }, { stage: 'reoffered' as const }, { stage: 'told' as const }]) {
+  for (const extra of [{ stage: 'reoffered' as const }, { stage: 'told' as const }]) {
     proposal.writeConfirm(me, { ...cf, ...extra });
     assert.equal(tailLib.remindersText(me, room.open(code)),
       'proposal dddddddddddd: alice\'s note waits to be sent or discarded; if alice asks, call AskUserQuestion with "objection dddddddddddd". Don\'t reopen the review (that drops the note).');

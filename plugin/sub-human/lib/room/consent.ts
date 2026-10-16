@@ -33,7 +33,6 @@
  *   titleOf(e) -> string           the title a proposal entry carries ("proposal HASH: title"), '' for none
  *
  * Semantics (one place):
- *   - Entries are read through normalize() (legacy plan_rev / plan_hash / concern / agree).
  *   - Only valid 12-hex hashes (sha256/12 of the plan bytes, lib/proposal.ts) count.
  *   - The latest proposal entry per hash wins (approvers, path, author). Answers attach to the hash (the text),
  *     wherever they sit in the log.
@@ -41,10 +40,9 @@
  *     (which only hook processes hold), or unsigned from a seat that has no key at all (a room from before seat
  *     keys). A bad sig, or an unsigned answer from a seat with a key, is ignored.
  *   - Per person, the latest via=human signoff / objection wins: an objection voids that person's earlier
- *     signoff (and a later signoff replaces an objection). A legacy via=human `revoke` clears the answer.
+ *     signoff (and a later signoff replaces an objection).
  *   - One person in several seats: a proposal's `same` groups (lib/proposal.ts create: seats of one account) are one
- *     person. The newest answer from any seat of the group counts for every seat of it, and a revoke from one clears
- *     the group. A proposal with no `same` (an older proposer's, or one person per seat) counts every seat: stricter,
+ *     person. The newest answer from any seat of the group counts for every seat of it. A proposal with no `same` (an older proposer's, or one person per seat) counts every seat: stricter,
  *     never wrong.
  *   - A decision is as recorded: the latest via=system decision with that proposal_hash closes it.
  *     state: 'blocked' when an approver's current answer is an objection, else 'agreed'.
@@ -106,15 +104,14 @@ function groupsOf(same: unknown, approvers: string[]): string[][] {
 function compute(list: Entries, trust: Trust): Fold {
   const proposals = new Map<string, ProposalState>();
   const answers = new Map<string, Map<string, Stance>>();
-  // per hash and seat, its latest answer or revoke (null) and where it sits in the log: a same group's newest wins
-  const latest = new Map<string, Map<string, { at: number; a: Stance | null }>>();
+  // per hash and seat, its latest answer and where it sits in the log: a same group's newest wins
+  const latest = new Map<string, Map<string, { at: number; a: Stance }>>();
   let seq = 0;
   const decisions = new Map<string, Entry>();
   const superseded = new Map<string, string>();
   for (const raw of list) {
-    // only a proposal or a line naming one (current or legacy fields) can change the state: the rest is passed over
-    // without normalizing (most of a log is chat)
-    if (!raw || (raw.kind !== 'proposal' && raw.kind !== 'plan_rev' && raw.proposal_hash === undefined && raw.plan_hash === undefined)) continue;
+    // only a proposal or a line naming one can change the state: the rest is passed over (most of a log is chat)
+    if (!raw || (raw.kind !== 'proposal' && raw.proposal_hash === undefined)) continue;
     const e = parseEntry(normalize(raw));
     if (!e) continue; // a newer host's kind: no state this version folds
     if (e.kind === 'proposal') {
@@ -135,28 +132,20 @@ function compute(list: Entries, trust: Trust): Fold {
     if (!isHash(h)) continue;
     switch (e.kind) {
       case 'decision': if (e.via === 'system') decisions.set(h, e); break;
-      case 'signoff': case 'objection': case 'revoke': {
+      case 'signoff': case 'objection': {
         if (e.via !== 'human' || typeof e.from !== 'string' || trust(raw) === 'unverified') break;
-        const mark = (a: Stance | null) => {
-          let marks = latest.get(h);
-          if (!marks) latest.set(h, marks = new Map<string, { at: number; a: Stance | null }>());
-          marks.set(e.from, { at: ++seq, a });
-        };
-        if (e.kind !== 'revoke') {
-          let byName = answers.get(h);
-          if (!byName) answers.set(h, byName = new Map<string, Stance>());
-          const a: Stance = { kind: e.kind, id: e.id, entry: e };
-          byName.set(e.from, a);
-          mark(a);
-        } else {
-          const byName = answers.get(h);
-          if (byName) { byName.delete(e.from); mark(null); }
-        }
+        let byName = answers.get(h);
+        if (!byName) answers.set(h, byName = new Map<string, Stance>());
+        const a: Stance = { kind: e.kind, id: e.id, entry: e };
+        byName.set(e.from, a);
+        let marks = latest.get(h);
+        if (!marks) latest.set(h, marks = new Map<string, { at: number; a: Stance }>());
+        marks.set(e.from, { at: ++seq, a });
         break;
       }
-      // a line that names a proposal and decides nothing (a say about it, an agree or concern normalize left as is)
+      // a line that names a proposal and decides nothing (a say about it)
       case 'say': case 'question': case 'status': case 'task_req': case 'member_joined': case 'member_left': case 'task':
-      case 'host_changed': case 'concern': case 'agree': case 'plan_rev':
+      case 'host_changed':
         break;
       default: assertNever(e, 'entry kind');
     }
@@ -165,11 +154,11 @@ function compute(list: Entries, trust: Trust): Fold {
   const ownAnswer = (hash: string, name: string): Stance | null => { const m = answers.get(hash); return (m && m.get(name)) ?? null; };
   /** The seats of name's person on hash: its same group, else name alone. */
   const groupOf = (groups: string[][], name: string): string[] => groups.find(g => g.includes(name)) ?? [name];
-  /** The answer that counts for a person's seats: the newest answer or revoke of any of them. */
+  /** The answer that counts for a person's seats: the newest answer of any of them. */
   function current(hash: string, seats: string[]): Stance | null {
     const m = latest.get(hash);
     if (!m) return null;
-    let best: { at: number; a: Stance | null } | null = null;
+    let best: { at: number; a: Stance } | null = null;
     for (const n of seats) { const x = m.get(n); if (x && (!best || x.at > best.at)) best = x; }
     return best ? best.a : null;
   }

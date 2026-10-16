@@ -29,12 +29,6 @@
  *                                 absent or left. now: tests only (the host's clock otherwise).
  *   publicView(members) -> members   the document as other machines see it: LOCAL_FIELDS stripped
  *   ROOM_CLAUDE ("claude"), PRESENCE_STATES (the source of PresenceState) and isPresenceState, LOCAL_FIELDS
- *   LOG_V (2)                     what a seat's code reads: 2, the log in segments with a snapshot (lib/room/log-io.ts).
- *                                 A seat records it at join (log_v; the room's Claude's record at spawn too); a seat
- *                                 without it runs an older plugin (0.5.0-beta.15 or before), which reads one log.jsonl
- *   readsSegments(m) -> bool      m.log_v >= LOG_V
- *   holdsRotation(m) -> bool      a seat of this machine that may still run and reads only one log.jsonl: while one
- *                                 does, the room's log does not rotate (fs-store.ts rotationOk)
  */
 
 import { isAlive, validPid } from '../io.ts';
@@ -67,15 +61,6 @@ const LOCAL_FIELDS = ['pid', 'pid_start', 'session_id', 'cwd'] as const;
 const ROOM_CLAUDE_FIELDS = ['job', 'spawned_at', 'closing', 'by', 'job_session', 'claim'] as const; // kept across the room Claude's (re)bind
 
 const machineOf = (m: SeatLike): string | null => m.machine || machineId();
-
-const LOG_V = 2;
-const readsSegments = (m: SeatLike): boolean => typeof m.log_v === 'number' && m.log_v >= LOG_V;
-/** A seat of this machine (a person's, or the room's Claude's while its job may run) whose code reads one log.jsonl. */
-function holdsRotation(m: SeatLike | null | undefined): boolean {
-  if (!m || readsSegments(m) || m.left_at || !isMine(machineOf(m) || '')) return false;
-  if (m.role === ROOM_CLAUDE) return !m.stopped_at && (seatAlive(m) || !!m.job);
-  return seatAlive(m);
-}
 
 /** The stored start time still describes the process now holding m.pid (tolerates legacy / unreadable). */
 function startMatches(m: SeatLike): boolean {
@@ -177,6 +162,6 @@ function roomClaudePresence(o: SeatLike | null | undefined, now: number = Date.n
 }
 
 export {
-  PRESENCE_STATES, isPresenceState, LOCAL_FIELDS, ROOM_CLAUDE, LOG_V, readsSegments, holdsRotation, seatAlive,
+  PRESENCE_STATES, isPresenceState, LOCAL_FIELDS, ROOM_CLAUDE, seatAlive,
   roomClaudePresence, leaseFresh, startMatches, ops, publicView,
 };

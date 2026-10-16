@@ -103,10 +103,9 @@ test('gate: the room-open task completes only while the room is closing', () => 
   // closing read from members.json
   assert.equal(tasks.isClosing(code), false);
   const f = path.join(identity.roomDir(code), 'members.json');
-  io.writeJsonAtomic(f, { ...identity.readMembers(code), closing: new Date().toISOString() });
-  assert.equal(tasks.gate(code, t1, []).ok, true);
   io.writeJsonAtomic(f, { claude: { name: 'claude', role: 'claude', pid: 1, closing: true } });
   assert.equal(tasks.isClosing(code), true);
+  assert.equal(tasks.gate(code, t1, []).ok, true);
 });
 
 // ---------- the mirror file and summary ----------

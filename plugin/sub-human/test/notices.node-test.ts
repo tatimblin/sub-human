@@ -124,27 +124,16 @@ test('notices shown / markShown: ids merge and sort; via is required', () => {
 
 // ---------- the room hold's progress line ----------
 // mcp/hold.ts polls on the global timers and Date, so node:test's mock timers drive it: no real waiting.
-test('session document: one per seat; a seat an earlier sub-human kept in separate documents keeps them, migrated by the first write', () => {
+test('session document: one per seat; a field written is read back, a cleared one stays cleared', () => {
   h.freshHome();
   const code = h.newRoom();
   const s = room.open(code).store;
-  // what 0.5.0-beta.15 kept per seat
-  s.setCursor('deliver-alice', 41);
-  s.kv.set('rows/notices-alice', { shown: [3, 5], log: [{ id: 5, via: 'mod', at: at(0) }] });
-  s.kv.set('members/alice/review', { phase: 'shown', hash: 'abcdef012345', at: T0 });
-  s.kv.set('members/alice/confirm', { hash: 'abcdef012345', note: 'wait', from: 'bob', title: 'x', at: T0 });
-  s.kv.set('members/alice/pick', { hash: 'abcdef012345', at: T0 });
-  s.kv.set('rows/holds-alice', { pid: process.pid, at: at(0), members: ['bob'], room: true });
-  const old = session.read(s, 'alice');
-  assert.deepEqual([old.cursor, must(old.shown).ids, must(old.review).phase, must(old.confirm).note, must(old.pick).hash, must(old.holds).members], [41, [3, 5], 'shown', 'wait', 'abcdef012345', ['bob']]);
-  assert.deepEqual([...notices.shown(code, 'alice')], [3, 5], 'nothing shown twice after an upgrade');
-  // the first write keeps every field, and from then on the document is the one place
+  assert.deepEqual(session.read(s, 'alice'), { v: 1 });
   session.put(s, 'alice', 'cursor', 42);
-  s.kv.delete('members/alice/review');
-  const now = session.read(s, 'alice');
-  assert.deepEqual([now.cursor, must(now.review).phase, must(now.confirm).note], [42, 'shown', 'wait']);
+  session.put(s, 'alice', 'review', { phase: 'shown', hash: 'abcdef012345', at: T0 });
+  assert.deepEqual([session.read(s, 'alice').cursor, must(session.read(s, 'alice').review).phase], [42, 'shown']);
   session.put(s, 'alice', 'review', undefined);
-  assert.equal(session.read(s, 'alice').review, undefined, 'a cleared field stays cleared (the older document is not read again)');
+  assert.equal(session.read(s, 'alice').review, undefined);
   assert.equal(session.read(s, 'bob').cursor, undefined, 'another seat: its own document');
   // blocks: per row agent, the newest kept
   session.setBlocks(s, 'alice', 'a1', 2);

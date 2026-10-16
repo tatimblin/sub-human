@@ -12,7 +12,7 @@ import type { Reason } from '../reasons.ts';
 import type nodeFs from 'node:fs';
 import type { LockOpts } from '../lock.ts';
 import type { LinkSpec } from '../remote/types-rest.ts';
-import type { AGENT_KINDS, HUMAN_KINDS, LEGACY_KINDS, SYSTEM_KINDS, TASK_OPS, VIAS } from './validate.ts';
+import type { AGENT_KINDS, HUMAN_KINDS, SYSTEM_KINDS, TASK_OPS, VIAS } from './validate.ts';
 import type { PRESENCE_STATES } from './members.ts';
 import type { STATE_WORDS } from './link-state.ts';
 import type { WireCode } from '../remote/types-core.ts';
@@ -30,10 +30,8 @@ export type HumanKind = (typeof HUMAN_KINDS)[number];
 export type SystemKind = (typeof SYSTEM_KINDS)[number];
 /** Every kind validate() accepts (envelope v3). */
 export type Kind = AgentKind | HumanKind | SystemKind;
-/** Kinds only logs from before envelope v3 hold (validate.ts LEGACY_KINDS); store.ts normalize() maps all but revoke for display. */
-export type LegacyKind = (typeof LEGACY_KINDS)[number];
 /** Every kind this version reads: a log line's kind is one of these, or a newer host's (validate.ts parseEntry). */
-export type KnownKind = Kind | LegacyKind;
+export type KnownKind = Kind;
 /** A task_req's op (validate.ts TASK_OPS). A `task` entry's op is any short word. */
 export type TaskOp = (typeof TASK_OPS)[number];
 /** A signed acceptance or request carried by host_changed (lib/handoff.ts makes them; validate.ts caps their size). */
@@ -206,9 +204,7 @@ export interface Entry extends EntryFields, Partial<Envelope> {
   prev?: string;
   from: string;
   via?: Via | (string & {});
-  kind: Kind | LegacyKind | (string & {});
-  /** legacy (before envelope v3): the proposal's hash on plan_rev / agree; normalize() maps it */
-  plan_hash?: string;
+  kind: Kind | (string & {});
 }
 
 /** A post a mirror's daemon queued while the link was down, or holds while the host is slow (store-mirror.ts place). */
@@ -281,8 +277,6 @@ export interface Member {
   owner?: boolean;
   joined_at?: string;
   seen_at?: string;
-  /** what log its code reads (lib/room/members.ts LOG_V: 2, segments); none: an older plugin's seat, one log.jsonl */
-  log_v?: number;
   left_at?: string;
   /** its lease ran out with no leave (lib/seats.ts sweep): still seated, not present; its next beat brings it back */
   lapsed_at?: string;
@@ -316,8 +310,6 @@ export interface SeatRecord {
   pid_start?: number;
   session_id?: SessionId | null;
   cwd?: string | null;
-  /** what log the seat's code reads (lib/room/members.ts LOG_V) */
-  log_v?: number;
 }
 
 /** members.join's answer: joined (rejoin: the seat was in the room before), or refused with why. code: a mirror's
@@ -353,7 +345,7 @@ export interface MembersApi {
 
 // ---------- the store's other parts ----------
 
-/** store.blobs: plans, by room-relative ref ("plans/<hash>.md"); get/has/ref also take the absolute path older entries stored. */
+/** store.blobs: plans, by room-relative ref ("plans/<hash>.md"). */
 export interface BlobsApi {
   put(name: string, bytes: string | Uint8Array): string;
   get(ref: string): Buffer | null;

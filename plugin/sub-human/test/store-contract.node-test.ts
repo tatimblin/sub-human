@@ -178,7 +178,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.equal(s.kv.get('presence/alice', null), null, 'leaving drops the seat\'s presence');
   });
 
-  test(`store contract (${name}): sig v2 covers the payload, not its place: placed at another id it still verifies; v1 lines still do`, { skip: B.hostOnly }, t => {
+  test(`store contract (${name}): sig v2 covers the payload, not its place: placed at another id it still verifies`, { skip: B.hostOnly }, t => {
     h.freshHome(t);
     const s = B.make(t);
     const e = say(s, 'alice', 'mine');
@@ -190,14 +190,6 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.deepEqual([moved.id, moved.sig], [3, e.sig]);
     assert.notEqual(moved.prev, e.prev);
     assert.equal(other.trust(other.readAll()[2]), 'verified');
-    // a v1 line (signed over the stored line minus sig, as before sig v2) still reads as the person's
-    const v1 = rawLine(other, { from: 'alice', via: 'human', kind: 'say', to: 'room', text: 'old', room: CODE });
-    v1.sig = crypto.sign(null, Buffer.from(JSON.stringify(v1)), seatKey.ensure(CODE, sn('alice'))).toString('base64');
-    B.raw(other, v1);
-    say(other, 'alice', 'v2 after v1');
-    assert.deepEqual(other.readAll().slice(-2).map(e => other.trust(e)), ['verified', 'verified']);
-    assert.deepEqual(other.validateChain(), { ok: true, count: 5 });
-    assert.equal(other.verifyChain().ok, true, 'a mixed v1/v2 log chains');
   });
 
   test(`store contract (${name}): member_joined pins a key; a keyed room never counts an unsigned answer and refuses another key`, { skip: B.hostOnly }, t => {
@@ -383,7 +375,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.deepEqual(Object.keys(s.members.read()).sort(), ['alice', 'bob']);
   });
 
-  test(`store contract (${name}): blobs: room-relative refs, bytes back exactly, legacy absolute paths read by name`, { skip: B.hostOnly }, t => {
+  test(`store contract (${name}): blobs: room-relative refs, bytes back exactly`, { skip: B.hostOnly }, t => {
     h.freshHome(t);
     const s = B.make(t);
     const bytes = Buffer.from('# plan\né\n', 'utf8');
@@ -391,8 +383,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.equal(ref, 'plans/abcdef012345.md');
     assert.ok(s.blobs.has(ref));
     assert.ok(must(s.blobs.get(ref)).equals(bytes));
-    assert.equal(s.blobs.ref('/old/home/rooms/otter-1234/plans/abcdef012345.md'), ref, 'an older entry\'s absolute path');
-    assert.ok(must(s.blobs.get('/old/home/rooms/otter-1234/plans/abcdef012345.md')).equals(bytes));
+    assert.equal(s.blobs.ref('/old/home/rooms/otter-1234/plans/abcdef012345.md'), null, 'a ref, never a path');
     assert.equal(s.blobs.get('plans/missing.md'), null);
     assert.equal(s.blobs.ref('../etc/passwd'), null);
     assert.throws(() => s.blobs.put('../x', bytes), (e: Err) => e.code === 'INVALID');

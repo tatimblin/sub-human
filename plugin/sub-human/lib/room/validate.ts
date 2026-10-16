@@ -12,8 +12,8 @@
  *   isEntryId(v), entryId(v) -> EntryId | null   a log line's id (a positive safe integer; entryId reads 22 or "22"),
  *       nextEntryId(last) the one after: the brand's constructors (lib/brand.ts); isTaskId(v), taskId(v) -> TaskId |
  *       null a task's id as stored (a short id string; taskId also reads a positive integer)
- *   AGENT_KINDS HUMAN_KINDS SYSTEM_KINDS SYSTEM_ONLY_KINDS LEGACY_KINDS KINDS TASK_OPS VIAS   the tables, the source of
- *       lib/room/types.ts Kind, LegacyKind, TaskOp and Via; isKind, isVia, isTaskOp their guards
+ *   AGENT_KINDS HUMAN_KINDS SYSTEM_KINDS SYSTEM_ONLY_KINDS KINDS TASK_OPS VIAS   the tables, the source of
+ *       lib/room/types.ts Kind, TaskOp and Via; isKind, isVia, isTaskOp their guards
  * Rules: via "agent" writes say question status proposal task_req; via "human" say signoff objection proposal;
  * via "system" decision member_joined member_left task status, and only with {system: true}.
  * Size caps (lib/config.ts): text <= ENTRY_TEXT_MAX_BYTES UTF-8 bytes, refs <= ENTRY_REFS_MAX, approvers and
@@ -36,21 +36,19 @@ import { ENTRY_TEXT_MAX_BYTES, ENTRY_REFS_MAX, ENTRY_STR_MAX, ENTRY_LIST_MAX } f
 import type { Entry, EntryInput, EntryOf, HostFields, Kind, KnownEntry, KnownKind, TaskFields, TaskOp, Validated, ValidateOpts, Via } from './types.ts';
 import type { EntryId, TaskId } from '../brand.ts';
 
-// The tables are the source of their unions (lib/room/types.ts Via, Kind, LegacyKind, TaskOp), on lib/reasons.ts's
+// The tables are the source of their unions (lib/room/types.ts Via, Kind, TaskOp), on lib/reasons.ts's
 // pattern: a word added here is a member there, and every switch over it must handle it.
 const AGENT_KINDS = ['say', 'question', 'status', 'proposal', 'task_req'] as const;
 const HUMAN_KINDS = ['say', 'signoff', 'objection', 'proposal'] as const;
 const SYSTEM_ONLY_KINDS = ['decision', 'member_joined', 'member_left', 'task', 'host_changed'] as const;
 const SYSTEM_KINDS: readonly ["decision", "member_joined", "member_left", "task", "host_changed", "status"] = [...SYSTEM_ONLY_KINDS, 'status'] as const;
-/** Kinds only logs from before envelope v3 hold (rules.ts normalize maps all but revoke). */
-const LEGACY_KINDS = ['concern', 'agree', 'plan_rev', 'revoke'] as const;
 const TASK_OPS = ['add', 'claim', 'release', 'done'] as const;
 const VIAS = ['human', 'agent', 'system'] as const;
 const KINDS: readonly Kind[] = [...new Set([...AGENT_KINDS, ...HUMAN_KINDS, ...SYSTEM_KINDS])];
 const KINDS_BY_VIA: Record<Via, readonly Kind[]> = { agent: AGENT_KINDS, human: HUMAN_KINDS, system: SYSTEM_KINDS };
 const VIA_SET: ReadonlySet<unknown> = new Set(VIAS);
 const KIND_SET: ReadonlySet<unknown> = new Set(KINDS);
-const KNOWN_SET: ReadonlySet<unknown> = new Set([...KINDS, ...LEGACY_KINDS]);
+const KNOWN_SET: ReadonlySet<unknown> = new Set(KINDS);
 const TASK_OP_SET: ReadonlySet<unknown> = new Set(TASK_OPS);
 const SYSTEM_ONLY_SET: ReadonlySet<Kind> = new Set(SYSTEM_ONLY_KINDS);
 const isVia = (v: unknown): v is Via => VIA_SET.has(v);
@@ -258,4 +256,4 @@ function taskText(kind: string, t: TaskFields): string {
 }
 
 export {
-  RoomError, validate, parseEntry, isKindOf, isEntryId, entryId, nextEntryId, isTaskId, taskId, isVia, isKind, isTaskOp, KINDS, LEGACY_KINDS, AGENT_KINDS, HUMAN_KINDS, SYSTEM_KINDS, SYSTEM_ONLY_KINDS, TASK_OPS, VIAS };
+  RoomError, validate, parseEntry, isKindOf, isEntryId, entryId, nextEntryId, isTaskId, taskId, isVia, isKind, isTaskOp, KINDS, AGENT_KINDS, HUMAN_KINDS, SYSTEM_KINDS, SYSTEM_ONLY_KINDS, TASK_OPS, VIAS };

@@ -26,13 +26,11 @@
  *                                host_changed that brings the room back here (a later epoch naming this machine):
  *                                STALE (lib/handoff.ts writes host_changed)
  *   hostState(entries) -> {epoch, host?, machine?, locator?, id?}   the last host_changed entry, else epoch 0
- *   normalize(e)                 legacy display mapping (concern -> objection, agree -> signoff, plan_rev -> proposal
- *                                {hash}, plan_hash -> proposal_hash). The log itself is never rewritten.
+ *   normalize(e)                 a copy of e addressed to the room when it names no one
  *   CHAT_KINDS                   say, status: the kinds a view may leave out (everything else decides state)
  *   blobRef(pathOrRef), checkKey(key), checkCursor(name)   the names a store's documents, blobs and cursors take
  */
 
-import path from 'node:path';
 import * as config from '../config.ts';
 import { hash12 } from '../text.ts';
 import { RoomError, validate, nextEntryId } from './validate.ts';
@@ -46,14 +44,9 @@ const auth = (msg: string): RoomError => new RoomError('AUTH', msg);
 /** The envelope fields sign() adds (lib/room/envelope.ts); only a via=human payload carries them. */
 const SIGNED_FIELDS = ['room', 'nonce', 'ts', 'sigv', 'sig'] as const;
 
-/** Legacy entries (logs from before envelope v3) mapped for display and for the answer matrix. A new object. */
+/** e addressed to the room when it names no one. A new object. */
 function normalize(e: Entry): Entry {
   const n: Entry = { ...e };
-  if (n.kind === 'concern') n.kind = 'objection';
-  if (n.kind === 'agree' && n.plan_hash) n.kind = 'signoff';
-  if (n.kind === 'plan_rev') { n.kind = 'proposal'; if (n.plan_hash && !n.hash) n.hash = n.plan_hash; }
-  else if (n.plan_hash && !n.proposal_hash) n.proposal_hash = n.plan_hash;
-  delete n.plan_hash;
   n.to ??= 'room';
   return n;
 }
@@ -208,22 +201,12 @@ function checkKey(key: unknown): string {
   return key as string; // its segments matched KEY_SEG
 }
 const BLOB_RE: RegExp = /^(plans)\/([A-Za-z0-9_][A-Za-z0-9_.-]{0,127})$/;
-/** A blob's room-relative ref ("plans/<x>"), from a ref or from the absolute path older entries stored. */
-function blobRef(p: unknown): string | null {
-  if (typeof p !== 'string' || !p) return null;
-  if (BLOB_RE.test(p)) return p;
-  if (path.isAbsolute(p)) { const m = /[\\/](plans)[\\/]([^\\/]+)$/.exec(p); if (m && BLOB_RE.test(`${m[1]}/${m[2]}`)) return `${m[1]}/${m[2]}`; }
-  return null;
-}
+/** A blob's room-relative ref ("plans/<x>"), or null. */
+const blobRef = (p: unknown): string | null => (typeof p === 'string' && BLOB_RE.test(p) ? p : null);
 const CURSOR_RE = /^[A-Za-z0-9_.-]{1,64}$/;
 const checkCursor = (name: string): string => { if (!CURSOR_RE.test(name)) throw new RoomError('INVALID', `invalid cursor name "${name}"`); return name; };
 
-/** The room line a log that waits to split says (lib/room/fs-store.ts): it asks people to act, so it is a notice for
- * every member (lib/room/deliver.ts), not context. */
-const ROTATION_HELD_TEXT = 'this room\'s log is large and waits to split into segments: a session or the room\'s Claude on the host still runs an older sub-human (one from before segmented logs), which would read a split log as broken. Restart those sessions (/exit, then claude) once everyone has updated.';
-
 export {
-  ROTATION_HELD_TEXT,
   RoomError, CHAT_KINDS, KEY_SEG, BLOB_RE, normalize, fieldsOf, toPayload, admit, scanTail, checkSigned, checkPin, checkHere,
   hostState, hostStep, placeAfter, checkKey, blobRef, checkCursor, hash12,
 };

@@ -7,7 +7,6 @@ import * as room from '../lib/room.ts';
 import * as identity from '../lib/identity.ts';
 import type { Room } from '../lib/room.ts';
 import { lane, deliver } from '../lib/room/deliver.ts';
-import { ROTATION_HELD_TEXT } from '../lib/room/rules.ts';
 import type { Entry, EntryInput, Lane, LaneViewer } from '../lib/room/types.ts';
 import { sn, eid } from './support/brands.ts';
 import { fsStore } from './support/fs-store.ts';
@@ -234,15 +233,12 @@ test('lane (P3 wakes): every person\'s words reach every member (a group chat), 
   assert.equal(roomLane(ALICE, d3, all3), 'push');
 });
 
-test('deliver (live verify, P): what asks the person is a notice, not context only: the log waiting to split, a decision or another approver\'s objection on a proposal they are in', () => {
+test('deliver (live verify, P): what asks the person is a notice, not context only: a decision or another approver\'s objection on a proposal they are in', () => {
   const code = fresh();
   h.register('alice', 'member', process.pid, code);
   const BOB = { name: 'bob', role: 'member' };
   const CAROL = { name: 'carol', role: 'member' };
   const D = (me: LaneViewer, e: Entry, es?: readonly Entry[]) => deliver(me, e, { entries: es, trust: room.trustOf });
-  const held = sys('status', { text: ROTATION_HELD_TEXT }, 'room');
-  assert.equal(D(ALICE, held), 'notice', 'restart the old sessions: the people act');
-  assert.equal(D(ROOM_CLAUDE, held), 'context');
   const chatter = sys('status', { text: 'a machine (x) linked to the room with an invite and its PIN (link abcdef012345)' }, 'room');
   assert.equal(D(ALICE, chatter), 'context', 'chatter stays context');
   prop('claude', H1, ['alice', 'bob']);

@@ -258,21 +258,9 @@ export function showNote(_n: string, h: string, interrupted = false): string {
 }
 
 // ---------- the note ----------
-/** A note's stage; a note an earlier sub-human wrote carries flags instead (types-app.ts Confirm). */
-export function stageOf(cf: Confirm): NoteStage {
-  if (cf.stage) return cf.stage;
-  if (cf.renudged) return 'told';
-  if (cf.reoffered) return (cf.asked || 0) >= cf.reoffered ? 'told' : 'reoffered';
-  if (cf.again) return 'told';
-  if (cf.asked) return 'asked';
-  if (cf.nudged) return 'nudged';
-  return 'waiting';
-}
-/** The note at a stage, in this version's shape (no flags). */
-const staged = (cf: Confirm, stage: NoteStage): Confirm => {
-  const { asked: _a, nudged: _n, again: _g, reoffered: _r, renudged: _d, ...rest } = cf;
-  return { ...rest, stage };
-};
+/** A note's stage. */
+export const stageOf = (cf: Confirm): NoteStage => cf.stage ?? 'waiting';
+const staged = (cf: Confirm, stage: NoteStage): Confirm => ({ ...cf, stage });
 /** The card shown (Pre AskUserQuestion): an offer still due becomes asked; one offered again is the last. */
 const onShown = (s: NoteStage): NoteStage => (s === 'waiting' || s === 'nudged' || s === 'asked' ? 'asked' : 'told');
 

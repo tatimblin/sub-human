@@ -335,7 +335,7 @@ const OPS: OpHandlers = {
     return out;
   },
 
-  join(s, { name, role = 'member', pubkey, proof, log_v }) {
+  join(s, { name, role = 'member', pubkey, proof }) {
     if (role !== 'member') throw invalid('a link joins members only');
     if (typeof pubkey !== 'string' || !envelope.parseKey(pubkey)) throw invalid('join needs the seat\'s public key (Ed25519 SPKI PEM)');
     hostLinks.checkSeatProof(proof, { room: s.store.code, name, pubkey });
@@ -354,7 +354,7 @@ const OPS: OpHandlers = {
     s.link = hostLinks.bindSeat(s.store, link.id, name);
     let r: ReturnType<typeof seats.enter>;
     try {
-      r = seats.enter({ code: s.store.code, name, machine: s.link.machine, pubkey, ...(account ? { account } : {}), ...(typeof log_v === 'number' ? { log_v } : {}) });
+      r = seats.enter({ code: s.store.code, name, machine: s.link.machine, pubkey, ...(account ? { account } : {}) });
     } catch (e) { if (!had) hostLinks.unbindSeat(s.store, s.link.id, name); throw e; }
     if (!r.ok) {
       if (!had) { hostLinks.unbindSeat(s.store, s.link.id, name); s.held(); }

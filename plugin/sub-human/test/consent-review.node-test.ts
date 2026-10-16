@@ -156,17 +156,6 @@ test('note: one whose proposal is no longer the seat\'s is dropped wherever it i
   assert.deepEqual(noteShape(review.reduce({ review: null, note: note('waiting') }, { ...STOP, active: true }, ctx)), ['waiting', null, '']);
 });
 
-test('note: a note an earlier sub-human wrote (flags) reads as its stage; a step writes the stage, not the flags', () => {
-  const flags: [Partial<Confirm>, NoteStage][] = [
-    [{}, 'waiting'], [{ nudged: 2 }, 'nudged'], [{ asked: 2 }, 'asked'], [{ asked: 2, again: 3, reoffered: 3 }, 'reoffered'],
-    [{ asked: 4, again: 3, reoffered: 3 }, 'told'], [{ asked: 2, again: 3 }, 'told'], [{ reoffered: 3, renudged: 4 }, 'told'], [{ nudged: 2, again: 3 }, 'told'],
-  ];
-  for (const [f, stage] of flags) assert.equal(review.stageOf(note(null, f)), stage, JSON.stringify(f));
-  const next = must(review.reduce({ review: null, note: note(null, { asked: 2 }) }, PROMPT, ctx).state.note);
-  assert.equal(next.stage, 'reoffered');
-  assert.deepEqual(['asked', 'nudged', 'again', 'reoffered', 'renudged'].filter(k => k in next), []);
-});
-
 test('openOf: a review on record, or a note consent must still offer (anything but told)', () => {
   assert.equal(review.openOf({ review: null, note: null }), false);
   assert.equal(review.openOf({ review: REVIEWS.restore, note: null }), true);

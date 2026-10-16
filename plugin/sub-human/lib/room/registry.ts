@@ -34,7 +34,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { home, roomsDir, roomDir, repairModes } from '../home.ts';
+import { home, roomsDir, roomDir } from '../home.ts';
 import { withLock } from '../lock.ts';
 import { readJsonRaw, writeJsonAtomic, lazy } from '../io.ts';
 import { isObj } from '../decode.ts';
@@ -64,7 +64,6 @@ function open(c: RoomCode, { dir }: { dir?: string | undefined } = {}): RoomStor
   const k = `${home()}\0${c}`;
   let s = stores.get(k);
   if (!s || s.isHost === linked(c)) { // none yet, or a handoff wrote or removed the link since
-    repairModes(); // a home an older version made 0755 (once per home and process)
     s = linked(c) ? new (mirrorLib().MirrorRoomStore)(c) : new FsRoomStore(c);
     stores.set(k, s);
   }
@@ -86,7 +85,6 @@ function isLeftover(c: RoomCode): boolean {
 const roomExists = (c: unknown): c is RoomCode => isRoomCode(c) && ((fs.existsSync(roomDir(c)) && !isLeftover(c)) || linked(c));
 function createRoom(c: RoomCode): boolean {
   fs.mkdirSync(roomsDir(), { recursive: true, mode: 0o700 }); // the home and rooms/ too when new: private
-  repairModes();
   try { fs.mkdirSync(roomDir(c), { mode: 0o700 }); } catch (e) { if (errCode(e) === 'EEXIST') return false; throw e; }
   indexRoom(c);
   return true;

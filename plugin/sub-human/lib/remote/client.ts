@@ -26,7 +26,7 @@
  *     machine's id in the room as the host records it, null from a host that sends none)
  *     request(op, params, {ms}?) -> Promise<result>   one op as the wire has it (the link daemon relays its hooks' ops
  *         so); ms: its own deadline instead of deadlineMs (the daemon waits longer for an @room post sent already)
- *     join({name, role?, pubkey, proof, log_v?}) -> Promise<{ok, rejoin?}>   log_v: what log the seat's code reads (additive)
+ *     join({name, role?, pubkey, proof}) -> Promise<{ok, rejoin?}>
  *     leave(name, reason) -> Promise<{ok}>
  *     beat(name, {presence?}) -> Promise<{ok}>
  *     append(payload) -> Promise<entry>
@@ -170,7 +170,7 @@ class Client {
   }
 
   request(op: string, params: object, { ms }: { ms?: number } = {}): Promise<unknown> { return this._request(op, params, undefined, ms); }
-  join({ name, role = 'member', pubkey, proof, log_v }: { name: string; role?: string; pubkey: string; proof: object; log_v?: number }): Promise<{ ok: boolean; rejoin?: boolean }> { return this._request('join', { name, role, pubkey, proof, ...(log_v ? { log_v } : {}) }); }
+  join({ name, role = 'member', pubkey, proof }: { name: string; role?: string; pubkey: string; proof: object }): Promise<{ ok: boolean; rejoin?: boolean }> { return this._request('join', { name, role, pubkey, proof }); }
   leave(name: string, reason?: string): Promise<{ ok: boolean }> { return this._request('leave', { name, reason }); }
   beat(name: string, { presence }: { presence?: unknown } = {}): Promise<{ ok: boolean }> { return this._request('beat', { name, presence }); }
   /** The entry as the server stored it. */

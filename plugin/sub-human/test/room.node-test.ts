@@ -159,7 +159,7 @@ test('room: rate limit is 6 agent posts per member per minute', () => {
   assert.equal(agent('alice', 'status').from, 'alice');
 });
 
-test('room: proposals, answers matrix, objection voids an agreement, decided; legacy plan_rev reads as a proposal', () => {
+test('room: proposals, answers matrix, objection voids an agreement, decided', () => {
   fresh();
   assert.equal(R.proposal(H1), null);
   agent('claude', 'proposal', { hash: H1, approvers: ['alice', 'bob'] });
@@ -189,16 +189,6 @@ test('room: proposals, answers matrix, objection voids an agreement, decided; le
   const d = sys('decision', { proposal_hash: H1 }, 'room');
   assert.equal(must(R.decided(H1)).id, d.id);
   assert.equal(R.decided(H2), null);
-  // a Phase 0 log: plan_rev / plan_hash read as proposal / proposal_hash
-  fresh();
-  fs.mkdirSync(must(R.store.dir), { recursive: true });
-  fs.writeFileSync(fsStore(R.store).logFile,
-    `{"id":1,"at":"2026-10-04T00:00:00.000Z","from":"claude","via":"system","kind":"plan_rev","plan_hash":"${H1}","approvers":["alice"],"text":"rev"}\n` +
-    `{"id":2,"at":"2026-10-04T00:00:01.000Z","from":"alice","via":"human","kind":"signoff","plan_hash":"${H1}","text":"ok"}\n`);
-  assert.equal(must(R.proposal(H1)).kind, 'proposal');
-  assert.equal(R.answers(H1).complete, true);
-  // a keyless legacy answer still counts, and reads as unverified (no seat key signed it)
-  assert.match(room.line(must(R.readAll()[1])), new RegExp(`^#2 alice\\[human\\] \\(unverified\\) signoff proposal=${H1} "ok"$`));
 });
 
 test('room: line is <= 240 chars for hostile text; who() labels', () => {
@@ -268,21 +258,6 @@ test('room: digest skips a proposal its proposer revised (superseded), as pendin
   assert.match(d, /proposal=dddddddddddd /);
   assert.doesNotMatch(d, /proposal=cccccccccccc/, 'the superseded one is not listed as waiting');
   assert.equal((d.match(/waiting on: bob/g) || []).length, 1);
-});
-
-test('room: legacy entries (agree, concern, no via) still read, render and append after', () => {
-  fresh();
-  fs.mkdirSync(must(R.store.dir), { recursive: true });
-  fs.writeFileSync(fsStore(R.store).logFile,
-    '{"id":1,"at":"2026-10-04T00:07:47.786Z","from":"bob","kind":"concern","text":"slow"}\n' +
-    '{"id":2,"at":"2026-10-04T00:07:48.786Z","from":"alice","kind":"agree","text":"fine"}\n' +
-    '{"id":3,"at":"2026-10-04T00:07:49.786Z","from":"alice","via":"human","kind":"revoke","plan_hash":"aaaaaaaaaaaa","text":"wait"}\n');
-  assert.equal(R.readAll().length, 3);
-  assert.match(room.line(must(R.readAll()[0])), /^#1 bob objection "slow"$/);
-  assert.match(room.line(must(R.readAll()[1])), /^#2 alice agree "fine"$/);
-  assert.match(R.digest(), /#1 bob objection/);
-  assert.equal(human('alice', 'say').id, 4);
-  assert.equal(R.validateChain().ok, true, 'legacy lines without prev are tolerated');
 });
 
 // ---------- chat rendering: what a human sees (no ids) ----------

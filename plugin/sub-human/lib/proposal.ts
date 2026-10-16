@@ -14,7 +14,7 @@
  *       path: a file under cwd (the seat's working directory; never ~, / or above ~) or Claude Code's plans, and never
  *       under the plugin's home, ~/.sub-human, ~/.ssh or ~/.claude (its plans aside).
  *       Stores the blob plans/<hash>.md (hash = sha256/12 of the bytes; lib/room/store.ts blobs) and appends
- *       `proposal` with path = that room-relative ref (older entries hold an absolute path). approvers
+ *       `proposal` with path = that room-relative ref. approvers
  *       default to the humans present (not room Claude, not left). An identical open proposal is not re-appended.
  *       same: the approvers that are one person (sameOf: the room owner's seat on the host with the seats over
  *       the host account's login links; never two seats on the host), groups of 2+; the fold counts one answer for the group (lib/room/consent.ts).
@@ -220,7 +220,7 @@ function summary(text: string): string {
   return out.join('\n') + (rest > 0 ? `\n… (${rest} more lines)` : '');
 }
 
-/** p.path: the stored ref (room-relative; older entries hold an absolute path, read by its plans/ name). */
+/** p.path: the stored ref (room-relative). */
 function preview(p: Proposal, code: RoomCode): string {
   const b = blobs(code);
   const ref: string = b.ref(p.path) || planRef(p.hash);

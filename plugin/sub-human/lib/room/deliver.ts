@@ -34,7 +34,7 @@
  *   mentions(text, name) -> bool   "@name" anywhere in the text (case-insensitive, not part of a longer name)
  */
 
-import { normalize, ROTATION_HELD_TEXT } from './rules.ts';
+import { normalize } from './rules.ts';
 import { proposal, answered, decided, approversOf } from './consent.ts';
 import { NO_TRUST } from './trust.ts';
 import type { Delivery, Entry, Lane, LaneViewer, Trust } from './types.ts';
@@ -105,9 +105,6 @@ function quietDecision(name: string, d: Entry, entries: readonly Readonly<Entry>
 /** A member's pushed entry that is group chat, not a request: another person's own words not addressed to me. */
 const chat = (me: LaneViewer, e: Entry): boolean => e.via === 'human' && e.kind === 'say' && e.to !== me.name && !mentions(e.text, String(me.name));
 
-/** A room line that asks the people to act (the log waiting to split: restart the old sessions): a notice. */
-const asksPeople = (e: Entry): boolean => e.kind === 'status' && e.via === 'system' && e.from === 'room' && e.text === ROTATION_HELD_TEXT;
-
 /**
  * A pulled entry the person must see, though their Claude needs no wake: the outcome of a proposal they are in (a
  * decision their own answer completed, or an objected one they did not write) and another approver's objection on a
@@ -130,7 +127,7 @@ function deliver(me: LaneViewer | null | undefined, e: Entry, { entries, trust =
   }
   if (isHostMove(e) || (isMove(e) && e.via === 'system' && e.from !== name && e.from !== 'claude')) return 'notice';
   if (l === 'push') return me && (isMove(e) || chat(me, e)) ? 'notice' : 'wake';
-  if (l === 'pull' && me && (asksPeople(e) || personSees(String(name), e, entries, trust))) return 'notice';
+  if (l === 'pull' && me && personSees(String(name), e, entries, trust)) return 'notice';
   return l === 'pull' ? 'context' : 'none';
 }
 

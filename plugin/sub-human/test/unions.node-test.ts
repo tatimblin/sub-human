@@ -11,7 +11,7 @@ import * as members from '../lib/room/members.ts';
 import { chatLines } from '../lib/room/render.ts';
 import { fold } from '../lib/room/consent.ts';
 import { NO_TRUST } from '../lib/room/trust.ts';
-import type { Entry, Kind, KnownKind, LegacyKind, LinkStateWord, PresenceState, TaskOp, Via } from '../lib/room/types.ts';
+import type { Entry, Kind, KnownKind, LinkStateWord, PresenceState, TaskOp, Via } from '../lib/room/types.ts';
 import type { EventData, EventName, Op, OpParams, OpResults } from '../lib/remote/types-core.ts';
 import { eid } from './support/brands.ts';
 
@@ -21,7 +21,6 @@ const same: true[] = [
   true satisfies Same<Kind, (typeof validate.KINDS)[number]>,
   true satisfies Same<Via, (typeof validate.VIAS)[number]>,
   true satisfies Same<TaskOp, (typeof validate.TASK_OPS)[number]>,
-  true satisfies Same<LegacyKind, (typeof validate.LEGACY_KINDS)[number]>,
   true satisfies Same<EventName, keyof EventData>,
   true satisfies Same<Op, keyof OpParams>,
   true satisfies Same<Op, keyof OpResults>,
@@ -33,7 +32,7 @@ const same: true[] = [
 const reach = (x: unknown, what: string): unknown => Reflect.apply(assertNever, undefined, [x, what]);
 
 test('assertNever: throws, naming the union and the value no case took', () => {
-  assert.equal(same.length, 9);
+  assert.equal(same.length, 8);
   assert.throws(() => reach('poll', 'entry kind'), /^Error: sub-human: unhandled entry kind: "poll"$/);
   assert.throws(() => reach({ type: 'later' }, 'link event'), /unhandled link event: \{"type":"later"\}/);
   const cyclic: Record<string, unknown> = {};
@@ -53,7 +52,6 @@ test('tables: every kind is some via\'s, the guards accept exactly the table wor
     for (const w of words) assert.equal(is(w), true, w);
     for (const x of ['', 'SAY', 'poll', 'constructor', null, undefined, 1, {}]) assert.equal(is(x), false, JSON.stringify(x) ?? 'undefined');
   }
-  for (const k of validate.LEGACY_KINDS) assert.equal(validate.isKind(k), false, `${k}: read, never written`);
   for (const ev of protocol.EVENTS) assert.equal(protocol.isEvent({ ev }), true, ev);
   assert.equal(protocol.isEvent({ ev: 'later' }), false);
   for (const w of linkState.STATE_WORDS) assert.ok(linkState.STATES.has(w), w);
@@ -64,7 +62,7 @@ const at = '2026-10-16T00:00:00.000Z';
 const entry = (kind: string, extra: Partial<Entry> = {}): Entry => ({ id: eid(1), at, from: 'bob', via: 'agent', kind, text: 'vote on lunch?', ...extra });
 
 test('parseEntry: the entry itself (no copy) for every kind this version reads, null for a newer host\'s', () => {
-  const known: KnownKind[] = [...validate.KINDS, ...validate.LEGACY_KINDS];
+  const known: KnownKind[] = [...validate.KINDS];
   for (const k of known) {
     const e = entry(k);
     assert.equal(validate.parseEntry(e), e, k);

@@ -77,8 +77,7 @@ export interface HelloParams {
   /** The mirror's host epoch (lib/handoff.ts). */
   epoch?: number;
 }
-/** log_v (additive): what log the seat's code reads (lib/room/members.ts LOG_V); an older joiner sends none. */
-export interface JoinParams { name: string; role?: string; pubkey: string; proof: SignedPayload; log_v?: unknown }
+export interface JoinParams { name: string; role?: string; pubkey: string; proof: SignedPayload }
 export interface LeaveParams { name: string; reason?: string }
 export interface BeatParams { name: string; presence?: PresenceInput | undefined }
 export interface AppendParams { payload: Payload; epoch?: number }

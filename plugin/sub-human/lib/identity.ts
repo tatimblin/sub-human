@@ -137,7 +137,7 @@ import { NAME_RE, CODE_RE, isRoomCode, isSeatName, isSessionId } from './text.ts
 import { sidIndex } from '../mod/core/seat.ts';
 import { SEAT_BEAT_MS, MOD_LEASE_FRESH_MS, SESSION_INDEX_TTL_MS } from './config.ts';
 import {
-  seatAlive, leaseFresh, startMatches, PRESENCE_STATES, isPresenceState, ROOM_CLAUDE, LOG_V,
+  seatAlive, leaseFresh, startMatches, PRESENCE_STATES, isPresenceState, ROOM_CLAUDE,
 } from './room/members.ts';
 import * as cc from './cc/env.ts';
 import { continuedIn, lastTitle, lastHome } from './cc/transcript.ts';
@@ -192,8 +192,6 @@ interface JoinRequest {
   pid?: number | string | null | undefined;
   session_id?: string | null | undefined;
   cwd?: string | null | undefined;
-  /** what log a remote seat's code reads, as its join said (lib/remote/server.ts join; a local seat's is this code's) */
-  log_v?: number | undefined;
   /** leave the seat this pid held before to the caller (lib/seats.ts take: it leaves it, logged, once this join
    * worked, so a refused join changes nothing) instead of retiring it here */
   keepPrevious?: boolean | undefined;
@@ -306,7 +304,7 @@ function localSeat({ name, role, machine, pid, session_id, cwd }: { name: SeatNa
   return { name, role, machine, pid, ...(start != null ? { pid_start: start } : {}), session_id: session_id || null, cwd: cwd || null };
 }
 
-function join({ code, name, role, machine = machineIn(code), account, pid: pidArg, session_id, cwd, log_v, keepPrevious = false }: JoinRequest = {} as JoinRequest): JoinOutcome {
+function join({ code, name, role, machine = machineIn(code), account, pid: pidArg, session_id, cwd, keepPrevious = false }: JoinRequest = {} as JoinRequest): JoinOutcome {
   if (!roomExists(code)) return fail(`no room "${code}"`);
   if (typeof name !== 'string' || !NAME_RE.test(name)) return fail(`invalid name "${name}" (letters, digits, . _ -, up to 32)`);
   if (!ROLES.includes(role)) return fail(`invalid role "${role}"`);
@@ -318,10 +316,7 @@ function join({ code, name, role, machine = machineIn(code), account, pid: pidAr
   if (session_id != null && !isSessionId(session_id)) return fail('invalid session_id');
 
   const seatRole = role as Role; // one of ROLES
-  // log_v: what this code reads (a seat of this machine), or what a remote seat's join said (lib/room/members.ts
-  // holdsRotation: a seat without it holds the log's rotation on its machine)
-  const reads = local ? LOG_V : typeof log_v === 'number' && Number.isInteger(log_v) && log_v > 0 && log_v < 100 ? log_v : undefined;
-  const rec: SeatRecord = { ...(local ? localSeat({ name, role: seatRole, machine, pid, session_id, cwd }) : { name, role: seatRole, machine }), ...(account ? { account } : {}), ...(reads ? { log_v: reads } : {}) };
+  const rec: SeatRecord = { ...(local ? localSeat({ name, role: seatRole, machine, pid, session_id, cwd }) : { name, role: seatRole, machine }), ...(account ? { account } : {}) };
   const r = membersOf(code).join(rec);
   if (r.ok) store.indexRoom(code); // it may be open from here on (lib/room/registry.ts)
   if (r.ok && local) {

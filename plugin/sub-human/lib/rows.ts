@@ -271,7 +271,6 @@ function parseSpawn(input: unknown, members: MemberInput, code?: string | null):
 
 // ---------- the agent -> row map ----------
 const mapKey = (sid: unknown) => `rows/${SID_SAFE.test(String(sid)) ? sid : 'unknown'}`;
-const NOT_A_MAP = /^rows\/(holds|notices|blocks)-/; // an earlier sub-human's per-seat documents (lib/room/session.ts now)
 
 /** The row map's lock: wait up to ROWS_LOCK_TIMEOUT_MS, then throw (the hook logs it); never write unlocked. */
 const LOCK = { compact: true, timeoutMs: ROWS_LOCK_TIMEOUT_MS, staleMs: ROWS_LOCK_STALE_MS };
@@ -286,7 +285,7 @@ function recordRow(code: RoomCode, sessionId: string | null | undefined, agentId
   return true;
 }
 
-const sessionKeys = (code: RoomCode): string[] => { try { return kvOf(code).list('rows/').filter((k: string) => !NOT_A_MAP.test(k)); } catch { return []; } };
+const sessionKeys = (code: RoomCode): string[] => { try { return kvOf(code).list('rows/'); } catch { return []; } };
 
 function readRowMap(code: RoomCode): Record<string, RowRec> {
   const out: Record<string, RowRec> = {};

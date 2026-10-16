@@ -82,7 +82,7 @@ import { envMs, envStr, timingEnv } from './env.ts';
 import * as clock from './clock.ts';
 import * as cc from './cc/bg.ts';
 import * as ccEnv from './cc/env.ts';
-import { LOG_V, startMatches } from './room/members.ts';
+import { startMatches } from './room/members.ts';
 import type { Member, Members } from './room/types.ts';
 import type { RoomClaudePatch } from './identity.ts';
 import type { AgentJob } from './cc/bg.ts';
@@ -205,7 +205,7 @@ function claimSpawn(code: RoomCode, { now = clock.now(), by = null }: { now?: nu
     const claim = crypto.randomBytes(6).toString('hex');
     out = { claim, prevJob: o && o.job && o.job !== PENDING && !o.stopped_at ? o.job : null };
     return {
-      job: PENDING, claim, by: by || undefined, spawned_at: iso(now), log_v: LOG_V, // the job runs this code's plugin dir
+      job: PENDING, claim, by: by || undefined, spawned_at: iso(now),
       // seen_at goes too: an old job's fresh lease would otherwise hold the seat against the new one ("name taken")
       pid: null, pid_start: undefined, seen_at: undefined, left_at: undefined, closing: undefined, stopped_at: undefined,
       spawn_error: undefined, job_session: undefined, orphan_since: undefined,
@@ -296,7 +296,7 @@ function spawn(opts: SpawnOpts): SpawnResult {
       const patch: RoomClaudePatch = { job: found.id, job_session: found.sessionId || undefined, claim: undefined, spawn_error: undefined };
       if (!claim) {
         Object.assign(patch, {
-          spawned_at: iso(clock.now()), pid: null, pid_start: undefined, left_at: undefined, closing: undefined, stopped_at: undefined, log_v: LOG_V,
+          spawned_at: iso(clock.now()), pid: null, pid_start: undefined, left_at: undefined, closing: undefined, stopped_at: undefined,
         });
       }
       return patch;

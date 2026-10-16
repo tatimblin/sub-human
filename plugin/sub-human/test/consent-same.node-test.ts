@@ -26,7 +26,7 @@ const ans = (from: string, kind: string): Entry => ({ id: eid(++id), at, kind, v
 /** These hand-made answers carry no signature: judged as a room from before seat keys would (legacy: they count). */
 const LEGACY: Trust = e => (e && e.via === 'human' ? 'legacy' : null);
 
-test('fold: one answer satisfies a same group; the newest seat\'s answer wins; a revoke clears the group', () => {
+test('fold: one answer satisfies a same group; the newest seat\'s answer wins', () => {
   id = 0;
   const log = [prop(['tristan', 'laptop', 'bob'], [['tristan', 'laptop']])];
   const f0 = consent.fold(log, LEGACY);
@@ -51,11 +51,6 @@ test('fold: one answer satisfies a same group; the newest seat\'s answer wins; a
 
   log.push(ans('bob', 'signoff'));
   assert.equal(consent.fold([...log], LEGACY).matrix(H).complete, true, 'every person answered');
-  log.push(ans('tristan', 'revoke')); // a legacy revoke from either seat clears the group's answer
-  f = consent.fold([...log], LEGACY);
-  m = f.matrix(H);
-  assert.deepEqual([m.missing, m.complete, m.answers.laptop], [['tristan'], false, null]);
-  assert.deepEqual(f.pending('laptop').map(p => p.hash), [H]);
 });
 
 test('fold: without same (an older proposer) every seat is its own approver; a stray same is read safely', () => {
