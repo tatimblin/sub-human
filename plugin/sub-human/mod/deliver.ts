@@ -477,7 +477,10 @@ export function registerDeliver(on: On) {
     if (status) pinStatus($, status);
     else if (cancels(e.args, reply, pinnedRef)) unpin($);
     try { await refresh($, sid); } catch { /* the next refresh tries again */ }
-    try { childFor($, sid, asHello((await $.state.get(HELLO)).value)); } catch { /* next start tries again */ }
+    // a leave ends this session's delivery now, whatever the hello says: a room hosted elsewhere may still list the
+    // seat for a moment (a session cut off kept its tail and heard "carol left" after its leave: stage 8e I.11)
+    if (left) stopChild(sid);
+    else { try { childFor($, sid, asHello((await $.state.get(HELLO)).value)); } catch { /* next start tries again */ } }
     return result;
   }).catch(($, e, next) => next(e)); // unsure: the classic hook beneath answers, as without the module
 

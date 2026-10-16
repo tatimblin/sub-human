@@ -35,6 +35,8 @@ type Opts = {
   spawn?: (n: number, e: any) => AsyncGenerator<any, any, any>,
   /** What hooks/handlers/prompt.ts answers for a prompt (default: no review open). */
   promptOut?: (prompt: string) => any,
+  /** What hooks/handlers/join.ts answers (default: nothing). */
+  joinOut?: any,
 }
 
 /**
@@ -42,7 +44,7 @@ type Opts = {
  * feeds it, staying up until the test ends (`release`); later children only wait; the session's notices, prompts
  * (each attempt in `submits`, the ones that entered in `prompts`) and scripts recorded.
  */
-function world(engine: any, on: any, { hello = OUT, pieces = [], gate = Promise.resolve(), submit = () => 'ok', append = () => 'ok', spawn, promptOut }: Opts = {}) {
+function world(engine: any, on: any, { hello = OUT, pieces = [], gate = Promise.resolve(), submit = () => 'ok', append = () => 'ok', spawn, promptOut, joinOut }: Opts = {}) {
   const seen = {
     spawns: [] as any[], logs: [] as string[], prompts: [] as string[], submits: [] as string[], contexts: [] as any[],
     appends: [] as string[], appended: [] as string[],
@@ -59,6 +61,7 @@ function world(engine: any, on: any, { hello = OUT, pieces = [], gate = Promise.
     seen.scripts.push(script)
     if (script === 'presence.ts') seen.presence.push(JSON.parse(e.init.stdin))
     if (script === 'prompt.ts') return ran(JSON.stringify(promptOut ? promptOut(JSON.parse(e.init.stdin).prompt) : { subHuman: { reviewOpen: false } }))
+    if (script === 'join.ts' && joinOut) return ran(JSON.stringify(joinOut))
     return ran(script === 'mod-hello.ts' ? JSON.stringify(hello) : '')
   })
   on('process.spawn', async function* ($: any, e: any) {
@@ -418,6 +421,25 @@ test('a /sub-human leave stops the child: the hello says no seat, nothing restar
   await new Promise(r => setTimeout(r, 50))
   hello.seat = null // what mod-hello says once the leave took the seat
   await $.command.run({ command: 'sub-human:sub-human', args: 'leave', origin: { kind: 'composer' } } as any)
+  seen.release()
+  await clock.advance(120_000)
+  expect(seen.spawns.length).toBe(1)
+})
+
+test('stage 8e I.11 (live verify, remote/16b): a leave stops the child though the hello still names the seat (a room hosted elsewhere lists it a moment longer); nothing restarts it', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT })], joinOut: { subHuman: { say: 'left otter-4821 · /sub-human joins again', refused: false, shareable: true } } })
+  on('command.run', () => ({ text: undefined }))
+  on('env.get', () => ({ value: undefined }))
+  on('session.cwd', () => ({ value: '/w' }))
+  await start($)
+  await until(() => seen.spawns.length === 1)
+  await new Promise(r => setTimeout(r, 50))
+  await $.command.run({ command: 'sub-human:sub-human', args: 'leave', origin: { kind: 'composer' } } as any)
+  // the stopped child's stream: a chat line after the leave reaches nobody
+  seen.feed(line({ type: 'chat', lines: ['carol left'] }))
+  await new Promise(r => setTimeout(r, 50))
+  expect(seen.logs.filter(l => l === 'carol left')).toEqual([])
   seen.release()
   await clock.advance(120_000)
   expect(seen.spawns.length).toBe(1)
