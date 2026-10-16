@@ -81,7 +81,7 @@ export function registerConsent(on: On) {
       if (!lines.length) return r;
       return r.deny !== undefined ? { deny: [r.deny, ...lines].join('\n\n') } : { ...r, context: [...(r.context || []), ...lines] };
     } catch { return r; }
-  }).catch(($, e, next) => next(e)); // the flag stays as it was; past next, a failure returns the refusal as it came
+  }).catch((_$, e, next) => next(e)); // the flag stays as it was; past next, a failure returns the refusal as it came
 
   on('classic.PreToolUse', { tool: ['AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode', /^mcp__plugin_sub-human_room__/] }, async ($, e, next) => {
     const sid = await $.session.id();
@@ -96,7 +96,7 @@ export function registerConsent(on: On) {
     await apply($, said);
     if (allowReason) $.ui.log(asNotice(allowReason));
     return mergePre(result, first ?? await next(e));
-  }).catch(($, e, next) => next(e)); // the call goes on as without consent: nothing is recorded
+  }).catch((_$, e, next) => next(e)); // the call goes on as without consent: nothing is recorded
 
   on('classic.PostToolUse', { tool_name: ['AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode'] }, async ($, e, next) => {
     facts.noteEvent(e);
@@ -104,7 +104,7 @@ export function registerConsent(on: On) {
     const { result, ...said } = toClassic('PostToolUse', await runConsent($, e, e.session_id));
     await apply($, said);
     return mergeClassic(result, await next(e));
-  }).catch(($, e, next) => next(e));
+  }).catch((_$, e, next) => next(e));
 
   on('classic.PermissionRequest', { tool_name: 'ExitPlanMode' }, async ($, e, next) => {
     facts.noteEvent(e);
@@ -113,7 +113,7 @@ export function registerConsent(on: On) {
     const { result, subHuman } = toPermission(await runConsent($, e, e.session_id));
     await apply($, { subHuman });
     return mergePermission(result, await next(e));
-  }).catch(($, e, next) => next(e)); // the dialog shows as it would
+  }).catch((_$, e, next) => next(e)); // the dialog shows as it would
 
   on('classic.Stop', async ($, e, next) => {
     facts.noteEvent(e);
@@ -121,11 +121,11 @@ export function registerConsent(on: On) {
     const { result, ...said } = toClassic('Stop', await runConsent($, e, e.session_id));
     await apply($, said);
     return mergeClassic(result, await next(e));
-  }).catch(($, e, next) => next(e)); // a nudge, not a gate: the turn ends as it would
+  }).catch((_$, e, next) => next(e)); // a nudge, not a gate: the turn ends as it would
 
   // observe only: whether the person is typing (PromptHint isDraft), for a plan view about to open (item 8)
-  on('ui.render', { component: 'PromptHint' }, ($, e, next) => {
+  on('ui.render', { component: 'PromptHint' }, (_$, e, next) => {
     draft = e.props.isDraft === true;
     return next(e);
-  }).catch(($, e, next) => next(e));
+  }).catch((_$, e, next) => next(e));
 }

@@ -58,7 +58,7 @@ function redactor({ home = os.homedir(), shHome = lib('home.ts').home(), hosts =
     for (const r of rooms) s = s.replace(new RegExp(`(?<![\\w-])${esc(r)}(?![\\w-])`, 'g'), `room-${hash8(r, salt)}`);
     for (const m of members) s = s.replace(new RegExp(`(?<![\\w.-])${esc(m)}(?![\\w-])`, 'g'), `member-${hash8(m, salt)}`);
     // any other user@host (an email, an ssh destination this machine has no link to)
-    s = s.replace(/(?<![\w.-])([A-Za-z0-9_.+-]+)@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)/g, (m: string, u: string, h: string) => `user-${hash8(u, salt)}@host-${hash8(h, salt)}`);
+    s = s.replace(/(?<![\w.-])([A-Za-z0-9_.+-]+)@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)/g, (_m: string, u: string, h: string) => `user-${hash8(u, salt)}@host-${hash8(h, salt)}`);
     s = s.replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, m => `ip-${hash8(m, salt)}`);
     s = s.replace(/\b[0-9a-f]{16,}\b/gi, '<hex>');
     s = s.replace(/\b(?=[A-Za-z0-9_-]*\d)(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9_-]{20,}\b/g, '<secret>');

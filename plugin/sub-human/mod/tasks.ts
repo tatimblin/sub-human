@@ -49,7 +49,7 @@ export function registerTasks(on: On) {
   on('classic.PostToolUse', { tool_name: ['TaskCreate', 'TaskUpdate'] }, async ($, e, next) => {
     const ours = await runTasks($, e, 'PostToolUse');
     return ours ? mergeClassic(ours, await next(e)) : next(e);
-  }).catch(($, e, next) => next(e)); // not a gate: tasks.ts's next room Claude run appends any task the log missed
+  }).catch((_$, e, next) => next(e)); // not a gate: tasks.ts's next room Claude run appends any task the log missed
 
   on('classic.TaskCompleted', async ($, e, next) => {
     const ours = await runTasks($, e, 'TaskCompleted');

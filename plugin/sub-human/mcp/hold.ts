@@ -188,7 +188,7 @@ class HoldServer {
     });
   }
 
-  others(code: string, ms: Members): string[] {
+  others(_code: string, ms: Members): string[] {
     const me = this.me;
     return Object.values(ms)
       .filter((m): m is NonNullable<typeof m> & { name: string } => !!(m && m.name) && !m.left_at && m.role !== 'claude' && m.name !== 'claude' && (!me || m.name !== me.name))

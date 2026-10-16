@@ -395,7 +395,7 @@ test('tail: --max-seconds stops it with no timer left', () => {
   h.freshHome();
   h.register('alice');
   const clock = createFake({ now: Date.now() });
-  tailLib.runTail({ clock, lookup: () => identity.resolveByPid(process.pid), timings: FAST, write: (s, d) => d(), err: () => {}, maxSeconds: 2 });
+  tailLib.runTail({ clock, lookup: () => identity.resolveByPid(process.pid), timings: FAST, write: (_s, d) => d(), err: () => {}, maxSeconds: 2 });
   clock.advance(2000);
   assert.equal(clock.pending(), 0);
 });

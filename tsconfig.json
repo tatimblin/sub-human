@@ -4,6 +4,11 @@
   "compilerOptions": {
     "strict": true,
     "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "isolatedModules": true,
     "noEmit": true,
     "target": "es2024",
     "module": "nodenext",

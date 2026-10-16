@@ -249,7 +249,7 @@ export const SAY = {
  * The model is to show the note's card now (consent's reoffer and renudge, and lib/tail.ts's reminder say it alike).
  * interrupted: the card was shown and closed with no answer (an Esc), which the model reads as declined; it is neither.
  */
-export function showNote(n: string, h: string, interrupted = false): string {
+export function showNote(_n: string, h: string, interrupted = false): string {
   return interrupted
     ? `Esc was no answer, not a decline. First, ${NEXT.note(h)}.`
     : `First, ${NEXT.note(h)}.`;

@@ -87,7 +87,7 @@ function locator({ host, port, path = '/' }: { host: string; port?: number; path
 function channel(conn: Conn, { send, recv }: { send: CipherState; recv: CipherState }, early: Buffer[] = []): Duplex {
   const { MAX_PLAINTEXT } = noise();
   const d = new Duplex({
-    write(chunk: Buffer, enc, cb) {
+    write(chunk: Buffer, _enc, cb) {
       try {
         for (let o = 0; o < chunk.length; o += MAX_PLAINTEXT) conn.send(send.encrypt(chunk.subarray(o, o + MAX_PLAINTEXT)));
         cb();

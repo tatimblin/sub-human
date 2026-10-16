@@ -180,7 +180,7 @@ test('ws keepalive: a peer that stops answering is terminated after two ping int
 test('ws client through an HTTP CONNECT proxy', async t => {
   const { port } = await echoServer(t);
   const seen: (string | undefined)[] = [];
-  const proxy = http.createServer((q, s) => s.end());
+  const proxy = http.createServer((_q, s) => s.end());
   proxy.on('connect', (req, sock, head) => {
     seen.push(req.url);
     const [hh, pp] = req.url!.split(':');
@@ -199,7 +199,7 @@ test('ws client through an HTTP CONNECT proxy', async t => {
   c.terminate();
   // a proxy that refuses
   const deny = http.createServer();
-  deny.on('connect', (req, sock) => sock.end('HTTP/1.1 403 Forbidden\r\n\r\n'));
+  deny.on('connect', (_req, sock) => sock.end('HTTP/1.1 403 Forbidden\r\n\r\n'));
   await new Promise<void>(r => deny.listen(0, '127.0.0.1', r));
   t.after(() => deny.close());
   await assert.rejects(ws.connect(`wss://example.invalid/x`, { proxy: `http://127.0.0.1:${portOf(deny)}` }), /refused CONNECT example\.invalid:443: HTTP\/1\.1 403/);
