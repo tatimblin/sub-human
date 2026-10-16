@@ -210,9 +210,8 @@ function watchSync({ bin: b, args, timeoutMs = SERVE_MS }: { bin: string; args: 
   return { ok: false, status: null, text: String(r.stderr || '').trim(), reason: errCode(r.error) === 'ETIMEDOUT' ? 'timeout' : 'error', error: r.error ? r.error.message : 'no result' };
 }
 
-const serveMs = (): number => SERVE_MS;
 
-function on({ bin: b, path: p, port, funnel = false, timeoutMs = serveMs() }: {
+function on({ bin: b, path: p, port, funnel = false, timeoutMs = SERVE_MS }: {
   bin: string; path: string; port: number | string; funnel?: boolean; timeoutMs?: number;
 }): TailscaleRec {
   const r = watchSync({ bin: b, args: serveArgs({ path: p, port, funnel }), timeoutMs });

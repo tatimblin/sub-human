@@ -25,6 +25,7 @@ import type * as IdentityMod from '../../plugin/sub-human/lib/identity.ts';
 import type * as ProposalMod from '../../plugin/sub-human/lib/proposal.ts';
 import type * as LinkSocketMod from '../../plugin/sub-human/lib/remote/link-socket.ts';
 import type * as ListenerMod from '../../plugin/sub-human/lib/remote/listener.ts';
+import type * as NoiseMod from '../../plugin/sub-human/lib/remote/noise.ts';
 import type * as TailscaleMod from '../../plugin/sub-human/lib/remote/tailscale.ts';
 import type * as WsMod from '../../plugin/sub-human/lib/remote/transports/ws.ts';
 import type * as RemoteWsMod from '../../plugin/sub-human/lib/remote/ws.ts';
@@ -51,6 +52,7 @@ export interface PluginLibs {
   'proposal.ts': typeof ProposalMod;
   'remote/link-socket.ts': typeof LinkSocketMod;
   'remote/listener.ts': typeof ListenerMod;
+  'remote/noise.ts': typeof NoiseMod;
   'remote/tailscale.ts': typeof TailscaleMod;
   'remote/transports/ws.ts': typeof WsMod;
   'remote/ws.ts': typeof RemoteWsMod;

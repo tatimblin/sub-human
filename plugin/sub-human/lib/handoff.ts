@@ -80,7 +80,7 @@ import { machineId, machineIn, isMine } from './home.ts';
 import { isAlive, sleepSync, lazy } from './io.ts';
 import { isObj } from './decode.ts';
 import * as config from './config.ts';
-import * as identityMod from './identity.ts';
+import * as identity from './identity.ts';
 import * as ioMod from './io.ts';
 import type { Card, HandoffAskDoc, HandoffDoc } from './types-app.ts';
 import type { WireCode } from './remote/types-core.ts';
@@ -129,7 +129,6 @@ const iso = (ms: number) => new Date(ms).toISOString();
 const err = (code: WireCode, msg: string) => new RoomError(code, msg);
 const linkSocket = lazy<typeof LinkSocketMod>(import.meta.url, './remote/link-socket.ts');
 const linkConnect = lazy<typeof LinkConnectMod>(import.meta.url, './remote/link-connect.ts');
-const identity = () => identityMod;
 const transportOf = (locator: unknown) => (typeof locator === 'string' ? linkConnect().transportOf(locator) : null);
 // A next host reached over the web (wss/ws, lib/remote/transports/ws.ts): its invites pin its listener's X25519 key,
 // and the link file that follows one carries that key and a key of the link's own (XK). Over ssh a follower reaches
@@ -234,7 +233,7 @@ function serverAccept(s: Store, link: LinkRec, { id, accept: proof, locator, inv
     epoch: d.epoch, host: d.to, machine: link.machine, locator: loc, accept: proof, ...(d.ask ? { ask: d.ask } : {}),
   }, { via: 'system', from: d.from, system: true });
   let job: string | null = null;
-  identity().updateRoomClaude(s.code, (o: Member | null) => {
+  identity.updateRoomClaude(s.code, (o: Member | null) => {
     if (!o) return null;
     job = o.job && o.job !== 'pending' ? o.job : null;
     return { job: null, claim: undefined, left_at: iso(now), moved_at: iso(now) };
@@ -415,14 +414,14 @@ function takeOver(code: RoomCode, { by, cwd, epoch, entry }: { by: string, cwd?:
   if (!s.isHost) throw err('INVALID', `room ${code} is still linked from this machine`);
   try { s.kv.delete('link'); } catch { /* none */ }
   if (entry) s.append(entry, { via: 'system', from: by, system: true });
-  identity().adoptLocalSeats(code);
+  identity.adoptLocalSeats(code);
   s.kv.delete(hostLinks.LINKS_KEY); // links from an earlier time this machine hosted: their tokens are not this epoch's
   s.kv.delete(HOST_DOC);
   if (cwd && !s.kv.get(WORKDIR)) s.kv.set(WORKDIR, { cwd });
   const now = iso(Date.now());
   // the old host's room Claude goes with its holder: its machine and lease too. Else claimSpawn clears left_at and the new
   // job's bind meets a record on another machine with a fresh lease, still holding the name ("name taken")
-  identity().updateRoomClaude(code, () => ({ job: null, pid: null, pid_start: undefined, machine: undefined, seen_at: undefined, claim: undefined, closing: undefined, left_at: now, stopped_at: now }));
+  identity.updateRoomClaude(code, () => ({ job: null, pid: null, pid_start: undefined, machine: undefined, seen_at: undefined, claim: undefined, closing: undefined, left_at: now, stopped_at: now }));
   return seatsLib().ensureRoomClaude(code, cwd, by);
 }
 

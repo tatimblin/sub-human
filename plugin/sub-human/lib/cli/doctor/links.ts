@@ -117,15 +117,8 @@ async function webHelloProbe(spec: LinkSpec, code: RoomCode, { timeoutMs = DOCTO
 }
 
 
-/** The host's clock from a hello reply, when it carries one (ms). */
-function replyTime(reply: HelloReply | null): number | null {
-  for (const k of ['time', 'now', 'ts', 'at']) {
-    const v = reply && reply[k];
-    const ms = typeof v === 'number' ? v : typeof v === 'string' ? Date.parse(v) : NaN;
-    if (Number.isFinite(ms)) return ms;
-  }
-  return null;
-}
+/** The host's clock from a hello reply (its `time`, ms), when it carries one. */
+const replyTime = (reply: HelloReply | null): number | null => (reply && typeof reply.time === 'number' && Number.isFinite(reply.time) ? reply.time : null);
 
 /**
  * A link that stopped for good with nothing wrong: its room closed, or no seat of this machine is left in it (reasons

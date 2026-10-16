@@ -1,9 +1,9 @@
 /**
- * plugin/sub-human/lib/remote/transports/index.ts: the transport contract and the registry of kinds. A transport
+ * plugin/sub-human/lib/remote/transports/index.ts: the transport contract and the table of kinds. A transport
  * carries protocol frames (lib/remote/protocol.ts) between a client and a server and knows nothing about
  * them. Built in: memory (./memory.ts, a pair in one process or across worker threads), pipe (./pipe.ts, a
  * child's stdio or this process's), ssh (./ssh.ts, the pipe kind with an `ssh` command in front), and wss / ws
- * (./ws.ts, a Noise_NK channel to the host's listener inside a WebSocket, through a TLS front such as Tailscale Serve).
+ * (./ws.ts, a Noise XK channel to the host's listener inside a WebSocket, through a TLS front such as Tailscale Serve).
  *
  *   Transport = {send(frame), onFrame(fn), onClose(fn), close()}
  *       send after close is a no-op; onClose fires once, also when the peer ends
@@ -12,14 +12,14 @@
  *       memory ({kind: 'memory', port}) and a plain pipe ({kind: 'pipe', cmd: [bin, ...args], env?, cwd?}) are
  *       for tests and have no locator.
  *
- *   register(kind, {open, parse?, describe?})   add a kind (a kind registered twice is an error):
+ *   A kind is {open, parse?, describe?}:
  *       open(spec, ctx) -> Transport | Promise<Transport>   connect; ctx = {code} when the link daemon connects
  *           to room CODE (lib/remote/link.ts connectLink), else {}. May be async: a transport that connects
  *           (a socket, a WebSocket, a handshake) resolves once it can carry frames; client.connect then says hello
  *       parse(rest) -> Spec | null    the Spec for locator `kind:rest`, null when rest is not acceptable. Without
  *           parse the kind has no locator (an invite cannot name it). Invites are untrusted: accept only plain values
  *       describe(spec) -> string      a short human line ("ssh me@far:2222") for logs and diagnostics
- *   kinds() -> string[]               the registered kinds, in registration order; KINDS is the same, read live
+ *   kinds() -> string[]               the kinds, in table order
  *   get(kind) -> entry | null
  *   parse(locator) -> Spec | null     by the kind before the first ":"; null for an unknown kind or a refused rest
  *   open(spec, ctx = {}) -> Promise<Transport>   rejects RoomError INVALID for an unknown kind, else as the kind's open
@@ -30,9 +30,7 @@
  *       to receive() (decoded, protocol.decoder) and calls end() when the other side is gone
  *   fromDuplex(stream, {readable?}?) -> Transport   frames over any node stream pair: written to stream, read from
  *       readable (default stream itself: a net.Socket, a tls socket, a stream from a WebSocket). Its end, close or
- *       error closes the transport; close() ends and destroys both. A new socket kind is then:
- *         register('tcp', { parse: rest => …, open: spec => new Promise((ok, no) => {
- *           const s = net.connect(spec.port, spec.host, () => ok(fromDuplex(s))); s.once('error', no); }) });
+ *       error closes the transport; close() ends and destroys both
  */
 
 import * as protocol from '../protocol.ts';
@@ -46,29 +44,28 @@ import type * as PipeMod from './pipe.ts';
 import type * as SshMod from './ssh.ts';
 import type * as WsMod from './ws.ts';
 
-interface Registered {
-  open: KindEntry['open'];
-  parse: NonNullable<KindEntry['parse']> | null;
-  describe: NonNullable<KindEntry['describe']> | null;
-}
+// The built-in kinds. Their modules import this one (lineTransport): a cycle, and no kind's code need load until a
+// link or invite uses it, so each loads at its first use, through its `kind` export.
+const memory = lazy<typeof MemoryMod>(import.meta.url, './memory.ts');
+const pipe = lazy<typeof PipeMod>(import.meta.url, './pipe.ts');
+const ssh = lazy<typeof SshMod>(import.meta.url, './ssh.ts');
+const ws = lazy<typeof WsMod>(import.meta.url, './ws.ts');
+const kindOf = (load: () => { kind: Required<KindEntry> }): KindEntry => ({
+  open: (spec, ctx) => load().kind.open(spec, ctx),
+  parse: rest => load().kind.parse(rest),
+  describe: spec => load().kind.describe(spec),
+});
+const memoryKind: KindEntry<MemorySpec> = { open: spec => memory().over(spec.port), describe: () => 'memory' };
+const KIND_TABLE: ReadonlyMap<string, KindEntry> = new Map<string, KindEntry>([
+  ['memory', memoryKind], // the table hands each kind only the specs that name it
+  ['pipe', kindOf(pipe)],
+  ['ssh', kindOf(ssh)],
+  ['wss', kindOf(ws)], // ./ws.ts: a Noise channel in a WebSocket, through a TLS front
+  ['ws', kindOf(ws)],
+]);
 
-const registry = new Map<string, Registered>(); // kind -> {open, parse?, describe?}
-/** kinds(), kept current by register (an ESM live binding). */
-export let KINDS: string[] = [];
-
-const KIND_RE = /^[a-z][a-z0-9-]{0,15}$/;
-
-function register<S extends SpecBase>(kind: string, entry: KindEntry<S>): void {
-  if (!KIND_RE.test(String(kind))) throw new Error(`transport kind "${kind}" is not a short lower-case name`);
-  if (registry.has(kind)) throw new Error(`transport kind "${kind}" is registered already`);
-  if (!entry || typeof entry.open !== 'function') throw new Error(`transport kind "${kind}" needs open(spec, ctx)`);
-  const e: KindEntry = entry; // a kind's own spec type: the registry hands each kind only the specs that name it
-  registry.set(kind, { open: e.open, parse: e.parse ?? null, describe: e.describe ?? null });
-  KINDS = kinds();
-}
-
-const kinds = (): string[] => [...registry.keys()];
-const get = (kind: string): Registered | null => registry.get(kind) ?? null;
+const kinds = (): string[] => [...KIND_TABLE.keys()];
+const get = (kind: string): KindEntry | null => KIND_TABLE.get(kind) ?? null;
 
 function parse(locator: string): LinkSpec | null {
   const s = String(locator);
@@ -121,22 +118,4 @@ function fromDuplex(stream: Duplex, { readable = stream }: { readable?: Readable
   return transport;
 }
 
-export { register, kinds, get, parse, open, describe, lineTransport, fromDuplex };
-
-// ---------- the built-in kinds ----------
-// Their modules import this one (lineTransport): a cycle, and no kind's code need load until a link or invite uses it,
-// so each loads at its first use, through its `kind` export.
-const memory = lazy<typeof MemoryMod>(import.meta.url, './memory.ts');
-const pipe = lazy<typeof PipeMod>(import.meta.url, './pipe.ts');
-const ssh = lazy<typeof SshMod>(import.meta.url, './ssh.ts');
-const ws = lazy<typeof WsMod>(import.meta.url, './ws.ts');
-const kindOf = (load: () => { kind: Required<KindEntry> }): KindEntry => ({
-  open: (spec, ctx) => load().kind.open(spec, ctx),
-  parse: rest => load().kind.parse(rest),
-  describe: spec => load().kind.describe(spec),
-});
-register<MemorySpec>('memory', { open: spec => memory().over(spec.port), describe: () => 'memory' });
-register('pipe', kindOf(pipe));
-register('ssh', kindOf(ssh));
-register('wss', kindOf(ws)); // ./ws.ts: a Noise channel in a WebSocket, through a TLS front
-register('ws', kindOf(ws));
+export { kinds, get, parse, open, describe, lineTransport, fromDuplex };

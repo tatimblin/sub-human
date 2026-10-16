@@ -64,9 +64,9 @@ import { RoomError } from '../room/validate.ts';
 import { localHm, isSeatName } from '../text.ts';
 import { INVITE_TTL_MS, LINK_JOIN_WAIT_MS } from '../config.ts';
 import { envStr } from '../env.ts';
-import * as linkSocketMod from './link-socket.ts';
-import * as linkConnectMod from './link-connect.ts';
-import * as linksMod from '../room/links.ts';
+import * as linkSocket from './link-socket.ts';
+import * as linkConnect from './link-connect.ts';
+import * as links from '../room/links.ts';
 import * as roomMod from '../room.ts';
 import * as homeMod from '../home.ts';
 import * as seatsMod from '../seats.ts';
@@ -114,9 +114,6 @@ export interface Outcome {
   reason?: string | undefined;
 }
 
-const linkSocket = () => linkSocketMod;
-const linkConnect = () => linkConnectMod;
-const links = () => linksMod;
 const roomOf = (code: RoomCode) => roomMod.open(code);
 const minutes = (ms: number): number => Math.round(ms / 60_000);
 
@@ -231,7 +228,7 @@ function hostInvite(code: RoomCode, { ssh = true, via, pipe = false, by = null, 
   const store = hostStore(code);
   if (pipe) { // a second home on this machine (tests, the demo)
     if (via !== undefined) throw new RoomError('INVALID', '--via is for an ssh invite');
-    const locator = linkConnect().pipeLocator();
+    const locator = linkConnect.pipeLocator();
     const r = invites.mintInvite(store, { kind: 'pipe', locator, by, now });
     const word = machineWord(r.secret);
     const line = `/sub-human join ${locator} ${code} ${word}`;
@@ -323,8 +320,7 @@ function endLink(code: RoomCode, store: RoomStore, id: string): Ended {
   const r = hostLinks.revokeLink(store, id) ?? { link: null, invites: 0 };
   spawnSync('pkill', ['-f', '--', `--stdio ${code} --link ${id}`], { stdio: 'ignore' });
   const seats = r.link ? r.link.seats || [] : [];
-  const seatsLib = seatsMod;
-  for (const name of seats) { try { if (isSeatName(name)) seatsLib.exit(code, name, 'removed by the host'); } catch { /* gone already */ } }
+  for (const name of seats) { try { if (isSeatName(name)) seatsMod.exit(code, name, 'removed by the host'); } catch { /* gone already */ } }
   const login = !!(r.link && r.link.login); // a link made over this account's own ssh login (no key line of its own)
   roomLine(code, `the host ended ${seats.length ? `${seats.join(', ')}'s connection` : 'a connection'} to the room`);
   const text = `${seats.length ? `${seats.join(', ')} ${seats.length === 1 ? 'is' : 'are'} out of room ${code}` : `ended a connection to room ${code}`}: it no longer reaches the room`
@@ -345,7 +341,7 @@ function kick(code: RoomCode, name: string): Ended {
  * locator this machine cannot use.
  */
 function linkTransport({ inv, cur = null }: { inv: ParsedInvite; cur?: Link | null }): LinkSpec | null {
-  const transport = linkConnect().transportOf(inv.locator);
+  const transport = linkConnect.transportOf(inv.locator);
   if (!transport) return null;
   const prev: { kind?: string; user?: string; host?: string; port?: unknown; mux?: boolean; remoteHome?: string } = (cur && cur.transport) ?? {};
   if (transport.kind === 'ssh') {
@@ -357,15 +353,15 @@ function linkTransport({ inv, cur = null }: { inv: ParsedInvite; cur?: Link | nu
   }
   if (transport.kind === 'wss' || transport.kind === 'ws') { // the listener's X25519 key, pinned; the link's own key (XK)
     if (!inv.hostKey) throw new RoomError('INVALID', 'this web invite pins no host key; ask the host for a new one');
-    return { ...transport, hostKey: inv.hostKey, clientKey: linkConnect().linkKey(inv.code, { fresh: true }).pub.toString('base64url') };
+    return { ...transport, hostKey: inv.hostKey, clientKey: linkConnect.linkKey(inv.code, { fresh: true }).pub.toString('base64url') };
   }
   return transport;
 }
 
 function joinInvite({ inv, invite, pin }: { inv: ParsedInvite; invite: InviteSecret; pin?: Pin }): { code: RoomCode } {
-  const transport = linkTransport({ inv, cur: links().get(inv.code) });
+  const transport = linkTransport({ inv, cur: links.get(inv.code) });
   if (!transport) throw new RoomError('INVALID', `this invite reaches its room through "${inv.locator.split(':')[0]}", which this machine cannot use`);
-  links().set(inv.code, { code: inv.code, transport, invite, pin, created_at: new Date().toISOString() });
+  links.set(inv.code, { code: inv.code, transport, invite, pin, created_at: new Date().toISOString() });
   return { code: inv.code };
 }
 
@@ -374,11 +370,11 @@ const PIN_REASONS: ReadonlySet<string> = new Set(['PIN_NEEDED', 'PIN_WRONG', 'PI
 
 function outcome(code: RoomCode, { waitMs = LINK_JOIN_WAIT_MS }: { waitMs?: number } = {}): Outcome {
   const { sleepSync } = ioMod;
-  const l = linkSocket();
+  const l = linkSocket;
   for (const until = Date.now() + waitMs; ; sleepSync(50)) {
     const st = l.status(code);
     const stopped = l.stopReason(st);
-    const lf = links().get(code);
+    const lf = links.get(code);
     if (stopped && stopped.why && PIN_REASONS.has(stopped.why) && lf && lf.pin_wanted) return { state: 'pin', ...(stopped.why !== 'PIN_NEEDED' ? { reason: stopped.reason } : {}) };
     if (stopped) return { state: 'refused', reason: stopped.reason };
     if (st.state === 'online' && lf && lf.token) return { state: 'linked' };
@@ -388,7 +384,7 @@ function outcome(code: RoomCode, { waitMs = LINK_JOIN_WAIT_MS }: { waitMs?: numb
 }
 
 function joinText(code: RoomCode, name: SeatName, o: Outcome, { tells = false }: { tells?: boolean } = {}): string {
-  const lf: Partial<Link> = links().get(code) ?? {};
+  const lf: Partial<Link> = links.get(code) ?? {};
   if (o.state === 'linked') {
     // the card may have let this machine in under another name (its own sits in the room from another machine)
     const as = typeof lf.join_as === 'string' ? lf.join_as : name;
@@ -420,16 +416,16 @@ function joinText(code: RoomCode, name: SeatName, o: Outcome, { tells = false }:
  */
 function joinLine({ code, transport, word, name, sid }: { code: RoomCode; transport: LinkSpec; word: InviteSecret; name: string; sid?: string | null | undefined }): { code: RoomCode } {
   const t: LinkSpec = transport.kind === 'wss' || transport.kind === 'ws'
-    ? { ...transport, clientKey: linkConnect().linkKey(code, { fresh: true }).pub.toString('base64url') } : transport;
-  links().set(code, { code, transport: t, invite: word, join_as: name, ...(sid ? { join_sid: sid } : {}), created_at: new Date().toISOString() });
+    ? { ...transport, clientKey: linkConnect.linkKey(code, { fresh: true }).pub.toString('base64url') } : transport;
+  links.set(code, { code, transport: t, invite: word, join_as: name, ...(sid ? { join_sid: sid } : {}), created_at: new Date().toISOString() });
   return { code };
 }
 
 /** The PIN, typed when the host asked for it: into the link file, until the host answered it. */
 function givePin(code: RoomCode, pin: Pin): void {
-  const l = links().get(code);
+  const l = links.get(code);
   if (!l || typeof l.invite !== 'string') throw new RoomError('INVALID', `this machine has no invite to room ${code} waiting for a PIN`);
-  links().set(code, { ...l, pin });
+  links.set(code, { ...l, pin });
 }
 
 export {

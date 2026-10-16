@@ -22,12 +22,10 @@ import { flaky } from './support/flaky.ts';
 import type { DecodedFrame, SignedPayload } from '../lib/remote/types-core.ts';
 import type { RoomError } from '../lib/room/validate.ts';
 import { isErrno } from '../lib/errors.ts';
-import type { MemorySpec, PipeSpec, SpecBase, SshSpec, Transport } from '../lib/remote/types-rest.ts';
+import type { MemorySpec, PipeSpec, SshSpec, Transport } from '../lib/remote/types-rest.ts';
 import { rc, sn, mid } from './support/brands.ts';
 import { must } from './support/must.ts';
 
-/** The test's own socket kind: a unix socket path. */
-interface UnixSpec extends SpecBase { path: string }
 
 const CODE = rc('otter-1234');
 /** Every frame the transport delivers, and whether it closed. */
@@ -99,39 +97,24 @@ test('transports: open() by kind (a Promise): memory over a port, pipe over a ch
   assert.equal(gone.closed, 1);
 });
 
-test('transports: the registry: built-in kinds, locators parse by kind, a kind registers once; describe', () => {
+test('transports: the built-in kinds, locators parse by kind; describe', () => {
   assert.deepEqual(transports.kinds(), ['memory', 'pipe', 'ssh', 'wss', 'ws']);
-  assert.deepEqual(transports.KINDS, transports.kinds());
   assert.deepEqual(transports.parse('pipe:/a/home'), { kind: 'pipe', home: '/a/home' });
   assert.deepEqual(transports.parse('ssh:me@far:2222'), { kind: 'ssh', user: 'me', host: 'far', port: 2222 });
   for (const bad of ['memory:x', 'pipe:rel', 'ssh:-oX@h', 'nope:x', 'pipe', '']) assert.equal(transports.parse(bad), null, bad);
   const ssh: SshSpec = { kind: 'ssh', user: 'me', host: 'far', port: 2222 }, home: PipeSpec = { kind: 'pipe', home: '/h' };
   assert.equal(transports.describe(ssh), 'ssh me@far:2222');
   assert.equal(transports.describe(home), 'pipe /h');
-  // deliberate: kinds that are refused before their open() (which returns no transport) is ever called
-  // @ts-expect-error -- deliberate: an open() that returns no transport
-  assert.throws(() => transports.register('pipe', { open() {} }), /registered already/);
-  // @ts-expect-error -- deliberate: an open() that returns no transport
-  assert.throws(() => transports.register('Bad Kind', { open() {} }), /short lower-case/);
-  // @ts-expect-error -- deliberate: no open()
-  assert.throws(() => transports.register('noopen', {}), /needs open/);
 });
 
-test('transports: a registered socket kind in a few lines: async open, fromDuplex over a unix socket, locator, close both ways', async t => {
+test('transports: fromDuplex over a unix socket: frames both ways, close both ways', async t => {
   const sock = path.join(h.tmpDir('sh-tr-', t), 's.sock');
   const served: Transport[] = [];
   const srv = net.createServer(s => served.push(transports.fromDuplex(s)));
   await new Promise<void>(r => srv.listen(sock, r));
   t.after(() => srv.close());
-  transports.register<UnixSpec>('unixtest', {
-    parse: rest => (rest.startsWith('/') ? { path: rest } : null),
-    open: spec => new Promise((ok, no) => { const s = net.connect(spec.path, () => ok(transports.fromDuplex(s))); s.once('error', no); }),
-    describe: spec => `unix ${spec.path}`,
-  });
-  assert.ok(transports.KINDS.includes('unixtest'));
-  const spec = transports.parse(`unixtest:${sock}`);
-  assert.deepEqual(spec, { kind: 'unixtest', path: sock });
-  const ta = await transports.open(spec);
+  const dial = (p: string) => new Promise<Transport>((ok, no) => { const s = net.connect(p, () => ok(transports.fromDuplex(s))); s.once('error', no); });
+  const ta = await dial(sock);
   const a = recorder(ta);
   await h.until(() => served.length, 2000, 5);
   const s0 = must(served[0]);
@@ -145,8 +128,7 @@ test('transports: a registered socket kind in a few lines: async open, fromDuple
   await h.until(() => b.closed, 2000, 5);
   assert.deepEqual([a.closed, b.closed], [1, 1], 'close fires once on both ends');
   ta.send(protocol.request(2, 'beat', {})); // a no-op
-  const none: UnixSpec = { kind: 'unixtest', path: sock + '.none' };
-  await assert.rejects(transports.open(none), e => isErrno(e, 'ENOENT'));
+  await assert.rejects(dial(sock + '.none'), e => isErrno(e, 'ENOENT'));
   assert.ok(!fs.existsSync(sock + '.none'));
 });
 

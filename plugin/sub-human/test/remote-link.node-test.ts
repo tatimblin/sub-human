@@ -149,18 +149,18 @@ test('link: an ssh locator is a plain user@host[:port]; an invite can name neith
 });
 
 test('link: the ssh command: BatchMode, this machine\'s own options, the port, "--" before the destination, a fixed remote command', () => {
-  const cmd = linkConnect.sshCommand({ kind: 'ssh', user: 'me', host: 'far', port: 2222 }, rc('vole-1234'), ['-i', '/k/id', '-o', 'UserKnownHostsFile=/k/kh']);
+  const cmd = ssh.command({ kind: 'ssh', user: 'me', host: 'far', port: 2222 }, rc('vole-1234'), ['-i', '/k/id', '-o', 'UserKnownHostsFile=/k/kh']);
   assert.deepEqual(cmd, ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2',
     '-i', '/k/id', '-o', 'UserKnownHostsFile=/k/kh', '-p', '2222', '--', 'me@far', 'sub-human serve --stdio vole-1234']);
   const old = process.env.SUB_HUMAN_SSH_OPTS;
   process.env.SUB_HUMAN_SSH_OPTS = ' -F /dev/null  -i /k/id ';
-  try { assert.deepEqual(linkConnect.sshCommand({ kind: 'ssh', user: 'me', host: 'far' }, rc('vole-1234')).slice(8, -3), ['-F', '/dev/null', '-i', '/k/id']); } finally {
+  try { assert.deepEqual(ssh.command({ kind: 'ssh', user: 'me', host: 'far' }, rc('vole-1234')).slice(8, -3), ['-F', '/dev/null', '-i', '/k/id']); } finally {
     if (old === undefined) delete process.env.SUB_HUMAN_SSH_OPTS; else process.env.SUB_HUMAN_SSH_OPTS = old;
   }
   // a link file edited by hand is checked again
-  assert.throws(() => linkConnect.sshCommand({ kind: 'ssh', user: '-oProxyCommand=sh', host: 'far' }, rc('vole-1234'), []), (e: RoomError) => e.code === 'INVALID');
+  assert.throws(() => ssh.command({ kind: 'ssh', user: '-oProxyCommand=sh', host: 'far' }, rc('vole-1234'), []), (e: RoomError) => e.code === 'INVALID');
   // @ts-expect-error: not a room code, refused at run time
-  assert.throws(() => linkConnect.sshCommand({ kind: 'ssh', user: 'me', host: 'far' }, 'vole-1234; id', []), (e: RoomError) => e.code === 'INVALID');
+  assert.throws(() => ssh.command({ kind: 'ssh', user: 'me', host: 'far' }, 'vole-1234; id', []), (e: RoomError) => e.code === 'INVALID');
 });
 
 test('ssh: a ProxyJump rides the locator (?via=), as plain as the destination; the link\'s own options pin the host key and the key; prime opens a ControlMaster the daemon rides under BatchMode', t => {

@@ -22,7 +22,7 @@ import * as store from '../lib/room/store.ts';
 import * as identity from '../lib/identity.ts';
 import * as envelope from '../lib/room/envelope.ts';
 import * as linkSocket from '../lib/remote/link-socket.ts';
-import * as linkConnect from '../lib/remote/link-connect.ts';
+import * as sshMod from '../lib/remote/transports/ssh.ts';
 import * as links from '../lib/room/links.ts';
 import * as handoff from '../lib/handoff.ts';
 import * as client from '../lib/remote/client.ts';
@@ -340,7 +340,7 @@ test('handoff e2e: over ssh (--via), each follower reaches the new host through 
   assert.match(String(t0.link), /^[0-9a-f]{12}$/);
   assert.ok(!('key' in t0) && !('knownHosts' in t0) && !('request' in lc), 'nothing of the plugin\'s own pinned or let in');
   assert.equal(typeof lc.invite, 'string', 'the bound invite bob minted for her machine');
-  const cmd = C.lib(() => linkConnect.sshCommand(t0, code, []));
+  const cmd = C.lib(() => sshMod.command(t0, code, []));
   for (const o of ['ControlMaster=no', '-J', 'jump.example']) assert.ok(cmd.includes(o), `${o} in ${cmd.join(' ')}`);
   assert.ok(!cmd.some(o => /StrictHostKeyChecking|IdentitiesOnly|UserKnownHostsFile/.test(o)), 'the person\'s own ssh config and known_hosts decide');
   assert.match(must(cmd.at(-1)), new RegExp(`/bin/serve --stdio ${code} --link ${t0.link} --login$`));

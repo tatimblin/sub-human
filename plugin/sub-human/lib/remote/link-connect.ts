@@ -29,7 +29,6 @@
  *   sshLocator(dest, {via}?) -> 'ssh:user@host[:port][?via=JUMP]' | null   null: not a plain user@host[:port]
  *   transportOf(locator) -> Spec | null   the link file's transport for an invite's locator: the transport registry's
  *       parse (lib/remote/transports/index.ts)
- *   sshCommand(spec, code, opts?) -> [cmd, ...args]   the ssh command line (lib/remote/transports/ssh.ts command)
  */
 
 import fs from 'node:fs';
@@ -45,7 +44,6 @@ import { isReason, reasonOf } from '../reasons.ts';
 import { errCode, msgOf } from '../errors.ts';
 import type { Reason } from '../reasons.ts';
 import type { Client } from './client.ts';
-import type { SshSpec } from './types-rest.ts';
 import type { Link } from '../room/types.ts';
 import type { RoomCode } from '../brand.ts';
 import type * as TransportsMod from './transports/index.ts';
@@ -74,7 +72,6 @@ const machineKeyMod = lazy<typeof MachineKeyMod>(import.meta.url, './machine-key
 const pipeLocator = (h: string = homeMod.home()): string => `pipe:${h}`;
 const sshLocator = (dest: string, opts?: { via?: string }): string | null => ssh().locator(dest, opts);
 const transportOf = (locator: string): ReturnType<typeof TransportsMod['parse']> => transports().parse(locator);
-const sshCommand = (t: SshSpec, code: RoomCode, opts?: string[]): string[] => ssh().command(t, code, opts);
 
 /** A link the host refused before it held a token: drop the invite, its PIN and the pending rebind; say why. */
 function scrubRefused(code: RoomCode, reason: unknown, why: Reason | null | undefined): void {
@@ -204,4 +201,4 @@ async function loginRefused(l: Link, t: TransportLike | Promise<TransportLike>, 
   return why ? new RoomError('AUTH', why.message, why.reason) : e;
 }
 
-export { connectLink, loginRefused, linkKey, joinerLabel, pipeLocator, sshLocator, transportOf, sshCommand };
+export { connectLink, loginRefused, linkKey, joinerLabel, pipeLocator, sshLocator, transportOf };

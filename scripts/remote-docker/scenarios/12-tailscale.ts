@@ -3,7 +3,7 @@
 // it, then exactly the command `/sub-human invite --web` runs (lib/remote/tailscale.ts serveArgs):
 //   tailscale serve --bg --https=443 --set-path=/sub-human-lab-<rand> http://127.0.0.1:<port>
 // a wss connection to https://<this node's MagicDNS name>/sub-human-lab-<rand> (Tailscale's own certificate, no extra
-// CA) and a Noise_NK handshake pinned to the listener's key: the listener answers inside the channel that it serves
+// CA) and a Noise XK handshake pinned to the listener's key: the listener answers inside the channel that it serves
 // no such room, which only the holder of the pinned key can say. Then exactly what `invite --stop` runs (offArgs):
 //   tailscale serve --https=443 --set-path=/sub-human-lab-<rand> off
 // (only that path; never `serve reset`, never Funnel). The path must be gone from `tailscale serve status` after.
@@ -62,10 +62,10 @@ export async function run(t: T): Promise<void> {
     let res: string;
     try {
       const conn = await ws.connect(`wss://${me.dnsName}${p}`, { timeoutMs: 45_000 }); // a cold ts.net certificate takes ~20 s
-      try { await wsT.clientChannel(conn, { rs: Buffer.from(hostKey, 'base64url'), code: roomCode('vole-0001') }); res = 'joined?!'; } catch (e) { res = `${String(codeOf(e))}: ${msgOf(e)}`; }
+      try { await wsT.clientChannel(conn, { rs: Buffer.from(hostKey, 'base64url'), code: roomCode('vole-0001'), s: lib('remote/noise.ts').generateKeyPair() }); res = 'joined?!'; } catch (e) { res = `${String(codeOf(e))}: ${msgOf(e)}`; }
     } catch (e) { res = `connect: ${msgOf(e)}`; }
     t.ev.write('handshake.txt', res);
-    t.check(`a wss + Noise_NK handshake through https://${me.dnsName}${p}, pinned to the listener's key (it answers that it serves no such room)`,
+    t.check(`a wss + Noise XK handshake through https://${me.dnsName}${p}, pinned to the listener's key (it answers that it serves no such room)`,
       /^OFFLINE: .*not open for joins over the web/.test(res), res);
   } finally {
     if (on) { // nothing to turn off when serve never took the path (Serve not enabled on the tailnet)
