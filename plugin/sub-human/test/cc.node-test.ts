@@ -1,4 +1,4 @@
-// Tests for lib/cc.ts (the Claude Code contract) and scripts/probe-cc.js. Fixture transcript lines follow
+// Tests for lib/cc/ (the Claude Code contract and its readers) and scripts/probe-cc.js. Fixture transcript lines follow
 // the shapes in docs/internals/cc-2.1.281.md (checked against real 2.1.281 transcripts; unchanged in 2.1.292,
 // see docs/internals/cc-2.1.292.md).
 import test from 'node:test';
@@ -7,8 +7,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import * as cc from '../lib/cc.ts';
-import type { JobsOpts, ProbeResult } from '../lib/cc.ts';
+import * as env from '../lib/cc/env.ts';
+import * as transcript from '../lib/cc/transcript.ts';
+import * as bg from '../lib/cc/bg.ts';
+import * as contract from '../lib/cc/contract.ts';
+import type { JobsOpts } from '../lib/cc/bg.ts';
+import type { ProbeResult } from '../lib/cc/contract.ts';
+
+const cc = { ...env, ...transcript, ...bg, ...contract };
 
 /** scripts/probe-cc.js --json. */
 interface ProbeOut { ok: boolean; version: string; cpuMs: number; results: ProbeResult[] }
@@ -283,30 +289,74 @@ test('matcherIsExact / matcherMatches follow the binary rule', () => {
 
 test('CONTRACT entries are well formed and unique', () => {
   const ids = new Set();
+  const VER = /^\d+\.\d+\.\d+$/;
+  assert.match(cc.PROBED_VERSION, VER);
+  assert.match(cc.MIN_VERSION, VER);
   for (const e of cc.CONTRACT) {
     assert.ok(e.id && !ids.has(e.id), e.id);
     ids.add(e.id);
     assert.ok(['API', 'env', 'incidental'].includes(e.stability), e.id);
+    assert.ok(Number.isInteger(e.section), e.id);
+    // the version range: first checked on `since`, last on PROBED_VERSION
+    assert.ok(e.since && VER.test(e.since) && cc.compareVersions(e.since, cc.PROBED_VERSION)! <= 0, e.id);
     const s = Array.isArray(e.search) ? e.search : [e.search];
     assert.ok(s.length && s.every(x => typeof x === 'string' && x.length >= 8), e.id);
     const sh = e.shape === undefined ? [] : Array.isArray(e.shape) ? e.shape : [e.shape];
     // a shape keeps enough literal text to stay specific
     assert.ok(sh.every(x => typeof x === 'string' && x.replace(/~/g, '').length >= 16), e.id);
+    for (const g of e.contains || []) {
+      assert.ok(g.what && g.in.replace(/~/g, '').length >= 16 && g.names.length && g.names.every(n => /^\w+$/.test(n)), `${e.id}: ${g.what}`);
+    }
+    for (const d of e.degraded || []) assert.ok(VER.test(d.from) && cc.compareVersions(d.from, cc.PROBED_VERSION)! > 0 && d.note, e.id);
     assert.ok(e.note, e.id);
   }
   for (const id of ['task-completed-block-drops-fields', 'subagent-statusline-precedence', 'daemon-env-allowlist', 'matcher-rule',
     'hooks-json-modules', 'classic-chain-order', 'prompt-submit-ups-order', 'session-append-notice-hidden', 'ui-log-notice', 'process-run-stdin', 'plugin-test-off', 'plugin-types-state', 'prompt-origin-composer',
     'mcp-stdio-ppid', 'mcp-progress-resets-idle-timeout', 'mcp-server-shared-by-subagents', 'session-title-address'])
     assert.ok(ids.has(id), id);
+  // the contract is data: the JSON file is CONTRACT, and nothing else holds an entry
+  const json = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'lib', 'cc', 'contract.json'), 'utf8'));
+  assert.deepEqual(json.entries.map((e: { id: string }) => e.id), cc.CONTRACT.map(e => e.id));
+  assert.ok(!fs.existsSync(path.join(import.meta.dirname, '..', 'lib', 'cc.ts')), 'lib/cc.ts is gone: import lib/cc/{env,transcript,bg,contract}.ts');
 });
 
-test('every @cc tag in lib/cc.ts names a string some CONTRACT entry searches for', () => {
-  const src = fs.readFileSync(path.join(import.meta.dirname, '..', 'lib', 'cc.ts'), 'utf8');
+test('session-append-notice-rewrite is reported degraded from 2.1.300 (#8); degradedOn names it there and only there', () => {
+  const e = cc.CONTRACT.find(x => x.id === 'session-append-notice-rewrite')!;
+  assert.deepEqual(e.degraded!.map(d => [d.from, d.issue]), [['2.1.300', 8]]);
+  assert.deepEqual(cc.degradedOn('2.1.296'), []);
+  assert.deepEqual(cc.degradedOn('2.1.300').map(d => [d.id, d.issue]), [['session-append-notice-rewrite', 8]]);
+  assert.deepEqual(cc.degradedOn('2.1.301').map(d => d.id), ['session-append-notice-rewrite']);
+  assert.deepEqual(cc.degradedOn('not a version'), []);
+});
+
+test('every @cc tag in lib/cc/*.ts names a string some CONTRACT entry searches for', () => {
+  const dir = path.join(import.meta.dirname, '..', 'lib', 'cc');
+  const src = fs.readdirSync(dir).filter(f => f.endsWith('.ts')).map(f => fs.readFileSync(path.join(dir, f), 'utf8')).join('\n');
   const all = new Set(cc.CONTRACT.flatMap(e => (Array.isArray(e.search) ? e.search : [e.search])));
   const tags = [...src.matchAll(/^ \* @cc (.+)$/gm)].map(m => m[1]);
   assert.ok(tags.length > 20);
   // doc comments write \n literally where the binary has a newline in a template or \n in a regex
   for (const t of tags) assert.ok(all.has(t) || all.has(t + ' ') || all.has(t.replace(/\\n/g, '\n')), t);
+});
+
+test('daemon-env-allowlist: a shape, not the exact arrays: each group\'s array must hold its names, in any order, more allowed', () => {
+  const e = cc.CONTRACT.find(x => x.id === 'daemon-env-allowlist')!;
+  // the groups are DAEMON_ENV_ALLOW
+  assert.deepEqual([...new Set(e.contains!.flatMap(g => g.names))].sort(), [...cc.DAEMON_ENV_ALLOW].sort());
+  const g = { what: 'base', in: 'new Set(["A_KEY_ANCHOR_LONG",', names: ['A_KEY_ANCHOR_LONG', 'B_KEY'] };
+  const run = (text: string) => cc.probe(Buffer.from(text, 'latin1'), { entries: [{ id: 'x', stability: 'env', search: ['A_KEY_ANCHOR_LONG'], contains: [g], note: '' }] })[0];
+  assert.equal(run('var q=new Set(["A_KEY_ANCHOR_LONG",...x,"B_KEY"]),z=1;').ok, true);
+  assert.equal(run('var q=new Set(["A_KEY_ANCHOR_LONG","NEW_KEY",...x,"B_KEY","LATER"]);').ok, true, 'keys added and moved pass');
+  const dropped = run('var q=new Set(["A_KEY_ANCHOR_LONG",...x,"C_KEY"]);"B_KEY";');
+  assert.equal(dropped.ok, false, 'a key dropped from the array fails, even when the name is quoted elsewhere');
+  assert.deepEqual(dropped.missing, ['contains: base: B_KEY']);
+  assert.match(run('"A_KEY_ANCHOR_LONG"').missing[0], /^contains: base: no array at /);
+  // a shape anchor
+  const sh = { what: 'set', in: '~=new Set([...~,...~,"CLAUDE_', names: ['CLAUDE_X'] };
+  const r = cc.probe(Buffer.from('a,Qz=new Set([...q6e,...l5n,"CLAUDE_Y","CLAUDE_X"]);', 'latin1'), { entries: [{ id: 'y', stability: 'env', contains: [sh], note: '' }] })[0];
+  assert.equal(r.ok, true);
+  assert.deepEqual([...cc.arrayAt(String.raw`x=["a","b\"",...y,["c"],"d"]`, 0)!], ['a', String.raw`b\"`, 'd'], 'escapes and nested arrays skipped');
+  assert.equal(cc.arrayAt('x=["a"', 0), null);
 });
 
 test('shapeRe: ~ is one minified identifier, the rest is literal', () => {
@@ -369,7 +419,7 @@ test('probe: a mutated function-hooks entry fails (search and shape)', { skip: !
   const extra = J([
     { id: 'modules-search-mutated', search: by('hooks-json-modules').search![2] + '!!x' },
     { id: 'chain-shape-mutated', search: by('classic-chain-order').search, shape: by('classic-chain-order').shape![0].replace('function-hook chain', 'function-hooks chain') },
-    { id: 'notice-level-mutated', search: by('session-append-notice-hidden').search![0], shape: (by('session-append-notice-hidden').shape as string).replace('"info"', '"notice"') },
+    { id: 'notice-level-mutated', search: by('session-append-notice-hidden').search![0], shape: by('session-append-notice-hidden').shape![0].replace('"info"', '"notice"') },
   ]);
   const r = spawnSync(process.execPath, [PROBE, '--json', '--only', 'hooks-json-modules,classic-chain-order,session-append-notice-hidden'], { encoding: 'utf8', timeout: 60_000, env: { ...process.env, CC_PROBE_EXTRA: extra } });
   assert.equal(r.status, 1);

@@ -112,6 +112,8 @@ function kD(e){return J(we(),"tasks",aP(e))}  function U(e,n){return J(kD(e),`${
     - `p0e` = `CLAUDE_CONFIG_DIR`, `CLAUDE_INTERNAL_FC_OVERRIDES`, the model keys (`Qqe`: ANTHROPIC_MODEL, ANTHROPIC_DEFAULT_{FABLE,HAIKU,OPUS,SONNET}_MODEL[_DESCRIPTION|_NAME|_SUPPORTED_CAPABILITIES], ANTHROPIC_SMALL_FAST_MODEL[_AWS_REGION], CLAUDE_CODE_SUBAGENT_MODEL, two CLAUDE_CODE_3P_PROBE_WROTE_* keys), the ANTHROPIC_CUSTOM_MODEL_OPTION* keys, `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`, the provider selectors (`a4`: CLAUDE_CODE_USE_{BEDROCK,VERTEX,FOUNDRY,ANTHROPIC_AWS,ANTHROPIC_GOOGLE_CLOUD,MANTLE,GATEWAY} and their project/region keys, CLOUD_ML_REGION) and the AWS/GCP region, profile and credential-file keys.
     - `Ghn` = `PATH`, `CLAUDE_CODE_EXTRA_BODY`, `CLAUDE_CODE_HOST_CREDS_FILE`, plus every endpoint and companion from `lMe` (ANTHROPIC_BASE_URL, ANTHROPIC_{BEDROCK,VERTEX,FOUNDRY,AWS,GOOGLE_CLOUD,BEDROCK_MANTLE}_BASE_URL, ANTHROPIC_CUSTOM_HEADERS, the CLAUDE_CODE_SKIP_*_AUTH keys, _CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL).
     - Not in it: `HOME`, `USER`, auth secrets (ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN …), any `SUB_HUMAN_*`. The full expanded list is `DAEMON_ENV_ALLOW` in `plugin/sub-human/lib/cc.js`; `scripts/probe-cc.js` checks each name is still in the binary.
+
+> (Moved: `DAEMON_ENV_ALLOW` is in `lib/cc/bg.ts`, built from `lib/cc/contract.json` `daemon-env-allowlist`.)
     - Literal searches: `"CLAUDE_CODE_RESUME_SOURCE_ALIVE","CLAUDE_CODE_PLUGIN_DIRS"]`, `["PATH","CLAUDE_CODE_EXTRA_BODY","CLAUDE_CODE_HOST_CREDS_FILE",`, `new Set(["CLAUDE_CONFIG_DIR","CLAUDE_INTERNAL_FC_OVERRIDES",`.
   - Workers and spares are spawned with `Vt()`, which is the **daemon's own `process.env`** (sanitized) plus that filtered env. Search `CLAUDE_CODE_SESSION_KIND:"bg",CLAUDE_BG_BACKEND:"daemon",FORCE_COLOR`.
   - The persisted `providerEnv` is filtered through the same `p0e` set. Search `stripped disallowed providerEnv key(s)`.
@@ -151,6 +153,8 @@ function Zho(e,n,r){if(!(n?/^[a-zA-Z0-9_|, -]+$/:/^[a-zA-Z0-9_|]+$/).test(e))ret
 - **Per-hook fields.** Search `If true, hook runs in background and wakes the model on exit code 2`. The fields are `timeout` (seconds), `statusMessage`, `once`, `async`, `asyncRewake`, plus `rewakeMessage` and `rewakeSummary` (marked @internal).
 - **Timeouts.** The default hook timeout is `Ua=600000` ms (10 min); search `var Ua=600000,Ghe=30000`. SessionEnd defaults to **1500 ms**. Its budget is the largest SessionEnd hook `timeout`, floored at 1500 ms and capped at 60000 ms, and `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS` overrides it. Search `function Zde(){let e=a.CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS` and `jeo=1500,Hho=60000`.
 - **Stop `additionalContext`.** Search `case"Stop":case"SubagentStop":U.additionalContext=e.hookSpecificOutput.additionalContext`. A Stop hook that returns `hookSpecificOutput: {hookEventName:"Stop", additionalContext}` adds a `hook_additional_context` attachment and the turn continues, as with a block. A block (`decision:"block"` or exit 2) instead renders `Stop hook error: <reason>` in red (`${e} hook error: ${n.blockingError}`) and raises the "Stop hook error occurred" notification. `hooks/consent.ts` uses additionalContext for the open-review nudge. Stability: incidental.
+
+> (Moved: the consent hook is `hooks/handlers/consent.ts`, its nudge `mod/consent.ts`.)
 - Stability: **API** (documented semantics).
 
 ## 8. Cross-session messaging
@@ -203,6 +207,10 @@ function Zho(e,n,r){if(!(n?/^[a-zA-Z0-9_|, -]+$/:/^[a-zA-Z0-9_|]+$/).test(e))ret
 
 Every assumption above is an entry in `CONTRACT` in `plugin/sub-human/lib/cc.js` (id, literal search string(s), stability, note), and each export there carries `@cc <search>` and `@stability`. `node scripts/probe-cc.js [--json]` finds the installed binary (`CLAUDE_BIN`, then `claude` on PATH with symlinks resolved, then the Homebrew Caskroom), greps it for every search string and exits 1 on any miss. Search strings that embed minified names (`Mk`, `aP`, `eYn` …) are build-specific: on a new build, a FAIL there means "re-read this spot", not necessarily "the behavior changed".
 
+> (Moved: `lib/cc.js` became `lib/cc.ts`, then `lib/cc/`: the entries are `lib/cc/contract.json`, the `@cc` tags are on `lib/cc/{env,transcript,bg}.ts`.)
+
 ## Observed: Monitor strips leading whitespace from event lines
 
 Seen in live run penguin-3531 and confirmed with a probe Monitor: an event line `"  │ x"` reaches the model as `"│ x"`. There is no binary search string for this yet, so it is not in `lib/cc.ts` CONTRACT. Effect on the plugin: a nested chat line is marked by the `│` glyph, not by CHAT_NEST's leading spaces. Never rely on leading indentation in monitor output.
+
+> (Moved: the contract is `lib/cc/contract.json`.)

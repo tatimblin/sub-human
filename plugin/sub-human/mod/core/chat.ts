@@ -30,8 +30,24 @@ export function peerLines(fromName: unknown, text: unknown): string[] | null {
   return out;
 }
 
-/** A sub-human prompt without its "(for Claude)" lines (the model still reads them); null when none is left. */
-export function roomLines(text: unknown): string[] | null {
-  const lines = clean(text).split('\n').map(l => l.replace(/\s+$/, '')).filter(l => l.trim() && !l.startsWith(FOR_CLAUDE));
-  return lines.length ? lines : null;
+/** One drawn line of a sub-human prompt: dim for a "(for Claude)" marker. */
+export interface RoomRow { text: string; dim: boolean }
+/** The longest a "(for Claude)" marker is drawn, in characters, "…" included. */
+export const FOR_CLAUDE_MARK_MAX = 72;
+
+/**
+ * A sub-human prompt as the person sees it: its chat lines, and each run of "(for Claude)" lines (what only the model
+ * acts on: a wake's head, the room's state) as one dim marker in its place, the first of them cut to
+ * FOR_CLAUDE_MARK_MAX, with "(+N)" for the others (ctrl+o shows them whole). Nothing is hidden from the person, and
+ * the model reads the prompt unchanged. null when no chat line is left (the engine draws the row itself).
+ */
+export function roomRows(text: unknown): RoomRow[] | null {
+  const rows: RoomRow[] = [];
+  let run = 0;
+  for (const l of clean(text).split('\n').map(x => x.replace(/\s+$/, '')).filter(x => x.trim())) {
+    if (!l.startsWith(FOR_CLAUDE)) { run = 0; rows.push({ text: l, dim: false }); continue; }
+    if (run++) { rows[rows.length - 1] = { text: `${rows[rows.length - 1].text.replace(/ \(\+\d+\)$/, '')} (+${run - 1})`, dim: true }; continue; }
+    rows.push({ text: l.length > FOR_CLAUDE_MARK_MAX ? `${l.slice(0, FOR_CLAUDE_MARK_MAX - 1).trimEnd()}…` : l, dim: true });
+  }
+  return rows.some(r => !r.dim) ? rows : null;
 }

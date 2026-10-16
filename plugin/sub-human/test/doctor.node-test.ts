@@ -15,7 +15,7 @@ import * as identity from '../lib/identity.ts';
 import * as linkMod from '../lib/remote/link.ts';
 import * as store from '../lib/room/store.ts';
 import type { Check, KeyLine, LinkReport, LinkStateView, Reach, Report } from '../lib/cli/types.ts';
-import type { AgentJob } from '../lib/cc.ts';
+import type { AgentJob } from '../lib/cc/bg.ts';
 import type { MirrorRoomStore } from '../lib/room/store-mirror.ts';
 
 const KEY_B64 = crypto.randomBytes(51).toString('base64').replace(/=+$/, '');
@@ -400,4 +400,12 @@ test('doctor checkClaude: a probe that cannot run says so (a launcher, another v
   assert.match(empty.check.detail, /could not run: none of the \d+ internals was found/);
   assert.doesNotMatch(empty.check.detail, /changed/);
   assert.equal(empty.probe, null);
+});
+
+test('doctor checkClaude: an internal reported changed on this version is named (CONTRACT degraded), whatever the probe says', () => {
+  const quick = doctor.checkClaude({ version: '2.1.300', quick: true, env: { PATH: '' } });
+  assert.equal(quick.check.status, 'info');
+  assert.match(quick.check.detail, /; reported changed on this version: session-append-notice-rewrite \(#8\)$/);
+  const probed = doctor.checkClaude({ version: '2.1.296', quick: true, env: { PATH: '' } });
+  assert.doesNotMatch(probed.check.detail, /reported changed/);
 });

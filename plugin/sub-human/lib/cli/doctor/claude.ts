@@ -3,7 +3,8 @@
  *
  *   claudeVersion(env) -> string | null   `claude --version`
  *   checkClaude({version, quick, env}) -> {check, probe?}   claude: the version against cc.MIN_VERSION and
- *       cc.PROBED_VERSION; when it differs from the probed one, unless --quick, the internals probe (cc.probe, ~3 s).
+ *       cc.PROBED_VERSION; when it differs from the probed one, unless --quick, the internals probe (lib/cc/contract.ts
+ *       probe, ~3 s); an internal reported changed on that version (CONTRACT degraded) is named in the detail.
  *       Info "probe could not run" (no probe in the report) when the binary found has no VERSION marker (a launcher), is
  *       another version than `claude --version`, or lacks every internal
  *   checkDaemon({version, status?, exe?}) -> Check   the bg daemon (`claude daemon status`, also with --quick): its
@@ -41,15 +42,18 @@ function claudeVersion(env: NodeJS.ProcessEnv): string | null {
 }
 
 function checkClaude({ version, quick, env }: { version: string | null; quick: boolean; env: NodeJS.ProcessEnv }): { check: Check; probe?: Report['probe'] } {
-  const cc = lib('cc.ts');
+  const cc = lib('cc/contract.ts');
   if (!version) return { check: check('claude', 'warn', 'Claude Code', 'no `claude` on PATH here', 'install Claude Code, or put it on PATH for this shell') };
   if ((cc.compareVersions(version, cc.MIN_VERSION) ?? 0) < 0) { // null (unreadable) is not older
     return { check: check('claude', 'fail', 'Claude Code', `${version}; sub-human needs ${cc.MIN_VERSION}+ (function hooks)`, 'update Claude Code (claude update)') };
   }
   const same = cc.compareVersions(version, cc.PROBED_VERSION) === 0;
-  if (same) return { check: check('claude', 'pass', 'Claude Code', `${version}, the version its internals were checked on`) };
+  // an internal reported to have changed on this version, which the probe may not see (CONTRACT degraded)
+  const deg = cc.degradedOn(version);
+  const degraded = deg.length ? `; reported changed on this version: ${deg.map(d => d.issue ? `${d.id} (#${d.issue})` : d.id).join(', ')}` : '';
+  if (same) return { check: check('claude', 'pass', 'Claude Code', `${version}, the version its internals were checked on${degraded}`) };
   if (quick) {
-    return { check: check('claude', 'info', 'Claude Code', `${version}; internals last checked on ${cc.PROBED_VERSION} (run without --quick to check them)`) };
+    return { check: check('claude', 'info', 'Claude Code', `${version}; internals last checked on ${cc.PROBED_VERSION} (run without --quick to check them)${degraded}`) };
   }
   const bin = cc.locateBinary({ env });
   if (!bin) return { check: check('claude', 'info', 'Claude Code', `${version}; the binary was not found to check its internals`) };
@@ -66,16 +70,16 @@ function checkClaude({ version, quick, env }: { version: string | null; quick: b
   const missing = results.filter(r => !r.ok).map(r => r.id);
   // every entry missing is a probe that read the wrong thing, not every internal changed at once
   if (missing.length === results.length) return cannot(`none of the ${results.length} internals was found in ${tilde(bin)}; set CLAUDE_BIN to the Claude Code binary`);
-  if (!missing.length) return { check: check('claude', 'pass', 'Claude Code', `${version}; all ${results.length} internals sub-human relies on are present`), probe: { total: results.length, missing } };
+  if (!missing.length) return { check: check('claude', 'pass', 'Claude Code', `${version}; all ${results.length} internals sub-human relies on are present${degraded}`), probe: { total: results.length, missing } };
   return {
-    check: check('claude', 'warn', 'Claude Code', `${version}; ${missing.length} of ${results.length} internals changed since ${cc.PROBED_VERSION}: ${missing.join(', ')}`,
+    check: check('claude', 'warn', 'Claude Code', `${version}; ${missing.length} of ${results.length} internals changed since ${cc.PROBED_VERSION}: ${missing.join(', ')}${degraded}`,
       `update sub-human (/plugin update sub-human); if it persists, report it with ${cli('doctor --bundle')}`),
     probe: { total: results.length, missing },
   };
 }
 
 function settingsFiles(env: NodeJS.ProcessEnv): Settings[] {
-  const cc = lib('cc.ts');
+  const cc = lib('cc/env.ts');
   return cc.userSettingsFiles(process.cwd(), env).map(f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } }).filter(Boolean);
 }
 
@@ -86,7 +90,7 @@ function checkHooks(settings: Settings[], env = process.env): Check {
   if (settings.some(s => s.allowManagedHooksOnly === true)) {
     return check('hooks', 'fail', 'hooks', 'a settings file sets allowManagedHooksOnly: only managed hooks run, so sub-human cannot join a room', 'ask whoever manages this machine\'s Claude Code settings, or remove allowManagedHooksOnly from yours');
   }
-  if (lib('cc.ts').modulesSwitch(env) === false) {
+  if (lib('cc/env.ts').modulesSwitch(env) === false) {
     return check('hooks', 'fail', 'hooks', 'Claude Code has plugin hooks modules switched off for now (its saved switch), so sub-human cannot join a room', 'restart claude with network access, which refreshes the switch; if this stays, hooks modules are off for your account');
   }
   return check('hooks', 'pass', 'hooks', 'no settings file turns hooks off; hooks modules are on');
@@ -118,7 +122,7 @@ const RESTART = (code: string) => `then /sub-human NAME ${code} (in the room) st
  * records which).
  * jobs: the `claude agents` lookup (tests); called only for a job that never bound.
  */
-function checkRoomClaudes({ now = Date.now(), jobs = () => lib('cc.ts').jobs({ all: true }) }: { now?: number, jobs?: () => import('../../cc.ts').AgentJob[] | null } = {}): Check[] {
+function checkRoomClaudes({ now = Date.now(), jobs = () => lib('cc/bg.ts').jobs({ all: true }) }: { now?: number, jobs?: () => import('../../cc/bg.ts').AgentJob[] | null } = {}): Check[] {
   const identity = lib('identity.ts');
   const out: Check[] = [];
   let codes: string[] = [];
@@ -162,10 +166,10 @@ function checkRoomClaudes({ now = Date.now(), jobs = () => lib('cc.ts').jobs({ a
  * and one that did not crashed every room's Claude it started, issue #5), warn when its version is not `claude --version`'s,
  * info when it is not running or its status is unreadable. status, exe: cc.daemonStatus and cc.exeState (tests).
  */
-function checkDaemon({ version, env = process.env, status = () => lib('cc.ts').daemonStatus({ env }), exe = (pid: number) => lib('cc.ts').exeState(pid) }: {
-  version: string | null; env?: NodeJS.ProcessEnv; status?: () => import('../../cc.ts').DaemonStatus | null; exe?: (pid: number) => { exe: string; deleted: boolean } | null;
+function checkDaemon({ version, env = process.env, status = () => lib('cc/bg.ts').daemonStatus({ env }), exe = (pid: number) => lib('cc/bg.ts').exeState(pid) }: {
+  version: string | null; env?: NodeJS.ProcessEnv; status?: () => import('../../cc/bg.ts').DaemonStatus | null; exe?: (pid: number) => { exe: string; deleted: boolean } | null;
 }): Check {
-  let st: import('../../cc.ts').DaemonStatus | null = null;
+  let st: import('../../cc/bg.ts').DaemonStatus | null = null;
   try { st = status(); } catch { st = null; }
   if (!st) return check('daemon', 'info', 'bg daemon', 'could not read `claude daemon status`');
   if (!st.running) return check('daemon', 'info', 'bg daemon', 'not running (the next `claude agents` or `claude --bg` starts one)');
@@ -175,7 +179,7 @@ function checkDaemon({ version, env = process.env, status = () => lib('cc.ts').d
   if (x && x.deleted) {
     return check('daemon', 'fail', 'bg daemon', `running (${who}) from ${tilde(x.exe)}, which was deleted since it started (Claude Code was upgraded or reinstalled): background sessions it starts, the room's Claude included, can crash`, DAEMON_STOP);
   }
-  const cc = lib('cc.ts');
+  const cc = lib('cc/contract.ts');
   if (st.version && version && cc.compareVersions(st.version, version) !== 0) {
     return check('daemon', 'warn', 'bg daemon', `running (${who}) while \`claude --version\` says ${version}: background sessions start on the daemon's version`, DAEMON_STOP);
   }

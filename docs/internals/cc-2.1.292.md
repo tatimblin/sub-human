@@ -4,6 +4,8 @@ Source: `/opt/homebrew/Caskroom/claude-code@latest/2.1.292/claude` (`VERSION:"2.
 
 On 2.1.292, 20 of the 64 `lib/cc.ts` CONTRACT entries failed the probe. 18 were renamed minified identifiers (the code is the same), and 2 changed behaviour. Neither change needed a plugin code change beyond `cc.DAEMON_ENV_ALLOW`.
 
+> (Moved: `lib/cc.ts` is now `lib/cc/`, the entries `lib/cc/contract.json`.)
+
 ## The probe change: shapes instead of minified names
 
 Each failing search string had a minified name in it (`cr.status`, `Mk()`, `aP`, `eYn`, `Wpe`, `Zde` …), and those names change on every build. CONTRACT entries now have two kinds of check:
@@ -101,6 +103,8 @@ Some of these passing searches still named minified identifiers. They were rewri
 ## Function hooks
 
 What the [mods plan](../archive/MODS-PLAN.md) W0 spikes measured on 2.1.292 (2026-10-07). Method: a throwaway plugin (`hooks.json` with a command `UserPromptSubmit` + `SessionStart` hook and `"modules": ["./register.mjs"]`, the entry importing `../mod/x.mjs`) under `$TMPDIR/sh-mods-spike/`, loaded with `--plugin-dir` in `-p` runs, one `--bg` job and two interactive tmux sessions. Each hook appended a JSON line to a log file. The CONTRACT entries are in `lib/cc.ts` §10 (and `prompt-origin-composer` in §8).
+
+> (Moved: the entries are in `lib/cc/contract.json`.)
 
 | # | Question | Answer | Evidence | CONTRACT |
 |---|---|---|---|---|
@@ -230,6 +234,8 @@ Read from the 2.1.292 binary for the message pass (`docs/next/COMMANDS-REVIEW.md
 
 `command.run` fires for every slash command, a plugin's skill included, before it expands (the dispatch calls the hook chain with the engine's run as core), so the module answers `/sub-human` itself: `{}` plus `$.ui.log` lines in the terminal (a `{text}` row was tried first: the model read it and repeated it on its next turn, "You've left salmon-5421" under "left salmon-5421"), `{text}` only through Remote Control for a reply with no secret, and `next(e)` only for a join that worked, whose mechanics block it hands to its own `classic.UserPromptExpansion` hook (answered without `next`, so `hooks/join.ts` does not run twice). An SDK prompt (`-p`), or one with pasted blocks before it, is echoed as a user row whatever the answer (`P = isNonInteractive || precedingInputBlocks.length || !By(origin)` in the answer's renderer): the module leaves those, a prompt through Remote Control that may hold a PIN, and the room's Claude's launch to the classic hook, which keeps the prompt out with `suppressOriginalPrompt`. Limit: a `$.ui.log` line never reaches the phone.
 
+> (Moved: `hooks/join.ts` is now `hooks/handlers/join.ts`, its commands `lib/commands/`.)
+
 ## The @room receipt (0.5.0-beta.9)
 
 Read from the 2.1.292 binary for the trailer: can an `@room` post end with no "Operation stopped by hook" frame? CONTRACT `ups-stop-frame`, `session-append-notice-rewrite`.
@@ -240,6 +246,8 @@ Read from the 2.1.292 binary for the trailer: can an `@room` post end with no "O
 - **Claude Code request:** a way for a function hook to end a prompt with no turn and its own receipt (or none), without a warning frame.
 
 **Why a session has no module.** Modules wait for workspace trust, are off in safe mode and `--bare` (where the command hooks are off too), off for installed plugins under `allowManagedHooksOnly` / managed `disableAllHooks`, and off when the GrowthBook switch `tengu_plugin_hooks_modules` is (its last value is cached in the global config's `cachedGrowthBookFeatures`). `hooks/join.ts noModule` names the cause it can see from a command hook (the running binary's version, the cached switch); `/sub-human doctor` and `help` run without the module.
+
+> (Moved: `noModule` is in `lib/commands/index.ts`.)
 
 ## Remote Control
 

@@ -21,14 +21,14 @@ import * as identity from '../../lib/identity.ts';
 import * as room from '../../lib/room.ts';
 import { oneLine } from '../../lib/text.ts';
 import * as config from '../../lib/config.ts';
-import * as cc from '../../lib/cc.ts';
+import * as cc from '../../lib/cc/transcript.ts';
 import * as seats from '../../lib/seats.ts';
 import * as seatKey from '../seat-key.ts';
 import { whoami } from '../seat.ts';
 import { out } from '../reply.ts';
 import type { HookSpecificOutput, PromptIn } from '../types.ts';
 import type { Identity } from '../../lib/identity.ts';
-import type { TranscriptEntry } from '../../lib/cc.ts';
+import type { TranscriptEntry } from '../../lib/cc/transcript.ts';
 // how a prompt is read is the module's (mod/core): one parser, one list of typed origins, one wording per refusal
 import { parse, parseClaude, TYPED_ORIGINS, NO_ORIGIN, NOT_IN_ROOM } from '../../mod/core/prompt.ts';
 import { attested as leaseAttests } from '../../mod/core/state.ts';

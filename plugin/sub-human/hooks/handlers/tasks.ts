@@ -23,7 +23,7 @@ import { resolveSeat } from '../seat.ts';
 import * as identity from '../../lib/identity.ts';
 import * as room from '../../lib/room.ts';
 import * as tasks from '../../lib/tasks.ts';
-import * as cc from '../../lib/cc.ts';
+import * as cc from '../../lib/cc/env.ts';
 import { readJson } from '../../lib/io.ts';
 import type { AnyHookIn, HookIn, Reply } from '../types.ts';
 import type { RawTask } from '../../lib/tasks.ts';
