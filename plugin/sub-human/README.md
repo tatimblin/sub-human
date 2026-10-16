@@ -219,15 +219,23 @@ Your agent panel gets one row named after the room, with the other people nested
 - Rows are read-only views. If you type into one, it answers `read-only row — type in main with @room` and nothing is posted.
 - After `--resume` or `--continue`, your rows come back by themselves within a few seconds.
 
+### The agent view (←) moves your session
+
+**←** from your prompt is Claude Code's agent view, and opening it moves your own conversation into the background: Claude Code starts it again as a background session under a new session id, and your terminal becomes the agent view. Your rows end with the old session. **Enter on your own row (`alice.vole-8126`) goes back to your conversation**, and sub-human moves your seat into the new session: you stay in the room, nobody sees you leave, and your rows start again. A bare `/sub-human` there does the same if the move was missed. It never opens a second room while your seat is live in another session of the same folder; it says where the seat is.
+
+Two things change with the move. The conversation now runs under Claude Code's background daemon, so closing the terminal does not end it (`/exit` in it does). And the daemon passes on only some environment variables: a session started with `SUB_HUMAN_HOME` set in the shell loses it there, so the moved session no longer sees your rooms. Put `SUB_HUMAN_HOME` in the `env` of your own Claude Code settings instead if you use the agent view.
+
+To watch the room's Claude without moving your session, use `claude logs <id>` or `sub-human watch claude` in another terminal (below).
+
 While the rows run, Claude Code prints **"✻ Waiting for N background agents to finish"** after each turn, where N counts your rows. This is expected. Your prompt is still free, and nothing is stuck. Setting `"showTurnDuration": false` in your own settings hides the line, along with "Worked for 12s". The plugin never writes your settings.
 
 ## Watching the room's Claude
 
 The room's Claude takes no typed input. Every input it gets is attributed: a room entry, a Claude's `SendMessage`, or a task request.
 
-- In the agent view (**←**), it shows as `claude.vole-8126` with its last status. **Space** peeks: its panel lists one row per person, and **ctrl+t** shows the room's task list. **Enter** attaches.
+- In the agent view (**←**), it shows as `claude.vole-8126` with its last status. **Space** peeks: its panel lists one row per person, and **ctrl+t** shows the room's task list. **Enter** attaches. Opening the agent view moves your own session too (see **The agent view (←) moves your session**): Enter on your own row to get back.
 - If you type into it, the prompt is refused with `the room's Claude takes no typed input; type @claude in your own session, or ask your Claude to message claude.vole-8126`. A slash command typed there (`/clear` included) is answered with the same refusal and never runs (the hooks module's `command.run`, which Claude Code raises before any command).
-- `claude logs <id>` and `sub-human watch claude` show it read-only.
+- `claude logs <id>` and `sub-human watch claude` show it read-only, from another terminal, and leave your session where it is.
 - About half a minute after the last person leaves, the room's Claude is stopped.
 
 ## Saying something to the room: `@room` and `@claude`

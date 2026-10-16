@@ -443,7 +443,7 @@ export function registerDeliver(on: On) {
       try { await $.state.set(REVIEW, true); await refresh($, e.session_id); } catch { /* the next refresh tries again */ }
       try {
         const hello = asHello((await $.state.get(HELLO)).value);
-        if (e.source === 'resume' && hello && hello.seat) void rewake($, e);
+        if ((e.source === 'resume' || e.source === 'fork') && hello && hello.seat) void rewake($, e);
       } catch { /* the rows come with the next prompt (the restore's context) */ }
     }
     try {

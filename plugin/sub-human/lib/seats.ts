@@ -47,6 +47,8 @@
  *       lib/gc.ts sweep (closed rooms, ended sessions' indexes; at most every GC_EVERY_MS, within GC_BUDGET_MS), and
  *       a seat taken sweeps its room's row maps of ended sessions (gc.sweepRows)
  *   withWhom(code, name) -> string   "with bob, carol", "4 others here" or "nobody else here yet" (the people only)
+ *   liveSeatHere(cwd, name) -> code|null   an open room where name's seat is live and was taken from cwd (another
+ *       session of this folder holds it): a bare /sub-human opens no second room for that person
  */
 
 import * as identity from './identity.ts';
@@ -227,6 +229,16 @@ function withWhom(code: string, name: string): string {
   return names.length > 3 ? `${names.length} others here` : `with ${names.join(', ')}`;
 }
 
+function liveSeatHere(cwd: string, name: string): string | null {
+  try {
+    for (const c of identity.openRooms()) {
+      const m = identity.readMembers(c)[name];
+      if (m && m.role !== 'claude' && m.cwd === cwd && identity.seatAlive(m)) return c;
+    }
+  } catch { /* unknown: no refusal */ }
+  return null;
+}
+
 /** Close rooms where only the room's Claude is left once they have been orphaned long enough (best effort; host only). */
 function sweepOrphans(): void {
   try { identity.pruneModLeases(); } catch { /* the next join retries */ }
@@ -289,4 +301,4 @@ function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd,
  * module's own exports are read-only. */
 const seam = { startDetached: (o: Parameters<typeof roomClaude.startDetached>[0]) => roomClaude.startDetached(o) };
 
-export { enter, exit, sweep, back, ensureRoomClaude, seam, take, withWhom };
+export { enter, exit, sweep, back, ensureRoomClaude, seam, take, withWhom, liveSeatHere };

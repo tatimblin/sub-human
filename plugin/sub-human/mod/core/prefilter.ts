@@ -38,13 +38,16 @@ export const seatedOrUnsure = (hello: Hello | null | undefined, sid: unknown): b
  * session. Any other agent costs no node start. */
 export const rowsNeeded = (hello: Hello | null | undefined, sid: unknown, agentType: unknown): boolean => isRow(agentType) && seatedOrUnsure(hello, sid);
 
-const RESTORE_SOURCES = new Set(['clear', 'compact', 'resume']);
+const RESTORE_SOURCES = new Set(['clear', 'compact', 'resume', 'fork']);
 
 /** classic.SessionStart: session-restore (and on resume row-rewake) runs for clear, compact and resume unless the
  * hello is this session's and says there is no seat and nothing to restore (restorable: the seat this session id last
- * held, or one this claude process holds; unset counts as false only in a hello that is this session's). */
+ * held, or one this claude process holds; unset counts as false only in a hello that is this session's). A fork always
+ * runs it: its new session id has no index, and only the old transcript says whose seat it continues (← the agent
+ * view; hooks/handlers/session-restore.ts). */
 export function restoreNeeded(hello: Hello | null | undefined, sid: unknown, source: unknown): boolean {
   if (!RESTORE_SOURCES.has(String(source))) return false;
+  if (source === 'fork') return true;
   if (!sure(hello, sid) || !hello) return true;
   return !!hello.seat || hello.restorable === true;
 }

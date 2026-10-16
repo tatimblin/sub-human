@@ -80,6 +80,12 @@
  *                                        Bash, hooks and the status line; the mod sets it for its tail child), then CLAUDE_PID (same
  *                                        children), then the nearest ancestor pid with a registration
  *   lastSeat(sid) -> {code, name, role}|null   the seat a session id last held, left or not (for --resume)
+ *   forkParent(sid, dir) -> {sid, code, name, role}|null   the seat this session's conversation came from when ← (the
+ *                                        agent view) moved it into a bg job under a new id: a seat still held by an
+ *                                        older session whose transcript, beside this one's in dir, says it continued
+ *                                        in sid (lib/cc/transcript.ts continuedIn; CONTRACT session-fork-continued-in)
+ *   adoptFork(from, {pid, session_id, cwd}) -> JoinResult   move that seat to this process and session (no leave, no
+ *                                        log line: the person never left); the old session's indexes are dropped
  *   localSeats(code) -> [name]           this machine's seats in code that a live claude process holds, by the
  *                                        session indexes (resolveByPid): what a mirror knows while its link is down
  *   claudePid() -> int|null              CLAUDE_PID from the environment (hooks run with it set; lib/cc/env.ts)
@@ -124,6 +130,7 @@ import {
   seatAlive, leaseFresh, startMatches, PRESENCE_STATES, ROOM_CLAUDE, LOG_V,
 } from './room/members.ts';
 import * as cc from './cc/env.ts';
+import { continuedIn } from './cc/transcript.ts';
 import type { JoinResult, Member, Members, MembersApi, PresenceState, Role, SeatRecord } from './room/types.ts';
 
 /** A resolved seat (resolveBySession, resolveByPid, resolveSelf): address = NAME.CODE, the session title. */
@@ -487,6 +494,58 @@ function lastSeat(sid: unknown): { code: string; name: string; role: Role; addre
   return { code: rec.code, name, role, address: address(name, rec.code) };
 }
 
+type ForkParent = { sid: string; code: string; name: string; role: Role };
+
+function forkParent(sid: unknown, dir: string | null | undefined): ForkParent | null {
+  if (typeof sid !== 'string' || !SID_RE.test(sid) || typeof dir !== 'string' || !dir) return null;
+  let names: string[];
+  try { names = fs.readdirSync(path.dirname(bySidFile(sid))); } catch { return null; }
+  for (const f of names) {
+    const old = f.replace(/\.json$/, '');
+    if (old === sid || !SID_RE.test(old)) continue;
+    const transcript = path.join(dir, `${old}.jsonl`);
+    if (!fs.existsSync(transcript)) continue; // not a session of this directory
+    const rec: SeatIndex | null = readJson(bySidFile(old));
+    if (!rec || !roomExists(rec.code) || !NAME_RE.test(String(rec.name))) continue;
+    const m = indexedSeat(rec);
+    if (!m || m.left_at || m.session_id !== old) continue;
+    if (continuedIn(transcript) !== sid) continue;
+    return { sid: old, code: rec.code, name: rec.name, role: rec.role === ROOM_CLAUDE ? ROOM_CLAUDE : 'member' };
+  }
+  return null;
+}
+
+function adoptFork(from: ForkParent, { pid: pidArg, session_id, cwd }: { pid: unknown; session_id: string; cwd?: string | null }): JoinResult {
+  const pid = Number(pidArg);
+  if (!validPid(pid)) return fail(`invalid pid "${pid}"`);
+  const before: SeatIndex | null = readJson(bySidFile(from.sid));
+  if (isHost(from.code)) {
+    // the old process still runs (as the agent view), so its pid is alive: the seat is handed over, not taken
+    let moved = false;
+    membersOf(from.code).update(ms => {
+      moved = false;
+      const m = ms[from.name];
+      if (!m || m.left_at || m.session_id !== from.sid) return null;
+      m.pid = pid;
+      const st = pidStart(pid);
+      if (st != null) m.pid_start = st; else delete m.pid_start;
+      moved = true;
+      return ms;
+    });
+    if (!moved) return fail(`the seat ${from.name} in ${from.code} is no longer the old session's`);
+  }
+  const r = join({ code: from.code, name: from.name, role: from.role, pid, session_id, cwd });
+  if (r.ok) {
+    rm(bySidFile(from.sid));
+    const oldPid = before && validPid(before.pid) ? before.pid : null;
+    if (oldPid && oldPid !== pid) {
+      const p: SeatIndex | null = readJson(byPidFile(oldPid));
+      if (p && p.code === from.code && p.name === from.name) rm(byPidFile(oldPid));
+    }
+  }
+  return r;
+}
+
 const claudePid = () => cc.claudePid();
 
 function parentTable(): Map<number, number> {
@@ -596,7 +655,7 @@ export {
   NAME_RE, CODE_RE, RESERVED, VERBS, ROOM_CLAUDE, ANIMALS, PRESENCE_STATES, normalizeName, defaultName, home,
   roomDir, machineId, machineIn, isMine, newCode, roomExists, isHost, openRooms, closedForGood, orphanRooms, roomOpen, roomClosing, address,
   readMembers, join, leave, rebindSession, updateRoomClaude, liveMembers, seatAlive, heartbeat,
-  leaseFresh, isAlive, claudePid, resolveByPid, resolveBySession, resolveSelf, lastSeat, localSeats, adoptLocalSeats,
+  leaseFresh, isAlive, claudePid, resolveByPid, resolveBySession, resolveSelf, lastSeat, forkParent, adoptFork, localSeats, adoptLocalSeats,
   MOD_LEASE_FRESH_MS, writeModLease, readModLease, modLeaseOk, deleteModLease, pruneModLeases, pruneSessionIndexes, writePresence,
 };
-export type { Identity, SeatIndex, ModLease, JoinRequest, RoomClaudePatch };
+export type { Identity, SeatIndex, ModLease, JoinRequest, RoomClaudePatch, ForkParent };

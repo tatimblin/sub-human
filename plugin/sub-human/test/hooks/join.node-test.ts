@@ -803,3 +803,24 @@ test('an invite line without its SECRET: a second sub-human folder has no login 
   }
   assert.deepEqual(fs.readdirSync(w.home).filter(d => d === 'links'), [], 'no link written');
 });
+
+test('bare /sub-human in a fork of a seated session (← the agent view) takes the seat back; with no fork record, a live seat of this folder in another session is refused with where it is, never a second room', () => {
+  const w = new World({ claude: 'sleep', alice: 'sleep' });
+  spawnSync('git', ['init', '-q', w.cwd]);
+  spawnSync('git', ['-C', w.cwd, 'config', 'user.name', 'Alice Liddell']);
+  w.pid.fork = process.ppid; w.sid.fork = 'aaaaaaaa-0000-4000-8000-0000000000f1';
+  let r = w.hook('join', expand(''), { as: 'fork', env: NO_GIT });
+  assert.equal(r.json!.decision, 'block');
+  assert.match(r.json!.reason!, new RegExp(`already alice in room ${w.code} from another session in this folder[^]*Enter on alice\\.${w.code}`));
+  assert.deepEqual(fs.readdirSync(path.join(w.home, 'rooms')), [w.code], 'no second room');
+  // Claude Code's record in the old transcript, beside this session's: the conversation went on in the fork
+  const dir = path.join(w.userHome, '.claude', 'projects', fs.realpathSync(w.cwd).replace(/[^a-zA-Z0-9]/g, '-'));
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${w.sid.alice}.jsonl`), `${JSON.stringify({ type: 'continued-in', continuedInSessionId: w.sid.fork })}\n`);
+  r = w.hook('join', expand(''), { as: 'fork', env: NO_GIT });
+  assert.equal(r.json!.decision, undefined, r.stdout);
+  const m = w.members().alice;
+  assert.deepEqual([m.session_id, m.pid, m.left_at], [w.sid.fork, process.ppid, undefined]);
+  assert.deepEqual(fs.readdirSync(path.join(w.home, 'rooms')), [w.code]);
+  assert.ok(!w.entries().some(e => /alice (left|rejoined)/.test(e.text || '')), 'the person never left');
+});

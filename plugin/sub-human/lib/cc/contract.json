@@ -771,6 +771,19 @@
    "note": "A hook's sessionTitle renames the session and writes the name to the session registry; ListAgents lists it and SendMessage `to` matches it exactly, so NAME.CODE is the address. Names are unique among live sessions: a second live session given the same name takes a suffixed one and is not reachable at NAME.CODE (cc-2.1.292.md Review spikes, S-title)."
   },
   {
+   "id": "session-fork-continued-in",
+   "section": 8,
+   "stability": "incidental",
+   "since": "2.1.296",
+   "search": [
+    "?\"fork\":\"resume\"",
+    "\"type\":\"continued-in\"",
+    "[bg] continued-in record not written: ",
+    "replace(/[^a-zA-Z0-9]/g,\"-\")"
+   ],
+   "note": "← (the agent view) backgrounds the session: Claude Code starts a bg job `claude --resume <transcript> --fork-session` (a new session id, SessionStart source \"fork\") and then appends {\"type\":\"continued-in\",\"continuedInSessionId\":NEW} to the old transcript, in the same projects directory (<configDir>/projects/<cwd, every non-alphanumeric as '-'>). The old process stays up as the agent view, its in-process rows end, and the job keeps only the daemon's env allowlist (SUB_HUMAN_HOME is dropped). session-restore moves the seat to the fork the record names (lib/identity.ts forkParent, adoptFork)."
+  },
+  {
    "id": "plugin-settings-allowlist",
    "section": 9,
    "stability": "API",

@@ -5,8 +5,11 @@
  *
  *   bare      `/sub-human`: in a room, a short status (its link started if it stopped, the room's Claude started
  *             again if it failed or ended: seats.ensureRoomClaude), or the seat joined again over a re-pointed link;
- *             not in a room, finish a join the host has let in (a link file's join_as), else join the one open room,
- *             or open one, as the default name
+ *             not in a room, the seat the session this one was forked from holds (← the agent view moved the
+ *             conversation: identity.forkParent; restored, as session-restore does), else finish a join the host has
+ *             let in (a link file's join_as), else join the one open room, or open one, as the default name. Never a
+ *             new room while the default name's seat is live in another session of this folder (seats.liveSeatHere):
+ *             that is refused with where the seat is
  *   named     `/sub-human NAME [ROOM]`: join ROOM (else the one open room, else a new one) as NAME, leaving any other
  *             room; `/sub-human ROOM` (a room code alone): that room as the default name, never a person named after it.
  *             A word of digits is no name (it looks like a PIN)
@@ -29,7 +32,9 @@ import * as inviteSecret from '../remote/invite-secret.ts';
 import * as joining from '../remote/joining.ts';
 import { parse } from '../cli/args.ts';
 import { SECRET_WORD } from '../../mod/core/command.ts';
+import fs from 'node:fs';
 import { createRequire } from 'node:module';
+import { projectDir } from '../cc/env.ts';
 import { HELP_HINT, USAGE, refused, say } from './answer.ts';
 import type { Answer, Ctx, Verb } from './types.ts';
 import type { Identity } from '../identity.ts';
@@ -78,16 +83,33 @@ function status(cur: Identity, cwd: string): Answer {
     + `${host ? 'another machine: /sub-human invite · ' : ''}leave: /sub-human leave${seats.ensureRoomClaude(cur.code, cwd, cur.name)}`);
 }
 
+/** The seat this session's conversation came from (← the agent view forked it), moved here; null when none. */
+function forked(ctx: Ctx): Answer | null {
+  let real = ctx.cwd;
+  try { real = fs.realpathSync(ctx.cwd); } catch { /* as given */ }
+  const from = ctx.sid ? identity.forkParent(ctx.sid, projectDir(real)) || (real !== ctx.cwd ? identity.forkParent(ctx.sid, projectDir(ctx.cwd)) : null) : null;
+  if (!from || !ctx.sid) return null;
+  if (!identity.isHost(from.code)) { try { linkSocket.start(from.code); } catch { /* the join below says why */ } }
+  const r = identity.adoptFork(from, { pid: ctx.pid, session_id: ctx.sid, cwd: ctx.cwd });
+  if (!r.ok) return refused(`could not take back ${from.name}'s seat in ${from.code}: ${r.error || 'unknown error'}`);
+  const me: Identity = { code: from.code, name: from.name, role: from.role, pid: ctx.pid, session_id: ctx.sid, address: identity.address(from.name, from.code) };
+  return { kind: 'joined', me, lead: 'restored after the agent view', say: `you're ${from.name} in room ${from.code} again (this session went on from the one that held the seat), ${seats.withWhom(from.code, from.name)}` };
+}
+
 export const bare: Verb = (_args, ctx) => {
   const { cur, cwd } = ctx;
   if (cur) {
     const l = identity.isHost(cur.code) ? null : links.get(cur.code);
     return l && l.rebind ? seat({ name: cur.name, code: cur.code }, ctx) : status(cur, cwd);
   }
+  const back = forked(ctx);
+  if (back) return back;
   const pending = joining.pendingJoin();
   if (pending) return then(joining.finishJoin(pending), ctx);
   const name = identity.defaultName({ cwd });
   if (!name) return refused('no name to join as (no git user.name or $USER): /sub-human NAME');
+  const here = seats.liveSeatHere(cwd, name);
+  if (here) return refused(`you're already ${name} in room ${here} from another session in this folder, which is still running. Go back to it (in the agent view, ← : Enter on ${identity.address(name, here)}), or sit here as someone else: /sub-human NAME`);
   return seat({ name, code: null, isDefault: true }, ctx);
 };
 

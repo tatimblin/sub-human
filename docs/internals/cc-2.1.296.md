@@ -61,3 +61,9 @@ What four live runs on 2.1.296 showed about Claude Code, and what the plugin now
 - **A UserPromptSubmit `decision: block` puts the prompt back in the input** and draws "UserPromptSubmit operation blocked by hook:". Refusals the person types again are a stop (`continue: false`) now, as the `✓ sent` receipt is (CONTRACT `ups-stop-frame`).
 - **`/clear` in the room's Claude ran** (its conversation cleared, the seat rebound). `command.run` fires for every slash command, built-ins included (the typings' own example is `compact`); the module answers a typed one there with the refusal. Not yet seen live on `/clear` itself.
 - **`idle_prompt` may never come**: every member showed "working" for minutes. The module writes "idle" at the end of a turn a typed prompt started.
+
+## Live verification, round two (stage 8d)
+
+What a second live round on 2.1.296 showed, and what the plugin does about it (the changelog's "Live verification fixes, round two" lists the fixes):
+
+- **← (the agent view) forks the session.** It is `repl_background_fork`: the foreground conversation is started again as a bg job, `claude --resume <transcript> --fork-session …` (a new session id; its SessionStart `source` is `"fork"`, from `r.forkSession…?"fork":"resume"`), and once the job is up the old transcript gets `{"type":"continued-in","continuedInSessionId":NEW}`. The old process stays up as the agent view; the old session's in-process rows end ("Agent … finished" arrives in the fork); no SessionEnd runs for the old session, so its seat stayed live, and the job keeps only the daemon's env allowlist (`SUB_HUMAN_HOME` dropped: the live fork opened its new room in `~/.sub-human`). Before stage 8d the module ran no session-restore for `"fork"` (not a source it knew) and the seat was lost. CONTRACT `session-fork-continued-in`; `session-restore` moves the seat to the session the record names, and a bare `/sub-human` there does the same.

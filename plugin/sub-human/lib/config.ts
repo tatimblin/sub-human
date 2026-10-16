@@ -241,6 +241,7 @@ export const LINK_QUOTAS = {
 // row is this old, go too.
 export const ROOM_GC_MS = 30 * 24 * 60 * 60_000;      // SUB_HUMAN_ROOM_GC_MS
 export const SESSION_INDEX_TTL_MS = 30 * 24 * 60 * 60_000;
+export const FORK_RECORD_WAIT_MS = 3000;     // session-restore after ← (the agent view): the old transcript's continued-in record, written just after the fork starts (SUB_HUMAN_FORK_WAIT_MS)
 export const ROWS_TTL_MS = 7 * 24 * 60 * 60_000;
 export const GC_EVERY_MS = 6 * 60 * 60_000;           // at most one sweep of the home this often (<home>/gc.json)
 export const GC_BUDGET_MS = 250;                      // a sweep stops when it has run this long; the next one goes on

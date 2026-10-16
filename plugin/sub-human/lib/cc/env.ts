@@ -11,6 +11,7 @@
  *   taskListId(env)                      CLAUDE_CODE_TASK_LIST_ID or null
  *   configDir(env)                       CLAUDE_CONFIG_DIR || ~/.claude
  *   sanitizeId(s), tasksDir(listId, env), plansDir(env), taskFile(listId, id, env)
+ *   projectDir(cwd, env)                 <configDir>/projects/<cwd with every non-alphanumeric as '-'>: a session's transcripts
  *   userSettingsFiles(cwd, env)          the settings files the plugin reads showClearContextOnPlanAccept from
  *   clearContextOnPlanAccept(cwd, env)   true when any of them sets it
  *   globalConfigFile(env), modulesSwitch(env) -> bool|undefined   the hooks modules switch Claude Code last cached
@@ -104,6 +105,18 @@ const plansDir = (env: Env = process.env): string => `${configDir(env)}/plans`;
  */
 const taskFile = (listId: string, id: string | number, env: Env = process.env): string => path.join(tasksDir(listId, env), `${sanitizeId(id)}.json`);
 
+/**
+ * <configDir>/projects/<cwd sanitised>: the directory of the transcripts of the sessions started in cwd (every char
+ * outside [A-Za-z0-9] becomes '-'; a name past 200 chars is cut and gets a hash, which this does not compute: null).
+ * @cc replace(/[^a-zA-Z0-9]/g,"-")
+ * @stability incidental
+ */
+function projectDir(cwd: string | null | undefined, env: Env = process.env): string | null {
+  if (typeof cwd !== 'string' || !path.isAbsolute(cwd)) return null;
+  const name = cwd.replace(/[^a-zA-Z0-9]/g, '-');
+  return name.length <= 200 ? path.join(configDir(env), 'projects', name) : null;
+}
+
 // ---------- settings ----------
 
 /**
@@ -178,6 +191,6 @@ function matcherMatches(m: string | null | undefined, name: string, { toolEvent 
 }
 
 export {
-  ENV, sessionId, claudePid, taskListId, configDir, sanitizeId, tasksDir, plansDir, taskFile, userSettingsFiles,
+  ENV, sessionId, claudePid, taskListId, configDir, sanitizeId, tasksDir, plansDir, taskFile, projectDir, userSettingsFiles,
   clearContextOnPlanAccept, globalConfigFile, modulesSwitch, matcherIsExact, matcherMatches,
 };

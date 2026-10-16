@@ -8,6 +8,7 @@
  *   planFile(lines, toolInput?, env), planAnswer(lines, toolUseId) -> {note}|null (null: no tool_result on disk yet),
  *   planFeedback(lines, toolUseId), toolUseInput(lines, toolUseId), lastHumanPrompt(lines) -> {text, at}|null
  *   contentText(content), SAID, NOTE, PASTED_RE, unwrapPasted(text)
+ *   continuedIn(file) -> sid|null        the session a backgrounded session went on in (its last continued-in record)
  */
 
 import fs from 'node:fs';
@@ -235,8 +236,25 @@ function unwrapPasted(text: unknown): { text: string; normalized: boolean } {
   return { text: t, normalized };
 }
 
+/**
+ * The session id this transcript's conversation went on in, or null: ← (the agent view) backgrounds a session as a
+ * fork (a new session id) and then appends {"type":"continued-in","continuedInSessionId":NEW} to the old transcript.
+ * Reads the last 64 KiB: the record is written at the moment of the fork, and the old session writes little after it.
+ * @cc "type":"continued-in"
+ * @stability incidental
+ */
+function continuedIn(file: unknown): string | null {
+  let out: string | null = null;
+  for (const l of readLines(file, { tailBytes: 64 * 1024 })) {
+    if (!l.includes('"continued-in"')) continue;
+    const e = asEntry(l);
+    if (e && e.type === 'continued-in' && typeof e.continuedInSessionId === 'string') out = e.continuedInSessionId;
+  }
+  return out;
+}
+
 export {
   readLines, readEntries, parseLines, planFile, planAnswer, planFeedback, toolUseInput, lastHumanPrompt, contentText,
-  SAID, NOTE, PASTED_RE, unwrapPasted,
+  SAID, NOTE, PASTED_RE, unwrapPasted, continuedIn,
 };
 export type { TranscriptEntry, TranscriptLine, ContentBlock };

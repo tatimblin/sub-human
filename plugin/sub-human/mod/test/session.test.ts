@@ -86,3 +86,26 @@ test('a session surely without a seat: compact, clear and resume start no node',
   for (const source of ['compact', 'clear', 'resume', 'startup']) await $.classic.SessionStart({ session_id: SID, source } as any)
   expect(seen.runs).toEqual([])
 })
+
+test('a fork (← the agent view moved the conversation into a bg job, a new session id with no index): session-restore runs anyway and takes the old seat, then the hello names it, then row-rewake', async ($, on) => {
+  const restore = { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: 'SUB-HUMAN: you are alice\n(restored after the agent view)', sessionTitle: SEAT.addr } }
+  const calls = 'sub-human: this session was resumed, and its rows are NOT running.\nAgent({subagent_type: "sub-human:room"})'
+  const seen = world($, on, { seat: SEAT, answer: { 'session-restore.ts': { stdout: JSON.stringify(restore) }, 'row-rewake.ts': { exitCode: 2, stderr: calls } } })
+  await start($)
+  expect(seen.runs).toEqual([]) // no index for the new id: the hello is the module's own
+  const r: any = await $.classic.SessionStart({ session_id: SID, source: 'fork', cwd: '/w', transcript_path: '/t.jsonl' } as any)
+  expect(r.additionalContext).toEqual([restore.hookSpecificOutput.additionalContext])
+  expect(r.sessionTitle).toBe(SEAT.addr)
+  expect(seen.runs.slice(0, 2)).toEqual(['session-restore.ts', 'mod-hello.ts'])
+  expect(seen.stdin['session-restore.ts'].source).toBe('fork')
+  await until(() => seen.prompts.length === 1)
+  expect(seen.stdin['row-rewake.ts'].source).toBe('fork')
+})
+
+test('a fork with nothing to take back: session-restore says nothing, no tail child, no rewake', async ($, on) => {
+  const seen = world($, on)
+  await start($)
+  const r: any = await $.classic.SessionStart({ session_id: SID, source: 'fork', cwd: '/w', transcript_path: '/t.jsonl' } as any)
+  expect(r.additionalContext).toBeUndefined()
+  expect(seen.runs).toEqual(['session-restore.ts', 'mod-hello.ts'])
+})
