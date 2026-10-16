@@ -30,7 +30,7 @@ import { kick } from './kick.ts';
 import { leave } from './leave.ts';
 import { handoff } from './handoff.ts';
 import { bare, bindRoomClaude, join, named } from './join.ts';
-import type { Answer, Ctx, OpenVerb, Verb } from './types.ts';
+import type { Answer, VerbCtx, OpenVerb, Verb } from './types.ts';
 import type { Identity } from '../identity.ts';
 
 const require = createRequire(import.meta.url);
@@ -38,8 +38,8 @@ const require = createRequire(import.meta.url);
 export const TABLE: Readonly<Record<string, Verb>> = Object.freeze({ '': bare, join, invite, admit, kick, leave, handoff });
 export const OPEN: Readonly<Record<string, OpenVerb>> = Object.freeze({ help, doctor });
 
-/** What run() knows of the session: Ctx without the seat, which it resolves (seat()) only once the lease checked. */
-export type Session = Omit<Ctx, 'pid' | 'cur'> & { pid: number | null; seat(): Identity | null };
+/** What run() knows of the session: VerbCtx without the seat, which it resolves (seat()) only once the lease checked. */
+export type Session = Omit<VerbCtx, 'pid' | 'cur'> & { pid: number | null; seat(): Identity | null };
 
 export function noModule(pid: number | null): string {
   const cc: typeof import('../cc/contract.ts') & typeof import('../cc/bg.ts') & typeof import('../cc/env.ts') =
@@ -59,7 +59,7 @@ function route(args: string[], s: Session): Answer {
   if (open) return open(rest, s); // read only: these work without the module, and a refusal below points to them
   if (!identity.modLeaseOk(s.sid, s.pid)) return refused(noModule(s.pid || identity.claudePid()));
   if (!s.pid) return refused('could not tell which Claude Code session this is. Run /sub-human doctor.');
-  const ctx: Ctx = { ...s, pid: s.pid, cur: s.seat() };
+  const ctx: VerbCtx = { ...s, pid: s.pid, cur: s.seat() };
   if (s.roomClaudeAgent) return bindRoomClaude(args, ctx);
   if (ctx.cur && ctx.cur.role === 'claude') return refused(`this session is the room's Claude of room ${ctx.cur.code}; join from another session.`);
   const v = Object.hasOwn(TABLE, verb) ? TABLE[verb] : null;

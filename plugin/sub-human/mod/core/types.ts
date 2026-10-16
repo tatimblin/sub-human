@@ -5,6 +5,12 @@
  */
 import type { ClassicResult, PluginState, ProcessRunResult, PromptSubmitResult } from 'claude-code';
 import type { TailEvent as TailLine, TailSeat as TailLineSeat } from '../../lib/types-app.ts';
+import type { HookOutput, HookSpecificOutput, PinnedReport, SubHumanReport } from '../../hooks/types.ts';
+
+/** A shape the hooks write, as the module reads it back from a child's stdout: every field there may be missing or of
+ * another type, so each is `unknown` until checked. The one source of each shape stays where it is written
+ * (hooks/types.ts); this is a view of it, never a copy. */
+export type Loose<T> = { [K in keyof T]?: unknown };
 
 /** The hello as $.state keeps it (types/index.d.ts SubHumanHello; mod/core/seat.ts parseHello). */
 export type Hello = PluginState['sub-human']['hello'];
@@ -18,23 +24,15 @@ export type RunOutput = Partial<Pick<ProcessRunResult, 'exitCode' | 'stdout' | '
 export type ShimResult = Pick<ClassicResult,
   'block' | 'preventContinuation' | 'stopReason' | 'additionalContext' | 'sessionTitle' | 'suppressOriginalPrompt'>;
 
-/** A command hook's stdout line, parsed (untrusted: each field checked). */
-export interface HookJson {
-  decision?: unknown;
-  reason?: unknown;
-  continue?: unknown;
-  stopReason?: unknown;
-  systemMessage?: unknown;
-  sessionTitle?: unknown;
-  hookSpecificOutput?: unknown;
-  subHuman?: unknown;
-}
+/** A command hook's stdout line, parsed (untrusted: each field checked): hooks/types.ts HookOutput, loose, and a
+ * top-level sessionTitle (another plugin's hook may put it there). */
+export type HookJson = Loose<HookOutput> & { sessionTitle?: unknown };
 
 /** hookSpecificOutput of such a line, as read. */
-export interface HookJsonSpecific { additionalContext?: unknown; sessionTitle?: unknown; suppressOriginalPrompt?: unknown }
+export type HookJsonSpecific = Loose<Pick<HookSpecificOutput, 'additionalContext' | 'sessionTitle' | 'suppressOriginalPrompt'>>;
 
 /** What a shimmed hook reports to the module beside its output (hooks/types.ts SubHumanReport), as read. */
-export interface SubHumanReport { say?: unknown; refused?: unknown; shareable?: unknown; joined?: unknown; reviewOpen?: unknown; noteWaits?: unknown; pinned?: unknown; lease?: unknown }
+export type SubHumanRead = Loose<SubHumanReport>;
 
 /** A prompt's origin as the pure functions read it (PromptOrigin: its kind, and a plugin's name). */
 export interface OriginLike { kind?: unknown; name?: unknown }
@@ -89,11 +87,13 @@ declare module 'claude-code' {
   }
 }
 
-/** join.ts's reply, read (mod/core/command.ts readReply). */
-/** An invite on the status line (mod/core/command.ts readReply): status, else short with the notices cut (a terminal
- * narrower than status); ref, to take it off once the invite is no longer open. */
-export interface PinnedStatus { status: string; ms: number; short?: string; cut?: string[]; ref?: string }
+/** An invite on the status line (mod/core/command.ts readReply): hooks/types.ts PinnedReport as checked, its cut (the
+ * notice text) split into lines: status, else short with the notices cut (a terminal narrower than status); ref, to
+ * take it off once the invite is no longer open. */
+export type PinnedStatus = Omit<PinnedReport, 'cut'> & { cut?: string[] };
 
+/** join.ts's reply (hooks/reply.ts render of a lib/commands/types.ts Answer), as the module reads it back
+ * (mod/core/command.ts readReply): its say or joined, a lease that did not hold (stale), or no answer (failed). */
 export type JoinReply =
   | { kind: 'joined'; context: string; lines: string[] }
   | { kind: 'say'; lines: string[]; refused: boolean; shareable: boolean; pinned?: PinnedStatus }

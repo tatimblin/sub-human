@@ -45,7 +45,7 @@ import {
 } from '../config.ts';
 import { RoomError } from './validate.ts';
 import { namedSeat } from '../../mod/core/seat.ts';
-import type { JoinResult, KvApi, Member, Members, MembersApi, Presence, PresenceInput, PresenceState, SeatRecord } from './types.ts';
+import type { JoinOutcome, KvApi, Member, Members, MembersApi, Presence, PresenceInput, PresenceState, SeatRecord } from './types.ts';
 import type { RoomCode } from '../brand.ts';
 
 /** What ops() needs of its store: the members document's read and update, its kv, and the room code. */
@@ -93,7 +93,7 @@ function seatAlive(m: SeatLike | null | undefined): boolean { // unary: callers 
 /** rec is the holder of cur: the same machine and the same pid (none, for a seat on another machine). */
 const sameHolder = (cur: Member, rec: SeatRecord): boolean => machineOf(cur) === rec.machine && (cur.pid ?? null) === (rec.pid ?? null);
 
-function joinFold(ms: Members, rec: SeatRecord, code: RoomCode, now: number): { next: Members | null; result: JoinResult } {
+function joinFold(ms: Members, rec: SeatRecord, code: RoomCode, now: number): { next: Members | null; result: JoinOutcome } {
   const cur = ms[rec.name];
   if (cur && !sameHolder(cur, rec) && seatAlive(cur)) return { next: null, result: { ok: false, error: `name taken: "${rec.name}" is already in ${code}` } };
   const keep: Partial<Member> = {};
@@ -118,7 +118,7 @@ const seated = (ms: Members, name: string): boolean => !!ms[name] && !ms[name].l
 function ops(s: OpsStore): Pick<MembersApi, 'join' | 'leave' | 'beat'> {
   return {
     join(rec) {
-      let result!: JoinResult; // set by the fold: update runs fn at least once
+      let result!: JoinOutcome; // set by the fold: update runs fn at least once
       s.members.update(ms => { const r = joinFold(ms, rec, s.code, Date.now()); result = r.result; return r.next; });
       return result;
     },

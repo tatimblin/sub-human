@@ -92,7 +92,7 @@
  *                                        after a leave; with no such notice (a transcript from before it), its last
  *                                        title is an address NAME.CODE (lastTitle; CONTRACT transcript-custom-title)
  *   markForked(sid, f), forkedOf(sid)    <home>/sessions/forked/<sid>.json: session-restore's record of such a fork
- *   adoptFork(from, {pid, session_id, cwd}) -> JoinResult   move that seat to this process and session (no leave, no
+ *   adoptFork(from, {pid, session_id, cwd}) -> JoinOutcome  move that seat to this process and session (no leave, no
  *                                        log line: the person never left); the old session's indexes are dropped
  *   dropSeatIndexes(code) -> n           this machine's session indexes naming code removed (`link CODE --forget`)
  *   localSeats(code) -> [name]           this machine's seats in code that a live claude process holds, by the
@@ -141,7 +141,7 @@ import {
 } from './room/members.ts';
 import * as cc from './cc/env.ts';
 import { continuedIn, lastTitle, lastHome } from './cc/transcript.ts';
-import type { JoinResult, Member, Members, MembersApi, PresenceInput, Role, SeatRecord } from './room/types.ts';
+import type { JoinOutcome, Member, Members, MembersApi, PresenceInput, Role, SeatRecord } from './room/types.ts';
 
 /** A resolved seat (resolveBySession, resolveByPid, resolveSelf): address = NAME.CODE, the session title. */
 interface Identity {
@@ -269,7 +269,7 @@ function readMembers(code: RoomCode): Members {
   try { return membersOf(code).read(); } catch { return {}; }
 }
 
-const fail = (error: string): JoinResult => ({ ok: false, error });
+const fail = (error: string): JoinOutcome => ({ ok: false, error });
 
 /**
  * Renew me's lease (members seen_at), at most every SEAT_BEAT_MS: the tail's health tick and the hold server
@@ -306,7 +306,7 @@ function localSeat({ name, role, machine, pid, session_id, cwd }: { name: SeatNa
   return { name, role, machine, pid, ...(start != null ? { pid_start: start } : {}), session_id: session_id || null, cwd: cwd || null };
 }
 
-function join({ code, name, role, machine = machineIn(code), account, pid: pidArg, session_id, cwd, log_v, keepPrevious = false }: JoinRequest = {} as JoinRequest): JoinResult {
+function join({ code, name, role, machine = machineIn(code), account, pid: pidArg, session_id, cwd, log_v, keepPrevious = false }: JoinRequest = {} as JoinRequest): JoinOutcome {
   if (!roomExists(code)) return fail(`no room "${code}"`);
   if (typeof name !== 'string' || !NAME_RE.test(name)) return fail(`invalid name "${name}" (letters, digits, . _ -, up to 32)`);
   if (!ROLES.includes(role)) return fail(`invalid role "${role}"`);
@@ -608,7 +608,7 @@ function forkedOf(sid: unknown): ForkedAway | null {
   return r && { sid: r.sid, title: r.title, ...(typeof r.home === 'string' ? { home: r.home } : {}) };
 }
 
-function adoptFork(from: ForkParent, { pid: pidArg, session_id, cwd }: { pid: unknown; session_id: string; cwd?: string | null }): JoinResult {
+function adoptFork(from: ForkParent, { pid: pidArg, session_id, cwd }: { pid: unknown; session_id: string; cwd?: string | null }): JoinOutcome {
   const pid = Number(pidArg);
   if (!validPid(pid)) return fail(`invalid pid "${pid}"`);
   const before = readJson(bySidFile(from.sid), SEAT_INDEX, null);

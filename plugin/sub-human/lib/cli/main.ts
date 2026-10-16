@@ -155,7 +155,7 @@ const intList = (s: string): EntryId[] => String(s).split(',').filter(Boolean).m
   return n;
 });
 
-type Entry = Parameters<typeof room.fmt>[0];
+type FmtEntry = Parameters<typeof room.fmt>[0];
 
 /** Open the room: an explicit code, else this session's. Returns {code, me|null, r: Room}. */
 function openRoom(explicit?: string) {
@@ -223,7 +223,7 @@ function read(args: readonly string[]) {
   const { flags, rest } = parseFlags(args, { id: 1, json: 0, room: 1 });
   if (!flags.id && rest.length) flags.id = rest.join(','); // `sub-human read 22`, as the cut marker says
   const { me, r } = openRoom(flags.room);
-  const show = (es: readonly Entry[]) => es.forEach(e => console.log(flags.json ? JSON.stringify(e) : r.fmt(e) + '\n'));
+  const show = (es: readonly FmtEntry[]) => es.forEach(e => console.log(flags.json ? JSON.stringify(e) : r.fmt(e) + '\n'));
   if (flags.id) {
     const es = r.readById(intList(flags.id));
     if (!es.length) die('(no such entries)', 1);
@@ -292,14 +292,14 @@ function tasksCmd(args: readonly string[]) {
 
 // ---------- watch NAME ----------
 /** Who an entry is from, as a person reading a thread would say it. */
-function label(e: Entry): string {
+function label(e: FmtEntry): string {
   if (e.via === 'system') return 'room';
   if (e.from === 'claude') return 'claude';
   return e.via === 'agent' ? `${e.from}'s Claude` : e.from;
 }
 
 function inThread(name: string) {
-  return (e: Entry) => e.from === name || e.to === name || (e.kind === 'task' && e.owner === name);
+  return (e: FmtEntry) => e.from === name || e.to === name || (e.kind === 'task' && e.owner === name);
 }
 
 function watch(args: readonly string[]) {
@@ -315,7 +315,7 @@ function watch(args: readonly string[]) {
     member_joined: '2;32', member_left: '2;31',
   };
   const show = inThread(name);
-  const print = (raw: Entry) => {
+  const print = (raw: FmtEntry) => {
     const e = room.normalize(raw);
     if (!show(e)) return;
     const who = label(e) + (raw.via === 'human' && r.trust(raw) !== 'verified' ? ' (unverified)' : '');
@@ -332,7 +332,7 @@ function watch(args: readonly string[]) {
   };
   const follow = flags.follow ? true : flags['no-follow'] ? false : !!process.stdout.isTTY;
   if (!follow) {
-    const es = r.readAll().filter((e: Entry) => show(room.normalize(e)));
+    const es = r.readAll().filter((e: FmtEntry) => show(room.normalize(e)));
     if (!es.length) return console.log(`(nothing from or to ${name} in room ${code})`);
     return es.forEach(print);
   }

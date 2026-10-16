@@ -5,7 +5,7 @@
  * refresh) and an unset flag both mean "unsure": run node.
  */
 import { isRow } from './rows.ts';
-import type { Hello, SubHumanReport } from './types.ts';
+import type { Hello, SubHumanRead } from './types.ts';
 
 /** The hello is this session's. */
 export const sure = (hello: Hello | null | undefined, sid: unknown): boolean => !!hello && typeof sid === 'string' && hello.sid === sid;
@@ -27,7 +27,7 @@ export function tasksNeeded(hello: Hello | null | undefined, sid: unknown, roomE
 }
 
 /** Consent's report under SUB_HUMAN_SHIM=1 when it made one, else undefined. */
-export function reviewOpenOf(subHuman: SubHumanReport | null | undefined): boolean | undefined {
+export function reviewOpenOf(subHuman: SubHumanRead | null | undefined): boolean | undefined {
   return subHuman && typeof subHuman.reviewOpen === 'boolean' ? subHuman.reviewOpen : undefined;
 }
 

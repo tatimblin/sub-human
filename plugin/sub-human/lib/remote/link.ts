@@ -95,7 +95,7 @@ import type { Entry, Link } from '../room/types.ts';
 import type { MirrorRoomStore } from '../room/store-mirror.ts';
 import type { Client } from './client.ts';
 import type { Outbox, OutboxItem } from './outbox.ts';
-import type { EngineEvent, EngineState, Effect, Failure, TimerName } from './link-engine.ts';
+import type { EngineEvent, EngineState, EngineEffect, Failure, TimerName } from './link-engine.ts';
 import type net from 'node:net';
 import { errCode, msgOf } from '../errors.ts';
 import { assertNever } from '../../mod/core/never.ts';
@@ -276,7 +276,7 @@ async function serveMirror({
     dispatch({ type: 'dialFailed', dial, error: f, offline: handoff().whyOffline(mirror.code, f.message) });
   });
 
-  function effect(fx: Effect) {
+  function effect(fx: EngineEffect) {
     switch (fx.type) {
       case 'connect':
         dials.set(fx.dial, dials.get(fx.dial) || (() => {}));

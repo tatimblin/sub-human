@@ -12,7 +12,7 @@ import * as identity from '../../lib/identity.ts';
 import * as rows from '../../lib/rows.ts';
 import * as launcher from '../../hooks/launcher.ts';
 import { pathToFileURL } from 'node:url';
-import type { HookJson } from './helpers.ts';
+import type { HookLine } from './helpers.ts';
 import { sn } from '../support/brands.ts';
 
 type Env = Record<string, string | undefined>;
@@ -43,7 +43,7 @@ function env(extra: Env = {}) {
   for (const [k, v] of Object.entries(process.env)) if (!k.startsWith('CLAUDE') && k !== 'NODE_TEST_CONTEXT') e[k] = v;
   return { ...e, CLAUDE_PLUGIN_ROOT: PLUGIN, ...extra };
 }
-function hook(name: string, input: Record<string, unknown>, extra?: Env): { code: number | null; stdout: string; stderr: string; json: HookJson | null } {
+function hook(name: string, input: Record<string, unknown>, extra?: Env): { code: number | null; stdout: string; stderr: string; json: HookLine | null } {
   const r = spawnSync(process.execPath, [path.join(PLUGIN, 'hooks', 'run.ts'), name], { input: JSON.stringify(input), env: env(extra), encoding: 'utf8', timeout: 20_000 });
   return { code: r.status, stdout: r.stdout, stderr: r.stderr, json: r.stdout.trim() ? JSON.parse(r.stdout) : null };
 }

@@ -60,7 +60,7 @@ import { normalize } from './rules.ts';
 import { parseEntry } from './validate.ts';
 import { assertNever } from '../../mod/core/never.ts';
 import { isProposalHash as isHash } from '../text.ts';
-import type { Answer, Entry, EntryOf, Fold, Matrix, ProposalEntry, ProposalState, Trust } from './types.ts';
+import type { Stance, Entry, EntryOf, Fold, Matrix, ProposalEntry, ProposalState, Trust } from './types.ts';
 
 type Entries = readonly (Entry | null | undefined)[];
 /** A proposal entry with a hash the fold can key it by. */
@@ -103,9 +103,9 @@ function groupsOf(same: unknown, approvers: string[]): string[][] {
 
 function compute(list: Entries, trust: Trust): Fold {
   const proposals = new Map<string, ProposalState>();
-  const answers = new Map<string, Map<string, Answer>>();
+  const answers = new Map<string, Map<string, Stance>>();
   // per hash and seat, its latest answer or revoke (null) and where it sits in the log: a same group's newest wins
-  const latest = new Map<string, Map<string, { at: number; a: Answer | null }>>();
+  const latest = new Map<string, Map<string, { at: number; a: Stance | null }>>();
   let seq = 0;
   const decisions = new Map<string, Entry>();
   const superseded = new Map<string, string>();
@@ -135,13 +135,13 @@ function compute(list: Entries, trust: Trust): Fold {
       case 'decision': if (e.via === 'system') decisions.set(h, e); break;
       case 'signoff': case 'objection': case 'revoke': {
         if (e.via !== 'human' || typeof e.from !== 'string' || trust(raw) === 'unverified') break;
-        const mark = (a: Answer | null) => {
+        const mark = (a: Stance | null) => {
           if (!latest.has(h)) latest.set(h, new Map());
           latest.get(h)!.set(e.from, { at: ++seq, a });
         };
         if (e.kind !== 'revoke') {
           if (!answers.has(h)) answers.set(h, new Map());
-          const a: Answer = { kind: e.kind, id: e.id, entry: e };
+          const a: Stance = { kind: e.kind, id: e.id, entry: e };
           answers.get(h)!.set(e.from, a);
           mark(a);
         } else if (answers.has(h)) {
@@ -158,18 +158,18 @@ function compute(list: Entries, trust: Trust): Fold {
     }
   }
 
-  const ownAnswer = (hash: string, name: string): Answer | null => { const m = answers.get(hash); return (m && m.get(name)) || null; };
+  const ownAnswer = (hash: string, name: string): Stance | null => { const m = answers.get(hash); return (m && m.get(name)) || null; };
   /** The seats of name's person on hash: its same group, else name alone. */
   const groupOf = (groups: string[][], name: string): string[] => groups.find(g => g.includes(name)) || [name];
   /** The answer that counts for a person's seats: the newest answer or revoke of any of them. */
-  function current(hash: string, seats: string[]): Answer | null {
+  function current(hash: string, seats: string[]): Stance | null {
     const m = latest.get(hash);
     if (!m) return null;
-    let best: { at: number; a: Answer | null } | null = null;
+    let best: { at: number; a: Stance | null } | null = null;
     for (const n of seats) { const x = m.get(n); if (x && (!best || x.at > best.at)) best = x; }
     return best ? best.a : null;
   }
-  const answerOf = (hash: string, name: string): Answer | null => current(hash, groupOf(proposals.get(hash)?.same ?? [], name));
+  const answerOf = (hash: string, name: string): Stance | null => current(hash, groupOf(proposals.get(hash)?.same ?? [], name));
 
   function matrix(hash: string, approversArg?: string[]): Matrix {
     const approvers = Array.isArray(approversArg) ? approversArg : proposals.get(hash)?.approvers ?? [];

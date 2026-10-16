@@ -29,9 +29,9 @@ const FIXTURES = path.join(import.meta.dirname, '..', 'fixtures');
 /** A hook's stdin as a test builds it: a fixture or a literal, any fields (hooks check each one). */
 type HookInput = Record<string, unknown>;
 /** A hook's stdout line, parsed; { raw } when it was not JSON. */
-type HookJson = HookOutput & { raw?: string };
+type HookLine = HookOutput & { raw?: string };
 /** What World.hook returns: the exit code, both streams, and stdout parsed (null when it printed nothing). */
-interface HookRun { code: number | null; stdout: string; stderr: string; json: HookJson | null }
+interface HookRun { code: number | null; stdout: string; stderr: string; json: HookLine | null }
 /** Who holds a seat in a World: this process, our parent, or a live `sleep` child. */
 type Who = 'act' | 'act2' | 'sleep';
 
@@ -128,7 +128,7 @@ class World {
     const r = spawnSync(process.execPath, [path.join(HOOKS, 'run.ts'), name], {
       input: JSON.stringify(inp), env: e, encoding: 'utf8', cwd: this.cwd, timeout: 30_000,
     });
-    let json: HookJson | null = null;
+    let json: HookLine | null = null;
     if (r.stdout.trim()) { try { json = JSON.parse(r.stdout); } catch { json = { raw: r.stdout }; } }
     return { code: r.status, stdout: r.stdout, stderr: r.stderr, json };
   }
@@ -147,4 +147,4 @@ export {
   PLUGIN, HOOKS, identity, room, fixture, sleeper, baseEnv, withHome, sid, World,
   hso, decision, reason, ctx, roomPlan,
 };
-export type { HookInput, HookJson, HookRun, Who };
+export type { HookInput, HookLine, HookRun, Who };

@@ -65,7 +65,7 @@ import { pidStarts } from './lock.ts';
 import * as links from './room/links.ts';
 import { roomClaudePresence } from './room/members.ts';
 import { createRequire } from 'node:module';
-import type { JoinResult, Member } from './room/types.ts';
+import type { JoinOutcome, Member } from './room/types.ts';
 import type { Identity } from './identity.ts';
 import type { Wanted } from './remote/joining.ts';
 import { errCode, msgOf } from './errors.ts';
@@ -93,7 +93,7 @@ interface EnterOpts {
   keepPrevious?: boolean;
 }
 /** identity.join's answer; note: what the join line adds (the room's Claude starting, or why it could not). */
-type EnterResult = JoinResult & { note?: string };
+type EnterResult = JoinOutcome & { note?: string };
 
 const asSystem = (name: string) => ({ via: 'system', from: name, system: true });
 const WORKDIR = 'workdir'; // the room's working directory: {cwd}

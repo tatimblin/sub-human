@@ -30,7 +30,7 @@ interface OutboxItem { payload: SignedPayload; queued_at: string }
 /** An outbox item as read: one with a payload (the outbox's own write; load keeps no other). */
 const isItem = (x: unknown): x is OutboxItem => !!x && typeof x === 'object' && !!(x as { payload?: unknown }).payload;
 /** A signed @room post (queueable): its nonce and ts are fixed. */
-type QueuedPost = SignedPayload & { nonce: string; ts: number };
+type OutboxPost = SignedPayload & { nonce: string; ts: number };
 
 interface Outbox {
   file: string;
@@ -48,7 +48,7 @@ interface Outbox {
  * @param {object} p
  * @returns {boolean}
  */
-const queueable = (p: unknown): p is QueuedPost => {
+const queueable = (p: unknown): p is OutboxPost => {
   const q = p as SignedPayload | null | undefined; // a relayed append's payload, unchecked
   return !!q && q.kind === 'say' && q.via === 'human' && (q.to === undefined || q.to === 'room' || q.to === 'claude')
   && typeof q.nonce === 'string' && Number.isFinite(q.ts);

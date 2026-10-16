@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as engine from '../lib/remote/link-engine.ts';
 import * as clock from '../lib/clock.ts';
-import type { Effect, EngineEvent, EngineState } from '../lib/remote/link-engine.ts';
+import type { EngineEffect, EngineEvent, EngineState } from '../lib/remote/link-engine.ts';
 import type { LinkTimings } from '../lib/remote/types-core.ts';
 
 const T: LinkTimings = { retryMs: 1000, retryMaxMs: 10_000, pingMs: 15_000, pongMs: 5000, deadMs: 10_000, wakeTickMs: 2000, wakeGapMs: 5000, netPollMs: 5000, relayMs: 2000 };
@@ -14,9 +14,9 @@ const T: LinkTimings = { retryMs: 1000, retryMaxMs: 10_000, pingMs: 15_000, pong
 function rig(random: () => number = () => 0) {
   const c = clock.createFake({ now: 1_000_000 });
   let st: EngineState = engine.initial(c.now(), T.retryMs);
-  const fx: Effect[] = [];
+  const fx: EngineEffect[] = [];
   const timers = new Map<string, ReturnType<typeof c.setTimeout>>();
-  const dispatch = (ev: EngineEvent): Effect[] => {
+  const dispatch = (ev: EngineEvent): EngineEffect[] => {
     const r = engine.step(st, ev, { timings: T, random, now: c.now() });
     st = r.state;
     for (const e of r.effects) {
@@ -35,8 +35,8 @@ function rig(random: () => number = () => 0) {
     dispatch({ type: 'seated', dial: d });
     return dispatch({ type: 'flushed', dial: d, pings });
   };
-  const types = (es: Effect[]) => es.map(e => e.type);
-  const of = <K extends Effect['type']>(es: Effect[], type: K) => es.filter((e): e is Extract<Effect, { type: K }> => e.type === type);
+  const types = (es: EngineEffect[]) => es.map(e => e.type);
+  const of = <K extends EngineEffect['type']>(es: EngineEffect[], type: K) => es.filter((e): e is Extract<EngineEffect, { type: K }> => e.type === type);
   return { c, dispatch, dialOk, fx, types, of, get st() { return st; }, timers };
 }
 

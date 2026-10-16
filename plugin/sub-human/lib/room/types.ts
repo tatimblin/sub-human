@@ -322,7 +322,7 @@ export interface SeatRecord {
 
 /** members.join's answer: joined (rejoin: the seat was in the room before), or refused with why. code: a mirror's
  * RoomError code when the host refused. */
-export type JoinResult =
+export type JoinOutcome =
   | { ok: true; rejoin?: boolean; error?: undefined; code?: undefined }
   | { ok: false; error: string; code?: WireCode; rejoin?: undefined };
 
@@ -345,7 +345,7 @@ export interface MembersApi {
   read(): Members;
   /** fn returns the next document, or null / undefined to write nothing; may run more than once (keep it idempotent). */
   update(fn: (current: Members) => Members | null | undefined): Members | null;
-  join(rec: SeatRecord): JoinResult;
+  join(rec: SeatRecord): JoinOutcome;
   leave(name: string, opts?: { reason?: string; deadlineMs?: number }): boolean;
   beat(name: string, opts?: { presence?: PresenceInput; now?: number }): boolean;
 }
@@ -522,8 +522,8 @@ export interface ProposalState {
   entry: ProposalEntry;
 }
 
-/** A person's current answer on a hash. */
-export interface Answer {
+/** A person's current answer on a hash (their stance: a signoff or an objection). */
+export interface Stance {
   kind: 'signoff' | 'objection';
   id: EntryId;
   entry: Entry;
@@ -533,7 +533,7 @@ export interface Answer {
 export interface Matrix {
   hash: string;
   approvers: string[];
-  answers: Record<string, { id: number; kind: Answer['kind'] } | null>;
+  answers: Record<string, { id: number; kind: Stance['kind'] } | null>;
   signed: Record<string, number | null>;
   agreed: string[];
   objected: string[];
@@ -557,14 +557,14 @@ export interface ProposalStatus {
 /** consent.ts fold(entries): the one proposal / consent state. */
 export interface Fold {
   proposals: Map<string, ProposalState>;
-  answers: Map<string, Map<string, Answer>>;
+  answers: Map<string, Map<string, Stance>>;
   decisions: Map<string, Entry>;
   /** hash -> the newer hash that retired it (same sender, same title, while undecided) */
   superseded: Map<string, string>;
   /** the answer that counts for name: the latest of its person's seats (a `same` group) */
-  answerOf(hash: string, name: string): Answer | null;
+  answerOf(hash: string, name: string): Stance | null;
   /** name's own latest answer (one per seat: lib/proposal.ts answer) */
-  ownAnswer(hash: string, name: string): Answer | null;
+  ownAnswer(hash: string, name: string): Stance | null;
   matrix(hash: string, approvers?: string[]): Matrix;
   pending(name: string | null | undefined): ProposalState[];
   /** pending, except that another seat of name's person answering does not take a proposal out */

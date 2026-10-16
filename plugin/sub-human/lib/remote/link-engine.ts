@@ -55,7 +55,7 @@ import type { LinkTimings } from './types-core.ts';
 import type { LinkStateWord } from '../room/types.ts';
 
 type TimerName = 'retry' | 'ping' | 'pong';
-type Step = 'connect' | 'subscribe' | 'seats' | 'flush';
+type EngineStep = 'connect' | 'subscribe' | 'seats' | 'flush';
 
 /** Why a dial or a connection failed: its code, its typed reason and its message. */
 interface Failure { code?: string | null; reason?: Reason | null; message: string }
@@ -70,7 +70,7 @@ interface EngineState {
   since: number;
   conn: number | null;
   dial: number | null;
-  stepOf: Step | null;
+  stepOf: EngineStep | null;
   /** the next connection id */
   next: number;
   delay: number;
@@ -96,7 +96,7 @@ type EngineEvent =
   | { type: 'noPong'; conn: number }
   | { type: 'stop'; phase: 'stopped' | 'fork'; why: string; code?: string | null; reason?: Reason | null };
 
-type Effect =
+type EngineEffect =
   | { type: 'connect' | 'subscribe' | 'keepSeats' | 'flush'; dial: number }
   | { type: 'close' | 'retire'; conn: number }
   | { type: 'sendPing'; conn: number; ms: number }
@@ -108,7 +108,7 @@ type Effect =
   | { type: 'log'; msg: string }
   | { type: 'finish'; why: string };
 
-interface Ctx { timings: LinkTimings; random?: () => number; now: number }
+interface EngineCtx { timings: LinkTimings; random?: () => number; now: number }
 
 const FATAL: ReadonlySet<unknown> = new Set(['FORK', 'AUTH', 'PROTOCOL']);
 const FOR_GOOD: ReadonlySet<unknown> = new Set(['fork', 'stopped']);
@@ -127,9 +127,9 @@ function initial(now: number, retryMs = 0): EngineState {
 }
 
 /** One transition. The state passed in is not changed. */
-function step(state: EngineState, event: EngineEvent, ctx: Ctx): { state: EngineState; effects: Effect[] } {
+function step(state: EngineState, event: EngineEvent, ctx: EngineCtx): { state: EngineState; effects: EngineEffect[] } {
   const s: EngineState = { ...state };
-  const fx: Effect[] = [];
+  const fx: EngineEffect[] = [];
   const T = ctx.timings;
   const random = ctx.random || Math.random;
   const enter = (phase: LinkStateWord, reason: string | null = null, code: string | null = null, why: Reason | null = null) => {
@@ -308,4 +308,4 @@ function step(state: EngineState, event: EngineEvent, ctx: Ctx): { state: Engine
 }
 
 export { initial, step, nextDelay, shown, forGood, FATAL };
-export type { EngineState, EngineEvent, Effect, Failure, TimerName, Ctx };
+export type { EngineState, EngineEvent, EngineEffect, Failure, TimerName, EngineCtx };

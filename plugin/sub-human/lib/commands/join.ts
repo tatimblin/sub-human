@@ -37,9 +37,9 @@ import { createRequire } from 'node:module';
 import { projectDir } from '../cc/env.ts';
 import { envStr } from '../env.ts';
 import { HELP_HINT, USAGE, refused, say } from './answer.ts';
-import type { Answer, Ctx, Verb } from './types.ts';
+import type { Answer, VerbCtx, Verb } from './types.ts';
 import type { Identity } from '../identity.ts';
-import type { Step, Wanted } from '../remote/joining.ts';
+import type { JoinStep, Wanted } from '../remote/joining.ts';
 import type { SeatName, InviteSecret } from '../brand.ts';
 
 const require = createRequire(import.meta.url);
@@ -57,14 +57,14 @@ const NOT_A_NAME = (n: string) => (PIN_WORD.test(n) ? `"${n}" looks like a PIN, 
   : `"${n}" isn't a name (letters, digits, . _ -, up to 32)`);
 
 /** The seat: lib/seats.ts take, as an answer. */
-function seat(want: Wanted, ctx: Ctx): Answer {
+function seat(want: Wanted, ctx: VerbCtx): Answer {
   const t = seats.take(want, { pid: ctx.pid, session_id: ctx.sid, cwd: ctx.cwd, cur: ctx.cur, pubkey: ctx.pubkey });
   if (!t.ok) return t.refused ? refused(t.text) : say(t.text);
   return { kind: 'joined', me: t.me, lead: t.lead, say: t.msg };
 }
 
 /** A link step's end: the seat to take, or what the person reads. */
-const then = (step: Step, ctx: Ctx): Answer => (step.kind === 'take' ? seat(step.want, ctx) : step.refused ? refused(step.text) : say(step.text));
+const then = (step: JoinStep, ctx: VerbCtx): Answer => (step.kind === 'take' ? seat(step.want, ctx) : step.refused ? refused(step.text) : say(step.text));
 
 /** A name typed with --as: checked; else the default name. */
 function nameFor(as: string | undefined, cwd: string): { name: SeatName } | { error: string } {
@@ -86,7 +86,7 @@ function status(cur: Identity, cwd: string): Answer {
 }
 
 /** The seat this session's conversation came from (← the agent view forked it), moved here; null when none. */
-function forked(ctx: Ctx): Answer | null {
+function forked(ctx: VerbCtx): Answer | null {
   let real = ctx.cwd;
   try { real = fs.realpathSync(ctx.cwd); } catch { /* as given */ }
   const from = ctx.sid ? identity.forkParent(ctx.sid, projectDir(real)) || (real !== ctx.cwd ? identity.forkParent(ctx.sid, projectDir(ctx.cwd)) : null) : null;
@@ -150,7 +150,7 @@ function secretOf(word: string | undefined): { word: InviteSecret } | { error: s
 }
 
 /** `/sub-human join URL SECRET`: the web form of an invite line. */
-function joinWeb(r: string[], flags: { as?: string; via?: string; home?: string }, ctx: Ctx): Answer {
+function joinWeb(r: string[], flags: { as?: string; via?: string; home?: string }, ctx: VerbCtx): Answer {
   if (r.length === 3 && PIN_WORD.test(r[2])) return refused(PIN_APART);
   if (r.length !== 2) return refused(r.length < 2 ? 'a web join needs the SECRET the host sent with the address: /sub-human join URL SECRET' : JOIN_USAGE);
   if (flags.via !== undefined || flags.home !== undefined) return refused('--via and --home go with an ssh address, not a web one');
@@ -223,7 +223,7 @@ export const join: Verb = (argv, ctx) => {
 };
 
 /** The room Claude's own launch (see the header). */
-export function bindRoomClaude(args: string[], ctx: Ctx): Answer {
+export function bindRoomClaude(args: string[], ctx: VerbCtx): Answer {
   const { cur, pid, sid } = ctx;
   if (args.length > 1 || (args[0] && !identity.isRoomCode(args[0]))) {
     return refused('this session runs the room\'s Claude agent; people join from their own sessions with /sub-human.');

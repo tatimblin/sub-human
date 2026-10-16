@@ -63,7 +63,7 @@ import { unknownOutcome, UNKNOWN_OUTCOME } from '../remote/protocol.ts';
 import { SEAT_BEAT_MS } from '../config.ts';
 import type { LockOpts } from '../lock.ts';
 import type {
-  AppendOpts, BlobsApi, ChainCheck, ChainVerify, Entry, EntryInput, HostState, JoinResult, KvApi, Members, MembersApi,
+  AppendOpts, BlobsApi, ChainCheck, ChainVerify, Entry, EntryInput, HostState, JoinOutcome, KvApi, Members, MembersApi,
   Payload, Placed, PlaceOpts, PresenceInput, ReadViewOpts, RoomStore, SeatRecord, SnapshotWire, Tailer, TailerFs, Trust,
 } from './types.ts';
 import type { KeyObject } from 'node:crypto';
@@ -175,7 +175,7 @@ class MirrorRoomStore implements RoomStore {
     }
   }
 
-  _join({ name, role, log_v }: SeatRecord): JoinResult {
+  _join({ name, role, log_v }: SeatRecord): JoinOutcome {
     const key = humanKey(this.code, name);
     const pubkey = crypto.createPublicKey(key).export({ type: 'spki', format: 'pem' }) as string; // pem: a string
     try {

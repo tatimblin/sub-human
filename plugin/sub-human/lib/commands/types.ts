@@ -30,7 +30,7 @@ export interface Pinned { status: string; text: string; ms: number; short?: stri
 
 /** What every verb is handed. pid and cur are known only once the hooks module's lease checked (the verbs marked
  * `open` run before: help, doctor). */
-export interface Ctx {
+export interface VerbCtx {
   /** the session id the prompt came from */
   sid: string | undefined;
   /** the session's working directory */
@@ -48,6 +48,6 @@ export interface Ctx {
 }
 
 /** One verb: its words after the verb, and the context. */
-export type Verb = (args: string[], ctx: Ctx) => Answer;
+export type Verb = (args: string[], ctx: VerbCtx) => Answer;
 /** A verb that runs before the hooks module's lease is checked: it reads nothing of the session. */
-export type OpenVerb = (args: string[], ctx: Pick<Ctx, 'cwd' | 'pluginRoot'>) => Answer;
+export type OpenVerb = (args: string[], ctx: Pick<VerbCtx, 'cwd' | 'pluginRoot'>) => Answer;

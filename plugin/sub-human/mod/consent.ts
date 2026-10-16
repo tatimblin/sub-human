@@ -31,7 +31,7 @@ import { prePayload, rejectedPayload } from './core/facts.ts';
 import { asHello } from './core/state.ts';
 import { facts } from './deliver.ts';
 import type { EngineInterface, On } from 'claude-code';
-import type { Hello, RunOutput, SubHumanReport } from './core/types.ts';
+import type { Hello, RunOutput, SubHumanRead } from './core/types.ts';
 
 const HELLO = { plugin: 'sub-human', key: 'hello' } as const;
 const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' } as const;
@@ -56,7 +56,7 @@ function runConsent($: EngineInterface, stdin: unknown, sid: unknown): Promise<R
 }
 
 /** Consent's notices and its report: a systemMessage as $.ui.log lines, reviewOpen into $.state. */
-async function apply($: EngineInterface, { systemMessage, subHuman }: { systemMessage?: string; subHuman?: SubHumanReport }) {
+async function apply($: EngineInterface, { systemMessage, subHuman }: { systemMessage?: string; subHuman?: SubHumanRead }) {
   if (systemMessage) for (const line of asNotice(systemMessage).split('\n')) if (line.trim()) $.ui.log(line);
   const open = reviewOpenOf(subHuman);
   if (open !== undefined) await $.state.set(REVIEW, open);

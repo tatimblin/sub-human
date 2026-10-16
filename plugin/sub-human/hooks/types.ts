@@ -3,6 +3,7 @@
 // Identity; a member: room/types.ts Member; cards, proposals, reviews and notes: types-app.ts).
 import type { BaseHookInput, ClassicHookInputs } from 'claude-code';
 import type { Entry } from '../lib/room/types.ts';
+import type { Answer, Pinned } from '../lib/commands/types.ts';
 
 /** A classic hook event's name (PreToolUse, Stop, ...). */
 export type HookEvent = keyof ClassicHookInputs;
@@ -63,9 +64,9 @@ export interface SubHumanReport {
   lease?: 'stale';
 }
 
-/** An invite's pinned form as the module gets it (lib/commands/types.ts Pinned, less the text: say holds it). cut: the
+/** An invite's pinned form as the module gets it: lib/commands/types.ts Pinned, less the text (say holds it). cut: the
  * notice text when short is pinned in place of status (a terminal narrower than status). */
-export interface PinnedReport { status: string; ms: number; short?: string; cut?: string; ref?: string }
+export type PinnedReport = Omit<Pinned, 'text'>;
 
 /** One JSON output line of a command hook. */
 export interface HookOutput {
@@ -80,22 +81,21 @@ export interface HookOutput {
 
 /**
  * What a handler answers (hooks/run.ts renders it at the edge: hooks/reply.ts render). The first four are the /sub-human
- * join's; module: the hooks module ran it (join.ts checked the nonce), so the answer goes back as {subHuman}, which the
- * module draws itself; else Claude Code ran the hooks.json entry and reads it as a classic block or expansion.
+ * join's: a lib/commands/types.ts Answer (the one source of their kinds and fields) as it leaves the handler. module:
+ * the hooks module ran it (join.ts checked the nonce), so the answer goes back as {subHuman}, which the module draws
+ * itself; else Claude Code ran the hooks.json entry and reads it as a classic block or expansion.
  *   say      what the person asked for (help, who is here, done); shareable: it may be the command's output row
  *   refused  a refusal of a prompt that holds no secret ("✗ " before it)
  *   secret   only the person may read it (an invite, anything a PIN-shaped prompt gets): the typed prompt is kept out of
  *            the conversation as well; refused (default true) puts "✗ " before it
- *   joined   a seat taken: context is the mechanics block for the model, say the line for the person, warn what a
- *            classic answer shows as a systemMessage (the room's Claude did not start, bypass-permissions mode)
+ *   joined   a seat taken: the Answer's me and lead become context, the mechanics block for the model; say the line
+ *            for the person; warn what a classic answer shows as a systemMessage (the room's Claude did not start,
+ *            bypass-permissions mode)
  *   classic  any other hook's answer as a command hook gives it: its JSON lines, exit code (2 blocks) and stderr
- * Stage 3's command table returns the first four from each verb.
  */
 export type Reply =
-  | { kind: 'say'; text: string; module: boolean }
-  | { kind: 'refused'; text: string; module: boolean }
-  | { kind: 'secret'; text: string; module: boolean; refused?: boolean; pinned?: import('../lib/commands/types.ts').Pinned }
-  | { kind: 'joined'; context: string; say: string; warn?: string | null; module: boolean }
+  | (Extract<Answer, { kind: 'say' | 'refused' | 'secret' }> & { module: boolean })
+  | (Omit<Extract<Answer, { kind: 'joined' }>, 'me' | 'lead'> & { context: string; warn?: string | null; module: boolean })
   | { kind: 'classic'; outputs?: object[]; exit?: number; stderr?: string };
 
 /** A hooks/handlers/<name>.ts module, as hooks/run.ts loads it, for its stdin type I. handle: the answer (or out()

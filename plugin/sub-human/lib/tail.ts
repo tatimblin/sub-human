@@ -135,7 +135,7 @@ type Deps = Omit<TailDeps, 'roomClaude' | 'handoff' | 'admission' | 'invites'> &
   invites(): InvitesLib;
 };
 /** What every session shares (runTail). */
-interface Ctx {
+interface TailCtx {
   clock: Clock;
   fs: typeof nodeFs;
   write: Write;
@@ -475,7 +475,7 @@ function timerLoop({ clock, t, log, s }: { clock: Clock, t: Timings, log: Log, s
   return { start: (now: boolean) => { if (now) tick(); else timer = clock.setTimeout(tick, everyMs); }, stop: () => clock.clearTimeout(timer) };
 }
 
-function startSession(me: Identity, ctx: Ctx): Session {
+function startSession(me: Identity, ctx: TailCtx): Session {
   const { clock, fs, write, log, t, deps, sid } = ctx;
   const { rows, session } = deps;
   const rm = deps.openRoom(me.code); // this session's room, held for its whole life (no re-binding)
@@ -708,7 +708,7 @@ function runTail({
     }),
   };
   const log = errorLog(err, clock, tm.errorLogMs);
-  const ctx: Ctx = { clock, fs, write, log, t: tm, deps: d, sid };
+  const ctx: TailCtx = { clock, fs, write, log, t: tm, deps: d, sid };
   // say which seat is followed, when that changes
   let seatSent: string | undefined;
   const sendSeat = (me: Identity | null) => {

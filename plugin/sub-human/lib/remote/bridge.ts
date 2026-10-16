@@ -45,7 +45,7 @@ interface Call {
   method: string;
   params: unknown;
 }
-interface Reply {
+interface BridgeReply {
   id: number;
   result?: unknown;
   error?: { code: string | undefined; message: string; reason?: string; unknown?: boolean };
@@ -75,7 +75,7 @@ function createBridge<A extends Api>({ handler, deadlineMs = config.LINK_CALL_MS
     port.postMessage({ id, method, params });
     for (;;) {
       const seen = Atomics.load(replies, 0);
-      const got = receiveMessageOnPort(port) as { message: Reply } | undefined;
+      const got = receiveMessageOnPort(port) as { message: BridgeReply } | undefined;
       if (got) { if (got.message.id === id) return settle(got.message); continue; } // an abandoned call's reply
       const left = until - Date.now();
       if (left <= 0) throw new RoomError('OFFLINE', `${method}: no answer within ${ms} ms`, 'UNKNOWN_OUTCOME'); // sent, or not
@@ -87,7 +87,7 @@ function createBridge<A extends Api>({ handler, deadlineMs = config.LINK_CALL_MS
   return { call: call as Bridge<A>['call'], close() { port.close(); worker.terminate(); } };
 }
 
-function settle({ result, error }: Reply): unknown {
+function settle({ result, error }: BridgeReply): unknown {
   if (error) {
     const e = new RoomError(isWireCode(error.code) ? error.code : 'INVALID', error.message, isReason(error.reason) ? error.reason : null);
     if (error.unknown === true) e.unknown = true;
@@ -97,7 +97,7 @@ function settle({ result, error }: Reply): unknown {
 }
 
 // ---------- the worker ----------
-const failure = (id: number, err: unknown): Reply => {
+const failure = (id: number, err: unknown): BridgeReply => {
   const reason = reasonOf(err);
   return { id, error: {
     code: errCode(err), message: msgOf(err) || String(err),
@@ -108,7 +108,7 @@ const failure = (id: number, err: unknown): Reply => {
 function serve({ handler, replies, port }: { handler: string; replies: Int32Array; port: MessagePort }): void {
   let handle: Handle | null = null;
   port.on('message', async ({ id, method, params }: Call) => {
-    let reply: Reply;
+    let reply: BridgeReply;
     try {
       handle = handle || (require(handler) as { handle: Handle }).handle; // at the first call: a preload may be requiring this file
       reply = { id, result: await handle(method, params) };

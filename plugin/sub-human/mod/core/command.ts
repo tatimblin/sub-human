@@ -17,7 +17,8 @@
  * the command is not run a second time. A reply that says this session's lease did not hold (join.ts: {subHuman:
  * {lease: 'stale'}}, nothing run) is read as 'stale': the module says hello again and runs it once more.
  */
-import type { JoinReply, HookJson, HookJsonSpecific, OriginLike, PinnedStatus, RunOutput, SubHumanReport } from './types.ts';
+import type { JoinReply, HookJson, HookJsonSpecific, Loose, OriginLike, PinnedStatus, RunOutput, SubHumanRead } from './types.ts';
+import type { PinnedReport } from '../../hooks/types.ts';
 
 /** The command as command.run names it (a plugin skill's name, or its bare form). */
 export const COMMANDS = Object.freeze(['sub-human:sub-human', 'sub-human']);
@@ -139,7 +140,7 @@ export function readReply(run: RunOutput | null | undefined, { ms = null, error 
   const failed = (): JoinReply => ({ kind: 'failed', lines: [failedLine({ ms, error, stderr: run && run.stderr, exitCode: run && run.exitCode })] });
   if (!run || run.exitCode !== 0) return failed();
   const o = lastJson(run.stdout);
-  const sub = o && o.subHuman && typeof o.subHuman === 'object' ? o.subHuman as SubHumanReport : null;
+  const sub = o && o.subHuman && typeof o.subHuman === 'object' ? o.subHuman as SubHumanRead : null;
   if (sub && sub.lease === 'stale' && typeof sub.say !== 'string') return { kind: 'stale', lines: [STALE] };
   const say = sub && typeof sub.say === 'string' ? sub : null;
   if (!o || !say) return failed();
@@ -147,7 +148,7 @@ export function readReply(run: RunOutput | null | undefined, { ms = null, error 
   if (say.joined === true && typeof hso.additionalContext === 'string' && hso.additionalContext) {
     return { kind: 'joined', context: hso.additionalContext, lines: noticeLines(say.say) };
   }
-  const p = say.pinned && typeof say.pinned === 'object' ? say.pinned as { status?: unknown; ms?: unknown; short?: unknown; cut?: unknown; ref?: unknown } : null;
+  const p = say.pinned && typeof say.pinned === 'object' ? say.pinned as Loose<PinnedReport> : null;
   const one = (s: unknown) => (typeof s === 'string' && s ? s.replace(/\n/g, ' ') : null);
   const status = p && one(p.status);
   const short = p && one(p.short);

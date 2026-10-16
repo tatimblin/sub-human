@@ -29,7 +29,7 @@ import * as reply from '../reply.ts';
 import type { AnyHookIn, CardQuestion, HookOutput, Recorded } from '../types.ts';
 import type { Proposal, Review } from '../../lib/types-app.ts';
 import type { Identity } from '../../lib/identity.ts';
-import type { Effect, Event, Pending, Say, State, Target } from '../../lib/consent/review.ts';
+import type { ConsentEffect, ConsentEvent, Pending, Say, State, Target } from '../../lib/consent/review.ts';
 import type { CardResponse } from '../../lib/consent/card.ts';
 
 /** The tool call's input, as far as consent reads it (untrusted: each field checked). */
@@ -151,7 +151,7 @@ const responseOf = (input: ConsentIn): ToolResponse => (input.tool_response && t
  * disk ('wait': polled for, the dialog has closed and the line may not be written yet). Plus the review's proposal
  * while this seat may still answer it.
  */
-function answerFacts(input: ConsentIn, me: Identity, r: Review | null, type: Event['type']) {
+function answerFacts(input: ConsentIn, me: Identity, r: Review | null, type: ConsentEvent['type']) {
   const need = review.answerNeeded(r, { type, toolUseId: input.tool_use_id || null, mode: input.permission_mode });
   if (!need || !r) return {};
   const id = r.tool_use_id;
@@ -203,7 +203,7 @@ function admitAsked(me: Identity, call: Call): JoinRequest | null {
 type Out = { say: Say | null; show?: { admit?: JoinRequest; handoff?: ReturnType<typeof handoff.pendingAsk>; card?: Proposal[] } };
 
 /** The seat's state, reduce one event (made from it), run the effects, store the state, write the answer. */
-function step(input: ConsentIn, me: Identity, make: (st: State) => Event, show: Out['show'] = {}) {
+function step(input: ConsentIn, me: Identity, make: (st: State) => ConsentEvent, show: Out['show'] = {}) {
   const start: State = { review: proposal.readReview(me), note: proposal.readConfirm(me), recheck: proposal.readRecheck(me) };
   const ctx = { name: me.name, now: Date.now(), guardMs: env().testMs('SUB_HUMAN_YES_GUARD_MS') };
   const first = review.reduce(start, make(start), ctx);
@@ -212,7 +212,7 @@ function step(input: ConsentIn, me: Identity, make: (st: State) => Event, show: 
   let say = first.say;
   const disk = { review: JSON.stringify(start.review), note: JSON.stringify(start.note), recheck: JSON.stringify(start.recheck ?? null) };
   const answers = new Map<string, { choice: 'Agree' | 'Object'; res: Recorded }>();
-  const queue: Effect[] = [...first.effects];
+  const queue: ConsentEffect[] = [...first.effects];
   for (let e = queue.shift(); e; e = queue.shift()) {
     if (e.do === 'save') { proposal.writeReview(me, e.review); disk.review = JSON.stringify(e.review); }
     else if (e.do === 'restorePlan') proposal.restorePlan({ phase: 'exiting', file: e.file, backup: e.backup, restored: false });
