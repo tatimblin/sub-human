@@ -5,7 +5,7 @@
  */
 
 import type { MessagePort } from 'node:worker_threads';
-import type { DecodedFrame } from './types-core.ts';
+import type { DecodedFrame, WireCode } from './types-core.ts';
 
 // ---------- frames and transports ----------
 /** One connection's frames (./transports/index.ts documents it). */
@@ -103,7 +103,7 @@ export interface KindEntry<S extends SpecBase = SpecBase> {
 // ---------- the ws transport's handshake ----------
 /** A refusal in the Noise handshake's message 2. */
 export interface Refusal {
-  code: string;
+  code: WireCode;
   message: string;
 }
 

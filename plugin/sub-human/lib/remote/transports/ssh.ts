@@ -66,7 +66,7 @@ import CryptoMod from 'node:crypto';
 import FsMod from 'node:fs';
 import { createRequire } from 'node:module';
 import type { KindEntry, OpenCtx, SshDest, SshSpec, Transport } from '../types-rest.ts';
-import type { Reason } from '../../reasons.ts';
+import type { ReasonFor } from '../../reasons.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -214,7 +214,7 @@ function classify(stderr: unknown): SshProblem | null {
 }
 
 /** Why a login link cannot work until the person acts, with its reason (lib/reasons.ts), from classify; null when it may pass. */
-function loginProblem(stderr: string, spec: SshSpec, code: string, { first = false }: { first?: boolean } = {}): { message: string; reason: Reason } | null {
+function loginProblem(stderr: string, spec: SshSpec, code: string, { first = false }: { first?: boolean } = {}): { message: string; reason: ReasonFor<'AUTH'> } | null {
   const where = `${spec.user}@${spec.host}`;
   const once = loginCommand(spec);
   const home = spec.remoteHome || '~/.sub-human';

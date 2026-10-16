@@ -69,6 +69,7 @@ import type {
 import type { KeyObject } from 'node:crypto';
 import type { Bridge } from '../remote/bridge.ts';
 import type { LinkDoc, RelayOp, RelayParams, RelayResults } from '../remote/types-core.ts';
+import { errCode, msgOf } from '../errors.ts';
 
 /** The link daemon's socket as the bridge reaches it (lib/remote/link-socket.ts handle): each relayed op, sent with the
  * socket paths to try, answered as the daemon answers it (RelayResults). */
@@ -163,13 +164,13 @@ class MirrorRoomStore implements RoomStore {
     try {
       return bridge.call(op, { socket: socketPaths(this.dir, this._linkDoc()), params }, { deadlineMs });
     } catch (e) {
-      if ((e as RoomError).code !== 'OFFLINE') throw e;
+      if (errCode(e) !== 'OFFLINE') throw e;
       if (unknownOutcome(e)) { // it went out: never "nothing was sent" (a slow link lands it later)
         throw new RoomError('OFFLINE', `room ${this.code}: no answer from the host in time (a slow link); ${UNKNOWN_OUTCOME}`, 'UNKNOWN_OUTCOME');
       }
       const why = stopReason(this.local.kv.get('link')); // the daemon stopped for good (an invite refused, a fork): say why
       if (why) throw new RoomError(why.code, `the link to room ${this.code} stopped: ${why.reason}; nothing was sent`, why.why);
-      throw new RoomError('OFFLINE', `room ${this.code} is offline (${(e as Error).message}); nothing was sent`, reasonOf(e) || 'NOT_SENT');
+      throw new RoomError('OFFLINE', `room ${this.code} is offline (${msgOf(e)}); nothing was sent`, reasonOf(e) || 'NOT_SENT');
     }
   }
 

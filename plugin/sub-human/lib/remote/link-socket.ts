@@ -34,14 +34,15 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import * as protocol from './protocol.ts';
 import { RoomError } from '../room/validate.ts';
-import { isReason } from '../reasons.ts';
+import { isReason, reasonOf } from '../reasons.ts';
+import { errCode, msgOf } from '../errors.ts';
 import { isAlive, sleepSync } from '../io.ts';
 import { hash12 } from '../text.ts';
 import { isObj } from '../decode.ts';
 import * as config from '../config.ts';
 import { createRequire } from 'node:module';
 import type { Reason } from '../reasons.ts';
-import type { CodedError, DecodedFrame, ErrorFrame, FrameId, LinkDoc, ReplyFrame } from './types-core.ts';
+import type { DecodedFrame, ErrorFrame, FrameId, LinkDoc, ReplyFrame, WireCode } from './types-core.ts';
 
 /** The daemon's document `link`, and whether its pid lives. */
 type LinkStatus = (LinkDoc & { running: true; pid: number }) | (LinkDoc & { running: false });
@@ -86,29 +87,34 @@ function isPrivateDir(dir: string): boolean {
 function ensurePrivateDir(dir: string): void {
   const base = shortBase();
   if (path.dirname(dir) === base) {
-    try { fs.mkdirSync(base, { mode: 0o700 }); } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e; }
+    try { fs.mkdirSync(base, { mode: 0o700 }); } catch (e) { if (errCode(e) !== 'EEXIST') throw e; }
     if (!isPrivateDir(base)) throw new RoomError('AUTH', `${base} is not private to this user (a symlink, someone else's, or open to others)`);
   }
-  try { fs.mkdirSync(dir, { recursive: true, mode: 0o700 }); } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e; }
+  try { fs.mkdirSync(dir, { recursive: true, mode: 0o700 }); } catch (e) { if (errCode(e) !== 'EEXIST') throw e; }
   if (!isPrivateDir(dir)) throw new RoomError('AUTH', `${dir} is not private to this user`);
 }
 
 // ---------- the hook's end ----------
 async function handle(method: string, { socket, params }: { socket: string | string[]; params: object }): Promise<unknown> {
   if (!RELAY.has(method)) throw new RoomError('PROTOCOL', `${method} is not relayed to the host`);
-  let last: CodedError | null = null;
+  let last: NotListening | null = null;
   for (const file of Array.isArray(socket) ? socket : [socket]) {
     // a socket in a directory someone else could have made is never handed a seat's op
     if (!isPrivateDir(path.dirname(file))) continue;
     try { return await relayOnce(file, method, params); } catch (e) {
-      if (!(e as CodedError).notListening) throw e;
-      last = e as CodedError;
+      if (!(e instanceof NotListening)) throw e;
+      last = e;
     }
   }
   throw last || new RoomError('OFFLINE', 'the link daemon is not running (ENOENT)', 'DAEMON_DOWN');
 }
 
-/** One op over one socket; an error before the connection is made is marked notListening (try the next path). */
+/** OFFLINE DAEMON_DOWN before the connection was made: no daemon listens on this path (handle tries the next). */
+class NotListening extends RoomError {
+  constructor(message: string) { super('OFFLINE', message, 'DAEMON_DOWN'); }
+}
+
+/** One op over one socket; an error before the connection is made is a NotListening (try the next path). */
 function relayOnce(socket: string, method: string, params: object): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const conn = net.createConnection(socket);
@@ -122,7 +128,10 @@ function relayOnce(socket: string, method: string, params: object): Promise<unkn
       if (f.error) reject(protocol.toError(f.error));
       else resolve(f.result);
     });
-    conn.on('error', (e: NodeJS.ErrnoException) => reject(Object.assign(new RoomError('OFFLINE', `the link daemon is not running (${e.code || e.message})`, 'DAEMON_DOWN'), connected ? {} : { notListening: true })));
+    conn.on('error', (e: NodeJS.ErrnoException) => {
+      const message = `the link daemon is not running (${e.code || e.message})`;
+      reject(connected ? new RoomError('OFFLINE', message, 'DAEMON_DOWN') : new NotListening(message));
+    });
     conn.on('close', () => reject(new RoomError('OFFLINE', 'the link daemon hung up', 'DAEMON_DOWN')));
   });
 }
@@ -142,7 +151,7 @@ async function listen(file: string, relay: Relay): Promise<net.Server> {
   ensurePrivateDir(path.dirname(file));
   const srv = net.createServer(sock => serveHook(sock, relay));
   try { await listening(srv, file); } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw e;
+    if (errCode(e) !== 'EADDRINUSE') throw e;
     if (await answers(file)) throw new RoomError('LOCK', `a link daemon already listens on ${file}`);
     fs.rmSync(file, { force: true });
     await listening(srv, file);
@@ -157,9 +166,9 @@ async function answer(f: DecodedFrame | ErrorFrame, relay: Relay): Promise<Reply
   try {
     if (!protocol.isRequest(f) || !RELAY.has(f.op)) throw new RoomError('PROTOCOL', `not an op a hook may relay: ${g.op}`);
     return protocol.reply(f.id, await relay(f.op, isObj(f.params) ? f.params : {}));
-  } catch (err) {
-    const e = err as CodedError;
-    return protocol.error(g.id ?? null, (protocol.CODES as Record<string, string | undefined>)[e.code!] ? e.code! : 'INVALID', e.message, e.reason);
+  } catch (e) {
+    const code = errCode(e);
+    return protocol.error(g.id ?? null, protocol.isWireCode(code) ? code : 'INVALID', msgOf(e), reasonOf(e));
   }
 }
 
@@ -177,9 +186,9 @@ function status(code: string): LinkStatus {
   return { ...st, running: isAlive(st.pid) } as LinkStatus; // running: its pid (a number) lives
 }
 
-function stopReason(st: LinkDoc | null | undefined): { code: string; reason: string; why: Reason | null } | null {
+function stopReason(st: LinkDoc | null | undefined): { code: WireCode; reason: string; why: Reason | null } | null {
   if (!st || !STOPPED.has(st.state) || !st.reason) return null;
-  return { code: st.code || (st.state === 'fork' ? 'FORK' : 'OFFLINE'), reason: st.reason, why: isReason(st.why) ? st.why : null };
+  return { code: protocol.isWireCode(st.code) ? st.code : st.state === 'fork' ? 'FORK' : 'OFFLINE', reason: st.reason, why: isReason(st.why) ? st.why : null };
 }
 
 function start(code: string): boolean {

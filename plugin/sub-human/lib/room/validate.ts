@@ -23,6 +23,8 @@
 
 import { NAME_RE } from '../text.ts';
 import type { Reason } from '../reasons.ts';
+import { CODED } from '../errors.ts';
+import type { WireCode } from '../remote/types-core.ts';
 import { ENTRY_TEXT_MAX_BYTES, ENTRY_REFS_MAX, ENTRY_STR_MAX, ENTRY_LIST_MAX } from '../config.ts';
 import type { EntryInput, HostFields, Kind, TaskFields, TaskOp, Validated, ValidateOpts, Via } from './types.ts';
 
@@ -49,19 +51,23 @@ const MACHINE_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 /**
  * A room error, code: INVALID | RATE | LOCK | NO_ROOM | AUTH | STALE | HOST_ONLY, and over a link the protocol's codes
- * (lib/remote/protocol.ts CODES: OFFLINE, FORK, PROTOCOL, ...). reason: which one exactly (lib/reasons.ts), for code
- * that decides; the message is for people. unknown: an OFFLINE whose op went out (it may land; reason UNKNOWN_OUTCOME).
+ * (lib/remote/protocol.ts CODES, the WireCode union's source: OFFLINE, FORK, PROTOCOL, ...). reason: which one exactly
+ * (lib/reasons.ts, REASON_CODE pairs each with its code), for code that decides; the message is for people. unknown: an
+ * OFFLINE whose op went out (it may land; reason UNKNOWN_OUTCOME). note: a line for the room beside the refusal (an
+ * invite's PIN tries, lib/remote/invites.ts; the server posts it). A CodedError (lib/errors.ts isCoded).
  */
 class RoomError extends Error {
-  declare code: string;
+  declare code: WireCode;
   declare reason?: Reason;
   declare unknown?: boolean;
-  constructor(code: string, message: string, reason?: Reason | null) {
+  declare note?: string;
+  constructor(code: WireCode, message: string, reason?: Reason | null) {
     super(message);
     this.code = code;
     if (reason) this.reason = reason;
     if (reason === 'UNKNOWN_OUTCOME') this.unknown = true;
   }
+  get [CODED](): true { return true; }
 }
 
 function bad(msg: string): never { throw new RoomError('INVALID', msg); }

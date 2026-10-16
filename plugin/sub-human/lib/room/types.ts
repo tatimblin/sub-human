@@ -12,6 +12,7 @@ import type { Reason } from '../reasons.ts';
 import type nodeFs from 'node:fs';
 import type { LockOpts } from '../lock.ts';
 import type { LinkSpec } from '../remote/types-rest.ts';
+import type { WireCode } from '../remote/types-core.ts';
 
 // ---------- the log entry ----------
 
@@ -327,7 +328,7 @@ export interface SeatRecord {
  * RoomError code when the host refused. */
 export type JoinResult =
   | { ok: true; rejoin?: boolean; error?: undefined; code?: undefined }
-  | { ok: false; error: string; code?: string; rejoin?: undefined };
+  | { ok: false; error: string; code?: WireCode; rejoin?: undefined };
 
 /** A seat's presence state (members.ts PRESENCE_STATES). */
 export type PresenceState = 'working' | 'idle' | 'permission' | 'error';

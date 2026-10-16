@@ -13,40 +13,62 @@
  *   reasonOf(err) -> Reason | null   the error's reason, when it is one of REASONS
  *   withReason(err, reason) -> err   sets it (returns the same error)
  *
- * The reasons, by the code they come with:
- *   AUTH      PLACED_ALREADY (a signed entry's nonce is in the log: an earlier try landed), INVITE_UNKNOWN, INVITE_USED,
- *             INVITE_BURNT, INVITE_EXPIRED, INVITE_OTHER_MACHINE, INVITE_OTHER_LINK, PIN_NEEDED (an invite line's
- *             host asks for its PIN: the joiner is asked), PIN_WRONG, PIN_LAST (a wrong PIN burnt it), PIN_THROTTLED (a
- *             PIN too soon after a wrong one: nothing charged), HOST_KEY_MISMATCH (the host that answered does not
- *             hold the key the invite line's tag names: nothing was sent), KEY_MISMATCH (a web link, or its join,
- *             bound to another Noise key than the connection proved), ADMIT_REFUSED, ADMIT_LAPSED, ADMIT_REVOKED, ADMIT_LATE (let in, but not redeemed in
- *             time), TOKEN_UNKNOWN, LINK_REVOKED (the host revoked the link), KEY_REVOKED (ssh refused a link's own key
- *             that once got in), NOT_BOUND (a link let in as one name joins as another), NOT_JOINED (a write as a seat
- *             that did not join over the link), LOGIN_ONLY (a login hello that did not come over an ssh login),
- *             MACHINE_TAKEN (a link reports a machine id the room knows as another's), SSH_HOST_KEY, SSH_DENIED,
- *             SSH_NO_SHIM, SSH_NO_ROOM, SSH_OLD_HOST, SSH_HOST_UNKNOWN (ssh cannot resolve the host's name, on a login
- *             link's first connection) (an ssh login link that cannot work until the person acts)
- *   OFFLINE   UNKNOWN_OUTCOME (the op went out and got no answer in time: it may still land, retrying is safe),
- *             NOT_SENT (nothing went out), DAEMON_DOWN (no link daemon answers on this machine), ADMIT_WAITING (the
- *             host person has not answered the card yet), QUEUE_FULL
- *   RATE      QUOTA (a link's per-op quota, lib/config.ts LINK_QUOTAS)
- *   PROTOCOL  SKEW (the two ends speak no common protocol version: protocol.skewMessage says who updates)
- *   STALE     MOVED_AWAY (the room moved to a newer host), BEHIND (this copy has not caught up with a host change)
- *   FORK      LOG_RESET (the host's log was reset under a stream), NOT_CHAINED (a line, a snapshot or `after` that is not
- *             the mirror's)
- *   (stopped) ROOM_CLOSED (the room was closed: a dormant link), NO_SEAT (no seat of this machine is left in the room)
+ *   REASON_CODE          each reason's code (the source of Reason: a reason is added with the code it comes with);
+ *                        null: a reason a link stops with, carried beside whatever code the stop had (OFFLINE by
+ *                        default: lib/remote/link-socket.ts stopReason)
+ *   ReasonFor<C>         the reasons that may ride with code C (its own, and the null ones)
  */
+import type { WireCode } from './remote/types-core.ts';
 
-const NAMES = [
-  'PLACED_ALREADY', 'INVITE_UNKNOWN', 'INVITE_USED', 'INVITE_BURNT', 'INVITE_EXPIRED', 'INVITE_OTHER_MACHINE', 'INVITE_OTHER_LINK',
-  'PIN_NEEDED', 'PIN_WRONG', 'PIN_LAST', 'PIN_THROTTLED', 'HOST_KEY_MISMATCH', 'KEY_MISMATCH', 'ADMIT_REFUSED', 'ADMIT_LAPSED', 'ADMIT_REVOKED', 'ADMIT_LATE', 'TOKEN_UNKNOWN',
-  'LINK_REVOKED', 'KEY_REVOKED', 'NOT_BOUND', 'NOT_JOINED', 'LOGIN_ONLY', 'MACHINE_TAKEN', 'SSH_HOST_KEY', 'SSH_DENIED',
-  'SSH_NO_SHIM', 'SSH_NO_ROOM', 'SSH_OLD_HOST', 'SSH_HOST_UNKNOWN',
-  'UNKNOWN_OUTCOME', 'NOT_SENT', 'DAEMON_DOWN', 'ADMIT_WAITING', 'QUEUE_FULL',
-  'QUOTA', 'SKEW', 'MOVED_AWAY', 'BEHIND', 'LOG_RESET', 'NOT_CHAINED', 'ROOM_CLOSED', 'NO_SEAT',
-] as const;
+export const REASON_CODE = {
+  // AUTH
+  PLACED_ALREADY: 'AUTH', // a signed entry's nonce is in the log: an earlier try landed
+  INVITE_UNKNOWN: 'AUTH', INVITE_USED: 'AUTH', INVITE_BURNT: 'AUTH', INVITE_EXPIRED: 'AUTH', INVITE_OTHER_MACHINE: 'AUTH',
+  INVITE_OTHER_LINK: 'AUTH',
+  PIN_NEEDED: 'AUTH', // an invite line's host asks for its PIN: the joiner is asked
+  PIN_WRONG: 'AUTH',
+  PIN_LAST: 'AUTH', // a wrong PIN burnt it
+  PIN_THROTTLED: 'AUTH', // a PIN too soon after a wrong one: nothing charged
+  HOST_KEY_MISMATCH: 'AUTH', // the host that answered does not hold the key the invite line's tag names: nothing was sent
+  KEY_MISMATCH: 'AUTH', // a web link, or its join, bound to another Noise key than the connection proved
+  ADMIT_REFUSED: 'AUTH', ADMIT_LAPSED: 'AUTH', ADMIT_REVOKED: 'AUTH',
+  ADMIT_LATE: 'AUTH', // let in, but not redeemed in time
+  TOKEN_UNKNOWN: 'AUTH',
+  LINK_REVOKED: 'AUTH', // the host revoked the link
+  KEY_REVOKED: 'AUTH', // ssh refused a link's own key that once got in
+  NOT_BOUND: 'AUTH', // a link let in as one name joins as another
+  NOT_JOINED: 'AUTH', // a write as a seat that did not join over the link
+  LOGIN_ONLY: 'AUTH', // a login hello that did not come over an ssh login
+  MACHINE_TAKEN: 'AUTH', // a link reports a machine id the room knows as another's
+  // an ssh login link that cannot work until the person acts (SSH_HOST_UNKNOWN: ssh cannot resolve the host's name,
+  // on a login link's first connection)
+  SSH_HOST_KEY: 'AUTH', SSH_DENIED: 'AUTH', SSH_NO_SHIM: 'AUTH', SSH_NO_ROOM: 'AUTH', SSH_OLD_HOST: 'AUTH', SSH_HOST_UNKNOWN: 'AUTH',
+  // OFFLINE
+  UNKNOWN_OUTCOME: 'OFFLINE', // the op went out and got no answer in time: it may still land, retrying is safe
+  NOT_SENT: 'OFFLINE', // nothing went out
+  DAEMON_DOWN: 'OFFLINE', // no link daemon answers on this machine
+  ADMIT_WAITING: 'OFFLINE', // the host person has not answered the card yet
+  QUEUE_FULL: 'OFFLINE',
+  // RATE
+  QUOTA: 'RATE', // a link's per-op quota, lib/config.ts LINK_QUOTAS
+  // PROTOCOL
+  SKEW: 'PROTOCOL', // the two ends speak no common protocol version: protocol.skewMessage says who updates
+  // STALE
+  MOVED_AWAY: 'STALE', // the room moved to a newer host
+  BEHIND: 'STALE', // this copy has not caught up with a host change
+  // FORK
+  LOG_RESET: 'FORK', // the host's log was reset under a stream
+  NOT_CHAINED: 'FORK', // a line, a snapshot or `after` that is not the mirror's
+  // a link stopped
+  ROOM_CLOSED: null, // the room was closed: a dormant link
+  NO_SEAT: null, // no seat of this machine is left in the room
+} as const satisfies Record<string, WireCode | null>;
 
-export type Reason = typeof NAMES[number];
+export type Reason = keyof typeof REASON_CODE;
+/** The reasons that may ride with code C. */
+export type ReasonFor<C extends WireCode> = { [R in Reason]: (typeof REASON_CODE)[R] extends C | null ? R : never }[Reason];
+
+const NAMES = Object.keys(REASON_CODE) as Reason[]; // the object's own keys: Reason
 
 export const REASONS: Readonly<{ [R in Reason]: R }> = Object.freeze(Object.fromEntries(NAMES.map(n => [n, n])) as { [R in Reason]: R });
 

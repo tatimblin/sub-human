@@ -26,7 +26,8 @@ import * as config from '../lib/config.ts';
 import * as seats from '../lib/seats.ts';
 import * as sshkeys from '../lib/remote/sshkeys.ts';
 import type { Client, ConnectOpts } from '../lib/remote/client.ts';
-import type { CodedError, DecodedFrame } from '../lib/remote/types-core.ts';
+import type { DecodedFrame } from '../lib/remote/types-core.ts';
+import type { RoomError } from '../lib/room/validate.ts';
 import type { Transport } from '../lib/remote/types-rest.ts';
 import type { Entry, EntryInput, Members, Presence, RoomStore } from '../lib/room/types.ts';
 
@@ -66,7 +67,7 @@ function seat(code: string, name: string, key = seatKey.ensure(code, name)) {
   return { name, pubkey, proof: hostLinks.proveSeat(key, { room: code, name, pubkey }) };
 }
 const signed = (code: string, name: string, entry: EntryInput) => store.toPayload(code, entry, { via: 'human', from: name });
-const rejects = (p: Promise<unknown>, code: string) => assert.rejects(p, (e: CodedError) => e.code === code, `expected ${code}`);
+const rejects = (p: Promise<unknown>, code: string) => assert.rejects(p, (e: RoomError) => e.code === code, `expected ${code}`);
 
 /** Collect a subscription's events. */
 function collect(c: Client, after: number, hash: string | null) {
@@ -118,7 +119,7 @@ test('remote (memory): hello with an invite gives a token once; join, beat, appe
   // a person's posts over a link are bounded (LINK_HUMAN_RATE_MAX per minute); an agent post has its own budget
   assert.deepEqual(await c.join(seat(code, 'alice')), { ok: true, rejoin: true });
   for (let i = 0; i < config.LINK_QUOTAS['append.human'].max - 1; i++) await c.append(signed(code, 'alice', { kind: 'say', text: `fast ${i}` }));
-  await assert.rejects(c.append(signed(code, 'alice', { kind: 'say', text: 'one too many' })), (e: CodedError) => e.code === 'RATE' && /alice posted/.test(e.message));
+  await assert.rejects(c.append(signed(code, 'alice', { kind: 'say', text: 'one too many' })), (e: RoomError) => e.code === 'RATE' && /alice posted/.test(e.message));
   await rejects(c.append(signed(code, 'alice', { kind: 'signoff', proposal_hash: 'abcdef012345', text: 'an answer counts too' })), 'RATE');
 
   // the token reconnects as the same link; the invite was single-use
@@ -228,7 +229,7 @@ test('protocol skew: no common version is PROTOCOL naming the side that must upd
     t.after(() => s.close());
     return client.connect(a, { machine: REMOTE, ...opts });
   };
-  const fails = (p: Promise<unknown>, re: RegExp) => assert.rejects(p, (e: CodedError) => e.code === 'PROTOCOL' && re.test(e.message), String(re));
+  const fails = (p: Promise<unknown>, re: RegExp) => assert.rejects(p, (e: RoomError) => e.code === 'PROTOCOL' && re.test(e.message), String(re));
   // the joiner is behind
   await fails(at({ proto: { min: 2, max: 2 }, version: '0.3.0' }, { proto: { min: 3, max: 4 }, version: '0.4.0' }),
     /^host runs sub-human 0\.4\.0 \(protocol 3–4\); you run 0\.3\.0 \(protocol 2\)\. Update your plugin: \/plugin update sub-human$/);
@@ -279,7 +280,7 @@ test('remote (memory): a bound link (the card let one name in; a handoff\'s seat
   t.after(() => c.close());
   const before = logLines(code).length;
   await rejects(c.join(seat(code, 'bob')), 'AUTH');
-  await assert.rejects(c.join(seat(code, 'dana')), (e: CodedError) => e.code === 'AUTH' && /let in as carol, not dana/.test(e.message));
+  await assert.rejects(c.join(seat(code, 'dana')), (e: RoomError) => e.code === 'AUTH' && /let in as carol, not dana/.test(e.message));
   assert.equal(logLines(code).length, before, 'no seat was taken');
   assert.deepEqual(await c.join(seat(code, 'carol')), { ok: true });
   assert.deepEqual(await c.join(seat(code, 'carol')), { ok: true, rejoin: true });
@@ -405,7 +406,7 @@ test('remote (pipe): `serve --stdio CODE --link ID` (the SSH forced command) tak
   ca.close();
   // an invite not reserved for that link, over its forced command: AUTH, and it stays unused
   const c = invites.mintFor(host, { locator: 'ssh:me@far', machine: REMOTE, seats: [] });
-  await assert.rejects(client.connect(serveAs(a.link.id), { machine: REMOTE, invite: c.invite }), (e: CodedError) => e.code === 'AUTH' && e.reason === 'INVITE_OTHER_LINK');
+  await assert.rejects(client.connect(serveAs(a.link.id), { machine: REMOTE, invite: c.invite }), (e: RoomError) => e.code === 'AUTH' && e.reason === 'INVITE_OTHER_LINK');
   assert.equal(invites.redeemInvite(host, c.secret, { machine: REMOTE }).link.id.length, 12, 'and stays unused');
 });
 
@@ -492,7 +493,7 @@ test('quotas: one table for every op; a link\'s plans, seats and subscribes surv
     if (i === Math.floor(plans / 2)) { c.close(); c = await dial(); } // a reconnect resets nothing
   }
   const more = Buffer.from('# one too many\n');
-  await assert.rejects(c.blobPut(`plans/${store.hash12(more)}.md`, more), (e: CodedError) => e.code === 'RATE' && e.reason === 'QUOTA' && /try again in \d+ s/.test(e.message));
+  await assert.rejects(c.blobPut(`plans/${store.hash12(more)}.md`, more), (e: RoomError) => e.code === 'RATE' && e.reason === 'QUOTA' && /try again in \d+ s/.test(e.message));
   const again = Buffer.from('# plan 0\n');
   assert.equal(await c.blobPut(`plans/${store.hash12(again)}.md`, again), `plans/${store.hash12(again)}.md`, 'a plan stored already is no new one');
   c.close();
@@ -516,19 +517,19 @@ test('quotas: the log counts a seat\'s posts by via; a link window drops what ha
   const es = [{ from: 'bob', via: 'agent', at: at(120_000) }, ...Array.from({ length: 29 }, () => ({ from: 'bob', via: 'agent', at: at(1000) })), { from: 'bob', via: 'human', at: at(500) }] as Entry[];
   assert.equal(quota.fromLog(es, { from: 'bob', via: 'agent', windowMs: 60_000, now }), 29, 'the one older than the window is not counted');
   quota.checkLog(es, { from: 'bob', via: 'agent', op: 'append.agent', now });
-  assert.throws(() => quota.checkLog([...es, { from: 'bob', via: 'agent', at: at(10) } as Entry], { from: 'bob', via: 'agent', op: 'append.agent', now }), (e: CodedError) => e.reason === 'QUOTA' && /bob posted 30 times in 1 min/.test(e.message));
+  assert.throws(() => quota.checkLog([...es, { from: 'bob', via: 'agent', at: at(10) } as Entry], { from: 'bob', via: 'agent', op: 'append.agent', now }), (e: RoomError) => e.reason === 'QUOTA' && /bob posted 30 times in 1 min/.test(e.message));
   // the retry is when the oldest counted line leaves the window, not the window itself
   const late = Array.from({ length: 30 }, () => ({ from: 'bob', via: 'agent', at: at(50_000) })) as Entry[];
-  assert.throws(() => quota.checkLog(late, { from: 'bob', via: 'agent', op: 'append.agent', now }), (e: CodedError) => /try again in 10 s/.test(e.message));
+  assert.throws(() => quota.checkLog(late, { from: 'bob', via: 'agent', op: 'append.agent', now }), (e: RoomError) => /try again in 10 s/.test(e.message));
   const s = new MemoryRoomStore('otter-1234');
   const seatQ = config.LINK_QUOTAS.seat;
   for (let i = 0; i < seatQ.max; i++) quota.charge(s, 'abcdef012345', 'seat', { now });
-  assert.throws(() => quota.charge(s, 'abcdef012345', 'seat', { now }), (e: CodedError) => e.code === 'RATE');
+  assert.throws(() => quota.charge(s, 'abcdef012345', 'seat', { now }), (e: RoomError) => e.code === 'RATE');
   quota.charge(s, '0123456789ab', 'seat', { now }); // another link: its own count
   quota.charge(s, 'abcdef012345', 'seat', { now: now + seatQ.windowMs }); // the window passed
   const w = quota.session();
   for (let i = 0; i < config.LINK_QUOTAS.ping.max; i++) w.take('ping', now);
-  assert.throws(() => w.take('ping', now), (e: CodedError) => e.reason === 'QUOTA');
+  assert.throws(() => w.take('ping', now), (e: RoomError) => e.reason === 'QUOTA');
   w.take('beat', now);
 });
 
@@ -551,11 +552,11 @@ test('kick (pipe): a `serve --stdio CODE` child names no link, yet the kick ends
   assert.ok(await h.until(() => ends.length > 0, 5000, 20), 'the stream ends without a SIGTERM reaching this serve');
   assert.equal(ends[0].reason, 'AUTH');
   assert.match(ends[0].message!, /removed this machine from room .*kick/);
-  await assert.rejects(c.append(signed(code, 'bob', { kind: 'say', text: 'after the kick' })), (e: CodedError) => ['AUTH', 'OFFLINE'].includes(e.code!));
+  await assert.rejects(c.append(signed(code, 'bob', { kind: 'say', text: 'after the kick' })), (e: RoomError) => ['AUTH', 'OFFLINE'].includes(e.code));
   assert.ok(await h.until(() => closed, 5000, 20), 'the serve closes the connection');
   assert.ok(!host.readAll().some(e => e.text === 'after the kick'), 'nothing posted over the revoked link');
   // the old token at a new connection: LINK_REVOKED (what the joiner's daemon stops with, and doctor reads)
-  await assert.rejects(client.connect(served(t, host), { machine: REMOTE, token: c.token! }), (e: CodedError) => e.code === 'AUTH' && e.reason === 'LINK_REVOKED');
+  await assert.rejects(client.connect(served(t, host), { machine: REMOTE, token: c.token! }), (e: RoomError) => e.code === 'AUTH' && e.reason === 'LINK_REVOKED');
 });
 
 test('kick (memory): a connection that holds a revoked link gets AUTH LINK_REVOKED on every op; its join takes no seat (no ghost seat)', async t => {
@@ -564,9 +565,9 @@ test('kick (memory): a connection that holds a revoked link gets AUTH LINK_REVOK
   assert.deepEqual(await c.join(seat(code, 'bob')), { ok: true });
   hostLinks.revokeLink(host, c.link!); // another process's kick: this session only reads the store
   seats.exit(code, 'bob', 'removed by the host');
-  await assert.rejects(c.join(seat(code, 'bob')), (e: CodedError) => e.code === 'AUTH' && e.reason === 'LINK_REVOKED');
-  await assert.rejects(c.beat('bob'), (e: CodedError) => e.code === 'AUTH' && e.reason === 'LINK_REVOKED');
-  await assert.rejects(c.append(signed(code, 'bob', { kind: 'say', text: 'ghost' })), (e: CodedError) => e.code === 'AUTH' && e.reason === 'LINK_REVOKED');
+  await assert.rejects(c.join(seat(code, 'bob')), (e: RoomError) => e.code === 'AUTH' && e.reason === 'LINK_REVOKED');
+  await assert.rejects(c.beat('bob'), (e: RoomError) => e.code === 'AUTH' && e.reason === 'LINK_REVOKED');
+  await assert.rejects(c.append(signed(code, 'bob', { kind: 'say', text: 'ghost' })), (e: RoomError) => e.code === 'AUTH' && e.reason === 'LINK_REVOKED');
   const bob = identity.readMembers(code).bob;
   assert.ok(bob.left_at, 'the seat stays left');
   assert.ok(!host.readAll().some(e => e.kind === 'member_joined' && e.from === 'bob' && /rejoined/.test(String(e.text))), 'no "bob rejoined"');

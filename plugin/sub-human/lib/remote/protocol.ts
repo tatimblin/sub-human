@@ -62,9 +62,12 @@
  *                                    lists 'ping', and says hello with caps {ping: true} when it pings, so the
  *                                    server may close a session that then goes silent (LINK_SILENT_MS). An old
  *                                    peer on either side never sees one
- *   CODES                            RoomError codes on both ends and on the wire, unchanged:
- *                                    INVALID RATE LOCK NO_ROOM (today's) + OFFLINE HOST_ONLY AUTH FORK PROTOCOL
- *                                    STALE (a write or hello from another host epoch than the server's)
+ *   CODES, CODE_NAMES, WireCode      RoomError codes on both ends and on the wire, unchanged (CODE_NAMES is the
+ *                                    source of the WireCode union): INVALID RATE LOCK NO_ROOM (today's) + OFFLINE
+ *                                    HOST_ONLY AUTH FORK PROTOCOL STALE (a write or hello from another host epoch than
+ *                                    the server's). A code that is not one of them is never sent (the server and the
+ *                                    link socket send INVALID) and reads as INVALID (toError)
+ *   isWireCode(x) -> bool            one of CODES
  *   reasons                          an error reply may carry reason beside its code (lib/reasons.ts: which failure
  *                                    exactly, e.g. PLACED_ALREADY, INVITE_USED, UNKNOWN_OUTCOME); additive, a peer
  *                                    without them sends none, and nothing depends on one arriving
@@ -89,8 +92,9 @@ import { LINK_FRAME_MAX_BYTES } from '../config.ts';
 import { RoomError } from '../room/validate.ts';
 import { isReason, reasonOf } from '../reasons.ts';
 import { isObj } from '../decode.ts';
+import { errCode } from '../errors.ts';
 import type {
-  FrameId, Op, EventName, WireCode, ProtoRange, PeerVersion, OpParams, RequestFrame, AnyRequest, ResultFrame,
+  FrameId, Op, EventName, ProtoRange, PeerVersion, OpParams, RequestFrame, AnyRequest, ResultFrame,
   ErrorFrame, EventData, EventFrame, DecodedFrame, Caps, IncomingRequest, IncomingEvent,
 } from './types-core.ts';
 
@@ -132,16 +136,17 @@ const OPS: Op[] = ['hello', 'join', 'leave', 'beat', 'append', 'subscribe', 'blo
 const EVENTS: EventName[] = ['entry', 'doc', 'end', 'handoff', 'moved', 'snapshot'];
 const FIELDS: string[] = ['same'];
 const CAPS: Readonly<Caps> = Object.freeze({ ops: OPS, fields: FIELDS, snapshot: true });
-const CODES: Readonly<{ [C in WireCode]: C }> = Object.freeze({
-  INVALID: 'INVALID', RATE: 'RATE', LOCK: 'LOCK', NO_ROOM: 'NO_ROOM',
-  OFFLINE: 'OFFLINE', HOST_ONLY: 'HOST_ONLY', AUTH: 'AUTH', FORK: 'FORK', PROTOCOL: 'PROTOCOL', STALE: 'STALE',
-});
+/** The RoomError codes, the source of WireCode: on both ends and on the wire. */
+const CODE_NAMES = ['INVALID', 'RATE', 'LOCK', 'NO_ROOM', 'OFFLINE', 'HOST_ONLY', 'AUTH', 'FORK', 'PROTOCOL', 'STALE'] as const;
+export type WireCode = typeof CODE_NAMES[number];
+const CODES: Readonly<{ [C in WireCode]: C }> = Object.freeze(Object.fromEntries(CODE_NAMES.map(c => [c, c])) as { [C in WireCode]: C }); // every name, keyed by itself
+const CODE_SET: ReadonlySet<string> = new Set(CODE_NAMES);
+const isWireCode = (x: unknown): x is WireCode => typeof x === 'string' && CODE_SET.has(x);
 
 const UNKNOWN_OUTCOME = 'the outcome is unknown: it went out and may still land';
 /** An OFFLINE whose op went out (reason UNKNOWN_OUTCOME, or the bridge's unknown flag): never "nothing was sent". */
 const unknownOutcome = (e: unknown): boolean => {
-  const x = e as { code?: unknown; unknown?: unknown } | null | undefined; // any thrown value
-  return !!x && x.code === CODES.OFFLINE && (x.unknown === true || reasonOf(x) === 'UNKNOWN_OUTCOME');
+  return errCode(e) === CODES.OFFLINE && ((isObj(e) && e.unknown === true) || reasonOf(e) === 'UNKNOWN_OUTCOME');
 };
 
 /** @returns {{id: number|string, op: string, params: object}} */
@@ -151,9 +156,10 @@ function request(id: FrameId, op: string, params: object = {}): AnyRequest { ret
 /** @returns {{id: number|string, result: *}} */
 const reply = <R>(id: FrameId | undefined, result: R): ResultFrame<R> => ({ id, result });
 /** An error reply; reason (lib/reasons.ts) rides beside the code when the error has one. */
-const error = (id: FrameId | undefined, code: string, message: unknown, reason?: string | null): ErrorFrame => ({ id, error: { code, message: String(message), ...(isReason(reason) ? { reason } : {}) } });
-/** The RoomError an error reply stands for, with its reason when it carries one this end knows. */
-const toError = (e: { code: string; message: unknown; reason?: unknown }): RoomError => new RoomError(e.code, String(e.message), isReason(e.reason) ? e.reason : null);
+const error = (id: FrameId | undefined, code: WireCode, message: unknown, reason?: string | null): ErrorFrame => ({ id, error: { code, message: String(message), ...(isReason(reason) ? { reason } : {}) } });
+/** The RoomError an error reply stands for, with its reason when it carries one this end knows. A code this end does
+ * not know (a newer peer's) reads as INVALID, as this end's own server and link socket send one. */
+const toError = (e: { code: unknown; message: unknown; reason?: unknown }): RoomError => new RoomError(isWireCode(e.code) ? e.code : CODES.INVALID, String(e.message), isReason(e.reason) ? e.reason : null);
 /** @returns {{id: number|string, ev: string, data: *}} */
 const event = <E extends EventName>(id: FrameId, ev: E, data: EventData[E]): EventFrame<E> => ({ id, ev, data }) as EventFrame<E>;
 
@@ -195,6 +201,6 @@ const isEventName = (ev: unknown): ev is EventName => EVENTS.some(e => e === ev)
 const isOp = (op: unknown): op is Op => OPS.some(o => o === op);
 
 export {
-  PROTO, VERSION, PLUGIN_VERSION, rangeOf, negotiate, skewMessage, OPS, EVENTS, FIELDS, CAPS, CODES, UNKNOWN_OUTCOME,
+  PROTO, VERSION, PLUGIN_VERSION, rangeOf, negotiate, skewMessage, OPS, EVENTS, FIELDS, CAPS, CODES, CODE_NAMES, isWireCode, UNKNOWN_OUTCOME,
   unknownOutcome, request, reply, error, toError, event, encode, decoder, isRequest, isReply, isEvent, isOp,
 };

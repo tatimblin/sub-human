@@ -63,9 +63,9 @@ import { testMs } from '../env.ts';
 import * as hostLinks from './host-links.ts';
 import * as admission from './admission.ts';
 import * as secretMod from './invite-secret.ts';
-import type { Reason } from '../reasons.ts';
+import type { ReasonFor } from '../reasons.ts';
 import type {
-  AuthStore, BoundInvite, CodedError, Invites, InviteRecord, ShortInvite, AdmissionRecord, LinkRecord, ParsedInvite, ShortKind,
+  AuthStore, BoundInvite, Invites, InviteRecord, ShortInvite, AdmissionRecord, LinkRecord, ParsedInvite, ShortKind,
 } from './types-core.ts';
 
 /** A redeemed invite: the link's token (once, in clear), its record, and what kind of invite it was. */
@@ -89,7 +89,11 @@ const KINDS: readonly ShortKind[] = ['ssh', 'ws', 'pipe'];
 
 const sha256 = (s: unknown): string => crypto.createHash('sha256').update(String(s)).digest('hex');
 const iso = (now: number): string => new Date(now).toISOString();
-const authError = (msg: string, reason: Reason, note: string | null = null): CodedError => Object.assign(new RoomError('AUTH', msg, reason), note ? { note } : {});
+const authError = (msg: string, reason: ReasonFor<'AUTH'>, note: string | null = null): RoomError => {
+  const e = new RoomError('AUTH', msg, reason);
+  if (note) e.note = note;
+  return e;
+};
 
 function mintFor(store: AuthStore, { locator, machine, seats, pin: withPin = false, hostKey = null, now = Date.now() }: {
   locator: string; machine: string; seats: string[]; pin?: boolean; hostKey?: string | null; now?: number;
@@ -112,7 +116,7 @@ const sameDigest = (a: unknown, b: unknown): boolean => typeof a === 'string' &&
 const left = (n: number): string => `${n} ${n === 1 ? 'try' : 'tries'} left`;
 
 /** A bound invite's checks, inside the invites update: {next record?, err to throw after} (err null: it holds). */
-function checkBound(inv: BoundInvite, secret: string, pin: unknown, now: number): { next?: BoundInvite; err: CodedError | null } {
+function checkBound(inv: BoundInvite, secret: string, pin: unknown, now: number): { next?: BoundInvite; err: RoomError | null } {
   if (now > Date.parse(inv.expires_at)) {
     return inv.pin_sha256
       ? { next: { ...inv, burnt_at: iso(now) }, err: authError('this invite expired (an invite with a PIN lasts 15 minutes); ask the host for a new one', 'INVITE_EXPIRED') }
@@ -146,7 +150,7 @@ const backoff = (n: number): number => testMs('SUB_HUMAN_PIN_BACKOFF_MS') * 2 **
  */
 function redeemShort(cur: Invites, key: string, secret: string, inv: ShortInvite, { pin, proven, peerKey, as, linkId, now }: {
   pin: unknown; proven: string | null; peerKey: string | null; as: Asked | null; linkId: string | undefined; now: number;
-}): { next?: Invites; err: CodedError | null; made?: { id: string; machine: string; seats: string[]; key: string | null }; adm?: AdmissionRecord } {
+}): { next?: Invites; err: RoomError | null; made?: { id: string; machine: string; seats: string[]; key: string | null }; adm?: AdmissionRecord } {
   const ref = key.slice(0, 12);
   if (inv.v !== 4) return { err: authError('this invite was made by an older sub-human on the host; ask them for a new one (/sub-human invite)', 'INVITE_UNKNOWN') };
   // burnt, or no try left (a record whose last wrong PIN did not mark it burnt): it takes no PIN, right or wrong
@@ -209,7 +213,7 @@ function redeemInvite(store: AuthStore, secret: string, { machine, pin, proven =
 }): Redeemed {
   const key = sha256(secret);
   let link = null as { id: string; seats: string[]; bound: boolean; machine: string; key: string | null } | null; // (as: set in the update)
-  let err = null as CodedError | null, handoff = false, adm = null as AdmissionRecord | null;
+  let err = null as RoomError | null, handoff = false, adm = null as AdmissionRecord | null; // (as: set in the update)
   store.kv.update(INVITES_KEY, (stored: Invites | null) => {
     err = null;
     const cur = stored || {};
