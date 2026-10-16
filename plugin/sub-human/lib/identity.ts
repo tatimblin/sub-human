@@ -178,6 +178,9 @@ interface JoinRequest {
   cwd?: string | null;
   /** what log a remote seat's code reads, as its join said (lib/remote/server.ts join; a local seat's is this code's) */
   log_v?: number;
+  /** leave the seat this pid held before to the caller (lib/seats.ts take: it leaves it, logged, once this join
+   * worked, so a refused join changes nothing) instead of retiring it here */
+  keepPrevious?: boolean;
 }
 
 /** The room's Claude's record as updateRoomClaude patches it: undefined deletes a field. */
@@ -286,7 +289,7 @@ function localSeat({ name, role, machine, pid, session_id, cwd }: { name: string
   return { name, role, machine, pid, ...(start != null ? { pid_start: start } : {}), session_id: session_id || null, cwd: cwd || null };
 }
 
-function join({ code, name, role, machine = machineIn(code), account, pid: pidArg, session_id, cwd, log_v }: JoinRequest = {} as JoinRequest): JoinResult {
+function join({ code, name, role, machine = machineIn(code), account, pid: pidArg, session_id, cwd, log_v, keepPrevious = false }: JoinRequest = {} as JoinRequest): JoinResult {
   if (!roomExists(code)) return fail(`no room "${code}"`);
   if (typeof name !== 'string' || !NAME_RE.test(name)) return fail(`invalid name "${name}" (letters, digits, . _ -, up to 32)`);
   if (!ROLES.includes(role)) return fail(`invalid role "${role}"`);
@@ -305,7 +308,7 @@ function join({ code, name, role, machine = machineIn(code), account, pid: pidAr
   const r = membersOf(code).join(rec);
   if (r.ok) store.indexRoom(code); // it may be open from here on (lib/room/registry.ts)
   if (r.ok && local) {
-    retirePrevious(code, name, pid);
+    if (!keepPrevious) retirePrevious(code, name, pid);
     writeIndexes(code, rec);
   }
   return r;

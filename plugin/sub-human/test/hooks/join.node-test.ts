@@ -836,3 +836,21 @@ test('bare /sub-human in a fork of a seated session (← the agent view) takes t
   assert.deepEqual(fs.readdirSync(path.join(w.home, 'rooms')), [w.code]);
   assert.ok(!w.entries().some(e => /alice (left|rejoined)/.test(e.text || '')), 'the person never left');
 });
+
+test('R2 (live verify, verify6/14): a refused /sub-human NAME CODE leaves the seat this session holds as it was (no "left (switched rooms)", no lost row); one that works leaves it, logged', () => {
+  const w = new World({ claude: 'sleep', alice: 'act', dana: 'sleep' });
+  const before = w.entries().length;
+  // dana's name is held by a live seat: refused, and alice is still alice
+  const r = w.hook('join', expand(`dana ${w.code}`), { as: 'alice' });
+  assert.equal(r.json!.decision, 'block');
+  assert.match(r.json!.reason!, new RegExp(`could not join ${w.code} as dana: name taken[^]*; you're still alice in room ${w.code}$`));
+  assert.equal(w.members().alice.left_at, undefined);
+  assert.equal(w.lib(() => identity.resolveBySession(w.sid.alice))!.name, 'alice');
+  assert.equal(w.entries().length, before, 'nothing logged');
+  // a name that is free: the switch happens, and the old seat's leave is logged
+  const ok = w.hook('join', expand(`erin ${w.code}`), { as: 'alice' });
+  assert.equal(ok.json!.decision, undefined, ok.stdout);
+  assert.ok(w.members().alice.left_at);
+  assert.equal(w.lib(() => identity.resolveBySession(w.sid.alice))!.name, 'erin');
+  assert.ok(w.entries().some(e => e.text === 'alice left (switched rooms)'));
+});

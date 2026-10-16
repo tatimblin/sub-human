@@ -40,7 +40,8 @@
  *   take(want, {pid, session_id, cwd, cur, pubkey}) -> Taken   the /sub-human join's seat (lib/commands/join.ts): NAME in
  *       ROOM (code null: the one open room, sweeping orphans first, else a new one; several open is a refusal). In a room
  *       hosted elsewhere the link is started first (lib/remote/joining.ts ensureLinked). The same seat again is "already
- *       joined" (unless a re-pointed link must rebind it); another seat of this session leaves first ("switched rooms");
+ *       joined" (unless a re-pointed link must rebind it); another seat of this session leaves once the new one is taken
+ *       ("switched rooms"), never on a refused join;
  *       pubkey(code, name) is the seat key's public half (hooks/seat-key.ts, which only the join hook loads). Taken:
  *       {ok: true, me, lead, msg} (lead: the mechanics block's last line; msg: the line for the person) or
  *       {ok: false, text, refused} (a refusal, or where a join not let in yet stands). Every take first runs
@@ -82,6 +83,8 @@ interface EnterOpts {
   pubkey?: string;
   /** what log a remote seat's code reads, as its join said (lib/remote/server.ts) */
   log_v?: number;
+  /** take leaves the seat this pid held before itself, after this join worked (identity.join keepPrevious) */
+  keepPrevious?: boolean;
 }
 /** identity.join's answer; note: what the join line adds (the room's Claude starting, or why it could not). */
 type EnterResult = JoinResult & { note?: string };
@@ -109,12 +112,12 @@ function ensureRoomClaude(code: string, cwd: string | null | undefined, by: stri
   return ` · starting the room's Claude…${failed}`;
 }
 
-function enter({ code, name, role = 'member', machine = identity.machineIn(code), account, pid, session_id, cwd, pubkey, log_v }: EnterOpts): EnterResult {
+function enter({ code, name, role = 'member', machine = identity.machineIn(code), account, pid, session_id, cwd, pubkey, log_v, keepPrevious }: EnterOpts): EnterResult {
   // the seat's earlier record ended with no leave: its "left" line goes before this join's "rejoined"
   if (identity.isHost(code)) sweep(code, { name });
   // a seat on the host is the host account's (elsewhere the host's server decides: a mirror's join sends no account)
   if (account === undefined && machine && machine === identity.machineIn(code) && identity.isHost(code)) account = machine;
-  const r: EnterResult = identity.join({ code, name, role, machine, account, pid, session_id, cwd, log_v });
+  const r: EnterResult = identity.join({ code, name, role, machine, account, pid, session_id, cwd, log_v, keepPrevious });
   if (!r.ok) return r;
   if (!identity.isHost(code)) return { ...r, note: '' };
   keepWorkdir(code, cwd);
@@ -277,12 +280,13 @@ function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd,
   // The seat's key: via=human posts and answers are signed with it, and the log pins it.
   let key: string;
   try { key = pubkey(code, name); } catch (e) { return no(`could not make ${name}'s signing key (${msgOf(e)}). Run /sub-human doctor.`); }
-  if (cur && !same) exit(cur.code, cur.name, 'switched rooms'); // exactly as exiting the session would
-  const r = enter({ code, name, pid, session_id, cwd, pubkey: key });
+  // the seat this session holds now is left only once the new one is taken: a refused join changes nothing (item 10 R2)
+  const r = enter({ code, name, pid, session_id, cwd, pubkey: key, keepPrevious: !!cur && !same });
   if (!r.ok) {
     if (isDefault && /^name taken/.test(r.error || '')) return no(`"${name}" is taken in room ${code}; pick another: /sub-human NAME${created ? '' : ` ${code}`}`);
-    return no(`could not join ${code} as ${name}: ${r.error || 'unknown error'}`);
+    return no(`could not join ${code} as ${name}: ${r.error || 'unknown error'}${cur && !same ? `; you're still ${cur.name} in room ${cur.code}` : ''}`);
   }
+  if (cur && !same) exit(cur.code, cur.name, 'switched rooms'); // exactly as exiting the session would
   if (rebind) { const { rebind: _done, ...l } = links.get(code)!; links.set(code, l); } // rebind: read from it
   joining().dropJoinAs(code);
   try { gc().sweepRows(code); } catch { /* best effort: rows of ended sessions */ }
