@@ -932,6 +932,22 @@
    "note": "A ui.render rewrite of UserMessage text changes only the drawing; origin, isExpanded, task and from are pinned."
   },
   {
+   "id": "render-own-prompt-reentry",
+   "section": 10,
+   "stability": "incidental",
+   "since": "2.1.296",
+   "search": [
+    "Prompt from the ",
+    " left out for re-entry",
+    "useUserMessageSite"
+   ],
+   "shape": [
+    "{version:~,staticFrame:~,submittedBy:~}",
+    "case\"plugin\":return ~.name;case\"channel\":return"
+   ],
+   "note": "A plugin's own $.prompt.submit row is drawn under a \"Prompt from the <name> plugin\" label, and its ui.render is raised with that plugin as its origin (useUserMessageSite's submittedBy): the plugin's own render hook is left out for re-entry, and its .catch is asked in its place with every $ call refused. mod/render.ts draws the wake there from plain RenderElement data (stage 8c's hook never ran for wakes: they showed raw, the frame and the (for Claude) lines in the prompt's color)."
+  },
+  {
    "id": "plugin-types-state",
    "section": 10,
    "stability": "incidental",

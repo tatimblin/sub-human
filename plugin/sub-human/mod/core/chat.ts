@@ -14,18 +14,19 @@ const UNSAFE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/g;
 const clean = (s: unknown) => String(s).replace(/\r\n?/g, '\n').replace(UNSAFE, '');
 
 /**
- * A message another member's Claude sent: "bob's Claude: <first line>", further lines under NEST as
- * lib/room/render.ts chatLines lays out a message, at most CHAT_LINES_MAX then "[+N more lines: ctrl+o]".
- * null when fromName is not a seat address ("NAME.CODE").
+ * A message another member's Claude sent: "bob's Claude: <first line>" ("the room's Claude: …" from claude.CODE),
+ * further lines under NEST as lib/room/render.ts chatLines lays out a message, at most CHAT_LINES_MAX then
+ * "[+N more lines: ctrl+o]". null when fromName is not a seat address ("NAME.CODE").
  */
 export function peerLines(fromName: unknown, text: unknown): string[] | null {
   const who = parseAddr(fromName);
   if (!who) return null;
+  const label = who.name === 'claude' ? 'the room\'s Claude' : `${who.name}'s Claude`;
   let lines = clean(text).split('\n').map(l => l.replace(/\s+$/, '')).filter(l => l.trim());
-  if (!lines.length) return [`${who.name}'s Claude`];
+  if (!lines.length) return [label];
   const more = Math.max(0, lines.length - CHAT_LINES_MAX);
   if (more) lines = lines.slice(0, CHAT_LINES_MAX);
-  const out = lines.map((l, i) => (i ? NEST + l : `${who.name}'s Claude: ${l.replace(/^\s+/, '')}`));
+  const out = lines.map((l, i) => (i ? NEST + l : `${label}: ${l.replace(/^\s+/, '')}`));
   if (more) out.push(`${NEST}[+${more} more line${more === 1 ? '' : 's'}: ctrl+o]`);
   return out;
 }
