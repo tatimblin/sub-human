@@ -21,6 +21,7 @@ import type { RoomStore } from '../lib/room/types.ts';
 import type { Client, ConnectOpts } from '../lib/remote/client.ts';
 import type { AppendResult, HandoffAcceptResult, HandoffAsk, MovedEventData, StreamEvent } from '../lib/remote/types-core.ts';
 import type { RoomCode } from '../lib/brand.ts';
+import { sn } from './support/brands.ts';
 
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
 
@@ -49,9 +50,9 @@ async function linked(t: TestContext, host: RoomStore, opts: Partial<ConnectOpts
   return c;
 }
 async function joinBob(c: Client, code: RoomCode) {
-  const key = seatKey.ensure(code, 'bob');
-  const pubkey = seatKey.publicPem(code, 'bob');
-  await c.join({ name: 'bob', pubkey, proof: hostLinks.proveSeat(key, { room: code, name: 'bob', pubkey }) });
+  const key = seatKey.ensure(code, sn('bob'));
+  const pubkey = seatKey.publicPem(code, sn('bob'));
+  await c.join({ name: 'bob', pubkey, proof: hostLinks.proveSeat(key, { room: code, name: sn('bob'), pubkey }) });
   return key;
 }
 const events = (c: Client) => {
@@ -113,7 +114,7 @@ test('handoff: the ask reaches the target\'s link only; a signed acceptance move
 
   assert.throws(() => handoff.ask(code, { from: 'alice', to: 'alice' }), /on this machine/);
   assert.throws(() => handoff.ask(code, { from: 'alice', to: 'zed' }), /not in room/);
-  const d = handoff.ask(code, { from: 'alice', to: 'bob', locator: 'pipe:/bobs/home', sign: p => envelope.sign(p, seatKey.ensure(code, 'alice'), { room: code, from: 'alice' }) });
+  const d = handoff.ask(code, { from: 'alice', to: 'bob', locator: 'pipe:/bobs/home', sign: p => envelope.sign(p, seatKey.ensure(code, sn('alice')), { room: code, from: 'alice' }) });
   assert.deepEqual([d.state, d.epoch, d.ask!.kind], ['asked', 1, 'host_ask']);
   await h.until(() => bob.got.some(e => e.ev === 'handoff'), 3000, 20);
   const ev = (bob.got.find(e => e.ev === 'handoff') as StreamEvent<'handoff'>).data;
@@ -132,7 +133,7 @@ test('handoff: the ask reaches the target\'s link only; a signed acceptance move
   const e = host.readAll().at(-1)!;
   assert.deepEqual([e.kind, e.from, e.host, e.machine, e.epoch, e.locator], ['host_changed', 'alice', 'bob', REMOTE, 1, 'pipe:/bobs/home']);
   assert.ok(envelope.verify(e.accept, store.publicKey('bob', host)), 'bob\'s acceptance, signed with his pinned key');
-  assert.ok(envelope.verify(e.ask, envelope.parseKey(seatKey.publicPem(code, 'alice'))), 'alice\'s ask, signed with hers');
+  assert.ok(envelope.verify(e.ask, envelope.parseKey(seatKey.publicPem(code, sn('alice')))), 'alice\'s ask, signed with hers');
   assert.equal(handoff.hostDoc(host)!.state, 'moved');
 
   // the target's own stream: the line, then 'moved' naming its machine, no invite; the other link gets its invite
@@ -160,7 +161,7 @@ test('handoff: refused on the card, expired, or replaced: nothing moves', async 
   assert.deepEqual(await c.request('handoff.refuse', { id: d2.id }), { ok: true });
   assert.equal(handoff.hostDoc(host)!.state, 'refused');
   const d3 = handoff.ask(code, { from: 'alice', to: 'bob', now: Date.now() - 11 * 60_000 });
-  const key = seatKey.ensure(code, 'bob');
+  const key = seatKey.ensure(code, sn('bob'));
   const proof = envelope.sign({ kind: 'host_accept', id: d3.id, epoch: 1, locator: 'pipe:/x' }, key, { room: code, from: 'bob' });
   await rejects(c.request('handoff.accept', { id: d3.id, accept: proof, locator: 'pipe:/x', invites: {} }), 'INVALID', /expired/);
   assert.equal(host.hostState().epoch, 0);

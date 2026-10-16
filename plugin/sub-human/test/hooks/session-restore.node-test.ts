@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { World, fixture, identity, ctx, hso } from './helpers.ts';
 import * as rowsLib from '../../lib/rows.ts';
 import * as proposal from '../../lib/proposal.ts';
+import { sn } from '../support/brands.ts';
 
 const NEW_SID = '8cea5671-97a8-49c2-bcdb-4a62d51b6a18';
 const hasRows = () => typeof rowsLib.rowText === 'function';
@@ -23,7 +24,7 @@ test('session-restore: after /clear, rebinds the new session id by CLAUDE_PID an
   assert.ok(c.length <= 1200, `block ${c.length}`);
   assert.equal(hso(r).sessionTitle, `alice.${w.code}`, 'the native address');
   assert.equal(w.members().alice.session_id, NEW_SID);
-  assert.deepEqual(w.lib(() => identity.resolveBySession(NEW_SID)), { code: w.code, name: 'alice', role: 'member', session_id: NEW_SID, pid: process.pid, address: `alice.${w.code}` });
+  assert.deepEqual(w.lib(() => identity.resolveBySession(NEW_SID)), { code: w.code, name: sn('alice'), role: 'member', session_id: NEW_SID, pid: process.pid, address: `alice.${w.code}` });
   assert.equal(w.lib(() => identity.resolveBySession(w.sid.alice)), null, 'old session id dropped');
 });
 
@@ -106,10 +107,10 @@ test('session-restore: not joined -> nothing', () => {
 test('session-restore: a review left open (plan file still the proposal) is restored and cleared after clear; a fresh one survives compact', () => {
   const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
   const text = '# Cursor paging\n\n1. after=\n';
-  const bob = { code: w.code, name: 'bob', role: 'member' };
+  const bob = { code: w.code, name: sn('bob'), role: 'member' };
   const hash = w.lib(() => proposal.create(bob, { text, approvers: ['alice'] })).hash;
   const file = path.join(w.userHome, '.claude', 'plans', 'stuck.md');
-  const alice = { code: w.code, name: 'alice', role: 'member' };
+  const alice = { code: w.code, name: sn('alice'), role: 'member' };
   const open = () => !!w.lib(() => proposal.readReview(alice)); // her session document's review
   const leave = (extra = {}) => {
     fs.writeFileSync(file, text);

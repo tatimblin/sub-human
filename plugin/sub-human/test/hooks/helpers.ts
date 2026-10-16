@@ -20,6 +20,7 @@ import * as room from '../../lib/room.ts';
 import type { AppendOpts, Entry, EntryInput, Members } from '../../lib/room/types.ts';
 import type { HookOutput, HookSpecificOutput } from '../../hooks/types.ts';
 import type { RoomCode } from '../../lib/brand.ts';
+import { sn } from '../support/brands.ts';
 
 const PLUGIN = path.join(import.meta.dirname, '..', '..');
 const HOOKS = path.join(PLUGIN, 'hooks');
@@ -87,7 +88,7 @@ class World {
   join(name: string, who: Who = 'sleep', { announce = false }: { announce?: boolean } = {}): number {
     const pid = who === 'act' ? process.pid : who === 'act2' ? process.ppid : sleeper();
     const s = sid();
-    const r = this.lib(() => identity.join({ code: this.code, name, role: name === 'claude' ? 'claude' : 'member', pid, session_id: s, cwd: this.cwd }));
+    const r = this.lib(() => identity.join({ code: this.code, name: sn(name), role: name === 'claude' ? 'claude' : 'member', pid, session_id: s, cwd: this.cwd }));
     if (!r.ok) throw new Error(`join ${name}: ${r.error}`);
     this.pid[name] = pid;
     this.sid[name] = s;

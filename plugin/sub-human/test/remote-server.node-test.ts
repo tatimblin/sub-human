@@ -31,7 +31,7 @@ import type { RoomError } from '../lib/room/validate.ts';
 import type { Transport } from '../lib/remote/types-rest.ts';
 import type { Entry, EntryInput, Members, Presence, RoomStore } from '../lib/room/types.ts';
 import type { RoomCode } from '../lib/brand.ts';
-import { rc } from './support/brands.ts';
+import { rc, sn } from './support/brands.ts';
 
 /** server.serve's options. */
 type ServeOpts = Parameters<typeof server.serve>[1];
@@ -64,8 +64,8 @@ async function linked(t: TestContext, host: RoomStore, opts: Partial<ConnectOpts
   return c;
 }
 /** What the remote join hook sends: the seat's public key and a proof signed by its private key. */
-function seat(code: RoomCode, name: string, key = seatKey.ensure(code, name)) {
-  const pubkey = seatKey.publicPem(code, name);
+function seat(code: RoomCode, name: string, key = seatKey.ensure(code, sn(name))) {
+  const pubkey = seatKey.publicPem(code, sn(name));
   return { name, pubkey, proof: hostLinks.proveSeat(key, { room: code, name, pubkey }) };
 }
 const signed = (code: RoomCode, name: string, entry: EntryInput) => store.toPayload(code, entry, { via: 'human', from: name });
@@ -92,7 +92,7 @@ test('remote (memory): hello with an invite gives a token once; join, beat, appe
   const ms = identity.readMembers(code);
   assert.deepEqual([ms.alice.machine, ms.alice.pid], [REMOTE, undefined], 'a remote seat lives by its lease');
   const joined = host.readAll().find(e => e.kind === 'member_joined' && e.from === 'alice');
-  assert.deepEqual([joined!.machine, joined!.pubkey], [REMOTE, seatKey.publicPem(code, 'alice')], 'the key is pinned');
+  assert.deepEqual([joined!.machine, joined!.pubkey], [REMOTE, seatKey.publicPem(code, sn('alice'))], 'the key is pinned');
   assert.deepEqual(await c.beat('alice', { presence: { state: 'working', detail: 'tests' } }), { ok: true });
   const say = await c.append(signed(code, 'alice', { kind: 'say', text: 'hello from afar' }));
   assert.equal(host.trust(host.readById([say.id])[0]), 'verified');
@@ -270,7 +270,7 @@ test('remote (memory): a link writes only as the seats it joined: another `from`
   await b.leave('bob', 'gone');
   const fresh = crypto.generateKeyPairSync('ed25519');
   const pubkey = fresh.publicKey.export({ type: 'spki', format: 'pem' }) as string;
-  await rejects(a.join({ name: 'bob', pubkey, proof: hostLinks.proveSeat(fresh.privateKey, { room: code, name: 'bob', pubkey }) }), 'AUTH');
+  await rejects(a.join({ name: 'bob', pubkey, proof: hostLinks.proveSeat(fresh.privateKey, { room: code, name: sn('bob'), pubkey }) }), 'AUTH');
   assert.ok(identity.readMembers(code).bob.left_at);
   assert.equal(logLines(code).length, before + 1, 'only bob\'s own member_left was written');
 });
@@ -566,7 +566,7 @@ test('kick (memory): a connection that holds a revoked link gets AUTH LINK_REVOK
   const c = await linked(t, host);
   assert.deepEqual(await c.join(seat(code, 'bob')), { ok: true });
   hostLinks.revokeLink(host, c.link!); // another process's kick: this session only reads the store
-  seats.exit(code, 'bob', 'removed by the host');
+  seats.exit(code, sn('bob'), 'removed by the host');
   await assert.rejects(c.join(seat(code, 'bob')), (e: RoomError) => e.code === 'AUTH' && e.reason === 'LINK_REVOKED');
   await assert.rejects(c.beat('bob'), (e: RoomError) => e.code === 'AUTH' && e.reason === 'LINK_REVOKED');
   await assert.rejects(c.append(signed(code, 'bob', { kind: 'say', text: 'ghost' })), (e: RoomError) => e.code === 'AUTH' && e.reason === 'LINK_REVOKED');
@@ -582,7 +582,7 @@ test('a seat refused at join gives its link binding back; a seat of another mach
   await rejects(c.join({ ...wrong, pubkey: seat(code, 'dave').pubkey }), 'AUTH'); // a proof for another key
   assert.deepEqual(hostLinks.links(host)[c.link!].seats, [], 'not bound');
   // a ghost: a remote seat whose link is gone (a kick raced its join before this fix), its lease past the settle
-  assert.equal(seats.enter({ code, name: 'ghost', machine: 'ghost0machine001', pubkey: seat(code, 'ghost').pubkey }).ok, true);
+  assert.equal(seats.enter({ code, name: sn('ghost'), machine: 'ghost0machine001', pubkey: seat(code, 'ghost').pubkey }).ok, true);
   host.members.update(ms => { ms.ghost.seen_at = new Date(Date.now() - 3_600_000).toISOString(); return ms; });
   assert.deepEqual(seats.sweep(code), ['ghost']);
   const g = identity.readMembers(code).ghost;
@@ -603,8 +603,8 @@ test('remote (memory): params of the wrong shape are refused by the op\'s own ch
   await rejects(c.request('join', [1, 2]), 'INVALID'); // not an object: no pubkey
   await rejects(c.request('join', { ...seat(code, 'alice'), pubkey: 5 }), 'INVALID');
   // a proof signed over a name that is no seat name (a number): INVALID, and the link binds nothing
-  const key = seatKey.ensure(code, 'alice');
-  const pubkey = seatKey.publicPem(code, 'alice');
+  const key = seatKey.ensure(code, sn('alice'));
+  const pubkey = seatKey.publicPem(code, sn('alice'));
   const proof = hostLinks.proveSeat(key, { room: code, name: 7 as unknown as string, pubkey }); // deliberate: a number
   await rejects(c.request('join', { name: 7, pubkey, proof }), 'INVALID');
   assert.deepEqual(Object.values(hostLinks.links(host)).map(l => l.seats), [[]]);

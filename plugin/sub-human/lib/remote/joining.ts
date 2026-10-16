@@ -45,7 +45,7 @@ import type { Link } from '../room/types.ts';
 import type { LinkSpec, SshSpec } from './types-rest.ts';
 import type { Outcome } from './hosting.ts';
 import { msgOf } from '../errors.ts';
-import type { RoomCode } from '../brand.ts';
+import type { RoomCode, SeatName } from '../brand.ts';
 
 const require = createRequire(import.meta.url);
 const wsT = (): typeof import('./transports/ws.ts') => require('./transports/ws.ts');
@@ -53,7 +53,7 @@ const sshT = (): typeof import('./transports/ssh.ts') => require('./transports/s
 
 /** The seat a command asks to take: code null for the one open room, else a new one. isDefault: the name was not
  * typed (a taken one says how to pick another). pending: a join the host let in. */
-export interface Wanted { name: string; code: RoomCode | null; isDefault?: boolean; pending?: boolean }
+export interface Wanted { name: SeatName; code: RoomCode | null; isDefault?: boolean; pending?: boolean }
 /** What a join step ends in. */
 export type Step = { kind: 'take'; want: Wanted } | { kind: 'say'; text: string; refused: boolean };
 
@@ -106,7 +106,7 @@ const sameLogin = (a: LinkSpec | undefined, b: SshSpec) => !!a && !!b && a.kind 
 
 /** Where an invite join stands (hosting.joinText), as a step: a refusal when it was refused. tells: this session's tail
  * says what the host answers (the session that typed the line). */
-function stands(code: RoomCode, name: string, o: Outcome, tells = false): Step {
+function stands(code: RoomCode, name: SeatName, o: Outcome, tells = false): Step {
   const text = hosting.joinText(code, name, o, { tells });
   told(code, text);
   return say(text, o.state === 'refused');
@@ -117,7 +117,7 @@ function told(code: RoomCode, text: string): void {
   try { const l = links.get(code); if (l) links.set(code, { ...l, join_told: text }); } catch { /* the tail may repeat it */ }
 }
 
-export function linkLine({ name, code, word, transport, sid }: { name: string; code: RoomCode; word: string; transport: LinkSpec; sid?: string | null }): Step {
+export function linkLine({ name, code, word, transport, sid }: { name: SeatName; code: RoomCode; word: string; transport: LinkSpec; sid?: string | null }): Step {
   if (identity.roomExists(code) && identity.isHost(code)) return refuse(`room ${code} is hosted on this machine; join it with /sub-human ${name} ${code}.`);
   const cur: Link | null = links.get(code);
   // a link that stopped as spent (kicked: its token gets nowhere now) is replaced by the new line, never re-seated over
@@ -137,7 +137,7 @@ export function linkLine({ name, code, word, transport, sid }: { name: string; c
 }
 
 /** The invite joins this machine started that wait for their PIN (the host asked), this session's first, newest first. */
-export function pinJoin(sid?: string | null): Link | null {
+export function pinJoin(sid?: string | null): PendingLink | null {
   const all = pendingJoins().filter(l => !!l.pin_wanted && typeof l.invite === 'string');
   return all.find(l => !!sid && l.join_sid === sid) || all[0] || null;
 }
@@ -148,7 +148,7 @@ export function givePin(pin: string, sid?: string | null): Step {
     const any = pendingJoins().find(j => typeof j.invite === 'string' && !j.awaiting);
     return refuse(any ? `the host's machine has not asked for the PIN yet (room ${any.code}): wait a moment, then type it again` : 'no invite here is waiting for a PIN: type the invite line first (/sub-human join HOST ROOM SECRET), then the PIN when it asks');
   }
-  const code = l.code, name = String(l.join_as);
+  const code = l.code, name = l.join_as;
   restartLink(code);
   try { hosting.givePin(code, pin); } catch (e) { return refuse(msgOf(e)); }
   if (!linkSocket.start(code)) return refuse(NO_START(code));
@@ -156,7 +156,7 @@ export function givePin(pin: string, sid?: string | null): Step {
 }
 
 export function linkLogin({ dest: typed, code, via, home, name, isDefault }: {
-  dest: string; code: RoomCode; via: string | undefined; home: string | undefined; name: string; isDefault: boolean;
+  dest: string; code: RoomCode; via: string | undefined; home: string | undefined; name: SeatName; isDefault: boolean;
 }): Step {
   const dest = sshT().withUser(typed);
   const spec = sshT().loginSpec(dest, { via, home });
@@ -188,15 +188,18 @@ export function linkLogin({ dest: typed, code, via, home, name, isDefault }: {
 export const noSecret = (dest: string, code: RoomCode): string => `that looks like an invite line without its SECRET: /sub-human join ${dest} ${code} SECRET (the long word the host sent with it). If the host's line ended with a 4-digit PIN instead, it comes from an older sub-human on the host: ask them to update (/plugin update sub-human) and invite you again.`;
 
 /** The invite joins this machine started, waiting to take their seat (join_as), newest first. */
-function pendingJoins(): Link[] {
-  const all = links.list().map(c => links.get(c)).filter((l): l is Link => !!l && typeof l.join_as === 'string' && !identity.isHost(l.code));
+/** A link this machine's invite join is waiting on: join_as names the seat it asked for. */
+export type PendingLink = Link & { join_as: SeatName };
+
+function pendingJoins(): PendingLink[] {
+  const all = links.list().map(c => links.get(c)).filter((l): l is PendingLink => !!l && identity.isSeatName(l.join_as) && !identity.isHost(l.code));
   return all.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
 }
 
-export const pendingJoin = (): Link | null => pendingJoins()[0] || null;
+export const pendingJoin = (): PendingLink | null => pendingJoins()[0] || null;
 
-export function finishJoin(l: Link): Step {
-  const code = l.code, name = String(l.join_as); // pendingJoin: a string
+export function finishJoin(l: PendingLink): Step {
+  const code = l.code, name = l.join_as; // pendingJoin: a seat name
   const why = linkSocket.stopReason(linkSocket.status(code));
   if (l.pin_wanted && !l.token) return stands(code, name, { state: 'pin', ...(l.pin_wanted.message ? { reason: l.pin_wanted.message } : {}) });
   if (why && !l.token) {
@@ -210,7 +213,7 @@ export function finishJoin(l: Link): Step {
   return stands(code, name, o);
 }
 
-export function ensureLinked(code: RoomCode, name: string): Step | null {
+export function ensureLinked(code: RoomCode, name: SeatName): Step | null {
   if (identity.isHost(code)) return null;
   const pending = links.get(code);
   // a link the host ended (kicked: lib/remote/link.ts dropped its token): no seat over it; a new invite line replaces it
@@ -247,7 +250,7 @@ export function pendingNews(sid: string | null | undefined): News | null {
   if (!sid) return null;
   const l = pendingJoins().find(j => j.join_sid === sid);
   if (!l) return null;
-  const code = l.code, name = String(l.join_as);
+  const code = l.code, name = l.join_as;
   // the command's own answer said it already (join_told): nothing new for the tail to say
   const fresh = (n: News): News => (n.text && n.text.replace(/^✗ /, '') === l.join_told ? { ...n, text: '' } : n);
   if (l.pin_wanted && !l.token && l.pin === undefined) {

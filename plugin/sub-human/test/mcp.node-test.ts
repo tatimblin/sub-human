@@ -16,6 +16,7 @@ import type { Room } from '../lib/room.ts';
 import type { FsRoomStore } from '../lib/room/store.ts';
 import type { Entry } from '../lib/room/types.ts';
 import type { ToolDefinition } from '../mcp/types.ts';
+import { sn } from './support/brands.ts';
 
 /** A JSON-RPC line from the server, as these tests read it: each test reads the fields it expects to be there. */
 interface RpcMsg {
@@ -123,7 +124,7 @@ test('mcp: post is stamped from the parent pid (process.ppid), not env; system a
   h.freshHome();
   const { code } = h.register('alice');
   const bob = h.spawnSleeper();
-  identity.join({ code, name: 'bob', role: 'member', pid: bob.pid, session_id: 'sb' });
+  identity.join({ code, name: sn('bob'), role: 'member', pid: bob.pid, session_id: 'sb' });
   // A forged CLAUDE_PID pointing at bob changes nothing: the server uses its parent.
   const s = await ready({ CLAUDE_PID: String(bob.pid) });
   const e = payload(await s.tool('post', { kind: 'question', text: 'split auth into its own module?', refs: [1], to: 'bob' }));
@@ -146,7 +147,7 @@ test('mcp: post is stamped from the parent pid (process.ppid), not env; system a
 test('mcp: a post that repeats the person\'s objection note is refused, waiting for Send or just sent; others pass', async () => {
   h.freshHome();
   const { code } = h.register('alice');
-  const me = { code, name: 'alice', role: 'member' };
+  const me = { code, name: sn('alice'), role: 'member' };
   R = room.open(code);
   const s = await ready();
   const hash = 'abcdef012345';
@@ -173,10 +174,10 @@ test('stage 8e D (live verify, localb/03e): while a note on a proposal still pen
   h.freshHome();
   const { code } = h.register('alice');
   h.register('bob', 'member', 1, code);
-  const me = { code, name: 'alice', role: 'member' };
+  const me = { code, name: sn('alice'), role: 'member' };
   R = room.open(code);
   const s = await ready();
-  const { hash } = proposal.create({ code, name: 'bob', role: 'member' } as Parameters<typeof proposal.create>[0], { text: '# Add a CHANGELOG\n', approvers: ['alice'] });
+  const { hash } = proposal.create({ code, name: sn('bob'), role: 'member' } as Parameters<typeof proposal.create>[0], { text: '# Add a CHANGELOG\n', approvers: ['alice'] });
   proposal.writeConfirm(me, { hash, note: 'please use Keep a Changelog', from: 'bob', title: 'Add a CHANGELOG', at: Date.now(), stage: 'told' });
   assert.match(errText(await s.tool('post', { kind: 'say', text: 'test' })), new RegExp(`^sub-human: refused: alice's note on proposal ${hash} waits for Send or Discard on its card`));
   proposal.clearConfirm(me);
@@ -188,7 +189,7 @@ test('mcp: the seat is the one its session id names (CLAUDE_CODE_SESSION_ID); an
   h.freshHome();
   const { code } = h.register('alice'); // this process: the server's parent
   const bob = h.spawnSleeper();
-  identity.join({ code, name: 'bob', role: 'member', pid: bob.pid, session_id: 'sid-bob-1' });
+  identity.join({ code, name: sn('bob'), role: 'member', pid: bob.pid, session_id: 'sid-bob-1' });
   const s = await ready({ CLAUDE_CODE_SESSION_ID: 'sid-bob-1' });
   assert.equal(payload(await s.tool('post', { kind: 'say', text: 'from bob\'s session' })).from, 'bob', 'the session id wins over the parent');
   await s.close();
@@ -236,13 +237,13 @@ test('mcp: propose stores plans/<hash>.md, appends proposal {hash, approvers, pa
   h.freshHome();
   const { code } = h.register('alice');
   const bob = h.spawnSleeper(), carol = h.spawnSleeper(), roomClaude = h.spawnSleeper();
-  identity.join({ code, name: 'bob', role: 'member', pid: bob.pid, session_id: 'sb' });
-  identity.join({ code, name: 'carol', role: 'member', pid: carol.pid, session_id: 'sc' });
-  identity.join({ code, name: 'claude', role: 'claude', pid: roomClaude.pid, session_id: 'so' });
-  identity.leave(code, 'carol');
+  identity.join({ code, name: sn('bob'), role: 'member', pid: bob.pid, session_id: 'sb' });
+  identity.join({ code, name: sn('carol'), role: 'member', pid: carol.pid, session_id: 'sc' });
+  identity.join({ code, name: sn('claude'), role: 'claude', pid: roomClaude.pid, session_id: 'so' });
+  identity.leave(code, sn('carol'));
   R = room.open(code);
   mcpCwd = h.tmpDir('sh-mcp-cwd-');
-  identity.join({ code, name: 'alice', role: 'member', pid: process.pid, session_id: `sess-alice-${process.pid}`, cwd: mcpCwd }); // the seat's cwd: the root of a path
+  identity.join({ code, name: sn('alice'), role: 'member', pid: process.pid, session_id: `sess-alice-${process.pid}`, cwd: mcpCwd }); // the seat's cwd: the root of a path
   const s = await ready();
   const text = '# Cursor paging\n\n1. add cursor param\n2. tests\n';
   const r = await s.tool('propose', { text });

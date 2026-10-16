@@ -63,7 +63,7 @@ import * as machineKey from './machine-key.ts';
 import * as protocol from './protocol.ts';
 import { SECRET_WORD } from '../../mod/core/command.ts';
 import { RoomError } from '../room/validate.ts';
-import { localHm } from '../text.ts';
+import { localHm, isSeatName } from '../text.ts';
 import { INVITE_TTL_MS, LINK_JOIN_WAIT_MS } from '../config.ts';
 import { envStr } from '../env.ts';
 import * as linkSocketMod from './link-socket.ts';
@@ -79,7 +79,7 @@ import type { LinkSpec } from './types-rest.ts';
 import type { InviteRecord, Invites, ParsedInvite, ShortInvite } from './types-core.ts';
 import type { Link, RoomStore } from '../room/types.ts';
 import type { Pinned } from '../commands/types.ts';
-import type { RoomCode } from '../brand.ts';
+import type { RoomCode, SeatName } from '../brand.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -326,7 +326,7 @@ function endLink(code: RoomCode, store: RoomStore, id: string, { file = sshkeys.
   spawnSync('pkill', ['-f', '--', `--stdio ${code} --link ${id}`], { stdio: 'ignore' });
   const seats = r.link ? r.link.seats || [] : [];
   const seatsLib = seatsMod;
-  for (const name of seats) { try { seatsLib.exit(code, name, 'removed by the host'); } catch { /* gone already */ } }
+  for (const name of seats) { try { if (isSeatName(name)) seatsLib.exit(code, name, 'removed by the host'); } catch { /* gone already */ } }
   const login = !!(r.link && r.link.login); // a link made over this account's own ssh login (no key line of its own)
   roomLine(code, `the host ended ${seats.length ? `${seats.join(', ')}'s connection` : 'a connection'} to the room`);
   const text = `${seats.length ? `${seats.join(', ')} ${seats.length === 1 ? 'is' : 'are'} out of room ${code}` : `ended a connection to room ${code}`}: it no longer reaches the room`
@@ -389,7 +389,7 @@ function outcome(code: RoomCode, { waitMs = LINK_JOIN_WAIT_MS }: { waitMs?: numb
   }
 }
 
-function joinText(code: RoomCode, name: string, o: Outcome, { tells = false }: { tells?: boolean } = {}): string {
+function joinText(code: RoomCode, name: SeatName, o: Outcome, { tells = false }: { tells?: boolean } = {}): string {
   const lf: Partial<Link> = links().get(code) || {};
   if (o.state === 'linked') {
     // the card may have let this machine in under another name (its own sits in the room from another machine)

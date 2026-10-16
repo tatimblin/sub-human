@@ -35,7 +35,7 @@ import type { LinkStatus } from '../lib/remote/link-socket.ts';
 import type { RunningLink } from '../lib/remote/types-core.ts';
 import type { SshSpec } from '../lib/remote/types-rest.ts';
 import type { Link, LinkStateWord } from '../lib/room/types.ts';
-import { rc } from './support/brands.ts';
+import { rc, sn } from './support/brands.ts';
 
 const mode = (p: string) => fs.statSync(p).mode & 0o777;
 
@@ -324,7 +324,7 @@ test('link: the daemon stops with no seat of this machine left, offline too (by 
   const mirror = store.open(code) as MirrorRoomStore; // linked above: a mirror
   const seat = (extra = {}) => ({ bob: { name: 'bob', role: 'member', machine: identity.machineId(), joined_at: new Date().toISOString(), seen_at: new Date().toISOString(), ...extra } });
   const sleeper = h.spawnSleeper(60);
-  writeJsonAtomic(path.join(home, 'sessions', 'by-pid', `${sleeper.pid}.json`), { code, name: 'bob', role: 'member', pid: sleeper.pid, pid_start: pidStart(sleeper.pid), session_id: null, address: `bob.${code}` });
+  writeJsonAtomic(path.join(home, 'sessions', 'by-pid', `${sleeper.pid}.json`), { code, name: sn('bob'), role: 'member', pid: sleeper.pid, pid_start: pidStart(sleeper.pid), session_id: null, address: `bob.${code}` });
   let state: LinkStateWord = 'offline', stopped: string | null = null;
   // the two parts of a running link idleWatch uses
   const watch = () => link.idleWatch({ state: () => state, stop: why => { stopped = why; } } as RunningLink, mirror, 150);
@@ -368,7 +368,7 @@ test('link: online, a seat whose lease lapsed during a pause but whose claude pr
   store.createRoom(code);
   const mirror = store.open(code) as MirrorRoomStore; // linked above: a mirror
   const seat = (extra = {}) => ({ bob: { name: 'bob', role: 'member', machine: identity.machineId(), joined_at: new Date().toISOString(), seen_at: new Date(0).toISOString(), ...extra } });
-  const index = (s: { pid?: number }) => writeJsonAtomic(path.join(home, 'sessions', 'by-pid', `${s.pid}.json`), { code, name: 'bob', role: 'member', pid: s.pid, pid_start: pidStart(s.pid), session_id: null, address: `bob.${code}` });
+  const index = (s: { pid?: number }) => writeJsonAtomic(path.join(home, 'sessions', 'by-pid', `${s.pid}.json`), { code, name: sn('bob'), role: 'member', pid: s.pid, pid_start: pidStart(s.pid), session_id: null, address: `bob.${code}` });
   let stopped: string | null = null;
   const watches: (() => void)[] = [];
   t.after(() => watches.forEach(u => u())); // a failed assertion must not leave an interval keeping the run alive
@@ -450,7 +450,7 @@ test('join news: what the join command already said is not said again by the tai
   const code = rc('vole-9876');
   const pin = { at: new Date().toISOString(), left: 5 };
   links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, invite: 'x'.repeat(39), join_as: 'bob', join_sid: 'sid-1', pin_wanted: pin, created_at: new Date().toISOString() });
-  const said = hosting.joinText(code, 'bob', { state: 'pin' });
+  const said = hosting.joinText(code, sn('bob'), { state: 'pin' });
   links.set(code, { ...links.get(code)!, join_told: said });
   const n = joining.pendingNews('sid-1')!;
   assert.deepEqual([n.state, n.text], ['pin', ''], 'the command said it: the tail says nothing');

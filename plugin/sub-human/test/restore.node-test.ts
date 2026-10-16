@@ -8,6 +8,7 @@ import { PLUGIN, newRoom, register, childEnv, spawnSleeper } from './helpers.ts'
 import * as rows from '../lib/rows.ts';
 import * as roomLib from '../lib/room.ts';
 import * as session from '../lib/room/session.ts';
+import { sn } from './support/brands.ts';
 
 const RUN = path.join(PLUGIN, 'hooks', 'run.ts');
 
@@ -32,7 +33,7 @@ test('restore: /clear with a live room hold lists no row calls; without one it d
   assert.equal(calls(ctx).length, 1);
   assert.match(ctx, /Agent\(\{subagent_type: "sub-human:room"/);
 
-  rows.writeHolds(code, 'alice', { members: [], room: true }); // pid = this live test process
+  rows.writeHolds(code, sn('alice'), { members: [], room: true }); // pid = this live test process
   ctx = restore(alice, 'clear', 'sess-alice-new2');
   assert.deepEqual(calls(ctx), []);
   assert.match(ctx, /already running|rows are running/);
@@ -49,11 +50,11 @@ test('restore: lists only the missing rows (claude after compact / clear)', () =
   register('claude', 'claude', roomClaude, code);
   register('alice', 'member', spawnSleeper().pid, code);
   register('bob', 'member', spawnSleeper().pid, code);
-  rows.writeHolds(code, 'claude', { members: ['alice'] });
+  rows.writeHolds(code, sn('claude'), { members: ['alice'] });
   let ctx = restore(roomClaude, 'compact', `sess-claude-${roomClaude}`);
   assert.deepEqual(calls(ctx), ['Agent({subagent_type: "sub-human:participant", description: "bob", prompt: "member: bob", run_in_background: true})'],
     'bob only: alice is still held, re-listing her would duplicate her row');
-  rows.writeHolds(code, 'claude', { members: ['alice', 'bob'] });
+  rows.writeHolds(code, sn('claude'), { members: ['alice', 'bob'] });
   ctx = restore(roomClaude, 'clear', `sess-claude-${roomClaude}-2`);
   assert.deepEqual(calls(ctx), []);
   assert.match(ctx, /already running|rows are running/);

@@ -6,6 +6,7 @@ import path from 'node:path';
 import * as h from './helpers.ts';
 import * as d from '../lib/decode.ts';
 import * as io from '../lib/io.ts';
+import { sn } from './support/brands.ts';
 
 const ok = <T>(r: d.Result<T, d.DecodeError>): T => { assert.ok(r.ok, `refused: ${JSON.stringify(r)}`); return r.value; };
 const no = (r: d.Result<unknown, d.DecodeError>): d.DecodeError => { assert.ok(!r.ok, 'accepted'); return r.error; };
@@ -112,7 +113,7 @@ test('old records: a session index (0.5.0-beta.4 shape, extra keys, no role) sti
   // beta.4 wrote the same fields, pid_start only when known; a newer one may add fields
   const { pid_start: _, role: _r, ...old } = rec;
   fs.writeFileSync(file, JSON.stringify({ ...old, later: { field: 1 } }));
-  assert.deepEqual(identity.lastSeat(sid), { code, name: 'alice', role: 'member', address: `alice.${code}` });
+  assert.deepEqual(identity.lastSeat(sid), { code, name: sn('alice'), role: 'member', address: `alice.${code}` });
   assert.equal(identity.resolveBySession(sid)?.name, 'alice');
   fs.writeFileSync(file, JSON.stringify({ ...old, code: 7 }));
   assert.equal(identity.lastSeat(sid), null, 'no room code: no seat (as before)');

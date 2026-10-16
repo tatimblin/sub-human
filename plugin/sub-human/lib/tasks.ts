@@ -38,7 +38,7 @@ import { open } from './room/store.ts';
 import * as room from './room.ts';
 import type { Task, TaskReq } from './types-app.ts';
 import type { Entry, Members, Trust } from './room/types.ts';
-import type { RoomCode } from './brand.ts';
+import type { RoomCode, SeatName } from './brand.ts';
 
 /** A task as it arrives to be cleaned (the mirror, a fold, hooks/handlers/tasks.ts's native task): loosely shaped. */
 interface RawTask {
@@ -123,7 +123,7 @@ function metaReq(md: unknown): number | null {
 }
 
 const isOpen = (t: Task) => OPEN.has(t.status || 'pending');
-const mine = (code: RoomCode, name: string): Task[] => list(code).filter(t => isOpen(t) && t.owner === name);
+const mine = (code: RoomCode, name: SeatName): Task[] => list(code).filter(t => isOpen(t) && t.owner === name);
 
 function summary(code: RoomCode, viewer: string | null | undefined): string {
   const all = list(code).filter(t => !isRoomTask(t, code));

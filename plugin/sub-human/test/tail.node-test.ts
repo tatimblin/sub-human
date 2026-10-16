@@ -22,7 +22,7 @@ import type { Identity } from '../lib/identity.ts';
 import type * as linkMod from '../lib/remote/link-socket.ts';
 import type { TailEvent } from '../lib/types-app.ts';
 import type { RoomCode } from '../lib/brand.ts';
-import { rc } from './support/brands.ts';
+import { rc, sn } from './support/brands.ts';
 
 const FAST = {
   resolveMs: 100, unseatedMs: 100, pollMs: 50, settleMs: 300, settleMaxMs: 1000, roomClaudeSettleMs: 300, roomClaudeSettleMaxMs: 1000,
@@ -161,7 +161,7 @@ test('tail: silent before join, then the member push lane, settled into one batc
 test('tail: a member sees every join as a chat line; with its room row running, no row-call invite', () => {
   h.freshHome();
   const { code } = h.register('alice');
-  rows.writeHolds(code, 'alice', { room: true });
+  rows.writeHolds(code, sn('alice'), { room: true });
   sys(code, 'member_joined', 'alice');                         // #1
   const t = startTail();
   t.advance(300);
@@ -202,7 +202,7 @@ test('tail: a member_joined notice says whether that row already runs (live hold
   sys(code, 'member_joined', 'bob');                                     // #1 first join: no row yet, pushed with the call
   t.advance(1500);
   assert.match(t.text(), /member_joined/);
-  rows.writeHolds(code, 'claude', { members: ['bob'] });                   // the room Claude's bob row is now held
+  rows.writeHolds(code, sn('claude'), { members: ['bob'] });                   // the room Claude's bob row is now held
   sys(code, 'member_left', 'bob');                                       // #2 pull
   sys(code, 'member_joined', 'bob');                                     // #3 rejoin: the row survived, not pushed
   say(code, 'bob', 'back', { to: 'claude' });                            // #4
@@ -492,7 +492,7 @@ const startNd = startTail;
 test('tail: a member batch is chat + pull, a line to me is a wake; it says its seat', () => {
   h.freshHome();
   const { code } = h.register('alice');
-  rows.writeHolds(code, 'alice', { room: true });
+  rows.writeHolds(code, sn('alice'), { room: true });
   sys(code, 'member_joined', 'alice');                                                  // #1
   const t = startNd({ sid: 'sid-a' });
   t.advance(300);
@@ -532,7 +532,7 @@ test('tail: rows says the missing room row and the pending reminders at start an
   assert.match(r[0].text!, /^SUB-HUMAN ROWS: your room row is not running/);
   t.advance(FAST.healthMs + 100);
   assert.equal(t.of('rows').length, 1, 'unchanged: not sent again');
-  rows.writeHolds(code, 'alice', { room: true });
+  rows.writeHolds(code, sn('alice'), { room: true });
   t.advance(FAST.healthMs);
   r = t.of('rows');
   assert.equal(r.at(-1)!.text, null, 'the row runs: cleared');
@@ -544,7 +544,7 @@ test('tail: rows says the missing room row and the pending reminders at start an
 test('tail: the room\'s Claude gets its push block as one wake, the pull lane as pull; no chat', () => {
   h.freshHome();
   const { code } = h.register('claude', 'claude');
-  rows.writeHolds(code, 'claude', { members: ['bob'] });
+  rows.writeHolds(code, sn('claude'), { members: ['bob'] });
   const t = startNd({ sid: 'so', deps: { roomClaude: { watchdog: () => 'live' } } });
   t.advance(300);
   inRoom(code, r => r.append({ kind: 'task_req', text: 'please add tests', op: 'add', subject: 'tests' }, { via: 'agent', from: 'bob' })); // #1 push
@@ -572,7 +572,7 @@ test('tail: a chain break is a health event', () => {
 test('tail: a member\'s wake carries the room state without entry ids (the person sees the plugin prompt\'s row); the room\'s Claude\'s keeps them', () => {
   h.freshHome();
   const { code } = h.register('alice');
-  rows.writeHolds(code, 'alice', { room: true });
+  rows.writeHolds(code, sn('alice'), { room: true });
   sys(code, 'member_joined', 'alice');                                                  // #1
   const t = startNd({ sid: 's' });
   t.advance(300);
@@ -625,7 +625,7 @@ test('tail: a room hosted elsewhere: one OFFLINE line when the link goes down, o
 test('remindersText: the one a review opens next (the newest unless named), the others listed by short hash and title', () => {
   h.freshHome();
   const { code } = h.register('alice');
-  const me = { code, name: 'alice', role: 'member' } as Identity; // the fields remindersText reads
+  const me = { code, name: sn('alice'), role: 'member' } as Identity; // the fields remindersText reads
   const p = (from: string, hash: string, title: string) => inRoom(code, r => r.append({ kind: 'proposal', text: `proposal ${hash}: ${title}`, hash, approvers: ['alice'] }, { via: 'agent', from }));
   p('bob', 'aaaaaaaaaaaa', 'Ship v2 Friday');
   p('carol', 'cccccccccccc', 'Rate limits');
@@ -642,7 +642,7 @@ test('remindersText: the one a review opens next (the newest unless named), the 
 test('remindersText: a note of mine waiting on the picked proposal points at the confirm card, not a new review', () => {
   h.freshHome();
   const { code } = h.register('alice');
-  const me = { code, name: 'alice', role: 'member' } as Identity; // the fields remindersText reads
+  const me = { code, name: sn('alice'), role: 'member' } as Identity; // the fields remindersText reads
   inRoom(code, r => r.append({ kind: 'proposal', text: 'proposal dddddddddddd: Ship v3 Monday', hash: 'dddddddddddd', approvers: ['alice'] }, { via: 'agent', from: 'bob' }));
   // a note on another proposal: the ordinary reminder
   proposal.writeConfirm(me, { hash: 'aaaaaaaaaaaa', note: 'open rate limiting', from: 'bob', title: null, at: Date.now() });

@@ -91,7 +91,7 @@ import type { LinkSpec } from './remote/types-rest.ts';
 import type { MirrorRoomStore } from './room/store-mirror.ts';
 import type { Identity } from './identity.ts';
 import { msgOf } from './errors.ts';
-import type { RoomCode } from './brand.ts';
+import type { RoomCode, SeatName } from './brand.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -296,7 +296,7 @@ function whyOffline(code: RoomCode, message: string): string {
 }
 
 // ---------- the target ----------
-function pendingAsk(code: RoomCode, name: string, now: number = Date.now()): HandoffAskDoc | null {
+function pendingAsk(code: RoomCode, name: SeatName, now: number = Date.now()): HandoffAskDoc | null {
   let a: HandoffAskDoc | null;
   try { a = store.open(code).kv.get(ASK_DOC); } catch { return null; }
   if (!a || a.to !== name || expired(a, now)) return null;

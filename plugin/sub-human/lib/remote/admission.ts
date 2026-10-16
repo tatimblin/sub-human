@@ -47,7 +47,7 @@ import { createRequire } from 'node:module';
 import type { AdmissionRecord, AuthStore, InviteRecord, Invites } from './types-core.ts';
 import type { RoomStore } from '../room/types.ts';
 import type { Card } from '../types-app.ts';
-import type { RoomCode } from '../brand.ts';
+import type { RoomCode, SeatName } from '../brand.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -147,12 +147,13 @@ const hostStore = (code: RoomCode): RoomStore => roomLib().hostStore(code, { wha
 const pending = (code: RoomCode, { now = Date.now() }: { now?: number } = {}): AdmissionRequest[] => admissions(hostStore(code), { now });
 const find = (code: RoomCode, ref: string): AdmissionRequest | null => admissions(hostStore(code), { all: true }).find(r => r.ref === ref || (ref && ref.length >= 6 && r.ref.startsWith(ref))) || null;
 
-function targets(code: RoomCode, req: AdmissionRequest): string[] {
+function targets(code: RoomCode, req: AdmissionRequest): SeatName[] {
   const identity: typeof import('../identity.ts') = require('../identity.ts');
   const { isMine }: typeof import('../home.ts') = require('../home.ts');
   const here = Object.values(identity.readMembers(code) || {})
     .filter(m => !!m && !!m.name && !m.left_at && m.role !== 'claude' && (!m.machine || isMine(m.machine))).map(m => m.name);
-  return req.by && here.includes(req.by) ? [req.by] : here;
+  const by = here.find(n => n === req.by);
+  return by ? [by] : here;
 }
 
 /** What the card and the joiner's screen both show, to compare: the check of the machine (and web key) that proved

@@ -16,7 +16,7 @@ import type { AddressInfo } from 'node:net';
 import * as h from './helpers.ts';
 import * as ws from '../lib/remote/ws.ts';
 import { isAlive } from '../lib/io.ts';
-import { rc } from './support/brands.ts';
+import { rc, sn } from './support/brands.ts';
 
 /** The next `ev` from an emitter: its listener's arguments (A: what that event carries). */
 const once = <A extends unknown[] = unknown[]>(em: EventEmitter, ev: string) => new Promise<A>(r => em.once(ev, (...a: unknown[]) => r(a as A)));
@@ -297,9 +297,9 @@ test('kick: the listener\'s child (`serve --stdio CODE --via ws --peer KEY`) nam
   tr.onClose(() => { closed = true; });
   const c = await client.connect(tr, { machine: 'web0machine00001', token });
   t.after(() => c.close());
-  const key = seatKey.ensure(code, 'carol');
-  const pubkey = seatKey.publicPem(code, 'carol');
-  assert.deepEqual(await c.join({ name: 'carol', pubkey, proof: hostLinks.proveSeat(key, { room: code, name: 'carol', pubkey }) }), { ok: true });
+  const key = seatKey.ensure(code, sn('carol'));
+  const pubkey = seatKey.publicPem(code, sn('carol'));
+  assert.deepEqual(await c.join({ name: 'carol', pubkey, proof: hostLinks.proveSeat(key, { room: code, name: sn('carol'), pubkey }) }), { ok: true });
   const ends: string[] = [];
   const sub = c.subscribe(0, store.hash12(''), ({ ev, data }) => { if (ev === 'end') ends.push((data as { reason: string }).reason); });
   await sub.ready;

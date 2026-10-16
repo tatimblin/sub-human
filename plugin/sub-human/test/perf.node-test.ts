@@ -31,6 +31,7 @@ import * as envelope from '../lib/room/envelope.ts';
 import * as seatKey from '../hooks/seat-key.ts';
 import { agentStatusline } from '../statusline/index.ts';
 import type { RoomCode } from '../lib/brand.ts';
+import { sn } from './support/brands.ts';
 
 const N = Number(process.env.SUB_HUMAN_PERF_N) || 100_000;
 const RUNS = 15;
@@ -67,10 +68,10 @@ function bigRoom(n = N): { code: RoomCode } {
   const code = identity.newCode();
   const names = ['alice', 'bob'];
   for (const name of names) {
-    const r = identity.join({ code, name, role: 'member', pid: name === 'alice' ? process.pid : sleeper(), session_id: `sid-${name}`, cwd: os.tmpdir() });
+    const r = identity.join({ code, name: sn(name), role: 'member', pid: name === 'alice' ? process.pid : sleeper(), session_id: `sid-${name}`, cwd: os.tmpdir() });
     assert.ok(r.ok, r.error);
   }
-  const keys = Object.fromEntries(names.map(n => [n, seatKey.ensure(code, n)]));
+  const keys = Object.fromEntries(names.map(n => [n, seatKey.ensure(code, sn(n))]));
   const file = path.join(identity.roomDir(code), 'log.jsonl');
   const start = Date.now() - n * 1000;
   const out: string[] = [];
@@ -81,7 +82,7 @@ function bigRoom(n = N): { code: RoomCode } {
     let p: Record<string, unknown>;
     if (id <= names.length) {
       const n = names[id - 1];
-      p = { from: n, via: 'system', kind: 'member_joined', to: 'room', text: `${n} joined`, pubkey: seatKey.publicPem(code, n) };
+      p = { from: n, via: 'system', kind: 'member_joined', to: 'room', text: `${n} joined`, pubkey: seatKey.publicPem(code, sn(n)) };
     } else if (id % 1000 === 0) {
       proposal = hash12(`p${id}`);
       p = { from: 'bob', via: 'agent', kind: 'proposal', to: 'room', text: `proposal ${proposal}: step ${id}`, hash: proposal, approvers: names };

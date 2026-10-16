@@ -6,6 +6,7 @@ import { World, decision, room } from './helpers.ts';
 import type { Identity } from '../../lib/identity.ts';
 import * as proposal from '../../lib/proposal.ts';
 import * as rows from '../../lib/rows.ts';
+import { sn } from '../support/brands.ts';
 
 /** A seat as proposal, deliver and rows read it. */
 type Me = Pick<Identity, 'code' | 'name' | 'role'>;
@@ -13,7 +14,7 @@ type Me = Pick<Identity, 'code' | 'name' | 'role'>;
 
 test('consent table: proposal, re-proposal, revise, signoffs, objection after signoff, decision: all views agree', () => {
   const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep', carol: 'sleep', dave: 'sleep' });
-  const me = (name: string): Me => ({ code: w.code, name, role: name === 'claude' ? 'claude' : 'member' });
+  const me = (name: string): Me => ({ code: w.code, name: sn(name), role: name === 'claude' ? 'claude' : 'member' });
   const human = (from: string, kind: string, hash: string) => w.append({ kind, proposal_hash: hash }, { via: 'human', from });
   const create = (who: string, text: string, approvers: string[]) => w.lib(() => proposal.create(me(who), { text, approvers }));
 
@@ -69,7 +70,7 @@ test('consent table: proposal, re-proposal, revise, signoffs, objection after si
       assert.equal(you, exp, `stateLine ${name} ${h.slice(0, 6)}: ${seg}`);
     }
     // the room row: "your answer needed" names the newest pending proposal by its title
-    const roomRow = w.lib(() => rows.rowText(w.code, w.code, name, { entries, taskSummary: '' }));
+    const roomRow = w.lib(() => rows.rowText(w.code, { viewer: name, entries, taskSummary: '' }));
     const need = needed(name);
     if (need.length) assert.ok(roomRow.startsWith(`⚠ your answer needed ${titles[need.at(-1)!]}`), `${name}: ${roomRow}`);
     else assert.doesNotMatch(roomRow, /answer needed/, `${name}: ${roomRow}`);
@@ -89,7 +90,7 @@ test('consent table: proposal, re-proposal, revise, signoffs, objection after si
   }
   for (const name of people) {
     const h = latest[name];
-    const t = w.lib(() => rows.rowText(w.code, name, 'claude', { entries, tasks: [] }));
+    const t = w.lib(() => rows.rowText(w.code, { member: sn(name), viewer: 'claude', entries, tasks: [] }));
     const s = want[h][name];
     assert.ok(t.startsWith(ROW[s]), `row ${name}: ${t}`);
     if (s !== 'objected') assert.ok(t.includes(titles[h]), `row ${name} names the proposal by its title: ${t}`);
@@ -99,7 +100,7 @@ test('consent table: proposal, re-proposal, revise, signoffs, objection after si
 
 test('consent table: a note waiting for the person\'s Send is no answer in any view; Send makes it an objection everywhere', () => {
   const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
-  const me = (name: string): Me => ({ code: w.code, name, role: name === 'claude' ? 'claude' : 'member' });
+  const me = (name: string): Me => ({ code: w.code, name: sn(name), role: name === 'claude' ? 'claude' : 'member' });
   const H = w.lib(() => proposal.create(me('alice'), { text: '# Rate limiting\n\n1. 100 rps\n', approvers: ['bob'] })).hash;
   w.lib(() => proposal.writeConfirm(me('bob'), { hash: H, note: 'open rate limiting', from: 'alice', title: 'Rate limiting', at: Date.now() }));
   const views = () => {
@@ -110,7 +111,7 @@ test('consent table: a note waiting for the person\'s Send is no answer in any v
       lane: w.lib(() => room.deliver(me('bob'), e, { entries })),
       you: (/ · you: (agreed|objected|answer needed)/.exec(w.lib(() => room.open(w.code).stateLine(me('bob'), entries))) || [])[1],
       missing: w.lib(() => proposal.matrix(room.fold(entries).proposals.get(H)!, entries)).missing,
-      row: w.lib(() => rows.rowText(w.code, w.code, 'bob', { entries, taskSummary: '' })),
+      row: w.lib(() => rows.rowText(w.code, { viewer: 'bob', entries, taskSummary: '' })),
     };
   };
   const before = views();

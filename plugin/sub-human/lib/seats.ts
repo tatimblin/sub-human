@@ -69,7 +69,7 @@ import type { JoinResult, Member } from './room/types.ts';
 import type { Identity } from './identity.ts';
 import type { Wanted } from './remote/joining.ts';
 import { errCode, msgOf } from './errors.ts';
-import type { RoomCode } from './brand.ts';
+import type { RoomCode, SeatName } from './brand.ts';
 
 const require = createRequire(import.meta.url);
 // loaded only by take(): the session-end hook and the remote server never need the link or the listener
@@ -79,7 +79,7 @@ const gc = (): typeof import('./gc.ts') => require('./gc.ts');
 /** enter()'s seat: the join hook's, or the remote server's for a seat on another machine. */
 interface EnterOpts {
   code: RoomCode;
-  name: string;
+  name: SeatName;
   role?: string;
   machine?: string | null;
   account?: string;
@@ -138,7 +138,7 @@ function enter({ code, name, role = 'member', machine = identity.machineIn(code)
   return { ...r, note: ensureRoomClaude(code, cwd, name) };
 }
 
-function exit(code: RoomCode, name: string, reason: string, { deadlineMs }: { deadlineMs?: number } = {}): boolean {
+function exit(code: RoomCode, name: SeatName, reason: string, { deadlineMs }: { deadlineMs?: number } = {}): boolean {
   try {
     if (!identity.leave(code, name, { reason, deadlineMs })) return false;
   } catch (e) {
@@ -203,7 +203,7 @@ function sweep(code: RoomCode, { now = Date.now(), name }: { now?: number; name?
   return out;
 }
 
-function back(code: RoomCode, name: string): boolean {
+function back(code: RoomCode, name: SeatName): boolean {
   const s = room.open(code).store;
   if (!s || !s.isHost) return false;
   let was = false;
@@ -222,17 +222,17 @@ function back(code: RoomCode, name: string): boolean {
 /** take()'s answer: a seat taken (the mechanics block's lead line, the person's line), or a refusal / where it stands. */
 export type Taken = { ok: true; me: Identity; lead: string; msg: string } | { ok: false; text: string; refused: boolean };
 /** take()'s process: the seat's claude pid and session, the seat this session holds now, and its key's public half. */
-interface TakeCtx { pid: number; session_id: string | undefined; cwd: string; cur: Identity | null; pubkey(code: RoomCode, name: string): string }
+interface TakeCtx { pid: number; session_id: string | undefined; cwd: string; cur: Identity | null; pubkey(code: RoomCode, name: SeatName): string }
 
 const no = (text: string, refused = true): Taken => ({ ok: false, text, refused });
 
 /** Who else is in the room, live (the room's Claude only while it runs). */
-function others(code: RoomCode, name: string): string[] {
+function others(code: RoomCode, name: SeatName): string[] {
   return Object.values<Member>(identity.readMembers(code)).filter(m => m && m.name && m.name !== name && !m.left_at
     && (m.role !== 'claude' || roomClaudePresence(m) === 'live')).map(m => m.name);
 }
 
-function withWhom(code: RoomCode, name: string): string {
+function withWhom(code: RoomCode, name: SeatName): string {
   const names = others(code, name).filter(n => n !== identity.ROOM_CLAUDE);
   if (!names.length) return 'nobody else here yet';
   return names.length > 3 ? `${names.length} others here` : `with ${names.join(', ')}`;

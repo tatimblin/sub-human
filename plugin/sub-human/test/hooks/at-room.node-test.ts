@@ -8,11 +8,12 @@ import type { HookInput, HookRun } from './helpers.ts';
 import * as rows from '../../lib/rows.ts';
 import type { Entry } from '../../lib/room/types.ts';
 import { lane as roomLane } from '../../lib/room/deliver.ts';
+import { sn } from '../support/brands.ts';
 
 /** World.hook's options. */
 type HookOpts = NonNullable<Parameters<World['hook']>[2]>;
 /** The seat's rows are running: its hold server (this live test process) holds them. */
-const rowsRunning = (w: World, name: string, held: Parameters<typeof rows.writeHolds>[2]) => w.lib(() => rows.writeHolds(w.code, name, held));
+const rowsRunning = (w: World, name: string, held: Parameters<typeof rows.writeHolds>[2]) => w.lib(() => rows.writeHolds(w.code, sn(name), held));
 
 // The 20 hostile strings from demo/test/room.test.js.
 const HOSTILE = [

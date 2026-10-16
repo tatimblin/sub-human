@@ -13,6 +13,7 @@ import * as rows from '../../lib/rows.ts';
 import * as launcher from '../../hooks/launcher.ts';
 import { pathToFileURL } from 'node:url';
 import type { HookJson } from './helpers.ts';
+import { sn } from '../support/brands.ts';
 
 type Env = Record<string, string | undefined>;
 /** An Agent call's tool_input, as a row spawn sends it. */
@@ -32,7 +33,7 @@ function world(names: string[]) {
   process.env.SUB_HUMAN_HOME = home;
   const code = identity.newCode();
   for (const name of names) {
-    const r = identity.join({ code, name, role: name === 'claude' ? 'claude' : 'member', pid: sleeper(), session_id: `sid-${name}`, cwd: os.tmpdir() });
+    const r = identity.join({ code, name: sn(name), role: name === 'claude' ? 'claude' : 'member', pid: sleeper(), session_id: `sid-${name}`, cwd: os.tmpdir() });
     assert.ok(r.ok, r.error);
   }
   return { home, code };
@@ -110,10 +111,10 @@ test('row-hold: blocks a row agent that stops while its member is present (cappe
   assert.equal(rows.readRowMap(code).a2, undefined, 'a finished row is forgotten');
   // The member left: the row is still wanted (it reads "left" and comes back on rejoin).
   rows.recordRow(code, 'sid-claude', 'a3', { kind: 'participant', name: 'bob', parent: null });
-  identity.leave(code, 'bob');
+  identity.leave(code, sn('bob'));
   assert.equal(stop('a3', 'hmm').json!.decision, 'block');
   // The viewer left: no block.
-  identity.leave(code, 'claude');
+  identity.leave(code, sn('claude'));
   assert.equal(stop('a3', 'hmm').json, null);
   // The room row re-holds with its room code while this seat is in the room.
   rows.recordRow(code, 'sid-alice', 'r1', { kind: 'room', name: code, parent: null });
@@ -193,15 +194,15 @@ test('row-guard: denies spawning a row whose hold is live in this session; allow
   const roomRow = { subagent_type: 'sub-human:room', description: code, prompt: `room: ${code}\nmembers: bob`, run_in_background: true };
   assert.equal(pre('sid-alice', roomRow).stdout, '', 'nothing held yet');
   assert.equal(pre('sid-alice', bob, 'room1').stdout, '');
-  rows.writeHolds(code, 'alice', { members: ['bob'], room: true }); // this test process = a live hold server
+  rows.writeHolds(code, sn('alice'), { members: ['bob'], room: true }); // this test process = a live hold server
   const d = pre('sid-alice', roomRow).json!.hookSpecificOutput!;
   assert.equal(d.permissionDecision, 'deny');
   assert.match(d.permissionDecisionReason!, /already running/);
   assert.equal(pre('sid-alice', bob, 'room1').json!.hookSpecificOutput!.permissionDecision, 'deny');
   // The room Claude's rejoin spawn for bob: denied while room Claude's row for bob is live (it survived bob's leave).
-  rows.writeHolds(code, 'claude', { members: ['alice'] });
+  rows.writeHolds(code, sn('claude'), { members: ['alice'] });
   assert.equal(pre('sid-claude', bob).stdout, '', 'claude holds no bob row: allowed');
-  rows.writeHolds(code, 'claude', { members: ['alice', 'bob'] });
+  rows.writeHolds(code, sn('claude'), { members: ['alice', 'bob'] });
   assert.equal(pre('sid-claude', bob).json!.hookSpecificOutput!.permissionDecision, 'deny');
   assert.equal(pre('sid-claude', { subagent_type: 'Explore', description: 'bob', prompt: 'x' }).stdout, '', 'other agents untouched');
 });
@@ -237,13 +238,13 @@ test('row-rewake: a resumed member with no room row -> exit 2 with the room-row 
   assert.match(r.stderr, /may still list them as running; that list is from before the resume/);
   assert.match(r.stderr, /Write no text/);
   // a live hold of this process: nothing to restore, no wake
-  rows.writeHolds(code, 'alice', { room: true });
+  rows.writeHolds(code, sn('alice'), { room: true });
   assert.equal(rewake('sid-alice').code, 0);
 });
 
 test('row-rewake: a resumed claude gets only the missing participant rows', () => {
   const { code } = world(['claude', 'alice', 'bob']);
-  rows.writeHolds(code, 'claude', { members: ['alice'] });
+  rows.writeHolds(code, sn('claude'), { members: ['alice'] });
   const r = rewake('sid-claude');
   assert.equal(r.code, 2, r.stderr);
   assert.ok(r.stderr.includes(rows.participantCall('bob')), r.stderr);
@@ -252,8 +253,8 @@ test('row-rewake: a resumed claude gets only the missing participant rows', () =
 
 test('row-rewake: silent exit 0 when nothing is missing, outside a room, with no members, or not a resume', () => {
   const { code } = world(['claude', 'alice', 'bob']);
-  rows.writeHolds(code, 'alice', { members: ['bob'], room: true });
-  rows.writeHolds(code, 'claude', { members: ['alice', 'bob'] });
+  rows.writeHolds(code, sn('alice'), { members: ['bob'], room: true });
+  rows.writeHolds(code, sn('claude'), { members: ['alice', 'bob'] });
   for (const r of [rewake('sid-alice'), rewake('sid-claude'), rewake('sid-nobody'), rewake('sid-bob', {}, 'startup')]) {
     assert.equal(r.code, 0, r.stderr);
     assert.equal(r.stdout + r.stderr, '');

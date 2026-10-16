@@ -17,7 +17,7 @@
  *                                  re-exports them
  *   isSeatName(v), isRoomCode(v), isSessionId(v)   the guards that make the brands (lib/brand.ts) SeatName, RoomCode,
  *                                  SessionId: the only constructors of them; seatName(v), roomCode(v), sessionId(v) ->
- *                                  the brand | null
+ *                                  the brand | null; namedSeat("claude") a name the code itself spells, checked once
  */
 import type { Hello, HelloSeat } from './types.ts';
 import type { RoomCode, SeatName, SessionId } from '../../lib/brand.ts';
@@ -34,6 +34,11 @@ export const isSessionId = (v: unknown): v is SessionId => typeof v === 'string'
 export const seatName = (v: unknown): SeatName | null => (isSeatName(v) ? v : null);
 export const roomCode = (v: unknown): RoomCode | null => (isRoomCode(v) ? v : null);
 export const sessionId = (v: unknown): SessionId | null => (isSessionId(v) ? v : null);
+/** A seat name the code itself spells (lib/room/members.ts ROOM_CLAUDE), checked when its module loads. */
+export function namedSeat<const S extends string>(v: S): S & SeatName {
+  if (!isSeatName(v)) throw new TypeError(`not a seat name: ${v}`);
+  return v;
+}
 const ABS = (v: unknown): string | null => typeof v === 'string' && v.startsWith('/') ? v : null;
 
 export function parseAddr(addr: unknown): { name: string; code: string } | null {

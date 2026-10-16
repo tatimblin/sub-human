@@ -19,6 +19,7 @@ import * as identityMod from '../lib/identity.ts';
 import type { Entry, RoomStore } from '../lib/room/types.ts';
 import type { FsRoomStore } from '../lib/room/store.ts';
 import type { RoomCode } from '../lib/brand.ts';
+import { sn } from './support/brands.ts';
 
 const hash12 = (s: string) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 12);
 const H = 'abcdef012345';
@@ -40,14 +41,14 @@ const ids = (n: number, from = 1) => Array.from({ length: n }, (_, i) => i + fro
 
 /** A log as an older sub-human left it: one log.jsonl, chained by hand, alice's key pinned, a proposal she signed. */
 function legacyLog(code: RoomCode, file: string, n: number): string[] {
-  const key = seatKey.ensure(code, 'alice');
+  const key = seatKey.ensure(code, sn('alice'));
   const out: string[] = [];
   let prev = '';
   const start = Date.now() - n * 1000;
   for (let id = 1; id <= n; id++) {
     const now = start + id * 1000;
     let p: Record<string, unknown>;
-    if (id === 1) p = { from: 'alice', via: 'system', kind: 'member_joined', to: 'room', text: 'alice joined', pubkey: seatKey.publicPem(code, 'alice') };
+    if (id === 1) p = { from: 'alice', via: 'system', kind: 'member_joined', to: 'room', text: 'alice joined', pubkey: seatKey.publicPem(code, sn('alice')) };
     else if (id === 2) p = { from: 'claude', via: 'agent', kind: 'proposal', to: 'room', text: `proposal ${H}: old`, hash: H, approvers: ['alice'] };
     else if (id === 3) p = envelope.sign({ from: 'alice', via: 'human', kind: 'signoff', to: 'room', proposal_hash: H }, key, { room: code, from: 'alice', now });
     else p = { from: id % 2 ? 'alice' : 'bob', via: 'agent', kind: 'say', to: 'room', text: `old ${id} ${'y'.repeat(80)}` };
@@ -97,7 +98,7 @@ test('migration: a room with one log.jsonl and an old log.idx opens, folds and a
 
 test('rotation: a reader in another process sees the same log; the window keeps the rate across a rotation', t => {
   const { s } = room(t, 1024);
-  sys(s, 'member_joined', 'alice', { pubkey: seatKey.publicPem(s.code, 'alice') });
+  sys(s, 'member_joined', 'alice', { pubkey: seatKey.publicPem(s.code, sn('alice')) });
   for (let i = 0; i < 5; i++) say(s, 'bob', `bob ${i}`, 'agent');
   assert.ok(s.rotate() || s.snapshot(), 'sealed');
   const snap = s.snapshot()!;
@@ -131,7 +132,7 @@ test('rotation: a crash between linking the segment and replacing log.jsonl is f
 
 test('rotation: a lost snapshot is rebuilt from the sealed segments', t => {
   const { s } = room(t, 1024);
-  sys(s, 'member_joined', 'alice', { pubkey: seatKey.publicPem(s.code, 'alice') });
+  sys(s, 'member_joined', 'alice', { pubkey: seatKey.publicPem(s.code, sn('alice')) });
   for (let i = 0; i < 30; i++) say(s, 'alice', `m${i} ${'z'.repeat(60)}`);
   const want = { ids: s.readAll().map(e => e.id), snap: s.snapshot() };
   fs.rmSync(path.join(s.dir, 'snapshot.json'));
@@ -191,10 +192,10 @@ const note = (s: RoomStore, text: string) => s.append({ kind: 'status', text }, 
 test('rotation guard: a live seat without log_v (an older plugin\'s) holds the rotation, and the room hears it once; with log_v it rotates', t => {
   const { code, s } = room(t, 2048);
   const identity = identityMod;
-  assert.ok(identity.join({ code, name: 'alice', role: 'member', pid: process.pid, session_id: null, cwd: '/' }).ok);
+  assert.ok(identity.join({ code, name: sn('alice'), role: 'member', pid: process.pid, session_id: null, cwd: '/' }).ok);
   assert.equal(identity.readMembers(code).alice!.log_v, 2, 'this code records what it reads');
   // bob's seat as beta.15 wrote it: no log_v, live
-  s.members.update(ms => ({ ...ms, bob: { name: 'bob', role: 'member', machine: ms.alice!.machine, pid: process.pid, joined_at: new Date().toISOString(), seen_at: new Date().toISOString() } }));
+  s.members.update(ms => ({ ...ms, bob: { name: sn('bob'), role: 'member', machine: ms.alice!.machine, pid: process.pid, joined_at: new Date().toISOString(), seen_at: new Date().toISOString() } }));
   for (let i = 0; i < 40; i++) note(s, `held ${i} ${'x'.repeat(80)}`);
   assert.ok(!fs.existsSync(path.join(s.dir!, 'log-0001.jsonl')), 'not sealed while bob\'s older code may read it');
   const held = s.readAll().filter(e => /waits to split/.test(String(e.text)));
@@ -212,8 +213,8 @@ test('rotation guard: a live seat without log_v (an older plugin\'s) holds the r
 test('rotation guard: a room Claude job spawned by an older plugin (no log_v, not stopped) holds it; a stopped one does not', t => {
   const { code, s } = room(t, 2048);
   const identity = identityMod;
-  assert.ok(identity.join({ code, name: 'alice', role: 'member', pid: process.pid, session_id: null, cwd: '/' }).ok);
-  s.members.update(ms => ({ ...ms, claude: { name: 'claude', role: 'claude', machine: ms.alice!.machine, job: 'job12345', spawned_at: new Date().toISOString() } }));
+  assert.ok(identity.join({ code, name: sn('alice'), role: 'member', pid: process.pid, session_id: null, cwd: '/' }).ok);
+  s.members.update(ms => ({ ...ms, claude: { name: sn('claude'), role: 'claude', machine: ms.alice!.machine, job: 'job12345', spawned_at: new Date().toISOString() } }));
   for (let i = 0; i < 40; i++) note(s, `held ${i} ${'x'.repeat(80)}`);
   assert.ok(!fs.existsSync(path.join(s.dir!, 'log-0001.jsonl')));
   s.members.update(ms => ({ ...ms, claude: { ...ms.claude!, stopped_at: new Date().toISOString() } }));
@@ -227,7 +228,7 @@ test('rotation guard: a room Claude job spawned by an older plugin (no log_v, no
 // reads on without a reset (a reset reads as FORK to a link).
 test('mirror from a snapshot: the anchor\'s hash after its own rotation; a lost snapshot.json keeps the installed entries', t => {
   const { s: host } = room(t, 1024);
-  sys(host, 'member_joined', 'alice', { pubkey: seatKey.publicPem(host.code, 'alice') });
+  sys(host, 'member_joined', 'alice', { pubkey: seatKey.publicPem(host.code, sn('alice')) });
   for (let i = 0; i < 20; i++) say(host, 'alice', `before ${i} ${'z'.repeat(60)}`);
   const { held: _held, ...wire } = host.snapshot()!;
   const after = host.tailer({ after: wire.id });
@@ -252,7 +253,7 @@ test('mirror from a snapshot: the anchor\'s hash after its own rotation; a lost 
 
 test('tailer: more than 4 rotations behind, it reads on from where it was (no reset)', t => {
   const { s } = room(t, 1024);
-  sys(s, 'member_joined', 'alice', { pubkey: seatKey.publicPem(s.code, 'alice') });
+  sys(s, 'member_joined', 'alice', { pubkey: seatKey.publicPem(s.code, sn('alice')) });
   say(s, 'alice', 'first');
   const tl = s.tailer();
   assert.deepEqual(tl.poll().entries, []);
@@ -267,7 +268,7 @@ test('tailer: more than 4 rotations behind, it reads on from where it was (no re
 
 test('a person\'s signed line replayed after two rotations, and after a lost snapshot.json is rebuilt, is refused', t => {
   const { s } = room(t, 1024);
-  sys(s, 'member_joined', 'alice', { pubkey: seatKey.publicPem(s.code, 'alice') });
+  sys(s, 'member_joined', 'alice', { pubkey: seatKey.publicPem(s.code, sn('alice')) });
   const signed = say(s, 'alice', 'my own words');
   const { id: _i, at: _a, prev: _p, ...payload } = signed as Entry & Record<string, unknown>;
   for (let i = 0; i < 25; i++) note(s, `grow ${i} ${'z'.repeat(80)}`);

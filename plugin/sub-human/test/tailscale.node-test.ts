@@ -12,7 +12,7 @@ import * as h from './helpers.ts';
 import * as ts from '../lib/remote/tailscale.ts';
 import * as links from '../lib/room/links.ts';
 import * as hosting from '../lib/remote/hosting.ts';
-import { rc } from './support/brands.ts';
+import { rc, sn } from './support/brands.ts';
 
 const UP = '{"BackendState":"Running","Self":{"DNSName":"box.tail1a2b.ts.net.","Online":true}}';
 const ENABLE_URL = 'https://login.tailscale.com/f/serve?node=nABC123CNTRL';
@@ -115,6 +115,6 @@ test('join text: a wss link to a ts.net name still connecting says Tailscale may
   h.freshHome(t);
   const code = rc('vole-4321');
   links.set(code, { code, transport: { kind: 'wss', host: 'box.tail1a2b.ts.net', path: `/sub-human/${code}`, hostKey: 'A'.repeat(43) }, invite: 'x', created_at: 'now' });
-  assert.match(hosting.joinText(code, 'bob', { state: 'waiting' }), /still connecting to room vole-4321 \(Tailscale may be issuing a certificate: .*keeps trying\); type \/sub-human in a moment/);
-  assert.doesNotMatch(hosting.joinText(code, 'bob', { state: 'waiting', reason: 'no route' }), /certificate/);
+  assert.match(hosting.joinText(code, sn('bob'), { state: 'waiting' }), /still connecting to room vole-4321 \(Tailscale may be issuing a certificate: .*keeps trying\); type \/sub-human in a moment/);
+  assert.doesNotMatch(hosting.joinText(code, sn('bob'), { state: 'waiting', reason: 'no route' }), /certificate/);
 });

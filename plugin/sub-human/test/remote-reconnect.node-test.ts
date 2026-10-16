@@ -33,6 +33,7 @@ import type { DecodedFrame, Flush, RunningLink, SignedPayload } from '../lib/rem
 import type { SshSpec, Transport } from '../lib/remote/types-rest.ts';
 import type { Entry, EntryInput, Link, LinkStateRecord, RoomStore } from '../lib/room/types.ts';
 import type { RoomCode } from '../lib/brand.ts';
+import { sn } from './support/brands.ts';
 
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
 
@@ -191,8 +192,8 @@ async function rig(t: TestContext, { serverCaps }: { serverCaps?: Client['server
   t.after(() => sessions.forEach(s => s.close()));
   // bob joins over this link first (binds the seat to it), as the join hook does
   const first = await r.connect();
-  const pubkey = seatKey.publicPem(code, 'bob');
-  await first.join({ name: 'bob', pubkey, proof: hostLinks.proveSeat(seatKey.ensure(code, 'bob'), { room: code, name: 'bob', pubkey }) });
+  const pubkey = seatKey.publicPem(code, sn('bob'));
+  await first.join({ name: 'bob', pubkey, proof: hostLinks.proveSeat(seatKey.ensure(code, sn('bob')), { room: code, name: sn('bob'), pubkey }) });
   first.close();
   conns.length = 0;
   r.mirror = new MirrorRoomStore(code, { dir: h.tmpDir('sh-mirror-', t) });

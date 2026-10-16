@@ -103,18 +103,18 @@ test('room row: the link leads while offline or connecting again and closes the 
   const o = (link: Partial<LinkState> | null) => ({
     entries: [], members: { alice: { role: 'member' }, bob: { role: 'member' } } as unknown as Members, taskSummary: 'tasks 1 open', link: link as LinkState | null,
   });
-  assert.equal(rows.rowText(code, code, 'alice', o(null)), '2 here · tasks 1 open');
-  assert.equal(rows.rowText(code, code, 'alice', o({ state: 'online' })), '2 here · tasks 1 open · ⇄ online');
-  assert.equal(rows.rowText(code, code, 'alice', o({ state: 'connecting', attempt: 3 })), '… connecting (3) · 2 here · tasks 1 open');
-  assert.equal(rows.rowText(code, code, 'alice', o({ state: 'offline', queued: 2 })), '✕ offline · 2 queued · 2 here · tasks 1 open');
-  assert.match(rows.rowText(code, code, 'alice', { ...o({ state: 'offline' }), color: true }), /^\x1b\[33m✕ offline\x1b\[0m/, 'offline is a warning');
+  assert.equal(rows.rowText(code, { viewer: 'alice', ...o(null) }), '2 here · tasks 1 open');
+  assert.equal(rows.rowText(code, { viewer: 'alice', ...o({ state: 'online' }) }), '2 here · tasks 1 open · ⇄ online');
+  assert.equal(rows.rowText(code, { viewer: 'alice', ...o({ state: 'connecting', attempt: 3 }) }), '… connecting (3) · 2 here · tasks 1 open');
+  assert.equal(rows.rowText(code, { viewer: 'alice', ...o({ state: 'offline', queued: 2 }) }), '✕ offline · 2 queued · 2 here · tasks 1 open');
+  assert.match(rows.rowText(code, { viewer: 'alice', ...o({ state: 'offline' }), color: true }), /^\x1b\[33m✕ offline\x1b\[0m/, 'offline is a warning');
   // item 15: stopped for good, this copy's "2 here" is stale: no count; a kick says so
-  assert.equal(rows.rowText(code, code, 'alice', o({ state: 'stopped', lastReason: 'LINK_REVOKED' })), '✕ removed by the host · tasks 1 open');
-  assert.equal(rows.rowText(code, code, 'alice', o({ state: 'stopped', lastReason: 'ROOM_CLOSED' })), '✕ stopped · tasks 1 open');
+  assert.equal(rows.rowText(code, { viewer: 'alice', ...o({ state: 'stopped', lastReason: 'LINK_REVOKED' }) }), '✕ removed by the host · tasks 1 open');
+  assert.equal(rows.rowText(code, { viewer: 'alice', ...o({ state: 'stopped', lastReason: 'ROOM_CLOSED' }) }), '✕ stopped · tasks 1 open');
   // read from the home when not given
   linked(t);
   writeState({ state: 'offline', queued: 1 });
-  assert.equal(rows.rowText(CODE, CODE, 'alice', { entries: [], members: {}, taskSummary: '' }), '✕ offline · 1 queued · 0 here');
+  assert.equal(rows.rowText(CODE, { viewer: 'alice', entries: [], members: {}, taskSummary: '' }), '✕ offline · 1 queued · 0 here');
 });
 
 test('agent statusline: the room row carries the link state', t => {

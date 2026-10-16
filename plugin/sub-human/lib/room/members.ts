@@ -44,6 +44,7 @@ import {
   PRESENCE_DETAIL_MAX, PID_START_SLACK_S, SEAT_BEAT_MS, SEAT_LEASE_MS, ROOM_CLAUDE_BIND_MS, ROOM_CLAUDE_CLAIM_MS,
 } from '../config.ts';
 import { RoomError } from './validate.ts';
+import { namedSeat } from '../../mod/core/seat.ts';
 import type { JoinResult, KvApi, Member, Members, MembersApi, Presence, PresenceInput, PresenceState, SeatRecord } from './types.ts';
 import type { RoomCode } from '../brand.ts';
 
@@ -61,7 +62,7 @@ const PRESENCE_STATES = ['working', 'idle', 'permission', 'error'] as const;
 const PRESENCE_SET: ReadonlySet<unknown> = new Set(PRESENCE_STATES);
 const isPresenceState = (s: unknown): s is PresenceState => PRESENCE_SET.has(s);
 /** The room's Claude: its member name, role and SendMessage name (claude.CODE). */
-const ROOM_CLAUDE = 'claude';
+const ROOM_CLAUDE = namedSeat('claude');
 const LOCAL_FIELDS = ['pid', 'pid_start', 'session_id', 'cwd'] as const;
 const ROOM_CLAUDE_FIELDS = ['job', 'spawned_at', 'closing', 'by', 'job_session', 'claim'] as const; // kept across the room Claude's (re)bind
 

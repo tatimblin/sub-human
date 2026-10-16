@@ -20,6 +20,7 @@ import { roomsDir } from '../lib/home.ts';
 import type { Room } from '../lib/room.ts';
 import type { FsRoomStore } from '../lib/room/store.ts';
 import type { EntryInput, Via } from '../lib/room/types.ts';
+import { sn } from './support/brands.ts';
 let R!: Room; // the room under test
 
 // tail looks its seat up by CLAUDE_PID when it has no session id (no ps walk).
@@ -160,7 +161,7 @@ test('cli: who / read / digest resolve by session id, then ancestry', () => {
   assert.match(r.stderr, /not in a room; type \/sub-human in your Claude Code session/);
   assert.equal(cli(['read']).status, 1);
   const bob = h.spawnSleeper();
-  identity.join({ code, name: 'bob', role: 'member', pid: bob.pid, session_id: 'sbob' });
+  identity.join({ code, name: sn('bob'), role: 'member', pid: bob.pid, session_id: 'sbob' });
   h.register('alice', 'member', process.pid, code);
   r = cli(['who']);
   assert.equal(r.status, 0, r.stderr);
@@ -203,7 +204,7 @@ test('cli show HASH: a proposal\'s stored text, this session\'s room or --room; 
   const code = h.newRoom();
   h.register('alice', 'member', process.pid, code);
   const text = '# Cursor paging\n\n1. add cursor param\n';
-  const { hash } = proposal.create({ code, name: 'alice' }, { text, approvers: ['alice'] });
+  const { hash } = proposal.create({ code, name: sn('alice') }, { text, approvers: ['alice'] });
   let r = cli(['show', hash]);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stdout, text);
@@ -372,7 +373,7 @@ test('R1 (live verify, verify6/12): after link CODE --forget, a process still ho
   fs.mkdirSync(s.dir!, { recursive: true, mode: 0o700 });
   fs.writeFileSync(s.logFile, '{"id":1}\n');
   // bob's seat in it, as this machine's session indexes record it
-  const idx = { code, name: 'bob', role: 'member', pid: process.pid, session_id: 'aaaaaaaa-0000-4000-8000-0000000000b0', address: `bob.${code}` };
+  const idx = { code, name: sn('bob'), role: 'member', pid: process.pid, session_id: 'aaaaaaaa-0000-4000-8000-0000000000b0', address: `bob.${code}` };
   fs.mkdirSync(path.join(identity.home(), 'sessions', 'by-sid'), { recursive: true });
   fs.writeFileSync(path.join(identity.home(), 'sessions', 'by-sid', `${idx.session_id}.json`), JSON.stringify(idx));
   links.writeState(code, stopped);

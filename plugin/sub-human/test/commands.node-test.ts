@@ -11,6 +11,7 @@ import * as seatKey from '../hooks/seat-key.ts';
 import { HELP } from '../lib/commands/help.ts';
 import type { Answer } from '../lib/commands/types.ts';
 import type { Identity } from '../lib/identity.ts';
+import { sn } from './support/brands.ts';
 
 const PLUGIN = new URL('..', import.meta.url).pathname;
 // never start a room's Claude from a test
@@ -57,7 +58,7 @@ test('commands: the hidden rule is the router\'s: join, invite, admit or a word 
   const admit = run(w, 'admit', { seat: 'alice' });
   assert.deepEqual(admit, { kind: 'secret', text: `nobody is waiting to join room ${w.code}.`, refused: false }, 'not a refusal, still hidden');
   // hide() on its own: a seat a prompt with a PIN-shaped word took is not handed to the model in that step
-  const me = { code: w.code, name: 'alice', role: 'member' } as Identity;
+  const me = { code: w.code, name: sn('alice'), role: 'member' } as Identity;
   const joined: Answer = { kind: 'joined', me, lead: 'joined', say: `joined ${w.code} as alice` };
   assert.equal(commands.hide(['join', 'dev', w.code], joined), joined, 'a login join has no PIN: the seat goes to the model');
   assert.deepEqual(commands.hide(['join', 'dev', w.code, '--via', '2222'], joined), { kind: 'secret', text: `joined ${w.code} as alice · type /sub-human to bring the room to your Claude`, refused: false });

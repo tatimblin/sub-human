@@ -33,7 +33,7 @@ import * as machineKey from '../lib/remote/machine-key.ts';
 import { MemoryRoomStore } from './support/memory-store.ts';
 import * as linksLib from '../lib/room/links.ts';
 import type { RoomCode } from '../lib/brand.ts';
-import { rc } from './support/brands.ts';
+import { rc, sn } from './support/brands.ts';
 
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
 
@@ -154,8 +154,8 @@ test('server: a login link\'s seat is the host person\'s own only when the room 
   const code = h.newRoom();
   const host = store.open(code);
   const seat = async (c: Client, name: string) => {
-    const pubkey = seatKey.publicPem(code, name);
-    await c.join({ name, pubkey, proof: hostLinks.proveSeat(seatKey.ensure(code, name), { room: code, name, pubkey }) });
+    const pubkey = seatKey.publicPem(code, sn(name));
+    await c.join({ name, pubkey, proof: hostLinks.proveSeat(seatKey.ensure(code, sn(name)), { room: code, name, pubkey }) });
   };
   const open = async (ctx: { linkId?: string; login?: boolean }, opts: Omit<ConnectOpts, 'machine'>) => {
     const [a, b] = memory.pair();

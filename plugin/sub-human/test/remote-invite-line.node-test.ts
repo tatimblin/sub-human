@@ -26,6 +26,7 @@ import type { Invites, ShortInvite, AdmissionRecord } from '../lib/remote/types-
 import type { RoomError } from '../lib/room/validate.ts';
 import type { ConnectOpts } from '../lib/remote/client.ts';
 import type { RoomCode } from '../lib/brand.ts';
+import { sn } from './support/brands.ts';
 
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
 
@@ -269,7 +270,7 @@ test('R4 (live verify, verify6/11): a name that sits in the room from another ma
   const { code, host } = hostRoom(t);
   const old = machine(), carol = machine();
   const at = new Date().toISOString();
-  host.members.update(ms => ({ ...ms, carol: { name: 'carol', role: 'member', machine: old.id, joined_at: at, seen_at: at } }));
+  host.members.update(ms => ({ ...ms, carol: { name: sn('carol'), role: 'member', machine: old.id, joined_at: at, seen_at: at } }));
   const r = mint(host);
   const as = { name: 'carol', label: 'carols-new-mbp' };
   const held = await refused(dial(t, host, carol, { invite: r.word, pin: r.pin, as, checkHost: checkHost(code, r.word) }));

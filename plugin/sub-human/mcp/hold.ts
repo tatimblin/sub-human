@@ -41,7 +41,7 @@ import * as linkState from '../lib/room/link-state.ts';
 import type { CallMeta, JsonRpcId, Me, PluginApi, PluginContext, ProgressToken, ToolArgs, ToolDefinition, ToolResult } from './types.ts';
 import type { Entry, Members } from '../lib/room/types.ts';
 import { msgOf } from '../lib/errors.ts';
-import type { RoomCode } from '../lib/brand.ts';
+import type { RoomCode, SeatName } from '../lib/brand.ts';
 
 /** This machine's link to room code was ended by the host (a kick: its link-state stopped with a revocation). */
 const removedByHost = (code: RoomCode): boolean => {
@@ -66,7 +66,7 @@ interface HoldBase {
 type Hold = (HoldBase & { kind: 'member' }) | (HoldBase & { kind: 'room'; moves: Set<number> });
 type RoomHold = Extract<Hold, { kind: 'room' }>;
 /** The seat this server serves (for rows/holds-<me> and the lease). */
-interface Seat { code: RoomCode; name: string; pid?: number | null; savedAt?: number }
+interface Seat { code: RoomCode; name: SeatName; pid?: number | null; savedAt?: number }
 
 const { NAME_RE, oneLine } = strs;
 const ANNOUNCE_MAX = 3;

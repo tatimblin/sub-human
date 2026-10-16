@@ -117,7 +117,8 @@ import type {
 import type { Transport } from './types-rest.ts';
 import type { Members, Payload, PresenceInput, RoomStore, SnapshotWire } from '../room/types.ts';
 import type { Change } from '../room/watch.ts';
-import type { RoomCode } from '../brand.ts';
+import type { RoomCode, SeatName } from '../brand.ts';
+import { isSeatName } from '../text.ts';
 
 type Log = (msg: string) => void;
 /** What hello's credential gives: the link (null: answered, but still unauthenticated) and a new token, once. */
@@ -138,8 +139,9 @@ const authError = (msg: string, reason: ReasonFor<'AUTH'> | null = null): RoomEr
 const invalid = (msg: string): RoomError => new RoomError('INVALID', msg);
 
 /** name is a seat of this link (one it joined): AUTH NOT_JOINED otherwise. */
-function own(s: Session, name: unknown): asserts name is string {
-  if (typeof name !== 'string' || !hostLinks.mayWriteAs(s.link, name)) throw authError(`${String(name)} has not joined over this link`, 'NOT_JOINED');
+function own(s: Session, name: unknown): asserts name is SeatName {
+  // a link's seats are seat names: join binds only one
+  if (!isSeatName(name) || !hostLinks.mayWriteAs(s.link, name)) throw authError(`${String(name)} has not joined over this link`, 'NOT_JOINED');
 }
 
 function redeem(s: Session, invite: unknown, machine: string, pin: unknown, proven: string | null, as: unknown): Credential {
@@ -347,6 +349,7 @@ const OPS: OpHandlers = {
     // s.link: run() lets no op but hello in without it. A bound link (the card let one name in; a handoff's seats) joins
     // its own seats only, before any seat is taken. A login link is the host account's own: its seat is that person's
     if (!hostLinks.mayJoinAs(s.link, name)) throw authError(hostLinks.notBound(s.link!, name), 'NOT_BOUND');
+    if (!isSeatName(name)) throw invalid(`invalid name "${name}" (letters, digits, . _ -, up to 32)`); // as identity.join says
     // a login link's seat is the host person's own (one person with the host's seats) only where the room says so
     const account = s.link!.login && options.loginSamePerson(s.store) ? machineIn(s.store.code) ?? undefined : undefined;
     // bound first: a link revoked meanwhile is AUTH LINK_REVOKED before any seat exists (no seat with no link); a seat

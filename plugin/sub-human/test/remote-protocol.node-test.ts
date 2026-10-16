@@ -23,7 +23,7 @@ import type { DecodedFrame, SignedPayload } from '../lib/remote/types-core.ts';
 import type { RoomError } from '../lib/room/validate.ts';
 import { isErrno } from '../lib/errors.ts';
 import type { KindEntry, MemorySpec, PipeSpec, SpecBase, SshSpec, Transport } from '../lib/remote/types-rest.ts';
-import { rc } from './support/brands.ts';
+import { rc, sn } from './support/brands.ts';
 
 /** The test's own socket kind: a unix socket path. */
 interface UnixSpec extends SpecBase { path: string }
@@ -234,9 +234,9 @@ test('auth: an sh2 invite with a PIN (a promote\'s, handed out by hand) carries 
 
 test('auth: a seat proof is signed by the seat key for this room, name and key, and fresh', t => {
   h.freshHome(t);
-  const pubkey = seatKey.publicPem(CODE, 'alice');
+  const pubkey = seatKey.publicPem(CODE, sn('alice'));
   const seat = { room: CODE, name: 'alice', pubkey };
-  const proof = hostLinks.proveSeat(seatKey.ensure(CODE, 'alice'), seat);
+  const proof = hostLinks.proveSeat(seatKey.ensure(CODE, sn('alice')), seat);
   hostLinks.checkSeatProof(proof, seat);
   const other = crypto.generateKeyPairSync('ed25519');
   const refused: [SignedPayload | undefined, typeof seat][] = [

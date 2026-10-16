@@ -24,7 +24,8 @@
  *   participantCall(name), roomCall(code, names)   the single Agent call lines
  *
  * Row text (deterministic from the log + members + the presence/<name> documents {state, at}):
- *   rowText(code, name, viewer, {color, entries, members, now}?) -> string (<= ROW_MAX chars, no label)
+ *   rowText(code, {member?, viewer?, color, entries, members, now}?) -> string (<= ROW_MAX chars, no label): member's
+ *       participant row, or with no member the room row
  *       No entry ids (people never see them); task ids ("#2") are the room task list's numbers.
  *       Proposals: lib/room/consent.ts fold (the same state stateLine and the consent gate read). A proposal is named
  *       by its title (the stored plan's first line, clipped to ROW_TITLE_MAX; the 6-char hash when there is
@@ -73,7 +74,7 @@ import type { Entry, LinkState, Member, Members } from './room/types.ts';
 import type { Identity } from './identity.ts';
 // the row agents' types are mod/core/rows.ts's (the module's row hooks read them too)
 import { PARTICIPANT, ROOM_AGENT } from '../mod/core/rows.ts';
-import type { RoomCode } from './brand.ts';
+import type { RoomCode, SeatName } from './brand.ts';
 
 const require = createRequire(import.meta.url);
 // lib/proposal.ts loads the consent reducer: only a row that names a pending proposal's title needs it (the status
@@ -113,6 +114,8 @@ interface RowOpts {
   taskSummary?: string | null;
   link?: LinkState | null;
 }
+/** rowText's options: whose row (member: a participant's; none: the room's) and who looks (viewer). */
+interface RowFor extends RowOpts { member?: SeatName | null; viewer?: string | null }
 /** The row map document rows/<session_id>. */
 interface RowMap { byAgent?: Record<string, RowRec> }
 
@@ -225,7 +228,7 @@ function joinNote(me: Me | null | undefined, name: string | null | undefined, { 
       : `row: ${name} has no row running; spawn it now: Agent sub-human:participant, description "${name}", prompt "member: ${name}", run_in_background`;
   }
   if (h && h.room) return `row: your room row adds ${name} by itself; make NO Agent call`;
-  const names = memberList(readMembers(me.code)).filter(m => isActive(m) && !isRoomClaude(m) && m.name !== me.name).map(m => m.name);
+  const names: string[] = memberList(readMembers(me.code)).filter(m => isActive(m) && !isRoomClaude(m) && m.name !== me.name).map(m => m.name);
   if (!names.includes(name)) names.push(name);
   return `row: your room row is not running; spawn it now: ${roomCall(me.code, names)}`;
 }
@@ -245,7 +248,7 @@ function parseSpawn(input: unknown, members: MemberInput, code?: string | null):
   if (!input || typeof input !== 'object') return null;
   const call = input as Record<string, unknown>; // the Agent tool's input: each field is checked below
   const type = String(call.subagent_type || '');
-  const known = new Set(memberList(members).map(m => m.name));
+  const known = new Set<string>(memberList(members).map(m => m.name));
   const fields = [call.prompt, call.description, call.name].map(x => (typeof x === 'string' ? x.trim() : ''));
   if (type === PARTICIPANT || type === 'participant') {
     for (const f of fields) {
@@ -330,11 +333,11 @@ function forgetRow(code: RoomCode, agentId: string): void {
 }
 
 /** How often hooks/handlers/row-hold.ts blocked agentId's stop (the seat's session document); setBlockCount(code, name, id, n). */
-const blockCount = (code: RoomCode, name: string, id: string): number => session.blocks(storeOf(code), name, id);
-const setBlockCount = (code: RoomCode, name: string, id: string, n: unknown): void => session.setBlocks(storeOf(code), name, id, Number(n) || 0);
+const blockCount = (code: RoomCode, name: SeatName, id: string): number => session.blocks(storeOf(code), name, id);
+const setBlockCount = (code: RoomCode, name: SeatName, id: string, n: unknown): void => session.setBlocks(storeOf(code), name, id, Number(n) || 0);
 
 // ---------- hold liveness (mcp/hold.ts writes, the status line reads) ----------
-function writeHolds(code: RoomCode, name: string, { members = [], room = false, roomUntil = 0 }: { members?: string[], room?: boolean, roomUntil?: number } = {}): void {
+function writeHolds(code: RoomCode, name: SeatName, { members = [], room = false, roomUntil = 0 }: { members?: string[], room?: boolean, roomUntil?: number } = {}): void {
   const rec: Holds = { pid: process.pid, at: new Date().toISOString(), members: [...new Set(members)].sort(), room: !!room };
   if (!room && roomUntil) rec.roomUntil = new Date(roomUntil).toISOString();
   try { session.put(storeOf(code), name, 'holds', rec); } catch { /* best effort */ }
@@ -344,7 +347,7 @@ function writeHolds(code: RoomCode, name: string, { members = [], room = false, 
  * returned JOINED/RESPAWN is being re-called by its row agent, so the room row is still running (a join
  * notice read in that gap would invite a second room-row spawn, which row-guard then denies in red).
  */
-function readHolds(code: RoomCode, name: string, now: number = Date.now()): Holds | null {
+function readHolds(code: RoomCode, name: SeatName, now: number = Date.now()): Holds | null {
   let h: Holds | null = null; // as writeHolds wrote it (members is checked: an older writer)
   try { h = session.get(storeOf(code), name, 'holds') || null; } catch { h = null; }
   if (!h || !isAlive(h.pid) || now - Date.parse(h.at) > HOLDS_STALE_MS) return null;
@@ -427,7 +430,7 @@ function openTask(list: (Task | null | undefined)[], name: string): Task | null 
   return mine.find(t => t.status === 'in_progress') || mine[0] || null;
 }
 
-function presenceOf(code: RoomCode, name: string, es: readonly Entry[], now: number): string | null {
+function presenceOf(code: RoomCode, name: SeatName, es: readonly Entry[], now: number): string | null {
   let p: { state?: unknown, at?: string } | null = null;
   try { p = kvOf(code).get(`presence/${name}`, null); } catch { p = null; }
   if (!p || typeof p.state !== 'string') return null;
@@ -447,7 +450,10 @@ function presenceOf(code: RoomCode, name: string, es: readonly Entry[], now: num
   return clip(s, 12);
 }
 
-function participantText(code: RoomCode, name: string, viewer: string | null | undefined, es: readonly Entry[], ms: Member[], now: number, c: Paint, taskList: Task[]): string {
+/** What both row texts read: the room, who looks, its log and members, the time and the paint. */
+interface RowCtx { code: RoomCode; viewer: string | null | undefined; es: readonly Entry[]; ms: Member[]; now: number; c: Paint }
+
+function participantText({ code, viewer, es, ms, now, c }: RowCtx, name: SeatName, taskList: Task[]): string {
   const m = ms.find(x => x.name === name);
   if (!m) return 'not in the room';
   if (m.left_at) return 'left';
@@ -481,7 +487,7 @@ function participantText(code: RoomCode, name: string, viewer: string | null | u
   return fit(parts);
 }
 
-function roomText(code: RoomCode, viewer: string | null | undefined, es: readonly Entry[], ms: Member[], now: number, c: Paint, summary: string, link: LinkState | null): string {
+function roomText({ code, viewer, es, ms, now, c }: RowCtx, summary: string, link: LinkState | null): string {
   const parts: string[] = [];
   // a room hosted elsewhere: the link leads the row while it is down or reconnecting, and closes it while up
   // (lib/room/link-state.ts indicator: "✕ offline 2m · 2 queued", "… connecting (3)", "⇄ online")
@@ -522,21 +528,19 @@ function roomText(code: RoomCode, viewer: string | null | undefined, es: readonl
 }
 
 /**
- * opts: {color, entries, members, now, tasks (list; default lib/tasks.ts mine(code, name)),
- *        taskSummary (string, default tasks.summary(code, viewer)),
- *        link (the room row: lib/room/link-state.ts State or null, default read(code))}.
+ * opts: {member (a participant row's seat; none: the room row), viewer (who looks), color, entries, members, now,
+ *        tasks (list; default lib/tasks.ts mine(code, member)), taskSummary (string, default tasks.summary(code,
+ *        viewer)), link (the room row: lib/room/link-state.ts State or null, default read(code))}.
  */
-function rowText(code: RoomCode, name: string | null | undefined, viewer: string | null | undefined, opts: RowOpts = {}): string {
+function rowText(code: RoomCode, { member, viewer, ...opts }: RowFor = {}): string {
   const now = opts.now || Date.now();
-  const es = opts.entries || readLog(code);
-  const ms = memberList(opts.members || readMembers(code));
-  const c = paint(!!opts.color);
-  if (name == null || name === code) {
+  const ctx: RowCtx = { code, viewer, es: opts.entries || readLog(code), ms: memberList(opts.members || readMembers(code)), now, c: paint(!!opts.color) };
+  if (member == null) {
     const summary = opts.taskSummary != null ? oneLine(opts.taskSummary) : taskSummary(code, viewer);
     const link = opts.link !== undefined ? opts.link : (code ? linkState.read(code) : null);
-    return roomText(code, viewer, es, ms, now, c, summary, link);
+    return roomText(ctx, summary, link);
   }
-  return participantText(code, name, viewer, es, ms, now, c, Array.isArray(opts.tasks) ? opts.tasks : tasks.mine(code, name));
+  return participantText(ctx, member, Array.isArray(opts.tasks) ? opts.tasks : tasks.mine(code, member));
 }
 
 const rowLine = (label: string, text: string | null | undefined): string => (text ? `${label}  ${text}` : label);

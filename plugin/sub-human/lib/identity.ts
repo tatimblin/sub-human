@@ -146,7 +146,7 @@ import type { JoinResult, Member, Members, MembersApi, Role, SeatRecord } from '
 /** A resolved seat (resolveBySession, resolveByPid, resolveSelf): address = NAME.CODE, the session title. */
 interface Identity {
   code: RoomCode;
-  name: string;
+  name: SeatName;
   role: Role;
   session_id: string | null;
   pid: number | null | undefined;
@@ -156,7 +156,7 @@ interface Identity {
 /** A session index record, <home>/sessions/by-pid/<pid>.json and by-sid/<sid>.json: which seat a local pid or session holds. */
 interface SeatIndex {
   code: RoomCode;
-  name: string;
+  name: SeatName;
   /** a Role as written; read as any string (lastSeat and forkParent read anything but "claude" as a member) */
   role?: string;
   pid?: number | null;
@@ -166,7 +166,7 @@ interface SeatIndex {
 }
 /** A session index record as read (indexRec; the same since 0.5.0-beta.4): code and name are what every reader needs. */
 const SEAT_INDEX = obj({
-  code: refine(str, isRoomCode, 'a room code'), name: str, role: opt(str), pid: opt(nullable(num)), pid_start: opt(num),
+  code: refine(str, isRoomCode, 'a room code'), name: refine(str, isSeatName, 'a seat name'), role: opt(str), pid: opt(nullable(num)), pid_start: opt(num),
   session_id: opt(nullable(str)), address: opt(str),
 });
 
@@ -184,7 +184,7 @@ const MOD_LEASE = obj({ session_id: str, pid: opt(nullable(num)), pid_start: opt
 /** join()'s argument. */
 interface JoinRequest {
   code: RoomCode;
-  name: string;
+  name: SeatName;
   role: string;
   machine?: string | null;
   /** the person behind the seat (lib/seats.ts enter); kept on the record, never sent by a mirror */
@@ -219,13 +219,13 @@ const ANIMALS = [
 ];
 
 // ---------- the default name ----------
-function normalizeName(text: unknown): string | null {
+function normalizeName(text: unknown): SeatName | null {
   const first = String(text || '').trim().split(/\s+/)[0] || '';
   const n = first.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9_.-]/g, '').replace(/^[._-]+/, '').slice(0, 32);
-  return n && NAME_RE.test(n) && !RESERVED.includes(n) ? n : null;
+  return n && isSeatName(n) && !RESERVED.includes(n) ? n : null;
 }
 
-function defaultName({ cwd = process.cwd(), env = process.env }: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): string | null {
+function defaultName({ cwd = process.cwd(), env = process.env }: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): SeatName | null {
   const git = (key: string): string => {
     try {
       const r = spawnSync('git', ['config', '--get', key], { cwd, env, encoding: 'utf8', timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'] });
@@ -241,7 +241,7 @@ function defaultName({ cwd = process.cwd(), env = process.env }: { cwd?: string;
 
 // ---------- location ----------
 import * as store from './room/store.ts';
-import type { RoomCode } from './brand.ts';
+import type { RoomCode, SeatName } from './brand.ts';
 const roomExists = (code: unknown): code is RoomCode => store.roomExists(code);
 const byPidDir = (): string => path.join(home(), 'sessions', 'by-pid');
 const byPidFile = (pid: unknown): string => path.join(byPidDir(), `${Number(pid)}.json`);
@@ -291,7 +291,7 @@ function writeIndexes(code: RoomCode, m: Member | SeatRecord): void {
 }
 
 /** One seat per claude process: the seat pid held before this join (another name or room) is left. */
-function retirePrevious(code: RoomCode, name: string, pid: number): void {
+function retirePrevious(code: RoomCode, name: SeatName, pid: number): void {
   const prev = readJson(byPidFile(pid), SEAT_INDEX, null);
   if (!prev || (prev.code === code && prev.name === name)) return;
   try {
@@ -301,7 +301,7 @@ function retirePrevious(code: RoomCode, name: string, pid: number): void {
 }
 
 /** The record members.join stores for a seat of this machine: its pid, start time, session and cwd too. */
-function localSeat({ name, role, machine, pid, session_id, cwd }: { name: string; role: Role; machine: string | null; pid: number; session_id?: string | null; cwd?: string | null }): SeatRecord {
+function localSeat({ name, role, machine, pid, session_id, cwd }: { name: SeatName; role: Role; machine: string | null; pid: number; session_id?: string | null; cwd?: string | null }): SeatRecord {
   const start = pidStart(pid);
   return { name, role, machine, pid, ...(start != null ? { pid_start: start } : {}), session_id: session_id || null, cwd: cwd || null };
 }
@@ -331,7 +331,7 @@ function join({ code, name, role, machine = machineIn(code), account, pid: pidAr
   return r;
 }
 
-function leave(code: RoomCode, name: string, opts?: { reason?: string; deadlineMs?: number }): boolean {
+function leave(code: RoomCode, name: SeatName, opts?: { reason?: string; deadlineMs?: number }): boolean {
   if (!roomExists(code)) return false;
   if (!membersOf(code).leave(name, opts)) return false;
   primeStarts(Object.values(readMembers(code))); // one ps for the liveness checks below and the caller's (seats.exit)
@@ -534,16 +534,16 @@ function adoptLocalSeats(code: RoomCode): string[] {
   return names;
 }
 
-function lastSeat(sid: unknown): { code: RoomCode; name: string; role: Role; address: string } | null {
+function lastSeat(sid: unknown): { code: RoomCode; name: SeatName; role: Role; address: string } | null {
   if (typeof sid !== 'string' || !SID_RE.test(sid)) return null;
   const rec = readJson(bySidFile(sid), SEAT_INDEX, null);
-  if (!rec || !roomExists(rec.code) || !NAME_RE.test(String(rec.name))) return null;
+  if (!rec || !roomExists(rec.code)) return null; // SEAT_INDEX checked the name
   const name = rec.name;
   const role: Role = rec.role === ROOM_CLAUDE ? ROOM_CLAUDE : 'member';
   return { code: rec.code, name, role, address: address(name, rec.code) };
 }
 
-type ForkParent = { sid: string; code: RoomCode; name: string; role: Role };
+type ForkParent = { sid: string; code: RoomCode; name: SeatName; role: Role };
 
 function forkParent(sid: unknown, dir: string | null | undefined): ForkParent | null {
   if (typeof sid !== 'string' || !SID_RE.test(sid) || typeof dir !== 'string' || !dir) return null;
@@ -555,7 +555,7 @@ function forkParent(sid: unknown, dir: string | null | undefined): ForkParent | 
     const transcript = path.join(dir, `${old}.jsonl`);
     if (!fs.existsSync(transcript)) continue; // not a session of this directory
     const rec = readJson(bySidFile(old), SEAT_INDEX, null);
-    if (!rec || !roomExists(rec.code) || !NAME_RE.test(String(rec.name))) continue;
+    if (!rec || !roomExists(rec.code)) continue; // SEAT_INDEX checked the name
     const m = indexedSeat(rec);
     if (!m || m.left_at || m.session_id !== old) continue;
     if (continuedIn(transcript) !== sid) continue;
@@ -754,7 +754,7 @@ function updateRoomClaude(code: RoomCode, fn: (current: Member | null, members: 
 
 
 // ---------- presence ----------
-function writePresence(code: RoomCode, name: string, state: string, detail?: string | null): boolean {
+function writePresence(code: RoomCode, name: SeatName, state: string, detail?: string | null): boolean {
   if (!NAME_RE.test(String(name)) || !isPresenceState(state)) return false;
   try { return membersOf(code).beat(name, { presence: { state, detail } }); } catch { return false; }
 }

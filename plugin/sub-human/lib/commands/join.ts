@@ -40,6 +40,7 @@ import { HELP_HINT, USAGE, refused, say } from './answer.ts';
 import type { Answer, Ctx, Verb } from './types.ts';
 import type { Identity } from '../identity.ts';
 import type { Step, Wanted } from '../remote/joining.ts';
+import type { SeatName } from '../brand.ts';
 
 const require = createRequire(import.meta.url);
 const wsT = (): typeof import('../remote/transports/ws.ts') => require('../remote/transports/ws.ts');
@@ -66,9 +67,9 @@ function seat(want: Wanted, ctx: Ctx): Answer {
 const then = (step: Step, ctx: Ctx): Answer => (step.kind === 'take' ? seat(step.want, ctx) : step.refused ? refused(step.text) : say(step.text));
 
 /** A name typed with --as: checked; else the default name. */
-function nameFor(as: string | undefined, cwd: string): { name: string } | { error: string } {
+function nameFor(as: string | undefined, cwd: string): { name: SeatName } | { error: string } {
   if (as !== undefined) {
-    if (!identity.NAME_RE.test(as) || PIN_WORD.test(as)) return { error: NOT_A_NAME(as) };
+    if (!identity.isSeatName(as) || PIN_WORD.test(as)) return { error: NOT_A_NAME(as) };
     if (identity.RESERVED.includes(as.toLowerCase())) return { error: `"${as}" is reserved; pick another name` };
     return { name: as };
   }
@@ -134,7 +135,7 @@ export const named: Verb = (args, ctx) => {
   if (PIN_WORD.test(name)) return refused(NOT_A_NAME(name));
   if (code !== undefined && PIN_WORD.test(code)) return refused(`"${code}" looks like a PIN, not a room: a PIN goes in as /sub-human join PIN once an invite line asks for it`);
   if (name.startsWith('-')) return refused(`"${name}" goes with join (/sub-human join HOST ROOM SECRET ${name} …). ${USAGE}`);
-  if (!identity.NAME_RE.test(name)) return refused(`"${name}" isn't a command or a name. ${USAGE}`);
+  if (!identity.isSeatName(name)) return refused(`"${name}" isn't a command or a name. ${USAGE}`);
   if (identity.RESERVED.includes(name.toLowerCase())) return refused(`"${name}" is reserved; pick another name. ${USAGE}`);
   if (code !== undefined && !identity.isRoomCode(code)) return refused(`"${code}" isn't a room (like vole-8126). ${USAGE}`);
   return seat({ name, code: code || (ctx.cur && ctx.cur.name === name ? ctx.cur.code : null) }, ctx);
@@ -234,8 +235,8 @@ export function bindRoomClaude(args: string[], ctx: Ctx): Answer {
   const c = code || identity.newCode();
   if (!identity.roomExists(c)) return refused(`no room ${c}.`);
   if (identity.roomClosing(c)) return refused(`room ${c} is closing.`);
-  const r = identity.join({ code: c, name: 'claude', role: 'claude', pid, session_id: sid, cwd: ctx.cwd });
+  const r = identity.join({ code: c, name: identity.ROOM_CLAUDE, role: 'claude', pid, session_id: sid, cwd: ctx.cwd });
   if (!r || !r.ok) return refused(`could not bind the room's Claude of ${c}: ${(r && r.error) || 'unknown error'}`);
-  const me: Identity = { code: c, name: 'claude', role: 'claude', pid, session_id: sid || null, address: identity.address('claude', c) };
+  const me: Identity = { code: c, name: identity.ROOM_CLAUDE, role: 'claude', pid, session_id: sid || null, address: identity.address('claude', c) };
   return { kind: 'joined', me, lead: fresh ? 'room created' : 'claude started', say: fresh ? `room ${c} open · others join with: /sub-human` : `claude of room ${c}` };
 }

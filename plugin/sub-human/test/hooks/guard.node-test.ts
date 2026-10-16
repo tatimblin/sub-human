@@ -9,6 +9,7 @@ import path from 'node:path';
 import { World, PLUGIN } from './helpers.ts';
 import type * as Guard from '../../mod/core/guard.ts';
 import type { GuardCtx } from '../../mod/core/types.ts';
+import { sn } from '../support/brands.ts';
 
 let g: typeof Guard;
 test.before(async () => { g = await import(path.join(PLUGIN, 'mod', 'core', 'guard.ts')) as typeof Guard; });
@@ -61,7 +62,7 @@ test('guard table', () => {
     ['mcp__plugin_sub-human_room__read', { ids: [1] }, true, 'allow'],
     ['mcp__plugin_sub-human_room__propose', { text: 'x' }, true, 'allow'],
     ['mcp__plugin_sub-human_room__post', { text: 'hi' }, false, undefined], // not joined: no opinion
-    ['mcp__plugin_sub-human_room__hold', { member: 'bob' }, true, 'deny'], // main thread: never
+    ['mcp__plugin_sub-human_room__hold', { member: sn('bob') }, true, 'deny'], // main thread: never
     ['mcp__plugin_sub-human_room__task', { op: 'add', subject: 'x' }, true, 'allow'],
     ['Write', { file_path: path.join(H, 'rooms', w.code, 'log.jsonl'), content: 'x' }, true, 'deny'],
     ['Write', { file_path: path.join(realH, 'rooms', 'new.json'), content: 'x' }, false, 'deny'],

@@ -11,6 +11,7 @@ import * as identity from '../lib/identity.ts';
 import type { Room } from '../lib/room.ts';
 import type { FsRoomStore } from '../lib/room/store.ts';
 import type { AppendOpts, Entry, EntryInput } from '../lib/room/types.ts';
+import { sn } from './support/brands.ts';
 
 let R: Room = null!; // the current test's room (fresh() opens it)
 function fresh() {
@@ -234,7 +235,7 @@ test('room: digest has members, plan + matrix, open items, decisions; capped at 
   const code = fresh();
   h.register('claude', 'claude');
   const sleeper = h.spawnSleeper();
-  identity.join({ code, name: 'alice', role: 'member', pid: sleeper.pid, session_id: 's-a', cwd: '/tmp' });
+  identity.join({ code, name: sn('alice'), role: 'member', pid: sleeper.pid, session_id: 's-a', cwd: '/tmp' });
   agent('claude', 'proposal', { hash: H1, approvers: ['alice', 'bob'], path: '/p/plan.md' });
   human('alice', 'signoff', { proposal_hash: H1 });
   let d = R.digest();

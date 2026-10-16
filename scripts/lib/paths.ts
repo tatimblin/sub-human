@@ -9,7 +9,8 @@
  *   pluginLib(name)   plugin/sub-human/lib/<name>, loaded on first use and typed (e.g. 'room.ts' for validateChain)
  *   pluginTest(name)  plugin/sub-human/test/<name> (scripts tests only: 'support/two-homes.ts' for S11)
  *   pluginFile(rel)   another plugin module, by its path in the plugin (arch-doc: 'mod/register.ts' HOOKS)
- *   roomCode(v)       v as a RoomCode (plugin lib/brand.ts), through the plugin's own constructor; throws when it is none
+ *   roomCode(v), seatName(v)   v as a RoomCode or SeatName (plugin lib/brand.ts), through the plugin's own
+ *                     constructor; throws when it is none
  *
  * The plugin modules load lazily, so a script that needs only one lib (probe-cc: cc/contract.ts) loads only that one;
  * PluginLibs, PluginTests and PluginFiles name each one a script loads, with its type: a name missing there does not compile.
@@ -18,7 +19,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import type { RoomCode } from '../../plugin/sub-human/lib/brand.ts';
+import type { RoomCode, SeatName } from '../../plugin/sub-human/lib/brand.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -67,6 +68,11 @@ export function roomCode(v: unknown): RoomCode {
   const c = pluginLib('text.ts').roomCode(v);
   if (!c) throw new Error(`not a room code: ${JSON.stringify(v)}`);
   return c;
+}
+export function seatName(v: unknown): SeatName {
+  const n = pluginLib('text.ts').seatName(v);
+  if (!n) throw new Error(`not a seat name: ${JSON.stringify(v)}`);
+  return n;
 }
 export const taskListId = (code: string): string => pluginLib('room-claude.ts').taskListId(roomCode(code));
 export const tasksDir = (code: string): string => pluginLib('room-claude.ts').tasksDir(roomCode(code));
