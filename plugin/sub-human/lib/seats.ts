@@ -53,6 +53,7 @@ import * as room from './room.ts';
 import * as roomClaude from './room-claude.ts';
 import * as config from './config.ts';
 import { validPid } from './io.ts';
+import { pidStarts } from './lock.ts';
 import * as links from './room/links.ts';
 import { roomClaudePresence } from './room/members.ts';
 import { createRequire } from 'node:module';
@@ -76,6 +77,8 @@ interface EnterOpts {
   session_id?: string | null;
   cwd?: string | null;
   pubkey?: string;
+  /** what log a remote seat's code reads, as its join said (lib/remote/server.ts) */
+  log_v?: number;
 }
 /** identity.join's answer; note: what the join line adds (the room's Claude starting, or why it could not). */
 type EnterResult = JoinResult & { note?: string };
@@ -103,12 +106,12 @@ function ensureRoomClaude(code: string, cwd: string | null | undefined, by: stri
   return ` · starting the room's Claude…${failed}`;
 }
 
-function enter({ code, name, role = 'member', machine = identity.machineIn(code), account, pid, session_id, cwd, pubkey }: EnterOpts): EnterResult {
+function enter({ code, name, role = 'member', machine = identity.machineIn(code), account, pid, session_id, cwd, pubkey, log_v }: EnterOpts): EnterResult {
   // the seat's earlier record ended with no leave: its "left" line goes before this join's "rejoined"
   if (identity.isHost(code)) sweep(code, { name });
   // a seat on the host is the host account's (elsewhere the host's server decides: a mirror's join sends no account)
   if (account === undefined && machine && machine === identity.machineIn(code) && identity.isHost(code)) account = machine;
-  const r: EnterResult = identity.join({ code, name, role, machine, account, pid, session_id, cwd });
+  const r: EnterResult = identity.join({ code, name, role, machine, account, pid, session_id, cwd, log_v });
   if (!r.ok) return r;
   if (!identity.isHost(code)) return { ...r, note: '' };
   keepWorkdir(code, cwd);
@@ -148,7 +151,10 @@ function sweep(code: string, { now = Date.now(), name }: { now?: number; name?: 
   const lapsed = (m: Member | undefined): m is Member => !!m && !m.left_at && !m.lapsed_at && !identity.seatAlive(m)
     && (name !== undefined || !(now - Date.parse(String(m.seen_at)) < after));
   const out: string[] = [];
-  for (const m of Object.values(s.members.read())) {
+  const all = Object.values(s.members.read());
+  // one ps for every local seat whose start time is not known yet (lib/lock.ts keeps it while the pid lives)
+  pidStarts(all.filter((m): m is Member => !!m && !m.left_at && isLocal(m)).map(m => m.pid as number));
+  for (const m of all) {
     if (!m || !m.name || m.role === 'claude' || m.left_at || (name !== undefined && m.name !== name)) continue;
     if (m.lapsed_at) { if (identity.seatAlive(m)) back(code, m.name); continue; }
     if (identity.seatAlive(m)) continue;

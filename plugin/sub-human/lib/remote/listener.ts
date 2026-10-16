@@ -31,7 +31,9 @@
  *   stop() -> bool                 SIGTERM the live listener and wait for it to go; false when none ran
  *   run({port?, log?, closedCheckMs?, idleMs?}) -> Promise<{why, port}>   the daemon itself: pid in the state file (LOCK when a live
  *       one holds it), then serve until SIGTERM / SIGINT / SIGHUP. Limits before a handshake completes: at most
- *       PREAUTH_MAX connections in handshake, LISTEN_MAX in all, HANDSHAKE_MS to finish it, Noise-sized frames. Every
+ *       PREAUTH_MAX connections in handshake, LISTEN_MAX in all, SOURCE_MAX from one source (the front's Tailscale login
+ *       or X-Forwarded-For), HANDSHAKE_MS to finish it, Noise-sized frames; after it, the serve child closes a
+ *       session that made no link within LINK_AUTH_WAIT_MS (lib/remote/server.ts). Every
  *       closedCheckMs it drops rooms that closed (or are gone) and turns their Tailscale path off (only that path);
  *       with no room left for LISTEN_IDLE_MS and no connection it exits; it exits at once (checked every
  *       HOME_CHECK_MS, 2 s) when its home directory is gone, or the state file names another live listener. It survives a sleep: a socket bound to
@@ -76,6 +78,8 @@ const require = createRequire(import.meta.url);
 const DEFAULT_PORT = 7420;
 const PREAUTH_MAX = 16;
 const LISTEN_MAX = 64;
+/** At most this many connections at once from one source (the front's Tailscale login or X-Forwarded-For). */
+const SOURCE_MAX = 8;
 const HANDSHAKE_MS = 10_000;
 const WS_PING_MS = 15_000;
 const LISTEN_START_MS = 4000;
@@ -205,11 +209,22 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
     return p;
   };
 
+  const bySource = new Map<string, number>();
   async function onConnection(conn: Conn, req: IncomingMessage): Promise<void> {
     preauth++;
     conns++;
-    const who = req.headers['tailscale-user-login'] || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const who = String(req.headers['tailscale-user-login'] || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '?');
     conn.on('error', () => {});
+    // one source holds at most SOURCE_MAX of the LISTEN_MAX connections (each a serve process once its handshake is done)
+    if ((bySource.get(who) || 0) >= SOURCE_MAX) {
+      preauth--;
+      conns--;
+      log(`refused a connection from ${who}: ${SOURCE_MAX} open from there already`);
+      try { conn.close(1013, 'busy'); } catch { /* gone */ }
+      return;
+    }
+    bySource.set(who, (bySource.get(who) || 0) + 1);
+    conn.on('close', () => { const n = (bySource.get(who) || 1) - 1; if (n > 0) bySource.set(who, n); else bySource.delete(who); });
     const at = String(req.url || '').split('?')[0].split('/').filter(Boolean).pop();
     const refusal = (code: string): Refusal | null => {
       if (!CODE_RE.test(code)) return { code: 'PROTOCOL', message: 'not a room code' };

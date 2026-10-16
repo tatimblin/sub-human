@@ -176,7 +176,9 @@ function reconcile(code: string, r: RoomHandle, log: Entry[]): boolean {
 function gateHook(code: string, input: TasksIn, r: RoomHandle): Reply | null {
   const id = String(input.task_id || '');
   const native: NativeTask = readNative(code, id) || {};
-  const log = r.readAll();
+  // the recent view (every non-chat entry, and the lines since the last rotation) holds every task entry; only an
+  // owner's confirmation older than the rotation (a say) is not in it, so a refusal is checked again over the whole log
+  let log = r.readRecent();
   const m: Partial<TaskState> = tasks.fold(log).find((t: TaskState) => t.id === id) || {};
   const task = {
     id,
@@ -185,7 +187,8 @@ function gateHook(code: string, input: TasksIn, r: RoomHandle): Reply | null {
     req: tasks.metaReq(native.metadata),
   };
   if (internal(native)) task.owner = 'room';
-  const g = tasks.gate(code, task, log, { trust: r.trust });
+  let g = tasks.gate(code, task, log, { trust: r.trust });
+  if (!g.ok && r.store.recentFrom() > 0) { log = r.readAll(); g = tasks.gate(code, task, log, { trust: r.trust }); }
   if (g.ok) return null;
   return { kind: 'classic', exit: 2, stderr: `${g.reason}\n${RETRY}` };
 }
@@ -209,7 +212,7 @@ export function handle(input: TasksIn): Reply | null {
   const why = (what: string, err: unknown) => `sub-human tasks ${what}: ${err instanceof Error && err.stack || err}`;
   try {
     tasks.withList(code, () => {
-      const log = [...r.readAll()];
+      const log = [...r.readRecent()]; // the task entries are non-chat: every one is in the recent view
       let changed = false;
       if (mirrors) {
         try { changed = mirror(code, input, r, log); } catch (err) { reply = { kind: 'classic', exit: 1, stderr: why('mirror', err) }; }

@@ -284,6 +284,8 @@ export interface Member {
   owner?: boolean;
   joined_at?: string;
   seen_at?: string;
+  /** what log its code reads (lib/room/members.ts LOG_V: 2, segments); none: an older plugin's seat, one log.jsonl */
+  log_v?: number;
   left_at?: string;
   /** its lease ran out with no leave (lib/seats.ts sweep): still seated, not present; its next beat brings it back */
   lapsed_at?: string;
@@ -317,6 +319,8 @@ export interface SeatRecord {
   pid_start?: number;
   session_id?: string | null;
   cwd?: string | null;
+  /** what log the seat's code reads (lib/room/members.ts LOG_V) */
+  log_v?: number;
 }
 
 /** members.join's answer: joined (rejoin: the seat was in the room before), or refused with why. code: a mirror's

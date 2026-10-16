@@ -17,10 +17,12 @@
  *       every room ever made.
  *   indexRoom(code), unindexRooms([code])
  *   lastChange(code) -> ms       the newest mtime among the room directory and its entries (0: no directory)
- *   removeRoom(code)             the room's directory and its seat keys (<home>/keys/<code>) deleted, and unindexed
- *                                (lib/gc.ts only, for a closed room nobody touched in ROOM_GC_MS)
- *   asideRooms() -> [{name, at}] the folders `sub-human link --forget` set aside (rooms/CODE.forgotten-TIME), by mtime;
- *   removeAside(name)            delete one
+ *   setAsideRoom(code, now?) -> name   the room's directory moves to rooms/CODE.gc-TIME and its seat keys to
+ *                                keys/CODE.gc-TIME, unindexed (lib/gc.ts only, for a room closed for good that nobody
+ *                                touched in ROOM_GC_MS); nothing is deleted yet
+ *   asideRooms() -> [{name, at}] the folders set aside: `sub-human link --forget`'s (rooms/CODE.forgotten-TIME) and
+ *                                GC's (rooms/CODE.gc-TIME), by mtime
+ *   removeAside(name)            delete one, with the seat keys GC set aside under the same name
  *   trustOf(e) -> HumanTrust|null   an entry judged by the store of the room it names (e.room, which every signed
  *       entry carries); an entry of no named room is judged with trust.ts NO_TRUST (never verified). A caller that
  *       read e from a store passes that store's trust instead (RoomStore.trust): this is the fallback.
@@ -112,13 +114,24 @@ function lastChange(c: string): number {
   for (const n of names) { try { t = Math.max(t, fs.statSync(path.join(d, n)).mtimeMs); } catch { /* gone meanwhile */ } }
   return t;
 }
-function removeRoom(c: string): void {
-  fs.rmSync(roomDir(c), { recursive: true, force: true });
-  fs.rmSync(keyDir(c), { recursive: true, force: true });
+/**
+ * Set a room aside (lib/gc.ts): its directory becomes rooms/CODE.gc-TIME and its seat keys keys/CODE.gc-TIME (still
+ * under keys/, which the Read guard covers), both touched now so that the aside TTL counts from today. A person can
+ * rename both back to bring the room back; removeAside deletes them after the aside TTL.
+ */
+function setAsideRoom(c: string, now = Date.now()): string {
+  const name = `${c}.gc-${new Date(now).toISOString().replace(/[:.]/g, '-')}`;
+  const to = path.join(roomsDir(), name);
+  fs.renameSync(roomDir(c), to);
+  const kd = keyDir(c);
+  if (fs.existsSync(kd)) fs.renameSync(kd, path.join(path.dirname(kd), name));
+  const t = new Date(now);
+  try { fs.utimesSync(to, t, t); } catch { /* the aside TTL then counts from the room's last change */ }
   unindexRooms([c]);
   forget(c);
+  return name;
 }
-const ASIDE_RE = /^[a-z]+-\d{4}\.forgotten-[0-9TZ-]+$/;
+const ASIDE_RE = /^[a-z]+-\d{4}\.(?:forgotten|gc)-[0-9TZ-]+$/;
 function asideRooms(): { name: string; at: number }[] {
   let names: string[] = [];
   try { names = fs.readdirSync(roomsDir()); } catch { return []; }
@@ -126,7 +139,12 @@ function asideRooms(): { name: string; at: number }[] {
   for (const name of names.filter(n => ASIDE_RE.test(n))) { try { out.push({ name, at: fs.statSync(path.join(roomsDir(), name)).mtimeMs }); } catch { /* gone */ } }
   return out;
 }
-function removeAside(name: string): void { if (ASIDE_RE.test(name)) fs.rmSync(path.join(roomsDir(), name), { recursive: true, force: true }); }
+/** Delete one set-aside folder, and the seat keys a GC set aside with it. */
+function removeAside(name: string): void {
+  if (!ASIDE_RE.test(name)) return;
+  fs.rmSync(path.join(roomsDir(), name), { recursive: true, force: true });
+  fs.rmSync(path.join(home(), 'keys', name), { recursive: true, force: true });
+}
 
 function trustOf(e: Entry | null | undefined): HumanTrust | null {
   if (!e || e.via !== 'human') return null;
@@ -136,5 +154,5 @@ function trustOf(e: Entry | null | undefined): HumanTrust | null {
 
 export {
   open, forget, setBackend, roomExists, createRoom, listRooms, trustOf, indexedRooms, indexRoom, unindexRooms, lastChange,
-  removeRoom, asideRooms, removeAside,
+  setAsideRoom, asideRooms, removeAside,
 };

@@ -236,7 +236,8 @@ const loginFailure = (stderr: string, spec: SshSpec, code: string): string | nul
 function primeCommand(spec: SshSpec, code: string, { persist = '8h', opts = String(process.env.SUB_HUMAN_SSH_OPTS || '').split(/\s+/).filter(Boolean) }: { persist?: string; opts?: string[] } = {}): string[] {
   if (!/^[0-9]{1,5}[smhd]?$/.test(persist)) throw new RoomError('INVALID', `--persist "${persist}" is not a time (e.g. 8h)`);
   const { local, tail } = checked({ ...spec, mux: true }, code);
-  return ['ssh', '-M', '-N', '-f', '-o', `ControlPersist=${persist}`, '-o', 'ServerAliveInterval=15', ...opts, ...local, ...tail];
+  // as in command(): the pinned options (the master's ControlPath, the link's key and known_hosts) before the env's
+  return ['ssh', '-M', '-N', '-f', '-o', `ControlPersist=${persist}`, '-o', 'ServerAliveInterval=15', ...local, ...opts, ...tail];
 }
 
 const kind: Required<KindEntry<SshSpec>> = {

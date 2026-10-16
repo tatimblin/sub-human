@@ -18,6 +18,9 @@
  *                                        started) leaves the index. The start times of every live local pid it judges come from one
  *                                        ps call (lib/lock.ts pidStarts), not one per seat. No room Claude seat is needed: the first member opens it. A room
  *                                        where only the room's Claude is left is not open (see orphanRooms).
+ *   closedForGood(members) -> bool       every person's seat left (one whose session crashed has not) and the room's
+ *                                        Claude stopped or never started: only a join reopens it (lib/gc.ts sets aside
+ *                                        only such a room)
  *   orphanRooms() -> [code]              rooms not closing whose room Claude is not stopped but which have no live member
  *                                        (join sweeps these through roomClaude.watchdog)
  *   roomOpen(code) -> bool               not closing and has any live seat, the room's Claude included (a resume may
@@ -118,7 +121,7 @@ import { NAME_RE, CODE_RE, SID_SAFE as SID_RE } from './text.ts';
 import { sidIndex } from '../mod/core/seat.ts';
 import { SEAT_BEAT_MS, MOD_LEASE_FRESH_MS, SESSION_INDEX_TTL_MS } from './config.ts';
 import {
-  seatAlive, leaseFresh, startMatches, PRESENCE_STATES, ROOM_CLAUDE,
+  seatAlive, leaseFresh, startMatches, PRESENCE_STATES, ROOM_CLAUDE, LOG_V,
 } from './room/members.ts';
 import * as cc from './cc/env.ts';
 import type { JoinResult, Member, Members, MembersApi, PresenceState, Role, SeatRecord } from './room/types.ts';
@@ -164,6 +167,8 @@ interface JoinRequest {
   pid?: number | string | null;
   session_id?: string | null;
   cwd?: string | null;
+  /** what log a remote seat's code reads, as its join said (lib/remote/server.ts join; a local seat's is this code's) */
+  log_v?: number;
 }
 
 /** The room's Claude's record as updateRoomClaude patches it: undefined deletes a field. */
@@ -272,7 +277,7 @@ function localSeat({ name, role, machine, pid, session_id, cwd }: { name: string
   return { name, role, machine, pid, ...(start != null ? { pid_start: start } : {}), session_id: session_id || null, cwd: cwd || null };
 }
 
-function join({ code, name, role, machine = machineIn(code), account, pid: pidArg, session_id, cwd }: JoinRequest = {} as JoinRequest): JoinResult {
+function join({ code, name, role, machine = machineIn(code), account, pid: pidArg, session_id, cwd, log_v }: JoinRequest = {} as JoinRequest): JoinResult {
   if (!roomExists(code)) return fail(`no room "${code}"`);
   if (typeof name !== 'string' || !NAME_RE.test(name)) return fail(`invalid name "${name}" (letters, digits, . _ -, up to 32)`);
   if (!ROLES.includes(role)) return fail(`invalid role "${role}"`);
@@ -284,7 +289,10 @@ function join({ code, name, role, machine = machineIn(code), account, pid: pidAr
   if (session_id != null && (typeof session_id !== 'string' || !SID_RE.test(session_id))) return fail('invalid session_id');
 
   const seatRole = role as Role; // one of ROLES
-  const rec: SeatRecord = { ...(local ? localSeat({ name, role: seatRole, machine, pid, session_id, cwd }) : { name, role: seatRole, machine }), ...(account ? { account } : {}) };
+  // log_v: what this code reads (a seat of this machine), or what a remote seat's join said (lib/room/members.ts
+  // holdsRotation: a seat without it holds the log's rotation on its machine)
+  const reads = local ? LOG_V : typeof log_v === 'number' && Number.isInteger(log_v) && log_v > 0 && log_v < 100 ? log_v : undefined;
+  const rec: SeatRecord = { ...(local ? localSeat({ name, role: seatRole, machine, pid, session_id, cwd }) : { name, role: seatRole, machine }), ...(account ? { account } : {}), ...(reads ? { log_v: reads } : {}) };
   const r = membersOf(code).join(rec);
   if (r.ok) store.indexRoom(code); // it may be open from here on (lib/room/registry.ts)
   if (r.ok && local) {
@@ -586,7 +594,7 @@ function writePresence(code: string, name: string, state: string, detail?: strin
 
 export {
   NAME_RE, CODE_RE, RESERVED, VERBS, ROOM_CLAUDE, ANIMALS, PRESENCE_STATES, normalizeName, defaultName, home,
-  roomDir, machineId, machineIn, isMine, newCode, roomExists, isHost, openRooms, orphanRooms, roomOpen, roomClosing, address,
+  roomDir, machineId, machineIn, isMine, newCode, roomExists, isHost, openRooms, closedForGood, orphanRooms, roomOpen, roomClosing, address,
   readMembers, join, leave, rebindSession, updateRoomClaude, liveMembers, seatAlive, heartbeat,
   leaseFresh, isAlive, claudePid, resolveByPid, resolveBySession, resolveSelf, lastSeat, localSeats, adoptLocalSeats,
   MOD_LEASE_FRESH_MS, writeModLease, readModLease, modLeaseOk, deleteModLease, pruneModLeases, pruneSessionIndexes, writePresence,

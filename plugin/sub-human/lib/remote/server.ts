@@ -71,7 +71,9 @@
  *       seats is sent as the private 'handoff' event.
  *         ping       {pong: the host's ms}: the link daemon's heartbeat (lib/remote/link.ts). A session whose hello
  *                    carried caps {ping: true} and that then sends no frame for silentMs (LINK_SILENT_MS) is closed:
- *                    the peer is gone (a half-open link after a sleep)
+ *                    the peer is gone (a half-open link after a sleep). A web session (via ws) that has made no
+ *                    link within authMs (LINK_AUTH_WAIT_MS, 10 s) of its start is closed: a Noise handshake anyone
+ *                    can make holds a serve process no longer
  *       Quotas (lib/config.ts LINK_QUOTAS, lib/remote/quota.ts): before each op, its count: hello per connection (and
  *       per link once it has one), join and leave (seat), subscribe and a new blob.put per link in the host document
  *       remote/quota, beat, blob.get, ping and handoff.* per connection; over one is RATE QUOTA.
@@ -82,6 +84,7 @@
  *       answered PROTOCOL. close() ends the streams and the transport.
  */
 
+import crypto from 'node:crypto';
 import * as protocol from './protocol.ts';
 import * as invites from './invites.ts';
 import * as hostLinks from './host-links.ts';
@@ -99,7 +102,7 @@ import type { Reason } from '../reasons.ts';
 import { machineIn } from '../home.ts';
 import * as options from '../room/options.ts';
 import {
-  FOLLOW_POLL_MS, REPLAY_BATCH, PROPOSAL_FILE_MAX, LINK_SILENT_MS, LINK_FRAME_MAX_BYTES,
+  FOLLOW_POLL_MS, REPLAY_BATCH, PROPOSAL_FILE_MAX, LINK_SILENT_MS, LINK_FRAME_MAX_BYTES, LINK_AUTH_WAIT_MS,
 } from '../config.ts';
 import type {
   CodedError, DecodedFrame, ErrorFrame, EventData, EventName, FrameId, IncomingRequest, LinkRecord, Op, OpParams, OpResults, ProtoRange,
@@ -293,7 +296,11 @@ const OPS: OpHandlers = {
     s.link = null;
     s.v = v;
     s.peerVersion = { version: client, proto: theirs };
-    const proven = machineKey.verify(params.machine_key, s.store.code); // the id its machine key gives (else only reported)
+    // the id its machine key gives (else only reported): over the challenge this session's hello before handed out
+    // (an invite line's hello must be so bound: a proof a former host saw is no good in another session), else, for a
+    // token's or a login's hello, a fresh ts
+    const bound = machineKey.verifyFor(params.machine_key, s.store.code, s.challenge);
+    const proven = bound || (inviteSecret.decode(invite) ? null : machineKey.verify(params.machine_key, s.store.code));
     // nonce: the host home's machine key proves itself first, so a joiner sends an invite line's secret only after
     const host = v >= 3 && typeof nonce === 'string' && machineKey.NONCE_RE.test(nonce) ? machineKey.hostProof(s.store.code, nonce) : null;
     const r: Credential = invite !== undefined ? redeem(s, invite, machine, pin, proven, as) : token !== undefined ? known(s, token)
@@ -304,12 +311,15 @@ const OPS: OpHandlers = {
     const out: OpResults['hello'] = { v, proto: s.proto, server: s.version, caps: protocol.CAPS, room: s.store.code, link: r.link ? r.link.id : null, epoch: mine, time: Date.now() };
     if (r.link) out.machine = r.link.machine; // additive: this machine's id in the room, as the host records it
     if (host) out.host = host;
+    // a fresh challenge for this session's next hello (a refused hello keeps the one the joiner holds)
+    s.challenge = v >= 3 ? crypto.randomBytes(18).toString('base64url') : null;
+    if (s.challenge) out.challenge = s.challenge;
     if (r.token) out.token = r.token;
     if (stopped(s.store.members.read())) out.closed = true; // additive: an older host says nothing
     return out;
   },
 
-  join(s, { name, role = 'member', pubkey, proof }) {
+  join(s, { name, role = 'member', pubkey, proof, log_v }) {
     if (role !== 'member') throw invalid('a link joins members only');
     if (!envelope.parseKey(pubkey)) throw invalid('join needs the seat\'s public key (Ed25519 SPKI PEM)');
     hostLinks.checkSeatProof(proof, { room: s.store.code, name, pubkey });
@@ -318,7 +328,7 @@ const OPS: OpHandlers = {
     if (!hostLinks.mayJoinAs(s.link, name)) throw authError(hostLinks.notBound(s.link!, name), 'NOT_BOUND');
     // a login link's seat is the host person's own (one person with the host's seats) only where the room says so
     const account = s.link!.login && options.loginSamePerson(s.store) ? machineIn(s.store.code) ?? undefined : undefined;
-    const r = seats.enter({ code: s.store.code, name, machine: s.link!.machine, pubkey, ...(account ? { account } : {}) });
+    const r = seats.enter({ code: s.store.code, name, machine: s.link!.machine, pubkey, ...(account ? { account } : {}), ...(typeof log_v === 'number' ? { log_v } : {}) });
     if (!r.ok) throw new RoomError(r.code || 'INVALID', r.error);
     s.link = hostLinks.bindSeat(s.store, s.link!.id, name);
     return r.rejoin ? { ok: true, rejoin: true } : { ok: true };
@@ -419,6 +429,9 @@ class Session {
   silentMs: number;
   heard: number;
   silence: NodeJS.Timeout | null;
+  unlinked: NodeJS.Timeout | null = null;
+  /** the challenge the last hello's reply handed out: the next hello's machine proof signs it (machine-key.ts proofFor) */
+  challenge: string | null = null;
   constructor(transport: Transport, store: RoomStore, log: Log, linkId: string | null | undefined, silentMs: number, {
     proto = protocol.PROTO, version = protocol.PLUGIN_VERSION, login = false, via = null, peer = null,
   }: { proto?: ProtoRange; version?: string; login?: boolean; via?: 'ws' | null; peer?: string | null } = {}) {
@@ -512,9 +525,23 @@ class Session {
     return true;
   }
 
+  /** A web session closes unless a hello made it a link within ms (anyone can complete a Noise handshake). */
+  expireUnlinked(ms: number): void {
+    if (!(ms > 0)) return;
+    this.unlinked = setTimeout(() => {
+      if (this.link) return;
+      this.log(`sub-human serve: no link ${ms} ms after the connection began; closing it`);
+      this.stop();
+      this.transport.close();
+    }, ms);
+    this.unlinked.unref();
+  }
+
   stop(): void {
     clearInterval(this.silence ?? undefined);
     this.silence = null;
+    clearTimeout(this.unlinked ?? undefined);
+    this.unlinked = null;
     for (const st of [...this.streams]) st.stop();
   }
 }
@@ -524,10 +551,11 @@ class Session {
  * @param {{store: import('../room/store.ts').FsRoomStore, log?: (...a: any[]) => void, linkId?: string, login?: boolean, via?: 'ws' | null, peer?: string | null, silentMs?: number, proto?: {min: number, max: number}, version?: string}} ctx
  * @returns {{close(): void}}
  */
-function serve(transport: Transport, { store, log = () => {}, linkId, login = false, via = null, peer = null, silentMs = LINK_SILENT_MS, proto, version }: {
-  store: RoomStore; log?: Log; linkId?: string; login?: boolean; via?: 'ws' | null; peer?: string | null; silentMs?: number; proto?: ProtoRange; version?: string;
+function serve(transport: Transport, { store, log = () => {}, linkId, login = false, via = null, peer = null, silentMs = LINK_SILENT_MS, authMs = LINK_AUTH_WAIT_MS, proto, version }: {
+  store: RoomStore; log?: Log; linkId?: string; login?: boolean; via?: 'ws' | null; peer?: string | null; silentMs?: number; authMs?: number; proto?: ProtoRange; version?: string;
 }): { close(): void; revoked(): boolean } {
   const session = new Session(transport, store, log, linkId, silentMs, { proto, version, login, via, peer });
+  if (via === 'ws') session.expireUnlinked(authMs);
   return { close() { session.stop(); transport.close(); }, revoked: () => session.revoked() };
 }
 

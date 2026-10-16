@@ -15,6 +15,7 @@ import * as store from '../lib/room/store.ts';
 import * as envelope from '../lib/room/envelope.ts';
 import * as consent from '../lib/room/consent.ts';
 import * as seatKey from '../hooks/seat-key.ts';
+import * as identityMod from '../lib/identity.ts';
 import type { Entry, RoomStore } from '../lib/room/types.ts';
 import type { FsRoomStore } from '../lib/room/store.ts';
 
@@ -178,4 +179,101 @@ test('setAside: a demoted host\'s segments become one orphaned log, every line o
   assert.deepEqual(got.map(e => e.id), all.map(e => e.id));
   for (let i = 1; i < got.length; i++) assert.equal(got[i].prev, hash12(lines(file)[i - 1]));
   assert.deepEqual([s.readAll(), s.snapshot(), fs.existsSync(path.join(s.dir, 'log-0001.jsonl'))], [[], null, false]);
+});
+
+/** A system line (no rate limit): what grows the log in the guard tests. */
+const note = (s: RoomStore, text: string) => s.append({ kind: 'status', text }, { via: 'system', from: 'room', system: true });
+
+// Mixed versions (review finding 6): a 0.5.0-beta.15 process (a session, a --bg room Claude) reads a rotated log as
+// tampering, so a seat of this machine that may still run and records no log_v holds the rotation; the room hears
+// it once; a seat of the current code (log_v) does not hold it, nor a seat of another machine, nor one that left.
+test('rotation guard: a live seat without log_v (an older plugin\'s) holds the rotation, and the room hears it once; with log_v it rotates', t => {
+  const { code, s } = room(t, 2048);
+  const identity = identityMod;
+  assert.ok(identity.join({ code, name: 'alice', role: 'member', pid: process.pid, session_id: null, cwd: '/' }).ok);
+  assert.equal(identity.readMembers(code).alice!.log_v, 2, 'this code records what it reads');
+  // bob's seat as beta.15 wrote it: no log_v, live
+  s.members.update(ms => ({ ...ms, bob: { name: 'bob', role: 'member', machine: ms.alice!.machine, pid: process.pid, joined_at: new Date().toISOString(), seen_at: new Date().toISOString() } }));
+  for (let i = 0; i < 40; i++) note(s, `held ${i} ${'x'.repeat(80)}`);
+  assert.ok(!fs.existsSync(path.join(s.dir!, 'log-0001.jsonl')), 'not sealed while bob\'s older code may read it');
+  const held = s.readAll().filter(e => /waits to split/.test(String(e.text)));
+  assert.equal(held.length, 1, 'one room line, not one per append');
+  assert.match(held[0].text!, /restart those sessions/i);
+  assert.ok(s.validateChain().ok);
+  // another machine's seat without log_v never holds it (it reads its own mirror), nor a seat that left
+  s.members.update(ms => ({ ...ms, bob: { ...ms.bob!, machine: 'k0123456789abcde', pid: undefined } }));
+  note(s, 'after bob is remote');
+  assert.ok(fs.existsSync(path.join(s.dir!, 'log-0001.jsonl')), 'rotated');
+  assert.equal(s.kv.get('log/rotation-held'), null, 'the held note is cleared by the rotation');
+  assert.ok(s.validateChain().ok);
+});
+
+test('rotation guard: a room Claude job spawned by an older plugin (no log_v, not stopped) holds it; a stopped one does not', t => {
+  const { code, s } = room(t, 2048);
+  const identity = identityMod;
+  assert.ok(identity.join({ code, name: 'alice', role: 'member', pid: process.pid, session_id: null, cwd: '/' }).ok);
+  s.members.update(ms => ({ ...ms, claude: { name: 'claude', role: 'claude', machine: ms.alice!.machine, job: 'job12345', spawned_at: new Date().toISOString() } }));
+  for (let i = 0; i < 40; i++) note(s, `held ${i} ${'x'.repeat(80)}`);
+  assert.ok(!fs.existsSync(path.join(s.dir!, 'log-0001.jsonl')));
+  s.members.update(ms => ({ ...ms, claude: { ...ms.claude!, stopped_at: new Date().toISOString() } }));
+  note(s, 'after the old job stopped');
+  assert.ok(fs.existsSync(path.join(s.dir!, 'log-0001.jsonl')));
+});
+
+// Review finding 11: a mirror that began from its host's snapshot keeps its anchor's hash across its own rotations
+// (a subscribe at the anchor after a handoff asks it), and a lost snapshot.json there is rebuilt from the snapshot it
+// began from plus its segments (the host's entries before its first line survive); a tailer many rotations behind
+// reads on without a reset (a reset reads as FORK to a link).
+test('mirror from a snapshot: the anchor\'s hash after its own rotation; a lost snapshot.json keeps the installed entries', t => {
+  const { s: host } = room(t, 1024);
+  sys(host, 'member_joined', 'alice', { pubkey: seatKey.publicPem(host.code, 'alice') });
+  for (let i = 0; i < 20; i++) say(host, 'alice', `before ${i} ${'z'.repeat(60)}`);
+  const { held: _held, ...wire } = host.snapshot()!;
+  const after = host.tailer({ after: wire.id });
+  for (let i = 0; i < 30; i++) say(host, 'alice', `after ${i} ${'z'.repeat(60)}`);
+  const lines = after.poll().lines;
+  const mdir = h.tmpDir('sh-mirror-', t);
+  const mirror = store.open(host.code, { dir: mdir }) as FsRoomStore;
+  mirror.installSnapshot(wire);
+  for (const l of lines) mirror.appendVerbatim(l);
+  assert.ok(fs.existsSync(path.join(mdir, 'log-0001.jsonl')), 'the mirror rotated on its own');
+  assert.equal(mirror.lineHash(wire.id), wire.hash, 'the anchor\'s hash, from the mirror\'s first segment');
+  assert.equal(mirror.lineHash(wire.id), host.lineHash(wire.id));
+  const want = { ids: mirror.readAll().map(e => e.id), pins: [...mirror.pins().keys()] };
+  assert.deepEqual(want.pins, ['alice'], 'alice\'s key came with the snapshot');
+  fs.rmSync(path.join(mdir, 'snapshot.json'));
+  const again = store.open(host.code, { dir: mdir }) as FsRoomStore;
+  assert.deepEqual(again.readAll().map(e => e.id), want.ids, 'rebuilt: the installed snapshot\'s entries and every line after');
+  assert.deepEqual([...again.pins().keys()], ['alice']);
+  assert.equal(again.lineHash(wire.id), wire.hash);
+  assert.equal(again.snapshot()!.id, mirror.snapshot()!.id);
+});
+
+test('tailer: more than 4 rotations behind, it reads on from where it was (no reset)', t => {
+  const { s } = room(t, 1024);
+  sys(s, 'member_joined', 'alice', { pubkey: seatKey.publicPem(s.code, 'alice') });
+  say(s, 'alice', 'first');
+  const tl = s.tailer();
+  assert.deepEqual(tl.poll().entries, []);
+  const from = s.lastId();
+  for (let i = 0; i < 120; i++) say(s, 'alice', `m${i} ${'z'.repeat(80)}`);
+  const sealed = fs.readdirSync(s.dir!).filter(n => /^log-\d{4}\.jsonl$/.test(n)).length;
+  assert.ok(sealed >= 6, `rotated ${sealed} times`);
+  const got = tl.poll();
+  assert.equal(got.reset, false, 'no start over');
+  assert.deepEqual(got.entries.map(e => e.id), ids(120, from + 1), 'every line once, in order');
+});
+
+test('a person\'s signed line replayed after two rotations, and after a lost snapshot.json is rebuilt, is refused', t => {
+  const { s } = room(t, 1024);
+  sys(s, 'member_joined', 'alice', { pubkey: seatKey.publicPem(s.code, 'alice') });
+  const signed = say(s, 'alice', 'my own words');
+  const { id: _i, at: _a, prev: _p, ...payload } = signed as Entry & Record<string, unknown>;
+  for (let i = 0; i < 25; i++) note(s, `grow ${i} ${'z'.repeat(80)}`);
+  const sealed = fs.readdirSync(s.dir!).filter(n => /^log-\d{4}\.jsonl$/.test(n)).length;
+  assert.ok(sealed >= 2, `rotated ${sealed} times`);
+  const refused = (st: RoomStore) => assert.throws(() => st.place(payload as never), (e: Error & { code?: string }) => e.code === 'AUTH' && /nonce/.test(e.message));
+  refused(s);
+  fs.rmSync(path.join(s.dir!, 'snapshot.json'));
+  refused(store.open(s.code, { dir: s.dir }));
 });

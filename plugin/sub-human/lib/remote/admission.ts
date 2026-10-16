@@ -24,7 +24,8 @@
  *   find(code, ref) -> request | null         any request of the room with that ref (answered or not)
  *   targets(code, req) -> [name]              whose card asks: req.by when that seat is in the room on this machine,
  *                                              else every person seated here
- *   describe(req) -> "carol (request 3f9c2a) on carols-mbp"   the request's check: the joiner's screen shows the same
+ *   describe(req) -> "carol (check 3f9c-2a71) on carols-mbp"   the check of the machine whose key the PIN came with
+ *                                              (invite-secret.ts joinCheck): the joiner's screen shows the same
  *   question(req, code) -> string             the card's question (it names the ref)
  *   card(req, code) -> AskUserQuestion input  LET_IN / REFUSE
  *   letIn(code, ref, {by?, sign?, now?}) -> {id, text}   the person's yes: the record let in (signed with their seat key
@@ -135,6 +136,7 @@ const LET_IN = 'Let in';
 const REFUSE = 'Refuse';
 
 const roomLib = (): typeof import('../room.ts') => require('../room.ts');
+const secretLib = (): typeof import('./invite-secret.ts') => require('./invite-secret.ts');
 const hostStore = (code: string): RoomStore => roomLib().hostStore(code, { what: 'only its host can let people in' });
 
 const pending = (code: string, { now = Date.now() }: { now?: number } = {}): AdmissionRequest[] => admissions(hostStore(code), { now });
@@ -148,8 +150,9 @@ function targets(code: string, req: AdmissionRequest): string[] {
   return req.by && here.includes(req.by) ? [req.by] : here;
 }
 
-/** What the card and the joiner's screen both show, to compare: the request's ref. */
-const fp = (req: AdmissionRequest): string => `request ${req.ref.slice(0, 6)}`;
+/** What the card and the joiner's screen both show, to compare: the check of the machine (and web key) that proved
+ *  itself with the PIN (lib/remote/invite-secret.ts joinCheck), never something the line alone gives. */
+const fp = (req: AdmissionRequest): string => secretLib().joinCheck(req.machine, req.key);
 const describe = (req: AdmissionRequest): string => `${req.name} (${fp(req)}) on ${req.label || 'another machine'}`;
 const question = (req: AdmissionRequest, code: string): string => `Let ${describe(req)} join room ${code}? (admit ${req.ref})`;
 

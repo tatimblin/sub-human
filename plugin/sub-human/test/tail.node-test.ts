@@ -631,19 +631,19 @@ test('remindersText: a note of mine waiting on the picked proposal points at the
   for (const extra of [{}, { nudged: Date.now() }, { stage: 'waiting' as const }, { stage: 'nudged' as const }]) {
     proposal.writeConfirm(me, { ...cf, ...extra });
     assert.equal(tailLib.remindersText(me, room.open(code)),
-      'proposal dddddddddddd: alice\'s note is not recorded yet. Show alice the card now, before anything else: call AskUserQuestion with the question "objection dddddddddddd". Don\'t reopen the review (that drops the note).');
+      'proposal dddddddddddd: alice\'s note is not recorded yet. First, call AskUserQuestion with "objection dddddddddddd". Don\'t reopen the review (that drops the note).');
   }
   // shown and interrupted (asked, no answer): the Esc is said to be no answer, as consent's reoffer says it
   for (const extra of [{ asked: Date.now() }, { stage: 'asked' as const }]) {
     proposal.writeConfirm(me, { ...cf, ...extra });
     assert.equal(tailLib.remindersText(me, room.open(code)),
-      'proposal dddddddddddd: alice\'s note is not recorded yet. alice pressed Esc on its card: no answer, not a decline. Show it again now, before anything else: call AskUserQuestion with the question "objection dddddddddddd". Don\'t reopen the review (that drops the note).');
+      'proposal dddddddddddd: alice\'s note is not recorded yet. Esc was no answer, not a decline. First, call AskUserQuestion with "objection dddddddddddd". Don\'t reopen the review (that drops the note).');
   }
   // offered again (or its no-answer close told): the card is alice's to ask for
   for (const extra of [{ asked: Date.now(), again: Date.now() }, { stage: 'reoffered' as const }, { stage: 'told' as const }]) {
     proposal.writeConfirm(me, { ...cf, ...extra });
     assert.equal(tailLib.remindersText(me, room.open(code)),
-      'proposal dddddddddddd: alice\'s note waits to be sent or discarded; if alice asks, call AskUserQuestion with the question "objection dddddddddddd". Don\'t reopen the review (that drops the note).');
+      'proposal dddddddddddd: alice\'s note waits to be sent or discarded; if alice asks, call AskUserQuestion with "objection dddddddddddd". Don\'t reopen the review (that drops the note).');
   }
 });
 

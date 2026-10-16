@@ -34,7 +34,7 @@ test('panes: the line /sub-human invite showed and its PIN apart, also when the 
   assert.equal(joinLineIn('no line here'), null);
   assert.equal(joinLineIn('/sub-human join dev vole-1234 4829'), null, 'a 0.5.0-beta.15 line is no invite line now');
   assert.equal(pinIn('no PIN here 4829'), null);
-  const card = 'Let carol (request 3f9c2a) on carols-mbp join room vole-1234? (admit 3f9c2a0b1c2d)\n❯ 1. Let in\n  2. Refuse\n  3. Type something';
+  const card = 'Let carol (check 3f9c-2a71) on carols-mbp join room vole-1234? (admit 3f9c2a0b1c2d)\n❯ 1. Let in\n  2. Refuse\n  3. Type something';
   assert.deepEqual(admitCardState(card).opts.map(o => [o.n, o.label, o.cur]), [[1, 'Let in', true], [2, 'Refuse', false], [3, 'Type something', false]]);
   assert.equal(admitCardState('Agree to proposal abcdefabcdef?\n❯ 1. Agree'), null);
 });

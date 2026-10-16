@@ -63,7 +63,7 @@ import * as session from './room/session.ts';
 import { rowSegment } from './room/render.ts';
 import { isAlive } from './io.ts';
 import * as text from './text.ts';
-import * as proposal from './proposal.ts';
+import { createRequire } from 'node:module';
 import * as linkState from './room/link-state.ts';
 import {
   ROW_MAX, ROW_TITLE_MAX, PRESENCE_STALE_MS, HOLDS_STALE_MS, MISSING_GRACE_MS, ROWS_LOCK_TIMEOUT_MS, ROWS_LOCK_STALE_MS, ROWS_TTL_MS,
@@ -73,6 +73,11 @@ import type { Entry, LinkState, Member, Members } from './room/types.ts';
 import type { Identity } from './identity.ts';
 // the row agents' types are mod/core/rows.ts's (the module's row hooks read them too)
 import { PARTICIPANT, ROOM_AGENT } from '../mod/core/rows.ts';
+
+const require = createRequire(import.meta.url);
+// lib/proposal.ts loads the consent reducer: only a row that names a pending proposal's title needs it (the status
+// line runs every 5 s and draws most rows without one)
+const proposalLib = (): typeof import('./proposal.ts') => require('./proposal.ts');
 
 /** members as callers hand them over: readMembers(code) (by name) or a list. */
 type MemberInput = Members | Member[] | null | undefined;
@@ -399,7 +404,7 @@ function proposals(es: readonly Entry[], code: string | null | undefined): RowPr
 /** What a row calls a proposal: its title (lib/proposal.ts title), clipped; the short hash when it has none. */
 function label(code: string | null | undefined, fp: { hash: string, entry?: Entry }): string {
   let t = '';
-  try { t = code ? oneLine(proposal.title(code, fp.hash, fp.entry)) : ''; } catch { /* unreadable: the hash */ }
+  try { t = code ? oneLine(proposalLib().title(code, fp.hash, fp.entry)) : ''; } catch { /* unreadable: the hash */ }
   return t ? clip(t, ROW_TITLE_MAX) : h6(fp.hash);
 }
 /** A closed proposal: "✔ decided TITLE" when everyone agreed, "✖ blocked TITLE" when someone objected. */

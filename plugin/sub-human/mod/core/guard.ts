@@ -162,20 +162,59 @@ export function writeVerdict(candidates: unknown[], ctx: GuardCtx = {}, raw: unk
 
 export const WRITE_DENY = (tool: string, p: string | null) => `${MSG} (Denied: ${tool} on ${p}.)`;
 
-// ---------- Read ----------
-const KEYS_SEGMENT = /(?:^|\/)\.sub-human\/keys(?:\/|$)/;
+// ---------- Read / Grep / Glob ----------
 /**
- * 'deny reason' for a Read whose target is any of candidates and lies under the home's keys directory (the seat
- * signing keys: with one, a model could sign via=human entries that verify), or null. Everything else in the store
- * stays readable. Before mod-hello answered, a path through ".sub-human/keys" counts.
+ * The home's secret directories: keys/ (the seat signing keys, and this home's machine key: with one, a model could
+ * sign via=human entries that verify), listen/ (the web listener's Noise private key) and links/ (each link's token, a
+ * pending invite's SECRET and PIN, and a web link's own Noise key). Everything else in the store stays readable.
+ */
+export const SECRET_DIRS = ['keys', 'listen', 'links'];
+const SECRET_SEGMENT = /(?:^|\/)\.sub-human\/(?:keys|listen|links)(?:\/|$)/;
+const DOT_HOME_END = /(?:^|\/)\.sub-human\/?$/;
+const homesOf = (ctx: GuardCtx): string[] => [ctx.home, ctx.realHome].filter((r): r is string => typeof r === 'string' && r.startsWith('/')).map(normalize);
+const secretRoots = (ctx: GuardCtx): string[] => homesOf(ctx).flatMap(h => SECRET_DIRS.map(d => (h === '/' ? '' : h) + '/' + d));
+
+/**
+ * 'deny reason' for a Read whose target is any of candidates and lies under one of the home's secret directories
+ * (SECRET_DIRS), or null. Before mod-hello answered, a path through ".sub-human/keys|listen|links" counts.
  */
 export function readVerdict(candidates: unknown[], ctx: GuardCtx = {}, raw: unknown = ''): string | null {
   const cands = candidates.filter((c): c is string => typeof c === 'string' && !!c);
-  const roots = [ctx.home, ctx.realHome].filter((r): r is string => typeof r === 'string' && r.startsWith('/')).map(r => normalize(r) + '/keys');
-  if (roots.length) return cands.some(c => roots.some(r => isUnder(c, r))) ? 'it reads a seat signing key' : null;
-  return [...cands, String(raw || '')].some(c => KEYS_SEGMENT.test(c)) ? 'it reads a seat signing key (~/.sub-human/keys)' : null;
+  const roots = secretRoots(ctx);
+  if (roots.length) return cands.some(c => roots.some(r => isUnder(c, r))) ? 'it reads a seat signing key or a link\'s secret' : null;
+  return [...cands, String(raw || '')].some(c => SECRET_SEGMENT.test(c)) ? 'it reads a seat signing key or a link\'s secret (~/.sub-human)' : null;
 }
-export const READ_DENY = (p: string | null) => `ROOM-GUARD: the seat signing keys are the people's own; a model never reads them. (Denied: Read on ${p}.)`;
+
+/**
+ * 'deny reason' for a Grep (tool 'Grep') or a Glob (tool 'Glob'): readVerdict over where the search looks, and, for a
+ * Grep, a search rooted at the home or above it (ripgrep descends into hidden directories: a match prints the secrets'
+ * contents, and a regex is an oracle even when only file names come back). A Glob lists names only, so it is denied
+ * only inside the secret directories. Before mod-hello answered, a Grep at a path ending in ".sub-human" counts.
+ */
+export function searchVerdict(tool: string, candidates: unknown[], ctx: GuardCtx = {}, raw: unknown = ''): string | null {
+  const read = readVerdict(candidates, ctx, raw);
+  if (read || tool !== 'Grep') return read;
+  const cands = candidates.filter((c): c is string => typeof c === 'string' && !!c);
+  const homes = homesOf(ctx);
+  const above = (c: string, h: string) => c === '/' || isUnder(h, c);
+  if (homes.length) return cands.some(c => homes.some(h => above(normalize(c), h))) ? 'it searches the room store\'s home or a directory above it, which holds the seat signing keys' : null;
+  return [...cands, String(raw || '')].some(c => DOT_HOME_END.test(c)) ? 'it searches the room store (~/.sub-human), which holds the seat signing keys' : null;
+}
+
+/** Where a Grep or Glob looks, as the tool input names it: [base, deepest]. base: input.path ('' for the cwd); deepest:
+ *  for a Glob, the base joined with its pattern's literal leading segments (an absolute or ~ pattern on its own). */
+export function searchTargets(tool: string, input: { path?: unknown; pattern?: unknown } | null | undefined = {}): string[] {
+  const base = input && typeof input.path === 'string' ? input.path : '';
+  if (tool !== 'Glob' || !input || typeof input.pattern !== 'string') return [base];
+  const lit: string[] = [];
+  for (const seg of input.pattern.split('/')) { if (/[*?[\]{}!]/.test(seg)) break; lit.push(seg); }
+  const prefix = lit.join('/');
+  if (!prefix) return [base];
+  if (prefix.startsWith('/') || /^~(?=\/|$)/.test(prefix)) return [base, prefix];
+  return [base, base ? base.replace(/\/$/, '') + '/' + prefix : prefix];
+}
+
+export const READ_DENY = (p: string | null, tool = 'Read') => `ROOM-GUARD: the seat signing keys and the links' secrets are the people's own; a model never reads or searches them. (Denied: ${tool} on ${p || 'the working directory'}.)`;
 
 // ---------- the room MCP tools ----------
 /** hold only from a row subagent (agentId), never a main thread; the rest allowed for a seated session. */

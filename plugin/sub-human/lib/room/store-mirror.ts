@@ -172,11 +172,11 @@ class MirrorRoomStore implements RoomStore {
     }
   }
 
-  _join({ name, role }: SeatRecord): JoinResult {
+  _join({ name, role, log_v }: SeatRecord): JoinResult {
     const key = humanKey(this.code, name);
     const pubkey = crypto.createPublicKey(key).export({ type: 'spki', format: 'pem' }) as string; // pem: a string
     try {
-      return this._call('join', { name, role, pubkey, proof: proveSeat(key, { room: this.code, name, pubkey }) });
+      return this._call('join', { name, role, pubkey, proof: proveSeat(key, { room: this.code, name, pubkey }), ...(log_v ? { log_v } : {}) });
     } catch (e) {
       if (!(e instanceof RoomError)) throw e;
       return { ok: false, error: e.message, code: e.code };

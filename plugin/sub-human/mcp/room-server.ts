@@ -22,7 +22,8 @@
  *       card (hooks/handlers/consent.ts); a proposer who is also an approver is told to open the card now. The reply
  *       names the read-only `show` by the shim's full path (lib/text.ts cliCmd): no `sub-human` is on a session's
  *       PATH. A proposal retires the proposer's earlier undecided one with the same title (lib/room/consent.ts), and says so; another
- *       sender's pending one with the same title is warned about (both stay open).
+ *       sender's pending one with the same title is warned about (both stay open). A path's root is the seat's cwd
+ *       (its members record; else this process's): never ~, / or above ~, nor the plugin home, ~/.ssh or ~/.claude.
  *
  * Plug-ins: ./hold.ts (rows) and ./task.ts (the room task list) are loaded when present; a missing or broken
  * one is logged and skipped. Each exports create(ctx) -> {tools, call(name, me, args, meta), stop?,
@@ -219,7 +220,7 @@ function relayed(me: Me, body: unknown): string | null {
     return `refused: that is ${me.name}'s note on proposal ${cf.hash}, which waits for ${me.name}'s Send; posting it would relay it twice. ${proposal.confirmCall(cf.hash)} so ${me.name} can send or discard it.`;
   }
   const since = Date.now() - RELAY_WINDOW_MS;
-  const sent = room.open(me.code).readAll().findLast(e => e.kind === 'objection' && e.via === 'human' && e.from === me.name
+  const sent = room.open(me.code).readRecent().findLast(e => e.kind === 'objection' && e.via === 'human' && e.from === me.name
     && typeof e.text === 'string' && Date.parse(e.at) >= since && proposal.repeatsNote({ note: e.text }, body));
   return sent ? `refused: ${me.name} already sent that note as their objection to proposal ${sent.proposal_hash}; the room shows it, so posting it would relay it twice.` : null;
 }
@@ -255,7 +256,11 @@ function read(me: Me, args: ToolArgs) {
 
 function propose(me: Me, args: ToolArgs) {
   let r;
-  try { r = proposal.create(me, args); } catch (e) {
+  // the root of a path: the seat's working directory as its join recorded it (a mirror keeps none: this process's,
+  // which Claude Code spawned in the session's)
+  let cwd: string | undefined;
+  try { cwd = identity.readMembers(me.code)[me.name]?.cwd || undefined; } catch { /* process.cwd() then */ }
+  try { r = proposal.create(me, args, { cwd }); } catch (e) {
     if (e instanceof proposal.ProposalError) return text(`refused: ${e.message}`, true);
     throw e;
   }

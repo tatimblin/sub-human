@@ -8,7 +8,7 @@
  */
 import {
   bashVerdict, needsCwd, denyText, writeTarget, absTarget, ancestors, writeVerdict, WRITE_DENY,
-  roomToolVerdict, failClosed, HOLD_DENY, FAILED, readVerdict, READ_DENY,
+  roomToolVerdict, failClosed, HOLD_DENY, FAILED, readVerdict, READ_DENY, searchVerdict, searchTargets,
 } from './core/guard.ts';
 import { seated } from './core/seat.ts';
 import { asHello } from './core/state.ts';
@@ -16,6 +16,8 @@ import type { EngineInterface, On } from 'claude-code';
 import type { GuardCtx, Hello } from './core/types.ts';
 
 const HELLO = { plugin: 'sub-human', key: 'hello' } as const;
+/** A Grep's or Glob's input, as far as the guard reads it. */
+type SearchInput = { path?: unknown; pattern?: unknown };
 
 /** The hello, or {} before mod-hello answered. */
 async function helloOf($: EngineInterface): Promise<Hello | Record<string, never>> {
@@ -85,6 +87,24 @@ export function registerGuard(on: On) {
   }).catch(($, e, next) => {
     if (next.called) return next(e);
     return readVerdict([], {}, writeTarget(e) || '') ? { deny: READ_DENY(writeTarget(e)) } : next(e);
+  });
+
+  // a Grep's or Glob's search path (none: the cwd), and a Glob pattern's literal leading segments. A regex matcher: a
+  // build with search embedded in Bash has neither tool, and its typings then do not name them
+  on('tool.call', { tool: /^(?:Grep|Glob)$/ }, async ($, e, next) => {
+    const h = await helloOf($);
+    const targets = searchTargets(e.tool, e as SearchInput);
+    const candidates: (string | undefined)[] = [];
+    for (const p of targets) {
+      const cwd = p.startsWith('/') || p.startsWith('~') ? undefined : await $.session.cwd();
+      const abs = p ? absTarget(p, { cwd, userHome: h.userHome }) : absTarget(cwd || '', {});
+      if (abs) candidates.push(abs, await placed($, abs));
+    }
+    return searchVerdict(e.tool, candidates, h, targets.join(' ')) ? { deny: READ_DENY(targets.at(-1) || null, e.tool) } : next(e);
+  }).catch(($, e, next) => {
+    if (next.called) return next(e);
+    const targets = searchTargets(e.tool, e as SearchInput);
+    return searchVerdict(e.tool, [], {}, targets.join(' ')) || failClosed(e) ? { deny: READ_DENY(targets.at(-1) || null, e.tool) } : next(e);
   });
 
   on('tool.call', { tool: 'mcp__plugin_sub-human_room__hold' }, ($, e, next) => (e.agentId ? next(e) : { deny: HOLD_DENY }))

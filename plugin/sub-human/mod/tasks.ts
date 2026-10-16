@@ -5,8 +5,9 @@
  *     (mod/core/prefilter.ts: the room's Claude, or unsure).
  *   - classic.TaskCompleted: node hooks/handlers/tasks.ts (the gate) when tasksNeeded. Its exit 2 becomes block, which
  *     drops every field of that TaskUpdate as the command hook's did (cc CONTRACT task-completed-block-drops-
- *     fields, hook-exit2-blocks). If the shim fails wherever tasksNeeded holds, its .catch blocks: the gate
- *     fails closed, as tasks.ts does. Only a session surely not the room's Claude lets the completion go on.
+ *     fields, hook-exit2-blocks). Any other exit than 0 or 2 (a crash, a load error, a timeout) blocks with the retry
+ *     text, and so does the .catch when the shim itself fails wherever tasksNeeded holds: the gate fails closed, as
+ *     tasks.ts does. Only a session surely not the room's Claude lets the completion go on.
  */
 import { shimArgv, shimEnv, toClassic, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { tasksNeeded } from './core/prefilter.ts';
@@ -38,6 +39,9 @@ async function runTasks(
     env: shimEnv(e, root),
     timeoutMs: SHIM_TIMEOUT_MS,
   });
+  // the gate: a run that neither passed (0) nor blocked (2) did not check, so it blocks with the retry text
+  const code = Number(run.exitCode);
+  if (event === 'TaskCompleted' && code !== 0 && code !== 2) return { block: TASK_GATE_FAILED };
   return toClassic(event, run).result;
 }
 

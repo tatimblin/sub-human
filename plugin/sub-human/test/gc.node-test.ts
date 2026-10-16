@@ -1,7 +1,8 @@
 // What a home stops keeping (lib/gc.ts) and the open-rooms index (lib/room/registry.ts, lib/identity.ts openRooms):
 // openRooms judges only indexed rooms and drops the ones closed for good; a home from before the index builds it once;
-// a sweep deletes a closed room nobody touched in ROOM_GC_MS (with its seat keys), and never one with a live seat, a
-// link, a room Claude that may run or a recent change; the folders `link --forget` set aside go too; session indexes
+// a sweep sets aside (renames) a room closed for good that nobody touched in ROOM_GC_MS (with its seat keys), and never
+// one with a live seat, a seat that never left, a link of this machine's or a host's link record, a room Claude that
+// may run or a recent change; the folders set aside (by `link --forget`, or by GC) are deleted after a further TTL; session indexes
 // of ended sessions and row maps of ended sessions go after their TTL; a sweep runs at most every GC_EVERY_MS and
 // within its budget.
 import test from 'node:test';
@@ -71,7 +72,7 @@ test('openRooms: a home from before the index builds it once from every room dir
   assert.ok(fs.existsSync(dirOf(b)), 'dropping a room from the index deletes nothing');
 });
 
-test('gc: a closed room untouched for ROOM_GC_MS goes with its keys; one with a live seat, a link, a running room Claude or a recent change stays', async t => {
+test('gc: a closed room untouched for ROOM_GC_MS is set aside with its keys; one with a live seat, a link, a running room Claude or a recent change stays', async t => {
   h.freshHome(t);
   const old = await roomWith();
   const recent = await roomWith();
@@ -86,12 +87,45 @@ test('gc: a closed room untouched for ROOM_GC_MS goes with its keys; one with a 
   fs.mkdirSync(aside);
   age(aside, 40);
   assert.ok(fs.existsSync(keyDir(old)));
+  const oldDir = dirOf(old);
+  const oldKeys = keyDir(old);
   const r = gc.sweep({ force: true })!;
   assert.deepEqual(r.rooms, [old]);
-  assert.deepEqual(r.aside, [path.basename(aside)]);
-  assert.ok(!fs.existsSync(dirOf(old)) && !fs.existsSync(keyDir(old)), 'the room and its seat keys');
+  assert.deepEqual(r.aside, [path.basename(aside)], 'the folder `link --forget` set aside 40 days ago goes; the one GC just set aside stays');
+  assert.ok(!fs.existsSync(oldDir) && !fs.existsSync(oldKeys), 'the room and its seat keys moved');
+  const set = fs.readdirSync(path.dirname(oldDir)).filter(n => n.startsWith(`${old}.gc-`));
+  assert.equal(set.length, 1, 'the room set aside, not deleted');
+  assert.ok(fs.existsSync(path.join(identity.home(), 'keys', set[0])), 'its seat keys beside it, still under keys/');
   for (const c of [recent, live, linked, running]) assert.ok(fs.existsSync(dirOf(c)), `${c} stays`);
   assert.ok(!identity.roomExists(old));
+  // a further ROOM_GC_MS later the folder set aside goes, with its keys
+  const r2 = gc.sweep({ force: true, now: Date.now() + config.ROOM_GC_MS + 1000 })!;
+  assert.ok(r2.aside.includes(set[0]));
+  assert.ok(!fs.existsSync(path.join(path.dirname(oldDir), set[0])) && !fs.existsSync(path.join(identity.home(), 'keys', set[0])));
+});
+
+test('GC of a room with a never-left seat: a seat whose session crashed (no left_at, pid gone) keeps the room, however old', async t => {
+  h.freshHome(t);
+  const code = await roomWith({ left: false });
+  assert.ok(!identity.readMembers(code).alice!.left_at);
+  age(dirOf(code), 40);
+  age(keyDir(code), 40);
+  const r = gc.sweep({ force: true })!;
+  assert.deepEqual(r.rooms, []);
+  assert.ok(fs.existsSync(dirOf(code)) && fs.existsSync(keyDir(code)), 'the room and its seat keys stay');
+});
+
+test('GC of a room with a remote link record: the host\'s record of a machine linked to the room keeps it', async t => {
+  h.freshHome(t);
+  const code = await roomWith();
+  store.open(code).kv.set('remote/links', { '0123456789ab': { id: '0123456789ab', token_sha256: 'x', machine: 'm', seats: ['bob'], created_at: new Date().toISOString() } });
+  age(dirOf(code), 40);
+  const r = gc.sweep({ force: true })!;
+  assert.deepEqual(r.rooms, []);
+  assert.ok(fs.existsSync(dirOf(code)));
+  store.open(code).kv.set('remote/links', {});
+  age(dirOf(code), 40);
+  assert.deepEqual(gc.sweep({ force: true })!.rooms, [code], 'no record left: it goes aside');
 });
 
 test('gc: at most once per GC_EVERY_MS and only within its budget; never the room a join is about to take', async t => {

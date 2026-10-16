@@ -79,7 +79,8 @@ export interface HelloParams {
   /** The mirror's host epoch (lib/handoff.ts). */
   epoch?: number;
 }
-export interface JoinParams { name: string; role?: string; pubkey: string; proof: SignedPayload }
+/** log_v (additive): what log the seat's code reads (lib/room/members.ts LOG_V); an older joiner sends none. */
+export interface JoinParams { name: string; role?: string; pubkey: string; proof: SignedPayload; log_v?: unknown }
 export interface LeaveParams { name: string; reason?: string }
 export interface BeatParams { name: string; presence?: PresenceInput }
 export interface AppendParams { payload: Payload; epoch?: number }
@@ -129,6 +130,9 @@ export interface HelloResult {
   /** protocol 3, for a hello with a nonce: the host home's machine key and its signature over the nonce
    * (lib/remote/machine-key.ts hostProof), which an invite line's tag names over ssh and a pipe */
   host?: { key: string; sig: string };
+  /** protocol 3: a fresh random word this session's next hello signs its machine key over (machine-key.ts proofFor),
+   * so a proof is good for one hello of one session, not for any hello within the clock skew */
+  challenge?: string;
 }
 export interface OkResult { ok: boolean }
 export interface JoinResult { ok: true; rejoin?: true }
@@ -155,7 +159,8 @@ export interface OpResults {
 
 /** A request frame for one op: {id, op, params}, discriminated on op. */
 export type RequestFrame<O extends Op = Op> = { [K in O]: { id: FrameId; op: K; params: OpParams[K] } }[O];
-/** Any request, by its shape alone (an op this end may not serve, or another protocol's: lib/remote/enroll.ts). */
+/** Any request, by its shape alone (an op this end may not serve, or another protocol's: a 0.5.0-beta.15 joiner's PIN
+ * attempt, which lib/remote/listener.ts and `serve --enroll` answer with the skew message). */
 export interface AnyRequest { id: FrameId; op: string; params: object }
 /** A decoded frame shaped as a request (protocol.isRequest): op a string; id and params as the peer sent them. */
 export interface IncomingRequest {
@@ -280,6 +285,8 @@ export interface AdmissionRecord extends InviteLife {
   refused_at?: string; refused_by?: string | null;
   /** the seats whose card showed it (lib/remote/admission.ts markTold) */
   told?: string[];
+  /** the other machines (proven ids) that presented this used invite: the room heard of each once (invites.ts) */
+  others?: string[];
 }
 /** One record of the host document remote/invites, keyed by sha256(secret). */
 export type InviteRecord = BoundInvite | ShortInvite | AdmissionRecord;

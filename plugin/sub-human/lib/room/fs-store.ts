@@ -24,7 +24,7 @@
  * documents named). rotate() seals the active segment now (tests; an append rotates on its own when due).
  */
 
-import * as roomWatch from './watch.ts';
+import { createRequire } from 'node:module';
 import type { Change } from './watch.ts';
 import nodeFs from 'node:fs';
 import path from 'node:path';
@@ -46,7 +46,13 @@ import type {
 } from './types.ts';
 
 const fs = nodeFs;
+const require = createRequire(import.meta.url);
+/** lib/room/watch.ts: only the host's streams watch a room (lib/remote/server.ts), never a hook or the status line. */
+const roomWatch = (): typeof import('./watch.ts') => require('./watch.ts');
 const MOVED = 'log.moved';
+/** The kv document that says the room heard its log is waiting on older sessions (heldOnce); gone at the next rotation. */
+const ROTATION_HELD = 'log/rotation-held';
+const ROTATION_HELD_TEXT = 'this room\'s log is large and waits to split into segments: a session or the room\'s Claude on the host still runs an older sub-human (0.5.0-beta.15 or before), which would read a split log as broken. Restart those sessions (/exit, then claude) once everyone has updated.';
 const MEMBERS = 'members.json';
 
 /** pins and host as of `n` marked entries (the last of them `last`): carried forward as the marked list grows. */
@@ -137,7 +143,7 @@ class FsRoomStore implements RoomStore {
   snapshot(): (SnapshotWire & { held: number }) | null { return logIo.snapshotOf(this.dir); }
   tailer(opts: { fs?: TailerFs; after?: number } = {}): Tailer { return logIo.tailer(this.dir, opts); }
   /** What changes in the room's directory (lib/room/watch.ts): the log, and which documents; null: anything may have. */
-  watch(onChange: (change: Change | null) => void): () => void { return roomWatch.watch(this.dir, onChange); }
+  watch(onChange: (change: Change | null) => void): () => void { return roomWatch().watch(this.dir, onChange); }
   lineHash(id: number): string | null { return logIo.lineHash(this.dir, id); }
   validateChain(): ChainCheck { return logIo.validateChain(this.dir); }
   verifyChain(opts: { fromOffset?: number; prev?: string } = {}): ChainVerify { return logIo.verifyChain(this.dir, opts); }
@@ -172,12 +178,40 @@ class FsRoomStore implements RoomStore {
     const p = admit(this.code, payload, opts);
     fs.mkdirSync(d, { recursive: true, mode: 0o700 });
     const moved = path.join(d, MOVED);
-    return logIo.appendLocked(d, tail => {
+    let held = false, due = false;
+    const placed = logIo.appendLocked(d, tail => {
       const host = p.kind === 'host_changed' || fs.existsSync(moved) ? this.hostState() : undefined;
       const r = placeAfter(p, { keys: this._keys, host, machine: machineIn(this.code), ...tail, now: Date.now() });
       if (r.e.kind === 'host_changed') fs.writeFileSync(moved, '', { mode: 0o600 });
       return r;
-    });
+    }, () => { const ok = this.rotationOk(); held = !ok; due = ok; return ok; });
+    if (held) this.heldOnce();
+    else if (due && this.isHost && this.kv.get(ROTATION_HELD)) { try { this.kv.delete(ROTATION_HELD); } catch { /* the next rotation */ } }
+    return placed;
+  }
+
+  /**
+   * A due rotation may run: no seat of this machine that may still run reads only one log.jsonl (members.ts
+   * holdsRotation: a seat with no log_v, an older plugin's, whose session or room Claude job is still live). A process
+   * of 0.5.0-beta.15 or before reads a rotated log as tampering (two lines, then a broken chain), so the log grows
+   * in one segment until they restart. Read under the log lock, only when a rotation is due.
+   */
+  rotationOk(): boolean {
+    let ms: Members | null = null;
+    try { ms = readJson(this._membersFile) as Members | null; } catch { ms = null; }
+    if (!ms) return true;
+    try { return !Object.values(ms).some(m => members.holdsRotation(m)); } catch { return false; }
+  }
+
+  /** The room hears once that its log waits for older sessions (host only: a mirror's lines are the host's). */
+  private heldOnce(): void {
+    if (!this.isHost) return;
+    let first = false;
+    try { this.kv.update(ROTATION_HELD, cur => { if (cur) return undefined; first = true; return { at: new Date().toISOString() }; }); } catch { return; }
+    if (!first) return;
+    try {
+      this.append({ kind: 'status', text: ROTATION_HELD_TEXT }, { via: 'system', from: 'room', system: true } as AppendOpts);
+    } catch { /* best effort: the log still grows correctly */ }
   }
 
   setAside(): string | null {
@@ -192,7 +226,7 @@ class FsRoomStore implements RoomStore {
   /** One line as the host stored it, at the end of the log (the mirror checked that it chains). */
   appendVerbatim(line: string): void {
     fs.mkdirSync(this.dir, { recursive: true, mode: 0o700 });
-    logIo.appendVerbatim(this.dir, line);
+    logIo.appendVerbatim(this.dir, line, () => this.rotationOk());
   }
   /** The host's snapshot as this log's start (the mirror checked it: lib/room/snapshot.ts problem); PROTOCOL when the
    * log holds lines already. */

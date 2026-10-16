@@ -153,7 +153,7 @@ test('mcp: a post that repeats the person\'s objection note is refused, waiting 
   proposal.writeConfirm(me, { hash, note: 'Open rate limiting\nfirst', from: 'bob', title: 'Ship v3', at: Date.now() });
   // the note relayed (case, spacing and quotes aside): refused, pointing at the confirm card
   const twice = errText(await s.tool('post', { kind: 'say', text: 'alice objects: “open rate limiting  first”.' }));
-  assert.equal(twice, `refused: that is alice's note on proposal ${hash}, which waits for alice's Send; posting it would relay it twice. call AskUserQuestion with the question "objection ${hash}" so alice can send or discard it.`);
+  assert.equal(twice, `refused: that is alice's note on proposal ${hash}, which waits for alice's Send; posting it would relay it twice. call AskUserQuestion with "objection ${hash}" so alice can send or discard it.`);
   // an unrelated say passes
   assert.equal(payload(await s.tool('post', { kind: 'say', text: 'rate limits look fine to me' })).text, 'rate limits look fine to me');
   // a short note matches only exactly
@@ -227,6 +227,7 @@ test('mcp: propose stores plans/<hash>.md, appends proposal {hash, approvers, pa
   identity.leave(code, 'carol');
   R = room.open(code);
   mcpCwd = h.tmpDir('sh-mcp-cwd-');
+  identity.join({ code, name: 'alice', role: 'member', pid: process.pid, session_id: `sess-alice-${process.pid}`, cwd: mcpCwd }); // the seat's cwd: the root of a path
   const s = await ready();
   const text = '# Cursor paging\n\n1. add cursor param\n2. tests\n';
   const r = await s.tool('propose', { text });
@@ -266,6 +267,9 @@ test('mcp: propose stores plans/<hash>.md, appends proposal {hash, approvers, pa
   assert.equal(e2.hash, crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex').slice(0, 12));
   assert.doesNotMatch(r2, /EnterPlanMode|AskUserQuestion/);
   fs.unlinkSync(f);
+  // never under the plugin's home, even inside the root (a home under the project)
+  const inHome = path.join(identity.home(), 'rooms', code, 'members.json');
+  assert.match(errText(await s.tool('propose', { path: inHome })), /under the working directory/);
   // Refusals.
   assert.match(errText(await s.tool('propose', { text: 'x', approvers: ['zed'] })), /not in the room: zed/);
   assert.match(errText(await s.tool('propose', { text: 'x', approvers: ['claude'] })), /people/);

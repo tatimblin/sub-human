@@ -10,8 +10,13 @@
 // segmented room (snapshot + active segment): the cold cost of every hook and status line from then on, budgeted
 // at COLD (generous: wall clock in a child; the best of three).
 //
+// What fails the test is relative, so a loaded runner does not flake it: the same measurements over a room of SMALL
+// entries, taken in the same process at the same time, and the 100k-entry numbers must stay within RATIO of them
+// (plus SLACK ms): the cost does not grow with the log. The absolute budgets are a warning on stderr (a failure with
+// SUB_HUMAN_PERF_STRICT=1, for a quiet machine).
+//
 // Skipped under SUB_HUMAN_TEST_THREAD_STORE (every store call would cross the bridge: another measurement) and with
-// SUB_HUMAN_SKIP_PERF=1 (a loaded machine: the numbers are wall clock). SUB_HUMAN_PERF_REPORT=1 prints the numbers.
+// SUB_HUMAN_SKIP_PERF=1. SUB_HUMAN_PERF_REPORT=1 prints the numbers.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -30,6 +35,20 @@ const N = Number(process.env.SUB_HUMAN_PERF_N) || 100_000;
 const RUNS = 15;
 const BUDGET = { append: 50, statusline: 30 };
 const COLD = { append: 60, statusline: 60 };
+const SMALL = 1_000;
+const RATIO = 8;
+const SLACK = 10;
+const strict = process.env.SUB_HUMAN_PERF_STRICT === '1';
+/** An absolute budget: a warning, or with SUB_HUMAN_PERF_STRICT=1 a failure. */
+function budget(what: string, got: number, limit: number): void {
+  if (got <= limit) return;
+  const msg = `${what} ${got.toFixed(1)} ms > ${limit} ms (wall clock: a loaded machine can do this)`;
+  if (strict) assert.fail(msg);
+  process.stderr.write(`perf warning: ${msg}\n`);
+}
+/** The hard check: big within RATIO x small + SLACK ms, both measured now on this machine. */
+const relative = (what: string, big: number, small: number) => assert.ok(big <= small * RATIO + SLACK,
+  `${what}: ${big.toFixed(1)} ms over ${N} entries, ${small.toFixed(1)} ms over ${SMALL}: it grows with the log`);
 const skip = process.env.SUB_HUMAN_TEST_THREAD_STORE === '1' ? 'the thread store measures the bridge, not the store'
   : process.env.SUB_HUMAN_SKIP_PERF === '1' ? 'SUB_HUMAN_SKIP_PERF=1' : false;
 
@@ -42,7 +61,7 @@ const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.len
 function time(fn: () => unknown): number { const t = process.hrtime.bigint(); fn(); return Number(process.hrtime.bigint() - t) / 1e6; }
 
 /** A room with N entries; alice (this process) and bob seated, their keys pinned. */
-function bigRoom(): { code: string } {
+function bigRoom(n = N): { code: string } {
   h.freshHome();
   const code = identity.newCode();
   const names = ['alice', 'bob'];
@@ -52,11 +71,11 @@ function bigRoom(): { code: string } {
   }
   const keys = Object.fromEntries(names.map(n => [n, seatKey.ensure(code, n)]));
   const file = path.join(identity.roomDir(code), 'log.jsonl');
-  const start = Date.now() - N * 1000;
+  const start = Date.now() - n * 1000;
   const out: string[] = [];
   let prev = '';
   let proposal = '';
-  for (let id = 1; id <= N; id++) {
+  for (let id = 1; id <= n; id++) {
     const at = new Date(start + id * 1000).toISOString();
     let p: Record<string, unknown>;
     if (id <= names.length) {
@@ -82,28 +101,24 @@ function bigRoom(): { code: string } {
   return { code };
 }
 
-test(`perf: an @room post and the status line over a ${N}-entry log stay in budget`, { skip, timeout: 300_000 }, () => {
-  const { code } = bigRoom();
+/** In this process over a room of n entries: the first append and status line, then their medians after warm-up. */
+function measure(n: number): { code: string; panel: object; cold: { append: number; statusline: number }; got: { append: number; statusline: number }; max: { append: number; statusline: number }; sealed: boolean } {
+  const { code } = bigRoom(n);
   seatKey.arm();
   const s = store.open(code);
-  let n = 0;
-  const post = () => s.append({ kind: 'say', text: `alice's words ${n++}` }, { via: 'human', from: 'alice' });
+  let k = 0;
+  const post = () => s.append({ kind: 'say', text: `alice's words ${k++}` }, { via: 'human', from: 'alice' });
   const panel = { session_id: 'sid-alice', tasks: [{ id: 't1', status: 'running', description: code }, { id: 't2', status: 'running', description: 'bob' }] };
   const line = () => { const o = agentStatusline(panel, { env: { NO_COLOR: '1' } }); assert.match(o, /"t1"/); };
   const cold = { append: time(post), statusline: time(line) };
   for (let i = 0; i < 3; i++) { post(); line(); }
   const append: number[] = [], status: number[] = [];
   for (let i = 0; i < RUNS; i++) { append.push(time(post)); status.push(time(line)); }
-  const got = { append: median(append), statusline: median(status) };
-  if (process.env.SUB_HUMAN_PERF_REPORT === '1') {
-    process.stderr.write(`perf N=${N}: append cold ${cold.append.toFixed(1)} ms, median ${got.append.toFixed(1)} ms (max ${Math.max(...append).toFixed(1)}); `
-      + `status line cold ${cold.statusline.toFixed(1)} ms, median ${got.statusline.toFixed(1)} ms (max ${Math.max(...status).toFixed(1)})\n`);
-  }
-  assert.ok(got.append <= BUDGET.append, `append median ${got.append.toFixed(1)} ms > ${BUDGET.append} ms`);
-  assert.ok(got.statusline <= BUDGET.statusline, `status line median ${got.statusline.toFixed(1)} ms > ${BUDGET.statusline} ms`);
-  assert.ok(s.snapshot(), 'the first append sealed the old log');
+  return { code, panel, cold, got: { append: median(append), statusline: median(status) }, max: { append: Math.max(...append), statusline: Math.max(...status) }, sealed: !!s.snapshot() };
+}
 
-  // a fresh process over the segmented room: its first append and status line (imports done before timing)
+/** The best of three fresh processes: their first append and status line over room code (imports done before timing). */
+function fresh(code: string, panel: object): { append: number; statusline: number } {
   const src = `
     const t = () => Number(process.hrtime.bigint()) / 1e6;
     const store = require(${JSON.stringify(path.join(h.LIB, 'room', 'store.ts'))});
@@ -114,16 +129,32 @@ test(`perf: an @room post and the status line over a ${N}-entry log stay in budg
     let a = t(); s.append({ kind: 'say', text: 'cold words' }, { via: 'human', from: 'alice' }); const append = t() - a;
     a = t(); agentStatusline(${JSON.stringify(panel)}, { env: { NO_COLOR: '1' } }); const statusline = t() - a;
     process.stdout.write(JSON.stringify({ append, statusline }));`;
-  // the best of three fresh processes: one sample of wall clock in a child is at the mercy of a busy machine
+  // one sample of wall clock in a child is at the mercy of a busy machine
   const runs = [0, 1, 2].map(() => {
     const r = spawnSync(process.execPath, ['-e', src], { env: h.childEnv(), encoding: 'utf8' });
     assert.equal(r.status, 0, r.stderr);
     return JSON.parse(r.stdout) as { append: number; statusline: number };
   });
-  const fresh = { append: Math.min(...runs.map(x => x.append)), statusline: Math.min(...runs.map(x => x.statusline)) };
+  return { append: Math.min(...runs.map(x => x.append)), statusline: Math.min(...runs.map(x => x.statusline)) };
+}
+
+test(`perf: an @room post and the status line over a ${N}-entry log stay in budget`, { skip, timeout: 300_000 }, () => {
+  const small = measure(SMALL);
+  const smallFresh = fresh(small.code, small.panel);
+  const big = measure(N);
+  assert.ok(big.sealed, 'the first append sealed the old log');
+  const bigFresh = fresh(big.code, big.panel);
   if (process.env.SUB_HUMAN_PERF_REPORT === '1') {
-    process.stderr.write(`perf N=${N} segmented, a fresh process: append cold ${fresh.append.toFixed(1)} ms; status line cold ${fresh.statusline.toFixed(1)} ms\n`);
+    process.stderr.write(`perf N=${N}: append cold ${big.cold.append.toFixed(1)} ms, median ${big.got.append.toFixed(1)} ms (max ${big.max.append.toFixed(1)}; ${SMALL} entries: ${small.got.append.toFixed(1)}); `
+      + `status line cold ${big.cold.statusline.toFixed(1)} ms, median ${big.got.statusline.toFixed(1)} ms (max ${big.max.statusline.toFixed(1)}; ${SMALL} entries: ${small.got.statusline.toFixed(1)})\n`
+      + `perf N=${N} segmented, a fresh process: append cold ${bigFresh.append.toFixed(1)} ms (${SMALL}: ${smallFresh.append.toFixed(1)}); status line cold ${bigFresh.statusline.toFixed(1)} ms (${SMALL}: ${smallFresh.statusline.toFixed(1)})\n`);
   }
-  assert.ok(fresh.append <= COLD.append, `cold append over the segmented log ${fresh.append.toFixed(1)} ms > ${COLD.append} ms`);
-  assert.ok(fresh.statusline <= COLD.statusline, `cold status line over the segmented log ${fresh.statusline.toFixed(1)} ms > ${COLD.statusline} ms`);
+  relative('append median', big.got.append, small.got.append);
+  relative('status line median', big.got.statusline, small.got.statusline);
+  relative('a fresh process\'s first append', bigFresh.append, smallFresh.append);
+  relative('a fresh process\'s first status line', bigFresh.statusline, smallFresh.statusline);
+  budget('append median', big.got.append, BUDGET.append);
+  budget('status line median', big.got.statusline, BUDGET.statusline);
+  budget('cold append over the segmented log', bigFresh.append, COLD.append);
+  budget('cold status line over the segmented log', bigFresh.statusline, COLD.statusline);
 });

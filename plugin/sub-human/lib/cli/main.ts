@@ -114,7 +114,7 @@ import * as room from '../room.ts';
 import * as tasks from '../tasks.ts';
 import * as config from '../config.ts';
 import * as cc from '../cc/env.ts';
-import * as tailLib from '../tail.ts';
+import type * as TailLib from '../tail.ts';
 import * as statusline from '../../statusline/index.ts';
 import { readInput } from '../io.ts';
 import { parse as parseArgs } from './args.ts';
@@ -168,6 +168,7 @@ function tail(args: readonly string[]) {
     maxSeconds = Number(flags['max-seconds']);
     if (!(maxSeconds > 0)) die(`bad --max-seconds "${flags['max-seconds']}"`);
   }
+  const tailLib = require('../tail.ts') as typeof TailLib; // only the tail loads it (never the status line)
   let handle: ReturnType<typeof tailLib.runTail> | null = null;
   // the reader is gone: nobody to notify
   process.stdout.on('error', () => {
@@ -359,7 +360,10 @@ function serve(args: readonly string[]) {
     if (!handoff.movedAway(s)) die(`room "${code}" is not hosted on this machine (it holds a copy)`, 1);
     s = store.open(code, { dir: s.dir }); // the old log, read-only: it moved
   }
-  const srv = server.serve(pipe.stdio(), {
+  const t = pipe.stdio();
+  // the session closed its end (no link in time over the web, a silent peer): nothing is left for this process to do
+  t.onClose(() => { setTimeout(() => process.exit(0), 200); });
+  const srv = server.serve(t, {
     store: s, linkId: flags.link, login: !!flags.login, via: flags.via === 'ws' ? 'ws' : null, peer: flags.peer ?? null,
     log: (msg: string) => process.stderr.write(msg + '\n'),
   });

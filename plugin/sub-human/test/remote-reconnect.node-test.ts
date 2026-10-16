@@ -434,6 +434,39 @@ test('server: a session that said hello with caps.ping and then goes silent is c
   assert.equal(code, host.code);
 });
 
+test('server: a web session that makes no link within authMs is closed (a Noise handshake alone holds no serve); a linked one stays; ssh and pipe sessions are not timed', async t => {
+  h.freshHome(t);
+  const host = store.open(h.newRoom());
+  const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: REMOTE, seats: [] });
+  const raw = (via: 'ws' | null) => {
+    const [a, b] = memory.pair();
+    const srv = server.serve(b, { store: host, via, authMs: 120 });
+    t.after(() => srv.close());
+    let closed = false;
+    a.onClose(() => { closed = true; });
+    return { a, closed: () => closed };
+  };
+  const silent = raw('ws'); // nothing after the handshake
+  const notSsh = raw(null);
+  // a first hello only (no credential): it gets a challenge, but no link
+  const [a2, b2] = memory.pair();
+  const srv2 = server.serve(b2, { store: host, via: 'ws', authMs: 120 });
+  t.after(() => srv2.close());
+  const helloOnly = await client.connect(a2, { machine: REMOTE });
+  t.after(() => helloOnly.close());
+  const [a3, b3] = memory.pair();
+  const srv3 = server.serve(b3, { store: host, via: 'ws', authMs: 120 });
+  t.after(() => srv3.close());
+  const linked = await client.connect(a3, { machine: REMOTE, token });
+  t.after(() => linked.close());
+  await h.until(() => silent.closed() && helloOnly.closed, 2000, 10);
+  await h.sleep(200);
+  assert.equal(silent.closed(), true, 'no hello at all');
+  assert.equal(helloOnly.closed, true, 'a hello that made no link');
+  assert.equal(linked.closed, false, 'a link');
+  assert.equal(notSsh.closed(), false, 'ssh and a pipe come through a login: not timed');
+});
+
 // ---------- a slow link: a timed-out frame went out, so it is never "nothing was sent" (the lab's slow-link ghost) ----------
 const SLOW = { pingMs: 0, relayMs: 80 };
 const posts = (host: RoomStore) => host.readAll().filter(e => e.kind === 'say').map(e => e.text);

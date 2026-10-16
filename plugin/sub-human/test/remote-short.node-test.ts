@@ -98,7 +98,7 @@ test('an invite over pipe: the host sees the line and the PIN apart; the line, t
   assert.ok(hiddenBlock(linked), linked.stderr);
   assert.ok(!modelSees(linked).includes(pin), 'the PIN is in nothing the model or Remote Control get');
   assert.ok(!linked.json!.reason!.includes(pin), 'and not echoed');
-  assert.match(linked.json!.reason!, /checked your PIN\. A card there now asks them to let you in as bob \(request [0-9a-f]{6}\)\. This session tells you when they do; then type \/sub-human/);
+  assert.match(linked.json!.reason!, /checked your PIN\. A card there now asks them to let you in as bob \(check [0-9a-f]{4}-[0-9a-f]{4}\)\. This session tells you when they do; then type \/sub-human/);
   const lf = JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.json`), 'utf8'));
   assert.equal('pin' in lf, false, 'the PIN left the link file once the host answered');
   assert.equal('pin_wanted' in lf, false);
@@ -128,7 +128,8 @@ test('an invite over pipe: the host sees the line and the PIN apart; the line, t
 
   // an AFK card records nothing
   const afk = card(host, alice, reqs[0].ref, null, { afkTimeoutMs: 60000 });
-  assert.match(afk.card.questions[0].question, new RegExp(`Let bob \\(request [0-9a-f]{6}\\) on \\S+ join room ${code}\\? \\(admit ${reqs[0].ref}\\)`));
+  assert.match(afk.card.questions[0].question, new RegExp(`Let bob \\(check [0-9a-f]{4}-[0-9a-f]{4}\\) on \\S+ join room ${code}\\? \\(admit ${reqs[0].ref}\\)`));
+  assert.ok(afk.card.questions[0].question.includes(`(${lf.awaiting.check})`), 'the card shows the check the joiner\'s screen shows: its machine\'s, not the line\'s');
   assert.deepEqual(afk.card.questions[0].options.map(o => o.label), ['Let in', 'Refuse']);
   assert.match(afk.post.json!.hookSpecificOutput!.additionalContext!, /Nothing was decided/);
   assert.equal(host.lib(() => admission.pending(code)).length, 1);
@@ -149,7 +150,7 @@ test('an invite over pipe: the host sees the line and the PIN apart; the line, t
   assert.equal('invite' in after, false, 'the line is spent: the token replaced it');
   const said = host.lib(() => store.open(code).readAll()).filter(e => e.from === 'room' && e.kind === 'status').map(e => e.text).join('\n');
   assert.match(said, /bob on \S+ typed invite [0-9a-f]{12}'s PIN; waiting for alice to let them in/);
-  assert.match(said, /alice let bob \(request [0-9a-f]{6}\) on \S+ in; undo with: \/sub-human kick bob/);
+  assert.match(said, /alice let bob \(check [0-9a-f]{4}-[0-9a-f]{4}\) on \S+ in; undo with: \/sub-human kick bob/);
   assert.match(said, /bob's machine \(\S+\) joined the room, let in by alice; undo with: \/sub-human kick bob/);
   const admitted = host.lib(() => admission.find(code, reqs[0].ref))!;
   assert.equal(admitted.admit, 'let-in');
@@ -184,7 +185,7 @@ test('an invite: a wrong PIN costs a try with a room line and is asked for again
   const ok = remote.join(bob, `join ${m.pin}`);
   assert.match(ok.json!.reason!, /checked your PIN/);
   const said = host.lib(() => store.open(code).readAll()).filter(e => e.from === 'room').map(e => e.text).join('\n');
-  assert.match(said, /bob on \S+ typed a wrong PIN for invite [0-9a-f]{12} \(4 tries left\)/);
+  assert.match(said, /a wrong PIN for invite [0-9a-f]{12} \(4 tries left; it asked to join as bob\)/);
   assert.ok(!said.includes(` ${wrong}`) && !said.includes(` ${m.pin}`));
 });
 
@@ -234,7 +235,7 @@ test('an invite: Refuse stops the join; a request nobody answers lapses; kick NA
   assert.ok(ev.some(e => e.type === 'health' && /nobody let them in/.test(e.text)), JSON.stringify(ev));
   const late = host.hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: `admit ${ref}`, options: [] }] } }, alice);
   assert.equal(late.json, null, 'a lapsed request opens no card');
-  const q = `Let carol (request ${ref.slice(0, 6)}) on x join room ${code}? (admit ${ref})`;
+  const q = `Let carol (check 0000-0000) on x join room ${code}? (admit ${ref})`;
   const forged = host.hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: q }] }, tool_response: { questions: [{ question: q, options: [] }], answers: { [q]: 'Let in' } } }, alice);
   assert.match(forged.json!.hookSpecificOutput!.additionalContext!, /Nothing was decided/, 'an answer on a card the hooks did not build records nothing');
   assert.equal(host.lib(() => admission.find(code, ref))!.admit, 'lapsed');
@@ -272,7 +273,7 @@ test('an invite: the host CLI masks the SECRET and the PIN inside Claude Code, `
   await typeLine(remote, bob, code, m.line, 'bob');
   remote.join(bob, `join ${m.pin}`);
   const list = spawnSync(process.execPath, [h.BIN, 'admit'], { env: host.env(null), encoding: 'utf8' });
-  assert.match(list.stdout, /bob \(request [0-9a-f]{6}\) on \S+ wants to join room/);
+  assert.match(list.stdout, /bob \(check [0-9a-f]{4}-[0-9a-f]{4}\) on \S+ wants to join room/);
   const ref = /admit ([0-9a-f]{12}) \[--refuse\]$/m.exec(list.stdout)![1];
   assert.ok(!/(^|\s)sub-human admit/.test(list.stdout.replace(/\S*\/scripts\/sub-human admit/g, '')), 'the CLI by its path, never a bare sub-human');
   const noTty = spawnSync(process.execPath, [h.BIN, 'admit', ref], { env: host.env(null), encoding: 'utf8' });

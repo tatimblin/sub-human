@@ -4,7 +4,7 @@
 // When no live member is left, exit starts `node lib/room-claude.ts reap CODE` detached (on the host): after a grace
 // period (a quick rejoin cancels it) it marks the room closing, tells the room's Claude to complete task 1, waits up to
 // 20 s and runs `claude stop <job>`. The room Claude's own SessionEnd (it is stopped, or exits) only marks its seat left.
-// Budget: SessionEnd gets a few seconds (hooks.json timeout; 1.5 s by default), so nothing here waits on a
+// Budget: SessionEnd gets a few seconds (hooks.json sets its timeout to 5 s), so nothing here waits on a
 // child: the seat is marked left and the reaper started (detached) before the log append, which is the
 // only step that can wait on a lock. In a room hosted elsewhere the leave is one op over the link, within
 // LINK_CALL_END_MS; the host logs member_left and runs the reaper.

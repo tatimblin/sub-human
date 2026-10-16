@@ -6,8 +6,11 @@
  *       Creates lockPath exclusively (O_EXCL), runs fn, removes it. The body is the owner: "PID HOST START",
  *       START = the process start time in epoch seconds. A waiter retries every few ms; after timeoutMs
  *       (LOCK_TIMEOUT_MS) it throws ErrorClass (default Error) with code 'LOCK'. It never runs fn unlocked.
- *   pidStart(pid) -> epoch seconds | null   via `ps -o lstart= -p PID` (cached per pid; null when ps fails)
- *   pidStarts(pids)                     fill that cache for many pids with one ps call (a scan over every room's seats)
+ *   pidStart(pid) -> epoch seconds | null   via `ps -o lstart= -p PID` (null when ps fails). Cached per pid while
+ *                                       kill(pid, 0) keeps finding it alive (a pid seen gone is read again when it
+ *                                       lives: a reuse), at most PID_START_MAX_MS
+ *   pidStarts(pids)                     fill that cache for many pids with one ps call (a scan over every room's seats,
+ *                                       the host tail's seat sweep)
  *
  * Stale locks. A lock is stale when its owner is on this host and either its pid is dead or that pid now
  * belongs to a different process (its start time differs by more than LOCK_START_SLACK_S: pid reuse). A
@@ -36,15 +39,23 @@ const HOST = os.hostname();
 
 // ---------- process start times ----------
 const starts = new Map<number, { t: number; at: number }>();
-const PID_START_CACHE_MS = 30_000;
+/** How long a start time read for a pid that stayed alive is trusted (a reuse between two looks is the risk). */
+const PID_START_MAX_MS = 10 * 60_000;
+/** The cached start of pid, while it lives; a pid found gone drops its entry, so a reuse is read afresh. */
+function cachedStart(pid: number): number | null {
+  const hit = starts.get(pid);
+  if (!hit) return null;
+  if (Date.now() - hit.at >= PID_START_MAX_MS || !isAlive(pid)) { starts.delete(pid); return null; }
+  return hit.t;
+}
 
 /** Epoch seconds the process started, from ps; null when ps fails or the pid is gone. Cached per pid. */
 function pidStart(pidArg: unknown, { fresh = false }: { fresh?: boolean } = {}): number | null {
   const pid = Number(pidArg);
   if (!Number.isInteger(pid) || pid <= 0) return null;
-  // Cached briefly only: a long-running tail or MCP server would otherwise keep matching a reused pid.
-  const hit = starts.get(pid);
-  if (!fresh && hit && Date.now() - hit.at < PID_START_CACHE_MS) return hit.t;
+  // Cached while kill(pid, 0) keeps finding it: a long-running tail or MCP server sees a death, then reads a reuse.
+  const hit = fresh ? null : cachedStart(pid);
+  if (hit != null) return hit;
   let t: number | null = null;
   try {
     const r = spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' }, timeout: 2000 });
@@ -58,7 +69,7 @@ function pidStart(pidArg: unknown, { fresh = false }: { fresh?: boolean } = {}):
 
 /** Read the start times of pids with one ps call into pidStart's cache (pids it cannot read are left to pidStart). */
 function pidStarts(pids: readonly number[]): void {
-  const want = [...new Set(pids)].filter(p => Number.isInteger(p) && p > 0 && !(starts.get(p) && Date.now() - starts.get(p)!.at < PID_START_CACHE_MS));
+  const want = [...new Set(pids)].filter(p => Number.isInteger(p) && p > 0 && cachedStart(p) == null);
   if (want.length < 2) return; // none, or one: pidStart's own call is the same cost
   try {
     const r = spawnSync('ps', ['-o', 'pid=,lstart=', '-p', want.join(',')], { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' }, timeout: 2000 });

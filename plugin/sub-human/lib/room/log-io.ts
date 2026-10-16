@@ -17,6 +17,10 @@
  *   snapshot.json     the sealed lines in short (lib/room/snapshot.ts: chain head, non-chat entries, the window of
  *                     recent lines a placement needs, pins, host) plus where they are kept (seg, segs, held, base).
  *                     A mirror that began from its host's snapshot (install) holds no line before it: held > 1.
+ *   snapshot-base.json the snapshot a mirror began from (install), as installed and never written again: a lost
+ *                     snapshot.json is rebuilt from it and the sealed segments, so the host's entries before the mirror's
+ *                     first line (its proposals, keys, host) survive. The first segment such a mirror seals starts at
+ *                     that snapshot's line (its carry), so the anchor's hash is still found after a rotation.
  *   log.idx           retired (the checkpoint before segments): never read; removed at the first rotation.
  * Sealed segments are kept: an older peer's first sync replays the whole log, and readAll() still gives every line.
  * A crash between the steps of a rotation is finished by the next append (settle).
@@ -45,9 +49,10 @@
  *   verifyChain(dir, {fromOffset, prev}?)   incremental over the active segment from this process's own checkpoint
  *       (in memory; the snapshot vouches for the sealed lines: a segment is sealed only once it chains)
  * Writing:
- *   appendLocked(dir, place) -> Entry   under the log lock: read only the log's tail (newest first, then the
- *       snapshot's window), place({newest, prevLine}) -> {e, line}, write the line, then rotate when due
- *   appendVerbatim(dir, line)           a line as another machine stored it (the mirror's one writer); rotates too
+ *   appendLocked(dir, place, mayRotate?) -> Entry   under the log lock: read only the log's tail (newest first, then
+ *       the snapshot's window), place({newest, prevLine}) -> {e, line}, write the line, then rotate when due and
+ *       mayRotate() (fs-store.ts: no live seat of this machine runs code that reads only one log.jsonl) agrees
+ *   appendVerbatim(dir, line, mayRotate?)   a line as another machine stored it (the mirror's one writer); rotates too
  *   rotate(dir) -> bool                 seal the active segment now (false: nothing to seal, or it does not chain)
  *   install(dir, wire)                  a mirror's start from its host's snapshot: snapshot.json and a log.jsonl
  *                                       holding only the snapshot's line (RoomError PROTOCOL when a log is there)
@@ -74,6 +79,15 @@ const IDX = 'log.idx'; // retired
 const SEG_RE = /^log-(\d{4,})\.jsonl$/;
 const activeFile = (dir: string): string => path.join(dir, ACTIVE);
 const snapFile = (dir: string): string => path.join(dir, SNAP);
+const BASE = 'snapshot-base.json';
+const baseFile = (dir: string): string => path.join(dir, BASE);
+/** The snapshot an installed mirror began from (install), or null. */
+function loadBase(dir: string): LogSnapshot | null {
+  const x = readJson(baseFile(dir));
+  return validSnap(x) && x.seg === 0 ? x : null;
+}
+/** A snapshot to rebuild: sealed segments, or the base an installed mirror began from. */
+const rebuildable = (dir: string): boolean => fs.existsSync(segFile(dir, 1)) || fs.existsSync(baseFile(dir));
 const segFile = (dir: string, n: number): string => path.join(dir, `log-${String(n).padStart(4, '0')}.jsonl`);
 
 /** The active segment's checked prefix: its first `offset` bytes chain; marks: its non-chat lines [id, offset, length]. */
@@ -156,7 +170,7 @@ function sealedOnDisk(dir: string): number[] {
 /** The snapshot; one that is missing or unreadable while sealed segments exist is rebuilt from them (under the lock). */
 function snapOf(dir: string): LogSnapshot | null {
   const snap = loadSnap(dir);
-  if (snap || !fs.existsSync(segFile(dir, 1))) return snap;
+  if (snap || !rebuildable(dir)) return snap;
   return withLock(activeFile(dir) + '.lock', () => loadSnap(dir) || rebuild(dir), { ErrorClass: LockError });
 }
 
@@ -454,10 +468,11 @@ function tailer(dir: string, { fs: xfs = nodeFs, after }: { fs?: TailerFs; after
     }
     offset += pos;
   }
-  /** The sealed segment the active file of inode `old` became (a rotation), else 0. */
+  /** The sealed segment the active file of inode `old` became (a rotation), else 0: any of them, newest first, so a
+   *  tailer many rotations behind reads on from where it was instead of starting over (a reset reads as a FORK) */
   function sealedAs(old: number): number {
     const snap = snapOf(dir);
-    for (let n = snap ? snap.seg : 0; n >= 1 && snap && n > snap.seg - 4; n--) if (inoOf(segFile(dir, n)) === old) return n;
+    for (let n = snap ? snap.seg : 0; n >= 1; n--) if (inoOf(segFile(dir, n)) === old) return n;
     return 0;
   }
   return {
@@ -764,7 +779,7 @@ function tailFrom(fd: number, end: number, snap: LogSnapshot | null): { prevLine
 /** Under the lock: the snapshot, with a rotation a crash interrupted finished (the active file still the sealed one, or
  * gone): log.jsonl becomes the snapshot's line alone again. */
 function settle(dir: string): LogSnapshot | null {
-  const snap = loadSnap(dir) || (fs.existsSync(segFile(dir, 1)) ? rebuild(dir) : null);
+  const snap = loadSnap(dir) || (rebuildable(dir) ? rebuild(dir) : null);
   if (!snap) return null;
   const act = activeFile(dir);
   let ino: number | null = null;
@@ -778,7 +793,10 @@ function settle(dir: string): LogSnapshot | null {
   return snap;
 }
 
-function appendLocked(dir: string, place: (tail: { newest: Iterable<Entry>; prevLine: string }) => { e: Entry; line: string }): Entry {
+/** Whether a due rotation may run now (fs-store.ts rotationOk); called under the log lock, only when it is due. */
+type MayRotate = () => boolean;
+
+function appendLocked(dir: string, place: (tail: { newest: Iterable<Entry>; prevLine: string }) => { e: Entry; line: string }, mayRotate: MayRotate = () => true): Entry {
   const act = activeFile(dir);
   return withLock(act + '.lock', () => {
     const snap = settle(dir);
@@ -794,25 +812,25 @@ function appendLocked(dir: string, place: (tail: { newest: Iterable<Entry>; prev
       e = r.e;
       end = size + Buffer.byteLength(text);
     } finally { fs.closeSync(fd); }
-    if (end >= segmentMaxBytes()) { try { rotate(dir, true); } catch { /* sealed at the next append instead */ } }
+    if (end >= segmentMaxBytes() && mayRotate()) { try { rotate(dir, true); } catch { /* sealed at the next append instead */ } }
     return e;
   }, { ErrorClass: LockError });
 }
 
-function appendVerbatim(dir: string, line: string): void {
+function appendVerbatim(dir: string, line: string, mayRotate: MayRotate = () => true): void {
   const act = activeFile(dir);
   withLock(act + '.lock', () => {
     settle(dir);
     fs.appendFileSync(act, line + '\n', { mode: 0o600 });
     let size = 0;
     try { size = fs.statSync(act).size; } catch { /* gone */ }
-    if (size >= segmentMaxBytes()) { try { rotate(dir, true); } catch { /* the next line tries again */ } }
+    if (size >= segmentMaxBytes() && mayRotate()) { try { rotate(dir, true); } catch { /* the next line tries again */ } }
   }, { ErrorClass: LockError });
 }
 
 /** The snapshot of the sealed segments on disk, written (a snapshot.json lost or unreadable: under the lock). */
 function rebuild(dir: string): LogSnapshot | null {
-  let snap: LogSnapshot | null = null;
+  let snap: LogSnapshot | null = loadBase(dir); // an installed mirror's start: the host's entries before its first line
   for (const n of sealedOnDisk(dir)) {
     if (n !== (snap ? snap.seg : 0) + 1) break;
     let lines: string[] = [];
@@ -823,7 +841,8 @@ function rebuild(dir: string): LogSnapshot | null {
     const es: Entry[] = real.map(l => parse(l)).filter((e): e is Entry => !!e);
     if (!es.length) break;
     const wire = snapshot.extend(prev, { nonChat: es.filter(e => !CHAT_KINDS.has(e.kind)), recent: es.slice(-SNAPSHOT_WINDOW_MAX), line: real.at(-1)!, lines: real.length });
-    snap = { v: 1, ...wire, seg: n, segs: [...(snap ? snap.segs : []), [n, es[0].id, wire.id]], held: snap ? snap.held : es[0].id, base: snap ? snap.base : 0, at: new Date().toISOString() };
+    const first = prev && prev.seg === 0 ? prev.id : es[0].id; // an installed mirror's first segment holds its anchor
+    snap = { v: 1, ...wire, seg: n, segs: [...(snap ? snap.segs : []), [n, first, wire.id]], held: snap ? snap.held : es[0].id, base: snap ? snap.base : 0, at: new Date().toISOString() };
   }
   if (snap) { writeJsonAtomic(snapFile(dir), snap, { compact: true }); forget(dir); }
   return snap;
@@ -858,7 +877,9 @@ function rotate(dir: string, locked = false): boolean {
     const wire = snapshot.extend(snap, { nonChat: v.marked!, recent, line, lines: v.cp.count - (snap ? snap.count : 0) });
     const n = (snap ? snap.seg : 0) + 1;
     next = {
-      v: 1, ...wire, seg: n, segs: [...(snap ? snap.segs : []), [n, v.cp.first, wire.id]],
+      // an installed mirror's first seal starts at its anchor (the snapshot's line, this segment's carry): no earlier
+      // segment here holds it, and a subscribe at the anchor (after a handoff) asks its hash
+      v: 1, ...wire, seg: n, segs: [...(snap ? snap.segs : []), [n, snap && snap.seg === 0 ? snap.id : v.cp.first, wire.id]],
       held: snap ? snap.held : v.cp.first, base: snap ? snap.base : 0, at: new Date().toISOString(),
     };
   } finally { fs.closeSync(fd); }
@@ -880,6 +901,7 @@ function install(dir: string, wire: SnapshotWire): void {
     try { size = fs.statSync(act).size; } catch { /* none */ }
     if (size || loadSnap(dir) || fs.existsSync(segFile(dir, 1))) throw new RoomError('PROTOCOL', 'a snapshot arrived for a mirror that holds lines already');
     const snap: LogSnapshot = { v: 1, ...snapshot.toWire(wire), seg: 0, segs: [], held: wire.id + 1, base: wire.count, at: new Date().toISOString() };
+    writeJsonAtomic(baseFile(dir), snap, { compact: true });
     writeJsonAtomic(snapFile(dir), snap, { compact: true });
     writeFileAtomic(act, wire.line + '\n', { mode: 0o600 });
     forget(dir);
@@ -888,7 +910,7 @@ function install(dir: string, wire: SnapshotWire): void {
 
 /** Every log file of the room (active, sealed, snapshot, the retired log.idx). */
 function logFiles(dir: string): string[] {
-  return [activeFile(dir), snapFile(dir), path.join(dir, IDX), ...sealedOnDisk(dir).map(n => segFile(dir, n))];
+  return [activeFile(dir), snapFile(dir), baseFile(dir), path.join(dir, IDX), ...sealedOnDisk(dir).map(n => segFile(dir, n))];
 }
 
 /** Every line held moved to `to` as one log (the carry lines left out); false with no log. */

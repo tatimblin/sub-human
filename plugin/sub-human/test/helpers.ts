@@ -2,7 +2,8 @@
  * Shared test helpers. Requiring this file:
  *   - strips inherited CLAUDE* env vars from process.env (a test run started inside Claude Code would
  *     otherwise carry the parent's CLAUDE_PID / CLAUDE_CODE_SESSION_ID and confuse identity), and
- *   - gives the process a fresh temp SUB_HUMAN_HOME.
+ *   - gives the process a fresh temp SUB_HUMAN_HOME, and
+ *   - sets SUB_HUMAN_TEST=1 (lib/config.ts testMs: the test-only timing overrides).
  *
  *   freshHome() -> dir                   a new temp SUB_HUMAN_HOME (also set in process.env)
  *   newRoom() -> code                    identity.newCode(); becomes the default room for register()
@@ -108,6 +109,9 @@ function tmpDir(prefix = 'sub-human-test-', t?: TestContext): string {
 // ---- env -----------------------------------------------------------------------------------------
 const stripClaude = (env: NodeJS.ProcessEnv) => { for (const k of Object.keys(env)) if (k.startsWith('CLAUDE')) delete env[k]; return env; };
 stripClaude(process.env);
+// the marker lib/config.ts testMs honours: timings that would weaken a guard (the PIN's backoff, the card's wait)
+// take their SUB_HUMAN_* overrides only here, in a test process and the children it spawns
+process.env.SUB_HUMAN_TEST = '1';
 // via=human appends need the seat signer that the hook handlers that sign install (at-room, consent, join:
 // hooks/seat-key.ts arm). A test process is trusted the same way; required lazily, so preloading loads no lib/.
 (globalThis as unknown as Record<symbol, unknown>)[Symbol.for('sub-human.human-signer')] =

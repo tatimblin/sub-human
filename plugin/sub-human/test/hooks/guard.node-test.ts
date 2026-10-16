@@ -30,6 +30,17 @@ function decide(tool: string, input: ToolInput,
     for (const a of abs ? g.ancestors(abs) : []) { const r = real(a); if (r) { placed = path.join(r, abs!.slice(a.length)); break; } }
     return g.readVerdict(abs ? [abs, placed] : [], ctx, p) ? 'deny' : undefined;
   }
+  if (tool === 'Grep' || tool === 'Glob') {
+    const targets = g.searchTargets(tool, input);
+    const cands: (string | undefined)[] = [];
+    for (const p of targets) {
+      const abs = p ? g.absTarget(p, { cwd: w.cwd, userHome: ctx.userHome }) : g.absTarget(w.cwd, {});
+      let placed: string | undefined;
+      for (const a of abs ? g.ancestors(abs) : []) { const r = real(a); if (r) { placed = path.join(r, abs!.slice(a.length)); break; } }
+      if (abs) cands.push(abs, placed);
+    }
+    return g.searchVerdict(tool, cands, ctx, targets.join(' ')) ? 'deny' : undefined;
+  }
   if (g.WRITE_TOOLS.includes(tool)) {
     const p = g.writeTarget(input);
     const abs = g.absTarget(p, { cwd: w.cwd, userHome: ctx.userHome });
@@ -124,6 +135,51 @@ test('guard: Read of a seat signing key is denied (by path, through a symlink, b
   assert.equal(decide('Read', { file_path: path.join(w.home, 'rooms', w.code, 'plans', 'x.md') }, { w }), undefined);
   assert.equal(decide('Read', { file_path: path.join(w.cwd, 'keys', 'mine.key') }, { w }), undefined, 'a keys directory elsewhere is not the store');
   assert.match(g.READ_DENY(key), /seat signing keys/);
+});
+
+test('guard: Read of the listener\'s and the links\' secrets is denied (listen/, links/, by path and before mod-hello)', () => {
+  const w = new World({ claude: 'sleep', alice: 'act' });
+  for (const p of [['listen', 'host-x25519.json'], ['links', `${w.code}.json`], ['links', w.code, 'client-x25519.json']]) {
+    assert.equal(decide('Read', { file_path: path.join(w.home, ...p) }, { w }), 'deny', p.join('/'));
+    assert.equal(decide('Read', { file_path: `~/.sub-human/${p.join('/')}` }, { w, hello: false }), 'deny', `${p.join('/')} before hello`);
+  }
+  assert.equal(decide('Read', { file_path: path.join(w.home, 'listen-notes.md') }, { w }), undefined, 'not a secret directory');
+  assert.equal(decide('Read', { file_path: path.join(w.cwd, 'links', 'x.json') }, { w }), undefined, 'a links directory elsewhere');
+});
+
+test('guard: Grep is denied in a secret directory, at the home and above it (it would print a PEM); elsewhere it runs', () => {
+  const w = new World({ claude: 'sleep', alice: 'act' });
+  const grep = (p?: string, extra: ToolInput = {}) => decide('Grep', { pattern: '.', output_mode: 'content', ...(p === undefined ? {} : { path: p }), ...extra }, { w });
+  assert.equal(grep(path.join(w.home, 'keys')), 'deny', 'the reviewer\'s probe');
+  assert.equal(grep(path.join(w.home, 'keys', w.code, 'alice.key')), 'deny');
+  assert.equal(grep(path.join(w.home, 'listen')), 'deny');
+  assert.equal(grep(path.join(w.home, 'links')), 'deny');
+  assert.equal(grep(w.home), 'deny', 'the home: ripgrep descends into keys/');
+  assert.equal(grep(path.dirname(w.home)), 'deny', 'above the home');
+  assert.equal(grep('/'), 'deny');
+  const link = path.join(w.cwd, 'innocent');
+  fs.symlinkSync(w.home, link);
+  assert.equal(grep(path.join(link, 'keys')), 'deny', 'through a symlink');
+  assert.equal(grep(path.join(w.home, 'rooms', w.code)), undefined, 'a room\'s files stay searchable');
+  assert.equal(grep(w.cwd), undefined);
+  assert.equal(grep(), undefined, 'no path: the cwd');
+  assert.equal(grep('src'), undefined);
+  assert.equal(decide('Grep', { pattern: '.', path: '~/.sub-human/keys' }, { w, hello: false }), 'deny', 'before hello, by its spelling');
+  assert.equal(decide('Grep', { pattern: '.', path: '~/.sub-human' }, { w, hello: false }), 'deny');
+  assert.match(g.READ_DENY('/x', 'Grep'), /Denied: Grep on \/x/);
+});
+
+test('guard: Glob is denied in a secret directory, by its path or its pattern\'s literal prefix; names elsewhere list', () => {
+  const w = new World({ claude: 'sleep', alice: 'act' });
+  const glob = (pattern: string, p?: string) => decide('Glob', { pattern, ...(p === undefined ? {} : { path: p }) }, { w });
+  assert.equal(glob('**/*', path.join(w.home, 'keys')), 'deny');
+  assert.equal(glob('*', path.join(w.home, 'links')), 'deny');
+  assert.equal(glob('keys/**', w.home), 'deny', 'the pattern names the directory');
+  assert.equal(glob(`${w.home}/listen/*.json`), 'deny', 'an absolute pattern');
+  assert.equal(decide('Glob', { pattern: '~/.sub-human/keys/*' }, { w, hello: false }), 'deny', 'before hello');
+  assert.equal(glob('rooms/*/plans/*.md', w.home), undefined, 'the rest of the store lists');
+  assert.equal(glob('**/*.ts'), undefined);
+  assert.equal(glob('**/*', w.home), undefined, 'names only: a Glob from the home lists, it reads nothing');
 });
 
 test('guard: hold is allowed for row subagents only', () => {
