@@ -16,6 +16,8 @@
  *   cliCmd(args) -> string   the same CLI as a Bash tool command, `<plugin root>/scripts/sub-human ARGS` (absolute, the
  *                            shim runs itself): what a session's Claude is told to run; the store guard's read-only
  *                            CLI rule (mod/core/guard.ts READ_CLI) allows that spelling
+ *   localHm(iso) -> "21:40"  an ISO time as this machine's local hours and minutes ('' when it is no time): every
+ *                            "until" a person reads (an invite, a handoff's card, a join request) is local
  */
 import os from 'node:os';
 import crypto from 'node:crypto';
@@ -51,4 +53,6 @@ function cliCmd(args = ''): string {
   return `${q}${args ? ` ${args}` : ''}`;
 }
 
-export { clip, oneLine, cliLine, cliCmd, NAME_RE, CODE_RE, SID_SAFE, HASH_RE, hash12 };
+const localHm = (iso: unknown): string => { const d = new Date(String(iso)); return Number.isNaN(d.getTime()) ? '' : d.toTimeString().slice(0, 5); };
+
+export { clip, oneLine, cliLine, cliCmd, localHm, NAME_RE, CODE_RE, SID_SAFE, HASH_RE, hash12 };

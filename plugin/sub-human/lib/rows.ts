@@ -508,9 +508,11 @@ function roomText(code: string, viewer: string | null | undefined, es: readonly 
     parts.push(c.dim(`${ms.filter(m => isActive(m) && !isRoomClaude(m)).length} here`));
   }
   if (viewer) {
-    // read once the viewer or their Claude answered anything after it (stage 8e I.3: a Claude's reply left it stuck)
-    const lastOwn = lastWhere(es, e => e.from === viewer && (e.via === 'human' || e.via === 'agent'))?.id || 0;
-    const mail = countAfter(es, e => e.to === viewer && e.from !== viewer, lastOwn);
+    // read once the viewer or their Claude answered anything after it (stage 8e I.3: a Claude's reply left it stuck);
+    // the room's Claude's answer to the viewer's own @claude is read too: it was shown to them as it came (stage 8f)
+    const own = lastWhere(es, e => e.from === viewer && (e.via === 'human' || e.via === 'agent'));
+    const asked = !!own && own.to === 'claude';
+    const mail = countAfter(es, e => e.to === viewer && e.from !== viewer && !(asked && e.from === 'claude'), own?.id || 0);
     if (mail) parts.push(c.warn(`✉ ${mail} for you`));
   }
   if (summary) parts.push(summary);

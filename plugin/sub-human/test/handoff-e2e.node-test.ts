@@ -129,7 +129,7 @@ test('handoff e2e: planned, A to B with C following; the room\'s Claude moves; t
   // alice asks; bob's machine gets the ask privately, his tail wakes his Claude to open the card
   const asked = A.join(alice, 'handoff bob').json!;
   assert.equal(asked.decision, 'block', 'shown to alice, never to her Claude');
-  assert.match(asked.reason!, /^sub-human: asked bob to host room .*: a card asks them until .* UTC, and nothing moves unless they agree\. If they do, the room and its Claude move to bob's machine \(on bob's Claude account\)/);
+  assert.match(asked.reason!, /^sub-human: asked bob to host room .*: a card asks them until \d\d:\d\d, and nothing moves unless they agree\. If they do, the room and its Claude move to bob's machine \(on bob's Claude account\)/);
   await until(() => ask(B, code), 5000, 50);
   assert.equal(C.lib(() => store.open(code).kv.get(handoff.ASK_DOC)), null, 'carol\'s machine never sees it');
   const woke = (await B.tail(bob, 2)).split('\n').filter(Boolean).map(l => JSON.parse(l));

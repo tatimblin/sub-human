@@ -99,6 +99,17 @@ test('prompt: receiptBook keeps only an @room stop\'s own warning row, as the re
   assert.equal(book.rewrite({ type: 'system', content: [{ type: 'text', text: `${STOP_FRAME}b` }, { type: 'text', text: 'x' }] }), null, 'one text block only');
 });
 
+test('prompt (stage 8f item 4): the model row of an @claude line\'s stop names @claude, an @room line\'s @room', async () => {
+  const { receiptBook, STOP_FRAME } = await load();
+  const book = receiptBook();
+  const WAKE = "✓ sent; the room's Claude was woken", SENT = "✓ sent to room otter-4821 (Claude wasn't asked)";
+  const meta = (text: string) => ({ type: 'user', isMeta: true, content: [{ type: 'text', text }] });
+  book.expect(WAKE, '@claude');
+  book.expect(SENT);
+  assert.deepEqual(book.modelRow(meta(`${STOP_FRAME}${WAKE}`)), meta(`sub-human: the person's @claude line above went to the room, not to you (${WAKE}); nothing is asked of you.`));
+  assert.deepEqual(book.modelRow(meta(`${STOP_FRAME}${SENT}`)), meta(`sub-human: the person's @room line above went to the room, not to you (${SENT}); nothing is asked of you.`));
+});
+
 test('prompt: roomClaudeCommand refuses a command a person types into the room\'s Claude (/clear too); its launch and other origins run', async () => {
   const { roomClaudeCommand } = await load();
   assert.match(roomClaudeCommand('clear', { kind: 'composer' }, 'otter-4821')!, /^✗ the room's Claude takes no typed input, commands included; .*claude\.otter-4821$/);

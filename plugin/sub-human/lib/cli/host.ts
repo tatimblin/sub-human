@@ -111,7 +111,7 @@ function admit(args: readonly string[]): number {
   if (!p.rest.length) {
     const reqs = adm.pending(code);
     if (!reqs.length) { say(`nobody is waiting to join room ${code}`); return 0; }
-    for (const q of reqs) say(`${adm.describe(q)} wants to join room ${code} (until ${q.expires_at.slice(11, 16)} UTC): ${text.cliLine(`admit ${q.ref}`)} [--refuse]`);
+    for (const q of reqs) say(`${adm.describe(q)} wants to join room ${code} (until ${text.localHm(q.expires_at)}): ${text.cliLine(`admit ${q.ref}`)} [--refuse]`);
     return 0;
   }
   const req = adm.find(code, p.rest[0]);

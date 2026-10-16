@@ -63,6 +63,7 @@ import * as machineKey from './machine-key.ts';
 import * as protocol from './protocol.ts';
 import { SECRET_WORD } from '../../mod/core/command.ts';
 import { RoomError } from '../room/validate.ts';
+import { localHm } from '../text.ts';
 import { INVITE_TTL_MS, LINK_JOIN_WAIT_MS } from '../config.ts';
 import * as linkSocketMod from './link-socket.ts';
 import * as linkConnectMod from './link-connect.ts';
@@ -173,14 +174,13 @@ function reachHints(dest: string, defaulted: boolean): string[] {
  * this side (the card).
  */
 /** The clock time an invite stops working, as the person reads it (their local time). */
-const until = (expiresAt: string): string => { const d = new Date(expiresAt); return Number.isNaN(d.getTime()) ? '' : d.toTimeString().slice(0, 5); };
 
 /**
  * The invite's text and its pinned form: the line and the PIN on one status line (drawn under the prompt, never saved
  * in the conversation's transcript), and the text that says where they are instead.
  */
 function invitePinned({ code, how, line, pin, ref, expires_at, extra = [] }: { code: string; how: string; line: string; pin: string; ref: string; expires_at: string; extra?: string[] }): Pinned {
-  const at = until(expires_at);
+  const at = localHm(expires_at);
   const word = line.split(' ').find(w => SECRET_WORD.test(w));
   return {
     status: `PIN ${pin} · ${line}`,
