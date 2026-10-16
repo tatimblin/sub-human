@@ -140,7 +140,7 @@ export function readReply(run: RunOutput | null | undefined, { ms = null, error 
   const failed = (): JoinReply => ({ kind: 'failed', lines: [failedLine({ ms, error, stderr: run && run.stderr, exitCode: run && run.exitCode })] });
   if (!run || run.exitCode !== 0) return failed();
   const o = lastJson(run.stdout);
-  const sub = o && o.subHuman && typeof o.subHuman === 'object' ? o.subHuman as SubHumanRead : null;
+  const sub: SubHumanRead | null = o && o.subHuman && typeof o.subHuman === 'object' ? o.subHuman : null;
   if (sub && sub.lease === 'stale' && typeof sub.say !== 'string') return { kind: 'stale', lines: [STALE] };
   const say = sub && typeof sub.say === 'string' ? sub : null;
   if (!o || !say) return failed();
@@ -148,7 +148,7 @@ export function readReply(run: RunOutput | null | undefined, { ms = null, error 
   if (say.joined === true && typeof hso.additionalContext === 'string' && hso.additionalContext) {
     return { kind: 'joined', context: hso.additionalContext, lines: noticeLines(say.say) };
   }
-  const p = say.pinned && typeof say.pinned === 'object' ? say.pinned as Loose<PinnedReport> : null;
+  const p: Loose<PinnedReport> | null = say.pinned && typeof say.pinned === 'object' ? say.pinned : null;
   const one = (s: unknown) => (typeof s === 'string' && s ? s.replace(/\n/g, ' ') : null);
   const status = p && one(p.status);
   const short = p && one(p.short);

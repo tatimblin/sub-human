@@ -120,7 +120,7 @@ function roomOver(s: RoomStore): Room {
     ...pure,
     code: s.code, store: s, trust,
     // the store's overloads (opts.queue: a mirror may answer with the queued post)
-    append: ((entry: EntryInput, opts?: AppendOpts) => s.append(entry, opts)) as RoomStore['append'],
+    append: (entry: EntryInput, opts?: AppendOpts) => s.append(entry, opts),
     readAll: () => s.readAll(),
     readById: (ids: Parameters<RoomStore['readById']>[0]) => s.readById(ids),
     readAfter: (id: number, f?: (e: Entry) => boolean) => s.readAfter(id, f),
