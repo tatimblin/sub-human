@@ -66,7 +66,7 @@ interface HoldBase {
 type Hold = (HoldBase & { kind: 'member' }) | (HoldBase & { kind: 'room'; moves: Set<number> });
 type RoomHold = Extract<Hold, { kind: 'room' }>;
 /** The seat this server serves (for rows/holds-<me> and the lease). */
-interface Seat { code: RoomCode; name: SeatName; pid?: number | null; savedAt?: number }
+interface Seat { code: RoomCode; name: SeatName; pid?: number | null | undefined; savedAt?: number }
 
 const { NAME_RE, oneLine } = strs;
 const ANNOUNCE_MAX = 3;
@@ -145,13 +145,14 @@ class HoldServer {
     try { entries = room.open(code).readAll(); } catch { /* no log yet */ }
     const st = this.logState.get(code);
     if (st && st.entries === entries) return { entries, moves: st.moves, fresh: [] };
-    const lastId = st && st.entries.length ? st.entries[st.entries.length - 1].id : 0;
+    const last = st && st.entries.at(-1);
+    const lastId = last ? last.id : 0;
     // grown: the new entries are those after the old last one; anything else (a reset log) is read again whole
-    const grown = !!st && entries.length >= st.entries.length && (!st.entries.length || entries[st.entries.length - 1] === st.entries[st.entries.length - 1]);
-    const from = grown ? st!.entries.length : 0;
+    const grown = st && entries.length >= st.entries.length && (!last || entries[st.entries.length - 1] === last) ? st : null;
+    const from = grown ? grown.entries.length : 0;
     const added = entries.slice(from).filter(e => e && Number.isInteger(e.id));
     const isMove = (e: Entry) => e.kind === 'member_joined' || e.kind === 'member_left';
-    const moves = grown ? st!.moves.concat(added.filter(isMove)) : added.filter(isMove);
+    const moves = grown ? grown.moves.concat(added.filter(isMove)) : added.filter(isMove);
     const fresh = st ? added.filter(e => e.id > lastId) : [];
     this.logState.set(code, { entries, moves });
     return { entries, moves, fresh };
@@ -172,6 +173,7 @@ class HoldServer {
     if (h.kind === 'room' && !/^STOP\b/.test(s)) this.roomEnded.set(h.code, Date.now());
     else if (h.kind === 'room') this.roomEnded.delete(h.code);
     this.log('RETURN', h.id, s);
+    // oxlint-disable-next-line typescript/no-non-null-assertion -- a hold is in holds only once hold() set its resolve (checked above)
     h.resolve!(this.text(s));
     this.saveSeat();
     if (!this.holds.size) this.stopTimer();
@@ -244,13 +246,13 @@ class HoldServer {
       for (const h of [...this.holds.values()].filter(x => x.code === code)) {
         if (h.kind === 'member') {
           // NAME leaving keeps the row (it reads "left"); only this seat leaving ends it (above).
-          const mine = fresh.filter((e: Entry) => e.from === h.name || e.to === h.name);
-          if (mine.length) this.progress(h, entryLine(mine.at(-1)!));
+          const mine = fresh.filter((e: Entry) => e.from === h.name || e.to === h.name).at(-1);
+          if (mine) this.progress(h, entryLine(mine));
         } else {
           const reply = this.roomReply(code, this.missing(code, ms, now));
           if (reply) { this.finish(h, reply); continue; }
-          const plain = fresh.filter((e: Entry) => e.kind !== 'member_joined' && e.kind !== 'member_left');
-          if (plain.length) this.progress(h, entryLine(plain.at(-1)!));
+          const plain = fresh.filter((e: Entry) => e.kind !== 'member_joined' && e.kind !== 'member_left').at(-1);
+          if (plain) this.progress(h, entryLine(plain));
           const move = this.newMove(h, code, now);
           if (move) this.progress(h, move);
         }
@@ -287,6 +289,7 @@ class HoldServer {
     if (!this.holds.has(h.id)) return;
     this.holds.delete(h.id);
     this.log('CANCELLED', h.id, h.kind, h.name || h.code);
+    // oxlint-disable-next-line typescript/no-non-null-assertion -- a hold is in holds only once hold() set its resolve (checked above)
     h.resolve!(this.text(`(cancelled)`));
     if (h.kind === 'room') this.roomEnded.delete(h.code);
     this.saveSeat();

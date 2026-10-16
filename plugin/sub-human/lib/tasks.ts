@@ -43,9 +43,9 @@ import type { RoomCode, SeatName } from './brand.ts';
 /** A task as it arrives to be cleaned (the mirror, a fold, hooks/handlers/tasks.ts's native task): loosely shaped. */
 interface RawTask {
   id?: unknown;
-  subject?: string;
-  status?: string;
-  owner?: string | null;
+  subject?: string | undefined;
+  status?: string | undefined;
+  owner?: string | null | undefined;
   blockedBy?: unknown;
 }
 /** reqOf: a task_req or task entry's task fields. */
@@ -180,7 +180,8 @@ function validate(input: unknown): { ok: true, req: TaskReq } | { ok: false, err
 function requestText(r: TaskReq & { owner?: string | null }): string {
   const who = r.owner ? ` for ${r.owner}` : '';
   if (r.op === 'add') return `task add${who}: ${r.subject}${r.detail ? ` (${clip(r.detail.replace(/\s+/g, ' '), config.TASK_REQ_DETAIL_SHOWN)})` : ''}`;
-  if (r.op === 'done') return `task done #${r.id}${who}: ${clip(r.evidence!.replace(/\s+/g, ' '), config.TASK_REQ_EVIDENCE_SHOWN)}`;
+  // validate: done always carries evidence
+  if (r.op === 'done') return `task done #${r.id}${who}: ${clip((r.evidence ?? '').replace(/\s+/g, ' '), config.TASK_REQ_EVIDENCE_SHOWN)}`;
   return `task ${r.op} #${r.id}${who}`;
 }
 

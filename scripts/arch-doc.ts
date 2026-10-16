@@ -140,7 +140,7 @@ export function headerOf(file: string): string {
   const src = fs.readFileSync(file, 'utf8');
   const m = /\/\*\*([\s\S]*?)\*\//.exec(src);
   if (!m) return '';
-  const lines = m[1].split('\n').map(l => l.replace(/^\s*\* ?/, ''));
+  const lines = (m[1] ?? '').split('\n').map(l => l.replace(/^\s*\* ?/, ''));
   const para: string[] = [];
   for (const l of lines) {
     if (!l.trim()) { if (para.length) break; continue; }

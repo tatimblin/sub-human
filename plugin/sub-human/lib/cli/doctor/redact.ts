@@ -45,7 +45,7 @@ function redactor({ home = os.homedir(), shHome = lib('home.ts').home(), hosts =
   // a SUB_HUMAN_HOME outside $HOME (a temp dir, another disk) names nothing under ~: it is <sub-human-home>
   const under = (p: string) => homes.some(h => p === h || p.startsWith(h + '/'));
   const shHomes = [...new Set([shHome, real(shHome)].filter(h => h && h !== '/' && !under(h)))].sort((a, b) => b.length - a.length);
-  const names = [...new Set([...hosts, os.hostname(), os.hostname().split('.')[0]].filter(h => h && h.length > 2 && h !== 'localhost'))].sort((a, b) => b.length - a.length);
+  const names = [...new Set([...hosts, os.hostname(), os.hostname().split('.')[0]].filter((h): h is string => !!h && h.length > 2 && h !== 'localhost'))].sort((a, b) => b.length - a.length);
   const people = [...new Set([...users, (() => { try { return os.userInfo().username; } catch { return ''; } })()].filter(u => u && u.length > 2))];
   const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return text => {

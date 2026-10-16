@@ -63,9 +63,9 @@ function seatOf(code: RoomCode, as: string | undefined, die: CliIo['die']): stri
   if (as) return as;
   const me = identity.resolveSelf();
   if (me && me.code === code && me.role !== 'claude') return me.name;
-  const local = identity.localSeats(code).filter(n => n !== 'claude');
-  if (!local.length) die(`no seat of this machine is in room ${code}; join it first, or pass --as NAME`, 1);
-  return local[0];
+  const [first] = identity.localSeats(code).filter(n => n !== 'claude');
+  if (first === undefined) die(`no seat of this machine is in room ${code}; join it first, or pass --as NAME`, 1);
+  return first;
 }
 
 const LOCATOR_FLAGS = { ssh: 1, via: 1, url: 1 } as const satisfies FlagSpec;
@@ -92,7 +92,7 @@ const PROMOTE_USAGE = 'sub-human promote CODE [--as SEAT] [--ssh USER@HOST[:PORT
 function showStatus(code: RoomCode, { out }: CliIo) {
   // lib/handoff.ts status(code): the parts this prints
   const st: {
-    host: { host?: string; id?: number };
+    host: { host?: string | undefined; id?: number };
     isHost: boolean;
     doc?: { from: string; to: string; state: string; expires_at?: string } | null;
     machines?: { seats: string[]; connected: boolean }[];
@@ -111,12 +111,13 @@ function handoffCmd(args: readonly string[], ctx: CliIo): void {
   const { flags, rest } = flagsOf(args, { ...LOCATOR_FLAGS, room: 1, as: 1, status: 0 }, die);
   const code = roomOf(flags, die);
   if (flags.status) return showStatus(code, ctx);
-  if (rest.length === 2 && flags.ssh === undefined && flags.url === undefined) { // handoff NAME USER@HOST | https://FRONT
-    if (/^https?:\/\//.test(rest[1])) flags.url = rest[1]; else flags.ssh = rest[1];
+  const dest = rest[1];
+  if (rest.length === 2 && dest !== undefined && flags.ssh === undefined && flags.url === undefined) { // handoff NAME USER@HOST | https://FRONT
+    if (/^https?:\/\//.test(dest)) flags.url = dest; else flags.ssh = dest;
     rest.pop();
   }
-  if (rest.length !== 1) die(`usage: ${HANDOFF_USAGE} | handoff --status [--room CODE]`);
-  const to = rest[0];
+  const [to] = rest;
+  if (rest.length !== 1 || to === undefined) die(`usage: ${HANDOFF_USAGE} | handoff --status [--room CODE]`);
   const from = seatOf(code, flags.as, die);
   let d;
   try { d = handoff.ask(code, { from, to, locator: locatorOf(flags, die, code) }); } catch (e) { die(`could not hand room ${code} off: ${msgOf(e)}`, 1); }
@@ -173,7 +174,7 @@ function readLine(fd = 0): string {
     text += buf.subarray(0, n).toString('utf8');
     if (text.includes('\n') || text.length > 8192) break;
   }
-  return text.split('\n')[0];
+  return text.split('\n')[0] ?? ''; // split gives one part at least
 }
 
 function demoteCmd(args: readonly string[], ctx: CliIo): void {

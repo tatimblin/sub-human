@@ -52,9 +52,9 @@ const strings = (v: unknown): Record<string, string> => Object.fromEntries(Objec
 
 export function runInfo(screens: string): { A: string, B: string, remote: Record<string, string>, DEMO: Words } {
   const r = readJson<RunJson | null>(path.join(screens, 'run.json'), {}) || {};
-  const seats = Array.isArray(r.seats) && r.seats.length === 2 ? r.seats.map(String) : ['alice', 'bob'];
+  const [A, B] = Array.isArray(r.seats) && r.seats.length === 2 ? [String(r.seats[0]), String(r.seats[1])] : ['alice', 'bob'];
   const remote = r.remote && typeof r.remote === 'object' ? strings(r.remote) : {};
-  return { A: seats[0], B: seats[1], remote, DEMO: { ...DEMO, ...(r.words && typeof r.words === 'object' ? strings(r.words) : {}) } };
+  return { A, B, remote, DEMO: { ...DEMO, ...(r.words && typeof r.words === 'object' ? strings(r.words) : {}) } };
 }
 
 /** context()'s input: the run's screens and home, the room (default: the captures' or the newest), S11's second home. */

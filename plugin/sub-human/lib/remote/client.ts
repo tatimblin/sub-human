@@ -84,8 +84,8 @@ export interface ConnectOpts {
   /** this home's machine key's proof (lib/remote/machine-key.ts): the host derives the machine's id from it */
   machineKey?: { key: string; ts: number; sig: string };
   token?: LinkToken;
-  invite?: InviteSecret;
-  pin?: Pin;
+  invite?: InviteSecret | undefined;
+  pin?: Pin | undefined;
   /** protocol 3: the seat an invite line's PIN asks for, and this machine's short name */
   as?: { name: string; label: string };
   /** protocol 3: signs this machine's key over the host's challenge (machine-key.ts proofFor); with an invite the
@@ -237,7 +237,7 @@ async function connect(transport: Transport | Promise<Transport>, opts: ConnectO
       const nonce = checkHost ? crypto.randomBytes(18).toString('base64url') : undefined;
       const first: HelloReply & { host?: { key: string; sig: string }; challenge?: string } = await c._request('hello', { ...base, ...(nonce ? { nonce } : {}) }, ++c.seq, helloMs);
       if (!inRange(first)) throw skew(first);
-      if (checkHost) checkHost(first.host && typeof first.host === 'object' ? first.host : null, nonce!);
+      if (checkHost && nonce) checkHost(first.host && typeof first.host === 'object' ? first.host : null, nonce); // nonce: made with checkHost
       if (signMachine && typeof first.challenge === 'string') bound = { machine_key: signMachine(first.challenge) };
     }
     const r: HelloReply = await c._request('hello', { ...base, ...bound, ...cred }, ++c.seq, helloMs);

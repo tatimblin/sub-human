@@ -111,7 +111,9 @@ function bindSeat(store: AuthStore, linkId: string, name: string): LinkRecord {
     if (link.bound) throw new RoomError('AUTH', notBound(link, name), 'NOT_BOUND');
     return { ...cur, [linkId]: { ...link, seats: [...link.seats, name] } };
   });
-  return (next || (store.kv.get(LINKS_KEY) as Links))[linkId];
+  const link = (next || (store.kv.get(LINKS_KEY) as Links))[linkId];
+  if (!link) throw new RoomError('AUTH', `no link ${linkId} in room ${store.code}`, 'LINK_REVOKED'); // gone since the update
+  return link;
 }
 
 function unbindSeat(store: AuthStore, linkId: string, name: string): void {
@@ -132,17 +134,19 @@ const mayJoinAs = (link: Pick<LinkRecord, 'seats' | 'bound'> | null | undefined,
 
 function revokeLink(store: AuthStore, id: string, { now = Date.now() }: { now?: number } = {}): { link: LinkRecord | null; invites: number } | null {
   if (!store.isHost) throw new RoomError('HOST_ONLY', 'only the host of a room revokes its links');
-  let link = null as LinkRecord | null; // (as: set in the update)
+  const was: { link: LinkRecord | null } = { link: null }; // set in the update
   store.kv.update(LINKS_KEY, (cur: Links | null) => {
-    if (!cur || !cur[id]) return undefined;
-    link = cur[id];
+    const rec = cur ? cur[id] : undefined;
+    if (!cur || !rec) return undefined;
+    was.link = rec;
     const next = { ...cur };
     delete next[id];
     return next;
   });
   const n = invites.burnFor(store, id, { now });
-  const gone = link as LinkRecord | null;
-  if (gone) {
+  const { link } = was;
+  if (link) {
+    const gone = link;
     store.kv.update(REVOKED_KEY, (cur: Record<string, { token_sha256: string; at: string }> | null) => {
       const all = Object.entries({ ...cur, [id]: { token_sha256: gone.token_sha256, at: iso(now) } });
       return Object.fromEntries(all.slice(-REVOKED_KEEP));

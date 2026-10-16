@@ -67,6 +67,7 @@ function carry(d: Derived, es: readonly Readonly<Entry>[], from: number): Derive
   let pins = d.pins, host = d.host;
   for (let i = from; i < es.length; i++) {
     const e = es[i];
+    if (e === undefined) break; // i < es.length
     host = hostStep(host, e);
     if (e.kind !== 'member_joined' || e.via !== 'system' || typeof e.from !== 'string' || pins.has(e.from)) continue;
     const key = envelope.parseKey(e.pubkey);
@@ -74,7 +75,7 @@ function carry(d: Derived, es: readonly Readonly<Entry>[], from: number): Derive
     if (pins === d.pins) pins = new Map(pins);
     pins.set(e.from, key);
   }
-  return { n: es.length, last: es.length ? es[es.length - 1] : null, pins, host };
+  return { n: es.length, last: es.at(-1) ?? null, pins, host };
 }
 
 class FsRoomStore implements RoomStore {
@@ -89,7 +90,7 @@ class FsRoomStore implements RoomStore {
   declare _derived: Derived;
 
   /** code: the room code; dir: its directory (default <home>/rooms/<code>, read at each call). */
-  constructor(code: RoomCode, { dir }: { dir?: string } = {}) {
+  constructor(code: RoomCode, { dir }: { dir?: string | undefined } = {}) {
     if (!dir) roomDir(code); // validates the code
     this.code = code;
     this._dir = dir || null;
@@ -146,7 +147,9 @@ class FsRoomStore implements RoomStore {
   readById(ids: EntryId | readonly EntryId[]): readonly Readonly<Entry>[] {
     const want: readonly EntryId[] = typeof ids === 'number' ? [ids] : ids;
     const byId = new Map(this.readAll().map(e => [e.id, e]));
-    return want.filter(i => byId.has(i)).map(i => byId.get(i)!);
+    const out: Readonly<Entry>[] = [];
+    for (const i of want) { const e = byId.get(i); if (e) out.push(e); }
+    return out;
   }
   readAfter(seq: number, filterFn: (e: Readonly<Entry>) => boolean = () => true): readonly Readonly<Entry>[] { return this.readAll().filter(e => e.id > seq && filterFn(e)); }
   lastId(): number { return logIo.lastId(this.dir); }

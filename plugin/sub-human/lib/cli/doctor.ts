@@ -44,7 +44,7 @@ import type { Check, CheckStatus, DoctorOptions, Report } from './types.ts';
 const require = createRequire(import.meta.url);
 
 /** 24.3: the first 24 that strips TypeScript without an ExperimentalWarning (every hook is .ts). */
-const NODE_MIN = [24, 3];
+const NODE_MIN = [24, 3] as const;
 const STORE_DIRS = ['rooms', 'sessions', 'links', 'keys', 'bin'];
 
 function pluginVersion(): string | null {
@@ -59,7 +59,7 @@ function checkPlugin() {
 }
 
 function checkNode(version: string = process.versions.node): Check {
-  const [major, minor] = String(version).split('.').map(Number);
+  const [major = NaN, minor = NaN] = String(version).split('.').map(Number);
   const min = NODE_MIN.join('.');
   return major > NODE_MIN[0] || (major === NODE_MIN[0] && minor >= NODE_MIN[1])
     ? check({ id: 'node', status: 'pass', title: 'node', detail: `v${version}` })
@@ -81,7 +81,7 @@ function checkHome() {
   return check({ id: 'home', status: 'fail', title: 'sub-human folder', detail: bad.join('; '), fix: `${cli('doctor --fix')} in a terminal (or chmod 700 ${bad.map(b => b.split(' ')[0]).join(' ')})` });
 }
 
-async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, authorizedKeys, env = process.env }: { quick?: boolean; timeoutMs?: number; authorizedKeys?: string; env?: NodeJS.ProcessEnv } = {}): Promise<Report> {
+async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, authorizedKeys, env = process.env }: { quick?: boolean; timeoutMs?: number; authorizedKeys?: string | undefined; env?: NodeJS.ProcessEnv } = {}): Promise<Report> {
   const checks = [checkPlugin(), checkNode(), checkHome()];
   const akFile = authorizedKeys || path.join(os.homedir(), '.ssh', 'authorized_keys');
   const scan = scanAuthorizedKeys(akFile);
@@ -141,7 +141,7 @@ function parseArgs(args: readonly string[]): DoctorOptions {
   return o;
 }
 
-function applyFix(write: (s: string) => void, { authorizedKeys }: { authorizedKeys?: string } = {}) {
+function applyFix(write: (s: string) => void, { authorizedKeys }: { authorizedKeys?: string | undefined } = {}) {
   const h = lib('home.ts');
   const done: string[] = [];
   if (fs.existsSync(h.home())) {

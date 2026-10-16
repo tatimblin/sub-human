@@ -57,7 +57,7 @@ type Handle = (method: string, params: unknown) => unknown;
 export type Api = Record<string, { params: unknown; result: unknown }>;
 
 export interface Bridge<A extends Api> {
-  call<M extends keyof A & string>(method: M, params: A[M]['params'], opts?: { deadlineMs?: number }): A[M]['result'];
+  call<M extends keyof A & string>(method: M, params: A[M]['params'], opts?: { deadlineMs?: number | undefined }): A[M]['result'];
   close(): void;
 }
 
@@ -69,7 +69,7 @@ function createBridge<A extends Api>({ handler, deadlineMs = config.LINK_CALL_MS
   port.unref();
   let seq = 0;
 
-  function call(method: string, params: unknown, { deadlineMs: ms = deadlineMs }: { deadlineMs?: number } = {}): unknown {
+  function call(method: string, params: unknown, { deadlineMs: ms = deadlineMs }: { deadlineMs?: number | undefined } = {}): unknown {
     const id = ++seq;
     const until = Date.now() + ms;
     port.postMessage({ id, method, params });

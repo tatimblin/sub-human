@@ -33,7 +33,7 @@ const DIGITS = /^[0-9]{3,10}$/;
 export const SECRET_WORD: RegExp = /^[0-9A-Za-z]{32,48}$/;
 const words = (args: unknown) => String(args ?? '').trim().split(/\s+/).filter(Boolean);
 const secretShaped = (w: string) => DIGITS.test(w) || SECRET_WORD.test(w);
-export const mayHoldSecret = (args: unknown): boolean => { const a = words(args); return SECRET_VERBS.includes(a[0]) || a.some(secretShaped); };
+export const mayHoldSecret = (args: unknown): boolean => { const a = words(args); const [verb = ''] = a; return SECRET_VERBS.includes(verb) || a.some(secretShaped); };
 /** A word of the prompt is PIN- or SECRET-shaped: lib/commands/index.ts never hands such a prompt a seat's block. */
 export const hasPinWord = (args: unknown): boolean => words(args).some(secretShaped);
 

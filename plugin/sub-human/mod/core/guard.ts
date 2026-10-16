@@ -107,7 +107,7 @@ export function braceExpand(word: string, max = 64): string[] {
   const m = /\{([^{}]*,[^{}]*)\}/.exec(word);
   if (!m) return [word];
   const out: string[] = [];
-  for (const alt of m[1].split(',')) {
+  for (const alt of m[0].slice(1, -1).split(',')) { // the braces' inside (the group)
     for (const w of braceExpand(word.slice(0, m.index) + alt + word.slice(m.index + m[0].length), max)) {
       out.push(w);
       if (out.length >= max) return out;
@@ -121,7 +121,7 @@ function segTest(seg: string): (name: string) => boolean {
   if (!GLOB_CHARS.test(seg)) return name => name === seg;
   let re = '';
   for (let i = 0; i < seg.length; i++) {
-    const c = seg[i];
+    const c = seg.charAt(i);
     if (c === '*') re += '.*';
     else if (c === '?') re += '.';
     else if (c === '[') {
@@ -144,9 +144,10 @@ function segTest(seg: string): (name: string) => boolean {
 export function reach(p: string, root: string): 'under' | 'above' | null {
   const ps = normalize(p).split('/').filter(Boolean), rs = root.split('/').filter(Boolean);
   for (let i = 0; i < rs.length; i++) {
-    if (i >= ps.length) return 'above';
-    if (ps[i] === '**') return 'under';
-    if (rs[i] !== '*' && !segTest(ps[i])(rs[i])) return null;
+    const r = rs[i] ?? '', s = ps[i]; // r: i is in range
+    if (s === undefined) return 'above';
+    if (s === '**') return 'under';
+    if (r !== '*' && !segTest(s)(r)) return null;
   }
   return 'under';
 }
@@ -212,15 +213,19 @@ export function pathVerdict(cmd: string, ctx: GuardCtx = {}): string | null {
   for (const seg of cmd.split(/\|\||&&|[;|&\n()]/)) {
     const words = seg.trim().split(/\s+/).filter(Boolean).map(unquote).map(w => w.replace(/^\d*[<>]+&?/, '')).filter(Boolean);
     let i = 0;
-    while (i < words.length && (/^\w+=/.test(words[i]) || WRAPPERS.has(words[i]) || /^-/.test(words[i]) && i > 0 && WRAPPERS.has(words[i - 1]))) i++;
-    if (i < words.length && words[i - 1] === 'timeout' && /^\d/.test(words[i])) i++;
+    for (let w = words[0]; w !== undefined; w = words[++i]) {
+      if (!(/^\w+=/.test(w) || WRAPPERS.has(w) || /^-/.test(w) && i > 0 && WRAPPERS.has(words[i - 1] ?? ''))) break;
+    }
+    const next = words[i];
+    if (next !== undefined && words[i - 1] === 'timeout' && /^\d/.test(next)) i++;
     const tool = (words[i] || '').split('/').pop() || '';
     const args = words.slice(i + 1);
     if (tool === 'cd' || tool === 'pushd') {
       const target = args.find(a => !a.startsWith('-')) ?? '~';
       const why = check(target, base); // a cd into the store is the store
       if (why) return why;
-      base = placeWord(braceExpand(target)[0], base, userHome);
+      const [first = target] = braceExpand(target); // never empty
+      base = placeWord(first, base, userHome);
       continue;
     }
     const walker = WALKERS.has(tool) || (SHELLS.has(tool) && args.includes('-c')) || (['grep', 'egrep', 'fgrep'].includes(tool) && isRecursiveGrep(args))
@@ -237,11 +242,13 @@ export function pathVerdict(cmd: string, ctx: GuardCtx = {}): string | null {
       if (why) return why;
     }
     // a walker with no path word (rg PATTERN, grep -r PATTERN, find -name X) walks where it stands
-    if (walker && base && (tool === 'find' ? !args.length || args[0].startsWith('-') : plain <= 1)) { const why = check('.', base); if (why) return why; }
+    const [arg0] = args;
+    if (walker && base && (tool === 'find' ? arg0 === undefined || arg0.startsWith('-') : plain <= 1)) { const why = check('.', base); if (why) return why; }
   }
   // paths inside other words: an interpreter's code, a quoted string
   for (const m of cmd.matchAll(EMBEDDED)) { const why = check(unquote(m[0]), base); if (why) return why; }
-  if (walks && aboves.length) return aboves[0].p.above;
+  const [above] = aboves;
+  if (walks && above) return above.p.above;
   return null;
 }
 
@@ -260,11 +267,12 @@ function ansiWord(cmd: string, j: number): [string, number] | null {
     let m: RegExpExecArray | null;
     const rest = cmd.slice(j + 1);
     if (SIMPLE_ESC[e] !== undefined) { word += SIMPLE_ESC[e]; j += 2; }
-    else if ((m = /^x([0-9a-fA-F]{1,2})/.exec(rest))) { word += String.fromCharCode(parseInt(m[1], 16)); j += 1 + m[0].length; }
-    else if ((m = /^u([0-9a-fA-F]{1,4})/.exec(rest))) { word += String.fromCodePoint(parseInt(m[1], 16)); j += 1 + m[0].length; }
-    else if ((m = /^U([0-9a-fA-F]{1,8})/.exec(rest))) { const n = parseInt(m[1], 16); if (n > 0x10ffff) return null; word += String.fromCodePoint(n); j += 1 + m[0].length; }
-    else if ((m = /^([0-7]{1,3})/.exec(rest))) { word += String.fromCharCode(parseInt(m[1], 8) & 0xff); j += 1 + m[0].length; }
-    else if ((m = /^c(.)/.exec(rest))) { word += String.fromCharCode(m[1].charCodeAt(0) & 0x1f); j += 3; }
+    // m[0] is the escape past its backslash: its letter, then the digits (or \c's character)
+    else if ((m = /^x[0-9a-fA-F]{1,2}/.exec(rest))) { word += String.fromCharCode(parseInt(m[0].slice(1), 16)); j += 1 + m[0].length; }
+    else if ((m = /^u[0-9a-fA-F]{1,4}/.exec(rest))) { word += String.fromCodePoint(parseInt(m[0].slice(1), 16)); j += 1 + m[0].length; }
+    else if ((m = /^U[0-9a-fA-F]{1,8}/.exec(rest))) { const n = parseInt(m[0].slice(1), 16); if (n > 0x10ffff) return null; word += String.fromCodePoint(n); j += 1 + m[0].length; }
+    else if ((m = /^[0-7]{1,3}/.exec(rest))) { word += String.fromCharCode(parseInt(m[0], 8) & 0xff); j += 1 + m[0].length; }
+    else if ((m = /^c./.exec(rest))) { word += String.fromCharCode(m[0].charCodeAt(1) & 0x1f); j += 3; }
     else { word += '\\' + e; j += 2; }
   }
 }
@@ -281,7 +289,7 @@ type Heredoc = { delim: string; quoted: boolean; strip: boolean };
 /** The shell keyword w starts at cmd[i] as a word of its own. */
 function keywordAt(cmd: string, i: number, w: string): boolean {
   if (!cmd.startsWith(w, i)) return false;
-  const before = i === 0 ? '' : cmd[i - 1], after = cmd[i + w.length] ?? '';
+  const before = cmd.charAt(i - 1), after = cmd.charAt(i + w.length); // '' past either end
   return (before === '' || /[\s;&|(`]/.test(before)) && (after === '' || /[\s;&|)]/.test(after));
 }
 
@@ -293,7 +301,7 @@ function heredocAt(cmd: string, i: number): [Heredoc, number] | null {
   if (strip) j++;
   while (cmd[j] === ' ' || cmd[j] === '\t') j++;
   let delim = '', quoted = false;
-  while (j < cmd.length && !/[\s;&|<>()]/.test(cmd[j])) {
+  while (j < cmd.length && !/[\s;&|<>()]/.test(cmd.charAt(j))) {
     const c = cmd[j];
     if (c === "'" || c === '"') {
       const close = cmd.indexOf(c, j + 1);
@@ -335,12 +343,13 @@ export function ansiC(cmd: string): string | null {
 
 function scanQuotes(cmd: string, start: Frame['k']): string | null {
   let out = '';
-  const st: Frame[] = [frame(start)];
+  const root = frame(start);
+  const st: Frame[] = [root];
   const pending: Heredoc[] = [];
   let i = 0;
   while (i < cmd.length) {
     const c = cmd[i];
-    const f = st[st.length - 1];
+    const f = st.at(-1) ?? root; // root is never popped: st is never empty
     if (c === '\\') { out += cmd.slice(i, i + 2); i += 2; continue; }
     if (c === '\n' && pending.length && (f.k === 'u' || f.k === 'p' || f.k === 'b')) {
       out += c; i++;
@@ -466,7 +475,7 @@ export function writeTarget(input: { file_path?: unknown; notebook_path?: unknow
 }
 
 /** The path made absolute (~ expanded), or null when it cannot be. */
-export function absTarget(p: unknown, { cwd, userHome }: { cwd?: string | null; userHome?: string | null } = {}): string | null {
+export function absTarget(p: unknown, { cwd, userHome }: { cwd?: string | null | undefined; userHome?: string | null } = {}): string | null {
   if (typeof p !== 'string' || !p) return null;
   let x = p;
   if (/^~(?=\/|$)/.test(x)) {

@@ -45,7 +45,7 @@ const record = (v: unknown): Record<string, unknown> | null => (v && typeof v ==
 function same(q: ShownQuestion, spec: CardSpec): boolean {
   const opts = Array.isArray(q.options) ? q.options : null;
   return q.question === spec.question && !!opts && opts.length === spec.options.length
-    && opts.every((o, i) => !!o && o.label === spec.options[i].label && o.description === spec.options[i].description);
+    && opts.every((o, i) => { const so = spec.options[i]; return !!o && !!so && o.label === so.label && o.description === so.description; }); // as long: so is there
 }
 
 export function answerCard(spec: CardSpec, response: CardResponse | null | undefined, input?: { questions?: unknown } | null,
@@ -56,9 +56,9 @@ export function answerCard(spec: CardSpec, response: CardResponse | null | undef
   const has = !!answers && Object.hasOwn(answers, spec.question);
   const asked = [...shown, ...list(input && input.questions)].some(q => q.question === spec.question) || (!exact && has);
   if (!asked) return { kind: 'absent' };
-  if (r.afkTimeoutMs || r.followUp || !has) return { kind: 'none' };
+  if (r.afkTimeoutMs || r.followUp || !answers || !has) return { kind: 'none' };
   if (exact && !shown.some(q => same(q, spec))) return { kind: 'none' };
-  const label = String(answers![spec.question]);
+  const label = String(answers[spec.question]);
   if (!spec.options.some(o => o.label === label)) return { kind: 'other', label };
   const note = record(record(r.annotations)?.[spec.question])?.notes;
   return typeof note === 'string' ? { kind: 'answer', label, notes: note } : { kind: 'answer', label };

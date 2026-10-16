@@ -132,7 +132,9 @@ function createFake({ now: start = 0 }: { now?: number } = {}): FakeClock {
     runAll(limit = 1000) {
       for (let i = 0; timers.size; i++) {
         if (i >= limit) throw new Error(`runAll: still ${timers.size} timer(s) after ${limit} firings`);
-        fire(next(Infinity)!); // timers is not empty, so some timer is due by Infinity
+        const t = next(Infinity);
+        if (!t) break; // never: timers is not empty, so some timer is due by Infinity
+        fire(t);
       }
     },
     pending: () => timers.size,

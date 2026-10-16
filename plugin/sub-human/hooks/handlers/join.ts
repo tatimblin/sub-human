@@ -93,6 +93,7 @@ export function fail(err: unknown, input: JoinIn | null | undefined): Reply {
   let module = false;
   try { module = !!input && attested(input); } catch { /* classic */ }
   const m = err instanceof Error ? err.message : String(err);
-  const text = `sub-human could not run that (${m.split('\n')[0].slice(0, 200)}). Run /sub-human doctor.`;
+  const [first = ''] = m.split('\n');
+  const text = `sub-human could not run that (${first.slice(0, 200)}). Run /sub-human doctor.`;
   return args === null || mayHoldSecret(args) ? { kind: 'secret', text, refused: true, module } : { kind: 'refused', text, module };
 }

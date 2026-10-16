@@ -40,7 +40,7 @@ export interface FrameLine { t: number, kind: 'frame', session: string, ansi: st
 export interface Opts { _: string[], [flag: string]: string | string[] | undefined }
 /** The active capture file's content. */
 interface Active { dir: string, pid: number, t0: string }
-interface SceneRec { scene?: string, startT?: number, started?: string, endT?: number, ended?: string, status?: string, reason?: string }
+interface SceneRec { scene?: string | undefined, startT?: number, started?: string, endT?: number, ended?: string, status?: string | undefined, reason?: string }
 interface RunJson { scenes?: unknown, [k: string]: unknown }
 interface ChecksJson { _meta?: { summary?: unknown }, [scene: string]: unknown }
 export interface Verdict { error?: string, summary?: unknown, failed?: string[], pass?: boolean }
@@ -115,13 +115,13 @@ export function finalise(file: string, meta: { sessions?: Record<string, Size>, 
     if (o.kind === 'meta') { prevMeta = o; continue; }
     kept.push([Number(o.t) || 0, o.kind, l]);
   }
-  const order = kept.map((_k, i) => i).sort((a, b) => kept[a][0] - kept[b][0] || a - b);
+  const sorted = [...kept].sort((a, b) => a[0] - b[0]); // a stable sort: equal t keep their order
   const m: Record<string, unknown> = { t: 0, kind: 'meta', sessions: { ...(prevMeta.sessions || {}), ...(meta.sessions || {}) }, room: meta.room || prevMeta.room || null };
   for (const k of Object.keys(meta)) if (!(k in m)) m[k] = meta[k];
   const fd = fs.openSync(file + '.tmp', 'w');
   try {
     fs.writeSync(fd, line(m));
-    for (const i of order) fs.writeSync(fd, kept[i][2] + '\n');
+    for (const [, , raw] of sorted) fs.writeSync(fd, raw + '\n');
   } finally { fs.closeSync(fd); }
   fs.renameSync(file + '.tmp', file);
   return { lines: kept.length + 1, frames: kept.filter(k => k[1] === 'frame').length, markers: kept.filter(k => k[1] === 'marker').length };
@@ -242,10 +242,8 @@ const str = (v: string | string[] | undefined): string | undefined => (typeof v 
 
 function opts(args: string[]): Opts {
   const o: Opts = { _: [] };
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a.startsWith('--')) o[a.slice(2)] = args[++i]; else o._.push(a);
-  }
+  const it = args.values();
+  for (const a of it) if (a.startsWith('--')) o[a.slice(2)] = it.next().value; else o._.push(a);
   return o;
 }
 

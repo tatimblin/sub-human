@@ -71,7 +71,7 @@ function encode(secret: Buffer, tag: Buffer): InviteSecret {
 
 function decode(text: unknown): { secret: Buffer; tag: Buffer } | null {
   if (typeof text !== 'string') return null;
-  const w = text.trim().toLowerCase().replace(/[ilo]/g, c => LOOKALIKE[c]);
+  const w = text.trim().toLowerCase().replace(/[ilo]/g, c => LOOKALIKE[c] ?? c); // c: one of LOOKALIKE's keys
   if (!WORD_RE.test(w)) return null;
   let n = 0n;
   for (const c of w) n = (n << 5n) | BigInt(ALPHABET.indexOf(c));

@@ -12,17 +12,18 @@ import type { Signer } from '../remote/admission.ts';
 
 const require = createRequire(import.meta.url);
 
-export const admit: Verb = (argv, { cur }) => {
-  const why = hostOnly(cur, 'admit');
-  if (why || !cur) return refused(why!);
-  if (argv.length > 1 || (argv[0] && !/^[0-9a-f]{6,12}$/.test(argv[0]))) return refused(`usage: /sub-human admit (who is waiting), then /sub-human admit ID from that list. ${HELP_HINT}`);
+export const admit: Verb = (argv, { cur: seat }) => {
+  const cur = hostOnly(seat, 'admit');
+  if (typeof cur === 'string') return refused(cur);
+  const [ref, ...more] = argv;
+  if (more.length || (ref && !/^[0-9a-f]{6,12}$/.test(ref))) return refused(`usage: /sub-human admit (who is waiting), then /sub-human admit ID from that list. ${HELP_HINT}`);
   try {
     const adm: typeof import('../remote/admission.ts') = require('../remote/admission.ts');
-    if (!argv.length) {
+    if (ref === undefined) {
       const reqs = adm.pending(cur.code);
       return say(reqs.length ? `waiting to join room ${cur.code}: ${reqs.map(q => `${adm.describe(q)}: let them in with /sub-human admit ${q.ref}`).join('; ')}` : `nobody is waiting to join room ${cur.code}.`);
     }
     const sign: Signer = p => envelope.sign(p, store.humanKey(cur.code, cur.name), { room: cur.code, from: cur.name });
-    return say(adm.letIn(cur.code, argv[0], { by: cur.name, sign }).text);
+    return say(adm.letIn(cur.code, ref, { by: cur.name, sign }).text);
   } catch (e) { return refused(msgOf(e)); }
 };

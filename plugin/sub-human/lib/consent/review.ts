@@ -72,7 +72,7 @@ import type { RoomCode } from '../brand.ts';
 
 /** recheck: a plan-view Yes that came as the view opened (within YES_GUARD_MS, or while the person had typed text in
  * the prompt), not recorded: the card asks once, and only its answer records (item 8). */
-export interface State { review: Review | null; note: Confirm | null; recheck?: Recheck | null }
+export interface State { review: Review | null; note: Confirm | null; recheck?: Recheck | null | undefined }
 /** guardMs: YES_GUARD_MS unless the handler says otherwise (the tests shorten it: env.testMs). */
 export interface ReviewCtx { name: string; now: number; guardMs?: number }
 
@@ -297,7 +297,8 @@ function showEarly(r: Review, plan: PlanFile): [Review, ConsentEffect[]] {
 }
 
 /** Whether (and how) the handler reads the dialog's answer for this event: 'wait' polls for the line, 'now' does not. */
-export function answerNeeded(r: Review | null, ev: { type: ConsentEvent['type']; toolUseId?: string | null; mode?: string }): 'wait' | 'now' | null {
+export function answerNeeded(r: Review | null, ev: { type: ConsentEvent['type']; toolUseId?: string | null; mode?: string | undefined }
+): 'wait' | 'now' | null {
   if (!r || r.resolved || !(r.phase === 'shown' || r.unread)) return null;
   const same = !!r.tool_use_id && r.tool_use_id === ev.toolUseId;
   switch (ev.type) {
@@ -346,9 +347,10 @@ function unshown(ev: Extract<ConsentEvent, { type: 'exited' }>, ctx: ReviewCtx, 
   if (!hit.length && plan.trim()) { const h = hash12(Buffer.from(plan, 'utf8')); hit = ev.pending.filter(p => p.from !== ctx.name && p.hash === h); }
   if (!hit.length && plan.length < 300) hit = ev.pending.filter(p => ev.callNames.includes(p.hash));
   if (!hit.length && !plan.trim()) hit = ev.pending;
-  if (!hit.length) return null;
-  const again = ev.reviewable && hit.every(p => p.viewable) ? NEXT.open(hit[0].hash) : NEXT.card(hit[0].hash);
-  return { effects: [{ do: 'pick', hash: hit[0].hash }], say: { to: 'context', parts: [SAY.unshown(ctx.name, hit.map(p => p.hash).join(', '), again)] } };
+  const [first] = hit;
+  if (!first) return null;
+  const again = ev.reviewable && hit.every(p => p.viewable) ? NEXT.open(first.hash) : NEXT.card(first.hash);
+  return { effects: [{ do: 'pick', hash: first.hash }], say: { to: 'context', parts: [SAY.unshown(ctx.name, hit.map(p => p.hash).join(', '), again)] } };
 }
 
 /** Post(ExitPlanMode) for the person's own plan: their own pending proposal unedited is their signoff; else offer to propose it. */
@@ -356,8 +358,8 @@ function ownPlan(ev: Extract<ConsentEvent, { type: 'exited' }>, ctx: ReviewCtx):
   const plan = ev.response.plan;
   if (ev.response.isAgent || typeof plan !== 'string' || !plan.trim()) return { effects: [], say: null };
   // "proposal HASH" with no review: not the person's plan, and not an answer (the dialog showed only the name)
-  const named = /^\s*(?:the room )?proposal\s+([0-9a-f]{6,12})\s*\.?\s*$/i.exec(plan);
-  if (named) return { effects: [], say: { to: 'context', parts: [SAY.stubPlan(ctx.name, named[1])] } };
+  const [, named] = /^\s*(?:the room )?proposal\s+([0-9a-f]{6,12})\s*\.?\s*$/i.exec(plan) ?? [];
+  if (named !== undefined) return { effects: [], say: { to: 'context', parts: [SAY.stubPlan(ctx.name, named)] } };
   const h = hash12(Buffer.from(plan, 'utf8'));
   if (!ev.response.edited && ev.pending.some(p => p.hash === h && p.from === ctx.name)) {
     return { effects: [{ do: 'answer', hash: h, choice: 'Agree' }], say: { to: 'context', parts: [{ answer: h }] } };
@@ -379,7 +381,8 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
   switch (ev.type) {
     case 'enter': {
       if (r && r.phase === 'restore') return { state, effects: [], say: { to: 'allow', text: SAY.restoring } };
-      if (!ev.pending.length || !ev.reviewable) return none(state);
+      const newest = ev.pending.at(-1);
+      if (!newest || !ev.reviewable) return none(state);
       // a review left behind: its backup goes back before a new one is taken
       const [old, effects] = r ? restore(r) : [r, [] as ConsentEffect[]];
       const said = ev.said;
@@ -391,7 +394,6 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
       }
       // The person's pick, else the newest: never the model's choice. A pick made after their latest prompt stands.
       const fresh = !!said && !(ev.kept && ev.kept.at > said.at);
-      const newest = ev.pending[ev.pending.length - 1];
       const byHash = (h: string | null | undefined) => (h ? ev.pending.find(p => p.hash === h) : undefined);
       const p = (fresh ? byHash(ev.named) || since : byHash(ev.kept && ev.kept.hash)) || newest;
       if (fresh) effects.push({ do: 'pick', hash: byHash(ev.named) ? ev.named : since ? since.hash : null });
@@ -568,10 +570,10 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
       if (!r || !r.tool_use_id || r.tool_use_id !== ev.toolUseId || r.resolved || !(r.phase === 'shown' || r.unread)) return none(state);
       const res = resolve(r, state.note, ev, ctx, true);
       const h = r.hash || '';
-      const noted = !!res.note && res.note !== state.note;
+      const added = res.note !== state.note ? res.note : null;
       return { state: { review: { ...res.review, phase: 'exiting' }, note: res.note }, effects: [],
-        say: ctxSay(noted ? SAY.rejectedNote(n, h) : SAY.rejectedClosed(n, h)),
-        ...(noted ? { notice: SAY.noteNotice(res.note!.title, h) } : {}) };
+        say: ctxSay(added ? SAY.rejectedNote(n, h) : SAY.rejectedClosed(n, h)),
+        ...(added ? { notice: SAY.noteNotice(added.title, h) } : {}) };
     }
 
     case 'prompt': {
@@ -596,12 +598,14 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
           say: { to: 'ask', text: SAY.noteAsk(n, note.hash), show: { note: true } } };
       }
       const base = { ...state, note };
-      if (!ev.hit.length) return none(base);
+      const [first] = ev.hit;
+      if (!first) return none(base);
       // a Yes that came as the plan view opened is confirmed on the card, not in the view again (item 8)
-      const again = state.recheck ? ev.hit.find(p => p.hash === state.recheck!.hash) : undefined;
+      const recheck = state.recheck;
+      const again = recheck ? ev.hit.find(p => p.hash === recheck.hash) : undefined;
       if (again) return { state: base, effects: [], say: { to: 'ask', text: SAY.recheckAsk(n, again.hash), show: { card: [again.hash] } } };
       if (ev.reviewable && ev.hit.every(p => p.viewable)) {
-        return { state: base, effects: [{ do: 'pick', hash: ev.hit[0].hash }], say: { to: 'deny', parts: [SAY.planView(n, ev.hit[0].hash)] } };
+        return { state: base, effects: [{ do: 'pick', hash: first.hash }], say: { to: 'deny', parts: [SAY.planView(n, first.hash)] } };
       }
       return { state: base, effects: [], say: { to: 'ask', text: `room proposal ${ev.hit.map(p => p.hash).join(', ')}`, show: { card: ev.hit.map(p => p.hash) } } };
     }
@@ -620,7 +624,8 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
       }
       if (!ev.answers.length && !ev.asked) return none(state); // not a consent card
       // the recheck is asked once: any card for its proposal settles it, answered or not
-      const rc = state.recheck && (ev.answers.some(a => a.hash === state.recheck!.hash) || !ev.answers.length) ? null : state.recheck;
+      const held = state.recheck;
+      const rc = held && (ev.answers.some(a => a.hash === held.hash) || !ev.answers.length) ? null : held;
       state = rc === state.recheck ? state : { ...state, recheck: rc };
       if (ev.afk || !ev.answers.length) return { state, effects: [], say: ctxSay(SAY.cardNoAnswer(n)) };
       const effects: ConsentEffect[] = [];

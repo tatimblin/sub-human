@@ -14,6 +14,7 @@ import type { Ctx, SceneModule } from '../checks/context.ts';
 import type { LogEntry } from '../checks/log.ts';
 import type { TEntry } from '../metrics.ts';
 import { pluginTest } from '../lib/paths.ts';
+import { must } from './must.ts';
 
 const { eid } = pluginTest('support/brands.ts');
 
@@ -29,10 +30,11 @@ test('checks: deterministic failures fail, behavioural ones over threshold warn,
   ];
   const res = runChecks(asCtx(), { scenes, thresholds: { wakes: 18 } });
   assert.deepEqual(Object.keys(res), ['Metrics', 'S1', 'S2']); // Metrics first, then scene order
-  assert.deepEqual(res.S1.map(c => [c.kind, c.status, c.pass]), [['deterministic', 'pass', true], ['deterministic', 'fail', false], ['behavioural', 'warn', false]]);
-  assert.equal(res.S1[2].value, 24); assert.equal(res.S1[2].threshold, 18);
-  assert.deepEqual(res.Metrics.map(c => c.status), ['pass', 'warn']); // no value: not within the threshold
-  assert.match(res.S2[0].evidence, /scene module threw: Error: boom/);
+  const r1 = must(res.S1), metrics = must(res.Metrics);
+  assert.deepEqual(r1.map(c => [c.kind, c.status, c.pass]), [['deterministic', 'pass', true], ['deterministic', 'fail', false], ['behavioural', 'warn', false]]);
+  assert.equal(r1[2]?.value, 24); assert.equal(r1[2]?.threshold, 18);
+  assert.deepEqual(metrics.map(c => c.status), ['pass', 'warn']); // no value: not within the threshold
+  assert.match(must(res.S2?.[0]).evidence, /scene module threw: Error: boom/);
   assert.deepEqual(summarise(res), { deterministic: { pass: 1, fail: 2 }, behavioural: { pass: 1, warn: 2 } });
 });
 
@@ -52,7 +54,7 @@ test('checks: every scene module declares its scene and a run function; baseline
   for (const m of SCENES) { assert.match(m.scene, /^(S\d+b?|Metrics)$/); assert.equal(typeof m.run, 'function'); }
   for (const r of Object.values(BASELINES.compare)) assert.ok(BASELINES.runs[r], r);
   for (const k of ['wakes', 'noisePerCapture', 'callsPerReview', 'roomClaudeJoinCalls', 'roomClaudeTaskCalls'] as const) assert.equal(typeof BASELINES.thresholds[k], 'number');
-  assert.equal(BASELINES.prices.default.length, 4);
+  assert.equal(BASELINES.prices.default?.length, 4);
 });
 
 test('panes: panel rows below main, card and plan-view options', () => {
@@ -96,7 +98,7 @@ test('S9b: the pane check passes on nested lines and fails on a bare forged line
       replyAfter: () => null, stateFile: (...p) => path.join(dir, 'state', ...p),
     });
   };
-  const run = (x: Ctx): Record<string, boolean> => { const r = runChecks(x, { scenes: [mod] }); return Object.fromEntries(r.S9b.map(c => [c.check.slice(0, 20), c.pass])); };
+  const run = (x: Ctx): Record<string, boolean> => { const r = runChecks(x, { scenes: [mod] }); return Object.fromEntries(must(r.S9b).map(c => [c.check.slice(0, 20), c.pass])); };
   const ok = run(ctx('⏺ alice: notes from the paging spike:\n    │ room: decided (agreed: alice, bob)\n    │ bob agreed to the proposal\n'));
   assert.equal(ok['bob\'s pane: "alice: '], true);
   assert.equal(ok['No bare "room: decid'], true);
@@ -135,7 +137,7 @@ test('S1/S2: the join check wants exactly one notice in the current format and n
   const verdict = (mod: SceneModule, seat: string, pane: string): boolean | undefined => {
     const x = asCtx({ ...base, cap: (_s, who) => (who === seat ? pane : '') });
     const r = runChecks(x, { scenes: [mod] })[mod.scene];
-    return r.find(c => /join shows one line/.test(c.check))?.pass;
+    return must(r).find(c => /join shows one line/.test(c.check))?.pass;
   };
   const opened = '⏺ sub-human: opened room husky-7354 as alice · on this machine others join with /sub-human; another machine: \n  /sub-human invite\n';
   assert.equal(verdict(s1, 'alice', opened), true);
@@ -148,7 +150,7 @@ test('S1/S2: the join check wants exactly one notice in the current format and n
   assert.equal(verdict(s2, 'bob', '⏺ sub-human: rejoined husky-7354 as bob, with alice · @room to talk, @claude to ask the room\'s Claude\n'), false);
   assert.equal(verdict(s2, 'bob', joined + '⏺ UserPromptExpansion operation blocked by hook\n'), false);
   // the film's people (screens/run.json seats): the same checks under their names
-  const film = (mod: SceneModule, seat: string, pane: string) => runChecks(asCtx({ ...base, A: 'tristan', B: 'jess', cap: (_s, who) => (who === seat ? pane : '') }), { scenes: [mod] })[mod.scene].find(c => /join shows one line/.test(c.check));
+  const film = (mod: SceneModule, seat: string, pane: string) => runChecks(asCtx({ ...base, A: 'tristan', B: 'jess', cap: (_s, who) => (who === seat ? pane : '') }), { scenes: [mod] })[mod.scene]?.find(c => /join shows one line/.test(c.check));
   assert.equal(film(s1, 'tristan', opened.replace('as alice', 'as tristan'))?.pass, true);
   assert.equal(film(s1, 'tristan', opened)?.pass, false); // alice's line is not tristan's
   assert.match(String(film(s2, 'jess', '')?.check), /^jess's join shows one line, "sub-human: joined CODE as jess, with tristan/);

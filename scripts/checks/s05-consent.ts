@@ -17,7 +17,7 @@ const hash12 = (t: string): string => crypto.createHash('sha256').update(Buffer.
 export function isReview(call: Block, es: TEntry[], hashes: Set<string>): boolean {
   const plan = String((call.input || {}).plan || '');
   const stub = /^proposal ([0-9a-f]{12})\b/.exec(plan);
-  if (!(stub ? hashes.has(stub[1]) : hashes.has(hash12(plan)))) return false;
+  if (!(stub ? hashes.has(stub[1] ?? '') : hashes.has(hash12(plan)))) return false;
   const res = es.flatMap(e => (e.type === 'user' ? blocksOf(e) : [])).find(r => r && r.type === 'tool_result' && r.tool_use_id === call.id);
   const t = res ? (typeof res.content === 'string' ? res.content : JSON.stringify(res.content)) : '';
   return !/^User has approved exiting plan mode/.test(t);
@@ -34,12 +34,12 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   det(`${B}'s objection via=human; the note byte-exact`, ob && ob.via === 'human' && ob.text === DEMO.note5, ob ? `${x.fmt(ob)} (${ob.text === DEMO.note5 ? '===' : '!=='} typed)` : 'no objection');
   const sa = p1 && log.find(e => e.kind === 'signoff' && e.from === A && e.proposal_hash === p1.hash);
   det(`${A}'s agreement on the first proposal via=human`, sa && sa.via === 'human', x.fmt(sa));
-  det('The room\'s Claude revised: a second proposal with a new hash', p2 && p2.from === 'claude' && p2.hash !== p1.hash, p2 ? `${p1.hash.slice(0, 6)} → ${p2.hash.slice(0, 6)} (#${p2.id})` : 'no revision');
+  det('The room\'s Claude revised: a second proposal with a new hash', p2 && p2.from === 'claude' && p2.hash !== p1?.hash, p2 ? `${p1?.hash.slice(0, 6)} → ${p2.hash.slice(0, 6)} (#${p2.id})` : 'no revision');
   const sig = p2 ? [A, B].map(n => log.find(e => e.kind === 'signoff' && e.via === 'human' && e.from === n && e.proposal_hash === p2.hash)) : [];
   const d = p2 && log.find(e => e.kind === 'decision' && e.proposal_hash === p2.hash);
   det('Both agree on the revision; the decision cites both answers', sig.length === 2 && sig.every(Boolean) && d && sig.every(y => y && (d.refs || []).includes(y.id)) && /^agreed: /.test(String(d.text)),
     d ? `${x.fmt(d)} refs [${(d.refs || []).join(',')}]` : `signoffs ${sig.map(y => (y ? '#' + y.id : 'missing')).join(', ')}; no decision`);
-  const late = p2 ? log.filter(e => (e.kind === 'signoff' || e.kind === 'objection') && e.proposal_hash === p1.hash && e.id > p2.id) : [];
+  const late = p2 ? log.filter(e => (e.kind === 'signoff' || e.kind === 'objection') && e.proposal_hash === p1?.hash && e.id > p2.id) : [];
   det('No answer recorded on the old hash after the revision', late.length === 0, late.length ? late.map(x.fmt).join('; ') : `none after #${p2 ? p2.id : '?'}`);
   const human = [A, B].map(n => log.filter(e => e.from === n && (e.kind === 'signoff' || e.kind === 'objection') && e.via !== 'human').length);
   det('Every answer came from a card (via=human); no Claude answered', human.every(n => n === 0), `non-human answers: ${A} ${human[0]}, ${B} ${human[1]}`);

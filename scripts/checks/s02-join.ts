@@ -19,14 +19,14 @@ export function run(x: Ctx, { det, beh }: { det: Det, beh: Beh }, T: Thresholds)
   // since 0.5.0-beta.7 a join that works shows one dim notice from the hooks module (command.run), no hook frame
   const jn = joinNotices(x.cap('S2', B, 'last'));
   const want = new RegExp(`^⏺ sub-human: joined ${code} as ${B}, with ${A} · @room to talk, @claude to ask the room's Claude`);
-  det(`${B}'s join shows one line, "sub-human: joined CODE as ${B}, with ${A} · …", and no "blocked by hook" frame`, jn.notices.length === 1 && want.test(jn.notices[0]) && !jn.frame,
+  det(`${B}'s join shows one line, "sub-human: joined CODE as ${B}, with ${A} · …", and no "blocked by hook" frame`, jn.notices.length === 1 && want.test(jn.notices[0] ?? '') && !jn.frame,
     `${jn.notices.length} join line(s)${jn.notices.length ? `: ${jn.notices.map(l => `"${l}"`).join('; ')}` : ''}; hook frame ${jn.frame ? `"${jn.frame}"` : 'none'} in ${x.capName('S2', B, 'last')}`);
   const ha = x.holdsAt('S2', 'last', A), hb = x.holdsAt('S2', 'last', B), ho = x.holdsAt('S2', 'last', 'claude');
   det(`Rows: ${B} nested in ${A}'s room row, ${A} in ${B}'s, both in the room's Claude's`, ha.room && (ha.members || []).includes(B) && hb.room && (hb.members || []).includes(A) && [A, B].every(n => (ho.members || []).includes(n)),
     `holds-${A} ${JSON.stringify({ room: ha.room, members: ha.members })}; holds-${B} ${JSON.stringify({ room: hb.room, members: hb.members })}; holds-claude ${JSON.stringify(ho.members)}`);
   const br = panelRows(x.cap('S2', B, 'last'));
   const top = br.filter(r => !r.nested);
-  det(`${B}'s panel: only the ${code} row at the top level (no stray participant row)`, top.length === 1 && top[0].label === code, br.map(r => r.line).join(' | ') || 'no rows');
+  det(`${B}'s panel: only the ${code} row at the top level (no stray participant row)`, top.length === 1 && top[0]?.label === code, br.map(r => r.line).join(' | ') || 'no rows');
   const orr = panelRows(x.cap('S2', 'claude', 'last'));
   det(`The room's Claude's panel lists ${A} and ${B}`, [A, B].every(n => orr.some(r => r.label === n)), orr.map(r => r.line).join(' | ') || 'none');
   const n = x.roomClaudeTurns(x.span('S2'));
@@ -48,7 +48,8 @@ export function run(x: Ctx, { det, beh }: { det: Det, beh: Beh }, T: Thresholds)
   const ct = notes[0] ? x.chatTurn(A, notes[0]) : null;
   det(`The join reached ${A} as one chat row and one copy for ${A}'s Claude, with no model turn`, notes.length === 1 && pulls.length === 1 && woke.length === 0 && ct && !ct.woke,
     `${notes.length} chat row(s) "sub-human: ${B} joined"; ${pulls.length} isMeta copy(ies); ${woke.length} wake(s) carrying it; ${ct ? ct.evidence : 'no chat row'}`);
-  if (x.remote && x.remote[B]) remoteJoin(x, det, j);
+  const rh = x.remote && x.remote[B];
+  if (rh) remoteJoin(x, det, j, rh);
 }
 
 /**
@@ -67,9 +68,9 @@ interface LinkFile {
 /** An admission record (<room>/remote/invites.json). */
 interface Admission { admission?: unknown, name?: string, kind?: string, admit?: string, admitted_by?: string, label?: string, admit_sig?: Partial<Envelope> & { kind?: string } }
 
-function remoteJoin(x: Ctx, det: Det, j: LogEntry | undefined): void {
+/** rh: B's sub-human home on her machine. */
+function remoteJoin(x: Ctx, det: Det, j: LogEntry | undefined, rh: string): void {
   const { code, A, B, log } = x;
-  const rh = x.remote[B];
   const devbox = path.join(path.dirname(path.dirname(rh)), 'devbox');
   const lf = readJson<LinkFile | null>(path.join(rh, 'links', `${code}.json`), null);
   const t: NonNullable<LinkFile['transport']> = (lf && lf.transport) || {};

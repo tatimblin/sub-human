@@ -110,7 +110,7 @@ export interface Ended {
 /** The link daemon's hellos, as the joiner's person is told. */
 export interface Outcome {
   state: 'linked' | 'pin' | 'refused' | 'waiting';
-  reason?: string;
+  reason?: string | undefined;
 }
 
 const sshT = (): typeof import('./transports/ssh.ts') => require('./transports/ssh.ts');
@@ -226,7 +226,7 @@ function inviteText({ code, how, line, pin, ref, extra = [], pinned, cut = false
 const machineWord = (secret: Buffer): InviteSecret => inviteSecret.encode(secret, inviteSecret.tagOf(secret, 'machine', machineKey.publicKey()));
 
 function hostInvite(code: RoomCode, { ssh = true, via, pipe = false, by = null, now = Date.now() }: {
-  ssh?: true | string; via?: string; pipe?: boolean; by?: string | null; now?: number;
+  ssh?: true | string | undefined; via?: string | undefined; pipe?: boolean; by?: string | null; now?: number;
 } = {}): HostedInvite {
   const store = hostStore(code);
   if (pipe) { // a second home on this machine (tests, the demo)
@@ -272,11 +272,13 @@ function linkIdOf(store: RoomStore, target: string): string {
   const all = hostLinks.links(store);
   if (hostLinks.LINK_ID_RE.test(target) && hostLinks.linkKnown(store, target)) return target;
   const hits = Object.values(all).filter(l => Array.isArray(l.seats) && l.seats.includes(target));
-  if (hits.length === 1) return hits[0].id;
+  const [hit] = hits;
+  if (hits.length === 1 && hit) return hit.id;
   if (hits.length > 1) throw new RoomError('INVALID', `${target} joined over ${hits.length} connections; ask them to leave the extra one, then kick again`);
   // an invite's joiner not linked yet (waiting for the card, or let in and not connected): its reserved link
   const asked = admission.admissions(store, { all: true }).filter(a => a.name === target && !a.used_at && !a.burnt_at);
-  if (asked.length === 1) return asked[0].link;
+  const [one] = asked;
+  if (asked.length === 1 && one) return one.link;
   throw new RoomError('INVALID', `nobody called "${target}" joined room ${store.code} from another machine`);
 }
 
@@ -306,9 +308,10 @@ function cancelInvite(code: RoomCode, ref?: string | null, { file = sshkeys.auth
   const store = hostStore(code);
   if (ref === undefined || ref === null || ref === '') {
     const open = openInvites(store, now);
-    if (!open.length) return { refs: [], text: `room ${code} has no open invite; nothing to cancel` };
+    const [only] = open;
+    if (!only) return { refs: [], text: `room ${code} has no open invite; nothing to cancel` };
     if (open.length > 1) return { refs: open.map(o => o.ref), text: `room ${code} has ${open.length} open invites; cancel one: ${open.map(o => `/sub-human invite --cancel ${o.ref} (until ${o.expires_at.slice(11, 16)} UTC)`).join(', ')}` };
-    ref = open[0].ref;
+    ref = only.ref;
   }
   const found = /^[0-9a-f]{12}$/.test(String(ref)) ? invites.findInvite(store, ref) : null;
   if (!found) throw new RoomError('INVALID', `room ${code} has no open invite ${ref}; /sub-human invite --cancel (no ID) lists the open ones`);
@@ -320,7 +323,7 @@ function endLink(code: RoomCode, store: RoomStore, id: string, { file = sshkeys.
   const r = hostLinks.revokeLink(store, id) || { link: null, invites: 0 };
   // a link an admit let in before protocol 3 has a forced-command line for it (where its admission says, else the
   // default file): it goes with the link. Nothing adds such a line any more
-  const doors = new Set([path.resolve(file), ...admission.admissions(store, { all: true }).filter(a => a.link === id && a.door_file).map(a => path.resolve(a.door_file!))]);
+  const doors = new Set([path.resolve(file), ...admission.admissions(store, { all: true }).flatMap(a => (a.link === id && a.door_file ? [path.resolve(a.door_file)] : []))]);
   let keys = 0;
   for (const f of doors) keys += sshkeys.removeAuthorized(f, code, id);
   spawnSync('pkill', ['-f', '--', `--stdio ${code} --link ${id}`], { stdio: 'ignore' });
@@ -420,7 +423,7 @@ function joinText(code: RoomCode, name: SeatName, o: Outcome, { tells = false }:
  * (a web one with a fresh key of the link's own), the SECRET word and join_as. The daemon dials (lib/remote/link-
  * connect.ts connectLink): the host key the line names first, then the SECRET; the host asks for the PIN.
  */
-function joinLine({ code, transport, word, name, sid }: { code: RoomCode; transport: LinkSpec; word: InviteSecret; name: string; sid?: string | null }): { code: RoomCode } {
+function joinLine({ code, transport, word, name, sid }: { code: RoomCode; transport: LinkSpec; word: InviteSecret; name: string; sid?: string | null | undefined }): { code: RoomCode } {
   const t: LinkSpec = transport.kind === 'wss' || transport.kind === 'ws'
     ? { ...transport, clientKey: linkConnect().linkKey(code, { fresh: true }).pub.toString('base64url') } : transport;
   links().set(code, { code, transport: t, invite: word, join_as: name, ...(sid ? { join_sid: sid } : {}), created_at: new Date().toISOString() });

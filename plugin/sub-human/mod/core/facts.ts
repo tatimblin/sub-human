@@ -68,7 +68,7 @@ const RESERVED = new Set(['tool', 'tool_use_id', 'agentId', 'consent']);
  * and agent_id as known, tool_name, tool_input (the arguments), tool_use_id. */
 export function prePayload(
   e: { tool?: unknown; tool_use_id?: unknown; [k: string]: unknown },
-  { sid, cwd, facts, agentId }: { sid: unknown; cwd?: unknown; facts: SessionFacts; agentId?: string },
+  { sid, cwd, facts, agentId }: { sid: unknown; cwd?: unknown; facts: SessionFacts; agentId?: string | undefined },
 ): PrePayload {
   const tool_input = Object.fromEntries(Object.entries(e).filter(([k]) => !RESERVED.has(k)));
   return {

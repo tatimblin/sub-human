@@ -81,7 +81,7 @@ export interface HelloParams {
 /** log_v (additive): what log the seat's code reads (lib/room/members.ts LOG_V); an older joiner sends none. */
 export interface JoinParams { name: string; role?: string; pubkey: string; proof: SignedPayload; log_v?: unknown }
 export interface LeaveParams { name: string; reason?: string }
-export interface BeatParams { name: string; presence?: PresenceInput }
+export interface BeatParams { name: string; presence?: PresenceInput | undefined }
 export interface AppendParams { payload: Payload; epoch?: number }
 /** What a hook hands the link daemon for an append: {queue: true} marks an @room post the outbox may keep. */
 export interface RelayAppendParams extends AppendParams { queue?: boolean }
@@ -186,10 +186,10 @@ export interface IncomingEvent { id?: FrameId; ev: EventName; data?: unknown }
 
 /** A reply: result or error (the other key absent, so `f.error ? … : f.result` reads either). id: the request's,
  * absent when the request had none (JSON drops an undefined id). */
-export interface ResultFrame<R = unknown> { id?: FrameId; result: R; error?: undefined }
+export interface ResultFrame<R = unknown> { id?: FrameId | undefined; result: R; error?: undefined }
 /** reason: lib/reasons.ts, beside the code (absent from a peer before reasons). */
 export interface WireError { code: string; message: string; reason?: string }
-export interface ErrorFrame { id?: FrameId; error: WireError; result?: undefined }
+export interface ErrorFrame { id?: FrameId | undefined; error: WireError; result?: undefined }
 export type ReplyFrame<R = unknown> = ResultFrame<R> | ErrorFrame;
 
 /** A line of the host's log: one JSON entry, verbatim. */
@@ -229,7 +229,7 @@ export type Frame = RequestFrame | ReplyFrame | EventFrame;
  * The fields are the ones a frame of this protocol may carry; a peer's frame may carry others, or the wrong types.
  */
 export interface DecodedFrame {
-  id?: FrameId;
+  id?: FrameId | undefined;
   op?: string;
   params?: Record<string, unknown>;
   result?: unknown;
@@ -239,7 +239,7 @@ export interface DecodedFrame {
 }
 
 /** One side as skewMessage names it: its plugin version (null or '?' unknown) and range. */
-export interface PeerVersion { version?: string | null; proto: ProtoRange }
+export interface PeerVersion { version?: string | null | undefined; proto: ProtoRange }
 
 // ---------- the host's records (lib/remote/invites.ts, host-links.ts, admission.ts) ----------
 

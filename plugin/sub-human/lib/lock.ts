@@ -75,9 +75,9 @@ function pidStarts(pids: readonly number[]): void {
   try {
     const r = spawnSync('ps', ['-o', 'pid=,lstart=', '-p', want.join(',')], { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' }, timeout: 2000 });
     for (const line of String(r.stdout || '').split('\n')) {
-      const m = /^\s*(\d+)\s+(.+?)\s*$/.exec(line);
-      const ms = m ? Date.parse(m[2]) : NaN;
-      if (m && Number.isFinite(ms)) starts.set(Number(m[1]), { t: Math.floor(ms / 1000), at: Date.now() });
+      const [, pid, when] = /^\s*(\d+)\s+(.+?)\s*$/.exec(line) ?? [];
+      const ms = when !== undefined ? Date.parse(when) : NaN;
+      if (pid !== undefined && Number.isFinite(ms)) starts.set(Number(pid), { t: Math.floor(ms / 1000), at: Date.now() });
     }
   } catch { /* pidStart asks one by one */ }
 }
@@ -91,7 +91,9 @@ interface LockOwner { pid: number; host: string; start: number | null }
 
 function parseOwner(body: unknown): LockOwner | null {
   const m = /^(\d+) (\S+)(?: (\d+))?$/.exec(String(body).trim());
-  return m ? { pid: Number(m[1]), host: m[2], start: m[3] != null ? Number(m[3]) : null } : null;
+  if (!m) return null;
+  const [, pid, host = '', start] = m; // host: its group always takes part
+  return { pid: Number(pid), host, start: start != null ? Number(start) : null };
 }
 
 // ---------- judging ----------

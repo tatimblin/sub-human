@@ -87,7 +87,7 @@ const hostCli = <T = Record<string, unknown>>(...args: string[]): T => JSON.pars
 const port = (svc: string, p: number): number => Number(dc(['port', svc, String(p)]).stdout.trim().split(':').pop());
 
 async function toxi(api: number, method: string, p: string, body?: unknown): Promise<unknown> {
-  const r = await fetch(`http://127.0.0.1:${api}${p}`, { method, headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  const r = await fetch(`http://127.0.0.1:${api}${p}`, { method, headers: { 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
   const text = await r.text();
   if (!r.ok) throw new Error(`toxiproxy ${method} ${p}: ${r.status} ${text}`);
   return text ? JSON.parse(text) : null;

@@ -91,11 +91,11 @@ export function record<T>(d: Decoder<T>): Decoder<Record<string, T>> {
 }
 
 export function obj<S extends Shape>(shape: S): Decoder<ObjOf<S>> {
-  const keys = Object.keys(shape);
+  const fields = Object.entries(shape);
   return v => {
     if (!isObj(v)) return no('an object');
-    for (const k of keys) {
-      const r = shape[k](v[k]);
+    for (const [k, d] of fields) {
+      const r = d(v[k]);
       if (!r.ok) return no(r.error.expected, `.${k}${r.error.at}`);
     }
     return okv(v as ObjOf<S>); // every listed field checked; the others are the input's own
@@ -115,8 +115,9 @@ export function union<K extends string, M extends Record<string, Decoder<unknown
   return v => {
     if (!isObj(v)) return no('an object');
     const t = v[tag];
-    if (typeof t !== 'string' || !Object.hasOwn(cases, t)) return no(Object.keys(cases).join(' | '), `.${tag}`);
-    return cases[t](v) as Result<Infer<M[keyof M]>, DecodeError>; // the case's decoder: one of the union's
+    const d = typeof t === 'string' && Object.hasOwn(cases, t) ? cases[t] : undefined;
+    if (!d) return no(Object.keys(cases).join(' | '), `.${tag}`);
+    return d(v) as Result<Infer<M[keyof M]>, DecodeError>; // the case's decoder: one of the union's
   };
 }
 

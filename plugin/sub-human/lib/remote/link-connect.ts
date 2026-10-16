@@ -118,7 +118,8 @@ function linkKey(code: RoomCode, { fresh = false }: { fresh?: boolean } = {}): i
  * SUB_HUMAN_MACHINE_LABEL names it instead of the host name (a machine whose host name says nothing, a demo).
  */
 function joinerLabel(env: NodeJS.ProcessEnv = process.env): string {
-  const n = String(envStr('SUB_HUMAN_MACHINE_LABEL', env) || os.hostname() || '').split('.')[0].replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 64);
+  const [first = ''] = String(envStr('SUB_HUMAN_MACHINE_LABEL', env) || os.hostname() || '').split('.'); // split gives at least one part
+  const n = first.replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 64);
   return /^[A-Za-z0-9._-]{1,64}$/.test(n) ? n : 'a-machine';
 }
 
@@ -177,7 +178,7 @@ async function connectLink(code: RoomCode): Promise<Client> {
     // the host's card may have let this machine in under another name than it asked for (its own sits there from
     // another machine): the seat takes the one the link is bound to
     const as = c.as && typeof rest.join_as === 'string' && c.as !== rest.join_as ? { join_as: c.as, join_renamed: rest.join_as } : {};
-    linksMod.set(code, { ...rest, ...as, token: c.token!, ...(rest.moved ? { moved: { ...rest.moved, reached_at: new Date().toISOString() } } : {}) }); // c.token: hello gives one for an invite or a login
+    linksMod.set(code, { ...rest, ...as, ...(c.token ? { token: c.token } : {}), ...(rest.moved ? { moved: { ...rest.moved, reached_at: new Date().toISOString() } } : {}) }); // c.token: hello gives one for an invite or a login
   }
   return c;
 }

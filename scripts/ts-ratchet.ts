@@ -55,23 +55,23 @@ export function blank(src: string): string {
   const templateText = (): boolean => {
     let s = '';
     while (i < n) {
-      const c = src[i];
+      const c = src.charAt(i);
       if (c === '\\') { s += src.slice(i, i + 2); i += 2; continue; }
       if (c === '`') { out.push(space(s), '`'); i++; last = '`'; return false; }
-      if (c === '$' && src[i + 1] === '{') { out.push(space(s), '${'); i += 2; braces.push(true); last = '{'; return true; }
+      if (c === '$' && src.charAt(i + 1) === '{') { out.push(space(s), '${'); i += 2; braces.push(true); last = '{'; return true; }
       s += c; i++;
     }
     out.push(space(s));
     return false;
   };
   while (i < n) {
-    const c = src[i];
-    const d = src[i + 1];
+    const c = src.charAt(i);
+    const d = src.charAt(i + 1);
     if (c === '/' && d === '/') { const e = src.indexOf('\n', i); const end = e < 0 ? n : e; out.push(space(src.slice(i, end))); i = end; continue; }
     if (c === '/' && d === '*') { const e = src.indexOf('*/', i + 2); const end = e < 0 ? n : e + 2; out.push(space(src.slice(i, end))); i = end; continue; }
     if (c === '"' || c === "'") {
       let j = i + 1;
-      while (j < n && src[j] !== c && src[j] !== '\n') j += src[j] === '\\' ? 2 : 1;
+      while (j < n && src.charAt(j) !== c && src.charAt(j) !== '\n') j += src.charAt(j) === '\\' ? 2 : 1;
       out.push(c, space(src.slice(i + 1, j)), c); i = j + 1; last = c; lastWord = ''; continue;
     }
     if (c === '`') { out.push('`'); i++; templateText(); lastWord = ''; continue; }
@@ -85,20 +85,20 @@ export function blank(src: string): string {
     }
     if (c === '/' && (last === '' || REGEX_AFTER.has(last) || KEYWORDS.has(lastWord))) {
       let j = i + 1, cls = false;
-      while (j < n && src[j] !== '\n') {
-        if (src[j] === '\\') { j += 2; continue; }
-        if (src[j] === '[') cls = true; else if (src[j] === ']') cls = false; else if (src[j] === '/' && !cls) break;
+      while (j < n && src.charAt(j) !== '\n') {
+        if (src.charAt(j) === '\\') { j += 2; continue; }
+        if (src.charAt(j) === '[') cls = true; else if (src.charAt(j) === ']') cls = false; else if (src.charAt(j) === '/' && !cls) break;
         j++;
       }
       j++;
-      while (j < n && /[a-z]/i.test(src[j])) j++;
+      while (j < n && /[a-z]/i.test(src.charAt(j))) j++;
       out.push('/', space(src.slice(i + 1, j - 1)), '/'); i = j; lastWord = '';
       last = 'x'; // a regex is an operand: a `/` after it divides, as after an identifier
       continue;
     }
     if (ID.test(c)) {
       let j = i;
-      while (j < n && ID.test(src[j])) j++;
+      while (j < n && ID.test(src.charAt(j))) j++;
       const w = src.slice(i, j);
       emit(w); lastWord = w; i = j; continue;
     }
@@ -135,7 +135,7 @@ export function countSource(src: string): Counts {
   });
   const casts = count(code, /(?<=[\w$)\]}>'"`]\s*)\bas\s+(?!const\b)(?=[\w$({[`'"])/g, () => true);
   // after a keyword (`return!x`, `typeof!(x)`) a `!` is a negation
-  const bangs = count(code, /(?<=[\w$)\]])!(?=[.)\],;[:}?(\s]|$)(?!=)/g, i => !(/[\w$]/.test(code[i - 1]) && KEYWORDS.has(wordBefore(code, i))));
+  const bangs = count(code, /(?<=[\w$)\]])!(?=[.)\],;[:}?(\s]|$)(?!=)/g, i => !(/[\w$]/.test(code.charAt(i - 1)) && KEYWORDS.has(wordBefore(code, i))));
   return { any: anys, as: casts, nonNull: bangs };
 }
 
@@ -145,7 +145,8 @@ export function bucketOf(rel: string): string | null {
   if (p.startsWith('scripts/')) return /\.[cm]?[jt]s$/.test(p) ? 'scripts' : null;
   const m = /^plugin\/sub-human\/(.+)$/.exec(p);
   if (!m || !/\.[cm]?[jt]s$/.test(p) || p.endsWith('.d.ts')) return null;
-  return DIRS.find(d => m[1].startsWith(`${d}/`)) ?? null;
+  const inPlugin = m[1] ?? '';
+  return DIRS.find(d => inPlugin.startsWith(`${d}/`)) ?? null;
 }
 
 function walk(dir: string, files: string[]): string[] {
@@ -164,9 +165,10 @@ export function countRepo(root = REPO): Record<string, Counts> {
   const files = [...walk(path.join(root, 'plugin', 'sub-human'), []), ...walk(path.join(root, 'scripts'), [])];
   for (const f of files) {
     const b = bucketOf(path.relative(root, f));
-    if (!b) continue;
+    const into = b && counts[b]; // every bucket is set above
+    if (!into) continue;
     const c = countSource(fs.readFileSync(f, 'utf8'));
-    for (const k of KINDS) counts[b][k] += c[k];
+    for (const k of KINDS) into[k] += c[k];
   }
   return counts;
 }

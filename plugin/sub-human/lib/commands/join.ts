@@ -130,6 +130,7 @@ export const named: Verb = (args, ctx) => {
     return seat({ name, code: args[0], isDefault: true }, ctx);
   }
   const [name, code] = args;
+  if (name === undefined) return refused(USAGE); // route() sends a bare /sub-human to bare
   // a SECRET-shaped word is never echoed, nor taken for a name or a room: it belongs in an invite line
   if (args.some(a => SECRET_WORD.test(a))) return refused(`that looks like an invite line's SECRET: the whole line goes in as /sub-human join HOST ROOM SECRET. ${USAGE}`);
   if (PIN_WORD.test(name)) return refused(NOT_A_NAME(name));
@@ -151,19 +152,20 @@ function secretOf(word: string | undefined): { word: InviteSecret } | { error: s
 
 /** `/sub-human join URL SECRET`: the web form of an invite line. */
 function joinWeb(r: string[], flags: { as?: string; via?: string; home?: string }, ctx: VerbCtx): Answer {
-  if (r.length === 3 && PIN_WORD.test(r[2])) return refused(PIN_APART);
-  if (r.length !== 2) return refused(r.length < 2 ? 'a web join needs the SECRET the host sent with the address: /sub-human join URL SECRET' : JOIN_USAGE);
+  const [url, word, extra] = r;
+  if (r.length === 3 && extra !== undefined && PIN_WORD.test(extra)) return refused(PIN_APART);
+  if (r.length !== 2 || url === undefined) return refused(r.length < 2 ? 'a web join needs the SECRET the host sent with the address: /sub-human join URL SECRET' : JOIN_USAGE);
   if (flags.via !== undefined || flags.home !== undefined) return refused('--via and --home go with an ssh address, not a web one');
-  const w = secretOf(r[1]);
+  const w = secretOf(word);
   if ('error' in w) return refused(w.error);
   const BAD = 'that isn\'t a join address (https://HOST/…/sub-human/ROOM). Paste the whole line the host sent you.';
-  const m = /^(https?):\/\/([^#\s]+)$/.exec(r[0]);
-  const spec = m && wsT().parse(`//${m[2].replace(/\/+$/, '')}`);
+  const [, scheme, where] = /^(https?):\/\/([^#\s]+)$/.exec(url) ?? [];
+  const spec = where !== undefined ? wsT().parse(`//${where.replace(/\/+$/, '')}`) : null;
   const code = spec && spec.path.split('/').filter(Boolean).pop();
-  if (!m || !spec || !code || !identity.isRoomCode(code)) return refused(BAD);
+  if (!spec || !code || !identity.isRoomCode(code)) return refused(BAD);
   const n = nameFor(flags.as, ctx.cwd);
   if ('error' in n) return refused(n.error);
-  const loc = wsT().locator(spec, m[1] === 'https');
+  const loc = wsT().locator(spec, scheme === 'https');
   const transport = loc && linkConnect.transportOf(loc);
   if (!transport) return refused(BAD);
   return then(joining.linkLine({ name: n.name, code, word: w.word, transport, sid: ctx.sid }), ctx);
@@ -187,9 +189,9 @@ export const join: Verb = (argv, ctx) => {
     if ('error' in n) return refused(n.error);
     return seat({ name: n.name, code: r[0], isDefault: p.flags.as === undefined }, ctx);
   }
-  if (r.length === 4 && PIN_WORD.test(r[3])) return refused(PIN_APART);
-  if (r.length < 2 || r.length > 3) return refused(r.length === 1 ? (PIN_WORD.test(r[0]) ? 'a PIN is 4 digits: /sub-human join PIN' : `which room? ${JOIN_USAGE}`) : JOIN_USAGE);
-  const [dest, code, word] = r;
+  const [dest, code, word, extra] = r;
+  if (r.length === 4 && extra !== undefined && PIN_WORD.test(extra)) return refused(PIN_APART);
+  if (dest === undefined || code === undefined || r.length > 3) return refused(r.length === 1 && dest !== undefined ? (PIN_WORD.test(dest) ? 'a PIN is 4 digits: /sub-human join PIN' : `which room? ${JOIN_USAGE}`) : JOIN_USAGE);
   if (!identity.isRoomCode(code)) return refused(`"${code}" isn't a room (like vole-8126). ${JOIN_USAGE}`);
   const local = /^pipe:\//.test(dest) || dest.startsWith('/'); // a second home on this machine (tests, the demo)
   if (word !== undefined) {

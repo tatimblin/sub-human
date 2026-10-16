@@ -8,7 +8,7 @@
 //   (3) the listener restarts (kill, start again): both links redial by themselves.
 // Every phase ends byte-identical with chains verified.
 import { delivered, waitState, converge, entries, linkState, wssHost, wssJoin } from './_lib.ts';
-import type { T } from '../lab.ts';
+import type { T, SeatDriver } from '../lab.ts';
 
 const SLEEP_S = Number(process.env.LAB_WSS_SLEEP_S || 45);
 const PING_DEADLINE_MS = Number(process.env.LAB_PING_DEADLINE_MS || 35_000);
@@ -42,7 +42,7 @@ export async function run(t: T): Promise<void> {
   const left = SLEEP_S * 1000 - (Date.now() - tPause);
   if (left > 0) await sleep(left);
   lab.dc(['unpause', 'devbox']);
-  const [ba, bb] = await Promise.all(seats.map(s => waitState(s, code, 'online', 60_000)));
+  const [ba, bb] = await Promise.all([waitState(sa, code, 'online', 60_000), waitState(sb, code, 'online', 60_000)]);
   t.metric('wssReconnectAfterWakeMs', { bob: ba, ben: bb });
   t.check(`both wss links back within ${RECONNECT_MS / 1000} s of the wake`, ba !== null && bb !== null && ba < RECONNECT_MS && bb < RECONNECT_MS, `bob ${ba} ms (${linkState(sa, code)}), ben ${bb} ms (${linkState(sb, code)})`);
   const w = host.say('alice', 'wss-r after wake');
@@ -54,11 +54,12 @@ export async function run(t: T): Promise<void> {
   t.check('the post queued during the sleep is in the log exactly once', entries(c1.host.log).filter(e => e.text === 'wss-r bob while the host sleeps').length === 1);
 
   // (2) half-open: packets vanish, nothing closes
-  const ip = (svc: string, name: string): string => lab.exec(svc, ['getent', 'hosts', name]).stdout.trim().split(/\s+/)[0];
+  const ip = (svc: string, name: string): string => lab.exec(svc, ['getent', 'hosts', name]).stdout.trim().split(/\s+/)[0] ?? '';
   const front = ip('joiner-a', 'tls-front'), proxy = ip('joiner-b', 'corp-proxy');
   lab.exec('joiner-a', ['sh', '-c', `iptables -A OUTPUT -d ${front} -j DROP && iptables -A INPUT -s ${front} -j DROP`]);
   lab.exec('joiner-b', ['sh', '-c', `iptables -A OUTPUT -d ${proxy} -j DROP && iptables -A INPUT -s ${proxy} -j DROP`]);
-  const [da, db] = await Promise.all(seats.map(s => waitState(s, code, ['offline', 'connecting'], PING_DEADLINE_MS + 15_000)));
+  const dead = (s: SeatDriver): Promise<number | null> => waitState(s, code, ['offline', 'connecting'], PING_DEADLINE_MS + 15_000);
+  const [da, db] = await Promise.all([dead(sa), dead(sb)]);
   t.metric('wssDeadAfterMs', { bob: da, ben: db });
   t.check(`both half-open wss links declared dead within ${PING_DEADLINE_MS} ms (the app ping)`, da !== null && db !== null && da <= PING_DEADLINE_MS && db <= PING_DEADLINE_MS, `bob ${da} ms, ben ${db} ms`);
   for (const svc of ['joiner-a', 'joiner-b']) lab.exec(svc, ['iptables', '-F']);

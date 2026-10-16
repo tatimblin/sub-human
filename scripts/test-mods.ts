@@ -23,7 +23,8 @@ function main(): number {
   if (!m) return skip(`unreadable version: ${String(v.stdout).trim()}`);
   const have = m.slice(1, 4).map(Number);
   const older = have.findIndex((x, i) => x !== MIN[i]);
-  if (older >= 0 && have[older] < MIN[older]) return skip(`claude ${have.join('.')} has no function hooks (needs ${MIN.join('.')}+)`);
+  const at = have[older], min = MIN[older]; // both undefined when older is -1
+  if (at !== undefined && min !== undefined && at < min) return skip(`claude ${have.join('.')} has no function hooks (needs ${MIN.join('.')}+)`);
   const r = spawnSync('claude', ['plugin', 'test', path.relative(process.cwd(), PLUGIN) || PLUGIN], { encoding: 'utf8', timeout: 300_000 });
   const out = `${r.stdout || ''}${r.stderr || ''}`;
   if (/hooks modules are turned off/.test(out)) return skip(out.trim().split('\n').find(l => /turned off/.test(l)));

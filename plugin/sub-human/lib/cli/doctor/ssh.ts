@@ -50,10 +50,10 @@ const KEY_LINE_RE = /^command="SUB_HUMAN_HOME=(\S+) (.+?) --stdio (\S+) --link (
 /** A door line's home (its forced command's SUB_HUMAN_HOME) is this one, by path; a line naming none is this home's
  * when its room is. Another home's line (a second sub-human folder, the person's own ~/.sub-human) is left alone. */
 function ownDoor(line: string, code: string): boolean {
-  const h = /command="SUB_HUMAN_HOME=(\S+) /.exec(line);
+  const h = /command="SUB_HUMAN_HOME=(\S+) /.exec(line)?.[1];
   const home = lib('home.ts').home();
   const real = (p: string) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
-  if (h) return real(h[1]) === real(home);
+  if (h !== undefined) return real(h) === real(home);
   try { return lib('identity.ts').roomExists(code); } catch { return false; }
 }
 
@@ -62,12 +62,12 @@ function scanAuthorizedKeys(file: string): AuthorizedKeysScan {
   if (text === null) return { file, exists: false, lines: [] };
   const lines: KeyLine[] = [], doors: string[] = [], otherDoors: string[] = [];
   for (const l of text.split('\n')) {
-    const door = / sub-human-enroll:(\S+)\s*$/.exec(l);
-    if (door) { (ownDoor(l, door[1]) ? doors : otherDoors).push(door[1]); continue; }
+    const door = / sub-human-enroll:(\S+)\s*$/.exec(l)?.[1];
+    if (door !== undefined) { (ownDoor(l, door) ? doors : otherDoors).push(door); continue; }
     if (!/\bsub-human:/.test(l) && !/ serve --stdio /.test(l)) continue;
     const m = KEY_LINE_RE.exec(l.trim());
     if (!m) { lines.push({ ok: false, parse: false, raw: l }); continue; }
-    const [, home, run, code, id, type, key] = m;
+    const [, home = '', run = '', code = '', id = '', type = '', key = ''] = m; // every group is required: the defaults never apply
     const shimmed = run === path.join(home, 'bin', 'serve');
     lines.push({ ok: shimmed, home, code, id, type, key, shimmed });
   }
@@ -78,8 +78,9 @@ function checkAuthorizedKeys(scan: AuthorizedKeysScan): Check {
   const h = path.resolve(lib('home.ts').home());
   if (!scan.exists) return check({ id: 'authorized_keys', status: 'info', title: 'authorized_keys', detail: `${tilde(scan.file)}: none (this machine hosts no room over SSH)` });
   const doors = scan.doors || [];
-  const others = [...new Set(scan.otherDoors || [])];
-  const otherNote = others.length ? ` (and ${others.length === 1 ? 'a line' : `${scan.otherDoors!.length} lines`} of another sub-human folder's, room ${others.join(', ')}: not this home's, not touched)` : '';
+  const otherDoors = scan.otherDoors || [];
+  const others = [...new Set(otherDoors)];
+  const otherNote = others.length ? ` (and ${others.length === 1 ? 'a line' : `${otherDoors.length} lines`} of another sub-human folder's, room ${others.join(', ')}: not this home's, not touched)` : '';
   if (doors.length) {
     return check({ id: 'authorized_keys', status: 'warn', title: 'authorized_keys', detail: `${doors.length} enrollment door line(s) an older sub-human's ssh invite left (room ${[...new Set(doors)].join(', ')}): they only tell an old joiner to update${otherNote}`, fix: `run ${cli('doctor --fix')} in a terminal (it removes them), or delete the lines ending sub-human-enroll:ROOM from ${tilde(scan.file)}` });
   }

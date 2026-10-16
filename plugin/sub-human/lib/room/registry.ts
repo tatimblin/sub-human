@@ -54,7 +54,7 @@ const stores = new Map<string, RoomStore>(); // home \0 code -> FsRoomStore | Mi
 /** A room hosted elsewhere: the link registry knows it (required here, not at load: links.ts reads this module's rooms). */
 const linked = (c: string): boolean => (require('./links.ts') as typeof import('./links.ts')).has(c);
 
-function open(c: RoomCode, { dir }: { dir?: string } = {}): RoomStore {
+function open(c: RoomCode, { dir }: { dir?: string | undefined } = {}): RoomStore {
   if (backend) return backend(c);
   if (dir) return new FsRoomStore(c, { dir });
   const k = `${home()}\0${c}`;

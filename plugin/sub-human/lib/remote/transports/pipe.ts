@@ -25,7 +25,7 @@ import type { KindEntry, OpenCtx, PipeSpec, Transport } from '../types-rest.ts';
 
 const BIN = path.join(import.meta.dirname, '..', '..', '..', 'scripts', 'sub-human');
 
-function spawn(cmd: string, args: string[], opts: { env?: NodeJS.ProcessEnv; cwd?: string } = {}): Transport {
+function spawn(cmd: string, args: string[], opts: { env?: NodeJS.ProcessEnv | undefined; cwd?: string | undefined } = {}): Transport {
   const child = spawnChild(cmd, args, { env: opts.env || process.env, cwd: opts.cwd, stdio: ['pipe', 'pipe', 'pipe'] });
   const { transport, receive, end } = lineTransport({
     write: line => child.stdin.write(line),
@@ -62,8 +62,9 @@ const kind: Required<KindEntry<PipeSpec>> = {
       if (typeof spec.home !== 'string' || !spec.home.startsWith('/')) throw new RoomError('INVALID', 'the link\'s pipe names no home');
       return spawn(process.execPath, [BIN, 'serve', '--stdio', ctx.code], { env: { ...process.env, SUB_HUMAN_HOME: spec.home } });
     }
-    if (!Array.isArray(spec.cmd) || !spec.cmd.length) throw new RoomError('INVALID', 'a pipe needs cmd [bin, ...args] or a home');
-    return spawn(spec.cmd[0], spec.cmd.slice(1), { env: spec.env, cwd: spec.cwd });
+    const [bin, ...args] = Array.isArray(spec.cmd) ? spec.cmd : [];
+    if (bin === undefined) throw new RoomError('INVALID', 'a pipe needs cmd [bin, ...args] or a home');
+    return spawn(bin, args, { env: spec.env, cwd: spec.cwd });
   },
   describe: spec => (spec.home ? `pipe ${spec.home}` : `pipe ${spec.cmd && spec.cmd[0]}`),
 };

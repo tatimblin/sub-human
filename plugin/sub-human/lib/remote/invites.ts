@@ -161,7 +161,7 @@ const backoff = (n: number): number => testMs('SUB_HUMAN_PIN_BACKOFF_MS') * 2 **
  */
 function redeemShort(cur: Invites, key: string, secret: string, inv: ShortInvite, { pin, proven, peerKey, as, linkId, now }: {
   pin: unknown; proven: MachineId | null; peerKey: string | null; as: Asked | null; linkId: string | undefined; now: number;
-}): { next?: Invites; err: RoomError | null; made?: { id: string; machine: MachineId; seats: string[]; key: string | null }; adm?: AdmissionRecord } {
+}): { next?: Invites; err: RoomError; made?: undefined; adm?: undefined } | { next: Invites; err: null; made: { id: string; machine: MachineId; seats: string[]; key: string | null }; adm: AdmissionRecord } {
   const ref = key.slice(0, 12);
   if (inv.v !== 4) return { err: authError('this invite was made by an older sub-human on the host; ask them for a new one (/sub-human invite)', 'INVITE_UNKNOWN') };
   // burnt, or no try left (a record whose last wrong PIN did not mark it burnt): it takes no PIN, right or wrong
@@ -223,23 +223,23 @@ function redeemInvite(store: AuthStore, secret: string, { machine, pin, proven =
   machine: MachineId; pin?: unknown; proven?: MachineId | null; peerKey?: string | null; as?: Asked | null; reserved?: string; newId?: string; now?: number;
 }): Redeemed {
   const key = sha256(secret);
-  let link = null as { id: string; seats: string[]; bound: boolean; machine: MachineId; key: string | null } | null; // (as: set in the update)
-  let err = null as RoomError | null, handoff = false, adm = null as AdmissionRecord | null; // (as: set in the update)
+  // set in the update (a property, so the closure's writes are seen after it)
+  const got: { link: { id: string; seats: string[]; bound: boolean; machine: MachineId; key: string | null } | null; err: RoomError | null; handoff: boolean; adm: AdmissionRecord | null } = { link: null, err: null, handoff: false, adm: null };
   store.kv.update(INVITES_KEY, (stored: Invites | null) => {
-    err = null;
+    got.err = null;
     const cur = stored || {};
     const inv = cur[key];
     if (inv && inv.admission) { // an admission of a short invite a 0.5.0-beta.15 host enrolled (its own secret)
-      adm = inv;
+      got.adm = inv;
       const r = admission.check(inv, { machine, linkId: reserved ?? newId, peerKey, now });
-      if (r.err) { err = r.err; return r.next ? { ...cur, [key]: r.next } : undefined; }
-      link = { id: inv.link, seats: [inv.name], bound: true, machine: proven || machine, key: null }; // the card let one name in: that seat and no other
+      if (r.err) { got.err = r.err; return r.next ? { ...cur, [key]: r.next } : undefined; }
+      got.link = { id: inv.link, seats: [inv.name], bound: true, machine: proven || machine, key: null }; // the card let one name in: that seat and no other
       return { ...cur, [key]: { ...inv, used_at: iso(now) } };
     }
     if (inv && inv.short) {
       const r = redeemShort(cur, key, secret, inv, { pin, proven, peerKey, as, linkId: reserved ?? newId, now });
-      err = r.err;
-      if (r.made) { adm = r.adm!; link = { ...r.made, bound: true }; } // made: with the admission it came from
+      got.err = r.err;
+      if (r.made) { got.adm = r.adm; got.link = { ...r.made, bound: true }; } // made: with the admission it came from
       return r.next;
     }
     if (inv && inv.burnt_at) throw authError('this invite no longer works (too many wrong PINs, expired, or cancelled); ask the host for a new one', 'INVITE_BURNT');
@@ -248,15 +248,16 @@ function redeemInvite(store: AuthStore, secret: string, { machine, pin, proven =
     if (reserved !== undefined && inv.link !== reserved) throw authError('this invite is for another connection', 'INVITE_OTHER_LINK');
     if (inv.machine !== machine) throw authError('this invite is for another machine', 'INVITE_OTHER_MACHINE');
     const r = checkBound(inv, secret, pin, now);
-    if (r.err) { err = r.err; return r.next ? { ...cur, [key]: r.next } : undefined; }
-    handoff = inv.handoff === true;
+    if (r.err) { got.err = r.err; return r.next ? { ...cur, [key]: r.next } : undefined; }
+    got.handoff = inv.handoff === true;
     const id = inv.link || newId || hostLinks.newLinkId();
     // its seats are pre-bound (a handoff's, a promote's), and it is that machine's: the binding is the host's own
-    link = { id, seats: [...inv.seats], bound: inv.seats.length > 0, machine: inv.machine, key: peerKey };
+    got.link = { id, seats: [...inv.seats], bound: inv.seats.length > 0, machine: inv.machine, key: peerKey };
     return { ...cur, [key]: { ...inv, used_at: iso(now), link: id } };
   });
+  const { link: l, err, handoff, adm } = got;
   if (err) throw err;
-  const l = link!; // the update ran without err
+  if (!l) throw new Error('the invites update ended with no link and no error'); // every path without err sets link
   // an admission's machine: the one its joiner's machine key proves, else the reported one, checked
   const made = hostLinks.create(store, { id: l.id, machine: l.machine, seats: l.seats, bound: l.bound, label: machine, key: l.key, check: !!adm && !proven, now });
   return { ...made, handoff, ...(adm ? { admission: adm } : {}) };
@@ -276,17 +277,18 @@ function mintInvite(store: AuthStore, { kind, locator, by = null, now = Date.now
   const raw = crypto.randomBytes(16);
   const secret = raw.toString('base64url');
   const pin = newPin(4);
-  let out = null as { ref: string; expires_at: string } | null; // (as: set in the update)
+  const made: { out: { ref: string; expires_at: string } | null } = { out: null }; // set in the update
   store.kv.update(INVITES_KEY, (cur: Invites | null) => {
     const live = Object.values(cur || {}).filter(i => inviteOpen(i, now));
     if (live.length >= SHORT_LIVE_MAX) {
       throw new RoomError('INVALID', `${live.length} invites to room ${store.code} are open already; wait until one is used or expires, or cancel one (/sub-human invite --cancel REF)`);
     }
     const rec: ShortInvite = { v: 4, short: true, kind: kind as ShortKind, locator, by, created_at: iso(now), expires_at: iso(now + INVITE_TTL_MS), tries: INVITE_PIN_TRIES, pin_sha256: pinDigest(secret, pin) };
-    out = { ref: inviteRef(secret), expires_at: rec.expires_at };
+    made.out = { ref: inviteRef(secret), expires_at: rec.expires_at };
     return { ...cur, [sha256(secret)]: rec };
   });
-  return { secret: raw, pin, ...out! }; // the update ran (or threw)
+  if (!made.out) throw new Error('the invites update did not run'); // it ran (or threw)
+  return { secret: raw, pin, ...made.out };
 }
 
 // ---------- the sh2 invite string (bound invites: a handoff's, a promote's) ----------
@@ -299,7 +301,7 @@ function formatInvite({ code, locator, secret, hostKey = null }: { code: RoomCod
 function parseInvite(text: unknown): ParsedInvite | null {
   const parts = typeof text === 'string' ? text.trim().split('.') : [];
   if (parts[0] !== INVITE_PREFIX || parts.length !== 5) return null;
-  const [, code, loc, secret, hk] = parts;
+  const [, code = '', loc = '', secret = '', hk = ''] = parts; // five parts
   if (!/^[A-Za-z0-9_-]+$/.test(loc)) return null;
   const locator = Buffer.from(loc, 'base64url').toString('utf8');
   if (!isRoomCode(code) || !locator || !SECRET_RE.test(secret)) return null;
@@ -313,7 +315,8 @@ const inviteRef = (secret: string): string => sha256(secret).slice(0, 12);
 function findInvite(store: AuthStore, ref: unknown): { key: string; invite: InviteRecord } | null {
   if (!REF_RE.test(String(ref))) return null;
   const hit = Object.entries((store.kv.get(INVITES_KEY, null) || {}) as Invites).filter(([k]) => k.startsWith(ref as string)); // ref: 12 hex (REF_RE)
-  return hit.length === 1 ? { key: hit[0][0], invite: hit[0][1] } : null;
+  const [only] = hit;
+  return hit.length === 1 && only ? { key: only[0], invite: only[1] } : null;
 }
 
 /**
@@ -322,18 +325,21 @@ function findInvite(store: AuthStore, ref: unknown): { key: string; invite: Invi
  */
 function burnInvite(store: AuthStore, ref: string, { now = Date.now() }: { now?: number } = {}): { state: 'used' | 'burnt already' | 'burnt'; invite: InviteRecord } {
   if (!store.isHost) throw new RoomError('HOST_ONLY', 'only the host of a room revokes its invites');
-  let out = null as { state: 'used' | 'burnt already' | 'burnt'; invite: InviteRecord } | null; // (as: set in the update)
+  const burnt: { out: { state: 'used' | 'burnt already' | 'burnt'; invite: InviteRecord } | null } = { out: null }; // set in the update
   store.kv.update(INVITES_KEY, (cur: Invites | null) => {
-    const hit = Object.keys(cur || {}).filter(k => REF_RE.test(String(ref)) && k.startsWith(ref));
-    if (hit.length !== 1) throw new RoomError('AUTH', `no invite of room ${store.code} has the ref ${ref}`, 'INVITE_UNKNOWN');
-    const inv = cur![hit[0]]; // cur: hit holds a key of it
-    if (inv.used_at) { out = { state: 'used', invite: inv }; return undefined; }
-    if (inv.burnt_at) { out = { state: 'burnt already', invite: inv }; return undefined; }
+    const hit = Object.entries(cur || {}).filter(([k]) => REF_RE.test(String(ref)) && k.startsWith(ref));
+    const [only] = hit;
+    if (hit.length !== 1 || !only) throw new RoomError('AUTH', `no invite of room ${store.code} has the ref ${ref}`, 'INVITE_UNKNOWN');
+    const [slot, inv] = only;
+    if (inv.used_at) { burnt.out = { state: 'used', invite: inv }; return undefined; }
+    if (inv.burnt_at) { burnt.out = { state: 'burnt already', invite: inv }; return undefined; }
     const { prs, ...kept } = inv; // a 0.5.0-beta.15 short invite's PIN goes with it
-    out = { state: 'burnt', invite: { ...kept, burnt_at: iso(now) } };
-    return { ...cur, [hit[0]]: out.invite };
+    const invite: InviteRecord = { ...kept, burnt_at: iso(now) };
+    burnt.out = { state: 'burnt', invite };
+    return { ...cur, [slot]: invite };
   });
-  return out!; // the update ran (or threw)
+  if (!burnt.out) throw new Error('the invites update did not run'); // it ran (or threw)
+  return burnt.out;
 }
 
 /** Burn every invite reserved for link id (an admission waiting for the card): how many. */

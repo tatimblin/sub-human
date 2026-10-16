@@ -38,6 +38,7 @@ function fromLog(entries: readonly Readonly<Entry>[], { from, via, windowMs, now
   let n = 0;
   for (let i = entries.length - 1; i >= 0; i--) {
     const e = entries[i];
+    if (!e) continue; // i is in range
     if (now - Date.parse(e.at) >= windowMs) break;
     if (e.from === from && e.via === via) n++;
   }
@@ -51,7 +52,7 @@ function checkLog(entries: readonly Readonly<Entry>[], { from, via, op, now = Da
   let n = 0, at = now;
   for (let i = entries.length - 1; i >= 0 && n < q.max; i--) {
     const e = entries[i];
-    if (e.from === from && e.via === via) { n++; at = Date.parse(e.at); }
+    if (e && e.from === from && e.via === via) { n++; at = Date.parse(e.at); } // e: i is in range
   }
   throw over(op, `${from} posted`, q.windowMs - (now - at));
 }
@@ -63,7 +64,7 @@ function charge(store: Pick<AuthStore, 'kv'>, linkId: string, op: QuotaOp, { now
     refused.err = null;
     const mine = { ...(cur && cur[linkId]) };
     const times = (mine[op] || []).filter(t => now - t < q.windowMs);
-    if (times.length >= q.max) { refused.err = over(op, `this connection's ${op}`, q.windowMs - (now - times[0])); return undefined; }
+    if (times.length >= q.max) { refused.err = over(op, `this connection's ${op}`, q.windowMs - (now - (times[0] ?? now))); return undefined; }
     mine[op] = [...times, now];
     return { ...cur, [linkId]: mine };
   });
@@ -77,7 +78,7 @@ function session(): { take(op: QuotaOp, now?: number): void } {
     take(op, now = Date.now()) {
       const q = LINK_QUOTAS[op];
       const times = (seen.get(op) || []).filter(t => now - t < q.windowMs);
-      if (times.length >= q.max) throw over(op, `this connection's ${op}`, q.windowMs - (now - times[0]));
+      if (times.length >= q.max) throw over(op, `this connection's ${op}`, q.windowMs - (now - (times[0] ?? now)));
       times.push(now);
       seen.set(op, times);
     },

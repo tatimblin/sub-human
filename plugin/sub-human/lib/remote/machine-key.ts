@@ -55,7 +55,9 @@ function load(): { priv: crypto.KeyObject; pub: string } {
   let rec = readKey();
   if (!rec) {
     const kp = crypto.generateKeyPairSync('ed25519');
-    rec = { priv: kp.privateKey.export({ format: 'pem', type: 'pkcs8' }).toString(), pub: kp.publicKey.export({ format: 'jwk' }).x! };
+    const { x } = kp.publicKey.export({ format: 'jwk' });
+    if (typeof x !== 'string') throw new Error('an Ed25519 public key exported no JWK x'); // an OKP key always has it
+    rec = { priv: kp.privateKey.export({ format: 'pem', type: 'pkcs8' }).toString(), pub: x };
     fs.mkdirSync(path.dirname(file()), { recursive: true, mode: 0o700 });
     const tmp = `${file()}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify({ v: 1, ...rec }) + '\n', { mode: 0o600 });

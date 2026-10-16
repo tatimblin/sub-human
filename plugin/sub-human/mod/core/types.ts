@@ -43,9 +43,9 @@ export interface GuardCtx {
   realHome?: string | null;
   userHome?: string | null;
   pluginRoot?: string | null;
-  realPluginRoot?: string | null;
+  realPluginRoot?: string | null | undefined;
   cwd?: string | null;
-  realCwd?: string | null;
+  realCwd?: string | null | undefined;
   /** Claude Code's directory (CLAUDE_CONFIG_DIR, else ~/.claude): its history.jsonl and this session's transcript */
   claudeDir?: string | null;
   /** this session's id: its transcript is projects/<any>/<sid>.jsonl */

@@ -163,7 +163,7 @@ function sameOf(approvers: string[], ms: Members): string[][] {
   const by = new Map<string, string[]>();
   for (const n of approvers) {
     const m = ms[n], who = personOf(m);
-    if (!who || (m.machine === who && ownerOf(ms, who) !== n)) continue;
+    if (!m || !who || (m.machine === who && ownerOf(ms, who) !== n)) continue; // no seat: no person (personOf)
     by.set(who, [...(by.get(who) || []), n]);
   }
   return [...by.values()].filter(g => g.length > 1);
@@ -209,7 +209,7 @@ function title(code: RoomCode, hash: string, entry?: Pick<Entry, 'text'> | null)
   const t = planTitle(read(code, hash));
   if (t) { titles.set(hash, t); return t; }
   const m = entry && /^proposal [0-9a-f]{6,64}:\s*(.+)/.exec(String(entry.text || ''));
-  return m ? m[1].trim() : '';
+  return (m?.[1] ?? '').trim();
 }
 
 // ---------- the card ----------
@@ -225,7 +225,7 @@ function summary(text: string): string {
     if (len + s.length + 1 > SUMMARY_MAX) break;
     out.push(s); len += s.length + 1; used++;
   }
-  while (out.length && !out[out.length - 1].trim()) out.pop();
+  while (out.length && !out.at(-1)?.trim()) out.pop();
   const rest = lines.length - used;
   return out.join('\n') + (rest > 0 ? `\n… (${rest} more lines)` : '');
 }
@@ -275,14 +275,15 @@ function namedIn(ps: Proposal[], prompt: string | null | undefined, code: RoomCo
   const s = String(prompt || '').toLowerCase();
   const hex = s.match(/\b[0-9a-f]{6,12}\b/g) || [];
   const byHash = ps.filter(p => hex.some(t => p.hash.startsWith(t) && ps.filter(q => q.hash.startsWith(t)).length === 1));
-  if (byHash.length) return byHash[0];
+  const [first] = byHash;
+  if (first) return first;
   const words = [...new Set(wordsOf(s))].filter(w => !STOP_WORDS.has(w));
   if (!words.length || !ps.length) return null;
   for (const field of [(p: Proposal) => title(code, p.hash, p.entry), (p: Proposal) => read(code, p.hash) || '']) {
     const sets = ps.map(p => new Set(wordsOf(field(p))));
     const scores = sets.map((set, i) => words.filter(w => set.has(w) && sets.every((o, j) => j === i || !o.has(w))).length);
     const max = Math.max(...scores);
-    if (max > 0 && scores.filter(x => x === max).length === 1) return ps[scores.indexOf(max)];
+    if (max > 0 && scores.filter(x => x === max).length === 1) return ps[scores.indexOf(max)] ?? null; // max is one of the scores
   }
   return null;
 }
@@ -298,11 +299,12 @@ function replacedIn(ps: Proposal[], prompt: string | null | undefined, code: Roo
   const f = room.open(code).fold();
   for (const t of hex) {
     const named = [...f.superseded.keys()].filter(h => h.startsWith(t));
-    if (named.length !== 1 || [...f.proposals.keys()].filter(h => h.startsWith(t)).length !== 1) continue;
-    let h = named[0];
-    for (let i = 0; i < 64 && f.superseded.has(h); i++) h = f.superseded.get(h)!; // a chain of revisions, bounded
+    const [old] = named;
+    if (old === undefined || named.length !== 1 || [...f.proposals.keys()].filter(h => h.startsWith(t)).length !== 1) continue;
+    let h = old;
+    for (let i = 0, next = f.superseded.get(h); i < 64 && next !== undefined; i++, next = f.superseded.get(h)) h = next; // a chain of revisions, bounded
     const p = ps.find(x => x.hash === h);
-    if (p) return { old: named[0], p };
+    if (p) return { old, p };
   }
   return null;
 }
@@ -343,12 +345,14 @@ const openCall: (h: string) => string = NEXT.open;
 const confirmCall: (h: string) => string = NEXT.note;
 const showConfirm: typeof showNote = showNote;
 /** A proposal as a list item: `3fa2c1 "Ship v3 Monday"` (the short hash alone without a title or a room to read it from). */
-function listed(code: RoomCode | undefined, p: Pick<Proposal, 'hash' | 'entry'>): string {
+/** A proposal as the re-ask lists it: its entry when the caller found it. */
+type Listed = Pick<Proposal, 'hash'> & { entry?: Proposal['entry'] | undefined };
+function listed(code: RoomCode | undefined, p: Listed): string {
   const t = code ? clip(title(code, p.hash, p.entry).replace(/\s+/g, ' ').trim(), TITLE_MAX) : '';
   return t ? `${p.hash.slice(0, 6)} "${t}"` : p.hash.slice(0, 6);
 }
 /** others: the other proposals awaiting name, listed by short hash and title (code: the room their titles come from). */
-function reminder(p: Pick<Proposal, 'hash'>, name: string, { code, others = [] }: { code?: RoomCode, others?: Pick<Proposal, 'hash' | 'entry'>[] } = {}): string {
+function reminder(p: Pick<Proposal, 'hash'>, name: string, { code, others = [] }: { code?: RoomCode, others?: Listed[] } = {}): string {
   const base = `proposal ${p.hash} still awaits ${name}'s answer (an earlier review closed without an answer is fine). Now ${openCall(p.hash)}, unless ${name} asked you to propose something: then do that, and this waits.`;
   if (!others.length) return base;
   return `${base} (${others.length} more await ${name}'s answer: ${others.map(o => listed(code, o)).join(', ')}; the hooks open whichever ${name} names next, else the newest.)`;
@@ -394,7 +398,7 @@ function inside(abs: string, cwd: string | undefined): boolean {
 interface CreateArgs { text?: unknown, path?: unknown, approvers?: unknown }
 interface Created { hash: ProposalHash, approvers: string[], path: string, entry: Entry | undefined, again: boolean, retired: string[] }
 
-function create(me: Me | null | undefined, args: CreateArgs = {}, { cwd }: { cwd?: string } = {}): Created {
+function create(me: Me | null | undefined, args: CreateArgs = {}, { cwd }: { cwd?: string | undefined } = {}): Created {
   if (!me || !me.code || !me.name) refuse('not in a room; run /sub-human');
   const r = room.open(me.code);
   const { text, path: file } = args;
@@ -492,7 +496,7 @@ function decide(code: RoomCode, hash: string): Entry | null {
       ? `objected: ${people(m, m.objected)}${m.agreed.length ? ` · agreed: ${people(m, m.agreed)}` : ''} (proposal ${hash})`
       : `agreed: ${people(m, m.agreed)} (proposal ${hash})`;
     // complete: every approver has answered (a person's seats share one answer)
-    const refs = [...new Set(cur.approvers.map((n: string) => m.answers[n]!.id))];
+    const refs = [...new Set(cur.approvers.flatMap((n: string) => { const a = m.answers[n]; return a ? [a.id] : []; }))]; // complete: each one there
     return r.append({ kind: 'decision', text, proposal_hash: hash, refs: [cur.id, ...refs] }, { via: 'system', from: 'room', system: true });
   });
 }

@@ -13,9 +13,14 @@ import type { CaptureRec, TEntry } from '../metrics.ts';
 export function runCost({ index, runStart, seats = ['alice', 'bob'] }: { index: CaptureRec[], runStart: string, seats?: string[] }): () => string {
   return function cost() {
     const P = metrics.BASELINES.prices;
-    const price = (m: string): number[] => (Object.entries(P).find(([k]) => k !== 'default' && m.includes(k)) || [null, P.default])[1];
+    const price = (m: string): number[] => {
+      const row = Object.entries(P).find(([k]) => k !== 'default' && m.includes(k))?.[1] ?? P.default;
+      if (!row) throw new Error('scripts/baselines.json prices: no default');
+      return row;
+    };
     let usd = 0;
-    const until = index.length ? new Date(Date.parse(index.map(r => r.time).sort()[index.length - 1]) + 60_000).toISOString() : ''; // not later runs
+    const last = index.map(r => r.time).sort().at(-1);
+    const until = last !== undefined ? new Date(Date.parse(last) + 60_000).toISOString() : ''; // not later runs
     const seen = new Set<string | undefined>();
     const byModel: Record<string, number> = {};
     const walk = (d: string): void => {
@@ -32,7 +37,7 @@ export function runCost({ index, runStart, seats = ['alice', 'bob'] }: { index: 
           if (seen.has(id)) continue;
           seen.add(id);
           const m = e.message?.model || '';
-          const [i, o2, cw, cr] = price(m);
+          const [i = 0, o2 = 0, cw = 0, cr = 0] = price(m); // [input, output, cache write, cache read]
           const c = ((u.input_tokens || 0) * i + (u.output_tokens || 0) * o2 + (u.cache_creation_input_tokens || 0) * cw + (u.cache_read_input_tokens || 0) * cr) / 1e6;
           usd += c; byModel[m] = (byModel[m] || 0) + c;
         }

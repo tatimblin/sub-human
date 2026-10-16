@@ -116,7 +116,7 @@ class Machine {
     const asked = await h.until(() => this.lib(() => !!(links.get(code) || {}).pin_wanted), ms, 50);
     if (!asked) throw new Error(`the host never asked for the PIN: ${JSON.stringify(typed.json)} ${typed.stderr} ${JSON.stringify(this.lib(() => links.get(code)))}`);
     const gave = this.join(seat, `join ${inv.pin}`);
-    const ref = await h.until(() => { try { const q = host.lib(() => admission.pending(code)); return q.length ? q[q.length - 1].ref : null; } catch { return null; } }, ms, 50);
+    const ref = await h.until(() => { try { const q = host.lib(() => admission.pending(code)); return q.at(-1)?.ref ?? null; } catch { return null; } }, ms, 50);
     if (!ref) throw new Error(`no join request on the host: ${JSON.stringify(gave.json)} ${gave.stderr}`);
     const admitted = host.join(hostSeat, `admit ${ref}`);
     const linked = await h.until(() => this.lib(() => (links.get(code) || {}).token), ms, 50);
@@ -172,9 +172,10 @@ function shownInvite(text: string): { line: string; dest: string; code: RoomCode
   const m = /\/sub-human (join (\S+)(?: ([a-z]+-\d{4}))? ([0-9a-z]{39})((?: --(?:via|home) \S+)*))\s*$/m.exec(text);
   const p = /apart from the line[^\n]*: (\d{4})\s*$/m.exec(text);
   if (!m || !p) return null;
-  const code = roomCode(m[3] || m[2].split('/').pop() || ''); // a web line: the URL's last segment is the room
+  const [, line = '', dest = '', named, word = ''] = m;
+  const code = roomCode(named || dest.split('/').pop() || ''); // a web line: the URL's last segment is the room
   if (!code) return null;
-  return { line: m[1], dest: m[2], code, word: m[4], pin: p[1] };
+  return { line, dest, code, word, pin: p[1] ?? '' };
 }
 
 export { Machine, shownInvite };

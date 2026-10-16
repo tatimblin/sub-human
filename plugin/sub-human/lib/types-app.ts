@@ -81,7 +81,7 @@ export interface Card {
 /** members/NAME/review: the plan-view review state (hooks/handlers/consent.ts writes it). */
 export interface Review {
   phase: 'entering' | 'shown' | 'exiting' | 'restore';
-  mode?: string;
+  mode?: string | undefined;
   at?: number;
   hash?: string;
   from?: string | null;
@@ -94,7 +94,8 @@ export interface Review {
   /** closed while its dialog's tool_result was not on disk yet: the answer is read again later (hooks/handlers/consent.ts resolveShown) */
   unread?: boolean;
   foreign?: boolean;
-  card?: string;
+  card?: string | undefined;
+
   /** opened at ExitPlanMode in a plan mode the person chose (no EnterPlanMode of the review's): no mode to restore */
   keepMode?: boolean;
   /** when the plan view was shown (its Pre(ExitPlanMode)): a Yes this soon after is asked again on the card (item 8) */

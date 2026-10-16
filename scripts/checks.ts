@@ -30,9 +30,9 @@ import path from 'node:path';
 import * as paths from './lib/paths.ts';
 import { clip, readJson } from './lib/io.ts';
 import { context } from './checks/context.ts';
-import { BASELINES } from './metrics.ts';
+import { BASELINES, BASELINE, PHASE0, PREV } from './metrics.ts';
 import type { Ctx, SceneModule, RunJson } from './checks/context.ts';
-import type { Thresholds } from './metrics.ts';
+import type { Thresholds, BaselineRun } from './metrics.ts';
 import * as s01 from './checks/s01-open.ts';
 import * as s02 from './checks/s02-join.ts';
 import * as s03 from './checks/s03-pairing.ts';
@@ -68,9 +68,10 @@ export type Results = Record<string, CheckResult[]>;
 /** The counts by kind. */
 export type Summary = Record<CheckResult['kind'], Record<string, number>>;
 
-function args(argv: string[]): Record<string, string> {
-  const o: Record<string, string> = {};
-  for (let i = 0; i < argv.length; i++) if (argv[i].startsWith('--')) o[argv[i].slice(2)] = argv[++i];
+function args(argv: string[]): Record<string, string | undefined> {
+  const o: Record<string, string | undefined> = {};
+  const it = argv.values();
+  for (const a of it) if (a.startsWith('--')) o[a.slice(2)] = it.next().value;
   return o;
 }
 
@@ -102,7 +103,7 @@ export function plannedScenes(screens: string): string[] | null {
 /** Counts by kind: {deterministic: {pass, fail}, behavioural: {pass, warn}}. */
 export function summarise(res: Results): Summary {
   const s: Summary = { deterministic: { pass: 0, fail: 0 }, behavioural: { pass: 0, warn: 0 } };
-  for (const [k, cs] of Object.entries(res)) if (!k.startsWith('_')) for (const c of cs) s[c.kind][c.status]++;
+  for (const [k, cs] of Object.entries(res)) if (!k.startsWith('_')) for (const c of cs) { const n = s[c.kind]; n[c.status] = (n[c.status] ?? 0) + 1; } // det: pass|fail, beh: pass|warn, all set above
   return s;
 }
 
@@ -118,9 +119,9 @@ function main() {
   const skipped = planned ? ORDER.filter(k => k !== 'Metrics' && !planned.includes(k)) : [];
   const meta = { cost: ctx.cost(), run: `room ${ctx.code}, ${ctx.log.length} log entries, ${ctx.index.length} captures, claude job ${ctx.job}${skipped.length ? `; partial run: ${(planned || []).join(', ')}` : ''}`, note: o.note || '', summary, ...(skipped.length ? { skipped } : {}) };
   const M = ctx.metrics;
-  const run = (name: keyof typeof BASELINES.compare) => { const { note, ...r } = BASELINES.runs[BASELINES.compare[name]]; void note; return r; };
+  const run = (b: BaselineRun) => { const { note, ...r } = b; void note; return r; };
   const metrics = M && !('error' in M)
-    ? { _metrics: { run: { room: ctx.code, ...M }, baseline: run('baseline'), phase0: run('phase0'), prev: run('prev'), target: BASELINES.thresholds } }
+    ? { _metrics: { run: { room: ctx.code, ...M }, baseline: run(BASELINE), phase0: run(PHASE0), prev: run(PREV), target: BASELINES.thresholds } }
     : {};
   fs.writeFileSync(out, JSON.stringify({ ...res, _meta: meta, ...metrics }, null, 1) + '\n');
 

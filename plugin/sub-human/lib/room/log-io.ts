@@ -167,7 +167,9 @@ function loadSnap(dir: string): LogSnapshot | null {
 function sealedOnDisk(dir: string): number[] {
   let names: string[] = [];
   try { names = fs.readdirSync(dir); } catch { return []; }
-  return names.map(n => SEG_RE.exec(n)).filter(m => !!m).map(m => Number(m![1])).sort((a, b) => a - b);
+  const segs: number[] = [];
+  for (const n of names) { const [, seg] = SEG_RE.exec(n) ?? []; if (seg !== undefined) segs.push(Number(seg)); }
+  return segs.sort((a, b) => a - b);
 }
 /** The snapshot; one that is missing or unreadable while sealed segments exist is rebuilt from them (under the lock). */
 function snapOf(dir: string): LogSnapshot | null {
@@ -258,14 +260,15 @@ function lineAt(fd: number, pos: number, end: number): LineSpan | null {
   return { start, end: nl < 0 ? end : nl + 1, id: m ? Number(m[1]) : null };
 }
 
+const hasId = (L: LineSpan | null): L is LineSpan & { id: number } => L !== null && L.id !== null;
 /** Byte offset of the first line in [0, end) whose id is > after (ids rise through a file), or end. */
 function offsetAfter(fd: number, end: number, after: number): number {
   let lo = 0, hi = end;
-  const idAt = (pos: number): LineSpan | null => { let L = lineAt(fd, pos, end); while (L && L.id === null) L = lineAt(fd, L.end, end); return L; };
+  const idAt = (pos: number): (LineSpan & { id: number }) | null => { let L = lineAt(fd, pos, end); while (L && L.id === null) L = lineAt(fd, L.end, end); return hasId(L) ? L : null; };
   while (lo < hi) {
     const mid = Math.floor((lo + hi) / 2);
     const L = idAt(mid);
-    if (!L || L.id! > after) hi = mid; else lo = mid + 1; // idAt skips lines without an id
+    if (!L || L.id > after) hi = mid; else lo = mid + 1;
   }
   const L = idAt(lo);
   return L ? L.start : end;
@@ -351,10 +354,11 @@ function prefixOf(dir: string, snap: LogSnapshot): readonly Readonly<Entry>[] {
   let last = snap.held - 1;
   for (let n = 1; n <= snap.seg; n++) {
     const es = segEntries(segFile(dir, n));
-    for (let i = 0; i < es.length; i++) {
-      if (i === 0 && !(es[i].id > last)) continue;
-      out.push(es[i]);
-      if (es[i].id > last) last = es[i].id;
+    let i = 0;
+    for (const e of es) {
+      if (i++ === 0 && !(e.id > last)) continue;
+      out.push(e);
+      if (e.id > last) last = e.id;
     }
   }
   const entries = Object.freeze(out);
@@ -364,8 +368,8 @@ function prefixOf(dir: string, snap: LogSnapshot): readonly Readonly<Entry>[] {
 
 /** The active segment's entries after the snapshot (its carry line, and lines a rotation in flight sealed, left out). */
 function afterSnap(act: readonly Readonly<Entry>[], S: number): readonly Readonly<Entry>[] {
-  let i = 0;
-  while (i < act.length && !(act[i].id > S)) i++;
+  const at = act.findIndex(e => e.id > S);
+  const i = at < 0 ? act.length : at;
   return i ? Object.freeze(act.slice(i)) : act;
 }
 
@@ -643,11 +647,15 @@ function verifyChain(dir: string, { fromOffset, prev }: { fromOffset?: number; p
 function readMarks(fd: number, marks: readonly [number, number, number][]): (Entry | null)[] {
   const out: (Entry | null)[] = [];
   let i = 0;
-  while (i < marks.length) {
-    let j = i;
-    while (j + 1 < marks.length && marks[j + 1][1] - (marks[j][1] + marks[j][2]) < 4096) j++;
-    const off = marks[i][1], buf = readRange(fd, off, marks[j][1] + marks[j][2] - off);
-    for (let k = i; k <= j; k++) out.push(parse(buf.subarray(marks[k][1] - off, marks[k][1] - off + marks[k][2])));
+  for (let first = marks[i]; first; first = marks[i]) {
+    // a run: first..last, each mark within 4 KiB of the one before
+    let j = i, last = first;
+    for (let next = marks[j + 1]; next && next[1] - (last[1] + last[2]) < 4096; next = marks[j + 1]) { last = next; j++; }
+    const off = first[1], buf = readRange(fd, off, last[1] + last[2] - off);
+    for (let k = i; k <= j; k++) {
+      const m = marks[k];
+      if (m) out.push(parse(buf.subarray(m[1] - off, m[1] - off + m[2]))); // k <= j: there
+    }
     i = j + 1;
   }
   return out;
@@ -658,7 +666,7 @@ function readMarks(fd: number, marks: readonly [number, number, number][]): (Ent
  * state, plus what the advance read ([{off, e}] past the old checkpoint, its first break, and where the complete lines
  * end). A new snapshot (a rotation) or another file starts it again after the snapshot.
  */
-function advance(dir: string, snap: LogSnapshot | null, fd: number, size: number): { v: ViewState; out: { off: number; e: Entry }[]; bad: ChainBreak | null; complete: number } {
+function advance(dir: string, snap: LogSnapshot | null, fd: number, size: number): { v: ViewState; marked: readonly Readonly<Entry>[]; out: { off: number; e: Entry }[]; bad: ChainBreak | null; complete: number } {
   const st = fs.fstatSync(fd);
   const key = `${size}:${st.mtimeMs}`;
   let v = views.get(dir);
@@ -668,17 +676,20 @@ function advance(dir: string, snap: LogSnapshot | null, fd: number, size: number
     views.set(dir, v);
   }
   v.checked = key;
-  if (!v.marked) {
+  let marked = v.marked;
+  if (!marked) {
     const got = readMarks(fd, v.cp.marks);
-    if (got.some(e => !e)) { v.cp = startCp(snap); v.marked = []; } // a marked line no longer parses: from the start
-    else v.marked = Object.freeze(got as Entry[]);
+    const parsed = got.filter((e): e is Entry => !!e);
+    if (parsed.length < got.length) { v.cp = startCp(snap); marked = []; } // a marked line no longer parses: from the start
+    else marked = Object.freeze(parsed);
+    v.marked = marked;
   }
   const { out, next, added, bad, complete } = scan(fd, size, v.cp);
   if (next.offset > v.cp.offset) {
     v.cp = next;
-    if (added.length) { v.marked = Object.freeze(v.marked!.concat(added)); v.joined = null; }
+    if (added.length) { v.marked = marked = Object.freeze(marked.concat(added)); v.joined = null; }
   }
-  return { v, out, bad, complete };
+  return { v, marked, out, bad, complete };
 }
 
 /** The active segment's view: its non-chat entries and every entry with id > after (after >= the snapshot's id). */
@@ -687,13 +698,16 @@ function activeView(dir: string, snap: LogSnapshot | null, after: number): Entry
   if (fd === null) return [];
   try {
     const size = fs.fstatSync(fd).size;
-    const { v, out, complete } = advance(dir, snap, fd, size);
-    const cp = v.cp, marks = cp.marks, marked = v.marked!;
+    const { v, marked, out, complete } = advance(dir, snap, fd, size);
+    const cp = v.cp, marks = cp.marks;
     const res: Entry[] = [];
+    // marks and marked are one list: a mark's offset, and its entry
+    const markAt = (i: number): number => marks[i]?.[1] ?? Infinity;
+    const take = (i: number): void => { const e = marked[i]; if (e) res.push(e); };
     // the prefix: marked lines, and (after < cp.id) every line from the first with id > after
     const from = after < cp.id ? offsetAfter(fd, cp.offset, after) : cp.offset;
     let k = 0;
-    for (; k < marks.length && marks[k][1] < from; k++) res.push(marked[k]);
+    for (; k < marks.length && markAt(k) < from; k++) take(k);
     if (from < cp.offset) {
       const buf = readRange(fd, from, cp.offset - from);
       let pos = 0;
@@ -701,13 +715,13 @@ function activeView(dir: string, snap: LogSnapshot | null, after: number): Entry
         let nl = buf.indexOf(10, pos);
         if (nl < 0) nl = buf.length;
         if (nl > pos) {
-          if (k < marks.length && marks[k][1] === from + pos) res.push(marked[k++]);
+          if (k < marks.length && markAt(k) === from + pos) take(k++);
           else { const e = parse(buf.subarray(pos, nl)); if (e && e.id > after) res.push(e); }
         }
         pos = nl + 1;
       }
     }
-    for (; k < marks.length; k++) res.push(marked[k]);
+    for (; k < marks.length; k++) take(k);
     // after the checkpoint: what this call scanned past it (a break stops the checkpoint, not the reading)
     for (const { off, e } of out) if (off >= cp.offset && (!CHAT_KINDS.has(e.kind) || e.id > after)) res.push(e);
     if (size > complete) { // no newline yet; readAll() parses it too
@@ -736,10 +750,10 @@ function nonChat(dir: string): { marked: readonly Readonly<Entry>[]; rest: Entry
     if (fd === null) return { marked: snap ? snap.entries : EMPTY, rest: [] };
     try {
       const size = fs.fstatSync(fd).size;
-      const { v, out, complete } = advance(dir, snap, fd, size);
+      const { v, marked, out, complete } = advance(dir, snap, fd, size);
       const rest = out.filter(x => x.off >= v.cp.offset && !CHAT_KINDS.has(x.e.kind)).map(x => x.e);
       if (size > complete) { const e = parse(readRange(fd, complete, size - complete)); if (e && !CHAT_KINDS.has(e.kind)) rest.push(e); }
-      if (!v.joined) v.joined = snap && snap.entries.length ? Object.freeze(snap.entries.concat(v.marked!)) : v.marked!;
+      if (!v.joined) v.joined = snap && snap.entries.length ? Object.freeze(snap.entries.concat(marked)) : marked;
       return { marked: v.joined, rest };
     } finally { fs.closeSync(fd); }
   });
@@ -771,8 +785,8 @@ function tailFrom(fd: number, end: number, snap: LogSnapshot | null): { prevLine
     }
     if (!snap) return;
     for (let i = snap.window.length - 1; i >= 0; i--) {
-      const w: WindowItem = snap.window[i];
-      if (w.id < low) yield w as Entry; // the fields scanTail reads
+      const w: WindowItem | undefined = snap.window[i];
+      if (w && w.id < low) yield w as Entry; // the fields scanTail reads
     }
   }
   return { prevLine: first.done ? (snap ? snap.line : '') : first.value, newest: newest() };
@@ -841,10 +855,11 @@ function rebuild(dir: string): LogSnapshot | null {
     const S: number = prev ? prev.id : 0;
     const real: string[] = lines.filter((l, i) => !(i === 0 && prev && !((parse(l) || { id: 0 }).id > S)));
     const es: Entry[] = real.map(l => parse(l)).filter((e): e is Entry => !!e);
-    if (!es.length) break;
-    const wire = snapshot.extend(prev, { nonChat: es.filter(e => !CHAT_KINDS.has(e.kind)), recent: es.slice(-SNAPSHOT_WINDOW_MAX), line: real.at(-1)!, lines: real.length });
-    const first = prev && prev.seg === 0 ? prev.id : es[0].id; // an installed mirror's first segment holds its anchor
-    snap = { v: 1, ...wire, seg: n, segs: [...(snap ? snap.segs : []), [n, first, wire.id]], held: snap ? snap.held : es[0].id, base: snap ? snap.base : 0, at: new Date().toISOString() };
+    const [head] = es, line = real.at(-1);
+    if (!head || line === undefined) break; // es comes from real: one is empty only when both are
+    const wire = snapshot.extend(prev, { nonChat: es.filter(e => !CHAT_KINDS.has(e.kind)), recent: es.slice(-SNAPSHOT_WINDOW_MAX), line, lines: real.length });
+    const first = prev && prev.seg === 0 ? prev.id : head.id; // an installed mirror's first segment holds its anchor
+    snap = { v: 1, ...wire, seg: n, segs: [...(snap ? snap.segs : []), [n, first, wire.id]], held: snap ? snap.held : head.id, base: snap ? snap.base : 0, at: new Date().toISOString() };
   }
   if (snap) { writeJsonAtomic(snapFile(dir), snap, { compact: true }); forget(dir); }
   return snap;
@@ -864,7 +879,7 @@ function rotate(dir: string, locked = false): boolean {
   let next: LogSnapshot;
   try {
     const size = fs.fstatSync(fd).size;
-    const { v, bad } = advance(dir, snap, fd, size);
+    const { v, marked, bad } = advance(dir, snap, fd, size);
     const S = snap ? snap.id : 0;
     if (bad || v.cp.offset !== size || !(v.cp.id > S) || !v.cp.first) return false;
     const line = lineBefore(fd, size);
@@ -876,7 +891,7 @@ function rotate(dir: string, locked = false): boolean {
       recent.push(e);
     }
     recent.reverse();
-    const wire = snapshot.extend(snap, { nonChat: v.marked!, recent, line, lines: v.cp.count - (snap ? snap.count : 0) });
+    const wire = snapshot.extend(snap, { nonChat: marked, recent, line, lines: v.cp.count - (snap ? snap.count : 0) });
     const n = (snap ? snap.seg : 0) + 1;
     next = {
       // an installed mirror's first seal starts at its anchor (the snapshot's line, this segment's carry): no earlier

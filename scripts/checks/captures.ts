@@ -30,16 +30,22 @@ export function captures({ screens, index }: { screens: string, index: CaptureRe
   const pick = (scene: string, seat: string, step: Step): CaptureRec | undefined => { const rs = caps(scene, seat); return step === 'last' ? rs.at(-1) : rs.find(x => x.step === step); };
   const cap = (scene: string, seat: string, step: Step = 1): string | null => { const r = pick(scene, seat, step); return r ? readText(path.join(screens, r.txt)) : null; };
   const capName = (scene: string, seat: string, step: Step = 1): string => { const r = pick(scene, seat, step); return r ? r.txt : `(no ${scene} step ${step} capture of sh-${seat})`; };
-  const win = (scene: string): Span | null => { const ts = index.filter(r => r.scene === scene).map(r => r.time).sort(); return ts.length ? { from: ts[0], to: ts[ts.length - 1] } : null; };
+  const win = (scene: string): Span | null => {
+    const ts = index.filter(r => r.scene === scene).map(r => r.time).sort();
+    const from = ts.at(0), to = ts.at(-1);
+    return from !== undefined && to !== undefined ? { from, to } : null;
+  };
   // a scene's window runs from the previous scene's last capture to its own last capture
   const sceneOrder = [...new Set(index.map(r => r.scene))];
   const span = (scene: string): Span | null => {
     const w = win(scene); if (!w) return null;
     const i = sceneOrder.indexOf(scene);
-    const prev = i > 0 ? win(sceneOrder[i - 1]) : null;
+    const before = sceneOrder[i - 1];
+    const prev = i > 0 && before !== undefined ? win(before) : null;
     return { from: prev ? prev.to : new Date(Date.parse(w.from) - 180_000).toISOString(), to: w.to };
   };
-  const runStart = index.length ? new Date(Date.parse(index.map(r => r.time).sort()[0]) - 180_000).toISOString() : '';
+  const first = index.map(r => r.time).sort().at(0);
+  const runStart = first !== undefined ? new Date(Date.parse(first) - 180_000).toISOString() : '';
   const stateDir = (scene: string, step: Step): string | null => {
     const d = path.join(screens, 'state', scene);
     let steps: number[] = [];

@@ -155,8 +155,10 @@ function clearContextOnPlanAccept(cwd: string | null | undefined, env: Env = pro
 
 /** The global config file Claude Code keeps its cached feature switches in: $CLAUDE_CONFIG_DIR/.claude.json, else
  * ~/.claude.json. */
-const globalConfigFile = (env: Env = process.env): string => (env[ENV.CONFIG_DIR]
-  ? path.join(env[ENV.CONFIG_DIR]!, '.claude.json') : path.join(env.HOME || os.homedir(), '.claude.json'));
+const globalConfigFile = (env: Env = process.env): string => {
+  const dir = env[ENV.CONFIG_DIR];
+  return dir ? path.join(dir, '.claude.json') : path.join(env.HOME || os.homedir(), '.claude.json');
+};
 
 /**
  * The installed plugins' hooks modules switch as Claude Code last cached it (cachedGrowthBookFeatures

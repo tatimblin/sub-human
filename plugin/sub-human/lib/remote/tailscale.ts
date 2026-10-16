@@ -42,7 +42,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
-import type { ChildProcess } from 'node:child_process';
+import type { ChildProcess, ChildProcessByStdio } from 'node:child_process';
+import type { Readable } from 'node:stream';
 import { RoomError } from '../room/validate.ts';
 import { envStr } from '../env.ts';
 import { arr, decode, isObj, num, obj, objAs, opt, str } from '../decode.ts';
@@ -100,9 +101,9 @@ function call(b: string, args: string[]): { ok: boolean; status: number | null; 
 function classify(text: string): Classified | null {
   const s = String(text || '');
   const url = ENABLE_URL_RE.exec(s);
-  if (url || NOT_ENABLED_RE.test(s)) {
-    const named = NOT_ENABLED_RE.exec(s);
-    const word = (named ? named[1] : url![1]).toLowerCase(); // one of the two matched
+  const hit = NOT_ENABLED_RE.exec(s) ?? url; // the words' match first, else the URL's
+  if (hit) {
+    const word = (hit[1] ?? '').toLowerCase(); // group 1 is not optional in either
     return { kind: 'enable', feature: word === 'funnel' ? 'Funnel' : 'Serve', url: url ? url[0].replace(/[.,;)]+$/, '') : null };
   }
   if (NOT_RUNNING_RE.test(s)) return { kind: 'not-running' };
@@ -168,7 +169,7 @@ const offArgs = ({ path: p, funnel = false }: { path: string; funnel?: boolean }
 const WATCH_ARGS = obj({ bin: str, args: arr(str), timeoutMs: opt(num) });
 
 function watch({ bin: b, args, timeoutMs = SERVE_MS, env = process.env }: {
-  bin: string; args: string[]; timeoutMs?: number; env?: NodeJS.ProcessEnv;
+  bin: string; args: string[]; timeoutMs?: number | undefined; env?: NodeJS.ProcessEnv;
 }): Promise<Watched> {
   return new Promise(resolve => {
     let text = '', done = false, child: ChildProcess | undefined;
@@ -183,18 +184,19 @@ function watch({ bin: b, args, timeoutMs = SERVE_MS, env = process.env }: {
       resolve({ ok: reason === 'exit' && extra.status === 0, status: null, text: text.trim(), reason, ...extra });
     };
     const timer = setTimeout(() => finish('timeout'), timeoutMs);
+    let proc: ChildProcessByStdio<null, Readable, Readable>; // stdio: pipe
     try {
-      child = spawn(b, args, { env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+      proc = child = spawn(b, args, { env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
     } catch (e) { finish('error', { error: msgOf(e) }); return; }
     const onData = (d: Buffer) => {
       text += d;
       const c = classify(text);
       if (c && c.kind === 'enable' && c.url) finish('enable', { found: c });
     };
-    child.stdout!.on('data', onData); // stdio: pipe
-    child.stderr!.on('data', onData);
-    child.on('error', e => finish('error', { error: e.message }));
-    child.on('close', status => finish('exit', { status }));
+    proc.stdout.on('data', onData);
+    proc.stderr.on('data', onData);
+    proc.on('error', e => finish('error', { error: e.message }));
+    proc.on('close', status => finish('exit', { status }));
   });
 }
 

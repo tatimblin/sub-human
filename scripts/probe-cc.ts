@@ -48,7 +48,7 @@ function version(buf: Buffer, bin: string): string {
   if (v) return v;
   const r = spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: 5000 });
   const m = /(\d+\.\d+\.\d+)/.exec(r.stdout || '');
-  return m ? m[1] : 'unknown';
+  return m?.[1] ?? 'unknown';
 }
 
 /** An extra entry as --extra and $CC_PROBE_EXTRA give it: stability and note may be left out. */
@@ -66,7 +66,8 @@ function extras(): ContractEntry[] {
 function main(): never {
   const json = process.argv.includes('--json');
   const t0 = Date.now();
-  const bin = cc.locateBinary({ bin: arg('--bin') });
+  const binArg = arg('--bin');
+  const bin = cc.locateBinary(binArg === undefined ? {} : { bin: binArg });
   if (!bin) {
     const msg = 'probe-cc: no Claude Code binary found (set CLAUDE_BIN)';
     if (json) process.stdout.write(JSON.stringify({ ok: false, error: msg }) + '\n'); else process.stderr.write(msg + '\n');

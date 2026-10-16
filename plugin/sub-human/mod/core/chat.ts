@@ -59,7 +59,11 @@ export function roomRows(text: unknown, { expanded = false }: { expanded?: boole
     if (frame) { if (expanded) rows.push({ text: l, dim: true }); continue; }
     if (expanded && l.startsWith(FOR_CLAUDE)) { rows.push({ text: l, dim: true }); continue; }
     if (!l.startsWith(FOR_CLAUDE)) { run = 0; rows.push({ text: l, dim: false }); continue; }
-    if (run++) { rows[rows.length - 1] = { text: `${rows[rows.length - 1].text.replace(/ \(\+\d+\)$/, '')} (+${run - 1})`, dim: true }; continue; }
+    if (run++) { // the run's first line is the last row
+      const prev = rows.at(-1);
+      if (prev) rows[rows.length - 1] = { text: `${prev.text.replace(/ \(\+\d+\)$/, '')} (+${run - 1})`, dim: true };
+      continue;
+    }
     rows.push({ text: l.length > FOR_CLAUDE_MARK_MAX ? `${l.slice(0, FOR_CLAUDE_MARK_MAX - 1).trimEnd()}…` : l, dim: true });
   }
   return rows.some(r => !r.dim) ? rows : null;

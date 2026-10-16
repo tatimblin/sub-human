@@ -173,9 +173,9 @@ async function typeHuman(session: string, text: string): Promise<void> {
   const c = await helperClient();
   const ds = keyDelays(text);
   const chars = [...text];
-  for (let i = 0; i < chars.length; i++) {
-    tmux('send-keys', '-c', c, '-l', '-t', tgt(session), '--', chars[i]);
-    await sleep(ds[i]);
+  for (const [i, ch] of chars.entries()) {
+    tmux('send-keys', '-c', c, '-l', '-t', tgt(session), '--', ch);
+    await sleep(ds[i] ?? 0);
   }
 }
 
@@ -275,11 +275,11 @@ const FLAGS = ['absent', 'latest-plan', 'fresh', 'new']; // options that take no
 
 export function opts(args: string[]): Opts {
   const o: Opts = { _: [] };
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
+  const it = args.values();
+  for (const a of it) {
     if (a.startsWith('--')) {
       const k = a.slice(2);
-      if (FLAGS.includes(k)) o[k] = true; else o[k] = args[++i];
+      if (FLAGS.includes(k)) o[k] = true; else o[k] = it.next().value;
     } else o._.push(a);
   }
   return o;
@@ -318,21 +318,27 @@ async function submit(session: string, text: string): Promise<void> {
   if (!text.startsWith('/')) return;
   // the slash picker may take the first Enter as "accept completion": check the input line
   await sleep(1200);
-  const cmd = esc(text.split(' ')[0]);
+  const cmd = esc(text.split(' ')[0] ?? '');
   // the input line is the ❯ line right under a ──── rule (submitted prompts also show as ❯ lines)
   const p = pane(session).split('\n');
-  const input = p.filter((l, i) => /^\s*❯/.test(l) && i > 0 && /^\s*─{10,}/.test(p[i - 1])).at(-1) || '';
+  const input = p.filter((l, i) => /^\s*❯/.test(l) && i > 0 && /^\s*─{10,}/.test(p[i - 1] ?? '')).at(-1) || '';
   if (new RegExp(`❯\\s*${cmd}`).test(input)) await keys(session, ['Enter']);
 }
 
 // ---- commands: one function per subcommand, (o, T) => exit code; o from opts(), T = --timeout (60; 0 = no limit)
 
 const rest = (o: Opts): string => o._.slice(1).join(' ');
+/** The i-th positional argument, which the command needs: a usage error when it is missing. */
+const arg = (o: Opts, i: number): string => {
+  const v = o._[i];
+  if (v === undefined) throw new Error(`missing argument ${i + 1}`);
+  return v;
+};
 const exit = (ok: unknown): number => (ok ? 0 : 1);
 const print = (v: unknown): boolean => process.stdout.write(v + '\n');
 
 async function selectRow(o: Opts): Promise<number> {
-  const [session, label] = o._;
+  const session = arg(o, 0), label = arg(o, 1);
   const re = new RegExp(`^❯\\s+(└\\s*)?[⏺◯●]\\s+${esc(label)}(\\s|$)`, 'm');
   for (let i = 0; i < 8; i++) {
     if (re.test(pane(session))) { record(`${session}: panel cursor on ${label}`, true, 0); return 0; }
@@ -362,7 +368,7 @@ export function newMatches(src: string, before: string, now: string): string[] {
 }
 
 async function waitPane(o: Opts, T: number): Promise<number> {
-  const [session, src] = o._;
+  const session = arg(o, 0), src = arg(o, 1);
   const re = new RegExp(src, 'm');
   const what = o.what || `${session} pane ${o.absent ? '!~' : '~'} /${src}/${o.below ? ` below /${o.below}/` : ''}${o.new ? ' (new)' : ''}`;
   const text = () => paneBelow(pane(session), o.below);
@@ -371,7 +377,7 @@ async function waitPane(o: Opts, T: number): Promise<number> {
 }
 
 async function waitSubagentRow(o: Opts, T: number): Promise<number> {
-  const session = o._[0];
+  const session = arg(o, 0);
   const save = o.save;
   const rows = await until(o.what || `${session}: a subagent's row in the agent panel`, T, () => {
     const p = pane(session);
@@ -388,7 +394,7 @@ async function waitSubagentRow(o: Opts, T: number): Promise<number> {
 const paintBody = (p: string): string => p.replace(/\d+[smh]\b|[✻✶✳✢·✽*]/g, '');
 
 async function waitPaint(o: Opts, T: number): Promise<number> {
-  const session = o._[0];
+  const session = arg(o, 0);
   const quiet = (o.quiet == null ? 1 : +o.quiet) * 1000;
   let last: string | null = null, since = 0;
   return exit(await until(o.what || `${session} painted`, T, () => {
@@ -399,7 +405,7 @@ async function waitPaint(o: Opts, T: number): Promise<number> {
 }
 
 async function waitExited(o: Opts, T: number): Promise<number> {
-  const session = o._[0];
+  const session = arg(o, 0);
   return exit(await until(o.what || `${session}'s claude exited`, T,
     () => tmux('display-message', '-p', '-t', tgt(session), '#{pane_dead}').trim() === '1'));
 }
@@ -417,7 +423,7 @@ async function waitLog(o: Opts, T: number): Promise<number> {
 }
 
 async function approveUntil(o: Opts, T: number): Promise<number> {
-  const session = o._[0];
+  const session = arg(o, 0);
   const n = +(o.count || 1);
   const byTask = o['task-done'] != null;
   const target = byTask ? `task #${o['task-done']} completed` : `${n}× ${o.kind}${o.from ? ` from ${o.from}` : ''}`;
@@ -441,7 +447,7 @@ async function approveUntil(o: Opts, T: number): Promise<number> {
       last = Date.now();
       const two = /^\s*2\. Yes, (and|allow)/m.test(p);
       approvals++;
-      record(`${session}: human approved "${m[1].trim().slice(0, 80)}" (${two ? '2. Yes, and…' : '1. Yes'})`, true, 0);
+      record(`${session}: human approved "${(m[1] ?? '').trim().slice(0, 80)}" (${two ? '2. Yes, and…' : '1. Yes'})`, true, 0);
       // fire and forget; the next poll sees the result
       keys(session, two ? ['Down', 'Enter'] : ['Enter']).catch(() => {});
     }
@@ -452,7 +458,7 @@ async function approveUntil(o: Opts, T: number): Promise<number> {
 }
 
 async function waitHolds(o: Opts, T: number): Promise<number> {
-  const [seat, name] = o._;
+  const seat = arg(o, 0), name = arg(o, 1);
   return exit(await until(o.what || `${seat}'s room holds ${name}'s row`, T, () => {
     const doc = readJson<{ holds?: { at: string, members?: string[] } } | null>(roomFile(path.join('members', seat, 'session.json')), null);
     const h = doc && doc.holds;
@@ -463,12 +469,12 @@ async function waitHolds(o: Opts, T: number): Promise<number> {
 async function memberField(o: Opts): Promise<number> {
   const ms = readJson<Record<string, Record<string, unknown> | undefined> | null>(roomFile('members.json'), null);
   if (!ms) throw new Error(`cannot read ${roomFile('members.json')}`);
-  print(String((ms[o._[0]] || {})[o._[1]] ?? ''));
+  print(String((ms[arg(o, 0)] || {})[arg(o, 1)] ?? ''));
   return 0;
 }
 
 async function waitMember(o: Opts, T: number): Promise<number> {
-  const [name, field] = o._;
+  const name = arg(o, 0), field = arg(o, 1);
   return exit(await until(o.what || `${name}'s ${field} changes`, T, () => {
     const v = (readJson<Record<string, Record<string, unknown> | undefined>>(roomFile('members.json'), {})[name] || {})[field];
     return v != null && String(v) !== String(o.not);
@@ -476,7 +482,7 @@ async function waitMember(o: Opts, T: number): Promise<number> {
 }
 
 async function waitIdle(o: Opts, T: number): Promise<number> {
-  const session = o._[0];
+  const session = arg(o, 0);
   const quiet = (o.quiet == null ? 3 : +o.quiet) * 1000;
   let last: string | null = null, since = 0;
   return exit(await until(o.what || `${session} idle`, T, () => {
@@ -561,7 +567,7 @@ async function answerCard(session: string, choice: string, note: string): Promis
 
 /** The host's join-request card (lib/remote/admission.ts): move onto "Let in" and Enter. */
 async function admitCard(o: Opts, T: number): Promise<number> {
-  const session = o._[0];
+  const session = arg(o, 0);
   if (!(await until(`${session}: the join request's card open`, T, () => admitCardState(pane(session))))) return 1;
   await sleep(1200);
   for (let i = 0; i < 6; i++) {
@@ -664,7 +670,7 @@ function runAsRoomClaude(handler: string, input: unknown, roomClaude: RoomClaude
 
 async function syntheticGate(o: Opts): Promise<number> {
   const roomClaude = roomClaudeMember();
-  const input = { hook_event_name: 'TaskCompleted', session_id: roomClaude.session_id, task_id: String(o._[0]), task_subject: '' };
+  const input = { hook_event_name: 'TaskCompleted', session_id: roomClaude.session_id, task_id: String(arg(o, 0)), task_subject: '' };
   const r = runAsRoomClaude('tasks', input, roomClaude, { CLAUDE_CODE_TASK_LIST_ID: paths.taskListId(roomCode() ?? '') });
   print(JSON.stringify({ input, ...r, logMax: Math.max(0, ...readLog(roomCode()).map(e => e.id)) }, null, 1));
   return 0;
@@ -694,7 +700,7 @@ async function logMax(): Promise<number> {
 
 /** S11: a link file's shape, never its token: {mode, token: bool, invite: bool, transport}. */
 async function linkShape(o: Opts): Promise<number> {
-  const f = o._[0];
+  const f = arg(o, 0);
   let st: fs.Stats;
   try { st = fs.statSync(f); } catch { return 1; }
   const l = readJson<{ transport?: unknown, token?: unknown, invite?: unknown } | null>(f, {}) || {};
@@ -713,7 +719,7 @@ async function latestPlan(): Promise<number> {
 const writeJson = (f: string, v: unknown): void => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(v, null, 1) + '\n'); };
 
 async function pruneIndex(o: Opts): Promise<number> {
-  const [f, ...scenes] = o._;
+  const f = arg(o, 0), scenes = o._.slice(1);
   const drop = new Set(scenes);
   const index = readJson<unknown>(f, []);
   writeJson(f, (Array.isArray(index) ? index : []).filter((r: { scene?: string }) => !drop.has(r.scene ?? '')));
@@ -721,7 +727,7 @@ async function pruneIndex(o: Opts): Promise<number> {
 }
 
 async function planRun(o: Opts): Promise<number> {
-  const [f, ...add] = o._;
+  const f = arg(o, 0), add = o._.slice(1);
   const all = String(o.all || '').split(' ').filter(Boolean);
   const prev: string[] = o.fresh ? [] : (readJson<{ scenes?: string[] } | null>(f, {}) || {}).scenes || [];
   const scenes = all.filter(x => prev.includes(x) || add.includes(x));
@@ -733,11 +739,14 @@ async function planRun(o: Opts): Promise<number> {
 }
 
 async function runWords(o: Opts): Promise<number> {
-  const [f, ...kv] = o._;
+  const f = arg(o, 0), kv = o._.slice(1);
   if (kv.length % 2) throw new Error('run-words <run.json> <key> <text> …: a key with no text');
   const r = readJson<{ words?: Record<string, string> } | null>(f, {}) || {};
   const words: Record<string, string> = { ...(r.words || {}) };
-  for (let i = 0; i < kv.length; i += 2) words[kv[i]] = kv[i + 1];
+  for (let i = 0; i < kv.length; i += 2) {
+    const [k, v] = kv.slice(i, i + 2);
+    if (k !== undefined && v !== undefined) words[k] = v;
+  }
   writeJson(f, { ...r, words });
   return 0;
 }
@@ -748,16 +757,16 @@ async function recordCmd(o: Opts): Promise<number> {
 }
 
 export const COMMANDS: Record<string, Command> = {
-  type: async o => { typeText(o._[0], rest(o)); return 0; },
-  keys: async o => { await keys(o._[0], o._.slice(1)); return 0; },
-  literal: async o => { await literal(o._[0], rest(o)); return 0; },
-  submit: async o => { await submit(o._[0], rest(o)); return 0; },
+  type: async o => { typeText(arg(o, 0), rest(o)); return 0; },
+  keys: async o => { await keys(arg(o, 0), o._.slice(1)); return 0; },
+  literal: async o => { await literal(arg(o, 0), rest(o)); return 0; },
+  submit: async o => { await submit(arg(o, 0), rest(o)); return 0; },
   'select-row': selectRow,
-  ready: async (o, T) => exit(await ready(o._[0], T)),
-  readonly: async o => exit(readonlyAttached(o._[0])),
-  pane: async o => { process.stdout.write(pane(o._[0])); return 0; },
-  'join-line': async o => { const l = joinLineIn(pane(o._[0])); if (l) process.stdout.write(l + '\n'); return exit(!!l); },
-  'join-pin': async o => { const p = pinIn(pane(o._[0])); if (p) process.stdout.write(p + '\n'); return exit(!!p); },
+  ready: async (o, T) => exit(await ready(arg(o, 0), T)),
+  readonly: async o => exit(readonlyAttached(arg(o, 0))),
+  pane: async o => { process.stdout.write(pane(arg(o, 0))); return 0; },
+  'join-line': async o => { const l = joinLineIn(pane(arg(o, 0))); if (l) process.stdout.write(l + '\n'); return exit(!!l); },
+  'join-pin': async o => { const p = pinIn(pane(arg(o, 0))); if (p) process.stdout.write(p + '\n'); return exit(!!p); },
   'admit-card': admitCard,
   'wait-pane': waitPane,
   'wait-paint': waitPaint,
@@ -784,7 +793,7 @@ export const COMMANDS: Record<string, Command> = {
   'last-id': lastId,
   'log-max': logMax,
   'json-string': async o => { process.stdout.write(JSON.stringify(o._.join(' '))); return 0; },
-  'json-field': async o => { const v = (readJson<Record<string, unknown> | null>(o._[0], {}) || {})[o._[1]]; if (v != null) print(String(v)); return exit(v != null); },
+  'json-field': async o => { const v = (readJson<Record<string, unknown> | null>(arg(o, 0), {}) || {})[arg(o, 1)]; if (v != null) print(String(v)); return exit(v != null); },
   'link-shape': linkShape,
   'latest-plan': latestPlan,
   'prune-index': pruneIndex,

@@ -87,7 +87,7 @@ export type ToolArgs = Record<string, unknown>;
 /** meta = {id, progressToken} of a tools/call, for a plug-in that streams progress or watches for cancel. */
 export interface CallMeta {
   id?: JsonRpcId;
-  progressToken?: ProgressToken;
+  progressToken?: ProgressToken | undefined;
 }
 
 // ---------- the plug-in contract ----------

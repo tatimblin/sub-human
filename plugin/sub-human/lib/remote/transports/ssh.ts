@@ -85,9 +85,10 @@ const HOME_RE = /^\/[A-Za-z0-9_\/.@+,:-]+$/; // lib/remote/shim.ts PLAIN_PATH_RE
 function dest(text: string): SshDest | null {
   const m = SSH_RE.exec(String(text));
   if (!m) return null;
-  const port = m[3] === undefined ? undefined : Number(m[3]);
+  const [, user = '', host = '', p] = m; // user and host always match
+  const port = p === undefined ? undefined : Number(p);
   if (port !== undefined && !(port >= 1 && port <= 65535)) return null;
-  return { user: m[1], host: m[2], ...(port ? { port } : {}) };
+  return { user, host, ...(port ? { port } : {}) };
 }
 
 /**
@@ -103,7 +104,8 @@ function withUser(text: string, { bin = 'ssh', opts = sshOpts() }: { bin?: strin
   try {
     const r = childProcess.spawnSync(bin, [...opts, '-G', host], { encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] });
     const m = r.status === 0 && /^user (\S+)$/m.exec(r.stdout || '');
-    return m && new RegExp(`^${SSH_USER}$`).test(m[1]) ? `${m[1]}@${t}` : t;
+    const user = m ? m[1] : undefined;
+    return user !== undefined && new RegExp(`^${SSH_USER}$`).test(user) ? `${user}@${t}` : t;
   } catch { return t; }
 }
 /** The `YOU@host` of the README's examples, typed as is. */
@@ -121,12 +123,12 @@ function jump(text: string): string | null {
 }
 
 function parse(rest: string): (SshDest & { via?: string }) | null {
-  const [d, q, ...more] = String(rest).split('?');
+  const [d = '', q, ...more] = String(rest).split('?'); // split gives at least one part
   if (more.length) return null;
   const spec = dest(d);
   if (!spec || q === undefined) return spec;
   const m = /^via=(.+)$/.exec(q);
-  const via = m && jump(m[1]);
+  const via = m && m[1] !== undefined && jump(m[1]); // (.+) always matches
   return via ? { ...spec, via } : null;
 }
 
@@ -166,7 +168,7 @@ function checked(spec: SshSpec, code: RoomCode): { d: SshDest; local: string[]; 
   return { d, local, tail: [...(spec.via !== undefined ? ['-J', spec.via] : []), ...(d.port ? ['-p', String(d.port)] : []), '--', `${d.user}@${d.host}`] };
 }
 
-function command(spec: SshSpec, code: RoomCode, opts: string[] = sshOpts()): string[] {
+function command(spec: SshSpec, code: RoomCode, opts: string[] = sshOpts()): [string, ...string[]] {
   const { local, tail } = checked(spec, code);
   const mux = spec.mux === true ? ['-o', 'ControlMaster=no'] : [];
   // ssh takes an option's first value: the pinned ones (local: the link's key, known_hosts, StrictHostKeyChecking; mux)
@@ -184,7 +186,7 @@ function remoteCommand(spec: Pick<SshSpec, 'login' | 'link' | 'remoteHome'>, cod
 }
 
 /** text: user@host[:port] */
-function loginSpec(text: string, { via, home, link = CryptoMod.randomBytes(6).toString('hex') }: { via?: string; home?: string; link?: string } = {}): SshSpec | null {
+function loginSpec(text: string, { via, home, link = CryptoMod.randomBytes(6).toString('hex') }: { via?: string | undefined; home?: string | undefined; link?: string } = {}): SshSpec | null {
   const d = dest(text);
   if (!d || (via !== undefined && !jump(via)) || (home !== undefined && !HOME_RE.test(String(home))) || !LINK_ID_RE.test(String(link))) return null;
   return { kind: 'ssh', ...d, ...(via !== undefined ? { via } : {}), login: true, link, ...(home !== undefined ? { remoteHome: path.resolve(home) } : {}) };
@@ -208,7 +210,8 @@ function classify(stderr: unknown): SshProblem | null {
   if (/^usage: sub-human serve --stdio CODE \[--link ID\]$/m.test(s)) return { kind: 'old-host' };
   if (/sub-human: no (plugin install|node)/.test(s)) return { kind: 'no-plugin' };
   const m = /^(no room "[^"]*"|room "[^"]*" is not hosted on this machine[^\n]*|sub-human serve --login: [^\n]*)$/m.exec(s);
-  if (m) return /^no room/.test(m[1]) ? { kind: 'no-room' } : /not hosted/.test(m[1]) ? { kind: 'not-hosted' } : { kind: 'serve-refused', detail: m[1] };
+  const said = m ? m[1] : undefined; // the group always matches
+  if (said !== undefined) return /^no room/.test(said) ? { kind: 'no-room' } : /not hosted/.test(said) ? { kind: 'not-hosted' } : { kind: 'serve-refused', detail: said };
   if (/Could not resolve hostname|Name or service not known|nodename nor servname/i.test(s)) return { kind: 'dns' };
   if (/Connection refused/i.test(s)) return { kind: 'refused' };
   if (/timed out|Operation timed out/i.test(s)) return { kind: 'timeout' };

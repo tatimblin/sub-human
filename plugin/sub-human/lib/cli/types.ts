@@ -63,7 +63,7 @@ export interface HelloProbe {
   ms: number;
   t0?: number;
   t1?: number;
-  reply?: HelloReply;
+  reply?: HelloReply | undefined;
   error?: string;
   code?: string;
   stderr?: string;
@@ -74,25 +74,25 @@ export interface HelloProbe {
 export interface Reach {
   ok: boolean;
   ms: number;
-  error?: string;
+  error?: string | undefined;
   /** the hello's error code (PROTOCOL: the two sides speak no common version) */
   code?: string;
   skipped: boolean;
   hint: string | null;
   stderr: string;
-  protocol: { v?: number; proto: ProtoRange | null; server: string | null } | null;
+  protocol: { v?: number | undefined; proto: ProtoRange | null; server: string | null } | null;
   skewMs: number | null;
 }
 
 /** diagnoseLink(code, opts) -> one link's report. */
 export interface LinkReport {
   code: RoomCode;
-  transport: { kind?: string; describe: string; user?: string; host?: string; port?: number; home?: string; login?: true };
+  transport: { kind?: string | undefined; describe: string; user?: string | undefined; host?: string | undefined; port?: number | undefined; home?: string | undefined; login?: true };
   credential: string;
   daemon: { running: boolean; pid?: number | null };
   state: LinkStateView;
   recent: string[];
-  moved: { epoch?: number; host?: string; locator?: string; demoted: boolean; reached: boolean } | null;
+  moved: { epoch?: number | undefined; host?: string | undefined; locator?: string | undefined; demoted: boolean; reached: boolean } | null;
   reach?: Reach;
   /** The room is known to be closed: the mirror's room Claude stopped, or the host's hello says so. */
   closed?: true;
@@ -150,7 +150,7 @@ export interface Bundle {
     credential: string;
     moved: { epoch: number | undefined; demoted: boolean; reached: boolean } | undefined;
     daemon: { running: boolean };
-    state: Pick<LinkStateView, 'state' | 'since' | 'attempt' | 'rttMs' | 'queued' | 'lastError' | 'source'>;
+    state: Pick<LinkState, 'state'> & { [K in 'since' | 'attempt' | 'rttMs' | 'queued' | 'lastError' | 'source']?: LinkState[K] | undefined };
     reach: (Pick<Reach, 'ok' | 'ms' | 'skipped' | 'protocol' | 'skewMs'> & { error: string | undefined; ssh_error: string[] | undefined }) | undefined;
     recent_errors: string[];
   }[];

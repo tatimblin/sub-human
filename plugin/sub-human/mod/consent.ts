@@ -56,7 +56,7 @@ function runConsent($: EngineInterface, stdin: unknown, sid: unknown): Promise<R
 }
 
 /** Consent's notices and its report: a systemMessage as $.ui.log lines, reviewOpen into $.state. */
-async function apply($: EngineInterface, { systemMessage, subHuman }: { systemMessage?: string; subHuman?: SubHumanRead }) {
+async function apply($: EngineInterface, { systemMessage, subHuman }: { systemMessage?: string; subHuman?: SubHumanRead | undefined }) {
   if (systemMessage) for (const line of asNotice(systemMessage).split('\n')) if (line.trim()) $.ui.log(line);
   const open = reviewOpenOf(subHuman);
   if (open !== undefined) await $.state.set(REVIEW, open);

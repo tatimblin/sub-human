@@ -26,8 +26,8 @@ function checkListener({ quick = false }: { quick?: boolean } = {}): Check[] {
     : check({ id: 'listener', status: 'fail', title: 'listener', detail: `not running, but ${codes.join(', ')} ${codes.length === 1 ? 'is' : 'are'} served over the web: joiners cannot reach ${codes.length === 1 ? 'it' : 'them'}`, fix: `/sub-human invite --web again in the room (or ${cli('listen --start')} in a terminal); its log: ${tilde(lib('remote/listener.ts').logFile())}` })];
   const ts = lib('remote/tailscale.ts');
   const serveStatus: Record<string, string | null> = {}; // bin -> stdout
-  for (const code of codes) {
-    const rec = st.rooms[code] || {};
+  for (const [code, room] of Object.entries(st.rooms || {})) {
+    const rec = room || {};
     const id = `web:${code}`;
     if (!lib('remote/listener.ts').roomLive(code)) { out.push(check({ id, status: 'warn', title: `web ${code}`, detail: 'served over the web, but the room is closed or gone here', fix: `${cli(`invite --stop --room ${code}`)} in a terminal` })); continue; }
     const where = rec.url || rec.path || '?';
@@ -36,11 +36,11 @@ function checkListener({ quick = false }: { quick?: boolean } = {}): Check[] {
     if (!quick) {
       const bin = rec.tailscale.bin || ts.bin();
       const key = String(bin); // no tailscale binary: the one entry 'null'
-      if (!(key in serveStatus)) {
+      let text = serveStatus[key];
+      if (text === undefined) { // not asked yet (an answer is a string or null)
         const r = bin ? spawnSync(bin, ['serve', 'status', '--json'], { encoding: 'utf8', timeout: 10_000 }) : { status: 1, stdout: '' };
-        serveStatus[key] = r.status === 0 ? String(r.stdout || '') : null;
+        text = serveStatus[key] = r.status === 0 ? String(r.stdout || '') : null;
       }
-      const text = serveStatus[key];
       if (text === null) out.push(check({ id, status: 'warn', title: `web ${code}`, detail: `tailscale ${kind} ${rec.tailscale.path}: could not read tailscale serve status`, fix: 'is Tailscale running? tailscale status' }));
       else if (!text.includes(rec.tailscale.path)) {
         out.push(check({ id, status: 'fail', title: `web ${code}`, detail: `tailscale ${kind} has no ${rec.tailscale.path} any more (a reset, or another serve replaced it)`, fix: `/sub-human invite ${rec.tailscale.funnel ? '--public' : '--web'} in the room (it puts the path back)` }));

@@ -48,7 +48,7 @@ const JOB_RE: RegExp = /backgrounded\s*·\s*([0-9a-z]{4,40})\b/i;
  */
 function parseDispatch(text: unknown): string | null {
   const m = JOB_RE.exec(String(text || ''));
-  return m ? m[1] : null;
+  return m?.[1] ?? null;
 }
 
 /**
@@ -121,7 +121,7 @@ function parseDaemonStatus(text: unknown): DaemonStatus | null {
   const t = String(text || '');
   const pid = /^pid:\s+(\d+)\s*$/m.exec(t);
   const version = /^version:\s+(\S+)\s*$/m.exec(t);
-  if (pid || version) return { running: true, pid: pid && Number(pid[1]) > 0 ? Number(pid[1]) : null, version: version ? version[1] : null };
+  if (pid || version) return { running: true, pid: pid && Number(pid[1]) > 0 ? Number(pid[1]) : null, version: version?.[1] ?? null };
   return /^not running\b/m.test(t) ? { running: false, pid: null, version: null } : null;
 }
 
@@ -205,11 +205,11 @@ function runningVersion(pid: unknown, { timeoutMs = 3000 }: { timeoutMs?: number
   let exe = st.exe;
   try { exe = fs.realpathSync(exe); } catch { /* as ps gave it */ }
   const inPath = /(?:^|\/)(\d+\.\d+\.\d+)(?:\/|$)/.exec(exe);
-  if (inPath) return inPath[1];
+  if (inPath?.[1]) return inPath[1];
   if (!path.isAbsolute(exe) || st.deleted) return null;
   const r = spawnSync(exe, ['--version'], { encoding: 'utf8', timeout: timeoutMs });
   const m = /(\d+\.\d+\.\d+)/.exec(String(r.stdout || ''));
-  return m ? m[1] : null;
+  return m?.[1] ?? null;
 }
 
 export {

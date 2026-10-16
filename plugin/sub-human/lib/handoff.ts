@@ -141,10 +141,10 @@ function serveWeb(code: RoomCode, locator: string): void {
   if (isWeb(locator)) (require('./remote/webhost.ts') as typeof import('./remote/webhost.ts')).serveAt(code, locator);
 }
 const askMs = () => config.HANDOFF_ASK_MS;
-const expired = (doc: { expires_at?: string } | null | undefined, now: number = Date.now()) => !(Date.parse((doc && doc.expires_at) as string) > now);
+const expired = (doc: { expires_at?: string | undefined } | null | undefined, now: number = Date.now()) => !(Date.parse((doc && doc.expires_at) as string) > now);
 
 // ---------- the old host ----------
-function ask(code: RoomCode, { from, to, locator, sign, now = Date.now() }: { from: string, to: string, locator?: string, sign?: Sign, now?: number }): HandoffDoc {
+function ask(code: RoomCode, { from, to, locator, sign, now = Date.now() }: { from: string, to: string, locator?: string | undefined, sign?: Sign, now?: number }): HandoffDoc {
   const s = store.open(code);
   if (!s.isHost) throw err('HOST_ONLY', `room ${code} is hosted on another machine; only its host hands it off`);
   if (movedAway(s)) throw err('STALE', `room ${code} moved to another machine already`);
@@ -347,7 +347,7 @@ function mintAll(s: Store, locator: string, { pin = false, machines = machinesOf
 }
 
 type HandoffAnswer = { ok: true, epoch?: number, note?: string } | { ok: false, error: string };
-function accept(me: Pick<Identity, 'code' | 'name'>, { cwd, sign }: { cwd?: string, sign: Sign }): HandoffAnswer {
+function accept(me: Pick<Identity, 'code' | 'name'>, { cwd, sign }: { cwd?: string | undefined, sign: Sign }): HandoffAnswer {
   const code = me.code;
   const opened = store.open(code);
   if (opened.isHost) return { ok: false, error: `this machine hosts room ${code} already` };
@@ -390,7 +390,7 @@ function stopDaemon(code: RoomCode): void {
   for (const until = Date.now() + 3000; Date.now() < until && isAlive(st.pid); sleepSync(20));
 }
 
-function takeOver(code: RoomCode, { by, cwd, epoch, entry }: { by: string, cwd?: string, epoch?: number, entry?: EntryInput }): string {
+function takeOver(code: RoomCode, { by, cwd, epoch, entry }: { by: string, cwd?: string | undefined, epoch?: number, entry?: EntryInput }): string {
   const mirror = store.open(code);
   if (!entry) {
     const h: HostState = mirror.hostState();
@@ -419,7 +419,8 @@ function takeOver(code: RoomCode, { by, cwd, epoch, entry }: { by: string, cwd?:
 
 // ---------- promote / demote ----------
 interface Promoted { epoch: number, entry: Entry | undefined, invites: Minted[], note: string, last: number }
-function promote(code: RoomCode, { name, locator, force = false, cwd, now = Date.now() }: { name: string, locator?: string, force?: boolean, cwd?: string, now?: number }): Promoted {
+function promote(code: RoomCode, { name, locator, force = false, cwd, now = Date.now() }: { name: string, locator?: string | undefined, force?: boolean, cwd?: string, now?: number }
+): Promoted {
   const s = store.open(code);
   if (s.isHost) throw err('INVALID', `this machine hosts room ${code} already`);
   const st = linkSocket().status(code);
@@ -463,7 +464,7 @@ function demote(code: RoomCode, { invite, pin }: { invite: string; pin?: string 
     const st = linkSocket().status(code);
     if (st.running) { try { process.kill(st.pid, 'SIGTERM'); } catch { /* gone */ } }
     hosting().joinInvite({ inv, invite, pin });
-    links.set(code, { ...links.get(code)!, rebind: true, moved: { locator: inv.locator, host: 'the new host', at: iso(Date.now()) } }); // written just above
+    links.set(code, { ...(links.get(code) ?? cur), rebind: true, moved: { locator: inv.locator, host: 'the new host', at: iso(Date.now()) } }); // written just above
     for (const until = Date.now() + 2000; st.running && Date.now() < until && ioMod.isAlive(st.pid);) ioMod.sleepSync(20);
     linkSocket().start(code);
     return { orphan: null, follower: true };
@@ -476,7 +477,8 @@ function demote(code: RoomCode, { invite, pin }: { invite: string; pin?: string 
   const moved = { demoted: true, locator: inv.locator, host: 'the new host' };
   // the joiner's side of an sh2 invite (its PIN; over ssh this person's own ssh login to the new host)
   hosting().joinInvite({ inv, invite, pin });
-  links.set(code, { ...links.get(code)!, moved }); // joinInvite wrote it
+  const joined = links.get(code); // joinInvite wrote it
+  if (joined) links.set(code, { ...joined, moved });
   store.forget(code);
   linkSocket().start(code);
   return { orphan };

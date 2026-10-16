@@ -26,7 +26,7 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   const bes = x.inSpan(x.entries('bob'), s);
   // one $.ui.log row per line (a notice is one line: a newline in one would be drawn as U+FFFD)
   const all = x.chatIn(bes);
-  const notes = e ? all.filter((_y, i) => want.every((l, k) => all[i + k] && all[i + k].content === `sub-human: ${l}`)) : [];
+  const notes = e ? all.filter((_y, i) => want.every((l, k) => all[i + k]?.content === `sub-human: ${l}`)) : [];
   const copies = x.pullIn(bes).filter(y => e && x.textOf(y.message?.content).includes(want.join('\n')));
   const ct = notes[0] ? x.chatTurn('bob', notes[0]) : null;
   det('bob gets the lines once as a chat row and once as his Claude\'s copy, "│" prefixes included, with no model turn', notes.length === 1 && copies.length === 1 && ct && !ct.woke,
@@ -39,12 +39,12 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   // the two lines after the head, past the blank spacer the engine draws between rows (nothing else in between)
   const after = hi >= 0 ? lines.slice(hi + 1).map((l, k) => ({ l, k: hi + 1 + k })).filter(y => y.l.trim()).slice(0, 2) : [];
   const next = after.map(y => y.l);
-  const span2 = after.length ? after[after.length - 1].k : hi;
+  const span2 = after.at(-1)?.k ?? hi;
   const rest = e ? String(e.text).split('\n').slice(1) : [];
   // each later line its own chat row, still under the "│" ("⏺ sub-human:   │ …"), or a plain continuation line
-  const nested = next.length === 2 && next.every((l, i) => new RegExp(`^(\\s*(⏺ )?sub-human: +| {2,})│ ${esc(rest[i])}\\s*$`).test(l));
+  const nested = next.length === 2 && next.every((l, i) => rest[i] !== undefined && new RegExp(`^(\\s*(⏺ )?sub-human: +| {2,})│ ${esc(rest[i])}\\s*$`).test(l));
   det('bob\'s pane: "alice: notes from the paging spike:" then both later lines nested under it ("│ ")', nested,
-    hi >= 0 ? `pane lines ${hi + 1}–${span2 + 1}: ${[lines[hi], ...next].map(l => JSON.stringify(l.trimEnd())).join(' / ')}` : `no head line in state/S9b/pane-bob.txt (${pane ? `${lines.length} lines` : 'missing'})`);
+    hi >= 0 ? `pane lines ${hi + 1}–${span2 + 1}: ${[lines[hi] ?? '', ...next].map(l => JSON.stringify(l.trimEnd())).join(' / ')}` : `no head line in state/S9b/pane-bob.txt (${pane ? `${lines.length} lines` : 'missing'})`);
 
   // no bare (column-0 or "⏺ ") line with the post's later text, beyond what real entries render as
   const bare = (t: string): RegExp => new RegExp(`^(⏺ )?${esc(t)}\\s*$`);

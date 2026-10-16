@@ -44,9 +44,10 @@ function agentStatusline(input: StatuslineIn | null = {}, { env = process.env }:
     let me = seatOf(input);
     let left = false;
     if (!me) {
-      const last = input && typeof input.session_id === 'string' ? identity.lastSeat(input.session_id) : null;
+      const sid = input && typeof input.session_id === 'string' ? input.session_id : null;
+      const last = sid !== null ? identity.lastSeat(sid) : null;
       if (!last) return '';
-      me = { ...last, pid: null, session_id: input!.session_id ?? null } as Identity;
+      me = { ...last, pid: null, session_id: sid } as Identity;
       left = true;
     }
     const members: Members = identity.readMembers(me.code) || {};
@@ -65,7 +66,7 @@ function agentStatusline(input: StatuslineIn | null = {}, { env = process.env }:
       let content: string;
       if (rec.kind === 'room') {
         content = rows.rowLine(rec.name, left ? 'you left · /sub-human joins again' : dead(t) ? '⚠ room row stopped' : rows.rowText(me.code, { viewer: me.name, ...opts }));
-      } else if (dead(t) && members[rec.name] && !members[rec.name]!.left_at) {
+      } else if (dead(t) && members[rec.name] && !members[rec.name]?.left_at) {
         content = rows.rowLine(rec.name, rec.parent ? '(reconnecting)' : '⚠ row stopped');
       } else {
         content = rows.rowLine(rec.name, identity.isSeatName(rec.name) ? rows.rowText(me.code, { member: rec.name, viewer: me.name, ...opts }) : 'not in the room');

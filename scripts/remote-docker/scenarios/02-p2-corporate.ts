@@ -62,7 +62,7 @@ export async function run(t: T): Promise<void> {
   const connect = (prox.match(/[^\n]*CONNECT[^\n]*toxiproxy:22001[^\n]*/i) || [''])[0];
   t.check('corp-proxy logged the CONNECT to toxiproxy:22001', !!connect, connect.replace(/^\S+\s+\|\s*/, '').slice(0, 140));
 
-  const c = await converge(t, host, code, [v1.seat, v2.seat].filter((_s, i) => [v1, v2][i].join.ok));
+  const c = await converge(t, host, code, [v1, v2].filter(v => v.join.ok).map(v => v.seat));
   t.check('both mirrors byte-identical to the host log, chains verify', c.ok, c.detail);
 
   if (t.features.hostSsh) {
