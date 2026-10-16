@@ -10,6 +10,7 @@ import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
 import * as linkSocket from '../lib/remote/link-socket.ts';
 import { Machine } from './support/two-homes.ts';
+import { must } from './support/must.ts';
 
 const childOf = (pid: number | undefined) => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
 // a missing pid (null/undefined) throws in process.kill and is ignored, like a gone one
@@ -21,7 +22,7 @@ test('remote: a daemon started with one TMPDIR serves hooks running with another
   const remote = new Machine(t, 'remote', { SUB_HUMAN_LINK_IDLE_MS: '20000', TMPDIR: daemonTmp });
   const alice = host.seat('alice'), bob = remote.seat('bob');
   host.join(alice, 'alice');
-  const code = host.lib(() => store.listRooms()[0]);
+  const code = must(host.lib(() => store.listRooms()[0]), 'the room');
 
   // the join hook starts the daemon: it gets daemonTmp
   await remote.joinVia(host, alice, bob);
@@ -37,8 +38,8 @@ test('remote: a daemon started with one TMPDIR serves hooks running with another
   // every later hook runs with hookTmp (the session's own TMPDIR)
   remote.extra.TMPDIR = hookTmp;
   const joined = remote.join(bob, `bob ${code}`);
-  assert.equal(joined.json!.systemMessage, undefined, joined.stderr);
-  assert.equal(remote.say(bob, 'across TMPDIRs').json!.continue, false);
+  assert.equal(must(joined.json).systemMessage, undefined, joined.stderr);
+  assert.equal(must(remote.say(bob, 'across TMPDIRs').json).continue, false);
   const said = host.lib(() => store.open(code).readAll()).at(-1);
-  assert.deepEqual([said!.from, said!.text], ['bob', 'across TMPDIRs']);
+  assert.deepEqual([must(said).from, must(said).text], ['bob', 'across TMPDIRs']);
 });

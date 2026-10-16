@@ -11,6 +11,7 @@ import * as rows from '../lib/rows.ts';
 import * as segments from '../statusline/segments.ts';
 import * as index from '../statusline/index.ts';
 import { sn } from './support/brands.ts';
+import { must } from './support/must.ts';
 
 const PLUGIN = path.join(import.meta.dirname, '..');
 for (const k of Object.keys(process.env)) if (k.startsWith('CLAUDE')) delete process.env[k];
@@ -41,6 +42,8 @@ function world(names: string[], { selfName }: { selfName?: string } = {}) {
 const env = { NO_COLOR: '1' };
 
 const prop = (approvers: string[]) => ({ via: 'human', hash: H, approvers, path: `plans/${H}.md` });
+/** A statusline output line, parsed: a row's id and its label. */
+const rowOf = (l: string) => JSON.parse(l) as { id: string; content: string };
 
 test('statusline: only the agent-panel rows remain (no main status line)', () => {
   assert.deepEqual(Object.keys(index), ['agentStatusline']);
@@ -62,7 +65,7 @@ test('agentStatusline: claude rows by the row map, else by description; other ta
     { id: 'a4', type: 'local_agent', status: 'killed', description: 'bob' },
     { id: 'a5', type: 'local_agent', status: 'running', description: 'claude' },
   ];
-  const out = agentStatusline({ session_id: 'sid-claude', tasks }, { env }).split('\n').map(l => JSON.parse(l));
+  const out = agentStatusline({ session_id: 'sid-claude', tasks }, { env }).split('\n').map(rowOf);
   assert.deepEqual(out, [
     { id: 'a1', content: 'alice  ✓ agreed b7ca39' },
     { id: 'a2', content: 'bob  ⚠ reviewing b7ca39 · ◼ #2 parser tests' },
@@ -85,16 +88,16 @@ test('agentStatusline: a member\'s room row and the nested rows inside it (after
     { id: 'c1', status: 'running', description: 'bob' },
     { id: 'c2', status: 'killed', description: 'carol' },
   ];
-  const out = agentStatusline({ session_id: 'sid-alice', tasks }, { env }).split('\n').map(l => JSON.parse(l));
-  assert.match(out[0].content, new RegExp(`^${code}  ⚠ your answer needed b7ca39`));
+  const out = agentStatusline({ session_id: 'sid-alice', tasks }, { env }).split('\n').map(rowOf);
+  assert.match(must(out[0]).content, new RegExp(`^${code}  ⚠ your answer needed b7ca39`));
   assert.deepEqual(out.slice(1), [
     { id: 'c1', content: 'bob  ✖ objected' },
     { id: 'c2', content: 'carol  (reconnecting)' },
   ]);
   for (const o of out) assert.ok(Array.from(o.content).length <= code.length + 2 + rows.ROW_MAX);
   identity.leave(code, sn('carol'));
-  assert.equal(JSON.parse(agentStatusline({ session_id: 'sid-alice', tasks: [tasks[2]] }, { env })).content, 'carol  left');
-  const colored = JSON.parse(agentStatusline({ session_id: 'sid-alice', tasks: [tasks[0]] }, { env: {} })).content;
+  assert.equal(rowOf(agentStatusline({ session_id: 'sid-alice', tasks: [tasks[2]] }, { env })).content, 'carol  left');
+  const colored = rowOf(agentStatusline({ session_id: 'sid-alice', tasks: [tasks[0]] }, { env: {} })).content;
   assert.match(colored, /\x1b\[33m⚠ your answer needed b7ca39\x1b\[0m/);
 });
 
@@ -104,10 +107,10 @@ test('stage 8e I.7 (live verify, remote/16a): after this session left, its rows 
   rows.recordRow(code, 'sid-alice', 'c1', { kind: 'participant', name: 'bob', parent: 'r1' });
   identity.leave(code, sn('alice'));
   const tasks = [{ id: 'r1', status: 'running', description: 'Spawning participant row for bob' }, { id: 'c1', status: 'running', description: 'bob' }];
-  const out = agentStatusline({ session_id: 'sid-alice', tasks }, { env }).split('\n').filter(Boolean).map(l => JSON.parse(l));
+  const out = agentStatusline({ session_id: 'sid-alice', tasks }, { env }).split('\n').filter(Boolean).map(rowOf);
   assert.deepEqual(out.map(o => o.id), ['r1', 'c1']);
-  assert.equal(out[0].content, `${code}  you left · /sub-human joins again`);
-  assert.match(out[1].content, /^bob  /);
+  assert.equal(out[0]?.content, `${code}  you left · /sub-human joins again`);
+  assert.match(must(out[1]).content, /^bob  /);
   assert.equal(agentStatusline({ session_id: 'sid-never', tasks }, { env }), '', 'a session that held no seat: nothing');
 });
 
@@ -116,5 +119,5 @@ test('agentStatusline: falls back to process ancestry in a child process', () =>
   add('claude', 'proposal', { ...prop(['alice']), via: 'system' });
   const r = spawnSync(process.execPath, ['-e', `process.stdout.write(require(${JSON.stringify(path.join(PLUGIN, 'statusline', 'index.ts'))}).agentStatusline({tasks: [{id: 'x', status: 'running', description: ${JSON.stringify(code)}}]}, {env: {NO_COLOR: '1'}}))`],
     { env: { ...process.env }, encoding: 'utf8' });
-  assert.match(JSON.parse(r.stdout).content, new RegExp(`^${code}  ⚠ your answer needed b7ca39`));
+  assert.match(rowOf(r.stdout).content, new RegExp(`^${code}  ⚠ your answer needed b7ca39`));
 });

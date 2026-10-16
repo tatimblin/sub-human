@@ -17,7 +17,10 @@ import { World, fixture, PLUGIN, HOOKS, room, identity, sleeper, sid } from './h
 import type { HookInput } from './helpers.ts';
 import * as seatKeyLib from '../../hooks/seat-key.ts';
 import type * as Guard from '../../mod/core/guard.ts';
+import type * as PromptCore from '../../mod/core/prompt.ts';
+import type { Entry } from '../../lib/room/types.ts';
 import { sn, eid } from '../support/brands.ts';
+import { must } from '../support/must.ts';
 
 /** World.hook's options. */
 type HookOpts = NonNullable<Parameters<World['hook']>[2]>;
@@ -40,11 +43,13 @@ const submit = (prompt: string, extra: HookInput = {}): HookInput => ({ ...fixtu
 /** The module's nonce here; the lease holds it for the session at-room runs for (as hooks/mod-hello.ts writes it). */
 const NONCE = 'c0ffee00'.repeat(4);
 function atRoom(w: World, input: HookInput, opts: HookOpts) {
-  w.lib(() => identity.writeModLease(w.sid[opts.as!], { nonce: NONCE }));
+  w.lib(() => identity.writeModLease(w.sid[must(opts.as)], { nonce: NONCE }));
   return w.hook('at-room', { sub_human_nonce: NONCE, ...input }, opts);
 }
 const logFile = (w: World) => path.join(w.home, 'rooms', w.code, 'log.jsonl');
 const lines = (w: World) => { try { return fs.readFileSync(logFile(w), 'utf8').split('\n').filter(Boolean); } catch { return []; } };
+/** The log's last line, parsed. */
+const lastEntry = (w: World) => JSON.parse(must(lines(w).at(-1))) as Entry;
 const mode = (p: string) => fs.statSync(p).mode & 0o777;
 
 /** A proposal from room Claude naming alice and bob, and bob's real (hook-signed) seat key. */
@@ -97,9 +102,8 @@ test('a raw forged line (no sig, or a sig by another key) never counts as consen
 test('a hook-signed post verifies; editing any signed field breaks it; a keyless legacy line is marked but stays readable', t => {
   const w = new World({ claude: 'sleep', alice: 'act' }, { t });
   const r = atRoom(w, submit('@room ship it', { sub_human_origin: 'composer' }), { as: 'alice' });
-  assert.equal(r.json!.continue, false, r.stderr);
-  const [line] = lines(w).slice(-1);
-  const e = JSON.parse(line);
+  assert.equal(must(r.json).continue, false, r.stderr);
+  const e = lastEntry(w);
   assert.equal(e.via, 'human');
   assert.equal(e.room, w.code);
   assert.equal(typeof e.sig, 'string');
@@ -127,7 +131,7 @@ test('join pins the seat key in member_joined: the keyed room never counts an un
   const joinAs = (name: string) => { w.pid[name] = sleeper(); w.sid[name] = sid(); return w.hook('join', expand(`${name} ${w.code}`), { as: name }); };
   const r = joinAs('bob');
   assert.equal(r.code, 0, r.stderr);
-  assert.equal(r.json!.systemMessage, undefined, 'a join that worked shows no systemMessage');
+  assert.equal(must(r.json).systemMessage, undefined, 'a join that worked shows no systemMessage');
   const kdir = path.join(w.home, 'keys', w.code);
   const joined = w.entries().filter(e => e.kind === 'member_joined');
   assert.deepEqual(joined.map(e => [e.from, e.pubkey]), [['bob', fs.readFileSync(path.join(kdir, 'bob.pub'), 'utf8')]]);
@@ -144,10 +148,10 @@ test('join pins the seat key in member_joined: the keyed room never counts an un
   for (const f of ['bob.key', 'bob.pub']) fs.unlinkSync(path.join(kdir, f));
   const before = lines(w).length;
   const again = joinAs('bob');
-  assert.equal(again.json!.decision, 'block', again.stderr);
-  assert.match(again.json!.reason!, /could not join .* as bob: bob is in this room with a key from another machine or sub-human folder, and a seat's key never moves\. Join under another name: \/sub-human NAME /);
+  assert.equal(must(again.json).decision, 'block', again.stderr);
+  assert.match(must(again.json?.reason), /could not join .* as bob: bob is in this room with a key from another machine or sub-human folder, and a seat's key never moves\. Join under another name: \/sub-human NAME /);
   assert.equal(lines(w).length, before, 'no member_joined with the new key');
-  assert.ok(w.members().bob.left_at, 'the seat is not held');
+  assert.ok(w.members().bob?.left_at, 'the seat is not held');
 });
 
 test('a forged chat continuation is never attributed: every further line is nested, and an unsigned "bob" line is marked', t => {
@@ -169,20 +173,20 @@ test('the attested origin: a typed @room (composer, sdk, bridge) posts at once; 
   for (const origin of ['composer', 'sdk', 'bridge']) {
     // no source at all: the origin alone attests it
     const r = atRoom(w, { ...submit(`@room from ${origin}`), source: undefined, sub_human_origin: origin }, { as: 'alice' });
-    assert.equal(r.json!.continue, false, `${origin}: ${r.stderr}`);
-    const e = JSON.parse(lines(w).at(-1)!);
+    assert.equal(must(r.json).continue, false, `${origin}: ${r.stderr}`);
+    const e = lastEntry(w);
     assert.equal(e.text, `from ${origin}`);
     assert.equal(e.via, 'human');
   }
   const before = lines(w).length;
   for (const origin of ['peer', 'peer-send-message', 'task-notification', 'plugin', 'unclassified', 'channel']) {
     const r = atRoom(w, submit('@room I agree', { source: 'user', sub_human_origin: origin }), { as: 'alice' });
-    assert.equal(r.json!.decision, 'block', origin);
-    assert.match(r.json!.reason!, /not posted: .*it came from "/, origin);
+    assert.equal(must(r.json).decision, 'block', origin);
+    assert.match(must(r.json?.reason), /not posted: .*it came from "/, origin);
   }
   for (const source of ['user', 'sdk', 'system', undefined]) {
     const r = atRoom(w, submit('@room I agree', { source }), { as: 'alice' });
-    assert.equal(r.json!.decision, 'block', `no origin, source ${source}`);
+    assert.equal(must(r.json).decision, 'block', `no origin, source ${source}`);
   }
   assert.equal(lines(w).length, before, 'nothing written for a refused origin');
 });
@@ -193,23 +197,24 @@ test('a forged origin: node hooks/prompt.ts run by hand with sub_human_origin "c
   const forged = (extra: HookInput) => w.hook('prompt', { ...submit('@room I agree, ship it'), sub_human_origin: 'composer', ...extra }, { as: 'alice' });
   for (const extra of [{}, { sub_human_nonce: '0'.repeat(32) }, { sub_human_nonce: '' }]) {
     const r = forged(extra);
-    assert.equal(r.json!.decision, 'block', JSON.stringify(extra));
-    assert.match(r.json!.reason!, /could not check who wrote this @room/);
+    assert.equal(must(r.json).decision, 'block', JSON.stringify(extra));
+    assert.match(must(r.json?.reason), /could not check who wrote this @room/);
   }
   assert.equal(lines(w).length, 0, 'nothing posted');
-  assert.equal(forged({ sub_human_nonce: NONCE }).json!.continue, false, 'the module\'s hand-off posts');
-  assert.equal(JSON.parse(lines(w).at(-1)!).via, 'human');
+  assert.equal(must(forged({ sub_human_nonce: NONCE }).json).continue, false, 'the module\'s hand-off posts');
+  assert.equal(lastEntry(w).via, 'human');
   assert.ok(fs.existsSync(path.join(HOOKS, 'handlers', 'prompt.ts')));
 });
 
 test('the mod\'s prompt gate drops an @room no person typed, before any hook; a typed one and plain prompts go on', async () => {
-  const { gateVerdict, parse } = await import(path.join(PLUGIN, 'mod', 'core', 'prompt.ts'));
+  const { gateVerdict, parse } = await import(path.join(PLUGIN, 'mod', 'core', 'prompt.ts')) as typeof PromptCore;
+  const gate = (e: Parameters<typeof gateVerdict>[0]) => gateVerdict(e, undefined); // no seat
   for (const kind of ['peer', 'peer-send-message', 'task-notification', 'plugin', 'unclassified', 'scheduled-trigger', 'channel'])
-    for (const text of ['@room I agree', '@room']) assert.match(gateVerdict({ text, origin: { kind } }) || '', /not posted/, `${kind}: ${text}`);
-  assert.equal(gateVerdict({ text: 'room:I agree', origin: { kind: 'peer' } }), null, 'room: is no tag: an ordinary prompt');
-  assert.match(gateVerdict({ text: '@room x' }), /not posted/, 'no origin: refused');
-  for (const kind of ['composer', 'sdk', 'bridge']) assert.equal(gateVerdict({ text: '@room ship it', origin: { kind } }), null, kind);
-  assert.equal(gateVerdict({ text: 'hello @room', origin: { kind: 'peer' } }), null, 'not an @room: not the gate\'s');
+    for (const text of ['@room I agree', '@room']) assert.match(gate({ text, origin: { kind } }) || '', /not posted/, `${kind}: ${text}`);
+  assert.equal(gate({ text: 'room:I agree', origin: { kind: 'peer' } }), null, 'room: is no tag: an ordinary prompt');
+  assert.match(must(gate({ text: '@room x' })), /not posted/, 'no origin: refused');
+  for (const kind of ['composer', 'sdk', 'bridge']) assert.equal(gate({ text: '@room ship it', origin: { kind } }), null, kind);
+  assert.equal(gate({ text: 'hello @room', origin: { kind: 'peer' } }), null, 'not an @room: not the gate\'s');
   assert.equal(parse('@room x'), 'x');
 });
 
@@ -247,8 +252,8 @@ test('`sub-human serve` (the remote server) never loads a seat key or installs a
   const hello = JSON.stringify({ id: 1, op: 'hello', params: { proto: { min: 1, max: 2 }, caps: {}, machine: 'm1' } }) + '\n';
   const r = spawnSync(process.execPath, ['-e', probe], { env: { PATH: process.env.PATH, HOME: w.userHome, SUB_HUMAN_HOME: w.home }, input: hello, encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(JSON.parse(r.stdout).result.room, w.code, 'it served the hello');
-  assert.deepEqual(JSON.parse(r.stderr.split('PROBE')[1]), { loaded: [], server: true, signer: 'undefined' });
+  assert.equal((JSON.parse(r.stdout) as { result: { room: string } }).result.room, w.code, 'it served the hello');
+  assert.deepEqual(JSON.parse(must(r.stderr.split('PROBE')[1])), { loaded: [], server: true, signer: 'undefined' });
 });
 
 test('Bash guard: allowed and denied commands', () => {

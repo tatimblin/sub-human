@@ -24,7 +24,7 @@ const arg = (name: string, fallback: number) => { const i = process.argv.indexOf
 const CALLS = arg('--calls', 500);
 const HOOKS = arg('--hooks', 40);
 
-const pct = (xs: number[], p: number) => { const s = [...xs].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
+const pct = (xs: number[], p: number): number => { const s = [...xs].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))] ?? NaN; };
 const ms = (n: number) => n.toFixed(n < 1 ? 3 : 1);
 function time(fn: () => unknown) { const t = process.hrtime.bigint(); fn(); return Number(process.hrtime.bigint() - t) / 1e6; }
 const row = (what: string, a: number[], b: number[]) => `| ${what} | ${ms(pct(a, 0.5))} / ${ms(pct(a, 0.99))} | ${ms(pct(b, 0.5))} / ${ms(pct(b, 0.99))} | ${ms(pct(b, 0.5) - pct(a, 0.5))} / ${ms(pct(b, 0.99) - pct(a, 0.99))} |`;

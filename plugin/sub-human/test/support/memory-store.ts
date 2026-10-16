@@ -182,11 +182,11 @@ class MemoryRoomStore implements RoomStore {
 
   validateChain(): ChainCheck {
     let prev = '';
-    for (let i = 0; i < this._lines.length; i++) {
-      const e = parse(this._lines[i]);
+    for (const [i, line] of this._lines.entries()) {
+      const e = parse(line);
       if (!e) return { ok: false, badAt: null, line: i + 1, count: this._lines.length };
       if (e.prev !== undefined && e.prev !== hash12(prev)) return { ok: false, badAt: e.id, count: this._lines.length };
-      prev = this._lines[i];
+      prev = line;
     }
     return { ok: true, count: this._lines.length };
   }
@@ -194,15 +194,16 @@ class MemoryRoomStore implements RoomStore {
   /** Incremental from the checkpoint (lines already checked); offsets here count lines. */
   verifyChain(_opts: { fromOffset?: number; prev?: string } = {}): ChainVerify {
     const cp = this._checked;
-    const ok = cp.count <= this._lines.length && (cp.count === 0 || hash12(this._lines[cp.count - 1]) === cp.hash);
+    const ok = cp.count <= this._lines.length && (cp.count === 0 || hash12(this._lines[cp.count - 1] ?? '') === cp.hash);
     const from = ok ? cp : { count: 0, hash: hash12('') };
     let { count, hash } = from, id = 0;
     let bad: { badAt: number | null; line?: number } | null = null;
-    for (let i = from.count; i < this._lines.length; i++) {
-      const e = parse(this._lines[i]);
+    for (const [i, line] of this._lines.entries()) {
+      if (i < from.count) continue;
+      const e = parse(line);
       if (!e) { bad = { badAt: null, line: i + 1 }; break; }
       if (e.prev !== undefined && e.prev !== hash) { bad = { badAt: e.id }; break; }
-      hash = hash12(this._lines[i]); count++; id = e.id || id;
+      hash = hash12(line); count++; id = e.id || id;
     }
     this._checked = { count, hash };
     const r = { ok: !bad, count, checked: count - from.count, offset: count, id, hash, from: from.count };

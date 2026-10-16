@@ -9,17 +9,18 @@ import * as h from './helpers.ts';
 import * as room from '../lib/room.ts';
 import * as identity from '../lib/identity.ts';
 import type { Room } from '../lib/room.ts';
-import type { FsRoomStore } from '../lib/room/store.ts';
+import { fsStore } from './support/fs-store.ts';
 import type { AppendOpts, Entry, EntryInput } from '../lib/room/types.ts';
 import { sn, eid } from './support/brands.ts';
+import { must } from './support/must.ts';
 
-let R: Room = null!; // the current test's room (fresh() opens it)
+let R: Room; // the current test's room (fresh() opens it)
 function fresh() {
   h.freshHome();
   R = room.open(h.newRoom());
   return R.code;
 }
-const logLines = () => fs.readFileSync((R.store as FsRoomStore).logFile, 'utf8').split('\n').filter(Boolean);
+const logLines = () => fs.readFileSync(fsStore(R.store).logFile, 'utf8').split('\n').filter(Boolean);
 const H1 = 'aaaaaaaaaaaa', H2 = 'bbbbbbbbbbbb';
 const sys = (kind: string, extra: Partial<EntryInput> = {}, from = 'claude') => R.append({ kind, text: `${kind}`, ...extra }, { via: 'system', from, system: true });
 const human = (from: string, kind: string, extra: Partial<EntryInput> = {}) => R.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'human', from });
@@ -41,13 +42,13 @@ test('room: concurrent appends from 5 processes x 20 give 100 sequential ids and
     c.on('exit', status => (status === 0 ? resolve() : reject(new Error(`${u} exited ${status}`))));
   })));
   const lines = logLines();
-  const es = lines.map(l => JSON.parse(l));
+  const es = lines.map(l => JSON.parse(l) as Entry);
   assert.equal(es.length, 100);
   assert.deepEqual(es.map(e => e.id), Array.from({ length: 100 }, (_, i) => i + 1));
-  assert.equal(es[0].prev, room.hash12(''));
-  for (let i = 1; i < es.length; i++) assert.equal(es[i].prev, room.hash12(lines[i - 1]), `chain broken at #${es[i].id}`);
+  assert.equal(es[0]?.prev, room.hash12(''));
+  for (let i = 1; i < es.length; i++) { const e = must(es[i]); assert.equal(e.prev, room.hash12(must(lines[i - 1])), `chain broken at #${e.id}`); }
   for (const u of ['p1', 'p2', 'p3', 'p4', 'p5']) assert.equal(es.filter(e => e.from === u).length, 20);
-  assert.ok(!fs.existsSync((R.store as FsRoomStore).logFile + '.lock'));
+  assert.ok(!fs.existsSync(fsStore(R.store).logFile + '.lock'));
   assert.deepEqual(R.validateChain(), { ok: true, count: 100 });
 });
 
@@ -55,16 +56,16 @@ test('room: validateChain spots an edited line', () => {
   fresh();
   human('alice', 'say'); human('bob', 'say'); human('alice', 'say');
   const lines = logLines();
-  lines[1] = lines[1].replace('bob say', 'bob SAID');
-  fs.writeFileSync((R.store as FsRoomStore).logFile, lines.join('\n') + '\n');
+  lines[1] = must(lines[1]).replace('bob say', 'bob SAID');
+  fs.writeFileSync(fsStore(R.store).logFile, lines.join('\n') + '\n');
   assert.equal(R.validateChain().ok, false);
   assert.equal(R.validateChain().badAt, 3);
 });
 
 test('room: a stale lock from a dead process is cleaned up', () => {
   fresh();
-  fs.mkdirSync(R.store.dir!, { recursive: true });
-  fs.writeFileSync((R.store as FsRoomStore).logFile + '.lock', `999999 ${os.hostname()} 0`);
+  fs.mkdirSync(must(R.store.dir), { recursive: true });
+  fs.writeFileSync(fsStore(R.store).logFile + '.lock', `999999 ${os.hostname()} 0`);
   assert.equal(human('alice', 'say').id, 1);
 });
 
@@ -111,7 +112,8 @@ test('room: kind/via policy; system kinds need {system:true}; callers cannot set
   assert.throws(() => R.append({ kind: 'say', text: 'x' }, { via: 'human', from: 'a b' }), /invalid from/);
   assert.throws(() => R.append({ kind: 'say', text: 'x' }, { via: 'robot', from: 'a' }), /via must be/);
   assert.throws(() => R.append({ kind: 'say', text: ' \t ' }, { via: 'human', from: 'a' }), /empty/);
-  assert.throws(() => R.append({ kind: 'say', text: 'x', refs: ['1'] as unknown as number[] }, { via: 'human', from: 'a' }), /refs/); // deliberate: a string ref
+  // @ts-expect-error -- deliberate: a string ref
+  assert.throws(() => R.append({ kind: 'say', text: 'x', refs: ['1'] }, { via: 'human', from: 'a' }), /refs/);
   assert.throws(() => R.append({ kind: 'say', text: 'x', to: 'a b' }, { via: 'human', from: 'a' }), /invalid to/);
   assert.throws(() => R.append({ kind: 'signoff', text: 'x', proposal_hash: 'XYZ' }, { via: 'human', from: 'a' }), /proposal_hash/);
   assert.throws(() => agent('a', 'proposal', { hash: H1, approvers: ['ok', 'not ok'] }), /approvers/);
@@ -139,7 +141,8 @@ test('room: task_req and task entries: the task id is task_id, by is stamped, te
   assert.deepEqual([t.task_id, t.owner, t.status, t.req, t.by], ['2', 'bob', 'in_progress', 1, undefined]);
   assert.equal(t.text, 'update #2 parser tests: in_progress, owner bob');
   assert.match(room.line(t), /^#4 claude\[system\] task task=#2 owner=bob req=#1 "update #2/);
-  assert.throws(() => R.append({ kind: 'task', op: 'x', req: 'one' as unknown as number }, { via: 'system', from: 'claude', system: true }), /req/); // deliberate: a string req
+  // @ts-expect-error -- deliberate: a string req
+  assert.throws(() => R.append({ kind: 'task', op: 'x', req: 'one' }, { via: 'system', from: 'claude', system: true }), /req/);
 });
 
 test('room: rate limit is 6 agent posts per member per minute', () => {
@@ -150,9 +153,9 @@ test('room: rate limit is 6 agent posts per member per minute', () => {
   assert.equal(human('alice', 'say').via, 'human', 'human words are never rate limited');
   for (let i = 0; i < 10; i++) sys('member_joined', {}, 'alice');
   // Entries older than a minute do not count.
-  const lines = logLines().map(l => JSON.parse(l));
+  const lines = logLines().map(l => JSON.parse(l) as Entry);
   const old = new Date(Date.now() - 61_000).toISOString();
-  fs.writeFileSync((R.store as FsRoomStore).logFile, lines.map(e => JSON.stringify({ ...e, at: old })).join('\n') + '\n');
+  fs.writeFileSync(fsStore(R.store).logFile, lines.map(e => JSON.stringify({ ...e, at: old })).join('\n') + '\n');
   assert.equal(agent('alice', 'status').from, 'alice');
 });
 
@@ -160,7 +163,7 @@ test('room: proposals, answers matrix, objection voids an agreement, decided; le
   fresh();
   assert.equal(R.proposal(H1), null);
   agent('claude', 'proposal', { hash: H1, approvers: ['alice', 'bob'] });
-  assert.equal(R.proposal(H1)!.id, 1);
+  assert.equal(must(R.proposal(H1)).id, 1);
   const s1 = human('alice', 'signoff', { proposal_hash: H1 });
   let m = R.answers(H1);
   assert.deepEqual(m.signed, { alice: s1.id, bob: null });
@@ -173,7 +176,7 @@ test('room: proposals, answers matrix, objection voids an agreement, decided; le
   assert.ok(!('mallory' in m.signed));
   const o = human('alice', 'objection', { proposal_hash: H1 });
   assert.deepEqual(R.answers(H1).missing, ['alice']);
-  assert.equal(R.answered('alice', H1)!.id, o.id);
+  assert.equal(must(R.answered('alice', H1)).id, o.id);
   assert.equal(R.answered('carol', H1), null);
   human('bob', 'objection', { proposal_hash: H2 });
   assert.deepEqual(R.answers(H1).missing, ['alice']);
@@ -184,18 +187,18 @@ test('room: proposals, answers matrix, objection voids an agreement, decided; le
   assert.deepEqual(R.proposals().map(p => p.hash), [H2, H1], 'latest per hash, in order');
   assert.equal(R.decided(H1), null);
   const d = sys('decision', { proposal_hash: H1 }, 'room');
-  assert.equal(R.decided(H1)!.id, d.id);
+  assert.equal(must(R.decided(H1)).id, d.id);
   assert.equal(R.decided(H2), null);
   // a Phase 0 log: plan_rev / plan_hash read as proposal / proposal_hash
   fresh();
-  fs.mkdirSync(R.store.dir!, { recursive: true });
-  fs.writeFileSync((R.store as FsRoomStore).logFile,
+  fs.mkdirSync(must(R.store.dir), { recursive: true });
+  fs.writeFileSync(fsStore(R.store).logFile,
     `{"id":1,"at":"2026-10-04T00:00:00.000Z","from":"claude","via":"system","kind":"plan_rev","plan_hash":"${H1}","approvers":["alice"],"text":"rev"}\n` +
     `{"id":2,"at":"2026-10-04T00:00:01.000Z","from":"alice","via":"human","kind":"signoff","plan_hash":"${H1}","text":"ok"}\n`);
-  assert.equal(R.proposal(H1)!.kind, 'proposal');
+  assert.equal(must(R.proposal(H1)).kind, 'proposal');
   assert.equal(R.answers(H1).complete, true);
   // a keyless legacy answer still counts, and reads as unverified (no seat key signed it)
-  assert.match(room.line(R.readAll()[1]), new RegExp(`^#2 alice\\[human\\] \\(unverified\\) signoff proposal=${H1} "ok"$`));
+  assert.match(room.line(must(R.readAll()[1])), new RegExp(`^#2 alice\\[human\\] \\(unverified\\) signoff proposal=${H1} "ok"$`));
 });
 
 test('room: line is <= 240 chars for hostile text; who() labels', () => {
@@ -206,14 +209,15 @@ test('room: line is <= 240 chars for hostile text; who() labels', () => {
     assert.ok(line.length <= room.TAIL_MAX, `${line.length}: ${line}`);
     assert.ok(!line.includes('\n'));
   }
-  const e = R.readAll()[0];
+  const e = must(R.readAll()[0]);
   assert.match(room.line(e), /^#1 bob\[human\] objection to=alice refs=#1,#2,#3,#4,#5,… proposal=aaaaaaaaaaaa "/);
   const huge = room.line({ id: 123456, from: 'b'.repeat(32), via: 'agent', kind: 'proposal', to: 'c'.repeat(32), refs: [1],
-    approvers: Array(8).fill('x'.repeat(32)), hash: H1, text: '"\\'.repeat(3000) } as Entry); // no at: tailLine shows none
+    approvers: Array<string>(8).fill('x'.repeat(32)), hash: H1, text: '"\\'.repeat(3000) } as Entry); // no at: tailLine shows none
   assert.ok(huge.length <= 240, String(huge.length));
-  assert.equal(room.who({ from: 'alice', via: 'human' } as Entry), 'alice');
-  assert.equal(room.who({ from: 'alice', via: 'agent' } as Entry), "alice's Claude");
-  assert.equal(room.who({ from: 'claude', via: 'system' } as Entry), 'room');
+  const by = (from: string, via: string) => ({ from, via }) as Entry; // the fields who() reads
+  assert.equal(room.who(by('alice', 'human')), 'alice');
+  assert.equal(room.who(by('alice', 'agent')), "alice's Claude");
+  assert.equal(room.who(by('claude', 'system')), 'room');
   assert.match(room.fmt(e), /^\[#1 bob\[human\] objection/);
 });
 
@@ -268,14 +272,14 @@ test('room: digest skips a proposal its proposer revised (superseded), as pendin
 
 test('room: legacy entries (agree, concern, no via) still read, render and append after', () => {
   fresh();
-  fs.mkdirSync(R.store.dir!, { recursive: true });
-  fs.writeFileSync((R.store as FsRoomStore).logFile,
+  fs.mkdirSync(must(R.store.dir), { recursive: true });
+  fs.writeFileSync(fsStore(R.store).logFile,
     '{"id":1,"at":"2026-10-04T00:07:47.786Z","from":"bob","kind":"concern","text":"slow"}\n' +
     '{"id":2,"at":"2026-10-04T00:07:48.786Z","from":"alice","kind":"agree","text":"fine"}\n' +
     '{"id":3,"at":"2026-10-04T00:07:49.786Z","from":"alice","via":"human","kind":"revoke","plan_hash":"aaaaaaaaaaaa","text":"wait"}\n');
   assert.equal(R.readAll().length, 3);
-  assert.match(room.line(R.readAll()[0]), /^#1 bob objection "slow"$/);
-  assert.match(room.line(R.readAll()[1]), /^#2 alice agree "fine"$/);
+  assert.match(room.line(must(R.readAll()[0])), /^#1 bob objection "slow"$/);
+  assert.match(room.line(must(R.readAll()[1])), /^#2 alice agree "fine"$/);
   assert.match(R.digest(), /#1 bob objection/);
   assert.equal(human('alice', 'say').id, 4);
   assert.equal(R.validateChain().ok, true, 'legacy lines without prev are tolerated');
@@ -310,9 +314,9 @@ test('chatLines: group-chat lines with no ids, exact words, multi-line and long 
   // with the log, an answer and a decision name their proposal by title (with two pending, which one was decided)
   const all = R.readAll();
   const W = (e: Entry, viewer = 'alice') => room.chatLines(e, { viewer, entries: R.readAll() });
-  assert.deepEqual(W(all.find(x => x.kind === 'signoff')!), ['bob agreed to "cursor paging" (aaaaaa)']);
-  assert.deepEqual(W(all.find(x => x.kind === 'objection')!), ['bob objected to "cursor paging" (aaaaaa): add the 400 test']);
-  assert.deepEqual(W(all.find(x => x.kind === 'decision')!), ['room: "cursor paging" (aaaaaa) agreed (alice, bob)']);
+  assert.deepEqual(W(must(all.find(x => x.kind === 'signoff'))), ['bob agreed to "cursor paging" (aaaaaa)']);
+  assert.deepEqual(W(must(all.find(x => x.kind === 'objection'))), ['bob objected to "cursor paging" (aaaaaa): add the 400 test']);
+  assert.deepEqual(W(must(all.find(x => x.kind === 'decision'))), ['room: "cursor paging" (aaaaaa) agreed (alice, bob)']);
   const p2 = R.append({ kind: 'proposal', text: `proposal ${H2}: Ship v3 Monday`, hash: H2, approvers: ['bob', 'carol'] }, { via: 'agent', from: 'alice' });
   const o2 = R.append({ kind: 'objection', proposal_hash: H2, text: 'keep status; clients depend on it' }, { via: 'human', from: 'bob' });
   const s2 = R.append({ kind: 'signoff', proposal_hash: H2 }, { via: 'human', from: 'carol' });
@@ -335,6 +339,6 @@ test('chatLines: group-chat lines with no ids, exact words, multi-line and long 
   assert.equal(ls.at(-1), `(for Claude) that message is cut at ${room.CHAT_MAX}/${room.CHAT_MAX + 10} chars; read({ids:[${long.id}]}) has all of it`);
   assert.ok(ls.slice(0, -1).every(l => Array.from(l).length <= room.CHAT_WRAP), 'every line fits CHAT_WRAP');
   assert.ok(ls.slice(1, -1).every(l => l.startsWith(room.CHAT_NEST)), 'wrapped pieces are nested too');
-  assert.match(ls.at(-2)!, /\[cut: the rest is in the room log\]$/);
+  assert.match(must(ls.at(-2)), /\[cut: the rest is in the room log\]$/);
   for (const e of R.readAll()) for (const l of C(e)) if (!l.startsWith('(for Claude)')) assert.doesNotMatch(l, /#\d/, l);
 });

@@ -24,6 +24,7 @@ import type { MachineRun } from './support/two-homes.ts';
 import { fakeSsh } from './support/fake-ssh.ts';
 import type { Invites, ShortInvite } from '../lib/remote/types-core.ts';
 import type { RoomCode } from '../lib/brand.ts';
+import { must } from './support/must.ts';
 
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
 
@@ -32,15 +33,15 @@ const childOf = (pid: number) => Number(spawnSync('pgrep', ['-P', String(pid)], 
 const kill = (pid: number | null) => { try { process.kill(pid as number, 'SIGKILL'); } catch { /* gone */ } };
 const hiddenBlock = (r: MachineRun) => r.json && r.json.decision === 'block' && r.json.hookSpecificOutput && r.json.hookSpecificOutput.suppressOriginalPrompt === true;
 const roomLines = (m: Machine, code: RoomCode) => m.lib(() => store.open(code).readAll()).filter(e => e.from === 'room').map(e => e.text);
-const shortOf = (m: Machine, code: RoomCode, ref: string) => Object.entries(m.lib(() => store.open(code).kv.get<Invites>(invites.INVITES_KEY)) || {}).find(([k]) => k.startsWith(ref))![1] as ShortInvite;
+const shortOf = (m: Machine, code: RoomCode, ref: string) => must(Object.entries(m.lib(() => store.open(code).kv.get<Invites>(invites.INVITES_KEY)) || {}).find(([k]) => k.startsWith(ref)))[1] as ShortInvite;
 
 function rig(t: TestContext, fake: Record<string, string> = {}) {
   const ak = path.join(h.tmpDir('sh-ak-', t), 'authorized_keys');
   const host = new Machine(t, 'host', { SUB_HUMAN_AUTHORIZED_KEYS: ak, SUB_HUMAN_REMOTE_LOGIN: 'on' });
   const remote = new Machine(t, 'remote', { ...LINK_ENV, PATH: `${fakeSsh(t)}:${process.env.PATH}`, FAKE_SSH_HOME: host.user, SUB_HUMAN_SSH_OPTS: undefined, ...fake });
   const alice = host.seat('alice'), bob = remote.seat('bob');
-  assert.equal(host.join(alice, 'alice').json!.decision, undefined);
-  const code = host.lib(() => store.listRooms()[0]);
+  assert.equal(must(host.join(alice, 'alice').json).decision, undefined);
+  const code = must(host.lib(() => store.listRooms()[0]), 'the room');
   t.after(() => {
     const d = remote.lib(() => linkSocket.status(code));
     if (d.pid) { kill(childOf(d.pid)); kill(d.pid); }
@@ -58,60 +59,62 @@ test('ssh invite: the line names the person\'s own ssh login (and the host\'s fo
   const { host, remote, alice, bob, code, ak } = rig(t);
   const out = host.join(alice, 'invite --ssh me@devbox');
   assert.ok(hiddenBlock(out), out.stderr);
-  const m = shownInvite(out.json!.reason!)!;
-  assert.ok(m, out.json!.reason!);
+  const m = must(shownInvite(must(out.json?.reason)));
+  assert.ok(m, must(out.json?.reason));
   assert.equal(m.line, `join me@devbox ${code} ${m.word} --home ${host.home}`, 'a host folder that is not ~/.sub-human goes in the line');
-  assert.match(out.json!.reason!, /Over ssh this needs their own ssh login to this account \(\S+\), set up as for any ssh login: sub-human writes nothing to authorized_keys\. No login here\? Invite them over the web: \/sub-human invite --web/);
+  assert.match(must(out.json?.reason), /Over ssh this needs their own ssh login to this account \(\S+\), set up as for any ssh login: sub-human writes nothing to authorized_keys\. No login here\? Invite them over the web: \/sub-human invite --web/);
   assert.equal(fs.existsSync(ak), false, 'no line written');
   assert.ok(fs.existsSync(path.join(host.home, 'bin', 'serve')), 'the shim their login runs');
 
   const typed = remote.join(bob, `${m.line} --as bob`);
   assert.ok(hiddenBlock(typed), typed.stderr);
   await until(() => remote.lib(() => !!(links.get(code) || {}).pin_wanted), 10_000, 'the host asking for the PIN');
-  const lf = remote.lib(() => links.get(code))!;
-  const t0 = lf.transport as { kind: string; user: string; host: string; login: boolean; link: string; remoteHome: string };
+  const lf = must(remote.lib(() => links.get(code)));
+  const t0 = lf.transport;
+  assert.ok(t0.kind === 'ssh', 'an ssh link');
   assert.deepEqual([t0.kind, t0.user, t0.host, t0.login, t0.remoteHome], ['ssh', 'me', 'devbox', true, host.home], 'a login link');
-  assert.match(t0.link, /^[0-9a-f]{12}$/);
+  const linkId = must(t0.link, 'its link id');
+  assert.match(linkId, /^[0-9a-f]{12}$/);
   assert.ok(!('key' in t0) && !('knownHosts' in t0), 'no key or known_hosts of the plugin\'s');
   assert.equal(fs.existsSync(remote.lib(() => links.dirOf(code))), false, 'no key of its own: nothing in a link folder');
 
   const gave = remote.join(bob, `join ${m.pin}`);
-  assert.match(gave.json!.reason!, /checked your PIN\. A card there now asks them to let you in \(check [0-9a-f]{4}-[0-9a-f]{4}\)/);
-  const req = host.lib(() => admission.pending(code))[0];
-  assert.equal(req.link, t0.link, 'the request reserves the link id its login names');
+  assert.match(must(gave.json?.reason), /checked your PIN\. A card there now asks them to let you in \(check [0-9a-f]{4}-[0-9a-f]{4}\)/);
+  const req = must(host.lib(() => admission.pending(code))[0], 'the request');
+  assert.equal(req.link, linkId, 'the request reserves the link id its login names');
   assert.equal(req.key, null);
-  assert.match(host.join(alice, `admit ${req.ref}`).json!.reason!, /let in: bob/);
+  assert.match(must(host.join(alice, `admit ${req.ref}`).json?.reason), /let in: bob/);
   await until(() => remote.lib(() => (links.get(code) || {}).token), 10_000, 'the token');
   const seated = remote.join(bob, '');
-  assert.equal(seated.json!.decision, undefined, seated.stdout);
+  assert.equal(must(seated.json).decision, undefined, seated.stdout);
   await until(() => remote.lib(() => identity.resolveBySession(bob.sid)), 10_000, 'the seat');
-  const link = host.lib(() => hostLinks.links(store.open(code)))[t0.link];
+  const link = must(host.lib(() => hostLinks.links(store.open(code)))[linkId], 'the link');
   assert.deepEqual([link.seats, link.bound, link.login, link.key], [['bob'], true, undefined, undefined], 'bound to bob alone; not a login link (no owner\'s consent)');
   assert.equal(fs.existsSync(ak), false, 'still nothing in authorized_keys');
   // kick ends it: its token, and its serve (found by the link id in its argv)
-  assert.match(host.join(alice, 'kick bob').json!.reason!, /bob is out of room/);
-  assert.equal(host.lib(() => hostLinks.links(store.open(code)))[t0.link], undefined);
+  assert.match(must(host.join(alice, 'kick bob').json?.reason), /bob is out of room/);
+  assert.equal(host.lib(() => hostLinks.links(store.open(code)))[linkId], undefined);
 });
 
 test('ssh invite: a joiner with no ssh login of their own there sends nothing (no try spent) and is told to ask for a web invite; a line for another host neither', async t => {
   const { host, remote, alice, bob, code } = rig(t, { FAKE_SSH_FAIL: 'denied' });
-  const m = shownInvite(host.join(alice, 'invite --ssh me@devbox').json!.reason!)!;
+  const m = must(shownInvite(must(host.join(alice, 'invite --ssh me@devbox').json?.reason)));
   const r = remote.join(bob, `${m.line} --as bob`);
-  assert.match(r.json!.reason!, /could not join room \S+: me@devbox refused your ssh login: sub-human logs in with your ssh keys or agent only/);
-  assert.equal(shortOf(host, code, m.word ? invites.inviteRef(inviteSecret.idOf(inviteSecret.decode(m.word)!.secret)) : '').tries, 5);
+  assert.match(must(r.json?.reason), /could not join room \S+: me@devbox refused your ssh login: sub-human logs in with your ssh keys or agent only/);
+  assert.equal(shortOf(host, code, m.word ? invites.inviteRef(inviteSecret.idOf(must(inviteSecret.decode(m.word)).secret)) : '').tries, 5);
 
   // a line whose tag names another host's machine key: the host's proof does not match, so the SECRET never goes
   const other = new Machine(t, 'other', { ...LINK_ENV, PATH: `${fakeSsh(t)}:${process.env.PATH}`, FAKE_SSH_HOME: host.user, SUB_HUMAN_SSH_OPTS: undefined });
   const carol = other.seat('carol');
   t.after(() => { const d = other.lib(() => linkSocket.status(code)); if (d.pid) { kill(childOf(d.pid)); kill(d.pid); } });
-  const m2 = shownInvite(host.join(alice, 'invite --ssh me@devbox').json!.reason!)!;
-  const d = inviteSecret.decode(m2.word)!;
+  const m2 = must(shownInvite(must(host.join(alice, 'invite --ssh me@devbox').json?.reason)));
+  const d = must(inviteSecret.decode(m2.word));
   const forged = inviteSecret.encode(d.secret, inviteSecret.tagOf(d.secret, 'machine', Buffer.alloc(32, 9).toString('base64url')));
   const before = roomLines(host, code).length;
   other.join(carol, `${m2.line.replace(m2.word, forged)} --as carol`);
   await until(() => other.lib(() => (links.get(code) || {}).refused), 10_000, 'the refusal');
-  assert.match(other.lib(() => links.get(code))!.refused!.reason, /the host's machine key is not the one the invite line names: someone may be in between, or the line is for another host\. Nothing secret was sent/);
-  assert.equal(other.lib(() => links.get(code))!.invite, undefined, 'the line is dropped');
+  assert.match(must(other.lib(() => links.get(code))?.refused).reason, /the host's machine key is not the one the invite line names: someone may be in between, or the line is for another host\. Nothing secret was sent/);
+  assert.equal(must(other.lib(() => links.get(code))).invite, undefined, 'the line is dropped');
   assert.equal(shortOf(host, code, invites.inviteRef(inviteSecret.idOf(d.secret))).tries, 5, 'no try spent');
   assert.equal(shortOf(host, code, invites.inviteRef(inviteSecret.idOf(d.secret))).used_at, undefined);
   assert.equal(roomLines(host, code).length, before, 'and the host heard nothing');

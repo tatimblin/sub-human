@@ -15,7 +15,9 @@ import * as linkSocket from '../lib/remote/link-socket.ts';
 import * as links from '../lib/room/links.ts';
 import { leaseFresh } from '../lib/room/members.ts';
 import { isAlive } from '../lib/io.ts';
+import type { Entry, Link } from '../lib/room/types.ts';
 import { Machine } from './support/two-homes.ts';
+import { must } from './support/must.ts';
 
 const BASE = {
   SUB_HUMAN_LINK_IDLE_MS: '1500', SUB_HUMAN_LINK_RETRY_MS: '300', SUB_HUMAN_LINK_RETRY_MAX_MS: '600',
@@ -26,19 +28,19 @@ const BASE = {
 const children = (pid: number | undefined) => spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n').filter(Boolean).map(Number);
 // a missing pid throws in process.kill and is ignored, like a gone one
 const signal = (pid: number | undefined, sig: NodeJS.Signals) => { try { process.kill(pid as number, sig); } catch { /* gone */ } };
-const ids = (log: string) => log.split('\n').filter(Boolean).map(l => JSON.parse(l).id);
+const ids = (log: string) => log.split('\n').filter(Boolean).map(l => (JSON.parse(l) as Entry).id);
 
 /** alice hosts, bob joins from the other home; returns what the tests need, cleaned up when the test ends. */
 async function room(t: TestContext, env?: Record<string, string>) {
   const host = new Machine(t, 'host'), remote = new Machine(t, 'remote', { ...BASE, ...env });
   const alice = host.seat('alice'), bob = remote.seat('bob');
   host.join(alice, 'alice');
-  const code = host.lib(() => store.listRooms()[0]);
+  const code = must(host.lib(() => store.listRooms()[0]), 'the room');
   // an invite and its PIN: the PIN goes into the PAKE only; every redial below says hello with the token
   const { seated: joined } = await remote.joinVia(host, alice, bob);
-  const lf = JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.json`), 'utf8'));
+  const lf = JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.json`), 'utf8')) as Link; // the link file as stored
   assert.deepEqual(['enroll' in lf, 'invite' in lf, typeof lf.token], [false, false, 'string']);
-  assert.equal(joined.json!.systemMessage, undefined, joined.stderr);
+  assert.equal(must(joined.json).systemMessage, undefined, joined.stderr);
   const daemon = remote.lib(() => linkSocket.status(code)).pid;
   t.after(() => {
     for (const c of children(daemon)) signal(c, 'SIGKILL');
@@ -65,7 +67,7 @@ test('remote e2e: a server that stops answering (half-open) is caught by a misse
   assert.match(r.daemonLog(), /swapped in, the old connection is closed/);
   await h.until(r.same, 5000, 50);
   assert.ok(r.same(), 'the mirror caught up over the new server');
-  assert.equal(r.remote.say(r.bob, 'over the new link').json!.continue, false);
+  assert.equal(must(r.remote.say(r.bob, 'over the new link').json).continue, false);
   assert.ok(r.same());
   assert.equal(new Set(ids(r.remote.log(r.code))).size, ids(r.remote.log(r.code)).length, 'no duplicate line');
   assert.equal(r.remote.lib(() => store.open(r.code).verifyChain()).ok, true);
@@ -88,7 +90,7 @@ test('remote e2e: a daemon frozen past the wake gap (as after a sleep) redials a
   await h.until(r.same, 5000, 50);
   assert.ok(r.same());
   assert.equal(new Set(ids(r.remote.log(r.code))).size, ids(r.remote.log(r.code)).length);
-  assert.equal(r.remote.say(r.bob, 'awake').json!.continue, false);
+  assert.equal(must(r.remote.say(r.bob, 'awake').json).continue, false);
   assert.ok(r.same());
 });
 
@@ -98,8 +100,8 @@ test('remote e2e: a seat whose lease lapsed on the host during an outage is rene
   const [old] = children(r.daemon);
   signal(old, 'SIGKILL');
   await h.until(() => r.st().state === 'offline', 5000, 20);
-  assert.match(r.st().lastError!, /closed/);
-  r.host.lib(() => store.open(r.code).members.update(ms => { ms.bob.seen_at = new Date(0).toISOString(); return ms; }));
+  assert.match(must(r.st().lastError), /closed/);
+  r.host.lib(() => store.open(r.code).members.update(ms => { must(ms.bob).seen_at = new Date(0).toISOString(); return ms; }));
   assert.equal(r.host.lib(() => leaseFresh(store.open(r.code).members.read().bob)), false, 'the host counts bob gone');
   const before = r.host.log(r.code);
   await h.until(() => r.st().state === 'online', 8000, 50);

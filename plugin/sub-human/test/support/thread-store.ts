@@ -109,7 +109,10 @@ class ThreadRoomStore implements RoomStore {
   }
   get dir() { return this._local.dir; }
   /** The store method's result on the worker, as that method gives it (R: its type). */
-  _call<R>(method: string, args: unknown[]): R { return send(method, { code: this.code, dir: this._local.dir, home: home(), seg: process.env.SUB_HUMAN_SEGMENT_BYTES, args }) as R; }
+  _call<R>(method: string, args: unknown[]): R {
+    const seg = process.env.SUB_HUMAN_SEGMENT_BYTES;
+    return send(method, { code: this.code, dir: this._local.dir, home: home(), ...(seg !== undefined ? { seg } : {}), args }) as R;
+  }
 
   readAll(): readonly Entry[] { return this._call('readAll', []); }
   readById(ids: EntryId | readonly EntryId[]): Entry[] { return this._call('readById', [ids]); }
@@ -173,20 +176,21 @@ function install() {
 const stores = new Map<string, FsStore>(); // dir -> FsRoomStore
 const tailers = new Map<number, Tailer>(); // id -> FsRoomStore tailer
 
-// The worker's own ops; every other method is an FsRoomStore method by name. Args arrive as structured clones.
-const OPS: Record<string, (s: FsStore, args: any[]) => unknown> = { // any: each op's own argument list
+// The worker's own ops; every other method is an FsRoomStore method by name. Args arrive as structured clones of
+// what the calling side (the proxy above) passed, so each cast restores the type that side sent.
+const OPS: Record<string, (s: FsStore, args: unknown[]) => unknown> = {
   'members.cas'(s, [expect, next]) {
     let ok = false;
-    s.members.update(cur => ((ok = isDeepStrictEqual(cur, expect)) ? next : null));
+    s.members.update(cur => ((ok = isDeepStrictEqual(cur, expect)) ? next as Members : null));
     return ok;
   },
   'kv.cas'(s, [key, expect, next, opts]) {
     let ok = false;
-    s.kv.update(key, cur => ((ok = isDeepStrictEqual(cur, expect)) ? next : undefined), opts);
+    s.kv.update(key as string, cur => ((ok = isDeepStrictEqual(cur, expect)) ? next : undefined), opts as KvUpdateOpts | undefined);
     return ok;
   },
-  tailer(s, [opts]) { const id = tailers.size + 1; tailers.set(id, s.tailer(opts)); return id; },
-  'tailer.poll'(_s, [id]) { return tailers.get(id)?.poll(); },
+  tailer(s, [opts]) { const id = tailers.size + 1; tailers.set(id, s.tailer(opts as { after?: number } | undefined)); return id; },
+  'tailer.poll'(_s, [id]) { return tailers.get(id as number)?.poll(); },
 };
 
 function handle(method: string, { code, dir, home: h, seg, args }: CallParams): unknown {
@@ -194,12 +198,17 @@ function handle(method: string, { code, dir, home: h, seg, args }: CallParams): 
   if (seg) process.env.SUB_HUMAN_SEGMENT_BYTES = seg; else delete process.env.SUB_HUMAN_SEGMENT_BYTES; // the caller's segment size
   let s = stores.get(dir);
   if (!s) { s = new FsRoomStore(code, { dir }); stores.set(dir, s); }
-  if (OPS[method]) return OPS[method](s, args);
+  const op = OPS[method];
+  if (op) return op(s, args);
   // a method of the store, or of one of its parts (members.join, kv.get, ...), called by name
   type Callable = Record<string, (...a: unknown[]) => unknown>;
-  const [a, b] = method.split('.');
-  const target = s as unknown as Record<string, Callable & ((...a: unknown[]) => unknown)>;
-  return b ? target[a][b](...args) : target[a](...args);
+  const [a = '', b] = method.split('.');
+  const target = s as unknown as Record<string, Callable & ((...a: unknown[]) => unknown)>; // by name: the caller's method
+  const part = target[a];
+  if (!part) throw new Error(`thread-store: no store method ${method}`);
+  const fn = b ? part[b] : part;
+  if (!fn) throw new Error(`thread-store: no store method ${method}`);
+  return fn.apply(b ? part : s, args);
 }
 
 if (isMainThread && process.env.SUB_HUMAN_TEST_THREAD_STORE === '1') install();

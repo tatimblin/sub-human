@@ -11,17 +11,18 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { World, PLUGIN, baseEnv } from './helpers.ts';
 import { HANDLERS } from '../../hooks/run.ts';
+import { must } from '../support/must.ts';
 
 interface HookEntry { command: string; timeout?: number }
 interface HooksJson { hooks: Record<string, { matcher?: string; hooks: HookEntry[] }[]> }
 
-const HOOKS_JSON: HooksJson = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8'));
+const HOOKS_JSON = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')) as HooksJson;
 /** handler -> its smallest timeout (s): a hooks.json entry's, else the module's shim timeout (10 s). */
 const TIMEOUTS = new Map<string, number>(HANDLERS.map(h => [h, 10]));
 for (const groups of Object.values(HOOKS_JSON.hooks)) {
   for (const g of groups) {
     for (const h of g.hooks) {
-      for (const m of h.command.matchAll(/hooks\/run\.ts\\?"? ([a-z-]+)/g)) TIMEOUTS.set(m[1], Math.min(TIMEOUTS.get(m[1]) ?? Infinity, h.timeout ?? 60));
+      for (const m of h.command.matchAll(/hooks\/run\.ts\\?"? ([a-z-]+)/g)) { const name = must(m[1]); TIMEOUTS.set(name, Math.min(TIMEOUTS.get(name) ?? Infinity, h.timeout ?? 60)); }
     }
   }
 }
@@ -35,7 +36,7 @@ test('stdin: every hooks.json entry runs hooks/run.ts with a handler that exists
     if (ev === 'PreToolUse') { assert.doesNotMatch(h.command, /\bnode\b/, 'the EnterPlanMode mode note runs no node'); continue; }
     const m = /hooks\/run\.ts\\?"? ([a-z-]+)/.exec(h.command);
     assert.ok(m, `a hooks.json command runs hooks/run.ts: ${h.command}`);
-    named.add(m[1]);
+    named.add(must(m[1]));
   }
   for (const n of named) assert.ok(HANDLERS.includes(n), n);
   const files = fs.readdirSync(path.join(PLUGIN, 'hooks', 'handlers')).filter(f => f.endsWith('.ts')).map(f => f.slice(0, -3));

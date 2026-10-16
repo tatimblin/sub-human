@@ -11,6 +11,7 @@
  *       presence change (one op each over the link).
  */
 import * as h from '../helpers.ts';
+import { must } from './must.ts';
 import * as store from '../../lib/room/store.ts';
 import * as linkSocket from '../../lib/remote/link-socket.ts';
 import { Machine, type MachineRun, type Seat } from './two-homes.ts';
@@ -19,7 +20,7 @@ const arg = (name: string, fallback: number) => { const i = process.argv.indexOf
 const CALLS = arg('--calls', 200);
 const HOOKS = arg('--hooks', 40);
 
-const pct = (xs: number[], p: number) => { const s = [...xs].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
+const pct = (xs: number[], p: number): number => { const s = [...xs].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))] ?? NaN; };
 const ms = (n: number) => n.toFixed(n < 1 ? 3 : 1);
 function time(fn: () => unknown) { const t = process.hrtime.bigint(); fn(); return Number(process.hrtime.bigint() - t) / 1e6; }
 const row = (what: string, a: number[], b: number[]) => `| ${what} | ${ms(pct(a, 0.5))} / ${ms(pct(a, 0.99))} | ${ms(pct(b, 0.5))} / ${ms(pct(b, 0.99))} | ${ms(pct(b, 0.5) - pct(a, 0.5))} / ${ms(pct(b, 0.99) - pct(a, 0.99))} |`;
@@ -27,7 +28,7 @@ const row = (what: string, a: number[], b: number[]) => `| ${what} | ${ms(pct(a,
 const host = new Machine(undefined, 'host'), remote = new Machine(undefined, 'remote');
 const alice = host.seat('alice'), bob = remote.seat('bob');
 host.join(alice, 'alice');
-const code = host.lib(() => store.listRooms()[0]);
+const code = must(host.lib(() => store.listRooms()[0]), 'the room');
 remote.linkInvite(code, host.inviteFor(code, remote)); // the link file (a bound invite, no card), then the seat over it
 const joined = remote.join(bob, `bob ${code}`);
 if (!joined.json?.hookSpecificOutput) throw new Error(`join: ${JSON.stringify(joined.json)} ${joined.stderr}`);

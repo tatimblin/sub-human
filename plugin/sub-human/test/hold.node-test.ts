@@ -14,6 +14,7 @@ import * as seatKey from '../hooks/seat-key.ts';
 import type { JsonRpcId, Me, ProgressToken, ToolArgs, ToolResult } from '../mcp/types.ts';
 import type { LinkState, Member } from '../lib/room/types.ts';
 import { rc, sn } from './support/brands.ts';
+import { must } from './support/must.ts';
 
 Object.assign(process.env, {
   SUB_HUMAN_HOLD_BEAT_MS: '150', SUB_HUMAN_HOLD_POLL_MS: '20', SUB_HUMAN_HOLD_GRACE_MS: '250',
@@ -58,10 +59,10 @@ function setup(names: string[], self: string) {
   let rid = 0;
   const call = (args: ToolArgs) => { const meta = { id: ++rid, progressToken: `t${rid}` }; return { id: rid, p: Promise.resolve(plug.call('hold', me as Me | null, args, meta)) }; };
   return {
-    code, dir, ms, save, add, progress, plug, call, cancel: (r: JsonRpcId) => cancels.get(r)!(),
+    code, dir, ms, save, add, progress, plug, call, cancel: (r: JsonRpcId) => must(cancels.get(r))(),
     leaveMe: () => { me = null; },
     join: (n: string) => { ms[n] = { name: sn(n), role: 'member', joined_at: new Date().toISOString() }; save(); },
-    leave: (n: string) => { ms[n].left_at = new Date().toISOString(); save(); },
+    leave: (n: string) => { must(ms[n]).left_at = new Date().toISOString(); save(); },
   };
 }
 const pending = async (p: Promise<unknown>, ms = 80) => (await Promise.race([p.then(() => 'done'), sleep(ms).then(() => 'pending')])) === 'pending';
@@ -72,10 +73,10 @@ test('hold: tool definition and argument errors', async () => {
   assert.equal(w.plug.call('nope', null, {}, {}), null);
   const bad = await w.call({}).p;
   assert.match(textOf(bad), /hold needs/);
-  assert.equal(bad!.isError, true, 'a call without member or room is refused as an error');
+  assert.equal(must(bad).isError, true, 'a call without member or room is refused as an error');
   const stop = await w.call({ member: sn('zed') }).p;
   assert.match(textOf(stop), /^STOP: zed is not in room/);
-  assert.equal(stop!.isError, undefined, 'a STOP is an answer for the row, not an error');
+  assert.equal(must(stop).isError, undefined, 'a STOP is an answer for the row, not an error');
   assert.match(textOf(await w.call({ member: sn('claude') }).p), /^STOP: that is you/);
   assert.match(textOf(await w.call({ member: '../x' }).p), /^STOP/);
   assert.match(textOf(await w.call({ room: rc('otter-1111') }).p), /^STOP: you are in room marmot-2509/);
@@ -88,24 +89,24 @@ test('hold {member}: blocks with progress, streams the thread, refuses a duplica
   w.add('alice', 'say');
   const a = w.call({ member: sn('alice') });
   assert.ok(await pending(a.p), 'blocks');
-  assert.equal(w.progress[0].token, `t${a.id}`);
-  assert.equal(w.progress[0].message, `alice: say 1${hold.HINT}`);
+  assert.equal(must(w.progress[0]).token, `t${a.id}`);
+  assert.equal(must(w.progress[0]).message, `alice: say 1${hold.HINT}`);
   assert.match(hold.HINT, /read-only · talk in main \(@room\)$/);
   w.add('bob', 'say');                       // not alice's thread
   w.add('claude', 'question', { via: 'agent', to: 'alice' });
   await sleep(80);
-  assert.match(w.progress.at(-1)!.message, /^claude \(to alice\): question 3/);
+  assert.match(must(w.progress.at(-1)).message, /^claude \(to alice\): question 3/);
   assert.ok(!w.progress.some(p => /^bob/.test(p.message)), 'other threads are not streamed');
   const n = w.progress.length;
   await sleep(250);
   assert.ok(w.progress.length > n, 'heartbeat keeps the idle timeout away');
   assert.match(textOf(await w.call({ member: sn('alice') }).p), /^STOP: duplicate row: alice's row is already open/, 'one row per member');
-  assert.deepEqual(rows.readHolds(w.code, sn('claude'))!.members, ['alice']);
+  assert.deepEqual(must(rows.readHolds(w.code, sn('claude'))).members, ['alice']);
   w.add('alice', 'member_left', { via: 'system' });
   w.leave('alice');
   assert.ok(await pending(a.p, 200), 'the row outlives the leave (it reads "left")');
-  assert.match(w.progress.at(-1)!.message, /^alice left/);
-  assert.deepEqual(rows.readHolds(w.code, sn('claude'))!.members, ['alice']);
+  assert.match(must(w.progress.at(-1)).message, /^alice left/);
+  assert.deepEqual(must(rows.readHolds(w.code, sn('claude'))).members, ['alice']);
 });
 
 test('hold: duplicate holds are refused for both kinds; the first one stays', async () => {
@@ -132,7 +133,7 @@ test('hold: leave + rejoin keeps one hold per member, announces nothing, and spa
   assert.ok(await pending(r1.p, 500), 'no JOINED for a member whose row is still held (well past the grace period)');
   assert.ok(await pending(b1.p), 'the same row is live again');
   assert.match(textOf(await w.call({ member: sn('bob') }).p), /^STOP: duplicate row/);
-  assert.deepEqual(rows.readHolds(w.code, sn('alice'))!.members, ['bob']);
+  assert.deepEqual(must(rows.readHolds(w.code, sn('alice'))).members, ['bob']);
   // A row spawned for a member who already left still holds (reads "left") instead of finishing at once.
   w.leave('bob');
   w.cancel(b1.id);
@@ -225,21 +226,21 @@ test('hold {room}: after JOINED the room row still reads as running while it re-
     const r1 = w.call({ room: w.code });
     w.call({ member: sn('bob') });
     await sleep(40);
-    assert.equal(rows.readHolds(w.code, sn('erin'))!.room, true);
+    assert.equal(must(rows.readHolds(w.code, sn('erin'))).room, true);
     w.join('carol');
     assert.equal(textOf(await r1.p), 'JOINED carol');
-    const h = rows.readHolds(w.code, sn('erin'))!;
+    const h = must(rows.readHolds(w.code, sn('erin')));
     assert.equal(h.room, true, 'between the return and the re-call');
     assert.match(rows.joinNote(me, 'carol'), /your room row adds carol by itself; make NO Agent call/);
     assert.deepEqual(rows.rowsNeeded(w.code, me, { held: h }), []);
     w.call({ member: sn('carol') });
     await sleep(350);
-    assert.equal(rows.readHolds(w.code, sn('erin'))!.room, false, 'never re-called within the gap: not running');
+    assert.equal(must(rows.readHolds(w.code, sn('erin'))).room, false, 'never re-called within the gap: not running');
     const r2 = w.call({ room: w.code });
     assert.ok(await pending(r2.p, 40));
-    assert.equal(rows.readHolds(w.code, sn('erin'))!.room, true);
+    assert.equal(must(rows.readHolds(w.code, sn('erin'))).room, true);
     w.cancel(r2.id);
-    assert.equal(rows.readHolds(w.code, sn('erin'))!.room, false, 'an Esc-killed room row is not running');
+    assert.equal(must(rows.readHolds(w.code, sn('erin'))).room, false, 'an Esc-killed room row is not running');
   } finally { delete process.env.SUB_HUMAN_HOLD_ROOM_GAP_MS; }
 });
 
@@ -265,7 +266,7 @@ test('hold: a post marked provisional (old logs) shows at once, like any other',
   assert.ok(await pending(a.p));
   w.add('alice', 'say', { provisional: true }); // #1
   await sleep(100);
-  assert.match(w.progress.at(-1)!.message, /^alice: say 1/);
+  assert.match(must(w.progress.at(-1)).message, /^alice: say 1/);
   w.leaveMe();
   await a.p;
 });

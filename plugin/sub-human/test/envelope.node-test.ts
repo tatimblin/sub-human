@@ -7,6 +7,7 @@ import type { KeyObject } from 'node:crypto';
 import * as envelope from '../lib/room/envelope.ts';
 import type { Entry } from '../lib/room/types.ts';
 import { eid } from './support/brands.ts';
+import { must } from './support/must.ts';
 
 const CODE = 'otter-1234';
 const pair = () => crypto.generateKeyPairSync('ed25519');
@@ -38,6 +39,7 @@ test('envelope: sign adds room, from, nonce, ts and sigv 2; the sig verifies whe
   assert.equal(envelope.verify({ ...p, ts: now + 1 }, publicKey), false);
   assert.equal(envelope.verify({ ...p, provisional: true } as typeof p, publicKey), false, 'an added field is not signed');
   assert.equal(envelope.verify(p, pair().publicKey), false);
+  // @ts-expect-error -- deliberate: the sig set to undefined
   assert.equal(envelope.verify({ ...p, sig: undefined }, publicKey), false);
 });
 
@@ -57,7 +59,8 @@ test('envelope: freshTs is the replay bound around the host clock', () => {
   assert.equal(envelope.freshTs({ ts: now - envelope.SIG_SKEW_MS }, now), true);
   assert.equal(envelope.freshTs({ ts: now + envelope.SIG_SKEW_MS + 1 }, now), false);
   assert.equal(envelope.freshTs({ ts: now - envelope.SIG_SKEW_MS - 1 }, now), false);
-  assert.equal(envelope.freshTs({ ts: String(now) } as unknown as Entry, now), false); // deliberate: a string ts is refused
+  // @ts-expect-error -- deliberate: a string ts is refused
+  assert.equal(envelope.freshTs({ ts: String(now) }, now), false);
   assert.equal(envelope.freshTs({}, now), false);
 });
 
@@ -81,8 +84,8 @@ test('envelope: pinnedKeys keeps the first member_joined pubkey per name; keyed 
   ];
   const pins = envelope.pinnedKeys(placed(log));
   assert.deepEqual([...pins.keys()], ['alice']);
-  assert.ok(pins.get('alice')!.equals(a1));
+  assert.ok(must(pins.get('alice')).equals(a1));
   assert.equal(envelope.keyed(placed(log)), true);
-  assert.equal(envelope.parseKey(pem(a1))!.asymmetricKeyType, 'ed25519');
+  assert.equal(must(envelope.parseKey(pem(a1))).asymmetricKeyType, 'ed25519');
   assert.equal(envelope.parseKey(pem(crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' }).publicKey)), null, 'Ed25519 only');
 });
