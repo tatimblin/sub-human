@@ -44,7 +44,8 @@ function baseEnv(extra: Record<string, string | undefined> = {}): NodeJS.Process
     if (k.startsWith('CLAUDE') || k === 'NODE_TEST_CONTEXT' || k === 'SUB_HUMAN_HOME') continue;
     e[k] = v;
   }
-  return { ...e, ...extra };
+  // a plan-view Yes a test gives right after the view opens is a person's (item 8's guard is tested on its own)
+  return { SUB_HUMAN_YES_GUARD_MS: '1', ...e, ...extra };
 }
 
 /** Run fn with process.env.SUB_HUMAN_HOME pointed at this test's home. */

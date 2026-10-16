@@ -111,6 +111,7 @@ From `mod/register.ts` (hooks.json `modules`), in registration order.
 | `classic.PostToolUse` | `tool_name AskUserQuestion\|EnterPlanMode\|ExitPlanMode` | `mod/consent.ts` | node consent (records the person's answer, restores the plan file and the mode) for a seat or when unsure |
 | `classic.PermissionRequest` | `tool_name ExitPlanMode` | `mod/consent.ts` | node consent (closes a review without a dialog) while a review may be open; a deny beneath wins |
 | `classic.Stop` | (all) | `mod/consent.ts` | node consent (the open-review nudge) only while a review may be open or the seat is unknown |
+| `ui.render` | `PromptHint` | `mod/consent.ts` | observes whether the prompt holds typed text (isDraft; always next(e)): an ExitPlanMode's consent payload carries it, so a plan-view Yes that keys meant for the prompt may have given is asked again on the card |
 | `classic.PostToolUse` | `tool_name TaskCreate\|TaskUpdate` | `mod/tasks.ts` | node tasks (the room task mirror) only for the room's Claude or an unknown seat |
 | `classic.TaskCompleted` | (all) | `mod/tasks.ts` | node tasks (the gate; exit 2 -> block) only for the room's Claude or an unknown seat; .catch blocks in the room's Claude |
 | `tool.call` | `Agent` | `mod/rows.ts` | keeps the call's agentId while it runs, for classic.PreToolUse beneath (which carries none); always next(e) |

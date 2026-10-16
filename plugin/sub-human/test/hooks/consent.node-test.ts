@@ -1248,3 +1248,22 @@ test('H3 (live verify, verify5/H3): the person switched to plan mode mid-turn; t
   assert.match(String(hso(pre).permissionDecisionReason), /Agree: any "Yes" \(your plan mode comes back\)/);
   assert.equal(review(w)!.mode, 'plan');
 });
+
+test('8 (live verify): a plan-view Yes that came as the view opened (or while bob was typing) records nothing; the card asks once, and only its Agree records', () => {
+  const { w, hash } = world();
+  const file = path.join(w.userHome, '.claude', 'plans', 'quick.md');
+  const tp = transcript(w, file, null, { id: 'tu1', input: { plan: `proposal ${hash}` } });
+  const guard = { as: 'bob', env: { SUB_HUMAN_YES_GUARD_MS: '60000' } };
+  w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'auto', tool_input: {} }), guard);
+  assert.equal(decision(w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu1', transcript_path: tp }), guard)), 'ask');
+  const yes = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: {}, tool_use_id: 'tu1', tool_response: { plan: fs.readFileSync(file, 'utf8'), filePath: file }, transcript_path: tp }), guard);
+  assert.match(ctx(yes)!, /^Nothing recorded yet: bob's Yes came as the view opened/);
+  assert.match(yes.json!.systemMessage!, /your Yes on "Rename fetchUser" came right as the review opened, so it is not recorded yet/);
+  assert.deepEqual(answers(w), []);
+  // the card for it (not the plan view again), then Agree there: recorded via=human, once
+  const pre = w.hook('consent', preAsk({ questions: [{ question: `proposal ${hash}`, header: 'x', options: [{ label: 'Agree' }] }] }), guard);
+  assert.equal(decision(pre), 'ask');
+  const card = hso(pre).updatedInput as Card;
+  w.hook('consent', postAsk({ ...card, answers: { [card.questions[0].question]: 'Agree' } }), guard);
+  assert.deepEqual(answers(w).map(x => [x.kind, x.via]), [['signoff', 'human']]);
+});

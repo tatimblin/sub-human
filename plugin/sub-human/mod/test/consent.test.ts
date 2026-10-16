@@ -28,6 +28,7 @@ function world(on: any, { hello = OUT as any, answers = [{ subHuman: { reviewOpe
   on('classic.PreToolUse', ($: any, e: any) => { seen.beneathPre.push(e.tool); return {} })
   on('tool.check', () => ({ decision: 'allow' }))
   on('tool.call', ($: any, e: any) => { seen.tools.push(e.tool); return e.tool === 'ExitPlanMode' && exit ? exit : { result: 'ok', text: 'ok' } })
+  on('ui.render', () => ({ type: 'Text', children: ['the engine\'s line'] })) // the engine's drawing, beneath
   return seen
 }
 const stop = ($: any) => $.classic.Stop({ session_id: SID, stop_hook_active: false, permission_mode: 'default' } as any)
@@ -166,4 +167,18 @@ test('M: an ExitPlanMode that ran (a Yes) is not a refusal: no consent run from 
   const r: any = await $.tool.call({ tool: 'ExitPlanMode' } as any)
   expect(r.text).toBe('ok')
   expect(seen.consent.map(c => c.stdin.hook_event_name)).toEqual(['PreToolUse'])
+})
+
+test('8: the prompt holding typed text as the plan view opens goes with ExitPlanMode\'s consent payload (sub_human_typing); an empty prompt sends none', async ($, on) => {
+  const seen = world(on, { answers: [{ subHuman: { reviewOpen: true, noteWaits: false } }] })
+  await start($)
+  const hint = (isDraft: boolean) => $.ui.mount({ plugin: 'sub-human', surface: 'terminal', component: 'PromptHint', props: { isDraft, isWorking: true, hint: 'esc to interrupt' } } as any)
+  let ui = await hint(true)
+  await $.tool.call({ tool: 'ExitPlanMode', plan: 'proposal abcdef012345' } as any)
+  expect(seen.consent[0].stdin.sub_human_typing).toBe(true)
+  await ui.unmount()
+  ui = await hint(false)
+  await $.tool.call({ tool: 'ExitPlanMode', plan: 'proposal abcdef012345' } as any)
+  expect(seen.consent.at(-1).stdin.sub_human_typing).toBeUndefined()
+  await ui.unmount()
 })

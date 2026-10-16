@@ -308,8 +308,8 @@ test('H (live verify): plan mode by hand, no EnterPlanMode: an ExitPlanMode whos
   assert.deepEqual((shown.say as { show: unknown }).show, { plan: H }, 'the proposal\'s text, not the stub');
   assert.equal(shown.state.review!.mode, 'plan');
   assert.match((shown.say as { text: string }).text, /Agree: any "Yes" \(your plan mode comes back\)/);
-  // the Yes then records Agree and, as it left the person's plan mode, puts it back (item 7: EnterPlanMode alone)
-  const yes = review.reduce(shown.state, { ...EVENTS.exited, toolUseId: 'tu2', mode: 'auto' }, ctx);
+  // the Yes (after reading) then records Agree and, as it left the person's plan mode, puts it back (item 7: EnterPlanMode alone)
+  const yes = review.reduce(shown.state, { ...EVENTS.exited, toolUseId: 'tu2', mode: 'auto' }, { ...ctx, now: ctx.now + 10_000 });
   assert.deepEqual(shape(yes), ['restore', 'context', 'answer,restorePlan']);
   assert.match(review.textOf((yes.say as { parts: review.Part[] }).parts, () => '', false), /call EnterPlanMode to put bob's plan mode back \(no dialog\)/);
   const back = review.reduce(yes.state, { type: 'entered', plan }, ctx);
@@ -412,4 +412,32 @@ test('M (live verify): while a note waits for its card the post tool is refused 
   assert.deepEqual([gone.state.note, gone.say], [null, null]);
   // a shown review is plan mode whatever mode the module last saw: any room tool is refused
   assert.equal(review.reduce({ review: REVIEWS.shown, note: null }, { type: 'roomTool', mode: 'auto', answer: { note: null }, target }, ctx).say!.to, 'deny');
+});
+
+// ---------- item 8: a Yes as the view opened ----------
+test('8 (live verify): a Yes within YES_GUARD_MS of the view being shown, or while the person had typed text, records nothing; the card asks once and only its answer records', () => {
+  const opened = review.reduce({ review: REVIEWS.entering, note: null }, { ...EVENTS.exit, typing: false }, ctx);
+  assert.equal(opened.state.review!.shownAt, ctx.now);
+  const yesAt = (dt: number, r = opened.state.review!) => review.reduce({ review: r, note: null }, { ...EVENTS.exited, toolUseId: 'tu2', mode: 'default' }, { ...ctx, now: ctx.now + dt });
+  // table: [how long after the view was shown, typing?] -> recorded?
+  const TABLE: [number, boolean, boolean][] = [[0, false, false], [500, false, false], [1999, false, false], [2000, false, true], [30_000, false, true], [30_000, true, false]];
+  for (const [dt, typing, records] of TABLE) {
+    const s = yesAt(dt, { ...opened.state.review!, ...(typing ? { typing: true } : {}) });
+    assert.equal(s.effects.some(e => e.do === 'answer'), records, `${dt} ms, typing ${typing}`);
+    if (records) { assert.equal(s.state.recheck ?? null, null); assert.equal(s.notice, undefined); continue; }
+    assert.deepEqual(s.state.recheck, { hash: H, at: ctx.now + dt });
+    assert.match(review.textOf((s.say as { parts: review.Part[] }).parts, () => '', false), /^Nothing recorded yet: bob's Yes came as the view opened[^]*call AskUserQuestion with "proposal [0-9a-f]{12}"; only that answer counts/);
+    assert.match(s.notice!, typing ? /came while you were typing/ : /came right as the review opened/);
+  }
+  // the card: asked for that proposal even where the plan view could show it; Agree there records, and the recheck is spent
+  const quick = yesAt(100);
+  const ask = review.reduce(quick.state, EVENTS.ask, ctx);
+  assert.deepEqual([ask.say!.to, (ask.say as { show: unknown }).show], ['ask', { card: [H] }]);
+  const agreed = review.reduce(quick.state, EVENTS.answered, ctx);
+  assert.deepEqual(agreed.effects, [{ do: 'answer', hash: H, choice: 'Agree' }]);
+  assert.equal(agreed.state.recheck, null);
+  // asked once: a card closed without an answer spends it too (the next ask opens the plan view as usual)
+  const closed = review.reduce(quick.state, { ...EVENTS.answered, answers: [] }, ctx);
+  assert.deepEqual([closed.effects, closed.state.recheck], [[], null]);
+  assert.equal(review.reduce(closed.state, EVENTS.ask, ctx).say!.to, 'deny');
 });

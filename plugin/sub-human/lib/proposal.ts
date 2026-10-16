@@ -65,6 +65,8 @@
  * The plan-view review state (the session document's review, lib/room/session.ts): readReview, writeReview, clearReview,
  *   withReview(me, fn)
  *   (the lock), restorePlan(st), restoreStale(me, {force, now}) (session-restore: a review left behind).
+ * A plan-view Yes that came as the view opened, asked again on the card (the session document's recheck): readRecheck,
+ *   writeRecheck, clearRecheck.
  * A review's note waiting for the person's Send (the session document's confirm): readConfirm, writeConfirm,
  *   clearConfirm; confirmCard(c) -> the AskUserQuestion input (Send, Discard), confirmQuestion(c) its question,
  *   confirmCall(hash) -> how the model opens that card, showConfirm(name, hash, interrupted?) -> the line telling it to
@@ -85,7 +87,7 @@ import { clip, oneLine, hash12, HASH_RE } from './text.ts';
 import * as config from './config.ts';
 import * as cc from './cc/env.ts';
 import { NEXT, showNote } from './consent/review.ts';
-import type { Card, Confirm, Proposal, Review } from './types-app.ts';
+import type { Card, Confirm, Proposal, Recheck, Review } from './types-app.ts';
 import type { Entry, Matrix, Member, Members, ProposalState, Trust } from './room/types.ts';
 import type { Identity } from './identity.ts';
 
@@ -549,6 +551,11 @@ const readConfirm = (me: Me): Confirm | null => { try { return session.get(store
 const writeConfirm = (me: Me, c: Confirm): void => session.put(storeOf(me), me.name, 'confirm', c);
 function clearConfirm(me: Me): void { try { session.put(storeOf(me), me.name, 'confirm', undefined); } catch { /* none */ } }
 
+/** A plan-view Yes waiting for its confirmation on the card (lib/consent/review.ts recheck): {hash, at} or null. */
+const readRecheck = (me: Me): Recheck | null => { try { return session.get(storeOf(me), me.name, 'recheck') || null; } catch { return null; } };
+const writeRecheck = (me: Me, r: Recheck): void => session.put(storeOf(me), me.name, 'recheck', r);
+function clearRecheck(me: Me): void { try { session.put(storeOf(me), me.name, 'recheck', undefined); } catch { /* none */ } }
+
 const CONFIRM_NOTE_MAX = 300;
 const CONFIRM_TITLE_MAX = 80;
 /** The confirm card's question: what Send does, in the person's words; the note clipped (the preview has it all). */
@@ -579,7 +586,7 @@ function repeatsNote(c: Pick<Confirm, 'note'> | null | undefined, text: unknown)
 
 export {
   QUESTION_RE, ProposalError, readReview, writeReview, clearReview, withReview, restorePlan, restoreStale,
-  readConfirm, writeConfirm, clearConfirm, confirmCard, confirmQuestion, repeatsNote, namedIn, choose, picked, readPick, writePick,
+  readConfirm, writeConfirm, clearConfirm, readRecheck, writeRecheck, clearRecheck, confirmCard, confirmQuestion, repeatsNote, namedIn, choose, picked, readPick, writePick,
   proposeIntent, create, proposals, pendingFor, answerableFor, personOf, sameOk, card, cardFor, question, preview, viewable, openCall,
   confirmCall, showConfirm, matrix, answer, decide, decision, humans, reminder, read, hash12, title, replacedIn,
 };

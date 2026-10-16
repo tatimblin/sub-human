@@ -202,13 +202,13 @@ type Out = { say: Say | null; show?: { admit?: JoinRequest; handoff?: ReturnType
 
 /** The seat's state, reduce one event (made from it), run the effects, store the state, write the answer. */
 function step(input: ConsentIn, me: Identity, make: (st: State) => Event, show: Out['show'] = {}) {
-  const start: State = { review: proposal.readReview(me), note: proposal.readConfirm(me) };
-  const ctx = { name: me.name, now: Date.now() };
+  const start: State = { review: proposal.readReview(me), note: proposal.readConfirm(me), recheck: proposal.readRecheck(me) };
+  const ctx = { name: me.name, now: Date.now(), guardMs: config.testMs('SUB_HUMAN_YES_GUARD_MS', config.YES_GUARD_MS) };
   const first = review.reduce(start, make(start), ctx);
   if (first.notice) unsent.push(first.notice);
   let state = first.state;
   let say = first.say;
-  const disk = { review: JSON.stringify(start.review), note: JSON.stringify(start.note) };
+  const disk = { review: JSON.stringify(start.review), note: JSON.stringify(start.note), recheck: JSON.stringify(start.recheck ?? null) };
   const answers = new Map<string, { choice: 'Agree' | 'Object'; res: Recorded }>();
   const queue: Effect[] = [...first.effects];
   for (let e = queue.shift(); e; e = queue.shift()) {
@@ -235,6 +235,7 @@ function step(input: ConsentIn, me: Identity, make: (st: State) => Event, show: 
   }
   if (JSON.stringify(state.review) !== disk.review) { if (state.review) proposal.writeReview(me, state.review); else proposal.clearReview(me); }
   if (JSON.stringify(state.note) !== disk.note) { if (state.note) proposal.writeConfirm(me, state.note); else proposal.clearConfirm(me); }
+  if (JSON.stringify(state.recheck ?? null) !== disk.recheck) { if (state.recheck) proposal.writeRecheck(me, state.recheck); else proposal.clearRecheck(me); }
   if (say) write(input, me, say, state, answers, show);
 }
 
@@ -413,7 +414,8 @@ function preExit(input: ConsentIn, me: Identity) {
   step(input, me, st => {
     const r = st.review;
     const ev = { type: 'exit' as const, toolUseId: input.tool_use_id || null, ...answerFacts(input, me, r, 'exit'),
-      shown: null, text: null, plan: { file: null, text: null }, callPlan: undefined, ownPlan: undefined, mode: input.permission_mode, stub: null };
+      shown: null, text: null, plan: { file: null, text: null }, callPlan: undefined, ownPlan: undefined, mode: input.permission_mode, stub: null,
+      typing: input.sub_human_typing === true };
     if (!r) {
       // no review opened (plan mode by hand, EnterPlanMode skipped), and the plan is a proposal's name: its review
       // opens here (lib/consent/review.ts exit with stub), else the call is denied: never a bare view of the name

@@ -11,6 +11,7 @@
  *    review   the plan-view review (lib/proposal.ts readReview; hooks/handlers/consent.ts)
  *    confirm  a review's note waiting for the person's Send (lib/proposal.ts readConfirm)
  *    pick     {hash|null, at}: the proposal the person's latest prompt named (lib/proposal.ts readPick)
+ *    recheck  {hash, at}: a plan-view Yes that came as the view opened, asked again on the card (lib/proposal.ts readRecheck)
  *    holds    the seat's live row holds, as mcp/hold.ts wrote them (lib/rows.ts readHolds)
  *    blocks   {agentId: n}: how often hooks/handlers/row-hold.ts blocked that row's stop (the last BLOCKS_MAX)}
  *

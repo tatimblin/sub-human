@@ -63,11 +63,15 @@
  */
 
 import { hash12 } from '../text.ts';
-import type { Confirm, NoteStage, Review } from '../types-app.ts';
+import { YES_GUARD_MS } from '../config.ts';
+import type { Confirm, NoteStage, Recheck, Review } from '../types-app.ts';
 import type { CardAnswer } from './card.ts';
 
-export interface State { review: Review | null; note: Confirm | null }
-export interface Ctx { name: string; now: number }
+/** recheck: a plan-view Yes that came as the view opened (within YES_GUARD_MS, or while the person had typed text in
+ * the prompt), not recorded: the card asks once, and only its answer records (item 8). */
+export interface State { review: Review | null; note: Confirm | null; recheck?: Recheck | null }
+/** guardMs: YES_GUARD_MS unless the handler says otherwise (the tests shorten it: config.testMs). */
+export interface Ctx { name: string; now: number; guardMs?: number }
 
 /** How the review's dialog closed (cc.planAnswer): note null for no note (Esc, a bare deny). */
 export interface Answer { note: string | null }
@@ -89,7 +93,9 @@ export type Event =
   | { type: 'entered'; plan: PlanFile }
   | { type: 'exit'; toolUseId: string | null; answer?: Answer | null; target?: Target | null; shown: { hash: string; from: string | null } | null;
       text: string | null; plan: PlanFile; callPlan: unknown; ownPlan: unknown; mode?: string | undefined;
-      stub?: { hash: string; live: boolean } | null }
+      stub?: { hash: string; live: boolean } | null;
+      /** the person had typed text in the prompt as the view opened (the module's PromptHint isDraft) */
+      typing?: boolean }
   | { type: 'permission' }
   | { type: 'exited'; toolUseId: string | null; mode: string | undefined; answer?: Answer | null; target?: Target | null;
       response: { plan: unknown; edited: boolean; isAgent: boolean; filePath: unknown }; callPlan: unknown;
@@ -166,6 +172,10 @@ export const SAY = {
   replaced: (n: string, old: string, h: string) => `sub-human: proposal ${old} was replaced by ${h}; opening ${h} for ${n}`,
   restoring: 'sub-human: restoring the mode after a room review',
   planBack: (n: string) => `${n}'s plan mode is back. ${DONE}`,
+  /** a Yes as the view opened (item 8) */
+  tooSoon: (n: string, h: string) => `Nothing recorded yet: ${n}'s Yes came as the view opened, maybe keys meant for the prompt. Ask once on the card: ${NEXT.card(h)}; only that answer counts.`,
+  tooSoonNotice: (title: string | null, h: string, typing: boolean) => `your Yes on ${title ? `"${title}"` : `proposal ${h}`} came ${typing ? 'while you were typing' : 'right as the review opened'}, so it is not recorded yet: confirm it on the card that follows`,
+  recheckAsk: (n: string, h: string) => `room proposal ${h}: ${n}'s Yes came as the view opened; confirm it here`,
   proposeFirst: (n: string) => `sub-human: no room review now: ${n} asked you to propose something, so do that. The proposal awaiting ${n} stays pending.`,
   showOnly: (n: string, h: string) => `sub-human: this plan mode is only to show ${n} room proposal ${h}. Call ExitPlanMode now with plan "proposal ${h}"; plan nothing (the hooks show its text).`,
   exitNow: `sub-human: ${NEXT.exit}.`,
@@ -338,6 +348,9 @@ function ownPlan(ev: Extract<Event, { type: 'exited' }>, ctx: Ctx): { effects: E
 }
 
 const none = (state: State): Step => ({ state, effects: [], say: null });
+/** A Yes that may not be the person's choice: it came within YES_GUARD_MS of the view being shown, or they had typed
+ * text in the prompt as it opened (their next keys went to the dialog). */
+const quickYes = (r: Review, ctx: Ctx): boolean => !!r.typing || (typeof r.shownAt === 'number' && ctx.now - r.shownAt < (ctx.guardMs ?? YES_GUARD_MS));
 const ctxSay = (...parts: Part[]): Say => ({ to: 'context', parts });
 
 export function reduce(state: State, ev: Event, ctx: Ctx): Step {
@@ -435,7 +448,8 @@ export function reduce(state: State, ev: Event, ctx: Ctx): Step {
         return { state: { ...state, review: { ...back, phase: 'exiting', card: ev.shown.hash } }, effects: [...effects, ...e], say: null };
       }
       // The backup is on disk (save) BEFORE the plan file is overwritten: a crash in between loses nothing.
-      const before: Review = { ...review, hash: ev.shown.hash, from: ev.shown.from || null, file: ev.plan.file, backup, restored: false, tool_use_id: ev.toolUseId || null };
+      const before: Review = { ...review, hash: ev.shown.hash, from: ev.shown.from || null, file: ev.plan.file, backup, restored: false, tool_use_id: ev.toolUseId || null,
+        shownAt: ctx.now, ...(ev.typing ? { typing: true } : {}) };
       effects.push({ do: 'save', review: before }, { do: 'writePlan', file: ev.plan.file, hash: ev.shown.hash, early: false });
       return { state: { ...state, review: { ...before, phase: 'shown' } }, effects,
         say: { to: 'ask', text: SAY.dialog(n, ev.shown.hash, before.from, before.mode), show: { plan: ev.shown.hash } } };
@@ -479,16 +493,23 @@ export function reduce(state: State, ev: Event, ctx: Ctx): Step {
       const plan = ev.response.plan;
       const effects: Effect[] = [];
       let line: Part[];
+      let recheck: Recheck | null | undefined = state.recheck;
+      let notice: string | undefined;
       if (ev.response.edited || typeof plan !== 'string' || hash12(Buffer.from(plan, 'utf8')) !== shownHash(cur)) line = [SAY.edited(n, h)];
       else if (!ev.target || ev.target.hash !== cur.hash) line = [SAY.stale(h)];
-      else { effects.push({ do: 'answer', hash: h, choice: 'Agree' }); line = [{ ifRecorded: SAY.recorded }, { answer: h }]; }
+      else if (quickYes(cur, ctx)) { // keys meant for the prompt may have answered it: the card asks once
+        recheck = { hash: h, at: ctx.now };
+        line = [SAY.tooSoon(n, h)];
+        notice = SAY.tooSoonNotice(ev.target.title, h, !!cur.typing);
+      } else { effects.push({ do: 'answer', hash: h, choice: 'Agree' }); line = [{ ifRecorded: SAY.recorded }, { answer: h }]; }
       const [back, e] = restore(cur);
       effects.push(...e);
+      const withNotice = notice ? { notice } : {};
       if (ev.mode && ev.mode !== cur.mode && !cur.keepMode) {
         const { said: _s, ...rest } = back;
-        return { state: { ...state, review: { ...rest, phase: 'restore' } }, effects, say: ctxSay(...line, SAY.modeChanged(n, cur.mode), ...foreign) };
+        return { state: { ...state, recheck, review: { ...rest, phase: 'restore' } }, effects, say: ctxSay(...line, SAY.modeChanged(n, cur.mode), ...foreign), ...withNotice };
       }
-      return { state: { ...state, review: null }, effects, say: ctxSay(...line, SAY.notAPlan, ...foreign) };
+      return { state: { ...state, recheck, review: null }, effects, say: ctxSay(...line, SAY.notAPlan, ...foreign), ...withNotice };
     }
 
     case 'stop': {
@@ -556,6 +577,9 @@ export function reduce(state: State, ev: Event, ctx: Ctx): Step {
       }
       const base = { ...state, note };
       if (!ev.hit.length) return none(base);
+      // a Yes that came as the plan view opened is confirmed on the card, not in the view again (item 8)
+      const again = state.recheck ? ev.hit.find(p => p.hash === state.recheck!.hash) : undefined;
+      if (again) return { state: base, effects: [], say: { to: 'ask', text: SAY.recheckAsk(n, again.hash), show: { card: [again.hash] } } };
       if (ev.reviewable && ev.hit.every(p => p.viewable)) {
         return { state: base, effects: [{ do: 'pick', hash: ev.hit[0].hash }], say: { to: 'deny', parts: [SAY.planView(n, ev.hit[0].hash)] } };
       }
@@ -575,6 +599,9 @@ export function reduce(state: State, ev: Event, ctx: Ctx): Step {
           say: ctxSay({ ifRecorded: SAY.recorded }, { answer: cf.hash }, { ifRecorded: DONE }) };
       }
       if (!ev.answers.length && !ev.asked) return none(state); // not a consent card
+      // the recheck is asked once: any card for its proposal settles it, answered or not
+      const rc = state.recheck && (ev.answers.some(a => a.hash === state.recheck!.hash) || !ev.answers.length) ? null : state.recheck;
+      state = rc === state.recheck ? state : { ...state, recheck: rc };
       if (ev.afk || !ev.answers.length) return { state, effects: [], say: ctxSay(SAY.cardNoAnswer(n)) };
       const effects: Effect[] = [];
       const parts: Part[] = [{ ifRecorded: SAY.recorded }];

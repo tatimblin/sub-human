@@ -18,6 +18,7 @@ export interface SessionDoc {
   review?: Review;
   confirm?: Confirm;
   pick?: { hash: string | null; at: number };
+  recheck?: Recheck;
   holds?: Holds;
   blocks?: Record<string, number>;
 }
@@ -95,7 +96,14 @@ export interface Review {
   card?: string;
   /** opened at ExitPlanMode in a plan mode the person chose (no EnterPlanMode of the review's): no mode to restore */
   keepMode?: boolean;
+  /** when the plan view was shown (its Pre(ExitPlanMode)): a Yes this soon after is asked again on the card (item 8) */
+  shownAt?: number;
+  /** the person had typed text in the prompt when the plan view opened: their keys may answer it, so a Yes is asked again */
+  typing?: boolean;
 }
+/** members/NAME/session recheck: a Yes that came as the plan view opened, recorded only once the person confirms it on
+ * the card (lib/consent/review.ts); asked once. */
+export interface Recheck { hash: string; at: number }
 /** Where a review's note stands (lib/consent/review.ts): waiting (its card never shown), nudged (Stop asked for the card
  * once), asked (the card was shown; no Post yet), reoffered (an interrupted card offered again at the next prompt),
  * told (the model was told the card closed without an answer, or every offer is spent: the card is the person's to ask for). */

@@ -21,6 +21,8 @@ export type AnyHookIn = Partial<BaseHookInput> & {
   stop_hook_active?: boolean;
   /** PostToolUseFailure: the error as the model read it */
   error?: string;
+  /** the module's PreToolUse(ExitPlanMode) payload: the person had typed text in the prompt (PromptHint isDraft) */
+  sub_human_typing?: boolean;
   agent_type?: string;
   source?: string;
 };

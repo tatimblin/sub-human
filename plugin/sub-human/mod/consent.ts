@@ -14,6 +14,8 @@
  *     other plugin's and the person's hooks (cc CONTRACT classic-chain-order). An allow's reason, which the command
  *     hook's allow showed the person, is a notice.
  *   - classic.PostToolUse AskUserQuestion|EnterPlanMode|ExitPlanMode: node consent wherever a seat is or may be.
+ *   - ui.render PromptHint: observed only (next(e) always): whether the prompt holds typed text, sent with an
+ *     ExitPlanMode's PreToolUse payload (sub_human_typing) so a plan-view Yes typed into by mistake is asked again.
  *   - classic.PermissionRequest ExitPlanMode: node consent while a review may be open (it closes one without a dialog).
  *   - classic.Stop: node consent (the open-review nudge) while a review may be open; its additionalContext continues
  *     the turn (cc CONTRACT stop-additional-context).
@@ -63,6 +65,9 @@ async function apply($: EngineInterface, { systemMessage, subHuman }: { systemMe
   if (waits !== undefined) await $.state.set(NOTE, waits);
 }
 
+/** The prompt holds typed text (the last PromptHint drawn said isDraft): module state, lost on reload (then false). */
+let draft = false;
+
 export function registerConsent(on: On) {
   on('tool.call', { tool: ['EnterPlanMode', 'ExitPlanMode'] }, async ($, e, next) => {
     await $.state.set(REVIEW, true);
@@ -87,7 +92,9 @@ export function registerConsent(on: On) {
     // EnterPlanMode: the hooks beneath first, the plugin's own command hook among them, which notes the mode the call
     // is made in (this event carries none, and the module's last-seen mode is stale after a shift+tab: item 7 H)
     const first = e.tool === 'EnterPlanMode' ? await next(e) : null;
-    const payload = prePayload(e, { sid, cwd: await $.session.cwd().catch(() => undefined), facts: facts.of(sid), agentId: facts.agentOf(e.tool_use_id) });
+    const base = prePayload(e, { sid, cwd: await $.session.cwd().catch(() => undefined), facts: facts.of(sid), agentId: facts.agentOf(e.tool_use_id) });
+    // ExitPlanMode: whether the person had typed text in the prompt as the view opens (their next keys go to it: item 8)
+    const payload = e.tool === 'ExitPlanMode' && draft ? { ...base, sub_human_typing: true } : base;
     const { result, allowReason, ...said } = toPre(await runConsent($, payload, sid));
     await apply($, said);
     if (allowReason) $.ui.log(asNotice(allowReason));
@@ -118,4 +125,10 @@ export function registerConsent(on: On) {
     await apply($, said);
     return mergeClassic(result, await next(e));
   }).catch(($, e, next) => next(e)); // a nudge, not a gate: the turn ends as it would
+
+  // observe only: whether the person is typing (PromptHint isDraft), for a plan view about to open (item 8)
+  on('ui.render', { component: 'PromptHint' }, ($, e, next) => {
+    draft = e.props.isDraft === true;
+    return next(e);
+  }).catch(($, e, next) => next(e));
 }

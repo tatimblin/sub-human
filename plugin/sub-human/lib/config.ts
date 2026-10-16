@@ -306,3 +306,7 @@ export const REVIEW_LOCK_TIMEOUT_MS = 3000;    // members/NAME/review.json read-
 export const EXIT_INPUT_WAIT_MS = 1500;        // SUB_HUMAN_EXIT_INPUT_WAIT_MS
 export const EXIT_INPUT_POLL_MS = 50;
 export const REVIEW_STALE_MS = 30 * 60 * 1000; // a plan-view review open this long is stuck: session-restore restores the plan file
+// A plan-view Yes this soon after the view was shown is asked again on the card before it records (item 8: keys meant for
+// the prompt, typed as the view opened, answered three reviews in the live round). Claude Code draws the dialog about
+// 0.1 s after its Pre hook; a person who reads the proposal first takes several seconds.
+export const YES_GUARD_MS = 2000;

@@ -48,6 +48,7 @@ export const HOOKS = [
   { event: 'classic.PostToolUse', matcher: 'tool_name AskUserQuestion|EnterPlanMode|ExitPlanMode', file: 'mod/consent.ts', does: 'node consent (records the person\'s answer, restores the plan file and the mode) for a seat or when unsure' },
   { event: 'classic.PermissionRequest', matcher: 'tool_name ExitPlanMode', file: 'mod/consent.ts', does: 'node consent (closes a review without a dialog) while a review may be open; a deny beneath wins' },
   { event: 'classic.Stop', matcher: '', file: 'mod/consent.ts', does: 'node consent (the open-review nudge) only while a review may be open or the seat is unknown' },
+  { event: 'ui.render', matcher: 'PromptHint', file: 'mod/consent.ts', does: 'observes whether the prompt holds typed text (isDraft; always next(e)): an ExitPlanMode\'s consent payload carries it, so a plan-view Yes that keys meant for the prompt may have given is asked again on the card' },
   { event: 'classic.PostToolUse', matcher: 'tool_name TaskCreate|TaskUpdate', file: 'mod/tasks.ts', does: 'node tasks (the room task mirror) only for the room\'s Claude or an unknown seat' },
   { event: 'classic.TaskCompleted', matcher: '', file: 'mod/tasks.ts', does: 'node tasks (the gate; exit 2 -> block) only for the room\'s Claude or an unknown seat; .catch blocks in the room\'s Claude' },
   { event: 'tool.call', matcher: 'Agent', file: 'mod/rows.ts', does: 'keeps the call\'s agentId while it runs, for classic.PreToolUse beneath (which carries none); always next(e)' },
