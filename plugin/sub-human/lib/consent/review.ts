@@ -274,9 +274,10 @@ const staged = (cf: Confirm, stage: NoteStage): Confirm => {
 /** The card shown (Pre AskUserQuestion): an offer still due becomes asked; one offered again is the last. */
 const onShown = (s: NoteStage): NoteStage => (s === 'waiting' || s === 'nudged' || s === 'asked' ? 'asked' : 'told');
 
-/** The seat still has something consent must act on at a turn's end or the next prompt (the mod's reviewMaybeOpen). */
+/** The seat still has something consent must act on at a turn's end or the next prompt (the mod's reviewMaybeOpen): a
+ * note told already counts until the person heard once what Send and Discard do (noteAtPrompt: explained). */
 export function openOf(state: State): boolean {
-  return !!state.review || (!!state.note && stageOf(state.note) !== 'told');
+  return !!state.review || (!!state.note && (stageOf(state.note) !== 'told' || !state.note.explained));
 }
 
 // ---------- the review ----------

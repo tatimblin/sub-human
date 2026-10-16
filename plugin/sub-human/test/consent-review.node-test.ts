@@ -161,7 +161,9 @@ test('openOf: a review on record, or a note consent must still offer (anything b
   assert.equal(review.openOf({ review: null, note: null }), false);
   assert.equal(review.openOf({ review: REVIEWS.restore, note: null }), true);
   for (const s of ['waiting', 'nudged', 'asked', 'reoffered'] as NoteStage[]) assert.equal(review.openOf({ review: null, note: note(s) }), true, s);
-  assert.equal(review.openOf({ review: null, note: note('told') }), false);
+  // stage 8e D: told, it stays open until the person heard once what Send and Discard do
+  assert.equal(review.openOf({ review: null, note: note('told') }), true);
+  assert.equal(review.openOf({ review: null, note: note('told', { explained: true }) }), false);
 });
 
 // ---------- the facts each branch reads ----------
