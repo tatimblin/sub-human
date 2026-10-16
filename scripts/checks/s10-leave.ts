@@ -53,7 +53,7 @@ export function run(x: Ctx, { det }: { det: Det }): void {
     const lines = (readText(path.join(screens, r.txt)) || '').split('\n');
     const end = lines.findIndex(l => MAIN_ROW.test(l));
     for (const l of end < 0 ? lines : lines.slice(0, end)) {
-      const ns = [...l.matchAll(/(?:^|[\s(])#(\d+)\b/g)].map(m => m[1]);
+      const ns = [...l.matchAll(/(?:^|[\s(])#(\d+)\b/g)].flatMap(m => m[1] ?? []);
       if (ns.length && !ns.every(n => taskIds.has(n)) && !/\btasks?\b|◼|\b(claim(ed|s)?|done|complete[sd]?)\b/i.test(l)) hits.push(`${r.txt}: ${clip(l, 90)}`);
     }
   }

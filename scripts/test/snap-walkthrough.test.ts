@@ -8,6 +8,7 @@ import type { LogEntry, LogExcerpt, SnapRecord } from '../snap.ts';
 import { build, isNoise, classify, freshLines, capLines, mergePanes } from '../walkthrough.ts';
 import type { Line } from '../walkthrough.ts';
 import { opts, KEY_BYTES } from '../demo-lib.ts';
+import { must } from './must.ts';
 
 /** A pane line with only its text (and red) given. */
 const L = (text: string, red = false): Line => ({ text, html: '', red, row: false });
@@ -26,13 +27,13 @@ test('snap: writes svg + txt, appends index, log excerpt since the previous scen
   snap('sh-claude', 'S4', 'bob posts', { dir, capture: cap('y\n'), room: 'otter-4821', entries: log });
 
   const idx: SnapRecord[] = JSON.parse(fs.readFileSync(path.join(dir, 'index.json'), 'utf8'));
-  const logOf = (r: SnapRecord): LogExcerpt[] => r.log ?? [];
+  const logOf = (r: SnapRecord | undefined): LogExcerpt[] => must(r, 'an index record').log ?? [];
   assert.equal(idx.length, 4);
   assert.deepEqual(idx.map(r => r.svg), ['S1-sh-claude.svg', 'S1-sh-alice.svg', 'S4-sh-claude.svg', 'S4-2-sh-claude.svg']);
   assert.deepEqual(logOf(idx[0]).map(e => e.id), [1]);
   assert.deepEqual(logOf(idx[1]).map(e => e.id), [1]);   // same scene: same window
   assert.deepEqual(logOf(idx[2]).map(e => e.id), [2, 3]); // only entries after S1
-  assert.equal(Reflect.get(logOf(idx[2])[0], 'hash'), undefined);         // chain fields dropped from excerpts
+  assert.equal(Reflect.get(must(logOf(idx[2])[0]), 'hash'), undefined);         // chain fields dropped from excerpts
   assert.equal(fs.readFileSync(path.join(dir, 'S1-sh-claude.txt'), 'utf8'), 'room otter-4821\n');
   assert.match(fs.readFileSync(path.join(dir, 'S1-sh-claude.svg'), 'utf8'), /claude · S1/);
 });
@@ -56,7 +57,7 @@ test('walkthrough: one section per scene in plan order, text excerpts, checks an
   assert.equal(r.scenes, 3);
   assert.equal(r.pass, 1); assert.equal(r.fail, 1);
   const order = ['id="S2"', 'id="S10"', 'id="S11b"'].map(s => html.indexOf(s));
-  assert.ok(order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1])), 'plan order');
+  assert.ok(order.every((v, i) => v > 0 && (i === 0 || v > must(order[i - 1]))), 'plan order');
   // panes ordered room Claude, alice, bob, as text excerpts with palette classes
   const s2 = html.slice(html.indexOf('id="S2"'), html.indexOf('id="S10"'));
   const seats = [...s2.matchAll(/<figcaption>(\w+)<\/figcaption>/g)].map(m => m[1]);
@@ -116,8 +117,8 @@ test('walkthrough excerpt: new lines only, noise dropped, unchanged chip, rows s
   assert.match(sec('S3'), /reads page 3<span class="pages">\(final page; \+2 more pages\)/);
   const pre = ((sec('S3').match(/<pre>([\s\S]*?)<\/pre>/) ?? [])[1] ?? '').split('\n');
   assert.equal(pre.length, 10);
-  assert.match(pre[3], /… 5 lines …/);
-  assert.match(pre[0], /line number 1 /); assert.match(pre[9], /line number 14 /);
+  assert.match(must(pre[3]), /… 5 lines …/);
+  assert.match(must(pre[0]), /line number 1 /); assert.match(must(pre[9]), /line number 14 /);
 });
 
 test('walkthrough excerpt rules: noise, plan view body, red lines kept through the cap', () => {
@@ -128,7 +129,7 @@ test('walkthrough excerpt rules: noise, plan view body, red lines kept through t
     '   Plan: cursor paging', '   Context and more body', '   - body bullet', '  \u254c\u254c\u254c\u254c\u254c\u254c', '   \u2502 room proposal abc from claude',
     '  \u2500\u2500\u2500\u2500\u2500\u2500', '   Would you like to proceed?', '   \u276f 1. Yes, and use auto mode', '     2. Yes, manually approve edits'];
   const info = classify(plan);
-  assert.deepEqual(plan.filter((_, i) => info[i].drop), ['   Context and more body', '   - body bullet', '   \u276f 1. Yes, and use auto mode', '     2. Yes, manually approve edits']);
+  assert.deepEqual(plan.filter((_, i) => info[i]?.drop), ['   Context and more body', '   - body bullet', '   \u276f 1. Yes, and use auto mode', '     2. Yes, manually approve edits']);
   const f = freshLines(plan.map(t => ({ text: t, html: t })), null).lines.map(l => l.text);
   assert.deepEqual(f, ['   Plan: cursor paging', '   \u2502 room proposal abc from claude']);
   // previous capture's lines (as a multiset) are not new; a repeat beyond the old count is
@@ -160,7 +161,7 @@ test('demo-lib: every key demo.sh sends is a known key (S8 died on "unknown key 
   for (const line of sh.split('\n')) {
     for (const m of line.replace(/#.*$/, '').matchAll(/\bkeys\s+("?\$?[\w-]+"?)((?:\s+[A-Za-z][\w-]*)+)/g)) {
       if (m[1] === 'sh-keys') continue;
-      sent.push(...m[2].trim().split(/\s+/));
+      sent.push(...(m[2] ?? '').trim().split(/\s+/));
     }
   }
   assert.ok(sent.includes('C-e') && sent.includes('PageDown'), `parsed keys: ${sent.join(' ')}`);

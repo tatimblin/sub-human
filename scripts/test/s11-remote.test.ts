@@ -12,6 +12,7 @@ import { runChecks, SCENES } from '../checks.ts';
 import { context, DEMO } from '../checks/context.ts';
 import { joinLineIn, pinIn, admitCardState } from '../lib/panes.ts';
 import type { Proposal } from '../../plugin/sub-human/lib/types-app.ts';
+import { must } from './must.ts';
 
 const { Machine } = paths.pluginTest('support/two-homes.ts');
 const store = paths.pluginLib('room/store.ts');
@@ -46,7 +47,7 @@ test('S11: carol from a second home passes every check over real evidence; a bro
   const host = new Machine(t, 'host'), remote = new Machine(t, 'remote', { SUB_HUMAN_LINK_IDLE_MS: '3000' }); // short, so the daemon exits once carol leaves; not so short that a loaded run's daemon idles out between the host's Let in and her /sub-human
   const alice = host.seat('alice'), bob = host.seat('bob'), carol = remote.seat('carol');
   host.join(alice, 'alice');
-  const code = host.lib(() => store.listRooms()[0]);
+  const code = must(host.lib(() => store.listRooms()[0]), 'the room');
   host.join(bob, `bob ${code}`);
   const via = await remote.joinVia(host, alice, carol);
   const shown = via.shown?.json?.reason;
@@ -95,7 +96,7 @@ test('S11: carol from a second home passes every check over real evidence; a bro
 
   const mod = SCENES.find(m => m.scene === 'S11');
   assert.ok(mod);
-  const run = () => runChecks(context({ screens, home: host.home, room: code, home2: remote.home }), { scenes: [mod] }).S11;
+  const run = () => must(runChecks(context({ screens, home: host.home, room: code, home2: remote.home }), { scenes: [mod] }).S11, 'the S11 results');
   const res = run();
   assert.deepEqual(res.filter(c => !c.pass).map(c => `${c.check}: ${c.evidence}`), []);
   assert.equal(res.length, 12);

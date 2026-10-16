@@ -28,9 +28,9 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   det(`${A}'s words cost ${B}'s Claude no model turn (no wake, nothing to repeat)`, woke.length === 0 && ct && !ct.woke,
     `${woke.length} wake(s) carrying #${e ? e.id : '?'}; ${ct ? ct.evidence : 'no chat row'}`);
   const sm = x.toolUses(x.inSpan(x.entries(B), s), 'SendMessage').filter(c => String((c.input || {}).to || '') === `${A}.${code}`);
-  det(`${B}'s Claude calls SendMessage to ${A}.${code}`, sm.length >= 1, sm.length ? `SendMessage {to: "${sm[0].input?.to}", message: "${clip(sm[0].input?.message || sm[0].input?.content, 80)}"}` : `no SendMessage to ${A}`);
+  det(`${B}'s Claude calls SendMessage to ${A}.${code}`, sm.length >= 1, sm.length ? `SendMessage {to: "${sm[0]?.input?.to}", message: "${clip(sm[0]?.input?.message || sm[0]?.input?.content, 80)}"}` : `no SendMessage to ${A}`);
   const pe = x.peerIn(x.inSpan(x.entries(A), s), B);
-  det(`${A}'s Claude receives it as a peer message from ${B} (origin.kind peer)`, pe.length >= 1, pe.length ? `origin {kind: peer, name: ${pe[0].origin?.name}, verifiedPeerPid: ${pe[0].origin?.verifiedPeerPid}}: "${clip(pe[0].origin?.body, 80)}"` : `no peer entry from ${B}`);
+  det(`${A}'s Claude receives it as a peer message from ${B} (origin.kind peer)`, pe.length >= 1, pe.length ? `origin {kind: peer, name: ${pe[0]?.origin?.name}, verifiedPeerPid: ${pe[0]?.origin?.verifiedPeerPid}}: "${clip(pe[0]?.origin?.body, 80)}"` : `no peer entry from ${B}`);
   // a reply goes to bob.CODE, or to the peer socket the incoming message came from ("uds:…", Claude Code's reply address)
   const back = x.toolUses(x.inSpan(x.entries(A), s), 'SendMessage').filter(c => { const to = String((c.input || {}).to || ''); return to === `${B}.${code}` || /^uds:/.test(to); });
   const pb = x.peerIn(x.inSpan(x.entries(B), s), A);

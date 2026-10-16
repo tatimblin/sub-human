@@ -17,9 +17,11 @@ export function panelRows(txt: string | null | undefined): PanelRow[] {
   for (const [i, l] of lines.entries()) if (MAIN_ROW.test(l)) start = i;
   if (start < 0) return [];
   const out: PanelRow[] = [];
-  for (let i = start + 1; i < lines.length; i++) {
-    const m = /^(\s*)(❯\s*)?(└\s*)?(◯|●|⏺)\s+(\S+)\s*(.*)$/.exec(lines[i]);
-    if (m) out.push({ indent: m[1].length, selected: !!m[2], nested: !!m[3], label: m[5], text: m[6].trim(), line: lines[i].trim() });
+  for (const l of lines.slice(start + 1)) {
+    const m = /^(\s*)(❯\s*)?(└\s*)?(◯|●|⏺)\s+(\S+)\s*(.*)$/.exec(l);
+    if (!m) continue;
+    const [, indent = '', selected, nested, , label = '', text = ''] = m;
+    out.push({ indent: indent.length, selected: !!selected, nested: !!nested, label, text: text.trim(), line: l.trim() });
   }
   return out;
 }
@@ -28,10 +30,11 @@ export function panelRows(txt: string | null | undefined): PanelRow[] {
 export function roomRowMembers(txt: string | null | undefined, code: string): { room: PanelRow, members: string[] } | null {
   const rows = panelRows(txt);
   const i = rows.findIndex(r => !r.nested && r.label === code);
-  if (i < 0) return null;
+  const room = rows[i];
+  if (i < 0 || !room) return null;
   const members: string[] = [];
   for (const r of rows.slice(i + 1)) { if (!r.nested) break; members.push(r.label); }
-  return { room: rows[i], members };
+  return { room, members };
 }
 
 /** Top-level panel rows besides main and the room row: a Claude's own subagents (◯ Explore  Read server and store). */
@@ -45,15 +48,22 @@ export function statusLine(txt: string | null | undefined): string {
   return l ? l.trim() : '';
 }
 
+/** One option line of a dialog: m is (❯)?, the digit, the label. */
+function dialogOpt(m: RegExpExecArray): DialogOpt {
+  const [, cur, n = '', label = ''] = m;
+  return { cur: !!cur, n: +n, label };
+}
+
 /** The ❯ line index and option labels of an open consent card, or null. */
 export function cardState(p: string): DialogState | null {
   const lines = p.split('\n');
   const q = lines.findIndex(l => /Agree to proposal [0-9a-f]{12}\?/.test(l));
   if (q < 0) return null;
   const opts: DialogOpt[] = [];
-  for (let i = q + 1; i < lines.length && opts.length < 4; i++) {
-    const m = /^\s*(❯)?\s*(\d)\.\s+(Not yet|Agree|Object|Type something|Chat about this)\b/.exec(lines[i]);
-    if (m) opts.push({ cur: !!m[1], n: +m[2], label: m[3] });
+  for (const l of lines.slice(q + 1)) {
+    if (opts.length >= 4) break;
+    const m = /^\s*(❯)?\s*(\d)\.\s+(Not yet|Agree|Object|Type something|Chat about this)\b/.exec(l);
+    if (m) opts.push(dialogOpt(m));
   }
   return opts.length ? { opts } : null;
 }
@@ -64,7 +74,7 @@ export function planState(p: string): DialogState | null {
   const opts: DialogOpt[] = [];
   for (const l of p.split('\n')) {
     const m = /^\s*(❯)?\s*(\d)\.\s+(Yes, [^\n]*?|Tell Claude what to change|No, keep planning)\s*$/.exec(l);
-    if (m) opts.push({ cur: !!m[1], n: +m[2], label: m[3] });
+    if (m) opts.push(dialogOpt(m));
   }
   return opts.length ? { opts } : null;
 }
@@ -109,9 +119,10 @@ export function admitCardState(p: string | null | undefined): DialogState | null
   const q = lines.findIndex(l => /Let \S+ \(.*\) on \S+ join room [a-z]+-\d{4}\?|\(admit [0-9a-f]{12}\)/.test(l));
   if (q < 0) return null;
   const opts: DialogOpt[] = [];
-  for (let i = q + 1; i < lines.length && opts.length < 4; i++) {
-    const m = /^\s*(❯)?\s*(\d)\.\s+(Let in|Refuse|Type something|Chat about this)\b/.exec(lines[i]);
-    if (m) opts.push({ cur: !!m[1], n: +m[2], label: m[3] });
+  for (const l of lines.slice(q + 1)) {
+    if (opts.length >= 4) break;
+    const m = /^\s*(❯)?\s*(\d)\.\s+(Let in|Refuse|Type something|Chat about this)\b/.exec(l);
+    if (m) opts.push(dialogOpt(m));
   }
   return opts.length ? { opts } : null;
 }

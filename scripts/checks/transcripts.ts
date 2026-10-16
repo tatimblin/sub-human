@@ -94,8 +94,7 @@ export function transcripts({ roomClaudeSid, projects }: { roomClaudeSid: string
     if (i < 0) return { woke: false, idle: null, evidence: 'chat row not found' };
     const isPrompt = (e: TEntry): boolean => !!(e.type === 'user' && !metrics.isPull(e) && !isToolResults(e) && (!e.isMeta || (e.origin && e.origin.kind === 'peer')));
     let idle = true;
-    for (let j = i - 1; j >= 0; j--) {
-      const e = es[j];
+    for (const e of es.slice(0, i).reverse()) {
       if (e.type === 'system' && e.subtype === 'turn_duration') break;
       if (isPrompt(e) || e.type === 'assistant') { idle = false; break; }
     }
@@ -133,8 +132,7 @@ export function transcripts({ roomClaudeSid, projects }: { roomClaudeSid: string
       // the receipt carries no id: the first "✓ sent" system line at or after the entry (within 10 s)
       const i = es.findIndex(x => x.type === 'system' && typeof x.content === 'string' && /✓ sent/.test(x.content) && !!x.timestamp && x.timestamp >= new Date(Date.parse(e.at) - 2000).toISOString() && x.timestamp <= new Date(Date.parse(e.at) + 10_000).toISOString());
       if (i < 0) continue;
-      for (let j = i + 1; j < es.length; j++) {
-        const x = es[j];
+      for (const x of es.slice(i + 1)) {
         // the next prompt: a typed one, a wake, or a peer message (written isMeta, origin peer)
         if ((x.type === 'user' && (!x.isMeta || (x.origin && x.origin.kind === 'peer'))) || (x.type === 'queue-operation' && x.operation === 'enqueue')) return { pass: true, evidence: `${path.basename(f).slice(0, 8)}…: hook receipt for #${e.id}, no assistant message before the next prompt or notice` };
         if (x.type === 'assistant') return { pass: false, evidence: `assistant message right after the receipt for #${e.id}` };

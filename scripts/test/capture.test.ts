@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { framer, finalise, parseSessions, verdict } from '../capture.ts';
+import { must } from './must.ts';
 
 const CAPTURE = path.join(import.meta.dirname, '..', 'capture.ts');
 const tmp = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'sh-cap-'));
@@ -51,13 +52,14 @@ test('capture: verdict reads a checks.json', () => {
 test('capture fixture: the hand-made trailer/capture/fixture follows the contract', () => {
   const f = path.join(import.meta.dirname, '..', '..', 'trailer', 'capture', 'fixture', 'capture.jsonl');
   const ls = lines(f);
-  assert.equal(ls[0].kind, 'meta');
-  assert.deepEqual(Object.keys(ls[0].sessions).sort(), ['alice', 'bob', 'claude']);
-  assert.match(ls[0].room ?? '', /^[a-z]+-\d{4}$/);
-  for (let i = 1; i < ls.length; i++) assert.ok(ls[i].t >= ls[i - 1].t, `sorted at line ${i + 1}`);
+  const meta = must(ls[0], 'the meta line');
+  assert.equal(meta.kind, 'meta');
+  assert.deepEqual(Object.keys(meta.sessions).sort(), ['alice', 'bob', 'claude']);
+  assert.match(meta.room ?? '', /^[a-z]+-\d{4}$/);
+  for (const [k, o] of ls.slice(1).entries()) assert.ok(o.t >= must(ls[k]).t, `sorted at line ${k + 2}`);
   const frames = ls.filter(o => o.kind === 'frame');
   for (const s of ['alice', 'bob', 'claude']) assert.ok(frames.some(o => o.session === s && o.t === 0), `${s} has a frame at t 0`);
-  for (const o of frames) assert.ok(o.ansi.split('\n').length <= (ls[0].sessions[o.session]?.rows ?? 0), `${o.session}@${o.t} fits its rows`);
+  for (const o of frames) assert.ok(o.ansi.split('\n').length <= (meta.sessions[o.session]?.rows ?? 0), `${o.session}@${o.t} fits its rows`);
   assert.ok(ls.filter(o => o.kind === 'marker').every(o => o.scene && o.beat && o.caption));
   assert.ok((ls.at(-1)?.t ?? 0) >= 15000, 'about 20 s long');
 });
@@ -85,9 +87,10 @@ test('capture: the poller records a real tmux pane, markers from another process
     run(['stop']);
     await new Promise<void>(r => { if (p.exitCode != null) r(); else p.on('exit', () => r()); });
     const ls = lines(path.join(take, 'capture.jsonl'));
-    assert.equal(ls[0].kind, 'meta');
-    assert.deepEqual(ls[0].sessions, { alice: { cols: 120, rows: 36 } });
-    assert.equal(ls[0].room, 'otter-4821');
+    const meta = must(ls[0], 'the meta line');
+    assert.equal(meta.kind, 'meta');
+    assert.deepEqual(meta.sessions, { alice: { cols: 120, rows: 36 } });
+    assert.equal(meta.room, 'otter-4821');
     const fs1 = ls.filter(o => o.kind === 'frame');
     assert.ok(fs1.length >= 2, `${fs1.length} frames`);
     assert.ok(fs1.every(o => o.session === 'alice'));

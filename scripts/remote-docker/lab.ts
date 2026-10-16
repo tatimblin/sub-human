@@ -92,8 +92,8 @@ export interface Probe {
 /** What the lab's features are: feature name -> present. */
 export type Features = Record<string, boolean>;
 /** sh/exec options. */
-interface ShOpts { input?: string, allowFail?: boolean, timeout?: number, cwd?: string }
-interface ExecOpts { user?: string, env?: Record<string, string | undefined>, input?: string, allowFail?: boolean, timeout?: number }
+interface ShOpts { input?: string | undefined, allowFail?: boolean, timeout?: number, cwd?: string }
+interface ExecOpts { user?: string | undefined, env?: Record<string, string | undefined>, input?: string, allowFail?: boolean, timeout?: number }
 /** ssh Host blocks: alias -> {HostName, Port, ProxyJump, ProxyCommand, User}. */
 export type Hosts = Record<string, Record<string, string | number>>;
 
@@ -153,7 +153,7 @@ export class Lab {
   }
 
   /** The seat driver on one machine: lab/seat-cli.ts as that machine's user, with one SUB_HUMAN_HOME. */
-  seat(svc: string, { home = '.sub-human', env: own = {}, user = USERS[svc] ?? 'root' }: { home?: string, env?: Record<string, string>, user?: string } = {}) {
+  seat(svc: string, { home = '.sub-human', env: own = {}, user = USERS[svc] ?? 'root' }: { home?: string, env?: Record<string, string>, user?: string | undefined } = {}) {
     const subHome = `/home/${user}/${home}`;
     // the link timings of this run (SUB_HUMAN_LINK_*_MS in the harness's env, then the scenario's linkEnv) reach every
     // hook, CLI and link daemon the seat starts
@@ -189,7 +189,7 @@ export class Lab {
   }
 
   async toxi(method: string, p: string, body?: unknown): Promise<unknown> {
-    const r = await fetch(`http://127.0.0.1:${this.api}${p}`, { method, headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+    const r = await fetch(`http://127.0.0.1:${this.api}${p}`, { method, headers: { 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
     const text = await r.text();
     if (!r.ok) throw new Error(`toxiproxy ${method} ${p}: ${r.status} ${text}`);
     return text ? JSON.parse(text) : null;
@@ -307,9 +307,9 @@ export class Lab {
     const text = r.out || '';
     const m = /\/sub-human (join \S+ [a-z]+-\d{4} ([0-9a-z]{39})(?: --(?:via|home) \S+)*)\n/.exec(`${text}\n`);
     const p = /apart from the line[^\n]*: (\d{4})\n/.exec(`${text}\n`);
-    if (m && p) return { line: m[1], word: m[2], pin: p[1], text };
+    if (m && p) return { line: m[1] ?? '', word: m[2] ?? '', pin: p[1] ?? '', text };
     const old = /\/sub-human (join \S+ [a-z]+-\d{4} (\d{4})(?: --via \S+)?)\n/.exec(`${text}\n`); // a beta.15 host's
-    if (old) return { line: old[1], word: null, pin: old[2], text };
+    if (old) return { line: old[1] ?? '', word: null, pin: old[2] ?? '', text };
     throw new Error(`invite --ssh on ${hostSeat.svc}: no line and PIN in: ${text.slice(0, 300)}`);
   }
 
@@ -350,7 +350,7 @@ export class Lab {
 /** lab.join's options. */
 export interface JoinOpts {
   svc: string; name: string; code: string; hosts: Hosts; via?: string; viaFlag?: string; host?: SeatDriver; hostName?: string;
-  user?: string; hostSvc?: string; dest?: string; key?: string; ms?: number; home?: string;
+  user?: string | undefined; hostSvc?: string; dest?: string; key?: string; ms?: number; home?: string;
 }
 /** lab.join's answer: the joiner's seat driver and every step's result. */
 export interface Joined {

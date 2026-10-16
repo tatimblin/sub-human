@@ -37,12 +37,12 @@ export async function run(t: T): Promise<void> {
   if (!t.check('invite --ssh shows one line (/sub-human join host@devbox CODE SECRET, no NAME) and the PIN apart, hidden from the model', !!m && !!p && m[2] === 'host@devbox' && m[3] === code
     && shown.json && shown.json.hookSpecificOutput && shown.json.hookSpecificOutput.suppressOriginalPrompt === true && !shown.json.systemMessage, (shown.out || '').slice(0, 200)) || !m || !p) return;
   t.check('nothing of sub-human\'s in authorized_keys: no door, no line', !/sub-human/.test(ak()), `${ak().split('\n').filter(Boolean).length} line(s)`);
-  const pin = p[1];
+  const [, line = '', , , secret = ''] = m, [, pin = ''] = p; // LINE_RE's groups 1 and 4 and PIN_RE's 1 always match
   const pub = lab.keypair('joiner-a', 'id_bob');
   lab.authorizeLogin(pub); // bob's own login to the devbox account, as ssh-copy-id would set it up
   const conf = lab.sshConfig('joiner-a', 'bob', 'id_bob', WAN);
   const seat = lab.seat('joiner-a');
-  const typed = seat.short('bob', m[1], '-F', conf);
+  const typed = seat.short('bob', line, '-F', conf);
   const asked = typed.asked || await t.until(() => !!seat.linkfile(code).pin_wanted, 20_000, 250);
   t.check('the line: the host\'s key checked, the SECRET shown; the host asks for the PIN, in a hidden step', asked && typed.hidden, (typed.out || '').slice(0, 200));
   const wrong = String((Number(pin) + 1) % 10_000).padStart(4, '0');
@@ -73,10 +73,11 @@ export async function run(t: T): Promise<void> {
   if (wm) t.ev.invite(wm[1], wp && wp[1]);
   if (!t.check('invite --url shows a URL + SECRET (no #) and the PIN apart', !!wm && !!wp && wm[2] === `https://tls-front/sub-human/${code}` && !/#/.test(ws.out || ''), (ws.out || '').slice(0, 200)) || !wm || !wp) return;
   const ben = lab.seat('joiner-b', { env: { ...LAB_CA_ENV, HTTPS_PROXY: CORP_PROXY, https_proxy: CORP_PROXY } });
-  const bt = ben.short('ben', wm[1]);
+  const [, webLine = '', , , webSecret = ''] = wm, [, webPin = ''] = wp;
+  const bt = ben.short('ben', webLine);
   const basked = bt.asked || await t.until(() => !!ben.linkfile(code).pin_wanted, 30_000, 250);
   t.check('ben (joiner-b, through corp-proxy and tls-front): the listener\'s key checked against the line; the host asks for the PIN', basked && bt.hidden, (bt.out || '').slice(0, 200));
-  const bj = ben.pin('ben', wp[1]);
+  const bj = ben.pin('ben', webPin);
   t.check('ben\'s PIN is checked inside the Noise channel (XK, a key of his link\'s own)', bj.waiting && bj.hidden, (bj.out || '').slice(0, 200));
   const bc = host.admitcard('alice', 'Let in');
   t.check('alice lets ben in on the card', bc.ok, bc.out);
@@ -88,6 +89,6 @@ export async function run(t: T): Promise<void> {
     t.check('mirrors byte-identical to the host log', c.ok, c.detail);
   }
   const caddy = lab.composeLogs('tls-front').replace(/\d{4}-\d\d-\d\dT[\d:.]+Z?/g, '');
-  t.check('the TLS front\'s log holds neither PIN nor SECRET', !new RegExp(`\\b(${wp[1]}|${pin})\\b`).test(caddy) && !caddy.includes(wm[4]) && !caddy.includes(m[4]));
+  t.check('the TLS front\'s log holds neither PIN nor SECRET', !new RegExp(`\\b(${webPin}|${pin})\\b`).test(caddy) && !caddy.includes(webSecret) && !caddy.includes(secret));
   t.pending('a stranger, a stolen line without its PIN, PIN guessing', 'covered by test/remote-invite-ssh, remote-invite-line and remote-short (not driven from the lab)');
 }

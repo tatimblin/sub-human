@@ -19,7 +19,7 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   det(`The room's Claude is woken by ${B}'s @claude line`, !!ow, ow ? `${metrics.trigger(ow)} at ${ow.timestamp?.slice(11, 19)}` : 'no claude wake after it');
   // the proposal opens in the native plan dialog (scrollable, hooks/handlers/consent.ts); the card is the fallback
   let title = '';
-  try { title = (fs.readFileSync(path.join(roomDir, 'plans', `${p1.hash}.md`), 'utf8').split('\n').map(l => l.replace(/^\s*(#{1,6}\s+|[-*+>]\s+)/, '').replace(/[*_`]/g, '').trim()).find(Boolean) || '').slice(0, 40); } catch { /* none */ }
+  if (p1) try { title = (fs.readFileSync(path.join(roomDir, 'plans', `${p1.hash}.md`), 'utf8').split('\n').map(l => l.replace(/^\s*(#{1,6}\s+|[-*+>]\s+)/, '').replace(/[*_`]/g, '').trim()).find(Boolean) || '').slice(0, 40); } catch { /* none */ }
   const firstPage = (seat: string): Step => x.caps('S4', seat).find(r => r.caption?.startsWith('The room\'s Claude proposes'))?.step ?? 'last';
   for (const seat of [A, B]) {
     // the plan view's first page (S4 step 1: the title); later S4 steps are alice paging down
@@ -33,7 +33,8 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   }
   // alice pages through the whole proposal (PgDn) to its end: the hook's "room proposal HASH" line under the plan
   const pages = x.caps('S4', A).filter(r => /reads the whole proposal/.test(String(r.caption)));
-  const endT = pages.length ? readText(path.join(x.screens, pages[pages.length - 1].txt)) || '' : x.cap('S4', A, firstPage(A)) || '';
+  const lastPage = pages.at(-1);
+  const endT = lastPage ? readText(path.join(x.screens, lastPage.txt)) || '' : x.cap('S4', A, firstPage(A)) || '';
   const endOk = p1 && new RegExp(`room proposal ${esc(p1.hash)}`).test(endT);
   det(`${A} reads the whole proposal: PgDn pages through the plan view to its end (the "room proposal HASH" line)`, endOk && /Would you like to proceed\?/.test(endT),
     `${pages.length} PgDn page capture(s) (${pages.map(r => r.txt).join(', ') || 'none'}); last shows ${endOk ? `"room proposal ${p1.hash}"` : 'no end line'}`);

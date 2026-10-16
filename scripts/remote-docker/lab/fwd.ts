@@ -4,6 +4,7 @@
 import net from 'node:net';
 
 const [fwd, target] = process.argv.slice(2).map(Number);
+if (fwd === undefined || target === undefined) throw new Error('usage: node fwd.ts FWD TARGET');
 net.createServer(c => {
   const u = net.connect(target, '127.0.0.1');
   c.pipe(u).pipe(c);

@@ -54,12 +54,13 @@ export function newer(a: unknown, b: unknown): boolean {
   // pre-release identifiers per dot part, as semver: numbers numerically (beta.10 > beta.2), else as text
   const ia = pa.split('.'), ib = pb.split('.');
   for (let i = 0; i < Math.max(ia.length, ib.length); i++) {
-    if (ia[i] === undefined || ib[i] === undefined) return ib[i] === undefined; // more parts is newer
-    if (ia[i] === ib[i]) continue;
-    const na = /^\d+$/.test(ia[i]), nb = /^\d+$/.test(ib[i]);
-    if (na && nb) return Number(ia[i]) > Number(ib[i]);
+    const a = ia[i], b = ib[i];
+    if (a === undefined || b === undefined) return b === undefined; // more parts is newer
+    if (a === b) continue;
+    const na = /^\d+$/.test(a), nb = /^\d+$/.test(b);
+    if (na && nb) return Number(a) > Number(b);
     if (na !== nb) return nb; // a number sorts before text
-    return ia[i] > ib[i];
+    return a > b;
   }
   return false;
 }

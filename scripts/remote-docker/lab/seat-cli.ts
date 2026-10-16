@@ -247,13 +247,13 @@ const cmds: Record<string, (...args: string[]) => unknown> = {
   admitcard(name, label) {
     const seat = seatOf(name);
     const code = load().code || lib('room/store.ts').listRooms()[0];
-    const req = lib('remote/admission.ts').pending(code)[0];
+    const req = code ? lib('remote/admission.ts').pending(code)[0] : undefined;
     if (!req) return { ok: false, out: 'no join request waits' };
     lease(seat);
     const pre = hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: `admit ${req.ref}`, options: [] }] } }, seat);
     const card = pre.json && pre.json.hookSpecificOutput && pre.json.hookSpecificOutput.updatedInput;
-    if (!card) return { ok: false, out: 'the hooks built no card', pre: pre.json, stderr: pre.stderr };
-    const q = card.questions[0].question;
+    const q = card ? card.questions[0]?.question : undefined;
+    if (!card || q === undefined) return { ok: false, out: 'the hooks built no card', pre: pre.json, stderr: pre.stderr };
     const post = hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: card, tool_response: { questions: card.questions, answers: { [q]: label } } }, seat);
     const ctx = post.json && post.json.hookSpecificOutput && post.json.hookSpecificOutput.additionalContext;
     return { ok: /let \S+'s machine into room|refused/.test(ctx || ''), question: q, out: ctx, ref: req.ref, key: req.key, link: req.link, ms: pre.ms + post.ms, stderr: post.stderr };
@@ -262,13 +262,13 @@ const cmds: Record<string, (...args: string[]) => unknown> = {
   card(name, label) {
     const seat = seatOf(name);
     const code = load().code || lib('room/store.ts').listRooms()[0];
-    const ask = lib('room/store.ts').open(code).kv.get(lib('handoff.ts').ASK_DOC);
+    const ask = code ? lib('room/store.ts').open(code).kv.get(lib('handoff.ts').ASK_DOC) : null;
     if (!ask) return { ok: false, out: 'no handoff ask on this machine' };
     lease(seat);
     const pre = hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: `handoff ${ask.id}`, options: [] }] } }, seat);
     const card = pre.json && pre.json.hookSpecificOutput && pre.json.hookSpecificOutput.updatedInput;
-    if (!card) return { ok: false, out: 'the hooks built no card', pre: pre.json, stderr: pre.stderr };
-    const q = card.questions[0].question;
+    const q = card ? card.questions[0]?.question : undefined;
+    if (!card || q === undefined) return { ok: false, out: 'the hooks built no card', pre: pre.json, stderr: pre.stderr };
     const post = hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: card, tool_response: { questions: card.questions, answers: { [q]: label } } }, seat);
     return { ok: !!(post.json && post.json.systemMessage), out: post.json && (post.json.systemMessage || post.json.reason), json: post.json, ms: pre.ms + post.ms, stderr: post.stderr };
   },

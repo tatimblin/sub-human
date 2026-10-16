@@ -29,7 +29,7 @@ export type CapLine = Line | { elided: number };
 export interface Pane { seat: string, lines: Line[] }
 /** One check of checks.json. */
 export interface Check { check: string, pass?: boolean, status?: string, evidence?: unknown, kind?: string, value?: unknown, threshold?: unknown }
-interface Step { caption: string, step?: number, pages: number, panes: Pane[] }
+interface Step { caption: string, step?: number | undefined, pages: number, panes: Pane[] }
 interface SceneShots { steps: Step[], log: Map<number, LogExcerpt> }
 interface Group { scene: string, caption: string, step?: number, time: string, recs: SnapRecord[] }
 interface Wait { scene?: string, ok?: boolean, what?: string, ms: number }
@@ -78,9 +78,9 @@ const SEAT_ORDER = ['claude', 'viewer', 'alice', 'bob', 'carol'];
 // excerpt limits
 const MAX_LINES = 10, HEAD = 3, TAIL = 6, MAX_ROWS = 3, EVIDENCE = 160, MERGE = 0.8, RULE_MAX = 16;
 
-function args(): Record<string, string> {
-  const a = process.argv.slice(2), o: Record<string, string> = {};
-  for (let i = 0; i < a.length; i++) if (a[i].startsWith('--')) o[a[i].slice(2)] = a[++i];
+function args(): Record<string, string | undefined> {
+  const it = process.argv.slice(2).values(), o: Record<string, string | undefined> = {};
+  for (const x of it) if (x.startsWith('--')) o[x.slice(2)] = it.next().value;
   return o;
 }
 
@@ -124,20 +124,22 @@ const norm = (l: string): string => l.replace(/\s+$/, '').replace(SCROLL, '');
  */
 export function classify(texts: string[]): Array<{ drop: boolean, row: boolean }> {
   const info = texts.map(() => ({ drop: false, row: false }));
+  // the loops below stay within texts, so a line is never missing ('' only to satisfy the index type)
+  const line = (i: number): string => texts[i] ?? '';
+  const drop = (i: number): void => { const x = info[i]; if (x) x.drop = true; };
   const proceed = texts.findIndex(l => /Would you like to proceed\?/.test(l));
   if (proceed >= 0) {
-    let start = -1;
-    for (let i = proceed - 1; i >= 0; i--) if (/^\s*▔{4,}\s*$/.test(texts[i]) || /Here is Claude's plan:/.test(texts[i])) { start = i; break; }
+    const start = texts.slice(0, proceed).findLastIndex(l => /^\s*▔{4,}\s*$/.test(l) || /Here is Claude's plan:/.test(l));
     if (start >= 0) {
       let i = start + 1;
-      while (i < proceed && (!texts[i].trim() || isRule(texts[i]) || /Ready to code\?|Here is Claude's plan:/.test(texts[i]))) i++;
-      for (; i < proceed && !isRule(texts[i]); i++) if (!/^\s*#*\s*Plan:/.test(texts[i])) info[i].drop = true;
+      while (i < proceed && (!line(i).trim() || isRule(line(i)) || /Ready to code\?|Here is Claude's plan:/.test(line(i)))) i++;
+      for (; i < proceed && !isRule(line(i)); i++) if (!/^\s*#*\s*Plan:/.test(line(i))) drop(i);
     }
-    for (let i = proceed + 1; i < texts.length && !STATUS.test(texts[i]); i++) if (/^\s*(❯\s*)?\d\.\s/.test(texts[i])) info[i].drop = true;
+    for (let i = proceed + 1; i < texts.length && !STATUS.test(line(i)); i++) if (/^\s*(❯\s*)?\d\.\s/.test(line(i))) drop(i);
   }
   let st = -1;
   texts.forEach((l, i) => { if (STATUS.test(l)) st = i; });
-  if (st >= 0) for (let i = st + 1; i < texts.length; i++) info[i].row = true;
+  if (st >= 0) for (const x of info.slice(st + 1)) x.row = true;
   return info;
 }
 
@@ -155,13 +157,13 @@ export function freshLines(rows: Row[], prev?: Map<string, number> | null): { li
   const out: Line[] = [];
   let last: string | null = null;
   rows.forEach((r, i) => {
-    const t = texts[i];
-    if (!t.trim()) return;
+    const t = texts[i], cls = info[i];
+    if (t === undefined || cls === undefined || !t.trim()) return; // texts and info hold one entry per row
     const n = seen.get(t) || 0;
     if (n > 0) { seen.set(t, n - 1); return; }
-    if (info[i].drop || isNoise(t) || t === last) return;
+    if (cls.drop || isNoise(t) || t === last) return;
     last = t;
-    out.push({ text: t, html: r.html.replace(/\s{2,}(<i[^>]*>)?[↑↓](<\/i>)?$/, ''), red: !!r.red, row: info[i].row });
+    out.push({ text: t, html: r.html.replace(/\s{2,}(<i[^>]*>)?[↑↓](<\/i>)?$/, ''), red: !!r.red, row: cls.row });
   });
   return { lines: out, bag: bag(texts) };
 }
@@ -172,7 +174,8 @@ export function capLines(lines: Line[]): CapLine[] {
   const keep = lines.map((l, i) => i < HEAD || i >= lines.length - TAIL || l.red);
   const out: CapLine[] = [];
   for (let i = 0; i < lines.length;) {
-    if (keep[i]) { out.push(lines[i++]); continue; }
+    const l = lines[i];
+    if (l && keep[i]) { out.push(l); i++; continue; }
     let j = i; while (j < lines.length && !keep[j]) j++;
     out.push({ elided: j - i });
     i = j;
@@ -294,7 +297,7 @@ function metricsSection(m: Metrics | undefined): string {
   rows.push(['… excluding "Waiting for N background agents"', R.total.noise.perCaptureExWaiting, B.noise.perCaptureExWaiting, g(P, 'noise', 'perCaptureExWaiting'), g(S, 'noise', 'perCaptureExWaiting')]);
   // "Monitor event" lines exist only in the stored earlier runs; this run has none to count
   rows.push(['"Monitor event" lines (all captures)', null, B.noise.monitor, g(P, 'noise', 'monitor'), g(S, 'noise', 'monitor')]);
-  for (const [k, label] of [['plugin', 'plugin prompt framing lines ("The sub-human plugin sent a message")'], ['waiting', '"Waiting for N background agents" lines'], ['hookError', '"hook error" lines'], ['blocked', '"blocked by hook" lines'], ['invalid', '"Invalid tool parameters" lines']]) rows.push([`${label} (all captures)`, R.total.noise[k], B.noise[k], g(P, 'noise', k), g(S, 'noise', k)]);
+  for (const [k, label] of [['plugin', 'plugin prompt framing lines ("The sub-human plugin sent a message")'], ['waiting', '"Waiting for N background agents" lines'], ['hookError', '"hook error" lines'], ['blocked', '"blocked by hook" lines'], ['invalid', '"Invalid tool parameters" lines']] as const) rows.push([`${label} (all captures)`, R.total.noise[k], B.noise[k], g(P, 'noise', k), g(S, 'noise', k)]);
   if (R.total.chat) rows.push(['Model calls per chat burst (people\'s words, joins, leaves: shown as chat, never a wake)', R.total.chat.callsPerBurst, null, null, g(S, 'chat', 'callsPerBurst')]);
   rows.push(['Red or "hook error" lines (all captures)', R.total.noise.red, null, null, g(S, 'red')]);
   rows.push(['Model calls per proposal review (open + after the answer)', R.total.cards.perCard, null, null, g(S, 'cardsPerCard')]);
@@ -401,7 +404,8 @@ ${checkHtml}${logHtml}${waitHtml}
 </section>`;
   }).join('\n');
 
-  const run = meta.run || (index.length && index[0].room ? `room ${index[0].room}` : '');
+  const first = index.at(0);
+  const run = meta.run || (first?.room ? `room ${first.room}` : '');
   const summary = [
     run,
     `${sceneIds.length} scene${sceneIds.length === 1 ? '' : 's'}`,
@@ -409,7 +413,7 @@ ${checkHtml}${logHtml}${waitHtml}
     pass + fail + warn ? `checks ${pass} pass / ${warn} warn / ${fail} fail` : 'no checks yet',
     Array.isArray(meta.skipped) && meta.skipped.length ? `not run (partial run): ${meta.skipped.join(', ')}` : '',
     meta.cost ? `run cost ${meta.cost}` : '',
-    index.length ? `captured ${String(index[0].time).slice(0, 10)}` : '',
+    first ? `captured ${String(first.time).slice(0, 10)}` : '',
   ].filter(Boolean).join(' · ');
 
   const html = `<!doctype html>
@@ -420,7 +424,7 @@ ${checkHtml}${logHtml}${waitHtml}
 <title>sub-human slim build</title>
 <style>
 ${PAGE_CSS}
-${pal.css('.term', new Set([...sections.matchAll(/<i class=([a-z]+)>/g)].map(m => m[1])))}
+${pal.css('.term', new Set([...sections.matchAll(/<i class=([a-z]+)>/g)].flatMap(m => m[1] ?? [])))}
 </style>
 </head>
 <body>

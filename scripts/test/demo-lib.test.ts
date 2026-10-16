@@ -15,7 +15,7 @@ const lib = (args: string[], env: Record<string, string> = {}) => spawnSync(proc
 const readJson = (f: string) => JSON.parse(fs.readFileSync(f, 'utf8'));
 
 test('demo-lib: every subcommand demo.sh calls is a command', () => {
-  const used = new Set([...fs.readFileSync(DEMO_SH, 'utf8').matchAll(/\$LIB ([a-z-]+)/g)].map(m => m[1]));
+  const used = new Set([...fs.readFileSync(DEMO_SH, 'utf8').matchAll(/\$LIB ([a-z-]+)/g)].flatMap(m => m[1] ?? []));
   assert.ok(used.size > 20);
   for (const c of used) assert.ok(Object.hasOwn(COMMANDS, c), `demo.sh calls ${c}`);
 });
@@ -37,7 +37,7 @@ test('demo.sh --film: the story scenes only, S6b defined, every mark has a short
   assert.match(sh, /^S6b\(\) \{/m);
   const marks = [...sh.matchAll(/^\s*mark ([a-z]+) "([^"]*)"/gm)];
   assert.ok(marks.length >= 15, `${marks.length} marks`);
-  for (const m of marks) assert.ok(m[2].length > 0 && m[2].length <= 80, `caption for ${m[1]}: ${m[2]}`);
+  for (const [, beat, caption = ''] of marks) assert.ok(caption.length > 0 && caption.length <= 80, `caption for ${beat}: ${caption}`);
 });
 
 test('demo-lib: wait-pane --new takes only a summary the pane did not show before; demo.sh\'s PASS6b reads a real run', () => {
@@ -50,7 +50,7 @@ test('demo-lib: wait-pane --new takes only a summary the pane did not show befor
   const after = `${sum('90.2')}\n⏺ All pass.\n${sum('497.934875')}\n⏺ This pull added 24 more test files.\n❯ \n`;
   const got = newMatches(src, before, after);
   assert.equal(got.length, 1);
-  assert.match(got[0], /duration_ms 497\.934875$/);
+  assert.match(got[0] ?? '', /duration_ms 497\.934875$/);
   assert.deepEqual(newMatches(src, '', sum('1.2').replace('fail 0', 'fail 1')), []);
   assert.deepEqual(newMatches(src, '', 'ℹ pass 3\nℹ fail 0\n'), []); // cut off: not the whole summary yet
   assert.match(sh, /^RUN6b="git pull && npm test"$/m);
@@ -88,7 +88,7 @@ test('demo.sh --film: the panel beat opens the room row and comes back with one 
   assert.equal((show.match(/keys "\$s" Up/g) || []).length, 1);
   assert.match(sh, /mark panel "Everyone in the room shows up in your agent panel"/);
   const s6b = (/^S6b\(\) \{\n([\s\S]*?)\n\}/m.exec(sh) ?? [])[1] ?? '';
-  const prompts = [...s6b.matchAll(/submit "\$[ab]" "([^"]*)"/g)].map(m => m[1]);
+  const prompts = [...s6b.matchAll(/submit "\$[ab]" "([^"]*)"/g)].flatMap(m => m[1] ?? []);
   assert.ok(prompts.length >= 3, `${prompts.length} S6b prompts`);
   for (const p of prompts) assert.doesNotMatch(p, /mcp__|op \\"|tool/, p);
   assert.match(s6b, /wait-subagent-row "sh-\$b"/);

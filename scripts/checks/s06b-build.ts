@@ -27,7 +27,7 @@ export function parseGitLog(text: string | null | undefined): Commit[] {
   const out: Commit[] = [];
   for (const l of String(text || '').split('\n')) {
     const m = /^commit ([0-9a-f]{7,40}) (.*)$/.exec(l);
-    if (m) { out.push({ sha: m[1], author: m[2], subject: null, files: [] }); continue; }
+    if (m) { const [, sha = '', author = ''] = m; out.push({ sha, author, subject: null, files: [] }); continue; }
     const c = out.at(-1);
     if (!c || !l.trim()) continue;
     if (c.subject == null) c.subject = l; else c.files.push(l.trim());
@@ -38,7 +38,7 @@ export function parseGitLog(text: string | null | undefined): Commit[] {
 /** `git log -g --date=iso-strict --format='%gd %gs'` (newest first) -> [{at, msg}] oldest first. */
 export function parseReflog(text: string | null | undefined): { at: string, msg: string }[] {
   return String(text || '').split('\n').map(l => /^\S+@\{([^}]+)\} (.*)$/.exec(l.trim())).filter((m): m is RegExpExecArray => !!m)
-    .map(m => ({ at: m[1], msg: m[2] })).reverse();
+    .map(([, at = '', msg = '']) => ({ at, msg })).reverse();
 }
 
 /** The first time a checkout took commits from the origin (a pull, or a fetch's merge or rebase), or null. */
@@ -46,9 +46,9 @@ export const firstPull = (reflog: string | null | undefined): { at: string, msg:
 
 /** The summary of a node --test run (spec: ℹ tests 6, or tap: # tests 6): {tests, pass, fail, exit} (null fields when missing). */
 export function tapSummary(text: string | null | undefined): { tests: number | null, pass: number | null, fail: number | null, exit: number | null } {
-  const n = (k: string): number | null => { const m = new RegExp(`^[ℹ#] ${k} (\\d+)`, 'm').exec(text || ''); return m ? +m[1] : null; };
+  const n = (k: string): number | null => { const m = new RegExp(`^[ℹ#] ${k} (\\d+)`, 'm').exec(text || ''); return m ? Number(m[1]) : null; };
   const e = /^exit (\d+)/m.exec(text || '');
-  return { tests: n('tests'), pass: n('pass'), fail: n('fail'), exit: e ? +e[1] : null };
+  return { tests: n('tests'), pass: n('pass'), fail: n('fail'), exit: e ? Number(e[1]) : null };
 }
 
 /**
@@ -58,7 +58,7 @@ export function tapSummary(text: string | null | undefined): { tests: number | n
 export function lastSummary(pane: string | null | undefined): { pass: number, fail: number, text: string } | null {
   const re = /[ℹ#] pass (\d+)\s*\n\s*(?:⎿\s*)?[ℹ#] fail (\d+)\s*\n(?:\s*[ℹ#] [a-z]+ \d+\s*\n){0,4}\s*[ℹ#] duration_ms [\d.]+/g;
   const m = [...String(pane || '').matchAll(re)].at(-1);
-  return m ? { pass: +m[1], fail: +m[2], text: m[0].split('\n').map(l => l.trim()).join(' / ') } : null;
+  return m ? { pass: Number(m[1]), fail: Number(m[2]), text: m[0].split('\n').map(l => l.trim()).join(' / ') } : null;
 }
 
 export const scene = 'S6b';
@@ -68,7 +68,7 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   const name: Record<'A' | 'B', string> = { A, B };
   const f = (...p: string[]): string => x.stateFile('S6b', ...p);
   // S2 (film): each person opens the room row in their agent panel, and the other shows inside it
-  for (const [who, other] of [[A, B], [B, A]]) {
+  for (const [who, other] of [[A, B], [B, A]] as const) {
     const rm = roomRowMembers(readText(x.stateFile('S2', `panel-${who}.txt`)), code);
     det(`${who} opens the ${code} row in the agent panel: ${other} shows inside it`, rm && rm.members.includes(other),
       rm ? `${rm.room.line} | ${rm.members.map(n => `└ ${n}`).join(' | ') || 'no member rows'} (state/S2/panel-${who}.txt)` : `no ${code} row in state/S2/panel-${who}.txt`);
@@ -100,8 +100,9 @@ export function run(x: Ctx, { det }: { det: Det }): void {
       `${mine.length} commit(s) by ${who}: ${mine.map(c => `${c.sha.slice(0, 7)} "${clip(c.subject, 50)}" [${c.files.join(' ')}]`).join('; ') || 'none'}${out.length ? `; outside the lane: ${out.join(' ')}` : ''}${missing.length ? `; not changed: ${missing.join(' ')}` : ''}`);
   }
   const heads = [A, B, 'origin'].map(n => (readText(f(`head-${n}.txt`)) || '').trim());
+  const [headA = '', headB = '', headO = ''] = heads;
   det('Both checkouts end at the origin\'s commit (each pulled the other\'s half)', heads.every(s => /^[0-9a-f]{40}$/.test(s)) && new Set(heads).size === 1,
-    `${A} ${heads[0].slice(0, 7) || '?'}, ${B} ${heads[1].slice(0, 7) || '?'}, origin ${heads[2].slice(0, 7) || '?'}`);
+    `${A} ${headA.slice(0, 7) || '?'}, ${B} ${headB.slice(0, 7) || '?'}, origin ${headO.slice(0, 7) || '?'}`);
   // the handoff: A's Claude tells B's that the store is pushed, and B's checkout pulls only after that
   const pull = firstPull(readText(f(`reflog-${B}.txt`)));
   const said = x.peerIn(x.inSpan(x.entries(B), x.span('S6b')), A)

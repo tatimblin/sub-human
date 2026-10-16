@@ -9,6 +9,7 @@ import type { Ctx } from '../checks/context.ts';
 import type { LogEntry } from '../checks/log.ts';
 import type { TEntry } from '../metrics.ts';
 import { pluginTest } from '../lib/paths.ts';
+import { must } from './must.ts';
 
 const { eid, tid } = pluginTest('support/brands.ts');
 
@@ -71,7 +72,7 @@ function world({ A = 'tristan', B = 'jess', gitLog, reflogB = REFLOG, tapB = TAP
     textOf: c => (typeof c === 'string' ? c : ''),
   });
 }
-const run = (ctx: Ctx) => runChecks(ctx, { scenes: [mod] }).S6b;
+const run = (ctx: Ctx) => must(runChecks(ctx, { scenes: [mod] }).S6b, 'the S6b results');
 const failed = (ctx: Ctx): string[] => run(ctx).filter(c => !c.pass).map(c => c.check);
 
 test('S6b: a clean build passes every check, for tristan and jess or alice and bob', () => {

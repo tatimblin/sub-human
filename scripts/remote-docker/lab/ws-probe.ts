@@ -31,6 +31,7 @@ if (mode === 'serve') {
   srv.listen(Number(a), '127.0.0.1', () => process.stderr.write(`ws-probe listening 127.0.0.1:${a}\n`));
   setTimeout(() => process.exit(0), Number(b || 30) * 1000);
 } else if (mode === 'connect') {
+  if (a === undefined) throw new Error('usage: node ws-probe.ts connect URL [PROXY_URL]');
   const url = new URL(a);
   const port = Number(url.port || 443);
   const t0 = Date.now();

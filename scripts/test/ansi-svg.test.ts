@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { render, renderHtml, rowsHtml, palette, parse, charWidth, color256, THEME } from '../ansi-svg.ts';
+import { must } from './must.ts';
 
 const E = '\x1b[';
 
@@ -20,26 +21,27 @@ test('charWidth: ascii, box drawing, CJK, emoji, combining', () => {
 });
 
 test('parse: 16 colors, bold, reset, columns', () => {
-  const rows = parse(`${E}1m${E}31mab${E}0mc\n`);
-  assert.equal(rows[0].length, 3);
-  assert.equal(rows[0][0].style.fg, THEME.ansi[1]);
-  assert.equal(rows[0][0].style.bold, true);
-  assert.equal(rows[0][2].style.fg, null);
-  assert.equal(rows[0][2].style.bold, false);
-  assert.deepEqual(rows[0].map(c => c.col), [0, 1, 2]);
+  const row = must(parse(`${E}1m${E}31mab${E}0mc\n`)[0]);
+  assert.equal(row.length, 3);
+  const [a, , c] = row;
+  assert.equal(must(a).style.fg, THEME.ansi[1]);
+  assert.equal(must(a).style.bold, true);
+  assert.equal(must(c).style.fg, null);
+  assert.equal(must(c).style.bold, false);
+  assert.deepEqual(row.map(x => x.col), [0, 1, 2]);
 });
 
 test('parse: 256 and truecolor fg/bg, semicolon and colon forms, 39/49', () => {
   const rows = parse(`${E}38;5;208mA${E}48;2;10;20;30mB${E}39;49mC${E}38:2::1:2:3mD${E}38:5:21mE${E}90mF${E}101mG`);
-  const [a, b, c, d, e, f, g] = rows[0];
-  assert.equal(a.style.fg, color256(208));
-  assert.equal(b.style.bg, '#0a141e');
-  assert.equal(b.style.fg, color256(208));
-  assert.equal(c.style.fg, null); assert.equal(c.style.bg, null);
-  assert.equal(d.style.fg, '#010203');
-  assert.equal(e.style.fg, color256(21));
-  assert.equal(f.style.fg, THEME.ansi[8]);
-  assert.equal(g.style.bg, THEME.ansi[9]);
+  const [a, b, c, d, e, f, g] = must(rows[0]).map(x => x.style);
+  assert.equal(must(a).fg, color256(208));
+  assert.equal(must(b).bg, '#0a141e');
+  assert.equal(must(b).fg, color256(208));
+  assert.equal(must(c).fg, null); assert.equal(must(c).bg, null);
+  assert.equal(must(d).fg, '#010203');
+  assert.equal(must(e).fg, color256(21));
+  assert.equal(must(f).fg, THEME.ansi[8]);
+  assert.equal(must(g).bg, THEME.ansi[9]);
 });
 
 test('color256: cube and grayscale', () => {
@@ -51,19 +53,20 @@ test('color256: cube and grayscale', () => {
 });
 
 test('parse: dim, italic, underline, inverse, strike and their resets', () => {
-  const [r] = parse(`${E}2;3;4;7;9mx${E}22;23;24;27;29my`);
-  assert.deepEqual([r[0].style.dim, r[0].style.italic, r[0].style.underline, r[0].style.inverse, r[0].style.strike], [true, true, true, true, true]);
-  assert.deepEqual([r[1].style.dim, r[1].style.italic, r[1].style.underline, r[1].style.inverse, r[1].style.strike], [false, false, false, false, false]);
+  const [x, y] = must(parse(`${E}2;3;4;7;9mx${E}22;23;24;27;29my`)[0]).map(c => c.style);
+  const flags = (s: { dim: boolean, italic: boolean, underline: boolean, inverse: boolean, strike: boolean }): boolean[] => [s.dim, s.italic, s.underline, s.inverse, s.strike];
+  assert.deepEqual(flags(must(x)), [true, true, true, true, true]);
+  assert.deepEqual(flags(must(y)), [false, false, false, false, false]);
 });
 
 test('parse: wide chars take two columns; combining marks attach', () => {
-  const [r] = parse('a日b😀c é');
+  const r = must(parse('a日b😀c é')[0]);
   assert.deepEqual(r.map(c => c.col), [0, 1, 3, 4, 6, 7, 8]);
-  assert.equal(r[6].ch, 'é');
+  assert.equal(r[6]?.ch, 'é');
 });
 
 test('parse: other escapes (cursor CSI, OSC hyperlink, charset) are dropped', () => {
-  const [r] = parse(`${E}2K${E}?25l\x1b]8;;https://x.y\x07link\x1b]8;;\x1b\\\x1b(Bok`);
+  const r = must(parse(`${E}2K${E}?25l\x1b]8;;https://x.y\x07link\x1b]8;;\x1b\\\x1b(Bok`)[0]);
   assert.equal(r.map(c => c.ch).join(''), 'linkok');
 });
 
@@ -85,7 +88,7 @@ test('render: valid-looking svg with title, colors, escaped text, no ids', () =>
 test('render: size follows cols/rows options and content', () => {
   const small = render('hi\n', { cols: 40, rows: 5 });
   const big = render('hi\n', { cols: 120, rows: 40 });
-  const dims = (s: string): number[] => (s.match(/viewBox="0 0 (\d+) (\d+)"/) ?? []).slice(1).map(Number);
+  const dims = (s: string): [number, number] => { const [, w, h] = s.match(/viewBox="0 0 (\d+) (\d+)"/) ?? []; return [Number(w), Number(h)]; };
   assert.ok(dims(big)[0] > dims(small)[0] * 2);
   assert.ok(dims(big)[1] > dims(small)[1] * 4);
   const long = render('x'.repeat(200) + '\n', { cols: 80 });
@@ -119,8 +122,8 @@ test('rowsHtml: raw line, plain text and html per row; spaces join a run', () =>
   const rows = rowsHtml(`${E}32mok go${E}0m  \n${E}38;5;196mstop${E}0m\n`);
   assert.equal(rows.length, 2);
   assert.deepEqual(rows.map(r => r.text), ['ok go', 'stop']);
-  assert.equal(rows[0].html, '<i class=a>ok go</i>');
-  assert.equal(rows[1].raw, `${E}38;5;196mstop${E}0m`);
+  assert.equal(rows[0]?.html, '<i class=a>ok go</i>');
+  assert.equal(rows[1]?.raw, `${E}38;5;196mstop${E}0m`);
 });
 
 test('CLI: stdin to stdout', () => {

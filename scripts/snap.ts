@@ -30,7 +30,7 @@ export interface LogEntry {
 }
 /** A log entry as a snap record keeps it. */
 export interface LogExcerpt {
-  id: number, at?: string, from?: string, via?: string, kind?: string, to?: string, text?: string,
+  id: number, at?: string | undefined, from?: string | undefined, via?: string | undefined, kind?: string | undefined, to?: string, text?: string,
   plan_hash?: unknown, refs?: unknown, approvers?: unknown,
 }
 /** One record of docs/rebuild/screens/index.json. */
@@ -87,7 +87,7 @@ function capture(session: string): PaneCapture {
   let cols = 0, rows = 0;
   try {
     const dims = execFileSync('tmux', ['display-message', '-p', '-t', target, '#{pane_width} #{pane_height}'], { encoding: 'utf8' }).trim().split(' ');
-    cols = +dims[0] || 0; rows = +dims[1] || 0;
+    cols = Number(dims[0]) || 0; rows = Number(dims[1]) || 0;
   } catch { /* fine: size from content */ }
   return { text, cols, rows };
 }

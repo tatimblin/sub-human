@@ -9,7 +9,9 @@
 import fs from 'node:fs';
 import { spawn, type ChildProcess } from 'node:child_process';
 
-const [cli, sid, events] = process.argv.slice(2);
+const argv = process.argv.slice(2);
+const arg = (i: number): string => { const v = argv[i]; if (v === undefined) throw new Error('usage: node seat-proc.ts CLI SID EVENTS'); return v; };
+const cli = arg(0), sid = arg(1), events = arg(2);
 const env = {
   ...process.env, CLAUDE_CODE_SESSION_ID: sid, CLAUDE_PID: String(process.pid),
   SUB_HUMAN_SETTLE_MS: '150', SUB_HUMAN_SETTLE_MAX_MS: '400', SUB_HUMAN_POLL_MS: '50', SUB_HUMAN_TAIL_HEALTH_MS: '1000',

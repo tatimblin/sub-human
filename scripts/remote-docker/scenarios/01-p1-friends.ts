@@ -78,7 +78,7 @@ export async function run(t: T): Promise<void> {
     const body = lab.exec('joiner-a', ['cat', file], { allowFail: true }).stdout;
     const secret = String(j.invite).split('.')[3];
     t.check('doctor --bundle writes a bundle that holds no link token, invite secret, PIN or room code',
-      bundle.status === 0 && body.length > 100 && !body.includes(token) && !body.includes(secret) && !(j.pin && body.includes(j.pin)) && !body.includes(code),
+      bundle.status === 0 && body.length > 100 && !body.includes(token) && !(secret !== undefined && body.includes(secret)) && !(j.pin && body.includes(j.pin)) && !body.includes(code),
       `${file}, ${body.length} B, exit ${bundle.status}`);
   } else t.pending('sub-human doctor reports the link (and --bundle is redacted)', 'needs doctor');
 }

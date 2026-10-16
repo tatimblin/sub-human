@@ -31,12 +31,15 @@ export const THEME: Theme = {
          '#5c6370', '#ff7a85', '#b5e890', '#ffd68a', '#82c4ff', '#de9cf0', '#7fd8e3', '#ffffff'],
 };
 
-export function color256(n: number, theme: Theme = THEME): string {
-  if (n < 16) return theme.ansi[n];
+/** The theme's color for a 16-color index, or null (the default color) for one it does not hold. */
+const ansiAt = (theme: Theme, n: number): string | null => theme.ansi[n] ?? null;
+
+export function color256(n: number, theme: Theme = THEME): string | null {
+  if (n < 16) return ansiAt(theme, n);
   if (n < 232) {
     n -= 16;
     const lv = [0, 95, 135, 175, 215, 255];
-    return hex(lv[Math.floor(n / 36)], lv[Math.floor(n / 6) % 6], lv[n % 6]);
+    return hex(lv[Math.floor(n / 36)] ?? 0, lv[Math.floor(n / 6) % 6] ?? 0, lv[n % 6] ?? 0);
   }
   const g = 8 + (n - 232) * 10;
   return hex(g, g, g);
@@ -82,21 +85,22 @@ export function applySgr(s: Style, params: string[], theme: Theme = THEME): Styl
   if (params.length === 0) params = ['0'];
   for (let i = 0; i < params.length; i++) {
     const raw = params[i];
+    if (raw === undefined) break;
     const sub = raw.includes(':') ? raw.split(':') : null;
-    const p = parseInt(sub ? sub[0] : raw, 10) || 0;
+    const p = parseInt(sub ? sub[0] ?? '' : raw, 10) || 0;
     if (p === 38 || p === 48 || p === 58) {
       let col: string | null = null;
       if (sub) {
         // 38:5:n  |  38:2:r:g:b  |  38:2::r:g:b (with colorspace id)
-        if (sub[1] === '5') col = color256(+sub[2] || 0, theme);
+        if (sub[1] === '5') col = color256(Number(sub[2]) || 0, theme);
         else if (sub[1] === '2') {
           const v = sub.length >= 6 ? sub.slice(3, 6) : sub.slice(2, 5);
-          col = hex(+v[0] || 0, +v[1] || 0, +v[2] || 0);
+          col = hex(Number(v[0]) || 0, Number(v[1]) || 0, Number(v[2]) || 0);
         }
       } else if (params[i + 1] === '5') {
-        col = color256(+params[i + 2] || 0, theme); i += 2;
+        col = color256(Number(params[i + 2]) || 0, theme); i += 2;
       } else if (params[i + 1] === '2') {
-        col = hex(+params[i + 2] || 0, +params[i + 3] || 0, +params[i + 4] || 0); i += 4;
+        col = hex(Number(params[i + 2]) || 0, Number(params[i + 3]) || 0, Number(params[i + 4]) || 0); i += 4;
       }
       if (p === 38) s.fg = col; else if (p === 48) s.bg = col;
       continue;
@@ -114,12 +118,12 @@ export function applySgr(s: Style, params: string[], theme: Theme = THEME): Styl
     else if (p === 24) s.underline = false;
     else if (p === 27) s.inverse = false;
     else if (p === 29) s.strike = false;
-    else if (p >= 30 && p <= 37) s.fg = theme.ansi[p - 30];
+    else if (p >= 30 && p <= 37) s.fg = ansiAt(theme, p - 30);
     else if (p === 39) s.fg = null;
-    else if (p >= 40 && p <= 47) s.bg = theme.ansi[p - 40];
+    else if (p >= 40 && p <= 47) s.bg = ansiAt(theme, p - 40);
     else if (p === 49) s.bg = null;
-    else if (p >= 90 && p <= 97) s.fg = theme.ansi[p - 90 + 8];
-    else if (p >= 100 && p <= 107) s.bg = theme.ansi[p - 100 + 8];
+    else if (p >= 90 && p <= 97) s.fg = ansiAt(theme, p - 90 + 8);
+    else if (p >= 100 && p <= 107) s.bg = ansiAt(theme, p - 100 + 8);
   }
   return s;
 }
@@ -162,7 +166,8 @@ export function parse(text: unknown, theme: Theme = THEME): Cell[][] {
     i += ch.length;
     const w = charWidth(cp);
     if (w === 0) {
-      if (cp >= 32 && row.length) row[row.length - 1].ch += ch; // attach combining/ZWJ/VS to previous cell
+      const prev = row.at(-1);
+      if (cp >= 32 && prev) prev.ch += ch; // attach combining/ZWJ/VS to previous cell
       continue;
     }
     row.push({ ch, w, col, style: { ...s } });
@@ -200,10 +205,10 @@ export function render(text: unknown, opts: RenderOpts = {}): string {
   const theme = opts.theme || THEME;
   let rows = parse(text, theme);
   // tmux capture ends each line with \n: drop the final empty row it produces
-  if (rows.length && rows[rows.length - 1].length === 0 && String(text).endsWith('\n')) rows.pop();
-  if (opts.trim) while (rows.length && rows[rows.length - 1].every(c => c.ch.trim() === '' && !c.style.bg && !c.style.inverse)) rows.pop();
+  if (rows.at(-1)?.length === 0 && String(text).endsWith('\n')) rows.pop();
+  if (opts.trim) while (rows.at(-1)?.every(c => c.ch.trim() === '' && !c.style.bg && !c.style.inverse)) rows.pop();
   if (opts.rows && rows.length > opts.rows) rows = rows.slice(rows.length - opts.rows);
-  const contentCols = rows.reduce((m, r) => Math.max(m, r.length ? r[r.length - 1].col + r[r.length - 1].w : 0), 0);
+  const contentCols = rows.reduce((m, r) => { const last = r.at(-1); return Math.max(m, last ? last.col + last.w : 0); }, 0);
   const cols = Math.max(opts.cols || 0, contentCols, 20);
   const nrows = Math.max(opts.rows || 0, rows.length, 1);
   const fs = opts.fontSize || 13;
@@ -325,10 +330,10 @@ export function rowsHtml(text: unknown, opts: HtmlOpts = {}): HtmlRow[] {
   const str = String(text).replace(/\r\n/g, '\n');
   const raws = str.split('\n');
   const rows = parse(str, theme);
-  if (rows.length && rows[rows.length - 1].length === 0 && str.endsWith('\n')) rows.pop();
+  if (rows.at(-1)?.length === 0 && str.endsWith('\n')) rows.pop();
   return rows.map((r, y) => {
-    let end = r.length;
-    while (end > 0 && r[end - 1].ch.trim() === '' && !resolved(r[end - 1].style, theme).bg) end--;
+    // right-trim: the cells after the last one that is not a blank on the default background
+    const end = r.findLastIndex(c => !(c.ch.trim() === '' && !resolved(c.style, theme).bg)) + 1;
     let html = '', plain = '';
     let run: { cls: string, text: string } | null = null;
     const flush = (): void => {
@@ -337,8 +342,8 @@ export function rowsHtml(text: unknown, opts: HtmlOpts = {}): HtmlRow[] {
       html += run.cls ? `<i class=${run.cls}>${t}</i>` : t;
       run = null;
     };
-    for (let i = 0; i < end; i++) {
-      const c = r[i], st = c.style;
+    for (const c of r.slice(0, end)) {
+      const st = c.style;
       const cls = pal.cls(st);
       // a plain space looks the same in any foreground: let it join the current run
       const blank = c.ch === ' ' && !resolved(st, theme).bg && !st.underline && !st.strike;
@@ -355,7 +360,7 @@ export function rowsHtml(text: unknown, opts: HtmlOpts = {}): HtmlRow[] {
 /** ANSI text -> <figure class="term"><figcaption>title</figcaption><pre>…</pre></figure>. */
 export function renderHtml(text: unknown, opts: HtmlOpts = {}): string {
   const rows = rowsHtml(text, opts);
-  if (opts.trim !== false) while (rows.length && rows[rows.length - 1].text === '') rows.pop();
+  if (opts.trim !== false) while (rows.at(-1)?.text === '') rows.pop();
   const cap = opts.title == null ? '' : `<figcaption>${escHtml(String(opts.title))}</figcaption>`;
   return `<figure class="term">${cap}<pre>${rows.map(r => r.html).join('\n')}</pre></figure>`;
 }
@@ -363,12 +368,13 @@ export function renderHtml(text: unknown, opts: HtmlOpts = {}): string {
 if (import.meta.main) {
   const args = process.argv.slice(2);
   const opts: RenderOpts = {};
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a === '--title') opts.title = args[++i];
-    else if (a === '--cols') opts.cols = +args[++i];
-    else if (a === '--rows') opts.rows = +args[++i];
-    else if (a === '--font-size') opts.fontSize = +args[++i];
+  const it = args.values();
+  const next = (): string | undefined => it.next().value;
+  for (const a of it) {
+    if (a === '--title') opts.title = next() ?? null;
+    else if (a === '--cols') opts.cols = Number(next());
+    else if (a === '--rows') opts.rows = Number(next());
+    else if (a === '--font-size') opts.fontSize = Number(next());
     else if (a === '--trim') opts.trim = true;
     else if (a === '-h' || a === '--help') {
       process.stdout.write('usage: tmux capture-pane -ep -t S | ansi-svg.ts [--title T] [--cols N] [--rows N] [--font-size N] [--trim] > out.svg\n');

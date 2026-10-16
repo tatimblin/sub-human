@@ -122,9 +122,14 @@ const REWAKE = 'sub-human: this session was resumed';
 
 /** Earlier runs to compare against (scripts/baselines.json runs; compare picks which fill checks.json _metrics). */
 export const BASELINES: Baselines = baselinesJson;
-export const BASELINE: BaselineRun = BASELINES.runs[BASELINES.compare.baseline];
-export const PHASE0: BaselineRun = BASELINES.runs[BASELINES.compare.phase0];
-export const PREV: BaselineRun = BASELINES.runs[BASELINES.compare.prev];
+const baselineRun = (name: string): BaselineRun => {
+  const r = BASELINES.runs[name];
+  if (!r) throw new Error(`scripts/baselines.json: compare names ${name}, which runs does not hold`);
+  return r;
+};
+export const BASELINE: BaselineRun = baselineRun(BASELINES.compare.baseline);
+export const PHASE0: BaselineRun = baselineRun(BASELINES.compare.phase0);
+export const PREV: BaselineRun = baselineRun(BASELINES.compare.prev);
 
 /** A message's content blocks ([] for a string or none). */
 export const blocksOf = (e: TEntry): Block[] => { const c = e.message && e.message.content; return Array.isArray(c) ? c : []; };
@@ -138,7 +143,8 @@ function roomClaudeSession(home: string | undefined, code: string | undefined): 
   if (!home) return null;
   try {
     const rooms = path.join(home, 'rooms');
-    const c = code || fs.readdirSync(rooms).map(d => ({ d, m: fs.statSync(path.join(rooms, d)).mtimeMs })).sort((a, b) => b.m - a.m)[0].d;
+    const c = code || fs.readdirSync(rooms).map(d => ({ d, m: fs.statSync(path.join(rooms, d)).mtimeMs })).sort((a, b) => b.m - a.m).at(0)?.d;
+    if (!c) return null;
     const o = readJson<Members>(path.join(rooms, c, 'members.json'), {}).claude;
     return (o && o.session_id) || null;
   } catch { return null; }
@@ -190,27 +196,23 @@ export interface CardTurn { at: string | undefined, hash: string, toCard: number
 export function cardTurns(es: TEntry[]): CardTurn[] {
   const out: CardTurn[] = [];
   const main = es.filter(e => !e.isSidechain && (e.type === 'user' || e.type === 'assistant'));
-  for (let i = 0; i < main.length; i++) {
-    const e = main[i];
+  for (const [i, e] of main.entries()) {
     if (e.type !== 'assistant') continue;
     // the card, or the plan view (ExitPlanMode "proposal <hash>": hooks/handlers/consent.ts shows the proposal in the plan dialog)
     const call = blocksOf(e).find(c => c && c.type === 'tool_use' && (c.name === 'AskUserQuestion' || c.name === 'ExitPlanMode') && HASH_RE.test(JSON.stringify(c.input || {})));
     if (!call) continue;
     // back to the entry that started this turn (a user entry that is not a tool result)
-    let s = i - 1;
     const starts = (x: TEntry): boolean => !!(x.type === 'user' && !isToolResult(x) && (!x.isMeta || (x.origin && x.origin.kind === 'peer')));
-    while (s >= 0 && !starts(main[s])) s--;
+    const s = main.slice(0, i).findLastIndex(starts);
     const ids = new Set<string | undefined>();
-    for (let j = s + 1; j <= i; j++) if (main[j].type === 'assistant') ids.add(main[j].message?.id || main[j].uuid);
+    for (const x of main.slice(s + 1, i + 1)) if (x.type === 'assistant') ids.add(x.message?.id || x.uuid);
     // forward to the end of the turn
     const after = new Set<string | undefined>();
-    let j = i + 1;
-    for (; j < main.length; j++) {
-      const x = main[j];
+    for (const x of main.slice(i + 1)) {
       if (starts(x)) break;
       if (x.type === 'assistant') { const id = x.message?.id || x.uuid; if (!ids.has(id)) after.add(id); }
     }
-    out.push({ at: e.timestamp, hash: (HASH_RE.exec(JSON.stringify(call.input)) || ['', ''])[1], toCard: ids.size, after: after.size });
+    out.push({ at: e.timestamp, hash: (HASH_RE.exec(JSON.stringify(call.input)) || ['', ''])[1] ?? '', toCard: ids.size, after: after.size });
   }
   // the card call and its answer can be split over several assistant entries with one message id: dedupe by call
   const seen = new Set<string>();
@@ -298,14 +300,16 @@ export function isRed(line: string): boolean {
   for (const m of line.matchAll(/\x1b\[([0-9;]*)m/g)) {
     count(line.slice(last, m.index));
     last = m.index + m[0].length;
-    const p = m[1] === '' ? [0] : m[1].split(';').map(Number);
+    const g = m[1] ?? '';
+    const p = g === '' ? [0] : g.split(';').map(Number);
     for (let i = 0; i < p.length; i++) {
       const c = p[i];
+      if (c === undefined) break;
       if (c === 0 || c === 39) red = false;
       else if (c === 31 || c === 91) red = true;
       else if ((c >= 30 && c <= 37) || (c >= 90 && c <= 97)) red = false;
-      else if (c === 38 && p[i + 1] === 5) { red = RED_256.includes(p[i + 2]); i += 2; }
-      else if (c === 38 && p[i + 1] === 2) { const [R, G, B] = p.slice(i + 2, i + 5); red = R >= 200 && G <= 115 && B <= 140 && R - G >= 120; i += 4; }
+      else if (c === 38 && p[i + 1] === 5) { const v = p[i + 2]; red = v !== undefined && RED_256.includes(v); i += 2; }
+      else if (c === 38 && p[i + 1] === 2) { const [R = NaN, G = NaN, B = NaN] = p.slice(i + 2, i + 5); red = R >= 200 && G <= 115 && B <= 140 && R - G >= 120; i += 4; }
       else if (c === 48 && (p[i + 1] === 5 || p[i + 1] === 2)) i += p[i + 1] === 5 ? 2 : 4; // a background: skip its args
     }
   }
@@ -329,7 +333,7 @@ export interface Noise {
 
 function noiseFor(screens: string | undefined, index: CaptureRec[], seat: string): Noise {
   const caps = index.filter(r => r.session === `sh-${seat}`);
-  const n: Record<string, number> = { captures: caps.length, lines: 0, receipts: 0, red: 0 };
+  const n: { captures: number, lines: number, receipts: number, red: number, [kind: string]: number } = { captures: caps.length, lines: 0, receipts: 0, red: 0 };
   for (const k of Object.keys(NOISE)) n[k] = 0;
   for (const r of caps) {
     let t = '';
@@ -337,7 +341,7 @@ function noiseFor(screens: string | undefined, index: CaptureRec[], seat: string
     for (const l of t.split('\n')) {
       if (RECEIPT.test(l)) n.receipts++;
       let hit = false;
-      for (const [k, re] of Object.entries(NOISE)) if (re.test(l)) { n[k]++; hit = true; }
+      for (const [k, re] of Object.entries(NOISE)) if (re.test(l)) { n[k] = (n[k] ?? 0) + 1; hit = true; }
       if (hit) n.lines++;
     }
     let a: string | null = null;
@@ -345,14 +349,14 @@ function noiseFor(screens: string | undefined, index: CaptureRec[], seat: string
     for (const l of (a || t).split('\n')) if ((a && isRed(l)) || /hook error/i.test(l.replace(/\x1b\[[0-9;]*m/g, ''))) n.red++;
   }
   return {
-    captures: n.captures, lines: n.lines, receipts: n.receipts, red: n.red, ...n,
+    ...n, // captures, lines, receipts, red first: n's own key order
     perCapture: caps.length ? +(n.lines / caps.length).toFixed(2) : null,
-    perCaptureExWaiting: caps.length ? +((n.lines - n.waiting) / caps.length).toFixed(2) : null,
+    perCaptureExWaiting: caps.length ? +((n.lines - (n.waiting ?? 0)) / caps.length).toFixed(2) : null,
   };
 }
 
 /** measure()'s options: the run's screens, the projects dir (default ~/.claude/projects), home, room and its people. */
-export interface MeasureOpts { screens?: string, projects?: string, home?: string, code?: string, seats?: string[] }
+export interface MeasureOpts { screens?: string, projects?: string, home?: string, code?: string, seats?: string[] | undefined }
 /** One seat's measurements in a run. */
 export interface SeatMeasure extends SeatMetrics { transcripts: string[], noise: Noise }
 
@@ -360,10 +364,11 @@ export function measure({ screens, projects, home, code, seats: people = ['alice
   const SEATS = ['claude', ...people];
   const index = screens ? readJson<CaptureRec[]>(path.join(screens, 'index.json'), []) : [];
   const times = index.map(r => r.time).filter(Boolean).sort();
-  if (!times.length) return { error: `no captures in ${screens}` };
+  const first = times.at(0), last = times.at(-1);
+  if (first === undefined || last === undefined) return { error: `no captures in ${screens}` };
   // the run starts a little before the first capture (S1's /sub-human); stop 30 s after the last one
-  const from = new Date(Date.parse(times[0]) - 120_000).toISOString();
-  const to = new Date(Date.parse(times[times.length - 1]) + 30_000).toISOString();
+  const from = new Date(Date.parse(first) - 120_000).toISOString();
+  const to = new Date(Date.parse(last) + 30_000).toISOString();
   const roomClaudeSid = roomClaudeSession(home || process.env.SUB_HUMAN_HOME, code);
   const seats: Record<string, SeatMeasure> = {};
   const all = { lines: 0, captures: 0, waiting: 0, red: 0 };
@@ -379,7 +384,8 @@ export function measure({ screens, projects, home, code, seats: people = ['alice
     all.lines += noise.lines; all.captures += noise.captures; all.waiting += noise.waiting ?? 0; all.red += noise.red;
   }
   const kinds = Object.keys(NOISE);
-  const sum = (k: string): number => SEATS.reduce((a, s) => a + (seats[s].noise[k] ?? 0), 0);
+  const seatOf = (s: string): SeatMeasure => { const m = seats[s]; if (!m) throw new Error(`no measure for ${s}`); return m; };
+  const sum = (k: string): number => SEATS.reduce((a, s) => a + (seatOf(s).noise[k] ?? 0), 0);
   const avg = (k: 'toCard' | 'after'): number | null => (cards.length ? +(cards.reduce((a, c) => a + c[k], 0) / cards.length).toFixed(2) : null);
   const noise: Noise = {
     captures: all.captures, lines: all.lines,
@@ -395,16 +401,16 @@ export function measure({ screens, projects, home, code, seats: people = ['alice
     seats,
     total: {
       wakes,
-      roomWakesMembers: people.reduce((a, s) => a + seats[s].wakes.turns, 0),
-      pluginWakes: SEATS.reduce((a, s) => a + seats[s].wakes.plugin, 0),
+      roomWakesMembers: people.reduce((a, s) => a + seatOf(s).wakes.turns, 0),
+      pluginWakes: SEATS.reduce((a, s) => a + seatOf(s).wakes.plugin, 0),
       chat: (() => {
         const c: Chat = { notices: 0, pulls: 0, turns: 0, calls: 0 };
-        for (const s of SEATS) for (const k of ['notices', 'pulls', 'turns', 'calls'] as const) c[k] += seats[s].chat[k];
+        for (const s of SEATS) for (const k of ['notices', 'pulls', 'turns', 'calls'] as const) c[k] += seatOf(s).chat[k];
         c.callsPerBurst = c.notices ? +(c.calls / c.notices).toFixed(2) : null;
         return c;
       })(),
-      joinChars: SEATS.filter(s => s !== 'claude').map(s => seats[s].injected.join),
-      injectedTotal: SEATS.reduce((a, s) => a + seats[s].injected.total, 0),
+      joinChars: SEATS.filter(s => s !== 'claude').map(s => seatOf(s).injected.join),
+      injectedTotal: SEATS.reduce((a, s) => a + seatOf(s).injected.total, 0),
       cards: { count: cards.length, toCard: avg('toCard'), after: avg('after'), perCard: cards.length ? +(cards.reduce((a, c) => a + c.toCard + c.after, 0) / cards.length).toFixed(2) : null, list: cards },
       noise,
     },
@@ -415,8 +421,9 @@ export function measure({ screens, projects, home, code, seats: people = ['alice
 export type Measured = ReturnType<typeof measure>;
 
 if (import.meta.main) {
-  const a = process.argv.slice(2), o: Record<string, string> = {};
-  for (let i = 0; i < a.length; i++) if (a[i].startsWith('--')) o[a[i].slice(2)] = a[++i];
+  const a = process.argv.slice(2), o: Record<string, string | undefined> = {};
+  const it = a.values();
+  for (const x of it) if (x.startsWith('--')) o[x.slice(2)] = it.next().value;
   const screens = path.resolve(o.screens || path.join(import.meta.dirname, '..', 'docs/rebuild/screens'));
   const seats = (readJson<{ seats?: string[] } | null>(path.join(screens, 'run.json'), {}) || {}).seats; // the run's two people (demo.sh plan-run)
   process.stdout.write(JSON.stringify(measure({ screens, home: o.home || paths.demoHome(), seats }), null, 1) + '\n');

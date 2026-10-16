@@ -76,9 +76,11 @@ export async function converge(t: T, host: SeatDriver, code: string, mirrors: Se
   const same = ms_.every(m => m.log === h.log);
   const chains = [h, ...ms_].every(d => d.chain && d.chain.ok);
   t.log(`host ${host.svc} log sha256 ${t.sha(h.log)} (${ids.length} lines, ${noGap ? 'ids 1..n no gap' : 'GAP'}, chain ${JSON.stringify(h.chain)})`);
-  ms_.forEach((m, i) => t.log(`mirror ${mirrors[i].svc}${mirrors[i].home.endsWith('.sub-human') ? '' : ` (${mirrors[i].home})`} sha256 ${t.sha(m.log)} ${m.log === h.log ? '= host' : `!= host (${entries(m.log).length} lines)`}, chain ${JSON.stringify(m.chain)}, link ${m.link && m.link.state}`));
+  // ms_ is mirrors.map(dump): one dump per mirror, in order
+  const pairs = ms_.flatMap((m, i) => { const s = mirrors[i]; return s ? [{ m, s }] : []; });
+  pairs.forEach(({ m, s }) => t.log(`mirror ${s.svc}${s.home.endsWith('.sub-human') ? '' : ` (${s.home})`} sha256 ${t.sha(m.log)} ${m.log === h.log ? '= host' : `!= host (${entries(m.log).length} lines)`}, chain ${JSON.stringify(m.chain)}, link ${m.link && m.link.state}`));
   t.ev.write(`log-host-${host.svc}.jsonl`, h.log);
-  ms_.forEach((m, i) => t.ev.write(`log-mirror-${mirrors[i].svc}-${i}.jsonl`, m.log));
+  pairs.forEach(({ m, s }, i) => t.ev.write(`log-mirror-${s.svc}-${i}.jsonl`, m.log));
   return { ok: same && chains && noGap && !dupLines && !dupNonces, host: h, mirrors: ms_, detail: `byte-identical ${same}, chains ${chains}, no gap ${noGap}, dup lines ${dupLines}, dup nonces ${dupNonces}, ${ids.length} lines` };
 }
 
@@ -95,16 +97,17 @@ export async function wssHost(_t: T, lab: Lab): Promise<number> {
   return WS_PORT;
 }
 
-export async function wssJoin(t: T, lab: Lab, host: SeatDriver, code: string, svc: string, name: string, { proxy = false }: { proxy?: boolean } = {}): Promise<{ seat?: SeatDriver, name?: string, ok: boolean, out?: string | null }> {
+export async function wssJoin(t: T, lab: Lab, host: SeatDriver, code: string, svc: string, name: string, { proxy = false }: { proxy?: boolean } = {}): Promise<{ seat?: SeatDriver, name?: string, ok: boolean, out?: string | null | undefined }> {
   const r = host.expand('alice', 'invite --url https://tls-front');
   const text = (r.json && r.json.reason) || '';
   const m = WEB_LINE_RE.exec(`${text}\n`), p = PIN_RE.exec(`${text}\n`);
   if (!m || !p) return { ok: false, out: text.slice(0, 200) };
-  t.ev.invite(m[1], p[1]);
+  const [, line = ''] = m, [, pin = ''] = p;
+  t.ev.invite(line, pin);
   const seat = lab.seat(svc, { env: { ...LAB_CA_ENV, ...(proxy ? { HTTPS_PROXY: CORP_PROXY, https_proxy: CORP_PROXY } : {}) } });
-  const typed = seat.short(name, m[1]);
+  const typed = seat.short(name, line);
   if (!(typed.asked || await t.until(() => !!seat.linkfile(code).pin_wanted, 45_000, 250))) return { seat, name, ok: false, out: typed.out };
-  const l = seat.pin(name, p[1]);
+  const l = seat.pin(name, pin);
   if (!l.waiting) return { seat, name, ok: false, out: l.out };
   const card = host.admitcard('alice', 'Let in');
   if (!card.ok) return { seat, name, ok: false, out: `card: ${card.out}` };
