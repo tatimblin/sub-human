@@ -469,7 +469,7 @@ class Session {
   challenge: string | null = null;
   constructor(transport: Transport, store: RoomStore, log: Log, linkId: string | null | undefined, silentMs: number, {
     proto = protocol.PROTO, version = protocol.PLUGIN_VERSION, login = false, via = null, peer = null,
-  }: { proto?: ProtoRange; version?: string; login?: boolean; via?: 'ws' | null; peer?: string | null } = {}) {
+  }: { proto?: ProtoRange | undefined; version?: string | undefined; login?: boolean; via?: 'ws' | null; peer?: string | null } = {}) {
     this.transport = transport;
     this.login = login === true;
     this.via = via;
@@ -609,7 +609,7 @@ class Session {
  * @returns {{close(): void}}
  */
 function serve(transport: Transport, { store, log = () => {}, linkId, login = false, via = null, peer = null, silentMs = LINK_SILENT_MS, authMs = LINK_AUTH_WAIT_MS, proto, version }: {
-  store: RoomStore; log?: Log; linkId?: string; login?: boolean; via?: 'ws' | null; peer?: string | null; silentMs?: number; authMs?: number; proto?: ProtoRange; version?: string;
+  store: RoomStore; log?: Log; linkId?: string | undefined; login?: boolean; via?: 'ws' | null; peer?: string | null; silentMs?: number; authMs?: number; proto?: ProtoRange | undefined; version?: string | undefined;
 }): { close(): void; revoked(): boolean } {
   const session = new Session(transport, store, log, linkId, silentMs, { proto, version, login, via, peer });
   if (via === 'ws') session.expireUnlinked(authMs);

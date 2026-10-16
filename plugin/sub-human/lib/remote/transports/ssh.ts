@@ -184,7 +184,7 @@ function remoteCommand(spec: Pick<SshSpec, 'login' | 'link' | 'remoteHome'>, cod
 }
 
 /** text: user@host[:port] */
-function loginSpec(text: string, { via, home, link = CryptoMod.randomBytes(6).toString('hex') }: { via?: string; home?: string; link?: string } = {}): SshSpec | null {
+function loginSpec(text: string, { via, home, link = CryptoMod.randomBytes(6).toString('hex') }: { via?: string | undefined; home?: string | undefined; link?: string } = {}): SshSpec | null {
   const d = dest(text);
   if (!d || (via !== undefined && !jump(via)) || (home !== undefined && !HOME_RE.test(String(home))) || !LINK_ID_RE.test(String(link))) return null;
   return { kind: 'ssh', ...d, ...(via !== undefined ? { via } : {}), login: true, link, ...(home !== undefined ? { remoteHome: path.resolve(home) } : {}) };

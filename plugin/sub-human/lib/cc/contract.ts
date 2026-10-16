@@ -124,7 +124,7 @@ const shapeIn = (text: string, shape: string): boolean => !shapeAt(text, shape).
  * spreads and other elements are skipped, and so are nested arrays' and objects' strings unless deep. null when there
  * is no `[` or it does not close.
  */
-function arrayAt(text: string, from: number, { deep = false }: { deep?: boolean } = {}): Set<string> | null {
+function arrayAt(text: string, from: number, { deep = false }: { deep?: boolean | undefined } = {}): Set<string> | null {
   const open = text.indexOf('[', from);
   if (open < 0 || open - from > 256) return null;
   const names = new Set<string>();

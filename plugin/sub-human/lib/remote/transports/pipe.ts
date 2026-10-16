@@ -25,7 +25,7 @@ import type { KindEntry, OpenCtx, PipeSpec, Transport } from '../types-rest.ts';
 
 const BIN = path.join(import.meta.dirname, '..', '..', '..', 'scripts', 'sub-human');
 
-function spawn(cmd: string, args: string[], opts: { env?: NodeJS.ProcessEnv; cwd?: string } = {}): Transport {
+function spawn(cmd: string, args: string[], opts: { env?: NodeJS.ProcessEnv | undefined; cwd?: string | undefined } = {}): Transport {
   const child = spawnChild(cmd, args, { env: opts.env || process.env, cwd: opts.cwd, stdio: ['pipe', 'pipe', 'pipe'] });
   const { transport, receive, end } = lineTransport({
     write: line => child.stdin.write(line),

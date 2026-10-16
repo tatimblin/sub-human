@@ -66,7 +66,7 @@ interface HoldBase {
 type Hold = (HoldBase & { kind: 'member' }) | (HoldBase & { kind: 'room'; moves: Set<number> });
 type RoomHold = Extract<Hold, { kind: 'room' }>;
 /** The seat this server serves (for rows/holds-<me> and the lease). */
-interface Seat { code: RoomCode; name: SeatName; pid?: number | null; savedAt?: number }
+interface Seat { code: RoomCode; name: SeatName; pid?: number | null | undefined; savedAt?: number }
 
 const { NAME_RE, oneLine } = strs;
 const ANNOUNCE_MAX = 3;

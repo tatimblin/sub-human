@@ -89,7 +89,7 @@ class FsRoomStore implements RoomStore {
   declare _derived: Derived;
 
   /** code: the room code; dir: its directory (default <home>/rooms/<code>, read at each call). */
-  constructor(code: RoomCode, { dir }: { dir?: string } = {}) {
+  constructor(code: RoomCode, { dir }: { dir?: string | undefined } = {}) {
     if (!dir) roomDir(code); // validates the code
     this.code = code;
     this._dir = dir || null;

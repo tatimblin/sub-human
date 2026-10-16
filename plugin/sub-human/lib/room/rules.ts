@@ -171,7 +171,7 @@ interface PlaceCtx {
   /** the room's keys (TrustCtx: its code and pinned keys) */
   keys: TrustCtx;
   /** who holds the room by its log; with machine, checkHere runs first */
-  host?: HostState;
+  host?: HostState | undefined;
   machine?: string | null;
   newest: Iterable<Entry>;
   prevLine: string;

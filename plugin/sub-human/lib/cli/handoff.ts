@@ -92,7 +92,7 @@ const PROMOTE_USAGE = 'sub-human promote CODE [--as SEAT] [--ssh USER@HOST[:PORT
 function showStatus(code: RoomCode, { out }: CliIo) {
   // lib/handoff.ts status(code): the parts this prints
   const st: {
-    host: { host?: string; id?: number };
+    host: { host?: string | undefined; id?: number };
     isHost: boolean;
     doc?: { from: string; to: string; state: string; expires_at?: string } | null;
     machines?: { seats: string[]; connected: boolean }[];

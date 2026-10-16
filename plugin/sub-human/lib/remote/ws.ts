@@ -47,8 +47,8 @@ import type { Duplex } from 'node:stream';
 /** The byte stream under a Conn: an upgraded http socket, or a net/tls socket (setNoDelay when it has one). */
 type WsSocket = Duplex & { setNoDelay?(noDelay?: boolean): unknown };
 type ConnState = 'open' | 'closing' | 'closed';
-interface ConnOptions { client: boolean; maxPayload?: number; pingMs?: number; head?: Buffer | null }
-interface AcceptOptions { maxPayload?: number; pingMs?: number }
+interface ConnOptions { client: boolean; maxPayload?: number | undefined; pingMs?: number | undefined; head?: Buffer | null }
+interface AcceptOptions { maxPayload?: number | undefined; pingMs?: number | undefined }
 interface ServerOptions extends AcceptOptions {
   host?: string;
   port: number;
@@ -351,8 +351,7 @@ function readHead(socket: Duplex, what: string): Promise<Head> {
 
 function tcp(host: string, port: number, secure: boolean, tlsOpts: tls.ConnectionOptions, what: string): Promise<net.Socket> {
   return new Promise((resolve, reject) => {
-    const opts = { host, port, ...(secure ? { servername: net.isIP(host) ? undefined : host, ALPNProtocols: ['http/1.1'], ...tlsOpts } : {}) };
-    const s = secure ? tls.connect(opts) : net.connect(opts);
+    const s = secure ? tls.connect({ host, port, ...(net.isIP(host) ? {} : { servername: host }), ALPNProtocols: ['http/1.1'], ...tlsOpts }) : net.connect({ host, port });
     s.once(secure ? 'secureConnect' : 'connect', () => { s.off('error', no); resolve(s); });
     const no = (e: Error) => reject(connectError(`${what} ${host}:${port}: ${e.message}`));
     s.once('error', no);

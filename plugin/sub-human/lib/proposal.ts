@@ -343,12 +343,14 @@ const openCall: (h: string) => string = NEXT.open;
 const confirmCall: (h: string) => string = NEXT.note;
 const showConfirm: typeof showNote = showNote;
 /** A proposal as a list item: `3fa2c1 "Ship v3 Monday"` (the short hash alone without a title or a room to read it from). */
-function listed(code: RoomCode | undefined, p: Pick<Proposal, 'hash' | 'entry'>): string {
+/** A proposal as the re-ask lists it: its entry when the caller found it. */
+type Listed = Pick<Proposal, 'hash'> & { entry?: Proposal['entry'] | undefined };
+function listed(code: RoomCode | undefined, p: Listed): string {
   const t = code ? clip(title(code, p.hash, p.entry).replace(/\s+/g, ' ').trim(), TITLE_MAX) : '';
   return t ? `${p.hash.slice(0, 6)} "${t}"` : p.hash.slice(0, 6);
 }
 /** others: the other proposals awaiting name, listed by short hash and title (code: the room their titles come from). */
-function reminder(p: Pick<Proposal, 'hash'>, name: string, { code, others = [] }: { code?: RoomCode, others?: Pick<Proposal, 'hash' | 'entry'>[] } = {}): string {
+function reminder(p: Pick<Proposal, 'hash'>, name: string, { code, others = [] }: { code?: RoomCode, others?: Listed[] } = {}): string {
   const base = `proposal ${p.hash} still awaits ${name}'s answer (an earlier review closed without an answer is fine). Now ${openCall(p.hash)}, unless ${name} asked you to propose something: then do that, and this waits.`;
   if (!others.length) return base;
   return `${base} (${others.length} more await ${name}'s answer: ${others.map(o => listed(code, o)).join(', ')}; the hooks open whichever ${name} names next, else the newest.)`;
@@ -394,7 +396,7 @@ function inside(abs: string, cwd: string | undefined): boolean {
 interface CreateArgs { text?: unknown, path?: unknown, approvers?: unknown }
 interface Created { hash: ProposalHash, approvers: string[], path: string, entry: Entry | undefined, again: boolean, retired: string[] }
 
-function create(me: Me | null | undefined, args: CreateArgs = {}, { cwd }: { cwd?: string } = {}): Created {
+function create(me: Me | null | undefined, args: CreateArgs = {}, { cwd }: { cwd?: string | undefined } = {}): Created {
   if (!me || !me.code || !me.name) refuse('not in a room; run /sub-human');
   const r = room.open(me.code);
   const { text, path: file } = args;

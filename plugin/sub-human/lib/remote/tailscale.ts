@@ -168,7 +168,7 @@ const offArgs = ({ path: p, funnel = false }: { path: string; funnel?: boolean }
 const WATCH_ARGS = obj({ bin: str, args: arr(str), timeoutMs: opt(num) });
 
 function watch({ bin: b, args, timeoutMs = SERVE_MS, env = process.env }: {
-  bin: string; args: string[]; timeoutMs?: number; env?: NodeJS.ProcessEnv;
+  bin: string; args: string[]; timeoutMs?: number | undefined; env?: NodeJS.ProcessEnv;
 }): Promise<Watched> {
   return new Promise(resolve => {
     let text = '', done = false, child: ChildProcess | undefined;

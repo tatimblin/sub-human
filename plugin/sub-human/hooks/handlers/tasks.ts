@@ -35,13 +35,13 @@ import type { RoomCode } from '../../lib/brand.ts';
 import type { Room } from '../../lib/room.ts';
 
 /** Anything that may carry task metadata (a call's input, a native task file). */
-type WithMeta = { metadata?: { _internal?: unknown; req?: unknown } | null } | null | undefined;
+type WithMeta = { metadata?: { _internal?: unknown; req?: unknown } | null | undefined } | null | undefined;
 
 /** A native task file (cc.taskFile JSON, read only): the fields read here. */
 interface NativeTask extends RawTask {
-  blockedBy?: unknown[];
-  description?: string;
-  metadata?: { _internal?: unknown; req?: unknown } | null;
+  blockedBy?: unknown[] | undefined;
+  description?: string | undefined;
+  metadata?: { _internal?: unknown; req?: unknown } | null | undefined;
 }
 
 /** A native task file as read: Claude Code's; every field this file reads is optional. */

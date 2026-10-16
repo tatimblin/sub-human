@@ -41,9 +41,9 @@ import type { Delivery, Entry, Lane, LaneViewer, Trust } from './types.ts';
 
 /** What deliver() judges an entry against. */
 interface DeliverState {
-  entries?: readonly Readonly<Entry>[];
+  entries?: readonly Readonly<Entry>[] | undefined;
   trust?: Trust;
-  note?: string;
+  note?: string | undefined;
 }
 
 const esc = (s: string): string => s.replace(/[.]/g, '\\.');

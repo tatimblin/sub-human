@@ -91,7 +91,7 @@ import type { RoomCode } from './brand.ts';
 /** What spawnPlan builds a launch from. */
 interface PlanOpts {
   code: RoomCode;
-  cwd?: string;
+  cwd?: string | undefined;
   home?: string;
   pluginDir?: string | null;
   env?: NodeJS.ProcessEnv;
@@ -362,7 +362,7 @@ function detached(args: string[], cwd?: string): number | undefined {
   return p.pid;
 }
 
-function startDetached({ code, cwd, claim, prevJob = null }: { code: RoomCode, cwd?: string, claim?: string, prevJob?: string | null }): number | undefined {
+function startDetached({ code, cwd, claim, prevJob = null }: { code: RoomCode, cwd?: string | undefined, claim?: string, prevJob?: string | null }): number | undefined {
   identity.roomDir(code);
   return detached(['start', code, JSON.stringify({ cwd: cwd || process.cwd(), claim, prevJob })], cwd);
 }

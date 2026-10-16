@@ -177,11 +177,11 @@ class SymmetricState {
 
 interface HandshakeOptions {
   initiator: boolean;
-  pattern?: PatternName;
+  pattern?: PatternName | undefined;
   s?: KeyPair | null;
   rs?: Buffer | null;
-  e?: KeyPair | null;
-  prologue?: Buffer | string;
+  e?: KeyPair | null | undefined;
+  prologue?: Buffer | string | undefined;
 }
 
 /** One side of a pattern (NK or XK; both pre-message <- s). */
@@ -276,7 +276,7 @@ class Handshake {
   }
 }
 
-type Who = { prologue?: Buffer | string; e?: KeyPair | null; pattern?: PatternName };
+type Who = { prologue?: Buffer | string | undefined; e?: KeyPair | null | undefined; pattern?: PatternName | undefined };
 const initiator = ({ rs, s = null, prologue, e, pattern }: Who & { rs: Buffer; s?: KeyPair | null }): Handshake => new Handshake({ initiator: true, pattern, rs, s, prologue, e });
 const responder = ({ s, prologue, e, pattern }: Who & { s: KeyPair }): Handshake => new Handshake({ initiator: false, pattern, s, prologue, e });
 

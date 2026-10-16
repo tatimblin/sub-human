@@ -78,7 +78,7 @@ function parse(rest: string): WsAddr | null {
 const hostPort = (s: { host: string; port?: number }): string => `${s.host}${s.port ? `:${s.port}` : ''}`;
 const urlOf = (s: WsAddr & SpecBase): string => `${s.kind === 'ws' ? 'ws' : 'wss'}://${hostPort(s)}${s.path}`;
 
-function locator({ host, port, path = '/' }: { host: string; port?: number; path?: string }, secure = true): string | null {
+function locator({ host, port, path = '/' }: { host: string; port?: number | undefined; path?: string }, secure = true): string | null {
   const kind = secure ? 'wss' : 'ws';
   const rest = `//${String(host).toLowerCase()}${port ? `:${port}` : ''}${path}`;
   return parse(rest) ? `${kind}:${rest}` : null;
@@ -164,7 +164,7 @@ function firstAny(conn: Conn, timeoutMs: number): Promise<{ data: Buffer; binary
 const REFUSAL_CODES = ['OFFLINE', 'AUTH', 'PROTOCOL', 'NO_ROOM'] as const;
 const refusalCode = (c: unknown): c is typeof REFUSAL_CODES[number] => REFUSAL_CODES.some(x => x === c);
 
-async function clientChannel(conn: Conn, { rs, code, s = null, timeoutMs = HANDSHAKE_MS }: { rs: Buffer; code: RoomCode; s?: KeyPair | null; timeoutMs?: number }): Promise<Duplex> {
+async function clientChannel(conn: Conn, { rs, code, s = null, timeoutMs = HANDSHAKE_MS }: { rs: Buffer; code: RoomCode; s?: KeyPair | null | undefined; timeoutMs?: number }): Promise<Duplex> {
   const xk = !!s;
   const hs = noise().initiator({ rs, s, pattern: xk ? 'XK' : 'NK', prologue: xk ? PROLOGUE3 : PROLOGUE });
   conn.send(hs.writeMessage(Buffer.from(JSON.stringify({ v: xk ? 3 : 1, room: code }))));

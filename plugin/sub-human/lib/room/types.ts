@@ -83,8 +83,8 @@ export type EntryInput = {
   drafted?: 'agent';
   id?: string | number;
   by?: string;
-  pubkey?: string;
-  machine?: string;
+  pubkey?: string | undefined;
+  machine?: string | undefined;
   // host_changed
   epoch?: number;
   host?: string;
@@ -108,7 +108,7 @@ export type EntryInput = {
 export interface ValidateOpts {
   via?: string;
   from: string;
-  system?: boolean;
+  system?: boolean | undefined;
 }
 
 /** append()'s opts. queue: an @room post a mirror's daemon may queue while its link is down (store-mirror.ts). */
@@ -118,7 +118,7 @@ export interface AppendOpts extends ValidateOpts {
 
 /** place()'s opts (the payload carries from and via). */
 export interface PlaceOpts {
-  system?: boolean;
+  system?: boolean | undefined;
   queue?: boolean;
 }
 
@@ -233,9 +233,9 @@ export type ProposalEntry = EntryOf<'proposal'> & { hash: ProposalHash };
 /** Who holds the room by its log (store.ts hostState): the last host_changed entry, else epoch 0. */
 export interface HostState {
   epoch: number;
-  host?: string;
-  machine?: string;
-  locator?: string;
+  host?: string | undefined;
+  machine?: string | undefined;
+  locator?: string | undefined;
   id?: number;
 }
 
@@ -286,9 +286,9 @@ export interface Member {
   left_at?: string;
   /** its lease ran out with no leave (lib/seats.ts sweep): still seated, not present; its next beat brings it back */
   lapsed_at?: string;
-  pid?: number | null;
-  pid_start?: number;
-  session_id?: SessionId | null;
+  pid?: number | null | undefined;
+  pid_start?: number | undefined;
+  session_id?: SessionId | null | undefined;
   cwd?: string | null;
   // the room's Claude's bookkeeping (lib/room-claude.ts)
   /** its `claude --bg` job id; "pending" while a spawn is claimed; null after a failed spawn */
@@ -337,7 +337,8 @@ export interface Presence {
 /** What beat({presence}) takes; another state is RoomError INVALID. */
 export interface PresenceInput {
   state: string;
-  detail?: string | null;
+  detail?: string | null | undefined;
+
 }
 
 /** store.members: the document plus the named seat ops (members.ts ops; a mirror's are the host's ops). */
@@ -346,8 +347,8 @@ export interface MembersApi {
   /** fn returns the next document, or null / undefined to write nothing; may run more than once (keep it idempotent). */
   update(fn: (current: Members) => Members | null | undefined): Members | null;
   join(rec: SeatRecord): JoinOutcome;
-  leave(name: string, opts?: { reason?: string; deadlineMs?: number }): boolean;
-  beat(name: string, opts?: { presence?: PresenceInput; now?: number }): boolean;
+  leave(name: string, opts?: { reason?: string; deadlineMs?: number | undefined }): boolean;
+  beat(name: string, opts?: { presence?: PresenceInput | undefined; now?: number }): boolean;
 }
 
 // ---------- the store's other parts ----------
@@ -595,7 +596,7 @@ export interface Link {
   /** an sh2 invite (a handoff's, a promote's), or an invite line's SECRET word (protocol 3), until the token */
   invite?: InviteSecret;
   /** the PIN, from the moment it is typed until the host answered it (held, wrong, or throttled) */
-  pin?: Pin;
+  pin?: Pin | undefined;
   /** an invite line's host asked for its PIN (left: tries; why/message: the last wrong or throttled one) */
   pin_wanted?: { at: string; left?: number; why?: string; message?: string };
   awaiting?: { at: string; ref: string; check: string; expires_at: string };

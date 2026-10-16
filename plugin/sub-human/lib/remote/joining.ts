@@ -117,7 +117,7 @@ function told(code: RoomCode, text: string): void {
   try { const l = links.get(code); if (l) links.set(code, { ...l, join_told: text }); } catch { /* the tail may repeat it */ }
 }
 
-export function linkLine({ name, code, word, transport, sid }: { name: SeatName; code: RoomCode; word: InviteSecret; transport: LinkSpec; sid?: string | null }): JoinStep {
+export function linkLine({ name, code, word, transport, sid }: { name: SeatName; code: RoomCode; word: InviteSecret; transport: LinkSpec; sid?: string | null | undefined }): JoinStep {
   if (identity.roomExists(code) && identity.isHost(code)) return refuse(`room ${code} is hosted on this machine; join it with /sub-human ${name} ${code}.`);
   const cur: Link | null = links.get(code);
   // a link that stopped as spent (kicked: its token gets nowhere now) is replaced by the new line, never re-seated over

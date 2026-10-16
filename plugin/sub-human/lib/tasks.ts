@@ -43,9 +43,9 @@ import type { RoomCode, SeatName } from './brand.ts';
 /** A task as it arrives to be cleaned (the mirror, a fold, hooks/handlers/tasks.ts's native task): loosely shaped. */
 interface RawTask {
   id?: unknown;
-  subject?: string;
-  status?: string;
-  owner?: string | null;
+  subject?: string | undefined;
+  status?: string | undefined;
+  owner?: string | null | undefined;
   blockedBy?: unknown;
 }
 /** reqOf: a task_req or task entry's task fields. */

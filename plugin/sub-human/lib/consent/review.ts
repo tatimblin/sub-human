@@ -72,7 +72,7 @@ import type { RoomCode } from '../brand.ts';
 
 /** recheck: a plan-view Yes that came as the view opened (within YES_GUARD_MS, or while the person had typed text in
  * the prompt), not recorded: the card asks once, and only its answer records (item 8). */
-export interface State { review: Review | null; note: Confirm | null; recheck?: Recheck | null }
+export interface State { review: Review | null; note: Confirm | null; recheck?: Recheck | null | undefined }
 /** guardMs: YES_GUARD_MS unless the handler says otherwise (the tests shorten it: env.testMs). */
 export interface ReviewCtx { name: string; now: number; guardMs?: number }
 
@@ -297,7 +297,8 @@ function showEarly(r: Review, plan: PlanFile): [Review, ConsentEffect[]] {
 }
 
 /** Whether (and how) the handler reads the dialog's answer for this event: 'wait' polls for the line, 'now' does not. */
-export function answerNeeded(r: Review | null, ev: { type: ConsentEvent['type']; toolUseId?: string | null; mode?: string }): 'wait' | 'now' | null {
+export function answerNeeded(r: Review | null, ev: { type: ConsentEvent['type']; toolUseId?: string | null; mode?: string | undefined }
+): 'wait' | 'now' | null {
   if (!r || r.resolved || !(r.phase === 'shown' || r.unread)) return null;
   const same = !!r.tool_use_id && r.tool_use_id === ev.toolUseId;
   switch (ev.type) {

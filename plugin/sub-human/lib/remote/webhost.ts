@@ -68,7 +68,7 @@ function frontBase(text: string): FrontBase {
 }
 
 function hostWeb(code: RoomCode, { tailscale = false, funnel = false, url, port, by = null, now = Date.now() }: {
-  tailscale?: boolean; funnel?: boolean; url?: string; port?: number; by?: string | null; now?: number;
+  tailscale?: boolean; funnel?: boolean; url?: string | undefined; port?: number | undefined; by?: string | null; now?: number;
 } = {}): WebInvite {
   const store = hostStore(code);
   if (funnel) tailscale = true;

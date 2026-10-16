@@ -466,7 +466,7 @@ export function writeTarget(input: { file_path?: unknown; notebook_path?: unknow
 }
 
 /** The path made absolute (~ expanded), or null when it cannot be. */
-export function absTarget(p: unknown, { cwd, userHome }: { cwd?: string | null; userHome?: string | null } = {}): string | null {
+export function absTarget(p: unknown, { cwd, userHome }: { cwd?: string | null | undefined; userHome?: string | null } = {}): string | null {
   if (typeof p !== 'string' || !p) return null;
   let x = p;
   if (/^~(?=\/|$)/.test(x)) {

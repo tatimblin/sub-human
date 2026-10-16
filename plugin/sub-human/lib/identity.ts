@@ -158,11 +158,11 @@ interface SeatIndex {
   code: RoomCode;
   name: SeatName;
   /** a Role as written; read as any string (lastSeat and forkParent read anything but "claude" as a member) */
-  role?: string;
-  pid?: number | null;
-  pid_start?: number;
-  session_id?: SessionId | null;
-  address?: string;
+  role?: string | undefined;
+  pid?: number | null | undefined;
+  pid_start?: number | undefined;
+  session_id?: SessionId | null | undefined;
+  address?: string | undefined;
 }
 /** A session index record as read (indexRec; the same since 0.5.0-beta.4): code and name are what every reader needs. */
 const SEAT_INDEX = obj({
@@ -173,10 +173,10 @@ const SEAT_INDEX = obj({
 /** The hooks module's lease, <home>/sessions/mods/<sid>.json (see the header). */
 interface ModLease {
   session_id: SessionId;
-  pid?: number | null;
-  pid_start?: number;
-  at?: string;
-  nonce?: string;
+  pid?: number | null | undefined;
+  pid_start?: number | undefined;
+  at?: string | undefined;
+  nonce?: string | undefined;
 }
 /** A lease as read (writeModLease). */
 const MOD_LEASE = obj({ session_id: refine(str, isSessionId, 'a session id'), pid: opt(nullable(num)), pid_start: opt(num), at: opt(str), nonce: opt(str) });
@@ -186,17 +186,17 @@ interface JoinRequest {
   code: RoomCode;
   name: SeatName;
   role: string;
-  machine?: MachineId | null;
+  machine?: MachineId | null | undefined;
   /** the person behind the seat (lib/seats.ts enter); kept on the record, never sent by a mirror */
-  account?: string;
-  pid?: number | string | null;
-  session_id?: string | null;
-  cwd?: string | null;
+  account?: string | undefined;
+  pid?: number | string | null | undefined;
+  session_id?: string | null | undefined;
+  cwd?: string | null | undefined;
   /** what log a remote seat's code reads, as its join said (lib/remote/server.ts join; a local seat's is this code's) */
-  log_v?: number;
+  log_v?: number | undefined;
   /** leave the seat this pid held before to the caller (lib/seats.ts take: it leaves it, logged, once this join
    * worked, so a refused join changes nothing) instead of retiring it here */
-  keepPrevious?: boolean;
+  keepPrevious?: boolean | undefined;
 }
 
 /** The room's Claude's record as updateRoomClaude patches it: undefined deletes a field. */
@@ -275,7 +275,7 @@ const fail = (error: string): JoinOutcome => ({ ok: false, error });
  * Renew me's lease (members seen_at), at most every SEAT_BEAT_MS: the tail's health tick and the hold server
  * call it. Only for the seat as me holds it (same pid when me has one; not left). Returns true when written.
  */
-function heartbeat(me: { code?: RoomCode; name?: string; pid?: number | null } | null | undefined, now: number = Date.now()): boolean {
+function heartbeat(me: { code?: RoomCode; name?: string; pid?: number | null | undefined } | null | undefined, now: number = Date.now()): boolean {
   if (!me || !me.code || !me.name || !roomExists(me.code)) return false;
   const m: Member | undefined = readMembers(me.code)[me.name]; // the cheap check, before the op (a mirror's document holds no pid)
   const stale = !!m && !m.left_at && (!validPid(me.pid) || m.pid == null || m.pid === me.pid) && !(Date.parse(String(m.seen_at)) > now - SEAT_BEAT_MS);
@@ -301,7 +301,7 @@ function retirePrevious(code: RoomCode, name: SeatName, pid: number): void {
 }
 
 /** The record members.join stores for a seat of this machine: its pid, start time, session and cwd too. */
-function localSeat({ name, role, machine, pid, session_id, cwd }: { name: SeatName; role: Role; machine: MachineId | null; pid: number; session_id?: SessionId | null; cwd?: string | null }): SeatRecord {
+function localSeat({ name, role, machine, pid, session_id, cwd }: { name: SeatName; role: Role; machine: MachineId | null; pid: number; session_id?: SessionId | null | undefined; cwd?: string | null | undefined }): SeatRecord {
   const start = pidStart(pid);
   return { name, role, machine, pid, ...(start != null ? { pid_start: start } : {}), session_id: session_id || null, cwd: cwd || null };
 }
@@ -331,7 +331,7 @@ function join({ code, name, role, machine = machineIn(code), account, pid: pidAr
   return r;
 }
 
-function leave(code: RoomCode, name: SeatName, opts?: { reason?: string; deadlineMs?: number }): boolean {
+function leave(code: RoomCode, name: SeatName, opts?: { reason?: string; deadlineMs?: number | undefined }): boolean {
   if (!roomExists(code)) return false;
   if (!membersOf(code).leave(name, opts)) return false;
   primeStarts(Object.values(readMembers(code))); // one ps for the liveness checks below and the caller's (seats.exit)
@@ -608,7 +608,8 @@ function forkedOf(sid: unknown): ForkedAway | null {
   return r && { sid: r.sid, title: r.title, ...(typeof r.home === 'string' ? { home: r.home } : {}) };
 }
 
-function adoptFork(from: ForkParent, { pid: pidArg, session_id, cwd }: { pid: unknown; session_id: string; cwd?: string | null }): JoinOutcome {
+function adoptFork(from: ForkParent, { pid: pidArg, session_id, cwd }: { pid: unknown; session_id: string; cwd?: string | null | undefined }
+): JoinOutcome {
   const pid = Number(pidArg);
   if (!validPid(pid)) return fail(`invalid pid "${pid}"`);
   const before = readJson(bySidFile(from.sid), SEAT_INDEX, null);

@@ -93,7 +93,7 @@ class MirrorRoomStore implements RoomStore {
   readonly kv: KvApi;
 
   /** code: the room code; dir: the mirror's directory (default <home>/rooms/<code>). */
-  constructor(code: RoomCode, { dir }: { dir?: string } = {}) {
+  constructor(code: RoomCode, { dir }: { dir?: string | undefined } = {}) {
     this.code = code;
     const local = this.local = new FsRoomStore(code, { dir });
     this.trust = local.trust;
@@ -160,7 +160,7 @@ class MirrorRoomStore implements RoomStore {
   _linkDoc(): LinkDoc | null { try { return this.local.kv.get<LinkDoc>('link'); } catch { return null; } }
 
   /** One op over the bridge to this room's link daemon (the socket it recorded, then the computed paths). */
-  _call<M extends RelayOp>(op: M, params: RelayParams[M], { deadlineMs }: { deadlineMs?: number } = {}): RelayApi[M]['result'] {
+  _call<M extends RelayOp>(op: M, params: RelayParams[M], { deadlineMs }: { deadlineMs?: number | undefined } = {}): RelayApi[M]['result'] {
     bridge = bridge || createBridge<RelayApi>({ handler: HANDLER });
     try {
       return bridge.call(op, { socket: socketPaths(this.dir, this._linkDoc()), params }, { deadlineMs });

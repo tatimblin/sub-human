@@ -146,7 +146,7 @@ function dropToken(code: RoomCode, why: string, reason: Reason): void {
 
 // ---------- reconnect: timings, wake, network change ----------
 /** Every timing the daemon uses, from lib/config.ts and the SUB_HUMAN_LINK_*_MS overrides tests and the lab use, then `over`. */
-const linkTimings = (over: Partial<LinkTimings> = {}): LinkTimings => ({
+const linkTimings = (over: { [K in keyof LinkTimings]?: LinkTimings[K] | undefined } = {}): LinkTimings => ({
   retryMs: envMs('SUB_HUMAN_LINK_RETRY_MS'),
   retryMaxMs: envMs('SUB_HUMAN_LINK_RETRY_MAX_MS'),
   pingMs: envMs('SUB_HUMAN_LINK_PING_MS'),

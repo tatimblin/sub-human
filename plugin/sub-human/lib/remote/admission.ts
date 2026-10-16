@@ -61,7 +61,7 @@ const WAITING = 'waiting for the host to let this machine in';
 
 // ---------- the records (in the host document remote/invites, beside the invites: lib/remote/invites.ts) ----------
 /** An admission record's redemption (lib/remote/invites.ts redeemInvite): {err, next?} (err null: it may redeem). */
-function check(inv: AdmissionRecord, { machine, linkId, peerKey = null, now }: { machine: string; linkId?: string; peerKey?: string | null; now: number }): { next?: AdmissionRecord; err: RoomError | null } {
+function check(inv: AdmissionRecord, { machine, linkId, peerKey = null, now }: { machine: string; linkId?: string | undefined; peerKey?: string | null; now: number }): { next?: AdmissionRecord; err: RoomError | null } {
   const no = (msg: string, reason: ConstructorParameters<typeof RoomError>[2]) => new RoomError('AUTH', msg, reason);
   if (inv.used_at) return { err: no('this machine\'s join was used already; ask the host for a new invite', 'INVITE_USED') };
   if (inv.admit === 'refused') return { err: no('the host refused to let this machine in', 'ADMIT_REFUSED') };

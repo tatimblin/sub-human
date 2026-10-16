@@ -81,7 +81,7 @@ function checkHome() {
   return check({ id: 'home', status: 'fail', title: 'sub-human folder', detail: bad.join('; '), fix: `${cli('doctor --fix')} in a terminal (or chmod 700 ${bad.map(b => b.split(' ')[0]).join(' ')})` });
 }
 
-async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, authorizedKeys, env = process.env }: { quick?: boolean; timeoutMs?: number; authorizedKeys?: string; env?: NodeJS.ProcessEnv } = {}): Promise<Report> {
+async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, authorizedKeys, env = process.env }: { quick?: boolean; timeoutMs?: number; authorizedKeys?: string | undefined; env?: NodeJS.ProcessEnv } = {}): Promise<Report> {
   const checks = [checkPlugin(), checkNode(), checkHome()];
   const akFile = authorizedKeys || path.join(os.homedir(), '.ssh', 'authorized_keys');
   const scan = scanAuthorizedKeys(akFile);
@@ -141,7 +141,7 @@ function parseArgs(args: readonly string[]): DoctorOptions {
   return o;
 }
 
-function applyFix(write: (s: string) => void, { authorizedKeys }: { authorizedKeys?: string } = {}) {
+function applyFix(write: (s: string) => void, { authorizedKeys }: { authorizedKeys?: string | undefined } = {}) {
   const h = lib('home.ts');
   const done: string[] = [];
   if (fs.existsSync(h.home())) {

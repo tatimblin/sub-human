@@ -39,7 +39,7 @@ interface ConsentToolInput { plan?: unknown; questions?: CardQuestion[]; planFil
 interface ToolResponse extends CardResponse { plan?: unknown; planWasEdited?: unknown; isAgent?: unknown; filePath?: unknown }
 /** Every event consent handles (PreToolUse, PostToolUse, PermissionRequest, Stop, UserPromptSubmit), with the
  * transcript's lines once read (lines()). */
-type ConsentIn = Omit<AnyHookIn, 'tool_input'> & { tool_input?: ConsentToolInput; _lines?: string[] | null };
+type ConsentIn = Omit<AnyHookIn, 'tool_input' | 'permission_mode'> & { tool_input?: ConsentToolInput; _lines?: string[] | null; permission_mode?: string | undefined };
 /** An invite's join request waiting on the host (lib/remote/admission.ts pending). */
 type JoinRequest = AdmissionRequest;
 
@@ -49,7 +49,7 @@ const require = createRequire(import.meta.url);
 
 /** A room tool call outside plan mode, other than post: the reducer acts on one only while a review is open (plan
  * mode) or, for post, while a note waits for its card, so nothing else needs loading. */
-const quiet = (input: AnyHookIn | undefined): boolean => !!input && input.hook_event_name === 'PreToolUse' && input.permission_mode !== 'plan'
+const quiet = (input: ConsentIn | undefined): boolean => !!input && input.hook_event_name === 'PreToolUse' && input.permission_mode !== 'plan'
   && /^mcp__plugin_sub-human_room__/.test(String(input.tool_name || '')) && !POST_TOOL.test(String(input.tool_name || ''));
 const POST_TOOL = /^mcp__plugin_sub-human_room__post$/;
 
@@ -202,7 +202,8 @@ function admitAsked(me: Identity, call: Call): JoinRequest | null {
 }
 
 // ---------- running a step ----------
-type Out = { say: Say | null; show?: { admit?: JoinRequest; handoff?: HandoffAskDoc | null; card?: Proposal[] } };
+type Out = { say: Say | null; show?: { admit?: JoinRequest | undefined; handoff?: HandoffAskDoc | null | undefined; card?: Proposal[] } };
+
 
 /** The seat's state, reduce one event (made from it), run the effects, store the state, write the answer. */
 function step(input: ConsentIn, me: Identity, make: (st: State) => ConsentEvent, show: Out['show'] = {}) {

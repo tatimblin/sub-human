@@ -84,8 +84,8 @@ export interface ConnectOpts {
   /** this home's machine key's proof (lib/remote/machine-key.ts): the host derives the machine's id from it */
   machineKey?: { key: string; ts: number; sig: string };
   token?: LinkToken;
-  invite?: InviteSecret;
-  pin?: Pin;
+  invite?: InviteSecret | undefined;
+  pin?: Pin | undefined;
   /** protocol 3: the seat an invite line's PIN asks for, and this machine's short name */
   as?: { name: string; label: string };
   /** protocol 3: signs this machine's key over the host's challenge (machine-key.ts proofFor); with an invite the

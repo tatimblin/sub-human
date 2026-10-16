@@ -54,7 +54,9 @@ const stateFile = (code: unknown): string => links.stateFile(code);
 
 const num = (x: unknown): number | undefined => (Number.isFinite(Number(x)) && x !== null && x !== '' ? Number(x) : undefined);
 const str = (x: unknown): string | undefined => (typeof x === 'string' && x ? x : undefined);
-const clean = <O extends object>(o: O): O => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as O; // only undefined fields dropped
+/** o without its undefined fields: a field that may be undefined comes back optional (and never undefined). */
+type Cleaned<O> = { [K in keyof O as undefined extends O[K] ? never : K]: O[K] } & { [K in keyof O as undefined extends O[K] ? K : never]?: Exclude<O[K], undefined> };
+const clean = <O extends object>(o: O): Cleaned<O> => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Cleaned<O>; // only undefined fields dropped
 
 function normalize(state: unknown, detail?: unknown): LinkStateWord {
   if (isForGood(detail)) return detail;

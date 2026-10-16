@@ -110,7 +110,7 @@ export interface Ended {
 /** The link daemon's hellos, as the joiner's person is told. */
 export interface Outcome {
   state: 'linked' | 'pin' | 'refused' | 'waiting';
-  reason?: string;
+  reason?: string | undefined;
 }
 
 const sshT = (): typeof import('./transports/ssh.ts') => require('./transports/ssh.ts');
@@ -226,7 +226,7 @@ function inviteText({ code, how, line, pin, ref, extra = [], pinned, cut = false
 const machineWord = (secret: Buffer): InviteSecret => inviteSecret.encode(secret, inviteSecret.tagOf(secret, 'machine', machineKey.publicKey()));
 
 function hostInvite(code: RoomCode, { ssh = true, via, pipe = false, by = null, now = Date.now() }: {
-  ssh?: true | string; via?: string; pipe?: boolean; by?: string | null; now?: number;
+  ssh?: true | string | undefined; via?: string | undefined; pipe?: boolean; by?: string | null; now?: number;
 } = {}): HostedInvite {
   const store = hostStore(code);
   if (pipe) { // a second home on this machine (tests, the demo)
@@ -420,7 +420,7 @@ function joinText(code: RoomCode, name: SeatName, o: Outcome, { tells = false }:
  * (a web one with a fresh key of the link's own), the SECRET word and join_as. The daemon dials (lib/remote/link-
  * connect.ts connectLink): the host key the line names first, then the SECRET; the host asks for the PIN.
  */
-function joinLine({ code, transport, word, name, sid }: { code: RoomCode; transport: LinkSpec; word: InviteSecret; name: string; sid?: string | null }): { code: RoomCode } {
+function joinLine({ code, transport, word, name, sid }: { code: RoomCode; transport: LinkSpec; word: InviteSecret; name: string; sid?: string | null | undefined }): { code: RoomCode } {
   const t: LinkSpec = transport.kind === 'wss' || transport.kind === 'ws'
     ? { ...transport, clientKey: linkConnect().linkKey(code, { fresh: true }).pub.toString('base64url') } : transport;
   links().set(code, { code, transport: t, invite: word, join_as: name, ...(sid ? { join_sid: sid } : {}), created_at: new Date().toISOString() });

@@ -80,17 +80,17 @@ const gc = (): typeof import('./gc.ts') => require('./gc.ts');
 interface EnterOpts {
   code: RoomCode;
   name: SeatName;
-  role?: string;
-  machine?: MachineId | null;
-  account?: string;
-  pid?: number | null;
-  session_id?: string | null;
-  cwd?: string | null;
-  pubkey?: string;
+  role?: string | undefined;
+  machine?: MachineId | null | undefined;
+  account?: string | undefined;
+  pid?: number | null | undefined;
+  session_id?: string | null | undefined;
+  cwd?: string | null | undefined;
+  pubkey?: string | undefined;
   /** what log a remote seat's code reads, as its join said (lib/remote/server.ts) */
-  log_v?: number;
+  log_v?: number | undefined;
   /** take leaves the seat this pid held before itself, after this join worked (identity.join keepPrevious) */
-  keepPrevious?: boolean;
+  keepPrevious?: boolean | undefined;
 }
 /** identity.join's answer; note: what the join line adds (the room's Claude starting, or why it could not). */
 type EnterResult = JoinOutcome & { note?: string };
@@ -138,7 +138,7 @@ function enter({ code, name, role = 'member', machine = identity.machineIn(code)
   return { ...r, note: ensureRoomClaude(code, cwd, name) };
 }
 
-function exit(code: RoomCode, name: SeatName, reason: string, { deadlineMs }: { deadlineMs?: number } = {}): boolean {
+function exit(code: RoomCode, name: SeatName, reason: string, { deadlineMs }: { deadlineMs?: number | undefined } = {}): boolean {
   try {
     if (!identity.leave(code, name, { reason, deadlineMs })) return false;
   } catch (e) {
