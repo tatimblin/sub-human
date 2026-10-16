@@ -90,3 +90,19 @@ test('join: a linked machine given another invite to the same host through the s
   const kept = remote.lib(() => links.get(code))!;
   assert.deepEqual([kept.token, kept.rebind], ['tok', undefined], 'the working link is kept, its token not replaced');
 });
+
+test('C (live verify, remote/15c-e): a join another way, for a room this machine is linked to live, is refused and leaves the link file and its daemon alone', t => {
+  const { remote, bob, code } = room(t);
+  const transport: SshSpec = { kind: 'ssh', user: 'host', host: 'devbox' };
+  remote.lib(() => {
+    links.set(code, { code, transport, token: 'tok', created_at: new Date().toISOString() });
+    // the daemon's document: running (this process's pid lives) and online
+    store.open(code).kv.set('link', { pid: process.pid, state: 'online', since: new Date().toISOString() });
+  });
+  const before = remote.lib(() => links.get(code));
+  for (const line of [`join nosuchhost.invalid ${code}`, `join other@elsewhere.invalid ${code} ${inviteSecret.encode(inviteSecret.mint(), Buffer.alloc(8))}`]) {
+    const r = remote.join(bob, line);
+    assert.match(r.json!.reason || r.json!.systemMessage || r.stdout, new RegExp(`already linked to room ${code} through ssh host@devbox; .*link ${code} --forget`), line);
+    assert.deepEqual(remote.lib(() => links.get(code)), before, `the link file is as it was: ${line}`);
+  }
+});
