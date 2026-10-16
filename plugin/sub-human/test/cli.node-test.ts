@@ -13,15 +13,16 @@ import * as identity from '../lib/identity.ts';
 import * as proposal from '../lib/proposal.ts';
 import * as textMod from '../lib/text.ts';
 import * as store from '../lib/room/store.ts';
+import { FsRoomStore } from '../lib/room/store.ts';
 import { MirrorRoomStore } from '../lib/room/store-mirror.ts';
 import * as links from '../lib/room/links.ts';
 import * as linkMod from '../lib/remote/link.ts';
 import { roomsDir } from '../lib/home.ts';
 import type { Room } from '../lib/room.ts';
-import type { FsRoomStore } from '../lib/room/store.ts';
-import type { EntryInput, Via } from '../lib/room/types.ts';
+import type { EntryInput, RoomStore, Via } from '../lib/room/types.ts';
 import { sn, tokenOf } from './support/brands.ts';
-let R!: Room; // the room under test
+import { must } from './support/must.ts';
+let R: Room; // the room under test
 
 // tail looks its seat up by CLAUDE_PID when it has no session id (no ps walk).
 const FAST = { CLAUDE_PID: String(process.pid), SUB_HUMAN_RESOLVE_MS: '100', SUB_HUMAN_UNSEATED_MS: '100', SUB_HUMAN_POLL_MS: '50', SUB_HUMAN_SETTLE_MS: '300', SUB_HUMAN_SETTLE_MAX_MS: '1000', SUB_HUMAN_LEAVE_MS: '600' };
@@ -50,17 +51,17 @@ interface TailRun {
 function startTail(env: Record<string, string> = {}): TailRun {
   const child = spawn(h.BIN, ['tail', '/plugin/root', '/project/dir'], { env: h.childEnv({ ...FAST, ...env }) });
   children.add(child);
-  const t = { child, out: '', exited: new Promise<number | null>(r => child.on('exit', code => r(code))) } as TailRun;
+  const t = { child, out: '', exited: new Promise<number | null>(r => child.on('exit', code => r(code))) } as TailRun; // deliberate: its methods set just below
   child.stdout.on('data', d => { t.out += d; });
   // one JSON event per line; lines(): what the batches show (each chat event's lines, then its wake's)
-  t.events = () => t.out.split('\n').filter(Boolean).map(l => JSON.parse(l));
+  t.events = () => t.out.split('\n').filter(Boolean).map(l => JSON.parse(l) as TailEvent);
   t.of = (type: string) => t.events().filter(x => x.type === type);
   t.lines = () => t.events().flatMap(x => (x.type === 'chat' ? x.lines : x.type === 'wake' ? x.text.split('\n') : []));
   t.text = () => t.lines().map(l => l + '\n').join('');
   t.chat = () => t.lines().filter(l => !l.startsWith('(for Claude)'));
   t.forClaude = () => t.lines().filter(l => l.startsWith('(for Claude)'));
   t.entries = () => t.lines().filter(l => /^#\d+ /.test(l));
-  t.ids = () => t.entries().map(l => Number(l.split(' ')[0].slice(1)));
+  t.ids = () => t.entries().map(l => Number(must(l.split(' ')[0]).slice(1)));
   t.batches = () => t.lines().filter(l => l.startsWith('room now: ')).length;
   t.until = async (needle: string, ms = 5000) => {
     await h.until(() => t.text().includes(needle), ms);
@@ -69,6 +70,8 @@ function startTail(env: Record<string, string> = {}): TailRun {
   t.stop = async () => { child.kill(); await t.exited; children.delete(child); };
   return t;
 }
+/** A room's store on this machine's disk (its dir and logFile): a hosted room's, or a linked room's mirror. */
+const onDisk = (s: RoomStore): FsRoomStore | MirrorRoomStore => { assert.ok(s instanceof FsRoomStore || s instanceof MirrorRoomStore, 'expected a store on disk'); return s; };
 const cli = (args: string[], env: Record<string, string> = {}) => spawnSync(h.BIN, args, { env: h.childEnv(env), encoding: 'utf8' });
 const say = (from: string, text: string, extra: Partial<EntryInput> = {}, via: Via = 'human') => R.append({ kind: 'say', text, ...extra }, { via, from });
 const sys = (kind: string, from: string, extra: Partial<EntryInput> = {}) => R.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'system', from, system: true });
@@ -120,9 +123,9 @@ test('cli tail --ndjson (smoke): by session id, one JSON event per line; SIGTERM
   await h.until(() => out.includes('"type":"seat"'), 5000);
   say('bob', 'hi alice');                                // #2
   await h.until(() => out.includes('"type":"chat"'), 5000);
-  const events = out.split('\n').filter(Boolean).map(l => JSON.parse(l));
-  assert.deepEqual(events.find(x => x.type === 'chat').lines, ['bob: hi alice'], out);
-  assert.equal(events.find(x => x.type === 'seat').seat.addr, `alice.${code}`);
+  const events = out.split('\n').filter(Boolean).map(l => JSON.parse(l) as TailEvent & { seat: { addr: string } });
+  assert.deepEqual(must(events.find(x => x.type === 'chat')).lines, ['bob: hi alice'], out);
+  assert.equal(must(events.find(x => x.type === 'seat')).seat.addr, `alice.${code}`);
   child.kill('SIGTERM');
   assert.equal(await exited, 0);
 });
@@ -181,7 +184,7 @@ test('cli: who / read / digest resolve by session id, then ancestry', () => {
   assert.ok(r.stdout.includes('  │ line one\n  │   line `two` $(x)'), 'every text line nested under the header');
   assert.ok(cli(['read', '2']).stdout.startsWith('[#2 '), 'a bare id works, as the cut marker says');
   r = cli(['read', '--json']);
-  assert.deepEqual(r.stdout.trim().split('\n').map(l => JSON.parse(l).id), [1, 2]);
+  assert.deepEqual(r.stdout.trim().split('\n').map(l => (JSON.parse(l) as { id: number }).id), [1, 2]);
   assert.match(cli(['read']).stdout, /no new messages/);
   assert.equal(cli(['read', '--id', '99']).status, 1);
   r = cli(['digest']);
@@ -242,12 +245,12 @@ test('cli tasks: the room list from lib/tasks.ts list(code), plain and --json', 
     { id: '3', subject: 'docs', status: 'pending', owner: null, blockedBy: ['2'] },
     { id: '1', subject: `room ${code} open`, status: 'in_progress', owner: 'room', metadata: { _internal: true } },
   ];
-  fs.writeFileSync(path.join(R.store.dir!, 'tasks.json'), JSON.stringify(list));
+  fs.writeFileSync(path.join(must(R.store.dir), 'tasks.json'), JSON.stringify(list));
   r = cli(['tasks']);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stdout, '#2  in progress  bob  parser tests\n#3  open         -    docs  (blocked by #2)\n', 'the rows\' words: open, in progress, done');
   r = cli(['tasks', '--json', '--room', code]);
-  assert.deepEqual(JSON.parse(r.stdout).map((t: { id: string }) => t.id), ['2', '3']);
+  assert.deepEqual((JSON.parse(r.stdout) as { id: string }[]).map(t => t.id), ['2', '3']);
   assert.equal(cli(['tasks', '--room', 'nope-0000']).status, 1);
 });
 
@@ -270,14 +273,14 @@ test('cli watch NAME: their words, their Claude, sign-offs, joins/leaves, the ro
   const r = cli(['watch', 'bob']);
   assert.equal(r.status, 0, r.stderr);
   const heads = r.stdout.split('\n').filter(l => /^#\d+ /.test(l));
-  assert.deepEqual(heads.map(l => Number(l.split(' ')[0].slice(1))), [1, 2, 3, 6, 9, 10, 11], r.stdout);
-  const whoOf = (id: number) => heads.find(l => l.startsWith(`#${id} `))!.split(/\s{2,}/)[1];
+  assert.deepEqual(heads.map(l => Number(must(l.split(' ')[0]).slice(1))), [1, 2, 3, 6, 9, 10, 11], r.stdout);
+  const whoOf = (id: number) => must(heads.find(l => l.startsWith(`#${id} `))).split(/\s{2,}/)[1];
   assert.equal(whoOf(1), 'room');
   assert.equal(whoOf(2), 'bob');
   assert.equal(whoOf(3), "bob's Claude");
   assert.equal(whoOf(6), 'claude');
   assert.equal(whoOf(9), 'bob');
-  assert.match(heads.find(l => l.startsWith('#9 '))!, /objection {2}proposal abcdef$/);
+  assert.match(must(heads.find(l => l.startsWith('#9 '))), /objection {2}proposal abcdef$/);
   assert.ok(r.stdout.includes('    too broad\n      keep it small\n'), 'text verbatim, indented');
   assert.ok(!r.stdout.includes('\x1b['), 'no color when not a terminal');
   // the room Claude's own thread labels it claude
@@ -301,11 +304,11 @@ test('cli link CODE --forget: refused on a room hosted here, and for a link stop
 
   const code = h.newRoom();
   links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: tokenOf('t') });
-  const s = store.open(code) as FsRoomStore; // a room on disk: the fs store, with its logFile
+  const s = onDisk(store.open(code)); // a room on disk: the fs store, with its logFile
   assert.equal(s.isHost, false);
-  fs.mkdirSync(s.dir!, { recursive: true, mode: 0o700 });
+  fs.mkdirSync(must(s.dir), { recursive: true, mode: 0o700 });
   fs.writeFileSync(s.logFile, '{"id":1}\n');
-  fs.writeFileSync(path.join(s.dir!, 'outbox.json'), '[]');
+  fs.writeFileSync(path.join(must(s.dir), 'outbox.json'), '[]');
   // stopped for another reason: only --force forgets it
   links.writeState(code, stopped('AUTH: unknown link token'));
   const r2 = cli(['link', code, '--forget']);
@@ -319,7 +322,7 @@ test('cli link CODE --forget: refused on a room hosted here, and for a link stop
   assert.equal(r3.status, 0, r3.stderr);
   const m = r3.stdout.match(/^room \S+: forgotten; this machine's copy is kept at (.+)$/m);
   assert.ok(m, r3.stdout);
-  const archive = m[1];
+  const archive = must(m[1]);
   assert.equal(path.dirname(archive), roomsDir());
   assert.match(path.basename(archive), new RegExp(`^${code}\\.forgotten-`));
   assert.ok(fs.existsSync(path.join(archive, 'outbox.json')), 'unsent posts are kept');
@@ -327,10 +330,10 @@ test('cli link CODE --forget: refused on a room hosted here, and for a link stop
   assert.ok(!fs.existsSync(path.join(archive, path.basename(s.logFile))));
   assert.equal(links.has(code), false);
   assert.equal(fs.existsSync(links.dirOf(code)), false);
-  assert.equal(fs.existsSync(s.dir!), false);
+  assert.equal(fs.existsSync(must(s.dir)), false);
   // verify12 remote/07d: the link's own state file goes with the copy, none stays in links/
   assert.equal(fs.existsSync(links.stateFile(code)), false);
-  assert.equal(JSON.parse(fs.readFileSync(path.join(archive, 'link.state.json'), 'utf8')).lastReason, 'ROOM_CLOSED');
+  assert.equal((JSON.parse(fs.readFileSync(path.join(archive, 'link.state.json'), 'utf8')) as { lastReason: string }).lastReason, 'ROOM_CLOSED');
   store.forget(code); // this process's cache (the CLI dropped its own)
   assert.equal(store.roomExists(code), false);
   assert.deepEqual(store.listRooms(), [hosted], 'no listing sees the archive, and nothing opens it as a room hosted here');
@@ -347,7 +350,7 @@ test('cli link CODE --forget: refused on a room hosted here, and for a link stop
   // a seatless stop forgets too; --force any link, here one with no copy on disk
   const seatless = h.newRoom();
   links.set(seatless, { code: seatless, transport: { kind: 'pipe', home: '/h' }, token: tokenOf('t') });
-  fs.mkdirSync(store.open(seatless).dir!, { recursive: true, mode: 0o700 });
+  fs.mkdirSync(must(store.open(seatless).dir), { recursive: true, mode: 0o700 });
   links.writeState(seatless, stopped(linkMod.NO_SEAT_REASON, 'NO_SEAT'));
   assert.equal(cli(['link', seatless, '--forget']).status, 0);
   assert.equal(links.has(seatless), false);
@@ -369,8 +372,8 @@ test('R1 (live verify, verify6/12): after link CODE --forget, a process still ho
   h.freshHome();
   const code = h.newRoom();
   links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: tokenOf('t') });
-  const s = store.open(code) as FsRoomStore;
-  fs.mkdirSync(s.dir!, { recursive: true, mode: 0o700 });
+  const s = onDisk(store.open(code));
+  fs.mkdirSync(must(s.dir), { recursive: true, mode: 0o700 });
   fs.writeFileSync(s.logFile, '{"id":1}\n');
   // bob's seat in it, as this machine's session indexes record it
   const idx = { code, name: sn('bob'), role: 'member', pid: process.pid, session_id: 'aaaaaaaa-0000-4000-8000-0000000000b0', address: `bob.${code}` };
@@ -383,46 +386,46 @@ test('R1 (live verify, verify6/12): after link CODE --forget, a process still ho
   assert.equal(fs.existsSync(path.join(identity.home(), 'sessions', 'by-sid', `${idx.session_id}.json`)), false, 'the seat ends: its index is gone');
   assert.equal(identity.lastSeat(idx.session_id), null);
   // what bob's hold server or tail would write next: refused, and no folder comes back
-  const after = store.open(code) as FsRoomStore;
+  const after = onDisk(store.open(code));
   assert.throws(() => session.put(after, 'bob', 'holds', { pid: 1, at: new Date().toISOString(), members: [], room: false }), (e: Error & { code?: string }) => e.code === 'NO_ROOM');
   assert.throws(() => after.kv.update('members/bob/session', () => ({ v: 1 })), (e: Error & { code?: string }) => e.code === 'NO_ROOM');
-  assert.equal(fs.existsSync(after.dir!), false);
+  assert.equal(fs.existsSync(must(after.dir)), false);
   assert.equal(store.roomExists(code), false);
   // the stray state an older run left: a folder with only a seat's session document, untouched for minutes
-  fs.mkdirSync(path.join(after.dir!, 'members', 'bob'), { recursive: true, mode: 0o700 });
-  fs.writeFileSync(path.join(after.dir!, 'members', 'bob', 'session.json'), '{"v":1}');
+  fs.mkdirSync(path.join(must(after.dir), 'members', 'bob'), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(path.join(must(after.dir), 'members', 'bob', 'session.json'), '{"v":1}');
   const old = new Date(Date.now() - 5 * 60_000);
-  fs.utimesSync(after.dir!, old, old);
+  fs.utimesSync(must(after.dir), old, old);
   assert.equal(store.isLeftover(code), true);
   assert.equal(store.roomExists(code), false, 'never a room hosted here');
   // stage 8e I.10: a stray write a moment ago (its mtime now) leaves it a leftover: made long ago is what counts
   // (where the filesystem keeps a birth time that utimes moved back with it, as on macOS)
-  fs.writeFileSync(path.join(after.dir!, 'members', 'bob', 'x.json'), '{}');
-  fs.utimesSync(after.dir!, new Date(), new Date());
-  if (fs.statSync(after.dir!).birthtimeMs > 0 && fs.statSync(after.dir!).birthtimeMs < Date.now() - 60_000) assert.equal(store.isLeftover(code), true, 'written just now, made minutes ago');
-  fs.utimesSync(after.dir!, old, old);
+  fs.writeFileSync(path.join(must(after.dir), 'members', 'bob', 'x.json'), '{}');
+  fs.utimesSync(must(after.dir), new Date(), new Date());
+  if (fs.statSync(must(after.dir)).birthtimeMs > 0 && fs.statSync(must(after.dir)).birthtimeMs < Date.now() - 60_000) assert.equal(store.isLeftover(code), true, 'written just now, made minutes ago');
+  fs.utimesSync(must(after.dir), old, old);
   // the store's locks refuse a room this machine does not have, as its writes do
   const gone = h.newRoom();
-  const ghost = store.open(gone) as FsRoomStore;
-  fs.rmSync(ghost.dir!, { recursive: true, force: true });
+  const ghost = onDisk(store.open(gone));
+  fs.rmSync(must(ghost.dir), { recursive: true, force: true });
   assert.throws(() => ghost.lock('x', () => 1), (e: Error & { code?: string }) => e.code === 'NO_ROOM');
   assert.throws(() => ghost.kv.lock('members/bob/session', () => 1), (e: Error & { code?: string }) => e.code === 'NO_ROOM');
-  assert.equal(fs.existsSync(ghost.dir!), false, 'no folder made for a lock');
+  assert.equal(fs.existsSync(must(ghost.dir)), false, 'no folder made for a lock');
   const fresh = h.newRoom();
   store.createRoom(fresh);
   assert.equal(store.isLeftover(fresh), false, 'a room just made, before its first join, is a room');
   const d = cli(['link', code, '--forget']);
   assert.equal(d.status, 0, d.stderr);
   assert.match(d.stdout, new RegExp(`^room ${code}: a leftover folder .* is set aside at .*${code}\\.forgotten-`));
-  assert.equal(fs.existsSync(after.dir!), false);
+  assert.equal(fs.existsSync(must(after.dir)), false);
 });
 
 test('cli link CODE --forget (stage 8f item 3): a daemon still running is stopped first, then the room is forgotten in the same step', () => {
   h.freshHome();
   const code = h.newRoom();
   links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: tokenOf('t') });
-  const s = store.open(code) as FsRoomStore;
-  fs.mkdirSync(s.dir!, { recursive: true, mode: 0o700 });
+  const s = onDisk(store.open(code));
+  fs.mkdirSync(must(s.dir), { recursive: true, mode: 0o700 });
   fs.writeFileSync(s.logFile, '{"id":1}\n');
   // a stand-in daemon: its document `link` names a live pid, online (no stop reason on record)
   // started through a shell that exits, so it is reaped once it stops, as the detached daemon is
@@ -434,7 +437,7 @@ test('cli link CODE --forget (stage 8f item 3): a daemon still running is stoppe
   assert.match(r.stdout, new RegExp(`^room ${code}: its connection \\(pid ${pid}\\) stopped, and forgotten; this machine's copy is kept at `, 'm'));
   assert.equal(identity.isAlive(pid), false, 'the daemon is gone');
   assert.equal(links.has(code), false);
-  assert.equal(fs.existsSync(s.dir!), false);
+  assert.equal(fs.existsSync(must(s.dir)), false);
   store.forget(code);
 });
 
@@ -442,8 +445,8 @@ test('cli link CODE --forget on a link that is not online (verify12 remote/05b):
   h.freshHome();
   const code = h.newRoom();
   links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: tokenOf('t') });
-  const s = store.open(code) as FsRoomStore;
-  fs.mkdirSync(s.dir!, { recursive: true, mode: 0o700 });
+  const s = onDisk(store.open(code));
+  fs.mkdirSync(must(s.dir), { recursive: true, mode: 0o700 });
   fs.writeFileSync(s.logFile, '{"id":1}\n');
   // bob's seat, this machine's, as the host's document (sent to the mirror) has it
   const opened = store.open(code);

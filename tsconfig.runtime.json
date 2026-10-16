@@ -3,13 +3,10 @@
   // declaration only a test brings in. isolatedDeclarations: every export's type is written where it is declared (a
   // function's return, a table's annotation or an inferable literal), so a module's boundary reads without the
   // checker. It needs `declaration`; noEmit (from the root) still writes nothing. It refuses allowJs: the two plain JS
-  // files are the root pass's. exactOptionalPropertyTypes and noUncheckedIndexedAccess are the runtime's here (the
-  // tests, the root pass, take them next: stage T6b); scripts/tsconfig.json sets them for the repo scripts.
+  // files are the root pass's.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "isolatedDeclarations": true,
-    "exactOptionalPropertyTypes": true,
-    "noUncheckedIndexedAccess": true,
     "declaration": true,
     "allowJs": false,
     "checkJs": false,

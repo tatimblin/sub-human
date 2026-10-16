@@ -49,7 +49,7 @@ function redactor({ home = os.homedir(), shHome = lib('home.ts').home(), hosts =
   const people = [...new Set([...users, (() => { try { return os.userInfo().username; } catch { return ''; } })()].filter(u => u && u.length > 2))];
   const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return text => {
-    let s = String(text == null ? '' : text).replace(/\x1b\[[0-9;]*m/g, '');
+    let s = String(text ?? '').replace(/\x1b\[[0-9;]*m/g, '');
     s = s.replace(KEY_RE, (_: string, type: string, b64: string) => `${type} ${fingerprint(b64)}`);
     s = s.replace(/\bsh\d\.[A-Za-z0-9._~:-]+/g, 'sh2.<invite>');
     // an invite's PIN is its whole secret (join DEST ROOM 4829; a promote's sh2 PIN has 6 digits): any lone 4- or
@@ -88,7 +88,7 @@ function bundle(report: Report, { salt, env = process.env }: { salt?: string; en
   const config = lib('config.ts');
   const timings = Object.fromEntries(Object.entries(config).filter(([k, v]) => /^[A-Z][A-Z0-9_]+$/.test(k) && (typeof v === 'number' || typeof v === 'boolean')));
   const overrides = Object.fromEntries(Object.entries(env).filter(([k]) => lib('env.ts').TIMING_ENV_RE.test(k)).map(([k, v]) => [k, Number(v)]));
-  const opt = <T>(x: T): T | undefined => (x === undefined || x === null ? undefined : x);
+  const opt = <T>(x: T): T | undefined => (x ?? undefined);
   return {
     kind: 'sub-human-doctor-bundle', format: 1, generated_at: report.generated_at,
     note: 'redacted: no messages, keys, tokens or invites; paths under $HOME are ~, host and user names hashed',

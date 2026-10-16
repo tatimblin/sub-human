@@ -68,7 +68,7 @@ const EXPANSION = 'UserPromptExpansion';
 export function render(reply: Reply | null | undefined | void): Rendered {
   if (!reply) return { outputs: [], exit: 0, stderr: '' };
   switch (reply.kind) {
-    case 'classic': return { outputs: reply.outputs || [], exit: reply.exit ?? 0, stderr: reply.stderr || '' };
+    case 'classic': return { outputs: reply.outputs ?? [], exit: reply.exit ?? 0, stderr: reply.stderr || '' };
     case 'joined': {
       const hso = { hookEventName: EXPANSION, additionalContext: reply.context };
       if (reply.module) return { outputs: [{ hookSpecificOutput: hso, subHuman: { say: reply.say, joined: true, shareable: true } }], exit: 0, stderr: '' };

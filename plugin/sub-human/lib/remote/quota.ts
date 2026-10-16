@@ -63,7 +63,7 @@ function charge(store: Pick<AuthStore, 'kv'>, linkId: string, op: QuotaOp, { now
   store.kv.update(QUOTA_KEY, (cur: Counts | null) => {
     refused.err = null;
     const mine = { ...(cur && cur[linkId]) };
-    const times = (mine[op] || []).filter(t => now - t < q.windowMs);
+    const times = (mine[op] ?? []).filter(t => now - t < q.windowMs);
     if (times.length >= q.max) { refused.err = over(op, `this connection's ${op}`, q.windowMs - (now - (times[0] ?? now))); return undefined; }
     mine[op] = [...times, now];
     return { ...cur, [linkId]: mine };
@@ -77,7 +77,7 @@ function session(): { take(op: QuotaOp, now?: number): void } {
   return {
     take(op, now = Date.now()) {
       const q = LINK_QUOTAS[op];
-      const times = (seen.get(op) || []).filter(t => now - t < q.windowMs);
+      const times = (seen.get(op) ?? []).filter(t => now - t < q.windowMs);
       if (times.length >= q.max) throw over(op, `this connection's ${op}`, q.windowMs - (now - (times[0] ?? now)));
       times.push(now);
       seen.set(op, times);
@@ -86,4 +86,4 @@ function session(): { take(op: QuotaOp, now?: number): void } {
 }
 
 export { fromLog, checkLog, charge, session, QUOTA_KEY };
-export type { QuotaOp as QuotaOp };
+export type { QuotaOp };

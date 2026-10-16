@@ -1,9 +1,12 @@
 // Wiring: the group-chat drawing of UserMessage rows (mod/render.ts). Run with `npm run test:mods`.
-import { test, expect } from 'claude-code/testing'
+import type { RenderPropsOf } from 'claude-code'
+import { test, expect, type Mounted } from 'claude-code/testing'
 
 const SURFACES = ['terminal', 'desktop'] as const
-const row = (props: any) => ({ plugin: 'sub-human', component: 'UserMessage' as const, props: { isExpanded: false, ...props } })
-const texts = async (ui: any) => (await ui.findAll({ type: 'Text' })).map((t: any) => t.text)
+/** A UserMessage row's props (isExpanded: false unless given). */
+type Props = Omit<RenderPropsOf['UserMessage'], 'isExpanded'> & { isExpanded?: boolean }
+const row = (props: Props) => ({ plugin: 'sub-human', component: 'UserMessage' as const, props: { isExpanded: false, ...props } })
+const texts = async (ui: Pick<Mounted, 'findAll'>) => (await ui.findAll({ type: 'Text' })).map(t => t.text)
 
 test('a peer message from another member\'s Claude is one compact chat row', async $ => {
   for (const surface of SURFACES) {
@@ -18,8 +21,8 @@ test('a sub-human prompt draws its chat lines, and its (for Claude) lines as one
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ ...row({ text, origin: { kind: 'plugin', name: 'sub-human' } }), surface })
     const found = await ui.findAll({ type: 'Text' })
-    expect(found.map((t: any) => t.text)).toEqual([expect.stringMatching(/^\(for Claude\) sub-human room: lines from .*…$/), 'bob: sure, once we agree', '  │ on the schema', 'carol joined', '(for Claude) room now: no proposals'])
-    expect(found.map((t: any) => !!t.props.dimColor)).toEqual([true, false, false, false, true])
+    expect(found.map(t => t.text)).toEqual([expect.stringMatching(/^\(for Claude\) sub-human room: lines from .*…$/), 'bob: sure, once we agree', '  │ on the schema', 'carol joined', '(for Claude) room now: no proposals'])
+    expect(found.map(t => !!t.props.dimColor)).toEqual([true, false, false, false, true])
     await ui.unmount()
   }
 })
@@ -30,14 +33,14 @@ test('a wake as Claude Code frames it: the frame is left out; expanded (a short 
   for (const surface of SURFACES) {
     let ui = await $.ui.mount({ ...row({ text, origin: { kind: 'plugin', name: 'sub-human' } }), surface })
     let found = await ui.findAll({ type: 'Text' })
-    expect(found.map((t: any) => t.text)).toEqual([expect.stringMatching(/^\(for Claude\) sub-human room: .*…$/), 'dave objected to "Readme pass" (b18b6e)', '(for Claude) room now: proposal b18b6e decided'])
-    expect(found.map((t: any) => !!t.props.dimColor)).toEqual([true, false, true])
+    expect(found.map(t => t.text)).toEqual([expect.stringMatching(/^\(for Claude\) sub-human room: .*…$/), 'dave objected to "Readme pass" (b18b6e)', '(for Claude) room now: proposal b18b6e decided'])
+    expect(found.map(t => !!t.props.dimColor)).toEqual([true, false, true])
     await ui.unmount()
     ui = await $.ui.mount({ ...row({ text, origin: { kind: 'plugin', name: 'sub-human' }, isExpanded: true }), surface })
     found = await ui.findAll({ type: 'Text' })
     expect(found.length).toBe(5)
-    expect(found.map((t: any) => !!t.props.dimColor)).toEqual([true, true, false, true, true])
-    expect(found[1].text).toMatch(/act on what concerns you\.$/)
+    expect(found.map(t => !!t.props.dimColor)).toEqual([true, true, false, true, true])
+    expect(found[1]?.text).toMatch(/act on what concerns you\.$/)
     await ui.unmount()
   }
 })
@@ -50,7 +53,7 @@ test('expanded (ctrl+o), another plugin, a sender that is no seat, a notificatio
     if (!el || typeof el === 'string') throw new Error('the engine row drew no element')
     return el
   })
-  const cases = [
+  const cases: Props[] = [
     { text: 'hi', origin: { kind: 'peer' }, from: { name: 'bob.otter-4821' }, isExpanded: true },
     { text: 'hi', origin: { kind: 'plugin', name: 'other' } },
     { text: 'hi', origin: { kind: 'peer' }, from: { name: 'Some session' } },

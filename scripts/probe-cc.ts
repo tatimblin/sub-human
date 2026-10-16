@@ -24,10 +24,11 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { PLUGIN, REPO, pluginLib } from './lib/paths.ts';
 import { writtenBy } from './typings.ts';
+import { parseJson } from './lib/io.ts';
 import type { ContractEntry } from '../plugin/sub-human/lib/cc/contract.ts';
 
 const CONTRACT_JSON = path.join(PLUGIN, 'lib', 'cc', 'contract.json');
-const contract: { probed: string, entries: ContractEntry[] } = JSON.parse(fs.readFileSync(CONTRACT_JSON, 'utf8'));
+const contract = parseJson<{ probed: string, entries: ContractEntry[] }>(fs.readFileSync(CONTRACT_JSON, 'utf8'));
 const cc = pluginLib('cc/contract.ts');
 export const TYPINGS = path.join(REPO, 'typings', 'claude-code', 'index.d.ts');
 
@@ -59,7 +60,7 @@ function extras(): ContractEntry[] {
   const f = arg('--extra');
   if (f) text = fs.readFileSync(f, 'utf8');
   if (!text) return [];
-  const x: Extra | Extra[] = JSON.parse(text);
+  const x = parseJson<Extra | Extra[]>(text);
   return (Array.isArray(x) ? x : [x]).map(e => ({ stability: 'test', note: '', ...e }));
 }
 

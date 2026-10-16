@@ -264,7 +264,7 @@ class HoldServer {
     if (seat && now - (seat.savedAt || 0) >= this.BEAT_MS / 2) {
       seat.savedAt = now;
       this.saveSeat();
-      try { this.ctx.identity.heartbeat && this.ctx.identity.heartbeat(this.me || seat, now); } catch (e) { this.log('heartbeat', msgOf(e)); }
+      try { this.ctx.identity.heartbeat && this.ctx.identity.heartbeat(this.me ?? seat, now); } catch (e) { this.log('heartbeat', msgOf(e)); }
     }
   }
 

@@ -5,7 +5,8 @@
 // post and receive; the bastion's and the proxy's logs show the hop. bea's invite comes from `/sub-human invite --ssh
 // host@devbox --via jump@bastion`: the jump is in the invite's line, so her link runs ssh -J itself.
 import { JUMP, PROXY, delivered, converge } from './_lib.ts';
-import type { T } from '../lab.ts';
+import type { LinkJson, T } from '../lab.ts';
+import { parseJson } from '../../lib/io.ts';
 
 export const id = 'p2-corporate';
 export const title = 'joiner-b reaches devbox only via the bastion (ProxyJump), and only via the CONNECT proxy';
@@ -66,7 +67,7 @@ export async function run(t: T): Promise<void> {
   t.check('both mirrors byte-identical to the host log, chains verify', c.ok, c.detail);
 
   if (t.features.hostSsh) {
-    const lf = JSON.parse(lab.exec('joiner-b', ['cat', `${v1.seat.home}/links/${code}.json`], { user: 'joiner' }).stdout);
+    const lf = parseJson<LinkJson>(lab.exec('joiner-b', ['cat', `${v1.seat.home}/links/${code}.json`], { user: 'joiner' }).stdout);
     t.ev.write('bea-link-transport.json', lf.transport);
     t.check('invite --ssh --via: bea\'s line carried the jump, her link dials ssh -J jump@bastion with its own key and the pinned host key',
       v1.join.ok && lf.transport.via === 'jump@bastion' && !!lf.transport.key && !!lf.transport.alias, JSON.stringify({ via: lf.transport.via, key: !!lf.transport.key, alias: lf.transport.alias }));

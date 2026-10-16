@@ -115,7 +115,7 @@ interface Room extends Pure {
 /** A Room over a RoomStore: the store's calls plus the queries and renderings that need this room's log. */
 function roomOver(s: RoomStore): Room {
   const trust = s.trust;
-  const all = (entries?: Entries | null): Entries => entries || s.readAll();
+  const all = (entries?: Entries | null): Entries => entries ?? s.readAll();
   return {
     ...pure,
     code: s.code, store: s, trust,
@@ -153,7 +153,7 @@ function roomOver(s: RoomStore): Room {
 
 const rooms = new Map<string, { s: RoomStore; room: Room }>(); // code -> {s, room}
 function open(code: RoomCode, { store: s, dir }: { store?: RoomStore; dir?: string } = {}): Room {
-  if (s || dir) return roomOver(s || store.open(code, { dir }));
+  if (s || dir) return roomOver(s ?? store.open(code, { dir }));
   const st = store.open(code);
   const hit = rooms.get(code);
   if (hit && hit.s === st) return hit.room;

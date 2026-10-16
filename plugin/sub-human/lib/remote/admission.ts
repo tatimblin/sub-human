@@ -48,8 +48,13 @@ import type { AdmissionRecord, AuthStore, InviteRecord, Invites } from './types-
 import type { RoomStore } from '../room/types.ts';
 import type { Card } from '../types-app.ts';
 import type { RoomCode, SeatName } from '../brand.ts';
+import type * as RoomMod from '../room.ts';
+import type * as InviteSecretMod from './invite-secret.ts';
+import type * as IdentityMod from '../identity.ts';
+import type * as HomeMod from '../home.ts';
+import type * as TextMod from '../text.ts';
 
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 /** A record with where it is: its kv key (slot) and ref. */
 type Slotted<T> = T & { slot: string; ref: string };
@@ -83,7 +88,7 @@ function check(inv: AdmissionRecord, { machine, linkId, peerKey = null, now }: {
 
 /** The admission records of this room still waiting for the host person (all: every one), oldest first. */
 function admissions(store: AuthStore, { now = Date.now(), all = false }: { now?: number; all?: boolean } = {}): AdmissionRequest[] {
-  return Object.entries((store.kv.get(INVITES_KEY, null) || {}) as Invites)
+  return Object.entries(store.kv.get<Invites>(INVITES_KEY, null) ?? {})
     .filter((e): e is [string, AdmissionRecord] => { const i = e[1]; return !!(i && i.admission && (all || (i.admit === 'asked' && !i.burnt_at && now <= Date.parse(i.expires_at)))); })
     .map(([k, i]) => ({ ...i, slot: k, ref: k.slice(0, 12) }))
     .sort((a, b) => a.created_at.localeCompare(b.created_at));
@@ -99,7 +104,7 @@ function decide(store: AuthStore, ref: string, { decision, by = null, sig = null
   if (!store.isHost) throw new RoomError('HOST_ONLY', 'only the host of a room lets machines in');
   const got: { out: AdmissionRequest | null } = { out: null }; // set in the update
   store.kv.update(INVITES_KEY, (cur: Invites | null) => {
-    const hit = Object.entries(cur || {}).filter((e): e is [string, AdmissionRecord] => REF_RE.test(String(ref)) && e[0].startsWith(ref) && !!e[1].admission);
+    const hit = Object.entries(cur ?? {}).filter((e): e is [string, AdmissionRecord] => REF_RE.test(String(ref)) && e[0].startsWith(ref) && !!e[1].admission);
     const [only] = hit;
     if (hit.length !== 1 || !only) throw new RoomError('AUTH', `room ${store.code} has no join request ${ref} (/sub-human admit lists them)`);
     const [slot, inv] = only;
@@ -120,11 +125,11 @@ function decide(store: AuthStore, ref: string, { decision, by = null, sig = null
 function lapseAdmissions(store: AuthStore, { now = Date.now() }: { now?: number } = {}): AdmissionRequest[] {
   let lapsed: AdmissionRequest[] = [];
   const due = (i: InviteRecord | null | undefined) => !!i && !!i.admission && i.admit === 'asked' && !i.burnt_at && now > Date.parse(i.expires_at);
-  if (!Object.values((store.kv.get(INVITES_KEY, null) || {}) as Invites).some(due)) return lapsed; // a read, no lock, on every tail tick
+  if (!Object.values(store.kv.get<Invites>(INVITES_KEY, null) ?? {}).some(due)) return lapsed; // a read, no lock, on every tail tick
   store.kv.update(INVITES_KEY, (cur: Invites | null) => {
     lapsed = [];
     const next: Invites = { ...cur };
-    for (const [k, i] of Object.entries(cur || {})) {
+    for (const [k, i] of Object.entries(cur ?? {})) {
       if (i && i.admission && due(i)) {
         const rec: AdmissionRecord = { ...i, admit: 'lapsed', burnt_at: iso(now) };
         next[k] = rec;
@@ -142,16 +147,16 @@ type Signer = (rec: { kind: 'admit'; ref: string; link: string; key: string | nu
 const LET_IN = 'Let in';
 const REFUSE = 'Refuse';
 
-const roomLib = (): typeof import('../room.ts') => require('../room.ts');
-const secretLib = (): typeof import('./invite-secret.ts') => require('./invite-secret.ts');
+const roomLib = (): typeof RoomMod => require('../room.ts');
+const secretLib = (): typeof InviteSecretMod => require('./invite-secret.ts');
 const hostStore = (code: RoomCode): RoomStore => roomLib().hostStore(code, { what: 'only its host can let people in' });
 
 const pending = (code: RoomCode, { now = Date.now() }: { now?: number } = {}): AdmissionRequest[] => admissions(hostStore(code), { now });
-const find = (code: RoomCode, ref: string): AdmissionRequest | null => admissions(hostStore(code), { all: true }).find(r => r.ref === ref || (ref && ref.length >= 6 && r.ref.startsWith(ref))) || null;
+const find = (code: RoomCode, ref: string): AdmissionRequest | null => admissions(hostStore(code), { all: true }).find(r => r.ref === ref || (ref && ref.length >= 6 && r.ref.startsWith(ref))) ?? null;
 
 function targets(code: RoomCode, req: AdmissionRequest): SeatName[] {
-  const identity: typeof import('../identity.ts') = require('../identity.ts');
-  const { isMine }: typeof import('../home.ts') = require('../home.ts');
+  const identity: typeof IdentityMod = require('../identity.ts');
+  const { isMine }: typeof HomeMod = require('../home.ts');
   const here = Object.values(identity.readMembers(code) || {})
     .filter(m => !!m && !!m.name && !m.left_at && m.role !== 'claude' && (!m.machine || isMine(m.machine))).map(m => m.name);
   const by = here.find(n => n === req.by);
@@ -166,10 +171,10 @@ const question = (req: AdmissionRequest, code: RoomCode): string => `Let ${descr
 
 function taken(code: RoomCode, req: AdmissionRequest): string | null {
   let ms: Record<string, { name?: string; role?: string; machine?: string | null } | undefined>;
-  try { ms = (require('../identity.ts') as typeof import('../identity.ts')).readMembers(code) || {}; } catch { return null; }
+  try { ms = require<typeof IdentityMod>('../identity.ts').readMembers(code) || {}; } catch { return null; }
   const m = ms[req.name];
   if (!m || m.role === 'claude' || !m.machine || m.machine === req.machine) return null;
-  const { NAME_RE }: typeof import('../text.ts') = require('../text.ts');
+  const { NAME_RE }: typeof TextMod = require('../text.ts');
   for (let i = 2; i < 100; i++) {
     const alt = `${req.name.slice(0, 30)}${i}`;
     if (NAME_RE.test(alt) && !ms[alt]) return alt;
@@ -233,10 +238,10 @@ function refuse(code: RoomCode, ref: string, { by = null, now = Date.now() }: { 
 function markTold(code: RoomCode, { ref, name }: { ref: string; name: SeatName }): void {
   try {
     hostStore(code).kv.update(INVITES_KEY, (cur: Invites | null) => {
-      const docs = cur || {};
+      const docs = cur ?? {};
       const [k, rec] = Object.entries(docs).find(([x, d]) => x.startsWith(ref) && d.admission) ?? [];
-      if (!k || !rec || !rec.admission || (rec.told || []).includes(name)) return undefined;
-      return { ...cur, [k]: { ...rec, told: [...(rec.told || []), name] } };
+      if (!k || !rec || !rec.admission || (rec.told ?? []).includes(name)) return undefined;
+      return { ...cur, [k]: { ...rec, told: [...(rec.told ?? []), name] } };
     });
   } catch { /* told again */ }
 }

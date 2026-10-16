@@ -41,8 +41,9 @@ import type { KindEntry, LineTransport, LinkSpec, MemorySpec, OpenCtx, SpecBase,
 import type { DecodedFrame } from '../types-core.ts';
 import { RoomError } from '../../room/validate.ts';
 import { createRequire } from 'node:module';
+import type * as MemoryMod from './memory.ts';
 
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 interface Registered {
   open: KindEntry['open'];
@@ -61,12 +62,12 @@ function register<S extends SpecBase>(kind: string, entry: KindEntry<S>): void {
   if (registry.has(kind)) throw new Error(`transport kind "${kind}" is registered already`);
   if (!entry || typeof entry.open !== 'function') throw new Error(`transport kind "${kind}" needs open(spec, ctx)`);
   const e: KindEntry = entry; // a kind's own spec type: the registry hands each kind only the specs that name it
-  registry.set(kind, { open: e.open, parse: e.parse || null, describe: e.describe || null });
+  registry.set(kind, { open: e.open, parse: e.parse ?? null, describe: e.describe ?? null });
   KINDS = kinds();
 }
 
 const kinds = (): string[] => [...registry.keys()];
-const get = (kind: string): Registered | null => registry.get(kind) || null;
+const get = (kind: string): Registered | null => registry.get(kind) ?? null;
 
 function parse(locator: string): LinkSpec | null {
   const s = String(locator);
@@ -126,11 +127,11 @@ export { register, kinds, get, parse, open, describe, lineTransport, fromDuplex 
 // require (createRequire; require(esm) is synchronous) so no kind's code loads until a link or invite needs it.
 type KindModule = { kind: Required<KindEntry> };
 const lazy = (file: string): KindEntry => ({
-  open: (spec, ctx) => (require(file) as KindModule).kind.open(spec, ctx),
-  parse: rest => (require(file) as KindModule).kind.parse(rest),
-  describe: spec => (require(file) as KindModule).kind.describe(spec),
+  open: (spec, ctx) => require<KindModule>(file).kind.open(spec, ctx),
+  parse: rest => require<KindModule>(file).kind.parse(rest),
+  describe: spec => require<KindModule>(file).kind.describe(spec),
 });
-register<MemorySpec>('memory', { open: spec => (require('./memory.ts') as typeof import('./memory.ts')).over(spec.port), describe: () => 'memory' });
+register<MemorySpec>('memory', { open: spec => require<typeof MemoryMod>('./memory.ts').over(spec.port), describe: () => 'memory' });
 register('pipe', lazy('./pipe.ts'));
 register('ssh', lazy('./ssh.ts'));
 register('wss', lazy('./ws.ts')); // ./ws.ts: a Noise channel in a WebSocket, through a TLS front

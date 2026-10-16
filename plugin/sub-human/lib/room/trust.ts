@@ -49,7 +49,7 @@ function humanKey(code: RoomCode, from: string): KeyObject {
 
 function publicKey(name: string, ctx: TrustCtx): KeyObject | null {
   const pins = ctx.pins();
-  return pins.size ? pins.get(name) || null : ctx.localKey(name);
+  return pins.size ? pins.get(name) ?? null : ctx.localKey(name);
 }
 
 /** A signed entry's check: true / false when a key was there to check against, null when none was. */

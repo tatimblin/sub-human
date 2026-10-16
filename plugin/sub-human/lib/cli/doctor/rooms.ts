@@ -14,9 +14,10 @@ import { check, cli } from './check.ts';
 import { createRequire } from 'node:module';
 import type { Check } from '../types.ts';
 import type { RoomCode } from '../../brand.ts';
+import type * as StoreMod from '../../room/store.ts';
 
-const require = createRequire(import.meta.url);
-const store = (): typeof import('../../room/store.ts') => require('../../room/store.ts');
+const require: <M>(id: string) => M = createRequire(import.meta.url);
+const store = (): typeof StoreMod => require('../../room/store.ts');
 
 export interface RoomVerify { code: RoomCode; count: number; chain: { ok: boolean; badAt?: number | null; line?: number }; unverified: number[]; legacy: number }
 

@@ -17,11 +17,12 @@ import * as hostLinks from '../lib/remote/host-links.ts';
 import * as memory from '../lib/remote/transports/memory.ts';
 import * as handoff from '../lib/handoff.ts';
 import * as seatKey from '../hooks/seat-key.ts';
-import type { RoomStore } from '../lib/room/types.ts';
+import type { Entry, RoomStore } from '../lib/room/types.ts';
 import type { Client, ConnectOpts } from '../lib/remote/client.ts';
-import type { AppendResult, HandoffAcceptResult, HandoffAsk, MovedEventData, StreamEvent } from '../lib/remote/types-core.ts';
+import type { AppendResult, HandoffAcceptResult, HandoffAsk, StreamEvent } from '../lib/remote/types-core.ts';
 import type { RoomCode } from '../lib/brand.ts';
 import { sn, mid } from './support/brands.ts';
+import { must } from './support/must.ts';
 
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
 
@@ -81,8 +82,8 @@ test('host epoch: the old host takes no more lines once its log says the room mo
   assert.deepEqual(host.hostState(), { epoch: 1, host: 'bob', machine: OTHER, locator: 'pipe:/elsewhere', id: moved.id });
   assert.throws(() => host.append({ kind: 'say', text: 'after' }, { via: 'agent', from: 'alice' }), (e: Error & { code?: string }) => e.code === 'STALE' && /moved to bob's machine/.test(e.message));
   assert.throws(() => host.append(moveTo(OTHER, 2), sys('alice')), (e: Error & { code?: string }) => e.code === 'STALE', 'naming another machine still');
-  assert.throws(() => host.append(moveTo(identity.machineId()!, 1, 'alice'), sys('alice')), (e: Error & { code?: string }) => e.code === 'STALE', 'not a later epoch');
-  const back = host.append(moveTo(identity.machineId()!, 2, 'alice'), sys('alice'));
+  assert.throws(() => host.append(moveTo(must(identity.machineId()), 1, 'alice'), sys('alice')), (e: Error & { code?: string }) => e.code === 'STALE', 'not a later epoch');
+  const back = host.append(moveTo(must(identity.machineId()), 2, 'alice'), sys('alice'));
   assert.equal(host.hostState().epoch, 2);
   assert.equal(host.append({ kind: 'say', text: 'here again' }, { via: 'agent', from: 'alice' }).id, back.id + 1);
   assert.equal(handoff.movedAway(store.open(code)), false);
@@ -101,7 +102,7 @@ test('server: a hello from a later epoch is STALE (a host the room moved from); 
   host.append({ ...moveTo(OTHER) }, sys('alice'));
   await rejects(c.request('append', { payload: { ...p, text: 'late' }, epoch: 1 }), 'STALE', /moved to \S+'s machine; this machine takes no more messages for it/);
   await rejects(c.beat('bob'), 'STALE');
-  assert.equal(host.readAll().at(-1)!.kind, 'host_changed');
+  assert.equal(must(host.readAll().at(-1)).kind, 'host_changed');
 });
 
 test('handoff: the ask reaches the target\'s link only; a signed acceptance moves the room; the stream ends "moved"', async t => {
@@ -115,9 +116,9 @@ test('handoff: the ask reaches the target\'s link only; a signed acceptance move
   assert.throws(() => handoff.ask(code, { from: 'alice', to: 'alice' }), /on this machine/);
   assert.throws(() => handoff.ask(code, { from: 'alice', to: 'zed' }), /not in room/);
   const d = handoff.ask(code, { from: 'alice', to: 'bob', locator: 'pipe:/bobs/home', sign: p => envelope.sign(p, seatKey.ensure(code, sn('alice')), { room: code, from: 'alice' }) });
-  assert.deepEqual([d.state, d.epoch, d.ask!.kind], ['asked', 1, 'host_ask']);
+  assert.deepEqual([d.state, d.epoch, must(d.ask).kind], ['asked', 1, 'host_ask']);
   await h.until(() => bob.got.some(e => e.ev === 'handoff'), 3000, 20);
-  const ev = (bob.got.find(e => e.ev === 'handoff') as StreamEvent<'handoff'>).data;
+  const ev = must(bob.got.find(e => e.ev === 'handoff')).data;
   assert.deepEqual([ev.id, ev.from, ev.to, ev.epoch, ev.locator], [d.id, 'alice', 'bob', 1, 'pipe:/bobs/home']);
   assert.equal((ev as HandoffAsk & { ask?: unknown }).ask, undefined, 'the ask as the target sees it: no signatures');
   assert.ok(!carol.got.some(e => e.ev === 'handoff'), 'private to the link holding its target');
@@ -130,19 +131,19 @@ test('handoff: the ask reaches the target\'s link only; a signed acceptance move
   await rejects(c.request('handoff.accept', { id: d.id, accept: proof, invites: { [OTHER]: 'sh2.nope' } }), 'INVALID');
   const r = await c.request('handoff.accept', { id: d.id, accept: proof, invites: given }) as HandoffAcceptResult;
   assert.equal(r.epoch, 1);
-  const e = host.readAll().at(-1)!;
+  const e = must(host.readAll().at(-1));
   assert.deepEqual([e.kind, e.from, e.host, e.machine, e.epoch, e.locator], ['host_changed', 'alice', 'bob', REMOTE, 1, 'pipe:/bobs/home']);
   assert.ok(envelope.verify(e.accept, store.publicKey('bob', host)), 'bob\'s acceptance, signed with his pinned key');
   assert.ok(envelope.verify(e.ask, envelope.parseKey(seatKey.publicPem(code, sn('alice')))), 'alice\'s ask, signed with hers');
-  assert.equal(handoff.hostDoc(host)!.state, 'moved');
+  assert.equal(must(handoff.hostDoc(host)).state, 'moved');
 
   // the target's own stream: the line, then 'moved' naming its machine, no invite; the other link gets its invite
   await h.until(() => carol.got.some(x => x.ev === 'end'), 3000, 20);
-  const seq = (x: { got: StreamEvent[] }) => x.got.filter(y => y.ev !== 'doc').map(y => y.ev === 'entry' ? JSON.parse(y.data).kind : y.ev);
+  const seq = (x: { got: StreamEvent[] }) => x.got.filter(y => y.ev !== 'doc').map(y => y.ev === 'entry' ? (JSON.parse(y.data) as Entry).kind : y.ev);
   assert.deepEqual(seq(carol).slice(-3), ['host_changed', 'moved', 'end']);
-  assert.equal((carol.got.find(x => x.ev === 'moved') as StreamEvent<'moved'>).data.invite, given[OTHER], 'carol\'s machine gets its own invite, privately');
-  assert.deepEqual(bob.got.find(x => x.ev === 'end')!.data, { reason: 'moved' });
-  assert.deepEqual([(bob.got.find(x => x.ev === 'moved')!.data as MovedEventData).machine, (bob.got.find(x => x.ev === 'moved')!.data as MovedEventData).invite], [REMOTE, null]);
+  assert.equal(must(carol.got.find(x => x.ev === 'moved')).data.invite, given[OTHER], 'carol\'s machine gets its own invite, privately');
+  assert.deepEqual(must(bob.got.find(x => x.ev === 'end')).data, { reason: 'moved' });
+  assert.deepEqual([must(bob.got.find(x => x.ev === 'moved')).data.machine, must(bob.got.find(x => x.ev === 'moved')).data.invite], [REMOTE, null]);
   // a host the room moved away from still says hello and streams, and refuses every write
   await rejects(c.request('handoff.accept', { id: d.id, accept: proof, invites: given }), 'STALE');
   await rejects(c.beat('bob'), 'STALE');
@@ -159,7 +160,7 @@ test('handoff: refused on the card, expired, or replaced: nothing moves', async 
   const d2 = handoff.ask(code, { from: 'alice', to: 'bob' });
   await rejects(c.request('handoff.refuse', { id: d1.id }), 'INVALID', /no such handoff/);
   assert.deepEqual(await c.request('handoff.refuse', { id: d2.id }), { ok: true });
-  assert.equal(handoff.hostDoc(host)!.state, 'refused');
+  assert.equal(must(handoff.hostDoc(host)).state, 'refused');
   const d3 = handoff.ask(code, { from: 'alice', to: 'bob', now: Date.now() - 11 * 60_000 });
   const key = seatKey.ensure(code, sn('bob'));
   const proof = envelope.sign({ kind: 'host_accept', id: d3.id, epoch: 1, locator: 'pipe:/x' }, key, { room: code, from: 'bob' });

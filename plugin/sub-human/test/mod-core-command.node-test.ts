@@ -5,9 +5,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import type { JoinReply, RunOutput } from '../mod/core/types.ts';
+import type * as commandMod from '../mod/core/command.ts';
+import type * as inviteSecretMod from '../lib/remote/invite-secret.ts';
+import { must } from './support/must.ts';
 
 const PLUGIN = path.join(import.meta.dirname, '..');
-const load = (): Promise<typeof import('../mod/core/command.ts')> => import(path.join(PLUGIN, 'mod', 'core', 'command.ts'));
+const load = (): Promise<typeof commandMod> => import(path.join(PLUGIN, 'mod', 'core', 'command.ts'));
 const ran = (o: unknown, exitCode = 0): RunOutput => ({ exitCode, stdout: typeof o === 'string' ? o : JSON.stringify(o) + '\n', stderr: '' });
 const NONCE = 'ab'.repeat(16);
 
@@ -36,7 +39,7 @@ test('command: mayHoldSecret, the rule join answers hidden by', async () => {
 
 test('command: a word shaped like an invite line\'s SECRET is hidden wherever it is typed, a paste that lost a character too', async () => {
   const { mayHoldSecret, hasPinWord, SECRET_WORD } = await load();
-  const secret = await import(path.join(PLUGIN, 'lib', 'remote', 'invite-secret.ts')) as typeof import('../lib/remote/invite-secret.ts');
+  const secret = await import(path.join(PLUGIN, 'lib', 'remote', 'invite-secret.ts')) as typeof inviteSecretMod; // a dynamic import, typed
   const word = secret.encode(secret.mint(), Buffer.alloc(8, 7));
   assert.match(word, SECRET_WORD);
   for (const args of [word, `bob ${word}`, `devbox vole-1234 ${word}`, word.toUpperCase(), word.slice(1), `${word}x`]) {
@@ -83,7 +86,7 @@ test('a lease that did not hold the nonce is read as stale (nothing ran: the mod
   const { readReply, goneAfter, leftName, failLogLine, appendCapped } = await load();
   const stale = readReply(ran({ subHuman: { lease: 'stale' } }));
   assert.equal(stale.kind, 'stale');
-  assert.match(stale.lines[0], /lease did not hold/);
+  assert.match(must(stale.lines[0]), /lease did not hold/);
   assert.equal(readReply(ran({ subHuman: { lease: 'stale', say: 'x' } })).kind, 'say', 'a reply with a say is that reply');
   const failed = readReply(null);
   const seat = { name: 'bob', code: 'vole-1234', role: 'member' };
@@ -99,10 +102,10 @@ test('a lease that did not hold the nonce is read as stale (nothing ran: the mod
 
 test('command: here every reply is notices with an empty answer (no row, nothing for the model to repeat); through Remote Control only a shareable one is the output row', async () => {
   const { answerOf } = await load();
-  const help = { kind: 'say', lines: ['commands:', '  /sub-human …'], shareable: true } as JoinReply; // no refused: answerOf never reads it
+  const help: JoinReply = { kind: 'say', lines: ['commands:', '  /sub-human …'], refused: false, shareable: true };
   assert.deepEqual(answerOf(help), { result: {}, logs: help.lines });
   assert.deepEqual(answerOf(help, { bridge: true }), { result: { text: 'commands:\n  /sub-human …' }, logs: [] });
-  const secret = { kind: 'say', lines: ['  /sub-human join me@box vole-1234 4821'], shareable: false } as JoinReply;
+  const secret: JoinReply = { kind: 'say', lines: ['  /sub-human join me@box vole-1234 4821'], refused: false, shareable: false };
   assert.deepEqual(answerOf(secret), { result: {}, logs: secret.lines });
   const bridge = answerOf(secret, { bridge: true });
   assert.ok(!JSON.stringify(bridge.result).includes('4821'), 'the PIN never goes to the phone or the model');
@@ -119,10 +122,10 @@ test('command: an invite\'s status fits the terminal: the whole line (the PIN fi
   assert.deepEqual(pinFor({ status, ms: 1 }, ['whole'], 40), { status, lines: ['whole'] }, 'no short form: the whole line, cut by the terminal');
   const r = readReply({ exitCode: 0, stdout: JSON.stringify({ subHuman: { say: 'x', shareable: false, pinned: { status, ms: 5, short: p.short, cut: 'a\nb', ref: 'abcdef012345' } } }), stderr: '' });
   assert.deepEqual(r.kind === 'say' && r.pinned, { status, ms: 5, short: p.short, cut: ['a', 'b'], ref: 'abcdef012345' });
-  const ok = { kind: 'say', lines: ['invite abcdef012345 cancelled'], refused: false, shareable: true } as JoinReply;
+  const ok: JoinReply = { kind: 'say', lines: ['invite abcdef012345 cancelled'], refused: false, shareable: true };
   assert.equal(cancels('invite --cancel', ok, 'abcdef012345'), true);
   assert.equal(cancels('invite --cancel abcdef012345', ok, 'abcdef012345'), true);
   assert.equal(cancels('invite --cancel 111111111111', ok, 'abcdef012345'), false, 'another invite');
-  assert.equal(cancels('invite --cancel', { ...ok, refused: true } as JoinReply, 'abcdef012345'), false);
+  assert.equal(cancels('invite --cancel', { ...ok, refused: true }, 'abcdef012345'), false);
   assert.equal(cancels('leave', ok, 'abcdef012345'), false);
 });

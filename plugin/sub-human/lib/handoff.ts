@@ -94,8 +94,15 @@ import { msgOf } from './errors.ts';
 import type { RoomCode, SeatName, MachineId, InviteSecret, Pin } from './brand.ts';
 import { isMachineId } from './text.ts';
 import { isInviteSecret } from './remote/invite-secret.ts';
+import type * as LinkSocketMod from './remote/link-socket.ts';
+import type * as LinkConnectMod from './remote/link-connect.ts';
+import type * as ListenerMod from './remote/listener.ts';
+import type * as HostingMod from './remote/hosting.ts';
+import type * as WebhostMod from './remote/webhost.ts';
+import type * as RoomClaudeMod from './room-claude.ts';
+import type * as SeatsMod from './seats.ts';
 
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 /** A room's store (lib/room/store.ts open): the host's FsRoomStore or a mirror's. */
 type Store = RoomStore;
@@ -116,15 +123,15 @@ const ID_RE = /^[0-9a-f]{12}$/;
 
 const iso = (ms: number) => new Date(ms).toISOString();
 const err = (code: WireCode, msg: string) => new RoomError(code, msg);
-const linkSocket = (): typeof import('./remote/link-socket.ts') => require('./remote/link-socket.ts');
-const linkConnect = (): typeof import('./remote/link-connect.ts') => require('./remote/link-connect.ts');
+const linkSocket = (): typeof LinkSocketMod => require('./remote/link-socket.ts');
+const linkConnect = (): typeof LinkConnectMod => require('./remote/link-connect.ts');
 const identity = () => identityMod;
 const transportOf = (locator: unknown) => (typeof locator === 'string' ? linkConnect().transportOf(locator) : null);
 // A next host reached over the web (wss/ws, lib/remote/transports/ws.ts): its invites pin its listener's X25519 key,
 // and the link file that follows one carries that key and a key of the link's own (XK). Over ssh a follower reaches
 // the new host through its person's own ssh login to it: nothing is pinned or let in by the plugin.
 const isWeb = (locator: unknown) => /^wss?:/.test(String(locator));
-const hostKeyFor = (locator: string): string | null => (isWeb(locator) ? (require('./remote/listener.ts') as typeof import('./remote/listener.ts')).hostKey() : null);
+const hostKeyFor = (locator: string): string | null => (isWeb(locator) ? require<typeof ListenerMod>('./remote/listener.ts').hostKey() : null);
 /**
  * The link file that follows the room to locator with invite (lib/remote/hosting.ts linkTransport): over ssh the
  * person's own ssh login to the new host (mux kept); over the web the listener key the invite pins and a fresh key of
@@ -133,12 +140,12 @@ const hostKeyFor = (locator: string): string | null => (isWeb(locator) ? (requir
 function followLink(code: RoomCode, locator: string | undefined, invite: unknown): Follow {
   const inv = typeof invite === 'string' ? invites.parseInvite(invite) : null;
   if (!inv || inv.code !== code || inv.locator !== locator || !transportOf(locator)) return { transport: transportOf(locator) };
-  const hosting: typeof import('./remote/hosting.ts') = require('./remote/hosting.ts');
+  const hosting: typeof HostingMod = require('./remote/hosting.ts');
   return { transport: hosting.linkTransport({ inv, cur: links.get(code) }) };
 }
 /** This machine, about to host CODE at a web locator: its listener up, the room in its served set. */
 function serveWeb(code: RoomCode, locator: string): void {
-  if (isWeb(locator)) (require('./remote/webhost.ts') as typeof import('./remote/webhost.ts')).serveAt(code, locator);
+  if (isWeb(locator)) require<typeof WebhostMod>('./remote/webhost.ts').serveAt(code, locator);
 }
 const askMs = () => config.HANDOFF_ASK_MS;
 const expired = (doc: { expires_at?: string | undefined } | null | undefined, now: number = Date.now()) => !(Date.parse((doc && doc.expires_at) as string) > now);
@@ -152,7 +159,7 @@ function ask(code: RoomCode, { from, to, locator, sign, now = Date.now() }: { fr
   if (!m || m.left_at || m.role === 'claude') throw err('INVALID', `${to} is not in room ${code}`);
   if (isMine(m.machine || machineId())) throw err('INVALID', `${to} is on this machine; a handoff moves the room to another machine`);
   if (!members.seatAlive(m)) throw err('OFFLINE', `${to} is not online; a handoff needs their answer`);
-  const linksNow: Record<string, LinkRec | null> = s.kv.get(hostLinks.LINKS_KEY) || {};
+  const linksNow: Record<string, LinkRec | null> = s.kv.get(hostLinks.LINKS_KEY) ?? {};
   const linked = Object.values(linksNow).some(l => l && l.machine === m.machine && (l.seats || []).includes(to));
   if (!linked) throw err('INVALID', `${to} is not connected to room ${code} over a link`);
   if (locator !== undefined && !transportOf(locator)) throw err('INVALID', `"${locator}" is not a locator this machine knows (pipe:/HOME, ssh:user@host[:port] or wss://host/…/sub-human/CODE)`);
@@ -248,7 +255,7 @@ function serverRefuse(s: Store, link: LinkRec, { id }: { id?: unknown } = {}, no
 
 /** The old host after its reply: stop its room Claude job, then mirror the new host (a link holding its own invite). */
 function afterMoved(s: Store, { job }: { job?: string | null } = {}): boolean {
-  if (job) { try { (require('./room-claude.ts') as typeof import('./room-claude.ts')).releaseDetached(s.code, job); } catch { /* the job ends with its session */ } }
+  if (job) { try { require<typeof RoomClaudeMod>('./room-claude.ts').releaseDetached(s.code, job); } catch { /* the job ends with its session */ } }
   const d = hostDoc(s);
   const me = machineIn(s.code);
   const invite = d && d.invites && me ? d.invites[me] : null;
@@ -275,7 +282,7 @@ function onMoved(mirror: Store, data: MovedEventData | null | undefined): { self
   if (isMine(data.machine)) return { self: true, stop: true, reason: `this machine hosts room ${code} now` };
   const how = `ask ${data.host} for an invite (/sub-human invite, there) and type the line it shows here`;
   if (!isInviteSecret(data.invite)) return { stop: true, reason: `room ${code} moved to ${data.host}'s machine, and no invite came for this machine; ${how}` };
-  const cur: Partial<Link> = links.get(code) || {};
+  const cur: Partial<Link> = links.get(code) ?? {};
   let f: Follow;
   try { f = followLink(code, data.locator, data.invite); } catch (e) { return { stop: true, reason: `room ${code} moved to ${data.host}'s machine, and this machine could not follow it: ${msgOf(e)}; ${how}` }; }
   if (!f.transport) return { stop: true, reason: `room ${code} moved to ${data.host}'s machine at "${data.locator}", which this machine cannot use; ${how}` };
@@ -329,7 +336,7 @@ function machinesOf(s: Store): Map<MachineId, string[]> {
   const by = new Map<MachineId, string[]>();
   for (const m of Object.values(s.members.read())) {
     if (!m || !m.name || m.left_at || m.role === 'claude' || !m.machine || isMine(m.machine)) continue;
-    const seats = by.get(m.machine) || [];
+    const seats = by.get(m.machine) ?? [];
     if (!by.has(m.machine)) by.set(m.machine, seats);
     seats.push(m.name);
   }
@@ -413,7 +420,7 @@ function takeOver(code: RoomCode, { by, cwd, epoch, entry }: { by: string, cwd?:
   // the old host's room Claude goes with its holder: its machine and lease too. Else claimSpawn clears left_at and the new
   // job's bind meets a record on another machine with a fresh lease, still holding the name ("name taken")
   identity().updateRoomClaude(code, () => ({ job: null, pid: null, pid_start: undefined, machine: undefined, seen_at: undefined, claim: undefined, closing: undefined, left_at: now, stopped_at: now }));
-  const seats: typeof import('./seats.ts') = require('./seats.ts');
+  const seats: typeof SeatsMod = require('./seats.ts');
   return seats.ensureRoomClaude(code, cwd, by);
 }
 
@@ -457,7 +464,7 @@ function demote(code: RoomCode, { invite, pin }: { invite: string; pin?: string 
   if (!transport) throw err('INVALID', `this machine cannot use "${inv.locator}"`);
   // without it the link's hello would spend one of the invite's tries on a missing PIN
   if (!invites.isPromotePin(pin)) throw err('INVALID', 'this invite needs the 6-digit PIN that came with it: sub-human demote CODE INVITE PIN');
-  const hosting = (): typeof import('./remote/hosting.ts') => require('./remote/hosting.ts');
+  const hosting = (): typeof HostingMod => require('./remote/hosting.ts');
   if (!s.isHost) { // a member's machine follows the promoted room: its link re-pointed, its seats join again over it
     const cur = links.get(code);
     if (!cur) throw err('INVALID', `this machine has no copy of room ${code}`);
@@ -470,7 +477,7 @@ function demote(code: RoomCode, { invite, pin }: { invite: string; pin?: string 
     return { orphan: null, follower: true };
   }
   const o: Member | undefined = s.members.read().claude;
-  if (o && o.job && o.job !== 'pending') { try { (require('./room-claude.ts') as typeof import('./room-claude.ts')).releaseDetached(code, o.job); } catch { /* ends with its session */ } }
+  if (o && o.job && o.job !== 'pending') { try { require<typeof RoomClaudeMod>('./room-claude.ts').releaseDetached(code, o.job); } catch { /* ends with its session */ } }
   const orphan: string | null = s.setAside();
   for (const k of [hostLinks.LINKS_KEY, invites.INVITES_KEY, HOST_DOC, WORKDIR, 'tasks']) s.kv.delete(k);
   for (const k of s.kv.list('presence/')) s.kv.delete(k);
@@ -494,8 +501,8 @@ function status(code: RoomCode): Status {
   const s = store.open(code);
   const out: Status = { host: s.hostState(), isHost: s.isHost, doc: hostDoc(s) };
   if (s.isHost) {
-    const linksNow = Object.values((s.kv.get(hostLinks.LINKS_KEY) || {}) as Record<string, LinkRec>);
-    const inv = Object.values((s.kv.get(invites.INVITES_KEY) || {}) as Invites).filter((i): i is BoundInvite => !!i && i.handoff === true);
+    const linksNow = Object.values(s.kv.get<Record<string, LinkRec>>(hostLinks.LINKS_KEY) ?? {});
+    const inv = Object.values(s.kv.get<Invites>(invites.INVITES_KEY) ?? {}).filter((i): i is BoundInvite => !!i && i.handoff === true);
     out.machines = inv.map(i => ({ machine: i.machine, seats: i.seats, connected: !!i.used_at || linksNow.some(l => l.machine === i.machine) }));
   }
   return out;

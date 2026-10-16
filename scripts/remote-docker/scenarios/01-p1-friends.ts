@@ -2,7 +2,8 @@
 // the other side's tail in under 2 s, with no toxic and with a 300 ms latency toxic on each direction. doctor, when
 // the plugin has it, reports a healthy link and its --bundle carries no secret.
 import { WAN, delivered, converge, type DoctorReport } from './_lib.ts';
-import type { Joined, SeatDriver, T } from '../lab.ts';
+import type { Joined, LinkJson, SeatDriver, T } from '../lab.ts';
+import { parseJson } from '../../lib/io.ts';
 
 const LIMIT_MS = 2000;
 
@@ -66,13 +67,13 @@ export async function run(t: T): Promise<void> {
     t.check('sub-human doctor on the joiner exits 0 (warnings allowed: no claude binary in the lab)', doc.status === 0, (doc.stdout + doc.stderr).split('\n').slice(-3).join(' / '));
     const json = j.seat.cli(['doctor', '--json'], { env });
     let report: DoctorReport | null = null;
-    try { report = JSON.parse(json.stdout); } catch { /* not JSON */ }
+    try { report = parseJson<DoctorReport>(json.stdout); } catch { /* not JSON */ }
     t.ev.write('doctor.json', json.stdout + json.stderr);
     const by = (id: string) => report && report.checks.find(c => c.id === id);
     const lk = by(`link:${code}`), clk = by(`clock:${code}`);
     t.check('doctor --json: the link check passes (daemon, state up, a hello to the host)', !!lk && lk.status === 'pass', lk ? `${lk.status}: ${lk.detail}`.slice(0, 160) : (json.stderr || json.stdout).slice(0, 160));
     t.check('doctor --json: the clock against the host (its hello carries the time) passes', !!clk && clk.status === 'pass', clk ? `${clk.status}: ${clk.detail}` : 'no clock check');
-    const token = JSON.parse(lab.exec('joiner-a', ['cat', `${j.seat.home}/links/${code}.json`], { user: 'joiner' }).stdout).token;
+    const token = parseJson<LinkJson>(lab.exec('joiner-a', ['cat', `${j.seat.home}/links/${code}.json`], { user: 'joiner' }).stdout).token;
     const file = '/home/joiner/doctor-bundle.json';
     const bundle = j.seat.cli(['doctor', '--bundle', file], { env });
     const body = lab.exec('joiner-a', ['cat', file], { allowFail: true }).stdout;

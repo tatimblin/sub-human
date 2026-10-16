@@ -92,7 +92,7 @@ const stopped = new Set<string>();
 
 /** The held room context as the next prompt carries it (mod/core/deliver.ts pullContext), or null. */
 async function heldPull($: EngineInterface): Promise<{ text: string; upTo: number } | null> {
-  try { return pullContext((await $.state.get(PULLS)).value as Pulls | null); } catch { return null; }
+  try { return pullContext((await $.state.get(PULLS)).value); } catch { return null; }
 }
 
 /** A prompt carried the room context up to upTo and goes on to a turn: what it carried is no longer held. */

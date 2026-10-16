@@ -9,8 +9,9 @@ import { HELP_HINT, hostOnly, refused, say } from './answer.ts';
 import { msgOf } from '../errors.ts';
 import type { Verb } from './types.ts';
 import type { Signer } from '../remote/admission.ts';
+import type * as AdmissionMod from '../remote/admission.ts';
 
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 export const admit: Verb = (argv, { cur: seat }) => {
   const cur = hostOnly(seat, 'admit');
@@ -18,7 +19,7 @@ export const admit: Verb = (argv, { cur: seat }) => {
   const [ref, ...more] = argv;
   if (more.length || (ref && !/^[0-9a-f]{6,12}$/.test(ref))) return refused(`usage: /sub-human admit (who is waiting), then /sub-human admit ID from that list. ${HELP_HINT}`);
   try {
-    const adm: typeof import('../remote/admission.ts') = require('../remote/admission.ts');
+    const adm: typeof AdmissionMod = require('../remote/admission.ts');
     if (ref === undefined) {
       const reqs = adm.pending(cur.code);
       return say(reqs.length ? `waiting to join room ${cur.code}: ${reqs.map(q => `${adm.describe(q)}: let them in with /sub-human admit ${q.ref}`).join('; ')}` : `nobody is waiting to join room ${cur.code}.`);

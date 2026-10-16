@@ -25,6 +25,8 @@ import type { FsRoomStore } from '../lib/room/store.ts';
 import type { Transport } from '../lib/remote/types-rest.ts';
 import type { DecodedFrame } from '../lib/remote/types-core.ts';
 import { sn, mid } from './support/brands.ts';
+import { must } from './support/must.ts';
+import { fsStore } from './support/fs-store.ts';
 
 const REMOTE = mid('remote0machine01');
 
@@ -39,7 +41,7 @@ function rig(t: TestContext, n: number, { seg, oldHost, tamper, before }: RigOpt
   if (seg) process.env.SUB_HUMAN_SEGMENT_BYTES = String(seg);
   t.after(() => { if (was === undefined) delete process.env.SUB_HUMAN_SEGMENT_BYTES; else process.env.SUB_HUMAN_SEGMENT_BYTES = was; });
   const code = h.newRoom();
-  const host = store.open(code) as FsRoomStore;
+  const host = fsStore(store.open(code));
   if (before) before(host);
   for (let i = 1; i <= n; i++) host.append({ kind: 'status', text: `line ${i} ${'x'.repeat(i % 7 * 20)}` }, { via: 'system', from: 'claude', system: true });
   const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: REMOTE, seats: [] });
@@ -82,7 +84,7 @@ test('first sync: a 3000-line log reaches a new mirror whole and byte for byte, 
 test('first sync: a corrupt line in the middle of the host\'s log stops the link there (PROTOCOL); the mirror keeps the lines before it', async t => {
   const r = rig(t, 6);
   const lines = r.hostLog().split('\n').filter(Boolean);
-  lines[3] = lines[3].slice(0, 25); // line 4, torn mid-object: not JSON
+  lines[3] = must(lines[3]).slice(0, 25); // line 4, torn mid-object: not JSON
   fs.writeFileSync(r.host.logFile, lines.join('\n') + '\n');
   // the host's own readers skip the line and its chain check names it
   assert.deepEqual(store.open(r.code).readAll().map(e => e.id), [1, 2, 3, 5, 6]);
@@ -110,14 +112,14 @@ const chat = (e: { kind: string }) => store.CHAT_KINDS.has(e.kind);
 
 test('first sync from the host\'s snapshot: only the lines after it cross, they chain to its head, and the mirror reads the same', async t => {
   const r = rig(t, 200, { seg: 4096, before: seated });
-  const snap = r.host.snapshot()!;
+  const snap = must(r.host.snapshot());
   assert.ok(snap && snap.id > 100, 'the host rotated');
   const l = await r.start();
   t.after(() => l.stop('done'));
   assert.ok(await h.until(() => r.mirror.lastId() === 203, 10_000, 20), `synced to ${r.mirror.lastId()}: ${r.logged.join('\n')}`);
   assert.equal(r.events.filter(e => e === 'snapshot').length, 1);
   assert.equal(r.events.filter(e => e === 'entry').length, 203 - snap.id, 'only the lines after the snapshot');
-  const m = r.mirror.snapshot()!;
+  const m = must(r.mirror.snapshot());
   assert.deepEqual([m.id, m.hash, m.held], [snap.id, snap.hash, snap.id + 1], 'the mirror starts from the host\'s head');
   assert.deepEqual(r.mirror.readAll().map(e => e.id), r.host.readAll().filter(e => !chat(e) || e.id > snap.id).map(e => e.id), 'every non-chat entry, and the lines after');
   assert.deepEqual(r.mirror.validateChain(), { ok: true, count: 203 });
@@ -151,7 +153,7 @@ test('a mirror behind the host\'s rotations catches up across the sealed segment
   l.stop('pause');
   process.env.SUB_HUMAN_SEGMENT_BYTES = '2048';
   for (let i = 0; i < 80; i++) r.host.append({ kind: 'status', text: `while away ${i} ${'y'.repeat(40)}` }, { via: 'system', from: 'claude', system: true });
-  assert.ok(r.host.snapshot()!.id > 5, 'line 5 is in a sealed segment now');
+  assert.ok(must(r.host.snapshot()).id > 5, 'line 5 is in a sealed segment now');
   l = await r.start();
   t.after(() => l.stop('done'));
   assert.ok(await h.until(() => r.mirror.lastId() === 85, 10_000, 20), r.logged.join('\n'));
@@ -183,7 +185,7 @@ test('a line after the snapshot that does not chain to its head is FORK; the mir
       return { ...f, data: (f.data as string).replace(/"prev":"[0-9a-f]{12}"/, '"prev":"000000000000"') };
     },
   });
-  const snap = r.host.snapshot()!;
+  const snap = must(r.host.snapshot());
   const l = await r.start();
   t.after(() => l.stop('done'));
   assert.ok(await h.until(() => l.state() === 'fork', 10_000, 20), `still ${l.state()}: ${r.logged.join('\n')}`);

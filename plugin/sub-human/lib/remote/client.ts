@@ -216,7 +216,7 @@ class Client {
 /** transport: {send(frame), onFrame(fn), onClose(fn), close()}, or a Promise of one */
 async function connect(transport: Transport | Promise<Transport>, opts: ConnectOpts): Promise<Client> {
   const { machine, machineKey, signMachine, token, invite, pin, as, checkHost, login, epoch, caps = {}, deadlineMs = LINK_CALL_MS, helloMs = deadlineMs } = opts;
-  const proto: ProtoRange = opts.proto || protocol.PROTO, version: string = opts.version || protocol.PLUGIN_VERSION;
+  const proto: ProtoRange = opts.proto ?? protocol.PROTO, version: string = opts.version || protocol.PLUGIN_VERSION;
   const c = new Client(await transport, { deadlineMs });
   const cred: { invite?: InviteSecret; pin?: Pin; as?: { name: string; label: string }; token?: LinkToken; login?: boolean } = invite !== undefined
     ? { invite, ...(pin !== undefined ? { pin } : {}), ...(as ? { as } : {}) } : token !== undefined ? { token } : login === true ? { login: true } : {};
@@ -226,7 +226,7 @@ async function connect(transport: Transport | Promise<Transport>, opts: ConnectO
   const base = { proto, client: version, caps, machine, ...(machineKey ? { machine_key: machineKey } : {}), ...(Number.isInteger(epoch) ? { epoch } : {}) };
   const skew = (r: HelloReply): RoomError => {
     const theirs = protocol.rangeOf({ proto: r.proto });
-    return new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: r.server, proto: theirs || { min: r.v, max: r.v } }, joiner: me }), 'SKEW');
+    return new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: r.server, proto: theirs ?? { min: r.v, max: r.v } }, joiner: me }), 'SKEW');
   };
   const inRange = (r: HelloReply): boolean => !!protocol.rangeOf({ proto: r.proto }) && r.v >= proto.min && r.v <= proto.max && r.v >= need;
   try {

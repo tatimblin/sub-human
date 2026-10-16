@@ -175,7 +175,7 @@ function sealedOnDisk(dir: string): number[] {
 function snapOf(dir: string): LogSnapshot | null {
   const snap = loadSnap(dir);
   if (snap || !rebuildable(dir)) return snap;
-  return withLock(activeFile(dir) + '.lock', () => loadSnap(dir) || rebuild(dir), { ErrorClass: LockError });
+  return withLock(activeFile(dir) + '.lock', () => loadSnap(dir) ?? rebuild(dir), { ErrorClass: LockError });
 }
 
 // ---------- line helpers ----------
@@ -589,7 +589,7 @@ function scan(fd: number, size: number, cp: Checkpoint, mark = true): { out: { o
     if (nl > pos) {
       const l = buf.toString('utf8', pos, nl);
       let e: Entry | null = null;
-      try { e = snapshot.asEntry(JSON.parse(l)); } catch { if (!bad) bad = { badAt: null, line: next.count + 1 }; }
+      try { e = snapshot.asEntry(JSON.parse(l)); } catch { bad ??= { badAt: null, line: next.count + 1 }; }
       if (!bad && start + pos === 0 && cp.id > 0 && e && !(e.id > cp.id)) { // the carry line: the snapshot's own, verbatim
         if (hash12(l) !== cp.hash) bad = { badAt: e.id };
         pos = nl + 1;
@@ -753,7 +753,7 @@ function nonChat(dir: string): { marked: readonly Readonly<Entry>[]; rest: Entry
       const { v, marked, out, complete } = advance(dir, snap, fd, size);
       const rest = out.filter(x => x.off >= v.cp.offset && !CHAT_KINDS.has(x.e.kind)).map(x => x.e);
       if (size > complete) { const e = parse(readRange(fd, complete, size - complete)); if (e && !CHAT_KINDS.has(e.kind)) rest.push(e); }
-      if (!v.joined) v.joined = snap && snap.entries.length ? Object.freeze(snap.entries.concat(marked)) : marked;
+      v.joined ??= snap && snap.entries.length ? Object.freeze(snap.entries.concat(marked)) : marked;
       return { marked: v.joined, rest };
     } finally { fs.closeSync(fd); }
   });
@@ -780,7 +780,7 @@ function tailFrom(fd: number, end: number, snap: LogSnapshot | null): { prevLine
     let low = Infinity;
     for (let n = first; !n.done; n = lines.next()) {
       let e: Entry | null = null;
-      try { e = snapshot.asEntry(JSON.parse(n.value as string)); } catch { /* corrupt line: skip */ }
+      try { e = snapshot.asEntry(JSON.parse(n.value)); } catch { /* corrupt line: skip */ }
       if (e) { if (e.id < low) low = e.id; yield e; }
     }
     if (!snap) return;
@@ -795,7 +795,7 @@ function tailFrom(fd: number, end: number, snap: LogSnapshot | null): { prevLine
 /** Under the lock: the snapshot, with a rotation a crash interrupted finished (the active file still the sealed one, or
  * gone): log.jsonl becomes the snapshot's line alone again. */
 function settle(dir: string): LogSnapshot | null {
-  const snap = loadSnap(dir) || (rebuildable(dir) ? rebuild(dir) : null);
+  const snap = loadSnap(dir) ?? (rebuildable(dir) ? rebuild(dir) : null);
   if (!snap) return null;
   const act = activeFile(dir);
   let ino: number | null = null;
@@ -853,7 +853,7 @@ function rebuild(dir: string): LogSnapshot | null {
     try { lines = fs.readFileSync(segFile(dir, n), 'utf8').split('\n').filter(Boolean); } catch { break; }
     const prev: LogSnapshot | null = snap;
     const S: number = prev ? prev.id : 0;
-    const real: string[] = lines.filter((l, i) => !(i === 0 && prev && !((parse(l) || { id: 0 }).id > S)));
+    const real: string[] = lines.filter((l, i) => !(i === 0 && prev && !((parse(l) ?? { id: 0 }).id > S)));
     const es: Entry[] = real.map(l => parse(l)).filter((e): e is Entry => !!e);
     const [head] = es, line = real.at(-1);
     if (!head || line === undefined) break; // es comes from real: one is empty only when both are

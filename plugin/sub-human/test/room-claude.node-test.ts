@@ -15,6 +15,7 @@ import * as room from '../lib/room.ts';
 import type { AgentJob } from '../lib/cc/bg.ts';
 import { rc, sn } from './support/brands.ts';
 import type { RoomCode } from '../lib/brand.ts';
+import { must } from './support/must.ts';
 
 /** One call the stub claude recorded. */
 interface StubCall { argv: string[]; env: Record<string, string>; cwd: string }
@@ -33,9 +34,12 @@ function stubClaude({ out = 'backgrounded · 0b500131 · claude.x', agents = nul
     `if (process.argv.includes('--bg')) { require('fs').writeFileSync(${JSON.stringify(bg)}, ''); console.log(${JSON.stringify(out)}); }\n` +
     (agents ? `if (process.argv[2] === 'agents') console.log(${before ? `require('fs').existsSync(${JSON.stringify(bg)}) ? ${JSON.stringify(JSON.stringify(agents))} : ${JSON.stringify(JSON.stringify(before))}` : JSON.stringify(JSON.stringify(agents))});\n` : ''));
   fs.chmodSync(bin, 0o755);
-  const calls = (): StubCall[] => { try { return fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch { return []; } };
+  const calls = (): StubCall[] => { try { return fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l) as StubCall); } catch { return []; } };
   return { bin, calls, dir };
 }
+
+/** `claude agents` rows as a test lists them: only the fields it sets, the rest absent. */
+const rows = (...js: Partial<AgentJob>[]) => js as AgentJob[];
 
 function withEnv<T>(vars: Record<string, string | undefined>, fn: () => T): T {
   const old: Record<string, string | undefined> = {};
@@ -43,7 +47,7 @@ function withEnv<T>(vars: Record<string, string | undefined>, fn: () => T): T {
   const restore = () => { for (const k of Object.keys(old)) { if (old[k] === undefined) delete process.env[k]; else process.env[k] = old[k]; } };
   let r: T;
   try { r = fn(); } catch (e) { restore(); throw e; }
-  if (r && typeof (r as { then?: unknown }).then === 'function') return (r as unknown as Promise<unknown>).finally(restore) as T;
+  if (r instanceof Promise) return r.finally(restore) as T;
   restore();
   return r;
 }
@@ -62,7 +66,7 @@ test('room-claude: spawnPlan argv, --settings env, clean env (no CLAUDE_* from t
   assert.deepEqual(a.slice(3, 5), ['--plugin-dir', '/p/sub-human']);
   assert.deepEqual(a.slice(5, 9), ['--agent', 'sub-human:room-claude', '--permission-mode', 'plan']);
   assert.equal(a[9], '--settings');
-  assert.deepEqual(JSON.parse(a[10]), {
+  assert.deepEqual(JSON.parse(must(a[10])), {
     env: { SUB_HUMAN_HOME: identity.home(), SUB_HUMAN_ROOM: code, CLAUDE_CODE_TASK_LIST_ID: `sh-${code}`, CLAUDE_CODE_ENABLE_TODO_TOOLS: '1' },
     crossSessionInbound: 'accept',
   });
@@ -80,7 +84,7 @@ test('room-claude: the spawner\'s SUB_HUMAN_*_MS overrides go through --settings
   const parent = { HOME: '/Users/a', USER: 'a', PATH: '/bin', SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS: '5000', SUB_HUMAN_REAP_GRACE_MS: '0',
     SUB_HUMAN_SETTLE_MS: 'soon', SUB_HUMAN_LEAVE_MS: '', SUB_HUMAN_PLUGIN_DIR: '/x', SUB_HUMAN_CLAUDE: '/bin/claude' };
   const p = withEnv({ SUB_HUMAN_PLUGIN_DIR: '' }, () => roomClaude.spawnPlan({ code, env: parent }));
-  const env = JSON.parse(p.args[p.args.indexOf('--settings') + 1]).env;
+  const { env } = JSON.parse(must(p.args[p.args.indexOf('--settings') + 1])) as { env: Record<string, string> };
   // numeric timing keys only: not a malformed or empty one, not the binary or plugin-dir knobs
   assert.deepEqual(Object.keys(env).filter(k => k.endsWith('_MS')).sort(), ['SUB_HUMAN_REAP_GRACE_MS', 'SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS']);
   assert.equal(env.SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS, '5000');
@@ -98,7 +102,7 @@ test('env: every override read through envMs matches the pattern the room\'s Cla
       const p = path.join(d, f.name);
       if (f.isDirectory()) { if (!['test', 'node_modules'].includes(f.name)) walk(p); continue; }
       if (!/\.(c?js|mjs|ts)$/.test(f.name) && f.name !== 'sub-human') continue;
-      for (const m of fs.readFileSync(p, 'utf8').matchAll(/envMs\(\s*['"]([A-Z0-9_]+)['"]/g)) names.add(m[1]);
+      for (const m of fs.readFileSync(p, 'utf8').matchAll(/envMs\(\s*['"]([A-Z0-9_]+)['"]/g)) names.add(must(m[1]));
     }
   };
   walk(root);
@@ -121,11 +125,11 @@ test('room-claude: spawn runs the stub, records members.json claude {job, spawne
   const cwd = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sh-cwd-')));
   const r = withEnv({ SUB_HUMAN_CLAUDE: s.bin, SUB_HUMAN_PLUGIN_DIR: '', HOME: userHome, CLAUDE_PID: '77' }, () => roomClaude.spawn({ code, cwd }));
   assert.deepEqual(r, { ok: true, job: '0b500131' });
-  const [call] = s.calls();
+  const call = must(s.calls()[0]);
   assert.equal(call.cwd, cwd);
   assert.equal(call.env.CLAUDE_PID, undefined);
   assert.equal(call.argv[0], '--bg');
-  const o = identity.readMembers(code).claude;
+  const o = must(identity.readMembers(code).claude);
   assert.equal(o.job, '0b500131');
   assert.equal(o.pid, null);
   assert.ok(o.spawned_at);
@@ -170,7 +174,7 @@ test('room-claude: reap waits the grace, marks closing, tells the room\'s Claude
     assert.equal(identity.roomClosing(code), false, 'not closing during the grace');
     await h.until(() => identity.roomClosing(code), 2000);
     const R = room.open(code);
-    const e = R.readAll().at(-1)!;
+    const e = must(R.readAll().at(-1));
     assert.deepEqual([e.kind, e.to, e.via, e.text], ['status', 'claude', 'system', roomClaude.CLOSE_TEXT]);
     assert.equal(s.calls().length, 0, 'no stop while task 1 is open');
     await h.sleep(200);
@@ -179,15 +183,15 @@ test('room-claude: reap waits the grace, marks closing, tells the room\'s Claude
     const dt = Date.now() - t0;
     assert.ok(dt < 3000, `stopped once task 1 completed (${dt} ms), not at the 20 s cap`);
     assert.deepEqual(s.calls().map(c => c.argv), [['stop', 'cafe1234'], ['agents', '--json', '--all']], 'then looks for strays');
-    assert.equal(s.calls()[0].env.CLAUDE_PID, undefined, 'clean env for stop');
-    assert.equal(s.calls()[0].env.CLAUDE_CONFIG_DIR, cfg, 'stop reaches the same daemon (CLAUDE_CONFIG_DIR is on the allowlist)');
-    const rec = identity.readMembers(code).claude;
+    assert.equal(must(s.calls()[0]).env.CLAUDE_PID, undefined, 'clean env for stop');
+    assert.equal(must(s.calls()[0]).env.CLAUDE_CONFIG_DIR, cfg, 'stop reaches the same daemon (CLAUDE_CONFIG_DIR is on the allowlist)');
+    const rec = must(identity.readMembers(code).claude);
     assert.ok(rec.left_at && rec.stopped_at && rec.closing);
     // item 16: the stub's `claude stop` left the room Claude's process up (as the daemon did live): the reaper ended it
     assert.equal(identity.isAlive(o.pid), false, 'the bound process is gone before stopped_at is written');
     assert.ok(fs.existsSync(list), 'never deletes the task list');
     // stage 8e I.1: closed for good, it is off the open-rooms index at once (no look at the open rooms needed)
-    const idx = JSON.parse(fs.readFileSync(path.join(identity.home(), 'open-rooms.json'), 'utf8')).rooms;
+    const idx = (JSON.parse(fs.readFileSync(path.join(identity.home(), 'open-rooms.json'), 'utf8')) as { rooms: Record<string, unknown> }).rooms;
     assert.equal(idx[code], undefined, JSON.stringify(idx));
     assert.deepEqual(identity.openRooms(), []);
   });
@@ -254,7 +258,7 @@ test('room-claude: claimSpawn: one claim wins, the second sees it; a stale pendi
   assert.ok(a && a.claim, 'first claim');
   assert.equal(a.prevJob, null);
   assert.equal(roomClaude.claimSpawn(code, { now: t0 + 1000, by: 'bob' }), null, 'second join sees the claim');
-  const o = identity.readMembers(code).claude;
+  const o = must(identity.readMembers(code).claude);
   assert.deepEqual([o.job, o.by, o.claim], ['pending', 'alice', a.claim]);
   assert.equal(roomClaude.needsSpawn(code, t0 + 1000), false);
   const later = t0 + 91_000;
@@ -300,9 +304,9 @@ test('room-claude: spawn with a claim stops the previous job first, finds the jo
   assert.deepEqual(r, { ok: true, job: 'bbbb1111' }, 'no backgrounded line: the job comes from agents --json');
   const argv = s.calls().map(x => x.argv[0]);
   assert.deepEqual(argv, ['stop', 'agents', 'stop', '--bg', 'agents'], 'stop the old job and the stray before the respawn');
-  assert.deepEqual(s.calls()[0].argv, ['stop', 'dead0001']);
-  assert.deepEqual(s.calls()[2].argv, ['stop', 'cccc2222'], 'the live stray only: not prevJob again, an ended job or another room');
-  const o = identity.readMembers(code).claude;
+  assert.deepEqual(must(s.calls()[0]).argv, ['stop', 'dead0001']);
+  assert.deepEqual(must(s.calls()[2]).argv, ['stop', 'cccc2222'], 'the live stray only: not prevJob again, an ended job or another room');
+  const o = must(identity.readMembers(code).claude);
   assert.deepEqual([o.job, o.job_session, o.claim, o.by], ['bbbb1111', 'bbbb1111-full', undefined, 'alice']);
 });
 
@@ -319,10 +323,10 @@ test('room-claude: a superseded claim stops the job it made; a failed start reco
   identity.updateRoomClaude(code, () => ({ job: 'pending', claim: 'k2', spawned_at: new Date().toISOString() }));
   const r2 = withEnv({ SUB_HUMAN_CLAUDE: bad.bin, SUB_HUMAN_PLUGIN_DIR: '' }, () => roomClaude.spawn({ code, cwd: os.tmpdir(), claim: 'k2' }));
   assert.equal(r2.ok, false);
-  const o = identity.readMembers(code).claude;
+  const o = must(identity.readMembers(code).claude);
   assert.equal(o.job, null);
   assert.equal(o.claim, undefined);
-  assert.match(o.spawn_error!, /not trusted/);
+  assert.match(must(o.spawn_error), /not trusted/);
   assert.equal(roomClaude.needsSpawn(code), true, 'the next join retries');
 });
 
@@ -332,17 +336,17 @@ test('room-claude: watchStart: a job the bg daemon failed records spawn_error, c
   const notices = () => room.open(code).readAll().filter(e => e.kind === 'status' && /did not start/.test(e.text || ''));
   identity.updateRoomClaude(code, () => ({ job: 'cafe0001', spawned_at: new Date().toISOString() }));
   let n = 0;
-  const jobs = () => [{ id: 'cafe0001', state: ++n < 3 ? 'working' : 'failed' }] as AgentJob[];
+  const jobs = () => rows({ id: 'cafe0001', state: ++n < 3 ? 'working' : 'failed' });
   const stopped: string[] = [];
   assert.equal(await roomClaude.watchStart(code, 'cafe0001', { pollMs: 5, bindMs: 5000, jobs, stop: j => stopped.push(j) }), 'failed');
   assert.deepEqual(stopped, ['cafe0001']);
-  const o = identity.readMembers(code).claude;
+  const o = must(identity.readMembers(code).claude);
   assert.equal(o.job, null);
   assert.equal(o.spawn_error, 'job cafe0001 failed');
   assert.equal(notices().length, 1);
-  const e = notices()[0];
+  const e = must(notices()[0]);
   assert.deepEqual([e.via, e.to], ['system', 'room'], 'to everyone');
-  assert.match(e.text!, /^the room's Claude did not start: job cafe0001 failed\. Run \/sub-human doctor; \/sub-human in the room starts it again$/);
+  assert.match(must(e.text), /^the room's Claude did not start: job cafe0001 failed\. Run \/sub-human doctor; \/sub-human in the room starts it again$/);
   assert.equal(roomClaude.needsSpawn(code), true, 'the next join retries');
 });
 
@@ -351,18 +355,18 @@ test('room-claude: watchStart: a job done without binding (its process alive) is
   const code = h.newRoom();
   identity.updateRoomClaude(code, () => ({ job: 'cafe0009', spawned_at: new Date().toISOString() }));
   const stopped: string[] = [];
-  const jobs = () => [{ id: 'cafe0009', pid: 4242, state: 'done', status: 'idle' }] as AgentJob[];
+  const jobs = () => rows({ id: 'cafe0009', pid: 4242, state: 'done', status: 'idle' });
   assert.equal(await roomClaude.watchStart(code, 'cafe0009', { pollMs: 5, bindMs: 5000, jobs, stop: j => stopped.push(j) }), 'failed');
   assert.deepEqual(stopped, ['cafe0009'], 'stopped before the record forgets it');
-  const o = identity.readMembers(code).claude;
+  const o = must(identity.readMembers(code).claude);
   assert.deepEqual([o.job, o.spawn_error], [null, 'job cafe0009 ended without taking its seat']);
   const e = room.open(code).readAll().filter(x => x.kind === 'status' && /did not start/.test(x.text || ''));
   assert.equal(e.length, 1);
-  assert.match(e[0].text!, /^the room's Claude did not start: job cafe0009 ended without taking its seat\. Run \/sub-human doctor/);
+  assert.match(must(e[0]?.text), /^the room's Claude did not start: job cafe0009 ended without taking its seat\. Run \/sub-human doctor/);
   // a bound room Claude idling between turns also lists as done: it is never stopped
   identity.updateRoomClaude(code, () => ({ job: 'cafe0010', spawned_at: new Date().toISOString() }));
   identity.join({ code, name: sn('claude'), role: 'claude', pid: process.pid, session_id: 'so' });
-  assert.equal(await roomClaude.watchStart(code, 'cafe0010', { pollMs: 5, bindMs: 50, jobs: () => [{ id: 'cafe0010', state: 'done' }] as AgentJob[], stop: j => stopped.push(j) }), 'bound');
+  assert.equal(await roomClaude.watchStart(code, 'cafe0010', { pollMs: 5, bindMs: 50, jobs: () => rows({ id: 'cafe0010', state: 'done' }), stop: j => stopped.push(j) }), 'bound');
   assert.deepEqual(stopped, ['cafe0009']);
 });
 
@@ -370,14 +374,14 @@ test('room-claude: stopStrays stops every live claude.CODE job but the kept ones
   h.freshHome();
   const code = h.newRoom();
   const s = stubClaude();
-  const list = [
+  const list = rows(
     { id: 'aaaa0001', pid: 1, kind: 'background', name: `claude.${code}`, state: 'done', status: 'idle' },
     { id: 'aaaa0002', kind: 'background', name: `claude.${code}`, state: 'blocked' },
     { id: 'aaaa0003', kind: 'background', name: `claude.${code}`, state: 'stopped' },
     { id: 'aaaa0004', pid: 2, kind: 'background', name: `claude.${code}`, state: 'working' },
     { id: 'aaaa0005', pid: 3, kind: 'interactive', name: `claude.${code}` },
     { id: 'aaaa0006', pid: 4, kind: 'background', name: 'claude.other-0001', state: 'working' },
-  ] as AgentJob[];
+  );
   const r = withEnv({ SUB_HUMAN_CLAUDE: s.bin }, () => roomClaude.stopStrays(code, ['aaaa0004'], list));
   assert.deepEqual(r, ['aaaa0001', 'aaaa0002']);
   assert.deepEqual(s.calls().map(c => c.argv), [['stop', 'aaaa0001'], ['stop', 'aaaa0002']]);
@@ -388,21 +392,21 @@ test('room-claude: watchStart: no seat by the bind deadline records spawn_error,
   h.freshHome();
   const code = h.newRoom();
   identity.updateRoomClaude(code, () => ({ job: 'cafe0002', spawned_at: new Date().toISOString() }));
-  const r = await roomClaude.watchStart(code, 'cafe0002', { pollMs: 5, bindMs: 50, jobs: () => [{ id: 'cafe0002', state: 'working' }] as AgentJob[] });
+  const r = await roomClaude.watchStart(code, 'cafe0002', { pollMs: 5, bindMs: 50, jobs: () => rows({ id: 'cafe0002', state: 'working' }) });
   assert.equal(r, 'timeout');
-  const o = identity.readMembers(code).claude;
+  const o = must(identity.readMembers(code).claude);
   assert.equal(o.job, 'cafe0002');
   assert.equal(o.spawn_error, 'did not take its seat in 0 s (job cafe0002: working)');
   assert.equal(room.open(code).readAll().filter(e => e.kind === 'status' && /did not start/.test(e.text || '')).length, 1);
   assert.equal(roomClaude.needsSpawn(code, Date.now() + 120_001), true);
-  assert.equal(roomClaude.claimSpawn(code, { now: Date.now() + 120_001 })!.prevJob, 'cafe0002', 'stopped as prevJob');
+  assert.equal(must(roomClaude.claimSpawn(code, { now: Date.now() + 120_001 })).prevJob, 'cafe0002', 'stopped as prevJob');
 });
 
 test('room-claude: watchStart stays quiet when the room\'s Claude binds, the start is superseded, or the room closes', async () => {
   h.freshHome();
   const code = h.newRoom();
   const notices = () => room.open(code).readAll().filter(e => e.kind === 'status' && /did not start/.test(e.text || ''));
-  const jobs = () => [{ id: 'cafe0003', state: 'working' }] as AgentJob[];
+  const jobs = () => rows({ id: 'cafe0003', state: 'working' });
   identity.updateRoomClaude(code, () => ({ job: 'cafe0003', spawned_at: new Date().toISOString() }));
   const bound = roomClaude.watchStart(code, 'cafe0003', { pollMs: 5, bindMs: 2000, jobs });
   await h.sleep(30);
@@ -414,9 +418,9 @@ test('room-claude: watchStart stays quiet when the room\'s Claude binds, the sta
   identity.updateRoomClaude(code, () => ({ job: 'cafe0005' }));
   assert.equal(await superseded, 'gone');
   identity.updateRoomClaude(code, () => ({ closing: new Date().toISOString() }));
-  assert.equal(await roomClaude.watchStart(code, 'cafe0005', { pollMs: 5, bindMs: 50, jobs: () => [{ id: 'cafe0005', state: 'failed' }] as AgentJob[] }), 'gone');
+  assert.equal(await roomClaude.watchStart(code, 'cafe0005', { pollMs: 5, bindMs: 50, jobs: () => rows({ id: 'cafe0005', state: 'failed' }) }), 'gone');
   assert.equal(notices().length, 0);
-  assert.equal(identity.readMembers(code).claude.spawn_error, undefined);
+  assert.equal(must(identity.readMembers(code).claude).spawn_error, undefined);
 });
 
 test('room-claude: a claim after a just-stopped job (dead pid, fresh lease) lets the new job take the seat', async () => {
@@ -429,7 +433,7 @@ test('room-claude: a claim after a just-stopped job (dead pid, fresh lease) lets
   assert.ok(roomClaude.claimSpawn(code, {}));
   const r = identity.join({ code, name: sn('claude'), role: 'claude', pid: process.pid, session_id: 'new' });
   assert.ok(r && r.ok !== false, `the new job binds (${r && r.error})`);
-  assert.equal(identity.readMembers(code).claude.pid, process.pid);
+  assert.equal(must(identity.readMembers(code).claude).pid, process.pid);
 });
 
 test('room-claude: the room\'s Claude binding before its starter records the job keeps the claim; the record then lands', () => {
@@ -441,7 +445,7 @@ test('room-claude: the room\'s Claude binding before its starter records the job
   assert.equal(roomClaude.needsSpawn(code), false, 'bound');
   const r = withEnv({ SUB_HUMAN_CLAUDE: s.bin, SUB_HUMAN_PLUGIN_DIR: '' }, () => roomClaude.spawn({ code, cwd: os.tmpdir(), ...c }));
   assert.deepEqual(r, { ok: true, job: '0b500131' });
-  const o = identity.readMembers(code).claude;
+  const o = must(identity.readMembers(code).claude);
   assert.deepEqual([o.pid, o.job], [process.pid, '0b500131']);
 });
 
@@ -460,11 +464,11 @@ test('room-claude: watchdog with an injected clock and liveness: live, waiting, 
   assert.equal(roomClaude.watchdog(code, { now: t0, alive, reaper }), 'live');
   up = false;
   assert.equal(roomClaude.watchdog(code, { now: t0 + 1000, alive, reaper }), 'waiting');
-  assert.equal(identity.readMembers(code).claude.orphan_since, new Date(t0 + 1000).toISOString());
+  assert.equal(must(identity.readMembers(code).claude).orphan_since, new Date(t0 + 1000).toISOString());
   assert.equal(roomClaude.watchdog(code, { now: t0 + 30_000, alive, reaper }), 'waiting');
   up = true;
   assert.equal(roomClaude.watchdog(code, { now: t0 + 40_000, alive, reaper }), 'live', 'a member came back');
-  assert.equal(identity.readMembers(code).claude.orphan_since, undefined);
+  assert.equal(must(identity.readMembers(code).claude).orphan_since, undefined);
   up = false;
   assert.equal(roomClaude.watchdog(code, { now: t0 + 50_000, alive, reaper }), 'waiting', 'the clock restarts');
   assert.equal(roomClaude.watchdog(code, { now: t0 + 109_000, alive, reaper }), 'waiting');
@@ -483,7 +487,7 @@ test('room-claude: watchdog: members who all left cleanly count from their lates
   identity.updateRoomClaude(code, () => ({ job: 'cafe0002' }));
   identity.join({ code, name: sn('alice'), role: 'member', pid: process.pid });
   identity.leave(code, sn('alice'));
-  const left = Date.parse(identity.readMembers(code).alice.left_at!);
+  const left = Date.parse(must(identity.readMembers(code).alice?.left_at));
   const reaped: string[] = [];
   assert.equal(roomClaude.watchdog(code, { now: left + 59_000, reaper: c => reaped.push(c) }), 'waiting');
   assert.equal(roomClaude.watchdog(code, { now: left + 60_000, reaper: c => reaped.push(c) }), 'reaping');
@@ -517,11 +521,11 @@ test('room-claude: crash-all-members (SIGKILL) -> the watchdog reaps the room\'s
     assert.equal(roomClaude.watchdog(code, { now: t0, reaper }), 'waiting', 'no SessionEnd ran: the first observation starts the clock');
     assert.equal(roomClaude.watchdog(code, { now: t0 + 60_000, reaper }), 'reaping');
     assert.ok(reaperPid, 'the reaper was started');
-    assert.ok(await h.until(() => !identity.isAlive(reaperPid!), 120_000), 'the reaper exited');
-    assert.ok(identity.readMembers(code).claude.stopped_at, 'reaper finished');
+    assert.ok(await h.until(() => !identity.isAlive(must(reaperPid)), 120_000), 'the reaper exited');
+    assert.ok(must(identity.readMembers(code).claude).stopped_at, 'reaper finished');
   });
   assert.deepEqual(s.calls().map(c => c.argv).filter(a => a[0] === 'stop'), [['stop', 'dead00ff']]);
-  const rec = identity.readMembers(code).claude;
+  const rec = must(identity.readMembers(code).claude);
   assert.ok(rec.closing && rec.left_at);
   const R = room.open(code);
   assert.ok(R.readAll().some(e => e.kind === 'status' && e.text === roomClaude.CLOSE_TEXT));

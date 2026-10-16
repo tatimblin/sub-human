@@ -108,7 +108,7 @@ export const seatTitle = (me: Identity): string => identity.address(me.name, me.
 export function contextBlock(me: Identity, lead?: string, { rowsLead = '', rowsText = null, allRows = false }: { rowsLead?: string; rowsText?: string | null; allRows?: boolean } = {}): string {
   const text = roleText(me.role, me);
   const tail = lead ? `\n(${lead})` : '';
-  let rs = rowsText != null ? rowsText : rowCalls(me, allRows);
+  let rs = rowsText ?? rowCalls(me, allRows);
   if (rs && rowsText == null) {
     const full = `${rowsLead}${rs}`;
     rs = `${text}\n\nROWS\n${full}${tail}`.length <= BLOCK_MAX ? full : compactRows(rs, me);

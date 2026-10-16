@@ -17,6 +17,7 @@
  *                                     through corp-proxy: proxy), alice's card lets them in, a bare /sub-human seats
  */
 import type { Dump, Hosts, Lab, LogLine, SeatDriver, T } from '../lab.ts';
+import { parseJson } from '../../lib/io.ts';
 
 /** `sub-human doctor --json`, as far as the scenarios read it. */
 export interface DoctorReport {
@@ -33,7 +34,7 @@ export const PROXY: Hosts = {
 export const CORE: Hosts = { devbox: {}, 'devbox-old': {} };
 
 export const sleep = (ms: number): Promise<void> => new Promise(r => setTimeout(r, ms));
-export const entries = (log: unknown): LogLine[] => String(log || '').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return { bad: l }; } });
+export const entries = (log: unknown): LogLine[] => String(log || '').split('\n').filter(Boolean).map((l): LogLine => { try { return parseJson<LogLine>(l); } catch { return { bad: l }; } });
 
 export async function delivered(seat: SeatDriver, name: string, text: string, ms = 5000): Promise<{ ok: true, t: number } | { ok: false, t: null }> {
   const end = Date.now() + ms;

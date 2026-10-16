@@ -41,10 +41,12 @@ import type { Answer, VerbCtx, Verb } from './types.ts';
 import type { Identity } from '../identity.ts';
 import type { JoinStep, Wanted } from '../remote/joining.ts';
 import type { SeatName, InviteSecret } from '../brand.ts';
+import type * as WsMod from '../remote/transports/ws.ts';
+import type * as SshMod from '../remote/transports/ssh.ts';
 
-const require = createRequire(import.meta.url);
-const wsT = (): typeof import('../remote/transports/ws.ts') => require('../remote/transports/ws.ts');
-const sshT = (): typeof import('../remote/transports/ssh.ts') => require('../remote/transports/ssh.ts');
+const require: <M>(id: string) => M = createRequire(import.meta.url);
+const wsT = (): typeof WsMod => require('../remote/transports/ws.ts');
+const sshT = (): typeof SshMod => require('../remote/transports/ssh.ts');
 
 export const JOIN_USAGE: string = `usage: /sub-human join HOST ROOM SECRET (the line from an invite), then /sub-human join PIN when it asks. ${HELP_HINT}`;
 /** A line from a host before protocol 3: its last word is a 4-digit PIN, where an invite line has its SECRET. */
@@ -89,7 +91,7 @@ function status(cur: Identity, cwd: string): Answer {
 function forked(ctx: VerbCtx): Answer | null {
   let real = ctx.cwd;
   try { real = fs.realpathSync(ctx.cwd); } catch { /* as given */ }
-  const from = ctx.sid ? identity.forkParent(ctx.sid, projectDir(real)) || (real !== ctx.cwd ? identity.forkParent(ctx.sid, projectDir(ctx.cwd)) : null) : null;
+  const from = ctx.sid ? identity.forkParent(ctx.sid, projectDir(real)) ?? (real !== ctx.cwd ? identity.forkParent(ctx.sid, projectDir(ctx.cwd)) : null) : null;
   if (!from || !ctx.sid) return null;
   if (!identity.isHost(from.code)) { try { linkSocket.start(from.code); } catch { /* the join below says why */ } }
   const r = identity.adoptFork(from, { pid: ctx.pid, session_id: ctx.sid, cwd: ctx.cwd });

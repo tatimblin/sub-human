@@ -77,7 +77,7 @@ function excerpt(e: LogEntry): LogExcerpt {
 }
 
 function loadIndex(file: string): SnapRecord[] {
-  const v = readJson<unknown>(file, []);
+  const v = readJson<SnapRecord[]>(file, []);
   return Array.isArray(v) ? v : [];
 }
 

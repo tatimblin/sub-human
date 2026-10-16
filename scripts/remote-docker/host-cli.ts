@@ -19,7 +19,9 @@ import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
 import { spawn, spawnSync } from 'node:child_process';
 
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
+/** JSON.parse typed as what the caller expects (this lab's own files and the plugin's output: not checked). */
+const parseJson: <T = unknown>(text: string) => T = JSON.parse;
 
 // The plugin mounted at /plugin, typed by the few members this file uses (not by the repo's sources: the container
 // holds whatever was mounted).
@@ -52,7 +54,7 @@ const CWD = '/home/host/work';
 if (!HOME) { console.error('host-cli: SUB_HUMAN_HOME is not set'); process.exit(2); }
 
 const lib = <K extends keyof Libs>(name: K): Libs[K] => require(path.join(PLUGIN, 'lib', name));
-const state = (): State => JSON.parse(fs.readFileSync(STATE, 'utf8'));
+const state = (): State => parseJson<State>(fs.readFileSync(STATE, 'utf8'));
 const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
 function hook(script: string, input: Record<string, unknown>, seat: Seat): { status: number | null, json: { continue?: boolean } | null, stderr: string } {
@@ -63,7 +65,7 @@ function hook(script: string, input: Record<string, unknown>, seat: Seat): { sta
   const r = spawnSync(process.execPath, [path.join(PLUGIN, 'hooks', 'run.ts'), script], {
     input: JSON.stringify({ ...input, session_id: seat.sid, cwd: CWD }), env, cwd: CWD, encoding: 'utf8', timeout: 30_000,
   });
-  return { status: r.status, json: r.stdout.trim() ? JSON.parse(r.stdout) : null, stderr: r.stderr };
+  return { status: r.status, json: r.stdout.trim() ? parseJson(r.stdout) : null, stderr: r.stderr };
 }
 
 const cmds: Record<string, (...args: string[]) => unknown> = {

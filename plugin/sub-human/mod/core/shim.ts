@@ -67,7 +67,7 @@ function parseOut(stdout: unknown): HookJson | null | undefined {
  * Only the fields the event reads (CLASSIC_FIELDS) are kept: a field the event does not read fails the hook.
  */
 export function toClassic(event: string, run: RunOutput = {}): { result: ShimResult; systemMessage?: string; subHuman?: SubHumanRead } {
-  const fields = new Set([...COMMON, ...(CLASSIC_FIELDS[event] || [])]);
+  const fields = new Set([...COMMON, ...(CLASSIC_FIELDS[event] ?? [])]);
   // a subset of r's own fields
   const keep = (r: ShimResult): ShimResult => Object.fromEntries(Object.entries(r).filter(([k, v]) => fields.has(k) && v !== undefined));
   const code = Number(run.exitCode);
@@ -153,7 +153,7 @@ export function mergePre(ours: PreResult | null = {}, theirs: PreResult | null |
   const a = (ours || {}) as { allow?: true; ask?: string; deny?: string; updatedInput?: Record<string, unknown>; additionalContext?: string[] };
   const b = (theirs || {}) as typeof a;
   const updatedInput = a.updatedInput ?? b.updatedInput;
-  const ctx = [...(a.additionalContext || []), ...(b.additionalContext || [])];
+  const ctx = [...(a.additionalContext ?? []), ...(b.additionalContext ?? [])];
   const extra = { ...(updatedInput ? { updatedInput } : {}), ...(ctx.length ? { additionalContext: ctx } : {}) };
   const deny = a.deny ?? b.deny;
   if (deny) return { deny, ...extra };
@@ -182,7 +182,7 @@ export function toPermission(run: RunOutput = {}): { result: PermissionAnswer; s
 
 /** Ours with theirs: a deny from either wins, then our decision, then theirs. */
 export function mergePermission(ours: PermissionAnswer | null = {}, theirs: PermissionAnswer | null | undefined = {}): PermissionAnswer {
-  const a = (ours || {}).decision, b = (theirs || {}).decision;
+  const a = (ours ?? {}).decision, b = (theirs ?? {}).decision;
   if (b && b.behavior === 'deny' && !(a && a.behavior === 'deny')) return { decision: b };
   return a ? { decision: a } : b ? { decision: b } : {};
 }

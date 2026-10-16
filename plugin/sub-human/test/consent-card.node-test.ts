@@ -5,10 +5,8 @@ import assert from 'node:assert/strict';
 import { answerCard } from '../lib/consent/card.ts';
 import type { CardSpec } from '../lib/consent/card.ts';
 
-const SPEC: CardSpec = { question: 'Host room vole-8126 on this machine? (handoff 3f9c2a)', options: [
-  { label: 'Host it here', description: 'alice asks to move the room here.' },
-  { label: 'Not now', description: 'alice stays the host.' },
-] };
+const HOST = { label: 'Host it here', description: 'alice asks to move the room here.' }, NOT_NOW = { label: 'Not now', description: 'alice stays the host.' };
+const SPEC: CardSpec = { question: 'Host room vole-8126 on this machine? (handoff 3f9c2a)', options: [HOST, NOT_NOW] };
 const shown = (over: Partial<CardSpec> = {}) => ({ ...SPEC, header: 'Handoff', multiSelect: false, ...over });
 const resp = (label: string | null, extra: Record<string, unknown> = {}) => ({ questions: [shown()], answers: label == null ? {} : { [SPEC.question]: label }, ...extra });
 
@@ -29,8 +27,8 @@ test('answerCard: AFK, a followUp, no answer or a card shown other than as built
   assert.deepEqual(answerCard(SPEC, resp('Host it here', { followUp: 'tell me more' })), { kind: 'none' });
   assert.deepEqual(answerCard(SPEC, resp(null)), { kind: 'none' });
   // the model's own card with the hooks' question: swapped descriptions, a missing option, an extra one
-  const swapped = shown({ options: [{ ...SPEC.options[0], description: SPEC.options[1].description }, { ...SPEC.options[1], description: SPEC.options[0].description }] });
-  for (const q of [swapped, shown({ options: [SPEC.options[0]] }), shown({ options: [...SPEC.options, { label: 'Yes', description: '' }] })]) {
+  const swapped = shown({ options: [{ ...HOST, description: NOT_NOW.description }, { ...NOT_NOW, description: HOST.description }] });
+  for (const q of [swapped, shown({ options: [HOST] }), shown({ options: [...SPEC.options, { label: 'Yes', description: '' }] })]) {
     assert.deepEqual(answerCard(SPEC, { questions: [q], answers: { [SPEC.question]: 'Host it here' } }), { kind: 'none' });
   }
 });

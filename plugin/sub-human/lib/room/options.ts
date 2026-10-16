@@ -22,7 +22,7 @@ const NAMES = ['login-same-person'] as const;
 type Name = typeof NAMES[number];
 type Options = Partial<Record<Name, true>>;
 
-const get = (store: Pick<RoomStore, 'kv'>): Options => { try { return store.kv.get(KEY, null) || {}; } catch { return {}; } };
+const get = (store: Pick<RoomStore, 'kv'>): Options => { try { return store.kv.get(KEY, null) ?? {}; } catch { return {}; } };
 
 function set(store: Store, name: string, on: boolean): Options {
   if (!store.isHost) throw new RoomError('HOST_ONLY', `room ${store.code} is hosted on another machine; its host sets its options`);

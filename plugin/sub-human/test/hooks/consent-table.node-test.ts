@@ -7,6 +7,7 @@ import type { Identity } from '../../lib/identity.ts';
 import * as proposal from '../../lib/proposal.ts';
 import * as rows from '../../lib/rows.ts';
 import { sn } from '../support/brands.ts';
+import { must } from '../support/must.ts';
 
 /** A seat as proposal, deliver and rows read it. */
 type Me = Pick<Identity, 'code' | 'name' | 'role'>;
@@ -37,6 +38,7 @@ test('consent table: proposal, re-proposal, revise, signoffs, objection after si
     [H2]: { bob: 'agreed', carol: 'needed' },
     [H3]: { alice: 'decided' },
   };
+  const ANSWER: Record<string, string> = { agreed: 'agreed', objected: 'objected', needed: 'answer needed' };
   const titles: Record<string, string> = { [H1]: 'Cursor paging', [H2]: 'Cursor paging v2', [H3]: 'Rename fetchUser' };
   const people = ['alice', 'bob', 'carol', 'dave'];
   const hashes = [H1, H2, H3];
@@ -57,7 +59,7 @@ test('consent table: proposal, re-proposal, revise, signoffs, objection after si
     }
     // deliver: a proposal wakes me exactly while it awaits my answer
     for (const h of hashes) {
-      const e = entries.filter(x => x.kind === 'proposal' && x.hash === h).at(-1)!;
+      const e = must(entries.filter(x => x.kind === 'proposal' && x.hash === h).at(-1));
       assert.equal(w.lib(() => room.deliver(me(name), e, { entries })) === 'wake', needed(name).includes(h), `deliver ${name} ${h.slice(0, 6)}`);
     }
     // stateLine: the open proposals (H1, H2) and my part in each
@@ -66,13 +68,13 @@ test('consent table: proposal, re-proposal, revise, signoffs, objection after si
       const seg = line.replace(/^room now: /, '').split(/ · (?=proposal |away:|\+)/).find(s => s.startsWith(`proposal ${h.slice(0, 6)}`));
       assert.ok(seg, `${line} has ${h.slice(0, 6)}`);
       const you = (/ · you: (agreed|objected|answer needed|not answered)/.exec(seg) || [])[1] || null;
-      const exp = ({ agreed: 'agreed', objected: 'objected', needed: 'answer needed' } as Record<string, string>)[(want[h] || {})[name]] || null;
+      const exp = ANSWER[want[h]?.[name] ?? ''] || null;
       assert.equal(you, exp, `stateLine ${name} ${h.slice(0, 6)}: ${seg}`);
     }
     // the room row: "your answer needed" names the newest pending proposal by its title
     const roomRow = w.lib(() => rows.rowText(w.code, { viewer: name, entries, taskSummary: '' }));
     const need = needed(name);
-    if (need.length) assert.ok(roomRow.startsWith(`⚠ your answer needed ${titles[need.at(-1)!]}`), `${name}: ${roomRow}`);
+    if (need.length) assert.ok(roomRow.startsWith(`⚠ your answer needed ${titles[must(need.at(-1))]}`), `${name}: ${roomRow}`);
     else assert.doesNotMatch(roomRow, /answer needed/, `${name}: ${roomRow}`);
   }
 
@@ -80,20 +82,21 @@ test('consent table: proposal, re-proposal, revise, signoffs, objection after si
   const latest: Record<string, string> = { alice: H3, bob: H2, carol: H2, dave: H1 };
   const ROW: Record<string, string> = { agreed: '✓ agreed', objected: '✖ objected', needed: '⚠ reviewing', decided: '✔ decided' };
   for (const h of [H1, H2, H3]) {
-    const p = f.proposals.get(h)!;
+    const p = must(f.proposals.get(h));
     const m = w.lib(() => proposal.matrix(p, entries));
-    const by = (s: string) => p.approvers.filter(n => want[h][n] === s || (s === 'agreed' && want[h][n] === 'decided'));
+    const wh = must(want[h]);
+    const by = (s: string) => p.approvers.filter(n => wh[n] === s || (s === 'agreed' && wh[n] === 'decided'));
     assert.deepEqual(m.agreed, by('agreed'), `matrix agreed ${h.slice(0, 6)}`);
     assert.deepEqual(m.objected, by('objected'), `matrix objected ${h.slice(0, 6)}`);
     assert.deepEqual(m.missing, by('needed'), `matrix missing ${h.slice(0, 6)}`);
-    assert.equal(f.status(h)!.state, h === H3 ? 'agreed' : 'open');
+    assert.equal(must(f.status(h)).state, h === H3 ? 'agreed' : 'open');
   }
   for (const name of people) {
-    const h = latest[name];
+    const h = must(latest[name]);
     const t = w.lib(() => rows.rowText(w.code, { member: sn(name), viewer: 'claude', entries, tasks: [] }));
-    const s = want[h][name];
-    assert.ok(t.startsWith(ROW[s]), `row ${name}: ${t}`);
-    if (s !== 'objected') assert.ok(t.includes(titles[h]), `row ${name} names the proposal by its title: ${t}`);
+    const s = must(must(want[h])[name]);
+    assert.ok(t.startsWith(must(ROW[s])), `row ${name}: ${t}`);
+    if (s !== 'objected') assert.ok(t.includes(must(titles[h])), `row ${name} names the proposal by its title: ${t}`);
     assert.doesNotMatch(t, /[0-9a-f]{6}/, `no bare hash in ${t}`);
   }
 });
@@ -105,12 +108,12 @@ test('consent table: a note waiting for the person\'s Send is no answer in any v
   w.lib(() => proposal.writeConfirm(me('bob'), { hash: H, note: 'open rate limiting', from: 'alice', title: 'Rate limiting', at: Date.now() }));
   const views = () => {
     const entries = w.entries();
-    const e = entries.filter(x => x.kind === 'proposal' && x.hash === H).at(-1)!;
+    const e = must(entries.filter(x => x.kind === 'proposal' && x.hash === H).at(-1));
     return {
       pending: w.lib(() => proposal.pendingFor(me('bob'), entries)).some(p => p.hash === H),
       lane: w.lib(() => room.deliver(me('bob'), e, { entries })),
       you: (/ · you: (agreed|objected|answer needed)/.exec(w.lib(() => room.open(w.code).stateLine(me('bob'), entries))) || [])[1],
-      missing: w.lib(() => proposal.matrix(room.fold(entries).proposals.get(H)!, entries)).missing,
+      missing: w.lib(() => proposal.matrix(must(room.fold(entries).proposals.get(H)), entries)).missing,
       row: w.lib(() => rows.rowText(w.code, { viewer: 'bob', entries, taskSummary: '' })),
     };
   };
@@ -120,10 +123,10 @@ test('consent table: a note waiting for the person\'s Send is no answer in any v
   // bob's Send on the confirm card (the hooks' card, his answer)
   const pre = w.hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: `objection ${H}` }] } }, { as: 'bob' });
   assert.equal(decision(pre), 'ask');
-  const card = JSON.parse(pre.stdout).hookSpecificOutput.updatedInput;
-  w.hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: card, tool_response: { ...card, answers: { [card.questions[0].question]: 'Send' } } }, { as: 'bob' });
+  const card = (JSON.parse(pre.stdout) as { hookSpecificOutput: { updatedInput: { questions: { question: string }[] } } }).hookSpecificOutput.updatedInput;
+  w.hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: card, tool_response: { ...card, answers: { [must(card.questions[0]).question]: 'Send' } } }, { as: 'bob' });
   const after = views();
   assert.deepEqual([after.pending, after.missing], [false, []]);
-  assert.equal(w.lib(() => room.fold(w.entries())).status(H)!.state, 'blocked');
+  assert.equal(must(w.lib(() => room.fold(w.entries())).status(H)).state, 'blocked');
   assert.doesNotMatch(after.row, /answer needed/);
 });

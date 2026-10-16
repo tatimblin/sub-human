@@ -39,8 +39,9 @@ import { createRequire } from 'node:module';
 import type { LinkState, LinkStateWord } from './types.ts';
 import type { LinkStatus } from '../remote/link-socket.ts';
 import type { RoomCode } from '../brand.ts';
+import type * as LinkSocketMod from '../remote/link-socket.ts';
 
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 
 /** The words, the source of LinkStateWord (lib/room/types.ts). */
@@ -65,7 +66,7 @@ function normalize(state: unknown, detail?: unknown): LinkStateWord {
 
 /** The mirror's `link` document (lib/remote/link.ts status), or null when it cannot be read. */
 function linkDoc(code: RoomCode): LinkStatus | null {
-  try { return (require('../remote/link-socket.ts') as typeof import('../remote/link-socket.ts')).status(code); } catch { return null; }
+  try { return require<typeof LinkSocketMod>('../remote/link-socket.ts').status(code); } catch { return null; }
 }
 
 const NOT_RUNNING = 'the link daemon is not running';

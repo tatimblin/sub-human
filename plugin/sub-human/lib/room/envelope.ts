@@ -116,7 +116,7 @@ function parseKey(pem: unknown): KeyObject | null {
  */
 function pinnedKeys(entries: readonly (Entry | null | undefined)[] | null | undefined): Map<string, KeyObject> {
   const pins = new Map<string, KeyObject>();
-  for (const e of entries || []) {
+  for (const e of entries ?? []) {
     if (!e || e.kind !== 'member_joined' || e.via !== 'system' || typeof e.from !== 'string' || pins.has(e.from)) continue;
     const key = parseKey(e.pubkey);
     if (key) pins.set(e.from, key);

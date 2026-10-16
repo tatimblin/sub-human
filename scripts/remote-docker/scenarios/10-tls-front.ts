@@ -4,6 +4,7 @@
 // host it upgrades (101) and echoes, from joiner-a directly and from joiner-b only through corp-proxy (CONNECT). So
 // once the host listens on 127.0.0.1:7420 the wss scenario runs over a path already proved.
 import type { T } from '../lab.ts';
+import { parseJson } from '../../lib/io.ts';
 
 /** What lab/ws-probe.ts connect prints. */
 interface WsProbe { ok: boolean, status?: number, upgraded?: boolean, echo?: boolean, authorized?: boolean, error?: string, ms?: number }
@@ -19,7 +20,7 @@ export async function run(t: T): Promise<void> {
   const env = { NODE_EXTRA_CA_CERTS: '/etc/lab-ca.crt' };
   const probe = (svc: string, proxy?: string): WsProbe => {
     const r = lab.exec(svc, ['node', '/lab/ws-probe.ts', 'connect', 'https://tls-front/ABCD', ...(proxy ? [proxy] : [])], { user: 'joiner', env, allowFail: true, timeout: 20_000 });
-    try { return JSON.parse(r.stdout.trim()); } catch { return { ok: false, error: r.stderr.trim() || r.stdout.trim() }; }
+    try { return parseJson<WsProbe>(r.stdout.trim()); } catch { return { ok: false, error: r.stderr.trim() || r.stdout.trim() }; }
   };
   const idle = probe('joiner-a');
   t.check('with no listener: TLS verifies against the lab CA and the proxy answers 502', idle.ok && idle.status === 502 && idle.authorized, JSON.stringify(idle));

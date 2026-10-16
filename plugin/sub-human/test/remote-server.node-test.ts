@@ -32,6 +32,8 @@ import type { Transport } from '../lib/remote/types-rest.ts';
 import type { Entry, EntryInput, Members, Presence, RoomStore } from '../lib/room/types.ts';
 import type { RoomCode } from '../lib/brand.ts';
 import { rc, sn, mid, inv } from './support/brands.ts';
+import { must } from './support/must.ts';
+import { fsStore } from './support/fs-store.ts';
 
 /** server.serve's options. */
 type ServeOpts = Parameters<typeof server.serve>[1];
@@ -48,7 +50,7 @@ function hostRoom(t: TestContext) {
   const code = h.newRoom();
   return { code, host: store.open(code) };
 }
-const logLines = (code: RoomCode) => { try { return fs.readFileSync(path.join(store.open(code).dir!, 'log.jsonl'), 'utf8').split('\n').filter(Boolean); } catch { return []; } };
+const logLines = (code: RoomCode) => { try { return fs.readFileSync(path.join(must(store.open(code).dir), 'log.jsonl'), 'utf8').split('\n').filter(Boolean); } catch { return []; } };
 
 /** The client end of a memory pair whose server end serves host (closed when the test ends). */
 function served(t: TestContext, host: RoomStore, wrap: (tr: Transport) => Transport = tr => tr) {
@@ -87,12 +89,12 @@ test('remote (memory): hello with an invite gives a token once; join, beat, appe
   h.register('bob', 'member', process.pid, code); // a seat of the host machine: its pid and session never leave it
   const c = await linked(t, host);
   assert.equal(typeof c.token, 'string');
-  assert.deepEqual([c.room, c.serverCaps!.ops], [code, protocol.OPS]);
+  assert.deepEqual([c.room, must(c.serverCaps).ops], [code, protocol.OPS]);
   assert.deepEqual(await c.join(seat(code, 'alice')), { ok: true });
   const ms = identity.readMembers(code);
-  assert.deepEqual([ms.alice.machine, ms.alice.pid], [REMOTE, undefined], 'a remote seat lives by its lease');
+  assert.deepEqual([must(ms.alice).machine, must(ms.alice).pid], [REMOTE, undefined], 'a remote seat lives by its lease');
   const joined = host.readAll().find(e => e.kind === 'member_joined' && e.from === 'alice');
-  assert.deepEqual([joined!.machine, joined!.pubkey], [REMOTE, seatKey.publicPem(code, sn('alice'))], 'the key is pinned');
+  assert.deepEqual([must(joined).machine, must(joined).pubkey], [REMOTE, seatKey.publicPem(code, sn('alice'))], 'the key is pinned');
   assert.deepEqual(await c.beat('alice', { presence: { state: 'working', detail: 'tests' } }), { ok: true });
   const say = await c.append(signed(code, 'alice', { kind: 'say', text: 'hello from afar' }));
   assert.equal(host.trust(host.readById([say.id])[0]), 'verified');
@@ -110,13 +112,13 @@ test('remote (memory): hello with an invite gives a token once; join, beat, appe
   await h.until(() => got.lines.length === logLines(code).length && got.docs.has('presence/alice'), 3000, 20);
   assert.deepEqual(got.lines, logLines(code), 'byte-identical lines');
   const members = got.docs.get('members') as Members;
-  assert.deepEqual(Object.keys(members.bob).filter(k => ['pid', 'pid_start', 'session_id', 'cwd'].includes(k)), [], 'publicView');
-  assert.equal(members.alice.machine, REMOTE);
+  assert.deepEqual(Object.keys(must(members.bob)).filter(k => ['pid', 'pid_start', 'session_id', 'cwd'].includes(k)), [], 'publicView');
+  assert.equal(must(members.alice).machine, REMOTE);
   assert.equal((got.docs.get('presence/alice') as Presence).state, 'working');
   assert.ok(got.docs.has('tasks'));
   assert.deepEqual(await c.leave('alice', 'session ended'), { ok: true });
   await h.until(() => got.lines.length === logLines(code).length, 3000, 20);
-  assert.equal(JSON.parse(got.lines.at(-1)!).text, 'alice left (session ended)');
+  assert.equal((JSON.parse(must(got.lines.at(-1))) as Entry).text, 'alice left (session ended)');
 
   // a person's posts over a link are bounded (LINK_HUMAN_RATE_MAX per minute); an agent post has its own budget
   assert.deepEqual(await c.join(seat(code, 'alice')), { ok: true, rejoin: true });
@@ -125,7 +127,7 @@ test('remote (memory): hello with an invite gives a token once; join, beat, appe
   await rejects(c.append(signed(code, 'alice', { kind: 'signoff', proposal_hash: 'abcdef012345', text: 'an answer counts too' })), 'RATE');
 
   // the token reconnects as the same link; the invite was single-use
-  const again = await client.connect(served(t, host), { machine: REMOTE, token: c.token! });
+  const again = await client.connect(served(t, host), { machine: REMOTE, token: must(c.token) });
   t.after(() => again.close());
   assert.deepEqual([again.link, again.token], [c.link, c.token]);
   assert.deepEqual(await again.join(seat(code, 'alice')), { ok: true, rejoin: true });
@@ -135,12 +137,12 @@ test('remote (memory): a seat whose lease lapsed is logged left by the host\'s s
   const { code, host } = hostRoom(t);
   const c = await linked(t, host);
   assert.deepEqual(await c.join(seat(code, 'alice')), { ok: true });
-  host.members.update(ms => { ms.alice.seen_at = new Date(Date.now() - config.SEAT_LEASE_MS - config.LEAVE_SETTLE_MS - 1000).toISOString(); return ms; });
+  host.members.update(ms => { must(ms.alice).seen_at = new Date(Date.now() - config.SEAT_LEASE_MS - config.LEAVE_SETTLE_MS - 1000).toISOString(); return ms; });
   assert.deepEqual(seats.sweep(code), ['alice']);
   assert.deepEqual(await c.beat('alice'), { ok: true });
   const moves = host.readAll().filter(e => e.from === 'alice' && (e.kind === 'member_joined' || e.kind === 'member_left')).map(e => e.text);
   assert.deepEqual(moves, ['alice joined', 'alice left (connection lost)', 'alice rejoined']);
-  assert.equal(identity.readMembers(code).alice.lapsed_at, undefined);
+  assert.equal(must(identity.readMembers(code).alice).lapsed_at, undefined);
   assert.ok(identity.liveMembers(code).includes('alice'));
   assert.deepEqual(await c.beat('alice'), { ok: true });
   assert.equal(host.readAll().filter(e => e.text === 'alice rejoined').length, 1, 'a beat of a seat that never lapsed logs nothing');
@@ -165,7 +167,7 @@ test('remote (memory): no token gets AUTH on every op but hello; a bad token, a 
   await rejects(hello({ token: 'not-a-token' }), 'AUTH');
   const { invite } = invites.mintFor(host, { locator: 'pipe:test', machine: REMOTE, seats: [] });
   const [pre, c, loc, secret, key] = invite.split('.');
-  await rejects(hello({ invite: inv([pre, c, loc, secret.replace(/^./, (ch: string) => (ch === 'A' ? 'B' : 'A')), key].join('.')) }), 'AUTH');
+  await rejects(hello({ invite: inv([pre, c, loc, must(secret).replace(/^./, (ch: string) => (ch === 'A' ? 'B' : 'A')), key].join('.')) }), 'AUTH');
   await rejects(hello({ invite: inv([pre, rc('vole-1234'), loc, secret, key].join('.')) }), 'AUTH');
   (await hello({ invite })).close();
   await rejects(hello({ invite }), 'AUTH');
@@ -179,7 +181,7 @@ test('remote (memory): no token gets AUTH on every op but hello; a bad token, a 
   a.send({ hello: true });
   await h.until(() => replies.length === 3, 2000, 5);
   a.close();
-  assert.deepEqual(replies.map(f => [f.id, f.error!.code]), [[1, 'PROTOCOL'], [2, 'PROTOCOL'], [null, 'PROTOCOL']]);
+  assert.deepEqual(replies.map(f => [f.id, must(f.error).code]), [[1, 'PROTOCOL'], [2, 'PROTOCOL'], [null, 'PROTOCOL']]);
 });
 
 // ---------- protocol skew: fake versions on both ends (N-1, N, N+1) ----------
@@ -193,7 +195,7 @@ async function rawHello(t: TestContext, host: RoomStore, params: Record<string, 
   a.send(protocol.request(1, 'hello', { caps: {}, machine: REMOTE, ...params }));
   await h.until(() => got.length === 1, 2000, 5);
   a.close();
-  return got[0];
+  return must(got[0], 'the hello answer');
 }
 
 test('protocol skew: the host picks the highest common version; N-1 and N+1 peers work, unknown hello fields are ignored both ways', async t => {
@@ -221,7 +223,7 @@ test('protocol skew: the host picks the highest common version; N-1 and N+1 peer
   assert.equal((beta.result as { v: number }).v, 2, 'a beta.15 link still links');
   // a hello with a version but no range (a joiner from before 0.5): PROTOCOL SKEW, it must update
   const pre = await rawHello(t, host, { v: 1 });
-  assert.deepEqual([pre.error!.code, pre.error!.reason, /update it/.test(pre.error!.message)], ['PROTOCOL', 'SKEW', true]);
+  assert.deepEqual([must(pre.error).code, must(pre.error).reason, /update it/.test(must(pre.error).message)], ['PROTOCOL', 'SKEW', true]);
 });
 
 test('protocol skew: no common version is PROTOCOL naming the side that must update', async t => {
@@ -241,7 +243,7 @@ test('protocol skew: no common version is PROTOCOL naming the side that must upd
     /host runs sub-human 0\.4\.0 \(protocol 3–4\); you run 0\.9\.0 \(protocol 5–6\)\. The host must update/);
   // a joiner that speaks only protocol 1 meets a host that dropped it: the message reaches it as the error it shows
   const r = await rawHello(t, host, { proto: { min: 1, max: 1 } }, { proto: { min: 2, max: 3 }, version: '0.5.0' });
-  assert.deepEqual([r.error!.code, r.error!.reason, /you run an older sub-human \(protocol 1\)\. Update your plugin/.test(r.error!.message)], ['PROTOCOL', 'SKEW', true]);
+  assert.deepEqual([must(r.error).code, must(r.error).reason, /you run an older sub-human \(protocol 1\)\. Update your plugin/.test(must(r.error).message)], ['PROTOCOL', 'SKEW', true]);
   // a reply outside this end's range is refused here too
   await fails(at({ proto: { min: 1, max: 1 } }, { proto: { min: 1, max: 1 } }).then(() => at({ proto: { min: protocol.PROTO.max + 1, max: protocol.PROTO.max + 1 } }, {})), /must update|Update your plugin/);
   // this version and 0.5.0-beta.15: protocol 3 against 1–2 settles on 2 both ways (a link made before keeps working)
@@ -272,7 +274,7 @@ test('remote (memory): a link writes only as the seats it joined: another `from`
   const fresh = crypto.generateKeyPairSync('ed25519');
   const pubkey = fresh.publicKey.export({ type: 'spki', format: 'pem' }) as string;
   await rejects(a.join({ name: 'bob', pubkey, proof: hostLinks.proveSeat(fresh.privateKey, { room: code, name: sn('bob'), pubkey }) }), 'AUTH');
-  assert.ok(identity.readMembers(code).bob.left_at);
+  assert.ok(must(identity.readMembers(code).bob).left_at);
   assert.equal(logLines(code).length, before + 1, 'only bob\'s own member_left was written');
 });
 
@@ -288,7 +290,7 @@ test('remote (memory): a bound link (the card let one name in; a handoff\'s seat
   assert.deepEqual(await c.join(seat(code, 'carol')), { ok: true });
   assert.deepEqual(await c.join(seat(code, 'carol')), { ok: true, rejoin: true });
   await rejects(c.append(signed(code, 'bob', { kind: 'say', text: 'as bob' })), 'AUTH');
-  assert.deepEqual(hostLinks.links(host)[c.link!].seats, ['carol']);
+  assert.deepEqual(hostLinks.links(host)[must(c.link)]?.seats, ['carol']);
   // an unbound link (a login's, an invite that binds no seat) still picks its name at join time
   const open = await linked(t, host);
   assert.deepEqual(await open.join(seat(code, 'erin')), { ok: true });
@@ -301,7 +303,7 @@ test('remote (memory): a remote answer is placed, then the host decides', async 
   host.append({ kind: 'proposal', text: `proposal ${H}: x`, hash: H, approvers: ['alice'] }, { via: 'agent', from: 'claude' });
   const answer = await c.append(signed(code, 'alice', { kind: 'signoff', proposal_hash: H }));
   const last = host.readAll().at(-1);
-  assert.deepEqual([last!.kind, last!.text, last!.refs], ['decision', `agreed: alice (proposal ${H})`, [answer.id - 1, answer.id]]);
+  assert.deepEqual([must(last).kind, must(last).text, must(last).refs], ['decision', `agreed: alice (proposal ${H})`, [answer.id - 1, answer.id]]);
   await c.append(signed(code, 'alice', { kind: 'objection', proposal_hash: H, text: 'late' }));
   assert.equal(host.readAll().filter(e => e.kind === 'decision').length, 1, 'decided once');
 });
@@ -313,7 +315,7 @@ test('remote (memory): a cut mid-subscribe and a reconnect from {after, hash} re
   const post = (n: number) => host.append({ kind: 'say', text: `line ${n}` }, { via: 'human', from: 'alice' });
   for (let i = 0; i < 3; i++) post(i);
   // a second connection whose transport is cut after 8 frames (hello, its reply, subscribe, its reply, 4 events)
-  const cutter = await client.connect(served(t, host, tr => flaky(tr, { seed: 3, cutAfter: 8 })), { machine: REMOTE, token: c.token! });
+  const cutter = await client.connect(served(t, host, tr => flaky(tr, { seed: 3, cutAfter: 8 })), { machine: REMOTE, token: must(c.token) });
   const first = collect(cutter, 0, store.hash12(''));
   await first.sub.ready;
   for (let i = 3; i < 6; i++) post(i);
@@ -321,10 +323,10 @@ test('remote (memory): a cut mid-subscribe and a reconnect from {after, hash} re
   assert.deepEqual(first.got.ends, ['OFFLINE']);
   assert.ok(first.got.lines.length > 0 && first.got.lines.length < logLines(code).length, `${first.got.lines.length} lines before the cut`);
   // resume from the last line held
-  const last = first.got.lines.at(-1)!;
-  const again = await client.connect(served(t, host), { machine: REMOTE, token: c.token! });
+  const last = must(first.got.lines.at(-1));
+  const again = await client.connect(served(t, host), { machine: REMOTE, token: must(c.token) });
   t.after(() => again.close());
-  const second = collect(again, JSON.parse(last).id, store.hash12(last));
+  const second = collect(again, (JSON.parse(last) as Entry).id, store.hash12(last));
   await second.sub.ready;
   post(6);
   await h.until(() => first.got.lines.length + second.got.lines.length === logLines(code).length, 3000, 20);
@@ -349,24 +351,25 @@ test('remote (memory): over a flaky link a dropped frame is OFFLINE at the deadl
   const { code, host } = hostRoom(t);
   const c = await linked(t, host);
   await c.join(seat(code, 'alice'));
-  let shaky;
-  for (let seed = 1; !shaky; seed++) { // the hello itself may be dropped: try the next seed
-    shaky = await client.connect(served(t, host, tr => flaky(tr, { seed, drop: 0.35 })), { machine: REMOTE, token: c.token!, deadlineMs: 150 }).catch(() => null);
+  let link: Client | null = null;
+  for (let seed = 1; !link; seed++) { // the hello itself may be dropped: try the next seed
+    link = await client.connect(served(t, host, tr => flaky(tr, { seed, drop: 0.35 })), { machine: REMOTE, token: must(c.token), deadlineMs: 150 }).catch(() => null);
   }
+  const shaky = link;
   t.after(() => shaky.close());
   const payloads = Array.from({ length: 16 }, (_, i) => signed(code, 'alice', { kind: 'say', text: `try ${i}` }));
   const results: { e?: Entry; code?: string }[] = [];
-  for (const p of payloads) results.push(await shaky.append(p).then(e => ({ e }), err => ({ code: err.code })));
+  for (const p of payloads) results.push(await shaky.append(p).then(e => ({ e }), (err: RoomError) => ({ code: err.code })));
   assert.ok(results.some(r => r.code === 'OFFLINE') && results.some(r => r.e), JSON.stringify(results.map(r => r.code || 'ok')));
   assert.deepEqual([...new Set(results.map(r => r.code).filter(Boolean))], ['OFFLINE']);
   assert.equal(host.validateChain().ok, true);
   const placed = () => new Map(host.readAll().filter(e => e.nonce).map(e => [e.nonce, e]));
-  for (const [i, r] of results.entries()) if (r.e) assert.ok(placed().has(payloads[i].nonce), 'a write that answered is in the log');
+  for (const [i, r] of results.entries()) if (r.e) assert.ok(placed().has(must(payloads[i]).nonce), 'a write that answered is in the log');
   // every OFFLINE payload is either in the log whole (its reply was lost) or not at all: re-sent, it lands once
   for (const [i, r] of results.entries()) {
     if (!r.code) continue;
-    const had = placed().has(payloads[i].nonce);
-    await c.append(payloads[i]).then(() => assert.equal(had, false), e => assert.deepEqual([e.code, had], ['AUTH', true]));
+    const had = placed().has(must(payloads[i]).nonce);
+    await c.append(must(payloads[i])).then(() => assert.equal(had, false), (e: RoomError) => assert.deepEqual([e.code, had], ['AUTH', true]));
   }
   const nonces = host.readAll().filter(e => e.nonce).map(e => e.nonce);
   assert.equal(new Set(nonces).size, nonces.length);
@@ -389,7 +392,7 @@ test('remote (pipe): `sub-human serve --stdio CODE` as a child serves the host h
   await sub.ready;
   await h.until(() => got.lines.length === logLines(code).length, 5000, 20);
   assert.deepEqual(got.lines, logLines(code));
-  assert.equal(JSON.parse(got.lines.at(-1)!).id, e.id);
+  assert.equal((JSON.parse(must(got.lines.at(-1))) as Entry).id, e.id);
   c.close();
   await h.until(() => closed, 5000, 20);
   assert.equal(closed, true);
@@ -416,7 +419,7 @@ test('remote (pipe): `serve --stdio CODE --link ID` (the SSH forced command) tak
 test('the lines an older sub-human wrote to authorized_keys: kick takes a link\'s out, a door goes by its tag; nothing here writes one', t => {
   const { code } = hostRoom(t);
   const KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOv2YxFcmD0qVf1aW0gk1oQfWb3m9e1bJ1l3xq3fQnHk';
-  const home = path.resolve(process.env.SUB_HUMAN_HOME!);
+  const home = path.resolve(must(process.env.SUB_HUMAN_HOME));
   const id = 'abcdef012345';
   const linkLine = `command="SUB_HUMAN_HOME=${home} ${home}/bin/serve --stdio ${code} --link ${id}",restrict ${KEY} sub-human:${code}:${id}`;
   const door = `command="SUB_HUMAN_HOME=${home} ${home}/bin/serve --enroll ${code} --kind ssh",restrict ${KEY} ${sshkeys.ENROLL_TAG(code)}`;
@@ -452,13 +455,15 @@ test('remote (memory): subscribe {snapshot: true} gets the snapshot first only f
   process.env.SUB_HUMAN_SEGMENT_BYTES = '1024';
   t.after(() => { if (was === undefined) delete process.env.SUB_HUMAN_SEGMENT_BYTES; else process.env.SUB_HUMAN_SEGMENT_BYTES = was; });
   for (let i = 5; i < 40; i++) status(i);
-  const snap = host.snapshot()!;
+  const snap = must(host.snapshot());
   assert.ok(snap && snap.id > 5 && snap.id < 40);
   r = events(0, { snapshot: true });
   await r.sub.ready;
   assert.ok(await h.until(() => r.got.filter(e => e.ev === 'entry').length === 40 - snap.id, 3000, 10));
-  assert.equal(r.got[0].ev, 'snapshot', 'first');
-  assert.deepEqual([(r.got[0].data as { id: number }).id, (r.got[0].data as { hash: string }).hash], [snap.id, snap.hash]);
+  const first = must(r.got[0]);
+  assert.equal(first.ev, 'snapshot', 'first');
+  const head = first.data as { id: number; hash: string };
+  assert.deepEqual([head.id, head.hash], [snap.id, snap.hash]);
   r.sub.stop();
   // after > 0: a resume, never a snapshot; without the flag: every line (an older mirror)
   r = events(3, { snapshot: true });
@@ -475,7 +480,7 @@ test('remote (memory): subscribe {snapshot: true} gets the snapshot first only f
   delete process.env.SUB_HUMAN_SEGMENT_BYTES;
   for (let i = 0; i < 40; i++) host.append({ kind: 'task_req', text: `task ${i}`, op: 'add', subject: `t${i}`, detail: 'd'.repeat(1900) }, { via: 'agent', from: `a${i}` });
   for (let i = 0; i < 500; i++) host.append({ kind: 'task', text: `task ${i}`, op: 'update', id: i + 1, subject: 's'.repeat(400), detail: 'd'.repeat(1900), status: 'pending' }, { via: 'system', from: 'claude', system: true });
-  assert.ok((host as store.FsRoomStore).rotate(), 'sealed now');
+  assert.ok(fsStore(host).rotate(), 'sealed now');
   assert.ok(JSON.stringify(host.snapshot()).length > config.LINK_FRAME_MAX_BYTES, 'too big for one frame');
   const total = host.lastId();
   r = events(0, { snapshot: true });
@@ -510,19 +515,20 @@ test('quotas: one table for every op; a link\'s plans, seats and subscribes surv
   for (let i = 1; i <= n + 1; i++) a.send(protocol.request(i, 'hello', { proto: protocol.PROTO, caps: {}, machine: REMOTE }));
   await h.until(() => got.length === n + 1, 3000, 5);
   assert.deepEqual(got.slice(0, n).map(f => !!f.result), new Array(n).fill(true));
-  assert.deepEqual([got[n].error!.code, got[n].error!.reason], ['RATE', 'QUOTA']);
+  assert.deepEqual([must(got[n]?.error).code, must(got[n]?.error).reason], ['RATE', 'QUOTA']);
   a.close();
 });
 
 test('quotas: the log counts a seat\'s posts by via; a link window drops what has passed; a session window is per op', () => {
   const now = Date.parse('2026-10-15T12:00:00Z');
   const at = (ago: number) => new Date(now - ago).toISOString();
-  const es = [{ from: 'bob', via: 'agent', at: at(120_000) }, ...Array.from({ length: 29 }, () => ({ from: 'bob', via: 'agent', at: at(1000) })), { from: 'bob', via: 'human', at: at(500) }] as Entry[];
+  const line = (via: string, ago: number) => ({ from: 'bob', via, at: at(ago) }) as Entry; // the fields quota reads
+  const es = [line('agent', 120_000), ...Array.from({ length: 29 }, () => line('agent', 1000)), line('human', 500)];
   assert.equal(quota.fromLog(es, { from: 'bob', via: 'agent', windowMs: 60_000, now }), 29, 'the one older than the window is not counted');
   quota.checkLog(es, { from: 'bob', via: 'agent', op: 'append.agent', now });
-  assert.throws(() => quota.checkLog([...es, { from: 'bob', via: 'agent', at: at(10) } as Entry], { from: 'bob', via: 'agent', op: 'append.agent', now }), (e: RoomError) => e.reason === 'QUOTA' && /bob posted 30 times in 1 min/.test(e.message));
+  assert.throws(() => quota.checkLog([...es, line('agent', 10)], { from: 'bob', via: 'agent', op: 'append.agent', now }), (e: RoomError) => e.reason === 'QUOTA' && /bob posted 30 times in 1 min/.test(e.message));
   // the retry is when the oldest counted line leaves the window, not the window itself
-  const late = Array.from({ length: 30 }, () => ({ from: 'bob', via: 'agent', at: at(50_000) })) as Entry[];
+  const late = Array.from({ length: 30 }, () => line('agent', 50_000));
   assert.throws(() => quota.checkLog(late, { from: 'bob', via: 'agent', op: 'append.agent', now }), (e: RoomError) => /try again in 10 s/.test(e.message));
   const s = new MemoryRoomStore(rc('otter-1234'));
   const seatQ = config.LINK_QUOTAS.seat;
@@ -548,30 +554,30 @@ test('kick (pipe): a `serve --stdio CODE` child names no link, yet the kick ends
   t.after(() => c.close());
   assert.deepEqual(await c.join(seat(code, 'bob')), { ok: true });
   const ends: { reason: string; message?: string }[] = [];
-  const sub = c.subscribe(0, store.hash12(''), ({ ev, data }) => { if (ev === 'end') ends.push(data as { reason: string; message?: string }); });
+  const sub = c.subscribe(0, store.hash12(''), ({ ev, data }) => { if (ev === 'end') ends.push(data); });
   await sub.ready;
   const r = hosting.kick(code, 'bob', { file: ak });
   assert.deepEqual(r.seats, ['bob']);
   assert.ok(await h.until(() => ends.length > 0, 5000, 20), 'the stream ends without a SIGTERM reaching this serve');
-  assert.equal(ends[0].reason, 'AUTH');
-  assert.match(ends[0].message!, /removed this machine from room .*kick/);
+  assert.equal(ends[0]?.reason, 'AUTH');
+  assert.match(must(ends[0]?.message), /removed this machine from room .*kick/);
   await assert.rejects(c.append(signed(code, 'bob', { kind: 'say', text: 'after the kick' })), (e: RoomError) => ['AUTH', 'OFFLINE'].includes(e.code));
   assert.ok(await h.until(() => closed, 5000, 20), 'the serve closes the connection');
   assert.ok(!host.readAll().some(e => e.text === 'after the kick'), 'nothing posted over the revoked link');
   // the old token at a new connection: LINK_REVOKED (what the joiner's daemon stops with, and doctor reads)
-  await assert.rejects(client.connect(served(t, host), { machine: REMOTE, token: c.token! }), (e: RoomError) => e.code === 'AUTH' && e.reason === 'LINK_REVOKED');
+  await assert.rejects(client.connect(served(t, host), { machine: REMOTE, token: must(c.token) }), (e: RoomError) => e.code === 'AUTH' && e.reason === 'LINK_REVOKED');
 });
 
 test('kick (memory): a connection that holds a revoked link gets AUTH LINK_REVOKED on every op; its join takes no seat (no ghost seat)', async t => {
   const { code, host } = hostRoom(t);
   const c = await linked(t, host);
   assert.deepEqual(await c.join(seat(code, 'bob')), { ok: true });
-  hostLinks.revokeLink(host, c.link!); // another process's kick: this session only reads the store
+  hostLinks.revokeLink(host, must(c.link)); // another process's kick: this session only reads the store
   seats.exit(code, sn('bob'), 'removed by the host');
   await assert.rejects(c.join(seat(code, 'bob')), (e: RoomError) => e.code === 'AUTH' && e.reason === 'LINK_REVOKED');
   await assert.rejects(c.beat('bob'), (e: RoomError) => e.code === 'AUTH' && e.reason === 'LINK_REVOKED');
   await assert.rejects(c.append(signed(code, 'bob', { kind: 'say', text: 'ghost' })), (e: RoomError) => e.code === 'AUTH' && e.reason === 'LINK_REVOKED');
-  const bob = identity.readMembers(code).bob;
+  const bob = must(identity.readMembers(code).bob);
   assert.ok(bob.left_at, 'the seat stays left');
   assert.ok(!host.readAll().some(e => e.kind === 'member_joined' && e.from === 'bob' && /rejoined/.test(String(e.text))), 'no "bob rejoined"');
 });
@@ -581,19 +587,19 @@ test('a seat refused at join gives its link binding back; a seat of another mach
   const c = await linked(t, host);
   const wrong = seat(code, 'carol');
   await rejects(c.join({ ...wrong, pubkey: seat(code, 'dave').pubkey }), 'AUTH'); // a proof for another key
-  assert.deepEqual(hostLinks.links(host)[c.link!].seats, [], 'not bound');
+  assert.deepEqual(hostLinks.links(host)[must(c.link)]?.seats, [], 'not bound');
   // a ghost: a remote seat whose link is gone (a kick raced its join before this fix), its lease past the settle
   assert.equal(seats.enter({ code, name: sn('ghost'), machine: mid('ghost0machine001'), pubkey: seat(code, 'ghost').pubkey }).ok, true);
-  host.members.update(ms => { ms.ghost.seen_at = new Date(Date.now() - 3_600_000).toISOString(); return ms; });
+  host.members.update(ms => { must(ms.ghost).seen_at = new Date(Date.now() - 3_600_000).toISOString(); return ms; });
   assert.deepEqual(seats.sweep(code), ['ghost']);
-  const g = identity.readMembers(code).ghost;
+  const g = must(identity.readMembers(code).ghost);
   assert.ok(g.left_at && !g.lapsed_at, 'left, not lapsed');
-  assert.match(String(host.readAll().at(-1)!.text), /ghost left \(its connection was ended\)/);
+  assert.match(String(must(host.readAll().at(-1)).text), /ghost left \(its connection was ended\)/);
   // a lapsed seat over a live link stays seated (its next beat renews it)
   assert.deepEqual(await c.join(seat(code, 'erin')), { ok: true });
-  host.members.update(ms => { ms.erin.seen_at = new Date(Date.now() - 3_600_000).toISOString(); return ms; });
+  host.members.update(ms => { must(ms.erin).seen_at = new Date(Date.now() - 3_600_000).toISOString(); return ms; });
   assert.deepEqual(seats.sweep(code), ['erin']);
-  const e = identity.readMembers(code).erin;
+  const e = must(identity.readMembers(code).erin);
   assert.ok(e.lapsed_at && !e.left_at);
 });
 
@@ -606,7 +612,8 @@ test('remote (memory): params of the wrong shape are refused by the op\'s own ch
   // a proof signed over a name that is no seat name (a number): INVALID, and the link binds nothing
   const key = seatKey.ensure(code, sn('alice'));
   const pubkey = seatKey.publicPem(code, sn('alice'));
-  const proof = hostLinks.proveSeat(key, { room: code, name: 7 as unknown as string, pubkey }); // deliberate: a number
+  // @ts-expect-error -- deliberate: a number for the name
+  const proof = hostLinks.proveSeat(key, { room: code, name: 7, pubkey });
   await rejects(c.request('join', { name: 7, pubkey, proof }), 'INVALID');
   assert.deepEqual(Object.values(hostLinks.links(host)).map(l => l.seats), [[]]);
   await rejects(c.request('leave', { name: ['alice'] }), 'AUTH');

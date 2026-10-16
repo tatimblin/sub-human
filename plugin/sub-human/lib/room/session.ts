@@ -40,11 +40,11 @@ const keyOf = (name: string) => `members/${name}/session`;
 /** What an earlier sub-human kept for this seat in separate documents. */
 function legacy(s: SessionStore, name: string): SessionDoc {
   const d: SessionDoc = { v: 1 };
-  const get = (key: string) => { try { return s.kv.get(key, null); } catch { return null; } };
+  const get = <T>(key: string): T | null => { try { return s.kv.get<T>(key, null); } catch { return null; } };
   let cursor = 0;
   try { cursor = s.getCursor(`deliver-${name}`); } catch { /* none */ }
   if (cursor > 0) d.cursor = cursor;
-  const n = get(`rows/notices-${name}`);
+  const n = get<Partial<NonNullable<SessionDoc['shown']>> & { shown?: number[] }>(`rows/notices-${name}`); // its writer's shape (an earlier sub-human)
   if (n && (Array.isArray(n.shown) || Array.isArray(n.log))) d.shown = { ids: Array.isArray(n.shown) ? n.shown : [], log: Array.isArray(n.log) ? n.log : [] };
   for (const [field, key] of [['review', `members/${name}/review`], ['confirm', `members/${name}/confirm`], ['pick', `members/${name}/pick`], ['holds', `rows/holds-${name}`]] as const) {
     const v = get(key);
@@ -89,7 +89,7 @@ function markShown(s: SessionStore, name: string, ids: number[], via: string, { 
   if (!ids.length) return;
   const at = new Date(now).toISOString();
   update(s, name, d => {
-    const cur = d.shown || { ids: [], log: [] };
+    const cur = d.shown ?? { ids: [], log: [] };
     const all = [...new Set<number>([...(Array.isArray(cur.ids) ? cur.ids : []), ...ids])].sort((a, b) => a - b).slice(-config.SHOWN_MAX);
     const log = [...(Array.isArray(cur.log) ? cur.log : []), ...ids.map(id => ({ id, via, at }))].slice(-config.SHOWN_MAX);
     return { ...d, shown: { ids: all, log } };
@@ -97,10 +97,10 @@ function markShown(s: SessionStore, name: string, ids: number[], via: string, { 
 }
 
 /** How often row-hold blocked agent id's stop, and the count after one more (the last BLOCKS_MAX agents kept). */
-const blocks = (s: SessionStore, name: string, id: string): number => Number((read(s, name).blocks || {})[id]) || 0;
+const blocks = (s: SessionStore, name: string, id: string): number => Number((read(s, name).blocks ?? {})[id]) || 0;
 function setBlocks(s: SessionStore, name: string, id: string, n: number): void {
   update(s, name, d => {
-    const b = { ...(d.blocks || {}) };
+    const b = { ...(d.blocks ?? {}) };
     delete b[id];
     b[id] = Number(n) || 0;
     const keys = Object.keys(b);

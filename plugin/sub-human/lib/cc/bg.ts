@@ -150,7 +150,7 @@ function daemonStatus({ bin = envStr('SUB_HUMAN_CLAUDE') || 'claude', env = proc
  * @stability env
  */
 const DAEMON_ENV_ALLOW: readonly string[] = Object.freeze([...new Set(
-  (CONTRACT.find(e => e.id === 'daemon-env-allowlist')?.contains || []).flatMap(g => g.names),
+  (CONTRACT.find(e => e.id === 'daemon-env-allowlist')?.contains ?? []).flatMap(g => g.names),
 )]);
 const DAEMON_ENV_SET = new Set(DAEMON_ENV_ALLOW);
 

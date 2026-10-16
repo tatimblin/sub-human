@@ -18,35 +18,36 @@ test.before(async () => { g = await import(path.join(PLUGIN, 'mod', 'core', 'gua
 type ToolInput = Record<string, unknown>;
 
 const real = (p: string) => { try { return fs.realpathSync(p); } catch { return undefined; } };
+/** abs as placed under its nearest existing ancestor's real path (undefined: none exists). */
+const placedOf = (abs: string) => { for (const a of g.ancestors(abs)) { const r = real(a); if (r) return path.join(r, abs.slice(a.length)); } return undefined; };
 /** What mod/guard.ts decides for one call: 'allow' | 'deny' | undefined (no opinion). */
 function decide(tool: string, input: ToolInput,
   { w, seated = false, hello = true, agentId }: { w: Pick<World, 'home' | 'userHome' | 'cwd'>; seated?: boolean; hello?: boolean; agentId?: string }) {
-  const ctx: GuardCtx = hello ? { home: w.home, realHome: real(w.home), userHome: w.userHome, pluginRoot: PLUGIN } : {};
+  const realHome = real(w.home);
+  const ctx: GuardCtx = hello ? { home: w.home, ...(realHome ? { realHome } : {}), userHome: w.userHome, pluginRoot: PLUGIN } : {};
+  const at = { cwd: w.cwd, ...(hello ? { userHome: w.userHome } : {}) }; // what absTarget reads of ctx
   if (tool.startsWith(g.MCP_PREFIX)) { const v = g.roomToolVerdict({ tool, agentId }, seated); return v ? v.decision : undefined; }
   if (tool === 'Bash') return g.bashVerdict(input.command, { ...ctx, cwd: w.cwd, realCwd: real(w.cwd) }) ? 'deny' : undefined;
   if (tool === 'Read') {
     const p = g.writeTarget(input);
-    const abs = g.absTarget(p, { cwd: w.cwd, userHome: ctx.userHome });
-    let placed: string | undefined;
-    for (const a of abs ? g.ancestors(abs) : []) { const r = real(a); if (r) { placed = path.join(r, abs!.slice(a.length)); break; } }
+    const abs = g.absTarget(p, at);
+    const placed = abs ? placedOf(abs) : undefined;
     return g.readVerdict(abs ? [abs, placed] : [], ctx, p) ? 'deny' : undefined;
   }
   if (tool === 'Grep' || tool === 'Glob') {
     const targets = g.searchTargets(tool, input);
     const cands: (string | undefined)[] = [];
     for (const p of targets) {
-      const abs = p ? g.absTarget(p, { cwd: w.cwd, userHome: ctx.userHome }) : g.absTarget(w.cwd, {});
-      let placed: string | undefined;
-      for (const a of abs ? g.ancestors(abs) : []) { const r = real(a); if (r) { placed = path.join(r, abs!.slice(a.length)); break; } }
+      const abs = p ? g.absTarget(p, at) : g.absTarget(w.cwd, {});
+      const placed = abs ? placedOf(abs) : undefined;
       if (abs) cands.push(abs, placed);
     }
     return g.searchVerdict(tool, cands, ctx, targets.join(' ')) ? 'deny' : undefined;
   }
   if (g.WRITE_TOOLS.includes(tool)) {
     const p = g.writeTarget(input);
-    const abs = g.absTarget(p, { cwd: w.cwd, userHome: ctx.userHome });
-    let placed: string | undefined;
-    for (const a of abs ? g.ancestors(abs) : []) { const r = real(a); if (r) { placed = path.join(r, abs!.slice(a.length)); break; } }
+    const abs = g.absTarget(p, at);
+    const placed = abs ? placedOf(abs) : undefined;
     return g.writeVerdict(abs ? [abs, placed] : [], ctx, p) ? 'deny' : undefined;
   }
   return undefined;
@@ -95,7 +96,7 @@ test('guard: doctor --bundle / --fix in a session gets its own reason: a person\
   for (const cmd of ['sub-human doctor --bundle', '/p/scripts/sub-human doctor --bundle /tmp/x.json', 'sub-human doctor --quick --fix']) {
     const why = g.bashVerdict(cmd);
     assert.equal(why, g.DOCTOR_WHY, cmd);
-    const t = g.denyText(why!, '/p');
+    const t = g.denyText(why, '/p');
     assert.match(t, /^ROOM-GUARD: sub-human doctor --fix and --bundle change or write files/);
     assert.doesNotMatch(t, /reached only through sub-human|room MCP/);
     assert.ok(t.includes("the person's step: they run `node /p/scripts/sub-human doctor --bundle` (or --fix) in a terminal outside Claude Code"), t);

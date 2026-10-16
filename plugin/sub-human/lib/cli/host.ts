@@ -35,8 +35,16 @@ import { createRequire } from 'node:module';
 import { msgOf } from '../errors.ts';
 import { isRoomCode } from '../text.ts';
 import type { RoomCode, Secret } from '../brand.ts';
+import type * as RedactMod from './doctor/redact.ts';
+import type * as IdentityMod from '../identity.ts';
+import type * as WebhostMod from '../remote/webhost.ts';
+import type * as HostingMod from '../remote/hosting.ts';
+import type * as AdmissionMod from '../remote/admission.ts';
+import type * as TextMod from '../text.ts';
+import type * as LinksMod from '../room/links.ts';
+import type * as SshMod from '../remote/transports/ssh.ts';
 
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 const say = (s: string) => process.stdout.write(s.endsWith('\n') ? s : s + '\n');
 const fail = (s: string, code = 1) => { process.stderr.write(s.endsWith('\n') ? s : s + '\n'); return code; };
@@ -48,7 +56,7 @@ const PIN_HIDDEN = 'PIN and SECRET hidden: this ran inside Claude Code, where th
 /** text with every PIN in it masked, and why, when run inside Claude Code; else text as it is. */
 function maskPins(text: string, secrets: readonly (Secret | null | undefined)[], env: NodeJS.ProcessEnv = process.env): string {
   if (!inClaudeCode(env)) return text;
-  const { redact }: typeof import('./doctor/redact.ts') = require('./doctor/redact.ts');
+  const { redact }: typeof RedactMod = require('./doctor/redact.ts');
   let out = text;
   for (const p of secrets) if (p) out = out.split(p).join(redact(p));
   return `${out}\n${PIN_HIDDEN}`;
@@ -56,7 +64,7 @@ function maskPins(text: string, secrets: readonly (Secret | null | undefined)[],
 
 /** The room: --room, else the one open room hosted here. */
 function hostedRoom(explicit?: string): RoomCode {
-  const identity: typeof import('../identity.ts') = require('../identity.ts');
+  const identity: typeof IdentityMod = require('../identity.ts');
   if (explicit) {
     if (!identity.isRoomCode(explicit)) throw new Error(`invalid room code "${explicit}"`); // as lib/home.ts roomDir says
     return explicit;
@@ -79,8 +87,8 @@ function invite(args: readonly string[]): number {
   if (ways > 1) return fail(`pick one way: ${INVITE_USAGE}`, 2);
   try {
     const code = hostedRoom(f.room);
-    const webhost: typeof import('../remote/webhost.ts') = require('../remote/webhost.ts');
-    const hosting: typeof import('../remote/hosting.ts') = require('../remote/hosting.ts');
+    const webhost: typeof WebhostMod = require('../remote/webhost.ts');
+    const hosting: typeof HostingMod = require('../remote/hosting.ts');
     if (f.stop) { say(webhost.unhost(code).text); return 0; }
     if (f.cancel !== undefined) { say(hosting.cancelInvite(code, f.cancel === true ? undefined : f.cancel).text); return 0; }
     const r = web
@@ -96,7 +104,7 @@ function kick(args: readonly string[]): number {
   const [name] = rest;
   if (error || rest.length !== 1 || name === undefined) return fail('usage: sub-human kick NAME [--room ROOM] [--file AUTHORIZED_KEYS]', 2);
   try {
-    const hosting: typeof import('../remote/hosting.ts') = require('../remote/hosting.ts');
+    const hosting: typeof HostingMod = require('../remote/hosting.ts');
     say(hosting.kick(hostedRoom(f.room), name, f.file ? { file: f.file } : {}).text);
     return 0;
   } catch (e) { return fail(msgOf(e)); }
@@ -115,8 +123,8 @@ function admit(args: readonly string[]): number {
   const p = parse(args, { yes: 0, room: 1, refuse: 0 });
   const [ref] = p.rest;
   if (p.error || p.rest.length > 1 || (ref !== undefined && !/^[0-9a-f]{6,12}$/.test(ref))) return fail(p.error || 'usage: sub-human admit [REF [--refuse] [--yes]] [--room ROOM]', 2);
-  const adm: typeof import('../remote/admission.ts') = require('../remote/admission.ts');
-  const text: typeof import('../text.ts') = require('../text.ts');
+  const adm: typeof AdmissionMod = require('../remote/admission.ts');
+  const text: typeof TextMod = require('../text.ts');
   let code;
   try { code = hostedRoom(p.flags.room); } catch (e) { return fail(msgOf(e)); }
   if (ref === undefined) {
@@ -142,11 +150,11 @@ function prime(args: readonly string[]): number {
   const p = parse(args, { persist: 1 });
   if (p.error || p.rest.length !== 1) return fail(p.error || 'usage: sub-human prime ROOM [--persist 8h]', 2);
   const code = p.rest[0];
-  const links: typeof import('../room/links.ts') = require('../room/links.ts');
+  const links: typeof LinksMod = require('../room/links.ts');
   const l = links.get(code);
   if (!l || !l.transport || l.transport.kind !== 'ssh' || !isRoomCode(code)) return fail(`this machine isn't connected to room ${code} over ssh`);
   try {
-    const ssh: typeof import('../remote/transports/ssh.ts') = require('../remote/transports/ssh.ts');
+    const ssh: typeof SshMod = require('../remote/transports/ssh.ts');
     fs.mkdirSync(PathMod.dirname(ssh.controlPath()), { recursive: true, mode: 0o700 });
     const [cmd, ...rest] = ssh.primeCommand(l.transport, code, p.flags.persist ? { persist: p.flags.persist } : {});
     links.set(code, { ...l, transport: { ...l.transport, mux: true } });

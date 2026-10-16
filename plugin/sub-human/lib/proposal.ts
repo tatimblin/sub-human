@@ -126,7 +126,7 @@ function store(code: RoomCode, buf: Buffer): ProposalHash {
 
 // the recent view: every non-chat entry (proposals, answers, decisions, revisions, revokes: all the consent fold reads)
 // and the lines since the last rotation
-const entriesOf = (me: Me, entries: readonly Readonly<Entry>[] | null | undefined): readonly Readonly<Entry>[] => entries || room.open(me.code).readRecent();
+const entriesOf = (me: Me, entries: readonly Readonly<Entry>[] | null | undefined): readonly Readonly<Entry>[] => entries ?? room.open(me.code).readRecent();
 const kvOf = (me: Me) => room.open(me.code).store.kv;
 const storeOf = (me: Me) => room.open(me.code).store;
 
@@ -164,7 +164,7 @@ function sameOf(approvers: string[], ms: Members): string[][] {
   for (const n of approvers) {
     const m = ms[n], who = personOf(m);
     if (!m || !who || (m.machine === who && ownerOf(ms, who) !== n)) continue; // no seat: no person (personOf)
-    by.set(who, [...(by.get(who) || []), n]);
+    by.set(who, [...(by.get(who) ?? []), n]);
   }
   return [...by.values()].filter(g => g.length > 1);
 }
@@ -180,7 +180,7 @@ function sameOk(code: RoomCode): boolean {
 const shape = (p: ProposalState): Proposal => ({ id: p.id, hash: p.hash, approvers: p.approvers, path: p.path, from: p.from });
 const proposals = (entries: readonly Readonly<Entry>[], trust: Trust = room.trustOf): Proposal[] => [...room.fold(entries, trust).proposals.values()].map(shape);
 
-const decision = (hash: string, entries: readonly Readonly<Entry>[], trust: Trust = room.trustOf): Entry | null => room.fold(entries, trust).decisions.get(hash) || null;
+const decision = (hash: string, entries: readonly Readonly<Entry>[], trust: Trust = room.trustOf): Entry | null => room.fold(entries, trust).decisions.get(hash) ?? null;
 
 /** The answer matrix over p.approvers (the latest answer per person wins; an objection voids a signoff). */
 const matrix = (p: Pick<Proposal, 'hash' | 'approvers'>, entries: readonly Readonly<Entry>[], trust: Trust = room.trustOf): Matrix => room.fold(entries, trust).matrix(p.hash, p.approvers);
@@ -263,7 +263,7 @@ function viewable(p: Pick<Proposal, 'hash'>, code: RoomCode): boolean {
 // ---------- which proposal a review opens (the hook picks; the model never does) ----------
 const STOP_WORDS = new Set(('a an and answer approve agree are be can do for from i in is it let me my now object of on one open '
   + 'or please plan proposal proposals read review see show that the this to view want with you your').split(' '));
-const wordsOf = (s: string | null | undefined) => (String(s || '').toLowerCase().match(/[\p{L}\p{N}]+/gu) || []);
+const wordsOf = (s: string | null | undefined) => (String(s || '').toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
 
 /**
  * The pending proposal the person's words name, or null: a hash (a 6–12 hex prefix of exactly one; several
@@ -273,7 +273,7 @@ const wordsOf = (s: string | null | undefined) => (String(s || '').toLowerCase()
  */
 function namedIn(ps: Proposal[], prompt: string | null | undefined, code: RoomCode): Proposal | null {
   const s = String(prompt || '').toLowerCase();
-  const hex = s.match(/\b[0-9a-f]{6,12}\b/g) || [];
+  const hex = s.match(/\b[0-9a-f]{6,12}\b/g) ?? [];
   const byHash = ps.filter(p => hex.some(t => p.hash.startsWith(t) && ps.filter(q => q.hash.startsWith(t)).length === 1));
   const [first] = byHash;
   if (first) return first;
@@ -294,7 +294,7 @@ function namedIn(ps: Proposal[], prompt: string | null | undefined, code: RoomCo
  * among ps. {old, p}, else null.
  */
 function replacedIn(ps: Proposal[], prompt: string | null | undefined, code: RoomCode): { old: string, p: Proposal } | null {
-  const hex = String(prompt || '').toLowerCase().match(/\b[0-9a-f]{6,12}\b/g) || [];
+  const hex = String(prompt || '').toLowerCase().match(/\b[0-9a-f]{6,12}\b/g) ?? [];
   if (!hex.length || !ps.length || hex.some(t => ps.some(p => p.hash.startsWith(t)))) return null;
   const f = room.open(code).fold();
   for (const t of hex) {
@@ -322,13 +322,13 @@ const proposeIntent = (prompt: string | null | undefined): boolean => PROPOSE_RE
  * The session's pick: {hash|null, at}, the proposal the person's latest prompt named (hooks/handlers/consent.ts reads it from
  * the transcript at Pre(EnterPlanMode), or a card call named). A review opens that one while pending, else the newest.
  */
-const readPick = (me: Me): { hash: string | null, at: number } | null => { try { return session.get(storeOf(me), me.name, 'pick') || null; } catch { return null; } };
+const readPick = (me: Me): { hash: string | null, at: number } | null => { try { return session.get(storeOf(me), me.name, 'pick') ?? null; } catch { return null; } };
 /** Record what prompt names among ps (null when nothing) and return the proposal a review opens next; prompt null (not the person's words): the earlier pick stands. */
 function choose(me: Me, ps: Proposal[], prompt: string | null | undefined): Proposal | null {
   if (prompt == null) return picked(me, ps);
-  const hit = namedIn(ps, prompt, me.code) || replacedIn(ps, prompt, me.code)?.p || null;
+  const hit = namedIn(ps, prompt, me.code) ?? replacedIn(ps, prompt, me.code)?.p ?? null;
   writePick(me, hit ? hit.hash : null);
-  return hit || ps.at(-1) || null;
+  return hit ?? ps.at(-1) ?? null;
 }
 /** Record the person's pick (null: their words named none); hooks/handlers/consent.ts's pick effect. */
 const writePick = (me: Me, hash: string | null): void => session.put(storeOf(me), me.name, 'pick', { hash, at: Date.now() });
@@ -508,7 +508,7 @@ function decide(code: RoomCode, hash: string): Entry | null {
  * text (null only when there was no file: the one the review created is removed on close), recorded BEFORE the
  * overwrite, so a crash between the two never loses the person's own plan.
  */
-const readReview = (me: Me): Review | null => session.get(storeOf(me), me.name, 'review') || null;
+const readReview = (me: Me): Review | null => session.get(storeOf(me), me.name, 'review') ?? null;
 const writeReview = (me: Me, st: Review): void => session.put(storeOf(me), me.name, 'review', st);
 function clearReview(me: Me): void { session.put(storeOf(me), me.name, 'review', undefined); }
 /** Every read-modify-write of the review state runs under this lock (hooks of one session can overlap). Its own lock,
@@ -554,12 +554,12 @@ function restoreStale(me: Me | null | undefined, { force = false, now = Date.now
  * after a bare deny lands there too) records nothing by itself: the note waits here until the person answers the
  * confirm card. One per person: a newer note replaces it.
  */
-const readConfirm = (me: Me): Confirm | null => { try { return session.get(storeOf(me), me.name, 'confirm') || null; } catch { return null; } };
+const readConfirm = (me: Me): Confirm | null => { try { return session.get(storeOf(me), me.name, 'confirm') ?? null; } catch { return null; } };
 const writeConfirm = (me: Me, c: Confirm): void => session.put(storeOf(me), me.name, 'confirm', c);
 function clearConfirm(me: Me): void { try { session.put(storeOf(me), me.name, 'confirm', undefined); } catch { /* none */ } }
 
 /** A plan-view Yes waiting for its confirmation on the card (lib/consent/review.ts recheck): {hash, at} or null. */
-const readRecheck = (me: Me): Recheck | null => { try { return session.get(storeOf(me), me.name, 'recheck') || null; } catch { return null; } };
+const readRecheck = (me: Me): Recheck | null => { try { return session.get(storeOf(me), me.name, 'recheck') ?? null; } catch { return null; } };
 const writeRecheck = (me: Me, r: Recheck): void => session.put(storeOf(me), me.name, 'recheck', r);
 function clearRecheck(me: Me): void { try { session.put(storeOf(me), me.name, 'recheck', undefined); } catch { /* none */ } }
 

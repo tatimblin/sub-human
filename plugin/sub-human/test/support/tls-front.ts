@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import net from 'node:net';
 import tls from 'node:tls';
 
-const [front, target, cert, key] = process.argv.slice(2);
+const [front, target, cert = '', key = ''] = process.argv.slice(2);
 tls.createServer({ cert: fs.readFileSync(cert), key: fs.readFileSync(key) }, s => {
   const u = net.connect(Number(target), '127.0.0.1');
   s.pipe(u).pipe(s);

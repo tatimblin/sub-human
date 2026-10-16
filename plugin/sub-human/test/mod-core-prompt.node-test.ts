@@ -3,28 +3,32 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import type { Hello, HelloSeat, RunOutput } from '../mod/core/types.ts';
+import type { Hello, HelloSeat } from '../mod/core/types.ts';
+import type * as Prompt from '../mod/core/prompt.ts';
+import { must } from './support/must.ts';
 
 const PLUGIN = path.join(import.meta.dirname, '..');
-const load = (): Promise<typeof import('../mod/core/prompt.ts')> => import(path.join(PLUGIN, 'mod', 'core', 'prompt.ts'));
+const load = (): Promise<typeof Prompt> => import(path.join(PLUGIN, 'mod', 'core', 'prompt.ts'));
 const seat = (code = 'otter-4821', role: HelloSeat['role'] = 'member'): HelloSeat => ({ name: 'alice', code, role, addr: `alice.${code}` });
+/** A hello as titleFor and writesWorking read it: sid and seat (the rest any home). */
+const hi = (sid: string, s: HelloSeat | null): Hello => ({ sid, seat: s, home: '/h', realHome: '/h', userHome: null, pluginRoot: null });
 
 test('prompt: titleFor titles once per session id and address, so a room switch sets the new title', async () => {
   const { titleFor } = await load();
-  const a = { sid: 's1', seat: seat() } as Hello; // a hello as titleFor reads it: sid and seat only
+  const a = hi('s1', seat()); // a hello as titleFor reads it: sid and seat only
   assert.equal(titleFor(a, 's1', undefined), 'alice.otter-4821');
   assert.equal(titleFor(a, 's1', { sid: 's1', addr: 'alice.otter-4821' }), null, 'already titled');
-  const b = { sid: 's1', seat: seat('badger-2971') } as Hello;
+  const b = hi('s1', seat('badger-2971'));
   assert.equal(titleFor(b, 's1', { sid: 's1', addr: 'alice.otter-4821' }), 'alice.badger-2971', 'switched rooms');
   assert.equal(titleFor(a, 's2', { sid: 's1', addr: 'alice.otter-4821' }), null, 'not this session\'s hello');
-  assert.equal(titleFor({ sid: 's2', seat: seat() } as Hello, 's2', { sid: 's1', addr: 'alice.otter-4821' }), 'alice.otter-4821', 'after /clear');
+  assert.equal(titleFor(hi('s2', seat()), 's2', { sid: 's1', addr: 'alice.otter-4821' }), 'alice.otter-4821', 'after /clear');
   assert.equal(titleFor(a, 's1', 's1'), 'alice.otter-4821', 'a sid-only mark (older module state) titles once more');
-  assert.equal(titleFor({ sid: 's1', seat: seat('otter-4821', 'claude') } as Hello, 's1', undefined), null, 'the room\'s Claude keeps its launch name');
-  assert.equal(titleFor({ sid: 's1', seat: null } as Hello, 's1', undefined), null);
+  assert.equal(titleFor(hi('s1', seat('otter-4821', 'claude')), 's1', undefined), null, 'the room\'s Claude keeps its launch name');
+  assert.equal(titleFor(hi('s1', null), 's1', undefined), null);
   assert.equal(titleFor(null, 's1', undefined), null);
   // after a /sub-human leave the address goes: the title is the name alone, once
-  assert.equal(titleFor({ sid: 's1', seat: null } as Hello, 's1', { sid: 's1', addr: 'alice.otter-4821' }), 'alice');
-  assert.equal(titleFor({ sid: 's1', seat: null } as Hello, 's1', { sid: 's1', addr: 'alice' }), null);
+  assert.equal(titleFor(hi('s1', null), 's1', { sid: 's1', addr: 'alice.otter-4821' }), 'alice');
+  assert.equal(titleFor(hi('s1', null), 's1', { sid: 's1', addr: 'alice' }), null);
 });
 
 test('prompt: the origin hand-off gives a kind only to the prompt whose text it was pushed with', async () => {
@@ -59,20 +63,21 @@ test('prompt: an @room the shim could not handle is refused, never let through; 
   assert.equal(p.failClosed('ship it'), null);
   assert.equal(p.failClosed(undefined), null);
   // only exit 0 (an answer) and 2 (a block) count as the hook having handled it
-  for (const exitCode of [1, 124, null, undefined]) assert.equal(p.shimFailed({ exitCode } as RunOutput), true, String(exitCode)); // null: deliberately not a number
+  // @ts-expect-error -- deliberate: null is not a number, and undefined is written out
+  for (const exitCode of [1, 124, null, undefined]) assert.equal(p.shimFailed({ exitCode }), true, String(exitCode));
   for (const exitCode of [0, 2]) assert.equal(p.shimFailed({ exitCode }), false, String(exitCode));
 });
 
 test('prompt: the mod writes "working" for a typed prompt of a member (or an unknown seat), once', async () => {
   const { writesWorking } = await load();
-  const hello = { sid: 's1', seat: seat() } as Hello; // sid and seat only
+  const hello = hi('s1', seat()); // sid and seat only
   assert.equal(writesWorking({ kind: 'composer' }, hello, null), true);
   assert.equal(writesWorking({ kind: 'bridge' }, null, 'idle_prompt'), true, 'unknown seat: presence.ts decides');
   assert.equal(writesWorking({ kind: 'composer' }, hello, 'working'), false, 'already working');
   assert.equal(writesWorking({ kind: 'peer' }, hello, null), false, 'not typed');
   assert.equal(writesWorking(undefined, hello, null), false);
-  assert.equal(writesWorking({ kind: 'composer' }, { sid: 's1', seat: null } as Hello, null), false, 'no seat');
-  const roomClaude = { sid: 's1', seat: seat('otter-4821', 'claude') } as Hello;
+  assert.equal(writesWorking({ kind: 'composer' }, hi('s1', null), null), false, 'no seat');
+  const roomClaude = hi('s1', seat('otter-4821', 'claude'));
   assert.equal(writesWorking({ kind: 'composer' }, roomClaude, null), false, 'the room\'s Claude refuses typed prompts');
 });
 
@@ -112,7 +117,7 @@ test('prompt (stage 8f item 4): the model row of an @claude line\'s stop names @
 
 test('prompt: roomClaudeCommand refuses a command a person types into the room\'s Claude (/clear too); its launch and other origins run', async () => {
   const { roomClaudeCommand } = await load();
-  assert.match(roomClaudeCommand('clear', { kind: 'composer' }, 'otter-4821')!, /^✗ the room's Claude takes no typed input, commands included; .*claude\.otter-4821$/);
+  assert.match(must(roomClaudeCommand('clear', { kind: 'composer' }, 'otter-4821')), /^✗ the room's Claude takes no typed input, commands included; .*claude\.otter-4821$/);
   assert.ok(roomClaudeCommand('compact', { kind: 'bridge' }, 'otter-4821'));
   assert.equal(roomClaudeCommand('sub-human', { kind: 'composer' }, 'otter-4821'), null, 'its launch: at-room answers a typed one');
   assert.equal(roomClaudeCommand('clear', { kind: 'sdk' }, 'otter-4821'), null, 'the launcher, not a person');

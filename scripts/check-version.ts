@@ -17,6 +17,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { parseJson } from './lib/io.ts';
 
 /** check()'s verdict. */
 export interface VersionCheck { ok: boolean, base: string | null, from: string | null, to: string | null, changed: string[], why: string }
@@ -30,7 +31,7 @@ const tryGit = (cwd: string, args: string[]): string => { try { return git(cwd, 
 
 const versionAt = (cwd: string, ref: string | null): string | null => {
   const text = ref ? tryGit(cwd, ['show', `${ref}:${MANIFEST}`]) : fs.readFileSync(path.join(cwd, MANIFEST), 'utf8');
-  const v: unknown = text ? JSON.parse(text).version : null;
+  const v = text ? parseJson<{ version?: unknown }>(text).version : null;
   return typeof v === 'string' ? v : null;
 };
 

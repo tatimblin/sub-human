@@ -18,13 +18,14 @@ import * as config from '../lib/config.ts';
 import * as seatKey from '../hooks/seat-key.ts';
 import { MemoryRoomStore } from './support/memory-store.ts';
 import { RoomError } from '../lib/room/validate.ts';
+import { must } from './support/must.ts';
 import type { Members } from '../lib/room/types.ts';
 test('seats.exit: Claude Code\'s SessionEnd token is written in words (live: "bob left (prompt_input_exit)" in the log)', t => {
   h.freshHome(t);
   const code = h.newRoom();
   h.register('bob', 'member', process.pid, code);
   assert.equal(seats.exit(code, sn('bob'), 'prompt_input_exit'), true);
-  assert.equal(store.open(code).readAll().at(-1)!.text, 'bob left (session ended)');
+  assert.equal(must(store.open(code).readAll().at(-1)).text, 'bob left (session ended)');
 });
 
 import * as hostLinksForSeats from '../lib/remote/host-links.ts';
@@ -56,12 +57,12 @@ test('seats: enter logs member_joined with the pubkey and machine; exit leaves, 
   const pubkey = seatKey.publicPem(code, sn('alice'));
   const r = seats.enter({ code, name: sn('alice'), pid: process.pid, session_id: 'sa', cwd: '/x', pubkey });
   assert.deepEqual(r, { ok: true, note: ' · starting the room\'s Claude…' });
-  const joined = mem.readAll().at(-1)!;
+  const joined = must(mem.readAll().at(-1));
   assert.deepEqual([joined.kind, joined.from, joined.pubkey, joined.machine], ['member_joined', 'alice', pubkey, identity.machineId()]);
-  assert.equal(identity.resolveBySession('sa')!.name, 'alice');
+  assert.equal(must(identity.resolveBySession('sa')).name, 'alice');
   assert.equal(seats.enter({ code, name: sn('host'), pid: process.pid, pubkey }).error, '"host" is reserved');
   assert.equal(seats.exit(code, sn('alice'), 'session ended'), true);
-  assert.equal(mem.readAll().at(-1)!.text, 'alice left (session ended)');
+  assert.equal(must(mem.readAll().at(-1)).text, 'alice left (session ended)');
   assert.equal(seats.exit(code, sn('alice'), 'again'), false, 'already left: nothing written');
   assert.equal(mem.readAll().length, 2);
 });
@@ -70,9 +71,9 @@ test('seats: a seat whose machine id could not be read (machine null) still join
   const { code, mem } = memoryRoom(t, { isHost: true });
   const r = seats.enter({ code, name: sn('alice'), machine: null, pid: process.pid, session_id: 'sa', cwd: '/x', pubkey: seatKey.publicPem(code, sn('alice')) });
   assert.equal(r.ok, true);
-  const joined = mem.readAll().at(-1)!;
+  const joined = must(mem.readAll().at(-1));
   assert.deepEqual([joined.kind, joined.from, 'machine' in joined], ['member_joined', 'alice', false]);
-  assert.equal(identity.readMembers(code).alice.machine, null);
+  assert.equal(must(identity.readMembers(code).alice).machine, null);
 });
 
 test('seats: the room\'s Claude runs in the room\'s working directory (the first local seat\'s cwd), also when a seat on another machine starts it', t => {
@@ -95,14 +96,14 @@ test('seats: a key other than the pinned one gives the seat back (AUTH)', t => {
   const r = seats.enter({ code, name: sn('alice'), pid: process.pid, pubkey: other });
   assert.equal(r.ok, false);
   assert.match(r.error, /a lost key means a new name/);
-  assert.ok(mem.members.read().alice.left_at, 'the seat was given back');
+  assert.ok(must(mem.members.read().alice).left_at, 'the seat was given back');
 });
 
 test('host gates: on a mirror-shaped store enter is the seat op only (no member_joined, no claude), exit starts no reaper and logs nothing, the watchdog and decide do nothing', t => {
   const { code, mem, started } = memoryRoom(t, { isHost: false });
   assert.equal(identity.isHost(code), false);
   assert.deepEqual(seats.enter({ code, name: sn('alice'), pid: process.pid, session_id: 'sa', pubkey: seatKey.publicPem(code, sn('alice')) }), { ok: true, note: '' });
-  assert.equal(identity.resolveBySession('sa')!.name, 'alice', 'this machine\'s indexes are written');
+  assert.equal(must(identity.resolveBySession('sa')).name, 'alice', 'this machine\'s indexes are written');
   assert.deepEqual(mem.readAll(), [], 'the host logs the join');
   assert.deepEqual([mem.members.read().claude, started], [undefined, []], 'no spawn claim');
   assert.equal(roomClaude.claimSpawn(code), null);
@@ -114,7 +115,7 @@ test('host gates: on a mirror-shaped store enter is the seat op only (no member_
   assert.equal(proposal.decide(code, H), null);
   assert.equal(mem.readAll().filter(e => e.kind === 'decision').length, 0);
   assert.equal(seats.exit(code, sn('alice'), 'session ended'), true);
-  assert.ok(mem.members.read().alice.left_at);
+  assert.ok(must(mem.members.read().alice).left_at);
   assert.deepEqual([mem.members.read().claude, mem.readAll().filter(e => e.kind === 'member_left')], [undefined, []], 'the host logs the leave');
 });
 
@@ -136,14 +137,14 @@ test('identity on a mirror: a seat of this machine is resolved, rebound after /c
   const { code, mem } = memoryRoom(t, { isHost: false });
   seats.enter({ code, name: sn('alice'), pid: process.pid, session_id: 'sa', pubkey: seatKey.publicPem(code, sn('alice')) });
   const stale = new Date(Date.now() - config.SEAT_BEAT_MS - 1000).toISOString();
-  mem.members.update(ms => { const v = members.publicView(ms); v.alice.seen_at = stale; return v; }); // as the host streams it
-  assert.equal(identity.resolveBySession('sa')!.name, 'alice');
-  assert.equal(identity.resolveByPid(process.pid)!.name, 'alice');
+  mem.members.update(ms => { const v = members.publicView(ms); must(v.alice).seen_at = stale; return v; }); // as the host streams it
+  assert.equal(must(identity.resolveBySession('sa')).name, 'alice');
+  assert.equal(must(identity.resolveByPid(process.pid)).name, 'alice');
   assert.equal(identity.rebindSession(process.pid, 'sb'), true);
-  assert.deepEqual([identity.resolveBySession('sb')!.name, identity.resolveBySession('sa')], ['alice', null]);
-  assert.equal('session_id' in mem.members.read().alice, false, 'the host never holds the session');
+  assert.deepEqual([must(identity.resolveBySession('sb')).name, identity.resolveBySession('sa')], ['alice', null]);
+  assert.equal('session_id' in must(mem.members.read().alice), false, 'the host never holds the session');
   assert.equal(identity.heartbeat(identity.resolveBySession('sb')), true);
-  assert.notEqual(mem.members.read().alice.seen_at, stale);
+  assert.notEqual(must(mem.members.read().alice).seen_at, stale);
 });
 
 test('decide on the host: once every approver answered, exactly once; an incomplete proposal is not decided', t => {
@@ -164,7 +165,7 @@ test('decide on the host: once every approver answered, exactly once; an incompl
 test('members.publicView: other machines never see a seat\'s pid, pid_start, session_id or cwd', () => {
   const ms: Members = { alice: { name: sn('alice'), role: 'member', machine: mid('m1'), pid: 42, pid_start: 7, session_id: sid('s'), cwd: '/x', joined_at: 'j', seen_at: 's' } };
   assert.deepEqual(members.publicView(ms), { alice: { name: 'alice', role: 'member', machine: 'm1', joined_at: 'j', seen_at: 's' } });
-  assert.equal(ms.alice.pid, 42, 'the document itself is unchanged');
+  assert.equal(must(ms.alice).pid, 42, 'the document itself is unchanged');
   assert.deepEqual(members.LOCAL_FIELDS, ['pid', 'pid_start', 'session_id', 'cwd']);
 });
 
@@ -172,7 +173,7 @@ test('members.publicView: other machines never see a seat\'s pid, pid_start, ses
 function farSeat(code: RoomCode, mem: MemoryRoomStore, name: string, ago = config.SEAT_LEASE_MS + config.LEAVE_SETTLE_MS + 1000) {
   if (!Object.values(hostLinksForSeats.links(store.open(code))).some(k => k.seats.includes(name))) linkFor(code, name);
   assert.equal(seats.enter({ code, name: sn(name), machine: mid('far-away'), pubkey: seatKey.publicPem(code, sn(name)) }).ok, true);
-  mem.members.update(ms => { ms[name].seen_at = new Date(Date.now() - ago).toISOString(); return ms; });
+  mem.members.update(ms => { must(ms[name]).seen_at = new Date(Date.now() - ago).toISOString(); return ms; });
 }
 const moves = (mem: MemoryRoomStore) => mem.readAll().filter(e => e.kind === 'member_joined' || e.kind === 'member_left').map(e => e.text);
 
@@ -180,9 +181,9 @@ test('seats.sweep: a remote seat whose lease ran out is logged left (connection 
   const { code, mem } = memoryRoom(t, { isHost: true });
   farSeat(code, mem, 'bob', config.SEAT_LEASE_MS + 1000);
   assert.deepEqual(seats.sweep(code), [], 'still within the settle');
-  mem.members.update(ms => { ms.bob.seen_at = new Date(Date.now() - config.SEAT_LEASE_MS - config.LEAVE_SETTLE_MS - 1000).toISOString(); return ms; });
+  mem.members.update(ms => { must(ms.bob).seen_at = new Date(Date.now() - config.SEAT_LEASE_MS - config.LEAVE_SETTLE_MS - 1000).toISOString(); return ms; });
   assert.deepEqual(seats.sweep(code), ['bob']);
-  const bob = mem.members.read().bob;
+  const bob = must(mem.members.read().bob);
   assert.deepEqual([!!bob.lapsed_at, bob.left_at], [true, undefined], 'lapsed, not left: its next beat renews it');
   assert.equal(identity.liveMembers(code).includes('bob'), false);
   assert.deepEqual(seats.sweep(code), [], 'a second sweep adds nothing');
@@ -196,7 +197,7 @@ test('seats.back: a lapsed seat is logged rejoined once; a seat that never lapse
   seats.sweep(code);
   assert.equal(seats.back(code, sn('bob')), true);
   assert.equal(seats.back(code, sn('bob')), false);
-  assert.equal(mem.members.read().bob.lapsed_at, undefined);
+  assert.equal(must(mem.members.read().bob).lapsed_at, undefined);
   assert.deepEqual(moves(mem), ['bob joined', 'bob left (connection lost)', 'bob rejoined']);
 });
 
@@ -206,14 +207,14 @@ test('seats.enter: a seat whose earlier record lapsed unswept is logged left bef
   if (!Object.values(hostLinksForSeats.links(store.open(code))).some(k => k.seats.includes('bob'))) linkFor(code, 'bob');
   assert.equal(seats.enter({ code, name: sn('bob'), machine: mid('far-away'), pubkey: seatKey.publicPem(code, sn('bob')) }).rejoin, true);
   assert.deepEqual(moves(mem), ['bob joined', 'bob left (connection lost)', 'bob rejoined']);
-  assert.equal(mem.members.read().bob.lapsed_at, undefined, 'the join wrote a fresh record');
+  assert.equal(must(mem.members.read().bob).lapsed_at, undefined, 'the join wrote a fresh record');
 });
 
 test('seats.sweep: on a mirror-shaped store it does nothing (the host sweeps)', t => {
   const { code, mem } = memoryRoom(t, { isHost: false });
   farSeat(code, mem, 'bob');
   assert.deepEqual(seats.sweep(code), []);
-  assert.deepEqual([mem.members.read().bob.lapsed_at, mem.readAll()], [undefined, []]);
+  assert.deepEqual([must(mem.members.read().bob).lapsed_at, mem.readAll()], [undefined, []]);
 });
 
 test('seats.sweep: a local seat whose pid died exits (session ended)', t => {
@@ -221,7 +222,7 @@ test('seats.sweep: a local seat whose pid died exits (session ended)', t => {
   const dead = child_process.spawnSync(process.execPath, ['-e', '0']).pid;
   assert.equal(seats.enter({ code, name: sn('alice'), pid: dead, session_id: 'sa', pubkey: seatKey.publicPem(code, sn('alice')) }).ok, true);
   assert.deepEqual(seats.sweep(code), ['alice']);
-  assert.ok(mem.members.read().alice.left_at);
+  assert.ok(must(mem.members.read().alice).left_at);
   assert.deepEqual(moves(mem), ['alice joined', 'alice left (session ended)']);
   assert.deepEqual(seats.sweep(code), []);
 });

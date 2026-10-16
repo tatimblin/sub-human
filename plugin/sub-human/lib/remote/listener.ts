@@ -67,6 +67,15 @@ import type { Duplex } from 'node:stream';
 import type { Conn } from './ws.ts';
 import { msgOf, stackOf } from '../errors.ts';
 import type { RoomCode } from '../brand.ts';
+import type * as HomeMod from '../home.ts';
+import type * as NoiseMod from './noise.ts';
+import type * as LockMod from '../lock.ts';
+import type * as IdentityMod from '../identity.ts';
+import type * as TailscaleMod from './tailscale.ts';
+import type * as WsMod from './ws.ts';
+import type * as TransportsWsMod from './transports/ws.ts';
+import type * as ShimMod from './shim.ts';
+import type * as ProtocolMod from './protocol.ts';
 
 
 /** The listener's status (status()). */
@@ -79,7 +88,7 @@ export interface ListenStatus {
   rooms: Record<string, ServedRoom>;
 }
 
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 const DEFAULT_PORT = 7420;
 const PREAUTH_MAX = 16;
@@ -94,12 +103,12 @@ const HOME_CHECK_MS = 2000;
 const CLOSED_CHECK_MS = 30_000;
 const BIN = path.join(import.meta.dirname, '..', '..', 'scripts', 'sub-human');
 
-const home = (): string => path.resolve((require('../home.ts') as typeof import('../home.ts')).home());
+const home = (): string => path.resolve(require<typeof HomeMod>('../home.ts').home());
 const dir = (): string => path.join(home(), 'listen');
 const stateFile = (): string => path.join(dir(), 'state.json');
 const logFile = (): string => path.join(dir(), 'listen.log');
 const keyFile = (): string => path.join(dir(), 'host-x25519.json');
-const staticKey = (): KeyPair => (require('./noise.ts') as typeof import('./noise.ts')).loadOrCreateStatic(keyFile());
+const staticKey = (): KeyPair => require<typeof NoiseMod>('./noise.ts').loadOrCreateStatic(keyFile());
 const hostKey = (): string => staticKey().pub.toString('base64url');
 const defaultPort = (): number => envNum('SUB_HUMAN_LISTEN_PORT') || DEFAULT_PORT;
 
@@ -110,7 +119,7 @@ function read(): ListenState {
 /** Change the state file under its lock; fn(cur) returns the next state. */
 function update(fn: (cur: ListenState) => ListenState): ListenState {
   fs.mkdirSync(dir(), { recursive: true, mode: 0o700 });
-  const { withLock }: typeof import('../lock.ts') = require('../lock.ts');
+  const { withLock }: typeof LockMod = require('../lock.ts');
   const { writeFileAtomic } = ioMod;
   return withLock(path.join(dir(), 'state.lock'), () => {
     const next = fn(read());
@@ -122,19 +131,19 @@ function update(fn: (cur: ListenState) => ListenState): ListenState {
 function status(): ListenStatus {
   const s = read();
   const running: boolean = isAlive(s.pid);
-  return { running, ...(running ? { pid: s.pid, port: s.port, started_at: s.started_at, conns: s.conns || 0 } : {}), rooms: s.rooms || {} };
+  return { running, ...(running ? { pid: s.pid, port: s.port, started_at: s.started_at, conns: s.conns || 0 } : {}), rooms: s.rooms ?? {} };
 }
 
 function addRoom(code: RoomCode, rec: ServedRoom): ServedRoom {
-  update(s => ({ ...s, rooms: { ...(s.rooms || {}), [code]: { ...rec, at: new Date().toISOString() } } }));
+  update(s => ({ ...s, rooms: { ...(s.rooms ?? {}), [code]: { ...rec, at: new Date().toISOString() } } }));
   return rec;
 }
 
 function removeRoom(code: string): ServedRoom | null {
   let had: ServedRoom | null = null;
   update(s => {
-    const rooms = { ...(s.rooms || {}) };
-    had = rooms[code] || null;
+    const rooms = { ...(s.rooms ?? {}) };
+    had = rooms[code] ?? null;
     delete rooms[code];
     return { ...s, rooms };
   });
@@ -175,7 +184,7 @@ function stop(): boolean {
 
 /** Is room CODE still open on this host (not stopped, closing or gone)? */
 function roomLive(code: string): boolean {
-  const identity: typeof import('../identity.ts') = require('../identity.ts');
+  const identity: typeof IdentityMod = require('../identity.ts');
   try {
     if (!isRoomCode(code) || !identity.roomExists(code) || !identity.isHost(code)) return false;
     const roomClaude = identity.readMembers(code).claude;
@@ -187,7 +196,7 @@ function roomLive(code: string): boolean {
 function untailscale(rec: ServedRoom | null, log: (msg: string) => void = () => {}): { ok: boolean; error?: string | null } | null {
   if (!rec || !rec.tailscale) return null;
   try {
-    const r = (require('./tailscale.ts') as typeof import('./tailscale.ts')).off(rec.tailscale);
+    const r = require<typeof TailscaleMod>('./tailscale.ts').off(rec.tailscale);
     log(`tailscale ${rec.tailscale.funnel ? 'funnel' : 'serve'} ${rec.tailscale.path} off: ${r.ok ? 'done' : r.error}`);
     return r;
   } catch (e) { log(`tailscale off: ${msgOf(e)}`); return { ok: false, error: msgOf(e) }; }
@@ -196,8 +205,8 @@ function untailscale(rec: ServedRoom | null, log: (msg: string) => void = () => 
 async function run({ port = defaultPort(), log = (msg: string): unknown => process.stderr.write(`${new Date().toISOString()} sub-human listen: ${msg}\n`), closedCheckMs = envNum('SUB_HUMAN_LISTEN_CHECK_MS') || CLOSED_CHECK_MS, idleMs = LISTEN_IDLE_MS }: {
   port?: number; log?: (msg: string) => unknown; closedCheckMs?: number; idleMs?: number;
 } = {}): Promise<{ why: string; port: number }> {
-  const ws: typeof import('./ws.ts') = require('./ws.ts');
-  const wsT: typeof import('./transports/ws.ts') = require('./transports/ws.ts');
+  const ws: typeof WsMod = require('./ws.ts');
+  const wsT: typeof TransportsWsMod = require('./transports/ws.ts');
   const { CODE_RE } = textMod;
   const s = staticKey();
   let mine = false;
@@ -211,7 +220,7 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
   const publishConns = () => { try { update(cur => (cur.pid === process.pid ? { ...cur, conns } : cur)); } catch { /* best effort */ } };
 
   const shimCmd = (): string => {
-    const shim: typeof import('./shim.ts') = require('./shim.ts');
+    const shim: typeof ShimMod = require('./shim.ts');
     const p = shim.refresh();
     if (!p) throw new RoomError('INVALID', `the plugin root ${shim.pluginRoot()} is under a temp dir; the listener will not run what sits there (SUB_HUMAN_ALLOW_TMP_ROOT=1 allows it)`);
     return p;
@@ -238,7 +247,7 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
     const refusal = (code: string): Refusal | null => {
       if (!isRoomCode(code)) return { code: 'PROTOCOL', message: 'not a room code' };
       if (at && CODE_RE.test(at) && at !== code) return { code: 'PROTOCOL', message: `this URL is for room ${at}, not ${code}` };
-      if (!(read().rooms || {})[code] || !roomLive(code)) return { code: 'OFFLINE', message: `room ${code} is not open for joins over the web here (the host can run /sub-human invite --web or --url again)` };
+      if (!(read().rooms ?? {})[code] || !roomLive(code)) return { code: 'OFFLINE', message: `room ${code} is not open for joins over the web here (the host can run /sub-human invite --web or --url again)` };
       return null;
     };
     let ch: { duplex: Duplex; hello: { room: string }; peer: Buffer | null }, first: { data: Buffer; binary: boolean };
@@ -288,7 +297,7 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
    * message (it must update); anything else a refusal. Each holds its pre-auth slot only until it is answered.
    */
   function textConn(conn: Conn, data: Buffer, who: unknown): void {
-    const protocol: typeof import('./protocol.ts') = require('./protocol.ts');
+    const protocol: typeof ProtocolMod = require('./protocol.ts');
     let v: unknown = null;
     try { v = JSON.parse(data.toString('utf8')); } catch { /* refused below */ }
     const frame = isObj(v) ? v : null; // parsed JSON, checked below
@@ -310,30 +319,30 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
   const srv = await ws.createServer({
     host: '127.0.0.1',
     port,
-    maxPayload: (require('./noise.ts') as typeof import('./noise.ts')).MAX_MESSAGE + 64,
+    maxPayload: require<typeof NoiseMod>('./noise.ts').MAX_MESSAGE + 64,
     pingMs: WS_PING_MS,
     accept: () => (preauth >= PREAUTH_MAX || conns >= LISTEN_MAX ? 503 : true),
     onConnection: (conn, req) => { onConnection(conn, req).catch((e: unknown) => log(`connection: ${stackOf(e)}`)); },
   });
   const real = (srv.address() as AddressInfo).port; // a TCP listener
-  update(cur => { mine = true; return { ...cur, pid: process.pid, port: real, started_at: new Date().toISOString(), conns: 0, rooms: cur.rooms || {} }; });
+  update(cur => { mine = true; return { ...cur, pid: process.pid, port: real, started_at: new Date().toISOString(), conns: 0, rooms: cur.rooms ?? {} }; });
   log(`listening on 127.0.0.1:${real} (host key ${hostKey().slice(0, 12)}…)`);
 
   let idleSince = Date.now();
   const sweep = setInterval(() => {
     let rooms: Record<string, ServedRoom> = {};
-    try { rooms = read().rooms || {}; } catch { /* next time */ }
+    try { rooms = read().rooms ?? {}; } catch { /* next time */ }
     let dropped = false;
     for (const [code, rec] of Object.entries(rooms)) {
       if (roomLive(code)) continue;
       log(`room ${code} closed: no longer served`);
-      untailscale(removeRoom(code) || rec, log);
+      untailscale(removeRoom(code) ?? rec, log);
       dropped = true;
     }
     // the last room it served closed and nobody is connected: nothing to wait for (item 16; a listener started with
     // no room still waits LISTEN_IDLE_MS for one)
-    if (dropped && !Object.keys(read().rooms || {}).length && !conns) return end('the last room it served closed');
-    if (Object.keys(read().rooms || {}).length || conns) idleSince = Date.now();
+    if (dropped && !Object.keys(read().rooms ?? {}).length && !conns) return end('the last room it served closed');
+    if (Object.keys(read().rooms ?? {}).length || conns) idleSince = Date.now();
     else if (Date.now() - idleSince >= idleMs) end('no room is served over the web any more');
   }, Math.min(closedCheckMs, idleMs));
   sweep.unref();

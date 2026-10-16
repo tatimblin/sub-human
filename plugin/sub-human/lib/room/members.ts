@@ -154,7 +154,7 @@ function ops(s: OpsStore): Pick<MembersApi, 'join' | 'leave' | 'beat'> {
 
 function publicView(members: Members | null | undefined): Members {
   const out: Members = {};
-  for (const [name, m] of Object.entries(members || {})) {
+  for (const [name, m] of Object.entries(members ?? {})) {
     out[name] = { ...m };
     for (const k of LOCAL_FIELDS) delete out[name][k];
   }

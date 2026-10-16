@@ -69,8 +69,10 @@ import { createRequire } from 'node:module';
 import type { KindEntry, OpenCtx, SshDest, SshSpec, Transport } from '../types-rest.ts';
 import type { ReasonFor } from '../../reasons.ts';
 import type { RoomCode } from '../../brand.ts';
+import type * as HomeMod from '../../home.ts';
+import type * as PipeMod from './pipe.ts';
 
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 const SSH_USER = '[A-Za-z_][A-Za-z0-9_.-]{0,31}';
 const SSH_HOST = '[A-Za-z0-9](?:[A-Za-z0-9.-]{0,252})';
@@ -79,7 +81,7 @@ const HOP_RE = new RegExp(`^(?:${SSH_USER}@)?${SSH_HOST}(?::([0-9]{1,5}))?$`);
 const LOCAL_PATH_RE = /^\/[^\0\n"'%]*$/;
 const ALIAS_RE = /^[A-Za-z0-9._-]{1,64}$/;
 const LINK_ID_RE = /^[0-9a-f]{12}$/;
-const HOME_RE = /^\/[A-Za-z0-9_\/.@+,:-]+$/; // lib/remote/shim.ts PLAIN_PATH_RE: nothing a remote shell expands
+const HOME_RE = /^\/[A-Za-z0-9_/.@+,:-]+$/; // lib/remote/shim.ts PLAIN_PATH_RE: nothing a remote shell expands
 
 /** text: user@host[:port] */
 function dest(text: string): SshDest | null {
@@ -140,7 +142,7 @@ function locator(text: string, { via }: { via?: string } = {}): string | null {
   return `ssh:${at(d)}${via !== undefined ? `?via=${via}` : ''}`;
 }
 
-const controlPath = (h: string = (require('../../home.ts') as typeof import('../../home.ts')).home()): string => path.join(path.resolve(h), 'ssh', 'cm-%C');
+const controlPath = (h: string = require<typeof HomeMod>('../../home.ts').home()): string => path.join(path.resolve(h), 'ssh', 'cm-%C');
 
 /** The spec, checked again; the link options its local fields ask for. */
 function checked(spec: SshSpec, code: RoomCode): { d: SshDest; local: string[]; tail: string[] } {
@@ -260,7 +262,7 @@ const kind: Required<KindEntry<SshSpec>> = {
     if (!ctx.code) throw new RoomError('INVALID', 'an ssh transport connects to a room: open(spec, {code})');
     if (spec.mux === true) FsMod.mkdirSync(path.dirname(controlPath()), { recursive: true, mode: 0o700 });
     const [cmd, ...args] = command(spec, ctx.code);
-    return (require('./pipe.ts') as typeof import('./pipe.ts')).spawn(cmd, args);
+    return require<typeof PipeMod>('./pipe.ts').spawn(cmd, args);
   },
   describe: spec => `ssh ${at(spec)}${spec.via ? ` via ${spec.via}` : ''}${spec.login === true ? ' (your ssh login)' : ''}`,
 };

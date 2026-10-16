@@ -8,6 +8,8 @@
   // scripts are their own project, scripts/tsconfig.json.
   "compilerOptions": {
     "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noImplicitReturns": true,

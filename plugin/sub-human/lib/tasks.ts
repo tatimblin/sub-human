@@ -86,8 +86,8 @@ function isRoomTask(t: RawTask | null | undefined, code?: string): boolean {
 }
 
 function list(code: RoomCode): Task[] {
-  let v: unknown = [];
-  try { v = kvOf(code).get('tasks', []); } catch { v = []; }
+  let v: Task[] | null = [];
+  try { v = kvOf(code).get<Task[]>('tasks', []); } catch { v = []; }
   return Array.isArray(v) ? v.filter(t => t && t.id != null).sort(byId) : [];
 }
 
@@ -105,11 +105,11 @@ function writeList(code: RoomCode, tasks: (RawTask | null | undefined)[]): Task[
 /** The mirror as a pure fold of the log's `task` entries (via system). Each entry is the task's whole state. */
 function fold(entries: readonly (Entry | null | undefined)[] | null | undefined): Task[] {
   const m = new Map<string, RawTask>();
-  for (const e of entries || []) {
+  for (const e of entries ?? []) {
     if (!e || e.kind !== 'task' || e.via !== 'system' || e.task_id == null) continue;
     const id = String(e.task_id);
     if (e.op === 'delete' || e.status === 'deleted') { m.delete(id); continue; }
-    m.set(id, { id, subject: e.subject || '', status: e.status || 'pending', owner: e.owner || null, blockedBy: e.blockedBy || [] });
+    m.set(id, { id, subject: e.subject || '', status: e.status || 'pending', owner: e.owner || null, blockedBy: e.blockedBy ?? [] });
   }
   return clean([...m.values()]);
 }
@@ -187,7 +187,7 @@ function requestText(r: TaskReq & { owner?: string | null }): string {
 
 /** A task_req or task entry's task fields (the task id is the entry's task_id). */
 function reqOf(e: Partial<Entry> | null | undefined): ReqFields {
-  const t: Partial<Entry> = e || {};
+  const t: Partial<Entry> = e ?? {};
   return {
     op: t.op, id: t.task_id == null ? null : String(t.task_id), subject: t.subject || null, detail: t.detail || null,
     evidence: t.evidence || null, owner: t.owner || null, status: t.status || null, req: t.req || null,
@@ -203,7 +203,7 @@ function isClosing(code: RoomCode): boolean {
   return !!(m.closing || (m.claude && m.claude.closing) || (m._room && m._room.closing));
 }
 
-const cites = (e: Entry, reqId: number) => (e.refs || []).includes(reqId) || new RegExp(`(^|[^\\d])#${reqId}(?!\\d)`).test(String(e.text || ''));
+const cites = (e: Entry, reqId: number) => (e.refs ?? []).includes(reqId) || new RegExp(`(^|[^\\d])#${reqId}(?!\\d)`).test(String(e.text || ''));
 
 /**
  * May the room's Claude complete `task` ({id, subject, owner, req?})? Only on a task_req{op:'done', id} with
@@ -214,7 +214,7 @@ const cites = (e: Entry, reqId: number) => (e.refs || []).includes(reqId) || new
 function gate(code: RoomCode, task: (RawTask & { req?: unknown }) | null | undefined, log: readonly Readonly<Entry>[] = [], { closing, trust }: { closing?: boolean; trust?: Trust } = {}): GateResult {
   const id = String(task && task.id);
   if (isRoomTask(task, code)) {
-    const c = closing === undefined ? isClosing(code) : closing;
+    const c = closing ?? isClosing(code);
     return c ? { ok: true } : { ok: false, reason: `#${id} is the room's open task; it stays open until the room closes` };
   }
   const owner = task && task.owner;
@@ -224,7 +224,7 @@ function gate(code: RoomCode, task: (RawTask & { req?: unknown }) | null | undef
   const dones = reqs.filter(e => reqOf(e).op === 'done' && e.id > lastClaim && String(reqOf(e).evidence || '').trim()).reverse();
   const hint = dones.findIndex(e => e.id === Number(task.req));
   if (hint > 0) dones.unshift(...dones.splice(hint, 1));
-  const judge = trust || open(code).trust;
+  const judge = trust ?? open(code).trust;
   for (const d of dones) {
     if (d.from === owner) return { ok: true, req: d };
     const confirmed = log.some(e => e.via === 'human' && judge(e) !== 'unverified' && e.from === owner && e.id > lastClaim && cites(e, d.id));

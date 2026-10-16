@@ -22,7 +22,7 @@ import type { RoomCode } from '../lib/brand.ts';
 
 const LINK_ENV: Record<string, string> = { SUB_HUMAN_LINK_RETRY_MS: '200', SUB_HUMAN_LINK_RETRY_MAX_MS: '400', SUB_HUMAN_LINK_IDLE_MS: '1500' };
 const childOf = (pid: number) => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
-const kill = (pid: number | null) => { try { process.kill(pid as number, 'SIGKILL'); } catch { /* gone */ } };
+const kill = (pid: number | null) => { try { if (pid != null) process.kill(pid, 'SIGKILL'); } catch { /* gone */ } };
 const stopDaemon = (t: TestContext, m: Machine, code: RoomCode) => t.after(() => {
   const d = m.lib(() => linkSocket.status(code));
   if (d.pid) { kill(childOf(d.pid)); kill(d.pid); }

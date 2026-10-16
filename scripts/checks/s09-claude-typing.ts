@@ -1,5 +1,5 @@
 // S9: the room's Claude refuses typed input (a viewer attaches with claude attach and types one line)
-import { readJson } from '../lib/io.ts';
+import { parseJson, readJson } from '../lib/io.ts';
 import type { Ctx, Det } from './context.ts';
 
 export const scene = 'S9';
@@ -13,7 +13,7 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   const n = x.roomClaudeTurns(s);
   det('The typed text never reached the room\'s Claude\'s model; no claude turn', typed.length === 0 && n === 0, `${typed.length} transcript entries with the typed text; ${n} claude assistant messages in S9`);
   const syn = readJson<{ stdout?: string, input: { session_id: string, pid?: number } } | null>(x.stateFile('S9', 'synthetic-prompt.json'), null);
-  const so = syn && ((): { decision?: string, reason?: string } | null => { try { return JSON.parse(String(syn.stdout)); } catch { return null; } })();
+  const so = syn && ((): { decision?: string, reason?: string } | null => { try { return parseJson<{ decision?: string, reason?: string } | null>(String(syn.stdout)); } catch { return null; } })();
   det('The room\'s Claude\'s UserPromptSubmit hook blocks a typed prompt (synthetic payload as the room\'s Claude)', so && so.decision === 'block' && /takes no typed input/.test(String(so.reason)),
     so ? `decision ${so.decision}: "${so.reason}" (session ${syn.input.session_id.slice(0, 8)}, pid ${syn.input.pid})` : 'no synthetic run saved');
 }

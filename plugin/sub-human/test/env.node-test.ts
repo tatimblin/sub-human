@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import * as h from './helpers.ts';
+import { must } from './support/must.ts';
 import * as env from '../lib/env.ts';
 
 /** The runtime's files (what the plugin runs: lib, hooks, mcp, statusline, mod and the CLI shim), not its tests. */
@@ -38,7 +39,7 @@ test('env: no runtime file reads process.env.SUB_HUMAN_* but lib/env.ts (and the
 test('env: every knob a runtime file names in a reader is in the table; the timing pattern is the ms knobs', () => {
   const names = new Set<string>();
   for (const f of runtimeFiles()) {
-    for (const m of fs.readFileSync(f, 'utf8').matchAll(/\b(?:envMs|testMs|envNum|envFlag|envStr)\(\s*['"](SUB_HUMAN_[A-Z0-9_]+)['"]/g)) names.add(m[1]);
+    for (const m of fs.readFileSync(f, 'utf8').matchAll(/\b(?:envMs|testMs|envNum|envFlag|envStr)\(\s*['"](SUB_HUMAN_[A-Z0-9_]+)['"]/g)) names.add(must(m[1], 'a knob'));
   }
   assert.ok(names.size >= 40, `found ${names.size}`);
   for (const n of names) assert.ok(Object.hasOwn(env.ENV, n), n);

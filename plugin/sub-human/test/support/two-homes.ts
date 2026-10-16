@@ -36,6 +36,7 @@ import { spawn, spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import type { TestContext } from 'node:test';
 import * as h from '../helpers.ts';
 import type { HookInput, HookLine } from '../hooks/helpers.ts';
+import { must } from './must.ts';
 import * as identity from '../../lib/identity.ts';
 import * as invites from '../../lib/remote/invites.ts';
 import * as store from '../../lib/room/store.ts';
@@ -87,13 +88,13 @@ class Machine {
     const r = spawnSync(process.execPath, [path.join(h.PLUGIN, 'hooks', 'run.ts'), script], {
       input: JSON.stringify({ ...input, session_id: seat.sid, cwd: this.cwd }), env: this.env(seat, env), encoding: 'utf8', cwd: this.cwd, timeout: 30_000,
     });
-    return { ...r, json: r.stdout.trim() ? JSON.parse(r.stdout) : null };
+    return { ...r, json: r.stdout.trim() ? JSON.parse(r.stdout) as HookLine : null }; // a hook's answer, as it printed it
   }
 
   join(seat: Seat, args: string): MachineRun { this.lease(seat); return this.hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: args }, seat); }
   /** A bound invite (no PIN, no card) to room code hosted here, for the second home `joiner` on this machine (pipe). */
   inviteFor(code: RoomCode, joiner: Machine): InviteSecret {
-    const machine = joiner.lib(() => homeMod.machineId())!;
+    const machine = must(joiner.lib(() => homeMod.machineId()), "the joiner's machine id");
     return this.lib(() => invites.mintFor(store.open(code), { locator: `pipe:${this.home}`, machine, seats: [] }).invite);
   }
 
@@ -154,7 +155,7 @@ class Machine {
   /** Kill the listener whose pid this home's listen/state.json holds (no-op without one). */
   killListener(): void {
     let pid: unknown = null;
-    try { pid = JSON.parse(fs.readFileSync(path.join(this.home, 'listen', 'state.json'), 'utf8')).pid; } catch { return; }
+    try { pid = (JSON.parse(fs.readFileSync(path.join(this.home, 'listen', 'state.json'), 'utf8')) as { pid?: unknown }).pid; } catch { return; }
     if (typeof pid === 'number' && Number.isInteger(pid) && pid > 0) try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ }
   }
 

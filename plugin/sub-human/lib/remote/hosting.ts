@@ -80,8 +80,10 @@ import type { InviteRecord, Invites, ParsedInvite, ShortInvite } from './types-c
 import type { Link, RoomStore } from '../room/types.ts';
 import type { Pinned } from '../commands/types.ts';
 import type { RoomCode, SeatName, InviteSecret, Pin } from '../brand.ts';
+import type * as SshMod from './transports/ssh.ts';
+import type * as ShimMod from './shim.ts';
 
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 /** An invite line as hostInvite (and webhost.ts hostWeb) returns it: the PIN, its ref, when it lapses, the line. */
 export interface HostedInvite {
@@ -113,7 +115,7 @@ export interface Outcome {
   reason?: string | undefined;
 }
 
-const sshT = (): typeof import('./transports/ssh.ts') => require('./transports/ssh.ts');
+const sshT = (): typeof SshMod => require('./transports/ssh.ts');
 const linkSocket = () => linkSocketMod;
 const linkConnect = () => linkConnectMod;
 const links = () => linksMod;
@@ -125,8 +127,8 @@ const hostStore = (code: RoomCode): RoomStore => roomMod.hostStore(code);
 const roomLine = (code: RoomCode, text: string): void => roomMod.roomLine(roomOf(code), text);
 
 /** The stable serve shim (an ssh login runs it); the home path it carries. */
-function shimReady(): { shim: typeof import('./shim.ts'); h: string } {
-  const shim: typeof import('./shim.ts') = require('./shim.ts');
+function shimReady(): { shim: typeof ShimMod; h: string } {
+  const shim: typeof ShimMod = require('./shim.ts');
   if (!shim.refresh({ force: true })) throw new RoomError('INVALID', `the plugin is installed under a temp folder (${shim.pluginRoot()}), which ssh would run from; install it normally (or set SUB_HUMAN_ALLOW_TMP_ROOT=1 to allow it)`);
   const h = path.resolve(homeMod.home());
   if (!shim.PLAIN_PATH_RE.test(h)) throw new RoomError('INVALID', `the sub-human folder "${h}" has characters ssh cannot carry plainly; move it (SUB_HUMAN_HOME) and try again`);
@@ -298,7 +300,7 @@ function revokeInvite(code: RoomCode, store: RoomStore, ref: string, invite: Inv
 
 /** The open invites of the room: [{ref, expires_at}], oldest first. */
 function openInvites(store: RoomStore, now = Date.now()): { ref: string; expires_at: string }[] {
-  return Object.entries((store.kv.get(invites.INVITES_KEY, null) || {}) as Invites)
+  return Object.entries(store.kv.get<Invites>(invites.INVITES_KEY, null) ?? {})
     .filter((e): e is [string, ShortInvite] => invites.inviteOpen(e[1], now))
     .sort(([, a], [, b]) => a.created_at.localeCompare(b.created_at))
     .map(([k, i]) => ({ ref: k.slice(0, 12), expires_at: i.expires_at }));
@@ -320,7 +322,7 @@ function cancelInvite(code: RoomCode, ref?: string | null, { file = sshkeys.auth
 
 /** End link id of the room: its token, an older link's key line, its seats, its serve processes; a room line. */
 function endLink(code: RoomCode, store: RoomStore, id: string, { file = sshkeys.authorizedKeysFile() }: { file?: string } = {}): Ended {
-  const r = hostLinks.revokeLink(store, id) || { link: null, invites: 0 };
+  const r = hostLinks.revokeLink(store, id) ?? { link: null, invites: 0 };
   // a link an admit let in before protocol 3 has a forced-command line for it (where its admission says, else the
   // default file): it goes with the link. Nothing adds such a line any more
   const doors = new Set([path.resolve(file), ...admission.admissions(store, { all: true }).flatMap(a => (a.link === id && a.door_file ? [path.resolve(a.door_file)] : []))]);
@@ -352,7 +354,7 @@ function kick(code: RoomCode, name: string, opts: { file?: string } = {}): Ended
 function linkTransport({ inv, cur = null }: { inv: ParsedInvite; cur?: Link | null }): LinkSpec | null {
   const transport = linkConnect().transportOf(inv.locator);
   if (!transport) return null;
-  const prev: { kind?: string; user?: string; host?: string; port?: unknown; mux?: boolean; remoteHome?: string } = (cur && cur.transport) || {};
+  const prev: { kind?: string; user?: string; host?: string; port?: unknown; mux?: boolean; remoteHome?: string } = (cur && cur.transport) ?? {};
   if (transport.kind === 'ssh') {
     const sameDest = prev.kind === 'ssh' && prev.user === transport.user && prev.host === transport.host && prev.port === transport.port;
     const at = `${transport.user}@${transport.host}${transport.port ? `:${transport.port}` : ''}`;
@@ -393,7 +395,7 @@ function outcome(code: RoomCode, { waitMs = LINK_JOIN_WAIT_MS }: { waitMs?: numb
 }
 
 function joinText(code: RoomCode, name: SeatName, o: Outcome, { tells = false }: { tells?: boolean } = {}): string {
-  const lf: Partial<Link> = links().get(code) || {};
+  const lf: Partial<Link> = links().get(code) ?? {};
   if (o.state === 'linked') {
     // the card may have let this machine in under another name (its own sits in the room from another machine)
     const as = typeof lf.join_as === 'string' ? lf.join_as : name;
@@ -402,7 +404,7 @@ function joinText(code: RoomCode, name: SeatName, o: Outcome, { tells = false }:
   }
   if (o.state === 'refused') return `could not join room ${code}: ${o.reason}`;
   if (o.state === 'pin') {
-    const w = lf.pin_wanted || { at: '' };
+    const w = lf.pin_wanted ?? { at: '' };
     const left = typeof w.left === 'number' ? ` (${w.left} PIN ${w.left === 1 ? 'try' : 'tries'} left)` : '';
     return `${o.reason ? `${o.reason}` : `the host's machine has your invite${left}. Type the 4-digit PIN they told you`}: /sub-human join PIN`;
   }
@@ -412,7 +414,7 @@ function joinText(code: RoomCode, name: SeatName, o: Outcome, { tells = false }:
       + (tells ? 'This session tells you when they do; then type /sub-human to join' : 'Once they do, type /sub-human to join')
       + ` (the request waits ${minutes(configMod.ADMIT_TTL_MS)} minutes)`;
   }
-  const t: { kind?: string; host?: string } = lf.transport || {};
+  const t: { kind?: string; host?: string } = lf.transport ?? {};
   const cert = t.kind === 'wss' && /\.ts\.net$/i.test(String(t.host || '')) && !o.reason
     ? ' (Tailscale may be issuing a certificate: the first connection to a ts.net name can take ~20 s; it keeps trying)' : '';
   return `still connecting to room ${code}${o.reason ? ` (${o.reason})` : cert}; ${tells ? 'this session tells you when the host asks for the PIN or lets you in, or ' : ''}type /sub-human in a moment`;

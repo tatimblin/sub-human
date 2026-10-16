@@ -38,7 +38,7 @@ function remoteStore(code: RoomCode, { dir }: { dir: string }): { mirror: Mirror
   if (Atomics.load(ready, 0) !== 1) throw new Error('the remote store\'s link did not come online');
   return {
     mirror: new MirrorRoomStore(code, { dir }),
-    stop() { worker.terminate(); fs.rmSync(path.dirname(socketPath(dir)), { recursive: true, force: true }); },
+    stop() { void worker.terminate(); fs.rmSync(path.dirname(socketPath(dir)), { recursive: true, force: true }); },
   };
 }
 
@@ -59,6 +59,7 @@ async function serveWorker({ code, dir, home, ready }: WorkerData) {
   Atomics.notify(ready, 0);
 }
 
-if (!isMainThread && workerData && workerData.ready) serveWorker(workerData as WorkerData);
+const given = workerData as WorkerData | null; // what remoteStore() passed this thread
+if (!isMainThread && given?.ready) void serveWorker(given); // its failure is the thread's: ready stays 0, remoteStore throws
 
 export { remoteStore, NAMES, MACHINE };

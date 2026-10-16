@@ -173,7 +173,7 @@ const TIMING_ENV_RE: RegExp = new RegExp(`^(?:${MS_NAMES.join('|')})$`);
 
 function timingEnv(src: Env | null = process.env): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(src || {})) {
+  for (const [k, v] of Object.entries(src ?? {})) {
     if (!TIMING_ENV_RE.test(k) || v == null || String(v).trim() === '') continue;
     const n = Number(v);
     if (Number.isFinite(n) && n >= 0) out[k] = String(v);

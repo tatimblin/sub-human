@@ -379,7 +379,7 @@ export function build({ screens, checksFile, out }: { screens: string, checksFil
   const toc = sceneIds.map(id => `<a class="${sceneStatus(checksOf(id))}" href="#${attr(id)}">${esc(id)}</a>`).join('');
 
   const sections = sceneIds.map(id => {
-    const sc = scenes.get(id) || { steps: [], log: new Map() };
+    const sc: SceneShots = scenes.get(id) || { steps: [], log: new Map() };
     const [title, must] = SCENES[id] || [id, ''];
     const cs = checksOf(id);
     const n = sc.steps.length;

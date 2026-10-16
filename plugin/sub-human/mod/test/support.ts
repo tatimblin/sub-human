@@ -20,6 +20,20 @@ export const ran = (stdout = '', exitCode = 0, stderr = '') => ({ value: { exitC
 /** The hook a $.process.run call runs, as its handler file ("mod-hello.ts": node hooks/run.ts mod-hello). */
 export const scriptOf = (e: EventOf['process.run']): string => (/\/hooks\/run\.ts$/.test(String(e.argv.at(-2))) ? `${e.argv.at(-1)}.ts` : String(e.argv.at(-1)).replace(/^.*\/hooks\//, ''));
 
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+/** A $.process.run call's stdin, parsed: the payload the hook got. */
+export function stdinOf(e: EventOf['process.run']): Record<string, unknown> {
+  const v: unknown = JSON.parse(e.init?.stdin ?? '');
+  if (!isRecord(v)) throw new Error(`stdin is no JSON object: ${e.init?.stdin}`);
+  return v;
+}
+
+/** v, asserted present (test/support/must.ts's, which a hooks module cannot import: it needs node:assert). */
+export function must<T>(v: T | null | undefined, what = 'a value'): T {
+  if (v === null || v === undefined) throw new Error(`expected ${what}`);
+  return v;
+}
+
 /** The session every world starts from: its id, and a session.start the engine takes. */
 export function session(on: On, sid: string): void {
   on('session.id', () => ({ value: sid }));

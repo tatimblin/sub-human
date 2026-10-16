@@ -40,8 +40,9 @@ import { roomChecks, verifyRoom, verifyText } from './doctor/rooms.ts';
 import { claudeVersion, checkClaude, checkDaemon, checkRoomClaudes, settingsFiles, checkHooks, checkRemoteControl } from './doctor/claude.ts';
 import { bundle, redactor } from './doctor/redact.ts';
 import type { Check, CheckStatus, DoctorOptions, Report } from './types.ts';
+import type * as ArgsMod from './args.ts';
 
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 /** 24.3: the first 24 that strips TypeScript without an ExperimentalWarning (every hook is .ts). */
 const NODE_MIN = [24, 3] as const;
@@ -105,7 +106,7 @@ async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, authorized
   return {
     generated_at: new Date().toISOString(),
     versions: { plugin: pluginVersion(), node: process.versions.node, claude: cv, protocol: lib('remote/protocol.ts').PROTO, ssh: sshV, platform: process.platform, arch: process.arch, os: os.release() },
-    checks, links, authorizedKeys: scan, probe: cl.probe || null,
+    checks, links, authorizedKeys: scan, probe: cl.probe ?? null,
   };
 }
 
@@ -128,7 +129,7 @@ function format(report: Report, { color = false }: { color?: boolean } = {}): st
 
 // ---------- CLI ----------
 function parseArgs(args: readonly string[]): DoctorOptions {
-  const { parse }: typeof import('./args.ts') = require('./args.ts');
+  const { parse }: typeof ArgsMod = require('./args.ts');
   const { flags: f, rest, error } = parse(args, { quick: 0, fix: 0, json: 0, bundle: '?', 'authorized-keys': 1, timeout: 1 });
   if (rest.length) throw new Error(`usage: sub-human doctor [--quick] [--fix] [--json] [--bundle [FILE]] [--authorized-keys FILE] [--timeout MS] (not ${rest[0]})`);
   if (error && /^--timeout/.test(error)) throw new Error('--timeout needs a number of milliseconds');
@@ -156,7 +157,7 @@ function applyFix(write: (s: string) => void, { authorizedKeys }: { authorizedKe
   const scan = scanAuthorizedKeys(akFile);
   const sk = lib('remote/sshkeys.ts');
   let gone = 0;
-  for (const code of new Set(scan.doors || [])) { try { gone += sk.removeTagged(akFile, sk.ENROLL_TAG(code)); } catch { /* left for by hand */ } }
+  for (const code of new Set(scan.doors ?? [])) { try { gone += sk.removeTagged(akFile, sk.ENROLL_TAG(code)); } catch { /* left for by hand */ } }
   if (gone) done.push(`removed ${gone} enrollment door line(s) an older sub-human left in ${tilde(akFile)}`);
   for (const d of done) write(`fixed: ${d}\n`);
 }

@@ -27,8 +27,9 @@ import { ThreadRoomStore } from './support/thread-store.ts';
 import { remoteStore, MACHINE } from './support/remote-store.ts';
 import { machineId } from '../lib/home.ts';
 import * as identity from '../lib/identity.ts';
-import type { Entry, EntryInput, Member, Members, Payload, RoomStore, Via } from '../lib/room/types.ts';
+import type { Entry, EntryInput, Payload, Presence, RoomStore, Via } from '../lib/room/types.ts';
 import { rc, sn, mid, eid } from './support/brands.ts';
+import { must } from './support/must.ts';
 
 type Err = Error & { code?: string };
 /** A store under test and how to change its log around it. */
@@ -45,12 +46,12 @@ const CODE = rc('otter-1234');
 const FILES: Pick<Backend, 'tamper' | 'raw'> = {
   // replace line i (0-based) of the log
   tamper: (s, i, fn) => {
-    const lines = fs.readFileSync(path.join(s.dir!, 'log.jsonl'), 'utf8').split('\n').filter(Boolean);
-    lines[i] = fn(lines[i]!);
-    fs.writeFileSync(path.join(s.dir!, 'log.jsonl'), lines.join('\n') + '\n');
+    const lines = fs.readFileSync(path.join(must(s.dir), 'log.jsonl'), 'utf8').split('\n').filter(Boolean);
+    lines[i] = fn(must(lines[i]));
+    fs.writeFileSync(path.join(must(s.dir), 'log.jsonl'), lines.join('\n') + '\n');
   },
   // a line written around the store
-  raw: (s, e) => fs.appendFileSync(path.join(s.dir!, 'log.jsonl'), JSON.stringify(e) + '\n'),
+  raw: (s, e) => fs.appendFileSync(path.join(must(s.dir), 'log.jsonl'), JSON.stringify(e) + '\n'),
 };
 // A remote join on the host starts the room's Claude, as a local one does: never a real one.
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false' });
@@ -68,8 +69,8 @@ const BACKENDS: Record<string, Backend> = {
   memory: {
     make: () => new MemoryRoomStore(CODE),
     // s is this backend's own make(): a MemoryRoomStore
-    tamper: (s, i, fn) => { const m = s as MemoryRoomStore; m._lines[i] = fn(m._lines[i]!); },
-    raw: (s, e) => { (s as MemoryRoomStore)._lines.push(JSON.stringify(e)); },
+    tamper: (s, i, fn) => { assert.ok(s instanceof MemoryRoomStore); s._lines[i] = fn(must(s._lines[i])); },
+    raw: (s, e) => { assert.ok(s instanceof MemoryRoomStore); s._lines.push(JSON.stringify(e)); },
   },
 };
 
@@ -99,7 +100,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.ok(Date.parse(a.at) <= Date.now());
     const all = s.readAll();
     assert.deepEqual(all.map(e => e.id), [1, 2, 3]);
-    assert.equal(all[1].prev, store.hash12(JSON.stringify(all[0])), 'prev = hash12 of the previous stored line');
+    assert.equal(must(all[1]).prev, store.hash12(JSON.stringify(all[0])), 'prev = hash12 of the previous stored line');
     assert.equal(s.lastId(), 3);
     assert.deepEqual(s.readById([3, 1, 9].map(eid)).map(e => e.id), [3, 1]);
     assert.deepEqual(s.readAfter(1).map(e => e.id), [2, 3]);
@@ -149,29 +150,29 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     const here = machineId();
     assert.equal(s.isHost, true);
     assert.deepEqual(s.members.join({ name: sn('alice'), role: 'member', machine: mid('far-away') }), { ok: true });
-    const a = s.members.read().alice;
+    const a = must(s.members.read().alice);
     assert.deepEqual([a.machine, typeof a.joined_at, a.seen_at === a.joined_at], ['far-away', 'string', true]);
     // alice's seat on another machine has a fresh lease: taken from here, whatever pid asks; her own machine rejoins
     const taken = s.members.join({ name: sn('alice'), role: 'member', machine: here, pid: process.pid });
     assert.equal(taken.ok, false);
-    assert.match(taken.error!, /name taken: "alice" is already in otter-1234/);
+    assert.match(must(taken.error), /name taken: "alice" is already in otter-1234/);
     assert.deepEqual(s.members.join({ name: sn('alice'), role: 'member', machine: mid('far-away') }), { ok: true, rejoin: true });
     // a stale lease frees the name
-    s.members.update(ms => { ms.alice.seen_at = new Date(Date.now() - config.SEAT_LEASE_MS - 1).toISOString(); return ms; });
+    s.members.update(ms => { must(ms.alice).seen_at = new Date(Date.now() - config.SEAT_LEASE_MS - 1).toISOString(); return ms; });
     assert.deepEqual(s.members.join({ name: sn('alice'), role: 'member', machine: here, pid: process.pid }), { ok: true, rejoin: true });
-    assert.deepEqual([s.members.read().alice.machine, s.members.read().alice.pid], [here, process.pid]);
+    assert.deepEqual([must(s.members.read().alice).machine, must(s.members.read().alice).pid], [here, process.pid]);
     // beat: the lease (at most every SEAT_BEAT_MS) and presence; a bad state writes nothing
-    const later = Date.parse(s.members.read().alice.seen_at!) + config.SEAT_BEAT_MS + 1;
+    const later = Date.parse(must(must(s.members.read().alice).seen_at)) + config.SEAT_BEAT_MS + 1;
     assert.equal(s.members.beat('alice', { now: later, presence: { state: 'idle', detail: 'x' } }), true);
-    assert.equal(s.members.read().alice.seen_at, new Date(later).toISOString());
+    assert.equal(must(s.members.read().alice).seen_at, new Date(later).toISOString());
     assert.deepEqual(s.kv.get('presence/alice'), { state: 'idle', at: new Date(later).toISOString(), detail: 'x' });
     assert.equal(s.members.beat('alice', { now: later + 1000 }), true);
-    assert.equal(s.members.read().alice.seen_at, new Date(later).toISOString(), 'renewed at most every SEAT_BEAT_MS');
+    assert.equal(must(s.members.read().alice).seen_at, new Date(later).toISOString(), 'renewed at most every SEAT_BEAT_MS');
     assert.throws(() => s.members.beat('alice', { presence: { state: 'away' } }), (e: Err) => e.code === 'INVALID');
     assert.equal(s.members.beat('zed'), false, 'no seat');
     // leave: once
     assert.equal(s.members.leave('alice'), true);
-    assert.ok(s.members.read().alice.left_at);
+    assert.ok(must(s.members.read().alice).left_at);
     assert.equal(s.members.leave('alice'), false);
     assert.equal(s.members.beat('alice', { presence: { state: 'working' } }), false, 'a left seat writes nothing');
     assert.equal(s.kv.get('presence/alice', null), null, 'leaving drops the seat\'s presence');
@@ -185,7 +186,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     // the same payload placed in another copy of the room, after other entries: a new id and prev, the same sig
     const other = B.make(t);
     sys(other, 'status', 'room'); sys(other, 'status', 'room');
-    const moved = other.place(placed(s.readAll()[0]));
+    const moved = other.place(placed(must(s.readAll()[0])));
     assert.deepEqual([moved.id, moved.sig], [3, e.sig]);
     assert.notEqual(moved.prev, e.prev);
     assert.equal(other.trust(other.readAll()[2]), 'verified');
@@ -212,7 +213,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     const alice = seatKey.publicPem(CODE, sn('alice'));
     sys(s, 'member_joined', 'alice', { pubkey: alice });
     assert.deepEqual([...s.pins().keys()], ['alice']);
-    assert.ok(s.pins().get('alice')!.equals(crypto.createPublicKey(alice)));
+    assert.ok(must(s.pins().get('alice')).equals(crypto.createPublicKey(alice)));
     assert.equal(s.trust(forged), 'unverified', 'a keyed room never returns legacy');
     // the same key again (a rejoin) is fine; another key for a pinned name is refused
     sys(s, 'member_joined', 'alice', { pubkey: alice });
@@ -285,12 +286,12 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     const tl = s.tailer({ after: 1 });
     const p = tl.poll();
     assert.deepEqual(p.entries.map(e => e.id), [2, 3]);
-    assert.deepEqual(p.lines.map(l => JSON.parse(l)), all.slice(1), 'lines are the stored entries');
-    assert.equal(all[2].prev, store.hash12(p.lines[0]), 'byte-identical: the next prev hashes it');
+    assert.deepEqual(p.lines.map(l => JSON.parse(l) as Entry), all.slice(1), 'lines are the stored entries');
+    assert.equal(must(all[2]).prev, store.hash12(must(p.lines[0])), 'byte-identical: the next prev hashes it');
     say(s, 'alice', 'd');
     assert.deepEqual(tl.poll().entries.map(e => e.id), [4]);
     assert.deepEqual(s.tailer({ after: 4 }).poll().lines, []);
-    assert.equal(s.lineHash(3), s.readAll()[3].prev);
+    assert.equal(s.lineHash(3), must(s.readAll()[3]).prev);
     assert.equal(s.lineHash(9), null);
   });
 
@@ -325,18 +326,18 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     const s = B.make(t);
     const words = (i: number) => `line ${i} ${'x'.repeat(200)}`;
     say(s, 'alice', words(1));
-    const replay = placed(s.readAll()[0]);
+    const replay = placed(must(s.readAll()[0]));
     for (let i = 2; i <= 14; i++) say(s, 'alice', words(i));
     const all = s.readAll();
     assert.deepEqual(all.map(e => e.id), Array.from({ length: 14 }, (_, i) => i + 1), 'every line, once, in order');
-    for (let i = 1; i < all.length; i++) assert.equal(all[i].prev, store.hash12(JSON.stringify(all[i - 1])), `#${i + 1} chains to #${i}`);
-    for (let i = 1; i < all.length; i++) assert.equal(s.lineHash(all[i - 1].id), all[i].prev, `lineHash(${i})`);
+    for (let i = 1; i < all.length; i++) assert.equal(must(all[i]).prev, store.hash12(JSON.stringify(all[i - 1])), `#${i + 1} chains to #${i}`);
+    for (let i = 1; i < all.length; i++) assert.equal(s.lineHash(must(all[i - 1]).id), must(all[i]).prev, `lineHash(${i})`);
     assert.deepEqual(s.validateChain(), { ok: true, count: 14 });
     assert.equal(s.verifyChain().ok, true);
     assert.equal(s.lastId(), 14);
     const tl = s.tailer({ after: 2 }).poll();
     assert.deepEqual(tl.entries.map(e => e.id), Array.from({ length: 12 }, (_, i) => i + 3), 'a tailer from a sealed segment runs on to the end');
-    for (let i = 1; i < tl.lines.length; i++) assert.equal(JSON.parse(tl.lines[i]).prev, store.hash12(tl.lines[i - 1]), 'verbatim across segments');
+    for (let i = 1; i < tl.lines.length; i++) assert.equal((JSON.parse(must(tl.lines[i])) as Entry).prev, store.hash12(must(tl.lines[i - 1])), 'verbatim across segments');
     for (const after of [3, 9, 13, Infinity]) {
       const want = all.filter(e => !store.CHAT_KINDS.has(e.kind) || e.id > after).map(e => e.id);
       assert.deepEqual(s.readView({ after }).map(e => e.id), want, `readView after ${after}`);
@@ -345,7 +346,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.throws(() => s.place(replay), (e: Err) => e.code === 'AUTH' && /nonce/.test(e.message), 'a nonce placed before the rotation is still refused');
     if (s.dir && name !== 'memory') {
       assert.ok(fs.existsSync(path.join(s.dir, 'log-0001.jsonl')) && fs.existsSync(path.join(s.dir, 'snapshot.json')), 'sealed segments and a snapshot');
-      const snap = s.snapshot()!;
+      const snap = must(s.snapshot());
       assert.ok(snap && snap.id > 1 && snap.id < 14, `the snapshot stands for sealed lines (${snap && snap.id})`);
       assert.equal(s.recentFrom(), snap.id);
       assert.equal(snap.hash, s.lineHash(snap.id));
@@ -374,9 +375,11 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.deepEqual(s.members.update(ms => ({ ...ms, alice: { name: sn('alice'), role: 'member' } })), { alice: { name: 'alice', role: 'member' } });
     assert.equal(s.members.update(() => null), null);
     const r = s.members.read();
-    (r.alice as { role: string }).role = 'changed'; // deliberate: not a role, only a change to a copy
-    assert.equal(s.members.read().alice.role, 'member', 'mutating a read changes nothing stored');
-    s.members.update(ms => { ms.bob = { name: 'bob' } as Member; return ms; });
+    // @ts-expect-error -- deliberate: not a role, only a change to a copy
+    must(r.alice).role = 'changed';
+    assert.equal(must(s.members.read().alice).role, 'member', 'mutating a read changes nothing stored');
+    // @ts-expect-error -- deliberate: a partial seat (no role)
+    s.members.update(ms => { ms.bob = { name: 'bob' }; return ms; });
     assert.deepEqual(Object.keys(s.members.read()).sort(), ['alice', 'bob']);
   });
 
@@ -387,9 +390,9 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     const ref = s.blobs.put('plans/abcdef012345.md', bytes);
     assert.equal(ref, 'plans/abcdef012345.md');
     assert.ok(s.blobs.has(ref));
-    assert.ok(s.blobs.get(ref)!.equals(bytes));
+    assert.ok(must(s.blobs.get(ref)).equals(bytes));
     assert.equal(s.blobs.ref('/old/home/rooms/otter-1234/plans/abcdef012345.md'), ref, 'an older entry\'s absolute path');
-    assert.ok(s.blobs.get('/old/home/rooms/otter-1234/plans/abcdef012345.md')!.equals(bytes));
+    assert.ok(must(s.blobs.get('/old/home/rooms/otter-1234/plans/abcdef012345.md')).equals(bytes));
     assert.equal(s.blobs.get('plans/missing.md'), null);
     assert.equal(s.blobs.ref('../etc/passwd'), null);
     assert.throws(() => s.blobs.put('../x', bytes), (e: Err) => e.code === 'INVALID');
@@ -428,7 +431,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.equal(r.proposals().length, 1);
     assert.match(r.stateLine({ name: 'alice' }), /^room now: proposal abcdef .* · you: answer needed .* · away: bob$/);
     assert.match(r.digest(), new RegExp(`## members of ${CODE}`));
-    assert.equal(r.deliver({ name: 'alice', role: 'member' }, r.readAll()[0], { entries: r.readAll() }), 'wake');
+    assert.equal(r.deliver({ name: 'alice', role: 'member' }, must(r.readAll()[0]), { entries: r.readAll() }), 'wake');
   });
 }
 
@@ -453,11 +456,13 @@ test('store contract (fs): members.update is atomic across processes (no lost up
 test('store contract (memory): members.update retries when another writer got in first (compare-and-set)', () => {
   const s = new MemoryRoomStore(CODE);
   let calls = 0;
+  // @ts-expect-error -- deliberate: numbers, not seats (its return below)
   s.members.update(ms => {
     calls++;
     // numbers, not seats: the memory store's compare-and-set does not look inside
-    if (calls === 1) s.members.update(x => ({ ...x, other: 1 }) as unknown as Members); // a concurrent writer between read and write
-    return { ...ms, mine: 1 } as unknown as Members;
+    // @ts-expect-error -- deliberate: not a seat, a concurrent writer between read and write
+    if (calls === 1) s.members.update(x => ({ ...x, other: 1 }));
+    return { ...ms, mine: 1 };
   });
   assert.equal(calls, 2, 'fn ran again on the newer version');
   assert.deepEqual(s.members.read(), { other: 1, mine: 1 });
@@ -472,7 +477,7 @@ test('store: setBackend routes every open() (identity included) to another store
     assert.deepEqual(Object.keys(identity.readMembers(CODE)), ['alice']);
     assert.equal(identity.seatAlive(identity.readMembers(CODE).alice), true, 'no pid: the lease decides');
     identity.writePresence(CODE, sn('alice'), { state: 'idle' });
-    assert.equal(mem.kv.get('presence/alice').state, 'idle');
+    assert.equal(mem.kv.get<Presence>('presence/alice')?.state, 'idle');
     assert.equal(room.open(CODE).store, mem);
   } finally { store.setBackend(null); }
 });
@@ -486,14 +491,14 @@ test('store contract (remote): a write goes through the host and reads back at o
   assert.equal(s.trust(s.readAll().at(-1)), 'verified');
   // the join: the seat's key and a proof from this thread's signer; the host logs member_joined with them
   assert.deepEqual(s.members.join({ name: sn('erin'), role: 'member', machine: MACHINE }), { ok: true });
-  const joined = s.readAll().at(-1)!;
+  const joined = must(s.readAll().at(-1));
   assert.deepEqual([joined.kind, joined.from, joined.machine, joined.pubkey], ['member_joined', 'erin', MACHINE, seatKey.publicPem(CODE, sn('erin'))]);
-  assert.deepEqual([s.members.read().erin.machine, 'pid' in s.members.read().erin], [MACHINE, false], 'a seat on another machine lives by its lease');
+  assert.deepEqual([must(s.members.read().erin).machine, 'pid' in must(s.members.read().erin)], [MACHINE, false], 'a seat on another machine lives by its lease');
   assert.equal(s.members.beat('erin', { presence: { state: 'idle' } }), true);
-  assert.equal(s.kv.get('presence/erin').state, 'idle', 'presence written on the host, streamed back');
+  assert.equal(s.kv.get<Presence>('presence/erin')?.state, 'idle', 'presence written on the host, streamed back');
   assert.equal(s.members.leave('erin', { reason: 'done' }), true);
-  assert.equal(s.readAll().at(-1)!.text, 'erin left (done)');
-  assert.ok(s.members.read().erin.left_at);
+  assert.equal(must(s.readAll().at(-1)).text, 'erin left (done)');
+  assert.ok(must(s.members.read().erin).left_at);
   assert.equal(s.members.beat('erin'), false, 'a left seat');
   assert.deepEqual(store.open(CODE).readAll().map(x => x.id), s.readAll().map(x => x.id), 'the host log');
 });
@@ -521,12 +526,12 @@ test('store contract (remote): blobs are put on the host by their content and fe
   const plan = Buffer.from('# plan\né\n');
   const ref = `plans/${store.hash12(plan)}.md`;
   assert.equal(s.blobs.put(ref, plan), ref);
-  assert.ok(s.blobs.has(ref) && store.open(CODE).blobs.get(ref)!.equals(plan));
+  assert.ok(s.blobs.has(ref) && must(store.open(CODE).blobs.get(ref)).equals(plan));
   assert.throws(() => s.blobs.put('plans/abcdef012345.md', plan), (e: Err) => e.code === 'INVALID' && /content/.test(e.message));
   const other = Buffer.from('# only on the host\n');
   const ref2 = store.open(CODE).blobs.put(`plans/${store.hash12(other)}.md`, other);
   assert.equal(s.blobs.has(ref2), false);
-  assert.ok(s.blobs.get(ref2)!.equals(other), 'fetched over the link');
+  assert.ok(must(s.blobs.get(ref2)).equals(other), 'fetched over the link');
   assert.equal(s.blobs.get('plans/missing.md'), null);
 });
 

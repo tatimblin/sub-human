@@ -44,7 +44,7 @@ test('reconcile: a TaskCreate whose mirror run was dropped is restored by the ne
   assert.deepEqual(w.list().map(t => [t.id, t.subject]), [['2', 'parser tests'], ['3', 'docs']]);
   const ents = w.taskEntries();
   assert.deepEqual(ents.map(e => [e.task_id, e.op]), [['3', 'add'], ['2', 'add']]);
-  assert.equal(ents[1].req, 7);
+  assert.equal(ents[1]?.req, 7);
   // restored once: the next run finds it recorded
   w.run(update(3, { owner: 'bob' }));
   assert.equal(w.taskEntries().filter(e => e.task_id === '2').length, 1);

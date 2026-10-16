@@ -13,6 +13,7 @@ import * as ts from '../lib/remote/tailscale.ts';
 import * as links from '../lib/room/links.ts';
 import * as hosting from '../lib/remote/hosting.ts';
 import { rc, sn, wordOf } from './support/brands.ts';
+import { must } from './support/must.ts';
 
 const UP = '{"BackendState":"Running","Self":{"DNSName":"box.tail1a2b.ts.net.","Online":true}}';
 const ENABLE_URL = 'https://login.tailscale.com/f/serve?node=nABC123CNTRL';
@@ -106,7 +107,7 @@ test('tailscale warm: one background HTTPS request to the served URL (the certif
   const pid = ts.warm(`https://127.0.0.1:${(srv.address() as AddressInfo).port}/sub-human/vole-1234`, { timeoutMs: 3000 });
   assert.ok(Number.isInteger(pid) && Date.now() - t0 < 1000, 'returns at once');
   assert.ok(await h.until(() => hit, 5000, 20), 'the request arrived');
-  assert.equal(hit![0], 0x16, 'a TLS ClientHello');
+  assert.equal(must(hit)[0], 0x16, 'a TLS ClientHello');
   assert.equal(ts.warm('https://box.ts.net/x', { env: { SUB_HUMAN_TAILSCALE_WARM: '0' } }), null);
   assert.equal(ts.warm('https://box.ts.net/x"; rm -rf /'), null, 'a plain URL only');
 });

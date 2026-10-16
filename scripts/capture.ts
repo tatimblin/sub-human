@@ -26,11 +26,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { readJson } from './lib/io.ts';
+import { parseJson, readJson } from './lib/io.ts';
+import type * as SnapMod from './snap.ts';
 
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 // snap.ts loads the plugin's identity lib: only the poller's last step needs it
-const snapLib = (): typeof import('./snap.ts') => require('./snap.ts');
+const snapLib = (): typeof SnapMod => require('./snap.ts');
 
 /** A pane as grab() reads it. */
 export interface Pane { ansi: string, cols: number, rows: number }
@@ -41,7 +42,7 @@ export interface Opts { _: string[], [flag: string]: string | string[] | undefin
 /** The active capture file's content. */
 interface Active { dir: string, pid: number, t0: string }
 interface SceneRec { scene?: string | undefined, startT?: number, started?: string, endT?: number, ended?: string, status?: string | undefined, reason?: string }
-interface RunJson { scenes?: unknown, [k: string]: unknown }
+interface RunJson { scenes?: SceneRec[], [k: string]: unknown }
 interface ChecksJson { _meta?: { summary?: unknown }, [scene: string]: unknown }
 export interface Verdict { error?: string, summary?: unknown, failed?: string[], pass?: boolean }
 
@@ -111,7 +112,7 @@ export function finalise(file: string, meta: { sessions?: Record<string, Size>, 
   for (const l of fileLines(file)) {
     if (!l) continue;
     let o: { kind?: unknown, t?: unknown, sessions?: Record<string, Size>, room?: string | null };
-    try { o = JSON.parse(l); } catch { continue; } // torn
+    try { o = parseJson<typeof o>(l); } catch { continue; } // torn
     if (o.kind === 'meta') { prevMeta = o; continue; }
     kept.push([Number(o.t) || 0, o.kind, l]);
   }
@@ -211,11 +212,12 @@ function scene(o: Opts): number {
 }
 
 /** checks.json -> {summary, failed: [SCENE: check]} for run.json */
+const isChecks = (v: unknown): v is Array<{ status?: string, check?: string }> => Array.isArray(v); // a scene's checks (checks.ts wrote them)
 export function verdict(checks: string): Verdict {
   const c = readJson<ChecksJson | null>(checks, null);
   if (!c) return { error: `no checks at ${checks}` };
   const failed: string[] = [];
-  for (const [k, list] of Object.entries(c)) if (!k.startsWith('_') && Array.isArray(list)) { const items: Array<{ status?: string, check?: string }> = list; for (const x of items) if (x.status === 'fail') failed.push(`${k}: ${x.check}`); }
+  for (const [k, list] of Object.entries(c)) if (!k.startsWith('_') && isChecks(list)) { const items = list; for (const x of items) if (x.status === 'fail') failed.push(`${k}: ${x.check}`); }
   return { summary: (c._meta || {}).summary || null, failed, pass: failed.length === 0 };
 }
 

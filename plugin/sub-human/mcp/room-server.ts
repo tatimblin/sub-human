@@ -56,7 +56,7 @@ import * as proposal from '../lib/proposal.ts';
 import { SAY } from '../lib/consent/review.ts';
 import * as cc from '../lib/cc/env.ts';
 import { cliCmd } from '../lib/text.ts';
-import { decode, objAs } from '../lib/decode.ts';
+import { decode, isObj, objAs } from '../lib/decode.ts';
 import { envFlag } from '../lib/env.ts';
 
 /** A JSON-RPC message from Claude Code: an object, each field checked by handle(). */
@@ -68,7 +68,7 @@ import { msgOf, stackOf } from '../lib/errors.ts';
 import { entryId } from '../lib/room/validate.ts';
 
 // loadPlugins() requires each plug-in by path (createRequire: require(esm) is synchronous).
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 const READ_MAX = 100;
 const PLUGINS = ['hold.ts', 'task.ts'];
@@ -300,7 +300,7 @@ function loadPlugins(): Plugin[] {
     const full = path.join(import.meta.dirname, file);
     if (!fs.existsSync(full)) { log('plugin missing', file); continue; }
     try {
-      const mod: { create?: unknown } | null = require(full); // a plug-in: checked below, not trusted
+      const mod: { create?: (c: PluginContext) => PluginApi | null } | null = require(full); // a plug-in: checked below, not trusted
       const api: PluginApi | null = mod && typeof mod.create === 'function' ? mod.create(ctx) : null;
       if (!api || !Array.isArray(api.tools) || typeof api.call !== 'function') { log('plugin has no {tools, call}', file); continue; }
       out.push({ file, api, anonymous: new Set(Array.isArray(api.anonymous) ? api.anonymous : []) });
@@ -335,7 +335,7 @@ function settle(id: JsonRpcId, r: ToolResult | null | undefined) {
 
 function callTool(id: JsonRpcId, params: CallToolParams | undefined) {
   const name = params && params.name;
-  const args = (params && params.arguments) || {};
+  const args = (params && params.arguments) ?? {};
   const meta: CallMeta = { id, progressToken: params && params._meta ? params._meta.progressToken : undefined };
   const isCore = CORE.some(t => t.name === name);
   const owner = isCore ? null : ownerOf(name);
@@ -372,11 +372,11 @@ function handle(msg: JsonRpcIncoming | null) {
   }
   const { method } = msg;
   const id = msg.id as JsonRpcId; // null or absent only for a notification, which gets no reply
-  const params = msg.params as Record<string, any> | undefined; // the client's, per method: each case reads what it needs
+  const params = isObj(msg.params) ? msg.params : undefined; // the client's, per method: each case reads what it needs
   const isNote = id === undefined || id === null;
   switch (method) {
     case 'initialize':
-      clientCapabilities = (params && params.capabilities) || {};
+      clientCapabilities = isObj(params?.capabilities) ? params.capabilities : {};
       return reply(id, {
         protocolVersion: negotiateProtocol(params && params.protocolVersion),
         capabilities: { tools: { listChanged: false } },
@@ -386,13 +386,13 @@ function handle(msg: JsonRpcIncoming | null) {
     case 'notifications/initialized':
       return;
     case 'notifications/cancelled': {
-      if (!params || params.requestId == null) return;
-      const rid = params.requestId;
+      const rid = params?.requestId;
+      if (typeof rid !== 'string' && typeof rid !== 'number') return;
       const fns = cancelHandlers.get(rid);
       if (fns) {
         cancelled.add(rid);
         cancelHandlers.delete(rid);
-        for (const fn of fns) { try { fn(params.reason); } catch (e) { log('onCancel handler failed', msgOf(e)); } }
+        for (const fn of fns) { try { fn(params?.reason); } catch (e) { log('onCancel handler failed', msgOf(e)); } }
       }
       return;
     }

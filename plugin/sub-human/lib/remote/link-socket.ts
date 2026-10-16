@@ -44,16 +44,18 @@ import { createRequire } from 'node:module';
 import type { Reason } from '../reasons.ts';
 import type { DecodedFrame, ErrorFrame, FrameId, LinkDoc, ReplyFrame, WireCode } from './types-core.ts';
 import type { RoomCode } from '../brand.ts';
+import type * as StoreMod from '../room/store.ts';
+import type * as LinksMod from '../room/links.ts';
 
 /** The daemon's document `link`, and whether its pid lives. */
 type LinkStatus = (LinkDoc & { running: true; pid: number }) | (LinkDoc & { running: false });
 /** One relayed op's params as a hook sends them: an append may carry {queue: true}. */
 type Relay = (op: string, params: { [field: string]: unknown }) => Promise<unknown>;
 
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 // the store and the link files, only for status and start: the bridge worker that loads this file for handle never needs them
-const storeMod = (): typeof import('../room/store.ts') => require('../room/store.ts');
-const linksMod = (): typeof import('../room/links.ts') => require('../room/links.ts');
+const storeMod = (): typeof StoreMod => require('../room/store.ts');
+const linksMod = (): typeof LinksMod => require('../room/links.ts');
 const BIN = path.join(import.meta.dirname, '..', '..', 'scripts', 'sub-human');
 const RELAY: ReadonlySet<string> = new Set(['join', 'leave', 'beat', 'append', 'blob.get', 'blob.put', 'handoff.accept', 'handoff.refuse']);
 const SUN_PATH_MAX = 103; // a unix socket's path: 104 bytes on macOS with its NUL (108 on Linux)
@@ -107,7 +109,7 @@ async function handle(method: string, { socket, params }: { socket: string | str
       last = e;
     }
   }
-  throw last || new RoomError('OFFLINE', 'the link daemon is not running (ENOENT)', 'DAEMON_DOWN');
+  throw last ?? new RoomError('OFFLINE', 'the link daemon is not running (ENOENT)', 'DAEMON_DOWN');
 }
 
 /** OFFLINE DAEMON_DOWN before the connection was made: no daemon listens on this path (handle tries the next). */
@@ -177,13 +179,13 @@ function serveHook(sock: net.Socket, relay: Relay): void {
   const dec = protocol.decoder();
   sock.on('error', () => { /* the hook gave up at its deadline */ });
   sock.on('data', (chunk: Buffer) => {
-    for (const f of dec.push(chunk)) answer(f, relay).then(out => sock.end(protocol.encode(out)));
+    for (const f of dec.push(chunk)) void answer(f, relay).then(out => sock.end(protocol.encode(out))); // answer() never rejects: an error is its reply
   });
 }
 
 // ---------- control ----------
 function status(code: RoomCode): LinkStatus {
-  const st: LinkDoc = storeMod().open(code).kv.get('link') || {};
+  const st: LinkDoc = storeMod().open(code).kv.get('link') ?? {};
   return { ...st, running: isAlive(st.pid) } as LinkStatus; // running: its pid (a number) lives
 }
 

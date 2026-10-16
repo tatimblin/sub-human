@@ -10,6 +10,7 @@
 // 99, straight into the current host's serve over an ssh login: PROTOCOL, naming the side that must update.
 import { WAN, CORE, delivered, converge } from './_lib.ts';
 import type { Hosts, T } from '../lab.ts';
+import { parseJson } from '../../lib/io.ts';
 
 const VERSION_MSG = /version|update|upgrade|protocol/i;
 
@@ -64,8 +65,9 @@ export async function run(t: T): Promise<void> {
   const r = lab.exec('joiner-a', ['sh', '-c', `printf '%s\\n' '${frame}' | timeout 20 ssh -F ${conf} -o StrictHostKeyChecking=accept-new -T host@devbox '"$HOME"/.sub-human/bin/serve --stdio ${code}'`], { user: 'joiner', allowFail: true, timeout: 30_000 });
   const reply = (r.stdout.split('\n').find(l => l.includes('"id":1')) || '').trim();
   t.ev.write('future-hello.txt', `> ${frame}\n< ${reply}\nstderr: ${r.stderr}`);
-  let err: { code?: string, reason?: string, message: string } | null = null;
-  try { err = JSON.parse(reply).error; } catch { /* no reply */ }
+  type WireErr = { code?: string, reason?: string, message: string };
+  let err: WireErr | null = null;
+  try { err = parseJson<{ error: WireErr | null }>(reply).error; } catch { /* no reply */ }
   t.check(`a v99 hello is refused PROTOCOL (reason SKEW) by the ${probe.version} server`, err && err.code === 'PROTOCOL' && err.reason === 'SKEW', reply.slice(0, 200) || r.stderr.slice(0, 200));
   t.expect('the refusal names both versions and says the host must update (the joiner is newer)',
     !!err && /9\.9\.9/.test(err.message) && new RegExp((probe.version ?? '').replace(/\./g, '\\.')).test(err.message) && /host must update/i.test(err.message), err ? err.message : 'no reply', 'versionRange');

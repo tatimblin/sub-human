@@ -374,10 +374,10 @@ export interface KvUpdateOpts {
  * read from disk or the wire: T defaults to any, an untyped boundary each caller narrows (or names T).
  */
 export interface KvApi {
-  get<T = any>(key: string, fallback?: NoInfer<T> | null): T | null;
+  get<T = unknown>(key: string, fallback?: NoInfer<T> | null): T | null;
   set(key: string, value: unknown, opts?: { compact?: boolean }): void;
   /** fn(current | null) -> next; undefined: no write, null: delete. Atomic, like members.update. */
-  update<T = any>(key: string, fn: (current: T | null) => T | null | undefined, opts?: KvUpdateOpts): T | null | undefined;
+  update<T = unknown>(key: string, fn: (current: T | null) => T | null | undefined, opts?: KvUpdateOpts): T | null | undefined;
   delete(key: string): void;
   list(prefix: string): string[];
   lock<R>(key: string, fn: () => R, opts?: LockOpts): R;

@@ -14,7 +14,7 @@ import * as identity from '../lib/identity.ts';
 import * as seatKey from '../hooks/seat-key.ts';
 import { ThreadRoomStore } from './support/thread-store.ts';
 import type { RoomError } from '../lib/room/validate.ts';
-import type { Member } from '../lib/room/types.ts';
+import { must } from './support/must.ts';
 
 const BRIDGE = path.join(h.LIB, 'remote', 'bridge.ts');
 const THREAD_STORE = path.join(import.meta.dirname, 'support', 'thread-store.ts');
@@ -101,7 +101,7 @@ test('bridge: the worker is unref\'d: a hook-like process exits when its body re
 });
 
 test('bridge: the deadlines fit inside the hook timeouts (SessionEnd has its own)', () => {
-  const hooks: Record<string, { hooks: { timeout: number }[] }[]> = JSON.parse(fs.readFileSync(path.join(h.PLUGIN, 'hooks', 'hooks.json'), 'utf8')).hooks;
+  const hooks = (JSON.parse(fs.readFileSync(path.join(h.PLUGIN, 'hooks', 'hooks.json'), 'utf8')) as { hooks: Record<string, { hooks: { timeout: number }[] }[]> }).hooks;
   for (const [event, groups] of Object.entries(hooks)) {
     if (event === 'PreToolUse') continue; // the EnterPlanMode mode note: a few shell lines, no node, no store call
     for (const hk of groups.flatMap(g => g.hooks)) {
@@ -129,9 +129,11 @@ test('thread store: appends (a signed human one too), compare-and-set updates, b
 
   // members.update: fn runs again when another writer got in between its read and its write
   let runs = 0;
+  // @ts-expect-error -- deliberate: bare records (its return below)
   th.members.update(m => {
-    if (runs++ === 0) fsStore.members.update(cur => ({ ...cur, bob: { role: 'member' } as Member })); // bare records (no name): the store keeps what it is given
-    return { ...m, alice: { role: 'member' } as Member };
+    // @ts-expect-error -- deliberate: bare records (no name): the store keeps what it is given
+    if (runs++ === 0) fsStore.members.update(cur => ({ ...cur, bob: { role: 'member' } }));
+    return { ...m, alice: { role: 'member' } };
   });
   assert.equal(runs, 2);
   assert.deepEqual(Object.keys(fsStore.members.read()).sort(), ['alice', 'bob']);
@@ -143,7 +145,7 @@ test('thread store: appends (a signed human one too), compare-and-set updates, b
 
   assert.equal(th.blobs.put('plans/p.md', Buffer.from('# plan')), 'plans/p.md');
   assert.ok(Buffer.isBuffer(th.blobs.get('plans/p.md')));
-  assert.equal(fsStore.blobs.get('plans/p.md')!.toString(), '# plan');
+  assert.equal(must(fsStore.blobs.get('plans/p.md')).toString(), '# plan');
   assert.equal(th.lock('proposal', () => th.lastId()), 2, 'a store call under the room lock');
 
   Reflect.deleteProperty(globalThis, store.SIGNER);

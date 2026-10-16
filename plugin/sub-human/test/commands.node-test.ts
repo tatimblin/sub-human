@@ -12,13 +12,14 @@ import { HELP } from '../lib/commands/help.ts';
 import type { Answer } from '../lib/commands/types.ts';
 import type { Identity } from '../lib/identity.ts';
 import { sn } from './support/brands.ts';
+import { must } from './support/must.ts';
 
 const PLUGIN = new URL('..', import.meta.url).pathname;
 // never start a room's Claude from a test
 seats.seam.startDetached = () => {};
 
 /** run(args) as a session of w: the lease written unless lease is false; seat: who this session is (or null). */
-function run(w: World, args: string, { seat = null as string | null, lease = true, pid = process.pid as number | null, roomClaudeAgent = false } = {}): Answer {
+function run(w: World, args: string, { seat = null, lease = true, pid = process.pid, roomClaudeAgent = false }: { seat?: string | null; lease?: boolean; pid?: number | null; roomClaudeAgent?: boolean } = {}): Answer {
   const sid = seat ? w.sid[seat] : crypto.randomUUID();
   return w.lib(() => {
     if (lease) identity.writeModLease(sid, { pid: process.pid });
@@ -58,7 +59,7 @@ test('commands: the hidden rule is the router\'s: join, invite, admit or a word 
   const admit = run(w, 'admit', { seat: 'alice' });
   assert.deepEqual(admit, { kind: 'secret', text: `nobody is waiting to join room ${w.code}.`, refused: false }, 'not a refusal, still hidden');
   // hide() on its own: a seat a prompt with a PIN-shaped word took is not handed to the model in that step
-  const me = { code: w.code, name: sn('alice'), role: 'member' } as Identity;
+  const me: Identity = { code: w.code, name: sn('alice'), role: 'member', session_id: null, pid: null, address: `alice.${w.code}` };
   const joined: Answer = { kind: 'joined', me, lead: 'joined', say: `joined ${w.code} as alice` };
   assert.equal(commands.hide(['join', 'dev', w.code], joined), joined, 'a login join has no PIN: the seat goes to the model');
   assert.deepEqual(commands.hide(['join', 'dev', w.code, '--via', '2222'], joined), { kind: 'secret', text: `joined ${w.code} as alice · type /sub-human to bring the room to your Claude`, refused: false });
@@ -72,8 +73,8 @@ test('commands: leave, kick, admit, invite and handoff', t => {
   assert.match(text(run(w, 'kick', { seat: 'alice' })), /usage: \/sub-human kick NAME/);
   assert.match(text(run(w, 'kick carol', { seat: 'alice' })), /nobody called "carol" joined room/);
   const inv = run(w, 'invite --pipe', { seat: 'alice' });
-  assert.equal(inv.kind, 'secret');
-  assert.equal((inv as { refused?: boolean }).refused, false, 'an invite is no refusal');
+  assert.ok(inv.kind === 'secret', inv.kind);
+  assert.equal(inv.refused, false, 'an invite is no refusal');
   assert.match(text(inv), new RegExp(`/sub-human join pipe:\\S+ ${w.code} [0-9a-z]{39}\n`));
   assert.match(text(inv), /its PIN apart from the line \(say it, or send it another way\): \d{4}\n/);
   assert.match(text(run(w, 'invite --pipe --web', { seat: 'alice' })), /pick one way at a time/);
@@ -83,7 +84,7 @@ test('commands: leave, kick, admit, invite and handoff', t => {
   assert.match(text(run(w, 'handoff bob --via j', { seat: 'alice' })), /--via goes with the ssh address/);
   assert.match(text(run(w, 'leave now', { seat: 'alice' })), /usage: \/sub-human leave/);
   assert.deepEqual(run(w, 'leave', { seat: 'bob' }), { kind: 'say', text: `left ${w.code} · /sub-human joins again` });
-  assert.ok(w.members().bob.left_at);
+  assert.ok(must(w.members().bob).left_at);
 });
 
 test('commands: NAME [ROOM], ROOM, join ROOM and the bare command take a seat; a word of digits is no name', t => {

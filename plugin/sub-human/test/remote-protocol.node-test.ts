@@ -22,8 +22,9 @@ import { flaky } from './support/flaky.ts';
 import type { DecodedFrame, SignedPayload } from '../lib/remote/types-core.ts';
 import type { RoomError } from '../lib/room/validate.ts';
 import { isErrno } from '../lib/errors.ts';
-import type { KindEntry, MemorySpec, PipeSpec, SpecBase, SshSpec, Transport } from '../lib/remote/types-rest.ts';
+import type { MemorySpec, PipeSpec, SpecBase, SshSpec, Transport } from '../lib/remote/types-rest.ts';
 import { rc, sn, mid } from './support/brands.ts';
+import { must } from './support/must.ts';
 
 /** The test's own socket kind: a unix socket path. */
 interface UnixSpec extends SpecBase { path: string }
@@ -49,9 +50,9 @@ test('protocol: frames encode to one line; the decoder keeps partial lines and a
   assert.deepEqual(d.push(bytes.subarray(0, cut)), []);
   assert.deepEqual(d.push(bytes.subarray(cut)), [{ id: 1, result: 'é' }, { id: 2, result: 'x' }]);
   const bad = d.push('not json\n[1]\n');
-  assert.deepEqual(bad.map(f => [f.id, f.error!.code]), [[null, 'PROTOCOL'], [null, 'PROTOCOL']]);
+  assert.deepEqual(bad.map(f => [f.id, must(f.error).code]), [[null, 'PROTOCOL'], [null, 'PROTOCOL']]);
   const big = d.push('"' + 'x'.repeat(config.LINK_FRAME_MAX_BYTES + 1));
-  assert.equal(big[0].error!.code, 'PROTOCOL', 'an endless line is cut off, not buffered');
+  assert.equal(must(must(big[0]).error).code, 'PROTOCOL', 'an endless line is cut off, not buffered');
   assert.deepEqual(Object.keys(protocol.CODES).slice(4), ['OFFLINE', 'HOST_ONLY', 'AUTH', 'FORK', 'PROTOCOL', 'STALE']);
 });
 
@@ -72,14 +73,16 @@ test('transports: a memory pair carries frames both ways as lines; close fires o
 
 test('transports: open() by kind (a Promise): memory over a port, pipe over a child\'s stdio; an unknown kind is INVALID', async () => {
   const { port1, port2 } = new MessageChannel();
-  const a = await transports.open({ kind: 'memory', port: port1 } as MemorySpec), b = memory.over(port2);
+  const mem: MemorySpec = { kind: 'memory', port: port1 };
+  const a = await transports.open(mem), b = memory.over(port2);
   const gb = recorder(b);
   a.send(protocol.request(1, 'beat'));
   await h.until(() => gb.frames.length, 2000, 5);
   a.close();
   // an echo child: every line back as a reply
   const echo = 'process.stdin.on("data", d => { for (const l of String(d).split("\\n").filter(Boolean)) process.stdout.write(JSON.stringify({id: JSON.parse(l).id, result: "echo"}) + "\\n"); })';
-  const p = await transports.open({ kind: 'pipe', cmd: [process.execPath, '-e', echo] } as PipeSpec);
+  const echoSpec: PipeSpec = { kind: 'pipe', cmd: [process.execPath, '-e', echo] };
+  const p = await transports.open(echoSpec);
   const gp = recorder(p);
   p.send(protocol.request(7, 'hello'));
   await h.until(() => gp.frames.length, 5000, 10);
@@ -88,7 +91,8 @@ test('transports: open() by kind (a Promise): memory over a port, pipe over a ch
   await h.until(() => gp.closed, 5000, 10);
   assert.equal(gp.closed, 1);
   await assert.rejects(transports.open({ kind: 'carrier-pigeon' }), (e: RoomError) => e.code === 'INVALID');
-  await assert.rejects(transports.open({ kind: 'ssh', user: 'me', host: 'far' } as SshSpec), (e: RoomError) => e.code === 'INVALID', 'ssh connects to a room');
+  const far: SshSpec = { kind: 'ssh', user: 'me', host: 'far' };
+  await assert.rejects(transports.open(far), (e: RoomError) => e.code === 'INVALID', 'ssh connects to a room');
   // the child's own exit closes the client end
   const gone = recorder(pipe.spawn(process.execPath, ['-e', '']));
   await h.until(() => gone.closed, 5000, 10);
@@ -101,12 +105,16 @@ test('transports: the registry: built-in kinds, locators parse by kind, a kind r
   assert.deepEqual(transports.parse('pipe:/a/home'), { kind: 'pipe', home: '/a/home' });
   assert.deepEqual(transports.parse('ssh:me@far:2222'), { kind: 'ssh', user: 'me', host: 'far', port: 2222 });
   for (const bad of ['memory:x', 'pipe:rel', 'ssh:-oX@h', 'nope:x', 'pipe', '']) assert.equal(transports.parse(bad), null, bad);
-  assert.equal(transports.describe({ kind: 'ssh', user: 'me', host: 'far', port: 2222 } as SshSpec), 'ssh me@far:2222');
-  assert.equal(transports.describe({ kind: 'pipe', home: '/h' } as PipeSpec), 'pipe /h');
+  const ssh: SshSpec = { kind: 'ssh', user: 'me', host: 'far', port: 2222 }, home: PipeSpec = { kind: 'pipe', home: '/h' };
+  assert.equal(transports.describe(ssh), 'ssh me@far:2222');
+  assert.equal(transports.describe(home), 'pipe /h');
   // deliberate: kinds that are refused before their open() (which returns no transport) is ever called
-  assert.throws(() => transports.register('pipe', { open() {} } as unknown as KindEntry), /registered already/);
-  assert.throws(() => transports.register('Bad Kind', { open() {} } as unknown as KindEntry), /short lower-case/);
-  assert.throws(() => transports.register('noopen', {} as KindEntry), /needs open/);
+  // @ts-expect-error -- deliberate: an open() that returns no transport
+  assert.throws(() => transports.register('pipe', { open() {} }), /registered already/);
+  // @ts-expect-error -- deliberate: an open() that returns no transport
+  assert.throws(() => transports.register('Bad Kind', { open() {} }), /short lower-case/);
+  // @ts-expect-error -- deliberate: no open()
+  assert.throws(() => transports.register('noopen', {}), /needs open/);
 });
 
 test('transports: a registered socket kind in a few lines: async open, fromDuplex over a unix socket, locator, close both ways', async t => {
@@ -126,9 +134,10 @@ test('transports: a registered socket kind in a few lines: async open, fromDuple
   const ta = await transports.open(spec);
   const a = recorder(ta);
   await h.until(() => served.length, 2000, 5);
-  const b = recorder(served[0]);
+  const s0 = must(served[0]);
+  const b = recorder(s0);
   ta.send(protocol.request(1, 'beat', {}));
-  served[0].send(protocol.reply(1, { ok: true }));
+  s0.send(protocol.reply(1, { ok: true }));
   await h.until(() => a.frames.length && b.frames.length, 2000, 5);
   assert.deepEqual(b.frames, [protocol.request(1, 'beat', {})]);
   assert.deepEqual(a.frames, [protocol.reply(1, { ok: true })]);
@@ -136,7 +145,8 @@ test('transports: a registered socket kind in a few lines: async open, fromDuple
   await h.until(() => b.closed, 2000, 5);
   assert.deepEqual([a.closed, b.closed], [1, 1], 'close fires once on both ends');
   ta.send(protocol.request(2, 'beat', {})); // a no-op
-  await assert.rejects(transports.open({ kind: 'unixtest', path: sock + '.none' } as UnixSpec), e => isErrno(e, 'ENOENT'));
+  const none: UnixSpec = { kind: 'unixtest', path: sock + '.none' };
+  await assert.rejects(transports.open(none), e => isErrno(e, 'ENOENT'));
   assert.ok(!fs.existsSync(sock + '.none'));
 });
 
@@ -190,22 +200,22 @@ test('auth: a bound invite is one string for one machine, redeemed once for a to
 test('auth: an sh2 invite with a PIN (a promote\'s, handed out by hand) carries the room, locator, a 128-bit secret and the host key, never the PIN; the host checks the PIN online: 5 tries, 15 minutes, burnt on success or the last try', t => {
   h.freshHome(t);
   const s = new MemoryRoomStore(CODE);
-  const hostKey = crypto.generateKeyPairSync('ed25519').publicKey.export({ format: 'jwk' }).x;
+  const hostKey = must(crypto.generateKeyPairSync('ed25519').publicKey.export({ format: 'jwk' }).x);
   const t0 = Date.parse('2026-10-08T12:00:00Z');
   const mint = (opts: { now?: number } = {}) => invites.mintFor(s, { locator: 'ssh:me@far:2222', machine: mid('m'), seats: ['bob'], pin: true, hostKey, now: t0, ...opts });
   const a = mint();
   assert.match(a.invite, /^sh2\.otter-1234\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/);
-  assert.match(a.pin!, /^[0-9]{6}$/);
-  assert.ok(!a.invite.includes(a.pin!) || !a.invite.split('.').includes(a.pin!), 'the PIN is not a part of the invite');
+  assert.match(must(a.pin), /^[0-9]{6}$/);
+  assert.ok(!a.invite.includes(must(a.pin)) || !a.invite.split('.').includes(must(a.pin)), 'the PIN is not a part of the invite');
   assert.equal(Buffer.from(a.secret, 'base64url').length, 16, '128 bits');
   assert.deepEqual(invites.parseInvite(a.invite), { v: 2, code: CODE, locator: 'ssh:me@far:2222', secret: a.secret, hostKey });
-  assert.equal(invites.parseInvite(invites.mintFor(s, { locator: 'pipe:/h', machine: mid('m'), seats: [], pin: true }).invite)!.hostKey, null, 'no key: "0"');
+  assert.equal(must(invites.parseInvite(invites.mintFor(s, { locator: 'pipe:/h', machine: mid('m'), seats: [], pin: true }).invite)).hostKey, null, 'no key: "0"');
   const stored = JSON.stringify(s.kv.get(invites.INVITES_KEY));
   assert.ok(!stored.includes(a.secret) && !stored.includes(`"${a.pin}"`), 'neither the secret nor the PIN in clear on the host');
 
   // no PIN or a wrong one: a try each, and the room line the server posts; the right one redeems and burns the invite
   const wrong = String((Number(a.pin) + 1) % 1e6).padStart(6, '0');
-  assert.throws(() => invites.redeemInvite(s, a.secret, { machine: mid('m'), now: t0 }), (e: RoomError) => e.code === 'AUTH' && /needs its PIN/.test(e.message) && /4 tries left/.test(e.note!));
+  assert.throws(() => invites.redeemInvite(s, a.secret, { machine: mid('m'), now: t0 }), (e: RoomError) => e.code === 'AUTH' && /needs its PIN/.test(e.message) && /4 tries left/.test(String(e.note)));
   assert.throws(() => invites.redeemInvite(s, a.secret, { machine: mid('m'), pin: wrong, now: t0 }), (e: RoomError) => /wrong PIN \(3 tries left\)\. Check the digits with the host, then type the join line again/.test(e.message));
   const ok = invites.redeemInvite(s, a.secret, { machine: mid('m'), pin: a.pin, now: t0 + 60_000 });
   assert.equal(typeof ok.token, 'string');
@@ -215,7 +225,7 @@ test('auth: an sh2 invite with a PIN (a promote\'s, handed out by hand) carries 
   const b = mint();
   const bad = String((Number(b.pin) + 7) % 1e6).padStart(6, '0');
   for (let i = 4; i >= 1; i--) assert.throws(() => invites.redeemInvite(s, b.secret, { machine: mid('m'), pin: bad, now: t0 }), (e: RoomError) => e.message.includes(`(${i} ${i === 1 ? 'try' : 'tries'} left)`));
-  assert.throws(() => invites.redeemInvite(s, b.secret, { machine: mid('m'), pin: bad, now: t0 }), (e: RoomError) => /last try: this invite no longer works/.test(e.message) && /burnt/.test(e.note!));
+  assert.throws(() => invites.redeemInvite(s, b.secret, { machine: mid('m'), pin: bad, now: t0 }), (e: RoomError) => /last try: this invite no longer works/.test(e.message) && /burnt/.test(String(e.note)));
   assert.throws(() => invites.redeemInvite(s, b.secret, { machine: mid('m'), pin: b.pin, now: t0 }), (e: RoomError) => /this invite no longer works/.test(e.message), 'burnt, said so');
 
   // 15 minutes: an expired invite burns, PIN or not
@@ -227,7 +237,7 @@ test('auth: an sh2 invite with a PIN (a promote\'s, handed out by hand) carries 
   const d = mint();
   assert.throws(() => invites.redeemInvite(s, d.secret, { machine: mid('other'), pin: d.pin, now: t0 }), (e: RoomError) => /another machine/.test(e.message));
   const dl = invites.redeemInvite(s, d.secret, { machine: mid('m'), pin: d.pin, now: t0 });
-  assert.deepEqual(hostLinks.revokeLink(s, dl.link.id)!.link!.id, dl.link.id);
+  assert.deepEqual(must(must(hostLinks.revokeLink(s, dl.link.id)).link).id, dl.link.id);
   assert.equal(hostLinks.verifyToken(s, dl.token), null, 'the token is dead');
   assert.equal(hostLinks.revokeLink(s, dl.link.id), null, 'nothing left to revoke');
 });
@@ -242,7 +252,7 @@ test('auth: a seat proof is signed by the seat key for this room, name and key, 
   const refused: [SignedPayload | undefined, typeof seat][] = [
     [proof, { ...seat, room: rc('vole-1234') }], [proof, { ...seat, name: 'bob' }],
     [hostLinks.proveSeat(other.privateKey, seat), seat], // signed by a key that is not pubkey
-    [{ ...proof, ts: proof.ts! - 2 * 60 * 60 * 1000 }, seat], [undefined, seat],
+    [{ ...proof, ts: must(proof.ts) - 2 * 60 * 60 * 1000 }, seat], [undefined, seat],
   ];
   for (const [p, s] of refused) assert.throws(() => hostLinks.checkSeatProof(p, s), (e: RoomError) => e.code === 'AUTH');
 });

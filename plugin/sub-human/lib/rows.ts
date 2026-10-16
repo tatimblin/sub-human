@@ -75,11 +75,12 @@ import type { Identity } from './identity.ts';
 // the row agents' types are mod/core/rows.ts's (the module's row hooks read them too)
 import { PARTICIPANT, ROOM_AGENT } from '../mod/core/rows.ts';
 import type { RoomCode, SeatName } from './brand.ts';
+import type * as ProposalMod from './proposal.ts';
 
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 // lib/proposal.ts loads the consent reducer: only a row that names a pending proposal's title needs it (the status
 // line runs every 5 s and draws most rows without one)
-const proposalLib = (): typeof import('./proposal.ts') => require('./proposal.ts');
+const proposalLib = (): typeof ProposalMod => require('./proposal.ts');
 
 /** members as callers hand them over: readMembers(code) (by name) or a list. */
 type MemberInput = Members | Member[] | null | undefined;
@@ -237,8 +238,8 @@ function joinNote(me: Me | null | undefined, name: string | null | undefined, { 
 
 /** Rows this seat should have but `held` (readHolds) shows no live hold for. Room Claude: names; member: [code]. */
 function rowsNeeded(code: RoomCode, me: Pick<Identity, 'name' | 'role'>, { members, held = null }: { members?: MemberInput, held?: Holds | null } = {}): string[] {
-  const ms = memberList(members || readMembers(code));
-  const h: Pick<Holds, 'members' | 'room'> = held || { members: [], room: false };
+  const ms = memberList(members ?? readMembers(code));
+  const h: Pick<Holds, 'members' | 'room'> = held ?? { members: [], room: false };
   if (me.role === 'claude') {
     return ms.filter(m => isActive(m) && !isRoomClaude(m) && m.name !== me.name && !h.members.includes(m.name)).map(m => m.name);
   }
@@ -262,7 +263,7 @@ function parseSpawn(input: unknown, members: MemberInput, code?: string | null):
   }
   if (type === ROOM_AGENT || type === 'room') {
     for (const f of fields) {
-      const name = (/\broom:\s*([a-z]+-\d{4})/.exec(f) || /^([a-z]+-\d{4})$/.exec(f))?.[1];
+      const name = (/\broom:\s*([a-z]+-\d{4})/.exec(f) ?? /^([a-z]+-\d{4})$/.exec(f))?.[1];
       if (name !== undefined) return { kind: 'room', name };
     }
     return code ? { kind: 'room', name: code } : null;
@@ -353,7 +354,7 @@ function writeHolds(code: RoomCode, name: SeatName, { members = [], room = false
  */
 function readHolds(code: RoomCode, name: SeatName, now: number = Date.now()): Holds | null {
   let h: Holds | null = null; // as writeHolds wrote it (members is checked: an older writer)
-  try { h = session.get(storeOf(code), name, 'holds') || null; } catch { h = null; }
+  try { h = session.get(storeOf(code), name, 'holds') ?? null; } catch { h = null; }
   if (!h || !isAlive(h.pid) || now - Date.parse(h.at) > HOLDS_STALE_MS) return null;
   const members = Array.isArray(h.members) ? h.members : [];
   return { ...h, members, room: !!h.room || (!!h.roomUntil && now < Date.parse(h.roomUntil)) };
@@ -361,8 +362,8 @@ function readHolds(code: RoomCode, name: SeatName, now: number = Date.now()): Ho
 
 /** Rows this seat should have but holds nothing for. Room Claude: members. Member: the room row ([code]). */
 function missingRows(code: RoomCode, me: Pick<Identity, 'name' | 'role'>, { now = Date.now(), members }: { now?: number, members?: MemberInput } = {}): string[] {
-  const ms = memberList(members || readMembers(code));
-  const h: Pick<Holds, 'members' | 'room'> = readHolds(code, me.name, now) || { members: [], room: false };
+  const ms = memberList(members ?? readMembers(code));
+  const h: Pick<Holds, 'members' | 'room'> = readHolds(code, me.name, now) ?? { members: [], room: false };
   const old = (m: Member) => !m.joined_at || now - Date.parse(m.joined_at) > MISSING_GRACE_MS;
   if (me.role === 'claude') {
     return ms.filter(m => isActive(m) && !isRoomClaude(m) && m.name !== me.name && old(m) && !h.members.includes(m.name)).map(m => m.name);
@@ -423,7 +424,7 @@ const awaiting = (ps: RowProposal[], name: string) => ps.filter(p => !p.decided 
 /** The proposal a row reports for `name`: the newest unretired one that names them, else the newest unretired one. */
 function latestFor(ps: RowProposal[], name: string): RowProposal | null {
   const live = ps.filter(p => !p.superseded);
-  return live.filter(p => p.approvers.includes(name)).at(-1) || live.at(-1) || null;
+  return live.filter(p => p.approvers.includes(name)).at(-1) ?? live.at(-1) ?? null;
 }
 
 // ---------- tasks (lib/tasks.ts: the mirror of the room Claude's native list) ----------
@@ -432,7 +433,7 @@ const taskSummary = (code: RoomCode, viewer: string | null | undefined) => oneLi
 function openTask(list: (Task | null | undefined)[], name: string): Task | null {
   const mine = list.filter((t): t is Task => !!t && t.owner === name && t.status !== 'completed' && t.status !== 'deleted'
     && !(t.metadata && t.metadata._internal));
-  return mine.find(t => t.status === 'in_progress') || mine[0] || null;
+  return mine.find(t => t.status === 'in_progress') ?? mine[0] ?? null;
 }
 
 function presenceOf(code: RoomCode, name: SeatName, es: readonly Readonly<Entry>[], now: number): string | null {
@@ -515,7 +516,7 @@ function roomText({ code, viewer, es, ms, now, c }: RowCtx, summary: string, lin
     else if (v && v.kind === 'objection') parts.push(c.warn('✖ objected'));
     else parts.push(`proposal ${p.name} ${n}`);
     // another person's objections: the viewer's own (from any of their seats) is the "✖ objected" above
-    const others = p.objectors.filter(x => x !== viewer && !(p.also[x] || []).includes(String(viewer)));
+    const others = p.objectors.filter(x => x !== viewer && !(p.also[x] ?? []).includes(String(viewer)));
     if (!p.decided && others.length) parts.push(c.warn(`✖ ${plural(others.length, 'objection')}`));
   } else if (!linkState.stoppedForGood(link)) { // stopped (a kick, the room closed): this copy's count is stale
     parts.push(c.dim(`${ms.filter(m => isActive(m) && !isRoomClaude(m)).length} here`));
@@ -540,7 +541,7 @@ function roomText({ code, viewer, es, ms, now, c }: RowCtx, summary: string, lin
  */
 function rowText(code: RoomCode, { member, viewer, ...opts }: RowFor = {}): string {
   const now = opts.now || Date.now();
-  const ctx: RowCtx = { code, viewer, es: opts.entries || readLog(code), ms: memberList(opts.members || readMembers(code)), now, c: paint(!!opts.color) };
+  const ctx: RowCtx = { code, viewer, es: opts.entries ?? readLog(code), ms: memberList(opts.members ?? readMembers(code)), now, c: paint(!!opts.color) };
   if (member == null) {
     const summary = opts.taskSummary != null ? oneLine(opts.taskSummary) : taskSummary(code, viewer);
     const link = opts.link !== undefined ? opts.link : (code ? linkState.read(code) : null);

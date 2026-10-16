@@ -46,13 +46,15 @@ import { FsRoomStore } from './fs-store.ts';
 import { NO_TRUST } from './trust.ts';
 import type { Entry, HumanTrust, RoomStore } from './types.ts';
 import type { RoomCode } from '../brand.ts';
+import type * as LinksMod from './links.ts';
+import type * as StoreMirrorMod from './store-mirror.ts';
 
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 let backend: ((code: RoomCode) => RoomStore) | null = null; // tests: code -> RoomStore
 const stores = new Map<string, RoomStore>(); // home \0 code -> FsRoomStore | MirrorRoomStore
 /** A room hosted elsewhere: the link registry knows it (required here, not at load: links.ts reads this module's rooms). */
-const linked = (c: string): boolean => (require('./links.ts') as typeof import('./links.ts')).has(c);
+const linked = (c: string): boolean => require<typeof LinksMod>('./links.ts').has(c);
 
 function open(c: RoomCode, { dir }: { dir?: string | undefined } = {}): RoomStore {
   if (backend) return backend(c);
@@ -61,7 +63,7 @@ function open(c: RoomCode, { dir }: { dir?: string | undefined } = {}): RoomStor
   let s = stores.get(k);
   if (!s || s.isHost === linked(c)) { // none yet, or a handoff wrote or removed the link since
     repairModes(); // a home an older version made 0755 (once per home and process)
-    const mirror: typeof import('./store-mirror.ts') | null = linked(c) ? require('./store-mirror.ts') : null;
+    const mirror: typeof StoreMirrorMod | null = linked(c) ? require('./store-mirror.ts') : null;
     s = mirror ? new mirror.MirrorRoomStore(c) : new FsRoomStore(c);
     stores.set(k, s);
   }
@@ -113,7 +115,7 @@ function indexedRooms(): RoomCode[] {
   return Object.keys(cur ? cur.rooms : updateIndex(() => false)).filter(isRoomCode).sort();
 }
 function indexRoom(c: RoomCode): void {
-  if (!isRoomCode(c) || (readIndex()?.rooms || {})[c]) return;
+  if (!isRoomCode(c) || (readIndex()?.rooms ?? {})[c]) return;
   updateIndex(rooms => { if (rooms[c]) return false; rooms[c] = new Date().toISOString(); return true; });
 }
 function unindexRooms(codes: readonly RoomCode[]): void {

@@ -46,11 +46,13 @@ import type {
   Payload, Placed, PlaceOpts, ReadViewOpts, RoomStore, SnapshotWire, Tailer, TailerFs, Trust, TrustCtx,
 } from './types.ts';
 import type { RoomCode, EntryId } from '../brand.ts';
+import type * as WatchMod from './watch.ts';
+import type * as LinksMod from './links.ts';
 
 const fs = nodeFs;
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 /** lib/room/watch.ts: only the host's streams watch a room (lib/remote/server.ts), never a hook or the status line. */
-const roomWatch = (): typeof import('./watch.ts') => require('./watch.ts');
+const roomWatch = (): typeof WatchMod => require('./watch.ts');
 const MOVED = 'log.moved';
 /** The kv document that says the room heard its log is waiting on older sessions (heldOnce); gone at the next rotation. */
 const ROTATION_HELD = 'log/rotation-held';
@@ -134,7 +136,7 @@ class FsRoomStore implements RoomStore {
    */
   _mustExist(): void {
     if (this._dir || fs.existsSync(this.dir)) return;
-    if ((require('./links.ts') as typeof import('./links.ts')).has(this.code)) return;
+    if (require<typeof LinksMod>('./links.ts').has(this.code)) return;
     throw new RoomError('NO_ROOM', `no room ${this.code} on this machine`);
   }
   /** the active segment (tests write around the store through it) */
@@ -297,8 +299,7 @@ class FsRoomStore implements RoomStore {
     const v = readJsonRaw(this._kvFile(key));
     return v === undefined ? fallback : v as T; // a document of this home's own code: its reader checks it (KvApi)
   }
-  // any: a kv document is JSON from disk (KvApi)
-  _kvUpdate<T = any>(key: string, fn: (current: T | null) => T | null | undefined, { compact = false, timeoutMs, staleMs }: KvUpdateOpts = {}): T | null | undefined {
+  _kvUpdate<T = unknown>(key: string, fn: (current: T | null) => T | null | undefined, { compact = false, timeoutMs, staleMs }: KvUpdateOpts = {}): T | null | undefined {
     const file = this._kvFile(key);
     this._mustExist();
     const lockOpts: LockOpts = {};

@@ -30,7 +30,7 @@ const READ_DOCTOR = /^\s*(?:[\w./~-]*\/)?sub-human\s+doctor(?:\s+(?:--quick|--js
 const DOCTOR_WRITES = /(?:^|[\s;&|(`'"/])sub-human\s+doctor\b[^;&|\n]*--(?:fix|bundle)(?![\w-])/;
 const ENV_NAMES = /\bSUB_HUMAN_HOME\b/;
 /** Claude Code's prompt history, by name (before the hello says where Claude Code's directory is). */
-const HISTORY = /(?:^|[\/\s'"])\.claude\/history\.jsonl\b/;
+const HISTORY = /(?:^|[/\s'"])\.claude\/history\.jsonl\b/;
 /** The CLI commands a person runs in their own shell: an invite, letting a machine in or out, the link daemon, the room server, the room's options, moving the room's host, the web listener. */
 const PERSON_CLI = /(?:^|[\s;&|(`'"/])sub-human\s+(?:invite|admit|kick|prime|listen|link|serve|options|handoff|promote|demote)(?![\w-])/;
 /** The host's serve shim asked to link a machine over an ssh login (`ssh you@host H/bin/serve --stdio CODE --link ID --login`),

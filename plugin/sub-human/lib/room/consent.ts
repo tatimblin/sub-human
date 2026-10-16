@@ -73,8 +73,10 @@ const titleOf = (e: Pick<Entry, 'text'>): string => { const m = /^proposal [0-9a
 const MEMO_SLOTS = 4;
 const memo = new WeakMap<Trust, { n: number; first: unknown; last: unknown; f: Fold }[]>();
 
+const isEntries = (v: Entries | null | undefined): v is Entries => Array.isArray(v);
+
 function fold(entries: Entries | null | undefined, trust: Trust): Fold {
-  const list = Array.isArray(entries) ? entries : [];
+  const list = isEntries(entries) ? entries : [];
   const n = list.length, first = n ? list[0] : null, last = n ? list[n - 1] : null;
   let slots = memo.get(trust);
   if (!slots) memo.set(trust, slots = []);
@@ -137,12 +139,12 @@ function compute(list: Entries, trust: Trust): Fold {
         if (e.via !== 'human' || typeof e.from !== 'string' || trust(raw) === 'unverified') break;
         const mark = (a: Stance | null) => {
           let marks = latest.get(h);
-          if (!marks) latest.set(h, marks = new Map());
+          if (!marks) latest.set(h, marks = new Map<string, { at: number; a: Stance | null }>());
           marks.set(e.from, { at: ++seq, a });
         };
         if (e.kind !== 'revoke') {
           let byName = answers.get(h);
-          if (!byName) answers.set(h, byName = new Map());
+          if (!byName) answers.set(h, byName = new Map<string, Stance>());
           const a: Stance = { kind: e.kind, id: e.id, entry: e };
           byName.set(e.from, a);
           mark(a);
@@ -160,9 +162,9 @@ function compute(list: Entries, trust: Trust): Fold {
     }
   }
 
-  const ownAnswer = (hash: string, name: string): Stance | null => { const m = answers.get(hash); return (m && m.get(name)) || null; };
+  const ownAnswer = (hash: string, name: string): Stance | null => { const m = answers.get(hash); return (m && m.get(name)) ?? null; };
   /** The seats of name's person on hash: its same group, else name alone. */
-  const groupOf = (groups: string[][], name: string): string[] => groups.find(g => g.includes(name)) || [name];
+  const groupOf = (groups: string[][], name: string): string[] => groups.find(g => g.includes(name)) ?? [name];
   /** The answer that counts for a person's seats: the newest answer or revoke of any of them. */
   function current(hash: string, seats: string[]): Stance | null {
     const m = latest.get(hash);
@@ -207,7 +209,7 @@ function compute(list: Entries, trust: Trust): Fold {
     const p = proposals.get(hash);
     if (!p) return null;
     const m = matrix(hash);
-    const d = decisions.get(hash) || null;
+    const d = decisions.get(hash) ?? null;
     return { proposal: p, decision: d, matrix: m, state: !d ? (superseded.has(hash) ? 'superseded' : 'open') : m.objected.length ? 'blocked' : 'agreed' };
   }
 
@@ -220,12 +222,12 @@ const proposal = (hash: string | undefined, entries: Entries, trust: Trust): Pro
   return p ? p.entry : null;
 };
 const proposals = (entries: Entries, trust: Trust): ProposalEntry[] => [...fold(entries, trust).proposals.values()].map(p => p.entry);
-const approversOf = (p: { approvers?: unknown } | null | undefined): string[] => (p && Array.isArray(p.approvers) ? p.approvers : []);
+const approversOf = (p: { approvers?: unknown } | null | undefined): string[] => (p && Array.isArray(p.approvers) ? p.approvers as string[] : []); // a proposal entry's, as its writer gave them
 function answers(hash: string, approvers: string[] | null | undefined, entries: Entries, trust: Trust): { hash: string; signed: Record<string, number | null>; missing: string[]; complete: boolean } {
   const m = fold(entries, trust).matrix(hash, Array.isArray(approvers) ? approvers : undefined);
   return { hash, signed: m.signed, missing: m.unsigned, complete: !!hash && m.approvers.length > 0 && m.unsigned.length === 0 };
 }
 const answered = (name: string, hash: string, entries: Entries, trust: Trust): Entry | null => fold(entries, trust).answerOf(hash, name)?.entry ?? null;
-const decided = (hash: string | undefined, entries: Entries, trust: Trust): Entry | null => (hash === undefined ? null : fold(entries, trust).decisions.get(hash) || null);
+const decided = (hash: string | undefined, entries: Entries, trust: Trust): Entry | null => (hash === undefined ? null : fold(entries, trust).decisions.get(hash) ?? null);
 
 export { fold, groupsOf, titleOf, proposal, proposals, answers, answered, decided, approversOf };

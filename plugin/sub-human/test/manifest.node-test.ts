@@ -11,6 +11,7 @@ import * as cc from '../lib/cc/env.ts';
 import * as config from '../lib/config.ts';
 import { SHIM_TIMEOUT_MS } from '../mod/core/shim.ts';
 import type { ToolDefinition } from '../mcp/types.ts';
+import { must } from './support/must.ts';
 
 /** hooks/hooks.json, as these lints read it. */
 interface HookCommand { type: string; command: string; timeout: number; async?: boolean; asyncRewake?: boolean }
@@ -23,8 +24,13 @@ interface McpJson { mcpServers: Record<string, { command: string; args?: string[
 interface RpcReply { id: number; result: { tools: ToolDefinition[]; protocolVersion: string; serverInfo: { version: string } } }
 
 const PLUGIN = h.PLUGIN;
-const readJson = <T>(rel: string): T => JSON.parse(fs.readFileSync(path.join(PLUGIN, rel), 'utf8'));
+/** JSON text as the type these lints read it as. */
+const parse = <T,>(text: string): T => JSON.parse(text) as T;
+const readJson = <T,>(rel: string): T => parse<T>(fs.readFileSync(path.join(PLUGIN, rel), 'utf8'));
 const hooks = readJson<HooksJson>('hooks/hooks.json').hooks;
+/** An event's hook groups, and the command of its first hook. */
+const groups = (event: string) => must(hooks[event], event);
+const firstCommand = (event: string) => must(must(groups(event)[0]).hooks[0], event).command;
 const TOOL_EVENTS = new Set(['PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PermissionRequest', 'PermissionDenied']);
 
 function* allHooks() {
@@ -62,7 +68,7 @@ function alternatives(re: string) {
 }
 
 test('hooks.json: the join with no node on PATH, or one older than 24.3, says what to do (exit 2, its stderr shown); with node it runs the hook', () => {
-  const join = [...allHooks()].find(x => x.event === 'UserPromptExpansion')!.hook.command;
+  const join = must([...allHooks()].find(x => x.event === 'UserPromptExpansion')).hook.command;
   const bare = spawnSync('/bin/sh', ['-c', join], { env: { PATH: '/nonexistent', CLAUDE_PLUGIN_ROOT: PLUGIN }, encoding: 'utf8' });
   assert.equal(bare.status, 2);
   assert.match(bare.stderr, /^sub-human needs Node 24\.3 or newer on the PATH .*found none \(node: command not found\)\..*restart claude from a shell where node -v works\.\n$/);
@@ -91,13 +97,13 @@ test('hooks.json: every command runs node on a script that exists in the plugin 
     assert.ok(hook.command.replace(check, '').startsWith(PRELOAD), `${event}: ${hook.command}`);
     assert.match(hook.command.replace(check, '').slice(PRELOAD.length), /^"\$\{CLAUDE_PLUGIN_ROOT\}\/hooks\/run\.ts" [a-z-]+$/, `${event}: ${hook.command}`);
     const rel = scriptOf(hook.command);
-    assert.ok(fs.existsSync(path.join(PLUGIN, rel!)), `${event}: ${rel} is missing`);
+    assert.ok(fs.existsSync(path.join(PLUGIN, must(rel))), `${event}: ${rel} is missing`);
   }
 });
 
 test('every ${CLAUDE_PLUGIN_ROOT}/ path in hooks.json and .mcp.json, and every module, exists (validate does not check them)', () => {
   const paths: string[] = [];
-  const collect = (s: unknown) => { for (const m of String(s).matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}\/([^"'\s]+)/g)) paths.push(m[1]); };
+  const collect = (s: unknown) => { for (const m of String(s).matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}\/([^"'\s]+)/g)) paths.push(must(m[1])); };
   for (const { hook } of allHooks()) collect(hook.command);
   for (const srv of Object.values(readJson<McpJson>('.mcp.json').mcpServers)) { collect(srv.command); (srv.args || []).forEach(collect); }
   assert.ok(paths.includes('mcp/room-server.ts') && paths.includes('hooks/compile-cache.js') && paths.includes('hooks/run.ts'), paths.join(' '));
@@ -118,17 +124,17 @@ test('hooks.json: every matcher is an exact-name list or an anchored regex (bina
 
 test('hooks.json: only the /sub-human expansion, SessionEnd and the EnterPlanMode mode note are command hooks; everything else is the module\'s', () => {
   assert.deepEqual(Object.keys(hooks).sort(), ['PreToolUse', 'SessionEnd', 'UserPromptExpansion']);
-  assert.deepEqual(hooks.PreToolUse.map(x => x.matcher), ['EnterPlanMode']);
+  assert.deepEqual(groups('PreToolUse').map(x => x.matcher), ['EnterPlanMode']);
   assert.ok(!fs.existsSync(path.join(PLUGIN, 'hooks', 'guard.ts')), 'the store guard is mod/guard.ts');
   assert.deepEqual(readJson<HooksJson>('hooks/hooks.json').modules, ['../mod/register.ts']);
   const m = (x: string, name: string) => cc.matcherMatches(x, name);
-  const upe = hooks.UserPromptExpansion[0].matcher!;
+  const upe = must(must(groups('UserPromptExpansion')[0]).matcher);
   for (const t of ['sub-human', 'sub-human:sub-human']) assert.ok(m(upe, t), t);
   for (const t of ['sub-humans', 'x:sub-human', 'sub-human:sub-human:x']) assert.ok(!m(upe, t), t);
 });
 
 test('hooks.json: SessionEnd starts node only for a session with a lease, a session index or a seat by pid (or no session id)', () => {
-  const end = hooks.SessionEnd[0].hooks[0].command;
+  const end = firstCommand('SessionEnd');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-end-'));
   const bin = path.join(tmp, 'bin'), log = path.join(tmp, 'ran'), home = path.join(tmp, 'home');
   fs.mkdirSync(bin);
@@ -163,7 +169,7 @@ test('hooks.json: every blocking hook has a timeout (<= 10 s, row-rewake aside);
     if (!hook.async && !hook.asyncRewake) assert.ok(hook.timeout <= 10, `${event} ${scriptOf(hook.command)}: ${hook.timeout}s`);
     assert.ok(hook.timeout <= 60, 'Claude Code caps hook budgets at 60 s');
   }
-  for (const g of hooks.SessionEnd) for (const hk of g.hooks) assert.ok(hk.timeout >= 3, `SessionEnd gets 1.5 s unless timeout is set (got ${hk.timeout})`);
+  for (const g of groups('SessionEnd')) for (const hk of g.hooks) assert.ok(hk.timeout >= 3, `SessionEnd gets 1.5 s unless timeout is set (got ${hk.timeout})`);
 });
 
 test('budgets: the join\'s waits fit its hook timeout, and every lock gives up before the hook it runs in is killed', () => {
@@ -198,7 +204,7 @@ function frontmatter(file: string) {
   const t = fs.readFileSync(file, 'utf8');
   const m = /^---\n([\s\S]*?)\n---\n/.exec(t);
   assert.ok(m, `${file}: frontmatter`);
-  return m[1];
+  return must(m[1]);
 }
 
 test('agents: no model key; Agent(...) restrictions name agents that exist', () => {
@@ -209,9 +215,9 @@ test('agents: no model key; Agent(...) restrictions name agents that exist', () 
     assert.doesNotMatch(fm, /^model:/m, `${f} prescribes a model`);
     const tools = /^tools: (.*)$/m.exec(fm);
     if (!tools) continue;
-    assert.doesNotMatch(tools[1], /(^|,\s*)Agent(\s*,|$)/, `${f}: a bare Agent lets it spawn any type`);
-    for (const [, types] of tools[1].matchAll(/Agent\(([^)]*)\)/g)) {
-      for (const t of types.split(',').map(s => s.trim())) assert.ok(names.has(t) || t === 'general-purpose', `${f}: unknown agent type ${t}`);
+    assert.doesNotMatch(must(tools[1]), /(^|,\s*)Agent(\s*,|$)/, `${f}: a bare Agent lets it spawn any type`);
+    for (const [, types] of must(tools[1]).matchAll(/Agent\(([^)]*)\)/g)) {
+      for (const t of must(types).split(',').map(s => s.trim())) assert.ok(names.has(t) || t === 'general-purpose', `${f}: unknown agent type ${t}`);
     }
   }
   assert.match(frontmatter(path.join(dir, 'room.md')), /^tools: Agent\(sub-human:participant\), mcp__plugin_sub-human_room__hold$/m);
@@ -231,7 +237,7 @@ test('manifests: plugin.json carries the version; the marketplace entry does not
   assert.match(p.version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?$/, 'X.Y.Z, or a pre-release such as 0.5.0-beta.1');
   assert.ok(Array.isArray(p.keywords) && p.keywords.length);
   assert.notEqual(p.license, 'UNLICENSED', 'not an SPDX id');
-  const mk: { plugins: { name: string; version?: string }[] } = JSON.parse(fs.readFileSync(path.join(PLUGIN, '..', '..', '.claude-plugin', 'marketplace.json'), 'utf8'));
+  const mk = parse<{ plugins: { name: string; version?: string }[] }>(fs.readFileSync(path.join(PLUGIN, '..', '..', '.claude-plugin', 'marketplace.json'), 'utf8'));
   const entry = mk.plugins.find(x => x.name === 'sub-human');
   assert.ok(entry && entry.version === undefined, 'plugin.json wins at install; keep one version');
 });
@@ -247,7 +253,7 @@ function rpc(msgs: [string, unknown][]) {
       buf += d;
       let nl;
       while ((nl = buf.indexOf('\n')) >= 0) {
-        const m: RpcReply = JSON.parse(buf.slice(0, nl));
+        const m = parse<RpcReply>(buf.slice(0, nl));
         buf = buf.slice(nl + 1);
         if (m.id != null) out.set(m.id, m);
         if (out.size === msgs.length) { clearTimeout(timer); child.kill(); resolve(out); }
@@ -259,22 +265,23 @@ function rpc(msgs: [string, unknown][]) {
 
 test('mcp: every tool has a description, documented properties, additionalProperties:false and annotations', async () => {
   const r = await rpc([['initialize', { protocolVersion: '2025-06-18', capabilities: {} }], ['tools/list', {}]]);
-  const tools = r.get(2)!.result.tools;
+  const tools = must(r.get(2)).result.tools;
   assert.deepEqual(tools.map(t => t.name).sort(), ['hold', 'post', 'propose', 'read', 'task']);
   for (const t of tools) {
     assert.ok(typeof t.description === 'string' && t.description.length >= 60, `${t.name}: description`);
     assert.equal(t.inputSchema.type, 'object');
     assert.equal(t.inputSchema.additionalProperties, false, `${t.name}: additionalProperties`);
-    for (const [k, v] of Object.entries(t.inputSchema.properties!)) assert.ok(v.description, `${t.name}.${k}: description`);
+    for (const [k, v] of Object.entries(must(t.inputSchema.properties))) assert.ok(v.description, `${t.name}.${k}: description`);
     assert.ok(t.annotations, `${t.name}: annotations`);
     assert.equal(t.annotations.openWorldHint, false);
   }
   const by = Object.fromEntries(tools.map(t => [t.name, t]));
-  assert.equal(by.read.annotations!.readOnlyHint, true);
-  assert.equal(by.hold.annotations!.readOnlyHint, true);
+  const ann = (n: string) => must(must(by[n], n).annotations, `${n}: annotations`);
+  assert.equal(ann('read').readOnlyHint, true);
+  assert.equal(ann('hold').readOnlyHint, true);
   for (const n of ['post', 'propose', 'task']) {
-    assert.equal(by[n].annotations!.readOnlyHint, false);
-    assert.equal(by[n].annotations!.destructiveHint, false);
+    assert.equal(ann(n).readOnlyHint, false);
+    assert.equal(ann(n).destructiveHint, false);
   }
 });
 
@@ -285,16 +292,16 @@ test('mcp initialize: negotiates the protocol version; serverInfo.version is the
     ['initialize', { protocolVersion: '1999-01-01', capabilities: {} }],
     ['initialize', { capabilities: {} }],
   ]);
-  assert.equal(r.get(1)!.result.protocolVersion, '2025-03-26');
-  const latest = r.get(2)!.result.protocolVersion;
+  assert.equal(must(r.get(1)).result.protocolVersion, '2025-03-26');
+  const latest = must(r.get(2)).result.protocolVersion;
   assert.match(latest, /^\d{4}-\d{2}-\d{2}$/);
   assert.notEqual(latest, '1999-01-01');
-  assert.equal(r.get(3)!.result.protocolVersion, latest);
-  for (const i of [1, 2, 3]) assert.equal(r.get(i)!.result.serverInfo.version, version);
+  assert.equal(must(r.get(3)).result.protocolVersion, latest);
+  for (const i of [1, 2, 3]) assert.equal(must(r.get(i)).result.serverInfo.version, version);
 });
 
 test('hooks.json: the EnterPlanMode note (item 7 H) writes the call\'s permission_mode for a session with a seat index, and nothing for any other', () => {
-  const note = hooks.PreToolUse[0].hooks[0].command;
+  const note = firstCommand('PreToolUse');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-mode-'));
   const home = path.join(tmp, 'home');
   const run = (sid: string, input: string) => {

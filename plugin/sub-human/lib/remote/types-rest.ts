@@ -6,6 +6,8 @@
 
 import type { MessagePort } from 'node:worker_threads';
 import type { DecodedFrame, WireCode } from './types-core.ts';
+import type * as BrandMod from '../brand.ts';
+import type * as NoiseMod from './noise.ts';
 
 // ---------- frames and transports ----------
 /** One connection's frames (./transports/index.ts documents it). */
@@ -30,8 +32,8 @@ export interface LineTransport {
 /** What a kind is opened with: the room the link daemon connects to, if any, and the link's own Noise key (a web link
  * made under protocol 3: XK proves it). */
 export interface OpenCtx {
-  code?: import('../brand.ts').RoomCode;
-  clientKey?: import('./noise.ts').KeyPair;
+  code?: BrandMod.RoomCode;
+  clientKey?: NoiseMod.KeyPair;
 }
 
 /** A transport spec: its kind, and what that kind needs. */

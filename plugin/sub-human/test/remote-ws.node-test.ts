@@ -17,6 +17,7 @@ import * as h from './helpers.ts';
 import * as ws from '../lib/remote/ws.ts';
 import { isAlive } from '../lib/io.ts';
 import { rc, sn, mid } from './support/brands.ts';
+import { must } from './support/must.ts';
 
 /** The next `ev` from an emitter: its listener's arguments (A: what that event carries). */
 const once = <A extends unknown[] = unknown[]>(em: EventEmitter, ev: string) => new Promise<A>(r => em.once(ev, (...a: unknown[]) => r(a as A)));
@@ -43,7 +44,7 @@ test('ws server: interop with Node\'s built-in WebSocket client (text, binary, c
   c.binaryType = 'arraybuffer';
   await new Promise((ok, no) => { c.onopen = ok; c.onerror = no; });
   const got: (string | ArrayBuffer)[] = [];
-  c.onmessage = e => got.push(e.data);
+  c.onmessage = e => got.push(e.data as string | ArrayBuffer);
   c.send('hello');
   const big = crypto.randomBytes(70_000);
   c.send(big);
@@ -58,7 +59,7 @@ test('ws server: interop with Node\'s built-in WebSocket client (text, binary, c
 });
 
 test('ws server: Node\'s client closing with a code reaches the server', async t => {
-  let closed!: (v: Closed) => void;
+  let closed: (v: Closed) => void;
   const done = new Promise<Closed>(r => { closed = r; });
   const srv = await ws.createServer({ port: 0, onConnection: c => c.on('close', (code, reason) => closed([code, reason])) });
   t.after(() => srv.close());
@@ -88,7 +89,7 @@ test('ws client <-> ws server: text, binary, ping/pong, close handshake', async 
 });
 
 test('ws server: an upgrade the accept hook refuses is answered before any 101; a plain GET is 426', async t => {
-  const { port } = await echoServer(t, { accept: req => (req.url!.startsWith('/ok') ? true : 404) });
+  const { port } = await echoServer(t, { accept: req => (must(req.url).startsWith('/ok') ? true : 404) });
   await assert.rejects(ws.connect(`ws://127.0.0.1:${port}/nope`), /404/);
   const r = await fetch(`http://127.0.0.1:${port}/ok`);
   assert.equal(r.status, 426);
@@ -105,7 +106,7 @@ async function rawServer(t: TestContext, onSock: (sock: net.Socket) => void) {
       const i = buf.indexOf('\r\n\r\n');
       if (i < 0) return;
       sock.off('data', onData);
-      const key = /sec-websocket-key: (\S+)/i.exec(buf)![1];
+      const key = must(/sec-websocket-key: (\S+)/i.exec(buf))[1];
       sock.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${ws.acceptKey(key)}\r\n\r\n`);
       onSock(sock);
     };
@@ -127,7 +128,7 @@ test('ws client: a fragmented message with a ping in between is reassembled, and
       frame(0x00, Buffer.from('lo ')), // continuation
       frame(0x80, Buffer.from('wörld')), // final continuation
     ]));
-    sock.on('data', (d: Buffer) => { if ((d[0] & 0x0f) === 0x0a) gotPong = d; });
+    sock.on('data', (d: Buffer) => { if (((d[0] ?? 0) & 0x0f) === 0x0a) gotPong = d; });
   });
   const c = await ws.connect(`ws://127.0.0.1:${port}/`);
   const [d] = await once<Msg>(c, 'message');
@@ -184,7 +185,7 @@ test('ws client through an HTTP CONNECT proxy', async t => {
   const proxy = http.createServer((_q, s) => s.end());
   proxy.on('connect', (req, sock, head) => {
     seen.push(req.url);
-    const [hh, pp] = req.url!.split(':');
+    const [hh, pp] = must(req.url).split(':');
     const up = net.connect(Number(pp), hh, () => { sock.write('HTTP/1.1 200 Connection established\r\n\r\n'); up.write(head); up.pipe(sock).pipe(up); });
     up.on('error', () => sock.destroy());
     sock.on('error', () => up.destroy());
@@ -248,7 +249,7 @@ test('listener: it exits on its own once its home is gone (no listener left serv
   const child = spawn(process.execPath, [h.BIN, 'listen', '--port', '0'], { env, stdio: 'ignore' });
   t.after(() => { try { child.kill('SIGKILL'); } catch { /* gone */ } fs.rmSync(home, { recursive: true, force: true }); });
   const stateFile = path.join(home, 'listen', 'state.json');
-  const pid = await h.until(() => { try { return JSON.parse(fs.readFileSync(stateFile, 'utf8')).pid; } catch { return null; } }, 5000, 25);
+  const pid = await h.until(() => { try { return (JSON.parse(fs.readFileSync(stateFile, 'utf8')) as { pid: number }).pid; } catch { return null; } }, 5000, 25);
   assert.equal(pid, child.pid);
   fs.rmSync(home, { recursive: true, force: true });
   assert.ok(await h.until(() => !isAlive(child.pid) || child.exitCode !== null, 6000, 50), 'gone within the home check');
@@ -260,7 +261,7 @@ test('listener: one source holds at most 8 connections at once (the front\'s X-F
   const child = spawn(process.execPath, [h.BIN, 'listen', '--port', '0'], { env, stdio: 'ignore' });
   t.after(() => { try { child.kill('SIGKILL'); } catch { /* gone */ } fs.rmSync(home, { recursive: true, force: true }); });
   const stateFile = path.join(home, 'listen', 'state.json');
-  const port = await h.until(() => { try { return JSON.parse(fs.readFileSync(stateFile, 'utf8')).port; } catch { return null; } }, 5000, 25);
+  const port = await h.until(() => { try { return (JSON.parse(fs.readFileSync(stateFile, 'utf8')) as { port: number }).port; } catch { return null; } }, 5000, 25);
   const open = async (src: string) => {
     const c = await ws.connect(`ws://127.0.0.1:${port}/`, { headers: { 'x-forwarded-for': src }, timeoutMs: 3000 });
     let code: number | null = null;

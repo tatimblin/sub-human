@@ -46,10 +46,12 @@ import type { LinkSpec, SshSpec } from './types-rest.ts';
 import type { Outcome } from './hosting.ts';
 import { msgOf } from '../errors.ts';
 import type { RoomCode, SeatName, InviteSecret, Pin } from '../brand.ts';
+import type * as WsMod from './transports/ws.ts';
+import type * as SshMod from './transports/ssh.ts';
 
-const require = createRequire(import.meta.url);
-const wsT = (): typeof import('./transports/ws.ts') => require('./transports/ws.ts');
-const sshT = (): typeof import('./transports/ssh.ts') => require('./transports/ssh.ts');
+const require: <M>(id: string) => M = createRequire(import.meta.url);
+const wsT = (): typeof WsMod => require('./transports/ws.ts');
+const sshT = (): typeof SshMod => require('./transports/ssh.ts');
 
 /** The seat a command asks to take: code null for the one open room, else a new one. isDefault: the name was not
  * typed (a taken one says how to pick another). pending: a join the host let in. */
@@ -121,7 +123,7 @@ export function linkLine({ name, code, word, transport, sid }: { name: SeatName;
   if (identity.roomExists(code) && identity.isHost(code)) return refuse(`room ${code} is hosted on this machine; join it with /sub-human ${name} ${code}.`);
   const cur: Link | null = links.get(code);
   // a link that stopped as spent (kicked: its token gets nowhere now) is replaced by the new line, never re-seated over
-  const spent = !!cur && SPENT_REASONS.has(String((linkSocket.stopReason(linkSocket.status(code)) || {}).why || ''));
+  const spent = !!cur && SPENT_REASONS.has(String((linkSocket.stopReason(linkSocket.status(code)) ?? {}).why || ''));
   if (cur && cur.token && !spent && locatorOf(cur.transport) === locatorOf(transport)) {
     return say(`this machine is in room ${code} already; /sub-human ${name} ${code} takes your place there.`);
   }
@@ -140,7 +142,7 @@ export function linkLine({ name, code, word, transport, sid }: { name: SeatName;
 /** The invite joins this machine started that wait for their PIN (the host asked), this session's first, newest first. */
 export function pinJoin(sid?: string | null): PendingLink | null {
   const all = pendingJoins().filter(l => !!l.pin_wanted && typeof l.invite === 'string');
-  return all.find(l => !!sid && l.join_sid === sid) || all[0] || null;
+  return all.find(l => !!sid && l.join_sid === sid) ?? all[0] ?? null;
 }
 
 export function givePin(pin: Pin, sid?: string | null): JoinStep {
@@ -165,7 +167,7 @@ export function linkLogin({ dest: typed, code, via, home, name, isDefault }: {
   if (identity.roomExists(code) && identity.isHost(code)) return refuse(`room ${code} is hosted on this machine; join it with /sub-human ${name} ${code}.`);
   const cur: Link | null = links.get(code);
   const at = sshT().kind.describe(spec); // "ssh you@host … (your ssh login)"
-  const spent = (linkSocket.stopReason(linkSocket.status(code)) || {}).code === 'AUTH'; // kicked, or a host key changed: link anew
+  const spent = (linkSocket.stopReason(linkSocket.status(code)) ?? {}).code === 'AUTH'; // kicked, or a host key changed: link anew
   if (cur && cur.token && sameLogin(cur.transport, spec) && !spent) return take({ name, code, isDefault }); // linked this way already: just the seat
   const live = liveElsewhere(code, cur, spent);
   if (live) return live;
@@ -197,14 +199,14 @@ function pendingJoins(): PendingLink[] {
   return all.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
 }
 
-export const pendingJoin = (): PendingLink | null => pendingJoins()[0] || null;
+export const pendingJoin = (): PendingLink | null => pendingJoins()[0] ?? null;
 
 export function finishJoin(l: PendingLink): JoinStep {
   const code = l.code, name = l.join_as; // pendingJoin: a seat name
   const why = linkSocket.stopReason(linkSocket.status(code));
   if (l.pin_wanted && !l.token) return stands(code, name, { state: 'pin', ...(l.pin_wanted.message ? { reason: l.pin_wanted.message } : {}) });
   if (why && !l.token) {
-    try { const { join_as: _gone, join_sid: _sid, join_told: _told, join_renamed: _renamed, ...rest } = links.get(code) || l; links.set(code, rest); } catch { /* no credential left: nothing to keep */ }
+    try { const { join_as: _gone, join_sid: _sid, join_told: _told, join_renamed: _renamed, ...rest } = links.get(code) ?? l; links.set(code, rest); } catch { /* no credential left: nothing to keep */ }
     return refuse(`could not join room ${code}: ${why.reason}`);
   }
   if (l.token) return take({ name, code, pending: true });

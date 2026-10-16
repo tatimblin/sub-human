@@ -32,6 +32,7 @@ import * as seatKey from '../hooks/seat-key.ts';
 import { agentStatusline } from '../statusline/index.ts';
 import type { RoomCode } from '../lib/brand.ts';
 import { sn } from './support/brands.ts';
+import { must } from './support/must.ts';
 
 const N = Number(process.env.SUB_HUMAN_PERF_N) || 100_000;
 const RUNS = 15;
@@ -59,7 +60,7 @@ process.on('exit', () => { for (const p of sleepers) { try { p.kill('SIGKILL'); 
 const sleeper = () => { const p = spawn('sleep', ['600'], { stdio: 'ignore' }); p.unref(); sleepers.push(p); return p.pid; };
 
 const hash12 = (s: string) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 12);
-const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+const median = (xs: number[]): number => must([...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)], 'a median');
 function time(fn: () => unknown): number { const t = process.hrtime.bigint(); fn(); return Number(process.hrtime.bigint() - t) / 1e6; }
 
 /** A room with N entries; alice (this process) and bob seated, their keys pinned. */
@@ -81,15 +82,15 @@ function bigRoom(n = N): { code: RoomCode } {
     const at = new Date(start + id * 1000).toISOString();
     let p: Record<string, unknown>;
     if (id <= names.length) {
-      const n = names[id - 1];
+      const n = must(names[id - 1]);
       p = { from: n, via: 'system', kind: 'member_joined', to: 'room', text: `${n} joined`, pubkey: seatKey.publicPem(code, sn(n)) };
     } else if (id % 1000 === 0) {
       proposal = hash12(`p${id}`);
       p = { from: 'bob', via: 'agent', kind: 'proposal', to: 'room', text: `proposal ${proposal}: step ${id}`, hash: proposal, approvers: names };
     } else if (id % 1000 === 1 && proposal) {
-      p = envelope.sign({ from: 'alice', via: 'human', kind: 'signoff', to: 'room', proposal_hash: proposal }, keys.alice, { room: code, from: 'alice', now: start + id * 1000 });
+      p = envelope.sign({ from: 'alice', via: 'human', kind: 'signoff', to: 'room', proposal_hash: proposal }, must(keys.alice), { room: code, from: 'alice', now: start + id * 1000 });
     } else if (id % 100 === 0) {
-      p = envelope.sign({ from: 'bob', via: 'human', kind: 'say', to: 'room', text: `bob says ${id}` }, keys.bob, { room: code, from: 'bob', now: start + id * 1000 });
+      p = envelope.sign({ from: 'bob', via: 'human', kind: 'say', to: 'room', text: `bob says ${id}` }, must(keys.bob), { room: code, from: 'bob', now: start + id * 1000 });
     } else {
       p = { from: id % 2 ? 'alice' : 'bob', via: 'agent', kind: id % 7 ? 'say' : 'status', to: 'room', text: `note ${id} ${'x'.repeat(60)}` };
     }

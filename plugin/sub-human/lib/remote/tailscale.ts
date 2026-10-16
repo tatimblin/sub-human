@@ -217,7 +217,7 @@ function on({ bin: b, path: p, port, funnel = false, timeoutMs = serveMs() }: {
 }): TailscaleRec {
   const r = watchSync({ bin: b, args: serveArgs({ path: p, port, funnel }), timeoutMs });
   if (r.ok) return { bin: b, path: p, port: Number(port), https: 443, funnel };
-  const c = r.found || classify(r.text);
+  const c = r.found ?? classify(r.text);
   if (c && c.kind === 'enable') throw new RoomError('INVALID', notEnabled({ feature: c.feature, url: c.url, funnel }));
   if (c) throw notUp(c.kind, funnel);
   if (r.reason === 'timeout') throw new RoomError('INVALID', notEnabled({ funnel, waited: timeoutMs }));
@@ -255,5 +255,5 @@ export {
 if (import.meta.main && process.argv[2] === '--watch') {
   const a = decode(WATCH_ARGS, JSON.parse(process.argv[3] ?? 'null'));
   if (!a) process.exit(2); // watchSync's own argument: never
-  watch(a).then(r => { process.stdout.write(JSON.stringify(r) + '\n'); process.exit(0); });
+  void watch(a).then(r => { process.stdout.write(JSON.stringify(r) + '\n'); process.exit(0); }); // the child exits from its answer
 }

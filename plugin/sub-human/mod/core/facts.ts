@@ -33,7 +33,7 @@ export function factsBook(maxAgents = 64): FactsBook {
     /** A main-loop classic event's transcript path and mode (a subagent's, with agent_id, is its own loop's). */
     noteEvent(e: EventLike): void {
       if (!e || typeof e.session_id !== 'string' || e.agent_id !== undefined) return;
-      const cur = bySid.get(e.session_id) || {};
+      const cur = bySid.get(e.session_id) ?? {};
       const next: SessionFacts = { ...cur };
       if (typeof e.transcript_path === 'string' && e.transcript_path) next.transcript_path = e.transcript_path;
       if (typeof e.permission_mode === 'string' && e.permission_mode) next.permission_mode = e.permission_mode;

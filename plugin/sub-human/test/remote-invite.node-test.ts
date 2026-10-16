@@ -18,14 +18,16 @@ import * as links from '../lib/room/links.ts';
 import type { Invites } from '../lib/remote/types-core.ts';
 import type { SshSpec } from '../lib/remote/types-rest.ts';
 import { tokenOf } from './support/brands.ts';
+import { must } from './support/must.ts';
 
+const reason = (r: MachineRun) => must(must(r.json, 'a hook answer').reason, 'a reason');
 const hiddenBlock = (r: MachineRun) => r.json && r.json.decision === 'block' && r.json.hookSpecificOutput && r.json.hookSpecificOutput.suppressOriginalPrompt === true;
 
 function room(t: TestContext) {
   const host = new Machine(t, 'host'), remote = new Machine(t, 'remote');
   const alice = host.seat('alice'), bob = remote.seat('bob');
-  assert.equal(host.join(alice, 'alice').json!.decision, undefined);
-  const code = host.lib(() => store.listRooms()[0]);
+  assert.equal(must(host.join(alice, 'alice').json).decision, undefined);
+  const code = must(host.lib(() => store.listRooms()[0]), 'the room');
   return { host, remote, alice, bob, code };
 }
 
@@ -37,14 +39,14 @@ test('invite over ssh: the line with --via, the host folder and no NAME, the PIN
   const esc = (x: string) => x.replace(/[.]/g, '\\.');
   const shown = host.join(alice, 'invite --ssh me@127.0.0.1:1 --via jump.example');
   assert.ok(hiddenBlock(shown), shown.stderr);
-  assert.equal(shown.json!.systemMessage, undefined, 'the SECRET and the PIN stay off Remote Control');
-  assert.match(shown.json!.reason!, new RegExp(`\n  /sub-human join me@127\\.0\\.0\\.1:1 ${code} [0-9a-z]{39} --via jump\\.example --home ${esc(host.home)}\n`));
-  assert.match(shown.json!.reason!, /apart from the line \(say it, or send it another way\): \d{4}\n/);
-  assert.match(shown.json!.reason!, /their own ssh login to this account/);
+  assert.equal(must(shown.json).systemMessage, undefined, 'the SECRET and the PIN stay off Remote Control');
+  assert.match(reason(shown), new RegExp(`\n  /sub-human join me@127\\.0\\.0\\.1:1 ${code} [0-9a-z]{39} --via jump\\.example --home ${esc(host.home)}\n`));
+  assert.match(reason(shown), /apart from the line \(say it, or send it another way\): \d{4}\n/);
+  assert.match(reason(shown), /their own ssh login to this account/);
   assert.equal(fs.existsSync(ak), false, 'no door, no line');
-  assert.match(host.join(alice, 'invite --ssh -oProxyCommand=x@far').json!.reason!, /not a plain user@host/);
-  assert.match(host.join(alice, 'invite --ssh me@far --via -oX').json!.reason!, /--via .* is not a plain/);
-  assert.match(host.join(alice, 'invite --ssh YOU@far').json!.reason!, /placeholder/);
+  assert.match(reason(host.join(alice, 'invite --ssh -oProxyCommand=x@far')), /not a plain user@host/);
+  assert.match(reason(host.join(alice, 'invite --ssh me@far --via -oX')), /--via .* is not a plain/);
+  assert.match(reason(host.join(alice, 'invite --ssh YOU@far')), /placeholder/);
   // a bare ssh alias: the line names it as given (the joiner's own config resolves it); the record holds user@alias
   // as this machine's ssh reads it (SUB_HUMAN_SSH_OPTS's -F config: its User)
   const cfg = path.join(host.user, 'ssh_config');
@@ -54,11 +56,11 @@ test('invite over ssh: the line with --via, the host folder and no NAME, the PIN
   const al = host.join(alice, 'invite --ssh devbox');
   Object.keys(host.extra).forEach(k => { if (!(k in aliasEnv)) delete host.extra[k]; });
   assert.ok(hiddenBlock(al), al.stderr);
-  assert.match(al.json!.reason!, new RegExp(`\n  /sub-human join devbox ${code} [0-9a-z]{39} --home \\S+\n`));
-  assert.match(al.json!.reason!, /over ssh devbox\./);
+  assert.match(reason(al), new RegExp(`\n  /sub-human join devbox ${code} [0-9a-z]{39} --home \\S+\n`));
+  assert.match(reason(al), /over ssh devbox\./);
   const locs = Object.values(host.lib(() => store.open(code).kv.get<Invites>(invites.INVITES_KEY)) || {}).map(i => (i as { locator?: string }).locator); // an admission record has none
   assert.ok(locs.includes('ssh:dev@devbox'), JSON.stringify(locs));
-  host.join(alice, `invite --cancel ${/invite --cancel ([0-9a-f]{12})/.exec(al.json!.reason!)![1]}`);
+  host.join(alice, `invite --cancel ${must(/invite --cancel ([0-9a-f]{12})/.exec(reason(al)))[1]}`);
 
   // the CLI: --ssh alone (or nothing) is this machine's own address
   const cli = (args: string[], extra: Record<string, string> = {}) => spawnSync(process.execPath, [h.BIN, ...args], { env: host.env(null, { ...env, ...extra }), encoding: 'utf8' });
@@ -87,8 +89,8 @@ test('join: a linked machine given another invite to the same host through the s
   remote.lib(() => links.set(code, { code, transport, token: tokenOf('tok'), created_at: new Date().toISOString() }));
   const r = remote.join(bob, `join host@devbox ${code} ${inviteSecret.encode(inviteSecret.mint(), Buffer.alloc(8))} --via jump@bastion`);
   assert.ok(hiddenBlock(r));
-  assert.match(r.json!.reason!, /this machine is in room .* already; \/sub-human \S+ \S+ takes your place there/, r.json!.reason);
-  const kept = remote.lib(() => links.get(code))!;
+  assert.match(reason(r), /this machine is in room .* already; \/sub-human \S+ \S+ takes your place there/, must(r.json).reason);
+  const kept = must(remote.lib(() => links.get(code)));
   assert.deepEqual([kept.token, kept.rebind], [tokenOf('tok'), undefined], 'the working link is kept, its token not replaced');
 });
 
@@ -103,7 +105,7 @@ test('C (live verify, remote/15c-e): a join another way, for a room this machine
   const before = remote.lib(() => links.get(code));
   for (const line of [`join nosuchhost.invalid ${code}`, `join other@elsewhere.invalid ${code} ${inviteSecret.encode(inviteSecret.mint(), Buffer.alloc(8))}`]) {
     const r = remote.join(bob, line);
-    assert.match(r.json!.reason || r.json!.systemMessage || r.stdout, new RegExp(`already linked to room ${code} through ssh host@devbox; .*link ${code} --forget`), line);
+    assert.match(must(r.json).reason || must(r.json).systemMessage || r.stdout, new RegExp(`already linked to room ${code} through ssh host@devbox; .*link ${code} --forget`), line);
     assert.deepEqual(remote.lib(() => links.get(code)), before, `the link file is as it was: ${line}`);
   }
 });

@@ -91,7 +91,7 @@ function lane(me: LaneViewer | null | undefined, e: Entry, entries?: readonly Re
  * reply), or it is an objected decision on a proposal name did not write.
  */
 function quietDecision(name: string, d: Entry, entries: readonly Readonly<Entry>[], trust: Trust): boolean {
-  const refs = new Set(d.refs || []);
+  const refs = new Set(d.refs ?? []);
   let last: Entry | null = null;
   for (const x of entries) if (refs.has(x.id) && (x.kind === 'signoff' || x.kind === 'objection') && (!last || x.id > last.id)) last = x;
   if (last && last.from === name && last.via === 'human') return true;

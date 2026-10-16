@@ -320,7 +320,7 @@ export function answerNeeded(r: Review | null, ev: { type: ConsentEvent['type'];
 function resolve(r: Review, note: Confirm | null, ev: { answer?: ReviewAnswer | null; target?: Target | null }, ctx: ReviewCtx, close = false): { review: Review; note: Confirm | null } {
   if (r.resolved || !(r.phase === 'shown' || r.unread)) return { review: r, note };
   const h = r.hash || '';
-  const seen = ev.answer || null;
+  const seen = ev.answer ?? null;
   if (!seen && r.tool_use_id && !close) return { review: { ...r, unread: true, said: SAY.unread(ctx.name, h) }, note };
   const { unread: _u, ...rest } = r;
   const text = seen ? seen.note : null;
@@ -395,7 +395,7 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
       // The person's pick, else the newest: never the model's choice. A pick made after their latest prompt stands.
       const fresh = !!said && !(ev.kept && ev.kept.at > said.at);
       const byHash = (h: string | null | undefined) => (h ? ev.pending.find(p => p.hash === h) : undefined);
-      const p = (fresh ? byHash(ev.named) || since : byHash(ev.kept && ev.kept.hash)) || newest;
+      const p = (fresh ? byHash(ev.named) ?? since : byHash(ev.kept && ev.kept.hash)) ?? newest;
       if (fresh) effects.push({ do: 'pick', hash: byHash(ev.named) ? ev.named : since ? since.hash : null });
       const was = fresh && ev.replaced && ev.replaced.hash === p.hash ? ev.replaced : null;
       let review: Review = { phase: 'entering', mode: ev.mode, at: ctx.now, hash: p.hash, from: p.from || null };

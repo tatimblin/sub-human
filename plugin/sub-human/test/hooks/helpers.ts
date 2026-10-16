@@ -35,7 +35,7 @@ interface HookRun { code: number | null; stdout: string; stderr: string; json: H
 /** Who holds a seat in a World: this process, our parent, or a live `sleep` child. */
 type Who = 'act' | 'act2' | 'sleep';
 
-const fixture = (name: string): HookInput => JSON.parse(fs.readFileSync(path.join(FIXTURES, name + '.json'), 'utf8'));
+const fixture = (name: string): HookInput => JSON.parse(fs.readFileSync(path.join(FIXTURES, name + '.json'), 'utf8')) as HookInput; // a recorded hook input
 
 // A live pid that is not an ancestor; ../helpers.ts kills it on exit.
 const sleeper = () => common.spawnSleeper(600).pid as number;
@@ -129,7 +129,7 @@ class World {
       input: JSON.stringify(inp), env: e, encoding: 'utf8', cwd: this.cwd, timeout: 30_000,
     });
     let json: HookLine | null = null;
-    if (r.stdout.trim()) { try { json = JSON.parse(r.stdout); } catch { json = { raw: r.stdout }; } }
+    if (r.stdout.trim()) { try { json = JSON.parse(r.stdout) as HookLine; } catch { json = { raw: r.stdout }; } } // the hook's answer, as printed
     return { code: r.status, stdout: r.stdout, stderr: r.stderr, json };
   }
 }

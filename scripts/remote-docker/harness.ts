@@ -47,11 +47,14 @@ import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
 import { spawn, spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { PLUGIN, pluginLib, roomCode } from '../lib/paths.ts';
+import { parseJson } from '../lib/io.ts';
+import type * as LabMod from './lab.ts';
+import type * as AnsiSvgMod from '../ansi-svg.ts';
 
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 // loaded on use: the scenarios' controller, and the SVG renderer only the report needs
-const labLib = (): typeof import('./lab.ts') => require('./lab.ts');
-const ansiSvg = (): typeof import('../ansi-svg.ts') => require('../ansi-svg.ts');
+const labLib = (): typeof LabMod => require('./lab.ts');
+const ansiSvg = (): typeof AnsiSvgMod => require('../ansi-svg.ts');
 
 interface ShOpts { input?: string, allowFail?: boolean, timeout?: number }
 /** One manual-mode joiner (state.json). */
@@ -83,7 +86,7 @@ function sh(cmd: string, args: string[], { input, allowFail = false, timeout = 6
 }
 const dc = (args: string[], o?: ShOpts): SpawnSyncReturns<string> => sh('docker', ['compose', '-f', COMPOSE, ...PROJECT, ...args], o);
 const dexec = (args: string[], { user = 'host', ...o }: ShOpts & { user?: string } = {}): SpawnSyncReturns<string> => dc(['exec', '-T', '-u', user, '-e', `SUB_HUMAN_HOME=${HOST_HOME}`, 'devbox', ...args], o);
-const hostCli = <T = Record<string, unknown>>(...args: string[]): T => JSON.parse(dexec(['node', '/harness/host-cli.ts', ...args]).stdout);
+const hostCli = <T = Record<string, unknown>>(...args: string[]): T => parseJson<T>(dexec(['node', '/harness/host-cli.ts', ...args]).stdout);
 const port = (svc: string, p: number): number => Number(dc(['port', svc, String(p)]).stdout.trim().split(':').pop());
 
 async function toxi(api: number, method: string, p: string, body?: unknown): Promise<unknown> {
@@ -243,7 +246,7 @@ pre{white-space:pre-wrap}</style><h1>sub-human remote rooms over SSH</h1><p>${al
 }
 
 // ---------- the manual mode ----------
-const manualState = (): ManualState => JSON.parse(fs.readFileSync(path.join(MANUAL, 'state.json'), 'utf8'));
+const manualState = (): ManualState => parseJson<ManualState>(fs.readFileSync(path.join(MANUAL, 'state.json'), 'utf8'));
 const opt = (args: string[], flag: string, dflt?: string): string | undefined => { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : dflt; };
 /** Run fn with SUB_HUMAN_HOME set to a joiner's home (the plugin libs read it on every call). */
 const asJoiner = <V>(j: Joiner, fn: () => V): V | null => { process.env.SUB_HUMAN_HOME = j.home; try { return fn(); } catch { return null; } };

@@ -165,7 +165,7 @@ const error = (id: FrameId | undefined, code: WireCode, message: unknown, reason
  * not know (a newer peer's) reads as INVALID, as this end's own server and link socket send one. */
 const toError = (e: { code: unknown; message: unknown; reason?: unknown }): RoomError => new RoomError(isWireCode(e.code) ? e.code : CODES.INVALID, String(e.message), isReason(e.reason) ? e.reason : null);
 /** @returns {{id: number|string, ev: string, data: *}} */
-const event = <E extends EventName>(id: FrameId, ev: E, data: EventData[E]): EventFrame<E> => ({ id, ev, data }) as EventFrame<E>;
+const event = <E extends EventName>(id: FrameId, ev: E, data: EventData[E]): EventFrame<E> => ({ id, ev, data });
 
 /**
  * @param {object} frame
@@ -177,7 +177,7 @@ function parseLine(line: string): DecodedFrame | ErrorFrame {
   if (Buffer.byteLength(line, 'utf8') > LINK_FRAME_MAX_BYTES) return error(null, CODES.PROTOCOL, `a frame over ${LINK_FRAME_MAX_BYTES} bytes`);
   let f: unknown;
   try { f = JSON.parse(line); } catch { return error(null, CODES.PROTOCOL, 'a frame that is not JSON'); }
-  return f && typeof f === 'object' && !Array.isArray(f) ? f as DecodedFrame : error(null, CODES.PROTOCOL, 'a frame that is not an object');
+  return f && typeof f === 'object' && !Array.isArray(f) ? f : error(null, CODES.PROTOCOL, 'a frame that is not an object');
 }
 
 /** @returns {{push(chunk: string|Buffer): object[]}} */

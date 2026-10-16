@@ -100,8 +100,10 @@ import type net from 'node:net';
 import { errCode, msgOf } from '../errors.ts';
 import { assertNever } from '../../mod/core/never.ts';
 import type { RoomCode } from '../brand.ts';
+import type * as HandoffMod from '../handoff.ts';
+import type * as OutboxMod from './outbox.ts';
 
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 /** One relayed op's params as a hook sends them: an append may carry {queue: true}. */
 type RelayParams = { queue?: boolean; payload?: SignedPayload; [field: string]: unknown };
@@ -124,8 +126,8 @@ interface ServeMirrorOptions {
 }
 
 const HANDOFF_SELF_STOP_MS = 10_000;
-const handoff = (): typeof import('../handoff.ts') => require('../handoff.ts');
-const outboxMod = (): typeof import('./outbox.ts') => require('./outbox.ts');
+const handoff = (): typeof HandoffMod => require('../handoff.ts');
+const outboxMod = (): typeof OutboxMod => require('./outbox.ts');
 /** Why a link stopped for good with nothing wrong (reasons ROOM_CLOSED, NO_SEAT): a dormant link. */
 const ROOM_CLOSED_REASON = 'the room was closed';
 const NO_SEAT_REASON = 'no seat of this machine is left in the room';
@@ -182,7 +184,7 @@ function wakeWatch({ onWake, tickMs, gapMs, clock = realClock, mono = () => perf
 function netSignature(ifaces: NodeJS.Dict<os.NetworkInterfaceInfo[]> = os.networkInterfaces()): string {
   const out: string[] = [];
   for (const [name, list] of Object.entries(ifaces || {})) {
-    for (const a of list || []) if (a && !a.internal && !/^fe80:/i.test(a.address)) out.push(`${name}/${a.address}`);
+    for (const a of list ?? []) if (a && !a.internal && !/^fe80:/i.test(a.address)) out.push(`${name}/${a.address}`);
   }
   return out.sort().join(',');
 }
@@ -225,9 +227,9 @@ async function serveMirror({
 }: ServeMirrorOptions): Promise<RunningLink> {
   const T = linkTimings({ ...timings, retryMs, retryMaxMs });
   const sockFile = socketPath(mirror.dir);
-  const box = outbox || outboxMod().open(mirror.dir);
-  const localSeats = seats || (() => identityMod.localSeats(mirror.code));
-  const saveState = writeState || (rec => linksMod.writeState(mirror.code, rec));
+  const box = outbox ?? outboxMod().open(mirror.dir);
+  const localSeats = seats ?? (() => identityMod.localSeats(mirror.code));
+  const saveState = writeState ?? (rec => linksMod.writeState(mirror.code, rec));
   let st: EngineState = engine.initial(clock.now(), T.retryMs);
   const conns = new Map<number, Client>(); // connection id (the engine's) -> its client
   const after = new Map<number, number>(); // a dial's id -> the mirror line it subscribed after (for its log line)
@@ -239,7 +241,7 @@ async function serveMirror({
   const { promise: done, resolve: finish } = Promise.withResolvers<string>();
   const { promise: first, resolve: firstDone } = Promise.withResolvers<void>();
   const iso = (ms: number) => new Date(ms).toISOString();
-  const live = (): Client | null => (st.conn === null ? null : conns.get(st.conn) || null);
+  const live = (): Client | null => (st.conn === null ? null : conns.get(st.conn) ?? null);
 
   /** The two records observers read: the mirror's document `link` (lib/tail.ts) and links/<code>.state.json. */
   function publish() {
@@ -271,7 +273,8 @@ async function serveMirror({
   }
 
   /** A dial step's outcome: the next step's event, or dialFailed (offline: the person's words for it). */
-  const stepOf = (dial: number, p: Promise<unknown>, next: () => EngineEvent) => p.then(() => dispatch(next()), (e: unknown) => {
+  // each step ends in an engine event, its failure too (void: nothing else waits on it)
+  const stepOf = (dial: number, p: Promise<unknown>, next: () => EngineEvent): void => void p.then(() => dispatch(next()), (e: unknown) => {
     const f = failure(e);
     dispatch({ type: 'dialFailed', dial, error: f, offline: handoff().whyOffline(mirror.code, f.message) });
   });
@@ -286,7 +289,7 @@ async function serveMirror({
   function effect(fx: EngineEffect) {
     switch (fx.type) {
       case 'connect':
-        dials.set(fx.dial, dials.get(fx.dial) || (() => {}));
+        dials.set(fx.dial, dials.get(fx.dial) ?? (() => {}));
         stepOf(fx.dial, connect().then(c => { conns.set(fx.dial, c); }), () => ({ type: 'connected', dial: fx.dial }));
         break;
       case 'subscribe': {
@@ -601,7 +604,7 @@ async function run({ code, log = msg => process.stderr.write(`${new Date().toISO
   const link = await serveMirror({ mirror, connect: () => connectLink(code), log });
   const unwatch = idleWatch(link, mirror, envMs('SUB_HUMAN_LINK_IDLE_MS'));
   for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.once(sig, () => link.stop(`stopped by ${sig}`));
-  process.on('SIGUSR2', () => link.wake('SIGUSR2'));
+  process.on('SIGUSR2', () => { void link.wake('SIGUSR2'); }); // the redial reports through the engine
   const why = await link.done;
   unwatch();
   log(`stopped: ${why}`);

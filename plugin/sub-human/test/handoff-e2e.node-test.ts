@@ -31,8 +31,9 @@ import { isAlive } from '../lib/io.ts';
 import { Machine, type Seat } from './support/two-homes.ts';
 import type { Entry } from '../lib/room/types.ts';
 import type { HandoffAskDoc } from '../lib/types-app.ts';
-import type { LinkSpec, PipeSpec, SshSpec } from '../lib/remote/types-rest.ts';
+import type { LinkSpec, PipeSpec } from '../lib/remote/types-rest.ts';
 import type { RoomCode } from '../lib/brand.ts';
+import { must } from './support/must.ts';
 
 /** h.until, failing the test when fn never holds. */
 async function until<T>(fn: () => T, ms: number, step: number): Promise<T> {
@@ -72,9 +73,12 @@ function stubClaude(t: TestContext, job: string): Stub {
 }
 
 const childOf = (pid: number | undefined) => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
-const kill = (pid: number | null | undefined) => { try { process.kill(pid as number, 'SIGKILL'); } catch { /* gone */ } };
+const kill = (pid: number | null | undefined) => { try { if (pid != null) process.kill(pid, 'SIGKILL'); } catch { /* gone */ } };
 /** The sh2 invite and its PIN in a text (/sub-human host's block, promote's lines). */
-const inviteOf = (text: string) => ({ invite: /sh2\.\S+/.exec(text)![0], pin: /\b(\d{6})\b/.exec(text.slice(text.indexOf('sh2.')))![1] });
+const inviteOf = (text: string) => ({ invite: must(/sh2\.\S+/.exec(text))[0], pin: must(must(/\b(\d{6})\b/.exec(text.slice(text.indexOf('sh2.'))))[1], 'the PIN') });
+/** A pipe link's home (undefined for another kind, or no link). */
+const pipeHome = (s: LinkSpec | undefined) => s?.kind === 'pipe' ? s.home : undefined;
+const pipeTo = (home: string): PipeSpec => ({ kind: 'pipe', home });
 const kinds = (log: string) => log.split('\n').filter(Boolean).map(l => (JSON.parse(l) as Entry).kind);
 const texts = (log: string) => log.split('\n').filter(Boolean).map(l => (JSON.parse(l) as Entry).text);
 
@@ -104,20 +108,20 @@ async function room(t: TestContext): Promise<RoomWithCarol>;
 async function room(t: TestContext, { carol: withCarol = true }: { carol?: boolean } = {}): Promise<Room | RoomWithCarol> {
   const A = machine(t, 'a', 'aaaa1111'), B = machine(t, 'b', 'bbbb2222'), C = withCarol ? machine(t, 'c', 'cccc3333') : null;
   const alice = A.seat('alice'), bob = B.seat('bob'), carol = C && C.seat('carol');
-  assert.equal(A.join(alice, 'alice').json!.decision, undefined);
-  const code = A.lib(() => store.listRooms()[0]);
-  await until(() => A.lib(() => identity.readMembers(code).claude || {}).job === 'aaaa1111', 8000, 50);
-  assert.equal((await B.joinVia(A, alice, bob)).seated.json!.systemMessage, undefined);
-  if (C && carol) assert.equal((await C.joinVia(A, alice, carol)).seated.json!.systemMessage, undefined);
+  assert.equal(must(A.join(alice, 'alice').json).decision, undefined);
+  const code = must(A.lib(() => store.listRooms()[0]), 'the room');
+  await until(() => A.lib(() => identity.readMembers(code).claude?.job) === 'aaaa1111', 8000, 50);
+  assert.equal(must((await B.joinVia(A, alice, bob)).seated.json).systemMessage, undefined);
+  if (C && carol) assert.equal(must((await C.joinVia(A, alice, carol)).seated.json).systemMessage, undefined);
   return C && carol ? { A, B, C, alice, bob, carol, code } : { A, B, alice, bob, code };
 }
 
 /** bob's card: the Pre the hooks rewrite, then his answer on it. */
 function answerCard(B: TestMachine, bob: Seat, id: string, label: string) {
   const pre = B.hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: `handoff ${id}`, options: [] }] } }, bob);
-  const card = pre.json!.hookSpecificOutput!.updatedInput as Card;
-  assert.equal(pre.json!.hookSpecificOutput!.permissionDecision, 'ask', pre.stderr);
-  const q = card.questions[0].question;
+  const card = must(must(pre.json).hookSpecificOutput).updatedInput as Card;
+  assert.equal(must(must(pre.json).hookSpecificOutput).permissionDecision, 'ask', pre.stderr);
+  const q = must(card.questions[0]).question;
   const post = B.hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: card, tool_response: { questions: card.questions, answers: { [q]: label } } }, bob);
   return { card, post };
 }
@@ -128,41 +132,41 @@ test('handoff e2e: planned, A to B with C following; the room\'s Claude moves; t
   const { A, B, C, alice, bob, carol, code } = await room(t);
 
   // alice asks; bob's machine gets the ask privately, his tail wakes his Claude to open the card
-  const asked = A.join(alice, 'handoff bob').json!;
+  const asked = must(A.join(alice, 'handoff bob').json);
   assert.equal(asked.decision, 'block', 'shown to alice, never to her Claude');
-  assert.match(asked.reason!, /^sub-human: asked bob to host room .*: a card asks them until \d\d:\d\d, and nothing moves unless they agree\. If they do, the room and its Claude move to bob's machine \(on bob's Claude account\)/);
+  assert.match(must(asked.reason), /^sub-human: asked bob to host room .*: a card asks them until \d\d:\d\d, and nothing moves unless they agree\. If they do, the room and its Claude move to bob's machine \(on bob's Claude account\)/);
   await until(() => ask(B, code), 5000, 50);
   assert.equal(C.lib(() => store.open(code).kv.get(handoff.ASK_DOC)), null, 'carol\'s machine never sees it');
-  const woke = (await B.tail(bob, 2)).split('\n').filter(Boolean).map(l => JSON.parse(l));
-  const id = ask(B, code)!.id;
-  assert.match(woke.find(e => e.type === 'wake').text, new RegExp(`call AskUserQuestion with the question "handoff ${id}"`));
+  const woke = (await B.tail(bob, 2)).split('\n').filter(Boolean).map(l => JSON.parse(l) as { type: string; text: string });
+  const id = must(ask(B, code)).id;
+  assert.match(must(woke.find(e => e.type === 'wake')).text, new RegExp(`call AskUserQuestion with the question "handoff ${id}"`));
   // one wake: its first line is the person's (drawn as the prompt), the rest for Claude
-  assert.match(woke.find(e => e.type === 'wake').text, /^room: alice asks you to host room \S+ on this machine; your Claude shows you a card\n\(for Claude\) /);
+  assert.match(must(woke.find(e => e.type === 'wake')).text, /^room: alice asks you to host room \S+ on this machine; your Claude shows you a card\n\(for Claude\) /);
 
   // the card says what it costs; bob agrees on it
   const { card, post } = answerCard(B, bob, id, 'Host it here');
-  assert.match(card.questions[0].options[0].description, /YOUR model account: your Claude or Bedrock billing and rate limits.*reachable/);
-  assert.match(post.json!.systemMessage!, /^sub-human: room \S+ is hosted on this machine now, and its Claude runs on your Claude account/, post.stderr);
-  assert.doesNotMatch(post.json!.systemMessage!, /epoch/);
-  assert.match(post.json!.hookSpecificOutput!.additionalContext!, /hosted on this machine now/);
+  assert.match(must(must(card.questions[0]).options[0]).description, /YOUR model account: your Claude or Bedrock billing and rate limits.*reachable/);
+  assert.match(must(must(post.json).systemMessage), /^sub-human: room \S+ is hosted on this machine now, and its Claude runs on your Claude account/, post.stderr);
+  assert.doesNotMatch(must(must(post.json).systemMessage), /epoch/);
+  assert.match(must(must(must(post.json).hookSpecificOutput).additionalContext), /hosted on this machine now/);
 
   // B hosts: no link, its log names it at epoch 1 with both signatures
   assert.equal(B.lib(() => links.has(code)), false);
   const bs = B.store(code);
   assert.equal(bs.isHost, true);
-  const moved = B.read(code).find(e => e.kind === 'host_changed')!;
+  const moved = must(B.read(code).find(e => e.kind === 'host_changed'));
   assert.deepEqual([moved.epoch, moved.host, moved.machine, moved.from], [1, 'bob', B.lib(() => identity.machineIn(code)), 'alice']);
   B.lib(() => {
     assert.ok(envelope.verify(moved.accept, store.publicKey('bob', store.open(code))), 'bob\'s acceptance');
     assert.ok(envelope.verify(moved.ask, store.publicKey('alice', store.open(code))), 'alice\'s ask');
   });
-  assert.equal(B.lib(() => identity.resolveBySession(bob.sid))!.name, 'bob', 'bob\'s seat resolves on the new host');
+  assert.equal(must(B.lib(() => identity.resolveBySession(bob.sid))).name, 'bob', 'bob\'s seat resolves on the new host');
 
   // A and C follow: their links point at B and come online; every copy is the same log and chains
   for (const m of [A, C]) {
     // re-pointed first: until its 'moved' event lands, a link may still be online to A's old log (served read-only,
     // the same lines as B's right after the move)
-    await until(() => ((m.lib(() => links.get(code)) || { transport: {} }).transport as PipeSpec).home === B.home && m.status(code).state === 'online' && m.log(code) === B.log(code), 10_000, 50);
+    await until(() => pipeHome(m.lib(() => links.get(code))?.transport) === B.home && m.status(code).state === 'online' && m.log(code) === B.log(code), 10_000, 50);
     assert.equal(m.lib(() => store.open(code).verifyChain()).ok, true);
   }
   assert.equal(A.store(code).isHost, false);
@@ -171,11 +175,11 @@ test('handoff e2e: planned, A to B with C following; the room\'s Claude moves; t
   // (A's server runs with the env of the pipe that spawned it, bob's daemon's, so the stop may land in either stub)
   await until(() => [...A.stub.calls(), ...B.stub.calls()].some(a => a[0] === 'stop' && a[1] === 'aaaa1111'), 8000, 50);
   await until(() => B.stub.calls().some(a => a.includes('--bg')), 8000, 50);
-  await until(() => B.lib(() => identity.readMembers(code).claude || {}).job === 'bbbb2222', 8000, 50);
+  await until(() => B.lib(() => identity.readMembers(code).claude?.job) === 'bbbb2222', 8000, 50);
 
   // people post through the new host from both old machines
-  assert.equal(C.say(carol, 'hello new host').json!.continue, false);
-  assert.equal(A.say(alice, 'from the old host').json!.continue, false);
+  assert.equal(must(C.say(carol, 'hello new host').json).continue, false);
+  assert.equal(must(A.say(alice, 'from the old host').json).continue, false);
   const last = B.read(code).slice(-2);
   assert.deepEqual(last.map(e => [e.from, e.text]), [['carol', 'hello new host'], ['alice', 'from the old host']]);
   assert.deepEqual(B.lib(() => last.map(e => store.trustOf(e))), ['verified', 'verified']);
@@ -203,9 +207,9 @@ test('handoff e2e: "Not now" on the card moves nothing; alice\'s tail says bob d
   const { A, B, alice, bob, code } = await room(t, { carol: false });
   A.join(alice, 'handoff bob');
   await until(() => ask(B, code), 5000, 50);
-  const { post } = answerCard(B, bob, ask(B, code)!.id, 'Not now');
-  assert.match(post.json!.hookSpecificOutput!.additionalContext!, /bob declined to host room/);
-  assert.equal(A.lib(() => handoff.hostDoc(store.open(code)))!.state, 'refused');
+  const { post } = answerCard(B, bob, must(ask(B, code)).id, 'Not now');
+  assert.match(must(must(must(post.json).hookSpecificOutput).additionalContext), /bob declined to host room/);
+  assert.equal(must(A.lib(() => handoff.hostDoc(store.open(code)))).state, 'refused');
   assert.equal(ask(B, code), null);
   assert.equal(B.store(code).isHost, false);
   assert.ok(!kinds(A.log(code)).includes('host_changed'));
@@ -214,10 +218,10 @@ test('handoff e2e: "Not now" on the card moves nothing; alice\'s tail says bob d
   A.join(alice, 'handoff bob');
   await until(() => ask(B, code), 5000, 50);
   const pre = B.hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: 'handoff?' }] } }, bob);
-  const card = pre.json!.hookSpecificOutput!.updatedInput as Card;
+  const card = must(must(pre.json).hookSpecificOutput).updatedInput as Card;
   const afk = B.hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: card, tool_response: { questions: card.questions, answers: {}, afkTimeoutMs: 60000 } }, bob);
-  assert.match(afk.json!.hookSpecificOutput!.additionalContext!, /Nothing was decided/);
-  assert.equal(A.lib(() => handoff.hostDoc(store.open(code)))!.state, 'asked');
+  assert.match(must(must(must(afk.json).hookSpecificOutput).additionalContext), /Nothing was decided/);
+  assert.equal(must(A.lib(() => handoff.hostDoc(store.open(code)))).state, 'asked');
 });
 
 test('handoff e2e: a new host the others cannot reach: offline with what to do, no hang; a fresh invite re-points', async t => {
@@ -225,10 +229,10 @@ test('handoff e2e: a new host the others cannot reach: offline with what to do, 
   const nowhere = path.join(os.tmpdir(), `sh-nowhere-${process.pid}`);
   A.lib(() => handoff.ask(code, { from: 'alice', to: 'bob', locator: `pipe:${nowhere}` }));
   await until(() => ask(B, code), 5000, 50);
-  assert.match(answerCard(B, bob, ask(B, code)!.id, 'Host it here').post.json!.systemMessage!, /is hosted on this machine now/);
+  assert.match(must(must(answerCard(B, bob, must(ask(B, code)).id, 'Host it here').post.json).systemMessage), /is hosted on this machine now/);
 
   await until(() => /can't reach yet/.test(C.status(code).reason || ''), 8000, 50);
-  assert.match(C.status(code).reason!, /moved to bob's machine, which this machine can't reach yet .*Ask bob for an invite \(\/sub-human invite there\) and type the line it shows here/);
+  assert.match(must(C.status(code).reason), /moved to bob's machine, which this machine can't reach yet .*Ask bob for an invite \(\/sub-human invite there\) and type the line it shows here/);
   const t0 = Date.now();
   const queued = C.say(carol, 'anyone?'); // an @room post waits in the outbox (lib/remote/outbox.ts); nothing hangs
   assert.match(JSON.stringify(queued.json), /queued: room .* is offline/, queued.stderr);
@@ -237,11 +241,11 @@ test('handoff e2e: a new host the others cannot reach: offline with what to do, 
 
   // bob, now the host, gives carol an invite she can use: her link re-points and she posts through it
   const rejoined = (await C.joinVia(B, bob, carol)).seated;
-  assert.equal(rejoined.json!.decision, undefined, rejoined.stdout);
-  assert.equal(rejoined.json!.systemMessage, undefined, rejoined.stderr);
-  assert.equal((C.lib(() => links.get(code))!.transport as PipeSpec).home, B.home);
+  assert.equal(must(rejoined.json).decision, undefined, rejoined.stdout);
+  assert.equal(must(rejoined.json).systemMessage, undefined, rejoined.stderr);
+  assert.equal(pipeHome(must(C.lib(() => links.get(code))).transport), B.home);
   const back = C.say(carol, 'back via a fresh invite');
-  assert.equal(back.json!.continue, false, JSON.stringify(back.json) + back.stderr);
+  assert.equal(must(back.json).continue, false, JSON.stringify(back.json) + back.stderr);
   assert.equal(texts(B.log(code)).at(-1), 'back via a fresh invite');
   assert.equal(A.status(code).state === 'online', false, 'alice\'s machine stays offline until it gets one too');
   void alice;
@@ -259,7 +263,7 @@ test('handoff e2e: promote when the host is gone; the old host back is STALE to 
   // the host goes away (after bob's copy holds carol's seat: a promote mints invites for the seats it knows)
   await until(() => B.lib(() => identity.readMembers(code).carol), 5000, 50);
   const hostDir = path.join(A.home, 'rooms', code), hidden = `${hostDir}.away`;
-  const oldToken = C.lib(() => links.get(code))!.token;
+  const oldToken = must(must(C.lib(() => links.get(code))).token, 'the old token');
   for (const m of [B, C]) kill(childOf(m.status(code).pid)); // its servers die with it, and no new one finds the room
   fs.renameSync(hostDir, hidden);
   for (const m of [B, C]) await until(() => m.status(code).state === 'offline', 8000, 50);
@@ -275,9 +279,9 @@ test('handoff e2e: promote when the host is gone; the old host back is STALE to 
   assert.match(r.stdout, /this machine hosts room \S+ now/);
   assert.doesNotMatch(r.stdout, /epoch|(^|\s)sub-human demote/m);
   assert.match(r.stdout, /carol: run node \S+\/scripts\/sub-human demote \S+ and paste: sh2\.\S+ \d{6}\n.*alice: |alice: run node \S+\/scripts\/sub-human demote \S+ and paste: .*\n.*carol: /, r.stdout);
-  const carolInvite = inviteOf(/carol: .*/.exec(r.stdout)![0]), aliceInvite = inviteOf(/alice: .*/.exec(r.stdout)![0]);
+  const carolInvite = inviteOf(must(/carol: .*/.exec(r.stdout))[0]), aliceInvite = inviteOf(must(/alice: .*/.exec(r.stdout))[0]);
   assert.match(B.lib(() => JSON.stringify(store.open(code).kv.get('remote/invites'))), /"machine":/, 'each bound to its machine');
-  const e = B.read(code).at(-1)!;
+  const e = must(B.read(code).at(-1));
   assert.deepEqual([e.kind, e.epoch, e.host, e.promoted, e.from], ['host_changed', 1, 'bob', true, 'bob']);
   await until(() => B.stub.calls().some(a => a.includes('--bg')), 8000, 50);
 
@@ -289,14 +293,14 @@ test('handoff e2e: promote when the host is gone; the old host back is STALE to 
   assert.match(fol.stdout, /Type \/sub-human in your session to join it again/);
   await until(() => C.lib(() => (links.get(code) || {}).token), 8000, 50);
   const back = C.join(carol, '');
-  assert.equal(back.json!.decision, undefined, back.stdout);
+  assert.equal(must(back.json).decision, undefined, back.stdout);
   await until(() => C.status(code).state === 'online' && C.log(code) === B.log(code), 8000, 50);
-  assert.equal(C.say(carol, 'on the promoted host').json!.continue, false);
+  assert.equal(must(C.say(carol, 'on the promoted host').json).continue, false);
 
   // the old host comes back still believing it hosts the room (epoch 0): a mirror at epoch 1 is refused there
   fs.rmSync(hostDir, { recursive: true, force: true });
   fs.renameSync(hidden, hostDir);
-  const tr = A.lib(() => transports.open({ kind: 'pipe', home: A.home } as PipeSpec, { code }));
+  const tr = A.lib(() => transports.open(pipeTo(A.home), { code }));
   await assert.rejects(client.connect(tr, { machine: C.lib(() => identity.machineId()), token: oldToken, epoch: 1 }),
     (err: Error & { code?: string }) => err.code === 'STALE' && /moved away from this machine/.test(err.message));
 
@@ -318,19 +322,20 @@ test('handoff e2e: over ssh (--via), each follower reaches the new host through 
   const { A, B, C, alice, bob, code } = await room(t);
   const ak = path.join(B.user, '.ssh', 'authorized_keys');
   Object.assign(B.extra, { SUB_HUMAN_AUTHORIZED_KEYS: ak });
-  C.lib(() => links.set(code, { ...links.get(code)!, transport: { ...links.get(code)!.transport, mux: true } as LinkSpec })); // a pipe link here, mux to carry over
+  C.lib(() => links.set(code, { ...must(links.get(code)), transport: { ...must(links.get(code)).transport, mux: true } as LinkSpec })); // deliberate: a pipe link here (no mux in its type), mux to carry over
 
   // alice: the others reach bob's machine as me@127.0.0.1:1 (nothing listens: they stay offline) through a jump host
-  const asked = A.join(alice, 'handoff bob me@127.0.0.1:1 --via jump.example').json!;
-  assert.match(asked.reason!, /asked bob to host room/, JSON.stringify(asked));
-  assert.equal(A.lib(() => handoff.hostDoc(store.open(code)))!.locator, 'ssh:me@127.0.0.1:1?via=jump.example');
+  const asked = must(A.join(alice, 'handoff bob me@127.0.0.1:1 --via jump.example').json);
+  assert.match(must(asked.reason), /asked bob to host room/, JSON.stringify(asked));
+  assert.equal(must(A.lib(() => handoff.hostDoc(store.open(code)))).locator, 'ssh:me@127.0.0.1:1?via=jump.example');
   await until(() => ask(B, code), 5000, 50);
-  assert.match(answerCard(B, bob, ask(B, code)!.id, 'Host it here').post.json!.systemMessage!, /is hosted on this machine now/);
+  assert.match(must(must(answerCard(B, bob, must(ask(B, code)).id, 'Host it here').post.json).systemMessage), /is hosted on this machine now/);
 
   // carol follows over her own ssh login to bob's machine: a login spec, her mux kept, no key, no known_hosts
   await until(() => C.lib(() => (links.get(code) || {}).moved), 10_000, 50);
-  const lc = C.lib(() => links.get(code))!;
-  const t0 = lc.transport as SshSpec;
+  const lc = must(C.lib(() => links.get(code)));
+  const t0 = lc.transport;
+  assert.ok(t0.kind === 'ssh', t0.kind);
   assert.deepEqual([t0.kind, t0.user, t0.host, t0.port, t0.via, t0.login, t0.mux], ['ssh', 'me', '127.0.0.1', 1, 'jump.example', true, true]);
   assert.match(String(t0.link), /^[0-9a-f]{12}$/);
   assert.ok(!('key' in t0) && !('knownHosts' in t0) && !('request' in lc), 'nothing of the plugin\'s own pinned or let in');
@@ -338,14 +343,15 @@ test('handoff e2e: over ssh (--via), each follower reaches the new host through 
   const cmd = C.lib(() => linkConnect.sshCommand(t0, code, []));
   for (const o of ['ControlMaster=no', '-J', 'jump.example']) assert.ok(cmd.includes(o), `${o} in ${cmd.join(' ')}`);
   assert.ok(!cmd.some(o => /StrictHostKeyChecking|IdentitiesOnly|UserKnownHostsFile/.test(o)), 'the person\'s own ssh config and known_hosts decide');
-  assert.match(cmd.at(-1)!, new RegExp(`/bin/serve --stdio ${code} --link ${t0.link} --login$`));
+  assert.match(must(cmd.at(-1)), new RegExp(`/bin/serve --stdio ${code} --link ${t0.link} --login$`));
   // offline (nothing listens there); the reason says how: her own login, else a web invite from bob
   await until(() => /can't reach yet/.test(C.status(code).reason || ''), 15_000, 50);
-  assert.match(C.status(code).reason!, /Over ssh this machine follows through your own ssh login to bob's machine; without one, ask bob for an invite \(\/sub-human invite --web there\)/);
+  assert.match(must(C.status(code).reason), /Over ssh this machine follows through your own ssh login to bob's machine; without one, ask bob for an invite \(\/sub-human invite --web there\)/);
 
   // the old host follows the same way
   await until(() => A.lib(() => (links.get(code) || {}).moved), 10_000, 50);
-  const la = A.lib(() => links.get(code))!.transport as SshSpec;
+  const la = must(A.lib(() => links.get(code))).transport;
+  assert.ok(la.kind === 'ssh', la.kind);
   assert.deepEqual([la.kind, la.user, la.host, la.login], ['ssh', 'me', '127.0.0.1', true]);
   assert.ok(!('key' in la));
   assert.equal(fs.existsSync(ak) ? fs.readFileSync(ak, 'utf8').trim() : '', '', 'nothing written to bob\'s authorized_keys');
@@ -355,10 +361,10 @@ test('handoff and promote CLI: --via carries a ProxyJump into the new locator, a
   const { A, B, code } = await room(t, { carol: false });
   const r = A.cli(['handoff', 'bob', '--ssh', 'me@box.example:2222', '--via', 'jump@bastion', '--as', 'alice', '--room', code]);
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(A.lib(() => handoff.hostDoc(store.open(code)))!.locator, 'ssh:me@box.example:2222?via=jump@bastion');
+  assert.equal(must(A.lib(() => handoff.hostDoc(store.open(code)))).locator, 'ssh:me@box.example:2222?via=jump@bastion');
   const pos = A.cli(['handoff', 'bob', 'me@box.example', '--via', 'j1,j2', '--as', 'alice', '--room', code]);
   assert.equal(pos.status, 0, pos.stderr);
-  assert.equal(A.lib(() => handoff.hostDoc(store.open(code)))!.locator, 'ssh:me@box.example?via=j1,j2');
+  assert.equal(must(A.lib(() => handoff.hostDoc(store.open(code)))).locator, 'ssh:me@box.example?via=j1,j2');
   assert.match(A.cli(['handoff', 'bob', '--via', 'j', '--as', 'alice', '--room', code]).stderr, /--via is for an ssh address/);
   assert.match(A.cli(['handoff', 'bob', '--ssh', 'me@box', '--via', '-oProxyCommand=x', '--as', 'alice', '--room', code]).stderr, /--via needs a plain/);
   assert.match(A.cli(['handoff', 'bob', '--ssh']).stderr, /--ssh needs a value/);
@@ -384,13 +390,13 @@ test('handoff e2e: the new host\'s claude binds (the old host\'s live claude rec
 
   A.join(alice, 'handoff bob');
   await until(() => ask(B, code), 5000, 50);
-  assert.match(answerCard(B, bob, ask(B, code)!.id, 'Host it here').post.json!.systemMessage!, /is hosted on this machine now/);
-  await until(() => B.lib(() => identity.readMembers(code).claude || {}).job === 'bbbb2222', 8000, 50);
+  assert.match(must(must(answerCard(B, bob, must(ask(B, code)).id, 'Host it here').post.json).systemMessage), /is hosted on this machine now/);
+  await until(() => B.lib(() => identity.readMembers(code).claude?.job) === 'bbbb2222', 8000, 50);
 
   // the job B started runs /sub-human: its seat binds on B
   const onB = bindRoomClaude(B, code);
   assert.doesNotMatch(JSON.stringify(onB.json || {}), /could not bind|name taken/, onB.stderr);
-  const o = B.lib(() => identity.readMembers(code).claude);
+  const o = must(B.lib(() => identity.readMembers(code).claude));
   assert.equal(o.machine, B.lib(() => identity.machineIn(code)), 'its id in the room, as the old host recorded it');
   assert.equal(o.left_at, undefined);
 });

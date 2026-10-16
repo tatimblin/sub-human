@@ -7,12 +7,13 @@ import { spawnSync } from 'node:child_process';
 import { COMMANDS, opts, listsRoomClaude, keyDelays, paneBelow, newMatches, taskFor } from '../demo-lib.ts';
 import { roomRowMembers, subagentRows } from '../lib/panes.ts';
 import { runInfo } from '../checks/context.ts';
+import { parseJson } from '../lib/io.ts';
 
 const LIB = path.join(import.meta.dirname, '..', 'demo-lib.ts');
 const DEMO_SH = path.join(import.meta.dirname, '..', 'demo.sh');
 const tmp = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'sh-demolib-'));
 const lib = (args: string[], env: Record<string, string> = {}) => spawnSync(process.execPath, [LIB, ...args], { encoding: 'utf8', env: { ...process.env, ...env } });
-const readJson = (f: string) => JSON.parse(fs.readFileSync(f, 'utf8'));
+const readJson = <T = unknown>(f: string): T => parseJson<T>(fs.readFileSync(f, 'utf8'));
 
 test('demo-lib: every subcommand demo.sh calls is a command', () => {
   const used = new Set([...fs.readFileSync(DEMO_SH, 'utf8').matchAll(/\$LIB ([a-z-]+)/g)].flatMap(m => m[1] ?? []));
@@ -172,7 +173,7 @@ test('demo-lib plan-run: a resume adds to the scenes already listed; every scene
   assert.equal(lib(['plan-run', f, '--all', ALL, 'S1', 'S2']).status, 0); // no file yet: just these
   assert.deepEqual(readJson(f), { scenes: ['S1', 'S2'], partial: true });
   assert.equal(lib(['plan-run', f, '--all', ALL, 'S4', 'S2']).status, 0);
-  assert.deepEqual(readJson(f).scenes, ['S1', 'S2', 'S4']);
+  assert.deepEqual(readJson<{ scenes?: unknown }>(f).scenes, ['S1', 'S2', 'S4']);
   assert.equal(lib(['plan-run', f, '--all', ALL, ...ALL.split(' ')]).status, 0);
   assert.deepEqual(readJson(f), { scenes: ALL.split(' '), partial: false });
 });
@@ -181,7 +182,7 @@ test('demo-lib plan-run: matches the inline edit it replaced', () => {
   // the former demo.sh one-liner, kept here as the reference
   const old = (f: string, fresh: boolean, all: string, add: string[]): string => {
     let p: string[] = [];
-    if (!fresh) try { p = JSON.parse(fs.readFileSync(f, 'utf8')).scenes || []; } catch { /* none */ }
+    if (!fresh) try { p = parseJson<{ scenes?: string[] }>(fs.readFileSync(f, 'utf8')).scenes || []; } catch { /* none */ }
     const s = all.split(' ').filter(x => p.includes(x) || add.includes(x));
     return JSON.stringify({ scenes: s, partial: s.length < all.split(' ').length }, null, 1) + '\n';
   };
@@ -201,7 +202,7 @@ test('demo-lib record: appends one waits.jsonl line for the current scene; --ok 
   const env = { SNAP_DIR: d, DEMO_SCENE: 'S4' };
   assert.equal(lib(['record', '--what', 'nudge: alice asked for the card'], env).status, 0);
   assert.equal(lib(['record', '--what', 'S4: timed out waiting: "x"', '--ok', 'false'], env).status, 0);
-  const lines: Array<{ time: string, [k: string]: unknown }> = fs.readFileSync(path.join(d, 'waits.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  const lines: Array<{ time: string, [k: string]: unknown }> = fs.readFileSync(path.join(d, 'waits.jsonl'), 'utf8').trim().split('\n').map(l => parseJson<{ time: string, [k: string]: unknown }>(l));
   assert.deepEqual(lines.map(({ time, ...r }) => (assert.ok(Date.parse(time)), r)), [
     { scene: 'S4', what: 'nudge: alice asked for the card', ok: true, ms: 0 },
     { scene: 'S4', what: 'S4: timed out waiting: "x"', ok: false, ms: 0 },

@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { must } from './support/must.ts';
 
 const ROOT = path.join(import.meta.dirname, '..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -26,11 +27,11 @@ function frontmatter(t: string) {
   const m = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(t);
   assert.ok(m, 'frontmatter present');
   const fm: Record<string, string> = {};
-  for (const line of m[1].split('\n')) {
+  for (const line of must(m[1]).split('\n')) {
     const kv = /^([a-z-]+):\s*(.*)$/.exec(line);
-    if (kv) fm[kv[1]] = kv[2];
+    if (kv) fm[must(kv[1])] = must(kv[2]);
   }
-  return { fm, body: m[2] };
+  return { fm, body: must(m[2], 'a body') };
 }
 
 test('words: member template is <= 900 chars raw and filled for 5 members, with every placeholder', () => {
@@ -64,7 +65,8 @@ test('words: claude fill is short and names the room task; agent body holds the 
 
   const { fm, body } = frontmatter(read(AGENT));
   assert.equal(fm.name, 'room-claude');
-  assert.ok(fm.description.length <= 200, `claude description is ${fm.description.length} chars`);
+  const description = must(fm.description, 'a description');
+  assert.ok(description.length <= 200, `claude description is ${description.length} chars`);
   assert.ok(body.length <= 1900, `claude body is ${body.length} chars`);
   for (const s of ['TaskCreate', 'TaskUpdate', 'one message', 'metadata {req: N, by: NAME}', 'only status completed', 'drops every field', 'completed',
     'owner\'s done request', 'room closed', 'Task 1', 'SendMessage', 'propose', 'no #ids', 'No Bash',
@@ -75,7 +77,7 @@ test('words: claude fill is short and names the room task; agent body holds the 
 
 test('words: room Claude tools are exactly the plan list (no Bash)', () => {
   const { fm } = frontmatter(read(AGENT));
-  const tools = fm.tools.split(',').map(s => s.trim());
+  const tools = must(fm.tools, 'tools').split(',').map(s => s.trim());
   const want = ['Read', 'Grep', 'Glob', 'Write', 'Edit', 'Agent(sub-human:participant)', 'Agent(general-purpose)', 'SendMessage', 'ListAgents', 'ToolSearch',
     'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet', ...['post', 'read', 'propose', 'hold'].map(t => PREFIX + t)];
   assert.deepEqual([...tools].sort(), [...want].sort());
@@ -88,7 +90,8 @@ test('words: SKILL.md allows only the live room tools (not hold: mod/guard.ts de
   assert.deepEqual(allowed.sort(), ['post', 'read', 'propose', 'task'].map(x => PREFIX + x).sort());
   assert.match(t, /disable-model-invocation: true/);
   const { fm } = frontmatter(t);
-  assert.ok(fm.description.length <= 250, `skill description is ${fm.description.length} chars`);
+  const description = must(fm.description, 'a description');
+  assert.ok(description.length <= 250, `skill description is ${description.length} chars`);
 });
 
 test('words: every room tool name is spelled with the hyphen', () => {
@@ -133,7 +136,7 @@ test('words: README covers the plan topics', () => {
 });
 
 test('words: plugin.json is valid and describes the slim plugin', () => {
-  const p = JSON.parse(read('.claude-plugin/plugin.json'));
+  const p = JSON.parse(read('.claude-plugin/plugin.json')) as { name: string; version: string; description: string };
   assert.equal(p.name, 'sub-human');
   assert.match(p.version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?$/, 'X.Y.Z, or a pre-release such as 0.5.0-beta.1');
   assert.ok(p.description.length <= 300);

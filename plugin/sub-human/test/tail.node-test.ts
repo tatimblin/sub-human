@@ -15,14 +15,15 @@ import * as tailLib from '../lib/tail.ts';
 import * as session from '../lib/room/session.ts';
 import * as proposal from '../lib/proposal.ts';
 import type { Room } from '../lib/room.ts';
-import type { FsRoomStore } from '../lib/room/store.ts';
+import { fsStore } from './support/fs-store.ts';
 import type { FakeClock } from '../lib/clock.ts';
-import type { Entry, EntryInput, Via } from '../lib/room/types.ts';
+import type { Entry, EntryInput, Role, Via } from '../lib/room/types.ts';
 import type { Identity } from '../lib/identity.ts';
 import type * as linkMod from '../lib/remote/link-socket.ts';
 import type { TailEvent } from '../lib/types-app.ts';
 import type { RoomCode } from '../lib/brand.ts';
 import { rc, sn } from './support/brands.ts';
+import { must } from './support/must.ts';
 
 const FAST = {
   resolveMs: 100, unseatedMs: 100, pollMs: 50, settleMs: 300, settleMaxMs: 1000, roomClaudeSettleMs: 300, roomClaudeSettleMaxMs: 1000,
@@ -68,12 +69,13 @@ interface TailHarness {
 }
 function startTail({ timings = {}, lookup = () => identity.resolveByPid(process.pid), ...opts }: StartOpts = {}): TailHarness {
   const clock = opts.clock || createFake({ now: Date.now() });
-  const t = { clock, out: '', writes: 0, errs: [] } as unknown as TailHarness; // the methods are added below
+  const t = { clock, out: '', writes: 0, errs: [] } as unknown as TailHarness; // deliberate: the methods are added below
   t.handle = tailLib.runTail({
-    clock, lookup, timings: { ...FAST, ...timings }, fs: opts.fs, deps: opts.deps, sid: opts.sid,
+    clock, lookup, timings: { ...FAST, ...timings },
+    ...(opts.fs !== undefined ? { fs: opts.fs } : {}), ...(opts.deps !== undefined ? { deps: opts.deps } : {}), ...(opts.sid !== undefined ? { sid: opts.sid } : {}),
     write: (s, done) => {
       t.out += s;
-      if (s.split('\n').filter(Boolean).some(l => BATCH.has(JSON.parse(l).type))) t.writes++;
+      if (s.split('\n').filter(Boolean).some(l => BATCH.has((JSON.parse(l) as TailEvent).type))) t.writes++;
       done();
     },
     err: s => t.errs.push(s),
@@ -87,12 +89,14 @@ function startTail({ timings = {}, lookup = () => identity.resolveByPid(process.
   t.chat = () => t.lines().filter(l => !l.startsWith('(for Claude)'));
   t.forClaude = () => t.lines().filter(l => l.startsWith('(for Claude)'));
   t.entries = () => t.lines().filter(l => /^#\d+ /.test(l));
-  t.ids = () => t.entries().map(l => Number(l.split(' ')[0].slice(1)));
+  t.ids = () => t.entries().map(l => Number(must(l.split(' ')[0]).slice(1)));
   t.batches = () => t.lines().filter(l => l.startsWith('room now: ')).length;
   t.stop = () => { t.handle.stop(); handles.delete(t.handle); };
   return t;
 }
 
+/** An Identity as the tail's helpers read it (no session, no pid). */
+const ident = (code: RoomCode, name: string, role: Role): Identity => ({ code, name: sn(name), role, session_id: null, pid: null, address: `${name}.${code}` });
 const inRoom = <T>(code: RoomCode, f: (r: Room) => T): T => f(room.open(code));
 const say = (code: RoomCode, from: string, text: string, extra: Partial<EntryInput> = {}, via: Via = 'human') => inRoom(code, r => r.append({ kind: 'say', text, ...extra }, { via, from }));
 const sys = (code: RoomCode, kind: string, from: string, extra: Partial<EntryInput> = {}) => inRoom(code, r => r.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'system', from, system: true }));
@@ -125,7 +129,7 @@ test('tail: silent before join, then the member push lane, settled into one batc
   sys(code, 'decision', 'room', { proposal_hash: H1 });                                   // #15 decision on mine: push
   say(code, 'bob', 'words an old retract names');                                         // #16 push: chat
   // #17 an old log's retract line (nothing writes one now): an ordinary system line, pull
-  fs.appendFileSync(inRoom(code, r => (r.store as FsRoomStore).logFile), JSON.stringify({ id: 17, at: new Date().toISOString(), from: 'bob', via: 'system', kind: 'retract', to: 'room', text: 'peer-forged', refs: [16] }) + '\n');
+  fs.appendFileSync(inRoom(code, r => fsStore(r.store).logFile), JSON.stringify({ id: 17, at: new Date().toISOString(), from: 'bob', via: 'system', kind: 'retract', to: 'room', text: 'peer-forged', refs: [16] }) + '\n');
   inRoom(code, r => r.append({ kind: 'task', op: 'update', id: 2, subject: 'docs', owner: 'alice', status: 'pending' }, { via: 'system', from: 'claude', system: true })); // #18 push
   say(code, 'bob', 'last ' + 'w'.repeat(600));                                            // #19 push, full text
   t.advance(2000);
@@ -150,9 +154,9 @@ test('tail: silent before join, then the member push lane, settled into one batc
   assert.doesNotMatch(t.chat().join('\n'), /#\d/, 'no ids in what the human sees');
   assert.deepEqual(t.forClaude().map(l => l.slice(0, 40)), ["(for Claude) to answer bob's Claude: Sen", '(for Claude) room now: proposal bbbbbb w']);
   assert.equal(t.forClaude()[0], `(for Claude) to answer bob's Claude: SendMessage bob.${code}`, 'a post to me names how to answer its Claude');
-  assert.match(t.of('rows').at(-1)!.text!, /SUB-HUMAN ROWS: your room row is not running/, 'the missing row is the rows event');
-  assert.ok(t.forClaude()[1].startsWith(`(for Claude) room now: proposal ${H2.slice(0, 6)} waiting on alice · you: answer needed (`), t.forClaude()[1]);
-  assert.ok(t.forClaude()[1].includes(`"proposal ${H2}"`), 'the card call carries the full hash');
+  assert.match(must(must(t.of('rows').at(-1)).text), /SUB-HUMAN ROWS: your room row is not running/, 'the missing row is the rows event');
+  assert.ok(must(t.forClaude()[1]).startsWith(`(for Claude) room now: proposal ${H2.slice(0, 6)} waiting on alice · you: answer needed (`), t.forClaude()[1]);
+  assert.ok(must(t.forClaude()[1]).includes(`"proposal ${H2}"`), 'the card call carries the full hash');
   assert.equal(cursor(code, 'alice'), 19);
   assert.ok(shown(code, 'alice').has(12), 'the join is recorded as shown (a restarted child does not repeat it)');
   assert.deepEqual(t.errs, []);
@@ -208,8 +212,8 @@ test('tail: a member_joined notice says whether that row already runs (live hold
   say(code, 'bob', 'back', { to: 'claude' });                            // #4
   t.advance(1500);
   assert.deepEqual(t.ids(), [1, 4], t.text());
-  assert.match(t.entries()[0], /^#1 bob\[system\] member_joined .* · row: bob has no row running; spawn it now: Agent sub-human:participant, description "bob", prompt "member: bob"/);
-  assert.doesNotMatch(t.entries()[1], / · row:/, 'only member_joined carries the note');
+  assert.match(must(t.entries()[0]), /^#1 bob\[system\] member_joined .* · row: bob has no row running; spawn it now: Agent sub-human:participant, description "bob", prompt "member: bob"/);
+  assert.doesNotMatch(must(t.entries()[1]), / · row:/, 'only member_joined carries the note');
 });
 
 test('tail: leave/rejoin collapse at the default 8 s hold (left+rejoin within 3 s prints nothing)', () => {
@@ -265,11 +269,11 @@ test('tail: a steady trickle is cut into batches at the settle max; held ids kee
 
 test('tail: startCursor: the saved cursor, else the latest join, else the log\'s end', () => {
   // a fake room with the one call startCursor makes; its entry and the seats carry only the fields it reads
-  const rm: Parameters<typeof tailLib.startCursor>[0] = { readView: () => [{ id: 7, kind: 'member_joined', from: 'claude' } as Entry] };
-  const claude = { name: 'claude', role: 'claude' } as Identity;
+  const rm: Parameters<typeof tailLib.startCursor>[0] = { readView: () => [{ id: 7, kind: 'member_joined', from: 'claude' } as Entry] }; // deliberate: a partial entry
+  const claude = ident(rc('vole-0000'), 'claude', 'claude');
   assert.equal(tailLib.startCursor(rm, 5, claude, 9), 5, 'the session document\'s cursor');
   assert.equal(tailLib.startCursor(rm, 0, claude, 9), 7, 'no cursor: its latest join');
-  assert.equal(tailLib.startCursor(rm, 0, { name: 'bob', role: 'member' } as Identity, 9), 9, 'no join: the log\'s end');
+  assert.equal(tailLib.startCursor(rm, 0, ident(rc('vole-0000'), 'bob', 'member'), 9), 9, 'no join: the log\'s end');
 });
 
 test('tail: survives a restart via its cursor (no read from byte 0); switches when the session changes rooms', () => {
@@ -334,7 +338,7 @@ test('tail: an error inside the loop is logged once, backed off and recovered; d
   t.advance(3000);
   assert.deepEqual(t.lines(), ['bob: one', 'bob: two'], t.text());
   assert.equal(t.errs.length, 1, `rate-limited to one line: ${t.errs}`);
-  assert.match(t.errs[0], /^sub-human tail: poll failed: EIO: injected read error; retrying\n$/);
+  assert.match(must(t.errs[0]), /^sub-human tail: poll failed: EIO: injected read error; retrying\n$/);
   viewFails = 1;                                               // the flush's view read throws once: the batch is kept
   lookupFails = 3;                                             // a failing seat lookup keeps the session
   say(code, 'bob', 'three');                                   // #4
@@ -351,7 +355,7 @@ test('tail: a dead poll loop is noticed by the seat check and the session restar
   sys(code, 'member_joined', 'alice');                         // #1
   const t = startTail();
   t.advance(300);
-  t.handle.session()!.killPoll();
+  must(t.handle.session()).killPoll();
   say(code, 'bob', 'while the loop was dead');                 // #2
   t.advance(FAST.stallMs + 1000);
   assert.deepEqual(t.lines(), ['bob: while the loop was dead'], t.text());
@@ -366,7 +370,7 @@ test('tail: a hash-chain break is reported once per break, for Claude; the tail 
   const t = startTail();
   t.advance(FAST.healthMs + 100);
   assert.deepEqual(t.lines(), ['bob: genuine'], 'an intact chain prints nothing');
-  const file = inRoom(code, r => (r.store as FsRoomStore).logFile);
+  const file = inRoom(code, r => fsStore(r.store).logFile);
   fs.appendFileSync(file, JSON.stringify({ id: 3, at: new Date().toISOString(), from: 'alice', via: 'agent', kind: 'status', to: 'room', text: 'spliced', prev: '000000000000' }) + '\n');
   t.advance(FAST.healthMs);
   t.advance(FAST.healthMs * 3);
@@ -445,16 +449,16 @@ test('stage 8e G (live verify, remote/99x): an invite\'s join request is one wak
   h.freshHome();
   const { code } = h.register('alice');
   sys(code, 'member_joined', 'alice');
-  const q = { ref: 'a6a8c73830ec', told: [] as string[] };
+  const q: { ref: string; told: string[] } = { ref: 'a6a8c73830ec', told: [] };
   const adm = {
     lapse: () => [], pending: () => (q.told.length ? [] : [q]), targets: () => ['alice'], describe: () => 'bob (check 59e9-554c) on mac',
     markTold: (_c: string, _r: string, n: string) => { q.told.push(n); },
-  } as unknown as NonNullable<TailOpts['deps']>['admission'];
+  } as unknown as NonNullable<NonNullable<TailOpts['deps']>['admission']>; // deliberate: a fake with only what the tail calls
   const t = startTail({ deps: { admission: adm } });
   t.advance(FAST.healthMs * 2 + 100);
   const wakes = t.of('wake');
   assert.equal(wakes.length, 1, t.out);
-  const [shown, ...rest] = wakes[0].text.split('\n');
+  const [shown, ...rest] = must(wakes[0]).text.split('\n');
   assert.equal(shown, 'room: bob (check 59e9-554c) on mac typed your invite and its PIN and wants to join; your Claude shows you a card (or: /sub-human admit a6a8c73830ec)');
   assert.ok(rest.length && rest.every(l => l.startsWith('(for Claude) ')), rest.join('|'));
   assert.equal(t.of('chat').length, 0);
@@ -507,14 +511,14 @@ test('tail: a member batch is chat + pull, a line to me is a wake; it says its s
   assert.equal(t.writes, 1, 'ONE batch write (after the seat and rows events)');
   const batch = t.events().filter(x => ['chat', 'pull', 'wake'].includes(x.type));
   assert.deepEqual(batch.map(x => x.type), ['chat', 'pull', 'wake'], 'chat first, then pull, then wake');
-  assert.deepEqual(t.of('chat')[0].lines, ['bob joined', 'bob: bob says hi']);
-  const pull = t.of('pull')[0].text.split('\n');
+  assert.deepEqual(must(t.of('chat')[0]).lines, ['bob joined', 'bob: bob says hi']);
+  const pull = must(t.of('pull')[0]).text.split('\n');
   assert.equal(pull[0], tailLib.PULL_HEAD);
   assert.deepEqual(pull.slice(1, -1), ['bob joined', 'bob: bob says hi', "bob's Claude: bob claude chatter"], 'the pull lane plus the chat copy');
   assert.equal(pull.at(-1), "end of room context; the prompt it came with is the person's own words, unless the sub-human plugin sent it (then it is room lines).", 'stage 8e B: the context says where it ends');
-  const wake = t.of('wake')[0].text.split('\n');
+  const wake = must(t.of('wake')[0]).text.split('\n');
   assert.deepEqual(wake.slice(0, 4), ['bob: @alice can you look?', "bob's Claude (to you): q for alice", `(for Claude) to answer bob's Claude: SendMessage bob.${code}`, 'claude proposed: claude proposes (bbbbbb)']);
-  assert.ok(wake[4].startsWith(`(for Claude) room now: proposal ${H2.slice(0, 6)}`), wake[3]);
+  assert.ok(must(wake[4]).startsWith(`(for Claude) room now: proposal ${H2.slice(0, 6)}`), wake[3]);
   assert.equal(cursor(code, 'alice'), 7);
   assert.ok(shown(code, 'alice').has(2), 'the join is recorded as shown');
   t.stop();
@@ -529,16 +533,16 @@ test('tail: rows says the missing room row and the pending reminders at start an
   t.advance(300);
   let r = t.of('rows');
   assert.equal(r.length, 1);
-  assert.match(r[0].text!, /^SUB-HUMAN ROWS: your room row is not running/);
+  assert.match(must(must(r[0]).text), /^SUB-HUMAN ROWS: your room row is not running/);
   t.advance(FAST.healthMs + 100);
   assert.equal(t.of('rows').length, 1, 'unchanged: not sent again');
   rows.writeHolds(code, sn('alice'), { room: true });
   t.advance(FAST.healthMs);
   r = t.of('rows');
-  assert.equal(r.at(-1)!.text, null, 'the row runs: cleared');
+  assert.equal(must(r.at(-1)).text, null, 'the row runs: cleared');
   prop(code, 'claude', H2, ['alice']);
   t.advance(FAST.healthMs);
-  assert.match(t.of('rows').at(-1)!.text!, new RegExp(H2.slice(0, 6)), 'a proposal awaiting me is reminded');
+  assert.match(must(must(t.of('rows').at(-1)).text), new RegExp(H2.slice(0, 6)), 'a proposal awaiting me is reminded');
 });
 
 test('tail: the room\'s Claude gets its push block as one wake, the pull lane as pull; no chat', () => {
@@ -553,9 +557,9 @@ test('tail: the room\'s Claude gets its push block as one wake, the pull lane as
   assert.deepEqual(t.of('chat'), []);
   const wake = t.of('wake');
   assert.equal(wake.length, 1);
-  assert.match(wake[0].text, /^room now: /);
-  assert.match(wake[0].text, /#1 /);
-  assert.match(t.of('pull')[0].text, /bob: bob to the room/);
+  assert.match(must(wake[0]).text, /^room now: /);
+  assert.match(must(wake[0]).text, /#1 /);
+  assert.match(must(t.of('pull')[0]).text, /bob: bob to the room/);
 });
 
 test('tail: a chain break is a health event', () => {
@@ -564,7 +568,7 @@ test('tail: a chain break is a health event', () => {
   sys(code, 'member_joined', 'alice');
   const t = startNd({ sid: 's' });
   t.advance(300);
-  fs.appendFileSync(inRoom(code, r => (r.store as FsRoomStore).logFile), JSON.stringify({ id: 2, at: new Date().toISOString(), from: 'alice', via: 'agent', kind: 'status', to: 'room', text: 'spliced', prev: '000000000000' }) + '\n');
+  fs.appendFileSync(inRoom(code, r => fsStore(r.store).logFile), JSON.stringify({ id: 2, at: new Date().toISOString(), from: 'alice', via: 'agent', kind: 'status', to: 'room', text: 'spliced', prev: '000000000000' }) + '\n');
   t.advance(FAST.healthMs * 2);
   assert.deepEqual(t.of('health').map(x => x.text.slice(0, 40)), ['room log check: the hash chain breaks at']);
 });
@@ -599,7 +603,7 @@ test('tail: a room hosted elsewhere: one OFFLINE line when the link goes down, o
   st = { running: true, state: 'offline', reason: 'the connection to the host closed' };
   t.advance(FAST.healthMs * 2 + 100);
   assert.equal(health().length, 1, health().join('\n'));
-  assert.match(health()[0], /^the connection to room \S+ is down \(the connection to the host closed\); @room posts wait and go out when it's back/);
+  assert.match(must(health()[0]), /^the connection to room \S+ is down \(the connection to the host closed\); @room posts wait and go out when it's back/);
   st = { running: true, state: 'connecting' };
   t.advance(FAST.healthMs + 100);
   assert.equal(health().length, 1, 'connecting is not back yet');
@@ -625,28 +629,28 @@ test('tail: a room hosted elsewhere: one OFFLINE line when the link goes down, o
 test('remindersText: the one a review opens next (the newest unless named), the others listed by short hash and title', () => {
   h.freshHome();
   const { code } = h.register('alice');
-  const me = { code, name: sn('alice'), role: 'member' } as Identity; // the fields remindersText reads
+  const me = ident(code, 'alice', 'member');
   const p = (from: string, hash: string, title: string) => inRoom(code, r => r.append({ kind: 'proposal', text: `proposal ${hash}: ${title}`, hash, approvers: ['alice'] }, { via: 'agent', from }));
   p('bob', 'aaaaaaaaaaaa', 'Ship v2 Friday');
   p('carol', 'cccccccccccc', 'Rate limits');
   p('bob', 'dddddddddddd', 'Ship v3 Monday');
-  const text = tailLib.remindersText(me, room.open(code))!;
+  const text = must(tailLib.remindersText(me, room.open(code)));
   assert.match(text, /^proposal dddddddddddd still awaits alice's answer/);
   assert.match(text, /\(2 more await alice's answer: aaaaaa "Ship v2 Friday", cccccc "Rate limits"; the hooks open whichever alice names next, else the newest\.\)$/);
   // bob's revision of "Ship v3 Monday" retires his earlier one: it is no longer listed
   p('bob', 'eeeeeeeeeeee', 'Ship v3 Monday');
-  assert.doesNotMatch(tailLib.remindersText(me, room.open(code))!, /dddddd/);
+  assert.doesNotMatch(must(tailLib.remindersText(me, room.open(code))), /dddddd/);
   assert.equal(tailLib.remindersText({ ...me, role: 'claude' }, room.open(code)), null);
 });
 
 test('remindersText: a note of mine waiting on the picked proposal points at the confirm card, not a new review', () => {
   h.freshHome();
   const { code } = h.register('alice');
-  const me = { code, name: sn('alice'), role: 'member' } as Identity; // the fields remindersText reads
+  const me = ident(code, 'alice', 'member');
   inRoom(code, r => r.append({ kind: 'proposal', text: 'proposal dddddddddddd: Ship v3 Monday', hash: 'dddddddddddd', approvers: ['alice'] }, { via: 'agent', from: 'bob' }));
   // a note on another proposal: the ordinary reminder
   proposal.writeConfirm(me, { hash: 'aaaaaaaaaaaa', note: 'open rate limiting', from: 'bob', title: null, at: Date.now() });
-  assert.match(tailLib.remindersText(me, room.open(code))!, /^proposal dddddddddddd still awaits alice's answer/);
+  assert.match(must(tailLib.remindersText(me, room.open(code))), /^proposal dddddddddddd still awaits alice's answer/);
   // waiting, not yet offered again: show it now, as consent's reoffer on the same prompt says (never a softer line)
   const cf = { hash: 'dddddddddddd', note: 'open rate limiting', from: 'bob', title: 'Ship v3 Monday', at: Date.now() };
   // each stage as this version writes it (stage) and as an earlier one did (flags: lib/consent/review.ts stageOf)
@@ -680,7 +684,7 @@ test('tail: a session with no seat and a PIN join waiting looks again every reso
     write: (s, d) => { out.push(s); d(); },
     deps: { pendingNews: (sid: string) => { asked++; assert.equal(sid, 'sid-1'); return news; } },
   });
-  const chat = () => out.flatMap(s => s.split('\n').filter(Boolean)).map(l => JSON.parse(l)).filter(e => e.type === 'chat');
+  const chat = () => out.flatMap(s => s.split('\n').filter(Boolean)).map(l => JSON.parse(l) as TailEvent).filter((e): e is EventOf<'chat'> => e.type === 'chat');
   clock.advance(350);
   assert.ok(asked >= 3, `waiting: asked again every resolveMs (${asked})`);
   assert.deepEqual(chat(), []);
@@ -694,7 +698,7 @@ test('tail: a session with no seat and a PIN join waiting looks again every reso
   news = { state: 'refused', code: rc('vole-1234'), text: 'could not join room vole-1234: the host refused to let this machine in' };
   clock.advance(5000);
   assert.equal(chat().length, 2);
-  assert.deepEqual(chat()[1].lines, [news.text]);
+  assert.deepEqual(must(chat()[1]).lines, [news.text]);
 });
 
 test('tail: a session with no seat and no join of its own says nothing (and never looks without a session id)', () => {

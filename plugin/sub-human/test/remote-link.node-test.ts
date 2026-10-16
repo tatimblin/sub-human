@@ -35,23 +35,35 @@ import type { LinkStatus } from '../lib/remote/link-socket.ts';
 import type { RunningLink } from '../lib/remote/types-core.ts';
 import type { SshSpec } from '../lib/remote/types-rest.ts';
 import type { Link, LinkStateWord } from '../lib/room/types.ts';
+import type { RoomCode } from '../lib/brand.ts';
 import { rc, sn, mid, tokenOf, wordOf } from './support/brands.ts';
+import { must } from './support/must.ts';
+import { fsStore } from './support/fs-store.ts';
 
 const mode = (p: string) => fs.statSync(p).mode & 0o777;
+/** The room's store, asserted to be this machine's mirror (linked above). */
+const mirrorOf = (code: RoomCode): MirrorRoomStore => {
+  const m = store.open(code);
+  assert.ok(m instanceof MirrorRoomStore, 'a mirror');
+  return m;
+};
+/** A running link as idleWatch reads it: its state and stop (wake and done are never used). */
+const running = (state: () => LinkStateWord, stop: (why: string) => void): RunningLink => ({ state, stop, wake: () => Promise.resolve(), done: new Promise<string>(() => {}) });
 
 test('links: one private file per room; get, set, remove, list; a bad code or shape is refused', t => {
   const home = h.freshHome(t);
-  const l: Link = { code: rc('vole-1234'), transport: { kind: 'pipe', home: '/h' }, invite: wordOf('sh1.x'), created_at: 'now' };
+  const bare: Link = { code: rc('vole-1234'), transport: { kind: 'pipe', home: '/h' }, created_at: 'now' }; // no credential
+  const l: Link = { ...bare, invite: wordOf('sh1.x') };
   assert.equal(links.get(rc('vole-1234')), null);
   assert.deepEqual(links.set(rc('vole-1234'), l), l);
   assert.deepEqual(links.get(rc('vole-1234')), l);
   assert.deepEqual([mode(links.linksDir()), mode(path.join(home, 'links', 'vole-1234.json'))], [0o700, 0o600]);
-  links.set(rc('otter-0001'), { ...l, code: rc('otter-0001'), invite: undefined, token: tokenOf('t') });
+  links.set(rc('otter-0001'), { ...bare, code: rc('otter-0001'), token: tokenOf('t') });
   assert.deepEqual(links.list(), [rc('otter-0001'), rc('vole-1234')]);
   assert.equal(links.get('../x'), null);
   // @ts-expect-error: not a room code, refused at run time
   assert.throws(() => links.set('../x', l), (e: RoomError) => e.code === 'INVALID');
-  assert.throws(() => links.set(rc('vole-1234'), { ...l, invite: undefined }), (e: RoomError) => e.code === 'INVALID', 'no credential');
+  assert.throws(() => links.set(rc('vole-1234'), bare), (e: RoomError) => e.code === 'INVALID', 'no credential');
   assert.throws(() => links.set(rc('vole-1234'), { ...l, code: rc('otter-0001') }), (e: RoomError) => e.code === 'INVALID');
   assert.equal(links.remove(rc('vole-1234')), true);
   assert.equal(links.remove(rc('vole-1234')), false);
@@ -96,7 +108,7 @@ test('link: the socket path is short whatever the home; locators name a home, ne
   const deep = path.join('/', 'x'.repeat(200), 'rooms', rc('vole-1234'));
   const p = linkSocket.socketPath(deep);
   assert.ok(Buffer.byteLength(p) < 104, p);
-  assert.ok(p.startsWith(`/tmp/sub-human-${process.getuid!()}/`), p);
+  assert.ok(p.startsWith(`/tmp/sub-human-${must(process.getuid?.(), 'a uid')}/`), p);
   assert.notEqual(linkSocket.socketPath(deep + 'x'), p);
   assert.equal(linkSocket.socketPath('/h/rooms/vole-1234'), '/h/rooms/vole-1234/.link/link.sock', 'a short home: in the mirror');
   // never TMPDIR: a daemon and a hook with different ones agree
@@ -115,7 +127,7 @@ test('link: the socket path is short whatever the home; locators name a home, ne
 
 test('link: handle tries each socket in order; a missing one, or one in a directory open to others, is skipped', async t => {
   const serve = (file: string, result: unknown) => new Promise<void>(resolve => {
-    const srv = net.createServer(s => { const dec = protocol.decoder(); s.on('data', c => { for (const f of dec.push(c)) s.end(protocol.encode(protocol.reply(f.id!, result))); }); });
+    const srv = net.createServer(s => { const dec = protocol.decoder(); s.on('data', c => { for (const f of dec.push(c)) s.end(protocol.encode(protocol.reply(f.id, result))); }); });
     t.after(() => srv.close());
     srv.listen(file, resolve);
   });
@@ -196,16 +208,17 @@ test('ssh: a ProxyJump rides the locator (?via=), as plain as the destination; t
 test('mirror: applyLine appends a host line only when it chains; applyDoc writes only the room documents', t => {
   h.freshHome(t);
   const code = h.newRoom();
-  const host = store.open(code) as store.FsRoomStore;
+  const host = fsStore(store.open(code));
   const mirror = new MirrorRoomStore(code, { dir: h.tmpDir('sh-mirror-', t) });
   const lines = () => fs.readFileSync(host.logFile, 'utf8').split('\n').filter(Boolean);
+  const line = (i: number) => must(lines()[i], `host line ${i}`);
   host.append({ kind: 'status', text: 'one' }, { via: 'system', from: 'room', system: true });
   host.append({ kind: 'status', text: 'two' }, { via: 'system', from: 'room', system: true });
-  assert.throws(() => mirror.applyLine(lines()[1]), (e: RoomError) => e.code === 'FORK', 'a gap');
-  assert.equal(mirror.applyLine(lines()[0]).text, 'one');
-  assert.throws(() => mirror.applyLine(lines()[0]), (e: RoomError) => e.code === 'FORK', 'a duplicate');
-  assert.throws(() => mirror.applyLine(JSON.stringify({ ...JSON.parse(lines()[1]), prev: '000000000000' })), (e: RoomError) => e.code === 'FORK');
-  mirror.applyLine(lines()[1]);
+  assert.throws(() => mirror.applyLine(line(1)), (e: RoomError) => e.code === 'FORK', 'a gap');
+  assert.equal(mirror.applyLine(line(0)).text, 'one');
+  assert.throws(() => mirror.applyLine(line(0)), (e: RoomError) => e.code === 'FORK', 'a duplicate');
+  assert.throws(() => mirror.applyLine(JSON.stringify({ ...JSON.parse(line(1)), prev: '000000000000' })), (e: RoomError) => e.code === 'FORK');
+  mirror.applyLine(line(1));
   assert.equal(fs.readFileSync(mirror.logFile, 'utf8'), fs.readFileSync(host.logFile, 'utf8'));
   assert.throws(() => mirror.applyLine('{nope'), (e: RoomError) => e.code === 'PROTOCOL');
   mirror.applyDoc('members', { bob: { name: 'bob' } });
@@ -222,7 +235,7 @@ test('mirror: applyLine appends a host line only when it chains; applyDoc writes
 test('link: a mirror that is not the host\'s prefix is a FORK: the daemon stops and says so; after reset() it copies the room again', async t => {
   h.freshHome(t);
   const code = h.newRoom();
-  const host = store.open(code) as store.FsRoomStore;
+  const host = fsStore(store.open(code));
   for (const text of ['a', 'b']) host.append({ kind: 'status', text }, { via: 'system', from: 'room', system: true });
   const mirror = new MirrorRoomStore(code, { dir: h.tmpDir('sh-mirror-', t) });
   t.after(() => fs.rmSync(path.dirname(linkSocket.socketPath(mirror.dir)), { recursive: true, force: true }));
@@ -239,9 +252,10 @@ test('link: a mirror that is not the host\'s prefix is a FORK: the daemon stops 
   const forked = await link.serveMirror({ mirror, connect, log: m => logged.push(m) });
   assert.match(await forked.done, /not the mirror's/);
   assert.equal(forked.state(), 'fork');
-  assert.deepEqual([mirror.kv.get('link').state, mirror.kv.get('link').pid], ['fork', process.pid]);
+  const linkDoc = must(mirror.kv.get<{ state: string; pid: number }>('link'), 'the link document');
+  assert.deepEqual([linkDoc.state, linkDoc.pid], ['fork', process.pid]);
   assert.match(logged.join('\n'), new RegExp(`FORK in room ${code}.*sub-human link --reset ${code}`));
-  assert.equal(mirror.readAll()[0].text, 'not the host\'s', 'nothing repaired');
+  assert.equal(must(mirror.readAll()[0]).text, 'not the host\'s', 'nothing repaired');
 
   mirror.reset();
   const again = await link.serveMirror({ mirror, connect });
@@ -267,16 +281,17 @@ test('skew: a newer host\'s unknown entry kind, via and fields, an unknown docum
   const connect = () => {
     const [a, b] = memory.pair();
     b.onFrame(f => {
-      if (f.op === 'hello') return b.send(protocol.reply(f.id!, { v: protocol.PROTO.max, proto: { min: 1, max: protocol.PROTO.max + 1 }, server: '9.0.0', caps: {}, room: code, link: 'abcdef012345', newField: 1 }));
+      if (f.op === 'hello') return b.send(protocol.reply(f.id, { v: protocol.PROTO.max, proto: { min: 1, max: protocol.PROTO.max + 1 }, server: '9.0.0', caps: {}, room: code, link: 'abcdef012345', newField: 1 }));
       if (f.op !== 'subscribe') return undefined;
-      b.send(protocol.reply(f.id!, { ok: true }));
+      const id = must(f.id, 'the subscribe id');
+      b.send(protocol.reply(id, { ok: true }));
       // @ts-expect-error deliberate: an event this version does not know
-      b.send(protocol.event(f.id!, 'ping', { t: 1 }));
-      b.send(protocol.event(f.id!, 'doc', { key: 'links', value: { x: 1 } }));
+      b.send(protocol.event(id, 'ping', { t: 1 }));
+      b.send(protocol.event(id, 'doc', { key: 'links', value: { x: 1 } }));
       // @ts-expect-error deliberate: a doc event with no data
-      b.send(protocol.event(f.id!, 'doc', null));
-      for (const l of lines) b.send(protocol.event(f.id!, 'entry', l));
-      return b.send(protocol.event(f.id!, 'doc', { key: 'presence/bob', value: { state: 'idle', mood: 'new field' } }));
+      b.send(protocol.event(id, 'doc', null));
+      for (const l of lines) b.send(protocol.event(id, 'entry', l));
+      return b.send(protocol.event(id, 'doc', { key: 'presence/bob', value: { state: 'idle', mood: 'new field' } }));
     });
     return client.connect(a, { machine: mid('m1'), token: tokenOf('tok') });
   };
@@ -311,8 +326,8 @@ test('link: a lost connection is retried with decorrelated jitter: each delay in
   await h.until(() => at.length >= 5, 30_000, 5);
   l.stop('done');
   assert.deepEqual(asked.slice(0, 4), [120, 360, 400, 400]);
-  const gaps = at.slice(1, 5).map((x, i) => x - at[i]);
-  gaps.forEach((g, i) => assert.ok(g >= asked[i] - 5, `gap ${i}: ${g} ms, under the ${asked[i]} ms asked: ${gaps}`));
+  const gaps = at.slice(1, 5).map((x, i) => x - must(at[i]));
+  gaps.forEach((g, i) => { const want = must(asked[i]); assert.ok(g >= want - 5, `gap ${i}: ${g} ms, under the ${want} ms asked: ${gaps}`); });
   assert.deepEqual([config.LINK_RETRY_MS, config.LINK_RETRY_MAX_MS], [1000, 10_000]);
 });
 
@@ -321,13 +336,13 @@ test('link: the daemon stops with no seat of this machine left, offline too (by 
   const code = rc('vole-1234');
   links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: tokenOf('t') });
   store.createRoom(code);
-  const mirror = store.open(code) as MirrorRoomStore; // linked above: a mirror
+  const mirror = mirrorOf(code);
   const seat = (extra = {}) => ({ bob: { name: 'bob', role: 'member', machine: identity.machineId(), joined_at: new Date().toISOString(), seen_at: new Date().toISOString(), ...extra } });
   const sleeper = h.spawnSleeper(60);
   writeJsonAtomic(path.join(home, 'sessions', 'by-pid', `${sleeper.pid}.json`), { code, name: sn('bob'), role: 'member', pid: sleeper.pid, pid_start: pidStart(sleeper.pid), session_id: null, address: `bob.${code}` });
   let state: LinkStateWord = 'offline', stopped: string | null = null;
   // the two parts of a running link idleWatch uses
-  const watch = () => link.idleWatch({ state: () => state, stop: why => { stopped = why; } } as RunningLink, mirror, 150);
+  const watch = () => link.idleWatch(running(() => state, why => { stopped = why; }), mirror, 150);
 
   // offline: the host's document is stale (an old lease), but bob's claude process lives: the daemon keeps retrying
   mirror.applyDoc('members', seat({ seen_at: new Date(0).toISOString() }));
@@ -336,7 +351,7 @@ test('link: the daemon stops with no seat of this machine left, offline too (by 
   await h.sleep(600);
   assert.equal(stopped, null);
   // bob's session crashed (no SessionEnd, so no leave reached the host): the daemon stops
-  process.kill(sleeper.pid!, 'SIGKILL');
+  process.kill(must(sleeper.pid), 'SIGKILL');
   await h.until(() => stopped, 3000, 20);
   unwatch();
   assert.equal(stopped, 'no seat of this machine is left in the room');
@@ -366,13 +381,13 @@ test('link: online, a seat whose lease lapsed during a pause but whose claude pr
   const code = rc('vole-1234');
   links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: tokenOf('t') });
   store.createRoom(code);
-  const mirror = store.open(code) as MirrorRoomStore; // linked above: a mirror
+  const mirror = mirrorOf(code);
   const seat = (extra = {}) => ({ bob: { name: 'bob', role: 'member', machine: identity.machineId(), joined_at: new Date().toISOString(), seen_at: new Date(0).toISOString(), ...extra } });
-  const index = (s: { pid?: number }) => writeJsonAtomic(path.join(home, 'sessions', 'by-pid', `${s.pid}.json`), { code, name: sn('bob'), role: 'member', pid: s.pid, pid_start: pidStart(s.pid), session_id: null, address: `bob.${code}` });
+  const index = (s: { pid?: number | undefined }) => writeJsonAtomic(path.join(home, 'sessions', 'by-pid', `${s.pid}.json`), { code, name: sn('bob'), role: 'member', pid: s.pid, pid_start: pidStart(s.pid), session_id: null, address: `bob.${code}` });
   let stopped: string | null = null;
   const watches: (() => void)[] = [];
   t.after(() => watches.forEach(u => u())); // a failed assertion must not leave an interval keeping the run alive
-  const watch = (state: LinkStateWord, opts?: Parameters<typeof link.idleWatch>[3]) => { const u = link.idleWatch({ state: () => state, stop: why => { stopped = why; } } as RunningLink, mirror, 150, opts); watches.push(u); return u; };
+  const watch = (state: LinkStateWord, opts?: Parameters<typeof link.idleWatch>[3]) => { const u = link.idleWatch(running(() => state, why => { stopped = why; }), mirror, 150, opts); watches.push(u); return u; };
 
   // (a) online after a pause: the host's document still shows bob's lease as lapsed, but bob's claude process lives
   const sleeper = h.spawnSleeper(60);
@@ -382,7 +397,7 @@ test('link: online, a seat whose lease lapsed during a pause but whose claude pr
   await h.sleep(600);
   assert.equal(stopped, null);
   // (b) bob's session died: nothing holds the seat any more
-  process.kill(sleeper.pid!, 'SIGKILL');
+  process.kill(must(sleeper.pid), 'SIGKILL');
   await h.until(() => stopped, 3000, 20);
   unwatch();
   assert.equal(stopped, link.NO_SEAT_REASON);
@@ -414,15 +429,16 @@ test('link: online, a seat whose lease lapsed during a pause but whose claude pr
 });
 
 test('tail: one line for a link that is not online, keyed fork, stopped or offline; none while it is online or connecting', () => {
-  // a running link's status without its pid: the fields linkLine reads
-  assert.equal(linkLine({ running: true, state: 'online' } as LinkStatus, rc('vole-1234')), null);
-  assert.equal(linkLine({ running: true, state: 'connecting' } as LinkStatus, rc('vole-1234')), null);
+  // a running link's status (linkLine never reads the pid)
+  const up = (st: Omit<Extract<LinkStatus, { running: true }>, 'running' | 'pid'>): LinkStatus => ({ running: true, pid: 4242, ...st });
+  assert.equal(linkLine(up({ state: 'online' }), rc('vole-1234')), null);
+  assert.equal(linkLine(up({ state: 'connecting' }), rc('vole-1234')), null);
   assert.deepEqual(linkLine({ running: false, state: 'fork' }, rc('vole-1234')), {
     key: 'fork', text: 'this machine\'s copy of room vole-1234 no longer matches the host\'s. Run /sub-human doctor.' });
-  assert.match(linkLine({ running: false, state: 'fork', queued: 3 }, rc('vole-1234'))!.text, /host's; 3 @room post\(s\) are kept, not sent\. Run \/sub-human doctor\./);
-  assert.deepEqual(linkLine({ running: true, state: 'offline', reason: 'the link closed' } as LinkStatus, rc('vole-1234')), {
+  assert.match(must(linkLine({ running: false, state: 'fork', queued: 3 }, rc('vole-1234'))).text, /host's; 3 @room post\(s\) are kept, not sent\. Run \/sub-human doctor\./);
+  assert.deepEqual(linkLine(up({ state: 'offline', reason: 'the link closed' }), rc('vole-1234')), {
     key: 'offline', text: 'the connection to room vole-1234 is down (the link closed); @room posts wait and go out when it\'s back, card answers can\'t be sent until then' });
-  assert.match(linkLine({ running: false }, rc('vole-1234'))!.text, /the connection to room vole-1234 isn't running; .*Type \/sub-human to reconnect\./);
+  assert.match(must(linkLine({ running: false }, rc('vole-1234'))).text, /the connection to room vole-1234 isn't running; .*Type \/sub-human to reconnect\./);
   assert.deepEqual(linkLine({ running: false, state: 'stopped', reason: 'the room was closed' }, rc('vole-1234')), {
     key: 'stopped', text: 'the connection to room vole-1234 stopped (the room was closed); @room posts can\'t be sent. Run /sub-human doctor.' });
 });
@@ -432,9 +448,9 @@ test('link: a join the host let in whose person has not typed /sub-human yet kee
   const code = rc('vole-4321');
   links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: tokenOf('t'), join_as: 'bob', join_sid: 'sid-1', created_at: new Date().toISOString() });
   store.createRoom(code);
-  const mirror = store.open(code) as MirrorRoomStore;
+  const mirror = mirrorOf(code);
   let stopped: string | null = null;
-  const unwatch = link.idleWatch({ state: () => 'online', stop: why => { stopped = why; } } as RunningLink, mirror, 150);
+  const unwatch = link.idleWatch(running(() => 'online', why => { stopped = why; }), mirror, 150);
   t.after(unwatch);
   await h.sleep(500);
   assert.equal(stopped, null, 'let in, its seat not taken yet: kept');
@@ -451,9 +467,9 @@ test('join news: what the join command already said is not said again by the tai
   const pin = { at: new Date().toISOString(), left: 5 };
   links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, invite: wordOf('x'), join_as: 'bob', join_sid: 'sid-1', pin_wanted: pin, created_at: new Date().toISOString() });
   const said = hosting.joinText(code, sn('bob'), { state: 'pin' });
-  links.set(code, { ...links.get(code)!, join_told: said });
-  const n = joining.pendingNews('sid-1')!;
+  links.set(code, { ...must(links.get(code)), join_told: said });
+  const n = must(joining.pendingNews('sid-1'));
   assert.deepEqual([n.state, n.text], ['pin', ''], 'the command said it: the tail says nothing');
-  links.set(code, { ...links.get(code)!, join_told: 'something else' });
-  assert.equal(joining.pendingNews('sid-1')!.text, said);
+  links.set(code, { ...must(links.get(code)), join_told: 'something else' });
+  assert.equal(must(joining.pendingNews('sid-1')).text, said);
 });

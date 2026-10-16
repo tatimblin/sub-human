@@ -23,6 +23,7 @@ import { lib, cli, check, tilde, truthy } from './check.ts';
 import type { Check, Report } from '../types.ts';
 import { msgOf } from '../../errors.ts';
 import type { RoomCode } from '../../brand.ts';
+import type * as BgMod from '../../cc/bg.ts';
 
 /** A Claude Code settings file, as the hooks and Remote Control checks read it. */
 interface Settings {
@@ -124,7 +125,7 @@ const RESTART = (code: RoomCode) => `then /sub-human NAME ${code} (in the room) 
  * records which).
  * jobs: the `claude agents` lookup (tests); called only for a job that never bound.
  */
-function checkRoomClaudes({ now = Date.now(), jobs = () => lib('cc/bg.ts').jobs({ all: true }) }: { now?: number, jobs?: () => import('../../cc/bg.ts').AgentJob[] | null } = {}): Check[] {
+function checkRoomClaudes({ now = Date.now(), jobs = () => lib('cc/bg.ts').jobs({ all: true }) }: { now?: number, jobs?: () => BgMod.AgentJob[] | null } = {}): Check[] {
   const identity = lib('identity.ts');
   const out: Check[] = [];
   let codes: RoomCode[] = [];
@@ -147,7 +148,7 @@ function checkRoomClaudes({ now = Date.now(), jobs = () => lib('cc/bg.ts').jobs(
     }
     if (bound || now - since < ROOM_CLAUDE_BIND_GRACE_MS) continue;
     let state: string | null = null;
-    try { state = (jobs() || []).find(j => j.id === o.job)?.state || null; } catch { state = null; }
+    try { state = (jobs() ?? []).find(j => j.id === o.job)?.state || null; } catch { state = null; }
     const ended = !!state && ['done', 'failed', 'stopped'].includes(state);
     const why = o.spawn_error ? ` (${o.spawn_error})` : '';
     out.push(check({ id: `room-claude:${code}`, status: 'fail', title: `room's Claude ${code}`, detail: `its job ${o.job} was started ${Math.round((now - since) / 1000)} s ago but never took its seat${state ? `; the job is ${state}` : ''}${why}: the room's Claude is not running`, fix: state === 'done'
@@ -166,9 +167,9 @@ function checkRoomClaudes({ now = Date.now(), jobs = () => lib('cc/bg.ts').jobs(
  * info when it is not running or its status is unreadable. status, exe: cc.daemonStatus and cc.exeState (tests).
  */
 function checkDaemon({ version, env = process.env, status = () => lib('cc/bg.ts').daemonStatus({ env }), exe = (pid: number) => lib('cc/bg.ts').exeState(pid) }: {
-  version: string | null; env?: NodeJS.ProcessEnv; status?: () => import('../../cc/bg.ts').DaemonStatus | null; exe?: (pid: number) => { exe: string; deleted: boolean } | null;
+  version: string | null; env?: NodeJS.ProcessEnv; status?: () => BgMod.DaemonStatus | null; exe?: (pid: number) => { exe: string; deleted: boolean } | null;
 }): Check {
-  let st: import('../../cc/bg.ts').DaemonStatus | null = null;
+  let st: BgMod.DaemonStatus | null = null;
   try { st = status(); } catch { st = null; }
   if (!st) return check({ id: 'daemon', status: 'info', title: 'bg daemon', detail: 'could not read `claude daemon status`' });
   if (!st.running) return check({ id: 'daemon', status: 'info', title: 'bg daemon', detail: 'not running (the next `claude agents` or `claude --bg` starts one)' });

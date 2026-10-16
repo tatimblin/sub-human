@@ -14,6 +14,7 @@ import * as launcher from '../../hooks/launcher.ts';
 import { pathToFileURL } from 'node:url';
 import type { HookLine } from './helpers.ts';
 import { sn } from '../support/brands.ts';
+import { must } from '../support/must.ts';
 
 type Env = Record<string, string | undefined>;
 /** An Agent call's tool_input, as a row spawn sends it. */
@@ -45,7 +46,7 @@ function env(extra: Env = {}) {
 }
 function hook(name: string, input: Record<string, unknown>, extra?: Env): { code: number | null; stdout: string; stderr: string; json: HookLine | null } {
   const r = spawnSync(process.execPath, [path.join(PLUGIN, 'hooks', 'run.ts'), name], { input: JSON.stringify(input), env: env(extra), encoding: 'utf8', timeout: 20_000 });
-  return { code: r.status, stdout: r.stdout, stderr: r.stderr, json: r.stdout.trim() ? JSON.parse(r.stdout) : null };
+  return { code: r.status, stdout: r.stdout, stderr: r.stderr, json: r.stdout.trim() ? JSON.parse(r.stdout) as HookLine : null };
 }
 /** hooks/launcher.ts refresh() in a child of its own, as a join or a restore runs it, with env extra. */
 function launch(extra?: Env): { code: number | null; stderr: string } {
@@ -70,7 +71,7 @@ test('row-map: claude participant rows (name from the prompt even when the descr
   const m = rows.readRowMap(code);
   assert.deepEqual(Object.keys(m).sort(), ['a1', 'a2']);
   assert.deepEqual({ ...m.a1, at: undefined }, { kind: 'participant', name: 'alice', parent: null, at: undefined });
-  assert.equal(m.a2.name, 'bob');
+  assert.equal(must(m.a2).name, 'bob');
   assert.ok(Object.keys(rows.sessionRowMap(code, 'sid-claude')).length, 'the room\'s Claude session has its own map');
 });
 
@@ -80,10 +81,10 @@ test('row-map: a member\'s room row and its nested children (parent = the spawni
   hook('row-map', post('sid-alice', { subagent_type: 'sub-human:participant', description: 'bob', prompt: 'member: bob' }, 'c1', 'r1'));
   hook('row-map', post('sid-alice', { subagent_type: 'sub-human:participant', description: 'carol', prompt: 'carol' }, 'c2', 'r1'));
   const m = rows.readRowMap(code);
-  assert.equal(m.r1.kind, 'room');
-  assert.equal(m.r1.name, code);
-  assert.equal(m.r1.parent, null);
-  assert.deepEqual([m.c1.name, m.c1.parent, m.c2.name, m.c2.parent], ['bob', 'r1', 'carol', 'r1']);
+  assert.equal(must(m.r1).kind, 'room');
+  assert.equal(must(m.r1).name, code);
+  assert.equal(must(m.r1).parent, null);
+  assert.deepEqual([must(m.c1).name, must(m.c1).parent, must(m.c2).name, must(m.c2).parent], ['bob', 'r1', 'carol', 'r1']);
 });
 
 test('row-map: not in a room -> nothing written, exit 0', () => {
@@ -100,9 +101,9 @@ test('row-hold: blocks a row agent that stops while its member is present (cappe
     session_id: sid, hook_event_name: 'SubagentStop', agent_id: id, agent_type: type, stop_hook_active: false, last_assistant_message: last,
   });
   let r = stop('a1', 'error');
-  assert.equal(r.json!.decision, 'block');
-  assert.match(r.json!.reason!, /Call hold with \{"member": "alice"\} again now/);
-  for (let i = 0; i < 4; i++) assert.equal(stop('a1', 'error').json!.decision, 'block');
+  assert.equal(must(r.json).decision, 'block');
+  assert.match(must(must(r.json).reason), /Call hold with \{"member": "alice"\} again now/);
+  for (let i = 0; i < 4; i++) assert.equal(must(stop('a1', 'error').json).decision, 'block');
   assert.equal(stop('a1', 'error').json, null, 'capped');
   assert.equal(stop('zz', 'error').json, null, 'unmapped agent');
   assert.equal(stop('a1', 'error', '').json, null, 'AgentSummary forks have no agent_type');
@@ -112,14 +113,14 @@ test('row-hold: blocks a row agent that stops while its member is present (cappe
   // The member left: the row is still wanted (it reads "left" and comes back on rejoin).
   rows.recordRow(code, 'sid-claude', 'a3', { kind: 'participant', name: 'bob', parent: null });
   identity.leave(code, sn('bob'));
-  assert.equal(stop('a3', 'hmm').json!.decision, 'block');
+  assert.equal(must(stop('a3', 'hmm').json).decision, 'block');
   // The viewer left: no block.
   identity.leave(code, sn('claude'));
   assert.equal(stop('a3', 'hmm').json, null);
   // The room row re-holds with its room code while this seat is in the room.
   rows.recordRow(code, 'sid-alice', 'r1', { kind: 'room', name: code, parent: null });
   r = stop('r1', '', 'sub-human:room', 'sid-alice');
-  assert.match(r.json!.reason!, new RegExp(`Call hold with \\{"room": "${code}"\\}`));
+  assert.match(must(must(r.json).reason), new RegExp(`Call hold with \\{"room": "${code}"\\}`));
 });
 
 test('launcher: writes an executable launcher under SUB_HUMAN_HOME/bin that runs this plugin\'s agent-statusline', () => {
@@ -138,7 +139,7 @@ test('launcher: writes an executable launcher under SUB_HUMAN_HOME/bin that runs
   assert.equal(fs.statSync(path.join(home, 'bin', 'serve')).mode & 0o777, 0o700);
   assert.ok(fs.readFileSync(path.join(home, 'bin', 'current'), 'utf8').startsWith(path.resolve(PLUGIN) + '\n'));
   // The plugin settings point at the same place, through the shell's env default.
-  const settings = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'settings.json'), 'utf8'));
+  const settings = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'settings.json'), 'utf8')) as { subagentStatusLine: { type: string; command: string } };
   assert.equal(settings.subagentStatusLine.type, 'command');
   const cmd = settings.subagentStatusLine.command;
   const resolved = spawnSync('/bin/sh', ['-c', `printf %s ${cmd}`], { env: env({ SUB_HUMAN_HOME: home }), encoding: 'utf8' }).stdout;
@@ -195,15 +196,15 @@ test('row-guard: denies spawning a row whose hold is live in this session; allow
   assert.equal(pre('sid-alice', roomRow).stdout, '', 'nothing held yet');
   assert.equal(pre('sid-alice', bob, 'room1').stdout, '');
   rows.writeHolds(code, sn('alice'), { members: ['bob'], room: true }); // this test process = a live hold server
-  const d = pre('sid-alice', roomRow).json!.hookSpecificOutput!;
+  const d = must(must(pre('sid-alice', roomRow).json).hookSpecificOutput);
   assert.equal(d.permissionDecision, 'deny');
-  assert.match(d.permissionDecisionReason!, /already running/);
-  assert.equal(pre('sid-alice', bob, 'room1').json!.hookSpecificOutput!.permissionDecision, 'deny');
+  assert.match(must(d.permissionDecisionReason), /already running/);
+  assert.equal(must(must(pre('sid-alice', bob, 'room1').json).hookSpecificOutput).permissionDecision, 'deny');
   // The room Claude's rejoin spawn for bob: denied while room Claude's row for bob is live (it survived bob's leave).
   rows.writeHolds(code, sn('claude'), { members: ['alice'] });
   assert.equal(pre('sid-claude', bob).stdout, '', 'claude holds no bob row: allowed');
   rows.writeHolds(code, sn('claude'), { members: ['alice', 'bob'] });
-  assert.equal(pre('sid-claude', bob).json!.hookSpecificOutput!.permissionDecision, 'deny');
+  assert.equal(must(must(pre('sid-claude', bob).json).hookSpecificOutput).permissionDecision, 'deny');
   assert.equal(pre('sid-claude', { subagent_type: 'Explore', description: 'bob', prompt: 'x' }).stdout, '', 'other agents untouched');
 });
 
@@ -214,9 +215,9 @@ test('row-guard: a member never spawns a participant row from main, nor one for 
     ...(parent ? { agent_id: parent, agent_type: 'sub-human:room' } : {}),
   });
   const p = (name: string) => ({ subagent_type: 'sub-human:participant', description: name, prompt: name, run_in_background: true });
-  assert.equal(pre('sid-bob', p('bob')).json!.hookSpecificOutput!.permissionDecision, 'deny', 'main, self');
-  assert.equal(pre('sid-bob', p('alice')).json!.hookSpecificOutput!.permissionDecision, 'deny', 'main, other');
-  assert.equal(pre('sid-bob', p('bob'), 'room1').json!.hookSpecificOutput!.permissionDecision, 'deny', 'inside the room row, self');
+  assert.equal(must(must(pre('sid-bob', p('bob')).json).hookSpecificOutput).permissionDecision, 'deny', 'main, self');
+  assert.equal(must(must(pre('sid-bob', p('alice')).json).hookSpecificOutput).permissionDecision, 'deny', 'main, other');
+  assert.equal(must(must(pre('sid-bob', p('bob'), 'room1').json).hookSpecificOutput).permissionDecision, 'deny', 'inside the room row, self');
   assert.equal(pre('sid-bob', p('alice'), 'room1').stdout, '', 'inside the room row: allowed');
   assert.equal(pre('sid-claude', p('alice')).stdout, '', 'the room\'s Claude spawns participant rows from main');
   const roomRow = { subagent_type: 'sub-human:room', description: code, prompt: `room: ${code}\nmembers: alice`, run_in_background: true };
@@ -266,7 +267,7 @@ test('row-rewake: silent exit 0 when nothing is missing, outside a room, with no
 });
 
 test('the row hooks are the module\'s: hooks.json has no row PreToolUse, and no PostToolUse, SubagentStop or SessionStart entry', async () => {
-  const cfg: { hooks: Record<string, HookGroup[]> } = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8'));
+  const cfg = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')) as { hooks: Record<string, HookGroup[]> };
   for (const ev of ['PostToolUse', 'SubagentStop', 'SessionStart']) assert.equal(cfg.hooks[ev], undefined, ev);
   // the one PreToolUse command hook is the EnterPlanMode mode note (item 7), no row hook
   assert.deepEqual((cfg.hooks.PreToolUse || []).map(g => g.matcher), ['EnterPlanMode']);
@@ -287,7 +288,7 @@ test('row agents: a stray typed message gets the one-line read-only reply, then 
 test('row agents: descriptions are at most 125 chars each; no model key (rows inherit the session model), background, hold-only tools', () => {
   for (const f of ['room.md', 'participant.md']) {
     const s = fs.readFileSync(path.join(PLUGIN, 'agents', f), 'utf8');
-    const d = /^description: (.*)$/m.exec(s)![1];
+    const d = must(must(/^description: (.*)$/m.exec(s))[1]);
     assert.ok(Array.from(d).length <= 125, `${f}: ${d.length}`);
     assert.doesNotMatch(s, /^model:/m, `${f} prescribes no model`);
     assert.match(s, /^background: true$/m);

@@ -18,7 +18,8 @@ import * as config from '../lib/config.ts';
 import { keyDir } from '../lib/room/keys.ts';
 import * as seatKey from '../hooks/seat-key.ts';
 import type { RoomCode } from '../lib/brand.ts';
-import { sn } from './support/brands.ts';
+import { sn, tokenOf } from './support/brands.ts';
+import { must } from './support/must.ts';
 
 const DAY = 24 * 60 * 60_000;
 const SID = (n: number) => `aaaaaaaa-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -44,8 +45,8 @@ async function roomWith({ live = false, left = true }: { live?: boolean; left?: 
   if (left && !live) assert.ok(identity.leave(code, sn('alice'), { reason: 'done' }));
   return code;
 }
-const dirOf = (code: RoomCode) => store.open(code).dir!;
-const indexed = () => JSON.parse(fs.readFileSync(path.join(identity.home(), 'open-rooms.json'), 'utf8')).rooms as Record<string, string>;
+const dirOf = (code: RoomCode) => must(store.open(code).dir);
+const indexed = () => (JSON.parse(fs.readFileSync(path.join(identity.home(), 'open-rooms.json'), 'utf8')) as { rooms: Record<string, string> }).rooms;
 
 test('openRooms: judges only the indexed rooms and drops the ones closed for good; a join puts a room back', async t => {
   h.freshHome(t);
@@ -60,10 +61,10 @@ test('openRooms: judges only the indexed rooms and drops the ones closed for goo
   // a room outside the index is never judged, even with a live seat written around the join
   const sleeper = h.spawnSleeper(60);
   t.after(() => sleeper.kill());
-  const r = identity.join({ code: closed[0], name: sn('bob'), role: 'member', pid: sleeper.pid!, session_id: null, cwd: '/' });
+  const r = identity.join({ code: must(closed[0]), name: sn('bob'), role: 'member', pid: must(sleeper.pid), session_id: null, cwd: '/' });
   assert.ok(r.ok);
-  assert.ok(indexed()[closed[0]], 'a join puts it back');
-  assert.deepEqual(identity.openRooms().sort(), [open, closed[0]].sort());
+  assert.ok(indexed()[must(closed[0])], 'a join puts it back');
+  assert.deepEqual(identity.openRooms().sort(), [open, must(closed[0])].sort());
 });
 
 test('openRooms: a home from before the index builds it once from every room directory', async t => {
@@ -82,7 +83,7 @@ test('gc: a closed room untouched for ROOM_GC_MS is set aside with its keys; one
   const recent = await roomWith();
   const live = await roomWith({ live: true });
   const linked = await roomWith();
-  links.set(linked, { code: linked, transport: { kind: 'pipe', home: '/nowhere' }, token: 'x'.repeat(32), created_at: new Date().toISOString() } as never);
+  links.set(linked, { code: linked, transport: { kind: 'pipe', home: '/nowhere' }, token: tokenOf('x'.repeat(32)), created_at: new Date().toISOString() });
   const running = await roomWith();
   identity.updateRoomClaude(running, () => ({ job: 'job12345', spawned_at: new Date().toISOString() }));
   for (const c of [old, live, linked, running]) age(dirOf(c), 40);
@@ -93,28 +94,28 @@ test('gc: a closed room untouched for ROOM_GC_MS is set aside with its keys; one
   assert.ok(fs.existsSync(keyDir(old)));
   const oldDir = dirOf(old);
   const oldKeys = keyDir(old);
-  const r = gc.sweep({ force: true })!;
+  const r = must(gc.sweep({ force: true }));
   assert.deepEqual(r.rooms, [old]);
   assert.deepEqual(r.aside, [path.basename(aside)], 'the folder `link --forget` set aside 40 days ago goes; the one GC just set aside stays');
   assert.ok(!fs.existsSync(oldDir) && !fs.existsSync(oldKeys), 'the room and its seat keys moved');
   const set = fs.readdirSync(path.dirname(oldDir)).filter(n => n.startsWith(`${old}.gc-`));
   assert.equal(set.length, 1, 'the room set aside, not deleted');
-  assert.ok(fs.existsSync(path.join(identity.home(), 'keys', set[0])), 'its seat keys beside it, still under keys/');
+  assert.ok(fs.existsSync(path.join(identity.home(), 'keys', must(set[0]))), 'its seat keys beside it, still under keys/');
   for (const c of [recent, live, linked, running]) assert.ok(fs.existsSync(dirOf(c)), `${c} stays`);
   assert.ok(!identity.roomExists(old));
   // a further ROOM_GC_MS later the folder set aside goes, with its keys
-  const r2 = gc.sweep({ force: true, now: Date.now() + config.ROOM_GC_MS + 1000 })!;
-  assert.ok(r2.aside.includes(set[0]));
-  assert.ok(!fs.existsSync(path.join(path.dirname(oldDir), set[0])) && !fs.existsSync(path.join(identity.home(), 'keys', set[0])));
+  const r2 = must(gc.sweep({ force: true, now: Date.now() + config.ROOM_GC_MS + 1000 }));
+  assert.ok(r2.aside.includes(must(set[0])));
+  assert.ok(!fs.existsSync(path.join(path.dirname(oldDir), must(set[0]))) && !fs.existsSync(path.join(identity.home(), 'keys', must(set[0]))));
 });
 
 test('GC of a room with a never-left seat: a seat whose session crashed (no left_at, pid gone) keeps the room, however old', async t => {
   h.freshHome(t);
   const code = await roomWith({ left: false });
-  assert.ok(!identity.readMembers(code).alice!.left_at);
+  assert.ok(!must(identity.readMembers(code).alice).left_at);
   age(dirOf(code), 40);
   age(keyDir(code), 40);
-  const r = gc.sweep({ force: true })!;
+  const r = must(gc.sweep({ force: true }));
   assert.deepEqual(r.rooms, []);
   assert.ok(fs.existsSync(dirOf(code)) && fs.existsSync(keyDir(code)), 'the room and its seat keys stay');
 });
@@ -124,12 +125,12 @@ test('GC of a room with a remote link record: the host\'s record of a machine li
   const code = await roomWith();
   store.open(code).kv.set('remote/links', { '0123456789ab': { id: '0123456789ab', token_sha256: 'x', machine: 'm', seats: ['bob'], created_at: new Date().toISOString() } });
   age(dirOf(code), 40);
-  const r = gc.sweep({ force: true })!;
+  const r = must(gc.sweep({ force: true }));
   assert.deepEqual(r.rooms, []);
   assert.ok(fs.existsSync(dirOf(code)));
   store.open(code).kv.set('remote/links', {});
   age(dirOf(code), 40);
-  assert.deepEqual(gc.sweep({ force: true })!.rooms, [code], 'no record left: it goes aside');
+  assert.deepEqual(must(gc.sweep({ force: true })).rooms, [code], 'no record left: it goes aside');
 });
 
 test('gc: at most once per GC_EVERY_MS and only within its budget; never the room a join is about to take', async t => {
@@ -138,7 +139,7 @@ test('gc: at most once per GC_EVERY_MS and only within its budget; never the roo
   for (const c of rooms) age(dirOf(c), 40);
   assert.deepEqual(gc.sweep({ budgetMs: 0 }), { rooms: [], aside: [], sessions: 0 }, 'no time: nothing done');
   assert.equal(gc.sweep(), null, 'not due again yet');
-  assert.deepEqual(gc.sweep({ now: Date.now() + config.GC_EVERY_MS + 1000, keep: rooms[1] })!.rooms, [rooms[0], rooms[2]].sort(), 'due: all but the one kept');
+  assert.deepEqual(must(gc.sweep({ now: Date.now() + config.GC_EVERY_MS + 1000, keep: must(rooms[1]) })).rooms, [rooms[0], rooms[2]].sort(), 'due: all but the one kept');
 });
 
 test('gc: a session index of an ended session goes after its TTL; a live one stays', async t => {

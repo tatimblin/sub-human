@@ -12,8 +12,9 @@ import { spawnSync } from 'node:child_process';
 import { lib, cli, check, tilde } from './check.ts';
 import type { Check } from '../types.ts';
 import { msgOf } from '../../errors.ts';
+import type * as ListenerMod from '../../remote/listener.ts';
 
-type ListenerStatus = import('../../remote/listener.ts').ListenStatus;
+type ListenerStatus = ListenerMod.ListenStatus;
 
 /** The host's web listener and the rooms it serves (lib/remote/listener.ts), with their Tailscale paths. */
 function checkListener({ quick = false }: { quick?: boolean } = {}): Check[] {

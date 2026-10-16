@@ -52,23 +52,31 @@ import type { Client } from './client.ts';
 import type { SshSpec } from './types-rest.ts';
 import type { Link } from '../room/types.ts';
 import type { RoomCode } from '../brand.ts';
+import type * as TransportsMod from './transports/index.ts';
+import type * as SshMod from './transports/ssh.ts';
+import type * as ClientMod from './client.ts';
+import type * as NoiseMod from './noise.ts';
+import type * as InviteSecretMod from './invite-secret.ts';
+import type * as WsMod from './transports/ws.ts';
+import type * as MachineKeyMod from './machine-key.ts';
+import type * as TypesRestMod from './types-rest.ts';
 
-const require = createRequire(import.meta.url);
+const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 /** A transport as connectLink opens it (lib/remote/transports/*): ssh's keeps its stderr. */
 type TransportLike = { stderr?(): string } | null | undefined;
 
-const transports = (): typeof import('./transports/index.ts') => require('./transports/index.ts');
-const ssh = (): typeof import('./transports/ssh.ts') => require('./transports/ssh.ts');
-const clientMod = (): typeof import('./client.ts') => require('./client.ts');
-const noiseMod = (): typeof import('./noise.ts') => require('./noise.ts');
-const secretMod = (): typeof import('./invite-secret.ts') => require('./invite-secret.ts');
-const wsMod = (): typeof import('./transports/ws.ts') => require('./transports/ws.ts');
-const machineKeyMod = (): typeof import('./machine-key.ts') => require('./machine-key.ts');
+const transports = (): typeof TransportsMod => require('./transports/index.ts');
+const ssh = (): typeof SshMod => require('./transports/ssh.ts');
+const clientMod = (): typeof ClientMod => require('./client.ts');
+const noiseMod = (): typeof NoiseMod => require('./noise.ts');
+const secretMod = (): typeof InviteSecretMod => require('./invite-secret.ts');
+const wsMod = (): typeof WsMod => require('./transports/ws.ts');
+const machineKeyMod = (): typeof MachineKeyMod => require('./machine-key.ts');
 
 const pipeLocator = (h: string = homeMod.home()): string => `pipe:${h}`;
 const sshLocator = (dest: string, opts?: { via?: string }): string | null => ssh().locator(dest, opts);
-const transportOf = (locator: string): ReturnType<typeof import('./transports/index.ts')['parse']> => transports().parse(locator);
+const transportOf = (locator: string): ReturnType<typeof TransportsMod['parse']> => transports().parse(locator);
 const sshCommand = (t: SshSpec, code: RoomCode, opts?: string[]): string[] => ssh().command(t, code, opts);
 
 /** A link the host refused before it held a token: drop the invite, its PIN and the pending rebind; say why. */
@@ -98,7 +106,7 @@ function keepAnswer(code: RoomCode, e: unknown, word: { secret: Buffer }, sentPi
       const ref = secretMod().admissionRef(word.secret);
       // the check the host's card shows: this machine's proven id and, over the web, this link's own key
       const check = secretMod().joinCheck(machineKeyMod().idOf(machineKeyMod().publicKey()), ownKey);
-      linksMod.set(code, { ...rest, awaiting: cur.awaiting || { at, ref, check, expires_at: new Date(Date.now() + config.ADMIT_TTL_MS).toISOString() } });
+      linksMod.set(code, { ...rest, awaiting: cur.awaiting ?? { at, ref, check, expires_at: new Date(Date.now() + config.ADMIT_TTL_MS).toISOString() } });
     }
     return true;
   }
@@ -107,7 +115,7 @@ function keepAnswer(code: RoomCode, e: unknown, word: { secret: Buffer }, sentPi
 
 const keyFile = (code: RoomCode): string => path.join(linksMod.dirOf(code), 'client-x25519.json');
 /** The link's own Noise key (made once; fresh: a new one, for a new invite's link). */
-function linkKey(code: RoomCode, { fresh = false }: { fresh?: boolean } = {}): import('./noise.ts').KeyPair {
+function linkKey(code: RoomCode, { fresh = false }: { fresh?: boolean } = {}): NoiseMod.KeyPair {
   if (fresh) fs.rmSync(keyFile(code), { force: true });
   fs.mkdirSync(linksMod.dirOf(code), { recursive: true, mode: 0o700 });
   return noiseMod().loadOrCreateStatic(keyFile(code));
@@ -123,7 +131,7 @@ function joinerLabel(env: NodeJS.ProcessEnv = process.env): string {
   return /^[A-Za-z0-9._-]{1,64}$/.test(n) ? n : 'a-machine';
 }
 
-const isWeb = (t: Link['transport']): t is import('./types-rest.ts').WsSpec => t.kind === 'ws' || t.kind === 'wss';
+const isWeb = (t: Link['transport']): t is TypesRestMod.WsSpec => t.kind === 'ws' || t.kind === 'wss';
 const mismatch = (what: string): RoomError => new RoomError('AUTH', `${what} is not the one the invite line names: someone may be in between, or the line is for another host. Nothing secret was sent; check the line with the host before you try again`, 'HOST_KEY_MISMATCH');
 
 async function connectLink(code: RoomCode): Promise<Client> {
@@ -173,7 +181,7 @@ async function connectLink(code: RoomCode): Promise<Client> {
   }
   if (c.machine && c.machine !== homeMod.machineIn(code)) homeMod.setMachineIn(code, c.machine);
   if (!l.token) {
-    const cur = linksMod.get(code) || l;
+    const cur = linksMod.get(code) ?? l;
     const { invite, pin, awaiting, pin_wanted, ...rest } = cur; // the invite and its PIN are spent with it
     // the host's card may have let this machine in under another name than it asked for (its own sits there from
     // another machine): the seat takes the one the link is bound to
