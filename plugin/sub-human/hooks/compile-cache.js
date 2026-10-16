@@ -1,3 +1,4 @@
+// @ts-check
 // plugin/sub-human/hooks/compile-cache.js: node's compile cache on, before a hook's TypeScript loads. Every node
 // command of the plugin preloads it (`node --import <root>/hooks/compile-cache.js <root>/hooks/X.ts`: hooks.json,
 // .mcp.json, mod/core/shim.ts shimArgv): without the cache each run strips the types of every module it loads again,
