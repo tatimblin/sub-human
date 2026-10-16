@@ -31,7 +31,8 @@ const INPUTS = ['', '{"hook_event_name":"Pre', 'not json', 'null', '[]', '"text"
 
 test('stdin: every hooks.json entry runs hooks/run.ts with a handler that exists, and every handler file is one run.ts knows', () => {
   const named = new Set<string>();
-  for (const groups of Object.values(HOOKS_JSON.hooks)) for (const g of groups) for (const h of g.hooks) {
+  for (const [ev, groups] of Object.entries(HOOKS_JSON.hooks)) for (const g of groups) for (const h of g.hooks) {
+    if (ev === 'PreToolUse') { assert.doesNotMatch(h.command, /\bnode\b/, 'the EnterPlanMode mode note runs no node'); continue; }
     const m = /hooks\/run\.ts\\?"? ([a-z-]+)/.exec(h.command);
     assert.ok(m, `a hooks.json command runs hooks/run.ts: ${h.command}`);
     named.add(m[1]);
