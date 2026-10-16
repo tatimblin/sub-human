@@ -48,7 +48,7 @@ function world(engine: any, on: any, { hello = OUT, pieces = [], gate = Promise.
   const seen = {
     spawns: [] as any[], logs: [] as string[], prompts: [] as string[], submits: [] as string[], contexts: [] as any[],
     appends: [] as string[], appended: [] as string[],
-    scripts: [] as string[], classic: [] as any[], ended: [] as number[], release: () => {}, feed: (text: string) => {}, presence: [] as any[],
+    scripts: [] as string[], classic: [] as any[], ended: [] as number[], release: () => {}, feed: (_text: string) => {}, presence: [] as any[],
   }
   let released = false
   const fed: string[] = []
@@ -56,7 +56,7 @@ function world(engine: any, on: any, { hello = OUT, pieces = [], gate = Promise.
   const held = new Promise<void>(r => { seen.release = () => { released = true; poke(); r() } })
   seen.feed = text => { fed.push(text); poke() }
   session(on, SID)
-  on('process.run', ($: any, e: any) => {
+  on('process.run', (_$: any, e: any) => {
     const script = scriptOf(e)
     seen.scripts.push(script)
     if (script === 'presence.ts') seen.presence.push(JSON.parse(e.init.stdin))
@@ -64,7 +64,7 @@ function world(engine: any, on: any, { hello = OUT, pieces = [], gate = Promise.
     if (script === 'join.ts' && joinOut) return ran(JSON.stringify(joinOut))
     return ran(script === 'mod-hello.ts' ? JSON.stringify(hello) : '')
   })
-  on('process.spawn', async function* ($: any, e: any) {
+  on('process.spawn', async function* (_$: any, e: any) {
     const n = seen.spawns.length
     seen.spawns.push(e)
     if (spawn) { yield { stream: 'stderr', text: 'started\n' }; yield* spawn(n, e); return { value: { code: 1, signal: null } } }
@@ -81,8 +81,8 @@ function world(engine: any, on: any, { hello = OUT, pieces = [], gate = Promise.
       return { value: { code: 0, signal: null } }
     } finally { seen.ended.push(n) }
   })
-  on('ui.log', ($: any, e: any) => { seen.logs.push(e.text); return { value: undefined } })
-  on('session.append', async ($: any, e: any, next: any) => {
+  on('ui.log', (_$: any, e: any) => { seen.logs.push(e.text); return { value: undefined } })
+  on('session.append', async (_$: any, e: any, next: any) => {
     if (e.message.type === 'system') return next(e) // the hidden home notice (stage 8f item 1), no delivery
     const text = e.message.content.map((b: any) => b.text).join('')
     const how = append(text, seen.appends.length)
@@ -93,7 +93,7 @@ function world(engine: any, on: any, { hello = OUT, pieces = [], gate = Promise.
     seen.appended.push(text)
     return r
   })
-  on('prompt.submit', async ($: any, e: any) => {
+  on('prompt.submit', async (_$: any, e: any) => {
     const how = submit(e.text, seen.submits.length)
     seen.submits.push(e.text)
     if (how === 'throw') throw new Error('no session to take it')
@@ -103,8 +103,8 @@ function world(engine: any, on: any, { hello = OUT, pieces = [], gate = Promise.
     return { text: e.text }
   })
   on('classic.UserPromptSubmit', () => ({}))
-  on('turn.start', ($: any, e: any) => ({ turnId: e.turnId }))
-  on('turn.complete', ($: any, e: any) => ({ text: e.answer }))
+  on('turn.start', (_$: any, e: any) => ({ turnId: e.turnId }))
+  on('turn.complete', (_$: any, e: any) => ({ text: e.answer }))
   on('session.messages', () => ({ value: [] }))
   return seen
 }
@@ -372,7 +372,7 @@ test('a child that exits is started again after 1 s, doubling; one that ran over
 test('session.end stops the child: nothing restarts it, and the session no longer counts as delivered', async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
   const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT })] })
-  on('session.end', ($: any, e: any) => ({ sessionId: e.sessionId }))
+  on('session.end', (_$: any, e: any) => ({ sessionId: e.sessionId }))
   await start($)
   await until(() => seen.spawns.length === 1)
   await new Promise(r => setTimeout(r, 50))
@@ -450,8 +450,8 @@ test('classic.SessionStart before session.start, in a session with no seat: no t
   const seen = world($, on, { hello: { ...OUT, seat: null } })
   on('classic.SessionStart', () => ({}))
   on('fs.exists', () => ({ value: false })) // no session index: surely no seat
-  on('env.get', ($: any, e: any) => ({ value: e.name === 'HOME' ? '/u' : undefined }))
-  on('fs.stat', ($: any, e: any) => ({ value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: false, realPath: e.path } }))
+  on('env.get', (_$: any, e: any) => ({ value: e.name === 'HOME' ? '/u' : undefined }))
+  on('fs.stat', (_$: any, e: any) => ({ value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: false, realPath: e.path } }))
   await $.classic.SessionStart({ session_id: SID, cwd: '/w', transcript_path: '/t.jsonl', source: 'startup' } as any)
   await start($)
   await new Promise(r => setTimeout(r, 50))

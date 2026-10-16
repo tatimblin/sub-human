@@ -16,11 +16,11 @@ function world(engine: any, on: any, seat: any) {
   const held = new Promise<void>(r => { seen.release = r })
   session(on, SID)
   on('session.cwd', () => ({ value: '/w' }))
-  on('env.get', ($: any, e: any) => ({ value: e.name === 'HOME' ? '/u' : undefined }))
-  on('fs.exists', ($: any, e: any) => ({ value: !!seat && e.path === `${HOME}/sessions/by-sid/${SID}.json` }))
-  on('fs.stat', ($: any, e: any) => ({ value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: false, realPath: e.path } }))
+  on('env.get', (_$: any, e: any) => ({ value: e.name === 'HOME' ? '/u' : undefined }))
+  on('fs.exists', (_$: any, e: any) => ({ value: !!seat && e.path === `${HOME}/sessions/by-sid/${SID}.json` }))
+  on('fs.stat', (_$: any, e: any) => ({ value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: false, realPath: e.path } }))
   on('ui.log', () => ({ value: undefined }))
-  on('process.run', ($: any, e: any) => {
+  on('process.run', (_$: any, e: any) => {
     const script = scriptOf(e)
     seen.runs.push(script)
     if (script === 'mod-hello.ts') return ran(JSON.stringify(helloOf(seat)))
@@ -28,12 +28,12 @@ function world(engine: any, on: any, seat: any) {
     return ran('')
   })
   on('process.spawn', async function* () { seen.spawns++; await held; return { value: { code: 0, signal: null } } })
-  on('prompt.submit', async ($: any, e: any) => {
+  on('prompt.submit', async (_$: any, e: any) => {
     await engine.classic.UserPromptSubmit({ prompt: e.text, session_id: SID, permission_mode: 'default' })
     return { text: e.text }
   })
   on('command.run', () => ({ text: undefined }))
-  on('session.end', ($: any, e: any) => ({ sessionId: e.sessionId }))
+  on('session.end', (_$: any, e: any) => ({ sessionId: e.sessionId }))
   on('tool.check', () => ({ decision: 'allow' }))
   on('tool.call', () => ({ result: 'ok', text: 'ok' }))
   for (const ev of ['UserPromptSubmit', 'UserPromptExpansion', 'PostToolUse', 'PermissionRequest', 'SubagentStop', 'Stop',

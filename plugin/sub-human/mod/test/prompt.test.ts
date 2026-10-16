@@ -21,8 +21,8 @@ function world(engine: any, on: any, { hello = OUT as any, prompt = '', exitCode
     logs: [] as string[], entered: [] as string[], contexts: [] as any[], hello: hello as any, hellos: [] as any[],
   }
   session(on, SID)
-  on('ui.log', ($: any, e: any) => { seen.logs.push(e.text); return { value: undefined } })
-  on('process.run', ($: any, e: any) => {
+  on('ui.log', (_$: any, e: any) => { seen.logs.push(e.text); return { value: undefined } })
+  on('process.run', (_$: any, e: any) => {
     const script = scriptOf(e)
     if (script === 'presence.ts') { seen.presence.push({ stdin: JSON.parse(e.init.stdin), env: e.init.env }); return ran('') }
     seen.scripts.push(script)
@@ -34,9 +34,9 @@ function world(engine: any, on: any, { hello = OUT as any, prompt = '', exitCode
   })
   on('classic.UserPromptSubmit', () => ({}))
   on('classic.UserPromptExpansion', () => ({}))
-  on('turn.start', ($: any, e: any) => ({ turnId: e.turnId }))
+  on('turn.start', (_$: any, e: any) => ({ turnId: e.turnId }))
   let turns = 0
-  on('prompt.submit', async ($: any, e: any) => {
+  on('prompt.submit', async (_$: any, e: any) => {
     const r = await engine.classic.UserPromptSubmit({ prompt: e.text, session_id: SID, permission_mode: 'default' })
     seen.classic.push(r)
     seen.entered.push(e.text)
@@ -108,7 +108,7 @@ test('a typed @room posts through node: ✓ sent stops the prompt; sdk and bridg
 // implementation, so the call rejects): the test's hook beneath records the row the module handed down.
 function rows(on: any) {
   const kept: string[] = []
-  on('session.append', ($: any, e: any, next: any) => { kept.push(e.message.content[0].text); return next(e) })
+  on('session.append', (_$: any, e: any, next: any) => { kept.push(e.message.content[0].text); return next(e) })
   let n = 0
   return async ($: any, text: string, type = 'system', door = 'notice') => {
     await $.session.append({

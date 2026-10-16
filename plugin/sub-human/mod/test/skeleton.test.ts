@@ -16,7 +16,7 @@ const verdict = async ($: any) => (await $.tool.check({ tool: POST, input: { tex
 test('session.start runs hooks/run.ts mod-hello with the payload session id and keeps the hello in $.state', async ($, on) => {
   const runs: any[] = []
   world(on)
-  on('process.run', ($, e: any) => { runs.push(e); return ran(JSON.stringify(OUT) + '\n') })
+  on('process.run', (_$, e: any) => { runs.push(e); return ran(JSON.stringify(OUT) + '\n') })
   expect(await verdict($)).toBe('ask')
   await $.session.start({ cwd: '/w', surface: null, isInteractive: false })
   expect(runs.length).toBe(1)
@@ -52,7 +52,7 @@ test('a hello with no seat keeps the room tools behind the permission prompt', a
 test('the join (classic.UserPromptExpansion /sub-human): the lease first, the join beneath, then mod-hello for the new seat', async ($, on) => {
   const order: string[] = []
   world(on)
-  on('process.run', ($, e: any) => { order.push('hello'); return ran(JSON.stringify(OUT)) })
+  on('process.run', (_$, _e: any) => { order.push('hello'); return ran(JSON.stringify(OUT)) })
   on('classic.UserPromptExpansion', () => { order.push('join'); return { additionalContext: ['joined'] } })
   const r = await $.classic.UserPromptExpansion({ expansion_type: 'slash_command', command_name: 'sub-human', command_args: 'alice', prompt: '/sub-human alice', session_id: 'sid-join' } as any)
   expect(r.additionalContext).toEqual(['joined'])
@@ -69,7 +69,7 @@ test('the join (classic.UserPromptExpansion /sub-human): the lease first, the jo
 
 test('classic.SessionStart after /clear puts the seat back (session-restore) and says hello for the new session id; startup does neither', async ($, on) => {
   const runs: string[] = []
-  on('process.run', ($, e: any) => { runs.push(`${scriptOf(e)} ${JSON.parse(e.init.stdin).session_id}`); return ran(scriptOf(e) === 'mod-hello.ts' ? JSON.stringify(OUT) : '') })
+  on('process.run', (_$, e: any) => { runs.push(`${scriptOf(e)} ${JSON.parse(e.init.stdin).session_id}`); return ran(scriptOf(e) === 'mod-hello.ts' ? JSON.stringify(OUT) : '') })
   on('classic.SessionStart', () => ({}))
   await $.classic.SessionStart({ source: 'startup', session_id: 'sid-a' } as any)
   await $.classic.SessionStart({ source: 'clear', session_id: 'sid-b' } as any)

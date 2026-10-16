@@ -44,7 +44,12 @@ test('a wake as Claude Code frames it: the frame is left out; expanded (a short 
 
 test('expanded (ctrl+o), another plugin, a sender that is no seat, a notification: the engine draws its own row', async ($, on) => {
   // the engine's own row, beneath the plugins
-  on('ui.render', ($: any, e: any) => { const { Text } = $.ui.resolve(e); return h(Text, { key: 'engine' }, e.props.text) })
+  on('ui.render', { component: 'UserMessage' }, ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    const el = h(Text, { key: 'engine' }, e.props.text)
+    if (!el || typeof el === 'string') throw new Error('the engine row drew no element')
+    return el
+  })
   const cases = [
     { text: 'hi', origin: { kind: 'peer' }, from: { name: 'bob.otter-4821' }, isExpanded: true },
     { text: 'hi', origin: { kind: 'plugin', name: 'other' } },
