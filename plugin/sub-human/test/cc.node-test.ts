@@ -453,3 +453,18 @@ test('probe: a bogus binary fails every entry', () => {
   assert.match(r.stdout, /claude 0\.0\.1/);
   assert.match(r.stdout, /FAIL {2}matcher-rule/);
 });
+
+test('transcript-home-notice (stage 8f item 1): lastHome reads the folder of the last hidden home notice; a user row or a notice that only quotes it does not count', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-home-notice-'));
+  const file = path.join(dir, 't.jsonl');
+  const notice = (content: string, level = 'info') => ({ type: 'system', subtype: 'informational', content, isMeta: false, level });
+  const write = (rows: object[]) => fs.writeFileSync(file, rows.map(r => JSON.stringify(r)).join('\n') + '\n');
+  write([notice('sub-human: home /a/one'), { type: 'user', message: { content: 'sub-human: home /b/two' } }, notice('said: sub-human: home /c/three', 'notice')]);
+  assert.equal(transcript.lastHome(file), '/a/one');
+  write([notice('sub-human: home /a/one'), notice('sub-human: home /d/four')]);
+  assert.equal(transcript.lastHome(file), '/d/four', 'the last wins');
+  write([notice('sub-human: home relative')]);
+  assert.equal(transcript.lastHome(file), null, 'an absolute folder only');
+  assert.equal(transcript.lastHome(path.join(dir, 'none.jsonl')), null);
+  fs.rmSync(dir, { recursive: true, force: true });
+});

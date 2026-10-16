@@ -13,7 +13,7 @@ const HOME = '/u/.sub-human'
  * other scripts answering from `answer` ({stdout, exitCode, stderr}); what ran, the prompts submitted, the writes
  * the guard let through. */
 function world(engine: any, on: any, { indexed = false, seat = null as any, answer = {} as Record<string, any> } = {}) {
-  const seen = { runs: [] as string[], stdin: {} as Record<string, any>, prompts: [] as string[], logs: [] as string[] }
+  const seen = { runs: [] as string[], stdin: {} as Record<string, any>, prompts: [] as string[], asUser: [] as boolean[], logs: [] as string[] }
   session(on, SID)
   on('session.cwd', () => ({ value: '/w' }))
   on('env.get', ($: any, e: any) => ({ value: e.name === 'HOME' ? '/u' : undefined }))
@@ -29,7 +29,7 @@ function world(engine: any, on: any, { indexed = false, seat = null as any, answ
     return ran(a.stdout || '', a.exitCode ?? 0, a.stderr || '')
   })
   on('process.spawn', async function* () { return { value: { code: 0, signal: null } } })
-  on('prompt.submit', ($: any, e: any) => { seen.prompts.push(e.text); return { text: e.text } })
+  on('prompt.submit', ($: any, e: any) => { seen.prompts.push(e.text); seen.asUser.push(!!(e.origin && e.origin.asUser === true)); return { text: e.text } })
   on('classic.SessionStart', () => ({}))
   on('classic.UserPromptExpansion', () => ({}))
   on('command.run', () => ({ text: undefined }))
@@ -74,10 +74,10 @@ test('a resumed seat: session-restore puts it back (its context and title), then
   expect(seen.runs.slice(0, 2)).toEqual(['session-restore.ts', 'mod-hello.ts'])
   expect(seen.runs).toContain('row-rewake.ts')
   expect(seen.stdin['row-rewake.ts'].source).toBe('resume')
-  const lines = seen.prompts[0].split('\n')
-  expect(lines[0]).toBe("sub-human: restoring this session's rows")
-  expect(lines.slice(1).every(l => l.startsWith('(for Claude) '))).toBe(true)
-  expect(lines[2]).toBe('(for Claude) Agent({subagent_type: "sub-human:room"})')
+  // stage 8f item 6: a member's, submitted asUser with its one line alone (the row calls ride as context), also
+  // before the tail child named the seat (here it never does): never the framed prompt with its "(for Claude)" lines
+  expect(seen.prompts[0]).toBe("sub-human: restoring this session's rows")
+  expect(seen.asUser[0]).toBe(true)
 })
 
 test('a session surely without a seat: compact, clear and resume start no node', async ($, on) => {
@@ -118,4 +118,28 @@ test('stage 8e E: a fork whose seat is in another sub-human folder: session-rest
   expect(r.additionalContext).toBeUndefined()
   expect(seen.logs).toEqual([said.replace(/^sub-human: /, '')])
   expect(seen.runs).toEqual(['session-restore.ts', 'mod-hello.ts'])
+})
+
+test('stage 8f item 1: a hello that names a seat appends the hidden home notice once per session and folder; one with no seat appends none', async ($, on) => {
+  const appended: any[] = []
+  on('session.append', ($: any, e: any, next: any) => { appended.push(e.message); return next(e) })
+  const seen = world($, on, { indexed: true, seat: SEAT })
+  await start($)
+  await until(() => appended.length === 1)
+  expect(appended[0].type).toBe('system')
+  expect(appended[0].content).toEqual([{ type: 'text', text: 'sub-human: home /u/.sub-human' }])
+  // another hello for the same session and folder (a resume's restore): no second notice
+  await $.classic.SessionStart({ session_id: SID, source: 'resume', cwd: '/w', transcript_path: '/t.jsonl' } as any)
+  await new Promise(r => setTimeout(r, 50))
+  expect(seen.runs).toContain('mod-hello.ts')
+  expect(appended.length).toBe(1)
+})
+
+test('stage 8f item 1: a session with no seat appends no home notice', async ($, on) => {
+  const appended: any[] = []
+  on('session.append', ($: any, e: any, next: any) => { appended.push(e.message); return next(e) })
+  world($, on, { indexed: true, seat: null })
+  await start($)
+  await new Promise(r => setTimeout(r, 50))
+  expect(appended).toEqual([])
 })

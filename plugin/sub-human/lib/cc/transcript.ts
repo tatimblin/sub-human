@@ -11,11 +11,15 @@
  *   contentText(content), SAID, NOTE, PASTED_RE, unwrapPasted(text)
  *   continuedIn(file) -> sid|null        the session a backgrounded session went on in (its last continued-in record)
  *   lastTitle(file) -> title|null        the session's title as its transcript keeps it (its last custom-title record)
+ *   HOME_MARK, homeMark(home) -> text    (mod/core/constants.ts) the notice the hooks module appends (a system row, hidden
+ *                                        in the default view) once a session holds a seat: which sub-human folder it is in
+ *   lastHome(file) -> home|null          the folder the transcript's last such notice names
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { plansDir } from './env.ts';
+import { HOME_MARK, homeMark } from '../../mod/core/constants.ts';
 
 type Env = NodeJS.ProcessEnv;
 
@@ -281,8 +285,29 @@ function lastTitle(file: unknown): string | null {
   return out;
 }
 
+
+/**
+ * The sub-human folder this transcript's session last held a seat in, or null: the hooks module appends HOME_MARK and
+ * the folder as a system row ($.session.append), which Claude Code keeps as {"type":"system","subtype":"informational",
+ * "content":TEXT,"level":"info"} (drawn only in the ctrl+o transcript view). The agent view's fork reads it from the
+ * transcript it continued, since the bg job it runs in drops a shell's SUB_HUMAN_HOME (stage 8f item 1). Reads the
+ * whole file (the notice is written at the join, which may be long before the fork), only lines that name the mark.
+ * @cc "a notice that is not one text block"
+ * @stability incidental
+ */
+function lastHome(file: unknown): string | null {
+  let out: string | null = null;
+  for (const l of readLines(file)) {
+    if (!l.includes(HOME_MARK)) continue;
+    const e = asEntry(l);
+    const c = e && e.type === 'system' ? e.content : null;
+    if (typeof c === 'string' && c.startsWith(HOME_MARK) && c.slice(HOME_MARK.length).startsWith('/')) out = c.slice(HOME_MARK.length).trim();
+  }
+  return out;
+}
+
 export {
   readLines, readEntries, parseLines, planFile, planAnswer, planFeedback, toolUseInput, lastHumanPrompt, contentText,
-  SAID, NOTE, PASTED_RE, unwrapPasted, continuedIn, lastTitle, rejectionAnswer,
+  SAID, NOTE, PASTED_RE, unwrapPasted, continuedIn, lastTitle, HOME_MARK, homeMark, lastHome, rejectionAnswer,
 };
 export type { TranscriptEntry, TranscriptLine, ContentBlock };

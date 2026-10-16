@@ -22,6 +22,7 @@ import {
   relayQueue, rewakePrompt, wakeParts, holdPull, DELIVERY_ERROR_NOTICE, MOD_RESTART_TELL_FAILS, RELAY_AFTER_MS, REWAKE_TIMEOUT_MS,
 } from './core/deliver.ts';
 import { parseHello, localHello, homeOf, sidIndex } from './core/seat.ts';
+import { homeMark } from './core/constants.ts';
 import { answersItself, joinPayload, readReply, answerOf, cancels, leftName, CONFIRM_AFTER_MS } from './core/command.ts';
 import { shimArgv, shimEnv, toClassic, asNotice, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { restoreNeeded } from './core/prefilter.ts';
@@ -92,8 +93,27 @@ async function sayHello($: EngineInterface, sid: string) {
     timeoutMs: SHIM_TIMEOUT_MS,
   });
   const hello = run.exitCode === 0 ? parseHello(run.stdout, sid) : null;
-  if (hello) { await $.state.set(HELLO, hello); leased = sid; }
+  if (hello) { await $.state.set(HELLO, hello); leased = sid; void markHome($, hello); }
   return hello;
+}
+
+/** The session ids and folders whose transcript names the folder already (module state: a reload names it once more). */
+const homeMarked = new Set<string>();
+/**
+ * A seated session's sub-human folder, once per session id and folder, as a system row in its transcript (stored at
+ * level info: drawn only in the ctrl+o view; cc CONTRACT transcript-home-notice). The agent view's fork runs in a bg
+ * job that drops a shell's SUB_HUMAN_HOME, and reads the folder from the transcript it continued (lib/identity.ts
+ * forkedAway; stage 8f item 1). Never throws.
+ */
+async function markHome($: EngineInterface, hello: NonNullable<ReturnType<typeof parseHello>>) {
+  if (!hello.seat || !hello.sid) return;
+  const key = `${hello.sid}\n${hello.home}`;
+  if (homeMarked.has(key)) return;
+  homeMarked.add(key);
+  try {
+    const r = await $.session.append({ message: { type: 'system', content: [{ type: 'text', text: homeMark(hello.home) }] } });
+    if (!r || r.deny) homeMarked.delete(key); // refused: the next hello tries again
+  } catch { homeMarked.delete(key); }
 }
 
 /** The lease for sid (mod-hello writes it, with the nonce): before a join, which refuses a session without one. */
@@ -225,11 +245,12 @@ function logEach($: EngineInterface, lines: unknown) {
 const wakeContexts = new Map<string, string>();
 export const wakeContextOf = (text: string): string | undefined => wakeContexts.get(text);
 
-function submitWake($: EngineInterface, text: string, { appended = false, seen = [] as string[] } = {}) {
+function submitWake($: EngineInterface, text: string, { appended = false, seen = [] as string[], member = false } = {}) {
   return (async () => {
     let r = null;
-    // a member's wake: its lines for the person bare (asUser), the rest as context (core/deliver.ts wakeParts)
-    const parts = child && child.seat && child.seat.role !== 'claude' ? wakeParts(text) : null;
+    // a member's wake: its lines for the person bare (asUser), the rest as context (core/deliver.ts wakeParts); member:
+    // the caller knows the seat is a member's before the tail child said so (a resume's rewake races its seat event)
+    const parts = (child && child.seat ? child.seat.role !== 'claude' : member) ? wakeParts(text) : null;
     if (parts) wakeContexts.set(parts.shown, parts.context);
     try { r = await $.prompt.submit(parts ? { text: parts.shown, asUser: true } : { text }); } catch { /* below */ } finally { if (parts) wakeContexts.delete(parts.shown); }
     if (r && typeof r.drop !== 'string') return;
@@ -246,11 +267,13 @@ function submitWake($: EngineInterface, text: string, { appended = false, seen =
  * After a resume: hooks/handlers/row-rewake.ts, not awaited (it was an asyncRewake command hook). Its exit 2 is the row
  * calls the resume lost: they go to the model as a wake (submitWake), shown to the person as one line. Never throws.
  */
-async function rewake($: EngineInterface, e: { session_id?: string }) {
+async function rewake($: EngineInterface, e: { session_id?: string }, member: boolean) {
   try {
     const root = $.plugin.root;
     const run = await $.process.run(shimArgv(root, 'row-rewake'), { stdin: JSON.stringify(e), env: shimEnv(e, root), timeoutMs: REWAKE_TIMEOUT_MS });
-    if (run.exitCode === 2 && String(run.stderr || '').trim()) await submitWake($, rewakePrompt(run.stderr));
+    // a member's: asUser, its one line shown and the row calls as context, also before the tail child named the seat
+    // (stage 8f item 6: one of two --continue resumes drew the framed prompt with every "(for Claude)" line)
+    if (run.exitCode === 2 && String(run.stderr || '').trim()) await submitWake($, rewakePrompt(run.stderr), { member });
   } catch { /* the restore's context lists the same rows for the next prompt */ }
 }
 
@@ -513,7 +536,7 @@ export function registerDeliver(on: On) {
       try { await $.state.set(REVIEW, true); await refresh($, e.session_id); } catch { /* the next refresh tries again */ }
       try {
         const hello = asHello((await $.state.get(HELLO)).value);
-        if ((e.source === 'resume' || e.source === 'fork') && hello && hello.seat) void rewake($, e);
+        if ((e.source === 'resume' || e.source === 'fork') && hello && hello.seat) void rewake($, e, hello.seat.role !== 'claude');
       } catch { /* the rows come with the next prompt (the restore's context) */ }
     }
     try {

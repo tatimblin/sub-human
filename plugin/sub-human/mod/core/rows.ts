@@ -7,6 +7,9 @@
  *   spawnedId(response) -> id|null   the agent id an Agent call's response names (tool_response.agentId)
  *   handbackFrom(text) -> id|null    the agent whose final report a delivery is (Claude Code's "[Subagent hand-back]"
  *                                    frame inside <agent-message from="ID">: cc CONTRACT subagent-handback-message)
+ *   rowReportFrom(text) -> id|null   the agent whose hand-back is a room row's own last word (its report is exactly
+ *                                    `left` or `error`, agents/room.md and participant.md): a row this process never saw
+ *                                    spawned (the agent view's fork, or a reload) still ends without a turn
  *   finishedFrom(text) -> id|null    the agent a task notification says finished (<task-notification> with
  *                                    <task-id>ID</task-id> and <status>completed</status>; the same CONTRACT entry)
  */
@@ -26,6 +29,13 @@ export function spawnedId(response: unknown): string | null {
 const HANDBACK = /<agent-message from="([\w-]+)">\s*\[Subagent hand-back\]/;
 export function handbackFrom(text: unknown): string | null {
   const m = HANDBACK.exec(String(text ?? ''));
+  return m ? m[1] : null;
+}
+
+/** The report inside a hand-back's frame (the harness indents each of its lines) is exactly a row's last word. */
+const ROW_REPORT = /<agent-message from="([\w-]+)">\s*\[Subagent hand-back\][^\n]*\n\s*(left|error)\s*<\/agent-message>/;
+export function rowReportFrom(text: unknown): string | null {
+  const m = ROW_REPORT.exec(String(text ?? ''));
   return m ? m[1] : null;
 }
 

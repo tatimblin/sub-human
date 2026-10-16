@@ -99,16 +99,25 @@ test('stage 8e I.2 (live verify, remote/16b; shv9 carol): a row\'s hand-back ("l
   const ROWID = 'a8fbba36c5b5b5ae1', OTHER = 'a0000000000000001'
   await posted($, ROW, { tool_response: { agentId: ROWID } }) // the room row, spawned
   await posted($, { subagent_type: 'Explore', prompt: 'look', description: 'look' }, { tool_response: { agentId: OTHER } })
-  const handback = (id: string) => `Another Claude session sent a message:\n<agent-message from="${id}">\n[Subagent hand-back] The text below is the final report of a subagent this session delegated to. … The report follows:\n  left\n</agent-message>`
+  const handback = (id: string, report = 'left') => `Another Claude session sent a message:\n<agent-message from="${id}">\n[Subagent hand-back] The text below is the final report of a subagent this session delegated to. … The report follows:\n  ${report}\n</agent-message>`
   const finished = (id: string) => `<task-notification>\n<task-id>${id}</task-id>\n<output-file>/tmp/x.output</output-file>\n<status>completed</status>\n<summary>Agent "falcon-7297" finished</summary>\n</task-notification>`
   const got: any = await $.session.receive({ origin: { kind: 'peer' }, text: handback(ROWID) } as any)
-  expect(got.consumed).toBe('sub-human: a room row ended (no turn for it)')
+  expect(got.consumed).toBe('sub-human: row ended, nothing to do')
   const r: any = await $.prompt.submit({ text: handback(ROWID), origin: { kind: 'peer' }, wait: false } as any)
-  expect(r.drop).toBe('sub-human: a room row ended (no turn for it)')
+  expect(r.drop).toBe('sub-human: row ended, nothing to do')
   const n: any = await $.prompt.submit({ text: finished(ROWID), origin: { kind: 'task-notification' }, wait: false } as any)
-  expect(n.drop).toBe('sub-human: a room row ended (no turn for it)')
-  const other: any = await $.prompt.submit({ text: handback(OTHER), origin: { kind: 'peer' }, wait: false } as any)
+  expect(n.drop).toBe('sub-human: row ended, nothing to do')
+  const other: any = await $.prompt.submit({ text: handback(OTHER, 'found 3 files'), origin: { kind: 'peer' }, wait: false } as any)
   const otherDone: any = await $.prompt.submit({ text: finished(OTHER), origin: { kind: 'task-notification' }, wait: false } as any)
   expect([other.drop, otherDone.drop]).toEqual([undefined, undefined])
-  expect(entered).toEqual([handback(OTHER), finished(OTHER)])
+  expect(entered).toEqual([handback(OTHER, 'found 3 files'), finished(OTHER)])
+  // stage 8f item 1: a fork's row, never seen spawned here, ends with its last word: taken, its notification too
+  const FORKED = 'a1111111111111111'
+  const f: any = await $.session.receive({ origin: { kind: 'peer' }, text: handback(FORKED) } as any)
+  expect(f.consumed).toBe('sub-human: row ended, nothing to do')
+  const fDone: any = await $.session.receive({ origin: { kind: 'task-notification' }, text: finished(FORKED) } as any)
+  expect(fDone.consumed).toBe('sub-human: row ended, nothing to do')
+  const err: any = await $.prompt.submit({ text: handback('a2222222222222222', 'error'), origin: { kind: 'peer' }, wait: false } as any)
+  expect(err.drop).toBe('sub-human: row ended, nothing to do')
+  expect(entered.length).toBe(2)
 })

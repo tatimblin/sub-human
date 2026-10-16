@@ -85,10 +85,12 @@
  *                                        agent view) moved it into a bg job under a new id: a seat still held by an
  *                                        older session whose transcript, beside this one's in dir, says it continued
  *                                        in sid (lib/cc/transcript.ts continuedIn; CONTRACT session-fork-continued-in)
- *   forkedAway(sid, dir) -> {sid, title}|null   a fork whose parent held a seat this folder has no record of (its
- *                                        SUB_HUMAN_HOME was only in the shell, which the bg job drops): the parent
- *                                        transcript continued in sid and its last title is an address NAME.CODE
- *                                        (lib/cc/transcript.ts lastTitle; CONTRACT transcript-custom-title)
+ *   forkedAway(sid, dir) -> {sid, title, home?}|null   a fork whose parent sat in another sub-human folder than this
+ *                                        process's (its SUB_HUMAN_HOME was only in the shell, which the bg job drops):
+ *                                        the parent transcript continued in sid and the last folder it names is not
+ *                                        this one (lib/cc/transcript.ts lastHome; CONTRACT transcript-home-notice), also
+ *                                        after a leave; with no such notice (a transcript from before it), its last
+ *                                        title is an address NAME.CODE (lastTitle; CONTRACT transcript-custom-title)
  *   markForked(sid, f), forkedOf(sid)    <home>/sessions/forked/<sid>.json: session-restore's record of such a fork
  *   adoptFork(from, {pid, session_id, cwd}) -> JoinResult   move that seat to this process and session (no leave, no
  *                                        log line: the person never left); the old session's indexes are dropped
@@ -137,7 +139,7 @@ import {
   seatAlive, leaseFresh, startMatches, PRESENCE_STATES, ROOM_CLAUDE, LOG_V,
 } from './room/members.ts';
 import * as cc from './cc/env.ts';
-import { continuedIn, lastTitle } from './cc/transcript.ts';
+import { continuedIn, lastTitle, lastHome } from './cc/transcript.ts';
 import type { JoinResult, Member, Members, MembersApi, PresenceState, Role, SeatRecord } from './room/types.ts';
 
 /** A resolved seat (resolveBySession, resolveByPid, resolveSelf): address = NAME.CODE, the session title. */
@@ -556,10 +558,12 @@ const FORK_SCAN_MS = 10 * 60_000;
 /** title is a seat's address NAME.CODE (the session title a seat sets). */
 const isAddress = (title: string): boolean => { const i = title.lastIndexOf('.'); return i > 0 && NAME_RE.test(title.slice(0, i)) && CODE_RE.test(title.slice(i + 1)); };
 
-/** A fork's parent seated in another sub-human folder (stage 8e E): sid's conversation came from a session whose
- * transcript (beside this one's in dir) continued in sid and whose title was a seat's address NAME.CODE, so it held a
- * seat; forkParent found none in this folder. {sid, title} or null. */
-type ForkedAway = { sid: string; title: string };
+/** A fork's parent seated in another sub-human folder (stage 8e E, 8f item 1): sid's conversation came from a session
+ * whose transcript (beside this one's in dir) continued in sid and names another folder than this one as its seat's
+ * (the hooks module's notice), whether or not it still held the seat (a leave renames the session, so its title says
+ * nothing then); with no notice, a title that was a seat's address NAME.CODE. {sid, title, home?} or null. */
+type ForkedAway = { sid: string; title: string; home?: string };
+const realish = (p: string): string => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
 function forkedAway(sid: unknown, dir: string | null | undefined, now = Date.now()): ForkedAway | null {
   if (typeof sid !== 'string' || !SID_RE.test(sid) || typeof dir !== 'string' || !dir) return null;
   let names: string[];
@@ -570,8 +574,10 @@ function forkedAway(sid: unknown, dir: string | null | undefined, now = Date.now
     const file = path.join(dir, f);
     try { if (now - fs.statSync(file).mtimeMs > FORK_SCAN_MS) continue; } catch { continue; }
     if (continuedIn(file) !== sid) continue;
-    const title = lastTitle(file);
-    return title && isAddress(title) ? { sid: old, title } : null;
+    const title = lastTitle(file) || '';
+    const was = lastHome(file);
+    if (was) return realish(was) !== realish(home()) ? { sid: old, title, home: was } : null;
+    return isAddress(title) ? { sid: old, title } : null;
   }
   return null;
 }
@@ -585,7 +591,7 @@ function markForked(sid: string, f: ForkedAway): void {
 function forkedOf(sid: unknown): ForkedAway | null {
   if (typeof sid !== 'string' || !SID_RE.test(sid)) return null;
   const r = readJson(forkedFile(sid)) as Partial<ForkedAway> | null;
-  return r && typeof r.title === 'string' && typeof r.sid === 'string' ? { sid: r.sid, title: r.title } : null;
+  return r && typeof r.title === 'string' && typeof r.sid === 'string' ? { sid: r.sid, title: r.title, ...(typeof r.home === 'string' ? { home: r.home } : {}) } : null;
 }
 
 function adoptFork(from: ForkParent, { pid: pidArg, session_id, cwd }: { pid: unknown; session_id: string; cwd?: string | null }): JoinResult {
