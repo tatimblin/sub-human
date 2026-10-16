@@ -3,7 +3,7 @@
 // checks the hooks: a peer @room is dropped before anything beneath runs, an unseated prompt starts no node, a
 // seated one runs hooks/handlers/prompt.ts with the origin in its stdin, and the shim's answer and notices reach the session.
 import { test, expect, mock } from 'claude-code/testing'
-import { SEAT, OUT, ran, scriptOf, session, start } from './support.ts'
+import { SEAT, OUT, ran, scriptOf, session, start, helloOf, seatOf } from './support.ts'
 
 const SID = 'sid-p'
 const NONCE = /^[0-9a-f]{32}$/
@@ -311,4 +311,17 @@ test('an @room typed through Remote Control that posted ("✓ sent", no systemMe
   await new Promise(r => setTimeout(r, 200))
   expect(seen.entered).toEqual(['@room hi']) // this world's engine enters every prompt; no relay after it
   expect(seen.logs.filter(l => !/didn't arrive here/.test(l))).toEqual([]) // (this world runs no tail child)
+})
+
+test('13 (K/Q): a plain prompt typed into the room\'s Claude is a stop with the hint, drawn as the hint alone: no "blocked by hook" frame, nothing put back in the input, no turn', async ($, on) => {
+  const HINT = '✗ the room\'s Claude takes no typed input; type @claude in your own session, or ask your Claude to message claude.otter-4821'
+  const seen = world($, on, { hello: helloOf(seatOf('claude', 'claude')), prompt: JSON.stringify({ continue: false, stopReason: HINT, subHuman: { reviewOpen: false } }) })
+  const append = rows(on)
+  await start($)
+  await submit($, 'please tidy the task list')
+  expect(seen.classic[0].preventContinuation).toBe(true)
+  expect(seen.classic[0].block).toBeUndefined()
+  expect(seen.classic[0].stopReason).toBe(HINT)
+  expect(await append($, `Operation stopped by hook: ${HINT}`)).toBe(HINT)
+  expect(seen.presence.length).toBe(0)
 })

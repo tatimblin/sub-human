@@ -240,7 +240,7 @@ While the rows run, Claude Code prints **"✻ Waiting for N background agents to
 The room's Claude takes no typed input. Every input it gets is attributed: a room entry, a Claude's `SendMessage`, or a task request.
 
 - In the agent view (**←**), it shows as `claude.vole-8126` with its last status. **Space** peeks: its panel lists one row per person, and **ctrl+t** shows the room's task list. **Enter** attaches. Opening the agent view moves your own session too (see **The agent view (←) moves your session**): Enter on your own row to get back.
-- If you type into it, the prompt is refused with `the room's Claude takes no typed input; type @claude in your own session, or ask your Claude to message claude.vole-8126`. A slash command typed there (`/clear` included) is answered with the same refusal and never runs (the hooks module's `command.run`, which Claude Code raises before any command).
+- If you type into it, the prompt is refused with `✗ the room's Claude takes no typed input; type @claude in your own session, or ask your Claude to message claude.vole-8126`: it runs no turn, and your text is not put back in the input. A slash command typed there (`/clear` included) is answered with the same refusal and never runs (the hooks module's `command.run`, which Claude Code raises before any command).
 - `claude logs <id>` and `sub-human watch claude` show it read-only, from another terminal, and leave your session where it is.
 - About half a minute after the last person leaves, the room's Claude is stopped.
 

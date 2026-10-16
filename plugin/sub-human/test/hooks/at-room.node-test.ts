@@ -142,8 +142,8 @@ test('task notifications, slash commands and plain prompts are not posted', () =
 test('room Claude and non-members are refused; an empty post is refused', () => {
   const w = new World({ claude: 'act', alice: 'sleep' });
   let r = atRoom(w, submit('@room hi'), { as: 'claude' });
-  blocked(r);
-  assert.equal(r.json!.reason, `the room's Claude takes no typed input; type @claude in your own session, or ask your Claude to message claude.${w.code}`);
+  // item 13 (K/Q): a stop with the hint, as members' refusals are: no "blocked by hook" frame, nothing put back
+  assert.equal(refusedStop(r), `✗ the room's Claude takes no typed input; type @claude in your own session, or ask your Claude to message claude.${w.code}`);
   const w2 = new World({ claude: 'sleep', alice: 'act' });
   r = atRoom(w2, submit('@room    '), { as: 'alice' });
   assert.match(refusedStop(r), /^✗ not posted: there is nothing after @room/);
@@ -239,8 +239,7 @@ test('@claude: refused like @room when empty, forged or unattested; the room\'s 
   assert.equal(r.json!.reason, '✗ not posted: sub-human could not check who wrote this @claude. Type it again.');
   const wc = new World({ claude: 'act', alice: 'sleep' }); // one seat per pid: the room's Claude holds this process here
   r = atRoom(wc, submit('@claude hi'), { as: 'claude' });
-  blocked(r);
-  assert.match(r.json!.reason!, /^the room's Claude takes no typed input/);
+  assert.match(refusedStop(r), /^✗ the room's Claude takes no typed input/);
   assert.equal(wc.entries().length, 0);
   assert.equal(w.entries().length, 0);
   const out = new World({ claude: 'sleep' });
@@ -359,13 +358,14 @@ test('the room\'s Claude: a typed prompt is refused (but its launch), a peer, a 
   const transcript = path.join(w.cwd, 'claude.jsonl');
   jsonl(transcript, [{ type: 'user', promptId: 'p-launch', message: { role: 'user', content: '/sub-human' } }]);
   const at = (p: string, origin: string | null, extra: HookInput = {}) => atRoom(w, { ...submit(p), transcript_path: transcript, prompt_id: 'p-now', sub_human_origin: origin, ...extra }, { as: 'claude' });
-  for (const o of ['composer', 'sdk', 'bridge']) blocked(at('hi from a viewer', o));
+  for (const o of ['composer', 'sdk', 'bridge']) assert.match(refusedStop(at('hi from a viewer', o)), /^✗ the room's Claude takes no typed input/, o);
+  const runs = (r: HookRun) => !r.json || (r.json.decision !== 'block' && r.json.continue !== false);
   for (const o of ['peer', 'peer-send-message', 'task-notification', 'plugin:sub-human']) {
-    assert.notEqual((at('(for Claude) sub-human room: act on what concerns you\n#3 bob[agent] task_req', o).json || {}).decision, 'block', o);
+    assert.ok(runs(at('(for Claude) sub-human room: act on what concerns you\n#3 bob[agent] task_req', o)), o);
   }
-  assert.notEqual((at('/sub-human', 'composer', { prompt_id: 'p-launch' }).json || {}).decision, 'block', 'the launch, attested');
-  blocked(at('/sub-human', 'composer')); // not the session's first prompt
-  blocked(at('/clear', 'composer'));     // a typed slash command
-  assert.notEqual((at('hello', null).json || {}).decision, 'block', 'no origin (a lost hand-off): the wake must not be lost');
+  assert.ok(runs(at('/sub-human', 'composer', { prompt_id: 'p-launch' })), 'the launch, attested');
+  refusedStop(at('/sub-human', 'composer')); // not the session's first prompt
+  refusedStop(at('/clear', 'composer'));     // a typed slash command
+  assert.ok(runs(at('hello', null)), 'no origin (a lost hand-off): the wake must not be lost');
   assert.equal(w.entries().length, 0);
 });
