@@ -268,47 +268,125 @@ function ansiWord(cmd: string, j: number): [string, number] | null {
   }
 }
 
+/** Where the scan stands (ansiC): 'u' unquoted, 'd' double quotes, 'p' a $( in double quotes or a heredoc body
+ * (unquoted inside; depth counts its parens, cases its open `case`s), 'b' a backtick, 'v' a ${ in double quotes or a
+ * heredoc body (the shell reads $'…' inside it: depth counts its braces), 'h' an unquoted heredoc's body (expansions,
+ * no quotes). */
+type Frame = { k: 'u' | 'd' | 'p' | 'b' | 'v' | 'h'; depth: number; cases: number };
+const frame = (k: Frame['k']): Frame => ({ k, depth: 0, cases: 0 });
+/** A heredoc whose body starts at the next newline: its delimiter, whether it was quoted (a literal body), <<- (tabs). */
+type Heredoc = { delim: string; quoted: boolean; strip: boolean };
+
+/** The shell keyword w starts at cmd[i] as a word of its own. */
+function keywordAt(cmd: string, i: number, w: string): boolean {
+  if (!cmd.startsWith(w, i)) return false;
+  const before = i === 0 ? '' : cmd[i - 1], after = cmd[i + w.length] ?? '';
+  return (before === '' || /[\s;&|(`]/.test(before)) && (after === '' || /[\s;&|)]/.test(after));
+}
+
+/** A heredoc operator at cmd[i] (`<<` or `<<-`, not `<<<`): the heredoc and the index past its delimiter word, or
+ * null when no word follows. */
+function heredocAt(cmd: string, i: number): [Heredoc, number] | null {
+  let j = i + 2;
+  const strip = cmd[j] === '-';
+  if (strip) j++;
+  while (cmd[j] === ' ' || cmd[j] === '\t') j++;
+  let delim = '', quoted = false;
+  while (j < cmd.length && !/[\s;&|<>()]/.test(cmd[j])) {
+    const c = cmd[j];
+    if (c === "'" || c === '"') {
+      const close = cmd.indexOf(c, j + 1);
+      if (close < 0) return null;
+      delim += cmd.slice(j + 1, close); quoted = true; j = close + 1;
+    } else if (c === '\\') { delim += cmd[j + 1] ?? ''; quoted = true; j += 2; }
+    else { delim += c; j++; }
+  }
+  return delim ? [{ delim, quoted, strip }, j] : null;
+}
+
+/** The body of heredoc hd from cmd[i] (just past its operator's line): [body, delimiter line, index past it]. A body
+ * with no delimiter line runs to the end (the shell warns and takes it). */
+function heredocBody(cmd: string, i: number, hd: Heredoc): [string, string, number] {
+  for (let at = i; at < cmd.length;) {
+    const nl = cmd.indexOf('\n', at);
+    const end = nl < 0 ? cmd.length : nl;
+    const line = cmd.slice(at, end);
+    if ((hd.strip ? line.replace(/^\t+/, '') : line) === hd.delim) return [cmd.slice(i, at), cmd.slice(at, nl < 0 ? end : end + 1), nl < 0 ? end : end + 1];
+    at = end + 1;
+  }
+  return [cmd.slice(i), '', cmd.length];
+}
+
 /**
  * The command with each ANSI-C quoted word ($'…') decoded as bash and zsh read it (\xHH, \NNN octal, \uHHHH,
  * \UHHHHHHHH, \cX and the one-letter escapes; an unknown escape keeps its backslash), so `cat /h/$'\x68'ost/keys/…`
- * is placed as /h/host/keys/… (item 14 R5). null: a $'…' this cannot read whole (unterminated): denied.
- * A $' counts only where the shell reads one: unquoted (also inside $(…) or `…` in double quotes), never inside
- * '…' (where $ is literal: grep 'foo$'), inside "…", after a backslash, or as the second $ of $$ (stage 8e A).
+ * is placed as /h/host/keys/… (item 14 R5), and each $"…" (a locale string) read as the double-quoted string it is
+ * (`/h/$"home"` is /h/home). null: a $'…' this cannot read whole (unterminated): denied.
+ * A $' counts only where the shell reads one: unquoted (also inside $(…), ${…} or `…` in double quotes or an
+ * unquoted heredoc's body), never inside '…' (where $ is literal: grep 'foo$'), inside "…", after a backslash, as the
+ * second $ of $$ (stage 8e A), or in a heredoc's body outside those (a quoted heredoc's body is literal throughout). A
+ * `case` inside $(…) keeps its patterns' ) from closing it (stage 8f item 5).
  */
 export function ansiC(cmd: string): string | null {
-  if (!cmd.includes("$'")) return cmd;
+  if (!cmd.includes("$'") && !cmd.includes('$"')) return cmd;
+  return scanQuotes(cmd, 'u');
+}
+
+function scanQuotes(cmd: string, start: Frame['k']): string | null {
   let out = '';
-  // the contexts open at i: 'u' unquoted, 'd' double quotes, 'p' a $( in double quotes (unquoted inside), 'b' a backtick
-  const ctx: string[] = ['u'];
-  const depth: number[] = [0];
+  const st: Frame[] = [frame(start)];
+  const pending: Heredoc[] = [];
   let i = 0;
   while (i < cmd.length) {
     const c = cmd[i];
-    const top = ctx[ctx.length - 1];
+    const f = st[st.length - 1];
     if (c === '\\') { out += cmd.slice(i, i + 2); i += 2; continue; }
-    if (top === 'd') {
-      if (c === '"') ctx.pop();
-      else if (c === '$' && cmd[i + 1] === '(') { ctx.push('p'); depth.push(0); out += '$('; i += 2; continue; }
-      else if (c === '`') ctx.push('b');
+    if (c === '\n' && pending.length && (f.k === 'u' || f.k === 'p' || f.k === 'b')) {
+      out += c; i++;
+      // each heredoc this line opened: its body, literal when its word was quoted, else read as the shell does
+      for (const hd of pending.splice(0)) {
+        const [body, close, next] = heredocBody(cmd, i, hd);
+        const read = hd.quoted ? body : scanQuotes(body, 'h');
+        if (read === null) return null;
+        out += read + close; i = next;
+      }
+      continue;
+    }
+    if (f.k === 'd' || f.k === 'h') {
+      if (c === '"' && f.k === 'd') { st.pop(); out += c; i++; continue; }
+      if (c === '$' && cmd[i + 1] === '(') { st.push(frame('p')); out += '$('; i += 2; continue; }
+      if (c === '$' && cmd[i + 1] === '{') { st.push(frame('v')); out += '${'; i += 2; continue; }
+      if (c === '`') st.push(frame('b'));
       out += c; i++; continue;
     }
-    // unquoted: u, p, b
+    // u, p, b, v: the shell reads quotes here
     if (c === '$' && cmd[i + 1] === '$') { out += '$$'; i += 2; continue; }
     if (c === '$' && cmd[i + 1] === "'") {
       const w = ansiWord(cmd, i + 2);
       if (!w) return null;
       out += w[0]; i = w[1]; continue;
     }
-    if (c === "'") {
+    if (c === '$' && cmd[i + 1] === '"') { st.push(frame('d')); out += '"'; i += 2; continue; } // $"…": a "…" string
+    if (c === "'" && f.k !== 'v') { // inside "${…}" a ' is a plain character
       const close = cmd.indexOf("'", i + 1);
       const to = close < 0 ? cmd.length : close + 1;
       out += cmd.slice(i, to); i = to; continue;
     }
-    if (c === '"') ctx.push('d');
-    else if (c === '`' && top === 'b') { ctx.pop(); }
-    else if (c === '`') ctx.push('b');
-    else if (top === 'p' && c === '(') depth[depth.length - 1]++;
-    else if (top === 'p' && c === ')') { if (depth[depth.length - 1]-- === 0) { ctx.pop(); depth.pop(); } }
+    if (c === '"') { st.push(frame('d')); out += c; i++; continue; }
+    if (c === '`') { if (f.k === 'b') st.pop(); else st.push(frame('b')); out += c; i++; continue; }
+    if (c === '<' && cmd[i + 1] === '<' && cmd[i + 2] !== '<' && f.k !== 'v') {
+      const hd = heredocAt(cmd, i);
+      if (hd) { pending.push(hd[0]); out += cmd.slice(i, hd[1]); i = hd[1]; continue; }
+    }
+    if (f.k === 'v') {
+      if (c === '{') f.depth++;
+      else if (c === '}' && f.depth-- === 0) st.pop();
+    } else if (f.k === 'p') {
+      if (c === '(') f.depth++;
+      else if (c === ')') { if (!(f.cases > 0 && f.depth === 0) && f.depth-- === 0) st.pop(); } // a case pattern's ) stays
+      else if (keywordAt(cmd, i, 'case')) f.cases++;
+      else if (f.cases > 0 && keywordAt(cmd, i, 'esac')) f.cases--;
+    }
     out += c; i++;
   }
   return out;
@@ -319,8 +397,18 @@ export function bashVerdict(command: unknown, ctx: GuardCtx = {}): string | null
   const raw = typeof command === 'string' ? command : '';
   if (!raw.trim()) return null;
   // $'…' words read as the shell reads them; one this cannot read is not placed, so it is denied
-  const cmd = ansiC(raw);
-  if (cmd === null) return 'it has an ANSI-C quoted word ($\'…\') the guard cannot read whole';
+  const read = ansiC(raw);
+  if (read === null) return 'it has an ANSI-C quoted word ($\'…\') the guard cannot read whole';
+  // a ${NAME:-word} is read both ways: NAME set (a variable, not placed) and unset (its word: "/h/${u:-h}ome")
+  const unset = withDefaults(read);
+  return verdictOf(read, ctx) ?? (unset !== read ? verdictOf(unset, ctx) : null);
+}
+
+/** cmd with each ${NAME:-word}, ${NAME-word}, ${NAME:=word} or ${NAME=word} (no braces inside) as its word: what the
+ * shell makes of it when NAME is unset. */
+const withDefaults = (cmd: string): string => cmd.replace(/\$\{[A-Za-z_][A-Za-z0-9_]*:?[-=]([^{}]*)\}/g, '$1');
+
+function verdictOf(cmd: string, ctx: GuardCtx): string | null {
   if (READ_CLI.test(cmd) || READ_DOCTOR.test(cmd)) return null;
   if (DOCTOR_WRITES.test(cmd)) return DOCTOR_WHY;
   if (PERSON_CLI.test(cmd) || LOGIN_SERVE.test(cmd)) return 'it makes an invite, lets a machine in or out, or speaks for the room\'s connection: the person does that in their own session (/sub-human invite, admit, kick or handoff) or in a terminal outside Claude Code, never with !, which would put an invite and its PIN into this conversation';
