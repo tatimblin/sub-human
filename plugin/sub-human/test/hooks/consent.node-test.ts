@@ -989,7 +989,8 @@ test('H (live verify, verify1/08): plan mode by hand, the model skips EnterPlanM
   assert.match(ctx(w.hook('consent', ev('PostToolUse', 'EnterPlanMode', { permission_mode: 'plan', tool_input: {}, tool_response: {} }), { as: 'bob' }))!, /bob's plan mode is back/);
   assert.equal(review(w), null);
   assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.proposal_hash]), [['signoff', 'human', v3]]);
-  assert.equal(fs.readFileSync(file, 'utf8'), `proposal ${v3}`, 'the plan file as it was');
+  // stage 8e I.6: the stub the model wrote is no plan of bob's: not put back (a closing ExitPlanMode would show its old hash)
+  assert.equal(fs.existsSync(file), false, 'the stub is not restored');
   // a stub for a proposal that is not bob's to answer (answered now): denied, never a bare view
   const again = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: `proposal ${v3}` }, tool_use_id: 'tu8', transcript_path: tp }), { as: 'bob' });
   assert.equal(decision(again), 'deny');

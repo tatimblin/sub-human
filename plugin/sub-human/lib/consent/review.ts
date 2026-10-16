@@ -289,7 +289,7 @@ function restore(r: Review): [Review, Effect[]] {
 /** Back up the plan file and write the proposal there as early as its path is known (EnterPlanMode Pre, else Post). */
 function showEarly(r: Review, plan: PlanFile): [Review, Effect[]] {
   if (!plan.file || !r.hash || r.file) return [r, []];
-  const next: Review = { ...r, file: plan.file, backup: plan.text, restored: false };
+  const next: Review = { ...r, file: plan.file, backup: personsPlan(plan.text), restored: false };
   return [next, [{ do: 'save', review: next }, { do: 'writePlan', file: plan.file, hash: r.hash, early: true }]];
 }
 
@@ -328,6 +328,10 @@ function resolve(r: Review, note: Confirm | null, ev: { answer?: Answer | null; 
 
 /** A blank plan, or the "proposal <hash>" stub the model is told to pass: not a plan of its own. */
 const stub = (t: string) => !t.trim() || /^\s*(?:the room )?proposal\s+[0-9a-f]{6,12}\s*\.?\s*$/i.test(t);
+/** What a review backs up of the plan file: the person's own plan, never a stub a model wrote ("proposal HASH"), which a
+ * restore would put back for the closing ExitPlanMode to show as an older proposal's hash (stage 8e I.6): null, so
+ * the restore removes the file. */
+const personsPlan = (t: string | null | undefined): string | null => (typeof t === 'string' && !stub(t) ? t : null);
 
 /** Post(ExitPlanMode) with no review shown although its dialog was a pending proposal's: tell the model, pick it. */
 function unshown(ev: Extract<Event, { type: 'exited' }>, ctx: Ctx, hashes: string[]): { effects: Effect[]; say: Say } | null {
@@ -446,7 +450,7 @@ export function reduce(state: State, ev: Event, ctx: Ctx): Step {
         const { file: _f, backup: _b, ...rest } = back;
         review = rest;
       }
-      const backup = review.file === ev.plan.file && !review.restored ? review.backup ?? null : ev.plan.text;
+      const backup = review.file === ev.plan.file && !review.restored ? review.backup ?? null : personsPlan(ev.plan.text);
       // A plan of the model's own (not the proposal, not a stub) is never shown here: the model's input as sent, or the
       // plan Claude Code read from the file unless that is just what the file held before the review.
       const mine = (t: unknown) => typeof t === 'string' && !stub(t) && t !== ev.text && hash12(Buffer.from(t, 'utf8')) !== shownHash(review);

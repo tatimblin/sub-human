@@ -437,6 +437,18 @@ test('stage 8e H (live verify, localb/07e): the plan view\'s hint names only a "
   }
 });
 
+test('stage 8e I.6 (live verify, localb/08c): a plan file that held only a stub ("proposal HASH") is backed up as nothing, so the restore never puts an older proposal\'s name back', () => {
+  for (const text of ['proposal a8ec03fc4da6', '  the room proposal a8ec03 ', '']) {
+    const s = review.reduce({ review: { phase: 'entering', mode: 'default', at: 1, hash: H }, note: null }, { type: 'entered', plan: { file: '/p/plan.md', text } } as Event, ctx);
+    const saved = s.effects.find(e => e.do === 'save') as Extract<Step['effects'][number], { do: 'save' }> | undefined;
+    assert.ok(saved, text);
+    assert.equal(saved.review.backup, null, text);
+  }
+  const own = review.reduce({ review: { phase: 'entering', mode: 'default', at: 1, hash: H }, note: null }, { type: 'entered', plan: { file: '/p/plan.md', text: '# my own plan\n' } } as Event, ctx);
+  const saved = own.effects.find(e => e.do === 'save') as Extract<Step['effects'][number], { do: 'save' }> | undefined;
+  assert.equal(saved && saved.review.backup, '# my own plan\n', 'the person\'s own plan is kept');
+});
+
 // ---------- item 8: a Yes as the view opened ----------
 test('8 (live verify): a Yes within YES_GUARD_MS of the view being shown, or while the person had typed text, records nothing; the card asks once and only its answer records', () => {
   const opened = review.reduce({ review: REVIEWS.entering, note: null }, { ...EVENTS.exit, typing: false }, ctx);
