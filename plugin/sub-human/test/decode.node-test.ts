@@ -50,7 +50,7 @@ test('obj: listed fields checked, unknown keys kept, the input itself returned',
   const v = { a: 'x', c: null, extra: { deep: 1 } };
   const got = ok(D(v));
   assert.equal(got, v, 'the same object, not a copy');
-  assert.deepEqual((got as unknown as { extra: unknown }).extra, { deep: 1 });
+  assert.deepEqual(Reflect.get(got, 'extra'), { deep: 1 });
   ok(D({ a: 'x', b: undefined, c: true }));
   assert.deepEqual(no(D({ c: true })), { at: '.a', expected: 'a string' });
   assert.deepEqual(no(D({ a: 'x', b: 1.5, c: true })), { at: '.b', expected: 'an integer' });
@@ -107,13 +107,13 @@ test('old records: a session index (0.5.0-beta.4 shape, extra keys, no role) sti
   const { code } = h.register('alice');
   const sid = `sess-alice-${process.pid}`;
   const file = path.join(home, 'sessions', 'by-sid', `${sid}.json`);
-  const rec = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
+  const rec = io.readJson(file, d.record(d.unknown_), {});
   assert.deepEqual(Object.keys(rec).sort(), ['address', 'code', 'name', 'pid', 'pid_start', 'role', 'session_id'].filter(k => k in rec).sort());
   // beta.4 wrote the same fields, pid_start only when known; a newer one may add fields
   const { pid_start: _, role: _r, ...old } = rec;
   fs.writeFileSync(file, JSON.stringify({ ...old, later: { field: 1 } }));
   assert.deepEqual(identity.lastSeat(sid), { code, name: 'alice', role: 'member', address: `alice.${code}` });
-  assert.equal(identity.resolveBySession(sid)!.name, 'alice');
+  assert.equal(identity.resolveBySession(sid)?.name, 'alice');
   fs.writeFileSync(file, JSON.stringify({ ...old, code: 7 }));
   assert.equal(identity.lastSeat(sid), null, 'no room code: no seat (as before)');
   fs.writeFileSync(file, '[]');
@@ -126,7 +126,7 @@ test('old records: a module lease without nonce or pid_start reads; a fork recor
   const sid = '0123abcd-0000-4000-8000-000000000001';
   fs.mkdirSync(path.join(home, 'sessions', 'mods'), { recursive: true });
   fs.writeFileSync(path.join(home, 'sessions', 'mods', `${sid}.json`), JSON.stringify({ session_id: sid, pid: null, at: new Date().toISOString() }));
-  assert.deepEqual(identity.readModLease(sid), { session_id: sid, pid: null, at: identity.readModLease(sid)!.at });
+  assert.deepEqual(identity.readModLease(sid), { session_id: sid, pid: null, at: identity.readModLease(sid)?.at });
   fs.mkdirSync(path.join(home, 'sessions', 'forked'), { recursive: true });
   const f = path.join(home, 'sessions', 'forked', `${sid}.json`);
   fs.writeFileSync(f, JSON.stringify({ sid: 'old', title: 'T', home: 5, at: 'x' }));
@@ -142,15 +142,16 @@ test('old records: members.json keeps the fields this version does not know thro
   const store = await import('../lib/room/store.ts');
   const { code } = h.register('alice');
   const s = store.open(code);
-  const file = path.join(s.dir!, 'members.json');
-  const ms = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, Record<string, unknown>>;
-  ms.alice.from_the_future = { x: 1 };
-  ms.ghost = { name: 'ghost', role: 'member', left_at: 'then' } as Record<string, unknown>;
+  const file = path.join(String(s.dir), 'members.json');
+  const MEMBERS = d.record(d.record(d.unknown_));
+  const ms = io.readJson(file, MEMBERS, {});
+  ms.alice = { ...ms.alice, from_the_future: { x: 1 } };
+  ms.ghost = { name: 'ghost', role: 'member', left_at: 'then' };
   fs.writeFileSync(file, JSON.stringify(ms));
   s.members.update(m => m);
-  const after = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, Record<string, unknown>>;
-  assert.deepEqual(after.alice.from_the_future, { x: 1 });
-  assert.equal(after.ghost.left_at, 'then');
+  const after = io.readJson(file, MEMBERS, {});
+  assert.deepEqual(after.alice?.from_the_future, { x: 1 });
+  assert.equal(after.ghost?.left_at, 'then');
   assert.deepEqual(Object.keys(s.members.read()).sort(), ['alice', 'ghost']);
 });
 
@@ -166,9 +167,9 @@ test('old records: gc.json with only at, a link record and its state with unknow
   const code = (await import('../lib/identity.ts')).newCode();
   fs.mkdirSync(links.linksDir(), { recursive: true });
   fs.writeFileSync(path.join(links.linksDir(), `${code}.json`), JSON.stringify({ code, transport: { kind: 'pipe' }, newer: true }));
-  assert.equal((links.get(code) as unknown as { newer: boolean }).newer, true);
+  assert.equal(Reflect.get(links.get(code) ?? {}, 'newer'), true);
   fs.writeFileSync(links.stateFile(code), JSON.stringify({ state: 'online', since: 'x', later: 1 }));
-  assert.equal(links.readState(code)!.state, 'online');
+  assert.equal(links.readState(code)?.state, 'online');
   fs.writeFileSync(links.stateFile(code), '"online"');
   assert.equal(links.readState(code), null);
 });

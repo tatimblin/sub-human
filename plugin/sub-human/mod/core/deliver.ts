@@ -11,7 +11,7 @@
  */
 import { FOR_CLAUDE, PULL_HEAD, PULL_END, PULL_CAP, pullDroppedLine, MOD_RESTART_MS, MOD_RESTART_MAX_MS, MOD_RESTART_STEADY_MS, MOD_DELIVERY_ERROR_LOG_MS } from './constants.ts';
 import { shimEnv } from './shim.ts';
-import type { DeliverAction, Hello, Pulls, TailEvent, TailSeat } from './types.ts';
+import type { DeliverAction, Hello, Pulls, TailEvent } from './types.ts';
 
 // the backoff and the notice's window are mod/core/constants.ts's (lib/config.ts re-exports them)
 export { MOD_RESTART_MS, MOD_RESTART_MAX_MS, MOD_RESTART_STEADY_MS, MOD_DELIVERY_ERROR_LOG_MS };
@@ -124,8 +124,8 @@ export function parseEvent(line: string): TailEvent | null {
   switch (type) {
     case 'seat': {
       const s = o.seat;
-      // the seat's other fields are the tail's own, as it sent them
-      return { type: 'seat', seat: rec(s) && str(s.name) && str(s.code) ? s as TailSeat : null };
+      // name and code checked; the seat's other fields are the tail's own, as it sent them
+      return { type: 'seat', seat: rec(s) && str(s.name) && str(s.code) ? { ...s, name: s.name, code: s.code } : null };
     }
     case 'chat': return Array.isArray(o.lines) && o.lines.length ? { type: 'chat', lines: o.lines.map(String) } : null;
     case 'rows': return { type: 'rows', text: str(text) ? text : null };

@@ -289,7 +289,7 @@ class FsRoomStore implements RoomStore {
   _kvFile(key: string): string { return path.join(this.dir, `${checkKey(key)}.json`); }
   _kvSet(key: string, value: unknown, { compact = false }: { compact?: boolean } = {}): void { this._mustExist(); writeJsonAtomic(this._kvFile(key), value, { compact }); }
   /** A kv document as stored (any JSON), else fallback. any: its reader types it (KvApi). */
-  _kvGet<T = any>(key: string, fallback: T | null): T | null {
+  _kvGet<T>(key: string, fallback: T | null): T | null {
     const v = readJsonRaw(this._kvFile(key));
     return v === undefined ? fallback : v as T; // a document of this home's own code: its reader checks it (KvApi)
   }

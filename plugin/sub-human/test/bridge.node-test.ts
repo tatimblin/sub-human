@@ -146,7 +146,7 @@ test('thread store: appends (a signed human one too), compare-and-set updates, b
   assert.equal(fsStore.blobs.get('plans/p.md')!.toString(), '# plan');
   assert.equal(th.lock('proposal', () => th.lastId()), 2, 'a store call under the room lock');
 
-  delete (globalThis as unknown as Record<symbol, unknown>)[store.SIGNER];
+  Reflect.deleteProperty(globalThis, store.SIGNER);
   assert.throws(() => th.append({ kind: 'say', text: 'forged' }, { via: 'human', from: 'alice' }), (e: RoomError) => e.code === 'INVALID', 'no signer here: refused before the worker');
   assert.equal(fsStore.lastId(), 2);
 });
