@@ -20,13 +20,14 @@ import type {
   Placed, ReadViewOpts, RoomStore, Tailer, Trust, TrustCtx,
 } from '../../lib/room/types.ts';
 import type { KeyObject } from 'node:crypto';
+import type { RoomCode } from '../../lib/brand.ts';
 
 const { RoomError, hash12, blobRef, checkKey, checkCursor, CHAT_KINDS } = store;
 const clone = <T,>(v: T): T => (v === undefined ? v : structuredClone(v));
 const parse = (l: string): Entry | null => { try { return JSON.parse(l) as Entry; } catch { return null; } };
 
 class MemoryRoomStore implements RoomStore {
-  readonly code: string;
+  readonly code: RoomCode;
   isHost: boolean;
   /** the serialized log, one line per entry: open for tamper tests */
   _lines: string[] = [];
@@ -44,7 +45,7 @@ class MemoryRoomStore implements RoomStore {
   blobs: BlobsApi;
   kv: KvApi;
 
-  constructor(code: string, { isHost = true }: { isHost?: boolean } = {}) {
+  constructor(code: RoomCode, { isHost = true }: { isHost?: boolean } = {}) {
     this.code = code;
     this.isHost = isHost;
     this._keys = { code, pins: () => this.pins(), localKey: n => store.localKey(n, code), hasLocalKey: n => store.hasLocalKey(n, code) };

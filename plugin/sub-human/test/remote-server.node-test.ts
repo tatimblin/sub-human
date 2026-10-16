@@ -30,6 +30,8 @@ import type { DecodedFrame } from '../lib/remote/types-core.ts';
 import type { RoomError } from '../lib/room/validate.ts';
 import type { Transport } from '../lib/remote/types-rest.ts';
 import type { Entry, EntryInput, Members, Presence, RoomStore } from '../lib/room/types.ts';
+import type { RoomCode } from '../lib/brand.ts';
+import { rc } from './support/brands.ts';
 
 /** server.serve's options. */
 type ServeOpts = Parameters<typeof server.serve>[1];
@@ -46,7 +48,7 @@ function hostRoom(t: TestContext) {
   const code = h.newRoom();
   return { code, host: store.open(code) };
 }
-const logLines = (code: string) => { try { return fs.readFileSync(path.join(store.open(code).dir!, 'log.jsonl'), 'utf8').split('\n').filter(Boolean); } catch { return []; } };
+const logLines = (code: RoomCode) => { try { return fs.readFileSync(path.join(store.open(code).dir!, 'log.jsonl'), 'utf8').split('\n').filter(Boolean); } catch { return []; } };
 
 /** The client end of a memory pair whose server end serves host (closed when the test ends). */
 function served(t: TestContext, host: RoomStore, wrap: (tr: Transport) => Transport = tr => tr) {
@@ -62,11 +64,11 @@ async function linked(t: TestContext, host: RoomStore, opts: Partial<ConnectOpts
   return c;
 }
 /** What the remote join hook sends: the seat's public key and a proof signed by its private key. */
-function seat(code: string, name: string, key = seatKey.ensure(code, name)) {
+function seat(code: RoomCode, name: string, key = seatKey.ensure(code, name)) {
   const pubkey = seatKey.publicPem(code, name);
   return { name, pubkey, proof: hostLinks.proveSeat(key, { room: code, name, pubkey }) };
 }
-const signed = (code: string, name: string, entry: EntryInput) => store.toPayload(code, entry, { via: 'human', from: name });
+const signed = (code: RoomCode, name: string, entry: EntryInput) => store.toPayload(code, entry, { via: 'human', from: name });
 const rejects = (p: Promise<unknown>, code: string) => assert.rejects(p, (e: RoomError) => e.code === code, `expected ${code}`);
 
 /** Collect a subscription's events. */
@@ -163,7 +165,7 @@ test('remote (memory): no token gets AUTH on every op but hello; a bad token, a 
   const { invite } = invites.mintFor(host, { locator: 'pipe:test', machine: REMOTE, seats: [] });
   const [pre, c, loc, secret, key] = invite.split('.');
   await rejects(hello({ invite: [pre, c, loc, secret.replace(/^./, (ch: string) => (ch === 'A' ? 'B' : 'A')), key].join('.') }), 'AUTH');
-  await rejects(hello({ invite: [pre, 'vole-1234', loc, secret, key].join('.') }), 'AUTH');
+  await rejects(hello({ invite: [pre, rc('vole-1234'), loc, secret, key].join('.') }), 'AUTH');
   (await hello({ invite })).close();
   await rejects(hello({ invite }), 'AUTH');
 
@@ -521,7 +523,7 @@ test('quotas: the log counts a seat\'s posts by via; a link window drops what ha
   // the retry is when the oldest counted line leaves the window, not the window itself
   const late = Array.from({ length: 30 }, () => ({ from: 'bob', via: 'agent', at: at(50_000) })) as Entry[];
   assert.throws(() => quota.checkLog(late, { from: 'bob', via: 'agent', op: 'append.agent', now }), (e: RoomError) => /try again in 10 s/.test(e.message));
-  const s = new MemoryRoomStore('otter-1234');
+  const s = new MemoryRoomStore(rc('otter-1234'));
   const seatQ = config.LINK_QUOTAS.seat;
   for (let i = 0; i < seatQ.max; i++) quota.charge(s, 'abcdef012345', 'seat', { now });
   assert.throws(() => quota.charge(s, 'abcdef012345', 'seat', { now }), (e: RoomError) => e.code === 'RATE');

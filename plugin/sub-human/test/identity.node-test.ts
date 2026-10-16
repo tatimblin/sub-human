@@ -11,6 +11,7 @@ import * as lockLib from '../lib/lock.ts';
 import { pidStart } from '../lib/lock.ts';
 import * as config from '../lib/config.ts';
 import type { Member } from '../lib/room/types.ts';
+import { rc } from './support/brands.ts';
 
 type JoinRequest = NonNullable<Parameters<typeof identity.join>[0]>;
 
@@ -27,9 +28,9 @@ test('identity: home, room codes are word-NNNN from the animal list and unique',
     codes.add(c);
   }
   assert.equal(codes.size, 30);
-  assert.equal(identity.roomDir('otter-0001'), path.join(home, 'rooms', 'otter-0001'));
+  assert.equal(identity.roomDir(rc('otter-0001')), path.join(home, 'rooms', rc('otter-0001')));
   assert.throws(() => identity.roomDir('../etc'), /invalid room code/);
-  assert.equal(identity.roomExists('otter-0001'), false);
+  assert.equal(identity.roomExists(rc('otter-0001')), false);
   assert.equal(identity.roomExists('../x'), false);
 });
 
@@ -46,7 +47,7 @@ test('identity: join validates names, reserved names and roles', () => {
   assert.match(j('alice', 'orch').error!, /invalid role/);
   assert.match(j('alice', 'admin').error!, /invalid role/);
   assert.match(j('alice', 'observer').error!, /invalid role/, 'roles are claude and member only');
-  assert.match(identity.join({ code: 'nope-0000', name: 'alice', role: 'member', pid: process.pid }).error!, /no room/);
+  assert.match(identity.join({ code: rc('nope-0000'), name: 'alice', role: 'member', pid: process.pid }).error!, /no room/);
   assert.match(j('alice', 'member', { session_id: '../../x' }).error!, /session_id/);
   assert.match(j('alice', 'member', { pid: 'x' }).error!, /invalid pid/);
   assert.deepEqual(j('claude', 'claude'), { ok: true });
@@ -190,7 +191,7 @@ test('identity: members.json claude {job, pid}: updateRoomClaude before the bind
   assert.equal(m.job, 'ab12cd34');
   assert.equal(m.pid, process.pid);
   assert.equal(identity.resolveByPid(process.pid)!.address, `claude.${code}`);
-  assert.throws(() => identity.updateRoomClaude('nope-0000', () => ({})), /no room/);
+  assert.throws(() => identity.updateRoomClaude(rc('nope-0000'), () => ({})), /no room/);
 });
 
 test('identity: presence is a per-member file written with the lease (members.beat); writePresence stores valid states and names only', () => {
@@ -264,7 +265,7 @@ test('identity: updateRoomClaude merges a patch under the lock, writes nothing f
   identity.updateRoomClaude(code, o => { assert.equal(o, null); return { job: 'pending', claim: 'c1' }; });
   const r = identity.updateRoomClaude(code, o => ({ claim: undefined, job: o!.job === 'pending' ? 'abcd1234' : 'x' }));
   assert.deepEqual(r, { name: 'claude', role: 'claude', pid: null, job: 'abcd1234' });
-  assert.throws(() => identity.updateRoomClaude('nope-0000', () => ({})), /no room/);
+  assert.throws(() => identity.updateRoomClaude(rc('nope-0000'), () => ({})), /no room/);
 });
 
 test('identity: the seat lease: join stamps seen_at, heartbeat renews it (throttled, own seat only), seatAlive uses it only without a pid', async () => {

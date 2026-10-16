@@ -15,6 +15,8 @@ import * as config from '../lib/config.ts';
 import { machineId } from '../lib/home.ts';
 import { MemoryRoomStore } from './support/memory-store.ts';
 import type { Entry, EntryInput, Member, Trust } from '../lib/room/types.ts';
+import type { RoomCode } from '../lib/brand.ts';
+import { rc } from './support/brands.ts';
 
 const H = 'abcdef012345';
 let id = 0;
@@ -81,7 +83,7 @@ test('validate: same is for proposals, groups of 2+ approvers, disjoint, capped 
 });
 
 /** A room with seats: name -> {machine, account?}. */
-function seated(t: TestContext, seats: Record<string, Partial<Member>>): string {
+function seated(t: TestContext, seats: Record<string, Partial<Member>>): RoomCode {
   h.freshHome(t);
   const code = h.newRoom();
   const now = new Date().toISOString();
@@ -164,7 +166,7 @@ test('members.join: the first person\'s seat on the host is the owner, kept acro
 
 test('create: a mirror writes same only while its host\'s caps list it (the link document\'s fields)', t => {
   assert.equal(proposal.sameOk(seated(t, {})), true, 'the host itself');
-  const code = 'gate0room';
+  const code = rc('gate-0000');
   const mem = new MemoryRoomStore(code, { isHost: false });
   store.setBackend(() => mem);
   t.after(() => store.setBackend(null));

@@ -22,6 +22,7 @@ import { Machine } from './support/two-homes.ts';
 import * as noiseLib from '../lib/remote/noise.ts';
 import type { WsSpec } from '../lib/remote/types-rest.ts';
 import type { HandoffAskDoc } from '../lib/types-app.ts';
+import type { RoomCode } from '../lib/brand.ts';
 
 /** The card the consent hook's Pre rewrites AskUserQuestion's input to. */
 interface Card { questions: { question: string }[] }
@@ -31,7 +32,7 @@ const childOf = (pid: number | undefined) => Number(spawnSync('pgrep', ['-P', St
 const kill = (pid: number | null | undefined) => { try { process.kill(pid as number, 'SIGKILL'); } catch { /* gone */ } };
 const freePort = () => new Promise<number>(r => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = (s.address() as AddressInfo).port; s.close(() => r(p)); }); });
 
-function cleanup(t: TestContext, machines: Machine[], code: () => string) {
+function cleanup(t: TestContext, machines: Machine[], code: () => RoomCode) {
   t.after(() => {
     for (const m of machines) {
       m.lib(() => listener.stop());

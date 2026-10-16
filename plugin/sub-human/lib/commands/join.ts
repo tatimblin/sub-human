@@ -123,7 +123,7 @@ export const named: Verb = (args, ctx) => {
     return seat({ name: n.name, code: ctx.cur && ctx.cur.name === n.name ? ctx.cur.code : null }, ctx);
   }
   if (args.length > 2) return refused(USAGE);
-  if (args.length === 1 && identity.CODE_RE.test(args[0])) { // `/sub-human vole-8126`: that room, as the default name
+  if (args.length === 1 && identity.isRoomCode(args[0])) { // `/sub-human vole-8126`: that room, as the default name
     const name = identity.defaultName({ cwd: ctx.cwd });
     if (!name) return refused(`no name to join as (no git user.name or $USER): /sub-human NAME ${args[0]}`);
     return seat({ name, code: args[0], isDefault: true }, ctx);
@@ -136,7 +136,7 @@ export const named: Verb = (args, ctx) => {
   if (name.startsWith('-')) return refused(`"${name}" goes with join (/sub-human join HOST ROOM SECRET ${name} …). ${USAGE}`);
   if (!identity.NAME_RE.test(name)) return refused(`"${name}" isn't a command or a name. ${USAGE}`);
   if (identity.RESERVED.includes(name.toLowerCase())) return refused(`"${name}" is reserved; pick another name. ${USAGE}`);
-  if (code !== undefined && !identity.CODE_RE.test(code)) return refused(`"${code}" isn't a room (like vole-8126). ${USAGE}`);
+  if (code !== undefined && !identity.isRoomCode(code)) return refused(`"${code}" isn't a room (like vole-8126). ${USAGE}`);
   return seat({ name, code: code || (ctx.cur && ctx.cur.name === name ? ctx.cur.code : null) }, ctx);
 };
 
@@ -159,7 +159,7 @@ function joinWeb(r: string[], flags: { as?: string; via?: string; home?: string 
   const m = /^(https?):\/\/([^#\s]+)$/.exec(r[0]);
   const spec = m && wsT().parse(`//${m[2].replace(/\/+$/, '')}`);
   const code = spec && spec.path.split('/').filter(Boolean).pop();
-  if (!m || !spec || !code || !identity.CODE_RE.test(code)) return refused(BAD);
+  if (!m || !spec || !code || !identity.isRoomCode(code)) return refused(BAD);
   const n = nameFor(flags.as, ctx.cwd);
   if ('error' in n) return refused(n.error);
   const loc = wsT().locator(spec, m[1] === 'https');
@@ -180,7 +180,7 @@ export const join: Verb = (argv, ctx) => {
     if (via !== undefined || home !== undefined || p.flags.as !== undefined) return refused('the PIN goes alone: /sub-human join PIN (the name went with the line)');
     return then(joining.givePin(r[0], ctx.sid), ctx);
   }
-  if (r.length === 1 && identity.CODE_RE.test(r[0])) { // `/sub-human join vole-8126`: that room on this machine
+  if (r.length === 1 && identity.isRoomCode(r[0])) { // `/sub-human join vole-8126`: that room on this machine
     if (via !== undefined || home !== undefined) return refused(`--via and --home go with the other machine's address: /sub-human join HOST ${r[0]}`);
     const n = nameFor(p.flags.as, ctx.cwd);
     if ('error' in n) return refused(n.error);
@@ -189,7 +189,7 @@ export const join: Verb = (argv, ctx) => {
   if (r.length === 4 && PIN_WORD.test(r[3])) return refused(PIN_APART);
   if (r.length < 2 || r.length > 3) return refused(r.length === 1 ? (PIN_WORD.test(r[0]) ? 'a PIN is 4 digits: /sub-human join PIN' : `which room? ${JOIN_USAGE}`) : JOIN_USAGE);
   const [dest, code, word] = r;
-  if (!identity.CODE_RE.test(code)) return refused(`"${code}" isn't a room (like vole-8126). ${JOIN_USAGE}`);
+  if (!identity.isRoomCode(code)) return refused(`"${code}" isn't a room (like vole-8126). ${JOIN_USAGE}`);
   const local = /^pipe:\//.test(dest) || dest.startsWith('/'); // a second home on this machine (tests, the demo)
   if (word !== undefined) {
     const w = secretOf(word);
@@ -224,7 +224,7 @@ export const join: Verb = (argv, ctx) => {
 /** The room Claude's own launch (see the header). */
 export function bindRoomClaude(args: string[], ctx: Ctx): Answer {
   const { cur, pid, sid } = ctx;
-  if (args.length > 1 || (args[0] && !identity.CODE_RE.test(args[0]))) {
+  if (args.length > 1 || (args[0] && !identity.isRoomCode(args[0]))) {
     return refused('this session runs the room\'s Claude agent; people join from their own sessions with /sub-human.');
   }
   const code = envStr('SUB_HUMAN_ROOM') || args[0] || null;

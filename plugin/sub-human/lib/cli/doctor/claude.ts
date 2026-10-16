@@ -22,6 +22,7 @@ import { spawnSync } from 'node:child_process';
 import { lib, cli, check, tilde, truthy } from './check.ts';
 import type { Check, Report } from '../types.ts';
 import { msgOf } from '../../errors.ts';
+import type { RoomCode } from '../../brand.ts';
 
 /** A Claude Code settings file, as the hooks and Remote Control checks read it. */
 interface Settings {
@@ -114,7 +115,7 @@ const ROOM_CLAUDE_BIND_GRACE_MS = 90_000;
 
 const DAEMON_HINT = 'the bg daemon check says whether the daemon runs a Claude Code that was upgraded away since, and how to restart it';
 const DAEMON_STOP = 'claude daemon stop --any --keep-workers in a terminal (detached sessions keep running); the next `claude agents` or `claude --bg` starts a fresh daemon';
-const RESTART = (code: string) => `then /sub-human NAME ${code} (in the room) starts it again`;
+const RESTART = (code: RoomCode) => `then /sub-human NAME ${code} (in the room) starts it again`;
 
 /**
  * Each open room hosted here: the room's Claude bound here and live is a pass. A fail: its last start failed
@@ -128,7 +129,7 @@ const RESTART = (code: string) => `then /sub-human NAME ${code} (in the room) st
 function checkRoomClaudes({ now = Date.now(), jobs = () => lib('cc/bg.ts').jobs({ all: true }) }: { now?: number, jobs?: () => import('../../cc/bg.ts').AgentJob[] | null } = {}): Check[] {
   const identity = lib('identity.ts');
   const out: Check[] = [];
-  let codes: string[] = [];
+  let codes: RoomCode[] = [];
   try { codes = identity.openRooms().filter(c => identity.isHost(c)); } catch { return out; }
   for (const code of codes) {
     let o;

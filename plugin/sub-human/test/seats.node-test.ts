@@ -28,9 +28,10 @@ test('seats.exit: Claude Code\'s SessionEnd token is written in words (live: "bo
 });
 
 import * as hostLinksForSeats from '../lib/remote/host-links.ts';
+import type { RoomCode } from '../lib/brand.ts';
 /** A remote seat's link on the host (lib/remote/server.ts binds every remote seat to one; the sweep lets a seat no
  * link names leave). */
-const linkFor = (code: string, name: string) => hostLinksForSeats.create(store.open(code), { id: hostLinksForSeats.newLinkId(), machine: 'far-away', seats: [name] });
+const linkFor = (code: RoomCode, name: string) => hostLinksForSeats.create(store.open(code), { id: hostLinksForSeats.newLinkId(), machine: 'far-away', seats: [name] });
 
 const H = 'abcdef012345';
 
@@ -167,7 +168,7 @@ test('members.publicView: other machines never see a seat\'s pid, pid_start, ses
 });
 
 /** A seat on another machine (no pid: it lives by its lease) whose lease ran out ago ms before now. */
-function farSeat(code: string, mem: MemoryRoomStore, name: string, ago = config.SEAT_LEASE_MS + config.LEAVE_SETTLE_MS + 1000) {
+function farSeat(code: RoomCode, mem: MemoryRoomStore, name: string, ago = config.SEAT_LEASE_MS + config.LEAVE_SETTLE_MS + 1000) {
   if (!Object.values(hostLinksForSeats.links(store.open(code))).some(k => k.seats.includes(name))) linkFor(code, name);
   assert.equal(seats.enter({ code, name, machine: 'far-away', pubkey: seatKey.publicPem(code, name) }).ok, true);
   mem.members.update(ms => { ms[name].seen_at = new Date(Date.now() - ago).toISOString(); return ms; });

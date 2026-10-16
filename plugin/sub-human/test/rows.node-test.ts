@@ -10,6 +10,7 @@ import * as session from '../lib/room/session.ts';
 import type { Identity } from '../lib/identity.ts';
 import type { Entry, Member, Members } from '../lib/room/types.ts';
 import type { Task } from '../lib/types-app.ts';
+import { rc } from './support/brands.ts';
 
 /** A seat as rows reads it. */
 type Seat = Pick<Identity, 'code' | 'name' | 'role'>;
@@ -20,7 +21,7 @@ type RowOpts = NonNullable<Parameters<typeof rows.rowText>[3]>;
 function makeRoom(members: (Pick<Member, 'name'> & Partial<Member>)[], entries: object[] = []) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-rows-'));
   process.env.SUB_HUMAN_HOME = home;
-  const code = 'marmot-2509';
+  const code = rc('marmot-2509');
   const dir = path.join(home, 'rooms', code);
   fs.mkdirSync(dir, { recursive: true });
   const ms: Members = {};
@@ -60,8 +61,8 @@ test('parseSpawn: name from the prompt, else the description; room code from pro
   assert.deepEqual(rows.parseSpawn({ subagent_type: 'sub-human:participant', prompt: 'member: bob', description: 'whatever' }, ms), { kind: 'participant', name: 'bob' });
   assert.deepEqual(rows.parseSpawn({ subagent_type: 'sub-human:participant', prompt: 'hold it', description: 'alice' }, ms), { kind: 'participant', name: 'alice' });
   assert.equal(rows.parseSpawn({ subagent_type: 'sub-human:participant', prompt: 'x', description: 'zed' }, ms), null);
-  assert.deepEqual(rows.parseSpawn({ subagent_type: 'sub-human:room', prompt: 'room: otter-1234\nmembers: bob' }, ms), { kind: 'room', name: 'otter-1234' });
-  assert.deepEqual(rows.parseSpawn({ subagent_type: 'sub-human:room', description: 'otter-1234' }, ms), { kind: 'room', name: 'otter-1234' });
+  assert.deepEqual(rows.parseSpawn({ subagent_type: 'sub-human:room', prompt: 'room: otter-1234\nmembers: bob' }, ms), { kind: 'room', name: rc('otter-1234') });
+  assert.deepEqual(rows.parseSpawn({ subagent_type: 'sub-human:room', description: rc('otter-1234') }, ms), { kind: 'room', name: rc('otter-1234') });
   assert.equal(rows.parseSpawn({ subagent_type: 'Explore', description: 'alice' }, ms), null);
 });
 

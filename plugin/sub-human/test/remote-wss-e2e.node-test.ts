@@ -28,6 +28,8 @@ import * as links from '../lib/room/links.ts';
 import * as admission from '../lib/remote/admission.ts';
 import * as hostLinks from '../lib/remote/host-links.ts';
 import * as inviteSecret from '../lib/remote/invite-secret.ts';
+import type { RoomCode } from '../lib/brand.ts';
+import { rc } from './support/brands.ts';
 
 const LINK_ENV: Record<string, string> = { SUB_HUMAN_LINK_RETRY_MS: '200', SUB_HUMAN_LINK_RETRY_MAX_MS: '600', SUB_HUMAN_LINK_IDLE_MS: '20000' };
 const childOf = (pid: number) => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
@@ -66,7 +68,7 @@ async function rig(t: TestContext, hostEnv: Record<string, string> = {}, remoteE
 
 type Rig = Awaited<ReturnType<typeof rig>>;
 
-const linkState = (m: Machine, code: string) => m.lib(() => linkSocket.status(code).state);
+const linkState = (m: Machine, code: RoomCode) => m.lib(() => linkSocket.status(code).state);
 async function posts(_t: TestContext, { host, remote, alice, bob, code }: Rig, text: string) {
   const r = remote.say(bob, text);
   assert.equal(r.json && r.json.continue, false, JSON.stringify(r.json) + r.stderr);
@@ -121,10 +123,10 @@ test('wss 1.1: the listener gives its key to a text request, answers an old join
   }
   // a room not served over the web here: refused inside the channel (authenticated by the pinned key)
   const c2 = await ws.connect(`ws://127.0.0.1:${port}/sub-human/vole-0001`);
-  await assert.rejects(wsT.clientChannel(c2, { rs: pinned, code: 'vole-0001', s: noise.generateKeyPair() }), (e: Error & { code?: string }) => e.code === 'OFFLINE' && /not open for joins over the web/.test(e.message));
+  await assert.rejects(wsT.clientChannel(c2, { rs: pinned, code: rc('vole-0001'), s: noise.generateKeyPair() }), (e: Error & { code?: string }) => e.code === 'OFFLINE' && /not open for joins over the web/.test(e.message));
   // a path for one room, a handshake for another
   const c3 = await ws.connect(`ws://127.0.0.1:${port}/sub-human/${code}`);
-  await assert.rejects(wsT.clientChannel(c3, { rs: pinned, code: 'vole-0001' }), /this URL is for room/);
+  await assert.rejects(wsT.clientChannel(c3, { rs: pinned, code: rc('vole-0001') }), /this URL is for room/);
   // XK and NK both get through to serve: the log says which (the key XK proved, or protocol 2)
   const mine = noise.generateKeyPair();
   for (const s of [mine, null]) {

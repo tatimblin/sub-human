@@ -32,6 +32,8 @@ import { parse } from './args.ts';
 import PathMod from 'node:path';
 import { createRequire } from 'node:module';
 import { msgOf } from '../errors.ts';
+import { isRoomCode } from '../text.ts';
+import type { RoomCode } from '../brand.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -51,9 +53,12 @@ function maskPins(text: string, pins: readonly (string | null | undefined)[], en
 }
 
 /** The room: --room, else the one open room hosted here. */
-function hostedRoom(explicit?: string): string {
+function hostedRoom(explicit?: string): RoomCode {
   const identity: typeof import('../identity.ts') = require('../identity.ts');
-  if (explicit) return explicit;
+  if (explicit) {
+    if (!identity.isRoomCode(explicit)) throw new Error(`invalid room code "${explicit}"`); // as lib/home.ts roomDir says
+    return explicit;
+  }
   const open = identity.openRooms().filter(c => identity.isHost(c));
   if (open.length === 1) return open[0];
   throw Object.assign(new Error(open.length ? `${open.length} rooms are open here (${open.join(', ')}); name one with --room ROOM` : 'no room is open here; name one with --room ROOM'), { code: 'NO_ROOM' });
@@ -134,7 +139,7 @@ function prime(args: readonly string[]): number {
   const code = p.rest[0];
   const links: typeof import('../room/links.ts') = require('../room/links.ts');
   const l = links.get(code);
-  if (!l || !l.transport || l.transport.kind !== 'ssh') return fail(`this machine isn't connected to room ${code} over ssh`);
+  if (!l || !l.transport || l.transport.kind !== 'ssh' || !isRoomCode(code)) return fail(`this machine isn't connected to room ${code} over ssh`);
   try {
     const ssh: typeof import('../remote/transports/ssh.ts') = require('../remote/transports/ssh.ts');
     fs.mkdirSync(PathMod.dirname(ssh.controlPath()), { recursive: true, mode: 0o700 });

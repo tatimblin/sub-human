@@ -11,8 +11,9 @@ import * as ls from '../lib/room/link-state.ts';
 import * as rows from '../lib/rows.ts';
 import { agentStatusline } from '../statusline/segments.ts';
 import type { LinkState, Members } from '../lib/room/types.ts';
+import { rc } from './support/brands.ts';
 
-const CODE = 'vole-4321';
+const CODE = rc('vole-4321');
 function linked(t: TestContext) {
   h.freshHome(t);
   links.set(CODE, { code: CODE, transport: { kind: 'pipe', home: '/elsewhere' }, token: 't', created_at: 'now' });
@@ -25,6 +26,7 @@ test('link-state: null for a room hosted here (no link); the state file wins, re
   h.freshHome(t);
   const code = h.newRoom();
   assert.equal(ls.read(code), null);
+  // @ts-expect-error: not a room code, refused at run time
   assert.equal(ls.read('not a code'), null);
   linked(t);
   setDoc({ pid: process.pid, state: 'online', since: 'x' });
@@ -96,7 +98,7 @@ test('link-state: indicator wording', () => {
 });
 
 test('room row: the link leads while offline or connecting again and closes the row while online; none for a room hosted here', t => {
-  const code = 'vole-0001';
+  const code = rc('vole-0001');
   // members by role only (rowText counts them); a link as the row reads it (no source)
   const o = (link: Partial<LinkState> | null) => ({
     entries: [], members: { alice: { role: 'member' }, bob: { role: 'member' } } as unknown as Members, taskSummary: 'tasks 1 open', link: link as LinkState | null,

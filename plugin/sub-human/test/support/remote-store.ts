@@ -21,14 +21,15 @@ import * as hostLinks from '../../lib/remote/host-links.ts';
 import * as server from '../../lib/remote/server.ts';
 import * as client from '../../lib/remote/client.ts';
 import * as memory from '../../lib/remote/transports/memory.ts';
+import type { RoomCode } from '../../lib/brand.ts';
 
 const NAMES = ['alice', 'bob', 'carol', 'dave'];
 const MACHINE = 'remote0machine01';
 
 /** What the worker is started with. ready: 0 while starting, 1 online, 2 failed. */
-interface WorkerData { code: string; dir: string; home: string | undefined; ready: Int32Array }
+interface WorkerData { code: RoomCode; dir: string; home: string | undefined; ready: Int32Array }
 
-function remoteStore(code: string, { dir }: { dir: string }): { mirror: MirrorRoomStore; stop(): void } {
+function remoteStore(code: RoomCode, { dir }: { dir: string }): { mirror: MirrorRoomStore; stop(): void } {
   const ready = new Int32Array(new SharedArrayBuffer(4));
   const worker = new Worker(import.meta.filename, { workerData: { code, dir, home: process.env.SUB_HUMAN_HOME, ready } satisfies WorkerData });
   worker.unref();

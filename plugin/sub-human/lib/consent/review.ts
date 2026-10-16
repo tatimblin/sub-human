@@ -68,6 +68,7 @@ import { YES_GUARD_MS } from '../config.ts';
 import { assertNever } from '../../mod/core/never.ts';
 import type { Confirm, NoteStage, Recheck, Review } from '../types-app.ts';
 import type { CardAnswer } from './card.ts';
+import type { RoomCode } from '../brand.ts';
 
 /** recheck: a plan-view Yes that came as the view opened (within YES_GUARD_MS, or while the person had typed text in
  * the prompt), not recorded: the card asks once, and only its answer records (item 8). */
@@ -235,14 +236,14 @@ export const SAY = {
   noChoice: (h: string) => `proposal ${h}: no Agree/Object answer; nothing was recorded.`,
   // the handoff card (lib/handoff.ts) and a join request's card (lib/remote/admission.ts)
   handoffNoAnswer: (n: string) => `Nothing was decided: the handoff card closed without ${n}'s answer. If ${n} asks, ${NEXT.handoff}. ${DONE}`,
-  handoffDeclined: (n: string, code: string, host: string) => `${n} declined to host room ${code}; ${host} stays the host. ${DONE}`,
+  handoffDeclined: (n: string, code: RoomCode, host: string) => `${n} declined to host room ${code}; ${host} stays the host. ${DONE}`,
   handoffUntold: (n: string, why: string) => `${n} declined, but the host was not told (${why}); nothing moved. ${DONE}`,
   handoffFailed: (n: string, why: string) => `The room did NOT move: ${why}. ${n} has been told. ${DONE}`,
-  handoffMoved: (n: string, code: string) => `Room ${code} is hosted on this machine now (${n} agreed on the card); its Claude runs on ${n}'s Claude account. Post nothing about it. ${DONE}`,
-  admitUnknown: (ref: string, code: string) => `Nothing was done: no join request ${ref} in room ${code}. ${DONE}`,
+  handoffMoved: (n: string, code: RoomCode) => `Room ${code} is hosted on this machine now (${n} agreed on the card); its Claude runs on ${n}'s Claude account. Post nothing about it. ${DONE}`,
+  admitUnknown: (ref: string, code: RoomCode) => `Nothing was done: no join request ${ref} in room ${code}. ${DONE}`,
   admitNoAnswer: (n: string, who: string, ref: string) => `Nothing was decided: the join card closed without ${n}'s answer; ${who} still waits. If ${n} asks, ${NEXT.admit(ref)}. ${DONE}`,
   admitRefused: (n: string, who: string) => `${n} refused ${who}; nothing got in. Post nothing about it. ${DONE}`,
-  admitLetIn: (n: string, who: string, code: string) => `${n} let ${who}'s machine into room ${code}. Post nothing about it. ${DONE}`,
+  admitLetIn: (n: string, who: string, code: RoomCode) => `${n} let ${who}'s machine into room ${code}. Post nothing about it. ${DONE}`,
   admitFailed: (n: string, why: string) => `Nothing was done: ${why}. ${n} has been told. ${DONE}`,
 };
 

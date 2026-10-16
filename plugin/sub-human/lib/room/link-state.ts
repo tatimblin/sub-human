@@ -38,6 +38,7 @@ import * as links from './links.ts';
 import { createRequire } from 'node:module';
 import type { LinkState, LinkStateWord } from './types.ts';
 import type { LinkStatus } from '../remote/link-socket.ts';
+import type { RoomCode } from '../brand.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -61,7 +62,7 @@ function normalize(state: unknown, detail?: unknown): LinkStateWord {
 }
 
 /** The mirror's `link` document (lib/remote/link.ts status), or null when it cannot be read. */
-function linkDoc(code: string): LinkStatus | null {
+function linkDoc(code: RoomCode): LinkStatus | null {
   try { return (require('../remote/link-socket.ts') as typeof import('../remote/link-socket.ts')).status(code); } catch { return null; }
 }
 
@@ -69,10 +70,10 @@ const NOT_RUNNING = 'the link daemon is not running';
 
 /** Test seam: read() calls through this object, which a test may stub (test/link-state.node-test.ts); an ES module's own
  * exports are read-only. */
-const seam = { read: (code: string): LinkState | null => readLink(code) };
-const read = (code: string): LinkState | null => seam.read(code);
+const seam = { read: (code: RoomCode): LinkState | null => readLink(code) };
+const read = (code: RoomCode): LinkState | null => seam.read(code);
 
-function readLink(code: string): LinkState | null {
+function readLink(code: RoomCode): LinkState | null {
   try {
     if (!links.get(code)) return null;
   } catch { return null; }

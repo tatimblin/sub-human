@@ -12,6 +12,7 @@ import * as tasks from '../lib/tasks.ts';
 import * as identity from '../lib/identity.ts';
 import * as room from '../lib/room.ts';
 import type { Me, PluginApi, PluginContext, JsonSchema, ToolArgs, ToolDefinition, ToolResult } from './types.ts';
+import type { RoomCode } from '../lib/brand.ts';
 
 const S = (d: string): JsonSchema => ({ type: 'string', description: d });
 const TOOL: ToolDefinition = {
@@ -38,7 +39,7 @@ const TOOL: ToolDefinition = {
 function create(ctx: Partial<Pick<PluginContext, 'text'>> = {}): PluginApi {
   const text = ctx.text || ((s: unknown, isError?: boolean): ToolResult => ({ content: [{ type: 'text', text: String(s) }], ...(isError ? { isError: true } : {}) }));
 
-  function roomClaudeLive(code: string) {
+  function roomClaudeLive(code: RoomCode) {
     const o = identity.readMembers(code).claude;
     return !!(o && o.role === 'claude' && identity.seatAlive(o));
   }

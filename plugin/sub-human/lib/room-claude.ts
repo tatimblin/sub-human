@@ -86,10 +86,11 @@ import { LOG_V, startMatches } from './room/members.ts';
 import type { Member, Members } from './room/types.ts';
 import type { RoomClaudePatch } from './identity.ts';
 import type { AgentJob } from './cc/bg.ts';
+import type { RoomCode } from './brand.ts';
 
 /** What spawnPlan builds a launch from. */
 interface PlanOpts {
-  code: string;
+  code: RoomCode;
   cwd?: string;
   home?: string;
   pluginDir?: string | null;
@@ -121,8 +122,8 @@ const PENDING = 'pending';
 const ENDED = new Set(['done', 'failed', 'stopped']);
 
 const claudeBin = () => envStr('SUB_HUMAN_CLAUDE') || 'claude';
-const taskListId = (code: string) => `sh-${code}`;
-const tasksDir = (code: string): string => ccEnv.tasksDir(taskListId(code));
+const taskListId = (code: RoomCode) => `sh-${code}`;
+const tasksDir = (code: RoomCode): string => ccEnv.tasksDir(taskListId(code));
 const iso = (ms: number) => new Date(ms).toISOString();
 const claimMs = () => config.ROOM_CLAUDE_CLAIM_MS;
 const orphanMsDefault = () => envMs('SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS');
@@ -189,11 +190,11 @@ function needsSpawnRec(o: Member | null | undefined, now: number = clock.now()):
   if (!o.job) return true;
   return now - Date.parse(o.spawned_at || '0') > config.ROOM_CLAUDE_BIND_MS;
 }
-const needsSpawn = (code: string, now: number = clock.now()): boolean => needsSpawnRec((identity.readMembers(code) as Members).claude, now);
+const needsSpawn = (code: RoomCode, now: number = clock.now()): boolean => needsSpawnRec((identity.readMembers(code) as Members).claude, now);
 
 /** A claim on the room's Claude's start: prevJob is the old job to stop first. */
 interface Claim { claim: string, prevJob: string | null }
-function claimSpawn(code: string, { now = clock.now(), by = null }: { now?: number, by?: string | null } = {}): Claim | null {
+function claimSpawn(code: RoomCode, { now = clock.now(), by = null }: { now?: number, by?: string | null } = {}): Claim | null {
   if (!identity.isHost(code)) return null;
   let out: Claim | null = null;
   identity.updateRoomClaude(code, (o: Member | null): RoomClaudePatch | null => {
@@ -213,7 +214,7 @@ function claimSpawn(code: string, { now = clock.now(), by = null }: { now?: numb
 }
 
 /** The job `claude agents --json` lists for this room (name claude.CODE, still running), else the parsed id. */
-function findJob(code: string, { parsed = null, env = cleanEnv() }: { parsed?: string | null, env?: Record<string, string> } = {}): { id: string, sessionId?: string | null } | null {
+function findJob(code: RoomCode, { parsed = null, env = cleanEnv() }: { parsed?: string | null, env?: Record<string, string> } = {}): { id: string, sessionId?: string | null } | null {
   const list: AgentJob[] | null = cc.jobs({ bin: claudeBin(), env, timeout: config.SPAWN_TIMEOUT_MS });
   const fallback = parsed ? { id: parsed, sessionId: null } : null;
   if (!list) return fallback;
@@ -253,7 +254,7 @@ function stopJob(job: string | null | undefined): boolean {
  * Stop every live job named claude.CODE that keep does not hold: a job the record lost (a leak) would otherwise run
  * beside the room's Claude under the same name. Live: it has a process (a done job can keep one) or has not ended.
  */
-function stopStrays(code: string, keep: (string | null | undefined)[] = [],
+function stopStrays(code: RoomCode, keep: (string | null | undefined)[] = [],
   list: AgentJob[] | null = cc.jobs({ all: true, bin: claudeBin(), env: cleanEnv(), timeout: config.SPAWN_TIMEOUT_MS })): string[] {
   const name = `claude.${code}`;
   const strays = (list || []).filter(j => !!j.id && j.kind !== 'interactive' && j.name === name && !keep.includes(j.id)
@@ -309,14 +310,14 @@ const waitingOn = (o: Member | null | undefined, job: string): boolean =>
   !!o && o.job === job && !o.pid && !o.closing && !o.stopped_at && !o.left_at;
 
 /** Tell the room its Claude did not start (a system status entry everyone sees). */
-function postNotStarted(code: string, reason: string): void {
+function postNotStarted(code: RoomCode, reason: string): void {
   const text = `the room's Claude did not start: ${reason}. Run /sub-human doctor; /sub-human in the room starts it again`;
   try {
     room.open(code).append({ kind: 'status', text }, { via: 'system', from: 'room', system: true });
   } catch { /* room gone */ }
 }
 
-async function watchStart(code: string, job: string, {
+async function watchStart(code: RoomCode, job: string, {
   pollMs = config.ROOM_CLAUDE_WATCH_POLL_MS,
   bindMs = config.ROOM_CLAUDE_BIND_MS,
   // --all: a failed job is left out without it
@@ -361,7 +362,7 @@ function detached(args: string[], cwd?: string): number | undefined {
   return p.pid;
 }
 
-function startDetached({ code, cwd, claim, prevJob = null }: { code: string, cwd?: string, claim?: string, prevJob?: string | null }): number | undefined {
+function startDetached({ code, cwd, claim, prevJob = null }: { code: RoomCode, cwd?: string, claim?: string, prevJob?: string | null }): number | undefined {
   identity.roomDir(code);
   return detached(['start', code, JSON.stringify({ cwd: cwd || process.cwd(), claim, prevJob })], cwd);
 }
@@ -369,7 +370,7 @@ function startDetached({ code, cwd, claim, prevJob = null }: { code: string, cwd
 // ---------- stopping ----------
 
 /** Task 1 completed, or the list cleaned up (every visible task completed). Read only. */
-function roomTaskDone(code: string): boolean {
+function roomTaskDone(code: RoomCode): boolean {
   const dir = tasksDir(code);
   if (!fs.existsSync(dir)) return true;
   const t = readJsonRaw(path.join(dir, '1.json'));
@@ -380,7 +381,7 @@ const hasLiveMember = (members: Members, alive: Alive = identity.seatAlive): boo
   Object.values(members).some(m => !!m && m.role !== 'claude' && alive(m));
 
 /** Set claude.closing unless the room has a live member or is already closing / stopped. */
-function claimClose(code: string, now: number = clock.now()): { rec: Member } | { why: ReapResult } {
+function claimClose(code: RoomCode, now: number = clock.now()): { rec: Member } | { why: ReapResult } {
   let why: ReapResult = 'no-claude';
   const rec: Member | null = identity.updateRoomClaude(code, (o: Member | null, members: Members): RoomClaudePatch | null => {
     if (hasLiveMember(members)) { why = 'cancelled'; return null; }
@@ -390,7 +391,7 @@ function claimClose(code: string, now: number = clock.now()): { rec: Member } | 
   return rec ? { rec } : { why };
 }
 
-async function reap(code: string, {
+async function reap(code: RoomCode, {
   graceMs = envMs('SUB_HUMAN_REAP_GRACE_MS'),
   waitMs = envMs('SUB_HUMAN_REAP_WAIT_MS'),
   pollMs = config.REAP_POLL_MS,
@@ -426,21 +427,21 @@ async function reap(code: string, {
   return 'stopped';
 }
 
-function reapDetached(code: string, { claimed = false } = {}): number | null | undefined {
+function reapDetached(code: RoomCode, { claimed = false } = {}): number | null | undefined {
   identity.roomDir(code);
   if (!identity.isHost(code)) return null;
   return detached(claimed ? ['reap', code, '--claimed'] : ['reap', code]);
 }
 
 const JOB_RE = /^[A-Za-z0-9_.-]{1,64}$/;
-function releaseDetached(code: string, job: string): number | null | undefined {
+function releaseDetached(code: RoomCode, job: string): number | null | undefined {
   identity.roomDir(code);
   if (!JOB_RE.test(String(job))) return null;
   return detached(['release', code, String(job)]);
 }
 
-function watchdog(code: string, { now = clock.now(), orphanMs = orphanMsDefault(), alive = identity.seatAlive, reaper = reapDetached }: {
-  now?: number, orphanMs?: number, alive?: Alive, reaper?: (code: string, opts: { claimed: boolean }) => unknown,
+function watchdog(code: RoomCode, { now = clock.now(), orphanMs = orphanMsDefault(), alive = identity.seatAlive, reaper = reapDetached }: {
+  now?: number, orphanMs?: number, alive?: Alive, reaper?: (code: RoomCode, opts: { claimed: boolean }) => unknown,
 } = {}): WatchdogState {
   if (!identity.roomExists(code)) return 'no-room';
   if (!identity.isHost(code)) return 'not-host';
@@ -473,8 +474,8 @@ export {
 
 if (import.meta.main) {
   const [cmd, code, extra] = process.argv.slice(2);
-  const die = (msg: string): never => { process.stderr.write(`room-claude.ts: ${msg}\n`); process.exit(2); };
-  if (!cmd || !identity.CODE_RE.test(String(code))) die('usage: node lib/room-claude.ts cmd|spawn|reap [--claimed]|watchdog|release|start CODE [JSON|JOB]');
+  const die: (msg: string) => never = msg => { process.stderr.write(`room-claude.ts: ${msg}\n`); process.exit(2); };
+  if (!cmd || !identity.isRoomCode(code)) die('usage: node lib/room-claude.ts cmd|spawn|reap [--claimed]|watchdog|release|start CODE [JSON|JOB]');
   if (cmd === 'cmd') process.stdout.write(command(spawnPlan({ code })) + '\n');
   else if (cmd === 'spawn') { const r = spawn({ code }); process.stdout.write(JSON.stringify(r) + '\n'); process.exitCode = r.ok ? 0 : 1; }
   else if (cmd === 'start') {

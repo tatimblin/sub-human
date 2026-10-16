@@ -13,13 +13,14 @@
 import { check, cli } from './check.ts';
 import { createRequire } from 'node:module';
 import type { Check } from '../types.ts';
+import type { RoomCode } from '../../brand.ts';
 
 const require = createRequire(import.meta.url);
 const store = (): typeof import('../../room/store.ts') => require('../../room/store.ts');
 
-export interface RoomVerify { code: string; count: number; chain: { ok: boolean; badAt?: number | null; line?: number }; unverified: number[]; legacy: number }
+export interface RoomVerify { code: RoomCode; count: number; chain: { ok: boolean; badAt?: number | null; line?: number }; unverified: number[]; legacy: number }
 
-export function verifyRoom(code: string): RoomVerify {
+export function verifyRoom(code: RoomCode): RoomVerify {
   const s = store().open(code);
   const chain = s.validateChain();
   const unverified: number[] = [];
@@ -45,7 +46,7 @@ export function verifyText(v: RoomVerify): string {
 
 export function roomChecks(): Check[] {
   const out: Check[] = [];
-  let codes: string[] = [];
+  let codes: RoomCode[] = [];
   try { codes = store().listRooms(); } catch { return out; }
   for (const code of codes) {
     let v: RoomVerify;

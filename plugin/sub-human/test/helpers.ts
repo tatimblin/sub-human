@@ -38,6 +38,7 @@ import { createRequire, syncBuiltinESMExports } from 'node:module';
 import type { TestContext } from 'node:test';
 import type * as IdentityLib from '../lib/identity.ts';
 import type * as SeatKeyLib from '../hooks/seat-key.ts';
+import type { RoomCode } from '../lib/brand.ts';
 
 // lib/ is required on first use (createRequire: require(esm) is synchronous), so preloading this file loads none of it
 const require = createRequire(import.meta.url);
@@ -115,12 +116,12 @@ process.env.SUB_HUMAN_TEST = '1';
 // via=human appends need the seat signer that the hook handlers that sign install (at-room, consent, join:
 // hooks/seat-key.ts arm). A test process is trusted the same way; required lazily, so preloading loads no lib/.
 (globalThis as unknown as Record<symbol, unknown>)[Symbol.for('sub-human.human-signer')] =
-  (code: string, name: string) => (require(path.join(PLUGIN, 'hooks', 'seat-key.ts')) as typeof SeatKeyLib).ensure(code, name);
+  (code: RoomCode, name: string) => (require(path.join(PLUGIN, 'hooks', 'seat-key.ts')) as typeof SeatKeyLib).ensure(code, name);
 
 let identityMod: typeof IdentityLib | null = null;
 const identity = () => identityMod || (identityMod = require(path.join(LIB, 'identity.ts')) as typeof IdentityLib);
 
-let current: string | null = null;
+let current: RoomCode | null = null;
 
 function freshHome(t?: TestContext): string {
   const dir = tmpDir('sub-human-test-', t);
@@ -130,15 +131,15 @@ function freshHome(t?: TestContext): string {
 }
 freshHome();
 
-function newRoom(): string {
+function newRoom(): RoomCode {
   current = identity().newCode();
   return current;
 }
 
 /** A seat this test registered (identity.join). */
-interface Registered { code: string; name: string; role: string; pid: number }
+interface Registered { code: RoomCode; name: string; role: string; pid: number }
 
-function register(name: string, role = 'member', pid = process.pid, code: string = current || newRoom()): Registered {
+function register(name: string, role = 'member', pid = process.pid, code: RoomCode = current || newRoom()): Registered {
   const r = identity().join({ code, name, role, pid, session_id: `sess-${name}-${pid}`, cwd: process.cwd() });
   if (!r.ok) throw new Error(`register ${name}: ${r.error}`);
   return { code, name, role, pid };

@@ -5,6 +5,7 @@
 import type { PipeSpec, SshSpec, WsSpec } from '../remote/types-rest.ts';
 import type { ProtoRange } from '../remote/types-core.ts';
 import type { LinkState } from '../room/types.ts';
+import type { RoomCode } from '../brand.ts';
 
 /** args.ts parse spec: 1 takes a value, 0 is a switch, '?' takes an optional value. */
 export type FlagSpec = Readonly<Record<string, 0 | 1 | '?'>>;
@@ -85,7 +86,7 @@ export interface Reach {
 
 /** diagnoseLink(code, opts) -> one link's report. */
 export interface LinkReport {
-  code: string;
+  code: RoomCode;
   transport: { kind?: string; describe: string; user?: string; host?: string; port?: number; home?: string; login?: true };
   credential: string;
   daemon: { running: boolean; pid?: number | null };

@@ -57,7 +57,7 @@
 
 import crypto from 'node:crypto';
 import { RoomError } from '../room/validate.ts';
-import { CODE_RE, NAME_RE } from '../text.ts';
+import { isRoomCode, NAME_RE } from '../text.ts';
 import { INVITE_TTL_MS, INVITE_PIN_TRIES, HANDOFF_INVITE_MS, SHORT_LIVE_MAX } from '../config.ts';
 import { testMs } from '../env.ts';
 import * as hostLinks from './host-links.ts';
@@ -67,6 +67,7 @@ import type { ReasonFor } from '../reasons.ts';
 import type {
   AuthStore, BoundInvite, Invites, InviteRecord, ShortInvite, AdmissionRecord, LinkRecord, ParsedInvite, ShortKind,
 } from './types-core.ts';
+import type { RoomCode } from '../brand.ts';
 
 /** A redeemed invite: the link's token (once, in clear), its record, and what kind of invite it was. */
 interface Redeemed { token: string; link: LinkRecord; handoff: boolean; admission?: AdmissionRecord }
@@ -279,7 +280,7 @@ function mintInvite(store: AuthStore, { kind, locator, by = null, now = Date.now
 }
 
 // ---------- the sh2 invite string (bound invites: a handoff's, a promote's) ----------
-const formatInvite = ({ code, locator, secret, hostKey = null }: { code: string; locator: string; secret: string; hostKey?: string | null }): string =>
+const formatInvite = ({ code, locator, secret, hostKey = null }: { code: RoomCode; locator: string; secret: string; hostKey?: string | null }): string =>
   [INVITE_PREFIX, code, Buffer.from(locator).toString('base64url'), secret, hostKey || '0'].join('.');
 
 function parseInvite(text: unknown): ParsedInvite | null {
@@ -288,7 +289,7 @@ function parseInvite(text: unknown): ParsedInvite | null {
   const [, code, loc, secret, hk] = parts;
   if (!/^[A-Za-z0-9_-]+$/.test(loc)) return null;
   const locator = Buffer.from(loc, 'base64url').toString('utf8');
-  if (!CODE_RE.test(code) || !locator || !SECRET_RE.test(secret)) return null;
+  if (!isRoomCode(code) || !locator || !SECRET_RE.test(secret)) return null;
   if (hk !== '0' && !HOST_KEY_RE.test(hk)) return null;
   return { v: 2, code, locator, secret, hostKey: hk === '0' ? null : hk };
 }

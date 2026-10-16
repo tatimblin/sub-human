@@ -13,6 +13,7 @@ import * as linkStateMod from '../lib/room/link-state.ts';
 import * as seatKey from '../hooks/seat-key.ts';
 import type { JsonRpcId, Me, ProgressToken, ToolArgs, ToolResult } from '../mcp/types.ts';
 import type { LinkState, Member } from '../lib/room/types.ts';
+import { rc } from './support/brands.ts';
 
 Object.assign(process.env, {
   SUB_HUMAN_HOLD_BEAT_MS: '150', SUB_HUMAN_HOLD_POLL_MS: '20', SUB_HUMAN_HOLD_GRACE_MS: '250',
@@ -31,7 +32,7 @@ interface Progress { token: ProgressToken | null | undefined; n: number; message
 /** A room written by hand, and a fake room-server ctx for seat `self`. */
 function setup(names: string[], self: string) {
   process.env.SUB_HUMAN_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-hold-'));
-  const code = 'marmot-2509';
+  const code = rc('marmot-2509');
   const dir = path.join(process.env.SUB_HUMAN_HOME, 'rooms', code);
   fs.mkdirSync(dir, { recursive: true });
   const ms: Record<string, Partial<Member>> = {};
@@ -77,7 +78,7 @@ test('hold: tool definition and argument errors', async () => {
   assert.equal(stop!.isError, undefined, 'a STOP is an answer for the row, not an error');
   assert.match(textOf(await w.call({ member: 'claude' }).p), /^STOP: that is you/);
   assert.match(textOf(await w.call({ member: '../x' }).p), /^STOP/);
-  assert.match(textOf(await w.call({ room: 'otter-1111' }).p), /^STOP: you are in room marmot-2509/);
+  assert.match(textOf(await w.call({ room: rc('otter-1111') }).p), /^STOP: you are in room marmot-2509/);
   w.leaveMe();
   assert.match(textOf(await Promise.resolve(w.plug.call('hold', null, { member: 'alice' }, { id: 99 }))), /^STOP: not in a room/);
 });

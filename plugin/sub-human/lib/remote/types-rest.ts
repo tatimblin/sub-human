@@ -30,7 +30,7 @@ export interface LineTransport {
 /** What a kind is opened with: the room the link daemon connects to, if any, and the link's own Noise key (a web link
  * made under protocol 3: XK proves it). */
 export interface OpenCtx {
-  code?: string;
+  code?: import('../brand.ts').RoomCode;
   clientKey?: import('./noise.ts').KeyPair;
 }
 

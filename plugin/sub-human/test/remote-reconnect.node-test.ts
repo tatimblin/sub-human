@@ -32,6 +32,7 @@ import type { Client } from '../lib/remote/client.ts';
 import type { DecodedFrame, Flush, RunningLink, SignedPayload } from '../lib/remote/types-core.ts';
 import type { SshSpec, Transport } from '../lib/remote/types-rest.ts';
 import type { Entry, EntryInput, Link, LinkStateRecord, RoomStore } from '../lib/room/types.ts';
+import type { RoomCode } from '../lib/brand.ts';
 
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
 
@@ -42,8 +43,8 @@ interface ProbeOut { code?: string; message: string; unknown?: boolean }
 
 const REMOTE = 'remote0machine01';
 const FAST = { pingMs: 40, pongMs: 60, deadMs: 250 };
-const signed = (code: string, name: string, entry: EntryInput) => store.toPayload(code, entry, { via: 'human', from: name });
-const say = (code: string, text: string) => signed(code, 'bob', { kind: 'say', text });
+const signed = (code: RoomCode, name: string, entry: EntryInput) => store.toPayload(code, entry, { via: 'human', from: name });
+const say = (code: RoomCode, text: string) => signed(code, 'bob', { kind: 'say', text });
 const lines = (file: string) => { try { return fs.readFileSync(file, 'utf8').split('\n').filter(Boolean); } catch { return []; } };
 
 // ---------- pure pieces ----------
@@ -142,7 +143,7 @@ interface HookReply { entry?: Entry; queued?: number; slow?: boolean }
 interface Conn { c: Client; cut(): void }
 /** What rig() returns. */
 interface Rig {
-  code: string;
+  code: RoomCode;
   host: store.FsRoomStore;
   conns: Conn[];
   pings: { n: number };

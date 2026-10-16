@@ -40,20 +40,21 @@ import { withLock } from '../lock.ts';
 import { readJsonRaw, writeJsonAtomic } from '../io.ts';
 import { isObj } from '../decode.ts';
 import { errCode } from '../errors.ts';
-import { CODE_RE } from '../text.ts';
+import { isRoomCode } from '../text.ts';
 import { keyDir } from './keys.ts';
 import { FsRoomStore } from './fs-store.ts';
 import { NO_TRUST } from './trust.ts';
 import type { Entry, HumanTrust, RoomStore } from './types.ts';
+import type { RoomCode } from '../brand.ts';
 
 const require = createRequire(import.meta.url);
 
-let backend: ((code: string) => RoomStore) | null = null; // tests: code -> RoomStore
+let backend: ((code: RoomCode) => RoomStore) | null = null; // tests: code -> RoomStore
 const stores = new Map<string, RoomStore>(); // home \0 code -> FsRoomStore | MirrorRoomStore
 /** A room hosted elsewhere: the link registry knows it (required here, not at load: links.ts reads this module's rooms). */
 const linked = (c: string): boolean => (require('./links.ts') as typeof import('./links.ts')).has(c);
 
-function open(c: string, { dir }: { dir?: string } = {}): RoomStore {
+function open(c: RoomCode, { dir }: { dir?: string } = {}): RoomStore {
   if (backend) return backend(c);
   if (dir) return new FsRoomStore(c, { dir });
   const k = `${home()}\0${c}`;
@@ -66,12 +67,12 @@ function open(c: string, { dir }: { dir?: string } = {}): RoomStore {
   }
   return s;
 }
-const forget = (c: string): void => { stores.delete(`${home()}\0${c}`); };
-const setBackend = (fn: ((code: string) => RoomStore) | null | undefined): void => { backend = typeof fn === 'function' ? fn : null; };
+const forget = (c: RoomCode): void => { stores.delete(`${home()}\0${c}`); };
+const setBackend = (fn: ((code: RoomCode) => RoomStore) | null | undefined): void => { backend = typeof fn === 'function' ? fn : null; };
 /** A just-made room has no members document or log for a moment: a folder made less than this ago is never a
  * leftover. Made, not written: a stray process's writes into a leftover kept its mtime young (stage 8e I.10). */
 const LEFTOVER_MS = 60_000;
-function isLeftover(c: string): boolean {
+function isLeftover(c: RoomCode): boolean {
   const d = roomDir(c);
   let st: fs.Stats;
   try { st = fs.statSync(d); } catch { return false; }
@@ -79,15 +80,15 @@ function isLeftover(c: string): boolean {
   if (!st.isDirectory() || Date.now() - made < LEFTOVER_MS || linked(c)) return false;
   return !['members.json', 'log.jsonl', 'snapshot.json', 'snapshot-base.json', 'log-0001.jsonl'].some(f => fs.existsSync(path.join(d, f)));
 }
-const roomExists = (c: unknown): boolean => typeof c === 'string' && CODE_RE.test(c) && ((fs.existsSync(roomDir(c)) && !isLeftover(c)) || linked(c));
-function createRoom(c: string): boolean {
+const roomExists = (c: unknown): c is RoomCode => isRoomCode(c) && ((fs.existsSync(roomDir(c)) && !isLeftover(c)) || linked(c));
+function createRoom(c: RoomCode): boolean {
   fs.mkdirSync(roomsDir(), { recursive: true, mode: 0o700 }); // the home and rooms/ too when new: private
   repairModes();
   try { fs.mkdirSync(roomDir(c), { mode: 0o700 }); } catch (e) { if (errCode(e) === 'EEXIST') return false; throw e; }
   indexRoom(c);
   return true;
 }
-const listRooms = (): string[] => { try { return fs.readdirSync(roomsDir()).filter(c => CODE_RE.test(c)); } catch { return []; } };
+const listRooms = (): RoomCode[] => { try { return fs.readdirSync(roomsDir()).filter(isRoomCode); } catch { return []; } };
 
 // ---------- the open-rooms index ----------
 /** <home>/open-rooms.json: {v: 1, rooms: {code: when it was indexed}}. */
@@ -107,21 +108,21 @@ function updateIndex(fn: (rooms: Record<string, string>) => boolean): Record<str
     return rooms;
   });
 }
-function indexedRooms(): string[] {
+function indexedRooms(): RoomCode[] {
   const cur = readIndex();
-  return Object.keys(cur ? cur.rooms : updateIndex(() => false)).filter(c => CODE_RE.test(c)).sort();
+  return Object.keys(cur ? cur.rooms : updateIndex(() => false)).filter(isRoomCode).sort();
 }
-function indexRoom(c: string): void {
-  if (!CODE_RE.test(c) || (readIndex()?.rooms || {})[c]) return;
+function indexRoom(c: RoomCode): void {
+  if (!isRoomCode(c) || (readIndex()?.rooms || {})[c]) return;
   updateIndex(rooms => { if (rooms[c]) return false; rooms[c] = new Date().toISOString(); return true; });
 }
-function unindexRooms(codes: readonly string[]): void {
+function unindexRooms(codes: readonly RoomCode[]): void {
   if (!codes.length) return;
   updateIndex(rooms => { let n = 0; for (const c of codes) if (rooms[c]) { delete rooms[c]; n++; } return n > 0; });
 }
 
 // ---------- deleting a closed room (lib/gc.ts) ----------
-function lastChange(c: string): number {
+function lastChange(c: RoomCode): number {
   const d = roomDir(c);
   let t: number;
   try { t = fs.statSync(d).mtimeMs; } catch { return 0; }
@@ -135,7 +136,7 @@ function lastChange(c: string): number {
  * under keys/, which the Read guard covers), both touched now so that the aside TTL counts from today. A person can
  * rename both back to bring the room back; removeAside deletes them after the aside TTL.
  */
-function setAsideRoom(c: string, now = Date.now()): string {
+function setAsideRoom(c: RoomCode, now = Date.now()): string {
   const name = `${c}.gc-${new Date(now).toISOString().replace(/[:.]/g, '-')}`;
   const to = path.join(roomsDir(), name);
   fs.renameSync(roomDir(c), to);
@@ -148,7 +149,7 @@ function setAsideRoom(c: string, now = Date.now()): string {
   return name;
 }
 /** A leftover folder (isLeftover) set aside as a forgotten copy is: rooms/CODE.forgotten-TIME; its absolute path. */
-function setAsideLeftover(c: string, now = Date.now()): string {
+function setAsideLeftover(c: RoomCode, now = Date.now()): string {
   const to = path.join(roomsDir(), `${c}.forgotten-${new Date(now).toISOString().replace(/[:.]/g, '-')}`);
   fs.renameSync(roomDir(c), to);
   forget(c);
@@ -171,7 +172,7 @@ function removeAside(name: string): void {
 
 function trustOf(e: Entry | null | undefined): HumanTrust | null {
   if (!e || e.via !== 'human') return null;
-  if (typeof e.room !== 'string' || !CODE_RE.test(e.room)) return NO_TRUST(e);
+  if (!isRoomCode(e.room)) return NO_TRUST(e);
   try { return open(e.room).trust(e); } catch { return NO_TRUST(e); }
 }
 

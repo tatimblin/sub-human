@@ -35,6 +35,7 @@ import * as textMod from '../text.ts';
 import { createRequire } from 'node:module';
 import type { CliIo, FlagSpec, Flags, Parsed } from './types.ts';
 import { errCode, msgOf } from '../errors.ts';
+import type { RoomCode } from '../brand.ts';
 
 const require = createRequire(import.meta.url);
 const cli = (args: string) => textMod.cliLine(args);
@@ -47,7 +48,7 @@ function flagsOf<S extends FlagSpec>(args: readonly string[], spec: S, die: CliI
 }
 
 /** The room: --room, else this session's. */
-function roomOf(flags: { room?: string }, die: CliIo['die']): string {
+function roomOf(flags: { room?: string }, die: CliIo['die']): RoomCode {
   if (flags.room) {
     if (!identity.roomExists(flags.room)) die(`no room "${flags.room}"`, 1);
     return flags.room;
@@ -58,7 +59,7 @@ function roomOf(flags: { room?: string }, die: CliIo['die']): string {
 }
 
 /** Which seat of this machine speaks: --as, else this session's, else the first live one. */
-function seatOf(code: string, as: string | undefined, die: CliIo['die']): string {
+function seatOf(code: RoomCode, as: string | undefined, die: CliIo['die']): string {
   if (as) return as;
   const me = identity.resolveSelf();
   if (me && me.code === code && me.role !== 'claude') return me.name;
@@ -70,7 +71,7 @@ function seatOf(code: string, as: string | undefined, die: CliIo['die']): string
 const LOCATOR_FLAGS = { ssh: 1, via: 1, url: 1 } as const;
 
 /** Where the others will reach the next host: --url, or --ssh USER@HOST[:PORT] (a plain one) with --via JUMP. */
-function locatorOf(flags: Flags<typeof LOCATOR_FLAGS>, die: CliIo['die'], code: string) {
+function locatorOf(flags: Flags<typeof LOCATOR_FLAGS>, die: CliIo['die'], code: RoomCode) {
   if (flags.url !== undefined) {
     if (flags.ssh !== undefined || flags.via !== undefined) die('--ssh/--via and --url are two ways in; pick one');
     const webhost: typeof import('../remote/webhost.ts') = require('../remote/webhost.ts');
@@ -88,7 +89,7 @@ function locatorOf(flags: Flags<typeof LOCATOR_FLAGS>, die: CliIo['die'], code: 
 const HANDOFF_USAGE = 'sub-human handoff NAME [USER@HOST[:PORT] | --ssh USER@HOST[:PORT]] [--via JUMP] [--room CODE] [--as SEAT] | handoff NAME --url https://FRONT';
 const PROMOTE_USAGE = 'sub-human promote CODE [--as SEAT] [--ssh USER@HOST[:PORT] [--via JUMP] | --url https://FRONT] [--force] --confirm CODE';
 
-function showStatus(code: string, { out }: CliIo) {
+function showStatus(code: RoomCode, { out }: CliIo) {
   // lib/handoff.ts status(code): the parts this prints
   const st: {
     host: { host?: string; id?: number };
@@ -123,7 +124,7 @@ function handoffCmd(args: readonly string[], ctx: CliIo) {
   out(`If ${to} agrees, the room and its Claude move to their machine (on ${to}'s Claude account), and this machine stays in it. ${cli(`handoff --status --room ${code}`)} shows how it went.`);
 }
 
-const FORK_RISK = (code: string, last: number): string[] => [
+const FORK_RISK = (code: RoomCode, last: number): string[] => [
   `PROMOTE makes this machine's copy of room ${code} the room. Only do this when its host is gone for good.`,
   'If the old host is only slow, asleep or cut off, the room FORKS: lines it writes from now on reach nobody here,',
   `and lines it wrote after #${last} (the last one this machine has) are lost to the room. Members still linked to it`,
@@ -135,7 +136,7 @@ function promoteCmd(args: readonly string[], ctx: CliIo) {
   const die: CliIo['die'] = ctx.die, out = ctx.out;
   const { flags, rest } = flagsOf(args, { ...LOCATOR_FLAGS, as: 1, force: 0, confirm: 1 }, die);
   const code = rest[0];
-  if (rest.length !== 1 || !identity.CODE_RE.test(String(code))) die(`usage: ${PROMOTE_USAGE}`);
+  if (rest.length !== 1 || !identity.isRoomCode(code)) die(`usage: ${PROMOTE_USAGE}`);
   if (!identity.roomExists(code)) die(`no room "${code}"`, 1);
   const s = store.open(code);
   if (s.isHost) die(`this machine hosts room ${code} already`, 1);

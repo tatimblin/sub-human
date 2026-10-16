@@ -31,12 +31,13 @@ import type {
   AppendOpts, BlobsApi, ChainCheck, ChainVerify, Entry, EntryInput, HostState, KvApi, KvUpdateOpts, Members, MembersApi,
   Payload, PlaceOpts, Placed, ReadViewOpts, RoomStore, SnapshotWire, Tailer, Trust,
 } from '../../lib/room/types.ts';
+import type { RoomCode } from '../../lib/brand.ts';
 
 const { FsRoomStore, blobRef } = store;
 type FsStore = InstanceType<typeof FsRoomStore>;
 
 /** What crosses the bridge per call: the method's args, and where this thread finds the room. */
-interface CallParams { code: string; dir: string; home: string; seg?: string; args: unknown[] }
+interface CallParams { code: RoomCode; dir: string; home: string; seg?: string; args: unknown[] }
 
 // ---------- the calling thread ----------
 /** Every store method by name; its result is the method's own (each caller below names its type). */
@@ -46,7 +47,7 @@ const send = (method: string, params: CallParams): unknown => (bridge || (bridge
 const toBuffer = (b: Uint8Array | null) => (b ? Buffer.from(b.buffer, b.byteOffset, b.byteLength) : null);
 
 class ThreadRoomStore implements RoomStore {
-  readonly code: string;
+  readonly code: RoomCode;
   isHost = true;
   _local: FsStore;
   members: MembersApi;
@@ -66,7 +67,7 @@ class ThreadRoomStore implements RoomStore {
   trust: Trust;
   _pins: { last: number; map: Map<string, KeyObject> } | null = null;
 
-  constructor(code: string, { dir }: { dir?: string } = {}) {
+  constructor(code: RoomCode, { dir }: { dir?: string } = {}) {
     this.code = code;
     this._local = new FsRoomStore(code, { dir }); // this thread's view: the room's directory and its lock files
     this.trust = store.trustOver({ code, pins: () => this.pins(), localKey: n => store.localKey(n, code), hasLocalKey: n => store.hasLocalKey(n, code) });

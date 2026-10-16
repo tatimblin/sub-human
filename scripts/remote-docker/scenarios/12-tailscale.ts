@@ -16,7 +16,7 @@ import net from 'node:net';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
-import { PLUGIN, pluginLib as lib } from '../../lib/paths.ts';
+import { PLUGIN, pluginLib as lib, roomCode } from '../../lib/paths.ts';
 import type { T } from '../lab.ts';
 
 const freePort = (): Promise<number> => new Promise(r => {
@@ -62,7 +62,7 @@ export async function run(t: T): Promise<void> {
     let res: string;
     try {
       const conn = await ws.connect(`wss://${me.dnsName}${p}`, { timeoutMs: 45_000 }); // a cold ts.net certificate takes ~20 s
-      try { await wsT.clientChannel(conn, { rs: Buffer.from(hostKey, 'base64url'), code: 'vole-0001' }); res = 'joined?!'; } catch (e) { res = `${String(codeOf(e))}: ${msgOf(e)}`; }
+      try { await wsT.clientChannel(conn, { rs: Buffer.from(hostKey, 'base64url'), code: roomCode('vole-0001') }); res = 'joined?!'; } catch (e) { res = `${String(codeOf(e))}: ${msgOf(e)}`; }
     } catch (e) { res = `connect: ${msgOf(e)}`; }
     t.ev.write('handshake.txt', res);
     t.check(`a wss + Noise_NK handshake through https://${me.dnsName}${p}, pinned to the listener's key (it answers that it serves no such room)`,

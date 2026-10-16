@@ -41,9 +41,10 @@ import * as linkState from '../lib/room/link-state.ts';
 import type { CallMeta, JsonRpcId, Me, PluginApi, PluginContext, ProgressToken, ToolArgs, ToolDefinition, ToolResult } from './types.ts';
 import type { Entry, Members } from '../lib/room/types.ts';
 import { msgOf } from '../lib/errors.ts';
+import type { RoomCode } from '../lib/brand.ts';
 
 /** This machine's link to room code was ended by the host (a kick: its link-state stopped with a revocation). */
-const removedByHost = (code: string): boolean => {
+const removedByHost = (code: RoomCode): boolean => {
   try { const st = linkState.read(code); return linkState.stoppedForGood(st) && /^(?:LINK_REVOKED|KEY_REVOKED|TOKEN_UNKNOWN)$/.test(String(st && st.lastReason)); } catch { return false; }
 };
 
@@ -57,7 +58,7 @@ interface HoldBase {
   n: number;
   msg: string;
   sentAt: number;
-  code: string;
+  code: RoomCode;
   started: number;
   name: string;
   resolve?: (r: ToolResult) => void; // set as the call blocks, before it is in holds
@@ -65,7 +66,7 @@ interface HoldBase {
 type Hold = (HoldBase & { kind: 'member' }) | (HoldBase & { kind: 'room'; moves: Set<number> });
 type RoomHold = Extract<Hold, { kind: 'room' }>;
 /** The seat this server serves (for rows/holds-<me> and the lease). */
-interface Seat { code: string; name: string; pid?: number | null; savedAt?: number }
+interface Seat { code: RoomCode; name: string; pid?: number | null; savedAt?: number }
 
 const { NAME_RE, oneLine } = strs;
 const ANNOUNCE_MAX = 3;
@@ -129,9 +130,9 @@ class HoldServer {
 
   log(...a: unknown[]) { try { this.ctx.log && this.ctx.log('hold', ...a); } catch { /* debug only */ } }
   text(s: string, isError = false): ToolResult { return this.ctx.text ? this.ctx.text(s, isError) : { content: [{ type: 'text', text: s }], ...(isError ? { isError: true as const } : {}) }; }
-  memberHolds(code: string) { return [...this.holds.values()].filter(h => h.kind === 'member' && h.code === code); }
-  roomHolds(code: string) { return [...this.holds.values()].filter(h => h.kind === 'room' && h.code === code); }
-  members(code: string): Members { try { return this.ctx.identity.readMembers(code) || {}; } catch { return {}; } }
+  memberHolds(code: RoomCode) { return [...this.holds.values()].filter(h => h.kind === 'member' && h.code === code); }
+  roomHolds(code: RoomCode) { return [...this.holds.values()].filter(h => h.kind === 'room' && h.code === code); }
+  members(code: RoomCode): Members { try { return this.ctx.identity.readMembers(code) || {}; } catch { return {}; } }
   present(ms: Members, name: string) { const m = ms[name]; return !!(m && !m.left_at); }
 
   /**
@@ -139,7 +140,7 @@ class HoldServer {
    * and `fresh`: the entries that arrived since the last call (none on the first call for a room). Only the new part
    * of a grown log is looked at.
    */
-  readEntries(code: string): { entries: readonly Entry[]; moves: Entry[]; fresh: Entry[] } {
+  readEntries(code: RoomCode): { entries: readonly Entry[]; moves: Entry[]; fresh: Entry[] } {
     let entries: readonly Entry[] = [];
     try { entries = room.open(code).readAll(); } catch { /* no log yet */ }
     const st = this.logState.get(code);
@@ -197,7 +198,7 @@ class HoldServer {
   }
 
   /** Names the room should spawn now (JOINED). Marks them announced. */
-  missing(code: string, ms: Members, now: number): string[] {
+  missing(code: RoomCode, ms: Members, now: number): string[] {
     const live = new Set(this.memberHolds(code).map(h => h.name));
     const out: string[] = [];
     for (const n of this.others(code, ms)) {
@@ -211,7 +212,7 @@ class HoldServer {
     return out;
   }
 
-  roomReply(code: string, joined: string[]): string {
+  roomReply(code: RoomCode, joined: string[]): string {
     const lines: string[] = [];
     const rs = this.respawn.get(code);
     if (rs && rs.size) { lines.push(`RESPAWN ${[...rs].join(' ')}`); this.respawn.delete(code); }
@@ -266,7 +267,7 @@ class HoldServer {
   }
 
   /** The newest join / settled leave this room hold has not shown yet, as a notice line (marks them shown). */
-  newMove(h: RoomHold, code: string, now: number): string {
+  newMove(h: RoomHold, code: RoomCode, now: number): string {
     const { moves } = this.readEntries(code); // joins and leaves only: not the whole log every tick
     const me = this.me;
     const fresh = joinLeave(moves, me && me.name, { now }).filter(n => n.settled && !h.moves.has(n.id));
@@ -318,7 +319,7 @@ class HoldServer {
   }
 
   /** The latest entry `pick` accepts, for a new hold's first line. */
-  lastShown(code: string, pick: (e: Entry) => boolean): Entry | undefined {
+  lastShown(code: RoomCode, pick: (e: Entry) => boolean): Entry | undefined {
     return this.readEntries(code).entries.findLast(pick);
   }
 

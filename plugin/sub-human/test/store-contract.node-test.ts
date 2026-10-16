@@ -28,6 +28,7 @@ import { remoteStore, MACHINE } from './support/remote-store.ts';
 import { machineId } from '../lib/home.ts';
 import * as identity from '../lib/identity.ts';
 import type { Entry, EntryInput, Member, Members, Payload, RoomStore, Via } from '../lib/room/types.ts';
+import { rc } from './support/brands.ts';
 
 type Err = Error & { code?: string };
 /** A store under test and how to change its log around it. */
@@ -40,7 +41,7 @@ interface Backend {
   raw(s: RoomStore, e: object): void;
 }
 
-const CODE = 'otter-1234';
+const CODE = rc('otter-1234');
 const FILES: Pick<Backend, 'tamper' | 'raw'> = {
   // replace line i (0-based) of the log
   tamper: (s, i, fn) => {
@@ -235,7 +236,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     const fields: Payload = { from: 'alice', via: 'human', kind: 'say', to: 'room', text: 'x' };
     const refused = [
       envelope.sign(fields, key, { room: CODE, from: 'alice', now: Date.now() - envelope.SIG_SKEW_MS - 1000 }),
-      envelope.sign(fields, key, { room: 'vole-0000', from: 'alice' }),
+      envelope.sign(fields, key, { room: rc('vole-0000'), from: 'alice' }),
       { ...envelope.sign(fields, key, { room: CODE, from: 'alice' }), text: 'changed' },
     ];
     for (const r of refused) assert.throws(() => s.place(r), (e: Err) => e.code === 'AUTH', JSON.stringify(r).slice(0, 80));

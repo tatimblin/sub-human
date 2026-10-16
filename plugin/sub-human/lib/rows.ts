@@ -73,6 +73,7 @@ import type { Entry, LinkState, Member, Members } from './room/types.ts';
 import type { Identity } from './identity.ts';
 // the row agents' types are mod/core/rows.ts's (the module's row hooks read them too)
 import { PARTICIPANT, ROOM_AGENT } from '../mod/core/rows.ts';
+import type { RoomCode } from './brand.ts';
 
 const require = createRequire(import.meta.url);
 // lib/proposal.ts loads the consent reducer: only a row that names a pending proposal's title needs it (the status
@@ -147,14 +148,14 @@ function ago(iso: string, now: number = Date.now()): string {
 }
 
 /** The room's small documents (lib/room/store.ts kv). */
-const kvOf = (code: string) => room.open(code).store.kv;
-const storeOf = (code: string) => room.open(code).store;
+const kvOf = (code: RoomCode) => room.open(code).store.kv;
+const storeOf = (code: RoomCode) => room.open(code).store;
 /**
  * The room log as a row reads it: every non-chat entry, and every line since the log's last rotation (lib/room.ts
  * readRecent; the whole log before one). A row looks back only over recent chat (the last post, the mail since the
  * viewer's last reply: everything in that window is after an older reply), so a cold status line parses one segment.
  */
-function readLog(code: string): readonly Entry[] {
+function readLog(code: RoomCode): readonly Entry[] {
   try { return room.open(code).readRecent(); } catch { return []; }
 }
 function memberList(members: MemberInput): Member[] {
@@ -165,14 +166,14 @@ function memberList(members: MemberInput): Member[] {
 }
 const isActive = (m: Member | null | undefined) => !!m && !m.left_at && !m.lapsed_at; // lapsed: lib/seats.ts sweep
 const isRoomClaude = (m: Member) => m.role === 'claude' || m.name === 'claude';
-function readMembers(code: string): Members { try { return identity.readMembers(code) || {}; } catch { return {}; } }
+function readMembers(code: RoomCode): Members { try { return identity.readMembers(code) || {}; } catch { return {}; } }
 
 const normKind = (e: Entry): string => room.normalize(e).kind;
 
 // ---------- spawning ----------
 const participantCall = (name: string) =>
   `Agent({subagent_type: "${PARTICIPANT}", description: "${name}", prompt: "member: ${name}", run_in_background: true})`;
-const roomCall = (code: string, names: string[]) =>
+const roomCall = (code: RoomCode, names: string[]) =>
   `Agent({subagent_type: "${ROOM_AGENT}", description: "${code}", prompt: "room: ${code}\\nmembers: ${names.length ? names.join(', ') : '(none)'}", run_in_background: true})`;
 
 function rowCalls(me: Me | null | undefined, members: MemberInput, { only = null }: { only?: string[] | null } = {}): string {
@@ -230,7 +231,7 @@ function joinNote(me: Me | null | undefined, name: string | null | undefined, { 
 }
 
 /** Rows this seat should have but `held` (readHolds) shows no live hold for. Room Claude: names; member: [code]. */
-function rowsNeeded(code: string, me: Pick<Identity, 'name' | 'role'>, { members, held = null }: { members?: MemberInput, held?: Holds | null } = {}): string[] {
+function rowsNeeded(code: RoomCode, me: Pick<Identity, 'name' | 'role'>, { members, held = null }: { members?: MemberInput, held?: Holds | null } = {}): string[] {
   const ms = memberList(members || readMembers(code));
   const h: Pick<Holds, 'members' | 'room'> = held || { members: [], room: false };
   if (me.role === 'claude') {
@@ -271,7 +272,7 @@ const NOT_A_MAP = /^rows\/(holds|notices|blocks)-/; // an earlier sub-human's pe
 /** The row map's lock: wait up to ROWS_LOCK_TIMEOUT_MS, then throw (the hook logs it); never write unlocked. */
 const LOCK = { compact: true, timeoutMs: ROWS_LOCK_TIMEOUT_MS, staleMs: ROWS_LOCK_STALE_MS };
 
-function recordRow(code: string, sessionId: string | null | undefined, agentId: string, rec: Omit<RowRec, 'at'>): boolean { // stamped with at here
+function recordRow(code: RoomCode, sessionId: string | null | undefined, agentId: string, rec: Omit<RowRec, 'at'>): boolean { // stamped with at here
   if (!code || !agentId) return false;
   kvOf(code).update(mapKey(sessionId), (cur: RowMap | null) => {
     const byAgent = cur && cur.byAgent && typeof cur.byAgent === 'object' ? cur.byAgent : {};
@@ -281,9 +282,9 @@ function recordRow(code: string, sessionId: string | null | undefined, agentId: 
   return true;
 }
 
-const sessionKeys = (code: string): string[] => { try { return kvOf(code).list('rows/').filter((k: string) => !NOT_A_MAP.test(k)); } catch { return []; } };
+const sessionKeys = (code: RoomCode): string[] => { try { return kvOf(code).list('rows/').filter((k: string) => !NOT_A_MAP.test(k)); } catch { return []; } };
 
-function readRowMap(code: string): Record<string, RowRec> {
+function readRowMap(code: RoomCode): Record<string, RowRec> {
   const out: Record<string, RowRec> = {};
   const kv = kvOf(code);
   for (const k of sessionKeys(code)) {
@@ -294,7 +295,7 @@ function readRowMap(code: string): Record<string, RowRec> {
 }
 
 /** The agent -> row records this session id spawned ({} when none). */
-function sessionRowMap(code: string, sid: string | null | undefined): Record<string, RowRec> {
+function sessionRowMap(code: RoomCode, sid: string | null | undefined): Record<string, RowRec> {
   const m: RowMap | null = kvOf(code).get(mapKey(sid), null);
   return (m && m.byAgent && typeof m.byAgent === 'object') ? m.byAgent : {};
 }
@@ -303,7 +304,7 @@ function sessionRowMap(code: string, sid: string | null | undefined): Record<str
  * Drop the agent -> row maps of sessions that ended without clearing them: a map whose newest row is ROWS_TTL_MS old
  * and whose session holds no live seat (identity.resolveBySession). lib/gc.ts sweepRows, at a join. Returns how many.
  */
-function pruneRowMaps(code: string, now: number = Date.now()): number {
+function pruneRowMaps(code: RoomCode, now: number = Date.now()): number {
   const kv = kvOf(code);
   let n = 0;
   for (const k of sessionKeys(code)) {
@@ -317,7 +318,7 @@ function pruneRowMaps(code: string, now: number = Date.now()): number {
   return n;
 }
 
-function forgetRow(code: string, agentId: string): void {
+function forgetRow(code: RoomCode, agentId: string): void {
   const kv = kvOf(code);
   for (const k of sessionKeys(code)) {
     kv.update(k, (m: RowMap | null) => {
@@ -329,11 +330,11 @@ function forgetRow(code: string, agentId: string): void {
 }
 
 /** How often hooks/handlers/row-hold.ts blocked agentId's stop (the seat's session document); setBlockCount(code, name, id, n). */
-const blockCount = (code: string, name: string, id: string): number => session.blocks(storeOf(code), name, id);
-const setBlockCount = (code: string, name: string, id: string, n: unknown): void => session.setBlocks(storeOf(code), name, id, Number(n) || 0);
+const blockCount = (code: RoomCode, name: string, id: string): number => session.blocks(storeOf(code), name, id);
+const setBlockCount = (code: RoomCode, name: string, id: string, n: unknown): void => session.setBlocks(storeOf(code), name, id, Number(n) || 0);
 
 // ---------- hold liveness (mcp/hold.ts writes, the status line reads) ----------
-function writeHolds(code: string, name: string, { members = [], room = false, roomUntil = 0 }: { members?: string[], room?: boolean, roomUntil?: number } = {}): void {
+function writeHolds(code: RoomCode, name: string, { members = [], room = false, roomUntil = 0 }: { members?: string[], room?: boolean, roomUntil?: number } = {}): void {
   const rec: Holds = { pid: process.pid, at: new Date().toISOString(), members: [...new Set(members)].sort(), room: !!room };
   if (!room && roomUntil) rec.roomUntil = new Date(roomUntil).toISOString();
   try { session.put(storeOf(code), name, 'holds', rec); } catch { /* best effort */ }
@@ -343,7 +344,7 @@ function writeHolds(code: string, name: string, { members = [], room = false, ro
  * returned JOINED/RESPAWN is being re-called by its row agent, so the room row is still running (a join
  * notice read in that gap would invite a second room-row spawn, which row-guard then denies in red).
  */
-function readHolds(code: string, name: string, now: number = Date.now()): Holds | null {
+function readHolds(code: RoomCode, name: string, now: number = Date.now()): Holds | null {
   let h: Holds | null = null; // as writeHolds wrote it (members is checked: an older writer)
   try { h = session.get(storeOf(code), name, 'holds') || null; } catch { h = null; }
   if (!h || !isAlive(h.pid) || now - Date.parse(h.at) > HOLDS_STALE_MS) return null;
@@ -352,7 +353,7 @@ function readHolds(code: string, name: string, now: number = Date.now()): Holds 
 }
 
 /** Rows this seat should have but holds nothing for. Room Claude: members. Member: the room row ([code]). */
-function missingRows(code: string, me: Pick<Identity, 'name' | 'role'>, { now = Date.now(), members }: { now?: number, members?: MemberInput } = {}): string[] {
+function missingRows(code: RoomCode, me: Pick<Identity, 'name' | 'role'>, { now = Date.now(), members }: { now?: number, members?: MemberInput } = {}): string[] {
   const ms = memberList(members || readMembers(code));
   const h: Pick<Holds, 'members' | 'room'> = readHolds(code, me.name, now) || { members: [], room: false };
   const old = (m: Member) => !m.joined_at || now - Date.parse(m.joined_at) > MISSING_GRACE_MS;
@@ -390,7 +391,7 @@ function fit(parts: (string | null | undefined | false)[]): string {
  * {kind, id}} (approvers' current answers: a person's seats share one), decided (decision id or 0), agreed (count of
  * people), objectors (one seat per person), also, people (count), superseded (a revision retired it), name (title)}.
  */
-function proposals(es: readonly Entry[], code: string | null | undefined): RowProposal[] {
+function proposals(es: readonly Entry[], code: RoomCode | null | undefined): RowProposal[] {
   const f = code ? room.open(code).fold(es) : room.fold(es); // the room's store judges its people's answers
   return [...f.proposals.values()].map((fp): RowProposal => {
     const m = f.matrix(fp.hash);
@@ -402,7 +403,7 @@ function proposals(es: readonly Entry[], code: string | null | undefined): RowPr
   });
 }
 /** What a row calls a proposal: its title (lib/proposal.ts title), clipped; the short hash when it has none. */
-function label(code: string | null | undefined, fp: { hash: string, entry?: Entry }): string {
+function label(code: RoomCode | null | undefined, fp: { hash: string, entry?: Entry }): string {
   let t = '';
   try { t = code ? oneLine(proposalLib().title(code, fp.hash, fp.entry)) : ''; } catch { /* unreadable: the hash */ }
   return t ? clip(t, ROW_TITLE_MAX) : h6(fp.hash);
@@ -418,7 +419,7 @@ function latestFor(ps: RowProposal[], name: string): RowProposal | null {
 }
 
 // ---------- tasks (lib/tasks.ts: the mirror of the room Claude's native list) ----------
-const taskSummary = (code: string, viewer: string | null | undefined) => oneLine(tasks.summary(code, viewer) || '');
+const taskSummary = (code: RoomCode, viewer: string | null | undefined) => oneLine(tasks.summary(code, viewer) || '');
 /** NAME's open task on the room list: in progress first, else the first pending. */
 function openTask(list: (Task | null | undefined)[], name: string): Task | null {
   const mine = list.filter((t): t is Task => !!t && t.owner === name && t.status !== 'completed' && t.status !== 'deleted'
@@ -426,7 +427,7 @@ function openTask(list: (Task | null | undefined)[], name: string): Task | null 
   return mine.find(t => t.status === 'in_progress') || mine[0] || null;
 }
 
-function presenceOf(code: string, name: string, es: readonly Entry[], now: number): string | null {
+function presenceOf(code: RoomCode, name: string, es: readonly Entry[], now: number): string | null {
   let p: { state?: unknown, at?: string } | null = null;
   try { p = kvOf(code).get(`presence/${name}`, null); } catch { p = null; }
   if (!p || typeof p.state !== 'string') return null;
@@ -446,7 +447,7 @@ function presenceOf(code: string, name: string, es: readonly Entry[], now: numbe
   return clip(s, 12);
 }
 
-function participantText(code: string, name: string, viewer: string | null | undefined, es: readonly Entry[], ms: Member[], now: number, c: Paint, taskList: Task[]): string {
+function participantText(code: RoomCode, name: string, viewer: string | null | undefined, es: readonly Entry[], ms: Member[], now: number, c: Paint, taskList: Task[]): string {
   const m = ms.find(x => x.name === name);
   if (!m) return 'not in the room';
   if (m.left_at) return 'left';
@@ -480,7 +481,7 @@ function participantText(code: string, name: string, viewer: string | null | und
   return fit(parts);
 }
 
-function roomText(code: string, viewer: string | null | undefined, es: readonly Entry[], ms: Member[], now: number, c: Paint, summary: string, link: LinkState | null): string {
+function roomText(code: RoomCode, viewer: string | null | undefined, es: readonly Entry[], ms: Member[], now: number, c: Paint, summary: string, link: LinkState | null): string {
   const parts: string[] = [];
   // a room hosted elsewhere: the link leads the row while it is down or reconnecting, and closes it while up
   // (lib/room/link-state.ts indicator: "✕ offline 2m · 2 queued", "… connecting (3)", "⇄ online")
@@ -525,7 +526,7 @@ function roomText(code: string, viewer: string | null | undefined, es: readonly 
  *        taskSummary (string, default tasks.summary(code, viewer)),
  *        link (the room row: lib/room/link-state.ts State or null, default read(code))}.
  */
-function rowText(code: string, name: string | null | undefined, viewer: string | null | undefined, opts: RowOpts = {}): string {
+function rowText(code: RoomCode, name: string | null | undefined, viewer: string | null | undefined, opts: RowOpts = {}): string {
   const now = opts.now || Date.now();
   const es = opts.entries || readLog(code);
   const ms = memberList(opts.members || readMembers(code));

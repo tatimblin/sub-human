@@ -47,6 +47,7 @@ import { createRequire } from 'node:module';
 import type { AdmissionRecord, AuthStore, InviteRecord, Invites } from './types-core.ts';
 import type { RoomStore } from '../room/types.ts';
 import type { Card } from '../types-app.ts';
+import type { RoomCode } from '../brand.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -141,12 +142,12 @@ const REFUSE = 'Refuse';
 
 const roomLib = (): typeof import('../room.ts') => require('../room.ts');
 const secretLib = (): typeof import('./invite-secret.ts') => require('./invite-secret.ts');
-const hostStore = (code: string): RoomStore => roomLib().hostStore(code, { what: 'only its host can let people in' });
+const hostStore = (code: RoomCode): RoomStore => roomLib().hostStore(code, { what: 'only its host can let people in' });
 
-const pending = (code: string, { now = Date.now() }: { now?: number } = {}): AdmissionRequest[] => admissions(hostStore(code), { now });
-const find = (code: string, ref: string): AdmissionRequest | null => admissions(hostStore(code), { all: true }).find(r => r.ref === ref || (ref && ref.length >= 6 && r.ref.startsWith(ref))) || null;
+const pending = (code: RoomCode, { now = Date.now() }: { now?: number } = {}): AdmissionRequest[] => admissions(hostStore(code), { now });
+const find = (code: RoomCode, ref: string): AdmissionRequest | null => admissions(hostStore(code), { all: true }).find(r => r.ref === ref || (ref && ref.length >= 6 && r.ref.startsWith(ref))) || null;
 
-function targets(code: string, req: AdmissionRequest): string[] {
+function targets(code: RoomCode, req: AdmissionRequest): string[] {
   const identity: typeof import('../identity.ts') = require('../identity.ts');
   const { isMine }: typeof import('../home.ts') = require('../home.ts');
   const here = Object.values(identity.readMembers(code) || {})
@@ -158,9 +159,9 @@ function targets(code: string, req: AdmissionRequest): string[] {
  *  itself with the PIN (lib/remote/invite-secret.ts joinCheck), never something the line alone gives. */
 const fp = (req: AdmissionRequest): string => secretLib().joinCheck(req.machine, req.key);
 const describe = (req: AdmissionRequest): string => `${req.name} (${fp(req)}) on ${req.label || 'another machine'}`;
-const question = (req: AdmissionRequest, code: string): string => `Let ${describe(req)} join room ${code}? (admit ${req.ref})`;
+const question = (req: AdmissionRequest, code: RoomCode): string => `Let ${describe(req)} join room ${code}? (admit ${req.ref})`;
 
-function taken(code: string, req: AdmissionRequest): string | null {
+function taken(code: RoomCode, req: AdmissionRequest): string | null {
   let ms: Record<string, { name?: string; role?: string; machine?: string | null } | undefined>;
   try { ms = (require('../identity.ts') as typeof import('../identity.ts')).readMembers(code) || {}; } catch { return null; }
   const m = ms[req.name];
@@ -173,7 +174,7 @@ function taken(code: string, req: AdmissionRequest): string | null {
   return null;
 }
 
-function card(req: AdmissionRequest, code: string): Card {
+function card(req: AdmissionRequest, code: RoomCode): Card {
   const alt = taken(code, req);
   if (alt) {
     return {
@@ -202,7 +203,7 @@ function card(req: AdmissionRequest, code: string): Card {
 }
 
 
-function letIn(code: string, ref: string, { by = null, sign = null, as, now = Date.now() }: {
+function letIn(code: RoomCode, ref: string, { by = null, sign = null, as, now = Date.now() }: {
   by?: string | null; sign?: Signer | null; as?: string; now?: number;
 } = {}): { id: string; text: string } {
   const store = hostStore(code);
@@ -217,7 +218,7 @@ function letIn(code: string, ref: string, { by = null, sign = null, as, now = Da
   return { id: rec.link, text: `let in: ${describe(rec)} joins room ${code} within seconds, as ${rec.name} only. Undo: /sub-human kick ${rec.name}` };
 }
 
-function refuse(code: string, ref: string, { by = null, now = Date.now() }: { by?: string | null; now?: number } = {}): { text: string } {
+function refuse(code: RoomCode, ref: string, { by = null, now = Date.now() }: { by?: string | null; now?: number } = {}): { text: string } {
   const store = hostStore(code);
   const req = find(code, ref);
   if (!req) throw new RoomError('INVALID', `room ${code} has no join request ${ref} (/sub-human admit lists them)`);
@@ -226,7 +227,7 @@ function refuse(code: string, ref: string, { by = null, now = Date.now() }: { by
   return { text: `refused: ${describe(rec)} does not get into room ${code}; their join stops` };
 }
 
-function markTold(code: string, ref: string, name: string): void {
+function markTold(code: RoomCode, ref: string, name: string): void {
   try {
     hostStore(code).kv.update(INVITES_KEY, (cur: Invites | null) => {
       const docs = cur || {};
@@ -238,7 +239,7 @@ function markTold(code: string, ref: string, name: string): void {
   } catch { /* told again */ }
 }
 
-const lapse = (code: string, { now = Date.now() }: { now?: number } = {}): AdmissionRequest[] => lapseAdmissions(hostStore(code), { now });
+const lapse = (code: RoomCode, { now = Date.now() }: { now?: number } = {}): AdmissionRequest[] => lapseAdmissions(hostStore(code), { now });
 
 export {
   check, admissions, decide, lapseAdmissions, WAITING, pending, find, targets, describe, question, taken, card, letIn, refuse, markTold, lapse, LET_IN, REFUSE,

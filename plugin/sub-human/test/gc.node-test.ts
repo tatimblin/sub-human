@@ -17,6 +17,7 @@ import * as gc from '../lib/gc.ts';
 import * as config from '../lib/config.ts';
 import { keyDir } from '../lib/room/keys.ts';
 import * as seatKey from '../hooks/seat-key.ts';
+import type { RoomCode } from '../lib/brand.ts';
 
 const DAY = 24 * 60 * 60_000;
 const SID = (n: number) => `aaaaaaaa-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -33,7 +34,7 @@ function age(p: string, days: number): void {
   walk(p);
 }
 /** A room whose one person joined (pid: a live one, or one gone) and, unless live, left. */
-async function roomWith({ live = false, left = true }: { live?: boolean; left?: boolean } = {}): Promise<string> {
+async function roomWith({ live = false, left = true }: { live?: boolean; left?: boolean } = {}): Promise<RoomCode> {
   const code = h.newRoom();
   const pid = live ? process.pid : await h.deadPid();
   const r = identity.join({ code, name: 'alice', role: 'member', pid, session_id: null, cwd: '/' });
@@ -42,7 +43,7 @@ async function roomWith({ live = false, left = true }: { live?: boolean; left?: 
   if (left && !live) assert.ok(identity.leave(code, 'alice', { reason: 'done' }));
   return code;
 }
-const dirOf = (code: string) => store.open(code).dir!;
+const dirOf = (code: RoomCode) => store.open(code).dir!;
 const indexed = () => JSON.parse(fs.readFileSync(path.join(identity.home(), 'open-rooms.json'), 'utf8')).rooms as Record<string, string>;
 
 test('openRooms: judges only the indexed rooms and drops the ones closed for good; a join puts a room back', async t => {

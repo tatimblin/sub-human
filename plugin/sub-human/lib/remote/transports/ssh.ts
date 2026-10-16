@@ -68,6 +68,7 @@ import FsMod from 'node:fs';
 import { createRequire } from 'node:module';
 import type { KindEntry, OpenCtx, SshDest, SshSpec, Transport } from '../types-rest.ts';
 import type { ReasonFor } from '../../reasons.ts';
+import type { RoomCode } from '../../brand.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -140,7 +141,7 @@ function locator(text: string, { via }: { via?: string } = {}): string | null {
 const controlPath = (h: string = (require('../../home.ts') as typeof import('../../home.ts')).home()): string => path.join(path.resolve(h), 'ssh', 'cm-%C');
 
 /** The spec, checked again; the link options its local fields ask for. */
-function checked(spec: SshSpec, code: string): { d: SshDest; local: string[]; tail: string[] } {
+function checked(spec: SshSpec, code: RoomCode): { d: SshDest; local: string[]; tail: string[] } {
   const d = spec && dest(at(spec));
   if (!d) throw new RoomError('INVALID', 'the link\'s ssh destination is not a plain user@host[:port]');
   if (spec.via !== undefined && !jump(spec.via)) throw new RoomError('INVALID', 'the link\'s ProxyJump is not a plain [user@]host[:port] list');
@@ -165,7 +166,7 @@ function checked(spec: SshSpec, code: string): { d: SshDest; local: string[]; ta
   return { d, local, tail: [...(spec.via !== undefined ? ['-J', spec.via] : []), ...(d.port ? ['-p', String(d.port)] : []), '--', `${d.user}@${d.host}`] };
 }
 
-function command(spec: SshSpec, code: string, opts: string[] = sshOpts()): string[] {
+function command(spec: SshSpec, code: RoomCode, opts: string[] = sshOpts()): string[] {
   const { local, tail } = checked(spec, code);
   const mux = spec.mux === true ? ['-o', 'ControlMaster=no'] : [];
   // ssh takes an option's first value: the pinned ones (local: the link's key, known_hosts, StrictHostKeyChecking; mux)
@@ -174,7 +175,7 @@ function command(spec: SshSpec, code: string, opts: string[] = sshOpts()): strin
     ...mux, ...local, ...opts, ...tail, remoteCommand(spec, code)];
 }
 
-function remoteCommand(spec: Pick<SshSpec, 'login' | 'link' | 'remoteHome'>, code: string): string {
+function remoteCommand(spec: Pick<SshSpec, 'login' | 'link' | 'remoteHome'>, code: RoomCode): string {
   if (spec.login !== true) return `sub-human serve --stdio ${code}`;
   const args = `--stdio ${code} --link ${spec.link} --login`;
   return spec.remoteHome !== undefined
@@ -215,7 +216,7 @@ function classify(stderr: unknown): SshProblem | null {
 }
 
 /** Why a login link cannot work until the person acts, with its reason (lib/reasons.ts), from classify; null when it may pass. */
-function loginProblem(stderr: string, spec: SshSpec, code: string, { first = false }: { first?: boolean } = {}): { message: string; reason: ReasonFor<'AUTH'> } | null {
+function loginProblem(stderr: string, spec: SshSpec, code: RoomCode, { first = false }: { first?: boolean } = {}): { message: string; reason: ReasonFor<'AUTH'> } | null {
   const where = `${spec.user}@${spec.host}`;
   const once = loginCommand(spec);
   const home = spec.remoteHome || '~/.sub-human';
@@ -241,9 +242,9 @@ function loginProblem(stderr: string, spec: SshSpec, code: string, { first = fal
 }
 
 /** loginProblem's words alone. */
-const loginFailure = (stderr: string, spec: SshSpec, code: string): string | null => loginProblem(stderr, spec, code)?.message ?? null;
+const loginFailure = (stderr: string, spec: SshSpec, code: RoomCode): string | null => loginProblem(stderr, spec, code)?.message ?? null;
 
-function primeCommand(spec: SshSpec, code: string, { persist = '8h', opts = sshOpts() }: { persist?: string; opts?: string[] } = {}): string[] {
+function primeCommand(spec: SshSpec, code: RoomCode, { persist = '8h', opts = sshOpts() }: { persist?: string; opts?: string[] } = {}): string[] {
   if (!/^[0-9]{1,5}[smhd]?$/.test(persist)) throw new RoomError('INVALID', `--persist "${persist}" is not a time (e.g. 8h)`);
   const { local, tail } = checked({ ...spec, mux: true }, code);
   // as in command(): the pinned options (the master's ControlPath, the link's key and known_hosts) before the env's

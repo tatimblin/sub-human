@@ -34,6 +34,7 @@ import { homeOf } from '../mod/core/seat.ts';
 import { isObj } from './decode.ts';
 import { envFlag, envStr } from './env.ts';
 import { errCode } from './errors.ts';
+import type { RoomCode } from './brand.ts';
 
 // the rule is mod/core/seat.ts homeOf's: the hooks module finds the store without node by the same one
 const home = (): string => homeOf(envStr('SUB_HUMAN_HOME'), os.homedir()) || path.join(os.homedir(), '.sub-human');
@@ -77,13 +78,13 @@ function roomIds(): Record<string, string> {
   inRooms = { home: h, at: now, map };
   return map;
 }
-function machineIn(code: string): string | null {
+function machineIn(code: RoomCode): string | null {
   const id = roomIds()[code];
   return typeof id === 'string' && id ? id : machineId();
 }
 /** null, when this home's id cannot be read, is this machine's as machineId() is (a seat then names none). */
 const isMine = (id: unknown): boolean => (id ?? null) === machineId() || (typeof id === 'string' && !!id && Object.values(roomIds()).includes(id));
-function setMachineIn(code: string, id: string): void {
+function setMachineIn(code: RoomCode, id: string): void {
   if (!CODE_RE.test(code) || roomIds()[code] === id) return;
   const map = { ...roomIds(), [code]: id };
   fs.mkdirSync(home(), { recursive: true, mode: 0o700 });

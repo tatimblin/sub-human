@@ -67,9 +67,10 @@ import path from 'node:path';
 import { home } from '../home.ts';
 import { readJson, writeJsonAtomic } from '../io.ts';
 import { objAs } from '../decode.ts';
-import { CODE_RE } from '../text.ts';
+import { isRoomCode } from '../text.ts';
 import { RoomError } from './validate.ts';
 import type { Link, LinkStateRecord } from './types.ts';
+import type { RoomCode } from '../brand.ts';
 
 /** @returns {string} <home>/links */
 const linksDir = (): string => path.join(home(), 'links');
@@ -79,7 +80,7 @@ const LINK = objAs<Link>();
 const LINK_STATE = objAs<LinkStateRecord>();
 
 function fileOf(code: unknown, ext = 'json'): string {
-  if (typeof code !== 'string' || !CODE_RE.test(code)) throw new RoomError('INVALID', `invalid room code "${code}"`);
+  if (!isRoomCode(code)) throw new RoomError('INVALID', `invalid room code "${code}"`);
   return path.join(linksDir(), `${code}.${ext}`);
 }
 
@@ -87,13 +88,13 @@ function fileOf(code: unknown, ext = 'json'): string {
  * @param {string} code
  * @returns {object | null}
  */
-const get = (code: unknown): Link | null => (typeof code === 'string' && CODE_RE.test(code) ? readJson(fileOf(code), LINK, null) : null);
+const get = (code: unknown): Link | null => (isRoomCode(code) ? readJson(fileOf(code), LINK, null) : null);
 
 /**
  * @param {string} code
  * @returns {boolean}
  */
-const has = (code: unknown): boolean => typeof code === 'string' && CODE_RE.test(code) && fs.existsSync(fileOf(code));
+const has = (code: unknown): boolean => isRoomCode(code) && fs.existsSync(fileOf(code));
 
 // a link the host refused before it held a token keeps no credential, only {refused: {at, reason}}; a login link
 // (transport.login) needs none before its first hello: the person's own ssh login to the host is the admission
@@ -105,7 +106,7 @@ const credential = (l: Link): boolean => typeof l.token === 'string' || typeof l
  * @param {object} link
  * @returns {object}
  */
-function set(code: string, link: Link): Link {
+function set(code: RoomCode, link: Link): Link {
   const file = fileOf(code);
   if (!link || link.code !== code || !link.transport || typeof link.transport.kind !== 'string' || !credential(link)) {
     throw new RoomError('INVALID', `a link needs {code: "${code}", transport: {kind}, token or invite}`);
@@ -119,7 +120,7 @@ function set(code: string, link: Link): Link {
  * @param {string} code
  * @returns {boolean}
  */
-function remove(code: string): boolean {
+function remove(code: RoomCode): boolean {
   try { fs.rmSync(dirOf(code), { recursive: true, force: true }); } catch { /* none */ }
   try { fs.unlinkSync(fileOf(code)); return true; } catch { return false; }
 }
@@ -131,10 +132,10 @@ function remove(code: string): boolean {
 const dirOf = (code: unknown): string => fileOf(code).slice(0, -'.json'.length);
 
 /** @returns {string[]} */
-function list(): string[] {
+function list(): RoomCode[] {
   let names: string[];
   try { names = fs.readdirSync(linksDir()); } catch { return []; }
-  return names.filter(n => n.endsWith('.json') && CODE_RE.test(n.slice(0, -5))).map(n => n.slice(0, -5)).sort();
+  return names.filter(n => n.endsWith('.json')).map(n => n.slice(0, -5)).filter(isRoomCode).sort();
 }
 
 /**
@@ -153,13 +154,13 @@ const stateFile = (code: unknown): string => fileOf(code, 'state.json');
  * @param {string} code
  * @returns {object | null}
  */
-const readState = (code: unknown): LinkStateRecord | null => (typeof code === 'string' && CODE_RE.test(code) ? readJson(stateFile(code), LINK_STATE, null) : null);
+const readState = (code: unknown): LinkStateRecord | null => (isRoomCode(code) ? readJson(stateFile(code), LINK_STATE, null) : null);
 
 /**
  * @param {string} code
  * @param {object} rec
  */
-function writeState(code: string, rec: LinkStateRecord): void {
+function writeState(code: RoomCode, rec: LinkStateRecord): void {
   const file = stateFile(code);
   fs.mkdirSync(linksDir(), { recursive: true, mode: 0o700 });
   writeJsonAtomic(file, rec, { mode: 0o600 });

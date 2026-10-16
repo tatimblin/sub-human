@@ -16,6 +16,7 @@ import type { AGENT_KINDS, HUMAN_KINDS, LEGACY_KINDS, SYSTEM_KINDS, TASK_OPS, VI
 import type { PRESENCE_STATES } from './members.ts';
 import type { STATE_WORDS } from './link-state.ts';
 import type { WireCode } from '../remote/types-core.ts';
+import type { RoomCode } from '../brand.ts';
 
 // ---------- the log entry ----------
 
@@ -246,7 +247,7 @@ export type Trust = (e: Entry | null | undefined) => HumanTrust | null;
 
 /** What a trust verdict reads (trust.ts): the room, the keys its log pins, and the seats' local public keys. */
 export interface TrustCtx {
-  code: string;
+  code: RoomCode;
   pins(): ReadonlyMap<string, KeyObject>;
   /** <home>/keys/<code>/<name>.pub: what a legacy room (no key pinned) verifies against */
   localKey(name: string): KeyObject | null;
@@ -469,7 +470,7 @@ export interface ReadViewOpts {
  * room hosted elsewhere, test/support/memory-store.ts in the tests.
  */
 export interface RoomStore {
-  readonly code: string;
+  readonly code: RoomCode;
   /** the room's directory on this machine (FsRoomStore and its mirror; a store kept elsewhere has none) */
   readonly dir?: string;
   isHost: boolean;
@@ -586,7 +587,7 @@ export type Delivery = 'none' | 'context' | 'notice' | 'wake';
 
 /** A link record, <home>/links/<code>.json (links.ts documents each field). */
 export interface Link {
-  code: string;
+  code: RoomCode;
   /** how the daemon reaches the host's server (lib/remote/link.ts transportOf); a login link (`/sub-human join
    * USER@HOST ROOM`) is an ssh spec with login: the person's own ssh login admits it */
   transport: LinkSpec;

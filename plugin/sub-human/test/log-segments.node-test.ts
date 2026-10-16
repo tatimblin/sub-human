@@ -18,12 +18,13 @@ import * as seatKey from '../hooks/seat-key.ts';
 import * as identityMod from '../lib/identity.ts';
 import type { Entry, RoomStore } from '../lib/room/types.ts';
 import type { FsRoomStore } from '../lib/room/store.ts';
+import type { RoomCode } from '../lib/brand.ts';
 
 const hash12 = (s: string) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 12);
 const H = 'abcdef012345';
 
 /** A fresh home and room on the file store, rotating at `bytes` (unset: the default 1 MiB) while the test runs. */
-function room(t: TestContext, bytes?: number): { code: string; s: FsRoomStore } {
+function room(t: TestContext, bytes?: number): { code: RoomCode; s: FsRoomStore } {
   h.freshHome(t);
   const was = process.env.SUB_HUMAN_SEGMENT_BYTES;
   if (bytes) process.env.SUB_HUMAN_SEGMENT_BYTES = String(bytes); else delete process.env.SUB_HUMAN_SEGMENT_BYTES;
@@ -38,7 +39,7 @@ const sys = (s: RoomStore, kind: string, from: string, extra: object = {}) => s.
 const ids = (n: number, from = 1) => Array.from({ length: n }, (_, i) => i + from);
 
 /** A log as an older sub-human left it: one log.jsonl, chained by hand, alice's key pinned, a proposal she signed. */
-function legacyLog(code: string, file: string, n: number): string[] {
+function legacyLog(code: RoomCode, file: string, n: number): string[] {
   const key = seatKey.ensure(code, 'alice');
   const out: string[] = [];
   let prev = '';

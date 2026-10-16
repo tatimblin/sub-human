@@ -51,6 +51,7 @@ import { createRequire } from 'node:module';
 import type { Client } from './client.ts';
 import type { SshSpec } from './types-rest.ts';
 import type { Link } from '../room/types.ts';
+import type { RoomCode } from '../brand.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -68,10 +69,10 @@ const machineKeyMod = (): typeof import('./machine-key.ts') => require('./machin
 const pipeLocator = (h: string = homeMod.home()): string => `pipe:${h}`;
 const sshLocator = (dest: string, opts?: { via?: string }): string | null => ssh().locator(dest, opts);
 const transportOf = (locator: string): ReturnType<typeof import('./transports/index.ts')['parse']> => transports().parse(locator);
-const sshCommand = (t: SshSpec, code: string, opts?: string[]): string[] => ssh().command(t, code, opts);
+const sshCommand = (t: SshSpec, code: RoomCode, opts?: string[]): string[] => ssh().command(t, code, opts);
 
 /** A link the host refused before it held a token: drop the invite, its PIN and the pending rebind; say why. */
-function scrubRefused(code: string, reason: unknown, why: Reason | null | undefined): void {
+function scrubRefused(code: RoomCode, reason: unknown, why: Reason | null | undefined): void {
   try {
     const cur: Link | null = linksMod.get(code);
     if (!cur || cur.token) return;
@@ -81,7 +82,7 @@ function scrubRefused(code: string, reason: unknown, why: Reason | null | undefi
 }
 
 /** What an invite line's host answered, kept in the link file (see the header); false: not one of those answers. */
-function keepAnswer(code: string, e: unknown, word: { secret: Buffer }, sentPin: boolean, ownKey: string | null = null): boolean {
+function keepAnswer(code: RoomCode, e: unknown, word: { secret: Buffer }, sentPin: boolean, ownKey: string | null = null): boolean {
   const cur: Link | null = linksMod.get(code);
   if (!cur || cur.token) return false;
   const { pin, pin_wanted, ...rest } = cur;
@@ -104,9 +105,9 @@ function keepAnswer(code: string, e: unknown, word: { secret: Buffer }, sentPin:
   return false;
 }
 
-const keyFile = (code: string): string => path.join(linksMod.dirOf(code), 'client-x25519.json');
+const keyFile = (code: RoomCode): string => path.join(linksMod.dirOf(code), 'client-x25519.json');
 /** The link's own Noise key (made once; fresh: a new one, for a new invite's link). */
-function linkKey(code: string, { fresh = false }: { fresh?: boolean } = {}): import('./noise.ts').KeyPair {
+function linkKey(code: RoomCode, { fresh = false }: { fresh?: boolean } = {}): import('./noise.ts').KeyPair {
   if (fresh) fs.rmSync(keyFile(code), { force: true });
   fs.mkdirSync(linksMod.dirOf(code), { recursive: true, mode: 0o700 });
   return noiseMod().loadOrCreateStatic(keyFile(code));
@@ -124,7 +125,7 @@ function joinerLabel(env: NodeJS.ProcessEnv = process.env): string {
 const isWeb = (t: Link['transport']): t is import('./types-rest.ts').WsSpec => t.kind === 'ws' || t.kind === 'wss';
 const mismatch = (what: string): RoomError => new RoomError('AUTH', `${what} is not the one the invite line names: someone may be in between, or the line is for another host. Nothing secret was sent; check the line with the host before you try again`, 'HOST_KEY_MISMATCH');
 
-async function connectLink(code: string): Promise<Client> {
+async function connectLink(code: RoomCode): Promise<Client> {
   let l: Link | null = linksMod.get(code);
   if (!l) throw new RoomError('AUTH', `this machine has no link to room ${code} any more`, 'TOKEN_UNKNOWN');
   const login = !!l.transport && 'login' in l.transport && l.transport.login === true; // a link over the person's own ssh login: no invite
@@ -200,7 +201,7 @@ async function keyRefused(l: Link, t: TransportLike | Promise<TransportLike>, e:
 }
 
 /** What connect threw (e, anything), or AUTH with why when ssh says why a login link cannot work yet. */
-async function loginRefused(l: Link, t: TransportLike | Promise<TransportLike>, e: unknown, code: string): Promise<unknown> {
+async function loginRefused(l: Link, t: TransportLike | Promise<TransportLike>, e: unknown, code: RoomCode): Promise<unknown> {
   if (errCode(e) !== 'OFFLINE' || l.transport.kind !== 'ssh') return e; // a login link is ssh
   const err = await stderrOf(t);
   const why = err === null ? null : ssh().loginProblem(err, l.transport, code, { first: !l.token });

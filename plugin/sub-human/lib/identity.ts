@@ -130,10 +130,10 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 import { readJson, writeJsonAtomic, isAlive, validPid } from './io.ts';
-import { obj, str, num, opt, nullable, unknown_ } from './decode.ts';
+import { obj, str, num, opt, nullable, refine, unknown_ } from './decode.ts';
 import { home, roomDir, machineId, machineIn, isMine } from './home.ts';
 import { pidStart, pidStarts } from './lock.ts';
-import { NAME_RE, CODE_RE, SID_SAFE as SID_RE } from './text.ts';
+import { NAME_RE, CODE_RE, SID_SAFE as SID_RE, isRoomCode, isSeatName, isSessionId } from './text.ts';
 import { sidIndex } from '../mod/core/seat.ts';
 import { SEAT_BEAT_MS, MOD_LEASE_FRESH_MS, SESSION_INDEX_TTL_MS } from './config.ts';
 import {
@@ -145,7 +145,7 @@ import type { JoinResult, Member, Members, MembersApi, Role, SeatRecord } from '
 
 /** A resolved seat (resolveBySession, resolveByPid, resolveSelf): address = NAME.CODE, the session title. */
 interface Identity {
-  code: string;
+  code: RoomCode;
   name: string;
   role: Role;
   session_id: string | null;
@@ -155,7 +155,7 @@ interface Identity {
 
 /** A session index record, <home>/sessions/by-pid/<pid>.json and by-sid/<sid>.json: which seat a local pid or session holds. */
 interface SeatIndex {
-  code: string;
+  code: RoomCode;
   name: string;
   /** a Role as written; read as any string (lastSeat and forkParent read anything but "claude" as a member) */
   role?: string;
@@ -166,7 +166,7 @@ interface SeatIndex {
 }
 /** A session index record as read (indexRec; the same since 0.5.0-beta.4): code and name are what every reader needs. */
 const SEAT_INDEX = obj({
-  code: str, name: str, role: opt(str), pid: opt(nullable(num)), pid_start: opt(num),
+  code: refine(str, isRoomCode, 'a room code'), name: str, role: opt(str), pid: opt(nullable(num)), pid_start: opt(num),
   session_id: opt(nullable(str)), address: opt(str),
 });
 
@@ -183,7 +183,7 @@ const MOD_LEASE = obj({ session_id: str, pid: opt(nullable(num)), pid_start: opt
 
 /** join()'s argument. */
 interface JoinRequest {
-  code: string;
+  code: RoomCode;
   name: string;
   role: string;
   machine?: string | null;
@@ -241,22 +241,23 @@ function defaultName({ cwd = process.cwd(), env = process.env }: { cwd?: string;
 
 // ---------- location ----------
 import * as store from './room/store.ts';
-const roomExists = (code: unknown): boolean => store.roomExists(code);
+import type { RoomCode } from './brand.ts';
+const roomExists = (code: unknown): code is RoomCode => store.roomExists(code);
 const byPidDir = (): string => path.join(home(), 'sessions', 'by-pid');
 const byPidFile = (pid: unknown): string => path.join(byPidDir(), `${Number(pid)}.json`);
 // the path is mod/core/seat.ts sidIndex's: the hooks module checks it for a seat without node
 const bySidFile = (sid: string): string => sidIndex(path.resolve(home()), sid) || path.join(home(), 'sessions', 'by-sid', `${sid}.json`);
 const modLeaseFile = (sid: string): string => path.join(home(), 'sessions', 'mods', `${sid}.json`);
-const address = (name: string, code: string): string => `${name}.${code}`;
+const address = (name: string, code: RoomCode): string => `${name}.${code}`;
 /** The room's members document (lib/room/store.ts members: read(), the ops join/leave/beat, update(fn) atomic). */
-const membersOf = (code: string): MembersApi => store.open(code).members;
-const isHost = (code: string): boolean => store.open(code).isHost;
+const membersOf = (code: RoomCode): MembersApi => store.open(code).members;
+const isHost = (code: RoomCode): boolean => store.open(code).isHost;
 
-function newCode(): string {
+function newCode(): RoomCode {
   for (let i = 0; i < 200; i++) {
     const word = ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
     const code = `${word}-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
-    if (store.createRoom(code)) return code;
+    if (isRoomCode(code) && store.createRoom(code)) return code;
   }
   throw new Error('could not allocate a room code');
 }
@@ -264,7 +265,7 @@ function newCode(): string {
 const rm = (file: string): void => { try { fs.unlinkSync(file); } catch { /* already gone */ } };
 
 // ---------- members ----------
-function readMembers(code: string): Members {
+function readMembers(code: RoomCode): Members {
   try { return membersOf(code).read(); } catch { return {}; }
 }
 
@@ -274,7 +275,7 @@ const fail = (error: string): JoinResult => ({ ok: false, error });
  * Renew me's lease (members seen_at), at most every SEAT_BEAT_MS: the tail's health tick and the hold server
  * call it. Only for the seat as me holds it (same pid when me has one; not left). Returns true when written.
  */
-function heartbeat(me: { code?: string; name?: string; pid?: number | null } | null | undefined, now = Date.now()): boolean {
+function heartbeat(me: { code?: RoomCode; name?: string; pid?: number | null } | null | undefined, now = Date.now()): boolean {
   if (!me || !me.code || !me.name || !roomExists(me.code)) return false;
   const m: Member | undefined = readMembers(me.code)[me.name]; // the cheap check, before the op (a mirror's document holds no pid)
   const stale = !!m && !m.left_at && (!validPid(me.pid) || m.pid == null || m.pid === me.pid) && !(Date.parse(String(m.seen_at)) > now - SEAT_BEAT_MS);
@@ -282,15 +283,15 @@ function heartbeat(me: { code?: string; name?: string; pid?: number | null } | n
 }
 
 /** The session index record of seat m: which seat a local pid or session id holds. */
-const indexRec = (code: string, m: Member | SeatRecord): SeatIndex => ({ code, name: m.name, role: m.role, pid: m.pid, ...(m.pid_start != null ? { pid_start: m.pid_start } : {}), session_id: m.session_id || null, address: address(m.name, code) });
-function writeIndexes(code: string, m: Member | SeatRecord): void {
+const indexRec = (code: RoomCode, m: Member | SeatRecord): SeatIndex => ({ code, name: m.name, role: m.role, pid: m.pid, ...(m.pid_start != null ? { pid_start: m.pid_start } : {}), session_id: m.session_id || null, address: address(m.name, code) });
+function writeIndexes(code: RoomCode, m: Member | SeatRecord): void {
   const rec = indexRec(code, m);
   writeJsonAtomic(byPidFile(m.pid), rec);
   if (m.session_id) writeJsonAtomic(bySidFile(m.session_id), rec);
 }
 
 /** One seat per claude process: the seat pid held before this join (another name or room) is left. */
-function retirePrevious(code: string, name: string, pid: number): void {
+function retirePrevious(code: RoomCode, name: string, pid: number): void {
   const prev = readJson(byPidFile(pid), SEAT_INDEX, null);
   if (!prev || (prev.code === code && prev.name === name)) return;
   try {
@@ -330,7 +331,7 @@ function join({ code, name, role, machine = machineIn(code), account, pid: pidAr
   return r;
 }
 
-function leave(code: string, name: string, opts?: { reason?: string; deadlineMs?: number }): boolean {
+function leave(code: RoomCode, name: string, opts?: { reason?: string; deadlineMs?: number }): boolean {
   if (!roomExists(code)) return false;
   if (!membersOf(code).leave(name, opts)) return false;
   primeStarts(Object.values(readMembers(code))); // one ps for the liveness checks below and the caller's (seats.exit)
@@ -365,7 +366,7 @@ function rebindSession(pid: unknown, sid: unknown): boolean {
 }
 
 // ---------- resolution ----------
-const seat = (code: string, m: Member): Identity => ({ code, name: m.name, role: m.role, session_id: m.session_id || null, pid: m.pid, address: address(m.name, code) });
+const seat = (code: RoomCode, m: Member): Identity => ({ code, name: m.name, role: m.role, session_id: m.session_id || null, pid: m.pid, address: address(m.name, code) });
 
 /**
  * The members record of the seat index record idx names. On a mirror, whose document holds no pid, start time or
@@ -487,7 +488,7 @@ function pruneModLeases(now = Date.now()): number {
 
 /** This machine's session indexes (by-pid, by-sid) that name room code, removed: `link CODE --forget` ends every
  * local seat there, so a hold server, tail or hook still running for it resolves no seat and writes nothing. */
-function dropSeatIndexes(code: string): number {
+function dropSeatIndexes(code: RoomCode): number {
   let n = 0;
   for (const dir of [byPidDir(), path.join(home(), 'sessions', 'by-sid')]) {
     let names: string[];
@@ -501,7 +502,7 @@ function dropSeatIndexes(code: string): number {
   return n;
 }
 
-function localSeats(code: string): string[] {
+function localSeats(code: RoomCode): string[] {
   let files: string[];
   try { files = fs.readdirSync(byPidDir()); } catch { return []; }
   const names = new Set<string>();
@@ -514,7 +515,7 @@ function localSeats(code: string): string[] {
   return [...names];
 }
 
-function adoptLocalSeats(code: string): string[] {
+function adoptLocalSeats(code: RoomCode): string[] {
   let files: string[];
   try { files = fs.readdirSync(byPidDir()); } catch { return []; }
   const recs = files.map(f => readJson(path.join(byPidDir(), f), SEAT_INDEX, null)).filter((r): r is SeatIndex & { pid: number } => !!r && r.code === code && validPid(r.pid) && isAlive(r.pid));
@@ -533,7 +534,7 @@ function adoptLocalSeats(code: string): string[] {
   return names;
 }
 
-function lastSeat(sid: unknown): { code: string; name: string; role: Role; address: string } | null {
+function lastSeat(sid: unknown): { code: RoomCode; name: string; role: Role; address: string } | null {
   if (typeof sid !== 'string' || !SID_RE.test(sid)) return null;
   const rec = readJson(bySidFile(sid), SEAT_INDEX, null);
   if (!rec || !roomExists(rec.code) || !NAME_RE.test(String(rec.name))) return null;
@@ -542,7 +543,7 @@ function lastSeat(sid: unknown): { code: string; name: string; role: Role; addre
   return { code: rec.code, name, role, address: address(name, rec.code) };
 }
 
-type ForkParent = { sid: string; code: string; name: string; role: Role };
+type ForkParent = { sid: string; code: RoomCode; name: string; role: Role };
 
 function forkParent(sid: unknown, dir: string | null | undefined): ForkParent | null {
   if (typeof sid !== 'string' || !SID_RE.test(sid) || typeof dir !== 'string' || !dir) return null;
@@ -673,7 +674,7 @@ function resolveSelf(): Identity | null {
 // ---------- rooms ----------
 const isMember = (m: Member | null | undefined): m is Member => !!m && m.role !== 'claude';
 /** The names of code's live people, the start times of their local pids read by one ps call (not one per seat). */
-function liveMembers(code: string): string[] {
+function liveMembers(code: RoomCode): string[] {
   const ms = Object.values(readMembers(code)).filter(m => isMember(m) && !m.left_at);
   primeStarts(ms);
   return ms.filter(m => seatAlive(m)).map(m => m.name);
@@ -682,7 +683,7 @@ function liveMembers(code: string): string[] {
 function primeStarts(ms: readonly (Member | null | undefined)[]): void {
   try { pidStarts(ms.filter((m): m is Member => !!m && !m.left_at && validPid(m.pid) && (!m.machine || isMine(m.machine)) && isAlive(m.pid)).map(m => m.pid as number)); } catch { /* each check asks on its own */ }
 }
-const roomClosing = (code: string): boolean => { const o = readMembers(code).claude; return !!(o && o.closing); };
+const roomClosing = (code: RoomCode): boolean => { const o = readMembers(code).claude; return !!(o && o.closing); };
 
 /** Closed for good: no person's seat that has not left, and no room Claude that may still run. Only a join reopens it. */
 const closedForGood = (ms: Members): boolean => !Object.values(ms).some(m => !!m && (isMember(m) ? !m.left_at : roomClaudeActive(m)));
@@ -691,9 +692,9 @@ const closedForGood = (ms: Members): boolean => !Object.values(ms).some(m => !!m
  * The indexed rooms' members documents, with the start times of their live local pids read by one ps call. A room
  * closed for good, or whose directory and link are gone, leaves the index.
  */
-function allMembers(): { code: string; ms: Members }[] {
+function allMembers(): { code: RoomCode; ms: Members }[] {
   const all = store.indexedRooms().filter(roomExists).map(code => ({ code, ms: readMembers(code) }));
-  const gone = store.indexedRooms().filter(c => !roomExists(c)).concat(all.filter(r => closedForGood(r.ms)).map(r => r.code));
+  const gone = store.indexedRooms().filter((c): boolean => !roomExists(c)).concat(all.filter(r => closedForGood(r.ms)).map(r => r.code));
   if (gone.length) { try { store.unindexRooms(gone); } catch { /* the next look drops them */ } }
   const open = all.filter(r => !closedForGood(r.ms));
   pidStarts(open.flatMap(({ ms }) => Object.values(ms)).filter(m => m && !m.left_at && validPid(m.pid) && (!m.machine || isMine(m.machine)) && isAlive(m.pid)).map(m => m.pid as number));
@@ -702,12 +703,12 @@ function allMembers(): { code: string; ms: Members }[] {
 
 /** code off the open-rooms index once it is closed for good (the reaper, a leave): open-rooms.json lists no closed
  * room until the next look (stage 8e I.1). */
-function unindexClosed(code: string): void {
+function unindexClosed(code: RoomCode): void {
   if (roomExists(code) && closedForGood(readMembers(code))) store.unindexRooms([code]);
 }
 
-function openRooms(): string[] {
-  const open: { code: string; at: string }[] = [];
+function openRooms(): RoomCode[] {
+  const open: { code: RoomCode; at: string }[] = [];
   for (const { code, ms } of allMembers()) {
     if (ms.claude && ms.claude.closing) continue;
     const live = Object.values(ms).filter(m => isMember(m) && seatAlive(m));
@@ -719,8 +720,8 @@ function openRooms(): string[] {
 /** The room's Claude record still owns a job or a live seat (not stopped, not left). */
 const roomClaudeActive = (o: Member | null | undefined): boolean => !!o && !o.stopped_at && (seatAlive(o) || (!o.left_at && !!o.job));
 
-function orphanRooms(): string[] {
-  const out: string[] = [];
+function orphanRooms(): RoomCode[] {
+  const out: RoomCode[] = [];
   for (const { code, ms } of allMembers()) {
     const o = ms.claude;
     if (!o || o.closing || !roomClaudeActive(o)) continue;
@@ -729,14 +730,14 @@ function orphanRooms(): string[] {
   return out;
 }
 
-function roomOpen(code: string): boolean {
+function roomOpen(code: RoomCode): boolean {
   if (!roomExists(code)) return false;
   const ms = readMembers(code);
   if (ms.claude && ms.claude.closing) return false;
   return Object.values(ms).some(seatAlive);
 }
 
-function updateRoomClaude(code: string, fn: (current: Member | null, members: Members) => RoomClaudePatch | null | undefined): Member | null {
+function updateRoomClaude(code: RoomCode, fn: (current: Member | null, members: Members) => RoomClaudePatch | null | undefined): Member | null {
   if (!roomExists(code)) throw new Error(`no room "${code}"`);
   let rec: Member | null = null;
   membersOf(code).update(members => {
@@ -753,13 +754,13 @@ function updateRoomClaude(code: string, fn: (current: Member | null, members: Me
 
 
 // ---------- presence ----------
-function writePresence(code: string, name: string, state: string, detail?: string | null): boolean {
+function writePresence(code: RoomCode, name: string, state: string, detail?: string | null): boolean {
   if (!NAME_RE.test(String(name)) || !isPresenceState(state)) return false;
   try { return membersOf(code).beat(name, { presence: { state, detail } }); } catch { return false; }
 }
 
 export {
-  NAME_RE, CODE_RE, RESERVED, VERBS, ROOM_CLAUDE, ANIMALS, PRESENCE_STATES, normalizeName, defaultName, home,
+  NAME_RE, CODE_RE, isRoomCode, isSeatName, isSessionId, RESERVED, VERBS, ROOM_CLAUDE, ANIMALS, PRESENCE_STATES, normalizeName, defaultName, home,
   roomDir, machineId, machineIn, isMine, newCode, roomExists, isHost, openRooms, unindexClosed, closedForGood, orphanRooms, roomOpen, roomClosing, address,
   readMembers, join, leave, rebindSession, updateRoomClaude, liveMembers, seatAlive, heartbeat,
   leaseFresh, isAlive, claudePid, resolveByPid, resolveBySession, resolveSelf, lastSeat, forkParent, forkedAway, markForked, forkedOf, adoptFork, localSeats, adoptLocalSeats, dropSeatIndexes,

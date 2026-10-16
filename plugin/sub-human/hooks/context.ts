@@ -17,13 +17,14 @@ import * as config from '../lib/config.ts';
 import { roomClaudePresence } from '../lib/room/members.ts';
 import type { Member } from '../lib/room/types.ts';
 import type { Identity } from '../lib/identity.ts';
+import type { RoomCode } from '../lib/brand.ts';
 
 const PLUGIN_ROOT = path.join(import.meta.dirname, '..');
 const CAP = config.CONTEXT_CAP;
 export const BLOCK_MAX = config.BLOCK_MAX;
 
 /** readMembers() ({name: record}) as an array, in join order. */
-const members = (code: string): Member[] => Object.values<Member>(identity.readMembers(code) || {}).filter(m => m && m.name);
+const members = (code: RoomCode): Member[] => Object.values<Member>(identity.readMembers(code) || {}).filter(m => m && m.name);
 const hasLeft = (m: Member) => !!m.left_at;
 
 const TEMPLATE_FILES: Record<'member' | 'claude', string> = { member: 'member.md', claude: 'room-claude.md' };

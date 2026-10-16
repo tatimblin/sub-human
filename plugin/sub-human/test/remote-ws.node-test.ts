@@ -16,6 +16,7 @@ import type { AddressInfo } from 'node:net';
 import * as h from './helpers.ts';
 import * as ws from '../lib/remote/ws.ts';
 import { isAlive } from '../lib/io.ts';
+import { rc } from './support/brands.ts';
 
 /** The next `ev` from an emitter: its listener's arguments (A: what that event carries). */
 const once = <A extends unknown[] = unknown[]>(em: EventEmitter, ev: string) => new Promise<A>(r => em.once(ev, (...a: unknown[]) => r(a as A)));
@@ -310,7 +311,7 @@ test('kick: the listener\'s child (`serve --stdio CODE --via ws --peer KEY`) nam
 test('listener (item 16): once the last room it served closed and no connection is open, it exits at once, not after LISTEN_IDLE_MS', async t => {
   h.freshHome(t);
   const listenerMod = await import('../lib/remote/listener.ts');
-  listenerMod.addRoom('vole-0042', { path: '/sub-human/vole-0042', url: 'https://box/sub-human/vole-0042', mode: 'url' });
+  listenerMod.addRoom(rc('vole-0042'), { path: '/sub-human/vole-0042', url: 'https://box/sub-human/vole-0042', mode: 'url' });
   const t0 = Date.now();
   const r = await listenerMod.run({ port: 0, closedCheckMs: 50, idleMs: 600_000, log: () => {} });
   assert.equal(r.why, 'the last room it served closed');

@@ -91,6 +91,7 @@ import type { LinkSpec } from './remote/types-rest.ts';
 import type { MirrorRoomStore } from './room/store-mirror.ts';
 import type { Identity } from './identity.ts';
 import { msgOf } from './errors.ts';
+import type { RoomCode } from './brand.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -128,21 +129,21 @@ const hostKeyFor = (locator: string): string | null => (isWeb(locator) ? (requir
  * person's own ssh login to the new host (mux kept); over the web the listener key the invite pins and a fresh key of
  * the link's own. {transport: null} for a locator this machine cannot use.
  */
-function followLink(code: string, locator: string | undefined, invite: unknown): Follow {
+function followLink(code: RoomCode, locator: string | undefined, invite: unknown): Follow {
   const inv = typeof invite === 'string' ? invites.parseInvite(invite) : null;
   if (!inv || inv.code !== code || inv.locator !== locator || !transportOf(locator)) return { transport: transportOf(locator) };
   const hosting: typeof import('./remote/hosting.ts') = require('./remote/hosting.ts');
   return { transport: hosting.linkTransport({ inv, cur: links.get(code) }) };
 }
 /** This machine, about to host CODE at a web locator: its listener up, the room in its served set. */
-function serveWeb(code: string, locator: string): void {
+function serveWeb(code: RoomCode, locator: string): void {
   if (isWeb(locator)) (require('./remote/webhost.ts') as typeof import('./remote/webhost.ts')).serveAt(code, locator);
 }
 const askMs = () => config.HANDOFF_ASK_MS;
 const expired = (doc: { expires_at?: string } | null | undefined, now: number = Date.now()) => !(Date.parse((doc && doc.expires_at) as string) > now);
 
 // ---------- the old host ----------
-function ask(code: string, { from, to, locator, sign, now = Date.now() }: { from: string, to: string, locator?: string, sign?: Sign, now?: number }): HandoffDoc {
+function ask(code: RoomCode, { from, to, locator, sign, now = Date.now() }: { from: string, to: string, locator?: string, sign?: Sign, now?: number }): HandoffDoc {
   const s = store.open(code);
   if (!s.isHost) throw err('HOST_ONLY', `room ${code} is hosted on another machine; only its host hands it off`);
   if (movedAway(s)) throw err('STALE', `room ${code} moved to another machine already`);
@@ -189,7 +190,7 @@ function streamEvent(s: Store, link: LinkRec | null | undefined, sent: { ask?: s
   return null;
 }
 
-function checkInvites(code: string, locator: string, given: unknown): asserts given is Record<string, string> {
+function checkInvites(code: RoomCode, locator: string, given: unknown): asserts given is Record<string, string> {
   if (!given || typeof given !== 'object' || Array.isArray(given)) throw err('INVALID', 'handoff.accept needs {invites: {machine: invite}}');
   for (const [m, inv] of Object.entries(given)) {
     const p = invites.parseInvite(inv);
@@ -265,7 +266,7 @@ function onAsk(mirror: Store, data: HandoffAsk | null | undefined): void {
 }
 
 function onMoved(mirror: Store, data: MovedEventData | null | undefined): { self?: boolean, stop?: boolean, reason: string } {
-  const code: string = mirror.code;
+  const code: RoomCode = mirror.code;
   const h: HostState = mirror.hostState();
   if (!data || h.epoch !== data.epoch || h.machine !== data.machine) {
     return { reason: `the host said room ${code} moved, but this machine hasn't received that yet` };
@@ -285,7 +286,7 @@ function onMoved(mirror: Store, data: MovedEventData | null | undefined): { self
   return { reason: `room ${code} moved to ${data.host}'s machine; reconnecting there` };
 }
 
-function whyOffline(code: string, message: string): string {
+function whyOffline(code: RoomCode, message: string): string {
   const l = links.get(code);
   if (!l || !l.moved || l.token) return message;
   const login = l.transport && l.transport.kind === 'ssh' && l.transport.login === true
@@ -295,20 +296,20 @@ function whyOffline(code: string, message: string): string {
 }
 
 // ---------- the target ----------
-function pendingAsk(code: string, name: string, now: number = Date.now()): HandoffAskDoc | null {
+function pendingAsk(code: RoomCode, name: string, now: number = Date.now()): HandoffAskDoc | null {
   let a: HandoffAskDoc | null;
   try { a = store.open(code).kv.get(ASK_DOC); } catch { return null; }
   if (!a || a.to !== name || expired(a, now)) return null;
   return a;
 }
 
-function markTold(code: string, id: string): void {
+function markTold(code: RoomCode, id: string): void {
   try { store.open(code).kv.update(ASK_DOC, (a: HandoffAskDoc | null) => (a && a.id === id && !a.told_at ? { ...a, told_at: iso(Date.now()) } : undefined)); } catch { /* told again */ }
 }
 
-const question = (a: Pick<HandoffAsk, 'id'>, code: string) => `Host room ${code} on this machine? (handoff ${a.id})`;
+const question = (a: Pick<HandoffAsk, 'id'>, code: RoomCode) => `Host room ${code} on this machine? (handoff ${a.id})`;
 
-function card(a: Pick<HandoffAsk, 'id' | 'from'>, code: string): Card {
+function card(a: Pick<HandoffAsk, 'id' | 'from'>, code: RoomCode): Card {
   return {
     questions: [{
       question: question(a, code),
@@ -381,14 +382,14 @@ function refuse(me: Pick<Identity, 'code' | 'name'>): Answer {
 }
 
 /** Stop this room's link daemon (it may have stopped itself on the 'moved' event) and wait for it to exit. */
-function stopDaemon(code: string): void {
+function stopDaemon(code: RoomCode): void {
   const st = linkSocket().status(code);
   if (!st.running) return;
   try { process.kill(st.pid, 'SIGTERM'); } catch { return; }
   for (const until = Date.now() + 3000; Date.now() < until && isAlive(st.pid); sleepSync(20));
 }
 
-function takeOver(code: string, { by, cwd, epoch, entry }: { by: string, cwd?: string, epoch?: number, entry?: EntryInput }): string {
+function takeOver(code: RoomCode, { by, cwd, epoch, entry }: { by: string, cwd?: string, epoch?: number, entry?: EntryInput }): string {
   const mirror = store.open(code);
   if (!entry) {
     const h: HostState = mirror.hostState();
@@ -417,7 +418,7 @@ function takeOver(code: string, { by, cwd, epoch, entry }: { by: string, cwd?: s
 
 // ---------- promote / demote ----------
 interface Promoted { epoch: number, entry: Entry | undefined, invites: Minted[], note: string, last: number }
-function promote(code: string, { name, locator, force = false, cwd, now = Date.now() }: { name: string, locator?: string, force?: boolean, cwd?: string, now?: number }): Promoted {
+function promote(code: RoomCode, { name, locator, force = false, cwd, now = Date.now() }: { name: string, locator?: string, force?: boolean, cwd?: string, now?: number }): Promoted {
   const s = store.open(code);
   if (s.isHost) throw err('INVALID', `this machine hosts room ${code} already`);
   const st = linkSocket().status(code);
@@ -446,7 +447,7 @@ function promote(code: string, { name, locator, force = false, cwd, now = Date.n
   return { epoch, entry: placed, invites, note, last };
 }
 
-function demote(code: string, invite: string, pin?: string): { orphan: string | null, follower?: boolean } {
+function demote(code: RoomCode, invite: string, pin?: string): { orphan: string | null, follower?: boolean } {
   const s = store.open(code);
   const inv = invites.parseInvite(invite);
   if (!inv || inv.code !== code) throw err('INVALID', `that is not an invite to room ${code}`);
@@ -486,7 +487,7 @@ interface Status {
   doc: HandoffDoc | null;
   machines?: { machine?: string, seats: string[], connected: boolean }[];
 }
-function status(code: string): Status {
+function status(code: RoomCode): Status {
   const s = store.open(code);
   const out: Status = { host: s.hostState(), isHost: s.isHost, doc: hostDoc(s) };
   if (s.isHost) {

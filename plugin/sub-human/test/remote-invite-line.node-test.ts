@@ -25,6 +25,7 @@ import type { RoomStore } from '../lib/room/types.ts';
 import type { Invites, ShortInvite, AdmissionRecord } from '../lib/remote/types-core.ts';
 import type { RoomError } from '../lib/room/validate.ts';
 import type { ConnectOpts } from '../lib/remote/client.ts';
+import type { RoomCode } from '../lib/brand.ts';
 
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
 
@@ -64,7 +65,7 @@ function dial(t: TestContext, host: RoomStore, m: ReturnType<typeof machine>, op
 const refused = async (p: Promise<unknown>): Promise<RoomError> => { try { await p; } catch (e) { return e as RoomError; } throw new Error('it was not refused'); };
 
 /** The checkHost an invite line's joiner runs over ssh and a pipe (lib/remote/link-connect.ts). */
-const checkHost = (code: string, word: string) => (host: { key: string; sig: string } | null, nonce: string) => {
+const checkHost = (code: RoomCode, word: string) => (host: { key: string; sig: string } | null, nonce: string) => {
   const d = inviteSecret.decode(word)!;
   const key = host && machineKey.verifyHost(host, code, nonce);
   if (!key || !inviteSecret.keyHolds(d, 'machine', key)) throw Object.assign(new Error('mismatch'), { code: 'AUTH', reason: 'HOST_KEY_MISMATCH' });

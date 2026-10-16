@@ -8,6 +8,7 @@
 
 import type { Entry, HostProof, ProposalState } from './room/types.ts';
 import type { HandoffAsk } from './remote/types-core.ts';
+import type { RoomCode } from './brand.ts';
 
 // ---------- lib/room/session.ts ----------
 /** A seat's session document, members/NAME/session (lib/room/session.ts documents each field). */
@@ -155,7 +156,7 @@ export type HandoffAskDoc = HandoffAsk & { at?: string; told_at?: string };
 /** The seat a tail follows, as its `seat` event names it. */
 export interface TailSeat {
   name: string;
-  code: string;
+  code: RoomCode;
   role: 'claude' | 'member';
   addr: string;
 }

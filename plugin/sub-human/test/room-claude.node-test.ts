@@ -13,6 +13,8 @@ import * as cc from '../lib/cc/bg.ts';
 import * as env from '../lib/env.ts';
 import * as room from '../lib/room.ts';
 import type { AgentJob } from '../lib/cc/bg.ts';
+import { rc } from './support/brands.ts';
+import type { RoomCode } from '../lib/brand.ts';
 
 /** One call the stub claude recorded. */
 interface StubCall { argv: string[]; env: Record<string, string>; cwd: string }
@@ -68,6 +70,7 @@ test('room-claude: spawnPlan argv, --settings env, clean env (no CLAUDE_* from t
   assert.ok(!a.includes('--model'), 'no model is prescribed: the room\'s Claude uses the user\'s default');
   assert.equal(withEnv({ SUB_HUMAN_PLUGIN_DIR: '' }, () => roomClaude.spawnPlan({ code, env: parent })).args.includes('--plugin-dir'), false);
   assert.match(roomClaude.command(p), /^cd \/work && env -i .*PATH='\/bin:\/a b\/c'.* --settings '\{"env":/);
+  // @ts-expect-error: not a room code, refused at run time
   assert.throws(() => roomClaude.spawnPlan({ code: '../x' }), /invalid room code/);
 });
 
@@ -485,7 +488,7 @@ test('room-claude: watchdog: members who all left cleanly count from their lates
   assert.equal(roomClaude.watchdog(code, { now: left + 59_000, reaper: c => reaped.push(c) }), 'waiting');
   assert.equal(roomClaude.watchdog(code, { now: left + 60_000, reaper: c => reaped.push(c) }), 'reaping');
   assert.deepEqual(reaped, [code]);
-  assert.equal(roomClaude.watchdog('nope-0000'), 'no-room');
+  assert.equal(roomClaude.watchdog(rc('nope-0000')), 'no-room');
 });
 
 test('room-claude: crash-all-members (SIGKILL) -> the watchdog reaps the room\'s Claude (real detached reaper, stub claude)', async () => {
@@ -509,7 +512,7 @@ test('room-claude: crash-all-members (SIGKILL) -> the watchdog reaps the room\'s
   // The real detached reaper (reapDetached), whose pid is kept so the test waits for it to exit: a fixed 5 s
   // deadline on its result failed when two node starts (reaper, stub claude) took longer under load.
   let reaperPid: number | null | undefined = null;
-  const reaper = (c: string, o: { claimed: boolean }) => { reaperPid = roomClaude.reapDetached(c, o); };
+  const reaper = (c: RoomCode, o: { claimed: boolean }) => { reaperPid = roomClaude.reapDetached(c, o); };
   await withEnv({ SUB_HUMAN_CLAUDE: s.bin, CLAUDE_CONFIG_DIR: cfg, SUB_HUMAN_REAP_WAIT_MS: '0' }, async () => {
     assert.equal(roomClaude.watchdog(code, { now: t0, reaper }), 'waiting', 'no SessionEnd ran: the first observation starts the clock');
     assert.equal(roomClaude.watchdog(code, { now: t0 + 60_000, reaper }), 'reaping');

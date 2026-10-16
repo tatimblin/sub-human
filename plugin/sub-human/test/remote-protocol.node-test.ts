@@ -23,11 +23,12 @@ import type { DecodedFrame, SignedPayload } from '../lib/remote/types-core.ts';
 import type { RoomError } from '../lib/room/validate.ts';
 import { isErrno } from '../lib/errors.ts';
 import type { KindEntry, MemorySpec, PipeSpec, SpecBase, SshSpec, Transport } from '../lib/remote/types-rest.ts';
+import { rc } from './support/brands.ts';
 
 /** The test's own socket kind: a unix socket path. */
 interface UnixSpec extends SpecBase { path: string }
 
-const CODE = 'otter-1234';
+const CODE = rc('otter-1234');
 /** Every frame the transport delivers, and whether it closed. */
 function recorder(tr: Transport) {
   const got: { frames: DecodedFrame[]; closed: number } = { frames: [], closed: 0 };
@@ -239,7 +240,7 @@ test('auth: a seat proof is signed by the seat key for this room, name and key, 
   hostLinks.checkSeatProof(proof, seat);
   const other = crypto.generateKeyPairSync('ed25519');
   const refused: [SignedPayload | undefined, typeof seat][] = [
-    [proof, { ...seat, room: 'vole-1234' }], [proof, { ...seat, name: 'bob' }],
+    [proof, { ...seat, room: rc('vole-1234') }], [proof, { ...seat, name: 'bob' }],
     [hostLinks.proveSeat(other.privateKey, seat), seat], // signed by a key that is not pubkey
     [{ ...proof, ts: proof.ts! - 2 * 60 * 60 * 1000 }, seat], [undefined, seat],
   ];

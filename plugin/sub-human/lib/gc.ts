@@ -32,6 +32,7 @@ import { readJson, writeJsonAtomic } from './io.ts';
 import { obj, str, opt } from './decode.ts';
 import { GC_BUDGET_MS, GC_EVERY_MS } from './config.ts';
 import { envMs } from './env.ts';
+import type { RoomCode } from './brand.ts';
 
 const require = createRequire(import.meta.url);
 // lib/rows.ts loads the consent fold and the tasks: only a join that sweeps a room's rows needs it
@@ -45,7 +46,7 @@ const stateFile = (): string => path.join(home(), 'gc.json');
 /** The host's records of the machines linked to this room (lib/remote/host-links.ts LINKS_KEY; not imported: GC
  *  runs at every join and should not load the remote code). */
 const HOST_LINKS_KEY = 'remote/links';
-function hostLinked(code: string): boolean {
+function hostLinked(code: RoomCode): boolean {
   const recs = store.open(code).kv.get<Record<string, unknown>>(HOST_LINKS_KEY);
   return !!recs && typeof recs === 'object' && Object.keys(recs).length > 0;
 }
@@ -84,6 +85,6 @@ function sweep({ now = Date.now(), budgetMs = GC_BUDGET_MS, force = false, keep 
   return out;
 }
 
-function sweepRows(code: string, { now = Date.now() }: { now?: number } = {}): number { return rows().pruneRowMaps(code, now); }
+function sweepRows(code: RoomCode, { now = Date.now() }: { now?: number } = {}): number { return rows().pruneRowMaps(code, now); }
 
 export { sweep, sweepRows };

@@ -117,6 +117,7 @@ import type {
 import type { Transport } from './types-rest.ts';
 import type { Members, Payload, PresenceInput, RoomStore, SnapshotWire } from '../room/types.ts';
 import type { Change } from '../room/watch.ts';
+import type { RoomCode } from '../brand.ts';
 
 type Log = (msg: string) => void;
 /** What hello's credential gives: the link (null: answered, but still unauthenticated) and a new token, once. */
@@ -185,7 +186,7 @@ function viaLogin(s: Session, machine: string, proven: string | null): Credentia
 }
 
 /** What a revoked link's machine is told, at hello and when its connection ends. */
-const revokedText = (code: string): string => `the host removed this machine from room ${code} (/sub-human kick); ask them for a new invite`;
+const revokedText = (code: RoomCode): string => `the host removed this machine from room ${code} (/sub-human kick); ask them for a new invite`;
 
 function known(s: Session, token: unknown): Credential {
   const link = hostLinks.verifyToken(s.store, token);

@@ -3,6 +3,7 @@
  * only (import type).
  */
 import type { Identity } from '../identity.ts';
+import type { RoomCode } from '../brand.ts';
 
 /**
  * What a verb answers. The join hook (hooks/handlers/join.ts) turns it into the hook's one Reply (hooks/types.ts):
@@ -41,7 +42,7 @@ export interface Ctx {
   /** the session runs the room's Claude agent (agent_type sub-human:room-claude) */
   roomClaudeAgent: boolean;
   /** the seat key's public half for a seat about to be taken (hooks/seat-key.ts publicPem; only the join hook loads it) */
-  pubkey(code: string, name: string): string;
+  pubkey(code: RoomCode, name: string): string;
   /** this process runs as the plugin's hook: the root of scripts/sub-human (doctor runs it) */
   pluginRoot: string;
 }

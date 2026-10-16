@@ -70,6 +70,7 @@ import type { KeyObject } from 'node:crypto';
 import type { Bridge } from '../remote/bridge.ts';
 import type { LinkDoc, RelayOp, RelayParams, RelayResults } from '../remote/types-core.ts';
 import { errCode, msgOf } from '../errors.ts';
+import type { RoomCode } from '../brand.ts';
 
 /** The link daemon's socket as the bridge reaches it (lib/remote/link-socket.ts handle): each relayed op, sent with the
  * socket paths to try, answered as the daemon answers it (RelayResults). */
@@ -82,7 +83,7 @@ const hostOnly = (what: string): RoomError => new RoomError('HOST_ONLY', `${what
 let bridge: Bridge<RelayApi> | null = null; // one per process, started by its first op
 
 class MirrorRoomStore implements RoomStore {
-  readonly code: string;
+  readonly code: RoomCode;
   isHost = false;
   /** the mirror's directory as a store of this machine: every read, and the daemon's writes */
   readonly local: FsRoomStore;
@@ -92,7 +93,7 @@ class MirrorRoomStore implements RoomStore {
   kv: KvApi;
 
   /** code: the room code; dir: the mirror's directory (default <home>/rooms/<code>). */
-  constructor(code: string, { dir }: { dir?: string } = {}) {
+  constructor(code: RoomCode, { dir }: { dir?: string } = {}) {
     this.code = code;
     const local = this.local = new FsRoomStore(code, { dir });
     this.trust = local.trust;

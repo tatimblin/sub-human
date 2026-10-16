@@ -99,6 +99,7 @@ import type { EngineEvent, EngineState, Effect, Failure, TimerName } from './lin
 import type net from 'node:net';
 import { errCode, msgOf } from '../errors.ts';
 import { assertNever } from '../../mod/core/never.ts';
+import type { RoomCode } from '../brand.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -134,7 +135,7 @@ const nextDelay = engine.nextDelay;
 const SPENT: ReadonlySet<string> = new Set(['LINK_REVOKED', 'TOKEN_UNKNOWN', 'KEY_REVOKED']);
 /** A link stopped as spent keeps no token: a new invite line for the room replaces it (lib/remote/joining.ts linkLine),
  * and `sub-human link CODE --forget` needs no --force. The refusal stays in the file for doctor. */
-function dropToken(code: string, why: string, reason: Reason): void {
+function dropToken(code: RoomCode, why: string, reason: Reason): void {
   try {
     const l = linksMod.get(code);
     if (!l || !l.token) return;
@@ -583,7 +584,7 @@ function idleWatch(link: RunningLink, mirror: MirrorRoomStore, idleMs: number, {
 }
 
 async function run({ code, log = msg => process.stderr.write(`${new Date().toISOString()} sub-human link ${code}: ${msg}\n`) }: {
-  code: string; log?: (msg: string) => unknown;
+  code: RoomCode; log?: (msg: string) => unknown;
 }): Promise<string> {
   const store = storeMod;
   const opened = store.open(code);

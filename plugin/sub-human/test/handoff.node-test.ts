@@ -20,6 +20,7 @@ import * as seatKey from '../hooks/seat-key.ts';
 import type { RoomStore } from '../lib/room/types.ts';
 import type { Client, ConnectOpts } from '../lib/remote/client.ts';
 import type { AppendResult, HandoffAcceptResult, HandoffAsk, MovedEventData, StreamEvent } from '../lib/remote/types-core.ts';
+import type { RoomCode } from '../lib/brand.ts';
 
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
 
@@ -47,7 +48,7 @@ async function linked(t: TestContext, host: RoomStore, opts: Partial<ConnectOpts
   t.after(() => c.close());
   return c;
 }
-async function joinBob(c: Client, code: string) {
+async function joinBob(c: Client, code: RoomCode) {
   const key = seatKey.ensure(code, 'bob');
   const pubkey = seatKey.publicPem(code, 'bob');
   await c.join({ name: 'bob', pubkey, proof: hostLinks.proveSeat(key, { room: code, name: 'bob', pubkey }) });

@@ -45,6 +45,7 @@ import type {
   AppendOpts, BlobsApi, ChainCheck, ChainVerify, Entry, EntryInput, HostState, KvApi, KvUpdateOpts, Members, MembersApi,
   Payload, Placed, PlaceOpts, ReadViewOpts, RoomStore, SnapshotWire, Tailer, TailerFs, Trust, TrustCtx,
 } from './types.ts';
+import type { RoomCode } from '../brand.ts';
 
 const fs = nodeFs;
 const require = createRequire(import.meta.url);
@@ -77,7 +78,7 @@ function carry(d: Derived, es: readonly Entry[], from: number): Derived {
 }
 
 class FsRoomStore implements RoomStore {
-  declare code: string;
+  declare code: RoomCode;
   declare _dir: string | null;
   declare isHost: boolean;
   declare members: MembersApi;
@@ -88,7 +89,7 @@ class FsRoomStore implements RoomStore {
   declare _derived: Derived;
 
   /** code: the room code; dir: its directory (default <home>/rooms/<code>, read at each call). */
-  constructor(code: string, { dir }: { dir?: string } = {}) {
+  constructor(code: RoomCode, { dir }: { dir?: string } = {}) {
     if (!dir) roomDir(code); // validates the code
     this.code = code;
     this._dir = dir || null;

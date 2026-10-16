@@ -127,6 +127,7 @@ import { parse as parseArgs } from './args.ts';
 import type { CliIo, FlagSpec, Parsed } from './types.ts';
 import type { MirrorRoomStore } from '../room/store-mirror.ts';
 import { errCode, msgOf, stackOf } from '../errors.ts';
+import type { RoomCode } from '../brand.ts';
 
 // Each command's own modules load when it runs (createRequire: require(esm) is synchronous), so the tail and
 // agent-statusline (run often) never load the remote stack, doctor or the host commands.
@@ -267,7 +268,7 @@ function who(args: readonly string[] = []) {
 
 // ---------- tasks ----------
 /** lib/tasks.ts list(code): the room document `tasks` as the mirror writes it. */
-const taskList = (code: string) => tasks.list(code) || [];
+const taskList = (code: RoomCode) => tasks.list(code) || [];
 
 function tasksCmd(args: readonly string[]) {
   const { flags } = parseFlags(args, { json: 0, room: 1 });
@@ -412,6 +413,7 @@ function linkCmd(args: readonly string[]) {
   const { flags, rest } = parseFlags(args, { reset: 0, forget: 0, force: 0 });
   const code = rest[0];
   if (!code || (flags.reset && flags.forget)) die('usage: sub-human link CODE [--reset | --forget [--force]]');
+  if (!identity.isRoomCode(code)) die(`no room ${code} on this machine`, 1);
   // a folder a process still holding a forgotten room's seat wrote (no link, no members, no log): never a room hosted
   // here; --forget sets it aside (item 9 R1)
   if (flags.forget && (require('../room/store.ts') as typeof import('../room/store.ts')).isLeftover(code)) return forgetLeftover(code);
@@ -460,7 +462,7 @@ const FORGET_TELL_MS = 3000;
  * the host logs "NAME left" now. A link that is not online is not tried. What to add to the forget's line: who the
  * host heard leave, or why it did not (it then sees the seat lapse).
  */
-function tellHostLeaving(code: string, s: MirrorRoomStore, state: unknown): string {
+function tellHostLeaving(code: RoomCode, s: MirrorRoomStore, state: unknown): string {
   const names = new Set<string>(identity.localSeats(code));
   try {
     for (const m of Object.values(s.members.read())) if (m && m.role !== 'claude' && !m.left_at && m.machine && identity.isMine(m.machine)) names.add(m.name);
@@ -484,7 +486,7 @@ function tellHostLeaving(code: string, s: MirrorRoomStore, state: unknown): stri
 
 /** The link's own log and state files (<home>/links/CODE.log, CODE.state.json), into the archive beside the copy
  * (link.log, link.state.json), or deleted when there is no archive: nothing of the link stays in links/. */
-function setAsideLinkFiles(code: string, archive: string | null) {
+function setAsideLinkFiles(code: RoomCode, archive: string | null) {
   const links: typeof import('../room/links.ts') = require('../room/links.ts');
   for (const [file, name] of [[links.logFile(code), 'link.log'], [links.stateFile(code), 'link.state.json']]) {
     try {
@@ -493,7 +495,7 @@ function setAsideLinkFiles(code: string, archive: string | null) {
   }
 }
 
-function forgetLink(code: string, s: MirrorRoomStore, force: boolean, stopped?: number, told = '') {
+function forgetLink(code: RoomCode, s: MirrorRoomStore, force: boolean, stopped?: number, told = '') {
   const st = (require('../room/link-state.ts') as typeof import('../room/link-state.ts')).read(code);
   const why = st?.lastError || '';
   // dormant (the room closed, no seat left) or spent (the host removed this machine: its token gets nowhere now)
@@ -517,7 +519,7 @@ function forgetLink(code: string, s: MirrorRoomStore, force: boolean, stopped?: 
 }
 
 /** link CODE --forget on a leftover folder: set aside as a forgotten copy is, and no seat names the room any more. */
-function forgetLeftover(code: string) {
+function forgetLeftover(code: RoomCode) {
   const archive = (require('../room/store.ts') as typeof import('../room/store.ts')).setAsideLeftover(code);
   identity.dropSeatIndexes(code);
   console.log(`room ${code}: a leftover folder (no log, no connection: something still running wrote it after the room was forgotten) is set aside at ${archive}; this machine has no room ${code}`);

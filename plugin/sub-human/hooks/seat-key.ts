@@ -24,8 +24,9 @@ import crypto from 'node:crypto';
 import * as store from '../lib/room/store.ts';
 import { writeFileAtomic } from '../lib/io.ts';
 import { errCode } from '../lib/errors.ts';
+import type { RoomCode } from '../lib/brand.ts';
 
-const keyPath = (code: string, name: string): string => store.pubPath(name, code).replace(/\.pub$/, '.key');
+const keyPath = (code: RoomCode, name: string): string => store.pubPath(name, code).replace(/\.pub$/, '.key');
 
 function mkdir700(dir: string) {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -44,7 +45,7 @@ function createOnce(file: string, data: string): boolean {
 
 const cache = new Map<string, crypto.KeyObject>(); // key file -> KeyObject
 
-function ensure(code: string, name: string): crypto.KeyObject {
+function ensure(code: RoomCode, name: string): crypto.KeyObject {
   const file = keyPath(code, name);
   const hit = cache.get(file);
   if (hit) return hit;
@@ -66,7 +67,7 @@ function ensure(code: string, name: string): crypto.KeyObject {
   return key;
 }
 
-const publicPem = (code: string, name: string): string => crypto.createPublicKey(ensure(code, name)).export({ type: 'spki', format: 'pem' }).toString(); // PEM: always a string
+const publicPem = (code: RoomCode, name: string): string => crypto.createPublicKey(ensure(code, name)).export({ type: 'spki', format: 'pem' }).toString(); // PEM: always a string
 
 // globalThis has no declared slot for the signer: lib/room/store.ts reads it back by the same symbol
 function arm() { (globalThis as Record<symbol, unknown>)[store.SIGNER] = ensure; }

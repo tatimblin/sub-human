@@ -15,8 +15,12 @@
  *   parseAddr("bob.otter-4821") -> {name, code} | null     a seat's address (the session title), or null
  *   NAME_RE, CODE_RE, SID_SAFE     a seat name, a room code, a session id safe in a file name: owned here, lib/text.ts
  *                                  re-exports them
+ *   isSeatName(v), isRoomCode(v), isSessionId(v)   the guards that make the brands (lib/brand.ts) SeatName, RoomCode,
+ *                                  SessionId: the only constructors of them; seatName(v), roomCode(v), sessionId(v) ->
+ *                                  the brand | null
  */
 import type { Hello, HelloSeat } from './types.ts';
+import type { RoomCode, SeatName, SessionId } from '../../lib/brand.ts';
 
 /** A seat name: letters, digits, . _ -, 1-32. */
 export const NAME_RE = /^[A-Za-z0-9_.-]{1,32}$/;
@@ -24,6 +28,12 @@ export const NAME_RE = /^[A-Za-z0-9_.-]{1,32}$/;
 export const CODE_RE = /^[a-z]+-\d{4}$/;
 /** A session id safe to use in a file name. */
 export const SID_SAFE = /^[A-Za-z0-9_-]{1,128}$/;
+export const isSeatName = (v: unknown): v is SeatName => typeof v === 'string' && NAME_RE.test(v);
+export const isRoomCode = (v: unknown): v is RoomCode => typeof v === 'string' && CODE_RE.test(v);
+export const isSessionId = (v: unknown): v is SessionId => typeof v === 'string' && SID_SAFE.test(v);
+export const seatName = (v: unknown): SeatName | null => (isSeatName(v) ? v : null);
+export const roomCode = (v: unknown): RoomCode | null => (isRoomCode(v) ? v : null);
+export const sessionId = (v: unknown): SessionId | null => (isSessionId(v) ? v : null);
 const ABS = (v: unknown): string | null => typeof v === 'string' && v.startsWith('/') ? v : null;
 
 export function parseAddr(addr: unknown): { name: string; code: string } | null {

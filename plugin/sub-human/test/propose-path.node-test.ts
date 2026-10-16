@@ -9,6 +9,7 @@ import path from 'node:path';
 import * as h from './helpers.ts';
 import * as identity from '../lib/identity.ts';
 import * as proposal from '../lib/proposal.ts';
+import type { RoomCode } from '../lib/brand.ts';
 
 /** A fake user home with ~/.ssh, ~/.claude/plans and a project, HOME and CLAUDE_CONFIG_DIR pointed at it. */
 function userHome(t: import('node:test').TestContext) {
@@ -21,7 +22,7 @@ function userHome(t: import('node:test').TestContext) {
   return { u, put };
 }
 
-const tryCreate = (code: string, file: string, cwd: string) => {
+const tryCreate = (code: RoomCode, file: string, cwd: string) => {
   try { proposal.create({ code, name: 'alice' }, { path: file }, { cwd }); return 'ok'; } catch (e) {
     if (e instanceof proposal.ProposalError) return e.message;
     throw e;

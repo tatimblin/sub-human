@@ -23,20 +23,22 @@ import type { FakeClock } from '../lib/clock.ts';
 import type { Entry, Member, Members } from '../lib/room/types.ts';
 import type { Me, ToolResult } from '../mcp/types.ts';
 import * as hostLinksForSeats from '../lib/remote/host-links.ts';
+import type { RoomCode } from '../lib/brand.ts';
+import { rc } from './support/brands.ts';
 /** A remote seat's link on the host (lib/remote/server.ts binds every remote seat to one; the sweep lets a seat no
  * link names leave). */
-const linkFor = (code: string, name: string) => hostLinksForSeats.create(room.open(code).store, { id: hostLinksForSeats.newLinkId(), machine: 'far-away', seats: [name] });
+const linkFor = (code: RoomCode, name: string) => hostLinksForSeats.create(room.open(code).store, { id: hostLinksForSeats.newLinkId(), machine: 'far-away', seats: [name] });
 let R!: Room; // the room under test (set per test)
 /** The join / leave notices as these tests use them: render.ts's, and the shown ones in the seat's session document. */
 const notices = {
   joinLeave: render.joinLeave, text: render.noticeText, rowSegment: render.rowSegment,
-  shown: (code: string, name: string) => session.shown(room.open(code).store, name),
-  markShown: (code: string, name: string, ids: number[], via: string, opts?: { now?: number }) => session.markShown(room.open(code).store, name, ids, via, opts),
+  shown: (code: RoomCode, name: string) => session.shown(room.open(code).store, name),
+  markShown: (code: RoomCode, name: string, ids: number[], via: string, opts?: { now?: number }) => session.markShown(room.open(code).store, name, ids, via, opts),
 };
 /** noticeText's argument; the tests leave rejoin out where it is false. */
 type NoticeIn = Parameters<typeof render.noticeText>[0];
 
-const CODE = 'stoat-3644';
+const CODE = rc('stoat-3644');
 const T0 = Date.parse('2026-10-05T10:00:00.000Z');
 const at = (s: number) => new Date(T0 + s * 1000).toISOString();
 const mv = (id: number, kind: string, from: string, s: number, text?: string): Entry => ({ id, at: at(s), from, via: 'system', kind, to: 'room', text: text || `${from} ${kind === 'member_left' ? 'left' : 'joined'}` });

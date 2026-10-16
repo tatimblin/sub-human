@@ -14,6 +14,7 @@
 import type { Reason } from '../reasons.ts';
 import type { Op, EventName } from './protocol.ts';
 import type { Entry, LinkStateWord, Payload, PresenceInput, RoomStore, SnapshotWire } from '../room/types.ts';
+import type { RoomCode } from '../brand.ts';
 
 // ---------- the wire protocol ----------
 
@@ -327,7 +328,7 @@ export interface LinkRecord {
 export type Links = Record<string, LinkRecord>;
 
 /** A parsed sh2 invite. */
-export interface ParsedInvite { v: 2; code: string; locator: string; secret: string; hostKey: string | null }
+export interface ParsedInvite { v: 2; code: RoomCode; locator: string; secret: string; hostKey: string | null }
 
 // ---------- the store, as the remote code uses it ----------
 

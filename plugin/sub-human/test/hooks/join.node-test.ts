@@ -16,6 +16,8 @@ import * as inviteSecret from '../../lib/remote/invite-secret.ts';
 import type { HookJson, HookRun } from './helpers.ts';
 import type { Identity } from '../../lib/identity.ts';
 import type { Member, Role } from '../../lib/room/types.ts';
+import type { RoomCode } from '../../lib/brand.ts';
+import { rc } from '../support/brands.ts';
 
 /** An invite line's SECRET word (lib/remote/invite-secret.ts): well formed, naming no host this test has. */
 const SECRET = inviteSecret.encode(Buffer.alloc(16, 1), Buffer.alloc(8, 2));
@@ -47,7 +49,7 @@ test('/sub-human NAME with no open room: opens a room, joins as a member, spawns
   assert.equal(r.json!.systemMessage, undefined, 'a join that worked shows no (warning-styled) systemMessage');
   const m = /in room ([a-z]+-\d{4})/.exec(hso(r).additionalContext!);
   assert.ok(m, hso(r).additionalContext);
-  w.code = m[1];
+  w.code = rc(m[1]);
   assert.ok(['pending', '0b500131'].includes(w.members().claude.job!), 'claimed before the hook returned');
   assert.ok(await until(() => w.members().claude.job === '0b500131'), 'the detached starter records members.json claude {job}');
   const ms = w.members();
@@ -112,7 +114,7 @@ test('debug launch: a room-claude agent session without SUB_HUMAN_ROOM opens a r
   const r = w.hook('join', input, { as: 'me', env: { SUB_HUMAN_ROOM: undefined } });
   const m = /the room's Claude of room ([a-z]+-\d{4})/.exec(hso(r).additionalContext!);
   assert.ok(m && r.json!.systemMessage === undefined, JSON.stringify(r.json));
-  w.code = m[1];
+  w.code = rc(m[1]);
   assert.equal(w.members().claude.pid, process.pid);
   const w2 = new World({ bob: 'sleep' });
   w2.pid.me = process.pid; w2.sid.me = 'aaaaaaaa-0000-4000-8000-000000000004';
@@ -130,7 +132,7 @@ test('bare /sub-human: not in a room, it opens one as the default name (git user
   spawnSync('git', ['-C', plain.cwd, 'config', 'user.name', 'Dana Scully']);
   let r = plain.hook('join', expand(''), { as: 'me', env: { ...NO_GIT, USER: 'ignored' } });
   assert.equal(r.json!.decision, undefined, r.stdout);
-  const code = fs.readdirSync(path.join(plain.home, 'rooms'))[0];
+  const code = rc(fs.readdirSync(path.join(plain.home, 'rooms'))[0]);
   assert.ok(withHome(plain.home, () => identity.readMembers(code)).dana, 'joined as dana');
   // seated: the status, no model turn
   r = plain.hook('join', expand(''), { as: 'me', env: NO_GIT });
@@ -169,7 +171,7 @@ test('budget: a join whose host never answers (ssh hangs) still replies, hidden,
   const pids = path.join(bin, 'pids');
   // connects nowhere and says nothing (each run notes its pid, so the test can stop it; 15 s at most regardless)
   fs.writeFileSync(path.join(bin, 'ssh'), `#!/bin/sh\necho $$ >> '${pids}'\nexec sleep 15\n`, { mode: 0o755 });
-  const code = 'vole-4321';
+  const code = rc('vole-4321');
   t.after(() => {
     const kill = (pid: number) => { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } };
     const daemon = w.lib(() => linkSocket.status(code)).pid;
@@ -660,7 +662,7 @@ test('block: <= 900 chars with 5 members (stub templates), placeholders filled, 
  */
 const REF_PLUGIN = '/Users/someone/.claude/plugins/cache/sub-human/sub-human/1.0.0';
 const LONGEST_CODE = `${identity.ANIMALS.reduce((a, b) => (b.length > a.length ? b : a))}-0000`;
-const atReference = (text: string, code: string) => text.split(PLUGIN).join(REF_PLUGIN).split(code).join(LONGEST_CODE);
+const atReference = (text: string, code: RoomCode) => text.split(PLUGIN).join(REF_PLUGIN).split(code).join(LONGEST_CODE);
 
 test('block: no template file (or one without placeholders) falls back to the built-in text; the shipped templates fill cleanly', () => {
   const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-plugin-'));
@@ -679,7 +681,7 @@ test('block: no template file (or one without placeholders) falls back to the bu
 });
 
 test('seatTitle is the native address NAME.CODE', () => {
-  assert.equal(common.seatTitle({ code: 'vole-8126', name: 'alice' } as Identity), 'alice.vole-8126');
+  assert.equal(common.seatTitle({ code: rc('vole-8126'), name: 'alice' } as Identity), 'alice.vole-8126');
 });
 
 test('classic (no module answering): a reply is the block reason alone, never also a systemMessage (Claude Code shows the reason only); an invite is hidden', () => {

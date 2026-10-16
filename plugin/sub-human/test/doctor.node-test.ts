@@ -17,6 +17,7 @@ import * as store from '../lib/room/store.ts';
 import type { Check, KeyLine, LinkReport, LinkStateView, Reach, Report } from '../lib/cli/types.ts';
 import type { AgentJob } from '../lib/cc/bg.ts';
 import type { MirrorRoomStore } from '../lib/room/store-mirror.ts';
+import { rc } from './support/brands.ts';
 
 const KEY_B64 = crypto.randomBytes(51).toString('base64').replace(/=+$/, '');
 const KEY = `ssh-ed25519 ${KEY_B64}`;
@@ -43,13 +44,13 @@ test('doctor: node floor, Remote Control, ssh hints and argument errors', () => 
   assert.equal(doctor.checkRemoteControl({ CLAUDE_CODE_USE_BEDROCK: '0' }, []).status, 'info', '0 is off');
   assert.equal(doctor.checkRemoteControl({}, [{ env: { CLAUDE_CODE_USE_BEDROCK: '1' } }]).status, 'warn', 'from a settings file too');
   // ssh refused: a login of the person's own (or a web invite); an older link's own key: removed by the host; prime for MFA
-  const denied = doctor.sshHint('alice@box: Permission denied (publickey).', { code: 'vole-1234' });
+  const denied = doctor.sshHint('alice@box: Permission denied (publickey).', { code: rc('vole-1234') });
   assert.ok(denied);
   assert.match(denied, /refused your ssh login: joining over ssh needs a login of your own there .* ask the host for an invite over the web \(\/sub-human invite --web\)/);
   assert.match(denied, /sub-human prime vole-1234/);
   assert.doesNotMatch(denied, /authorize\b|shk1|ssh-agent|SUB_HUMAN_SSH_OPTS|let in/, 'no sh1/sh2-era or admit-a-key advice');
-  assert.match(doctor.sshHint('Permission denied (publickey).', { code: 'vole-1234', transport: { key: '/x/id_ed25519' } })!, /refused this link's own key \(an older sub-human let it in\): the host removed it\. ask the host for a new invite/);
-  assert.match(doctor.sshHint('Permission denied (publickey,keyboard-interactive).', { code: 'vole-1234' })!, /interactive login \(MFA\): run SUB_HUMAN_HOME=\S+ node \S+\/scripts\/sub-human prime vole-1234 once in a terminal/);
+  assert.match(doctor.sshHint('Permission denied (publickey).', { code: rc('vole-1234'), transport: { key: '/x/id_ed25519' } })!, /refused this link's own key \(an older sub-human let it in\): the host removed it\. ask the host for a new invite/);
+  assert.match(doctor.sshHint('Permission denied (publickey,keyboard-interactive).', { code: rc('vole-1234') })!, /interactive login \(MFA\): run SUB_HUMAN_HOME=\S+ node \S+\/scripts\/sub-human prime vole-1234 once in a terminal/);
   assert.match(doctor.sshHint('Host key verification failed.', { transport: { knownHosts: '/x/known_hosts', via: 'jump' } })!, /not the one its invite pinned.*\/sub-human invite --via jump/);
   assert.match(doctor.sshHint('Host key verification failed.')!, /host key/);
   assert.match(doctor.sshHint('ssh: Could not resolve hostname box: nodename nor servname provided')!, /does not resolve.*--via JUMP/);
@@ -71,8 +72,8 @@ test('doctor: authorized_keys lines that bypass the shim are found', t => {
     `command="SUB_HUMAN_HOME=${home} /opt/node/bin/node /cache/sub-human/0.2.0/bin/sub-human serve --stdio vole-1234 --link ${LINK_ID}",restrict ${KEY} sub-human:vole-1234:${LINK_ID}`,
   ].join('\n'));
   const scan = doctor.scanAuthorizedKeys(file);
-  assert.deepEqual(scan.lines.map(l => [l.shimmed, (l as Extract<KeyLine, { code: string }>).code, (l as Extract<KeyLine, { code: string }>).id]), [[true, 'vole-1234', 'aaaaaaaaaaaa'], [false, 'vole-1234', LINK_ID]]);
-  assert.deepEqual(scan.doors, ['vole-5678'], 'a door a 0.5.0-beta.15 invite left');
+  assert.deepEqual(scan.lines.map(l => [l.shimmed, (l as Extract<KeyLine, { code: string }>).code, (l as Extract<KeyLine, { code: string }>).id]), [[true, rc('vole-1234'), 'aaaaaaaaaaaa'], [false, rc('vole-1234'), LINK_ID]]);
+  assert.deepEqual(scan.doors, [rc('vole-5678')], 'a door a 0.5.0-beta.15 invite left');
   const c = doctor.checkAuthorizedKeys(scan);
   assert.equal(c.status, 'warn');
   assert.match(c.detail, /1 enrollment door line\(s\) an older sub-human's ssh invite left \(room vole-5678\)/);
@@ -87,7 +88,7 @@ test('doctor: a door line of another sub-human home is reported as not this home
   const mine = `command="SUB_HUMAN_HOME=${home} ${home}/bin/serve --enroll vole-5678 --kind ssh",restrict ${KEY} sub-human-enroll:vole-5678`;
   fs.writeFileSync(file, `${other}\n${mine}\n`);
   const scan = doctor.scanAuthorizedKeys(file);
-  assert.deepEqual([scan.doors, scan.otherDoors], [['vole-5678'], ['orca-5212']]);
+  assert.deepEqual([scan.doors, scan.otherDoors], [[rc('vole-5678')], [rc('orca-5212')]]);
   const c = doctor.checkAuthorizedKeys(scan);
   assert.match(c.detail, /room vole-5678\): they only tell an old joiner to update \(and a line of another sub-human folder's, room orca-5212: not this home's, not touched\)/);
   let out = '';
@@ -197,18 +198,18 @@ test('doctor bundle: an allowlist, every free text redacted: ~ for $HOME, hashed
       { id: 'misc', status: 'info', title: 'misc', detail: `machine ${hex}; mail tristan@example.com; /home/bob/x and /Users/carol/y` },
     ],
     links: [{
-      code: 'vole-1234', transport: { kind: 'ssh', describe: `ssh alice@${host}:2222`, user: 'alice', host, port: 2222 }, credential: 'token',
+      code: rc('vole-1234'), transport: { kind: 'ssh', describe: `ssh alice@${host}:2222`, user: 'alice', host, port: 2222 }, credential: 'token',
       daemon: { running: true, pid: 4242 }, state: { state: 'down', attempt: 3, queued: 1, lastError: `ssh: connect to host ${host} port 2222: Connection refused`, source: 'state-file' },
       recent: [`2026-10-08T10:00:00Z sub-human link vole-1234: offline: ${home}/.sub-human/x ${host}`],
       reach: { ok: false, ms: 5, error: `the ssh command exited (255)`, stderr: `alice@${host}: Permission denied (publickey).`, protocol: null, skewMs: null },
     }],
-    authorizedKeys: { exists: true, lines: [{ shimmed: false, type: 'ssh-ed25519', key: KEY_B64, code: 'vole-1234', id: LINK_ID }] },
+    authorizedKeys: { exists: true, lines: [{ shimmed: false, type: 'ssh-ed25519', key: KEY_B64, code: rc('vole-1234'), id: LINK_ID }] },
     probe: null,
   };
   // a hand-made report: no authorizedKeys.file, no reach.hint, which bundle never reads
   const b = doctor.bundle(report as unknown as Report, { salt: 'fixed', env: { SUB_HUMAN_SETTLE_MS: '900', SECRET_THING: 'x' } });
   const text = JSON.stringify(b);
-  for (const s of [home, host, 'alice', 'vole-1234', KEY_B64, invite.split('.').at(-2)!, token, hex, '10.1.2.3', 'tristan@example.com', '/home/bob', '/Users/carol', os.hostname()]) {
+  for (const s of [home, host, 'alice', rc('vole-1234'), KEY_B64, invite.split('.').at(-2)!, token, hex, '10.1.2.3', 'tristan@example.com', '/home/bob', '/Users/carol', os.hostname()]) {
     assert.ok(!text.includes(s), `the bundle holds ${s}:\n${text}`);
   }
   assert.ok(text.includes('~/.ssh/authorized_keys'), 'paths under $HOME are ~');
@@ -291,7 +292,7 @@ test('doctor: a room whose claude job started but never took its seat (e.g. bloc
 
 test('doctor: a link stopped on a spent invite says to ask the host for a new one (joining again would reuse it)', () => {
   // no credential: linkChecks never reads it
-  const d = (state: LinkStateView) => ({ code: 'vole-1234', transport: { kind: 'pipe', describe: 'pipe /x' }, daemon: { running: false }, recent: [], moved: null, state }) as Omit<LinkReport, 'credential'> as LinkReport;
+  const d = (state: LinkStateView) => ({ code: rc('vole-1234'), transport: { kind: 'pipe', describe: 'pipe /x' }, daemon: { running: false }, recent: [], moved: null, state }) as Omit<LinkReport, 'credential'> as LinkReport;
   for (const [why, lastReason] of [['this invite no longer works (too many wrong PINs, expired, or cancelled); ask the host for a new one', 'INVITE_BURNT'], ['this invite was used already (each invite works once); ask the host for a new one', 'INVITE_USED']] as const) {
     const [c] = doctor.linkChecks(d({ state: 'stopped', lastError: why, lastReason }));
     assert.match(c.fix!, /ask the host for a new invite \(\/sub-human invite there\) and type the line it shows/);
@@ -307,7 +308,7 @@ test('doctor: a dormant link (the room closed, or no seat of this machine left) 
   assert.equal(linkMod.ROOM_CLOSED_REASON, 'the room was closed');
   assert.equal(linkMod.NO_SEAT_REASON, 'no seat of this machine is left in the room');
   // no credential: linkChecks never reads it
-  const d = (state: LinkStateView, reach?: Reach) => ({ code: 'vole-1234', transport: { kind: 'pipe', describe: 'pipe /x' }, daemon: { running: false }, recent: [], moved: null, state, ...(reach ? { reach } : {}) }) as Omit<LinkReport, 'credential'> as LinkReport;
+  const d = (state: LinkStateView, reach?: Reach) => ({ code: rc('vole-1234'), transport: { kind: 'pipe', describe: 'pipe /x' }, daemon: { running: false }, recent: [], moved: null, state, ...(reach ? { reach } : {}) }) as Omit<LinkReport, 'credential'> as LinkReport;
   const failed: Reach = { ok: false, ms: 3, error: 'the pipe command exited (1) before answering', skipped: false, stderr: '', hint: null, protocol: null, skewMs: null };
   const [closed] = doctor.linkChecks(d({ state: 'stopped', lastError: linkMod.ROOM_CLOSED_REASON, lastReason: 'ROOM_CLOSED' }));
   assert.equal(closed.status, 'info');
