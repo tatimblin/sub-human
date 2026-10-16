@@ -17,7 +17,7 @@ import {
 } from './core/prompt.ts';
 import { shimArgv, shimEnv, toClassic, asNotice, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { reviewOpenOf, seatedOrUnsure } from './core/prefilter.ts';
-import { delivering, setRemote, queueRelay, isRelay, facts, presence } from './deliver.ts';
+import { delivering, setRemote, queueRelay, isRelay, wakeContextOf, facts, presence } from './deliver.ts';
 import { RELAY_CONTEXT } from './core/deliver.ts';
 import { asHello, asNonce } from './core/state.ts';
 import type { ClassicHookInputs, EngineInterface, On } from 'claude-code';
@@ -125,6 +125,12 @@ export function registerPrompt(on: On) {
       contexted.add(e.text);
       try { return await next({ ...e, context: [...(e.context ?? []), RELAY_CONTEXT] }); } finally { contexted.delete(e.text); }
     }
+    // a member's wake submitted asUser (mod/deliver.ts): what the model alone needs of it rides as context
+    const wake = e.origin && e.origin.kind === 'plugin' && e.origin.name === $.plugin.name ? wakeContextOf(e.text) : undefined;
+    if (wake) {
+      contexted.add(e.text);
+      try { return await next({ ...e, context: [...(e.context ?? []), wake] }); } finally { contexted.delete(e.text); }
+    }
     const why = gateVerdict(e, isAtClaude(e.text) ? await helloOf($) : null);
     if (why) return { drop: why };
     let down = e;
@@ -173,12 +179,16 @@ export function registerPrompt(on: On) {
     // NAME.CODE as the session title is the seat's SendMessage address (cc CONTRACT session-title-address).
     const title = titleFor(hello, e.session_id, titled);
     if (title) await $.state.set(TITLED, { sid: e.session_id, addr: title });
-    const top = title ? { sessionTitle: title } : {};
+    const top: ShimResult = title ? { sessionTitle: title } : {};
     const { value: reviewFlag } = await $.state.get(REVIEW);
     if (isRelay(e.prompt)) { // room lines for the person: no node, and the model's part as context it alone reads
       const ctx = contexted.has(e.prompt) ? {} : { additionalContext: [RELAY_CONTEXT] };
       return mergeClassic({ ...ctx, ...top }, await next(e));
     }
+    // a member's wake submitted asUser: its context, when prompt.submit above did not add it (the hook that submits a
+    // prompt skips its own plugin's prompt.submit hook); the prompt goes on as any other (consent reads it too)
+    const wake = wakeContextOf(e.prompt);
+    if (wake && !contexted.has(e.prompt)) top.additionalContext = [wake];
     const refused = unseatedRefusal(e, hello); // an @room with surely no seat: at-room's words, no node
     if (refused) {
       presence.pending = null; // stopped: no turn, no "working"
@@ -193,7 +203,7 @@ export function registerPrompt(on: On) {
       return merged;
     }
     const ours = await runPrompt($, e, origins.take(e.prompt), hello);
-    const merged = mergeClassic({ ...ours, ...top }, await next(e));
+    const merged = mergeClassic(mergeClassic(ours, top), await next(e)); // both contexts kept (a wake's and node's)
     if (ours.preventContinuation && !merged.block) receipts.expect(merged.stopReason);
     if (merged.block || merged.preventContinuation) presence.pending = null; // stopped or refused: no turn, no "working"
     return merged;

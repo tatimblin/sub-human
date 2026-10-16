@@ -17,7 +17,7 @@
  */
 import {
   tailArgv, tailEnv, lineBuffer, parseEvent, route, restartDelay, nextFails, noticeDue, turnLedger, spawnWanted, logLines,
-  relayQueue, rewakePrompt, DELIVERY_ERROR_NOTICE, MOD_RESTART_TELL_FAILS, RELAY_AFTER_MS, REWAKE_TIMEOUT_MS,
+  relayQueue, rewakePrompt, wakeParts, DELIVERY_ERROR_NOTICE, MOD_RESTART_TELL_FAILS, RELAY_AFTER_MS, REWAKE_TIMEOUT_MS,
 } from './core/deliver.ts';
 import { parseHello, localHello, homeOf, sidIndex } from './core/seat.ts';
 import { answersItself, joinPayload, readReply, answerOf, cancels, leftName, CONFIRM_AFTER_MS } from './core/command.ts';
@@ -198,10 +198,17 @@ function logEach($: EngineInterface, lines: unknown) {
  * sees the room lines `seen` as notices, since no prompt row shows them (only "Prompt dropped by a hook"); lines
  * already shown are passed as none. Never throws.
  */
+/** A wake submitted asUser (its shown lines) -> the context the model reads beside it: mod/prompt.ts adds it. */
+const wakeContexts = new Map<string, string>();
+export const wakeContextOf = (text: string): string | undefined => wakeContexts.get(text);
+
 function submitWake($: EngineInterface, text: string, { appended = false, seen = [] as string[] } = {}) {
   return (async () => {
     let r = null;
-    try { r = await $.prompt.submit({ text }); } catch { /* below */ }
+    // a member's wake: its lines for the person bare (asUser), the rest as context (core/deliver.ts wakeParts)
+    const parts = child && child.seat && child.seat.role !== 'claude' ? wakeParts(text) : null;
+    if (parts) wakeContexts.set(parts.shown, parts.context);
+    try { r = await $.prompt.submit(parts ? { text: parts.shown, asUser: true } : { text }); } catch { /* below */ } finally { if (parts) wakeContexts.delete(parts.shown); }
     if (r && typeof r.drop !== 'string') return;
     try { logEach($, seen); } catch { /* the model still gets it below */ }
     if (appended || await appendRow($, text)) return;

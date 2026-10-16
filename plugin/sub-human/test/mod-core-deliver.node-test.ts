@@ -127,3 +127,12 @@ test('deliver: the tail\'s invites event (the host\'s open invite refs) is one i
   assert.deepEqual(d.route(ev), [{ do: 'invites', open: ['abcdef012345'] }]);
   assert.equal(d.parseEvent(JSON.stringify({ type: 'invites' })), null);
 });
+
+test('deliver (item 5): a member\'s wake goes as its lines for the person, bare, and its "(for Claude)" lines as context; one with none goes framed', async () => {
+  const d = await import('../mod/core/deliver.ts');
+  const wake = `${d.WAKE_HEAD}\nalice: @bob just say ok\n  │ please\n(for Claude) room now: proposal a1 waiting on bob`;
+  const p = d.wakeParts(wake)!;
+  assert.equal(p.shown, 'alice: @bob just say ok\n  │ please');
+  assert.deepEqual(p.context.split('\n'), [d.WAKE_CONTEXT, d.WAKE_HEAD, '(for Claude) room now: proposal a1 waiting on bob']);
+  assert.equal(d.wakeParts(`${d.WAKE_HEAD}\n(for Claude) only for the model`), null);
+});

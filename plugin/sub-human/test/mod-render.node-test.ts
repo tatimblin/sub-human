@@ -1,7 +1,7 @@
-// mod/render.ts drawRow in node: the drawing its ui.render hook returns and, for a prompt this plugin submitted, its
-// .catch returns under re-entry (cc CONTRACT render-own-prompt-reentry: Claude Code raises that row's ui.render with
-// the plugin as its origin, so the hook is left out and only the .catch can draw it, from plain data). The wiring is
-// mod/test/render.test.ts (the test kit mounts a row with no origin, so it runs the hook, never the re-entry path).
+// mod/render.ts drawRow in node: the drawing its ui.render hook returns. Live, Claude Code never asks this plugin to
+// draw its own prompts (cc CONTRACT render-own-prompt-reentry: raised with the plugin itself as the origin, every hook
+// of it is skipped), so a member's wake goes asUser with its lines alone (test/mod-core-deliver wakeParts); the test
+// kit mounts a row with no origin, so the wiring test (mod/test/render.test.ts) still runs this drawing.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { drawRow } from '../mod/render.ts';
@@ -12,7 +12,7 @@ const plugin = { kind: 'plugin', name: 'sub-human' };
 type Node = { type: string; props?: Record<string, unknown>; children?: unknown[] };
 const lines = (t: Node | null) => (t ? (t.children as Node[]).map(c => [String((c.children as string[])[0]), !!(c.props && c.props.dimColor)]) : null);
 
-test('I (live verify): a wake under its frame, as the re-entry .catch draws it: chat lines bright, markers dim, the frame left out; expanded, every line whole and the frame dim', () => {
+test('drawRow: a framed wake (the shape the stage 8c live round showed): chat lines bright, markers dim, the frame left out; expanded, every line whole and the frame dim', () => {
   const compact = lines(drawRow({ text: LIVE, origin: plugin, isExpanded: false }, true))!;
   assert.deepEqual(compact.map(([, d]) => d), [true, false, true]);
   assert.match(String(compact[0][0]), /^\(for Claude\) sub-human room: .*…$/);
@@ -22,7 +22,7 @@ test('I (live verify): a wake under its frame, as the re-entry .catch draws it: 
   assert.equal(whole.length, 5);
   assert.deepEqual(whole.map(([, d]) => d), [true, true, false, true, true], 'the frame and the markers dim, never in the prompt\'s color');
   assert.equal(whole[0][0], 'The sub-human plugin sent a message:');
-  // the plain data a .catch may return: a Box of Texts, no constructor from $.ui.resolve
+  // plain RenderElement data: a Box of Texts, no constructor from $.ui.resolve
   const t = drawRow({ text: LIVE, origin: plugin, isExpanded: false }, true)!;
   assert.equal(t.type, 'Box');
   assert.ok((t.children as Node[]).every(c => c.type === 'Text'));

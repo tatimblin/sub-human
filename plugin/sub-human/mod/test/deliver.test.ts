@@ -137,8 +137,10 @@ test('chat is a notice and starts no turn; a pull starts none either; a wake whi
   expect(seen.logs).toEqual(['bob: hi', 'carol joined'])
   expect(seen.appended).toEqual(['Room since your last turn (…):\nbob: hi'])
   expect(seen.prompts.length).toBe(1)
-  expect(seen.prompts[0]).toMatch(/^\(for Claude\) sub-human room/)
-  expect(seen.prompts[0]).toMatch(/bob's Claude \(to you\): q\?$/)
+  // item 5: a member's wake is its lines for the person, bare (asUser: no frame), and its "(for Claude)" lines as context
+  expect(seen.prompts[0]).toBe("bob's Claude (to you): q?")
+  const said = [...(seen.contexts[0] ?? []), ...(seen.classic[0].additionalContext ?? [])].join('\n')
+  expect(said).toMatch(/^\(for Claude\) sub-human: the prompt above is the room's lines[^\n]*\n\(for Claude\) sub-human room/)
   seen.release()
 })
 
@@ -173,7 +175,8 @@ test('a wake mid-turn whose append is refused falls back to a prompt, whole', as
   await until(() => seen.logs.length === 1 && seen.prompts.length === 1)
   expect(seen.logs).toEqual(['room: decided (room decision)'])
   expect(seen.appended).toEqual([])
-  expect(seen.prompts[0]).toMatch(DECIDED)
+  expect(seen.prompts[0]).toBe('room: decided (room decision)') // its lines bare; the rest rides as context
+  expect([...(seen.contexts[0] ?? []), ...(seen.classic[0].additionalContext ?? [])].join('\n')).toMatch(/\(for Claude\) room now: …$/)
   seen.release()
 })
 
@@ -254,7 +257,7 @@ test('a wake whose prompt a hook drops and whose append is refused shows its roo
   expect(seen.logs).toEqual(["bob's Claude (to you): q?", '  │ which file?', NOTICE])
   await $.turn.start({ text: 'next', turnId: 't1' } as any)
   await until(() => seen.prompts.length === 1)
-  expect(seen.prompts[0]).toMatch(/^\(for Claude\) sub-human room[^\n]*\nbob's Claude \(to you\): q\?\n/)
+  expect(seen.prompts[0]).toBe("bob's Claude (to you): q?\n  │ which file?")
   expect(seen.logs.length).toBe(3) // delivered later without showing the lines again
   seen.release()
 })
@@ -272,7 +275,7 @@ test('a mid-turn wake that can be neither appended nor submitted waits for the n
   expect(seen.prompts).toEqual([])
   await $.turn.start({ text: 'next', turnId: 't2' } as any)
   await until(() => seen.prompts.length === 1)
-  expect(seen.prompts[0]).toMatch(/\nroom: decided$/)
+  expect(seen.prompts[0]).toBe('room: decided')
   seen.release()
 })
 
@@ -432,7 +435,7 @@ test('a wake appended mid-turn that no later request carried is submitted at the
   await until(() => seen.appended.length === 1)
   await $.turn.complete({ turnId: 't1', answer: 'done' } as any).catch(() => {})
   await until(() => seen.prompts.length === 1)
-  expect(seen.prompts[0]).toMatch(DECIDED)
+  expect(seen.prompts[0]).toBe('room: decided (room decision)')
   await $.turn.start({ text: 'next', turnId: 't2' } as any)
   await new Promise(r => setTimeout(r, 50))
   expect(seen.prompts.length).toBe(1)

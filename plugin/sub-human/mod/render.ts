@@ -9,11 +9,12 @@
  *     that the model was told something; expanded (ctrl+o, or a row short enough for its speaker label, which Claude
  *     Code draws expanded too) every line whole, the frame and the markers dim;
  *   - anything else, a sender that is not a seat address, and a peer's row while expanded (ctrl+o): the engine's.
- * A prompt this plugin submitted is drawn under its own frame (cc CONTRACT render-own-prompt-reentry): Claude Code
- * raises that row's ui.render with the submitting plugin as its origin, so this plugin's hook is left out for
- * re-entry and its .catch is asked in the hook's place, with every $ call refused. That handler draws the same rows
- * from plain RenderElement data (no $.ui.resolve), so the wakes get the room drawing too (seen live in stage 8c: the
- * hook alone never ran for them, and every wake showed raw).
+ * A prompt this plugin submitted is never drawn here (cc CONTRACT render-own-prompt-reentry): Claude Code raises that
+ * row's ui.render with the submitting plugin itself as the origin, so every hook of this plugin is skipped for
+ * re-entry ("the plugin's own code raised it"), no .catch asked either. Seen live: the stage 8c render of wakes never
+ * ran. So a member's wake is submitted asUser with its lines for the person alone (mod/deliver.ts, core/deliver.ts
+ * wakeParts): no frame to hide, and its "(for Claude)" lines ride as context. The plugin-origin branch below stays for
+ * a row this hook is asked to draw (the test kit's mount, a later Claude Code).
  */
 import { peerLines, roomRows } from './core/chat.ts';
 import type { On, RenderElement } from 'claude-code';
@@ -46,10 +47,5 @@ export function registerRender(on: On) {
   on('ui.render', { component: 'UserMessage', props: { origin: { kind: ['peer', 'peer-send-message', 'plugin'] } } } as { component: 'UserMessage' }, ($, e, next) => {
     const tree = drawRow(e.props, e.props.origin.kind === 'plugin' && ownPlugin(e.props.origin.name, $.plugin.name));
     return tree ?? next(e);
-  }).catch(($, e, next) => {
-    // re-entry: the row is this plugin's own prompt (its origin is this plugin), so the hook was left out; draw it
-    // here from plain data ($ calls reject in this handler). A throw or a timeout: the engine draws its own row.
-    if (next.error && next.error.kind === 're-entry' && !next.called) return drawRow(e.props, e.props.origin.kind === 'plugin') ?? next(e);
-    return next(e);
-  });
+  }); // no .catch: a throw skips this hook for that one row (the engine draws its own) and the next row runs it again
 }
