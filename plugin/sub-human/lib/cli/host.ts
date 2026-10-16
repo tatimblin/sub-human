@@ -10,7 +10,7 @@
  *                over ssh by default; --web Tailscale Serve, --public Tailscale Funnel, --url a front of your own;
  *                --stop stops serving the room over the web (webhost.unhost); --cancel [REF] cancels an unused
  *                invite (hosting.cancelInvite). Without --room, the one room hosted here with a live seat
- *   kick(args)   sub-human kick NAME [--room ROOM] [--file AUTHORIZED_KEYS]: end NAME's connection (hosting.kick)
+ *   kick(args)   sub-human kick NAME [--room ROOM]: end NAME's connection (hosting.kick)
  *   admit(args)  sub-human admit [REF [--refuse] [--yes]] [--room ROOM]: the join requests waiting (no REF: list
  *                them); REF: let that one in after y/N (lib/remote/admission.ts letIn), or --refuse. The card in the
  *                host's session is the usual way; this is for a host with no session open
@@ -104,12 +104,12 @@ function invite(args: readonly string[]): number {
 }
 
 function kick(args: readonly string[]): number {
-  const { flags: f, rest, error } = parse(args, { room: 1, file: 1 });
+  const { flags: f, rest, error } = parse(args, { room: 1 });
   const [name] = rest;
-  if (error || rest.length !== 1 || name === undefined) return fail('usage: sub-human kick NAME [--room ROOM] [--file AUTHORIZED_KEYS]', 2);
+  if (error || rest.length !== 1 || name === undefined) return fail('usage: sub-human kick NAME [--room ROOM]', 2);
   try {
     const hosting = hostingLib();
-    say(hosting.kick(hostedRoom(f.room), name, f.file ? { file: f.file } : {}).text);
+    say(hosting.kick(hostedRoom(f.room), name).text);
     return 0;
   } catch (e) { return fail(msgOf(e)); }
 }

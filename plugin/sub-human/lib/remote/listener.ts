@@ -3,10 +3,8 @@
  * 7420]`), one per home. It binds 127.0.0.1 only; a TLS front (Tailscale Serve or Funnel, the lab's Caddy, a
  * person's own reverse proxy) is the only way in from elsewhere. A WebSocket whose first message is TEXT asks for the
  * host's public key ({"op": "key"}, answered {"v": 3, "key"} and closed: an invite line's first dial checks it against
- * the line's tag before anything secret goes), or is a 0.5.0-beta.15 joiner's PIN attempt ({"op": "enroll.start"},
- * answered with protocol.skewMessage: that joiner must update). For each other WebSocket it runs the Noise handshake as
- * the responder with the host's static X25519 key (lib/remote/transports/ws.ts serverChannel: XK, or NK for a link
- * made under protocol 2), checks the room the joiner names is one this home serves over ws, and only then spawns
+ * the line's tag before anything secret goes). For each other WebSocket it runs the Noise handshake as
+ * the responder with the host's static X25519 key (lib/remote/transports/ws.ts serverChannel: XK), checks the room the joiner names is one this home serves over ws, and only then spawns
  * `<home>/bin/serve --stdio CODE --via ws [--peer KEY]` (the stable shim, lib/remote/shim.ts; KEY: the link's own
  * Noise key XK proved) for that one connection, piping decrypted bytes to its stdin and its stdout back. It never
  * runs lib/remote/server.ts in-process (the store lock busy-waits; one wait would stall every connection), parses no
@@ -255,7 +253,7 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
     let ch: { duplex: Duplex; hello: { room: string }; peer: Buffer | null }, first: { data: Buffer; binary: boolean };
     try {
       first = await wsT.firstAny(conn, HANDSHAKE_MS);
-      if (!first.binary) return textConn(conn, first.data, who); // a key request, or an older joiner's PIN attempt
+      if (!first.binary) return textConn(conn, first.data, who); // a key request
       ch = await wsT.serverChannel(conn, { s, timeoutMs: HANDSHAKE_MS, m1: first.data, check: hello => refusal(hello.room) });
     } catch (e) {
       preauth--;
@@ -295,8 +293,7 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
 
   /**
    * A TEXT first message: {"op": "key"} gets this listener's public key (an invite line's first dial checks it against
-   * the line's tag before it sends anything secret); a 0.5.0-beta.15 joiner's {"op": "enroll.start"} gets the skew
-   * message (it must update); anything else a refusal. Each holds its pre-auth slot only until it is answered.
+   * the line's tag before it sends anything secret); anything else a refusal. Each holds its pre-auth slot only until it is answered.
    */
   function textConn(conn: Conn, data: Buffer, who: unknown): void {
     const protocol = protocolLib();
@@ -305,11 +302,7 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
     const frame = isObj(v) ? v : null; // parsed JSON, checked below
     const id: FrameId = frame && (typeof frame.id === 'number' || typeof frame.id === 'string') ? frame.id : null;
     if (frame && frame.op === 'key') conn.send(JSON.stringify({ v: 3, key: hostKey() }));
-    else if (frame && frame.op === 'enroll.start') {
-      const msg = protocol.skewMessage({ host: { version: protocol.PLUGIN_VERSION, proto: protocol.PROTO }, joiner: { version: null, proto: { min: 1, max: 2 } }, need: 3 });
-      conn.send(protocol.encode(protocol.error(id, 'PROTOCOL', msg, 'SKEW')).trimEnd());
-      log(`an older joiner's PIN attempt from ${who}: told to update`);
-    } else {
+    else {
       conn.send(protocol.encode(protocol.error(id, 'PROTOCOL', 'a text message that is not a key request')).trimEnd());
       log(`refused a text message from ${who}`);
     }

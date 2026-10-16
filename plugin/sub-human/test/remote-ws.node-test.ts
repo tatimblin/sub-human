@@ -304,7 +304,7 @@ test('kick: the listener\'s child (`serve --stdio CODE --via ws --peer KEY`) nam
   const ends: string[] = [];
   const sub = c.subscribe(0, store.hash12(''), ({ ev, data }) => { if (ev === 'end') ends.push((data as { reason: string }).reason); });
   await sub.ready;
-  hosting.kick(code, 'carol', { file: path.join(h.tmpDir('sh-ak-', t), 'authorized_keys') });
+  hosting.kick(code, 'carol');
   assert.ok(await h.until(() => ends.length > 0 && closed, 5000, 20), `ended ${JSON.stringify(ends)}, closed ${closed}`);
   assert.deepEqual(ends, ['AUTH']);
 });

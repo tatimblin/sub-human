@@ -57,10 +57,6 @@
  *       names the shim, <home>/bin/serve, with it): a hello with no token makes link ID (lib/remote/server.ts), as
  *       a process of this account may. Refused under SSH_ORIGINAL_COMMAND (a forced command: a restricted key, whose
  *       line fixes its arguments without --login anyway, or a ForceCommand).
- *   sub-human serve --enroll CODE --kind ssh|ws|pipe
- *       What a 0.5.0-beta.15 enrollment door left in authorized_keys runs: the joiner's first frame is answered with
- *       protocol.skewMessage (PROTOCOL SKEW: that joiner must update) and nothing else happens. Nothing writes such a
- *       door any more; doctor names a leftover one.
  *   sub-human link CODE [--reset | --forget [--force]]
  *       The link daemon of room CODE, hosted on another machine (lib/remote/link.ts run): the join hook starts it
  *       detached; it exits on its own once this machine has no seat left in the room. --reset (with no daemon
@@ -84,7 +80,7 @@
  *   sub-human admit [REF [--refuse] [--yes]] [--room ROOM]                    (lib/cli/host.ts)
  *       The join requests waiting for the host (no REF), or let one in (y/N first; --yes skips it), or --refuse it.
  *       The card in the host's session is the usual way; this is for a host with no session open.
- *   sub-human kick NAME [--room ROOM] [--file AUTHORIZED_KEYS]                (lib/cli/host.ts)
+ *   sub-human kick NAME [--room ROOM]                                        (lib/cli/host.ts)
  *       End NAME's connection: token burnt, its authorized_keys lines removed, its seats leave, a room line says so.
  *   sub-human prime ROOM [--persist 8h]                                       (lib/cli/host.ts)
  *       On the joining machine: open a shared ssh connection (ControlMaster) for room ROOM's link, interactively,
@@ -138,7 +134,6 @@ import type * as HostLinksMod from '../remote/host-links.ts';
 import type * as ServerMod from '../remote/server.ts';
 import type * as PipeMod from '../remote/transports/pipe.ts';
 import type * as HandoffMod from '../handoff.ts';
-import type * as ProtocolMod from '../remote/protocol.ts';
 import type * as LinkMod from '../remote/link.ts';
 import type * as LinkSocketMod from '../remote/link-socket.ts';
 import type * as OptionsMod from '../room/options.ts';
@@ -155,7 +150,6 @@ const hostLinksLib = lazy<typeof HostLinksMod>(import.meta.url, '../remote/host-
 const serverLib = lazy<typeof ServerMod>(import.meta.url, '../remote/server.ts');
 const pipeLib = lazy<typeof PipeMod>(import.meta.url, '../remote/transports/pipe.ts');
 const handoffLib = lazy<typeof HandoffMod>(import.meta.url, '../handoff.ts');
-const protocolLib = lazy<typeof ProtocolMod>(import.meta.url, '../remote/protocol.ts');
 const linkLib = lazy<typeof LinkMod>(import.meta.url, '../remote/link.ts');
 const linkSocketLib = lazy<typeof LinkSocketMod>(import.meta.url, '../remote/link-socket.ts');
 const optionsLib = lazy<typeof OptionsMod>(import.meta.url, '../room/options.ts');
@@ -386,11 +380,10 @@ function watch(args: readonly string[]) {
 }
 
 // ---------- serve --stdio CODE: lib/remote/server.ts ----------
-const SERVE_FLAGS = { stdio: 0, link: 1, login: 0, via: 1, peer: 1, enroll: 1, kind: 1 } as const satisfies FlagSpec;
+const SERVE_FLAGS = { stdio: 0, link: 1, login: 0, via: 1, peer: 1 } as const satisfies FlagSpec;
 
 function serve(args: readonly string[]) {
   const { flags, rest } = parseFlags(args, SERVE_FLAGS);
-  if (flags.enroll !== undefined) return serveEnroll();
   const code = rest[0];
   if (!flags.stdio || !code || rest.length > 1) die('usage: sub-human serve --stdio CODE [--link ID [--login]] [--via ws [--peer KEY]]');
   const { LINK_ID_RE } = hostLinksLib();
@@ -423,24 +416,6 @@ function serve(args: readonly string[]) {
   });
   // `sub-human kick` stops this with SIGTERM: tell the link it was revoked first, so its daemon stops, not redials
   process.once('SIGTERM', () => { const told = srv.revoked(); setTimeout(() => process.exit(0), told ? 200 : 0); });
-}
-
-// serve --enroll CODE --kind K: a 0.5.0-beta.15 enrollment door's forced command (nothing writes one now). The joiner's
-// first frame gets the skew message, so that sub-human says to update instead of "the invite no longer works".
-function serveEnroll() {
-  const protocol = protocolLib();
-  const msg = protocol.skewMessage({ host: { version: protocol.PLUGIN_VERSION, proto: protocol.PROTO }, joiner: { version: null, proto: { min: 1, max: 2 } }, need: 3 });
-  const dec = protocol.decoder();
-  let answered = false;
-  process.stdin.on('data', d => {
-    for (const f of dec.push(d)) {
-      if (answered) return;
-      answered = true;
-      const id = f && typeof f === 'object' && 'id' in f ? f.id : null;
-      process.stdout.write(protocol.encode(protocol.error(id ?? null, 'PROTOCOL', msg, 'SKEW')), () => process.exit(0));
-    }
-  });
-  process.stdin.on('end', () => process.exit(0));
 }
 
 // ---------- link CODE [--reset | --forget [--force]]: lib/remote/link.ts ----------

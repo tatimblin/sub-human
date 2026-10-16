@@ -27,7 +27,6 @@ import type * as LinksMod from '../../room/links.ts';
 import type * as LinkStateMod from '../../room/link-state.ts';
 import type * as EnvelopeMod from '../../room/envelope.ts';
 import type * as ShimMod from '../../remote/shim.ts';
-import type * as SshkeysMod from '../../remote/sshkeys.ts';
 import type * as ProtocolMod from '../../remote/protocol.ts';
 import type * as LinkSocketMod from '../../remote/link-socket.ts';
 import type * as LinkConnectMod from '../../remote/link-connect.ts';
@@ -56,7 +55,6 @@ interface Libs {
   'room/link-state.ts': typeof LinkStateMod;
   'room/envelope.ts': typeof EnvelopeMod;
   'remote/shim.ts': typeof ShimMod;
-  'remote/sshkeys.ts': typeof SshkeysMod;
   'remote/protocol.ts': typeof ProtocolMod;
   'remote/link-socket.ts': typeof LinkSocketMod;
   'remote/link-connect.ts': typeof LinkConnectMod;

@@ -105,10 +105,6 @@ function bundle(report: Report, { salt, env = process.env }: { salt?: string; en
       reach: d.reach ? { ok: d.reach.ok, ms: d.reach.ms, skipped: d.reach.skipped, error: d.reach.error ? red(d.reach.error) : undefined, protocol: d.reach.protocol, skewMs: d.reach.skewMs, ssh_error: d.reach.stderr ? red(d.reach.stderr).split('\n').slice(-3) : undefined } : undefined,
       recent_errors: d.recent.map(red),
     })),
-    authorized_keys: {
-      exists: report.authorizedKeys.exists,
-      lines: report.authorizedKeys.lines.map(l => ({ through_shim: !!l.shimmed, parsed: l.parse !== false, key: l.key ? `${l.type} ${fingerprint(l.key)}` : undefined })),
-    },
     probe: report.probe,
   };
 }

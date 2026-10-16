@@ -24,7 +24,6 @@ import * as seatKey from '../hooks/seat-key.ts';
 import { flaky } from './support/flaky.ts';
 import * as config from '../lib/config.ts';
 import * as seats from '../lib/seats.ts';
-import * as sshkeys from '../lib/remote/sshkeys.ts';
 import type { Client, ConnectOpts } from '../lib/remote/client.ts';
 import type { DecodedFrame } from '../lib/remote/types-core.ts';
 import type { RoomError } from '../lib/room/validate.ts';
@@ -416,23 +415,6 @@ test('remote (pipe): `serve --stdio CODE --link ID` (the SSH forced command) tak
   assert.equal(invites.redeemInvite(host, c.secret, { machine: REMOTE }).link.id.length, 12, 'and stays unused');
 });
 
-test('the lines an older sub-human wrote to authorized_keys: kick takes a link\'s out, a door goes by its tag; nothing here writes one', t => {
-  const { code } = hostRoom(t);
-  const KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOv2YxFcmD0qVf1aW0gk1oQfWb3m9e1bJ1l3xq3fQnHk';
-  const home = path.resolve(must(process.env.SUB_HUMAN_HOME));
-  const id = 'abcdef012345';
-  const linkLine = `command="SUB_HUMAN_HOME=${home} ${home}/bin/serve --stdio ${code} --link ${id}",restrict ${KEY} sub-human:${code}:${id}`;
-  const door = `command="SUB_HUMAN_HOME=${home} ${home}/bin/serve --enroll ${code} --kind ssh",restrict ${KEY} ${sshkeys.ENROLL_TAG(code)}`;
-  const ak = path.join(h.tmpDir('sh-ak-', t), 'authorized_keys');
-  fs.writeFileSync(ak, `ssh-ed25519 AAAAmine me@laptop\n${linkLine}\n${door}\n`, { mode: 0o600 });
-  assert.equal(sshkeys.removeAuthorized(ak, code, '0123456789ab'), 0, 'another link\'s line: none');
-  assert.equal(sshkeys.removeAuthorized(ak, code, id), 1);
-  assert.equal(sshkeys.removeTagged(ak, sshkeys.ENROLL_TAG(code)), 1);
-  assert.equal(fs.readFileSync(ak, 'utf8'), 'ssh-ed25519 AAAAmine me@laptop\n', 'the person\'s own lines stay');
-  assert.equal(fs.statSync(ak).mode & 0o777, 0o600);
-  assert.deepEqual(Object.keys(sshkeys).sort(), ['ENROLL_TAG', 'authorizedKeysFile', 'removeAuthorized', 'removeTagged'], 'no writer left');
-});
-
 test('remote (memory): subscribe {snapshot: true} gets the snapshot first only from a host that has one, only after 0, and only when it fits a frame', async t => {
   const { code, host } = hostRoom(t);
   const c = await linked(t, host);
@@ -545,7 +527,6 @@ test('quotas: the log counts a seat\'s posts by via; a link window drops what ha
 test('kick (pipe): a `serve --stdio CODE` child names no link, yet the kick ends its stream with LINK_REVOKED, refuses its ops and closes it; the old token\'s hello says LINK_REVOKED', async t => {
   const { code, host } = hostRoom(t);
   const hosting = await import('../lib/remote/hosting.ts');
-  const ak = path.join(h.tmpDir('sh-ak-', t), 'authorized_keys');
   const { invite } = invites.mintFor(host, { locator: 'pipe:test', machine: REMOTE, seats: [] });
   const tr = pipe.spawn(process.execPath, [h.BIN, 'serve', '--stdio', code], { env: h.childEnv() });
   let closed = false;
@@ -556,7 +537,7 @@ test('kick (pipe): a `serve --stdio CODE` child names no link, yet the kick ends
   const ends: { reason: string; message?: string }[] = [];
   const sub = c.subscribe(0, store.hash12(''), ({ ev, data }) => { if (ev === 'end') ends.push(data); });
   await sub.ready;
-  const r = hosting.kick(code, 'bob', { file: ak });
+  const r = hosting.kick(code, 'bob');
   assert.deepEqual(r.seats, ['bob']);
   assert.ok(await h.until(() => ends.length > 0, 5000, 20), 'the stream ends without a SIGTERM reaching this serve');
   assert.equal(ends[0]?.reason, 'AUTH');

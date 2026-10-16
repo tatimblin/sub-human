@@ -2,28 +2,26 @@
  * plugin/sub-human/lib/cli/doctor.ts: `sub-human doctor`, what is wrong with this machine's sub-human and how to fix
  * it, and `doctor --bundle`, the same as redacted JSON to attach to a bug report. Read only, except --fix (the
  * shim refresh, the home's modes) and the bundle file. scripts/sub-human dispatches here. The checks live by subject in
- * lib/cli/doctor/: links.ts (the links, keyed on the typed reasons the link daemon records), ssh.ts (the shim,
- * authorized_keys, ssh and its stderr), listener.ts (the web listener), claude.ts (Claude Code, the bg daemon, the
+ * lib/cli/doctor/: links.ts (the links, keyed on the typed reasons the link daemon records), ssh.ts (the shim, ssh
+ * and its stderr), listener.ts (the web listener), claude.ts (Claude Code, the bg daemon, the
  * room's Claude, hooks, Remote Control), redact.ts (the bundle); check.ts what they share.
  *
- *   sub-human doctor [--quick] [--fix] [--json] [--bundle [FILE]] [--authorized-keys FILE] [--timeout MS]
+ *   sub-human doctor [--quick] [--fix] [--json] [--bundle [FILE]] [--timeout MS]
  *       --quick    skip the slow checks: the hello to each link's host and the Claude Code internals probe
- *       --fix      first refresh the serve shim and pointer (lib/remote/shim.ts refresh), remove the enrollment door
- *                  lines a 0.5.0-beta.15 ssh invite left in authorized_keys, and repair the home's
+ *       --fix      first refresh the serve shim and pointer (lib/remote/shim.ts refresh) and repair the home's
  *                  modes (lib/home.ts repairModes)
  *       --json     the report as JSON (unredacted: it stays on this machine)
  *       --bundle   write the redacted bundle (default ./sub-human-doctor-<time>.json) and print its path
- *       --authorized-keys   the file to scan (default ~/.ssh/authorized_keys)
  *       --timeout  the hello's deadline per link (default DOCTOR_HELLO_MS, 8 s)
  *   Exit 1 when a check fails, else 0.
  *
  * Checks, each {id, status: pass|warn|fail|info, title, detail, fix?}, in this order:
  *   plugin, node (24.3 or newer), home (the home and its store directories are 0700 and this user's): here
- *   shim, authorized_keys, ssh: doctor/ssh.ts;  link:CODE, clock:CODE: doctor/links.ts;  room:CODE (each hosted room's
+ *   shim, ssh: doctor/ssh.ts;  link:CODE, clock:CODE: doctor/links.ts;  room:CODE (each hosted room's
  *   log: its hash chain and every person's line verified): doctor/rooms.ts
  *   room-claude:CODE, claude, daemon, hooks, remote_control: doctor/claude.ts;  listener, web:CODE: doctor/listener.ts
  *
- *   diagnose(opts) -> Promise<Report>   Report = {generated_at, versions, checks, links, authorizedKeys}
+ *   diagnose(opts) -> Promise<Report>   Report = {generated_at, versions, checks, links}
  *   format(report, {color}?) -> string
  *   main(args) -> Promise<exitCode>;  parseArgs(args) -> options (lib/cli/args.ts; Error with the usage)
  *   checkNode(version?), and every check the doctor/ modules export, re-exported here for the tests
@@ -32,7 +30,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { lib, cli, check, tilde, PLUGIN_ROOT, DOCTOR_HELLO_MS } from './doctor/check.ts';
-import { checkShim, scanAuthorizedKeys, checkAuthorizedKeys, sshVersion, checkSsh, sshHint } from './doctor/ssh.ts';
+import { checkShim, sshVersion, checkSsh, sshHint } from './doctor/ssh.ts';
 import { diagnoseLink, linkChecks, helloProbe } from './doctor/links.ts';
 import { checkListener } from './doctor/listener.ts';
 import { roomChecks, verifyRoom, verifyText } from './doctor/rooms.ts';
@@ -80,14 +78,11 @@ function checkHome() {
   return check({ id: 'home', status: 'fail', title: 'sub-human folder', detail: bad.join('; '), fix: `${cli('doctor --fix')} in a terminal (or chmod 700 ${bad.map(b => b.split(' ')[0]).join(' ')})` });
 }
 
-async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, authorizedKeys, env = process.env }: { quick?: boolean; timeoutMs?: number; authorizedKeys?: string | undefined; env?: NodeJS.ProcessEnv } = {}): Promise<Report> {
+async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, env = process.env }: { quick?: boolean; timeoutMs?: number; env?: NodeJS.ProcessEnv } = {}): Promise<Report> {
   const checks = [checkPlugin(), checkNode(), checkHome()];
-  const akFile = authorizedKeys || path.join(os.homedir(), '.ssh', 'authorized_keys');
-  const scan = scanAuthorizedKeys(akFile);
   const codes = lib('room/links.ts').list();
   const sshLinks = codes.some(c => lib('room/links.ts').get(c)?.transport?.kind === 'ssh');
-  checks.push(checkShim({ needed: scan.lines.some(l => l.shimmed) }));
-  checks.push(checkAuthorizedKeys(scan));
+  checks.push(checkShim());
   const sshV = sshVersion();
   checks.push(checkSsh({ needed: sshLinks, version: sshV }));
   const links = await Promise.all(codes.map(code => diagnoseLink(code, { quick, timeoutMs, env })));
@@ -104,7 +99,7 @@ async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, authorized
   return {
     generated_at: new Date().toISOString(),
     versions: { plugin: pluginVersion(), node: process.versions.node, claude: cv, protocol: lib('remote/protocol.ts').PROTO, ssh: sshV, platform: process.platform, arch: process.arch, os: os.release() },
-    checks, links, authorizedKeys: scan, probe: cl.probe ?? null,
+    checks, links, probe: cl.probe ?? null,
   };
 }
 
@@ -127,19 +122,18 @@ function format(report: Report, { color = false }: { color?: boolean } = {}): st
 
 // ---------- CLI ----------
 function parseArgs(args: readonly string[]): DoctorOptions {
-  const { flags: f, rest, error } = parse(args, { quick: 0, fix: 0, json: 0, bundle: '?', 'authorized-keys': 1, timeout: 1 });
-  if (rest.length) throw new Error(`usage: sub-human doctor [--quick] [--fix] [--json] [--bundle [FILE]] [--authorized-keys FILE] [--timeout MS] (not ${rest[0]})`);
-  if (error && /^--timeout/.test(error)) throw new Error('--timeout needs a number of milliseconds');
-  if (error || f['authorized-keys'] === '') throw new Error('--authorized-keys needs a file');
+  const { flags: f, rest, error } = parse(args, { quick: 0, fix: 0, json: 0, bundle: '?', timeout: 1 });
+  if (rest.length) throw new Error(`usage: sub-human doctor [--quick] [--fix] [--json] [--bundle [FILE]] [--timeout MS] (not ${rest[0]})`);
+  if (error) throw new Error('--timeout needs a number of milliseconds');
   const o: DoctorOptions = {
     quick: !!f.quick, fix: !!f.fix, json: !!f.json, bundle: f.bundle === undefined ? null : f.bundle === true ? '' : f.bundle,
-    authorizedKeys: f['authorized-keys'], timeoutMs: f.timeout === undefined ? DOCTOR_HELLO_MS : Number(f.timeout),
+    timeoutMs: f.timeout === undefined ? DOCTOR_HELLO_MS : Number(f.timeout),
   };
   if (!(o.timeoutMs > 0)) throw new Error('--timeout needs a number of milliseconds');
   return o;
 }
 
-function applyFix(write: (s: string) => void, { authorizedKeys }: { authorizedKeys?: string | undefined } = {}) {
+function applyFix(write: (s: string) => void) {
   const h = lib('home.ts');
   const done: string[] = [];
   if (fs.existsSync(h.home())) {
@@ -149,20 +143,13 @@ function applyFix(write: (s: string) => void, { authorizedKeys }: { authorizedKe
     const r = shim.refresh({ force: true });
     done.push(r ? `the serve shim and pointer name ${tilde(shim.pluginRoot())} and ${tilde(process.execPath)}` : `the plugin root ${tilde(shim.pluginRoot())} is under a temp dir: the shim was not written`);
   }
-  // the enrollment doors a 0.5.0-beta.15 ssh invite left: they only answer "update" now
-  const akFile = authorizedKeys || path.join(os.homedir(), '.ssh', 'authorized_keys');
-  const scan = scanAuthorizedKeys(akFile);
-  const sk = lib('remote/sshkeys.ts');
-  let gone = 0;
-  for (const code of new Set(scan.doors ?? [])) { try { gone += sk.removeTagged(akFile, sk.ENROLL_TAG(code)); } catch { /* left for by hand */ } }
-  if (gone) done.push(`removed ${gone} enrollment door line(s) an older sub-human left in ${tilde(akFile)}`);
   for (const d of done) write(`fixed: ${d}\n`);
 }
 
 async function main(args: readonly string[], { write = (s: string) => { process.stdout.write(s); }, env = process.env }: { write?: (s: string) => void; env?: NodeJS.ProcessEnv } = {}): Promise<number> {
   const o = parseArgs(args);
-  if (o.fix) applyFix(write, { authorizedKeys: o.authorizedKeys });
-  const report = await diagnose({ quick: o.quick, timeoutMs: o.timeoutMs, authorizedKeys: o.authorizedKeys, env });
+  if (o.fix) applyFix(write);
+  const report = await diagnose({ quick: o.quick, timeoutMs: o.timeoutMs, env });
   if (o.bundle !== null) {
     const file = path.resolve(o.bundle || `sub-human-doctor-${report.generated_at.replace(/[:.]/g, '-')}.json`);
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 }); // a folder named for the bundle may not exist yet
@@ -177,6 +164,6 @@ async function main(args: readonly string[], { write = (s: string) => { process.
 }
 
 export {
-  diagnose, format, bundle, redactor, helloProbe, checkListener, checkRoomClaudes, linkChecks, scanAuthorizedKeys, checkAuthorizedKeys,
+  diagnose, format, bundle, redactor, helloProbe, checkListener, checkRoomClaudes, linkChecks,
   checkNode, checkRemoteControl, checkClaude, checkDaemon, sshHint, main, parseArgs, DOCTOR_HELLO_MS, roomChecks, verifyRoom, verifyText,
 };

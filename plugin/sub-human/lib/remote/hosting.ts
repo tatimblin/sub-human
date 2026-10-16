@@ -18,12 +18,11 @@
  *   cancelInvite(code, ref?) -> {ref?, refs?, text}   burn one unused invite (a leaked one) by its ref; with no ref, the
  *       one open invite, or the list of them when there are several. One reserved for or used by a link ends that
  *       link (kick)
- *   kick(code, name, {file?}) -> {id, seats, keys, text}   end the link NAME joined over: its token (and key) stops
+ *   kick(code, name) -> {id, seats, text}   end the link NAME joined over: its token stops
  *       working (hostLinks.revokeLink, which also burns an invite reserved for it), its seats leave ("removed by the
  *       host"), and a room line says so. Every live `serve` of the link sees its record go (lib/remote/server.ts held:
  *       the stream ends AUTH LINK_REVOKED, every op is refused, the connection closes), whatever its argv; one that
- *       names `--link ID` (ssh) is also sent SIGTERM. A link an admit let in before
- *       protocol 3 also loses its authorized_keys line (keys: how many; nothing adds one any more). A joiner still
+ *       names `--link ID` (ssh) is also sent SIGTERM. A joiner still
  *       waiting for the card: its reserved link. A link made over this account's own ssh login (hostLinks.loginLink):
  *       its token goes and its serve is stopped, and the text says that login can link again
  *   linkTransport({inv, cur?}) -> LinkSpec | null   the link transport for an sh2 invite (internal: a handoff's
@@ -57,7 +56,6 @@ import { spawnSync } from 'node:child_process';
 import * as invites from './invites.ts';
 import * as hostLinks from './host-links.ts';
 import * as admission from './admission.ts';
-import * as sshkeys from './sshkeys.ts';
 import * as inviteSecret from './invite-secret.ts';
 import * as machineKey from './machine-key.ts';
 import * as protocol from './protocol.ts';
@@ -107,7 +105,6 @@ export interface Ended {
   id: string | null;
   ref?: string;
   seats: string[];
-  keys: number;
   text: string;
 }
 
@@ -286,9 +283,9 @@ function linkIdOf(store: RoomStore, target: string): string {
 }
 
 /** Burn one invite (a leaked one) by its ref; one reserved for or used by a link ends that link. */
-function revokeInvite(code: RoomCode, store: RoomStore, ref: string, invite: InviteRecord, opts: { file?: string }): Ended {
+function revokeInvite(code: RoomCode, store: RoomStore, ref: string, invite: InviteRecord): Ended {
   if (invite.link) {
-    const r = endLink(code, store, invite.link, opts);
+    const r = endLink(code, store, invite.link);
     return { ...r, ref, text: `that invite ${invite.used_at ? 'was used already' : 'was being used'}; ${r.text}` };
   }
   const { state } = invites.burnInvite(store, ref);
@@ -296,7 +293,7 @@ function revokeInvite(code: RoomCode, store: RoomStore, ref: string, invite: Inv
   const text = state === 'burnt'
     ? `cancelled the invite to room ${code} (${ref}): it lets no one in; everyone else stays`
     : `that invite to room ${code} (${ref}) no longer worked already (wrong PINs, expired, or cancelled); nothing changed`;
-  return { id: null, ref, seats: [], keys: 0, text };
+  return { id: null, ref, seats: [], text };
 }
 
 /** The open invites of the room: [{ref, expires_at}], oldest first. */
@@ -307,7 +304,7 @@ function openInvites(store: RoomStore, now = Date.now()): { ref: string; expires
     .map(([k, i]) => ({ ref: k.slice(0, 12), expires_at: i.expires_at }));
 }
 
-function cancelInvite(code: RoomCode, ref?: string | null, { file = sshkeys.authorizedKeysFile(), now = Date.now() }: { file?: string; now?: number } = {}): Ended | { refs: string[]; text: string } {
+function cancelInvite(code: RoomCode, ref?: string | null, { now = Date.now() }: { now?: number } = {}): Ended | { refs: string[]; text: string } {
   const store = hostStore(code);
   if (ref === undefined || ref === null || ref === '') {
     const open = openInvites(store, now);
@@ -318,17 +315,12 @@ function cancelInvite(code: RoomCode, ref?: string | null, { file = sshkeys.auth
   }
   const found = /^[0-9a-f]{12}$/.test(String(ref)) ? invites.findInvite(store, ref) : null;
   if (!found) throw new RoomError('INVALID', `room ${code} has no open invite ${ref}; /sub-human invite --cancel (no ID) lists the open ones`);
-  return revokeInvite(code, store, ref, found.invite, { file });
+  return revokeInvite(code, store, ref, found.invite);
 }
 
-/** End link id of the room: its token, an older link's key line, its seats, its serve processes; a room line. */
-function endLink(code: RoomCode, store: RoomStore, id: string, { file = sshkeys.authorizedKeysFile() }: { file?: string } = {}): Ended {
+/** End link id of the room: its token, its seats, its serve processes; a room line. */
+function endLink(code: RoomCode, store: RoomStore, id: string): Ended {
   const r = hostLinks.revokeLink(store, id) ?? { link: null, invites: 0 };
-  // a link an admit let in before protocol 3 has a forced-command line for it (where its admission says, else the
-  // default file): it goes with the link. Nothing adds such a line any more
-  const doors = new Set([path.resolve(file), ...admission.admissions(store, { all: true }).flatMap(a => (a.link === id && a.door_file ? [path.resolve(a.door_file)] : []))]);
-  let keys = 0;
-  for (const f of doors) keys += sshkeys.removeAuthorized(f, code, id);
   spawnSync('pkill', ['-f', '--', `--stdio ${code} --link ${id}`], { stdio: 'ignore' });
   const seats = r.link ? r.link.seats || [] : [];
   const seatsLib = seatsMod;
@@ -336,13 +328,13 @@ function endLink(code: RoomCode, store: RoomStore, id: string, { file = sshkeys.
   const login = !!(r.link && r.link.login); // a link made over this account's own ssh login (no key line of its own)
   roomLine(code, `the host ended ${seats.length ? `${seats.join(', ')}'s connection` : 'a connection'} to the room`);
   const text = `${seats.length ? `${seats.join(', ')} ${seats.length === 1 ? 'is' : 'are'} out of room ${code}` : `ended a connection to room ${code}`}: it no longer reaches the room`
-    + (login ? `. It came over an ssh login to this account, which can join again: to shut that, take its key out of ${file}` : '');
-  return { id, seats, keys, text };
+    + (login ? `. It came over an ssh login to this account, which can join again: to shut that, take its key out of ~/.ssh/authorized_keys` : '');
+  return { id, seats, text };
 }
 
-function kick(code: RoomCode, name: string, opts: { file?: string } = {}): Ended {
+function kick(code: RoomCode, name: string): Ended {
   const store = hostStore(code);
-  return endLink(code, store, linkIdOf(store, String(name).trim()), opts);
+  return endLink(code, store, linkIdOf(store, String(name).trim()));
 }
 
 // ---------- the joiner ----------

@@ -98,22 +98,6 @@ export interface LinkReport {
   closed?: true;
 }
 
-/** One sub-human line of authorized_keys: unreadable, or parsed. */
-export type KeyLine =
-  | { ok: false; parse: false; raw: string; shimmed?: undefined; home?: undefined; type?: undefined; key?: undefined }
-  | { ok: boolean; parse?: undefined; home: string; code: string; id: string; type: string; key: string; shimmed: boolean };
-
-/** scanAuthorizedKeys(file) -> {file, exists, lines, doors}: doors, the room codes of enrollment doors a 0.5.0-beta.15
- * invite left (they only answer "update"; doctor --fix removes them) */
-export interface AuthorizedKeysScan {
-  file: string;
-  exists: boolean;
-  lines: KeyLine[];
-  doors?: string[];
-  /** door lines of another sub-human home (their forced command names it): reported, never removed */
-  otherDoors?: string[];
-}
-
 /** diagnose(opts) -> Report */
 export interface Report {
   generated_at: string;
@@ -123,7 +107,6 @@ export interface Report {
   };
   checks: Check[];
   links: LinkReport[];
-  authorizedKeys: AuthorizedKeysScan;
   probe: { total: number; missing: string[] } | null;
 }
 
@@ -154,7 +137,6 @@ export interface Bundle {
     reach: (Pick<Reach, 'ok' | 'ms' | 'skipped' | 'protocol' | 'skewMs'> & { error: string | undefined; ssh_error: string[] | undefined }) | undefined;
     recent_errors: string[];
   }[];
-  authorized_keys: { exists: boolean; lines: { through_shim: boolean; parsed: boolean; key: string | undefined }[] };
   probe: Report['probe'];
 }
 
@@ -164,6 +146,5 @@ export interface DoctorOptions {
   fix: boolean;
   json: boolean;
   bundle: string | null;
-  authorizedKeys: string | undefined;
   timeoutMs: number;
 }

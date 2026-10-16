@@ -68,46 +68,7 @@ test('doctor: node floor, Remote Control, ssh hints and argument errors', () => 
   assert.deepEqual(doctor.parseArgs(['--bundle', 'f.json', '--quick']), { ...doctor.parseArgs([]), bundle: 'f.json', quick: true });
 });
 
-test('doctor: authorized_keys lines that bypass the shim are found', t => {
-  const home = h.freshHome(t);
-  const file = path.join(h.tmpDir('sh-ak-', t), 'authorized_keys');
-  fs.writeFileSync(file, [
-    'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIother someone@else',
-    `command="SUB_HUMAN_HOME=${home} ${home}/bin/serve --stdio vole-1234 --link aaaaaaaaaaaa",restrict ${KEY} sub-human:vole-1234:aaaaaaaaaaaa`,
-    `command="SUB_HUMAN_HOME=${home} ${home}/bin/serve --enroll vole-5678 --kind ssh",restrict ${KEY} sub-human-enroll:vole-5678`,
-    `command="SUB_HUMAN_HOME=${home} /opt/node/bin/node /cache/sub-human/0.2.0/bin/sub-human serve --stdio vole-1234 --link ${LINK_ID}",restrict ${KEY} sub-human:vole-1234:${LINK_ID}`,
-  ].join('\n'));
-  const scan = doctor.scanAuthorizedKeys(file);
-  assert.deepEqual(scan.lines.map(l => [l.shimmed, 'code' in l ? l.code : undefined, 'id' in l ? l.id : undefined]), [[true, rc('vole-1234'), 'aaaaaaaaaaaa'], [false, rc('vole-1234'), LINK_ID]]);
-  assert.deepEqual(scan.doors, [rc('vole-5678')], 'a door a 0.5.0-beta.15 invite left');
-  const c = doctor.checkAuthorizedKeys(scan);
-  assert.equal(c.status, 'warn');
-  assert.match(c.detail, /1 enrollment door line\(s\) an older sub-human's ssh invite left \(room vole-5678\)/);
-  assert.match(fixOf(c), /doctor --fix in a terminal \(it removes them\)/);
-  assert.deepEqual(doctor.scanAuthorizedKeys(file + '.none'), { file: file + '.none', exists: false, lines: [] });
-});
-
-test('doctor: a door line of another sub-human home is reported as not this home\'s, and --fix leaves it (live: the real ~/.sub-human\'s rooms)', async t => {
-  const home = h.freshHome(t);
-  const file = path.join(h.tmpDir('sh-ak-', t), 'authorized_keys');
-  const other = `command="SUB_HUMAN_HOME=/Users/someone/.sub-human /Users/someone/.sub-human/bin/serve --enroll orca-5212 --kind ssh",restrict ${KEY} sub-human-enroll:orca-5212`;
-  const mine = `command="SUB_HUMAN_HOME=${home} ${home}/bin/serve --enroll vole-5678 --kind ssh",restrict ${KEY} sub-human-enroll:vole-5678`;
-  fs.writeFileSync(file, `${other}\n${mine}\n`);
-  const scan = doctor.scanAuthorizedKeys(file);
-  assert.deepEqual([scan.doors, scan.otherDoors], [[rc('vole-5678')], [rc('orca-5212')]]);
-  const c = doctor.checkAuthorizedKeys(scan);
-  assert.match(c.detail, /room vole-5678\): they only tell an old joiner to update \(and a line of another sub-human folder's, room orca-5212: not this home's, not touched\)/);
-  let out = '';
-  await doctor.main(['--fix', '--quick', '--json', '--authorized-keys', file], { write: (x: string) => { out += x; } });
-  assert.equal(fs.readFileSync(file, 'utf8'), `${other}\n`, 'only this home\'s door went');
-  assert.match(out, /removed 1 enrollment door line/);
-  // only another home's: info, nothing to fix here
-  const c2 = doctor.checkAuthorizedKeys(doctor.scanAuthorizedKeys(file));
-  assert.equal(c2.status, 'info');
-  assert.match(c2.detail, /no sub-human lines of this home \(and a line of another sub-human folder's, room orca-5212/);
-});
-
-test('doctor CLI: a pipe link to a second home: state, last error, a hello with both protocol versions; home modes, an old key line; --fix', async t => {
+test('doctor CLI: a pipe link to a second home: state, last error, a hello with both protocol versions; home modes; --fix', async t => {
   // the host: a room in its own home
   const hostHome = h.freshHome(t);
   const code = h.newRoom();
@@ -118,9 +79,6 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   fs.writeFileSync(linkState.stateFile(code), JSON.stringify({ state: 'offline', since: new Date(Date.now() - 120_000).toISOString(), attempt: 4, lastError: 'no route to host', queued: 2 }));
   fs.writeFileSync(links.logFile(code), `2026-10-08T10:00:00.000Z sub-human link ${code}: offline: ssh exited 255\n`);
   fs.chmodSync(home, 0o755);
-  fs.mkdirSync(path.join(user, '.ssh'), { recursive: true });
-  const ak = path.join(user, '.ssh', 'authorized_keys');
-  fs.writeFileSync(ak, `command="SUB_HUMAN_HOME=${home} /opt/node/bin/node /cache/sub-human/0.2.0/bin/sub-human serve --stdio ${code} --link ${LINK_ID}",restrict ${KEY} sub-human:${code}:${LINK_ID}\n`);
   const env = { SUB_HUMAN_HOME: home, HOME: user };
 
   let r = run(['--json', '--timeout', '30000'], env);
@@ -129,9 +87,6 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   assert.equal(byId(rep, 'node').status, 'pass');
   assert.equal(byId(rep, 'home').status, 'fail');
   assert.match(fixOf(byId(rep, 'home')), /^SUB_HUMAN_HOME=\S+ node \S+\/scripts\/sub-human doctor --fix in a terminal/, 'the CLI by its path: none is on PATH');
-  const akc = byId(rep, 'authorized_keys');
-  assert.equal(akc.status, 'warn');
-  assert.match(fixOf(akc), new RegExp(`^remove the sub-human:${code}:${LINK_ID} line from ~/\\.ssh/authorized_keys and invite that machine again`), 'this home\'s line, in the child\'s ~/.ssh/authorized_keys');
   const lc = byId(rep, `link:${code}`);
   assert.equal(lc.status, 'warn', lc.detail);
   assert.match(lc.detail, new RegExp(`^pipe ${hostHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · daemon not running · ✕ offline 2m · 2 queued · last error: no route to host · the room moved to [^·]* · host reachable in \\d+ ms; protocol here 1-3 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), host 1-3 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), speaking v3`));
@@ -159,15 +114,10 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   assert.match(r.stdout, /✗ sub-human folder +.*\n +fix: SUB_HUMAN_HOME=\S+ node \S+\/scripts\/sub-human doctor --fix in a terminal/);
   assert.doesNotMatch(r.stdout, /host reachable/, '--quick says no hello');
 
-  // --fix: the modes, the shim and a leftover door (an old link's key line stays: kicking that link takes it out); the
-  // home check passes after it
+  // --fix: the modes and the shim; the home check passes after it
   fs.chmodSync(home, 0o755);
-  const door = `command="SUB_HUMAN_HOME=${home} ${home}/bin/serve --enroll ${code} --kind ssh",restrict ${KEY} sub-human-enroll:${code}`;
-  fs.appendFileSync(ak, `${door}\n`);
   r = run(['--fix', '--quick', '--json'], env);
   assert.match(r.stdout, /^fixed: made .* 0700$/m);
-  assert.match(r.stdout, /^fixed: removed 1 enrollment door line\(s\) an older sub-human left in ~\/\.ssh\/authorized_keys$/m);
-  assert.ok(!fs.readFileSync(ak, 'utf8').includes(door) && fs.readFileSync(ak, 'utf8').includes(`sub-human:${code}:${LINK_ID}`));
   assert.doesNotMatch(r.stdout, /rewrote/);
   const fixed = JSON.parse(r.stdout.slice(r.stdout.indexOf('{'))) as Report;
   assert.equal(byId(fixed, 'home').status, 'pass');
@@ -188,7 +138,6 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   const bl = must(b.links[0], 'the bundle\'s link');
   assert.equal(bl.state.queued, 2);
   assert.equal(must(bl.reach).ok, true);
-  assert.match(must(b.authorized_keys.lines[0]?.key), /^ssh-ed25519 SHA256:[A-Za-z0-9+/]{12}$/);
 });
 
 test('doctor bundle: an allowlist, every free text redacted: ~ for $HOME, hashed hosts and users, no keys, tokens, invites or secrets', () => {
@@ -211,10 +160,9 @@ test('doctor bundle: an allowlist, every free text redacted: ~ for $HOME, hashed
       recent: [`2026-10-08T10:00:00Z sub-human link vole-1234: offline: ${home}/.sub-human/x ${host}`],
       reach: { ok: false, ms: 5, error: `the ssh command exited (255)`, stderr: `alice@${host}: Permission denied (publickey).`, protocol: null, skewMs: null },
     }],
-    authorizedKeys: { exists: true, lines: [{ shimmed: false, type: 'ssh-ed25519', key: KEY_B64, code: rc('vole-1234'), id: LINK_ID }] },
     probe: null,
   };
-  // deliberate: a hand-made report (no authorizedKeys.file, no reach.hint, which bundle never reads; protocol a number)
+  // deliberate: a hand-made report (no reach.hint, which bundle never reads; protocol a number)
   const b = doctor.bundle(report as unknown as Report, { salt: 'fixed', env: { SUB_HUMAN_SETTLE_MS: '900', SECRET_THING: 'x' } });
   const text = JSON.stringify(b);
   for (const s of [home, host, 'alice', rc('vole-1234'), KEY_B64, must(invite.split('.').at(-2)), token, hex, '10.1.2.3', 'tristan@example.com', '/home/bob', '/Users/carol', os.hostname()]) {
@@ -349,8 +297,7 @@ test('doctor: a seatless link gets a hello, whose closed (or the mirror\'s stopp
   links.set(code, { code, transport: { kind: 'pipe', home: hostHome }, token: tokenOf('tok-x'), created_at: new Date().toISOString() });
   fs.writeFileSync(linkState.stateFile(code), JSON.stringify({ state: 'stopped', since: new Date().toISOString(), lastError: linkMod.NO_SEAT_REASON, lastReason: 'NO_SEAT' }));
   const env = { ...process.env, PATH: path.join(home, 'bin') }; // no claude: the internals probe is not run
-  const ak = path.join(home, 'authorized_keys');
-  let rep = await doctor.diagnose({ timeoutMs: 20_000, authorizedKeys: ak, env });
+  let rep = await doctor.diagnose({ timeoutMs: 20_000, env });
   const reach = must(rep.links[0]?.reach, 'its hello');
   assert.equal(reach.ok, true, reach.error);
   assert.equal(rep.links[0]?.closed, undefined, 'open on the host');
@@ -359,17 +306,17 @@ test('doctor: a seatless link gets a hello, whose closed (or the mirror\'s stopp
   process.env.SUB_HUMAN_HOME = hostHome;
   identity.updateRoomClaude(code, () => ({ job: 'cafe0001', stopped_at: new Date().toISOString() }));
   process.env.SUB_HUMAN_HOME = home;
-  rep = await doctor.diagnose({ timeoutMs: 20_000, authorizedKeys: ak, env });
+  rep = await doctor.diagnose({ timeoutMs: 20_000, env });
   assert.equal(rep.links[0]?.closed, true);
   const c = byId(rep, `link:${code}`);
   assert.equal(c.status, 'info');
   assert.match(fixOf(c), /^the room was closed; this machine's copy is kept/);
   // --quick (no hello): the mirror's own record of the stop is enough
-  assert.doesNotMatch(fixOf(byId(await doctor.diagnose({ quick: true, authorizedKeys: ak, env }), `link:${code}`)), /room was closed/);
+  assert.doesNotMatch(fixOf(byId(await doctor.diagnose({ quick: true, env }), `link:${code}`)), /room was closed/);
   const mirror = store.open(code);
   assert.ok(mirror instanceof MirrorRoomStore);
   mirror.applyDoc('members', { claude: { name: 'claude', role: 'claude', stopped_at: new Date().toISOString() } });
-  assert.match(fixOf(byId(await doctor.diagnose({ quick: true, authorizedKeys: ak, env }), `link:${code}`)), /^the room was closed; this machine's copy is kept/);
+  assert.match(fixOf(byId(await doctor.diagnose({ quick: true, env }), `link:${code}`)), /^the room was closed; this machine's copy is kept/);
 });
 
 test('doctor: a dormant link gets no hello', async t => {
@@ -379,11 +326,11 @@ test('doctor: a dormant link gets no hello', async t => {
   links.set(code, { code, transport: { kind: 'pipe', home: gone }, token: tokenOf('tok-x'), created_at: new Date().toISOString() });
   fs.writeFileSync(linkState.stateFile(code), JSON.stringify({ state: 'stopped', since: new Date().toISOString(), lastError: 'the room was closed', lastReason: 'ROOM_CLOSED' }));
   const env = { ...process.env, PATH: path.join(gone, 'bin') }; // no claude: the internals probe is not run
-  const rep = await doctor.diagnose({ timeoutMs: 5000, authorizedKeys: path.join(gone, 'authorized_keys'), env });
+  const rep = await doctor.diagnose({ timeoutMs: 5000, env });
   assert.equal(must(rep.links[0], 'the link').reach, undefined, 'no hello');
   assert.equal(byId(rep, `link:${code}`).status, 'info');
   assert.equal(byId(rep, 'daemon').status, 'info', 'no claude: the daemon status is unreadable');
-  const quick = await doctor.diagnose({ quick: true, authorizedKeys: path.join(gone, 'authorized_keys'), env });
+  const quick = await doctor.diagnose({ quick: true, env });
   assert.match(byId(quick, 'daemon').detail, /could not read `claude daemon status`/, '--quick checks the daemon too');
 });
 

@@ -1,15 +1,10 @@
 /**
  * plugin/sub-human/lib/cli/doctor/ssh.ts: doctor's ssh checks (lib/cli/doctor.ts): the serve shim a host reached over ssh
- * runs, the authorized_keys lines that name it, ssh itself, and what ssh's stderr means for a link (one classifier:
+ * runs, ssh itself, and what ssh's stderr means for a link (one classifier:
  * lib/remote/transports/ssh.ts classify).
  *
- *   checkShim({needed}) -> Check     <home>/bin/serve is the current shim and <home>/bin/current names an existing plugin
+ *   checkShim() -> Check             <home>/bin/serve is the current shim and <home>/bin/current names an existing plugin
  *                                    and node
- *   scanAuthorizedKeys(file) -> {file, exists, lines, doors}   the sub-human lines an older sub-human wrote (nothing
- *                                    writes one now): a link's forced command, and doors (the room codes of enrollment
- *                                    doors a 0.5.0-beta.15 invite left). checkAuthorizedKeys(scan) -> Check: a line that
- *                                    bypasses the shim (written before 0.5), or a door, is a warning (doctor --fix
- *                                    removes the doors; a link's line goes when its link is kicked)
  *   sshVersion() -> string | null;  checkSsh({needed, version}) -> Check
  *   sshHint(stderr, {code?, transport?}) -> string | null   ssh's complaint as a fix (MFA: prime; denied: a login of
  *                                    your own, or an invite over the web; a host key; DNS or a timeout: --via JUMP)
@@ -20,13 +15,13 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { lib, cli, check, tilde, isExec, readText } from './check.ts';
 import { assertNever } from '../../../mod/core/never.ts';
-import type { AuthorizedKeysScan, Check, KeyLine, LinkTransportView } from '../types.ts';
+import type { Check, LinkTransportView } from '../types.ts';
 
-function checkShim({ needed }: { needed: boolean }): Check {
+function checkShim(): Check {
   const shim = lib('remote/shim.ts');
   const file = shim.shimPath(), ptr = shim.pointerPath();
   if (!fs.existsSync(file) && !fs.existsSync(ptr)) {
-    return check({ id: 'shim', status: needed ? 'fail' : 'info', title: 'serve shim', detail: `${tilde(file)} is not there${needed ? ', and authorized_keys names it' : ' (only a host reached over SSH needs it)'}`, fix: needed ? 'start Claude Code once on this machine (it writes it), or run ' + cli('doctor --fix') + ' in a terminal' : undefined });
+    return check({ id: 'shim', status: 'info', title: 'serve shim', detail: `${tilde(file)} is not there (only a host reached over SSH needs it)` });
   }
   const problems: string[] = [];
   if (!isExec(file)) problems.push(`${tilde(file)} is missing or not executable`);
@@ -42,54 +37,6 @@ function checkShim({ needed }: { needed: boolean }): Check {
     return check({ id: 'shim', status: stale ? 'warn' : 'pass', title: 'serve shim', detail: stale ? `runs ${tilde(root)} (sub-human ${shim.versionOf(root) || '?'}), not this install (${tilde(shim.pluginRoot())}, sub-human ${shim.versionOf(shim.pluginRoot()) || '?'})` : `runs ${tilde(root)} with ${tilde(node)}`, fix: stale ? `to serve from this install, run ${cli('doctor --fix')} in a terminal (it points the shim here); a newer install takes it by itself at its next join` : undefined });
   }
   return check({ id: 'shim', status: 'fail', title: 'serve shim', detail: problems.join('; '), fix: 'start Claude Code once on this machine (it rewrites it), or run ' + cli('doctor --fix') + ' in a terminal' });
-}
-
-// command="SUB_HUMAN_HOME=<home> <...> --stdio CODE --link ID",restrict <type> <key> sub-human:CODE:ID
-const KEY_LINE_RE = /^command="SUB_HUMAN_HOME=(\S+) (.+?) --stdio (\S+) --link ([0-9a-f]{12})",restrict (\S+) (\S+) sub-human:(\S+):(\S+)\s*$/;
-
-/** A door line's home (its forced command's SUB_HUMAN_HOME) is this one, by path; a line naming none is this home's
- * when its room is. Another home's line (a second sub-human folder, the person's own ~/.sub-human) is left alone. */
-function ownDoor(line: string, code: string): boolean {
-  const h = /command="SUB_HUMAN_HOME=(\S+) /.exec(line)?.[1];
-  const home = lib('home.ts').home();
-  const real = (p: string) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
-  if (h !== undefined) return real(h) === real(home);
-  try { return lib('identity.ts').roomExists(code); } catch { return false; }
-}
-
-function scanAuthorizedKeys(file: string): AuthorizedKeysScan {
-  const text = readText(file);
-  if (text === null) return { file, exists: false, lines: [] };
-  const lines: KeyLine[] = [], doors: string[] = [], otherDoors: string[] = [];
-  for (const l of text.split('\n')) {
-    const door = / sub-human-enroll:(\S+)\s*$/.exec(l)?.[1];
-    if (door !== undefined) { (ownDoor(l, door) ? doors : otherDoors).push(door); continue; }
-    if (!/\bsub-human:/.test(l) && !/ serve --stdio /.test(l)) continue;
-    const m = KEY_LINE_RE.exec(l.trim());
-    if (!m) { lines.push({ ok: false, parse: false, raw: l }); continue; }
-    const [, home = '', run = '', code = '', id = '', type = '', key = ''] = m; // every group is required: the defaults never apply
-    const shimmed = run === path.join(home, 'bin', 'serve');
-    lines.push({ ok: shimmed, home, code, id, type, key, shimmed });
-  }
-  return { file, exists: true, lines, doors, ...(otherDoors.length ? { otherDoors } : {}) };
-}
-
-function checkAuthorizedKeys(scan: AuthorizedKeysScan): Check {
-  const h = path.resolve(lib('home.ts').home());
-  if (!scan.exists) return check({ id: 'authorized_keys', status: 'info', title: 'authorized_keys', detail: `${tilde(scan.file)}: none (this machine hosts no room over SSH)` });
-  const doors = scan.doors ?? [];
-  const otherDoors = scan.otherDoors ?? [];
-  const others = [...new Set(otherDoors)];
-  const otherNote = others.length ? ` (and ${others.length === 1 ? 'a line' : `${otherDoors.length} lines`} of another sub-human folder's, room ${others.join(', ')}: not this home's, not touched)` : '';
-  if (doors.length) {
-    return check({ id: 'authorized_keys', status: 'warn', title: 'authorized_keys', detail: `${doors.length} enrollment door line(s) an older sub-human's ssh invite left (room ${[...new Set(doors)].join(', ')}): they only tell an old joiner to update${otherNote}`, fix: `run ${cli('doctor --fix')} in a terminal (it removes them), or delete the lines ending sub-human-enroll:ROOM from ${tilde(scan.file)}` });
-  }
-  if (!scan.lines.length) return check({ id: 'authorized_keys', status: 'info', title: 'authorized_keys', detail: `${tilde(scan.file)}: no sub-human lines of this home${otherNote}` });
-  const old = scan.lines.filter(l => !l.ok);
-  if (!old.length) return check({ id: 'authorized_keys', status: 'pass', title: 'authorized_keys', detail: `${scan.lines.length} sub-human line(s) an older sub-human wrote for its links, all through the shim (each goes when its link is kicked)` });
-  const fixes = old.map(l => (l.parse === false ? `edit the unreadable sub-human line by hand in ${tilde(scan.file)}`
-    : `remove the sub-human:${l.code}:${l.id} line from ${tilde(scan.file)}${l.home === h ? '' : ` (home ${tilde(l.home)})`} and invite that machine again (/sub-human invite)`));
-  return check({ id: 'authorized_keys', status: 'warn', title: 'authorized_keys', detail: `${old.length} of ${scan.lines.length} sub-human line(s) bypass the shim (written before 0.5): they bake in a node and plugin path that break on an update`, fix: [...new Set(fixes)].join('\n') });
 }
 
 function sshVersion(): string | null {
@@ -141,4 +88,4 @@ function batchMode(ok: boolean, stderr: string): string {
   return p && (p.kind === 'denied' || p.kind === 'host-key') ? 'ssh cannot log in without a prompt' : '';
 }
 
-export { checkShim, scanAuthorizedKeys, checkAuthorizedKeys, sshVersion, checkSsh, sshHint, batchMode };
+export { checkShim, sshVersion, checkSsh, sshHint, batchMode };
