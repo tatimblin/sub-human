@@ -150,7 +150,7 @@ test('consent: Post(ExitPlanMode) offers to propose once, never denies; a subage
   assert.equal(hso(r).permissionDecision, undefined);
   assert.match(ctx(r), new RegExp(`propose tool with \\{path: ${JSON.stringify(file).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\}`));
   assert.equal(w.hook('consent', ev({ isAgent: true }), { as: 'alice' }).stdout, '');
-  const { hash } = w.lib(() => proposal.create({ code: w.code, name: 'alice' }, { path: file }));
+  const { hash } = w.lib(() => proposal.create({ code: w.code, name: 'alice' }, { path: file }, { cwd: w.userHome }));
   assert.equal(ctx(w.hook('consent', ev(), { as: 'alice' })), `alice agreed to proposal ${hash}.`, 'pending for alice: her approval is her signoff');
   assert.equal(w.hook('consent', ev(), { as: 'alice' }).stdout, '', 'already proposed (same sha256/12)');
 });
@@ -161,7 +161,7 @@ test('consent: approving my own pending proposal, unedited, in my own plan mode 
     const plan = '# Plan\n\n1. paging\n';
     const file = path.join(w.userHome, '.claude', 'plans', 'own-plan.md');
     fs.writeFileSync(file, plan);
-    const { hash } = w.lib(() => proposal.create({ code: w.code, name: 'bob', role: 'member' }, { path: file, approvers: ['bob', 'alice'] }));
+    const { hash } = w.lib(() => proposal.create({ code: w.code, name: 'bob', role: 'member' }, { path: file, approvers: ['bob', 'alice'] }, { cwd: w.userHome }));
     const r = w.hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'ExitPlanMode', permission_mode: 'default', tool_input: {},
       tool_response: { plan, isAgent: false, filePath: file, ...(edited ? { planWasEdited: true } : {}) } }, { as: 'bob' });
     return { w, hash, r };

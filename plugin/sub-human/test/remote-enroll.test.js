@@ -79,6 +79,9 @@ test('enroll: the right code gets the joiner a sealed admission secret and the v
   assert.throws(() => auth.redeemInvite(host, got.secret, { machine: 'someoneelse00001' }), e => e.code === 'AUTH' && /another machine/.test(e.message));
   const red = auth.redeemInvite(host, got.secret, { machine: JOINER.machine });
   assert.equal(red.link.id, got.link);
+  assert.deepEqual([red.link.seats, red.link.bound], [['carol'], true], 'the link is bound to the one name the card let in');
+  assert.ok(auth.mayJoinAs(red.link, 'carol') && !auth.mayJoinAs(red.link, 'bob'));
+  assert.throws(() => auth.bindSeat(host, red.link.id, 'bob'), e => e.code === 'AUTH' && /let in as carol, not bob/.test(e.message));
   assert.throws(() => auth.redeemInvite(host, got.secret, { machine: JOINER.machine }), e => e.code === 'AUTH' && /used already/.test(e.message));
 });
 

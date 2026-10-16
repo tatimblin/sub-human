@@ -69,7 +69,7 @@ import * as members from '../room/members.ts';
 import * as envelope from '../room/envelope.ts';
 import { RoomError, hash12 } from '../room/store.ts';
 import { machineId } from '../home.ts';
-import { FOLLOW_POLL_MS, PROPOSAL_FILE_MAX, LINK_SILENT_MS, envMs } from '../config.ts';
+import { FOLLOW_POLL_MS, PROPOSAL_FILE_MAX, LINK_SILENT_MS, LINK_HUMAN_RATE_MAX, LINK_BLOBS_MAX, RATE_WINDOW_MS, envMs } from '../config.ts';
 import type {
   CodedError, DecodedFrame, ErrorFrame, EventData, EventName, FrameId, IncomingRequest, LinkRecord, Op, OpParams, OpResults, ProtoRange,
 } from './types-core.ts';
@@ -93,6 +93,19 @@ const stale = (msg: string): CodedError => new RoomError('STALE', msg);
 const WIRE_CODES: Set<string> = new Set(Object.values(protocol.CODES));
 const authError = (msg: string): CodedError => new RoomError('AUTH', msg);
 const invalid = (msg: string): CodedError => new RoomError('INVALID', msg);
+
+/** A person's posts over a link are bounded (config LINK_HUMAN_RATE_MAX per RATE_WINDOW_MS): the newest lines first. */
+function humanRate(s: Session, from: string, now = Date.now()): void {
+  const all = s.store.readAll();
+  let n = 0;
+  for (let i = all.length - 1; i >= 0; i--) {
+    const e = all[i];
+    if (now - Date.parse(e.at) >= RATE_WINDOW_MS) break;
+    if (e.from === from && e.via === 'human' && ++n >= LINK_HUMAN_RATE_MAX) {
+      throw new RoomError('RATE', `rate limit: ${from} posted ${LINK_HUMAN_RATE_MAX} times in the last minute; wait before posting again`);
+    }
+  }
+}
 
 function own(s: Session, name: string | undefined): void {
   if (!auth.mayWriteAs(s.link, name as string)) throw authError(`${name} has not joined over this link`);
@@ -216,7 +229,9 @@ const OPS: OpHandlers = {
     if (role !== 'member') throw invalid('a link joins members only');
     if (!envelope.parseKey(pubkey)) throw invalid('join needs the seat\'s public key (Ed25519 SPKI PEM)');
     auth.checkSeatProof(proof, { room: s.store.code, name, pubkey });
-    // s.link: run() lets no op but hello in without it. A login link is the host account's own: its seat is that person's
+    // s.link: run() lets no op but hello in without it. A bound link (the card let one name in; a handoff's seats) joins
+    // its own seats only, before any seat is taken. A login link is the host account's own: its seat is that person's
+    if (!auth.mayJoinAs(s.link, name)) throw authError(auth.notBound(s.link!, name));
     const account = s.link!.login ? machineId() : undefined;
     const r = seats.enter({ code: s.store.code, name, machine: s.link!.machine, pubkey, ...(account ? { account } : {}) });
     if (!r.ok) throw new RoomError(r.code || 'INVALID', r.error);
@@ -246,6 +261,7 @@ const OPS: OpHandlers = {
     }
     own(s, payload.from);
     if (payload.via === 'system') throw authError('a link never writes via "system"; the host writes the room\'s own entries');
+    if (payload.via === 'human') humanRate(s, payload.from);
     const entry = s.store.place(payload);
     if (ANSWERS.has(entry.kind) && entry.proposal_hash) {
       try { proposal.decide(s.store.code, entry.proposal_hash); } catch (e) { s.log(`sub-human serve: decide: ${e && (e as Error).stack || e}`); }
@@ -258,6 +274,7 @@ const OPS: OpHandlers = {
     if (s.store.lineHash(after) !== hash) {
       throw new RoomError('FORK', `the host's line ${after} is not the mirror's; re-mirror with sub-human link --reset ${s.store.code}`);
     }
+    for (const st of [...s.streams]) st.stop(); // one stream per connection: a new subscribe replaces the old (each is a poller)
     s.streams.add(stream(s, id, after));
     return { ok: true };
   },
@@ -280,7 +297,9 @@ const OPS: OpHandlers = {
     const buf = Buffer.from(bytes, 'base64');
     if (buf.length > PROPOSAL_FILE_MAX) throw invalid(`a blob is at most ${PROPOSAL_FILE_MAX} bytes`);
     if (name !== `plans/${hash12(buf)}.md`) throw invalid('a blob is named by its content: plans/<hash12 of the bytes>.md');
-    if (!s.store.blobs.has(name)) s.store.blobs.put(name, buf);
+    if (s.store.blobs.has(name)) return { ref: name };
+    if (++s.blobsPut > LINK_BLOBS_MAX) throw new RoomError('RATE', `this connection stored ${LINK_BLOBS_MAX} plans already; reconnect to store more`);
+    s.store.blobs.put(name, buf);
     return { ref: name };
   },
 
@@ -300,6 +319,7 @@ class Session {
   link: LinkRecord | null;
   later: (() => void) | null;
   streams: Set<Stream>;
+  blobsPut: number;
   silentMs: number;
   heard: number;
   silence: NodeJS.Timeout | null;
@@ -317,6 +337,7 @@ class Session {
     this.link = null;
     this.later = null; // work an op leaves for after its reply (handoff.accept)
     this.streams = new Set(); // {tick, stop}
+    this.blobsPut = 0;
     this.silentMs = silentMs;
     this.heard = Date.now();
     this.silence = null;

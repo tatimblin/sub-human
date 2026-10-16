@@ -160,6 +160,9 @@ test('ssh: a ProxyJump rides the locator (?via=), as plain as the destination; t
   const spec = { kind: 'ssh', user: 'me', host: 'far', via: 'bastion', key: '/k/id_ed25519', knownHosts: '/k/known_hosts', alias: 'sub-human-vole-1234' };
   const local = ['-i', '/k/id_ed25519', '-o', 'IdentitiesOnly=yes', '-o', 'UserKnownHostsFile=/k/known_hosts', '-o', 'StrictHostKeyChecking=yes', '-o', 'HostKeyAlias=sub-human-vole-1234'];
   assert.deepEqual(ssh.command(spec, 'vole-1234', []).slice(8), [...local, '-J', 'bastion', '--', 'me@far', 'sub-human serve --stdio vole-1234']);
+  // SUB_HUMAN_SSH_OPTS comes after the pinned options (ssh takes the first value), so it cannot weaken them
+  const withOpts = ssh.command(spec, 'vole-1234', ['-o', 'StrictHostKeyChecking=no']);
+  assert.ok(withOpts.indexOf('StrictHostKeyChecking=yes') < withOpts.indexOf('StrictHostKeyChecking=no'), withOpts.join(' '));
   const cp = path.join(home, 'ssh', 'cm-%C');
   assert.deepEqual(ssh.command({ ...spec, mux: true }, 'vole-1234', []).slice(2, 10), ['-o', 'BatchMode=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2', '-o', 'ControlMaster=no']);
   assert.ok(ssh.command({ ...spec, mux: true }, 'vole-1234', []).includes(`ControlPath=${cp}`), 'rides the primed master; never becomes one');

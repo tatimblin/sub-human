@@ -122,6 +122,30 @@ test('bare /sub-human: not in a room, it opens one as the default name (git user
   assert.match(r.json.reason, new RegExp(`^sub-human: you're dana in room ${code}, nobody else here yet · another machine: /sub-human invite · leave: /sub-human leave( · starting the room's Claude….*)?$`));
 });
 
+test('/sub-human CODE (a room code alone) joins that room as the default name, never as a person named after the room', () => {
+  const w = new World({ alice: 'act' });
+  w.pid.me = process.ppid; w.sid.me = 'aaaaaaaa-0000-4000-8000-000000000015';
+  spawnSync('git', ['init', '-q', w.cwd]);
+  spawnSync('git', ['-C', w.cwd, 'config', 'user.name', 'Dana Scully']);
+  const r = w.hook('join', expand(w.code), { as: 'me', env: NO_GIT });
+  assert.equal(r.json.decision, undefined, r.stdout);
+  const ms = w.members();
+  assert.ok(ms.dana, 'joined as dana');
+  assert.equal(ms[w.code], undefined);
+});
+
+test('SECURITY: a PIN-shaped prompt the hook throws on is still answered hidden (never a plain exit that expands the prompt)', () => {
+  const w = new World({ alice: 'act' });
+  w.pid.me = process.ppid; w.sid.me = 'aaaaaaaa-0000-4000-8000-000000000016';
+  fs.writeFileSync(path.join(w.home, 'links'), 'not a directory'); // the link registry cannot be written: the join flow throws
+  const r = w.hook('join', expand('join me@far vole-1234 4829'), { as: 'me' });
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.json.decision, 'block');
+  assert.equal(r.json.hookSpecificOutput.suppressOriginalPrompt, true, 'the typed prompt stays out of the conversation');
+  assert.match(r.json.reason, /^sub-human: ✗ /, 'a refusal with the failure, not a bare exit 1');
+  assert.ok(!r.json.reason.includes('4829') && !r.json.reason.includes('me@far'), 'nothing typed is echoed');
+});
+
 test('the default name: git user.name, else the local part of user.email, else $USER; a taken one says how to pick another', () => {
   const w = new World({ claude: 'sleep', dana: 'sleep' });
   w.pid.me = process.pid; w.sid.me = 'aaaaaaaa-0000-4000-8000-000000000015';

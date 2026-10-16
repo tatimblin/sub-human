@@ -66,8 +66,9 @@ export const TAIL_ERROR_LOG_MS = 60_000;       // SUB_HUMAN_TAIL_ERROR_LOG_MS: o
 export const TAIL_STALL_MS = 60_000;           // SUB_HUMAN_TAIL_STALL_MS
 
 // ---------- locks (lib/lock.ts) ----------
-// Locks are held for milliseconds. A waiter gives up (throws LOCK) after the timeout.
-export const LOCK_TIMEOUT_MS = 15_000;
+// Locks are held for milliseconds. A waiter gives up (throws LOCK) after the timeout: under the hooks' own timeouts
+// (hooks.json: 10 s, SessionEnd 5 s), so a wedged lock is reported as LOCK instead of the hook being killed.
+export const LOCK_TIMEOUT_MS = 4000;
 // A lock whose owner cannot be checked (another host, an unreadable or legacy body) is stale after this.
 export const LOCK_STALE_MS = 10_000;
 // The row map (lib/rows.ts) is written from PostToolUse / SubagentStop hooks: wait less, then throw.
@@ -127,7 +128,7 @@ export const LINK_FRAME_MAX_BYTES = 1024 * 1024;
 // The link daemon (lib/remote/link.ts): the join hook waits this long for it to listen; a lost connection is
 // tried again after a jittered delay from LINK_RETRY_MS up to LINK_RETRY_MAX_MS; it exits LINK_IDLE_MS after
 // this machine has no seat left in the room.
-export const LINK_START_MS = 3000;
+export const LINK_START_MS = 2000;             // with LINK_JOIN_WAIT_MS and the join hook's 1 s restart: inside its 10 s
 export const LINK_HELLO_MS = 15_000;           // the daemon's hello: an ssh transport connects (and authenticates) first
 // A wss/ws link's WebSocket (TCP, TLS, upgrade), before the Noise handshake: a ts.net name's first TLS handshake
 // waits while Tailscale fetches its certificate (~20 s seen cold), so this is generous.
@@ -156,7 +157,7 @@ export const SHORT_LIVE_MAX = 4;
 export const ENROLL_MS = 20_000;               // SUB_HUMAN_ENROLL_MS
 export const ADMIT_TTL_MS = 10 * 60_000;       // SUB_HUMAN_ADMIT_TTL_MS
 // The join hook waits this long for a fresh link's first hello (redeem or refusal) before it answers.
-export const LINK_JOIN_WAIT_MS = 6000;
+export const LINK_JOIN_WAIT_MS = 4000;
 // The app-level heartbeat (op ping, to a server whose caps list it): a ping every LINK_PING_MS; no pong within
 // LINK_PONG_MS makes the link suspect (a new connection is made before the old one is dropped); none within
 // LINK_DEAD_MS declares it dead (a half-open TCP or ssh link after a sleep). The server closes a session that
@@ -201,6 +202,11 @@ export const RATE_MAX = 6;                     // agent posts to the room per `f
 // room budget.
 export const RATE_ADDRESSED_MAX = 10;
 export const RATE_WINDOW_MS = 60_000;
+// A person's own posts over a link (lib/remote/server.ts append): a seat on another machine holds its own key and
+// token, so a script there could post as fast as it likes (each @claude a wake of the host's room Claude, each line
+// log growth). A person types one keystroke per post; this is well above that. Local hooks are not limited.
+export const LINK_HUMAN_RATE_MAX = 30;          // via=human entries per seat per RATE_WINDOW_MS, over a link
+export const LINK_BLOBS_MAX = 40;               // blob.put per connection (a proposal's plan each; the daemon reconnects)
 
 // ---------- room log integrity (lib/room/{store,validate,render}.js) ----------
 export const ENTRY_TEXT_MAX_BYTES = 16 * 1024; // an entry's text, UTF-8 bytes (validate)

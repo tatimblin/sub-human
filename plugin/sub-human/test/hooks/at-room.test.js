@@ -79,6 +79,20 @@ test('20 hostile strings after "@room " are logged byte-identical, via human, an
   });
 });
 
+test('the tag with a newline after it (Ctrl+J) still posts; another case, or a word that starts with it, is an ordinary prompt', () => {
+  const w = new World({ claude: 'sleep', alice: 'act' });
+  posted(atRoom(w, submit('@room\nfirst line\nsecond'), { as: 'alice' }));
+  assert.equal(w.entries().at(-1).text, 'first line\nsecond');
+  posted(atRoom(w, submit('@room  two spaces'), { as: 'alice' }));
+  assert.equal(w.entries().at(-1).text, ' two spaces', 'exactly one whitespace character after the tag is dropped');
+  const n = w.entries().length;
+  for (const text of ['@roommate hi', '@Room shouted']) {
+    const r = atRoom(w, submit(text), { as: 'alice' });
+    assert.equal((r.json || {}).decision, undefined, `${text}: an ordinary prompt`);
+  }
+  assert.equal(w.entries().length, n);
+});
+
 test('room: is no tag (an ordinary prompt), and identity falls back to CLAUDE_PID after /clear', () => {
   const w = new World({ claude: 'sleep', alice: 'act' });
   for (const p of ['room:short', 'room: spaced']) assert.equal((atRoom(w, submit(p), { as: 'alice' }).json || {}).decision, undefined, p);

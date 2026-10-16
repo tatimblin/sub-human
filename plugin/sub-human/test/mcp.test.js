@@ -14,8 +14,9 @@ const identity = require(path.join(h.LIB, 'identity.ts'));
 const servers = new Set();
 test.afterEach(() => { for (const c of servers) c.kill(); servers.clear(); });
 
+let mcpCwd; // the session's working directory, as the server sees it (process.cwd(): spawned there by Claude Code)
 function startMcp(env = {}, server = h.MCP) {
-  const child = spawn(process.execPath, [server], { env: h.childEnv(env), stdio: ['pipe', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, [server], { env: h.childEnv(env), stdio: ['pipe', 'pipe', 'pipe'], ...(mcpCwd ? { cwd: mcpCwd } : {}) });
   servers.add(child);
   const waiters = new Map();
   let buf = '', nextId = 1;
@@ -154,7 +155,9 @@ test('mcp: read returns unseen entries (skipping own posts) then by id', async (
   const s = await ready();
   R.append({ kind: 'say', text: 'hi' }, { via: 'human', from: 'bob' });
   await s.tool('post', { kind: 'status', text: 'mine' });
-  assert.deepEqual(payload(await s.tool('read')).map(e => e.text), ['hi']);
+  const got = payload(await s.tool('read'));
+  assert.deepEqual(got.map(e => e.text), ['hi']);
+  assert.deepEqual([got[0].trust, got[0].sig, got[0].nonce, got[0].pubkey], ['verified', undefined, undefined, undefined], 'the model reads a trust verdict, not signature material');
   assert.deepEqual(payload(await s.tool('read')), []);
   R.append({ kind: 'say', text: 'bob here' }, { via: 'human', from: 'bob' });
   assert.deepEqual(payload(await s.tool('read')).map(e => e.text), ['bob here']);
@@ -172,6 +175,7 @@ test('mcp: propose stores plans/<hash>.md, appends proposal {hash, approvers, pa
   identity.join({ code, name: 'claude', role: 'claude', pid: roomClaude.pid, session_id: 'so' });
   identity.leave(code, 'carol');
   R = room.open(code);
+  mcpCwd = h.tmpDir('sh-mcp-cwd-');
   const s = await ready();
   const text = '# Cursor paging\n\n1. add cursor param\n2. tests\n';
   const r = await s.tool('propose', { text });
@@ -198,8 +202,13 @@ test('mcp: propose stores plans/<hash>.md, appends proposal {hash, approvers, pa
   // The same proposal again is not re-appended.
   assert.match((await s.tool('propose', { text })).result.content[0].text, /already open/);
   assert.equal(R.readAll().filter(x => x.kind === 'proposal').length, 1);
+  // path: only under the session's cwd or Claude Code's plans (the bytes go to every mirror and the whole room)
+  const outside = path.join(os.tmpdir(), `sh-plan-${process.pid}.md`);
+  fs.writeFileSync(outside, '# secret\n');
+  assert.match(errText(await s.tool('propose', { path: outside })), /under the working directory/);
+  fs.unlinkSync(outside);
   // path: bytes are hashed as-is; a proposer who is not an approver gets no card line.
-  const f = path.join(os.tmpdir(), `sh-plan-${process.pid}.md`);
+  const f = path.join(mcpCwd, 'plan.md');
   fs.writeFileSync(f, '# other\nbody\n');
   const r2 = (await s.tool('propose', { path: f, approvers: ['@bob'] })).result.content[0].text;
   const e2 = R.readAll().at(-1);

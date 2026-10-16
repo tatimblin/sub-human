@@ -18,7 +18,7 @@
  *   sessionId(env) / claudePid(env)      CLAUDE_CODE_SESSION_ID / CLAUDE_PID, validated
  *   taskListId(env)                      CLAUDE_CODE_TASK_LIST_ID or null
  *   configDir(env)                       CLAUDE_CONFIG_DIR || ~/.claude
- *   sanitizeId(s), tasksDir(listId, env), taskFile(listId, id, env)
+ *   sanitizeId(s), tasksDir(listId, env), plansDir(env), taskFile(listId, id, env)
  *   userSettingsFiles(cwd, env)          the settings files the plugin reads showClearContextOnPlanAccept from
  *   clearContextOnPlanAccept(cwd, env)   true when any of them sets it
  *   readLines(file, {tailBytes}), readEntries(file, {tailBytes}), parseLines(lines)
@@ -181,6 +181,8 @@ const sanitizeId = (s: unknown): string => String(s).replace(/[^a-zA-Z0-9_-]/g, 
  * @stability incidental
  */
 const tasksDir = (listId: string, env: Env = process.env): string => path.join(configDir(env), 'tasks', sanitizeId(listId));
+/** <configDir>/plans: where Claude Code keeps the plan-mode files (cc.planFile names one). */
+const plansDir = (env: Env = process.env): string => `${configDir(env)}/plans`;
 
 /**
  * <tasksDir>/<sanitized id>.json: one native task.
@@ -994,7 +996,7 @@ function probe(buf: Buffer, { entries = CONTRACT, envNames = true }: { entries?:
 }
 
 export {
-  ENV, sessionId, claudePid, taskListId, configDir, sanitizeId, tasksDir, taskFile, userSettingsFiles,
+  ENV, sessionId, claudePid, taskListId, configDir, sanitizeId, tasksDir, plansDir, taskFile, userSettingsFiles,
   clearContextOnPlanAccept, readLines, readEntries, parseLines, planFile, planAnswer, planFeedback, toolUseInput,
   lastHumanPrompt, contentText, SAID, NOTE, PASTED_RE, unwrapPasted, JOB_RE, parseDispatch, agentsCmd, stopCmd,
   parseAgentsJson, jobs, parseDaemonStatus, daemonStatus, exeState, DAEMON_ENV_ALLOW, daemonEnv, matcherIsExact, matcherMatches, shapeRe, CONTRACT,

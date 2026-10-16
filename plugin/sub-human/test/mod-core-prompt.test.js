@@ -37,6 +37,19 @@ test('prompt: the origin hand-off gives a kind only to the prompt whose text it 
   assert.equal(q.take('@room two'), 'composer');
 });
 
+test('prompt: parse and parseClaude take the tag with one whitespace character after it (a newline too), as hooks/at-room.ts does', async () => {
+  const p = await load('mod/core/prompt.ts');
+  const atRoom = require('../hooks/at-room.ts');
+  for (const [text, want] of [['@room hi', 'hi'], ['@room', ''], ['@room\nhi', 'hi'], ['@Room hi', null], ['@room  x', ' x'], ['@roommate hi', null], ['room: hi', null], [' @room hi', null]]) {
+    assert.equal(p.parse(text), want, JSON.stringify(text));
+    assert.equal(atRoom.parse(text), want, JSON.stringify(text));
+  }
+  for (const [text, want] of [['@claude plan', 'plan'], ['@claude\nplan', 'plan'], ['@Claude', null], ['@claude', ''], ['@claudette', null]]) {
+    assert.equal(p.parseClaude(text), want, JSON.stringify(text));
+    assert.equal(atRoom.parseClaude(text), want, JSON.stringify(text));
+  }
+});
+
 test('prompt: an @room the shim could not handle is refused, never let through; one wording with at-room\'s', async () => {
   const p = await load();
   const atRoom = require('../hooks/at-room.ts');

@@ -104,6 +104,13 @@ test('remote (memory): hello with an invite gives a token once; join, beat, appe
   await h.until(() => got.lines.length === logLines(code).length, 3000, 20);
   assert.equal(JSON.parse(got.lines.at(-1)).text, 'alice left (session ended)');
 
+  // a person's posts over a link are bounded (LINK_HUMAN_RATE_MAX per minute); an agent post has its own budget
+  const config = require(path.join(h.LIB, 'config.ts'));
+  assert.deepEqual(await c.join(seat(code, 'alice')), { ok: true, rejoin: true });
+  for (let i = 0; i < config.LINK_HUMAN_RATE_MAX - 1; i++) await c.append(signed(code, 'alice', { kind: 'say', text: `fast ${i}` }));
+  await assert.rejects(c.append(signed(code, 'alice', { kind: 'say', text: 'one too many' })), e => e.code === 'RATE' && /alice posted/.test(e.message));
+  await rejects(c.append(signed(code, 'alice', { kind: 'signoff', proposal_hash: 'abcdef012345', text: 'an answer counts too' })), 'RATE');
+
   // the token reconnects as the same link; the invite was single-use
   const again = await client.connect(served(t, host), { machine: REMOTE, token: c.token });
   t.after(() => again.close());
@@ -266,6 +273,24 @@ test('remote (memory): a link writes only as the seats it joined: another `from`
   await rejects(a.join({ name: 'bob', pubkey, proof: auth.proveSeat(fresh.privateKey, { room: code, name: 'bob', pubkey }) }), 'AUTH');
   assert.ok(identity.readMembers(code).bob.left_at);
   assert.equal(logLines(code).length, before + 1, 'only bob\'s own member_left was written');
+});
+
+test('remote (memory): a bound link (the card let one name in; a handoff\'s seats) joins its own seats only: another name, or a second seat, is AUTH', async t => {
+  const { code, host } = hostRoom(t);
+  const { invite } = auth.mintFor(host, { locator: 'pipe:test', machine: REMOTE, seats: ['carol'] });
+  const c = await client.connect(served(t, host), { machine: REMOTE, invite });
+  t.after(() => c.close());
+  const before = logLines(code).length;
+  await rejects(c.join(seat(code, 'bob')), 'AUTH');
+  await assert.rejects(c.join(seat(code, 'dana')), e => e.code === 'AUTH' && /let in as carol, not dana/.test(e.message));
+  assert.equal(logLines(code).length, before, 'no seat was taken');
+  assert.deepEqual(await c.join(seat(code, 'carol')), { ok: true });
+  assert.deepEqual(await c.join(seat(code, 'carol')), { ok: true, rejoin: true });
+  await rejects(c.append(signed(code, 'bob', { kind: 'say', text: 'as bob' })), 'AUTH');
+  assert.deepEqual(auth.links(host)[c.link].seats, ['carol']);
+  // an unbound link (an sh1 invite, a login) still picks its name at join time
+  const open = await linked(t, host);
+  assert.deepEqual(await open.join(seat(code, 'erin')), { ok: true });
 });
 
 test('remote (memory): a remote answer is placed, then the host decides', async t => {

@@ -53,6 +53,8 @@
  *   verifyToken(store, token) -> link | null       the link record for a presented token
  *   bindSeat(store, linkId, name) -> link          name joined over this link (AUTH for an unknown link)
  *   mayWriteAs(link, name) -> bool                 name is one of link.seats
+ *   mayJoinAs(link, name) -> bool                  a bound link (the card let one name in; a handoff's seats) joins only
+ *                                                  those; notBound(link, name) says why not
  *   proveSeat(key, {room, name, pubkey}) -> proof  the remote hook's half (it holds the seat's private key):
  *                                                  {kind: 'join', pubkey} signed (sig v2) for room and name
  *   checkSeatProof(proof, {room, name, pubkey})    the server's half: AUTH unless proof is a fresh join proof for
@@ -194,7 +196,7 @@ function redeemInvite(store: AuthStore, secret: string, { machine, linkId, pin, 
   machine: string; linkId?: string; pin?: unknown; now?: number;
 }): Redeemed {
   const key = sha256(secret);
-  let id = null as string | null, seats: string[] = []; // (as: set in the update; an error throws first)
+  let id = null as string | null, seats: string[] = [], bound = false; // (as: set in the update; an error throws first)
   let err = null as CodedError | null, handoff = false, admission = null as AdmissionRecord | null; // (as: set in the update)
   store.kv.update(INVITES_KEY, (cur: Invites | null) => {
     err = null;
@@ -205,6 +207,7 @@ function redeemInvite(store: AuthStore, secret: string, { machine, linkId, pin, 
       const r = admissionCheck(inv, { machine, linkId, now });
       if (r.err) { err = r.err; return r.next ? { ...cur, [key]: r.next } : undefined; }
       id = inv.link;
+      seats = [inv.name]; bound = true; // the card let one name in: the link joins that seat and no other
       return { ...cur, [key]: { ...inv, used_at: iso(now) } };
     }
     if (inv && inv.burnt_at) throw new RoomError('AUTH', 'this invite no longer works (too many wrong PINs, expired, or cancelled); ask the host for a new one');
@@ -219,12 +222,12 @@ function redeemInvite(store: AuthStore, secret: string, { machine, linkId, pin, 
       if (r.err) { err = r.err; return { ...cur, [key]: r.next }; }
     }
     id = inv.link || newLinkId();
-    if (Array.isArray(inv.seats)) seats = [...inv.seats];
+    if (Array.isArray(inv.seats) && inv.seats.length) { seats = [...inv.seats]; bound = true; } // pre-bound (a handoff's, a promote's)
     return { ...cur, [key]: { ...inv, used_at: iso(now), link: id } };
   });
   if (err) throw err;
   const token = random();
-  const link: LinkRecord = { id: id!, token_sha256: sha256(token), machine, seats, created_at: iso(now) }; // id: the update ran without err
+  const link: LinkRecord = { id: id!, token_sha256: sha256(token), machine, seats, created_at: iso(now), ...(bound ? { bound: true as const } : {}) }; // id: the update ran without err
   store.kv.update(LINKS_KEY, (cur: Links | null) => ({ ...cur, [link.id]: link }));
   return { token, link, handoff, ...(admission ? { admission } : {}) };
 }
@@ -478,7 +481,9 @@ function bindSeat(store: AuthStore, linkId: string, name: string): LinkRecord {
   const next = store.kv.update(LINKS_KEY, (cur: Links | null) => {
     const link = cur && cur[linkId];
     if (!link) throw new RoomError('AUTH', `no link ${linkId} in room ${store.code}`);
-    return link.seats.includes(name) ? undefined : { ...cur, [linkId]: { ...link, seats: [...link.seats, name] } };
+    if (link.seats.includes(name)) return undefined;
+    if (link.bound) throw new RoomError('AUTH', notBound(link, name));
+    return { ...cur, [linkId]: { ...link, seats: [...link.seats, name] } };
   });
   return (next || (store.kv.get(LINKS_KEY) as Links))[linkId];
 }
@@ -489,6 +494,12 @@ function bindSeat(store: AuthStore, linkId: string, name: string): LinkRecord {
  * @returns {boolean}
  */
 const mayWriteAs = (link: { seats?: unknown } | null | undefined, name: string): boolean => !!link && Array.isArray(link.seats) && link.seats.includes(name);
+
+/** Why a bound link may not take `name`: the host let it in for its seats alone. */
+const notBound = (link: Pick<LinkRecord, 'seats'>, name: string): string =>
+  `this connection was let in as ${link.seats.join(', ')}, not ${name}; join as that name (/sub-human ${link.seats[0] || 'NAME'}), or ask the host for a new invite`;
+/** A link may join `name`: its own seats when bound, any name otherwise (a login link is the account's own). */
+const mayJoinAs = (link: Pick<LinkRecord, 'seats' | 'bound'> | null | undefined, name: string): boolean => !!link && (!link.bound || link.seats.includes(name));
 
 /**
  * @param {import('node:crypto').KeyObject} key   the seat's private key
@@ -605,7 +616,7 @@ const links = (store: AuthStore): Links => store.kv.get(LINKS_KEY, null) || {};
 export {
   INVITE_PREFIX, INVITE2_PREFIX, PIN_RE, SHORT_PIN_RE, inviteRef, findInvite, burnInvite, revokeLink, links,
   INVITES_KEY, LINKS_KEY, LINK_ID_RE, mintInvite, mintFor, redeemInvite, loginLink, reserveLink, linkKnown,
-  verifyToken, bindSeat, mayWriteAs, proveSeat, checkSeatProof, formatInvite, parseInvite, mintShort, startShort,
+  verifyToken, bindSeat, mayWriteAs, mayJoinAs, notBound, proveSeat, checkSeatProof, formatInvite, parseInvite, mintShort, startShort,
   failShort, enrollShort, shortLive, admissions, decideAdmission, lapseAdmissions, WAITING,
 };
 export type { Redeemed, ShortAttempt, Slotted };

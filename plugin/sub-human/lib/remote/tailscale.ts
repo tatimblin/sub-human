@@ -69,7 +69,7 @@ const CALL_MS = 20_000;
 const SERVE_MS = 10_000;
 const WARM_MS = 60_000;
 const ADMIN_DNS = 'https://login.tailscale.com/admin/dns';
-const CT_WARNING = 'Funnel makes this URL public: its hostname is published in public certificate-transparency logs, so anyone can find the name (the room still needs the URL\'s secret and the PIN).';
+const CT_WARNING = 'Funnel makes this URL public: its hostname is published in public certificate-transparency logs, so anyone can find the name (getting in still takes the PIN, 5 tries per invite, and your card).';
 const PATH_RE = /^\/[A-Za-z0-9._~/-]{1,200}$/;
 // "Serve is not enabled on your tailnet." / "Funnel is not enabled …" / "HTTPS …", then "To enable, visit:" and a
 // login-server URL (https://login.tailscale.com/f/serve?node=…; a custom control server has its own host)

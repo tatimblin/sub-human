@@ -159,8 +159,10 @@ function checked(spec: SshSpec, code: string): { d: SshDest; local: string[]; ta
 function command(spec: SshSpec, code: string, opts: string[] = String(process.env.SUB_HUMAN_SSH_OPTS || '').split(/\s+/).filter(Boolean)): string[] {
   const { local, tail } = checked(spec, code);
   const mux = spec.mux === true ? ['-o', 'ControlMaster=no'] : [];
-  return ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2', ...opts,
-    ...mux, ...local, ...tail, remoteCommand(spec, code)];
+  // ssh takes an option's first value: the pinned ones (local: the link's key, known_hosts, StrictHostKeyChecking; mux)
+  // come before SUB_HUMAN_SSH_OPTS, so the environment adds options and never weakens those
+  return ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2',
+    ...mux, ...local, ...opts, ...tail, remoteCommand(spec, code)];
 }
 
 function remoteCommand(spec: Pick<SshSpec, 'login' | 'link' | 'remoteHome'>, code: string): string {
