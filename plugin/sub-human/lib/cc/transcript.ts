@@ -6,6 +6,7 @@
  *
  *   readLines(file, {tailBytes}), readEntries(file, {tailBytes}), parseLines(lines)
  *   planFile(lines, toolInput?, env), planAnswer(lines, toolUseId) -> {note}|null (null: no tool_result on disk yet),
+ *   rejectionAnswer(text) -> {note} (the same, from a refusal's text),
  *   planFeedback(lines, toolUseId), toolUseInput(lines, toolUseId), lastHumanPrompt(lines) -> {text, at}|null
  *   contentText(content), SAID, NOTE, PASTED_RE, unwrapPasted(text)
  *   continuedIn(file) -> sid|null        the session a backgrounded session went on in (its last continued-in record)
@@ -162,14 +163,23 @@ function planAnswer(lines: readonly TranscriptLine[], toolUseId: string | null |
     if (!block) continue;
     if (!block.is_error) return { note: null };
     if (typeof e!.userFeedback === 'string') return { note: e!.userFeedback }; // e is set: block came from its message
-    const t = contentText(block.content);
-    const at = t.indexOf(SAID);
-    if (at < 0) return { note: null };
-    const rest = t.slice(at + SAID.length);
-    const end = rest.lastIndexOf(NOTE);
-    return { note: end >= 0 ? rest.slice(0, end) : rest };
+    return rejectionAnswer(contentText(block.content));
   }
   return null;
+}
+
+/**
+ * A refusal's text as the tool's result reads it (the module's tool.call gets it before the line is on disk): {note}
+ * as planAnswer reads the same text in the transcript; note null when the person wrote none (Esc, a bare deny).
+ * @cc ?.feedbackIsFromUser&&
+ * @stability incidental
+ */
+function rejectionAnswer(text: string): { note: string | null } {
+  const at = text.indexOf(SAID);
+  if (at < 0) return { note: null };
+  const rest = text.slice(at + SAID.length);
+  const end = rest.lastIndexOf(NOTE);
+  return { note: end >= 0 ? rest.slice(0, end) : rest };
 }
 
 /** planAnswer's note alone: null also while the tool_result is not on disk. */
@@ -255,6 +265,6 @@ function continuedIn(file: unknown): string | null {
 
 export {
   readLines, readEntries, parseLines, planFile, planAnswer, planFeedback, toolUseInput, lastHumanPrompt, contentText,
-  SAID, NOTE, PASTED_RE, unwrapPasted, continuedIn,
+  SAID, NOTE, PASTED_RE, unwrapPasted, continuedIn, rejectionAnswer,
 };
 export type { TranscriptEntry, TranscriptLine, ContentBlock };

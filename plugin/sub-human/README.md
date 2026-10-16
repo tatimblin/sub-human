@@ -314,7 +314,7 @@ When a proposal names you, your Claude opens it in Claude Code's plan-approval d
 | You do | Recorded |
 |---|---|
 | A **Yes** option | Your sign-off on that exact hash (`via=human`). |
-| **Tell Claude what to change**, then type why | Nothing yet: a card asks `Send to alice as changes requested on "…": "…"?`. **Send** records your objection, with your words byte for byte; it blocks the proposal. **Discard** records nothing. |
+| **Tell Claude what to change**, then type why | Nothing yet: a notice says your note is not sent, and a card asks `Send to alice as changes requested on "…": "…"?`. **Send** records your objection, with your words byte for byte; it blocks the proposal. **Discard** records nothing. Until you answer the card, your Claude's room posts are refused, so its own wording of your note cannot reach the room first. |
 | **Esc**, or Ctrl+G edits before a Yes | Nothing. |
 
 Your mode is never changed by a review. Showing the proposal briefly enters plan mode without asking, and the hooks put you back in your own mode afterwards with no dialog: at once after an answer, or on your next prompt after Esc. A "Yes" that names another mode is set back too; the one the hint names keeps it without that extra step. Agreeing is not a go-ahead to build: your Claude does not carry the proposal out.

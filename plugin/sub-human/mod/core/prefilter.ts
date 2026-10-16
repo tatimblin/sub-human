@@ -30,6 +30,10 @@ export function tasksNeeded(hello: Hello | null | undefined, sid: unknown, roomE
 export function reviewOpenOf(subHuman: SubHumanReport | null | undefined): boolean | undefined {
   return subHuman && typeof subHuman.reviewOpen === 'boolean' ? subHuman.reviewOpen : undefined;
 }
+/** consent's noteWaits report: a note of the seat waits for its card; undefined when it said nothing. */
+export function noteWaitsOf(subHuman: SubHumanReport | null | undefined): boolean | undefined {
+  return subHuman && typeof subHuman.noteWaits === 'boolean' ? subHuman.noteWaits : undefined;
+}
 
 /** A seat is known for this session, or the module is not sure there is none: node may act. */
 export const seatedOrUnsure = (hello: Hello | null | undefined, sid: unknown): boolean => !sure(hello, sid) || !!(hello && hello.seat);
@@ -54,9 +58,13 @@ export function restoreNeeded(hello: Hello | null | undefined, sid: unknown, sou
 
 const ROOM_TOOL = /^mcp__plugin_sub-human_room__/;
 
-/** Consent's PreToolUse: on a room tool only while a review may be open (it acts only inside one: consentNeeded); on
- * AskUserQuestion, EnterPlanMode and ExitPlanMode wherever a seat is or may be. */
-export function consentPreNeeded(hello: Hello | null | undefined, sid: unknown, tool: unknown, reviewFlag: unknown): boolean {
-  if (ROOM_TOOL.test(String(tool))) return seatedOrUnsure(hello, sid) && consentNeeded(hello, sid, reviewFlag);
+/** Consent's PreToolUse: on a room tool only while a review may be open (it acts only inside one: consentNeeded), and
+ * on the post tool also while a note may wait for its card (noteFlag: unset counts as maybe); on AskUserQuestion,
+ * EnterPlanMode and ExitPlanMode wherever a seat is or may be. */
+export function consentPreNeeded(hello: Hello | null | undefined, sid: unknown, tool: unknown, reviewFlag: unknown, noteFlag: unknown = false): boolean {
+  if (ROOM_TOOL.test(String(tool))) {
+    return seatedOrUnsure(hello, sid) && (consentNeeded(hello, sid, reviewFlag) || (String(tool) === POST_TOOL && noteFlag !== false));
+  }
   return seatedOrUnsure(hello, sid);
 }
+const POST_TOOL = 'mcp__plugin_sub-human_room__post';

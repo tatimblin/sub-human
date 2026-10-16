@@ -38,6 +38,7 @@ const EVENTS: { [K in Event['type']]: Extract<Event, { type: K }> } = {
   ask: { type: 'ask', admit: null, handoff: false, noteNamed: false, live: true, hit: pending, reviewable: true },
   answered: { type: 'answered', note: { kind: 'absent' }, target, afk: false, asked: true, answers: [{ hash: H, answer: { kind: 'answer', label: 'Agree' }, live: true }] },
   planFailed: { type: 'planFailed', early: false },
+  rejected: { type: 'rejected', toolUseId: 'tu1', answer: { note: 'add a test' }, target },
 };
 
 /** What a step did, compactly: the review's phase after it (none: cleared), the say's kind, the effects in order. */
@@ -48,32 +49,32 @@ const TABLE: Record<string, Record<Event['type'], [string, string | null, string
   none: {
     enter: ['entering', 'allow', 'save,writePlan'], entered: ['none', null, ''], exit: ['none', null, ''], permission: ['none', null, ''],
     exited: ['none', 'context', ''], stop: ['none', null, ''], roomTool: ['none', null, ''], prompt: ['none', null, ''],
-    ask: ['none', 'deny', 'pick'], answered: ['none', 'context', 'answer'], planFailed: ['none', null, ''],
+    ask: ['none', 'deny', 'pick'], answered: ['none', 'context', 'answer'], planFailed: ['none', null, ''], rejected: ['none', null, ''],
   },
   entering: {
     enter: ['entering', 'allow', 'save,writePlan'], entered: ['entering', 'context', 'save,writePlan'], exit: ['shown', 'ask', 'save,writePlan'],
     permission: ['entering', null, ''], exited: ['none', 'context', ''], stop: ['entering', 'context', ''], roomTool: ['entering', null, ''],
-    prompt: ['exiting', 'context', ''], ask: ['entering', 'deny', 'pick'], answered: ['entering', 'context', 'answer'], planFailed: ['exiting', null, ''],
+    prompt: ['exiting', 'context', ''], ask: ['entering', 'deny', 'pick'], answered: ['entering', 'context', 'answer'], planFailed: ['exiting', null, ''], rejected: ['entering', null, ''],
   },
   shown: {
     enter: ['entering', 'allow', 'restorePlan,save,writePlan'], entered: ['shown', null, ''], exit: ['exiting', null, ''], permission: ['shown', null, ''],
     exited: ['none', 'context', 'answer,restorePlan'], stop: ['exiting', 'context', ''], roomTool: ['exiting', 'deny', ''], prompt: ['exiting', 'context', ''],
-    ask: ['shown', 'deny', 'pick'], answered: ['shown', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'],
+    ask: ['shown', 'deny', 'pick'], answered: ['shown', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', 'context', ''],
   },
   exiting: {
     enter: ['entering', 'allow', 'restorePlan,save,writePlan'], entered: ['exiting', null, ''], exit: ['exiting', null, ''], permission: ['exiting', 'permit', 'restorePlan'],
     exited: ['none', 'context', 'restorePlan'], stop: ['exiting', 'context', ''], roomTool: ['exiting', 'deny', ''], prompt: ['exiting', 'context', ''],
-    ask: ['exiting', 'deny', 'pick'], answered: ['exiting', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'],
+    ask: ['exiting', 'deny', 'pick'], answered: ['exiting', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', null, ''],
   },
   unread: {
     enter: ['entering', 'allow', 'restorePlan,save,writePlan'], entered: ['exiting', null, ''], exit: ['exiting', null, ''], permission: ['exiting', 'permit', 'restorePlan'],
     exited: ['none', 'context', 'answer,restorePlan'], stop: ['exiting', 'context', ''], roomTool: ['exiting', 'deny', ''], prompt: ['exiting', 'context', ''],
-    ask: ['exiting', 'deny', 'pick'], answered: ['exiting', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'],
+    ask: ['exiting', 'deny', 'pick'], answered: ['exiting', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', 'context', ''],
   },
   restore: {
     enter: ['restore', 'allow', ''], entered: ['restore', 'context', ''], exit: ['exiting', null, ''], permission: ['restore', null, ''],
     exited: ['restore', null, ''], stop: ['restore', 'context', ''], roomTool: ['restore', null, ''], prompt: ['none', null, ''],
-    ask: ['restore', 'deny', 'pick'], answered: ['restore', 'context', 'answer'], planFailed: ['exiting', null, ''],
+    ask: ['restore', 'deny', 'pick'], answered: ['restore', 'context', 'answer'], planFailed: ['exiting', null, ''], rejected: ['restore', null, ''],
   },
 };
 
@@ -375,4 +376,36 @@ test('words: the note\'s and review\'s longest lines stay under 160 characters w
   const long = review.textOf(Array.from({ length: 20 }, () => lines.noted), () => '', false);
   assert.equal(long.length, review.SAY_MAX);
   assert.ok(long.endsWith('…'));
+});
+
+test('M (live verify): the plan view refused with a note resolves at once: the note opens, the model hears nothing is recorded (in the refusal itself), the person gets a notice', () => {
+  const st: State = { review: REVIEWS.shown, note: null };
+  const s = review.reduce(st, { type: 'rejected', toolUseId: 'tu1', answer: { note: 'please also add a CODE_OF_CONDUCT' }, target }, ctx);
+  assert.equal(s.state.review!.phase, 'exiting');
+  assert.deepEqual([s.state.note!.note, s.state.note!.stage], ['please also add a CODE_OF_CONDUCT', 'waiting']);
+  assert.equal(s.say!.to, 'context');
+  const said = review.textOf((s.say as Extract<Step['say'], { to: 'context' }>).parts, () => '', false);
+  assert.match(said, /^sub-human: nothing is recorded yet: bob's note on \w+ waits for its card \(Send or Discard\)[^]*post nothing about it[^]*ExitPlanMode[^]*AskUserQuestion with "objection /);
+  assert.match(s.notice!, /^your note on "Ship v3 Monday" is not sent yet/);
+  // refused with no note: closed, nothing recorded, no notice
+  const esc = review.reduce(st, { type: 'rejected', toolUseId: 'tu1', answer: { note: null }, target }, ctx);
+  assert.deepEqual([esc.state.note, esc.notice], [null, undefined]);
+  // another call's refusal, or a review already resolved: nothing
+  assert.equal(review.reduce(st, { type: 'rejected', toolUseId: 'tu9', answer: { note: 'x' }, target }, ctx).say, null);
+  assert.equal(review.reduce({ review: { ...REVIEWS.shown!, resolved: true }, note: null }, { type: 'rejected', toolUseId: 'tu1', answer: { note: 'x' }, target }, ctx).say, null);
+});
+
+test('M (live verify): while a note waits for its card the post tool is refused with the reason (any mode); other room tools pass; a note no longer live is dropped', () => {
+  for (const stage of ['waiting', 'nudged', 'asked', 'reoffered', 'told'] as NoteStage[]) {
+    const s = review.reduce({ review: null, note: note(stage) }, { type: 'roomTool', mode: 'auto', post: true, noteLive: true }, ctx);
+    assert.equal(s.say!.to, 'deny', stage);
+    assert.match(review.textOf((s.say as Extract<Step['say'], { to: 'deny' }>).parts, () => '', false), /^sub-human: refused: bob's note on proposal \w+ waits for Send or Discard on its card/);
+    assert.equal(s.state.note!.stage, stage, 'the note stays as it was');
+  }
+  assert.equal(review.reduce({ review: null, note: note('waiting') }, { type: 'roomTool', mode: 'auto', post: false, noteLive: true }, ctx).say, null, 'read, task, propose pass');
+  assert.equal(review.reduce({ review: null, note: null }, { type: 'roomTool', mode: 'auto', post: true, noteLive: false }, ctx).say, null);
+  const gone = review.reduce({ review: null, note: note('waiting') }, { type: 'roomTool', mode: 'auto', post: true, noteLive: false }, ctx);
+  assert.deepEqual([gone.state.note, gone.say], [null, null]);
+  // a shown review is plan mode whatever mode the module last saw: any room tool is refused
+  assert.equal(review.reduce({ review: REVIEWS.shown, note: null }, { type: 'roomTool', mode: 'auto', answer: { note: null }, target }, ctx).say!.to, 'deny');
 });

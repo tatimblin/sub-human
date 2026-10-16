@@ -19,6 +19,8 @@ export type AnyHookIn = Partial<BaseHookInput> & {
   tool_response?: unknown;
   tool_use_id?: string;
   stop_hook_active?: boolean;
+  /** PostToolUseFailure: the error as the model read it */
+  error?: string;
   agent_type?: string;
   source?: string;
 };
@@ -49,6 +51,8 @@ export interface SubHumanReport {
   shareable?: boolean;
   joined?: boolean;
   reviewOpen?: boolean;
+  /** consent: a note of the seat waits for its card (the module then sends a room post to consent) */
+  noteWaits?: boolean;
   /** an invite's line and PIN for the module's status line (never saved in the transcript) and how long it stays;
    * say then holds the text without them */
   pinned?: PinnedReport;

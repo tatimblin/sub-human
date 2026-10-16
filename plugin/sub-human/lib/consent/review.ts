@@ -28,10 +28,16 @@
  *              stub: the proposal a "proposal HASH" plan names when no review was opened (plan mode entered by hand,
  *              or EnterPlanMode skipped): live, it opens the review here (keepMode: the person chose plan mode, so no
  *              restore); not this seat's to answer, the call is denied, never a bare plan view of the stub
+ *   rejected   the dialog's rejection   toolUseId, answer, target: the person rejected the plan view (with a note, or
+ *              none): Claude Code runs no PostToolUse for it, so the module's tool.call hook reports it the moment
+ *              ExitPlanMode's call comes back refused (mod/consent.ts). The review resolves there and then: a note
+ *              opens, and the model and the person both hear that nothing is recorded until its Send
  *   permission PermissionRequest(ExitPlanMode)
  *   exited     Post(ExitPlanMode)       toolUseId, mode, response, answer?, target?, pending, plan, callNames, reviewable, proposed
  *   stop       Stop                     mode, active, answer?, target?, live
- *   roomTool   Pre(a room MCP tool)     mode, answer?, target?
+ *   roomTool   Pre(a room MCP tool)     mode, answer?, target?, post, noteLive: while a review is shown or closing, any
+ *              room tool is denied; while a note waits for its card, the post tool is (the card decides what the
+ *              room gets, so a paraphrase cannot go out first)
  *   prompt     UserPromptSubmit         mode, answer?, target?, live
  *   ask        Pre(AskUserQuestion)     admit, handoff, noteNamed, live, hit, reviewable
  *   answered   Post(AskUserQuestion)    note (lib/consent/card.ts answerCard of its card), target?, afk, asked, answers
@@ -88,7 +94,8 @@ export type Event =
       response: { plan: unknown; edited: boolean; isAgent: boolean; filePath: unknown }; callPlan: unknown;
       pending: Pending[]; callNames: string[]; reviewable: boolean; proposed: boolean }
   | { type: 'stop'; mode: string | undefined; active: boolean; answer?: Answer | null; target?: Target | null; live: boolean }
-  | { type: 'roomTool'; mode: string | undefined; answer?: Answer | null; target?: Target | null }
+  | { type: 'roomTool'; mode: string | undefined; answer?: Answer | null; target?: Target | null; post?: boolean; noteLive?: boolean }
+  | { type: 'rejected'; toolUseId: string | null; answer: Answer | null; target?: Target | null }
   | { type: 'prompt'; mode: string | undefined; answer?: Answer | null; target?: Target | null; live: boolean }
   | { type: 'ask'; admit: string | null; handoff: boolean; noteNamed: boolean; live: boolean; hit: Pending[]; reviewable: boolean }
   | { type: 'answered'; note: CardAnswer; target?: Target | null; afk: boolean; asked: boolean;
@@ -110,7 +117,8 @@ export type Say =
   | { to: 'ask'; text: string; show: { plan: string } | { card: string[] } | { note: true } | { admit: string } | { handoff: true } }
   | { to: 'permit'; mode: string | undefined };
 
-export interface Step { state: State; effects: Effect[]; say: Say | null }
+/** notice: a line for the person (the hook's systemMessage, a sub-human notice), beside what the model is told. */
+export interface Step { state: State; effects: Effect[]; say: Say | null; notice?: string }
 
 /** The hash the dialog's plan must have for an answer to count: the proposal's own (PLAN-COLLAB: the composed text's). */
 export const shownHash = (r: Review): string | undefined => r.hash;
@@ -168,6 +176,13 @@ export const SAY = {
   closed: (n: string, h: string) => `${n} closed the review of proposal ${h} without answering; nothing was recorded.`,
   /** said once the dialog closed with a note (live, a model told the person it was recorded before the card) */
   noted: (n: string, h: string) => `Nothing is recorded yet: ${n}'s note on ${h} waits for Send or Discard on its card. Next, ${NEXT.note(h)}.`,
+  /** the dialog's rejection with a note, said in its own result (live, the model posted a paraphrase before the card) */
+  rejectedNote: (n: string, h: string) => `sub-human: nothing is recorded yet: ${n}'s note on ${h} waits for its card (Send or Discard), which decides what the room gets; post nothing about it. First call ExitPlanMode now (no plan needed); then ${NEXT.note(h)}.`,
+  rejectedClosed: (n: string, h: string) => `sub-human: ${n} closed the review of proposal ${h} without answering; nothing was recorded. First ${NEXT.exit}; then ${DONE.toLowerCase()}`,
+  /** the person's notice at the rejection */
+  noteNotice: (title: string | null, h: string) => `your note on ${title ? `"${title}"` : `proposal ${h}`} is not sent yet: Send or Discard on the card that follows decides`,
+  /** a post while a note waits for its card */
+  noteWaits: (n: string, h: string) => `sub-human: refused: ${n}'s note on proposal ${h} waits for Send or Discard on its card, which decides what the room gets. Post nothing about it; ${NEXT.note(h)}.`,
   nothingToShow: (h: string | undefined) => `${h ? `proposal ${h}` : 'the room proposal'}: nothing to show (already answered, decided or unknown); nothing was recorded.`,
   reviewClosed: 'The room review is closed and the mode is restored; this was not a plan to carry out.',
   cardInstead: (n: string, h: string) => ` The plan view could not show proposal ${h}: ${NEXT.card(h)} so ${n} answers on the card.`,
@@ -261,7 +276,7 @@ export function answerNeeded(r: Review | null, ev: { type: Event['type']; toolUs
     case 'exit': return r.phase === 'shown' && same ? null : 'wait';
     case 'exited': return r.unread && same ? null : r.phase === 'exiting' ? 'wait' : null;
     case 'stop': return ev.mode === 'plan' && r.phase !== 'restore' && r.phase !== 'entering' ? 'now' : null;
-    case 'roomTool': return ev.mode === 'plan' && (r.phase === 'shown' || r.phase === 'exiting') ? 'now' : null;
+    case 'roomTool': return r.phase === 'shown' || r.phase === 'exiting' ? 'now' : null;
     case 'prompt': return (ev.mode === 'plan' && r.phase !== 'restore') || r.unread ? 'now' : null;
     default: return null;
   }
@@ -491,10 +506,25 @@ export function reduce(state: State, ev: Event, ctx: Ctx): Step {
     }
 
     case 'roomTool': {
-      if (!r || ev.mode !== 'plan' || !(r.phase === 'shown' || r.phase === 'exiting')) return none(state);
-      const res = resolve(r, state.note, ev, ctx);
+      // a shown or closing review means plan mode (the module's mode can be stale: it is the last event's)
+      if (r && (r.phase === 'shown' || r.phase === 'exiting')) {
+        const res = resolve(r, state.note, ev, ctx);
+        return { state: { review: { ...res.review, phase: 'exiting' }, note: res.note }, effects: [],
+          say: { to: 'deny', parts: [SAY.roomToolDenied(res.review.said || '')] } };
+      }
+      if (!state.note || !ev.post) return none(state);
+      if (ev.noteLive === false) return { state: { ...state, note: null }, effects: [], say: null }; // no longer this seat's to answer
+      return { state, effects: [], say: { to: 'deny', parts: [SAY.noteWaits(n, state.note.hash)] } };
+    }
+
+    case 'rejected': {
+      if (!r || !r.tool_use_id || r.tool_use_id !== ev.toolUseId || r.resolved || !(r.phase === 'shown' || r.unread)) return none(state);
+      const res = resolve(r, state.note, ev, ctx, true);
+      const h = r.hash || '';
+      const noted = !!res.note && res.note !== state.note;
       return { state: { review: { ...res.review, phase: 'exiting' }, note: res.note }, effects: [],
-        say: { to: 'deny', parts: [SAY.roomToolDenied(res.review.said || '')] } };
+        say: ctxSay(noted ? SAY.rejectedNote(n, h) : SAY.rejectedClosed(n, h)),
+        ...(noted ? { notice: SAY.noteNotice(res.note!.title, h) } : {}) };
     }
 
     case 'prompt': {
