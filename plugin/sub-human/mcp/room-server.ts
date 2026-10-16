@@ -53,6 +53,7 @@ import path from 'node:path';
 import * as identity from '../lib/identity.ts';
 import * as room from '../lib/room.ts';
 import * as proposal from '../lib/proposal.ts';
+import { SAY } from '../lib/consent/review.ts';
 import * as cc from '../lib/cc/env.ts';
 import { cliCmd } from '../lib/text.ts';
 import { createRequire } from 'node:module';
@@ -230,6 +231,10 @@ function post(me: Me, args: ToolArgs) {
   if (typeof kind !== 'string' || !POST_KINDS.includes(kind)) {
     return text(`refused: kind must be one of ${POST_KINDS.join(', ')}. To ask for agreement, use propose; only people answer it, on their own card.`, true);
   }
+  // a note waiting for the person's Send or Discard: the card decides what the room gets. Consent's PreToolUse refuses
+  // this first; the server says the same when no hook ran (stage 8e D: a skipped hook let a post through live)
+  const cf = proposal.readConfirm(me);
+  if (cf && proposal.pendingFor(me).some(p => p.hash === cf.hash)) return text(SAY.noteWaits(me.name, cf.hash), true);
   const twice = relayed(me, body);
   if (twice) return text(twice, true);
   // the model's arguments, unchecked: validate() (append) checks each field's type

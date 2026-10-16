@@ -414,6 +414,17 @@ test('M (live verify): while a note waits for its card the post tool is refused 
   assert.equal(review.reduce({ review: REVIEWS.shown, note: null }, { type: 'roomTool', mode: 'auto', answer: { note: null }, target }, ctx).say!.to, 'deny');
 });
 
+test('stage 8e D (live verify, localb/03c-f): a note told already whose card went by again: the next prompt tells the person once what Send and Discard do; the note keeps waiting', () => {
+  const first = review.reduce({ review: null, note: note('told') }, PROMPT, ctx);
+  assert.equal(first.say, null, 'nothing more for the model');
+  assert.match(first.notice!, /^your note on "Ship v3 Monday" still waits, not sent\. On its card, Send posts it as your objection; Discard drops it and records nothing/);
+  assert.deepEqual([first.state.note!.stage, first.state.note!.explained], ['told', true]);
+  const again = review.reduce(first.state, PROMPT, ctx);
+  assert.equal(again.notice, undefined, 'once');
+  assert.equal(again.state.note!.hash, H, 'never dropped');
+  assert.equal(review.reduce({ review: null, note: note('told') }, { ...PROMPT, live: false } as Event, ctx).notice, undefined, 'a note no longer live says nothing');
+});
+
 // ---------- item 8: a Yes as the view opened ----------
 test('8 (live verify): a Yes within YES_GUARD_MS of the view being shown, or while the person had typed text, records nothing; the card asks once and only its answer records', () => {
   const opened = review.reduce({ review: REVIEWS.entering, note: null }, { ...EVENTS.exit, typing: false }, ctx);

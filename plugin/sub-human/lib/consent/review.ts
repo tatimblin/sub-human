@@ -19,6 +19,7 @@
  * The note (Confirm.stage):
  *   waiting ─stop─► nudged ─prompt─► told        asked ─prompt (no Post: Esc)─► reoffered ─stop─► told
  *   waiting|nudged ─ask─► asked ─answered (no answer)─► told; reoffered ─ask─► told; Send / Discard ─► (none)
+ *   told ─prompt─► told, the person told once what Send and Discard do (explained); the note keeps waiting
  * A note whose proposal is no longer the seat's to answer is dropped wherever it is met.
  *
  * Events (each carries its facts; ctx {name, now}):
@@ -215,6 +216,8 @@ export const SAY = {
   renudge: (n: string, h: string) => `${n}'s note on ${h} still waits; Esc was no answer. First, ${NEXT.note(h)}. ${keepNote(n)}`,
   noteNoAnswer: (n: string, h: string) => `Nothing was recorded: the card closed without ${n}'s answer; the note waits. If ${n} asks, ${NEXT.note(h)}. ${DONE}`,
   noteOther: (h: string) => `proposal ${h}: no Send/Discard answer; nothing was recorded and the note waits. ${DONE}`,
+  /** the person's notice once the card went by unanswered again: what each button does; the note keeps waiting */
+  noteStillWaits: (title: string | null, h: string) => `your note on ${title ? `"${title}"` : `proposal ${h}`} still waits, not sent. On its card, Send posts it as your objection; Discard drops it and records nothing (the proposal stays unanswered). Esc keeps it waiting: ask your Claude for the card when you decide`,
   discarded: (n: string, h: string) => `${n} discarded the note; nothing was recorded and proposal ${h} still awaits ${n}'s answer. ${DONE}`,
   // the fallback card
   cardNoAnswer: (n: string) => `Nothing was recorded: the card closed without ${n}'s answer. Reopening it later is fine. ${DONE}`,
@@ -631,11 +634,16 @@ function noteAtStop(state: State, ev: Extract<Event, { type: 'stop' }>, ctx: Ctx
 }
 
 /** The next prompt with no review: a note whose card was interrupted (asked, no Post) or never shown though Stop
- * nudged is offered again, once. */
+ * nudged is offered again, once; one told already gets the person a notice of what Send and Discard do, once. */
 function noteAtPrompt(state: State, ev: Extract<Event, { type: 'prompt' }>, ctx: Ctx): Step {
   const cf = state.note;
   if (!cf) return none(state);
   const stage = stageOf(cf);
+  // offered and told already, and its card went by again: the person hears once what Send and Discard do (never a
+  // silent drop: the note keeps waiting)
+  if (stage === 'told' && !cf.explained && ev.live) {
+    return { state: { ...state, note: { ...cf, explained: true } }, effects: [], say: null, notice: SAY.noteStillWaits(cf.title, cf.hash) };
+  }
   if (stage !== 'asked' && stage !== 'nudged') return none(state);
   if (!ev.live) return { state: { ...state, note: null }, effects: [], say: null };
   const interrupted = stage === 'asked';

@@ -169,6 +169,21 @@ test('mcp: a post that repeats the person\'s objection note is refused, waiting 
   await s.close();
 });
 
+test('stage 8e D (live verify, localb/03e): while a note on a proposal still pending for the seat waits for its card, the server refuses any post (no hook ran); once it is gone posts pass', async () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  h.register('bob', 'member', 1, code);
+  const me = { code, name: 'alice', role: 'member' };
+  R = room.open(code);
+  const s = await ready();
+  const { hash } = proposal.create({ code, name: 'bob', role: 'member' } as Parameters<typeof proposal.create>[0], { text: '# Add a CHANGELOG\n', approvers: ['alice'] });
+  proposal.writeConfirm(me, { hash, note: 'please use Keep a Changelog', from: 'bob', title: 'Add a CHANGELOG', at: Date.now(), stage: 'told' });
+  assert.match(errText(await s.tool('post', { kind: 'say', text: 'test' })), new RegExp(`^sub-human: refused: alice's note on proposal ${hash} waits for Send or Discard on its card`));
+  proposal.clearConfirm(me);
+  assert.equal(payload(await s.tool('post', { kind: 'say', text: 'test' })).text, 'test');
+  await s.close();
+});
+
 test('mcp: the seat is the one its session id names (CLAUDE_CODE_SESSION_ID); an id that names none (a /clear since) falls back to the parent pid', async () => {
   h.freshHome();
   const { code } = h.register('alice'); // this process: the server's parent

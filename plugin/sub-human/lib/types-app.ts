@@ -117,6 +117,8 @@ export interface Confirm {
   at: number;
   /** absent in a note an earlier sub-human wrote: lib/consent/review.ts stageOf reads the flags below */
   stage?: NoteStage;
+  /** the person was told, once, what Send and Discard do after the card closed with no answer more than once (stage 8e D) */
+  explained?: true;
   /** an earlier sub-human's, read only (stageOf): when the card was shown, Stop nudged, the model was told or an
    * interrupted card offered again, and when that offer was renudged */
   asked?: number;

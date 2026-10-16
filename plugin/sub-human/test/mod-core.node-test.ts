@@ -545,8 +545,11 @@ test('prefilter: rows, the restore and consent\'s PreToolUse start node only whe
   }
   assert.equal(f.restoreNeeded(seated, 's1', 'startup'), false);
   assert.equal(f.restoreNeeded(unseated, 's1', 'fork'), true, 'a fork (← the agent view): only node can find the seat it continues');
-  const room = 'mcp__plugin_sub-human_room__post';
+  const room = 'mcp__plugin_sub-human_room__read';
   assert.equal(f.consentPreNeeded(seated, 's1', room, false), false, 'no review may be open');
+  // stage 8e D: the post tool always reaches consent where a seat is (a waiting note refuses it)
+  assert.equal(f.consentPreNeeded(seated, 's1', 'mcp__plugin_sub-human_room__post', false), true);
+  assert.equal(f.consentPreNeeded(unseated, 's1', 'mcp__plugin_sub-human_room__post', false), false);
   assert.equal(f.consentPreNeeded(seated, 's1', room, true), true);
   assert.equal(f.consentPreNeeded(seated, 's1', room, undefined), true, 'unset counts as open');
   assert.equal(f.consentPreNeeded(unseated, 's1', room, true), false);

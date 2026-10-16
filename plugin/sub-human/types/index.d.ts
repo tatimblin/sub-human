@@ -34,9 +34,6 @@ declare module 'claude-code' {
       /** False only when hooks/handlers/consent.ts said no room review is open and no EnterPlanMode / ExitPlanMode ran
        * since (mod/consent.ts); unset or true: consent runs. */
       reviewMaybeOpen: boolean;
-      /** False only when hooks/handlers/consent.ts said no note of this seat waits for its card (mod/consent.ts): while
-       * one may, a room post goes to consent, which refuses it (the card decides what the room gets). */
-      noteMaybeWaiting: boolean;
       /** What the person's next prompt carries for Claude (pending-proposal reminders, missing row calls): the
        * tail child's last rows event (mod/deliver.ts); null: nothing. */
       rows: string | null;

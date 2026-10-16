@@ -8,6 +8,7 @@ import { seatOf, helloOf, ran, scriptOf, session, start } from './support.ts'
 const OUT = helloOf(seatOf('bob'))
 const SID = 'sid-c'
 const POST = 'mcp__plugin_sub-human_room__post'
+const READ = 'mcp__plugin_sub-human_room__read'
 
 /** The engine beneath: mod-hello answering `hello`, consent.ts answering in turn from `answers` (the last repeats). */
 function world(on: any, { hello = OUT as any, answers = [{ subHuman: { reviewOpen: false } }] as any[], exit = null as any } = {}) {
@@ -71,16 +72,17 @@ test('an unseated session never runs consent', async ($, on) => {
   expect(seen.consent.length).toBe(0)
 })
 
-test('every PreToolUse hook beneath runs on a room tool, a review open or not; node consent only while a review may be open', async ($, on) => {
+test('every PreToolUse hook beneath runs on a room tool, a review open or not; node consent only while a review may be open, and always for the post tool (a waiting note refuses it: stage 8e D)', async ($, on) => {
   const seen = world(on)
   await start($)
-  await post($) // unsure after session.start: consent runs (and reports no review)
+  const read = ($: any) => $.tool.call({ tool: READ } as any)
+  await read($) // unsure after session.start: consent runs (and reports no review)
   await stop($) // no review: no node
+  await read($)
   await post($)
   await post($)
-  expect(seen.beneathPre).toEqual([POST, POST, POST])
-  expect(seen.tools).toEqual([POST, POST, POST])
-  expect(seen.consent.map((c: any) => `${c.stdin.hook_event_name} ${c.stdin.tool_name}`)).toEqual([`PreToolUse ${POST}`])
+  expect(seen.beneathPre).toEqual([READ, READ, POST, POST])
+  expect(seen.consent.map((c: any) => `${c.stdin.hook_event_name} ${c.stdin.tool_name}`)).toEqual([`PreToolUse ${READ}`, `PreToolUse ${POST}`, `PreToolUse ${POST}`])
 })
 
 test('a consent shim that fails leaves the turn end to what is beneath', async ($, on) => {
