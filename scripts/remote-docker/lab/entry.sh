@@ -1,6 +1,6 @@
 #!/bin/sh
 # The lab image's entrypoint (scripts/remote-docker/lab/Dockerfile): one role per container.
-#   devbox   sshd for user `host` (keys only, no forwarding); /lab/fwd.js, the stand-in for `tailscale serve`:
+#   devbox   sshd for user `host` (keys only, no forwarding); /lab/fwd.ts, the stand-in for `tailscale serve`:
 #            0.0.0.0:$LAB_WS_FWD_PORT -> 127.0.0.1:$LAB_WS_PORT (the host's future ws listener, 1.1)
 #   bastion  sshd for user `jump`: no shell, no tty, TCP forwarding only to $LAB_PERMIT_OPEN (ProxyJump)
 #   joiner   sshd for user `joiner` (used only once a handoff makes this joiner the host)
@@ -25,7 +25,7 @@ sshd_for() {
 case "$role" in
   devbox)
     sshd_for host 'AllowTcpForwarding no' 'AllowAgentForwarding no'
-    node /lab/fwd.js "${LAB_WS_FWD_PORT:-7421}" "${LAB_WS_PORT:-7420}" &
+    node /lab/fwd.ts "${LAB_WS_FWD_PORT:-7421}" "${LAB_WS_PORT:-7420}" &
     exec /usr/sbin/sshd -D -e ;;
   bastion)
     sshd_for jump 'AllowTcpForwarding yes' "PermitOpen ${LAB_PERMIT_OPEN:-devbox:22}" 'PermitTTY no' 'ForceCommand /usr/sbin/nologin'

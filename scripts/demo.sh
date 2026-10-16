@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # demo.sh — drive the slim-build walkthrough scenes S1–S11 with two member seats in detached tmux
 # sessions (sh-alice, sh-bob; --film: sh-tristan, sh-jess), and in S11 a third (sh-carol) from a second home, and snap every pane after every
-# step (scripts/snap.js → docs/rebuild/screens/).
+# step (scripts/snap.ts → docs/rebuild/screens/).
 #
 #   scripts/demo.sh [--windows] [--pause] [--only S6[,S7]] [--from S6] [--to S3] [--member-model MODEL] [--no-reset]
 #                   (--to: stop after that scene; a fresh run unless --from/--only is given too)
 #   scripts/demo.sh --film [--take NAME] [same options]   a trailer take: the story scenes only (S1 S2 S3 S4 S5 S6b S10),
 #                   with tristan and jess in the seats (sh-tristan, sh-jess) instead of alice and bob,
-#                   seat panes 120×36, prompts typed a key at a time, every pane recorded by scripts/capture.js into
+#                   seat panes 120×36, prompts typed a key at a time, every pane recorded by scripts/capture.ts into
 #                   trailer/capture/NAME/ (capture.jsonl + run.json; NAME defaults to take-DATE-TIME) with a marker
 #                   per beat. The seats are clones of one git repo (/tmp/sh-demo/origin.git), and S6b builds the
 #                   agreed plan: tristan's Claude the store side (listTasks in src/store.js), jess's Claude the HTTP
@@ -34,13 +34,13 @@
 # --only / --from: run a subset against already-running sessions (scenes depend on earlier state). A subset that
 #           includes S1 starts fresh instead (S1 opens the room), e.g. the short run --only S1,S2,S4,S5,S9,S9b,S10.
 #           S11's carol has her own home, SUB_HUMAN_HOME=/tmp/sh-demo/home2: another machine, on this one.
-# screens/run.json lists the scenes this run planned ({scenes, partial}; a resume adds to it): checks.js skips the
+# screens/run.json lists the scenes this run planned ({scenes, partial}; a resume adds to it): checks.ts skips the
 # checks of scenes no invocation planned, and still fails a planned scene with no evidence.
 # Scenes: S1–S9, S9b (a multi-line post stays nested), S11 (a seat from a second home over the pipe link), S10
 # (S11 runs before S10, which closes the room).
 # Waits: every wait is recorded in screens/waits.jsonl. A wait the scene depends on (`need …`) aborts the scene
 # on timeout: the panes are snapped as "aborted", the run stops and prints how to resume (--from SCENE). Settles
-# before a snap (`settle`) and evidence captures are best-effort. After the run: node scripts/checks.js && node scripts/walkthrough.js
+# before a snap (`settle`) and evidence captures are best-effort. After the run: node scripts/checks.ts && node scripts/walkthrough.ts
 set -u
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -55,7 +55,7 @@ LAPTOP="$BASE/laptop"; DEVBOX="$BASE/devbox"
 SSH_PORT="${SH_DEMO_SSH_PORT:-2222}"
 DEVBOX_SH="$REPO/scripts/devbox.sh"
 export SNAP_DIR="${SNAP_DIR:-$REPO/docs/rebuild/screens}"
-LIB="node $REPO/scripts/demo-lib.js"
+LIB="node $REPO/scripts/demo-lib.ts"
 SEAT_A=alice; SEAT_B=bob   # the two people: A opens the room, B joins (--film: tristan and jess)
 COLS=120; ROWS=40
 ROOM_CLAUDE_COLS=200; ROOM_CLAUDE_ROWS=50   # a --bg session renders at 200 columns: claude logs replays that
@@ -66,7 +66,7 @@ MEMBER_MODEL=""   # empty: the seats use the user's default model; --member-mode
 
 case "${1:-}" in
   stop)
-    node "$REPO/scripts/capture.js" stop
+    node "$REPO/scripts/capture.ts" stop
     for s in $(tmux ls -F '#{session_name}' 2>/dev/null | grep -E '^sh-'); do tmux kill-session -t "$s" && echo "killed $s"; done
     "$DEVBOX_SH" down "$DEVBOX"
     exit 0 ;;
@@ -108,7 +108,7 @@ if [ "$FILM" = 1 ]; then
   TAKE_DIR="$REPO/trailer/capture/$TAKE"
   FILM_ENV="CLAUDE_CODE_HIDE_CWD=1 DISABLE_AUTOUPDATER=1 GIT_CONFIG_GLOBAL=$BASE/gitconfig GIT_CONFIG_NOSYSTEM=1"
 fi
-CAPTURE="node $REPO/scripts/capture.js"
+CAPTURE="node $REPO/scripts/capture.ts"
 # mark BEAT CAPTION: a marker in the take at this moment (film only)
 mark() { [ "$FILM" = 1 ] && $CAPTURE mark "$SCENE" "$1" "$2"; return 0; }
 g() { GIT_CONFIG_GLOBAL="$BASE/gitconfig" GIT_CONFIG_NOSYSTEM=1 git "$@"; }   # the seats' git, never the user's config
@@ -273,10 +273,10 @@ snap() { # caption — capture the panes (the room's Claude via claude logs), an
   local job; job=$(claude_job)
   # a fresh `claude logs` each time: its first screen is a full repaint (a long-running stream drifts)
   claude_view && paint sh-claude 2
-  node "$REPO/scripts/snap.js" "$SESSIONS" "$SCENE" "$1"
+  node "$REPO/scripts/snap.ts" "$SESSIONS" "$SCENE" "$1"
   local r; r=$(room); [ -n "$r" ] || return 0
   STEP=$((STEP + 1))
-  local d="$SNAP_DIR/state/$SCENE/$STEP"   # this step's evidence (checks.js reads state/SCENE/N)
+  local d="$SNAP_DIR/state/$SCENE/$STEP"   # this step's evidence (checks.ts reads state/SCENE/N)
   mkdir -p "$d"
   cp "$SUB_HUMAN_HOME/rooms/$r/members.json" "$SUB_HUMAN_HOME/rooms/$r"/rows/*.json "$d/" 2>/dev/null || true
   # each seat's session document (its holds, the notices it was shown, its cursor) as session-NAME.json
@@ -460,7 +460,7 @@ S2_ssh() {
 }
 
 # The people's scripted words. The checks compare the log against them byte for byte: demo.sh writes them into
-# screens/run.json ("words"; checks/context.js reads them there, alice and bob's are its defaults).
+# screens/run.json ("words"; checks/context.ts reads them there, alice and bob's are its defaults).
 if [ "$FILM" = 1 ]; then
   SAY3="$SEAT_B, can you take the HTTP side of paging? I'll do the store"
   ASK3="ask $SEAT_A's Claude how createTask in store.js picks ids. just ask, change nothing"
@@ -541,7 +541,7 @@ read_plan() {
   local i=0
   while [ $i -lt 15 ] && ! $LIB pane "sh-$1" | command grep -Eq "room proposal [0-9a-f]{12}"; do
     keys "$1" PageDown; paint "sh-$1"; i=$((i + 1))
-    node "$REPO/scripts/snap.js" "sh-$1" "$SCENE" "$1 reads the whole proposal in the plan view: PgDn, page $((i + 1))"
+    node "$REPO/scripts/snap.ts" "sh-$1" "$SCENE" "$1 reads the whole proposal in the plan view: PgDn, page $((i + 1))"
   done
   local ok=fail; $LIB pane "sh-$1" | command grep -Eq "room proposal [0-9a-f]{12}" && ok=ok
   record "$1 paged to the end of the proposal (${i}× PgDn)" "$ok"
@@ -771,7 +771,7 @@ S9() { # the room's Claude refuses typed input: a viewer attaches and types one 
   $LIB submit sh-viewer "hi claude, what's next?"
   $LIB wait-pane sh-viewer "takes no typed input" --timeout 30 --what "the attached room's Claude refuses the typed prompt"
   claude_view && paint sh-claude 2
-  node "$REPO/scripts/snap.js" "sh-viewer,sh-claude" "$SCENE" "A viewer attaches to the room's Claude and types: the prompt is refused with the hint; no turn for the room's Claude"
+  node "$REPO/scripts/snap.ts" "sh-viewer,sh-claude" "$SCENE" "A viewer attaches to the room's Claude and types: the prompt is refused with the hint; no turn for the room's Claude"
   mkdir -p "$SNAP_DIR/state/S9"; $LIB synthetic-claude-prompt > "$SNAP_DIR/state/S9/synthetic-prompt.json" 2>&1 || true
   $LIB keys sh-viewer Left; sleep 1   # ← back to the agent view, then leave the viewer (killed next: nothing reads it)
   tmux kill-session -t sh-viewer 2>/dev/null
@@ -918,7 +918,7 @@ done
 # a resume drops the captures of the scenes it runs again from screens/index.json
 [ "$RESET" = 0 ] && [ ${#run[@]} -gt 0 ] && $LIB prune-index "$SNAP_DIR/index.json" "${run[@]}"
 # the planned scenes (a fresh run replaces the list, a resume adds to it), the two seats and the people's scripted
-# words; checks.js reads them
+# words; checks.ts reads them
 fresh=(); [ "$RESET" = 1 ] && fresh=(--fresh)
 remote=(); [ "$REMOTE" = 1 ] && remote=(--remote "$SEAT_B=$LAPTOP/home")
 $LIB plan-run "$SNAP_DIR/run.json" --all "${ALL[*]}" --seats "$SEAT_A $SEAT_B" ${remote[@]+"${remote[@]}"} ${fresh[@]+"${fresh[@]}"} ${run[@]+"${run[@]}"}
@@ -950,9 +950,9 @@ done
 if [ "$FILM" = 1 ]; then
   # stop the recording, then the checks; their verdict goes in the take's run.json
   $CAPTURE stop
-  node "$REPO/scripts/checks.js" --out "$TAKE_DIR/checks.json" > "$TAKE_DIR/checks.txt" 2>&1; tail -n 3 "$TAKE_DIR/checks.txt"
+  node "$REPO/scripts/checks.ts" --out "$TAKE_DIR/checks.json" > "$TAKE_DIR/checks.txt" 2>&1; tail -n 3 "$TAKE_DIR/checks.txt"
   $CAPTURE stop --dir "$TAKE_DIR" --checks "$TAKE_DIR/checks.json"
   say "take $TAKE: ${TAKE_DIR#$REPO/}/capture.jsonl, run.json (checks: checks.txt)"
 fi
-say "done. screens in ${SNAP_DIR#$REPO/}; then: node scripts/checks.js && node scripts/walkthrough.js"
+say "done. screens in ${SNAP_DIR#$REPO/}; then: node scripts/checks.ts && node scripts/walkthrough.ts"
 echo "sessions: tmux attach -r -t sh-$SEAT_A | sh-$SEAT_B | sh-carol   (scripts/demo.sh stop); claude job: $(claude_job) (claude logs / stop / rm)"

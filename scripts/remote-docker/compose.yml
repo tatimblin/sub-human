@@ -1,4 +1,4 @@
-# The remote-rooms harness (scripts/remote-docker/harness.js): devbox holds the host room and runs sshd; toxiproxy
+# The remote-rooms harness (scripts/remote-docker/harness.ts): devbox holds the host room and runs sshd; toxiproxy
 # sits in front of devbox:22 so the harness can cut the link or add latency. Only toxiproxy publishes ports, on
 # 127.0.0.1 with ports Docker picks (the harness reads them with `docker compose port`). Nothing on the Mac's own
 # sshd, ~/.ssh or ~/.sub-human is used.
@@ -10,7 +10,7 @@ services:
     init: true
     volumes:
       - ../../plugin/sub-human:/plugin:ro
-      - ./host-cli.js:/harness/host-cli.js:ro
+      - ./host-cli.ts:/harness/host-cli.ts:ro
   toxiproxy:
     image: ghcr.io/shopify/toxiproxy:2.12.0
     depends_on: [devbox]

@@ -1,5 +1,5 @@
 {
- "_doc": "Baselines and thresholds for scripts/checks.js and scripts/metrics.js. runs: per-run metrics (metrics.js shape, totals only). compare: which runs fill checks.json _metrics.{baseline,phase0,prev} (the walkthrough table). thresholds: the behavioural checks' limits (a value over its limit is a warning, not a failure) and the join-text sizes (deterministic). prices: USD per million tokens [input, output, cache write, cache read], matched by model-name substring in order; 'default' otherwise.",
+ "_doc": "Baselines and thresholds for scripts/checks.ts and scripts/metrics.ts. runs: per-run metrics (metrics.ts shape, totals only). compare: which runs fill checks.json _metrics.{baseline,phase0,prev} (the walkthrough table). thresholds: the behavioural checks' limits (a value over its limit is a warning, not a failure) and the join-text sizes (deterministic). prices: USD per million tokens [input, output, cache write, cache read], matched by model-name substring in order; 'default' otherwise.",
  "compare": {
   "baseline": "vole-8126",
   "phase0": "otter-0813",

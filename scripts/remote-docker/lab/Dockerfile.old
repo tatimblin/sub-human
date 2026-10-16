@@ -1,6 +1,6 @@
 # devbox-old: the previous release (plugin 0.5.0-beta.15, git ref 7c97bdb: before Stage 7's typed reasons, machine keys
 # and quotas) for the version-skew scenario. The build context is `git archive 7c97bdb plugin/sub-human` extracted to a temp dir
-# (scripts/remote-docker/lab.js buildOld); the plugin is baked in, read-only, at /plugin.
+# (scripts/remote-docker/lab.ts buildOld); the plugin is baked in, read-only, at /plugin.
 FROM sub-human-lab:node24
 COPY plugin/sub-human /plugin
 RUN chmod -R a-w /plugin

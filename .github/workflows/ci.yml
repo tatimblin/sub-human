@@ -54,7 +54,7 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           BASE_REF: ${{ github.base_ref }}
-        run: node scripts/check-version.js "origin/$BASE_REF"
+        run: node scripts/check-version.ts "origin/$BASE_REF"
 
   remote-docker:
     name: remote rooms over real SSH (docker)

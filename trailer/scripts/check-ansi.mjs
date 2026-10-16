@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * check-ansi: the trailer's ANSI port (src/lib/ansi.ts) must read every captured screen exactly as the
- * walkthrough's renderer (../scripts/ansi-svg.js) does: same cells, columns, widths and resolved colours.
+ * walkthrough's renderer (../scripts/ansi-svg.ts) does: same cells, columns, widths and resolved colours.
  *
  *   node scripts/check-ansi.mjs [capture.jsonl | screen.ansi ...]   (default: capture/synthetic/capture.jsonl.gz)
  */
@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { parse, resolved } from '../src/lib/ansi.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const svg = createRequire(import.meta.url)(path.join(ROOT, '..', 'scripts', 'ansi-svg.js'));
+const svg = createRequire(import.meta.url)(path.join(ROOT, '..', 'scripts', 'ansi-svg.ts'));
 const files = process.argv.slice(2);
 if (!files.length) files.push(path.join(ROOT, 'capture/synthetic/capture.jsonl.gz'));
 

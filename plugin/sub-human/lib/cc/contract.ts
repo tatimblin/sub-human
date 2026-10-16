@@ -7,8 +7,8 @@
  *   checked on), search (literal strings, all must be in the binary), shape? (code where `~` is one minified
  *   identifier), contains? (arrays that must hold names: see probe), degraded? ([{from, issue, note}]: a version on which
  *   the behaviour was reported to change while the probe may still pass), note.
- * scripts/probe-cc.js reads the JSON itself and runs probe() over the installed binary; `sub-human doctor` runs it too
- * (doctor/claude.ts), and scripts/arch-doc.js renders the table in docs/ARCHITECTURE.md from the JSON. Every export of
+ * scripts/probe-cc.ts reads the JSON itself and runs probe() over the installed binary; `sub-human doctor` runs it too
+ * (doctor/claude.ts), and scripts/arch-doc.ts renders the table in docs/ARCHITECTURE.md from the JSON. Every export of
  * lib/cc/{env,transcript,bg}.ts that relies on an entry names one of its search strings in a `@cc` tag.
  *
  *   CONTRACT, PROBED_VERSION, MIN_VERSION       the JSON's entries, probed and min
