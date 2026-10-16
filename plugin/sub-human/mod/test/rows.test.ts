@@ -14,14 +14,14 @@ function world(on: any, { seat = SEAT as any, answer = {} as Record<string, unkn
   const seen = { runs: [] as { script: string; stdin: any }[], beneathPre: [] as string[], beneathPost: 0, beneathStop: 0 }
   session(on, SID)
   on('session.cwd', () => ({ value: '/w' }))
-  on('process.run', ($: any, e: any) => {
+  on('process.run', (_$: any, e: any) => {
     const script = scriptOf(e)
     if (script === 'mod-hello.ts') return ran(JSON.stringify(helloOf(seat)))
     seen.runs.push({ script, stdin: JSON.parse(e.init.stdin) })
     const a = answer[script]
     return a === undefined ? ran('') : ran(JSON.stringify(a))
   })
-  on('classic.PreToolUse', ($: any, e: any) => { seen.beneathPre.push(e.tool); return {} })
+  on('classic.PreToolUse', (_$: any, e: any) => { seen.beneathPre.push(e.tool); return {} })
   on('classic.PostToolUse', () => { seen.beneathPost++; return {} })
   on('classic.SubagentStop', () => { seen.beneathStop++; return {} })
   on('classic.UserPromptSubmit', () => ({}))
@@ -93,8 +93,8 @@ test('a row hook that fails leaves the call and the stop as they were', async ($
 test('stage 8e I.2 (live verify, remote/16b; shv9 carol): a row\'s hand-back ("left" after a leave) and its "finished" notification start no turn; another agent\'s pass', async ($, on) => {
   world(on, { seat: null })
   const entered: string[] = []
-  on('prompt.submit', ($: any, e: any) => { entered.push(e.text); return { text: e.text } })
-  on('session.receive', ($: any, e: any) => ({ text: e.text }))
+  on('prompt.submit', (_$: any, e: any) => { entered.push(e.text); return { text: e.text } })
+  on('session.receive', (_$: any, e: any) => ({ text: e.text }))
   await start($)
   const ROWID = 'a8fbba36c5b5b5ae1', OTHER = 'a0000000000000001'
   await posted($, ROW, { tool_response: { agentId: ROWID } }) // the room row, spawned

@@ -547,7 +547,7 @@ export function registerDeliver(on: On) {
     if (left || gone) stopChild(sid);
     else { try { childFor($, sid, asHello((await $.state.get(HELLO)).value)); } catch { /* next start tries again */ } }
     return result;
-  }).catch(($, e, next) => next(e)); // unsure: the classic hook beneath answers, as without the module
+  }).catch((_$, e, next) => next(e)); // unsure: the classic hook beneath answers, as without the module
 
   // after a join (hooks/handlers/join.ts beneath, or the one command.run above took): hello for the new seat; the child looks
   // it up itself
@@ -560,7 +560,7 @@ export function registerDeliver(on: On) {
     try { await refresh($, e.session_id); } catch { /* the next refresh tries again */ }
     try { childFor($, e.session_id, asHello((await $.state.get(HELLO)).value)); } catch { /* next start tries again */ }
     return r;
-  }).catch(($, e, next) => next(e)); // never in the join's way: what ran beneath stands, or runs
+  }).catch((_$, e, next) => next(e)); // never in the join's way: what ran beneath stands, or runs
 
   // a /clear (new session id), compact or resume: session-restore puts the seat back first (a /clear rebinds it to the
   // new session id), unless this session surely has none; then the hello for that id, the tail child, and on resume
@@ -589,9 +589,9 @@ export function registerDeliver(on: On) {
       childFor($, e.session_id, hello);
     } catch { /* the next session.start or join starts it */ }
     return mergeClassic(ours, await next(e));
-  }).catch(($, e, next) => next(e));
+  }).catch((_$, e, next) => next(e));
 
-  on('session.end', ($, e, next) => {
+  on('session.end', (_$, e, next) => {
     stopChild(e.sessionId);
     return next(e);
   });
@@ -624,6 +624,6 @@ export function registerDeliver(on: On) {
   });
 
   // observe: when a main-loop tool call finished (a model request follows it, carrying what was appended)
-  on('classic.PostToolUse', toolDone).catch(($, e, next) => next(e));
-  on('classic.PostToolUseFailure', toolDone).catch(($, e, next) => next(e));
+  on('classic.PostToolUse', toolDone).catch((_$, e, next) => next(e));
+  on('classic.PostToolUseFailure', toolDone).catch((_$, e, next) => next(e));
 }

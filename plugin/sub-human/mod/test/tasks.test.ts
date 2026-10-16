@@ -11,17 +11,17 @@ const SID = 'sid-t'
 function world(on: any, { seat = ROOM_CLAUDE as any, exitCode = 0, stderr = '', room = undefined as string | undefined, fail = false, envFail = false } = {}) {
   const seen = { tasks: [] as any[], beneath: [] as string[] }
   session(on, SID)
-  on('env.get', ($: any, e: any) => {
+  on('env.get', (_$: any, e: any) => {
     if (envFail) throw new Error('env unavailable')
     return { value: e.name === 'SUB_HUMAN_ROOM' ? room : undefined }
   })
-  on('process.run', ($: any, e: any) => {
+  on('process.run', (_$: any, e: any) => {
     if (scriptOf(e) === 'mod-hello.ts') return ran(JSON.stringify(helloOf(seat)))
     if (fail) return { deny: 'no processes here' }
     seen.tasks.push(JSON.parse(e.init.stdin))
     return ran('', exitCode, stderr)
   })
-  on('classic.PostToolUse', ($: any, e: any) => { seen.beneath.push(`post ${e.tool_name}`); return {} })
+  on('classic.PostToolUse', (_$: any, e: any) => { seen.beneath.push(`post ${e.tool_name}`); return {} })
   on('classic.TaskCompleted', () => { seen.beneath.push('completed'); return {} })
   return seen
 }

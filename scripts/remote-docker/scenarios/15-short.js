@@ -57,7 +57,7 @@ module.exports = {
     await t.sleep(1500);
     t.check('nothing gets in before the card: bob\'s link is not online', seat.link(code).state !== 'online', seat.link(code).state);
     const card = host.admitcard('alice', 'Let in');
-    t.check('alice\'s card names bob and his machine's check; her Let in admits him', card.ok && /^Let bob \(check [0-9a-f]{4}-[0-9a-f]{4}\) on \S+ join room /.test(card.question || ''), card.out);
+    t.check('alice\'s card names bob and his machine\'s check; her Let in admits him', card.ok && /^Let bob \(check [0-9a-f]{4}-[0-9a-f]{4}\) on \S+ join room /.test(card.question || ''), card.out);
     const online = await waitState(seat, code, 'online', 40_000);
     t.check('bob\'s link comes online once let in', online !== null, `${online} ms`);
     const rj = seat.expand('bob', '');

@@ -16,13 +16,13 @@ function world(on: any, { cwd = true } = {}) {
   on('session.cwd', () => (cwd ? { value: '/w' } : { deny: 'no cwd here' }))
   on('tool.check', () => ({ decision: 'ask' }))
   on('process.run', () => ran(JSON.stringify(OUT)))
-  on('fs.stat', ($: any, e: any) => {
+  on('fs.stat', (_$: any, e: any) => {
     if (!EXISTS.has(e.path)) return { deny: 'ENOENT' }
     const link = Object.keys(LINKS).find(l => e.path === l || e.path.startsWith(l + '/'))
     const realPath = link ? LINKS[link] + e.path.slice(link.length) : e.path
     return { value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: !!link && link !== '/w', ...(e.resolve ? { realPath } : {}) } }
   })
-  on('tool.call', ($: any, e: any) => { ran_.push(e.tool); return { result: 'ran', text: 'ran' } })
+  on('tool.call', (_$: any, e: any) => { ran_.push(e.tool); return { result: 'ran', text: 'ran' } })
   return ran_
 }
 /** session.start: the module runs mod-hello and keeps the home and seat. */

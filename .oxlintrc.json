@@ -1,0 +1,47 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [
+    "typescript",
+    "node",
+    "import"
+  ],
+  "categories": {
+    "correctness": "warn"
+  },
+  "ignorePatterns": [
+    "trailer/**",
+    "node_modules/**",
+    "typings/**",
+    "docs/**",
+    "plugin/sub-human/test/fixtures/**"
+  ],
+  "overrides": [
+    {
+      "files": [
+        "plugin/sub-human/**"
+      ],
+      "rules": {
+        "typescript/no-explicit-any": "warn",
+        "typescript/no-non-null-assertion": "warn",
+        "typescript/consistent-type-imports": "warn",
+        "typescript/no-import-type-side-effects": "warn",
+        "typescript/no-floating-promises": "warn",
+        "typescript/no-misused-promises": "warn",
+        "typescript/switch-exhaustiveness-check": "warn",
+        "typescript/no-unnecessary-type-assertion": "warn",
+        "typescript/no-unsafe-argument": "warn",
+        "typescript/no-unsafe-assignment": "warn",
+        "typescript/no-unsafe-call": "warn",
+        "typescript/no-unsafe-member-access": "warn",
+        "typescript/no-unsafe-return": "warn",
+        "typescript/no-unsafe-type-assertion": "warn",
+        "typescript/no-unsafe-enum-comparison": "warn",
+        "typescript/no-unsafe-unary-minus": "warn",
+        "typescript/no-unsafe-declaration-merging": "warn",
+        "typescript/no-unsafe-function-type": "warn",
+        "typescript/prefer-nullish-coalescing": "warn",
+        "typescript/only-throw-error": "warn"
+      }
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  // npm run typecheck, second pass: the runtime alone (no test file, no 'claude-code/testing'), so it never leans on a
+  // declaration only a test brings in.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "claude-code": ["./typings/claude-code/index.d.ts"]
+    }
+  },
+  "include": [
+    "plugin/sub-human/lib",
+    "plugin/sub-human/hooks",
+    "plugin/sub-human/mcp",
+    "plugin/sub-human/statusline",
+    "plugin/sub-human/mod",
+    "plugin/sub-human/types",
+    "typings/claude-code-tools"
+  ],
+  "exclude": [
+    "plugin/sub-human/mod/test",
+    "plugin/sub-human/test"
+  ]
+}

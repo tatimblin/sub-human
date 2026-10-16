@@ -282,16 +282,16 @@ function accept(req: http.IncomingMessage, socket: Duplex, head: Buffer, { maxPa
 }
 
 function createServer({ host = '127.0.0.1', port, onConnection, accept: allow = () => true, maxPayload, pingMs }: ServerOptions): Promise<http.Server> {
-  const srv = http.createServer((req, res) => { res.writeHead(426, { 'content-type': 'text/plain', connection: 'close' }); res.end('upgrade required\n'); });
+  const srv = http.createServer((_req, res) => { res.writeHead(426, { 'content-type': 'text/plain', connection: 'close' }); res.end('upgrade required\n'); });
   srv.on('upgrade', (req, socket, head) => {
     socket.on('error', () => { /* a peer that went away */ });
     let ok: boolean | number;
     try { ok = allow(req); } catch { ok = 500; }
-    if (ok !== true) return refuse(socket, typeof ok === 'number' ? ok : 404, 'not here\n');
+    if (ok !== true) { refuse(socket, typeof ok === 'number' ? ok : 404, 'not here\n'); return; }
     const conn = accept(req, socket, head, { maxPayload, pingMs });
     if (conn) onConnection(conn, req);
   });
-  srv.on('clientError', (e, socket) => socket.destroy());
+  srv.on('clientError', (_e, socket) => socket.destroy());
   return new Promise((resolve, reject) => {
     srv.once('error', reject);
     srv.listen(port, host, () => { srv.off('error', reject); resolve(srv); });

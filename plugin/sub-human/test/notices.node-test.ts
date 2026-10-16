@@ -171,7 +171,7 @@ test('hold {room}: joins and settled leaves show as notices on the progress line
   const progress: string[] = []; // the room hold's line only (bob's row streams his own thread)
   const me = { code: CODE, name: 'alice', role: 'member' } as Me; // the fields hold reads
   let who: Me | null = me;
-  const plug = hold.create({ identity, whoami: () => who, progress: (k, n, m) => { if (k === 'r') progress.push(m!); }, onCancel: () => {}, log: () => {}, text: s => ({ content: [{ type: 'text', text: s as string }] }) });
+  const plug = hold.create({ identity, whoami: () => who, progress: (k, _n, m) => { if (k === 'r') progress.push(m!); }, onCancel: () => {}, log: () => {}, text: s => ({ content: [{ type: 'text', text: s as string }] }) });
   // bob's row is already held, so the room hold does not return JOINED for him
   const ended: ToolResult[] = [];
   const b = plug.call('hold', me, { member: 'bob' }, { id: 1, progressToken: 'b' });

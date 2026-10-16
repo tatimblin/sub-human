@@ -15,8 +15,8 @@ function world(on: any, { hello = OUT as any, answers = [{ subHuman: { reviewOpe
   const seen = { consent: [] as any[], beneathStop: 0, beneathPre: [] as string[], tools: [] as string[], logs: [] as string[] }
   session(on, SID)
   on('session.cwd', () => ({ value: '/w' }))
-  on('ui.log', ($: any, e: any) => { seen.logs.push(e.text); return { value: undefined } })
-  on('process.run', ($: any, e: any) => {
+  on('ui.log', (_$: any, e: any) => { seen.logs.push(e.text); return { value: undefined } })
+  on('process.run', (_$: any, e: any) => {
     const script = scriptOf(e)
     if (script === 'mod-hello.ts') return ran(JSON.stringify(hello))
     seen.consent.push({ stdin: JSON.parse(e.init.stdin), env: e.init.env })
@@ -26,9 +26,9 @@ function world(on: any, { hello = OUT as any, answers = [{ subHuman: { reviewOpe
   on('classic.Stop', () => { seen.beneathStop++; return {} })
   // stands for every settings hook beneath the module: consent's command hook (hooks.json PreToolUse
   // ^mcp__plugin_sub-human_room__), another plugin's, the user's
-  on('classic.PreToolUse', ($: any, e: any) => { seen.beneathPre.push(e.tool); return {} })
+  on('classic.PreToolUse', (_$: any, e: any) => { seen.beneathPre.push(e.tool); return {} })
   on('tool.check', () => ({ decision: 'allow' }))
-  on('tool.call', ($: any, e: any) => { seen.tools.push(e.tool); return e.tool === 'ExitPlanMode' && exit ? exit : { result: 'ok', text: 'ok' } })
+  on('tool.call', (_$: any, e: any) => { seen.tools.push(e.tool); return e.tool === 'ExitPlanMode' && exit ? exit : { result: 'ok', text: 'ok' } })
   on('ui.render', () => ({ type: 'Text', children: ['the engine\'s line'] })) // the engine's drawing, beneath
   return seen
 }

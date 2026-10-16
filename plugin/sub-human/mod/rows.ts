@@ -53,10 +53,10 @@ const ROW_ENDED = 'sub-human: row ended, nothing to do';
 const typeOf = (input: unknown) => (input && typeof input === 'object' ? (input as { subagent_type?: unknown }).subagent_type : undefined);
 
 export function registerRows(on: On) {
-  on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
+  on('tool.call', { tool: 'Agent' }, async (_$, e, next) => {
     facts.stashAgent(e.tool_use_id, e.agentId);
     try { return await next(e); } finally { facts.dropAgent(e.tool_use_id); }
-  }).catch(($, e, next) => next(e));
+  }).catch((_$, e, next) => next(e));
 
   on('classic.PreToolUse', { tool: 'Agent' }, async ($, e, next) => {
     const sid = await $.session.id();
@@ -65,7 +65,7 @@ export function registerRows(on: On) {
     const payload = prePayload(e, { sid, cwd: await $.session.cwd().catch(() => undefined), facts: facts.of(sid), agentId: facts.agentOf(e.tool_use_id) });
     const run = await $.process.run(shimArgv(root, 'row-guard'), { stdin: JSON.stringify(payload), env: shimEnv({ session_id: sid }, root), timeoutMs: SHIM_TIMEOUT_MS });
     return mergePre(toPre(run).result, await next(e));
-  }).catch(($, e, next) => next(e)); // never disturb the session: the spawn goes on (hold.ts stops a duplicate itself)
+  }).catch((_$, e, next) => next(e)); // never disturb the session: the spawn goes on (hold.ts stops a duplicate itself)
 
   on('classic.PostToolUse', { tool_name: ['Agent', 'Task'] }, async ($, e, next) => {
     if (isRow(typeOf(e.tool_input))) { const id = spawnedId(e.tool_response); if (id) rowAgents.add(id); }
@@ -73,27 +73,27 @@ export function registerRows(on: On) {
     const root = $.plugin.root;
     const run = await $.process.run(shimArgv(root, 'row-map'), { stdin: JSON.stringify(e), env: shimEnv(e, root), timeoutMs: SHIM_TIMEOUT_MS });
     return mergeClassic(toClassic('PostToolUse', run).result, await next(e));
-  }).catch(($, e, next) => next(e));
+  }).catch((_$, e, next) => next(e));
 
   // a row's hand-back is no turn: taken before it is queued, or dropped as a prompt where it was not
-  on('session.receive', { origin: [{ kind: 'peer' }, { kind: 'task-notification' }] }, ($, e, next) => {
+  on('session.receive', { origin: [{ kind: 'peer' }, { kind: 'task-notification' }] }, (_$, e, next) => {
     const id = e.origin.kind === 'peer' ? rowHandback(e.text) : e.origin.kind === 'task-notification' ? rowFinished(e.text) : null;
     if (id && e.origin.kind === 'task-notification') rowAgents.delete(id);
     return id ? { consumed: ROW_ENDED } : next(e); // taken quietly: nothing queued, shown or read
-  }).catch(($, e, next) => next(e));
-  on('prompt.submit', { origin: [{ kind: 'peer' }, { kind: 'task-notification' }] }, ($, e, next) => {
+  }).catch((_$, e, next) => next(e));
+  on('prompt.submit', { origin: [{ kind: 'peer' }, { kind: 'task-notification' }] }, (_$, e, next) => {
     // the hand-back first (the agent id stays noted: its "finished" notification follows), then that notification
     if (e.origin && e.origin.kind === 'peer' && rowHandback(e.text)) return { drop: ROW_ENDED };
     const done = e.origin && e.origin.kind === 'task-notification' ? rowFinished(e.text) : null;
     if (!done) return next(e);
     rowAgents.delete(done);
     return { drop: ROW_ENDED };
-  }).catch(($, e, next) => next(e));
+  }).catch((_$, e, next) => next(e));
 
   on('classic.SubagentStop', async ($, e, next) => {
     if (!(await needed($, e.session_id, e.agent_type))) return next(e);
     const root = $.plugin.root;
     const run = await $.process.run(shimArgv(root, 'row-hold'), { stdin: JSON.stringify(e), env: shimEnv(e, root), timeoutMs: SHIM_TIMEOUT_MS });
     return mergeClassic(toClassic('SubagentStop', run).result, await next(e));
-  }).catch(($, e, next) => next(e));
+  }).catch((_$, e, next) => next(e));
 }

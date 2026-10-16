@@ -11,7 +11,8 @@
     "test:scripts": "node --test --import ./plugin/sub-human/test/helpers.ts scripts/test",
     "test:mods": "node scripts/test-mods.js",
     "test:thread-store": "SUB_HUMAN_TEST_THREAD_STORE=1 NODE_OPTIONS=\"--import $PWD/plugin/sub-human/test/support/thread-store.ts\" node --test 'plugin/sub-human/test/hooks/*.node-test.ts'",
-    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.runtime.json && node scripts/typecheck-shim.js",
+    "lint": "node scripts/lint.js",
     "validate": "claude plugin validate plugin/sub-human --strict",
     "probe": "node scripts/probe-cc.js",
     "docs": "node scripts/arch-doc.js",
@@ -20,6 +21,8 @@
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
+    "oxlint": "1.88.0",
+    "oxlint-tsgolint": "7.0.2004",
     "typescript": "^7.0.2"
   }
 }

@@ -125,7 +125,7 @@ test('append: id and prev from the tail, past a corrupt or unterminated last lin
   for (let i = 0; i < 40; i++) say('alice', big + i);
   const reads: number[] = [];
   const orig = fs.readSync;
-  fs.readSync = function (this: unknown, fd: number, buf: NodeJS.ArrayBufferView, off: number, len: number, pos: fs.ReadPosition | null) {
+  fs.readSync = function (this: unknown, _fd: number, _buf: NodeJS.ArrayBufferView, _off: number, len: number, _pos: fs.ReadPosition | null) {
     reads.push(len); return orig.apply(this, arguments as unknown as Parameters<typeof orig>);
   } as typeof fs.readSync;
   try { R.append({ kind: 'status', text: 'after' }, { via: 'system', from: 'room', system: true }); } finally { fs.readSync = orig; }

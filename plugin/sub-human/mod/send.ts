@@ -31,5 +31,5 @@ export function registerSend(on: On) {
     const room = await $.mcp.connect(SERVER);
     if (!room.isConnected) return next(e);
     return postResult(name, await $.mcp.call(room.server, 'post', postArgs(name, e.text)));
-  }).catch(($, e, next) => next(e));
+  }).catch((_$, e, next) => next(e));
 }

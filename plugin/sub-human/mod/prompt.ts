@@ -138,7 +138,7 @@ export function registerPrompt(on: On) {
   on('command.run', async ($, e, next) => {
     const why = roomClaudeCommand(e.command, e.origin, await $.env.get('SUB_HUMAN_ROOM'));
     return why ? { text: why } : next(e);
-  }).catch(($, e, next) => next(e)); // unsure: the command runs, as without the module
+  }).catch((_$, e, next) => next(e)); // unsure: the command runs, as without the module
 
   on('prompt.submit', async ($, e, next) => {
     // the room context held since the last turn rides beside this prompt; it is cleared once the prompt goes on to a
@@ -185,7 +185,7 @@ export function registerPrompt(on: On) {
     }
     const item = origins.push(e.text, originKind(e.origin));
     try { return await pass(down); } finally { origins.drop(item); sendRefusals($); }
-  }).catch(($, e, next) => (next.called || !isAtRoom(e.text) ? next(e) : { drop: GATE_FAILED }));
+  }).catch((_$, e, next) => (next.called || !isAtRoom(e.text) ? next(e) : { drop: GATE_FAILED }));
 
   // idle, waiting on the person, or stalled: written (not awaited) for a seat, or when unsure; the next typed prompt
   // then writes "working" again
@@ -196,7 +196,7 @@ export function registerPrompt(on: On) {
     presence.last = e.notification_type;
     if (seatedOrUnsure(hello, e.session_id)) void writePresence($, e, e.session_id).catch(() => { presence.last = null; });
     return next(e);
-  }).catch(($, e, next) => next(e));
+  }).catch((_$, e, next) => next(e));
   on('classic.StopFailure', async ($, e, next) => {
     facts.noteEvent(e);
     const hello = await helloOf($);
@@ -204,7 +204,7 @@ export function registerPrompt(on: On) {
     presence.last = 'error';
     if (seatedOrUnsure(hello, e.session_id)) void writePresence($, e, e.session_id).catch(() => { presence.last = null; });
     return next(e);
-  }).catch(($, e, next) => next(e));
+  }).catch((_$, e, next) => next(e));
 
   on('classic.UserPromptSubmit', async ($, e, next) => {
     // the held room context, for a prompt prompt.submit did not give it to (see pulled)
@@ -249,7 +249,7 @@ export function registerPrompt(on: On) {
     if (r.block || r.preventContinuation) { if (pulled.has(e.prompt)) stopped.add(e.prompt); } // no turn: it stays held
     else if (own) await carried($, own.upTo);
     return out;
-  }).catch(($, e, next) => failClosed(e.prompt) ?? next(e)); // a plain prompt goes on, as when a command hook fails
+  }).catch((_$, e, next) => failClosed(e.prompt) ?? next(e)); // a plain prompt goes on, as when a command hook fails
 
   // The stop above is drawn as a warning row "Operation stopped by hook: ✓ sent" (cc CONTRACT ups-stop-frame): that
   // row, and only one whose receipt is waiting, is kept as the receipt alone (cc CONTRACT
@@ -257,8 +257,8 @@ export function registerPrompt(on: On) {
   // The stop's other row, the isMeta user row the model reads ("Operation stopped by hook: ✓ sent …"), says what it is:
   // the person's @room line went to the room and nothing is asked of the model (stage 8e B: read before the person's
   // next words with no turn between, the bare frame read as a request).
-  on('session.append', ($, e, next) => {
+  on('session.append', (_$, e, next) => {
     const row = e.door === 'notice' ? receipts.rewrite(e.message) : receipts.modelRow(e.message);
     return next(row ? { ...e, message: row } : e);
-  }).catch(($, e, next) => next(e)); // a failure keeps the engine's words
+  }).catch((_$, e, next) => next(e)); // a failure keeps the engine's words
 }

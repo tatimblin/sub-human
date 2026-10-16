@@ -67,7 +67,7 @@ async function rig(t: TestContext, hostEnv: Record<string, string> = {}, remoteE
 type Rig = Awaited<ReturnType<typeof rig>>;
 
 const linkState = (m: Machine, code: string) => m.lib(() => linkSocket.status(code).state);
-async function posts(t: TestContext, { host, remote, alice, bob, code }: Rig, text: string) {
+async function posts(_t: TestContext, { host, remote, alice, bob, code }: Rig, text: string) {
   const r = remote.say(bob, text);
   assert.equal(r.json && r.json.continue, false, JSON.stringify(r.json) + r.stderr);
   assert.ok(host.lib(() => store.open(code).readAll()).some(e => e.text === text));

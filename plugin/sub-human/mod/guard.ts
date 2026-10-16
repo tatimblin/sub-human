@@ -83,7 +83,7 @@ export function registerGuard(on: On) {
     const abs = absTarget(p, { cwd, userHome: h.userHome });
     const candidates = abs ? [abs, await placed($, abs)] : [];
     return writeVerdict(candidates, h, p) ? { deny: WRITE_DENY(e.tool, p) } : next(e);
-  }).catch(($, e, next) => {
+  }).catch((_$, e, next) => {
     if (next.called) return next(e);
     if (writeVerdict([], {}, writeTarget(e) || '')) return { deny: WRITE_DENY(e.tool, writeTarget(e)) };
     return failClosed(e) ? { deny: FAILED } : next(e);
@@ -97,7 +97,7 @@ export function registerGuard(on: On) {
     const abs = absTarget(p, { cwd, userHome: h.userHome });
     const candidates = abs ? [abs, await placed($, abs)] : [];
     return readVerdict(candidates, await withTalk($, h), p) ? { deny: READ_DENY(p) } : next(e);
-  }).catch(($, e, next) => {
+  }).catch((_$, e, next) => {
     if (next.called) return next(e);
     return readVerdict([], {}, writeTarget(e) || '') ? { deny: READ_DENY(writeTarget(e)) } : next(e);
   });
@@ -114,17 +114,17 @@ export function registerGuard(on: On) {
       if (abs) candidates.push(abs, await placed($, abs));
     }
     return searchVerdict(e.tool, candidates, await withTalk($, h), targets.join(' ')) ? { deny: READ_DENY(targets.at(-1) || null, e.tool) } : next(e);
-  }).catch(($, e, next) => {
+  }).catch((_$, e, next) => {
     if (next.called) return next(e);
     const targets = searchTargets(e.tool, e as SearchInput);
     return searchVerdict(e.tool, [], {}, targets.join(' ')) || failClosed(e) ? { deny: READ_DENY(targets.at(-1) || null, e.tool) } : next(e);
   });
 
-  on('tool.call', { tool: 'mcp__plugin_sub-human_room__hold' }, ($, e, next) => (e.agentId ? next(e) : { deny: HOLD_DENY }))
-    .catch(($, e, next) => (next.called || e.agentId ? next(e) : { deny: HOLD_DENY }));
+  on('tool.call', { tool: 'mcp__plugin_sub-human_room__hold' }, (_$, e, next) => (e.agentId ? next(e) : { deny: HOLD_DENY }))
+    .catch((_$, e, next) => (next.called || e.agentId ? next(e) : { deny: HOLD_DENY }));
 
   on('tool.check', { tool: /^mcp__plugin_sub-human_room__/ }, async ($, e, next) => {
     const v = roomToolVerdict(e, seated(await helloOf($)));
     return v || next(e);
-  }).catch(($, e, next) => roomToolVerdict(e, false) || next(e));
+  }).catch((_$, e, next) => roomToolVerdict(e, false) || next(e));
 }

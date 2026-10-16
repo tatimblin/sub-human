@@ -12,15 +12,15 @@ const HOME = '/u/.sub-human'
 /** The engine beneath: HOME=/u, a session index for SID only when `indexed`, mod-hello answering for `seat`, the
  * other scripts answering from `answer` ({stdout, exitCode, stderr}); what ran, the prompts submitted, the writes
  * the guard let through. */
-function world(engine: any, on: any, { indexed = false, seat = null as any, answer = {} as Record<string, any> } = {}) {
+function world(_engine: any, on: any, { indexed = false, seat = null as any, answer = {} as Record<string, any> } = {}) {
   const seen = { runs: [] as string[], stdin: {} as Record<string, any>, prompts: [] as string[], asUser: [] as boolean[], logs: [] as string[] }
   session(on, SID)
   on('session.cwd', () => ({ value: '/w' }))
-  on('env.get', ($: any, e: any) => ({ value: e.name === 'HOME' ? '/u' : undefined }))
-  on('fs.exists', ($: any, e: any) => ({ value: indexed && e.path === `${HOME}/sessions/by-sid/${SID}.json` }))
-  on('fs.stat', ($: any, e: any) => ({ value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: false, realPath: e.path } }))
-  on('ui.log', ($: any, e: any) => { seen.logs.push(e.text); return { value: undefined } })
-  on('process.run', ($: any, e: any) => {
+  on('env.get', (_$: any, e: any) => ({ value: e.name === 'HOME' ? '/u' : undefined }))
+  on('fs.exists', (_$: any, e: any) => ({ value: indexed && e.path === `${HOME}/sessions/by-sid/${SID}.json` }))
+  on('fs.stat', (_$: any, e: any) => ({ value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: false, realPath: e.path } }))
+  on('ui.log', (_$: any, e: any) => { seen.logs.push(e.text); return { value: undefined } })
+  on('process.run', (_$: any, e: any) => {
     const script = scriptOf(e)
     seen.runs.push(script)
     seen.stdin[script] = JSON.parse(e.init.stdin)
@@ -29,7 +29,7 @@ function world(engine: any, on: any, { indexed = false, seat = null as any, answ
     return ran(a.stdout || '', a.exitCode ?? 0, a.stderr || '')
   })
   on('process.spawn', async function* () { return { value: { code: 0, signal: null } } })
-  on('prompt.submit', ($: any, e: any) => { seen.prompts.push(e.text); seen.asUser.push(!!(e.origin && e.origin.asUser === true)); return { text: e.text } })
+  on('prompt.submit', (_$: any, e: any) => { seen.prompts.push(e.text); seen.asUser.push(!!(e.origin && e.origin.asUser === true)); return { text: e.text } })
   on('classic.SessionStart', () => ({}))
   on('classic.UserPromptExpansion', () => ({}))
   on('command.run', () => ({ text: undefined }))
@@ -122,7 +122,7 @@ test('stage 8e E: a fork whose seat is in another sub-human folder: session-rest
 
 test('stage 8f item 1: a hello that names a seat appends the hidden home notice once per session and folder; one with no seat appends none', async ($, on) => {
   const appended: any[] = []
-  on('session.append', ($: any, e: any, next: any) => { appended.push(e.message); return next(e) })
+  on('session.append', (_$: any, e: any, next: any) => { appended.push(e.message); return next(e) })
   const seen = world($, on, { indexed: true, seat: SEAT })
   await start($)
   await until(() => appended.length === 1)
@@ -137,7 +137,7 @@ test('stage 8f item 1: a hello that names a seat appends the hidden home notice 
 
 test('stage 8f item 1: a session with no seat appends no home notice', async ($, on) => {
   const appended: any[] = []
-  on('session.append', ($: any, e: any, next: any) => { appended.push(e.message); return next(e) })
+  on('session.append', (_$: any, e: any, next: any) => { appended.push(e.message); return next(e) })
   world($, on, { indexed: true, seat: null })
   await start($)
   await new Promise(r => setTimeout(r, 50))

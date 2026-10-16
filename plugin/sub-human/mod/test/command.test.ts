@@ -13,13 +13,13 @@ const SID = 'sid-c'
  * hook passes it on: `ran` counts it, and a join's expansion raises classic.UserPromptExpansion as the engine does). */
 function world(engine: any, on: any, { join = {} as any, room = undefined as string | undefined, hello = undefined as any } = {}) {
   const seen = { joins: [] as any[], logs: [] as string[], ran: 0, expansions: [] as any[], hellos: 0, commands: [] as string[], files: {} as Record<string, string> }
-  on('fs.read', ($: any, e: any) => { if (e.path in seen.files) return { value: seen.files[e.path] }; throw new Error('ENOENT') })
-  on('fs.write', ($: any, e: any) => { seen.files[e.path] = e.text; return { value: undefined } })
+  on('fs.read', (_$: any, e: any) => { if (e.path in seen.files) return { value: seen.files[e.path] }; throw new Error('ENOENT') })
+  on('fs.write', (_$: any, e: any) => { seen.files[e.path] = e.text; return { value: undefined } })
   session(on, SID)
   on('session.cwd', () => ({ value: '/w' }))
-  on('env.get', ($: any, e: any) => ({ value: e.name === 'SUB_HUMAN_ROOM' ? room : undefined }))
-  on('ui.log', ($: any, e: any) => { seen.logs.push(e.text); return { value: undefined } })
-  on('process.run', ($: any, e: any) => {
+  on('env.get', (_$: any, e: any) => ({ value: e.name === 'SUB_HUMAN_ROOM' ? room : undefined }))
+  on('ui.log', (_$: any, e: any) => { seen.logs.push(e.text); return { value: undefined } })
+  on('process.run', (_$: any, e: any) => {
     const script = scriptOf(e)
     if (script === 'mod-hello.ts') { seen.hellos++; return ran(JSON.stringify(hello ? hello(seen) : OUT)) }
     if (script === 'join.ts') {
@@ -32,8 +32,8 @@ function world(engine: any, on: any, { join = {} as any, room = undefined as str
     }
     return ran('')
   })
-  on('classic.UserPromptExpansion', ($: any, e: any) => { seen.expansions.push(e); return { additionalContext: ['from the classic join hook'] } })
-  on('command.run', async ($: any, e: any) => {
+  on('classic.UserPromptExpansion', (_$: any, e: any) => { seen.expansions.push(e); return { additionalContext: ['from the classic join hook'] } })
+  on('command.run', async (_$: any, e: any) => {
     seen.commands.push(`${e.command} ${e.args ?? ''}`.trim())
     if (e.command === 'rename') return { text: `Session renamed to: ${e.args}` }
     seen.ran++
@@ -64,7 +64,7 @@ test('an invite\'s line and PIN go to the status line (saved in no transcript), 
   const say = 'invite to room otter-4821 for one machine … are pinned under the prompt until 12:15 …'
   const seen = world($, on, { join: { subHuman: { say, refused: false, shareable: false, pinned: { status: 'invite to otter-4821 until 12:15: /sub-human join me@box otter-4821 SECRET  ·  its PIN, apart from the line (say it, or send it another way): 4821', ms: 900000 } } } })
   const statuses: (string | undefined)[] = []
-  on('ui.status', ($: any, e: any) => { statuses.push(e.text); return { value: undefined } })
+  on('ui.status', (_$: any, e: any) => { statuses.push(e.text); return { value: undefined } })
   await start($)
   const r: any = await typed($, 'invite')
   expect(r.text).toBeUndefined()
@@ -83,7 +83,7 @@ test('item 2 (D): a terminal narrower than the whole line pins the PIN and SECRE
   const cancel = { subHuman: { say: `invite ${ref} cancelled`, refused: false, shareable: true } }
   const seen = world($, on, { join: (stdin: any) => (String(stdin.command_args).startsWith('invite --cancel') ? cancel : { subHuman: { say: 'invite to room otter-4821 … pinned under the prompt until 12:15 …', refused: false, shareable: false, pinned } }) })
   const statuses: (string | undefined)[] = []
-  on('ui.status', ($: any, e: any) => { statuses.push(e.text); return { value: undefined } })
+  on('ui.status', (_$: any, e: any) => { statuses.push(e.text); return { value: undefined } })
   await start($)
   await $.command.run({ command: 'sub-human:sub-human', args: 'invite', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 100 } } as any)
   expect(statuses).toEqual([`PIN 4821 · SECRET ${word}`])
@@ -159,7 +159,7 @@ test('a run that rejects (the shim\'s timeout) is one refusal with its time and 
 })
 
 test('a lease that lost the nonce (join.ts ran nothing): the module says hello again and runs it once more', async ($, on) => {
-  const seen = world($, on, { join: (stdin: any, s: any) => (s.joins.length === 1 ? { subHuman: { lease: 'stale' } } : { subHuman: { say: 'left otter-4821 · /sub-human joins again', refused: false, shareable: true } }) })
+  const seen = world($, on, { join: (_stdin: any, s: any) => (s.joins.length === 1 ? { subHuman: { lease: 'stale' } } : { subHuman: { say: 'left otter-4821 · /sub-human joins again', refused: false, shareable: true } }) })
   await start($)
   const hellos = seen.hellos
   await typed($, 'leave')

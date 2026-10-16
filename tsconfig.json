@@ -1,9 +1,18 @@
 {
   // npm run typecheck (docs/archive/TYPESCRIPT.md, decision 8). Nothing is emitted: node strips the types of each .ts it
   // loads (Node 24.3+) and Claude Code transpiles the hooks module (mod/); only this checks them.
+  // This is the whole plugin: the runtime, its node tests (test/), the module's wiring tests (mod/test) and its two
+  // plain JavaScript files (hooks/compile-cache.js, lib/cache-dir.js: // @ts-check), as one project, which is what an
+  // editor and the type-aware linter (npm run lint) read. tsconfig.runtime.json checks the runtime again on its own, so
+  // it never leans on a test's declarations; scripts/typecheck-shim.js checks scripts/sub-human (no extension).
   "compilerOptions": {
     "strict": true,
     "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "isolatedModules": true,
     "noEmit": true,
     "target": "es2024",
     "module": "nodenext",
@@ -12,24 +21,23 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
+    "allowJs": true,
+    "checkJs": true,
     "types": ["node"],
     // import type { ... } from 'claude-code': the committed snapshot of the declarations Claude Code writes beside a
-    // hooks module (.claude-plugin/types/, gitignored); refresh it from there after a Claude Code update
+    // hooks module (.claude-plugin/types/, gitignored); refresh it from there after a Claude Code update. The same file
+    // declares 'claude-code/testing', the kit mod/test imports under `claude plugin test`.
     "paths": {
-      "claude-code": ["./typings/claude-code/index.d.ts"]
+      "claude-code": ["./typings/claude-code/index.d.ts"],
+      "claude-code/testing": ["./typings/claude-code/index.d.ts"]
     }
   },
   "include": [
-    "plugin/sub-human/lib",
-    "plugin/sub-human/hooks",
-    "plugin/sub-human/mcp",
-    "plugin/sub-human/statusline",
-    "plugin/sub-human/mod",
-    "plugin/sub-human/types",
+    "plugin/sub-human",
     "typings/claude-code-tools"
   ],
   "exclude": [
-    "plugin/sub-human/mod/test",
-    "plugin/sub-human/test"
+    "plugin/sub-human/test/fixtures",
+    "plugin/sub-human/.claude-plugin"
   ]
 }
