@@ -324,6 +324,7 @@ function join({ code, name, role, machine = machineIn(code), account, pid: pidAr
 function leave(code: string, name: string, opts?: { reason?: string; deadlineMs?: number }): boolean {
   if (!roomExists(code)) return false;
   if (!membersOf(code).leave(name, opts)) return false;
+  primeStarts(Object.values(readMembers(code))); // one ps for the liveness checks below and the caller's (seats.exit)
   try { unindexClosed(code); } catch { /* the next look at the open rooms drops it */ }
   const m = readMembers(code)[name];
   if (m && m.left_at && validPid(m.pid)) {
@@ -417,8 +418,9 @@ const leaseLive = (lease: ModLease | null): boolean => !!lease && validPid(lease
 function modLeaseOk(sid: unknown, pid: unknown, now = Date.now()): boolean {
   const lease = readModLease(sid);
   if (!lease || lease.session_id !== sid) return false;
-  if (validPid(Number(pid)) && lease.pid === Number(pid) && leaseLive(lease)) return true;
-  return leaseYoung(lease, now);
+  // a young lease lets it through on its own: asked first, it spares the ps a live check costs (a loaded machine)
+  if (leaseYoung(lease, now)) return true;
+  return validPid(Number(pid)) && lease.pid === Number(pid) && leaseLive(lease);
 }
 
 function deleteModLease(sid: unknown): boolean {
@@ -659,7 +661,16 @@ function resolveSelf(): Identity | null {
 
 // ---------- rooms ----------
 const isMember = (m: Member | null | undefined): m is Member => !!m && m.role !== 'claude';
-const liveMembers = (code: string): string[] => Object.values(readMembers(code)).filter(m => isMember(m) && seatAlive(m)).map(m => m.name);
+/** The names of code's live people, the start times of their local pids read by one ps call (not one per seat). */
+function liveMembers(code: string): string[] {
+  const ms = Object.values(readMembers(code)).filter(m => isMember(m) && !m.left_at);
+  primeStarts(ms);
+  return ms.filter(m => seatAlive(m)).map(m => m.name);
+}
+/** The start times of these seats' live local pids, read into lib/lock.ts's cache by one ps call. */
+function primeStarts(ms: readonly (Member | null | undefined)[]): void {
+  try { pidStarts(ms.filter((m): m is Member => !!m && !m.left_at && validPid(m.pid) && (!m.machine || isMine(m.machine)) && isAlive(m.pid)).map(m => m.pid as number)); } catch { /* each check asks on its own */ }
+}
 const roomClosing = (code: string): boolean => { const o = readMembers(code).claude; return !!(o && o.closing); };
 
 /** Closed for good: no person's seat that has not left, and no room Claude that may still run. Only a join reopens it. */

@@ -23,14 +23,14 @@ import {
 } from './core/deliver.ts';
 import { parseHello, localHello, homeOf, sidIndex } from './core/seat.ts';
 import { homeMark } from './core/constants.ts';
-import { answersItself, joinPayload, readReply, answerOf, cancels, leftName, CONFIRM_AFTER_MS } from './core/command.ts';
+import { answersItself, joinPayload, readReply, answerOf, cancels, leftName, goneAfter, failLogLine, appendCapped, MODULE_LOG, CONFIRM_AFTER_MS } from './core/command.ts';
 import { shimArgv, shimEnv, toClassic, asNotice, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { restoreNeeded } from './core/prefilter.ts';
 import { mergeClassic } from './core/prompt.ts';
 import { factsBook } from './core/facts.ts';
 import { asHello, asNonce, mintNonce } from './core/state.ts';
 import type { EngineInterface, On, SessionAppendArgs } from 'claude-code';
-import type { Pulls, RelayIo, TailEvent, TailSeat } from './core/types.ts';
+import type { JoinReply, Pulls, RelayIo, TailEvent, TailSeat } from './core/types.ts';
 
 /** The tail child as the module tracks it; stream: its $.process.spawn stream, as stopChild ends it. */
 interface Child { sid: string; seat: TailSeat | null; stream: { return(value?: unknown): Promise<unknown> } | null; stopped: boolean; fails: number }
@@ -95,6 +95,20 @@ async function sayHello($: EngineInterface, sid: string) {
   const hello = run.exitCode === 0 ? parseHello(run.stdout, sid) : null;
   if (hello) { await $.state.set(HELLO, hello); leased = sid; void markHome($, hello); }
   return hello;
+}
+
+/** $.clock.now(), or null when there is no clock. */
+const nowMs = ($: EngineInterface): Promise<number | null> => $.clock.now().then(t => (typeof t === 'number' ? t : null), () => null);
+
+/** A /sub-human run that did not answer, as a line of <home>/module.log (the last MODULE_LOG_LINES kept), so the
+ * next one can be explained after the notice scrolled away. Never throws. */
+async function logFailure($: EngineInterface, hello: ReturnType<typeof asHello>, args: unknown, line: string | undefined) {
+  try {
+    if (!hello || typeof hello.home !== 'string' || !hello.home.startsWith('/') || !line) return;
+    const file = `${hello.home}/${MODULE_LOG}`;
+    const was = await $.fs.read(file).then(t => (typeof t === 'string' ? t : ''), () => '');
+    await $.fs.write(file, appendCapped(was, failLogLine(await nowMs($), args, line)));
+  } catch { /* the notice said it */ }
 }
 
 /** The session ids and folders whose transcript names the folder already (module state: a reload names it once more). */
@@ -469,15 +483,32 @@ export function registerDeliver(on: On) {
     const sid = await $.session.id();
     await ensureLease($, sid); // the join needs this session's lease, and the nonce it holds
     const nonce = asNonce((await $.state.get(NONCE)).value, sid);
-    if (!answersItself(e, { roomClaude: !!(await $.env.get('SUB_HUMAN_ROOM')), nonce })) return next(e);
+    if (!nonce || !answersItself(e, { roomClaude: !!(await $.env.get('SUB_HUMAN_ROOM')), nonce })) return next(e);
     const root = $.plugin.root;
     const before = asHello((await $.state.get(HELLO)).value); // the seat a leave ends (its title goes with it)
-    const run = await $.process.run(shimArgv(root, 'join'), {
-      stdin: JSON.stringify(joinPayload({ sid, cwd: await $.session.cwd(), args: e.args, nonce })),
-      env: shimEnv({ session_id: sid }, root),
-      timeoutMs: SHIM_TIMEOUT_MS,
-    });
-    const reply = readReply(run);
+    const cwd = await $.session.cwd();
+    // one run of join.ts: a run that rejects (its timeout) is a failure here, never the command run a second time by
+    // the classic hook beneath; how long it took and stderr's last line go in the refusal
+    const runJoin = async (n: string): Promise<JoinReply> => {
+      const t0 = await nowMs($);
+      const ms = async () => { const t1 = await nowMs($); return t0 === null || t1 === null ? null : t1 - t0; };
+      try {
+        const run = await $.process.run(shimArgv(root, 'join'), {
+          stdin: JSON.stringify(joinPayload({ sid, cwd, args: e.args, nonce: n })),
+          env: shimEnv({ session_id: sid }, root),
+          timeoutMs: SHIM_TIMEOUT_MS,
+        });
+        return readReply(run, { ms: await ms() });
+      } catch (error) { return readReply(null, { ms: await ms(), error }); }
+    };
+    let reply = await runJoin(nonce);
+    if (reply.kind === 'stale') {
+      // the lease lost this session's nonce (nothing ran): hello again, which writes it, then once more
+      await refresh($, sid);
+      const again = asNonce((await $.state.get(NONCE)).value, sid);
+      if (again) reply = await runJoin(again);
+    }
+    if (reply.kind === 'failed' || reply.kind === 'stale') void logFailure($, before, e.args, reply.lines[0]);
     if (reply.kind === 'joined') {
       joined = { sid, context: reply.context };
       try {
@@ -488,8 +519,19 @@ export function registerDeliver(on: On) {
         return r;
       } finally { joined = null; }
     }
+    // a run that did not answer: what is true now (a leave the shim gave up on may have finished), so no stale seat
+    // stays on show; the notice says the seat went
+    const mine = before && before.sid === sid ? before.seat : null;
+    let gone: string | null = null;
+    let fresh = false; // the hello below is said already
+    if ((reply.kind === 'failed' || reply.kind === 'stale') && mine) {
+      try { await refresh($, sid); fresh = true; } catch { /* the refresh below tries again */ }
+      const now = asHello((await $.state.get(HELLO)).value);
+      gone = now && now.sid === sid ? goneAfter(reply, mine, now.seat) : null;
+      if (gone) reply = { ...reply, lines: [...reply.lines, gone] };
+    }
     // a leave: the address NAME.CODE goes with the seat now, not at the next prompt (item 12 J): the title is NAME
-    const left = leftName(e.args, reply, before && before.sid === sid ? before.seat : null);
+    const left = leftName(e.args, reply, mine, { gone: !!gone });
     if (left) {
       // not from this hook (the engine refuses a command.run raised inside one): just after it, on the clock
       const rename = () => { void $.command.run({ command: 'rename', args: left }).then(() => $.state.set(TITLED, { sid, addr: left }), () => { /* the next prompt titles it */ }); };
@@ -499,10 +541,10 @@ export function registerDeliver(on: On) {
     for (const line of logs) $.ui.log(line);
     if (status) pinStatus($, status);
     else if (cancels(e.args, reply, pinnedRef)) unpin($);
-    try { await refresh($, sid); } catch { /* the next refresh tries again */ }
+    if (!fresh) { try { await refresh($, sid); } catch { /* the next refresh tries again */ } }
     // a leave ends this session's delivery now, whatever the hello says: a room hosted elsewhere may still list the
     // seat for a moment (a session cut off kept its tail and heard "carol left" after its leave: stage 8e I.11)
-    if (left) stopChild(sid);
+    if (left || gone) stopChild(sid);
     else { try { childFor($, sid, asHello((await $.state.get(HELLO)).value)); } catch { /* next start tries again */ } }
     return result;
   }).catch(($, e, next) => next(e)); // unsure: the classic hook beneath answers, as without the module

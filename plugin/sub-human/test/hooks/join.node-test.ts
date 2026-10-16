@@ -244,6 +244,21 @@ test('/sub-human leave: the seat leaves (as /exit would), the session stays; /su
   assert.match(w.hook('join', expand('leave'), { as: 'alice' }).json!.reason!, /not in a room/);
 });
 
+test('verify12 local/37: a leave asks ps once (one call for every seat\'s start time), not once per seat; a young lease needs none', () => {
+  const w = new World({ claude: 'sleep', alice: 'sleep', carol: 'sleep', dana: 'sleep' });
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-ps-'));
+  const log = path.join(bin, 'ps.log');
+  fs.writeFileSync(path.join(bin, 'ps'), `#!/bin/sh\necho "$*" >> ${JSON.stringify(log)}\nexec /bin/ps "$@"\n`);
+  fs.chmodSync(path.join(bin, 'ps'), 0o755);
+  viaModule(w, 'bob', `bob ${w.code}`);
+  try { fs.rmSync(log); } catch { /* none yet */ }
+  const nonce = 'ab'.repeat(16);
+  const left = w.hook('join', { ...expand('leave'), sub_human_via: 'command.run', sub_human_nonce: nonce }, { as: 'bob', modLease: false, env: { CLAUDE_PID: undefined, PATH: `${bin}:${process.env.PATH}` } });
+  assert.equal(left.json!.subHuman!.say, `left ${w.code} · /sub-human joins again`);
+  const calls = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter(Boolean) : [];
+  assert.ok(calls.length <= 1, calls.join('\n'));
+});
+
 test('NAME CODE joins a room whose claude runs: no spawn, no systemMessage; the block lists who is here', () => {
   const w = new World({ claude: 'sleep', alice: 'sleep' });
   w.pid.bob = process.pid; w.sid.bob = 'aaaaaaaa-0000-4000-8000-000000000006';
@@ -733,10 +748,16 @@ test('SECURITY through the module: an invite and anything a PIN may be typed in 
     assert.equal(r.shareable, false, args);
     assert.ok(!/48291/.test(r.say!) && !r.say!.includes(SECRET), args);
   }
-  // a payload that says "command.run" without this session's nonce is no module: classic, which needs CLAUDE_PID
-  const forged = viaModule(w, 'eve', 'help', { nonce: 'cd'.repeat(16), leaseNonce: 'ab'.repeat(16) }).json!;
-  assert.equal(forged.decision, 'block');
-  assert.equal(forged.subHuman, undefined);
+  // a payload that says "command.run" without this session's nonce is no module: nothing runs, and the module is
+  // told its lease did not hold (it says hello again and asks once more; verify12 local/37)
+  const forged = viaModule(w, 'eve', 'help', { nonce: 'cd'.repeat(16), leaseNonce: 'ab'.repeat(16) });
+  assert.equal(forged.json!.decision, undefined);
+  assert.deepEqual(forged.json!.subHuman, { lease: 'stale' });
+  assert.match(forged.stderr, /lease did not hold/);
+  const before = w.entries().length;
+  viaModule(w, 'alice', 'leave', { nonce: 'cd'.repeat(16), leaseNonce: 'ab'.repeat(16) });
+  assert.equal(w.entries().length, before, 'a stale lease runs no leave');
+  assert.equal(w.members().alice.left_at, undefined);
 });
 test('the block lists the room\'s Claude only while it runs or is starting: never one that never ran or whose start failed', () => {
   const w = new World({ alice: 'sleep', bob: 'sleep' });

@@ -64,10 +64,16 @@ function toReply(a: Answer, input: JoinIn, module: boolean): Reply {
   }
 }
 
+/** The module ran this (sub_human_via "command.run") but this session's lease does not hold its nonce (gone, or
+ * another's): nothing runs, and the module is told so ({subHuman: {lease: 'stale'}}), says hello again and asks once
+ * more. Before, such a run was answered as a classic block, which the module cannot read ("did not finish here"). */
+const STALE: Reply = { kind: 'classic', outputs: [{ subHuman: { lease: 'stale' } }], stderr: 'sub-human: this session\'s hooks-module lease did not hold the nonce' };
+
 export function handle(input: JoinIn): Reply | null {
   if (!COMMANDS.includes(String(input.command_name))) return null;
   const args = String(input.command_args || '').trim().split(/\s+/).filter(Boolean);
   const module = attested(input);
+  if (!module && input.sub_human_via === 'command.run') return STALE;
   // the module's $.process.run child has no CLAUDE_PID of this session: its parent is the claude process
   const pid = identity.claudePid() || (module ? process.ppid : null);
   const a = commands.run(args, {
