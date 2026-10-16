@@ -65,7 +65,7 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   // bob's @room: placed on the host, verified there, back in his mirror byte for byte
   assert.equal(remote.say(bob, 'hello from afar').json!.continue, false);
   const said = host.lib(() => store.open(code).readAll()).at(-1)!;
-  assert.deepEqual([said.from, said.text, host.lib(() => store.humanTrust(said))], ['bob', 'hello from afar', 'verified']);
+  assert.deepEqual([said.from, said.text, host.lib(() => store.open(code).trust(said))], ['bob', 'hello from afar', 'verified']);
   assert.equal(remote.log(code), host.log(code), 'read-your-writes: the mirror held it when the hook returned');
 
   // a prompt that only reads starts no worker (no op crosses the link); a post starts one
@@ -81,7 +81,7 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   remote.hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: {}, tool_response: { ...card, answers: { [q]: 'Agree' } } }, bob);
   const decision = host.lib(() => store.open(code).readAll()).find(e => e.kind === 'decision')!;
   assert.equal(decision.text, `agreed: bob (proposal ${p.hash})`);
-  assert.equal(host.lib(() => store.humanTrust(store.open(code).readAll().find(e => e.kind === 'signoff'))), 'verified');
+  assert.equal(host.lib(() => (s => s.trust(s.readAll().find(e => e.kind === 'signoff')))(store.open(code))), 'verified');
 
   // a post alice's Claude addresses to bob wakes his Claude (from the mirror), not carol's (addressed is not private:
   // hers reads it with her next turn); bob's own words reach her chat
@@ -128,7 +128,7 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   await h.until(() => remote.lib(() => link.status(code)).state === 'online', RETRY_MS + 5000, 50);
   await h.until(() => remote.log(code) === host.log(code), 3000, 20);
   assert.deepEqual(texts(host.log(code)).slice(-4), ['while you were away', 'is anyone there', 'second', 'third']);
-  assert.deepEqual(host.lib(() => store.open(code).readAll().slice(-3).map(e => store.humanTrust(e))), ['verified', 'verified', 'verified']);
+  assert.deepEqual(host.lib(() => (s => s.readAll().slice(-3).map(e => s.trust(e)))(store.open(code))), ['verified', 'verified', 'verified']);
   assert.equal(fs.existsSync(path.join(remote.home, 'rooms', code, 'outbox.json')), false, 'the outbox is empty');
   const notice = events(await across, ['health']);
   assert.equal(notice.match(/is down \(/g)!.length, 1, notice);
@@ -143,7 +143,7 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   // nothing session-local of bob's is on the host
   const hostFiles = fs.readdirSync(path.join(host.home, 'rooms', code), { recursive: true }) as string[];
   assert.deepEqual(hostFiles.filter(f => /bob/.test(f) && !/^presence/.test(f)), []);
-  assert.ok(fs.readdirSync(path.join(remote.home, 'rooms', code)).some(f => /bob\.cursor$/.test(f)), 'his cursors are on his machine');
+  assert.ok((fs.readdirSync(path.join(remote.home, 'rooms', code), { recursive: true }) as string[]).some(f => /^members[/\\]bob[/\\]session\.json$/.test(f)), 'his session document (his delivery cursor) is on his machine');
 
   // bob's session ends: the host logs it; his daemon (and the server it spawned) exit on their own
   remote.hook('session-end', { hook_event_name: 'SessionEnd', reason: 'logout' }, bob);

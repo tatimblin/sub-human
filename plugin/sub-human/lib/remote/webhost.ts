@@ -55,13 +55,7 @@ export interface WebInvite extends ReturnType<typeof import('./auth.ts')['mintSh
   text: string;
 }
 
-function hostStore(code: string): RoomStore {
-  const identity: typeof import('../identity.ts') = require('../identity.ts');
-  if (!identity.roomExists(code)) throw new RoomError('NO_ROOM', `no room "${code}"`);
-  const s = (require('../room.ts') as typeof import('../room.ts')).open(code).store;
-  if (!s.isHost) throw new RoomError('HOST_ONLY', `room ${code} is hosted on another machine; its host does this`);
-  return s;
-}
+const hostStore = (code: string): RoomStore => (require('../room.ts') as typeof import('../room.ts')).hostStore(code);
 
 /** The front's base URL, checked: http(s)://host[:port][/prefix], nothing else. */
 function frontBase(text: string): FrontBase {

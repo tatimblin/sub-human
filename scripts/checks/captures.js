@@ -7,6 +7,8 @@
  *   span(scene)              {from, to}: the previous scene's last capture to this scene's last capture
  *   runStart                 3 minutes before the first capture ('' with none)
  *   stateDir, st, stText, nativeTasks, stateFile   the per-step state files
+ *   holdsAt(scene, step, name)   a seat's row holds as that step saved them (session-NAME.json: its session document's
+ *                            holds; holds-NAME.json from a run before the session document)
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -35,10 +37,11 @@ function captures({ screens, index }) {
     return s ? path.join(d, String(s)) : null;
   };
   const st = (scene, step, file, d) => { const dir = stateDir(scene, step); return dir ? readJson(path.join(dir, file), d) : d; };
+  const holdsAt = (scene, step, name) => (st(scene, step, `session-${name}.json`, {}) || {}).holds || st(scene, step, `holds-${name}.json`, {});
   const stText = (scene, step, file) => { const dir = stateDir(scene, step); return dir ? readText(path.join(dir, file)) : null; };
   const nativeTasks = (scene, step) => { const dir = stateDir(scene, step); const d = dir && path.join(dir, 'native-tasks'); try { return fs.readdirSync(d).map(f => readJson(path.join(d, f), null)).filter(Boolean); } catch { return []; } };
   const stateFile = (...p) => path.join(screens, 'state', ...p);
-  return { caps, cap, capName, span, runStart, stateDir, st, stText, nativeTasks, stateFile };
+  return { caps, cap, capName, span, runStart, stateDir, st, stText, nativeTasks, stateFile, holdsAt };
 }
 
 module.exports = { captures };

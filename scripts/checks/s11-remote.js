@@ -20,7 +20,7 @@ module.exports = {
     const { code, log, DEMO } = x;
     process.env.SUB_HUMAN_HOME = x.home;
     const room = paths.pluginLib('room.ts');
-    const trust = e => (e ? room.humanTrust(e) : null);
+    const trust = e => (e ? room.open(code).trust(e) : null);
 
     const hostId = (readJson(x.stateFile('S11', 'machine-host.json'), {}) || {}).id;
     const carolId = (readJson(x.stateFile('S11', 'machine-carol.json'), {}) || {}).id;
@@ -67,7 +67,7 @@ module.exports = {
       lf ? JSON.stringify(lf) : 'state/S11/link-file.json not saved');
 
     const leaked = files(x.roomDir).filter(f => /carol/.test(f) && !/^presence[/\\]carol\.json$/.test(f));
-    const local = files(path.join(x.home2, 'rooms', code)).filter(f => /carol\.cursor$/.test(f));
+    const local = files(path.join(x.home2, 'rooms', code)).filter(f => /carol\.cursor$|members[/\\]carol[/\\]session\.json$/.test(f));
     det('Nothing session-local of carol\'s on the host (rows, cursors, review state stay in her home)', leaked.length === 0 && local.length > 0,
       `host: ${leaked.length ? leaked.join(', ') : 'none'}; her home: ${local.join(', ') || 'no cursors'}`);
 

@@ -100,7 +100,7 @@ class World {
     for (const d of [this.home, this.userHome, this.cwd]) { try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* gone */ } }
   }
 
-  entries(): Entry[] { return this.code ? this.lib(() => room.open(this.code).readAll()) : []; }
+  entries(): readonly Entry[] { return this.code ? this.lib(() => room.open(this.code).readAll()) : []; }
   append(entry: EntryInput, opts: AppendOpts): Entry { return this.lib(() => room.open(this.code).append(entry, opts)); }
   members(): Members { return this.lib(() => identity.readMembers(this.code)); }
   memberDir(name: string): string { return path.join(this.home, 'rooms', this.code, 'members', name); }

@@ -59,7 +59,7 @@ test('session-end: the last member leaving starts the detached reaper: closing, 
   const bin = path.join(stubDir, 'claude');
   fs.writeFileSync(bin, `#!${process.execPath}\nrequire('fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');\n`);
   fs.chmodSync(bin, 0o755);
-  w.lib(() => identity.setRoomClaude(w.code, { job: 'feed0042' }));
+  w.lib(() => identity.updateRoomClaude(w.code, () => ({ job: 'feed0042' })));
   w.join('claude', 'sleep');
   const r = w.hook('session-end', fixture('session-end'), { as: 'alice', env: { SUB_HUMAN_CLAUDE: bin } });
   assert.equal(r.code, 0, r.stderr);
@@ -79,7 +79,7 @@ test('session-end: fits its budget: the reaper is detached, so a slow `claude st
   const bin = path.join(stubDir, 'claude');
   fs.writeFileSync(bin, `#!${process.execPath}\nAtomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3000);\n`);
   fs.chmodSync(bin, 0o755);
-  w.lib(() => identity.setRoomClaude(w.code, { job: 'feed0043' }));
+  w.lib(() => identity.updateRoomClaude(w.code, () => ({ job: 'feed0043' })));
   w.join('claude', 'sleep');
   const t0 = Date.now();
   const r = w.hook('session-end', fixture('session-end'), { as: 'alice', env: { SUB_HUMAN_CLAUDE: bin } });

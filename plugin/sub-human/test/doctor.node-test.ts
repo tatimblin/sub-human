@@ -315,7 +315,7 @@ test('doctor: a seatless link gets a hello, whose closed (or the mirror\'s stopp
   assert.match(byId(rep, `link:${code}`).fix!, /If the host still has the room open, type \/sub-human/);
   // the host closes the room: its hello says so
   process.env.SUB_HUMAN_HOME = hostHome;
-  identity.setRoomClaude(code, { job: 'cafe0001', stopped_at: new Date().toISOString() });
+  identity.updateRoomClaude(code, () => ({ job: 'cafe0001', stopped_at: new Date().toISOString() }));
   process.env.SUB_HUMAN_HOME = home;
   rep = await doctor.diagnose({ timeoutMs: 20_000, authorizedKeys: ak, env });
   assert.equal(rep.links[0].closed, true);

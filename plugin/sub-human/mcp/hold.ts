@@ -20,8 +20,8 @@
  *       Both can come back together, one line each. "STOP: ..." when this seat left the room, or
  *       "STOP: duplicate row" at once when another room row already holds here (e.g. re-spawned after /clear).
  * One server serves the whole claude session, main thread and every subagent (cc CONTRACT
- * mcp-server-shared-by-subagents), so it sees every row's hold. Liveness goes to the room document rows/holds-<me>
- * (lib/rows.ts) for row-guard, join notes and rewake; the seat's lease is renewed every BEAT_MS / 2. A room hold
+ * mcp-server-shared-by-subagents), so it sees every row's hold. Liveness goes to the seat's session document's holds
+ * (lib/rows.ts writeHolds) for row-guard, join notes and rewake; the seat's lease is renewed every BEAT_MS / 2. A room hold
  * that returned JOINED/RESPAWN still counts as running for ROOM_GAP_MS while its agent re-calls, so a join notice
  * read in that gap never invites a second room row.
  *
@@ -31,7 +31,7 @@
  */
 
 import * as rows from '../lib/rows.ts';
-import * as notices from '../lib/notices.ts';
+import { joinLeave, noticeText } from '../lib/room/render.ts';
 import * as room from '../lib/room.ts';
 import * as strs from '../lib/text.ts';
 import * as config from '../lib/config.ts';
@@ -99,7 +99,7 @@ class HoldServer {
   respawn: Map<string, Set<string>>;
   roomGone: Map<string, number>;
   roomEnded: Map<string, number>;
-  logState: Map<string, { lastId: number; count: number; entries: Entry[] }>;
+  logState: Map<string, { entries: readonly Entry[]; moves: Entry[] }>;
   me: Me | null; meAt: number; timer: NodeJS.Timeout | null; seat: Seat | null;
 
   constructor(ctx: HoldContext) {
@@ -115,7 +115,7 @@ class HoldServer {
     this.respawn = new Map();   // code -> Set(names) waiting for the next room hold
     this.roomGone = new Map();  // code -> time the room hold was cancelled
     this.roomEnded = new Map(); // code -> time a room hold last returned (it is re-calling)
-    this.logState = new Map();  // code -> {lastId, count, entries}
+    this.logState = new Map();  // code -> {entries, moves}: the log as last read, and its joins and leaves
     this.me = null; this.meAt = 0; this.timer = null; this.seat = null;
   }
 
@@ -126,16 +126,26 @@ class HoldServer {
   members(code: string): Members { try { return this.ctx.identity.readMembers(code) || {}; } catch { return {}; } }
   present(ms: Members, name: string) { const m = ms[name]; return !!(m && !m.left_at); }
 
-  /** The room's entries, and `fresh`: the ones that arrived since the last call (none on the first call for a room). */
-  readEntries(code: string): { entries: Entry[]; fresh: Entry[] } {
-    let entries: Entry[] = [];
-    try { entries = room.open(code).readAll().filter((e: Entry) => e && Number.isInteger(e.id)); } catch { /* no log yet */ }
-    const last: number = entries.length ? entries.at(-1)!.id : 0;
+  /**
+   * The room's entries (the store's cached read: the same array while the log is unchanged), its joins and leaves,
+   * and `fresh`: the entries that arrived since the last call (none on the first call for a room). Only the new part
+   * of a grown log is looked at.
+   */
+  readEntries(code: string): { entries: readonly Entry[]; moves: Entry[]; fresh: Entry[] } {
+    let entries: readonly Entry[] = [];
+    try { entries = room.open(code).readAll(); } catch { /* no log yet */ }
     const st = this.logState.get(code);
-    if (st && st.lastId === last && st.count === entries.length) return { entries: st.entries, fresh: [] };
-    const fresh = st ? entries.filter(e => e.id > st.lastId) : [];
-    this.logState.set(code, { lastId: last, count: entries.length, entries });
-    return { entries, fresh };
+    if (st && st.entries === entries) return { entries, moves: st.moves, fresh: [] };
+    const lastId = st && st.entries.length ? st.entries[st.entries.length - 1].id : 0;
+    // grown: the new entries are those after the old last one; anything else (a reset log) is read again whole
+    const grown = !!st && entries.length >= st.entries.length && (!st.entries.length || entries[st.entries.length - 1] === st.entries[st.entries.length - 1]);
+    const from = grown ? st!.entries.length : 0;
+    const added = entries.slice(from).filter(e => e && Number.isInteger(e.id));
+    const isMove = (e: Entry) => e.kind === 'member_joined' || e.kind === 'member_left';
+    const moves = grown ? st!.moves.concat(added.filter(isMove)) : added.filter(isMove);
+    const fresh = st ? added.filter(e => e.id > lastId) : [];
+    this.logState.set(code, { entries, moves });
+    return { entries, moves, fresh };
   }
 
   progress(h: Hold, msg?: string) {
@@ -244,12 +254,12 @@ class HoldServer {
 
   /** The newest join / settled leave this room hold has not shown yet, as a notice line (marks them shown). */
   newMove(h: RoomHold, code: string, now: number): string {
-    const { entries } = this.readEntries(code);
+    const { moves } = this.readEntries(code); // joins and leaves only: not the whole log every tick
     const me = this.me;
-    const fresh = notices.joinLeave(entries, me && me.name, { now }).filter((n: { settled?: boolean; id: number }) => n.settled && !h.moves.has(n.id));
+    const fresh = joinLeave(moves, me && me.name, { now }).filter(n => n.settled && !h.moves.has(n.id));
     for (const n of fresh) h.moves.add(n.id);
-    const n = fresh.filter((x: { at: string }) => now - Date.parse(x.at) < config.NOTICE_FRESH_MS).at(-1);
-    return n ? clip(notices.text(n)) : '';
+    const n = fresh.filter(x => now - Date.parse(x.at) < config.NOTICE_FRESH_MS).at(-1);
+    return n ? clip(noticeText(n)) : '';
   }
 
   startTimer() {
@@ -296,7 +306,7 @@ class HoldServer {
 
   /** The latest entry `pick` accepts, for a new hold's first line. */
   lastShown(code: string, pick: (e: Entry) => boolean): Entry | undefined {
-    return this.readEntries(code).entries.filter(pick).at(-1);
+    return this.readEntries(code).entries.findLast(pick);
   }
 
   call(name: string, who0: Me | null, args: ToolArgs = {}, meta: CallMeta = {}): ToolResult | Promise<ToolResult> | null {

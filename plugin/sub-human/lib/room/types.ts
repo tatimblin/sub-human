@@ -241,8 +241,21 @@ export interface HostState {
   id?: number;
 }
 
-/** How far a via=human entry is the person's (store.ts humanTrust). */
+/** How far a via=human entry is the person's (trust.ts verdict). */
 export type HumanTrust = 'verified' | 'legacy' | 'unverified';
+
+/** A store's judgement of the entries it read (RoomStore.trust; trust.ts trustOver): null when not via=human. */
+export type Trust = (e: Entry | null | undefined) => HumanTrust | null;
+
+/** What a trust verdict reads (trust.ts): the room, the keys its log pins, and the seats' local public keys. */
+export interface TrustCtx {
+  code: string;
+  pins(): ReadonlyMap<string, KeyObject>;
+  /** <home>/keys/<code>/<name>.pub: what a legacy room (no key pinned) verifies against */
+  localKey(name: string): KeyObject | null;
+  /** that file exists, readable or not (a seat with a key: its unsigned words are never legacy) */
+  hasLocalKey(name: string): boolean;
+}
 
 // ---------- members ----------
 
@@ -398,10 +411,9 @@ export interface Tailer {
   poll(): { entries: Entry[]; lines: string[]; reset: boolean };
 }
 
-/** readView's options: after <= 0 is readAll(); Infinity is the non-chat entries only. save: false leaves log.idx. */
+/** readView's options: after <= 0 is readAll(); Infinity is the non-chat entries only. */
 export interface ReadViewOpts {
   after?: number;
-  save?: boolean;
 }
 
 /**
@@ -417,20 +429,21 @@ export interface RoomStore {
   append(entry: EntryInput, opts?: AppendOpts): Entry;
   place(payload: Payload, opts: PlaceOpts & { queue: true }): Placed;
   place(payload: Payload, opts?: PlaceOpts): Entry;
+  /** this store's verdict on a via=human entry it read (trust.ts): a stable function, pass it on */
+  readonly trust: Trust;
   pins(): Map<string, KeyObject>;
   hostState(): HostState;
   setAside(): string | null;
-  readAll(): Entry[];
+  /** the store's cached array: never change it, nor its entries */
+  readAll(): readonly Entry[];
   readById(ids: number | string | readonly (number | string)[]): Entry[];
   readAfter(id: number, filter?: (e: Entry) => boolean): Entry[];
-  since(id: number): Entry[];
   lastId(): number;
-  readView(opts?: ReadViewOpts): Entry[];
-  watch(onEntry: (e: Entry) => void, opts?: { after?: number; intervalMs?: number }): () => void;
+  readView(opts?: ReadViewOpts): readonly Entry[];
   tailer(opts?: { fs?: TailerFs; after?: number }): Tailer;
   lineHash(id: number): string | null;
   validateChain(): ChainCheck;
-  verifyChain(opts?: { fromOffset?: number; prev?: string; save?: boolean }): ChainVerify;
+  verifyChain(opts?: { fromOffset?: number; prev?: string; save?: boolean | 'lazy' }): ChainVerify;
   getCursor(reader: string): number;
   setCursor(reader: string, id: number): void;
   members: MembersApi;
@@ -506,12 +519,14 @@ export interface Fold {
 
 // ---------- lanes and rendering ----------
 
-/** Who reads an entry (lanes.ts lane): the session's seat as far as lanes look. */
+/** Who reads an entry (deliver.ts): the session's seat as far as delivery looks. */
 export interface LaneViewer {
   name?: string;
   role?: string;
 }
 export type Lane = 'push' | 'pull' | 'none';
+/** What one entry is for one seat (deliver.ts): never shown, context for Claude, a notice for the person, or a wake. */
+export type Delivery = 'none' | 'context' | 'notice' | 'wake';
 
 // ---------- links (links.ts, link-state.ts) ----------
 

@@ -1,6 +1,6 @@
 /**
  * plugin/sub-human/lib/proposal.ts: proposals and the consent card.
- * CommonJS, zero dependencies. Every write goes through room.append().
+ * Every write goes through room.append().
  *
  * Log entries:
  *   proposal  via=agent, from = the proposer, {hash, approvers[], same?, path, text}   (propose tool)
@@ -58,11 +58,12 @@
  *   choose(me, ps, prompt) -> p    store that pick (namedIn, else replacedIn's p; members/NAME/pick) and return it,
  *                                  else the newest (hooks/handlers/consent.ts)
  *   picked(me, ps) -> p            Pre(EnterPlanMode): the stored pick when still among ps, else the newest
- *   readPick(me), writePick(me, hash|null)   members/NAME/pick as stored
+ *   readPick(me), writePick(me, hash|null)   the seat's session document's pick (lib/room/session.ts) as stored
  *   read(code, hash) -> string|null  the stored plan (the room blob plans/<hash>.md)
- * The plan-view review state (the room document members/NAME/review): readReview, writeReview, clearReview, withReview(me, fn)
+ * The plan-view review state (the session document's review, lib/room/session.ts): readReview, writeReview, clearReview,
+ *   withReview(me, fn)
  *   (the lock), restorePlan(st), restoreStale(me, {force, now}) (session-restore: a review left behind).
- * A review's note waiting for the person's Send (the room document members/NAME/confirm): readConfirm, writeConfirm,
+ * A review's note waiting for the person's Send (the session document's confirm): readConfirm, writeConfirm,
  *   clearConfirm; confirmCard(c) -> the AskUserQuestion input (Send, Discard), confirmQuestion(c) its question,
  *   confirmCall(hash) -> how the model opens that card, showConfirm(name, hash, interrupted?) -> the line telling it to
  *   open the card now, before anything else, and after an Esc that the Esc was no answer (lib/consent/review.ts NEXT
@@ -76,19 +77,19 @@ import os from 'node:os';
 import path from 'node:path';
 import * as identity from './identity.ts';
 import * as room from './room.ts';
+import * as session from './room/session.ts';
 import { writeFileAtomic } from './io.ts';
-import { clip, oneLine } from './text.ts';
+import { clip, oneLine, hash12, HASH_RE } from './text.ts';
 import * as config from './config.ts';
 import * as cc from './cc.ts';
-import { NEXT, hash12, showNote } from './consent/review.ts';
+import { NEXT, showNote } from './consent/review.ts';
 import type { Card, Confirm, Proposal, Review } from './types-app.ts';
-import type { Entry, Matrix, Member, Members, ProposalState } from './room/types.ts';
+import type { Entry, Matrix, Member, Members, ProposalState, Trust } from './room/types.ts';
 import type { Identity } from './identity.ts';
 
 /** Who acts: a seat's room and name are all these functions read. */
 type Me = Pick<Identity, 'code' | 'name'>;
 
-const HASH_RE = /^[0-9a-f]{12}$/;
 const QUESTION_RE = /^Agree to proposal ([0-9a-f]{12})\?$/;
 const PREVIEW_MAX = config.PREVIEW_MAX;     // the card withholds a longer preview (JS .length)
 const PREVIEW_LINES = config.PREVIEW_LINES; // about 24 lines show at 50 rows; keep a margin
@@ -118,8 +119,9 @@ function store(code: string, buf: Buffer): string {
   return hash;
 }
 
-const entriesOf = (me: Me, entries: Entry[] | null | undefined): Entry[] => entries || room.open(me.code).readAll();
+const entriesOf = (me: Me, entries: readonly Entry[] | null | undefined): readonly Entry[] => entries || room.open(me.code).readAll();
 const kvOf = (me: Me) => room.open(me.code).store.kv;
+const storeOf = (me: Me) => room.open(me.code).store;
 
 function humans(code: string): string[] {
   return Object.values((identity.readMembers(code) || {}) as Members)
@@ -169,24 +171,24 @@ function sameOk(code: string): boolean {
 
 // ---------- reading the log (lib/room/consent.ts fold: the same semantics as stateLine, lane and the rows) ----------
 const shape = (p: ProposalState): Proposal => ({ id: p.id, hash: p.hash, approvers: p.approvers, path: p.path, from: p.from });
-const proposals = (entries: Entry[]): Proposal[] => [...room.fold(entries).proposals.values()].map(shape);
+const proposals = (entries: readonly Entry[], trust: Trust = room.trustOf): Proposal[] => [...room.fold(entries, trust).proposals.values()].map(shape);
 
-const decision = (hash: string, entries: Entry[]): Entry | null => room.fold(entries).decisions.get(hash) || null;
+const decision = (hash: string, entries: readonly Entry[], trust: Trust = room.trustOf): Entry | null => room.fold(entries, trust).decisions.get(hash) || null;
 
 /** The answer matrix over p.approvers (the latest answer per person wins; an objection voids a signoff). */
-const matrix = (p: Pick<Proposal, 'hash' | 'approvers'>, entries: Entry[]): Matrix => room.fold(entries).matrix(p.hash, p.approvers);
+const matrix = (p: Pick<Proposal, 'hash' | 'approvers'>, entries: readonly Entry[], trust: Trust = room.trustOf): Matrix => room.fold(entries, trust).matrix(p.hash, p.approvers);
 
-function pendingFor(me: Me | null | undefined, entries?: Entry[] | null): Proposal[] {
+function pendingFor(me: Me | null | undefined, entries?: readonly Entry[] | null): Proposal[] {
   if (!me || !me.name) return [];
-  return room.fold(entriesOf(me, entries)).pending(me.name).map(shape);
+  return room.open(me.code).fold(entriesOf(me, entries)).pending(me.name).map(shape);
 }
-function answerableFor(me: Me | null | undefined, entries?: Entry[] | null): Proposal[] {
+function answerableFor(me: Me | null | undefined, entries?: readonly Entry[] | null): Proposal[] {
   if (!me || !me.name) return [];
-  return room.fold(entriesOf(me, entries)).answerable(me.name).map(shape);
+  return room.open(me.code).fold(entriesOf(me, entries)).answerable(me.name).map(shape);
 }
 
 /** A proposal's title: the first non-empty line of its text, heading / list / quote markers dropped. */
-const titleOf = (text: string | null | undefined) => String(text || '').split('\n').map(l => l.replace(/^\s*(#{1,6}\s+|[-*+>]\s+)/, '').trim()).find(Boolean) || '';
+const planTitle = (text: string | null | undefined) => String(text || '').split('\n').map(l => l.replace(/^\s*(#{1,6}\s+|[-*+>]\s+)/, '').trim()).find(Boolean) || '';
 const titles = new Map<string, string>(); // hash -> title: plans are content-addressed, so a hash's title never changes
 /**
  * The title people see for proposal hash: the stored plan's first line, else the entry's "proposal HASH: title"
@@ -195,7 +197,7 @@ const titles = new Map<string, string>(); // hash -> title: plans are content-ad
 function title(code: string, hash: string, entry?: Pick<Entry, 'text'> | null): string {
   const known = titles.get(hash);
   if (known !== undefined) return known;
-  const t = titleOf(read(code, hash));
+  const t = planTitle(read(code, hash));
   if (t) { titles.set(hash, t); return t; }
   const m = entry && /^proposal [0-9a-f]{6,64}:\s*(.+)/.exec(String(entry.text || ''));
   return m ? m[1].trim() : '';
@@ -284,7 +286,7 @@ function namedIn(ps: Proposal[], prompt: string | null | undefined, code: string
 function replacedIn(ps: Proposal[], prompt: string | null | undefined, code: string): { old: string, p: Proposal } | null {
   const hex = String(prompt || '').toLowerCase().match(/\b[0-9a-f]{6,12}\b/g) || [];
   if (!hex.length || !ps.length || hex.some(t => ps.some(p => p.hash.startsWith(t)))) return null;
-  const f = room.fold(room.open(code).readAll());
+  const f = room.open(code).fold();
   for (const t of hex) {
     const named = [...f.superseded.keys()].filter(h => h.startsWith(t));
     if (named.length !== 1 || [...f.proposals.keys()].filter(h => h.startsWith(t)).length !== 1) continue;
@@ -306,11 +308,10 @@ const PROPOSE_RE = new RegExp('^\\s*(?:@\\S+\\s+)?(?:(?:ok(?:ay)?|now|so|please|
 const proposeIntent = (prompt: string | null | undefined): boolean => PROPOSE_RE.test(String(prompt || ''));
 
 /**
- * members/NAME/pick: {hash|null, at}, the proposal the person's latest prompt named (hooks/handlers/consent.ts reads it from
+ * The session's pick: {hash|null, at}, the proposal the person's latest prompt named (hooks/handlers/consent.ts reads it from
  * the transcript at Pre(EnterPlanMode), or a card call named). A review opens that one while pending, else the newest.
  */
-const pickKey = (me: Me) => `members/${me.name}/pick`;
-const readPick = (me: Me): { hash: string | null, at: number } | null => { try { return kvOf(me).get(pickKey(me), null); } catch { return null; } };
+const readPick = (me: Me): { hash: string | null, at: number } | null => { try { return session.get(storeOf(me), me.name, 'pick') || null; } catch { return null; } };
 /** Record what prompt names among ps (null when nothing) and return the proposal a review opens next; prompt null (not the person's words): the earlier pick stands. */
 function choose(me: Me, ps: Proposal[], prompt: string | null | undefined): Proposal | null {
   if (prompt == null) return picked(me, ps);
@@ -319,7 +320,7 @@ function choose(me: Me, ps: Proposal[], prompt: string | null | undefined): Prop
   return hit || ps.at(-1) || null;
 }
 /** Record the person's pick (null: their words named none); hooks/handlers/consent.ts's pick effect. */
-const writePick = (me: Me, hash: string | null): void => kvOf(me).set(pickKey(me), { hash, at: Date.now() }, { compact: true });
+const writePick = (me: Me, hash: string | null): void => session.put(storeOf(me), me.name, 'pick', { hash, at: Date.now() });
 /** The proposal a review opens among ps (pending, oldest first): the person's pick when it is one of them, else the newest. */
 function picked(me: Me, ps: Proposal[]): Proposal | null {
   const pk = readPick(me);
@@ -404,19 +405,19 @@ function create(me: Me | null | undefined, args: CreateArgs = {}, { cwd }: { cwd
 
   const hash = store(me.code, buf);
   const stored = planPath(me.code, hash);
-  const entries: Entry[] = r.readAll();
-  const open = proposals(entries).find(p => p.hash === hash);
-  const before = room.fold(entries).superseded;
-  if (open && !decision(hash, entries) && !before.has(hash) && open.approvers.length === approvers.length && approvers.every(a => open.approvers.includes(a))) {
+  const entries = r.readAll();
+  const open = proposals(entries, r.trust).find(p => p.hash === hash);
+  const before = r.fold(entries).superseded;
+  if (open && !decision(hash, entries, r.trust) && !before.has(hash) && open.approvers.length === approvers.length && approvers.every(a => open.approvers.includes(a))) {
     return { hash, approvers, path: stored, entry: entries.find(e => e.id === open.id), again: true, retired: [] };
   }
   // the entry stores the room-relative ref; `path` returned is where the proposer can open it
-  const entry: Entry = r.append({ kind: 'proposal', text: `proposal ${hash}: ${clip(titleOf(buf.toString('utf8')), TITLE_MAX)}`, hash, approvers,
+  const entry: Entry = r.append({ kind: 'proposal', text: `proposal ${hash}: ${clip(planTitle(buf.toString('utf8')), TITLE_MAX)}`, hash, approvers,
     ...(same.length ? { same } : {}), path: planRef(hash) },
     { via: 'agent', from: me.name });
   // what this entry retired: superseded by it now and not before (lib/room/consent.ts); a retired proposal proposed
   // again is appended anew (above), which brings it back
-  const retired = [...room.fold([...entries, entry]).superseded].filter(([old, by]) => by === hash && !before.has(old)).map(([old]) => old);
+  const retired = [...r.fold([...entries, entry]).superseded].filter(([old, by]) => by === hash && !before.has(old)).map(([old]) => old);
   return { hash, approvers, path: stored, entry, again: false, retired };
 }
 
@@ -431,8 +432,7 @@ function answer(me: Me, p: Pick<Proposal, 'hash'>, a: { choice?: unknown, notes?
   const choice = choiceOf(a.choice);
   if (choice !== 'Agree' && choice !== 'Object') return { stale: true, why: 'no choice' };
   return r.store.lock('proposal', (): Answered => {
-    const entries: Entry[] = r.readAll();
-    const f = room.fold(entries);
+    const f = r.fold();
     const cur = f.proposals.get(p.hash);
     // Idempotent: one answer per seat per proposal. A card and a plan view open at once, or a reopened card,
     // never record twice, and the decision's refs are exactly the answers the fold reads as current. Another seat
@@ -455,11 +455,11 @@ function decide(code: string, hash: string): Entry | null {
   if (!identity.isHost(code)) return null;
   const r = room.open(code);
   return r.store.lock('proposal', (): Entry | null => {
-    const entries: Entry[] = r.readAll();
-    const f = room.fold(entries);
+    const entries = r.readAll();
+    const f = r.fold(entries);
     const cur = f.proposals.get(hash);
     if (!cur || f.decisions.has(hash) || f.superseded.has(hash)) return null;
-    const m = matrix(cur, entries);
+    const m = matrix(cur, entries, r.trust);
     if (!m.complete) return null;
     const text = m.objected.length
       ? `objected: ${people(m, m.objected)}${m.agreed.length ? ` · agreed: ${people(m, m.agreed)}` : ''} (proposal ${hash})`
@@ -472,17 +472,17 @@ function decide(code: string, hash: string): Entry | null {
 
 // ---------- the plan-view review state (hooks/handlers/consent.ts, hooks/handlers/session-restore.ts) ----------
 /**
- * members/NAME/review: {phase, mode, at, hash?, from?, file?, backup?, restored?, tool_use_id?, …}.
+ * The session's review: {phase, mode, at, hash?, from?, file?, backup?, restored?, tool_use_id?, …}.
  * `backup` is the session plan file's text before the review overwrote it, even when that is the proposal's own
  * text (null only when there was no file: the one the review created is removed on close), recorded BEFORE the
  * overwrite, so a crash between the two never loses the person's own plan.
  */
-const reviewKey = (me: Me) => `members/${me.name}/review`;
-const readReview = (me: Me): Review | null => kvOf(me).get(reviewKey(me), null);
-const writeReview = (me: Me, st: Review): void => kvOf(me).set(reviewKey(me), st, { compact: true });
-function clearReview(me: Me): void { kvOf(me).delete(reviewKey(me)); }
-/** Every read-modify-write of the review state runs under this lock (hooks of one session can overlap). */
-const withReview = <T>(me: Me, fn: () => T): T => kvOf(me).lock(reviewKey(me), fn, { timeoutMs: config.REVIEW_LOCK_TIMEOUT_MS });
+const readReview = (me: Me): Review | null => session.get(storeOf(me), me.name, 'review') || null;
+const writeReview = (me: Me, st: Review): void => session.put(storeOf(me), me.name, 'review', st);
+function clearReview(me: Me): void { session.put(storeOf(me), me.name, 'review', undefined); }
+/** Every read-modify-write of the review state runs under this lock (hooks of one session can overlap). Its own lock,
+ * not the session document's: each write inside takes that one. */
+const withReview = <T>(me: Me, fn: () => T): T => kvOf(me).lock(`members/${me.name}/review`, fn, { timeoutMs: config.REVIEW_LOCK_TIMEOUT_MS });
 
 /** Put the session plan file back as it was before the review (atomically); marks st.restored. */
 function restorePlan(st: Review | null | undefined): void {
@@ -518,15 +518,14 @@ function restoreStale(me: Me | null | undefined, { force = false, now = Date.now
 
 // ---------- a review's note, waiting for the person's Send (hooks/handlers/consent.ts) ----------
 /**
- * members/NAME/confirm: {hash, note, from, title, at, stage} (lib/consent/review.ts: where its card stands). A plan review rejected with a note ("Tell Claude what
+ * The session's confirm: {hash, note, from, title, at, stage} (lib/consent/review.ts: where its card stands). A plan review rejected with a note ("Tell Claude what
  * to change", a phone deny with a note or "Suggest edits": Claude Code writes them alike, and a phone message typed
  * after a bare deny lands there too) records nothing by itself: the note waits here until the person answers the
  * confirm card. One per person: a newer note replaces it.
  */
-const confirmKey = (me: Me) => `members/${me.name}/confirm`;
-const readConfirm = (me: Me): Confirm | null => { try { return kvOf(me).get(confirmKey(me), null); } catch { return null; } };
-const writeConfirm = (me: Me, c: Confirm): void => kvOf(me).set(confirmKey(me), c, { compact: true });
-function clearConfirm(me: Me): void { try { kvOf(me).delete(confirmKey(me)); } catch { /* none */ } }
+const readConfirm = (me: Me): Confirm | null => { try { return session.get(storeOf(me), me.name, 'confirm') || null; } catch { return null; } };
+const writeConfirm = (me: Me, c: Confirm): void => session.put(storeOf(me), me.name, 'confirm', c);
+function clearConfirm(me: Me): void { try { session.put(storeOf(me), me.name, 'confirm', undefined); } catch { /* none */ } }
 
 const CONFIRM_NOTE_MAX = 300;
 const CONFIRM_TITLE_MAX = 80;

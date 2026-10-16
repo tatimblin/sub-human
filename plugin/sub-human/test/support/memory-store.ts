@@ -1,27 +1,29 @@
 /**
  * test/support/memory-store.ts: MemoryRoomStore, a second RoomStore (lib/room/store.ts documents the interface)
- * that keeps a room in this process's memory. Test only. It shares the envelope with FsRoomStore (store.toPayload
- * validates and signs, store.admit and store.placeAfter check and stamp id, at and prev), so ids, the prev chain,
- * signatures and the trust checks are byte-for-byte what the file store does. test/store-contract.node-test.ts runs the same
+ * that keeps a room in this process's memory. Test only. It shares the rules with FsRoomStore (store.toPayload
+ * validates and signs, store.admit and store.placeAfter check and stamp id, at and prev; store.trustOver judges a
+ * person's lines), so ids, the prev chain, signatures and the trust checks are byte-for-byte what the file store does. test/store-contract.node-test.ts runs the same
  * suite against both: that is the seam a store off this machine would implement.
  *
  *   new MemoryRoomStore(code, {isHost}?)   _lines (the serialized log, one string per entry) is open for tamper
  *       tests. isHost: false makes it mirror-shaped (the host gates: lib/room-claude.ts, lib/proposal.ts decide).
  *   members.join/leave/beat are lib/room/members.ts ops over this store's compare-and-set update, as FsRoomStore's.
+ *   lock(name, fn) and kv.lock(key, fn) are held while fn runs: taking one already held is RoomError LOCK at once (the
+ *   file store would wait out its timeout for the same answer; fn is synchronous, so nothing else can run under it).
  */
 import * as store from '../../lib/room/store.ts';
-import * as config from '../../lib/config.ts';
 import * as envelope from '../../lib/room/envelope.ts';
 import * as members from '../../lib/room/members.ts';
+import { machineId } from '../../lib/home.ts';
 import type {
   AppendOpts, BlobsApi, ChainCheck, ChainVerify, Entry, EntryInput, HostState, KvApi, Members, MembersApi, Payload, PlaceOpts,
-  Placed, ReadViewOpts, RoomStore, Tailer,
+  Placed, ReadViewOpts, RoomStore, Tailer, Trust, TrustCtx,
 } from '../../lib/room/types.ts';
 import type { KeyObject } from 'node:crypto';
 
-const { RoomError, hash12, tag, blobRef, checkKey, checkCursor, CHAT_KINDS } = store;
+const { RoomError, hash12, blobRef, checkKey, checkCursor, CHAT_KINDS } = store;
 const clone = <T,>(v: T): T => (v === undefined ? v : structuredClone(v));
-const parse = (l: string, s: RoomStore | null): Entry | null => { try { return tag(JSON.parse(l) as Entry, s); } catch { return null; } };
+const parse = (l: string): Entry | null => { try { return JSON.parse(l) as Entry; } catch { return null; } };
 
 class MemoryRoomStore implements RoomStore {
   readonly code: string;
@@ -34,6 +36,10 @@ class MemoryRoomStore implements RoomStore {
   _blobs = new Map<string, Buffer>();
   _kv = new Map<string, unknown>();
   _checked = { count: 0, hash: hash12('') }; // the verifyChain checkpoint
+  _held = new Set<string>(); // the locks held now
+  _all: readonly Entry[] = []; // readAll's last answer, returned again while no line changed
+  _keys: TrustCtx;
+  trust: Trust;
   members: MembersApi;
   blobs: BlobsApi;
   kv: KvApi;
@@ -41,6 +47,8 @@ class MemoryRoomStore implements RoomStore {
   constructor(code: string, { isHost = true }: { isHost?: boolean } = {}) {
     this.code = code;
     this.isHost = isHost;
+    this._keys = { code, pins: () => this.pins(), localKey: n => store.localKey(n, code), hasLocalKey: n => store.hasLocalKey(n, code) };
+    this.trust = store.trustOver(this._keys);
     const self = this;
     const base: Pick<MembersApi, 'read' | 'update'> = {
       read: () => members.fromLegacy(clone(self._members.doc)),
@@ -86,32 +94,38 @@ class MemoryRoomStore implements RoomStore {
         if (p && !p.endsWith('/')) throw new RoomError('INVALID', `kv.list needs a "dir/" prefix, not "${prefix}"`);
         return [...self._kv.keys()].filter(k => k.startsWith(p) && !k.slice(p.length).includes('/')).sort();
       },
-      lock: (key, fn) => { checkKey(key); return fn(); },
+      lock: (key, fn) => self._hold(`kv:${checkKey(key)}`, fn),
     };
   }
 
   exists() { return true; }
-  lock<R>(name: string, fn: () => R): R { checkKey(name); return fn(); }
+  lock<R>(name: string, fn: () => R): R { return this._hold(`room:${checkKey(name)}`, fn); }
+  _hold<R>(name: string, fn: () => R): R {
+    if (this._held.has(name)) throw new RoomError('LOCK', `${name} is held already (a lock taken inside itself)`);
+    this._held.add(name);
+    try { return fn(); } finally { this._held.delete(name); }
+  }
 
-  readAll(): Entry[] {
+  readAll(): readonly Entry[] {
     const out: Entry[] = [];
+    let same = this._parsed.length === this._lines.length;
     this._lines.forEach((l, i) => {
       let p = this._parsed[i];
-      if (!p || p.line !== l) p = this._parsed[i] = { line: l, e: parse(l, this) };
+      if (!p || p.line !== l) { p = this._parsed[i] = { line: l, e: parse(l) }; same = false; }
       if (p.e) out.push(p.e);
     });
     this._parsed.length = this._lines.length;
-    return out;
+    if (!same) this._all = Object.freeze(out);
+    return this._all;
   }
   readById(ids: number | string | readonly (number | string)[]): Entry[] {
     const byId = new Map(this.readAll().map(e => [e.id, e]));
     return (Array.isArray(ids) ? ids : [ids]).map(Number).flatMap(i => byId.get(i) || []);
   }
   readAfter(id: number, f: (e: Entry) => boolean = () => true) { return this.readAll().filter(e => e.id > id && f(e)); }
-  since(id: number) { return this.readAfter(id); }
   lastId() { const es = this.readAll(); return es.at(-1)?.id || 0; }
 
-  readView({ after = 0 }: ReadViewOpts = {}): Entry[] {
+  readView({ after = 0 }: ReadViewOpts = {}): readonly Entry[] {
     const all = this.readAll();
     if (!(after > 0)) return all;
     return all.filter(e => !CHAT_KINDS.has(e.kind) || e.id > after);
@@ -128,7 +142,9 @@ class MemoryRoomStore implements RoomStore {
   place(payload: Payload, opts?: PlaceOpts): Entry;
   place(payload: Payload, opts: PlaceOpts = {}): Entry {
     const p = store.admit(this.code, payload, opts);
-    const { e, line } = store.placeAfter(this, p, { newest: this.readAll().toReversed(), prevLine: this._lines.at(-1) ?? '', now: Date.now() });
+    const { e, line } = store.placeAfter(p, {
+      keys: this._keys, host: this.hostState(), machine: machineId(), newest: this.readAll().toReversed(), prevLine: this._lines.at(-1) ?? '', now: Date.now(),
+    });
     this._lines.push(line);
     return e;
   }
@@ -137,21 +153,8 @@ class MemoryRoomStore implements RoomStore {
   hostState(): HostState { return store.hostState(this.readAll()); }
   setAside(): string | null { return null; }
 
-  watch(onEntry: (e: Entry) => void, { after = 0, intervalMs = config.FOLLOW_POLL_MS }: { after?: number; intervalMs?: number } = {}) {
-    let seen = after, len = 0;
-    const tick = () => {
-      if (this._lines.length < len) { len = 0; seen = 0; }
-      const fresh = this._lines.slice(len);
-      len = this._lines.length;
-      for (const l of fresh) { const e = parse(l, this); if (e && e.id > seen) { seen = e.id; onEntry(e); } }
-    };
-    tick();
-    const t = setInterval(tick, intervalMs);
-    return () => clearInterval(t);
-  }
-
   tailer({ after }: { after?: number } = {}): Tailer {
-    const idOf = (l: string) => parse(l, null)?.id ?? 0;
+    const idOf = (l: string) => parse(l)?.id ?? 0;
     let at = after === undefined ? this._lines.length : this._lines.findIndex(l => idOf(l) > after);
     if (at < 0) at = this._lines.length;
     const self = this;
@@ -162,21 +165,21 @@ class MemoryRoomStore implements RoomStore {
         if (self._lines.length < at) { at = 0; reset = true; }
         const lines = self._lines.slice(at);
         at = self._lines.length;
-        return { entries: lines.flatMap(l => parse(l, self) || []), lines, reset };
+        return { entries: lines.flatMap(l => parse(l) || []), lines, reset };
       },
     };
   }
 
   lineHash(id: number): string | null {
     if (id === 0) return hash12('');
-    const line = this._lines.find(l => parse(l, null)?.id === id);
+    const line = this._lines.find(l => parse(l)?.id === id);
     return line === undefined ? null : hash12(line);
   }
 
   validateChain(): ChainCheck {
     let prev = '';
     for (let i = 0; i < this._lines.length; i++) {
-      const e = parse(this._lines[i], null);
+      const e = parse(this._lines[i]);
       if (!e) return { ok: false, badAt: null, line: i + 1, count: this._lines.length };
       if (e.prev !== undefined && e.prev !== hash12(prev)) return { ok: false, badAt: e.id, count: this._lines.length };
       prev = this._lines[i];
@@ -185,14 +188,14 @@ class MemoryRoomStore implements RoomStore {
   }
 
   /** Incremental from the checkpoint (lines already checked); offsets here count lines. */
-  verifyChain({ save = true }: { save?: boolean } = {}): ChainVerify {
+  verifyChain({ save = true }: { save?: boolean | 'lazy' } = {}): ChainVerify {
     const cp = this._checked;
     const ok = cp.count <= this._lines.length && (cp.count === 0 || hash12(this._lines[cp.count - 1]) === cp.hash);
     const from = ok ? cp : { count: 0, hash: hash12('') };
     let { count, hash } = from, id = 0;
     let bad: { badAt: number | null; line?: number } | null = null;
     for (let i = from.count; i < this._lines.length; i++) {
-      const e = parse(this._lines[i], null);
+      const e = parse(this._lines[i]);
       if (!e) { bad = { badAt: null, line: i + 1 }; break; }
       if (e.prev !== undefined && e.prev !== hash) { bad = { badAt: e.id }; break; }
       hash = hash12(this._lines[i]); count++; id = e.id || id;

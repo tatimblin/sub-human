@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import * as rows from '../lib/rows.ts';
 import * as roomLib from '../lib/room.ts';
+import * as session from '../lib/room/session.ts';
 import type { Identity } from '../lib/identity.ts';
 import type { Entry, Member, Members } from '../lib/room/types.ts';
 import type { Task } from '../lib/types-app.ts';
@@ -199,7 +200,7 @@ test('missingRows: claude lists members without a live hold after the grace peri
   assert.deepEqual(rows.missingRows(code, me({ code, name: 'alice', role: 'member' })), [code]);
   rows.writeHolds(code, 'alice', { members: [], room: true });
   assert.deepEqual(rows.missingRows(code, me({ code, name: 'alice', role: 'member' })), []);
-  roomLib.open(code).store.kv.set('rows/holds-alice', { pid: 999999, at: new Date().toISOString(), members: [], room: true });
+  session.put(roomLib.open(code).store, 'alice', 'holds', { pid: 999999, at: new Date().toISOString(), members: [], room: true });
   assert.deepEqual(rows.missingRows(code, me({ code, name: 'alice', role: 'member' })), [code], 'dead server pid: not live');
 });
 
@@ -210,7 +211,7 @@ test('joinNote: a member_joined notice says whether the row already runs here (l
   rows.writeHolds(code, 'claude', { members: ['bob'] });
   assert.match(rows.joinNote(roomClaude, 'bob'), /bob's row is already running .*make NO Agent call/);
   assert.match(rows.joinNote(roomClaude, 'alice'), /alice has no row running/);
-  roomLib.open(code).store.kv.set('rows/holds-claude', { pid: 999999, at: new Date().toISOString(), members: ['bob'], room: false });
+  session.put(roomLib.open(code).store, 'claude', 'holds', { pid: 999999, at: new Date().toISOString(), members: ['bob'], room: false });
   assert.match(rows.joinNote(roomClaude, 'bob'), /no row running/, 'dead hold server: not running');
   const alice: Seat = { code, name: 'alice', role: 'member' };
   assert.equal(rows.joinNote(alice, 'bob'), `row: your room row is not running; spawn it now: ${rows.roomCall(code, ['bob'])}`);

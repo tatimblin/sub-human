@@ -8,6 +8,8 @@
  *   NAME_RE                  a seat name: letters, digits, . _ -, 1-32
  *   CODE_RE                  a room code: "otter-4821"
  *   SID_SAFE                 a session id safe to use in a file name
+ *   HASH_RE                  a proposal's hash: 12 lowercase hex (sha256/12 of the plan bytes, lib/proposal.ts)
+ *   hash12(data) -> string   the first 12 hex of sha256(data): a proposal's hash, and the log's prev chain
  *   cliLine(args) -> string  the shell line that runs this plugin's CLI, `node <plugin root>/scripts/sub-human ARGS`
  *                            (~ for the home folder): what a message prints when only a shell can do it, since no
  *                            `sub-human` is on PATH
@@ -16,10 +18,14 @@
  *                            CLI rule (mod/core/guard.ts READ_CLI) allows that spelling
  */
 import os from 'node:os';
+import crypto from 'node:crypto';
 import path from 'node:path';
 
 // owned by mod/core/seat.ts (the hooks module parses names and codes too)
 import { NAME_RE, CODE_RE, SID_SAFE } from '../mod/core/seat.ts';
+
+const HASH_RE = /^[0-9a-f]{12}$/;
+const hash12 = (data: crypto.BinaryLike): string => crypto.createHash('sha256').update(data).digest('hex').slice(0, 12);
 
 function clip(s: unknown, n: number): string {
   const str = String(s);
@@ -45,4 +51,4 @@ function cliCmd(args = ''): string {
   return `${q}${args ? ` ${args}` : ''}`;
 }
 
-export { clip, oneLine, cliLine, cliCmd, NAME_RE, CODE_RE, SID_SAFE };
+export { clip, oneLine, cliLine, cliCmd, NAME_RE, CODE_RE, SID_SAFE, HASH_RE, hash12 };

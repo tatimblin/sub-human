@@ -36,7 +36,8 @@ const VIAS: readonly string[] = ['human', 'agent', 'system'];
 const isVia = (v: unknown): v is Via => VIAS.includes(v as string);
 const isKind = (k: unknown): k is Kind => KINDS.includes(k as string);
 const isTaskOp = (op: unknown): op is TaskOp => TASK_OPS.includes(op as string);
-const HASH_RE = /^[0-9a-f]{6,64}$/;
+/** a hash a caller may name: 6-64 hex (a proposal's is 12, lib/text.ts HASH_RE; older logs hold longer ones) */
+const HASH_ARG_RE = /^[0-9a-f]{6,64}$/;
 const HOST_FIELDS = ['epoch', 'host', 'locator', 'accept', 'ask', 'promoted'];
 const TASK_FIELDS = ['op', 'task_id', 'subject', 'detail', 'evidence', 'owner', 'status', 'req', 'blockedBy'];
 const ENTRY_FIELDS = new Set(['kind', 'text', 'to', 'refs', 'hash', 'approvers', 'same', 'path', 'proposal_hash', 'normalized',
@@ -96,7 +97,7 @@ function validate(entry: EntryInput, opts: ValidateOpts): Validated {
   }
   if (refs !== undefined && refs.length > ENTRY_REFS_MAX) bad(`too many refs (${refs.length}; the limit is ${ENTRY_REFS_MAX})`);
   for (const [k, v] of [['hash', hash], ['proposal_hash', proposal_hash]]) {
-    if (v !== undefined && (typeof v !== 'string' || !HASH_RE.test(v))) bad(`${k} must be 6-64 lowercase hex chars`);
+    if (v !== undefined && (typeof v !== 'string' || !HASH_ARG_RE.test(v))) bad(`${k} must be 6-64 lowercase hex chars`);
   }
   if (approvers !== undefined && (!Array.isArray(approvers) || !approvers.every(a => typeof a === 'string' && NAME_RE.test(a)))) {
     bad('approvers must be an array of names');

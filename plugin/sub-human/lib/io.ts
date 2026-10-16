@@ -11,6 +11,7 @@
  *                                         private, and this may be the first write into a new home).
  *   writeJsonAtomic(file, value, opts)    the same for JSON. opts.compact: one line, no trailing newline;
  *                                         otherwise pretty-printed (2 spaces) with a trailing newline.
+ *   validPid(pid) -> bool                 a positive integer
  *   isAlive(pid) -> bool                  the pid exists (EPERM counts as alive: it exists, owned by another user)
  *   sleepSync(ms)                         block this thread (for the sync lock and poll loops in hooks)
  *   readInput({strict = true}?) -> object the process's stdin JSON ({} when empty, or when stdin is a terminal).
@@ -55,6 +56,8 @@ function writeJsonAtomic(file: string, value: unknown, { compact = false, ...opt
   writeFileAtomic(file, compact ? JSON.stringify(value) : JSON.stringify(value, null, 2) + '\n', opts);
 }
 
+const validPid = (pid: unknown): pid is number => Number.isInteger(pid) && (pid as number) > 0;
+
 function isAlive(pid: unknown): boolean {
   const n = Number(pid);
   if (!Number.isInteger(n) || n <= 0) return false;
@@ -75,4 +78,4 @@ function readInput({ strict = true }: { strict?: boolean } = {}): any {
   }
 }
 
-export { readJson, writeFileAtomic, writeJsonAtomic, isAlive, sleepSync, readInput };
+export { readJson, writeFileAtomic, writeJsonAtomic, validPid, isAlive, sleepSync, readInput };

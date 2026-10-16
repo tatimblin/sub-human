@@ -50,6 +50,7 @@ import * as identity from './identity.ts';
 import * as room from './room.ts';
 import * as roomClaude from './room-claude.ts';
 import * as config from './config.ts';
+import { validPid } from './io.ts';
 import * as links from './room/links.ts';
 import { roomClaudePresence } from './room/members.ts';
 import { createRequire } from 'node:module';
@@ -134,7 +135,6 @@ function exit(code: string, name: string, reason: string, { deadlineMs }: { dead
   return true;
 }
 
-const validPid = (pid: unknown): pid is number => Number.isInteger(pid) && (pid as number) > 0;
 const isLocal = (m: Member): boolean => validPid(m.pid) && (m.machine || identity.machineId()) === identity.machineId();
 
 function sweep(code: string, { now = Date.now(), name }: { now?: number; name?: string } = {}): string[] {

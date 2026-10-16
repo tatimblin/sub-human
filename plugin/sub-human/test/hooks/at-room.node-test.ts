@@ -7,6 +7,7 @@ import { World, fixture, hso, PLUGIN, identity, room } from './helpers.ts';
 import type { HookInput, HookRun } from './helpers.ts';
 import * as rows from '../../lib/rows.ts';
 import type { Entry } from '../../lib/room/types.ts';
+import { lane as roomLane } from '../../lib/room/deliver.ts';
 
 /** World.hook's options. */
 type HookOpts = NonNullable<Parameters<World['hook']>[2]>;
@@ -185,9 +186,9 @@ test('@claude: only a leading tag posts the words to=claude (the wake); "@room @
     ['@claude this is a plain post', 'room', 'alice', 'human', 'say'],
     ['ask @claude later', 'room', 'alice', 'human', 'say'],
   ]);
-  const lane = (e: Entry) => w.lib(() => room.lane({ name: 'claude', role: 'claude' }, e));
+  const lane = (e: Entry) => w.lib(() => roomLane({ name: 'claude', role: 'claude' }, e, undefined, room.trustOf));
   assert.deepEqual(w.entries().map(lane), ['push', 'pull', 'pull'], 'only the leading @claude wakes the room\'s Claude');
-  assert.deepEqual(w.entries().map(e => w.lib(() => room.lane({ name: 'bob', role: 'member' }, e))), ['push', 'push', 'push'], 'everyone sees all three');
+  assert.deepEqual(w.entries().map(e => w.lib(() => roomLane({ name: 'bob', role: 'member' }, e, undefined, room.trustOf))), ['push', 'push', 'push'], 'everyone sees all three');
 });
 
 test('@claude on the host with no room\'s Claude running starts it (a stopped one too); @room never does', async () => {

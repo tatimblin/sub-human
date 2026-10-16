@@ -2,7 +2,7 @@
 /**
  * plugin/sub-human/lib/room-claude.ts: the room's own Claude (member claude, SendMessage name claude.CODE), a headless
  * `claude --bg` session the join hook starts.
- * CommonJS, zero dependencies. Nobody launches it by hand; for debugging, `node lib/room-claude.ts cmd CODE` prints
+ * Nobody launches it by hand; for debugging, `node lib/room-claude.ts cmd CODE` prints
  * the exact command and `node lib/room-claude.ts spawn CODE` runs it (both from the cwd the room's Claude should work in).
  *
  *   spawnPlan({code, cwd, home?, pluginDir?, env?}) -> {bin, args, env, cwd}
@@ -397,7 +397,7 @@ async function reap(code: string, {
   if (job === PENDING && (identity.readMembers(code) as Members).claude?.pid) job = findJob(code)?.id; // bound, starter died
   stopJob(job);
   stopStrays(code, [job]); // a job the record lost would outlive the room
-  identity.setRoomClaude(code, { stopped_at: new Date().toISOString() });
+  identity.updateRoomClaude(code, () => ({ stopped_at: new Date().toISOString() }));
   try { identity.leave(code, 'claude', {}); } catch { /* already left */ }
   return 'stopped';
 }

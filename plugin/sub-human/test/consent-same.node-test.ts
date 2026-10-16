@@ -14,23 +14,25 @@ import * as proposal from '../lib/proposal.ts';
 import * as config from '../lib/config.ts';
 import { machineId } from '../lib/home.ts';
 import { MemoryRoomStore } from './support/memory-store.ts';
-import type { Entry, EntryInput, Member } from '../lib/room/types.ts';
+import type { Entry, EntryInput, Member, Trust } from '../lib/room/types.ts';
 
 const H = 'abcdef012345';
 let id = 0;
 const at = '2026-01-01T00:00:00.000Z';
 const prop = (approvers: string[], same?: string[][], from = 'carol'): Entry => ({ id: ++id, at, kind: 'proposal', via: 'agent', from, text: `proposal ${H}: Ship`, hash: H, approvers, ...(same ? { same } : {}) });
 const ans = (from: string, kind: string): Entry => ({ id: ++id, at, kind, via: 'human', from, proposal_hash: H });
+/** These hand-made answers carry no signature: judged as a room from before seat keys would (legacy: they count). */
+const LEGACY: Trust = e => (e && e.via === 'human' ? 'legacy' : null);
 
 test('fold: one answer satisfies a same group; the newest seat\'s answer wins; a revoke clears the group', () => {
   id = 0;
   const log = [prop(['tristan', 'laptop', 'bob'], [['tristan', 'laptop']])];
-  const f0 = consent.fold(log);
+  const f0 = consent.fold(log, LEGACY);
   assert.deepEqual(f0.proposals.get(H)!.same, [['tristan', 'laptop']]);
   assert.deepEqual([f0.matrix(H).missing, f0.matrix(H).people, f0.matrix(H).also], [['tristan', 'bob'], 2, { tristan: ['laptop'] }]);
 
   log.push(ans('tristan', 'signoff'));
-  let f = consent.fold([...log]);
+  let f = consent.fold([...log], LEGACY);
   let m = f.matrix(H);
   assert.deepEqual([m.agreed, m.missing, m.also, m.complete], [['tristan'], ['bob'], { tristan: ['laptop'] }, false]);
   assert.deepEqual([m.answers.laptop, m.signed.laptop], [{ id: 2, kind: 'signoff' }, 2], 'the group shares the answer');
@@ -41,14 +43,14 @@ test('fold: one answer satisfies a same group; the newest seat\'s answer wins; a
   assert.deepEqual(f.pending('bob').map(p => p.hash), [H]);
 
   log.push(ans('laptop', 'objection')); // the newer seat's answer overrides
-  m = consent.fold([...log]).matrix(H);
+  m = consent.fold([...log], LEGACY).matrix(H);
   assert.deepEqual([m.agreed, m.objected, m.also], [[], ['laptop'], { laptop: ['tristan'] }]);
   assert.equal(m.answers.tristan!.kind, 'objection');
 
   log.push(ans('bob', 'signoff'));
-  assert.equal(consent.fold([...log]).matrix(H).complete, true, 'every person answered');
+  assert.equal(consent.fold([...log], LEGACY).matrix(H).complete, true, 'every person answered');
   log.push(ans('tristan', 'revoke')); // a legacy revoke from either seat clears the group's answer
-  f = consent.fold([...log]);
+  f = consent.fold([...log], LEGACY);
   m = f.matrix(H);
   assert.deepEqual([m.missing, m.complete, m.answers.laptop], [['tristan'], false, null]);
   assert.deepEqual(f.pending('laptop').map(p => p.hash), [H]);
@@ -56,7 +58,7 @@ test('fold: one answer satisfies a same group; the newest seat\'s answer wins; a
 
 test('fold: without same (an older proposer) every seat is its own approver; a stray same is read safely', () => {
   id = 0;
-  const f = consent.fold([prop(['tristan', 'laptop']), ans('tristan', 'signoff')]);
+  const f = consent.fold([prop(['tristan', 'laptop']), ans('tristan', 'signoff')], LEGACY);
   assert.deepEqual([f.matrix(H).missing, f.matrix(H).people, f.pending('laptop').length], [['laptop'], 2, 1]);
   assert.deepEqual(consent.groupsOf([['a', 'x'], ['b', 'c', 'b'], ['c', 'd'], 'e'], ['a', 'b', 'c', 'd']), [['b', 'c']],
     'only approvers, 2+ each, disjoint');
@@ -119,7 +121,7 @@ test('create: several seats on the host are several people: login seats are the 
   });
   const r = proposal.create({ code, name: 'alice' }, { text: '# Ship v3\n' });
   assert.deepEqual([r.approvers, r.entry!.same], [['alice', 'tristan', 'laptop'], [['tristan', 'laptop']]], 'alice stays her own');
-  const m = consent.fold(room.open(code).readAll()).matrix(r.hash);
+  const m = room.open(code).fold().matrix(r.hash);
   assert.deepEqual([m.people, m.missing], [2, ['alice', 'tristan']]);
   const one = proposal.create({ code, name: 'alice' }, { text: '# Ship v4\n', approvers: ['alice', 'tristan'] });
   assert.equal(one.entry!.same, undefined, 'two plain seats on the host never merge: no group, no field');

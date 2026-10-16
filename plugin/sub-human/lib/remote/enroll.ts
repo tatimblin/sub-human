@@ -147,10 +147,9 @@ const wireCode = (c: unknown): c is WireCode => (Object.values(protocol.CODES) a
 const fingerprint = (key: string | null): string | null => (key ? sshkeysMod().fingerprint(key) : null);
 
 // ---------- the host ----------
-/** A line in the room from the room itself, best effort. */
-function roomLine(store: RoomStore, text: string, log: (msg: string) => void): void {
-  try { store.append({ kind: 'status', text }, { via: 'system', from: 'room', system: true }); } catch (e) { log(`room line: ${e && (e as Error).message}`); }
-}
+/** A line in the room from the room itself, best effort (lib/room.ts roomLine). */
+const roomLine = (store: RoomStore, text: string, log: (msg: string) => void): void => roomLib().roomLine(store, text, log);
+const roomLib = (): typeof import('../room.ts') => require('../room.ts');
 
 function serveEnroll(transport: Transport, { store, kind, log = () => {}, timeoutMs = enrollMs(), now = () => Date.now() }: {
   store: RoomStore; kind: string; log?: (msg: string) => void; timeoutMs?: number; now?: () => number;
@@ -439,11 +438,7 @@ async function enrollLink(code: string): Promise<void> {
 }
 
 // ---------- the door (ssh) ----------
-function storeOf(code: string): RoomStore {
-  const s = (require('../room.ts') as typeof import('../room.ts')).open(code).store;
-  if (!s.isHost) throw new RoomError('HOST_ONLY', `room ${code} is hosted on another machine`);
-  return s;
-}
+const storeOf = (code: string): RoomStore => roomLib().hostStore(code);
 
 function openDoor(code: string, { file = sshkeysMod().authorizedKeysFile() }: { file?: string } = {}): string {
   const sshkeys = sshkeysMod();

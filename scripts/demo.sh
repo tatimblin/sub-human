@@ -280,8 +280,12 @@ snap() { # caption — capture the panes (the room's Claude via claude logs), an
   local d="$SNAP_DIR/state/$SCENE/$STEP"   # this step's evidence (checks.js reads state/SCENE/N)
   mkdir -p "$d"
   cp "$SUB_HUMAN_HOME/rooms/$r/members.json" "$SUB_HUMAN_HOME/rooms/$r"/rows/*.json "$d/" 2>/dev/null || true
-  # B on another machine (--film): B's rows are session-local, in B's mirror there (holds-B, notices-B, …)
-  [ "$REMOTE" = 1 ] && cp "$LAPTOP/home/rooms/$r"/rows/*"-$SEAT_B".json "$d/" 2>/dev/null
+  # each seat's session document (its holds, the notices it was shown, its cursor) as session-NAME.json
+  local sd; for sd in "$SUB_HUMAN_HOME/rooms/$r"/members/*/session.json; do
+    [ -f "$sd" ] && cp "$sd" "$d/session-$(basename "$(dirname "$sd")").json"
+  done
+  # B on another machine (--film): B's session document is session-local, in B's mirror there
+  [ "$REMOTE" = 1 ] && cp "$LAPTOP/home/rooms/$r/members/$SEAT_B/session.json" "$d/session-$SEAT_B.json" 2>/dev/null
   cp "$SUB_HUMAN_HOME/rooms/$r/tasks.json" "$d/" 2>/dev/null || true
   claude agents --json > "$d/agents.json" 2>/dev/null || true
   "$PLUGIN/scripts/sub-human" tasks --room "$r" > "$d/sub-human-tasks.txt" 2>&1 || true

@@ -51,7 +51,7 @@ export const LEAVE_SETTLE_MS = 8000;           // SUB_HUMAN_LEAVE_MS (tail, noti
 export const UNSEATED_MS = 10_000;             // SUB_HUMAN_UNSEATED_MS: no seat yet, look it up this rarely
 export const RESOLVE_MS = 2000;                // SUB_HUMAN_RESOLVE_MS: seated, re-resolve the seat this often
 export const TAIL_POLL_MS = 250;               // SUB_HUMAN_POLL_MS: the tail's log poll
-export const FOLLOW_POLL_MS = 250;             // room.follow default poll
+export const FOLLOW_POLL_MS = 250;             // the remote server's log poll (lib/remote/server.ts)
 export const WATCH_POLL_MS = 500;              // `sub-human watch --follow` poll
 
 // ---------- the tail loop's health (lib/tail.ts) ----------
@@ -200,9 +200,12 @@ export const RATE_MAX = 6;                     // agent posts to the room per `f
 // room budget.
 export const RATE_ADDRESSED_MAX = 10;
 export const RATE_WINDOW_MS = 60_000;
-// A person's own posts over a link (lib/remote/server.ts append): a seat on another machine holds its own key and
-// token, so a script there could post as fast as it likes (each @claude a wake of the host's room Claude, each line
-// log growth). A person types one keystroke per post; this is well above that. Local hooks are not limited.
+// A person's own entries (lib/room/rules.ts placeAfter): signed by the hooks, so only a script driving them could
+// come near; a person types one keystroke per post. High enough for the tests' bursts (150 per name), low enough
+// to bound a flood through the local hooks.
+export const RATE_HUMAN_MAX = 300;             // via=human entries per seat per RATE_WINDOW_MS
+// The same over a link (lib/remote/server.ts append): a seat on another machine holds its own key and token, so a
+// script there could post as fast as it likes (each @claude a wake of the host's room Claude, each line log growth).
 export const LINK_HUMAN_RATE_MAX = 30;          // via=human entries per seat per RATE_WINDOW_MS, over a link
 export const LINK_BLOBS_MAX = 40;               // blob.put per connection (a proposal's plan each; the daemon reconnects)
 

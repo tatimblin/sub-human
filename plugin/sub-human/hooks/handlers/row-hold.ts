@@ -29,9 +29,9 @@ export function handle(input: HookIn<'SubagentStop'>) {
     ? !!(mine && !mine.left_at)
     : !!(ms[rec.name] && mine && !mine.left_at); // a member who left keeps the row ("left")
   let n = 0;
-  try { n = rows.blockCount(me.code, id); } catch { /* first */ }
+  try { n = rows.blockCount(me.code, me.name, id); } catch { /* first */ }
   if (wanted && n < MAX_BLOCKS) {
-    try { rows.setBlockCount(me.code, id, n + 1); } catch { /* best effort */ }
+    try { rows.setBlockCount(me.code, me.name, id, n + 1); } catch { /* best effort */ }
     const args = rec.kind === 'room' ? `{"room": "${rec.name}"}` : `{"member": "${rec.name}"}`;
     out({
       decision: 'block',

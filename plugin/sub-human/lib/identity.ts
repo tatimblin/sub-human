@@ -1,6 +1,6 @@
 /**
  * plugin/sub-human/lib/identity.ts: where rooms live, who is in them, and which Claude session is asking.
- * CommonJS, zero dependencies. Identity is bound at join by a hook and never chosen by the model.
+ * Identity is bound at join by a hook and never chosen by the model.
  * Participants are collaborators: there is no process-ancestry proof. A seat is found by a direct lookup of
  * the session id (hooks) or of a registered claude pid (MCP server, CLI). Every seat stores its process start
  * time (pid_start, epoch s, lib/lock.ts pidStart), so a reused pid never keeps a dead seat alive or adopts it.
@@ -12,7 +12,8 @@
  *   newCode() -> string                  "otter-4821": a fresh room, created with an exclusive mkdir
  *   roomExists(code) -> bool
  *   openRooms() -> [code]                rooms with >= 1 live member seat (role member) that are not closing,
- *                                        newest first. No room Claude seat is needed: the first member opens it. A room
+ *                                        newest first. The start times of every live local pid it judges come from one
+ *                                        ps call (lib/lock.ts pidStarts), not one per seat. No room Claude seat is needed: the first member opens it. A room
  *                                        where only the room's Claude is left is not open (see orphanRooms).
  *   orphanRooms() -> [code]              rooms not closing whose room Claude is not stopped but which have no live member
  *                                        (join sweeps these through roomClaude.watchdog)
@@ -30,7 +31,6 @@
  *       The "claude" record also carries {job, spawned_at, closing?, stopped_at?, claim?, by?, ...} (lib/room-claude.ts);
  *       before the spawned room Claude binds, it is {name:"claude", role:"claude", pid:null, job, spawned_at}, and while a
  *       spawn is in flight job is "pending".
- *   setRoomClaude(code, patch) -> record       merge patch into members.claude under the lock (creates the record)
  *   updateRoomClaude(code, fn) -> record|null  under the lock: fn(room Claude record or null, members) returns a patch to
  *                                        merge (the new record is returned) or null to write nothing (null)
  *   seatAlive(m) -> bool                 not left, and: a seat of this machine with a pid: that pid is alive with
@@ -105,9 +105,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-import { readJson, writeJsonAtomic, isAlive } from './io.ts';
+import { readJson, writeJsonAtomic, isAlive, validPid } from './io.ts';
 import { home, roomDir, machineId } from './home.ts';
-import { pidStart } from './lock.ts';
+import { pidStart, pidStarts } from './lock.ts';
 import { NAME_RE, CODE_RE, SID_SAFE as SID_RE } from './text.ts';
 import { sidIndex } from '../mod/core/seat.ts';
 import { SEAT_BEAT_MS, MOD_LEASE_FRESH_MS } from './config.ts';
@@ -230,7 +230,6 @@ function readMembers(code: string): Members {
 }
 
 const fail = (error: string): JoinResult => ({ ok: false, error });
-const validPid = (pid: unknown): pid is number => Number.isInteger(pid) && (pid as number) > 0;
 
 /**
  * Renew me's lease (members seen_at), at most every SEAT_BEAT_MS: the tail's health tick and the hold server
@@ -493,10 +492,17 @@ const roomClosing = (code: string): boolean => { const o = readMembers(code).cla
 
 const roomCodes = (): string[] => store.listRooms();
 
+/** Every room's members document, with the start times of their live local pids read by one ps call. */
+function allMembers(): { code: string; ms: Members }[] {
+  const all = roomCodes().map(code => ({ code, ms: readMembers(code) }));
+  const here = machineId();
+  pidStarts(all.flatMap(({ ms }) => Object.values(ms)).filter(m => m && !m.left_at && validPid(m.pid) && (m.machine || here) === here && isAlive(m.pid)).map(m => m.pid as number));
+  return all;
+}
+
 function openRooms(): string[] {
   const open: { code: string; at: string }[] = [];
-  for (const code of roomCodes()) {
-    const ms = readMembers(code);
+  for (const { code, ms } of allMembers()) {
     if (ms.claude && ms.claude.closing) continue;
     const live = Object.values(ms).filter(m => isMember(m) && seatAlive(m));
     if (live.length) open.push({ code, at: live.map(m => m.joined_at || '').sort().at(-1)! }); // live is not empty
@@ -509,8 +515,7 @@ const roomClaudeActive = (o: Member | null | undefined): boolean => !!o && !o.st
 
 function orphanRooms(): string[] {
   const out: string[] = [];
-  for (const code of roomCodes()) {
-    const ms = readMembers(code);
+  for (const { code, ms } of allMembers()) {
     const o = ms.claude;
     if (!o || o.closing || !roomClaudeActive(o)) continue;
     if (!Object.values(ms).some(m => isMember(m) && seatAlive(m))) out.push(code);
@@ -540,7 +545,6 @@ function updateRoomClaude(code: string, fn: (current: Member | null, members: Me
   return rec;
 }
 
-const setRoomClaude = (code: string, patch: RoomClaudePatch = {}): Member | null => updateRoomClaude(code, () => patch);
 
 // ---------- presence ----------
 function writePresence(code: string, name: string, state: string, detail?: string | null): boolean {
@@ -551,7 +555,7 @@ function writePresence(code: string, name: string, state: string, detail?: strin
 export {
   NAME_RE, CODE_RE, RESERVED, VERBS, ROOM_CLAUDE, ANIMALS, PRESENCE_STATES, normalizeName, defaultName, home,
   roomDir, machineId, newCode, roomExists, isHost, openRooms, orphanRooms, roomOpen, roomClosing, address,
-  readMembers, join, leave, rebindSession, setRoomClaude, updateRoomClaude, liveMembers, seatAlive, heartbeat,
+  readMembers, join, leave, rebindSession, updateRoomClaude, liveMembers, seatAlive, heartbeat,
   leaseFresh, isAlive, claudePid, resolveByPid, resolveBySession, resolveSelf, lastSeat, localSeats, adoptLocalSeats,
   MOD_LEASE_FRESH_MS, writeModLease, readModLease, modLeaseOk, deleteModLease, pruneModLeases, writePresence,
 };

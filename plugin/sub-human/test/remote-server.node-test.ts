@@ -90,7 +90,7 @@ test('remote (memory): hello with an invite gives a token once; join, beat, appe
   assert.deepEqual([joined!.machine, joined!.pubkey], [REMOTE, seatKey.publicPem(code, 'alice')], 'the key is pinned');
   assert.deepEqual(await c.beat('alice', { presence: { state: 'working', detail: 'tests' } }), { ok: true });
   const say = await c.append(signed(code, 'alice', { kind: 'say', text: 'hello from afar' }));
-  assert.equal(store.humanTrust(host.readById([say.id])[0]), 'verified');
+  assert.equal(host.trust(host.readById([say.id])[0]), 'verified');
   const note = await c.append({ from: 'alice', via: 'agent', kind: 'say', text: 'her Claude', to: 'room' });
   assert.equal(note.id, say.id + 1);
   const plan = Buffer.from('# the plan\n');
@@ -341,11 +341,11 @@ test('remote (memory): a cut mid-subscribe and a reconnect from {after, hash} re
 
 test('remote (memory): the stream ends {reason: closed} when the room\'s claude is stopped', async t => {
   const { code, host } = hostRoom(t);
-  identity.setRoomClaude(code, { job: 'j1', spawned_at: new Date().toISOString() });
+  identity.updateRoomClaude(code, () => ({ job: 'j1', spawned_at: new Date().toISOString() }));
   const c = await linked(t, host);
   const { got, sub } = collect(c, 0, store.hash12(''));
   await sub.ready;
-  identity.setRoomClaude(code, { stopped_at: new Date().toISOString() });
+  identity.updateRoomClaude(code, () => ({ stopped_at: new Date().toISOString() }));
   await h.until(() => got.ends.length, 3000, 20);
   assert.deepEqual(got.ends, ['closed']);
 });

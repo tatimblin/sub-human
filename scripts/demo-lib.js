@@ -34,7 +34,7 @@
  *                        with --quiet S, then keep at it until its background agents are done (only the room
  *                        row left in its panel) and no dialog has shown for S seconds
  *   demo-lib.js wait-holds <seat> <name> [--timeout S]   wait until <seat>'s room server holds <name>'s row
- *                                                  (rows/holds-<seat>.json, fresh)
+ *                                                  (members/<seat>/session.json holds, fresh)
  *   demo-lib.js member-field <name> <field>       print members.json[name][field] ('' if none)
  *   demo-lib.js wait-member <name> <field> --not V [--timeout S]   wait until that field differs from V
  *   demo-lib.js count --kind K [same filters]     print the count now
@@ -422,7 +422,8 @@ async function approveUntil(o, T) {
 async function waitHolds(o, T) {
   const [seat, name] = o._;
   return exit(await until(o.what || `${seat}'s room holds ${name}'s row`, T, () => {
-    const h = readJson(roomFile(path.join('rows', `holds-${seat}.json`)), null);
+    const doc = readJson(roomFile(path.join('members', seat, 'session.json')), null);
+    const h = doc && doc.holds;
     return !!h && Date.now() - Date.parse(h.at) < 90_000 && (h.members || []).includes(name);
   }));
 }

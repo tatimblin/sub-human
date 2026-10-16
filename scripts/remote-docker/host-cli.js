@@ -98,7 +98,8 @@ const cmds = {
     const s = store.open(code);
     const read = f => { try { return fs.readFileSync(path.join(s.dir, f), 'utf8'); } catch { return null; } };
     const entries = s.readAll().map(e => ({ id: e.id, from: e.from, via: e.via, kind: e.kind, to: e.to, text: e.text, machine: e.machine,
-      v2: envelope.isV2(e), trust: e.via === 'human' ? store.humanTrust(e) : null }));
+      // the store's own verdict (0.5.0 after beta.15: s.trust), else an older plugin's store.humanTrust
+      v2: envelope.isV2(e), trust: e.via === 'human' ? (s.trust ? s.trust(e) : store.humanTrust(e)) : null }));
     return { code, machine, home: HOME, dir: s.dir, log: read('log.jsonl'), members: read('members.json'), entries,
       chain: s.verifyChain(), files: fs.readdirSync(s.dir, { recursive: true }).sort() };
   },

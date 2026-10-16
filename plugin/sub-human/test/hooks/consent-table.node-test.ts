@@ -1,4 +1,4 @@
-// One log, every consent view: lib/room/consent.ts fold feeds stateLine, lane(), the rows, proposal.matrix /
+// One log, every consent view: lib/room/consent.ts fold feeds stateLine, deliver(), the rows, proposal.matrix /
 // pendingFor and the consent gate (hooks/handlers/consent.ts Pre(AskUserQuestion)); they must give the same answers.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -6,9 +6,8 @@ import { World, decision, room } from './helpers.ts';
 import type { Identity } from '../../lib/identity.ts';
 import * as proposal from '../../lib/proposal.ts';
 import * as rows from '../../lib/rows.ts';
-import * as consent from '../../lib/room/consent.ts';
 
-/** A seat as proposal, lane and rows read it. */
+/** A seat as proposal, deliver and rows read it. */
 type Me = Pick<Identity, 'code' | 'name' | 'role'>;
 
 
@@ -43,9 +42,9 @@ test('consent table: proposal, re-proposal, revise, signoffs, objection after si
   const needed = (name: string) => hashes.filter(h => want[h] && want[h][name] === 'needed');
 
   const entries = w.entries();
-  const f = consent.fold(entries);
+  const f = w.lib(() => room.fold(entries));
   assert.deepEqual([...f.proposals.keys()], [H1, H2, H3], 'order of the latest entry');
-  assert.equal(consent.fold(entries), f, 'memoized per array');
+  assert.equal(w.lib(() => room.fold(entries)), f, 'memoized: the same entries, the same fold');
 
   for (const name of people) {
     // proposal.pendingFor
@@ -55,10 +54,10 @@ test('consent table: proposal, re-proposal, revise, signoffs, objection after si
       const r = w.hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: `proposal ${h}` }] } }, { as: name });
       assert.equal(decision(r) === 'ask', needed(name).includes(h), `gate ${name} ${h.slice(0, 6)}`);
     }
-    // lane: a proposal pushes to me exactly while it awaits my answer
+    // deliver: a proposal wakes me exactly while it awaits my answer
     for (const h of hashes) {
       const e = entries.filter(x => x.kind === 'proposal' && x.hash === h).at(-1)!;
-      assert.equal(room.lane(me(name), e, entries) === 'push', needed(name).includes(h), `lane ${name} ${h.slice(0, 6)}`);
+      assert.equal(w.lib(() => room.deliver(me(name), e, { entries })) === 'wake', needed(name).includes(h), `deliver ${name} ${h.slice(0, 6)}`);
     }
     // stateLine: the open proposals (H1, H2) and my part in each
     const line = w.lib(() => room.open(w.code).stateLine(me(name), entries));
@@ -108,14 +107,14 @@ test('consent table: a note waiting for the person\'s Send is no answer in any v
     const e = entries.filter(x => x.kind === 'proposal' && x.hash === H).at(-1)!;
     return {
       pending: w.lib(() => proposal.pendingFor(me('bob'), entries)).some(p => p.hash === H),
-      lane: room.lane(me('bob'), e, entries),
+      lane: w.lib(() => room.deliver(me('bob'), e, { entries })),
       you: (/ · you: (agreed|objected|answer needed)/.exec(w.lib(() => room.open(w.code).stateLine(me('bob'), entries))) || [])[1],
-      missing: w.lib(() => proposal.matrix(consent.fold(entries).proposals.get(H)!, entries)).missing,
+      missing: w.lib(() => proposal.matrix(room.fold(entries).proposals.get(H)!, entries)).missing,
       row: w.lib(() => rows.rowText(w.code, w.code, 'bob', { entries, taskSummary: '' })),
     };
   };
   const before = views();
-  assert.deepEqual([before.pending, before.lane, before.you, before.missing], [true, 'push', 'answer needed', ['bob']]);
+  assert.deepEqual([before.pending, before.lane, before.you, before.missing], [true, 'wake', 'answer needed', ['bob']]);
   assert.ok(before.row.startsWith('⚠ your answer needed Rate limiting'), before.row);
   // bob's Send on the confirm card (the hooks' card, his answer)
   const pre = w.hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: `objection ${H}` }] } }, { as: 'bob' });
@@ -124,6 +123,6 @@ test('consent table: a note waiting for the person\'s Send is no answer in any v
   w.hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: card, tool_response: { ...card, answers: { [card.questions[0].question]: 'Send' } } }, { as: 'bob' });
   const after = views();
   assert.deepEqual([after.pending, after.missing], [false, []]);
-  assert.equal(consent.fold(w.entries()).status(H)!.state, 'blocked');
+  assert.equal(w.lib(() => room.fold(w.entries())).status(H)!.state, 'blocked');
   assert.doesNotMatch(after.row, /answer needed/);
 });

@@ -14,8 +14,8 @@
  * Not one call each: members.update and kv.update are compare-and-set loops (fn runs here on a copy; the worker
  * writes only if the document is still that copy, else fn runs again), as the store contract allows a store
  * off this machine. lock and kv.lock take the same lock files on this thread: a mutex held across a callback
- * cannot cross. readAfter filters here, watch() polls readAfter() (a reset log is not noticed), and tailer()
- * keeps its reader on the worker (its {after} is forwarded, its {fs} test hook is not).
+ * cannot cross. readAfter filters here, and tailer() keeps its reader on the worker (its {after} is forwarded, its
+ * {fs} test hook is not). trust judges here, with the keys pins() reads here.
  * append signs here (store.toPayload, with this thread's signer) and the worker only places the payload
  * (store.place), as a remote member's hook and the host do. pins() reads the pinned keys here, from readView.
  */
@@ -23,17 +23,16 @@ import { isMainThread } from 'node:worker_threads';
 import { isDeepStrictEqual } from 'node:util';
 import type { KeyObject } from 'node:crypto';
 import * as store from '../../lib/room/store.ts';
-import * as config from '../../lib/config.ts';
 import { createBridge, type Bridge } from '../../lib/remote/bridge.ts';
 import * as envelope from '../../lib/room/envelope.ts';
 import { home } from '../../lib/home.ts';
 import type { LockOpts } from '../../lib/lock.ts';
 import type {
   AppendOpts, BlobsApi, ChainCheck, ChainVerify, Entry, EntryInput, HostState, KvApi, KvUpdateOpts, Members, MembersApi,
-  Payload, PlaceOpts, Placed, ReadViewOpts, RoomStore, Tailer,
+  Payload, PlaceOpts, Placed, ReadViewOpts, RoomStore, Tailer, Trust,
 } from '../../lib/room/types.ts';
 
-const { FsRoomStore, tag, blobRef } = store;
+const { FsRoomStore, blobRef } = store;
 type FsStore = InstanceType<typeof FsRoomStore>;
 
 /** What crosses the bridge per call: the method's args, and where this thread finds the room. */
@@ -61,10 +60,13 @@ class ThreadRoomStore implements RoomStore {
   setCursor: (reader: string, id: number) => void;
   hostState: () => HostState;
   setAside: () => string | null;
+  trust: Trust;
+  _pins: { last: number; map: Map<string, KeyObject> } | null = null;
 
   constructor(code: string, { dir }: { dir?: string } = {}) {
     this.code = code;
     this._local = new FsRoomStore(code, { dir }); // this thread's view: the room's directory and its lock files
+    this.trust = store.trustOver({ code, pins: () => this.pins(), localKey: n => store.localKey(n, code), hasLocalKey: n => store.hasLocalKey(n, code) });
     const fwd = (method: string) => (...args: unknown[]) => this._call(method, args);
     this.members = {
       read: fwd('members.read'),
@@ -100,13 +102,11 @@ class ThreadRoomStore implements RoomStore {
   }
   get dir() { return this._local.dir; }
   _call(method: string, args: unknown[]) { return send(method, { code: this.code, dir: this._local.dir, home: home(), args }); }
-  _tag(entries: Entry[]): Entry[] { for (const e of entries) tag(e, this); return entries; }
 
-  readAll(): Entry[] { return this._tag(this._call('readAll', [])); }
-  readById(ids: number | string | readonly (number | string)[]): Entry[] { return this._tag(this._call('readById', [ids])); }
+  readAll(): readonly Entry[] { return this._call('readAll', []); }
+  readById(ids: number | string | readonly (number | string)[]): Entry[] { return this._call('readById', [ids]); }
   readAfter(seq: number, filterFn: (e: Entry) => boolean = () => true) { return this.readAll().filter(e => e.id > seq && filterFn(e)); }
-  since(id: number) { return this.readAfter(id); }
-  readView(opts?: ReadViewOpts): Entry[] { return this._tag(this._call('readView', [opts])); }
+  readView(opts?: ReadViewOpts): readonly Entry[] { return this._call('readView', [opts]); }
   append(entry: EntryInput, opts: AppendOpts & { queue: true }): Placed;
   append(entry: EntryInput, opts?: AppendOpts): Entry;
   append(entry: EntryInput, opts?: AppendOpts): Entry {
@@ -115,22 +115,20 @@ class ThreadRoomStore implements RoomStore {
   }
   place(payload: Payload, opts: PlaceOpts & { queue: true }): Placed;
   place(payload: Payload, opts?: PlaceOpts): Entry;
-  place(payload: Payload, opts: PlaceOpts = {}): Entry { return tag(this._call('place', [payload, { system: opts.system }]), this); }
-  pins(): Map<string, KeyObject> { return envelope.pinnedKeys(this.readView({ after: Infinity, save: false })); }
+  place(payload: Payload, opts: PlaceOpts = {}): Entry { return this._call('place', [payload, { system: opts.system }]); }
+  /** The pinned keys, read here from readView (KeyObjects do not cross the bridge), again only once the log grew. */
+  pins(): Map<string, KeyObject> {
+    const last = this.lastId();
+    if (!this._pins || this._pins.last !== last) this._pins = { last, map: envelope.pinnedKeys(this.readView({ after: Infinity })) };
+    return this._pins.map;
+  }
   lock<R>(name: string, fn: () => R, opts?: LockOpts): R { return this._local.lock(name, fn, opts); }
 
-  watch(onEntry: (e: Entry) => void, { after = 0, intervalMs = config.FOLLOW_POLL_MS }: { after?: number; intervalMs?: number } = {}) {
-    let seen = after;
-    const tick = () => { for (const e of this.readAfter(seen)) { seen = e.id; onEntry(e); } };
-    tick();
-    const t = setInterval(tick, intervalMs);
-    return () => clearInterval(t);
-  }
   tailer({ after }: { after?: number } = {}): Tailer {
     const id: number = this._call('tailer', [{ after }]);
     return {
       offset: 0, // the reader's offset lives on the worker
-      poll: () => { const r = this._call('tailer.poll', [id]); this._tag(r.entries); return r; },
+      poll: () => this._call('tailer.poll', [id]),
     };
   }
 

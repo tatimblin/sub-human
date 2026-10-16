@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { PLUGIN, newRoom, register, childEnv, spawnSleeper } from './helpers.ts';
 import * as rows from '../lib/rows.ts';
 import * as roomLib from '../lib/room.ts';
+import * as session from '../lib/room/session.ts';
 
 const RUN = path.join(PLUGIN, 'hooks', 'run.ts');
 
@@ -37,7 +38,7 @@ test('restore: /clear with a live room hold lists no row calls; without one it d
   assert.match(ctx, /already running|rows are running/);
 
   // --resume: a new claude process, so a new hold server; the old server pid is dead -> nothing is held.
-  roomLib.open(code).store.kv.set('rows/holds-alice', { pid: 999999, at: new Date().toISOString(), members: [], room: true });
+  session.put(roomLib.open(code).store, 'alice', 'holds', { pid: 999999, at: new Date().toISOString(), members: [], room: true });
   ctx = restore(alice, 'resume', 'sess-alice-new2');
   assert.match(ctx, /Agent\(\{subagent_type: "sub-human:room"/);
 });

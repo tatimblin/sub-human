@@ -67,6 +67,7 @@ import * as proposal from '../proposal.ts';
 import * as handoff from '../handoff.ts';
 import * as members from '../room/members.ts';
 import * as envelope from '../room/envelope.ts';
+import * as room from '../room.ts';
 import { RoomError, hash12 } from '../room/store.ts';
 import { machineId } from '../home.ts';
 import { FOLLOW_POLL_MS, PROPOSAL_FILE_MAX, LINK_SILENT_MS, LINK_HUMAN_RATE_MAX, LINK_BLOBS_MAX, RATE_WINDOW_MS, envMs } from '../config.ts';
@@ -129,9 +130,7 @@ function redeem(s: Session, invite: unknown, machine: string, pin: unknown): Cre
 }
 
 /** A line in the room from the room itself (via system), best effort: what the host should know about its links. */
-function roomLine(s: Session, text: string): void {
-  try { s.store.append({ kind: 'status', text }, { via: 'system', from: 'room', system: true }); } catch (e) { s.log(`sub-human serve: room line: ${e && (e as Error).message}`); }
-}
+const roomLine = (s: Session, text: string): void => room.roomLine(s.store, text, msg => s.log(`sub-human serve: ${msg}`));
 
 /** hello {login: true}: a new link for a connection over the host account's own ssh login (Session.login), else AUTH. */
 function viaLogin(s: Session, machine: string): Credential {
