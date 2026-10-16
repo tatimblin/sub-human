@@ -351,7 +351,7 @@ function watch(args: readonly string[]) {
 }
 
 // ---------- serve --stdio CODE: lib/remote/server.ts ----------
-const SERVE_FLAGS = { stdio: 0, link: 1, login: 0, via: 1, peer: 1, enroll: 1, kind: 1 } as const;
+const SERVE_FLAGS = { stdio: 0, link: 1, login: 0, via: 1, peer: 1, enroll: 1, kind: 1 } as const satisfies FlagSpec;
 
 function serve(args: readonly string[]) {
   const { flags, rest } = parseFlags(args, SERVE_FLAGS);

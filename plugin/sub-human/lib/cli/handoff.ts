@@ -68,7 +68,7 @@ function seatOf(code: RoomCode, as: string | undefined, die: CliIo['die']): stri
   return local[0];
 }
 
-const LOCATOR_FLAGS = { ssh: 1, via: 1, url: 1 } as const;
+const LOCATOR_FLAGS = { ssh: 1, via: 1, url: 1 } as const satisfies FlagSpec;
 
 /** Where the others will reach the next host: --url, or --ssh USER@HOST[:PORT] (a plain one) with --via JUMP. */
 function locatorOf(flags: Flags<typeof LOCATOR_FLAGS>, die: CliIo['die'], code: RoomCode) {
