@@ -98,11 +98,25 @@ export type Reply =
   | { kind: 'joined'; context: string; say: string; warn?: string | null; module: boolean }
   | { kind: 'classic'; outputs?: object[]; exit?: number; stderr?: string };
 
-/** A hooks/handlers/<name>.ts module, as hooks/run.ts loads it. handle: the answer (or out() lines and nothing);
- * fail: the answer after a throw, or a stdin that does not parse (raw is what came); without it the hook exits 1. */
-export interface Handler {
-  handle(input: never, raw: string): Reply | null | void | Promise<Reply | null | void>;
-  fail?(err: unknown, input: never, raw: string): Reply | null | void;
+/** A hooks/handlers/<name>.ts module, as hooks/run.ts loads it, for its stdin type I. handle: the answer (or out()
+ * lines and nothing); fail: the answer after a throw, or a stdin that does not parse (raw is what came, input {});
+ * without it the hook exits 1. Properties, not methods, so a module's own input type is checked against I. */
+export interface Handler<I> {
+  handle: (input: I, raw: string) => Reply | null | void | Promise<Reply | null | void>;
+  fail?: (err: unknown, input: I, raw: string) => Reply | null | void;
+}
+
+/** The fields every hook payload may carry (BaseHookInput, and hook_event_name), as hooks/run.ts checks them: each
+ * one present is a string. A handler's own fields are its input type's (each checked before use). */
+export interface HookBase {
+  session_id?: string;
+  transcript_path?: string;
+  cwd?: string;
+  prompt_id?: string;
+  permission_mode?: string;
+  agent_id?: string;
+  agent_type?: string;
+  hook_event_name?: string;
 }
 
 /** A card option and question, as AskUserQuestion takes them and as a call's input or response may carry them
