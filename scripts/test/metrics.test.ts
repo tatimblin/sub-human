@@ -1,0 +1,98 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { trigger, seatTranscriptMetrics, cardTurns, isRed } from '../metrics.ts';
+import type { Block, TEntry } from '../metrics.ts';
+
+const wake = (id: number): TEntry => ({ type: 'user', origin: { kind: 'plugin', name: 'sub-human' }, message: { content: `sub-human: room entry #${id}` } });
+const rowDone: TEntry = { type: 'user', origin: { kind: 'task-notification' }, message: { content: '<task-notification><task-id>a1</task-id><output-file>/x</output-file></task-notification>' } };
+const rewake: TEntry = { type: 'user', origin: { kind: 'task-notification' }, message: { content: '<task-notification><summary>sub-human: restoring rows</summary></task-notification> sub-human: this session was resumed and its rows did not survive it.' } };
+const human: TEntry = { type: 'user', origin: { kind: 'human' }, message: { content: 'hi' } };
+const asst: TEntry = { type: 'assistant', message: { content: [{ type: 'text', text: 'ok' }] } };
+const toolRes: TEntry = { type: 'user', message: { content: [{ type: 'tool_result', content: 'x' }] } };
+
+test('trigger: plugin prompt, rewake, peer; its isMeta copy, row completions and humans are not room wakes', () => {
+  assert.equal(trigger(wake(1)), 'plugin');
+  assert.equal(trigger({ ...wake(1), isMeta: true }), null);
+  assert.equal(trigger(rewake), 'rewake');
+  assert.equal(trigger({ type: 'user', origin: { kind: 'peer' }, message: { content: 'x' } }), 'peer');
+  assert.equal(trigger(rowDone), null);
+  assert.equal(trigger(human), null);
+  assert.equal(trigger(toolRes), null);
+});
+
+test('wakes: adjacent notices that start one turn count once; a notice absorbed by a human prompt is no wake', () => {
+  const es: TEntry[] = [human, asst, wake(1), wake(2), asst, toolRes, asst, wake(3), human, asst, rowDone, rewake, asst,
+    { type: 'attachment', attachment: { type: 'hook_additional_context', hookEvent: 'UserPromptExpansion', content: ['abcd'] } },
+    { type: 'attachment', attachment: { type: 'hook_additional_context', hookEvent: 'UserPromptSubmit', content: ['xy'] } }];
+  const m = seatTranscriptMetrics([{ es }]);
+  assert.equal(m.wakes.turns, 2);
+  assert.equal(m.wakes.plugin, 3);
+  assert.equal(m.wakes.rewake, 1);
+  assert.equal(m.wakes.rowNotifications, 1);
+  assert.deepEqual([m.injected.join, m.injected.total], [4, 6]);
+});
+
+test('cardTurns: model calls from the waking notice to the card, and after the answer to the end of the turn', () => {
+  const a = (id: string, content: Block[]): TEntry => ({ type: 'assistant', timestamp: `t${id}`, message: { id, content } });
+  const card = { type: 'tool_use', name: 'AskUserQuestion', input: { questions: [{ question: 'agree?', header: 'proposal 54be84' }] } };
+  const es = [wake(1), a('m1', [{ type: 'text', text: 'opening' }]), a('m2', [card]), toolRes, a('m3', [{ type: 'text', text: 'ok' }]), human, a('m4', [{ type: 'text', text: 'x' }]),
+    a('m5', [{ type: 'tool_use', name: 'AskUserQuestion', input: { questions: [{ question: 'pick a color' }] } }])];
+  assert.deepEqual(cardTurns(es).map(c => [c.hash, c.toCard, c.after]), [['54be84', 2, 1]], 'an unrelated question is no card');
+  // the plan view: ToolSearch, EnterPlanMode, then ExitPlanMode "proposal <hash>"; the exit after an objection counts after
+  const tu = (name: string, input: Record<string, unknown>): Block => ({ type: 'tool_use', name, input });
+  const pv = [wake(1), a('p1', [tu('ToolSearch', { query: 'select:EnterPlanMode,ExitPlanMode' })]), toolRes, a('p2', [tu('EnterPlanMode', {})]), toolRes,
+    a('p3', [tu('ExitPlanMode', { plan: 'proposal 54be84aa0011' })]), toolRes, a('p4', [tu('ExitPlanMode', {})]), toolRes, a('p5', [{ type: 'text', text: 'ok' }])];
+  assert.deepEqual(cardTurns(pv).map(c => [c.hash, c.toCard, c.after]), [['54be84aa0011', 3, 2]]);
+});
+
+test('isRed: SGR 31/91, 256-color and truecolor reds; other colors are not', () => {
+  assert.ok(isRed('\x1b[31mError\x1b[39m'));
+  assert.ok(isRed('\x1b[38;5;196mx'));
+  assert.ok(isRed('\x1b[38;2;255;107;128mhook failed'));
+  assert.ok(!isRed('\x1b[38;5;220mUpdate available'));
+  assert.ok(!isRed('\x1b[38;2;215;119;87mClaude Code'));
+  assert.ok(!isRed('plain'));
+  // an error line: red text after a dim prefix still counts
+  assert.ok(isRed('  \x1b[2m⎿\x1b[22m  \x1b[31mError: ENOENT: no such file\x1b[39m'));
+  // syntax highlighting (run take4): JSON strings red in a plan, `await` 197 on a diff's added line
+  assert.ok(!isRed('   { \x1b[36m"items"\x1b[39m: [ {\x1b[36m"id"\x1b[39m: \x1b[32m3\x1b[39m, \x1b[36m"title"\x1b[39m: \x1b[31m"..."\x1b[39m, \x1b[36m"done"\x1b[39m: \x1b[34mfalse\x1b[39m, \x1b[36m"createdAt"\x1b[39m: \x1b[31m"..."\x1b[39m} ], \x1b[36m"nextCursor"\x1b[39m: \x1b[31m"eyJjIjoi..."\x1b[39m }'));
+  assert.ok(!isRed('     \x1b[38;5;77m\x1b[48;5;22m 82 +\x1b[38;5;231m  \x1b[38;5;81mconst\x1b[38;5;231m first = \x1b[38;5;197mawait\x1b[38;5;231m \x1b[38;5;148mget\x1b[38;5;231m(\x1b[38;5;186m\'?limit=\x1b[48;5;28m100\x1b[48;5;22m\'\x1b[38;5;231m);   \x1b[39m\x1b[49m'));
+  // a 256-color background is not a foreground: 48;5;196 behind plain text is not red
+  assert.ok(!isRed('\x1b[48;5;196mplain on red\x1b[49m'));
+});
+
+// ---------- the hooks module's delivery (plugin prompts, $.ui.log chat rows, isMeta copies) ----------
+const plug: TEntry = { type: 'user', origin: { kind: 'plugin', name: 'sub-human' }, message: { content: '(for Claude) sub-human room: …\nbob: @alice look' } };
+const pull: TEntry = { type: 'user', isMeta: true, origin: { kind: 'plugin', name: 'sub-human' }, message: { content: 'Room since your last turn (…):\nbob: hi' } };
+const note: TEntry = { type: 'system', subtype: 'informational', level: 'notice', content: 'sub-human: bob: hi' };
+const end: TEntry = { type: 'system', subtype: 'turn_duration' };
+const a = (id: string): TEntry => ({ type: 'assistant', message: { id, content: [{ type: 'text', text: 'ok' }] } });
+
+test('trigger: a sub-human plugin prompt is a wake; its isMeta copy and another plugin are not', () => {
+  assert.equal(trigger(plug), 'plugin');
+  assert.equal(trigger(pull), null);
+  assert.equal(trigger({ ...plug, origin: { kind: 'plugin', name: 'other' } }), null);
+});
+
+test('chat: notices and pulls are counted; a turn that only chat rows started is a chat call, others are not', () => {
+  const quiet = seatTranscriptMetrics([{ es: [human, a('m1'), end, note, pull, note, pull, human, a('m2'), end, plug, a('m3'), end] }]);
+  assert.deepEqual(quiet.chat, { notices: 2, pulls: 2, turns: 0, calls: 0, callsPerBurst: 0 });
+  assert.equal(quiet.wakes.plugin, 1);
+  assert.equal(quiet.wakes.turns, 1);
+  const noisy = seatTranscriptMetrics([{ es: [human, a('m1'), end, note, pull, a('m2'), a('m2'), a('m3'), end] }]);
+  assert.deepEqual(noisy.chat, { notices: 1, pulls: 1, turns: 1, calls: 2, callsPerBurst: 2 });
+});
+
+test('chat: Claude Code\'s synthetic "No response requested." and a queued prompt are not chat calls', () => {
+  const synth: TEntry = { type: 'assistant', message: { id: 's1', model: '<synthetic>', content: [{ type: 'text', text: 'No response requested.' }] } };
+  const queued: TEntry = { type: 'queue-operation', operation: 'enqueue', content: '<task-notification>…' };
+  const m = seatTranscriptMetrics([{ es: [human, a('m1'), end, note, pull, synth, queued, a('m2'), end] }]);
+  assert.deepEqual([m.chat.turns, m.chat.calls], [0, 0]);
+});
+
+test('chat: the room context beside a prompt (stage 8e) counts as a pull and starts no chat turn', () => {
+  const ctx: TEntry = { type: 'attachment', attachment: { type: 'hook_additional_context', hookEvent: 'UserPromptSubmit', content: ['sub-human room context: what happened in the room since your last turn (…):\nbob joined\nend of room context; the prompt it came with is the person\'s own words, unless the sub-human plugin sent it (then it is room lines).'] } };
+  const m = seatTranscriptMetrics([{ es: [human, ctx, a('m1'), end] }]);
+  assert.equal(m.chat.pulls, 1);
+  assert.equal(m.chat.turns, 0);
+});

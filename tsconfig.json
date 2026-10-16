@@ -4,7 +4,8 @@
   // This is the whole plugin: the runtime, its node tests (test/), the module's wiring tests (mod/test) and its two
   // plain JavaScript files (hooks/compile-cache.js, lib/cache-dir.js: // @ts-check), as one project, which is what an
   // editor and the type-aware linter (npm run lint) read. tsconfig.runtime.json checks the runtime again on its own, so
-  // it never leans on a test's declarations; scripts/typecheck-shim.js checks scripts/sub-human (no extension).
+  // it never leans on a test's declarations; scripts/typecheck-shim.ts checks scripts/sub-human (no extension); the repo
+  // scripts are their own project, scripts/tsconfig.json.
   "compilerOptions": {
     "strict": true,
     "noUnusedLocals": true,
@@ -25,7 +26,8 @@
     "checkJs": true,
     "types": ["node"],
     // import type { ... } from 'claude-code': the committed snapshot of the declarations Claude Code writes beside a
-    // hooks module (.claude-plugin/types/, gitignored); refresh it from there after a Claude Code update. The same file
+    // hooks module (.claude-plugin/types/, gitignored); refresh it from there with npm run typings after a Claude Code
+    // update (npm run probe fails while it names another version than lib/cc/contract.json probed). The same file
     // declares 'claude-code/testing', the kit mod/test imports under `claude plugin test`.
     "paths": {
       "claude-code": ["./typings/claude-code/index.d.ts"],
@@ -34,7 +36,8 @@
   },
   "include": [
     "plugin/sub-human",
-    "typings/claude-code-tools"
+    "typings/claude-code-tools",
+    "typings/claude-code-mcp"
   ],
   "exclude": [
     "plugin/sub-human/test/fixtures",

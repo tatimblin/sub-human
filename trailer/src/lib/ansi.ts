@@ -1,6 +1,6 @@
 /**
  * ANSI (as `tmux capture-pane -ep` writes it) -> rows of styled runs. A TypeScript port of the cell logic
- * in ../../../scripts/ansi-svg.js (THEME, color256, charWidth, applySgr, parse, resolved), so the trailer's
+ * in ../../../scripts/ansi-svg.ts (THEME, color256, charWidth, applySgr, parse, resolved), so the trailer's
  * terminals carry the same colours and the same cell grid as the walkthrough's SVGs. Keep the two in step.
  */
 
@@ -44,7 +44,7 @@ export function color256(n: number, theme: Theme = THEME): string {
   return hex(g, g, g);
 }
 
-/** Terminal cell width of a code point: 0, 1 or 2 (the same wcwidth approximation as ansi-svg.js). */
+/** Terminal cell width of a code point: 0, 1 or 2 (the same wcwidth approximation as ansi-svg.ts). */
 export function charWidth(cp: number): number {
   if (cp === 0) return 0;
   if (cp < 32 || (cp >= 0x7f && cp < 0xa0)) return 0;
@@ -196,7 +196,7 @@ const sameStyle = (a: Style, b: Style) =>
 /**
  * A run of cells drawn as one span: same style, contiguous columns. `solo` runs hold one glyph that may not
  * advance exactly one cell in the bundled mono font (wide chars, symbols drawn by a fallback font), so the
- * renderer pins it to its cell box, as ansi-svg.js pins such runs with textLength.
+ * renderer pins it to its cell box, as ansi-svg.ts pins such runs with textLength.
  */
 export type Run = { col: number; cells: number; text: string; style: Style; solo: boolean };
 

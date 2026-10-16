@@ -1,4 +1,4 @@
-// Tests for lib/cc/ (the Claude Code contract and its readers) and scripts/probe-cc.js. Fixture transcript lines follow
+// Tests for lib/cc/ (the Claude Code contract and its readers) and scripts/probe-cc.ts. Fixture transcript lines follow
 // the shapes in docs/internals/cc-2.1.281.md (checked against real 2.1.281 transcripts; unchanged in 2.1.292,
 // see docs/internals/cc-2.1.292.md).
 import test from 'node:test';
@@ -16,12 +16,12 @@ import type { ProbeResult } from '../lib/cc/contract.ts';
 
 const cc = { ...env, ...transcript, ...bg, ...contract };
 
-/** scripts/probe-cc.js --json. */
+/** scripts/probe-cc.ts --json. */
 interface ProbeOut { ok: boolean; version: string; cpuMs: number; results: ProbeResult[] }
 /** A runner's answer, as jobs() and daemonStatus() read it. */
 type RunAnswer = ReturnType<NonNullable<JobsOpts['run']>>;
 
-const PROBE = path.join(import.meta.dirname, '..', '..', '..', 'scripts', 'probe-cc.js');
+const PROBE = path.join(import.meta.dirname, '..', '..', '..', 'scripts', 'probe-cc.ts');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-cc-'));
 test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 

@@ -1,0 +1,13 @@
+{
+  // npm run typecheck, the repo scripts: ESM .ts run by node's type stripping, like the plugin, under the root flags.
+  // A tsconfig.json here (not tsconfig.scripts.json at the root) because the type-aware linter types each file by the
+  // nearest tsconfig.json whose project holds it (scripts/lint.ts). The plugin files the scripts import are checked
+  // again here, as they are seen from a script, with the root project's own declarations (the plugin's $.state types,
+  // the built-in tool inputs) that a plugin file leans on.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "resolveJsonModule": true
+  },
+  "include": [".", "../plugin/sub-human/types", "../typings/claude-code-tools", "../typings/claude-code-mcp"],
+  "exclude": []
+}

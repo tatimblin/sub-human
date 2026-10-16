@@ -1,5 +1,5 @@
 # The sub-human lab (scripts/remote-docker/README.md has the diagram): a multi-machine topology for the remote rooms
-# 1.0/1.1 scenarios (scripts/remote-docker/scenarios/, `harness.js scenarios`). Project name sub-human-lab, so it
+# 1.0/1.1 scenarios (scripts/remote-docker/scenarios/, `harness.ts scenarios`). Project name sub-human-lab, so it
 # never touches the older single-devbox stack (compose.yml, sub-human-remote).
 #
 # Networks
@@ -30,7 +30,7 @@ services:
     networks: [core]
 
   devbox-old:
-    # plugin 0.5.0-beta.15 (git ref 7c97bdb, LAB_OLD_REF), baked into the image by harness.js (lab.js buildOld); no mount
+    # plugin 0.5.0-beta.15 (git ref 7c97bdb, LAB_OLD_REF), baked into the image by harness.ts (lab.ts buildOld); no mount
     image: sub-human-lab-old:${LAB_OLD_REF:-7c97bdb}
     init: true
     command: [devbox]

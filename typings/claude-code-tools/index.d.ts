@@ -32,46 +32,30 @@ declare module 'claude-code' {
       code: string
     }
     Artifact: {
-      /** One of 'publish', 'list', 'read', 'delete', 'open', 'pin', 'unpin', 'quickstart'. Omitting it means 'publish'. **Calls** in the description says what each one does and takes, except as noted here. */
-      action?: "publish" | "list" | "read" | "delete" | "open" | "pin" | "unpin" | "quickstart"
-      /** publish: the local page Claude publishes (.html, or .md only when a skill says so). For an Artifact created from an Artifact type, it is one of that Artifact's data files. With `asset: true`, it is the local file Claude uploads. A short, distinctive basename also serves as the title when nothing else gives one. */
+      /** One of 'publish', 'list', 'read', 'delete', 'pin', 'unpin'. Omitting it means 'publish'. **Calls** in the description says what each one does and takes, except as noted here. */
+      action?: "publish" | "list" | "read" | "delete" | "pin" | "unpin"
+      /** publish: the local page Claude publishes (.html, or .md only when a skill says so). A short, distinctive basename also serves as the title when nothing else gives one. */
       file_path?: string
-      /** publish with `url`: true uploads `file_path` (or each of `file_paths`) to that artifact's asset store instead of publishing it as the page — or, with `from_url` and `asset_ids` in place of `file_path`, copies those assets of another artifact into it server side (see **Calls**). */
-      asset?: boolean
-      /** publish with `asset: true` only: several local image, video, PDF, font, stylesheet or script files in place of `file_path`, up to 25 in one call, all into the artifact that `url` names; one approval covers the call, and the result lists each file's id and url, or why it was not uploaded. A CSV, Markdown, JSON or plain-text file, a symbolic or hard link, and a file outside the working directory each go in a call of their own with `file_path`. */
-      file_paths?: string[]
-      /** publish with `asset: true`, in place of `file_path`: the SOURCE artifact's claude.ai URL — one the person can open. */
-      from_url?: string
-      /** publish with `asset: true` and `from_url` only: 1–10 distinct asset ids from the source artifact (from a `scope: "assets"` listing of it, or an upload result). */
-      asset_ids?: string[]
       /** Deprecated; Claude omits it and uses `icon`. */
       favicon?: string
-      /** One short generic word for the artifact's browser-tab icon, such as chart, calendar, recipe, code or map: a plain signifier, never a product or brand name. Claude includes it on every page's first publish and omits it on a redeploy so the artifact keeps its icon, passing a new one only when the person asks. Ignored on an Artifact created from an Artifact type. */
+      /** One short generic word for the artifact's browser-tab icon, such as chart, calendar, recipe, code or map: a plain signifier, never a product or brand name. Claude includes it on every page's first publish and omits it on a redeploy so the artifact keeps its icon, passing a new one only when the person asks. */
       icon?: string
-      /** Supporting files to publish alongside the page, as a map {"published/path": "source/path" | {from, contentType} | {artifact, path, ver?} | null}. The key is what the HTML references. The source is a path on disk, or {from, contentType} when the type cannot be inferred from the published extension. An {artifact, path} source copies that Artifact's published file on the server: an Artifact the person can open, with its type carried over, never an HTML or XML document, and at most 4 source Artifact versions per publish. null removes that path on an update, and files left out are kept. A plain list publishes each file at its own spelling. Sources must be under the working directory or Claude's scratchpad directory. `preflight.js` at the artifact root is reserved: it runs against open pages when Claude publishes updates, and it must be a JavaScript module of at most 8 KiB whose default export is a function, or the publish is refused. */
+      /** Supporting files to publish alongside the page, as a map {"published/path": "source/path" | {from, contentType} | null}. The key is what the HTML references. The source is a path on disk, or {from, contentType} when the type cannot be inferred from the published extension. null removes that path on an update, and files left out are kept. A plain list publishes each file at its own spelling. Sources must be under the working directory or Claude's scratchpad directory. `preflight.js` at the artifact root is reserved: it runs against open pages when Claude publishes updates, and it must be a JavaScript module of at most 8 KiB whose default export is a function, or the publish is refused. */
       files?: Array<{
         /** Path relative to the working directory (or to `root`, which may be a folder in your scratchpad directory); the file is served at this same path next to the page. */
         path: string
         /** Servable media type; inferred from the extension for common types (css/js/json/png/…) — pass explicitly otherwise. */
         contentType?: string
       }> | {}
-      /** The base directory that relative `files` sources resolve against, like a bundler root. It never changes published paths. It is relative to the working directory, or absolute within it or within Claude's scratchpad directory. It requires `files`, except on an Artifact made from a type, where a data `file_path` under it is served at its path relative to it. */
+      /** The base directory that relative `files` sources resolve against, like a bundler root. It never changes published paths. It is relative to the working directory, or absolute within it or within Claude's scratchpad directory. It requires `files`. */
       root?: string
       /** publish only: true also pins the published artifact to the person's claude.ai sidebar once it is published. Claude passes it only when the person asked for that. A failed pin never fails the publish, and the result says so. */
       pin?: boolean
       /** list only: the maximum number of artifacts to return (default 25). */
       limit?: number
-      /** list: which listing to return. 'mine' is the default. The others are 'shared', 'all', 'types', 'files' (with `url`) and 'assets' (with `url`, continued with `after`). See **Calls**. */
-      scope?: "mine" | "shared" | "all" | "types" | "files" | "assets"
-      /** list with scope 'types' only: limits the listing to the types whose title or description match this text best, ignoring case; a type that matches less well is left out, so a narrowed listing is not the whole catalog. Claude omits it when choosing a type for a request, unless a listing made without it says more types exist than it shows. */
-      type_query?: string
-      /** list only: the name of a published Artifact type, as a 'types' listing shows it (case does not matter). The listing then shows the Artifacts made from that type instead of the person's gallery. Claude passes this or `type_url`, not both. */
-      type?: string
-      /** quickstart only (required): what is being made — 'document' (text to read or edit together), 'slides' (a deck or one slide), 'design' (a visual design or prototype on a canvas), 'other' (anything else, or unsure). */
-      intent?: "document" | "slides" | "design" | "other"
-      /** quickstart only: false when a design system's link is already in hand (it is then read with its own call) or one was declined. Omitted or true, the result lists the design systems (not for a document) and, for slides or a design, attaches the default one's README. */
-      design_systems?: boolean
-      /** publish: the fallback title for an HTML page whose file has no <title>. It is a name, not a summary, and Claude keeps it the same across redeploys. On a `type_url` create, it is the new Artifact's name: what the person called it, or a short descriptive name. If it is left out, the Artifact is named after the type. */
+      /** list: which listing to return. 'mine' is the default. The others are 'shared', 'all' and 'files' (with `url`). See **Calls**. */
+      scope?: "mine" | "shared" | "all" | "types" | "files"
+      /** publish: the fallback title for an HTML page whose file has no <title>. It is a name, not a summary, and Claude keeps it the same across redeploys. */
       title?: string
       /** publish: one sentence for the subtitle on the gallery card. */
       description?: string
@@ -81,24 +65,16 @@ declare module 'claude-code' {
       overwrite_unread?: string[]
       /** An existing artifact's claude.ai link (claude.ai/artifact/{id} or claude.ai/code/artifact/{uuid}); a chat, project or session link is not one, and `action: "list"` lists the person's artifacts. On a publish, it is the artifact to update in place, one the person owns or was given edit access to (a read of it says "writer"). Before publishing to an artifact this conversation has neither read nor published, Claude reads it (`action: "read"`) and builds on what comes back; a publish sent without that read is refused. A refusal that hands Claude the live version counts as that read: Claude merges its changes into that version and publishes the result, and never resends the refused content unchanged. Claude omits `url` for a new artifact or to redeploy a file this conversation already published. For read, delete and the other calls that take a URL, it is the artifact to act on. */
       url?: string
-      /** publish: the Artifact type to create this new, private Artifact from (a link from a 'types' listing). Claude omits `url`. Any `file_path`/`files` passed become the new Artifact's own files beside the type's fixed ones. read (no `url`): the type to describe. list: the type whose Artifacts to list, or Claude names the type with `type` instead. */
-      type_url?: string
-      /** Only with `type_url` and no `file_path`: when the new Artifact opens for the person. Claude passes "after_first_write" when it will fill the Artifact right after creating it with a files publish to its url, so the person does not first see it empty. The Artifact then opens on that first write. Otherwise Claude omits it, and the Artifact opens when created; Claude always omits it for a type whose content it writes through a connector, such as a Claude Docs document, since no publish or store write follows to open it. */
-      auto_open?: "at_create" | "after_first_write"
       /** read, for an artifact shared with the person: what Claude needs from it, which steers the isolated summary. */
       prompt?: string
       /** publish: a last-resort overwrite that **discards** the newer published version. On a conflict, Claude merges its changes onto the newer content that the rejection hands it and publishes again. Claude passes true only when the person explicitly said to discard that specific version, and the server may still refuse it over a version saved from inside the page. */
       force?: boolean
-      /** read with `path`: the directory to save into. The default is this artifact's folder in Claude's scratchpad directory, where saving needs no approval. A published file lands at <out_dir>/<published path>, and saving it outside that default folder asks the person first. An asset's file is named by its id plus its type's extension; saving it outside the default folder is an ordinary file save the person may be asked to approve. */
+      /** read with `path`: the directory to save into. The default is this artifact's folder in Claude's scratchpad directory, where saving needs no approval. A published file lands at <out_dir>/<published path>, and saving it outside that default folder asks the person first. */
       out_dir?: string
-      /** read: the file's published path inside the artifact, exactly as a 'files' listing printed it ("index.html" is the page itself). The file is saved locally, the result says where, and a small text file's contents are included. It can instead be an uploaded asset's id (32 hex characters, from an 'assets' listing or an upload result), and that asset is saved to a local file. delete: the id of the one asset to remove. */
+      /** read: the file's published path inside the artifact, exactly as a 'files' listing printed it ("index.html" is the page itself). The file is saved locally, the result says where, and a small text file's contents are included. */
       path?: string
       /** read: several published paths in place of `path`, up to 256 in one call. Each file is saved as a single `path` would be, and the result lists where each one landed, or why it could not be read, with small text files' contents included while they fit. */
       paths?: string[]
-      /** list with scope 'assets' only: the `next` value from a previous listing, passed to continue it. */
-      after?: string
-      /** read only: true returns the rendered page in cases where a read otherwise returns something else. A typed Artifact's read leaves out the type's own page. */
-      page?: boolean
       /** publish: the runtime capabilities this page declares, as {name: config}. Claude loads the `artifact-capabilities` skill before passing it. On a redeploy Claude omits the field to keep what the page has, and {} clears it. */
       capabilities?: {}
       /** publish: the artifact's runtime version. Leaving it out keeps the current version (the default), 'latest' upgrades, and an exact version pins or rolls back. It changes how the published page behaves, so Claude passes it only when the author explicitly intends that change. */
@@ -551,6 +527,8 @@ declare module 'claude-code' {
       limit?: number
       /** Page range for PDF files (e.g., "1-5", "3", "10-20"). Only applicable to PDF files. Maximum 20 pages per request. */
       pages?: string
+      /** Set to true to read a text file, or a line range of one, that is over the usual size limits, up to what still fits in your context. Only use this when you genuinely need all of it or the user asked for the whole file; otherwise read it in parts with offset and limit, or search it. */
+      allow_large?: boolean
     }
     ReadMcpResourceDirTool: {
       /** The MCP server name */
@@ -761,12 +739,6 @@ declare module 'claude-code' {
         activeForm: string
       }>
     }
-    ToolSearch: {
-      /** Query to find deferred tools. Use "select:<tool_name>" for direct selection, or keywords to search. */
-      query: string
-      /** Maximum number of results to return (default: 5) */
-      max_results: number
-    }
     WaitForMcpServers: {
       /** Server names to wait for (default: all pending) */
       servers?: string[]
@@ -786,8 +758,6 @@ declare module 'claude-code' {
       allowed_domains?: string[]
       /** Never include search results from these domains */
       blocked_domains?: string[]
-      /** "standard": the normal web search: quick and cheap; right for straightforward lookups (reference facts, official pages, documentation, well-known people, places and topics) and simple follow-up lookups. "extended": a thorough, fresh search at several times the cost and latency. */
-      mode: "standard" | "extended"
     }
     Workflow: {
       /** Self-contained workflow script. Must begin with `export const meta = { name, description, phases }` (pure literal, no computed values) followed by the script body using agent()/parallel()/pipeline()/phase(). */
@@ -883,6 +853,8 @@ declare module 'claude-code' {
       prompt: string
       worktreePath?: string
       worktreeBranch?: string
+      /** @internal False when the calling agent cannot continue this agent with a follow-up message (it holds no messaging tool); absent means it can. */
+      canContinueAgent?: boolean
     } | {
       status: "async_launched"
       isAsync?: true
@@ -900,6 +872,8 @@ declare module 'claude-code' {
       outputFile: string
       /** Whether the calling agent has Read/Bash tools to check progress */
       canReadOutputFile?: boolean
+      /** @internal False when the calling agent cannot continue this agent with a follow-up message (it holds no messaging tool); absent means it can. */
+      canContinueAgent?: boolean
       /** @internal True when this unisolated write-capable agent was launched into a working directory where another one is already running and a worktree could have been made here (drives a model-facing note; not a stable consumer field) */
       sharesCwd?: boolean
     } | {
@@ -1064,31 +1038,12 @@ declare module 'claude-code' {
       liveSubscription?: string
       verifyGuide?: string
       seededThread?: string
-      copied?: {
-        path: string
-        from_url: string
-        from_path: string
-      }[]
       files_written?: {
         path: string
         sha256: string
       }[]
       files_removed?: string[]
       pinned?: boolean
-      /** The Artifact type (and release) this Artifact was created from */
-      type?: {
-        url: string
-        release: string
-        latest?: string
-        blocked?: {
-          to?: string
-          reason: string
-          conflict_count?: number
-          paths?: string[]
-        }
-      }
-      own_files?: string[]
-      type_files?: string[]
     } | {
       artifacts: Array<{
         title: string
@@ -1196,6 +1151,12 @@ declare module 'claude-code' {
         }[]
         types_more?: boolean
         dashboard_type?: {
+          title: string
+          type_url: string
+          description?: string
+          tier?: string
+        }
+        motion_type?: {
           title: string
           type_url: string
           description?: string
@@ -1902,31 +1863,12 @@ declare module 'claude-code' {
       liveSubscription?: string
       verifyGuide?: string
       seededThread?: string
-      copied?: {
-        path: string
-        from_url: string
-        from_path: string
-      }[]
       files_written?: {
         path: string
         sha256: string
       }[]
       files_removed?: string[]
       pinned?: boolean
-      /** The Artifact type (and release) this Artifact was created from */
-      type?: {
-        url: string
-        release: string
-        latest?: string
-        blocked?: {
-          to?: string
-          reason: string
-          conflict_count?: number
-          paths?: string[]
-        }
-      }
-      own_files?: string[]
-      type_files?: string[]
     } | {
       artifacts: Array<{
         title: string
@@ -2034,6 +1976,12 @@ declare module 'claude-code' {
         }[]
         types_more?: boolean
         dashboard_type?: {
+          title: string
+          type_url: string
+          description?: string
+          tier?: string
+        }
+        motion_type?: {
           title: string
           type_url: string
           description?: string
@@ -2740,31 +2688,12 @@ declare module 'claude-code' {
       liveSubscription?: string
       verifyGuide?: string
       seededThread?: string
-      copied?: {
-        path: string
-        from_url: string
-        from_path: string
-      }[]
       files_written?: {
         path: string
         sha256: string
       }[]
       files_removed?: string[]
       pinned?: boolean
-      /** The Artifact type (and release) this Artifact was created from */
-      type?: {
-        url: string
-        release: string
-        latest?: string
-        blocked?: {
-          to?: string
-          reason: string
-          conflict_count?: number
-          paths?: string[]
-        }
-      }
-      own_files?: string[]
-      type_files?: string[]
     } | {
       artifacts: Array<{
         title: string
@@ -2872,6 +2801,12 @@ declare module 'claude-code' {
         }[]
         types_more?: boolean
         dashboard_type?: {
+          title: string
+          type_url: string
+          description?: string
+          tier?: string
+        }
+        motion_type?: {
           title: string
           type_url: string
           description?: string
@@ -3578,31 +3513,12 @@ declare module 'claude-code' {
       liveSubscription?: string
       verifyGuide?: string
       seededThread?: string
-      copied?: {
-        path: string
-        from_url: string
-        from_path: string
-      }[]
       files_written?: {
         path: string
         sha256: string
       }[]
       files_removed?: string[]
       pinned?: boolean
-      /** The Artifact type (and release) this Artifact was created from */
-      type?: {
-        url: string
-        release: string
-        latest?: string
-        blocked?: {
-          to?: string
-          reason: string
-          conflict_count?: number
-          paths?: string[]
-        }
-      }
-      own_files?: string[]
-      type_files?: string[]
     } | {
       artifacts: Array<{
         title: string
@@ -3710,6 +3626,12 @@ declare module 'claude-code' {
         }[]
         types_more?: boolean
         dashboard_type?: {
+          title: string
+          type_url: string
+          description?: string
+          tier?: string
+        }
+        motion_type?: {
           title: string
           type_url: string
           description?: string
@@ -5321,17 +5243,6 @@ declare module 'claude-code' {
         activeForm: string
       }>
     }
-    ToolSearch: {
-      matches: string[]
-      query: string
-      total_deferred_tools: number
-      pending_mcp_servers?: string[]
-      failed_mcp_servers?: {
-        name: string
-        errorCode?: string
-        error?: string
-      }[]
-    }
     WaitForMcpServers: {
       ready: boolean
       connected: string[]
@@ -5375,6 +5286,8 @@ declare module 'claude-code' {
           title: string
           /** The URL of the search result */
           url: string
+          /** Page text. PostToolUse hooks get it; tool_use_result does not. */
+          snippet?: string
         }>
       } | string>
       /** Time taken to complete the search operation */

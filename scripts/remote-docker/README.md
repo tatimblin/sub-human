@@ -18,9 +18,9 @@ checked only with `node --check`. The "today" column below is the last run befor
 
 | What | Command | Stack |
 |---|---|---|
-| The scenario suite (personas P1–P3, chaos, skew, security, 1.1) | `npm run test:remote-docker` or `node scripts/remote-docker/harness.js scenarios [--only ID[,ID]] [--out DIR] [--keep]` | `lab/compose.yml`, project `sub-human-lab` |
-| The original 11 assertions, with this Mac as the joiner: **not ported** to the PIN join yet (it linked with an sh1 invite, gone in Stage 7); `harness.js run` exits 2 saying so | `npm run test:remote-docker:mac` or `harness.js run` | `compose.yml`, project `sub-human-remote` |
-| Manual mode: real Claude sessions on this Mac join a devbox room | `harness.js up [--host-seat NAME] [--joiners A,B]`, `status`, `say [--to NAME] TEXT`, `cut`, `heal`, `latency MS`, `down` | `compose.yml` |
+| The scenario suite (personas P1–P3, chaos, skew, security, 1.1) | `npm run test:remote-docker` or `node scripts/remote-docker/harness.ts scenarios [--only ID[,ID]] [--out DIR] [--keep]` | `lab/compose.yml`, project `sub-human-lab` |
+| The original 11 assertions, with this Mac as the joiner: **not ported** to the PIN join yet (it linked with an sh1 invite, gone in Stage 7); `harness.ts run` exits 2 saying so | `npm run test:remote-docker:mac` or `harness.ts run` | `compose.yml`, project `sub-human-remote` |
+| Manual mode: real Claude sessions on this Mac join a devbox room | `harness.ts up [--host-seat NAME] [--joiners A,B]`, `status`, `say [--to NAME] TEXT`, `cut`, `heal`, `latency MS`, `down` | `compose.yml` |
 
 ## Topology (`lab/compose.yml`)
 
@@ -38,7 +38,7 @@ checked only with `node --check`. The "today" column below is the last run befor
   ==================|==================|=========================|=====    ===============|=======
      core (internal)|                  |                         |          corp (internal: no
                     v                  v                         v           route, no DNS out,
-              [devbox] <---------------+          fwd.js :7421 -> 127.0.0.1:7420    no UDP)
+              [devbox] <---------------+          fwd.ts :7421 -> 127.0.0.1:7420    no UDP)
               sshd (user host), the host room,    (the tailscaled stand-in; the       |
               plugin /plugin (ro), node 24        1.1 ws listener will sit on 7420)   |
               [devbox-old]  plugin 0.5.0-beta.15 (7c97bdb), baked in      [joiner-b] -+-> bastion:22
@@ -50,12 +50,12 @@ checked only with `node --check`. The "today" column below is the last run befor
   the internal `core` network only: a joiner reaches it through toxiproxy (the chaos-able WAN path), through the
   bastion (ProxyJump) or, for 1.1, through tls-front.
 - **devbox-old**: the same image with the previous release, plugin 0.5.0-beta.15, from `git archive 7c97bdb
-  plugin/sub-human` baked in (`lab/Dockerfile.old`, built once by `lab.js` as `sub-human-lab-old:7c97bdb`; `LAB_OLD_REF`
+  plugin/sub-human` baked in (`lab/Dockerfile.old`, built once by `lab.ts` as `sub-human-lab-old:7c97bdb`; `LAB_OLD_REF`
   for another). Its `joiner` user is the beta.15 joiner. Releases before 0.5 are not interoperated with any more.
 - **bastion**: sshd for user `jump`: `ForceCommand nologin`, `PermitTTY no`, forwarding only to `devbox:22`,
   `devbox-old:22` and `joiner-a:22`.
 - **joiner-a / joiner-b**: node 24, the plugin, an ssh client, user `joiner` with its own `SUB_HUMAN_HOME`, and
-  `NET_ADMIN` for iptables. They run the real hooks and CLI (`lab/seat-cli.js`). Each seat has a `lab/seat-proc.js`
+  `NET_ADMIN` for iptables. They run the real hooks and CLI (`lab/seat-cli.ts`). Each seat has a `lab/seat-proc.ts`
   that stands in for its `claude` process and runs the plugin's own room tail, which renews the lease and records
   every delivery with a timestamp. A joiner's ssh routing is its own `~/.ssh/NAME.conf`, passed to the link
   daemon as `SUB_HUMAN_SSH_OPTS=-F …`. Every invite says `ssh:host@devbox`; the config decides the path.
@@ -65,11 +65,11 @@ checked only with `node --check`. The "today" column below is the last run befor
 - **corp-proxy**: tinyproxy (`lab/tinyproxy.conf`), CONNECT to 443, 22001 and 22003 only. Every CONNECT is logged.
   The ssh path through it is `ProxyCommand nc -X connect -x corp-proxy:3128 %h %p`; the wss path is `HTTPS_PROXY`.
 - **tls-front**: Caddy with `tls internal` for `https://tls-front/` (`lab/Caddyfile`). It forwards everything,
-  WebSocket upgrades included, to `devbox:$LAB_WS_FWD_PORT` (7421), where `lab/fwd.js` hands the connection to the
+  WebSocket upgrades included, to `devbox:$LAB_WS_FWD_PORT` (7421), where `lab/fwd.ts` hands the connection to the
   host's `127.0.0.1:$LAB_WS_PORT` (7420), the plugin's `sub-human listen`. This is the shape of Tailscale Serve/Funnel: a third party terminates
   HTTPS and forwards to a loopback listener. The joiners trust Caddy's root through `NODE_EXTRA_CA_CERTS=/etc/lab-ca.crt`.
 
-## Scenarios (`scenarios/NN-*.js`, run in order, each from a clean reset)
+## Scenarios (`scenarios/NN-*.ts`, run in order, each from a clean reset)
 
 | id | persona | what it proves | today |
 |---|---|---|---|
@@ -82,7 +82,7 @@ checked only with `node --check`. The "today" column below is the last run befor
 | `skew` | mixed | beta.15 host ← current joiner: its line ends with a 4-digit PIN, refused here naming the host's update; current host ← beta.15 joiner: beta.15 refuses the SECRET line, and the host's invite text names the version it needs; a link made before keeps working (protocol 1..3 against 1..2 settles on 2, unit-tested); a hello as a 9.9.9 joiner (protocol 99) into the host's serve over an ssh login is refused `PROTOCOL` (reason `SKEW`) naming both versions and "The host must update" | not run (Stage 7b) |
 | `security` | all | nothing of sub-human's in the devbox account's `authorized_keys` (no door, no forced command); the bastion has no shell; homes 0700 with nothing group/world readable; no link token in any log, room file, process list or other file; PIN guessing pending (unit-tested); `/sub-human kick bob`: his link's token ends, serve stopped, bob's link stops (AUTH, typed reason) and his post is refused, bea untouched | not run (Stage 7b) |
 | `handoff` | P3 | alice (devbox) runs `/sub-human handoff bob joiner@joiner-a`; bob answers the card; joiner-a hosts at epoch 1 (both signatures in `host_changed`), devbox mirrors it; bea's re-pointed link (her own login, the invite bob's machine minted for hers) is offline with a reason naming bob and the way out while she has no login on joiner-a (`doctor --json` shows the link moved, not reached); once joiner-a's account takes her key and devbox's, each joins again over its login; posts flow, `handoff --status` shows nobody left behind, every copy converges with the old lines kept | not run (Stage 7b) |
-| `tls-front` | 1.1 | `https://tls-front/` verifies against the lab CA and answers 502 with no listener; with a stand-in listener on the devbox loopback (`lab/ws-probe.js`) the upgrade is 101 and echoes, from joiner-a and from joiner-b only through corp-proxy | pass |
+| `tls-front` | 1.1 | `https://tls-front/` verifies against the lab CA and answers 502 with no listener; with a stand-in listener on the devbox loopback (`lab/ws-probe.ts`) the upgrade is 101 and echoes, from joiner-a and from joiner-b only through corp-proxy | pass |
 | `wss` | 1.1 | the host's `sub-human listen` on 127.0.0.1:7420; `/sub-human invite --url https://tls-front` shows `/sub-human join https://tls-front/sub-human/CODE SECRET` and the PIN apart (no name, no `#`); bob and (through corp-proxy) ben type the line (the listener's key checked against it, Noise XK with a key of the link's own), then the PIN when asked; a wrong PIN is refused; alice's card lets each in, a bare `/sub-human` seats them; posts flow both ways; mirrors converge; Caddy's log holds no post text | not run (Stage 7b) |
 | `tailscale` | 1.1 | opt-in (`TS_SERVE=1` and a tailscale CLI): the plugin's real `sub-human listen` and exactly the commands `invite --web` / `invite --stop` run (`tailscale serve --bg --https=443 --set-path=/sub-human-lab-<rand> http://127.0.0.1:<port>`, then `… --set-path=… off`), with a wss + Noise_NK handshake through the node's MagicDNS name pinned to the listener's key (never Funnel, never `serve reset`). The certificate is warmed first and the connect waits 45 s (a cold ts.net name takes ~20 s). A tailnet without Serve/HTTPS fails the serve check with the plugin's message (the admin URL), within 10 s | skip |
 | `wss-resilience` | P3/P2 (1.1) | bob (direct) and ben (corp-proxy) over wss: `docker pause devbox` `LAB_WSS_SLEEP_S` (45) s, both offline, a post queued, back within 30 s, the queued post once; iptables DROP to tls-front / corp-proxy, both dead within `LAB_PING_DEADLINE_MS` and back after the heal; the listener killed and restarted, both redial; converged throughout | pass |
@@ -94,7 +94,7 @@ scenario or check is not run); **bug** (a known plugin bug; exit 0 unless `LAB_S
 
 ### Pending features and switching them on
 
-`lab.js` probes the plugin in `/plugin` once the stack is up (`seat-cli.js probe`: CLI commands, transport kinds,
+`lab.ts` probes the plugin in `/plugin` once the stack is up (`seat-cli.ts probe`: CLI commands, transport kinds,
 protocol ops, files, source markers) and writes `features.json`. A scenario that `requires` a missing feature is
 pending, and a check made with `t.expect(…, feature)` is pending instead of failing. When the feature lands, the
 probe finds it and the scenario runs. You can also force things:
@@ -133,7 +133,7 @@ redacted from every file.
   heartbeat waits.
 - The suite is idempotent: it starts the stack (or reuses one left by `--keep`), resets every machine between
   scenarios, and runs `compose down -v --remove-orphans` at the end.
-- One stack: `node scripts/remote-docker/harness.js scenarios --only p1 --keep`, then
+- One stack: `node scripts/remote-docker/harness.ts scenarios --only p1 --keep`, then
   `docker compose -p sub-human-lab -f scripts/remote-docker/lab/compose.yml exec -u joiner joiner-a bash` to look
   around. `docker compose -p sub-human-lab -f scripts/remote-docker/lab/compose.yml down -v` when done.
 - Link timings: `SUB_HUMAN_LINK_*_MS` in the harness's environment reach every machine's hooks, CLI and link daemons
@@ -143,9 +143,9 @@ redacted from every file.
 
 ## Files
 
-- `harness.js`: the entry point: `scenarios`, `run` and the manual mode.
-- `lab.js`: the lab controller and the scenario runner.
-- `scenarios/`: one file per scenario, plus `_lib.js` (ssh routes and the delivery, link-state and convergence helpers).
-- `lab/`: `compose.yml`, `Dockerfile` (the one machine image), `Dockerfile.old`, `entry.sh` (roles), `seat-cli.js` /
-  `seat-proc.js` (seats inside a machine), `fwd.js`, `ws-probe.js`, `tinyproxy.conf`, `Caddyfile`.
-- `compose.yml`, `Dockerfile` and `host-cli.js`: the original single-devbox stack (the manual mode; `run` is not ported).
+- `harness.ts`: the entry point: `scenarios`, `run` and the manual mode.
+- `lab.ts`: the lab controller and the scenario runner.
+- `scenarios/`: one file per scenario, plus `_lib.ts` (ssh routes and the delivery, link-state and convergence helpers).
+- `lab/`: `compose.yml`, `Dockerfile` (the one machine image), `Dockerfile.old`, `entry.sh` (roles), `seat-cli.ts` /
+  `seat-proc.ts` (seats inside a machine), `fwd.ts`, `ws-probe.ts`, `tinyproxy.conf`, `Caddyfile`.
+- `compose.yml`, `Dockerfile` and `host-cli.ts`: the original single-devbox stack (the manual mode; `run` is not ported).
