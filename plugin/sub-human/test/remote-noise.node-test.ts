@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import * as noise from '../lib/remote/noise.ts';
+import { must } from './support/must.ts';
 
 const VECTORS = [
   {
@@ -100,6 +101,7 @@ for (const v of VECTORS) {
     const i = noise.initiator({ rs: hex(v.init_remote_static), prologue: hex(v.init_prologue), e: noise.keyPair(hex(v.init_ephemeral)) });
     const r = noise.responder({ s: rs, prologue: hex(v.resp_prologue), e: noise.keyPair(hex(v.resp_ephemeral)) });
     const [m1, m2, ...rest] = v.messages;
+    assert.ok(m1 && m2, 'the handshake\'s two messages');
     const c1 = i.writeMessage(hex(m1.payload));
     assert.equal(c1.toString('hex'), m1.ciphertext, 'message 1');
     assert.equal(r.readMessage(c1).toString('hex'), m1.payload);
@@ -107,7 +109,7 @@ for (const v of VECTORS) {
     assert.equal(c2.toString('hex'), m2.ciphertext, 'message 2');
     assert.equal(i.readMessage(c2).toString('hex'), m2.payload);
     assert.ok(i.done && r.done);
-    if (v.handshake_hash) assert.equal(i.handshakeHash!.toString('hex'), v.handshake_hash);
+    if (v.handshake_hash) assert.equal(must(i.handshakeHash).toString('hex'), v.handshake_hash);
     assert.deepEqual(i.handshakeHash, r.handshakeHash);
     const ic = i.split(), rc = r.split();
     rest.forEach((m, k) => {
@@ -127,6 +129,7 @@ for (const v of XK_VECTORS) {
     const i = noise.initiator({ pattern: 'XK', rs: hex(v.init_remote_static), s: is, prologue: hex(v.init_prologue), e: noise.keyPair(hex(v.init_ephemeral)) });
     const r = noise.responder({ pattern: 'XK', s: rs, prologue: hex(v.resp_prologue), e: noise.keyPair(hex(v.resp_ephemeral)) });
     const [m1, m2, m3, ...rest] = v.messages;
+    assert.ok(m1 && m2 && m3, 'the handshake\'s three messages');
     const c1 = i.writeMessage(hex(m1.payload));
     assert.equal(c1.toString('hex'), m1.ciphertext, 'message 1');
     assert.equal(r.readMessage(c1).toString('hex'), m1.payload);
@@ -140,7 +143,7 @@ for (const v of XK_VECTORS) {
     assert.equal(r.readMessage(c3).toString('hex'), m3.payload);
     assert.ok(i.done && r.done);
     assert.deepEqual(r.remoteStatic, is.pub, 'message 3 carried the initiator\'s static key');
-    if (v.handshake_hash) assert.equal(i.handshakeHash!.toString('hex'), v.handshake_hash);
+    if (v.handshake_hash) assert.equal(must(i.handshakeHash).toString('hex'), v.handshake_hash);
     assert.deepEqual(i.handshakeHash, r.handshakeHash);
     const ic = i.split(), rc = r.split();
     rest.forEach((m, k) => {
@@ -166,7 +169,7 @@ test('Noise XK: message 1 of one pattern never reads as the other; a forged mess
   xk.readMessage(r.writeMessage(Buffer.from('ok')));
   const m3 = xk.writeMessage();
   const bad = Buffer.from(m3);
-  bad[5] ^= 1;
+  bad[5] = must(bad[5]) ^ 1;
   assert.throws(() => r.readMessage(bad), { code: 'NOISE' }, 'a tampered message 3');
   assert.throws(() => noise.initiator({ pattern: 'XK', rs: host.pub }), { code: 'NOISE' }, 'XK needs the initiator\'s own key');
 });
@@ -196,7 +199,7 @@ test('Noise NK transport: tamper, replay and reorder fail; a fresh handshake wor
   assert.equal(b.recv.decrypt(c1).toString(), 'one');
   assert.throws(() => b.recv.decrypt(c1), { code: 'NOISE' }, 'replayed');
   const bad = Buffer.from(c2);
-  bad[0] ^= 1;
+  bad[0] = must(bad[0]) ^ 1;
   assert.throws(() => b.recv.decrypt(bad), { code: 'NOISE' }, 'tampered');
   assert.equal(b.recv.decrypt(c2).toString(), 'two');
   assert.throws(() => a.send.encrypt(Buffer.alloc(noise.MAX_PLAINTEXT + 1)), { code: 'NOISE' });

@@ -18,7 +18,7 @@ function restore(pid: number | undefined, source: string, sid: string): string {
     env: childEnv({ CLAUDE_PID: String(pid) }), encoding: 'utf8',
   });
   assert.equal(r.status, 0, r.stderr);
-  return JSON.parse(r.stdout).hookSpecificOutput.additionalContext;
+  return (JSON.parse(r.stdout) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext;
 }
 
 const calls = (ctx: string): string[] => (ctx.match(/Agent\(\{subagent_type: "sub-human:(?:participant|room)", description: "(?!NAME")[^\n]*/g) || []);

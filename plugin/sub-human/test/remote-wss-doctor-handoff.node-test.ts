@@ -23,7 +23,14 @@ import * as noiseLib from '../lib/remote/noise.ts';
 import type { WsSpec } from '../lib/remote/types-rest.ts';
 import type { HandoffAskDoc } from '../lib/types-app.ts';
 import type { RoomCode } from '../lib/brand.ts';
+import type { Link } from '../lib/room/types.ts';
+import { must } from './support/must.ts';
 
+/** A link's web transport, asserted. */
+const wsSpec = (l: Link): WsSpec => {
+  assert.ok(l.transport.kind === 'ws' || l.transport.kind === 'wss', 'a web link');
+  return l.transport;
+};
 /** The card the consent hook's Pre rewrites AskUserQuestion's input to. */
 interface Card { questions: { question: string }[] }
 
@@ -66,27 +73,27 @@ test('doctor: the listener, a room\'s Tailscale path present or gone, Funnel\'s 
   const host = new Machine(t, 'host', { SUB_HUMAN_LISTEN_PORT: String(port), PATH: `${ts.bin}:${process.env.PATH}` });
   const remote = new Machine(t, 'remote', LINK_ENV);
   const alice = host.seat('alice'), bob = remote.seat('bob');
-  assert.equal(host.join(alice, 'alice').json!.decision, undefined);
-  const code = host.lib(() => store.listRooms()[0]);
+  assert.equal(must(host.join(alice, 'alice').json).decision, undefined);
+  const code = must(host.lib(() => store.listRooms()[0]), 'the room');
   cleanup(t, [host, remote], () => code);
   const checks = () => host.lib(() => doctor.checkListener({}));
-  assert.match(checks()[0].detail, /no room is served over the web/);
+  assert.match(must(checks()[0]).detail, /no room is served over the web/);
 
   host.join(alice, 'invite --web');
   let c = checks();
-  assert.equal(c[0].status, 'pass');
-  assert.match(c[0].detail, new RegExp(`running \\(pid \\d+\\) on 127\\.0\\.0\\.1:${port} · serves ${code}`));
-  assert.deepEqual([c[1].id, c[1].status], [`web:${code}`, 'pass'], JSON.stringify(c[1]));
-  assert.match(c[1].detail, /Tailscale Serve \(tailnet only\) https:\/\/box\.tail1a2b\.ts\.net\/sub-human\/\S+ \(path present\)/);
+  assert.equal(must(c[0]).status, 'pass');
+  assert.match(must(c[0]).detail, new RegExp(`running \\(pid \\d+\\) on 127\\.0\\.0\\.1:${port} · serves ${code}`));
+  assert.deepEqual([must(c[1]).id, must(c[1]).status], [`web:${code}`, 'pass'], JSON.stringify(must(c[1])));
+  assert.match(must(c[1]).detail, /Tailscale Serve \(tailnet only\) https:\/\/box\.tail1a2b\.ts\.net\/sub-human\/\S+ \(path present\)/);
   // the path gone behind our back (a serve reset): a failure, with the fix
   fs.writeFileSync(ts.served, '');
   c = checks();
-  assert.deepEqual([c[1].status, c[1].fix], ['fail', '/sub-human invite --web in the room (it puts the path back)']);
+  assert.deepEqual([must(c[1]).status, must(c[1]).fix], ['fail', '/sub-human invite --web in the room (it puts the path back)']);
   // Funnel: a warning that the name is public
   host.join(alice, 'invite --public');
   c = checks();
-  assert.equal(c[1].status, 'warn');
-  assert.match(c[1].detail, /Tailscale Funnel .*\(path present\)\. .*certificate-transparency/);
+  assert.equal(must(c[1]).status, 'warn');
+  assert.match(must(c[1]).detail, /Tailscale Funnel .*\(path present\)\. .*certificate-transparency/);
   // the bundle hashes the ts.net name and the room code
   const report = await host.lib(() => doctor.diagnose({ quick: true }));
   assert.ok(report.checks.some(x => x.id === 'listener'));
@@ -95,17 +102,17 @@ test('doctor: the listener, a room\'s Tailscale path present or gone, Funnel\'s 
   // the listener gone while a room is served: a failure
   host.lib(() => listener.stop());
   c = checks();
-  assert.equal(c[0].status, 'fail');
-  assert.match(c[0].fix!, /sub-human listen --start/);
+  assert.equal(must(c[0]).status, 'fail');
+  assert.match(must(must(c[0]).fix), /sub-human listen --start/);
 
   // a joiner's wss link: doctor's hello goes over the WebSocket and the pinned Noise channel
   host.lib(() => listener.start({ port }));
   await remote.joinVia(host, alice, bob, { invite: `invite --url http://127.0.0.1:${port}` });
-  const lf = remote.lib(() => links.get(code))!;
+  const lf = must(remote.lib(() => links.get(code)));
   const probe = await remote.lib(() => doctor.helloProbe(lf.transport, code, { timeoutMs: 5000 }));
   assert.equal(probe.ok, true, probe.error);
-  assert.ok(probe.reply && probe.reply.v! >= 1);
-  const wrongKey = await remote.lib(() => doctor.helloProbe({ ...lf.transport as WsSpec, hostKey: noiseLib.generateKeyPair().pub.toString('base64url') }, code, { timeoutMs: 5000 }));
+  assert.ok(probe.reply && must(probe.reply.v) >= 1);
+  const wrongKey = await remote.lib(() => doctor.helloProbe({ ...wsSpec(lf), hostKey: noiseLib.generateKeyPair().pub.toString('base64url') }, code, { timeoutMs: 5000 }));
   assert.equal(wrongKey.ok, false, 'another pinned key gets no answer');
 });
 
@@ -113,39 +120,39 @@ test('handoff to a new host reached over the web: a ws locator, invites pinning 
   const bport = await freePort();
   const A = new Machine(t, 'a', LINK_ENV), B = new Machine(t, 'b', { ...LINK_ENV, SUB_HUMAN_LISTEN_PORT: String(bport) });
   const alice = A.seat('alice'), bob = B.seat('bob');
-  assert.equal(A.join(alice, 'alice').json!.decision, undefined);
-  const code = A.lib(() => store.listRooms()[0]);
+  assert.equal(must(A.join(alice, 'alice').json).decision, undefined);
+  const code = must(A.lib(() => store.listRooms()[0]), 'the room');
   cleanup(t, [A, B], () => code);
   // bob joins over the pipe (any transport); alice asks him to host the room behind his web front
-  assert.equal((await B.joinVia(A, alice, bob)).seated.json!.decision, undefined);
-  const asked = A.join(alice, `handoff bob http://127.0.0.1:${bport}`).json!;
-  assert.match(asked.reason!, /asked bob to host room/, JSON.stringify(asked));
+  assert.equal(must((await B.joinVia(A, alice, bob)).seated.json).decision, undefined);
+  const asked = must(A.join(alice, `handoff bob http://127.0.0.1:${bport}`).json);
+  assert.match(must(asked.reason), /asked bob to host room/, JSON.stringify(asked));
   const loc = `ws://127.0.0.1:${bport}/sub-human/${code}`;
-  assert.equal(A.lib(() => handoff.hostDoc(store.open(code)))!.locator, loc);
+  assert.equal(must(A.lib(() => handoff.hostDoc(store.open(code)))).locator, loc);
   assert.ok(await h.until(() => B.lib(() => store.open(code).kv.get(handoff.ASK_DOC)), 5000, 50));
-  const id = B.lib(() => store.open(code).kv.get<HandoffAskDoc>(handoff.ASK_DOC))!.id;
+  const id = must(B.lib(() => store.open(code).kv.get<HandoffAskDoc>(handoff.ASK_DOC))).id;
   // bob's own answer on the card
   const pre = B.hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: `handoff ${id}`, options: [] }] } }, bob);
-  const card = pre.json!.hookSpecificOutput!.updatedInput as Card;
-  const q = card.questions[0].question;
+  const card = must(must(pre.json).hookSpecificOutput).updatedInput as Card;
+  const q = must(card.questions[0], 'the card\'s question').question;
   const post = B.hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: card, tool_response: { questions: card.questions, answers: { [q]: 'Host it here' } } }, bob);
-  assert.match(post.json!.systemMessage!, /is hosted on this machine now, and its Claude runs on your Claude account/, post.stderr);
+  assert.match(must(must(post.json).systemMessage), /is hosted on this machine now, and its Claude runs on your Claude account/, post.stderr);
 
   // B serves the room on its listener; the invite B minted for A pins B's listener key; A follows over ws
   const bkey = B.lib(() => listener.hostKey());
   assert.ok(B.lib(() => listener.status()).rooms[code], 'B serves the room over the web');
   const minted = A.lib(() => handoff.hostDoc(store.open(code)));
   const forA = minted && minted.invites && Object.values(minted.invites)[0];
-  if (forA) assert.equal(invites.parseInvite(forA)!.hostKey, bkey, 'the handoff invite pins the new host\'s key');
+  if (forA) assert.equal(must(invites.parseInvite(forA)).hostKey, bkey, 'the handoff invite pins the new host\'s key');
   assert.ok(await h.until(() => A.lib(() => linkSocket.status(code)).state === 'online', 10_000, 50), JSON.stringify(A.lib(() => linkSocket.status(code))));
-  const lf = A.lib(() => links.get(code))!;
-  const { clientKey, ...pinned } = lf.transport as WsSpec;
+  const lf = must(A.lib(() => links.get(code)));
+  const { clientKey, ...pinned } = wsSpec(lf);
   assert.deepEqual(pinned, { kind: 'ws', host: '127.0.0.1', port: bport, path: `/sub-human/${code}`, hostKey: bkey });
   assert.match(String(clientKey), /^[A-Za-z0-9_-]{43}$/, 'a key of the link\'s own (XK)');
   assert.ok(Object.values(B.lib(() => hostLinks.links(store.open(code)))).some(l => l.key === clientKey), 'the new host bound A\'s link to that key');
-  assert.equal(B.lib(() => store.open(code).readAll()).find(e => e.kind === 'host_changed')!.locator, loc);
+  assert.equal(must(B.lib(() => store.open(code).readAll()).find(e => e.kind === 'host_changed')).locator, loc);
   // alice posts through the new host, over ws
-  assert.equal(A.say(alice, 'over ws to the new host').json!.continue, false);
-  assert.equal(B.lib(() => store.open(code).readAll()).at(-1)!.text, 'over ws to the new host');
+  assert.equal(must(A.say(alice, 'over ws to the new host').json).continue, false);
+  assert.equal(must(B.lib(() => store.open(code).readAll()).at(-1)).text, 'over ws to the new host');
   assert.ok(await h.until(() => A.log(code) === B.log(code), 5000, 50));
 });

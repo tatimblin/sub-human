@@ -11,6 +11,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { must } from './support/must.ts';
 
 const PLUGIN = path.join(import.meta.dirname, '..');
 
@@ -40,10 +41,10 @@ function stripComments(src: string): string {
 function importsOf(rel: string, code: string): string[] {
   const out = new Set<string>();
   const re = /\b(?:from|import|require)\s*\(?\s*['"](\.{1,2}\/[^'"]+)['"]/g;
-  for (let m; (m = re.exec(code));) out.add(path.normalize(path.join(path.dirname(rel), m[1])));
+  for (let m; (m = re.exec(code));) out.add(path.normalize(path.join(path.dirname(rel), must(m[1]))));
   // createRequire's lazy loads by a joined path: require(path.join(import.meta.dirname, '…', 'x.ts'))
   const joined = /path\.join\(import\.meta\.dirname((?:\s*,\s*['"][^'"]+['"])+)\)/g;
-  for (let m; (m = joined.exec(code));) out.add(path.normalize(path.join(path.dirname(rel), ...[...m[1].matchAll(/['"]([^'"]+)['"]/g)].map(x => x[1]))));
+  for (let m; (m = joined.exec(code));) out.add(path.normalize(path.join(path.dirname(rel), ...[...must(m[1]).matchAll(/['"]([^'"]+)['"]/g)].map(x => must(x[1])))));
   return [...out];
 }
 function importers(target: string): string[] {

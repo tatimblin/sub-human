@@ -4,11 +4,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import type { TailEvent } from '../mod/core/types.ts';
+import type * as deliverMod from '../mod/core/deliver.ts';
+import type * as shimMod from '../mod/core/shim.ts';
+import type * as promptMod from '../mod/core/prompt.ts';
+import type * as constantsMod from '../mod/core/constants.ts';
+import { must } from './support/must.ts';
 
 interface Core {
-  'mod/core/deliver.ts': typeof import('../mod/core/deliver.ts');
-  'mod/core/shim.ts': typeof import('../mod/core/shim.ts');
-  'mod/core/prompt.ts': typeof import('../mod/core/prompt.ts');
+  'mod/core/deliver.ts': typeof deliverMod;
+  'mod/core/shim.ts': typeof shimMod;
+  'mod/core/prompt.ts': typeof promptMod;
 }
 const load = <K extends keyof Core>(rel: K): Promise<Core[K]> => import(path.join(import.meta.dirname, '..', rel));
 
@@ -131,7 +136,7 @@ test('deliver: the tail\'s invites event (the host\'s open invite refs) is one i
 test('deliver (item 5): a member\'s wake goes as its lines for the person, bare, and its "(for Claude)" lines as context; one with none goes framed', async () => {
   const d = await import('../mod/core/deliver.ts');
   const wake = `${d.WAKE_HEAD}\nalice: @bob just say ok\n  │ please\n(for Claude) room now: proposal a1 waiting on bob`;
-  const p = d.wakeParts(wake)!;
+  const p = must(d.wakeParts(wake));
   assert.equal(p.shown, 'alice: @bob just say ok\n  │ please');
   assert.deepEqual(p.context.split('\n'), [d.WAKE_CONTEXT, d.WAKE_HEAD, '(for Claude) room now: proposal a1 waiting on bob']);
   assert.equal(d.wakeParts(`${d.WAKE_HEAD}\n(for Claude) only for the model`), null);
@@ -139,21 +144,21 @@ test('deliver (item 5): a member\'s wake goes as its lines for the person, bare,
 
 test('stage 8e B: the room context is held for the next prompt: events merge, the newest kept under PULL_CAP, and a prompt clears only what it carried', async () => {
   const d = await load('mod/core/deliver.ts');
-  const { PULL_HEAD, PULL_END } = await import(path.join(import.meta.dirname, '..', 'mod/core/constants.ts')) as typeof import('../mod/core/constants.ts');
+  const { PULL_HEAD, PULL_END } = await import(path.join(import.meta.dirname, '..', 'mod/core/constants.ts')) as typeof constantsMod; // a dynamic import, typed
   let held = d.holdPull(null, [PULL_HEAD, 'bob joined', PULL_END].join('\n'));
   held = d.holdPull(held, [PULL_HEAD, '(2 earlier lines not shown: the room read tool has them)', 'bob: hi', PULL_END].join('\n'));
-  const ctx = d.pullContext(held)!;
+  const ctx = must(d.pullContext(held));
   assert.deepEqual(ctx.text.split('\n'), [PULL_HEAD, '(2 earlier lines not shown: the room read tool has them)', 'bob joined', 'bob: hi', PULL_END]);
   assert.equal(ctx.upTo, 2);
   // a third arrives after the prompt took its context: clearing what it carried keeps the third
   const more = d.holdPull(held, `${PULL_HEAD}\ncarol joined\n${PULL_END}`);
-  assert.deepEqual(d.pullContext(d.clearPulls(more, ctx.upTo))!.text.split('\n'), [PULL_HEAD, 'carol joined', PULL_END]);
+  assert.deepEqual(must(d.pullContext(d.clearPulls(more, ctx.upTo))).text.split('\n'), [PULL_HEAD, 'carol joined', PULL_END]);
   assert.equal(d.clearPulls(held, ctx.upTo), null);
   assert.equal(d.pullContext(null), null);
   // a session that never prompts again holds at most the cap, the oldest lines counted as left out
   let big = null;
   for (let i = 0; i < 100; i++) big = d.holdPull(big, `${PULL_HEAD}\nline ${i} ${'x'.repeat(40)}\n${PULL_END}`, 500);
-  const text = d.pullContext(big)!.text;
+  const text = must(d.pullContext(big)).text;
   assert.ok(text.length < 500 + PULL_HEAD.length + PULL_END.length + 80, String(text.length));
   assert.match(text, /\nline 99 /);
   assert.match(text, /^.*\n\(\d+ earlier lines not shown/);
