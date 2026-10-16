@@ -40,13 +40,16 @@
  *   take(want, {pid, session_id, cwd, cur, pubkey}) -> Taken   the /sub-human join's seat (lib/commands/join.ts): NAME in
  *       ROOM (code null: the one open room, sweeping orphans first, else a new one; several open is a refusal). In a room
  *       hosted elsewhere the link is started first (lib/remote/joining.ts ensureLinked). The same seat again is "already
- *       joined" (unless a re-pointed link must rebind it); another seat of this session leaves first ("switched rooms");
+ *       joined" (unless a re-pointed link must rebind it); another seat of this session leaves once the new one is taken
+ *       ("switched rooms"), never on a refused join;
  *       pubkey(code, name) is the seat key's public half (hooks/seat-key.ts, which only the join hook loads). Taken:
  *       {ok: true, me, lead, msg} (lead: the mechanics block's last line; msg: the line for the person) or
  *       {ok: false, text, refused} (a refusal, or where a join not let in yet stands). Every take first runs
  *       lib/gc.ts sweep (closed rooms, ended sessions' indexes; at most every GC_EVERY_MS, within GC_BUDGET_MS), and
  *       a seat taken sweeps its room's row maps of ended sessions (gc.sweepRows)
  *   withWhom(code, name) -> string   "with bob, carol", "4 others here" or "nobody else here yet" (the people only)
+ *   liveSeatHere(cwd, name) -> code|null   an open room where name's seat is live and was taken from cwd (another
+ *       session of this folder holds it): a bare /sub-human opens no second room for that person
  */
 
 import * as identity from './identity.ts';
@@ -80,6 +83,8 @@ interface EnterOpts {
   pubkey?: string;
   /** what log a remote seat's code reads, as its join said (lib/remote/server.ts) */
   log_v?: number;
+  /** take leaves the seat this pid held before itself, after this join worked (identity.join keepPrevious) */
+  keepPrevious?: boolean;
 }
 /** identity.join's answer; note: what the join line adds (the room's Claude starting, or why it could not). */
 type EnterResult = JoinResult & { note?: string };
@@ -107,12 +112,12 @@ function ensureRoomClaude(code: string, cwd: string | null | undefined, by: stri
   return ` · starting the room's Claude…${failed}`;
 }
 
-function enter({ code, name, role = 'member', machine = identity.machineIn(code), account, pid, session_id, cwd, pubkey, log_v }: EnterOpts): EnterResult {
+function enter({ code, name, role = 'member', machine = identity.machineIn(code), account, pid, session_id, cwd, pubkey, log_v, keepPrevious }: EnterOpts): EnterResult {
   // the seat's earlier record ended with no leave: its "left" line goes before this join's "rejoined"
   if (identity.isHost(code)) sweep(code, { name });
   // a seat on the host is the host account's (elsewhere the host's server decides: a mirror's join sends no account)
   if (account === undefined && machine && machine === identity.machineIn(code) && identity.isHost(code)) account = machine;
-  const r: EnterResult = identity.join({ code, name, role, machine, account, pid, session_id, cwd, log_v });
+  const r: EnterResult = identity.join({ code, name, role, machine, account, pid, session_id, cwd, log_v, keepPrevious });
   if (!r.ok) return r;
   if (!identity.isHost(code)) return { ...r, note: '' };
   keepWorkdir(code, cwd);
@@ -140,7 +145,8 @@ function exit(code: string, name: string, reason: string, { deadlineMs }: { dead
   try { if (!identity.liveMembers(code).length) roomClaude.reapDetached(code); } catch { /* the room Claude's watchdog closes it */ }
   // Claude Code's SessionEnd token ("prompt_input_exit", "logout", "other") is written in words, as render reads it
   const why = CC_END_REASONS.has(reason) || /^[a-z]+(?:_[a-z]+)+$/.test(reason) ? 'session ended' : reason;
-  room.open(code).append({ kind: 'member_left', text: `${name} left (${why})` }, asSystem(name));
+  // `/sub-human leave` (reason "left") is the person's own leave: nothing to add ("fresh left (left)" read oddly)
+  room.open(code).append({ kind: 'member_left', text: why === 'left' ? `${name} left` : `${name} left (${why})` }, asSystem(name));
   return true;
 }
 
@@ -227,6 +233,16 @@ function withWhom(code: string, name: string): string {
   return names.length > 3 ? `${names.length} others here` : `with ${names.join(', ')}`;
 }
 
+function liveSeatHere(cwd: string, name: string): string | null {
+  try {
+    for (const c of identity.openRooms()) {
+      const m = identity.readMembers(c)[name];
+      if (m && m.role !== 'claude' && m.cwd === cwd && identity.seatAlive(m)) return c;
+    }
+  } catch { /* unknown: no refusal */ }
+  return null;
+}
+
 /** Close rooms where only the room's Claude is left once they have been orphaned long enough (best effort; host only). */
 function sweepOrphans(): void {
   try { identity.pruneModLeases(); } catch { /* the next join retries */ }
@@ -265,12 +281,18 @@ function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd,
   // The seat's key: via=human posts and answers are signed with it, and the log pins it.
   let key: string;
   try { key = pubkey(code, name); } catch (e) { return no(`could not make ${name}'s signing key (${msgOf(e)}). Run /sub-human doctor.`); }
-  if (cur && !same) exit(cur.code, cur.name, 'switched rooms'); // exactly as exiting the session would
-  const r = enter({ code, name, pid, session_id, cwd, pubkey: key });
+  // the seat this session holds now is left only once the new one is taken: a refused join changes nothing (item 10 R2)
+  const r = enter({ code, name, pid, session_id, cwd, pubkey: key, keepPrevious: !!cur && !same });
   if (!r.ok) {
     if (isDefault && /^name taken/.test(r.error || '')) return no(`"${name}" is taken in room ${code}; pick another: /sub-human NAME${created ? '' : ` ${code}`}`);
-    return no(`could not join ${code} as ${name}: ${r.error || 'unknown error'}`);
+    // item 11 R4: the name sits in the room with a key made elsewhere (a new home or machine); a key never moves
+    if (/pinned to another key/.test(r.error || '')) {
+      const bound = !host && !!(links.get(code) || {}).token;
+      return no(`could not join ${code} as ${name}: ${name} is in this room with a key from another machine or sub-human folder, and a seat's key never moves. ${bound ? 'This connection is bound to that name: ask the host for a new invite; their card lets this machine in under a new name' : `Join under another name: /sub-human NAME ${code}`}`);
+    }
+    return no(`could not join ${code} as ${name}: ${r.error || 'unknown error'}${cur && !same ? `; you're still ${cur.name} in room ${cur.code}` : ''}`);
   }
+  if (cur && !same) exit(cur.code, cur.name, 'switched rooms'); // exactly as exiting the session would
   if (rebind) { const { rebind: _done, ...l } = links.get(code)!; links.set(code, l); } // rebind: read from it
   joining().dropJoinAs(code);
   try { gc().sweepRows(code); } catch { /* best effort: rows of ended sessions */ }
@@ -289,4 +311,4 @@ function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd,
  * module's own exports are read-only. */
 const seam = { startDetached: (o: Parameters<typeof roomClaude.startDetached>[0]) => roomClaude.startDetached(o) };
 
-export { enter, exit, sweep, back, ensureRoomClaude, seam, take, withWhom };
+export { enter, exit, sweep, back, ensureRoomClaude, seam, take, withWhom, liveSeatHere };

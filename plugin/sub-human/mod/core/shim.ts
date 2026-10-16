@@ -21,6 +21,7 @@ const CLASSIC_FIELDS: Record<string, string[] | undefined> = {
   UserPromptExpansion: ['additionalContext', 'suppressOriginalPrompt'],
   SessionStart: ['additionalContext', 'sessionTitle'],
   PostToolUse: ['additionalContext'],
+  PostToolUseFailure: ['additionalContext'],
   Stop: ['additionalContext'],
   SubagentStop: ['additionalContext'],
   TaskCompleted: [],

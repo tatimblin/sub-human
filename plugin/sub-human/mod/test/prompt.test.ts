@@ -3,7 +3,7 @@
 // checks the hooks: a peer @room is dropped before anything beneath runs, an unseated prompt starts no node, a
 // seated one runs hooks/handlers/prompt.ts with the origin in its stdin, and the shim's answer and notices reach the session.
 import { test, expect, mock } from 'claude-code/testing'
-import { SEAT, OUT, ran, scriptOf, session, start } from './support.ts'
+import { SEAT, OUT, ran, scriptOf, session, start, helloOf, seatOf } from './support.ts'
 
 const SID = 'sid-p'
 const NONCE = /^[0-9a-f]{32}$/
@@ -34,11 +34,15 @@ function world(engine: any, on: any, { hello = OUT as any, prompt = '', exitCode
   })
   on('classic.UserPromptSubmit', () => ({}))
   on('classic.UserPromptExpansion', () => ({}))
+  on('turn.start', ($: any, e: any) => ({ turnId: e.turnId }))
+  let turns = 0
   on('prompt.submit', async ($: any, e: any) => {
     const r = await engine.classic.UserPromptSubmit({ prompt: e.text, session_id: SID, permission_mode: 'default' })
     seen.classic.push(r)
     seen.entered.push(e.text)
     seen.contexts.push(e.context)
+    // as the engine does: a prompt a hook stopped or blocked starts no turn
+    if (!r.block && !r.preventContinuation) await engine.turn.start({ text: e.text, turnId: `t${++turns}` }).catch(() => {})
     return { text: e.text }
   })
   return seen
@@ -245,6 +249,25 @@ test('a member\'s typed prompt writes "working" once from the mod, delivering or
   expect(seen.stdin[0].sub_human_origin).toBe('composer') // at-room, given the origin, leaves presence to the mod
 })
 
+test('O (live verify): a typed prompt the plugin stops (an @room\'s receipt) or refuses starts no turn and writes no "working"', async ($, on) => {
+  const stopped = { continue: false, stopReason: '✓ sent', subHuman: { reviewOpen: false } }
+  const seen = world($, on, { prompt: JSON.stringify(stopped) })
+  await start($)
+  await submit($, '@room hi')
+  await new Promise(r => setTimeout(r, 20))
+  expect(seen.classic[0].preventContinuation).toBe(true)
+  expect(seen.presence.length).toBe(0)
+})
+
+test('O: a refused prompt (a block) writes no "working" either', async ($, on) => {
+  const refused = { decision: 'block', reason: '✗ not posted', subHuman: { reviewOpen: false } }
+  const seen = world($, on, { prompt: JSON.stringify(refused) })
+  await start($)
+  await submit($, '@room hi')
+  await new Promise(r => setTimeout(r, 20))
+  expect(seen.presence.length).toBe(0)
+})
+
 test('an unseated session writes no presence', async ($, on) => {
   const seen = world($, on, { hello: { ...OUT, seat: null } })
   await start($)
@@ -288,4 +311,17 @@ test('an @room typed through Remote Control that posted ("✓ sent", no systemMe
   await new Promise(r => setTimeout(r, 200))
   expect(seen.entered).toEqual(['@room hi']) // this world's engine enters every prompt; no relay after it
   expect(seen.logs.filter(l => !/didn't arrive here/.test(l))).toEqual([]) // (this world runs no tail child)
+})
+
+test('13 (K/Q): a plain prompt typed into the room\'s Claude is a stop with the hint, drawn as the hint alone: no "blocked by hook" frame, nothing put back in the input, no turn', async ($, on) => {
+  const HINT = '✗ the room\'s Claude takes no typed input; type @claude in your own session, or ask your Claude to message claude.otter-4821'
+  const seen = world($, on, { hello: helloOf(seatOf('claude', 'claude')), prompt: JSON.stringify({ continue: false, stopReason: HINT, subHuman: { reviewOpen: false } }) })
+  const append = rows(on)
+  await start($)
+  await submit($, 'please tidy the task list')
+  expect(seen.classic[0].preventContinuation).toBe(true)
+  expect(seen.classic[0].block).toBeUndefined()
+  expect(seen.classic[0].stopReason).toBe(HINT)
+  expect(await append($, `Operation stopped by hook: ${HINT}`)).toBe(HINT)
+  expect(seen.presence.length).toBe(0)
 })

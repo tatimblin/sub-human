@@ -7,8 +7,8 @@
 // prompt-origin-composer) may post: anything that can run node can claim an origin, only a lease reader the nonce.
 // Out: continue:false + "✓ sent" (the person's row stays, the model sees it next turn); a refusal of the person's own
 // typed words (no seat, nothing after the tag, the room refused it) is a stop too, with the reason (refuse); decision:
-// block + suppressOriginalPrompt only where the text must never reach the model as the person's (the room's Claude, no
-// or another origin). Failure: no origin, a bad nonce or no seat
+// block + suppressOriginalPrompt only where the text must never reach the model as the person's (no or another origin;
+// in the room's Claude a typed prompt is a stop with its hint, which the model reads as a refusal). Failure: no origin, a bad nonce or no seat
 // refuses, and the person types it again. In the room's Claude, a typed prompt is refused (it takes no typed input); with
 // no origin it runs, so a reload never loses the room Claude's wakes. It writes no presence: the module is its one writer
 // (mod/prompt.ts, through hooks/handlers/presence.ts).
@@ -52,7 +52,7 @@ const block = (reason: string, extra: Partial<HookSpecificOutput> = {}) => out({
  * outcome is unknown): a stop with the reason, as "✓ sent" is (cc CONTRACT ups-stop-frame; mod/prompt.ts draws its
  * warning row as the reason alone). A block would draw "UserPromptSubmit operation blocked by hook:" and put the
  * prompt back in the input, where refusals piled up and a later Enter sent them all. block stays for a prompt whose
- * words must not reach the model as the person's (the room's Claude, no or another origin). */
+ * words must not reach the model as the person's (no or another origin). */
 const refuse = (reason: string) => out({ continue: false, stopReason: reason, ...phoneNote(reason), hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
 
 const TAIL_BYTES = config.TRANSCRIPT_TAIL_BYTES;
@@ -87,7 +87,7 @@ function draftedByAgent(text: string, assistant: string): boolean {
 
 // ---------- the room's Claude takes no typed input ----------
 const LAUNCH = /^\/(?:sub-human:)?sub-human(?:\s|$)/;
-const roomClaudeHint = (me: Identity) => `the room's Claude takes no typed input; type @claude in your own session, or ask your Claude to message ${identity.address(me.name, me.code)}`;
+const roomClaudeHint = (me: Identity) => `✗ the room's Claude takes no typed input; type @claude in your own session, or ask your Claude to message ${identity.address(me.name, me.code)}`;
 
 /** True when no earlier prompt of this session is in its transcript (a fresh session has none, or no file). */
 function firstPrompt(input: PromptIn): boolean {
@@ -121,7 +121,9 @@ function handle(input: PromptIn): void {
   const me = whoami(input);
   if (me && me.role === 'claude') { // the origin unchecked: a forged one here only refuses more
     const refusal = roomClaudeRefusal(me, input, prompt, claimed);
-    if (refusal) return block(refusal);
+    // a stop, as members' refusals are (item 13): no "UserPromptSubmit operation blocked by hook:" frame, nothing put
+    // back in the input; the hint is the stop's reason, which the room's Claude reads too (it acts on nothing typed)
+    if (refusal) return refuse(refusal);
   }
   if (raw === null && (wake === null || !me)) return; // outside a room, @claude is an ordinary prompt
 

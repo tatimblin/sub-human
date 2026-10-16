@@ -210,7 +210,7 @@ function classify(stderr: unknown): SshProblem | null {
 }
 
 /** Why a login link cannot work until the person acts, with its reason (lib/reasons.ts), from classify; null when it may pass. */
-function loginProblem(stderr: string, spec: SshSpec, code: string): { message: string; reason: Reason } | null {
+function loginProblem(stderr: string, spec: SshSpec, code: string, { first = false }: { first?: boolean } = {}): { message: string; reason: Reason } | null {
   const where = `${spec.user}@${spec.host}`;
   const once = loginCommand(spec);
   const home = spec.remoteHome || '~/.sub-human';
@@ -226,6 +226,9 @@ function loginProblem(stderr: string, spec: SshSpec, code: string): { message: s
     case 'no-room': return { reason: 'SSH_NO_ROOM', message: `room ${code} isn't open on ${where} (nothing by that name in ${home}): check the room's name, or open it there first` };
     case 'not-hosted': return { reason: 'SSH_NO_ROOM', message: `${where} only holds a copy of room ${code}; join the machine that hosts it` };
     case 'serve-refused': return { reason: 'SSH_NO_ROOM', message: (p as { detail: string }).detail };
+    // a name ssh cannot resolve on the first connection is a typo or a missing alias, not a network blip: say so and
+    // stop (item 15); a link that connected before keeps retrying (a laptop offline resolves nothing for a while)
+    case 'dns': return first ? { reason: 'SSH_HOST_UNKNOWN', message: `ssh cannot find ${spec.host} (${(/(Could not resolve hostname[^\n]*|Name or service not known|nodename nor servname[^\n]*)/i.exec(String(stderr || '')) || ['no such host'])[0].trim()}): check the name, or use an alias from your ~/.ssh/config, then join again` } : null;
     default: return null;
   }
 }

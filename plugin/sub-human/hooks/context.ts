@@ -2,7 +2,7 @@
  * plugin/sub-human/hooks/context.ts: the mechanics block the join and the restore hand the model (<= BLOCK_MAX chars
  * with 5 members). No seat key.
  *
- *   contextBlock(me, lead?, {rowsLead, rowsText}?) -> string   the role template (skills/sub-human/member.md |
+ *   contextBlock(me, lead?, {rowsLead, rowsText, allRows}?) -> string   the role template (skills/sub-human/member.md |
  *       room-claude.md) filled for this seat, then ROWS (lib/rows.ts rowCalls, cut to the bare calls when the whole block
  *       would pass BLOCK_MAX). lead (e.g. "restored after clear") is a short last line. No roster or digest: others'
  *       words arrive through the hooks module's tail child (chat, pull, wake).
@@ -70,12 +70,13 @@ const clip = (s: string, n = CAP) => text.clip(s, n);
 /**
  * lib/rows.ts rowCalls(); '' when it fails. Lists only the rows with no live hold in this seat's hold
  * server (rows/holds-NAME.json): rows survive /clear, compaction and a re-run of /sub-human, and a second
- * spawn would duplicate them. After --resume the server is new, so all.
+ * spawn would duplicate them. After --resume the server is new, so all; all: every row (after the agent view's fork,
+ * whose rows ended with the old session while its hold server may still look live).
  */
-function rowCalls(me: Identity): string {
+function rowCalls(me: Identity, all = false): string {
   try {
     const ms = identity.readMembers(me.code);
-    const held = rows.readHolds(me.code, me.name);
+    const held = all ? null : rows.readHolds(me.code, me.name);
     const only = held ? rows.rowsNeeded(me.code, me, { members: ms, held }) : null;
     return String(rows.rowCalls(me, ms, { only }) || '').trim();
   } catch (e) {
@@ -102,10 +103,10 @@ function compactRows(text: string, me: Identity): string {
 
 export const seatTitle = (me: Identity) => identity.address(me.name, me.code);
 
-export function contextBlock(me: Identity, lead?: string, { rowsLead = '', rowsText = null }: { rowsLead?: string; rowsText?: string | null } = {}) {
+export function contextBlock(me: Identity, lead?: string, { rowsLead = '', rowsText = null, allRows = false }: { rowsLead?: string; rowsText?: string | null; allRows?: boolean } = {}) {
   const text = roleText(me.role, me);
   const tail = lead ? `\n(${lead})` : '';
-  let rs = rowsText != null ? rowsText : rowCalls(me);
+  let rs = rowsText != null ? rowsText : rowCalls(me, allRows);
   if (rs && rowsText == null) {
     const full = `${rowsLead}${rs}`;
     rs = `${text}\n\nROWS\n${full}${tail}`.length <= BLOCK_MAX ? full : compactRows(rs, me);

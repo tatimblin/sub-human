@@ -306,3 +306,14 @@ test('kick: the listener\'s child (`serve --stdio CODE --via ws --peer KEY`) nam
   assert.ok(await h.until(() => ends.length > 0 && closed, 5000, 20), `ended ${JSON.stringify(ends)}, closed ${closed}`);
   assert.deepEqual(ends, ['AUTH']);
 });
+
+test('listener (item 16): once the last room it served closed and no connection is open, it exits at once, not after LISTEN_IDLE_MS', async t => {
+  h.freshHome(t);
+  const listenerMod = await import('../lib/remote/listener.ts');
+  listenerMod.addRoom('vole-0042', { path: '/sub-human/vole-0042', url: 'https://box/sub-human/vole-0042', mode: 'url' });
+  const t0 = Date.now();
+  const r = await listenerMod.run({ port: 0, closedCheckMs: 50, idleMs: 600_000, log: () => {} });
+  assert.equal(r.why, 'the last room it served closed');
+  assert.ok(Date.now() - t0 < 5000, `${Date.now() - t0} ms`);
+  assert.deepEqual(Object.keys(listenerMod.status().rooms), []);
+});

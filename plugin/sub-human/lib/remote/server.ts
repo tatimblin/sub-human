@@ -327,6 +327,8 @@ const OPS: OpHandlers = {
     s.challenge = v >= 3 ? crypto.randomBytes(18).toString('base64url') : null;
     if (s.challenge) out.challenge = s.challenge;
     if (r.token) out.token = r.token;
+    // the one name the card let in (maybe not the one asked for: lib/remote/admission.ts taken), so the joiner's seat takes it
+    if (r.token && r.link && r.link.bound && r.link.seats.length === 1) out.as = r.link.seats[0];
     if (stopped(s.store.members.read())) out.closed = true; // additive: an older host says nothing
     return out;
   },

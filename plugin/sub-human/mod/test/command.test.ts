@@ -12,7 +12,7 @@ const SID = 'sid-c'
 /** The engine beneath: a session (its cwd), mod-hello, hooks/handlers/join.ts answering `join`, and the command itself (when the
  * hook passes it on: `ran` counts it, and a join's expansion raises classic.UserPromptExpansion as the engine does). */
 function world(engine: any, on: any, { join = {} as any, room = undefined as string | undefined } = {}) {
-  const seen = { joins: [] as any[], logs: [] as string[], ran: 0, expansions: [] as any[], hellos: 0 }
+  const seen = { joins: [] as any[], logs: [] as string[], ran: 0, expansions: [] as any[], hellos: 0, commands: [] as string[] }
   session(on, SID)
   on('session.cwd', () => ({ value: '/w' }))
   on('env.get', ($: any, e: any) => ({ value: e.name === 'SUB_HUMAN_ROOM' ? room : undefined }))
@@ -20,11 +20,18 @@ function world(engine: any, on: any, { join = {} as any, room = undefined as str
   on('process.run', ($: any, e: any) => {
     const script = scriptOf(e)
     if (script === 'mod-hello.ts') { seen.hellos++; return ran(JSON.stringify(OUT)) }
-    if (script === 'join.ts') { seen.joins.push({ stdin: JSON.parse(e.init.stdin), env: e.init.env }); return ran(typeof join === 'string' ? join : JSON.stringify(join)) }
+    if (script === 'join.ts') {
+      const stdin = JSON.parse(e.init.stdin)
+      seen.joins.push({ stdin, env: e.init.env })
+      const j = typeof join === 'function' ? join(stdin) : join
+      return ran(typeof j === 'string' ? j : JSON.stringify(j))
+    }
     return ran('')
   })
   on('classic.UserPromptExpansion', ($: any, e: any) => { seen.expansions.push(e); return { additionalContext: ['from the classic join hook'] } })
   on('command.run', async ($: any, e: any) => {
+    seen.commands.push(`${e.command} ${e.args ?? ''}`.trim())
+    if (e.command === 'rename') return { text: `Session renamed to: ${e.args}` }
     seen.ran++
     const r = await engine.classic.UserPromptExpansion({ expansion_type: 'slash_command', command_name: 'sub-human:sub-human', command_args: e.args, prompt: `/sub-human ${e.args}`.trim(), session_id: SID } as any)
     return { text: undefined, context: r.additionalContext }
@@ -62,6 +69,27 @@ test('an invite\'s line and PIN go to the status line (saved in no transcript), 
   expect(statuses.length).toBe(1)
   expect(statuses[0]).toContain('/sub-human join me@box otter-4821 SECRET')
   expect(statuses[0]).toContain(': 4821')
+})
+
+test('item 2 (D): a terminal narrower than the whole line pins the PIN and SECRET only, and the notices give the line with SECRET in its place; a cancel of that invite takes it off at once', async ($, on) => {
+  const ref = 'abcdef012345'
+  const word = '2hmejp4am3wm6rh3767dwrkeg99yyp05ry9js2b'
+  const status = `PIN 4821 · /sub-human join tristan@box.example otter-4821 ${word} --home /Users/tristan/.sub-human`
+  const pinned = { status, ms: 900000, short: `PIN 4821 · SECRET ${word}`, cut: 'invite to room otter-4821 … Send them this line with SECRET replaced by the word under the prompt:\n  /sub-human join tristan@box.example otter-4821 SECRET --home /Users/tristan/.sub-human\nand tell them the PIN apart', ref }
+  const cancel = { subHuman: { say: `invite ${ref} cancelled`, refused: false, shareable: true } }
+  const seen = world($, on, { join: (stdin: any) => (String(stdin.command_args).startsWith('invite --cancel') ? cancel : { subHuman: { say: 'invite to room otter-4821 … pinned under the prompt until 12:15 …', refused: false, shareable: false, pinned } }) })
+  const statuses: (string | undefined)[] = []
+  on('ui.status', ($: any, e: any) => { statuses.push(e.text); return { value: undefined } })
+  await start($)
+  await $.command.run({ command: 'sub-human:sub-human', args: 'invite', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 100 } } as any)
+  expect(statuses).toEqual([`PIN 4821 · SECRET ${word}`])
+  expect(seen.logs.some(l => l.includes('otter-4821 SECRET --home'))).toBe(true)
+  expect(seen.logs.join('\n')).not.toContain(word)
+  expect(seen.logs.join('\n')).not.toContain('4821 ·')
+  await $.command.run({ command: 'sub-human:sub-human', args: 'invite', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 200 } } as any)
+  expect(statuses[1]).toBe(status) // wide enough: the whole line, the PIN first
+  await typed($, 'invite --cancel')
+  expect(statuses.at(-1)).toBeUndefined()
 })
 
 test('a reply with no secret is a notice here (the model never reads it, so never repeats it), and the output row through Remote Control', async ($, on) => {
@@ -122,4 +150,24 @@ test('a member\'s session: /clear runs as usual', async ($, on) => {
   await start($)
   await $.command.run({ command: 'clear', args: '', origin: { kind: 'composer' } } as any)
   expect(seen.ran).toBe(1)
+})
+
+test('12 (J): /sub-human leave renames the session to the name alone at once (its NAME.CODE address goes with the seat), not at the next prompt', async ($, on) => {
+  const seen = world($, on, { join: { subHuman: { say: 'left otter-4821 · /sub-human joins again', refused: false, shareable: true } } })
+  const clock = mock.clock(on, { now: 0 })
+  await start($)
+  await typed($, 'leave')
+  expect(seen.commands).toEqual([]) // nothing from inside the hook: the engine refuses a command.run raised there
+  await clock.advance(200)
+  for (let i = 0; i < 20 && !seen.commands.includes('rename alice'); i++) await new Promise(r => setTimeout(r, 10))
+  expect(seen.commands).toEqual(['rename alice'])
+})
+
+test('12: a refused leave, or another command, renames nothing', async ($, on) => {
+  const seen = world($, on, { join: { subHuman: { say: '✗ this session is not in a room', refused: true, shareable: true } } })
+  await start($)
+  await typed($, 'leave')
+  await typed($, 'help')
+  await new Promise(r => setTimeout(r, 30))
+  expect(seen.commands.filter(c => c.startsWith('rename'))).toEqual([])
 })

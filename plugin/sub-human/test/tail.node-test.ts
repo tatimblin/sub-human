@@ -685,3 +685,32 @@ test('tail: a session with no seat and no join of its own says nothing (and neve
   assert.equal(asked, 0);
   assert.equal(out.join('').includes('"chat"'), false);
 });
+
+test('tail: on the host, the room\'s open invite refs each time they change, so the module takes a used, burnt, cancelled or expired one off its status line (item 2)', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  sys(code, 'member_joined', 'alice');
+  const now = Date.now();
+  const rec = (o: Record<string, unknown> = {}) => ({ v: 4, short: true, kind: 'pipe', tries: 5, created_at: new Date(now).toISOString(), expires_at: new Date(now + 15 * 60_000).toISOString(), ...o });
+  inRoom(code, r => r.store.kv.set('remote/invites', { ['a'.repeat(64)]: rec(), ['b'.repeat(64)]: rec() }));
+  const t = startNd({ sid: 'sid-a' });
+  t.advance(FAST.healthMs + 100);
+  assert.deepEqual(t.of('invites').map(e => e.open), [['aaaaaaaaaaaa', 'bbbbbbbbbbbb']]);
+  t.advance(FAST.healthMs + 100);
+  assert.equal(t.of('invites').length, 1, 'nothing changed: nothing said');
+  inRoom(code, r => r.store.kv.set('remote/invites', { ['a'.repeat(64)]: rec({ used_at: new Date(now).toISOString() }), ['b'.repeat(64)]: rec({ burnt_at: new Date(now).toISOString() }) }));
+  t.advance(FAST.healthMs + 100);
+  assert.deepEqual(t.of('invites').map(e => e.open), [['aaaaaaaaaaaa', 'bbbbbbbbbbbb'], []]);
+  t.stop();
+});
+
+test('tail (item 15): a seated session (a kicked machine whose copy still shows the seat) is told too when the host lets its new join in', () => {
+  h.freshHome();
+  const { code } = h.register('bob');
+  sys(code, 'member_joined', 'bob');
+  const text = `the host let you in to room ${code}: type /sub-human to join it as bob`;
+  const t = startNd({ sid: 'sid-b', deps: { pendingNews: () => ({ state: 'linked', code, text }) } });
+  t.advance(FAST.resolveMs * 3 + 100);
+  assert.deepEqual(t.of('chat').filter(e => e.lines.includes(text)).length, 1, 'said once');
+  t.stop();
+});

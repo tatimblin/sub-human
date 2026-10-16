@@ -771,6 +771,19 @@
    "note": "A hook's sessionTitle renames the session and writes the name to the session registry; ListAgents lists it and SendMessage `to` matches it exactly, so NAME.CODE is the address. Names are unique among live sessions: a second live session given the same name takes a suffixed one and is not reachable at NAME.CODE (cc-2.1.292.md Review spikes, S-title)."
   },
   {
+   "id": "session-fork-continued-in",
+   "section": 8,
+   "stability": "incidental",
+   "since": "2.1.296",
+   "search": [
+    "?\"fork\":\"resume\"",
+    "\"type\":\"continued-in\"",
+    "[bg] continued-in record not written: ",
+    "replace(/[^a-zA-Z0-9]/g,\"-\")"
+   ],
+   "note": "← (the agent view) backgrounds the session: Claude Code starts a bg job `claude --resume <transcript> --fork-session` (a new session id, SessionStart source \"fork\") and then appends {\"type\":\"continued-in\",\"continuedInSessionId\":NEW} to the old transcript, in the same projects directory (<configDir>/projects/<cwd, every non-alphanumeric as '-'>). The old process stays up as the agent view, its in-process rows end, and the job keeps only the daemon's env allowlist (SUB_HUMAN_HOME is dropped). session-restore moves the seat to the fork the record names (lib/identity.ts forkParent, adoptFork)."
+  },
+  {
    "id": "plugin-settings-allowlist",
    "section": 9,
    "stability": "API",
@@ -919,6 +932,23 @@
    "note": "A ui.render rewrite of UserMessage text changes only the drawing; origin, isExpanded, task and from are pinned."
   },
   {
+   "id": "render-own-prompt-reentry",
+   "section": 10,
+   "stability": "incidental",
+   "since": "2.1.296",
+   "search": [
+    "Prompt from the ",
+    " skipped: re-entry (",
+    "the plugin's own code raised it; ",
+    "useUserMessageSite"
+   ],
+   "shape": [
+    "{version:~,staticFrame:~,submittedBy:~}",
+    "case\"plugin\":return ~.name;case\"channel\":return"
+   ],
+   "note": "A plugin's own $.prompt.submit row is drawn under a \"Prompt from the <name> plugin\" label, and its ui.render is raised with that plugin itself as the origin (useUserMessageSite's submittedBy): every hook of that plugin is skipped for re-entry (\"the plugin's own code raised it\"), its .catch not asked. A plugin cannot redraw its own prompts: stage 8c's wake render never ran live, and the frame and (for Claude) lines showed as typed. mod/deliver.ts submits a member's wake asUser with its lines for the person alone, its (for Claude) lines as context."
+  },
+  {
    "id": "plugin-types-state",
    "section": 10,
    "stability": "incidental",
@@ -993,6 +1023,17 @@
     "${~.map(~).join(\"+\")}: ${~.text}"
    ],
    "note": "An answer {} (no text, no context) of a typed prompt adds no row at all: the command line is not echoed and nothing reaches the model; a {text} answer is the command's output row, shown under \"sub-human: \" (the hooking plugins' names) and read by the model with its echoed command line (local_command rows go to the API), and the model repeats it on its next turn (seen live), so the module shows replies with $.ui.log and answers {text} only through Remote Control, for a prompt and a reply that hold no secret. A prompt run by the SDK, or with pasted blocks before it, is echoed as a user row even then: the module leaves those to the classic hook."
+  },
+  {
+   "id": "rename-command",
+   "section": 10,
+   "stability": "incidental",
+   "since": "2.1.296",
+   "search": [
+    "name:\"rename\",aliases:[\"name\"],supportsNonInteractive:!0",
+    "Session renamed to: "
+   ],
+   "note": "The built-in /rename NAME renames the session (its title and the session registry's name, the SendMessage address). mod/deliver.ts runs it with $.command.run after a /sub-human leave, so the session stops answering to NAME.CODE at once rather than at the next prompt (item 12)."
   },
   {
    "id": "expansion-block-frame",

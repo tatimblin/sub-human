@@ -61,6 +61,7 @@ import * as sshkeys from './sshkeys.ts';
 import * as inviteSecret from './invite-secret.ts';
 import * as machineKey from './machine-key.ts';
 import * as protocol from './protocol.ts';
+import { SECRET_WORD } from '../../mod/core/command.ts';
 import { RoomError } from '../room/validate.ts';
 import { INVITE_TTL_MS, LINK_JOIN_WAIT_MS } from '../config.ts';
 import * as linkSocketMod from './link-socket.ts';
@@ -180,16 +181,28 @@ const until = (expiresAt: string): string => { const d = new Date(expiresAt); re
  */
 function invitePinned({ code, how, line, pin, ref, expires_at, extra = [] }: { code: string; how: string; line: string; pin: string; ref: string; expires_at: string; extra?: string[] }): Pinned {
   const at = until(expires_at);
+  const word = line.split(' ').find(w => SECRET_WORD.test(w));
   return {
-    status: `invite to ${code}${at ? ` until ${at}` : ''}: ${line}  ·  its PIN, apart from the line (say it, or send it another way): ${pin}`,
+    status: `PIN ${pin} · ${line}`,
     text: inviteText({ code, how, line: '', pin: '', ref, extra, pinned: at || 'it expires' }),
     ms: Math.max(0, Date.parse(expires_at) - Date.now()) || INVITE_TTL_MS,
+    ref,
+    ...(word ? {
+      short: `PIN ${pin} · SECRET ${word}`,
+      cut: inviteText({ code, how, line: line.split(word).join('SECRET'), pin: '', ref, extra, pinned: at || 'it expires', cut: true }),
+    } : {}),
   };
 }
 
-function inviteText({ code, how, line, pin, ref, extra = [], pinned }: { code: string; how: string; line: string; pin: string; ref: string; extra?: string[]; pinned?: string }): string {
-  const send = pinned
-    ? [`invite to room ${code} for one machine, ${how}. It works once, for ${minutes(INVITE_TTL_MS)} minutes. The line to send them and its PIN are pinned under the prompt until ${pinned}: Claude Code saves neither in this conversation. Send the line; tell them the PIN apart from it (say it, or send it another way).`]
+function inviteText({ code, how, line, pin, ref, extra = [], pinned, cut = false }: { code: string; how: string; line: string; pin: string; ref: string; extra?: string[]; pinned?: string; cut?: boolean }): string {
+  const send = pinned && cut
+    ? [
+      `invite to room ${code} for one machine, ${how}. It works once, for ${minutes(INVITE_TTL_MS)} minutes. The whole line is wider than this terminal, so only its PIN and SECRET are pinned under the prompt (until ${pinned}; Claude Code saves neither in this conversation). Send them this line with SECRET replaced by the word under the prompt:`,
+      `  ${line}`,
+      'and tell them the PIN apart from it (say it, or send it another way). In a wider terminal the whole line shows under the prompt; `sub-human invite` in a terminal outside Claude Code prints a new invite whole.',
+    ]
+    : pinned
+    ? [`invite to room ${code} for one machine, ${how}. It works once, for ${minutes(INVITE_TTL_MS)} minutes. Its PIN and the line to send them are pinned under the prompt until ${pinned}: Claude Code saves neither in this conversation. Send the line; tell them the PIN apart from it (say it, or send it another way).`]
     : [
       `invite to room ${code} for one machine, ${how}. It works once, for ${minutes(INVITE_TTL_MS)} minutes; send them this line:`,
       '',
@@ -376,7 +389,12 @@ function outcome(code: string, { waitMs = LINK_JOIN_WAIT_MS }: { waitMs?: number
 
 function joinText(code: string, name: string, o: Outcome, { tells = false }: { tells?: boolean } = {}): string {
   const lf: Partial<Link> = links().get(code) || {};
-  if (o.state === 'linked') return `the host let you in to room ${code}: type /sub-human to join it as ${name}`;
+  if (o.state === 'linked') {
+    // the card may have let this machine in under another name (its own sits in the room from another machine)
+    const as = typeof lf.join_as === 'string' ? lf.join_as : name;
+    const why = lf.join_renamed ? ` (${lf.join_renamed} is in the room from another machine, and a seat's key never moves, so the host let this machine in as ${as})` : '';
+    return `the host let you in to room ${code}: type /sub-human to join it as ${as}${why}`;
+  }
   if (o.state === 'refused') return `could not join room ${code}: ${o.reason}`;
   if (o.state === 'pin') {
     const w = lf.pin_wanted || { at: '' };

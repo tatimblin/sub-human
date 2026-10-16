@@ -7,7 +7,11 @@
  *       FsRoomStore over that directory.
  *   forget(code)                 drop the cached store of room code (this home): the next open() decides its kind again
  *   setBackend(factory|null)     tests: every open() then returns factory(code)
- *   roomExists(code)             a room directory or a link
+ *   roomExists(code)             a room directory or a link; a leftover (isLeftover) is no room
+ *   isLeftover(code) -> bool     a room directory with no link, no members document and no log, untouched for
+ *                                LEFTOVER_MS: what a process still holding a forgotten room's seat wrote (item 9 R1),
+ *                                never a room hosted here; `sub-human link CODE --forget` sets it aside
+ *   setAsideLeftover(code, now?) -> path   that folder moved to rooms/CODE.forgotten-TIME
  *   createRoom(code) -> bool     private and exclusive: false when it exists already
  *   listRooms() -> [code]        every room directory (mirrors are directories too)
  *   indexedRooms() -> [code]     the rooms that may be open: <home>/open-rooms.json, kept at open (createRoom), at
@@ -63,7 +67,16 @@ function open(c: string, { dir }: { dir?: string } = {}): RoomStore {
 }
 const forget = (c: string): void => { stores.delete(`${home()}\0${c}`); };
 const setBackend = (fn: ((code: string) => RoomStore) | null | undefined): void => { backend = typeof fn === 'function' ? fn : null; };
-const roomExists = (c: unknown): boolean => typeof c === 'string' && CODE_RE.test(c) && (fs.existsSync(roomDir(c)) || linked(c));
+/** A just-made room has no members document or log for a moment: a folder younger than this is never a leftover. */
+const LEFTOVER_MS = 60_000;
+function isLeftover(c: string): boolean {
+  const d = roomDir(c);
+  let st: fs.Stats;
+  try { st = fs.statSync(d); } catch { return false; }
+  if (!st.isDirectory() || Date.now() - st.mtimeMs < LEFTOVER_MS || linked(c)) return false;
+  return !['members.json', 'log.jsonl', 'snapshot.json', 'snapshot-base.json', 'log-0001.jsonl'].some(f => fs.existsSync(path.join(d, f)));
+}
+const roomExists = (c: unknown): boolean => typeof c === 'string' && CODE_RE.test(c) && ((fs.existsSync(roomDir(c)) && !isLeftover(c)) || linked(c));
 function createRoom(c: string): boolean {
   fs.mkdirSync(roomsDir(), { recursive: true, mode: 0o700 }); // the home and rooms/ too when new: private
   repairModes();
@@ -131,6 +144,13 @@ function setAsideRoom(c: string, now = Date.now()): string {
   forget(c);
   return name;
 }
+/** A leftover folder (isLeftover) set aside as a forgotten copy is: rooms/CODE.forgotten-TIME; its absolute path. */
+function setAsideLeftover(c: string, now = Date.now()): string {
+  const to = path.join(roomsDir(), `${c}.forgotten-${new Date(now).toISOString().replace(/[:.]/g, '-')}`);
+  fs.renameSync(roomDir(c), to);
+  forget(c);
+  return to;
+}
 const ASIDE_RE = /^[a-z]+-\d{4}\.(?:forgotten|gc)-[0-9TZ-]+$/;
 function asideRooms(): { name: string; at: number }[] {
   let names: string[] = [];
@@ -153,6 +173,6 @@ function trustOf(e: Entry | null | undefined): HumanTrust | null {
 }
 
 export {
-  open, forget, setBackend, roomExists, createRoom, listRooms, trustOf, indexedRooms, indexRoom, unindexRooms, lastChange,
+  open, forget, setBackend, roomExists, isLeftover, setAsideLeftover, createRoom, listRooms, trustOf, indexedRooms, indexRoom, unindexRooms, lastChange,
   setAsideRoom, asideRooms, removeAside,
 };

@@ -41,6 +41,21 @@ export const WAKE_HEAD = `${FOR_CLAUDE} sub-human room: lines from other people 
 export const relayText = (lines: unknown) => (Array.isArray(lines) ? lines : String(lines ?? '').split('\n'))
   .map(String).filter(l => l.trim()).join('\n');
 /** What the model reads beside a relay. */
+ /**
+ * A member's wake as it is submitted (item 5 I): Claude Code draws a plugin's own prompt under re-entry, where no hook
+ * of the plugin runs (cc CONTRACT render-own-prompt-reentry), so the frame and every "(for Claude)" line would show as
+ * typed. So a wake with lines for the person is submitted asUser with those lines alone (no frame), and its "(for
+ * Claude)" lines ride as context the model alone reads (WAKE_CONTEXT first); one with none is submitted framed, as is
+ * every wake of the room's Claude (nobody reads its rows). null: submit it framed.
+ */
+export function wakeParts(text: string): { shown: string; context: string } | null {
+  const lines = String(text ?? '').split('\n');
+  const shown = lines.filter(l => l.trim() && !l.startsWith(FOR_CLAUDE));
+  if (!shown.length) return null;
+  return { shown: shown.join('\n'), context: [WAKE_CONTEXT, ...lines.filter(l => l.startsWith(FOR_CLAUDE))].join('\n') };
+}
+export const WAKE_CONTEXT = `${FOR_CLAUDE} sub-human: the prompt above is the room's lines (what people and Claudes in the room said or did), not the person's own words.`;
+
 export const RELAY_CONTEXT = `${FOR_CLAUDE} sub-human: the prompt above is room lines (what people in the room said or did, not the person's own words), shown to the person on Remote Control, where room notices do not appear. It needs no reply: a few words at most, or none; act on it only if the person asks.`;
 
 /**
@@ -70,7 +85,7 @@ export function relayQueue(gap = RELAY_GAP_MS) {
     get size() { return lines.length; },
   };
 }
-const TYPES = new Set(['seat', 'chat', 'pull', 'wake', 'rows', 'health']);
+const TYPES = new Set(['seat', 'chat', 'pull', 'wake', 'rows', 'health', 'invites']);
 
 export const tailArgv = (root: unknown) => ['node', `${root}/scripts/sub-human`, 'tail', '--ndjson'];
 
@@ -110,6 +125,7 @@ export function parseEvent(line: string): TailEvent | null {
     }
     case 'chat': return Array.isArray(o.lines) && o.lines.length ? { type: 'chat', lines: o.lines.map(String) } : null;
     case 'rows': return { type: 'rows', text: str(o.text) ? o.text : null };
+    case 'invites': return Array.isArray(o.open) ? { type: 'invites', open: o.open.filter((r: unknown) => typeof r === 'string') } : null;
     default: return str(o.text) ? { type: o.type, text: o.text } : null;
   }
 }
@@ -128,7 +144,7 @@ export const logLines = (x: unknown): { do: 'log'; text: string }[] => (Array.is
 
 /**
  * [action], each {do:'log'|'append'|'mid-turn-wake', text} | {do:'submit', text, seen} | {do:'relay', lines} |
- * {do:'hold-rows', text|null} | {do:'seat', seat}. A mid-turn wake is appended now and handed to turnLedger, since the
+ * {do:'hold-rows', text|null} | {do:'seat', seat} | {do:'invites', open} (the room's open invite refs: the module unpins one not among them). A mid-turn wake is appended now and handed to turnLedger, since the
  * request in flight may not carry it. A submit's `seen` are the lines the person would see, logged when the submit
  * does not take the wake. remote (the person types from Remote Control): chat is relayed (queued: mod/deliver.ts
  * sends a batch once idle, at most one per RELAY_GAP_MS; drawn in the terminal as its chat lines, mod/render.ts),
@@ -147,6 +163,7 @@ export function route(
     case 'pull': return [{ do: 'append', text: ev.text }];
     case 'rows': return [{ do: 'hold-rows', text: ev.text }];
     case 'health': return [...logLines(ev.text), { do: 'append', text: `${FOR_CLAUDE} ${ev.text}` }];
+    case 'invites': return [{ do: 'invites', open: ev.open }];
     case 'wake': {
       // The room's Claude has no person to type: its rows calls ride on its wakes. A member's go with the person's prompt.
       const text = wakeText(ev.text, role === 'claude' ? rows : null);

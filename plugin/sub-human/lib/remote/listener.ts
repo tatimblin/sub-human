@@ -35,7 +35,8 @@
  *       or X-Forwarded-For), HANDSHAKE_MS to finish it, Noise-sized frames; after it, the serve child closes a
  *       session that made no link within LINK_AUTH_WAIT_MS (lib/remote/server.ts). Every
  *       closedCheckMs it drops rooms that closed (or are gone) and turns their Tailscale path off (only that path);
- *       with no room left for LISTEN_IDLE_MS and no connection it exits; it exits at once (checked every
+ *       once the last room it served closed and no connection is open it exits; with no room for LISTEN_IDLE_MS (one
+ *       started with none) and no connection, too; it exits at once (checked every
  *       HOME_CHECK_MS, 2 s) when its home directory is gone, or the state file names another live listener. It survives a sleep: a socket bound to
  *       loopback outlives one, a dead peer is found by the WebSocket ping (15 s) and the child's own LINK_SILENT_MS
  *   DEFAULT_PORT                   7420; defaultPort() -> SUB_HUMAN_LISTEN_PORT, else DEFAULT_PORT
@@ -313,11 +314,16 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
   const sweep = setInterval(() => {
     let rooms: Record<string, ServedRoom> = {};
     try { rooms = read().rooms || {}; } catch { /* next time */ }
+    let dropped = false;
     for (const [code, rec] of Object.entries(rooms)) {
       if (roomLive(code)) continue;
       log(`room ${code} closed: no longer served`);
       untailscale(removeRoom(code) || rec, log);
+      dropped = true;
     }
+    // the last room it served closed and nobody is connected: nothing to wait for (item 16; a listener started with
+    // no room still waits LISTEN_IDLE_MS for one)
+    if (dropped && !Object.keys(read().rooms || {}).length && !conns) return end('the last room it served closed');
     if (Object.keys(read().rooms || {}).length || conns) idleSince = Date.now();
     else if (Date.now() - idleSince >= idleMs) end('no room is served over the web any more');
   }, Math.min(closedCheckMs, idleMs));

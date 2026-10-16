@@ -261,3 +261,32 @@ test('the PIN\'s backoff and the card\'s wait take their SUB_HUMAN_* overrides o
   assert.equal(adm.label, 'x'.repeat(24), 'the card and the room line show 24 characters of it');
   assert.equal(Date.parse(adm.expires_at) - (now + 60_000), config.ADMIT_TTL_MS, 'the card\'s real wait');
 });
+
+test('R4 (live verify, verify6/11): a name that sits in the room from another machine: the card offers "Let in as NAME2" only, the link is bound to it, and the joiner\'s hello learns it', async t => {
+  const { code, host } = hostRoom(t);
+  const old = machine(), carol = machine();
+  const at = new Date().toISOString();
+  host.members.update(ms => ({ ...ms, carol: { name: 'carol', role: 'member', machine: old.id, joined_at: at, seen_at: at } }));
+  const r = mint(host);
+  const as = { name: 'carol', label: 'carols-new-mbp' };
+  const held = await refused(dial(t, host, carol, { invite: r.word, pin: r.pin, as, checkHost: checkHost(code, r.word) }));
+  assert.equal(held.reason, 'ADMIT_WAITING');
+  const req = admission.pending(code)[0];
+  assert.equal(admission.taken(code, req), 'carol2');
+  const options = admission.card(req, code).questions[0].options.map(o => o.label);
+  assert.deepEqual(options, ['Let in as carol2', admission.REFUSE], 'never "Let in" as the taken name: that seat would be refused');
+  assert.throws(() => admission.letIn(code, req.ref, { by: 'alice', as: 'carol' }), /can be let in as carol2 only/);
+  const res = admission.letIn(code, req.ref, { by: 'alice', as: 'carol2' });
+  assert.match(res.text, /as carol2 only/);
+  const c = await dial(t, host, carol, { invite: r.word, as, checkHost: checkHost(code, r.word) });
+  assert.ok(c.token);
+  assert.equal(c.as, 'carol2', 'the hello says the name the link is bound to');
+  const link = Object.values(hostLinks.links(host)).find(l => l.machine === carol.id)!;
+  assert.deepEqual(link.seats, ['carol2']);
+  // the same machine as the seat's (a rejoin from its own home): the plain card, as before
+  const r2 = mint(host);
+  await refused(dial(t, host, old, { invite: r2.word, pin: r2.pin, as, checkHost: checkHost(code, r2.word) }));
+  const req2 = admission.pending(code).find(q => q.machine === old.id)!;
+  assert.equal(admission.taken(code, req2), null);
+  assert.equal(admission.card(req2, code).questions[0].options[0].label, admission.LET_IN);
+});

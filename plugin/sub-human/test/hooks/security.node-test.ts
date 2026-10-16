@@ -144,7 +144,7 @@ test('join pins the seat key in member_joined: the keyed room never counts an un
   const before = lines(w).length;
   const again = joinAs('bob');
   assert.equal(again.json!.decision, 'block', again.stderr);
-  assert.match(again.json!.reason!, /bob is pinned to another key in room .*a lost key means a new name/);
+  assert.match(again.json!.reason!, /could not join .* as bob: bob is in this room with a key from another machine or sub-human folder, and a seat's key never moves\. Join under another name: \/sub-human NAME /);
   assert.equal(lines(w).length, before, 'no member_joined with the new key');
   assert.ok(w.members().bob.left_at, 'the seat is not held');
 });

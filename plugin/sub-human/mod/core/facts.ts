@@ -41,6 +41,16 @@ export function factsBook(maxAgents = 64) {
   };
 }
 
+/** An ExitPlanMode the person refused, as the PostToolUseFailure payload consent reads (hooks/handlers/consent.ts
+ * rejectedExit): the refusal's text as `error`; the mode is plan (the dialog was the plan view). */
+export function rejectedPayload(e: { tool_use_id?: unknown }, { sid, cwd, facts, text }: { sid: unknown; cwd?: unknown; facts: SessionFacts; text: string }) {
+  return {
+    hook_event_name: 'PostToolUseFailure', session_id: sid, ...(typeof cwd === 'string' ? { cwd } : {}),
+    ...(facts.transcript_path ? { transcript_path: facts.transcript_path } : {}), permission_mode: 'plan',
+    tool_name: 'ExitPlanMode', tool_input: {}, tool_use_id: e.tool_use_id, error: text,
+  };
+}
+
 /** The keys a tool call carries beside the tool's own arguments (ToolCallReserved, AgentLoop). */
 const RESERVED = new Set(['tool', 'tool_use_id', 'agentId', 'consent']);
 

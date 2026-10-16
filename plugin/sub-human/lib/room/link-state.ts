@@ -25,8 +25,10 @@
  *                detail?, dead?, source: 'state-file'|'link-doc'}; lastReason: lastError's typed reason (lib/reasons.ts)
  *   normalize(state, detail?) -> STATES member   a word of the vocabulary (detail fork or stopped wins; unknown: 'offline')
  *   indicator(st, {now}?) -> string  the compact segment: "⇄ online", "… connecting", "… connecting (3)",
- *       "✕ offline 2m · 2 queued", "✕ stopped", "✕ out of step: /sub-human doctor"; '' for null
+ *       "✕ offline 2m · 2 queued", "✕ stopped" ("✕ removed by the host" after a kick), "✕ out of step: /sub-human
+ *       doctor"; '' for null
  *   isDown(st) -> bool               connecting after a first failure, offline, fork or stopped: worth leading a row with
+ *   stoppedForGood(st) -> bool       stopped: who this copy shows in the room is stale (the row shows no count)
  *   stateFile(code) -> string        <home>/links/<code>.state.json
  *   STATES                           Set of the five words
  */
@@ -105,11 +107,16 @@ function indicator(st: Partial<LinkState> | null | undefined, { now = Date.now()
   const queued = (st.queued ?? 0) > 0 ? ` · ${st.queued} queued` : '';
   if (state === 'online') return '⇄ online';
   if (state === 'fork') return '✕ out of step: /sub-human doctor';
-  if (state === 'stopped') return `✕ stopped${queued}`;
+  if (state === 'stopped') return `✕ ${REMOVED.has(String(st.lastReason)) ? 'removed by the host' : 'stopped'}${queued}`;
   if (state === 'connecting') return (st.attempt ?? 0) > 1 ? `… connecting (${st.attempt})${queued}` : `… connecting${queued}`;
   const t = st.since ? ago(st.since, now) : '';
   return `✕ offline${t ? ` ${t}` : ''}${queued}`;
 }
+
+/** A stop for good because the host ended this machine's link (`/sub-human kick`, a revoked key or token). */
+const REMOVED: ReadonlySet<string> = new Set(['LINK_REVOKED', 'KEY_REVOKED', 'TOKEN_UNKNOWN']);
+/** The link is stopped for good: what this copy shows of the room (who is here) is no longer the room's. */
+const stoppedForGood = (st: Partial<LinkState> | null | undefined): boolean => !!st && normalize(st.state, st.detail) === 'stopped';
 
 function isDown(st: Partial<LinkState> | null | undefined): boolean {
   if (!st) return false;
@@ -117,4 +124,4 @@ function isDown(st: Partial<LinkState> | null | undefined): boolean {
   return state === 'offline' || FOR_GOOD.has(state) || (state === 'connecting' && (st.attempt ?? 0) > 1);
 }
 
-export { read, normalize, indicator, isDown, stateFile, STATES, seam };
+export { read, normalize, indicator, isDown, stoppedForGood, stateFile, STATES, seam };

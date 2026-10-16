@@ -52,6 +52,8 @@
  *                             link's linkLine each time it goes off (FORK, STOPPED or OFFLINE; nothing while it stays so)
  *                             and LINK_BACK ("the connection to the room is back; …", with flushLine) once it is online
  *                             again: one quiet line, no "left"/"joined" (the daemon renews the seat's lapsed lease)
+ *   {type:'invites', open}    on the host, the refs of the room's open invite lines, each time the set changes: the
+ *                             module takes an invite off its status line once it is used, burnt, cancelled or expired
  *   An invite's join request (lib/remote/admission.ts), on the host: a chat line for the person and a wake that
  *   tells Claude to open the card ("admit REF"), once per seat it is for; a request that lapsed is a health line.
  *   A planned handoff (lib/handoff.ts): the ask waiting for this seat (its machine's mirror) is a chat line for the
@@ -59,7 +61,8 @@
  *   declined or expires; host_changed is a chat line for every member. A session whose room changed kind (a
  *   mirror that became the host, or the reverse) is started again over the new store.
  * A session with no seat that started an invite join (its link file's join_sid; the hooks module starts the tail for
- * it: mod-hello's pending) is looked up every resolveMs until the host let it in, and gets one chat line per answer:
+ * it: mod-hello's pending) is looked up every resolveMs until the host let it in, and gets one chat line per answer (a
+ * seated session too, at each seat check: a kicked machine's copy may still show its seat):
  * the host asks for the PIN (or again, after a wrong one), "the host let you in to room CODE: type /sub-human to join
  * it as NAME", or why the join stopped.
  * A session never re-reads the log from byte 0: backlog from room.readView({after: cursor}), live entries from
@@ -104,6 +107,7 @@ type SessionLib = Pick<typeof import('./room/session.ts'), 'shown' | 'markShown'
 type RoomClaudeLib = Pick<typeof import('./room-claude.ts'), 'watchdog'>;
 type HandoffLib = Pick<typeof import('./handoff.ts'), 'pendingAsk' | 'markTold' | 'hostDoc'>;
 type AdmissionLib = Pick<typeof import('./remote/admission.ts'), 'lapse' | 'pending' | 'targets' | 'describe' | 'markTold'>;
+type InvitesLib = Pick<typeof import('./remote/invites.ts'), 'inviteOpen'>;
 /** runTail's deps (tests): each one replaces a module or call. */
 interface TailDeps {
   openRoom(code: string): TailRoom;
@@ -116,14 +120,16 @@ interface TailDeps {
   linkStatus(code: string): LinkStatus;
   handoff: HandoffLib;
   admission: AdmissionLib;
+  invites: InvitesLib;
   sweepSeats(code: string): unknown;
   pendingNews(sid: string): { state: 'waiting' | 'pin' | 'linked' | 'refused'; code: string; text: string } | null;
 }
 /** The deps as a session uses them: the lazily loaded modules behind a getter. */
-type Deps = Omit<TailDeps, 'roomClaude' | 'handoff' | 'admission'> & {
+type Deps = Omit<TailDeps, 'roomClaude' | 'handoff' | 'admission' | 'invites'> & {
   roomClaude(): RoomClaudeLib;
   handoff(): HandoffLib;
   admission(): AdmissionLib;
+  invites(): InvitesLib;
 };
 /** What every session shares (runTail). */
 interface Ctx {
@@ -567,6 +573,7 @@ function startSession(me: Identity, ctx: Ctx): Session {
   }
   // A planned handoff: the ask waiting for this seat (a wake, once), or the asker told it was declined or expired.
   let askKey: string | null = null;
+  let invitesKey: string | null = null;
   function handoffHealth() {
     const ho = deps.handoff();
     const store = rm.store!; // health() calls this only with a store
@@ -604,12 +611,23 @@ function startSession(me: Identity, ctx: Ctx): Session {
       ]);
     }
   }
+  // the room's open invite lines, said when the set changes (the module unpins one that is over)
+  function inviteHealth() {
+    const all = (rm.store!.kv.get('remote/invites', null) || {}) as Record<string, unknown>;
+    const inv = deps.invites();
+    const open = Object.entries(all).filter(([, i]) => inv.inviteOpen(i, clock.now())).map(([k]) => k.slice(0, 12)).sort();
+    const key = open.join(',');
+    if (key === invitesKey) return;
+    invitesKey = key;
+    emit([{ type: 'invites', open }]);
+  }
   function health() {
     try { deps.heartbeat(me); } catch (e) { log('seat heartbeat', e); } // the seat's lease (identity.heartbeat)
     sendRows();
     if (s.moved()) return; // the room changed kind under this session: the next check starts it again
     if (rm.store && me.role !== 'claude') { try { handoffHealth(); } catch (e) { log('handoff', e); } }
     if (rm.store && rm.store.isHost && me.role !== 'claude') { try { admitHealth(); } catch (e) { log('admission', e); } }
+    if (rm.store && rm.store.isHost && me.role !== 'claude') { try { inviteHealth(); } catch (e) { log('invites', e); } }
     if (rm.store && !rm.store.isHost) linkHealth();
     const r = rm.verifyChain(); // the active segment's new lines only, from this process's checkpoint
     if (r.ok) breakKey = null;
@@ -677,6 +695,7 @@ function runTail({
     linkStatus: deps.linkStatus || ((code: string) => (require('./remote/link-socket.ts') as typeof import('./remote/link-socket.ts')).status(code)),
     handoff: deps.handoff ? () => deps.handoff! : (() => { let m: HandoffLib | undefined; return () => m || (m = require('./handoff.ts') as HandoffLib); })(),
     admission: deps.admission ? () => deps.admission! : (() => { let m: AdmissionLib | undefined; return () => m || (m = require('./remote/admission.ts') as AdmissionLib); })(),
+    invites: deps.invites ? () => deps.invites! : (() => { let m: InvitesLib | undefined; return () => m || (m = require('./remote/invites.ts') as InvitesLib); })(),
     sweepSeats: deps.sweepSeats || ((code: string) => (require('./seats.ts') as typeof import('./seats.ts')).sweep(code)),
     pendingNews: deps.pendingNews || ((s: string) => {
       // a cheap look first: the link files (most unseated tails have no pending join); the link code only when one is
@@ -738,6 +757,9 @@ function runTail({
       }
     }
     const waiting = !failed && !me && !sess && news();
+    // seated, yet a join of this session's waits (a kicked machine typing a new invite line: its copy of the room may
+    // still show the seat, as a pipe link's did live): its news is said too (item 15)
+    if (!failed && me && sid) news();
     if (!stopped) timer = clock.setTimeout(check, sess || me || waiting ? tm.resolveMs : tm.unseatedMs);
   }
 

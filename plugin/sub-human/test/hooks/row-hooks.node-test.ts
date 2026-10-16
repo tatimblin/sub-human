@@ -264,9 +264,11 @@ test('row-rewake: silent exit 0 when nothing is missing, outside a room, with no
   assert.equal(r.stderr, '');
 });
 
-test('the row hooks are the module\'s: hooks.json has no PreToolUse, PostToolUse, SubagentStop or SessionStart entry', async () => {
+test('the row hooks are the module\'s: hooks.json has no row PreToolUse, and no PostToolUse, SubagentStop or SessionStart entry', async () => {
   const cfg: { hooks: Record<string, HookGroup[]> } = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8'));
-  for (const ev of ['PreToolUse', 'PostToolUse', 'SubagentStop', 'SessionStart']) assert.equal(cfg.hooks[ev], undefined, ev);
+  for (const ev of ['PostToolUse', 'SubagentStop', 'SessionStart']) assert.equal(cfg.hooks[ev], undefined, ev);
+  // the one PreToolUse command hook is the EnterPlanMode mode note (item 7), no row hook
+  assert.deepEqual((cfg.hooks.PreToolUse || []).map(g => g.matcher), ['EnterPlanMode']);
   const { HOOKS: MOD } = await import(path.join(PLUGIN, 'mod', 'register.ts')) as { HOOKS: { event: string; matcher: string; file: string; does: string }[] };
   for (const ev of ['classic.PreToolUse', 'classic.PostToolUse', 'classic.SubagentStop']) assert.ok(MOD.some(h => h.event === ev && h.file === 'mod/rows.ts'), ev);
   // a resume's rows come back through the module (classic.SessionStart: row-rewake in the background, its calls a wake)

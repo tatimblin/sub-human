@@ -12,6 +12,18 @@
         ]
       }
     ],
+    "PreToolUse": [
+      {
+        "matcher": "EnterPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "h=\"${SUB_HUMAN_HOME:-$HOME/.sub-human}/sessions\"; s=\"$CLAUDE_CODE_SESSION_ID\"; case \"$s\" in \"\"|*/*|.*) cat >/dev/null; exit 0;; esac; [ -e \"$h/by-sid/$s.json\" ] || { cat >/dev/null; exit 0; }; m=$(tr -d '\\n' | sed -n 's/.*\"permission_mode\": *\"\\([A-Za-z]*\\)\".*/\\1/p'); [ -n \"$m\" ] || exit 0; umask 077; mkdir -p \"$h/mode\" 2>/dev/null && printf '%s\\n' \"$m\" > \"$h/mode/$s\" 2>/dev/null; exit 0",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "SessionEnd": [
       {
         "hooks": [

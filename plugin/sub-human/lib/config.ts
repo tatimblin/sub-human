@@ -94,6 +94,7 @@ export const SPAWN_TIMEOUT_MS = 30_000;        // `claude --bg` and `claude stop
 export const REAP_GRACE_MS = 10_000;           // SUB_HUMAN_REAP_GRACE_MS (allowZero): a quick rejoin cancels the reap
 export const REAP_WAIT_MS = 20_000;            // SUB_HUMAN_REAP_WAIT_MS (allowZero): wait for task 1 before `claude stop`
 export const REAP_POLL_MS = 500;
+export const REAP_STOP_MS = 5000;              // after `claude stop`: how long the reaper waits for the room Claude's process to go before it ends it itself
 export const ROOM_CLAUDE_BIND_MS = 120_000;           // a spawned room Claude that never bound in this long is spawned again
 export const ROOM_CLAUDE_WATCH_POLL_MS = 5_000;       // the detached starter checks its job this often until it binds (watchStart)
 
@@ -241,6 +242,7 @@ export const LINK_QUOTAS = {
 // row is this old, go too.
 export const ROOM_GC_MS = 30 * 24 * 60 * 60_000;      // SUB_HUMAN_ROOM_GC_MS
 export const SESSION_INDEX_TTL_MS = 30 * 24 * 60 * 60_000;
+export const FORK_RECORD_WAIT_MS = 3000;     // session-restore after ← (the agent view): the old transcript's continued-in record, written just after the fork starts (SUB_HUMAN_FORK_WAIT_MS)
 export const ROWS_TTL_MS = 7 * 24 * 60 * 60_000;
 export const GC_EVERY_MS = 6 * 60 * 60_000;           // at most one sweep of the home this often (<home>/gc.json)
 export const GC_BUDGET_MS = 250;                      // a sweep stops when it has run this long; the next one goes on
@@ -305,3 +307,7 @@ export const REVIEW_LOCK_TIMEOUT_MS = 3000;    // members/NAME/review.json read-
 export const EXIT_INPUT_WAIT_MS = 1500;        // SUB_HUMAN_EXIT_INPUT_WAIT_MS
 export const EXIT_INPUT_POLL_MS = 50;
 export const REVIEW_STALE_MS = 30 * 60 * 1000; // a plan-view review open this long is stuck: session-restore restores the plan file
+// A plan-view Yes this soon after the view was shown is asked again on the card before it records (item 8: keys meant for
+// the prompt, typed as the view opened, answered three reviews in the live round). Claude Code draws the dialog about
+// 0.1 s after its Pre hook; a person who reads the proposal first takes several seconds.
+export const YES_GUARD_MS = 2000;

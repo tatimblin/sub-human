@@ -160,7 +160,7 @@ test('room-claude: reap waits the grace, marks closing, tells the room\'s Claude
   const o = h.spawnSleeper();
   identity.updateRoomClaude(code, () => ({ job: 'cafe1234' }));
   identity.join({ code, name: 'claude', role: 'claude', pid: o.pid, session_id: 'so' });
-  await withEnv({ SUB_HUMAN_CLAUDE: s.bin, CLAUDE_CONFIG_DIR: cfg }, async () => {
+  await withEnv({ SUB_HUMAN_CLAUDE: s.bin, CLAUDE_CONFIG_DIR: cfg, SUB_HUMAN_REAP_STOP_MS: '100' }, async () => {
     const t0 = Date.now();
     const p = roomClaude.reap(code, { graceMs: 150, waitMs: 3000, pollMs: 50 });
     await h.sleep(60);
@@ -180,6 +180,8 @@ test('room-claude: reap waits the grace, marks closing, tells the room\'s Claude
     assert.equal(s.calls()[0].env.CLAUDE_CONFIG_DIR, cfg, 'stop reaches the same daemon (CLAUDE_CONFIG_DIR is on the allowlist)');
     const rec = identity.readMembers(code).claude;
     assert.ok(rec.left_at && rec.stopped_at && rec.closing);
+    // item 16: the stub's `claude stop` left the room Claude's process up (as the daemon did live): the reaper ended it
+    assert.equal(identity.isAlive(o.pid), false, 'the bound process is gone before stopped_at is written');
     assert.ok(fs.existsSync(list), 'never deletes the task list');
     assert.deepEqual(identity.openRooms(), []);
   });

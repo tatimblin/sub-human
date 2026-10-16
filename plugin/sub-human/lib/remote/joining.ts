@@ -165,7 +165,7 @@ export function finishJoin(l: Link): Step {
   const why = linkSocket.stopReason(linkSocket.status(code));
   if (l.pin_wanted && !l.token) return stands(code, name, { state: 'pin', ...(l.pin_wanted.message ? { reason: l.pin_wanted.message } : {}) });
   if (why && !l.token) {
-    try { const { join_as: _gone, join_sid: _sid, join_told: _told, ...rest } = links.get(code) || l; links.set(code, rest); } catch { /* no credential left: nothing to keep */ }
+    try { const { join_as: _gone, join_sid: _sid, join_told: _told, join_renamed: _renamed, ...rest } = links.get(code) || l; links.set(code, rest); } catch { /* no credential left: nothing to keep */ }
     return refuse(`could not join room ${code}: ${why.reason}`);
   }
   if (l.token) return take({ name, code, pending: true });
@@ -201,7 +201,7 @@ export function ensureLinked(code: string, name: string): Step | null {
 export function dropJoinAs(code: string): void {
   try {
     const l = identity.isHost(code) ? null : links.get(code);
-    if (l && (l.join_as !== undefined || l.join_sid !== undefined)) { const { join_as: _done, join_sid: _sid, join_told: _told, ...rest } = l; links.set(code, rest); }
+    if (l && (l.join_as !== undefined || l.join_sid !== undefined)) { const { join_as: _done, join_sid: _sid, join_told: _told, join_renamed: _renamed, ...rest } = l; links.set(code, rest); }
   } catch { /* a stale join_as only names the seat again */ }
 }
 

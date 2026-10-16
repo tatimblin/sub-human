@@ -103,6 +103,13 @@ test('ssh.loginFailure: what only the person can fix names the exact step; anyth
   assert.match(f('sub-human serve --login: refused: this connection came through a forced command')!, /forced command/);
   assert.equal(f('ssh: connect to host devbox port 22: Connection refused'), null);
   assert.equal(f('ssh: connect to host devbox port 22: Operation timed out'), null);
+  // item 15: a name ssh cannot resolve stops a login link's first connection with ssh's own words (no retrying forever);
+  // a link that connected before keeps retrying (a laptop offline resolves nothing for a while)
+  const dns = 'ssh: Could not resolve hostname devbox: nodename nor servname provided, or not known';
+  const first = ssh.loginProblem(dns, spec, 'vole-1234', { first: true })!;
+  assert.equal(first.reason, 'SSH_HOST_UNKNOWN');
+  assert.match(first.message, /^ssh cannot find devbox \(Could not resolve hostname devbox: nodename nor servname provided, or not known\): check the name, or use an alias from your ~\/\.ssh\/config, then join again$/);
+  assert.equal(ssh.loginProblem(dns, spec, 'vole-1234'), null);
 });
 
 test('server: a hello {login} makes a link only in a `serve --login` session, under its --link id, once; a forced-command session refuses it', async t => {

@@ -244,10 +244,53 @@ export function pathVerdict(cmd: string, ctx: GuardCtx = {}): string | null {
   return null;
 }
 
+const SIMPLE_ESC: Record<string, string> = { a: '\x07', b: '\b', e: '\x1b', E: '\x1b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v', '\\': '\\', "'": "'", '"': '"', '?': '?' };
+
+/**
+ * The command with each ANSI-C quoted word ($'…') decoded as bash and zsh read it (\xHH, \NNN octal, \uHHHH,
+ * \UHHHHHHHH, \cX and the one-letter escapes; an unknown escape keeps its backslash), so `cat /h/$'\x68'ost/keys/…`
+ * is placed as /h/host/keys/… (item 14 R5). null: a $'…' this cannot read whole (unterminated): denied.
+ */
+export function ansiC(cmd: string): string | null {
+  if (!cmd.includes("$'")) return cmd;
+  let out = '';
+  let i = 0;
+  while (i < cmd.length) {
+    const at = cmd.indexOf("$'", i);
+    if (at < 0) { out += cmd.slice(i); break; }
+    out += cmd.slice(i, at);
+    let j = at + 2;
+    let word = '';
+    for (;;) {
+      if (j >= cmd.length) return null; // unterminated
+      const ch = cmd[j];
+      if (ch === "'") { j++; break; }
+      if (ch !== '\\') { word += ch; j++; continue; }
+      const e = cmd[j + 1];
+      if (e === undefined) return null;
+      let m: RegExpExecArray | null;
+      const rest = cmd.slice(j + 1);
+      if (SIMPLE_ESC[e] !== undefined) { word += SIMPLE_ESC[e]; j += 2; }
+      else if ((m = /^x([0-9a-fA-F]{1,2})/.exec(rest))) { word += String.fromCharCode(parseInt(m[1], 16)); j += 1 + m[0].length; }
+      else if ((m = /^u([0-9a-fA-F]{1,4})/.exec(rest))) { word += String.fromCodePoint(parseInt(m[1], 16)); j += 1 + m[0].length; }
+      else if ((m = /^U([0-9a-fA-F]{1,8})/.exec(rest))) { const n = parseInt(m[1], 16); if (n > 0x10ffff) return null; word += String.fromCodePoint(n); j += 1 + m[0].length; }
+      else if ((m = /^([0-7]{1,3})/.exec(rest))) { word += String.fromCharCode(parseInt(m[1], 8) & 0xff); j += 1 + m[0].length; }
+      else if ((m = /^c(.)/.exec(rest))) { word += String.fromCharCode(m[1].charCodeAt(0) & 0x1f); j += 3; }
+      else { word += '\\' + e; j += 2; }
+    }
+    out += word;
+    i = j;
+  }
+  return out;
+}
+
 /** 'deny reason' for a Bash command, or null. */
 export function bashVerdict(command: unknown, ctx: GuardCtx = {}): string | null {
-  const cmd = typeof command === 'string' ? command : '';
-  if (!cmd.trim()) return null;
+  const raw = typeof command === 'string' ? command : '';
+  if (!raw.trim()) return null;
+  // $'…' words read as the shell reads them; one this cannot read is not placed, so it is denied
+  const cmd = ansiC(raw);
+  if (cmd === null) return 'it has an ANSI-C quoted word ($\'…\') the guard cannot read whole';
   if (READ_CLI.test(cmd) || READ_DOCTOR.test(cmd)) return null;
   if (DOCTOR_WRITES.test(cmd)) return DOCTOR_WHY;
   if (PERSON_CLI.test(cmd) || LOGIN_SERVE.test(cmd)) return 'it makes an invite, lets a machine in or out, or speaks for the room\'s connection: the person does that in their own session (/sub-human invite, admit, kick or handoff) or in a terminal outside Claude Code, never with !, which would put an invite and its PIN into this conversation';

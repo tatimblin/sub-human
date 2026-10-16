@@ -544,6 +544,7 @@ test('prefilter: rows, the restore and consent\'s PreToolUse start node only whe
     assert.equal(f.restoreNeeded(seated, 's-new', source), true, `${source}: a new session id (a /clear): unsure`);
   }
   assert.equal(f.restoreNeeded(seated, 's1', 'startup'), false);
+  assert.equal(f.restoreNeeded(unseated, 's1', 'fork'), true, 'a fork (← the agent view): only node can find the seat it continues');
   const room = 'mcp__plugin_sub-human_room__post';
   assert.equal(f.consentPreNeeded(seated, 's1', room, false), false, 'no review may be open');
   assert.equal(f.consentPreNeeded(seated, 's1', room, true), true);

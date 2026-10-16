@@ -79,7 +79,8 @@ export function render(reply: Reply | null | undefined | void): Rendered {
         // an invite: its line and PIN go to the module's status line (not a transcript row), the text without them
         const pin = reply.kind === 'secret' && reply.pinned ? reply.pinned : null;
         const say = pin ? `${refused ? '✗ ' : ''}${pin.text}` : t;
-        return { outputs: [{ subHuman: { say, refused, shareable: !secret, ...(pin ? { pinned: { status: pin.status, ms: pin.ms } } : {}) } }], exit: 0, stderr: '' };
+        const pinned = pin ? { status: pin.status, ms: pin.ms, ...(pin.short && pin.cut ? { short: pin.short, cut: pin.cut } : {}), ...(pin.ref ? { ref: pin.ref } : {}) } : null;
+        return { outputs: [{ subHuman: { say, refused, shareable: !secret, ...(pinned ? { pinned } : {}) } }], exit: 0, stderr: '' };
       }
       return {
         outputs: [{

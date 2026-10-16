@@ -34,7 +34,7 @@ export interface HookJson {
 export interface HookJsonSpecific { additionalContext?: unknown; sessionTitle?: unknown; suppressOriginalPrompt?: unknown }
 
 /** What a shimmed hook reports to the module beside its output (hooks/types.ts SubHumanReport), as read. */
-export interface SubHumanReport { say?: unknown; refused?: unknown; shareable?: unknown; joined?: unknown; reviewOpen?: unknown; pinned?: unknown }
+export interface SubHumanReport { say?: unknown; refused?: unknown; shareable?: unknown; joined?: unknown; reviewOpen?: unknown; noteWaits?: unknown; pinned?: unknown }
 
 /** A prompt's origin as the pure functions read it (PromptOrigin: its kind, and a plugin's name). */
 export interface OriginLike { kind?: unknown; name?: unknown }
@@ -67,7 +67,8 @@ export type DeliverAction =
   | { do: 'submit'; text: string; seen: string[] }
   | { do: 'relay'; lines: string[] }
   | { do: 'hold-rows'; text: string | null }
-  | { do: 'seat'; seat: TailSeat | null };
+  | { do: 'seat'; seat: TailSeat | null }
+  | { do: 'invites'; open: string[] };
 
 /** What a relay needs of a hook's $, as plain functions (no $ crosses an import): mod/deliver.ts queueRelay. */
 export interface RelayIo {
@@ -85,7 +86,11 @@ declare module 'claude-code' {
 }
 
 /** join.ts's reply, read (mod/core/command.ts readReply). */
+/** An invite on the status line (mod/core/command.ts readReply): status, else short with the notices cut (a terminal
+ * narrower than status); ref, to take it off once the invite is no longer open. */
+export interface PinnedStatus { status: string; ms: number; short?: string; cut?: string[]; ref?: string }
+
 export type JoinReply =
   | { kind: 'joined'; context: string; lines: string[] }
-  | { kind: 'say'; lines: string[]; refused: boolean; shareable: boolean; pinned?: { status: string; ms: number } }
+  | { kind: 'say'; lines: string[]; refused: boolean; shareable: boolean; pinned?: PinnedStatus }
   | { kind: 'failed'; lines: string[] };

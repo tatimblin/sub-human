@@ -15,7 +15,7 @@
  * answer and the notices. Failure: a shim that did not answer (timeout, crash) is one refusal notice pointing to the
  * doctor; the command is not run a second time.
  */
-import type { JoinReply, HookJson, HookJsonSpecific, OriginLike, RunOutput, SubHumanReport } from './types.ts';
+import type { JoinReply, HookJson, HookJsonSpecific, OriginLike, PinnedStatus, RunOutput, SubHumanReport } from './types.ts';
 
 /** The command as command.run names it (a plugin skill's name, or its bare form). */
 export const COMMANDS = Object.freeze(['sub-human:sub-human', 'sub-human']);
@@ -87,9 +87,45 @@ export function readReply(run: RunOutput | null | undefined): JoinReply {
   if (say.joined === true && typeof hso.additionalContext === 'string' && hso.additionalContext) {
     return { kind: 'joined', context: hso.additionalContext, lines: noticeLines(say.say) };
   }
-  const p = say.pinned && typeof say.pinned === 'object' ? say.pinned as { status?: unknown; ms?: unknown } : null;
-  const pinned = p && typeof p.status === 'string' && p.status ? { status: p.status.replace(/\n/g, ' '), ms: Math.min(Number(p.ms) > 0 ? Number(p.ms) : PINNED_MS, PINNED_MS) } : null;
+  const p = say.pinned && typeof say.pinned === 'object' ? say.pinned as { status?: unknown; ms?: unknown; short?: unknown; cut?: unknown; ref?: unknown } : null;
+  const one = (s: unknown) => (typeof s === 'string' && s ? s.replace(/\n/g, ' ') : null);
+  const status = p && one(p.status);
+  const short = p && one(p.short);
+  const pinned: PinnedStatus | null = p && status ? {
+    status, ms: Math.min(Number(p.ms) > 0 ? Number(p.ms) : PINNED_MS, PINNED_MS),
+    ...(short && typeof p.cut === 'string' && p.cut ? { short, cut: noticeLines(p.cut) } : {}),
+    ...(typeof p.ref === 'string' && /^[0-9a-f]{12}$/.test(p.ref) ? { ref: p.ref } : {}),
+  } : null;
   return { kind: 'say', lines: noticeLines(say.say), refused: say.refused === true, shareable: say.shareable === true, ...(pinned ? { pinned } : {}) };
+}
+
+/** What Claude Code draws before a plugin's status text ("  ⚠ sub-human: "), in cells, with a cell to spare. */
+export const STATUS_LEAD = 17;
+
+/** The status that fits a terminal `columns` wide, and the notices that go with it: the whole line when it fits (or the
+ * width is not known), else the short form (PIN and SECRET) with the notices that give the line with SECRET in its
+ * place. */
+export function pinFor(p: PinnedStatus, lines: string[], columns: unknown): { status: string; lines: string[] } {
+  const w = Number(columns);
+  if (!p.short || !p.cut || !(w > 0) || STATUS_LEAD + p.status.length <= w) return { status: p.status, lines };
+  return { status: p.short, lines: p.cut };
+}
+
+/** A `/sub-human leave` that went through: the name of the seat it ended (the session is titled with it alone, its
+ * address gone with the seat: mod/deliver.ts renames it at once, item 12), else null. A member's seat only. */
+export function leftName(args: unknown, reply: JoinReply, seat: { name?: unknown; role?: unknown } | null | undefined): string | null {
+  const a = words(args);
+  if (a.length !== 1 || a[0] !== 'leave' || reply.kind !== 'say' || reply.refused || !seat || seat.role === 'claude') return null;
+  return typeof seat.name === 'string' && /^[A-Za-z0-9._-]{1,32}$/.test(seat.name) ? seat.name : null;
+}
+
+/** An `/sub-human invite --cancel [REF]` that went through takes the pinned invite off when it named it, or named none
+ * (the one open invite, which the reply names). */
+export function cancels(args: unknown, reply: JoinReply, ref: string | null): boolean {
+  const a = words(args);
+  if (!ref || a[0] !== 'invite' || !a.includes('--cancel') || reply.kind !== 'say' || reply.refused) return false;
+  const named = a.find(w => /^[0-9a-f]{12}$/.test(w));
+  return named ? named === ref : reply.lines.some(l => l.includes(ref));
 }
 
 /** The longest a pinned invite stays on the status line (an invite's life: lib/config.ts INVITE_TTL_MS). */
@@ -101,9 +137,14 @@ export const PINNED_MS = 15 * 60_000;
  * Remote Control: a shareable reply is the command's output row (result {text}); one that is not (none should be: the
  * module answers only prompts that hold no secret there) says where it is instead.
  */
-export function answerOf(reply: JoinReply, { bridge = false } = {}): { result: { text?: string }; logs: string[]; status?: { status: string; ms: number } } {
-  const status = reply.kind === 'say' && reply.pinned ? { status: reply.pinned } : {};
-  if (!bridge) return { result: {}, logs: reply.lines, ...status };
+export function answerOf(reply: JoinReply, { bridge = false, columns }: { bridge?: boolean; columns?: unknown } = {}): { result: { text?: string }; logs: string[]; status?: { status: string; ms: number; ref?: string } } {
+  if (reply.kind === 'say' && reply.pinned) {
+    const fit = pinFor(reply.pinned, reply.lines, columns);
+    const status = { status: { status: fit.status, ms: reply.pinned.ms, ...(reply.pinned.ref ? { ref: reply.pinned.ref } : {}) } };
+    if (!bridge) return { result: {}, logs: fit.lines, ...status };
+    return { result: { text: 'the reply is on the terminal of the machine this session runs on.' }, logs: fit.lines, ...status };
+  }
+  if (!bridge) return { result: {}, logs: reply.lines };
   if (reply.kind === 'say' && reply.shareable && reply.lines.length) return { result: { text: reply.lines.join('\n') }, logs: [] };
-  return { result: { text: 'the reply is on the terminal of the machine this session runs on.' }, logs: reply.lines, ...status };
+  return { result: { text: 'the reply is on the terminal of the machine this session runs on.' }, logs: reply.lines };
 }

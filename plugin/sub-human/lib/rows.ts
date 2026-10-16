@@ -182,7 +182,7 @@ function rowCalls(me: Me | null | undefined, members: MemberInput, { only = null
   if (me.role === 'claude') {
     const all = others.filter(m => !isRoomClaude(m)).map(m => m.name);
     const names = want ? all.filter(n => want.has(n)) : all;
-    const lines = ['PARTICIPANT ROWS (do this now; it costs nothing while they wait):'];
+    const lines = ['PARTICIPANT ROWS (one row per person; a row shows that person, not you. Do this now; it costs nothing while they wait):'];
     if (names.length) {
       lines.push(`Make exactly these Agent tool calls, all in ONE message, then carry on (write nothing about them):`);
       for (const n of names) lines.push(participantCall(n));
@@ -504,7 +504,7 @@ function roomText(code: string, viewer: string | null | undefined, es: readonly 
     // another person's objections: the viewer's own (from any of their seats) is the "✖ objected" above
     const others = p.objectors.filter(x => x !== viewer && !(p.also[x] || []).includes(String(viewer)));
     if (!p.decided && others.length) parts.push(c.warn(`✖ ${plural(others.length, 'objection')}`));
-  } else {
+  } else if (!linkState.stoppedForGood(link)) { // stopped (a kick, the room closed): this copy's count is stale
     parts.push(c.dim(`${ms.filter(m => isActive(m) && !isRoomClaude(m)).length} here`));
   }
   if (viewer) {

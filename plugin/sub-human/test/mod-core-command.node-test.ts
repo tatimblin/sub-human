@@ -77,3 +77,21 @@ test('command: here every reply is notices with an empty answer (no row, nothing
   assert.ok(!JSON.stringify(bridge.result).includes('4821'), 'the PIN never goes to the phone or the model');
   assert.deepEqual(answerOf({ kind: 'failed', lines: ['✗ x'] }), { result: {}, logs: ['✗ x'] });
 });
+
+test('command: an invite\'s status fits the terminal: the whole line (the PIN first) when it fits or the width is unknown, else the PIN and SECRET with the notices that give the line; a cancel of the pinned invite unpins it (item 2)', async () => {
+  const { pinFor, cancels, readReply, STATUS_LEAD } = await load();
+  const status = `PIN 4821 · /sub-human join me@box vole-1234 ${'a'.repeat(39)}`;
+  const p = { status, ms: 1000, short: `PIN 4821 · SECRET ${'a'.repeat(39)}`, cut: ['send this line:', '  /sub-human join me@box vole-1234 SECRET'] };
+  assert.deepEqual(pinFor(p, ['whole'], STATUS_LEAD + status.length), { status, lines: ['whole'] });
+  assert.deepEqual(pinFor(p, ['whole'], undefined), { status, lines: ['whole'] });
+  assert.deepEqual(pinFor(p, ['whole'], 90), { status: p.short, lines: p.cut });
+  assert.deepEqual(pinFor({ status, ms: 1 }, ['whole'], 40), { status, lines: ['whole'] }, 'no short form: the whole line, cut by the terminal');
+  const r = readReply({ exitCode: 0, stdout: JSON.stringify({ subHuman: { say: 'x', shareable: false, pinned: { status, ms: 5, short: p.short, cut: 'a\nb', ref: 'abcdef012345' } } }), stderr: '' });
+  assert.deepEqual(r.kind === 'say' && r.pinned, { status, ms: 5, short: p.short, cut: ['a', 'b'], ref: 'abcdef012345' });
+  const ok = { kind: 'say', lines: ['invite abcdef012345 cancelled'], refused: false, shareable: true } as JoinReply;
+  assert.equal(cancels('invite --cancel', ok, 'abcdef012345'), true);
+  assert.equal(cancels('invite --cancel abcdef012345', ok, 'abcdef012345'), true);
+  assert.equal(cancels('invite --cancel 111111111111', ok, 'abcdef012345'), false, 'another invite');
+  assert.equal(cancels('invite --cancel', { ...ok, refused: true } as JoinReply, 'abcdef012345'), false);
+  assert.equal(cancels('leave', ok, 'abcdef012345'), false);
+});

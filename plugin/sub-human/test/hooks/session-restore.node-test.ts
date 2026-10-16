@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { World, fixture, identity, ctx, hso } from './helpers.ts';
 import * as rowsLib from '../../lib/rows.ts';
 import * as proposal from '../../lib/proposal.ts';
@@ -135,4 +136,60 @@ test('session-restore: a review left open (plan file still the proposal) is rest
   w.hook('session-restore', { ...fixture('session-start-clear'), source: 'clear', session_id: NEW_SID }, { as: 'alice', session: false });
   assert.equal(fs.existsSync(file), false);
   assert.equal(open(), false);
+});
+
+// ← (the agent view) moves the conversation into a bg job: a new process, a new session id (source "fork"), and the
+// old transcript, beside the new one, ends with {"type":"continued-in","continuedInSessionId":NEW}.
+function forkTranscripts(w: World, oldSid: string, newSid: string, { record = true } = {}) {
+  const dir = fs.mkdtempSync(path.join(w.home, '..', 'proj-'));
+  const lines = [{ type: 'user', sessionId: oldSid, message: { content: 'hi' } }];
+  if (record) lines.push({ type: 'continued-in', sessionId: oldSid, continuedInSessionId: newSid } as any);
+  fs.writeFileSync(path.join(dir, `${oldSid}.jsonl`), lines.map(l => JSON.stringify(l)).join('\n') + '\n');
+  return path.join(dir, `${newSid}.jsonl`);
+}
+
+test('session-restore: a fork (← the agent view) takes the seat its old session holds, with no leave and no log line, and lists every row', () => {
+  const w = new World({ claude: 'sleep', alice: 'sleep', bob: 'sleep' });
+  const oldSid = w.sid.alice;
+  const oldPid = w.pid.alice; // the old process stays up as the agent view: its pid is alive
+  const before = w.entries().length;
+  const transcript = forkTranscripts(w, oldSid, NEW_SID);
+  w.pid.alice = process.pid; // the bg job
+  const r = w.hook('session-restore', { ...fixture('session-start-clear'), source: 'fork', session_id: NEW_SID, transcript_path: transcript }, { as: 'alice', session: false });
+  assert.equal(r.code, 0, r.stderr);
+  const c = ctx(r)!;
+  assert.ok(c.startsWith(`SUB-HUMAN: you are alice's Claude in room ${w.code}`) && c.endsWith('(restored after the agent view)'), c.slice(-120));
+  if (hasRows()) assert.match(c, /ROWS\n[^]*subagent_type: "sub-human:room"/, "every row listed, held or not");
+  assert.equal(hso(r).sessionTitle, `alice.${w.code}`);
+  const m = w.members().alice;
+  assert.deepEqual([m.left_at, m.pid, m.session_id], [undefined, process.pid, NEW_SID]);
+  assert.equal(w.entries().length, before, 'no leave, no rejoin line');
+  assert.equal(w.lib(() => identity.resolveBySession(NEW_SID))!.name, 'alice');
+  assert.equal(w.lib(() => identity.resolveBySession(oldSid)), null, 'the old session no longer holds it');
+  assert.equal(w.lib(() => identity.resolveByPid(oldPid)), null, 'nor the agent view\'s process');
+  assert.equal(w.lib(() => identity.lastSeat(oldSid)), null, 'a --resume of the old id later takes nothing');
+});
+
+test('session-restore: a fork with no continued-in record (claude --resume X --fork-session by hand) takes no seat', () => {
+  const w = new World({ claude: 'sleep', alice: 'sleep' });
+  const transcript = forkTranscripts(w, w.sid.alice, NEW_SID, { record: false });
+  w.pid.alice = process.pid;
+  const r = w.hook('session-restore', { ...fixture('session-start-clear'), source: 'fork', session_id: NEW_SID, transcript_path: transcript }, { as: 'alice', session: false, env: { SUB_HUMAN_FORK_WAIT_MS: '1' } });
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(ctx(r), undefined);
+  assert.equal(w.members().alice.session_id, w.sid.alice);
+});
+
+test('session-restore: a fork waits for the continued-in record Claude Code writes just after the job starts', () => {
+  const w = new World({ claude: 'sleep', alice: 'sleep' });
+  const oldSid = w.sid.alice;
+  const transcript = forkTranscripts(w, oldSid, NEW_SID, { record: false });
+  w.pid.alice = process.pid;
+  // written 0.4 s after the hook starts (the hook runs synchronously here, so another process writes it)
+  const line = JSON.stringify({ type: 'continued-in', continuedInSessionId: NEW_SID });
+  spawn('sh', ['-c', `sleep 0.4; printf '%s\\n' '${line}' >> '${path.join(path.dirname(transcript), `${oldSid}.jsonl`)}'`], { stdio: 'ignore' });
+  const r = w.hook('session-restore', { ...fixture('session-start-clear'), source: 'fork', session_id: NEW_SID, transcript_path: transcript }, { as: 'alice', session: false });
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(ctx(r)!, /restored after the agent view/);
+  assert.equal(w.members().alice.session_id, NEW_SID);
 });

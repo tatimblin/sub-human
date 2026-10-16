@@ -10,7 +10,7 @@ const SID = 'sid-c'
 const POST = 'mcp__plugin_sub-human_room__post'
 
 /** The engine beneath: mod-hello answering `hello`, consent.ts answering in turn from `answers` (the last repeats). */
-function world(on: any, { hello = OUT as any, answers = [{ subHuman: { reviewOpen: false } }] as any[] } = {}) {
+function world(on: any, { hello = OUT as any, answers = [{ subHuman: { reviewOpen: false } }] as any[], exit = null as any } = {}) {
   const seen = { consent: [] as any[], beneathStop: 0, beneathPre: [] as string[], tools: [] as string[], logs: [] as string[] }
   session(on, SID)
   on('session.cwd', () => ({ value: '/w' }))
@@ -27,7 +27,8 @@ function world(on: any, { hello = OUT as any, answers = [{ subHuman: { reviewOpe
   // ^mcp__plugin_sub-human_room__), another plugin's, the user's
   on('classic.PreToolUse', ($: any, e: any) => { seen.beneathPre.push(e.tool); return {} })
   on('tool.check', () => ({ decision: 'allow' }))
-  on('tool.call', ($: any, e: any) => { seen.tools.push(e.tool); return { result: 'ok', text: 'ok' } })
+  on('tool.call', ($: any, e: any) => { seen.tools.push(e.tool); return e.tool === 'ExitPlanMode' && exit ? exit : { result: 'ok', text: 'ok' } })
+  on('ui.render', () => ({ type: 'Text', children: ['the engine\'s line'] })) // the engine's drawing, beneath
   return seen
 }
 const stop = ($: any) => $.classic.Stop({ session_id: SID, stop_hook_active: false, permission_mode: 'default' } as any)
@@ -139,4 +140,45 @@ test('an unseated session runs no consent on the plan tools or the card', async 
   await $.classic.PostToolUse({ session_id: SID, tool_name: 'AskUserQuestion', tool_input: {}, tool_response: {}, tool_use_id: 'q1' } as any)
   expect(seen.consent).toEqual([])
   expect(seen.beneathPre).toEqual(['AskUserQuestion', 'ExitPlanMode'])
+})
+
+test('M (live verify): an ExitPlanMode refused in the plan view goes to consent at once as a PostToolUseFailure; its line rides on the refusal the model reads, the person gets a notice', async ($, on) => {
+  const refusal = "The user doesn't want to proceed with this tool use. … the user said:\nplease also add a CODE_OF_CONDUCT\n\nNote: The user's next message …"
+  const line = 'sub-human: nothing is recorded yet: bob\'s note on abcdef012345 waits for its card (Send or Discard)'
+  const answer = { hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: line }, systemMessage: 'sub-human: your note on "Add CONTRIBUTING" is not sent yet', subHuman: { reviewOpen: true, noteWaits: true } }
+  const pre = { subHuman: { reviewOpen: true, noteWaits: false } }
+  const seen = world(on, { answers: [pre, answer, { subHuman: { reviewOpen: true, noteWaits: true } }], exit: { deny: refusal } })
+  await start($)
+  const r: any = await $.tool.call({ tool: 'ExitPlanMode', plan: 'proposal abcdef012345' } as any)
+  expect(seen.consent.map(c => c.stdin.hook_event_name)).toEqual(['PreToolUse', 'PostToolUseFailure'])
+  const sent = seen.consent[1].stdin
+  expect([sent.hook_event_name, sent.tool_name, sent.permission_mode, sent.error]).toEqual(['PostToolUseFailure', 'ExitPlanMode', 'plan', refusal])
+  expect(r.deny).toBe(`${refusal}\n\n${line}`)
+  expect(seen.logs).toEqual(['your note on "Add CONTRIBUTING" is not sent yet'])
+  // the note waits: a post goes to consent (which refuses it), whatever review flag
+  await post($)
+  expect(seen.consent.length).toBe(3)
+  expect(seen.consent[2].stdin.tool_name).toBe(POST)
+})
+
+test('M: an ExitPlanMode that ran (a Yes) is not a refusal: no consent run from tool.call', async ($, on) => {
+  const seen = world(on)
+  await start($)
+  const r: any = await $.tool.call({ tool: 'ExitPlanMode' } as any)
+  expect(r.text).toBe('ok')
+  expect(seen.consent.map(c => c.stdin.hook_event_name)).toEqual(['PreToolUse'])
+})
+
+test('8: the prompt holding typed text as the plan view opens goes with ExitPlanMode\'s consent payload (sub_human_typing); an empty prompt sends none', async ($, on) => {
+  const seen = world(on, { answers: [{ subHuman: { reviewOpen: true, noteWaits: false } }] })
+  await start($)
+  const hint = (isDraft: boolean) => $.ui.mount({ plugin: 'sub-human', surface: 'terminal', component: 'PromptHint', props: { isDraft, isWorking: true, hint: 'esc to interrupt' } } as any)
+  let ui = await hint(true)
+  await $.tool.call({ tool: 'ExitPlanMode', plan: 'proposal abcdef012345' } as any)
+  expect(seen.consent[0].stdin.sub_human_typing).toBe(true)
+  await ui.unmount()
+  ui = await hint(false)
+  await $.tool.call({ tool: 'ExitPlanMode', plan: 'proposal abcdef012345' } as any)
+  expect(seen.consent.at(-1).stdin.sub_human_typing).toBeUndefined()
+  await ui.unmount()
 })

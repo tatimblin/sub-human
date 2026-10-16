@@ -81,8 +81,9 @@ test('hooks.json: the join with no node on PATH, or one older than 24.3, says wh
   }
 });
 
-test('hooks.json: every command runs node on a script that exists in the plugin', () => {
+test('hooks.json: every command runs node on a script that exists in the plugin (the EnterPlanMode mode note runs none)', () => {
   for (const { event, hook } of allHooks()) {
+    if (event === 'PreToolUse') { assert.doesNotMatch(hook.command, /\bnode\b/); continue; }
     assert.equal(hook.type, 'command', event);
     const check = event === 'UserPromptExpansion' ? NODE_CHECK : SEAT_CHECK;
     assert.match(hook.command, check, hook.command);
@@ -115,8 +116,9 @@ test('hooks.json: every matcher is an exact-name list or an anchored regex (bina
   }
 });
 
-test('hooks.json: only the /sub-human expansion and SessionEnd are command hooks; everything else is the module\'s', () => {
-  assert.deepEqual(Object.keys(hooks).sort(), ['SessionEnd', 'UserPromptExpansion']);
+test('hooks.json: only the /sub-human expansion, SessionEnd and the EnterPlanMode mode note are command hooks; everything else is the module\'s', () => {
+  assert.deepEqual(Object.keys(hooks).sort(), ['PreToolUse', 'SessionEnd', 'UserPromptExpansion']);
+  assert.deepEqual(hooks.PreToolUse.map(x => x.matcher), ['EnterPlanMode']);
   assert.ok(!fs.existsSync(path.join(PLUGIN, 'hooks', 'guard.ts')), 'the store guard is mod/guard.ts');
   assert.deepEqual(readJson<HooksJson>('hooks/hooks.json').modules, ['../mod/register.ts']);
   const m = (x: string, name: string) => cc.matcherMatches(x, name);
@@ -289,4 +291,26 @@ test('mcp initialize: negotiates the protocol version; serverInfo.version is the
   assert.notEqual(latest, '1999-01-01');
   assert.equal(r.get(3)!.result.protocolVersion, latest);
   for (const i of [1, 2, 3]) assert.equal(r.get(i)!.result.serverInfo.version, version);
+});
+
+test('hooks.json: the EnterPlanMode note (item 7 H) writes the call\'s permission_mode for a session with a seat index, and nothing for any other', () => {
+  const note = hooks.PreToolUse[0].hooks[0].command;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-mode-'));
+  const home = path.join(tmp, 'home');
+  const run = (sid: string, input: string) => {
+    const r = spawnSync('/bin/sh', ['-c', note], { input, encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: tmp, SUB_HUMAN_HOME: home, CLAUDE_CODE_SESSION_ID: sid } });
+    assert.equal(r.status, 0, r.stderr);
+  };
+  const file = (sid: string) => path.join(home, 'sessions', 'mode', sid);
+  const payload = (mode: string) => JSON.stringify({ hook_event_name: 'PreToolUse', session_id: 's1', permission_mode: mode, tool_name: 'EnterPlanMode', tool_input: {} });
+  run('s1', payload('plan'));
+  assert.equal(fs.existsSync(file('s1')), false, 'no seat index: nothing written');
+  fs.mkdirSync(path.join(home, 'sessions', 'by-sid'), { recursive: true });
+  fs.writeFileSync(path.join(home, 'sessions', 'by-sid', 's1.json'), '{}');
+  run('s1', payload('plan'));
+  assert.equal(fs.readFileSync(file('s1'), 'utf8'), 'plan\n');
+  run('s1', JSON.stringify({ permission_mode: 'acceptEdits', tool_input: { x: '"permission_mode":"bypass"' } }).replace(/,/g, ',\n'));
+  assert.equal(fs.readFileSync(file('s1'), 'utf8'), 'acceptEdits\n', 'the payload\'s own field, across lines');
+  run('../s1', payload('plan'));
+  assert.equal(fs.existsSync(path.join(home, 'sessions', 's1')), false, 'a session id with a path in it writes nothing');
 });

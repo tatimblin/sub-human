@@ -9,9 +9,10 @@ import crypto from 'node:crypto';
 import * as identity from '../lib/identity.ts';
 import * as rows from '../lib/rows.ts';
 import * as hold from '../mcp/hold.ts';
+import * as linkStateMod from '../lib/room/link-state.ts';
 import * as seatKey from '../hooks/seat-key.ts';
 import type { JsonRpcId, Me, ProgressToken, ToolArgs, ToolResult } from '../mcp/types.ts';
-import type { Member } from '../lib/room/types.ts';
+import type { LinkState, Member } from '../lib/room/types.ts';
 
 Object.assign(process.env, {
   SUB_HUMAN_HOLD_BEAT_MS: '150', SUB_HUMAN_HOLD_POLL_MS: '20', SUB_HUMAN_HOLD_GRACE_MS: '250',
@@ -266,4 +267,18 @@ test('hold: a post marked provisional (old logs) shows at once, like any other',
   assert.match(w.progress.at(-1)!.message, /^alice: say 1/);
   w.leaveMe();
   await a.p;
+});
+
+test('hold (item 15): removed by the host (a kick), the rows keep holding (they show it), so none hands "left" back to the kicked person\'s Claude', async () => {
+  const w = setup(['claude', 'alice', 'bob'], 'alice');
+  const real = linkStateMod.seam.read;
+  linkStateMod.seam.read = (c: string) => (c === w.code ? { state: 'stopped', lastReason: 'LINK_REVOKED', lastError: 'the host removed this machine' } as LinkState : null);
+  try {
+    const b = w.call({ member: 'bob' });
+    const r = w.call({ room: w.code });
+    assert.ok(await pending(r.p));
+    w.leaveMe();
+    assert.ok(await pending(b.p, 400), 'the member row holds');
+    assert.ok(await pending(r.p, 50), 'the room row holds');
+  } finally { linkStateMod.seam.read = real; }
 });

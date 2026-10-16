@@ -19,6 +19,10 @@ export type AnyHookIn = Partial<BaseHookInput> & {
   tool_response?: unknown;
   tool_use_id?: string;
   stop_hook_active?: boolean;
+  /** PostToolUseFailure: the error as the model read it */
+  error?: string;
+  /** the module's PreToolUse(ExitPlanMode) payload: the person had typed text in the prompt (PromptHint isDraft) */
+  sub_human_typing?: boolean;
   agent_type?: string;
   source?: string;
 };
@@ -49,10 +53,16 @@ export interface SubHumanReport {
   shareable?: boolean;
   joined?: boolean;
   reviewOpen?: boolean;
+  /** consent: a note of the seat waits for its card (the module then sends a room post to consent) */
+  noteWaits?: boolean;
   /** an invite's line and PIN for the module's status line (never saved in the transcript) and how long it stays;
    * say then holds the text without them */
-  pinned?: { status: string; ms: number };
+  pinned?: PinnedReport;
 }
+
+/** An invite's pinned form as the module gets it (lib/commands/types.ts Pinned, less the text: say holds it). cut: the
+ * notice text when short is pinned in place of status (a terminal narrower than status). */
+export interface PinnedReport { status: string; ms: number; short?: string; cut?: string; ref?: string }
 
 /** One JSON output line of a command hook. */
 export interface HookOutput {
@@ -81,7 +91,7 @@ export interface HookOutput {
 export type Reply =
   | { kind: 'say'; text: string; module: boolean }
   | { kind: 'refused'; text: string; module: boolean }
-  | { kind: 'secret'; text: string; module: boolean; refused?: boolean; pinned?: { status: string; text: string; ms: number } }
+  | { kind: 'secret'; text: string; module: boolean; refused?: boolean; pinned?: import('../lib/commands/types.ts').Pinned }
   | { kind: 'joined'; context: string; say: string; warn?: string | null; module: boolean }
   | { kind: 'classic'; outputs?: object[]; exit?: number; stderr?: string };
 

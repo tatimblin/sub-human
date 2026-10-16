@@ -17,10 +17,10 @@
  */
 import {
   tailArgv, tailEnv, lineBuffer, parseEvent, route, restartDelay, nextFails, noticeDue, turnLedger, spawnWanted, logLines,
-  relayQueue, rewakePrompt, DELIVERY_ERROR_NOTICE, MOD_RESTART_TELL_FAILS, RELAY_AFTER_MS, REWAKE_TIMEOUT_MS,
+  relayQueue, rewakePrompt, wakeParts, DELIVERY_ERROR_NOTICE, MOD_RESTART_TELL_FAILS, RELAY_AFTER_MS, REWAKE_TIMEOUT_MS,
 } from './core/deliver.ts';
 import { parseHello, localHello, homeOf, sidIndex } from './core/seat.ts';
-import { answersItself, joinPayload, readReply, answerOf, CONFIRM_AFTER_MS } from './core/command.ts';
+import { answersItself, joinPayload, readReply, answerOf, cancels, leftName, CONFIRM_AFTER_MS } from './core/command.ts';
 import { shimArgv, shimEnv, toClassic, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { restoreNeeded } from './core/prefilter.ts';
 import { mergeClassic } from './core/prompt.ts';
@@ -34,6 +34,7 @@ interface Child { sid: string; seat: TailSeat | null; stream: { return(value?: u
 
 const ROWS = { plugin: 'sub-human', key: 'rows' } as const;
 const HELLO = { plugin: 'sub-human', key: 'hello' } as const;
+const TITLED = { plugin: 'sub-human', key: 'titled' } as const;
 const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' } as const;
 const ERRORS = { plugin: 'sub-human', key: 'deliveryErrors' } as const;
 const NONCE = { plugin: 'sub-human', key: 'nonce' } as const;
@@ -59,10 +60,21 @@ function nonceFor($: EngineInterface, sid: string): Promise<string | null> {
  * module sees notes the session's transcript path and permission mode; tool.call stashes the call's agentId. Module
  * state: a reload forgets it until the next event. */
 export const facts = factsBook();
-/** The last presence the module wrote or saw for seat (address|sid): mod/prompt.ts writes "working" for a typed prompt,
- * idle on a notification; turn.complete below writes "idle" when the turn that ends was a "working" one (an
- * idle_prompt notification may never come: seen live, every member stuck on "working"). Lost on reload. */
-export const presence: { last: string | null; seat: string | null } = { last: null, seat: null };
+/** The last presence the module wrote or saw for seat (address|sid). A typed prompt (mod/prompt.ts) only marks
+ * "working" as pending; the turn it starts writes it (turn.start below), so a prompt the plugin stops or refuses (no
+ * turn: an @room's receipt, a refusal) writes nothing (seen live: "working" for 8+ minutes). turn.complete writes
+ * "idle" when the turn that ends was a "working" one or waited on the person ("permission": the dialog was answered,
+ * or the turn went on), and a tool call that finishes after a "permission" notification writes "working" again (an
+ * idle_prompt notification may never come). Lost on reload. */
+export const presence: { last: string | null; seat: string | null; pending: string | null } = { last: null, seat: null, pending: null };
+
+/** node hooks/run.ts presence with a payload of its own (Working, TurnEnd), not awaited by the caller. */
+function presenceRun($: EngineInterface, event: 'Working' | 'TurnEnd'): Promise<unknown> {
+  return (async () => {
+    const root = $.plugin.root, sid = await $.session.id();
+    await $.process.run(shimArgv(root, 'presence'), { stdin: JSON.stringify({ hook_event_name: event, session_id: sid }), env: shimEnv({ session_id: sid }, root), timeoutMs: SHIM_TIMEOUT_MS });
+  })();
+}
 
 /** The session id whose lease this module process has written (mod-hello ran for it): join and at-room need one. */
 let leased: string | null = null;
@@ -186,10 +198,17 @@ function logEach($: EngineInterface, lines: unknown) {
  * sees the room lines `seen` as notices, since no prompt row shows them (only "Prompt dropped by a hook"); lines
  * already shown are passed as none. Never throws.
  */
+/** A wake submitted asUser (its shown lines) -> the context the model reads beside it: mod/prompt.ts adds it. */
+const wakeContexts = new Map<string, string>();
+export const wakeContextOf = (text: string): string | undefined => wakeContexts.get(text);
+
 function submitWake($: EngineInterface, text: string, { appended = false, seen = [] as string[] } = {}) {
   return (async () => {
     let r = null;
-    try { r = await $.prompt.submit({ text }); } catch { /* below */ }
+    // a member's wake: its lines for the person bare (asUser), the rest as context (core/deliver.ts wakeParts)
+    const parts = child && child.seat && child.seat.role !== 'claude' ? wakeParts(text) : null;
+    if (parts) wakeContexts.set(parts.shown, parts.context);
+    try { r = await $.prompt.submit(parts ? { text: parts.shown, asUser: true } : { text }); } catch { /* below */ } finally { if (parts) wakeContexts.delete(parts.shown); }
     if (r && typeof r.drop !== 'string') return;
     try { logEach($, seen); } catch { /* the model still gets it below */ }
     if (appended || await appendRow($, text)) return;
@@ -330,6 +349,8 @@ async function toolDone<E extends { readonly agent_id?: string; readonly session
   facts.noteEvent(e);
   if (!e.agent_id) {
     try { turns.toolDone(await $.clock.now()); } catch { /* above */ }
+    // the person answered what the turn waited on (a permission dialog, the plan view): working again
+    if (presence.last === 'permission_prompt') { presence.last = 'working'; void presenceRun($, 'Working').catch(() => { presence.last = null; }); }
   }
   return next(e);
 }
@@ -359,6 +380,7 @@ async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
       case 'submit': void submitWake($, a.text, { seen: a.seen }); break; // not awaited: it resolves as the turn starts
       case 'mid-turn-wake': await midTurnWake($, a.text); break;
       case 'relay': queueRelay(relayIo($), a.lines); break;
+      case 'invites': if (pinnedRef && !a.open.includes(pinnedRef)) unpin($); break;
       default: break;
     }
   }
@@ -367,10 +389,19 @@ async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
 /** An invite's line and PIN on this plugin's status line, under the prompt (Claude Code saves it in no transcript, as it
  * does a notice), until the invite's life is over; a newer one replaces it. */
 let pinnedAt = 0;
-function pinStatus($: EngineInterface, { status, ms }: { status: string; ms: number }): void {
+/** The pinned invite's ref: the tail's `invites` event (the room's open invites) takes it off once it is not open. */
+let pinnedRef: string | null = null;
+function pinStatus($: EngineInterface, { status, ms, ref }: { status: string; ms: number; ref?: string }): void {
   const mine = ++pinnedAt;
+  pinnedRef = ref || null;
   $.ui.status(status);
-  try { $.clock.after(ms, () => { if (mine === pinnedAt) $.ui.status(undefined); }); } catch { /* it stays until the next one replaces it */ }
+  try { $.clock.after(ms, () => { if (mine === pinnedAt) unpin($); }); } catch { /* it stays until the next one replaces it */ }
+}
+/** The invite is over (used, burnt, cancelled or expired): off the status line now. */
+function unpin($: EngineInterface): void {
+  ++pinnedAt;
+  pinnedRef = null;
+  $.ui.status(undefined);
 }
 
 export function registerDeliver(on: On) {
@@ -393,6 +424,7 @@ export function registerDeliver(on: On) {
     const nonce = asNonce((await $.state.get(NONCE)).value, sid);
     if (!answersItself(e, { roomClaude: !!(await $.env.get('SUB_HUMAN_ROOM')), nonce })) return next(e);
     const root = $.plugin.root;
+    const before = asHello((await $.state.get(HELLO)).value); // the seat a leave ends (its title goes with it)
     const run = await $.process.run(shimArgv(root, 'join'), {
       stdin: JSON.stringify(joinPayload({ sid, cwd: await $.session.cwd(), args: e.args, nonce })),
       env: shimEnv({ session_id: sid }, root),
@@ -409,9 +441,17 @@ export function registerDeliver(on: On) {
         return r;
       } finally { joined = null; }
     }
-    const { result, logs, status } = answerOf(reply, { bridge: e.origin.kind === 'bridge' });
+    // a leave: the address NAME.CODE goes with the seat now, not at the next prompt (item 12 J): the title is NAME
+    const left = leftName(e.args, reply, before && before.sid === sid ? before.seat : null);
+    if (left) {
+      // not from this hook (the engine refuses a command.run raised inside one): just after it, on the clock
+      const rename = () => { void $.command.run({ command: 'rename', args: left }).then(() => $.state.set(TITLED, { sid, addr: left }), () => { /* the next prompt titles it */ }); };
+      try { $.clock.after(CONFIRM_AFTER_MS, rename); } catch { /* no clock: the next prompt titles it (mod/core/prompt.ts titleFor) */ }
+    }
+    const { result, logs, status } = answerOf(reply, { bridge: e.origin.kind === 'bridge', columns: e.presentation && e.presentation.columns });
     for (const line of logs) $.ui.log(line);
     if (status) pinStatus($, status);
+    else if (cancels(e.args, reply, pinnedRef)) unpin($);
     try { await refresh($, sid); } catch { /* the next refresh tries again */ }
     try { childFor($, sid, asHello((await $.state.get(HELLO)).value)); } catch { /* next start tries again */ }
     return result;
@@ -443,7 +483,7 @@ export function registerDeliver(on: On) {
       try { await $.state.set(REVIEW, true); await refresh($, e.session_id); } catch { /* the next refresh tries again */ }
       try {
         const hello = asHello((await $.state.get(HELLO)).value);
-        if (e.source === 'resume' && hello && hello.seat) void rewake($, e);
+        if ((e.source === 'resume' || e.source === 'fork') && hello && hello.seat) void rewake($, e);
       } catch { /* the rows come with the next prompt (the restore's context) */ }
     }
     try {
@@ -464,6 +504,12 @@ export function registerDeliver(on: On) {
   on('turn.start', ($, e, next) => {
     // a wake nothing took before goes into this turn, as any wake that lands mid-turn
     for (const text of turns.start(e.turnId)) void midTurnWake($, text).catch(() => {});
+    // the person's typed prompt started this turn: now it is "working" (a stopped prompt starts none)
+    if (presence.pending) {
+      presence.pending = null;
+      presence.last = 'working';
+      void presenceRun($, 'Working').catch(() => { presence.last = null; });
+    }
     return next(e);
   });
 
@@ -474,12 +520,9 @@ export function registerDeliver(on: On) {
       for (const text of turns.complete(e.turnId)) void submitWake($, text, { appended: true });
       if (turns.running === null) scheduleRelay(relayIo($));
       // the turn the person's prompt started is over: back at the prompt (node hooks/run.ts presence, not awaited)
-      if (presence.last === 'working') {
+      if (presence.last === 'working' || presence.last === 'permission_prompt') {
         presence.last = 'idle';
-        void (async () => {
-          const root = $.plugin.root, sid = await $.session.id();
-          await $.process.run(shimArgv(root, 'presence'), { stdin: JSON.stringify({ hook_event_name: 'TurnEnd', session_id: sid }), env: shimEnv({ session_id: sid }, root), timeoutMs: SHIM_TIMEOUT_MS });
-        })().catch(() => { presence.last = null; });
+        void presenceRun($, 'TurnEnd').catch(() => { presence.last = null; });
       }
     }
     return next(e);

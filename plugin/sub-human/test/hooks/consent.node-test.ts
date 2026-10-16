@@ -365,9 +365,9 @@ test('review: a room tool call after "Tell Claude what to change" records the ob
   w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'auto', tool_input: {} }), { as: 'bob' });
   w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu1', transcript_path: tp0 }), { as: 'bob' });
   const tp = transcript(w, file, { tool_use_id: 'tu1', is_error: true, content: said(note) });
-  // Outside plan mode, or with no review open, a room tool call is untouched.
-  assert.equal(w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__post', { permission_mode: 'auto', tool_input: { text: note }, transcript_path: tp }), { as: 'bob' }).stdout, '');
+  // With no review open (alice), a room tool call is untouched; a read outside plan mode exits before loading.
   assert.equal(w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__post', { permission_mode: 'plan', tool_input: { text: note }, transcript_path: tp }), { as: 'alice' }).stdout, '');
+  assert.equal(w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__read', { permission_mode: 'auto', tool_input: {}, transcript_path: tp }), { as: 'bob' }).stdout, '');
   // bob's Claude tries to post his note itself: denied, the note waits for bob's Send (nothing recorded), exit next.
   const r = w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__post', { permission_mode: 'plan', tool_input: { kind: 'say', text: note }, transcript_path: tp }), { as: 'bob' });
   assert.equal(decision(r), 'deny');
@@ -550,33 +550,35 @@ test('review: the note comes from the structured userFeedback field; the backup 
   assert.ok(!fs.existsSync(path.join(w.memberDir('bob'), 'review.json.lock')), 'the lock is released');
 });
 
-test('shim mode (SUB_HUMAN_SHIM=1, mod/consent.ts): Stop always reports subHuman {reviewOpen} beside its usual output', () => {
+test('shim mode (SUB_HUMAN_SHIM=1, mod/consent.ts): Stop always reports subHuman {reviewOpen, noteWaits} beside its usual output', () => {
   const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
   const shim = { as: 'bob', env: { SUB_HUMAN_SHIM: '1' } };
   const stop = (extra: HookInput) => w.hook('consent', ev('Stop', null, { stop_hook_active: false, ...extra }), shim);
   // no review: nothing to say but the report
   let r = stop({ permission_mode: 'default' });
   assert.equal(r.code, 0, r.stderr);
-  assert.deepEqual(r.json, { subHuman: { reviewOpen: false } });
+  assert.deepEqual(r.json, { subHuman: { reviewOpen: false, noteWaits: false } });
   // a review still in restore: the nudge, and the report says it is open
   w.lib(() => proposal.writeReview({ code: w.code, name: 'bob', role: 'member' } as Seat, { phase: 'restore', mode: 'default', at: Date.now() }));
   r = stop({ permission_mode: 'auto' });
   assert.match(ctx(r)!, /restore bob's default mode/);
-  assert.deepEqual(r.json!.subHuman, { reviewOpen: true });
+  assert.deepEqual(r.json!.subHuman, { reviewOpen: true, noteWaits: false });
   // the restore done (mode back): consent clears the review, and says so
   r = stop({ permission_mode: 'default' });
-  assert.deepEqual(r.json, { subHuman: { reviewOpen: false } });
+  assert.deepEqual(r.json, { subHuman: { reviewOpen: false, noteWaits: false } });
   // unseated session: no review possible
   const u = new World({}, { room: false });
   const n = u.hook('consent', ev('Stop', null, { permission_mode: 'default' }), { env: { CLAUDE_PID: undefined, SUB_HUMAN_SHIM: '1' }, session: false });
-  assert.deepEqual(n.json, { subHuman: { reviewOpen: false } });
+  assert.deepEqual(n.json, { subHuman: { reviewOpen: false, noteWaits: false } });
   // without shim mode: unchanged (no output)
   assert.equal(w.hook('consent', ev('Stop', null, { permission_mode: 'default' }), { as: 'bob' }).stdout, '');
 });
 
 test('hooks.json: consent is the module\'s (mod/consent.ts); its classic.PreToolUse always calls next(e), so every other PreToolUse hook sees each call', async () => {
   const hooks = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')).hooks;
-  for (const ev of ['Stop', 'PreToolUse', 'PostToolUse', 'PermissionRequest']) assert.equal(hooks[ev], undefined, ev);
+  for (const ev of ['Stop', 'PostToolUse', 'PermissionRequest']) assert.equal(hooks[ev], undefined, ev);
+  // the one PreToolUse command hook only notes EnterPlanMode's mode (no node, no answer); consent itself is the module's
+  assert.deepEqual(hooks.PreToolUse.map((x: { matcher: string }) => x.matcher), ['EnterPlanMode']);
   const { HOOKS: MOD } = await import(path.join(PLUGIN, 'mod', 'register.ts')) as typeof Register;
   for (const ev of ['classic.Stop', 'tool.call', 'classic.PreToolUse', 'classic.PostToolUse', 'classic.PermissionRequest']) assert.ok(MOD.some(h => h.event === ev && h.file === 'mod/consent.ts'), ev);
   // a module hook answering classic.PreToolUse without next(e) would skip every non-managed settings hook there (cc
@@ -589,7 +591,7 @@ test('hooks.json: consent is the module\'s (mod/consent.ts); its classic.PreTool
   }
 });
 
-test('consent: a room tool call outside plan mode exits at once, loading nothing but its entry; in plan mode it loads the rest', t => {
+test('consent: a room tool call other than post outside plan mode exits at once, loading nothing but its entry; in plan mode, or a post, it loads the rest', t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-consent-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const preload = path.join(dir, 'loaded.js');
@@ -600,18 +602,19 @@ test('consent: a room tool call outside plan mode exits at once, loading nothing
     "process.on('exit', () => process.stderr.write('LOADED ' + JSON.stringify(seen) + '\\n'));",
   ].join('\n') + '\n');
   const w = new World({ claude: 'sleep', alice: 'act' }, { t });
-  const run = (mode: string | undefined) => {
-    const r = w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__post', { permission_mode: mode, tool_input: { text: 'hi' } }), { as: 'alice', env: { NODE_OPTIONS: `--require ${preload}` } });
+  const run = (mode: string | undefined, tool: string) => {
+    const r = w.hook('consent', ev('PreToolUse', `mcp__plugin_sub-human_room__${tool}`, { permission_mode: mode, tool_input: { text: 'hi' } }), { as: 'alice', env: { NODE_OPTIONS: `--require ${preload}` } });
     assert.equal(r.code, 0, r.stderr);
     const line = r.stderr.split('\n').find(l => l.startsWith('LOADED '));
     return { stdout: r.stdout, loaded: JSON.parse(line!.slice(7)).map((f: string) => path.relative(PLUGIN, f)).filter((f: string) => !f.startsWith('..')) };
   };
   for (const mode of ['default', 'acceptEdits', 'auto', 'bypassPermissions', undefined]) {
-    const q = run(mode);
+    const q = run(mode, 'read');
     assert.equal(q.stdout, '', String(mode));
     assert.deepEqual(q.loaded.sort(), ['hooks/handlers/consent.ts', 'hooks/reply.ts', 'hooks/run.ts'], String(mode));
   }
-  assert.ok(run('plan').loaded.includes('hooks/seat.ts'), 'plan mode: the review check runs');
+  assert.ok(run('plan', 'read').loaded.includes('hooks/seat.ts'), 'plan mode: the review check runs');
+  assert.ok(run('auto', 'post').loaded.includes('hooks/seat.ts'), 'a post in any mode: a note may wait for its card (M)');
 });
 
 // ---------- the transcript race: the model's call is not on disk yet, and Claude Code dropped plan ----------
@@ -979,10 +982,12 @@ test('H (live verify, verify1/08): plan mode by hand, the model skips EnterPlanM
   const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: `proposal ${v3}`, planFilePath: file }, tool_use_id: 'tu7', transcript_path: tp }), { as: 'bob' });
   assert.equal(decision(pre), 'ask', pre.stdout);
   assert.equal((hso(pre).updatedInput as { plan?: unknown }).plan, 'Ship v3 Monday');
-  assert.equal(review(w)!.keepMode, true);
+  assert.equal(review(w)!.mode, 'plan', 'the person\'s own plan mode is the one to put back');
   const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: { plan: 'Ship v3 Monday' }, tool_use_id: 'tu7', tool_response: { plan: 'Ship v3 Monday', filePath: file }, transcript_path: tp }), { as: 'bob' });
   assert.match(ctx(post)!, /bob agreed to proposal/);
-  assert.doesNotMatch(ctx(post)!, /restore/, 'the person chose plan mode: nothing to put back');
+  assert.match(ctx(post)!, /call EnterPlanMode to put bob's plan mode back/, 'item 7: the Yes left plan mode; it comes back');
+  assert.match(ctx(w.hook('consent', ev('PostToolUse', 'EnterPlanMode', { permission_mode: 'plan', tool_input: {}, tool_response: {} }), { as: 'bob' }))!, /bob's plan mode is back/);
+  assert.equal(review(w), null);
   assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.proposal_hash]), [['signoff', 'human', v3]]);
   assert.equal(fs.readFileSync(file, 'utf8'), `proposal ${v3}`, 'the plan file as it was');
   // a stub for a proposal that is not bob's to answer (answered now): denied, never a bare view
@@ -1193,4 +1198,72 @@ test('confirm: a card that closed with a Post (AFK, no Send/Discard) is not offe
   confirm(w, v3, 'not now');
   assert.equal(ctx(promptOf(w, tp)), undefined);
   assert.equal(waiting(w)!.note, 'open rate limiting');
+});
+
+test('M (live verify, verify5/M): the plan view refused with a note: the module\'s report (a PostToolUseFailure with the refusal) opens the note at once, tells the model and the person; a post while it waits is refused in any mode; Send records it', () => {
+  const { w, hash } = world();
+  const file = path.join(w.userHome, '.claude', 'plans', 'm.md');
+  const note = 'please also add a CODE_OF_CONDUCT';
+  const tp = transcript(w, file, null, { id: 'tu1', input: { plan: `proposal ${hash}` } });
+  w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'auto', tool_input: {} }), { as: 'bob' });
+  assert.equal(decision(w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu1', transcript_path: tp }), { as: 'bob' })), 'ask');
+  // the refusal, as the module's tool.call hook got it back (the transcript line not written yet)
+  const r = w.hook('consent', ev('PostToolUseFailure', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu1', transcript_path: tp, error: said(note) }), { as: 'bob' });
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(hso(r).hookEventName, 'PostToolUseFailure');
+  assert.match(ctx(r)!, new RegExp(`^sub-human: nothing is recorded yet: bob's note on ${hash} waits for its card \\(Send or Discard\\)`));
+  assert.match(r.json!.systemMessage!, /^sub-human: your note on "Rename fetchUser" is not sent yet: Send or Discard on the card that follows decides$/);
+  assert.equal(waiting(w)!.note, note);
+  assert.deepEqual(answers(w), []);
+  // the model tries to post its paraphrase: refused while the note waits, whatever mode the module last saw
+  for (const mode of ['plan', 'auto']) {
+    const p = w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__post', { permission_mode: mode, tool_input: { kind: 'say', text: 'dave declined it' }, transcript_path: tp }), { as: 'bob' });
+    assert.equal(decision(p), 'deny', mode);
+  }
+  // the review closes as before (back to auto), the note still waiting; a post is still refused, a read is not
+  assert.equal((hso(w.hook('consent', ev('PermissionRequest', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {} }), { as: 'bob' })).decision as PermDecision).updatedPermissions[0].mode, 'auto');
+  w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: {}, tool_response: { plan: null } }), { as: 'bob' });
+  assert.equal(review(w), null);
+  const p = w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__post', { permission_mode: 'auto', tool_input: { kind: 'say', text: 'x' } }), { as: 'bob' });
+  assert.match(reason(p)!, /^sub-human: refused: bob's note on proposal [0-9a-f]{12} waits for Send or Discard on its card/);
+  assert.equal(w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__read', { permission_mode: 'auto', tool_input: {} }), { as: 'bob' }).stdout, '');
+  confirm(w, hash, 'Send');
+  assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.text]), [['objection', 'human', note]]);
+  assert.equal(w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__post', { permission_mode: 'auto', tool_input: { kind: 'say', text: 'x' } }), { as: 'bob' }).stdout, '', 'sent: posts pass again');
+});
+
+test('H3 (live verify, verify5/H3): the person switched to plan mode mid-turn; the mode the EnterPlanMode call was made in (noted by the hooks.json hook) wins over the module\'s stale one: no review there, the stub opens it and the Yes puts plan mode back', () => {
+  const { w, v3, file } = two();
+  const dir = path.join(w.home, 'sessions', 'mode');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, w.sid.bob), 'plan\n');
+  const tp = transcript(w, file, null, { id: 'tu9', input: { plan: `proposal ${v3}` } });
+  // the module last saw "auto" (the wake's prompt); the call was made in plan mode
+  const enter = w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'auto', tool_input: {}, transcript_path: tp }), { as: 'bob' });
+  assert.equal(enter.stdout, '', 'plan mode is the person\'s own: no review opens at EnterPlanMode');
+  assert.equal(review(w), null);
+  assert.equal(fs.existsSync(path.join(dir, w.sid.bob)), false, 'the note is taken once');
+  const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: `proposal ${v3}`, planFilePath: file }, tool_use_id: 'tu9', transcript_path: tp }), { as: 'bob' });
+  assert.equal(decision(pre), 'ask');
+  assert.match(String(hso(pre).permissionDecisionReason), /Agree: any "Yes" \(your plan mode comes back\)/);
+  assert.equal(review(w)!.mode, 'plan');
+});
+
+test('8 (live verify): a plan-view Yes that came as the view opened (or while bob was typing) records nothing; the card asks once, and only its Agree records', () => {
+  const { w, hash } = world();
+  const file = path.join(w.userHome, '.claude', 'plans', 'quick.md');
+  const tp = transcript(w, file, null, { id: 'tu1', input: { plan: `proposal ${hash}` } });
+  const guard = { as: 'bob', env: { SUB_HUMAN_YES_GUARD_MS: '60000' } };
+  w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'auto', tool_input: {} }), guard);
+  assert.equal(decision(w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu1', transcript_path: tp }), guard)), 'ask');
+  const yes = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: {}, tool_use_id: 'tu1', tool_response: { plan: fs.readFileSync(file, 'utf8'), filePath: file }, transcript_path: tp }), guard);
+  assert.match(ctx(yes)!, /^Nothing recorded yet: bob's Yes came as the view opened/);
+  assert.match(yes.json!.systemMessage!, /your Yes on "Rename fetchUser" came right as the review opened, so it is not recorded yet/);
+  assert.deepEqual(answers(w), []);
+  // the card for it (not the plan view again), then Agree there: recorded via=human, once
+  const pre = w.hook('consent', preAsk({ questions: [{ question: `proposal ${hash}`, header: 'x', options: [{ label: 'Agree' }] }] }), guard);
+  assert.equal(decision(pre), 'ask');
+  const card = hso(pre).updatedInput as Card;
+  w.hook('consent', postAsk({ ...card, answers: { [card.questions[0].question]: 'Agree' } }), guard);
+  assert.deepEqual(answers(w).map(x => [x.kind, x.via]), [['signoff', 'human']]);
 });

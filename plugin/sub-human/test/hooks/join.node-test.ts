@@ -61,7 +61,7 @@ test('/sub-human NAME with no open room: opens a room, joins as a member, spawns
   // the joiner's timing overrides (the test env sets the reaper's to 0) ride along for the room Claude's own reaper
   assert.deepEqual(settings.env, {
     SUB_HUMAN_HOME: w.home, SUB_HUMAN_ROOM: w.code, CLAUDE_CODE_TASK_LIST_ID: `sh-${w.code}`, CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
-    SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0',
+    SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0', SUB_HUMAN_REAP_STOP_MS: '200',
   });
   assert.equal(settings.crossSessionInbound, 'accept');
   assert.equal(Object.keys(call.env).filter(k => k.startsWith('CLAUDE')).length, 0, 'no CLAUDE_* reaches the room\'s Claude');
@@ -206,6 +206,11 @@ test('the default name: git user.name, else the local part of user.email, else $
   // taken: refused with the hint; an explicit NAME always wins
   const w3 = new World({ claude: 'sleep', dana: 'sleep' });
   w3.pid.me = process.ppid; w3.sid.me = 'aaaaaaaa-0000-4000-8000-000000000017';
+  // that dana sits in another folder (the same folder's live seat is this person's own: see the fork test below)
+  const mf = path.join(w3.home, 'rooms', w3.code, 'members.json');
+  const ms = JSON.parse(fs.readFileSync(mf, 'utf8'));
+  ms.dana.cwd = '/elsewhere';
+  fs.writeFileSync(mf, JSON.stringify(ms));
   r = w3.hook('join', expand(''), { as: 'me', env: { ...NO_GIT, USER: 'dana' } });
   assert.equal(r.json!.decision, 'block');
   assert.match(r.json!.reason!, new RegExp(`^sub-human: ✗ "dana" is taken in room ${w3.code}; pick another: /sub-human NAME ${w3.code}$`));
@@ -235,7 +240,7 @@ test('/sub-human leave: the seat leaves (as /exit would), the session stays; /su
   assert.equal(r.json!.decision, 'block');
   assert.equal(r.json!.reason, `sub-human: left ${w.code} · /sub-human joins again`, 'a plain confirmation, not a refusal');
   assert.ok(w.members().alice.left_at, 'alice left');
-  assert.match(w.entries().map(e => e.text).join('\n'), /alice left \(left\)/);
+  assert.match(w.entries().map(e => e.text).join('\n'), /^alice left$/m);
   assert.match(w.hook('join', expand('leave'), { as: 'alice' }).json!.reason!, /not in a room/);
 });
 
@@ -713,9 +718,16 @@ test('SECURITY through the module: an invite and anything a PIN may be typed in 
   assert.doesNotMatch(inv.say!, new RegExp(`[0-9a-z]{39}`));
   assert.doesNotMatch(inv.say!, /: \d{4}\b/);
   assert.match(inv.say!, /pinned under the prompt until \d\d:\d\d: Claude Code saves neither in this conversation/);
-  assert.match(inv.pinned!.status, new RegExp(`/sub-human join pipe:\\S+ ${w.code} [0-9a-z]{39}`));
-  assert.match(inv.pinned!.status, /apart from the line \(say it, or send it another way\): \d{4}$/);
+  // item 2 (D): the PIN first and short, then the line; nothing before it that costs width
+  assert.match(inv.pinned!.status, new RegExp(`^PIN \\d{4} · /sub-human join pipe:\\S+ ${w.code} [0-9a-z]{39}$`));
   assert.ok(inv.pinned!.ms > 14 * 60_000 && inv.pinned!.ms <= 15 * 60_000);
+  // for a terminal too narrow for the line: the PIN and the SECRET alone, and notices with SECRET in the word's place
+  assert.match(inv.pinned!.short!, /^PIN \d{4} · SECRET [0-9a-z]{39}$/);
+  assert.match(inv.pinned!.cut!, new RegExp(`\\n  /sub-human join pipe:\\S+ ${w.code} SECRET\\n`));
+  const pin = /^PIN (\d{4})/.exec(inv.pinned!.status)![1];
+  assert.doesNotMatch(inv.pinned!.cut!, new RegExp(`[0-9a-z]{39}|PIN ${pin}|\\b${pin}\\b(?!.*${w.code})`));
+  assert.match(inv.pinned!.ref!, /^[0-9a-f]{12}$/);
+  assert.ok(inv.say!.includes(inv.pinned!.ref!), 'the notices name the ref --cancel takes');
   for (const args of ['join dev vole-1234 48291', `join dev vole-1234 ${SECRET} --frob`, `x ${w.code} 4829`, `x ${SECRET}`, 'join 4829', 'admit']) {
     const r = viaModule(w, 'me', args).json!.subHuman!;
     assert.equal(r.shareable, false, args);
@@ -787,8 +799,11 @@ test('a word of digits is no name: /sub-human 4829 says it looks like a PIN, hid
     assert.equal(r.json!.hookSpecificOutput!.suppressOriginalPrompt, true, args);
     assert.match(r.json!.reason!, /"4829" looks like a PIN, not a name: a PIN goes in as \/sub-human join PIN once an invite line asks for it/, args);
   }
-  // a PIN where a room goes (live: "/sub-human --as 4829" said it "isn't a room")
-  const r = w.hook('join', expand('--as 4829'), { as: 'me' });
+  // "/sub-human --as 4829": given as a name, so it is no name (live round two: it said "not a room")
+  let r = w.hook('join', expand('--as 4829'), { as: 'me' });
+  assert.match(r.json!.reason!, /"4829" looks like a PIN, not a name/);
+  // and a PIN where a room goes is no room
+  r = w.hook('join', expand('dana 4829'), { as: 'me' });
   assert.match(r.json!.reason!, /"4829" looks like a PIN, not a room/);
   assert.equal(fs.existsSync(path.join(w.home, 'rooms')) && fs.readdirSync(path.join(w.home, 'rooms')).length, false, 'no room opened');
 });
@@ -802,4 +817,43 @@ test('an invite line without its SECRET: a second sub-human folder has no login 
     assert.match(r.json!.reason!, new RegExp(`that looks like an invite line without its SECRET: /sub-human join ${dest} vole-1234 SECRET`), dest);
   }
   assert.deepEqual(fs.readdirSync(w.home).filter(d => d === 'links'), [], 'no link written');
+});
+
+test('bare /sub-human in a fork of a seated session (← the agent view) takes the seat back; with no fork record, a live seat of this folder in another session is refused with where it is, never a second room', () => {
+  const w = new World({ claude: 'sleep', alice: 'sleep' });
+  spawnSync('git', ['init', '-q', w.cwd]);
+  spawnSync('git', ['-C', w.cwd, 'config', 'user.name', 'Alice Liddell']);
+  w.pid.fork = process.ppid; w.sid.fork = 'aaaaaaaa-0000-4000-8000-0000000000f1';
+  let r = w.hook('join', expand(''), { as: 'fork', env: NO_GIT });
+  assert.equal(r.json!.decision, 'block');
+  assert.match(r.json!.reason!, new RegExp(`already alice in room ${w.code} from another session in this folder[^]*Enter on alice\\.${w.code}`));
+  assert.deepEqual(fs.readdirSync(path.join(w.home, 'rooms')), [w.code], 'no second room');
+  // Claude Code's record in the old transcript, beside this session's: the conversation went on in the fork
+  const dir = path.join(w.userHome, '.claude', 'projects', fs.realpathSync(w.cwd).replace(/[^a-zA-Z0-9]/g, '-'));
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${w.sid.alice}.jsonl`), `${JSON.stringify({ type: 'continued-in', continuedInSessionId: w.sid.fork })}\n`);
+  r = w.hook('join', expand(''), { as: 'fork', env: NO_GIT });
+  assert.equal(r.json!.decision, undefined, r.stdout);
+  const m = w.members().alice;
+  assert.deepEqual([m.session_id, m.pid, m.left_at], [w.sid.fork, process.ppid, undefined]);
+  assert.deepEqual(fs.readdirSync(path.join(w.home, 'rooms')), [w.code]);
+  assert.ok(!w.entries().some(e => /alice (left|rejoined)/.test(e.text || '')), 'the person never left');
+});
+
+test('R2 (live verify, verify6/14): a refused /sub-human NAME CODE leaves the seat this session holds as it was (no "left (switched rooms)", no lost row); one that works leaves it, logged', () => {
+  const w = new World({ claude: 'sleep', alice: 'act', dana: 'sleep' });
+  const before = w.entries().length;
+  // dana's name is held by a live seat: refused, and alice is still alice
+  const r = w.hook('join', expand(`dana ${w.code}`), { as: 'alice' });
+  assert.equal(r.json!.decision, 'block');
+  assert.match(r.json!.reason!, new RegExp(`could not join ${w.code} as dana: name taken[^]*; you're still alice in room ${w.code}$`));
+  assert.equal(w.members().alice.left_at, undefined);
+  assert.equal(w.lib(() => identity.resolveBySession(w.sid.alice))!.name, 'alice');
+  assert.equal(w.entries().length, before, 'nothing logged');
+  // a name that is free: the switch happens, and the old seat's leave is logged
+  const ok = w.hook('join', expand(`erin ${w.code}`), { as: 'alice' });
+  assert.equal(ok.json!.decision, undefined, ok.stdout);
+  assert.ok(w.members().alice.left_at);
+  assert.equal(w.lib(() => identity.resolveBySession(w.sid.alice))!.name, 'erin');
+  assert.ok(w.entries().some(e => e.text === 'alice left (switched rooms)'));
 });

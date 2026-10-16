@@ -46,9 +46,11 @@ type JoinRequest = ReturnType<typeof import('../../lib/remote/admission.ts')['pe
 // require(esm) is synchronous and caches like an import) by load(), not imported: a static import would load them first.
 const require = createRequire(import.meta.url);
 
-/** A room tool call outside plan mode: the reducer acts on one only in plan mode, so nothing else needs loading. */
+/** A room tool call outside plan mode, other than post: the reducer acts on one only while a review is open (plan
+ * mode) or, for post, while a note waits for its card, so nothing else needs loading. */
 const quiet = (input: AnyHookIn | undefined) => !!input && input.hook_event_name === 'PreToolUse' && input.permission_mode !== 'plan'
-  && /^mcp__plugin_sub-human_room__/.test(String(input.tool_name || ''));
+  && /^mcp__plugin_sub-human_room__/.test(String(input.tool_name || '')) && !POST_TOOL.test(String(input.tool_name || ''));
+const POST_TOOL = /^mcp__plugin_sub-human_room__post$/;
 
 /** The output helpers (hooks/reply.ts), the seat, the room and identity: what this file calls `c.`. */
 type C = typeof reply & { whoami: typeof import('../seat.ts')['whoami']; room: typeof import('../../lib/room.ts'); identity: typeof import('../../lib/identity.ts') };
@@ -84,7 +86,8 @@ function load() {
 }
 const admission = (): typeof import('../../lib/remote/admission.ts') => require('../../lib/remote/admission.ts');
 
-/** Answers this run could not record, for the person (dispatch puts them in the output's systemMessage). */
+/** Answers this run could not record, and the reducer's notices, for the person (dispatch puts them in the output's
+ * systemMessage). */
 let unsent: string[] = [];
 
 /**
@@ -199,12 +202,13 @@ type Out = { say: Say | null; show?: { admit?: JoinRequest; handoff?: ReturnType
 
 /** The seat's state, reduce one event (made from it), run the effects, store the state, write the answer. */
 function step(input: ConsentIn, me: Identity, make: (st: State) => Event, show: Out['show'] = {}) {
-  const start: State = { review: proposal.readReview(me), note: proposal.readConfirm(me) };
-  const ctx = { name: me.name, now: Date.now() };
+  const start: State = { review: proposal.readReview(me), note: proposal.readConfirm(me), recheck: proposal.readRecheck(me) };
+  const ctx = { name: me.name, now: Date.now(), guardMs: config.testMs('SUB_HUMAN_YES_GUARD_MS', config.YES_GUARD_MS) };
   const first = review.reduce(start, make(start), ctx);
+  if (first.notice) unsent.push(first.notice);
   let state = first.state;
   let say = first.say;
-  const disk = { review: JSON.stringify(start.review), note: JSON.stringify(start.note) };
+  const disk = { review: JSON.stringify(start.review), note: JSON.stringify(start.note), recheck: JSON.stringify(start.recheck ?? null) };
   const answers = new Map<string, { choice: 'Agree' | 'Object'; res: Recorded }>();
   const queue: Effect[] = [...first.effects];
   for (let e = queue.shift(); e; e = queue.shift()) {
@@ -231,6 +235,7 @@ function step(input: ConsentIn, me: Identity, make: (st: State) => Event, show: 
   }
   if (JSON.stringify(state.review) !== disk.review) { if (state.review) proposal.writeReview(me, state.review); else proposal.clearReview(me); }
   if (JSON.stringify(state.note) !== disk.note) { if (state.note) proposal.writeConfirm(me, state.note); else proposal.clearConfirm(me); }
+  if (JSON.stringify(state.recheck ?? null) !== disk.recheck) { if (state.recheck) proposal.writeRecheck(me, state.recheck); else proposal.clearRecheck(me); }
   if (say) write(input, me, say, state, answers, show);
 }
 
@@ -342,8 +347,9 @@ function postAdmit(input: ConsentIn, me: Identity, r: ToolResponse): boolean {
       adm.refuse(me.code, req.ref, { by: me.name });
       return say(S.admitRefused(me.name, req.name)), true;
     }
-    const res = adm.letIn(me.code, req.ref, { by: me.name, sign: p => envelope.sign(p, roomStore.humanKey(me.code, me.name), { room: me.code, from: me.name }) });
-    say(S.admitLetIn(me.name, req.name, me.code), { systemMessage: `sub-human: ${res.text}` });
+    const as = /^Let in as (\S+)$/.exec(String(got.label));
+    const res = adm.letIn(me.code, req.ref, { by: me.name, ...(as ? { as: as[1] } : {}), sign: p => envelope.sign(p, roomStore.humanKey(me.code, me.name), { room: me.code, from: me.name }) });
+    say(S.admitLetIn(me.name, as ? as[1] : req.name, me.code), { systemMessage: `sub-human: ${res.text}` });
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
     say(S.admitFailed(me.name, why), { systemMessage: `sub-human: ${req.name} was not let in: ${why}` });
@@ -351,7 +357,27 @@ function postAdmit(input: ConsentIn, me: Identity, r: ToolResponse): boolean {
   return true;
 }
 
+/**
+ * The mode EnterPlanMode was called in, as the plugin's own PreToolUse command hook noted it (hooks.json: it reads the
+ * call's permission_mode, which the module's event lacks) at <home>/sessions/mode/<sid>, taken once and only while
+ * fresh; else the payload's (the module's last-seen mode, stale after the person's shift+tab mid-turn: item 7 H).
+ */
+function modeAtEnter(input: ConsentIn): string | undefined {
+  const sid = input.session_id;
+  if (typeof sid !== 'string' || !/^[\w-]+$/.test(sid)) return input.permission_mode;
+  const file = `${c.identity.home()}/sessions/mode/${sid}`;
+  try {
+    const st = fs.statSync(file);
+    const mode = fs.readFileSync(file, 'utf8').trim();
+    fs.rmSync(file, { force: true });
+    if (Date.now() - st.mtimeMs < MODE_FRESH_MS && /^[A-Za-z]+$/.test(mode)) return mode;
+  } catch { /* none noted */ }
+  return input.permission_mode;
+}
+const MODE_FRESH_MS = 10_000;
+
 function preEnter(input: ConsentIn, me: Identity) {
+  input = { ...input, permission_mode: modeAtEnter(input) };
   step(input, me, st => {
     const base = { mode: input.permission_mode, reviewable: reviewable(input), plan: { file: null, text: null } };
     if (st.review && st.review.phase === 'restore') return { type: 'enter', ...base, pending: [], said: null, named: null, replaced: null, kept: null, propose: false };
@@ -389,7 +415,8 @@ function preExit(input: ConsentIn, me: Identity) {
   step(input, me, st => {
     const r = st.review;
     const ev = { type: 'exit' as const, toolUseId: input.tool_use_id || null, ...answerFacts(input, me, r, 'exit'),
-      shown: null, text: null, plan: { file: null, text: null }, callPlan: undefined, ownPlan: undefined, mode: input.permission_mode, stub: null };
+      shown: null, text: null, plan: { file: null, text: null }, callPlan: undefined, ownPlan: undefined, mode: input.permission_mode, stub: null,
+      typing: input.sub_human_typing === true };
     if (!r) {
       // no review opened (plan mode by hand, EnterPlanMode skipped), and the plan is a proposal's name: its review
       // opens here (lib/consent/review.ts exit with stub), else the call is denied: never a bare view of the name
@@ -434,7 +461,20 @@ function postExit(input: ConsentIn, me: Identity) {
 
 function permExit(input: ConsentIn, me: Identity) { step(input, me, () => ({ type: 'permission' })); }
 function postEnter(input: ConsentIn, me: Identity) { step(input, me, st => ({ type: 'entered', plan: st.review && st.review.phase === 'entering' ? planOf(input) : { file: null, text: null } })); }
-function preRoomTool(input: ConsentIn, me: Identity) { step(input, me, st => ({ type: 'roomTool', mode: input.permission_mode, ...answerFacts(input, me, st.review, 'roomTool') })); }
+function preRoomTool(input: ConsentIn, me: Identity) {
+  step(input, me, st => ({ type: 'roomTool', mode: input.permission_mode, ...answerFacts(input, me, st.review, 'roomTool'),
+    post: POST_TOOL.test(String(input.tool_name || '')), noteLive: !!st.note && isPending(me, st.note.hash) }));
+}
+/** The dialog's rejection, reported by the module (mod/consent.ts) as a PostToolUseFailure of the ExitPlanMode call:
+ * the note from the transcript's tool_result, else from the refusal's own text (the line may not be on disk yet). */
+function rejectedExit(input: ConsentIn, me: Identity) {
+  step(input, me, st => {
+    const id = input.tool_use_id || null;
+    const fromDisk = id ? cc.planAnswer(lines(input), id) : null;
+    const answer = fromDisk || cc.rejectionAnswer(typeof input.error === 'string' ? input.error : '');
+    return { type: 'rejected', toolUseId: id, answer, target: st.review ? targetOf(me, st.review.hash) : null };
+  });
+}
 function stop(input: ConsentIn, me: Identity) {
   step(input, me, st => ({ type: 'stop', mode: input.permission_mode, active: !!input.stop_hook_active, ...answerFacts(input, me, st.review, 'stop'),
     live: !st.review && !!st.note && isPending(me, st.note.hash) }));
@@ -466,6 +506,7 @@ function route(input: ConsentIn) {
   if (tool === 'ExitPlanMode' && ev === 'PreToolUse') return locked(preExit);
   if (tool === 'ExitPlanMode' && ev === 'PermissionRequest') return locked(permExit);
   if (tool === 'ExitPlanMode' && ev === 'PostToolUse') return locked(postExit);
+  if (tool === 'ExitPlanMode' && ev === 'PostToolUseFailure') return locked(rejectedExit);
   if (/^mcp__plugin_sub-human_room__/.test(tool || '') && ev === 'PreToolUse') return locked(preRoomTool);
   if (ev === 'Stop') return locked(stop);
   if (ev === 'UserPromptSubmit') return locked(prompt);
@@ -475,12 +516,18 @@ function route(input: ConsentIn) {
 const onPrompt = (input: ConsentIn) => { load(); dispatch({ ...input, hook_event_name: 'UserPromptSubmit' }); };
 
 /** True when this session's seat has a review on record or a note consent must still offer (review.openOf), so the
- * module still runs node at the next turn end or prompt; false with no seat. */
+ * module still runs node at the next turn end or prompt; false with no seat. noteWaits: any note of the seat waits for
+ * its card (a room post is refused meanwhile). */
 function reviewOpen(input: ConsentIn): boolean {
   load();
   const me = c.whoami(input);
   if (!me) return false;
   return review.openOf({ review: proposal.readReview(me), note: proposal.readConfirm(me) });
+}
+function noteWaits(input: ConsentIn): boolean {
+  load();
+  const me = c.whoami(input);
+  return !!me && !!proposal.readConfirm(me);
 }
 
 /**
@@ -494,7 +541,7 @@ function shimDispatch(input: ConsentIn) {
   const outputs = r.outputs.filter(Boolean);
   const last = outputs.pop() || {};
   for (const o of outputs) process.stdout.write(JSON.stringify(o) + '\n');
-  c.out({ ...last, subHuman: { reviewOpen: reviewOpen(input) } });
+  c.out({ ...last, subHuman: { reviewOpen: reviewOpen(input), noteWaits: noteWaits(input) } });
 }
 
 const SHIM = () => process.env.SUB_HUMAN_SHIM === '1';

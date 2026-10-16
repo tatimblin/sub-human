@@ -127,6 +127,9 @@ export interface HelloResult {
   closed?: boolean;
   /** This machine's id in the room as the host records it for the link (lib/remote/host-links.ts); additive. */
   machine?: string;
+  /** With the token of an invite line's link: the one name the host's card let in (another than the one asked for
+   * when that name sits in the room from another machine: lib/remote/admission.ts taken); additive. */
+  as?: string;
   /** protocol 3, for a hello with a nonce: the host home's machine key and its signature over the nonce
    * (lib/remote/machine-key.ts hostProof), which an invite line's tag names over ssh and a pipe */
   host?: { key: string; sig: string };
@@ -283,6 +286,8 @@ export interface AdmissionRecord extends InviteLife {
   expires_at: string;
   admitted_at?: string; admitted_by?: string | null; admit_sig?: unknown; admitted_until?: string;
   refused_at?: string; refused_by?: string | null;
+  /** the name the joiner asked for when the card let it in under another (its own sat here from another machine) */
+  asked_as?: string;
   /** the seats whose card showed it (lib/remote/admission.ts markTold) */
   told?: string[];
   /** the other machines (proven ids) that presented this used invite: the room heard of each once (invites.ts) */

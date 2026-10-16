@@ -362,3 +362,43 @@ test('cli link CODE --forget: refused on a room hosted here, while the daemon ru
   assert.equal(store.roomExists(other), false);
 });
 
+
+test('R1 (live verify, verify6/12): after link CODE --forget, a process still holding the seat writes nothing there and no "hosted" room comes back; a leftover folder is no room, and --forget sets it aside', () => {
+  const stopped = { state: 'stopped', since: new Date().toISOString(), attempt: 0, lastError: 'the host removed this machine', lastReason: 'LINK_REVOKED', rttMs: null, queued: 0, detail: 'stopped', at: new Date().toISOString() };
+  h.freshHome();
+  const code = h.newRoom();
+  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: 't' });
+  const s = store.open(code) as FsRoomStore;
+  fs.mkdirSync(s.dir!, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(s.logFile, '{"id":1}\n');
+  // bob's seat in it, as this machine's session indexes record it
+  const idx = { code, name: 'bob', role: 'member', pid: process.pid, session_id: 'aaaaaaaa-0000-4000-8000-0000000000b0', address: `bob.${code}` };
+  fs.mkdirSync(path.join(identity.home(), 'sessions', 'by-sid'), { recursive: true });
+  fs.writeFileSync(path.join(identity.home(), 'sessions', 'by-sid', `${idx.session_id}.json`), JSON.stringify(idx));
+  links.writeState(code, stopped);
+  const r = cli(['link', code, '--forget']);
+  assert.equal(r.status, 0, r.stderr);
+  store.forget(code);
+  assert.equal(fs.existsSync(path.join(identity.home(), 'sessions', 'by-sid', `${idx.session_id}.json`)), false, 'the seat ends: its index is gone');
+  assert.equal(identity.lastSeat(idx.session_id), null);
+  // what bob's hold server or tail would write next: refused, and no folder comes back
+  const after = store.open(code) as FsRoomStore;
+  assert.throws(() => session.put(after, 'bob', 'holds', { pid: 1, at: new Date().toISOString(), members: [], room: false }), (e: Error & { code?: string }) => e.code === 'NO_ROOM');
+  assert.throws(() => after.kv.update('members/bob/session', () => ({ v: 1 })), (e: Error & { code?: string }) => e.code === 'NO_ROOM');
+  assert.equal(fs.existsSync(after.dir!), false);
+  assert.equal(store.roomExists(code), false);
+  // the stray state an older run left: a folder with only a seat's session document, untouched for minutes
+  fs.mkdirSync(path.join(after.dir!, 'members', 'bob'), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(path.join(after.dir!, 'members', 'bob', 'session.json'), '{"v":1}');
+  const old = new Date(Date.now() - 5 * 60_000);
+  fs.utimesSync(after.dir!, old, old);
+  assert.equal(store.isLeftover(code), true);
+  assert.equal(store.roomExists(code), false, 'never a room hosted here');
+  const fresh = h.newRoom();
+  store.createRoom(fresh);
+  assert.equal(store.isLeftover(fresh), false, 'a room just made, before its first join, is a room');
+  const d = cli(['link', code, '--forget']);
+  assert.equal(d.status, 0, d.stderr);
+  assert.match(d.stdout, new RegExp(`^room ${code}: a leftover folder .* is set aside at .*${code}\\.forgotten-`));
+  assert.equal(fs.existsSync(after.dir!), false);
+});

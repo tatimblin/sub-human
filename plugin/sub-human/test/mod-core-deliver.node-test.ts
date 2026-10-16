@@ -119,3 +119,20 @@ test('deliver: relayQueue sends every queued line as one relay, at most one per 
   assert.equal(q.take(1000 + d.RELAY_GAP_MS), 'bob: there\nroom: "Rate limiting" agreed (bob)', 'coalesced');
   assert.ok(d.RELAY_GAP_MS >= 2000 && d.RELAY_GAP_MS <= 10_000, 'a few seconds');
 });
+
+test('deliver: the tail\'s invites event (the host\'s open invite refs) is one invites action; a malformed one is nothing', async () => {
+  const d = await import('../mod/core/deliver.ts');
+  const ev = d.parseEvent(JSON.stringify({ type: 'invites', open: ['abcdef012345', 3] }));
+  assert.deepEqual(ev, { type: 'invites', open: ['abcdef012345'] });
+  assert.deepEqual(d.route(ev), [{ do: 'invites', open: ['abcdef012345'] }]);
+  assert.equal(d.parseEvent(JSON.stringify({ type: 'invites' })), null);
+});
+
+test('deliver (item 5): a member\'s wake goes as its lines for the person, bare, and its "(for Claude)" lines as context; one with none goes framed', async () => {
+  const d = await import('../mod/core/deliver.ts');
+  const wake = `${d.WAKE_HEAD}\nalice: @bob just say ok\n  │ please\n(for Claude) room now: proposal a1 waiting on bob`;
+  const p = d.wakeParts(wake)!;
+  assert.equal(p.shown, 'alice: @bob just say ok\n  │ please');
+  assert.deepEqual(p.context.split('\n'), [d.WAKE_CONTEXT, d.WAKE_HEAD, '(for Claude) room now: proposal a1 waiting on bob']);
+  assert.equal(d.wakeParts(`${d.WAKE_HEAD}\n(for Claude) only for the model`), null);
+});
