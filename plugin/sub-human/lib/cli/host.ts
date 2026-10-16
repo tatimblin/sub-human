@@ -62,7 +62,8 @@ function hostedRoom(explicit?: string): RoomCode {
     return explicit;
   }
   const open = identity.openRooms().filter(c => identity.isHost(c));
-  if (open.length === 1) return open[0];
+  const [only, ...more] = open;
+  if (only !== undefined && !more.length) return only;
   throw Object.assign(new Error(open.length ? `${open.length} rooms are open here (${open.join(', ')}); name one with --room ROOM` : 'no room is open here; name one with --room ROOM'), { code: 'NO_ROOM' });
 }
 
@@ -92,10 +93,11 @@ function invite(args: readonly string[]): number {
 
 function kick(args: readonly string[]): number {
   const { flags: f, rest, error } = parse(args, { room: 1, file: 1 });
-  if (error || rest.length !== 1) return fail('usage: sub-human kick NAME [--room ROOM] [--file AUTHORIZED_KEYS]', 2);
+  const [name] = rest;
+  if (error || rest.length !== 1 || name === undefined) return fail('usage: sub-human kick NAME [--room ROOM] [--file AUTHORIZED_KEYS]', 2);
   try {
     const hosting: typeof import('../remote/hosting.ts') = require('../remote/hosting.ts');
-    say(hosting.kick(hostedRoom(f.room), rest[0], f.file ? { file: f.file } : {}).text);
+    say(hosting.kick(hostedRoom(f.room), name, f.file ? { file: f.file } : {}).text);
     return 0;
   } catch (e) { return fail(msgOf(e)); }
 }
@@ -111,19 +113,20 @@ function ask(question: string): string {
 /** `sub-human admit [REF [--refuse]]`: a join request (the card's, in a shell: headless hosts). */
 function admit(args: readonly string[]): number {
   const p = parse(args, { yes: 0, room: 1, refuse: 0 });
-  if (p.error || p.rest.length > 1 || (p.rest.length && !/^[0-9a-f]{6,12}$/.test(p.rest[0]))) return fail(p.error || 'usage: sub-human admit [REF [--refuse] [--yes]] [--room ROOM]', 2);
+  const [ref] = p.rest;
+  if (p.error || p.rest.length > 1 || (ref !== undefined && !/^[0-9a-f]{6,12}$/.test(ref))) return fail(p.error || 'usage: sub-human admit [REF [--refuse] [--yes]] [--room ROOM]', 2);
   const adm: typeof import('../remote/admission.ts') = require('../remote/admission.ts');
   const text: typeof import('../text.ts') = require('../text.ts');
   let code;
   try { code = hostedRoom(p.flags.room); } catch (e) { return fail(msgOf(e)); }
-  if (!p.rest.length) {
+  if (ref === undefined) {
     const reqs = adm.pending(code);
     if (!reqs.length) { say(`nobody is waiting to join room ${code}`); return 0; }
     for (const q of reqs) say(`${adm.describe(q)} wants to join room ${code} (until ${text.localHm(q.expires_at)}): ${text.cliLine(`admit ${q.ref}`)} [--refuse]`);
     return 0;
   }
-  const req = adm.find(code, p.rest[0]);
-  if (!req) return fail(`room ${code} has no join request ${p.rest[0]} (admit with no ID lists them)`);
+  const req = adm.find(code, ref);
+  if (!req) return fail(`room ${code} has no join request ${ref} (admit with no ID lists them)`);
   if (!p.flags.yes && !p.flags.refuse) {
     if (!process.stdin.isTTY) return fail('not a terminal: add --yes to let them in (or --refuse)');
     const yes = ask(`${adm.describe(req)} typed your PIN and wants to join room ${code}.\nLet them in? That machine joins the room and can post only as the people it brings. [y/N] `);
@@ -148,6 +151,7 @@ function prime(args: readonly string[]): number {
     const [cmd, ...rest] = ssh.primeCommand(l.transport, code, p.flags.persist ? { persist: p.flags.persist } : {});
     links.set(code, { ...l, transport: { ...l.transport, mux: true } });
     process.stderr.write(`opening a shared ssh connection for room ${code} (answer any prompt once)…\n`);
+    if (cmd === undefined) throw new TypeError('the ssh command is empty'); // never (primeCommand names ssh); spawnSync threw here too
     const r = spawnSync(cmd, rest, { stdio: 'inherit' });
     if (r.status !== 0) return fail(`ssh exited ${r.status}; the room still connects on its own, without the shared connection`);
     say(`room ${code}: its connection now rides this ssh login for ${p.flags.persist || '8h'} (after that it reconnects on its own; prime again for another MFA prompt)`);

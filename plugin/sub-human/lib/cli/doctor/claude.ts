@@ -40,7 +40,7 @@ function claudeVersion(env: NodeJS.ProcessEnv): string | null {
   const r = spawnSync('claude', ['--version'], { encoding: 'utf8', timeout: 15_000, env });
   if (r.error || r.status !== 0) return null;
   const m = /(\d+\.\d+\.\d+)/.exec(r.stdout || '');
-  return m ? m[1] : null;
+  return m?.[1] ?? null;
 }
 
 function checkClaude({ version, quick, env }: { version: string | null; quick: boolean; env: NodeJS.ProcessEnv }): { check: Check; probe?: Report['probe'] } {

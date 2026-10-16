@@ -66,11 +66,12 @@ function helloProbe(spec: LinkSpec, code: RoomCode, { timeoutMs = DOCTOR_HELLO_M
   if (!cmd && (spec.kind === 'wss' || spec.kind === 'ws')) return webHelloProbe(spec, code, { timeoutMs });
   if (!cmd) return Promise.resolve({ ok: false, ms: 0, skipped: true, error: `no reachability check for the ${spec.kind} transport` });
   const params = { proto: protocol.PROTO, client: protocol.PLUGIN_VERSION, caps: {}, machine: lib('home.ts').machineId() };
-  const argv = cmd.argv, childEnv = cmd.env;
+  const [bin, ...argv] = cmd.argv, childEnv = cmd.env;
   return new Promise<HelloProbe>(resolve => {
     const t0 = Date.now();
     let stderr = '', done = false;
-    const child = spawn(argv[0], argv.slice(1), { env: childEnv, stdio: ['pipe', 'pipe', 'pipe'] });
+    if (bin === undefined) throw new TypeError('the link command is empty'); // never (ssh and pipe commands name a program); spawn threw here too
+    const child = spawn(bin, argv, { env: childEnv, stdio: ['pipe', 'pipe', 'pipe'] });
     const finish = (r: Omit<HelloProbe, 'ms'>) => {
       if (done) return;
       done = true;
@@ -168,7 +169,7 @@ async function diagnoseLink(code: RoomCode, { quick, timeoutMs, env }: { quick: 
       ok: r.ok, ms: r.ms, error: r.error, ...(r.code ? { code: r.code } : {}), skipped: !!r.skipped, hint: r.ok ? null : (spec && spec.kind === 'ssh' ? (spec.login === true && lib('remote/transports/ssh.ts').loginFailure(r.stderr ?? '', spec, code)) || sshHint(r.stderr, { code, transport: spec }) : null),
       stderr: r.stderr || '',
       protocol: r.ok ? { v: reply.v, proto: reply.proto || null, server: typeof reply.server === 'string' ? reply.server : null } : null,
-      skewMs: r.ok && hostTime !== null ? Math.round(hostTime - (r.t0! + r.t1!) / 2) : null, // an answer carries t0 and t1
+      skewMs: r.ok && hostTime !== null && r.t0 !== undefined && r.t1 !== undefined ? Math.round(hostTime - (r.t0 + r.t1) / 2) : null, // an answer carries t0 and t1
     };
     if (r.ok && reply.closed === true) out.closed = true;
   }
@@ -181,7 +182,8 @@ function linkChecks(d: LinkReport): Check[] {
   const out: Check[] = [];
   const bits: (string | null | undefined)[] = [`${d.transport.describe}`, `daemon ${d.daemon.running ? `running (pid ${d.daemon.pid})` : 'not running'}`, ls.indicator(d.state) || d.state.state];
   if (d.state.rttMs !== undefined) bits.push(`rtt ${d.state.rttMs} ms`);
-  const lastError = d.state.lastError || (d.recent.length ? d.recent.at(-1)!.replace(/^\S+ sub-human link \S+: /, '') : null);
+  const lastLine = d.recent.at(-1);
+  const lastError = d.state.lastError || (lastLine !== undefined ? lastLine.replace(/^\S+ sub-human link \S+: /, '') : null);
   const why = d.state.lastReason || null;
   if (lastError && d.state.state !== 'online') bits.push(`last error: ${lastError}`);
   if (d.state.state === 'stopped' && why && REVOKED.has(why)) bits.push('the host ended this machine\'s link: not dialed');

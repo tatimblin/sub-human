@@ -16,14 +16,18 @@ function parse<S extends FlagSpec>(args: readonly string[], spec: S): Parsed<S> 
   const flags: Record<string, string | true> = {}, rest: string[] = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
+    if (a === undefined) break; // i < args.length
     if (a === '--') { rest.push(...args.slice(i + 1)); break; }
     const k = typeof a === 'string' && a.startsWith('--') ? a.slice(2) : null;
     if (k === null || !Object.hasOwn(spec, k)) { rest.push(a); continue; }
+    const next = args[i + 1];
     if (spec[k] === 0) flags[k] = true;
-    else if (spec[k] === '?') flags[k] = args[i + 1] !== undefined && !String(args[i + 1]).startsWith('--') ? args[++i] : true;
-    else {
-      if (args[i + 1] === undefined) return { flags: flags as Flags<S>, rest, error: `${a} needs a value` };
-      flags[k] = args[++i];
+    else if (spec[k] === '?') {
+      if (next !== undefined && !String(next).startsWith('--')) { flags[k] = next; i++; } else flags[k] = true;
+    } else {
+      if (next === undefined) return { flags: flags as Flags<S>, rest, error: `${a} needs a value` };
+      flags[k] = next;
+      i++;
     }
   }
   return { flags: flags as Flags<S>, rest };

@@ -234,7 +234,8 @@ function read(args: readonly string[]) {
   const es = r.readAfter(r.getCursor(cursor));
   if (!es.length) return console.log('(no new messages)');
   show(es);
-  r.setCursor(cursor, es.at(-1)!.id); // es is not empty
+  const last = es.at(-1);
+  if (last) r.setCursor(cursor, last.id); // es is not empty
 }
 
 function digest(args: readonly string[]) {
@@ -280,7 +281,8 @@ function tasksCmd(args: readonly string[]) {
   if (flags.json) return console.log(JSON.stringify(list));
   if (!list.length) return console.log(`(no tasks in room ${code})`);
   // the rows' words (lib/tasks.ts summary: "tasks 3 open"): open, in progress, done
-  const word = (s: unknown) => ({ pending: 'open', in_progress: 'in progress', completed: 'done' } as Record<string, string>)[String(s)] || String(s || '');
+  const words: Record<string, string> = { pending: 'open', in_progress: 'in progress', completed: 'done' };
+  const word = (s: unknown) => words[String(s)] || String(s || '');
   const w = Math.max(...list.map(t => word(t.status).length));
   const o = Math.max(...list.map(t => String(t.owner || '-').length));
   for (const t of list) {
@@ -478,7 +480,7 @@ function tellHostLeaving(code: RoomCode, s: MirrorRoomStore, state: unknown): st
   for (const n of names) {
     const ms = until - Date.now();
     if (ms <= 0) { why = 'no answer in time'; break; }
-    try { if (s.members.leave(n, { reason: 'left', deadlineMs: ms })) told.push(n); } catch (e) { why = (msgOf(e) || String(e)).split('\n')[0]; break; }
+    try { if (s.members.leave(n, { reason: 'left', deadlineMs: ms })) told.push(n); } catch (e) { why = (msgOf(e) || String(e)).split('\n')[0] ?? ''; break; }
   }
   const missed = [...names].filter(n => !told.includes(n));
   const heard = told.length ? `; the host was told ${told.join(', ')} left` : '';
@@ -489,7 +491,7 @@ function tellHostLeaving(code: RoomCode, s: MirrorRoomStore, state: unknown): st
  * (link.log, link.state.json), or deleted when there is no archive: nothing of the link stays in links/. */
 function setAsideLinkFiles(code: RoomCode, archive: string | null) {
   const links: typeof import('../room/links.ts') = require('../room/links.ts');
-  for (const [file, name] of [[links.logFile(code), 'link.log'], [links.stateFile(code), 'link.state.json']]) {
+  for (const [file, name] of [[links.logFile(code), 'link.log'], [links.stateFile(code), 'link.state.json']] as const) {
     try {
       if (archive) fs.renameSync(file, path.join(archive, name)); else fs.rmSync(file, { force: true });
     } catch (e) { if (errCode(e) !== 'ENOENT') { try { fs.rmSync(file, { force: true }); } catch { /* left */ } } }
@@ -583,7 +585,7 @@ function main([cmd, ...args]: string[] = process.argv.slice(2)): void {
     try { if (fs.existsSync(identity.home())) (require('../remote/shim.ts') as typeof import('../remote/shim.ts')).refresh(); } catch { /* best effort */ }
   }
   try {
-    (cmds[cmd] || (() => die(USAGE)))(args);
+    ((cmd === undefined ? undefined : cmds[cmd]) || (() => die(USAGE)))(args);
   } catch (e) {
     die(msgOf(e), 2);
   }

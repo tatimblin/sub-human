@@ -44,7 +44,7 @@ import type { Check, CheckStatus, DoctorOptions, Report } from './types.ts';
 const require = createRequire(import.meta.url);
 
 /** 24.3: the first 24 that strips TypeScript without an ExperimentalWarning (every hook is .ts). */
-const NODE_MIN = [24, 3];
+const NODE_MIN = [24, 3] as const;
 const STORE_DIRS = ['rooms', 'sessions', 'links', 'keys', 'bin'];
 
 function pluginVersion(): string | null {
@@ -59,7 +59,7 @@ function checkPlugin() {
 }
 
 function checkNode(version: string = process.versions.node): Check {
-  const [major, minor] = String(version).split('.').map(Number);
+  const [major = NaN, minor = NaN] = String(version).split('.').map(Number);
   const min = NODE_MIN.join('.');
   return major > NODE_MIN[0] || (major === NODE_MIN[0] && minor >= NODE_MIN[1])
     ? check({ id: 'node', status: 'pass', title: 'node', detail: `v${version}` })
