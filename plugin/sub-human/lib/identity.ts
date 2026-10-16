@@ -27,7 +27,8 @@
  *                                        rejoin a room whose room Claude is waiting out the reap grace)
  *   roomClosing(code) -> bool            members claude.closing is set (the reaper is shutting the room down)
  *   pruneSessionIndexes(now?, ttlMs?) -> n   by-sid and by-pid index records not written in ttlMs (SESSION_INDEX_TTL_MS)
- *                                        whose pid is not alive with its recorded start time: lib/gc.ts
+ *                                        whose pid is not alive with its recorded start time, and EnterPlanMode mode
+ *                                        notes (sessions/mode, hooks.json) over a minute old: lib/gc.ts
  *   isHost(code) -> bool                 this machine holds the room (its store's isHost): the room Claude's spawn, reap
  *                                        and watchdog and proposal decisions run only here
  *   machineId() -> string                this machine's id (lib/home.ts), a seat record's `machine`; machineIn(code) its id in
@@ -431,6 +432,14 @@ function pruneSessionIndexes(now = Date.now(), ttlMs = SESSION_INDEX_TTL_MS): nu
       rm(file);
       n++;
     }
+  }
+  // the EnterPlanMode mode notes (hooks.json) consent did not take: a minute is long past fresh
+  const modes = path.join(home(), 'sessions', 'mode');
+  let notes: string[] = [];
+  try { notes = fs.readdirSync(modes); } catch { /* none */ }
+  for (const f of notes) {
+    const file = path.join(modes, f);
+    try { if (now - fs.statSync(file).mtimeMs >= 60_000) { rm(file); n++; } } catch { /* gone */ }
   }
   return n;
 }
