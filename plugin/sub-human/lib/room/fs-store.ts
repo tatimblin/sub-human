@@ -117,7 +117,7 @@ class FsRoomStore implements RoomStore {
       update: (key, fn, opts) => self._kvUpdate(key, fn, opts),
       delete: key => { try { fs.unlinkSync(self._kvFile(key)); } catch { /* absent */ } },
       list: prefix => self._kvList(prefix),
-      lock: (key, fn, opts) => withLock(self._kvFile(key) + '.lock', fn, opts),
+      lock: (key, fn, opts) => { self._mustExist(); return withLock(self._kvFile(key) + '.lock', fn, opts); },
     };
   }
   get dir(): string { return this._dir || roomDir(this.code); }
@@ -310,7 +310,7 @@ class FsRoomStore implements RoomStore {
   }
 
   // ----- locks -----
-  lock<R>(name: string, fn: () => R, opts?: LockOpts): R { return withLock(path.join(this.dir, `${checkKey(name)}.lock`), fn, opts); }
+  lock<R>(name: string, fn: () => R, opts?: LockOpts): R { this._mustExist(); return withLock(path.join(this.dir, `${checkKey(name)}.lock`), fn, opts); }
 }
 
 export { FsRoomStore };

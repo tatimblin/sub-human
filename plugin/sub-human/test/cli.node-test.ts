@@ -394,6 +394,19 @@ test('R1 (live verify, verify6/12): after link CODE --forget, a process still ho
   fs.utimesSync(after.dir!, old, old);
   assert.equal(store.isLeftover(code), true);
   assert.equal(store.roomExists(code), false, 'never a room hosted here');
+  // stage 8e I.10: a stray write a moment ago (its mtime now) leaves it a leftover: made long ago is what counts
+  // (where the filesystem keeps a birth time that utimes moved back with it, as on macOS)
+  fs.writeFileSync(path.join(after.dir!, 'members', 'bob', 'x.json'), '{}');
+  fs.utimesSync(after.dir!, new Date(), new Date());
+  if (fs.statSync(after.dir!).birthtimeMs > 0 && fs.statSync(after.dir!).birthtimeMs < Date.now() - 60_000) assert.equal(store.isLeftover(code), true, 'written just now, made minutes ago');
+  fs.utimesSync(after.dir!, old, old);
+  // the store's locks refuse a room this machine does not have, as its writes do
+  const gone = h.newRoom();
+  const ghost = store.open(gone) as FsRoomStore;
+  fs.rmSync(ghost.dir!, { recursive: true, force: true });
+  assert.throws(() => ghost.lock('x', () => 1), (e: Error & { code?: string }) => e.code === 'NO_ROOM');
+  assert.throws(() => ghost.kv.lock('members/bob/session', () => 1), (e: Error & { code?: string }) => e.code === 'NO_ROOM');
+  assert.equal(fs.existsSync(ghost.dir!), false, 'no folder made for a lock');
   const fresh = h.newRoom();
   store.createRoom(fresh);
   assert.equal(store.isLeftover(fresh), false, 'a room just made, before its first join, is a room');
