@@ -8,10 +8,12 @@ coverage/
 docs/rebuild/screens/
 
 # written by Claude Code when it loads the hooks module from a folder (--plugin-dir, claude plugin test/validate);
-# docs/archive/MODS-PLAN.md W1 keeps them out of git
 plugin/sub-human/tsconfig.json
 plugin/sub-human/.claude-plugin/types/
 
 # demo.sh --film takes (scripts/capture.ts); only the hand-made fixture is kept
 trailer/capture/*
 !trailer/capture/fixture/
+
+# trailer agent skills: npx skills add remotion-dev/skills (trailer/skills-lock.json pins them)
+trailer/.claude/skills/

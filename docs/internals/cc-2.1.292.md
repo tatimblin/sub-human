@@ -75,7 +75,7 @@ function brr(){if(SP())return!1;return t(`installed plugins' hooks modules not l
 - Built-in plugins load regardless, and `--bare`, safe mode and managed policy switch modules off for installed plugins.
 - The event and cap names (`"ui.focus","agent.offer","agent.spawn"` …) are still there.
 
-**Effect on sub-human.** None until a module ships. The plugin's `hooks.json` has no `modules`, so nothing new loads. `cc.test.js` ("the plugin ships at most one hooks module, at the path hooks.json names") checks that `modules` has at most one entry, that the named file exists, and that no stray `hooks/register.*` sits beside it. Adopting modules was planned in [`docs/archive/MODS-PLAN.md`](../archive/MODS-PLAN.md); what W0 measured is in [Function hooks](#function-hooks).
+**Effect on sub-human.** None until a module ships. The plugin's `hooks.json` has no `modules`, so nothing new loads. `cc.test.js` ("the plugin ships at most one hooks module, at the path hooks.json names") checks that `modules` has at most one entry, that the named file exists, and that no stray `hooks/register.*` sits beside it. Adopting modules was planned in `docs/archive/MODS-PLAN.md` (git history); what W0 measured is in [Function hooks](#function-hooks).
 
 ## Currently passing entries: re-checked
 
@@ -102,7 +102,7 @@ Some of these passing searches still named minified identifiers. They were rewri
 
 ## Function hooks
 
-What the [mods plan](../archive/MODS-PLAN.md) W0 spikes measured on 2.1.292 (2026-10-07). Method: a throwaway plugin (`hooks.json` with a command `UserPromptSubmit` + `SessionStart` hook and `"modules": ["./register.mjs"]`, the entry importing `../mod/x.mjs`) under `$TMPDIR/sh-mods-spike/`, loaded with `--plugin-dir` in `-p` runs, one `--bg` job and two interactive tmux sessions. Each hook appended a JSON line to a log file. The CONTRACT entries are in `lib/cc.ts` §10 (and `prompt-origin-composer` in §8).
+What the mods plan (git history) W0 spikes measured on 2.1.292 (2026-10-07). Method: a throwaway plugin (`hooks.json` with a command `UserPromptSubmit` + `SessionStart` hook and `"modules": ["./register.mjs"]`, the entry importing `../mod/x.mjs`) under `$TMPDIR/sh-mods-spike/`, loaded with `--plugin-dir` in `-p` runs, one `--bg` job and two interactive tmux sessions. Each hook appended a JSON line to a log file. The CONTRACT entries are in `lib/cc.ts` §10 (and `prompt-origin-composer` in §8).
 
 > (Moved: the entries are in `lib/cc/contract.json`.)
 
@@ -127,7 +127,7 @@ Other findings:
 - **`$.ui.log` is one line.** A newline in the text is drawn as U+FFFD (seen live while building delivery), so `mod/deliver.ts` logs a chat batch line by line. CONTRACT `ui-log-notice`.
 - **Test kit.** A test answers a `$` call beneath the plugin with `on('process.run', () => ({ value: … }))` (a bare result is refused: "returned neither { value } nor { deny }"), and a classic event with nothing beneath needs `on('classic.<Event>', …)` ("no implementation for classic.UserPromptSubmit").
 
-W1 findings (2026-10-07, while building the module; [mods plan](../archive/MODS-PLAN.md) W1 results):
+W1 findings (2026-10-07, while building the module; mods plan (git history) W1 results):
 
 - **A notification row's text is its summary.** For `origin.kind` `task-notification`, `UserMessage` `props.text` is the `<summary>` (a monitor's reads `Monitor event: "sub-human room"`), not the `<event>` body. The engine parses the body itself and draws its first line as the row's headline (`monitorEvent:re===h?Ae:null`), so a hook that rewrites the text loses that headline and still has no chat lines to draw. sub-human leaves those rows to the engine. CONTRACT `usermessage-notification-summary`.
 - **`$.state` needs a types contract.** `claude plugin validate` refuses a `$.state` read or write the plugin's own contract does not declare (`… is not declared: the manifest's types contract must name it in interface PluginState { … }`). The contract is a self-contained `.d.ts` named by `plugin.json` `"types"`. CONTRACT `plugin-types-state`.
@@ -137,7 +137,7 @@ W1 findings (2026-10-07, while building the module; [mods plan](../archive/MODS-
 
 ## Review spikes R0
 
-What the [review plan](../archive/REVIEW-PLAN.md) R0 spikes found on 2.1.292 (2026-10-07). S-skip is a live run; S-title and S-mcp are binary reading (`/tmp/cc292/bin.txt`, `VERSION:"2.1.292"`). Hit counts are for a latin1 view of the binary; a shape uses `~` as in `cc.shapeRe`. R2 C1 turned the strings below into CONTRACT entries (`classic-chain-order` rewritten; `mcp-stdio-ppid`, `mcp-progress-resets-idle-timeout`, `mcp-server-shared-by-subagents` and `session-title-address` added, the last with the name-uniqueness strings folded in), each with a mutated-string test in `test/cc.test.js`.
+What the review plan (git history) R0 spikes found on 2.1.292 (2026-10-07). S-skip is a live run; S-title and S-mcp are binary reading (`/tmp/cc292/bin.txt`, `VERSION:"2.1.292"`). Hit counts are for a latin1 view of the binary; a shape uses `~` as in `cc.shapeRe`. R2 C1 turned the strings below into CONTRACT entries (`classic-chain-order` rewritten; `mcp-stdio-ppid`, `mcp-progress-resets-idle-timeout`, `mcp-server-shared-by-subagents` and `session-title-address` added, the last with the name-uniqueness strings folded in), each with a mutated-string test in `test/cc.test.js`.
 
 ### S-skip: what a module's `classic.PreToolUse` answer without `next` skips (review M5)
 

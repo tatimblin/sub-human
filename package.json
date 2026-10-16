@@ -17,8 +17,7 @@
     "probe": "node scripts/probe-cc.ts",
     "typings": "node scripts/typings.ts",
     "docs": "node scripts/arch-doc.ts",
-    "test:remote-docker": "node --test scripts/remote-docker/remote-docker.test.ts",
-    "test:remote-docker:mac": "LAB_MAC=1 node --test scripts/remote-docker/remote-docker.test.ts"
+    "test:remote-docker": "node --test scripts/remote-docker/remote-docker.test.ts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

@@ -1,5 +1,5 @@
 // hooks/handlers/tasks.ts: the PostToolUse TaskCreate|TaskUpdate mirror and the TaskCompleted gate (room Claude only).
-// Payload shapes are the ones S1 logged from a --bg room Claude (docs/archive/next/S1-headless-claude.md §4).
+// Payload shapes are the ones S1 logged from a --bg room Claude.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

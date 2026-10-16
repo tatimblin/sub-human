@@ -13,19 +13,18 @@ npx remotion render Trailer --props='{"take":"<take-id>"}'
 
 `<take-id>` is a folder under `capture/` holding `capture.jsonl` or `capture.jsonl.gz`, the take that
 `scripts/demo.sh --film --take <take-id>` records: `meta`, `frame` and `marker` lines. The default is `take7`, a real
-run of the whole story with tristan and jess that the cuts are timed to; `take5` and `take4` are alice-and-bob takes
-before it; `synthetic` is a generated one for development. See "Takes and casts" below. The MP4 lands in `out/`.
+run of the whole story with tristan and jess that the cuts are timed to; `synthetic` is a generated one for development. See "Takes and casts" below. The MP4 lands in `out/`.
 
 The compositions: `Trailer` (1920×1080, ~68 s), `TrailerSquare` (1080×1080, the same cut stacked), `Social15`
 (1080×1350, 15 s) and `ReadmeLoop` (1280×720, ~8 s, loops). Same `--props`. For take7 the default cuts are v3, the
 "native" ones (`src/edits/native.ts`): `STORYBOARD.md`'s take7 beats in the take4 cut's look (real terminal windows,
 one camera that pushes in on the pane that matters, plain captions, a few callout labels, the v1 title and end card;
 no message tags, name plates or per-person colours). The v2 split-screen cuts are `edit: "trailer-v2"`,
-`"social-v2"`, `"readme-v2"` (the default for take4 and take5); `"trailer-v3"` etc. name v3 explicitly.
+`"social-v2"`, `"readme-v2"` (the default for the alice-and-bob takes); `"trailer-v3"` etc. name v3 explicitly.
 The README GIF: `ffmpeg -i out/ReadmeLoop-take7-v3.mp4 -vf "fps=12,scale=800:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96[p];[b][p]paletteuse=dither=bayer:bayer_scale=4" out/ReadmeLoop-take7-v3.gif`.
-The take4-era cuts are still there as `edit: "trailer-v1"` and `"readme-v1"`. `npm run dev` opens Remotion Studio.
+`npm run dev` opens Remotion Studio.
 
-Props (all optional): `take`, `edit` (`trailer`, `social`, `readme` in the take's style; or `-v3`, `-v2` of each, `trailer-v1`, `readme-v1`), `music` (a URL or a path under `public/`, faded in and out), `musicVolume`,
+Props (all optional): `take`, `edit` (`trailer`, `social`, `readme` in the take's style; or `-v3`, `-v2` of each), `music` (a URL or a path under `public/`, faded in and out), `musicVolume`,
 `keyClicks` (a soft click per typed key; off), `scrubWords` (extra words to replace: a username, a hostname),
 `dropRows` (screen rows to remove, by text), `compact` (stacked panes drop blank rows; on for `ReadmeLoop`),
 `seats` (default: the take's two people).
@@ -37,7 +36,7 @@ who opens the room (left or top, blue), the one who joins (violet) and the room'
 capture's session keys. Name plates, captions, tag headers, marks and the anchors' text all come from it, so no cut
 hard-codes a name.
 
-- take4, take5 (and `synthetic`, `fixture`): alice and bob. alice's Claude writes the handler and bob's the tests
+- `synthetic`, `fixture`: alice and bob. alice's Claude writes the handler and bob's the tests
   (`testsStory` in `src/edits/trailer.ts`).
 - take7: tristan and jess (session keys `tristan`, `jess`, `claude`). Both Claudes write code: tristan's the store
   (`src/store.js`, listTasks with a keyset cursor), jess's the HTTP handler (`src/server.js`, 400 on a bad cursor),
@@ -74,8 +73,7 @@ itself)`, so a missing text falls back to the marker rather than dropping the se
   and `tags`: a message crossing between panes, flown as a card in the sender's colour from one row to another,
   landing when the receiving pane shows it (`arrive`). `src/components/SplitReplay.tsx` draws them: both panes always
   on screen, zooming within their halves, with name plates and the room's Claude's plate between them
-  (the take's cast: one name and one colour each). `src/edits/v1/` holds the take4-era cuts (one stage camera,
-  `components/Replay.tsx`).
+  (the take's cast: one name and one colour each).
 
 The cuts use the beats `demo.sh --film` marks: `open`, `join`, `panel`, `talk`, `reply`, `claudes`, `plan`, `proposal`,
 `answers`, `revision`, `agreed`, `split`, `build`, `subagent`, `claimed`, `handler`, `tested`, `tests` and `pass`
@@ -109,8 +107,7 @@ servers or sessions; it exits 1 on a hit. `--audit` only checks; `--lines` print
 ## Files
 
 - `capture/take7/` is the take the cuts are timed to (2026-10-12, Claude Code 2.1.292, 120×36 seats, tristan and
-  jess, room falcon-0515; all 66 checks pass), `capture/take5/` (alice and bob; it added the agent-panel beats
-  `panel` and `subagent`) and `capture/take4/` the ones before. Git keeps `capture.jsonl.gz` +
+  jess, room falcon-0515; all 66 checks pass); earlier takes are in git history. Git keeps `capture.jsonl.gz` +
   `run.json` only (`git add -f`; `capture/*` is ignored), and that gzip is pre-scrubbed (`scripts/prescrub.mjs`):
   every frame already went through the loader's scrub and row blanking, so no home path, account or skill list is
   in git. The raw `capture.jsonl` stays local; the loader prefers it when present and renders the same.
@@ -123,5 +120,5 @@ servers or sessions; it exits 1 on a hit. `--audit` only checks; `--lines` print
 - `src/fonts/`: JetBrains Mono, Inter and Noto Sans Symbols/Symbols 2/Math, all SIL OFL 1.1 (licences alongside).
   The Noto and Inter files are subsets: `pyftsubset <font> --unicodes=… --flavor=woff2`; the ranges are in
   `src/fonts/fonts.ts`'s header.
-- `.claude/skills/remotion-best-practices` holds Remotion's agent skills (`npx skills add remotion-dev/skills`;
-  `skills-lock.json` pins them).
+- Remotion's agent skills are not committed: `npx skills add remotion-dev/skills` installs them into
+  `.claude/skills/` (gitignored), and `skills-lock.json` pins them.

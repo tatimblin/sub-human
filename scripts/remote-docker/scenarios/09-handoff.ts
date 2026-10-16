@@ -1,4 +1,4 @@
-// Planned handoff (1.0, PROD-PLAN item 7): alice (the host, devbox) moves the room to bob on joiner-a before closing
+// Planned handoff (1.0): alice (the host, devbox) moves the room to bob on joiner-a before closing
 // her laptop; bea (joiner-b, through the bastion) follows. The real interfaces, in order:
 //   1. alice: `/sub-human handoff bob joiner@joiner-a` (the others will reach bob's machine at that address);
 //   2. bob's machine gets the ask privately; bob answers the card the hooks build ("Host it here", hooks/consent.ts);

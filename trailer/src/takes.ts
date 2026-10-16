@@ -5,7 +5,7 @@ import { halvesStory } from './edits/halves';
 
 /**
  * Per take: who is in it (the cast: names and colours, name plates, captions, tag labels) and which story its
- * cuts tell. take4/take5 (and the synthetic and fixture takes) are alice and bob, with bob's Claude writing the
+ * cuts tell. The synthetic and fixture takes are alice and bob, with bob's Claude writing the
  * tests; take7 is tristan and jess, both Claudes writing code (take6, an aborted take, is not listed). A take not
  * listed here gets the newest story, with its two people read from the capture (the first two sessions that are not
  * "claude", in the capture's order).
@@ -19,8 +19,6 @@ type TakeConfig = {
 
 const TESTS: TakeConfig = { cast: ALICE_BOB, story: testsStory };
 export const TAKES: Record<string, TakeConfig> = {
-  take4: TESTS,
-  take5: TESTS,
   synthetic: TESTS,
   fixture: TESTS,
   take7: { cast: TRISTAN_JESS, story: halvesStory, style: 'v3' },

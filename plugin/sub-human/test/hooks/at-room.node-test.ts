@@ -71,7 +71,7 @@ const refusedStop = (r: HookRun): string => {
   assert.equal(hso(r).suppressOriginalPrompt, undefined);
   return must(ans(r).stopReason);
 };
-/** A post: continue:false with the receipt as stopReason (docs/archive/fixes/D #9); never a block. */
+/** A post: continue:false with the receipt as stopReason; never a block. */
 const posted = (r: HookRun): string => {
   assert.equal(r.code, 0, r.stderr);
   assert.equal(ans(r).continue, false);

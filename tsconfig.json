@@ -1,5 +1,5 @@
 {
-  // npm run typecheck (docs/archive/TYPESCRIPT.md, decision 8). Nothing is emitted: node strips the types of each .ts it
+  // npm run typecheck. Nothing is emitted: node strips the types of each .ts it
   // loads (Node 24.3+) and Claude Code transpiles the hooks module (mod/); only this checks them.
   // This is the whole plugin: the runtime, its node tests (test/), the module's wiring tests (mod/test) and its two
   // plain JavaScript files (hooks/compile-cache.js, lib/cache-dir.js: // @ts-check), as one project, which is what an

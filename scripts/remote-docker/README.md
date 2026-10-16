@@ -19,7 +19,6 @@ checked only with `node --check`. The "today" column below is the last run befor
 | What | Command | Stack |
 |---|---|---|
 | The scenario suite (personas P1–P3, chaos, skew, security, 1.1) | `npm run test:remote-docker` or `node scripts/remote-docker/harness.ts scenarios [--only ID[,ID]] [--out DIR] [--keep]` | `lab/compose.yml`, project `sub-human-lab` |
-| The original 11 assertions, with this Mac as the joiner: **not ported** to the PIN join yet (it linked with an sh1 invite, gone in Stage 7); `harness.ts run` exits 2 saying so | `npm run test:remote-docker:mac` or `harness.ts run` | `compose.yml`, project `sub-human-remote` |
 | Manual mode: real Claude sessions on this Mac join a devbox room | `harness.ts up [--host-seat NAME] [--joiners A,B]`, `status`, `say [--to NAME] TEXT`, `cut`, `heal`, `latency MS`, `down` | `compose.yml` |
 
 ## Topology (`lab/compose.yml`)
@@ -101,7 +100,7 @@ probe finds it and the scenario runs. You can also force things:
 
 - `LAB_FORCE=handoff,wss` runs those scenarios whatever the probe says.
 - `LAB_FEATURES=outbox=1,ws=0` overrides single features.
-- The interfaces are assumed from `docs/next/PROD-PLAN.md`. Adapt them without editing the scenarios:
+- The interfaces are assumed. Adapt them without editing the scenarios:
   `LAB_HANDOFF_CMD` (default `handoff {name} joiner@joiner-a`, the `/sub-human` form), `LAB_WS_LISTEN_CMD` (default `listen --port {port}`).
 
 | feature | detected by | used in |

@@ -24,17 +24,15 @@ import { EndCard } from './scenes/EndCard';
 import { MONO, SANS } from './fonts/fonts';
 import { CastContext } from './cast';
 import { castFor, storyFor, styleFor } from './takes';
-import { trailerEdit as trailerV1 } from './edits/v1/trailer';
-import { readmeEdit as readmeV1 } from './edits/v1/readme';
 
 export type TrailerProps = {
   /** a folder under trailer/capture/ holding capture.jsonl[.gz] ("synthetic", "fixture", or a real take id) */
   take: string;
   /**
    * which cut: the trailer's, the 15 s social cut, the README loop's, in the take's default style (takes.ts: v3 for
-   * take7, v2 before it); or one style by name: `-v3` native, `-v2` split screen, `-v1` the take4-era cuts
+   * take7, v2 before it); or one style by name: `-v3` native, `-v2` split screen
    */
-  edit: Cut | `${Cut}-v2` | `${Cut}-v3` | 'trailer-v1' | 'readme-v1';
+  edit: Cut | `${Cut}-v2` | `${Cut}-v3`;
   /** the panes, left to right (or top to bottom); empty = the take's two people (takes.ts) */
   seats: string[];
   /** optional music: a URL, or a path under public/ */
@@ -54,11 +52,9 @@ type Cut = 'trailer' | 'social' | 'readme';
 
 /**
  * The cut: the v2 and v3 ones come from the take's story (its cast and build, takes.ts), v3 where the story has it
- * (else v2); the v1 ones are take4-era, alice and bob.
+ * (else v2).
  */
 function editFor(take: string, cap: Capture, which: TrailerProps['edit']): Edit {
-  if (which === 'trailer-v1') return trailerV1;
-  if (which === 'readme-v1') return readmeV1;
   const [cut, style = styleFor(take)] = which.split('-') as [Cut, string?];
   const story = storyFor(take, cap);
   return (style === 'v3' && story.native ? story.native : story)[cut];

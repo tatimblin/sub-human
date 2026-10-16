@@ -5,7 +5,7 @@ import { calculateTrailerMetadata, Trailer } from './Trailer';
 /**
  * Trailer (16:9) and TrailerSquare share one cut; Social15 is the 15 s cut, ReadmeLoop the README GIF's loop. Each is
  * the take's default style (v3 native for take7, v2 split screen before it); `edit: "trailer-v2"` / `"trailer-v3"`
- * pick one, and `"trailer-v1"` / `"readme-v1"` are the take4-era cuts. Swap in a real take with one prop: `take` names a folder under trailer/capture/ (e.g.
+ * pick one. Swap in a real take with one prop: `take` names a folder under trailer/capture/ (e.g.
  * `npx remotion render Trailer --props='{"take":"2026-10-12-1530"}'`). Durations come from the take.
  */
 export const RemotionRoot: React.FC = () => {
