@@ -29,7 +29,8 @@
  *       or the host's card has not answered), 'pin' (the host asks for the PIN: text says to type it), 'linked' (the
  *       host let this machine in: text says to type /sub-human) or 'refused' (text: its reason); null when there is
  *       none. The seatless session's tail (lib/tail.ts) says each once; text '' when the command's own answer said
- *       the same (join_told, written by the join step), so the person reads it once
+ *       the same (join_told, written by the join step), so the person reads it once. A stop from before the join's
+ *       line (the kicked link it replaced) is not its refusal
  *   noSecret(dest, code) -> string     a pipe join without its SECRET: the line the host sent has one
  */
 import * as identity from '../identity.ts';
@@ -252,7 +253,10 @@ export function pendingNews(sid: string | null | undefined): News | null {
     return fresh({ code, name, state: 'pin', text: hosting.joinText(code, name, { state: 'pin', ...(l.pin_wanted.message ? { reason: l.pin_wanted.message } : {}) }) });
   }
   const st = linkSocket.status(code);
-  const stopped = linkSocket.stopReason(st);
+  // a stop from before this join's line (the link it replaced: a kick's) is no answer to it: the new daemon has not
+  // written its own state yet
+  const old = !!st.since && typeof l.created_at === 'string' && Date.parse(st.since) < Date.parse(l.created_at);
+  const stopped = old ? null : linkSocket.stopReason(st);
   if (stopped && !l.token) return fresh({ code, name, state: 'refused', text: `✗ could not join room ${code}: ${stopped.reason}` });
   if (l.token && st.state === 'online') return fresh({ code, name, state: 'linked', text: hosting.joinText(code, name, { state: 'linked' }) });
   return { code, name, state: 'waiting', text: '' };

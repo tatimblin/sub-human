@@ -734,3 +734,22 @@ test('tail (item 15): a seated session (a kicked machine whose copy still shows 
   assert.deepEqual(t.of('chat').filter(e => e.lines.includes(text)).length, 1, 'said once');
   t.stop();
 });
+
+test('tail (stage 8f item 2, live verify, verify10/remote/05f): a second join\'s let-in is said even word for word the first one\'s, once the first took its seat', () => {
+  h.freshHome();
+  const { code } = h.register('bob');
+  sys(code, 'member_joined', 'bob');
+  const text = `the host let you in to room ${code}: type /sub-human to join it as bob`;
+  let news: { state: 'waiting' | 'linked'; code: string; text: string } | null = { state: 'linked', code, text };
+  const t = startNd({ sid: 'sid-b', deps: { pendingNews: () => news } });
+  t.advance(FAST.resolveMs * 3 + 100);
+  // bob took the seat (no join waits), was kicked, typed a new invite line and PIN: waiting, then let in again
+  news = null;
+  t.advance(FAST.resolveMs * 3 + 100);
+  news = { state: 'waiting', code, text: '' };
+  t.advance(FAST.resolveMs * 3 + 100);
+  news = { state: 'linked', code, text };
+  t.advance(FAST.resolveMs * 3 + 100);
+  assert.equal(t.of('chat').filter(e => e.lines.includes(text)).length, 2, 'said for each join');
+  t.stop();
+});
