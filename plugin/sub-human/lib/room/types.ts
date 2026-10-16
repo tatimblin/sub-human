@@ -473,7 +473,7 @@ export interface RoomStore {
   readonly code: RoomCode;
   /** the room's directory on this machine (FsRoomStore and its mirror; a store kept elsewhere has none) */
   readonly dir?: string;
-  isHost: boolean;
+  readonly isHost: boolean;
   append(entry: EntryInput, opts: AppendOpts & { queue: true }): Placed;
   append(entry: EntryInput, opts?: AppendOpts): Entry;
   place(payload: Payload, opts: PlaceOpts & { queue: true }): Placed;
@@ -483,12 +483,12 @@ export interface RoomStore {
   pins(): Map<string, KeyObject>;
   hostState(): HostState;
   setAside(): string | null;
-  /** the store's cached array: never change it, nor its entries */
-  readAll(): readonly Entry[];
-  readById(ids: EntryId | readonly EntryId[]): Entry[];
-  readAfter(id: number, filter?: (e: Entry) => boolean): Entry[];
+  /** the store's cached array and its entries: read-only all the way out (an entry is flat, one level is enough) */
+  readAll(): readonly Readonly<Entry>[];
+  readById(ids: EntryId | readonly EntryId[]): readonly Readonly<Entry>[];
+  readAfter(id: number, filter?: (e: Readonly<Entry>) => boolean): readonly Readonly<Entry>[];
   lastId(): number;
-  readView(opts?: ReadViewOpts): readonly Entry[];
+  readView(opts?: ReadViewOpts): readonly Readonly<Entry>[];
   /** the id after which readView reads only the newest segment (the snapshot's id; 0: no snapshot, the whole log) */
   recentFrom(): number;
   /** the log's snapshot (the subscribe stream's, plus the first id this store holds), null before any rotation */
@@ -501,9 +501,9 @@ export interface RoomStore {
   verifyChain(opts?: { fromOffset?: number; prev?: string }): ChainVerify;
   getCursor(reader: string): number;
   setCursor(reader: string, id: number): void;
-  members: MembersApi;
-  blobs: BlobsApi;
-  kv: KvApi;
+  readonly members: MembersApi;
+  readonly blobs: BlobsApi;
+  readonly kv: KvApi;
   lock<R>(name: string, fn: () => R, opts?: LockOpts): R;
   exists(): boolean;
 }

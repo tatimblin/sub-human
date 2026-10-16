@@ -126,7 +126,7 @@ function store(code: RoomCode, buf: Buffer): ProposalHash {
 
 // the recent view: every non-chat entry (proposals, answers, decisions, revisions, revokes: all the consent fold reads)
 // and the lines since the last rotation
-const entriesOf = (me: Me, entries: readonly Entry[] | null | undefined): readonly Entry[] => entries || room.open(me.code).readRecent();
+const entriesOf = (me: Me, entries: readonly Readonly<Entry>[] | null | undefined): readonly Readonly<Entry>[] => entries || room.open(me.code).readRecent();
 const kvOf = (me: Me) => room.open(me.code).store.kv;
 const storeOf = (me: Me) => room.open(me.code).store;
 
@@ -178,18 +178,18 @@ function sameOk(code: RoomCode): boolean {
 
 // ---------- reading the log (lib/room/consent.ts fold: the same semantics as stateLine, lane and the rows) ----------
 const shape = (p: ProposalState): Proposal => ({ id: p.id, hash: p.hash, approvers: p.approvers, path: p.path, from: p.from });
-const proposals = (entries: readonly Entry[], trust: Trust = room.trustOf): Proposal[] => [...room.fold(entries, trust).proposals.values()].map(shape);
+const proposals = (entries: readonly Readonly<Entry>[], trust: Trust = room.trustOf): Proposal[] => [...room.fold(entries, trust).proposals.values()].map(shape);
 
-const decision = (hash: string, entries: readonly Entry[], trust: Trust = room.trustOf): Entry | null => room.fold(entries, trust).decisions.get(hash) || null;
+const decision = (hash: string, entries: readonly Readonly<Entry>[], trust: Trust = room.trustOf): Entry | null => room.fold(entries, trust).decisions.get(hash) || null;
 
 /** The answer matrix over p.approvers (the latest answer per person wins; an objection voids a signoff). */
-const matrix = (p: Pick<Proposal, 'hash' | 'approvers'>, entries: readonly Entry[], trust: Trust = room.trustOf): Matrix => room.fold(entries, trust).matrix(p.hash, p.approvers);
+const matrix = (p: Pick<Proposal, 'hash' | 'approvers'>, entries: readonly Readonly<Entry>[], trust: Trust = room.trustOf): Matrix => room.fold(entries, trust).matrix(p.hash, p.approvers);
 
-function pendingFor(me: Me | null | undefined, entries?: readonly Entry[] | null): Proposal[] {
+function pendingFor(me: Me | null | undefined, entries?: readonly Readonly<Entry>[] | null): Proposal[] {
   if (!me || !me.name) return [];
   return room.open(me.code).fold(entriesOf(me, entries)).pending(me.name).map(shape);
 }
-function answerableFor(me: Me | null | undefined, entries?: readonly Entry[] | null): Proposal[] {
+function answerableFor(me: Me | null | undefined, entries?: readonly Readonly<Entry>[] | null): Proposal[] {
   if (!me || !me.name) return [];
   return room.open(me.code).fold(entriesOf(me, entries)).answerable(me.name).map(shape);
 }

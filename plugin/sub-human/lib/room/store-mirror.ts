@@ -84,13 +84,13 @@ let bridge: Bridge<RelayApi> | null = null; // one per process, started by its f
 
 class MirrorRoomStore implements RoomStore {
   readonly code: RoomCode;
-  isHost = false;
+  readonly isHost = false;
   /** the mirror's directory as a store of this machine: every read, and the daemon's writes */
   readonly local: FsRoomStore;
   readonly trust: Trust;
-  members: MembersApi;
-  blobs: BlobsApi;
-  kv: KvApi;
+  readonly members: MembersApi;
+  readonly blobs: BlobsApi;
+  readonly kv: KvApi;
 
   /** code: the room code; dir: the mirror's directory (default <home>/rooms/<code>). */
   constructor(code: RoomCode, { dir }: { dir?: string } = {}) {
@@ -120,11 +120,11 @@ class MirrorRoomStore implements RoomStore {
   exists(): boolean { return this.local.exists(); }
 
   // ----- reads: the local store's -----
-  readAll(): readonly Entry[] { return this.local.readAll(); }
-  readById(ids: EntryId | readonly EntryId[]): Entry[] { return this.local.readById(ids); }
-  readAfter(id: number, filter?: (e: Entry) => boolean): Entry[] { return this.local.readAfter(id, filter); }
+  readAll(): readonly Readonly<Entry>[] { return this.local.readAll(); }
+  readById(ids: EntryId | readonly EntryId[]): readonly Readonly<Entry>[] { return this.local.readById(ids); }
+  readAfter(id: number, filter?: (e: Readonly<Entry>) => boolean): readonly Readonly<Entry>[] { return this.local.readAfter(id, filter); }
   lastId(): number { return this.local.lastId(); }
-  readView(opts?: ReadViewOpts): readonly Entry[] { return this.local.readView(opts); }
+  readView(opts?: ReadViewOpts): readonly Readonly<Entry>[] { return this.local.readView(opts); }
   recentFrom(): number { return this.local.recentFrom(); }
   snapshot(): (SnapshotWire & { held: number }) | null { return this.local.snapshot(); }
   tailer(opts?: { fs?: TailerFs; after?: number }): Tailer { return this.local.tailer(opts); }

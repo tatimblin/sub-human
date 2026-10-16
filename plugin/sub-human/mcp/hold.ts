@@ -108,7 +108,7 @@ class HoldServer {
   respawn: Map<string, Set<string>>;
   roomGone: Map<string, number>;
   roomEnded: Map<string, number>;
-  logState: Map<string, { entries: readonly Entry[]; moves: Entry[] }>;
+  logState: Map<string, { entries: readonly Readonly<Entry>[]; moves: Entry[] }>;
   me: Me | null; meAt: number; timer: NodeJS.Timeout | null; seat: Seat | null;
 
   constructor(ctx: HoldContext) {
@@ -140,8 +140,8 @@ class HoldServer {
    * and `fresh`: the entries that arrived since the last call (none on the first call for a room). Only the new part
    * of a grown log is looked at.
    */
-  readEntries(code: RoomCode): { entries: readonly Entry[]; moves: Entry[]; fresh: Entry[] } {
-    let entries: readonly Entry[] = [];
+  readEntries(code: RoomCode): { entries: readonly Readonly<Entry>[]; moves: Entry[]; fresh: Entry[] } {
+    let entries: readonly Readonly<Entry>[] = [];
     try { entries = room.open(code).readAll(); } catch { /* no log yet */ }
     const st = this.logState.get(code);
     if (st && st.entries === entries) return { entries, moves: st.moves, fresh: [] };

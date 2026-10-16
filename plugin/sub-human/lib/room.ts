@@ -39,7 +39,7 @@ import type { DeliverState } from './room/deliver.ts';
 import { msgOf } from './errors.ts';
 import type { RoomCode } from './brand.ts';
 
-type Entries = readonly Entry[];
+type Entries = readonly Readonly<Entry>[];
 const { trustOf } = store;
 
 // ---------- stateless (a person's line judged by the store of the room it names) ----------

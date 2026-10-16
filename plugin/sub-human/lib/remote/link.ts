@@ -419,7 +419,7 @@ async function serveMirror({
   }
 
   /** Every proposal's plan a snapshot names (as each line's are fetched as it arrives). */
-  function prefetchAll(c: Client, es: readonly Entry[]) { for (const e of es) prefetch(c, e); }
+  function prefetchAll(c: Client, es: readonly Readonly<Entry>[]) { for (const e of es) prefetch(c, e); }
   function prefetch(c: Client, e: Entry) {
     if (e.kind !== 'proposal' || !e.hash) return;
     const ref = mirror.blobs.ref(e.path) || `plans/${e.hash}.md`;

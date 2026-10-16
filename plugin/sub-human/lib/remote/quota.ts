@@ -34,7 +34,7 @@ const over = (op: QuotaOp, what: string, retryMs: number): RoomError => {
   return new RoomError('RATE', `quota: ${what} ${q.max} times in ${per}; try again in ${Math.max(1, Math.ceil(retryMs / 1000))} s`, 'QUOTA');
 };
 
-function fromLog(entries: readonly Entry[], { from, via, windowMs, now = Date.now() }: { from: string; via: string; windowMs: number; now?: number }): number {
+function fromLog(entries: readonly Readonly<Entry>[], { from, via, windowMs, now = Date.now() }: { from: string; via: string; windowMs: number; now?: number }): number {
   let n = 0;
   for (let i = entries.length - 1; i >= 0; i--) {
     const e = entries[i];
@@ -44,7 +44,7 @@ function fromLog(entries: readonly Entry[], { from, via, windowMs, now = Date.no
   return n;
 }
 
-function checkLog(entries: readonly Entry[], { from, via, op, now = Date.now() }: { from: string; via: string; op: 'append.human' | 'append.agent'; now?: number }): void {
+function checkLog(entries: readonly Readonly<Entry>[], { from, via, op, now = Date.now() }: { from: string; via: string; op: 'append.human' | 'append.agent'; now?: number }): void {
   const q = LINK_QUOTAS[op];
   if (fromLog(entries, { from, via, windowMs: q.windowMs, now }) < q.max) return;
   // the wait: until the oldest line that still counts (the max-th newest) leaves the window

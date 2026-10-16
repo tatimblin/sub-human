@@ -93,7 +93,7 @@ const require = createRequire(import.meta.url);
 type TailRoom = Pick<Room, 'readView' | 'tailer' | 'lastId' | 'getCursor' | 'verifyChain' | 'deliver' | 'chatLines' | 'line' | 'stateLine'>
   & { store?: Room['store'] | null };
 /** What an entry is for this seat (lib/room/deliver.ts): entries is the log at flush time; note is the joinNote of a member_joined. */
-type Judge = (e: Entry, entries?: readonly Entry[], note?: string) => Delivery;
+type Judge = (e: Entry, entries?: readonly Readonly<Entry>[], note?: string) => Delivery;
 /** A rate-limited logger (errorLog): where it failed, and the error. */
 type Log = (where: string, e: unknown) => void;
 /** The tail's write: text (whole lines) and a callback once it is out. */
@@ -160,7 +160,7 @@ interface Session {
 interface FormatCtx {
   me: Identity;
   room: TailRoom;
-  entries: readonly Entry[];
+  entries: readonly Readonly<Entry>[];
   judge: Judge;
   joinNote(e: Entry): string;
   seen: Set<number>;
