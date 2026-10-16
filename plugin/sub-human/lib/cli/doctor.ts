@@ -31,7 +31,6 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createRequire } from 'node:module';
 import { lib, cli, check, tilde, PLUGIN_ROOT, DOCTOR_HELLO_MS } from './doctor/check.ts';
 import { checkShim, scanAuthorizedKeys, checkAuthorizedKeys, sshVersion, checkSsh, sshHint } from './doctor/ssh.ts';
 import { diagnoseLink, linkChecks, helloProbe } from './doctor/links.ts';
@@ -40,9 +39,8 @@ import { roomChecks, verifyRoom, verifyText } from './doctor/rooms.ts';
 import { claudeVersion, checkClaude, checkDaemon, checkRoomClaudes, settingsFiles, checkHooks, checkRemoteControl } from './doctor/claude.ts';
 import { bundle, redactor } from './doctor/redact.ts';
 import type { Check, CheckStatus, DoctorOptions, Report } from './types.ts';
-import type * as ArgsMod from './args.ts';
+import { parse } from './args.ts';
 
-const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 /** 24.3: the first 24 that strips TypeScript without an ExperimentalWarning (every hook is .ts). */
 const NODE_MIN = [24, 3] as const;
@@ -129,7 +127,6 @@ function format(report: Report, { color = false }: { color?: boolean } = {}): st
 
 // ---------- CLI ----------
 function parseArgs(args: readonly string[]): DoctorOptions {
-  const { parse }: typeof ArgsMod = require('./args.ts');
   const { flags: f, rest, error } = parse(args, { quick: 0, fix: 0, json: 0, bundle: '?', 'authorized-keys': 1, timeout: 1 });
   if (rest.length) throw new Error(`usage: sub-human doctor [--quick] [--fix] [--json] [--bundle [FILE]] [--authorized-keys FILE] [--timeout MS] (not ${rest[0]})`);
   if (error && /^--timeout/.test(error)) throw new Error('--timeout needs a number of milliseconds');

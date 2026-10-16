@@ -38,9 +38,8 @@ import * as linkSocket from './link-socket.ts';
 import * as linkConnect from './link-connect.ts';
 import * as links from '../room/links.ts';
 import * as hosting from './hosting.ts';
-import { sleepSync } from '../io.ts';
+import { sleepSync, lazy } from '../io.ts';
 import { cliLine } from '../text.ts';
-import { createRequire } from 'node:module';
 import type { Link } from '../room/types.ts';
 import type { LinkSpec, SshSpec } from './types-rest.ts';
 import type { Outcome } from './hosting.ts';
@@ -49,9 +48,9 @@ import type { RoomCode, SeatName, InviteSecret, Pin } from '../brand.ts';
 import type * as WsMod from './transports/ws.ts';
 import type * as SshMod from './transports/ssh.ts';
 
-const require: <M>(id: string) => M = createRequire(import.meta.url);
-const wsT = (): typeof WsMod => require('./transports/ws.ts');
-const sshT = (): typeof SshMod => require('./transports/ssh.ts');
+// a transport only for the join that uses it (start cost)
+const wsT = lazy<typeof WsMod>(import.meta.url, './transports/ws.ts');
+const sshT = lazy<typeof SshMod>(import.meta.url, './transports/ssh.ts');
 
 /** The seat a command asks to take: code null for the one open room, else a new one. isDefault: the name was not
  * typed (a taken one says how to pick another). pending: a join the host let in. */

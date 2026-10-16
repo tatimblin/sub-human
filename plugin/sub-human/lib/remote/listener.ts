@@ -50,13 +50,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { RoomError } from '../room/validate.ts';
-import { isAlive, readJson, sleepSync } from '../io.ts';
+import { isAlive, readJson, sleepSync, lazy } from '../io.ts';
 import { isObj, objAs } from '../decode.ts';
 import { envNum } from '../env.ts';
 import * as ioMod from '../io.ts';
 import * as textMod from '../text.ts';
 import { isRoomCode } from '../text.ts';
-import { createRequire } from 'node:module';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import type { IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -66,11 +65,11 @@ import type { FrameId } from './types-core.ts';
 import type { Duplex } from 'node:stream';
 import type { Conn } from './ws.ts';
 import { msgOf, stackOf } from '../errors.ts';
+import { withLock } from '../lock.ts';
+import * as identity from '../identity.ts';
+import * as homeMod from '../home.ts';
 import type { RoomCode } from '../brand.ts';
-import type * as HomeMod from '../home.ts';
 import type * as NoiseMod from './noise.ts';
-import type * as LockMod from '../lock.ts';
-import type * as IdentityMod from '../identity.ts';
 import type * as TailscaleMod from './tailscale.ts';
 import type * as WsMod from './ws.ts';
 import type * as TransportsWsMod from './transports/ws.ts';
@@ -88,7 +87,13 @@ export interface ListenStatus {
   rooms: Record<string, ServedRoom>;
 }
 
-const require: <M>(id: string) => M = createRequire(import.meta.url);
+// the server side only in the listener's own process (start cost: hooks and the CLI read its state through this file)
+const wsLib = lazy<typeof WsMod>(import.meta.url, './ws.ts');
+const transportsWsLib = lazy<typeof TransportsWsMod>(import.meta.url, './transports/ws.ts');
+const shimLib = lazy<typeof ShimMod>(import.meta.url, './shim.ts');
+const protocolLib = lazy<typeof ProtocolMod>(import.meta.url, './protocol.ts');
+const noiseLib = lazy<typeof NoiseMod>(import.meta.url, './noise.ts');
+const tailscaleLib = lazy<typeof TailscaleMod>(import.meta.url, './tailscale.ts');
 
 const DEFAULT_PORT = 7420;
 const PREAUTH_MAX = 16;
@@ -103,12 +108,12 @@ const HOME_CHECK_MS = 2000;
 const CLOSED_CHECK_MS = 30_000;
 const BIN = path.join(import.meta.dirname, '..', '..', 'scripts', 'sub-human');
 
-const home = (): string => path.resolve(require<typeof HomeMod>('../home.ts').home());
+const home = (): string => path.resolve(homeMod.home());
 const dir = (): string => path.join(home(), 'listen');
 const stateFile = (): string => path.join(dir(), 'state.json');
 const logFile = (): string => path.join(dir(), 'listen.log');
 const keyFile = (): string => path.join(dir(), 'host-x25519.json');
-const staticKey = (): KeyPair => require<typeof NoiseMod>('./noise.ts').loadOrCreateStatic(keyFile());
+const staticKey = (): KeyPair => noiseLib().loadOrCreateStatic(keyFile());
 const hostKey = (): string => staticKey().pub.toString('base64url');
 const defaultPort = (): number => envNum('SUB_HUMAN_LISTEN_PORT') || DEFAULT_PORT;
 
@@ -119,7 +124,6 @@ function read(): ListenState {
 /** Change the state file under its lock; fn(cur) returns the next state. */
 function update(fn: (cur: ListenState) => ListenState): ListenState {
   fs.mkdirSync(dir(), { recursive: true, mode: 0o700 });
-  const { withLock }: typeof LockMod = require('../lock.ts');
   const { writeFileAtomic } = ioMod;
   return withLock(path.join(dir(), 'state.lock'), () => {
     const next = fn(read());
@@ -184,7 +188,6 @@ function stop(): boolean {
 
 /** Is room CODE still open on this host (not stopped, closing or gone)? */
 function roomLive(code: string): boolean {
-  const identity: typeof IdentityMod = require('../identity.ts');
   try {
     if (!isRoomCode(code) || !identity.roomExists(code) || !identity.isHost(code)) return false;
     const roomClaude = identity.readMembers(code).claude;
@@ -196,7 +199,7 @@ function roomLive(code: string): boolean {
 function untailscale(rec: ServedRoom | null, log: (msg: string) => void = () => {}): { ok: boolean; error?: string | null } | null {
   if (!rec || !rec.tailscale) return null;
   try {
-    const r = require<typeof TailscaleMod>('./tailscale.ts').off(rec.tailscale);
+    const r = tailscaleLib().off(rec.tailscale);
     log(`tailscale ${rec.tailscale.funnel ? 'funnel' : 'serve'} ${rec.tailscale.path} off: ${r.ok ? 'done' : r.error}`);
     return r;
   } catch (e) { log(`tailscale off: ${msgOf(e)}`); return { ok: false, error: msgOf(e) }; }
@@ -205,8 +208,8 @@ function untailscale(rec: ServedRoom | null, log: (msg: string) => void = () => 
 async function run({ port = defaultPort(), log = (msg: string): unknown => process.stderr.write(`${new Date().toISOString()} sub-human listen: ${msg}\n`), closedCheckMs = envNum('SUB_HUMAN_LISTEN_CHECK_MS') || CLOSED_CHECK_MS, idleMs = LISTEN_IDLE_MS }: {
   port?: number; log?: (msg: string) => unknown; closedCheckMs?: number; idleMs?: number;
 } = {}): Promise<{ why: string; port: number }> {
-  const ws: typeof WsMod = require('./ws.ts');
-  const wsT: typeof TransportsWsMod = require('./transports/ws.ts');
+  const ws = wsLib();
+  const wsT = transportsWsLib();
   const { CODE_RE } = textMod;
   const s = staticKey();
   let mine = false;
@@ -220,7 +223,7 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
   const publishConns = () => { try { update(cur => (cur.pid === process.pid ? { ...cur, conns } : cur)); } catch { /* best effort */ } };
 
   const shimCmd = (): string => {
-    const shim: typeof ShimMod = require('./shim.ts');
+    const shim = shimLib();
     const p = shim.refresh();
     if (!p) throw new RoomError('INVALID', `the plugin root ${shim.pluginRoot()} is under a temp dir; the listener will not run what sits there (SUB_HUMAN_ALLOW_TMP_ROOT=1 allows it)`);
     return p;
@@ -297,7 +300,7 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
    * message (it must update); anything else a refusal. Each holds its pre-auth slot only until it is answered.
    */
   function textConn(conn: Conn, data: Buffer, who: unknown): void {
-    const protocol: typeof ProtocolMod = require('./protocol.ts');
+    const protocol = protocolLib();
     let v: unknown = null;
     try { v = JSON.parse(data.toString('utf8')); } catch { /* refused below */ }
     const frame = isObj(v) ? v : null; // parsed JSON, checked below
@@ -319,7 +322,7 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
   const srv = await ws.createServer({
     host: '127.0.0.1',
     port,
-    maxPayload: require<typeof NoiseMod>('./noise.ts').MAX_MESSAGE + 64,
+    maxPayload: noiseLib().MAX_MESSAGE + 64,
     pingMs: WS_PING_MS,
     accept: () => (preauth >= PREAUTH_MAX || conns >= LISTEN_MAX ? 503 : true),
     onConnection: (conn, req) => { onConnection(conn, req).catch((e: unknown) => log(`connection: ${stackOf(e)}`)); },

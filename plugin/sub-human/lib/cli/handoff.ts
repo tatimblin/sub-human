@@ -32,14 +32,16 @@ import * as links from '../room/links.ts';
 import * as linkConnect from '../remote/link-connect.ts';
 import { parse } from './args.ts';
 import * as textMod from '../text.ts';
-import { createRequire } from 'node:module';
 import type { CliIo, FlagSpec, Flags, Parsed } from './types.ts';
 import { errCode, msgOf } from '../errors.ts';
 import type { RoomCode } from '../brand.ts';
 import type * as WebhostMod from '../remote/webhost.ts';
 import type * as HostMod from './host.ts';
+import { lazy } from '../io.ts';
 
-const require: <M>(id: string) => M = createRequire(import.meta.url);
+// loaded when a command needs them (start cost)
+const webhostLib = lazy<typeof WebhostMod>(import.meta.url, '../remote/webhost.ts');
+const hostLib = lazy<typeof HostMod>(import.meta.url, './host.ts');
 const cli = (args: string) => textMod.cliLine(args);
 
 /** args.parse, dying on its error (usage, exit 2). */
@@ -76,7 +78,7 @@ const LOCATOR_FLAGS = { ssh: 1, via: 1, url: 1 } as const satisfies FlagSpec;
 function locatorOf(flags: Flags<typeof LOCATOR_FLAGS>, die: CliIo['die'], code: RoomCode) {
   if (flags.url !== undefined) {
     if (flags.ssh !== undefined || flags.via !== undefined) die('--ssh/--via and --url are two ways in; pick one');
-    const webhost: typeof WebhostMod = require('../remote/webhost.ts');
+    const webhost = webhostLib();
     try { return webhost.webLocator(flags.url, code); } catch (e) { die(msgOf(e)); }
   }
   if (flags.ssh === undefined) {
@@ -156,7 +158,7 @@ function promoteCmd(args: readonly string[], ctx: CliIo): void {
   // inside Claude Code (its ! shell) the PINs are masked: that output would land in the conversation. The machine
   // runs demote CODE and pastes the line and its PIN: never in argv
   const lines = r.invites.map(x => `  ${x.seats.join(', ')}: run ${textMod.cliLine(`demote ${code}`, { elsewhere: true })} and paste: ${x.invite} ${x.pin}`);
-  const host: typeof HostMod = require('./host.ts');
+  const host = hostLib();
   out(host.maskPins(lines.join('\n'), r.invites.map(x => x.pin)));
   out('(the old host runs its line too when it is back: its own lines are kept aside, never merged)');
 }

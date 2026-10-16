@@ -32,16 +32,16 @@
  *   stateFile(code) -> string        <home>/links/<code>.state.json
  *   STATE_WORDS, STATES, isState     the five words (the source of LinkStateWord), as a Set, and its guard
  */
-import { isAlive } from '../io.ts';
+import { isAlive, lazy } from '../io.ts';
 import { isReason } from '../reasons.ts';
 import * as links from './links.ts';
-import { createRequire } from 'node:module';
 import type { LinkState, LinkStateWord } from './types.ts';
 import type { LinkStatus } from '../remote/link-socket.ts';
 import type { RoomCode } from '../brand.ts';
 import type * as LinkSocketMod from '../remote/link-socket.ts';
 
-const require: <M>(id: string) => M = createRequire(import.meta.url);
+// the link daemon's status document: only a room hosted elsewhere reads it (start cost: the status line loads this)
+const linkSocketLib = lazy<typeof LinkSocketMod>(import.meta.url, '../remote/link-socket.ts');
 
 
 /** The words, the source of LinkStateWord (lib/room/types.ts). */
@@ -66,7 +66,7 @@ function normalize(state: unknown, detail?: unknown): LinkStateWord {
 
 /** The mirror's `link` document (lib/remote/link.ts status), or null when it cannot be read. */
 function linkDoc(code: RoomCode): LinkStatus | null {
-  try { return require<typeof LinkSocketMod>('../remote/link-socket.ts').status(code); } catch { return null; }
+  try { return linkSocketLib().status(code); } catch { return null; }
 }
 
 const NOT_RUNNING = 'the link daemon is not running';

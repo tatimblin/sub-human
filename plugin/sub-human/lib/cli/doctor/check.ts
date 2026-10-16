@@ -12,7 +12,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createRequire } from 'node:module';
+import { loadAt } from '../../io.ts';
 import type { Check, CheckStatus } from '../types.ts';
 import type * as TextMod from '../../text.ts';
 import type * as HomeMod from '../../home.ts';
@@ -36,13 +36,12 @@ import type * as TailscaleMod from '../../remote/tailscale.ts';
 import type * as TransportsMod from '../../remote/transports/index.ts';
 import type * as SshMod from '../../remote/transports/ssh.ts';
 
-const require: <M>(id: string) => M = createRequire(import.meta.url);
-
 const LIB = path.join(import.meta.dirname, '..', '..');
 const PLUGIN_ROOT: string = path.join(LIB, '..');
 const BIN: string = path.join(PLUGIN_ROOT, 'scripts', 'sub-human');
 const DOCTOR_HELLO_MS = 8000;
-/** The modules doctor loads lazily, by their path under lib/. */
+/** The modules doctor loads lazily (each check loads only what it reads), by their path under lib/: each one's type is
+ * the namespace imported from that path (scripts/test/lazy.test.ts checks the pairs). */
 interface Libs {
   'text.ts': typeof TextMod;
   'home.ts': typeof HomeMod;
@@ -66,7 +65,7 @@ interface Libs {
   'remote/transports/index.ts': typeof TransportsMod;
   'remote/transports/ssh.ts': typeof SshMod;
 }
-const lib = <K extends keyof Libs>(name: K): Libs[K] => require(path.join(LIB, name));
+const lib = <K extends keyof Libs>(name: K): Libs[K] => loadAt<Libs[K]>(import.meta.url, path.join(LIB, name));
 /** A fix only a shell can make: the CLI by its path (no `sub-human` is on PATH; lib/text.ts cliLine). */
 const cli = (args: string): string => lib('text.ts').cliLine(args);
 

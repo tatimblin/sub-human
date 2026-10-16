@@ -36,11 +36,10 @@ import * as protocol from './protocol.ts';
 import { RoomError } from '../room/validate.ts';
 import { isReason, reasonOf } from '../reasons.ts';
 import { errCode, msgOf } from '../errors.ts';
-import { isAlive, sleepSync } from '../io.ts';
+import { isAlive, sleepSync, lazy } from '../io.ts';
 import { hash12 } from '../text.ts';
 import { isObj } from '../decode.ts';
 import * as config from '../config.ts';
-import { createRequire } from 'node:module';
 import type { Reason } from '../reasons.ts';
 import type { DecodedFrame, ErrorFrame, FrameId, LinkDoc, ReplyFrame, WireCode } from './types-core.ts';
 import type { RoomCode } from '../brand.ts';
@@ -52,10 +51,9 @@ type LinkStatus = (LinkDoc & { running: true; pid: number }) | (LinkDoc & { runn
 /** One relayed op's params as a hook sends them: an append may carry {queue: true}. */
 type Relay = (op: string, params: { [field: string]: unknown }) => Promise<unknown>;
 
-const require: <M>(id: string) => M = createRequire(import.meta.url);
 // the store and the link files, only for status and start: the bridge worker that loads this file for handle never needs them
-const storeMod = (): typeof StoreMod => require('../room/store.ts');
-const linksMod = (): typeof LinksMod => require('../room/links.ts');
+const storeMod = lazy<typeof StoreMod>(import.meta.url, '../room/store.ts');
+const linksMod = lazy<typeof LinksMod>(import.meta.url, '../room/links.ts');
 const BIN = path.join(import.meta.dirname, '..', '..', 'scripts', 'sub-human');
 const RELAY: ReadonlySet<string> = new Set(['join', 'leave', 'beat', 'append', 'blob.get', 'blob.put', 'handoff.accept', 'handoff.refuse']);
 const SUN_PATH_MAX = 103; // a unix socket's path: 104 bytes on macOS with its NUL (108 on Linux)

@@ -65,14 +65,15 @@ import { assertNever } from '../../../mod/core/never.ts';
 const sshOpts = (): string[] => String(envStr('SUB_HUMAN_SSH_OPTS') || '').split(/\s+/).filter(Boolean);
 import CryptoMod from 'node:crypto';
 import FsMod from 'node:fs';
-import { createRequire } from 'node:module';
 import type { KindEntry, OpenCtx, SshDest, SshSpec, Transport } from '../types-rest.ts';
 import type { ReasonFor } from '../../reasons.ts';
 import type { RoomCode } from '../../brand.ts';
-import type * as HomeMod from '../../home.ts';
 import type * as PipeMod from './pipe.ts';
+import { lazy } from '../../io.ts';
+import * as homeMod from '../../home.ts';
 
-const require: <M>(id: string) => M = createRequire(import.meta.url);
+// the pipe only for a connection that opens (start cost)
+const pipeLib = lazy<typeof PipeMod>(import.meta.url, './pipe.ts');
 
 const SSH_USER = '[A-Za-z_][A-Za-z0-9_.-]{0,31}';
 const SSH_HOST = '[A-Za-z0-9](?:[A-Za-z0-9.-]{0,252})';
@@ -142,7 +143,7 @@ function locator(text: string, { via }: { via?: string } = {}): string | null {
   return `ssh:${at(d)}${via !== undefined ? `?via=${via}` : ''}`;
 }
 
-const controlPath = (h: string = require<typeof HomeMod>('../../home.ts').home()): string => path.join(path.resolve(h), 'ssh', 'cm-%C');
+const controlPath = (h: string = homeMod.home()): string => path.join(path.resolve(h), 'ssh', 'cm-%C');
 
 /** The spec, checked again; the link options its local fields ask for. */
 function checked(spec: SshSpec, code: RoomCode): { d: SshDest; local: string[]; tail: string[] } {
@@ -262,7 +263,7 @@ const kind: Required<KindEntry<SshSpec>> = {
     if (!ctx.code) throw new RoomError('INVALID', 'an ssh transport connects to a room: open(spec, {code})');
     if (spec.mux === true) FsMod.mkdirSync(path.dirname(controlPath()), { recursive: true, mode: 0o700 });
     const [cmd, ...args] = command(spec, ctx.code);
-    return require<typeof PipeMod>('./pipe.ts').spawn(cmd, args);
+    return pipeLib().spawn(cmd, args);
   },
   describe: spec => `ssh ${at(spec)}${spec.via ? ` via ${spec.via}` : ''}${spec.login === true ? ' (your ssh login)' : ''}`,
 };

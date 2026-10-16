@@ -6,14 +6,14 @@
  */
 import * as hosting from '../remote/hosting.ts';
 import { parse } from '../cli/args.ts';
-import { createRequire } from 'node:module';
 import { HELP_HINT, hostOnly, refused, say, secret } from './answer.ts';
 import { msgOf } from '../errors.ts';
 import type { Verb } from './types.ts';
 import type * as WebhostMod from '../remote/webhost.ts';
+import { lazy } from '../io.ts';
 
-const require: <M>(id: string) => M = createRequire(import.meta.url);
-const webhost = (): typeof WebhostMod => require('../remote/webhost.ts');
+// the web listener only for a web invite (start cost: /sub-human loads this file)
+const webhost = lazy<typeof WebhostMod>(import.meta.url, '../remote/webhost.ts');
 
 export const INVITE_USAGE: string = `usage: /sub-human invite (an ssh line; --web for the web). ${HELP_HINT}`;
 

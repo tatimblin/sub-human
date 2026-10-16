@@ -11,18 +11,15 @@
  *   verifyText(v) -> string          one room's verdict, for the CLI
  */
 import { check, cli } from './check.ts';
-import { createRequire } from 'node:module';
 import type { Check } from '../types.ts';
 import type { RoomCode } from '../../brand.ts';
-import type * as StoreMod from '../../room/store.ts';
+import * as store from '../../room/store.ts';
 
-const require: <M>(id: string) => M = createRequire(import.meta.url);
-const store = (): typeof StoreMod => require('../../room/store.ts');
 
 export interface RoomVerify { code: RoomCode; count: number; chain: { ok: boolean; badAt?: number | null; line?: number }; unverified: number[]; legacy: number }
 
 export function verifyRoom(code: RoomCode): RoomVerify {
-  const s = store().open(code);
+  const s = store.open(code);
   const chain = s.validateChain();
   const unverified: number[] = [];
   let legacy = 0;
@@ -48,16 +45,16 @@ export function verifyText(v: RoomVerify): string {
 export function roomChecks(): Check[] {
   const out: Check[] = [];
   let codes: RoomCode[] = [];
-  try { codes = store().listRooms(); } catch { return out; }
+  try { codes = store.listRooms(); } catch { return out; }
   for (const code of codes) {
     let v: RoomVerify;
     try {
       // a folder something wrote after its room was forgotten: no room at all (item 9 R1)
-      if (store().isLeftover(code)) {
+      if (store.isLeftover(code)) {
         out.push(check({ id: `room:${code}`, status: 'warn', title: `room ${code}`, detail: 'a leftover folder with no log and no connection, not a room hosted here', fix: `set it aside: ${cli(`link ${code} --forget`)}` }));
         continue;
       }
-      if (!store().open(code).isHost) continue;
+      if (!store.open(code).isHost) continue;
       v = verifyRoom(code);
     } catch (e) {
       out.push(check({ id: `room:${code}`, status: 'warn', title: `room ${code}`, detail: `its log could not be read: ${e instanceof Error ? e.message : e}` }));

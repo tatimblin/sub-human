@@ -33,7 +33,6 @@ import * as joining from '../remote/joining.ts';
 import { parse } from '../cli/args.ts';
 import { SECRET_WORD } from '../../mod/core/command.ts';
 import fs from 'node:fs';
-import { createRequire } from 'node:module';
 import { projectDir } from '../cc/env.ts';
 import { envStr } from '../env.ts';
 import { HELP_HINT, USAGE, refused, say } from './answer.ts';
@@ -43,10 +42,11 @@ import type { JoinStep, Wanted } from '../remote/joining.ts';
 import type { SeatName, InviteSecret } from '../brand.ts';
 import type * as WsMod from '../remote/transports/ws.ts';
 import type * as SshMod from '../remote/transports/ssh.ts';
+import { lazy } from '../io.ts';
 
-const require: <M>(id: string) => M = createRequire(import.meta.url);
-const wsT = (): typeof WsMod => require('../remote/transports/ws.ts');
-const sshT = (): typeof SshMod => require('../remote/transports/ssh.ts');
+// a transport only for a join by invite (start cost: /sub-human loads this file)
+const wsT = lazy<typeof WsMod>(import.meta.url, '../remote/transports/ws.ts');
+const sshT = lazy<typeof SshMod>(import.meta.url, '../remote/transports/ssh.ts');
 
 export const JOIN_USAGE: string = `usage: /sub-human join HOST ROOM SECRET (the line from an invite), then /sub-human join PIN when it asks. ${HELP_HINT}`;
 /** A line from a host before protocol 3: its last word is a 4-digit PIN, where an invite line has its SECRET. */

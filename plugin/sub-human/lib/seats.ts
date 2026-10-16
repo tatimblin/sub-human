@@ -60,11 +60,10 @@ import * as room from './room.ts';
 import * as roomClaude from './room-claude.ts';
 import * as config from './config.ts';
 import { envMs } from './env.ts';
-import { validPid } from './io.ts';
+import { validPid, lazy } from './io.ts';
 import { pidStarts } from './lock.ts';
 import * as links from './room/links.ts';
 import { roomClaudePresence } from './room/members.ts';
-import { createRequire } from 'node:module';
 import type { JoinOutcome, Member } from './room/types.ts';
 import type { Identity } from './identity.ts';
 import type { Wanted } from './remote/joining.ts';
@@ -75,10 +74,12 @@ import type * as GcMod from './gc.ts';
 import type * as WebhostMod from './remote/webhost.ts';
 import type * as ShimMod from './remote/shim.ts';
 
-const require: <M>(id: string) => M = createRequire(import.meta.url);
+// Loaded at first use (start cost: every hook that seats or unseats loads this file); joining.ts imports this one.
+const webhostLib = lazy<typeof WebhostMod>(import.meta.url, './remote/webhost.ts');
+const shimLib = lazy<typeof ShimMod>(import.meta.url, './remote/shim.ts');
 // loaded only by take(): the session-end hook and the remote server never need the link or the listener
-const joining = (): typeof JoiningMod => require('./remote/joining.ts');
-const gc = (): typeof GcMod => require('./gc.ts');
+const joining = lazy<typeof JoiningMod>(import.meta.url, './remote/joining.ts');
+const gc = lazy<typeof GcMod>(import.meta.url, './gc.ts');
 
 /** enter()'s seat: the join hook's, or the remote server's for a seat on another machine. */
 interface EnterOpts {
@@ -326,8 +327,8 @@ function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd,
   joining().dropJoinAs(code);
   try { gc().sweepRows(code); } catch { /* best effort: rows of ended sessions */ }
   if (host) {
-    try { require<typeof WebhostMod>('./remote/webhost.ts').ensure(code); } catch { /* best effort */ } // the listener after a reboot
-    try { require<typeof ShimMod>('./remote/shim.ts').refresh(); } catch { /* best effort */ } // the serve shim a login link runs
+    try { webhostLib().ensure(code); } catch { /* best effort */ } // the listener after a reboot
+    try { shimLib().refresh(); } catch { /* best effort */ } // the serve shim a login link runs
   }
   const me: Identity = { code, name, role: 'member', pid, session_id: session_id || null, address: identity.address(name, code) };
   const msg = created

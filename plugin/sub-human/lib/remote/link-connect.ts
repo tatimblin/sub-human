@@ -47,7 +47,6 @@ import { RoomError } from '../room/validate.ts';
 import { isReason, reasonOf } from '../reasons.ts';
 import { errCode, msgOf } from '../errors.ts';
 import type { Reason } from '../reasons.ts';
-import { createRequire } from 'node:module';
 import type { Client } from './client.ts';
 import type { SshSpec } from './types-rest.ts';
 import type { Link } from '../room/types.ts';
@@ -60,19 +59,20 @@ import type * as InviteSecretMod from './invite-secret.ts';
 import type * as WsMod from './transports/ws.ts';
 import type * as MachineKeyMod from './machine-key.ts';
 import type * as TypesRestMod from './types-rest.ts';
+import { lazy } from '../io.ts';
 
-const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 /** A transport as connectLink opens it (lib/remote/transports/*): ssh's keeps its stderr. */
 type TransportLike = { stderr?(): string } | null | undefined;
 
-const transports = (): typeof TransportsMod => require('./transports/index.ts');
-const ssh = (): typeof SshMod => require('./transports/ssh.ts');
-const clientMod = (): typeof ClientMod => require('./client.ts');
-const noiseMod = (): typeof NoiseMod => require('./noise.ts');
-const secretMod = (): typeof InviteSecretMod => require('./invite-secret.ts');
-const wsMod = (): typeof WsMod => require('./transports/ws.ts');
-const machineKeyMod = (): typeof MachineKeyMod => require('./machine-key.ts');
+// each transport and the client only for the link that uses them (start cost: the hooks load this file)
+const transports = lazy<typeof TransportsMod>(import.meta.url, './transports/index.ts');
+const ssh = lazy<typeof SshMod>(import.meta.url, './transports/ssh.ts');
+const clientMod = lazy<typeof ClientMod>(import.meta.url, './client.ts');
+const noiseMod = lazy<typeof NoiseMod>(import.meta.url, './noise.ts');
+const secretMod = lazy<typeof InviteSecretMod>(import.meta.url, './invite-secret.ts');
+const wsMod = lazy<typeof WsMod>(import.meta.url, './transports/ws.ts');
+const machineKeyMod = lazy<typeof MachineKeyMod>(import.meta.url, './machine-key.ts');
 
 const pipeLocator = (h: string = homeMod.home()): string => `pipe:${h}`;
 const sshLocator = (dest: string, opts?: { via?: string }): string | null => ssh().locator(dest, opts);

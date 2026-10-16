@@ -61,14 +61,12 @@ import { envFlag } from '../lib/env.ts';
 
 /** A JSON-RPC message from Claude Code: an object, each field checked by handle(). */
 const MESSAGE = objAs<JsonRpcIncoming>();
-import { createRequire } from 'node:module';
 import type { Entry, EntryInput } from '../lib/room/types.ts';
 import type { CallMeta, CallToolParams, JsonRpcId, JsonRpcIncoming, JsonRpcOutgoing, Me, OutgoingRequest, PluginApi, PluginContext, ProgressToken, ToolArgs, ToolDefinition, ToolResult } from './types.ts';
 import { msgOf, stackOf } from '../lib/errors.ts';
+import { loadAt } from '../lib/io.ts';
 import { entryId } from '../lib/room/validate.ts';
 
-// loadPlugins() requires each plug-in by path (createRequire: require(esm) is synchronous).
-const require: <M>(id: string) => M = createRequire(import.meta.url);
 
 const READ_MAX = 100;
 const PLUGINS = ['hold.ts', 'task.ts'];
@@ -300,7 +298,7 @@ function loadPlugins(): Plugin[] {
     const full = path.join(import.meta.dirname, file);
     if (!fs.existsSync(full)) { log('plugin missing', file); continue; }
     try {
-      const mod: { create?: (c: PluginContext) => PluginApi | null } | null = require(full); // a plug-in: checked below, not trusted
+      const mod = loadAt<{ create?: (c: PluginContext) => PluginApi | null } | null>(import.meta.url, full); // a plug-in by path: checked below, not trusted
       const api: PluginApi | null = mod && typeof mod.create === 'function' ? mod.create(ctx) : null;
       if (!api || !Array.isArray(api.tools) || typeof api.call !== 'function') { log('plugin has no {tools, call}', file); continue; }
       out.push({ file, api, anonymous: new Set(Array.isArray(api.anonymous) ? api.anonymous : []) });

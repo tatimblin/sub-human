@@ -235,7 +235,7 @@ test('the room MCP server, hold and task never load a seat key and cannot write 
   // and no file outside hooks/ requires the key module
   const walk = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).flatMap(x => x.isDirectory() ? walk(path.join(d, x.name)) : [path.join(d, x.name)]);
   for (const f of [...walk(path.join(PLUGIN, 'mcp')), ...walk(path.join(PLUGIN, 'lib')), path.join(PLUGIN, 'scripts', 'sub-human')]) {
-    assert.doesNotMatch(fs.readFileSync(f, 'utf8'), /require\([^)]*seat-key|(?:\bfrom\s*|import\(\s*)['"][^'"]*seat-key|\.key['"`]/, f);
+    assert.doesNotMatch(fs.readFileSync(f, 'utf8'), /require\([^)]*seat-key|(?:\bfrom\s*|import\(\s*|import\.meta\.url,\s*)['"][^'"]*seat-key|\.key['"`]/, f);
   }
 });
 
