@@ -171,4 +171,3 @@ test('12: a refused leave, or another command, renames nothing', async ($, on) =
   await new Promise(r => setTimeout(r, 30))
   expect(seen.commands.filter(c => c.startsWith('rename'))).toEqual([])
 })
-

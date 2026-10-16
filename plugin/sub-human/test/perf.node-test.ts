@@ -102,7 +102,7 @@ function bigRoom(n = N): { code: string } {
 }
 
 /** In this process over a room of n entries: the first append and status line, then their medians after warm-up. */
-function measure(n: number): { code: string; panel: object; cold: { append: number; statusline: number }; got: { append: number; statusline: number }; max: { append: number; statusline: number }; sealed: boolean } {
+function measure(n: number): { code: string; home: string; panel: object; cold: { append: number; statusline: number }; got: { append: number; statusline: number }; max: { append: number; statusline: number }; sealed: boolean } {
   const { code } = bigRoom(n);
   seatKey.arm();
   const s = store.open(code);
@@ -114,11 +114,11 @@ function measure(n: number): { code: string; panel: object; cold: { append: numb
   for (let i = 0; i < 3; i++) { post(); line(); }
   const append: number[] = [], status: number[] = [];
   for (let i = 0; i < RUNS; i++) { append.push(time(post)); status.push(time(line)); }
-  return { code, panel, cold, got: { append: median(append), statusline: median(status) }, max: { append: Math.max(...append), statusline: Math.max(...status) }, sealed: !!s.snapshot() };
+  return { code, home: identity.home(), panel, cold, got: { append: median(append), statusline: median(status) }, max: { append: Math.max(...append), statusline: Math.max(...status) }, sealed: !!s.snapshot() };
 }
 
-/** The best of three fresh processes: their first append and status line over room code (imports done before timing). */
-function fresh(code: string, panel: object): { append: number; statusline: number } {
+/** One fresh process: its first append and status line over room code (imports done before timing). */
+function freshOnce(code: string, home: string, panel: object): { append: number; statusline: number } {
   const src = `
     const t = () => Number(process.hrtime.bigint()) / 1e6;
     const store = require(${JSON.stringify(path.join(h.LIB, 'room', 'store.ts'))});
@@ -129,21 +129,26 @@ function fresh(code: string, panel: object): { append: number; statusline: numbe
     let a = t(); s.append({ kind: 'say', text: 'cold words' }, { via: 'human', from: 'alice' }); const append = t() - a;
     a = t(); agentStatusline(${JSON.stringify(panel)}, { env: { NO_COLOR: '1' } }); const statusline = t() - a;
     process.stdout.write(JSON.stringify({ append, statusline }));`;
-  // one sample of wall clock in a child is at the mercy of a busy machine
-  const runs = [0, 1, 2].map(() => {
-    const r = spawnSync(process.execPath, ['-e', src], { env: h.childEnv(), encoding: 'utf8' });
-    assert.equal(r.status, 0, r.stderr);
-    return JSON.parse(r.stdout) as { append: number; statusline: number };
-  });
-  return { append: Math.min(...runs.map(x => x.append)), statusline: Math.min(...runs.map(x => x.statusline)) };
+  const r = spawnSync(process.execPath, ['-e', src], { env: h.childEnv({ SUB_HUMAN_HOME: home }), encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  return JSON.parse(r.stdout) as { append: number; statusline: number };
+}
+/** FRESH_RUNS fresh processes per room, the small room's and the big room's taken in turn, the best of each: one sample
+ * of wall clock in a child is at the mercy of a busy machine, and a burst of load then hits both rooms alike (stage
+ * 8e I.12: the small room's three were taken before the big room was built, the big room's under the load after). */
+const FRESH_RUNS = 5;
+function freshPair(a: { code: string; home: string; panel: object }, b: { code: string; home: string; panel: object }) {
+  const runs: { a: { append: number; statusline: number }[]; b: { append: number; statusline: number }[] } = { a: [], b: [] };
+  for (let i = 0; i < FRESH_RUNS; i++) { runs.a.push(freshOnce(a.code, a.home, a.panel)); runs.b.push(freshOnce(b.code, b.home, b.panel)); }
+  const best = (xs: { append: number; statusline: number }[]) => ({ append: Math.min(...xs.map(x => x.append)), statusline: Math.min(...xs.map(x => x.statusline)) });
+  return { a: best(runs.a), b: best(runs.b) };
 }
 
 test(`perf: an @room post and the status line over a ${N}-entry log stay in budget`, { skip, timeout: 300_000 }, () => {
   const small = measure(SMALL);
-  const smallFresh = fresh(small.code, small.panel);
   const big = measure(N);
   assert.ok(big.sealed, 'the first append sealed the old log');
-  const bigFresh = fresh(big.code, big.panel);
+  const { a: smallFresh, b: bigFresh } = freshPair(small, big);
   if (process.env.SUB_HUMAN_PERF_REPORT === '1') {
     process.stderr.write(`perf N=${N}: append cold ${big.cold.append.toFixed(1)} ms, median ${big.got.append.toFixed(1)} ms (max ${big.max.append.toFixed(1)}; ${SMALL} entries: ${small.got.append.toFixed(1)}); `
       + `status line cold ${big.cold.statusline.toFixed(1)} ms, median ${big.got.statusline.toFixed(1)} ms (max ${big.max.statusline.toFixed(1)}; ${SMALL} entries: ${small.got.statusline.toFixed(1)})\n`
