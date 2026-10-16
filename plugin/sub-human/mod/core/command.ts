@@ -111,6 +111,14 @@ export function pinFor(p: PinnedStatus, lines: string[], columns: unknown): { st
   return { status: p.short, lines: p.cut };
 }
 
+/** A `/sub-human leave` that went through: the name of the seat it ended (the session is titled with it alone, its
+ * address gone with the seat: mod/deliver.ts renames it at once, item 12), else null. A member's seat only. */
+export function leftName(args: unknown, reply: JoinReply, seat: { name?: unknown; role?: unknown } | null | undefined): string | null {
+  const a = words(args);
+  if (a.length !== 1 || a[0] !== 'leave' || reply.kind !== 'say' || reply.refused || !seat || seat.role === 'claude') return null;
+  return typeof seat.name === 'string' && /^[A-Za-z0-9._-]{1,32}$/.test(seat.name) ? seat.name : null;
+}
+
 /** An `/sub-human invite --cancel [REF]` that went through takes the pinned invite off when it named it, or named none
  * (the one open invite, which the reply names). */
 export function cancels(args: unknown, reply: JoinReply, ref: string | null): boolean {

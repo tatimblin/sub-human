@@ -20,7 +20,7 @@ import {
   relayQueue, rewakePrompt, DELIVERY_ERROR_NOTICE, MOD_RESTART_TELL_FAILS, RELAY_AFTER_MS, REWAKE_TIMEOUT_MS,
 } from './core/deliver.ts';
 import { parseHello, localHello, homeOf, sidIndex } from './core/seat.ts';
-import { answersItself, joinPayload, readReply, answerOf, cancels, CONFIRM_AFTER_MS } from './core/command.ts';
+import { answersItself, joinPayload, readReply, answerOf, cancels, leftName, CONFIRM_AFTER_MS } from './core/command.ts';
 import { shimArgv, shimEnv, toClassic, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { restoreNeeded } from './core/prefilter.ts';
 import { mergeClassic } from './core/prompt.ts';
@@ -34,6 +34,7 @@ interface Child { sid: string; seat: TailSeat | null; stream: { return(value?: u
 
 const ROWS = { plugin: 'sub-human', key: 'rows' } as const;
 const HELLO = { plugin: 'sub-human', key: 'hello' } as const;
+const TITLED = { plugin: 'sub-human', key: 'titled' } as const;
 const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' } as const;
 const ERRORS = { plugin: 'sub-human', key: 'deliveryErrors' } as const;
 const NONCE = { plugin: 'sub-human', key: 'nonce' } as const;
@@ -416,6 +417,7 @@ export function registerDeliver(on: On) {
     const nonce = asNonce((await $.state.get(NONCE)).value, sid);
     if (!answersItself(e, { roomClaude: !!(await $.env.get('SUB_HUMAN_ROOM')), nonce })) return next(e);
     const root = $.plugin.root;
+    const before = asHello((await $.state.get(HELLO)).value); // the seat a leave ends (its title goes with it)
     const run = await $.process.run(shimArgv(root, 'join'), {
       stdin: JSON.stringify(joinPayload({ sid, cwd: await $.session.cwd(), args: e.args, nonce })),
       env: shimEnv({ session_id: sid }, root),
@@ -431,6 +433,13 @@ export function registerDeliver(on: On) {
         try { $.clock.after(CONFIRM_AFTER_MS, confirm); } catch { confirm(); }
         return r;
       } finally { joined = null; }
+    }
+    // a leave: the address NAME.CODE goes with the seat now, not at the next prompt (item 12 J): the title is NAME
+    const left = leftName(e.args, reply, before && before.sid === sid ? before.seat : null);
+    if (left) {
+      // not from this hook (the engine refuses a command.run raised inside one): just after it, on the clock
+      const rename = () => { void $.command.run({ command: 'rename', args: left }).then(() => $.state.set(TITLED, { sid, addr: left }), () => { /* the next prompt titles it */ }); };
+      try { $.clock.after(CONFIRM_AFTER_MS, rename); } catch { /* no clock: the next prompt titles it (mod/core/prompt.ts titleFor) */ }
     }
     const { result, logs, status } = answerOf(reply, { bridge: e.origin.kind === 'bridge', columns: e.presentation && e.presentation.columns });
     for (const line of logs) $.ui.log(line);

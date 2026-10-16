@@ -12,7 +12,7 @@ const SID = 'sid-c'
 /** The engine beneath: a session (its cwd), mod-hello, hooks/handlers/join.ts answering `join`, and the command itself (when the
  * hook passes it on: `ran` counts it, and a join's expansion raises classic.UserPromptExpansion as the engine does). */
 function world(engine: any, on: any, { join = {} as any, room = undefined as string | undefined } = {}) {
-  const seen = { joins: [] as any[], logs: [] as string[], ran: 0, expansions: [] as any[], hellos: 0 }
+  const seen = { joins: [] as any[], logs: [] as string[], ran: 0, expansions: [] as any[], hellos: 0, commands: [] as string[] }
   session(on, SID)
   on('session.cwd', () => ({ value: '/w' }))
   on('env.get', ($: any, e: any) => ({ value: e.name === 'SUB_HUMAN_ROOM' ? room : undefined }))
@@ -30,6 +30,8 @@ function world(engine: any, on: any, { join = {} as any, room = undefined as str
   })
   on('classic.UserPromptExpansion', ($: any, e: any) => { seen.expansions.push(e); return { additionalContext: ['from the classic join hook'] } })
   on('command.run', async ($: any, e: any) => {
+    seen.commands.push(`${e.command} ${e.args ?? ''}`.trim())
+    if (e.command === 'rename') return { text: `Session renamed to: ${e.args}` }
     seen.ran++
     const r = await engine.classic.UserPromptExpansion({ expansion_type: 'slash_command', command_name: 'sub-human:sub-human', command_args: e.args, prompt: `/sub-human ${e.args}`.trim(), session_id: SID } as any)
     return { text: undefined, context: r.additionalContext }
@@ -148,4 +150,24 @@ test('a member\'s session: /clear runs as usual', async ($, on) => {
   await start($)
   await $.command.run({ command: 'clear', args: '', origin: { kind: 'composer' } } as any)
   expect(seen.ran).toBe(1)
+})
+
+test('12 (J): /sub-human leave renames the session to the name alone at once (its NAME.CODE address goes with the seat), not at the next prompt', async ($, on) => {
+  const seen = world($, on, { join: { subHuman: { say: 'left otter-4821 · /sub-human joins again', refused: false, shareable: true } } })
+  const clock = mock.clock(on, { now: 0 })
+  await start($)
+  await typed($, 'leave')
+  expect(seen.commands).toEqual([]) // nothing from inside the hook: the engine refuses a command.run raised there
+  await clock.advance(200)
+  for (let i = 0; i < 20 && !seen.commands.includes('rename alice'); i++) await new Promise(r => setTimeout(r, 10))
+  expect(seen.commands).toEqual(['rename alice'])
+})
+
+test('12: a refused leave, or another command, renames nothing', async ($, on) => {
+  const seen = world($, on, { join: { subHuman: { say: '✗ this session is not in a room', refused: true, shareable: true } } })
+  await start($)
+  await typed($, 'leave')
+  await typed($, 'help')
+  await new Promise(r => setTimeout(r, 30))
+  expect(seen.commands.filter(c => c.startsWith('rename'))).toEqual([])
 })

@@ -1024,6 +1024,17 @@
    "note": "An answer {} (no text, no context) of a typed prompt adds no row at all: the command line is not echoed and nothing reaches the model; a {text} answer is the command's output row, shown under \"sub-human: \" (the hooking plugins' names) and read by the model with its echoed command line (local_command rows go to the API), and the model repeats it on its next turn (seen live), so the module shows replies with $.ui.log and answers {text} only through Remote Control, for a prompt and a reply that hold no secret. A prompt run by the SDK, or with pasted blocks before it, is echoed as a user row even then: the module leaves those to the classic hook."
   },
   {
+   "id": "rename-command",
+   "section": 10,
+   "stability": "incidental",
+   "since": "2.1.296",
+   "search": [
+    "name:\"rename\",aliases:[\"name\"],supportsNonInteractive:!0",
+    "Session renamed to: "
+   ],
+   "note": "The built-in /rename NAME renames the session (its title and the session registry's name, the SendMessage address). mod/deliver.ts runs it with $.command.run after a /sub-human leave, so the session stops answering to NAME.CODE at once rather than at the next prompt (item 12)."
+  },
+  {
    "id": "expansion-block-frame",
    "section": 10,
    "stability": "incidental",

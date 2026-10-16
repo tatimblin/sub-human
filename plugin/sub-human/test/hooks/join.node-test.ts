@@ -240,7 +240,7 @@ test('/sub-human leave: the seat leaves (as /exit would), the session stays; /su
   assert.equal(r.json!.decision, 'block');
   assert.equal(r.json!.reason, `sub-human: left ${w.code} · /sub-human joins again`, 'a plain confirmation, not a refusal');
   assert.ok(w.members().alice.left_at, 'alice left');
-  assert.match(w.entries().map(e => e.text).join('\n'), /alice left \(left\)/);
+  assert.match(w.entries().map(e => e.text).join('\n'), /^alice left$/m);
   assert.match(w.hook('join', expand('leave'), { as: 'alice' }).json!.reason!, /not in a room/);
 });
 

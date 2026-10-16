@@ -145,7 +145,8 @@ function exit(code: string, name: string, reason: string, { deadlineMs }: { dead
   try { if (!identity.liveMembers(code).length) roomClaude.reapDetached(code); } catch { /* the room Claude's watchdog closes it */ }
   // Claude Code's SessionEnd token ("prompt_input_exit", "logout", "other") is written in words, as render reads it
   const why = CC_END_REASONS.has(reason) || /^[a-z]+(?:_[a-z]+)+$/.test(reason) ? 'session ended' : reason;
-  room.open(code).append({ kind: 'member_left', text: `${name} left (${why})` }, asSystem(name));
+  // `/sub-human leave` (reason "left") is the person's own leave: nothing to add ("fresh left (left)" read oddly)
+  room.open(code).append({ kind: 'member_left', text: why === 'left' ? `${name} left` : `${name} left (${why})` }, asSystem(name));
   return true;
 }
 
