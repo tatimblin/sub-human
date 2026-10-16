@@ -59,10 +59,21 @@ function nonceFor($: EngineInterface, sid: string): Promise<string | null> {
  * module sees notes the session's transcript path and permission mode; tool.call stashes the call's agentId. Module
  * state: a reload forgets it until the next event. */
 export const facts = factsBook();
-/** The last presence the module wrote or saw for seat (address|sid): mod/prompt.ts writes "working" for a typed prompt,
- * idle on a notification; turn.complete below writes "idle" when the turn that ends was a "working" one (an
- * idle_prompt notification may never come: seen live, every member stuck on "working"). Lost on reload. */
-export const presence: { last: string | null; seat: string | null } = { last: null, seat: null };
+/** The last presence the module wrote or saw for seat (address|sid). A typed prompt (mod/prompt.ts) only marks
+ * "working" as pending; the turn it starts writes it (turn.start below), so a prompt the plugin stops or refuses (no
+ * turn: an @room's receipt, a refusal) writes nothing (seen live: "working" for 8+ minutes). turn.complete writes
+ * "idle" when the turn that ends was a "working" one or waited on the person ("permission": the dialog was answered,
+ * or the turn went on), and a tool call that finishes after a "permission" notification writes "working" again (an
+ * idle_prompt notification may never come). Lost on reload. */
+export const presence: { last: string | null; seat: string | null; pending: string | null } = { last: null, seat: null, pending: null };
+
+/** node hooks/run.ts presence with a payload of its own (Working, TurnEnd), not awaited by the caller. */
+function presenceRun($: EngineInterface, event: 'Working' | 'TurnEnd'): Promise<unknown> {
+  return (async () => {
+    const root = $.plugin.root, sid = await $.session.id();
+    await $.process.run(shimArgv(root, 'presence'), { stdin: JSON.stringify({ hook_event_name: event, session_id: sid }), env: shimEnv({ session_id: sid }, root), timeoutMs: SHIM_TIMEOUT_MS });
+  })();
+}
 
 /** The session id whose lease this module process has written (mod-hello ran for it): join and at-room need one. */
 let leased: string | null = null;
@@ -330,6 +341,8 @@ async function toolDone<E extends { readonly agent_id?: string; readonly session
   facts.noteEvent(e);
   if (!e.agent_id) {
     try { turns.toolDone(await $.clock.now()); } catch { /* above */ }
+    // the person answered what the turn waited on (a permission dialog, the plan view): working again
+    if (presence.last === 'permission_prompt') { presence.last = 'working'; void presenceRun($, 'Working').catch(() => { presence.last = null; }); }
   }
   return next(e);
 }
@@ -475,6 +488,12 @@ export function registerDeliver(on: On) {
   on('turn.start', ($, e, next) => {
     // a wake nothing took before goes into this turn, as any wake that lands mid-turn
     for (const text of turns.start(e.turnId)) void midTurnWake($, text).catch(() => {});
+    // the person's typed prompt started this turn: now it is "working" (a stopped prompt starts none)
+    if (presence.pending) {
+      presence.pending = null;
+      presence.last = 'working';
+      void presenceRun($, 'Working').catch(() => { presence.last = null; });
+    }
     return next(e);
   });
 
@@ -485,12 +504,9 @@ export function registerDeliver(on: On) {
       for (const text of turns.complete(e.turnId)) void submitWake($, text, { appended: true });
       if (turns.running === null) scheduleRelay(relayIo($));
       // the turn the person's prompt started is over: back at the prompt (node hooks/run.ts presence, not awaited)
-      if (presence.last === 'working') {
+      if (presence.last === 'working' || presence.last === 'permission_prompt') {
         presence.last = 'idle';
-        void (async () => {
-          const root = $.plugin.root, sid = await $.session.id();
-          await $.process.run(shimArgv(root, 'presence'), { stdin: JSON.stringify({ hook_event_name: 'TurnEnd', session_id: sid }), env: shimEnv({ session_id: sid }, root), timeoutMs: SHIM_TIMEOUT_MS });
-        })().catch(() => { presence.last = null; });
+        void presenceRun($, 'TurnEnd').catch(() => { presence.last = null; });
       }
     }
     return next(e);

@@ -34,11 +34,15 @@ function world(engine: any, on: any, { hello = OUT as any, prompt = '', exitCode
   })
   on('classic.UserPromptSubmit', () => ({}))
   on('classic.UserPromptExpansion', () => ({}))
+  on('turn.start', ($: any, e: any) => ({ turnId: e.turnId }))
+  let turns = 0
   on('prompt.submit', async ($: any, e: any) => {
     const r = await engine.classic.UserPromptSubmit({ prompt: e.text, session_id: SID, permission_mode: 'default' })
     seen.classic.push(r)
     seen.entered.push(e.text)
     seen.contexts.push(e.context)
+    // as the engine does: a prompt a hook stopped or blocked starts no turn
+    if (!r.block && !r.preventContinuation) await engine.turn.start({ text: e.text, turnId: `t${++turns}` }).catch(() => {})
     return { text: e.text }
   })
   return seen
@@ -243,6 +247,25 @@ test('a member\'s typed prompt writes "working" once from the mod, delivering or
   expect(seen.presence[0].env.CLAUDE_CODE_SESSION_ID).toBe(SID)
   expect(seen.presence[0].env.CLAUDE_PID).toBe('')
   expect(seen.stdin[0].sub_human_origin).toBe('composer') // at-room, given the origin, leaves presence to the mod
+})
+
+test('O (live verify): a typed prompt the plugin stops (an @room\'s receipt) or refuses starts no turn and writes no "working"', async ($, on) => {
+  const stopped = { continue: false, stopReason: '✓ sent', subHuman: { reviewOpen: false } }
+  const seen = world($, on, { prompt: JSON.stringify(stopped) })
+  await start($)
+  await submit($, '@room hi')
+  await new Promise(r => setTimeout(r, 20))
+  expect(seen.classic[0].preventContinuation).toBe(true)
+  expect(seen.presence.length).toBe(0)
+})
+
+test('O: a refused prompt (a block) writes no "working" either', async ($, on) => {
+  const refused = { decision: 'block', reason: '✗ not posted', subHuman: { reviewOpen: false } }
+  const seen = world($, on, { prompt: JSON.stringify(refused) })
+  await start($)
+  await submit($, '@room hi')
+  await new Promise(r => setTimeout(r, 20))
+  expect(seen.presence.length).toBe(0)
 })
 
 test('an unseated session writes no presence', async ($, on) => {

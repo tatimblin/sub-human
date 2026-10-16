@@ -1,5 +1,5 @@
 /**
- * plugin/sub-human/mod/prompt.ts: the prompt gate, "working" presence and the UserPromptSubmit shim (HOOKS in
+ * plugin/sub-human/mod/prompt.ts: the prompt gate, "working" presence (pending until the turn starts: mod/deliver.ts) and the UserPromptSubmit shim (HOOKS in
  * mod/register.ts says what each hook does). An @room no person typed is dropped (cc CONTRACT
  * prompt-origin-composer); one the shim could not handle is refused, never let through as typed. The origin goes
  * to at-room with the session's nonce, which at-room checks against this session's lease. The origin hand-off is
@@ -132,10 +132,8 @@ export function registerPrompt(on: On) {
       setRemote(onRemote(e.origin)); // the phone (bridge) or this terminal: where room lines must go
       const sid = await $.session.id();
       const hello = await helloOf($);
-      if (writesWorking(e.origin, hello, presenceOf(hello))) {
-        presence.last = 'working';
-        void writePresence($, { hook_event_name: 'Working', session_id: sid }, sid).catch(() => { presence.last = null; });
-      }
+      // "working" once the turn starts (mod/deliver.ts turn.start): a prompt stopped or refused below starts none
+      presence.pending = writesWorking(e.origin, hello, presenceOf(hello)) ? sid : null;
       if (delivering(sid)) {
         // the held rows text rides once per change: on the first typed prompt after it changes, not on every prompt
         const { value: rows } = await $.state.get(ROWS);
@@ -183,15 +181,21 @@ export function registerPrompt(on: On) {
     }
     const refused = unseatedRefusal(e, hello); // an @room with surely no seat: at-room's words, no node
     if (refused) {
+      presence.pending = null; // stopped: no turn, no "working"
       if (origins.take(e.prompt) === 'bridge') relay(refused.stopReason);
       const merged = mergeClassic({ ...refused, ...top }, await next(e));
       if (!merged.block) receipts.expect(merged.stopReason); // its warning row is the refusal alone, no frame
       return merged;
     }
-    if (!needsNode(e, hello, { delivering: delivering(e.session_id), reviewFlag })) return mergeClassic(top, await next(e));
+    if (!needsNode(e, hello, { delivering: delivering(e.session_id), reviewFlag })) {
+      const merged = mergeClassic(top, await next(e));
+      if (merged.block || merged.preventContinuation) presence.pending = null;
+      return merged;
+    }
     const ours = await runPrompt($, e, origins.take(e.prompt), hello);
     const merged = mergeClassic({ ...ours, ...top }, await next(e));
     if (ours.preventContinuation && !merged.block) receipts.expect(merged.stopReason);
+    if (merged.block || merged.preventContinuation) presence.pending = null; // stopped or refused: no turn, no "working"
     return merged;
   }).catch(($, e, next) => failClosed(e.prompt) ?? next(e)); // a plain prompt goes on, as when a command hook fails
 

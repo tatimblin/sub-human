@@ -49,7 +49,8 @@ const call = async ($: any, tool: string, input: any = {}) => {
 }
 /** Each event, as the engine raises it. */
 const EVENTS: [string, ($: any) => Promise<unknown>][] = [
-  ['a plain prompt', $ => $.prompt.submit({ text: 'hello', origin: { kind: 'composer' }, wait: false })],
+  // the prompt, then the turn it starts (presence "working" is written there: a stopped prompt starts none)
+  ['a plain prompt', async $ => { await $.prompt.submit({ text: 'hello', origin: { kind: 'composer' }, wait: false }); await $.turn.start({ text: 'hello', turnId: 'tp' } as any).catch(() => {}) }],
   ['an @room', $ => $.prompt.submit({ text: '@room hi', origin: { kind: 'composer' }, wait: false })],
   ['Bash, Read, Write', async $ => { await call($, 'Bash', { command: 'ls' }); await call($, 'Read', { file_path: '/w/a' }); await call($, 'Write', { file_path: '/w/a', content: '' }) }],
   ['Agent (Explore)', $ => call($, 'Agent', { subagent_type: 'Explore', prompt: 'look', description: 'look' })],
@@ -116,7 +117,7 @@ test('node starts per event: a seated member (before its tail child reports the 
   const counts = await measure($, on, SEAT)
   expect(counts).toEqual({
     'session start': 2, // mod-hello, the tail child
-    'a plain prompt': 2, // prompt.ts (no tail child has reported the seat yet), presence "working"
+    'a plain prompt': 2, // prompt.ts (no tail child has reported the seat yet), presence "working" at the turn's start
     'an @room': 1, // prompt.ts: at-room signs the post
     'Bash, Read, Write': 0, 'Agent (Explore)': 0,
     'Agent (a row)': 2, // row-guard, row-map
