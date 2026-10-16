@@ -17,7 +17,7 @@ function fakeVersion(dir: string, tag: string, sub = 'scripts') {
   fs.writeFileSync(path.join(dir, sub, 'sub-human'), `console.log(${JSON.stringify(tag)}, process.argv.slice(2).join(' '))\n`);
   return dir;
 }
-const runShim = (env = {}) => spawnSync('/bin/sh', [shim.shimPath(), '--stdio', 'vole-1234', '--link', 'abcdef012345'],
+const runShim = (env = {}) => spawnSync('/bin/sh', [shim.shimPath(), '--stdio', 'vole-1234', '--link', 'abcdef012345', '--login'],
   { encoding: 'utf8', env: h.childEnv(env) });
 
 test('refresh: the shim (0700) and pointer (0600) in <home>/bin, rewritten only on a change; a temp root is refused', t => {
@@ -48,7 +48,7 @@ test('the shim runs serve from the recorded root, else the newest cached version
   shim.refresh({ root: v2, env: ALLOW });
   let r = runShim();
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(r.stdout, 'v0.2.0 serve --stdio vole-1234 --link abcdef012345\n', 'the recorded root, its bin/ CLI');
+  assert.equal(r.stdout, 'v0.2.0 serve --stdio vole-1234 --link abcdef012345 --login\n', 'the recorded root, its bin/ CLI');
   // a plugin update: 0.2.0 removed, 0.10.0 and 0.9.1 installed; a node upgrade removed the recorded node
   fakeVersion(path.join(cache, '0.9.1'), 'v0.9.1');
   fakeVersion(path.join(cache, '0.10.0'), 'v0.10.0');
@@ -56,7 +56,7 @@ test('the shim runs serve from the recorded root, else the newest cached version
   fs.writeFileSync(shim.pointerPath(), `${v2}\n/nonexistent/v20.0.0/bin/node\n${cache}\n`);
   r = runShim({ PATH: `${path.dirname(process.execPath)}:/usr/bin:/bin` });
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(r.stdout, 'v0.10.0 serve --stdio vole-1234 --link abcdef012345\n', 'the newest version, node from PATH');
+  assert.equal(r.stdout, 'v0.10.0 serve --stdio vole-1234 --link abcdef012345 --login\n', 'the newest version, node from PATH');
   // nothing left to run: 127 and a line on stderr
   fs.rmSync(cache, { recursive: true });
   r = runShim();

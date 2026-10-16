@@ -1,38 +1,33 @@
 /**
- * plugin/sub-human/lib/remote/noise.ts: the end-to-end channel inside a WebSocket (lib/remote/transports/ws.ts): two
- * Noise patterns over 25519, ChaChaPoly and SHA256 (https://noiseprotocol.org/noise.html, revision 34), built on
+ * plugin/sub-human/lib/remote/noise.ts: the end-to-end channel inside a WebSocket (lib/remote/transports/ws.ts): the
+ * Noise pattern XK over 25519, ChaChaPoly and SHA256 (https://noiseprotocol.org/noise.html, revision 34), built on
  * node:crypto only: X25519 through crypto.diffieHellman on KeyObjects, ChaCha20-Poly1305 (12-byte nonce: 4 zero bytes
  * and the 64-bit little-endian counter), SHA-256, and the spec's HKDF, which is RFC 5869 HKDF-SHA256 with salt = ck
  * and no info (crypto.hkdfSync). No field arithmetic is written here. Checked against the cacophony and snow vectors
- * (test/remote-noise.node-test.ts) for both patterns.
+ * (test/remote-noise.node-test.ts).
  *
- * Both: the responder (the host's listener) has a static key the initiator (the joiner's link daemon) knows already
- * (an invite's tag names it, a link file pins it). So only the holder of that key can read message 1's payload or
- * answer with a message 2 that decrypts: a TLS front (Tailscale Serve or Funnel, a reverse proxy) between them sees
- * ciphertext.
- *   XK (protocol 3, every link made since): the initiator has a static key of its own, one per link (its link file's,
- *       made when it joined), and sends it encrypted in message 3:  <- s  ...  -> e, es   <- e, ee   -> s, se
- *       The responder learns it (remoteStatic) and the host binds the link to it: a link is a key, not a bearer token.
- *   NK (protocol 2, a link made before): the initiator stays anonymous:  <- s  ...  -> e, es   <- e, ee
- *       Kept so a link made under protocol 2 keeps working until it is invited again or revoked.
+ * The responder (the host's listener) has a static key the initiator (the joiner's link daemon) knows already (an
+ * invite's tag names it, a link file pins it). So only the holder of that key can read message 1's payload or answer
+ * with a message 2 that decrypts: a TLS front (Tailscale Serve or Funnel, a reverse proxy) between them sees
+ * ciphertext. The initiator has a static key of its own, one per link (its link file's, made when it joined), and sends
+ * it encrypted in message 3:  <- s  ...  -> e, es   <- e, ee   -> s, se
+ * The responder learns it (remoteStatic) and the host binds the link to it: a link is a key, not a bearer token.
  *
- *   PATTERNS                         {NK, XK}: each one's protocol name and message tokens
- *   PROTOCOL                         'Noise_NK_25519_ChaChaPoly_SHA256' (NK's name; PATTERNS.XK.name is XK's)
  *   MAX_MESSAGE                      65535 bytes, the spec's limit for one Noise message
  *   MAX_PLAINTEXT                    MAX_MESSAGE - 16 (the tag)
  *   generateKeyPair() -> {priv, pub}   32-byte Buffers
  *   keyPair(priv) -> {priv, pub}     the pair of a raw 32-byte X25519 private key
  *   dh(priv, pub) -> Buffer          X25519 shared secret (32 bytes); throws on an all-zero result (a low-order point)
- *   initiator({rs, s?, pattern?, prologue?, e?}) -> Handshake   rs: the responder's known public key (32 bytes); s: the
- *                                    initiator's own pair (XK); pattern 'NK' (default) or 'XK'
- *   responder({s, pattern?, prologue?, e?}) -> Handshake    s: the responder's own pair; e: a fixed ephemeral pair (tests only)
+ *   initiator({rs, s, prologue?, e?}) -> Handshake   rs: the responder's known public key (32 bytes); s: the
+ *                                    initiator's own pair
+ *   responder({s, prologue?, e?}) -> Handshake    s: the responder's own pair; e: a fixed ephemeral pair (tests only)
  *   Handshake (one side)
- *     writeMessage(payload) -> Buffer      the next message this side sends (initiator: 1 and, XK, 3; responder: 2)
+ *     writeMessage(payload) -> Buffer      the next message this side sends (initiator: 1 and 3; responder: 2)
  *     readMessage(buf) -> Buffer           the payload of the peer's message; throws NoiseError when it does not
  *                                          decrypt (for message 2 on the initiator: the host does not hold the key it
- *                                          named; for message 1 on the responder: another pattern, or another key)
+ *                                          named; for message 1 on the responder: another key)
  *     done -> bool                         every message of the pattern made
- *     remoteStatic -> Buffer | null        the peer's static key: the initiator's rs, the XK responder's after message 3
+ *     remoteStatic -> Buffer | null        the peer's static key: the initiator's rs, the responder's after message 3
  *     handshakeHash -> Buffer              h once done (channel binding)
  *     split() -> {send: CipherState, recv: CipherState}   once done
  *   CipherState: encrypt(plaintext, ad?) -> Buffer, decrypt(ciphertext, ad?) -> Buffer (NoiseError on a bad tag);
@@ -49,14 +44,10 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { markCoded, errCode, msgOf } from '../errors.ts';
 
-/** A pattern's message tokens (both patterns here have the pre-message <- s). */
+/** XK's message tokens (after the pre-message <- s). */
 type Token = 'e' | 's' | 'ee' | 'es' | 'se';
-type PatternName = 'NK' | 'XK';
-const PATTERNS: Readonly<Record<PatternName, { name: string; messages: readonly (readonly Token[])[] }>> = Object.freeze({
-  NK: { name: 'Noise_NK_25519_ChaChaPoly_SHA256', messages: [['e', 'es'], ['e', 'ee']] },
-  XK: { name: 'Noise_XK_25519_ChaChaPoly_SHA256', messages: [['e', 'es'], ['e', 'ee'], ['s', 'se']] },
-});
-const PROTOCOL: string = PATTERNS.NK.name;
+const PROTOCOL = 'Noise_XK_25519_ChaChaPoly_SHA256';
+const MESSAGES: readonly (readonly Token[])[] = [['e', 'es'], ['e', 'ee'], ['s', 'se']];
 const DHLEN = 32, HASHLEN = 32, TAGLEN = 16;
 const MAX_MESSAGE = 65535;
 const MAX_PLAINTEXT: number = MAX_MESSAGE - TAGLEN;
@@ -178,17 +169,15 @@ class SymmetricState {
 
 interface HandshakeOptions {
   initiator: boolean;
-  pattern?: PatternName | undefined;
   s?: KeyPair | null;
   rs?: Buffer | null;
   e?: KeyPair | null | undefined;
   prologue?: Buffer | string | undefined;
 }
 
-/** One side of a pattern (NK or XK; both pre-message <- s). */
+/** One side of the XK handshake. */
 class Handshake {
   initiator: boolean;
-  pattern: PatternName;
   messages: readonly (readonly Token[])[];
   ss: SymmetricState;
   s: KeyPair | null;
@@ -197,14 +186,12 @@ class Handshake {
   e: KeyPair | null;
   re: Buffer | null;
   step: number;
-  constructor({ initiator, pattern = 'NK', s = null, rs = null, e = null, prologue = EMPTY }: HandshakeOptions) {
-    if (!Object.hasOwn(PATTERNS, pattern)) throw new NoiseError(`no Noise pattern ${pattern}`);
+  constructor({ initiator, s = null, rs = null, e = null, prologue = EMPTY }: HandshakeOptions) {
     this.initiator = initiator;
-    this.pattern = pattern;
-    this.messages = PATTERNS[pattern].messages;
-    this.ss = new SymmetricState(PATTERNS[pattern].name);
+    this.messages = MESSAGES;
+    this.ss = new SymmetricState(PROTOCOL);
     this.ss.mixHash(Buffer.from(prologue));
-    if (initiator && pattern === 'XK') check32(s && s.pub, 'the initiator\'s own key');
+    if (initiator) check32(s && s.pub, 'the initiator\'s own key');
     this.s = s;
     this.rs = rs;
     this.fixedE = e;
@@ -279,9 +266,9 @@ class Handshake {
   }
 }
 
-type Who = { prologue?: Buffer | string | undefined; e?: KeyPair | null | undefined; pattern?: PatternName | undefined };
-const initiator = ({ rs, s = null, prologue, e, pattern }: Who & { rs: Buffer; s?: KeyPair | null }): Handshake => new Handshake({ initiator: true, pattern, rs, s, prologue, e });
-const responder = ({ s, prologue, e, pattern }: Who & { s: KeyPair }): Handshake => new Handshake({ initiator: false, pattern, s, prologue, e });
+type Who = { prologue?: Buffer | string | undefined; e?: KeyPair | null | undefined };
+const initiator = ({ rs, s = null, prologue, e }: Who & { rs: Buffer; s?: KeyPair | null }): Handshake => new Handshake({ initiator: true, rs, s, prologue, e });
+const responder = ({ s, prologue, e }: Who & { s: KeyPair }): Handshake => new Handshake({ initiator: false, s, prologue, e });
 
 const b64 = (b: Buffer): string => Buffer.from(b).toString('base64url');
 
@@ -307,7 +294,7 @@ function loadOrCreateStatic(file: string): KeyPair {
 }
 
 export {
-  PATTERNS, PROTOCOL, MAX_MESSAGE, MAX_PLAINTEXT, NoiseError, CipherState, generateKeyPair, keyPair, dh, initiator, responder,
+  MAX_MESSAGE, MAX_PLAINTEXT, NoiseError, CipherState, generateKeyPair, keyPair, dh, initiator, responder,
   loadOrCreateStatic,
 };
-export type { KeyPair, Handshake, PatternName };
+export type { KeyPair, Handshake };

@@ -36,7 +36,6 @@ export type { WireCode } from './protocol.ts';
 /** What an end serves (protocol.CAPS), in a hello reply. */
 export interface Caps {
   ops: readonly string[];
-  fields?: readonly string[];
   /** the host sends a new mirror its log's snapshot when asked (subscribe {after: 0, snapshot: true}); additive */
   snapshot?: boolean;
 }
@@ -349,8 +348,6 @@ export interface LinkDoc {
   why?: string;
   queued?: number;
   flush?: Flush;
-  /** online: the entry fields the host's hello listed (protocol.ts FIELDS), which this machine may write */
-  fields?: string[];
 }
 
 /** Every timing the link daemon uses (linkTimings). */

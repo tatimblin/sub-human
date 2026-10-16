@@ -149,9 +149,6 @@ function redeem(s: Session, invite: unknown, machine: MachineId, pin: unknown, p
   let secret: string;
   const opts = { machine, pin, proven, peerKey: s.peer, as: asked, ...(s.login && linkId ? { newId: linkId } : {}) };
   if (word) { // an invite line's SECRET (protocol 3)
-    const skew = () => new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: s.version, proto: s.proto }, joiner: s.peerVersion ?? { version: null, proto: { min: 1, max: s.v ?? 1 } }, need: 3 }), 'SKEW');
-    if ((s.v ?? 0) < 3) throw skew();
-    if (s.via === 'ws' && !s.peer) throw skew(); // over the web protocol 3 is XK, a key of the link's own: NK is an older joiner's
     secret = inviteSecret.idOf(word.secret);
   } else {
     const inv = invites.parseInvite(invite);
@@ -318,7 +315,7 @@ const OPS: OpHandlers = {
     const bound = machineKey.verifyFor(params.machine_key, s.store.code, s.challenge);
     const proven = bound || (inviteSecret.decode(invite) ? null : machineKey.verify(params.machine_key, s.store.code));
     // nonce: the host home's machine key proves itself first, so a joiner sends an invite line's secret only after
-    const host = v >= 3 && typeof nonce === 'string' && machineKey.NONCE_RE.test(nonce) ? machineKey.hostProof(s.store.code, nonce) : null;
+    const host = typeof nonce === 'string' && machineKey.NONCE_RE.test(nonce) ? machineKey.hostProof(s.store.code, nonce) : null;
     const r: Credential = invite !== undefined ? redeem(s, invite, machine, pin, proven, as) : token !== undefined ? known(s, token)
       : params.login === true ? viaLogin(s, machine, proven) : { link: null };
     s.link = r.link;

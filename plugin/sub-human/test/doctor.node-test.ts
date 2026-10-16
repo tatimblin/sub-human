@@ -87,7 +87,7 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   assert.match(fixOf(byId(rep, 'home')), /^SUB_HUMAN_HOME=\S+ node \S+\/scripts\/sub-human doctor --fix in a terminal/, 'the CLI by its path: none is on PATH');
   const lc = byId(rep, `link:${code}`);
   assert.equal(lc.status, 'warn', lc.detail);
-  assert.match(lc.detail, new RegExp(`^pipe ${hostHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · daemon not running · ✕ offline 2m · 2 queued · last error: no route to host · the room moved to [^·]* · host reachable in \\d+ ms; protocol here 1-3 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), host 1-3 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), speaking v3`));
+  assert.match(lc.detail, new RegExp(`^pipe ${hostHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · daemon not running · ✕ offline 2m · 2 queued · last error: no route to host · the room moved to [^·]* · host reachable in \\d+ ms; protocol here 3 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), host 3 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), speaking v3`));
   assert.match(fixOf(lc), /Ask carolyn for an invite/, 'the room moved and this link never reached the new host');
   assert.match(lc.detail, /the room moved to carolyn's machine; not reached from here yet/);
   assert.doesNotMatch(lc.detail, /epoch|BatchMode/);
@@ -100,7 +100,7 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   const reach = must(l.reach, 'its hello');
   assert.equal(reach.ok, true);
   assert.equal(must(reach.protocol).v, 3);
-  assert.deepEqual(must(reach.protocol).proto, { min: 1, max: 3 });
+  assert.deepEqual(must(reach.protocol).proto, { min: 3, max: 3 });
   // the midpoint of a slow spawn can sit seconds from the moment the host answered: bound it loosely
   assert.ok(Math.abs(must(reach.skewMs)) < 60_000, `skew ${reach.skewMs}`);
   assert.deepEqual(l.recent, [`2026-10-08T10:00:00.000Z sub-human link ${code}: offline: ssh exited 255`]);

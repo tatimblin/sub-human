@@ -88,7 +88,7 @@ test('remote (memory): hello with an invite gives a token once; join, beat, appe
   h.register('bob', 'member', process.pid, code); // a seat of the host machine: its pid and session never leave it
   const c = await linked(t, host);
   assert.equal(typeof c.token, 'string');
-  assert.deepEqual([c.room, must(c.serverCaps).ops], [code, protocol.OPS]);
+  assert.deepEqual([c.room, c.snapshots()], [code, true]);
   assert.deepEqual(await c.join(seat(code, 'alice')), { ok: true });
   const ms = identity.readMembers(code);
   assert.deepEqual([must(ms.alice).machine, must(ms.alice).pid], [REMOTE, undefined], 'a remote seat lives by its lease');
@@ -217,9 +217,9 @@ test('protocol skew: the host picks the highest common version; N-1 and N+1 peer
   const newHost = await at({}, { proto: { min: N.max, max: N.max + 1 }, version: '9.0.0' });
   assert.deepEqual([newHost.v, newHost.serverVersion], [N.max, '9.0.0']);
   newHost.close();
-  // a 0.5 beta's joiner: its hello also says v (the version it needs at least), honoured; an unknown field ignored
-  const beta = await rawHello(t, host, { v: 2, proto: { min: 1, max: 2 }, client: '0.5.0-beta.15', someFutureField: true });
-  assert.equal((beta.result as { v: number }).v, 2, 'a beta.15 link still links');
+  // a hello that says v (the version it needs at least) is honoured; an unknown field ignored
+  const needs = await rawHello(t, host, { v: N.max, proto: N, client: '9.0.0', someFutureField: true });
+  assert.equal((needs.result as { v: number }).v, N.max);
   // a hello with a version but no range (a joiner from before 0.5): PROTOCOL SKEW, it must update
   const pre = await rawHello(t, host, { v: 1 });
   assert.deepEqual([must(pre.error).code, must(pre.error).reason, /update it/.test(must(pre.error).message)], ['PROTOCOL', 'SKEW', true]);
@@ -245,11 +245,9 @@ test('protocol skew: no common version is PROTOCOL naming the side that must upd
   assert.deepEqual([must(r.error).code, must(r.error).reason, /you run an older sub-human \(protocol 1\)\. Update your plugin/.test(must(r.error).message)], ['PROTOCOL', 'SKEW', true]);
   // a reply outside this end's range is refused here too
   await fails(at({ proto: { min: 1, max: 1 } }, { proto: { min: 1, max: 1 } }).then(() => at({ proto: { min: protocol.PROTO.max + 1, max: protocol.PROTO.max + 1 } }, {})), /must update|Update your plugin/);
-  // this version and 0.5.0-beta.15: protocol 3 against 1–2 settles on 2 both ways (a link made before keeps working)
-  assert.deepEqual(protocol.PROTO, { min: 1, max: 3 });
-  const oldHost = await at({}, { proto: { min: 1, max: 2 }, version: '0.5.0-beta.15' });
-  assert.deepEqual([oldHost.v, oldHost.serverVersion], [2, '0.5.0-beta.15']);
-  oldHost.close();
+  // 0.5.0-beta.15 (protocol 1–2) and this version share none: the joiner is told to update
+  assert.deepEqual(protocol.PROTO, { min: 3, max: 3 });
+  await fails(at({}, { proto: { min: 1, max: 2 }, version: '0.5.0-beta.15' }), /The host must update/);
 });
 
 test('remote (memory): a link writes only as the seats it joined: another `from`, a stolen key or a system kind is AUTH', async t => {

@@ -36,11 +36,9 @@
  *         dropped. A transport that closes ends it with {ev: 'end', data: {reason: 'OFFLINE'}}. stop() stops
  *         delivering (the server's stream ends with the transport)
  *     blobGet(ref) -> Promise<Buffer | null>, blobPut(name, bytes) -> Promise<ref>
- *     supports(op) -> bool         the server's hello caps list op (an old server's do not list 'ping')
- *     snapshots() -> bool         the server's hello caps say snapshot: true (an old server's do not)
- *     fields() -> [field]          the entry fields the server's hello caps list (protocol.ts FIELDS; an old server's: none)
+ *     snapshots() -> bool         the server's hello caps say snapshot: true
  *     ping(ms?) -> Promise<{pong, rttMs}>   one heartbeat (protocol.ts ping); OFFLINE when no pong within ms
- *         (default deadlineMs). The link daemon pings only when supports('ping') and says hello with caps {ping: true}
+ *         (default deadlineMs). The link daemon pings, and says hello with caps {ping: true}
  *     closed                        true once the transport closed
  *     drain(ms?) -> Promise          resolves once no call waits for a reply (or after ms, default deadlineMs): the
  *         link daemon closes a replaced connection only then, so a hook's op in flight on it is answered
@@ -62,8 +60,6 @@ import type { MachineId, LinkToken, InviteSecret, Pin } from '../brand.ts';
 
 /** The server's caps, from its hello. */
 interface ServerCaps {
-  ops?: unknown;
-  fields?: unknown;
   snapshot?: unknown;
 }
 
@@ -201,9 +197,7 @@ class Client {
     });
   }
 
-  supports(op: string): boolean { return !!this.serverCaps && Array.isArray(this.serverCaps.ops) && this.serverCaps.ops.includes(op); }
   snapshots(): boolean { return !!this.serverCaps && this.serverCaps.snapshot === true; }
-  fields(): string[] { const f = this.serverCaps && this.serverCaps.fields; return Array.isArray(f) ? f.filter((x): x is string => typeof x === 'string') : []; }
   async ping(ms: number = this.deadlineMs): Promise<{ pong: unknown; rttMs: number }> {
     const t0 = Date.now();
     const r = await this._request('ping', {}, undefined, ms);
@@ -220,15 +214,13 @@ async function connect(transport: Transport | Promise<Transport>, opts: ConnectO
   const c = new Client(await transport, { deadlineMs });
   const cred: { invite?: InviteSecret; pin?: Pin; as?: { name: string; label: string }; token?: LinkToken; login?: boolean } = invite !== undefined
     ? { invite, ...(pin !== undefined ? { pin } : {}), ...(as ? { as } : {}) } : token !== undefined ? { token } : login === true ? { login: true } : {};
-  // the version this hello needs at least: an invite line (checkHost) needs 3, an sh2 invite's PIN 2
-  const need = Math.max(proto.min, checkHost ? 3 : pin !== undefined ? 2 : 1);
   const me = { version, proto };
   const base = { proto, client: version, caps, machine, ...(machineKey ? { machine_key: machineKey } : {}), ...(Number.isInteger(epoch) ? { epoch } : {}) };
   const skew = (r: HelloReply): RoomError => {
     const theirs = protocol.rangeOf({ proto: r.proto });
     return new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: r.server, proto: theirs ?? { min: r.v, max: r.v } }, joiner: me }), 'SKEW');
   };
-  const inRange = (r: HelloReply): boolean => !!protocol.rangeOf({ proto: r.proto }) && r.v >= proto.min && r.v <= proto.max && r.v >= need;
+  const inRange = (r: HelloReply): boolean => !!protocol.rangeOf({ proto: r.proto }) && r.v >= proto.min && r.v <= proto.max;
   try {
     let bound: { machine_key: { key: string; ts: number; sig: string } } | Record<string, never> = {};
     if (checkHost || (signMachine && cred.invite !== undefined)) {

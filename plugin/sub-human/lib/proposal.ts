@@ -18,9 +18,7 @@
  *       default to the humans present (not room Claude, not left). An identical open proposal is not re-appended.
  *       same: the approvers that are one person (sameOf: the room owner's seat on the host with the seats over
  *       the host account's login links; never two seats on the host), groups of 2+; the fold counts one answer for the group (lib/room/consent.ts).
- *       Written only where the host accepts it (sameOk: this machine is the host, or its link daemon's hello
- *       listed the field, lib/remote/protocol.ts FIELDS).
- *       retired: the hashes of my undecided proposals with the same title that this one supersedes (the fold
+ * *       retired: the hashes of my undecided proposals with the same title that this one supersedes (the fold
  *       retires them, lib/room/consent.ts: no longer pending, answers on them do not carry over).
  *       Throws ProposalError (message for the model) on bad input.
  *   Reading the log goes through lib/room/consent.ts fold (latest proposal per hash, the
@@ -47,7 +45,6 @@
  *   decision(hash, entries) -> Entry|null
  *   humans(code) -> [name]         members present who can approve
  *   personOf(m) -> string|undefined   who a seat is for consent: its account (lib/seats.ts enter), else nobody shared
- *   sameOk(code) -> bool           this machine may write a proposal's same (the host, or its host's caps list it)
  *   viewable(p, code) -> bool      the plan dialog can show it: stored, <= VIEW_MAX chars, no control or bidi
  *                                  characters (the dialog withholds approval for those); else the card
  *   reminder(p, name, {code, others}?) -> string   the re-ask wording (a review closed without an answer is fine to
@@ -167,13 +164,6 @@ function sameOf(approvers: string[], ms: Members): string[][] {
     by.set(who, [...(by.get(who) ?? []), n]);
   }
   return [...by.values()].filter(g => g.length > 1);
-}
-
-/** The host accepts a proposal's `same`: this machine is the host, or the link's host listed it (protocol.ts FIELDS). */
-function sameOk(code: RoomCode): boolean {
-  const s = room.open(code).store;
-  if (s.isHost) return true;
-  try { const d: { fields?: unknown } | null = s.kv.get('link', null); return !!d && Array.isArray(d.fields) && d.fields.includes('same'); } catch { return false; }
 }
 
 // ---------- reading the log (lib/room/consent.ts fold: the same semantics as stateLine, lane and the rows) ----------
@@ -432,7 +422,7 @@ function create(me: Me | null | undefined, args: CreateArgs = {}, { cwd }: { cwd
     if (unknown.length) refuse(`not in the room: ${unknown.join(', ')} (present: ${present.join(', ') || 'nobody'})`);
   }
   if (!approvers.length) refuse('nobody to ask: no humans are in the room');
-  const same = sameOk(me.code) ? sameOf(approvers, identity.readMembers(me.code) || {}) : [];
+  const same = sameOf(approvers, identity.readMembers(me.code) || {});
 
   const hash = store(me.code, buf);
   const stored = planPath(me.code, hash);
@@ -594,6 +584,6 @@ function repeatsNote(c: Pick<Confirm, 'note'> | null | undefined, text: unknown)
 export {
   QUESTION_RE, ProposalError, readReview, writeReview, clearReview, withReview, restorePlan, restoreStale,
   readConfirm, writeConfirm, clearConfirm, readRecheck, writeRecheck, clearRecheck, confirmCard, confirmQuestion, repeatsNote, namedIn, choose, picked, readPick, writePick,
-  proposeIntent, create, proposals, pendingFor, answerableFor, personOf, sameOk, card, cardFor, question, preview, viewable, openCall,
+  proposeIntent, create, proposals, pendingFor, answerableFor, personOf, card, cardFor, question, preview, viewable, openCall,
   confirmCall, showConfirm, matrix, answer, decide, decision, humans, reminder, read, hash12, title, replacedIn,
 };

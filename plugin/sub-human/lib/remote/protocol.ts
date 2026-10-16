@@ -22,19 +22,16 @@
  *   epoch                            hello and append may carry the mirror's host epoch (lib/handoff.ts); the hello
  *                                    reply carries the server's. A hello from a later epoch, or an append from another,
  *                                    is STALE (a host the room moved away from, or a copy not caught up)
- *   PROTO = {min: 1, max: 3}         the protocol versions this end speaks. hello carries {proto, client, caps}: proto
+ *   PROTO = {min: 3, max: 3}         the protocol versions this end speaks. hello carries {proto, client, caps}: proto
  *                                    its range, client its plugin version (a peer may also send v, the version it needs
  *                                    at least, which the server honours). The server answers {v, proto, server, caps,
  *                                    time}: time its clock (ms, for the skew sub-human doctor reports), v = negotiate()
  *                                    of the two ranges; no overlap, or a hello with no proto, is PROTOCOL (reason SKEW)
- *                                    with skewMessage(), which names the side that must update. v2: the sh2 invite and
- *                                    its PIN. v3: an invite line's SECRET word in hello's invite and its PIN (checked
- *                                    online, lib/remote/invites.ts), as {name, label}, nonce -> the reply's host (the
- *                                    host home's machine key over the nonce), and over the web Noise XK with a key of
- *                                    the link's own (lib/remote/transports/ws.ts). A link made under v2 (a token, NK)
- *                                    keeps working at v2 or v3 until it is invited again or revoked; a v3 invite is
- *                                    refused below v3 (PROTOCOL SKEW)
- *   VERSION = PROTO.max              (kept for callers that name one version)
+ *                                    with skewMessage(), which names the side that must update. v3: an invite line's
+ *                                    SECRET word in hello's invite and its PIN (checked online, lib/remote/invites.ts),
+ *                                    as {name, label}, nonce -> the reply's host (the host home's machine key over the
+ *                                    nonce), and over the web Noise XK with a key of the link's own
+ *                                    (lib/remote/transports/ws.ts). 0.5.0-beta.15 and before spoke 1–2: refused, SKEW
  *   PLUGIN_VERSION                   this plugin's version (.claude-plugin/plugin.json), '?' when unreadable
  *   negotiate(a, b) -> v | null      the highest version in both ranges {min, max}, null when they do not overlap
  *   rangeOf(params) -> {min, max} | null   a hello's range: its proto when well formed, else null
@@ -43,25 +40,18 @@
  *                                    host must update …" when the joiner is the newer side). need: the version what was
  *                                    asked needs (an invite line: 3), so ranges that overlap below it still name the
  *                                    side that lacks it
- *   CAPS                             what this end serves: {ops: OPS, fields: FIELDS, snapshot: true}
- *   snapshot                         a first sync from the host's snapshot instead of every line (additive, gated by
- *                                    caps, not by v): a mirror with an empty log asks subscribe {after: 0, hash,
- *                                    snapshot: true} only of a host whose caps say snapshot: true; such a host with a
- *                                    snapshot that fits a frame sends the 'snapshot' event, then the lines after it
- *                                    (else the whole log, as to anyone). An older peer on either side never asks or
- *                                    never answers, and gets or gives today's replay. The mirror checks the snapshot,
- *                                    and the lines that follow must chain to its head: FORK otherwise
- *   FIELDS                           entry fields this end's validate accepts that an older host refuses (lib/room/validate.ts):
- *                                    'same' (a proposal's seats that are one person). Gated by caps: a mirror writes one
- *                                    only while its host's hello listed it (the link daemon's document `link` fields,
- *                                    lib/proposal.ts create); an old host's hello lists none
+ *   CAPS                             what this end serves: {ops: OPS, snapshot: true}
+ *   snapshot                         a first sync from the host's snapshot instead of every line (gated by caps): a
+ *                                    mirror with an empty log asks subscribe {after: 0, hash, snapshot: true} only of
+ *                                    a host whose caps say snapshot: true; such a host with a snapshot that fits a
+ *                                    frame sends the 'snapshot' event, then the lines after it (else the whole log).
+ *                                    The mirror checks the snapshot, and the lines that follow must chain to its head:
+ *                                    FORK otherwise
  *   OPS                              hello join leave beat append subscribe blob.get blob.put ping handoff.accept
- *                                    handoff.refuse (caps-gated: a target sends them only to a server that lists them)
+ *                                    handoff.refuse
  *   ping                             the app-level heartbeat: request {op: 'ping'} -> reply {pong: <host ms>} (the
- *                                    pong). Gated by caps, not by v: a client pings only a server whose caps.ops
- *                                    lists 'ping', and says hello with caps {ping: true} when it pings, so the
- *                                    server may close a session that then goes silent (LINK_SILENT_MS). An old
- *                                    peer on either side never sees one
+ *                                    pong). A client that pings says hello with caps {ping: true}, so the server may
+ *                                    close a session that then goes silent (LINK_SILENT_MS)
  *   CODES, CODE_NAMES, WireCode      RoomError codes on both ends and on the wire, unchanged (CODE_NAMES is the
  *                                    source of the WireCode union): INVALID RATE LOCK NO_ROOM (today's) + OFFLINE
  *                                    HOST_ONLY AUTH FORK PROTOCOL STALE (a write or hello from another host epoch than
@@ -98,8 +88,7 @@ import type {
   ErrorFrame, EventData, EventFrame, DecodedFrame, Caps, IncomingRequest, IncomingEvent,
 } from './types-core.ts';
 
-const PROTO: Readonly<ProtoRange> = Object.freeze({ min: 1, max: 3 });
-const VERSION: number = PROTO.max;
+const PROTO: Readonly<ProtoRange> = Object.freeze({ min: 3, max: 3 });
 const PLUGIN_VERSION: string = (() => {
   let j: unknown;
   try { j = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '..', '.claude-plugin', 'plugin.json'), 'utf8')); } catch { return '?'; }
@@ -138,8 +127,7 @@ export type Op = typeof OPS[number];
 /** The events a stream carries, the source of EventName (types-core.ts EventData is keyed by it). */
 const EVENTS = ['entry', 'doc', 'end', 'handoff', 'moved', 'snapshot'] as const;
 export type EventName = typeof EVENTS[number];
-const FIELDS: readonly string[] = ['same'];
-const CAPS: Readonly<Caps> = Object.freeze({ ops: OPS, fields: FIELDS, snapshot: true });
+const CAPS: Readonly<Caps> = Object.freeze({ ops: OPS, snapshot: true });
 /** The RoomError codes, the source of WireCode: on both ends and on the wire. */
 const CODE_NAMES = ['INVALID', 'RATE', 'LOCK', 'NO_ROOM', 'OFFLINE', 'HOST_ONLY', 'AUTH', 'FORK', 'PROTOCOL', 'STALE'] as const;
 export type WireCode = typeof CODE_NAMES[number];
@@ -205,6 +193,6 @@ const isEventName = (ev: unknown): ev is EventName => EVENTS.some(e => e === ev)
 const isOp = (op: unknown): op is Op => OPS.some(o => o === op);
 
 export {
-  PROTO, VERSION, PLUGIN_VERSION, rangeOf, negotiate, skewMessage, OPS, EVENTS, FIELDS, CAPS, CODES, CODE_NAMES, isWireCode, UNKNOWN_OUTCOME,
+  PROTO, PLUGIN_VERSION, rangeOf, negotiate, skewMessage, OPS, EVENTS, CAPS, CODES, CODE_NAMES, isWireCode, UNKNOWN_OUTCOME,
   unknownOutcome, request, reply, error, toError, event, encode, decoder, isRequest, isReply, isEvent, isOp,
 };

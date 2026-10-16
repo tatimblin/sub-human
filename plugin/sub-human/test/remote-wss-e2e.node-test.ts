@@ -111,7 +111,7 @@ async function webJoin({ host, remote, alice, bob, code }: Rig, reason: string |
 }
 
 
-test('wss 1.1: the listener gives its key to a text request, answers an old joiner\'s PIN with the skew; refuses a handshake to another key, a room it does not serve, and plain HTTP; XK proves the link\'s own key, NK still works for an old link', async t => {
+test('wss 1.1: the listener gives its key to a text request, refuses a handshake to another key, a room it does not serve, and plain HTTP; XK proves the link\'s own key', async t => {
   const R = await rig(t);
   const { port, host, alice, code } = R;
   assert.ok(shortShown(must(host.join(alice, `invite --url http://127.0.0.1:${port}`).json?.reason)));
@@ -121,26 +121,22 @@ test('wss 1.1: the listener gives its key to a text request, answers an old join
   if (ss) assert.match(ss, /127\.0\.0\.1:\d+ \(LISTEN\)/, 'loopback only');
   // the key, for an invite line's first dial (it checks it against the line's tag)
   assert.equal(await wsT.fetchKey({ kind: 'ws', host: '127.0.0.1', port, path: `/sub-human/${code}` }), pinned.toString('base64url'));
-  // a joiner pinning another key: message 2 cannot come (the listener cannot read message 1), XK or NK
-  for (const s of [null, noise.generateKeyPair()]) {
-    const c1 = await ws.connect(`ws://127.0.0.1:${port}/sub-human/${code}`);
-    await assert.rejects(wsT.clientChannel(c1, { rs: noise.generateKeyPair().pub, code, s }), (e: Error & { code?: string }) => e.code === 'OFFLINE' && /closed \(4401/.test(e.message));
-  }
+  // a joiner pinning another key: message 2 cannot come (the listener cannot read message 1)
+  const c1 = await ws.connect(`ws://127.0.0.1:${port}/sub-human/${code}`);
+  await assert.rejects(wsT.clientChannel(c1, { rs: noise.generateKeyPair().pub, code, s: noise.generateKeyPair() }), (e: Error & { code?: string }) => e.code === 'OFFLINE' && /closed \(4401/.test(e.message));
   // a room not served over the web here: refused inside the channel (authenticated by the pinned key)
   const c2 = await ws.connect(`ws://127.0.0.1:${port}/sub-human/vole-0001`);
   await assert.rejects(wsT.clientChannel(c2, { rs: pinned, code: rc('vole-0001'), s: noise.generateKeyPair() }), (e: Error & { code?: string }) => e.code === 'OFFLINE' && /not open for joins over the web/.test(e.message));
   // a path for one room, a handshake for another
   const c3 = await ws.connect(`ws://127.0.0.1:${port}/sub-human/${code}`);
-  await assert.rejects(wsT.clientChannel(c3, { rs: pinned, code: rc('vole-0001') }), /this URL is for room/);
-  // XK and NK both get through to serve: the log says which (the key XK proved, or protocol 2)
+  await assert.rejects(wsT.clientChannel(c3, { rs: pinned, code: rc('vole-0001'), s: noise.generateKeyPair() }), /this URL is for room/);
+  // XK gets through to serve: the log names the key it proved
   const mine = noise.generateKeyPair();
-  for (const s of [mine, null]) {
-    const c = await ws.connect(`ws://127.0.0.1:${port}/sub-human/${code}`);
-    const d = await wsT.clientChannel(c, { rs: pinned, code, s });
-    d.destroy();
-  }
-  const lg = await h.until(() => { const x = fs.readFileSync(path.join(host.home, 'listen', 'listen.log'), 'utf8'); return /\(protocol 2\)/.test(x) && x; }, 5000, 50);
-  assert.ok(lg && lg.includes(`(key ${mine.pub.toString('base64url').slice(0, 12)}…)`), String(lg));
+  const c = await ws.connect(`ws://127.0.0.1:${port}/sub-human/${code}`);
+  (await wsT.clientChannel(c, { rs: pinned, code, s: mine })).destroy();
+  const tag = `(key ${mine.pub.toString('base64url').slice(0, 12)}…)`;
+  const lg = await h.until(() => { const x = fs.readFileSync(path.join(host.home, 'listen', 'listen.log'), 'utf8'); return x.includes(tag) && x; }, 5000, 50);
+  assert.ok(lg, 'the listener logged the key');
   assert.equal((await fetch(`http://127.0.0.1:${port}/`)).status, 426);
   // invite --stop: no longer served, and the listener stops with no room left
   const un = host.join(alice, 'invite --stop');

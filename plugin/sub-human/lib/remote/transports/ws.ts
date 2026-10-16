@@ -5,10 +5,8 @@
  * The front sees TLS-decrypted WebSocket frames that hold only Noise ciphertext; only the holder of the X25519 key
  * the link pins can read them or answer. The PIN, the invite line's secret and the link token travel inside.
  *
- * Two patterns, one listener: XK (protocol 3, prologue 'sub-human ws3'): the link proves a key of its own in message
- * 3, and the host binds the link to it (lib/remote/host-links.ts keyHolds); NK (protocol 2, prologue 'sub-human ws1'):
- * a link made before, which keeps working by its token until it is invited again or revoked. The listener tells them
- * apart by which one message 1 decrypts as.
+ * Noise XK (prologue 'sub-human ws3'): the link proves a key of its own in message 3, and the host binds the link to
+ * it (lib/remote/host-links.ts keyHolds).
  *
  *   Locator  wss://HOST[:PORT]/PATH  (ws:// the same without TLS: tests, or a front on loopback). HOST is a DNS name or
  *            an IPv4 address; PATH is [A-Za-z0-9._~/-]* with no query, fragment or user info. Spec = {kind, host, port?,
@@ -19,15 +17,15 @@
  *   parse(rest) -> Spec | null          the locator's rest ("//host:port/path")
  *   locator({host, port?, path}, secure = true) -> string | null
  *   urlOf(spec) -> 'wss://host[:port]/path'
- *   PROLOGUE, PROLOGUE3                 the Noise prologues, 'sub-human ws1' (NK) and 'sub-human ws3' (XK)
- *   clientChannel(conn, {rs, code, s?, timeoutMs?}) -> Promise<Duplex>   the initiator: XK with s (the link's own pair),
- *       else NK; message 1 carries {v: 3 | 1, room}; message 2's payload is {ok: true} or {error: {code, message}}
- *       (authenticated: only the pinned key could write it) -> RoomError with that code; XK's message 3 then carries s.
+ *   PROLOGUE                            the Noise prologue, 'sub-human ws3'
+ *   clientChannel(conn, {rs, code, s, timeoutMs?}) -> Promise<Duplex>   the initiator, with s the link's own pair;
+ *       message 1 carries {v: 3, room}; message 2's payload is {ok: true} or {error: {code, message}}
+ *       (authenticated: only the pinned key could write it) -> RoomError with that code; message 3 then carries s.
  *       Message 2 failing to decrypt is AUTH: whoever answered does not hold the key the link pinned. A close before
  *       message 2 is OFFLINE with the listener's reason
  *   serverChannel(conn, {s, check(hello) -> {code, message} | null, timeoutMs?, m1?}) -> Promise<{duplex, hello, peer}>
- *       the responder: message 1 read as XK, else as NK; check refuses a room (its error is sent in message 2, then the
- *       conn closes); XK waits for message 3, and peer is the key it proved (null for NK); m1: message 1 when the caller
+ *       the responder; check refuses a room (its error is sent in message 2, then the conn closes); it waits for
+ *       message 3, and peer is the key it proved; m1: message 1 when the caller
  *       read it already (the listener peeks: a TEXT first message is a key request instead)
  *   firstAny(conn, timeoutMs) -> Promise<{data, binary}>   the first message of either kind
  *   fetchKey(spec, {timeoutMs?}) -> Promise<key>   the listener's X25519 key (base64url), unauthenticated: a TEXT
@@ -37,9 +35,9 @@
  *   binary WebSocket message. A message that does not decrypt, or a text message, closes the conn (1002 / 1003).
  *   kind = {parse, open, describe}      open(spec, {code, clientKey?}) connects (lib/remote/ws.ts connect, so
  *       HTTPS_PROXY / NO_PROXY apply; within WS_CONNECT_MS, 45 s: a ts.net name's first TLS handshake waits on its
- *       certificate), runs clientChannel (XK when the spec names a clientKey, which must be ctx.clientKey's) and returns
+ *       certificate), runs clientChannel (with the spec's clientKey, which must be ctx.clientKey's) and returns
  *       the transport (./index.ts fromDuplex). A failed connect is OFFLINE (the link daemon retries); INVALID without a
- *       code or a pinned key
+ *       code, a pinned key or the link's own key
  */
 
 import { Duplex } from 'node:stream';
@@ -61,8 +59,7 @@ const transportsLib = lazy<typeof TransportsMod>(import.meta.url, './index.ts');
 const HOST_RE = /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,62})(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}))*\.?$/;
 const PATH_RE = /^\/[A-Za-z0-9._~/-]{0,200}$/;
 const KEY_RE = /^[A-Za-z0-9_-]{43}$/;
-const PROLOGUE: Buffer = Buffer.from('sub-human ws1');
-const PROLOGUE3: Buffer = Buffer.from('sub-human ws3');
+const PROLOGUE: Buffer = Buffer.from('sub-human ws3');
 const HANDSHAKE_MS = 10_000;
 
 // lib/remote/noise.ts and lib/remote/ws.ts, loaded on first use
@@ -172,10 +169,9 @@ function firstAny(conn: Conn, timeoutMs: number): Promise<{ data: Buffer; binary
 const REFUSAL_CODES = ['OFFLINE', 'AUTH', 'PROTOCOL', 'NO_ROOM'] as const;
 const refusalCode = (c: unknown): c is typeof REFUSAL_CODES[number] => REFUSAL_CODES.some(x => x === c);
 
-async function clientChannel(conn: Conn, { rs, code, s = null, timeoutMs = HANDSHAKE_MS }: { rs: Buffer; code: RoomCode; s?: KeyPair | null | undefined; timeoutMs?: number }): Promise<Duplex> {
-  const xk = !!s;
-  const hs = noise().initiator({ rs, s, pattern: xk ? 'XK' : 'NK', prologue: xk ? PROLOGUE3 : PROLOGUE });
-  conn.send(hs.writeMessage(Buffer.from(JSON.stringify({ v: xk ? 3 : 1, room: code }))));
+async function clientChannel(conn: Conn, { rs, code, s, timeoutMs = HANDSHAKE_MS }: { rs: Buffer; code: RoomCode; s: KeyPair; timeoutMs?: number }): Promise<Duplex> {
+  const hs = noise().initiator({ rs, s, prologue: PROLOGUE });
+  conn.send(hs.writeMessage(Buffer.from(JSON.stringify({ v: 3, room: code }))));
   const m2 = await firstMessage(conn, timeoutMs, 'the host\'s listener');
   let payload;
   try { payload = hs.readMessage(m2); } catch {
@@ -188,7 +184,7 @@ async function clientChannel(conn: Conn, { rs, code, s = null, timeoutMs = HANDS
     const e = r && r.error;
     throw new RoomError(e && refusalCode(e.code) ? e.code : 'PROTOCOL', `the host refused: ${(e && e.message) || 'no answer'}`);
   }
-  if (xk) conn.send(hs.writeMessage()); // message 3: this link's own key
+  conn.send(hs.writeMessage()); // message 3: this link's own key
   return channel(conn, hs.split());
 }
 
@@ -196,20 +192,16 @@ async function serverChannel(conn: Conn, { s, check = () => null, timeoutMs = HA
   s: KeyPair; check?: (hello: WsHello) => Refusal | null; timeoutMs?: number; m1?: Buffer;
 }): Promise<{ duplex: Duplex; hello: WsHello; peer: Buffer | null }> {
   const m1 = first ?? await firstMessage(conn, timeoutMs, 'the joiner');
-  let hs: ReturnType<ReturnType<typeof noise>['responder']> | null = null, hello: WsHello | null = null; // checked below
-  for (const [pattern, prologue] of [['XK', PROLOGUE3], ['NK', PROLOGUE]] as const) {
-    const h = noise().responder({ s, pattern, prologue });
-    try { hello = jsonOf(h.readMessage(m1)) as WsHello | null; hs = h; break; } catch { /* the other pattern, or another key */ }
-  }
-  if (!hs) {
+  const hs = noise().responder({ s, prologue: PROLOGUE });
+  let hello: WsHello | null;
+  try { hello = jsonOf(hs.readMessage(m1)) as WsHello | null; } catch {
     conn.close(4401, 'handshake failed');
     throw new RoomError('AUTH', 'a Noise message 1 that does not decrypt (sent to another host key)');
   }
-  const xk = hs.pattern === 'XK';
-  const refusal = !hello || hello.v !== (xk ? 3 : 1) || typeof hello.room !== 'string'
+  const refusal = !hello || hello.v !== 3 || typeof hello.room !== 'string'
     ? { code: 'PROTOCOL' as const, message: 'a handshake with no room' }
     : check(hello);
-  const after = xk && !refusal ? collector(conn) : null; // before message 2: message 3 and what follows it may come at once
+  const after = !refusal ? collector(conn) : null; // before message 2: message 3 and what follows it may come at once
   conn.send(hs.writeMessage(Buffer.from(JSON.stringify(refusal ? { error: refusal } : { ok: true }))));
   if (refusal) {
     conn.close(4404, 'refused');
@@ -247,8 +239,8 @@ const kind: Required<KindEntry<WsSpec>> = {
     const s = parse(`//${hostPort(spec)}${spec.path}`);
     if (!s) throw new RoomError('INVALID', 'the link\'s WebSocket URL is not a plain host[:port]/path');
     if (typeof spec.hostKey !== 'string' || !KEY_RE.test(spec.hostKey)) throw new RoomError('INVALID', 'the link pins no host key (a ws/wss invite carries one)');
-    const own = spec.clientKey !== undefined ? ctx.clientKey : null; // XK: the link's own key (NK: a link made under protocol 2)
-    if (spec.clientKey !== undefined && (!own || own.pub.toString('base64url') !== spec.clientKey)) throw new RoomError('INVALID', 'the link\'s own key is missing or is not the one its file names; join again with a new invite');
+    const own = ctx.clientKey; // the link's own key
+    if (spec.clientKey === undefined || !own || own.pub.toString('base64url') !== spec.clientKey) throw new RoomError('INVALID', 'the link\'s own key is missing or is not the one its file names; join again with a new invite');
     const url = urlOf({ ...s, kind: spec.kind });
     let conn: Conn;
     try {
@@ -265,4 +257,4 @@ const kind: Required<KindEntry<WsSpec>> = {
   describe: spec => `${spec.kind} ${hostPort(spec)}${spec.path}`,
 };
 
-export { parse, locator, urlOf, PROLOGUE, PROLOGUE3, clientChannel, serverChannel, firstAny, fetchKey, kind };
+export { parse, locator, urlOf, PROLOGUE, clientChannel, serverChannel, firstAny, fetchKey, kind };

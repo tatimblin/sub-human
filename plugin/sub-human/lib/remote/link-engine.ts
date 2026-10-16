@@ -19,8 +19,8 @@
  * Events:
  *   start                       the first dial
  *   connected / subscribed / seated {dial}   a step of the dial is done: the next step
- *   flushed {dial, pings}       the dial is done: it goes live (online); pings: the host's caps list ping, so the
- *                               heartbeat runs (a ping every pingMs)
+ *   flushed {dial}              the dial is done: it goes live (online), and the heartbeat runs (a ping every
+ *                               pingMs)
  *   dialFailed {dial, error, offline?}   a step failed: FORK, AUTH or PROTOCOL stop the link; anything else keeps a live
  *                               connection when there is one (a failed redial changes nothing), else goes offline and
  *                               retries after nextDelay (decorrelated jitter: random in [retryMs, 3 x the last delay],
@@ -86,7 +86,7 @@ interface EngineState {
 type EngineEvent =
   | { type: 'start' }
   | { type: 'connected' | 'subscribed' | 'seated'; dial: number }
-  | { type: 'flushed'; dial: number; pings: boolean }
+  | { type: 'flushed'; dial: number }
   | { type: 'dialFailed'; dial: number; error: Failure; offline?: string }
   | { type: 'lost'; conn: number; error: Failure; offline?: string }
   | { type: 'movedAway'; conn: number }
@@ -231,7 +231,7 @@ function step(state: EngineState, event: EngineEvent, ctx: EngineCtx): { state: 
       enter('online');
       fx.push({ type: 'online', conn: event.dial, old });
       clear('ping', 'pong');
-      if (event.pings && T.pingMs > 0) fx.push({ type: 'setTimer', name: 'ping', ms: T.pingMs });
+      if (T.pingMs > 0) fx.push({ type: 'setTimer', name: 'ping', ms: T.pingMs });
       if (old !== null) fx.push({ type: 'retire', conn: old });
       break;
     }

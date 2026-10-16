@@ -243,11 +243,9 @@ async function serveMirror({
 
   /** The two records observers read: the mirror's document `link` (lib/tail.ts) and links/<code>.state.json. */
   function publish() {
-    const c = live();
-    const fields = st.phase === 'online' && c && typeof c.fields === 'function' ? c.fields() : [];
     const doc: LinkDoc = {
       pid: process.pid, state: st.phase, since: iso(st.since), socket: sockFile, ...(st.reason ? { reason: st.reason } : {}),
-      ...(st.code ? { code: st.code } : {}), ...(st.why ? { why: st.why } : {}), ...(fields.length ? { fields } : {}),
+      ...(st.code ? { code: st.code } : {}), ...(st.why ? { why: st.why } : {}),
       ...(box.size() ? { queued: box.size() } : {}), ...(flushed ? { flush: flushed } : {}),
     };
     try { mirror.kv.set('link', doc); } catch (e) { log(`status: ${msgOf(e)}`); }
@@ -304,7 +302,7 @@ async function serveMirror({
         break;
       case 'flush': {
         const c = connOf(fx.dial);
-        stepOf(fx.dial, flush(c), () => ({ type: 'flushed', dial: fx.dial, pings: typeof c.supports === 'function' && c.supports('ping') }));
+        stepOf(fx.dial, flush(c), () => ({ type: 'flushed', dial: fx.dial }));
         break;
       }
       case 'close': {

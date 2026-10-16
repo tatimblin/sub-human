@@ -201,16 +201,11 @@ test('over the web: the admission is bound to the Noise key the PIN\'s connectio
   const link = must(hostLinks.links(host)[must(c.link)]);
   assert.deepEqual([link.key, link.seats, link.bound], [K, ['carol'], true]);
   c.close();
-  // the link is its key: the token over another key, or over NK, gets nowhere; over its own key it does
+  // the link is its key: the token over another key gets nowhere; over its own key it does
   assert.equal((await refused(dial(t, host, carol, { token: must(c.token) }, web(K2)))).reason, 'KEY_MISMATCH');
-  assert.equal((await refused(dial(t, host, carol, { token: must(c.token) }, web(null)))).reason, 'KEY_MISMATCH');
   (await dial(t, host, carol, { token: must(c.token) }, web(K))).close();
-  // a link made before protocol 3 (no key): its token alone, over NK or anything
-  const old = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: carol.id, seats: [] });
-  (await dial(t, host, carol, { token: old.token }, web(null))).close();
-  // an invite line over NK (an old joiner's handshake), or at protocol 2: SKEW
+  // an invite line at protocol 2 (0.5.0-beta.15): SKEW, no try spent
   const r2 = mint(host, 'ws');
-  assert.equal((await refused(dial(t, host, carol, { invite: r2.word, as }, web(null)))).reason, 'SKEW');
   assert.equal((await refused(dial(t, host, carol, { invite: r2.word, as, proto: { min: 1, max: 2 } }))).reason, 'SKEW');
   assert.equal(recordOf(host, r2.ref).tries, 5);
 });

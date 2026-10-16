@@ -274,7 +274,7 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
       return;
     }
     children.add(child);
-    log(`room ${code}: a connection from ${who}${ch.peer ? ` (key ${ch.peer.toString('base64url').slice(0, 12)}…)` : ' (protocol 2)'}; serve pid ${child.pid}`);
+    log(`room ${code}: a connection from ${who}${ch.peer ? ` (key ${ch.peer.toString('base64url').slice(0, 12)}…)` : ''}; serve pid ${child.pid}`);
     publishConns();
     child.stdout.pipe(ch.duplex);
     ch.duplex.pipe(child.stdin);

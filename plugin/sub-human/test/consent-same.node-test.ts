@@ -13,10 +13,9 @@ import * as consent from '../lib/room/consent.ts';
 import * as proposal from '../lib/proposal.ts';
 import * as config from '../lib/config.ts';
 import { machineId } from '../lib/home.ts';
-import { MemoryRoomStore } from './support/memory-store.ts';
 import type { Entry, EntryInput, Member, Trust } from '../lib/room/types.ts';
 import type { RoomCode } from '../lib/brand.ts';
-import { rc, sn, mid, eid } from './support/brands.ts';
+import { sn, mid, eid } from './support/brands.ts';
 import { must } from './support/must.ts';
 
 const H = 'abcdef012345';
@@ -164,19 +163,6 @@ test('members.join: the first person\'s seat on the host is the owner, kept acro
   store.open(c2).members.join({ name: sn('guest'), role: 'member', machine: mid('far0machine0001') });
   store.open(c2).members.join({ name: sn('bob'), role: 'member', machine: HOST, account: HOST });
   assert.equal(must(store.open(c2).members.read().bob).owner, undefined, 'a person was there first');
-});
-
-test('create: a mirror writes same only while its host\'s caps list it (the link document\'s fields)', t => {
-  assert.equal(proposal.sameOk(seated(t, {})), true, 'the host itself');
-  const code = rc('gate-0000');
-  const mem = new MemoryRoomStore(code, { isHost: false });
-  store.setBackend(() => mem);
-  t.after(() => store.setBackend(null));
-  assert.equal(proposal.sameOk(code), false, 'no link document: an older host, or offline');
-  mem.kv.set('link', { state: 'online' });
-  assert.equal(proposal.sameOk(code), false, 'an older host lists no fields');
-  mem.kv.set('link', { state: 'online', fields: ['same'] });
-  assert.equal(proposal.sameOk(code), true);
 });
 
 test('17: a proposal\'s title drops a numbered-list marker ("1. Add an MIT LICENSE file" is "Add an MIT LICENSE file"), as it drops a heading\'s', t => {

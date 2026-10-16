@@ -30,11 +30,11 @@ function rig(random: () => number = () => 0) {
     return r.effects;
   };
   /** The four steps of dial d, done. */
-  const dialOk = (d: number, pings = true) => {
+  const dialOk = (d: number) => {
     dispatch({ type: 'connected', dial: d });
     dispatch({ type: 'subscribed', dial: d });
     dispatch({ type: 'seated', dial: d });
-    return dispatch({ type: 'flushed', dial: d, pings });
+    return dispatch({ type: 'flushed', dial: d });
   };
   const types = (es: EngineEffect[]) => es.map(e => e.type);
   const of = <K extends EngineEffect['type']>(es: EngineEffect[], type: K) => es.filter((e): e is Extract<EngineEffect, { type: K }> => e.type === type);
@@ -52,19 +52,10 @@ const TABLE: { name: string; random?: () => number; run(r: ReturnType<typeof rig
       assert.deepEqual(r.types(r.dispatch({ type: 'connected', dial: 1 })), ['subscribe']);
       assert.deepEqual(r.types(r.dispatch({ type: 'subscribed', dial: 1 })), ['keepSeats']);
       assert.deepEqual(r.types(r.dispatch({ type: 'seated', dial: 1 })), ['flush']);
-      const live = r.dispatch({ type: 'flushed', dial: 1, pings: true });
+      const live = r.dispatch({ type: 'flushed', dial: 1 });
       assert.deepEqual(r.types(live), ['publish', 'online', 'clearTimer', 'clearTimer', 'setTimer']);
       assert.deepEqual([r.st.phase, r.st.conn, r.st.dial, r.st.attempts], ['online', 1, null, 0]);
       assert.deepEqual(r.of(live, 'setTimer')[0], { type: 'setTimer', name: 'ping', ms: T.pingMs });
-    },
-  },
-  {
-    name: 'a host without ping: online, no heartbeat',
-    run(r) {
-      r.dispatch({ type: 'start' });
-      assert.equal(r.of(r.dialOk(1, false), 'setTimer').length, 0);
-      r.c.advance(60_000);
-      assert.equal(r.of(r.fx, 'sendPing').length, 0);
     },
   },
   {
@@ -242,7 +233,7 @@ const TABLE: { name: string; random?: () => number; run(r: ReturnType<typeof rig
     name: 'a step for a dial that is not the one under way is closed, never swapped in',
     run(r) {
       r.dispatch({ type: 'start' });
-      assert.deepEqual(r.dispatch({ type: 'flushed', dial: 9, pings: true }).filter(e => e.type !== 'publish'), [{ type: 'close', conn: 9 }]);
+      assert.deepEqual(r.dispatch({ type: 'flushed', dial: 9 }).filter(e => e.type !== 'publish'), [{ type: 'close', conn: 9 }]);
       assert.equal(r.st.conn, null);
     },
   },

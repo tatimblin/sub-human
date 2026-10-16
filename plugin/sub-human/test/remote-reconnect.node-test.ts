@@ -392,38 +392,20 @@ test('link: a seat whose lease lapsed on the host during the outage is renewed o
   assert.match(r.logged.join('\n'), /seat carol: .*has not joined over this link/, 'a seat not of this link is only logged');
 });
 
-test('link: an old server (no ping in its caps) is never pinged; the state file is links/<code>.state.json', async t => {
-  // on a fake clock: four ping intervals pass at once, and the same advance pings a server that has ping
-  const pinged = async (serverCaps?: { ops: string[] }) => {
-    const r = await rig(t, serverCaps ? { serverCaps } : {});
-    const c = clock.createFake({ now: Date.now() });
-    const l = await r.start({ stateFile: true, clock: c });
-    t.after(() => l.stop('done'));
-    await h.until(() => l.state() === 'online', 3000, 5);
-    await c.advanceAsync(FAST.pingMs * 4);
-    return { r, n: r.pings.n };
-  };
-  assert.ok((await pinged()).n > 0, 'a server with ping in its caps is pinged on the same clock');
-  const { r, n } = await pinged({ ops: protocol.OPS.filter(o => o !== 'ping') });
-  assert.equal(n, 0);
+test('link: online, the server is pinged on the clock; the state file is links/<code>.state.json', async t => {
+  // on a fake clock: four ping intervals pass at once
+  const r = await rig(t);
+  const c = clock.createFake({ now: Date.now() });
+  const l = await r.start({ stateFile: true, clock: c });
+  t.after(() => l.stop('done'));
+  await h.until(() => l.state() === 'online', 3000, 5);
+  await c.advanceAsync(FAST.pingMs * 4);
+  assert.ok(r.pings.n > 0);
   const st = must(links.readState(r.code));
-  assert.deepEqual([st.state, st.attempt, st.lastError, st.rttMs, st.queued, st.pid, st.detail], ['online', 0, null, null, 0, process.pid, 'online']);
+  assert.deepEqual([st.state, st.attempt, st.lastError, typeof st.rttMs, st.queued, st.pid, st.detail], ['online', 0, null, 'number', 0, process.pid, 'online']);
   assert.ok(Date.parse(must(st.since)) <= Date.parse(must(st.at)));
   assert.equal(fs.statSync(links.stateFile(r.code)).mode & 0o777, 0o600);
   assert.deepEqual(links.list(), [], 'a state file is not a link');
-});
-
-test('link: online, the mirror\'s document link lists the entry fields the host\'s caps list (same); an old host\'s lists none', async t => {
-  const cases: [Client['serverCaps'] | undefined, string[] | undefined][] = [[undefined, ['same']], [{ ops: protocol.OPS }, undefined]];
-  for (const [caps, want] of cases) {
-    const r = await rig(t, caps ? { serverCaps: caps } : {});
-    const l = await r.start();
-    await h.until(() => l.state() === 'online', 3000, 5);
-    assert.deepEqual(linkDoc(r).fields, want);
-    l.stop('done');
-    await l.done;
-  }
-  assert.deepEqual(protocol.CAPS.fields, ['same']);
 });
 
 test('server: a session that said hello with caps.ping and then goes silent is closed; one without is kept', async t => {
@@ -438,7 +420,6 @@ test('server: a session that said hello with caps.ping and then goes silent is c
     return c;
   };
   const pinging = await open({ ping: true }), quiet = await open({});
-  assert.equal(pinging.supports('ping'), true);
   assert.equal(typeof (await pinging.ping(1000)).rttMs, 'number', 'pings keep it open');
   await h.until(() => pinging.closed, 2000, 10);
   assert.equal(pinging.closed, true);
