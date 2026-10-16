@@ -44,6 +44,7 @@ import * as links from '../../lib/room/links.ts';
 import * as homeMod from '../../lib/home.ts';
 import * as linkConnect from '../../lib/remote/link-connect.ts';
 import * as admission from '../../lib/remote/admission.ts';
+import * as linkSocket from '../../lib/remote/link-socket.ts';
 import type { RoomCode, InviteSecret } from '../../lib/brand.ts';
 import { roomCode } from '../../lib/text.ts';
 
@@ -179,5 +180,18 @@ function shownInvite(text: string): { line: string; dest: string; code: RoomCode
   return { line, dest, code, word, pin: p[1] ?? '' };
 }
 
-export { Machine, shownInvite };
+/** The first child of pid (a link daemon's ssh or serve), or null. */
+const childOf = (pid: number | null | undefined): number | null => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
+/** SIGKILL pid; nothing when it is gone or none. */
+const kill = (pid: number | null | undefined): void => { try { if (pid != null) process.kill(pid, 'SIGKILL'); } catch { /* gone */ } };
+/** A /sub-human answer shown to the person and hidden from the model. */
+const hiddenBlock = (r: MachineRun): boolean => !!(r.json && r.json.decision === 'block' && r.json.hookSpecificOutput && r.json.hookSpecificOutput.suppressOriginalPrompt === true);
+/** After the test: stop m's link daemon for code (and its child) and remove its socket folder. */
+const stopDaemon = (t: TestContext, m: Machine, code: RoomCode): void => t.after(() => {
+  const d = m.lib(() => linkSocket.status(code));
+  if (d.pid) { kill(childOf(d.pid)); kill(d.pid); }
+  fs.rmSync(path.dirname(linkSocket.socketPath(path.join(m.home, 'rooms', code))), { recursive: true, force: true });
+});
+
+export { Machine, shownInvite, childOf, kill, hiddenBlock, stopDaemon };
 export type { Seat, MachineRun };

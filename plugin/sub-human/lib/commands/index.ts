@@ -3,20 +3,14 @@
  * (types.ts). hooks/handlers/join.ts parses the hook's stdin, calls run() and renders the answer; the model never
  * chooses an identity, and nothing here writes output.
  *
- *   run(args, session) -> Answer
- *       One hidden-by-default rule, decided before any parsing (mod/core/command.ts mayHoldSecret): a `join`,
- *       `invite` or `admit` prompt, or one with a word of digits, may carry a PIN, so every say and refusal it gets is a
- *       secret (the typed prompt is kept out of the conversation as well), whatever form it turns out to be or
- *       whatever is wrong with it. A seat taken by a prompt with a word of digits is not handed to the model in that
- *       step either: the person's line says the seat is theirs, and a bare /sub-human brings the room to their Claude.
- *       Then: OPEN verbs (help, doctor) run without the hooks module; every other needs this session's lease
- *       (identity.modLeaseOk: the module's guard, prompt gate and delivery run), else noModule() says why. The room
- *       Claude's agent session binds its seat (join.ts bindRoomClaude); a room Claude's seat takes no other command.
- *   hide(args, answer) -> Answer   that rule, for run() and the tests
- *   TABLE     '' (bare), join, invite, admit, kick, leave, handoff; any other first word is a NAME or a ROOM
- *             (join.ts named). OPEN: help (any words after it), doctor
- *   noModule(pid) -> string   why this session has no hooks module, in words the person can act on: an old Claude Code
- *             (the running binary's version), its modules switched off (cc.modulesSwitch), else the doctor
+ * One hidden rule, decided from the prompt alone before any parsing (mod/core/command.ts mayHoldSecret; hide()): a
+ * `join`, `invite` or `admit` prompt, or one with a word of digits, may carry a PIN, so every say and refusal it gets
+ * is a secret (the typed prompt is kept out of the conversation as well), whatever is wrong with it. A seat taken by a
+ * prompt with a word of digits is not handed to the model in that step either: a bare /sub-human brings the room to
+ * their Claude.
+ * Then: OPEN verbs (help, doctor) run without the hooks module; every other needs this session's lease
+ * (identity.modLeaseOk: the module's guard, prompt gate and delivery run), else noModule() says why. Any first word
+ * not in TABLE is a NAME or a ROOM (join.ts named). A room Claude's seat takes no other command than its binding.
  */
 import * as identity from '../identity.ts';
 import * as contract from '../cc/contract.ts';
@@ -41,6 +35,8 @@ export const OPEN: Readonly<Record<string, OpenVerb>> = Object.freeze({ help, do
 /** What run() knows of the session: VerbCtx without the seat, which it resolves (seat()) only once the lease checked. */
 export type Session = Omit<VerbCtx, 'pid' | 'cur'> & { pid: number | null; seat(): Identity | null };
 
+/** Why this session has no hooks module, in words the person can act on: an old Claude Code, its modules switched
+ * off, else the doctor. */
 export function noModule(pid: number | null): string {
   const cc = { ...contract, ...bg, ...ccEnv };
   let v: string | null = null;

@@ -8,36 +8,19 @@
  * Noise XK (prologue 'sub-human ws3'): the link proves a key of its own in message 3, and the host binds the link to
  * it (lib/remote/host-links.ts keyHolds).
  *
- *   Locator  wss://HOST[:PORT]/PATH  (ws:// the same without TLS: tests, or a front on loopback). HOST is a DNS name or
- *            an IPv4 address; PATH is [A-Za-z0-9._~/-]* with no query, fragment or user info. Spec = {kind, host, port?,
- *            path}; the link file adds hostKey (the pinned X25519 public key, base64url: an sh2 invite's host-key field,
- *            or, for an invite line, the key the listener gave once its tag held) and clientKey (the link's own)
- *   Join URL https://HOST[:PORT]/PATH/ROOM   what `/sub-human invite --web` shows with the line's SECRET: the last path
- *            segment is the room; http:// gives a ws:// locator
- *   parse(rest) -> Spec | null          the locator's rest ("//host:port/path")
- *   locator({host, port?, path}, secure = true) -> string | null
- *   urlOf(spec) -> 'wss://host[:port]/path'
- *   PROLOGUE                            the Noise prologue, 'sub-human ws3'
- *   clientChannel(conn, {rs, code, s, timeoutMs?}) -> Promise<Duplex>   the initiator, with s the link's own pair;
- *       message 1 carries {v: 3, room}; message 2's payload is {ok: true} or {error: {code, message}}
- *       (authenticated: only the pinned key could write it) -> RoomError with that code; message 3 then carries s.
- *       Message 2 failing to decrypt is AUTH: whoever answered does not hold the key the link pinned. A close before
- *       message 2 is OFFLINE with the listener's reason
- *   serverChannel(conn, {s, check(hello) -> {code, message} | null, timeoutMs?, m1?}) -> Promise<{duplex, hello, peer}>
- *       the responder; check refuses a room (its error is sent in message 2, then the conn closes); it waits for
- *       message 3, and peer is the key it proved; m1: message 1 when the caller
- *       read it already (the listener peeks: a TEXT first message is a key request instead)
- *   firstAny(conn, timeoutMs) -> Promise<{data, binary}>   the first message of either kind
- *   fetchKey(spec, {timeoutMs?}) -> Promise<key>   the listener's X25519 key (base64url), unauthenticated: a TEXT
- *       {"op": "key", "v": 3} answered {"key"}. An invite line's first dial reads it so, and uses it only once the
- *       line's tag names it (lib/remote/link-connect.ts): nothing secret goes before
- *   The Duplex: plaintext bytes; each write is cut into Noise messages of at most noise.MAX_PLAINTEXT bytes, each one
- *   binary WebSocket message. A message that does not decrypt, or a text message, closes the conn (1002 / 1003).
- *   kind = {parse, open, describe}      open(spec, {code, clientKey?}) connects (lib/remote/ws.ts connect, so
- *       HTTPS_PROXY / NO_PROXY apply; within WS_CONNECT_MS, 45 s: a ts.net name's first TLS handshake waits on its
- *       certificate), runs clientChannel (with the spec's clientKey, which must be ctx.clientKey's) and returns
- *       the transport (./index.ts fromDuplex). A failed connect is OFFLINE (the link daemon retries); INVALID without a
- *       code, a pinned key or the link's own key
+ *
+ * Locator wss://HOST[:PORT]/PATH (ws:// without TLS: tests, or a front on loopback), plain: a DNS name or IPv4, no
+ * query, fragment or user info. The link file adds hostKey (the pinned listener key: a bound invite's host-key field,
+ * or for an invite line the key the listener gave once the line's tag named it) and clientKey (the link's own).
+ *
+ * Handshake: message 1 carries {v: 3, room}; message 2's payload is {ok: true} or {error: {code, message}},
+ * authenticated (only the pinned key could write it). Message 2 failing to decrypt is AUTH: whoever answered does not
+ * hold the key the link pinned; a close before it is OFFLINE. Message 3 carries the link's key, and serverChannel's
+ * peer is the key it proved. fetchKey is unauthenticated (a TEXT {"op": "key", "v": 3}): an invite line's first dial
+ * uses its answer only once the line's tag names it (link-connect.ts), so nothing secret goes before. After the
+ * handshake each write is cut into Noise messages of at most noise.MAX_PLAINTEXT bytes, one binary WebSocket message
+ * each; a message that does not decrypt, or a text message, closes the conn (1002 / 1003). open connects within
+ * WS_CONNECT_MS (45 s: a ts.net name's first TLS handshake waits on its certificate), through HTTPS_PROXY / NO_PROXY.
  */
 
 import { Duplex } from 'node:stream';

@@ -3,17 +3,11 @@
  * (lib/cli/doctor.ts), keyed on the typed reasons the link daemon records (lib/reasons.ts; the state file's lastReason),
  * never on an error's words.
  *
- *   diagnoseLink(code, {quick, timeoutMs, env}) -> LinkReport   per link: transport, the daemon (running, pid), state
- *       (lib/room/link-state.ts), the last error and its reason (the state record, else the daemon's log), and unless
- *       --quick a hello to the host without a credential (the server answers it and nothing else) with a timeout:
- *       reachable, round trip, both sides' protocol versions, the host's clock, and over ssh whether BatchMode works.
- *       A wss/ws link's hello goes over the real transport (the WebSocket and the pinned Noise handshake)
- *   linkChecks(report) -> [Check]   link:CODE and clock:CODE. A dormant link (stopped: ROOM_CLOSED, NO_SEAT) is info; a
- *       closed one gets no hello, and its fix: /sub-human reconnects if the host opens it again, `link CODE --forget`
- *       drops it. FORK: `link --reset`. A spent invite or an ended link (INVITE_*, PIN_LAST, ADMIT_*,
- *       LINK_REVOKED, TOKEN_UNKNOWN): a new invite; over a login link, join again; MOVED_AWAY: the new host's invite; a
- *       hello refused PROTOCOL: update the older side. clock:CODE: skew against the host (warn 2 min, fail SIG_SKEW_MS)
- *   helloProbe(spec, code, {timeoutMs, env}?) -> Promise<{ok, ms, reply?, error?, code?, stderr?}>
+ * diagnoseLink: per link, the daemon, its state (lib/room/link-state.ts), the last error and its reason (the state
+ * record, else the daemon's log) and, unless --quick, a hello to the host without a credential (the server answers it
+ * and nothing else) over the link's real transport: reachable, round trip, protocol versions, the host's clock, and
+ * over ssh whether BatchMode works. A dormant link (ROOM_CLOSED, NO_SEAT) is info, and neither a closed room nor a
+ * link the host ended is dialed. linkChecks maps each reason to its fix (a spent invite or ended link: a new invite).
  */
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';

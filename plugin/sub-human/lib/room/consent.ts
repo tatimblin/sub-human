@@ -4,33 +4,12 @@
  * stateLine and deliver() (render.ts, deliver.ts), the rows (lib/rows.ts) and the consent gate (lib/proposal.ts,
  * hooks/consent.ts) all read this, so they cannot disagree.
  *
- *   fold(entries, trust) -> F   memoized per trust on (length, first and last entry): the store's cached reads give
- *                  the same entry objects call after call, so a repeat fold of an unchanged log is a lookup
- *     F.proposals  Map hash -> {id, hash, from, approvers, same, path, entry}   the LATEST proposal entry per hash,
- *                  Map order = log order of that latest entry; same: its approvers that are one person (groupsOf)
- *     F.answers    Map hash -> Map name -> {kind: 'signoff'|'objection', id, entry}   per seat, the latest answer
- *     F.answerOf(hash, name) -> answer|null   the answer that counts for name: the latest of its person's seats
- *     F.ownAnswer(hash, name) -> answer|null  name's own (lib/proposal.ts answer: one per seat)
- *     F.decisions  Map hash -> entry   the latest via=system decision per hash
- *     F.superseded Map hash -> newer hash   undecided proposals a later one retired (below)
- *     F.matrix(hash, approvers?) -> {hash, approvers, answers: {name: {id, kind}|null}, signed: {name: id|null},
- *                  agreed, objected, missing (no answer), unsigned (no signoff), complete (everyone answered),
- *                  also: {name: [its person's other seats]}, people (how many people the approvers are)}
- *                  agreed / objected / missing list one name per person: the seat that answered, else its first
- *     F.pending(name) -> [proposal]   undecided, unretired proposals naming name that name has not answered (log order)
- *     F.answerable(name) -> [proposal]   the same, but another seat of name's person answering leaves one in: the
- *                  seat's own answer still counts, and overrides (the hooks record an answer from a card already open)
- *     F.status(hash) -> {proposal, decision, matrix, state: 'open'|'agreed'|'blocked'|'superseded'}|null
- *   Queries (each a read of fold(entries, trust)):
- *     proposal(hash, entries, trust) -> Entry|null     the latest proposal with that hash
- *     proposals(entries, trust) -> Entry[]             the latest entry per distinct hash, in log order
- *     answers(hash, approvers, entries, trust) -> {hash, signed: {name: id|null}, missing, complete}
- *         approvers default to that proposal's. signed[name] = the id of name's current signoff (the latest answer
- *         wins: an objection voids an earlier signoff); missing = approvers with no current signoff.
- *     answered(name, hash, entries, trust) -> Entry|null   name's latest via=human answer on hash
- *     decided(hash, entries, trust) -> Entry|null      the decision entry for that hash
- *     approversOf(p) -> [name]
- *   titleOf(e) -> string           the title a proposal entry carries ("proposal HASH: title"), '' for none
+ * fold(entries, trust) is memoized per trust on (length, first and last entry): the store's cached reads give the
+ * same entry objects call after call, so a repeat fold of an unchanged log is a lookup. Its shape is types.ts Fold;
+ * F.proposals keeps the log order of each hash's latest entry, and matrix's agreed / objected / missing list one name
+ * per person (the seat that answered, else its first). The queries (proposal, proposals, answers, answered, decided)
+ * each read the fold; answers() gives signed[name] = the id of name's current signoff and missing = approvers
+ * without one, approvers defaulting to the proposal's.
  *
  * Semantics (one place):
  *   - Only valid 12-hex hashes (sha256/12 of the plan bytes, lib/proposal.ts) count.
@@ -42,8 +21,8 @@
  *   - Per person, the latest via=human signoff / objection wins: an objection voids that person's earlier
  *     signoff (and a later signoff replaces an objection).
  *   - One person in several seats: a proposal's `same` groups (lib/proposal.ts create: seats of one account) are one
- *     person. The newest answer from any seat of the group counts for every seat of it. A proposal with no `same` (an older proposer's, or one person per seat) counts every seat: stricter,
- *     never wrong.
+ *     person. The newest answer from any seat of the group counts for every seat of it. A proposal with no `same`
+ *     counts every seat: stricter, never wrong.
  *   - A decision is as recorded: the latest via=system decision with that proposal_hash closes it.
  *     state: 'blocked' when an approver's current answer is an objection, else 'agreed'.
  *   - A revision retires: a proposal entry retires every earlier undecided proposal with the same `from` and the

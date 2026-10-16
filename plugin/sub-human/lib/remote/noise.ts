@@ -13,30 +13,11 @@
  * it encrypted in message 3:  <- s  ...  -> e, es   <- e, ee   -> s, se
  * The responder learns it (remoteStatic) and the host binds the link to it: a link is a key, not a bearer token.
  *
- *   MAX_MESSAGE                      65535 bytes, the spec's limit for one Noise message
- *   MAX_PLAINTEXT                    MAX_MESSAGE - 16 (the tag)
- *   generateKeyPair() -> {priv, pub}   32-byte Buffers
- *   keyPair(priv) -> {priv, pub}     the pair of a raw 32-byte X25519 private key
- *   dh(priv, pub) -> Buffer          X25519 shared secret (32 bytes); throws on an all-zero result (a low-order point)
- *   initiator({rs, s, prologue?, e?}) -> Handshake   rs: the responder's known public key (32 bytes); s: the
- *                                    initiator's own pair
- *   responder({s, prologue?, e?}) -> Handshake    s: the responder's own pair; e: a fixed ephemeral pair (tests only)
- *   Handshake (one side)
- *     writeMessage(payload) -> Buffer      the next message this side sends (initiator: 1 and 3; responder: 2)
- *     readMessage(buf) -> Buffer           the payload of the peer's message; throws NoiseError when it does not
- *                                          decrypt (for message 2 on the initiator: the host does not hold the key it
- *                                          named; for message 1 on the responder: another key)
- *     done -> bool                         every message of the pattern made
- *     remoteStatic -> Buffer | null        the peer's static key: the initiator's rs, the responder's after message 3
- *     handshakeHash -> Buffer              h once done (channel binding)
- *     split() -> {send: CipherState, recv: CipherState}   once done
- *   CipherState: encrypt(plaintext, ad?) -> Buffer, decrypt(ciphertext, ad?) -> Buffer (NoiseError on a bad tag);
- *     counter nonces, so a replayed, dropped or reordered message fails to decrypt. A state refuses to go past
- *     2^53 - 1 messages (far beyond any room's life)
- *   NoiseError                        an Error with code 'NOISE'
- *   loadOrCreateStatic(file) -> {priv, pub}   a static key in a 0600 JSON file ({v: 1, kind: 'x25519', priv, pub}
- *                                    base64url), made once: the host's listener key, a link's own key; refused when
- *                                    group/world readable or not this user's
+ * dh throws on an all-zero result (a low-order point). readMessage throws NoiseError when a message does not decrypt
+ * (message 2 on the initiator: the host does not hold the key it named; message 1 on the responder: another key).
+ * CipherState uses counter nonces, so a replayed, dropped or reordered message fails to decrypt; it refuses to go past
+ * 2^53 - 1 messages (far beyond any room's life). loadOrCreateStatic keeps a key in a 0600 JSON file, made once, and
+ * refuses one group/world readable or not this user's. e in initiator/responder is a fixed ephemeral pair, for tests.
  */
 
 import fs from 'node:fs';
@@ -98,8 +79,7 @@ function dh(priv: Buffer | null, pub: Buffer | null): Buffer {
 }
 
 const sha256 = (...parts: Buffer[]): Buffer => { const h = crypto.createHash('sha256'); for (const p of parts) h.update(p); return h.digest(); };
-/** HKDF(ck, ikm, n) of the spec: RFC 5869 with salt ck and empty info, cut into n outputs of HASHLEN. */
-/** HKDF with two outputs (the only count Noise's mixKey and split take here). */
+/** The spec's HKDF (RFC 5869, salt ck, empty info) with two outputs, the only count mixKey and split take here. */
 function hkdf(ck: Buffer, ikm: Buffer): [Buffer, Buffer] {
   const out = Buffer.from(crypto.hkdfSync('sha256', ikm, ck, EMPTY, HASHLEN * 2));
   return [out.subarray(0, HASHLEN), out.subarray(HASHLEN, 2 * HASHLEN)];

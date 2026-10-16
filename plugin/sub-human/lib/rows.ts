@@ -3,58 +3,26 @@
  * Reads the room log, members and presence; writes only the rows/* documents (lib/room/store.ts kv) and the holds and
  * blocks of a seat's session document (lib/room/session.ts).
  *
- * Spawning (text for the model; join.ts, session-restore.ts and the role text append it, never hand-copy):
- *   rowCalls(me, members, {only}?) -> string
- *       me = {code, name, role}; members = readMembers(code) (object by name) or an array of {name, role, left_at?}.
- *       claude:   one background sub-human:participant per active member, labelled by the member's name,
- *               prompt "member: NAME".
- *       member: one background sub-human:room, labelled by the room code, prompt "room: CODE\nmembers: a, b"
- *               (the other active members except the room's Claude and me). The room agent spawns those children.
- *       only = rowsNeeded(...) limits the calls to the rows that are missing; only = [] says the rows are intact
- *       and lists no calls (a second spawn would duplicate a row).
- *   joinNote(me, name, {held}?) -> "row: …" suffix for a member_joined notice (scripts/sub-human tail): running (no
- *       call) or the call to make. For a member it is about the ROOM row (which adds NAME by itself), so a join
- *       never invites a room-row call while that row is live; row-guard.ts stays the backstop.
- *   rowsNeeded(code, me, {members, held}) -> names (claude) or [code] (member): rows with no live hold in `held`
- *       (= readHolds(code, me.name), null = nothing held). No grace period: used by join / restore.
+ * Spawning: rowCalls is the text for the model (join.ts, session-restore.ts and the role text append it, never
+ * hand-copy). The room's Claude gets one background sub-human:participant per active member; a member gets one
+ * sub-human:room labelled by the room code, which spawns the other members' rows itself. only = rowsNeeded(...)
+ * limits the calls to the missing rows; only = [] lists none (a second spawn would duplicate a row). For a member,
+ * joinNote is about the ROOM row (which adds NAME by itself), so a join never invites a room-row call while that row
+ * is live; row-guard.ts stays the backstop.
  * Lifecycle: a row lives as long as its viewer is in the room. A participant row does NOT end when its member
  *   leaves; it reads "left" and comes back to life on rejoin (mcp/hold.ts keeps holding). One live hold per
  *   (viewer, kind, name): hold.ts refuses a second with "STOP: duplicate row", and hooks/handlers/row-guard.ts
  *   (PreToolUse Agent) denies the spawn itself when the row's hold is already live, so no dead copy appears.
- *   participantCall(name), roomCall(code, names)   the single Agent call lines
  *
- * Row text (deterministic from the log + members + the presence/<name> documents {state, at}):
- *   rowText(code, {member?, viewer?, color, entries, members, now}?) -> string (<= ROW_MAX chars, no label): member's
- *       participant row, or with no member the room row
- *       No entry ids (people never see them); task ids ("#2") are the room task list's numbers.
- *       Proposals: lib/room/consent.ts fold (the same state stateLine and the consent gate read). A proposal is named
- *       by its title (the stored plan's first line, clipped to ROW_TITLE_MAX; the 6-char hash when there is
- *       none): rows are for people, and no tool call is made from them. Segments that do not fit are dropped.
- *       name === code (or null): the member's room row, from viewer's seat: first a join / settled leave of the
- *         last 2 min ("+bob joined", "−bob left (connection lost)"; lib/room/render.ts rowSegment), then "⚠ your answer needed Cursor paging",
- *         "✓ agreed Cursor paging 1/2", "✖ objected", "✔ decided Cursor paging" ("✖ blocked …" when someone objected),
- *         "proposal Cursor paging 0/2", else "N here";
- *         then "✉ N for you", then lib/tasks.ts summary(code, viewer) ("tasks 3 open · #2 you · #4 bob").
- *         A room hosted elsewhere adds its link (lib/room/link-state.ts indicator, in its one vocabulary STATES):
- *         first while it is offline, stopped, a fork or connecting again ("✕ offline 2m · 2 queued", "… connecting
- *         (3)"), last while it is online ("⇄ online").
- *       otherwise: NAME's state as viewer sees it: "✓ agreed Cursor paging", "✖ objected", "⚠ reviewing …",
- *         "✔ decided …" (after it, their latest status: "Claude status: handler done"), then their
- *         open task on the room list ("◼ #2 parser tests"), presence, mail; "left".
- *   rowLine(label, text) -> "label  text"   what a row shows (the row content replaces the whole label)
+ * Row text is deterministic from the log, members and the presence/<name> documents, <= ROW_MAX chars, no label.
+ * No entry ids (people never see them); task ids ("#2") are the room task list's numbers. A proposal is named by its
+ * title (clipped to ROW_TITLE_MAX; the 6-char hash when there is none): rows are for people, and no tool call is made
+ * from them. Proposals come from lib/room/consent.ts fold, the same state stateLine and the consent gate read.
+ * Segments that do not fit are dropped.
  *
- * Agent -> row map (the room documents rows/<session_id> = {byAgent: {agentId: {kind, name, parent, at}}}):
- *   parseSpawn(toolInput, members, code) -> {kind: 'participant'|'room', name}|null
- *   recordRow(code, sessionId, agentId, rec), forgetRow(code, agentId), readRowMap(code) -> {agentId: rec}
- *       readRowMap merges every session's map in the room: /clear changes session_id, agent ids don't.
- *       sessionRowMap(code, sid) -> one session's; blockCount(code, {seat, agent}) / setBlockCount(code, {seat, agent}, n):
- *       row-hold.ts (the seat's session document's blocks)
- *   Hold liveness (written by mcp/hold.ts): writeHolds(code, name, {members, room, roomUntil}), readHolds(code, name)
- *       the seat's session document's holds = {pid, at, members: [names], room: bool, roomUntil?}; readHolds folds
- *       roomUntil into room (a room hold between its JOINED return and the re-call is still running).
- *   missingRows(code, me, {now}) -> [names]   active members whose row has no live hold (after a grace period)
- *
- * Constants: PARTICIPANT ('sub-human:participant'), ROOM_AGENT ('sub-human:room'), ROW_MAX.
+ * Agent -> row map: the room documents rows/<session_id> = {byAgent: {agentId: {kind, name, parent, at}}}.
+ * readRowMap merges every session's map in the room: /clear changes session_id, agent ids don't. Holds (written by
+ * mcp/hold.ts) and blocks (hooks/handlers/row-hold.ts) live in the seat's session document.
  */
 
 import * as identity from './identity.ts';
@@ -234,7 +202,8 @@ function joinNote(me: Me | null | undefined, name: string | null | undefined, { 
   return `row: your room row is not running; spawn it now: ${roomCall(me.code, names)}`;
 }
 
-/** Rows this seat should have but `held` (readHolds) shows no live hold for. Room Claude: names; member: [code]. */
+/** Rows this seat should have but `held` (readHolds) shows no live hold for, with no grace period (join, restore).
+ * Room Claude: names; member: [code]. */
 function rowsNeeded(code: RoomCode, me: Pick<Identity, 'name' | 'role'>, { members, held = null }: { members?: MemberInput, held?: Holds | null } = {}): string[] {
   const ms = memberList(members ?? readMembers(code));
   const h: Pick<Holds, 'members' | 'room'> = held ?? { members: [], room: false };
@@ -519,8 +488,8 @@ function roomText({ code, viewer, es, ms, now, c }: RowCtx, summary: string, lin
     parts.push(c.dim(`${ms.filter(m => isActive(m) && !isRoomClaude(m)).length} here`));
   }
   if (viewer) {
-    // read once the viewer or their Claude answered anything after it (stage 8e I.3: a Claude's reply left it stuck);
-    // the room's Claude's answer to the viewer's own @claude is read too: it was shown to them as it came (stage 8f)
+    // read once the viewer or their Claude answered anything after it; the room's Claude's answer to the viewer's
+    // own @claude is read too: it was shown to them as it came
     const own = lastWhere(es, e => e.from === viewer && (e.via === 'human' || e.via === 'agent'));
     const asked = !!own && own.to === 'claude';
     const mail = countAfter(es, e => e.to === viewer && e.from !== viewer && !(asked && e.from === 'claude'), own?.id || 0);
@@ -531,11 +500,8 @@ function roomText({ code, viewer, es, ms, now, c }: RowCtx, summary: string, lin
   return fit(parts);
 }
 
-/**
- * opts: {member (a participant row's seat; none: the room row), viewer (who looks), color, entries, members, now,
- *        tasks (list; default lib/tasks.ts mine(code, member)), taskSummary (string, default tasks.summary(code,
- *        viewer)), link (the room row: lib/room/link-state.ts State or null, default read(code))}.
- */
+/** member's participant row, or with no member the room row, as viewer sees it. tasks, taskSummary and link default to
+ * lib/tasks.ts mine / summary and lib/room/link-state.ts read. */
 function rowText(code: RoomCode, { member, viewer, ...opts }: RowFor = {}): string {
   const now = opts.now || Date.now();
   const ctx: RowCtx = { code, viewer, es: opts.entries ?? readLog(code), ms: memberList(opts.members ?? readMembers(code)), now, c: paint(!!opts.color) };

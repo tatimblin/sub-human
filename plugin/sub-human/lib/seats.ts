@@ -6,53 +6,28 @@
  * room hosted elsewhere (a mirror, lib/room/store-mirror.ts) the seat op is all there is: the host's server runs
  * the rest of the sequence for it.
  *
- *   enter({code, name, role?, machine?, account?, pid?, session_id?, cwd?, pubkey}) -> {ok, rejoin?, error?, code?, note?}
- *       identity.join (members.join, a named op of lib/room/store.ts; then this machine's session indexes) →
- *       on the host: the room's working directory, the first time (a local seat's cwd: where the room's Claude runs, also
- *       when a seat on another machine starts it) → member_joined via system with pubkey and machine (the key is
- *       pinned at first sight, lib/room/envelope.ts; a key other than the pinned one is refused and the seat given
- *       back: {ok: false, error, code: 'AUTH'}) → ensureRoomClaude.
- *       role: member (default). machine: this one (default); pid, session_id and cwd belong to a seat of this
- *       machine and stay out of what the host streams (lib/room/members.ts publicView). account: the person behind
- *       the seat (the remote server's, for a login link: the host's machine id); a seat on the host itself defaults
- *       to the host's machine id, so the host account's seat here and its seats over login links are one approver
- *       (on the host, only the seat of the person who opened the room: several people may share it; the first
- *       person's seat here is marked owner, lib/room/members.ts join; lib/proposal.ts sameOf). An invite's
- *       seat has none: it is its own person, even from the same machine.
- *   ensureRoomClaude(code, cwd?, by) -> string   start the room's Claude (detached) when it has none running: lib/room-claude.ts
- *       claimSpawn (host only) + startDetached in cwd, else the room's working directory. '' or the short
- *       systemMessage suffix the join hook shows.
- *   exit(code, name, reason, {deadlineMs}?) -> bool
- *       identity.leave (members.leave) → on the host: when no live member is left, the reaper (lib/room-claude.ts
- *       reapDetached) → member_left via system "NAME left (reason)". The seat is left and the reaper started
- *       before the append, the only step that can wait on a lock (SessionEnd has seconds; deadlineMs bounds a
- *       mirror's op). Idempotent: a seat absent or already left returns false and writes nothing. In a room
- *       hosted elsewhere a leave the link can't carry (offline, timed out) returns false: the seat lapses there.
- *   sweep(code, {now?, name?}) -> [name]   on the host (elsewhere: []), the seats that ended with no leave: a local
- *       seat whose pid died exits ("session ended"); any other seat whose lease is SEAT_LEASE_MS + LEAVE_SETTLE_MS old
- *       (name: only that seat, as soon as it is not seatAlive) gets lapsed_at, and the one caller that set it logs
- *       member_left "NAME left (connection lost)". A lapsed seat stays seated: its next beat renews it (lib/remote/link.ts
- *       keepSeats) and back() logs it; a seat of another machine that no host link names (revoked: no beat can renew
- *       it) exits instead ("its connection was ended"), lapsed already or not. The room's Claude, left seats and lapsed ones are not swept; a lapsed seat
- *       whose lease is fresh again (a beat that did not run back) is given back. Returns the names it ended.
- *   back(code, name) -> bool   on the host: clears lapsed_at and, when it was set, logs member_joined "NAME rejoined"
- *       (the remote server runs it after each beat). false when the seat had not lapsed.
- *   take(want, {pid, session_id, cwd, cur, pubkey}) -> Taken   the /sub-human join's seat (lib/commands/join.ts): NAME in
- *       ROOM (code null: the one open room, sweeping orphans first, else a new one; several open is a refusal). In a room
- *       hosted elsewhere the link is started first (lib/remote/joining.ts ensureLinked). The same seat again is "already
- *       joined" (unless a re-pointed link must rebind it); another seat of this session leaves once the new one is taken
- *       ("switched rooms"), never on a refused join;
- *       pubkey(code, name) is the seat key's public half (hooks/seat-key.ts, which only the join hook loads). Taken:
- *       {ok: true, me, lead, msg} (lead: the mechanics block's last line; msg: the line for the person) or
- *       {ok: false, text, refused} (a refusal, or where a join not let in yet stands). Every take first runs
- *       lib/gc.ts sweep (closed rooms, ended sessions' indexes; at most every GC_EVERY_MS, within GC_BUDGET_MS), and
- *       a seat taken sweeps its room's row maps of ended sessions (gc.sweepRows)
- *   withWhom(code, name) -> string   "with bob, carol", "4 others here" or "nobody else here yet" (the people only)
- *   forkedText(f, sid) -> string   why /sub-human opens no room (and joins none this folder lacks) in a fork of a session
- *       whose sub-human folder this process does not have (identity.forkedOf: session-restore recorded it), and how to
- *       get back (claude stop, then claude --resume with SUB_HUMAN_HOME)
- *   liveSeatHere(cwd, name) -> code|null   an open room where name's seat is live and was taken from cwd (another
- *       session of this folder holds it): a bare /sub-human opens no second room for that person
+ * enter: identity.join → on the host, the first local seat's cwd becomes the room's working directory (where the
+ *   room's Claude runs, also when a seat on another machine starts it) → member_joined via system with pubkey and
+ *   machine (the key is pinned at first sight, lib/room/envelope.ts; another key is refused with code 'AUTH' and the
+ *   seat given back) → ensureRoomClaude. pid, session_id and cwd stay out of what the host streams
+ *   (lib/room/members.ts publicView). account: the person behind the seat. A seat on the host defaults to the host's
+ *   machine id, so the host account's seat and its seats over login links are one approver (on the host only the
+ *   room owner's seat counts: several people may share it; lib/proposal.ts sameOf). An invite's seat has none: it
+ *   is its own person, even from the same machine.
+ * exit: identity.leave → on the host, the reaper when no live member is left → member_left. The seat is left and the
+ *   reaper started before the append, the only step that can wait on a lock (SessionEnd has seconds; deadlineMs
+ *   bounds a mirror's op). Idempotent. In a room hosted elsewhere a leave the link can't carry returns false: the
+ *   seat lapses there.
+ * sweep (host only): a local seat whose pid died exits ("session ended"); any other seat whose lease is
+ *   SEAT_LEASE_MS + LEAVE_SETTLE_MS old gets lapsed_at, and the one caller that set it logs "NAME left (connection
+ *   lost)". A lapsed seat stays seated: its next beat renews it (lib/remote/link.ts keepSeats) and back() logs
+ *   "NAME rejoined". A seat of another machine that no host link names (revoked: no beat can renew it) exits
+ *   instead. The room's Claude, left seats and lapsed ones are not swept.
+ * take: the /sub-human join's seat (lib/commands/join.ts). code null: the one open room (orphans swept first), else
+ *   a new one; several open is a refusal. In a room hosted elsewhere the link is started first (lib/remote/joining.ts
+ *   ensureLinked). Another seat of this session is left only once the new one is taken ("switched rooms"), never on
+ *   a refused join. Every take first runs lib/gc.ts sweep (at most every GC_EVERY_MS, within GC_BUDGET_MS), and a
+ *   seat taken sweeps its room's row maps of ended sessions.
  */
 
 import * as identity from './identity.ts';
@@ -107,6 +82,8 @@ function keepWorkdir(code: RoomCode, cwd: string | null | undefined): void {
   if (cwd && !kv.get(WORKDIR)) kv.set(WORKDIR, { cwd });
 }
 
+/** Start the room's Claude (detached; claimSpawn is host only) in cwd, else the room's working directory, when none
+ * runs. '' or the short systemMessage suffix the join hook shows. */
 function ensureRoomClaude(code: RoomCode, cwd: string | null | undefined, by: string): string {
   let last: Member | null = null;
   try {
@@ -242,6 +219,8 @@ function withWhom(code: RoomCode, name: SeatName): string {
   return names.length > 3 ? `${names.length} others here` : `with ${names.join(', ')}`;
 }
 
+/** An open room where name's seat is live and was taken from cwd (another session of this folder holds it): a bare
+ * /sub-human opens no second room for that person. */
 function liveSeatHere(cwd: string, name: string): RoomCode | null {
   try {
     for (const c of identity.openRooms()) {
@@ -259,9 +238,8 @@ function sweepOrphans(): void {
 }
 
 /**
- * Why /sub-human opens no room in a fork of a session whose sub-human folder this process does not have (stage 8e E:
- * one opened a second room in the default folder live; 8f item 1: also after a leave): where it sat, and how to get
- * back. `claude --resume` refuses a session that runs in the background, so the way back stops it first.
+ * Why /sub-human opens no room in a fork of a session whose sub-human folder this process does not have (also after a
+ * leave): where it sat, and how to get back. `claude --resume` refuses a session that runs in the background, so the way back stops it first.
  */
 function forkedText(f: Pick<identity.ForkedAway, 'title' | 'home'>, sid: string | null | undefined): string {
   const id = sid || 'SESSION';
@@ -276,7 +254,6 @@ function forkedText(f: Pick<identity.ForkedAway, 'title' | 'home'>, sid: string 
 function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd, cur, pubkey }: TakeCtx): Taken {
   let created = false;
   // a fork of a session whose folder is not this one: no room opened here, none joined that this folder does not have
-  // (stage 8e E, 8f item 1: "/sub-human NAME ROOM" said "no room ROOM on this machine … open a new room")
   if (!cur && (!code || !identity.roomExists(code))) { const f = identity.forkedOf(session_id); if (f) return no(forkedText(f, session_id)); }
   try { gc().sweep({ keep: code }); } catch { /* the next join sweeps (lib/gc.ts: at most every GC_EVERY_MS, within GC_BUDGET_MS) */ }
   if (!code) {
@@ -308,11 +285,11 @@ function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd,
   // The seat's key: via=human posts and answers are signed with it, and the log pins it.
   let key: string;
   try { key = pubkey(code, name); } catch (e) { return no(`could not make ${name}'s signing key (${msgOf(e)}). Run /sub-human doctor.`); }
-  // the seat this session holds now is left only once the new one is taken: a refused join changes nothing (item 10 R2)
+  // the seat this session holds now is left only once the new one is taken: a refused join changes nothing
   const r = enter({ code, name, pid, session_id, cwd, pubkey: key, keepPrevious: !!cur && !same });
   if (!r.ok) {
     if (isDefault && /^name taken/.test(r.error || '')) return no(`"${name}" is taken in room ${code}; pick another: /sub-human NAME${created ? '' : ` ${code}`}`);
-    // item 11 R4: the name sits in the room with a key made elsewhere (a new home or machine); a key never moves
+    // the name sits in the room with a key made elsewhere (a new home or machine); a key never moves
     if (/pinned to another key/.test(r.error || '')) {
       const bound = !host && !!(links.get(code) ?? {}).token;
       return no(`could not join ${code} as ${name}: ${name} is in this room with a key from another machine or sub-human folder, and a seat's key never moves. ${bound ? 'This connection is bound to that name: ask the host for a new invite; their card lets this machine in under a new name' : `Join under another name: /sub-human NAME ${code}`}`);

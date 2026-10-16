@@ -329,12 +329,12 @@ function heredocBody(cmd: string, i: number, hd: Heredoc): [string, string, numb
 /**
  * The command with each ANSI-C quoted word ($'…') decoded as bash and zsh read it (\xHH, \NNN octal, \uHHHH,
  * \UHHHHHHHH, \cX and the one-letter escapes; an unknown escape keeps its backslash), so `cat /h/$'\x68'ost/keys/…`
- * is placed as /h/host/keys/… (item 14 R5), and each $"…" (a locale string) read as the double-quoted string it is
+ * is placed as /h/host/keys/…, and each $"…" (a locale string) read as the double-quoted string it is
  * (`/h/$"home"` is /h/home). null: a $'…' this cannot read whole (unterminated): denied.
  * A $' counts only where the shell reads one: unquoted (also inside $(…), ${…} or `…` in double quotes or an
  * unquoted heredoc's body), never inside '…' (where $ is literal: grep 'foo$'), inside "…", after a backslash, as the
- * second $ of $$ (stage 8e A), or in a heredoc's body outside those (a quoted heredoc's body is literal throughout). A
- * `case` inside $(…) keeps its patterns' ) from closing it (stage 8f item 5).
+ * second $ of $$, or in a heredoc's body outside those (a quoted heredoc's body is literal throughout). A
+ * `case` inside $(…) keeps its patterns' ) from closing it.
  */
 export function ansiC(cmd: string): string | null {
   if (!cmd.includes("$'") && !cmd.includes('$"')) return cmd;

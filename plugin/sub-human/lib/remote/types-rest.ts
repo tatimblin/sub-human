@@ -29,14 +29,13 @@ export interface LineTransport {
   end(): void;
 }
 
-/** What a kind is opened with: the room the link daemon connects to, if any, and the link's own Noise key (a web link
- * made under protocol 3: XK proves it). */
+/** What a kind is opened with: the room the link daemon connects to, if any, and the link's own Noise key (XK proves
+ * it). */
 export interface OpenCtx {
   code?: BrandMod.RoomCode;
   clientKey?: NoiseMod.KeyPair;
 }
 
-/** A transport spec: its kind, and what that kind needs. */
 export interface SpecBase {
   kind: string;
 }
@@ -83,8 +82,7 @@ export interface WsSpec extends SpecBase, WsAddr {
   kind: 'ws' | 'wss';
   /** the pinned X25519 public key, base64url */
   hostKey?: string;
-  /** the link's own X25519 public key, base64url (its pair in the link's folder): XK proves it on every connection;
-   * absent from a link made under protocol 2 (NK) */
+  /** the link's own X25519 public key, base64url (its pair in the link's folder): XK proves it on every connection */
   clientKey?: string;
 }
 
@@ -106,7 +104,7 @@ export interface Refusal {
   message: string;
 }
 
-/** Message 1's payload: v 3 for XK, 1 for NK (a link made under protocol 2). */
+/** Message 1's payload (v 3: XK). */
 export interface WsHello {
   v: number;
   room: string;

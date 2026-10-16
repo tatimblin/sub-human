@@ -3,48 +3,21 @@
  * plugin/sub-human/mcp/room-server.ts: the room's stdio MCP server (JSON-RPC 2.0, one message per line).
  * Zero dependencies. Each Claude Code session runs its own copy, as a direct child of claude.
  *
- * Identity: the session that spawned us. Claude Code gives a stdio server its session id (cc CONTRACT
- * env-mcp-session), so me = identity.resolveBySession(CLAUDE_CODE_SESSION_ID); the id is fixed at spawn and /clear
- * moves the session to a new one (env-clear-session-id), so a seat that rebound since is found by its claude process
- * instead, our parent (mcp-stdio-ppid): identity.resolveByPid(process.ppid). Re-resolved on every call (the session
- * joins after the server starts). The model never names itself. Not joined -> every core tool returns "not in a
- * room; run /sub-human".
+ * Identity: the session that spawned us (whoami below), re-resolved on every call since the session may join after the
+ * server starts. The model never names itself. Not joined -> every core tool returns "not in a room; run /sub-human".
  *
- * Core tools:
- *   post({kind, text, to?, refs?})   kinds: say question status; via "agent", from = the resolved member. Refused
- *       when it repeats the member's objection note, waiting for their Send or sent in the last 10 minutes (relayed).
- *   read({ids?})   with ids: those entries in full. Without: this member's unseen entries (cursor mcp-<name>),
- *       skipping its own Claude's posts; at most 100, oldest first. Each entry is one rendered line (lib/room/render.ts
- *       line {full}): "#ID FROM[VIA] (unverified)? KIND … "TEXT"", no signature material, and a person's line whose
- *       signature does not verify marked "(unverified)" (not their words for certain).
- *   propose({text|path, approvers?})   lib/proposal.create: stores plans/<hash>.md, appends `proposal`
- *       {hash, approvers, path}; approvers default to the humans present. Each approver answers a consent
- *       card (hooks/consent.ts); a proposer who is also an approver is told to open the card now. The reply
- *       names the read-only `show` by the shim's full path (lib/text.ts cliCmd): no `sub-human` is on a session's
- *       PATH. A proposal retires the proposer's earlier undecided one with the same title (lib/room/consent.ts), and says so; another
- *       sender's pending one with the same title is warned about (both stay open). A path's root is the seat's cwd
- *       (its members record; else this process's): never ~, / or above ~, nor the plugin home, ~/.ssh or ~/.claude.
+ * Core tools: post (refused when it repeats the person's objection note: repeatsNote below), read (this member's
+ * unseen entries, cursor mcp-<name>, skipping its own Claude's posts, at most READ_MAX; each one rendered line with
+ * no signature material, a person's line whose signature does not verify marked "(unverified)"), propose
+ * (lib/proposal.ts create; its reply names `show` by the shim's full path, since no `sub-human` is on a session's
+ * PATH, and warns of another sender's pending proposal with the same title).
  *
- * Plug-ins: ./hold.ts (rows) and ./task.ts (the room task list) are loaded when present; a missing or broken
- * one is logged and skipped. Each exports create(ctx) -> {tools, call(name, me, args, meta), stop?,
- * anonymous?}. call returns a result or a Promise of one; meta = {id, progressToken}. A plug-in's tool is
- * called with me = null (instead of the "not in a room" error) only when its name is in `anonymous`.
- * Calls are routed to the plug-in that lists the tool (core names and earlier plug-ins win a clash).
- *
- * ctx (shared by every plug-in):
- *   send(msg)                         raw JSON-RPC to the client
- *   notify(method, params)            a notification
- *   request(method, params)           server->client request: a Promise of the result (rejects on error),
- *                                     with .id = the JSON-RPC request id
- *   cancelRequest(id, reason)         sends notifications/cancelled {requestId, reason}; the pending request
- *                                     rejects with {code:'CANCELLED'}
- *   progress(progressToken, progress, message)   notifications/progress (no-op without a token)
- *   onCancel(requestId, fn)           fn(reason) when the client cancels that tools/call (once)
- *   whoami()                          the session's seat (Identity above); me or null (each call opens me.code's Room)
- *   clientCaps()                      the client capabilities from initialize (e.g. .elicitation)
- *   room, identity, proposal          the libs
- *   text(s, isError)                  an MCP text result
- *   log(...a)                         $SUB_HUMAN_HOME/mcp-debug.log, only when SUB_HUMAN_DEBUG=1
+ * Plug-ins: ./hold.ts (rows) and ./task.ts (the room task list) are loaded when present; a missing or broken one is
+ * logged and skipped. Each exports create(ctx) -> PluginApi (mcp/types.ts). A plug-in's tool is called with me = null
+ * (instead of the "not in a room" error) only when its name is in `anonymous`. Calls are routed to the plug-in that
+ * lists the tool (core names and earlier plug-ins win a clash). In ctx: request() returns a Promise with .id = the
+ * JSON-RPC request id, and cancelRequest(id) rejects it with {code:'CANCELLED'}; log() writes
+ * $SUB_HUMAN_HOME/mcp-debug.log only when SUB_HUMAN_DEBUG=1.
  * A tools/call cancelled by the client gets no reply, even if its Promise settles later.
  */
 
@@ -239,7 +212,7 @@ function post(me: Me, args: ToolArgs) {
     return text(`refused: kind must be one of ${POST_KINDS.join(', ')}. To ask for agreement, use propose; only people answer it, on their own card.`, true);
   }
   // a note waiting for the person's Send or Discard: the card decides what the room gets. Consent's PreToolUse refuses
-  // this first; the server says the same when no hook ran (stage 8e D: a skipped hook let a post through live)
+  // this first; the server says the same when no hook ran
   const cf = proposal.readConfirm(me);
   if (cf && proposal.pendingFor(me).some(p => p.hash === cf.hash)) return text(SAY.noteWaits(me.name, cf.hash), true);
   const twice = relayed(me, body);

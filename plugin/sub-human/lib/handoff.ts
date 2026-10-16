@@ -12,8 +12,9 @@
  *
  * A planned handoff, A (the host, person `from`) to B (person `to`, on another machine, linked), C following:
  *   1. ask (A: `/sub-human handoff B` or `sub-human handoff B`): the host document remote/handoff (host-only, never
- *      streamed) {id, state: 'asked', from, to, epoch: next, locator?, ask?, at, expires_at}. A's server sends it to
- *      B's link only, as a private 'handoff' event (lib/remote/protocol.ts); B's daemon keeps it in B's mirror
+ *      streamed) {id, state: 'asked', from, to, epoch: next, locator?, ask?, at, expires_at} (ask: A's signed
+ *      'host_ask'). A's server sends it to B's link only, as a private 'handoff' event (lib/remote/protocol.ts); B's
+ *      daemon keeps it in B's mirror
  *      (onAsk: the session-local document `handoff`); B's tail wakes B's Claude, which opens the card.
  *   2. the card (hooks/consent.ts, AskUserQuestion; only B's own answer on the card as the hooks built it counts):
  *      it says the room's Claude then runs on B's model account (billing, rate limits) and that B's machine must stay
@@ -33,37 +34,12 @@
  *      during the handoff gets it when it reconnects to A, as long as A is up (HANDOFF_INVITE_MS). A member that
  *      cannot reach B stays offline with a reason that says what to do (whyOffline); nothing hangs.
  *
- *   ask(code, {from, to, locator?, sign?, now?}) -> doc        host only. sign(payload) -> signed (the hook's seat
- *       key): doc.ask = sign({kind: 'host_ask', id, epoch, to, locator}). RoomError INVALID / OFFLINE / HOST_ONLY /
- *       STALE with a reason for the person
- *   hostDoc(store) -> doc | null                               the host document remote/handoff
- *   streamEvent(store, link, sent) -> {ev, data, end?} | null  the next private event for a link's subscribe stream
- *       (lib/remote/server.ts): the ask to the link holding its target, or 'moved' once the host_changed line
- *       (sent.lastId: the last id this stream sent) went out; end: the stream ends after it ({reason: 'moved'})
- *   serverAccept(store, link, {id, accept, locator, invites}) -> {entry, epoch, job}   A's server: see 3
- *   serverRefuse(store, link, {id}) -> {ok}
- *   afterMoved(store, {job}) -> bool                           A's server, after the accept's reply: see 3
- *   movedAway(store) -> bool                                   the log says the room moved to another machine
- *   onAsk(mirror, data), onMoved(mirror, data) -> {self?, stop?, reason}   the link daemon's (lib/remote/link.ts)
- *   whyOffline(code, message) -> string                        the offline reason of a re-pointed link
- *   pendingAsk(code, name, now?) -> ask | null                 B's mirror: the ask waiting for name
- *   markTold(code, id)                                         the tail woke the target's Claude for it
- *   card(ask, code) -> AskUserQuestion input; question(ask, code) -> string; YES, NO
- *   accept(me, {cwd, sign}) -> {ok, epoch?, note?, error?}     B's hook: see 3 and 4
- *   refuse(me) -> {ok, error?}
- *   takeOver(code, {by, cwd, entry?}) -> string                this machine becomes the room's host (see 4);
- *       entry: append it once the store is this machine's (promote)
- *   promote(code, {name, locator?, force?, cwd?, now?}) -> {epoch, entry, invites: [{machine, seats, invite, pin}], note, last}
- *       a member's machine with a full mirror declares itself host at epoch + 1 (the person's own shell,
- *       lib/cli/handoff.ts, after a confirmation): refused while the link is online, or down for less than
- *       PROMOTE_OFFLINE_MS without force. The other machines get sh2 invites with a PIN each, to hand out by hand
- *       (each runs `sub-human demote CODE INVITE PIN` with its own).
- *   demote(code, {invite, pin?}) -> {orphan, follower?}   a machine follows a promoted room: a member's
- *       machine re-points its link (rebind: its seats join again with /sub-human; follower: true); an old host that
- *       was promoted away sets its log aside (orphaned-<time>.jsonl, kept, never merged), stops its room Claude, and
- *       mirrors the new host
- *   status(code) -> {host: hostState, doc, machines?}          for `sub-human handoff --status`
- *   HOST_DOC, ASK_DOC
+ * promote: a member's machine with a full mirror declares itself host at epoch + 1 (the person's own shell,
+ * lib/cli/handoff.ts, after a confirmation); refused while the link is online, or down for less than
+ * PROMOTE_OFFLINE_MS without force. The other machines get sh2 invites with a PIN each, handed out by hand, and each
+ * runs `sub-human demote CODE INVITE PIN`: a member's machine re-points its link (its seats join again with
+ * /sub-human); an old host that was promoted away sets its log aside (orphaned-<time>.jsonl, kept, never merged),
+ * stops its room Claude, and mirrors the new host.
  * A next host's locator may be a web one (wss://FRONT/…/sub-human/CODE, `--url`): it serves the room on its listener
  * (lib/remote/webhost.ts serveAt) before it accepts, and every invite it mints pins its listener's X25519 key.
  */
@@ -183,6 +159,8 @@ function movedAway(s: Store): boolean {
 const askView = (d: HandoffAsk): HandoffAsk => ({ id: d.id, from: d.from, to: d.to, epoch: d.epoch, expires_at: d.expires_at, ...(d.locator ? { locator: d.locator } : {}) });
 
 /** sent: what this subscribe stream already sent (the ask's id, the 'moved' event) and the last log id it sent. */
+/** The next private event for a link's subscribe stream (lib/remote/server.ts): the ask to the link holding its
+ * target, or 'moved' once the host_changed line went out (the stream then ends). */
 function streamEvent(s: Store, link: LinkRec | null | undefined, sent: { ask?: string, moved?: boolean, lastId: number }): PrivateEvent | null {
   const d = link && hostDoc(s);
   if (!d) return null;

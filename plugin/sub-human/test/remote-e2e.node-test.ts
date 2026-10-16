@@ -11,7 +11,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
 import * as identity from '../lib/identity.ts';
@@ -19,7 +18,7 @@ import * as proposal from '../lib/proposal.ts';
 import * as rows from '../lib/rows.ts';
 import * as linkSocket from '../lib/remote/link-socket.ts';
 import { isAlive } from '../lib/io.ts';
-import { Machine } from './support/two-homes.ts';
+import { Machine, childOf, kill } from './support/two-homes.ts';
 import type { Proposal } from '../lib/types-app.ts';
 import type { Link, LinkState } from '../lib/room/types.ts';
 import { sn } from './support/brands.ts';
@@ -33,8 +32,6 @@ interface TailEvent { type: string; text?: string; lines?: string[] }
 const RETRY_MS = 4000; // the daemon's first retry after the server is killed: the window the OFFLINE checks run in
 const LINK_ENV = { SUB_HUMAN_LINK_RETRY_MS: String(RETRY_MS), SUB_HUMAN_LINK_RETRY_MAX_MS: String(RETRY_MS), SUB_HUMAN_LINK_IDLE_MS: '1500' };
 
-const childOf = (pid: number | null | undefined) => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
-const kill = (pid: number | null | undefined) => { try { process.kill(pid as number, 'SIGKILL'); } catch { /* gone (or no pid: null and undefined throw too) */ } };
 const texts = (log: string): string[] => log.split('\n').filter(Boolean).map(l => (JSON.parse(l) as { text: string }).text);
 /** The text of a tail's NDJSON events of these types (lib/tail.ts). */
 const events = (out: string, types: string[]) => out.split('\n').filter(Boolean).map(l => JSON.parse(l) as TailEvent)

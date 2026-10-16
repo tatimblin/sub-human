@@ -4,31 +4,18 @@
  * refused dial means. The link daemon (lib/remote/link.ts) dials with connectLink; the join flows (lib/remote/joining.ts,
  * lib/commands/*) and the handoff make locators and transports with the rest.
  *
- *   connectLink(code) -> Promise<Client>   hello over the link file's transport (lib/remote/client.ts): with the token,
- *       or the invite once (with its PIN for an sh2 one), or {login: true} for a login link. An invite line's SECRET
- *       (protocol 3, lib/remote/invite-secret.ts) goes only to the host its tag names: over the web the listener's key
- *       is fetched (transports/ws.ts fetchKey), checked against the tag and pinned before the Noise handshake; over
- *       ssh and a pipe the host proves its machine key over a nonce first (client.ts checkHost). Either way a host that
- *       does not hold the named key gets nothing: AUTH HOST_KEY_MISMATCH. Then the hello carries the SECRET, the PIN
- *       when the person typed it, and as {name: join_as, label}; what the host answers is kept in the link file:
- *       PIN_NEEDED / PIN_WRONG / PIN_THROTTLED -> pin_wanted (the PIN dropped, the line kept: the join asks again),
- *       ADMIT_WAITING -> awaiting {ref, check} (the PIN dropped: it held), a token -> the invite dropped. A web link's
- *       own Noise key (linkKey) rides on every connection (XK) once its file names it. A token the hello gave replaces
- *       the invite and its PIN in the link file, so a redial never sends the PIN again; an invite the host refused
- *       (AUTH) is scrubbed with its PIN (refused: {at, reason}). caps {ping: true}. The hello carries this home's
- *       machine key's proof (lib/remote/machine-key.ts): the host records the machine id the key gives and the reply
- *       says it; it is kept (home.ts setMachineIn) and every later hello reports it (home.ts machineIn)
- *   loginRefused(linkFile, transport, err, code) -> Promise<err'>   a login link's ssh gave up for a reason only the
- *       person can fix (lib/remote/transports/ssh.ts loginProblem): AUTH with that reason, so the daemon stops and the
- *       join says what to run, instead of redialing a door that stays shut; anything else is err
- *   linkKey(code, {fresh?}) -> {priv, pub}   the link's own Noise key (X25519, <home>/links/<code>/client-x25519.json,
- *       0600), made once; fresh: a new one (a new invite's link)
- *   joinerLabel() -> string           this machine's short host name, as the host's card shows it (not trusted)
- *   pipeLocator(home?) -> 'pipe:<home>'   an invite's locator for a room hosted under that home on this machine (the
- *       demo's S11 and the tests: not a kind people use)
- *   sshLocator(dest, {via}?) -> 'ssh:user@host[:port][?via=JUMP]' | null   null: not a plain user@host[:port]
- *   transportOf(locator) -> Spec | null   the link file's transport for an invite's locator: the transport registry's
- *       parse (lib/remote/transports/index.ts)
+ * connectLink: an invite line's SECRET (invite-secret.ts) goes only to the host its tag names: over the web the
+ * listener's key is fetched (transports/ws.ts fetchKey), checked against the tag and pinned before the Noise
+ * handshake; over ssh and a pipe the host proves its machine key over a nonce first (client.ts checkHost). A host that
+ * does not hold the named key gets nothing: AUTH HOST_KEY_MISMATCH. The host's answers are kept in the link file:
+ * PIN_NEEDED / PIN_WRONG / PIN_THROTTLED -> pin_wanted (the PIN dropped, the line kept: the join asks again),
+ * ADMIT_WAITING -> awaiting {ref, check} (the PIN held). A token replaces the invite and its PIN, so a redial never
+ * sends the PIN again; an invite the host refused (AUTH) is scrubbed with its PIN, so the link file keeps no secret in
+ * clear. The machine id the host derives from this home's machine key is kept (home.ts setMachineIn).
+ *
+ * loginRefused: a login link's ssh gave up for a reason only the person can fix (ssh.ts loginProblem) becomes AUTH, so
+ * the daemon stops and the join says what to run instead of redialing a door that stays shut. joinerLabel is what the
+ * joiner says it is called, never trusted.
  */
 
 import fs from 'node:fs';

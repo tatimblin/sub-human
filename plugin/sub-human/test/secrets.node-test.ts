@@ -6,28 +6,17 @@
 // legitimately holds one: the joiner's link record (its token; the line's word and the PIN only until the host
 // answered, and a seated join is past that). The host keeps sha256s only.
 import test from 'node:test';
-import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
-import * as linkSocket from '../lib/remote/link-socket.ts';
 import * as links from '../lib/room/links.ts';
 import { isInviteSecret } from '../lib/remote/invite-secret.ts';
 import { isLinkToken } from '../lib/remote/host-links.ts';
 import { isPin } from '../lib/remote/invites.ts';
 import { redact } from '../lib/cli/doctor/redact.ts';
-import { Machine, shownInvite } from './support/two-homes.ts';
-import type { RoomCode } from '../lib/brand.ts';
+import { Machine, shownInvite, stopDaemon } from './support/two-homes.ts';
 
 const LINK_ENV: Record<string, string> = { SUB_HUMAN_LINK_RETRY_MS: '200', SUB_HUMAN_LINK_RETRY_MAX_MS: '400', SUB_HUMAN_LINK_IDLE_MS: '1500' };
-const childOf = (pid: number) => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
-const kill = (pid: number | null) => { try { if (pid != null) process.kill(pid, 'SIGKILL'); } catch { /* gone */ } };
-const stopDaemon = (t: TestContext, m: Machine, code: RoomCode) => t.after(() => {
-  const d = m.lib(() => linkSocket.status(code));
-  if (d.pid) { kill(childOf(d.pid)); kill(d.pid); }
-  fs.rmSync(path.dirname(linkSocket.socketPath(path.join(m.home, 'rooms', code))), { recursive: true, force: true });
-});
 
 function filesUnder(dir: string): string[] {
   const out: string[] = [];

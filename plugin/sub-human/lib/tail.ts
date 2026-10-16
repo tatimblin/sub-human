@@ -3,70 +3,37 @@
  * (mod/deliver.ts). Everything that waits goes through an injected clock (lib/clock.ts), so tests drive it with
  * clock.createFake() in-process.
  *
- *   runTail({clock, write, err, lookup, timings, fs, deps, maxSeconds, sid}) -> {stop(), session()}
- *       The loop: look the seat up (every unseatedMs, then resolveMs once seated), follow that room's log
- *       from its cursor, batch what this seat sees and write each batch's events with write(text, done). It
- *       never stops on an error: every timer callback is guarded (log to err, rate-limited, back off, carry on);
- *       only stop() / maxSeconds end it. A seated session whose poll loop has not ticked for stallMs is restarted.
- *   timings(env?) -> the named waits, from lib/config.ts and their SUB_HUMAN_* overrides
- *   Batcher({clock, settleMs, settleMaxMs, retryMs, onFlush, onError})
- *       enqueue(item) / arm() / flush() / stop(). Items wait in `pending` and go to onFlush(ready) as ONE
- *       batch after settleMs of quiet or settleMaxMs after the first one; an item younger than settleMs stays
- *       for the next batch. If onFlush throws, the batch goes back to pending and is retried after retryMs.
- *   formatRoomClaudeBatch(ready, ctx) -> lines     the room Claude's block: stateLine, then one full line per shown entry
- *   formatNdBatch(ready, ctx) -> {events, moved}   the hooks module's events for one batch (below)
- *   pullText(lines) -> text | null           the room context over lines (PULL_HEAD … PULL_END), the newest kept under PULL_CAP
- *   missingRowsText(me, sid, {now}?) -> text | null   the Agent calls for this seat's rows that run nowhere
- *   remindersText(me, rm) -> text | null     lib/proposal.ts reminder() for the proposal a review opens next (the
- *                                            person's pick, else the newest), the others awaiting me listed as
- *                                            h6 "title" (members); a note of mine waiting on it: the confirm card instead,
- *                                            to show now (consent's reoffer says the same) until it was offered again
- *   linkLine(status, code) -> {key, text} | null   the one line for a room link that is not online (lib/remote/link.ts
- *       status; the words are lib/room/link-state.ts STATES): key 'fork' (the mirror no longer matches the host's
- *       log; queued @room posts are kept, not sent), 'stopped' (for good: refused, revoked, the room closed) or
- *       'offline' (the host or the daemon is unreachable); null while it is online or connecting
- *   flushLine(flush) -> text | null   what became of the @room posts queued while the link was down (the daemon's
- *       document `link` flush {sent, unsent: [{text, why}]}): appended to LINK_BACK, or alone when some were not sent
- *   deps (tests): openRoom(code) -> Room (lib/room.ts open), heartbeat(me) (identity.heartbeat), rows, session (lib/room/session.ts), roomClaude,
- *       linkStatus(code) (lib/remote/link.ts status), admission (lib/remote/admission.ts),
- *       sweepSeats(code) (lib/seats.ts sweep: on the host, every health tick), pendingNews(sid) (lib/remote/joining.ts:
- *       a join this session started with a PIN)
+ * runTail looks the seat up (every unseatedMs, then resolveMs once seated), follows that room's log from the
+ * seat's cursor (its session document, lib/room/session.ts; first run: from its join), batches what the seat sees
+ * and writes one JSON event per line, which the mod routes. It never stops on an error: every timer callback is
+ * guarded (log to err, rate-limited, back off, carry on); only stop() / maxSeconds end it. A seated session whose
+ * poll loop has not ticked for stallMs is restarted, and one whose room changed kind (a mirror that became the
+ * host, or the reverse) is started again over the new store. A session never re-reads the log from byte 0:
+ * backlog from room.readView({after: cursor}), live entries from room.tailer(). The health tick also renews the
+ * seat's lease (identity.heartbeat). Batcher sends items as ONE batch after settleMs of quiet or settleMaxMs after
+ * the first; a batch whose onFlush throws goes back and is retried after retryMs.
  *
- * It writes one JSON event per line, which the mod routes. It reads from the seat's cursor (its session document,
- * lib/room/session.ts; first run: from
- * the seat's join) and sends each entry as lib/room/deliver.ts classes it for this seat (notice: chat; context:
- * pull; wake: wake; none: nothing). Events:
+ * Each entry goes as lib/room/deliver.ts classes it for this seat (notice: chat; context: pull; wake: wake). Events:
  *   {type:'seat', seat: {name, code, role, addr} | null}   the seat it follows (null: none any more)
- *   {type:'chat', lines}      a member's group chat: people's words, joins and leaves
- *                             (the person sees them; no wake)
- *   {type:'pull', text}       for Claude, no wake: the pull lane plus a copy of the chat lines, under the
- *                             room context's head and end (PULL_CAP); the module holds it for the person's next
- *                             prompt. At most once: the cursor moves when the line is written
+ *   {type:'chat', lines}      a member's group chat: people's words, joins and leaves (the person sees them; no wake)
+ *   {type:'pull', text}       for Claude, no wake: the pull lane plus a copy of the chat lines, under the room
+ *                             context's head and end (PULL_CAP); the module holds it for the person's next prompt.
+ *                             At most once: the cursor moves when the line is written
  *   {type:'wake', text}       what needs Claude now: to me / @me, a proposal for me, a decision on mine, a task
  *                             assigned to me, an objection to my proposal (members, with the room state line when
  *                             the batch moved a proposal); the room Claude's whole push block
  *   {type:'rows', text|null}  what the person's next prompt carries for Claude: pending-proposal reminders
  *                             (members) and the missing rows' Agent calls; sent at start and when it changes
- *                             (health tick); null clears it
- *   {type:'health', text}     the hash-chain check's line (one per break), and in a room hosted elsewhere the
- *                             link's linkLine each time it goes off (FORK, STOPPED or OFFLINE; nothing while it stays so)
- *                             and LINK_BACK ("the connection to the room is back; …", with flushLine) once it is online
- *                             again: one quiet line, no "left"/"joined" (the daemon renews the seat's lapsed lease)
- *   {type:'invites', open}    on the host, the refs of the room's open invite lines, each time the set changes: the
- *                             module takes an invite off its status line once it is used, burnt, cancelled or expired
- *   An invite's join request (lib/remote/admission.ts), on the host: one wake, its line for the person (drawn as the
- *   prompt) and a (for Claude) line that tells Claude to open the card ("admit REF"), once per seat it is for; a request that lapsed is a health line.
- *   A planned handoff (lib/handoff.ts): the ask waiting for this seat (its machine's mirror) is one wake, a line for the
- *   person and a (for Claude) line that tells Claude to open the card, once; the asker gets a health line when the ask is
- *   declined or expires; host_changed is a chat line for every member. A session whose room changed kind (a
- *   mirror that became the host, or the reverse) is started again over the new store.
- * A session with no seat that started an invite join (its link file's join_sid; the hooks module starts the tail for
- * it: mod-hello's pending) is looked up every resolveMs until the host let it in, and gets one chat line per answer (a
- * seated session too, at each seat check: a kicked machine's copy may still show its seat):
- * the host asks for the PIN (or again, after a wrong one), "the host let you in to room CODE: type /sub-human to join
- * it as NAME", or why the join stopped.
- * A session never re-reads the log from byte 0: backlog from room.readView({after: cursor}), live entries from
- * room.tailer(). The health tick also renews the seat's lease (identity.heartbeat).
+ *   {type:'health', text}     a hash-chain break (one line per break); in a room hosted elsewhere linkLine each time
+ *                             the link goes off and LINK_BACK once it is online again (one quiet line, no
+ *                             "left"/"joined": the daemon renews the seat's lapsed lease)
+ *   {type:'invites', open}    on the host, the refs of the open invite lines when the set changes (the module takes
+ *                             an invite off its status line once it is used, burnt, cancelled or expired)
+ * An invite's join request (lib/remote/admission.ts, on the host) and a planned handoff's ask (lib/handoff.ts, on
+ * the asked seat's mirror) are one wake each, once per seat; a lapsed request, or an ask declined or expired, is a
+ * health line. A session with no seat that started an invite join (its link file's join_sid) is looked up every
+ * resolveMs until the host lets it in, with one chat line per answer (a seated session too: a kicked machine's copy
+ * may still show its seat).
  */
 
 import nodeFs from 'node:fs';
@@ -292,7 +259,7 @@ class Batcher<T extends { e: { id: number } } = Item> {
 }
 
 // ---------- formatters ----------
-/** ctx: {me, room, entries, show, joinNote, leaveMs} */
+/** The room Claude's block: stateLine, then one full line per entry that wakes it. */
 function formatRoomClaudeBatch(ready: Item[], { me, room: rm, entries, judge, joinNote, leaveMs }: FormatCtx): string[] {
   const out: string[] = [];
   for (const { e, away } of ready) {
@@ -320,9 +287,8 @@ function pullText(lines: string[]): string | null {
 }
 
 /**
- * One batch as the hooks module's events, in the order the mod applies them (chat, pull, wake).
- * ctx: {me, room, entries, show (the push lane, visibleTo), joinNote, seen, leaveMs}. moved: the join / leave ids
- * sent as chat (session.markShown).
+ * One batch as the hooks module's events, in the order the mod applies them (chat, pull, wake). moved: the join /
+ * leave ids sent as chat (session.markShown).
  */
 function formatNdBatch(ready: Item[], ctx: FormatCtx): { events: TailEvent[], moved: number[] } {
   const { me, room: rm, entries, judge, joinNote, seen } = ctx;
@@ -413,6 +379,9 @@ function remindersText(me: Identity, rm: Pick<TailRoom, 'readView'>, { proposal 
 
 // ---------- the link of a room hosted elsewhere ----------
 const LINK_BACK = 'the connection to the room is back; @room posts go through again';
+/** The one line for a room link that is not online (lib/remote/link.ts status; words: lib/room/link-state.ts STATES):
+ * 'fork' (the mirror no longer matches the host's log; queued posts kept, not sent), 'stopped' (for good), 'offline';
+ * null while online or connecting. */
 function linkLine(st: LinkStatus, code: RoomCode): { key: 'fork' | 'offline' | 'stopped', text: string } | null {
   const kept = st.queued ? `; ${st.queued} @room post(s) are kept, not sent` : '';
   if (st.state === 'fork') {
@@ -423,6 +392,7 @@ function linkLine(st: LinkStatus, code: RoomCode): { key: 'fork' | 'offline' | '
   if (st.state === 'stopped') return { key: 'stopped', text: `the connection to room ${code} stopped (${st.reason || 'for good'}); @room posts can't be sent${kept}. Run /sub-human doctor.` };
   return { key: 'offline', text: `the connection to room ${code} isn't running; @room posts can't be sent${kept}. Type /sub-human to reconnect.` };
 }
+/** What became of the @room posts queued while the link was down (the daemon's `link` flush). */
 function flushLine(f: Flush | null | undefined): string | null {
   if (!f || (!f.sent && !(f.unsent || []).length)) return null;
   const parts: string[] = [];
@@ -653,7 +623,7 @@ function startSession(me: Identity, ctx: TailCtx): Session {
     for (const q of adm.pending(s.code, { now: clock.now() })) {
       if ((q.told ?? []).includes(me.name) || !adm.targets(s.code, q).includes(me.name)) continue;
       adm.markTold(s.code, { ref: q.ref, name: me.name });
-      // one wake (stage 8e G): its line for the person is drawn as the prompt (asUser, no frame), the (for Claude) line
+      // one wake: its line for the person is drawn as the prompt (asUser, no frame), the (for Claude) line
       // rides as context, as every member wake (mod/core/deliver.ts wakeParts)
       emit([
         { type: 'wake', text: `room: ${adm.describe(q)} typed your invite and its PIN and wants to join; your Claude shows you a card (or: /sub-human admit ${q.ref})\n${FOR_CLAUDE} ${adm.describe(q)} typed ${me.name}'s invite line and its PIN on another machine and asks to join room ${s.code}. Only ${me.name} can let them in: call AskUserQuestion with the question "admit ${q.ref}"; the hooks show the card. Don't answer for ${me.name} or post about it.` },
@@ -768,8 +738,8 @@ function runTail({
   };
   let sess: Session | null = null, timer: TimerHandle | null = null, stopped = false;
   // an invite join this session started: what became of it, said once per state and text (waiting: look again soon);
-  // once no join waits (its seat taken), the next join's news is new, even word for word the last one's (stage 8f item 2:
-  // a re-invite after a kick let the machine in, and "the host let you in" was never said again)
+  // once no join waits (its seat taken), the next join's news is new, even word for word the last one's (a re-invite
+  // after a kick)
   let told: string | null = null;
   const news = (): boolean => {
     if (!sid) return false;
@@ -810,7 +780,7 @@ function runTail({
     }
     const waiting = !failed && !me && !sess && news();
     // seated, yet a join of this session's waits (a kicked machine typing a new invite line: its copy of the room may
-    // still show the seat, as a pipe link's did live): its news is said too (item 15)
+    // still show the seat): its news is said too
     if (!failed && me && sid) news();
     if (!stopped) timer = clock.setTimeout(check, sess || me || waiting ? tm.resolveMs : tm.unseatedMs);
   }

@@ -161,7 +161,7 @@ test('the PIN online: none asked for (free), a wrong one costs a try and a room 
   assert.equal(must(redeem(carol)).reason, 'INVITE_USED', 'once');
 });
 
-test('five wrong PINs burn the invite; the right one after that is refused; a 0.5.0-beta.15 short invite is refused as an older one', t => {
+test('five wrong PINs burn the invite; the right one after that is refused', t => {
   const { host } = hostRoom(t);
   const r = mint(host);
   let now = Date.parse('2026-10-15T12:00:00Z');
@@ -182,7 +182,7 @@ test('five wrong PINs burn the invite; the right one after that is refused; a 0.
   assert.throws(() => invites.redeemInvite(host, z.id, { machine: m.id, proven: m.id, as: { name: 'x', label: 'x' }, pin: z.pin, now: Date.now() }), (e: RoomError) => e.reason === 'INVITE_BURNT');
 });
 
-test('over the web: the admission is bound to the Noise key the PIN\'s connection proved, the link too; a protocol-2 link keeps its token; an invite line needs protocol 3 and XK', async t => {
+test('over the web: the admission is bound to the Noise key the PIN\'s connection proved, the link too; an invite line needs protocol 3', async t => {
   const { host } = hostRoom(t);
   const r = mint(host, 'ws');
   const carol = machine();

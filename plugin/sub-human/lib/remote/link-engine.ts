@@ -6,47 +6,18 @@
  * table test drives every path on a fake clock (test/link-engine.node-test.ts). Connections are ids the daemon maps to
  * its clients; the engine only knows which one is live (conn) and which one a dial is making (dial).
  *
- * States (phase, the one link vocabulary, lib/room/link-state.ts):
- *   connecting   the first dial is under way (nothing was online yet)
- *   online       conn is live: subscribed, seats renewed, outbox sent
- *   offline      no live connection; a retry timer, or a dial, is under way
- *   fork         for good: the mirror is not the host's prefix (FORK)
- *   stopped      for good: refused (AUTH, PROTOCOL), the room closed, no seat left, a signal, moved with nowhere to go
- * A dial runs four steps, each an effect whose outcome comes back as an event: connect -> subscribe -> keepSeats ->
- * flush; only after flush does the new connection replace the live one (make before break), which is then retired
- * (closed once the ops in flight on it are answered). One dial at a time.
+ * Phases (lib/room/link-state.ts): connecting (the first dial, nothing online yet), online, offline (a retry timer or
+ * a dial under way), and for good fork (the mirror is not the host's prefix) or stopped (AUTH, PROTOCOL, the room
+ * closed, no seat left, a signal, moved with nowhere to go). A dial runs connect -> subscribe -> keepSeats -> flush,
+ * each an effect whose outcome comes back as an event; only after flush does the new connection replace the live one
+ * (make before break), which is then retired (closed once the ops in flight on it are answered). One dial at a time.
  *
- * Events:
- *   start                       the first dial
- *   connected / subscribed / seated {dial}   a step of the dial is done: the next step
- *   flushed {dial}              the dial is done: it goes live (online), and the heartbeat runs (a ping every
- *                               pingMs)
- *   dialFailed {dial, error, offline?}   a step failed: FORK, AUTH or PROTOCOL stop the link; anything else keeps a live
- *                               connection when there is one (a failed redial changes nothing), else goes offline and
- *                               retries after nextDelay (decorrelated jitter: random in [retryMs, 3 x the last delay],
- *                               at most retryMaxMs)
- *   lost {conn, error, offline?}   the live connection failed (closed, a stream end): as a failed dial with no live one
- *   movedAway {conn}            the host's stream ended {reason: 'moved'}: offline, and a redial now (to the new host)
- *   redial {why}                a wake, a network change, a late pong, a signal: dial now with the backoff reset
- *   timer {name}                retry: dial again; ping: send a ping (and arm pong); pong: no pong within pongMs, the
- *                               link is suspect: redial (make before break)
- *   pong {conn, rttMs}          the heartbeat answered: rttMs, the next ping in pingMs
- *   noPong {conn}               no pong within deadMs: the connection is dead (half-open after a sleep). A dial under
- *                               way decides what comes next; else as lost
- *   stop {phase, why, code?, reason?}   for good: every timer cleared, the live connection closed, finish
- * offline (the person's words for an offline reason, lib/handoff.ts whyOffline) rides in the event: the daemon computes
- * it, the engine only keeps it.
- *
- * Effects: connect | subscribe | keepSeats | flush {dial}, close | retire {conn}, sendPing {conn, ms}, setTimer
- * {name, ms}, clearTimer {name}, online {conn, old} (it went live), forked {why}, publish (the state changed: write
- * the document `link` and the state file), log {msg}, finish {why}.
- *
- *   initial(now) -> EngineState
- *   step(state, event, ctx) -> {state, effects}   ctx = {timings, random, now}
- *   nextDelay(prev, base, cap, random?) -> ms
- *   shown(state) -> phase   the word observers see: a redial under way of an offline link reads connecting
- *   forGood(state) -> bool  fork or stopped
- *   FATAL                   the codes a dial never survives: FORK, AUTH, PROTOCOL
+ * A failed step: FATAL codes stop the link; anything else keeps a live connection when there is one (a failed redial
+ * changes nothing), else goes offline and retries after nextDelay. lost is a failed dial with no live one; movedAway
+ * redials now (the new host). redial (a wake, a network change, a signal) dials now with the backoff reset. Timers:
+ * ping every pingMs; no pong within pongMs makes the link suspect (a make-before-break redial); none within deadMs
+ * (noPong) is a dead, half-open connection: a dial under way decides what comes next, else as lost. The person's words
+ * for an offline reason (lib/handoff.ts whyOffline) ride in the event: the daemon computes them, the engine keeps them.
  */
 
 import { assertNever } from '../../mod/core/never.ts';

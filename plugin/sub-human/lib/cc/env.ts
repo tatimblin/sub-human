@@ -5,17 +5,6 @@
  * stable the assumption is (`@stability`): API (documented schema, a `.describe()` string, an exported name), env (a
  * named env var or flag), incidental (follows from how the code is written; not named anywhere). Pure functions take
  * `env` (default process.env) so tests need no global state. Imported by the hooks: no JSON, nothing spawned.
- *
- *   ENV                                  env var names Claude Code sets or reads
- *   sessionId(env) / claudePid(env)      CLAUDE_CODE_SESSION_ID / CLAUDE_PID, validated
- *   taskListId(env)                      CLAUDE_CODE_TASK_LIST_ID or null
- *   configDir(env)                       CLAUDE_CONFIG_DIR || ~/.claude
- *   sanitizeId(s), tasksDir(listId, env), plansDir(env), taskFile(listId, id, env)
- *   projectDir(cwd, env)                 <configDir>/projects/<cwd with every non-alphanumeric as '-'>: a session's transcripts
- *   userSettingsFiles(cwd, env)          the settings files the plugin reads showClearContextOnPlanAccept from
- *   clearContextOnPlanAccept(cwd, env)   true when any of them sets it
- *   globalConfigFile(env), modulesSwitch(env) -> bool|undefined   the hooks modules switch Claude Code last cached
- *   matcherIsExact(m, {toolEvent}), matcherMatches(m, name, {toolEvent})   the hook matcher rule
  */
 
 import fs from 'node:fs';

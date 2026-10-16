@@ -5,33 +5,14 @@
  * host's card lets it in: neither step ever takes the seat, so the seat's mechanics block never goes to the model with a
  * secret-bearing prompt. A join over the person's own ssh login (no invite) links and then takes the seat.
  *
- *   Step = {kind: 'take', want: Wanted} | {kind: 'say', text, refused}   what a join step ends in: a seat to take
- *       (lib/seats.ts take), or a line for the person (a refusal, or where the join stands)
- *   linkLine({name, code, word, transport, sid?}) -> Step   an invite line: link only (hosting.joinLine), the daemon
- *       started, its hellos watched for LINK_JOIN_WAIT_MS: the host asks for the PIN (say so), or a refusal; sid: the
- *       session that typed it (join_sid), whose tail tells the person what the host answered (pendingNews)
- *   givePin(pin, sid?) -> Step         the PIN, for the join waiting for one (this session's, else the newest): into
- *       its link file (hosting.givePin), the daemon started again, watched: the card asks (awaiting), a wrong or
- *       too-soon PIN (asked again), or a refusal (the last try)
- *   linkLogin({dest, code, via, home, name, isDefault}) -> Step   `/sub-human join HOST ROOM` over the person's own ssh
- *       login: the link file, the daemon, then the seat once linked. Said explicitly (no SECRET is no invite), and a
- *       refused login says that an invite line ends with its SECRET. Either join, for a room this machine is linked
- *       to live another way, is refused (`link CODE --forget` first); one that replaced a link that was down and
- *       was refused puts the old link file back
- *   pendingJoin() -> Link | null       the newest invite join this machine started, waiting to take its seat
- *   pinJoin(sid?) -> Link | null       the invite join waiting for its PIN (this session's first, else the newest)
- *   finishJoin(link) -> Step           bare `/sub-human` with a pending join: the seat once the link is up
- *   ensureLinked(code, name) -> Step | null   before a seat in a room hosted elsewhere: a join not let in yet is not
- *       started again after a refusal, a stopped link says why; null when the link runs
- *   dropJoinAs(code)                   the seat a pending join waited for is taken: its link file no longer says so
- *   restartLink(code)                  a daemon still dialing the old host is stopped (1 s at most)
- *   pendingNews(sid) -> {code, name, state, text} | null   the invite join this session started: 'waiting' (dialing,
- *       or the host's card has not answered), 'pin' (the host asks for the PIN: text says to type it), 'linked' (the
- *       host let this machine in: text says to type /sub-human) or 'refused' (text: its reason); null when there is
- *       none. The seatless session's tail (lib/tail.ts) says each once; text '' when the command's own answer said
- *       the same (join_told, written by the join step), so the person reads it once. A stop from before the join's
- *       line (the kicked link it replaced) is not its refusal
- *   noSecret(dest, code) -> string     a pipe join without its SECRET: the line the host sent has one
+ * A join over the person's own ssh login is said explicitly (no SECRET is no invite), and its refusal says that an
+ * invite line ends with its SECRET. Either join, for a room this machine is linked to live another way, is refused
+ * (`link CODE --forget` first); one that replaced a link that was down and was refused puts the old link file back.
+ *
+ * pendingNews: the invite join this session started, for the seatless session's tail (lib/tail.ts), which says each
+ * state once: 'waiting' (dialing, or the card not answered), 'pin', 'linked' or 'refused'. text is '' when the
+ * command's own answer said the same (join_told), so the person reads it once. A stop from before the join's line
+ * (the kicked link it replaced) is not its refusal.
  */
 import * as identity from '../identity.ts';
 import * as linkSocket from './link-socket.ts';
@@ -85,8 +66,8 @@ const whereOf = (t: LinkSpec | null | undefined): string => (!t ? 'another way' 
 
 /**
  * A join another way while this machine's link to code is live (a token, not spent, its daemon running and not
- * stopped): the refusal, or null. A join never tears down a live link (stage 8e C: a mistyped host cut the seated
- * person off and rewrote the link file); the person forgets the old link first, on purpose.
+ * stopped): the refusal, or null. A join never tears down a live link (a mistyped host would cut the seated person
+ * off); the person forgets the old link first, on purpose.
  */
 function liveElsewhere(code: RoomCode, cur: Link | null, spent: boolean): JoinStep | null {
   if (!cur || !cur.token || spent) return null;
@@ -96,7 +77,7 @@ function liveElsewhere(code: RoomCode, cur: Link | null, spent: boolean): JoinSt
 }
 
 /** After a join another way was refused: the link file that worked before is put back (and its daemon started again),
- * so a failed connect never leaves a link this machine had pointing at a host that refused it (stage 8e C). */
+ * so a failed connect never leaves a link this machine had pointing at a host that refused it. */
 function putBack(code: RoomCode, cur: Link | null): void {
   if (!cur || !cur.token) return;
   try { restartLink(code); links.set(code, cur); linkSocket.start(code); } catch { /* doctor says what the link file holds */ }
@@ -188,10 +169,10 @@ export function linkLogin({ dest: typed, code, via, home, name, isDefault }: {
 /** A pipe join (a second sub-human folder on this machine) has no login path: the invite line has a SECRET. */
 export const noSecret = (dest: string, code: RoomCode): string => `that looks like an invite line without its SECRET: /sub-human join ${dest} ${code} SECRET (the long word the host sent with it). If the host's line ended with a 4-digit PIN instead, it comes from an older sub-human on the host: ask them to update (/plugin update sub-human) and invite you again.`;
 
-/** The invite joins this machine started, waiting to take their seat (join_as), newest first. */
 /** A link this machine's invite join is waiting on: join_as names the seat it asked for. */
 export type PendingLink = Link & { join_as: SeatName };
 
+/** The invite joins this machine started, waiting to take their seat (join_as), newest first. */
 function pendingJoins(): PendingLink[] {
   const all = links.list().map(c => links.get(c)).filter((l): l is PendingLink => !!l && identity.isSeatName(l.join_as) && !identity.isHost(l.code));
   return all.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));

@@ -11,37 +11,20 @@
  * protocol frame, and never sees a secret in clear outside the child's pipes. The child authenticates the hello
  * (an invite line and its PIN, or a link token and its key) as for any transport.
  *
- *   keyFile() -> <home>/listen/host-x25519.json   the host's static Noise key (0600): a random X25519 key of its own,
- *       made once per home (lib/remote/noise.ts loadOrCreateStatic). It is neither derived from nor signed by any
- *       other key: node:crypto cannot turn an Ed25519 seat key into an X25519 one without hand-written field
- *       arithmetic, and keeping roles apart means a leak of one never opens the other. The invite pins it directly,
- *       so no binding to the machine id is needed; it lives in the same home, so it follows that machine identity
- *   hostKey() -> string            its public key, base64url (43 chars): what an invite line's tag names for the web
- *                                  (role 'listener'), and the sh2 invite's host-key field for ws/wss
- *   stateFile() -> <home>/listen/state.json   the shared state (0600) doctor and the hooks read:
- *       {pid, port, started_at, rooms: {CODE: {path, url, mode: 'tailscale' | 'funnel' | 'url', tailscale?: {bin,
- *       https, path}, at}}, conns}. rooms is what this home serves over ws; a room not in it is refused at the handshake
- *   status() -> {running, pid?, port?, rooms, conns?, started_at?}
- *   addRoom(code, rec) / removeRoom(code) -> rec | null   (atomic, under the state file's lock)
- *   start({port?}) -> {pid, port, started}   idempotent: a live listener is kept (its port wins); else
- *       `sub-human listen --port PORT` is spawned detached (log: <home>/listen/listen.log) and awaited for up to
- *       LISTEN_START_MS. RoomError LOCK when it does not come up (the port is taken, say)
- *   stop() -> bool                 SIGTERM the live listener and wait for it to go; false when none ran
- *   run({port?, log?, closedCheckMs?, idleMs?}) -> Promise<{why, port}>   the daemon itself: pid in the state file (LOCK when a live
- *       one holds it), then serve until SIGTERM / SIGINT / SIGHUP. Limits before a handshake completes: at most
- *       PREAUTH_MAX connections in handshake, LISTEN_MAX in all, SOURCE_MAX from one source (the front's Tailscale login
- *       or X-Forwarded-For), HANDSHAKE_MS to finish it, Noise-sized frames; after it, the serve child closes a
- *       session that made no link within LINK_AUTH_WAIT_MS (lib/remote/server.ts). Every
- *       closedCheckMs it drops rooms that closed (or are gone) and turns their Tailscale path off (only that path);
- *       once the last room it served closed and no connection is open it exits; with no room for LISTEN_IDLE_MS (one
- *       started with none) and no connection, too; it exits at once (checked every
- *       HOME_CHECK_MS, 2 s) when its home directory is gone, or the state file names another live listener. It survives a sleep: a socket bound to
- *       loopback outlives one, a dead peer is found by the WebSocket ping (15 s) and the child's own LINK_SILENT_MS
- *   DEFAULT_PORT                   7420; defaultPort() -> SUB_HUMAN_LISTEN_PORT, else DEFAULT_PORT
- *   logFile() -> <home>/listen/listen.log   the daemon's stdout and stderr
- *   roomLive(code) -> bool         the room is still open here (not stopped, closing or gone): the sweep's test
- *   untailscale(rec, log?) -> {ok, error?} | null   turn a served room's own Tailscale path off (tailscale.off), if it
- *                                  has one; never another path, never `serve reset`
+ * The host's static Noise key (keyFile, 0600) is a random X25519 key of its own, made once per home. It is neither
+ * derived from nor signed by any other key: node:crypto cannot turn an Ed25519 seat key into an X25519 one without
+ * hand-written field arithmetic, and keeping roles apart means a leak of one never opens the other. The invite pins it
+ * directly (an invite line's tag, role 'listener'; a bound invite's host-key field), so no binding to the machine id
+ * is needed. The state file's rooms are what this home serves over ws; a room not in it is refused at the handshake.
+ *
+ * Limits before a handshake completes: at most PREAUTH_MAX connections in handshake, LISTEN_MAX in all, SOURCE_MAX
+ * from one source (the front's Tailscale login or X-Forwarded-For), HANDSHAKE_MS to finish it, Noise-sized frames;
+ * after it, the serve child closes a session that made no link within LINK_AUTH_WAIT_MS (server.ts). Every
+ * CLOSED_CHECK_MS it drops rooms that closed and turns their own Tailscale path off (never another, never `serve
+ * reset`); it exits once the last room it served closed and no connection is open, after LISTEN_IDLE_MS with no room
+ * and no connection, and at once (HOME_CHECK_MS) when its home is gone or the state file names another live
+ * listener. It survives a sleep: a loopback socket outlives one, and a dead peer is found by the WebSocket ping
+ * (WS_PING_MS) and the child's own LINK_SILENT_MS.
  */
 
 import fs from 'node:fs';
@@ -334,7 +317,7 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
       untailscale(removeRoom(code) ?? rec, log);
       dropped = true;
     }
-    // the last room it served closed and nobody is connected: nothing to wait for (item 16; a listener started with
+    // the last room it served closed and nobody is connected: nothing to wait for (a listener started with
     // no room still waits LISTEN_IDLE_MS for one)
     if (dropped && !Object.keys(read().rooms ?? {}).length && !conns) return end('the last room it served closed');
     if (Object.keys(read().rooms ?? {}).length || conns) idleSince = Date.now();

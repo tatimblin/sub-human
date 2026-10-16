@@ -4,26 +4,19 @@
  * answer there records anything (via=human, signed with the seat key).
  *
  * What happens is decided by one pure reducer, lib/consent/review.ts (its header has the phases, the note's stages,
- * every event and effect, and every line the model is told). This file only gathers each event's facts, under the
- * review lock (proposal.withReview): the transcript (cc: the person's latest prompt, the dialog's answer, the model's
- * own input, the plan file), the room (pending and answerable proposals, the join requests and handoff asks waiting);
- * then runs the effects (plan-file backup, write and restore, the pick, lib/proposal.ts answer then decide), stores the
- * state (members/NAME/review, members/NAME/confirm) and writes the answer.
+ * every event and effect, and every line the model is told). This file only gathers each event's facts under the
+ * review lock (proposal.withReview), runs the effects, stores the state (members/NAME/review, members/NAME/confirm)
+ * and writes the answer.
  *
- * The cards: a join request's (lib/remote/admission.ts, on the host: "Let in" admits the machine, signed with the seat
- * key; "Refuse" ends it) and the handoff's (lib/handoff.ts: "Host it here" moves the room here, "Not now" refuses) are
- * read like the note's and the fallback consent card, through lib/consent/card.ts answerCard: only the person's answer
- * on the card as the hooks built it counts; AFK, a followUp, another answer or an edited card records nothing.
+ * The cards (a join request's, the handoff's, the note's and the fallback consent card) are read through
+ * lib/consent/card.ts answerCard: only the person's answer on the card as the hooks built it counts.
  *
  * The plan file: cc.planFile, Claude Code's own record of it (the transcript's plan_mode attachment), or the path
  * Claude Code injects into ExitPlanMode's input when it is that path or under the plans dir; never a key the model put
  * in another call (the hooks write the proposal there).
  *
- * An answer the room refuses (OFFLINE, AUTH) is never lost silently: a systemMessage tells the person, the context the
- * model. Run with SUB_HUMAN_SHIM=1 (mod/consent.ts) the output also carries subHuman {reviewOpen}.
- *
- * The hook's entry is hooks/handlers/consent.ts: a room tool call outside plan mode exits there before this file
- * loads. Loading this file arms the seat-key signer (it signs the person's answers, via=human).
+ * Loading this file arms the seat-key signer (it signs the person's answers, via=human); hooks/handlers/consent.ts
+ * exits before it loads for a room tool call outside plan mode.
  */
 
 import fs from 'node:fs';
@@ -354,7 +347,7 @@ function postAdmit(input: ConsentIn, me: Identity, r: ToolResponse): boolean {
 /**
  * The mode EnterPlanMode was called in, as the plugin's own PreToolUse command hook noted it (hooks.json: it reads the
  * call's permission_mode, which the module's event lacks) at <home>/sessions/mode/<sid>, taken once and only while
- * fresh; else the payload's (the module's last-seen mode, stale after the person's shift+tab mid-turn: item 7 H).
+ * fresh; else the payload's (the module's last-seen mode, stale after the person's shift+tab mid-turn).
  */
 function modeAtEnter(input: ConsentIn): string | undefined {
   const sid = input.session_id;

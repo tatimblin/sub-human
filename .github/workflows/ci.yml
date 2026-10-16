@@ -48,8 +48,6 @@ jobs:
       - name: lint
         if: matrix.os == 'ubuntu-latest' && matrix.node == '24'
         run: npm run lint
-      - name: hook tests over the thread store
-        run: npm run test:thread-store
       - name: version bumped with the plugin change
         if: github.event_name == 'pull_request'
         env:

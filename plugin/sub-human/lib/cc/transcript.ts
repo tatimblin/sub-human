@@ -3,17 +3,6 @@
  *
  * Shapes are incidental (lib/cc/contract.json, `@cc` tags as in lib/cc/env.ts); fixture lines in test/cc.node-test.ts
  * follow docs/internals/cc-2.1.281.md and the rows 2.1.292 and 2.1.296 wrote.
- *
- *   readLines(file, {tailBytes}), readEntries(file, {tailBytes}), parseLines(lines)
- *   planFile(lines, toolInput?, env), planAnswer(lines, toolUseId) -> {note}|null (null: no tool_result on disk yet),
- *   rejectionAnswer(text) -> {note} (the same, from a refusal's text),
- *   planFeedback(lines, toolUseId), toolUseInput(lines, toolUseId), lastHumanPrompt(lines) -> {text, at}|null
- *   contentText(content), SAID, NOTE, PASTED_RE, unwrapPasted(text)
- *   continuedIn(file) -> sid|null        the session a backgrounded session went on in (its last continued-in record)
- *   lastTitle(file) -> title|null        the session's title as its transcript keeps it (its last custom-title record)
- *   HOME_MARK, homeMark(home) -> text    (mod/core/constants.ts) the notice the hooks module appends (a system row, hidden
- *                                        in the default view) once a session holds a seat: which sub-human folder it is in
- *   lastHome(file) -> home|null          the folder the transcript's last such notice names
  */
 
 import fs from 'node:fs';
@@ -298,7 +287,7 @@ function lastTitle(file: unknown): string | null {
  * The sub-human folder this transcript's session last held a seat in, or null: the hooks module appends HOME_MARK and
  * the folder as a system row ($.session.append), which Claude Code keeps as {"type":"system","subtype":"informational",
  * "content":TEXT,"level":"info"} (drawn only in the ctrl+o transcript view). The agent view's fork reads it from the
- * transcript it continued, since the bg job it runs in drops a shell's SUB_HUMAN_HOME (stage 8f item 1). Reads the
+ * transcript it continued, since the bg job it runs in drops a shell's SUB_HUMAN_HOME. Reads the
  * whole file (the notice is written at the join, which may be long before the fork), only lines that name the mark.
  * @cc "a notice that is not one text block"
  * @stability incidental

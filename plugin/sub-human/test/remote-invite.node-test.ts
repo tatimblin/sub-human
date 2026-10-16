@@ -12,7 +12,7 @@ import type { TestContext } from 'node:test';
 import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
 import * as inviteSecret from '../lib/remote/invite-secret.ts';
-import { Machine, type MachineRun } from './support/two-homes.ts';
+import { Machine, type MachineRun, hiddenBlock } from './support/two-homes.ts';
 import * as invites from '../lib/remote/invites.ts';
 import * as links from '../lib/room/links.ts';
 import type { Invites } from '../lib/remote/types-core.ts';
@@ -21,7 +21,6 @@ import { tokenOf } from './support/brands.ts';
 import { must } from './support/must.ts';
 
 const reason = (r: MachineRun) => must(must(r.json, 'a hook answer').reason, 'a reason');
-const hiddenBlock = (r: MachineRun) => r.json && r.json.decision === 'block' && r.json.hookSpecificOutput && r.json.hookSpecificOutput.suppressOriginalPrompt === true;
 
 function room(t: TestContext) {
   const host = new Machine(t, 'host'), remote = new Machine(t, 'remote');

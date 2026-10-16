@@ -7,52 +7,22 @@
  * online) and an admission (that invite's joiner, waiting for the host person's card: lib/remote/admission.ts). Zero
  * dependencies beyond node:crypto.
  *
- * A bound invite is for one machine, with its seats pre-bound, until expires_at:
- *   mintFor(store, {locator, machine, seats, pin?, hostKey?, now?}) -> {invite, secret, pin?, expires_at?}
- *       pin false (a handoff's, lib/handoff.ts): {v: 2, handoff: true, machine, seats, expires_at (HANDOFF_INVITE_MS)},
- *       minted by the room's next host before it is the host (so no HOST_ONLY check) and carried to that machine over
- *       its existing authenticated link, so it needs no PIN. pin true (a promote's, handed out by hand): the same record
- *       with pin_sha256 = sha256(secret:pin) (6 digits, never in the invite), INVITE_TTL_MS and INVITE_PIN_TRIES.
- *       hostKey: a ws/wss next host's listener key, pinned in the invite
- *   formatInvite({code, locator, secret, hostKey?}) -> "sh2.<code>.<locator-base64url>.<secret>.<hostKey | 0>"
- *   parseInvite(text) -> {v: 2, code, locator, secret, hostKey} | null
+ * A bound invite (mintFor) is for one machine, its seats pre-bound. A handoff's (lib/handoff.ts) is minted by the
+ * room's next host before it is the host (so no HOST_ONLY check) and carried to that machine over its existing
+ * authenticated link, so it needs no PIN. A promote's, handed out by hand, has a 6-digit PIN (never in the invite).
+ * It redeems on its machine only (INVITE_OTHER_MACHINE); a wrong PIN costs a try, the last burns it.
  *
- * An invite line's (lib/remote/hosting.ts hostInvite, webhost.ts hostWeb show it; lib/remote/invite-secret.ts its
- * SECRET word):
- *   mintInvite(store, {kind, locator, by?, now?}) -> {secret, pin, ref, expires_at}   secret: 16 random bytes (the line
- *       carries them, with the host key's tag); the record {v: 4, short, kind, locator, by, tries: INVITE_PIN_TRIES,
- *       pin_sha256 = sha256(secretId:pin), created_at, expires_at (INVITE_TTL_MS)}: no PIN in clear, so the host's own
- *       store gives nobody the PIN without the line. At most SHORT_LIVE_MAX open per room. Host only
- *   inviteOpen(record, now?) -> bool    an invite line's, not used, burnt or expired, a try left
+ * An invite line's (mintInvite; at most SHORT_LIVE_MAX open per room), redeemed in one hello (server.ts):
+ *   open: no pin is AUTH PIN_NEEDED and throttled (PIN_BACKOFF_MS doubling after each wrong PIN, per invite and per
+ *     source machine, the id its machine key proves) is PIN_THROTTLED, neither charged; a wrong PIN costs a try
+ *     (PIN_WRONG), the last burns it (PIN_LAST). The right one uses the invite, and an admission record (under
+ *     admissionSlot) waits for the host person's card: OFFLINE ADMIT_WAITING. A PIN goes only with a proven machine.
+ *   used: its admission decides (admission.ts check); let in, the link is made on the machine its key proved and, over
+ *     the web, bound to the Noise key it proved and to that one name. Another machine gets INVITE_USED, and the room a
+ *     line naming both checks (invite-secret.ts joinCheck), once per machine (`others`, at most OTHERS_MAX).
+ * A wrong PIN, the last try, a PIN that held and a second machine carry error.note, the room line.
  *
- * Redeeming (lib/remote/server.ts hello, the invite and its PIN in one hello):
- *   redeemInvite(store, secret, {machine, pin?, proven?, peerKey?, as?, newId?, now?}) -> {token, link,
- *       handoff, admission?}   secret: the secret as idOf gives it (base64url). machine: the id the hello reports;
- *       proven: the id the joiner's machine key gives (lib/remote/machine-key.ts); peerKey: the Noise key the
- *       connection proved (a web link's, XK), recorded on the link it makes; as: {name, label} the joiner asks to sit
- *       as; newId: the id a new link takes (a login session's --link, so kick finds its serve).
- *     A bound invite redeems on its machine only (INVITE_OTHER_MACHINE), before expires_at, and with its PIN when it
- *       has one (a wrong one costs a try, the last burns it).
- *     An invite line's, open:  no pin: AUTH PIN_NEEDED (nothing charged: the joiner is asked for the PIN);
- *       throttled (PIN_BACKOFF_MS doubling after each wrong PIN, per invite and per source machine): AUTH
- *       PIN_THROTTLED, nothing charged; a wrong PIN: a try gone (PIN_WRONG), the last burns it (PIN_LAST); the right
- *       one: the invite is used and an admission record {v: 2, admission, from, kind, by, machine: proven, name,
- *       label, key: peerKey, link, admit: 'asked'} waits for the host person under admissionSlot(secret), and the
- *       hello is OFFLINE ADMIT_WAITING. Every outcome but the first carries note, the room line.
- *     An invite line's, used: its admission decides (admission.ts check): waiting, refused, lapsed, or let in (then
- *       on the machine its key proved and, over the web, with the key it proved: the link is made, bound to that one
- *       name and that key). Another machine gets INVITE_USED, and the room a line naming both checks (invite-secret.ts
- *       joinCheck), once per machine (the admission's `others`, at most OTHERS_MAX)
- *     An unknown, used or burnt invite is AUTH with its reason (INVITE_UNKNOWN, INVITE_USED, INVITE_BURNT,
- *       INVITE_EXPIRED, ...); error.note is the room line
- *   admissionSlot(secret) -> string     the kv key of an invite line's admission: sha256(secret + "/admission")
- *   inviteRef(secret) -> string        the invite's short public name: 12 hex of sha256(secret), its record key's start
- *   findInvite(store, ref) -> {key, invite} | null   the one invite whose ref is ref
- *   burnInvite(store, ref, {now?}) -> {state, invite}   burn one unused invite (a leaked one): 'burnt', 'burnt already'
- *                                      or 'used' (then nothing changes). AUTH for no invite with that ref
- *   burnFor(store, linkId, {now?}) -> n   burn every invite reserved for that link (host-links.ts revokeLink)
- *   PIN_RE /^[0-9]{6}$/ (a promote's), SHORT_PIN_RE /^[0-9]{4}$/, INVITE_PREFIX 'sh2', INVITES_KEY 'remote/invites'
-  *   isPin(v), isShortPin(v) (4 digits), isPromotePin(v) (6)   a PIN: the guards that makes the Pin brand (lib/brand.ts), a secret (lib/cli/doctor/redact.ts redact)
+ * isPin and its kin make the Pin brand (lib/brand.ts), which lib/cli/doctor/redact.ts treats as a secret.
  */
 
 import crypto from 'node:crypto';
@@ -145,7 +115,7 @@ function checkBound(inv: BoundInvite, secret: string, pin: unknown, now: number)
 /** The kv key of an invite line's admission (the record the host person's card decides). */
 const admissionSlot = (secret: string): string => sha256(`${secret}/admission`);
 
-/** An invite line's record that may still be used: protocol 3's, not used, burnt or expired, a try left. */
+/** An invite line's record that may still be used: not used, burnt or expired, a try left. */
 const inviteOpen = (inv: unknown, now: number = Date.now()): inv is ShortInvite => {
   const i = inv as InviteRecord | null | undefined; // a stored record, read unchecked
   return !!i && i.short === true && i.v === 4 && !i.used_at && !i.burnt_at && now <= Date.parse(i.expires_at) && i.tries > 0;
@@ -253,10 +223,9 @@ function redeemInvite(store: AuthStore, secret: string, { machine, pin, proven =
 }
 
 /**
- * An invite line to this room (protocol 3): 16 random bytes the line carries, and a 4-digit PIN the host person tells
- * apart; the host keeps sha256(secret) as the record's key and sha256(secret:PIN), so its own store gives the PIN to
- * nobody who lacks the line. kind: the transport it is for ('ssh', 'ws', 'pipe'); by: the seat whose card admits the
- * joiner (null: any seat of the host's machine).
+ * An invite line to this room: 16 random bytes the line carries, and a 4-digit PIN the host person tells apart; the
+ * host keeps sha256(secret) as the record's key and sha256(secret:PIN), so its own store gives the PIN to nobody who
+ * lacks the line. by: the seat whose card admits the joiner (null: any seat of the host's machine).
  */
 function mintInvite(store: AuthStore, { kind, locator, by = null, now = Date.now() }: {
   kind: string; locator: string; by?: string | null; now?: number;

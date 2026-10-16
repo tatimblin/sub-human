@@ -4,28 +4,11 @@
  * file's handle) relays one op and reads one reply. Loading this file loads no store and no daemon: handle runs on
  * every writing hook's bridge worker.
  *
- *   socketPath(dir) -> string      one per room and home, from the mirror's directory alone (never TMPDIR: a daemon a
- *                                  listener, sshd or a handoff started and the session's hooks need not share it):
- *                                  <dir>/.link/link.sock, or, when that is longer than a socket path may be (103
- *                                  bytes, macOS), /tmp/sub-human-<uid>/<hash12(dir)>/link.sock. Each directory is
- *                                  0700, a real directory and ours: the daemon refuses any other, a hook skips it.
- *                                  The daemon records the path it bound in its document `link` (socket)
- *   socketPaths(dir, doc?) -> string[]   where a hook looks, in order: doc.socket, then socketPath(dir)
- *   handle(method, params) -> Promise<result>   the bridge handler, params {socket, params}: one op (RELAY) over the first
- *                                  socket (one path or socketPaths' list) that accepts the connection, the result as the
- *                                  wire has it (an error with its code and reason); OFFLINE DAEMON_DOWN when no daemon is
- *                                  listening (nothing is started from a hook's call)
- *   listen(file, relay) -> Promise<net.Server>   the daemon's end: a server on the socket file, in a directory only this
- *                                  user can enter (AUTH otherwise); a stale socket file is replaced, a live one is LOCK.
- *                                  relay(op, params) -> Promise<result> answers each hook's one op
- *   status(code) -> {running, pid?, state?, since?, reason?, code?, why?}   the daemon's document `link`; running: its
- *                                  pid lives; code: the RoomError that stopped it (AUTH, PROTOCOL, FORK), why its reason
- *   stopReason(doc) -> {code, reason, why} | null   why a stopped link stopped (a hook whose op met a daemon that hung up
- *                                  or is gone reports this, e.g. AUTH "this invite is unknown or was used already")
- *   start(code) -> bool            start the daemon detached (`scripts/sub-human link CODE`; stdout and stderr to
- *                                  lib/room/links.ts logFile) unless it runs; wait up to LINK_START_MS for it to listen
- *   RELAY                          the ops a hook may relay: join leave beat append blob.get blob.put handoff.accept
- *                                  handoff.refuse
+ * socketPath is one per room and home, from the mirror's directory alone: <dir>/.link/link.sock, or, when that is
+ * longer than a socket path may be, /tmp/sub-human-<uid>/<hash12(dir)>/link.sock (never TMPDIR: see shortBase). Each
+ * directory is 0700, a real directory and ours: the daemon refuses any other (AUTH), a hook skips it. handle answers
+ * OFFLINE DAEMON_DOWN when no daemon listens; nothing is started from a hook's call. A stale socket file is replaced,
+ * a live one is LOCK.
  */
 
 import fs from 'node:fs';

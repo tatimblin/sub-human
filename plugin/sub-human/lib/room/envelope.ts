@@ -8,16 +8,8 @@
  * from, nonce and ts, as JSON with sorted keys. The server stamps id, at and prev afterwards, so a signature
  * made on one machine stays valid wherever the line lands.
  *
- *   SIG_VERSION = 2
- *   signable(e) -> string            the bytes a v2 sig covers (sorted keys; id, at, prev, sig left out)
- *   sign(payload, key, {room, from, now?}) -> payload with room, from, nonce, ts, sigv: 2, sig (base64)
- *   verify(e, pub) -> bool           a v2 sig (e.sigv === 2, or e.nonce set) over signable(e)
- *   isV2(e) -> bool
- *   newNonce() -> string             16 random bytes, hex
- *   freshTs(e, now?, skewMs?) -> bool   |now - e.ts| <= skewMs (SIG_SKEW_MS): the replay bound, with the nonce
- *   parseKey(pem) -> KeyObject|null  an Ed25519 SPKI PEM public key (member_joined pubkey), else null
- *   pinnedKeys(entries) -> Map name -> KeyObject   the FIRST member_joined pubkey seen per name (first sight pins)
- *   keyed(entries) -> bool           the room pins at least one key: it never accepts a `legacy` answer
+ * A v2 entry has sigv === 2 or a nonce. freshTs (|now - ts| <= SIG_SKEW_MS) with the nonce is the replay bound.
+ * First sight pins a name's key; a keyed room (one pin or more) never accepts a `legacy` answer.
  */
 
 import crypto from 'node:crypto';
@@ -41,11 +33,7 @@ function sorted(v: unknown): unknown {
   return out;
 }
 
-/**
- * The bytes a v2 signature covers: e without PLACED_FIELDS, JSON with keys sorted at every level.
- * @param {object} e
- * @returns {string}
- */
+/** The bytes a v2 signature covers: e without PLACED_FIELDS, JSON with keys sorted at every level. */
 function signable(e: object): string {
   const rest: Record<string, unknown> = { ...e };
   for (const k of PLACED_FIELDS) delete rest[k];
@@ -55,45 +43,25 @@ function signable(e: object): string {
 const isV2 = (e: Signable | null | undefined): boolean => !!e && (e.sigv === SIG_VERSION || typeof e.nonce === 'string');
 
 
-/** @returns {string} 16 random bytes as hex */
+/** 16 random bytes as hex. */
 const newNonce = (): string => crypto.randomBytes(16).toString('hex');
 
-/**
- * Sign payload with the seat's private key: adds room, from, nonce, ts, sigv and sig, and returns the new object.
- * @param {object} payload   the validated entry fields (lib/room/validate.ts)
- * @param {import('node:crypto').KeyObject} key   the seat's Ed25519 private key (hooks/seat-key.ts)
- * @param {{room: string, from: string, now?: number}} ctx
- * @returns {object}
- */
+/** Sign the validated payload with the seat's Ed25519 private key (hooks/seat-key.ts): a new object with the Envelope. */
 function sign<P extends object>(payload: P, key: KeyObject, { room, from, now = Date.now() }: { room: string; from: string; now?: number }): P & Envelope {
   const e = { ...payload, room, from, nonce: newNonce(), ts: now, sigv: SIG_VERSION };
   return { ...e, sig: crypto.sign(null, Buffer.from(signable(e), 'utf8'), key).toString('base64') };
 }
 
-/**
- * Whether e's v2 sig verifies against pub, over signable(e).
- * @param {object} e
- * @param {import('node:crypto').KeyObject} pub
- * @returns {boolean}
- */
+/** Whether e's v2 sig verifies against pub, over signable(e). */
 function verify(e: Signable | null | undefined, pub: KeyObject | null | undefined): boolean {
   if (!e || typeof e.sig !== 'string' || !pub || !isV2(e)) return false;
   try { return crypto.verify(null, Buffer.from(signable(e), 'utf8'), pub, Buffer.from(e.sig, 'base64')); } catch { return false; }
 }
 
-/**
- * @param {object} e
- * @param {number} [now]
- * @param {number} [skewMs]
- * @returns {boolean}
- */
 const freshTs = (e: Signable | null | undefined, now: number = Date.now(), skewMs: number = SIG_SKEW_MS): boolean =>
   !!e && typeof e.ts === 'number' && Number.isFinite(e.ts) && Math.abs(now - e.ts) <= skewMs;
 
-/**
- * @param {string} pem
- * @returns {import('node:crypto').KeyObject|null}
- */
+/** An Ed25519 SPKI PEM public key (a member_joined pubkey), else null. */
 function parseKey(pem: unknown): KeyObject | null {
   if (typeof pem !== 'string') return null;
   try {
@@ -102,11 +70,7 @@ function parseKey(pem: unknown): KeyObject | null {
   } catch { return null; }
 }
 
-/**
- * The public key pinned for each name: the first member_joined entry carrying pubkey, in log order.
- * @param {object[]} entries
- * @returns {Map<string, import('node:crypto').KeyObject>}
- */
+/** The public key pinned for each name: the first member_joined entry carrying pubkey, in log order. */
 function pinnedKeys(entries: readonly (Entry | null | undefined)[] | null | undefined): Map<string, KeyObject> {
   const pins = new Map<string, KeyObject>();
   for (const e of entries ?? []) {
@@ -117,10 +81,6 @@ function pinnedKeys(entries: readonly (Entry | null | undefined)[] | null | unde
   return pins;
 }
 
-/**
- * @param {object[]} entries
- * @returns {boolean}
- */
 const keyed = (entries: readonly (Entry | null | undefined)[] | null | undefined): boolean => pinnedKeys(entries).size > 0;
 
 export {

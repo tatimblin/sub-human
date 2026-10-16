@@ -4,50 +4,21 @@
  * model) and the CLI (lib/cli/host.ts). The joiner's side is joinLine() and givePin() below; the dial is the link
  * daemon's (lib/remote/link-connect.ts connectLink).
  *
- *   hostInvite(code, {ssh?, via?, pipe?, by?, now?}) -> {pin, ref, expires_at, short: true, locator, line, word, text}
- *       An invite line (protocol 3): `/sub-human join DEST ROOM SECRET [--via J] [--home H]`, and beside it a 4-digit
- *       PIN the person tells apart (invites.mintInvite; SECRET: lib/remote/invite-secret.ts, its tag naming this home's
- *       machine key). ssh (the default): true for this machine's own address (SUB_HUMAN_SSH_ADDR, else
- *       <user>@<hostname>), or "user@host[:port]"; via: a ProxyJump for the joiner ("bastion", "me@jump:2222"); home:
- *       added when this home is not ~/.sub-human. Over ssh the joiner's own ssh login to this account runs the stable
- *       serve shim (lib/remote/shim.ts refresh: it must be writable); nothing is written to authorized_keys, and a
- *       joiner without a login here is invited over the web instead (webhost.ts). pipe: a second home on this machine
- *       (`/sub-human join pipe:HOME ROOM SECRET`; tests and the demo). by: the seat whose card admits the joiner
- *       (lib/remote/admission.ts). text: the copyable block for the person, with the PIN apart from the line
- *   inviteText({code, how, line, pin, ref, extra?}) -> string   that block (webhost.ts shows a web line with it)
- *   cancelInvite(code, ref?) -> {ref?, refs?, text}   burn one unused invite (a leaked one) by its ref; with no ref, the
- *       one open invite, or the list of them when there are several. One reserved for or used by a link ends that
- *       link (kick)
- *   kick(code, name) -> {id, seats, text}   end the link NAME joined over: its token stops
- *       working (hostLinks.revokeLink, which also burns an invite reserved for it), its seats leave ("removed by the
- *       host"), and a room line says so. Every live `serve` of the link sees its record go (lib/remote/server.ts held:
- *       the stream ends AUTH LINK_REVOKED, every op is refused, the connection closes), whatever its argv; one that
- *       names `--link ID` (ssh) is also sent SIGTERM. A joiner still
- *       waiting for the card: its reserved link. A link made over this account's own ssh login (hostLinks.loginLink):
- *       its token goes and its serve is stopped, and the text says that login can link again
- *   linkTransport({inv, cur?}) -> LinkSpec | null   the link transport for an sh2 invite (internal: a handoff's
- *       follower, lib/handoff.ts onMoved, afterMoved, demote): over ssh the person's own ssh login to the new host (a
- *       login spec: its user, host, port and jump; mux and, for the same destination, the remote home kept from cur);
- *       over ws/wss the pinned listener key and a fresh key of the link's own (XK). null for a locator this machine
- *       cannot use
- *   joinInvite({inv, invite, pin}) -> {code}   the link file for an sh2 invite (demote: a machine follows a promoted
- *       room with the invite promote printed for it). RoomError INVALID for a locator this machine cannot use
- *   shimReady() -> {shim, h}   the stable serve shim written and the plain home path it carries (an ssh login runs it);
- *       RoomError INVALID under a temp plugin root or a home path ssh cannot carry
- *   outcome(code, {waitMs?}) -> {state: 'linked' | 'pin' | 'refused' | 'waiting', reason?}   the link daemon's hellos,
- *       watched for up to waitMs (LINK_JOIN_WAIT_MS): linked, pin (the host asks for the PIN, or the last one was wrong
- *       or too soon: reason), refused (its reason: a burnt or expired invite, a host key the line does not name, a
- *       protocol skew), or waiting (the host's card not answered yet, or slow)
- *   joinLine({code, transport, word, name, sid?}) -> {code}   an invite line's link file before any dial: the transport
- *       (a web one with a fresh key of the link's own), the SECRET word (invite) and join_as, the seat's name once the
- *       host lets this machine in (a bare /sub-human finishes the join); join_sid: the session that typed it, whose
- *       tail tells the person when that happened (lib/remote/joining.ts pendingNews)
- *   givePin(code, pin) -> void   the PIN into that link file (dropped once the host answered it)
- *   joinText(code, name, outcome, {tells}?) -> string   what the joiner's person reads next; tells: this session's tail
- *       says when the host lets them in (the session that typed the line)
- *   remoteLogin() -> 'on' | 'off' | null   whether this machine takes ssh logins (macOS: Remote Login, launchctl;
- *       Linux: an sshd process or an active ssh socket unit); null when it cannot tell. SUB_HUMAN_REMOTE_LOGIN=on|off
- *       says it instead (tests). No network: an ssh invite then carries a hint when it is off
+ * hostInvite: an invite line `/sub-human join DEST ROOM SECRET [--via J] [--home H]` and a 4-digit PIN the person
+ * tells apart (SECRET's tag names this home's machine key: lib/remote/invite-secret.ts). Over ssh the joiner's own
+ * ssh login to this account runs the stable serve shim (shim.ts: it must be writable); nothing is written to
+ * authorized_keys, and a joiner without a login here is invited over the web instead (webhost.ts). pipe: a second
+ * home on this machine (tests and the demo). by: the seat whose card admits the joiner (admission.ts).
+ *
+ * kick ends the link NAME joined over (or the link reserved for a joiner still waiting for the card): its token stops
+ * working (hostLinks.revokeLink, which also burns an invite reserved for it), its seats leave, a room line says so.
+ * Every live `serve` of the link sees its record go (server.ts held), whatever its argv; one that names `--link ID`
+ * (ssh) is also sent SIGTERM. A login link's account can link again; the text says so. cancelInvite with no ref
+ * picks the one open invite, or lists them when there are several.
+ *
+ * outcome watches the link daemon's hellos for up to LINK_JOIN_WAIT_MS: linked, pin (asked, or the last was wrong or
+ * too soon), refused, or waiting (the card not answered yet, or slow). remoteLogin: whether this machine takes ssh
+ * logins (null: cannot tell; SUB_HUMAN_REMOTE_LOGIN=on|off says it in tests); no network.
  */
 
 import os from 'node:os';
@@ -169,12 +140,6 @@ function reachHints(dest: string, defaulted: boolean): string[] {
 }
 
 /**
- * The text an invite is shown with: the one line the joiner types, the PIN apart from it, and what happens next on
- * this side (the card).
- */
-/** The clock time an invite stops working, as the person reads it (their local time). */
-
-/**
  * The invite's text and its pinned form: the line and the PIN on one status line (drawn under the prompt, never saved
  * in the conversation's transcript), and the text that says where they are instead.
  */
@@ -193,6 +158,7 @@ function invitePinned({ code, how, line, pin, ref, expires_at, extra = [] }: { c
   };
 }
 
+/** The text an invite is shown with: the line the joiner types, the PIN apart from it, and what happens next here. */
 function inviteText({ code, how, line, pin, ref, extra = [], pinned, cut = false }: { code: RoomCode; how: string; line: string; pin: string; ref: string; extra?: string[]; pinned?: string; cut?: boolean }): string {
   const send = pinned && cut
     ? [
@@ -398,7 +364,7 @@ function joinText(code: RoomCode, name: SeatName, o: Outcome, { tells = false }:
     return `${o.reason ? `${o.reason}` : `the host's machine has your invite${left}. Type the 4-digit PIN they told you`}: /sub-human join PIN`;
   }
   if (lf.awaiting) {
-    // no name yet: the host's card picks it (NAME2 when NAME sits in the room from another machine: stage 8e I.9)
+    // no name yet: the host's card picks it (NAME2 when NAME sits in the room from another machine)
     return `the host's machine checked your PIN. A card there now asks them to let you in (${lf.awaiting.check}). `
       + (tells ? 'This session tells you when they do; then type /sub-human to join' : 'Once they do, type /sub-human to join')
       + ` (the request waits ${minutes(configMod.ADMIT_TTL_MS)} minutes)`;

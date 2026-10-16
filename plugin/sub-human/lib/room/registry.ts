@@ -1,35 +1,19 @@
 /**
  * plugin/sub-human/lib/room/registry.ts: which RoomStore a room code opens, and the rooms on this machine.
  *
- *   open(code, {dir}?) -> RoomStore   cached per home and code: a room this machine links to (lib/room/links.ts) is a
- *       MirrorRoomStore (lib/room/store-mirror.ts), any other an FsRoomStore (lib/room/fs-store.ts); a link written or
- *       removed since (a handoff) gives the other kind at the next open. {dir} (and only then) gives an uncached
- *       FsRoomStore over that directory.
- *   forget(code)                 drop the cached store of room code (this home): the next open() decides its kind again
- *   setBackend(factory|null)     tests: every open() then returns factory(code)
- *   roomExists(code)             a room directory or a link; a leftover (isLeftover) is no room
- *   isLeftover(code) -> bool     a room directory with no link, no members document and no log, made more than
- *                                LEFTOVER_MS ago (its birth time, or its mtime when earlier or no birth time is kept): what a process still holding a forgotten room's seat wrote (item 9 R1),
- *                                never a room hosted here; `sub-human link CODE --forget` sets it aside
- *   setAsideLeftover(code, now?) -> path   that folder moved to rooms/CODE.forgotten-TIME
- *   createRoom(code) -> bool     private and exclusive: false when it exists already
- *   listRooms() -> [code]        every room directory (mirrors are directories too)
- *   indexedRooms() -> [code]     the rooms that may be open: <home>/open-rooms.json, kept at open (createRoom), at
- *       every seat's join (indexRoom, lib/identity.ts join) and at close (unindexRooms: lib/identity.ts drops a room once
- *       it is closed for good, every seat left and its room Claude stopped; lib/gc.ts a room it deletes). A home from
- *       before the index builds it once from every room directory. lib/identity.ts openRooms judges only these, not
- *       every room ever made.
- *   indexRoom(code), unindexRooms([code])
- *   lastChange(code) -> ms       the newest mtime among the room directory and its entries (0: no directory)
- *   setAsideRoom(code, now?) -> name   the room's directory moves to rooms/CODE.gc-TIME and its seat keys to
- *                                keys/CODE.gc-TIME, unindexed (lib/gc.ts only, for a room closed for good that nobody
- *                                touched in ROOM_GC_MS); nothing is deleted yet
- *   asideRooms() -> [{name, at}] the folders set aside: `sub-human link --forget`'s (rooms/CODE.forgotten-TIME) and
- *                                GC's (rooms/CODE.gc-TIME), by mtime
- *   removeAside(name)            delete one, with the seat keys GC set aside under the same name
- *   trustOf(e) -> HumanTrust|null   an entry judged by the store of the room it names (e.room, which every signed
- *       entry carries); an entry of no named room is judged with trust.ts NO_TRUST (never verified). A caller that
- *       read e from a store passes that store's trust instead (RoomStore.trust): this is the fallback.
+ *   open(code) is cached per home and code: a room this machine links to (lib/room/links.ts) is a MirrorRoomStore,
+ *       any other an FsRoomStore; a link written or removed since (a handoff) gives the other kind at the next open.
+ *       {dir} (and only then) gives an uncached FsRoomStore over that directory. forget(code) drops the cached one.
+ *   isLeftover: a room directory with no link, no members document and no log, made more than LEFTOVER_MS ago: what
+ *       a process still holding a forgotten room's seat wrote, never a room hosted here (roomExists says no; `sub-human
+ *       link CODE --forget` sets it aside as rooms/CODE.forgotten-TIME).
+ *   indexedRooms: the rooms that may be open, <home>/open-rooms.json, kept at createRoom, at every seat's join
+ *       (lib/identity.ts) and at close (unindexRooms: lib/identity.ts once a room is closed for good, lib/gc.ts a room
+ *       it deletes). A home without the index builds it once from every room directory. lib/identity.ts openRooms
+ *       judges only these, not every room ever made.
+ *   trustOf(e): an entry judged by the store of the room it names (e.room, which every signed entry carries; none:
+ *       NO_TRUST, never verified). A caller that read e from a store passes that store's trust instead: this is the
+ *       fallback.
  */
 
 import fs from 'node:fs';
@@ -72,7 +56,7 @@ function open(c: RoomCode, { dir }: { dir?: string | undefined } = {}): RoomStor
 const forget = (c: RoomCode): void => { stores.delete(`${home()}\0${c}`); };
 const setBackend = (fn: ((code: RoomCode) => RoomStore) | null | undefined): void => { backend = typeof fn === 'function' ? fn : null; };
 /** A just-made room has no members document or log for a moment: a folder made less than this ago is never a
- * leftover. Made, not written: a stray process's writes into a leftover kept its mtime young (stage 8e I.10). */
+ * leftover. Made, not written: a stray process's writes into a leftover keep its mtime young. */
 const LEFTOVER_MS = 60_000;
 function isLeftover(c: RoomCode): boolean {
   const d = roomDir(c);

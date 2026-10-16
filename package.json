@@ -10,7 +10,6 @@
     "test:plugin": "node --test --import ./plugin/sub-human/test/helpers.ts 'plugin/sub-human/test/**/*.node-test.ts'",
     "test:scripts": "node --test --import ./plugin/sub-human/test/helpers.ts 'scripts/test/**/*.test.ts'",
     "test:mods": "node scripts/test-mods.ts",
-    "test:thread-store": "SUB_HUMAN_TEST_THREAD_STORE=1 NODE_OPTIONS=\"--import $PWD/plugin/sub-human/test/support/thread-store.ts\" node --test 'plugin/sub-human/test/hooks/*.node-test.ts'",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.runtime.json && tsc -p scripts/tsconfig.json && node scripts/typecheck-shim.ts",
     "lint": "node scripts/lint.ts",
     "validate": "claude plugin validate plugin/sub-human --strict",

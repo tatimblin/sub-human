@@ -2,14 +2,6 @@
  * plugin/sub-human/lib/cc/bg.ts: `claude --bg` jobs (the room's Claude), the bg daemon and the env it keeps from a dispatch.
  *
  * `@cc` tags as in lib/cc/env.ts. The runners take a spawnSync stand-in (`run`) so tests spawn nothing.
- *
- *   JOB_RE, parseDispatch(text), agentsCmd(all), stopCmd(id), parseAgentsJson(text), jobs(opts)
- *   parseDaemonStatus(text), daemonStatus(opts)   `claude daemon status`: {running, pid, version}
- *   exeState(pid, {readlink?, ps?, exists?}) -> {exe, deleted}|null   the executable a process runs, and whether it
- *                                        was deleted since (an upgrade): /proc/PID/exe on Linux, `ps -o comm=` elsewhere
- *   runningVersion(pid) -> string|null   the version the Claude Code process pid runs (exeState's path, else --version)
- *   DAEMON_ENV_ALLOW, daemonEnv(env)     the keys the daemon keeps from a dispatch: contract.json daemon-env-allowlist's
- *                                        `contains` groups, which the probe checks are still in the binary's arrays
  */
 
 import fs from 'node:fs';

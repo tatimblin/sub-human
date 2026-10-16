@@ -6,7 +6,15 @@ Each release names the Claude Code versions it was tested on. Marketplace instal
 
 Hardening from the October 2026 review (branch `fix/stage0-hardening`).
 
-**Restart every session after you update.** This release keeps a room's log in segments. A session, a room's Claude or a `serve` still running 0.5.0-beta.15 or before reads a split log as broken (a few lines, then "hash chain breaks"). A log does not split while a seat or room Claude of an older version may still run on its machine: the room says so once ("this room's log is large and waits to split…"), and it splits after those sessions restart (`/exit`, then `claude`).
+**Restart every session after you update.** This release keeps a room's log in segments. A session, a room's Claude or a `serve` still running 0.5.0-beta.15 or before reads a split log as broken (a few lines, then "hash chain breaks").
+
+**No compatibility with 0.5.0-beta.15 or before.** Both machines of a link must run this version: the protocol is 3 only, and an older peer is told to update. Links made with beta.15 stop working: join again with a new invite line. On a host that ran beta.15 over ssh, remove the `authorized_keys` lines ending `sub-human:ROOM:ID` or `sub-human-enroll:ROOM` (nothing uses or removes them now).
+
+### Removed
+- Protocol 1–2: Noise NK over the web, ssh links with their own key and pinned known_hosts (forced-command `serve --link` without `--login`), `serve --enroll`, the listener's `enroll.start` answer, beta.15's invite and admission records, and the capability checks every protocol-3 peer passes.
+- `sub-human doctor`'s `authorized_keys` scan, `--authorized-keys` and its `--fix` of enrollment doors; `sub-human kick --file`.
+- The store's upgrade paths: the `log_v` rotation hold, the per-seat session documents of beta.15, old note flags, `log.idx`, old closing marks, the pre-release entry kinds (`concern`, `agree`, `plan_rev`, `revoke`, `plan_hash`), v1 signatures, absolute plan paths, and the automatic mode repair on open (`doctor --fix` still repairs).
+- The thread-store test mode (`npm run test:thread-store`); the store contract runs a real mirror over the bridge instead.
 
 ### Security
 - **An admitted machine joins as the one name on the host's card.** The link a Let in makes was not bound to that name: it could take any name no live seat held, and as many seats as it liked (each a member_joined the room's Claude answers). A bound link (an admission's name, a handoff's or promote's pre-bound seats) now joins only those names; another is `AUTH` before a seat is taken.

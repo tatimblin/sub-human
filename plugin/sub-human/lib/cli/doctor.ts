@@ -6,25 +6,10 @@
  * and its stderr), listener.ts (the web listener), claude.ts (Claude Code, the bg daemon, the
  * room's Claude, hooks, Remote Control), redact.ts (the bundle); check.ts what they share.
  *
- *   sub-human doctor [--quick] [--fix] [--json] [--bundle [FILE]] [--timeout MS]
- *       --quick    skip the slow checks: the hello to each link's host and the Claude Code internals probe
- *       --fix      first refresh the serve shim and pointer (lib/remote/shim.ts refresh) and repair the home's
- *                  modes (lib/home.ts repairModes)
- *       --json     the report as JSON (unredacted: it stays on this machine)
- *       --bundle   write the redacted bundle (default ./sub-human-doctor-<time>.json) and print its path
- *       --timeout  the hello's deadline per link (default DOCTOR_HELLO_MS, 8 s)
- *   Exit 1 when a check fails, else 0.
- *
- * Checks, each {id, status: pass|warn|fail|info, title, detail, fix?}, in this order:
- *   plugin, node (24.3 or newer), home (the home and its store directories are 0700 and this user's): here
- *   shim, ssh: doctor/ssh.ts;  link:CODE, clock:CODE: doctor/links.ts;  room:CODE (each hosted room's
- *   log: its hash chain and every person's line verified): doctor/rooms.ts
- *   room-claude:CODE, claude, daemon, hooks, remote_control: doctor/claude.ts;  listener, web:CODE: doctor/listener.ts
- *
- *   diagnose(opts) -> Promise<Report>   Report = {generated_at, versions, checks, links}
- *   format(report, {color}?) -> string
- *   main(args) -> Promise<exitCode>;  parseArgs(args) -> options (lib/cli/args.ts; Error with the usage)
- *   checkNode(version?), and every check the doctor/ modules export, re-exported here for the tests
+ * --fix refreshes the serve shim and pointer (lib/remote/shim.ts refresh) and repairs the home's modes (lib/home.ts
+ * repairModes); --json is unredacted (it stays on this machine); --quick skips the hello to each link's host and the
+ * Claude Code internals probe. Exit 1 when a check fails. Each check is {id, status: pass|warn|fail|info, title,
+ * detail, fix?}; the doctor/ modules' checks are re-exported here for the tests.
  */
 import fs from 'node:fs';
 import os from 'node:os';

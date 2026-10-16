@@ -5,36 +5,14 @@
  * names one (a corporate network that allows only CONNECT to 443). Node's global WebSocket is not used: it has no
  * proxy support. No extensions (no permessage-deflate) and no subprotocols are negotiated.
  *
- *   Conn (an EventEmitter), one open WebSocket
- *     send(data)                 a Buffer goes as one binary message, a string as one text message (no-op once closing)
- *     ping(data?)                a ping frame (the peer answers pong; a browser-style client answers by itself)
- *     close(code?, reason?)      the close handshake (1000): a close frame, then the TCP end once the peer's comes
- *                                back (or after CLOSE_WAIT_MS)
- *     terminate()                drop the socket now (1006)
- *     state                      'open' | 'closing' | 'closed'
- *     events: 'message' (data: Buffer, isBinary), 'ping' (data), 'pong' (data), 'close' (code, reason) once,
- *             'error' (err) only with a listener (a protocol error closes with 1002/1007/1009 and emits close)
- *     A frame or a reassembled message larger than maxPayload (default 1 MiB) closes 1009. Fragmented messages are
- *     reassembled; control frames may come between fragments. A server refuses unmasked client frames, a client
- *     masked server frames (1002). Text must be valid UTF-8 (1007). pingMs > 0: a ping every pingMs, and no frame
- *     at all from the peer for two intervals terminates the connection (a half-open link; it also keeps idle
- *     proxies from cutting it).
- *   accept(req, socket, head, {maxPayload?, pingMs?}) -> Conn | null   the server's half of an http 'upgrade': checks
- *       GET, Upgrade: websocket, Connection: upgrade, Sec-WebSocket-Version 13 and a 16-byte key; answers 101 (or 400
- *       / 426 and null)
- *   createServer({host?, port, onConnection(conn, req), accept?(req) -> bool | number, maxPayload?, pingMs?})
- *       -> Promise<http.Server>   listening on host (default 127.0.0.1; port 0 picks one). A plain request is 426;
- *       accept(req) false (or an HTTP status) refuses the upgrade before the 101 (404 by default)
- *   connect(url, {proxy?, headers?, maxPayload?, pingMs?, timeoutMs?, tls?, env?}) -> Promise<Conn>
- *       url ws://, wss:// (http:// and https:// are taken as the same). proxy: an http:// (or https://) CONNECT proxy
- *       URL, default proxyFor(url, env). tls: extra tls.connect options (tests pass ca); the system CAs and
- *       NODE_EXTRA_CA_CERTS apply as for any node TLS. Rejects an Error with code WS_CONNECT and a message that says
- *       which step failed (proxy, TLS, the HTTP status) within timeoutMs (default 15 s)
- *   proxyFor(url, env?) -> string | null   wss/https: HTTPS_PROXY or https_proxy (else ALL_PROXY / all_proxy); ws/http:
- *       HTTP_PROXY or http_proxy. None for a host NO_PROXY / no_proxy names ("*", a host, ".suffix" or "suffix" for
- *       the domain and its subdomains, host:port) or a loopback host (localhost, 127.x, ::1)
- *   acceptKey(key) -> string    base64(sha1(key + GUID))
- *   MAX_PAYLOAD                 1 MiB, the default maxPayload of a message
+ * A frame or a reassembled message larger than maxPayload (default 1 MiB) closes 1009. Fragmented messages are
+ * reassembled; control frames may come between fragments. A server refuses unmasked client frames, a client masked
+ * server frames (1002). Text must be valid UTF-8 (1007). 'error' is emitted only with a listener; a protocol error
+ * closes and emits close. pingMs > 0: a ping every pingMs, and no frame at all from the peer for two intervals
+ * terminates the connection (a half-open link; it also keeps idle proxies from cutting it). connect rejects an Error
+ * with code WS_CONNECT and a message that says which step failed (proxy, TLS, the HTTP status). proxyFor: wss/https
+ * reads HTTPS_PROXY (else ALL_PROXY), ws/http HTTP_PROXY, either case; none for a host NO_PROXY names ("*", a host,
+ * ".suffix" or "suffix" for the domain and its subdomains, host:port) or a loopback host.
  */
 
 import net from 'node:net';

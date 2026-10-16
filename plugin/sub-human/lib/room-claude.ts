@@ -5,62 +5,35 @@
  * Nobody launches it by hand; for debugging, `node lib/room-claude.ts cmd CODE` prints
  * the exact command and `node lib/room-claude.ts spawn CODE` runs it (both from the cwd the room's Claude should work in).
  *
- *   spawnPlan({code, cwd, home?, pluginDir?, env?}) -> {bin, args, env, cwd}
- *       env is what the `claude` client needs to run and reach the bg daemon: the login basics (HOME USER
- *       LOGNAME SHELL PATH TERM LANG TMPDIR) plus the keys the daemon keeps from a dispatch (cc.daemonEnv:
- *       CLAUDE_CONFIG_DIR, provider, model, endpoint and credential-file keys). Nothing else from the parent
- *       (no CLAUDE_PID / session id, no SUB_HUMAN_*): the daemon would drop it anyway. The room Claude's own env
- *       comes from the --settings launch flag: SUB_HUMAN_HOME, SUB_HUMAN_ROOM, CLAUDE_CODE_TASK_LIST_ID=sh-CODE,
- *       CLAUDE_CODE_ENABLE_TODO_TOOLS=1, the spawner's SUB_HUMAN_*_MS timing overrides (env.timingEnv), plus
- *       crossSessionInbound "accept". No --model: the room's Claude runs on the
- *       user's default model. cwd is the joiner's: --bg refuses an untrusted cwd (a fresh temp dir is never
- *       trusted). No file is written into ~/.claude: the room's Claude creates the "room CODE open" task.
+ * The launch (spawnPlan): the env is only what the `claude` client needs to run and reach the bg daemon (the login
+ * basics plus cc.daemonEnv's allowlist; no CLAUDE_PID, session id or SUB_HUMAN_*: the daemon would drop them). The
+ * room Claude's own env comes from the --settings launch flag: SUB_HUMAN_HOME, SUB_HUMAN_ROOM,
+ * CLAUDE_CODE_TASK_LIST_ID=sh-CODE, CLAUDE_CODE_ENABLE_TODO_TOOLS=1, the spawner's SUB_HUMAN_*_MS overrides, plus
+ * crossSessionInbound "accept". No --model: it runs on the user's default model. cwd is the joiner's: --bg refuses
+ * an untrusted cwd (a fresh temp dir is never trusted). Nothing is written into ~/.claude, and nothing there is ever
+ * deleted.
  *
- * Host only (the host decides): claimSpawn, reapDetached and watchdog do nothing on a machine that
- * does not hold the room (identity.isHost false: null, null, 'not-host'), so the room's Claude runs only where it was spawned.
+ * Host only: claimSpawn, reapDetached and watchdog do nothing on a machine that does not hold the room, so the
+ * room's Claude runs only where it was spawned.
  *
- * Starting (one room Claude per room, even with concurrent joins):
- *   needsSpawn(code, now?) -> bool   no room Claude record, it left or was stopped, its bound pid is dead (pid + start
- *       time), a {job:"pending"} claim older than ROOM_CLAUDE_CLAIM_MS, no job, or a job that never bound in ROOM_CLAUDE_BIND_MS
- *   claimSpawn(code, {now, by}) -> {claim, prevJob}|null   under the members lock: when needsSpawn, write
- *       room Claude {job:"pending", claim, by, spawned_at}; a second joiner then sees the claim and starts nothing.
- *       prevJob is the old job id to stop first (a room Claude that never bound may still be running).
- *   startDetached({code, cwd, claim, prevJob}) -> pid   join.ts: `node lib/room-claude.ts start CODE JSON`, detached,
- *       so the hook returns at once; the helper runs spawn() below.
- *   spawn({code, cwd, claim?, prevJob?}) -> {ok, job?, error?}   stops prevJob (`claude stop`), runs the plan,
- *       finds the job in `claude agents --json` (name claude.CODE; cc.jobs), falling back to the id in the
- *       "backgrounded · <job>" line (cc.parseDispatch), and records room Claude {job, job_session}. With a claim it
- *       records only while the claim is still current and the room is not closing; otherwise it stops the job
- *       it just made. A failure records {job: null, spawn_error} so the next join retries and can say why. With
- *       a current claim it first stops any other live claude.CODE job (stopStrays): one the record lost must not
- *       run beside the new one.
- *   watchStart(code, job, {pollMs, bindMs, jobs}) -> 'bound'|'gone'|'failed'|'timeout'   the detached starter, after
- *       spawn: `claude --bg` succeeding does not mean the room's Claude runs (the bg daemon can crash it before its first
- *       turn). Every pollMs until it binds: a job `claude agents --json --all` lists as failed/stopped/done records
- *       {job: null, spawn_error} and stops the job (a done job that ended its turn without binding keeps its process:
- *       state done, status idle); no pid by spawned_at + bindMs records spawn_error and keeps the job (the next claim
- *       stops it as prevJob). Either posts a status entry to the room. Bound, closing, stopped or superseded: silent.
+ * Starting, one room Claude per room even with concurrent joins: claimSpawn writes {job:"pending", claim} under the
+ * members lock, so a second joiner sees the claim and starts nothing; join.ts runs spawn in a detached helper so the
+ * hook returns at once. spawn stops prevJob (a room Claude that never bound may still run) and, with a current
+ * claim, any other live claude.CODE job (stopStrays); it records the job only while the claim is current and the
+ * room not closing, else stops the job it just made. A failure records {job: null, spawn_error} so the next join
+ * retries and can say why. `claude --bg` succeeding does not mean the room's Claude runs (the bg daemon can crash it
+ * before its first turn), so watchStart polls until it binds: a failed/stopped/done job records spawn_error and is
+ * stopped; no pid by the bind deadline records spawn_error and keeps the job (the next claim stops it as prevJob).
  *
- * Stopping:
- *   reap(code, {graceMs, waitMs, claimed}) -> 'cancelled' | 'stopped' | 'no-claude'   after the last member leaves:
- *       wait graceMs (a quick rejoin cancels); claim members.json claude.closing under the lock (only one reaper
- *       wins); append a to=claude status "room closed: complete task 1" (the room Claude's tail child wakes it); wait up to
- *       waitMs for task 1 to complete (or the list to be cleaned up); `claude stop <job>` and any other live
- *       claude.CODE job (stopStrays); the bound process (pid and start time) gone, ended here after REAP_STOP_MS if
- *       `claude stop` left it running (ensureGone); mark the room's Claude stopped and left.
- *       claimed: the caller already set closing (watchdog): no grace, no claim. We never delete under ~/.claude.
- *   reapDetached(code, {claimed}?)   `node lib/room-claude.ts reap CODE [--claimed]`, detached, output ignored
- *   releaseDetached(code, job)   `node lib/room-claude.ts release CODE JOB`, detached: `claude stop JOB` and nothing else (a
- *       planned handoff, lib/handoff.ts: the room goes on, its room Claude restarts on the new host; the caller already
- *       marked the room's Claude record left, so no reaper, no "room closed")
- *   watchdog(code, {now, orphanMs, alive, reaper}) -> 'live'|'waiting'|'reaping'|'closing'|'no-claude'|'no-room'|'not-host'
- *       For the room Claude's tail loop (and join's sweep): when the room has had no live member (identity.seatAlive:
- *       pid alive and start time matching) for orphanMs (ROOM_CLAUDE_ORPHAN_MS), claim closing and start the reaper.
- *       Members that crashed leave no SessionEnd, so this is what closes their room. The orphan start is the
- *       latest left_at when every member left cleanly, else the first observation (stored as claude.orphan_since,
- *       cleared once a member is live again). Idempotent: once closing, it does nothing.
+ * Stopping: reap, after the last member leaves, waits graceMs (a quick rejoin cancels), claims claude.closing under
+ * the lock (one reaper wins), posts "room closed: complete task 1" to claude, waits up to waitMs for task 1, stops the
+ * job and any strays, ends the bound process if `claude stop` left it up (ensureGone), and marks the room's Claude
+ * stopped and left. releaseDetached (a planned handoff, lib/handoff.ts) only stops the job: the room goes on and its
+ * Claude restarts on the new host. watchdog (the room Claude's tail and join's sweep) claims closing and starts the
+ * reaper once no member has been live for orphanMs: members that crashed leave no SessionEnd, so this is what closes
+ * their room. The orphan start is the latest left_at when every member left cleanly, else the first observation
+ * (claude.orphan_since, cleared once a member is live again).
  *
- *   taskListId(code) -> "sh-CODE", tasksDir(code) -> <claude config>/tasks/sh-CODE (read only)
  * Env: SUB_HUMAN_CLAUDE (the claude binary; tests use a stub), SUB_HUMAN_PLUGIN_DIR (force --plugin-dir; "" = none),
  *   SUB_HUMAN_REAP_GRACE_MS (default 10 s), SUB_HUMAN_REAP_WAIT_MS (default 20 s), SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS.
  * CLI: node lib/room-claude.ts cmd|spawn|reap [--claimed]|watchdog|release|start CODE [JSON|JOB]
@@ -424,7 +397,7 @@ async function reap(code: RoomCode, {
   await ensureGone(identity.readMembers(code).claude ?? o);
   identity.updateRoomClaude(code, () => ({ stopped_at: new Date().toISOString() }));
   try { identity.leave(code, identity.ROOM_CLAUDE, {}); } catch { /* already left */ }
-  try { identity.unindexClosed(code); } catch { /* the next look at the open rooms drops it */ } // stage 8e I.1
+  try { identity.unindexClosed(code); } catch { /* the next look at the open rooms drops it */ }
   return 'stopped';
 }
 

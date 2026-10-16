@@ -15,8 +15,7 @@
 // (plus SLACK ms): the cost does not grow with the log. The absolute budgets are a warning on stderr (a failure with
 // SUB_HUMAN_PERF_STRICT=1, for a quiet machine).
 //
-// Skipped under SUB_HUMAN_TEST_THREAD_STORE (every store call would cross the bridge: another measurement) and with
-// SUB_HUMAN_SKIP_PERF=1. SUB_HUMAN_PERF_REPORT=1 prints the numbers.
+// Skipped with SUB_HUMAN_SKIP_PERF=1. SUB_HUMAN_PERF_REPORT=1 prints the numbers.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -52,8 +51,7 @@ function budget(what: string, got: number, limit: number): void {
 /** The hard check: big within RATIO x small + SLACK ms, both measured now on this machine. */
 const relative = (what: string, big: number, small: number) => assert.ok(big <= small * RATIO + SLACK,
   `${what}: ${big.toFixed(1)} ms over ${N} entries, ${small.toFixed(1)} ms over ${SMALL}: it grows with the log`);
-const skip = process.env.SUB_HUMAN_TEST_THREAD_STORE === '1' ? 'the thread store measures the bridge, not the store'
-  : process.env.SUB_HUMAN_SKIP_PERF === '1' ? 'SUB_HUMAN_SKIP_PERF=1' : false;
+const skip = process.env.SUB_HUMAN_SKIP_PERF === '1' ? 'SUB_HUMAN_SKIP_PERF=1' : false;
 
 const sleepers: ChildProcess[] = [];
 process.on('exit', () => { for (const p of sleepers) { try { p.kill('SIGKILL'); } catch { /* gone */ } } });

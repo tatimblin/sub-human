@@ -1,8 +1,7 @@
 // The RoomStore contract (lib/room/store.ts), run against FsRoomStore (the room directory), MemoryRoomStore
-// (test/support/memory-store.ts), ThreadRoomStore (test/support/thread-store.ts: every call crosses
-// lib/remote/bridge.ts to an FsRoomStore on a worker) and MirrorRoomStore (test/support/remote-store.ts: the
+// (test/support/memory-store.ts) and MirrorRoomStore (test/support/remote-store.ts: the
 // mirror of a room whose server and link run on a worker, over the memory transport): append, ids and the prev
-// chain, signed human entries (sig v2 placed anywhere, v1 still read), keys pinned in the log, place's replay and
+// chain, signed human entries (sig v2 placed anywhere), keys pinned in the log, place's replay and
 // trust checks and verdicts, the rate buckets, readView parity, the tailer, chain checks, cursors, members
 // compare-and-set (across processes for the file store) and the named seat ops, blobs and the small documents.
 // All passing is what lets a room move off this machine behind the same interface. The cases that write as the
@@ -23,7 +22,6 @@ import * as envelope from '../lib/room/envelope.ts';
 import * as consent from '../lib/room/consent.ts';
 import * as seatKey from '../hooks/seat-key.ts';
 import { MemoryRoomStore } from './support/memory-store.ts';
-import { ThreadRoomStore } from './support/thread-store.ts';
 import { remoteStore, MACHINE } from './support/remote-store.ts';
 import { machineId } from '../lib/home.ts';
 import * as identity from '../lib/identity.ts';
@@ -64,7 +62,6 @@ function mirrorOf(t: TestContext): RoomStore {
 const HOST_ONLY = 'host only: it writes as the system or the host\'s documents directly';
 const BACKENDS: Record<string, Backend> = {
   fs: { make: t => store.open(CODE, { dir: h.tmpDir('sh-store-', t) }), ...FILES },
-  thread: { make: t => new ThreadRoomStore(CODE, { dir: h.tmpDir('sh-store-', t) }), ...FILES },
   remote: { make: mirrorOf, hostOnly: HOST_ONLY, ...FILES },
   memory: {
     make: () => new MemoryRoomStore(CODE),

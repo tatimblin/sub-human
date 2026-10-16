@@ -4,49 +4,14 @@
  * keys, agent, ~/.ssh/config and known_hosts decide; the plugin writes no key and pins no host key) runs the host's
  * stable shim (remoteCommand), an invite line's or a plain `/sub-human join USER@HOST ROOM`'s alike.
  *
- *   dest(text) -> {user, host, port?} | null   a plain user@host[:port]: a POSIX-ish user name and a host name or
- *                                  IPv4 address. Neither part may start with "-" (an option) or hold spaces, quotes,
- *                                  "%" (ssh token expansion) or "@", so an invite can name neither an ssh option nor
- *                                  a command
- *   jump(text) -> string | null    a ProxyJump: one or more [user@]host[:port], comma-separated, each as plain as dest
- *                                  (a host alias of the joiner's own ~/.ssh/config is a plain host name)
- *   parse(rest) -> {user, host, port?, via?} | null   the locator's rest: user@host[:port][?via=JUMP]
- *   locator(text, {via}?) -> 'ssh:user@host[:port][?via=JUMP]' | null
- *   command(spec, code, opts?) -> [cmd, ...args]
- *       ssh -T -o BatchMode=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=2 [opts] [link options] [-J via]
- *       [-p port] -- user@host "sub-human serve --stdio CODE". The spec is checked again (a link file edited by hand:
- *       INVALID). opts (default: SUB_HUMAN_SSH_OPTS split on spaces) are extra ssh options from this machine's own
- *       environment, never from an invite: for tests and setups that need -i KEY, -F FILE or a known_hosts file
- *       (ssh takes the first value of an option, so they win). Link options come from fields the joining machine
- *       wrote into its own link file (lib/room/links.ts), never from an invite:
- *         mux         -o ControlMaster=no -o ControlPath=<home>/ssh/cm-%C   ride a master `sub-human prime CODE` opened
- *                     (one MFA prompt for hours); with none open, ssh connects as usual. BatchMode stays on, so the
- *                     daemon never waits on a prompt and never becomes a master itself
- *       Over a login link (spec.login, `/sub-human join USER@HOST ROOM`: the person's own ssh login to the host's
- *       account is the admission, no invite) the remote command is the host's stable shim instead (remoteCommand), and
- *       no link option is added: the person's own keys, agent, ~/.ssh/config and known_hosts decide, BatchMode on
- *   loginSpec(dest, {via?, home?, link?}) -> Spec | null   a login link's transport: {kind: 'ssh', user, host,
- *       port?, via?, login: true, link, remoteHome?}. link: the link id this machine picks (12 hex, random by default;
- *       the host's server records the link under it, so `/sub-human kick` finds its serve process by its argv); home:
- *       the host's SUB_HUMAN_HOME when it is not ~/.sub-human (a plain absolute path). null when any part is not plain
- *   remoteCommand(spec, code) -> string   what ssh asks the host to run: `sub-human serve --stdio CODE` (a spec
- *       that is not a login's: the tests' fake ssh), else (login) `"$HOME"/.sub-human/bin/serve --stdio CODE --link ID
- *       --login`, or `env SUB_HUMAN_HOME=H H/bin/serve …` with remoteHome. A forced-command key can never send --login:
- *       its line fixes the arguments (scripts/sub-human serve also refuses --login under SSH_ORIGINAL_COMMAND)
- *   loginCommand(spec) -> string     the plain `ssh [-p P] [-J V] user@host` a person runs once by hand (a host key to
- *       accept, a password or MFA to check)
- *   classify(stderr) -> {kind, ...} | null   what ssh's stderr says, in one place (the link daemon, loginProblem and
- *       doctor read it): mfa, host-key, denied {publickey}, no-shim, old-host, no-plugin, no-room, not-hosted,
- *       serve-refused {detail}, dns, refused, timeout; null for anything else
- *   loginProblem(stderr, spec, code) -> {message, reason} | null   why a login link cannot work until the person acts
- *       (an unknown or changed host key, a refused login, no shim or no room on the host: SSH_HOST_KEY, SSH_DENIED,
- *       SSH_NO_SHIM, SSH_OLD_HOST, SSH_NO_ROOM): the link daemon stops with it (AUTH) instead of redialing; null for
- *       anything that may pass (a timeout, a refused connection). loginFailure(stderr, spec, code): its message alone
- *   primeCommand(spec, code, {persist}?) -> [cmd, ...args]   the master: interactive (no BatchMode), -M -N -f
- *       -o ControlPersist=PERSIST (default 8h), the same link options and ControlPath
- *   controlPath(home?) -> string   <home>/ssh/cm-%C
- *   kind = {parse, open, describe}   the `ssh` kind (./index.ts register); open(spec, {code}) spawns command() over
- *                                  ./pipe.ts (INVALID without a code)
+ * Every ssh option comes from this machine: SUB_HUMAN_SSH_OPTS (tests, -i KEY, -F FILE) and the link options its own
+ * link file holds (lib/room/links.ts), never an invite; a link file edited by hand is checked again (INVALID). mux:
+ * ride a master `sub-human prime CODE` opened (one MFA prompt for hours; ControlMaster=no, so the daemon never becomes
+ * one). BatchMode stays on, so the daemon never waits on a prompt. remoteCommand over a login link runs
+ * `<home>/bin/serve --stdio CODE --link ID --login`; a forced-command key can never send --login (its line fixes the
+ * arguments, and scripts/sub-human serve refuses --login under SSH_ORIGINAL_COMMAND). classify reads ssh's stderr in
+ * one place (the link daemon, loginProblem, doctor); loginProblem is what stops a link (AUTH) until the person acts,
+ * null for what may pass (a timeout, a refused connection).
  */
 
 import path from 'node:path';
@@ -78,7 +43,8 @@ const LOCAL_PATH_RE = /^\/[^\0\n"'%]*$/;
 const LINK_ID_RE = /^[0-9a-f]{12}$/;
 const HOME_RE = /^\/[A-Za-z0-9_/.@+,:-]+$/; // lib/remote/shim.ts PLAIN_PATH_RE: nothing a remote shell expands
 
-/** text: user@host[:port] */
+/** text: user@host[:port], plain: neither part may start with "-" or hold spaces, quotes, "%" (ssh token expansion)
+ * or "@", so an invite can name neither an ssh option nor a command. */
 function dest(text: string): SshDest | null {
   const m = SSH_RE.exec(String(text));
   if (!m) return null;
@@ -177,7 +143,7 @@ function remoteCommand(spec: Pick<SshSpec, 'login' | 'link' | 'remoteHome'>, cod
     : `"$HOME"/.sub-human/bin/serve ${args}`;
 }
 
-/** text: user@host[:port] */
+/** text: user@host[:port]. link: the id the host records the link under, so `/sub-human kick` finds its serve by argv. */
 function loginSpec(text: string, { via, home, link = CryptoMod.randomBytes(6).toString('hex') }: { via?: string | undefined; home?: string | undefined; link?: string } = {}): SshSpec | null {
   const d = dest(text);
   if (!d || (via !== undefined && !jump(via)) || (home !== undefined && !HOME_RE.test(String(home))) || !LINK_ID_RE.test(String(link))) return null;
@@ -229,7 +195,7 @@ function loginProblem(stderr: string, spec: SshSpec, code: RoomCode, { first = f
     case 'not-hosted': return { reason: 'SSH_NO_ROOM', message: `${where} only holds a copy of room ${code}; join the machine that hosts it` };
     case 'serve-refused': return { reason: 'SSH_NO_ROOM', message: p.detail };
     // a name ssh cannot resolve on the first connection is a typo or a missing alias, not a network blip: say so and
-    // stop (item 15); a link that connected before keeps retrying (a laptop offline resolves nothing for a while)
+    // stop; a link that connected before keeps retrying (a laptop offline resolves nothing for a while)
     case 'dns': return first ? { reason: 'SSH_HOST_UNKNOWN', message: `ssh cannot find ${spec.host} (${(/(Could not resolve hostname[^\n]*|Name or service not known|nodename nor servname[^\n]*)/i.exec(String(stderr || '')) || ['no such host'])[0].trim()}): check the name, or use an alias from your ~/.ssh/config, then join again` } : null;
     case 'refused': case 'timeout': return null;
     default: return assertNever(p, 'ssh problem');

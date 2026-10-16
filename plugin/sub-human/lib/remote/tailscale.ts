@@ -2,41 +2,13 @@
  * plugin/sub-human/lib/remote/tailscale.ts: the few `tailscale` CLI calls `/sub-human invite --web | --public`
  * makes, each with a timeout, none interactive. It drives the person's own tailscaled; nothing is embedded.
  *
- *   bin(env?) -> string | null       SUB_HUMAN_TAILSCALE, else `tailscale` on PATH, else
- *                                    /Applications/Tailscale.app/Contents/MacOS/Tailscale (the macOS app's CLI)
- *   self(bin) -> {dnsName, online, backend}   `tailscale status --json`: Self.DNSName without its final dot (the
- *                                    MagicDNS name, box.tail1a2b.ts.net). RoomError OFFLINE when Tailscale is not up:
- *                                    tailscaled not running, logged out (BackendState NeedsLogin) or stopped, each with
- *                                    what to do
- *   serveArgs({path, port, funnel?}) -> argv   [serve|funnel] --bg --https=443 --set-path=PATH http://127.0.0.1:PORT
- *                                    (Tailscale 1.52+). Tailnet only with serve; Funnel makes the path public
- *   offArgs({path, funnel?}) -> argv           [serve|funnel] --https=443 --set-path=PATH off: that one path only
- *                                    (never `serve reset`, which would drop the person's other serves)
- *   on({bin, path, port, funnel?, timeoutMs?}) -> {bin, path, port, https: 443, funnel}   runs serveArgs, watched
- *                                    (watchSync): when the tailnet has Serve / HTTPS (or Funnel) off, the CLI prints
- *                                    "Serve is not enabled on your tailnet. To enable, visit: https://login.
- *                                    tailscale.com/f/serve?node=…" and then waits for an admin; so the first enable
- *                                    URL it prints, or no success within timeoutMs (SERVE_MS, 10 s), kills it and throws RoomError INVALID
- *                                    notEnabled(…): the admin page, then "run /sub-human invite --web again".
- *                                    tailscaled not running or logged out: RoomError OFFLINE with what to do. Any other
- *                                    refusal: INVALID with Tailscale's own words
- *   off({bin, path, funnel?}) -> {ok, error?}
- *   warm(url, {timeoutMs?, env?}) -> pid | null   one HTTPS request to the served URL in a detached child, not waited
- *                                    for (WARM_MS, 60 s): Tailscale fetches the name's certificate on the first request
- *                                    (~20 s cold), so the first joiner does not wait on it. SUB_HUMAN_TAILSCALE_WARM=0: off
- *   classify(text) -> {kind: 'enable', feature, url} | {kind: 'not-running'} | {kind: 'logged-out'} | {kind: 'stopped'}
- *                                    | null   what the CLI's output says (enable URLs: login.tailscale.com/f/…)
- *   notEnabled({feature, url, funnel?, waited?}) -> string   the person's message for a tailnet without Serve/Funnel
- *   watch({bin, args, timeoutMs, env?}) -> Promise<{ok, status, text, reason: 'exit'|'enable'|'timeout'|'error',
- *       found?}>   spawn the CLI and stream its stdout/stderr through classify: an enable URL ends it at once (killed),
- *       as does timeoutMs with no exit; ok only for exit 0
- *   watchSync(opts) -> the same, for the sync callers (the join hook, the CLI): watch() in a child node
- *       (`node tailscale.ts --watch JSON`), whose one line of JSON is the result
- *   MAC_APP                          /Applications/Tailscale.app/Contents/MacOS/Tailscale
- *   SERVE_MS                         10 s, on()'s default deadline
- *   CT_WARNING                       the one line `--funnel` prints: the name goes into public CT logs
- * The path is mounted as given; the listener reads the room from the Noise handshake, not the path, so it works
- * whether or not Tailscale strips the mount point before proxying.
+ * Only Tailscale 1.52+ `--set-path` serves, one path each; off turns that one path off, never `serve reset` (which
+ * would drop the person's other serves). When the tailnet has Serve / HTTPS (or Funnel) off, the CLI prints an enable
+ * URL and then waits for an admin, so on() watches its output (watchSync): the first enable URL, or no success within
+ * SERVE_MS, kills it and throws INVALID notEnabled(…) (the admin page, then "run /sub-human invite --web again").
+ * tailscaled not running, logged out or stopped is OFFLINE with what to do. watchSync runs watch() in a child node for
+ * the sync callers (the join hook, the CLI). The path is mounted as given; the listener reads the room from the Noise
+ * handshake, not the path, so it works whether or not Tailscale strips the mount point before proxying.
  */
 
 import fs from 'node:fs';
@@ -164,10 +136,10 @@ const serveArgs = ({ path: p, port, funnel = false }: { path: string; port: numb
 };
 const offArgs = ({ path: p, funnel = false }: { path: string; funnel?: boolean }): string[] => [funnel ? 'funnel' : 'serve', '--https=443', `--set-path=${checkPath(p)}`, 'off'];
 
-/** Run the CLI, reading its output as it comes: an enable URL or the deadline ends it (killed), else its exit. */
 /** `--watch JSON`: watchSync's argument to its child. */
 const WATCH_ARGS = obj({ bin: str, args: arr(str), timeoutMs: opt(num) });
 
+/** Run the CLI, reading its output as it comes: an enable URL or the deadline ends it (killed), else its exit. */
 function watch({ bin: b, args, timeoutMs = SERVE_MS, env = process.env }: {
   bin: string; args: string[]; timeoutMs?: number | undefined; env?: NodeJS.ProcessEnv;
 }): Promise<Watched> {

@@ -7,66 +7,33 @@
  * retry, ping, swap and stop is the pure state machine in lib/remote/link-engine.ts; this file runs its effects. It
  * never loads the signer.
  *
- *   run({code, log?}) -> Promise<reason>
- *       serveMirror over connectLink, until it stops; also stops LINK_IDLE_MS (SUB_HUMAN_LINK_IDLE_MS) after this machine
- *       has no seat left in the room (idleWatch, reason NO_SEAT), and on SIGTERM, SIGINT or SIGHUP. SIGUSR2 redials now,
- *       as a wake does.
- *   idleWatch(link, mirror, idleMs, {now?, gapMs?}) -> unwatch   stop the link once idleMs have passed with no seat of
- *       this machine in the room. Online, a seat is one the mirror's members document holds, not left, with a fresh
- *       lease or a live claude process of this machine (identity.localSeats: a lease that lapsed during a sleep or a
- *       pause is renewed by keepSeats, not given up); offline, the host's document is stale, so a seat is one a live
- *       claude process of this machine holds: a crashed or abandoned join never leaves a daemon retrying for ever. While
- *       the first connection is made it never stops, nor while the link file holds an invite younger than INVITE_TTL_MS
- *       (an sh2 join over ssh retries until the host admits its key). A tick more than gapMs (LINK_WAKE_GAP_MS) late is
- *       a sleep: it restarts the count and is skipped, so suspended time never counts as idle.
- *   serveMirror({mirror, connect, log?, retryMs?, retryMaxMs?, timings?, clock?, random?, mono?, netSignature?, watch?,
- *       seats?, writeState?, outbox?}) -> Promise<Link>
- *       Listen on socketPath(mirror.dir) (one daemon per socket: LOCK when another one answers there), then run the
- *       engine (link-engine.ts) from start, carrying out its effects:
- *         connect      connect() -> Promise<Client> (hello done)
- *         subscribe    {after: the mirror's last id, hash: that line's hash12; an empty mirror also asks snapshot: true of
- *                      a host whose caps offer it: the host's snapshot then arrives first (applySnapshot checks it; the
- *                      lines after it must chain to its head, else FORK), not every line}
- *         keepSeats    renew the lease of every live seat of this machine (seats(), default identity.localSeats: a
- *                      `beat`, so a seat whose lease lapsed on the host during an outage is back with no "left"/"joined"
- *                      lines; one the host shows as left is logged: the person joins again)
- *         flush        send the outbox, oldest first; a post the host already holds is PLACED_ALREADY (its nonce) and
- *                      counts as sent; one that waited longer than LINK_OUTBOX_AGE_MS or that the host refuses is
- *                      dropped and reported in the document `link` (flush)
- *         sendPing     the heartbeat, with a server whose caps list ping
- *         timers       on the injected clock (lib/clock.ts); wake (wakeWatch: a tick more than wakeGapMs late, or the
- *                      wall clock off the monotonic one by that much) and network changes (netWatch: netSignature, the
- *                      external addresses, changed) are redial events (watch: false turns both off)
- *       The stream goes into the mirror whichever connection carries it (a line it holds already, the same id and bytes,
- *       is skipped: two streams overlap during a swap); a proposal's plan is fetched once. A stream's end on the live
- *       connection is an event: closed (the room's Claude stopped) stops it (ROOM_CLOSED), moved redials the new host
- *       (or, this machine being the new host, waits for the accepting hook to stop it, HANDOFF_SELF_STOP_MS at most),
- *       anything else is lost (FORK: LOG_RESET, AUTH: LINK_REVOKED). A link stopped LINK_REVOKED or TOKEN_UNKNOWN
- *       drops its token from the link file (refused says why): a new invite line replaces it.
- *       A hook's op while not online is refused OFFLINE at once (before the first connection it waits for it), except an
- *       append marked {queue: true} (lib/room/store-mirror.ts, for an @room post) whose payload is outbox.queueable
- *       (lib/remote/outbox.ts): it is kept in the outbox and answered {queued: n}. Answers, consent, proposals and
- *       agents' posts are never queued. Online, every op is answered within relayMs (LINK_RELAY_MS, inside the hook's
- *       LINK_CALL_MS): a slow link's late answer must not turn into "nothing was sent", since the frame went out. Such a
- *       queueable post goes into the outbox under its nonce and is answered {queued: n, slow: true}; the host's late
- *       answer takes it out (placed, or PLACED_ALREADY), or drops and reports it (a refusal); a connection lost first
- *       leaves it for the next one. Any other op is OFFLINE UNKNOWN_OUTCOME: retrying it is safe (an answer is one per
- *       person per proposal, a join is a rejoin). FORK stops it and keeps the outbox (logged loudly: `sub-human link
- *       --reset CODE` re-mirrors); AUTH or PROTOCOL at hello, or the room closed, stop it too.
- *       Every change is written to the mirror's document `link` {pid, state, since, socket, reason?, code?, why?,
- *       queued?, flush?: {at, sent, unsent: [{text, why}]}, fields?: online, the entry fields the host's caps list} and
- *       to links/<code>.state.json (lib/room/links.ts LinkState, for doctor, the room row and the statusline: attempt,
- *       lastError, lastReason, rttMs, queued), both in the one vocabulary online | connecting | offline | fork | stopped
- *       (the state file says connecting while a redial of an offline link is under way: link-engine.ts shown).
- *       A planned handoff (lib/handoff.ts): the private 'handoff' event is kept for this machine's seat (onAsk); 'moved'
- *       re-points the link file at the new host (onMoved). The hello and every append carry the mirror's host epoch
- *       (STALE on a mismatch); a make-before-break redial says hello with the epoch the mirror holds at that moment.
- *       Link = {state() -> string, stop(why, reason?), wake(why?) -> Promise (the redial), done: Promise<reason>}
- *   ROOM_CLOSED_REASON, NO_SEAT_REASON   the words of a link stopped because the room closed or no seat of this machine
- *                                  is left (reasons ROOM_CLOSED, NO_SEAT): a dormant link, which doctor shows as info
- *   linkTimings(over?) -> {retryMs, retryMaxMs, pingMs, pongMs, deadMs, wakeTickMs, wakeGapMs, netPollMs, relayMs}
- *   nextDelay(prev, base, cap, random?) -> ms (link-engine.ts);  wakeWatch({onWake, tickMs, gapMs, clock?, mono?}) ->
- *   unwatch;  netWatch({onChange, pollMs, clock?, signature?}) -> unwatch;  netSignature(ifaces?) -> string
+ * run stops on SIGTERM, SIGINT or SIGHUP (SIGUSR2 redials now, as a wake does), and LINK_IDLE_MS after this machine
+ * has no seat left in the room (idleWatch, NO_SEAT). Online, a seat is one the mirror's members document holds, not
+ * left, with a fresh lease or a live claude process here (a lease that lapsed during a sleep is renewed by keepSeats,
+ * not given up); offline the host's document is stale, so only a live claude process counts: a crashed or abandoned
+ * join never leaves a daemon retrying for ever. It never stops while connecting, nor while the link file holds an
+ * invite or join_as younger than INVITE_TTL_MS + ADMIT_TTL_MS. A tick more than LINK_WAKE_GAP_MS late is a sleep:
+ * suspended time never counts as idle.
+ *
+ * serveMirror listens on socketPath(mirror.dir) (one daemon per socket: LOCK when another answers there). An empty
+ * mirror subscribes with snapshot: true (the lines after it must chain to its head, else FORK). The stream goes into
+ * the mirror whichever connection carries it (a line held already, same id and bytes, is skipped: two streams overlap
+ * during a swap). A stream's end on the live connection: closed stops it (ROOM_CLOSED), moved redials the new host (or,
+ * this machine being the new host, waits for the accepting hook to stop it, HANDOFF_SELF_STOP_MS at most), FORK
+ * (LOG_RESET) and AUTH (LINK_REVOKED) stop it; FORK keeps the outbox (`sub-human link --reset CODE` re-mirrors). A link
+ * stopped LINK_REVOKED or TOKEN_UNKNOWN drops its token (dropToken).
+ *
+ * A hook's op while not online is OFFLINE at once (before the first connection it waits for it), except an @room
+ * append marked {queue: true} that outbox.queueable accepts: it is kept in the outbox and answered {queued: n}.
+ * Answers, consent, proposals and agents' posts are never queued. Online, every op is answered within relayMs (inside
+ * the hook's LINK_CALL_MS; answerBy, sendPost); an op left OFFLINE UNKNOWN_OUTCOME is safe to retry (an answer is one
+ * per person per proposal, a join is a rejoin).
+ *
+ * Every change is written to the mirror's document `link` and to links/<code>.state.json (lib/room/links.ts LinkState,
+ * for doctor, the room row and the statusline), both in the one vocabulary online | connecting | offline | fork |
+ * stopped. A planned handoff (lib/handoff.ts): the private 'handoff' event is kept for this machine's seat; 'moved'
+ * re-points the link file at the new host. The hello and every append carry the mirror's host epoch (STALE on a
+ * mismatch); a make-before-break redial says hello with the epoch the mirror holds at that moment.
  */
 
 import fs from 'node:fs';

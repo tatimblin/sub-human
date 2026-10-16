@@ -253,10 +253,8 @@ export function registerPrompt(on: On): void {
 
   // The stop above is drawn as a warning row "Operation stopped by hook: ✓ sent" (cc CONTRACT ups-stop-frame): that
   // row, and only one whose receipt is waiting, is kept as the receipt alone (cc CONTRACT
-  // session-append-notice-rewrite). The model's own copy (an isMeta user row) is left as it is.
-  // The stop's other row, the isMeta user row the model reads ("Operation stopped by hook: ✓ sent …"), says what it is:
-  // the person's @room line went to the room and nothing is asked of the model (stage 8e B: read before the person's
-  // next words with no turn between, the bare frame read as a request).
+  // session-append-notice-rewrite). The model's copy (an isMeta user row) says the @room line went to the room and
+  // nothing is asked of it: read before the person's next words with no turn between, the bare frame read as a request.
   on('session.append', (_$, e, next) => {
     const row = e.door === 'notice' ? receipts.rewrite(e.message) : receipts.modelRow(e.message);
     return next(row ? { ...e, message: row } : e);

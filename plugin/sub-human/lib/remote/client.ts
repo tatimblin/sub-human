@@ -5,48 +5,18 @@
  * signer: a via=human payload, and a join's seat proof (lib/remote/host-links.ts proveSeat), reach it already
  * signed.
  *
- *   connect(transport, {machine, token?, invite?, pin?, as?, checkHost?, login?, epoch?, caps?, deadlineMs?, helloMs?, proto?, version?}) -> Promise<Client>
- *       hello carries {proto, client} (lib/remote/protocol.ts): the server picks the version; a version outside
- *       this end's range, or a refusal from a host too old or too new, is PROTOCOL SKEW with skewMessage (who must update).
- *       pin: an invite's PIN (checked by the host, never here); as: {name, label} the seat an invite line's PIN asks
- *       for. checkHost(host) (an invite line over ssh or a pipe, protocol 3): a first hello carries only a fresh nonce,
- *       checkHost reads the reply's host proof (the host's machine key over that nonce: it throws to stop, so the secret
- *       never goes to a host the line does not name), and a second hello carries the credential; a host that gives no
- *       proof is older (PROTOCOL SKEW). signMachine(challenge): with an invite, the first hello is made over the web
- *       too, and the second's machine proof signs the challenge its reply handed out (lib/remote/machine-key.ts
- *       proofFor), so a proof is good in that one session only. login: true (no token, no invite): a link over the
- *       host account's own ssh login (lib/remote/server.ts); a host that returns no token for it is PROTOCOL. proto / version: fakes for the skew tests.
- *       epoch: the mirror's host epoch (lib/handoff.ts), sent in the hello; the server's is client.epoch (0 from a
- *       server that sends none).
- *       transport may also be a Promise of one (lib/remote/transports/index.ts open()). Says hello; resolves once the server answered (the token from a redeemed invite is on client.token).
- *       helloMs (default deadlineMs) bounds the hello alone: a transport such as ssh connects before it answers.
- *       A refused hello closes the transport and rejects.
- *   Client
- *     token, link, room, serverCaps, v (the version in use), serverVersion (the host's plugin version), machine (this
- *     machine's id in the room as the host records it, null from a host that sends none)
- *     request(op, params, {ms}?) -> Promise<result>   one op as the wire has it (the link daemon relays its hooks' ops
- *         so); ms: its own deadline instead of deadlineMs (the daemon waits longer for an @room post sent already)
- *     join({name, role?, pubkey, proof}) -> Promise<{ok, rejoin?}>
- *     leave(name, reason) -> Promise<{ok}>
- *     beat(name, {presence?}) -> Promise<{ok}>
- *     append(payload) -> Promise<entry>
- *     subscribe(after, hash, onEvent, {snapshot}?) -> {ready: Promise, stop()}   onEvent({ev, data}) for every entry,
- *         doc, snapshot and end event (protocol.ts); snapshot: true asks for the host's snapshot first (after 0, and
- *         only of a server that snapshots()); ready rejects on a refused subscribe (FORK, AUTH, …) and the stream is
- *         dropped. A transport that closes ends it with {ev: 'end', data: {reason: 'OFFLINE'}}. stop() stops
- *         delivering (the server's stream ends with the transport)
- *     blobGet(ref) -> Promise<Buffer | null>, blobPut(name, bytes) -> Promise<ref>
- *     snapshots() -> bool         the server's hello caps say snapshot: true
- *     ping(ms?) -> Promise<{pong, rttMs}>   one heartbeat (protocol.ts ping); OFFLINE when no pong within ms
- *         (default deadlineMs). The link daemon pings, and says hello with caps {ping: true}
- *     closed                        true once the transport closed
- *     drain(ms?) -> Promise          resolves once no call waits for a reply (or after ms, default deadlineMs): the
- *         link daemon closes a replaced connection only then, so a hook's op in flight on it is answered
- *     close()
- *   A reply with error rejects with RoomError(code, message, reason?), the code and reason as the server sent them. A call
- *   with no reply within deadlineMs (default LINK_CALL_MS) rejects OFFLINE with reason UNKNOWN_OUTCOME (the frame went out
- *   and may still land) and its late reply is dropped; a transport
- *   that closed rejects every pending call with OFFLINE. Nothing is retried.
+ * Two hellos when the credential needs binding (checkHost: an invite line over ssh or a pipe; signMachine with an
+ * invite): the first carries no credential, only a fresh nonce; checkHost reads the reply's host proof (the host's
+ * machine key over that nonce) and throws to stop, so the secret never goes to a host the line does not name. The
+ * second carries the credential, its machine proof signing the challenge the first reply handed out, so a proof is
+ * good in that one session only. A version outside this end's range is PROTOCOL SKEW (skewMessage: who must update);
+ * a login hello answered with no token is PROTOCOL. A refused hello closes the transport and rejects.
+ *
+ * A reply with error rejects with RoomError(code, message, reason?) as the server sent them. A call with no reply
+ * within deadlineMs (default LINK_CALL_MS) rejects OFFLINE UNKNOWN_OUTCOME (the frame went out and may still land) and
+ * its late reply is dropped; a transport that closes rejects every pending call OFFLINE and ends every stream with
+ * {reason: 'OFFLINE'}. Nothing is retried. drain() lets the link daemon close a replaced connection only once no call
+ * waits for a reply, so a hook's op in flight on it is answered.
  */
 
 import crypto from 'node:crypto';
@@ -82,12 +52,12 @@ export interface ConnectOpts {
   token?: LinkToken;
   invite?: InviteSecret | undefined;
   pin?: Pin | undefined;
-  /** protocol 3: the seat an invite line's PIN asks for, and this machine's short name */
+  /** the seat an invite line's PIN asks for, and this machine's short name */
   as?: { name: string; label: string };
-  /** protocol 3: signs this machine's key over the host's challenge (machine-key.ts proofFor); with an invite the
-   *  credential then goes in a second hello whose proof is so bound (see the header) */
+  /** signs this machine's key over the host's challenge (machine-key.ts proofFor); with an invite the credential then
+   *  goes in a second hello whose proof is so bound (see the header) */
   signMachine?: (challenge: string) => { key: string; ts: number; sig: string };
-  /** protocol 3: the host proves its machine key over a nonce before the credential goes (see the header) */
+  /** the host proves its machine key over a nonce before the credential goes (see the header); throws to stop */
   checkHost?: (host: { key: string; sig: string } | null, nonce: string) => void;
   login?: boolean;
   epoch?: number;
@@ -207,7 +177,7 @@ class Client {
   close(): void { this.transport.close(); }
 }
 
-/** transport: {send(frame), onFrame(fn), onClose(fn), close()}, or a Promise of one */
+/** Says hello; resolves once the server answered. helloMs bounds the hello alone (ssh connects before it answers). */
 async function connect(transport: Transport | Promise<Transport>, opts: ConnectOpts): Promise<Client> {
   const { machine, machineKey, signMachine, token, invite, pin, as, checkHost, login, epoch, caps = {}, deadlineMs = LINK_CALL_MS, helloMs = deadlineMs } = opts;
   const proto: ProtoRange = opts.proto ?? protocol.PROTO, version: string = opts.version || protocol.PLUGIN_VERSION;

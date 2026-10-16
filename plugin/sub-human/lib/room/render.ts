@@ -4,37 +4,24 @@
  * Every call that shows a person's line takes the store's trust (RoomStore.trust; NO_TRUST when absent: every
  * person's line then reads "(unverified)"), so a line is marked by the store that read it.
  *
- *   line(e, {full, trust}) one notice line. full: the exact text (JSON-quoted) up to TEXT_MAX = 2,000 code
- *     points, then `[cut at 2000/N: read({ids:[ID]})]`; without full, <= TAIL_MAX (240) chars with the same
- *     marker when cut. Never a bare "…". A drafted:"agent" entry's header carries "(NAME, Claude's wording)".
- *   chatLines(e, {viewer, entries?, trust}) -> [string]   one entry as group-chat lines, no ids; continuation lines nested
- *     under the sender with CHAT_NEST ("  │ "), at most CHAT_LINES_MAX text lines (below). With entries (the log
- *     so far) an answer or decision names its proposal by title and short hash: 'bob agreed to "Ship v3 Monday"
- *     (3fa2c1)', 'room: "Ship v3 Monday" (3fa2c1) agreed (bob)', 'room: "Ship v3 Monday" (3fa2c1) not agreed: changes
- *     requested by bob: keep status'; a proposal that retires an earlier one adds 'replaces "Ship v3" (9c01de)'.
- *     A leave keeps its reason: "bob left (connection lost)", "bob left (session ended)"
- *   fmt(e, {trust})          full text for `sub-human read`, body lines nested the same way;
- *     who(e) ("alice" | "alice's Claude" | "room")
- *   stateLine(me, entries, {members, ids, trust}) -> "room now: proposal 3fa2c1 waiting on bob · objected: dave · you: answer needed ·
- *     away: carol"  (waiting on = no answer yet, objected = current answer is an objection; lib/room/consent.ts fold;
- *     ids:false drops the decision's "#N", for a member's wake, which the person sees too)
- *   digest(entries, {members, code, trust}) <= DIGEST_CAP chars: members, open proposals + approvers + answers, open
- *     objections/questions, decisions, last 10 human entries in full by the line() rule.
- *   FOR_CLAUDE               "(for Claude)": the prefix of chat lines meant only for the model
- *   UNVERIFIED               "(unverified)": after the name of a via=human entry whose sig does not verify
- *     (trust.ts unverified: a legacy line, or one written around append). It stays readable, never as the
- *     person's own words; the consent fold ignores it.
- * Join and leave notices (what a group chat shows: "bob joined", "bob rejoined", "bob left (connection lost)"; no
- * room code, no ids), drawn by the tail's chat line at the moment (mod/deliver.ts), the room row's text for a while
- * after (lib/rows.ts rowText) and the room row view's progress line (mcp/hold.ts):
- *   joinLeave(entries, viewer, {now, settle}) -> [{id, kind, name, at, settled, rejoin, why}]
- *       others' member_joined / member_left (never the room Claude's or viewer's own), in log order. A leave settles
- *       settleMs() (SUB_HUMAN_LEAVE_MS, LEAVE_SETTLE_MS = 8 s, the same as the tail's) after it; a leave followed by
- *       a rejoin within it is no notice, and neither is that rejoin. why: a leave's " (REASON)" (leftWhy), else ''.
- *       Time comes from lib/clock.ts unless the caller passes `now` (ms), so tests drive it without sleeps.
- *   noticeText(n) -> "bob joined" | "bob rejoined" | "bob left" | "bob left (connection lost)"
- *   rowSegment(entries, viewer, {now}) -> "+bob joined" | "−bob left (connection lost)" | ''   the newest settled
- *       notice of the last ROW_NOTICE_MS (2 min)
+ * line, chatLines and fmt are documented where they are defined. Never a bare "…": cut text always carries a marker
+ * naming the read call for the rest.
+ *   stateLine: "room now: proposal 3fa2c1 waiting on bob · objected: dave · you: answer needed · away: carol"
+ *     (waiting on = no answer yet, objected = current answer is an objection; ids:false drops the decision's "#N",
+ *     for a member's wake, which the person sees too)
+ *   digest: <= DIGEST_CAP chars: members, open proposals + approvers + answers, open objections/questions,
+ *     decisions, last 10 human entries in full by the line() rule; the cap trims the oldest first.
+ *   UNVERIFIED "(unverified)" follows the name of a via=human entry whose sig does not verify (a legacy line, or one
+ *     written around append). It stays readable, never as the person's own words; the consent fold ignores it.
+ * Join and leave notices ("bob joined", "bob rejoined", "bob left (connection lost)"; no room code, no ids), drawn by
+ * the tail's chat line (mod/deliver.ts), the room row's text for a while after (lib/rows.ts rowText) and the room row
+ * view's progress line (mcp/hold.ts):
+ *   joinLeave: others' member_joined / member_left (never the room Claude's or the viewer's own), in log order. A
+ *       leave settles settleMs() (SUB_HUMAN_LEAVE_MS, LEAVE_SETTLE_MS = 8 s, the same as the tail's) after it; a leave
+ *       followed by a rejoin within it is no notice, and neither is that rejoin. Time comes from lib/clock.ts unless
+ *       the caller passes `now` (ms), so tests drive it without sleeps.
+ *   rowSegment: "+bob joined" | "−bob left (connection lost)" | '', the newest settled notice of the last
+ *       ROW_NOTICE_MS (2 min).
  */
 
 import { normalize } from './rules.ts';

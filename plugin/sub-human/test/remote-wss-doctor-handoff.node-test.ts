@@ -7,7 +7,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import net, { type AddressInfo } from 'node:net';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import type { TestContext } from 'node:test';
 import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
@@ -18,7 +17,7 @@ import * as invites from '../lib/remote/invites.ts';
 import * as hostLinks from '../lib/remote/host-links.ts';
 import * as handoff from '../lib/handoff.ts';
 import * as doctor from '../lib/cli/doctor.ts';
-import { Machine } from './support/two-homes.ts';
+import { Machine, childOf, kill } from './support/two-homes.ts';
 import * as noiseLib from '../lib/remote/noise.ts';
 import type { WsSpec } from '../lib/remote/types-rest.ts';
 import type { HandoffAskDoc } from '../lib/types-app.ts';
@@ -35,8 +34,6 @@ const wsSpec = (l: Link): WsSpec => {
 interface Card { questions: { question: string }[] }
 
 const LINK_ENV = { SUB_HUMAN_LINK_RETRY_MS: '200', SUB_HUMAN_LINK_RETRY_MAX_MS: '600', SUB_HUMAN_LINK_IDLE_MS: '20000' };
-const childOf = (pid: number | undefined) => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
-const kill = (pid: number | null | undefined) => { try { process.kill(pid as number, 'SIGKILL'); } catch { /* gone */ } };
 const freePort = () => new Promise<number>(r => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = (s.address() as AddressInfo).port; s.close(() => r(p)); }); });
 
 function cleanup(t: TestContext, machines: Machine[], code: () => RoomCode) {

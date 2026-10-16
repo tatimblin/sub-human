@@ -2,11 +2,6 @@
  * plugin/sub-human/lib/remote/types-core.ts: types only (erased at run time) for the remote core: the wire protocol,
  * the host's invite and link records, and the link daemon's records.
  *
- *   wire protocol (lib/remote/protocol.ts)   frames (RequestFrame, ReplyFrame, EventFrame: discriminated on op / ev),
- *                                            each op's params (OpParams) and result (OpResults), each event's data
- *   host records (lib/remote/invites.ts, host-links.ts, admission.ts)   InviteRecord (bound, short, admission), LinkRecord
- *   the link daemon (lib/remote/link.ts)     its document `link`, its timings, a running link
- *
  * Request params are what a conforming peer sends. They arrive as parsed JSON, so the server still checks each
  * field it relies on (lib/remote/server.ts); the types document the protocol, not a validation.
  */
@@ -24,19 +19,17 @@ export type FrameId = number | string | null;
 /** The versions one end speaks (protocol.PROTO). */
 export interface ProtoRange { min: number; max: number }
 
-/** The ops a room's server serves, and the events a stream carries (protocol.OPS and protocol.EVENTS are their source). */
 export type { Op, EventName };
 
 /** The ops the link daemon relays for its hooks (lib/remote/link.ts RELAY). */
 export type RelayOp = 'join' | 'leave' | 'beat' | 'append' | 'blob.get' | 'blob.put' | 'handoff.accept' | 'handoff.refuse';
 
-/** The RoomError codes on both ends and on the wire (protocol.CODE_NAMES is its source). */
 export type { WireCode } from './protocol.ts';
 
 /** What an end serves (protocol.CAPS), in a hello reply. */
 export interface Caps {
   ops: readonly string[];
-  /** the host sends a new mirror its log's snapshot when asked (subscribe {after: 0, snapshot: true}); additive */
+  /** the host sends a new mirror its log's snapshot when asked (subscribe {after: 0, snapshot: true}) */
   snapshot?: boolean;
 }
 
@@ -54,11 +47,10 @@ export interface SignedPayload {
 }
 
 export interface HelloParams {
-  /** The version the client needs at least (a beta's joiner sends it; this one does not). The server honours it. */
+  /** The version the client needs at least; the server honours it. */
   v?: number;
   /** The client's range; a hello without it is refused (PROTOCOL SKEW). */
   proto?: ProtoRange;
-  /** The client's plugin version. */
   client?: string;
   caps?: { ping?: boolean };
   /** This machine's id in the room as it knows it (home.machineIn): what an invite's binding is checked against. */
@@ -66,12 +58,12 @@ export interface HelloParams {
   /** Its machine key's proof (lib/remote/machine-key.ts): the host records the id the key gives, not the reported one. */
   machine_key?: { key: string; ts: number; sig: string };
   token?: LinkToken;
-  /** an sh2 invite (a handoff's, a promote's), or an invite line's SECRET word (protocol 3) */
+  /** a bound invite (a handoff's, a promote's), or an invite line's SECRET word */
   invite?: InviteSecret;
   pin?: Pin;
-  /** protocol 3: the seat an invite line's PIN asks for, and this machine's short name (both as the joiner says) */
+  /** the seat an invite line's PIN asks for, and this machine's short name (both as the joiner says) */
   as?: { name: string; label: string };
-  /** protocol 3: a fresh random word; the reply's host proves the host home's machine key over it */
+  /** a fresh random word; the reply's host proves the host home's machine key over it */
   nonce?: string;
   login?: boolean;
   /** The mirror's host epoch (lib/handoff.ts). */
@@ -92,7 +84,6 @@ export type PingParams = Record<string, never>;
 export interface HandoffAcceptParams { id: string; [field: string]: unknown }
 export interface HandoffRefuseParams { id: string; [field: string]: unknown }
 
-/** Each op's params. */
 export interface OpParams {
   hello: HelloParams;
   join: JoinParams;
@@ -110,7 +101,6 @@ export interface OpParams {
 export interface HelloResult {
   v: number;
   proto: ProtoRange;
-  /** The host's plugin version. */
   server: string;
   caps: Caps;
   room: string;
@@ -120,18 +110,18 @@ export interface HelloResult {
   time: number;
   /** Once, for a redeemed invite or a login link. */
   token?: LinkToken;
-  /** The room was closed (its Claude stopped); absent while it is open, and from an older host. */
+  /** The room was closed (its Claude stopped). */
   closed?: boolean;
-  /** This machine's id in the room as the host records it for the link (lib/remote/host-links.ts); additive. */
+  /** This machine's id in the room as the host records it for the link (lib/remote/host-links.ts). */
   machine?: string;
   /** With the token of an invite line's link: the one name the host's card let in (another than the one asked for
-   * when that name sits in the room from another machine: lib/remote/admission.ts taken); additive. */
+   * when that name sits in the room from another machine: lib/remote/admission.ts taken). */
   as?: string;
-  /** protocol 3, for a hello with a nonce: the host home's machine key and its signature over the nonce
-   * (lib/remote/machine-key.ts hostProof), which an invite line's tag names over ssh and a pipe */
+  /** for a hello with a nonce: the host home's machine key and its signature over the nonce (machine-key.ts
+   * hostProof), which an invite line's tag names over ssh and a pipe */
   host?: { key: string; sig: string };
-  /** protocol 3: a fresh random word this session's next hello signs its machine key over (machine-key.ts proofFor),
-   * so a proof is good for one hello of one session, not for any hello within the clock skew */
+  /** a fresh word this session's next hello signs its machine key over (machine-key.ts proofFor), so a proof is good
+   * for one hello of one session, not for any hello within the clock skew */
   challenge?: string;
 }
 export interface OkResult { ok: boolean }
@@ -149,7 +139,6 @@ export interface QueuedReply { queued: number; slow?: true }
 /** The daemon's answer to each relayed op: the host's result, or, for a queueable append, QueuedReply. */
 export type RelayResults = { [M in RelayOp]: M extends 'append' ? AppendResult | QueuedReply : OpResults[M] };
 
-/** Each op's result. */
 export interface OpResults {
   hello: HelloResult;
   join: JoinResult;
@@ -166,8 +155,8 @@ export interface OpResults {
 
 /** A request frame for one op: {id, op, params}, discriminated on op. */
 export type RequestFrame<O extends Op = Op> = { [K in O]: { id: FrameId; op: K; params: OpParams[K] } }[O];
-/** Any request, by its shape alone (an op this end may not serve, or another protocol's: a 0.5.0-beta.15 joiner's PIN
- * attempt, which lib/remote/listener.ts and `serve --enroll` answer with the skew message). */
+/** Any request, by its shape alone (an op this end may not serve, or another protocol's, which lib/remote/listener.ts
+ * and `serve --enroll` answer with the skew message). */
 export interface AnyRequest { id: FrameId; op: string; params: object }
 /** A decoded frame shaped as a request (protocol.isRequest): op a string; id and params as the peer sent them. */
 export interface IncomingRequest {
@@ -185,7 +174,7 @@ export interface IncomingEvent { id?: FrameId; ev: EventName; data?: unknown }
 /** A reply: result or error (the other key absent, so `f.error ? … : f.result` reads either). id: the request's,
  * absent when the request had none (JSON drops an undefined id). */
 export interface ResultFrame<R = unknown> { id?: FrameId | undefined; result: R; error?: undefined }
-/** reason: lib/reasons.ts, beside the code (absent from a peer before reasons). */
+/** reason: lib/reasons.ts, beside the code. */
 export interface WireError { code: string; message: string; reason?: string }
 export interface ErrorFrame { id?: FrameId | undefined; error: WireError; result?: undefined }
 export type ReplyFrame<R = unknown> = ResultFrame<R> | ErrorFrame;
@@ -199,7 +188,7 @@ export type EndReason = 'closed' | 'FORK' | 'moved' | 'AUTH' | 'OFFLINE';
 export interface EndEventData { reason: EndReason; message?: string }
 /** The host's ask that one of this link's seats host the room (private to that link). */
 export interface HandoffAsk { id: string; from: string; to: string; epoch: number; locator?: string; expires_at: string }
-/** The room moved (after its host_changed line); invite: this link's machine's single-use sh2 invite to the new host. */
+/** The room moved (after its host_changed line); invite: this link's machine's single-use bound invite to the new host. */
 export interface MovedEventData { epoch: number; host: string; machine: string; locator: string; invite: string | null }
 
 /** Each event's data, keyed by EventName (protocol.EVENTS): a name with no data here does not compile. */
@@ -220,7 +209,6 @@ export type PrivateEvent =
 /** An event as a client hands it on: {ev, data}. */
 export type StreamEvent<E extends EventName = EventName> = { [K in E]: { ev: K; data: EventData[K] } }[E];
 
-/** Any frame this protocol defines. */
 export type Frame = RequestFrame | ReplyFrame | EventFrame;
 /**
  * A frame as the decoder yields it: a parsed JSON object, not yet checked (isRequest, isReply, isEvent narrow it).
@@ -250,9 +238,9 @@ interface InviteLife {
   burnt_at?: string;
 }
 /**
- * A bound invite (lib/remote/invites.ts mintFor): for one machine, its seats pre-bound, until expires_at. A handoff's
- * (handoff: true) needs no PIN: the room's next host carries it to that machine over its authenticated link. A
- * promote's, handed out by hand, needs its 6-digit PIN (pin_sha256 = sha256(secret:pin), tries left). One shape.
+ * A bound invite (invites.ts mintFor): one machine, its seats pre-bound. A handoff's (handoff: true) needs no PIN: the
+ * room's next host carries it to that machine over its authenticated link. A promote's, handed out by hand, needs its
+ * 6-digit PIN (pin_sha256 = sha256(secret:pin), tries left).
  */
 export interface BoundInvite extends InviteLife {
   v: 2; admission?: undefined; short?: undefined;
@@ -265,7 +253,7 @@ export type ShortKind = 'ssh' | 'ws' | 'pipe';
 /** The joiner an invite line's PIN let through to the card (lib/remote/invites.ts): key, a web link's Noise key. */
 export interface Joiner { machine: MachineId; name: string; label: string; key: string | null }
 /**
- * An invite line's record (protocol 3, v 4): the line carries its 128-bit secret (the record's key is that secret's
+ * An invite line's record: the line carries its 128-bit secret (the record's key is that secret's
  * sha256), and the PIN is checked here online (pin_sha256 = sha256(secret:PIN)), INVITE_PIN_TRIES tries, throttled
  * after each wrong one per invite (wrong, next_at) and per source machine (sources: the id its machine key proves).
  */
@@ -312,19 +300,19 @@ export interface LinkRecord {
   bound?: true;
   /** the machine id the joiner reported, when the host recorded another (lib/remote/host-links.ts machineFor): a label */
   label?: string;
-  /** the Noise key (X25519, base64url) a web link proves on every connection (XK); a link without one (ssh, a pipe, a web
-   * link made under protocol 2) has its token alone */
+  /** the Noise key (X25519, base64url) a web link proves on every connection (XK); a link without one (ssh, a pipe) has
+   * its token alone */
   key?: string;
 }
 /** The host document remote/links. */
 export type Links = Record<string, LinkRecord>;
 
-/** A parsed sh2 invite. */
+/** A parsed bound invite (sh2 form). */
 export interface ParsedInvite { v: 2; code: RoomCode; locator: string; secret: string; hostKey: string | null }
 
 // ---------- the store, as the remote code uses it ----------
 
-/** The store invites.ts, host-links.ts and admission.ts read and write (lib/room/store.ts FsRoomStore, or a mirror's): its code, role and documents. */
+/** The store invites.ts, host-links.ts and admission.ts read and write. */
 export type AuthStore = Pick<RoomStore, 'code' | 'isHost' | 'kv'>;
 
 /** An error thrown with a code of ours: RoomError | NoiseError (lib/errors.ts isCoded). */

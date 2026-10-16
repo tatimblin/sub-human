@@ -5,103 +5,26 @@
  * system). Without --room / CODE, the room is this session's
  * (identity.resolveSelf(): the session id env, then the nearest registered ancestor claude pid).
  *
- *   sub-human tail [--ndjson] [--max-seconds S]
- *       The hooks module's child (mod/deliver.ts starts it with $.process.spawn, CLAUDE_CODE_SESSION_ID set to the
- *       session's id; --ndjson is accepted for that argv and is the only output). Silent until this session has a
- *       seat: while it has none it looks the seat up by CLAUDE_CODE_SESSION_ID / CLAUDE_PID every
- *       SUB_HUMAN_UNSEATED_MS (10000; a `ps` ancestor walk only when neither is set). Once seated it re-resolves
- *       every SUB_HUMAN_RESOLVE_MS (2000), follows that room from the cursor deliver-<name> (without re-reading
- *       the log from byte 0) and writes one JSON event per line for the mod to route (seat, chat, pull, wake,
- *       rows, health; lib/tail.ts documents them), switching (or going silent) if the seat changes.
- *       Settle: entries are batched and written as ONE set of events (at most one wake) after
- *       SUB_HUMAN_SETTLE_MS (1500) of quiet or SUB_HUMAN_SETTLE_MAX_MS (5000) at most (the room's Claude: 3000 / 10000,
- *       unless those two are set). Each entry is judged again against the log at
- *       send time (answered / decided entries are dropped). A member_left X is held
- *       SUB_HUMAN_LEAVE_MS (8000): if X rejoins in that time both notices are dropped.
- *       A member's chat is a group chat (room.chatLines, no ids): "bob: <exact words>", "bob's Claude: …",
- *       "bob joined", "bob left". Lines meant only for Claude start with "(for Claude)". The room Claude's wake opens
- *       with room.stateLine() ("room now: …"), then one room.line(e, {full}) per entry (ids kept: its tools take
- *       them), a leave marked "· away 8s+"; its member_joined is pushed when lib/rows.ts joinNote() says that
- *       member's row is not running (the line ends with the note and the Agent call).
- *       It never exits on an error: it logs to stderr (rate-limited), backs off and carries on. Every
- *       SUB_HUMAN_TAIL_HEALTH_MS (5000) it checks the log's hash chain and, as the room's Claude, runs roomClaude.watchdog(code).
- *       It exits on --max-seconds, SIGTERM / SIGINT / SIGHUP, when its parent goes (the ppid changes) or when
- *       stdout closes.
- *   sub-human read [N[,M] | --id N[,M]] [--json] [--room CODE]
- *       entries in full: by id, or this session's unseen entries (cursor read-<name>)
- *   sub-human digest [--room CODE]     the compaction digest (<= 9,500 chars)
- *   sub-human who [--room CODE]        this session's identity: "<name> (<role>) in <code>"; with --room, each person in that room
- *   sub-human show HASH [--room CODE]  a proposal's stored text (lib/proposal.ts read(code, hash), plans/<HASH>.md)
- *   sub-human tasks [--json] [--room CODE]
- *       the room's shared task list (lib/tasks.ts list(code), the room Claude's native list mirrored to
- *       the room document `tasks`): "#2  in progress  bob  parser tests" (the rows' words: open, in progress, done). --json prints the array.
- *   sub-human watch NAME [--room CODE] [--follow|--no-follow]
- *       NAME's thread: their own words, their Claude's posts (labelled "NAME's Claude"), their answers,
- *       their joins/leaves, and entries addressed to them. The room Claude's posts are labelled
- *       "claude". Follows live when stdout is a terminal (or with --follow).
- *   sub-human verify CODE             a room's log checked (lib/cli/doctor/rooms.ts): its hash chain over every segment
- *       and every person's line against the keys the room pins; exit 1 when the chain breaks or a line does not verify
- *   sub-human agent-statusline
- *       Claude Code's subagentStatusLine command (statusline/*). Never fails: on any error it prints
- *       nothing and exits 0.
- *   sub-human serve --stdio CODE [--link ID [--login]] [--via ws [--peer KEY]]
- *       One remote connection to room CODE hosted here (lib/remote/server.ts): protocol frames on stdin and
- *       stdout (lib/remote/transports/pipe.ts), errors on stderr; exits when stdin ends. A remote machine's
- *       link spawns it (a pipe), an ssh login runs it (--login), or the web listener (--via ws, with --peer KEY: the
- *       link's own Noise key its XK handshake proved). Without a link token or an invite it answers hello and nothing
- *       else. A room this machine only mirrors is not served, unless
- *       the room moved away from here (lib/handoff.ts): then this machine's old log is served read-only, so a
- *       member that reconnects late still gets the line that moved the room and its invite to the new host.
- *       --login: run over this account's own ssh login (`/sub-human join USER@HOST ROOM` on the other machine
- *       names the shim, <home>/bin/serve, with it): a hello with no token makes link ID (lib/remote/server.ts), as
- *       a process of this account may. Refused under SSH_ORIGINAL_COMMAND (a forced command: a restricted key, whose
- *       line fixes its arguments without --login anyway, or a ForceCommand).
- *   sub-human link CODE [--reset | --forget [--force]]
- *       The link daemon of room CODE, hosted on another machine (lib/remote/link.ts run): the join hook starts it
- *       detached; it exits on its own once this machine has no seat left in the room. --reset (with no daemon
- *       running, e.g. after a FORK): forget this machine's copy of the room and start the daemon to copy it again.
- *       --forget (the link stopped because the room closed, no seat is left or the host removed this machine; --force:
- *       for any other reason; a daemon still running is stopped first, the person's own ask): drop the room from this
- *       machine for good. Never automatic (a closed room can open
- *       again). A running daemon first carries this machine's seats' leave to the host (within 3 s in all; an offline
- *       link is not tried, and the line says so), so the host logs "NAME left" at once. Its log is set aside as a
- *       demote's is, the copy moves to rooms/<code>.forgotten-<time> (not a room code, so no listing or open sees it,
- *       and nothing opens it as a room hosted here) with the link's own log and state files (link.log,
- *       link.state.json), then the link goes. It prints the archive's path.
- *   sub-human invite [--room ROOM] [--ssh [USER@HOST[:PORT]] [--via JUMP] | --web | --public | --url URL [--port P]]
- *       An invite line and its PIN, as /sub-human invite shows them (lib/cli/host.ts; lib/remote/hosting.ts hostInvite,
- *       webhost.ts hostWeb). Over ssh by default, to this machine's own address (SUB_HUMAN_SSH_ADDR, else
- *       user@hostname): the PIN vouches for this machine's sshd Ed25519 host key. --web: Tailscale Serve (tailnet only),
- *       --public: Tailscale Funnel, --url: any HTTPS front of your own, to the listener. --pipe: a second home here
- *       (tests, the demo). The host's card lets the joiner in
- *   sub-human invite --stop [--room ROOM]        stop serving the room over the web
- *   sub-human invite --cancel [REF] [--room ROOM]   cancel an invite nobody used (no REF: the one open, or the list)
- *   sub-human admit [REF [--refuse] [--yes]] [--room ROOM]                    (lib/cli/host.ts)
- *       The join requests waiting for the host (no REF), or let one in (y/N first; --yes skips it), or --refuse it.
- *       The card in the host's session is the usual way; this is for a host with no session open.
- *   sub-human kick NAME [--room ROOM]                                        (lib/cli/host.ts)
- *       End NAME's connection: token burnt, its authorized_keys lines removed, its seats leave, a room line says so.
- *   sub-human prime ROOM [--persist 8h]                                       (lib/cli/host.ts)
- *       On the joining machine: open a shared ssh connection (ControlMaster) for room ROOM's link, interactively,
- *       so an MFA bastion or host asks once; the link daemon then rides it.
- *   sub-human listen [--port 7420] | --start [--port P] | --stop | --status   (lib/cli/listen.ts)
- *       The host's WebSocket listener (lib/remote/listener.ts): 127.0.0.1 only, a Noise_NK handshake per connection,
- *       then `<home>/bin/serve --stdio CODE` for it. Without a flag it runs in this process.
- *   sub-human doctor [--quick] [--fix] [--json] [--bundle [FILE]] [--authorized-keys FILE] [--timeout MS]
- *       What is wrong on this machine and the fix for each (lib/cli/doctor.ts): node, the home's modes, the serve
- *       shim, authorized_keys lines that bypass it, ssh, each link (state, last error, a hello to its host with
- *       both protocol versions, clock skew), Claude Code against the internals, hooks, Remote Control. --bundle
- *       writes the same, redacted, for a bug report. Exit 1 when a check fails.
- *   sub-human options CODE [NAME on|off]
- *       A room hosted here: its options (lib/room/options.ts), printed, or one set. login-same-person: a seat that
- *       joins over this account's own ssh login is the host person's own for consent (default off: its own person).
- *   sub-human handoff NAME [--room CODE] [--as SEAT] [--ssh USER@HOST[:PORT]] | handoff --status [--room CODE]
- *   sub-human promote CODE [--as SEAT] [--ssh USER@HOST[:PORT]] [--force] --confirm CODE
- *   sub-human demote CODE [--from FILE]   (the invite line and its PIN on stdin, or in FILE: never in argv)
- *       Moving the room's host (lib/handoff.ts; the bodies are lib/cli/handoff.ts): a planned handoff to a member on
- *       another machine (their card decides), the manual promote of this machine's copy when the host is gone for
- *       good (it can fork the room), and each other machine's way to follow it with the invite promote printed for
- *       it (the old host's own lines kept aside as orphaned).
+ * Subcommands (each one's usage error and the README carry the detail):
+ *   tail        the hooks module's child (mod/deliver.ts): follows this session's seat, one JSON event per line for the
+ *               mod to route (lib/tail.ts). Never exits on an error (logs, backs off, carries on); exits on
+ *               --max-seconds, a signal, its parent going or stdout closing
+ *   read, digest, who, show, tasks, watch   read-only views of the room (read and watch keep their own cursors)
+ *   verify CODE         a room's hash chain and every person's line against the pinned keys (lib/cli/doctor/rooms.ts)
+ *   agent-statusline    Claude Code's subagentStatusLine command: never fails (prints nothing, exits 0)
+ *   serve --stdio CODE  one remote connection to a room hosted here (lib/remote/server.ts). A room this machine only
+ *               mirrors is not served, unless it moved away from here (lib/handoff.ts): then the old log read-only, so
+ *               a member that reconnects late still gets the line that moved it. --login (over this account's own
+ *               ssh login) is refused under SSH_ORIGINAL_COMMAND: a forced command (a restricted key or a
+ *               ForceCommand) is not the account's own login
+ *   link CODE   the link daemon of a room hosted elsewhere (lib/remote/link.ts); --reset recopies the room,
+ *               --forget drops it for good (never automatic: a closed room can open again; the copy is set aside
+ *               as rooms/<code>.forgotten-<time>, not a room code)
+ *   invite, admit, kick, prime, listen   the host's steps (lib/cli/host.ts, lib/cli/listen.ts)
+ *   doctor      what is wrong on this machine and the fix for each (lib/cli/doctor.ts)
+ *   options     a hosted room's options (lib/room/options.ts)
+ *   handoff, promote, demote   moving the room's host (lib/cli/handoff.ts); demote reads the invite line and PIN
+ *               on stdin or from a file, never argv
  *   Run invite, admit, kick, prime, listen, link, serve, options, handoff, promote and demote in your own shell: the Bash guard
  *   refuses them to a model. doctor without --fix or --bundle is read only.
  */
@@ -426,7 +349,7 @@ function linkCmd(args: readonly string[]) {
   if (!code || (flags.reset && flags.forget)) die('usage: sub-human link CODE [--reset | --forget [--force]]');
   if (!identity.isRoomCode(code)) die(`no room ${code} on this machine`, 1);
   // a folder a process still holding a forgotten room's seat wrote (no link, no members, no log): never a room hosted
-  // here; --forget sets it aside (item 9 R1)
+  // here; --forget sets it aside
   if (flags.forget && store.isLeftover(code)) return forgetLeftover(code);
   // first: room.open on a code this machine does not know is a room hosted here, which it is not (forgotten already)
   if (!identity.roomExists(code)) die(`no room ${code} on this machine`, 1);
@@ -440,8 +363,8 @@ function linkCmd(args: readonly string[]) {
   const linkSocket = linkSocketLib();
   const st = linkSocket.status(code);
   if (st.running && flags.forget) {
-    // the person asked to forget it: the daemon is this machine's own, so --forget stops it first (stage 8f item 3),
-    // once the host heard this machine's seats leave over it (verify12 remote/05b: else ~2 min later, "connection lost")
+    // the person asked to forget it: the daemon is this machine's own, so --forget stops it first, once the host
+    // heard this machine's seats leave over it (else the host sees "connection lost" ~2 min later)
     const told = tellHostLeaving(code, s, st.state);
     if (!stopDaemon(st.pid)) die(`the connection to room ${code} is running (pid ${st.pid}) and did not stop; kill ${st.pid}, then run this again`, 1);
     return forgetLink(code, s, true, st.pid, told);
@@ -543,7 +466,7 @@ function optionsCmd(args: readonly string[]) {
 
 type Command = (args: readonly string[]) => unknown;
 
-/** What an unknown command prints: one command per line, grouped (the header above has each in full). */
+/** What an unknown command prints: one command per line, grouped (the header above lists them). */
 const USAGE = [
   'usage: sub-human COMMAND',
   '  the room:   read [--id N,M] | digest | show HASH | who | tasks [--json] | watch NAME',

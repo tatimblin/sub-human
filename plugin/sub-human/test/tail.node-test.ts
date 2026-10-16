@@ -562,17 +562,6 @@ test('tail: the room\'s Claude gets its push block as one wake, the pull lane as
   assert.match(must(t.of('pull')[0]).text, /bob: bob to the room/);
 });
 
-test('tail: a chain break is a health event', () => {
-  h.freshHome();
-  const { code } = h.register('alice');
-  sys(code, 'member_joined', 'alice');
-  const t = startNd({ sid: 's' });
-  t.advance(300);
-  fs.appendFileSync(inRoom(code, r => fsStore(r.store).logFile), JSON.stringify({ id: 2, at: new Date().toISOString(), from: 'alice', via: 'agent', kind: 'status', to: 'room', text: 'spliced', prev: '000000000000' }) + '\n');
-  t.advance(FAST.healthMs * 2);
-  assert.deepEqual(t.of('health').map(x => x.text.slice(0, 40)), ['room log check: the hash chain breaks at']);
-});
-
 test('tail: a member\'s wake carries the room state without entry ids (the person sees the plugin prompt\'s row); the room\'s Claude\'s keeps them', () => {
   h.freshHome();
   const { code } = h.register('alice');

@@ -22,45 +22,25 @@
  *   told ─prompt─► told, the person told once what Send and Discard do (explained); the note keeps waiting
  * A note whose proposal is no longer the seat's to answer is dropped wherever it is met.
  *
- * Events (each carries its facts; ctx {name, now}):
- *   enter      Pre(EnterPlanMode)       mode, reviewable, pending (viewable), said, named, replaced, kept, propose, proposedSince, plan
- *   entered    Post(EnterPlanMode)      plan
- *   exit       Pre(ExitPlanMode)        toolUseId, answer?, target?, shown, text, plan, callPlan, ownPlan, mode?, stub?
- *              stub: the proposal a "proposal HASH" plan names when no review was opened (plan mode entered by hand,
- *              or EnterPlanMode skipped): live, it opens the review here with the person's own plan mode as the mode
- *              to put back (a Yes leaves plan mode: item 7 H); not this seat's to answer, the call is denied, never a
- *              bare plan view of the stub
- *   rejected   the dialog's rejection   toolUseId, answer, target: the person rejected the plan view (with a note, or
- *              none): Claude Code runs no PostToolUse for it, so the module's tool.call hook reports it the moment
- *              ExitPlanMode's call comes back refused (mod/consent.ts). The review resolves there and then: a note
- *              opens, and the model and the person both hear that nothing is recorded until its Send
- *   permission PermissionRequest(ExitPlanMode)
- *   exited     Post(ExitPlanMode)       toolUseId, mode, response, answer?, target?, pending, plan, callNames, reviewable, proposed
- *   stop       Stop                     mode, active, answer?, target?, live
- *   roomTool   Pre(a room MCP tool)     mode, answer?, target?, post, noteLive: while a review is shown or closing, any
- *              room tool is denied; while a note waits for its card, the post tool is (the card decides what the
- *              room gets, so a paraphrase cannot go out first)
- *   prompt     UserPromptSubmit         mode, answer?, target?, live
- *   ask        Pre(AskUserQuestion)     admit, handoff, noteNamed, live, hit, reviewable
- *   answered   Post(AskUserQuestion)    note (lib/consent/card.ts answerCard of its card), target?, afk, asked, answers
- *   planFailed a writePlan effect failed (early: at EnterPlanMode)
+ * Events (ConsentEvent, each carrying its facts; ctx {name, now}) are the hooks around EnterPlanMode, ExitPlanMode,
+ * AskUserQuestion and the room's MCP tools, plus Stop, UserPromptSubmit and a failed writePlan (planFailed). Notes:
+ *   exit's stub: a "proposal HASH" plan with no review opened (plan mode entered by hand, or EnterPlanMode skipped):
+ *     live, it opens the review here with the person's own plan mode as the mode to put back; otherwise the call is
+ *     denied, never a bare plan view of the stub.
+ *   rejected: Claude Code runs no PostToolUse for a rejected plan view, so the module's tool.call hook reports it the
+ *     moment ExitPlanMode's call comes back refused (mod/consent.ts); the review resolves there and then.
+ *   roomTool: while a review is shown or closing any room tool is denied; while a note waits for its card the post
+ *     tool is (the card decides what the room gets, so a paraphrase cannot go out first).
  * answerNeeded(review, event) says whether, and how, the handler reads the dialog's answer for an event.
  *
- * Effects, in order: save {review} (a snapshot stored before a plan-file write: the backup is on disk first),
- * writePlan {file, hash, early} (the proposal's text into the session plan file; a failure is the planFailed event),
- * restorePlan {file, backup} (the file back as it was; null backup: removed), pick {hash} (members/NAME/pick),
- * answer {hash, choice, notes?, clearNote?} (lib/proposal.ts answer then decide; clearNote: the note goes on success).
+ * Effects run in order. save comes before a writePlan, so the backup is on disk first; restorePlan with a null backup
+ * removes the file; answer is lib/proposal.ts answer then decide, its clearNote dropping the note only on success.
+ * say is what the hook answers (context, deny, allow, ask, permit: a PermissionRequest allow with the mode set back);
+ * its parts are lines, {answer: hash} (the answer effect's outcome line) or {ifRecorded}. Every model-facing line is
+ * in NEXT and SAY below: one mechanic per phase and short outcome lines (CLAUDE.md "Unprescriptive").
  *
- * say: what the hook answers. context (additionalContext for the event), deny, allow (a PreToolUse allow's reason),
- * ask (a PreToolUse ask with the dialog's input: the proposal as the plan, or a card), permit (PermissionRequest:
- * allow with the mode set back). Its text is parts: a line, {answer: hash} (the answer effect's outcome line), or
- * {ifRecorded} (a line only when an answer was recorded). Every model-facing line is in NEXT and SAY below: the one
- * mechanic to do next per phase, and short outcome lines (mechanics only; CLAUDE.md "Unprescriptive").
- *
- * Later (docs/next/PLAN-COLLAB-IMPL.md, PR4) versions, threads, withdraw and changes_requested are events and fields
- * on this state, not a second model: a revision retargets review.hash as `replaced` does, withdraw closes a review
- * like a proposal that is no longer pending, the note's Send is the changes-requested answer, and every comparison of
- * the dialog's plan with the proposal goes through shownHash (the composed text's hash then).
+ * Planned (docs/next/PLAN-COLLAB-IMPL.md): versions, threads, withdraw and changes_requested become events and fields
+ * on this state, not a second model; every comparison of the dialog's plan with the proposal goes through shownHash.
  */
 
 import { hash12 } from '../text.ts';
@@ -71,7 +51,7 @@ import type { CardAnswer } from './card.ts';
 import type { RoomCode } from '../brand.ts';
 
 /** recheck: a plan-view Yes that came as the view opened (within YES_GUARD_MS, or while the person had typed text in
- * the prompt), not recorded: the card asks once, and only its answer records (item 8). */
+ * the prompt), not recorded: the card asks once, and only its answer records. */
 export interface State { review: Review | null; note: Confirm | null; recheck?: Recheck | null | undefined }
 /** guardMs: YES_GUARD_MS unless the handler says otherwise (the tests shorten it: env.testMs). */
 export interface ReviewCtx { name: string; now: number; guardMs?: number }
@@ -153,12 +133,10 @@ export const NEXT = {
   admit: (ref: string) => `call AskUserQuestion with "admit ${ref}"`,
 };
 
-/** The dialog's "Yes" that leaves the mode as it was (any other "Yes" works too; the mode is then set back). */
 /** The plan view's "Yes" that leaves the person's mode as it is, by mode, from the options Claude Code 2.1.296 offers
  * ("Yes, and use auto mode", "Yes, manually approve edits"; without auto mode "Yes, auto-accept edits" in the first
  * place). A mode with no such option in every set (accept edits: the auto-mode set has none) is told "any Yes", since
- * the review puts the mode back after a Yes that changed it (stage 8e H: the hint named "Yes, and auto-accept edits",
- * which the dialog did not offer). */
+ * the review puts the mode back after a Yes that changed it. */
 const KEEP: Record<string, string | undefined> = { default: 'Yes, manually approve edits', auto: 'Yes, and use auto mode' };
 /** A mode as the person reads it in the hint. */
 const MODE_WORDS: Record<string, string | undefined> = { plan: 'plan', acceptEdits: 'accept-edits', bypassPermissions: 'bypass-permissions', dontAsk: "don't-ask" };
@@ -184,7 +162,7 @@ export const SAY = {
   replaced: (n: string, old: string, h: string): string => `sub-human: proposal ${old} was replaced by ${h}; opening ${h} for ${n}`,
   restoring: 'sub-human: restoring the mode after a room review',
   planBack: (n: string): string => `${n}'s plan mode is back. ${DONE}`,
-  /** a Yes as the view opened (item 8) */
+  /** a Yes as the view opened */
   tooSoon: (n: string, h: string): string => `Nothing recorded yet: ${n}'s Yes came as the view opened, maybe keys meant for the prompt. Ask once on the card: ${NEXT.card(h)}; only that answer counts.`,
   tooSoonNotice: (title: string | null, h: string, typing: boolean): string => `your Yes on ${title ? `"${title}"` : `proposal ${h}`} came ${typing ? 'while you were typing' : 'right as the review opened'}, so it is not recorded yet: confirm it on the card that follows`,
   recheckAsk: (n: string, h: string): string => `room proposal ${h}: ${n}'s Yes came as the view opened; confirm it here`,
@@ -322,8 +300,8 @@ function resolve(r: Review, note: Confirm | null, ev: { answer?: ReviewAnswer | 
 /** A blank plan, or the "proposal <hash>" stub the model is told to pass: not a plan of its own. */
 const stub = (t: string) => !t.trim() || /^\s*(?:the room )?proposal\s+[0-9a-f]{6,12}\s*\.?\s*$/i.test(t);
 /** What a review backs up of the plan file: the person's own plan, never a stub a model wrote ("proposal HASH"), which a
- * restore would put back for the closing ExitPlanMode to show as an older proposal's hash (stage 8e I.6): null, so
- * the restore removes the file. */
+ * restore would put back for the closing ExitPlanMode to show as an older proposal's hash: null, so the restore
+ * removes the file. */
 const personsPlan = (t: string | null | undefined): string | null => (typeof t === 'string' && !stub(t) ? t : null);
 
 /** Post(ExitPlanMode) with no review shown although its dialog was a pending proposal's: tell the model, pick it. */
@@ -588,7 +566,7 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
       const base = { ...state, note };
       const [first] = ev.hit;
       if (!first) return none(base);
-      // a Yes that came as the plan view opened is confirmed on the card, not in the view again (item 8)
+      // a Yes that came as the plan view opened is confirmed on the card, not in the view again
       const recheck = state.recheck;
       const again = recheck ? ev.hit.find(p => p.hash === recheck.hash) : undefined;
       if (again) return { state: base, effects: [], say: { to: 'ask', text: SAY.recheckAsk(n, again.hash), show: { card: [again.hash] } } };

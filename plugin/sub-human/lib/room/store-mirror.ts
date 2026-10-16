@@ -7,45 +7,27 @@
  * starts none. store.open(code) returns one for a code that lib/room/links.ts knows.
  *
  * Reads: the local FsRoomStore's, over the mirror directory (trust too: the keys the mirrored log pins).
- * Writes (RoomError codes in lib/remote/protocol.ts CODES; OFFLINE: the daemon or the host is unreachable, and
- * nothing was sent or queued but an @room post (append, opts.queue); a daemon that stopped for good gives its own
- * reason and code, from its document `link`, e.g. AUTH for a refused invite; a deadline that passed after the op
- * went out is OFFLINE with unknown: true (protocol.unknownOutcome): it may still land, and retrying is safe):
- *   append(entry, opts) = place(toPayload(...))   signed here (the hook's signer, via=human), placed by the host:
- *                            op `append`. The placed entry is returned once the mirror holds it (the host streams
- *                            a write's lines before its reply: read-your-writes). A via=system payload is refused
- *                            by the host (AUTH): the host writes the room's own entries. opts.queue (hooks/handlers/at-room.ts
- *                            only): with the link down the daemon queues an @room post instead of refusing it
- *                            (lib/remote/outbox.ts); the signed payload is returned with queued: n and no id. Online, a post the host
- *                            has not answered in time comes back queued: n, slow: true (in flight, kept under
- *                            its nonce: the late copy is the post).
- *   members.join(rec)        op `join` with the seat's public key and a proof (lib/remote/host-links.ts proveSeat), both
- *                            from the hook's signer; the host logs member_joined. Any RoomError comes back as
- *                            {ok: false, error, code}
- *   members.leave(name, {reason, deadlineMs}?)   op `leave`; the host logs "NAME left (reason)"
- *   members.beat(name, {presence?})   op `beat`, skipped (true) while the lease is younger than SEAT_BEAT_MS and
- *                            presence is unchanged
- *   members.update(fn)       HOST_ONLY (room Claude bookkeeping never runs here)
- *   blobs.put(name, bytes)   op `blob.put`, then the mirror's copy; blobs.get(ref): the mirror's file, else op
- *                            `blob.get`; has, localPath: the mirror's file (the daemon prefetches every proposal's plan)
- *   kv.*                     local (rows/*, members/NAME/*, cursors, notices, link: session-local documents);
- *                            set/update/delete of a streamed document (members, presence/*, tasks) is HOST_ONLY
- *   request(op, params, {deadlineMs}?)   any other op the daemon relays (lib/remote/link.ts RELAY): the planned
- *                            handoff's handoff.accept and handoff.refuse (lib/handoff.ts)
- *   isHost = false
- * The daemon's writes (lib/remote/link.ts only; it is the mirror's one writer):
- *   applyLine(line)          append one host line verbatim; its prev must hash-chain to the mirror's last line
- *                            and its id follow it, else RoomError FORK and nothing is written
- *   applySnapshot(wire)      a first sync that begins from the host's snapshot (the subscribe stream's 'snapshot'
- *                            event, lib/remote/server.ts): checked first (lib/room/snapshot.ts problem: PROTOCOL for a
- *                            malformed one, FORK for a head that does not hash or pins and host its entries do not
- *                            give), then the mirror's log starts from it. The lines that follow must chain to its
- *                            head (applyLine), else FORK: a snapshot is never repaired or merged
- *   applyDoc(key, value)     write a streamed document (members, presence/NAME, tasks) as the host sent it
- *                            (value null: the document is gone)
- *   applyBlob(ref, bytes)    the mirror's copy of a plan
- *   reset()                  forget everything synced (the log, its checkpoint, the streamed documents), for
- *                            `sub-human link --reset CODE`; session-local documents and plans stay
+ * Writes (RoomError codes in lib/remote/protocol.ts CODES): OFFLINE when the daemon or the host is unreachable and
+ * nothing was sent or queued; a daemon that stopped for good gives its own reason and code from its document `link`
+ * (e.g. AUTH for a refused invite); a deadline that passed after the op went out is OFFLINE with unknown: true: it
+ * may still land, and retrying is safe.
+ *   append/place: op `append`, signed here by the hook's signer. The placed entry is returned once the mirror holds
+ *       it (the host streams a write's lines before its reply: read-your-writes). The host refuses a via=system
+ *       payload (AUTH): it writes the room's own entries. opts.queue (hooks/handlers/at-room.ts only): with the link
+ *       down the daemon queues the post; online, a post the host has not answered in time comes back queued: n,
+ *       slow: true (in flight, kept under its nonce: the late copy is the post).
+ *   members.join sends the seat's public key and a proof (lib/remote/host-links.ts proveSeat), both from the hook's
+ *       signer; any RoomError comes back as {ok: false, error, code}. beat is skipped (true) while the lease is
+ *       younger than SEAT_BEAT_MS and presence is unchanged. update is HOST_ONLY (room Claude bookkeeping never runs here).
+ *   blobs: has and localPath read the mirror's file (the daemon prefetches every proposal's plan); get falls back to
+ *       op `blob.get`.
+ *   kv is local (rows/*, members/NAME/*, cursors, notices, link); set/update/delete of a streamed document
+ *       (members, presence/*, tasks) is HOST_ONLY.
+ * The daemon (lib/remote/link.ts) is the mirror's one writer, through applyLine, applySnapshot, applyDoc, applyBlob
+ * and reset (`sub-human link --reset CODE`). A line whose prev does not hash-chain to the mirror's last line, or
+ * whose id does not follow it, is FORK and nothing is written. A snapshot is checked first (lib/room/snapshot.ts
+ * problem: PROTOCOL when malformed, FORK for a head that does not hash or pins and host its entries do not give);
+ * the lines after it must chain to its head: a snapshot is never repaired or merged.
  */
 
 import crypto from 'node:crypto';
@@ -147,8 +129,7 @@ class MirrorRoomStore implements RoomStore {
   // no opts: validate() refuses the missing from
   append(entry: EntryInput, opts: AppendOpts = {} as AppendOpts): Placed { return this.place(toPayload(this.code, entry, opts), opts); }
 
-  /** The host places it: op `append`. opts.queue (an @room post): while the link is down the daemon may queue it
-   * (lib/remote/outbox.ts); the payload comes back with `queued: n` (the posts waiting) and no id. */
+  /** The host places it: op `append`. opts.queue: the payload may come back with `queued: n` (lib/remote/outbox.ts) and no id. */
   place(payload: Payload, opts: PlaceOpts & { queue: true }): Placed;
   place(payload: Payload, opts?: PlaceOpts): Entry;
   place(payload: Payload, { queue }: PlaceOpts = {}): Placed {

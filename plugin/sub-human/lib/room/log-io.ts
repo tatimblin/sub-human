@@ -6,57 +6,40 @@
  * Every call takes the room's directory.
  *
  * The files (<room>/):
- *   log.jsonl         the active segment: every append goes here. A room from before segments has only this file,
- *                     and reads as it always did; it rotates like any other once it passes the size.
- *   log-NNNN.jsonl    a sealed segment (0001, 0002, ...), never written again. Rotation: once an append leaves
- *                     log.jsonl at env.segmentMaxBytes() or more (1 MiB), and only when every line of it chains,
- *                     log.jsonl is linked as the next log-NNNN.jsonl, snapshot.json is written, and log.jsonl is
- *                     replaced by a file holding only the sealed segment's last line: a segment's first line repeats
- *                     the previous segment's last (the carry line), so the chain runs on across files, an older
- *                     plugin's appender still finds the right id and prev, and every reader skips that repeat.
- *   snapshot.json     the sealed lines in short (lib/room/snapshot.ts: chain head, non-chat entries, the window of
- *                     recent lines a placement needs, pins, host) plus where they are kept (seg, segs, held, base).
+ *   log.jsonl         the active segment: every append goes here (a room from before segments has only this file).
+ *   log-NNNN.jsonl    a sealed segment (0001, ...), never written again. Rotation: once an append leaves log.jsonl at
+ *                     env.segmentMaxBytes() or more, and only when every line of it chains, log.jsonl is linked as the
+ *                     next log-NNNN.jsonl, snapshot.json is written, and log.jsonl is replaced by the sealed segment's
+ *                     last line alone: each segment's first line repeats the previous one's last (the carry line), so
+ *                     the chain runs on across files, an older appender still finds the right id and prev, and every
+ *                     reader skips that repeat.
+ *   snapshot.json     the sealed lines in short (lib/room/snapshot.ts) plus where they are kept (seg, segs, held, base).
  *                     A mirror that began from its host's snapshot (install) holds no line before it: held > 1.
- *   snapshot-base.json the snapshot a mirror began from (install), as installed and never written again: a lost
- *                     snapshot.json is rebuilt from it and the sealed segments, so the host's entries before the mirror's
- *                     first line (its proposals, keys, host) survive. The first segment such a mirror seals starts at
- *                     that snapshot's line (its carry), so the anchor's hash is still found after a rotation.
+ *   snapshot-base.json the snapshot a mirror began from, never written again: a lost snapshot.json is rebuilt from it
+ *                     and the sealed segments, so the host's entries before the mirror's first line survive. That
+ *                     mirror's first sealed segment starts at the snapshot's line (its carry), so the anchor's hash is
+ *                     still found after a rotation.
  * Sealed segments are kept: an older peer's first sync replays the whole log, and readAll() still gives every line.
  * A crash between the steps of a rotation is finished by the next append (settle).
  *
- * Reading:
- *   readAll(dir) -> readonly Readonly<Entry>[]   every entry this machine holds, in order: the snapshot's non-chat entries
- *       before `held` (a mirror that began from a snapshot), the sealed segments, the active segment (carry lines
- *       skipped). Cached: sealed segments are parsed once; the active one as before (a repeat call re-reads nothing
- *       when unchanged and parses only the appended bytes when it grew; a shrink, a new inode, a same-size rewrite or
- *       a changed tail drops that cache). Frozen; a grown log gives a new array. A last line with no newline yet is
- *       parsed, never cached.
- *   readView(dir, {after})   every non-chat entry and every entry with id > after, in log order: the snapshot's
- *       entries, then the active segment through this process's in-memory checkpoint (only its new lines are
- *       parsed). An `after` before the snapshot reads the sealed segments too.
- *   nonChat(dir) -> {marked, rest}   the non-chat entries: the snapshot's and the active segment's verified prefix
- *       (`marked`: the same objects, in a prefix-stable array while the snapshot stands) and after it (past a chain
- *       break, or a line without its newline). What the store derives its pinned keys and host from.
- *   recentFrom(dir) -> id    the snapshot's id (0: none): readView({after: it}) parses only the active segment
- *   snapshotOf(dir) -> SnapshotWire & {held} | null
- *   lastId(dir), lineHash(dir, id) -> hash12 of the stored line (id 0: hash12(''); null: no such line here)
- *   tailer(dir, {fs, after}?)   entries appended after the moment it was made (after: an id, from the first line after
- *       it instead), parsed and verbatim, across segments; a rotation is followed (the rest of the old file, then the
- *       new one, carry skipped); reset: the log was replaced or shrank and reading began again
- *   validateChain(dir)       the whole prev chain over every segment this machine holds (a carry line must repeat
- *       the line before it)
- *   verifyChain(dir, {fromOffset, prev}?)   incremental over the active segment from this process's own checkpoint
- *       (in memory; the snapshot vouches for the sealed lines: a segment is sealed only once it chains)
+ * Reading (the store's calls, by dir):
+ *   readAll: the snapshot's non-chat entries before `held`, the sealed segments, the active segment (carry lines
+ *       skipped). Sealed segments are parsed once; the active one re-reads nothing when unchanged and parses only the
+ *       appended bytes when it grew (a shrink, a new inode, a same-size rewrite or a changed tail drops the cache).
+ *       Frozen; a grown log gives a new array. A last line with no newline yet is parsed, never cached.
+ *   readView: the snapshot's entries, then the active segment through this process's in-memory checkpoint (only
+ *       new lines parsed). An `after` before the snapshot reads the sealed segments too.
+ *   nonChat: `marked` is a prefix-stable array (the same objects while the snapshot stands) over the verified
+ *       prefix; `rest` is past a chain break or a line without its newline. The store derives pins and host from it.
+ *   tailer follows a rotation (the rest of the old file, then the new one, carry skipped); reset: the log was
+ *       replaced or shrank and reading began again.
+ *   validateChain: a carry line must repeat the line before it. verifyChain covers only the active segment from
+ *       this process's checkpoint (the snapshot vouches for the sealed lines: a segment is sealed only once it chains).
  * Writing:
- *   appendLocked(dir, place) -> Entry   under the log lock: read only the log's tail (newest first, then
- *       the snapshot's window), place({newest, prevLine}) -> {e, line}, write the line, then rotate when due
- *   appendVerbatim(dir, line)   a line as another machine stored it (the mirror's one writer); rotates too
- *   rotate(dir) -> bool                 seal the active segment now (false: nothing to seal, or it does not chain)
- *   install(dir, wire)                  a mirror's start from its host's snapshot: snapshot.json and a log.jsonl
- *                                       holding only the snapshot's line (RoomError PROTOCOL when a log is there)
- *   setAside(dir, to) -> bool           every line held moved to file `to`, one log again (a demoted host's)
- *   remove(dir)                         every log file gone (a mirror's reset)
- *   forget(dir)                         drop this process's caches of the room's log
+ *   appendLocked reads only the log's tail (newest first, then the snapshot's window) under the log lock, writes the
+ *       placed line, then rotates when due. appendVerbatim is the mirror's one writer (a line as the host stored it).
+ *   install: a mirror's start from its host's snapshot (PROTOCOL when a log is there already).
+ *   setAside: every line held into one file (a demoted host's); remove: every log file (a mirror's reset).
  */
 
 import nodeFs from 'node:fs';

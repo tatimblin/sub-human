@@ -181,7 +181,7 @@ export function goneAfter(reply: JoinReply, before: { name?: unknown; code?: unk
 }
 
 /** A `/sub-human leave` that went through: the name of the seat it ended (the session is titled with it alone, its
- * address gone with the seat: mod/deliver.ts renames it at once, item 12), else null. A member's seat only. */
+ * address gone with the seat: mod/deliver.ts renames it at once), else null. A member's seat only. */
 export function leftName(args: unknown, reply: JoinReply, seat: { name?: unknown; role?: unknown } | null | undefined, { gone = false }: { gone?: boolean } = {}): string | null {
   const a = words(args);
   const went = reply.kind === 'say' ? !reply.refused : gone; // gone: the seat went though the reply did not come

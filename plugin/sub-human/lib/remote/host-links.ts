@@ -6,39 +6,17 @@
  * as its seat key. "Write as yourself": a link writes only as the seats that joined over it, and joins a seat only
  * with a proof signed by that seat's key. (The joiner's own registry of links is lib/room/links.ts.)
  *
- *   create(store, {id, machine, seats, bound?, login?, label?, key?, check?, now?}) -> {token, link}   records {id,
- *       token_sha256, machine, seats, created_at, bound?, login?, label?, key?}; the token is returned once. key: the
- *       Noise key a web link proved when it was made (XK): every later hello over it must prove the same one
- *       (keyHolds). machine: the id
- *       the host derived from the joiner's machine key (lib/remote/machine-key.ts; the reported id is then only the
- *       label), or a bound invite's (the machine it was minted for, across a handoff); with check (an id only reported:
- *       a joiner that presents no key, a 0.5 beta's) it may be neither this host's (home.isMine) nor another link's
- *       (AUTH MACHINE_TAKEN)
- *   loginLink(store, {id, machine, proven?, now?}) -> {token, link}   proven: the id the joiner's machine key gives   a link for a connection that arrived over the host account's
- *       own ssh login (`serve --login`, lib/remote/server.ts): no invite, since whoever can run commands as this
- *       account may mint one anyway. Seats [], login: true, under the id the joiner chose (its serve's --link, so kick
- *       finds the process). AUTH for an id the room knows already
- *   verifyToken(store, token) -> link | null
- *   keyHolds(link, peer) -> bool              a link with a key is reached only over a connection that proved it;
- *                                             one without (ssh, a pipe, a web link made under protocol 2) by its token
- *   bindSeat(store, linkId, name) -> link     name joined over this link (AUTH for an unknown link, NOT_BOUND for a
- *       bound link and another name)
- *   mayWriteAs(link, name) -> bool            name is one of link.seats
- *   mayJoinAs(link, name) -> bool             a bound link (the card let one name in; a handoff's seats) joins only those;
- *                                             notBound(link, name) says why not
- *   unbindSeat(store, linkId, name)           undo a bindSeat whose seat was then refused (lib/remote/server.ts join)
- *   revokeLink(store, id, {now?}) -> {link, invites} | null   forget link id (its token stops working) and burn every
- *       invite reserved for it; null when nothing had that id. The token's digest is kept in the host-only document
- *       remote/revoked (the newest REVOKED_KEEP), so a hello with it is AUTH LINK_REVOKED, not an unknown token
- *   wasRevoked(store, token) -> bool          the token is one of a link the host revoked (kick)
- *   links(store) -> {id: link};  linkKnown(store, id) -> bool (a link, or an invite's reserved link, with that id)
- *   newLinkId() -> 12 hex;  LINK_ID_RE /^[0-9a-f]{12}$/;  LINKS_KEY 'remote/links'
- *   isLinkToken(v)   a link's token as create() makes one (24 random bytes, base64url): the guard that makes the
- *                    LinkToken brand (lib/brand.ts), a secret (lib/cli/doctor/redact.ts redact)
- *   proveSeat(key, {room, name, pubkey}) -> proof   the joining hook's half (it holds the seat's private key):
- *       {kind: 'join', pubkey} signed (sig v2) for room and name
- *   checkSeatProof(proof, {room, name, pubkey})    the server's half: AUTH unless proof is a fresh join proof for this
- *       room, name and pubkey that verifies against pubkey, so a link cannot take a seat with a public key alone
+ * create: machine is the id the host derived from the joiner's machine key (machine-key.ts; the reported id is then
+ * only the label), or a bound invite's (the machine it was minted for, across a handoff). key: the Noise key a web
+ * link proved when it was made: every later hello over it must prove the same one (keyHolds). loginLink makes a link
+ * for a connection over the host account's own ssh login (`serve --login`) with no invite, since whoever can run
+ * commands as this account may mint one anyway; it takes the id the joiner chose (its serve's --link, so kick finds
+ * the process). A bound link (the card let one name in; a handoff's seats) joins only those (mayJoinAs).
+ *
+ * revokeLink keeps the token's digest in the host-only document remote/revoked (the newest REVOKED_KEEP), so a hello
+ * with it is AUTH LINK_REVOKED, not an unknown token. checkSeatProof: a join needs a fresh proof signed by the seat's
+ * own key, so a link cannot take a seat with a public key alone; proveSeat is the joining hook's half. isLinkToken
+ * makes the LinkToken brand (lib/brand.ts), which lib/cli/doctor/redact.ts treats as a secret.
  */
 
 import crypto from 'node:crypto';
@@ -100,7 +78,7 @@ function verifyToken(store: AuthStore, token: unknown): LinkRecord | null {
   return Object.values(links(store)).find(l => l.token_sha256 === digest) ?? null;
 }
 
-/** A link bound to a key (made over the web under protocol 3) is reached only with that key; any other by its token. */
+/** A link bound to a key (a web link) is reached only over a connection that proved that key; any other by its token. */
 const keyHolds = (link: Pick<LinkRecord, 'key'>, peer: string | null | undefined): boolean => !link.key || link.key === peer;
 
 function bindSeat(store: AuthStore, linkId: string, name: string): LinkRecord {
@@ -165,7 +143,7 @@ function wasRevoked(store: AuthStore, token: unknown): boolean {
 
 const links = (store: AuthStore): Links => store.kv.get(LINKS_KEY, null) ?? {};
 
-/** A reported machine id (a joiner that derives none: a 0.5 beta's) may not be this host's own or another link's. */
+/** A machine id only reported (a joiner that presents no machine key) may not be this host's own or another link's. */
 function taken(store: AuthStore, machine: string, id: string): void {
   const other = Object.values(links(store)).some(l => l && l.id !== id && l.machine === machine);
   if (other || isMine(machine)) throw new RoomError('AUTH', `this machine reports the id of another one in room ${store.code} (${other ? 'a linked machine' : 'the host'}); join from your own sub-human home`, 'MACHINE_TAKEN');

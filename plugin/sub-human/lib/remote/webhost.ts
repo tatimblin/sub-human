@@ -4,25 +4,13 @@
  * never the model) and the CLI (lib/cli/host.ts). The wire is
  * lib/remote/transports/ws.ts; the daemon lib/remote/listener.ts; the Tailscale calls lib/remote/tailscale.ts.
  *
- *   hostWeb(code, {tailscale?, funnel?, url?, port?, by?, now?}) -> {pin, ref, expires_at, short: true, line, word,
- *       locator, hostKey, base, mode, port, text}
- *       An invite line: `/sub-human join https://HOST/…/sub-human/ROOM SECRET`, its SECRET's tag naming the listener's
- *       X25519 key (lib/remote/invite-secret.ts, role 'listener': the joiner checks it before its Noise handshake),
- *       and a 4-digit PIN told apart (lib/remote/invites.ts mintInvite, kind ws); the host person's card admits the
- *       joiner. Starts the listener (idempotent,
- *       127.0.0.1:port, default 7420) and puts the room in its served set; the locator is wss://HOST/…/sub-human/ROOM.
- *       tailscale (`--web`): Tailscale Serve for /sub-human/CODE -> http://127.0.0.1:PORT on this node's MagicDNS name (tailnet
- *       only), then one background request to it to warm its certificate (tailscale.warm); funnel (`--public`): the
- *       same through Funnel (public; the text carries tailscale.CT_WARNING). url: any HTTPS front that forwards to the
- *       listener (the lab's tls-front, a reverse proxy of the person's own): the join URL is URL/sub-human/ROOM
- *   ensure(code) -> bool   start the listener again for a room it serves (after a reboot): the join hook, on a host seat
- *   webLocator(url, code) -> 'wss://FRONT/prefix/sub-human/CODE'   a handoff's or promote's --url
- *   serveAt(code, locator) -> {port, hostKey}   this machine is about to host CODE at a web locator (lib/handoff.ts accept,
- *       promote): the listener up, the room served; its invites pin hostKey. A Tailscale path is set up by invite --web
- *   unhost(code) -> {removed, text}   (`invite --stop`) the room leaves the served set and its own Tailscale path (only that one) is
- *       turned off; the listener stops once it serves no room. Links already made keep their token but cannot
- *       reach the room over the web until it is hosted again
- *   frontBase(url) -> {secure, host, port?, prefix}   a front's base URL, checked: http(s)://host[:port][/prefix] only
+ * hostWeb: an invite line `/sub-human join https://HOST/…/sub-human/ROOM SECRET`, its SECRET's tag naming the
+ * listener's X25519 key (role 'listener': the joiner checks it before its Noise handshake), and a 4-digit PIN told
+ * apart. It starts the listener (127.0.0.1 only) and puts the room in its served set. tailscale (`--web`): Tailscale
+ * Serve for /sub-human/CODE on this node's MagicDNS name (tailnet only), its certificate warmed in the background;
+ * funnel (`--public`): the same through Funnel (public; the text carries tailscale.CT_WARNING); url: any HTTPS front
+ * that forwards to the listener. unhost (`invite --stop`) turns off the room's own Tailscale path only; links already
+ * made keep their token but cannot reach the room over the web until it is hosted again.
  */
 
 import { RoomError } from '../room/validate.ts';

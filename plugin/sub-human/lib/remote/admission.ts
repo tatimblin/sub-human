@@ -9,35 +9,11 @@
  * tail on the host wakes the seat's Claude to open the card once (lib/tail.ts); a request nobody answers lapses after
  * ADMIT_TTL_MS.
  *
- * The records (kept in the host document remote/invites, under invites.admissionSlot(secret)):
- *   check(record, {machine, linkId?, peerKey?, now}) -> {err, next?}   may it redeem: once let in, on its machine (the
- *       id its machine key proves), on its link (a login session's --link), with its key (a web one), before
- *       admitted_until (OFFLINE ADMIT_WAITING before the person answered; AUTH ADMIT_REFUSED / ADMIT_LAPSED /
- *       ADMIT_REVOKED / ADMIT_LATE / INVITE_USED / INVITE_OTHER_MACHINE / INVITE_OTHER_LINK / KEY_MISMATCH after)
- *   admissions(store, {now?, all?}) -> [{slot, ref, ...record}]   the requests waiting (all: every one), oldest first
- *   decide(store, ref, {decision: 'let-in' | 'refused', by?, sig?, now?}) -> record   the person's answer
- *   lapseAdmissions(store, {now?}) -> [record]   burn the requests nobody answered in ADMIT_TTL_MS
- *   WAITING   the words of a request not answered yet
- *
- *   pending(code, {now?}) -> [request]        the requests waiting (admissions): {ref, name, label, machine, key,
- *                                              kind, by, link, expires_at, told?}
- *   find(code, ref) -> request | null         any request of the room with that ref (answered or not)
- *   targets(code, req) -> [name]              whose card asks: req.by when that seat is in the room on this machine,
- *                                              else every person seated here
- *   describe(req) -> "carol (check 3f9c-2a71) on carols-mbp"   the check of the machine whose key the PIN came with
- *                                              (invite-secret.ts joinCheck): the joiner's screen shows the same
- *   question(req, code) -> string             the card's question (it names the ref)
- *   taken(code, req) -> alt | null            the name the request asks for sits in the room from another machine (its
- *                                              key never moves there: the seat would be refused, "pinned to another
- *                                              key"): the free name to let it in as instead (NAME2, NAME3, …), else null
- *   card(req, code) -> AskUserQuestion input  LET_IN / REFUSE; for a taken name "Let in as ALT" / REFUSE
- *   letIn(code, ref, {by?, sign?, as?, now?}) -> {id, text}   the person's yes: the record let in (signed with their
- *                                              seat key when sign is given), a room line; a taken name is let in as its
- *                                              alt (as: the card's), which the joiner's hello then learns (lib/remote/server.ts)
- *   refuse(code, ref, {by?, now?}) -> {text}  the person's no: burnt, a room line
- *   markTold(code, {ref, name})               the tail woke name's Claude for it
- *   lapse(code, {now?}) -> [request]          requests past their time, burnt now (the tail tells the host)
- *   LET_IN, REFUSE
+ * The records live in the host document remote/invites, under invites.admissionSlot(secret). A request asks the card
+ * of req.by when that seat is in the room on this machine, else of every person seated here (targets). The card and the
+ * joiner's screen both show the check of the machine (and web key) that proved itself with the PIN, to compare. A name
+ * that sits in the room from another machine can't be let in as itself (its key never moves): the card offers the
+ * free NAME2, NAME3, … instead (taken), which the joiner's hello then learns (server.ts).
  */
 
 import { INVITES_KEY } from './invites.ts';

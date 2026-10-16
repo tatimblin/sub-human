@@ -185,7 +185,7 @@ test('budget: a join whose host never answers (ssh hangs) still replies, hidden,
   });
   const t0 = Date.now();
   // the real store (not test:thread-store's preload): the link daemon this join starts must be a production one
-  const r = w.hook('join', expand(`join me@devbox ${code} ${SECRET}`), { as: 'me', env: { PATH: `${bin}:${process.env.PATH}`, SUB_HUMAN_TEST_THREAD_STORE: undefined } });
+  const r = w.hook('join', expand(`join me@devbox ${code} ${SECRET}`), { as: 'me', env: { PATH: `${bin}:${process.env.PATH}` } });
   const ms = Date.now() - t0;
   assert.equal(r.code, 0, r.stderr);
   assert.ok(ms < 9000, `the join took ${ms} ms of its 10 s`);

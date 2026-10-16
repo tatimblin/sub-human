@@ -6,123 +6,49 @@
  * time (pid_start, epoch s, lib/lock.ts pidStart), so a reused pid never keeps a dead seat alive or adopts it.
  * Every seat also stores its machine (machineId), so a pid is only ever checked on the machine it belongs to.
  *
- * Location:
- *   home() -> string                     SUB_HUMAN_HOME, else ~/.sub-human (read on every call; lib/home.ts)
- *   roomDir(code) -> string              <home>/rooms/<code> (lib/home.ts; validates the code)
- *   newCode() -> string                  "otter-4821": a fresh room, created with an exclusive mkdir
- *   roomExists(code) -> bool
- *   openRooms() -> [code]                rooms with >= 1 live member seat (role member) that are not closing,
- *                                        newest first, judged among the rooms the open-rooms index names (lib/room/store.ts
- *                                        indexedRooms: kept at open, join and close), not every room ever made; a room
- *                                        found closed for good (every seat left, its room Claude stopped or never
- *                                        started) leaves the index. The start times of every live local pid it judges come from one
- *                                        ps call (lib/lock.ts pidStarts), not one per seat. No room Claude seat is needed: the first member opens it. A room
- *                                        where only the room's Claude is left is not open (see orphanRooms).
- *   closedForGood(members) -> bool       every person's seat left (one whose session crashed has not) and the room's
- *                                        Claude stopped or never started: only a join reopens it (lib/gc.ts sets aside
- *                                        only such a room)
- *   orphanRooms() -> [code]              rooms not closing whose room Claude is not stopped but which have no live member
- *                                        (join sweeps these through roomClaude.watchdog)
- *   roomOpen(code) -> bool               not closing and has any live seat, the room's Claude included (a resume may
- *                                        rejoin a room whose room Claude is waiting out the reap grace)
- *   roomClosing(code) -> bool            members claude.closing is set (the reaper is shutting the room down)
- *   pruneSessionIndexes(now?, ttlMs?) -> n   by-sid and by-pid index records not written in ttlMs (SESSION_INDEX_TTL_MS)
- *                                        whose pid is not alive with its recorded start time, and EnterPlanMode mode
- *                                        notes (sessions/mode, hooks.json) over a minute old: lib/gc.ts
- *   isHost(code) -> bool                 this machine holds the room (its store's isHost): the room Claude's spawn, reap
- *                                        and watchdog and proposal decisions run only here
- *   machineId() -> string                this machine's id (lib/home.ts), a seat record's `machine`; machineIn(code) its id in
- *                                        a room joined over a link, isMine(id) any of them (lib/home.ts)
+ * Rooms. openRooms() judges only the rooms the open-rooms index names (lib/room/store.ts indexedRooms: kept at
+ * open, join and close), with one ps call for every live local pid (lib/lock.ts pidStarts). A room is open with
+ * >= 1 live member seat and not closing; one where only the room's Claude is left is not (orphanRooms: join sweeps
+ * those through roomClaude.watchdog). A room closed for good (every person's seat left, one whose session crashed
+ * has not; its room Claude stopped or never started) leaves the index, only a join reopens it, and it is the only
+ * kind lib/gc.ts sets aside. roomOpen counts the room's Claude too (a resume may rejoin a room whose room Claude
+ * is waiting out the reap grace). isHost: the room Claude's spawn, reap and watchdog and proposal decisions run
+ * only on the machine that holds the room.
  *
- * Members (the room's members document, lib/room/store.ts members; seats change through its named ops join,
- * leave and beat, whose rules are lib/room/members.ts):
- *   readMembers(code) -> {name: {name, role, machine, pid?, pid_start?, session_id?, cwd?, joined_at, seen_at,
- *       left_at?}}   pid, pid_start, session_id and cwd only for a seat of the machine that holds the room
- *       The "claude" record also carries {job, spawned_at, closing?, stopped_at?, claim?, by?, ...} (lib/room-claude.ts);
- *       before the spawned room Claude binds, it is {name:"claude", role:"claude", pid:null, job, spawned_at}, and while a
- *       spawn is in flight job is "pending".
- *   updateRoomClaude(code, fn) -> record|null  under the lock: fn(room Claude record or null, members) returns a patch to
- *                                        merge (the new record is returned) or null to write nothing (null)
- *   seatAlive(m) -> bool                 not left, and: a seat of this machine with a pid: that pid is alive with
- *                                        its start time matching pid_start; any other seat: its lease (seen_at)
- *                                        is fresh (lib/room/members.ts)
- *   normalizeName(text) -> name | null   a name from a person's own name: the first word, lowercased, accents dropped,
- *                                        only NAME_RE's characters; null when nothing is left or it is reserved
- *   defaultName({cwd?, env?}) -> name | null   the name /sub-human uses when none is typed: git's user.name (cwd's
- *                                        repo, else the global one), else the local part of git's user.email, else
- *                                        $USER, each through normalizeName ("Tristan Timblin" -> "tristan")
- *   heartbeat(me, now?) -> bool          renew me's lease, seen_at (members.beat, at most every SEAT_BEAT_MS; the
- *                                        tail's health tick and the hold server); leaseFresh(m, now?)
- *   liveMembers(code) -> [name]          the people's seats (not the room's Claude) that are seatAlive
- *   join({code, name, role, machine?, account?, pid, session_id, cwd}) -> {ok, error?, rejoin?}
- *       role is "claude" (the room's Claude) or "member". NAME_RE; reserved names (RESERVED) claude, room, all,
- *       system, host, and every /sub-human verb (VERBS): only role claude may use
- *       "claude", and role claude must use it. members.join: a name held by a live seat of another holder
- *       (another pid, or another machine) is "name taken"; otherwise the name is (re)bound. The room's Claude record
- *       keeps its job / spawned_at across a (re)bind. machine defaults to this one; a seat of this machine needs
- *       its pid, and after the op: one seat per claude pid (joining elsewhere retires its previous seat), then
- *       the indexes <home>/sessions/by-pid/<pid>.json and <home>/sessions/by-sid/<sid>.json. A seat of another
- *       machine (the remote server) has no pid here and no index.
- *   leave(code, name, {reason, deadlineMs}?) -> bool   members.leave (sets left_at; on a mirror the host's leave
- *                                        op, which logs member_left with the reason), then drops the by-pid index
- *                                        when it still names this seat. The by-sid index stays so lastSeat() can
- *                                        find the seat on --resume.
- *   rebindSession(pid, sid) -> bool      after /clear: point a new session id at the seat registered for pid (on a
- *                                        mirror only the indexes: the host never holds a seat's session)
+ * Members (lib/room/store.ts members; seats change only through its ops join, leave and beat, whose rules are
+ * lib/room/members.ts, and the room's Claude record through members.update, atomic). pid, pid_start, session_id
+ * and cwd are kept only for a seat of the machine that holds the room. The "claude" record also carries job,
+ * spawned_at, closing, stopped_at, claim, by (lib/room-claude.ts); before the spawned room Claude binds its pid is
+ * null, and while a spawn is in flight job is "pending".
+ *   join: reserved names (RESERVED: the room's own names and every /sub-human verb) are refused, except that role
+ *   claude must use "claude". A name held by a live seat of another holder (another pid or machine) is "name taken";
+ *   otherwise it is (re)bound, the room Claude record keeping its job and spawned_at. A seat of this machine needs
+ *   its pid; afterwards one seat per claude pid (its previous seat is left) and the indexes
+ *   <home>/sessions/by-pid/<pid>.json and by-sid/<sid>.json are written. A seat of another machine has neither.
+ *   leave drops the by-pid index but keeps the by-sid one, so lastSeat() finds the seat on --resume.
+ *   rebindSession (after /clear) on a mirror changes only the indexes: the host never holds a seat's session.
  *
- * Resolution (each returns the identity record {code, name, role, session_id, pid, address} or null;
- * address = "NAME.CODE", the session title other Claudes reach it by with SendMessage). In a room this machine
- * mirrors (lib/room/store-mirror.ts), whose members document holds no pid, start time or session, a seat of this
- * machine is judged by its index record's:
- *   resolveBySession(sid)                hooks: the payload's session_id
- *   resolveByPid(pid)                    the MCP server: process.ppid, a direct lookup of a registered pid
- *                                        (null when that pid now belongs to a process with another start time)
- *   resolveSelf()                        the CLI and the tail: CLAUDE_CODE_SESSION_ID (set by Claude Code for
- *                                        Bash, hooks and the status line; the mod sets it for its tail child), then CLAUDE_PID (same
- *                                        children), then the nearest ancestor pid with a registration
- *   lastSeat(sid) -> {code, name, role}|null   the seat a session id last held, left or not (for --resume)
- *   forkParent(sid, dir) -> {sid, code, name, role}|null   the seat this session's conversation came from when ← (the
- *                                        agent view) moved it into a bg job under a new id: a seat still held by an
- *                                        older session whose transcript, beside this one's in dir, says it continued
- *                                        in sid (lib/cc/transcript.ts continuedIn; CONTRACT session-fork-continued-in)
- *   forkedAway(sid, dir) -> {sid, title, home?}|null   a fork whose parent sat in another sub-human folder than this
- *                                        process's (its SUB_HUMAN_HOME was only in the shell, which the bg job drops):
- *                                        the parent transcript continued in sid and the last folder it names is not
- *                                        this one (lib/cc/transcript.ts lastHome; CONTRACT transcript-home-notice), also
- *                                        after a leave; with no such notice (a transcript from before it), its last
- *                                        title is an address NAME.CODE (lastTitle; CONTRACT transcript-custom-title)
- *   markForked(sid, f), forkedOf(sid)    <home>/sessions/forked/<sid>.json: session-restore's record of such a fork
- *   adoptFork(from, {pid, session_id, cwd}) -> JoinOutcome  move that seat to this process and session (no leave, no
- *                                        log line: the person never left); the old session's indexes are dropped
- *   dropSeatIndexes(code) -> n           this machine's session indexes naming code removed (`link CODE --forget`)
- *   localSeats(code) -> [name]           this machine's seats in code that a live claude process holds, by the
- *                                        session indexes (resolveByPid): what a mirror knows while its link is down
- *   claudePid() -> int|null              CLAUDE_PID from the environment (hooks run with it set; lib/cc/env.ts)
- *   adoptLocalSeats(code) -> [name]      after this machine became the room's host (lib/handoff.ts): its seats' records
- *                                        get back pid, pid_start and session_id from the session indexes (a mirror's
- *                                        members document never held them), so they resolve here as host seats
+ * Resolution returns {code, name, role, session_id, pid, address}, address = "NAME.CODE", the session title other
+ * Claudes reach it by with SendMessage. In a room this machine mirrors (lib/room/store-mirror.ts), whose members
+ * document holds no pid, start time or session, a seat of this machine is judged by its index record's.
+ * resolveSelf (the CLI and the tail) tries CLAUDE_CODE_SESSION_ID (set by Claude Code for Bash, hooks and the
+ * status line; the mod sets it for its tail child), then CLAUDE_PID, then the nearest ancestor with a registration.
+ * forkParent and forkedAway follow a conversation that ← (the agent view) moved into a bg job under a new id
+ * (lib/cc/transcript.ts continuedIn, lastHome, lastTitle; CONTRACT session-fork-continued-in,
+ * transcript-home-notice, transcript-custom-title); adoptFork moves the seat with no leave and no log line, since
+ * the person never left. adoptLocalSeats, after this machine became the host (lib/handoff.ts), puts pid, pid_start
+ * and session_id back from the indexes, which a mirror's members document never held.
  *
  * The hooks module's lease, <home>/sessions/mods/<sid>.json (atomic, 0600): this session's function hooks are
- * loaded and have said hello (hooks/handlers/mod-hello.ts writes it, join requires it, session-end deletes it). Fields:
- *   {session_id, pid, pid_start?, at, nonce?}   pid: the claude process the module runs in; pid_start: its
- *                                        start time (epoch s); at: ISO time written; nonce: the module's secret for
- *                                        the session (32 hex), which hooks/handlers/at-room.ts requires beside an origin.
- *                                        Keep it one small flat object.
- *   writeModLease(sid, {pid, nonce}) -> bool
- *   readModLease(sid) -> rec|null;  deleteModLease(sid) -> bool
- *   modLeaseOk(sid, pid, now?) -> bool   the lease is this claude process's (pid alive, start time matching), or
- *                                        was written within MOD_LEASE_FRESH_MS
- *   pruneModLeases(now?) -> n            delete leases whose process is gone (no pid: once past the fresh window)
+ * loaded and have said hello (hooks/handlers/mod-hello.ts writes it, join requires it, session-end deletes it).
+ * {session_id, pid, pid_start?, at, nonce?}: nonce is the module's secret for the session (32 hex), which
+ * hooks/handlers/at-room.ts requires beside an origin. Keep it one small flat object.
  *
- * Presence (the room documents presence/<name> = {state, at, detail?}, written by members.beat with the lease):
- *   writePresence(code, name, {state, detail?})   state: working (prompt submitted / joined) | idle (idle_prompt)
- *                                               | permission (permission_prompt) | error (StopFailure; detail = code).
- *                                               false for a name with no seat (or a left one)
+ * Presence (presence/<name> = {state, at, detail?}, written by members.beat): working | idle | permission |
+ * error (StopFailure; detail = code).
  *
- * Also: isAlive (lib/io.ts), NAME_RE, CODE_RE, RESERVED, ANIMALS, PRESENCE_STATES.
- * Room state (members, presence, the room list) goes through lib/room/store.ts; seats change only through the
- * members ops, the room's Claude record through members.update (atomic). The session indexes (<home>/sessions/, which
- * seat a local pid or session id holds) are this machine's, not the room's, and stay here.
+ * The session indexes (<home>/sessions/, which seat a local pid or session id holds) are this machine's, not the
+ * room's, and stay here; room state goes through lib/room/store.ts.
  */
 
 import fs from 'node:fs';
@@ -164,7 +90,7 @@ interface SeatIndex {
   session_id?: SessionId | null | undefined;
   address?: string | undefined;
 }
-/** A session index record as read (indexRec; the same since 0.5.0-beta.4): code and name are what every reader needs. */
+/** A session index record as read (indexRec): code and name are what every reader needs. */
 const SEAT_INDEX = obj({
   code: refine(str, isRoomCode, 'a room code'), name: refine(str, isSeatName, 'a seat name'), role: opt(str), pid: opt(nullable(num)), pid_start: opt(num),
   session_id: opt(nullable(refine(str, isSessionId, 'a session id'))), address: opt(str),
@@ -217,12 +143,14 @@ const ANIMALS: readonly string[] = [
 ];
 
 // ---------- the default name ----------
+/** A name from a person's own: the first word, lowercased, accents dropped; null when nothing is left or it is reserved. */
 function normalizeName(text: unknown): SeatName | null {
   const first = String(text || '').trim().split(/\s+/)[0] || '';
   const n = first.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9_.-]/g, '').replace(/^[._-]+/, '').slice(0, 32);
   return n && isSeatName(n) && !RESERVED.includes(n) ? n : null;
 }
 
+/** git's user.name (cwd's repo, else global), else user.email's local part, else $USER ("Tristan Timblin" -> "tristan"). */
 function defaultName({ cwd = process.cwd(), env = process.env }: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): SeatName | null {
   const git = (key: string): string => {
     try {
@@ -440,7 +368,7 @@ function deleteModLease(sid: unknown): boolean {
   return true;
 }
 
-/** Delete leases whose process is gone; a lease with no pid (or unreadable) once it is past the fresh window. */
+/** Index records older than ttlMs whose pid is not alive with its start time, and EnterPlanMode mode notes over a minute old. */
 function pruneSessionIndexes(now: number = Date.now(), ttlMs: number = SESSION_INDEX_TTL_MS): number {
   let n = 0;
   for (const dir of [byPidDir(), path.join(home(), 'sessions', 'by-sid')]) {
@@ -469,6 +397,7 @@ function pruneSessionIndexes(now: number = Date.now(), ttlMs: number = SESSION_I
   return n;
 }
 
+/** Delete leases whose process is gone; a lease with no pid (or unreadable) once it is past the fresh window. */
 function pruneModLeases(now: number = Date.now()): number {
   const dir = path.join(home(), 'sessions', 'mods');
   let names: string[];
@@ -571,10 +500,10 @@ const FORK_SCAN_MS = 10 * 60_000;
 /** title is a seat's address NAME.CODE (the session title a seat sets). */
 const isAddress = (title: string): boolean => { const i = title.lastIndexOf('.'); return i > 0 && NAME_RE.test(title.slice(0, i)) && CODE_RE.test(title.slice(i + 1)); };
 
-/** A fork's parent seated in another sub-human folder (stage 8e E, 8f item 1): sid's conversation came from a session
- * whose transcript (beside this one's in dir) continued in sid and names another folder than this one as its seat's
- * (the hooks module's notice), whether or not it still held the seat (a leave renames the session, so its title says
- * nothing then); with no notice, a title that was a seat's address NAME.CODE. {sid, title, home?} or null. */
+/** A fork's parent seated in another sub-human folder (its SUB_HUMAN_HOME was only in the shell, which the bg job
+ * drops): a transcript beside this one's that continued in sid and names another folder as its seat's (the hooks
+ * module's notice), held or not (a leave renames the session, so its title says nothing then); with no notice, a
+ * title that was a seat's address NAME.CODE. */
 type ForkedAway = { sid: string; title: string; home?: string };
 const realish = (p: string): string => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
 function forkedAway(sid: unknown, dir: string | null | undefined, now: number = Date.now()): ForkedAway | null {
@@ -703,8 +632,7 @@ function allMembers(): { code: RoomCode; ms: Members }[] {
   return open;
 }
 
-/** code off the open-rooms index once it is closed for good (the reaper, a leave): open-rooms.json lists no closed
- * room until the next look (stage 8e I.1). */
+/** code off the open-rooms index once it is closed for good (the reaper, a leave), not only at the next look. */
 function unindexClosed(code: RoomCode): void {
   if (roomExists(code) && closedForGood(readMembers(code))) store.unindexRooms([code]);
 }

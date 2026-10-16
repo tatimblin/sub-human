@@ -45,7 +45,7 @@ export const relayText = (lines: unknown): string => (Array.isArray(lines) ? lin
   .map(String).filter(l => l.trim()).join('\n');
 /** What the model reads beside a relay. */
  /**
- * A member's wake as it is submitted (item 5 I): Claude Code draws a plugin's own prompt under re-entry, where no hook
+ * A member's wake as it is submitted: Claude Code draws a plugin's own prompt under re-entry, where no hook
  * of the plugin runs (cc CONTRACT render-own-prompt-reentry), so the frame and every "(for Claude)" line would show as
  * typed. So a wake with lines for the person is submitted asUser with those lines alone (no frame), and its "(for
  * Claude)" lines ride as context the model alone reads (WAKE_CONTEXT first); one with none is submitted framed, as is

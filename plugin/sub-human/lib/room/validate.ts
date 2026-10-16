@@ -4,27 +4,16 @@
  * runs validate() before it signs, and place() runs it again on the payload before it takes the log lock.
  * Zero dependencies beyond lib/text.ts.
  *
- *   validate(entry, {via, from, system}) -> {via, kind, text, to, refs, hash, approvers, same, path, proposal_hash,
- *       normalized, edit_path, drafted, task, pubkey, machine, host}   throws RoomError INVALID with a message for the model
- *   RoomError(code, message, reason?)   reason: lib/reasons.ts; code: INVALID | RATE | LOCK | NO_ROOM | AUTH (a signature, a replay or a pinned key refused)
- *   parseEntry(e) -> e as a KnownEntry | null   a log line by its kind (no copy); null: a kind a newer host wrote
- *   isKindOf(e, kind) -> bool       a single-kind filter that narrows (EntryOf<kind>)
- *   isEntryId(v), entryId(v) -> EntryId | null   a log line's id (a positive safe integer; entryId reads 22 or "22"),
- *       nextEntryId(last) the one after: the brand's constructors (lib/brand.ts); isTaskId(v), taskId(v) -> TaskId |
- *       null a task's id as stored (a short id string; taskId also reads a positive integer)
- *   AGENT_KINDS HUMAN_KINDS SYSTEM_KINDS SYSTEM_ONLY_KINDS KINDS TASK_OPS VIAS   the tables, the source of
- *       lib/room/types.ts Kind, TaskOp and Via; isKind, isVia, isTaskOp their guards
+ * validate() throws RoomError INVALID with a message for the model. The tables (AGENT_KINDS, HUMAN_KINDS, ...) are
+ * the source of lib/room/types.ts Kind, TaskOp and Via.
  * Rules: via "agent" writes say question status proposal task_req; via "human" say signoff objection proposal;
  * via "system" decision member_joined member_left task status, and only with {system: true}.
  * Size caps (lib/config.ts): text <= ENTRY_TEXT_MAX_BYTES UTF-8 bytes, refs <= ENTRY_REFS_MAX, approvers and
  * blockedBy <= ENTRY_LIST_MAX, any other string field <= ENTRY_STR_MAX (JS .length) (narrower caps below win).
- * A proposal may carry same (lib/proposal.ts create): disjoint groups of 2+ of its approvers that are one person,
- * ENTRY_LIST_MAX names in all. A host lists 'same' in its caps (lib/remote/protocol.ts CAPS fields) once it accepts it.
  * member_joined may carry pubkey (the seat's Ed25519 SPKI PEM, which pins it: lib/room/envelope.ts) and machine.
- * host_changed (via system; lib/handoff.ts) moves the room's authority: {epoch (a positive integer, one more than the
- * last), host (the new host's seat name), machine (its machine id), locator (how members reach it: an invite's
- * locator), accept? (the new host seat's signed acceptance, a planned handoff), ask? (the old host seat's signed
- * request), promoted? (true: a manual promote, the old host unreachable)}.
+ * host_changed (via system; lib/handoff.ts) moves the room's authority: epoch is one more than the last; locator is
+ * how members reach the new host (an invite's locator); accept is the new host seat's signed acceptance (a planned
+ * handoff), ask the old host seat's signed request; promoted: a manual promote, the old host unreachable.
  * append() also refuses a serialized line over LOG_LINE_MAX_BYTES.
  */
 

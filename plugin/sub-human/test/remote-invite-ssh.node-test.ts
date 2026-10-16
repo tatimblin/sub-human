@@ -9,7 +9,6 @@ import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import * as store from '../lib/room/store.ts';
 import * as linkSocket from '../lib/remote/link-socket.ts';
 import * as hostLinks from '../lib/remote/host-links.ts';
@@ -19,8 +18,7 @@ import * as inviteSecret from '../lib/remote/invite-secret.ts';
 import * as links from '../lib/room/links.ts';
 import * as identity from '../lib/identity.ts';
 import * as h from './helpers.ts';
-import { Machine, shownInvite } from './support/two-homes.ts';
-import type { MachineRun } from './support/two-homes.ts';
+import { Machine, shownInvite, childOf, kill, hiddenBlock } from './support/two-homes.ts';
 import { fakeSsh } from './support/fake-ssh.ts';
 import type { Invites, ShortInvite } from '../lib/remote/types-core.ts';
 import type { RoomCode } from '../lib/brand.ts';
@@ -29,9 +27,6 @@ import { must } from './support/must.ts';
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
 
 const LINK_ENV = { SUB_HUMAN_LINK_RETRY_MS: '200', SUB_HUMAN_LINK_RETRY_MAX_MS: '400', SUB_HUMAN_LINK_IDLE_MS: '3000' };
-const childOf = (pid: number) => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
-const kill = (pid: number | null) => { try { process.kill(pid as number, 'SIGKILL'); } catch { /* gone */ } };
-const hiddenBlock = (r: MachineRun) => r.json && r.json.decision === 'block' && r.json.hookSpecificOutput && r.json.hookSpecificOutput.suppressOriginalPrompt === true;
 const roomLines = (m: Machine, code: RoomCode) => m.lib(() => store.open(code).readAll()).filter(e => e.from === 'room').map(e => e.text);
 const shortOf = (m: Machine, code: RoomCode, ref: string) => must(Object.entries(m.lib(() => store.open(code).kv.get<Invites>(invites.INVITES_KEY)) || {}).find(([k]) => k.startsWith(ref)))[1] as ShortInvite;
 

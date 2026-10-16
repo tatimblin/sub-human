@@ -459,8 +459,8 @@ export interface ReadViewOpts {
 }
 
 /**
- * One room's store (store.ts documents each call): FsRoomStore over this machine's directory, MirrorRoomStore for a
- * room hosted elsewhere, test/support/memory-store.ts in the tests.
+ * One room's store (store.ts notes what the shapes do not say): FsRoomStore over this machine's directory,
+ * MirrorRoomStore for a room hosted elsewhere, test/support/memory-store.ts in the tests.
  */
 export interface RoomStore {
   readonly code: RoomCode;

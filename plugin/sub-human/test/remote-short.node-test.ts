@@ -19,7 +19,7 @@ import * as linkSocket from '../lib/remote/link-socket.ts';
 import * as invites from '../lib/remote/invites.ts';
 import * as hostLinks from '../lib/remote/host-links.ts';
 import * as admission from '../lib/remote/admission.ts';
-import { Machine, shownInvite } from './support/two-homes.ts';
+import { Machine, shownInvite, childOf, kill, hiddenBlock, stopDaemon } from './support/two-homes.ts';
 import type { MachineRun, Seat } from './support/two-homes.ts';
 import * as identityLib from '../lib/identity.ts';
 import * as hosting from '../lib/remote/hosting.ts';
@@ -30,14 +30,6 @@ import type { TailEvent } from '../lib/types-app.ts';
 import { must } from './support/must.ts';
 
 const LINK_ENV: Record<string, string> = { SUB_HUMAN_LINK_RETRY_MS: '200', SUB_HUMAN_LINK_RETRY_MAX_MS: '400', SUB_HUMAN_LINK_IDLE_MS: '1500' };
-const childOf = (pid: number) => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
-const kill = (pid: number | null) => { if (pid !== null) try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } };
-const stopDaemon = (t: TestContext, m: Machine, code: RoomCode) => t.after(() => {
-  const d = m.lib(() => linkSocket.status(code));
-  if (d.pid) { kill(childOf(d.pid)); kill(d.pid); }
-  fs.rmSync(path.dirname(linkSocket.socketPath(path.join(m.home, 'rooms', code))), { recursive: true, force: true });
-});
-const hiddenBlock = (r: MachineRun) => r.json && r.json.decision === 'block' && r.json.hookSpecificOutput && r.json.hookSpecificOutput.suppressOriginalPrompt === true;
 const modelSees = (r: MachineRun) => JSON.stringify([r.json && r.json.hookSpecificOutput && r.json.hookSpecificOutput.additionalContext, r.json && r.json.systemMessage]);
 const shown = (reason: string | undefined) => must(shownInvite(String(reason)), 'an invite line');
 const reason = (r: MachineRun) => must(must(r.json, 'a hook answer').reason, 'a reason');

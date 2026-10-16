@@ -10,67 +10,19 @@
  *             written once, when every approver has answered. text names one seat per person: "agreed: tristan (also
  *             laptop), bob".
  *
- *   create(me, {text|path, approvers?}, {cwd?}) -> {hash, approvers, path, entry, again, retired}
- *       path: a file under cwd (the seat's working directory; never ~, / or above ~) or Claude Code's plans, and never
- *       under the plugin's home, ~/.sub-human, ~/.ssh or ~/.claude (its plans aside).
- *       Stores the blob plans/<hash>.md (hash = sha256/12 of the bytes; lib/room/store.ts blobs) and appends
- *       `proposal` with path = that room-relative ref. approvers
- *       default to the humans present (not room Claude, not left). An identical open proposal is not re-appended.
- *       same: the approvers that are one person (sameOf: the room owner's seat on the host with the seats over
- *       the host account's login links; never two seats on the host), groups of 2+; the fold counts one answer for the group (lib/room/consent.ts).
- * *       retired: the hashes of my undecided proposals with the same title that this one supersedes (the fold
- *       retires them, lib/room/consent.ts: no longer pending, answers on them do not carry over).
- *       Throws ProposalError (message for the model) on bad input.
- *   Reading the log goes through lib/room/consent.ts fold (latest proposal per hash, the
- *   latest answer per person, an objection voids a signoff), the same fold stateLine, lane() and the rows read.
- *   proposals(entries) -> [p]      the latest proposal entry per hash, as {id, hash, approvers, path, from}
- *   pendingFor(me, entries?) -> [p] proposals naming me that I have not answered, undecided, not superseded
- *                                  (another seat of my person answering counts as mine)
- *   answerableFor(me, entries?) -> [p]   the same, by my own seat's answer only: a card or review already open
- *                                  still records, and that later answer counts for my person (the hooks' answer paths)
- *   card(p, code) -> {questions:[…]}     the AskUserQuestion input (Not yet first, Agree, Object)
- *   cardFor(ps, code) -> {questions:[…]} one question per proposal (at most 4)
- *   question(hash) -> "Agree to proposal <hash>?";  QUESTION_RE parses it back
- *   preview(p, code) -> string     the full text if <= PREVIEW_MAX chars and <= PREVIEW_LINES lines, else
- *                                  a summary plus the plan file's path
- *   matrix(p, entries) -> {hash, approvers, answers:{name: {id, kind}|null}, agreed, objected, missing, complete, …}
- *   answer(me, p, {choice:'Agree'|'Object', notes?}) -> {entry}|{stale:true, why}
- *       under the proposal lock: appends the person's answer (signed, so any machine may write it). Idempotent:
- *       a seat that already answered that hash (or a decided / superseded / unknown one) is stale; one answer per seat.
- *   decide(code, hash) -> Entry|null
- *       host only (identity.isHost; null elsewhere): under the proposal lock, appends the decision once every
- *       approver has answered. Idempotent: a decided, superseded, unknown or incomplete proposal appends nothing (null). The
- *       consent hook calls it after each answer; the remote server will after placing one.
- *   title(code, hash, entry?) -> string  the stored plan's first line (else the entry's title text, else '')
- *   decision(hash, entries) -> Entry|null
- *   humans(code) -> [name]         members present who can approve
- *   personOf(m) -> string|undefined   who a seat is for consent: its account (lib/seats.ts enter), else nobody shared
- *   viewable(p, code) -> bool      the plan dialog can show it: stored, <= VIEW_MAX chars, no control or bidi
- *                                  characters (the dialog withholds approval for those); else the card
- *   reminder(p, name, {code, others}?) -> string   the re-ask wording (a review closed without an answer is fine to
- *                                  reopen); others: the other pending proposals, listed as h6 "title"
- *   namedIn(ps, prompt, code) -> p|null   the pending proposal a person's words name (hash, else distinctive title / text words)
- *   replacedIn(ps, prompt, code) -> {old, p}|null   the words name no pending hash but a superseded one (old) whose
- *                                  latest revision p is among ps: a review opens p, and says so
- *   proposeIntent(prompt) -> bool  the person's words ask their Claude to propose something ("propose to alice: …"):
- *                                  no review opens on such a prompt (hooks/consent.ts Pre(EnterPlanMode))
- *   choose(me, ps, prompt) -> p    store that pick (namedIn, else replacedIn's p; members/NAME/pick) and return it,
- *                                  else the newest (hooks/consent.ts)
- *   picked(me, ps) -> p            Pre(EnterPlanMode): the stored pick when still among ps, else the newest
- *   readPick(me), writePick(me, hash|null)   the seat's session document's pick (lib/room/session.ts) as stored
- *   read(code, hash) -> string|null  the stored plan (the room blob plans/<hash>.md)
- * The plan-view review state (the session document's review, lib/room/session.ts): readReview, writeReview, clearReview,
- *   withReview(me, fn)
- *   (the lock), restorePlan(st), restoreStale(me, {force, now}) (session-restore: a review left behind).
- * A plan-view Yes that came as the view opened, asked again on the card (the session document's recheck): readRecheck,
- *   writeRecheck, clearRecheck.
- * A review's note waiting for the person's Send (the session document's confirm): readConfirm, writeConfirm,
- *   clearConfirm; confirmCard(c) -> the AskUserQuestion input (Send, Discard), confirmQuestion(c) its question,
- *   confirmCall(hash) -> how the model opens that card, showConfirm(name, hash, interrupted?) -> the line telling it to
- *   open the card now, before anything else, and after an Esc that the Esc was no answer (lib/consent/review.ts NEXT
- *   and showNote: consent's reoffer and lib/tail.ts remindersText say the same); repeatsNote(c,
- *   text) -> bool: a post carries that note (case, spacing and quote marks aside; a note under 12 chars only when
- *   equal), so posting it would relay it twice.
+ * create stores the bytes as the blob plans/<hash>.md (hash = sha256/12; lib/room/store.ts blobs) and appends
+ * `proposal` with that room-relative path. approvers default to the humans present; an identical open proposal is
+ * not re-appended. same: groups of 2+ approvers that are one person (sameOf), for which the fold counts one answer.
+ * retired: my undecided proposals with the same title this one supersedes (no longer pending; answers on them do
+ * not carry over). Reading goes through lib/room/consent.ts fold (latest proposal per hash, latest answer per
+ * person, an objection voids a signoff), the same fold stateLine, lane() and the rows read. pendingFor counts
+ * another seat of my person answering as mine; answerableFor goes by my own seat's answer only, so a card or review
+ * already open still records (the hooks' answer paths).
+ *
+ * The session document (lib/room/session.ts) holds a seat's pick, review (the plan view), recheck (a plan-view Yes
+ * that came as the view opened, asked again on the card) and confirm (a review's note waiting for the person's
+ * Send). The lines telling the model to open a card are lib/consent/review.ts NEXT and showNote, shared with
+ * consent's reoffer and lib/tail.ts remindersText.
  */
 
 import fs from 'node:fs';
@@ -245,6 +197,8 @@ function cardQuestion(p: Proposal, code: RoomCode): Card['questions'][number] {
 const cardFor = (ps: Proposal[], code: RoomCode): Card => ({ questions: ps.slice(0, 4).map(p => cardQuestion(p, code)) });
 const card = (p: Proposal, code: RoomCode): Card => cardFor([p], code);
 
+/** The plan dialog can show it: stored, <= VIEW_MAX chars, no control or bidi characters (the dialog withholds
+ * approval for those); else the card. */
 function viewable(p: Pick<Proposal, 'hash'>, code: RoomCode): boolean {
   const t = read(code, p.hash);
   return t != null && t.length <= VIEW_MAX && !UNSAFE_RE.test(t.replace(/\r\n/g, '\n'));
@@ -334,14 +288,13 @@ function picked(me: Me, ps: Proposal[]): Proposal | null {
 const openCall: (h: string) => string = NEXT.open;
 const confirmCall: (h: string) => string = NEXT.note;
 const showConfirm: typeof showNote = showNote;
-/** A proposal as a list item: `3fa2c1 "Ship v3 Monday"` (the short hash alone without a title or a room to read it from). */
-/** A proposal as the re-ask lists it: its entry when the caller found it. */
+/** A proposal as the re-ask lists it: `3fa2c1 "Ship v3 Monday"` (the short hash alone without a title or a room). */
 type Listed = Pick<Proposal, 'hash'> & { entry?: Proposal['entry'] | undefined };
 function listed(code: RoomCode | undefined, p: Listed): string {
   const t = code ? clip(title(code, p.hash, p.entry).replace(/\s+/g, ' ').trim(), TITLE_MAX) : '';
   return t ? `${p.hash.slice(0, 6)} "${t}"` : p.hash.slice(0, 6);
 }
-/** others: the other proposals awaiting name, listed by short hash and title (code: the room their titles come from). */
+/** The re-ask (a review closed without an answer is fine to reopen). others: the other proposals awaiting name, listed by short hash and title (code: the room their titles come from). */
 function reminder(p: Pick<Proposal, 'hash'>, name: string, { code, others = [] }: { code?: RoomCode, others?: Listed[] } = {}): string {
   const base = `proposal ${p.hash} still awaits ${name}'s answer (an earlier review closed without an answer is fine). Now ${openCall(p.hash)}, unless ${name} asked you to propose something: then do that, and this waits.`;
   if (!others.length) return base;
@@ -448,6 +401,7 @@ function choiceOf(c: unknown): 'Agree' | 'Object' | 'Not yet' | null {
 }
 
 type Answered = { entry: Entry, stale?: undefined } | { stale: true, why: string, entry?: undefined };
+/** The person's answer, under the proposal lock; signed, so any machine may write it. */
 function answer(me: Me, p: { hash: string }, a: { choice?: unknown, notes?: unknown } = {}): Answered {
   const r = room.open(me.code);
   const choice = choiceOf(a.choice);
@@ -472,6 +426,8 @@ function answer(me: Me, p: { hash: string }, a: { choice?: unknown, notes?: unkn
 /** "tristan (also laptop), bob": one name per person, its other seats after it. */
 const people = (m: Matrix, names: string[]): string => names.map(n => (m.also[n] && m.also[n].length ? `${n} (also ${m.also[n].join(', ')})` : n)).join(', ');
 
+/** Host only (null elsewhere): under the proposal lock, the decision once every approver has answered; a decided,
+ * superseded, unknown or incomplete proposal appends nothing. The consent hook calls it after each answer. */
 function decide(code: RoomCode, hash: string): Entry | null {
   if (!identity.isHost(code)) return null;
   const r = room.open(code);

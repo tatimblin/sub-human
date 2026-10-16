@@ -6,16 +6,6 @@
  * with the module. A failed hello refresh keeps the last hello but as no session's, so the prefilters run node.
  * Failure: every lost event, child exit or wake nothing took counts in $.state deliveryErrors and shows
  * DELIVERY_ERROR_NOTICE (rate-limited), so the person learns the room may hold something they did not get.
- *
- *   delivering(sid) -> bool     the child follows a seat for this session id (mod/prompt.ts skips node on it)
- *   setRemote(on)               mod/prompt.ts: the person's last typed prompt came through Remote Control (true) or
- *                               this terminal (false); undefined changes nothing. Module state: a reload forgets it
- *   queueRelay(io, lines)       lines for the person on Remote Control (room chat; mod/prompt.ts: an @room's refusal):
- *                               one relay prompt once idle, at most one per RELAY_GAP_MS, submitted asUser; io is a
- *                               hook's {now, after, submit, log} (no $ crosses an import)
- *   isRelay(text) -> bool       mod/prompt.ts: text is a relay this module is submitting (its context, no node)
- *   serialPulls(fn)             runs fn after every other change to the held room context ($.state pulls): a pull
- *                               event is held there (never a user row of its own) until mod/prompt.ts carries it
  */
 import {
   tailArgv, tailEnv, lineBuffer, parseEvent, route, restartDelay, nextFails, noticeDue, turnLedger, spawnWanted, logLines,
@@ -67,7 +57,7 @@ function nonceFor($: EngineInterface, sid: string): Promise<string | null> {
 export const facts: FactsBook = factsBook();
 /** The last presence the module wrote or saw for seat (address|sid). A typed prompt (mod/prompt.ts) only marks
  * "working" as pending; the turn it starts writes it (turn.start below), so a prompt the plugin stops or refuses (no
- * turn: an @room's receipt, a refusal) writes nothing (seen live: "working" for 8+ minutes). turn.complete writes
+ * turn: an @room's receipt, a refusal) writes nothing. turn.complete writes
  * "idle" when the turn that ends was a "working" one or waited on the person ("permission": the dialog was answered,
  * or the turn went on), and a tool call that finishes after a "permission" notification writes "working" again (an
  * idle_prompt notification may never come). Lost on reload. */
@@ -118,7 +108,7 @@ const homeMarked = new Set<string>();
  * A seated session's sub-human folder, once per session id and folder, as a system row in its transcript (stored at
  * level info: drawn only in the ctrl+o view; cc CONTRACT transcript-home-notice). The agent view's fork runs in a bg
  * job that drops a shell's SUB_HUMAN_HOME, and reads the folder from the transcript it continued (lib/identity.ts
- * forkedAway; stage 8f item 1). Never throws.
+ * forkedAway). Never throws.
  */
 async function markHome($: EngineInterface, hello: NonNullable<ReturnType<typeof parseHello>>) {
   if (!hello.seat || !hello.sid) return;
@@ -193,8 +183,10 @@ let noticedAt = -Infinity;
 /** Error counts in order: two failures at once must not both read the same count. */
 let counting: Promise<void> = Promise.resolve();
 
+/** The child follows a seat for this session id (mod/prompt.ts skips node on it). */
 export const delivering = (sid: unknown): boolean => !!(child && !child.stopped && child.sid === sid && child.seat);
 
+/** mod/prompt.ts: the last typed prompt came through Remote Control (true) or this terminal (false). */
 export function setRemote(on: boolean | undefined): void { if (typeof on === 'boolean') remote = on; }
 
 const userRow = (text: string): SessionAppendArgs => ({ message: { type: 'user', content: [{ type: 'text', text }] } });
@@ -234,7 +226,7 @@ export function serialPulls<T>(fn: () => Promise<T>): Promise<T | undefined> {
   return run.catch(() => undefined);
 }
 
-/** A pull event: held in $.state for the next prompt (mod/prompt.ts carries it as context: stage 8e B). Only when it
+/** A pull event: held in $.state for the next prompt (mod/prompt.ts carries it as context). Only when it
  * cannot be held, the isMeta append it was before (the model reads it with its next request). */
 async function holdPullEvent($: EngineInterface, text: string): Promise<boolean> {
   const held = await serialPulls(async () => {
@@ -287,7 +279,6 @@ async function rewake($: EngineInterface, e: { session_id?: string }, member: bo
     const root = $.plugin.root;
     const run = await $.process.run(shimArgv(root, 'row-rewake'), { stdin: JSON.stringify(e), env: shimEnv(e, root), timeoutMs: REWAKE_TIMEOUT_MS });
     // a member's: asUser, its one line shown and the row calls as context, also before the tail child named the seat
-    // (stage 8f item 6: one of two --continue resumes drew the framed prompt with every "(for Claude)" line)
     if (run.exitCode === 2 && String(run.stderr || '').trim()) await submitWake($, rewakePrompt(run.stderr), { member });
   } catch { /* the restore's context lists the same rows for the next prompt */ }
 }
@@ -299,6 +290,7 @@ async function midTurnWake($: EngineInterface, text: string) {
   if (!turns.appended(text, at)) await submitWake($, text, { appended: true });
 }
 
+/** mod/prompt.ts: text is a relay this module is submitting (its context, no node). */
 export const isRelay = (text: string): boolean => relaying.has(text);
 
 /**
@@ -531,7 +523,7 @@ export function registerDeliver(on: On): void {
       gone = now && now.sid === sid ? goneAfter(reply, mine, now.seat) : null;
       if (gone) reply = { ...reply, lines: [...reply.lines, gone] };
     }
-    // a leave: the address NAME.CODE goes with the seat now, not at the next prompt (item 12 J): the title is NAME
+    // a leave: the address NAME.CODE goes with the seat now, not at the next prompt: the title is NAME
     const left = leftName(e.args, reply, mine, { gone: !!gone });
     if (left) {
       // not from this hook (the engine refuses a command.run raised inside one): just after it, on the clock
@@ -544,7 +536,7 @@ export function registerDeliver(on: On): void {
     else if (cancels(e.args, reply, pinnedRef)) unpin($);
     if (!fresh) { try { await refresh($, sid); } catch { /* the next refresh tries again */ } }
     // a leave ends this session's delivery now, whatever the hello says: a room hosted elsewhere may still list the
-    // seat for a moment (a session cut off kept its tail and heard "carol left" after its leave: stage 8e I.11)
+    // seat for a moment (a session cut off kept its tail and heard "carol left" after its leave)
     if (left || gone) stopChild(sid);
     else { try { childFor($, sid, asHello((await $.state.get(HELLO)).value)); } catch { /* next start tries again */ } }
     return result;

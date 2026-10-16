@@ -18,7 +18,7 @@ import * as store from '../lib/room/store.ts';
 import * as linkSocket from '../lib/remote/link-socket.ts';
 import * as listener from '../lib/remote/listener.ts';
 import * as wsT from '../lib/remote/transports/ws.ts';
-import { Machine, shownInvite } from './support/two-homes.ts';
+import { Machine, shownInvite, childOf, kill, hiddenBlock } from './support/two-homes.ts';
 import type { MachineRun, Seat } from './support/two-homes.ts';
 import * as ws from '../lib/remote/ws.ts';
 import * as noise from '../lib/remote/noise.ts';
@@ -35,10 +35,7 @@ import { rc } from './support/brands.ts';
 import { must } from './support/must.ts';
 
 const LINK_ENV: Record<string, string> = { SUB_HUMAN_LINK_RETRY_MS: '200', SUB_HUMAN_LINK_RETRY_MAX_MS: '600', SUB_HUMAN_LINK_IDLE_MS: '20000' };
-const childOf = (pid: number) => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
-const kill = (pid: number | null) => { try { process.kill(pid as number, 'SIGKILL'); } catch { /* gone (or no child: null throws too) */ } };
 const freePort = () => new Promise<number>(r => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = (s.address() as net.AddressInfo).port; s.close(() => r(p)); }); });
-const hiddenBlock = (r: MachineRun) => r.json && r.json.decision === 'block' && r.json.hookSpecificOutput && r.json.hookSpecificOutput.suppressOriginalPrompt === true;
 const modelSees = (r: MachineRun) => JSON.stringify([r.json && r.json.hookSpecificOutput && r.json.hookSpecificOutput.additionalContext, r.json && r.json.systemMessage]);
 /** The joiner's link file (<home>/links/<code>.json) as stored: a web link's. */
 const linkFile = (m: Machine, code: RoomCode) => JSON.parse(fs.readFileSync(path.join(m.home, 'links', `${code}.json`), 'utf8')) as Omit<Link, 'transport'> & { transport: WsSpec };

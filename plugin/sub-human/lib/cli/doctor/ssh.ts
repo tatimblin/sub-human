@@ -2,13 +2,6 @@
  * plugin/sub-human/lib/cli/doctor/ssh.ts: doctor's ssh checks (lib/cli/doctor.ts): the serve shim a host reached over ssh
  * runs, ssh itself, and what ssh's stderr means for a link (one classifier:
  * lib/remote/transports/ssh.ts classify).
- *
- *   checkShim() -> Check             <home>/bin/serve is the current shim and <home>/bin/current names an existing plugin
- *                                    and node
- *   sshVersion() -> string | null;  checkSsh({needed, version}) -> Check
- *   sshHint(stderr, {code?, transport?}) -> string | null   ssh's complaint as a fix (MFA: prime; denied: a login of
- *                                    your own, or an invite over the web; a host key; DNS or a timeout: --via JUMP)
- *   batchMode(ok, stderr) -> string  whether ssh logs in without a prompt, for a link's detail
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -17,6 +10,7 @@ import { lib, cli, check, tilde, isExec, readText } from './check.ts';
 import { assertNever } from '../../../mod/core/never.ts';
 import type { Check, LinkTransportView } from '../types.ts';
 
+/** <home>/bin/serve is the current shim and <home>/bin/current names an existing plugin and node. */
 function checkShim(): Check {
   const shim = lib('remote/shim.ts');
   const file = shim.shimPath(), ptr = shim.pointerPath();

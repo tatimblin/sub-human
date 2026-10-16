@@ -22,7 +22,7 @@ import type { Client, ConnectOpts } from '../lib/remote/client.ts';
 import type { SshSpec } from '../lib/remote/types-rest.ts';
 import * as memory from '../lib/remote/transports/memory.ts';
 import * as ssh from '../lib/remote/transports/ssh.ts';
-import { Machine } from './support/two-homes.ts';
+import { Machine, stopDaemon } from './support/two-homes.ts';
 import { fakeSsh } from './support/fake-ssh.ts';
 import * as protocolLib from '../lib/remote/protocol.ts';
 import * as seatKey from '../hooks/seat-key.ts';
@@ -40,13 +40,6 @@ Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_
 
 const LINK_ENV = { SUB_HUMAN_LINK_RETRY_MS: '300', SUB_HUMAN_LINK_IDLE_MS: '1500' };
 const ID = 'abcdef012345';
-const childOf = (pid: number | undefined) => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
-const kill = (pid: number | null | undefined) => { try { process.kill(pid as number, 'SIGKILL'); } catch { /* gone */ } };
-const stopDaemon = (t: TestContext, m: Machine, code: RoomCode) => t.after(() => {
-  const d = m.lib(() => linkSocket.status(code));
-  if (d.pid) { kill(childOf(d.pid)); kill(d.pid); }
-  fs.rmSync(path.dirname(linkSocket.socketPath(path.join(m.home, 'rooms', code))), { recursive: true, force: true });
-});
 const roomLines = (m: Machine, code: RoomCode) => m.lib(() => store.open(code).readAll()).filter(e => e.from === 'room').map(e => e.text).join('\n');
 const links = (m: Machine, code: RoomCode) => m.lib(() => hostLinks.links(store.open(code)));
 /** A link's ssh transport, asserted (a login link is ssh). */

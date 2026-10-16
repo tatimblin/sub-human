@@ -5,85 +5,38 @@
  * It never loads the signer (test/hooks/security.node-test.ts): a via=human payload arrives signed by the remote
  * hook and is verified against the key pinned in the log (lib/room/envelope.ts), then placed (store.place).
  *
- *   serve(transport, {store, log?, linkId?, login?, via?, peer?, silentMs?, proto?, version?}) -> {close(), revoked()}
- *       proto / version: this end's protocol range and plugin version (default protocol.PROTO, PLUGIN_VERSION; tests
- *       fake older and newer peers). via 'ws' and peer (`serve --stdio CODE --via ws [--peer KEY]`, the web listener's
- *       child): the connection came over the web, and peer is the Noise key its XK handshake proved (none: an NK one,
- *       a link made under protocol 2)
- *       A Session over one transport (lib/remote/transports/*): unauthenticated until hello {token | invite}
- *       (lib/remote/invites.ts); every other op before that is AUTH. login (`serve --stdio CODE --link ID --login`,
- *       run over the host account's own ssh login, never by a forced command: their lines fix the arguments, and the
- *       CLI refuses --login under SSH_ORIGINAL_COMMAND): the connection is trusted as a process of the account owner,
- *       so a hello {login: true} with no token records link ID (hostLinks.loginLink) and returns its token, with a room
- *       line; without login such a hello is AUTH. store is the room's store as store.open(code)
- *       gives it in this process: seats and decide reach the room through that too. Ops:
- *         hello      version: the highest common one of the two proto ranges (protocol.negotiate; a hello with none, or
- *                    no overlap, is PROTOCOL SKEW with protocol.skewMessage: which side must update); verifyToken (a
- *                    link bound to a Noise key only over a connection that proved it: KEY_MISMATCH), or redeemInvite
- *                    with the hello's pin (an invite line's SECRET word: protocol 3 only, and over the web only with
- *                    XK's peer key; a promote's sh2 invite: its 6-digit PIN), as {name, label} (the seat an invite
- *                    line's PIN asks for), the token returned once; a wrong PIN, the last try, a PIN that held and
- *                    the link are each a room line from the room, so the host sees them; or loginLink; neither:
- *                    answered, but the session stays unauthenticated. nonce (protocol 3): the reply's host is the host
- *                    home's machine key and its signature over it (machine-key.ts hostProof), which an invite line's
- *                    tag names over ssh and a pipe: a joiner sends its secret only in a second hello, once it checked
- *                    that. A new link's machine id is the one the hello's machine_key proves
- *                    (lib/remote/machine-key.ts), else the reported one (lib/remote/host-links.ts). The reply says the
- *                    link's machine id, and closed: true once the room's Claude was stopped (the room closed), for
- *                    sub-human doctor on a link that stopped before it
- *       Every op but hello reads the link's record again: gone (a kick, in any process) is AUTH LINK_REVOKED, the
- *       streams end and the connection closes. A hello with a revoked link's token is AUTH LINK_REVOKED (host-links.ts
- *       wasRevoked), not TOKEN_UNKNOWN.
- *         join       {name, role: 'member', pubkey, proof}: hostLinks.checkSeatProof, bindSeat, then lib/seats.ts enter() with
- *                    machine = the link's (no pid: the seat lives by its lease), and over a login link, when the room's
- *                    option login-same-person is on (lib/room/options.ts), account = this machine's id in the room (the
- *                    host account's own seat: one person with the host's seats, lib/proposal.ts create); a key other
- *                    than the pinned one is AUTH; a refused seat gives the binding back (no seat without a link)
- *         leave      seats.exit(), own seat only
- *         beat       store.members.beat(name, {presence?}), own seat only; then seats.back (a lapsed seat rejoined)
- *         append     own `from` only; the seat's quota (append.human / append.agent, counted in the log);
- *                    store.place() (validate, rate, replay, verify against the pinned key); a
- *                    signoff or objection is followed by lib/proposal.ts decide() (host only, idempotent). A system
- *                    kind from a link is AUTH (the host writes those)
- *         subscribe  {after, hash, snapshot?}: hash12 of the host's line `after` must equal hash (store.lineHash),
- *                    else FORK (also for a line before the first this host holds: a host that began from a
- *                    snapshot cannot replay what came before it). snapshot: true with after 0, and a snapshot that
- *                    fits a frame (store.snapshot(); protocol.ts snapshot): event 'snapshot' first, and the lines
- *                    from after its id. Then event 'entry' per line in id order (store.tailer({after}), verbatim), event
- *                    'doc' for members (lib/room/members.ts publicView), presence/NAME and tasks when they
- *                    change (all three at the start), 'end' {reason: 'closed'} when the room's Claude is stopped
- *                    or {reason: 'FORK'} when the host log is reset, or {reason: 'AUTH', message} when the
- *                    host revoked the link (the link's record gone, seen on the watch or at the next op: held(); and
- *                    revoked(), on the serve's SIGTERM). It follows the room's watch
- *                    (store.watch, lib/room/watch.ts: fs.watch and a FOLLOW_SLOW_MS poll; a store without one is polled
- *                    every FOLLOW_POLL_MS), reads a changed document alone, and sends a replay REPLAY_BATCH lines per
- *                    turn, waiting for the transport to drain (transport.writable), until the transport closes
- *         blob.get   store.blobs.get(ref), base64;  blob.put  {name, bytes}: name must be plans/<hash12>.md of
- *                    the bytes (content-addressed, at most PROPOSAL_FILE_MAX), written once; a new one counts against
- *                    the link's blob.put quota
- *         handoff.accept  {id, accept, locator, invites}: lib/handoff.ts serverAccept (the ask's target seat of this
- *                    link, its signed acceptance; host_changed appended); after the reply, afterMoved (the room's Claude job
- *                    stopped, this machine a mirror of the new host)
- *         handoff.refuse  {id}: lib/handoff.ts serverRefuse
- *       Host epochs (lib/handoff.ts): hello {epoch} from a mirror at a later epoch than this log's is STALE (this
- *       machine is a host the room moved away from), and the reply carries this log's epoch; append {epoch} from
- *       another epoch is STALE. Once the log says the room moved to another machine, every op but hello, subscribe,
- *       blob.get and ping is STALE; a subscribe stream then ends after the lines with the private 'moved' event (this
- *       link's machine's invite to the new host) and end {reason: 'moved'}. A pending ask for one of the link's
- *       seats is sent as the private 'handoff' event.
- *         ping       {pong: the host's ms}: the link daemon's heartbeat (lib/remote/link.ts). A session whose hello
- *                    carried caps {ping: true} and that then sends no frame for silentMs (LINK_SILENT_MS) is closed:
- *                    the peer is gone (a half-open link after a sleep). A web session (via ws) that has made no
- *                    link within authMs (LINK_AUTH_WAIT_MS, 10 s) of its start is closed: a Noise handshake anyone
- *                    can make holds a serve process no longer
- *       Quotas (lib/config.ts LINK_QUOTAS, lib/remote/quota.ts): before each op, its count: hello per connection (and
- *       per link once it has one), join and leave (seat), subscribe and a new blob.put per link in the host document
- *       remote/quota, beat, blob.get, ping and handoff.* per connection; over one is RATE QUOTA.
- *       After a write (join, leave, beat, append) every stream of the session is ticked before the reply goes out,
- *       so a link that subscribed holds the write's lines and documents when its reply arrives (read-your-writes).
- *       An op that throws a RoomError (a protocol CODES code) answers {error: {code, message, reason?}} with the same
- *       code and typed reason (lib/reasons.ts); any other error is INVALID with the message and is logged. A frame that is not a request is
- *       answered PROTOCOL. close() ends the streams and the transport.
+ * A Session is unauthenticated until hello {token | invite | login}; every other op before that is AUTH. Every op but
+ * hello reads the link's record again: gone (a kick, in any process) is AUTH LINK_REVOKED, the streams end and the
+ * connection closes. A hello with a revoked link's token is LINK_REVOKED too (host-links.ts wasRevoked), not
+ * TOKEN_UNKNOWN.
+ *
+ * hello: the highest common protocol (protocol.negotiate; none is PROTOCOL SKEW, whose skewMessage says which side
+ * must update). Credentials: a token (a link bound to a Noise key holds only over a connection that proved it:
+ * KEY_MISMATCH); an invite (invites.ts redeemInvite; an invite line's SECRET over the web only with XK's peer key); or
+ * login: true, accepted only by a serve run with --login over the host account's own ssh login (never a forced
+ * command; the CLI refuses --login under SSH_ORIGINAL_COMMAND), trusted as a process of the account owner. nonce: the
+ * reply carries the host home's machine key and its signature over the nonce (machine-key.ts hostProof), which an
+ * invite line's tag names over ssh and a pipe, so a joiner sends its secret only in a second hello once it checked
+ * that. A new link's machine id is the one the hello's machine_key proves, else the reported one. A wrong PIN, the
+ * last try, a PIN that held and the new link are each a room line, so the host sees them.
+ *
+ * join: bindSeat before seats.enter (a link revoked meanwhile gets no seat; a refused seat gives the binding back);
+ * over a login link with login-same-person on (lib/room/options.ts) the seat's account is the host's. append: own
+ * `from` only, never via system; a signoff or objection is followed by proposal.decide() (host only, idempotent).
+ * subscribe: hash12 of the host's line `after` must equal hash, else FORK (also for a line before the first this host
+ * holds: a host that began from a snapshot cannot replay what came before it). blob.put: content-addressed
+ * (plans/<hash12>.md), written once.
+ *
+ * Host epochs (lib/handoff.ts): a hello from a mirror at a later epoch, or an append from another epoch, is STALE.
+ * Once the log says the room moved, every op but WHILE_MOVED is STALE, and a stream ends after the lines with the
+ * private 'moved' event (this link's machine's invite to the new host). A pending ask for one of the link's seats is
+ * sent as the private 'handoff' event.
+ *
+ * A session whose hello carried caps {ping: true} and then sends nothing for silentMs (LINK_SILENT_MS) is closed (a
+ * half-open link after a sleep). A web session with no link within authMs (LINK_AUTH_WAIT_MS) is closed: a Noise
+ * handshake anyone can make holds a serve process no longer. Quotas (lib/config.ts LINK_QUOTAS) are counted before
+ * each op (charge). After a write every stream is ticked before the reply goes out (read-your-writes). A RoomError
+ * answers with its code and typed reason (lib/reasons.ts); any other error is INVALID and is logged.
  */
 
 import crypto from 'node:crypto';
@@ -189,7 +142,7 @@ function known(s: Session, token: unknown): Credential {
   if (!link && hostLinks.wasRevoked(s.store, token)) throw authError(revokedText(s.store.code), 'LINK_REVOKED');
   if (!link) throw authError('unknown link token; ask the host for a new invite', 'TOKEN_UNKNOWN');
   if (s.linkId && link.id !== s.linkId) throw authError(`this token is not link ${s.linkId}'s`, 'TOKEN_UNKNOWN');
-  // a web link made under protocol 3 is its Noise key: its token alone, or another key, gets nowhere
+  // a web link is bound to its Noise key: its token alone, or another key, gets nowhere
   if (!hostLinks.keyHolds(link, s.peer)) throw authError('this link is bound to its own key, and this connection did not prove it; join again with a new invite', 'KEY_MISMATCH');
   return { link };
 }
@@ -444,7 +397,7 @@ class Session {
   login: boolean;
   /** 'ws': the connection came through the web listener; null: ssh or a pipe */
   via: 'ws' | null;
-  /** the Noise key the web connection proved (XK); null for NK, ssh and a pipe */
+  /** the Noise key the web connection proved (XK); null for ssh and a pipe */
   peer: string | null;
   /** the peer's plugin version and range, as its hello said (for a skew message) */
   peerVersion: { version: string | null; proto: ProtoRange } | null = null;
@@ -558,15 +511,14 @@ class Session {
     return true;
   }
 
-  /** The session's link as the host's record has it now (a seat bound since, in another connection), true; false when
-   * the record is gone: the streams end AUTH with the reason and the connection closes a moment later (whatever
-   * process the kick ran in: pipe and web serves name no link in their argv). No link yet: true. */
   /** This session's link: run() lets no op but hello in without one. */
   linked(): LinkRecord {
     if (!this.link) throw authError('say hello with this link\'s token first');
     return this.link;
   }
 
+  /** The link as the host's record has it now (a seat bound since, in another connection); false when the record is
+   * gone: the streams end AUTH and the connection closes (whatever process the kick ran in). No link yet: true. */
   held(): boolean {
     if (!this.link) return true;
     const cur = hostLinks.links(this.store)[this.link.id];
@@ -606,11 +558,7 @@ class Session {
   }
 }
 
-/**
- * @param {{send(frame: object): void, onFrame(fn: (frame: object) => void): void, onClose(fn: () => void): void, close(): void}} transport
- * @param {{store: import('../room/store.ts').FsRoomStore, log?: (...a: any[]) => void, linkId?: string, login?: boolean, via?: 'ws' | null, peer?: string | null, silentMs?: number, proto?: {min: number, max: number}, version?: string}} ctx
- * @returns {{close(): void}}
- */
+/** Serve one connection; revoked() is what the serve's SIGTERM handler asks first (a kick). */
 function serve(transport: Transport, { store, log = () => {}, linkId, login = false, via = null, peer = null, silentMs = LINK_SILENT_MS, authMs = LINK_AUTH_WAIT_MS, proto, version }: {
   store: RoomStore; log?: Log; linkId?: string | undefined; login?: boolean; via?: 'ws' | null; peer?: string | null; silentMs?: number; authMs?: number; proto?: ProtoRange | undefined; version?: string | undefined;
 }): { close(): void; revoked(): boolean } {

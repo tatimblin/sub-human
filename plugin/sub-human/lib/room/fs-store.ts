@@ -3,25 +3,18 @@
  * (<home>/rooms/<code>, or {dir}). lib/room/store.ts documents the interface; this is the only module that knows a
  * room's file names (test/store-bypass.node-test.ts) and the only one that imports log-io.ts (the log's bytes).
  *
- *   <room>/log.jsonl        the log's active segment (log-io.ts): log-NNNN.jsonl its sealed segments, snapshot.json
- *                           what they hold in short; log.jsonl.lock the append lock (log-io.ts names these files)
+ *   <room>/log*.jsonl, snapshot*.json, log.jsonl.lock   the log (log-io.ts names these files)
  *   <room>/log.moved        a host_changed was placed here: place() reads the log's host before each line
  *                           (rules.ts checkHere: the old host's log takes no more lines). Without it, an append
  *                           reads only the log's tail.
  *   <room>/members.json     the members document (members.update under members.json.lock)
- *   <room>/<key>.json       the small documents (kv: tasks, presence/NAME, rows/*, members/NAME/*, link, remote/*),
- *                           each updated under <key>.json.lock
+ *   <room>/<key>.json       the kv documents, each updated under <key>.json.lock
  *   <room>/plans/<x>        blobs
  *   <room>/<name>.cursor    per-reader positions
  *   <room>/<name>.lock      lock(name): a room-wide mutex
  *
  * pins() and hostState() come from the log's non-chat entries (log-io.ts nonChat), carried forward one new line at a
  * time: an append does not recompute them, inside the log lock or out. trust is trustOver(this room's keys).
- *
- * For the mirror (lib/room/store-mirror.ts composes one of these over its directory; the link daemon is its one
- * writer): appendVerbatim(line) (a host line as the host stored it), installSnapshot(wire) (a first sync that began
- * from the host's snapshot), reset(keys) (forget the log, its segments and snapshot, the members document and the
- * documents named). rotate() seals the active segment now (tests; an append rotates on its own when due).
  */
 
 import type { Change } from './watch.ts';
@@ -129,7 +122,7 @@ class FsRoomStore implements RoomStore {
   /**
    * A write into a room this machine does not have (its folder set aside by `link --forget`, or never made here):
    * refused, so a process still holding the old seat (a hold server, a tail, a beat) cannot bring back a bare
-   * rooms/<code> that reads as a room hosted here (item 9 R1). A store over a given dir, a mirror's (its link file
+   * rooms/<code> that reads as a room hosted here. A store over a given dir, a mirror's (its link file
    * exists) and a room createRoom made write as before.
    */
   _mustExist(): void {

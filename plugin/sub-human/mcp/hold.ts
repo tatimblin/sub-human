@@ -3,32 +3,21 @@
  * HoldServer (one per room server, i.e. per claude session) behind the plug-in contract.
  * It keeps participant rows open in the agent panel at zero tokens (nested under the room row).
  *
- *   hold({member: NAME})   called once by a sub-human:participant row agent. Blocks for as long as this seat is in
- *       the room, streaming notifications/progress (the latest entry of NAME's thread, re-sent every BEAT_MS so
- *       the MCP idle timeout never fires: cc CONTRACT mcp-progress-resets-idle-timeout). NAME leaving does NOT end
- *       it: the row reads "left" (lib/rows.ts rowText) and is live again on rejoin, so leave/rejoin never makes a second row. Returns "STOP: ..." when
- *       this seat leaves, when NAME is this seat or was never in the room, or when another row for NAME is
- *       already held here ("STOP: duplicate row": the newcomer ends, the first row stays).
- *   hold({room: CODE})     called by the member's sub-human:room row agent. Blocks; returns
- *       "JOINED a b"   other members (not the room's Claude, not me) with no live hold here: someone joined, or the
- *                      room never spawned their row. A name is announced only after GRACE_MS without a hold
- *                      (so children spawned in the same message as this call are not double-announced), at
- *                      most ANNOUNCE_MAX times per name until its hold shows up.
- *       "RESPAWN a"    a's hold here was cancelled (Esc twice on the row) while a is still in the room.
- *                      Checked after RESPAWN_MS; dropped when the room hold itself was cancelled too
- *                      (killing the room cascades to its children).
- *       Both can come back together, one line each. "STOP: ..." when this seat left the room (not when the host
- *       removed this machine, a kick: the rows stay and show it, so no row hands a turn back to the kicked person), or
- *       "STOP: duplicate row" at once when another room row already holds here (e.g. re-spawned after /clear).
+ *   hold({member: NAME})   a sub-human:participant row. Blocks while this seat is in the room, streaming NAME's
+ *       latest line as notifications/progress, re-sent every BEAT_MS so the MCP idle timeout never fires (cc CONTRACT
+ *       mcp-progress-resets-idle-timeout). NAME leaving does NOT end it (the row reads "left" and is live again on
+ *       rejoin, so there is never a second row). "STOP: ..." when this seat leaves, NAME is this seat or never in the
+ *       room, or another row for NAME is already held here (the newcomer ends).
+ *   hold({room: CODE})     the member's sub-human:room row. Returns "JOINED a b" (members with no live hold here,
+ *       announced only after GRACE_MS so children spawned in the same message are not double-announced) and/or
+ *       "RESPAWN a" (a's hold was cancelled while a is in the room; dropped when the room hold was cancelled too, a
+ *       cascade). "STOP: ..." when this seat left (not on a kick: the rows stay and show it, so no row hands a turn
+ *       back to the kicked person) or another room row already holds here.
  * One server serves the whole claude session, main thread and every subagent (cc CONTRACT
  * mcp-server-shared-by-subagents), so it sees every row's hold. Liveness goes to the seat's session document's holds
  * (lib/rows.ts writeHolds) for row-guard, join notes and rewake; the seat's lease is renewed every BEAT_MS / 2. A room hold
  * that returned JOINED/RESPAWN still counts as running for ROOM_GAP_MS while its agent re-calls, so a join notice
- * read in that gap never invites a second room row.
- *
- * Env (ms): SUB_HUMAN_HOLD_BEAT_MS 20000, SUB_HUMAN_HOLD_POLL_MS 1000, SUB_HUMAN_HOLD_GRACE_MS 20000,
- *   SUB_HUMAN_HOLD_RESPAWN_MS 1500, SUB_HUMAN_HOLD_WHO_MS 3000 (how often `me` is re-resolved),
- *   SUB_HUMAN_HOLD_ROOM_GAP_MS 30000.
+ * read in that gap never invites a second room row. Timings and their env overrides: lib/config.ts HOLD_*.
  */
 
 import * as rows from '../lib/rows.ts';
@@ -182,7 +171,7 @@ class HoldServer {
   saveSeat(): void {
     const seat = this.seat;
     if (!seat) return;
-    // a room this machine no longer has (`link --forget`): write nothing there, ever again (item 9 R1)
+    // a room this machine no longer has (`link --forget`): write nothing there, ever again
     if (typeof this.ctx.identity.roomExists === 'function' && !this.ctx.identity.roomExists(seat.code)) { this.seat = null; return; }
     const ended = this.roomEnded.get(seat.code);
     rows.writeHolds(seat.code, seat.name, {

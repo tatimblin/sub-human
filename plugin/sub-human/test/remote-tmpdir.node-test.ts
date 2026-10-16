@@ -5,16 +5,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
 import * as linkSocket from '../lib/remote/link-socket.ts';
-import { Machine } from './support/two-homes.ts';
+import { Machine, childOf, kill } from './support/two-homes.ts';
 import { must } from './support/must.ts';
 
-const childOf = (pid: number | undefined) => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
 // a missing pid (null/undefined) throws in process.kill and is ignored, like a gone one
-const kill = (pid: number | null | undefined) => { try { process.kill(pid as number, 'SIGKILL'); } catch { /* gone */ } };
 
 test('remote: a daemon started with one TMPDIR serves hooks running with another; the doc records its socket', async t => {
   const daemonTmp = h.tmpDir('sh-tmp-daemon-', t), hookTmp = h.tmpDir('sh-tmp-hook-', t);

@@ -28,7 +28,7 @@ import * as handoff from '../lib/handoff.ts';
 import * as client from '../lib/remote/client.ts';
 import * as transports from '../lib/remote/transports/index.ts';
 import { isAlive } from '../lib/io.ts';
-import { Machine, type Seat } from './support/two-homes.ts';
+import { Machine, type Seat, childOf, kill } from './support/two-homes.ts';
 import type { Entry } from '../lib/room/types.ts';
 import type { HandoffAskDoc } from '../lib/types-app.ts';
 import type { LinkSpec, PipeSpec } from '../lib/remote/types-rest.ts';
@@ -72,8 +72,6 @@ function stubClaude(t: TestContext, job: string): Stub {
   return { bin, calls };
 }
 
-const childOf = (pid: number | undefined) => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
-const kill = (pid: number | null | undefined) => { try { if (pid != null) process.kill(pid, 'SIGKILL'); } catch { /* gone */ } };
 /** The sh2 invite and its PIN in a text (/sub-human host's block, promote's lines). */
 const inviteOf = (text: string) => ({ invite: must(/sh2\.\S+/.exec(text))[0], pin: must(must(/\b(\d{6})\b/.exec(text.slice(text.indexOf('sh2.'))))[1], 'the PIN') });
 /** A pipe link's home (undefined for another kind, or no link). */

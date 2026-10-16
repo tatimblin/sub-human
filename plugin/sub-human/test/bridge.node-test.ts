@@ -1,6 +1,5 @@
-// lib/remote/bridge.ts (a synchronous call to a worker thread, with a deadline) and its proof gate: a RoomStore
-// whose every call crosses the bridge (test/support/thread-store.ts) behaves as the FsRoomStore it forwards to, and
-// the hook suites pass over it (`npm run test:thread-store` runs all of test/hooks; consent.node-test.ts runs here).
+// lib/remote/bridge.ts: a synchronous call to a worker thread, with a deadline. lib/room/store-mirror.ts crosses it in
+// production; the store contract runs a mirror (test/support/remote-store.ts).
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -10,14 +9,9 @@ import * as h from './helpers.ts';
 import { createBridge } from '../lib/remote/bridge.ts';
 import * as config from '../lib/config.ts';
 import * as store from '../lib/room/store.ts';
-import * as identity from '../lib/identity.ts';
-import * as seatKey from '../hooks/seat-key.ts';
-import { ThreadRoomStore } from './support/thread-store.ts';
 import type { RoomError } from '../lib/room/validate.ts';
-import { must } from './support/must.ts';
 
 const BRIDGE = path.join(h.LIB, 'remote', 'bridge.ts');
-const THREAD_STORE = path.join(import.meta.dirname, 'support', 'thread-store.ts');
 
 /** The handler module's methods, as the tests call them. */
 type TestApi = {
@@ -111,54 +105,3 @@ test('bridge: the deadlines fit inside the hook timeouts (SessionEnd has its own
   }
 });
 
-test('thread store: appends (a signed human one too), compare-and-set updates, blobs and the tailer land in the FsRoomStore it forwards to', t => {
-  h.freshHome(t);
-  const code = identity.newCode();
-  const th = new ThreadRoomStore(code), fsStore = new store.FsRoomStore(code);
-  seatKey.arm();
-
-  const tail = th.tailer();
-  const a = th.append({ kind: 'say', text: 'hello' }, { via: 'agent', from: 'alice' });
-  const s = th.append({ kind: 'say', text: 'typed' }, { via: 'human', from: 'alice' });
-  assert.deepEqual(fsStore.readAll(), [a, s]);
-  assert.equal(fsStore.trust(fsStore.readAll()[1]), 'verified', 'signed on the worker with the key taken here');
-  assert.equal(th.trust(th.readAll()[1]), 'verified', 'and judged here the same way');
-  assert.deepEqual(th.readView({ after: 1 }), fsStore.readView({ after: 1 }));
-  assert.deepEqual(tail.poll().entries.map(e => e.id), [1, 2]);
-  assert.equal(th.validateChain().ok, true);
-
-  // members.update: fn runs again when another writer got in between its read and its write
-  let runs = 0;
-  // @ts-expect-error -- deliberate: bare records (its return below)
-  th.members.update(m => {
-    // @ts-expect-error -- deliberate: bare records (no name): the store keeps what it is given
-    if (runs++ === 0) fsStore.members.update(cur => ({ ...cur, bob: { role: 'member' } }));
-    return { ...m, alice: { role: 'member' } };
-  });
-  assert.equal(runs, 2);
-  assert.deepEqual(Object.keys(fsStore.members.read()).sort(), ['alice', 'bob']);
-  assert.deepEqual(th.kv.update<{ n: number }>('tasks', v => ({ n: ((v && v.n) || 0) + 1 })), { n: 1 });
-  assert.equal(th.kv.update('tasks', () => undefined), undefined);
-  assert.deepEqual(fsStore.kv.get('tasks'), { n: 1 });
-  assert.equal(th.kv.update('tasks', () => null), null);
-  assert.equal(fsStore.kv.get('tasks'), null);
-
-  assert.equal(th.blobs.put('plans/p.md', Buffer.from('# plan')), 'plans/p.md');
-  assert.ok(Buffer.isBuffer(th.blobs.get('plans/p.md')));
-  assert.equal(must(fsStore.blobs.get('plans/p.md')).toString(), '# plan');
-  assert.equal(th.lock('proposal', () => th.lastId()), 2, 'a store call under the room lock');
-
-  Reflect.deleteProperty(globalThis, store.SIGNER);
-  assert.throws(() => th.append({ kind: 'say', text: 'forged' }, { via: 'human', from: 'alice' }), (e: RoomError) => e.code === 'INVALID', 'no signer here: refused before the worker');
-  assert.equal(fsStore.lastId(), 2);
-});
-
-test('gate: test/hooks/consent.node-test.ts passes with every store call of every process on a worker thread', () => {
-  const env: NodeJS.ProcessEnv = { ...process.env, SUB_HUMAN_TEST_THREAD_STORE: '1', NODE_OPTIONS: `--import ${THREAD_STORE}` };
-  delete env.NODE_TEST_CONTEXT;
-  const probe = spawnSync(process.execPath, ['-e', `process.stdout.write(require(${JSON.stringify(path.join(h.LIB, 'room', 'store.ts'))}).open('otter-1234').constructor.name)`], { env, encoding: 'utf8' });
-  assert.equal(probe.stdout, 'ThreadRoomStore', 'the preload reaches child processes');
-  const r = spawnSync(process.execPath, ['--test', path.join(import.meta.dirname, 'hooks', 'consent.node-test.ts')], { env, encoding: 'utf8', timeout: 180_000 }); // ~110 s under a full parallel run
-  assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.match(r.stdout, /# fail 0|ℹ fail 0/);
-});

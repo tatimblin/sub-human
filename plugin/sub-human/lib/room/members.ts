@@ -2,33 +2,19 @@
  * plugin/sub-human/lib/room/members.ts: the members document's rules, shared by every RoomStore (as placeAfter is
  * for the log), so a seat is judged the same whichever machine holds the room. Zero dependencies beyond lib/.
  *
- * A seat record: {name, role, machine, joined_at, seen_at, left_at?, lapsed_at?}, plus the fields only the seat's own machine
- * can use (LOCAL_FIELDS: pid, pid_start, session_id, cwd). The room's Claude record also keeps its bookkeeping
- * (lib/room-claude.ts) across a (re)bind. A record with no machine is from before machine ids: this machine's.
- *
- *   seatAlive(m) -> bool          not left, and: a seat of this machine with a pid: that pid is alive with its start
- *                                 time matching pid_start (a seat with no pid_start, or a pid whose start ps cannot
- *                                 read, counts as matching); any other seat (another machine's, or no pid): its lease
- *                                 (a lapsed seat, lapsed_at: lib/seats.ts sweep, is past its lease; a beat renews it)
- *   roomClaudePresence(o, now?) -> 'live' | 'starting' | null   the room's Claude record as people are told about it: never listed
- *                                 as present when it never ran or its start failed
- *   leaseFresh(m, now?) -> bool   seen_at younger than SEAT_LEASE_MS
- *   startMatches(m) -> bool       m.pid_start still describes the process now holding m.pid (on this machine)
- *   ops(store) -> {join, leave, beat}   the store's named ops over its members.update (atomic) and kv:
- *     join(rec) -> {ok, rejoin?, error?}   rec = {name, role, machine, ...LOCAL_FIELDS}. A name held by a live seat
- *                                 of another holder (another machine, or another pid) is "name taken"; otherwise
- *                                 the seat is (re)bound: rec, joined_at = seen_at = now, the room Claude's bookkeeping kept.
- *                                 owner: the first person's seat on the host (account = machine) in a room with no
- *                                 other person's seat yet, the one who opened it; kept across that seat's rebind on
- *                                 the host (lib/proposal.ts sameOf: a login link's seats are that person's)
- *     leave(name) -> bool         sets left_at and deletes presence/<name> (a mirror gets the deletion); false when
- *                                 there is no such seat or it left already
- *     beat(name, {presence?, now?}) -> bool   renews seen_at (at most every SEAT_BEAT_MS) and, with presence
- *                                 {state, detail?}, writes the document presence/<name> = {state, at, detail?}
- *                                 (RoomError INVALID for another state). false, writing nothing, for a seat that is
- *                                 absent or left. now: tests only (the host's clock otherwise).
- *   publicView(members) -> members   the document as other machines see it: LOCAL_FIELDS stripped
- *   ROOM_CLAUDE ("claude"), PRESENCE_STATES (the source of PresenceState) and isPresenceState, LOCAL_FIELDS
+ * The seat record is types.ts Member.
+ *   seatAlive: not left, and: a seat of this machine with a pid: that pid is alive with its start time matching
+ *       pid_start (no pid_start, or a start ps cannot read, counts as matching); any other seat: its lease (a lapsed
+ *       seat, lib/seats.ts sweep, is past its lease; a beat renews it).
+ *   ops(store) -> {join, leave, beat}, over the store's members.update (atomic) and kv:
+ *     join: a name held by a live seat of another holder (another machine, or another pid) is "name taken";
+ *       otherwise the seat is (re)bound, the room Claude's bookkeeping kept. owner: the first person's seat on the
+ *       host (account = machine) in a room with no other person's seat yet; kept across that seat's rebind on the
+ *       host (lib/proposal.ts sameOf: a login link's seats are that person's).
+ *     leave sets left_at and deletes presence/<name> (a mirror gets the deletion).
+ *     beat renews seen_at at most every SEAT_BEAT_MS and with presence writes presence/<name> (INVALID for another
+ *       state); false, writing nothing, for a seat that is absent or left.
+ *   publicView: the document as other machines see it, LOCAL_FIELDS stripped.
  */
 
 import { isAlive, validPid } from '../io.ts';
