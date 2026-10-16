@@ -17,7 +17,8 @@
  *       "RESPAWN a"    a's hold here was cancelled (Esc twice on the row) while a is still in the room.
  *                      Checked after RESPAWN_MS; dropped when the room hold itself was cancelled too
  *                      (killing the room cascades to its children).
- *       Both can come back together, one line each. "STOP: ..." when this seat left the room, or
+ *       Both can come back together, one line each. "STOP: ..." when this seat left the room (not when the host
+ *       removed this machine, a kick: the rows stay and show it, so no row hands a turn back to the kicked person), or
  *       "STOP: duplicate row" at once when another room row already holds here (e.g. re-spawned after /clear).
  * One server serves the whole claude session, main thread and every subagent (cc CONTRACT
  * mcp-server-shared-by-subagents), so it sees every row's hold. Liveness goes to the seat's session document's holds
@@ -35,8 +36,14 @@ import { joinLeave, noticeText } from '../lib/room/render.ts';
 import * as room from '../lib/room.ts';
 import * as strs from '../lib/text.ts';
 import * as config from '../lib/config.ts';
+import * as linkState from '../lib/room/link-state.ts';
 import type { CallMeta, JsonRpcId, Me, PluginApi, PluginContext, ProgressToken, ToolArgs, ToolDefinition, ToolResult } from './types.ts';
 import type { Entry, Members } from '../lib/room/types.ts';
+
+/** This machine's link to room code was ended by the host (a kick: its link-state stopped with a revocation). */
+const removedByHost = (code: string): boolean => {
+  try { const st = linkState.read(code); return linkState.stoppedForGood(st) && /^(?:LINK_REVOKED|KEY_REVOKED|TOKEN_UNKNOWN)$/.test(String(st && st.lastReason)); } catch { return false; }
+};
 
 /** What the hold server needs of the room-server ctx (the tests pass a fake one). */
 type HoldContext = Pick<PluginContext, 'whoami' | 'progress' | 'identity'> & Partial<Pick<PluginContext, 'text' | 'log' | 'onCancel'>>;
@@ -218,6 +225,9 @@ class HoldServer {
       let cur = null;
       try { cur = this.ctx.whoami(); } catch { cur = null; }
       const me = this.me;
+      // removed by the host (a kick): the rows stay, showing it ("✕ removed by the host"), and end with the session;
+      // ending them would hand "left" back to the main conversation, a model turn the kicked person never asked for
+      if (me && !cur && removedByHost(me.code)) return;
       if (me && (!cur || cur.code !== me.code || cur.name !== me.name)) {
         for (const h of [...this.holds.values()]) this.finish(h, `STOP: ${me.name} is no longer in room ${h.code}. ${END}`);
         this.me = cur;

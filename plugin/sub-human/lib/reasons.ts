@@ -24,7 +24,8 @@
  *             that once got in), NOT_BOUND (a link let in as one name joins as another), NOT_JOINED (a write as a seat
  *             that did not join over the link), LOGIN_ONLY (a login hello that did not come over an ssh login),
  *             MACHINE_TAKEN (a link reports a machine id the room knows as another's), SSH_HOST_KEY, SSH_DENIED,
- *             SSH_NO_SHIM, SSH_NO_ROOM, SSH_OLD_HOST (an ssh login link that cannot work until the person acts)
+ *             SSH_NO_SHIM, SSH_NO_ROOM, SSH_OLD_HOST, SSH_HOST_UNKNOWN (ssh cannot resolve the host's name, on a login
+ *             link's first connection) (an ssh login link that cannot work until the person acts)
  *   OFFLINE   UNKNOWN_OUTCOME (the op went out and got no answer in time: it may still land, retrying is safe),
  *             NOT_SENT (nothing went out), DAEMON_DOWN (no link daemon answers on this machine), ADMIT_WAITING (the
  *             host person has not answered the card yet), QUEUE_FULL
@@ -40,7 +41,7 @@ const NAMES = [
   'PLACED_ALREADY', 'INVITE_UNKNOWN', 'INVITE_USED', 'INVITE_BURNT', 'INVITE_EXPIRED', 'INVITE_OTHER_MACHINE', 'INVITE_OTHER_LINK',
   'PIN_NEEDED', 'PIN_WRONG', 'PIN_LAST', 'PIN_THROTTLED', 'HOST_KEY_MISMATCH', 'KEY_MISMATCH', 'ADMIT_REFUSED', 'ADMIT_LAPSED', 'ADMIT_REVOKED', 'ADMIT_LATE', 'TOKEN_UNKNOWN',
   'LINK_REVOKED', 'KEY_REVOKED', 'NOT_BOUND', 'NOT_JOINED', 'LOGIN_ONLY', 'MACHINE_TAKEN', 'SSH_HOST_KEY', 'SSH_DENIED',
-  'SSH_NO_SHIM', 'SSH_NO_ROOM', 'SSH_OLD_HOST',
+  'SSH_NO_SHIM', 'SSH_NO_ROOM', 'SSH_OLD_HOST', 'SSH_HOST_UNKNOWN',
   'UNKNOWN_OUTCOME', 'NOT_SENT', 'DAEMON_DOWN', 'ADMIT_WAITING', 'QUEUE_FULL',
   'QUOTA', 'SKEW', 'MOVED_AWAY', 'BEHIND', 'LOG_RESET', 'NOT_CHAINED', 'ROOM_CLOSED', 'NO_SEAT',
 ] as const;

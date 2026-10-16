@@ -703,3 +703,14 @@ test('tail: on the host, the room\'s open invite refs each time they change, so 
   assert.deepEqual(t.of('invites').map(e => e.open), [['aaaaaaaaaaaa', 'bbbbbbbbbbbb'], []]);
   t.stop();
 });
+
+test('tail (item 15): a seated session (a kicked machine whose copy still shows the seat) is told too when the host lets its new join in', () => {
+  h.freshHome();
+  const { code } = h.register('bob');
+  sys(code, 'member_joined', 'bob');
+  const text = `the host let you in to room ${code}: type /sub-human to join it as bob`;
+  const t = startNd({ sid: 'sid-b', deps: { pendingNews: () => ({ state: 'linked', code, text }) } });
+  t.advance(FAST.resolveMs * 3 + 100);
+  assert.deepEqual(t.of('chat').filter(e => e.lines.includes(text)).length, 1, 'said once');
+  t.stop();
+});

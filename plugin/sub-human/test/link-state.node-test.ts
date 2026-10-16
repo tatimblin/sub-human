@@ -106,6 +106,9 @@ test('room row: the link leads while offline or connecting again and closes the 
   assert.equal(rows.rowText(code, code, 'alice', o({ state: 'connecting', attempt: 3 })), '… connecting (3) · 2 here · tasks 1 open');
   assert.equal(rows.rowText(code, code, 'alice', o({ state: 'offline', queued: 2 })), '✕ offline · 2 queued · 2 here · tasks 1 open');
   assert.match(rows.rowText(code, code, 'alice', { ...o({ state: 'offline' }), color: true }), /^\x1b\[33m✕ offline\x1b\[0m/, 'offline is a warning');
+  // item 15: stopped for good, this copy's "2 here" is stale: no count; a kick says so
+  assert.equal(rows.rowText(code, code, 'alice', o({ state: 'stopped', lastReason: 'LINK_REVOKED' })), '✕ removed by the host · tasks 1 open');
+  assert.equal(rows.rowText(code, code, 'alice', o({ state: 'stopped', lastReason: 'ROOM_CLOSED' })), '✕ stopped · tasks 1 open');
   // read from the home when not given
   linked(t);
   writeState({ state: 'offline', queued: 1 });

@@ -504,7 +504,7 @@ function roomText(code: string, viewer: string | null | undefined, es: readonly 
     // another person's objections: the viewer's own (from any of their seats) is the "✖ objected" above
     const others = p.objectors.filter(x => x !== viewer && !(p.also[x] || []).includes(String(viewer)));
     if (!p.decided && others.length) parts.push(c.warn(`✖ ${plural(others.length, 'objection')}`));
-  } else {
+  } else if (!linkState.stoppedForGood(link)) { // stopped (a kick, the room closed): this copy's count is stale
     parts.push(c.dim(`${ms.filter(m => isActive(m) && !isRoomClaude(m)).length} here`));
   }
   if (viewer) {

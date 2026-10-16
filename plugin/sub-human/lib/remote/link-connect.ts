@@ -200,7 +200,7 @@ async function keyRefused(l: Link, t: TransportLike | Promise<TransportLike>, e:
 async function loginRefused(l: Link, t: TransportLike | Promise<TransportLike>, e: CodedError | null | undefined, code: string): Promise<CodedError | null | undefined> {
   if (!e || e.code !== 'OFFLINE' || l.transport.kind !== 'ssh') return e; // a login link is ssh
   const err = await stderrOf(t);
-  const why = err === null ? null : ssh().loginProblem(err, l.transport, code);
+  const why = err === null ? null : ssh().loginProblem(err, l.transport, code, { first: !l.token });
   return why ? new RoomError('AUTH', why.message, why.reason) : e;
 }
 

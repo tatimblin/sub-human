@@ -61,7 +61,8 @@
  *   declined or expires; host_changed is a chat line for every member. A session whose room changed kind (a
  *   mirror that became the host, or the reverse) is started again over the new store.
  * A session with no seat that started an invite join (its link file's join_sid; the hooks module starts the tail for
- * it: mod-hello's pending) is looked up every resolveMs until the host let it in, and gets one chat line per answer:
+ * it: mod-hello's pending) is looked up every resolveMs until the host let it in, and gets one chat line per answer (a
+ * seated session too, at each seat check: a kicked machine's copy may still show its seat):
  * the host asks for the PIN (or again, after a wrong one), "the host let you in to room CODE: type /sub-human to join
  * it as NAME", or why the join stopped.
  * A session never re-reads the log from byte 0: backlog from room.readView({after: cursor}), live entries from
@@ -756,6 +757,9 @@ function runTail({
       }
     }
     const waiting = !failed && !me && !sess && news();
+    // seated, yet a join of this session's waits (a kicked machine typing a new invite line: its copy of the room may
+    // still show the seat, as a pipe link's did live): its news is said too (item 15)
+    if (!failed && me && sid) news();
     if (!stopped) timer = clock.setTimeout(check, sess || me || waiting ? tm.resolveMs : tm.unseatedMs);
   }
 
