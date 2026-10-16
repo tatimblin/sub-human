@@ -91,7 +91,7 @@ test('ssh.loginFailure: what only the person can fix names the exact step; anyth
   const f = (s: string) => ssh.loginFailure(s, spec, 'vole-1234');
   assert.match(f('Host key verification failed.')!, /Run `ssh me@devbox` once in a terminal, check and accept the key, then join again/);
   assert.match(ssh.loginFailure('Host key verification failed.', { ...spec, port: 2222, via: 'b' }, 'vole-1234')!, /`ssh -p 2222 -J b me@devbox`/);
-  assert.match(f('me@devbox: Permission denied (publickey).')!, /refused your ssh login: sub-human logs in with your ssh keys or agent only, never a password\..*run `node \S+\/scripts\/sub-human prime vole-1234` in a terminal first/);
+  assert.match(f('me@devbox: Permission denied (publickey).')!, /refused your ssh login: sub-human logs in with your ssh keys or agent only, never a password\..*run `(?:SUB_HUMAN_HOME=\S+ )?node \S+\/scripts\/sub-human prime vole-1234` in a terminal first/);
   assert.match(f('sh: 1: /home/me/.sub-human/bin/serve: not found')!, /me@devbox isn't set up for joining yet \(no ~\/\.sub-human\/bin\/serve\)\. On that machine, open the room in Claude Code \(\/sub-human\), then join again; .*--home PATH/);
   assert.match(f('zsh:1: no such file or directory: /home/me/.sub-human/bin/serve')!, /isn't set up for joining yet/);
   assert.match(ssh.loginFailure('env: /srv/sh/bin/serve: No such file or directory', { ...spec, remoteHome: '/srv/sh' }, 'vole-1234')!, /\(no \/srv\/sh\/bin\/serve\)/);

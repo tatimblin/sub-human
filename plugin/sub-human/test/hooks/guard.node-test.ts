@@ -101,6 +101,11 @@ test('guard: doctor --bundle / --fix in a session gets its own reason: a person\
     assert.match(t, /\/sub-human doctor is the read-only check/);
   }
   assert.match(g.denyText(g.DOCTOR_WHY, undefined), /person's step: they run it in a terminal outside Claude Code/);
+  // a sub-human folder other than ~/.sub-human is named, so the terminal acts on it (verify12 remote/05a)
+  assert.ok(g.denyText(g.DOCTOR_WHY, '/p', { home: '/tmp/sh home', userHome: '/u' }).includes("they run `SUB_HUMAN_HOME='/tmp/sh home' node /p/scripts/sub-human doctor --bundle`"));
+  assert.ok(g.denyText(g.DOCTOR_WHY, '/p', { home: '/u/.sub-human', userHome: '/u' }).includes('they run `node /p/scripts/sub-human doctor --bundle`'));
+  assert.equal(g.homeEnv('/srv/sh/', '/u'), 'SUB_HUMAN_HOME=/srv/sh/ ');
+  assert.equal(g.homeEnv('relative', '/u'), '');
   assert.equal(g.bashVerdict('sub-human doctor --quick'), null, 'the read-only doctor stays allowed');
 });
 

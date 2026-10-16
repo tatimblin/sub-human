@@ -39,7 +39,7 @@ test('commands: help (any words after it) and doctor run without the lease; ever
   assert.deepEqual(run(w, 'help join please', { lease: false }), { kind: 'say', text: HELP });
   const fix = run(w, 'doctor --fix', { lease: false });
   assert.equal(fix.kind, 'refused');
-  assert.match(text(fix), /--fix changes or writes files, so it runs in a terminal outside Claude Code: node \S+\/scripts\/sub-human doctor --fix/);
+  assert.match(text(fix), /--fix changes or writes files, so it runs in a terminal outside Claude Code: SUB_HUMAN_HOME=\S+ node \S+\/scripts\/sub-human doctor --fix/);
   assert.match(text(run(w, 'doctor now', { lease: false })), /usage: \/sub-human doctor/);
   for (const args of ['', 'leave', 'kick bob', 'alice']) {
     const a = run(w, args, { lease: false });

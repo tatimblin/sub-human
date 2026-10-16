@@ -49,7 +49,7 @@ test('doctor: node floor, Remote Control, ssh hints and argument errors', () => 
   assert.match(denied, /sub-human prime vole-1234/);
   assert.doesNotMatch(denied, /authorize\b|shk1|ssh-agent|SUB_HUMAN_SSH_OPTS|let in/, 'no sh1/sh2-era or admit-a-key advice');
   assert.match(doctor.sshHint('Permission denied (publickey).', { code: 'vole-1234', transport: { key: '/x/id_ed25519' } })!, /refused this link's own key \(an older sub-human let it in\): the host removed it\. ask the host for a new invite/);
-  assert.match(doctor.sshHint('Permission denied (publickey,keyboard-interactive).', { code: 'vole-1234' })!, /interactive login \(MFA\): run node \S+\/scripts\/sub-human prime vole-1234 once in a terminal/);
+  assert.match(doctor.sshHint('Permission denied (publickey,keyboard-interactive).', { code: 'vole-1234' })!, /interactive login \(MFA\): run SUB_HUMAN_HOME=\S+ node \S+\/scripts\/sub-human prime vole-1234 once in a terminal/);
   assert.match(doctor.sshHint('Host key verification failed.', { transport: { knownHosts: '/x/known_hosts', via: 'jump' } })!, /not the one its invite pinned.*\/sub-human invite --via jump/);
   assert.match(doctor.sshHint('Host key verification failed.')!, /host key/);
   assert.match(doctor.sshHint('ssh: Could not resolve hostname box: nodename nor servname provided')!, /does not resolve.*--via JUMP/);
@@ -121,7 +121,7 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   const rep: Report = JSON.parse(r.stdout);
   assert.equal(byId(rep, 'node').status, 'pass');
   assert.equal(byId(rep, 'home').status, 'fail');
-  assert.match(byId(rep, 'home').fix!, /^node \S+\/scripts\/sub-human doctor --fix in a terminal/, 'the CLI by its path: none is on PATH');
+  assert.match(byId(rep, 'home').fix!, /^SUB_HUMAN_HOME=\S+ node \S+\/scripts\/sub-human doctor --fix in a terminal/, 'the CLI by its path: none is on PATH');
   const akc = byId(rep, 'authorized_keys');
   assert.equal(akc.status, 'warn');
   assert.match(akc.fix!, new RegExp(`^remove the sub-human:${code}:${LINK_ID} line from ~/\\.ssh/authorized_keys and invite that machine again`), 'this home\'s line, in the child\'s ~/.ssh/authorized_keys');
@@ -148,7 +148,7 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   fs.chmodSync(home, 0o755);
   r = run(['--quick'], env);
   assert.match(r.stdout, /^checks · sub-human \d+\.\d+\.\d+(?:-[0-9a-z.]+)? · node v/);
-  assert.match(r.stdout, /✗ sub-human folder +.*\n +fix: node \S+\/scripts\/sub-human doctor --fix in a terminal/);
+  assert.match(r.stdout, /✗ sub-human folder +.*\n +fix: SUB_HUMAN_HOME=\S+ node \S+\/scripts\/sub-human doctor --fix in a terminal/);
   assert.doesNotMatch(r.stdout, /host reachable/, '--quick says no hello');
 
   // --fix: the modes, the shim and a leftover door (an old link's key line stays: kicking that link takes it out); the
@@ -312,12 +312,12 @@ test('doctor: a dormant link (the room closed, or no seat of this machine left) 
   const [closed] = doctor.linkChecks(d({ state: 'stopped', lastError: linkMod.ROOM_CLOSED_REASON, lastReason: 'ROOM_CLOSED' }));
   assert.equal(closed.status, 'info');
   // never pruned on its own: the host can open it again; forgetting it is the person's own command
-  assert.match(closed.fix!, /^the room was closed; this machine's copy is kept\. If the host opens it again, \/sub-human reconnects; node \S+ link vole-1234 --forget in a terminal drops it for good$/);
+  assert.match(closed.fix!, /^the room was closed; this machine's copy is kept\. If the host opens it again, \/sub-human reconnects; SUB_HUMAN_HOME=\S+ node \S+ link vole-1234 --forget in a terminal drops it for good$/);
   assert.doesNotMatch(closed.fix!, /--reset|\/sub-human invite/);
   const [seatless] = doctor.linkChecks(d({ state: 'stopped', lastError: linkMod.NO_SEAT_REASON, lastReason: 'NO_SEAT' }));
   assert.equal(seatless.status, 'info');
   // the host may have closed the room since: /sub-human only while it is open, --forget when it is not wanted
-  assert.match(seatless.fix!, /^the connection stopped when this machine's last seat left\. If the host still has the room open, type \/sub-human in your session to start it again; if you no longer want the room, node \S+ link vole-1234 --forget in a terminal drops it$/);
+  assert.match(seatless.fix!, /^the connection stopped when this machine's last seat left\. If the host still has the room open, type \/sub-human in your session to start it again; if you no longer want the room, SUB_HUMAN_HOME=\S+ node \S+ link vole-1234 --forget in a terminal drops it$/);
   assert.doesNotMatch(seatless.fix!, /--reset/);
   // known closed since (the mirror or the host's hello): the closed room's text
   const [shut] = doctor.linkChecks({ ...d({ state: 'stopped', lastError: linkMod.NO_SEAT_REASON, lastReason: 'NO_SEAT' }), closed: true });

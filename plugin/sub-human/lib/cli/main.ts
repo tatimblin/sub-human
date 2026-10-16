@@ -68,9 +68,11 @@
  *       --forget (the link stopped because the room closed, no seat is left or the host removed this machine; --force:
  *       for any other reason; a daemon still running is stopped first, the person's own ask): drop the room from this
  *       machine for good. Never automatic (a closed room can open
- *       again). Its log is set aside as a demote's is, the copy moves to rooms/<code>.forgotten-<time> (not a room
- *       code, so no listing or open sees it, and nothing opens it as a room hosted here), then the link goes. It
- *       prints the archive's path.
+ *       again). A running daemon first carries this machine's seats' leave to the host (within 3 s in all; an offline
+ *       link is not tried, and the line says so), so the host logs "NAME left" at once. Its log is set aside as a
+ *       demote's is, the copy moves to rooms/<code>.forgotten-<time> (not a room code, so no listing or open sees it,
+ *       and nothing opens it as a room hosted here) with the link's own log and state files (link.log,
+ *       link.state.json), then the link goes. It prints the archive's path.
  *   sub-human invite [--room ROOM] [--ssh [USER@HOST[:PORT]] [--via JUMP] | --web | --public | --url URL [--port P]]
  *       An invite line and its PIN, as /sub-human invite shows them (lib/cli/host.ts; lib/remote/hosting.ts hostInvite,
  *       webhost.ts hostWeb). Over ssh by default, to this machine's own address (SUB_HUMAN_SSH_ADDR, else
@@ -423,9 +425,11 @@ function linkCmd(args: readonly string[]) {
   const linkSocket: typeof import('../remote/link-socket.ts') = require('../remote/link-socket.ts');
   const st = linkSocket.status(code);
   if (st.running && flags.forget) {
-    // the person asked to forget it: the daemon is this machine's own, so --forget stops it first (stage 8f item 3)
+    // the person asked to forget it: the daemon is this machine's own, so --forget stops it first (stage 8f item 3),
+    // once the host heard this machine's seats leave over it (verify12 remote/05b: else ~2 min later, "connection lost")
+    const told = tellHostLeaving(code, s, st.state);
     if (!stopDaemon(st.pid)) die(`the connection to room ${code} is running (pid ${st.pid}) and did not stop; kill ${st.pid}, then run this again`, 1);
-    return forgetLink(code, s, true, st.pid);
+    return forgetLink(code, s, true, st.pid, told);
   }
   if (st.running) die(`the connection to room ${code} is running (pid ${st.pid}); it copies the room afresh only once stopped (kill ${st.pid}, then run this again)`, 1);
   if (flags.forget) return forgetLink(code, s, !!flags.force);
@@ -446,7 +450,48 @@ function stopDaemon(pid: number): boolean {
   return !identity.isAlive(pid);
 }
 
-function forgetLink(code: string, s: MirrorRoomStore, force: boolean, stopped?: number) {
+/** How long --forget gives the host, in all, to hear this machine's seats leave before the daemon stops. */
+const FORGET_TELL_MS = 3000;
+/**
+ * --forget on a running link: each seat of this machine in the room (the mirror's members of this machine, and the
+ * seats a live claude process here holds) leaves over the link while it still runs, within FORGET_TELL_MS in all, so
+ * the host logs "NAME left" now. A link that is not online is not tried. What to add to the forget's line: who the
+ * host heard leave, or why it did not (it then sees the seat lapse).
+ */
+function tellHostLeaving(code: string, s: MirrorRoomStore, state: unknown): string {
+  const names = new Set<string>(identity.localSeats(code));
+  try {
+    for (const m of Object.values(s.members.read())) if (m && m.role !== 'claude' && !m.left_at && m.machine && identity.isMine(m.machine)) names.add(m.name);
+  } catch { /* the index's seats only */ }
+  names.delete('claude');
+  if (!names.size) return '';
+  const who = [...names].join(', ');
+  if (state !== 'online') return `; the host was not told ${who} left (the connection was ${typeof state === 'string' && state ? state : 'not online'}): it sees the seat lapse`;
+  const until = Date.now() + FORGET_TELL_MS;
+  const told: string[] = [];
+  let why = '';
+  for (const n of names) {
+    const ms = until - Date.now();
+    if (ms <= 0) { why = 'no answer in time'; break; }
+    try { if (s.members.leave(n, { reason: 'left', deadlineMs: ms })) told.push(n); } catch (e) { why = String((e as Error).message || e).split('\n')[0]; break; }
+  }
+  const missed = [...names].filter(n => !told.includes(n));
+  const heard = told.length ? `; the host was told ${told.join(', ')} left` : '';
+  return missed.length && why ? `${heard}; the host was not told ${missed.join(', ')} left (${why}): it sees the seat lapse` : heard;
+}
+
+/** The link's own log and state files (<home>/links/CODE.log, CODE.state.json), into the archive beside the copy
+ * (link.log, link.state.json), or deleted when there is no archive: nothing of the link stays in links/. */
+function setAsideLinkFiles(code: string, archive: string | null) {
+  const links: typeof import('../room/links.ts') = require('../room/links.ts');
+  for (const [file, name] of [[links.logFile(code), 'link.log'], [links.stateFile(code), 'link.state.json']]) {
+    try {
+      if (archive) fs.renameSync(file, path.join(archive, name)); else fs.rmSync(file, { force: true });
+    } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') { try { fs.rmSync(file, { force: true }); } catch { /* left */ } } }
+  }
+}
+
+function forgetLink(code: string, s: MirrorRoomStore, force: boolean, stopped?: number, told = '') {
   const st = (require('../room/link-state.ts') as typeof import('../room/link-state.ts')).read(code);
   const why = st?.lastError || '';
   // dormant (the room closed, no seat left) or spent (the host removed this machine: its token gets nowhere now)
@@ -460,12 +505,13 @@ function forgetLink(code: string, s: MirrorRoomStore, force: boolean, stopped?: 
   s.setAside(); // a demote's idiom: the log is kept beside the outbox, never merged
   let archive: string | null = path.join(roomsDir(), `${code}.forgotten-${new Date().toISOString().replace(/[:.]/g, '-')}`);
   try { fs.renameSync(s.dir, archive); } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; archive = null; }
+  setAsideLinkFiles(code, archive);
   links.remove(code);
   store.forget(code);
   // every local seat there ends: a session, hold server or tail still running for it resolves none and writes nothing
   identity.dropSeatIndexes(code);
   const lead = stopped ? `room ${code}: its connection (pid ${stopped}) stopped, and ` : `room ${code}: `;
-  console.log(archive ? `${lead}forgotten; this machine's copy is kept at ${archive}` : `${lead}forgotten (this machine had no copy of it)`);
+  console.log(archive ? `${lead}forgotten; this machine's copy is kept at ${archive}${told}` : `${lead}forgotten (this machine had no copy of it)${told}`);
 }
 
 /** link CODE --forget on a leftover folder: set aside as a forgotten copy is, and no seat names the room any more. */

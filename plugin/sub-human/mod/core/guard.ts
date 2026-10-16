@@ -11,6 +11,7 @@
  * read the key (README "What it protects against").
  */
 import type { GuardCtx } from './types.ts';
+import { homeOf } from './seat.ts';
 
 export const MCP_PREFIX = 'mcp__plugin_sub-human_room__';
 export const HOLD = MCP_PREFIX + 'hold';
@@ -434,14 +435,24 @@ function verdictOf(cmd: string, ctx: GuardCtx): string | null {
 /** bashVerdict's reason for doctor --fix / --bundle: denyText gives it its own text (the store is not what it is about). */
 export const DOCTOR_WHY = 'doctor --fix and --bundle change or write files';
 
+/** `SUB_HUMAN_HOME=<home> ` when home (absolute) is not the default ~/.sub-human, so a terminal acts on this folder
+ *  (lib/text.ts homePrefix is the same rule, for node); '' otherwise. */
+export function homeEnv(home: unknown, userHome: unknown): string {
+  if (typeof home !== 'string' || !home.startsWith('/')) return '';
+  const trim = (p: string) => p.replace(/\/+$/, '') || '/';
+  const dflt = homeOf(undefined, userHome);
+  if (dflt && trim(dflt) === trim(home)) return '';
+  return `SUB_HUMAN_HOME=${/[^\w@%+=:,./~-]/.test(home) ? `'${home.replace(/'/g, "'\\''")}'` : home} `;
+}
+
 /** The deny text. root (the plugin root, when known): name the read-only CLI by its path; it lives in scripts/, which is
  *  not on the Bash tool's PATH (a top-level bin/ would be, but claude.ai org sync rejects a plugin that has one).
  *  doctor --fix / --bundle: a person's step, run in a terminal (by the same path), never the store's wording. */
-export const denyText = (why: string, root: unknown) => {
+export const denyText = (why: string, root: unknown, homes: { home?: unknown; userHome?: unknown } = {}) => {
   const known = typeof root === 'string' && root.startsWith('/');
   if (why === DOCTOR_WHY) {
     return `ROOM-GUARD: sub-human ${why} (the shim, the home's modes, a bundle file), so they are the person's step: ${
-      known ? `they run \`node ${root}/scripts/sub-human doctor --bundle\` (or --fix) ` : 'they run it '}in a terminal outside Claude Code. In a session, /sub-human doctor is the read-only check.`;
+      known ? `they run \`${homeEnv(homes.home, homes.userHome)}node ${root}/scripts/sub-human doctor --bundle\` (or --fix) ` : 'they run it '}in a terminal outside Claude Code. In a session, /sub-human doctor is the read-only check.`;
   }
   if (why === TALK_WHY || why === TALK_ABOVE) return `ROOM-GUARD: the invite lines and PINs typed or shown in Claude Code are the people's own; a model never reads them. (Denied: ${why}.)`;
   return `${MSG} (Denied: ${why}.) Use the room MCP tools${known ? `, or \`${root}/scripts/sub-human read|digest|who|tasks|show\`` : ''}.`;

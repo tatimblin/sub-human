@@ -150,7 +150,7 @@ function promoteCmd(args: readonly string[], ctx: CliIo) {
   out('Give each machine its line, and its PIN some other way (each is single-use, lasts 15 minutes and only works on that machine); they run it in a terminal, then /sub-human in their session:');
   // inside Claude Code (its ! shell) the PINs are masked: that output would land in the conversation. The machine
   // runs demote CODE and pastes the line and its PIN: never in argv
-  const lines = r.invites.map(x => `  ${x.seats.join(', ')}: run ${cli(`demote ${code}`)} and paste: ${x.invite} ${x.pin}`);
+  const lines = r.invites.map(x => `  ${x.seats.join(', ')}: run ${textMod.cliLine(`demote ${code}`, { elsewhere: true })} and paste: ${x.invite} ${x.pin}`);
   const host: typeof import('./host.ts') = require('./host.ts');
   out(host.maskPins(lines.join('\n'), r.invites.map(x => x.pin)));
   out('(the old host runs its line too when it is back: its own lines are kept aside, never merged)');
