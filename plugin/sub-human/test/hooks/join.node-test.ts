@@ -61,7 +61,7 @@ test('/sub-human NAME with no open room: opens a room, joins as a member, spawns
   // the joiner's timing overrides (the test env sets the reaper's to 0) ride along for the room Claude's own reaper
   assert.deepEqual(settings.env, {
     SUB_HUMAN_HOME: w.home, SUB_HUMAN_ROOM: w.code, CLAUDE_CODE_TASK_LIST_ID: `sh-${w.code}`, CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
-    SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0',
+    SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0', SUB_HUMAN_REAP_STOP_MS: '200',
   });
   assert.equal(settings.crossSessionInbound, 'accept');
   assert.equal(Object.keys(call.env).filter(k => k.startsWith('CLAUDE')).length, 0, 'no CLAUDE_* reaches the room\'s Claude');

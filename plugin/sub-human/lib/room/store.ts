@@ -104,7 +104,7 @@ const publicKey = (name: string, s: Pick<RoomStore, 'code' | 'pins'>): KeyObject
 });
 
 export {
-  open, forget, setBackend, roomExists, isLeftover, createRoom, listRooms, trustOf, indexedRooms, indexRoom, unindexRooms, lastChange,
+  open, forget, setBackend, roomExists, isLeftover, setAsideLeftover, createRoom, listRooms, trustOf, indexedRooms, indexRoom, unindexRooms, lastChange,
   setAsideRoom, asideRooms, removeAside,
 } from './registry.ts';
 export { FsRoomStore } from './fs-store.ts';

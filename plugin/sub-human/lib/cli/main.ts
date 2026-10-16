@@ -455,10 +455,7 @@ function forgetLink(code: string, s: MirrorRoomStore, force: boolean) {
 
 /** link CODE --forget on a leftover folder: set aside as a forgotten copy is, and no seat names the room any more. */
 function forgetLeftover(code: string) {
-  const { roomsDir, roomDir } = require('../home.ts') as typeof import('../home.ts');
-  const archive = path.join(roomsDir(), `${code}.forgotten-${new Date().toISOString().replace(/[:.]/g, '-')}`);
-  fs.renameSync(roomDir(code), archive);
-  (require('../room/store.ts') as typeof import('../room/store.ts')).forget(code);
+  const archive = (require('../room/store.ts') as typeof import('../room/store.ts')).setAsideLeftover(code);
   identity.dropSeatIndexes(code);
   console.log(`room ${code}: a leftover folder (no log, no connection: something still running wrote it after the room was forgotten) is set aside at ${archive}; this machine has no room ${code}`);
 }

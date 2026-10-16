@@ -11,6 +11,7 @@
  *   isLeftover(code) -> bool     a room directory with no link, no members document and no log, untouched for
  *                                LEFTOVER_MS: what a process still holding a forgotten room's seat wrote (item 9 R1),
  *                                never a room hosted here; `sub-human link CODE --forget` sets it aside
+ *   setAsideLeftover(code, now?) -> path   that folder moved to rooms/CODE.forgotten-TIME
  *   createRoom(code) -> bool     private and exclusive: false when it exists already
  *   listRooms() -> [code]        every room directory (mirrors are directories too)
  *   indexedRooms() -> [code]     the rooms that may be open: <home>/open-rooms.json, kept at open (createRoom), at
@@ -143,6 +144,13 @@ function setAsideRoom(c: string, now = Date.now()): string {
   forget(c);
   return name;
 }
+/** A leftover folder (isLeftover) set aside as a forgotten copy is: rooms/CODE.forgotten-TIME; its absolute path. */
+function setAsideLeftover(c: string, now = Date.now()): string {
+  const to = path.join(roomsDir(), `${c}.forgotten-${new Date(now).toISOString().replace(/[:.]/g, '-')}`);
+  fs.renameSync(roomDir(c), to);
+  forget(c);
+  return to;
+}
 const ASIDE_RE = /^[a-z]+-\d{4}\.(?:forgotten|gc)-[0-9TZ-]+$/;
 function asideRooms(): { name: string; at: number }[] {
   let names: string[] = [];
@@ -165,6 +173,6 @@ function trustOf(e: Entry | null | undefined): HumanTrust | null {
 }
 
 export {
-  open, forget, setBackend, roomExists, isLeftover, createRoom, listRooms, trustOf, indexedRooms, indexRoom, unindexRooms, lastChange,
+  open, forget, setBackend, roomExists, isLeftover, setAsideLeftover, createRoom, listRooms, trustOf, indexedRooms, indexRoom, unindexRooms, lastChange,
   setAsideRoom, asideRooms, removeAside,
 };
