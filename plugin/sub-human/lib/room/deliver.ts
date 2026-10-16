@@ -9,7 +9,7 @@
  *       note: the room Claude's row note for a member_joined (lib/rows.ts joinNote; '' when unknown).
  *     none     never shown: my own entries (hook-written system decision/task entries are not "mine"), and what
  *              concerns neither me nor the room's state
- *     context  for Claude, no wake: the tail's "Room since your last turn", read with my next request
+ *     context  for Claude, no wake: the tail's room context, carried beside my next prompt
  *     notice   for the person, no wake: a member's group chat (another person's own words not addressed to me, a
  *              join or leave, a host move). Claude gets a copy as context.
  *     wake     what needs Claude now

@@ -15,7 +15,7 @@
  *       for the next batch. If onFlush throws, the batch goes back to pending and is retried after retryMs.
  *   formatRoomClaudeBatch(ready, ctx) -> lines     the room Claude's block: stateLine, then one full line per shown entry
  *   formatNdBatch(ready, ctx) -> {events, moved}   the hooks module's events for one batch (below)
- *   pullText(lines) -> text | null           "Room since your last turn" over lines, the newest kept under PULL_CAP
+ *   pullText(lines) -> text | null           the room context over lines (PULL_HEAD … PULL_END), the newest kept under PULL_CAP
  *   missingRowsText(me, sid, {now}?) -> text | null   the Agent calls for this seat's rows that run nowhere
  *   remindersText(me, rm) -> text | null     lib/proposal.ts reminder() for the proposal a review opens next (the
  *                                            person's pick, else the newest), the others awaiting me listed as
@@ -40,8 +40,8 @@
  *   {type:'chat', lines}      a member's group chat: people's words, joins and leaves
  *                             (the person sees them; no wake)
  *   {type:'pull', text}       for Claude, no wake: the pull lane plus a copy of the chat lines, under the
- *                             "Room since your last turn" head (PULL_CAP). At most once: the cursor moves when
- *                             the line is written, whether or not the mod then appended it
+ *                             room context's head and end (PULL_CAP); the module holds it for the person's next
+ *                             prompt. At most once: the cursor moves when the line is written
  *   {type:'wake', text}       what needs Claude now: to me / @me, a proposal for me, a decision on mine, a task
  *                             assigned to me, an objection to my proposal (members, with the room state line when
  *                             the batch moved a proposal); the room Claude's whole push block
@@ -81,7 +81,7 @@ import type { Clock, TimerHandle } from './clock.ts';
 import type { Delivery, Entry } from './room/types.ts';
 import type { Identity } from './identity.ts';
 import type { Room } from './room.ts';
-import { FOR_CLAUDE } from '../mod/core/constants.ts';
+import { FOR_CLAUDE, PULL_HEAD, PULL_END, pullDroppedLine } from '../mod/core/constants.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -258,20 +258,20 @@ function formatRoomClaudeBatch(ready: Item[], { me, room: rm, entries, judge, jo
   return out.length ? [rm.stateLine(me, entries), ...out] : [];
 }
 
-const PULL_HEAD = 'Room since your last turn (context for you, not for the user: mention it only if they ask):';
-/** The pull text: PULL_HEAD, then the newest lines that fit under PULL_CAP (a note says how many were left out). */
+/** The pull text: PULL_HEAD, then the newest lines that fit under PULL_CAP (a note says how many were left out), then
+ * PULL_END (mod/core/constants.ts: the module carries it as context beside the person's next prompt). */
 function pullText(lines: string[]): string | null {
   if (!lines.length) return null;
   const kept: string[] = [];
-  let size = PULL_HEAD.length;
+  let size = PULL_HEAD.length + PULL_END.length + 1;
   for (let i = lines.length - 1; i >= 0; i--) {
     if (size + lines[i].length + 1 > config.PULL_CAP - 80) break;
     kept.unshift(lines[i]);
     size += lines[i].length + 1;
   }
   const dropped = lines.length - kept.length;
-  const more = dropped ? [`(${dropped} earlier ${dropped === 1 ? 'line' : 'lines'} not shown: the room read tool has them)`] : [];
-  return [PULL_HEAD, ...more, ...kept].join('\n');
+  const more = dropped ? [pullDroppedLine(dropped)] : [];
+  return [PULL_HEAD, ...more, ...kept, PULL_END].join('\n');
 }
 
 /**

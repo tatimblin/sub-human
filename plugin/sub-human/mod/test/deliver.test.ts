@@ -33,6 +33,8 @@ type Opts = {
   append?: (text: string, n: number) => 'ok' | 'deny' | 'throw',
   /** A child of the test's own in place of the one below (n counts from 0). */
   spawn?: (n: number, e: any) => AsyncGenerator<any, any, any>,
+  /** What hooks/handlers/prompt.ts answers for a prompt (default: no review open). */
+  promptOut?: (prompt: string) => any,
 }
 
 /**
@@ -40,7 +42,7 @@ type Opts = {
  * feeds it, staying up until the test ends (`release`); later children only wait; the session's notices, prompts
  * (each attempt in `submits`, the ones that entered in `prompts`) and scripts recorded.
  */
-function world(engine: any, on: any, { hello = OUT, pieces = [], gate = Promise.resolve(), submit = () => 'ok', append = () => 'ok', spawn }: Opts = {}) {
+function world(engine: any, on: any, { hello = OUT, pieces = [], gate = Promise.resolve(), submit = () => 'ok', append = () => 'ok', spawn, promptOut }: Opts = {}) {
   const seen = {
     spawns: [] as any[], logs: [] as string[], prompts: [] as string[], submits: [] as string[], contexts: [] as any[],
     appends: [] as string[], appended: [] as string[],
@@ -56,7 +58,7 @@ function world(engine: any, on: any, { hello = OUT, pieces = [], gate = Promise.
     const script = scriptOf(e)
     seen.scripts.push(script)
     if (script === 'presence.ts') seen.presence.push(JSON.parse(e.init.stdin))
-    if (script === 'prompt.ts') return ran(JSON.stringify({ subHuman: { reviewOpen: false } }))
+    if (script === 'prompt.ts') return ran(JSON.stringify(promptOut ? promptOut(JSON.parse(e.init.stdin).prompt) : { subHuman: { reviewOpen: false } }))
     return ran(script === 'mod-hello.ts' ? JSON.stringify(hello) : '')
   })
   on('process.spawn', async function* ($: any, e: any) {
@@ -124,7 +126,7 @@ test('a session surely without a seat starts no child', async ($, on) => {
   seen.release()
 })
 
-test('chat is a notice and starts no turn; a pull starts none either; a wake while idle submits one prompt', async ($, on) => {
+test('chat is a notice and starts no turn; a pull starts none either (held, no row); a wake while idle submits one prompt, which carries the pull', async ($, on) => {
   const pieces = [
     line({ type: 'seat', seat: SEAT }),
     line({ type: 'chat', lines: ['bob: hi', 'carol joined'] }) + line({ type: 'pull', text: 'Room since your last turn (…):\nbob: hi' }).slice(0, 10),
@@ -132,10 +134,12 @@ test('chat is a notice and starts no turn; a pull starts none either; a wake whi
   ]
   const seen = world($, on, { pieces })
   await start($)
-  await until(() => seen.prompts.length === 1 && seen.logs.length === 2 && seen.appended.length === 1).catch(() => { throw new Error(JSON.stringify(seen)) })
-  // one notice per line (a newline would show as U+FFFD); the pull is a row the model reads, not a turn
+  await until(() => seen.prompts.length === 1 && seen.logs.length === 2).catch(() => { throw new Error(JSON.stringify(seen)) })
+  // one notice per line (a newline would show as U+FFFD); the pull is no row of its own (stage 8e B) and no turn: the
+  // next prompt (here the wake) carries it as context
   expect(seen.logs).toEqual(['bob: hi', 'carol joined'])
-  expect(seen.appended).toEqual(['Room since your last turn (…):\nbob: hi'])
+  expect(seen.appends).toEqual([])
+  expect(seen.classic[0].additionalContext.at(-1)).toMatch(/^sub-human room context: [^\n]*\n.*\nbob: hi\nend of room context; the person's own words are their prompt\.$/)
   expect(seen.prompts.length).toBe(1)
   // item 5: a member's wake is its lines for the person, bare (asUser: no frame), and its "(for Claude)" lines as context
   expect(seen.prompts[0]).toBe("bob's Claude (to you): q?")
@@ -188,6 +192,43 @@ test('rows are held and ride on the person\'s next typed prompt as context, once
   await new Promise(r => setTimeout(r, 50))
   await $.prompt.submit({ text: 'what next?', origin: { kind: 'composer' }, wait: false } as any)
   expect(contexts.at(-1)).toEqual(['SUB-HUMAN ROWS: your room row is not running'])
+  seen.release()
+})
+
+test('stage 8e B (live verify, locala/X): a pull then a typed prompt: one prompt with the room context attached, no user row; the next prompt carries none', async ($, on) => {
+  const pull = 'sub-human room context: what happened in the room since your last turn (for you, not the user: mention it only if they ask):\nbob joined\nend of room context; the person\'s own words are their prompt.'
+  const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT }) + line({ type: 'pull', text: pull })] })
+  const typed = (text: string) => $.prompt.submit({ text, origin: { kind: 'composer' }, wait: false } as any)
+  await start($)
+  await until(() => seen.spawns.length === 1)
+  await new Promise(r => setTimeout(r, 50))
+  await typed('Run exactly this with Bash: touch x')
+  expect(seen.appends).toEqual([])
+  expect(seen.prompts).toEqual(['Run exactly this with Bash: touch x'])
+  expect(seen.contexts.at(-1)).toEqual([pull])
+  expect(seen.classic.at(-1).additionalContext ?? []).toEqual([]) // once, not again by the classic hook
+  await typed('and then?')
+  expect(seen.contexts.at(-1) ?? []).toEqual([])
+  seen.release()
+})
+
+test('stage 8e B: a typed @room the plugin stops starts no turn, so the room context waits for the prompt after it', async ($, on) => {
+  const pull = 'sub-human room context: what happened in the room since your last turn (for you, not the user: mention it only if they ask):\nbob joined\nend of room context; the person\'s own words are their prompt.'
+  const seen = world($, on, {
+    pieces: [line({ type: 'seat', seat: SEAT }) + line({ type: 'pull', text: pull })],
+    promptOut: p => (p.startsWith('@room') ? { continue: false, stopReason: '✓ sent to room otter-4821 (Claude wasn\'t asked)' } : { subHuman: { reviewOpen: false } }),
+  })
+  const typed = (text: string) => $.prompt.submit({ text, origin: { kind: 'composer' }, wait: false } as any)
+  await start($)
+  await until(() => seen.spawns.length === 1)
+  await new Promise(r => setTimeout(r, 50))
+  await typed('@room hi')
+  expect(seen.classic.at(-1).preventContinuation).toBe(true)
+  await typed('Run exactly this with Bash: touch x')
+  expect(seen.contexts.at(-1)).toEqual([pull])
+  expect(seen.appends).toEqual([])
+  await typed('and then?')
+  expect(seen.contexts.at(-1) ?? []).toEqual([])
   seen.release()
 })
 
@@ -282,19 +323,21 @@ test('a mid-turn wake that can be neither appended nor submitted waits for the n
 test('delivery errors are told once per window, however many there are', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT })], append: () => 'deny' })
-  const pull = line({ type: 'pull', text: 'Room since your last turn (…):\nbob: hi' })
+  // a health line is a notice and a row the model reads: that row refused, the line is lost to the model
+  const H = 'room log check: x'
+  const health = line({ type: 'health', text: H })
   await start($)
   await until(() => seen.spawns.length === 1)
-  seen.feed(pull)
-  await until(() => seen.logs.length === 1)
-  expect(seen.logs).toEqual([NOTICE])
-  seen.feed(pull + line({ type: 'chat', lines: ['carol: hey'] }))
+  seen.feed(health)
   await until(() => seen.logs.length === 2)
-  expect(seen.logs).toEqual([NOTICE, 'carol: hey'])
+  expect(seen.logs).toEqual([H, NOTICE])
+  seen.feed(health + line({ type: 'chat', lines: ['carol: hey'] }))
+  await until(() => seen.logs.length === 4)
+  expect(seen.logs).toEqual([H, NOTICE, H, 'carol: hey'])
   await clock.advance(300_000)
-  seen.feed(pull)
-  await until(() => seen.logs.length === 3)
-  expect(seen.logs).toEqual([NOTICE, 'carol: hey', NOTICE])
+  seen.feed(health)
+  await until(() => seen.logs.length === 6)
+  expect(seen.logs).toEqual([H, NOTICE, H, 'carol: hey', H, NOTICE])
   seen.release()
 })
 

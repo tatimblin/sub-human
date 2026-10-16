@@ -266,11 +266,11 @@ test('deliver: the child\'s argv and env; lines out of pieces; only well-formed 
     assert.deepEqual(d.parseEvent(JSON.stringify(ev)), ev);
 });
 
-test('deliver: the routing table: chat is a notice, pull an append, wake a prompt when idle and an append mid-turn', async () => {
+test('deliver: the routing table: chat is a notice, pull held for the next prompt, wake a prompt when idle and an append mid-turn', async () => {
   const d = await load('mod/core/deliver.ts');
   // one $.ui.log per line: a notice is one line (a newline would be drawn as U+FFFD)
   assert.deepEqual(d.route({ type: 'chat', lines: ['bob: hi', '  │ more', 'carol joined'] }), [{ do: 'log', text: 'bob: hi' }, { do: 'log', text: '  │ more' }, { do: 'log', text: 'carol joined' }]);
-  assert.deepEqual(d.route({ type: 'pull', text: 'Room since…' }), [{ do: 'append', text: 'Room since…' }]);
+  assert.deepEqual(d.route({ type: 'pull', text: 'Room since…' }), [{ do: 'hold-pull', text: 'Room since…' }], 'stage 8e B: never a user row of its own');
   assert.deepEqual(d.route({ type: 'rows', text: null }), [{ do: 'hold-rows', text: null }]);
   assert.deepEqual(d.route({ type: 'seat', seat: null }), [{ do: 'seat', seat: null }]);
   const idle = d.route({ type: 'wake', text: 'room: decided\n(for Claude) room now: …' });

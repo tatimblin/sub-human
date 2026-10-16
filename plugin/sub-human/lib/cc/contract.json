@@ -1062,7 +1062,7 @@
     "if(~.preventContinuation){let ~=~(~.stopReason);return ~.messages=[...~.messages,~(~),~(~)]",
     "var ~=(~)=>~(~,\"warning\",void 0,~);var ~=(~)=>~===void 0?~:`${~}: ${~}`;"
    ],
-   "note": "A UserPromptSubmit stop (continue:false, a function hook's preventContinuation) keeps the person's row and adds two: an isMeta user row the model reads and a system warning row the person sees, both \"Operation stopped by hook: <stopReason>\". Nothing else ends a typed non-slash prompt without a turn and without a frame: a prompt.submit drop draws \"Prompt dropped by a hook: <reason>\" (and loses the person's row), an answer without next \"Prompt not submitted: …\". An @room's receipt is such a stop; mod/prompt.ts rewrites its warning row (session-append-notice-rewrite)."
+   "note": "A UserPromptSubmit stop (continue:false, a function hook's preventContinuation) keeps the person's row and adds two: an isMeta user row the model reads and a system warning row the person sees, both \"Operation stopped by hook: <stopReason>\". Nothing else ends a typed non-slash prompt without a turn and without a frame: a prompt.submit drop draws \"Prompt dropped by a hook: <reason>\" (and loses the person's row), an answer without next \"Prompt not submitted: …\". An @room's receipt is such a stop; mod/prompt.ts rewrites its warning row (session-append-notice-rewrite) and words the isMeta copy as a receipt that asks the model nothing (a session.append text rewrite, which the typings allow for any row)."
   },
   {
    "id": "session-append-notice-rewrite",

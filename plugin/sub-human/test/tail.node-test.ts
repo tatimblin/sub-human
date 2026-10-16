@@ -489,7 +489,8 @@ test('tail: a member batch is chat + pull, a line to me is a wake; it says its s
   assert.deepEqual(t.of('chat')[0].lines, ['bob joined', 'bob: bob says hi']);
   const pull = t.of('pull')[0].text.split('\n');
   assert.equal(pull[0], tailLib.PULL_HEAD);
-  assert.deepEqual(pull.slice(1), ['bob joined', 'bob: bob says hi', "bob's Claude: bob claude chatter"], 'the pull lane plus the chat copy');
+  assert.deepEqual(pull.slice(1, -1), ['bob joined', 'bob: bob says hi', "bob's Claude: bob claude chatter"], 'the pull lane plus the chat copy');
+  assert.equal(pull.at(-1), "end of room context; the person's own words are their prompt.", 'stage 8e B: the context says where it ends');
   const wake = t.of('wake')[0].text.split('\n');
   assert.deepEqual(wake.slice(0, 4), ['bob: @alice can you look?', "bob's Claude (to you): q for alice", `(for Claude) to answer bob's Claude: SendMessage bob.${code}`, 'claude proposed: claude proposes (bbbbbb)']);
   assert.ok(wake[4].startsWith(`(for Claude) room now: proposal ${H2.slice(0, 6)}`), wake[3]);

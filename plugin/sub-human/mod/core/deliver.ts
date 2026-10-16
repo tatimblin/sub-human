@@ -2,15 +2,16 @@
  * plugin/sub-human/mod/core/deliver.ts: the room's delivery as pure functions; mod/deliver.ts makes the $ calls.
  * In: the tail child's ndjson events (lib/tail.ts). Out: route(ev) -> actions, one $ call each:
  *   seat -> follow it; chat -> $.ui.log per line (a notice is one line, cc CONTRACT ui-log-notice), relayed as a
- *   prompt while the person types from Remote Control (relayText, batched by relayQueue); pull -> isMeta
- *   append; wake -> $.prompt.submit when idle, else append plus log, re-checked at the turn's end (turnLedger);
+ *   prompt while the person types from Remote Control (relayText, batched by relayQueue); pull -> held in $.state
+ *   (holdPull) and carried as context beside the next prompt (pullContext, mod/prompt.ts), never a user row of its
+ *   own, which the model read as one turn with the person's next words (stage 8e B); wake -> $.prompt.submit when idle, else append plus log, re-checked at the turn's end (turnLedger);
  *   rows -> held for the next prompt (the room Claude's ride on its wakes); health -> log plus append.
  * Failure: pull is at most once (PULL_DELIVERY): the tail's cursor moves when the line is written, so a mod lost
- * between that write and the append drops it; a malformed event parses to null and is ignored.
+ * before the next prompt carried it (a reload forgets nothing: it waits in $.state) drops it; a malformed event parses to null and is ignored.
  */
-import { FOR_CLAUDE, MOD_RESTART_MS, MOD_RESTART_MAX_MS, MOD_RESTART_STEADY_MS, MOD_DELIVERY_ERROR_LOG_MS } from './constants.ts';
+import { FOR_CLAUDE, PULL_HEAD, PULL_END, PULL_CAP, pullDroppedLine, MOD_RESTART_MS, MOD_RESTART_MAX_MS, MOD_RESTART_STEADY_MS, MOD_DELIVERY_ERROR_LOG_MS } from './constants.ts';
 import { shimEnv } from './shim.ts';
-import type { DeliverAction, Hello, TailEvent } from './types.ts';
+import type { DeliverAction, Hello, Pulls, TailEvent } from './types.ts';
 
 // the backoff and the notice's window are mod/core/constants.ts's (lib/config.ts re-exports them)
 export { MOD_RESTART_MS, MOD_RESTART_MAX_MS, MOD_RESTART_STEADY_MS, MOD_DELIVERY_ERROR_LOG_MS };
@@ -160,7 +161,7 @@ export function route(
     case 'chat':
       if (!remote) return logLines(ev.lines);
       return [...(turnRunning ? logLines(ev.lines) : []), { do: 'relay', lines: ev.lines }];
-    case 'pull': return [{ do: 'append', text: ev.text }];
+    case 'pull': return [{ do: 'hold-pull', text: ev.text }];
     case 'rows': return [{ do: 'hold-rows', text: ev.text }];
     case 'health': return [...logLines(ev.text), { do: 'append', text: `${FOR_CLAUDE} ${ev.text}` }];
     case 'invites': return [{ do: 'invites', open: ev.open }];
@@ -173,6 +174,51 @@ export function route(
     }
     default: return [];
   }
+}
+
+/** A pull event's own lines (its head, end and left-out note gone) and how many it left out. */
+function pullBody(text: string): { lines: string[]; dropped: number } {
+  let dropped = 0;
+  const lines = String(text ?? '').split('\n').filter(l => {
+    if (l === PULL_HEAD || l === PULL_END || !l.trim()) return false;
+    const m = /^\((\d+) earlier lines? not shown: the room read tool has them\)$/.exec(l);
+    if (m) { dropped += Number(m[1]); return false; }
+    return true;
+  });
+  return { lines, dropped };
+}
+
+/** The held room context with one more pull event's text: its lines under a new id; the oldest lines over PULL_CAP
+ * go (counted in dropped), so a session that never prompts again holds at most PULL_CAP. */
+export function holdPull(prev: Pulls | null | undefined, text: string, cap = PULL_CAP): Pulls {
+  const base: Pulls = prev && Array.isArray(prev.items) ? { next: Number(prev.next) || 1, items: prev.items.map(i => ({ id: i.id, lines: [...i.lines] })), dropped: Number(prev.dropped) || 0 } : { next: 1, items: [], dropped: 0 };
+  const { lines, dropped } = pullBody(text);
+  base.dropped += dropped;
+  if (lines.length) base.items.push({ id: base.next++, lines });
+  let size = base.items.reduce((n, i) => n + i.lines.reduce((m, l) => m + l.length + 1, 0), 0);
+  while (size > cap && base.items.length) {
+    const first = base.items[0];
+    const l = first.lines.shift() as string;
+    size -= l.length + 1;
+    base.dropped++;
+    if (!first.lines.length) base.items.shift();
+  }
+  return base;
+}
+
+/** The context the next prompt carries for held: {text, upTo} (the newest id it holds, for clearPulls), or null. */
+export function pullContext(held: Pulls | null | undefined): { text: string; upTo: number } | null {
+  if (!held || !Array.isArray(held.items) || !held.items.length) return null;
+  const lines = held.items.flatMap(i => i.lines);
+  const more = held.dropped ? [pullDroppedLine(held.dropped)] : [];
+  return { text: [PULL_HEAD, ...more, ...lines, PULL_END].join('\n'), upTo: held.items[held.items.length - 1].id };
+}
+
+/** held without the items a prompt carried (ids up to upTo); null once none is left. */
+export function clearPulls(held: Pulls | null | undefined, upTo: number): Pulls | null {
+  if (!held || !Array.isArray(held.items)) return null;
+  const items = held.items.filter(i => i.id > upTo);
+  return items.length ? { next: held.next, items, dropped: 0 } : null;
 }
 
 /** The mid-turn wakes ({text, at}) after the main loop's last finished tool call: no request followed them. */

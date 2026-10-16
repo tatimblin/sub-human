@@ -50,6 +50,9 @@ declare module 'claude-code' {
       /** This session's nonce (mod/deliver.ts, minted once per session id): mod-hello writes it to the lease and
        * mod/prompt.ts passes it with sub_human_origin, so at-room believes only an origin the module handed over. */
       nonce: { sid: string; value: string };
+      /** The room context waiting for the next prompt (mod/deliver.ts holds each pull event, mod/prompt.ts carries it
+       * as context and clears what it carried): each event's lines by id, and how many lines its cap left out. */
+      pulls: { next: number; items: { id: number; lines: string[] }[]; dropped: number } | null;
     };
   }
 }

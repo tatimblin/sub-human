@@ -63,12 +63,16 @@ export type TailEvent = Exclude<TailLine, { type: 'seat' }> | { type: 'seat'; se
 
 /** One $ call an event maps to (mod/core/deliver.ts route). */
 export type DeliverAction =
-  | { do: 'log' | 'append' | 'mid-turn-wake'; text: string }
+  | { do: 'log' | 'append' | 'mid-turn-wake' | 'hold-pull'; text: string }
   | { do: 'submit'; text: string; seen: string[] }
   | { do: 'relay'; lines: string[] }
   | { do: 'hold-rows'; text: string | null }
   | { do: 'seat'; seat: TailSeat | null }
   | { do: 'invites'; open: string[] };
+
+/** The room context waiting for the next prompt ($.state pulls, mod/core/deliver.ts holdPull): each pull event's lines
+ * by id (the prompt that carried ids up to N clears them), and how many lines PULL_CAP left out. */
+export interface Pulls { next: number; items: { id: number; lines: string[] }[]; dropped: number }
 
 /** What a relay needs of a hook's $, as plain functions (no $ crosses an import): mod/deliver.ts queueRelay. */
 export interface RelayIo {

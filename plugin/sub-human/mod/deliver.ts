@@ -14,10 +14,12 @@
  *                               one relay prompt once idle, at most one per RELAY_GAP_MS, submitted asUser; io is a
  *                               hook's {now, after, submit, log} (no $ crosses an import)
  *   isRelay(text) -> bool       mod/prompt.ts: text is a relay this module is submitting (its context, no node)
+ *   serialPulls(fn)             runs fn after every other change to the held room context ($.state pulls): a pull
+ *                               event is held there (never a user row of its own) until mod/prompt.ts carries it
  */
 import {
   tailArgv, tailEnv, lineBuffer, parseEvent, route, restartDelay, nextFails, noticeDue, turnLedger, spawnWanted, logLines,
-  relayQueue, rewakePrompt, wakeParts, DELIVERY_ERROR_NOTICE, MOD_RESTART_TELL_FAILS, RELAY_AFTER_MS, REWAKE_TIMEOUT_MS,
+  relayQueue, rewakePrompt, wakeParts, holdPull, DELIVERY_ERROR_NOTICE, MOD_RESTART_TELL_FAILS, RELAY_AFTER_MS, REWAKE_TIMEOUT_MS,
 } from './core/deliver.ts';
 import { parseHello, localHello, homeOf, sidIndex } from './core/seat.ts';
 import { answersItself, joinPayload, readReply, answerOf, cancels, leftName, CONFIRM_AFTER_MS } from './core/command.ts';
@@ -27,7 +29,7 @@ import { mergeClassic } from './core/prompt.ts';
 import { factsBook } from './core/facts.ts';
 import { asHello, asNonce, mintNonce } from './core/state.ts';
 import type { EngineInterface, On, SessionAppendArgs } from 'claude-code';
-import type { RelayIo, TailEvent, TailSeat } from './core/types.ts';
+import type { Pulls, RelayIo, TailEvent, TailSeat } from './core/types.ts';
 
 /** The tail child as the module tracks it; stream: its $.process.spawn stream, as stopChild ends it. */
 interface Child { sid: string; seat: TailSeat | null; stream: { return(value?: unknown): Promise<unknown> } | null; stopped: boolean; fails: number }
@@ -38,6 +40,7 @@ const TITLED = { plugin: 'sub-human', key: 'titled' } as const;
 const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' } as const;
 const ERRORS = { plugin: 'sub-human', key: 'deliveryErrors' } as const;
 const NONCE = { plugin: 'sub-human', key: 'nonce' } as const;
+const PULLS = { plugin: 'sub-human', key: 'pulls' } as const;
 
 /** Nonce reads and mints in order: two refreshes at once for one session id must hand mod-hello the same one. */
 let minting: Promise<string | null> = Promise.resolve(null);
@@ -185,6 +188,26 @@ function noteError($: EngineInterface, { tell = true } = {}): Promise<void> {
 async function appendRow($: EngineInterface, text: string): Promise<boolean> {
   const r = await $.session.append(userRow(text)).catch(() => null);
   return !!(r && !r.deny);
+}
+
+/** Every read-modify-write of the held room context in order (this module's holdPull and mod/prompt.ts's clear): fn
+ * runs after the ones before it settled. Never rejects. */
+let pullChain: Promise<unknown> = Promise.resolve();
+export function serialPulls<T>(fn: () => Promise<T>): Promise<T | undefined> {
+  const run = pullChain.then(fn, fn);
+  pullChain = run.catch(() => undefined);
+  return run.catch(() => undefined);
+}
+
+/** A pull event: held in $.state for the next prompt (mod/prompt.ts carries it as context: stage 8e B). Only when it
+ * cannot be held, the isMeta append it was before (the model reads it with its next request). */
+async function holdPullEvent($: EngineInterface, text: string): Promise<boolean> {
+  const held = await serialPulls(async () => {
+    const { value } = await $.state.get(PULLS);
+    await $.state.set(PULLS, holdPull(value as Pulls | null, text));
+    return true;
+  });
+  return held === true || appendRow($, text);
 }
 
 /** Each line on its own notice, as a chat event's (a newline in one would be drawn as U+FFFD). */
@@ -376,6 +399,7 @@ async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
       }
       case 'log': $.ui.log(a.text); break;
       case 'append': if (!(await appendRow($, a.text))) await noteError($); break; // refused or failed: lost
+      case 'hold-pull': if (!(await holdPullEvent($, a.text))) await noteError($); break; // neither held nor appended: lost
       case 'hold-rows': await $.state.set(ROWS, a.text); break;
       case 'submit': void submitWake($, a.text, { seen: a.seen }); break; // not awaited: it resolves as the turn starts
       case 'mid-turn-wake': await midTurnWake($, a.text); break;
