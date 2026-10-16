@@ -184,6 +184,8 @@ An independent verifier's remaining findings on stage 8e (real Claude Code 2.1.2
 - **`npm run lint`**: oxlint 1.88.0 with type-aware rules (oxlint-tsgolint 7.0.2004, pinned dev dependencies; `.oxlintrc.json`, all warnings for now), then the ratchet. CI runs it once and no longer runs the typecheck twice.
 - **The type-escape ratchet**: `scripts/ts-ratchet.json` holds the explicit `any`, `as` casts and non-null `!` per directory (`scripts/ts-ratchet.js` counts them); `npm run lint` fails when a count rises, and `--update` writes lower ones.
 - **The lab's `15-short.js` parses again** (an unescaped quote the linter's parser found).
+- **The repo scripts are ESM TypeScript** (`scripts/`: the demo tools, the checks, the lab, the probe, the lint, the docs generator and their tests), strict, typechecked by `npm run typecheck` through `scripts/tsconfig.json` and linted type-aware; named exports, `.ts` specifiers, run by node's type stripping. `scripts/lib/paths.ts` loads plugin modules typed (`PluginLibs`, `PluginTests`, `PluginFiles`). `npm run test:scripts` globs `scripts/test/**/*.test.ts` (`scripts/test/index.js` goes). Every caller says `.ts`: `package.json`, `demo.sh`, CI, the lab's compose files. `demo/app.pristine/` stays JavaScript.
+- **`npm run typings`** copies the declarations Claude Code writes beside the hooks module (`claude-code`, `claude-code-tools` and now `claude-code-mcp`) into `typings/`; the snapshot is refreshed to 2.1.296. `npm run probe` fails while the snapshot's "Written by Claude Code X" is not `contract.json` `probed`.
 
 ## 0.5.0-beta.15 (2026-10-14), private beta
 

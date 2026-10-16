@@ -63,8 +63,10 @@ Claude Code run `npm install` on every user's machine.
 7. **Types come from Claude Code, not npm.**
    - `import type { … } from 'claude-code'` gives the module API and every hook input type, and is erased at run time.
    - The generated `.claude-plugin/types` folder is gitignored and missing in CI, so the root `tsconfig.json` maps
-     `claude-code` to a committed snapshot, `typings/claude-code/`, copied from the generated one and refreshed by
-     `npm run probe`.
+     `claude-code` to a committed snapshot, `typings/claude-code/`, copied from the generated one. (The probe never
+     refreshed it, as first written here; since stage T8 `npm run typings` copies it, with `claude-code-tools` and
+     `claude-code-mcp`, and `npm run probe` fails while its "Written by Claude Code X" line is not
+     `contract.json` `probed`.)
    - `@types/node` and `typescript` are root devDependencies with a committed root `package-lock.json`.
 8. **tsconfig** (at the repo root): `strict`, `noEmit`, `module`/`moduleResolution: nodenext`, `erasableSyntaxOnly`,
    `allowImportingTsExtensions`, `verbatimModuleSyntax`, `skipLibCheck`, `target: es2024`.
