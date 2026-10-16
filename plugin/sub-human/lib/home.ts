@@ -14,6 +14,7 @@
  *                               else machineId(). It stays when the room moves here (a handoff): the log names it
  *   isMine(id) -> bool          id is this machine's, in any room: machineId() or one of machines.json's
  *   setMachineIn(code, id)      record it (atomic; the link daemon, after a hello)
+ *                               machineId and machineIn are MachineIds (lib/text.ts isMachineId)
  *   repairModes() -> string[]   once per home and process: the home and its top-level store directories
  *                               (rooms, sessions, links, keys, bin) that exist, are this user's and are open to
  *                               group or others are made 0700 (a home made by an older version was 0755). Creates
@@ -29,11 +30,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { CODE_RE } from './text.ts';
+import { CODE_RE, isMachineId } from './text.ts';
 import { homeOf } from '../mod/core/seat.ts';
 import { isObj } from './decode.ts';
 import { envFlag, envStr } from './env.ts';
 import { errCode } from './errors.ts';
+import type { MachineId } from './brand.ts';
+import type { RoomCode } from './brand.ts';
 
 // the rule is mod/core/seat.ts homeOf's: the hooks module finds the store without node by the same one
 const home = (): string => homeOf(envStr('SUB_HUMAN_HOME'), os.homedir()) || path.join(os.homedir(), '.sub-human');
@@ -43,13 +46,13 @@ function roomDir(code: unknown): string {
   return path.join(roomsDir(), code);
 }
 
-const readId = (file: string): string | null => {
+const readId = (file: string): MachineId | null => {
   let v: unknown;
   try { v = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
-  return isObj(v) && typeof v.id === 'string' && v.id ? v.id : null;
+  return isObj(v) && isMachineId(v.id) ? v.id : null;
 };
 /** The id in file, else a new one linked into place (the first of two racing processes wins; both read it). */
-function readOrMakeId(file: string): string | null {
+function readOrMakeId(file: string): MachineId | null {
   const cur = readId(file);
   if (cur) return cur;
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -58,8 +61,8 @@ function readOrMakeId(file: string): string | null {
   try { fs.linkSync(tmp, file); } catch (e) { if (errCode(e) !== 'EEXIST') throw e; } finally { fs.rmSync(tmp, { force: true }); }
   return readId(file);
 }
-const machines = new Map<string, string | null>(); // home -> id
-function machineId(): string | null {
+const machines = new Map<string, MachineId | null>(); // home -> id
+function machineId(): MachineId | null {
   const h = home();
   if (!machines.has(h)) machines.set(h, readOrMakeId(path.join(h, 'machine.json')));
   return machines.get(h) ?? null;
@@ -77,13 +80,13 @@ function roomIds(): Record<string, string> {
   inRooms = { home: h, at: now, map };
   return map;
 }
-function machineIn(code: string): string | null {
+function machineIn(code: RoomCode): MachineId | null {
   const id = roomIds()[code];
-  return typeof id === 'string' && id ? id : machineId();
+  return isMachineId(id) ? id : machineId();
 }
 /** null, when this home's id cannot be read, is this machine's as machineId() is (a seat then names none). */
 const isMine = (id: unknown): boolean => (id ?? null) === machineId() || (typeof id === 'string' && !!id && Object.values(roomIds()).includes(id));
-function setMachineIn(code: string, id: string): void {
+function setMachineIn(code: RoomCode, id: string): void {
   if (!CODE_RE.test(code) || roomIds()[code] === id) return;
   const map = { ...roomIds(), [code]: id };
   fs.mkdirSync(home(), { recursive: true, mode: 0o700 });

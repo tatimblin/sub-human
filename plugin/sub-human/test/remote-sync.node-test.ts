@@ -24,8 +24,9 @@ import * as seatKey from '../hooks/seat-key.ts';
 import type { FsRoomStore } from '../lib/room/store.ts';
 import type { Transport } from '../lib/remote/types-rest.ts';
 import type { DecodedFrame } from '../lib/remote/types-core.ts';
+import { sn, mid } from './support/brands.ts';
 
-const REMOTE = 'remote0machine01';
+const REMOTE = mid('remote0machine01');
 
 /** Options of a rig: the host's segment size while it writes, an older host (its hello lists no snapshot cap), a
  * change to each frame the mirror receives, and room entries written before the n lines. */
@@ -101,7 +102,7 @@ test('first sync: a corrupt line in the middle of the host\'s log stops the link
 const H = 'abcdef012345';
 function seated(host: FsRoomStore): void {
   seatKey.arm();
-  host.append({ kind: 'member_joined', text: 'alice joined', pubkey: seatKey.publicPem(host.code, 'alice') }, { via: 'system', from: 'alice', system: true });
+  host.append({ kind: 'member_joined', text: 'alice joined', pubkey: seatKey.publicPem(host.code, sn('alice')) }, { via: 'system', from: 'alice', system: true });
   host.append({ kind: 'proposal', text: `proposal ${H}: paging`, hash: H, approvers: ['alice'] }, { via: 'agent', from: 'claude' });
   host.append({ kind: 'signoff', proposal_hash: H }, { via: 'human', from: 'alice' });
 }

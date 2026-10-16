@@ -10,6 +10,7 @@ import * as identity from '../lib/identity.ts';
 import * as rows from '../lib/rows.ts';
 import * as segments from '../statusline/segments.ts';
 import * as index from '../statusline/index.ts';
+import { sn } from './support/brands.ts';
 
 const PLUGIN = path.join(import.meta.dirname, '..');
 for (const k of Object.keys(process.env)) if (k.startsWith('CLAUDE')) delete process.env[k];
@@ -25,7 +26,7 @@ function world(names: string[], { selfName }: { selfName?: string } = {}) {
   process.env.SUB_HUMAN_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-sl-'));
   const code = identity.newCode();
   for (const name of names) {
-    const r = identity.join({ code, name, role: name === 'claude' ? 'claude' : 'member', pid: name === selfName ? process.pid : sleeper(), session_id: `sid-${name}`, cwd: os.tmpdir() });
+    const r = identity.join({ code, name: sn(name), role: name === 'claude' ? 'claude' : 'member', pid: name === selfName ? process.pid : sleeper(), session_id: `sid-${name}`, cwd: os.tmpdir() });
     assert.ok(r.ok, r.error);
   }
   const file = path.join(identity.roomDir(code), 'log.jsonl');
@@ -91,7 +92,7 @@ test('agentStatusline: a member\'s room row and the nested rows inside it (after
     { id: 'c2', content: 'carol  (reconnecting)' },
   ]);
   for (const o of out) assert.ok(Array.from(o.content).length <= code.length + 2 + rows.ROW_MAX);
-  identity.leave(code, 'carol');
+  identity.leave(code, sn('carol'));
   assert.equal(JSON.parse(agentStatusline({ session_id: 'sid-alice', tasks: [tasks[2]] }, { env })).content, 'carol  left');
   const colored = JSON.parse(agentStatusline({ session_id: 'sid-alice', tasks: [tasks[0]] }, { env: {} })).content;
   assert.match(colored, /\x1b\[33m⚠ your answer needed b7ca39\x1b\[0m/);
@@ -101,7 +102,7 @@ test('stage 8e I.7 (live verify, remote/16a): after this session left, its rows 
   const { code } = world(['claude', 'alice', 'bob']);
   rows.recordRow(code, 'sid-alice', 'r1', { kind: 'room', name: code, parent: null });
   rows.recordRow(code, 'sid-alice', 'c1', { kind: 'participant', name: 'bob', parent: 'r1' });
-  identity.leave(code, 'alice');
+  identity.leave(code, sn('alice'));
   const tasks = [{ id: 'r1', status: 'running', description: 'Spawning participant row for bob' }, { id: 'c1', status: 'running', description: 'bob' }];
   const out = agentStatusline({ session_id: 'sid-alice', tasks }, { env }).split('\n').filter(Boolean).map(l => JSON.parse(l));
   assert.deepEqual(out.map(o => o.id), ['r1', 'c1']);

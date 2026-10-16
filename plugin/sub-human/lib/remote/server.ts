@@ -117,17 +117,18 @@ import type {
 import type { Transport } from './types-rest.ts';
 import type { Members, Payload, PresenceInput, RoomStore, SnapshotWire } from '../room/types.ts';
 import type { Change } from '../room/watch.ts';
+import type { RoomCode, SeatName, MachineId, LinkToken } from '../brand.ts';
+import { isSeatName, isMachineId } from '../text.ts';
 
 type Log = (msg: string) => void;
 /** What hello's credential gives: the link (null: answered, but still unauthenticated) and a new token, once. */
-interface Credential { link: LinkRecord | null; token?: string }
+interface Credential { link: LinkRecord | null; token?: LinkToken }
 /** A subscribe stream of a session. */
 interface Stream { tick(): void; stop(): void; end(reason: EventData['end']['reason'], message?: string): void }
 /** Each op's handler: the session, the request's params (as the peer sent them: each field checked before use) and
  * its id. */
 type OpHandlers = { [K in Op]: (s: Session, params: WireParams<K>, id: FrameId | undefined) => OpResults[K] };
 
-const MACHINE_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const ANSWERS = new Set(['signoff', 'objection']);
 const WRITES = new Set(['join', 'leave', 'beat', 'append', 'handoff.accept', 'handoff.refuse']);
 const WHILE_MOVED = new Set(['hello', 'subscribe', 'blob.get', 'ping']); // what a host the room moved away from still serves
@@ -137,11 +138,12 @@ const authError = (msg: string, reason: ReasonFor<'AUTH'> | null = null): RoomEr
 const invalid = (msg: string): RoomError => new RoomError('INVALID', msg);
 
 /** name is a seat of this link (one it joined): AUTH NOT_JOINED otherwise. */
-function own(s: Session, name: unknown): asserts name is string {
-  if (typeof name !== 'string' || !hostLinks.mayWriteAs(s.link, name)) throw authError(`${String(name)} has not joined over this link`, 'NOT_JOINED');
+function own(s: Session, name: unknown): asserts name is SeatName {
+  // a link's seats are seat names: join binds only one
+  if (!isSeatName(name) || !hostLinks.mayWriteAs(s.link, name)) throw authError(`${String(name)} has not joined over this link`, 'NOT_JOINED');
 }
 
-function redeem(s: Session, invite: unknown, machine: string, pin: unknown, proven: string | null, as: unknown): Credential {
+function redeem(s: Session, invite: unknown, machine: MachineId, pin: unknown, proven: MachineId | null, as: unknown): Credential {
   const { store, linkId } = s;
   const word = inviteSecret.decode(invite);
   const asked = as && typeof as === 'object' && typeof (as as { name?: unknown }).name === 'string'
@@ -175,7 +177,7 @@ function redeem(s: Session, invite: unknown, machine: string, pin: unknown, prov
 const roomLine = (s: Session, text: string): void => room.roomLine(s.store, text, msg => s.log(`sub-human serve: ${msg}`));
 
 /** hello {login: true}: a new link for a connection over the host account's own ssh login (Session.login), else AUTH. */
-function viaLogin(s: Session, machine: string, proven: string | null): Credential {
+function viaLogin(s: Session, machine: MachineId, proven: MachineId | null): Credential {
   if (!s.login || !s.linkId) {
     throw authError(`this connection did not arrive over the host account's own ssh login${s.linkId ? ` (it came through a key that was let in for one other connection, and reaches only that one)` : ''}; join with an invite instead (/sub-human invite on the host)`, 'LOGIN_ONLY');
   }
@@ -185,7 +187,7 @@ function viaLogin(s: Session, machine: string, proven: string | null): Credentia
 }
 
 /** What a revoked link's machine is told, at hello and when its connection ends. */
-const revokedText = (code: string): string => `the host removed this machine from room ${code} (/sub-human kick); ask them for a new invite`;
+const revokedText = (code: RoomCode): string => `the host removed this machine from room ${code} (/sub-human kick); ask them for a new invite`;
 
 function known(s: Session, token: unknown): Credential {
   const link = hostLinks.verifyToken(s.store, token);
@@ -304,7 +306,7 @@ const OPS: OpHandlers = {
     if (v === null || v < (typeof params.v === 'number' && Number.isInteger(params.v) ? params.v : 1)) {
       throw new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: s.version, proto: s.proto }, joiner: { version: client, proto: theirs } }), 'SKEW');
     }
-    if (typeof machine !== 'string' || !MACHINE_RE.test(machine)) throw invalid('hello needs this machine\'s id');
+    if (!isMachineId(machine)) throw invalid('hello needs this machine\'s id');
     const mine = epochOf(s.store);
     if (typeof epoch === 'number' && Number.isInteger(epoch) && epoch > mine) {
       throw stale(`room ${s.store.code} has moved away from this machine to a newer host. Run /sub-human doctor to see where it is`);
@@ -346,6 +348,7 @@ const OPS: OpHandlers = {
     // s.link: run() lets no op but hello in without it. A bound link (the card let one name in; a handoff's seats) joins
     // its own seats only, before any seat is taken. A login link is the host account's own: its seat is that person's
     if (!hostLinks.mayJoinAs(s.link, name)) throw authError(hostLinks.notBound(s.link!, name), 'NOT_BOUND');
+    if (!isSeatName(name)) throw invalid(`invalid name "${name}" (letters, digits, . _ -, up to 32)`); // as identity.join says
     // a login link's seat is the host person's own (one person with the host's seats) only where the room says so
     const account = s.link!.login && options.loginSamePerson(s.store) ? machineIn(s.store.code) ?? undefined : undefined;
     // bound first: a link revoked meanwhile is AUTH LINK_REVOKED before any seat exists (no seat with no link); a seat

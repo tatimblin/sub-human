@@ -24,6 +24,7 @@ import type { Link } from '../../room/types.ts';
 import type { ProtoRange } from '../../remote/types-core.ts';
 import type { LinkSpec, Transport } from '../../remote/types-rest.ts';
 import { errCode, msgOf } from '../../errors.ts';
+import type { RoomCode } from '../../brand.ts';
 
 const SKEW_WARN_MS = 2 * 60 * 1000;
 /** The reasons that mean the link's invite or credential is spent: only a new invite helps. */
@@ -34,7 +35,7 @@ const SPENT: ReadonlySet<string> = new Set(['INVITE_UNKNOWN', 'INVITE_USED', 'IN
 const REVOKED: ReadonlySet<string> = new Set(['LINK_REVOKED', 'TOKEN_UNKNOWN', 'KEY_REVOKED']);
 const LOGIN_ENDED: ReadonlySet<string> = new Set(['LINK_REVOKED', 'TOKEN_UNKNOWN']);
 
-const lastLogError = (code: string): string[] => {
+const lastLogError = (code: RoomCode): string[] => {
   let text: string;
   try {
     const file = lib('room/links.ts').logFile(code);
@@ -51,7 +52,7 @@ const lastLogError = (code: string): string[] => {
 
 
 /** The hello a link's daemon would say, without a credential: the server answers it and nothing else. */
-function helloProbe(spec: LinkSpec, code: string, { timeoutMs = DOCTOR_HELLO_MS, env = process.env }: { timeoutMs?: number; env?: NodeJS.ProcessEnv } = {}): Promise<HelloProbe> {
+function helloProbe(spec: LinkSpec, code: RoomCode, { timeoutMs = DOCTOR_HELLO_MS, env = process.env }: { timeoutMs?: number; env?: NodeJS.ProcessEnv } = {}): Promise<HelloProbe> {
   const protocol = lib('remote/protocol.ts');
   let cmd: { argv: string[]; env: NodeJS.ProcessEnv } | undefined;
   try {
@@ -95,7 +96,7 @@ function helloProbe(spec: LinkSpec, code: string, { timeoutMs = DOCTOR_HELLO_MS,
 }
 
 /** A wss/ws link's hello without a credential: the WebSocket, the Noise handshake pinned to the link's key, then hello. */
-async function webHelloProbe(spec: LinkSpec, code: string, { timeoutMs = DOCTOR_HELLO_MS } = {}): Promise<HelloProbe> {
+async function webHelloProbe(spec: LinkSpec, code: RoomCode, { timeoutMs = DOCTOR_HELLO_MS } = {}): Promise<HelloProbe> {
   const t0 = Date.now();
   const protocol = lib('remote/protocol.ts');
   let t: Transport | null = null;
@@ -137,7 +138,7 @@ function dormant(st: LinkStateView): 'closed' | 'no-seat' | null {
   return st.lastReason === 'ROOM_CLOSED' ? 'closed' : st.lastReason === 'NO_SEAT' ? 'no-seat' : null;
 }
 
-async function diagnoseLink(code: string, { quick, timeoutMs, env }: { quick: boolean; timeoutMs: number; env: NodeJS.ProcessEnv }): Promise<LinkReport> {
+async function diagnoseLink(code: RoomCode, { quick, timeoutMs, env }: { quick: boolean; timeoutMs: number; env: NodeJS.ProcessEnv }): Promise<LinkReport> {
   const links = lib('room/links.ts');
   const l: Partial<Link> = links.get(code) || {};
   const spec: LinkSpec | undefined = l.transport;
@@ -225,17 +226,16 @@ function linkChecks(d: LinkReport): Check[] {
     if (d.transport.kind === 'ssh' && !r.skipped) bits.push(batchMode(r.ok, r.stderr));
     if (r.ok) {
       const SIG_SKEW_MS = lib('room/envelope.ts').SIG_SKEW_MS;
-      if (r.skewMs === null) out.push(check(`clock:${d.code}`, 'info', `clock ${d.code}`, 'skew not measurable: the host\'s hello carries no time'));
+      if (r.skewMs === null) out.push(check({ id: `clock:${d.code}`, status: 'info', title: `clock ${d.code}`, detail: 'skew not measurable: the host\'s hello carries no time' }));
       else {
         const abs = Math.abs(r.skewMs);
         const s = abs >= SIG_SKEW_MS ? 'fail' : abs >= SKEW_WARN_MS ? 'warn' : 'pass';
-        out.unshift(check(`clock:${d.code}`, s, `clock ${d.code}`, `this machine is ${Math.round(abs / 1000)} s ${r.skewMs > 0 ? 'behind' : 'ahead of'} the host`,
-          s === 'pass' ? undefined : 'turn on network time (NTP) on both machines: signed posts older than 10 min are refused'));
+        out.unshift(check({ id: `clock:${d.code}`, status: s, title: `clock ${d.code}`, detail: `this machine is ${Math.round(abs / 1000)} s ${r.skewMs > 0 ? 'behind' : 'ahead of'} the host`, fix: s === 'pass' ? undefined : 'turn on network time (NTP) on both machines: signed posts older than 10 min are refused' }));
       }
     }
   }
   if (quiet) status = 'info';
-  out.unshift(check(`link:${d.code}`, status, `connection ${d.code}`, bits.filter(Boolean).join(' · '), fix));
+  out.unshift(check({ id: `link:${d.code}`, status, title: `connection ${d.code}`, detail: bits.filter(Boolean).join(' · '), fix }));
   return out;
 }
 

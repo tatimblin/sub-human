@@ -7,6 +7,9 @@
  *       <sub-human-home> for SUB_HUMAN_HOME elsewhere; hashed room codes, member names, hostnames, users and IPs;
  *       invites, tokens, long hex and secrets cut; SSH public keys as a SHA256 fingerprint prefix
  *   fingerprint(base64) -> 'SHA256:…'
+ *   redact(secret) -> '####'   the one formatter of a secret (lib/brand.ts Secret: a PIN, an invite's SECRET or sh2
+ *       invite, a link token) for text a person, a transcript or a log reads; only the reply that hands a secret
+ *       over (the invite line, shown to its person alone) prints one (test/secrets.node-test.ts)
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -14,6 +17,10 @@ import crypto from 'node:crypto';
 import { lib } from './check.ts';
 import { webRooms, webHosts } from './listener.ts';
 import type { Report } from '../types.ts';
+import type { Secret } from '../../brand.ts';
+
+/** A secret, hidden: what a line shows in its place. */
+const redact = (_secret: Secret): string => '####';
 
 /** redactor(opts): what to hash, and the salt. */
 interface RedactorOptions {
@@ -106,4 +113,4 @@ function bundle(report: Report, { salt, env = process.env }: { salt?: string; en
   };
 }
 
-export { bundle, redactor, fingerprint };
+export { bundle, redactor, fingerprint, redact };

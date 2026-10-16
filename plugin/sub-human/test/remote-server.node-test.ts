@@ -30,6 +30,8 @@ import type { DecodedFrame } from '../lib/remote/types-core.ts';
 import type { RoomError } from '../lib/room/validate.ts';
 import type { Transport } from '../lib/remote/types-rest.ts';
 import type { Entry, EntryInput, Members, Presence, RoomStore } from '../lib/room/types.ts';
+import type { RoomCode } from '../lib/brand.ts';
+import { rc, sn, mid, inv } from './support/brands.ts';
 
 /** server.serve's options. */
 type ServeOpts = Parameters<typeof server.serve>[1];
@@ -37,7 +39,7 @@ type ServeOpts = Parameters<typeof server.serve>[1];
 // Never launch a real room Claude: a remote join on the host starts one as a local join does.
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
 
-const REMOTE = 'remote0machine01';
+const REMOTE = mid('remote0machine01');
 const H = 'abcdef012345';
 
 /** A fresh home with one room; host = its store as the server sees it. */
@@ -46,7 +48,7 @@ function hostRoom(t: TestContext) {
   const code = h.newRoom();
   return { code, host: store.open(code) };
 }
-const logLines = (code: string) => { try { return fs.readFileSync(path.join(store.open(code).dir!, 'log.jsonl'), 'utf8').split('\n').filter(Boolean); } catch { return []; } };
+const logLines = (code: RoomCode) => { try { return fs.readFileSync(path.join(store.open(code).dir!, 'log.jsonl'), 'utf8').split('\n').filter(Boolean); } catch { return []; } };
 
 /** The client end of a memory pair whose server end serves host (closed when the test ends). */
 function served(t: TestContext, host: RoomStore, wrap: (tr: Transport) => Transport = tr => tr) {
@@ -62,11 +64,11 @@ async function linked(t: TestContext, host: RoomStore, opts: Partial<ConnectOpts
   return c;
 }
 /** What the remote join hook sends: the seat's public key and a proof signed by its private key. */
-function seat(code: string, name: string, key = seatKey.ensure(code, name)) {
-  const pubkey = seatKey.publicPem(code, name);
+function seat(code: RoomCode, name: string, key = seatKey.ensure(code, sn(name))) {
+  const pubkey = seatKey.publicPem(code, sn(name));
   return { name, pubkey, proof: hostLinks.proveSeat(key, { room: code, name, pubkey }) };
 }
-const signed = (code: string, name: string, entry: EntryInput) => store.toPayload(code, entry, { via: 'human', from: name });
+const signed = (code: RoomCode, name: string, entry: EntryInput) => store.toPayload(code, entry, { via: 'human', from: name });
 const rejects = (p: Promise<unknown>, code: string) => assert.rejects(p, (e: RoomError) => e.code === code, `expected ${code}`);
 
 /** Collect a subscription's events. */
@@ -90,7 +92,7 @@ test('remote (memory): hello with an invite gives a token once; join, beat, appe
   const ms = identity.readMembers(code);
   assert.deepEqual([ms.alice.machine, ms.alice.pid], [REMOTE, undefined], 'a remote seat lives by its lease');
   const joined = host.readAll().find(e => e.kind === 'member_joined' && e.from === 'alice');
-  assert.deepEqual([joined!.machine, joined!.pubkey], [REMOTE, seatKey.publicPem(code, 'alice')], 'the key is pinned');
+  assert.deepEqual([joined!.machine, joined!.pubkey], [REMOTE, seatKey.publicPem(code, sn('alice'))], 'the key is pinned');
   assert.deepEqual(await c.beat('alice', { presence: { state: 'working', detail: 'tests' } }), { ok: true });
   const say = await c.append(signed(code, 'alice', { kind: 'say', text: 'hello from afar' }));
   assert.equal(host.trust(host.readById([say.id])[0]), 'verified');
@@ -159,11 +161,12 @@ test('remote (memory): no token gets AUTH on every op but hello; a bad token, a 
   assert.deepEqual(host.readAll(), [], 'nothing written');
 
   const hello = (opts: Partial<ConnectOpts>) => client.connect(served(t, host), { machine: REMOTE, ...opts });
+  // @ts-expect-error: not a link token, refused at run time
   await rejects(hello({ token: 'not-a-token' }), 'AUTH');
   const { invite } = invites.mintFor(host, { locator: 'pipe:test', machine: REMOTE, seats: [] });
   const [pre, c, loc, secret, key] = invite.split('.');
-  await rejects(hello({ invite: [pre, c, loc, secret.replace(/^./, (ch: string) => (ch === 'A' ? 'B' : 'A')), key].join('.') }), 'AUTH');
-  await rejects(hello({ invite: [pre, 'vole-1234', loc, secret, key].join('.') }), 'AUTH');
+  await rejects(hello({ invite: inv([pre, c, loc, secret.replace(/^./, (ch: string) => (ch === 'A' ? 'B' : 'A')), key].join('.')) }), 'AUTH');
+  await rejects(hello({ invite: inv([pre, rc('vole-1234'), loc, secret, key].join('.')) }), 'AUTH');
   (await hello({ invite })).close();
   await rejects(hello({ invite }), 'AUTH');
 
@@ -268,7 +271,7 @@ test('remote (memory): a link writes only as the seats it joined: another `from`
   await b.leave('bob', 'gone');
   const fresh = crypto.generateKeyPairSync('ed25519');
   const pubkey = fresh.publicKey.export({ type: 'spki', format: 'pem' }) as string;
-  await rejects(a.join({ name: 'bob', pubkey, proof: hostLinks.proveSeat(fresh.privateKey, { room: code, name: 'bob', pubkey }) }), 'AUTH');
+  await rejects(a.join({ name: 'bob', pubkey, proof: hostLinks.proveSeat(fresh.privateKey, { room: code, name: sn('bob'), pubkey }) }), 'AUTH');
   assert.ok(identity.readMembers(code).bob.left_at);
   assert.equal(logLines(code).length, before + 1, 'only bob\'s own member_left was written');
 });
@@ -396,7 +399,7 @@ test('remote (pipe): `serve --stdio CODE --link ID` (the SSH forced command) tak
   const { code, host } = hostRoom(t);
   const serveAs = (id?: string) => pipe.spawn(process.execPath, [h.BIN, 'serve', '--stdio', code, ...(id ? ['--link', id] : [])], { env: h.childEnv() });
   const a = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: REMOTE, seats: [] });
-  const b = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: 'other0machine001', seats: [] });
+  const b = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: mid('other0machine001'), seats: [] });
   assert.equal(hostLinks.linkKnown(host, a.link.id), true);
   assert.equal(hostLinks.linkKnown(host, 'ffffffffffff'), false);
   // a token presented over another link's forced command: AUTH; over its own: in
@@ -521,7 +524,7 @@ test('quotas: the log counts a seat\'s posts by via; a link window drops what ha
   // the retry is when the oldest counted line leaves the window, not the window itself
   const late = Array.from({ length: 30 }, () => ({ from: 'bob', via: 'agent', at: at(50_000) })) as Entry[];
   assert.throws(() => quota.checkLog(late, { from: 'bob', via: 'agent', op: 'append.agent', now }), (e: RoomError) => /try again in 10 s/.test(e.message));
-  const s = new MemoryRoomStore('otter-1234');
+  const s = new MemoryRoomStore(rc('otter-1234'));
   const seatQ = config.LINK_QUOTAS.seat;
   for (let i = 0; i < seatQ.max; i++) quota.charge(s, 'abcdef012345', 'seat', { now });
   assert.throws(() => quota.charge(s, 'abcdef012345', 'seat', { now }), (e: RoomError) => e.code === 'RATE');
@@ -564,7 +567,7 @@ test('kick (memory): a connection that holds a revoked link gets AUTH LINK_REVOK
   const c = await linked(t, host);
   assert.deepEqual(await c.join(seat(code, 'bob')), { ok: true });
   hostLinks.revokeLink(host, c.link!); // another process's kick: this session only reads the store
-  seats.exit(code, 'bob', 'removed by the host');
+  seats.exit(code, sn('bob'), 'removed by the host');
   await assert.rejects(c.join(seat(code, 'bob')), (e: RoomError) => e.code === 'AUTH' && e.reason === 'LINK_REVOKED');
   await assert.rejects(c.beat('bob'), (e: RoomError) => e.code === 'AUTH' && e.reason === 'LINK_REVOKED');
   await assert.rejects(c.append(signed(code, 'bob', { kind: 'say', text: 'ghost' })), (e: RoomError) => e.code === 'AUTH' && e.reason === 'LINK_REVOKED');
@@ -580,7 +583,7 @@ test('a seat refused at join gives its link binding back; a seat of another mach
   await rejects(c.join({ ...wrong, pubkey: seat(code, 'dave').pubkey }), 'AUTH'); // a proof for another key
   assert.deepEqual(hostLinks.links(host)[c.link!].seats, [], 'not bound');
   // a ghost: a remote seat whose link is gone (a kick raced its join before this fix), its lease past the settle
-  assert.equal(seats.enter({ code, name: 'ghost', machine: 'ghost0machine001', pubkey: seat(code, 'ghost').pubkey }).ok, true);
+  assert.equal(seats.enter({ code, name: sn('ghost'), machine: mid('ghost0machine001'), pubkey: seat(code, 'ghost').pubkey }).ok, true);
   host.members.update(ms => { ms.ghost.seen_at = new Date(Date.now() - 3_600_000).toISOString(); return ms; });
   assert.deepEqual(seats.sweep(code), ['ghost']);
   const g = identity.readMembers(code).ghost;
@@ -601,8 +604,8 @@ test('remote (memory): params of the wrong shape are refused by the op\'s own ch
   await rejects(c.request('join', [1, 2]), 'INVALID'); // not an object: no pubkey
   await rejects(c.request('join', { ...seat(code, 'alice'), pubkey: 5 }), 'INVALID');
   // a proof signed over a name that is no seat name (a number): INVALID, and the link binds nothing
-  const key = seatKey.ensure(code, 'alice');
-  const pubkey = seatKey.publicPem(code, 'alice');
+  const key = seatKey.ensure(code, sn('alice'));
+  const pubkey = seatKey.publicPem(code, sn('alice'));
   const proof = hostLinks.proveSeat(key, { room: code, name: 7 as unknown as string, pubkey }); // deliberate: a number
   await rejects(c.request('join', { name: 7, pubkey, proof }), 'INVALID');
   assert.deepEqual(Object.values(hostLinks.links(host)).map(l => l.seats), [[]]);

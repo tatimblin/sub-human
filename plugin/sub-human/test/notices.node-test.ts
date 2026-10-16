@@ -23,29 +23,31 @@ import type { FakeClock } from '../lib/clock.ts';
 import type { Entry, Member, Members } from '../lib/room/types.ts';
 import type { Me, ToolResult } from '../mcp/types.ts';
 import * as hostLinksForSeats from '../lib/remote/host-links.ts';
+import type { RoomCode } from '../lib/brand.ts';
+import { rc, sn, mid, eid } from './support/brands.ts';
 /** A remote seat's link on the host (lib/remote/server.ts binds every remote seat to one; the sweep lets a seat no
  * link names leave). */
-const linkFor = (code: string, name: string) => hostLinksForSeats.create(room.open(code).store, { id: hostLinksForSeats.newLinkId(), machine: 'far-away', seats: [name] });
+const linkFor = (code: RoomCode, name: string) => hostLinksForSeats.create(room.open(code).store, { id: hostLinksForSeats.newLinkId(), machine: mid('far-away'), seats: [name] });
 let R!: Room; // the room under test (set per test)
 /** The join / leave notices as these tests use them: render.ts's, and the shown ones in the seat's session document. */
 const notices = {
   joinLeave: render.joinLeave, text: render.noticeText, rowSegment: render.rowSegment,
-  shown: (code: string, name: string) => session.shown(room.open(code).store, name),
-  markShown: (code: string, name: string, ids: number[], via: string, opts?: { now?: number }) => session.markShown(room.open(code).store, name, ids, via, opts),
+  shown: (code: RoomCode, name: string) => session.shown(room.open(code).store, name),
+  markShown: (code: RoomCode, name: string, ids: number[], via: string, opts?: { now?: number }) => session.markShown(room.open(code).store, name, ids, via, opts),
 };
 /** noticeText's argument; the tests leave rejoin out where it is false. */
 type NoticeIn = Parameters<typeof render.noticeText>[0];
 
-const CODE = 'stoat-3644';
+const CODE = rc('stoat-3644');
 const T0 = Date.parse('2026-10-05T10:00:00.000Z');
 const at = (s: number) => new Date(T0 + s * 1000).toISOString();
-const mv = (id: number, kind: string, from: string, s: number, text?: string): Entry => ({ id, at: at(s), from, via: 'system', kind, to: 'room', text: text || `${from} ${kind === 'member_left' ? 'left' : 'joined'}` });
-const MEMBERS: Members = { claude: { name: 'claude', role: 'claude' }, alice: { name: 'alice', role: 'member' }, bob: { name: 'bob', role: 'member' } };
+const mv = (id: number, kind: string, from: string, s: number, text?: string): Entry => ({ id: eid(id), at: at(s), from, via: 'system', kind, to: 'room', text: text || `${from} ${kind === 'member_left' ? 'left' : 'joined'}` });
+const MEMBERS: Members = { claude: { name: sn('claude'), role: 'claude' }, alice: { name: sn('alice'), role: 'member' }, bob: { name: sn('bob'), role: 'member' } };
 
 test('notices.joinLeave: others only, leaves settle after 8 s, a quick leave + rejoin is no notice', () => {
   const es: Entry[] = [
     mv(1, 'member_joined', 'alice', 0), mv(2, 'member_joined', 'claude', 1), mv(3, 'member_joined', 'bob', 10),
-    { id: 4, at: at(11), from: 'bob', via: 'human', kind: 'say', text: 'hi' },
+    { id: eid(4), at: at(11), from: 'bob', via: 'human', kind: 'say', text: 'hi' },
     mv(5, 'member_left', 'bob', 20), mv(6, 'member_joined', 'bob', 25, 'bob rejoined'), // back in 5 s: nothing
     mv(7, 'member_left', 'bob', 40), mv(8, 'member_joined', 'bob', 60, 'bob rejoined (resumed)'), // away 20 s
     mv(9, 'member_left', 'bob', 100),
@@ -63,11 +65,11 @@ test('notices.joinLeave: a seat whose lease lapsed (lib/seats.ts sweep) and that
   const code = h.newRoom();
   t.mock.method(seats.seam, 'startDetached', () => 1);
   if (!Object.values(hostLinksForSeats.links(room.open(code).store)).some(k => k.seats.includes('bob'))) linkFor(code, 'bob');
-  assert.equal(seats.enter({ code, name: 'bob', machine: 'far-away', pubkey: seatKey.publicPem(code, 'bob') }).ok, true);
+  assert.equal(seats.enter({ code, name: sn('bob'), machine: mid('far-away'), pubkey: seatKey.publicPem(code, sn('bob')) }).ok, true);
   const s = room.open(code).store;
   s.members.update(ms => { ms.bob.seen_at = new Date(Date.now() - config.SEAT_LEASE_MS - config.LEAVE_SETTLE_MS - 1000).toISOString(); return ms; });
   assert.deepEqual(seats.sweep(code), ['bob']);
-  assert.equal(seats.back(code, 'bob'), true);
+  assert.equal(seats.back(code, sn('bob')), true);
   const es = room.open(code).readAll();
   assert.deepEqual(es.filter(e => e.from === 'bob').map(e => e.text), ['bob joined', 'bob left (connection lost)', 'bob rejoined']);
   assert.deepEqual(notices.joinLeave(es, 'alice', { now: Date.now() + 60_000, settle: 8000 }).map(n => n.name + ' ' + n.kind), ['bob member_joined'], 'only the first join');
@@ -95,15 +97,15 @@ test('notices.text and rowSegment: a leave carries the chat line\'s short reason
   assert.equal(notices.rowSegment(es, 'alice', { now: T0 + 39_000 }), '−bob left (session ended)', 'a SessionEnd token reads as the chat line does');
   es[1] = mv(2, 'member_left', 'bob', 30, 'bob left (left)');
   assert.equal(notices.rowSegment(es, 'alice', { now: T0 + 39_000 }), '−bob left', '/sub-human leave adds nothing');
-  const t = rows.rowText(CODE, CODE, 'alice', { entries: [mv(1, 'member_left', 'bob', 0, 'bob left (session ended)')], members: MEMBERS, now: T0 + 12_000, taskSummary: '' });
+  const t = rows.rowText(CODE, { viewer: 'alice', entries: [mv(1, 'member_left', 'bob', 0, 'bob left (session ended)')], members: MEMBERS, now: T0 + 12_000, taskSummary: '' });
   assert.match(t, /^−bob left \(session ended\)/, 'the room row (panel and statusline)');
 });
 
 test('rows.rowText: the room row leads with a recent join', () => {
   const es = [mv(1, 'member_joined', 'alice', 0), mv(2, 'member_joined', 'bob', 10)];
-  const t = rows.rowText(CODE, CODE, 'alice', { entries: es, members: MEMBERS, now: T0 + 12_000, taskSummary: '' });
+  const t = rows.rowText(CODE, { viewer: 'alice', entries: es, members: MEMBERS, now: T0 + 12_000, taskSummary: '' });
   assert.equal(t, '+bob joined · 2 here');
-  assert.equal(rows.rowText(CODE, CODE, 'alice', { entries: es, members: MEMBERS, now: T0 + 400_000, taskSummary: '' }), '2 here');
+  assert.equal(rows.rowText(CODE, { viewer: 'alice', entries: es, members: MEMBERS, now: T0 + 400_000, taskSummary: '' }), '2 here');
 });
 
 test('notices shown / markShown: ids merge and sort; via is required', () => {
@@ -162,19 +164,19 @@ test('hold {room}: joins and settled leaves show as notices on the progress line
   process.env.SUB_HUMAN_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-notice-hold-'));
   const dir = path.join(process.env.SUB_HUMAN_HOME, 'rooms', CODE);
   fs.mkdirSync(dir, { recursive: true });
-  const ms: Record<'claude' | 'alice' | 'bob', Member> = { claude: { name: 'claude', role: 'claude' }, alice: { name: 'alice', role: 'member' }, bob: { name: 'bob', role: 'member' } };
+  const ms: Record<'claude' | 'alice' | 'bob', Member> = { claude: { name: sn('claude'), role: 'claude' }, alice: { name: sn('alice'), role: 'member' }, bob: { name: sn('bob'), role: 'member' } };
   const save = () => fs.writeFileSync(path.join(dir, 'members.json'), JSON.stringify(ms));
   save();
   let id = 0;
   const add = (from: string, kind: string, text: string) => fs.appendFileSync(path.join(dir, 'log.jsonl'), JSON.stringify({ id: ++id, at: new Date().toISOString(), from, via: 'system', kind, to: 'room', text }) + '\n');
   add('alice', 'member_joined', 'alice joined');
   const progress: string[] = []; // the room hold's line only (bob's row streams his own thread)
-  const me = { code: CODE, name: 'alice', role: 'member' } as Me; // the fields hold reads
+  const me = { code: CODE, name: sn('alice'), role: 'member' } as Me; // the fields hold reads
   let who: Me | null = me;
   const plug = hold.create({ identity, whoami: () => who, progress: (k, _n, m) => { if (k === 'r') progress.push(m!); }, onCancel: () => {}, log: () => {}, text: s => ({ content: [{ type: 'text', text: s as string }] }) });
   // bob's row is already held, so the room hold does not return JOINED for him
   const ended: ToolResult[] = [];
-  const b = plug.call('hold', me, { member: 'bob' }, { id: 1, progressToken: 'b' });
+  const b = plug.call('hold', me, { member: sn('bob') }, { id: 1, progressToken: 'b' });
   const r = plug.call('hold', me, { room: CODE }, { id: 2, progressToken: 'r' });
   for (const p of [b, r]) (p as Promise<ToolResult>).then(x => ended.push(x)); // a hold call answers with a Promise
   tick(60);
@@ -238,7 +240,7 @@ test('tail (member): a join and a settled leave are chat events; a quick round t
   R = room.open(code);
   h.register('alice', 'member', process.pid, code);
   sys('member_joined', 'alice');
-  rows.writeHolds(code, 'alice', { room: true, members: ['bob'] }); // her rows run: no row note is pushed
+  rows.writeHolds(code, sn('alice'), { room: true, members: ['bob'] }); // her rows run: no row note is pushed
   const t = startTail();
   try {
     t.advance(400);

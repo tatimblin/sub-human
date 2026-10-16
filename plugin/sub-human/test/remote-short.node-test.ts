@@ -24,11 +24,12 @@ import type { MachineRun, Seat } from './support/two-homes.ts';
 import * as identityLib from '../lib/identity.ts';
 import * as hosting from '../lib/remote/hosting.ts';
 import * as links from '../lib/room/links.ts';
+import type { RoomCode } from '../lib/brand.ts';
 
 const LINK_ENV: Record<string, string> = { SUB_HUMAN_LINK_RETRY_MS: '200', SUB_HUMAN_LINK_RETRY_MAX_MS: '400', SUB_HUMAN_LINK_IDLE_MS: '1500' };
 const childOf = (pid: number) => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
 const kill = (pid: number | null) => { try { process.kill(pid as number, 'SIGKILL'); } catch { /* gone (or no child: null throws too) */ } };
-const stopDaemon = (t: TestContext, m: Machine, code: string) => t.after(() => {
+const stopDaemon = (t: TestContext, m: Machine, code: RoomCode) => t.after(() => {
   const d = m.lib(() => linkSocket.status(code));
   if (d.pid) { kill(childOf(d.pid)); kill(d.pid); }
   fs.rmSync(path.dirname(linkSocket.socketPath(path.join(m.home, 'rooms', code))), { recursive: true, force: true });
@@ -62,7 +63,7 @@ function card(host: Machine, alice: Seat, ref: string, label: string | null, ext
 }
 
 /** The line typed on the remote home (hidden); resolves once the host asked for the PIN (the link file says so). */
-async function typeLine(remote: Machine, seat: Seat, code: string, line: string, as: string) {
+async function typeLine(remote: Machine, seat: Seat, code: RoomCode, line: string, as: string) {
   const r = remote.join(seat, `${line} --as ${as}`);
   await until(() => remote.lib(() => !!(links.get(code) || {}).pin_wanted), 8000, 'the host asking for the PIN');
   return r;

@@ -59,11 +59,10 @@
 import { normalize } from './rules.ts';
 import { parseEntry } from './validate.ts';
 import { assertNever } from '../../mod/core/never.ts';
-import { HASH_RE } from '../text.ts';
+import { isProposalHash as isHash } from '../text.ts';
 import type { Answer, Entry, EntryOf, Fold, Matrix, ProposalEntry, ProposalState, Trust } from './types.ts';
 
 type Entries = readonly (Entry | null | undefined)[];
-const isHash = (h: unknown): h is string => typeof h === 'string' && HASH_RE.test(h);
 /** A proposal entry with a hash the fold can key it by. */
 const isProposal = (e: EntryOf<'proposal'>): e is ProposalEntry => isHash(e.hash);
 

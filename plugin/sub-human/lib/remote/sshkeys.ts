@@ -19,6 +19,7 @@ import path from 'node:path';
 import * as io from '../io.ts';
 import { envStr } from '../env.ts';
 import { errCode } from '../errors.ts';
+import type { RoomCode } from '../brand.ts';
 
 const authorizedKeysFile = (): string => envStr('SUB_HUMAN_AUTHORIZED_KEYS') || path.join(os.homedir(), '.ssh', 'authorized_keys');
 const ENROLL_TAG = (code: string): string => `sub-human-enroll:${code}`;
@@ -37,6 +38,6 @@ function removeTagged(file: string, tag: string): number {
   return n;
 }
 
-const removeAuthorized = (file: string, code: string, id: string): number => removeTagged(file, `sub-human:${code}:${id}`);
+const removeAuthorized = (file: string, code: RoomCode, id: string): number => removeTagged(file, `sub-human:${code}:${id}`);
 
 export { authorizedKeysFile, removeAuthorized, removeTagged, ENROLL_TAG };

@@ -69,6 +69,7 @@ import type { JoinResult, Member } from './room/types.ts';
 import type { Identity } from './identity.ts';
 import type { Wanted } from './remote/joining.ts';
 import { errCode, msgOf } from './errors.ts';
+import type { RoomCode, SeatName, MachineId } from './brand.ts';
 
 const require = createRequire(import.meta.url);
 // loaded only by take(): the session-end hook and the remote server never need the link or the listener
@@ -77,10 +78,10 @@ const gc = (): typeof import('./gc.ts') => require('./gc.ts');
 
 /** enter()'s seat: the join hook's, or the remote server's for a seat on another machine. */
 interface EnterOpts {
-  code: string;
-  name: string;
+  code: RoomCode;
+  name: SeatName;
   role?: string;
-  machine?: string | null;
+  machine?: MachineId | null;
   account?: string;
   pid?: number | null;
   session_id?: string | null;
@@ -98,12 +99,12 @@ const asSystem = (name: string) => ({ via: 'system', from: name, system: true })
 const WORKDIR = 'workdir'; // the room's working directory: {cwd}
 
 /** The first local seat's cwd becomes the room's working directory, where the room's Claude runs. */
-function keepWorkdir(code: string, cwd: string | null | undefined): void {
+function keepWorkdir(code: RoomCode, cwd: string | null | undefined): void {
   const kv = room.open(code).store.kv;
   if (cwd && !kv.get(WORKDIR)) kv.set(WORKDIR, { cwd });
 }
 
-function ensureRoomClaude(code: string, cwd: string | null | undefined, by: string): string {
+function ensureRoomClaude(code: RoomCode, cwd: string | null | undefined, by: string): string {
   let last: Member | null = null;
   try {
     last = identity.readMembers(code).claude || null;
@@ -137,7 +138,7 @@ function enter({ code, name, role = 'member', machine = identity.machineIn(code)
   return { ...r, note: ensureRoomClaude(code, cwd, name) };
 }
 
-function exit(code: string, name: string, reason: string, { deadlineMs }: { deadlineMs?: number } = {}): boolean {
+function exit(code: RoomCode, name: SeatName, reason: string, { deadlineMs }: { deadlineMs?: number } = {}): boolean {
   try {
     if (!identity.leave(code, name, { reason, deadlineMs })) return false;
   } catch (e) {
@@ -164,7 +165,7 @@ function linked(s: { kv: { get<T>(key: string, dflt?: T): T | null } }, name: st
 }
 const isLocal = (m: Member): boolean => validPid(m.pid) && identity.isMine(m.machine || identity.machineId());
 
-function sweep(code: string, { now = Date.now(), name }: { now?: number; name?: string } = {}): string[] {
+function sweep(code: RoomCode, { now = Date.now(), name }: { now?: number; name?: string } = {}): string[] {
   const s = room.open(code).store;
   if (!s || !s.isHost) return [];
   const after = config.SEAT_LEASE_MS + envMs('SUB_HUMAN_LEAVE_MS');
@@ -202,7 +203,7 @@ function sweep(code: string, { now = Date.now(), name }: { now?: number; name?: 
   return out;
 }
 
-function back(code: string, name: string): boolean {
+function back(code: RoomCode, name: SeatName): boolean {
   const s = room.open(code).store;
   if (!s || !s.isHost) return false;
   let was = false;
@@ -221,23 +222,23 @@ function back(code: string, name: string): boolean {
 /** take()'s answer: a seat taken (the mechanics block's lead line, the person's line), or a refusal / where it stands. */
 export type Taken = { ok: true; me: Identity; lead: string; msg: string } | { ok: false; text: string; refused: boolean };
 /** take()'s process: the seat's claude pid and session, the seat this session holds now, and its key's public half. */
-interface TakeCtx { pid: number; session_id: string | undefined; cwd: string; cur: Identity | null; pubkey(code: string, name: string): string }
+interface TakeCtx { pid: number; session_id: string | undefined; cwd: string; cur: Identity | null; pubkey(code: RoomCode, name: SeatName): string }
 
 const no = (text: string, refused = true): Taken => ({ ok: false, text, refused });
 
 /** Who else is in the room, live (the room's Claude only while it runs). */
-function others(code: string, name: string): string[] {
+function others(code: RoomCode, name: SeatName): string[] {
   return Object.values<Member>(identity.readMembers(code)).filter(m => m && m.name && m.name !== name && !m.left_at
     && (m.role !== 'claude' || roomClaudePresence(m) === 'live')).map(m => m.name);
 }
 
-function withWhom(code: string, name: string): string {
+function withWhom(code: RoomCode, name: SeatName): string {
   const names = others(code, name).filter(n => n !== identity.ROOM_CLAUDE);
   if (!names.length) return 'nobody else here yet';
   return names.length > 3 ? `${names.length} others here` : `with ${names.join(', ')}`;
 }
 
-function liveSeatHere(cwd: string, name: string): string | null {
+function liveSeatHere(cwd: string, name: string): RoomCode | null {
   try {
     for (const c of identity.openRooms()) {
       const m = identity.readMembers(c)[name];
@@ -276,7 +277,7 @@ function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd,
   try { gc().sweep({ keep: code }); } catch { /* the next join sweeps (lib/gc.ts: at most every GC_EVERY_MS, within GC_BUDGET_MS) */ }
   if (!code) {
     sweepOrphans();
-    const open: string[] = identity.openRooms();
+    const open: RoomCode[] = identity.openRooms();
     if (open.length > 1) return no(`${open.length} rooms are open (${open.join(', ')}); say which: /sub-human NAME ROOM.`);
     code = open[0] || null;
   }

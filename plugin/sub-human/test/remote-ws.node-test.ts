@@ -16,6 +16,7 @@ import type { AddressInfo } from 'node:net';
 import * as h from './helpers.ts';
 import * as ws from '../lib/remote/ws.ts';
 import { isAlive } from '../lib/io.ts';
+import { rc, sn, mid } from './support/brands.ts';
 
 /** The next `ev` from an emitter: its listener's arguments (A: what that event carries). */
 const once = <A extends unknown[] = unknown[]>(em: EventEmitter, ev: string) => new Promise<A>(r => em.once(ev, (...a: unknown[]) => r(a as A)));
@@ -290,15 +291,15 @@ test('kick: the listener\'s child (`serve --stdio CODE --via ws --peer KEY`) nam
   const hosting = await import('../lib/remote/hosting.ts');
   const host = store.open(code);
   const peer = crypto.randomBytes(32).toString('base64url');
-  const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: 'web0machine00001', seats: [], key: peer });
+  const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: mid('web0machine00001'), seats: [], key: peer });
   const tr = pipe.spawn(process.execPath, [h.BIN, 'serve', '--stdio', code, '--via', 'ws', '--peer', peer], { env: { ...h.childEnv(), SUB_HUMAN_CLAUDE: '/usr/bin/false' } });
   let closed = false;
   tr.onClose(() => { closed = true; });
-  const c = await client.connect(tr, { machine: 'web0machine00001', token });
+  const c = await client.connect(tr, { machine: mid('web0machine00001'), token });
   t.after(() => c.close());
-  const key = seatKey.ensure(code, 'carol');
-  const pubkey = seatKey.publicPem(code, 'carol');
-  assert.deepEqual(await c.join({ name: 'carol', pubkey, proof: hostLinks.proveSeat(key, { room: code, name: 'carol', pubkey }) }), { ok: true });
+  const key = seatKey.ensure(code, sn('carol'));
+  const pubkey = seatKey.publicPem(code, sn('carol'));
+  assert.deepEqual(await c.join({ name: 'carol', pubkey, proof: hostLinks.proveSeat(key, { room: code, name: sn('carol'), pubkey }) }), { ok: true });
   const ends: string[] = [];
   const sub = c.subscribe(0, store.hash12(''), ({ ev, data }) => { if (ev === 'end') ends.push((data as { reason: string }).reason); });
   await sub.ready;
@@ -310,7 +311,7 @@ test('kick: the listener\'s child (`serve --stdio CODE --via ws --peer KEY`) nam
 test('listener (item 16): once the last room it served closed and no connection is open, it exits at once, not after LISTEN_IDLE_MS', async t => {
   h.freshHome(t);
   const listenerMod = await import('../lib/remote/listener.ts');
-  listenerMod.addRoom('vole-0042', { path: '/sub-human/vole-0042', url: 'https://box/sub-human/vole-0042', mode: 'url' });
+  listenerMod.addRoom(rc('vole-0042'), { path: '/sub-human/vole-0042', url: 'https://box/sub-human/vole-0042', mode: 'url' });
   const t0 = Date.now();
   const r = await listenerMod.run({ port: 0, closedCheckMs: 50, idleMs: 600_000, log: () => {} });
   assert.equal(r.why, 'the last room it served closed');

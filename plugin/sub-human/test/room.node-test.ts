@@ -11,6 +11,7 @@ import * as identity from '../lib/identity.ts';
 import type { Room } from '../lib/room.ts';
 import type { FsRoomStore } from '../lib/room/store.ts';
 import type { AppendOpts, Entry, EntryInput } from '../lib/room/types.ts';
+import { sn, eid } from './support/brands.ts';
 
 let R: Room = null!; // the current test's room (fresh() opens it)
 function fresh() {
@@ -226,7 +227,7 @@ test('room: cursors persist per name and resume', () => {
   assert.throws(() => R.setCursor('../evil', 1), /cursor/);
   for (let i = 0; i < 5; i++) human('bob', 'say');
   assert.deepEqual(R.readAfter(R.getCursor('mcp-alice')).map(e => e.id), [4, 5]);
-  assert.deepEqual(R.readById([5, 2, 99]).map(e => e.id), [5, 2]);
+  assert.deepEqual(R.readById([5, 2, 99].map(eid)).map(e => e.id), [5, 2]);
   assert.equal(R.lastId(), 5);
 });
 
@@ -234,7 +235,7 @@ test('room: digest has members, plan + matrix, open items, decisions; capped at 
   const code = fresh();
   h.register('claude', 'claude');
   const sleeper = h.spawnSleeper();
-  identity.join({ code, name: 'alice', role: 'member', pid: sleeper.pid, session_id: 's-a', cwd: '/tmp' });
+  identity.join({ code, name: sn('alice'), role: 'member', pid: sleeper.pid, session_id: 's-a', cwd: '/tmp' });
   agent('claude', 'proposal', { hash: H1, approvers: ['alice', 'bob'], path: '/p/plan.md' });
   human('alice', 'signoff', { proposal_hash: H1 });
   let d = R.digest();

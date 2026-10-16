@@ -11,6 +11,7 @@ import * as taskPlugin from '../mcp/task.ts';
 import type { RawTask } from '../lib/tasks.ts';
 import type { Entry } from '../lib/room/types.ts';
 import type { Me, PluginApi, PluginContext, ToolArgs, ToolResult } from '../mcp/types.ts';
+import { sn } from './support/brands.ts';
 
 type Validated = ReturnType<typeof tasks.validate>;
 type Gated = ReturnType<typeof tasks.gate>;
@@ -124,7 +125,7 @@ test('writeList omits the room task; list and summary per viewer', () => {
   assert.deepEqual(Object.keys(l[0]).sort(), ['blockedBy', 'id', 'owner', 'status', 'subject']);
   assert.equal(tasks.summary(code, 'alice'), 'tasks 3 open · #2 you · #4 bob');
   assert.equal(tasks.summary(code, 'bob'), 'tasks 3 open · #2 alice · #4 you');
-  assert.deepEqual(tasks.mine(code, 'alice').map(t => t.id), ['2']);
+  assert.deepEqual(tasks.mine(code, sn('alice')).map(t => t.id), ['2']);
   tasks.writeList(code, [{ id: '2', subject: 'a', status: 'completed', owner: 'alice' }]);
   assert.equal(tasks.summary(code, 'alice'), 'tasks: all 1 done');
   tasks.writeList(code, ['1', '2', '3', '4', '5'].map(id => ({ id, subject: 's' + id, status: 'pending', owner: 'o' + id })));
@@ -148,9 +149,9 @@ test('task tool: the room Claude not running, refusals, queued request', () => {
   h.freshHome();
   const code = h.newRoom();
   const sleeper = h.spawnSleeper();
-  const me: Seat & { pid: number } = { code, name: 'alice', role: 'member', pid: process.pid };
-  identity.join({ code, name: 'alice', role: 'member', pid: process.pid, session_id: 's-a' });
-  identity.join({ code, name: 'bob', role: 'member', pid: sleeper.pid! + 0, session_id: 's-b' });
+  const me: Seat & { pid: number } = { code, name: sn('alice'), role: 'member', pid: process.pid };
+  identity.join({ code, name: sn('alice'), role: 'member', pid: process.pid, session_id: 's-a' });
+  identity.join({ code, name: sn('bob'), role: 'member', pid: sleeper.pid! + 0, session_id: 's-b' });
   const R = room.open(code);
   const api = taskPlugin.create(ctxFor()) as TaskApi;
   assert.deepEqual(api.tools.map(t => t.name), ['task']);
@@ -161,7 +162,7 @@ test('task tool: the room Claude not running, refusals, queued request', () => {
   assert.equal(R.readAll().length, 0);
 
   const roomClaudeProc = h.spawnSleeper();
-  identity.join({ code, name: 'claude', role: 'claude', pid: roomClaudeProc.pid, session_id: 's-o' });
+  identity.join({ code, name: sn('claude'), role: 'claude', pid: roomClaudeProc.pid, session_id: 's-o' });
   let r = api.call('task', me, { op: 'done', id: '2' });
   assert.equal(r.isError, true);
   assert.match(out(r), /evidence/);
@@ -179,7 +180,7 @@ test('task tool: the room Claude not running, refusals, queued request', () => {
   assert.match(d.text!, /done #2/);
 
   // the room's Claude itself is told to use its native tools
-  assert.match(out(api.call('task', { code, name: 'claude', role: 'claude' }, { op: 'add', subject: 'x' })), /TaskCreate/);
+  assert.match(out(api.call('task', { code, name: sn('claude'), role: 'claude' }, { op: 'add', subject: 'x' })), /TaskCreate/);
 });
 
 test('gate: task.req (the native metadata) is tried first; fold keeps the last snapshot per task', () => {

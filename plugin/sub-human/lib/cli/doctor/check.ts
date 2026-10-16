@@ -2,7 +2,7 @@
  * plugin/sub-human/lib/cli/doctor/check.ts: what every part of `sub-human doctor` shares (lib/cli/doctor.ts): a check,
  * the lazily loaded modules, and small file helpers.
  *
- *   check(id, status, title, detail, fix?) -> Check
+ *   check({id, status, title, detail, fix?}) -> Check
  *   lib(name) -> module            a module under lib/, loaded when a check needs it
  *   cli(args) -> string            a fix only a shell can make: the CLI by its path (lib/text.ts cliLine)
  *   tilde(path) -> string          ~ for paths under $HOME
@@ -49,7 +49,8 @@ const lib = <K extends keyof Libs>(name: K): Libs[K] => require(path.join(LIB, n
 /** A fix only a shell can make: the CLI by its path (no `sub-human` is on PATH; lib/text.ts cliLine). */
 const cli = (args: string): string => lib('text.ts').cliLine(args);
 
-const check = (id: string, status: CheckStatus, title: string, detail: string, fix?: string): Check => ({ id, status, title, detail, ...(fix ? { fix } : {}) });
+/** A check's verdict: id (stable, for the bundle), status, title (what was checked), detail (what was found) and fix. */
+const check = ({ id, status, title, detail, fix }: { id: string; status: CheckStatus; title: string; detail: string; fix?: string | undefined }): Check => ({ id, status, title, detail, ...(fix ? { fix } : {}) });
 const tilde = <P extends string | null | undefined>(p: P, h = os.homedir()): P | string => (p && h && (p === h || p.startsWith(h + path.sep)) ? '~' + p.slice(h.length) : p);
 const isExec = (p: string) => { try { fs.accessSync(p, fs.constants.X_OK); return fs.statSync(p).isFile(); } catch { return false; } };
 const readText = (p: string): string | null => { try { return fs.readFileSync(p, 'utf8'); } catch { return null; } };

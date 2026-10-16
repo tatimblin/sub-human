@@ -55,6 +55,7 @@ import { isObj, objAs } from '../decode.ts';
 import { envNum } from '../env.ts';
 import * as ioMod from '../io.ts';
 import * as textMod from '../text.ts';
+import { isRoomCode } from '../text.ts';
 import { createRequire } from 'node:module';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import type { IncomingMessage } from 'node:http';
@@ -65,6 +66,7 @@ import type { FrameId } from './types-core.ts';
 import type { Duplex } from 'node:stream';
 import type { Conn } from './ws.ts';
 import { msgOf, stackOf } from '../errors.ts';
+import type { RoomCode } from '../brand.ts';
 
 
 /** The listener's status (status()). */
@@ -123,7 +125,7 @@ function status(): ListenStatus {
   return { running, ...(running ? { pid: s.pid, port: s.port, started_at: s.started_at, conns: s.conns || 0 } : {}), rooms: s.rooms || {} };
 }
 
-function addRoom(code: string, rec: ServedRoom): ServedRoom {
+function addRoom(code: RoomCode, rec: ServedRoom): ServedRoom {
   update(s => ({ ...s, rooms: { ...(s.rooms || {}), [code]: { ...rec, at: new Date().toISOString() } } }));
   return rec;
 }
@@ -173,7 +175,7 @@ function stop(): boolean {
 function roomLive(code: string): boolean {
   const identity: typeof import('../identity.ts') = require('../identity.ts');
   try {
-    if (!identity.roomExists(code) || !identity.isHost(code)) return false;
+    if (!isRoomCode(code) || !identity.roomExists(code) || !identity.isHost(code)) return false;
     const roomClaude = identity.readMembers(code).claude;
     return !(roomClaude && (roomClaude.stopped_at || roomClaude.closing));
   } catch { return false; }
@@ -231,7 +233,7 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
     conn.on('close', () => { const n = (bySource.get(who) || 1) - 1; if (n > 0) bySource.set(who, n); else bySource.delete(who); });
     const at = String(req.url || '').split('?')[0].split('/').filter(Boolean).pop();
     const refusal = (code: string): Refusal | null => {
-      if (!CODE_RE.test(code)) return { code: 'PROTOCOL', message: 'not a room code' };
+      if (!isRoomCode(code)) return { code: 'PROTOCOL', message: 'not a room code' };
       if (at && CODE_RE.test(at) && at !== code) return { code: 'PROTOCOL', message: `this URL is for room ${at}, not ${code}` };
       if (!(read().rooms || {})[code] || !roomLive(code)) return { code: 'OFFLINE', message: `room ${code} is not open for joins over the web here (the host can run /sub-human invite --web or --url again)` };
       return null;

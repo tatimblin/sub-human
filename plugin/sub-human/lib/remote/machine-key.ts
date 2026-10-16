@@ -25,11 +25,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { home } from '../home.ts';
+import { isMachineId } from '../text.ts';
 import { readJson } from '../io.ts';
 import { obj, str } from '../decode.ts';
 import type { Infer } from '../decode.ts';
 import { SIG_SKEW_MS } from '../room/envelope.ts';
 import { machineKeyFile } from '../room/keys.ts';
+import type { MachineId } from '../brand.ts';
 
 interface Proof { key: string; ts: number; sig: string }
 const KEY_RE = /^[A-Za-z0-9_-]{43}$/;
@@ -37,7 +39,11 @@ const SPKI_ED25519 = Buffer.from('302a300506032b6570032100', 'hex'); // the DER 
 
 const file = (): string => machineKeyFile();
 const message = (room: string, ts: number): Buffer => Buffer.from(`sub-human machine:${room}:${ts}`);
-const idOf = (key: string): string => `k${crypto.createHash('sha256').update(key).digest('hex').slice(0, 15)}`;
+function idOf(key: string): MachineId {
+  const id = `k${crypto.createHash('sha256').update(key).digest('hex').slice(0, 15)}`;
+  if (!isMachineId(id)) throw new Error('a machine key id is k and 15 hex'); // it always is
+  return id;
+}
 
 let cached: { home: string; priv: crypto.KeyObject; pub: string } | null = null;
 /** <home>/keys/machine.json as read: {v, priv (PKCS#8 PEM), pub (base64url)}; null when missing or not one. */
@@ -71,7 +77,7 @@ function proofFor(room: string, challenge: string, now = Date.now()): Proof {
   const { priv, pub } = load();
   return { key: pub, ts: now, sig: crypto.sign(null, boundMessage(room, challenge), priv).toString('base64url') };
 }
-function verifyFor(p: unknown, room: string, challenge: string | null | undefined): string | null {
+function verifyFor(p: unknown, room: string, challenge: string | null | undefined): MachineId | null {
   const x = p as Partial<Proof> | null | undefined;
   if (!challenge || !x || typeof x.key !== 'string' || !KEY_RE.test(x.key) || typeof x.sig !== 'string') return null;
   try {
@@ -95,7 +101,7 @@ function verifyHost(p: unknown, room: string, nonce: string): string | null {
   try { return crypto.verify(null, hostMessage(room, nonce), pubObj(x.key), Buffer.from(x.sig, 'base64url')) ? x.key : null; } catch { return null; }
 }
 
-function verify(p: unknown, room: string, now = Date.now()): string | null {
+function verify(p: unknown, room: string, now = Date.now()): MachineId | null {
   const x = p as Partial<Proof> | null | undefined;
   if (!x || typeof x.key !== 'string' || !KEY_RE.test(x.key) || !Number.isFinite(x.ts) || typeof x.sig !== 'string') return null;
   if (Math.abs(now - (x.ts as number)) > SIG_SKEW_MS) return null;

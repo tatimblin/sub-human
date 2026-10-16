@@ -30,6 +30,8 @@ import * as store from '../lib/room/store.ts';
 import * as envelope from '../lib/room/envelope.ts';
 import * as seatKey from '../hooks/seat-key.ts';
 import { agentStatusline } from '../statusline/index.ts';
+import type { RoomCode } from '../lib/brand.ts';
+import { sn } from './support/brands.ts';
 
 const N = Number(process.env.SUB_HUMAN_PERF_N) || 100_000;
 const RUNS = 15;
@@ -61,15 +63,15 @@ const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.len
 function time(fn: () => unknown): number { const t = process.hrtime.bigint(); fn(); return Number(process.hrtime.bigint() - t) / 1e6; }
 
 /** A room with N entries; alice (this process) and bob seated, their keys pinned. */
-function bigRoom(n = N): { code: string } {
+function bigRoom(n = N): { code: RoomCode } {
   h.freshHome();
   const code = identity.newCode();
   const names = ['alice', 'bob'];
   for (const name of names) {
-    const r = identity.join({ code, name, role: 'member', pid: name === 'alice' ? process.pid : sleeper(), session_id: `sid-${name}`, cwd: os.tmpdir() });
+    const r = identity.join({ code, name: sn(name), role: 'member', pid: name === 'alice' ? process.pid : sleeper(), session_id: `sid-${name}`, cwd: os.tmpdir() });
     assert.ok(r.ok, r.error);
   }
-  const keys = Object.fromEntries(names.map(n => [n, seatKey.ensure(code, n)]));
+  const keys = Object.fromEntries(names.map(n => [n, seatKey.ensure(code, sn(n))]));
   const file = path.join(identity.roomDir(code), 'log.jsonl');
   const start = Date.now() - n * 1000;
   const out: string[] = [];
@@ -80,7 +82,7 @@ function bigRoom(n = N): { code: string } {
     let p: Record<string, unknown>;
     if (id <= names.length) {
       const n = names[id - 1];
-      p = { from: n, via: 'system', kind: 'member_joined', to: 'room', text: `${n} joined`, pubkey: seatKey.publicPem(code, n) };
+      p = { from: n, via: 'system', kind: 'member_joined', to: 'room', text: `${n} joined`, pubkey: seatKey.publicPem(code, sn(n)) };
     } else if (id % 1000 === 0) {
       proposal = hash12(`p${id}`);
       p = { from: 'bob', via: 'agent', kind: 'proposal', to: 'room', text: `proposal ${proposal}: step ${id}`, hash: proposal, approvers: names };
@@ -102,7 +104,7 @@ function bigRoom(n = N): { code: string } {
 }
 
 /** In this process over a room of n entries: the first append and status line, then their medians after warm-up. */
-function measure(n: number): { code: string; home: string; panel: object; cold: { append: number; statusline: number }; got: { append: number; statusline: number }; max: { append: number; statusline: number }; sealed: boolean } {
+function measure(n: number): { code: RoomCode; home: string; panel: object; cold: { append: number; statusline: number }; got: { append: number; statusline: number }; max: { append: number; statusline: number }; sealed: boolean } {
   const { code } = bigRoom(n);
   seatKey.arm();
   const s = store.open(code);
@@ -118,7 +120,7 @@ function measure(n: number): { code: string; home: string; panel: object; cold: 
 }
 
 /** One fresh process: its first append and status line over room code (imports done before timing). */
-function freshOnce(code: string, home: string, panel: object): { append: number; statusline: number } {
+function freshOnce(code: RoomCode, home: string, panel: object): { append: number; statusline: number } {
   const src = `
     const t = () => Number(process.hrtime.bigint()) / 1e6;
     const store = require(${JSON.stringify(path.join(h.LIB, 'room', 'store.ts'))});
@@ -137,7 +139,7 @@ function freshOnce(code: string, home: string, panel: object): { append: number;
  * of wall clock in a child is at the mercy of a busy machine, and a burst of load then hits both rooms alike (stage
  * 8e I.12: the small room's three were taken before the big room was built, the big room's under the load after). */
 const FRESH_RUNS = 5;
-function freshPair(a: { code: string; home: string; panel: object }, b: { code: string; home: string; panel: object }) {
+function freshPair(a: { code: RoomCode; home: string; panel: object }, b: { code: RoomCode; home: string; panel: object }) {
   const runs: { a: { append: number; statusline: number }[]; b: { append: number; statusline: number }[] } = { a: [], b: [] };
   for (let i = 0; i < FRESH_RUNS; i++) { runs.a.push(freshOnce(a.code, a.home, a.panel)); runs.b.push(freshOnce(b.code, b.home, b.panel)); }
   const best = (xs: { append: number; statusline: number }[]) => ({ append: Math.min(...xs.map(x => x.append)), statusline: Math.min(...xs.map(x => x.statusline)) });

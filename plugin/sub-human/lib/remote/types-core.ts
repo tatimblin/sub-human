@@ -14,6 +14,7 @@
 import type { Reason } from '../reasons.ts';
 import type { Op, EventName } from './protocol.ts';
 import type { Entry, LinkStateWord, Payload, PresenceInput, RoomStore, SnapshotWire } from '../room/types.ts';
+import type { RoomCode, MachineId, LinkToken, InviteSecret, Pin } from '../brand.ts';
 
 // ---------- the wire protocol ----------
 
@@ -65,10 +66,10 @@ export interface HelloParams {
   machine: string;
   /** Its machine key's proof (lib/remote/machine-key.ts): the host records the id the key gives, not the reported one. */
   machine_key?: { key: string; ts: number; sig: string };
-  token?: string;
+  token?: LinkToken;
   /** an sh2 invite (a handoff's, a promote's), or an invite line's SECRET word (protocol 3) */
-  invite?: string;
-  pin?: string;
+  invite?: InviteSecret;
+  pin?: Pin;
   /** protocol 3: the seat an invite line's PIN asks for, and this machine's short name (both as the joiner says) */
   as?: { name: string; label: string };
   /** protocol 3: a fresh random word; the reply's host proves the host home's machine key over it */
@@ -120,7 +121,7 @@ export interface HelloResult {
   /** The host's clock (ms), for the skew sub-human doctor reports. */
   time: number;
   /** Once, for a redeemed invite or a login link. */
-  token?: string;
+  token?: LinkToken;
   /** The room was closed (its Claude stopped); absent while it is open, and from an older host. */
   closed?: boolean;
   /** This machine's id in the room as the host records it for the link (lib/remote/host-links.ts); additive. */
@@ -257,14 +258,14 @@ interface InviteLife {
  */
 export interface BoundInvite extends InviteLife {
   v: 2; admission?: undefined; short?: undefined; prs?: undefined;
-  machine: string; seats: string[]; expires_at: string;
+  machine: MachineId; seats: string[]; expires_at: string;
   handoff?: true;
   pin_sha256?: string;
   tries?: number;
 }
 export type ShortKind = 'ssh' | 'ws' | 'pipe';
 /** The joiner an invite line's PIN let through to the card (lib/remote/invites.ts): key, a web link's Noise key. */
-export interface Joiner { machine: string; name: string; label: string; key: string | null }
+export interface Joiner { machine: MachineId; name: string; label: string; key: string | null }
 /**
  * An invite line's record (protocol 3, v 4): the line carries its 128-bit secret (the record's key is that secret's
  * sha256), and the PIN is checked here online (pin_sha256 = sha256(secret:PIN)), INVITE_PIN_TRIES tries, throttled
@@ -291,7 +292,7 @@ export type AdmitState = 'asked' | 'let-in' | 'refused' | 'lapsed';
 export interface AdmissionRecord extends InviteLife {
   v: 2; admission: true; short?: undefined; handoff?: undefined; seats?: undefined; prs?: undefined;
   from: string; kind: ShortKind; by: string | null; door_file?: string | null;
-  machine: string; name: string; label?: string; key: string | null; link: string; admit: AdmitState;
+  machine: MachineId; name: string; label?: string; key: string | null; link: string; admit: AdmitState;
   expires_at: string;
   admitted_at?: string; admitted_by?: string | null; admit_sig?: unknown; admitted_until?: string;
   refused_at?: string; refused_by?: string | null;
@@ -311,7 +312,7 @@ export type Invites = Record<string, InviteRecord>;
 export interface LinkRecord {
   id: string;
   token_sha256: string;
-  machine: string;
+  machine: MachineId;
   seats: string[];
   created_at: string;
   login?: true;
@@ -327,7 +328,7 @@ export interface LinkRecord {
 export type Links = Record<string, LinkRecord>;
 
 /** A parsed sh2 invite. */
-export interface ParsedInvite { v: 2; code: string; locator: string; secret: string; hostKey: string | null }
+export interface ParsedInvite { v: 2; code: RoomCode; locator: string; secret: string; hostKey: string | null }
 
 // ---------- the store, as the remote code uses it ----------
 

@@ -67,7 +67,7 @@ test('S11: carol from a second home passes every check over real evidence; a bro
   const said = remote.say(carol, DEMO.carol11);
   assert.equal(said.json?.continue, false, `${JSON.stringify(said.json)} ${said.stderr}`);
   await remote.tail(carol, 1); // her delivery cursor (deliver-carol), as her session's tail child keeps
-  const p = host.lib(() => proposal.create({ code, name: 'alice' }, { text: '# Carol reviews the parser tests\n', approvers: ['carol'] }));
+  const p = host.lib(() => proposal.create({ code, name: paths.seatName('alice') }, { text: '# Carol reviews the parser tests\n', approvers: ['carol'] }));
   assert.ok(await until(() => fs.existsSync(path.join(remote.home, 'rooms', code, 'plans', `${p.hash}.md`)), 5000));
   const card = remote.lib(() => proposal.card({ hash: p.hash, approvers: ['carol'] } as Proposal, code) /* the card reads only these */);
   remote.hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: {}, tool_response: { ...card, answers: { [`Agree to proposal ${p.hash}?`]: 'Agree' } } }, carol);

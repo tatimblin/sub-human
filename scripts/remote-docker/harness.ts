@@ -46,7 +46,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
 import { spawn, spawnSync, type SpawnSyncReturns } from 'node:child_process';
-import { PLUGIN, pluginLib } from '../lib/paths.ts';
+import { PLUGIN, pluginLib, roomCode } from '../lib/paths.ts';
 
 const require = createRequire(import.meta.url);
 // loaded on use: the scenarios' controller, and the SVG renderer only the report needs
@@ -247,7 +247,7 @@ const manualState = (): ManualState => JSON.parse(fs.readFileSync(path.join(MANU
 const opt = (args: string[], flag: string, dflt?: string): string | undefined => { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : dflt; };
 /** Run fn with SUB_HUMAN_HOME set to a joiner's home (the plugin libs read it on every call). */
 const asJoiner = <V>(j: Joiner, fn: () => V): V | null => { process.env.SUB_HUMAN_HOME = j.home; try { return fn(); } catch { return null; } };
-const linkOf = (st: ManualState, j: Joiner) => asJoiner(j, () => pluginLib('remote/link-socket.ts').status(st.code));
+const linkOf = (st: ManualState, j: Joiner) => asJoiner(j, () => pluginLib('remote/link-socket.ts').status(roomCode(st.code)));
 
 async function up(args: string[]): Promise<void> {
   if (fs.existsSync(path.join(MANUAL, 'state.json'))) throw new Error(`already up (${MANUAL}); run down first`);

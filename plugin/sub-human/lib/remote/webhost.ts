@@ -30,6 +30,7 @@ import { createRequire } from 'node:module';
 import type { TailscaleRec } from './types-rest.ts';
 import type { HostedInvite } from './hosting.ts';
 import type { RoomStore } from '../room/types.ts';
+import type { RoomCode } from '../brand.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -53,7 +54,7 @@ export interface WebInvite extends HostedInvite {
   port: number;
 }
 
-const hostStore = (code: string): RoomStore => (require('../room.ts') as typeof import('../room.ts')).hostStore(code);
+const hostStore = (code: RoomCode): RoomStore => (require('../room.ts') as typeof import('../room.ts')).hostStore(code);
 
 /** The front's base URL, checked: http(s)://host[:port][/prefix], nothing else. */
 function frontBase(text: string): FrontBase {
@@ -66,7 +67,7 @@ function frontBase(text: string): FrontBase {
   return { secure: u.protocol === 'https:', host: u.hostname, port: u.port ? Number(u.port) : undefined, prefix };
 }
 
-function hostWeb(code: string, { tailscale = false, funnel = false, url, port, by = null, now = Date.now() }: {
+function hostWeb(code: RoomCode, { tailscale = false, funnel = false, url, port, by = null, now = Date.now() }: {
   tailscale?: boolean; funnel?: boolean; url?: string; port?: number; by?: string | null; now?: number;
 } = {}): WebInvite {
   const store = hostStore(code);
@@ -121,7 +122,7 @@ function hostWeb(code: string, { tailscale = false, funnel = false, url, port, b
   return { pin: r.pin, ref: r.ref, expires_at: r.expires_at, short: true, line, word, locator, hostKey, base: joinBase, mode, port: lport, text, pinned };
 }
 
-function unhost(code: string): { removed: boolean; text: string } {
+function unhost(code: RoomCode): { removed: boolean; text: string } {
   const L = listener();
   const rec = L.removeRoom(code);
   const off = rec ? L.untailscale(rec) : null;
@@ -135,7 +136,7 @@ function unhost(code: string): { removed: boolean; text: string } {
 
 /** The listener back for a room this home serves over the web, if it is not running (a reboot, a crash): the join
  * hook calls it when a seat of the host joins. Best effort; true when it runs. */
-function ensure(code: string): boolean {
+function ensure(code: RoomCode): boolean {
   const L = listener();
   const st = L.status();
   const rec = st.rooms[code];
@@ -145,7 +146,7 @@ function ensure(code: string): boolean {
 }
 
 /** The wss locator of room CODE behind a front at URL (https://FRONT[/prefix]): wss://FRONT/prefix/sub-human/CODE. */
-function webLocator(url: string, code: string): string {
+function webLocator(url: string, code: RoomCode): string {
   const b = frontBase(url);
   const loc = wsT().locator({ host: b.host, port: b.port, path: `${b.prefix}/sub-human/${code}` }, b.secure);
   if (!loc) throw new RoomError('INVALID', `"${url}" gives no plain URL for room ${code}`);
@@ -154,7 +155,7 @@ function webLocator(url: string, code: string): string {
 
 /** Serve room CODE at a web locator this machine will host it at (a handoff or promote to here): the listener up and
  * the room in its served set. A Tailscale path is not set up here: run /sub-human invite --web after the move. */
-function serveAt(code: string, locator: string): { port: number; hostKey: string } {
+function serveAt(code: RoomCode, locator: string): { port: number; hostKey: string } {
   const i = locator.indexOf(':');
   const spec = wsT().parse(locator.slice(i + 1));
   if (!spec) throw new RoomError('INVALID', `"${locator}" is not a web locator`);

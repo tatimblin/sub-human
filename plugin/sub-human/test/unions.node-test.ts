@@ -13,6 +13,7 @@ import { fold } from '../lib/room/consent.ts';
 import { NO_TRUST } from '../lib/room/trust.ts';
 import type { Entry, Kind, KnownKind, LegacyKind, LinkStateWord, PresenceState, TaskOp, Via } from '../lib/room/types.ts';
 import type { EventData, EventName, Op, OpParams, OpResults } from '../lib/remote/types-core.ts';
+import { eid } from './support/brands.ts';
 
 // Compile-time: each union is exactly its table's words (npm run typecheck fails otherwise).
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
@@ -60,7 +61,7 @@ test('tables: every kind is some via\'s, the guards accept exactly the table wor
 });
 
 const at = '2026-10-16T00:00:00.000Z';
-const entry = (kind: string, extra: Partial<Entry> = {}): Entry => ({ id: 1, at, from: 'bob', via: 'agent', kind, text: 'vote on lunch?', ...extra });
+const entry = (kind: string, extra: Partial<Entry> = {}): Entry => ({ id: eid(1), at, from: 'bob', via: 'agent', kind, text: 'vote on lunch?', ...extra });
 
 test('parseEntry: the entry itself (no copy) for every kind this version reads, null for a newer host\'s', () => {
   const known: KnownKind[] = [...validate.KINDS, ...validate.LEGACY_KINDS];
@@ -82,9 +83,9 @@ test('a newer host\'s kind: shown as its writer\'s words, as a say is; the fold 
   }
   const hash = 'abcdef123456';
   const log: Entry[] = [
-    { id: 1, at, from: 'alice', via: 'agent', kind: 'proposal', hash, text: `proposal ${hash}: lunch`, approvers: ['bob'] },
-    { id: 2, at, from: 'bob', via: 'human', kind: 'poll', proposal_hash: hash },
-    { id: 3, at, from: 'room', via: 'system', kind: 'verdict', proposal_hash: hash },
+    { id: eid(1), at, from: 'alice', via: 'agent', kind: 'proposal', hash, text: `proposal ${hash}: lunch`, approvers: ['bob'] },
+    { id: eid(2), at, from: 'bob', via: 'human', kind: 'poll', proposal_hash: hash },
+    { id: eid(3), at, from: 'room', via: 'system', kind: 'verdict', proposal_hash: hash },
   ];
   const f = fold(log, NO_TRUST);
   assert.equal(f.proposals.get(hash)?.entry.hash, hash);

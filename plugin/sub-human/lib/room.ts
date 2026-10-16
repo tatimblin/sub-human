@@ -37,6 +37,7 @@ import { DIGEST_CAP, TAIL_MAX, CHAT_MAX, CHAT_WRAP, CHAT_LINES_MAX, CHAT_NEST } 
 import type { AppendOpts, Delivery, Entry, EntryInput, LaneViewer, ReadViewOpts, RoomStore, TailerFs, Trust } from './room/types.ts';
 import type { DeliverState } from './room/deliver.ts';
 import { msgOf } from './errors.ts';
+import type { RoomCode } from './brand.ts';
 
 type Entries = readonly Entry[];
 const { trustOf } = store;
@@ -57,7 +58,7 @@ function roomLine(s: Pick<RoomStore, 'append'>, text: string, log?: (msg: string
 }
 
 /** The store of a room this machine hosts: NO_ROOM when there is none here, HOST_ONLY when it is hosted elsewhere. */
-function hostStore(code: string, { what = 'its host does this' }: { what?: string } = {}): RoomStore {
+function hostStore(code: RoomCode, { what = 'its host does this' }: { what?: string } = {}): RoomStore {
   if (!store.roomExists(code)) throw new RoomError('NO_ROOM', `no room "${code}"`);
   const s = open(code).store;
   if (!s.isHost) throw new RoomError('HOST_ONLY', `room ${code} is hosted on another machine; ${what}`);
@@ -111,7 +112,7 @@ function roomOver(s: RoomStore) {
 type Room = ReturnType<typeof roomOver>;
 
 const rooms = new Map<string, { s: RoomStore; room: Room }>(); // code -> {s, room}
-function open(code: string, { store: s, dir }: { store?: RoomStore; dir?: string } = {}): Room {
+function open(code: RoomCode, { store: s, dir }: { store?: RoomStore; dir?: string } = {}): Room {
   if (s || dir) return roomOver(s || store.open(code, { dir }));
   const st = store.open(code);
   const hit = rooms.get(code);

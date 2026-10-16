@@ -40,6 +40,7 @@ import { HELP_HINT, USAGE, refused, say } from './answer.ts';
 import type { Answer, Ctx, Verb } from './types.ts';
 import type { Identity } from '../identity.ts';
 import type { Step, Wanted } from '../remote/joining.ts';
+import type { SeatName, InviteSecret } from '../brand.ts';
 
 const require = createRequire(import.meta.url);
 const wsT = (): typeof import('../remote/transports/ws.ts') => require('../remote/transports/ws.ts');
@@ -66,9 +67,9 @@ function seat(want: Wanted, ctx: Ctx): Answer {
 const then = (step: Step, ctx: Ctx): Answer => (step.kind === 'take' ? seat(step.want, ctx) : step.refused ? refused(step.text) : say(step.text));
 
 /** A name typed with --as: checked; else the default name. */
-function nameFor(as: string | undefined, cwd: string): { name: string } | { error: string } {
+function nameFor(as: string | undefined, cwd: string): { name: SeatName } | { error: string } {
   if (as !== undefined) {
-    if (!identity.NAME_RE.test(as) || PIN_WORD.test(as)) return { error: NOT_A_NAME(as) };
+    if (!identity.isSeatName(as) || PIN_WORD.test(as)) return { error: NOT_A_NAME(as) };
     if (identity.RESERVED.includes(as.toLowerCase())) return { error: `"${as}" is reserved; pick another name` };
     return { name: as };
   }
@@ -123,7 +124,7 @@ export const named: Verb = (args, ctx) => {
     return seat({ name: n.name, code: ctx.cur && ctx.cur.name === n.name ? ctx.cur.code : null }, ctx);
   }
   if (args.length > 2) return refused(USAGE);
-  if (args.length === 1 && identity.CODE_RE.test(args[0])) { // `/sub-human vole-8126`: that room, as the default name
+  if (args.length === 1 && identity.isRoomCode(args[0])) { // `/sub-human vole-8126`: that room, as the default name
     const name = identity.defaultName({ cwd: ctx.cwd });
     if (!name) return refused(`no name to join as (no git user.name or $USER): /sub-human NAME ${args[0]}`);
     return seat({ name, code: args[0], isDefault: true }, ctx);
@@ -134,14 +135,14 @@ export const named: Verb = (args, ctx) => {
   if (PIN_WORD.test(name)) return refused(NOT_A_NAME(name));
   if (code !== undefined && PIN_WORD.test(code)) return refused(`"${code}" looks like a PIN, not a room: a PIN goes in as /sub-human join PIN once an invite line asks for it`);
   if (name.startsWith('-')) return refused(`"${name}" goes with join (/sub-human join HOST ROOM SECRET ${name} …). ${USAGE}`);
-  if (!identity.NAME_RE.test(name)) return refused(`"${name}" isn't a command or a name. ${USAGE}`);
+  if (!identity.isSeatName(name)) return refused(`"${name}" isn't a command or a name. ${USAGE}`);
   if (identity.RESERVED.includes(name.toLowerCase())) return refused(`"${name}" is reserved; pick another name. ${USAGE}`);
-  if (code !== undefined && !identity.CODE_RE.test(code)) return refused(`"${code}" isn't a room (like vole-8126). ${USAGE}`);
+  if (code !== undefined && !identity.isRoomCode(code)) return refused(`"${code}" isn't a room (like vole-8126). ${USAGE}`);
   return seat({ name, code: code || (ctx.cur && ctx.cur.name === name ? ctx.cur.code : null) }, ctx);
 };
 
 /** An invite line's SECRET word, or why it is not one (an old line's PIN, a cut paste). */
-function secretOf(word: string | undefined): { word: string } | { error: string } {
+function secretOf(word: string | undefined): { word: InviteSecret } | { error: string } {
   if (word === undefined) return { error: JOIN_USAGE };
   if (invites.SHORT_PIN_RE.test(word)) return { error: OLD_LINE };
   const d = inviteSecret.decode(word);
@@ -159,7 +160,7 @@ function joinWeb(r: string[], flags: { as?: string; via?: string; home?: string 
   const m = /^(https?):\/\/([^#\s]+)$/.exec(r[0]);
   const spec = m && wsT().parse(`//${m[2].replace(/\/+$/, '')}`);
   const code = spec && spec.path.split('/').filter(Boolean).pop();
-  if (!m || !spec || !code || !identity.CODE_RE.test(code)) return refused(BAD);
+  if (!m || !spec || !code || !identity.isRoomCode(code)) return refused(BAD);
   const n = nameFor(flags.as, ctx.cwd);
   if ('error' in n) return refused(n.error);
   const loc = wsT().locator(spec, m[1] === 'https');
@@ -176,11 +177,11 @@ export const join: Verb = (argv, ctx) => {
   const r = p.rest;
   const { via, home } = p.flags;
   if (/^https?:\/\//.test(r[0] || '')) return joinWeb(r, p.flags, ctx);
-  if (r.length === 1 && invites.SHORT_PIN_RE.test(r[0])) { // `/sub-human join 4829`: the PIN an invite line's host asked for
+  if (r.length === 1 && invites.isShortPin(r[0])) { // `/sub-human join 4829`: the PIN an invite line's host asked for
     if (via !== undefined || home !== undefined || p.flags.as !== undefined) return refused('the PIN goes alone: /sub-human join PIN (the name went with the line)');
     return then(joining.givePin(r[0], ctx.sid), ctx);
   }
-  if (r.length === 1 && identity.CODE_RE.test(r[0])) { // `/sub-human join vole-8126`: that room on this machine
+  if (r.length === 1 && identity.isRoomCode(r[0])) { // `/sub-human join vole-8126`: that room on this machine
     if (via !== undefined || home !== undefined) return refused(`--via and --home go with the other machine's address: /sub-human join HOST ${r[0]}`);
     const n = nameFor(p.flags.as, ctx.cwd);
     if ('error' in n) return refused(n.error);
@@ -189,7 +190,7 @@ export const join: Verb = (argv, ctx) => {
   if (r.length === 4 && PIN_WORD.test(r[3])) return refused(PIN_APART);
   if (r.length < 2 || r.length > 3) return refused(r.length === 1 ? (PIN_WORD.test(r[0]) ? 'a PIN is 4 digits: /sub-human join PIN' : `which room? ${JOIN_USAGE}`) : JOIN_USAGE);
   const [dest, code, word] = r;
-  if (!identity.CODE_RE.test(code)) return refused(`"${code}" isn't a room (like vole-8126). ${JOIN_USAGE}`);
+  if (!identity.isRoomCode(code)) return refused(`"${code}" isn't a room (like vole-8126). ${JOIN_USAGE}`);
   const local = /^pipe:\//.test(dest) || dest.startsWith('/'); // a second home on this machine (tests, the demo)
   if (word !== undefined) {
     const w = secretOf(word);
@@ -224,7 +225,7 @@ export const join: Verb = (argv, ctx) => {
 /** The room Claude's own launch (see the header). */
 export function bindRoomClaude(args: string[], ctx: Ctx): Answer {
   const { cur, pid, sid } = ctx;
-  if (args.length > 1 || (args[0] && !identity.CODE_RE.test(args[0]))) {
+  if (args.length > 1 || (args[0] && !identity.isRoomCode(args[0]))) {
     return refused('this session runs the room\'s Claude agent; people join from their own sessions with /sub-human.');
   }
   const code = envStr('SUB_HUMAN_ROOM') || args[0] || null;
@@ -234,8 +235,8 @@ export function bindRoomClaude(args: string[], ctx: Ctx): Answer {
   const c = code || identity.newCode();
   if (!identity.roomExists(c)) return refused(`no room ${c}.`);
   if (identity.roomClosing(c)) return refused(`room ${c} is closing.`);
-  const r = identity.join({ code: c, name: 'claude', role: 'claude', pid, session_id: sid, cwd: ctx.cwd });
+  const r = identity.join({ code: c, name: identity.ROOM_CLAUDE, role: 'claude', pid, session_id: sid, cwd: ctx.cwd });
   if (!r || !r.ok) return refused(`could not bind the room's Claude of ${c}: ${(r && r.error) || 'unknown error'}`);
-  const me: Identity = { code: c, name: 'claude', role: 'claude', pid, session_id: sid || null, address: identity.address('claude', c) };
+  const me: Identity = { code: c, name: identity.ROOM_CLAUDE, role: 'claude', pid, session_id: sid || null, address: identity.address('claude', c) };
   return { kind: 'joined', me, lead: fresh ? 'room created' : 'claude started', say: fresh ? `room ${c} open · others join with: /sub-human` : `claude of room ${c}` };
 }

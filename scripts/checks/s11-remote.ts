@@ -21,7 +21,7 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   const { code, log, DEMO } = x;
   process.env.SUB_HUMAN_HOME = x.home;
   const room = paths.pluginLib('room.ts');
-  const trust = (e: LogEntry | undefined): string | null => (e ? room.open(code).trust(e) : null);
+  const trust = (e: LogEntry | undefined): string | null => (e ? room.open(paths.roomCode(code)).trust(e) : null);
 
   const hostId = (readJson<{ id?: string } | null>(x.stateFile('S11', 'machine-host.json'), {}) || {}).id;
   // her id in the room is the one the host derived from her home's machine key (machines.json), else her home's own

@@ -21,7 +21,8 @@
  *   hostedRoom(explicit?) -> code   --room, else the one open room hosted here (Error NO_ROOM otherwise)
  *   inClaudeCode(env?) -> bool      run inside Claude Code (CLAUDECODE=1 or CLAUDE_CODE_SESSION_ID): its ! shell, whose
  *                output becomes part of the conversation
- *   maskPins(text, pins, env?) -> text   inside Claude Code every PIN (and an invite line's SECRET) masked and PIN_HIDDEN
+ *   maskPins(text, secrets, env?) -> text   inside Claude Code every PIN (and an invite line's SECRET) redacted
+ *                                        (lib/cli/doctor/redact.ts redact) and PIN_HIDDEN
  *                appended; else text
  *                (invite here, promote in lib/cli/handoff.ts)
  */
@@ -32,6 +33,8 @@ import { parse } from './args.ts';
 import PathMod from 'node:path';
 import { createRequire } from 'node:module';
 import { msgOf } from '../errors.ts';
+import { isRoomCode } from '../text.ts';
+import type { RoomCode, Secret } from '../brand.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -43,17 +46,21 @@ const inClaudeCode = (env = process.env) => env.CLAUDECODE === '1' || !!env.CLAU
 const PIN_HIDDEN = 'PIN and SECRET hidden: this ran inside Claude Code, where the output becomes part of the conversation. Run it in a terminal outside Claude Code, or use /sub-human invite in the room (its reply is shown to you only).';
 
 /** text with every PIN in it masked, and why, when run inside Claude Code; else text as it is. */
-function maskPins(text: string, pins: readonly (string | null | undefined)[], env: NodeJS.ProcessEnv = process.env): string {
+function maskPins(text: string, secrets: readonly (Secret | null | undefined)[], env: NodeJS.ProcessEnv = process.env): string {
   if (!inClaudeCode(env)) return text;
+  const { redact }: typeof import('./doctor/redact.ts') = require('./doctor/redact.ts');
   let out = text;
-  for (const p of pins) if (p) out = out.split(p).join('####');
+  for (const p of secrets) if (p) out = out.split(p).join(redact(p));
   return `${out}\n${PIN_HIDDEN}`;
 }
 
 /** The room: --room, else the one open room hosted here. */
-function hostedRoom(explicit?: string): string {
+function hostedRoom(explicit?: string): RoomCode {
   const identity: typeof import('../identity.ts') = require('../identity.ts');
-  if (explicit) return explicit;
+  if (explicit) {
+    if (!identity.isRoomCode(explicit)) throw new Error(`invalid room code "${explicit}"`); // as lib/home.ts roomDir says
+    return explicit;
+  }
   const open = identity.openRooms().filter(c => identity.isHost(c));
   if (open.length === 1) return open[0];
   throw Object.assign(new Error(open.length ? `${open.length} rooms are open here (${open.join(', ')}); name one with --room ROOM` : 'no room is open here; name one with --room ROOM'), { code: 'NO_ROOM' });
@@ -134,7 +141,7 @@ function prime(args: readonly string[]): number {
   const code = p.rest[0];
   const links: typeof import('../room/links.ts') = require('../room/links.ts');
   const l = links.get(code);
-  if (!l || !l.transport || l.transport.kind !== 'ssh') return fail(`this machine isn't connected to room ${code} over ssh`);
+  if (!l || !l.transport || l.transport.kind !== 'ssh' || !isRoomCode(code)) return fail(`this machine isn't connected to room ${code} over ssh`);
   try {
     const ssh: typeof import('../remote/transports/ssh.ts') = require('../remote/transports/ssh.ts');
     fs.mkdirSync(PathMod.dirname(ssh.controlPath()), { recursive: true, mode: 0o700 });

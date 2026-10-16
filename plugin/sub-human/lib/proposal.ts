@@ -83,13 +83,14 @@ import * as identity from './identity.ts';
 import * as room from './room.ts';
 import * as session from './room/session.ts';
 import { writeFileAtomic } from './io.ts';
-import { clip, oneLine, hash12, HASH_RE } from './text.ts';
+import { clip, oneLine, hash12, isProposalHash, planHash } from './text.ts';
 import * as config from './config.ts';
 import * as cc from './cc/env.ts';
 import { NEXT, showNote } from './consent/review.ts';
 import type { Card, Confirm, Proposal, Recheck, Review } from './types-app.ts';
 import type { Entry, Matrix, Member, Members, ProposalState, Trust } from './room/types.ts';
 import type { Identity } from './identity.ts';
+import type { RoomCode, ProposalHash } from './brand.ts';
 
 /** Who acts: a seat's room and name are all these functions read. */
 type Me = Pick<Identity, 'code' | 'name'>;
@@ -108,16 +109,16 @@ class ProposalError extends Error {}
 function refuse(m: string): never { throw new ProposalError(m); }
 
 /** A plan's ref in the room's blob store: room-relative, so the room can live anywhere (lib/room/store.ts blobs). */
-const planRef = (hash: string) => `plans/${hash}.md`;
-const blobs = (code: string) => room.open(code).store.blobs;
+const planRef = (hash: ProposalHash) => `plans/${hash}.md`;
+const blobs = (code: RoomCode) => room.open(code).store.blobs;
 /** Where a person can open the stored plan (a local file; the ref when the store has none). */
-const planPath = (code: string, hash: string): string => blobs(code).localPath(planRef(hash)) || planRef(hash);
-function read(code: string, hash: string | null | undefined): string | null {
-  if (typeof hash !== 'string' || !HASH_RE.test(hash)) return null;
+const planPath = (code: RoomCode, hash: ProposalHash): string => blobs(code).localPath(planRef(hash)) || planRef(hash);
+function read(code: RoomCode, hash: string | null | undefined): string | null {
+  if (!isProposalHash(hash)) return null;
   try { const b: Buffer | null = blobs(code).get(planRef(hash)); return b == null ? null : b.toString('utf8'); } catch { return null; }
 }
-function store(code: string, buf: Buffer): string {
-  const hash = hash12(buf);
+function store(code: RoomCode, buf: Buffer): ProposalHash {
+  const hash = planHash(buf);
   const b = blobs(code);
   if (!b.has(planRef(hash))) b.put(planRef(hash), buf);
   return hash;
@@ -129,8 +130,8 @@ const entriesOf = (me: Me, entries: readonly Entry[] | null | undefined): readon
 const kvOf = (me: Me) => room.open(me.code).store.kv;
 const storeOf = (me: Me) => room.open(me.code).store;
 
-function humans(code: string): string[] {
-  return Object.values((identity.readMembers(code) || {}) as Members)
+function humans(code: RoomCode): string[] {
+  return Object.values(identity.readMembers(code) || {})
     .filter((m): m is Member => !!m && !!m.name && m.role !== 'claude' && !m.left_at).map(m => m.name);
 }
 
@@ -169,7 +170,7 @@ function sameOf(approvers: string[], ms: Members): string[][] {
 }
 
 /** The host accepts a proposal's `same`: this machine is the host, or the link's host listed it (protocol.ts FIELDS). */
-function sameOk(code: string): boolean {
+function sameOk(code: RoomCode): boolean {
   const s = room.open(code).store;
   if (s.isHost) return true;
   try { const d: { fields?: unknown } | null = s.kv.get('link', null); return !!d && Array.isArray(d.fields) && d.fields.includes('same'); } catch { return false; }
@@ -202,7 +203,7 @@ const titles = new Map<string, string>(); // hash -> title: plans are content-ad
  * The title people see for proposal hash: the stored plan's first line, else the entry's "proposal HASH: title"
  * text, else ''. Not clipped (the caller clips to its width).
  */
-function title(code: string, hash: string, entry?: Pick<Entry, 'text'> | null): string {
+function title(code: RoomCode, hash: string, entry?: Pick<Entry, 'text'> | null): string {
   const known = titles.get(hash);
   if (known !== undefined) return known;
   const t = planTitle(read(code, hash));
@@ -230,7 +231,7 @@ function summary(text: string): string {
 }
 
 /** p.path: the stored ref (room-relative; older entries hold an absolute path, read by its plans/ name). */
-function preview(p: Proposal, code: string): string {
+function preview(p: Proposal, code: RoomCode): string {
   const b = blobs(code);
   const ref: string = b.ref(p.path) || planRef(p.hash);
   const file: string = b.localPath(ref) || ref;
@@ -241,7 +242,7 @@ function preview(p: Proposal, code: string): string {
   return `${summary(text)}\n\nFull text: ${file}`;
 }
 
-function cardQuestion(p: Proposal, code: string): Card['questions'][number] {
+function cardQuestion(p: Proposal, code: RoomCode): Card['questions'][number] {
   const pv = preview(p, code);
   const desc = {
     'Not yet': 'Decide later; nothing is recorded',
@@ -251,10 +252,10 @@ function cardQuestion(p: Proposal, code: string): Card['questions'][number] {
   return { question: question(p.hash), header: 'Consent', multiSelect: false,
     options: (['Not yet', 'Agree', 'Object'] as const).map(label => ({ label, description: desc[label], preview: pv })) };
 }
-const cardFor = (ps: Proposal[], code: string): Card => ({ questions: ps.slice(0, 4).map(p => cardQuestion(p, code)) });
-const card = (p: Proposal, code: string): Card => cardFor([p], code);
+const cardFor = (ps: Proposal[], code: RoomCode): Card => ({ questions: ps.slice(0, 4).map(p => cardQuestion(p, code)) });
+const card = (p: Proposal, code: RoomCode): Card => cardFor([p], code);
 
-function viewable(p: Pick<Proposal, 'hash'>, code: string): boolean {
+function viewable(p: Pick<Proposal, 'hash'>, code: RoomCode): boolean {
   const t = read(code, p.hash);
   return t != null && t.length <= VIEW_MAX && !UNSAFE_RE.test(t.replace(/\r\n/g, '\n'));
 }
@@ -270,7 +271,7 @@ const wordsOf = (s: string | null | undefined) => (String(s || '').toLowerCase()
  * in no other pending proposal's title (a unique best; "Open v3" -> "Ship v3 Monday"), else the same over the
  * full texts. Common words ("open", "the", "proposal") never count.
  */
-function namedIn(ps: Proposal[], prompt: string | null | undefined, code: string): Proposal | null {
+function namedIn(ps: Proposal[], prompt: string | null | undefined, code: RoomCode): Proposal | null {
   const s = String(prompt || '').toLowerCase();
   const hex = s.match(/\b[0-9a-f]{6,12}\b/g) || [];
   const byHash = ps.filter(p => hex.some(t => p.hash.startsWith(t) && ps.filter(q => q.hash.startsWith(t)).length === 1));
@@ -291,7 +292,7 @@ function namedIn(ps: Proposal[], prompt: string | null | undefined, code: string
  * the room that a later one retired (lib/room/consent.ts superseded), followed to its latest revision, which must be
  * among ps. {old, p}, else null.
  */
-function replacedIn(ps: Proposal[], prompt: string | null | undefined, code: string): { old: string, p: Proposal } | null {
+function replacedIn(ps: Proposal[], prompt: string | null | undefined, code: RoomCode): { old: string, p: Proposal } | null {
   const hex = String(prompt || '').toLowerCase().match(/\b[0-9a-f]{6,12}\b/g) || [];
   if (!hex.length || !ps.length || hex.some(t => ps.some(p => p.hash.startsWith(t)))) return null;
   const f = room.open(code).fold();
@@ -342,12 +343,12 @@ const openCall = NEXT.open;
 const confirmCall = NEXT.note;
 const showConfirm = showNote;
 /** A proposal as a list item: `3fa2c1 "Ship v3 Monday"` (the short hash alone without a title or a room to read it from). */
-function listed(code: string | undefined, p: Pick<Proposal, 'hash' | 'entry'>): string {
+function listed(code: RoomCode | undefined, p: Pick<Proposal, 'hash' | 'entry'>): string {
   const t = code ? clip(title(code, p.hash, p.entry).replace(/\s+/g, ' ').trim(), TITLE_MAX) : '';
   return t ? `${p.hash.slice(0, 6)} "${t}"` : p.hash.slice(0, 6);
 }
 /** others: the other proposals awaiting name, listed by short hash and title (code: the room their titles come from). */
-function reminder(p: Pick<Proposal, 'hash'>, name: string, { code, others = [] }: { code?: string, others?: Pick<Proposal, 'hash' | 'entry'>[] } = {}): string {
+function reminder(p: Pick<Proposal, 'hash'>, name: string, { code, others = [] }: { code?: RoomCode, others?: Pick<Proposal, 'hash' | 'entry'>[] } = {}): string {
   const base = `proposal ${p.hash} still awaits ${name}'s answer (an earlier review closed without an answer is fine). Now ${openCall(p.hash)}, unless ${name} asked you to propose something: then do that, and this waits.`;
   if (!others.length) return base;
   return `${base} (${others.length} more await ${name}'s answer: ${others.map(o => listed(code, o)).join(', ')}; the hooks open whichever ${name} names next, else the newest.)`;
@@ -391,7 +392,7 @@ function inside(abs: string, cwd: string | undefined): boolean {
 
 /** The propose tool's arguments (checked here, so unknown). */
 interface CreateArgs { text?: unknown, path?: unknown, approvers?: unknown }
-interface Created { hash: string, approvers: string[], path: string, entry: Entry | undefined, again: boolean, retired: string[] }
+interface Created { hash: ProposalHash, approvers: string[], path: string, entry: Entry | undefined, again: boolean, retired: string[] }
 
 function create(me: Me | null | undefined, args: CreateArgs = {}, { cwd }: { cwd?: string } = {}): Created {
   if (!me || !me.code || !me.name) refuse('not in a room; run /sub-human');
@@ -453,7 +454,7 @@ function choiceOf(c: unknown): 'Agree' | 'Object' | 'Not yet' | null {
 }
 
 type Answered = { entry: Entry, stale?: undefined } | { stale: true, why: string, entry?: undefined };
-function answer(me: Me, p: Pick<Proposal, 'hash'>, a: { choice?: unknown, notes?: unknown } = {}): Answered {
+function answer(me: Me, p: { hash: string }, a: { choice?: unknown, notes?: unknown } = {}): Answered {
   const r = room.open(me.code);
   const choice = choiceOf(a.choice);
   if (choice !== 'Agree' && choice !== 'Object') return { stale: true, why: 'no choice' };
@@ -477,7 +478,7 @@ function answer(me: Me, p: Pick<Proposal, 'hash'>, a: { choice?: unknown, notes?
 /** "tristan (also laptop), bob": one name per person, its other seats after it. */
 const people = (m: Matrix, names: string[]): string => names.map(n => (m.also[n] && m.also[n].length ? `${n} (also ${m.also[n].join(', ')})` : n)).join(', ');
 
-function decide(code: string, hash: string): Entry | null {
+function decide(code: RoomCode, hash: string): Entry | null {
   if (!identity.isHost(code)) return null;
   const r = room.open(code);
   return r.store.lock('proposal', (): Entry | null => {

@@ -21,6 +21,7 @@ import * as linkSocket from '../lib/remote/link-socket.ts';
 import { isAlive } from '../lib/io.ts';
 import { Machine } from './support/two-homes.ts';
 import type { Proposal } from '../lib/types-app.ts';
+import { sn } from './support/brands.ts';
 
 /** proposal.create's seat (a Pick of Identity, not exported). */
 type ProposalMe = NonNullable<Parameters<typeof proposal.create>[0]>;
@@ -78,7 +79,7 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   assert.equal(remote.workers('prompt', { hook_event_name: 'UserPromptSubmit', prompt: '@room one more', sub_human_origin: 'composer', sub_human_nonce: bob.nonce }, bob), 1);
 
   // a proposal naming bob: its plan is prefetched, his card answer is signed there and decided here
-  const p = host.lib(() => proposal.create({ code, name: 'alice', role: 'member' } as ProposalMe, { text: '# Ship the parser\n\n1. merge\n', approvers: ['bob'] }));
+  const p = host.lib(() => proposal.create({ code, name: sn('alice'), role: 'member' } as ProposalMe, { text: '# Ship the parser\n\n1. merge\n', approvers: ['bob'] }));
   await h.until(() => fs.existsSync(path.join(remote.home, 'rooms', code, 'plans', `${p.hash}.md`)), 5000, 50);
   const card = remote.lib(() => proposal.card({ hash: p.hash, approvers: ['bob'] } as Proposal, code));
   assert.match(JSON.stringify(card), /Ship the parser/, 'the card shows the prefetched plan');
@@ -99,10 +100,10 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   // bob's presence rides on beat: the host's rows show it
   remote.hook('presence', { hook_event_name: 'Notification', notification_type: 'idle_prompt' }, bob);
   assert.equal(host.lib(() => store.open(code).kv.get('presence/bob')).state, 'idle');
-  assert.match(host.lib(() => rows.rowText(code, 'bob', 'alice')), /idle/);
+  assert.match(host.lib(() => rows.rowText(code, { member: sn('bob'), viewer: 'alice' })), /idle/);
 
   // a second proposal for bob, prefetched before the link goes down
-  const p2 = host.lib(() => proposal.create({ code, name: 'alice', role: 'member' } as ProposalMe, { text: '# Ship the lexer\n', approvers: ['bob'] }));
+  const p2 = host.lib(() => proposal.create({ code, name: sn('alice'), role: 'member' } as ProposalMe, { text: '# Ship the lexer\n', approvers: ['bob'] }));
   await h.until(() => fs.existsSync(path.join(remote.home, 'rooms', code, 'plans', `${p2.hash}.md`)), 5000, 50);
 
   // the host's server dies: bob's @room posts are queued, nothing written anywhere yet; his tail says so once
@@ -154,7 +155,7 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   remote.hook('session-end', { hook_event_name: 'SessionEnd', reason: 'logout' }, bob);
   assert.equal(texts(host.log(code)).at(-1), 'bob left (session ended)', 'Claude Code\'s token, in words');
   assert.equal(host.lib(() => store.open(code).kv.get('presence/bob', null)), null, 'his presence is gone with him');
-  assert.doesNotMatch(host.lib(() => rows.rowText(code, 'bob', 'alice')), /idle|prompt|working/);
+  assert.doesNotMatch(host.lib(() => rows.rowText(code, { member: sn('bob'), viewer: 'alice' })), /idle|prompt|working/);
   const current = childOf(daemon.pid);
   await h.until(() => !isAlive(daemon.pid), 8000, 50);
   assert.equal(isAlive(daemon.pid), false, 'the daemon exits once no seat of its machine is left');

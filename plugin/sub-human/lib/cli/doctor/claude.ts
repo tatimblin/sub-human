@@ -22,6 +22,7 @@ import { spawnSync } from 'node:child_process';
 import { lib, cli, check, tilde, truthy } from './check.ts';
 import type { Check, Report } from '../types.ts';
 import { msgOf } from '../../errors.ts';
+import type { RoomCode } from '../../brand.ts';
 
 /** A Claude Code settings file, as the hooks and Remote Control checks read it. */
 interface Settings {
@@ -44,21 +45,21 @@ function claudeVersion(env: NodeJS.ProcessEnv): string | null {
 
 function checkClaude({ version, quick, env }: { version: string | null; quick: boolean; env: NodeJS.ProcessEnv }): { check: Check; probe?: Report['probe'] } {
   const cc = lib('cc/contract.ts');
-  if (!version) return { check: check('claude', 'warn', 'Claude Code', 'no `claude` on PATH here', 'install Claude Code, or put it on PATH for this shell') };
+  if (!version) return { check: check({ id: 'claude', status: 'warn', title: 'Claude Code', detail: 'no `claude` on PATH here', fix: 'install Claude Code, or put it on PATH for this shell' }) };
   if ((cc.compareVersions(version, cc.MIN_VERSION) ?? 0) < 0) { // null (unreadable) is not older
-    return { check: check('claude', 'fail', 'Claude Code', `${version}; sub-human needs ${cc.MIN_VERSION}+ (function hooks)`, 'update Claude Code (claude update)') };
+    return { check: check({ id: 'claude', status: 'fail', title: 'Claude Code', detail: `${version}; sub-human needs ${cc.MIN_VERSION}+ (function hooks)`, fix: 'update Claude Code (claude update)' }) };
   }
   const same = cc.compareVersions(version, cc.PROBED_VERSION) === 0;
   // an internal reported to have changed on this version, which the probe may not see (CONTRACT degraded)
   const deg = cc.degradedOn(version);
   const degraded = deg.length ? `; reported changed on this version: ${deg.map(d => d.issue ? `${d.id} (#${d.issue})` : d.id).join(', ')}` : '';
-  if (same) return { check: check('claude', 'pass', 'Claude Code', `${version}, the version its internals were checked on${degraded}`) };
+  if (same) return { check: check({ id: 'claude', status: 'pass', title: 'Claude Code', detail: `${version}, the version its internals were checked on${degraded}` }) };
   if (quick) {
-    return { check: check('claude', 'info', 'Claude Code', `${version}; internals last checked on ${cc.PROBED_VERSION} (run without --quick to check them)${degraded}`) };
+    return { check: check({ id: 'claude', status: 'info', title: 'Claude Code', detail: `${version}; internals last checked on ${cc.PROBED_VERSION} (run without --quick to check them)${degraded}` }) };
   }
   const bin = cc.locateBinary({ env });
-  if (!bin) return { check: check('claude', 'info', 'Claude Code', `${version}; the binary was not found to check its internals`) };
-  const cannot = (why: string) => ({ check: check('claude', 'info', 'Claude Code', `${version}; internals probe could not run: ${why}`), probe: null });
+  if (!bin) return { check: check({ id: 'claude', status: 'info', title: 'Claude Code', detail: `${version}; the binary was not found to check its internals` }) };
+  const cannot = (why: string) => ({ check: check({ id: 'claude', status: 'info', title: 'Claude Code', detail: `${version}; internals probe could not run: ${why}` }), probe: null });
   let results;
   try {
     const buf = fs.readFileSync(bin);
@@ -71,10 +72,9 @@ function checkClaude({ version, quick, env }: { version: string | null; quick: b
   const missing = results.filter(r => !r.ok).map(r => r.id);
   // every entry missing is a probe that read the wrong thing, not every internal changed at once
   if (missing.length === results.length) return cannot(`none of the ${results.length} internals was found in ${tilde(bin)}; set CLAUDE_BIN to the Claude Code binary`);
-  if (!missing.length) return { check: check('claude', 'pass', 'Claude Code', `${version}; all ${results.length} internals sub-human relies on are present${degraded}`), probe: { total: results.length, missing } };
+  if (!missing.length) return { check: check({ id: 'claude', status: 'pass', title: 'Claude Code', detail: `${version}; all ${results.length} internals sub-human relies on are present${degraded}` }), probe: { total: results.length, missing } };
   return {
-    check: check('claude', 'warn', 'Claude Code', `${version}; ${missing.length} of ${results.length} internals changed since ${cc.PROBED_VERSION}: ${missing.join(', ')}${degraded}`,
-      `update sub-human (/plugin update sub-human); if it persists, report it with ${cli('doctor --bundle')}`),
+    check: check({ id: 'claude', status: 'warn', title: 'Claude Code', detail: `${version}; ${missing.length} of ${results.length} internals changed since ${cc.PROBED_VERSION}: ${missing.join(', ')}${degraded}`, fix: `update sub-human (/plugin update sub-human); if it persists, report it with ${cli('doctor --bundle')}` }),
     probe: { total: results.length, missing },
   };
 }
@@ -88,15 +88,15 @@ function settingsFiles(env: NodeJS.ProcessEnv): Settings[] {
 
 function checkHooks(settings: Settings[], env = process.env): Check {
   if (settings.some(s => s.disableAllHooks === true)) {
-    return check('hooks', 'fail', 'hooks', 'a settings file sets disableAllHooks: sub-human\'s hooks and hooks module never run', 'remove disableAllHooks from your Claude Code settings');
+    return check({ id: 'hooks', status: 'fail', title: 'hooks', detail: 'a settings file sets disableAllHooks: sub-human\'s hooks and hooks module never run', fix: 'remove disableAllHooks from your Claude Code settings' });
   }
   if (settings.some(s => s.allowManagedHooksOnly === true)) {
-    return check('hooks', 'fail', 'hooks', 'a settings file sets allowManagedHooksOnly: only managed hooks run, so sub-human cannot join a room', 'ask whoever manages this machine\'s Claude Code settings, or remove allowManagedHooksOnly from yours');
+    return check({ id: 'hooks', status: 'fail', title: 'hooks', detail: 'a settings file sets allowManagedHooksOnly: only managed hooks run, so sub-human cannot join a room', fix: 'ask whoever manages this machine\'s Claude Code settings, or remove allowManagedHooksOnly from yours' });
   }
   if (lib('cc/env.ts').modulesSwitch(env) === false) {
-    return check('hooks', 'fail', 'hooks', 'Claude Code has plugin hooks modules switched off for now (its saved switch), so sub-human cannot join a room', 'restart claude with network access, which refreshes the switch; if this stays, hooks modules are off for your account');
+    return check({ id: 'hooks', status: 'fail', title: 'hooks', detail: 'Claude Code has plugin hooks modules switched off for now (its saved switch), so sub-human cannot join a room', fix: 'restart claude with network access, which refreshes the switch; if this stays, hooks modules are off for your account' });
   }
-  return check('hooks', 'pass', 'hooks', 'no settings file turns hooks off; hooks modules are on');
+  return check({ id: 'hooks', status: 'pass', title: 'hooks', detail: 'no settings file turns hooks off; hooks modules are on' });
 }
 
 function checkRemoteControl(env: NodeJS.ProcessEnv, settings: Settings[]): Check {
@@ -105,16 +105,15 @@ function checkRemoteControl(env: NodeJS.ProcessEnv, settings: Settings[]): Check
     if (truthy(env[k]) || settings.some(s => s.env && truthy(s.env[k]))) seen.push(what);
   }
   if (settings.some(s => typeof s.apiKeyHelper === 'string' && s.apiKeyHelper)) seen.push('an apiKeyHelper');
-  if (!seen.length) return check('remote_control', 'info', 'Remote Control', 'likely available (needs a claude.ai login): the phone drives your session, room cards included');
-  return check('remote_control', 'warn', 'Remote Control', `likely unavailable: Claude Code here uses ${[...new Set(seen)].join(', ')}; Remote Control (the phone) needs a claude.ai subscription login`,
-    'nothing to fix for the room itself; to use the phone, log in with a claude.ai account');
+  if (!seen.length) return check({ id: 'remote_control', status: 'info', title: 'Remote Control', detail: 'likely available (needs a claude.ai login): the phone drives your session, room cards included' });
+  return check({ id: 'remote_control', status: 'warn', title: 'Remote Control', detail: `likely unavailable: Claude Code here uses ${[...new Set(seen)].join(', ')}; Remote Control (the phone) needs a claude.ai subscription login`, fix: 'nothing to fix for the room itself; to use the phone, log in with a claude.ai account' });
 }
 
 const ROOM_CLAUDE_BIND_GRACE_MS = 90_000;
 
 const DAEMON_HINT = 'the bg daemon check says whether the daemon runs a Claude Code that was upgraded away since, and how to restart it';
 const DAEMON_STOP = 'claude daemon stop --any --keep-workers in a terminal (detached sessions keep running); the next `claude agents` or `claude --bg` starts a fresh daemon';
-const RESTART = (code: string) => `then /sub-human NAME ${code} (in the room) starts it again`;
+const RESTART = (code: RoomCode) => `then /sub-human NAME ${code} (in the room) starts it again`;
 
 /**
  * Each open room hosted here: the room's Claude bound here and live is a pass. A fail: its last start failed
@@ -128,7 +127,7 @@ const RESTART = (code: string) => `then /sub-human NAME ${code} (in the room) st
 function checkRoomClaudes({ now = Date.now(), jobs = () => lib('cc/bg.ts').jobs({ all: true }) }: { now?: number, jobs?: () => import('../../cc/bg.ts').AgentJob[] | null } = {}): Check[] {
   const identity = lib('identity.ts');
   const out: Check[] = [];
-  let codes: string[] = [];
+  let codes: RoomCode[] = [];
   try { codes = identity.openRooms().filter(c => identity.isHost(c)); } catch { return out; }
   for (const code of codes) {
     let o;
@@ -136,15 +135,14 @@ function checkRoomClaudes({ now = Date.now(), jobs = () => lib('cc/bg.ts').jobs(
     if (!o || o.job === 'pending' || o.stopped_at || o.closing) continue;
     if (!o.job) {
       if (o.spawn_error && !o.left_at) {
-        out.push(check(`room-claude:${code}`, 'fail', `room's Claude ${code}`, `its last start failed: ${o.spawn_error}: the room's Claude is not running`,
-          `claude agents --all and the bg daemon's log say why; ${DAEMON_HINT}; ${RESTART(code)}`));
+        out.push(check({ id: `room-claude:${code}`, status: 'fail', title: `room's Claude ${code}`, detail: `its last start failed: ${o.spawn_error}: the room's Claude is not running`, fix: `claude agents --all and the bg daemon's log say why; ${DAEMON_HINT}; ${RESTART(code)}` }));
       }
       continue;
     }
     const since = Date.parse(o.spawned_at || '') || now;
     const bound = !!o.pid && !o.left_at && identity.isMine(o.machine || identity.machineId());
     if (bound && identity.seatAlive(Object.assign({ name: 'claude' }, o))) {
-      out.push(check(`room-claude:${code}`, 'pass', `room's Claude ${code}`, `bound and live: job ${o.job}, pid ${o.pid}`));
+      out.push(check({ id: `room-claude:${code}`, status: 'pass', title: `room's Claude ${code}`, detail: `bound and live: job ${o.job}, pid ${o.pid}` }));
       continue;
     }
     if (bound || now - since < ROOM_CLAUDE_BIND_GRACE_MS) continue;
@@ -152,13 +150,11 @@ function checkRoomClaudes({ now = Date.now(), jobs = () => lib('cc/bg.ts').jobs(
     try { state = (jobs() || []).find(j => j.id === o.job)?.state || null; } catch { state = null; }
     const ended = !!state && ['done', 'failed', 'stopped'].includes(state);
     const why = o.spawn_error ? ` (${o.spawn_error})` : '';
-    out.push(check(`room-claude:${code}`, 'fail', `room's Claude ${code}`,
-      `its job ${o.job} was started ${Math.round((now - since) / 1000)} s ago but never took its seat${state ? `; the job is ${state}` : ''}${why}: the room's Claude is not running`,
-      state === 'done'
+    out.push(check({ id: `room-claude:${code}`, status: 'fail', title: `room's Claude ${code}`, detail: `its job ${o.job} was started ${Math.round((now - since) / 1000)} s ago but never took its seat${state ? `; the job is ${state}` : ''}${why}: the room's Claude is not running`, fix: state === 'done'
         ? `the job ended its turn without taking its seat: claude logs ${o.job} shows why; ${DAEMON_HINT}; ${RESTART(code)}`
         : ended
           ? `the job ended before its first turn: claude logs ${o.job} and the bg daemon's log say why; ${DAEMON_HINT}; ${RESTART(code)}`
-          : `claude logs ${o.job} shows what it is doing and why it never took its seat; ${DAEMON_HINT}; ${RESTART(code)}`));
+          : `claude logs ${o.job} shows what it is doing and why it never took its seat; ${DAEMON_HINT}; ${RESTART(code)}` }));
   }
   return out;
 }
@@ -174,19 +170,19 @@ function checkDaemon({ version, env = process.env, status = () => lib('cc/bg.ts'
 }): Check {
   let st: import('../../cc/bg.ts').DaemonStatus | null = null;
   try { st = status(); } catch { st = null; }
-  if (!st) return check('daemon', 'info', 'bg daemon', 'could not read `claude daemon status`');
-  if (!st.running) return check('daemon', 'info', 'bg daemon', 'not running (the next `claude agents` or `claude --bg` starts one)');
+  if (!st) return check({ id: 'daemon', status: 'info', title: 'bg daemon', detail: 'could not read `claude daemon status`' });
+  if (!st.running) return check({ id: 'daemon', status: 'info', title: 'bg daemon', detail: 'not running (the next `claude agents` or `claude --bg` starts one)' });
   const who = `pid ${st.pid ?? '?'}${st.version ? `, ${st.version}` : ''}`;
   let x: { exe: string; deleted: boolean } | null = null;
   if (st.pid) { try { x = exe(st.pid); } catch { x = null; } }
   if (x && x.deleted) {
-    return check('daemon', 'fail', 'bg daemon', `running (${who}) from ${tilde(x.exe)}, which was deleted since it started (Claude Code was upgraded or reinstalled): background sessions it starts, the room's Claude included, can crash`, DAEMON_STOP);
+    return check({ id: 'daemon', status: 'fail', title: 'bg daemon', detail: `running (${who}) from ${tilde(x.exe)}, which was deleted since it started (Claude Code was upgraded or reinstalled): background sessions it starts, the room's Claude included, can crash`, fix: DAEMON_STOP });
   }
   const cc = lib('cc/contract.ts');
   if (st.version && version && cc.compareVersions(st.version, version) !== 0) {
-    return check('daemon', 'warn', 'bg daemon', `running (${who}) while \`claude --version\` says ${version}: background sessions start on the daemon's version`, DAEMON_STOP);
+    return check({ id: 'daemon', status: 'warn', title: 'bg daemon', detail: `running (${who}) while \`claude --version\` says ${version}: background sessions start on the daemon's version`, fix: DAEMON_STOP });
   }
-  return check('daemon', 'pass', 'bg daemon', `running (${who})`);
+  return check({ id: 'daemon', status: 'pass', title: 'bg daemon', detail: `running (${who})` });
 }
 
 export { claudeVersion, checkClaude, checkDaemon, checkRoomClaudes, settingsFiles, checkHooks, checkRemoteControl };

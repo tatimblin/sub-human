@@ -10,6 +10,7 @@ import { lane, deliver } from '../lib/room/deliver.ts';
 import { ROTATION_HELD_TEXT } from '../lib/room/rules.ts';
 import type { FsRoomStore } from '../lib/room/store.ts';
 import type { Entry, EntryInput, Lane, LaneViewer } from '../lib/room/types.ts';
+import { sn, eid } from './support/brands.ts';
 
 let R!: Room; // the current test's room (set by fresh())
 /** deliver()'s first step (push: notice or wake; pull: context), judged as the room's own facade judges. */
@@ -33,7 +34,7 @@ const ALICE: LaneViewer = { name: 'alice', role: 'member' }, ROOM_CLAUDE: LaneVi
 
 // The logged #22 from vole-8126 (B #2): the 240-char line cut exactly the clause that mattered.
 const E22 = {
-  id: 22, at: '2026-10-04T19:00:01.000Z', from: 'claude', via: 'agent', kind: 'say', to: 'alice', refs: [18, 21],
+  id: eid(22), at: '2026-10-04T19:00:01.000Z', from: 'claude', via: 'agent', kind: 'say', to: 'alice', refs: [18, 21],
   text: 'I reviewed this against the plan. It departs from it in two places. Bad or stale after: a malformed or stale ' +
     'cursor silently sends the client back to page 1 (src/store.ts:50-58). That can repeat tasks, and the plan suggested ' +
     'a 400 instead. And limit in the next-page link: the rel=next URL repeats the raw limit from the request, not the ' +
@@ -261,8 +262,8 @@ test('stateLine: open proposals, my answer, who is away', () => {
   assert.equal(R.stateLine(ALICE), 'room now: no proposals');
   h.register('alice', 'member', process.pid, code);
   const bob = h.spawnSleeper();
-  identity.join({ code, name: 'bob', role: 'member', pid: bob.pid, session_id: 's-b', cwd: '/tmp' });
-  identity.leave(code, 'bob');
+  identity.join({ code, name: sn('bob'), role: 'member', pid: bob.pid, session_id: 's-b', cwd: '/tmp' });
+  identity.leave(code, sn('bob'));
   prop('claude', H1, ['alice', 'bob']);
   assert.match(R.stateLine(ALICE), /^room now: proposal aaaaaa waiting on alice, bob · you: answer needed/);
   answer('alice', 'signoff', H1);

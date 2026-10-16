@@ -32,13 +32,14 @@ import * as envelope from './envelope.ts';
 import { RoomError } from './validate.ts';
 import type { KeyObject } from 'node:crypto';
 import type { Entry, HumanTrust, Trust, TrustCtx } from './types.ts';
+import type { RoomCode } from '../brand.ts';
 
 /** The installed human signer (hooks/seat-key.ts arm): the seat's private key for (room, from), or null. */
 type HumanSigner = (room: string, from: string) => KeyObject | null | undefined;
 
 const SIGNER = Symbol.for('sub-human.human-signer');
 
-function humanKey(code: string, from: string): KeyObject {
+function humanKey(code: RoomCode, from: string): KeyObject {
   const signer = (globalThis as unknown as Record<symbol, HumanSigner | undefined>)[SIGNER];
   let key: KeyObject | null | undefined = null;
   if (typeof signer === 'function') { try { key = signer(code, from); } catch { key = null; } }

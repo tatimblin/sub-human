@@ -32,6 +32,7 @@ import { Machine, type Seat } from './support/two-homes.ts';
 import type { Entry } from '../lib/room/types.ts';
 import type { HandoffAskDoc } from '../lib/types-app.ts';
 import type { LinkSpec, PipeSpec, SshSpec } from '../lib/remote/types-rest.ts';
+import type { RoomCode } from '../lib/brand.ts';
 
 /** h.until, failing the test when fn never holds. */
 async function until<T>(fn: () => T, ms: number, step: number): Promise<T> {
@@ -48,12 +49,12 @@ interface Stub { bin: string; calls: () => string[][] }
 type TestMachine = Machine & {
   stub: Stub;
   cli: (args: string[], extra?: Record<string, string>, input?: string) => SpawnSyncReturns<string>;
-  status: (code: string) => ReturnType<typeof linkSocket.status>;
-  store: (code: string) => ReturnType<typeof store.open>;
-  read: (code: string) => readonly Entry[];
+  status: (code: RoomCode) => ReturnType<typeof linkSocket.status>;
+  store: (code: RoomCode) => ReturnType<typeof store.open>;
+  read: (code: RoomCode) => readonly Entry[];
 };
 /** room()'s machines and seats: carol's only when she was asked for. */
-interface Room { A: TestMachine; B: TestMachine; alice: Seat; bob: Seat; code: string }
+interface Room { A: TestMachine; B: TestMachine; alice: Seat; bob: Seat; code: RoomCode }
 interface RoomWithCarol extends Room { C: TestMachine; carol: Seat }
 /** The card the consent hook's Pre rewrites AskUserQuestion's input to. */
 interface Card { questions: { question: string; options: { description: string }[] }[] }
@@ -121,7 +122,7 @@ function answerCard(B: TestMachine, bob: Seat, id: string, label: string) {
   return { card, post };
 }
 
-const ask = (B: TestMachine, code: string) => B.lib(() => store.open(code).kv.get<HandoffAskDoc>(handoff.ASK_DOC));
+const ask = (B: TestMachine, code: RoomCode) => B.lib(() => store.open(code).kv.get<HandoffAskDoc>(handoff.ASK_DOC));
 
 test('handoff e2e: planned, A to B with C following; the room\'s Claude moves; the old host is STALE', async t => {
   const { A, B, C, alice, bob, carol, code } = await room(t);
@@ -368,7 +369,7 @@ test('handoff and promote CLI: --via carries a ProxyJump into the new locator, a
 });
 
 /** The room's Claude job's own `/sub-human` (agent sub-human:room-claude, SUB_HUMAN_ROOM): it binds the seat "claude". */
-function bindRoomClaude(m: TestMachine, code: string) {
+function bindRoomClaude(m: TestMachine, code: RoomCode) {
   const s = m.seat('claude');
   m.lease(s);
   return m.hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: '', agent_type: 'sub-human:room-claude' }, s, { env: { SUB_HUMAN_ROOM: code } });

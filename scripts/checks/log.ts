@@ -49,7 +49,7 @@ export function roomLog({ home, code, roomDir, log, rowsDir = () => path.join(ro
   /** The room's hash chain, validated by the plugin's own room lib. */
   function chainOk(): { ok: boolean, evidence: string } {
     process.env.SUB_HUMAN_HOME = home;
-    const r = paths.pluginLib('room.ts').open(code).validateChain();
+    const r = paths.pluginLib('room.ts').open(paths.roomCode(code)).validateChain();
     return { ok: !!r.ok, evidence: r.ok ? `validateChain ok over ${r.count} entries` : `chain breaks at #${r.badAt} (${r.count} entries)` };
   }
   return { byKind, fmt, logIn, props, shownLog, shownVia, chainOk };

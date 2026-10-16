@@ -44,11 +44,13 @@ import {
   PRESENCE_DETAIL_MAX, PID_START_SLACK_S, SEAT_BEAT_MS, SEAT_LEASE_MS, ROOM_CLAUDE_BIND_MS, ROOM_CLAUDE_CLAIM_MS,
 } from '../config.ts';
 import { RoomError } from './validate.ts';
+import { namedSeat } from '../../mod/core/seat.ts';
 import type { JoinResult, KvApi, Member, Members, MembersApi, Presence, PresenceInput, PresenceState, SeatRecord } from './types.ts';
+import type { RoomCode } from '../brand.ts';
 
 /** What ops() needs of its store: the members document's read and update, its kv, and the room code. */
 interface OpsStore {
-  code: string;
+  code: RoomCode;
   members: Pick<MembersApi, 'read' | 'update'>;
   kv: Pick<KvApi, 'set' | 'delete'>;
 }
@@ -60,7 +62,7 @@ const PRESENCE_STATES = ['working', 'idle', 'permission', 'error'] as const;
 const PRESENCE_SET: ReadonlySet<unknown> = new Set(PRESENCE_STATES);
 const isPresenceState = (s: unknown): s is PresenceState => PRESENCE_SET.has(s);
 /** The room's Claude: its member name, role and SendMessage name (claude.CODE). */
-const ROOM_CLAUDE = 'claude';
+const ROOM_CLAUDE = namedSeat('claude');
 const LOCAL_FIELDS = ['pid', 'pid_start', 'session_id', 'cwd'] as const;
 const ROOM_CLAUDE_FIELDS = ['job', 'spawned_at', 'closing', 'by', 'job_session', 'claim'] as const; // kept across the room Claude's (re)bind
 
@@ -91,7 +93,7 @@ function seatAlive(m: SeatLike | null | undefined): boolean { // unary: callers 
 /** rec is the holder of cur: the same machine and the same pid (none, for a seat on another machine). */
 const sameHolder = (cur: Member, rec: SeatRecord): boolean => machineOf(cur) === rec.machine && (cur.pid ?? null) === (rec.pid ?? null);
 
-function joinFold(ms: Members, rec: SeatRecord, code: string, now: number): { next: Members | null; result: JoinResult } {
+function joinFold(ms: Members, rec: SeatRecord, code: RoomCode, now: number): { next: Members | null; result: JoinResult } {
   const cur = ms[rec.name];
   if (cur && !sameHolder(cur, rec) && seatAlive(cur)) return { next: null, result: { ok: false, error: `name taken: "${rec.name}" is already in ${code}` } };
   const keep: Partial<Member> = {};

@@ -17,6 +17,7 @@ import * as invites from '../lib/remote/invites.ts';
 import * as links from '../lib/room/links.ts';
 import type { Invites } from '../lib/remote/types-core.ts';
 import type { SshSpec } from '../lib/remote/types-rest.ts';
+import { tokenOf } from './support/brands.ts';
 
 const hiddenBlock = (r: MachineRun) => r.json && r.json.decision === 'block' && r.json.hookSpecificOutput && r.json.hookSpecificOutput.suppressOriginalPrompt === true;
 
@@ -83,19 +84,19 @@ test('invite over ssh: the line with --via, the host folder and no NAME, the PIN
 test('join: a linked machine given another invite to the same host through the same bastion is linked already, not a move', t => {
   const { remote, bob, code } = room(t);
   const transport: SshSpec = { kind: 'ssh', user: 'host', host: 'devbox', via: 'jump@bastion' };
-  remote.lib(() => links.set(code, { code, transport, token: 'tok', created_at: new Date().toISOString() }));
+  remote.lib(() => links.set(code, { code, transport, token: tokenOf('tok'), created_at: new Date().toISOString() }));
   const r = remote.join(bob, `join host@devbox ${code} ${inviteSecret.encode(inviteSecret.mint(), Buffer.alloc(8))} --via jump@bastion`);
   assert.ok(hiddenBlock(r));
   assert.match(r.json!.reason!, /this machine is in room .* already; \/sub-human \S+ \S+ takes your place there/, r.json!.reason);
   const kept = remote.lib(() => links.get(code))!;
-  assert.deepEqual([kept.token, kept.rebind], ['tok', undefined], 'the working link is kept, its token not replaced');
+  assert.deepEqual([kept.token, kept.rebind], [tokenOf('tok'), undefined], 'the working link is kept, its token not replaced');
 });
 
 test('C (live verify, remote/15c-e): a join another way, for a room this machine is linked to live, is refused and leaves the link file and its daemon alone', t => {
   const { remote, bob, code } = room(t);
   const transport: SshSpec = { kind: 'ssh', user: 'host', host: 'devbox' };
   remote.lib(() => {
-    links.set(code, { code, transport, token: 'tok', created_at: new Date().toISOString() });
+    links.set(code, { code, transport, token: tokenOf('tok'), created_at: new Date().toISOString() });
     // the daemon's document: running (this process's pid lives) and online
     store.open(code).kv.set('link', { pid: process.pid, state: 'online', since: new Date().toISOString() });
   });

@@ -19,6 +19,8 @@ import * as identity from '../../lib/identity.ts';
 import * as room from '../../lib/room.ts';
 import type { AppendOpts, Entry, EntryInput, Members } from '../../lib/room/types.ts';
 import type { HookOutput, HookSpecificOutput } from '../../hooks/types.ts';
+import type { RoomCode } from '../../lib/brand.ts';
+import { sn } from '../support/brands.ts';
 
 const PLUGIN = path.join(import.meta.dirname, '..', '..');
 const HOOKS = path.join(PLUGIN, 'hooks');
@@ -69,7 +71,7 @@ class World {
   pid: Record<string, number> = {};
   sid: Record<string, string> = {};
   /** the room's code; null only for a World made with { room: false } */
-  code: string;
+  declare code: RoomCode;
 
   constructor(spec: Record<string, Who> = {}, { room: makeRoom = true, t }: { room?: boolean; t?: TestContext } = {}) {
     this.home = common.tmpDir('sh-hooks-');
@@ -77,8 +79,7 @@ class World {
     fs.mkdirSync(path.join(this.userHome, '.claude', 'plans'), { recursive: true });
     this.cwd = common.tmpDir('sh-cwd-');
     if (t) t.after(() => this.dispose());
-    this.code = null as unknown as string; // a World without a room never reads it
-    if (makeRoom) this.code = this.lib(() => identity.newCode());
+    if (makeRoom) this.code = this.lib(() => identity.newCode()); // a World without a room never reads it
     for (const [name, who] of Object.entries(spec)) this.join(name, who);
   }
 
@@ -87,7 +88,7 @@ class World {
   join(name: string, who: Who = 'sleep', { announce = false }: { announce?: boolean } = {}): number {
     const pid = who === 'act' ? process.pid : who === 'act2' ? process.ppid : sleeper();
     const s = sid();
-    const r = this.lib(() => identity.join({ code: this.code, name, role: name === 'claude' ? 'claude' : 'member', pid, session_id: s, cwd: this.cwd }));
+    const r = this.lib(() => identity.join({ code: this.code, name: sn(name), role: name === 'claude' ? 'claude' : 'member', pid, session_id: s, cwd: this.cwd }));
     if (!r.ok) throw new Error(`join ${name}: ${r.error}`);
     this.pid[name] = pid;
     this.sid[name] = s;
@@ -139,7 +140,7 @@ const reason = (r: HookRun) => hso(r).permissionDecisionReason;
 const ctx = (r: HookRun) => hso(r).additionalContext;
 
 /** Plan text with sub-human frontmatter. */
-const roomPlan = (code: string, approvers: string[], body = '# Plan\n\n1. add pagination\n', approval = 'all') =>
+const roomPlan = (code: RoomCode, approvers: string[], body = '# Plan\n\n1. add pagination\n', approval = 'all') =>
   `---\nsub-human: ${JSON.stringify({ room: code, approval, approvers })}\n---\n${body}`;
 
 export {

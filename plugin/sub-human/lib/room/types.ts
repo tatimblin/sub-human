@@ -16,6 +16,7 @@ import type { AGENT_KINDS, HUMAN_KINDS, LEGACY_KINDS, SYSTEM_KINDS, TASK_OPS, VI
 import type { PRESENCE_STATES } from './members.ts';
 import type { STATE_WORDS } from './link-state.ts';
 import type { WireCode } from '../remote/types-core.ts';
+import type { RoomCode, SeatName, SessionId, MachineId, ProposalHash, EntryId, TaskId, LinkToken, InviteSecret, Pin } from '../brand.ts';
 
 // ---------- the log entry ----------
 
@@ -41,7 +42,7 @@ export type HostProof = Record<string, unknown>;
 /** The task fields of a task_req / task entry, as validate.ts taskFields() stores them (task_id always a string). */
 export interface TaskFields {
   op?: string;
-  task_id?: string;
+  task_id?: TaskId;
   subject?: string;
   detail?: string;
   evidence?: string;
@@ -200,7 +201,7 @@ export interface Payload extends EntryFields, Partial<Envelope> {
  * legacy kind (LegacyKind) and plan_hash; a newer host's may carry a kind or via this version does not know.
  */
 export interface Entry extends EntryFields, Partial<Envelope> {
-  id: number;
+  id: EntryId;
   at: string;
   prev?: string;
   from: string;
@@ -227,7 +228,7 @@ export type EntryOf<K extends KnownKind> = Entry & { kind: K };
 /** An entry of a kind this version knows, by kind: a reader switches on its kind and ends in assertNever. */
 export type KnownEntry = { [K in KnownKind]: EntryOf<K> }[KnownKind];
 /** A proposal whose hash the fold checked (consent.ts). */
-export type ProposalEntry = EntryOf<'proposal'> & { hash: string };
+export type ProposalEntry = EntryOf<'proposal'> & { hash: ProposalHash };
 
 /** Who holds the room by its log (store.ts hostState): the last host_changed entry, else epoch 0. */
 export interface HostState {
@@ -246,7 +247,7 @@ export type Trust = (e: Entry | null | undefined) => HumanTrust | null;
 
 /** What a trust verdict reads (trust.ts): the room, the keys its log pins, and the seats' local public keys. */
 export interface TrustCtx {
-  code: string;
+  code: RoomCode;
   pins(): ReadonlyMap<string, KeyObject>;
   /** <home>/keys/<code>/<name>.pub: what a legacy room (no key pinned) verifies against */
   localKey(name: string): KeyObject | null;
@@ -266,10 +267,10 @@ export type Role = 'member' | 'claude';
  * (lib/room-claude.ts) across a (re)bind.
  */
 export interface Member {
-  name: string;
+  name: SeatName;
   role: Role;
   /** null: this machine's id could not be read when the seat joined */
-  machine?: string | null;
+  machine?: MachineId | null;
   /**
    * the person behind the seat, as the host knows it: the host's machine id for a seat of the host account (one on
    * the host, or one over a login link, lib/seats.ts enter); none for an invite's seat. Seats with one account are
@@ -287,7 +288,7 @@ export interface Member {
   lapsed_at?: string;
   pid?: number | null;
   pid_start?: number;
-  session_id?: string | null;
+  session_id?: SessionId | null;
   cwd?: string | null;
   // the room's Claude's bookkeeping (lib/room-claude.ts)
   /** its `claude --bg` job id; "pending" while a spawn is claimed; null after a failed spawn */
@@ -307,13 +308,13 @@ export type Members = Record<string, Member>;
 
 /** What members.join(rec) takes: a seat of this machine carries its pid, start time, session and cwd too. */
 export interface SeatRecord {
-  name: string;
+  name: SeatName;
   role: Role;
-  machine?: string | null;
+  machine?: MachineId | null;
   account?: string;
   pid?: number;
   pid_start?: number;
-  session_id?: string | null;
+  session_id?: SessionId | null;
   cwd?: string | null;
   /** what log the seat's code reads (lib/room/members.ts LOG_V) */
   log_v?: number;
@@ -469,7 +470,7 @@ export interface ReadViewOpts {
  * room hosted elsewhere, test/support/memory-store.ts in the tests.
  */
 export interface RoomStore {
-  readonly code: string;
+  readonly code: RoomCode;
   /** the room's directory on this machine (FsRoomStore and its mirror; a store kept elsewhere has none) */
   readonly dir?: string;
   isHost: boolean;
@@ -484,7 +485,7 @@ export interface RoomStore {
   setAside(): string | null;
   /** the store's cached array: never change it, nor its entries */
   readAll(): readonly Entry[];
-  readById(ids: number | string | readonly (number | string)[]): Entry[];
+  readById(ids: EntryId | readonly EntryId[]): Entry[];
   readAfter(id: number, filter?: (e: Entry) => boolean): Entry[];
   lastId(): number;
   readView(opts?: ReadViewOpts): readonly Entry[];
@@ -511,8 +512,8 @@ export interface RoomStore {
 
 /** The latest proposal entry per hash. */
 export interface ProposalState {
-  id: number;
-  hash: string;
+  id: EntryId;
+  hash: ProposalHash;
   from: string;
   approvers: string[];
   /** the approvers that are one person: groups of 2+, disjoint (consent.ts groupsOf) */
@@ -524,7 +525,7 @@ export interface ProposalState {
 /** A person's current answer on a hash. */
 export interface Answer {
   kind: 'signoff' | 'objection';
-  id: number;
+  id: EntryId;
   entry: Entry;
 }
 
@@ -586,15 +587,15 @@ export type Delivery = 'none' | 'context' | 'notice' | 'wake';
 
 /** A link record, <home>/links/<code>.json (links.ts documents each field). */
 export interface Link {
-  code: string;
+  code: RoomCode;
   /** how the daemon reaches the host's server (lib/remote/link.ts transportOf); a login link (`/sub-human join
    * USER@HOST ROOM`) is an ssh spec with login: the person's own ssh login admits it */
   transport: LinkSpec;
-  token?: string;
+  token?: LinkToken;
   /** an sh2 invite (a handoff's, a promote's), or an invite line's SECRET word (protocol 3), until the token */
-  invite?: string;
+  invite?: InviteSecret;
   /** the PIN, from the moment it is typed until the host answered it (held, wrong, or throttled) */
-  pin?: string;
+  pin?: Pin;
   /** an invite line's host asked for its PIN (left: tries; why/message: the last wrong or throttled one) */
   pin_wanted?: { at: string; left?: number; why?: string; message?: string };
   awaiting?: { at: string; ref: string; check: string; expires_at: string };

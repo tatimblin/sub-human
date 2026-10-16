@@ -17,6 +17,7 @@ import { World, fixture, PLUGIN, HOOKS, room, identity, sleeper, sid } from './h
 import type { HookInput } from './helpers.ts';
 import * as seatKeyLib from '../../hooks/seat-key.ts';
 import type * as Guard from '../../mod/core/guard.ts';
+import { sn, eid } from '../support/brands.ts';
 
 /** World.hook's options. */
 type HookOpts = NonNullable<Parameters<World['hook']>[2]>;
@@ -50,7 +51,7 @@ const mode = (p: string) => fs.statSync(p).mode & 0o777;
 function proposalWorld(t: TestContext) {
   const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' }, { t });
   w.append({ kind: 'proposal', text: `proposal ${H1}: x`, hash: H1, approvers: ['alice', 'bob'] }, { via: 'agent', from: 'claude' });
-  w.lib(() => seatKeyLib.ensure(w.code, 'bob'));
+  w.lib(() => seatKeyLib.ensure(w.code, sn('bob')));
   return w;
 }
 
@@ -115,7 +116,7 @@ test('a hook-signed post verifies; editing any signed field breaks it; a keyless
     assert.equal(trust({ ...e, text: 'ship it now' }), 'unverified');
     assert.equal(trust({ ...e, from: 'bob' }), 'unverified');
     // legacy: a seat with no key at all (a pre-key log)
-    const legacy = { id: 9, at: e.at, from: 'carol', via: 'human', kind: 'say', to: 'room', text: 'old words' };
+    const legacy = { id: eid(9), at: e.at, from: 'carol', via: 'human', kind: 'say', to: 'room', text: 'old words' };
     assert.equal(room.chatLines(legacy, { viewer: 'alice' })[0], 'carol (unverified): old words');
   });
 });
@@ -139,7 +140,7 @@ test('join pins the seat key in member_joined: the keyed room never counts an un
     assert.deepEqual(R.answers(H1).missing, ['bob']);
   });
   // bob's key is lost; a new session joining as bob makes a new one: refused, and the seat is given back
-  w.lib(() => identity.leave(w.code, 'bob'));
+  w.lib(() => identity.leave(w.code, sn('bob')));
   for (const f of ['bob.key', 'bob.pub']) fs.unlinkSync(path.join(kdir, f));
   const before = lines(w).length;
   const again = joinAs('bob');

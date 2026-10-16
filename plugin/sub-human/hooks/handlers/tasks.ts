@@ -31,6 +31,7 @@ import type { AnyHookIn, HookIn, Reply } from '../types.ts';
 import type { RawTask } from '../../lib/tasks.ts';
 import type { Task } from '../../lib/types-app.ts';
 import type { Entry } from '../../lib/room/types.ts';
+import type { RoomCode } from '../../lib/brand.ts';
 
 /** Anything that may carry task metadata (a call's input, a native task file). */
 type WithMeta = { metadata?: { _internal?: unknown; req?: unknown } | null } | null | undefined;
@@ -75,16 +76,16 @@ interface TaskResponse {
 type TasksIn = Omit<AnyHookIn, 'tool_input' | 'tool_response'> & Omit<HookIn<'TaskCompleted'>, 'hook_event_name'>
   & { tool_input?: TaskCall; tool_response?: TaskResponse };
 
-function roomClaudeRoom(input: TasksIn): string | null {
+function roomClaudeRoom(input: TasksIn): RoomCode | null {
   const me = resolveSeat(input);
   if (me) return me.role === 'claude' ? me.code : null;
   const code = envStr('SUB_HUMAN_ROOM');
-  if (code && identity.CODE_RE.test(code) && input.agent_type === 'sub-human:room-claude' && identity.roomExists(code)) return code;
+  if (code && identity.isRoomCode(code) && input.agent_type === 'sub-human:room-claude' && identity.roomExists(code)) return code;
   return null;
 }
 
-const listId = (code: string): string => cc.taskListId() || `sh-${code}`;
-const readNative = (code: string, id: string): NativeTask | null => (/^\d+$/.test(String(id)) ? readJson(cc.taskFile(listId(code), id), NATIVE_TASK, null) : null);
+const listId = (code: RoomCode): string => cc.taskListId() || `sh-${code}`;
+const readNative = (code: RoomCode, id: string): NativeTask | null => (/^\d+$/.test(String(id)) ? readJson(cc.taskFile(listId(code), id), NATIVE_TASK, null) : null);
 const internal = (t: WithMeta) => !!(t && t.metadata && t.metadata._internal);
 const RETRY = 'Nothing in that TaskUpdate was saved. Resend its other fields without status; change status only in a TaskUpdate of its own.';
 
@@ -108,7 +109,7 @@ const same = (a: TaskState | null, b: TaskState) => !!a && !!b && a.subject === 
 type RoomHandle = ReturnType<typeof room.open>;
 
 /** The call's change to the list as a `task` entry, appended to the log and to `log` (the event's one read). */
-function mirror(code: string, input: TasksIn, r: RoomHandle, log: Entry[]): boolean {
+function mirror(code: RoomCode, input: TasksIn, r: RoomHandle, log: Entry[]): boolean {
   const resp: TaskResponse = input.tool_response || {};
   if (resp.success === false || resp.error) return false; // refused: the native list did not change
   const inp: TaskCall = input.tool_input || {};
@@ -156,7 +157,7 @@ function record(r: RoomHandle, t: TaskRecord): Entry {
 }
 
 /** The room Claude's native task files, by id (read only). */
-function nativeTasks(code: string): NativeTask[] {
+function nativeTasks(code: RoomCode): NativeTask[] {
   let names: string[] = [];
   try { names = fs.readdirSync(cc.tasksDir(listId(code))); } catch { return []; }
   return names.map(n => /^(\d+)\.json$/.exec(n)).filter(m => m !== null).map(m => readNative(code, m[1])).filter(t => t !== null)
@@ -170,7 +171,7 @@ function nativeTasks(code: string): NativeTask[] {
  * deleted task's file can linger, so a gap in the other direction or a differing status proves nothing.
  * The snapshot is the file's whole state and its metadata.req, the same fields a TaskCreate entry carries.
  */
-function reconcile(code: string, r: RoomHandle, log: Entry[]): boolean {
+function reconcile(code: RoomCode, r: RoomHandle, log: Entry[]): boolean {
   const natives = nativeTasks(code);
   if (!natives.length) return false;
   const seen = new Set(log.filter(e => e.kind === 'task' && e.via === 'system' && e.task_id != null).map(e => String(e.task_id)));
@@ -187,7 +188,7 @@ function reconcile(code: string, r: RoomHandle, log: Entry[]): boolean {
   return added > 0;
 }
 
-function gateHook(code: string, input: TasksIn, r: RoomHandle): Reply | null {
+function gateHook(code: RoomCode, input: TasksIn, r: RoomHandle): Reply | null {
   const id = String(input.task_id || '');
   const native: NativeTask = readNative(code, id) || {};
   // the recent view (every non-chat entry, and the lines since the last rotation) holds every task entry; only an

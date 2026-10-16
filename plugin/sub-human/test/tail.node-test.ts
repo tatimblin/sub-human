@@ -21,6 +21,8 @@ import type { Entry, EntryInput, Via } from '../lib/room/types.ts';
 import type { Identity } from '../lib/identity.ts';
 import type * as linkMod from '../lib/remote/link-socket.ts';
 import type { TailEvent } from '../lib/types-app.ts';
+import type { RoomCode } from '../lib/brand.ts';
+import { rc, sn } from './support/brands.ts';
 
 const FAST = {
   resolveMs: 100, unseatedMs: 100, pollMs: 50, settleMs: 300, settleMaxMs: 1000, roomClaudeSettleMs: 300, roomClaudeSettleMaxMs: 1000,
@@ -91,13 +93,13 @@ function startTail({ timings = {}, lookup = () => identity.resolveByPid(process.
   return t;
 }
 
-const inRoom = <T>(code: string, f: (r: Room) => T): T => f(room.open(code));
-const say = (code: string, from: string, text: string, extra: Partial<EntryInput> = {}, via: Via = 'human') => inRoom(code, r => r.append({ kind: 'say', text, ...extra }, { via, from }));
-const sys = (code: string, kind: string, from: string, extra: Partial<EntryInput> = {}) => inRoom(code, r => r.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'system', from, system: true }));
-const cursor = (code: string, name: string) => inRoom(code, r => session.get(r.store, name, 'cursor') || 0);
-const shown = (code: string, name: string) => inRoom(code, r => session.shown(r.store, name));
+const inRoom = <T>(code: RoomCode, f: (r: Room) => T): T => f(room.open(code));
+const say = (code: RoomCode, from: string, text: string, extra: Partial<EntryInput> = {}, via: Via = 'human') => inRoom(code, r => r.append({ kind: 'say', text, ...extra }, { via, from }));
+const sys = (code: RoomCode, kind: string, from: string, extra: Partial<EntryInput> = {}) => inRoom(code, r => r.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'system', from, system: true }));
+const cursor = (code: RoomCode, name: string) => inRoom(code, r => session.get(r.store, name, 'cursor') || 0);
+const shown = (code: RoomCode, name: string) => inRoom(code, r => session.shown(r.store, name));
 const H1 = 'abcdef012345', H2 = 'bbbbbbbbbbbb';
-const prop = (code: string, from: string, hash: string, approvers: string[]) => inRoom(code, r => r.append({ kind: 'proposal', text: `${from} proposes`, hash, approvers }, { via: 'agent', from }));
+const prop = (code: RoomCode, from: string, hash: string, approvers: string[]) => inRoom(code, r => r.append({ kind: 'proposal', text: `${from} proposes`, hash, approvers }, { via: 'agent', from }));
 
 test('tail: silent before join, then the member push lane, settled into one batch', () => {
   h.freshHome();
@@ -159,7 +161,7 @@ test('tail: silent before join, then the member push lane, settled into one batc
 test('tail: a member sees every join as a chat line; with its room row running, no row-call invite', () => {
   h.freshHome();
   const { code } = h.register('alice');
-  rows.writeHolds(code, 'alice', { room: true });
+  rows.writeHolds(code, sn('alice'), { room: true });
   sys(code, 'member_joined', 'alice');                         // #1
   const t = startTail();
   t.advance(300);
@@ -200,7 +202,7 @@ test('tail: a member_joined notice says whether that row already runs (live hold
   sys(code, 'member_joined', 'bob');                                     // #1 first join: no row yet, pushed with the call
   t.advance(1500);
   assert.match(t.text(), /member_joined/);
-  rows.writeHolds(code, 'claude', { members: ['bob'] });                   // the room Claude's bob row is now held
+  rows.writeHolds(code, sn('claude'), { members: ['bob'] });                   // the room Claude's bob row is now held
   sys(code, 'member_left', 'bob');                                       // #2 pull
   sys(code, 'member_joined', 'bob');                                     // #3 rejoin: the row survived, not pushed
   say(code, 'bob', 'back', { to: 'claude' });                            // #4
@@ -316,7 +318,7 @@ test('tail: an error inside the loop is logged once, backed off and recovered; d
   sys(code, 'member_joined', 'alice');                         // #1
   let statFails = 0, viewFails = 0, lookupFails = 0;
   const flakyFs = { ...fs, statSync: ((...x: [fs.PathLike]) => { if (statFails > 0) { statFails--; throw Object.assign(new Error('EIO: injected read error'), { code: 'EIO' }); } return fs.statSync(...x); }) as typeof fs.statSync };
-  const flakyRoom = (c: string) => { const r = room.open(c); return { ...r, readView: (...x: Parameters<Room['readView']>) => { if (viewFails > 0 && !(x[0] && x[0].after === Infinity)) { viewFails--; throw new Error('injected view error'); } return r.readView(...x); } }; };
+  const flakyRoom = (c: RoomCode) => { const r = room.open(c); return { ...r, readView: (...x: Parameters<Room['readView']>) => { if (viewFails > 0 && !(x[0] && x[0].after === Infinity)) { viewFails--; throw new Error('injected view error'); } return r.readView(...x); } }; };
   const t = startTail({
     fs: flakyFs, deps: { openRoom: flakyRoom },
     lookup: () => { if (lookupFails > 0) { lookupFails--; throw new Error('injected lookup error'); } return identity.resolveByPid(process.pid); },
@@ -468,7 +470,7 @@ test('tail: on the host the health tick sweeps the seats (lib/seats.ts sweep); a
   assert.ok(swept.length >= 2 && swept.every(c => c === code), swept.join(','));
   t.stop();
   const mswept: string[] = [];
-  const remote = (c: string) => { const r = room.open(c); return { ...r, store: { ...r.store, isHost: false } }; };
+  const remote = (c: RoomCode) => { const r = room.open(c); return { ...r, store: { ...r.store, isHost: false } }; };
   const m = startTail({ deps: { openRoom: remote, linkStatus: () => ({ running: true, state: 'online' }) as LinkStatus, sweepSeats: c => mswept.push(c) } });
   m.advance(FAST.healthMs * 2 + 100);
   assert.deepEqual(mswept, []);
@@ -490,7 +492,7 @@ const startNd = startTail;
 test('tail: a member batch is chat + pull, a line to me is a wake; it says its seat', () => {
   h.freshHome();
   const { code } = h.register('alice');
-  rows.writeHolds(code, 'alice', { room: true });
+  rows.writeHolds(code, sn('alice'), { room: true });
   sys(code, 'member_joined', 'alice');                                                  // #1
   const t = startNd({ sid: 'sid-a' });
   t.advance(300);
@@ -530,7 +532,7 @@ test('tail: rows says the missing room row and the pending reminders at start an
   assert.match(r[0].text!, /^SUB-HUMAN ROWS: your room row is not running/);
   t.advance(FAST.healthMs + 100);
   assert.equal(t.of('rows').length, 1, 'unchanged: not sent again');
-  rows.writeHolds(code, 'alice', { room: true });
+  rows.writeHolds(code, sn('alice'), { room: true });
   t.advance(FAST.healthMs);
   r = t.of('rows');
   assert.equal(r.at(-1)!.text, null, 'the row runs: cleared');
@@ -542,7 +544,7 @@ test('tail: rows says the missing room row and the pending reminders at start an
 test('tail: the room\'s Claude gets its push block as one wake, the pull lane as pull; no chat', () => {
   h.freshHome();
   const { code } = h.register('claude', 'claude');
-  rows.writeHolds(code, 'claude', { members: ['bob'] });
+  rows.writeHolds(code, sn('claude'), { members: ['bob'] });
   const t = startNd({ sid: 'so', deps: { roomClaude: { watchdog: () => 'live' } } });
   t.advance(300);
   inRoom(code, r => r.append({ kind: 'task_req', text: 'please add tests', op: 'add', subject: 'tests' }, { via: 'agent', from: 'bob' })); // #1 push
@@ -570,7 +572,7 @@ test('tail: a chain break is a health event', () => {
 test('tail: a member\'s wake carries the room state without entry ids (the person sees the plugin prompt\'s row); the room\'s Claude\'s keeps them', () => {
   h.freshHome();
   const { code } = h.register('alice');
-  rows.writeHolds(code, 'alice', { room: true });
+  rows.writeHolds(code, sn('alice'), { room: true });
   sys(code, 'member_joined', 'alice');                                                  // #1
   const t = startNd({ sid: 's' });
   t.advance(300);
@@ -589,7 +591,7 @@ test('tail: a room hosted elsewhere: one OFFLINE line when the link goes down, o
   const { code } = h.register('alice');
   sys(code, 'member_joined', 'alice');
   let st: FakeLink = { running: true, state: 'online' };
-  const remote = (c: string) => { const r = room.open(c); return { ...r, store: { ...r.store, isHost: false } }; };
+  const remote = (c: RoomCode) => { const r = room.open(c); return { ...r, store: { ...r.store, isHost: false } }; };
   const t = startTail({ deps: { openRoom: remote, linkStatus: () => st as LinkStatus } });
   const health = () => t.of('health').map(x => x.text);
   t.advance(FAST.healthMs + 100);
@@ -623,7 +625,7 @@ test('tail: a room hosted elsewhere: one OFFLINE line when the link goes down, o
 test('remindersText: the one a review opens next (the newest unless named), the others listed by short hash and title', () => {
   h.freshHome();
   const { code } = h.register('alice');
-  const me = { code, name: 'alice', role: 'member' } as Identity; // the fields remindersText reads
+  const me = { code, name: sn('alice'), role: 'member' } as Identity; // the fields remindersText reads
   const p = (from: string, hash: string, title: string) => inRoom(code, r => r.append({ kind: 'proposal', text: `proposal ${hash}: ${title}`, hash, approvers: ['alice'] }, { via: 'agent', from }));
   p('bob', 'aaaaaaaaaaaa', 'Ship v2 Friday');
   p('carol', 'cccccccccccc', 'Rate limits');
@@ -640,7 +642,7 @@ test('remindersText: the one a review opens next (the newest unless named), the 
 test('remindersText: a note of mine waiting on the picked proposal points at the confirm card, not a new review', () => {
   h.freshHome();
   const { code } = h.register('alice');
-  const me = { code, name: 'alice', role: 'member' } as Identity; // the fields remindersText reads
+  const me = { code, name: sn('alice'), role: 'member' } as Identity; // the fields remindersText reads
   inRoom(code, r => r.append({ kind: 'proposal', text: 'proposal dddddddddddd: Ship v3 Monday', hash: 'dddddddddddd', approvers: ['alice'] }, { via: 'agent', from: 'bob' }));
   // a note on another proposal: the ordinary reminder
   proposal.writeConfirm(me, { hash: 'aaaaaaaaaaaa', note: 'open rate limiting', from: 'bob', title: null, at: Date.now() });
@@ -671,7 +673,7 @@ test('tail: a session with no seat and a PIN join waiting looks again every reso
   h.freshHome();
   const clock = createFake({ now: Date.now() });
   const out: string[] = [];
-  let news: { state: 'waiting' | 'linked' | 'refused'; code: string; text: string } | null = { state: 'waiting', code: 'vole-1234', text: '' };
+  let news: { state: 'waiting' | 'linked' | 'refused'; code: RoomCode; text: string } | null = { state: 'waiting', code: rc('vole-1234'), text: '' };
   let asked = 0;
   tailLib.runTail({
     clock, lookup: () => null, timings: { ...FAST, resolveMs: 100, unseatedMs: 5000 }, sid: 'sid-1', err: () => {},
@@ -682,14 +684,14 @@ test('tail: a session with no seat and a PIN join waiting looks again every reso
   clock.advance(350);
   assert.ok(asked >= 3, `waiting: asked again every resolveMs (${asked})`);
   assert.deepEqual(chat(), []);
-  news = { state: 'linked', code: 'vole-1234', text: 'the host let you in to room vole-1234: type /sub-human to join it as bob' };
+  news = { state: 'linked', code: rc('vole-1234'), text: 'the host let you in to room vole-1234: type /sub-human to join it as bob' };
   clock.advance(100);
   clock.advance(20_000);
   assert.deepEqual(chat(), [{ type: 'chat', lines: [news.text] }], 'said once');
   const before = asked;
   clock.advance(10_000);
   assert.ok(asked - before <= 2, 'no longer waiting: back to the unseated pace');
-  news = { state: 'refused', code: 'vole-1234', text: 'could not join room vole-1234: the host refused to let this machine in' };
+  news = { state: 'refused', code: rc('vole-1234'), text: 'could not join room vole-1234: the host refused to let this machine in' };
   clock.advance(5000);
   assert.equal(chat().length, 2);
   assert.deepEqual(chat()[1].lines, [news.text]);
@@ -740,7 +742,7 @@ test('tail (stage 8f item 2, live verify, verify10/remote/05f): a second join\'s
   const { code } = h.register('bob');
   sys(code, 'member_joined', 'bob');
   const text = `the host let you in to room ${code}: type /sub-human to join it as bob`;
-  let news: { state: 'waiting' | 'linked'; code: string; text: string } | null = { state: 'linked', code, text };
+  let news: { state: 'waiting' | 'linked'; code: RoomCode; text: string } | null = { state: 'linked', code, text };
   const t = startNd({ sid: 'sid-b', deps: { pendingNews: () => news } });
   t.advance(FAST.resolveMs * 3 + 100);
   // bob took the seat (no join waits), was kicked, typed a new invite line and PIN: waiting, then let in again

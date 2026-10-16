@@ -35,10 +35,11 @@
 import path from 'node:path';
 import * as config from '../config.ts';
 import { hash12 } from '../text.ts';
-import { RoomError, validate } from './validate.ts';
+import { RoomError, validate, nextEntryId } from './validate.ts';
 import * as envelope from './envelope.ts';
 import { humanKey, publicKey } from './trust.ts';
 import type { Entry, EntryInput, HostState, Payload, PlaceOpts, TrustCtx, Validated, ValidateOpts } from './types.ts';
+import type { RoomCode } from '../brand.ts';
 
 const CHAT_KINDS: ReadonlySet<string> = new Set(['say', 'status']);
 const auth = (msg: string): RoomError => new RoomError('AUTH', msg);
@@ -81,7 +82,7 @@ function fieldsOf(v: Validated, from: string): Payload {
   return p;
 }
 
-function toPayload(c: string | null | undefined, entry: EntryInput, opts: ValidateOpts): Payload {
+function toPayload(c: RoomCode | null | undefined, entry: EntryInput, opts: ValidateOpts): Payload {
   const v = validate(entry, opts);
   if (!c) throw new RoomError('NO_ROOM', 'no room bound; run /sub-human');
   const p = fieldsOf(v, opts.from);
@@ -159,7 +160,7 @@ function hostStep(h: HostState, e: Entry | null | undefined): HostState {
   return h;
 }
 
-function checkHere(h: HostState, p: Payload, machine: string | null | undefined, code: string): void {
+function checkHere(h: HostState, p: Payload, machine: string | null | undefined, code: RoomCode): void {
   if (!h.machine || h.machine === machine) return;
   if (p.kind === 'host_changed' && p.machine === machine && p.epoch !== undefined && p.epoch > h.epoch) return;
   throw new RoomError('STALE', `room ${code} moved to ${h.host}'s machine (epoch ${h.epoch}); this machine's copy takes no more lines`);
@@ -189,7 +190,7 @@ function placeAfter(p: Payload, { keys, host, machine, newest, prevLine, now }: 
   if (p.via === 'human') checkSigned(p, keys, now);
   checkPin(p, keys);
   const { sig, ...rest } = p;
-  const e: Entry = { id: (t.last || 0) + 1, at: new Date(now).toISOString(), ...rest, prev: hash12(prevLine || '') };
+  const e: Entry = { id: nextEntryId(t.last || 0), at: new Date(now).toISOString(), ...rest, prev: hash12(prevLine || '') };
   if (sig !== undefined) e.sig = sig;
   const line = JSON.stringify(e);
   const bytes = Buffer.byteLength(line, 'utf8');

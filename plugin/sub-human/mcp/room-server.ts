@@ -65,6 +65,7 @@ import { createRequire } from 'node:module';
 import type { Entry, EntryInput } from '../lib/room/types.ts';
 import type { CallMeta, CallToolParams, JsonRpcId, JsonRpcIncoming, JsonRpcOutgoing, Me, OutgoingRequest, PluginApi, PluginContext, ProgressToken, ToolArgs, ToolDefinition, ToolResult } from './types.ts';
 import { msgOf, stackOf } from '../lib/errors.ts';
+import { entryId } from '../lib/room/validate.ts';
 
 // loadPlugins() requires each plug-in by path (createRequire: require(esm) is synchronous).
 const require = createRequire(import.meta.url);
@@ -255,9 +256,10 @@ const lines = (r: ReturnType<typeof room.open>, es: readonly Entry[], none: stri
 function read(me: Me, args: ToolArgs) {
   const r = room.open(me.code);
   if (args.ids !== undefined) {
-    const ids = Array.isArray(args.ids) ? args.ids : [args.ids];
-    if (!ids.length || !ids.every(i => Number.isInteger(Number(i)) && Number(i) > 0)) return text('ids must be positive integers', true);
-    return lines(r, r.readById(ids.map(Number)), '(no such entries)');
+    const raw: unknown[] = Array.isArray(args.ids) ? args.ids : [args.ids];
+    const ids = raw.map(entryId);
+    if (!ids.length || ids.includes(null)) return text('ids must be positive integers', true);
+    return lines(r, r.readById(ids.filter(i => i !== null)), '(no such entries)');
   }
   const cursor = `mcp-${me.name}`;
   const all = r.readAfter(r.getCursor(cursor));

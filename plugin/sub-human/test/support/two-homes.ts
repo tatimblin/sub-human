@@ -43,6 +43,8 @@ import * as links from '../../lib/room/links.ts';
 import * as homeMod from '../../lib/home.ts';
 import * as linkConnect from '../../lib/remote/link-connect.ts';
 import * as admission from '../../lib/remote/admission.ts';
+import type { RoomCode, InviteSecret } from '../../lib/brand.ts';
+import { roomCode } from '../../lib/text.ts';
 
 const PROBE = path.join(import.meta.dirname, 'worker-probe.ts');
 
@@ -90,13 +92,13 @@ class Machine {
 
   join(seat: Seat, args: string): MachineRun { this.lease(seat); return this.hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: args }, seat); }
   /** A bound invite (no PIN, no card) to room code hosted here, for the second home `joiner` on this machine (pipe). */
-  inviteFor(code: string, joiner: Machine): string {
+  inviteFor(code: RoomCode, joiner: Machine): InviteSecret {
     const machine = joiner.lib(() => homeMod.machineId())!;
     return this.lib(() => invites.mintFor(store.open(code), { locator: `pipe:${this.home}`, machine, seats: [] }).invite);
   }
 
   /** This machine's link file for that invite (the join over it is then `NAME CODE`). */
-  linkInvite(code: string, invite: string): void {
+  linkInvite(code: RoomCode, invite: InviteSecret): void {
     const inv = invites.parseInvite(invite);
     if (!inv) throw new Error(`not an invite: ${invite}`);
     const transport = linkConnect.transportOf(inv.locator);
@@ -162,15 +164,16 @@ class Machine {
     try { return fn(); } finally { process.env.SUB_HUMAN_HOME = old; }
   }
 
-  log(code: string): string { try { return fs.readFileSync(path.join(this.home, 'rooms', code, 'log.jsonl'), 'utf8'); } catch { return ''; } }
+  log(code: RoomCode): string { try { return fs.readFileSync(path.join(this.home, 'rooms', code, 'log.jsonl'), 'utf8'); } catch { return ''; } }
 }
 
 /** An invite's text as the host's person reads it (lib/remote/hosting.ts inviteText): the line and the PIN told apart. */
-function shownInvite(text: string): { line: string; dest: string; code: string; word: string; pin: string } | null {
+function shownInvite(text: string): { line: string; dest: string; code: RoomCode; word: string; pin: string } | null {
   const m = /\/sub-human (join (\S+)(?: ([a-z]+-\d{4}))? ([0-9a-z]{39})((?: --(?:via|home) \S+)*))\s*$/m.exec(text);
   const p = /apart from the line[^\n]*: (\d{4})\s*$/m.exec(text);
   if (!m || !p) return null;
-  const code = m[3] || m[2].split('/').pop() || ''; // a web line: the URL's last segment is the room
+  const code = roomCode(m[3] || m[2].split('/').pop() || ''); // a web line: the URL's last segment is the room
+  if (!code) return null;
   return { line: m[1], dest: m[2], code, word: m[4], pin: p[1] };
 }
 

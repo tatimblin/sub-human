@@ -11,11 +11,12 @@ import * as ls from '../lib/room/link-state.ts';
 import * as rows from '../lib/rows.ts';
 import { agentStatusline } from '../statusline/segments.ts';
 import type { LinkState, Members } from '../lib/room/types.ts';
+import { rc, tokenOf } from './support/brands.ts';
 
-const CODE = 'vole-4321';
+const CODE = rc('vole-4321');
 function linked(t: TestContext) {
   h.freshHome(t);
-  links.set(CODE, { code: CODE, transport: { kind: 'pipe', home: '/elsewhere' }, token: 't', created_at: 'now' });
+  links.set(CODE, { code: CODE, transport: { kind: 'pipe', home: '/elsewhere' }, token: tokenOf('t'), created_at: 'now' });
   store.createRoom(CODE);
 }
 const writeState = (st: unknown) => fs.writeFileSync(ls.stateFile(CODE), JSON.stringify(st));
@@ -25,6 +26,7 @@ test('link-state: null for a room hosted here (no link); the state file wins, re
   h.freshHome(t);
   const code = h.newRoom();
   assert.equal(ls.read(code), null);
+  // @ts-expect-error: not a room code, refused at run time
   assert.equal(ls.read('not a code'), null);
   linked(t);
   setDoc({ pid: process.pid, state: 'online', since: 'x' });
@@ -96,23 +98,23 @@ test('link-state: indicator wording', () => {
 });
 
 test('room row: the link leads while offline or connecting again and closes the row while online; none for a room hosted here', t => {
-  const code = 'vole-0001';
+  const code = rc('vole-0001');
   // members by role only (rowText counts them); a link as the row reads it (no source)
   const o = (link: Partial<LinkState> | null) => ({
     entries: [], members: { alice: { role: 'member' }, bob: { role: 'member' } } as unknown as Members, taskSummary: 'tasks 1 open', link: link as LinkState | null,
   });
-  assert.equal(rows.rowText(code, code, 'alice', o(null)), '2 here · tasks 1 open');
-  assert.equal(rows.rowText(code, code, 'alice', o({ state: 'online' })), '2 here · tasks 1 open · ⇄ online');
-  assert.equal(rows.rowText(code, code, 'alice', o({ state: 'connecting', attempt: 3 })), '… connecting (3) · 2 here · tasks 1 open');
-  assert.equal(rows.rowText(code, code, 'alice', o({ state: 'offline', queued: 2 })), '✕ offline · 2 queued · 2 here · tasks 1 open');
-  assert.match(rows.rowText(code, code, 'alice', { ...o({ state: 'offline' }), color: true }), /^\x1b\[33m✕ offline\x1b\[0m/, 'offline is a warning');
+  assert.equal(rows.rowText(code, { viewer: 'alice', ...o(null) }), '2 here · tasks 1 open');
+  assert.equal(rows.rowText(code, { viewer: 'alice', ...o({ state: 'online' }) }), '2 here · tasks 1 open · ⇄ online');
+  assert.equal(rows.rowText(code, { viewer: 'alice', ...o({ state: 'connecting', attempt: 3 }) }), '… connecting (3) · 2 here · tasks 1 open');
+  assert.equal(rows.rowText(code, { viewer: 'alice', ...o({ state: 'offline', queued: 2 }) }), '✕ offline · 2 queued · 2 here · tasks 1 open');
+  assert.match(rows.rowText(code, { viewer: 'alice', ...o({ state: 'offline' }), color: true }), /^\x1b\[33m✕ offline\x1b\[0m/, 'offline is a warning');
   // item 15: stopped for good, this copy's "2 here" is stale: no count; a kick says so
-  assert.equal(rows.rowText(code, code, 'alice', o({ state: 'stopped', lastReason: 'LINK_REVOKED' })), '✕ removed by the host · tasks 1 open');
-  assert.equal(rows.rowText(code, code, 'alice', o({ state: 'stopped', lastReason: 'ROOM_CLOSED' })), '✕ stopped · tasks 1 open');
+  assert.equal(rows.rowText(code, { viewer: 'alice', ...o({ state: 'stopped', lastReason: 'LINK_REVOKED' }) }), '✕ removed by the host · tasks 1 open');
+  assert.equal(rows.rowText(code, { viewer: 'alice', ...o({ state: 'stopped', lastReason: 'ROOM_CLOSED' }) }), '✕ stopped · tasks 1 open');
   // read from the home when not given
   linked(t);
   writeState({ state: 'offline', queued: 1 });
-  assert.equal(rows.rowText(CODE, CODE, 'alice', { entries: [], members: {}, taskSummary: '' }), '✕ offline · 1 queued · 0 here');
+  assert.equal(rows.rowText(CODE, { viewer: 'alice', entries: [], members: {}, taskSummary: '' }), '✕ offline · 1 queued · 0 here');
 });
 
 test('agent statusline: the room row carries the link state', t => {

@@ -63,7 +63,7 @@ import * as machineKey from './machine-key.ts';
 import * as protocol from './protocol.ts';
 import { SECRET_WORD } from '../../mod/core/command.ts';
 import { RoomError } from '../room/validate.ts';
-import { localHm } from '../text.ts';
+import { localHm, isSeatName } from '../text.ts';
 import { INVITE_TTL_MS, LINK_JOIN_WAIT_MS } from '../config.ts';
 import { envStr } from '../env.ts';
 import * as linkSocketMod from './link-socket.ts';
@@ -79,18 +79,19 @@ import type { LinkSpec } from './types-rest.ts';
 import type { InviteRecord, Invites, ParsedInvite, ShortInvite } from './types-core.ts';
 import type { Link, RoomStore } from '../room/types.ts';
 import type { Pinned } from '../commands/types.ts';
+import type { RoomCode, SeatName, InviteSecret, Pin } from '../brand.ts';
 
 const require = createRequire(import.meta.url);
 
 /** An invite line as hostInvite (and webhost.ts hostWeb) returns it: the PIN, its ref, when it lapses, the line. */
 export interface HostedInvite {
-  pin: string;
+  pin: Pin;
   ref: string;
   expires_at: string;
   short: true;
   locator: string;
   /** the SECRET word, as the line carries it */
-  word: string;
+  word: InviteSecret;
   line: string;
   text: string;
   /** the line and the PIN for the status line, and the text without them (lib/commands/types.ts Pinned) */
@@ -116,12 +117,12 @@ const sshT = (): typeof import('./transports/ssh.ts') => require('./transports/s
 const linkSocket = () => linkSocketMod;
 const linkConnect = () => linkConnectMod;
 const links = () => linksMod;
-const roomOf = (code: string) => roomMod.open(code);
+const roomOf = (code: RoomCode) => roomMod.open(code);
 const minutes = (ms: number): number => Math.round(ms / 60_000);
 
-const hostStore = (code: string): RoomStore => roomMod.hostStore(code);
+const hostStore = (code: RoomCode): RoomStore => roomMod.hostStore(code);
 /** A line in the room from the room itself, best effort. */
-const roomLine = (code: string, text: string): void => roomMod.roomLine(roomOf(code), text);
+const roomLine = (code: RoomCode, text: string): void => roomMod.roomLine(roomOf(code), text);
 
 /** The stable serve shim (an ssh login runs it); the home path it carries. */
 function shimReady(): { shim: typeof import('./shim.ts'); h: string } {
@@ -180,7 +181,7 @@ function reachHints(dest: string, defaulted: boolean): string[] {
  * The invite's text and its pinned form: the line and the PIN on one status line (drawn under the prompt, never saved
  * in the conversation's transcript), and the text that says where they are instead.
  */
-function invitePinned({ code, how, line, pin, ref, expires_at, extra = [] }: { code: string; how: string; line: string; pin: string; ref: string; expires_at: string; extra?: string[] }): Pinned {
+function invitePinned({ code, how, line, pin, ref, expires_at, extra = [] }: { code: RoomCode; how: string; line: string; pin: string; ref: string; expires_at: string; extra?: string[] }): Pinned {
   const at = localHm(expires_at);
   const word = line.split(' ').find(w => SECRET_WORD.test(w));
   return {
@@ -195,7 +196,7 @@ function invitePinned({ code, how, line, pin, ref, expires_at, extra = [] }: { c
   };
 }
 
-function inviteText({ code, how, line, pin, ref, extra = [], pinned, cut = false }: { code: string; how: string; line: string; pin: string; ref: string; extra?: string[]; pinned?: string; cut?: boolean }): string {
+function inviteText({ code, how, line, pin, ref, extra = [], pinned, cut = false }: { code: RoomCode; how: string; line: string; pin: string; ref: string; extra?: string[]; pinned?: string; cut?: boolean }): string {
   const send = pinned && cut
     ? [
       `invite to room ${code} for one machine, ${how}. It works once, for ${minutes(INVITE_TTL_MS)} minutes. The whole line is wider than this terminal, so only its PIN and SECRET are pinned under the prompt (until ${pinned}; Claude Code saves neither in this conversation). Send them this line with SECRET replaced by the word under the prompt:`,
@@ -222,9 +223,9 @@ function inviteText({ code, how, line, pin, ref, extra = [], pinned, cut = false
 }
 
 /** An invite line's SECRET word for this home's machine key (ssh, a pipe). */
-const machineWord = (secret: Buffer): string => inviteSecret.encode(secret, inviteSecret.tagOf(secret, 'machine', machineKey.publicKey()));
+const machineWord = (secret: Buffer): InviteSecret => inviteSecret.encode(secret, inviteSecret.tagOf(secret, 'machine', machineKey.publicKey()));
 
-function hostInvite(code: string, { ssh = true, via, pipe = false, by = null, now = Date.now() }: {
+function hostInvite(code: RoomCode, { ssh = true, via, pipe = false, by = null, now = Date.now() }: {
   ssh?: true | string; via?: string; pipe?: boolean; by?: string | null; now?: number;
 } = {}): HostedInvite {
   const store = hostStore(code);
@@ -280,7 +281,7 @@ function linkIdOf(store: RoomStore, target: string): string {
 }
 
 /** Burn one invite (a leaked one) by its ref; one reserved for or used by a link ends that link. */
-function revokeInvite(code: string, store: RoomStore, ref: string, invite: InviteRecord, opts: { file?: string }): Ended {
+function revokeInvite(code: RoomCode, store: RoomStore, ref: string, invite: InviteRecord, opts: { file?: string }): Ended {
   if (invite.link) {
     const r = endLink(code, store, invite.link, opts);
     return { ...r, ref, text: `that invite ${invite.used_at ? 'was used already' : 'was being used'}; ${r.text}` };
@@ -301,7 +302,7 @@ function openInvites(store: RoomStore, now = Date.now()): { ref: string; expires
     .map(([k, i]) => ({ ref: k.slice(0, 12), expires_at: i.expires_at }));
 }
 
-function cancelInvite(code: string, ref?: string | null, { file = sshkeys.authorizedKeysFile(), now = Date.now() }: { file?: string; now?: number } = {}): Ended | { refs: string[]; text: string } {
+function cancelInvite(code: RoomCode, ref?: string | null, { file = sshkeys.authorizedKeysFile(), now = Date.now() }: { file?: string; now?: number } = {}): Ended | { refs: string[]; text: string } {
   const store = hostStore(code);
   if (ref === undefined || ref === null || ref === '') {
     const open = openInvites(store, now);
@@ -315,7 +316,7 @@ function cancelInvite(code: string, ref?: string | null, { file = sshkeys.author
 }
 
 /** End link id of the room: its token, an older link's key line, its seats, its serve processes; a room line. */
-function endLink(code: string, store: RoomStore, id: string, { file = sshkeys.authorizedKeysFile() }: { file?: string } = {}): Ended {
+function endLink(code: RoomCode, store: RoomStore, id: string, { file = sshkeys.authorizedKeysFile() }: { file?: string } = {}): Ended {
   const r = hostLinks.revokeLink(store, id) || { link: null, invites: 0 };
   // a link an admit let in before protocol 3 has a forced-command line for it (where its admission says, else the
   // default file): it goes with the link. Nothing adds such a line any more
@@ -325,7 +326,7 @@ function endLink(code: string, store: RoomStore, id: string, { file = sshkeys.au
   spawnSync('pkill', ['-f', '--', `--stdio ${code} --link ${id}`], { stdio: 'ignore' });
   const seats = r.link ? r.link.seats || [] : [];
   const seatsLib = seatsMod;
-  for (const name of seats) { try { seatsLib.exit(code, name, 'removed by the host'); } catch { /* gone already */ } }
+  for (const name of seats) { try { if (isSeatName(name)) seatsLib.exit(code, name, 'removed by the host'); } catch { /* gone already */ } }
   const login = !!(r.link && r.link.login); // a link made over this account's own ssh login (no key line of its own)
   roomLine(code, `the host ended ${seats.length ? `${seats.join(', ')}'s connection` : 'a connection'} to the room`);
   const text = `${seats.length ? `${seats.join(', ')} ${seats.length === 1 ? 'is' : 'are'} out of room ${code}` : `ended a connection to room ${code}`}: it no longer reaches the room`
@@ -333,7 +334,7 @@ function endLink(code: string, store: RoomStore, id: string, { file = sshkeys.au
   return { id, seats, keys, text };
 }
 
-function kick(code: string, name: string, opts: { file?: string } = {}): Ended {
+function kick(code: RoomCode, name: string, opts: { file?: string } = {}): Ended {
   const store = hostStore(code);
   return endLink(code, store, linkIdOf(store, String(name).trim()), opts);
 }
@@ -363,7 +364,7 @@ function linkTransport({ inv, cur = null }: { inv: ParsedInvite; cur?: Link | nu
   return transport;
 }
 
-function joinInvite({ inv, invite, pin }: { inv: ParsedInvite; invite: string; pin?: string }): { code: string } {
+function joinInvite({ inv, invite, pin }: { inv: ParsedInvite; invite: InviteSecret; pin?: Pin }): { code: RoomCode } {
   const transport = linkTransport({ inv, cur: links().get(inv.code) });
   if (!transport) throw new RoomError('INVALID', `this invite reaches its room through "${inv.locator.split(':')[0]}", which this machine cannot use`);
   links().set(inv.code, { code: inv.code, transport, invite, pin, created_at: new Date().toISOString() });
@@ -373,7 +374,7 @@ function joinInvite({ inv, invite, pin }: { inv: ParsedInvite; invite: string; p
 /** The PIN steps the host answered, from the link file and the daemon's stop (PIN_NEEDED, PIN_WRONG, PIN_THROTTLED). */
 const PIN_REASONS: ReadonlySet<string> = new Set(['PIN_NEEDED', 'PIN_WRONG', 'PIN_THROTTLED']);
 
-function outcome(code: string, { waitMs = LINK_JOIN_WAIT_MS }: { waitMs?: number } = {}): Outcome {
+function outcome(code: RoomCode, { waitMs = LINK_JOIN_WAIT_MS }: { waitMs?: number } = {}): Outcome {
   const { sleepSync } = ioMod;
   const l = linkSocket();
   for (const until = Date.now() + waitMs; ; sleepSync(50)) {
@@ -388,7 +389,7 @@ function outcome(code: string, { waitMs = LINK_JOIN_WAIT_MS }: { waitMs?: number
   }
 }
 
-function joinText(code: string, name: string, o: Outcome, { tells = false }: { tells?: boolean } = {}): string {
+function joinText(code: RoomCode, name: SeatName, o: Outcome, { tells = false }: { tells?: boolean } = {}): string {
   const lf: Partial<Link> = links().get(code) || {};
   if (o.state === 'linked') {
     // the card may have let this machine in under another name (its own sits in the room from another machine)
@@ -419,7 +420,7 @@ function joinText(code: string, name: string, o: Outcome, { tells = false }: { t
  * (a web one with a fresh key of the link's own), the SECRET word and join_as. The daemon dials (lib/remote/link-
  * connect.ts connectLink): the host key the line names first, then the SECRET; the host asks for the PIN.
  */
-function joinLine({ code, transport, word, name, sid }: { code: string; transport: LinkSpec; word: string; name: string; sid?: string | null }): { code: string } {
+function joinLine({ code, transport, word, name, sid }: { code: RoomCode; transport: LinkSpec; word: InviteSecret; name: string; sid?: string | null }): { code: RoomCode } {
   const t: LinkSpec = transport.kind === 'wss' || transport.kind === 'ws'
     ? { ...transport, clientKey: linkConnect().linkKey(code, { fresh: true }).pub.toString('base64url') } : transport;
   links().set(code, { code, transport: t, invite: word, join_as: name, ...(sid ? { join_sid: sid } : {}), created_at: new Date().toISOString() });
@@ -427,7 +428,7 @@ function joinLine({ code, transport, word, name, sid }: { code: string; transpor
 }
 
 /** The PIN, typed when the host asked for it: into the link file, until the host answered it. */
-function givePin(code: string, pin: string): void {
+function givePin(code: RoomCode, pin: Pin): void {
   const l = links().get(code);
   if (!l || typeof l.invite !== 'string') throw new RoomError('INVALID', `this machine has no invite to room ${code} waiting for a PIN`);
   links().set(code, { ...l, pin });

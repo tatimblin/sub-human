@@ -64,11 +64,11 @@ function agentStatusline(input: StatuslineIn | null = {}, { env = process.env } 
       }
       let content: string;
       if (rec.kind === 'room') {
-        content = rows.rowLine(rec.name, left ? 'you left · /sub-human joins again' : dead(t) ? '⚠ room row stopped' : rows.rowText(me.code, me.code, me.name, opts));
+        content = rows.rowLine(rec.name, left ? 'you left · /sub-human joins again' : dead(t) ? '⚠ room row stopped' : rows.rowText(me.code, { viewer: me.name, ...opts }));
       } else if (dead(t) && members[rec.name] && !members[rec.name]!.left_at) {
         content = rows.rowLine(rec.name, rec.parent ? '(reconnecting)' : '⚠ row stopped');
       } else {
-        content = rows.rowLine(rec.name, rows.rowText(me.code, rec.name, me.name, opts));
+        content = rows.rowLine(rec.name, identity.isSeatName(rec.name) ? rows.rowText(me.code, { member: rec.name, viewer: me.name, ...opts }) : 'not in the room');
       }
       out.push(JSON.stringify({ id: t.id, content }));
     }

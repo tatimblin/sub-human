@@ -38,6 +38,7 @@ import { open } from './room/store.ts';
 import * as room from './room.ts';
 import type { Task, TaskReq } from './types-app.ts';
 import type { Entry, Members, Trust } from './room/types.ts';
+import type { RoomCode, SeatName } from './brand.ts';
 
 /** A task as it arrives to be cleaned (the mirror, a fold, hooks/handlers/tasks.ts's native task): loosely shaped. */
 interface RawTask {
@@ -69,9 +70,9 @@ const SUMMARY_ITEMS = 3;
 const OPEN = new Set(['pending', 'in_progress']);
 
 /** The mirror is the room document `tasks` (lib/room/store.ts kv; tasks.json on disk). */
-const kvOf = (code: string) => room.open(code).store.kv;
+const kvOf = (code: RoomCode) => room.open(code).store.kv;
 /** Run fn under the mirror's lock (hooks/handlers/tasks.ts: read the log, append, refold, as one step). */
-const withList = <T>(code: string, fn: () => T): T => kvOf(code).lock('tasks', fn);
+const withList = <T>(code: RoomCode, fn: () => T): T => kvOf(code).lock('tasks', fn);
 /** Claude Code's task store for a list id (read only; the plugin never writes there). */
 
 const idNum = (id: unknown) => Number(id);
@@ -84,7 +85,7 @@ function isRoomTask(t: RawTask | null | undefined, code?: string): boolean {
   return code ? s === `room ${code} open` : /^room \S+ open$/.test(s);
 }
 
-function list(code: string): Task[] {
+function list(code: RoomCode): Task[] {
   let v: unknown = [];
   try { v = kvOf(code).get('tasks', []); } catch { v = []; }
   return Array.isArray(v) ? v.filter(t => t && t.id != null).sort(byId) : [];
@@ -95,7 +96,7 @@ const clean = (tasks: (RawTask | null | undefined)[], code?: string): Task[] => 
   owner: t.owner || null, blockedBy: Array.isArray(t.blockedBy) ? t.blockedBy.map(String) : [],
 })).sort(byId);
 
-function writeList(code: string, tasks: (RawTask | null | undefined)[]): Task[] {
+function writeList(code: RoomCode, tasks: (RawTask | null | undefined)[]): Task[] {
   const c = clean(tasks, code);
   kvOf(code).set('tasks', c);
   return c;
@@ -113,7 +114,7 @@ function fold(entries: readonly (Entry | null | undefined)[] | null | undefined)
   return clean([...m.values()]);
 }
 
-const refold = (code: string, entries: readonly Entry[]): Task[] => writeList(code, fold(entries));
+const refold = (code: RoomCode, entries: readonly Entry[]): Task[] => writeList(code, fold(entries));
 
 /** metadata.req as a log id (a positive integer, or its digits), else null. */
 function metaReq(md: unknown): number | null {
@@ -122,9 +123,9 @@ function metaReq(md: unknown): number | null {
 }
 
 const isOpen = (t: Task) => OPEN.has(t.status || 'pending');
-const mine = (code: string, name: string): Task[] => list(code).filter(t => isOpen(t) && t.owner === name);
+const mine = (code: RoomCode, name: SeatName): Task[] => list(code).filter(t => isOpen(t) && t.owner === name);
 
-function summary(code: string, viewer: string | null | undefined): string {
+function summary(code: RoomCode, viewer: string | null | undefined): string {
   const all = list(code).filter(t => !isRoomTask(t, code));
   if (!all.length) return '';
   const open = all.filter(isOpen);
@@ -194,7 +195,7 @@ function reqOf(e: Partial<Entry> | null | undefined): ReqFields {
 }
 
 // ---------- the TaskCompleted gate ----------
-function isClosing(code: string): boolean {
+function isClosing(code: RoomCode): boolean {
   // members.json, plus the older room-wide closing marks (a top-level `closing`, `_room`)
   let m: Members & { closing?: unknown } = {};
   try { m = identity.readMembers(code) || {}; } catch { return false; }
@@ -209,7 +210,7 @@ const cites = (e: Entry, reqId: number) => (e.refs || []).includes(reqId) || new
  * [human] words citing that request. task.req (the native task's metadata.req) is tried first when it names
  * such a request. The room-open task completes only while the room is closing.
  */
-function gate(code: string, task: (RawTask & { req?: unknown }) | null | undefined, log: readonly Entry[] = [], { closing, trust }: { closing?: boolean; trust?: Trust } = {}): GateResult {
+function gate(code: RoomCode, task: (RawTask & { req?: unknown }) | null | undefined, log: readonly Entry[] = [], { closing, trust }: { closing?: boolean; trust?: Trust } = {}): GateResult {
   const id = String(task && task.id);
   if (isRoomTask(task, code)) {
     const c = closing === undefined ? isClosing(code) : closing;

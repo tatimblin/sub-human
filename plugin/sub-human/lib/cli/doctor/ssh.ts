@@ -26,8 +26,7 @@ function checkShim({ needed }: { needed: boolean }): Check {
   const shim = lib('remote/shim.ts');
   const file = shim.shimPath(), ptr = shim.pointerPath();
   if (!fs.existsSync(file) && !fs.existsSync(ptr)) {
-    return check('shim', needed ? 'fail' : 'info', 'serve shim', `${tilde(file)} is not there${needed ? ', and authorized_keys names it' : ' (only a host reached over SSH needs it)'}`,
-      needed ? 'start Claude Code once on this machine (it writes it), or run ' + cli('doctor --fix') + ' in a terminal' : undefined);
+    return check({ id: 'shim', status: needed ? 'fail' : 'info', title: 'serve shim', detail: `${tilde(file)} is not there${needed ? ', and authorized_keys names it' : ' (only a host reached over SSH needs it)'}`, fix: needed ? 'start Claude Code once on this machine (it writes it), or run ' + cli('doctor --fix') + ' in a terminal' : undefined });
   }
   const problems: string[] = [];
   if (!isExec(file)) problems.push(`${tilde(file)} is missing or not executable`);
@@ -40,11 +39,9 @@ function checkShim({ needed }: { needed: boolean }): Check {
   else if (!isExec(node)) problems.push(`the recorded node ${tilde(node)} is gone (the shim falls back to node on PATH)`);
   const stale = root && path.resolve(root) !== path.resolve(shim.pluginRoot());
   if (!problems.length) {
-    return check('shim', stale ? 'warn' : 'pass', 'serve shim',
-      stale ? `runs ${tilde(root)} (sub-human ${shim.versionOf(root) || '?'}), not this install (${tilde(shim.pluginRoot())}, sub-human ${shim.versionOf(shim.pluginRoot()) || '?'})` : `runs ${tilde(root)} with ${tilde(node)}`,
-      stale ? `to serve from this install, run ${cli('doctor --fix')} in a terminal (it points the shim here); a newer install takes it by itself at its next join` : undefined);
+    return check({ id: 'shim', status: stale ? 'warn' : 'pass', title: 'serve shim', detail: stale ? `runs ${tilde(root)} (sub-human ${shim.versionOf(root) || '?'}), not this install (${tilde(shim.pluginRoot())}, sub-human ${shim.versionOf(shim.pluginRoot()) || '?'})` : `runs ${tilde(root)} with ${tilde(node)}`, fix: stale ? `to serve from this install, run ${cli('doctor --fix')} in a terminal (it points the shim here); a newer install takes it by itself at its next join` : undefined });
   }
-  return check('shim', 'fail', 'serve shim', problems.join('; '), 'start Claude Code once on this machine (it rewrites it), or run ' + cli('doctor --fix') + ' in a terminal');
+  return check({ id: 'shim', status: 'fail', title: 'serve shim', detail: problems.join('; '), fix: 'start Claude Code once on this machine (it rewrites it), or run ' + cli('doctor --fix') + ' in a terminal' });
 }
 
 // command="SUB_HUMAN_HOME=<home> <...> --stdio CODE --link ID",restrict <type> <key> sub-human:CODE:ID
@@ -79,23 +76,19 @@ function scanAuthorizedKeys(file: string): AuthorizedKeysScan {
 
 function checkAuthorizedKeys(scan: AuthorizedKeysScan): Check {
   const h = path.resolve(lib('home.ts').home());
-  if (!scan.exists) return check('authorized_keys', 'info', 'authorized_keys', `${tilde(scan.file)}: none (this machine hosts no room over SSH)`);
+  if (!scan.exists) return check({ id: 'authorized_keys', status: 'info', title: 'authorized_keys', detail: `${tilde(scan.file)}: none (this machine hosts no room over SSH)` });
   const doors = scan.doors || [];
   const others = [...new Set(scan.otherDoors || [])];
   const otherNote = others.length ? ` (and ${others.length === 1 ? 'a line' : `${scan.otherDoors!.length} lines`} of another sub-human folder's, room ${others.join(', ')}: not this home's, not touched)` : '';
   if (doors.length) {
-    return check('authorized_keys', 'warn', 'authorized_keys',
-      `${doors.length} enrollment door line(s) an older sub-human's ssh invite left (room ${[...new Set(doors)].join(', ')}): they only tell an old joiner to update${otherNote}`,
-      `run ${cli('doctor --fix')} in a terminal (it removes them), or delete the lines ending sub-human-enroll:ROOM from ${tilde(scan.file)}`);
+    return check({ id: 'authorized_keys', status: 'warn', title: 'authorized_keys', detail: `${doors.length} enrollment door line(s) an older sub-human's ssh invite left (room ${[...new Set(doors)].join(', ')}): they only tell an old joiner to update${otherNote}`, fix: `run ${cli('doctor --fix')} in a terminal (it removes them), or delete the lines ending sub-human-enroll:ROOM from ${tilde(scan.file)}` });
   }
-  if (!scan.lines.length) return check('authorized_keys', 'info', 'authorized_keys', `${tilde(scan.file)}: no sub-human lines of this home${otherNote}`);
+  if (!scan.lines.length) return check({ id: 'authorized_keys', status: 'info', title: 'authorized_keys', detail: `${tilde(scan.file)}: no sub-human lines of this home${otherNote}` });
   const old = scan.lines.filter(l => !l.ok);
-  if (!old.length) return check('authorized_keys', 'pass', 'authorized_keys', `${scan.lines.length} sub-human line(s) an older sub-human wrote for its links, all through the shim (each goes when its link is kicked)`);
+  if (!old.length) return check({ id: 'authorized_keys', status: 'pass', title: 'authorized_keys', detail: `${scan.lines.length} sub-human line(s) an older sub-human wrote for its links, all through the shim (each goes when its link is kicked)` });
   const fixes = old.map(l => (l.parse === false ? `edit the unreadable sub-human line by hand in ${tilde(scan.file)}`
     : `remove the sub-human:${l.code}:${l.id} line from ${tilde(scan.file)}${l.home === h ? '' : ` (home ${tilde(l.home)})`} and invite that machine again (/sub-human invite)`));
-  return check('authorized_keys', 'warn', 'authorized_keys',
-    `${old.length} of ${scan.lines.length} sub-human line(s) bypass the shim (written before 0.5): they bake in a node and plugin path that break on an update`,
-    [...new Set(fixes)].join('\n'));
+  return check({ id: 'authorized_keys', status: 'warn', title: 'authorized_keys', detail: `${old.length} of ${scan.lines.length} sub-human line(s) bypass the shim (written before 0.5): they bake in a node and plugin path that break on an update`, fix: [...new Set(fixes)].join('\n') });
 }
 
 function sshVersion(): string | null {
@@ -105,8 +98,8 @@ function sshVersion(): string | null {
 }
 
 function checkSsh({ needed, version }: { needed: boolean; version: string | null }): Check {
-  if (version) return check('ssh', 'pass', 'ssh', version);
-  return check('ssh', needed ? 'fail' : 'info', 'ssh', 'no ssh on PATH', needed ? 'install OpenSSH: joining over ssh needs it' : undefined);
+  if (version) return check({ id: 'ssh', status: 'pass', title: 'ssh', detail: version });
+  return check({ id: 'ssh', status: needed ? 'fail' : 'info', title: 'ssh', detail: 'no ssh on PATH', fix: needed ? 'install OpenSSH: joining over ssh needs it' : undefined });
 }
 
 

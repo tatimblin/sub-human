@@ -43,6 +43,7 @@ import * as config from '../config.ts';
 import { createRequire } from 'node:module';
 import type { Reason } from '../reasons.ts';
 import type { DecodedFrame, ErrorFrame, FrameId, LinkDoc, ReplyFrame, WireCode } from './types-core.ts';
+import type { RoomCode } from '../brand.ts';
 
 /** The daemon's document `link`, and whether its pid lives. */
 type LinkStatus = (LinkDoc & { running: true; pid: number }) | (LinkDoc & { running: false });
@@ -181,7 +182,7 @@ function serveHook(sock: net.Socket, relay: Relay): void {
 }
 
 // ---------- control ----------
-function status(code: string): LinkStatus {
+function status(code: RoomCode): LinkStatus {
   const st: LinkDoc = storeMod().open(code).kv.get('link') || {};
   return { ...st, running: isAlive(st.pid) } as LinkStatus; // running: its pid (a number) lives
 }
@@ -191,7 +192,7 @@ function stopReason(st: LinkDoc | null | undefined): { code: WireCode; reason: s
   return { code: protocol.isWireCode(st.code) ? st.code : st.state === 'fork' ? 'FORK' : 'OFFLINE', reason: st.reason, why: isReason(st.why) ? st.why : null };
 }
 
-function start(code: string): boolean {
+function start(code: RoomCode): boolean {
   if (status(code).running) return true;
   const fd = fs.openSync(linksMod().logFile(code), 'a', 0o600);
   try { spawn(process.execPath, [BIN, 'link', code], { detached: true, stdio: ['ignore', fd, fd] }).unref(); } finally { fs.closeSync(fd); }

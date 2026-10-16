@@ -17,6 +17,8 @@ import * as gc from '../lib/gc.ts';
 import * as config from '../lib/config.ts';
 import { keyDir } from '../lib/room/keys.ts';
 import * as seatKey from '../hooks/seat-key.ts';
+import type { RoomCode } from '../lib/brand.ts';
+import { sn } from './support/brands.ts';
 
 const DAY = 24 * 60 * 60_000;
 const SID = (n: number) => `aaaaaaaa-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -33,16 +35,16 @@ function age(p: string, days: number): void {
   walk(p);
 }
 /** A room whose one person joined (pid: a live one, or one gone) and, unless live, left. */
-async function roomWith({ live = false, left = true }: { live?: boolean; left?: boolean } = {}): Promise<string> {
+async function roomWith({ live = false, left = true }: { live?: boolean; left?: boolean } = {}): Promise<RoomCode> {
   const code = h.newRoom();
   const pid = live ? process.pid : await h.deadPid();
-  const r = identity.join({ code, name: 'alice', role: 'member', pid, session_id: null, cwd: '/' });
+  const r = identity.join({ code, name: sn('alice'), role: 'member', pid, session_id: null, cwd: '/' });
   assert.ok(r.ok, r.error);
-  seatKey.ensure(code, 'alice');
-  if (left && !live) assert.ok(identity.leave(code, 'alice', { reason: 'done' }));
+  seatKey.ensure(code, sn('alice'));
+  if (left && !live) assert.ok(identity.leave(code, sn('alice'), { reason: 'done' }));
   return code;
 }
-const dirOf = (code: string) => store.open(code).dir!;
+const dirOf = (code: RoomCode) => store.open(code).dir!;
 const indexed = () => JSON.parse(fs.readFileSync(path.join(identity.home(), 'open-rooms.json'), 'utf8')).rooms as Record<string, string>;
 
 test('openRooms: judges only the indexed rooms and drops the ones closed for good; a join puts a room back', async t => {
@@ -58,7 +60,7 @@ test('openRooms: judges only the indexed rooms and drops the ones closed for goo
   // a room outside the index is never judged, even with a live seat written around the join
   const sleeper = h.spawnSleeper(60);
   t.after(() => sleeper.kill());
-  const r = identity.join({ code: closed[0], name: 'bob', role: 'member', pid: sleeper.pid!, session_id: null, cwd: '/' });
+  const r = identity.join({ code: closed[0], name: sn('bob'), role: 'member', pid: sleeper.pid!, session_id: null, cwd: '/' });
   assert.ok(r.ok);
   assert.ok(indexed()[closed[0]], 'a join puts it back');
   assert.deepEqual(identity.openRooms().sort(), [open, closed[0]].sort());
@@ -143,8 +145,8 @@ test('gc: a session index of an ended session goes after its TTL; a live one sta
   h.freshHome(t);
   const code = h.newRoom();
   const dead = await h.deadPid();
-  assert.ok(identity.join({ code, name: 'alice', role: 'member', pid: dead, session_id: SID(1), cwd: '/' }).ok);
-  assert.ok(identity.join({ code, name: 'bob', role: 'member', pid: process.pid, session_id: SID(2), cwd: '/' }).ok);
+  assert.ok(identity.join({ code, name: sn('alice'), role: 'member', pid: dead, session_id: SID(1), cwd: '/' }).ok);
+  assert.ok(identity.join({ code, name: sn('bob'), role: 'member', pid: process.pid, session_id: SID(2), cwd: '/' }).ok);
   const sessions = path.join(identity.home(), 'sessions');
   age(sessions, 40);
   const n = identity.pruneSessionIndexes();
@@ -157,7 +159,7 @@ test('gc: a session index of an ended session goes after its TTL; a live one sta
 test('gc: a room\'s row map of an ended session goes after ROWS_TTL_MS; a live session\'s and a recent one stay', async t => {
   h.freshHome(t);
   const code = h.newRoom();
-  assert.ok(identity.join({ code, name: 'alice', role: 'member', pid: process.pid, session_id: SID(3), cwd: '/' }).ok);
+  assert.ok(identity.join({ code, name: sn('alice'), role: 'member', pid: process.pid, session_id: SID(3), cwd: '/' }).ok);
   const kv = store.open(code).kv;
   const map = (days: number) => ({ byAgent: { a1: { kind: 'room', name: code, parent: null, at: new Date(Date.now() - days * DAY).toISOString() } } });
   kv.set(`rows/${SID(3)}`, map(30));  // alice's live session: stays

@@ -58,6 +58,7 @@ import { LINK_CALL_MS } from '../config.ts';
 import type { DecodedFrame, HelloResult, Op, OpResults, ProtoRange, StreamEvent } from './types-core.ts';
 import type { Entry } from '../room/types.ts';
 import type { Transport } from './types-rest.ts';
+import type { MachineId, LinkToken, InviteSecret, Pin } from '../brand.ts';
 
 /** The server's caps, from its hello. */
 interface ServerCaps {
@@ -79,12 +80,12 @@ type HelloReply = Pick<HelloResult, 'v' | 'link' | 'room'> & Partial<Pick<HelloR
 
 export interface ConnectOpts {
   /** this machine's id (home.machineId; null when it could not be read: the host refuses the hello) */
-  machine: string | null;
+  machine: MachineId | null;
   /** this home's machine key's proof (lib/remote/machine-key.ts): the host derives the machine's id from it */
   machineKey?: { key: string; ts: number; sig: string };
-  token?: string;
-  invite?: string;
-  pin?: string;
+  token?: LinkToken;
+  invite?: InviteSecret;
+  pin?: Pin;
   /** protocol 3: the seat an invite line's PIN asks for, and this machine's short name */
   as?: { name: string; label: string };
   /** protocol 3: signs this machine's key over the host's challenge (machine-key.ts proofFor); with an invite the
@@ -110,7 +111,7 @@ class Client {
   closed: boolean;
   pending: Map<number, Pending>;
   streams: Map<number, (e: StreamEvent) => void>;
-  token: string | null;
+  token: LinkToken | null;
   link: string | null;
   room: string | null;
   serverCaps: ServerCaps | null;
@@ -217,7 +218,7 @@ async function connect(transport: Transport | Promise<Transport>, opts: ConnectO
   const { machine, machineKey, signMachine, token, invite, pin, as, checkHost, login, epoch, caps = {}, deadlineMs = LINK_CALL_MS, helloMs = deadlineMs } = opts;
   const proto: ProtoRange = opts.proto || protocol.PROTO, version: string = opts.version || protocol.PLUGIN_VERSION;
   const c = new Client(await transport, { deadlineMs });
-  const cred: { invite?: string; pin?: string; as?: { name: string; label: string }; token?: string; login?: boolean } = invite !== undefined
+  const cred: { invite?: InviteSecret; pin?: Pin; as?: { name: string; label: string }; token?: LinkToken; login?: boolean } = invite !== undefined
     ? { invite, ...(pin !== undefined ? { pin } : {}), ...(as ? { as } : {}) } : token !== undefined ? { token } : login === true ? { login: true } : {};
   // the version this hello needs at least: an invite line (checkHost) needs 3, an sh2 invite's PIN 2
   const need = Math.max(proto.min, checkHost ? 3 : pin !== undefined ? 2 : 1);
