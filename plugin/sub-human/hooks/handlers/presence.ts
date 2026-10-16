@@ -24,7 +24,7 @@ const BY_TYPE: Record<string, string | undefined> = { idle_prompt: 'idle', permi
 
 /** Best-effort presence write for the resolved member. */
 function write(me: Identity | null, state: string, detail?: string) {
-  try { if (me) identity.writePresence(me.code, me.name, state, detail); } catch { /* best-effort */ }
+  try { if (me) identity.writePresence(me.code, me.name, { state, detail }); } catch { /* best-effort */ }
 }
 
 export function handle(input: PresenceIn) {

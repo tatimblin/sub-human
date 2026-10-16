@@ -199,20 +199,20 @@ test('identity: presence is a per-member file written with the lease (members.be
   h.freshHome();
   const code = h.newRoom();
   const kv = store.open(code).kv;
-  assert.equal(identity.writePresence(code, sn('alice'), 'idle'), false, 'no seat, no presence');
+  assert.equal(identity.writePresence(code, sn('alice'), { state: 'idle' }), false, 'no seat, no presence');
   const sleepers = ['bob', 'carol'].map(name => { const s = h.spawnSleeper(); identity.join({ code, name: sn(name), role: 'member', pid: s.pid }); return s; });
   identity.join({ code, name: sn('alice'), role: 'member', pid: process.pid });
-  assert.equal(identity.writePresence(code, sn('alice'), 'idle'), true);
-  assert.equal(identity.writePresence(code, sn('bob'), 'error', 'rate_limit'), true);
-  assert.equal(identity.writePresence(code, sn('bob'), 'bogus'), false);
+  assert.equal(identity.writePresence(code, sn('alice'), { state: 'idle' }), true);
+  assert.equal(identity.writePresence(code, sn('bob'), { state: 'error', detail: 'rate_limit' }), true);
+  assert.equal(identity.writePresence(code, sn('bob'), { state: 'bogus' }), false);
   // @ts-expect-error: not a seat name, refused at run time
-  assert.equal(identity.writePresence(code, '../x', 'idle'), false);
+  assert.equal(identity.writePresence(code, '../x', { state: 'idle' }), false);
   assert.deepEqual(kv.list('presence/').sort(), ['presence/alice', 'presence/bob']);
   assert.equal(kv.get('presence/alice').state, 'idle');
   assert.deepEqual([kv.get('presence/bob').state, kv.get('presence/bob').detail], ['error', 'rate_limit']);
   assert.ok(Date.parse(kv.get('presence/alice').at));
   assert.ok(fs.existsSync(path.join(identity.roomDir(code), 'presence', 'alice.json')));
-  for (const st of identity.PRESENCE_STATES) assert.equal(identity.writePresence(code, sn('carol'), st), true, st);
+  for (const st of identity.PRESENCE_STATES) assert.equal(identity.writePresence(code, sn('carol'), { state: st }), true, st);
   for (const sl of sleepers) sl.kill();
 });
 

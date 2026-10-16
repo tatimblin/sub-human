@@ -606,7 +606,7 @@ function startSession(me: Identity, ctx: Ctx): Session {
     }
     for (const q of adm.pending(s.code, { now: clock.now() })) {
       if ((q.told || []).includes(me.name) || !adm.targets(s.code, q).includes(me.name)) continue;
-      adm.markTold(s.code, q.ref, me.name);
+      adm.markTold(s.code, { ref: q.ref, name: me.name });
       // one wake (stage 8e G): its line for the person is drawn as the prompt (asUser, no frame), the (for Claude) line
       // rides as context, as every member wake (mod/core/deliver.ts wakeParts)
       emit([

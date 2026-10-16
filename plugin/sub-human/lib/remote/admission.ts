@@ -35,7 +35,7 @@
  *                                              seat key when sign is given), a room line; a taken name is let in as its
  *                                              alt (as: the card's), which the joiner's hello then learns (lib/remote/server.ts)
  *   refuse(code, ref, {by?, now?}) -> {text}  the person's no: burnt, a room line
- *   markTold(code, ref, name)                 the tail woke name's Claude for it
+ *   markTold(code, {ref, name})               the tail woke name's Claude for it
  *   lapse(code, {now?}) -> [request]          requests past their time, burnt now (the tail tells the host)
  *   LET_IN, REFUSE
  */
@@ -228,7 +228,7 @@ function refuse(code: RoomCode, ref: string, { by = null, now = Date.now() }: { 
   return { text: `refused: ${describe(rec)} does not get into room ${code}; their join stops` };
 }
 
-function markTold(code: RoomCode, ref: string, name: string): void {
+function markTold(code: RoomCode, { ref, name }: { ref: string; name: SeatName }): void {
   try {
     hostStore(code).kv.update(INVITES_KEY, (cur: Invites | null) => {
       const docs = cur || {};

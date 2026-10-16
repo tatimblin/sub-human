@@ -115,7 +115,7 @@
  *   pruneModLeases(now?) -> n            delete leases whose process is gone (no pid: once past the fresh window)
  *
  * Presence (the room documents presence/<name> = {state, at, detail?}, written by members.beat with the lease):
- *   writePresence(code, name, state, detail?)   state: working (prompt submitted / joined) | idle (idle_prompt)
+ *   writePresence(code, name, {state, detail?})   state: working (prompt submitted / joined) | idle (idle_prompt)
  *                                               | permission (permission_prompt) | error (StopFailure; detail = code).
  *                                               false for a name with no seat (or a left one)
  *
@@ -141,7 +141,7 @@ import {
 } from './room/members.ts';
 import * as cc from './cc/env.ts';
 import { continuedIn, lastTitle, lastHome } from './cc/transcript.ts';
-import type { JoinResult, Member, Members, MembersApi, Role, SeatRecord } from './room/types.ts';
+import type { JoinResult, Member, Members, MembersApi, PresenceInput, Role, SeatRecord } from './room/types.ts';
 
 /** A resolved seat (resolveBySession, resolveByPid, resolveSelf): address = NAME.CODE, the session title. */
 interface Identity {
@@ -754,7 +754,7 @@ function updateRoomClaude(code: RoomCode, fn: (current: Member | null, members: 
 
 
 // ---------- presence ----------
-function writePresence(code: RoomCode, name: SeatName, state: string, detail?: string | null): boolean {
+function writePresence(code: RoomCode, name: SeatName, { state, detail }: PresenceInput): boolean {
   if (!NAME_RE.test(String(name)) || !isPresenceState(state)) return false;
   try { return membersOf(code).beat(name, { presence: { state, detail } }); } catch { return false; }
 }

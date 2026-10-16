@@ -53,18 +53,17 @@ export function roomChecks(): Check[] {
     try {
       // a folder something wrote after its room was forgotten: no room at all (item 9 R1)
       if (store().isLeftover(code)) {
-        out.push(check(`room:${code}`, 'warn', `room ${code}`, 'a leftover folder with no log and no connection, not a room hosted here', `set it aside: ${cli(`link ${code} --forget`)}`));
+        out.push(check({ id: `room:${code}`, status: 'warn', title: `room ${code}`, detail: 'a leftover folder with no log and no connection, not a room hosted here', fix: `set it aside: ${cli(`link ${code} --forget`)}` }));
         continue;
       }
       if (!store().open(code).isHost) continue;
       v = verifyRoom(code);
     } catch (e) {
-      out.push(check(`room:${code}`, 'warn', `room ${code}`, `its log could not be read: ${e instanceof Error ? e.message : e}`));
+      out.push(check({ id: `room:${code}`, status: 'warn', title: `room ${code}`, detail: `its log could not be read: ${e instanceof Error ? e.message : e}` }));
       continue;
     }
     const bad = !v.chain.ok || v.unverified.length > 0;
-    out.push(check(`room:${code}`, bad ? 'fail' : 'pass', `room ${code}`, verifyText(v),
-      bad ? `the room's log was written outside sub-human: tell the room, and keep a copy (${cli(`verify ${code}`)} lists it); the people's own lines are the verified ones` : undefined));
+    out.push(check({ id: `room:${code}`, status: bad ? 'fail' : 'pass', title: `room ${code}`, detail: verifyText(v), fix: bad ? `the room's log was written outside sub-human: tell the room, and keep a copy (${cli(`verify ${code}`)} lists it); the people's own lines are the verified ones` : undefined }));
   }
   return out;
 }

@@ -191,7 +191,7 @@ function demoteCmd(args: readonly string[], ctx: CliIo) {
   const invite = words.find(w => w.startsWith('sh2.')) || '', pin = words.find(w => /^[0-9]{6}$/.test(w));
   if (!invite) die('that is not an invite line (it starts sh2.); paste the line promote printed for this machine, then its PIN', 1);
   let r;
-  try { r = handoff.demote(code, invite, pin); } catch (e) { die(`could not demote: ${msgOf(e)}`, 1); }
+  try { r = handoff.demote(code, { invite, pin }); } catch (e) { die(`could not demote: ${msgOf(e)}`, 1); }
   out(`room ${code}: this machine follows its new host now${r.orphan ? `; its own log is kept in ${r.orphan}` : ''}.${r.follower ? ' Type /sub-human in your session to join it again.' : ''}`);
   const t = (links.get(code) || {}).transport;
   if (t && t.kind === 'ssh') out('Over ssh this machine reaches the new host through your own ssh login to it: if it cannot connect, ask them for an invite over the web (/sub-human invite --web there) and type the line it shows in your session.');

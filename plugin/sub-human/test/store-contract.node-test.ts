@@ -471,7 +471,7 @@ test('store: setBackend routes every open() (identity included) to another store
     mem.members.update(() => ({ alice: { name: sn('alice'), role: 'member', seen_at: new Date().toISOString() } }));
     assert.deepEqual(Object.keys(identity.readMembers(CODE)), ['alice']);
     assert.equal(identity.seatAlive(identity.readMembers(CODE).alice), true, 'no pid: the lease decides');
-    identity.writePresence(CODE, sn('alice'), 'idle');
+    identity.writePresence(CODE, sn('alice'), { state: 'idle' });
     assert.equal(mem.kv.get('presence/alice').state, 'idle');
     assert.equal(room.open(CODE).store, mem);
   } finally { store.setBackend(null); }

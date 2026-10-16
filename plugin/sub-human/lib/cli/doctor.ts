@@ -55,20 +55,20 @@ function pluginVersion(): string | null {
 
 function checkPlugin() {
   const v = pluginVersion();
-  return check('plugin', v ? 'pass' : 'warn', 'plugin', `sub-human ${v || '(no version in plugin.json)'} at ${tilde(PLUGIN_ROOT)}`);
+  return check({ id: 'plugin', status: v ? 'pass' : 'warn', title: 'plugin', detail: `sub-human ${v || '(no version in plugin.json)'} at ${tilde(PLUGIN_ROOT)}` });
 }
 
 function checkNode(version = process.versions.node) {
   const [major, minor] = String(version).split('.').map(Number);
   const min = NODE_MIN.join('.');
   return major > NODE_MIN[0] || (major === NODE_MIN[0] && minor >= NODE_MIN[1])
-    ? check('node', 'pass', 'node', `v${version}`)
-    : check('node', 'fail', 'node', `v${version}; sub-human needs Node ${min} or newer`, `install Node ${min}+ (e.g. nvm install ${NODE_MIN[0]}); the hooks run on the node Claude Code finds on PATH`);
+    ? check({ id: 'node', status: 'pass', title: 'node', detail: `v${version}` })
+    : check({ id: 'node', status: 'fail', title: 'node', detail: `v${version}; sub-human needs Node ${min} or newer`, fix: `install Node ${min}+ (e.g. nvm install ${NODE_MIN[0]}); the hooks run on the node Claude Code finds on PATH` });
 }
 
 function checkHome() {
   const h = lib('home.ts').home();
-  if (!fs.existsSync(h)) return check('home', 'info', 'sub-human folder', `${tilde(h)} does not exist yet (made at the first join)`);
+  if (!fs.existsSync(h)) return check({ id: 'home', status: 'info', title: 'sub-human folder', detail: `${tilde(h)} does not exist yet (made at the first join)` });
   const uid = typeof process.getuid === 'function' ? process.getuid() : null;
   const bad: string[] = [];
   for (const d of [h, ...STORE_DIRS.map(n => path.join(h, n))]) {
@@ -77,8 +77,8 @@ function checkHome() {
     if (uid !== null && st.uid !== uid) bad.push(`${tilde(d)} belongs to uid ${st.uid}`);
     else if (st.mode & 0o077) bad.push(`${tilde(d)} is ${(st.mode & 0o777).toString(8)}`);
   }
-  if (!bad.length) return check('home', 'pass', 'sub-human folder', `${tilde(h)} and its folders are private (0700)`);
-  return check('home', 'fail', 'sub-human folder', bad.join('; '), `${cli('doctor --fix')} in a terminal (or chmod 700 ${bad.map(b => b.split(' ')[0]).join(' ')})`);
+  if (!bad.length) return check({ id: 'home', status: 'pass', title: 'sub-human folder', detail: `${tilde(h)} and its folders are private (0700)` });
+  return check({ id: 'home', status: 'fail', title: 'sub-human folder', detail: bad.join('; '), fix: `${cli('doctor --fix')} in a terminal (or chmod 700 ${bad.map(b => b.split(' ')[0]).join(' ')})` });
 }
 
 async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, authorizedKeys, env = process.env }: { quick?: boolean; timeoutMs?: number; authorizedKeys?: string; env?: NodeJS.ProcessEnv } = {}): Promise<Report> {
@@ -92,7 +92,7 @@ async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, authorized
   const sshV = sshVersion();
   checks.push(checkSsh({ needed: sshLinks, version: sshV }));
   const links = await Promise.all(codes.map(code => diagnoseLink(code, { quick, timeoutMs, env })));
-  if (!codes.length) checks.push(check('links', 'info', 'connections', 'none to a room hosted on another machine'));
+  if (!codes.length) checks.push(check({ id: 'links', status: 'info', title: 'connections', detail: 'none to a room hosted on another machine' }));
   for (const d of links) checks.push(...linkChecks(d));
   checks.push(...roomChecks());
   checks.push(...checkRoomClaudes());

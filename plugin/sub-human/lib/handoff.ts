@@ -58,7 +58,7 @@
  *       lib/cli/handoff.ts, after a confirmation): refused while the link is online, or down for less than
  *       PROMOTE_OFFLINE_MS without force. The other machines get sh2 invites with a PIN each, to hand out by hand
  *       (each runs `sub-human demote CODE INVITE PIN` with its own).
- *   demote(code, invite, pin?) -> {orphan, follower?}   a machine follows a promoted room: a member's
+ *   demote(code, {invite, pin?}) -> {orphan, follower?}   a machine follows a promoted room: a member's
  *       machine re-points its link (rebind: its seats join again with /sub-human; follower: true); an old host that
  *       was promoted away sets its log aside (orphaned-<time>.jsonl, kept, never merged), stops its room Claude, and
  *       mirrors the new host
@@ -448,7 +448,7 @@ function promote(code: RoomCode, { name, locator, force = false, cwd, now = Date
   return { epoch, entry: placed, invites, note, last };
 }
 
-function demote(code: RoomCode, invite: string, pin?: string): { orphan: string | null, follower?: boolean } {
+function demote(code: RoomCode, { invite, pin }: { invite: string; pin?: string | undefined }): { orphan: string | null, follower?: boolean } {
   const s = store.open(code);
   const inv = invites.parseInvite(invite);
   if (!inv || inv.code !== code || !isInviteSecret(invite)) throw err('INVALID', `that is not an invite to room ${code}`);

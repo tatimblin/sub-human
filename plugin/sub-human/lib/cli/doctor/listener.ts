@@ -18,21 +18,20 @@ type ListenerStatus = import('../../remote/listener.ts').ListenStatus;
 /** The host's web listener and the rooms it serves (lib/remote/listener.ts), with their Tailscale paths. */
 function checkListener({ quick = false } = {}): Check[] {
   let st: ListenerStatus;
-  try { st = lib('remote/listener.ts').status(); } catch (e) { return [check('listener', 'warn', 'listener', `could not read its state: ${msgOf(e)}`)]; }
+  try { st = lib('remote/listener.ts').status(); } catch (e) { return [check({ id: 'listener', status: 'warn', title: 'listener', detail: `could not read its state: ${msgOf(e)}` })]; }
   const codes = Object.keys(st.rooms || {});
-  if (!codes.length && !st.running) return [check('listener', 'info', 'listener', 'no room is served over the web here (/sub-human invite --web or --url starts it)')];
+  if (!codes.length && !st.running) return [check({ id: 'listener', status: 'info', title: 'listener', detail: 'no room is served over the web here (/sub-human invite --web or --url starts it)' })];
   const out = [st.running
-    ? check('listener', 'pass', 'listener', `running (pid ${st.pid}) on 127.0.0.1:${st.port} · ${codes.length ? `serves ${codes.join(', ')}` : 'serves no room'}${st.conns ? ` · ${st.conns} connection(s)` : ''}`)
-    : check('listener', 'fail', 'listener', `not running, but ${codes.join(', ')} ${codes.length === 1 ? 'is' : 'are'} served over the web: joiners cannot reach ${codes.length === 1 ? 'it' : 'them'}`,
-      `/sub-human invite --web again in the room (or ${cli('listen --start')} in a terminal); its log: ${tilde(lib('remote/listener.ts').logFile())}`)];
+    ? check({ id: 'listener', status: 'pass', title: 'listener', detail: `running (pid ${st.pid}) on 127.0.0.1:${st.port} · ${codes.length ? `serves ${codes.join(', ')}` : 'serves no room'}${st.conns ? ` · ${st.conns} connection(s)` : ''}` })
+    : check({ id: 'listener', status: 'fail', title: 'listener', detail: `not running, but ${codes.join(', ')} ${codes.length === 1 ? 'is' : 'are'} served over the web: joiners cannot reach ${codes.length === 1 ? 'it' : 'them'}`, fix: `/sub-human invite --web again in the room (or ${cli('listen --start')} in a terminal); its log: ${tilde(lib('remote/listener.ts').logFile())}` })];
   const ts = lib('remote/tailscale.ts');
   const serveStatus: Record<string, string | null> = {}; // bin -> stdout
   for (const code of codes) {
     const rec = st.rooms[code] || {};
     const id = `web:${code}`;
-    if (!lib('remote/listener.ts').roomLive(code)) { out.push(check(id, 'warn', `web ${code}`, 'served over the web, but the room is closed or gone here', `${cli(`invite --stop --room ${code}`)} in a terminal`)); continue; }
+    if (!lib('remote/listener.ts').roomLive(code)) { out.push(check({ id, status: 'warn', title: `web ${code}`, detail: 'served over the web, but the room is closed or gone here', fix: `${cli(`invite --stop --room ${code}`)} in a terminal` })); continue; }
     const where = rec.url || rec.path || '?';
-    if (!rec.tailscale) { out.push(check(id, 'info', `web ${code}`, `${rec.mode === 'handoff' ? 'moved here by a handoff' : 'through your own front'} at ${where}`)); continue; }
+    if (!rec.tailscale) { out.push(check({ id, status: 'info', title: `web ${code}`, detail: `${rec.mode === 'handoff' ? 'moved here by a handoff' : 'through your own front'} at ${where}` })); continue; }
     const kind = rec.tailscale.funnel ? 'funnel' : 'serve';
     if (!quick) {
       const bin = rec.tailscale.bin || ts.bin();
@@ -42,15 +41,15 @@ function checkListener({ quick = false } = {}): Check[] {
         serveStatus[key] = r.status === 0 ? String(r.stdout || '') : null;
       }
       const text = serveStatus[key];
-      if (text === null) out.push(check(id, 'warn', `web ${code}`, `tailscale ${kind} ${rec.tailscale.path}: could not read tailscale serve status`, 'is Tailscale running? tailscale status'));
+      if (text === null) out.push(check({ id, status: 'warn', title: `web ${code}`, detail: `tailscale ${kind} ${rec.tailscale.path}: could not read tailscale serve status`, fix: 'is Tailscale running? tailscale status' }));
       else if (!text.includes(rec.tailscale.path)) {
-        out.push(check(id, 'fail', `web ${code}`, `tailscale ${kind} has no ${rec.tailscale.path} any more (a reset, or another serve replaced it)`, `/sub-human invite ${rec.tailscale.funnel ? '--public' : '--web'} in the room (it puts the path back)`));
+        out.push(check({ id, status: 'fail', title: `web ${code}`, detail: `tailscale ${kind} has no ${rec.tailscale.path} any more (a reset, or another serve replaced it)`, fix: `/sub-human invite ${rec.tailscale.funnel ? '--public' : '--web'} in the room (it puts the path back)` }));
         continue;
       }
     }
     out.push(rec.tailscale.funnel
-      ? check(id, 'warn', `web ${code}`, `Tailscale Funnel ${where}${quick ? '' : ' (path present)'}. ${ts.CT_WARNING}`, `/sub-human invite --stop when nobody needs to join from outside the tailnet`)
-      : check(id, 'pass', `web ${code}`, `Tailscale Serve (tailnet only) ${where}${quick ? '' : ' (path present)'}`));
+      ? check({ id, status: 'warn', title: `web ${code}`, detail: `Tailscale Funnel ${where}${quick ? '' : ' (path present)'}. ${ts.CT_WARNING}`, fix: `/sub-human invite --stop when nobody needs to join from outside the tailnet` })
+      : check({ id, status: 'pass', title: `web ${code}`, detail: `Tailscale Serve (tailnet only) ${where}${quick ? '' : ' (path present)'}` }));
   }
   return out;
 }

@@ -226,17 +226,16 @@ function linkChecks(d: LinkReport): Check[] {
     if (d.transport.kind === 'ssh' && !r.skipped) bits.push(batchMode(r.ok, r.stderr));
     if (r.ok) {
       const SIG_SKEW_MS = lib('room/envelope.ts').SIG_SKEW_MS;
-      if (r.skewMs === null) out.push(check(`clock:${d.code}`, 'info', `clock ${d.code}`, 'skew not measurable: the host\'s hello carries no time'));
+      if (r.skewMs === null) out.push(check({ id: `clock:${d.code}`, status: 'info', title: `clock ${d.code}`, detail: 'skew not measurable: the host\'s hello carries no time' }));
       else {
         const abs = Math.abs(r.skewMs);
         const s = abs >= SIG_SKEW_MS ? 'fail' : abs >= SKEW_WARN_MS ? 'warn' : 'pass';
-        out.unshift(check(`clock:${d.code}`, s, `clock ${d.code}`, `this machine is ${Math.round(abs / 1000)} s ${r.skewMs > 0 ? 'behind' : 'ahead of'} the host`,
-          s === 'pass' ? undefined : 'turn on network time (NTP) on both machines: signed posts older than 10 min are refused'));
+        out.unshift(check({ id: `clock:${d.code}`, status: s, title: `clock ${d.code}`, detail: `this machine is ${Math.round(abs / 1000)} s ${r.skewMs > 0 ? 'behind' : 'ahead of'} the host`, fix: s === 'pass' ? undefined : 'turn on network time (NTP) on both machines: signed posts older than 10 min are refused' }));
       }
     }
   }
   if (quiet) status = 'info';
-  out.unshift(check(`link:${d.code}`, status, `connection ${d.code}`, bits.filter(Boolean).join(' · '), fix));
+  out.unshift(check({ id: `link:${d.code}`, status, title: `connection ${d.code}`, detail: bits.filter(Boolean).join(' · '), fix }));
   return out;
 }
 

@@ -47,7 +47,7 @@
  *   parseSpawn(toolInput, members, code) -> {kind: 'participant'|'room', name}|null
  *   recordRow(code, sessionId, agentId, rec), forgetRow(code, agentId), readRowMap(code) -> {agentId: rec}
  *       readRowMap merges every session's map in the room: /clear changes session_id, agent ids don't.
- *       sessionRowMap(code, sid) -> one session's; blockCount(code, name, id) / setBlockCount(code, name, id, n):
+ *       sessionRowMap(code, sid) -> one session's; blockCount(code, {seat, agent}) / setBlockCount(code, {seat, agent}, n):
  *       row-hold.ts (the seat's session document's blocks)
  *   Hold liveness (written by mcp/hold.ts): writeHolds(code, name, {members, room, roomUntil}), readHolds(code, name)
  *       the seat's session document's holds = {pid, at, members: [names], room: bool, roomUntil?}; readHolds folds
@@ -332,9 +332,11 @@ function forgetRow(code: RoomCode, agentId: string): void {
   }
 }
 
-/** How often hooks/handlers/row-hold.ts blocked agentId's stop (the seat's session document); setBlockCount(code, name, id, n). */
-const blockCount = (code: RoomCode, name: SeatName, id: string): number => session.blocks(storeOf(code), name, id);
-const setBlockCount = (code: RoomCode, name: SeatName, id: string, n: unknown): void => session.setBlocks(storeOf(code), name, id, Number(n) || 0);
+/** A row's hold: the seat's session document, and the row's agent id. */
+interface RowHold { seat: SeatName; agent: string }
+/** How often hooks/handlers/row-hold.ts blocked agent's stop (the seat's session document); setBlockCount(code, {seat, agent}, n). */
+const blockCount = (code: RoomCode, { seat, agent }: RowHold): number => session.blocks(storeOf(code), seat, agent);
+const setBlockCount = (code: RoomCode, { seat, agent }: RowHold, n: unknown): void => session.setBlocks(storeOf(code), seat, agent, Number(n) || 0);
 
 // ---------- hold liveness (mcp/hold.ts writes, the status line reads) ----------
 function writeHolds(code: RoomCode, name: SeatName, { members = [], room = false, roomUntil = 0 }: { members?: string[], room?: boolean, roomUntil?: number } = {}): void {
