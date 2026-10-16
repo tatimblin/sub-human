@@ -286,7 +286,7 @@ test('cli watch NAME: their words, their Claude, sign-offs, joins/leaves, the ro
   assert.equal(cli(['watch']).status, 2);
 });
 
-test('cli link CODE --forget: refused on a room hosted here, while the daemon runs, and for a live link without --force; then the copy is archived and the link removed', () => {
+test('cli link CODE --forget: refused on a room hosted here, and for a link stopped for another reason without --force; then the copy is archived and the link removed', () => {
   const stopped = (lastError: string, lastReason?: string) => ({ state: 'stopped', since: new Date().toISOString(), attempt: 0, lastError, ...(lastReason ? { lastReason } : {}), rttMs: null, queued: 0, detail: 'stopped', at: new Date().toISOString() });
   h.freshHome();
   const hosted = h.newRoom();
@@ -304,12 +304,6 @@ test('cli link CODE --forget: refused on a room hosted here, while the daemon ru
   fs.mkdirSync(s.dir!, { recursive: true, mode: 0o700 });
   fs.writeFileSync(s.logFile, '{"id":1}\n');
   fs.writeFileSync(path.join(s.dir!, 'outbox.json'), '[]');
-  // the daemon runs: its document `link` names a live pid
-  s.kv.set('link', { pid: process.pid, state: 'online', since: new Date().toISOString() });
-  const r1 = cli(['link', code, '--forget']);
-  assert.equal(r1.status, 1);
-  assert.match(r1.stderr, new RegExp(`the connection to room ${code} is running \\(pid ${process.pid}\\); it forgets the room only once stopped`));
-  s.kv.delete('link');
   // stopped for another reason: only --force forgets it
   links.writeState(code, stopped('AUTH: unknown link token'));
   const r2 = cli(['link', code, '--forget']);
@@ -414,4 +408,25 @@ test('R1 (live verify, verify6/12): after link CODE --forget, a process still ho
   assert.equal(d.status, 0, d.stderr);
   assert.match(d.stdout, new RegExp(`^room ${code}: a leftover folder .* is set aside at .*${code}\\.forgotten-`));
   assert.equal(fs.existsSync(after.dir!), false);
+});
+
+test('cli link CODE --forget (stage 8f item 3): a daemon still running is stopped first, then the room is forgotten in the same step', () => {
+  h.freshHome();
+  const code = h.newRoom();
+  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: 't' });
+  const s = store.open(code) as FsRoomStore;
+  fs.mkdirSync(s.dir!, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(s.logFile, '{"id":1}\n');
+  // a stand-in daemon: its document `link` names a live pid, online (no stop reason on record)
+  // started through a shell that exits, so it is reaped once it stops, as the detached daemon is
+  const pid = Number(spawnSync('sh', ['-c', `'${process.execPath}' -e 'setInterval(() => {}, 1000)' >/dev/null 2>&1 & echo $!`], { encoding: 'utf8' }).stdout.trim());
+  assert.ok(pid > 0 && identity.isAlive(pid));
+  s.kv.set('link', { pid, state: 'online', since: new Date().toISOString() });
+  const r = cli(['link', code, '--forget']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, new RegExp(`^room ${code}: its connection \\(pid ${pid}\\) stopped, and forgotten; this machine's copy is kept at `, 'm'));
+  assert.equal(identity.isAlive(pid), false, 'the daemon is gone');
+  assert.equal(links.has(code), false);
+  assert.equal(fs.existsSync(s.dir!), false);
+  store.forget(code);
 });

@@ -90,7 +90,7 @@ function liveElsewhere(code: string, cur: Link | null, spent: boolean): Step | n
   if (!cur || !cur.token || spent) return null;
   const st = linkSocket.status(code);
   if (!st.running || st.state === 'stopped' || st.state === 'fork') return null;
-  return refuse(`this machine is already linked to room ${code} through ${whereOf(cur.transport)}; a join another way would cut that link. To replace it, run \`${cliLine(`link ${code} --forget`)}\` in a terminal first (it ends this machine's seats there), then join again.`);
+  return refuse(`this machine is already linked to room ${code} through ${whereOf(cur.transport)}; a join another way would cut that link. To replace it, run \`${cliLine(`link ${code} --forget`)}\` in a terminal first (it stops that connection and ends this machine's seats there), then join again.`);
 }
 
 /** After a join another way was refused: the link file that worked before is put back (and its daemon started again),

@@ -65,8 +65,9 @@
  *       The link daemon of room CODE, hosted on another machine (lib/remote/link.ts run): the join hook starts it
  *       detached; it exits on its own once this machine has no seat left in the room. --reset (with no daemon
  *       running, e.g. after a FORK): forget this machine's copy of the room and start the daemon to copy it again.
- *       --forget (with no daemon running, the link stopped because the room closed or no seat is left; --force: for
- *       any other reason): drop the room from this machine for good. Never automatic (a closed room can open
+ *       --forget (the link stopped because the room closed, no seat is left or the host removed this machine; --force:
+ *       for any other reason; a daemon still running is stopped first, the person's own ask): drop the room from this
+ *       machine for good. Never automatic (a closed room can open
  *       again). Its log is set aside as a demote's is, the copy moves to rooms/<code>.forgotten-<time> (not a room
  *       code, so no listing or open sees it, and nothing opens it as a room hosted here), then the link goes. It
  *       prints the archive's path.
@@ -421,7 +422,11 @@ function linkCmd(args: readonly string[]) {
   }
   const linkSocket: typeof import('../remote/link-socket.ts') = require('../remote/link-socket.ts');
   const st = linkSocket.status(code);
-  if (st.running && flags.forget) die(`the connection to room ${code} is running (pid ${st.pid}); it forgets the room only once stopped (kill ${st.pid}, then run this again)`, 1);
+  if (st.running && flags.forget) {
+    // the person asked to forget it: the daemon is this machine's own, so --forget stops it first (stage 8f item 3)
+    if (!stopDaemon(st.pid)) die(`the connection to room ${code} is running (pid ${st.pid}) and did not stop; kill ${st.pid}, then run this again`, 1);
+    return forgetLink(code, s, true, st.pid);
+  }
   if (st.running) die(`the connection to room ${code} is running (pid ${st.pid}); it copies the room afresh only once stopped (kill ${st.pid}, then run this again)`, 1);
   if (flags.forget) return forgetLink(code, s, !!flags.force);
   s.reset();
@@ -432,7 +437,16 @@ function linkCmd(args: readonly string[]) {
 
 // link CODE --forget: the copy moves before the link file goes, so no moment has a bare rooms/<code> (that opens as a
 // room hosted here: a fork of the room)
-function forgetLink(code: string, s: MirrorRoomStore, force: boolean) {
+/** SIGTERM to a link daemon, then up to LINK_STOP_WAIT_MS for it to go: whether it is gone. */
+const LINK_STOP_WAIT_MS = 3000;
+function stopDaemon(pid: number): boolean {
+  try { process.kill(pid, 'SIGTERM'); } catch { return !identity.isAlive(pid); }
+  const io: typeof import('../io.ts') = require('../io.ts');
+  for (const until = Date.now() + LINK_STOP_WAIT_MS; Date.now() < until; io.sleepSync(20)) if (!identity.isAlive(pid)) return true;
+  return !identity.isAlive(pid);
+}
+
+function forgetLink(code: string, s: MirrorRoomStore, force: boolean, stopped?: number) {
   const st = (require('../room/link-state.ts') as typeof import('../room/link-state.ts')).read(code);
   const why = st?.lastError || '';
   // dormant (the room closed, no seat left) or spent (the host removed this machine: its token gets nowhere now)
@@ -450,7 +464,8 @@ function forgetLink(code: string, s: MirrorRoomStore, force: boolean) {
   store.forget(code);
   // every local seat there ends: a session, hold server or tail still running for it resolves none and writes nothing
   identity.dropSeatIndexes(code);
-  console.log(archive ? `room ${code}: forgotten; this machine's copy is kept at ${archive}` : `room ${code}: forgotten (this machine had no copy of it)`);
+  const lead = stopped ? `room ${code}: its connection (pid ${stopped}) stopped, and ` : `room ${code}: `;
+  console.log(archive ? `${lead}forgotten; this machine's copy is kept at ${archive}` : `${lead}forgotten (this machine had no copy of it)`);
 }
 
 /** link CODE --forget on a leftover folder: set aside as a forgotten copy is, and no seat names the room any more. */
