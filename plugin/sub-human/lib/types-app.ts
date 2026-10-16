@@ -81,19 +81,24 @@ export interface Review {
   foreign?: boolean;
   card?: string;
 }
-/** members/NAME/confirm: a review's note waiting for the person's Send (asked: when its card was shown). */
+/** Where a review's note stands (lib/consent/review.ts): waiting (its card never shown), nudged (Stop asked for the card
+ * once), asked (the card was shown; no Post yet), reoffered (an interrupted card offered again at the next prompt),
+ * told (the model was told the card closed without an answer, or every offer is spent: the card is the person's to ask for). */
+export type NoteStage = 'waiting' | 'nudged' | 'asked' | 'reoffered' | 'told';
+/** members/NAME/confirm: a review's note waiting for the person's Send. */
 export interface Confirm {
   hash: string;
   note: string;
   from: string | null;
   title: string | null;
   at: number;
+  /** absent in a note an earlier sub-human wrote: lib/consent/review.ts stageOf reads the flags below */
+  stage?: NoteStage;
+  /** an earlier sub-human's, read only (stageOf): when the card was shown, Stop nudged, the model was told or an
+   * interrupted card offered again, and when that offer was renudged */
   asked?: number;
-  /** when Stop nudged the model to show a card it never showed (hooks/handlers/consent.ts unasked): once */
   nudged?: number;
-  /** when the card's no-answer close was told, or an interrupted card offered again (hooks/handlers/consent.ts reoffer): once */
   again?: number;
-  /** when reoffer offered an interrupted card again: a Stop with no card asked since nudges once more (renudged) */
   reoffered?: number;
   renudged?: number;
 }

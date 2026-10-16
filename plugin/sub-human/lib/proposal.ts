@@ -58,14 +58,15 @@
  *   choose(me, ps, prompt) -> p    store that pick (namedIn, else replacedIn's p; members/NAME/pick) and return it,
  *                                  else the newest (hooks/handlers/consent.ts)
  *   picked(me, ps) -> p            Pre(EnterPlanMode): the stored pick when still among ps, else the newest
+ *   readPick(me), writePick(me, hash|null)   members/NAME/pick as stored
  *   read(code, hash) -> string|null  the stored plan (the room blob plans/<hash>.md)
  * The plan-view review state (the room document members/NAME/review): readReview, writeReview, clearReview, withReview(me, fn)
  *   (the lock), restorePlan(st), restoreStale(me, {force, now}) (session-restore: a review left behind).
  * A review's note waiting for the person's Send (the room document members/NAME/confirm): readConfirm, writeConfirm,
  *   clearConfirm; confirmCard(c) -> the AskUserQuestion input (Send, Discard), confirmQuestion(c) its question,
  *   confirmCall(hash) -> how the model opens that card, showConfirm(name, hash, interrupted?) -> the line telling it to
- *   open the card now, before anything else, and after an Esc that the Esc was no answer (hooks/handlers/consent.ts reoffer and
- *   lib/tail.ts remindersText say the same); repeatsNote(c,
+ *   open the card now, before anything else, and after an Esc that the Esc was no answer (lib/consent/review.ts NEXT
+ *   and showNote: consent's reoffer and lib/tail.ts remindersText say the same); repeatsNote(c,
  *   text) -> bool: a post carries that note (case, spacing and quote marks aside; a note under 12 chars only when
  *   equal), so posting it would relay it twice.
  */
@@ -73,13 +74,13 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import crypto from 'node:crypto';
 import * as identity from './identity.ts';
 import * as room from './room.ts';
 import { writeFileAtomic } from './io.ts';
 import { clip, oneLine } from './text.ts';
 import * as config from './config.ts';
 import * as cc from './cc.ts';
+import { NEXT, hash12, showNote } from './consent/review.ts';
 import type { Card, Confirm, Proposal, Review } from './types-app.ts';
 import type { Entry, Matrix, Member, Members, ProposalState } from './room/types.ts';
 import type { Identity } from './identity.ts';
@@ -101,7 +102,6 @@ const TITLE_MAX = config.PROPOSAL_TITLE_MAX;
 class ProposalError extends Error {}
 function refuse(m: string): never { throw new ProposalError(m); }
 
-const hash12 = (buf: crypto.BinaryLike) => crypto.createHash('sha256').update(buf).digest('hex').slice(0, 12);
 /** A plan's ref in the room's blob store: room-relative, so the room can live anywhere (lib/room/store.ts blobs). */
 const planRef = (hash: string) => `plans/${hash}.md`;
 const blobs = (code: string) => room.open(code).store.blobs;
@@ -315,27 +315,23 @@ const readPick = (me: Me): { hash: string | null, at: number } | null => { try {
 function choose(me: Me, ps: Proposal[], prompt: string | null | undefined): Proposal | null {
   if (prompt == null) return picked(me, ps);
   const hit = namedIn(ps, prompt, me.code) || replacedIn(ps, prompt, me.code)?.p || null;
-  kvOf(me).set(pickKey(me), { hash: hit ? hit.hash : null, at: Date.now() }, { compact: true });
+  writePick(me, hit ? hit.hash : null);
   return hit || ps.at(-1) || null;
 }
+/** Record the person's pick (null: their words named none); hooks/handlers/consent.ts's pick effect. */
+const writePick = (me: Me, hash: string | null): void => kvOf(me).set(pickKey(me), { hash, at: Date.now() }, { compact: true });
 /** The proposal a review opens among ps (pending, oldest first): the person's pick when it is one of them, else the newest. */
 function picked(me: Me, ps: Proposal[]): Proposal | null {
   const pk = readPick(me);
   return (pk && pk.hash && ps.find(p => p.hash === pk.hash)) || ps.at(-1) || null;
 }
 
-/** How the model opens proposal hash for its person: the plan view (the hooks fall back to the card). */
-const openCall = (hash: string) => `call EnterPlanMode, then ExitPlanMode with plan "proposal ${hash}"`;
-/** How the model shows the person the confirm card for a waiting note (hooks/handlers/consent.ts builds it). */
-const confirmCall = (hash: string) => `call AskUserQuestion with the question "objection ${hash}"`;
-/**
- * The model is to show that card now: one wording for every line that says so on the same prompt, so none is softer.
- * interrupted: the card was shown and closed with no answer (Confirm.asked, no Post: the person pressed Esc), which
- * the model sees as the person declining; it is said to be neither, and the card due once more.
- */
-const showConfirm = (name: string, hash: string, interrupted = false) => interrupted
-  ? `${name} pressed Esc on its card: an interruption, not a choice, though it reads as declined. The note is neither sent nor discarded. Show ${name} the card once more, now, before you answer or do anything else: ${confirmCall(hash)}, so ${name} can Send or Discard it.`
-  : `Show ${name} the card now, before you answer or do anything else: ${confirmCall(hash)}, so ${name} can send or discard the note.`;
+/** How the model opens proposal hash for its person (the plan view; the hooks fall back to the card), how it shows
+ * the confirm card for a waiting note, and the line telling it to show that card now (after an Esc on it: that the
+ * Esc was no answer): lib/consent/review.ts's lines, which the consent hook, the tail and the room server share. */
+const openCall = NEXT.open;
+const confirmCall = NEXT.note;
+const showConfirm = showNote;
 /** A proposal as a list item: `3fa2c1 "Ship v3 Monday"` (the short hash alone without a title or a room to read it from). */
 function listed(code: string | undefined, p: Pick<Proposal, 'hash' | 'entry'>): string {
   const t = code ? clip(title(code, p.hash, p.entry).replace(/\s+/g, ' ').trim(), TITLE_MAX) : '';
@@ -522,7 +518,7 @@ function restoreStale(me: Me | null | undefined, { force = false, now = Date.now
 
 // ---------- a review's note, waiting for the person's Send (hooks/handlers/consent.ts) ----------
 /**
- * members/NAME/confirm: {hash, note, from, title, at, asked?}. A plan review rejected with a note ("Tell Claude what
+ * members/NAME/confirm: {hash, note, from, title, at, stage} (lib/consent/review.ts: where its card stands). A plan review rejected with a note ("Tell Claude what
  * to change", a phone deny with a note or "Suggest edits": Claude Code writes them alike, and a phone message typed
  * after a bare deny lands there too) records nothing by itself: the note waits here until the person answers the
  * confirm card. One per person: a newer note replaces it.
@@ -562,7 +558,7 @@ function repeatsNote(c: Pick<Confirm, 'note'> | null | undefined, text: unknown)
 
 export {
   QUESTION_RE, ProposalError, readReview, writeReview, clearReview, withReview, restorePlan, restoreStale,
-  readConfirm, writeConfirm, clearConfirm, confirmCard, confirmQuestion, repeatsNote, namedIn, choose, picked, readPick,
+  readConfirm, writeConfirm, clearConfirm, confirmCard, confirmQuestion, repeatsNote, namedIn, choose, picked, readPick, writePick,
   proposeIntent, create, proposals, pendingFor, answerableFor, personOf, sameOk, card, cardFor, question, preview, viewable, openCall,
   confirmCall, showConfirm, matrix, answer, decide, decision, humans, reminder, read, hash12, title, replacedIn,
 };

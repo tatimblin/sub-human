@@ -22,7 +22,7 @@
  *   userSettingsFiles(cwd, env)          the settings files the plugin reads showClearContextOnPlanAccept from
  *   clearContextOnPlanAccept(cwd, env)   true when any of them sets it
  *   readLines(file, {tailBytes}), readEntries(file, {tailBytes}), parseLines(lines)
- *   planFile(lines, toolInput?), planAnswer(lines, toolUseId) -> {note}|null (null: no tool_result on disk yet),
+ *   planFile(lines, toolInput?, env), planAnswer(lines, toolUseId) -> {note}|null (null: no tool_result on disk yet),
  *   planFeedback(lines, toolUseId), toolUseInput(lines, toolUseId)
  *   contentText(content), PASTED_RE, unwrapPasted(text)
  *   JOB_RE, parseDispatch(text), parseAgentsJson(text), jobs(opts), agentsCmd(all), stopCmd(id)
@@ -272,21 +272,34 @@ const lineHas = (l: TranscriptLine, ...subs: string[]): boolean => typeof l !== 
 const asEntry = (l: TranscriptLine): TranscriptEntry | null => { if (l && typeof l === 'object') return l; try { return JSON.parse(l); } catch { return null; } };
 
 /**
- * The session's plan file: toolInput.planFilePath (PreToolUse/PermissionRequest on ExitPlanMode see it,
- * injected by normalizeToolInput), else the latest `plan_mode` attachment's planFilePath, else null.
+ * The session's plan file, as Claude Code recorded it: the latest `plan_mode` attachment's planFilePath, else null.
+ * toolInput: ExitPlanMode's input on PreToolUse/PermissionRequest, where Claude Code injects planFilePath
+ * (normalizeToolInput; cc CONTRACT exitplan-normalize); its path wins only when it is the attachment's or lies under
+ * the plans dir (plansDir; a project's own `plansDirectory` is the attachment's path). The hooks write a proposal to
+ * this file, so a path of the model's choosing (its own key on any other call, or one CC did not overwrite) never counts.
  * @cc type:"plan_mode",reminderType:
  * @stability incidental
  */
-function planFile(lines: readonly TranscriptLine[], toolInput?: { planFilePath?: unknown } | null): string | null {
-  const ti = toolInput || {};
-  if (typeof ti.planFilePath === 'string' && ti.planFilePath) return ti.planFilePath;
-  for (let k = lines.length - 1; k >= 0; k--) {
+function planFile(lines: readonly TranscriptLine[], toolInput?: { planFilePath?: unknown } | null, env: Env = process.env): string | null {
+  let att: string | null = null;
+  for (let k = lines.length - 1; k >= 0 && !att; k--) {
     if (!lineHas(lines[k], '"plan_mode"', 'planFilePath')) continue;
     const e = asEntry(lines[k]);
     const a = e && e.attachment;
-    if (a && a.type === 'plan_mode' && a.planFilePath) return a.planFilePath;
+    if (a && a.type === 'plan_mode' && typeof a.planFilePath === 'string' && a.planFilePath) att = a.planFilePath;
   }
-  return null;
+  const ti = toolInput && typeof toolInput.planFilePath === 'string' && toolInput.planFilePath ? toolInput.planFilePath : null;
+  return ti && (ti === att || underPlans(ti, env)) ? ti : att;
+}
+
+/** file lies under the plans dir (plansDir), once `..` and links in the dir are resolved. */
+function underPlans(file: string, env: Env = process.env): boolean {
+  if (!path.isAbsolute(file)) return false;
+  const abs = path.resolve(file);
+  const dir = path.resolve(plansDir(env));
+  let real = dir;
+  try { real = fs.realpathSync(dir); } catch { /* none yet */ }
+  return [dir, real].some(d => abs.startsWith(d + path.sep));
 }
 
 const contentText = (c: unknown): string => typeof c === 'string' ? c

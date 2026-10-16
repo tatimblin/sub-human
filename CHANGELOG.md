@@ -41,6 +41,12 @@ Hardening from the October 2026 review (branch `fix/stage0-hardening`).
 - **SKILL.md's fallback no longer blames hooks being off** whenever the SUB-HUMAN block is missing: it names both causes (hooks off, or the hook failed before answering, which the terminal shows) and the next step for each.
 - **Inside:** `/sub-human` is a table of verbs (`lib/commands/`); the join hook only reads who asked and renders the one answer. The hidden rule for anything PIN-shaped is the router's, decided before any verb parses. Taking a seat is `lib/seats.ts` take, the joiner's link steps `lib/remote/joining.ts`.
 
+### Consent (stage 4)
+- **The plan view is written only to Claude Code's own plan file.** The file is the transcript's `plan_mode` attachment; the `planFilePath` Claude Code injects into `ExitPlanMode` counts only when it is that same path or lies under the plans dir. A path the model chose never becomes the file a proposal is written to (a project's own `plansDirectory` keeps working: it is the attachment's path).
+- **Shorter lines for your Claude.** Everything consent tells the model is one table of short lines: the one thing to do next per step of a review, and what was or was not recorded. The note's reminders say once to show its card now, and that an Esc on it was no answer.
+- **A new review over one left behind on the same plan file keeps your plan as its backup** (it took the proposal text still in the file, so closing it could have left the proposal there instead of your plan).
+- **Inside:** a review and a waiting note are one pure reducer (`lib/consent/review.ts`, every phase × event table-tested), the note's five flags one stage (a note an earlier version wrote still reads), and every card the hooks build is read by one function (`lib/consent/card.ts` `answerCard`). The consent hook only gathers facts, runs effects and answers. Nothing changes in what records an answer: plan view first, the card as fallback, only your own answer there (`via=human`).
+
 ### Tests
 - **The plugin's node tests are TypeScript** (`plugin/sub-human/test/**/*.node-test.ts`, checked by `npm run typecheck` through `tsconfig.test.json`), named so `claude plugin test` never collects them; new cases for unreadable hook stdin, the join's time budget, a mirror's first sync of a large log and of a host log with a corrupt line, a forged line in MCP `read`, and a model-supplied `planFilePath`.
 

@@ -1054,12 +1054,13 @@ test('confirm: the model cannot answer the card for the person', () => {
 
 /** bob's next prompt, through consent's UserPromptSubmit (no review open), in shim mode (subHuman {reviewOpen}). */
 const promptOf = (w: World, tp: string) => w.hook('consent', ev('UserPromptSubmit', null, { permission_mode: 'default', prompt: 'ok', transcript_path: tp }), { as: 'bob', env: { SUB_HUMAN_SHIM: '1' } });
-const SHOW = (v3: string) => `Show bob the card now, before you answer or do anything else: call AskUserQuestion with the question "objection ${v3}", so bob can send or discard the note.`;
+// lib/consent/review.ts showNote: one wording for consent's reoffer and renudge and the tail's reminder
+const SHOW = (v3: string) => `Show bob the card now, before anything else: call AskUserQuestion with the question "objection ${v3}".`;
 /** After an Esc on the card: the Esc is said to be no answer (the model sees "declined"), and the card due once more. */
-const SHOW_ESC = (v3: string) => `bob pressed Esc on its card: an interruption, not a choice, though it reads as declined. The note is neither sent nor discarded. Show bob the card once more, now, before you answer or do anything else: call AskUserQuestion with the question "objection ${v3}", so bob can Send or Discard it.`;
+const SHOW_ESC = (v3: string) => `bob pressed Esc on its card: no answer, not a decline. Show it again now, before anything else: call AskUserQuestion with the question "objection ${v3}".`;
 const REOFFER = (v3: string) => `sub-human: bob's note on proposal ${v3} is still not recorded. ${SHOW_ESC(v3)} Don't post the note or answer for bob.`;
 const REOFFER_UNSHOWN = (v3: string) => `sub-human: bob's note on proposal ${v3} is still not recorded. Its card was never shown. ${SHOW(v3)} Don't post the note or answer for bob.`;
-const RENUDGE = (v3: string) => `sub-human: bob's note on proposal ${v3} is still not recorded and its card was not shown again. ${SHOW_ESC(v3)} Don't post the note or answer for bob.`;
+const RENUDGE = (v3: string) => `sub-human: bob's note on proposal ${v3} is still not recorded and its card was not shown again. The Esc was no answer: call AskUserQuestion with the question "objection ${v3}" now, before anything else. Don't post the note or answer for bob.`;
 const stopOf = (w: World, tp: string, active = false) => w.hook('consent', ev('Stop', null, { permission_mode: 'default', stop_hook_active: active, transcript_path: tp }), { as: 'bob', env: { SUB_HUMAN_SHIM: '1' } });
 
 test('confirm: Stop nudges once when the card was never shown; shim mode reports it open until then; a new review of that proposal drops the note', () => {
