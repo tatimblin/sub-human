@@ -4,11 +4,12 @@
  * never the model) and the CLI (lib/cli/host.ts). The wire is
  * lib/remote/transports/ws.ts; the daemon lib/remote/listener.ts; the Tailscale calls lib/remote/tailscale.ts.
  *
- *   hostWeb(code, {tailscale?, funnel?, url?, port?, by?, now?}) -> {pin, ref, expires_at, short: true, line, locator,
- *       hostKey, base, mode, port, text}
- *       A short invite: `/sub-human join https://HOST/…/sub-human/ROOM 4829`, the 4-digit PIN the whole secret
- *       (lib/remote/invites.ts mintShort, kind ws, vouching for the listener's X25519 key inside the PAKE,
- *       lib/remote/enroll.ts); the host person's card admits the joiner. Starts the listener (idempotent,
+ *   hostWeb(code, {tailscale?, funnel?, url?, port?, by?, now?}) -> {pin, ref, expires_at, short: true, line, word,
+ *       locator, hostKey, base, mode, port, text}
+ *       An invite line: `/sub-human join https://HOST/…/sub-human/ROOM SECRET`, its SECRET's tag naming the listener's
+ *       X25519 key (lib/remote/invite-secret.ts, role 'listener': the joiner checks it before its Noise handshake),
+ *       and a 4-digit PIN told apart (lib/remote/invites.ts mintInvite, kind ws); the host person's card admits the
+ *       joiner. Starts the listener (idempotent,
  *       127.0.0.1:port, default 7420) and puts the room in its served set; the locator is wss://HOST/…/sub-human/ROOM.
  *       tailscale (`--web`): Tailscale Serve for /sub-human/CODE -> http://127.0.0.1:PORT on this node's MagicDNS name (tailnet
  *       only), then one background request to it to warm its certificate (tailscale.warm); funnel (`--public`): the
@@ -27,6 +28,7 @@
 import { RoomError } from '../room/validate.ts';
 import { createRequire } from 'node:module';
 import type { TailscaleRec } from './types-rest.ts';
+import type { HostedInvite } from './hosting.ts';
 import type { RoomStore } from '../room/types.ts';
 
 const require = createRequire(import.meta.url);
@@ -44,15 +46,11 @@ export interface FrontBase {
 }
 
 /** A web invite as hostWeb returns it. */
-export interface WebInvite extends ReturnType<typeof import('./invites.ts')['mintShort']> {
-  short: true;
-  line: string;
-  locator: string;
+export interface WebInvite extends HostedInvite {
   hostKey: string;
   base: string;
   mode: string;
   port: number;
-  text: string;
 }
 
 const hostStore = (code: string): RoomStore => (require('../room.ts') as typeof import('../room.ts')).hostStore(code);
@@ -108,14 +106,16 @@ function hostWeb(code: string, { tailscale = false, funnel = false, url, port, b
     ...(mode === 'funnel' ? [ts().CT_WARNING] : []),
     'Stop serving it with /sub-human invite --stop (closing the room does too).',
   ];
-  // the URL and a 4-digit PIN (lib/remote/enroll.ts over the listener's text frames)
-  const r = (require('./invites.ts') as typeof import('./invites.ts')).mintShort(store, { kind: 'ws', locator, hostKey, by, now });
-  const line = `/sub-human join ${joinBase} ${r.pin}`;
-  const text = (require('./hosting.ts') as typeof import('./hosting.ts')).shortText({
-    code, how: `over the web through ${how} to this machine's listener on 127.0.0.1:${lport}`, line, ref: r.ref,
-    extra: [`Their machine checks this one's key (${hostKey.slice(0, 12)}…) as part of the PIN check, so nothing in between can read along.`, ...notes],
+  // the URL and the line's SECRET, its tag naming the listener's key; the PIN told apart
+  const r = (require('./invites.ts') as typeof import('./invites.ts')).mintInvite(store, { kind: 'ws', locator, by, now });
+  const secret: typeof import('./invite-secret.ts') = require('./invite-secret.ts');
+  const word = secret.encode(r.secret, secret.tagOf(r.secret, 'listener', hostKey));
+  const line = `/sub-human join ${joinBase} ${word}`;
+  const text = (require('./hosting.ts') as typeof import('./hosting.ts')).inviteText({
+    code, how: `over the web through ${how} to this machine's listener on 127.0.0.1:${lport}`, line, pin: r.pin, ref: r.ref,
+    extra: [`Their machine checks this one's key (${hostKey.slice(0, 12)}…, named in the line) before it sends anything, so nothing in between can read along.`, ...notes],
   });
-  return { ...r, short: true, line, locator, hostKey, base: joinBase, mode, port: lport, text };
+  return { pin: r.pin, ref: r.ref, expires_at: r.expires_at, short: true, line, word, locator, hostKey, base: joinBase, mode, port: lport, text };
 }
 
 function unhost(code: string): { removed: boolean; text: string } {

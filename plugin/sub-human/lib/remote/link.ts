@@ -534,10 +534,10 @@ function idleWatch(link: RunningLink, mirror: MirrorRoomStore, idleMs: number, {
     return Object.values(mirror.members.read()).some(m => m && isMine(m.machine) && !m.left_at
       && (leaseFresh(m) || (live ??= identity.localSeats(mirror.code)).includes(m.name)));
   };
-  // an invite not redeemed yet (an ssh join waits for the host to admit its key): kept trying for the invite's life
+  // an invite not redeemed yet (waiting for the host person's card): kept trying for the invite's life and the card's
   const redeeming = () => {
     const l: Link | null = linksMod.get(mirror.code);
-    return !!l && !l.token && (typeof l.invite === 'string' || !!l.enroll) && now() - Date.parse(l.created_at ?? '') < config.INVITE_TTL_MS;
+    return !!l && !l.token && typeof l.invite === 'string' && now() - Date.parse(l.created_at ?? '') < config.INVITE_TTL_MS + config.ADMIT_TTL_MS;
   };
   const seated = () => {
     const s = link.state();

@@ -64,14 +64,24 @@ function planState(p) {
 }
 
 /**
- * The line /sub-human invite showed in a capture, without its "/sub-human ", or null: "join DEST ROOM PIN" (DEST an
- * ssh address or pipe:HOME; a 4-digit PIN; then any --via) or "join URL PIN". The pane may wrap it: a line break
- * (and the next line's indent) inside a path is dropped first. The last one shown wins.
+ * The line /sub-human invite showed in a capture, without its "/sub-human ", or null: "join DEST ROOM SECRET" (DEST
+ * an ssh address or pipe:HOME; SECRET the line's 39 characters; then any --via and --home) or "join URL SECRET". The
+ * pane may wrap it: a line break (and the next line's indent) inside a word is dropped first. The last one shown wins.
+ * The PIN is shown apart from the line: pinIn reads it.
  */
 function joinLineIn(txt) {
-  const joined = (txt || '').replace(/([A-Za-z0-9_./:@-])\n[ \t│⎿]*(?=[A-Za-z0-9_./:@-])/g, '$1'); // one wrap, not a blank line
-  const re = /\/sub-human (join (?:https?:\/\/\S+|\S+ [a-z]+-\d{4}) \d{4}(?: --via \S+)?)(?=\s|$)/g;
+  const joined = unwrap(txt);
+  const re = /\/sub-human (join (?:https?:\/\/\S+|\S+ [a-z]+-\d{4}) [0-9a-z]{39}(?: --(?:via|home) \S+)*)(?=\s|$)/g;
   const all = [...joined.matchAll(re)].map(m => m[1]);
+  return all.at(-1) || null;
+}
+
+/** The pane may wrap a long word: a line break (and the next line's indent) inside one is dropped. */
+const unwrap = txt => (txt || '').replace(/([A-Za-z0-9_./:@-])\n[ \t│⎿]*(?=[A-Za-z0-9_./:@-])/g, '$1'); // one wrap, not a blank line
+
+/** The PIN an invite showed apart from its line ("…apart from the line (say it, or send it another way): 4829"). */
+function pinIn(txt) {
+  const all = [...String(txt || '').replace(/[\s│⎿]+/g, ' ').matchAll(/apart from the line \(say it, or send it another way\): (\d{4})\b/g)].map(m => m[1]);
   return all.at(-1) || null;
 }
 
@@ -100,4 +110,4 @@ function admitCardState(p) {
   return opts.length ? { opts } : null;
 }
 
-module.exports = { MAIN_ROW, panelRows, roomRowMembers, subagentRows, statusLine, cardState, planState, joinLineIn, joinNotices, admitCardState };
+module.exports = { MAIN_ROW, panelRows, roomRowMembers, subagentRows, statusLine, cardState, planState, joinLineIn, pinIn, joinNotices, admitCardState };

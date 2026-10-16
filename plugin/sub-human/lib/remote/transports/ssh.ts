@@ -1,8 +1,10 @@
 /**
  * plugin/sub-human/lib/remote/transports/ssh.ts: the ssh kind, the pipe kind (./pipe.ts) with an `ssh` command in
- * front. For an admitted key the host's authorized_keys forced command (the card's admit,
- * lib/remote/shim.ts) decides what runs there and ignores the remote command named here; a login link (no forced
- * command: the person's own login to the host account) names the host's stable shim itself (remoteCommand).
+ * front. Since protocol 3 every new ssh link is a login link: the person's own ssh login to the host account (their
+ * keys, agent, ~/.ssh/config and known_hosts decide; the plugin writes no key and pins no host key) runs the host's
+ * stable shim (remoteCommand), an invite line's or a plain `/sub-human join USER@HOST ROOM`'s alike. A link an admit let
+ * in before protocol 3 (its own key, a pinned host key, a forced command on the host that ignores the remote command
+ * named here) keeps working with the link options its file holds until it is kicked or invited again.
  *
  *   dest(text) -> {user, host, port?} | null   a plain user@host[:port]: a POSIX-ish user name and a host name or
  *                                  IPv4 address. Neither part may start with "-" (an option) or hold spaces, quotes,
@@ -19,9 +21,9 @@
  *       environment, never from an invite: for tests and setups that need -i KEY, -F FILE or a known_hosts file
  *       (ssh takes the first value of an option, so they win). Link options come from fields the joining machine
  *       wrote into its own link file (lib/room/links.ts), never from an invite:
- *         key         -i KEY -o IdentitiesOnly=yes          the link's own key (lib/remote/sshkeys.ts linkKey)
- *         knownHosts  -o UserKnownHostsFile=F -o StrictHostKeyChecking=yes -o HostKeyAlias=ALIAS   the host key the
- *         alias       invite carried, pinned: no first-use prompt, nothing else accepted
+ *         key         -i KEY -o IdentitiesOnly=yes          a link from before protocol 3: its own key (nothing makes one now)
+ *         knownHosts  -o UserKnownHostsFile=F -o StrictHostKeyChecking=yes -o HostKeyAlias=ALIAS   that link's pinned
+ *         alias       host key: no first-use prompt, nothing else accepted
  *         mux         -o ControlMaster=no -o ControlPath=<home>/ssh/cm-%C   ride a master `sub-human prime CODE` opened
  *                     (one MFA prompt for hours); with none open, ssh connects as usual. BatchMode stays on, so the
  *                     daemon never waits on a prompt and never becomes a master itself
@@ -32,8 +34,8 @@
  *       port?, via?, login: true, link, remoteHome?}. link: the link id this machine picks (12 hex, random by default;
  *       the host's server records the link under it, so `/sub-human kick` finds its serve process by its argv); home:
  *       the host's SUB_HUMAN_HOME when it is not ~/.sub-human (a plain absolute path). null when any part is not plain
- *   remoteCommand(spec, code) -> string   what ssh asks the host to run: `sub-human serve --stdio CODE` for an
- *       admitted key (its forced command ignores it), else (login) `"$HOME"/.sub-human/bin/serve --stdio CODE --link ID
+ *   remoteCommand(spec, code) -> string   what ssh asks the host to run: `sub-human serve --stdio CODE` for a key an
+ *       admit let in before protocol 3 (its forced command ignores it), else (login) `"$HOME"/.sub-human/bin/serve --stdio CODE --link ID
  *       --login`, or `env SUB_HUMAN_HOME=H H/bin/serve …` with remoteHome. A forced-command key can never send --login:
  *       its line fixes the arguments (scripts/sub-human serve also refuses --login under SSH_ORIGINAL_COMMAND)
  *   loginCommand(spec) -> string     the plain `ssh [-p P] [-J V] user@host` a person runs once by hand (a host key to
@@ -47,9 +49,6 @@
  *       anything that may pass (a timeout, a refused connection). loginFailure(stderr, spec, code): its message alone
  *   primeCommand(spec, code, {persist}?) -> [cmd, ...args]   the master: interactive (no BatchMode), -M -N -f
  *       -o ControlPersist=PERSIST (default 8h), the same link options and ControlPath
- *   enrollCommand(spec, code, {key, knownHosts, opts?}) -> [cmd, ...args]   a short code's enrollment (lib/remote/enroll.ts):
- *       the room's public enrollment key, a fresh known_hosts filled with accept-new (Ed25519 only, unhashed), no
- *       mux; read back and compared with the host key the host vouches for inside the PAKE
  *   controlPath(home?) -> string   <home>/ssh/cm-%C
  *   kind = {parse, open, describe}   the `ssh` kind (./index.ts register); open(spec, {code}) spawns command() over
  *                                  ./pipe.ts (INVALID without a code)
@@ -240,22 +239,6 @@ function primeCommand(spec: SshSpec, code: string, { persist = '8h', opts = Stri
   return ['ssh', '-M', '-N', '-f', '-o', `ControlPersist=${persist}`, '-o', 'ServerAliveInterval=15', ...opts, ...local, ...tail];
 }
 
-/**
- * The joiner's ssh to a short code's enrollment door (lib/remote/enroll.ts): the room's public enrollment key, and a
- * fresh known_hosts of its own that ssh fills with the host key it is shown (accept-new: there is no key to pin yet).
- * Ed25519 host keys only, never hashed or updated, so the joiner can read back exactly the key ssh verified and compare
- * it with the one the host vouches for inside the PAKE channel. These options come first, so neither the joiner's
- * SUB_HUMAN_SSH_OPTS nor its ~/.ssh/config can change them (ssh takes the first value of an option).
- */
-function enrollCommand(spec: SshSpec, code: string, { key, knownHosts, opts = String(process.env.SUB_HUMAN_SSH_OPTS || '').split(/\s+/).filter(Boolean) }: { key: string; knownHosts: string; opts?: string[] }): string[] {
-  const { tail } = checked(spec, code);
-  const file = (k: string, v: unknown): string => { if (typeof v !== 'string' || !LOCAL_PATH_RE.test(v)) throw new RoomError('INVALID', `the enrollment ${k} is not a plain absolute path`); return v; };
-  return ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes', '-i', file('key', key), '-o', `UserKnownHostsFile=${file('known_hosts', knownHosts)}`,
-    '-o', 'GlobalKnownHostsFile=/dev/null', '-o', 'StrictHostKeyChecking=accept-new', '-o', `HostKeyAlias=sub-human-enroll-${code}`, '-o', 'HostKeyAlgorithms=ssh-ed25519',
-    '-o', 'UpdateHostKeys=no', '-o', 'HashKnownHosts=no', '-o', 'ControlMaster=no', '-o', 'ControlPath=none', '-o', 'ConnectTimeout=15',
-    '-o', 'ServerAliveInterval=15', ...opts, ...tail, `sub-human serve --enroll ${code}`];
-}
-
 const kind: Required<KindEntry<SshSpec>> = {
   parse,
   open(spec, ctx: OpenCtx = {}): Transport {
@@ -268,6 +251,6 @@ const kind: Required<KindEntry<SshSpec>> = {
 };
 
 export {
-  withUser, placeholder, dest, jump, parse, locator, command, enrollCommand, remoteCommand, loginSpec, loginCommand,
+  withUser, placeholder, dest, jump, parse, locator, command, remoteCommand, loginSpec, loginCommand,
   loginFailure, loginProblem, classify, primeCommand, controlPath, kind,
 };

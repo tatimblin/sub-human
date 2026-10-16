@@ -98,7 +98,9 @@ async function webHelloProbe(spec: LinkSpec, code: string, { timeoutMs = DOCTOR_
   let t: Transport | null = null;
   const deadline = new Promise<never>((_, no) => setTimeout(() => no(new Error(`no answer within ${timeoutMs} ms`)), timeoutMs).unref());
   try {
-    const tr: Transport = await Promise.race([lib('remote/transports/index.ts').open(spec, { code }), deadline]);
+    // a web link made under protocol 3 proves its own Noise key (XK); the hello alone needs no token
+    const own = (spec.kind === 'ws' || spec.kind === 'wss') && spec.clientKey ? lib('remote/link-connect.ts').linkKey(code) : undefined;
+    const tr: Transport = await Promise.race([lib('remote/transports/index.ts').open(spec, { code, ...(own ? { clientKey: own } : {}) }), deadline]);
     t = tr;
     const reply = await Promise.race([new Promise<HelloReply | undefined>((ok, no) => {
       tr.onFrame(f => { if (f.id === 1) (f.error ? no(Object.assign(new Error(`${f.error.code}: ${f.error.message}`), { code: f.error.code })) : ok(f.result as HelloReply)); }); // as: the server's JSON, read defensively
@@ -145,9 +147,7 @@ async function diagnoseLink(code: string, { quick, timeoutMs, env }: { quick: bo
   if (st.pid) daemon = { running: lib('io.ts').isAlive(st.pid), pid: st.pid }; // the state record's own pid wins
   const recent = lastLogError(code);
   const out: LinkReport = { code, transport: { kind: t.kind, describe, user: t.user, host: t.host, port: t.port, home: t.home, ...(t.login === true ? { login: true } : {}) },
-    credential: l.token ? 'token' : l.enroll ? 'invite PIN (not checked by the host yet)' : l.awaiting ? 'waiting for the host person to let it in' : l.invite ? 'invite (not redeemed yet)' : t.login === true ? 'ssh login (not linked yet)' : 'none', daemon, state: st, recent,
-    // an ssh link whose key the new host has not let in yet (a handoff's follower; no secret in it)
-    ...(!l.token && typeof l.request === 'string' ? { request: l.request } : {}),
+    credential: l.token ? 'token' : l.awaiting ? 'waiting for the host person to let it in' : l.pin_wanted ? 'invite line (the host asks for its PIN)' : l.invite ? 'invite (not redeemed yet)' : t.login === true ? 'ssh login (not linked yet)' : 'none', daemon, state: st, recent,
     // the room's host moved (lib/handoff.ts): the link file was re-pointed at the new host; reached once a token came
     moved: l.moved ? { epoch: l.moved.epoch, host: l.moved.host, locator: l.moved.locator, demoted: !!l.moved.demoted, reached: !!l.moved.reached_at } : null };
   const quiet = dormant(st);
@@ -158,7 +158,7 @@ async function diagnoseLink(code: string, { quick, timeoutMs, env }: { quick: bo
     const reply: HelloReply = r.reply || {};
     const hostTime = replyTime(reply);
     out.reach = {
-      ok: r.ok, ms: r.ms, error: r.error, ...(r.code ? { code: r.code } : {}), skipped: !!r.skipped, hint: r.ok ? null : (spec && spec.kind === 'ssh' ? (spec.login === true && lib('remote/transports/ssh.ts').loginFailure(r.stderr ?? '', spec, code)) || sshHint(r.stderr, { code, request: l.request, transport: spec }) : null),
+      ok: r.ok, ms: r.ms, error: r.error, ...(r.code ? { code: r.code } : {}), skipped: !!r.skipped, hint: r.ok ? null : (spec && spec.kind === 'ssh' ? (spec.login === true && lib('remote/transports/ssh.ts').loginFailure(r.stderr ?? '', spec, code)) || sshHint(r.stderr, { code, transport: spec }) : null),
       stderr: r.stderr || '',
       protocol: r.ok ? { v: reply.v, proto: reply.proto || null, server: typeof reply.server === 'string' ? reply.server : null } : null,
       skewMs: r.ok && hostTime !== null ? Math.round(hostTime - (r.t0! + r.t1!) / 2) : null, // an answer carries t0 and t1
@@ -193,10 +193,8 @@ function linkChecks(d: LinkReport): Check[] {
   else if (d.state.state === 'fork') fix = `this machine's copy no longer matches the host's: run ${cli(`link --reset ${d.code}`)} in a terminal (it copies the room afresh; anything not sent is kept aside)`;
   else if (d.moved && !d.moved.reached && d.state.state !== 'online') {
     const who = d.moved.host || 'its host';
-    fix = `${d.request ? `over ssh ${who} has not let this machine in yet. ` : ''}`
-      + `Ask ${who} for an invite (/sub-human invite there) and type the line it shows`;
-  } else if (d.request && d.state.state !== 'online') fix = 'the host has not let this machine in yet: ask them for an invite (/sub-human invite there) and type the line it shows';
-  else if (d.transport.login && why && LOGIN_ENDED.has(why)) {
+    fix = `${d.transport.login ? `over ssh this machine follows through your own ssh login to ${who}'s machine; without one, ask` : 'Ask'} ${who} for an invite (/sub-human invite${d.transport.login ? ' --web' : ''} there) and type the line it shows`;
+  } else if (d.transport.login && why && LOGIN_ENDED.has(why)) {
     fix = `the host ended this connection: ask them first, then join again over your ssh login: /sub-human join ${d.transport.user}@${d.transport.host}${d.transport.port ? `:${d.transport.port}` : ''} ${d.code}`;
   } else if (why && SPENT.has(why)) {
     // the link's invite (or key) is spent: joining again or restarting the daemon would only reuse it

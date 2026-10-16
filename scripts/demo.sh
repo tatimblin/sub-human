@@ -16,9 +16,10 @@
 #                   Both people pull and run npm test. After jess joins, each opens the room row in the agent panel.
 #                   jess is another machine: her seat has its own sub-human home ($BASE/laptop/home) and ssh config,
 #                   and S2 joins her over a real ssh link to a private sshd on 127.0.0.1 (scripts/devbox.sh: run as
-#                   you, never root, never ~/.ssh): tristan's /sub-human invite shows `/sub-human join devbox ROOM
-#                   PIN`, jess types it, tristan's card lets her in, a bare /sub-human seats her. The sshd stops after
-#                   S10 (or an abort; a resume starts it again).
+#                   you, never root, never ~/.ssh; jess's own ssh login to it): tristan's /sub-human invite shows
+#                   `/sub-human join devbox ROOM SECRET --home …` and its PIN apart, jess types the line, then the
+#                   PIN when her machine asks, tristan's card lets her in, a bare /sub-human seats her. The sshd
+#                   stops after S10 (or an abort; a resume starts it again).
 #                   Checks run at the end; their verdict goes in run.json.
 #   scripts/demo.sh stop            kill the sh-* tmux sessions (never numbered ones), stop a capture and the film's sshd
 #
@@ -47,9 +48,9 @@ PLUGIN="$REPO/plugin/sub-human"
 BASE=/tmp/sh-demo
 export SUB_HUMAN_HOME="$BASE/home"
 HOME2="$BASE/home2"   # S11: carol's home, standing in for another machine
-# --film: jess's seat is another machine over ssh. LAPTOP is her machine (her sub-human home, her ssh config and
-# known_hosts); DEVBOX is tristan's as ssh reaches it: a private sshd (scripts/devbox.sh) with its own host key and the
-# authorized_keys sub-human writes the invite's door and the card's Let in line to (SUB_HUMAN_AUTHORIZED_KEYS).
+# --film: jess's seat is another machine over ssh. LAPTOP is her machine (her sub-human home, her ssh key, config and
+# known_hosts); DEVBOX is tristan's as ssh reaches it: a private sshd (scripts/devbox.sh) with its own host key and an
+# authorized_keys holding jess's login key (her own ssh login, set up as any ssh login is; sub-human writes nothing there).
 LAPTOP="$BASE/laptop"; DEVBOX="$BASE/devbox"
 SSH_PORT="${SH_DEMO_SSH_PORT:-2222}"
 DEVBOX_SH="$REPO/scripts/devbox.sh"
@@ -136,19 +137,17 @@ film_repo() {
 # seat_env (--film): the two machines' environments, one KEY=VALUE per line in $BASE/seat-env/SEAT (launch.sh adds
 # them after the defaults, so they win).
 #   A, the host: its ssh address is the alias devbox (the invite's line reads `/sub-human join devbox …`, never a user
-#      name), the private sshd's host key, the authorized_keys that sshd reads, and its own ssh config (ssh -G devbox
-#      names the user for the invite's record)
-#   B, another machine: her own sub-human home, her own ssh config (devbox -> 127.0.0.1:SSH_PORT, her known_hosts) for
-#      every ssh sub-human runs there, and her machine's name on the host's card
+#      name), and its own ssh config (ssh -G devbox names the user for the invite's record)
+#   B, another machine: her own sub-human home, her own ssh config (devbox -> 127.0.0.1:SSH_PORT, her key and
+#      known_hosts: her own login to devbox) for every ssh sub-human runs there, and her machine's name on the host's card
 seat_env() {
   mkdir -p "$BASE/seat-env" "$LAPTOP/home"
-  printf '%s\n' "SUB_HUMAN_SSH_ADDR=devbox" "SUB_HUMAN_SSH_HOST_KEY=$DEVBOX/ssh_host_ed25519_key.pub" \
-    "SUB_HUMAN_AUTHORIZED_KEYS=$DEVBOX/.ssh/authorized_keys" "SUB_HUMAN_SSH_OPTS=-F $DEVBOX/ssh_config" > "$BASE/seat-env/$SEAT_A"
+  printf '%s\n' "SUB_HUMAN_SSH_ADDR=devbox" "SUB_HUMAN_SSH_OPTS=-F $DEVBOX/ssh_config" > "$BASE/seat-env/$SEAT_A"
   printf '%s\n' "SUB_HUMAN_HOME=$LAPTOP/home" "SUB_HUMAN_SSH_OPTS=-F $LAPTOP/.ssh/config" \
     "SUB_HUMAN_MACHINE_LABEL=$SEAT_B-laptop" > "$BASE/seat-env/$SEAT_B"
 }
-# devbox_up / devbox_down (--film): the private sshd (scripts/devbox.sh). up keeps the host key and authorized_keys of
-# a resumed take (jess's link pinned that key; her admitted line is in that file). down stops sshd and its sessions;
+# devbox_up / devbox_down (--film): the private sshd (scripts/devbox.sh). up keeps the host key and jess's login key of
+# a resumed take (her known_hosts holds that host key; her key is the one authorized_keys lets in). down stops sshd and its sessions;
 # with --link (after S10) jess's link daemon first, which would otherwise redial for a while. After an abort her daemon
 # is left to redial: a resume (--from) starts sshd again and her link comes back by itself.
 devbox_up() { "$DEVBOX_SH" up "$DEVBOX" "$LAPTOP" "$SSH_PORT" >&2; }
@@ -410,29 +409,39 @@ S2() { # B joins (--film: from another machine, over ssh: S2_ssh)
   fi
 }
 
-# S2_ssh (--film): B joins A's room from her machine over ssh. A's /sub-human invite shows A one line with a 4-digit PIN
-# (to A only: the hook's hidden reply, never A's Claude); the driver reads it off A's pane (never through a model) and
-# B types it: her link runs the PIN check through the host's enrollment door over ssh (scripts/devbox.sh's sshd), and
-# A's card asks "Let B … on B-laptop join room …?"; A answers Let in (demo-lib admit-card: the person's own answer on the
-# card); once B's link is in (the host's line "B's machine (…) joined the room"), a bare /sub-human takes her seat.
+# S2_ssh (--film): B joins A's room from her machine over ssh. A's /sub-human invite shows A one line and, apart from
+# it, a 4-digit PIN (to A only: the hook's hidden reply, never A's Claude); the driver reads both off A's pane (never
+# through a model). B types the line: her link reaches devbox through her own ssh login (scripts/devbox.sh's sshd),
+# checks the host's key against the line, shows the host the line's SECRET, and the host asks for the PIN; B types the
+# PIN A told her, and A's card asks "Let B … on B-laptop join room …?"; A answers Let in (demo-lib admit-card: the
+# person's own answer on the card); once B's link is in (the host's line "B's machine (…) joined the room"), a bare
+# /sub-human takes her seat.
 S2_ssh() {
   local a=$SEAT_A b=$SEAT_B
   local before; before=$($LIB log-max)
   local d="$SNAP_DIR/state/S2"; mkdir -p "$d"
-  mark invite "$a invites $b's machine: one line with a PIN"
+  mark invite "$a invites $b's machine: one line, and a PIN told apart"
   submit "$a" "/sub-human invite"
   need wait_pane "$a" "invite to room $(room) for one machine, over ssh devbox" 30 --what "$a's pane shows the ssh invite (to $a, never to $a's Claude)" || return 1
   local line; line=$($LIB join-line "sh-$a")
-  [[ "$line" =~ ^join\ devbox\ $(room)\ [0-9]{4}$ ]] || { ABORT="S2: no \"join devbox $(room) PIN\" line readable in $a's pane (read: ${line:-nothing})"; return 1; }
-  echo "$line" > "$d/join-line.txt"   # the checks look for its PIN in every transcript (it must be in none)
-  record "the driver read $a's invite line off $a's pane"
+  [[ "$line" =~ ^join\ devbox\ $(room)\ [0-9a-z]{39}(\ --home\ [^ ]+)?$ ]] || { ABORT="S2: no \"join devbox $(room) SECRET\" line readable in $a's pane (read: ${line:-nothing})"; return 1; }
+  local pin; pin=$($LIB join-pin "sh-$a")
+  [[ "$pin" =~ ^[0-9]{4}$ ]] || { ABORT="S2: no PIN readable apart from the line in $a's pane"; return 1; }
+  echo "$line" > "$d/join-line.txt"   # the checks look for its SECRET in every transcript (it must be in none)
+  echo "$pin" > "$d/join-pin.txt"     # and for "join PIN"
+  record "the driver read $a's invite line and its PIN off $a's pane"
   settle "$a"
-  snap "$a runs /sub-human invite: one line for $b's machine, /sub-human join devbox $(room) and a 4-digit PIN, shown to $a only"
+  snap "$a runs /sub-human invite: one line for $b's machine, /sub-human join devbox $(room) and its SECRET, and a 4-digit PIN apart, shown to $a only"
   mark join "$b joins from her machine over ssh"
   submit "$b" "/sub-human $line"
-  need wait_pane "$b" "checked your PIN" 90 --what "$b's link ran the PIN check with the host over ssh; $a's card asks" || return 1
+  need wait_pane "$b" "Type the 4-digit PIN they told you" 90 --what "$b's link reached the host over her ssh login and checked its key; the host asks for the PIN" || return 1
   settle "$b"
-  snap "$b types the line: her machine checks the PIN with the host over ssh (her Claude never sees it); a card on $a's machine asks"
+  snap "$b types the line: her machine reaches the host over her own ssh login and checks its key (her Claude never sees the SECRET); the host asks for the PIN"
+  mark pin "$b types the PIN $a told her"
+  submit "$b" "/sub-human join $pin"
+  need wait_pane "$b" "checked your PIN" 90 --what "$b's PIN went to the host; $a's card asks" || return 1
+  settle "$b"
+  snap "$b types the PIN: the host checks it (her Claude never sees it); a card on $a's machine asks"
   mark card "$a lets her in"
   need $LIB admit-card "sh-$a" --timeout 120 || return 1
   need wait_log --kind status --from room --text-has "$b's machine (" --after "$before" --timeout 60 --what "$b's link connects over ssh once let in (the host's line)" || return 1
@@ -820,15 +829,19 @@ S11() { # remote: carol joins from a second home (another machine, on this one) 
   need wait_pane alice "invite to room $(room)" 30 --what "alice's pane shows the invite line (to her, never to her Claude)" || return 1
   local line; line=$($LIB join-line sh-alice)
   [ -n "$line" ] || { ABORT="S11: no invite line readable in alice's pane"; return 1; }
+  local pin; pin=$($LIB join-pin sh-alice)
+  [ -n "$pin" ] || { ABORT="S11: no PIN readable apart from the line in alice's pane"; return 1; }
   [ -d "$BASE/carol" ] || cp -R "$REPO/demo/app.pristine" "$BASE/carol"
   mkdir -p "$HOME2"
   start_seat carol
   need $LIB ready sh-carol --timeout 90 || return 1
   local SESSIONS="$SESSIONS,sh-carol"   # snap carol's pane too, in this scene
-  # the line links her home (a hidden step: the PIN never reaches her Claude); alice's card lets her in; then a bare
-  # /sub-human takes her seat
+  # the line links her home and the PIN follows when the host asks (hidden steps: neither reaches her Claude); alice's
+  # card lets her in; then a bare /sub-human takes her seat
   submit carol "/sub-human $line --as carol"
-  need wait_pane carol "checked your PIN" 60 --what "carol's link ran the PIN check with the host; alice's card asks" || return 1
+  need wait_pane carol "Type the 4-digit PIN they told you" 60 --what "carol's link reached the host and checked its key; the host asks for the PIN" || return 1
+  submit carol "/sub-human join $pin"
+  need wait_pane carol "checked your PIN" 60 --what "carol's PIN went to the host; alice's card asks" || return 1
   need $LIB admit-card sh-alice --timeout 120 || return 1
   local tries=0
   until $LIB wait-log --kind member_joined --from carol --after "$before" --timeout 1 >/dev/null 2>&1 || [ $tries -ge 4 ]; do
@@ -839,7 +852,7 @@ S11() { # remote: carol joins from a second home (another machine, on this one) 
   need wait_log --kind member_joined --from carol --after "$before" --timeout 60 --what "the host logs carol's join (her link let in, her seat taken)" || return 1
   need wait_pane carol "$(panel_row "$(room)")" 90 --what "carol's room row" || return 1
   settle alice carol
-  snap "alice runs /sub-human invite: one line with a 4-digit PIN, shown to her only. carol, in another home, types it (her Claude never sees the PIN), alice lets her in on the card, and /sub-human seats her: her link daemon mirrors the room"
+  snap "alice runs /sub-human invite: one line and a 4-digit PIN apart, shown to her only. carol, in another home, types the line, then the PIN (her Claude sees neither), alice lets her in on the card, and /sub-human seats her: her link daemon mirrors the room"
   local b1; b1=$($LIB log-max)
   submit carol "@room $SAY11"
   need wait_log --kind say --from carol --via human --after "$b1" --timeout 30 || return 1

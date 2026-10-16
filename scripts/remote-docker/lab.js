@@ -15,17 +15,22 @@
  *     keypair(svc, name) -> pubkey      ~/.ssh/NAME (ed25519) for the joiner user
  *     sshConfig(svc, name, hosts)       ~/.ssh/NAME.conf: one Host block per entry, then the shared defaults
  *     trustOnBastion(pub)   the joiner's key on the bastion (a jump host's account)
- *     restrict(code, linkId, pub, {svc})   the one-link forced-command line a host's admit writes, appended to the
- *                       devbox account's authorized_keys (what a key let in for one other connection looks like)
- *     hostInvite(hostSeat, name, {dest, via}) -> {line, pin, text}   `/sub-human invite --ssh DEST [--via JUMP]`
- *     join(opts) -> Promise<{seat, name, invite, pin, linkId, conf, join, pub}>   a joiner over one ssh path: invite
- *                       --ssh on the host's seat, the line typed on the joiner (`/sub-human join DEST ROOM PIN [--via J]
- *                       --as NAME`: the PAKE through the enrollment door, the link's own key), the host's card (Let in),
- *                       the link online, then a bare `/sub-human` (the seat). The same on devbox-old (beta.15 has the
- *                       PIN join): either end may be the previous release. A plugin without the PIN join (shortCode
- *                       false) has no other way in any more: the join returns {pending: why}
+ *     restrict(code, linkId, pub, {svc})   the one-link forced-command line an admit wrote before protocol 3, appended
+ *                       to the devbox account's authorized_keys (what a key let in for one other connection looks like;
+ *                       nothing writes one now)
+ *     authorizeLogin(pub, {svc, user?})   the joiner's key as an ordinary login line in the host account's authorized_keys: the
+ *                       person's own ssh login, set up as any is (an ssh invite rides it; the plugin writes no line)
+ *     hostInvite(hostSeat, name, {dest, via}) -> {line, word, pin, text}   `/sub-human invite --ssh DEST [--via JUMP]`:
+ *                       the line (protocol 3: its SECRET word; beta.15: word null, the PIN at its end) and the PIN
+ *     join(opts) -> Promise<{seat, name, invite, pin, linkId, conf, join, pub}>   a joiner over one ssh path: its own
+ *                       login to the host account, invite --ssh on the host's seat, the line typed on the joiner
+ *                       (`/sub-human join DEST ROOM SECRET [--via J] --as NAME`: the host's key checked, the SECRET
+ *                       shown), the PIN when the host asks (`/sub-human join PIN`), the host's card (Let in), the link
+ *                       online, then a bare `/sub-human` (the seat). Against devbox-old (beta.15) its line has a 4-digit
+ *                       PIN and this joiner refuses it (the host must update): {join: {ok: false, out}}; a beta.15 joiner
+ *                       refuses this host's line the same way
  *     features             {hostSsh, revoke, heartbeat, outbox, autoRejoin, handoff, doctor, ws, urlPin,
- *                          versionRange, loginJoin, shortCode}: what the plugin in /plugin can do (seat-cli.js probe), overridable with
+ *                          versionRange, loginJoin, shortCode, inviteLine}: what the plugin in /plugin can do (seat-cli.js probe), overridable with
  *                          LAB_FEATURES=outbox=1,ws=0
  *   runScenarios({out, only, log}) -> {ok, results}   each scenarios/*.js in order; evidence under out/<id>/
  * Scenario module: {id, title, persona, requires?: [feature], budgetMs?, linkEnv?: {SUB_HUMAN_LINK_*_MS}, run(t)}.
@@ -220,6 +225,10 @@ class Lab {
     return this.seat(svc).restrict(code, linkId, pub, '/home/host/.ssh/authorized_keys');
   }
 
+  authorizeLogin(pub, { svc = 'devbox', user = USERS[svc] || 'host' } = {}) {
+    this.exec(svc, ['sh', '-c', `mkdir -p /home/${user}/.ssh && cat >> /home/${user}/.ssh/authorized_keys && chown -R ${user}:${user} /home/${user}/.ssh && chmod 0600 /home/${user}/.ssh/authorized_keys`], { input: pub + '\n' });
+  }
+
   trustOnBastion(pub) {
     this.exec('bastion', ['sh', '-c', 'cat >> /home/jump/.ssh/authorized_keys && chown jump:jump /home/jump/.ssh/authorized_keys && chmod 0600 /home/jump/.ssh/authorized_keys'], { input: pub + '\n' });
   }
@@ -232,35 +241,45 @@ class Lab {
     return { code: h.code, host, hostName: name, machine: h.machine };
   }
 
-  /** `/sub-human invite --ssh DEST [--via JUMP]` in NAME's session on hostSeat: the line (no "/sub-human ") and its PIN. */
+  /** `/sub-human invite --ssh DEST [--via JUMP]` in NAME's session on hostSeat: the line (no "/sub-human "), its SECRET
+   * word (null from a beta.15 host, whose line ends with the PIN) and the PIN. */
   hostInvite(hostSeat, name, { dest = 'host@devbox', via } = {}) {
     const r = hostSeat.expand(name, `invite --ssh ${dest}${via ? ` --via ${via}` : ''}`);
     const text = r.out || '';
-    const m = /\/sub-human (join \S+ [a-z]+-\d{4} (\d{4})(?: --via \S+)?)\n/.exec(`${text}\n`);
-    if (!m) throw new Error(`invite --ssh on ${hostSeat.svc}: no line and PIN in: ${text.slice(0, 300)}`);
-    return { line: m[1], pin: m[2], text };
+    const m = /\/sub-human (join \S+ [a-z]+-\d{4} ([0-9a-z]{39})(?: --(?:via|home) \S+)*)\n/.exec(`${text}\n`);
+    const p = /apart from the line[^\n]*: (\d{4})\n/.exec(`${text}\n`);
+    if (m && p) return { line: m[1], word: m[2], pin: p[1], text };
+    const old = /\/sub-human (join \S+ [a-z]+-\d{4} (\d{4})(?: --via \S+)?)\n/.exec(`${text}\n`); // a beta.15 host's
+    if (old) return { line: old[1], word: null, pin: old[2], text };
+    throw new Error(`invite --ssh on ${hostSeat.svc}: no line and PIN in: ${text.slice(0, 300)}`);
   }
 
   async join(opts) {
-    const { svc, name, code, hosts, via, viaFlag, home, host, hostName = 'alice', user = USERS[svc], hostSvc = 'devbox', dest = 'host@devbox', key = `id_${name}`, ms = 30_000 } = opts;
-    const can = hostSvc === 'devbox' ? this.features.shortCode : features(this.oldProbe).shortCode;
-    if (!can) return { pending: `the plugin on ${hostSvc} has no PIN join, and the lab joins no other way (sh1 invites are gone)`, join: { ok: false } };
+    const { svc, name, code, hosts, via, viaFlag, host, hostName = 'alice', user = USERS[svc], hostSvc = 'devbox', dest = 'host@devbox', key = `id_${name}`, ms = 30_000 } = opts;
     const t0 = Date.now();
     const pub = this.keypair(svc, key, user);
     const conf = this.sshConfig(svc, name, key, hosts, user);
     if (via === 'bastion') this.trustOnBastion(pub);
+    this.authorizeLogin(pub, { svc: hostSvc }); // their own ssh login to the host account: what an ssh invite rides
     const hostSeat = host || this.seat(hostSvc);
-    const { line, pin } = this.hostInvite(hostSeat, hostName, { dest, via: viaFlag });
-    const seat = this.seat(svc, { user, ...(home ? { home } : {}) });
-    // the line, typed on the joiner: the PAKE through the door, then the host person's card
-    const linked = seat.short(name, dest, code, pin, ...(viaFlag ? ['--via', viaFlag] : []), '-F', conf);
-    const admitted = linked.waiting ? hostSeat.admitcard(hostName, 'Let in') : null;
+    const { line, word, pin, text } = this.hostInvite(hostSeat, hostName, { dest, via: viaFlag });
+    const seat = this.seat(svc, { user, ...(opts.home ? { home: opts.home } : {}) });
+    const typed = seat.short(name, line, '-F', conf);
+    const refused = out => ({ seat, name, invite: line, pin, text, linkId: null, conf, pub, linked: typed, admitted: null, join: { ok: false, out, ms: Date.now() - t0 } });
+    if (!word) return refused(typed.out); // a beta.15 host's line: this joiner says the host must update
+    if (!typed.ok) return refused(typed.out); // a beta.15 joiner refuses this host's line; or the host refused it
+    // the host asks for the PIN once the daemon reached it (the hook's reply may come before)
+    const asked = typed.asked || await until(() => { const l = seat.linkfile(code); return !!l.pin_wanted || !!l.refused; }, ms, 250);
+    const lf = seat.linkfile(code);
+    if (!asked || !lf.pin_wanted) return refused(`${typed.out} ${JSON.stringify(lf.refused || seat.link(code))}`);
+    const gave = seat.pin(name, pin);
+    const admitted = gave.waiting ? hostSeat.admitcard(hostName, 'Let in') : null;
     const linkId = admitted && admitted.link;
-    // the daemon redials (jittered backoff) until the card lets its key in
+    // the daemon redials (jittered backoff) until the card lets the machine in
     const online = !!(admitted && admitted.ok) && await until(() => { try { return seat.link(code).state === 'online'; } catch { return false; } }, ms, 250);
     const seated = online ? seat.expand(name, '') // a bare /sub-human takes the seat
-      : { ok: false, out: `not linked: ${linked.out || ''} ${admitted ? `card: ${admitted.out}` : ''} link ${JSON.stringify(seat.link(code))}` };
-    return { seat, name, invite: line, pin, linkId, conf, pub, linked, admitted, join: { ...seated, ms: Date.now() - t0 } };
+      : { ok: false, out: `not linked: ${gave.out || ''} ${admitted ? `card: ${admitted.out}` : ''} link ${JSON.stringify(seat.link(code))}` };
+    return { seat, name, invite: line, word, pin, linkId, conf, pub, linked: typed, gave, admitted, join: { ...seated, ms: Date.now() - t0 } };
   }
 
   /** Logs since the current scenario started (runOne sets this.since), so one scenario never sees another's. */
@@ -282,7 +301,8 @@ const FEATURES = {
   ws: p => p.kinds.some(k => /^wss?$/.test(k)) || p.files.some(f => /ws\.[jt]s$|listener\.[jt]s$/.test(f)),
   urlPin: p => p.src.join.urlPin,
   loginJoin: p => p.src.join.login,
-  shortCode: p => p.files.some(f => /^lib\/remote\/enroll\.[jt]s$/.test(f)),
+  shortCode: p => p.files.some(f => /^lib\/remote\/enroll\.[jt]s$/.test(f)), // beta.15's PIN join (CPace)
+  inviteLine: p => p.files.some(f => /^lib\/remote\/invite-secret\.[jt]s$/.test(f)), // protocol 3: the line and its PIN
   versionRange: p => p.src.hello.range,
 };
 
@@ -307,17 +327,23 @@ class Evidence {
     this.metrics = {};
   }
   secret(s, min = 8) { if (s && String(s).length >= min) this.secrets.add(String(s)); }
-  /** An invite's secret (sh2) and its PIN (only where it stands as the PIN: never a bare 4-digit number). */
+  /** An invite's secret (sh2, or an invite line's SECRET word) and its PIN (only where it stands as the PIN: never a bare
+   * 4-digit number). */
   invite(inv, pin) {
-    if (inv) this.secret(String(inv).split('.')[3]);
+    if (inv) {
+      const s = String(inv);
+      const word = /\b([0-9a-z]{39})\b/.exec(s);
+      if (word) this.secret(word[1]); else if (s.startsWith('sh2.')) this.secret(s.split('.')[3]);
+    }
     if (pin) this.pins = [...(this.pins || []), String(pin)];
   }
   redact(text) {
     let t = String(text);
     for (const s of this.secrets) t = t.split(s).join('<redacted>');
-    for (const p of this.pins || []) t = t.replace(new RegExp(`(PIN\\D{0,3}|sh2\\.\\S+\\s+)${p}\\b`, 'g'), '$1<pin>');
-    // an invite's line: join DEST ROOM 4829, or join URL 4829 (the PIN is its whole secret)
-    for (const p of this.pins || []) t = t.replace(new RegExp(`(join\\s+\\S+(?:\\s+[a-z]+-\\d{4})?\\s+)${p}\\b`, 'g'), '$1<pin>');
+    for (const p of this.pins || []) t = t.replace(new RegExp(`(PIN\\D{0,3}|another way\\): |sh2\\.\\S+\\s+)${p}\\b`, 'g'), '$1<pin>');
+    // a line's PIN step (join 4829), or a beta.15 line: join DEST ROOM 4829, or join URL 4829
+    for (const p of this.pins || []) t = t.replace(new RegExp(`(join\\s+(?:\\S+(?:\\s+[a-z]+-\\d{4})?\\s+)?)${p}\\b`, 'g'), '$1<pin>');
+    t = t.replace(/(\/sub-human join \S+(?: [a-z]+-\d{4})? )[0-9a-z]{39}\b/g, '$1<redacted>'); // any invite line's SECRET
     return t.replace(/\b(sh[12])\.([a-z]+-\d{4}|[A-Z0-9]{4,8})\.([A-Za-z0-9_-]+)\.[A-Za-z0-9_-]{16,}/g, '$1.$2.$3.<redacted>');
   }
   log(msg) {

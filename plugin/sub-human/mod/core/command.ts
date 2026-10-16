@@ -20,14 +20,19 @@ import type { JoinReply, HookJson, HookJsonSpecific, OriginLike, RunOutput, SubH
 /** The command as command.run names it (a plugin skill's name, or its bare form). */
 export const COMMANDS = Object.freeze(['sub-human:sub-human', 'sub-human']);
 
-/** The one rule for a prompt that may carry a PIN (lib/commands/index.ts answers it hidden, the module leaves it to the
- * classic hook through Remote Control): `join`, `invite` and `admit`, and any word of 3-10 digits. */
+/** The one rule for a prompt that may carry a secret (lib/commands/index.ts answers it hidden, the module leaves it to
+ * the classic hook through Remote Control): `join`, `invite` and `admit`, any word of 3-10 digits (a PIN), and any word
+ * shaped like an invite line's SECRET (SECRET_WORD). */
 const SECRET_VERBS = ['join', 'invite', 'admit'];
 const DIGITS = /^[0-9]{3,10}$/;
+/** An invite line's SECRET (lib/remote/invite-secret.ts: 39 characters of Crockford base32, read in either case), with
+ * room for a paste that lost or doubled a few: any word of 32-48 letters and digits is taken for one. */
+export const SECRET_WORD = /^[0-9A-Za-z]{32,48}$/;
 const words = (args: unknown) => String(args ?? '').trim().split(/\s+/).filter(Boolean);
-export const mayHoldSecret = (args: unknown) => { const a = words(args); return SECRET_VERBS.includes(a[0]) || a.some(w => DIGITS.test(w)); };
-/** A word of the prompt is PIN-shaped (3-10 digits): lib/commands/index.ts never hands such a prompt a seat's block. */
-export const hasPinWord = (args: unknown) => words(args).some(w => DIGITS.test(w));
+const secretShaped = (w: string) => DIGITS.test(w) || SECRET_WORD.test(w);
+export const mayHoldSecret = (args: unknown) => { const a = words(args); return SECRET_VERBS.includes(a[0]) || a.some(secretShaped); };
+/** A word of the prompt is PIN- or SECRET-shaped: lib/commands/index.ts never hands such a prompt a seat's block. */
+export const hasPinWord = (args: unknown) => words(args).some(secretShaped);
 
 /**
  * Whether the module answers this run itself. Typed here (composer): yes. Typed through Remote Control (bridge): only

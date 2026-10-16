@@ -15,8 +15,11 @@
  *
  * The reasons, by the code they come with:
  *   AUTH      PLACED_ALREADY (a signed entry's nonce is in the log: an earlier try landed), INVITE_UNKNOWN, INVITE_USED,
- *             INVITE_BURNT, INVITE_EXPIRED, INVITE_OTHER_MACHINE, INVITE_OTHER_LINK, PIN_NEEDED, PIN_WRONG, PIN_LAST (a
- *             wrong PIN burnt it), ADMIT_REFUSED, ADMIT_LAPSED, ADMIT_REVOKED, ADMIT_LATE (let in, but not redeemed in
+ *             INVITE_BURNT, INVITE_EXPIRED, INVITE_OTHER_MACHINE, INVITE_OTHER_LINK, PIN_NEEDED (an invite line's
+ *             host asks for its PIN: the joiner is asked), PIN_WRONG, PIN_LAST (a wrong PIN burnt it), PIN_THROTTLED (a
+ *             PIN too soon after a wrong one: nothing charged), HOST_KEY_MISMATCH (the host that answered does not
+ *             hold the key the invite line's tag names: nothing was sent), KEY_MISMATCH (a web link, or its join,
+ *             bound to another Noise key than the connection proved), ADMIT_REFUSED, ADMIT_LAPSED, ADMIT_REVOKED, ADMIT_LATE (let in, but not redeemed in
  *             time), TOKEN_UNKNOWN, LINK_REVOKED (the host revoked the link), KEY_REVOKED (ssh refused a link's own key
  *             that once got in), NOT_BOUND (a link let in as one name joins as another), NOT_JOINED (a write as a seat
  *             that did not join over the link), LOGIN_ONLY (a login hello that did not come over an ssh login),
@@ -35,7 +38,7 @@
 
 const NAMES = [
   'PLACED_ALREADY', 'INVITE_UNKNOWN', 'INVITE_USED', 'INVITE_BURNT', 'INVITE_EXPIRED', 'INVITE_OTHER_MACHINE', 'INVITE_OTHER_LINK',
-  'PIN_NEEDED', 'PIN_WRONG', 'PIN_LAST', 'ADMIT_REFUSED', 'ADMIT_LAPSED', 'ADMIT_REVOKED', 'ADMIT_LATE', 'TOKEN_UNKNOWN',
+  'PIN_NEEDED', 'PIN_WRONG', 'PIN_LAST', 'PIN_THROTTLED', 'HOST_KEY_MISMATCH', 'KEY_MISMATCH', 'ADMIT_REFUSED', 'ADMIT_LAPSED', 'ADMIT_REVOKED', 'ADMIT_LATE', 'TOKEN_UNKNOWN',
   'LINK_REVOKED', 'KEY_REVOKED', 'NOT_BOUND', 'NOT_JOINED', 'LOGIN_ONLY', 'MACHINE_TAKEN', 'SSH_HOST_KEY', 'SSH_DENIED',
   'SSH_NO_SHIM', 'SSH_NO_ROOM', 'SSH_OLD_HOST',
   'UNKNOWN_OUTCOME', 'NOT_SENT', 'DAEMON_DOWN', 'ADMIT_WAITING', 'QUEUE_FULL',

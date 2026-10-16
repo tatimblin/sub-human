@@ -4,11 +4,11 @@
 //   1. alice: `/sub-human handoff bob joiner@joiner-a` (the others will reach bob's machine at that address);
 //   2. bob's machine gets the ask privately; bob answers the card the hooks build ("Host it here", hooks/handlers/consent.ts);
 //   3. joiner-a holds the room (host epoch 1), devbox is a mirror of it, every link is re-pointed at joiner-a;
-//   4. over ssh the new host must let each member's key in (the documented 1.0 limit: not automated), so a member
-//      that cannot get in yet is offline with a reason naming bob and the way out, and `sub-human doctor --json`
-//      shows its link moved and not reached; bob then gives each machine an invite (`/sub-human invite --ssh`, for
-//      devbox `--via jump@bastion`: it is on the internal network only), each types its line, bob's card lets the
-//      machine in, and a bare `/sub-human` joins the seat again over the new link;
+//   4. over ssh each member follows through its person's own ssh login to the new host, with the bound invite bob's
+//      machine minted for it (protocol 3: nothing is let in by the plugin), so a member with no login there yet is
+//      offline with a reason naming bob and the way out, and `sub-human doctor --json` shows its link moved and not
+//      reached; once the joiner-a account takes each one's key as a login (as a person sets up any ssh login), the
+//      link comes online by itself and a bare `/sub-human` joins the seat again over it. (Not run since Stage 7b.)
 //   5. posts flow between all three through joiner-a, `sub-human handoff --status` on joiner-a shows both machines
 //      reconnected, and every copy is byte-identical with a verifying chain, the old host's lines kept.
 // LAB_HANDOFF_CMD overrides step 1's command ({name} and {code} are filled in).
@@ -57,10 +57,10 @@ module.exports = {
     t.check('host_changed (epoch 1, host bob) with both signatures: bob\'s acceptance and alice\'s ask', !!moved && moved.epoch === 1 && moved.host === 'bob' && !!moved.accept && !!moved.ask,
       moved ? JSON.stringify({ epoch: moved.epoch, host: moved.host, accept: !!moved.accept, ask: !!moved.ask }) : 'none');
 
-    // 4. bea is re-pointed at joiner-a; her key is not let in there yet: offline, told what to do
+    // 4. bea is re-pointed at joiner-a; she has no login there yet: offline, told what to do
     const repointed = await t.until(() => { const l = b.seat.link(code); return l.state === 'offline' && /bob/.test(l.reason || ''); }, 30_000, 500);
     const bl = b.seat.link(code);
-    t.check("bea's link follows to joiner-a; until bob lets her key in it is offline with a reason that names bob and the way out", repointed && /invite/.test(bl.reason || ''), `${bl.state}: ${(bl.reason || '').slice(0, 200)}`);
+    t.check("bea's link follows to joiner-a; with no login of hers there it is offline with a reason that names bob and the way out", repointed && /ssh login|invite/.test(bl.reason || ''), `${bl.state}: ${(bl.reason || '').slice(0, 200)}`);
     const dj = b.seat.cli(['doctor', '--json', '--quick'], { env: { SUB_HUMAN_SSH_OPTS: `-F ${b.conf}` } });
     let report = null;
     try { report = JSON.parse(dj.stdout); } catch { /* not JSON */ }
@@ -68,20 +68,18 @@ module.exports = {
     const ld = report && (report.links || []).find(l => l.code === code);
     t.check('doctor --json on joiner-b: the link\'s room moved to bob, not reached yet', !!ld && ld.moved && ld.moved.host === 'bob' && !ld.moved.reached, ld ? JSON.stringify(ld.moved) : 'no link in the report');
 
-    // bob lets each machine in: an invite each, its line typed there, his card, the seat joined again over the new link
-    const follow = async (seat, name, { via, sshOpts = [] } = {}) => {
-      const { pin } = lab.hostInvite(a.seat, 'bob', { dest: NEW_HOST, via });
-      t.ev.invite(null, pin);
-      const j = seat.short(name, NEW_HOST, code, pin, ...(via ? ['--via', via] : []), ...sshOpts);
-      const adm = j.waiting ? a.seat.admitcard('bob', 'Let in') : null;
-      const up = await waitState(seat, code, 'online', 45_000);
-      const re = up !== null ? seat.expand(name, '') : { ok: false, out: JSON.stringify(seat.link(code)) };
-      t.log(`${name} follows: join "${(j.out || '').slice(0, 80)}", card ${adm && adm.ok ? 'let in' : 'no'}, online after ${up} ms, seat: ${re.ok ? 'ok' : re.out}`);
-      return { ok: !!(adm && adm.ok) && up !== null && re.ok, up, re };
+    // each machine gets a login of its own on joiner-a (its key, as ssh-copy-id would): the link that stopped on the
+    // refused login is then joined again over that login (/sub-human join joiner@joiner-a CODE: links and seats)
+    const follow = async (seat, name, pub, sshOpts = []) => {
+      lab.authorizeLogin(pub, { svc: 'joiner-a', user: 'joiner' });
+      const re = seat.login(name, NEW_HOST, code, ...sshOpts);
+      const up = re.ok ? await waitState(seat, code, 'online', 30_000) : null;
+      t.log(`${name} follows: online after ${up} ms, seat: ${re.ok ? 'ok' : re.out}`);
+      return { ok: up !== null && re.ok, up, re };
     };
-    const fb = await follow(b.seat, 'bea', { sshOpts: ['-F', b.conf] });
-    t.check('bea follows: bob\'s invite line, his card, her link online at joiner-a and her seat joined again', fb.ok, `online after ${fb.up} ms; ${(fb.re.out || 'ok').slice(0, 120)}`);
-    const fa = await follow(host, 'alice', { via: 'jump@bastion' });
+    const fb = await follow(b.seat, 'bea', b.pub, ['-F', b.conf]);
+    t.check('bea follows once she has a login on joiner-a: joined again over it, her link online there', fb.ok, `online after ${fb.up} ms; ${(fb.re.out || 'ok').slice(0, 120)}`);
+    const fa = await follow(host, 'alice', hostPub);
     t.check('the old host follows as a member the same way (through the bastion)', fa.ok, `online after ${fa.up} ms; ${(fa.re.out || 'ok').slice(0, 120)}`);
 
     // 5. the room goes on through joiner-a

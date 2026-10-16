@@ -12,7 +12,7 @@
  *   mod-hooks    the hooks module's function hooks: mod/register.ts HOOKS (event, matcher, file, what it does)
  *   mcp-tools    the room MCP server's tools/list (spawned for real, so plug-ins are included)
  *   cc-contract  lib/cc.ts CONTRACT: id, internals-doc section, stability, note
- *   lib-modules  lib/**.ts (and lib/vendor's .js): each module's header comment, first sentence
+ *   lib-modules  lib/**.ts (and lib's .js): each module's header comment, first sentence
  *
  *   generate() -> Promise<{name: markdown}>    render(doc, sections) -> doc    DOC (the doc's path)
  */
@@ -142,7 +142,7 @@ function libSection() {
     for (const e of fs.readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       const p = path.join(d, e.name);
       if (e.isDirectory()) walk(p);
-      else if (/\.[jt]s$/.test(e.name) && !e.name.endsWith('.d.ts')) files.push(p); // .ts, and lib/vendor's .js
+      else if (/\.[jt]s$/.test(e.name) && !e.name.endsWith('.d.ts')) files.push(p); // .ts, and lib's .js (cache-dir.js)
     }
   };
   walk(lib);

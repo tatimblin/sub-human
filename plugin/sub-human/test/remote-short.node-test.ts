@@ -1,10 +1,12 @@
 // Invites end to end over the pipe transport, two homes on one machine (test/support/two-homes.ts): the host's
-// /sub-human invite --pipe shows `/sub-human join pipe:HOME ROOM 4829` to the person only; the joiner types it
-// (a hidden step: the model never sees the PIN); the link daemon runs CPace with the PIN (lib/remote/enroll.ts) and
-// then waits; the host's tail wakes the host seat's Claude, whose card (hooks/handlers/consent.ts) is the only way in: Let in
-// links the machine (a bare /sub-human then takes the seat), Refuse stops it, an AFK card records nothing, and a
-// request nobody answers lapses. A wrong PIN costs a try with a room line, the fifth burns the invite; the PIN is
-// never in a log, a link file after the attempt, or what the model gets.
+// /sub-human invite --pipe shows `/sub-human join pipe:HOME ROOM SECRET` and, apart from it, a 4-digit PIN, to the
+// person only; the joiner types the line (a hidden step: the model never sees the SECRET), the link daemon checks the
+// host's key against it and shows the host the SECRET, the host asks for the PIN, and the joiner types `/sub-human join
+// PIN` (hidden too); then the host's tail wakes the host seat's Claude, whose card (hooks/handlers/consent.ts) is the
+// only way in: Let in links the machine (a bare /sub-human then takes the seat), Refuse stops it, an AFK card records
+// nothing, and a request nobody answers lapses. A wrong PIN costs a try with a room line and is asked for again, the
+// fifth burns the invite; neither the SECRET nor the PIN is ever in a log, a link file after the host answered it, or
+// what the model gets.
 import test from 'node:test';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
@@ -17,10 +19,11 @@ import * as linkSocket from '../lib/remote/link-socket.ts';
 import * as invites from '../lib/remote/invites.ts';
 import * as hostLinks from '../lib/remote/host-links.ts';
 import * as admission from '../lib/remote/admission.ts';
-import { Machine } from './support/two-homes.ts';
+import { Machine, shownInvite } from './support/two-homes.ts';
 import type { MachineRun, Seat } from './support/two-homes.ts';
 import * as identityLib from '../lib/identity.ts';
 import * as hosting from '../lib/remote/hosting.ts';
+import * as links from '../lib/room/links.ts';
 
 const LINK_ENV: Record<string, string> = { SUB_HUMAN_LINK_RETRY_MS: '200', SUB_HUMAN_LINK_RETRY_MAX_MS: '400', SUB_HUMAN_LINK_IDLE_MS: '1500' };
 const childOf = (pid: number) => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
@@ -32,7 +35,7 @@ const stopDaemon = (t: TestContext, m: Machine, code: string) => t.after(() => {
 });
 const hiddenBlock = (r: MachineRun) => r.json && r.json.decision === 'block' && r.json.hookSpecificOutput && r.json.hookSpecificOutput.suppressOriginalPrompt === true;
 const modelSees = (r: MachineRun) => JSON.stringify([r.json && r.json.hookSpecificOutput && r.json.hookSpecificOutput.additionalContext, r.json && r.json.systemMessage]);
-const shown = (reason: string | undefined) => /\/sub-human join (\S+) ([a-z]+-\d{4}) (\d{4})/.exec(String(reason));
+const shown = (reason: string | undefined) => shownInvite(String(reason));
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 async function until<T>(fn: () => T, ms = 8000, what = 'condition'): Promise<T> {
   for (const end = Date.now() + ms; Date.now() < end; await sleep(50)) { const v = fn(); if (v) return v; }
@@ -58,33 +61,53 @@ function card(host: Machine, alice: Seat, ref: string, label: string | null, ext
   return { pre, card: c, post };
 }
 
-test('an invite over pipe: the host sees one line; join links in a hidden step; the host person\'s card lets the machine in; a bare /sub-human takes the seat', async t => {
+/** The line typed on the remote home (hidden); resolves once the host asked for the PIN (the link file says so). */
+async function typeLine(remote: Machine, seat: Seat, code: string, line: string, as: string) {
+  const r = remote.join(seat, `${line} --as ${as}`);
+  await until(() => remote.lib(() => !!(links.get(code) || {}).pin_wanted), 8000, 'the host asking for the PIN');
+  return r;
+}
+
+test('an invite over pipe: the host sees the line and the PIN apart; the line, then the PIN, link in hidden steps; the host person\'s card lets the machine in; a bare /sub-human takes the seat', async t => {
   const { host, remote, alice, bob, code } = room(t);
   const out = host.join(alice, 'invite --pipe');
   assert.ok(hiddenBlock(out), 'the invite: a hidden block');
   assert.equal(out.json!.systemMessage, undefined);
   const m = shown(out.json!.reason!);
   assert.ok(m, out.json!.reason!);
-  assert.equal(m[1], `pipe:${host.home}`);
-  assert.equal(m[2], code);
-  const pin = m[3];
-  assert.match(out.json!.reason!, /The 4-digit PIN is the whole secret/);
+  assert.equal(m.dest, `pipe:${host.home}`);
+  assert.equal(m.code, code);
+  const { pin, word } = m;
+  assert.match(out.json!.reason!, /tell them its PIN apart from the line \(say it, or send it another way\): \d{4}\n/);
+  assert.ok(!new RegExp(`join \\S+ \\S+ ${word}[^\\n]*${pin}`).test(out.json!.reason!), 'the PIN is not on the line');
   assert.match(out.json!.reason!, /a card here asks you to let them in/);
+  assert.match(out.json!.reason!, /newer than 0\.5\.0-beta\.15/);
 
-  const linked = remote.join(bob, `join pipe:${host.home} ${code} ${pin} --as bob`);
   stopDaemon(t, remote, code);
+  const typed = await typeLine(remote, bob, code, m.line, 'bob');
+  assert.ok(hiddenBlock(typed), typed.stderr);
+  for (const r of [typed]) assert.ok(!modelSees(r).includes(word) && !r.json!.reason!.includes(word), 'the SECRET is in nothing the model or Remote Control get, and not echoed');
+  const lf0 = JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.json`), 'utf8'));
+  assert.equal(lf0.invite, word);
+  assert.equal(lf0.pin_wanted.left, 5);
+  assert.equal(host.lib(() => admission.pending(code)).length, 0, 'the line alone makes no request');
+  const bare0 = remote.join(bob, '');
+  assert.match(bare0.json!.reason!, /has your invite \(5 tries left\)\. Type the 4-digit PIN they told you: \/sub-human join PIN/, 'a bare /sub-human asks for the PIN, never takes a seat');
+
+  const linked = remote.join(bob, `join ${pin}`);
   assert.ok(hiddenBlock(linked), linked.stderr);
   assert.ok(!modelSees(linked).includes(pin), 'the PIN is in nothing the model or Remote Control get');
   assert.ok(!linked.json!.reason!.includes(pin), 'and not echoed');
   assert.match(linked.json!.reason!, /checked your PIN\. A card there now asks them to let you in as bob \(request [0-9a-f]{6}\)\. This session tells you when they do; then type \/sub-human/);
   const lf = JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.json`), 'utf8'));
-  assert.equal('enroll' in lf, false, 'the PIN left the link file once the host answered');
+  assert.equal('pin' in lf, false, 'the PIN left the link file once the host answered');
+  assert.equal('pin_wanted' in lf, false);
   assert.equal(lf.join_as, 'bob', 'the seat it takes once let in');
   assert.equal(lf.join_sid, bob.sid, 'the session its tail tells');
   const hello = remote.hook('mod-hello', { nonce: bob.nonce }, bob).json as { seat: unknown; pending?: boolean };
-  assert.deepEqual([hello.seat, hello.pending], [null, true], 'no seat, a PIN join waiting: the module starts the tail');
-  assert.equal(JSON.stringify(lf).includes(pin), false);
-  assert.equal(typeof lf.invite, 'string');
+  assert.deepEqual([hello.seat, hello.pending], [null, true], 'no seat, an invite join waiting: the module starts the tail');
+  assert.equal(JSON.stringify(lf).includes(`"${pin}"`), false);
+  assert.equal(lf.invite, word, 'the line stays until the token comes');
   assert.equal(typeof lf.awaiting.ref, 'string');
 
   // nothing gets in before the host person answers: the daemon keeps hearing "waiting"
@@ -101,7 +124,7 @@ test('an invite over pipe: the host sees one line; join links in a hidden step; 
   const wake = ev.find(e => e.type === 'wake' && /admit/.test(e.text));
   assert.ok(wake, JSON.stringify(ev));
   assert.match(wake.text, new RegExp(`call AskUserQuestion with the question "admit ${reqs[0].ref}"`));
-  assert.ok(!wake.text.includes(pin));
+  assert.ok(!wake.text.includes(pin) && !wake.text.includes(word));
 
   // an AFK card records nothing
   const afk = card(host, alice, reqs[0].ref, null, { afkTimeoutMs: 60000 });
@@ -121,57 +144,81 @@ test('an invite over pipe: the host sees one line; join links in a hidden step; 
   const seated = remote.join(bob, '');
   assert.equal(seated.json!.decision, undefined, seated.stdout);
   assert.ok(remote.lib(() => identityLib.readMembers(code)).bob, 'bob is seated');
-  assert.equal('join_as' in JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.json`), 'utf8')), false, 'the seat is taken: nothing pending');
+  const after = JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.json`), 'utf8'));
+  assert.equal('join_as' in after, false, 'the seat is taken: nothing pending');
+  assert.equal('invite' in after, false, 'the line is spent: the token replaced it');
   const said = host.lib(() => store.open(code).readAll()).filter(e => e.from === 'room' && e.kind === 'status').map(e => e.text).join('\n');
-  assert.match(said, /bob on \S+ typed an invite's PIN; waiting for alice to let them in/);
+  assert.match(said, /bob on \S+ typed invite [0-9a-f]{12}'s PIN; waiting for alice to let them in/);
   assert.match(said, /alice let bob \(request [0-9a-f]{6}\) on \S+ in; undo with: \/sub-human kick bob/);
   assert.match(said, /bob's machine \(\S+\) joined the room, let in by alice; undo with: \/sub-human kick bob/);
-  assert.doesNotMatch(said, /\blink [0-9a-f]{12}|invite [0-9a-f]{12}/, 'no internal ids in the room\'s lines');
   const admitted = host.lib(() => admission.find(code, reqs[0].ref))!;
   assert.equal(admitted.admit, 'let-in');
   assert.ok(admitted.admit_sig && (admitted.admit_sig as { from?: string }).from === 'alice', 'the answer is signed with alice\'s seat key');
-  for (const f of [host.log(code), remote.log(code), fs.readFileSync(path.join(remote.home, 'links', `${code}.log`), 'utf8')]) assert.ok(!f.includes(` ${pin}`), 'the PIN is in no log');
-  const inv = host.lib(() => store.open(code).kv.get(invites.INVITES_KEY));
-  assert.ok(!JSON.stringify(inv).includes(`"prs":"${pin}"`), 'the host forgot the PIN once it was used');
+  for (const f of [host.log(code), remote.log(code), fs.readFileSync(path.join(remote.home, 'links', `${code}.log`), 'utf8')]) {
+    assert.ok(!f.includes(` ${pin}`) && !f.includes(word), 'neither the PIN nor the SECRET is in any log');
+  }
+  const inv = JSON.stringify(host.lib(() => store.open(code).kv.get(invites.INVITES_KEY)));
+  assert.ok(!inv.includes(`"${pin}"`) && !inv.includes(word), 'the host keeps neither in clear');
 });
 
-test('an invite: a wrong PIN costs a try with a room line; the fifth burns the invite; the right PIN after a wrong one still works', async t => {
+test('an invite: a wrong PIN costs a try with a room line and is asked for again; the right one too soon waits; after the wait it works', async t => {
   const { host, remote, alice, bob, code } = room(t);
-  const pin = shown(host.join(alice, 'invite --pipe').json!.reason!)![3];
-  const wrong = String((Number(pin) + 1) % 10_000).padStart(4, '0');
+  const m = shown(host.join(alice, 'invite --pipe').json!.reason!)!;
+  const wrong = String((Number(m.pin) + 1) % 10_000).padStart(4, '0');
   stopDaemon(t, remote, code);
-  const first = remote.join(bob, `join pipe:${host.home} ${code} ${wrong} --as bob`);
+  await typeLine(remote, bob, code, m.line, 'bob');
+  const first = remote.join(bob, `join ${wrong}`);
   assert.ok(hiddenBlock(first));
-  assert.match(first.json!.reason!, /could not join room \S+: wrong PIN \(4 tries left\)/);
+  assert.match(first.json!.reason!, /wrong PIN \(4 tries left\)\. Check the digits with the host, then type it again: \/sub-human join PIN/);
   assert.ok(!first.json!.reason!.includes(wrong));
   const lf = JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.json`), 'utf8'));
-  assert.equal('enroll' in lf, false, 'a refused PIN is dropped from the link file');
+  assert.equal('pin' in lf, false, 'a refused PIN is dropped from the link file');
+  assert.deepEqual([lf.pin_wanted.left, lf.pin_wanted.why], [4, 'PIN_WRONG'], 'and the PIN is asked for again');
   const rejoin = remote.join(bob, `bob ${code}`);
-  assert.match(rejoin.json!.reason!, /wrong PIN/, 'a rejoin never re-sends a refused PIN');
-  const bare = remote.join(bob, '');
-  assert.match(bare.json!.reason!, /could not join room \S+: .*wrong PIN/, 'nor does a bare /sub-human');
-  const ok = remote.join(bob, `join pipe:${host.home} ${code} ${pin} --as bob`);
+  assert.match(rejoin.json!.reason!, /wrong PIN \(4 tries left\)/, 'a seat never re-sends a refused PIN');
+  const fast = remote.join(bob, `join ${m.pin}`);
+  const w = /too many PINs tried just now: wait (\d) s, then type the PIN again: \/sub-human join PIN/.exec(fast.json!.reason!);
+  assert.ok(w, `too soon after a wrong one: ${fast.json!.reason}`);
+  assert.ok(Number(w[1]) > 2, 'the machine that typed it wrong waits longer than the invite (4 s, not 2)');
+  await sleep(Number(w[1]) * 1000 + 200);
+  const ok = remote.join(bob, `join ${m.pin}`);
   assert.match(ok.json!.reason!, /checked your PIN/);
   const said = host.lib(() => store.open(code).readAll()).filter(e => e.from === 'room').map(e => e.text).join('\n');
-  assert.match(said, /someone typed a wrong PIN for an invite to this room \(4 tries left\)/);
-  assert.ok(!said.includes(` ${wrong}`) && !said.includes(` ${pin}`));
+  assert.match(said, /bob on \S+ typed a wrong PIN for invite [0-9a-f]{12} \(4 tries left\)/);
+  assert.ok(!said.includes(` ${wrong}`) && !said.includes(` ${m.pin}`));
+});
 
-  // a second invite: five wrong PINs burn it
-  const pin2 = shown(host.join(alice, 'invite --pipe').json!.reason!)![3];
-  const bad = String((Number(pin2) + 7) % 10_000).padStart(4, '0');
+test('an invite: five wrong PINs burn it; the right one after that is asked for no more', async t => {
+  // the waits short (the pipe's serve runs with the joiner's environment)
+  const { host, remote, alice, code } = room(t, { ...LINK_ENV, SUB_HUMAN_PIN_BACKOFF_MS: '20' });
+  const carol = remote.seat('carol');
+  const m2 = shown(host.join(alice, 'invite --pipe').json!.reason!)!;
+  const bad = String((Number(m2.pin) + 7) % 10_000).padStart(4, '0');
+  stopDaemon(t, remote, code);
+  await typeLine(remote, carol, code, m2.line, 'carol');
   let last: MachineRun | undefined;
-  for (let i = 0; i < 5; i++) last = remote.join(bob, `join pipe:${host.home} ${code} ${bad} --as bob`);
+  for (let i = 0; i < 5; i++) {
+    for (;;) { // past the wait: the invite's and this machine's (doubling)
+      last = remote.join(carol, `join ${bad}`);
+      if (!/too many PINs tried just now: wait (\d+) s/.test(last.json!.reason!)) break;
+      await sleep(Number(/wait (\d+) s/.exec(last.json!.reason!)![1]) * 1000 + 100);
+    }
+  }
   assert.match(last!.json!.reason!, /that was the last try: this invite no longer works\. Ask the host for a new one/);
-  const after = remote.join(bob, `join pipe:${host.home} ${code} ${pin2} --as bob`);
-  assert.match(after.json!.reason!, /no invite for room \S+ is open here/, 'the right PIN no longer works once burnt');
+  const after = remote.join(carol, `join ${m2.pin}`);
+  assert.match(after.json!.reason!, /no invite here is waiting for a PIN/, 'a burnt invite takes no PIN; its line was scrubbed');
 });
 
 test('an invite: Refuse stops the join; a request nobody answers lapses; kick NAME withdraws a waiting one', async t => {
   const { host, remote, alice, bob, code } = room(t, { ...LINK_ENV, SUB_HUMAN_ADMIT_TTL_MS: '1500' });
   stopDaemon(t, remote, code);
+  const both = async (seat: Seat, as: string) => {
+    const m = shown(host.join(alice, 'invite --pipe').json!.reason!)!;
+    await typeLine(remote, seat, code, m.line, as);
+    return remote.join(seat, `join ${m.pin}`);
+  };
   // refuse
-  let pin = shown(host.join(alice, 'invite --pipe').json!.reason!)![3];
-  remote.join(bob, `join pipe:${host.home} ${code} ${pin} --as bob`);
+  await both(bob, 'bob');
   let ref = host.lib(() => admission.pending(code))[0].ref;
   const no = card(host, alice, ref, 'Refuse');
   assert.match(no.post.json!.hookSpecificOutput!.additionalContext!, /alice refused bob; nothing got in/);
@@ -179,9 +226,8 @@ test('an invite: Refuse stops the join; a request nobody answers lapses; kick NA
   assert.match(remote.lib(() => linkSocket.status(code)).reason!, /the host refused to let this machine in/);
 
   // lapse: the request waits ADMIT_TTL_MS, then the host's tail says so and the joiner stops
-  pin = shown(host.join(alice, 'invite --pipe').json!.reason!)![3];
   const carol = remote.seat('carol');
-  remote.join(carol, `join pipe:${host.home} ${code} ${pin} --as carol`);
+  await both(carol, 'carol');
   ref = host.lib(() => admission.pending(code))[0].ref;
   await sleep(1700);
   const ev = (await host.tail(alice, 1.2)).split('\n').filter(Boolean).map(l => JSON.parse(l));
@@ -195,9 +241,8 @@ test('an invite: Refuse stops the join; a request nobody answers lapses; kick NA
   await until(() => remote.lib(() => linkSocket.status(code)).state === 'stopped', 8000, 'the lapsed join stopped');
 
   // kick NAME while it waits
-  pin = shown(host.join(alice, 'invite --pipe').json!.reason!)![3];
   const dave = remote.seat('dave');
-  remote.join(dave, `join pipe:${host.home} ${code} ${pin} --as dave`);
+  await both(dave, 'dave');
   const r = host.join(alice, 'kick dave');
   assert.match(r.json!.reason!, /ended a connection to room \S+: it no longer reaches the room/);
   assert.equal(host.lib(() => admission.pending(code)).length, 0);
@@ -214,16 +259,18 @@ test('invite --cancel: an unknown ref is refused; an open invite is cancelled; c
   assert.match(host.lib(() => hosting.cancelInvite(code)).text, /has no open invite; nothing to cancel/);
 });
 
-test('an invite: the host CLI masks the PIN inside Claude Code, `sub-human admit` lists and lets in from a shell', async t => {
+test('an invite: the host CLI masks the SECRET and the PIN inside Claude Code, `sub-human admit` lists and lets in from a shell', async t => {
   const { host, remote, bob, code } = room(t);
   stopDaemon(t, remote, code);
   const masked = spawnSync(process.execPath, [h.BIN, 'invite', '--pipe'], { env: { ...host.env(null), CLAUDECODE: '1' }, encoding: 'utf8' });
   assert.equal(masked.status, 0, masked.stderr);
   assert.match(masked.stdout, /\/sub-human join \S+ \S+ ####\n/);
-  assert.match(masked.stdout, /PIN hidden/);
+  assert.match(masked.stdout, /another way\): ####\n/);
+  assert.match(masked.stdout, /PIN and SECRET hidden/);
   const plain = spawnSync(process.execPath, [h.BIN, 'invite', '--pipe'], { env: host.env(null), encoding: 'utf8' });
-  const pin = shown(plain.stdout)![3];
-  remote.join(bob, `join pipe:${host.home} ${code} ${pin} --as bob`);
+  const m = shown(plain.stdout)!;
+  await typeLine(remote, bob, code, m.line, 'bob');
+  remote.join(bob, `join ${m.pin}`);
   const list = spawnSync(process.execPath, [h.BIN, 'admit'], { env: host.env(null), encoding: 'utf8' });
   assert.match(list.stdout, /bob \(request [0-9a-f]{6}\) on \S+ wants to join room/);
   const ref = /admit ([0-9a-f]{12}) \[--refuse\]$/m.exec(list.stdout)![1];

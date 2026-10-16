@@ -5,11 +5,14 @@
  *
  *   checkShim({needed}) -> Check     <home>/bin/serve is the current shim and <home>/bin/current names an existing plugin
  *                                    and node
- *   scanAuthorizedKeys(file) -> {file, exists, lines}   the sub-human lines; checkAuthorizedKeys(scan) -> Check: lines that
- *                                    bypass the shim (written before 0.5) are a warning: remove them and invite again
+ *   scanAuthorizedKeys(file) -> {file, exists, lines, doors}   the sub-human lines an older sub-human wrote (nothing
+ *                                    writes one now): a link's forced command, and doors (the room codes of enrollment
+ *                                    doors a 0.5.0-beta.15 invite left). checkAuthorizedKeys(scan) -> Check: a line that
+ *                                    bypasses the shim (written before 0.5), or a door, is a warning (doctor --fix
+ *                                    removes the doors; a link's line goes when its link is kicked)
  *   sshVersion() -> string | null;  checkSsh({needed, version}) -> Check
- *   sshHint(stderr, {code?, request?, transport?}) -> string | null   ssh's complaint as a fix (MFA: prime; denied: the
- *                                    host's admit or a new invite; a host key; DNS or a timeout: --via JUMP)
+ *   sshHint(stderr, {code?, transport?}) -> string | null   ssh's complaint as a fix (MFA: prime; denied: a login of
+ *                                    your own, or an invite over the web; a host key; DNS or a timeout: --via JUMP)
  *   batchMode(ok, stderr) -> string  whether ssh logs in without a prompt, for a link's detail
  */
 import fs from 'node:fs';
@@ -49,8 +52,10 @@ const KEY_LINE_RE = /^command="SUB_HUMAN_HOME=(\S+) (.+?) --stdio (\S+) --link (
 function scanAuthorizedKeys(file: string): AuthorizedKeysScan {
   const text = readText(file);
   if (text === null) return { file, exists: false, lines: [] };
-  const lines: KeyLine[] = [];
+  const lines: KeyLine[] = [], doors: string[] = [];
   for (const l of text.split('\n')) {
+    const door = / sub-human-enroll:(\S+)\s*$/.exec(l);
+    if (door) { doors.push(door[1]); continue; }
     if (!/\bsub-human:/.test(l) && !/ serve --stdio /.test(l)) continue;
     const m = KEY_LINE_RE.exec(l.trim());
     if (!m) { lines.push({ ok: false, parse: false, raw: l }); continue; }
@@ -58,15 +63,21 @@ function scanAuthorizedKeys(file: string): AuthorizedKeysScan {
     const shimmed = run === path.join(home, 'bin', 'serve');
     lines.push({ ok: shimmed, home, code, id, type, key, shimmed });
   }
-  return { file, exists: true, lines };
+  return { file, exists: true, lines, doors };
 }
 
 function checkAuthorizedKeys(scan: AuthorizedKeysScan): Check {
   const h = path.resolve(lib('home.ts').home());
   if (!scan.exists) return check('authorized_keys', 'info', 'authorized_keys', `${tilde(scan.file)}: none (this machine hosts no room over SSH)`);
+  const doors = scan.doors || [];
+  if (doors.length) {
+    return check('authorized_keys', 'warn', 'authorized_keys',
+      `${doors.length} enrollment door line(s) an older sub-human's ssh invite left (room ${[...new Set(doors)].join(', ')}): they only tell an old joiner to update`,
+      `run ${cli('doctor --fix')} in a terminal (it removes them), or delete the lines ending sub-human-enroll:ROOM from ${tilde(scan.file)}`);
+  }
   if (!scan.lines.length) return check('authorized_keys', 'info', 'authorized_keys', `${tilde(scan.file)}: no sub-human lines`);
   const old = scan.lines.filter(l => !l.ok);
-  if (!old.length) return check('authorized_keys', 'pass', 'authorized_keys', `${scan.lines.length} sub-human line(s), all through the shim`);
+  if (!old.length) return check('authorized_keys', 'pass', 'authorized_keys', `${scan.lines.length} sub-human line(s) an older sub-human wrote for its links, all through the shim (each goes when its link is kicked)`);
   const fixes = old.map(l => (l.parse === false ? `edit the unreadable sub-human line by hand in ${tilde(scan.file)}`
     : `remove the sub-human:${l.code}:${l.id} line from ${tilde(scan.file)}${l.home === h ? '' : ` (home ${tilde(l.home)})`} and invite that machine again (/sub-human invite)`));
   return check('authorized_keys', 'warn', 'authorized_keys',
@@ -87,10 +98,10 @@ function checkSsh({ needed, version }: { needed: boolean; version: string | null
 
 
 /**
- * ssh's own complaint, as a hint (the link's own key the host lets in, `sub-human prime` for an MFA bastion, `--via`
- * for a jump host). link: the link file's {code, request?, transport} when known.
+ * ssh's own complaint, as a hint (a login of the person's own, `sub-human prime` for an MFA bastion, `--via` for a
+ * jump host). link: the link file's {code, transport} when known.
  */
-function sshHint(stderr: unknown, link: { code?: string; request?: unknown; transport?: LinkTransportView } = {}): string | null {
+function sshHint(stderr: unknown, link: { code?: string; transport?: LinkTransportView } = {}): string | null {
   const code = link.code || 'CODE';
   const t = link.transport || {};
   const newInvite = `ask the host for a new invite (/sub-human invite${t.via ? ` --via ${t.via}` : ''}) and type the line it shows`;
@@ -98,14 +109,14 @@ function sshHint(stderr: unknown, link: { code?: string; request?: unknown; tran
   switch (p && p.kind) {
     case 'mfa': return `the host or a jump host wants an interactive login (MFA): run ${cli(`prime ${code}`)} once in a terminal; the connection then rides that login for hours`;
     case 'denied': {
-      const admit = link.request
-        ? `the host has not let this machine in yet; ${newInvite}`
-        : 'the host refused this machine\'s key: it was never let in, or the host removed it. ' + newInvite;
-      return `${admit}. Behind a bastion with MFA, run ${cli(`prime ${code}`)} in a terminal first`;
+      const why = t.key
+        ? 'the host refused this link\'s own key (an older sub-human let it in): the host removed it. ' + newInvite
+        : 'the host refused your ssh login: joining over ssh needs a login of your own there (your key in its authorized_keys, as for any ssh). Without one, ask the host for an invite over the web (/sub-human invite --web)';
+      return `${why}. Behind a bastion with MFA, run ${cli(`prime ${code}`)} in a terminal first`;
     }
     case 'host-key': return t.knownHosts
       ? `the host's ssh key is not the one its invite pinned (a reinstalled or different machine): check with the host, then ${newInvite}`
-      : 'the host key is unknown or changed: run `ssh USER@HOST` once by hand to check and accept it, or ' + newInvite + ' (an invite pins the key)';
+      : 'the host key is unknown or changed: run `ssh USER@HOST` once by hand to check and accept it, then join again';
     case 'dns': return `the host name does not resolve from here (VPN or tailnet down?)${t.via ? '' : '; if it is only reachable through a jump host, ask the host for an invite with --via JUMP (/sub-human invite --via JUMP)'}`;
     case 'refused': return 'nothing listens for ssh on that port';
     case 'timeout': return `the host does not answer (asleep, offline or firewalled)${t.via ? '' : '; behind a bastion, the invite needs --via JUMP (/sub-human invite --via JUMP)'}`;

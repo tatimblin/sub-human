@@ -13,7 +13,7 @@
  *                                     sha256 of each and writes the logs to the evidence dir
  *   entries(log) -> [entry]           parse a log.jsonl
  *   wssHost(t, lab, code, host) -> port   (1.1) the host's listener on devbox 127.0.0.1:LAB_WS_PORT (LAB_WS_LISTEN_CMD)
- *   wssJoin(t, lab, host, code, svc, name, {proxy?}) -> Promise<{seat, name, ok, out}>   (1.1) alice mints a URL + PIN
+ *   wssJoin(t, lab, host, code, svc, name, {proxy?}) -> Promise<{seat, name, ok, out}>   (1.1) alice mints a URL + SECRET line and a PIN
  *                                     for https://tls-front (`/sub-human invite --url`), NAME types the line (joiner-b
  *                                     through corp-proxy: proxy), alice's card lets them in, a bare /sub-human seats
  */
@@ -76,7 +76,8 @@ async function converge(t, host, code, mirrors, ms = 20_000) {
 }
 
 const WS_PORT = Number(process.env.LAB_WS_PORT || 7420);
-const WEB_LINE_RE = /\/sub-human join (https:\/\/tls-front\/\S+) (\d{4})\n/;
+const WEB_LINE_RE = /\/sub-human (join https:\/\/tls-front\/\S+ [0-9a-z]{39})\n/;
+const PIN_RE = /apart from the line[^\n]*: (\d{4})\n/;
 const LAB_CA_ENV = { NODE_EXTRA_CA_CERTS: '/etc/lab-ca.crt' };
 const CORP_PROXY = 'http://corp-proxy:3128';
 
@@ -90,11 +91,13 @@ async function wssHost(t, lab) {
 async function wssJoin(t, lab, host, code, svc, name, { proxy = false } = {}) {
   const r = host.expand('alice', 'invite --url https://tls-front');
   const text = (r.json && r.json.reason) || '';
-  const m = WEB_LINE_RE.exec(`${text}\n`);
-  if (!m) return { ok: false, out: text.slice(0, 200) };
-  t.ev.invite(null, m[2]);
+  const m = WEB_LINE_RE.exec(`${text}\n`), p = PIN_RE.exec(`${text}\n`);
+  if (!m || !p) return { ok: false, out: text.slice(0, 200) };
+  t.ev.invite(m[1], p[1]);
   const seat = lab.seat(svc, { env: { ...LAB_CA_ENV, ...(proxy ? { HTTPS_PROXY: CORP_PROXY, https_proxy: CORP_PROXY } : {}) } });
-  const l = seat.short(name, m[1], '-', m[2]);
+  const typed = seat.short(name, m[1]);
+  if (!(typed.asked || await t.until(() => !!seat.linkfile(code).pin_wanted, 45_000, 250))) return { seat, name, ok: false, out: typed.out };
+  const l = seat.pin(name, p[1]);
   if (!l.waiting) return { seat, name, ok: false, out: l.out };
   const card = host.admitcard('alice', 'Let in');
   if (!card.ok) return { seat, name, ok: false, out: `card: ${card.out}` };

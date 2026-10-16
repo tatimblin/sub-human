@@ -5,10 +5,14 @@
  * signer: a via=human payload, and a join's seat proof (lib/remote/host-links.ts proveSeat), reach it already
  * signed.
  *
- *   connect(transport, {machine, token?, invite?, pin?, login?, epoch?, caps?, deadlineMs?, helloMs?, proto?, version?}) -> Promise<Client>
+ *   connect(transport, {machine, token?, invite?, pin?, as?, checkHost?, login?, epoch?, caps?, deadlineMs?, helloMs?, proto?, version?}) -> Promise<Client>
  *       hello carries {proto, client} (lib/remote/protocol.ts): the server picks the version; a version outside
  *       this end's range, or a refusal from a host too old or too new, is PROTOCOL SKEW with skewMessage (who must update).
- *       pin: an sh2 invite's PIN (checked by the host, never here). login: true (no token, no invite): a link over the
+ *       pin: an invite's PIN (checked by the host, never here); as: {name, label} the seat an invite line's PIN asks
+ *       for. checkHost(host) (an invite line over ssh or a pipe, protocol 3): a first hello carries only a fresh nonce,
+ *       checkHost reads the reply's host proof (the host's machine key over that nonce: it throws to stop, so the secret
+ *       never goes to a host the line does not name), and a second hello carries the credential; a host that gives no
+ *       proof is older (PROTOCOL SKEW). login: true (no token, no invite): a link over the
  *       host account's own ssh login (lib/remote/server.ts); a host that returns no token for it is PROTOCOL. proto / version: fakes for the skew tests.
  *       epoch: the mirror's host epoch (lib/handoff.ts), sent in the hello; the server's is client.epoch (0 from a
  *       server that sends none).
@@ -45,6 +49,7 @@
  *   that closed rejects every pending call with OFFLINE. Nothing is retried.
  */
 
+import crypto from 'node:crypto';
 import * as protocol from './protocol.ts';
 import { RoomError } from '../room/validate.ts';
 import { LINK_CALL_MS } from '../config.ts';
@@ -78,6 +83,10 @@ export interface ConnectOpts {
   token?: string;
   invite?: string;
   pin?: string;
+  /** protocol 3: the seat an invite line's PIN asks for, and this machine's short name */
+  as?: { name: string; label: string };
+  /** protocol 3: the host proves its machine key over a nonce before the credential goes (see the header) */
+  checkHost?: (host: { key: string; sig: string } | null, nonce: string) => void;
   login?: boolean;
   epoch?: number;
   caps?: object;
@@ -198,19 +207,29 @@ class Client {
 
 /** transport: {send(frame), onFrame(fn), onClose(fn), close()}, or a Promise of one */
 async function connect(transport: Transport | Promise<Transport>, opts: ConnectOpts): Promise<Client> {
-  const { machine, machineKey, token, invite, pin, login, epoch, caps = {}, deadlineMs = LINK_CALL_MS, helloMs = deadlineMs } = opts;
+  const { machine, machineKey, token, invite, pin, as, checkHost, login, epoch, caps = {}, deadlineMs = LINK_CALL_MS, helloMs = deadlineMs } = opts;
   const proto: ProtoRange = opts.proto || protocol.PROTO, version: string = opts.version || protocol.PLUGIN_VERSION;
   const c = new Client(await transport, { deadlineMs });
-  const cred: { invite?: string; pin?: string; token?: string; login?: boolean } = invite !== undefined ? { invite, ...(pin !== undefined ? { pin } : {}) } : token !== undefined ? { token } : login === true ? { login: true } : {};
-  // the version this hello needs at least: an sh2 invite's PIN needs 2
-  const need = Math.max(proto.min, pin !== undefined ? 2 : 1);
+  const cred: { invite?: string; pin?: string; as?: { name: string; label: string }; token?: string; login?: boolean } = invite !== undefined
+    ? { invite, ...(pin !== undefined ? { pin } : {}), ...(as ? { as } : {}) } : token !== undefined ? { token } : login === true ? { login: true } : {};
+  // the version this hello needs at least: an invite line (checkHost) needs 3, an sh2 invite's PIN 2
+  const need = Math.max(proto.min, checkHost ? 3 : pin !== undefined ? 2 : 1);
   const me = { version, proto };
-  try {
-    const r: HelloReply = await c._request('hello', { proto, client: version, caps, machine, ...(machineKey ? { machine_key: machineKey } : {}), ...cred, ...(Number.isInteger(epoch) ? { epoch } : {}) }, ++c.seq, helloMs);
+  const base = { proto, client: version, caps, machine, ...(machineKey ? { machine_key: machineKey } : {}), ...(Number.isInteger(epoch) ? { epoch } : {}) };
+  const skew = (r: HelloReply): RoomError => {
     const theirs = protocol.rangeOf({ proto: r.proto });
-    if (!theirs || r.v < proto.min || r.v > proto.max || r.v < need) {
-      throw new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: r.server, proto: theirs || { min: r.v, max: r.v } }, joiner: me }), 'SKEW');
+    return new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: r.server, proto: theirs || { min: r.v, max: r.v } }, joiner: me }), 'SKEW');
+  };
+  const inRange = (r: HelloReply): boolean => !!protocol.rangeOf({ proto: r.proto }) && r.v >= proto.min && r.v <= proto.max && r.v >= need;
+  try {
+    if (checkHost) { // the host proves its key first; the secret goes only in the second hello
+      const nonce = crypto.randomBytes(18).toString('base64url');
+      const first: HelloReply & { host?: { key: string; sig: string } } = await c._request('hello', { ...base, nonce }, ++c.seq, helloMs);
+      if (!inRange(first)) throw skew(first);
+      checkHost(first.host && typeof first.host === 'object' ? first.host : null, nonce);
     }
+    const r: HelloReply = await c._request('hello', { ...base, ...cred }, ++c.seq, helloMs);
+    if (!inRange(r)) throw skew(r);
     if (cred.login && !r.token) throw new RoomError('PROTOCOL', `the host's sub-human (${r.server || 'an unknown version'}) makes no link over an ssh login; update it there, or join with an invite`, 'SKEW');
     Object.assign(c, { token: r.token || token || null, link: r.link, room: r.room, serverCaps: r.caps, v: r.v, serverVersion: r.server || null, epoch: Number.isInteger(r.epoch) ? r.epoch : 0, machine: typeof r.machine === 'string' && r.machine ? r.machine : null });
   } catch (e) {

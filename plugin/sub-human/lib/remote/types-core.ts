@@ -68,8 +68,13 @@ export interface HelloParams {
   /** Its machine key's proof (lib/remote/machine-key.ts): the host records the id the key gives, not the reported one. */
   machine_key?: { key: string; ts: number; sig: string };
   token?: string;
+  /** an sh2 invite (a handoff's, a promote's), or an invite line's SECRET word (protocol 3) */
   invite?: string;
   pin?: string;
+  /** protocol 3: the seat an invite line's PIN asks for, and this machine's short name (both as the joiner says) */
+  as?: { name: string; label: string };
+  /** protocol 3: a fresh random word; the reply's host proves the host home's machine key over it */
+  nonce?: string;
   login?: boolean;
   /** The mirror's host epoch (lib/handoff.ts). */
   epoch?: number;
@@ -121,6 +126,9 @@ export interface HelloResult {
   closed?: boolean;
   /** This machine's id in the room as the host records it for the link (lib/remote/host-links.ts); additive. */
   machine?: string;
+  /** protocol 3, for a hello with a nonce: the host home's machine key and its signature over the nonce
+   * (lib/remote/machine-key.ts hostProof), which an invite line's tag names over ssh and a pipe */
+  host?: { key: string; sig: string };
 }
 export interface OkResult { ok: boolean }
 export interface JoinResult { ok: true; rejoin?: true }
@@ -220,7 +228,7 @@ export interface PeerVersion { version?: string | null; proto: ProtoRange }
 /** Lifecycle fields any invite record may carry. */
 interface InviteLife {
   created_at: string;
-  /** The link id it redeemed to (an admission's: the one its enrollment reserved, the door's forced command names). */
+  /** The link id it redeemed to (an admission's: the one its PIN reserved; over ssh, the login's --link). */
   link?: string;
   used_at?: string;
   burnt_at?: string;
@@ -238,20 +246,34 @@ export interface BoundInvite extends InviteLife {
   tries?: number;
 }
 export type ShortKind = 'ssh' | 'ws' | 'pipe';
-/** The joiner a short invite enrolled (lib/remote/enroll.ts). */
+/** The joiner an invite line's PIN let through to the card (lib/remote/invites.ts): key, a web link's Noise key. */
 export interface Joiner { machine: string; name: string; label: string; key: string | null }
-/** A short invite: a 4-digit PIN, the whole secret (prs, in clear until it is used, burnt or revoked). */
+/**
+ * An invite line's record (protocol 3, v 4): the line carries its 128-bit secret (the record's key is that secret's
+ * sha256), and the PIN is checked here online (pin_sha256 = sha256(secret:PIN)), INVITE_PIN_TRIES tries, throttled
+ * after each wrong one per invite (wrong, next_at) and per source machine (sources: the id its machine key proves).
+ * v 3: a 4-digit-PIN short invite a 0.5.0-beta.15 host left (prs, the PIN in clear; host_key; door_file): read so
+ * it is refused and its PIN dropped, never redeemed.
+ */
 export interface ShortInvite extends InviteLife {
-  v: 3; short: true; admission?: undefined; handoff?: undefined; machine?: undefined; seats?: undefined;
-  kind: ShortKind; locator: string; host_key: string | null; by: string | null; door_file: string | null;
-  expires_at: string; tries: number; prs?: string; last_try_at?: string;
+  v: 3 | 4; short: true; admission?: undefined; handoff?: undefined; machine?: undefined; seats?: undefined;
+  kind: ShortKind; locator: string; by: string | null; expires_at: string; tries: number;
+  pin_sha256?: string;
+  wrong?: number; next_at?: string;
+  sources?: Record<string, { wrong: number; next_at: string }>;
   enrolled?: { at: string } & Joiner;
+  /** 0.5.0-beta.15's */
+  prs?: string; host_key?: string | null; door_file?: string | null; last_try_at?: string;
 }
 export type AdmitState = 'asked' | 'let-in' | 'refused' | 'lapsed';
-/** An admission: a short invite's joiner, waiting for the host person's answer. */
+/**
+ * An admission: an invite line's joiner whose PIN held, waiting for the host person's answer. key: the Noise key its
+ * web connection proved (the link made from it is bound to that key), null over ssh or a pipe; from a 0.5.0-beta.15
+ * enrollment it was the joiner's ssh link key (door_file: where its line went).
+ */
 export interface AdmissionRecord extends InviteLife {
   v: 2; admission: true; short?: undefined; handoff?: undefined; seats?: undefined; prs?: undefined;
-  from: string; kind: ShortKind; by: string | null; door_file: string | null;
+  from: string; kind: ShortKind; by: string | null; door_file?: string | null;
   machine: string; name: string; label?: string; key: string | null; link: string; admit: AdmitState;
   expires_at: string;
   admitted_at?: string; admitted_by?: string | null; admit_sig?: unknown; admitted_until?: string;
@@ -276,6 +298,9 @@ export interface LinkRecord {
   bound?: true;
   /** the machine id the joiner reported, when the host recorded another (lib/remote/host-links.ts machineFor): a label */
   label?: string;
+  /** the Noise key (X25519, base64url) a web link proves on every connection (XK); a link without one (ssh, a pipe, a web
+   * link made under protocol 2) has its token alone */
+  key?: string;
 }
 /** The host document remote/links. */
 export type Links = Record<string, LinkRecord>;
@@ -298,8 +323,6 @@ export interface CodedError extends Error {
   notListening?: boolean;
   /** lib/remote/bridge.ts: the call went out and its outcome is unknown */
   unknown?: boolean;
-  /** lib/remote/enroll.ts joinEnroll: the host charged a try for the attempt */
-  spent?: boolean;
 }
 
 // ---------- the link daemon (lib/remote/link.ts) ----------

@@ -21,7 +21,8 @@
  *   hostedRoom(explicit?) -> code   --room, else the one open room hosted here (Error NO_ROOM otherwise)
  *   inClaudeCode(env?) -> bool      run inside Claude Code (CLAUDECODE=1 or CLAUDE_CODE_SESSION_ID): its ! shell, whose
  *                output becomes part of the conversation
- *   maskPins(text, pins, env?) -> text   inside Claude Code every PIN masked and PIN_HIDDEN appended; else text
+ *   maskPins(text, pins, env?) -> text   inside Claude Code every PIN (and an invite line's SECRET) masked and PIN_HIDDEN
+ *                appended; else text
  *                (invite here, promote in lib/cli/handoff.ts)
  */
 
@@ -38,7 +39,7 @@ const fail = (s: string, code = 1) => { process.stderr.write(s.endsWith('\n') ? 
 
 /** Run inside Claude Code (its `!` shell, a Bash tool): whatever is printed lands in the conversation, model input. */
 const inClaudeCode = (env = process.env) => env.CLAUDECODE === '1' || !!env.CLAUDE_CODE_SESSION_ID;
-const PIN_HIDDEN = 'PIN hidden: this ran inside Claude Code, where the output becomes part of the conversation. Run it in a terminal outside Claude Code, or use /sub-human invite in the room (its reply is shown to you only).';
+const PIN_HIDDEN = 'PIN and SECRET hidden: this ran inside Claude Code, where the output becomes part of the conversation. Run it in a terminal outside Claude Code, or use /sub-human invite in the room (its reply is shown to you only).';
 
 /** text with every PIN in it masked, and why, when run inside Claude Code; else text as it is. */
 function maskPins(text: string, pins: readonly (string | null | undefined)[], env: NodeJS.ProcessEnv = process.env): string {
@@ -76,7 +77,7 @@ function invite(args: readonly string[]): number {
     const r = web
       ? webhost.hostWeb(code, { tailscale: !!(f.web || f.public), funnel: !!f.public, url: f.url, ...(f.port ? { port: Number(f.port) } : {}) })
       : hosting.hostInvite(code, { ssh: f.pipe ? undefined : f.ssh === undefined ? true : f.ssh, via: f.via, pipe: !!f.pipe });
-    say(maskPins(r.text, [r.pin]));
+    say(maskPins(r.text, [r.pin, r.word]));
     return 0;
   } catch (e) { return fail((e as Error).message); }
 }

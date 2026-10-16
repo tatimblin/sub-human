@@ -15,6 +15,7 @@ import * as linkSocket from '../lib/remote/link-socket.ts';
 import * as links from '../lib/room/links.ts';
 import * as listener from '../lib/remote/listener.ts';
 import * as invites from '../lib/remote/invites.ts';
+import * as hostLinks from '../lib/remote/host-links.ts';
 import * as handoff from '../lib/handoff.ts';
 import * as doctor from '../lib/cli/doctor.ts';
 import { Machine } from './support/two-homes.ts';
@@ -137,7 +138,10 @@ test('handoff to a new host reached over the web: a ws locator, invites pinning 
   if (forA) assert.equal(invites.parseInvite(forA)!.hostKey, bkey, 'the handoff invite pins the new host\'s key');
   assert.ok(await h.until(() => A.lib(() => linkSocket.status(code)).state === 'online', 10_000, 50), JSON.stringify(A.lib(() => linkSocket.status(code))));
   const lf = A.lib(() => links.get(code))!;
-  assert.deepEqual(lf.transport, { kind: 'ws', host: '127.0.0.1', port: bport, path: `/sub-human/${code}`, hostKey: bkey });
+  const { clientKey, ...pinned } = lf.transport as WsSpec;
+  assert.deepEqual(pinned, { kind: 'ws', host: '127.0.0.1', port: bport, path: `/sub-human/${code}`, hostKey: bkey });
+  assert.match(String(clientKey), /^[A-Za-z0-9_-]{43}$/, 'a key of the link\'s own (XK)');
+  assert.ok(Object.values(B.lib(() => hostLinks.links(store.open(code)))).some(l => l.key === clientKey), 'the new host bound A\'s link to that key');
   assert.equal(B.lib(() => store.open(code).readAll()).find(e => e.kind === 'host_changed')!.locator, loc);
   // alice posts through the new host, over ws
   assert.equal(A.say(alice, 'over ws to the new host').json!.continue, false);

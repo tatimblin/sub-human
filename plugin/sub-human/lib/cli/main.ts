@@ -42,12 +42,13 @@
  *   sub-human agent-statusline
  *       Claude Code's subagentStatusLine command (statusline/*). Never fails: on any error it prints
  *       nothing and exits 0.
- *   sub-human serve --stdio CODE [--link ID [--login]]
+ *   sub-human serve --stdio CODE [--link ID [--login]] [--via ws [--peer KEY]]
  *       One remote connection to room CODE hosted here (lib/remote/server.ts): protocol frames on stdin and
  *       stdout (lib/remote/transports/pipe.ts), errors on stderr; exits when stdin ends. A remote machine's
- *       link spawns it (a pipe), or sshd runs it as the forced command the host's admit wrote. Without a link token
- *       or an invite it answers hello and nothing else. --link ID: only that link's token (or the invite
- *       reserved for it) is accepted; any other is AUTH. A room this machine only mirrors is not served, unless
+ *       link spawns it (a pipe), an ssh login runs it (--login), or the web listener (--via ws, with --peer KEY: the
+ *       link's own Noise key its XK handshake proved). Without a link token or an invite it answers hello and nothing
+ *       else. --link ID without --login (an ssh forced command an admit wrote before protocol 3): only that link's
+ *       token (or the invite reserved for it) is accepted; any other is AUTH. A room this machine only mirrors is not served, unless
  *       the room moved away from here (lib/handoff.ts): then this machine's old log is served read-only, so a
  *       member that reconnects late still gets the line that moved the room and its invite to the new host.
  *       --login: run over this account's own ssh login (`/sub-human join USER@HOST ROOM` on the other machine
@@ -55,8 +56,9 @@
  *       a process of this account may. Refused under SSH_ORIGINAL_COMMAND (a forced command: a restricted key, whose
  *       line fixes its arguments without --login anyway, or a ForceCommand).
  *   sub-human serve --enroll CODE --kind ssh|ws|pipe
- *       One PIN attempt at room CODE hosted here (lib/remote/enroll.ts serveEnroll): the CPace exchange and
- *       nothing else; it never serves the room. The ssh enrollment door's forced command and the web listener run it.
+ *       What a 0.5.0-beta.15 enrollment door left in authorized_keys runs: the joiner's first frame is answered with
+ *       protocol.skewMessage (PROTOCOL SKEW: that joiner must update) and nothing else happens. Nothing writes such a
+ *       door any more; doctor names a leftover one.
  *   sub-human link CODE [--reset | --forget [--force]]
  *       The link daemon of room CODE, hosted on another machine (lib/remote/link.ts run): the join hook starts it
  *       detached; it exits on its own once this machine has no seat left in the room. --reset (with no daemon
@@ -116,7 +118,7 @@ import * as tailLib from '../tail.ts';
 import * as statusline from '../../statusline/index.ts';
 import { readInput } from '../io.ts';
 import { parse as parseArgs } from './args.ts';
-import type { CliIo, FlagSpec, Flags, Parsed } from './types.ts';
+import type { CliIo, FlagSpec, Parsed } from './types.ts';
 import type { MirrorRoomStore } from '../room/store-mirror.ts';
 
 // Each command's own modules load when it runs (createRequire: require(esm) is synchronous), so the tail and
@@ -328,16 +330,20 @@ function watch(args: readonly string[]) {
 }
 
 // ---------- serve --stdio CODE: lib/remote/server.ts ----------
-const SERVE_FLAGS = { stdio: 0, link: 1, login: 0, enroll: 1, kind: 1 } as const;
+const SERVE_FLAGS = { stdio: 0, link: 1, login: 0, via: 1, peer: 1, enroll: 1, kind: 1 } as const;
 
 function serve(args: readonly string[]) {
   const { flags, rest } = parseFlags(args, SERVE_FLAGS);
-  if (flags.enroll !== undefined) return serveEnroll(flags.enroll, flags, rest);
+  if (flags.enroll !== undefined) return serveEnroll();
   const code = rest[0];
-  if (!flags.stdio || !code || rest.length > 1) die('usage: sub-human serve --stdio CODE [--link ID [--login]]');
+  if (!flags.stdio || !code || rest.length > 1) die('usage: sub-human serve --stdio CODE [--link ID [--login]] [--via ws [--peer KEY]]');
   const { LINK_ID_RE }: typeof import('../remote/host-links.ts') = require('../remote/host-links.ts');
   if (flags.link !== undefined && !LINK_ID_RE.test(flags.link)) die(`bad link id "${flags.link}"`);
   if (flags.login && flags.link === undefined) die('sub-human serve --login: names no --link ID');
+  // --via ws and --peer: the web listener's child (the key its Noise XK handshake proved); never with an ssh login
+  if (flags.via !== undefined && flags.via !== 'ws') die(`sub-human serve: --via ${flags.via}: only ws (the web listener)`);
+  if (flags.peer !== undefined && (flags.via !== 'ws' || !/^[A-Za-z0-9_-]{43}$/.test(flags.peer))) die('sub-human serve: --peer KEY goes with --via ws, a 32-byte key in base64url');
+  if (flags.via !== undefined && flags.link !== undefined) die('sub-human serve: --via ws and --link are two ways in; the listener names no link');
   // sshd sets SSH_ORIGINAL_COMMAND only when a forced command runs (an authorized_keys command="…" or ForceCommand): a
   // key restricted that way is not the account's own login, whatever command it asked for
   if (flags.login && process.env.SSH_ORIGINAL_COMMAND !== undefined) {
@@ -353,21 +359,30 @@ function serve(args: readonly string[]) {
     if (!handoff.movedAway(s)) die(`room "${code}" is not hosted on this machine (it holds a copy)`, 1);
     s = store.open(code, { dir: s.dir }); // the old log, read-only: it moved
   }
-  const srv = server.serve(pipe.stdio(), { store: s, linkId: flags.link, login: !!flags.login, log: (msg: string) => process.stderr.write(msg + '\n') });
+  const srv = server.serve(pipe.stdio(), {
+    store: s, linkId: flags.link, login: !!flags.login, via: flags.via === 'ws' ? 'ws' : null, peer: flags.peer ?? null,
+    log: (msg: string) => process.stderr.write(msg + '\n'),
+  });
   // `sub-human kick` stops this with SIGTERM: tell the link it was revoked first, so its daemon stops, not redials
   process.once('SIGTERM', () => { const told = srv.revoked(); setTimeout(() => process.exit(0), told ? 200 : 0); });
 }
 
-// serve --enroll CODE --kind ssh|ws|pipe: one short-code attempt (lib/remote/enroll.ts), the PAKE and nothing else. The
-// ssh enrollment door's forced command and the web listener run it; whatever command the other side asked for is ignored.
-function serveEnroll(code: string, flags: Flags<typeof SERVE_FLAGS>, rest: string[]) {
-  if (rest.length || flags.kind === undefined || !['ssh', 'ws', 'pipe'].includes(flags.kind) || !identity.CODE_RE.test(String(code))) die('usage: sub-human serve --enroll CODE --kind ssh|ws|pipe');
-  if (!identity.roomExists(code) || !identity.isHost(code)) die(`no room "${code}" is hosted here`, 1);
-  const enroll: typeof import('../remote/enroll.ts') = require('../remote/enroll.ts');
-  const pipe: typeof import('../remote/transports/pipe.ts') = require('../remote/transports/pipe.ts');
-  const s = room.open(code).store;
-  enroll.serveEnroll(pipe.stdio(), { store: s, kind: flags.kind, log: (msg: string) => process.stderr.write(msg + '\n') })
-    .then(() => process.stdout.write('', () => process.exit(0)), (e: Error) => die(e.message, 1));
+// serve --enroll CODE --kind K: a 0.5.0-beta.15 enrollment door's forced command (nothing writes one now). The joiner's
+// first frame gets the skew message, so that sub-human says to update instead of "the invite no longer works".
+function serveEnroll() {
+  const protocol: typeof import('../remote/protocol.ts') = require('../remote/protocol.ts');
+  const msg = protocol.skewMessage({ host: { version: protocol.PLUGIN_VERSION, proto: protocol.PROTO }, joiner: { version: null, proto: { min: 1, max: 2 } }, need: 3 });
+  const dec = protocol.decoder();
+  let answered = false;
+  process.stdin.on('data', d => {
+    for (const f of dec.push(d)) {
+      if (answered) return;
+      answered = true;
+      const id = f && typeof f === 'object' && 'id' in f ? f.id : null;
+      process.stdout.write(protocol.encode(protocol.error(id ?? null, 'PROTOCOL', msg, 'SKEW')), () => process.exit(0));
+    }
+  });
+  process.stdin.on('end', () => process.exit(0));
 }
 
 // ---------- link CODE [--reset | --forget [--force]]: lib/remote/link.ts ----------
@@ -440,6 +455,7 @@ const USAGE = [
   '  room:       options CODE [login-same-person on|off]',
   '  checks:     doctor [--fix] [--bundle [FILE]]',
   '  internal:   tail | serve --stdio CODE [--link ID [--login]] | agent-statusline',
+  '              serve --stdio CODE --via ws [--peer KEY] (the web listener\'s child)',
 ].join('\n');
 const doctor: Command = args => (require('./doctor.ts') as typeof import('./doctor.ts')).main(args).then(c => process.exit(c), (e: Error) => die(e.message, 2));
 const cmds: Record<string, Command> = { doctor, tail, read, digest, show, who, tasks: tasksCmd, watch, serve, link: linkCmd, options: optionsCmd, 'agent-statusline': agentStatusline };

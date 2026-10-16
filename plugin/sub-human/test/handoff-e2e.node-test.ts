@@ -32,7 +32,6 @@ import { Machine, type Seat } from './support/two-homes.ts';
 import type { Entry } from '../lib/room/types.ts';
 import type { HandoffAskDoc } from '../lib/types-app.ts';
 import type { LinkSpec, PipeSpec, SshSpec } from '../lib/remote/types-rest.ts';
-import * as sshkeys from '../lib/remote/sshkeys.ts';
 
 /** h.until, failing the test when fn never holds. */
 async function until<T>(fn: () => T, ms: number, step: number): Promise<T> {
@@ -313,17 +312,10 @@ test('handoff e2e: promote when the host is gone; the old host back is STALE to 
   void bob;
 });
 
-test('handoff e2e: over ssh (--via), each follower keeps its own link key and mux, pins the new host\'s key, and is told to ask for an invite until it is let in', async t => {
+test('handoff e2e: over ssh (--via), each follower reaches the new host through its own ssh login (mux kept), with nothing pinned or let in, and is told so while it cannot', async t => {
   const { A, B, C, alice, bob, code } = await room(t);
-  // bob's machine: its sshd host key (the invites it mints pin it) and the authorized_keys his admit writes
-  const hk = path.join(B.user, 'ssh_host_ed25519_key');
-  spawnSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-f', hk]);
   const ak = path.join(B.user, '.ssh', 'authorized_keys');
-  Object.assign(B.extra, { SUB_HUMAN_SSH_HOST_KEY: `${hk}.pub`, SUB_HUMAN_AUTHORIZED_KEYS: ak });
-  const hostRaw = sshkeys.ed25519Raw(fs.readFileSync(`${hk}.pub`, 'utf8'));
-  // carol's link as an ssh join and `sub-human prime` leave it: the link's own key in its directory, and mux
-  const dirC = C.lib(() => links.dirOf(code));
-  const keyC = C.lib(() => sshkeys.linkKey(dirC, `sub-human:${code}:carol`));
+  Object.assign(B.extra, { SUB_HUMAN_AUTHORIZED_KEYS: ak });
   C.lib(() => links.set(code, { ...links.get(code)!, transport: { ...links.get(code)!.transport, mux: true } as LinkSpec })); // a pipe link here, mux to carry over
 
   // alice: the others reach bob's machine as me@127.0.0.1:1 (nothing listens: they stay offline) through a jump host
@@ -333,30 +325,28 @@ test('handoff e2e: over ssh (--via), each follower keeps its own link key and mu
   await until(() => ask(B, code), 5000, 50);
   assert.match(answerCard(B, bob, ask(B, code)!.id, 'Host it here').post.json!.systemMessage!, /is hosted on this machine now/);
 
-  const sshSpec = { kind: 'ssh', user: 'me', host: '127.0.0.1', port: 1, via: 'jump.example' };
-  // carol follows: the same key file (not a new key), mux kept, bob's host key pinned in her link's known_hosts
+  // carol follows over her own ssh login to bob's machine: a login spec, her mux kept, no key, no known_hosts
   await until(() => C.lib(() => (links.get(code) || {}).moved), 10_000, 50);
   const lc = C.lib(() => links.get(code))!;
-  assert.deepEqual(lc.transport, { ...sshSpec, key: keyC.file, knownHosts: path.join(dirC, 'known_hosts'), alias: `sub-human-${code}`, mux: true });
-  assert.equal(sshkeys.ed25519Raw(fs.readFileSync(`${keyC.file}.pub`, 'utf8')), keyC.raw, 'her own key, unchanged');
-  assert.equal(fs.readFileSync(path.join(dirC, 'known_hosts'), 'utf8'), `sub-human-${code} ${sshkeys.openssh(hostRaw!)}\n`);
-  const reqC = (lc.request as string).split('.'); // shk1.CODE.REF.KEY.NAME: her key, not let in yet (no secret in it)
-  assert.deepEqual([reqC[1], reqC[3], reqC[4]], [code, keyC.raw, 'carol']);
-  const cmd = C.lib(() => linkConnect.sshCommand(lc.transport as SshSpec, code, []));
-  for (const o of ['-i', keyC.file, 'ControlMaster=no', 'StrictHostKeyChecking=yes', `HostKeyAlias=sub-human-${code}`, '-J', 'jump.example']) assert.ok(cmd.includes(o), `${o} in ${cmd.join(' ')}`);
-  // offline until bob lets her in; the reason says how (an invite from bob), and carries no request line to paste
-  await until(() => /Over ssh bob has not let this machine in yet\. Ask bob for an invite/.test(C.status(code).reason || ''), 15_000, 50);
-  assert.ok(!C.status(code).reason!.includes('shk1'));
+  const t0 = lc.transport as SshSpec;
+  assert.deepEqual([t0.kind, t0.user, t0.host, t0.port, t0.via, t0.login, t0.mux], ['ssh', 'me', '127.0.0.1', 1, 'jump.example', true, true]);
+  assert.match(String(t0.link), /^[0-9a-f]{12}$/);
+  assert.ok(!('key' in t0) && !('knownHosts' in t0) && !('request' in lc), 'nothing of the plugin\'s own pinned or let in');
+  assert.equal(typeof lc.invite, 'string', 'the bound invite bob minted for her machine');
+  const cmd = C.lib(() => linkConnect.sshCommand(t0, code, []));
+  for (const o of ['ControlMaster=no', '-J', 'jump.example']) assert.ok(cmd.includes(o), `${o} in ${cmd.join(' ')}`);
+  assert.ok(!cmd.some(o => /StrictHostKeyChecking|IdentitiesOnly|UserKnownHostsFile/.test(o)), 'the person\'s own ssh config and known_hosts decide');
+  assert.match(cmd.at(-1)!, new RegExp(`/bin/serve --stdio ${code} --link ${t0.link} --login$`));
+  // offline (nothing listens there); the reason says how: her own login, else a web invite from bob
+  await until(() => /can't reach yet/.test(C.status(code).reason || ''), 15_000, 50);
+  assert.match(C.status(code).reason!, /Over ssh this machine follows through your own ssh login to bob's machine; without one, ask bob for an invite \(\/sub-human invite --web there\)/);
 
-  // the old host follows too: a key of its own made for the link (it had none), the same pin, its own admit request
-  await until(() => A.lib(() => (links.get(code) || {}).request), 10_000, 50);
-  const la = A.lib(() => links.get(code))!;
-  const dirA = A.lib(() => links.dirOf(code));
-  assert.deepEqual(la.transport, { ...sshSpec, key: path.join(dirA, 'id_ed25519'), knownHosts: path.join(dirA, 'known_hosts'), alias: `sub-human-${code}` });
-  assert.equal((la.request as string).split('.')[3], sshkeys.ed25519Raw(fs.readFileSync(path.join(dirA, 'id_ed25519.pub'), 'utf8')));
-  // the pasted request line is gone: /sub-human admit takes only a waiting join's REF
-  assert.match(B.join(bob, `admit ${lc.request}`).json!.reason!, /usage: \/sub-human admit \(who is waiting\)/);
-  assert.equal(fs.existsSync(ak) ? fs.readFileSync(ak, 'utf8').trim() : '', '', 'no key let in');
+  // the old host follows the same way
+  await until(() => A.lib(() => (links.get(code) || {}).moved), 10_000, 50);
+  const la = A.lib(() => links.get(code))!.transport as SshSpec;
+  assert.deepEqual([la.kind, la.user, la.host, la.login], ['ssh', 'me', '127.0.0.1', true]);
+  assert.ok(!('key' in la));
+  assert.equal(fs.existsSync(ak) ? fs.readFileSync(ak, 'utf8').trim() : '', '', 'nothing written to bob\'s authorized_keys');
 });
 
 test('handoff and promote CLI: --via carries a ProxyJump into the new locator, as invite --ssh --via does', async t => {

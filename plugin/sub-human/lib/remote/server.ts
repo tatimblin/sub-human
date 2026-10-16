@@ -5,25 +5,34 @@
  * It never loads the signer (test/hooks/security.node-test.ts): a via=human payload arrives signed by the remote
  * hook and is verified against the key pinned in the log (lib/room/envelope.ts), then placed (store.place).
  *
- *   serve(transport, {store, log?, linkId?, login?, silentMs?, proto?, version?}) -> {close(), revoked()}   proto / version: this end's
- *       protocol range and plugin version (default protocol.PROTO, PLUGIN_VERSION; tests fake older and newer peers)
+ *   serve(transport, {store, log?, linkId?, login?, via?, peer?, silentMs?, proto?, version?}) -> {close(), revoked()}
+ *       proto / version: this end's protocol range and plugin version (default protocol.PROTO, PLUGIN_VERSION; tests
+ *       fake older and newer peers). via 'ws' and peer (`serve --stdio CODE --via ws [--peer KEY]`, the web listener's
+ *       child): the connection came over the web, and peer is the Noise key its XK handshake proved (none: an NK one,
+ *       a link made under protocol 2)
  *       A Session over one transport (lib/remote/transports/*): unauthenticated until hello {token | invite}
- *       (lib/remote/invites.ts); every other op before that is AUTH. linkId (`serve --stdio CODE --link ID`, the
- *       SSH forced command the host's admit writes): only that link's token, or the admission reserved for it,
- *       is accepted; any other is AUTH (and such an invite stays unused). login (`serve --stdio CODE --link ID --login`,
+ *       (lib/remote/invites.ts); every other op before that is AUTH. linkId without login (`serve --stdio CODE --link
+ *       ID`, the ssh forced command an admit wrote before protocol 3): only that link's token, or the admission reserved
+ *       for it, is accepted; any other is AUTH (and such an invite stays unused). login (`serve --stdio CODE --link ID --login`,
  *       run over the host account's own ssh login, never by a forced command: their lines fix the arguments, and the
  *       CLI refuses --login under SSH_ORIGINAL_COMMAND): the connection is trusted as a process of the account owner,
  *       so a hello {login: true} with no token records link ID (hostLinks.loginLink) and returns its token, with a room
  *       line; without login such a hello is AUTH. store is the room's store as store.open(code)
  *       gives it in this process: seats and decide reach the room through that too. Ops:
  *         hello      version: the highest common one of the two proto ranges (protocol.negotiate; a hello with none, or
- *                    no overlap, is PROTOCOL SKEW with protocol.skewMessage: which side must update); verifyToken, or
- *                    redeemInvite with the hello's pin for a promote's invite (the token is returned once; a wrong
- *                    PIN, the last try and the link are each a room line from the room, so the host sees them), or
- *                    loginLink; neither: answered, but the session stays unauthenticated. A new link's machine id is
- *                    the one the hello's machine_key proves (lib/remote/machine-key.ts), else the reported one
- *                    (lib/remote/host-links.ts). The reply says the link's machine id, and closed: true once the
- *                    room's Claude was stopped (the room closed), for sub-human doctor on a link that stopped before it
+ *                    no overlap, is PROTOCOL SKEW with protocol.skewMessage: which side must update); verifyToken (a
+ *                    link bound to a Noise key only over a connection that proved it: KEY_MISMATCH), or redeemInvite
+ *                    with the hello's pin (an invite line's SECRET word: protocol 3 only, and over the web only with
+ *                    XK's peer key; a promote's sh2 invite: its 6-digit PIN), as {name, label} (the seat an invite
+ *                    line's PIN asks for), the token returned once; a wrong PIN, the last try, a PIN that held and
+ *                    the link are each a room line from the room, so the host sees them; or loginLink; neither:
+ *                    answered, but the session stays unauthenticated. nonce (protocol 3): the reply's host is the host
+ *                    home's machine key and its signature over it (machine-key.ts hostProof), which an invite line's
+ *                    tag names over ssh and a pipe: a joiner sends its secret only in a second hello, once it checked
+ *                    that. A new link's machine id is the one the hello's machine_key proves
+ *                    (lib/remote/machine-key.ts), else the reported one (lib/remote/host-links.ts). The reply says the
+ *                    link's machine id, and closed: true once the room's Claude was stopped (the room closed), for
+ *                    sub-human doctor on a link that stopped before it
  *         join       {name, role: 'member', pubkey, proof}: hostLinks.checkSeatProof, then lib/seats.ts enter() with
  *                    machine = the link's (no pid: the seat lives by its lease), and over a login link, when the room's
  *                    option login-same-person is on (lib/room/options.ts), account = this machine's id in the room (the
@@ -78,6 +87,7 @@ import * as invites from './invites.ts';
 import * as hostLinks from './host-links.ts';
 import * as quota from './quota.ts';
 import * as machineKey from './machine-key.ts';
+import * as inviteSecret from './invite-secret.ts';
 import * as seats from '../seats.ts';
 import * as proposal from '../proposal.ts';
 import * as handoff from '../handoff.ts';
@@ -120,13 +130,26 @@ function own(s: Session, name: string | undefined): void {
   if (!hostLinks.mayWriteAs(s.link, name as string)) throw authError(`${name} has not joined over this link`, 'NOT_JOINED');
 }
 
-function redeem(s: Session, invite: unknown, machine: string, pin: unknown, proven: string | null): Credential {
+function redeem(s: Session, invite: unknown, machine: string, pin: unknown, proven: string | null, as: unknown): Credential {
   const { store, linkId } = s;
-  const inv = invites.parseInvite(invite);
-  if (!inv || inv.code !== store.code) throw authError(`not an invite to room ${store.code}`, 'INVITE_UNKNOWN');
+  const word = inviteSecret.decode(invite);
+  const asked = as && typeof as === 'object' && typeof (as as { name?: unknown }).name === 'string'
+    ? { name: (as as { name: string }).name, label: String((as as { label?: unknown }).label ?? '') } : null;
+  let secret: string;
+  const opts = { machine, pin, proven, peerKey: s.peer, as: asked, ...(s.login ? { newId: linkId! } : linkId ? { reserved: linkId } : {}) }; // login: a linkId (serve checks)
+  if (word) { // an invite line's SECRET (protocol 3)
+    const skew = () => new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: s.version, proto: s.proto }, joiner: s.peerVersion || { version: null, proto: { min: 1, max: s.v ?? 1 } }, need: 3 }), 'SKEW');
+    if ((s.v ?? 0) < 3) throw skew();
+    if (s.via === 'ws' && !s.peer) throw skew(); // over the web protocol 3 is XK, a key of the link's own: NK is an older joiner's
+    secret = inviteSecret.idOf(word.secret);
+  } else {
+    const inv = invites.parseInvite(invite);
+    if (!inv || inv.code !== store.code) throw authError(`not an invite to room ${store.code}`, 'INVITE_UNKNOWN');
+    secret = inv.secret;
+  }
   let r: ReturnType<typeof invites.redeemInvite>;
   try {
-    r = invites.redeemInvite(store, inv.secret, { machine, pin, proven, ...(linkId ? { linkId } : {}) });
+    r = invites.redeemInvite(store, secret, opts);
   } catch (e) {
     if ((e as CodedError).note) roomLine(s, (e as CodedError).note!);
     throw e;
@@ -150,10 +173,12 @@ function viaLogin(s: Session, machine: string, proven: string | null): Credentia
   return r;
 }
 
-function known(store: RoomStore, token: unknown, linkId: string | null): Credential {
-  const link = hostLinks.verifyToken(store, token);
+function known(s: Session, token: unknown): Credential {
+  const link = hostLinks.verifyToken(s.store, token);
   if (!link) throw authError('unknown link token; ask the host for a new invite', 'TOKEN_UNKNOWN');
-  if (linkId && link.id !== linkId) throw authError(`this token is not link ${linkId}'s`, 'TOKEN_UNKNOWN');
+  if (s.linkId && link.id !== s.linkId) throw authError(`this token is not link ${s.linkId}'s`, 'TOKEN_UNKNOWN');
+  // a web link made under protocol 3 is its Noise key: its token alone, or another key, gets nowhere
+  if (!hostLinks.keyHolds(link, s.peer)) throw authError('this link is bound to its own key, and this connection did not prove it; join again with a new invite', 'KEY_MISMATCH');
   return { link };
 }
 
@@ -252,7 +277,7 @@ function fits(id: FrameId | undefined, held: (SnapshotWire & { held: number }) |
 // ---------- ops ----------
 const OPS: OpHandlers = {
   hello(s, params) {
-    const { machine, token, invite, pin, caps, epoch } = params;
+    const { machine, token, invite, pin, caps, epoch, nonce, as } = params;
     const theirs = protocol.rangeOf(params);
     const client = typeof params.client === 'string' ? params.client.slice(0, 32) : null;
     if (!theirs) throw new RoomError('PROTOCOL', `this hello names no protocol range (a sub-human before 0.5${client ? `: ${client}` : ''}): update it (/plugin update sub-human)`, 'SKEW');
@@ -267,14 +292,18 @@ const OPS: OpHandlers = {
     }
     s.link = null;
     s.v = v;
+    s.peerVersion = { version: client, proto: theirs };
     const proven = machineKey.verify(params.machine_key, s.store.code); // the id its machine key gives (else only reported)
-    const r: Credential = invite !== undefined ? redeem(s, invite, machine, pin, proven) : token !== undefined ? known(s.store, token, s.linkId)
+    // nonce: the host home's machine key proves itself first, so a joiner sends an invite line's secret only after
+    const host = v >= 3 && typeof nonce === 'string' && machineKey.NONCE_RE.test(nonce) ? machineKey.hostProof(s.store.code, nonce) : null;
+    const r: Credential = invite !== undefined ? redeem(s, invite, machine, pin, proven, as) : token !== undefined ? known(s, token)
       : params.login === true ? viaLogin(s, machine, proven) : { link: null };
     s.link = r.link;
     if (caps && caps.ping === true) s.expireSilent();
     // time: the host's clock (ms), so a joiner (sub-human doctor) can measure the skew that SIG_SKEW_MS bounds; additive
     const out: OpResults['hello'] = { v, proto: s.proto, server: s.version, caps: protocol.CAPS, room: s.store.code, link: r.link ? r.link.id : null, epoch: mine, time: Date.now() };
     if (r.link) out.machine = r.link.machine; // additive: this machine's id in the room, as the host records it
+    if (host) out.host = host;
     if (r.token) out.token = r.token;
     if (stopped(s.store.members.read())) out.closed = true; // additive: an older host says nothing
     return out;
@@ -371,6 +400,12 @@ const OPS: OpHandlers = {
 class Session {
   transport: Transport;
   login: boolean;
+  /** 'ws': the connection came through the web listener; null: ssh or a pipe */
+  via: 'ws' | null;
+  /** the Noise key the web connection proved (XK); null for NK, ssh and a pipe */
+  peer: string | null;
+  /** the peer's plugin version and range, as its hello said (for a skew message) */
+  peerVersion: { version: string | null; proto: ProtoRange } | null = null;
   store: RoomStore;
   log: Log;
   linkId: string | null;
@@ -385,10 +420,12 @@ class Session {
   heard: number;
   silence: NodeJS.Timeout | null;
   constructor(transport: Transport, store: RoomStore, log: Log, linkId: string | null | undefined, silentMs: number, {
-    proto = protocol.PROTO, version = protocol.PLUGIN_VERSION, login = false,
-  }: { proto?: ProtoRange; version?: string; login?: boolean } = {}) {
+    proto = protocol.PROTO, version = protocol.PLUGIN_VERSION, login = false, via = null, peer = null,
+  }: { proto?: ProtoRange; version?: string; login?: boolean; via?: 'ws' | null; peer?: string | null } = {}) {
     this.transport = transport;
     this.login = login === true;
+    this.via = via;
+    this.peer = peer;
     this.store = store;
     this.log = log;
     this.linkId = linkId || null;
@@ -484,13 +521,13 @@ class Session {
 
 /**
  * @param {{send(frame: object): void, onFrame(fn: (frame: object) => void): void, onClose(fn: () => void): void, close(): void}} transport
- * @param {{store: import('../room/store.ts').FsRoomStore, log?: (...a: any[]) => void, linkId?: string, login?: boolean, silentMs?: number, proto?: {min: number, max: number}, version?: string}} ctx
+ * @param {{store: import('../room/store.ts').FsRoomStore, log?: (...a: any[]) => void, linkId?: string, login?: boolean, via?: 'ws' | null, peer?: string | null, silentMs?: number, proto?: {min: number, max: number}, version?: string}} ctx
  * @returns {{close(): void}}
  */
-function serve(transport: Transport, { store, log = () => {}, linkId, login = false, silentMs = LINK_SILENT_MS, proto, version }: {
-  store: RoomStore; log?: Log; linkId?: string; login?: boolean; silentMs?: number; proto?: ProtoRange; version?: string;
+function serve(transport: Transport, { store, log = () => {}, linkId, login = false, via = null, peer = null, silentMs = LINK_SILENT_MS, proto, version }: {
+  store: RoomStore; log?: Log; linkId?: string; login?: boolean; via?: 'ws' | null; peer?: string | null; silentMs?: number; proto?: ProtoRange; version?: string;
 }): { close(): void; revoked(): boolean } {
-  const session = new Session(transport, store, log, linkId, silentMs, { proto, version, login });
+  const session = new Session(transport, store, log, linkId, silentMs, { proto, version, login, via, peer });
   return { close() { session.stop(); transport.close(); }, revoked: () => session.revoked() };
 }
 

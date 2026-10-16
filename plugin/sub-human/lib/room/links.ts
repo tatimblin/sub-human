@@ -6,24 +6,26 @@
  * Machine-local, like the session indexes: it never syncs. Zero dependencies beyond lib/home.ts, lib/io.ts and
  * lib/text.ts.
  *
- * Link = {code, transport: {kind: 'pipe', home} | …, token?, invite?, pin?, enroll?, awaiting?, refused?, request?, rebind?, moved?, created_at}
+ * Link = {code, transport: {kind: 'pipe', home} | …, token?, invite?, pin?, pin_wanted?, awaiting?, refused?, rebind?, moved?, created_at}
  *   transport  how the daemon reaches the host's server (lib/remote/link.ts transportOf: an invite's locator), plus
- *              what this machine adds for ssh (lib/remote/transports/ssh.ts: key, knownHosts, alias, mux), files in
- *              dirOf(code); or a login link's {kind: 'ssh', user, host, port?, via?, login: true, link, remoteHome?, mux?}
- *              (`/sub-human join USER@HOST ROOM`, ssh.ts loginSpec): no invite, no key or host key of its own
- *   invite     the invite the daemon redeems at its first hello, until it holds the token
- *   pin        an sh2 invite's PIN, sent with it at that hello and dropped with it (the host checks it)
- *   token      the link's credential (the server keeps its sha256): kept in clear here, like the seat key
- *   refused    {at, reason}: the host refused the invite before any token (a wrong PIN, burnt, used, expired); the
- *              daemon then dropped invite, pin and rebind (lib/remote/link.ts), so no spent secret stays here
- *   request    an ssh link's key the host has not let in yet (a handoff's follower: lib/remote/hosting.ts
- *              linkTransport; no secret in it)
- *   join_as    the name the seat takes once the host lets a PIN join in (lib/remote/joining.ts: a bare /sub-human takes it)
+ *              what this machine adds: a web link's pinned listener key (hostKey) and its own Noise key (clientKey, the
+ *              pair in dirOf(code), lib/remote/link-connect.ts linkKey); an ssh link made before protocol 3 its own ssh
+ *              key and pinned known_hosts (key, knownHosts, alias: nothing makes those now), mux; or a login link's
+ *              {kind: 'ssh', user, host, port?, via?, login: true, link, remoteHome?, mux?} (`/sub-human join USER@HOST
+ *              ROOM`, ssh.ts loginSpec, and every ssh invite line: the person's own ssh login reaches the host)
+ *   invite     the invite the daemon redeems at its first hello, until it holds the token: an sh2 invite (a
+ *              handoff's, a promote's) or an invite line's SECRET word
+ *   pin        the PIN, sent with it and dropped once the host answered (the host checks it)
+ *   pin_wanted {at, left?, why?, message?}: an invite line's host asked for its PIN (PIN_NEEDED), or the last one was
+ *              wrong or too soon (why): the join asks the person for it (lib/remote/joining.ts givePin)
+ *   token      the link's credential (the server keeps its sha256): kept in clear here, like the seat key; a web link
+ *              made under protocol 3 also needs its own key (the host binds the link to it)
+ *   refused    {at, reason}: the host refused the invite before any token (a wrong PIN's last try, burnt, used,
+ *              expired, a host key the line does not name); the daemon then dropped invite, pin and rebind
+ *              (lib/remote/link.ts), so no spent secret stays here
+ *   join_as    the name the seat takes once the host lets an invite in (lib/remote/joining.ts: a bare /sub-human takes it)
  *   join_sid   the session that typed that join: its tail tells the person when the host let it in
- *   enroll     {pin, name, kind, attempts?}: a short invite's join (lib/remote/enroll.ts) not run yet: the 4-digit PIN
- *              the daemon runs CPace with, dropped once the host answered it (a wrong PIN, or it held)
- *   awaiting   {at, ref, check, expires_at}: the PIN held and the host person's card decides (no secret in it); the
- *              invite then is the admission secret the host sent inside the PAKE channel
+ *   awaiting   {at, ref, check, expires_at}: the PIN held and the host person's card decides (no secret in it)
  *   moved      {epoch, host, locator, at?, reached_at?, demoted?}: a handoff or promote re-pointed this link
  * The resume point is the mirror itself (its last line and that line's hash), not a field here.
  *
@@ -34,8 +36,8 @@
  *   list() -> [code]
  *   linksDir() -> string              <home>/links
  *   logFile(code) -> string           <home>/links/<code>.log: the daemon's stderr
- *   dirOf(code) -> string             <home>/links/<code>/: the link's own ssh key and pinned known_hosts (0700);
- *                                     remove() deletes it too
+ *   dirOf(code) -> string             <home>/links/<code>/: the link's own Noise key (0700; an older link's ssh key
+ *                                     and known_hosts); remove() deletes it too
  *
  * The link's state, for observers (doctor, the statusline, the room row): <home>/links/<code>.state.json (0600),
  * written by the link daemon (lib/remote/link.ts) on every change of state and every pong, never by anyone else.
@@ -90,7 +92,7 @@ const has = (code: unknown): boolean => typeof code === 'string' && CODE_RE.test
 // a link the host refused before it held a token keeps no credential, only {refused: {at, reason}}; a login link
 // (transport.login) needs none before its first hello: the person's own ssh login to the host is the admission
 const credential = (l: Link): boolean => typeof l.token === 'string' || typeof l.invite === 'string' || (!!l.refused && typeof l.refused === 'object')
-  || ('login' in l.transport && l.transport.login === true) || (!!l.enroll && typeof l.enroll === 'object' && typeof l.enroll.pin === 'string');
+  || ('login' in l.transport && l.transport.login === true);
 
 /**
  * @param {string} code

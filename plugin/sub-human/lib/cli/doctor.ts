@@ -8,7 +8,8 @@
  *
  *   sub-human doctor [--quick] [--fix] [--json] [--bundle [FILE]] [--authorized-keys FILE] [--timeout MS]
  *       --quick    skip the slow checks: the hello to each link's host and the Claude Code internals probe
- *       --fix      first refresh the serve shim and pointer (lib/remote/shim.ts refresh) and repair the home's
+ *       --fix      first refresh the serve shim and pointer (lib/remote/shim.ts refresh), remove the enrollment door
+ *                  lines a 0.5.0-beta.15 ssh invite left in authorized_keys, and repair the home's
  *                  modes (lib/home.ts repairModes)
  *       --json     the report as JSON (unredacted: it stays on this machine)
  *       --bundle   write the redacted bundle (default ./sub-human-doctor-<time>.json) and print its path
@@ -145,6 +146,13 @@ function applyFix(write: (s: string) => void, { authorizedKeys }: { authorizedKe
     const r = shim.refresh({ force: true });
     done.push(r ? `the serve shim and pointer name ${tilde(shim.pluginRoot())} and ${tilde(process.execPath)}` : `the plugin root ${tilde(shim.pluginRoot())} is under a temp dir: the shim was not written`);
   }
+  // the enrollment doors a 0.5.0-beta.15 ssh invite left: they only answer "update" now
+  const akFile = authorizedKeys || path.join(os.homedir(), '.ssh', 'authorized_keys');
+  const scan = scanAuthorizedKeys(akFile);
+  const sk = lib('remote/sshkeys.ts');
+  let gone = 0;
+  for (const code of new Set(scan.doors || [])) { try { gone += sk.removeTagged(akFile, sk.ENROLL_TAG(code)); } catch { /* left for by hand */ } }
+  if (gone) done.push(`removed ${gone} enrollment door line(s) an older sub-human left in ${tilde(akFile)}`);
   for (const d of done) write(`fixed: ${d}\n`);
 }
 
@@ -166,6 +174,6 @@ async function main(args: readonly string[], { write = (s: string) => { process.
 }
 
 export {
-  diagnose, format, bundle, redactor, helloProbe, checkListener, checkRoomClaudes, linkChecks, scanAuthorizedKeys,
+  diagnose, format, bundle, redactor, helloProbe, checkListener, checkRoomClaudes, linkChecks, scanAuthorizedKeys, checkAuthorizedKeys,
   checkNode, checkRemoteControl, checkClaude, checkDaemon, sshHint, main, parseArgs, DOCTOR_HELLO_MS,
 };

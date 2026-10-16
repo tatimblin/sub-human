@@ -591,12 +591,14 @@ export interface Link {
    * USER@HOST ROOM`) is an ssh spec with login: the person's own ssh login admits it */
   transport: LinkSpec;
   token?: string;
+  /** an sh2 invite (a handoff's, a promote's), or an invite line's SECRET word (protocol 3), until the token */
   invite?: string;
+  /** the PIN, from the moment it is typed until the host answered it (held, wrong, or throttled) */
   pin?: string;
-  enroll?: { pin: string; name: string; kind?: string; attempts?: number };
+  /** an invite line's host asked for its PIN (left: tries; why/message: the last wrong or throttled one) */
+  pin_wanted?: { at: string; left?: number; why?: string; message?: string };
   awaiting?: { at: string; ref: string; check: string; expires_at: string };
   refused?: { at: string; reason: string; why?: string };
-  request?: unknown;
   rebind?: unknown;
   join_as?: string;
   /** the session that typed the PIN join (lib/remote/joining.ts pendingNews: its tail says when the host let it in) */

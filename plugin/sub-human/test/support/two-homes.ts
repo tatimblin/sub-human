@@ -15,12 +15,15 @@
  *                                     the robustness tests link with it)
  *     linkInvite(code, invite)        this machine's link file for that invite; then join(seat, `NAME CODE`) takes
  *                                     the seat over it
- *     joinVia(host, hostSeat, seat, {as?, line?, invite?}) -> Promise<{shown, line, code, pin, typed, admitted, seated}>
+ *     joinVia(host, hostSeat, seat, {as?, line?, pin?, invite?}) -> Promise<{shown, line, code, pin, typed, gave, admitted, seated}>
  *                                     (once seated, it waits until the seat resolves here: the mirror's members)
  *                                     the whole join from a second home: `/sub-human invite --pipe` (or invite: other
- *                                     invite args, e.g. `invite --url U`) on the host, unless line is given; the line
- *                                     typed here (a hidden step), the host's `/sub-human admit REF`, the link online,
- *                                     then a bare /sub-human (the seat)
+ *                                     invite args, e.g. `invite --url U`) on the host, unless line (and its pin) is
+ *                                     given; the line typed here (a hidden step), the PIN once the host asks for it
+ *                                     (`/sub-human join PIN`, hidden too), the host's `/sub-human admit REF`, the link
+ *                                     online, then a bare /sub-human (the seat)
+ *   shownInvite(text) -> {line, dest, code, word, pin} | null   an invite's text as the host's person reads it: the
+ *                                     line (without "/sub-human "), its parts and the PIN told apart
  *     workers(script, input, seat) -> n     worker threads that hook started (test/support/worker-probe.ts)
  *     tail(seat, seconds) -> Promise<stdout>   seat's tail (scripts/sub-human tail, its NDJSON events) for that long
  *     lib(fn)                         fn with this machine's home, in this process
@@ -101,16 +104,18 @@ class Machine {
     this.lib(() => links.set(code, { code, transport, invite, created_at: new Date().toISOString() }));
   }
 
-  /** The whole join from this (second) home: the host's invite line, typed here, the host's admit, then the seat. */
-  async joinVia(host: Machine, hostSeat: Seat, seat: Seat, { as = seat.name, line, invite = 'invite --pipe', ms = 15_000 }: { as?: string; line?: string; invite?: string; ms?: number } = {}) {
+  /** The whole join from this (second) home: the host's invite line and its PIN, typed here, the host's admit, then the seat. */
+  async joinVia(host: Machine, hostSeat: Seat, seat: Seat, { as = seat.name, line, pin, invite = 'invite --pipe', ms = 15_000 }: { as?: string; line?: string; pin?: string; invite?: string; ms?: number } = {}) {
     const shown = line ? null : host.join(hostSeat, invite);
-    const m = /\/sub-human (join (\S+)(?: ([a-z]+-\d{4}))? (\d{4}))/.exec(line || shown?.json?.reason || '');
-    if (!m) throw new Error(`no invite line in: ${JSON.stringify(shown && shown.json)}`);
-    const [, typedLine, dest, room, pin] = m;
-    const code = room || dest.split('/').pop() || ''; // a web line: the URL's last segment is the room
-    const typed = this.join(seat, `${typedLine}${as ? ` --as ${as}` : ''}`);
+    const inv = shownInvite(line ? `/sub-human ${line.replace(/^\/sub-human /, '')}${pin ? `\napart from the line: ${pin}` : ''}` : shown?.json?.reason || '');
+    if (!inv) throw new Error(`no invite line in: ${JSON.stringify(shown && shown.json)}`);
+    const { code } = inv;
+    const typed = this.join(seat, `${inv.line}${as ? ` --as ${as}` : ''}`);
+    const asked = await h.until(() => this.lib(() => !!(links.get(code) || {}).pin_wanted), ms, 50);
+    if (!asked) throw new Error(`the host never asked for the PIN: ${JSON.stringify(typed.json)} ${typed.stderr} ${JSON.stringify(this.lib(() => links.get(code)))}`);
+    const gave = this.join(seat, `join ${inv.pin}`);
     const ref = await h.until(() => { try { const q = host.lib(() => admission.pending(code)); return q.length ? q[q.length - 1].ref : null; } catch { return null; } }, ms, 50);
-    if (!ref) throw new Error(`no join request on the host: ${JSON.stringify(typed.json)} ${typed.stderr}`);
+    if (!ref) throw new Error(`no join request on the host: ${JSON.stringify(gave.json)} ${gave.stderr}`);
     const admitted = host.join(hostSeat, `admit ${ref}`);
     const linked = await h.until(() => this.lib(() => (links.get(code) || {}).token), ms, 50);
     if (!linked) throw new Error(`the link never came up: ${JSON.stringify(this.lib(() => links.get(code)))}`);
@@ -118,7 +123,7 @@ class Machine {
     // the seat is the host's to record: this home's mirror shows it once the members document streams back, and
     // until then a hook here cannot resolve it (a prompt typed that fast reads "not in a room")
     if (seated.json && !seated.json.decision) await h.until(() => this.lib(() => identity.resolveBySession(seat.sid)), ms, 50);
-    return { shown, line: typedLine, code, pin, typed, admitted, seated };
+    return { shown, line: inv.line, code, pin: inv.pin, typed, gave, admitted, seated };
   }
   plain(seat: Seat, text: string): MachineRun {
     this.lease(seat);
@@ -160,5 +165,14 @@ class Machine {
   log(code: string): string { try { return fs.readFileSync(path.join(this.home, 'rooms', code, 'log.jsonl'), 'utf8'); } catch { return ''; } }
 }
 
-export { Machine };
+/** An invite's text as the host's person reads it (lib/remote/hosting.ts inviteText): the line and the PIN told apart. */
+function shownInvite(text: string): { line: string; dest: string; code: string; word: string; pin: string } | null {
+  const m = /\/sub-human (join (\S+)(?: ([a-z]+-\d{4}))? ([0-9a-z]{39})((?: --(?:via|home) \S+)*))\s*$/m.exec(text);
+  const p = /apart from the line[^\n]*: (\d{4})\s*$/m.exec(text);
+  if (!m || !p) return null;
+  const code = m[3] || m[2].split('/').pop() || ''; // a web line: the URL's last segment is the room
+  return { line: m[1], dest: m[2], code, word: m[4], pin: p[1] };
+}
+
+export { Machine, shownInvite };
 export type { Seat, MachineRun };

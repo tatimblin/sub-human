@@ -11,7 +11,7 @@ const { spawnSync } = require('node:child_process');
 const paths = require('../lib/paths.js');
 const { runChecks, SCENES } = require('../checks.js');
 const { context, DEMO } = require('../checks/context.js');
-const { joinLineIn, admitCardState } = require('../lib/panes.js');
+const { joinLineIn, pinIn, admitCardState } = require('../lib/panes.js');
 
 const { Machine } = paths.pluginTest('support/two-homes.ts');
 const store = paths.pluginLib('room/store.ts');
@@ -23,14 +23,17 @@ const kill = pid => { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ }
 const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
 async function until(fn, ms) { for (const end = Date.now() + ms; !fn() && Date.now() < end;) await new Promise(r => setTimeout(r, 50)); return fn(); }
 
-test('panes: the line /sub-human invite showed, also when the pane wrapped it; the host\'s join-request card', () => {
+test('panes: the line /sub-human invite showed and its PIN apart, also when the pane wrapped them; the host\'s join-request card', () => {
   const home = '/tmp/sh-demo/home';
-  const shown = `⏺ sub-human: invite to room vole-1234, for one machine, (a second home on this machine). Shown once\n\n    /sub-human join pipe:${home.slice(0, 9)}\n    ${home.slice(9)} vole-1234 4829\n\n  The 4-digit PIN is the whole secret`;
-  assert.equal(joinLineIn(shown), `join pipe:${home} vole-1234 4829`);
-  assert.equal(joinLineIn('  /sub-human join dev@box vole-1234 0042 --via jump\n'), 'join dev@box vole-1234 0042 --via jump');
-  assert.equal(joinLineIn('  /sub-human join https://box.ts.net/sub-human/vole-1234 1234\n'), 'join https://box.ts.net/sub-human/vole-1234 1234');
+  const S = '0v58jfh0vxfz8ggy5wbrnm40w1gzgtr5ene21zv';
+  const shown = `⏺ sub-human: invite to room vole-1234 for one machine, from another sub-human folder on this machine. It works once\n\n    /sub-human join pipe:${home.slice(0, 9)}\n    ${home.slice(9)} vole-1234 ${S.slice(0, 20)}\n    ${S.slice(20)}\n\n  and tell them its PIN apart from the line (say it, or send it another way):\n  4829\n  Their machine asks them for the PIN`;
+  assert.equal(joinLineIn(shown), `join pipe:${home} vole-1234 ${S}`);
+  assert.equal(pinIn(shown), '4829');
+  assert.equal(joinLineIn(`  /sub-human join dev@box vole-1234 ${S} --via jump --home /srv/sh\n`), `join dev@box vole-1234 ${S} --via jump --home /srv/sh`);
+  assert.equal(joinLineIn(`  /sub-human join https://box.ts.net/sub-human/vole-1234 ${S}\n`), `join https://box.ts.net/sub-human/vole-1234 ${S}`);
   assert.equal(joinLineIn('no line here'), null);
-  assert.equal(joinLineIn('/sub-human join dev vole-1234 48291'), null, 'four digits only');
+  assert.equal(joinLineIn('/sub-human join dev vole-1234 4829'), null, 'a 0.5.0-beta.15 line is no invite line now');
+  assert.equal(pinIn('no PIN here 4829'), null);
   const card = 'Let carol (request 3f9c2a) on carols-mbp join room vole-1234? (admit 3f9c2a0b1c2d)\n❯ 1. Let in\n  2. Refuse\n  3. Type something';
   assert.deepEqual(admitCardState(card).opts.map(o => [o.n, o.label, o.cur]), [[1, 'Let in', true], [2, 'Refuse', false], [3, 'Type something', false]]);
   assert.equal(admitCardState('Agree to proposal abcdefabcdef?\n❯ 1. Agree'), null);

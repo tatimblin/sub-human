@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
 # devbox.sh — a private sshd for the film's remote join (scripts/demo.sh --film): tristan's machine as ssh reaches it.
-# It runs as you (no root, no sudo), listens on 127.0.0.1 only, and never reads or writes ~/.ssh or /etc/ssh:
-# its own Ed25519 host key, its own sshd_config, and its own authorized_keys (the file sub-human's
-# SUB_HUMAN_AUTHORIZED_KEYS names on the host seat: the invite's enrollment door and the card's Let in line go there).
-# sshd run by a non-root user can only log that user in, so the ssh login is your own account: the configs name it
-# (User), and nothing on screen does (the invite and the join line say `devbox`).
+# It runs as you (no root, no sudo), listens on 127.0.0.1 only, and never reads or writes ~/.ssh or /etc/ssh: its
+# own Ed25519 host key, its own sshd_config, and its own authorized_keys. jess joins through her own ssh login to it
+# (sub-human writes nothing to authorized_keys and pins no key: her ssh decides, as for any login), so this script sets
+# that login up the way a person would once: her key in its authorized_keys, its host key in her known_hosts. sshd
+# run by a non-root user can only log that user in, so the ssh login is your own account: the configs name it (User),
+# and nothing on screen does (the invite and the join line say `devbox`).
 #
 #   scripts/devbox.sh up DEVBOX LAPTOP [PORT]   make what is missing and start sshd unless it runs (PORT 2222)
-#       DEVBOX/ssh_host_ed25519_key(.pub)  the host key (made once: a resumed take keeps the key jess's link pinned)
-#       DEVBOX/.ssh/authorized_keys        sub-human's lines only (made once, empty)
+#       DEVBOX/ssh_host_ed25519_key(.pub)  the host key (made once: a resumed take keeps the key jess's known_hosts holds)
+#       DEVBOX/.ssh/authorized_keys        jess's login key, one plain line (no sub-human line: nothing writes one)
 #       DEVBOX/sshd_config, sshd.pid, sshd.log
 #       DEVBOX/ssh_config                  the host seat's own `Host devbox` (SUB_HUMAN_SSH_OPTS=-F …: ssh -G names the user)
-#       LAPTOP/.ssh/config                 jess's ssh: `Host devbox` -> 127.0.0.1:PORT, her own known_hosts
+#       LAPTOP/.ssh/id_ed25519(.pub)       jess's key (made once)
+#       LAPTOP/.ssh/config, known_hosts    jess's ssh: `Host devbox` -> 127.0.0.1:PORT with her key, devbox's host key
+#                                          accepted once (HostKeyAlias devbox)
 #   scripts/devbox.sh down DEVBOX               stop that sshd and its sessions (and nothing else)
 #   scripts/devbox.sh status DEVBOX             exit 0 when it runs
 set -u
@@ -44,7 +47,10 @@ U=$(id -un)
 mkdir -p "$DEVBOX/.ssh" "$LAPTOP/.ssh" || exit 1
 chmod 700 "$DEVBOX" "$DEVBOX/.ssh" "$LAPTOP/.ssh"
 [ -f "$DEVBOX/ssh_host_ed25519_key" ] || ssh-keygen -q -t ed25519 -N '' -C devbox -f "$DEVBOX/ssh_host_ed25519_key" || exit 1
-[ -f "$DEVBOX/.ssh/authorized_keys" ] || { : > "$DEVBOX/.ssh/authorized_keys"; chmod 600 "$DEVBOX/.ssh/authorized_keys"; }
+# jess's own login to devbox, set up once as a person would: her key let in, devbox's host key in her known_hosts
+[ -f "$LAPTOP/.ssh/id_ed25519" ] || ssh-keygen -q -t ed25519 -N '' -C jess-laptop -f "$LAPTOP/.ssh/id_ed25519" || exit 1
+cp "$LAPTOP/.ssh/id_ed25519.pub" "$DEVBOX/.ssh/authorized_keys" && chmod 600 "$DEVBOX/.ssh/authorized_keys" || exit 1
+printf 'devbox %s\n' "$(cut -d' ' -f1-2 "$DEVBOX/ssh_host_ed25519_key.pub")" > "$LAPTOP/.ssh/known_hosts" && chmod 600 "$LAPTOP/.ssh/known_hosts" || exit 1
 cat > "$DEVBOX/sshd_config" <<EOF
 # a private sshd for the sub-human film (scripts/devbox.sh): this user only, loopback only, keys only
 ListenAddress 127.0.0.1
@@ -75,14 +81,17 @@ Host devbox
   Port $PORT
   User $U
 EOF
-# jess's ssh: her machine's own config and known_hosts (sub-human adds its own pinned known_hosts per link)
+# jess's ssh: her machine's own config, key and known_hosts (sub-human adds no option of its own to her login)
 cat > "$LAPTOP/.ssh/config" <<EOF
 Host devbox
   HostName 127.0.0.1
   Port $PORT
   User $U
+  HostKeyAlias devbox
   UserKnownHostsFile $LAPTOP/.ssh/known_hosts
   GlobalKnownHostsFile /dev/null
+  IdentityFile $LAPTOP/.ssh/id_ed25519
+  IdentitiesOnly yes
   IdentityAgent none
   ControlMaster no
 EOF

@@ -1,28 +1,33 @@
 /**
  * plugin/sub-human/lib/remote/joining.ts: the joiner's side of `/sub-human join …` (lib/commands/join.ts parses it): the
- * link file, the link daemon's start and what the person reads next. A join with a PIN only links this machine (the
- * PAKE runs in the link daemon, lib/remote/enroll.ts; the host's card lets it in): it never takes the seat in that
- * step, so the seat's mechanics block never goes to the model with a PIN-bearing prompt. A join over the person's own
- * ssh login (no PIN) links and then takes the seat.
+ * link file, the link daemon's start and what the person reads next. An invite line only links this machine, in two
+ * steps the person types (the line, then the PIN the host's machine asks for; lib/remote/link-connect.ts dials), and the
+ * host's card lets it in: neither step ever takes the seat, so the seat's mechanics block never goes to the model with a
+ * secret-bearing prompt. A join over the person's own ssh login (no invite) links and then takes the seat.
  *
  *   Step = {kind: 'take', want: Wanted} | {kind: 'say', text, refused}   what a join step ends in: a seat to take
  *       (lib/seats.ts take), or a line for the person (a refusal, or where the join stands)
- *   linkShort({name, code, pin, transport, sid?}) -> Step   an invite's PIN: link only (hosting.joinShort), the daemon
- *       started, the first hello watched for LINK_JOIN_WAIT_MS; sid: the session that typed it (join_sid), whose tail
- *       tells the person when the host's card let them in (pendingNews)
+ *   linkLine({name, code, word, transport, sid?}) -> Step   an invite line: link only (hosting.joinLine), the daemon
+ *       started, its hellos watched for LINK_JOIN_WAIT_MS: the host asks for the PIN (say so), or a refusal; sid: the
+ *       session that typed it (join_sid), whose tail tells the person what the host answered (pendingNews)
+ *   givePin(pin, sid?) -> Step         the PIN, for the join waiting for one (this session's, else the newest): into
+ *       its link file (hosting.givePin), the daemon started again, watched: the card asks (awaiting), a wrong or
+ *       too-soon PIN (asked again), or a refusal (the last try)
  *   linkLogin({dest, code, via, home, name, isDefault}) -> Step   `/sub-human join HOST ROOM` over the person's own ssh
- *       login: the link file, the daemon, then the seat once linked. Said explicitly (no PIN is no invite), and a
- *       refused login says that an invite line ends with its PIN
- *   pendingJoin() -> Link | null       the newest join this machine started with a PIN, waiting to take its seat
+ *       login: the link file, the daemon, then the seat once linked. Said explicitly (no SECRET is no invite), and a
+ *       refused login says that an invite line ends with its SECRET
+ *   pendingJoin() -> Link | null       the newest invite join this machine started, waiting to take its seat
+ *   pinJoin(sid?) -> Link | null       the invite join waiting for its PIN (this session's first, else the newest)
  *   finishJoin(link) -> Step           bare `/sub-human` with a pending join: the seat once the link is up
  *   ensureLinked(code, name) -> Step | null   before a seat in a room hosted elsewhere: a join not let in yet is not
  *       started again after a refusal, a stopped link says why; null when the link runs
  *   dropJoinAs(code)                   the seat a pending join waited for is taken: its link file no longer says so
  *   restartLink(code)                  a daemon still dialing the old host is stopped (1 s at most)
- *   pendingNews(sid) -> {code, name, state, text} | null   the join this session started with a PIN: 'waiting' (the
- *       host's card has not answered), 'linked' (the host let this machine in: text says to type /sub-human) or
- *       'refused' (text: its reason); null when there is none. The seatless session's tail (lib/tail.ts) says it once
- *   noPin(dest, code) -> string        a pipe join without its PIN: the line the host sent has one
+ *   pendingNews(sid) -> {code, name, state, text} | null   the invite join this session started: 'waiting' (dialing,
+ *       or the host's card has not answered), 'pin' (the host asks for the PIN: text says to type it), 'linked' (the
+ *       host let this machine in: text says to type /sub-human) or 'refused' (text: its reason); null when there is
+ *       none. The seatless session's tail (lib/tail.ts) says each once
+ *   noSecret(dest, code) -> string     a pipe join without its SECRET: the line the host sent has one
  */
 import * as identity from '../identity.ts';
 import * as linkSocket from './link-socket.ts';
@@ -51,7 +56,7 @@ const refuse = (text: string): Step => say(text, true);
 const msgOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
 export const NO_START = (code: string) => `the connection to room ${code} did not start. Run /sub-human doctor.`;
-const PIN_HINT = (dest: string, code: string) => `No PIN, so this went over your own ssh login; if the host sent you an invite, its line ends with a 4-digit PIN: /sub-human join ${dest} ${code} PIN`;
+const SECRET_HINT = (dest: string, code: string) => `No invite, so this went over your own ssh login; if the host sent you an invite line, it ends with a long SECRET: /sub-human join ${dest} ${code} SECRET`;
 
 /** A daemon still dialing the old host: stop it, so the start that follows dials the link file's new one. */
 export function restartLink(code: string): void {
@@ -68,23 +73,42 @@ const locatorOf = (t: LinkSpec | null | undefined): string | null => (t && t.kin
 
 const sameLogin = (a: LinkSpec | undefined, b: SshSpec) => !!a && !!b && a.kind === 'ssh' && a.login === true && (['user', 'host', 'port', 'via', 'remoteHome'] as const).every(k => a[k] === b[k]); // a login link is ssh
 
-/** Where a join started with a PIN stands (hosting.joinText), as a step: a refusal when it was refused. tells: this
- * session's tail says when the host lets it in (the session that typed the PIN). */
+/** Where an invite join stands (hosting.joinText), as a step: a refusal when it was refused. tells: this session's tail
+ * says what the host answers (the session that typed the line). */
 function stands(code: string, name: string, o: Outcome, tells = false): Step {
   return say(hosting.joinText(code, name, o, { tells }), o.state === 'refused');
 }
 
-export function linkShort({ name, code, pin, transport, sid }: { name: string; code: string; pin: string; transport: LinkSpec; sid?: string | null }): Step {
+export function linkLine({ name, code, word, transport, sid }: { name: string; code: string; word: string; transport: LinkSpec; sid?: string | null }): Step {
   if (identity.roomExists(code) && identity.isHost(code)) return refuse(`room ${code} is hosted on this machine; join it with /sub-human ${name} ${code}.`);
   const cur: Link | null = links.get(code);
   if (cur && cur.token && locatorOf(cur.transport) === locatorOf(transport)) {
     return say(`this machine is in room ${code} already; /sub-human ${name} ${code} takes your place there.`);
   }
   if (cur) restartLink(code); // a pending join replaced, or the room's host moved: dial with the new file
-  try { hosting.joinShort({ code, transport, pin, name, sid }); } catch (e) { return refuse(msgOf(e)); }
-  if (cur) links.set(code, { ...links.get(code)!, rebind: true }); // a seat here joins again over the new link (joinShort wrote it)
+  try { hosting.joinLine({ code, transport, word, name, sid }); } catch (e) { return refuse(msgOf(e)); }
+  if (cur) links.set(code, { ...links.get(code)!, rebind: true }); // a seat here joins again over the new link (joinLine wrote it)
   if (!linkSocket.start(code)) return refuse(NO_START(code));
   return stands(code, name, hosting.outcome(code), !!sid);
+}
+
+/** The invite joins this machine started that wait for their PIN (the host asked), this session's first, newest first. */
+export function pinJoin(sid?: string | null): Link | null {
+  const all = pendingJoins().filter(l => !!l.pin_wanted && typeof l.invite === 'string');
+  return all.find(l => !!sid && l.join_sid === sid) || all[0] || null;
+}
+
+export function givePin(pin: string, sid?: string | null): Step {
+  const l = pinJoin(sid);
+  if (!l) {
+    const any = pendingJoins().find(j => typeof j.invite === 'string' && !j.awaiting);
+    return refuse(any ? `the host's machine has not asked for the PIN yet (room ${any.code}): wait a moment, then type it again` : 'no invite here is waiting for a PIN: type the invite line first (/sub-human join HOST ROOM SECRET), then the PIN when it asks');
+  }
+  const code = l.code, name = String(l.join_as);
+  restartLink(code);
+  try { hosting.givePin(code, pin); } catch (e) { return refuse(msgOf(e)); }
+  if (!linkSocket.start(code)) return refuse(NO_START(code));
+  return stands(code, name, hosting.outcome(code), l.join_sid === sid && !!sid);
 }
 
 export function linkLogin({ dest: typed, code, via, home, name, isDefault }: {
@@ -105,18 +129,18 @@ export function linkLogin({ dest: typed, code, via, home, name, isDefault }: {
   } catch (e) { return refuse(msgOf(e)); }
   if (!linkSocket.start(code)) return refuse(NO_START(code));
   const o: Outcome = hosting.outcome(code);
-  // no PIN is no invite: the person's own ssh login is the way in, so a refusal says where an invite line differs
-  if (o.state === 'refused') return refuse(`could not reach room ${code} over ${at}: ${o.reason}. ${PIN_HINT(typed, code)}`);
+  // no SECRET is no invite: the person's own ssh login is the way in, so a refusal says where an invite line differs
+  if (o.state === 'refused') return refuse(`could not reach room ${code} over ${at}: ${o.reason}. ${SECRET_HINT(typed, code)}`);
   if (o.state !== 'linked') {
-    return say(`still connecting to room ${code} over ${at}${o.reason ? ` (${o.reason})` : ''}: no PIN, so no invite. Type /sub-human ${name} ${code} in a moment; if it doesn't come up, /sub-human doctor says why.`);
+    return say(`still connecting to room ${code} over ${at}${o.reason ? ` (${o.reason})` : ''}: no SECRET, so no invite. Type /sub-human ${name} ${code} in a moment; if it doesn't come up, /sub-human doctor says why.`);
   }
   return take({ name, code, isDefault });
 }
 
-/** A pipe join (a second sub-human folder on this machine) has no login path: the invite line has a PIN. */
-export const noPin = (dest: string, code: string): string => `that looks like an invite line without its PIN: /sub-human join ${dest} ${code} PIN (the 4 digits the host sent with it).`;
+/** A pipe join (a second sub-human folder on this machine) has no login path: the invite line has a SECRET. */
+export const noSecret = (dest: string, code: string): string => `that looks like an invite line without its SECRET: /sub-human join ${dest} ${code} SECRET (the long word the host sent with it).`;
 
-/** The joins this machine started with a PIN, waiting to take their seat (join_as), newest first. */
+/** The invite joins this machine started, waiting to take their seat (join_as), newest first. */
 function pendingJoins(): Link[] {
   const all = links.list().map(c => links.get(c)).filter((l): l is Link => !!l && typeof l.join_as === 'string' && !identity.isHost(l.code));
   return all.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
@@ -127,6 +151,7 @@ export const pendingJoin = (): Link | null => pendingJoins()[0] || null;
 export function finishJoin(l: Link): Step {
   const code = l.code, name = String(l.join_as); // pendingJoin: a string
   const why = linkSocket.stopReason(linkSocket.status(code));
+  if (l.pin_wanted && !l.token) return stands(code, name, { state: 'pin', ...(l.pin_wanted.message ? { reason: l.pin_wanted.message } : {}) });
   if (why && !l.token) {
     try { const { join_as: _gone, join_sid: _sid, ...rest } = links.get(code) || l; links.set(code, rest); } catch { /* no credential left: nothing to keep */ }
     return refuse(`could not join room ${code}: ${why.reason}`);
@@ -141,8 +166,9 @@ export function finishJoin(l: Link): Step {
 export function ensureLinked(code: string, name: string): Step | null {
   if (identity.isHost(code)) return null;
   const pending = links.get(code);
-  if (pending && !pending.token && (pending.pin !== undefined || pending.enroll || pending.awaiting)) {
-    // a join not let in yet: never start it again after a refusal (that would spend another try)
+  if (pending && !pending.token && (pending.pin !== undefined || pending.pin_wanted || pending.awaiting || typeof pending.invite === 'string')) {
+    // a join not let in yet: never started again after a refusal or while it waits for its PIN (a PIN is typed)
+    if (pending.pin_wanted && pending.pin === undefined) return stands(code, name, { state: 'pin', ...(pending.pin_wanted.message ? { reason: pending.pin_wanted.message } : {}) });
     const why = linkSocket.stopReason(linkSocket.status(code));
     if (why) return refuse(`could not join ${code}: ${why.reason}`);
     if (!linkSocket.start(code)) return refuse(NO_START(code));
@@ -163,14 +189,17 @@ export function dropJoinAs(code: string): void {
   } catch { /* a stale join_as only names the seat again */ }
 }
 
-/** What a seatless session's tail says about the join it started with a PIN (see the header); waiting: nothing yet. */
-export interface News { code: string; name: string; state: 'waiting' | 'linked' | 'refused'; text: string }
+/** What a seatless session's tail says about the invite join it started (see the header); waiting: nothing yet. */
+export interface News { code: string; name: string; state: 'waiting' | 'pin' | 'linked' | 'refused'; text: string }
 
 export function pendingNews(sid: string | null | undefined): News | null {
   if (!sid) return null;
   const l = pendingJoins().find(j => j.join_sid === sid);
   if (!l) return null;
   const code = l.code, name = String(l.join_as);
+  if (l.pin_wanted && !l.token && l.pin === undefined) {
+    return { code, name, state: 'pin', text: hosting.joinText(code, name, { state: 'pin', ...(l.pin_wanted.message ? { reason: l.pin_wanted.message } : {}) }) };
+  }
   const st = linkSocket.status(code);
   const stopped = linkSocket.stopReason(st);
   if (stopped && !l.token) return { code, name, state: 'refused', text: `could not join room ${code}: ${stopped.reason}` };

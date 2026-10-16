@@ -24,7 +24,6 @@ import * as seatKey from '../hooks/seat-key.ts';
 import { flaky } from './support/flaky.ts';
 import * as config from '../lib/config.ts';
 import * as seats from '../lib/seats.ts';
-import * as shim from '../lib/remote/shim.ts';
 import * as sshkeys from '../lib/remote/sshkeys.ts';
 import type { Client, ConnectOpts } from '../lib/remote/client.ts';
 import type { CodedError, DecodedFrame } from '../lib/remote/types-core.ts';
@@ -240,7 +239,12 @@ test('protocol skew: no common version is PROTOCOL naming the side that must upd
   const r = await rawHello(t, host, { proto: { min: 1, max: 1 } }, { proto: { min: 2, max: 3 }, version: '0.5.0' });
   assert.deepEqual([r.error!.code, r.error!.reason, /you run an unknown sub-human version \(protocol 1\)\. Update your plugin/.test(r.error!.message)], ['PROTOCOL', 'SKEW', true]);
   // a reply outside this end's range is refused here too
-  await fails(at({ proto: { min: 1, max: 1 } }, { proto: { min: 1, max: 1 } }).then(() => at({ proto: { min: 3, max: 3 } }, {})), /must update|Update your plugin/);
+  await fails(at({ proto: { min: 1, max: 1 } }, { proto: { min: 1, max: 1 } }).then(() => at({ proto: { min: protocol.PROTO.max + 1, max: protocol.PROTO.max + 1 } }, {})), /must update|Update your plugin/);
+  // this version and 0.5.0-beta.15: protocol 3 against 1–2 settles on 2 both ways (a link made before keeps working)
+  assert.deepEqual(protocol.PROTO, { min: 1, max: 3 });
+  const oldHost = await at({}, { proto: { min: 1, max: 2 }, version: '0.5.0-beta.15' });
+  assert.deepEqual([oldHost.v, oldHost.serverVersion], [2, '0.5.0-beta.15']);
+  oldHost.close();
 });
 
 test('remote (memory): a link writes only as the seats it joined: another `from`, a stolen key or a system kind is AUTH', async t => {
@@ -405,23 +409,21 @@ test('remote (pipe): `serve --stdio CODE --link ID` (the SSH forced command) tak
   assert.equal(invites.redeemInvite(host, c.secret, { machine: REMOTE }).link.id.length, 12, 'and stays unused');
 });
 
-test('the forced-command line a host writes for a link: the stable shim, restrict, no versioned path; appended once, one key one link', t => {
+test('the lines an older sub-human wrote to authorized_keys: kick takes a link\'s out, a door goes by its tag; nothing here writes one', t => {
   const { code } = hostRoom(t);
-  assert.deepEqual(invites.parseInvite(invites.mintFor(store.open(code), { locator: 'ssh:host@127.0.0.1:2222', machine: REMOTE, seats: [] }).invite)!.locator, 'ssh:host@127.0.0.1:2222');
   const KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOv2YxFcmD0qVf1aW0gk1oQfWb3m9e1bJ1l3xq3fQnHk';
-  assert.equal(sshkeys.publicKey(`${KEY} me@laptop "quoted" $(id)\n`), KEY, 'the key\'s own comment is dropped');
-  for (const bad of [`command="sh" ${KEY}`, `${KEY}\n${KEY}`, 'not a key']) assert.equal(sshkeys.publicKey(bad), null, bad);
   const home = path.resolve(process.env.SUB_HUMAN_HOME!);
   const id = 'abcdef012345';
-  const line = shim.authorizedLine(code, id, KEY, home);
-  assert.equal(line, `command="SUB_HUMAN_HOME=${home} ${home}/bin/serve --stdio ${code} --link ${id}",restrict ${KEY} sub-human:${code}:${id}`);
-  assert.ok(!line.includes(process.execPath) && !line.includes(fs.realpathSync(h.BIN)), 'no versioned node or plugin path is baked in');
-  const ak = path.join(h.tmpDir('sh-ak-', t), 'ssh', 'authorized_keys');
-  assert.equal(sshkeys.appendAuthorized(ak, line, KEY), 'added');
-  assert.equal(sshkeys.appendAuthorized(ak, line, KEY), 'present');
-  assert.equal(fs.readFileSync(ak, 'utf8'), `${line}\n`);
+  const linkLine = `command="SUB_HUMAN_HOME=${home} ${home}/bin/serve --stdio ${code} --link ${id}",restrict ${KEY} sub-human:${code}:${id}`;
+  const door = `command="SUB_HUMAN_HOME=${home} ${home}/bin/serve --enroll ${code} --kind ssh",restrict ${KEY} ${sshkeys.ENROLL_TAG(code)}`;
+  const ak = path.join(h.tmpDir('sh-ak-', t), 'authorized_keys');
+  fs.writeFileSync(ak, `ssh-ed25519 AAAAmine me@laptop\n${linkLine}\n${door}\n`, { mode: 0o600 });
+  assert.equal(sshkeys.removeAuthorized(ak, code, '0123456789ab'), 0, 'another link\'s line: none');
+  assert.equal(sshkeys.removeAuthorized(ak, code, id), 1);
+  assert.equal(sshkeys.removeTagged(ak, sshkeys.ENROLL_TAG(code)), 1);
+  assert.equal(fs.readFileSync(ak, 'utf8'), 'ssh-ed25519 AAAAmine me@laptop\n', 'the person\'s own lines stay');
   assert.equal(fs.statSync(ak).mode & 0o777, 0o600);
-  assert.throws(() => sshkeys.appendAuthorized(ak, shim.authorizedLine(code, '0123456789ab', KEY, home), KEY), (e: CodedError) => e.code === 'INVALID', 'one key, one link');
+  assert.deepEqual(Object.keys(sshkeys).sort(), ['ENROLL_TAG', 'authorizedKeysFile', 'removeAuthorized', 'removeTagged'], 'no writer left');
 });
 
 test('remote (memory): subscribe {snapshot: true} gets the snapshot first only from a host that has one, only after 0, and only when it fits a frame', async t => {

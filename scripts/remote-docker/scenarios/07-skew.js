@@ -2,11 +2,12 @@
 // Version skew against the previous release (devbox-old: 0.5.0-beta.15, git ref 7c97bdb, baked into its image). Releases
 // before 0.5 are not interoperated with any more (their sh1 invites and v-only hello are gone). (a) a beta.15 host
 // (devbox-old) and a current joiner (joiner-a, over toxiproxy:22003); (b) a current host (devbox) and a beta.15 joiner
-// (the joiner user on devbox-old, straight over the core network). Both over the PIN join (invite --ssh, the line
-// typed with its PIN, the host's card), which beta.15 has; both speak protocol 1..2 and settle on 2 (the current end's
-// additive fields, error reasons and its machine key, the old end ignores). Each direction must work fully (posts both
-// ways, mirror byte-identical, both chains verify) or refuse with a message that names the version and which side to
-// update; never a half-working room or a mirror that silently diverges. (c) A hello from a client claiming protocol
+// (the joiner user on devbox-old, straight over the core network). Protocol 3 changed the invite: a beta.15 host's
+// line ends with a 4-digit PIN, which this joiner refuses saying the host must update; this host's line ends with a
+// SECRET, which beta.15 refuses ("the PIN is the 4 digits"), and this host's invite text says the joiner needs a newer
+// sub-human. A link made before keeps working (protocol 1..3 against 1..2 settles on 2: test/remote-server). Each
+// direction must work fully or refuse with words that name the version and which side to update; never a
+// half-working room or a mirror that silently diverges. (Not run since Stage 7b.) (c) A hello from a client claiming protocol
 // 99, straight into the current host's serve over an ssh login: PROTOCOL, naming the side that must update.
 const { WAN, CORE, delivered, converge } = require('./_lib.js');
 
@@ -15,13 +16,14 @@ const VERSION_MSG = /version|update|upgrade|protocol/i;
 async function direction(t, label, { hostSvc, joinerSvc, joinerUser, hosts, dest }) {
   const { lab } = t;
   const { code, host } = lab.hostRoom(hostSvc);
-  // the PIN join both ways: beta.15 shows and takes the same `/sub-human join DEST ROOM PIN` line
+  // each side's invite line, typed on the other
   const j = await lab.join({ svc: joinerSvc, user: joinerUser, name: 'bob', code, hosts, hostSvc, dest, key: `id_skew_${hostSvc}` });
   if (j.pending) return t.pending(`${label}: the PIN join`, j.pending);
   t.ev.invite(j.invite, j.pin);
   t.log(`${label}: join ok ${j.join.ok} (${j.join.ms} ms) ${j.join.out || ''}`);
   if (!j.join.ok) {
-    t.check(`${label}: the refused join names the version / which side to update`, VERSION_MSG.test(j.join.out || ''), (j.join.out || '').slice(0, 200));
+    // the joiner's refusal, or (a beta.15 joiner, whose words predate protocol 3) the host's invite text the person read
+    t.check(`${label}: the refused join names the version / which side to update`, VERSION_MSG.test(j.join.out || '') || /newer than 0\.5\.0-beta\.15/.test(j.text || ''), (j.join.out || '').slice(0, 200));
     const h = host.dump(code);
     t.check(`${label}: the host log still verifies after the refusal`, h.chain && h.chain.ok, JSON.stringify(h.chain));
     return;

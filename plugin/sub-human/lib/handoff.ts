@@ -58,7 +58,7 @@
  *       lib/cli/handoff.ts, after a confirmation): refused while the link is online, or down for less than
  *       PROMOTE_OFFLINE_MS without force. The other machines get sh2 invites with a PIN each, to hand out by hand
  *       (each runs `sub-human demote CODE INVITE PIN` with its own).
- *   demote(code, invite, pin?) -> {orphan, request?, follower?}   a machine follows a promoted room: a member's
+ *   demote(code, invite, pin?) -> {orphan, follower?}   a machine follows a promoted room: a member's
  *       machine re-points its link (rebind: its seats join again with /sub-human; follower: true); an old host that
  *       was promoted away sets its log aside (orphaned-<time>.jsonl, kept, never merged), stops its room Claude, and
  *       mirrors the new host
@@ -97,8 +97,8 @@ type Store = ReturnType<typeof store.open>;
 type LinkRec = Pick<LinkRecord, 'machine' | 'seats'>;
 /** One signed payload (lib/room/envelope.ts): the hook's seat key signs it. */
 type Sign = (payload: Record<string, unknown>) => HostProof;
-/** followLink: the link file's transport (null: a locator this machine cannot use) and the ssh admit request. */
-interface Follow { transport: LinkSpec | null, request: string | null }
+/** followLink: the link file's transport (null: a locator this machine cannot use). */
+interface Follow { transport: LinkSpec | null }
 interface Minted { machine: string, seats: string[], invite: string, pin?: string }
 
 const HOST_DOC = 'remote/handoff';
@@ -116,24 +116,20 @@ const linkConnect = (): typeof import('./remote/link-connect.ts') => require('./
 const identity = () => identityMod;
 const transportOf = (locator: unknown) => (typeof locator === 'string' ? linkConnect().transportOf(locator) : null);
 // A next host reached over the web (wss/ws, lib/remote/transports/ws.ts): its invites pin its listener's X25519 key,
-// and the link file that follows one carries that key.
-// Over ssh its invites pin its sshd Ed25519 host key (lib/remote/sshkeys.ts hostKey; none when unreadable).
+// and the link file that follows one carries that key and a key of the link's own (XK). Over ssh a follower reaches
+// the new host through its person's own ssh login to it: nothing is pinned or let in by the plugin.
 const isWeb = (locator: unknown) => /^wss?:/.test(String(locator));
-const hostKeyFor = (locator: string): string | null => (isWeb(locator) ? (require('./remote/listener.ts') as typeof import('./remote/listener.ts')).hostKey()
-  : /^ssh:/.test(String(locator)) ? (require('./remote/sshkeys.ts') as typeof import('./remote/sshkeys.ts')).hostKey() : null);
-/** This machine's seat name in CODE, for its link key's comment and its admit request. */
-const seatName = (code: string): string => { try { return (identity().localSeats(code) as string[]).find(n => n !== 'claude') || 'member'; } catch { return 'member'; } };
+const hostKeyFor = (locator: string): string | null => (isWeb(locator) ? (require('./remote/listener.ts') as typeof import('./remote/listener.ts')).hostKey() : null);
 /**
- * The link file that follows the room to locator with invite (lib/remote/hosting.ts linkTransport): over ssh this
- * machine's own link key (made if it had none) and its mux kept, the new host's key pinned, and the admit request
- * the new host needs; over the web the listener key the invite pins. {transport: null} for a locator this machine
- * cannot use.
+ * The link file that follows the room to locator with invite (lib/remote/hosting.ts linkTransport): over ssh the
+ * person's own ssh login to the new host (mux kept); over the web the listener key the invite pins and a fresh key of
+ * the link's own. {transport: null} for a locator this machine cannot use.
  */
 function followLink(code: string, locator: string | undefined, invite: unknown): Follow {
   const inv = typeof invite === 'string' ? invites.parseInvite(invite) : null;
-  if (!inv || inv.code !== code || inv.locator !== locator || !transportOf(locator)) return { transport: transportOf(locator), request: null };
+  if (!inv || inv.code !== code || inv.locator !== locator || !transportOf(locator)) return { transport: transportOf(locator) };
   const hosting: typeof import('./remote/hosting.ts') = require('./remote/hosting.ts');
-  return hosting.linkTransport({ inv, name: seatName(code), cur: links.get(code) })!; // null only for a locator transportOf refuses
+  return { transport: hosting.linkTransport({ inv, cur: links.get(code) }) };
 }
 /** This machine, about to host CODE at a web locator: its listener up, the room in its served set. */
 function serveWeb(code: string, locator: string): void {
@@ -254,7 +250,7 @@ function afterMoved(s: Store, { job }: { job?: string | null } = {}): boolean {
   if (!d || !invite || !d.locator) return false;
   const f = followLink(s.code, d.locator, invite);
   if (!f.transport) return false;
-  links.set(s.code, { code: s.code, transport: f.transport, invite, ...(f.request ? { request: f.request } : {}), created_at: iso(Date.now()), moved: { epoch: d.epoch, host: d.to, locator: d.locator } });
+  links.set(s.code, { code: s.code, transport: f.transport, invite, created_at: iso(Date.now()), moved: { epoch: d.epoch, host: d.to, locator: d.locator } });
   store.forget(s.code);
   try { return linkSocket().start(s.code); } catch { return false; }
 }
@@ -279,7 +275,7 @@ function onMoved(mirror: Store, data: MovedEventData | null | undefined): { self
   try { f = followLink(code, data.locator, data.invite); } catch (e) { return { stop: true, reason: `room ${code} moved to ${data.host}'s machine, and this machine could not follow it: ${(e as Error).message}; ${how}` }; }
   if (!f.transport) return { stop: true, reason: `room ${code} moved to ${data.host}'s machine at "${data.locator}", which this machine cannot use; ${how}` };
   links.set(code, {
-    code, transport: f.transport, invite: data.invite, ...(f.request ? { request: f.request } : {}), created_at: cur.created_at || iso(Date.now()),
+    code, transport: f.transport, invite: data.invite, created_at: cur.created_at || iso(Date.now()),
     moved: { epoch: data.epoch, host: data.host, locator: data.locator, at: iso(Date.now()) },
   });
   if (cur.token === undefined && cur.invite === undefined) return { reason: 'repointed' };
@@ -289,9 +285,10 @@ function onMoved(mirror: Store, data: MovedEventData | null | undefined): { self
 function whyOffline(code: string, message: string): string {
   const l = links.get(code);
   if (!l || !l.moved || l.token) return message;
-  const admit = l.request ? `Over ssh ${l.moved.host} has not let this machine in yet. ` : '';
-  return `room ${code} moved to ${l.moved.host}'s machine, which this machine can't reach yet (${message}). ${admit}`
-    + `Ask ${l.moved.host} for an invite (/sub-human invite there) and type the line it shows here`;
+  const login = l.transport && l.transport.kind === 'ssh' && l.transport.login === true
+    ? `Over ssh this machine follows through your own ssh login to ${l.moved.host}'s machine; without one, ` : '';
+  return `room ${code} moved to ${l.moved.host}'s machine, which this machine can't reach yet (${message}). ${login}`
+    + `${login ? 'ask' : 'Ask'} ${l.moved.host} for an invite (/sub-human invite${login ? ' --web' : ''} there) and type the line it shows here`;
 }
 
 // ---------- the target ----------
@@ -446,7 +443,7 @@ function promote(code: string, { name, locator, force = false, cwd, now = Date.n
   return { epoch, entry: placed, invites, note, last };
 }
 
-function demote(code: string, invite: string, pin?: string): { orphan: string | null, request: unknown, follower?: boolean } {
+function demote(code: string, invite: string, pin?: string): { orphan: string | null, follower?: boolean } {
   const s = store.open(code);
   const inv = invites.parseInvite(invite);
   if (!inv || inv.code !== code) throw err('INVALID', `that is not an invite to room ${code}`);
@@ -454,18 +451,17 @@ function demote(code: string, invite: string, pin?: string): { orphan: string | 
   if (!transport) throw err('INVALID', `this machine cannot use "${inv.locator}"`);
   // without it the link's hello would spend one of the invite's tries on a missing PIN
   if (!invites.PIN_RE.test(String(pin || ''))) throw err('INVALID', 'this invite needs the 6-digit PIN that came with it: sub-human demote CODE INVITE PIN');
-  const name: string = (identity().localSeats(code) as string[]).find(n => n !== 'claude') || 'host';
   const hosting = (): typeof import('./remote/hosting.ts') => require('./remote/hosting.ts');
   if (!s.isHost) { // a member's machine follows the promoted room: its link re-pointed, its seats join again over it
     const cur = links.get(code);
     if (!cur) throw err('INVALID', `this machine has no copy of room ${code}`);
     const st = linkSocket().status(code);
     if (st.running) { try { process.kill(st.pid, 'SIGTERM'); } catch { /* gone */ } }
-    const request: unknown = hosting().joinInvite({ inv, invite, pin, name }).request || null;
+    hosting().joinInvite({ inv, invite, pin });
     links.set(code, { ...links.get(code)!, rebind: true, moved: { locator: inv.locator, host: 'the new host', at: iso(Date.now()) } }); // written just above
     for (const until = Date.now() + 2000; st.running && Date.now() < until && ioMod.isAlive(st.pid);) ioMod.sleepSync(20);
     linkSocket().start(code);
-    return { orphan: null, request, follower: true };
+    return { orphan: null, follower: true };
   }
   const o: Member | undefined = (s.members.read() as Members).claude;
   if (o && o.job && o.job !== 'pending') { try { (require('./room-claude.ts') as typeof import('./room-claude.ts')).releaseDetached(code, o.job); } catch { /* ends with its session */ } }
@@ -473,12 +469,12 @@ function demote(code: string, invite: string, pin?: string): { orphan: string | 
   for (const k of [hostLinks.LINKS_KEY, invites.INVITES_KEY, HOST_DOC, WORKDIR, 'tasks']) s.kv.delete(k);
   for (const k of s.kv.list('presence/')) s.kv.delete(k);
   const moved = { demoted: true, locator: inv.locator, host: 'the new host' };
-  // the joiner's side of an sh2 invite (its PIN; over ssh the link's own key and the pinned host key)
-  const request: unknown = hosting().joinInvite({ inv, invite, pin, name }).request || null;
+  // the joiner's side of an sh2 invite (its PIN; over ssh this person's own ssh login to the new host)
+  hosting().joinInvite({ inv, invite, pin });
   links.set(code, { ...links.get(code)!, moved }); // joinInvite wrote it
   store.forget(code);
   linkSocket().start(code);
-  return { orphan, request };
+  return { orphan };
 }
 
 interface Status {
