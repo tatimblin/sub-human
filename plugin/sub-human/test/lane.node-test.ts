@@ -8,11 +8,11 @@ import * as identity from '../lib/identity.ts';
 import type { Room } from '../lib/room.ts';
 import { lane, deliver } from '../lib/room/deliver.ts';
 import { ROTATION_HELD_TEXT } from '../lib/room/rules.ts';
-import type { FsRoomStore } from '../lib/room/store.ts';
 import type { Entry, EntryInput, Lane, LaneViewer } from '../lib/room/types.ts';
 import { sn, eid } from './support/brands.ts';
+import { fsStore } from './support/fs-store.ts';
 
-let R!: Room; // the current test's room (set by fresh())
+let R: Room; // the current test's room (set by fresh())
 /** deliver()'s first step (push: notice or wake; pull: context), judged as the room's own facade judges. */
 const roomLane = (me: LaneViewer | null, e: Entry, es?: readonly Entry[]) => lane(me, e, es, room.trustOf);
 function fresh() {
@@ -23,8 +23,8 @@ function fresh() {
 /** A line as an older version wrote it (a kind or field append() no longer takes), straight into the log. */
 function legacy(fields: Record<string, unknown>): Entry {
   const e = { id: R.lastId() + 1, at: new Date().toISOString(), ...fields };
-  fs.appendFileSync((R.store as FsRoomStore).logFile, JSON.stringify(e) + '\n');
-  return e as Entry;
+  fs.appendFileSync(fsStore(R.store).logFile, JSON.stringify(e) + '\n');
+  return e as Entry; // deliberate: an older version's line, not one append() takes
 }
 const H1 = 'aaaaaaaaaaaa', H2 = 'bbbbbbbbbbbb';
 const sys = (kind: string, extra: Partial<EntryInput> = {}, from = 'claude') => R.append({ kind, text: `${kind}`, ...extra }, { via: 'system', from, system: true });

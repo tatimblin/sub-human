@@ -12,6 +12,7 @@ import * as lock from '../lib/lock.ts';
 import * as config from '../lib/config.ts';
 import * as env from '../lib/env.ts';
 import * as text from '../lib/text.ts';
+import { must } from './support/must.ts';
 
 test('text.clip counts code points and never splits a surrogate pair; oneLine', () => {
   assert.equal(text.clip('abcdef', 6), 'abcdef');
@@ -75,7 +76,7 @@ test('lock: owner body, stale dead-pid and reused-pid locks are broken, a live o
   assert.ok(o);
   assert.equal(o.pid, process.pid);
   assert.equal(o.host, os.hostname());
-  assert.ok(Math.abs(o.start! - lock.pidStart(process.pid)!) <= config.LOCK_START_SLACK_S, 'start matches ps');
+  assert.ok(Math.abs(must(o.start) - must(lock.pidStart(process.pid))) <= config.LOCK_START_SLACK_S, 'start matches ps');
   assert.equal(fs.existsSync(L), false, 'released');
 
   const dead = await h.deadPid();
@@ -115,7 +116,7 @@ test('lock: processes racing a planted stale lock never assign the same log id',
     c.stderr.on('data', d => { err += d; });
     c.on('exit', code => (code === 0 ? resolve() : reject(new Error(err))));
   })));
-  const ids = fs.readFileSync(path.join(dir, 'log.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l).id);
+  const ids = fs.readFileSync(path.join(dir, 'log.jsonl'), 'utf8').trim().split('\n').map(l => (JSON.parse(l) as { id: number }).id);
   assert.equal(ids.length, 90);
   assert.equal(new Set(ids).size, 90, 'no duplicate ids');
   assert.deepEqual(ids, ids.slice().sort((a, b) => a - b));
@@ -132,17 +133,17 @@ test('lock: a pid\'s start time stays cached while kill(pid, 0) finds it (no ps 
   const calls = () => { try { return fs.readFileSync(count, 'utf8').split('\n').filter(Boolean).length; } catch { return 0; } };
   const a = spawn('sleep', ['30'], { stdio: 'ignore' }), b = spawn('sleep', ['30'], { stdio: 'ignore' });
   t.after(() => { a.kill(); b.kill(); });
-  lock.pidStarts([a.pid!, b.pid!]);
+  lock.pidStarts([must(a.pid), must(b.pid)]);
   assert.equal(calls(), 1, 'one ps for both');
   const ta = lock.pidStart(a.pid), tb = lock.pidStart(b.pid);
   assert.ok(ta && tb);
   Date.now = () => realNow() + 5 * 60_000; // five minutes on: the old 30 s cache would have run ps twice more
   assert.equal(lock.pidStart(a.pid), ta);
-  lock.pidStarts([a.pid!, b.pid!]);
+  lock.pidStarts([must(a.pid), must(b.pid)]);
   assert.equal(calls(), 1, 'still alive: no ps');
   Date.now = realNow;
   a.kill('SIGKILL');
-  await h.until(() => !io.isAlive(a.pid!), 3000, 10);
+  await h.until(() => !io.isAlive(must(a.pid)), 3000, 10);
   assert.equal(lock.pidStart(a.pid), null, 'gone: dropped, and ps finds nothing');
   assert.equal(calls(), 2);
 });

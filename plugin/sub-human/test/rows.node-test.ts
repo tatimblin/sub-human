@@ -10,7 +10,8 @@ import * as session from '../lib/room/session.ts';
 import type { Identity } from '../lib/identity.ts';
 import type { Entry, Member, Members } from '../lib/room/types.ts';
 import type { Task } from '../lib/types-app.ts';
-import { rc, sn, eid } from './support/brands.ts';
+import { rc, sn, sid, eid } from './support/brands.ts';
+import { must } from './support/must.ts';
 
 /** A seat as rows reads it. */
 type Seat = Pick<Identity, 'code' | 'name' | 'role'>;
@@ -42,7 +43,7 @@ test('rowCalls: claude gets one participant call per active member; none for cla
   assert.doesNotMatch(t, /description: "claude"/);
   assert.match(t, /member_joined NAME/);
   assert.match(t, /only when it says NAME has no row running/);
-  const none = rows.rowCalls({ code, name: sn('claude'), role: 'claude' }, { claude: ms.claude });
+  const none = rows.rowCalls({ code, name: sn('claude'), role: 'claude' }, { claude: must(ms.claude) });
   assert.match(none, /No members yet/);
 });
 
@@ -51,13 +52,15 @@ test('rowCalls: a member gets one room call labelled with the code, listing the 
   const t = rows.rowCalls({ code, name: sn('alice'), role: 'member' }, ms);
   assert.match(t, /subagent_type: "sub-human:room", description: "marmot-2509", prompt: "room: marmot-2509\\nmembers: bob, dave", run_in_background: true/);
   assert.equal((t.match(/Agent\(/g) || []).length, 1);
-  const solo = rows.rowCalls({ code, name: sn('alice'), role: 'member' }, [{ name: 'claude', role: 'claude' }, { name: 'alice' }] as Member[]); // alice: a record without its role
+  // @ts-expect-error -- deliberate: alice, a record without its role
+  const solo = rows.rowCalls({ code, name: sn('alice'), role: 'member' }, [{ name: 'claude', role: 'claude' }, { name: 'alice' }]);
   assert.match(solo, /members: \(none\)/);
   assert.equal(rows.rowCalls(null, ms), '');
 });
 
 test('parseSpawn: name from the prompt, else the description; room code from prompt or description', () => {
-  const ms = { alice: {}, bob: {} } as unknown as Members; // empty records: parseSpawn reads only the names
+  // @ts-expect-error -- deliberate: empty records: parseSpawn reads only the names
+  const ms: Members = { alice: {}, bob: {} };
   assert.deepEqual(rows.parseSpawn({ subagent_type: 'sub-human:participant', prompt: 'member: bob', description: 'whatever' }, ms), { kind: 'participant', name: 'bob' });
   assert.deepEqual(rows.parseSpawn({ subagent_type: 'sub-human:participant', prompt: 'hold it', description: 'alice' }, ms), { kind: 'participant', name: 'alice' });
   assert.equal(rows.parseSpawn({ subagent_type: 'sub-human:participant', prompt: 'x', description: 'zed' }, ms), null);
@@ -73,7 +76,7 @@ test('row map: records per session, merges across sessions (/clear), forgets', (
   rows.recordRow(code, 'sess-2', 'a3', { kind: 'participant', name: 'bob', parent: 'a2' });
   const m = rows.readRowMap(code);
   assert.deepEqual(Object.keys(m).sort(), ['a1', 'a2', 'a3']);
-  assert.equal(m.a3.parent, 'a2');
+  assert.equal(must(m.a3).parent, 'a2');
   rows.forgetRow(code, 'a1');
   assert.equal(rows.readRowMap(code).a1, undefined);
   rows.writeHolds(code, sn('claude'), { members: ['alice'] });
@@ -234,19 +237,19 @@ test('joinNote (Phase 0 fix): a room hold between its JOINED return and the re-c
   const alice: Seat = { code, name: sn('alice'), role: 'member' };
   // hold.ts writes room:false + roomUntil while the room agent re-calls hold after "JOINED bob"
   rows.writeHolds(code, sn('alice'), { members: [], room: false, roomUntil: Date.now() + 30_000 });
-  assert.equal(rows.readHolds(code, sn('alice'))!.room, true);
+  assert.equal(must(rows.readHolds(code, sn('alice'))).room, true);
   assert.match(rows.joinNote(alice, 'bob'), /make NO Agent call/);
   assert.doesNotMatch(rows.joinNote(alice, 'bob'), /not running|Agent\(/);
   assert.deepEqual(rows.rowsNeeded(code, alice, { held: rows.readHolds(code, sn('alice')) }), []);
   rows.writeHolds(code, sn('alice'), { members: [], room: false, roomUntil: Date.now() - 1 });
-  assert.equal(rows.readHolds(code, sn('alice'))!.room, false, 'the gap expired: the row really stopped');
+  assert.equal(must(rows.readHolds(code, sn('alice'))).room, false, 'the gap expired: the row really stopped');
   assert.match(rows.joinNote(alice, 'bob'), /not running/);
 });
 
 test('claude (headless --bg): rowCalls / rowsNeeded / joinNote ignore members.json\'s claude {job, pid} record', () => {
   const { code, dir } = makeRoom([{ name: sn('alice') }, { name: sn('bob') }, { name: sn('carol'), left_at: 'x' }]);
-  const ms = JSON.parse(fs.readFileSync(path.join(dir, 'members.json'), 'utf8'));
-  ms.claude = { job: 'job-123', pid: process.pid, role: 'claude', name: 'claude', session_id: 'sid-claude' };
+  const ms = JSON.parse(fs.readFileSync(path.join(dir, 'members.json'), 'utf8')) as Members;
+  ms.claude = { job: 'job-123', pid: process.pid, role: 'claude', name: sn('claude'), session_id: sid('sid-claude') };
   fs.writeFileSync(path.join(dir, 'members.json'), JSON.stringify(ms));
   const roomClaude: Seat = { code, name: sn('claude'), role: 'claude' };
   const t = rows.rowCalls(roomClaude, ms);
@@ -261,6 +264,7 @@ test('claude (headless --bg): rowCalls / rowsNeeded / joinNote ignore members.js
   assert.doesNotMatch(only, /description: "alice", prompt/);
   assert.match(rows.joinNote(roomClaude, 'bob'), /bob has no row running; spawn it now: Agent sub-human:participant, description "bob"/);
   // the room's Claude\'s own record without a name field (contract: room Claude:{job, pid}) is still not a member
+  // @ts-expect-error -- deliberate: no name or role
   ms.claude = { job: 'job-123', pid: process.pid };
   assert.deepEqual(rows.rowsNeeded(code, roomClaude, { members: ms }), ['alice', 'bob']);
   assert.deepEqual(rows.rowsNeeded(code, me({ code, name: sn('alice'), role: 'member' }), { members: ms }), [code]);
