@@ -306,10 +306,14 @@ test('H (live verify): plan mode by hand, no EnterPlanMode: an ExitPlanMode whos
   const shown = exit({});
   assert.deepEqual(shape(shown), ['shown', 'ask', 'save,writePlan']);
   assert.deepEqual((shown.say as { show: unknown }).show, { plan: H }, 'the proposal\'s text, not the stub');
-  assert.equal(shown.state.review!.keepMode, true);
-  // the Yes then records Agree and leaves the mode as the dialog set it (the person chose plan mode)
+  assert.equal(shown.state.review!.mode, 'plan');
+  assert.match((shown.say as { text: string }).text, /Agree: any "Yes" \(your plan mode comes back\)/);
+  // the Yes then records Agree and, as it left the person's plan mode, puts it back (item 7: EnterPlanMode alone)
   const yes = review.reduce(shown.state, { ...EVENTS.exited, toolUseId: 'tu2', mode: 'auto' }, ctx);
-  assert.deepEqual(shape(yes), ['none', 'context', 'answer,restorePlan']);
+  assert.deepEqual(shape(yes), ['restore', 'context', 'answer,restorePlan']);
+  assert.match(review.textOf((yes.say as { parts: review.Part[] }).parts, () => '', false), /call EnterPlanMode to put bob's plan mode back \(no dialog\)/);
+  const back = review.reduce(yes.state, { type: 'entered', plan }, ctx);
+  assert.deepEqual(shape(back), ['none', 'context', '']);
   // not this seat's to answer: denied, no dialog; no text to show: denied with the card instead
   const stale = exit({ stub: { hash: H, live: false }, shown: null, text: null });
   assert.equal(stale.say!.to, 'deny');

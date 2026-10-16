@@ -26,8 +26,9 @@
  *   entered    Post(EnterPlanMode)      plan
  *   exit       Pre(ExitPlanMode)        toolUseId, answer?, target?, shown, text, plan, callPlan, ownPlan, mode?, stub?
  *              stub: the proposal a "proposal HASH" plan names when no review was opened (plan mode entered by hand,
- *              or EnterPlanMode skipped): live, it opens the review here (keepMode: the person chose plan mode, so no
- *              restore); not this seat's to answer, the call is denied, never a bare plan view of the stub
+ *              or EnterPlanMode skipped): live, it opens the review here with the person's own plan mode as the mode
+ *              to put back (a Yes leaves plan mode: item 7 H); not this seat's to answer, the call is denied, never a
+ *              bare plan view of the stub
  *   rejected   the dialog's rejection   toolUseId, answer, target: the person rejected the plan view (with a note, or
  *              none): Claude Code runs no PostToolUse for it, so the module's tool.call hook reports it the moment
  *              ExitPlanMode's call comes back refused (mod/consent.ts). The review resolves there and then: a note
@@ -132,8 +133,9 @@ export const NEXT = {
   show: (h: string) => `call ExitPlanMode now with plan "proposal ${h}"`,
   /** shown / exiting: close the review */
   exit: 'call ExitPlanMode now (no plan needed; the hooks close the review)',
-  /** restore: put the person's mode back */
-  restore: (n: string, mode: string | undefined) => `call EnterPlanMode, then ExitPlanMode, to restore ${n}'s ${mode} mode (no dialogs)`,
+  /** restore: put the person's mode back (plan mode: EnterPlanMode alone) */
+  restore: (n: string, mode: string | undefined) => (mode === 'plan' ? `call EnterPlanMode to put ${n}'s plan mode back (no dialog)`
+    : `call EnterPlanMode, then ExitPlanMode, to restore ${n}'s ${mode} mode (no dialogs)`),
   /** the fallback card */
   card: (h: string) => `call AskUserQuestion with "proposal ${h}"`,
   /** a note's confirm card */
@@ -163,6 +165,7 @@ export const SAY = {
   opening: (n: string, h: string) => `sub-human: opening room proposal ${h} for ${n}`,
   replaced: (n: string, old: string, h: string) => `sub-human: proposal ${old} was replaced by ${h}; opening ${h} for ${n}`,
   restoring: 'sub-human: restoring the mode after a room review',
+  planBack: (n: string) => `${n}'s plan mode is back. ${DONE}`,
   proposeFirst: (n: string) => `sub-human: no room review now: ${n} asked you to propose something, so do that. The proposal awaiting ${n} stays pending.`,
   showOnly: (n: string, h: string) => `sub-human: this plan mode is only to show ${n} room proposal ${h}. Call ExitPlanMode now with plan "proposal ${h}"; plan nothing (the hooks show its text).`,
   exitNow: `sub-human: ${NEXT.exit}.`,
@@ -170,7 +173,7 @@ export const SAY = {
   stubPlan: (n: string, h: string) => `Nothing recorded for proposal ${h}: that plan was only its name, not a review ${n} answered. ${NEXT.open(h)} to show it.`,
   /** the plan dialog's reason line: for the person, not the model */
   dialog: (n: string, h: string, from: string | null | undefined, mode: string | undefined) => `room proposal ${h}${from ? ` from ${from}` : ''}, for ${n} (PgUp/PgDn scroll). `
-    + `Agree: "${KEEP[String(mode)] || 'Yes'}" keeps your mode. Object: "Tell Claude what to change" + why. Esc: decide later.`,
+    + `Agree: ${mode === 'plan' ? 'any "Yes" (your plan mode comes back)' : `"${KEEP[String(mode)] || 'Yes'}" keeps your mode`}. Object: "Tell Claude what to change" + why. Esc: decide later.`,
   planView: (n: string, h: string) => `Open it in the plan view instead: ${NEXT.open(h)}. The hooks show ${n} the full proposal.`,
   unread: (n: string, h: string) => `${n}'s answer in the review of proposal ${h} is not on record yet; nothing was recorded.`,
   closed: (n: string, h: string) => `${n} closed the review of proposal ${h} without answering; nothing was recorded.`,
@@ -372,6 +375,7 @@ export function reduce(state: State, ev: Event, ctx: Ctx): Step {
 
     case 'entered': {
       if (!r) return none(state);
+      if (r.phase === 'restore' && r.mode === 'plan') return { state: { ...state, review: null }, effects: [], say: ctxSay(SAY.planBack(n)) };
       if (r.phase === 'restore') return { state, effects: [], say: ctxSay(SAY.exitNow) };
       if (r.phase !== 'entering') return none(state);
       const [review, effects] = showEarly(r, ev.plan);
@@ -395,7 +399,9 @@ export function reduce(state: State, ev: Event, ctx: Ctx): Step {
         if (!ev.stub) return none(state);
         if (!ev.stub.live) return { state, effects: [], say: { to: 'deny', parts: [SAY.noReviewOpen(n, ev.stub.hash)] } };
         if (!ev.shown || !ev.plan.file || ev.text == null) return { state, effects: [], say: { to: 'deny', parts: [SAY.cardInstead(n, ev.stub.hash).trim()] } };
-        const opened: Review = { phase: 'entering', mode: ev.mode, keepMode: true, at: ctx.now, hash: ev.shown.hash, from: ev.shown.from || null };
+        // plan mode is the person's own (the call is ExitPlanMode's, so the session is in it): a Yes leaves it, and the
+        // review puts it back
+        const opened: Review = { phase: 'entering', mode: 'plan', at: ctx.now, hash: ev.shown.hash, from: ev.shown.from || null };
         return reduce({ ...state, review: opened }, ev, ctx);
       }
       if (r.phase === 'shown' && r.tool_use_id && r.tool_use_id === ev.toolUseId) { // the same call again

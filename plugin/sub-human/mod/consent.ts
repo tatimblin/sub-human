@@ -84,11 +84,14 @@ export function registerConsent(on: On) {
   on('classic.PreToolUse', { tool: ['AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode', /^mcp__plugin_sub-human_room__/] }, async ($, e, next) => {
     const sid = await $.session.id();
     if (!consentPreNeeded(await helloOf($), sid, e.tool, await flagOf($), (await $.state.get(NOTE)).value)) return next(e);
+    // EnterPlanMode: the hooks beneath first, the plugin's own command hook among them, which notes the mode the call
+    // is made in (this event carries none, and the module's last-seen mode is stale after a shift+tab: item 7 H)
+    const first = e.tool === 'EnterPlanMode' ? await next(e) : null;
     const payload = prePayload(e, { sid, cwd: await $.session.cwd().catch(() => undefined), facts: facts.of(sid), agentId: facts.agentOf(e.tool_use_id) });
     const { result, allowReason, ...said } = toPre(await runConsent($, payload, sid));
     await apply($, said);
     if (allowReason) $.ui.log(asNotice(allowReason));
-    return mergePre(result, await next(e));
+    return mergePre(result, first ?? await next(e));
   }).catch(($, e, next) => next(e)); // the call goes on as without consent: nothing is recorded
 
   on('classic.PostToolUse', { tool_name: ['AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode'] }, async ($, e, next) => {

@@ -92,6 +92,7 @@ test('bridge: the worker is unref\'d: a hook-like process exits when its body re
 test('bridge: the deadlines fit inside the hook timeouts (SessionEnd has its own)', () => {
   const hooks: Record<string, { hooks: { timeout: number }[] }[]> = JSON.parse(fs.readFileSync(path.join(h.PLUGIN, 'hooks', 'hooks.json'), 'utf8')).hooks;
   for (const [event, groups] of Object.entries(hooks)) {
+    if (event === 'PreToolUse') continue; // the EnterPlanMode mode note: a few shell lines, no node, no store call
     for (const hk of groups.flatMap(g => g.hooks)) {
       const budget = event === 'SessionEnd' ? config.LINK_CALL_END_MS : config.LINK_CALL_MS;
       assert.ok(budget * 3 <= hk.timeout * 1000, `${event}: three calls fit in ${hk.timeout} s`);

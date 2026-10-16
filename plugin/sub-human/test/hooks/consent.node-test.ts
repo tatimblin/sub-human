@@ -576,7 +576,9 @@ test('shim mode (SUB_HUMAN_SHIM=1, mod/consent.ts): Stop always reports subHuman
 
 test('hooks.json: consent is the module\'s (mod/consent.ts); its classic.PreToolUse always calls next(e), so every other PreToolUse hook sees each call', async () => {
   const hooks = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')).hooks;
-  for (const ev of ['Stop', 'PreToolUse', 'PostToolUse', 'PermissionRequest']) assert.equal(hooks[ev], undefined, ev);
+  for (const ev of ['Stop', 'PostToolUse', 'PermissionRequest']) assert.equal(hooks[ev], undefined, ev);
+  // the one PreToolUse command hook only notes EnterPlanMode's mode (no node, no answer); consent itself is the module's
+  assert.deepEqual(hooks.PreToolUse.map((x: { matcher: string }) => x.matcher), ['EnterPlanMode']);
   const { HOOKS: MOD } = await import(path.join(PLUGIN, 'mod', 'register.ts')) as typeof Register;
   for (const ev of ['classic.Stop', 'tool.call', 'classic.PreToolUse', 'classic.PostToolUse', 'classic.PermissionRequest']) assert.ok(MOD.some(h => h.event === ev && h.file === 'mod/consent.ts'), ev);
   // a module hook answering classic.PreToolUse without next(e) would skip every non-managed settings hook there (cc
@@ -980,10 +982,12 @@ test('H (live verify, verify1/08): plan mode by hand, the model skips EnterPlanM
   const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: `proposal ${v3}`, planFilePath: file }, tool_use_id: 'tu7', transcript_path: tp }), { as: 'bob' });
   assert.equal(decision(pre), 'ask', pre.stdout);
   assert.equal((hso(pre).updatedInput as { plan?: unknown }).plan, 'Ship v3 Monday');
-  assert.equal(review(w)!.keepMode, true);
+  assert.equal(review(w)!.mode, 'plan', 'the person\'s own plan mode is the one to put back');
   const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: { plan: 'Ship v3 Monday' }, tool_use_id: 'tu7', tool_response: { plan: 'Ship v3 Monday', filePath: file }, transcript_path: tp }), { as: 'bob' });
   assert.match(ctx(post)!, /bob agreed to proposal/);
-  assert.doesNotMatch(ctx(post)!, /restore/, 'the person chose plan mode: nothing to put back');
+  assert.match(ctx(post)!, /call EnterPlanMode to put bob's plan mode back/, 'item 7: the Yes left plan mode; it comes back');
+  assert.match(ctx(w.hook('consent', ev('PostToolUse', 'EnterPlanMode', { permission_mode: 'plan', tool_input: {}, tool_response: {} }), { as: 'bob' }))!, /bob's plan mode is back/);
+  assert.equal(review(w), null);
   assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.proposal_hash]), [['signoff', 'human', v3]]);
   assert.equal(fs.readFileSync(file, 'utf8'), `proposal ${v3}`, 'the plan file as it was');
   // a stub for a proposal that is not bob's to answer (answered now): denied, never a bare view
@@ -1226,4 +1230,21 @@ test('M (live verify, verify5/M): the plan view refused with a note: the module\
   confirm(w, hash, 'Send');
   assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.text]), [['objection', 'human', note]]);
   assert.equal(w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__post', { permission_mode: 'auto', tool_input: { kind: 'say', text: 'x' } }), { as: 'bob' }).stdout, '', 'sent: posts pass again');
+});
+
+test('H3 (live verify, verify5/H3): the person switched to plan mode mid-turn; the mode the EnterPlanMode call was made in (noted by the hooks.json hook) wins over the module\'s stale one: no review there, the stub opens it and the Yes puts plan mode back', () => {
+  const { w, v3, file } = two();
+  const dir = path.join(w.home, 'sessions', 'mode');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, w.sid.bob), 'plan\n');
+  const tp = transcript(w, file, null, { id: 'tu9', input: { plan: `proposal ${v3}` } });
+  // the module last saw "auto" (the wake's prompt); the call was made in plan mode
+  const enter = w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'auto', tool_input: {}, transcript_path: tp }), { as: 'bob' });
+  assert.equal(enter.stdout, '', 'plan mode is the person\'s own: no review opens at EnterPlanMode');
+  assert.equal(review(w), null);
+  assert.equal(fs.existsSync(path.join(dir, w.sid.bob)), false, 'the note is taken once');
+  const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: `proposal ${v3}`, planFilePath: file }, tool_use_id: 'tu9', transcript_path: tp }), { as: 'bob' });
+  assert.equal(decision(pre), 'ask');
+  assert.match(String(hso(pre).permissionDecisionReason), /Agree: any "Yes" \(your plan mode comes back\)/);
+  assert.equal(review(w)!.mode, 'plan');
 });

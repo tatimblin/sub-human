@@ -355,7 +355,27 @@ function postAdmit(input: ConsentIn, me: Identity, r: ToolResponse): boolean {
   return true;
 }
 
+/**
+ * The mode EnterPlanMode was called in, as the plugin's own PreToolUse command hook noted it (hooks.json: it reads the
+ * call's permission_mode, which the module's event lacks) at <home>/sessions/mode/<sid>, taken once and only while
+ * fresh; else the payload's (the module's last-seen mode, stale after the person's shift+tab mid-turn: item 7 H).
+ */
+function modeAtEnter(input: ConsentIn): string | undefined {
+  const sid = input.session_id;
+  if (typeof sid !== 'string' || !/^[\w-]+$/.test(sid)) return input.permission_mode;
+  const file = `${c.identity.home()}/sessions/mode/${sid}`;
+  try {
+    const st = fs.statSync(file);
+    const mode = fs.readFileSync(file, 'utf8').trim();
+    fs.rmSync(file, { force: true });
+    if (Date.now() - st.mtimeMs < MODE_FRESH_MS && /^[A-Za-z]+$/.test(mode)) return mode;
+  } catch { /* none noted */ }
+  return input.permission_mode;
+}
+const MODE_FRESH_MS = 10_000;
+
 function preEnter(input: ConsentIn, me: Identity) {
+  input = { ...input, permission_mode: modeAtEnter(input) };
   step(input, me, st => {
     const base = { mode: input.permission_mode, reviewable: reviewable(input), plan: { file: null, text: null } };
     if (st.review && st.review.phase === 'restore') return { type: 'enter', ...base, pending: [], said: null, named: null, replaced: null, kept: null, propose: false };
