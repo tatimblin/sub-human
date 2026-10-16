@@ -34,7 +34,8 @@
   },
   "include": [
     "plugin/sub-human",
-    "typings/claude-code-tools"
+    "typings/claude-code-tools",
+    "typings/claude-code-mcp"
   ],
   "exclude": [
     "plugin/sub-human/test/fixtures",

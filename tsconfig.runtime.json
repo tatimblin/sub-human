@@ -14,7 +14,8 @@
     "plugin/sub-human/statusline",
     "plugin/sub-human/mod",
     "plugin/sub-human/types",
-    "typings/claude-code-tools"
+    "typings/claude-code-tools",
+    "typings/claude-code-mcp"
   ],
   "exclude": [
     "plugin/sub-human/mod/test",
