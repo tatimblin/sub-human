@@ -241,3 +241,25 @@ test('guard (live verify, stage 8c): Read of the module lease (sessions/), the p
   assert.equal(g.readVerdict(['/tmp/shv4/home/rooms/x/log.jsonl'], ctx), null, 'the room log reads');
   assert.ok(g.searchVerdict('Grep', ['/Users/me/.claude'], ctx), 'a Grep above the history');
 });
+
+test('R5 (live verify, verify6/07): ANSI-C quoting ($\'…\') is decoded as the shell does before the word is placed; one the guard cannot read is denied', () => {
+  const ctx: GuardCtx = { home: '/tmp/shv6/host', realHome: '/private/tmp/shv6/host', userHome: '/Users/me', cwd: '/tmp/shv6/alice' };
+  const deny = (cmd: string) => assert.ok(g.bashVerdict(cmd, ctx), `should deny: ${cmd}`);
+  const allow = (cmd: string) => assert.equal(g.bashVerdict(cmd, ctx), null, `should allow: ${cmd}`);
+  // the live find: zsh and bash resolve it to the store
+  deny("cat /tmp/shv6/$'\\x68'ost/keys/machine.json");
+  // the other escapes the shells read: octal, \u, \U, a whole word, a control-free mix, inside a cd
+  deny("cat /tmp/shv6/$'\\150'ost/keys/x/bob.key");
+  deny("cat /tmp/shv6/$'\\u0068\\U0000006fst'/keys/x/bob.key");
+  deny("cat $'/tmp/shv6/host/keys/x/bob.key'");
+  deny("cd /tmp/shv6 && cat $'h\\x6fst'/keys/*/*");
+  deny("cat /tmp/$'\\x73hv6'/host/sessions/mods/x.json");
+  // unterminated: not read whole, so not placed: denied
+  deny("cat /tmp/shv6/$'\\x68ost/keys/a");
+  // decoding helps nothing that is not the store
+  allow("printf $'a\\tb\\n'");
+  allow("echo $'it\\'s fine'");
+  assert.equal(g.ansiC("a $'\\x41\\102\\u0043\\cA\\q' b"), 'a ABC\x01\\q b');
+  assert.equal(g.ansiC('no ansi here'), 'no ansi here');
+  assert.equal(g.ansiC("$'open"), null);
+});
