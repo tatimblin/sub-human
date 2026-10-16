@@ -5,6 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import * as secret from '../lib/remote/invite-secret.ts';
+import { must } from './support/must.ts';
 
 const key = () => crypto.randomBytes(32).toString('base64url');
 
@@ -14,7 +15,7 @@ test('a SECRET is 39 characters a chat app leaves alone, and reads back as the s
     const s = secret.mint(), t = crypto.randomBytes(8);
     const w = secret.encode(s, t);
     assert.match(w, /^[0-9a-hjkmnp-tv-z]{39}$/);
-    const d = secret.decode(w)!;
+    const d = must(secret.decode(w));
     assert.deepEqual([d.secret, d.tag], [s, t]);
   }
   const zero = secret.encode(Buffer.alloc(16), Buffer.alloc(8));
@@ -26,10 +27,10 @@ test('a SECRET is 39 characters a chat app leaves alone, and reads back as the s
 test('decode: upper case and the look-alikes read as Crockford says; anything else is no SECRET', () => {
   const s = secret.mint(), t = crypto.randomBytes(8);
   const w = secret.encode(s, t);
-  assert.deepEqual(secret.decode(w.toUpperCase())!.secret, s);
-  assert.deepEqual(secret.decode(`  ${w}\n`)!.secret, s);
+  assert.deepEqual(must(secret.decode(w.toUpperCase())).secret, s);
+  assert.deepEqual(must(secret.decode(`  ${w}\n`)).secret, s);
   const withO = w.replace(/0/g, 'o').replace(/1/g, 'l');
-  assert.deepEqual(secret.decode(withO)!.secret, s);
+  assert.deepEqual(must(secret.decode(withO)).secret, s);
   for (const bad of [w.slice(1), `${w}0`, w.replace(/.$/, 'u'), w.replace(/^./, '8'), `${w.slice(0, 20)}-${w.slice(21)}`, '', 42, null]) {
     assert.equal(secret.decode(bad), null, String(bad));
   }

@@ -3,6 +3,7 @@
 // seat's working directory (never ~, / or above ~) or Claude Code's plans, and the plugin's home, ~/.sub-human,
 // ~/.ssh and ~/.claude (its plans aside) are refused whatever the root.
 import test from 'node:test';
+import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -13,7 +14,7 @@ import type { RoomCode } from '../lib/brand.ts';
 import { sn } from './support/brands.ts';
 
 /** A fake user home with ~/.ssh, ~/.claude/plans and a project, HOME and CLAUDE_CONFIG_DIR pointed at it. */
-function userHome(t: import('node:test').TestContext) {
+function userHome(t: TestContext) {
   const u = fs.realpathSync(h.tmpDir('sh-user-', t));
   const was = { HOME: process.env.HOME, CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR };
   process.env.HOME = u;

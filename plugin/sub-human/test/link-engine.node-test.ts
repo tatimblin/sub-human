@@ -7,6 +7,7 @@ import * as engine from '../lib/remote/link-engine.ts';
 import * as clock from '../lib/clock.ts';
 import type { EngineEffect, EngineEvent, EngineState } from '../lib/remote/link-engine.ts';
 import type { LinkTimings } from '../lib/remote/types-core.ts';
+import { must } from './support/must.ts';
 
 const T: LinkTimings = { retryMs: 1000, retryMaxMs: 10_000, pingMs: 15_000, pongMs: 5000, deadMs: 10_000, wakeTickMs: 2000, wakeGapMs: 5000, netPollMs: 5000, relayMs: 2000 };
 
@@ -89,8 +90,8 @@ const TABLE: { name: string; random?: () => number; run(r: ReturnType<typeof rig
       const delays: number[] = [];
       for (let d = 1; d <= 4; d++) {
         const out = r.dispatch({ type: 'dialFailed', dial: d, error: off() });
-        delays.push(r.of(out, 'setTimer')[0].ms);
-        r.c.advance(delays.at(-1)!);
+        delays.push(must(r.of(out, 'setTimer')[0]).ms);
+        r.c.advance(must(delays.at(-1)));
       }
       assert.deepEqual(delays, [3000, 9000, 10_000, 10_000]);
       r.dialOk(5);
@@ -142,7 +143,7 @@ const TABLE: { name: string; random?: () => number; run(r: ReturnType<typeof rig
       const out = r.dispatch({ type: 'dialFailed', dial: 2, error: off('timed out') });
       assert.deepEqual([r.st.phase, r.st.conn, r.st.retrying], ['online', 1, false]);
       assert.deepEqual(r.of(out, 'close'), [{ type: 'close', conn: 2 }]);
-      assert.match(r.of(out, 'log')[0].msg, /redial failed \(timed out\); the current connection stays/);
+      assert.match(must(r.of(out, 'log')[0]).msg, /redial failed \(timed out\); the current connection stays/);
       // but a FORK on the redial stops it, live connection or not
       r.dispatch({ type: 'redial', why: 'woke' });
       r.dispatch({ type: 'dialFailed', dial: 3, error: { code: 'FORK', message: 'reset' } });

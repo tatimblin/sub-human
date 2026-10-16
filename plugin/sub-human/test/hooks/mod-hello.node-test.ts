@@ -15,7 +15,8 @@ test('mod-hello: the lease records the parent claude pid, its start time and the
   const r = w.hook('mod-hello', { session_id: sid, nonce }); // our process is the hook's parent, as claude is the module's
   assert.equal(r.code, 0, r.stderr);
   const file = path.join(w.home, 'sessions', 'mods', `${sid}.json`);
-  const rec = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const lease = () => JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>; // the lease as written
+  const rec = lease();
   assert.equal(rec.pid, process.pid);
   assert.equal(rec.pid_start, pidStart(process.pid));
   assert.equal(rec.nonce, nonce);
@@ -23,7 +24,7 @@ test('mod-hello: the lease records the parent claude pid, its start time and the
   // a nonce that is not 32 hex characters is not kept: at-room then believes no origin for the session
   for (const bad of ['short', 'X'.repeat(32), 42]) {
     w.hook('mod-hello', { session_id: sid, nonce: bad });
-    assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).nonce, undefined, String(bad));
+    assert.equal(lease().nonce, undefined, String(bad));
   }
   assert.equal(w.lib(() => identityLib.modLeaseOk(sid, process.pid, Date.now() + 86_400_000)), true);
 });

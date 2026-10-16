@@ -12,12 +12,15 @@ import * as transcript from '../lib/cc/transcript.ts';
 import * as bg from '../lib/cc/bg.ts';
 import * as contract from '../lib/cc/contract.ts';
 import type { JobsOpts } from '../lib/cc/bg.ts';
+type TranscriptLine = Parameters<typeof transcript.planFile>[0][number];
 import type { ProbeResult } from '../lib/cc/contract.ts';
+import { must } from './support/must.ts';
 
 const cc = { ...env, ...transcript, ...bg, ...contract };
 
 /** scripts/probe-cc.ts --json. */
 interface ProbeOut { ok: boolean; version: string; cpuMs: number; results: ProbeResult[] }
+const probeOut = (stdout: string) => JSON.parse(stdout) as ProbeOut;
 /** A runner's answer, as jobs() and daemonStatus() read it. */
 type RunAnswer = ReturnType<NonNullable<JobsOpts['run']>>;
 
@@ -26,6 +29,8 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-cc-'));
 test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
 const J = (o: unknown) => JSON.stringify(o);
+/** A contract entry's search or shape, as a list. */
+const list = (x: string | readonly string[] | undefined): readonly string[] => (typeof x === 'string' ? [x] : x ?? []);
 const REJECT = 'The user doesn\'t want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\n';
 const NOTE_SUFFIX = '\n\nNote: The user\'s next message may contain a correction or preference. Pay close attention — if they explain what went wrong or how they\'d prefer you to work, consider saving that to memory for future sessions.';
 
@@ -99,7 +104,7 @@ test("planFile: the latest plan_mode attachment; ExitPlanMode's input only as th
   assert.equal(cc.planFile(lines, { planFilePath: `${plans}/input.md` }), `${plans}/input.md`);
   assert.equal(cc.planFile(lines, { planFilePath: `${plans}/../settings.json` }), '/p/new.md');
   assert.equal(cc.planFile([], { planFilePath: '/etc/passwd' }), null);
-  assert.equal(cc.planFile(lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)), '/p/new.md');
+  assert.equal(cc.planFile(lines.map(l => { try { return JSON.parse(l) as TranscriptLine; } catch { return null; } }).filter(l => l !== null)), '/p/new.md');
   assert.equal(cc.planFile([]), null);
 });
 
@@ -136,10 +141,10 @@ test('planAnswer: null until the tool_result is on disk; then the note, or note 
 test('lastHumanPrompt: the newest prompt only when it is the person\'s (no origin, or kind human); tool results and meta rows skipped', () => {
   const user = (content: unknown, extra = {}) => J({ type: 'user', message: { role: 'user', content }, timestamp: '2026-10-08T10:00:00.000Z', ...extra });
   assert.deepEqual(cc.lastHumanPrompt([user('open v2'), user('Open v3')]), { text: 'Open v3', at: Date.parse('2026-10-08T10:00:00.000Z') });
-  assert.equal(cc.lastHumanPrompt([user('Open v3', { origin: { kind: 'human' } })])!.text, 'Open v3');
-  assert.equal(cc.lastHumanPrompt([user([{ type: 'text', text: 'Open v3' }])])!.text, 'Open v3');
+  assert.equal(must(cc.lastHumanPrompt([user('Open v3', { origin: { kind: 'human' } })])).text, 'Open v3');
+  assert.equal(must(cc.lastHumanPrompt([user([{ type: 'text', text: 'Open v3' }])])).text, 'Open v3');
   const skipped = [user([{ type: 'tool_result', tool_use_id: 't', content: 'x' }]), user('caveat', { isMeta: true }), user('side', { isSidechain: true }), J({ type: 'assistant', message: { content: 'hi' } })];
-  assert.equal(cc.lastHumanPrompt([user('Open v3'), ...skipped])!.text, 'Open v3');
+  assert.equal(must(cc.lastHumanPrompt([user('Open v3'), ...skipped])).text, 'Open v3');
   for (const kind of ['peer', 'task-notification', 'channel', 'plugin', 'unclassified', undefined]) {
     assert.equal(cc.lastHumanPrompt([user('Open v3'), user('open v2', { origin: kind === undefined ? {} : { kind } })]), null, String(kind));
   }
@@ -191,8 +196,8 @@ test('parseAgentsJson', () => {
   assert.ok(js);
   assert.equal(js.length, 3);
   assert.deepEqual(js[0], { pid: null, id: 'e738dbef', sessionId: 'e738dbef-93a2', status: null, state: 'failed', kind: 'background', name: 'old', cwd: '/r', startedAt: 1 });
-  assert.equal(js[1].pid, 14474);
-  assert.equal(js[2].id, null);
+  assert.equal(js[1]?.pid, 14474);
+  assert.equal(must(js[2]).id, null);
   assert.equal(cc.parseAgentsJson('nope'), null);
   assert.equal(cc.parseAgentsJson('{}'), null);
 });
@@ -200,10 +205,12 @@ test('parseAgentsJson', () => {
 test('jobs() runs agents --json through an injected runner', () => {
   const calls: [string, string[]][] = [];
   const run = (bin: string, args: string[]) => { calls.push([bin, args]); return { status: 0, stdout: AGENTS }; };
-  assert.equal(cc.jobs({ all: true, bin: 'cl', run })!.length, 3);
+  assert.equal(must(cc.jobs({ all: true, bin: 'cl', run })).length, 3);
   assert.deepEqual(calls[0], ['cl', ['agents', '--json', '--all']]);
   assert.equal(cc.jobs({ run: () => ({ status: 1, stdout: '' }) }), null);
-  assert.equal(cc.jobs({ run: () => ({ error: new Error('ENOENT') }) as RunAnswer }), null); // no status or stdout, as spawnSync's failure
+  // @ts-expect-error -- deliberate: no status or stdout, as spawnSync's failure
+  const failed: RunAnswer = { error: new Error('ENOENT') };
+  assert.equal(cc.jobs({ run: () => failed }), null);
   assert.equal(cc.jobs({ run: () => { throw new Error('x'); } }), null);
   assert.deepEqual(cc.stopCmd(7), ['stop', '7']);
   assert.deepEqual(cc.agentsCmd(), ['agents', '--json']);
@@ -221,9 +228,9 @@ test('parseDaemonStatus / daemonStatus: pid and version, not running, anything e
   assert.equal(cc.parseDaemonStatus('Usage: claude daemon [subcommand]'), null);
   const calls: [string, string[]][] = [];
   const run = (bin: string, args: string[]) => { calls.push([bin, args]); return { status: 0, stdout: DAEMON_UP }; };
-  assert.equal(cc.daemonStatus({ bin: 'cl', run })!.pid, 51234);
+  assert.equal(must(cc.daemonStatus({ bin: 'cl', run })).pid, 51234);
   assert.deepEqual(calls[0], ['cl', ['daemon', 'status']]);
-  assert.equal(cc.daemonStatus({ run: () => ({ status: 1, stdout: DAEMON_DOWN }) })!.running, false, 'exit 1 is "not running", not an error');
+  assert.equal(must(cc.daemonStatus({ run: () => ({ status: 1, stdout: DAEMON_DOWN }) })).running, false, 'exit 1 is "not running", not an error');
   assert.equal(cc.daemonStatus({ run: () => ({ error: new Error('ENOENT'), status: null, stdout: '' }) }), null);
   assert.equal(cc.daemonStatus({ run: () => { throw new Error('x'); } }), null);
   assert.equal(cc.daemonStatus({ run: () => ({ status: 0, stdout: 'unknown command' }) }), null);
@@ -247,7 +254,7 @@ test('exeState: /proc/PID/exe " (deleted)" on Linux; elsewhere ps -o comm=, dele
   for (const bad of [0, -1, 'x', null, 1.5]) assert.equal(cc.exeState(bad, { readlink: never, ps: never }), null);
   // a live process of this test run: its executable exists
   const self = cc.exeState(process.pid);
-  assert.equal(self!.deleted, false);
+  assert.equal(must(self).deleted, false);
 });
 
 test('DAEMON_ENV_ALLOW and daemonEnv', () => {
@@ -298,7 +305,7 @@ test('CONTRACT entries are well formed and unique', () => {
     assert.ok(['API', 'env', 'incidental'].includes(e.stability), e.id);
     assert.ok(Number.isInteger(e.section), e.id);
     // the version range: first checked on `since`, last on PROBED_VERSION
-    assert.ok(e.since && VER.test(e.since) && cc.compareVersions(e.since, cc.PROBED_VERSION)! <= 0, e.id);
+    assert.ok(e.since && VER.test(e.since) && must(cc.compareVersions(e.since, cc.PROBED_VERSION)) <= 0, e.id);
     const s = Array.isArray(e.search) ? e.search : [e.search];
     assert.ok(s.length && s.every(x => typeof x === 'string' && x.length >= 8), e.id);
     const sh = e.shape === undefined ? [] : Array.isArray(e.shape) ? e.shape : [e.shape];
@@ -307,7 +314,7 @@ test('CONTRACT entries are well formed and unique', () => {
     for (const g of e.contains || []) {
       assert.ok(g.what && g.in.replace(/~/g, '').length >= 16 && g.names.length && g.names.every(n => /^\w+$/.test(n)), `${e.id}: ${g.what}`);
     }
-    for (const d of e.degraded || []) assert.ok(VER.test(d.from) && cc.compareVersions(d.from, cc.PROBED_VERSION)! > 0 && d.note, e.id);
+    for (const d of e.degraded || []) assert.ok(VER.test(d.from) && must(cc.compareVersions(d.from, cc.PROBED_VERSION)) > 0 && d.note, e.id);
     assert.ok(e.note, e.id);
   }
   for (const id of ['task-completed-block-drops-fields', 'subagent-statusline-precedence', 'daemon-env-allowlist', 'matcher-rule',
@@ -315,14 +322,14 @@ test('CONTRACT entries are well formed and unique', () => {
     'mcp-stdio-ppid', 'mcp-progress-resets-idle-timeout', 'mcp-server-shared-by-subagents', 'session-title-address'])
     assert.ok(ids.has(id), id);
   // the contract is data: the JSON file is CONTRACT, and nothing else holds an entry
-  const json = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'lib', 'cc', 'contract.json'), 'utf8'));
-  assert.deepEqual(json.entries.map((e: { id: string }) => e.id), cc.CONTRACT.map(e => e.id));
+  const json = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'lib', 'cc', 'contract.json'), 'utf8')) as { entries: { id: string }[] };
+  assert.deepEqual(json.entries.map(e => e.id), cc.CONTRACT.map(e => e.id));
   assert.ok(!fs.existsSync(path.join(import.meta.dirname, '..', 'lib', 'cc.ts')), 'lib/cc.ts is gone: import lib/cc/{env,transcript,bg,contract}.ts');
 });
 
 test('session-append-notice-rewrite is reported degraded from 2.1.300 (#8); degradedOn names it there and only there', () => {
-  const e = cc.CONTRACT.find(x => x.id === 'session-append-notice-rewrite')!;
-  assert.deepEqual(e.degraded!.map(d => [d.from, d.issue]), [['2.1.300', 8]]);
+  const e = must(cc.CONTRACT.find(x => x.id === 'session-append-notice-rewrite'));
+  assert.deepEqual(must(e.degraded).map(d => [d.from, d.issue]), [['2.1.300', 8]]);
   assert.deepEqual(cc.degradedOn('2.1.296'), []);
   assert.deepEqual(cc.degradedOn('2.1.300').map(d => [d.id, d.issue]), [['session-append-notice-rewrite', 8]]);
   assert.deepEqual(cc.degradedOn('2.1.301').map(d => d.id), ['session-append-notice-rewrite']);
@@ -332,30 +339,30 @@ test('session-append-notice-rewrite is reported degraded from 2.1.300 (#8); degr
 test('every @cc tag in lib/cc/*.ts names a string some CONTRACT entry searches for', () => {
   const dir = path.join(import.meta.dirname, '..', 'lib', 'cc');
   const src = fs.readdirSync(dir).filter(f => f.endsWith('.ts')).map(f => fs.readFileSync(path.join(dir, f), 'utf8')).join('\n');
-  const all = new Set(cc.CONTRACT.flatMap(e => (Array.isArray(e.search) ? e.search : [e.search])));
-  const tags = [...src.matchAll(/^ \* @cc (.+)$/gm)].map(m => m[1]);
+  const all = new Set(cc.CONTRACT.flatMap(e => list(e.search)));
+  const tags = [...src.matchAll(/^ \* @cc (.+)$/gm)].map(m => must(m[1]));
   assert.ok(tags.length > 20);
   // doc comments write \n literally where the binary has a newline in a template or \n in a regex
   for (const t of tags) assert.ok(all.has(t) || all.has(t + ' ') || all.has(t.replace(/\\n/g, '\n')), t);
 });
 
 test('daemon-env-allowlist: a shape, not the exact arrays: each group\'s array must hold its names, in any order, more allowed', () => {
-  const e = cc.CONTRACT.find(x => x.id === 'daemon-env-allowlist')!;
+  const e = must(cc.CONTRACT.find(x => x.id === 'daemon-env-allowlist'));
   // the groups are DAEMON_ENV_ALLOW
-  assert.deepEqual([...new Set(e.contains!.flatMap(g => g.names))].sort(), [...cc.DAEMON_ENV_ALLOW].sort());
+  assert.deepEqual([...new Set(must(e.contains).flatMap(g => g.names))].sort(), [...cc.DAEMON_ENV_ALLOW].sort());
   const g = { what: 'base', in: 'new Set(["A_KEY_ANCHOR_LONG",', names: ['A_KEY_ANCHOR_LONG', 'B_KEY'] };
-  const run = (text: string) => cc.probe(Buffer.from(text, 'latin1'), { entries: [{ id: 'x', stability: 'env', search: ['A_KEY_ANCHOR_LONG'], contains: [g], note: '' }] })[0];
+  const run = (text: string) => must(cc.probe(Buffer.from(text, 'latin1'), { entries: [{ id: 'x', stability: 'env', search: ['A_KEY_ANCHOR_LONG'], contains: [g], note: '' }] })[0]);
   assert.equal(run('var q=new Set(["A_KEY_ANCHOR_LONG",...x,"B_KEY"]),z=1;').ok, true);
   assert.equal(run('var q=new Set(["A_KEY_ANCHOR_LONG","NEW_KEY",...x,"B_KEY","LATER"]);').ok, true, 'keys added and moved pass');
   const dropped = run('var q=new Set(["A_KEY_ANCHOR_LONG",...x,"C_KEY"]);"B_KEY";');
   assert.equal(dropped.ok, false, 'a key dropped from the array fails, even when the name is quoted elsewhere');
   assert.deepEqual(dropped.missing, ['contains: base: B_KEY']);
-  assert.match(run('"A_KEY_ANCHOR_LONG"').missing[0], /^contains: base: no array at /);
+  assert.match(String(run('"A_KEY_ANCHOR_LONG"').missing[0]), /^contains: base: no array at /);
   // a shape anchor
   const sh = { what: 'set', in: '~=new Set([...~,...~,"CLAUDE_', names: ['CLAUDE_X'] };
-  const r = cc.probe(Buffer.from('a,Qz=new Set([...q6e,...l5n,"CLAUDE_Y","CLAUDE_X"]);', 'latin1'), { entries: [{ id: 'y', stability: 'env', contains: [sh], note: '' }] })[0];
+  const r = must(cc.probe(Buffer.from('a,Qz=new Set([...q6e,...l5n,"CLAUDE_Y","CLAUDE_X"]);', 'latin1'), { entries: [{ id: 'y', stability: 'env', contains: [sh], note: '' }] })[0]);
   assert.equal(r.ok, true);
-  assert.deepEqual([...cc.arrayAt(String.raw`x=["a","b\"",...y,["c"],"d"]`, 0)!], ['a', String.raw`b\"`, 'd'], 'escapes and nested arrays skipped');
+  assert.deepEqual([...must(cc.arrayAt(String.raw`x=["a","b\"",...y,["c"],"d"]`, 0))], ['a', String.raw`b\"`, 'd'], 'escapes and nested arrays skipped');
   assert.equal(cc.arrayAt('x=["a"', 0), null);
 });
 
@@ -375,7 +382,7 @@ test('the plugin ships exactly one hooks module, at the path hooks.json names', 
   // "hooks/register.ts" is the built-in plugins' fixed path, not ours: ours is mod/register.ts, and no register.*
   // sits in hooks/ to be mistaken for it.
   const hooks = path.join(import.meta.dirname, '..', 'hooks');
-  const json = JSON.parse(fs.readFileSync(path.join(hooks, 'hooks.json'), 'utf8'));
+  const json = JSON.parse(fs.readFileSync(path.join(hooks, 'hooks.json'), 'utf8')) as { modules: string[] };
   assert.deepEqual(json.modules, ['../mod/register.ts'], 'hooks.json names one hooks module per plugin');
   for (const m of json.modules) assert.ok(fs.statSync(path.resolve(hooks, m)).isFile(), `${m} exists`);
   assert.deepEqual(fs.readdirSync(hooks).filter(f => /^register\.[cm]?[jt]sx?$/.test(f)), []);
@@ -387,7 +394,7 @@ const probeRun = spawnSync(process.execPath, [PROBE, '--json'], { encoding: 'utf
 const haveBinary = probeRun.status !== 2;
 
 test('probe: the installed binary satisfies the contract', { skip: !haveBinary && 'no Claude Code binary found' }, () => {
-  const out: ProbeOut = JSON.parse(probeRun.stdout);
+  const out = probeOut(probeRun.stdout);
   const failed = out.results.filter(r => !r.ok).map(r => `${r.id}: ${r.missing.join(' | ')}`);
   assert.deepEqual(failed, [], `claude ${out.version}`);
   assert.equal(probeRun.status, 0);
@@ -399,7 +406,7 @@ test('probe: a mutated search string fails', { skip: !haveBinary && 'no Claude C
   const extra = J([{ id: 'mutated', search: 'Inbound cross-session peer messages (SendMessage from your other sessions)!!x' }]);
   const r = spawnSync(process.execPath, [PROBE, '--json', '--only', 'cross-session-inbound'], { encoding: 'utf8', timeout: 60_000, env: { ...process.env, CC_PROBE_EXTRA: extra } });
   assert.equal(r.status, 1);
-  const out: ProbeOut = JSON.parse(r.stdout);
+  const out = probeOut(r.stdout);
   assert.equal(out.ok, false);
   assert.deepEqual(out.results.map(x => [x.id, x.ok]), [['cross-session-inbound', true], ['mutated', false]]);
 });
@@ -409,39 +416,38 @@ test('probe: a mutated shape fails', { skip: !haveBinary && 'no Claude Code bina
     { id: 'shape-mutated', search: 'Valid types are: approve, block', shape: 'case"block":~.permissionBehavior="allow"' }]);
   const r = spawnSync(process.execPath, [PROBE, '--json', '--only', 'none'], { encoding: 'utf8', timeout: 60_000, env: { ...process.env, CC_PROBE_EXTRA: extra } });
   assert.equal(r.status, 1);
-  const out: ProbeOut = JSON.parse(r.stdout);
+  const out = probeOut(r.stdout);
   assert.deepEqual(out.results.map(x => [x.id, x.ok]), [['shape-ok', true], ['shape-mutated', false]]);
-  assert.match(out.results[1].missing[0], /^shape: /);
+  assert.match(String(out.results[1]?.missing[0]), /^shape: /);
 });
 
 test('probe: a mutated function-hooks entry fails (search and shape)', { skip: !haveBinary && 'no Claude Code binary found' }, () => {
-  const by = (id: string) => cc.CONTRACT.find(e => e.id === id)!;
+  const by = (id: string) => must(cc.CONTRACT.find(e => e.id === id), id);
   const extra = J([
-    { id: 'modules-search-mutated', search: by('hooks-json-modules').search![2] + '!!x' },
-    { id: 'chain-shape-mutated', search: by('classic-chain-order').search, shape: by('classic-chain-order').shape![0].replace('function-hook chain', 'function-hooks chain') },
-    { id: 'notice-level-mutated', search: by('session-append-notice-hidden').search![0], shape: by('session-append-notice-hidden').shape![0].replace('"info"', '"notice"') },
+    { id: 'modules-search-mutated', search: must(by('hooks-json-modules').search?.[2]) + '!!x' },
+    { id: 'chain-shape-mutated', search: by('classic-chain-order').search, shape: must(list(by('classic-chain-order').shape)[0]).replace('function-hook chain', 'function-hooks chain') },
+    { id: 'notice-level-mutated', search: must(list(by('session-append-notice-hidden').search)[0]), shape: must(list(by('session-append-notice-hidden').shape)[0]).replace('"info"', '"notice"') },
   ]);
   const r = spawnSync(process.execPath, [PROBE, '--json', '--only', 'hooks-json-modules,classic-chain-order,session-append-notice-hidden'], { encoding: 'utf8', timeout: 60_000, env: { ...process.env, CC_PROBE_EXTRA: extra } });
   assert.equal(r.status, 1);
-  const out: ProbeOut = JSON.parse(r.stdout);
+  const out = probeOut(r.stdout);
   assert.deepEqual(out.results.map(x => [x.id, x.ok]), [['hooks-json-modules', true], ['classic-chain-order', true], ['session-append-notice-hidden', true],
     ['modules-search-mutated', false], ['chain-shape-mutated', false], ['notice-level-mutated', false]]);
 });
 
 test('probe: each review-spike entry fails on a mutated search or shape', { skip: !haveBinary && 'no Claude Code binary found' }, () => {
   // cc-2.1.292.md "Review spikes": the MCP, title and chain-order entries each fail when one string is off by a character
-  const by = (id: string) => cc.CONTRACT.find(e => e.id === id)!;
-  const list = (x: string | readonly string[]) => (Array.isArray(x) ? x : [x]) as readonly string[];
+  const by = (id: string) => must(cc.CONTRACT.find(e => e.id === id), id);
   const ids = ['mcp-stdio-ppid', 'mcp-progress-resets-idle-timeout', 'mcp-server-shared-by-subagents', 'session-title-address', 'classic-chain-order'];
   const extra: { id: string; search: string; shape?: string }[] = [];
   for (const id of ids) {
     const e = by(id);
-    list(e.search!).forEach((s, i) => extra.push({ id: `${id}/search${i}`, search: s + '!!x' }));
-    list(e.shape || []).forEach((sh, i) => extra.push({ id: `${id}/shape${i}`, search: list(e.search!)[0], shape: sh.replace(/[a-zA-Z]{4,}/, w => w + 'Q') }));
+    list(must(e.search)).forEach((s, i) => extra.push({ id: `${id}/search${i}`, search: s + '!!x' }));
+    list(e.shape || []).forEach((sh, i) => extra.push({ id: `${id}/shape${i}`, search: must(list(e.search)[0]), shape: sh.replace(/[a-zA-Z]{4,}/, w => w + 'Q') }));
   }
   const r = spawnSync(process.execPath, [PROBE, '--json', '--only', ids.join(',')], { encoding: 'utf8', timeout: 60_000, env: { ...process.env, CC_PROBE_EXTRA: J(extra) } });
   assert.equal(r.status, 1);
-  const out: ProbeOut = JSON.parse(r.stdout);
+  const out = probeOut(r.stdout);
   assert.deepEqual(out.results.map(x => [x.id, x.ok]), [...ids.map(id => [id, true]), ...extra.map(x => [x.id, false])]);
 });
 
