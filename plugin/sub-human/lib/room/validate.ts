@@ -7,6 +7,10 @@
  *   validate(entry, {via, from, system}) -> {via, kind, text, to, refs, hash, approvers, same, path, proposal_hash,
  *       normalized, edit_path, drafted, task, pubkey, machine, host}   throws RoomError INVALID with a message for the model
  *   RoomError(code, message, reason?)   reason: lib/reasons.ts; code: INVALID | RATE | LOCK | NO_ROOM | AUTH (a signature, a replay or a pinned key refused)
+ *   parseEntry(e) -> e as a KnownEntry | null   a log line by its kind (no copy); null: a kind a newer host wrote
+ *   isKindOf(e, kind) -> bool       a single-kind filter that narrows (EntryOf<kind>)
+ *   AGENT_KINDS HUMAN_KINDS SYSTEM_KINDS SYSTEM_ONLY_KINDS LEGACY_KINDS KINDS TASK_OPS VIAS   the tables, the source of
+ *       lib/room/types.ts Kind, LegacyKind, TaskOp and Via; isKind, isVia, isTaskOp their guards
  * Rules: via "agent" writes say question status proposal task_req; via "human" say signoff objection proposal;
  * via "system" decision member_joined member_left task status, and only with {system: true}.
  * Size caps (lib/config.ts): text <= ENTRY_TEXT_MAX_BYTES UTF-8 bytes, refs <= ENTRY_REFS_MAX, approvers and
