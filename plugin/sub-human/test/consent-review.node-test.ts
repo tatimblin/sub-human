@@ -425,6 +425,18 @@ test('stage 8e D (live verify, localb/03c-f): a note told already whose card wen
   assert.equal(review.reduce({ review: null, note: note('told') }, { ...PROMPT, live: false } as Event, ctx).notice, undefined, 'a note no longer live says nothing');
 });
 
+test('stage 8e H (live verify, localb/07e): the plan view\'s hint names only a "Yes" the dialog offers: the one that keeps default or auto, else any Yes (the mode comes back)', () => {
+  const hint = (mode: string | undefined) => /Agree: (.*?)\. Object/.exec(review.SAY.dialog('bob', H, 'alice', mode))![1];
+  assert.deepEqual(['default', 'auto', 'acceptEdits', 'plan', 'bypassPermissions', 'dontAsk', undefined].map(hint), [
+    '"Yes, manually approve edits" keeps your mode', '"Yes, and use auto mode" keeps your mode', 'any "Yes" (your accept-edits mode comes back)',
+    'any "Yes" (your plan mode comes back)', 'any "Yes" (your bypass-permissions mode comes back)', 'any "Yes" (your don\'t-ask mode comes back)', 'any "Yes" (your own mode comes back)',
+  ]);
+  // every option it names is one the dialog shows (Claude Code 2.1.296: "Yes, and use auto mode", "Yes, manually approve edits")
+  for (const m of ['default', 'auto', 'acceptEdits', 'plan']) for (const named of review.SAY.dialog('bob', H, 'alice', m).match(/"Yes[^"]*"/g) || []) {
+    assert.ok(['"Yes"', '"Yes, and use auto mode"', '"Yes, manually approve edits"'].includes(named), `${m}: ${named}`);
+  }
+});
+
 // ---------- item 8: a Yes as the view opened ----------
 test('8 (live verify): a Yes within YES_GUARD_MS of the view being shown, or while the person had typed text, records nothing; the card asks once and only its answer records', () => {
   const opened = review.reduce({ review: REVIEWS.entering, note: null }, { ...EVENTS.exit, typing: false }, ctx);

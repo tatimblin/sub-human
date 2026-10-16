@@ -152,7 +152,16 @@ export const NEXT = {
 };
 
 /** The dialog's "Yes" that leaves the mode as it was (any other "Yes" works too; the mode is then set back). */
-const KEEP: Record<string, string | undefined> = { default: 'Yes, manually approve edits', auto: 'Yes, and use auto mode', acceptEdits: 'Yes, and auto-accept edits' };
+/** The plan view's "Yes" that leaves the person's mode as it is, by mode, from the options Claude Code 2.1.296 offers
+ * ("Yes, and use auto mode", "Yes, manually approve edits"; without auto mode "Yes, auto-accept edits" in the first
+ * place). A mode with no such option in every set (accept edits: the auto-mode set has none) is told "any Yes", since
+ * the review puts the mode back after a Yes that changed it (stage 8e H: the hint named "Yes, and auto-accept edits",
+ * which the dialog did not offer). */
+const KEEP: Record<string, string | undefined> = { default: 'Yes, manually approve edits', auto: 'Yes, and use auto mode' };
+/** A mode as the person reads it in the hint. */
+const MODE_WORDS: Record<string, string | undefined> = { plan: 'plan', acceptEdits: 'accept-edits', bypassPermissions: 'bypass-permissions', dontAsk: "don't-ask" };
+/** The dialog's Agree: the option that keeps the mode, else any Yes (the mode comes back). */
+const agreeHint = (mode: string | undefined) => (KEEP[String(mode)] ? `"${KEEP[String(mode)]}" keeps your mode` : `any "Yes" (your ${MODE_WORDS[String(mode)] || 'own'} mode comes back)`);
 const DONE = 'Return to what you were doing.';
 /** The note is the person's: the model neither posts it nor answers its card for them. */
 const keepNote = (_n: string) => 'Don\'t post or answer it yourself.';
@@ -184,7 +193,7 @@ export const SAY = {
   stubPlan: (n: string, h: string) => `Nothing recorded for proposal ${h}: that plan was only its name, not a review ${n} answered. ${NEXT.open(h)} to show it.`,
   /** the plan dialog's reason line: for the person, not the model */
   dialog: (n: string, h: string, from: string | null | undefined, mode: string | undefined) => `room proposal ${h}${from ? ` from ${from}` : ''}, for ${n} (PgUp/PgDn scroll). `
-    + `Agree: ${mode === 'plan' ? 'any "Yes" (your plan mode comes back)' : `"${KEEP[String(mode)] || 'Yes'}" keeps your mode`}. Object: "Tell Claude what to change" + why. Esc: decide later.`,
+    + `Agree: ${agreeHint(mode)}. Object: "Tell Claude what to change" + why. Esc: decide later.`,
   planView: (n: string, h: string) => `Open it in the plan view instead: ${NEXT.open(h)}. The hooks show ${n} the full proposal.`,
   unread: (n: string, h: string) => `${n}'s answer in the review of proposal ${h} is not on record yet; nothing was recorded.`,
   closed: (n: string, h: string) => `${n} closed the review of proposal ${h} without answering; nothing was recorded.`,
