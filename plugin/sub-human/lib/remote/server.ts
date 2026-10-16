@@ -8,27 +8,31 @@
  *   serve(transport, {store, log?, linkId?, login?, silentMs?, proto?, version?}) -> {close(), revoked()}   proto / version: this end's
  *       protocol range and plugin version (default protocol.PROTO, PLUGIN_VERSION; tests fake older and newer peers)
  *       A Session over one transport (lib/remote/transports/*): unauthenticated until hello {token | invite}
- *       (lib/remote/auth.ts); every other op before that is AUTH. linkId (`serve --stdio CODE --link ID`, the
- *       SSH forced command the host's admit writes): only that link's token, or the invite reserved for it,
+ *       (lib/remote/invites.ts); every other op before that is AUTH. linkId (`serve --stdio CODE --link ID`, the
+ *       SSH forced command the host's admit writes): only that link's token, or the admission reserved for it,
  *       is accepted; any other is AUTH (and such an invite stays unused). login (`serve --stdio CODE --link ID --login`,
  *       run over the host account's own ssh login, never by a forced command: their lines fix the arguments, and the
  *       CLI refuses --login under SSH_ORIGINAL_COMMAND): the connection is trusted as a process of the account owner,
- *       so a hello {login: true} with no token records link ID (auth.loginLink) and returns its token, with a room
+ *       so a hello {login: true} with no token records link ID (hostLinks.loginLink) and returns its token, with a room
  *       line; without login such a hello is AUTH. store is the room's store as store.open(code)
  *       gives it in this process: seats and decide reach the room through that too. Ops:
- *         hello      version: the highest common one of the two ranges (protocol.negotiate), else PROTOCOL with
- *                    protocol.skewMessage (which side must update); verifyToken, or redeemInvite with the hello's
- *                    pin for an sh2 invite (the token is returned once; a wrong PIN, the last try and the link are
- *                    each a room line from the room, so the host sees them); neither: answered, but the session
- *                    stays unauthenticated. The reply says closed: true once the room's Claude was stopped (the
- *                    room closed), for sub-human doctor on a link that stopped before it
- *         join       {name, role: 'member', pubkey, proof}: auth.checkSeatProof, then lib/seats.ts enter() with
- *                    machine = the link's (no pid: the seat lives by its lease), and over a login link account =
- *                    this machine's id (the host account's own seat: one person with the host's seats, lib/proposal.ts
- *                    create); a key other than the pinned one is AUTH; bindSeat
+ *         hello      version: the highest common one of the two proto ranges (protocol.negotiate; a hello with none, or
+ *                    no overlap, is PROTOCOL SKEW with protocol.skewMessage: which side must update); verifyToken, or
+ *                    redeemInvite with the hello's pin for a promote's invite (the token is returned once; a wrong
+ *                    PIN, the last try and the link are each a room line from the room, so the host sees them), or
+ *                    loginLink; neither: answered, but the session stays unauthenticated. A new link's machine id is
+ *                    the one the hello's machine_key proves (lib/remote/machine-key.ts), else the reported one
+ *                    (lib/remote/host-links.ts). The reply says the link's machine id, and closed: true once the
+ *                    room's Claude was stopped (the room closed), for sub-human doctor on a link that stopped before it
+ *         join       {name, role: 'member', pubkey, proof}: hostLinks.checkSeatProof, then lib/seats.ts enter() with
+ *                    machine = the link's (no pid: the seat lives by its lease), and over a login link, when the room's
+ *                    option login-same-person is on (lib/room/options.ts), account = this machine's id in the room (the
+ *                    host account's own seat: one person with the host's seats, lib/proposal.ts create); a key other
+ *                    than the pinned one is AUTH; bindSeat
  *         leave      seats.exit(), own seat only
  *         beat       store.members.beat(name, {presence?}), own seat only; then seats.back (a lapsed seat rejoined)
- *         append     own `from` only; store.place() (validate, rate, replay, verify against the pinned key); a
+ *         append     own `from` only; the seat's quota (append.human / append.agent, counted in the log);
+ *                    store.place() (validate, rate, replay, verify against the pinned key); a
  *                    signoff or objection is followed by lib/proposal.ts decide() (host only, idempotent). A system
  *                    kind from a link is AUTH (the host writes those)
  *         subscribe  {after, hash, snapshot?}: hash12 of the host's line `after` must equal hash (store.lineHash),
@@ -39,10 +43,13 @@
  *                    'doc' for members (lib/room/members.ts publicView), presence/NAME and tasks when they
  *                    change (all three at the start), 'end' {reason: 'closed'} when the room's Claude is stopped
  *                    or {reason: 'FORK'} when the host log is reset, or {reason: 'AUTH', message} when the
- *                    host revoked the link (revoked(), on the serve's SIGTERM). Polls every FOLLOW_POLL_MS until the
- *                    transport closes
+ *                    host revoked the link (revoked(), on the serve's SIGTERM). It follows the room's watch
+ *                    (store.watch, lib/room/watch.ts: fs.watch and a FOLLOW_SLOW_MS poll; a store without one is polled
+ *                    every FOLLOW_POLL_MS), reads a changed document alone, and sends a replay REPLAY_BATCH lines per
+ *                    turn, waiting for the transport to drain (transport.writable), until the transport closes
  *         blob.get   store.blobs.get(ref), base64;  blob.put  {name, bytes}: name must be plans/<hash12>.md of
- *                    the bytes (content-addressed, at most PROPOSAL_FILE_MAX), written once
+ *                    the bytes (content-addressed, at most PROPOSAL_FILE_MAX), written once; a new one counts against
+ *                    the link's blob.put quota
  *         handoff.accept  {id, accept, locator, invites}: lib/handoff.ts serverAccept (the ask's target seat of this
  *                    link, its signed acceptance; host_changed appended); after the reply, afterMoved (the room's Claude job
  *                    stopped, this machine a mirror of the new host)
@@ -54,17 +61,23 @@
  *       link's machine's invite to the new host) and end {reason: 'moved'}. A pending ask for one of the link's
  *       seats is sent as the private 'handoff' event.
  *         ping       {pong: the host's ms}: the link daemon's heartbeat (lib/remote/link.ts). A session whose hello
- *                    carried caps {ping: true} and that then sends no frame for silentMs (LINK_SILENT_MS,
- *                    SUB_HUMAN_LINK_SILENT_MS) is closed: the peer is gone (a half-open link after a sleep)
- *       After a write (join, leave, beat, append) every stream of the session is polled before the reply goes out,
+ *                    carried caps {ping: true} and that then sends no frame for silentMs (LINK_SILENT_MS) is closed:
+ *                    the peer is gone (a half-open link after a sleep)
+ *       Quotas (lib/config.ts LINK_QUOTAS, lib/remote/quota.ts): before each op, its count: hello per connection (and
+ *       per link once it has one), join and leave (seat), subscribe and a new blob.put per link in the host document
+ *       remote/quota, beat, blob.get, ping and handoff.* per connection; over one is RATE QUOTA.
+ *       After a write (join, leave, beat, append) every stream of the session is ticked before the reply goes out,
  *       so a link that subscribed holds the write's lines and documents when its reply arrives (read-your-writes).
- *       An op that throws a RoomError (a protocol CODES code) answers {error: {code, message}} with the same
- *       code; any other error is INVALID with the message and is logged. A frame that is not a request is
+ *       An op that throws a RoomError (a protocol CODES code) answers {error: {code, message, reason?}} with the same
+ *       code and typed reason (lib/reasons.ts); any other error is INVALID with the message and is logged. A frame that is not a request is
  *       answered PROTOCOL. close() ends the streams and the transport.
  */
 
 import * as protocol from './protocol.ts';
-import * as auth from './auth.ts';
+import * as invites from './invites.ts';
+import * as hostLinks from './host-links.ts';
+import * as quota from './quota.ts';
+import * as machineKey from './machine-key.ts';
 import * as seats from '../seats.ts';
 import * as proposal from '../proposal.ts';
 import * as handoff from '../handoff.ts';
@@ -72,15 +85,18 @@ import * as members from '../room/members.ts';
 import * as envelope from '../room/envelope.ts';
 import * as room from '../room.ts';
 import { RoomError, hash12 } from '../room/store.ts';
-import { machineId } from '../home.ts';
+import type { Reason } from '../reasons.ts';
+import { machineIn } from '../home.ts';
+import * as options from '../room/options.ts';
 import {
-  FOLLOW_POLL_MS, PROPOSAL_FILE_MAX, LINK_SILENT_MS, LINK_HUMAN_RATE_MAX, LINK_BLOBS_MAX, LINK_FRAME_MAX_BYTES, RATE_WINDOW_MS, envMs,
+  FOLLOW_POLL_MS, REPLAY_BATCH, PROPOSAL_FILE_MAX, LINK_SILENT_MS, LINK_FRAME_MAX_BYTES,
 } from '../config.ts';
 import type {
   CodedError, DecodedFrame, ErrorFrame, EventData, EventName, FrameId, IncomingRequest, LinkRecord, Op, OpParams, OpResults, ProtoRange,
 } from './types-core.ts';
 import type { Transport } from './types-rest.ts';
 import type { Members, RoomStore, SnapshotWire } from '../room/types.ts';
+import type { Change } from '../room/watch.ts';
 
 type Log = (msg: string) => void;
 /** What hello's credential gives: the link (null: answered, but still unauthenticated) and a new token, once. */
@@ -95,42 +111,29 @@ const ANSWERS = new Set(['signoff', 'objection']);
 const WRITES = new Set(['join', 'leave', 'beat', 'append', 'handoff.accept', 'handoff.refuse']);
 const WHILE_MOVED = new Set(['hello', 'subscribe', 'blob.get', 'ping']); // what a host the room moved away from still serves
 const epochOf = (store: RoomStore): number => store.hostState().epoch;
-const stale = (msg: string): CodedError => new RoomError('STALE', msg);
+const stale = (msg: string, reason: Reason = 'MOVED_AWAY'): CodedError => new RoomError('STALE', msg, reason);
 const WIRE_CODES: Set<string> = new Set(Object.values(protocol.CODES));
-const authError = (msg: string): CodedError => new RoomError('AUTH', msg);
+const authError = (msg: string, reason: Reason | null = null): CodedError => new RoomError('AUTH', msg, reason);
 const invalid = (msg: string): CodedError => new RoomError('INVALID', msg);
 
-/** A person's posts over a link are bounded (config LINK_HUMAN_RATE_MAX per RATE_WINDOW_MS): the newest lines first. */
-function humanRate(s: Session, from: string, now = Date.now()): void {
-  const all = s.store.readAll();
-  let n = 0;
-  for (let i = all.length - 1; i >= 0; i--) {
-    const e = all[i];
-    if (now - Date.parse(e.at) >= RATE_WINDOW_MS) break;
-    if (e.from === from && e.via === 'human' && ++n >= LINK_HUMAN_RATE_MAX) {
-      throw new RoomError('RATE', `rate limit: ${from} posted ${LINK_HUMAN_RATE_MAX} times in the last minute; wait before posting again`);
-    }
-  }
-}
-
 function own(s: Session, name: string | undefined): void {
-  if (!auth.mayWriteAs(s.link, name as string)) throw authError(`${name} has not joined over this link`);
+  if (!hostLinks.mayWriteAs(s.link, name as string)) throw authError(`${name} has not joined over this link`, 'NOT_JOINED');
 }
 
-function redeem(s: Session, invite: unknown, machine: string, pin: unknown): Credential {
+function redeem(s: Session, invite: unknown, machine: string, pin: unknown, proven: string | null): Credential {
   const { store, linkId } = s;
-  const inv = auth.parseInvite(invite);
-  if (!inv || inv.code !== store.code) throw authError(`not an invite to room ${store.code}`);
-  let r: ReturnType<typeof auth.redeemInvite>;
+  const inv = invites.parseInvite(invite);
+  if (!inv || inv.code !== store.code) throw authError(`not an invite to room ${store.code}`, 'INVITE_UNKNOWN');
+  let r: ReturnType<typeof invites.redeemInvite>;
   try {
-    r = auth.redeemInvite(store, inv.secret, { machine, pin, ...(linkId ? { linkId } : {}) });
+    r = invites.redeemInvite(store, inv.secret, { machine, pin, proven, ...(linkId ? { linkId } : {}) });
   } catch (e) {
     if ((e as CodedError).note) roomLine(s, (e as CodedError).note!);
     throw e;
   }
   if (r.admission) roomLine(s, `${r.admission.name}'s machine (${r.admission.label || machine}) joined the room, let in by ${r.admission.admitted_by || 'the host'}; undo with: /sub-human kick ${r.admission.name}`);
   else if (r.handoff) roomLine(s, `a machine (${machine}) followed the room here with the invite its handoff gave it (link ${r.link.id})`);
-  else if (inv.v === 2) roomLine(s, `a machine (${machine}) linked to the room with an invite and its PIN (link ${r.link.id})`);
+  else roomLine(s, `a machine (${machine}) linked to the room with an invite and its PIN (link ${r.link.id})`);
   return r;
 }
 
@@ -138,67 +141,104 @@ function redeem(s: Session, invite: unknown, machine: string, pin: unknown): Cre
 const roomLine = (s: Session, text: string): void => room.roomLine(s.store, text, msg => s.log(`sub-human serve: ${msg}`));
 
 /** hello {login: true}: a new link for a connection over the host account's own ssh login (Session.login), else AUTH. */
-function viaLogin(s: Session, machine: string): Credential {
+function viaLogin(s: Session, machine: string, proven: string | null): Credential {
   if (!s.login || !s.linkId) {
-    throw authError(`this connection did not arrive over the host account's own ssh login${s.linkId ? ` (it came through a key that was let in for one other connection, and reaches only that one)` : ''}; join with an invite instead (/sub-human invite on the host)`);
+    throw authError(`this connection did not arrive over the host account's own ssh login${s.linkId ? ` (it came through a key that was let in for one other connection, and reaches only that one)` : ''}; join with an invite instead (/sub-human invite on the host)`, 'LOGIN_ONLY');
   }
-  const r = auth.loginLink(s.store, { id: s.linkId, machine }); // linkId: checked above
+  const r = hostLinks.loginLink(s.store, { id: s.linkId, machine, proven }); // linkId: checked above
   roomLine(s, 'a machine linked over your SSH login');
   return r;
 }
 
 function known(store: RoomStore, token: unknown, linkId: string | null): Credential {
-  const link = auth.verifyToken(store, token);
-  if (!link) throw authError('unknown link token; ask the host for a new invite');
-  if (linkId && link.id !== linkId) throw authError(`this token is not link ${linkId}'s`);
+  const link = hostLinks.verifyToken(store, token);
+  if (!link) throw authError('unknown link token; ask the host for a new invite', 'TOKEN_UNKNOWN');
+  if (linkId && link.id !== linkId) throw authError(`this token is not link ${linkId}'s`, 'TOKEN_UNKNOWN');
   return { link };
 }
 
 // ---------- the subscribe stream ----------
-/** The host documents a mirror holds, as other machines may see them: key -> value. */
-function docsOf(store: RoomStore): Map<string, unknown> {
-  const docs = new Map<string, unknown>([['members', members.publicView(store.members.read())], ['tasks', store.kv.get('tasks')]]);
-  for (const k of store.kv.list('presence/')) docs.set(k, store.kv.get(k));
+/** The host documents a mirror holds, as other machines may see them: key -> value. keys: only those (null: every one). */
+function docsOf(store: RoomStore, keys: ReadonlySet<string> | null = null): Map<string, unknown> {
+  const docs = new Map<string, unknown>();
+  const want = (k: string) => !keys || keys.has(k);
+  if (want('members')) docs.set('members', members.publicView(store.members.read()));
+  if (want('tasks')) docs.set('tasks', store.kv.get('tasks'));
+  if (!keys) for (const k of store.kv.list('presence/')) docs.set(k, store.kv.get(k));
+  else for (const k of keys) if (k.startsWith('presence/')) docs.set(k, store.kv.get(k)); // gone: null
   return docs;
 }
 const stopped = (ms: Members): boolean => !!(ms.claude && ms.claude.stopped_at);
+/** The documents whose change can move the room (closed, a handoff) besides a log line. */
+const MOVES: ReadonlySet<string> = new Set(['members', 'remote/handoff']);
 
-/** Stream subscribe request `id`'s events from the line after `after` (with snap: the snapshot first, then the lines
- * after its id). Returns {tick() (poll now), stop()}. */
+/**
+ * Stream subscribe request `id`'s events from the line after `after` (with snap: the snapshot first, then the lines
+ * after its id). The room's own watch (store.watch, lib/room/watch.ts: fs.watch, and a slow poll for a missed event)
+ * says what changed: a log line is sent, a changed document is read again and sent when it differs; a store with no
+ * watch is polled every FOLLOW_POLL_MS. A replay (the first sync, or a long gap) goes out REPLAY_BATCH lines per turn,
+ * waiting for the transport to drain between batches; tick(true) (after a write: read-your-writes) sends everything now.
+ */
 function stream(s: Session, id: FrameId | undefined, after: number, snap: SnapshotWire | null = null): Stream {
   if (snap) after = snap.id;
   const tailer = s.store.tailer({ after });
   const sent = new Map<string, string>(); // doc key -> the JSON last sent
   const priv = { lastId: after }; // the private events sent (lib/handoff.ts streamEvent)
+  const queue: string[] = []; // lines read, not sent yet
   let wasStopped = stopped(s.store.members.read());
+  let draining: NodeJS.Timeout | NodeJS.Immediate | null = null, stopped_ = false;
   const send = <E extends EventName>(ev: E, data: EventData[E]) => s.transport.send(protocol.event(id as FrameId, ev, data)); // (as: a request with no id gets events with none)
-  const end = (reason: EventData['end']['reason'], message?: string) => { send('end', { reason, ...(message ? { message } : {}) }); stop(); };
+  const end = (reason: EventData['end']['reason'], message?: string) => { flushAll(); send('end', { reason, ...(message ? { message } : {}) }); stop(); };
 
-  function sendDocs(docs: Map<string, unknown>) {
-    for (const key of new Set([...sent.keys(), ...docs.keys()])) {
+  function sendDocs(docs: Map<string, unknown>, all: boolean) {
+    for (const key of all ? new Set([...sent.keys(), ...docs.keys()]) : docs.keys()) {
       const value = docs.has(key) ? docs.get(key) : null;
       const json = JSON.stringify(value);
       if (sent.get(key) !== json) { sent.set(key, json); send('doc', { key, value }); }
     }
   }
-  function tick(): void {
-    const { lines, entries, reset } = tailer.poll();
-    if (reset) return end('FORK');
-    for (const line of lines) send('entry', line);
-    for (const e of entries) if (e.id > priv.lastId) priv.lastId = e.id;
-    const docs = docsOf(s.store);
-    sendDocs(docs);
+  const flushAll = () => { for (const line of queue.splice(0)) send('entry', line); };
+  /** One batch of the queued lines; the next once the transport drained (backpressure on a replay). */
+  function drain() {
+    draining = null;
+    if (stopped_) return;
+    if (typeof s.transport.writable === 'function' && !s.transport.writable()) { draining = setTimeout(drain, 10); return; }
+    for (const line of queue.splice(0, REPLAY_BATCH)) send('entry', line);
+    if (queue.length) draining = setImmediate(drain);
+  }
+  function tick(change: Change | null, now = false): void {
+    let moved = !change || change.log;
+    if (!change || change.log) {
+      const { lines, entries, reset } = tailer.poll();
+      if (reset) return end('FORK');
+      queue.push(...lines);
+      for (const e of entries) if (e.id > priv.lastId) priv.lastId = e.id;
+    }
+    if (now) flushAll();
+    else if (queue.length && !draining) drain();
+    const keys = change ? new Set([...change.docs].filter(k => k === 'members' || k === 'tasks' || k.startsWith('presence/'))) : null;
+    if (!keys || keys.size) sendDocs(docsOf(s.store, keys), !keys);
+    if (change && [...change.docs].some(k => MOVES.has(k))) moved = true;
+    if (!moved) return;
     const p = handoff.streamEvent(s.store, s.link, priv);
     if (p) { send(p.ev, p.data); if (p.end) return end('moved'); }
-    const now = stopped(docs.get('members') as Members); // docsOf's publicView
-    if (now && !wasStopped) return end('closed');
-    wasStopped = now;
+    const isStopped = stopped(s.store.members.read());
+    if (isStopped && !wasStopped) return end('closed');
+    wasStopped = isStopped;
   }
-  const safeTick = () => { try { tick(); } catch (e) { s.log(`sub-human serve: subscribe: ${e && (e as Error).stack || e}`); } };
-  const first = setImmediate(() => { if (snap) send('snapshot', snap); safeTick(); }); // after the subscribe reply
-  const timer = setInterval(safeTick, FOLLOW_POLL_MS);
-  const self: Stream = { tick: safeTick, stop, end };
-  function stop() { clearImmediate(first); clearInterval(timer); s.streams.delete(self); }
+  const safeTick = (change: Change | null, now = false) => { try { tick(change, now); } catch (e) { s.log(`sub-human serve: subscribe: ${e && (e as Error).stack || e}`); } };
+  const first = setImmediate(() => { if (snap) send('snapshot', snap); safeTick(null); }); // after the subscribe reply
+  const unwatch = typeof s.store.watch === 'function' ? s.store.watch(c => safeTick(c)) : null;
+  const timer = unwatch ? null : setInterval(() => safeTick(null), FOLLOW_POLL_MS);
+  const self: Stream = { tick: () => safeTick(null, true), stop, end };
+  function stop() {
+    stopped_ = true;
+    clearImmediate(first);
+    if (timer) clearInterval(timer);
+    if (unwatch) unwatch();
+    if (draining) { clearTimeout(draining as NodeJS.Timeout); clearImmediate(draining as NodeJS.Immediate); }
+    s.streams.delete(self);
+  }
   return self;
 }
 
@@ -214,11 +254,11 @@ const OPS: OpHandlers = {
   hello(s, params) {
     const { machine, token, invite, pin, caps, epoch } = params;
     const theirs = protocol.rangeOf(params);
-    if (!theirs) throw new RoomError('PROTOCOL', 'hello names no protocol version');
-    const v = protocol.negotiate(s.proto, theirs);
     const client = typeof params.client === 'string' ? params.client.slice(0, 32) : null;
+    if (!theirs) throw new RoomError('PROTOCOL', `this hello names no protocol range (a sub-human before 0.5${client ? `: ${client}` : ''}): update it (/plugin update sub-human)`, 'SKEW');
+    const v = protocol.negotiate(s.proto, theirs);
     if (v === null || v < (Number.isInteger(params.v) ? params.v! : 1)) {
-      throw new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: s.version, proto: s.proto }, joiner: { version: client, proto: theirs } }));
+      throw new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: s.version, proto: s.proto }, joiner: { version: client, proto: theirs } }), 'SKEW');
     }
     if (typeof machine !== 'string' || !MACHINE_RE.test(machine)) throw invalid('hello needs this machine\'s id');
     const mine = epochOf(s.store);
@@ -227,12 +267,14 @@ const OPS: OpHandlers = {
     }
     s.link = null;
     s.v = v;
-    const r: Credential = invite !== undefined ? redeem(s, invite, machine, pin) : token !== undefined ? known(s.store, token, s.linkId)
-      : params.login === true ? viaLogin(s, machine) : { link: null };
+    const proven = machineKey.verify(params.machine_key, s.store.code); // the id its machine key gives (else only reported)
+    const r: Credential = invite !== undefined ? redeem(s, invite, machine, pin, proven) : token !== undefined ? known(s.store, token, s.linkId)
+      : params.login === true ? viaLogin(s, machine, proven) : { link: null };
     s.link = r.link;
     if (caps && caps.ping === true) s.expireSilent();
     // time: the host's clock (ms), so a joiner (sub-human doctor) can measure the skew that SIG_SKEW_MS bounds; additive
     const out: OpResults['hello'] = { v, proto: s.proto, server: s.version, caps: protocol.CAPS, room: s.store.code, link: r.link ? r.link.id : null, epoch: mine, time: Date.now() };
+    if (r.link) out.machine = r.link.machine; // additive: this machine's id in the room, as the host records it
     if (r.token) out.token = r.token;
     if (stopped(s.store.members.read())) out.closed = true; // additive: an older host says nothing
     return out;
@@ -241,14 +283,15 @@ const OPS: OpHandlers = {
   join(s, { name, role = 'member', pubkey, proof }) {
     if (role !== 'member') throw invalid('a link joins members only');
     if (!envelope.parseKey(pubkey)) throw invalid('join needs the seat\'s public key (Ed25519 SPKI PEM)');
-    auth.checkSeatProof(proof, { room: s.store.code, name, pubkey });
+    hostLinks.checkSeatProof(proof, { room: s.store.code, name, pubkey });
     // s.link: run() lets no op but hello in without it. A bound link (the card let one name in; a handoff's seats) joins
     // its own seats only, before any seat is taken. A login link is the host account's own: its seat is that person's
-    if (!auth.mayJoinAs(s.link, name)) throw authError(auth.notBound(s.link!, name));
-    const account = s.link!.login ? machineId() : undefined;
+    if (!hostLinks.mayJoinAs(s.link, name)) throw authError(hostLinks.notBound(s.link!, name), 'NOT_BOUND');
+    // a login link's seat is the host person's own (one person with the host's seats) only where the room says so
+    const account = s.link!.login && options.loginSamePerson(s.store) ? machineIn(s.store.code) ?? undefined : undefined;
     const r = seats.enter({ code: s.store.code, name, machine: s.link!.machine, pubkey, ...(account ? { account } : {}) });
     if (!r.ok) throw new RoomError(r.code || 'INVALID', r.error);
-    s.link = auth.bindSeat(s.store, s.link!.id, name);
+    s.link = hostLinks.bindSeat(s.store, s.link!.id, name);
     return r.rejoin ? { ok: true, rejoin: true } : { ok: true };
   },
 
@@ -269,12 +312,12 @@ const OPS: OpHandlers = {
     if (!payload || typeof payload !== 'object') throw invalid('append needs {payload}');
     const mine = epochOf(s.store);
     if (Number.isInteger(epoch) && epoch !== mine) {
-      throw stale(epoch! < mine ? `room ${s.store.code} changed hosts and this machine hasn't caught up yet; try again in a moment`
-        : `room ${s.store.code} has moved away from this machine to a newer host. Run /sub-human doctor to see where it is`);
+      throw epoch! < mine ? stale(`room ${s.store.code} changed hosts and this machine hasn't caught up yet; try again in a moment`, 'BEHIND')
+        : stale(`room ${s.store.code} has moved away from this machine to a newer host. Run /sub-human doctor to see where it is`);
     }
     own(s, payload.from);
     if (payload.via === 'system') throw authError('a link never writes via "system"; the host writes the room\'s own entries');
-    if (payload.via === 'human') humanRate(s, payload.from);
+    if (payload.via === 'human' || payload.via === 'agent') quota.checkLog(s.store.readAll(), { from: payload.from!, via: payload.via, op: payload.via === 'human' ? 'append.human' : 'append.agent' });
     const entry = s.store.place(payload);
     if (ANSWERS.has(entry.kind) && entry.proposal_hash) {
       try { proposal.decide(s.store.code, entry.proposal_hash); } catch (e) { s.log(`sub-human serve: decide: ${e && (e as Error).stack || e}`); }
@@ -285,12 +328,12 @@ const OPS: OpHandlers = {
   subscribe(s, { after, hash, snapshot }, id) {
     if (!Number.isInteger(after) || after < 0) throw invalid('subscribe needs {after: id, hash}');
     if (s.store.lineHash(after) !== hash) {
-      throw new RoomError('FORK', `the host's line ${after} is not the mirror's; re-mirror with sub-human link --reset ${s.store.code}`);
+      throw new RoomError('FORK', `the host's line ${after} is not the mirror's; re-mirror with sub-human link --reset ${s.store.code}`, 'NOT_CHAINED');
     }
     const held = s.store.snapshot();
     const snap = snapshot === true && after === 0 ? fits(id, held) : null;
     if (!snap && held && after < held.held - 1) {
-      throw new RoomError('FORK', `this host holds room ${s.store.code}'s log only from line ${held.held - 1} (it began from its host's snapshot) and cannot replay the lines before; update sub-human on this machine, then sub-human link --reset ${s.store.code}`);
+      throw new RoomError('FORK', `this host holds room ${s.store.code}'s log only from line ${held.held - 1} (it began from its host's snapshot) and cannot replay the lines before; update sub-human on this machine, then sub-human link --reset ${s.store.code}`, 'NOT_CHAINED');
     }
     for (const st of [...s.streams]) st.stop(); // one stream per connection: a new subscribe replaces the old (each is a poller)
     s.streams.add(stream(s, id, after, snap));
@@ -316,7 +359,7 @@ const OPS: OpHandlers = {
     if (buf.length > PROPOSAL_FILE_MAX) throw invalid(`a blob is at most ${PROPOSAL_FILE_MAX} bytes`);
     if (name !== `plans/${hash12(buf)}.md`) throw invalid('a blob is named by its content: plans/<hash12 of the bytes>.md');
     if (s.store.blobs.has(name)) return { ref: name };
-    if (++s.blobsPut > LINK_BLOBS_MAX) throw new RoomError('RATE', `this connection stored ${LINK_BLOBS_MAX} plans already; reconnect to store more`);
+    quota.charge(s.store, s.link!.id, 'blob.put');
     s.store.blobs.put(name, buf);
     return { ref: name };
   },
@@ -337,7 +380,7 @@ class Session {
   link: LinkRecord | null;
   later: (() => void) | null;
   streams: Set<Stream>;
-  blobsPut: number;
+  quota: ReturnType<typeof quota.session>;
   silentMs: number;
   heard: number;
   silence: NodeJS.Timeout | null;
@@ -355,7 +398,7 @@ class Session {
     this.link = null;
     this.later = null; // work an op leaves for after its reply (handoff.accept)
     this.streams = new Set(); // {tick, stop}
-    this.blobsPut = 0;
+    this.quota = quota.session();
     this.silentMs = silentMs;
     this.heard = Date.now();
     this.silence = null;
@@ -397,13 +440,28 @@ class Session {
       const h = this.store.hostState!(); // movedAway: only a store with hostState moves
       throw stale(`room ${this.store.code} moved to ${h.host}'s machine; this machine takes no more messages for it`);
     }
+    this.charge(op);
     const ops = OPS as unknown as Record<string, (s: Session, params: object, id: FrameId | undefined) => unknown>; // op: one of OPS (checked above)
-    return ops[op](this, params && typeof params === 'object' ? params : {}, id);
+    const out = ops[op](this, params && typeof params === 'object' ? params : {}, id);
+    if (op === 'hello' && this.link) quota.charge(this.store, this.link.id, 'hello'); // a link's hellos, across reconnects
+    return out;
+  }
+
+  /** The op's quota (lib/config.ts LINK_QUOTAS) before it runs: RATE QUOTA when this connection or link is over. append
+   * counts the seat's own lines in the op; blob.put only a new blob, in the op. */
+  charge(op: string): void {
+    const take = (q: quota.QuotaOp) => this.quota.take(q);
+    const link = (q: quota.QuotaOp) => quota.charge(this.store, this.link!.id, q); // every op but hello runs with a link
+    if (op === 'hello') take('hello.session');
+    else if (op === 'join' || op === 'leave') link('seat');
+    else if (op === 'subscribe') link('subscribe');
+    else if (op === 'beat' || op === 'blob.get' || op === 'ping') take(op);
+    else if (op === 'handoff.accept' || op === 'handoff.refuse') take('handoff');
   }
 
   failure(f: IncomingRequest, err: unknown): ErrorFrame {
     const e = err as CodedError | null | undefined; // anything an op threw
-    if (e && WIRE_CODES.has(e.code!)) return protocol.error(f.id, e.code!, e.message);
+    if (e && WIRE_CODES.has(e.code!)) return protocol.error(f.id, e.code!, e.message, e.reason);
     this.log(`sub-human serve: ${f.op}: ${e && e.stack || e}`);
     return protocol.error(f.id, 'INVALID', (e && e.message) || String(e));
   }
@@ -412,7 +470,7 @@ class Session {
    * so the daemon stops with the reason instead of redialing a key that no longer gets in (`/sub-human kick`
    * stops this serve with SIGTERM: scripts/sub-human serve calls this first). */
   revoked(): boolean {
-    if (!this.link || (this.store.kv.get(auth.LINKS_KEY, null) || {})[this.link.id]) return false;
+    if (!this.link || (this.store.kv.get(hostLinks.LINKS_KEY, null) || {})[this.link.id]) return false;
     for (const st of [...this.streams]) st.end('AUTH', `the host revoked this link (${this.link.id}); ask them for a new invite`);
     return true;
   }
@@ -429,7 +487,7 @@ class Session {
  * @param {{store: import('../room/store.ts').FsRoomStore, log?: (...a: any[]) => void, linkId?: string, login?: boolean, silentMs?: number, proto?: {min: number, max: number}, version?: string}} ctx
  * @returns {{close(): void}}
  */
-function serve(transport: Transport, { store, log = () => {}, linkId, login = false, silentMs = envMs('SUB_HUMAN_LINK_SILENT_MS', LINK_SILENT_MS), proto, version }: {
+function serve(transport: Transport, { store, log = () => {}, linkId, login = false, silentMs = LINK_SILENT_MS, proto, version }: {
   store: RoomStore; log?: Log; linkId?: string; login?: boolean; silentMs?: number; proto?: ProtoRange; version?: string;
 }): { close(): void; revoked(): boolean } {
   const session = new Session(transport, store, log, linkId, silentMs, { proto, version, login });

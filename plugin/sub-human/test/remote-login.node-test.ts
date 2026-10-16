@@ -13,8 +13,8 @@ import { spawnSync } from 'node:child_process';
 import type { TestContext } from 'node:test';
 import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
-import * as link from '../lib/remote/link.ts';
-import * as auth from '../lib/remote/auth.ts';
+import * as linkSocket from '../lib/remote/link-socket.ts';
+import * as hostLinks from '../lib/remote/host-links.ts';
 import * as server from '../lib/remote/server.ts';
 import * as client from '../lib/remote/client.ts';
 import type { Client, ConnectOpts } from '../lib/remote/client.ts';
@@ -25,7 +25,11 @@ import * as shim from '../lib/remote/shim.ts';
 import { Machine } from './support/two-homes.ts';
 import * as protocolLib from '../lib/remote/protocol.ts';
 import * as seatKey from '../hooks/seat-key.ts';
-import { machineId } from '../lib/home.ts';
+import { machineIn } from '../lib/home.ts';
+import * as options from '../lib/room/options.ts';
+import * as machineKey from '../lib/remote/machine-key.ts';
+import { MemoryRoomStore } from './support/memory-store.ts';
+import type { CodedError } from '../lib/remote/types-core.ts';
 import * as linksLib from '../lib/room/links.ts';
 
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
@@ -35,12 +39,12 @@ const ID = 'abcdef012345';
 const childOf = (pid: number | undefined) => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
 const kill = (pid: number | null | undefined) => { try { process.kill(pid as number, 'SIGKILL'); } catch { /* gone */ } };
 const stopDaemon = (t: TestContext, m: Machine, code: string) => t.after(() => {
-  const d = m.lib(() => link.status(code));
+  const d = m.lib(() => linkSocket.status(code));
   if (d.pid) { kill(childOf(d.pid)); kill(d.pid); }
-  fs.rmSync(path.dirname(link.socketPath(path.join(m.home, 'rooms', code))), { recursive: true, force: true });
+  fs.rmSync(path.dirname(linkSocket.socketPath(path.join(m.home, 'rooms', code))), { recursive: true, force: true });
 });
 const roomLines = (m: Machine, code: string) => m.lib(() => store.open(code).readAll()).filter(e => e.from === 'room').map(e => e.text).join('\n');
-const links = (m: Machine, code: string) => m.lib(() => auth.links(store.open(code)));
+const links = (m: Machine, code: string) => m.lib(() => hostLinks.links(store.open(code)));
 
 /** A fake `ssh` in its own dir: logs its argv, then plays sshd for the host user (FAKE_SSH_HOME): FAKE_SSH_FAIL
  * (hostkey | denied) fails as ssh does in BatchMode; FAKE_SSH_FORCED runs that forced command with
@@ -140,11 +144,11 @@ test('server: a hello {login} makes a link only in a `serve --login` session, un
   // an authorized_keys line's session (--link, no --login): its key reaches that link only
   await assert.rejects(dial({ linkId: ID }, { login: true }), authErr(/did not arrive over the host account's own ssh login \(it came through a key that was let in for one other connection/));
   await assert.rejects(dial({}, { login: true }), authErr(/did not arrive over the host account's own ssh login/));
-  assert.deepEqual(auth.links(host), {}, 'nothing minted');
+  assert.deepEqual(hostLinks.links(host), {}, 'nothing minted');
   const c = await dial({ linkId: ID, login: true }, { login: true });
   assert.equal(typeof c.token, 'string');
   assert.equal(c.link, ID);
-  assert.deepEqual({ ...auth.links(host)[ID], token_sha256: '-', created_at: '-' }, { id: ID, token_sha256: '-', machine: 'remote0machine01', seats: [], created_at: '-', login: true });
+  assert.deepEqual({ ...hostLinks.links(host)[ID], token_sha256: '-', created_at: '-' }, { id: ID, token_sha256: '-', machine: 'remote0machine01', seats: [], created_at: '-', login: true });
   assert.match(host.readAll().at(-1)!.text!, /^a machine linked over your SSH login$/);
   // the id is taken now: a second login hello for it is refused; the token says hello as any link's
   await assert.rejects(dial({ linkId: ID, login: true }, { login: true }), authErr(/link abcdef012345 exists already/));
@@ -159,13 +163,13 @@ test('server: a hello {login} makes a link only in a `serve --login` session, un
 });
 const protocol = () => protocolLib;
 
-test('server: a seat that joins over a login link is the host account\'s (account = the host\'s machine id); an invite\'s seat has none', async t => {
+test('server: a login link\'s seat is the host person\'s own only when the room says so (login-same-person); an invite\'s never', async t => {
   h.freshHome(t);
   const code = h.newRoom();
   const host = store.open(code);
   const seat = async (c: Client, name: string) => {
     const pubkey = seatKey.publicPem(code, name);
-    await c.join({ name, pubkey, proof: auth.proveSeat(seatKey.ensure(code, name), { room: code, name, pubkey }) });
+    await c.join({ name, pubkey, proof: hostLinks.proveSeat(seatKey.ensure(code, name), { room: code, name, pubkey }) });
   };
   const open = async (ctx: { linkId?: string; login?: boolean }, opts: Omit<ConnectOpts, 'machine'>) => {
     const [a, b] = memory.pair();
@@ -175,13 +179,49 @@ test('server: a seat that joins over a login link is the host account\'s (accoun
     t.after(() => c.close());
     return c;
   };
+  // the default: a login link's seat is its own person (on a shared login, everyone who has it would be the owner)
   await seat(await open({ linkId: ID, login: true }, { login: true }), 'laptop');
-  const { secret } = auth.mintInvite(host, { locator: 'pipe:/test' });
-  const { token } = auth.redeemInvite(host, secret, { machine: 'remote0machine01' });
+  assert.deepEqual([host.members.read().laptop.machine, host.members.read().laptop.account], ['remote0machine01', undefined]);
+  // the host person's option: such a seat is theirs
+  assert.throws(() => options.set(new MemoryRoomStore(code, { isHost: false }), 'login-same-person', true), (e: CodedError) => e.code === 'HOST_ONLY');
+  assert.throws(() => options.set(host, 'everything', true), (e: CodedError) => e.code === 'INVALID');
+  options.set(host, 'login-same-person', true);
+  await seat(await open({ linkId: 'aaaaaaaaaaaa', login: true }, { login: true, machineKey: machineKey.proof(code) }), 'desk'); // another machine
+  const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: 'remote0machine02', seats: [] });
   await seat(await open({}, { token }), 'guest');
   const ms = host.members.read();
-  assert.deepEqual([ms.laptop.machine, ms.laptop.account], ['remote0machine01', machineId()]);
-  assert.deepEqual([ms.guest.machine, ms.guest.account], ['remote0machine01', undefined], 'the same machine, but over an invite');
+  assert.deepEqual([ms.desk.account], [machineIn(code)]);
+  assert.deepEqual([ms.guest.machine, ms.guest.account], ['remote0machine02', undefined], 'over an invite: never');
+  options.set(host, 'login-same-person', false);
+  assert.deepEqual(options.get(host), {});
+});
+
+test('server: a hello\'s machine key gives the id the host records; one only reported may not be the host\'s or another link\'s', async t => {
+  h.freshHome(t);
+  const code = h.newRoom();
+  const host = store.open(code);
+  const serveLogin = async (id: string, opts: Partial<ConnectOpts>) => {
+    const [a, b] = memory.pair();
+    const srv = server.serve(b, { store: host, linkId: id, login: true });
+    t.after(() => srv.close());
+    return client.connect(a, { machine: 'remote0machine01', login: true, ...opts } as ConnectOpts);
+  };
+  // a key proof: the id is the key's, the reported one only its label; the reply says it
+  const proof = machineKey.proof(code);
+  const c1 = await serveLogin('aaaaaaaaaaa1', { machineKey: proof });
+  assert.equal(c1.machine, machineKey.idOf(proof.key));
+  assert.deepEqual([hostLinks.links(host).aaaaaaaaaaa1.machine, hostLinks.links(host).aaaaaaaaaaa1.label], [machineKey.idOf(proof.key), 'remote0machine01']);
+  c1.close();
+  // a forged proof is no proof: the reported id, checked
+  await assert.rejects(serveLogin('aaaaaaaaaaa2', { machine: machineIn(code)!, machineKey: { ...proof, sig: proof.sig.replace(/^./, ch => (ch === 'A' ? 'B' : 'A')) } }), (e: CodedError) => e.code === 'AUTH' && e.reason === 'MACHINE_TAKEN');
+  // only reported: the host's own id, or another link's, is refused
+  await assert.rejects(serveLogin('aaaaaaaaaaa3', { machine: machineIn(code)! }), (e: CodedError) => e.reason === 'MACHINE_TAKEN');
+  const c4 = await serveLogin('aaaaaaaaaaa4', { machine: 'remote0machine09' });
+  assert.equal(c4.machine, 'remote0machine09');
+  c4.close();
+  await assert.rejects(serveLogin('aaaaaaaaaaa5', { machine: 'remote0machine09' }), (e: CodedError) => e.reason === 'MACHINE_TAKEN');
+  assert.equal(machineKey.verify({ ...proof, ts: proof.ts - 60 * 60_000 }, code), null, 'an old proof');
+  assert.equal(machineKey.verify(proof, 'vole-9999'), null, 'another room\'s');
 });
 
 test('serve CLI: --login needs --link, and is refused under SSH_ORIGINAL_COMMAND (a forced command), before any frame', t => {
@@ -227,8 +267,8 @@ test('login e2e: join me@devbox ROOM links over the person\'s own ssh and takes 
   const rv = host.join(alice, 'kick bob');
   assert.match(rv.json!.reason!, new RegExp(`bob is out of room ${code}: it no longer reaches the room\\. It came over an ssh login to this account, which can join again`));
   assert.deepEqual(links(host, code), {});
-  await h.until(() => remote.lib(() => link.status(code)).state === 'stopped', 10_000);
-  assert.match(remote.lib(() => link.status(code)).reason!, /revoked/);
+  await h.until(() => remote.lib(() => linkSocket.status(code)).state === 'stopped', 10_000);
+  assert.match(remote.lib(() => linkSocket.status(code)).reason!, /revoked/);
   // that login can link again: a new link, and bob's seat joins again over it
   const again = remote.join(bob, `join me@devbox ${code} --as bob`);
   assert.equal(again.json!.decision, undefined, again.json!.reason);

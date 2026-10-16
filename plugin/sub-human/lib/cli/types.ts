@@ -74,6 +74,8 @@ export interface Reach {
   ok: boolean;
   ms: number;
   error?: string;
+  /** the hello's error code (PROTOCOL: the two sides speak no common version) */
+  code?: string;
   skipped: boolean;
   hint: string | null;
   stderr: string;

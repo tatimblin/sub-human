@@ -13,11 +13,13 @@ import child_process from 'node:child_process';
 import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
 import * as link from '../lib/remote/link.ts';
+import * as linkSocket from '../lib/remote/link-socket.ts';
+import * as linkConnect from '../lib/remote/link-connect.ts';
 import * as outbox from '../lib/remote/outbox.ts';
 import * as protocol from '../lib/remote/protocol.ts';
 import * as server from '../lib/remote/server.ts';
 import * as client from '../lib/remote/client.ts';
-import * as auth from '../lib/remote/auth.ts';
+import * as hostLinks from '../lib/remote/host-links.ts';
 import * as links from '../lib/room/links.ts';
 import * as memory from '../lib/remote/transports/memory.ts';
 import * as clock from '../lib/clock.ts';
@@ -161,8 +163,7 @@ async function rig(t: TestContext, { serverCaps }: { serverCaps?: Client['server
   h.freshHome(t);
   const code = h.newRoom();
   const host = store.open(code) as store.FsRoomStore;
-  const { secret } = auth.mintInvite(host, { locator: 'pipe:/test' });
-  const { token } = auth.redeemInvite(host, secret, { machine: REMOTE });
+  const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: REMOTE, seats: [] });
   const sessions: Rig['sessions'] = [], conns: Rig['conns'] = [];
   const pings = { n: 0 };
   const r = { code, host, conns, pings, sessions, refuse: false } as Rig; // the rest is set below
@@ -189,7 +190,7 @@ async function rig(t: TestContext, { serverCaps }: { serverCaps?: Client['server
   // bob joins over this link first (binds the seat to it), as the join hook does
   const first = await r.connect();
   const pubkey = seatKey.publicPem(code, 'bob');
-  await first.join({ name: 'bob', pubkey, proof: auth.proveSeat(seatKey.ensure(code, 'bob'), { room: code, name: 'bob', pubkey }) });
+  await first.join({ name: 'bob', pubkey, proof: hostLinks.proveSeat(seatKey.ensure(code, 'bob'), { room: code, name: 'bob', pubkey }) });
   first.close();
   conns.length = 0;
   r.mirror = new MirrorRoomStore(code, { dir: h.tmpDir('sh-mirror-', t) });
@@ -200,8 +201,8 @@ async function rig(t: TestContext, { serverCaps }: { serverCaps?: Client['server
     seats: () => [], writeState: rec => r.states.push(rec as LinkStateRecord), ...opts,
   });
   r.same = () => fs.existsSync(r.mirror.logFile) && fs.readFileSync(r.mirror.logFile, 'utf8') === fs.readFileSync(host.logFile, 'utf8');
-  r.hook = (op, params) => link.handle(op, { socket: link.socketPath(r.mirror.dir), params }) as Promise<HookReply>;
-  t.after(() => fs.rmSync(path.dirname(link.socketPath(r.mirror.dir)), { recursive: true, force: true }));
+  r.hook = (op, params) => linkSocket.handle(op, { socket: linkSocket.socketPath(r.mirror.dir), params }) as Promise<HookReply>;
+  t.after(() => fs.rmSync(path.dirname(linkSocket.socketPath(r.mirror.dir)), { recursive: true, force: true }));
   return r;
 }
 const ids = (file: string) => lines(file).map(l => JSON.parse(l).id);
@@ -415,8 +416,7 @@ test('link: online, the mirror\'s document link lists the entry fields the host\
 
 test('server: a session that said hello with caps.ping and then goes silent is closed; one without is kept', async t => {
   const { code, host } = (() => { h.freshHome(t); const c = h.newRoom(); return { code: c, host: store.open(c) }; })();
-  const { secret } = auth.mintInvite(host, { locator: 'pipe:/test' });
-  const { token } = auth.redeemInvite(host, secret, { machine: REMOTE });
+  const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: REMOTE, seats: [] });
   const open = async (caps: object) => {
     const [a, b] = memory.pair();
     const srv = server.serve(b, { store: host, silentMs: 120 });
@@ -523,13 +523,13 @@ test('mirror store: a deadline that passed after the op went out is "unknown", n
   h.freshHome(t);
   const code = h.newRoom();
   const dir = h.tmpDir('sh-mirror-u-', t);
-  const sock = link.socketPath(dir);
+  const sock = linkSocket.socketPath(dir);
   fs.mkdirSync(path.dirname(sock), { recursive: true, mode: 0o700 });
   t.after(() => fs.rmSync(path.dirname(sock), { recursive: true, force: true }));
   const reply: { mode: string | null } = { mode: null };
   const srv = net.createServer(c => c.on('data', d => {
     const f = JSON.parse(String(d).split('\n')[0]);
-    if (reply.mode === 'unknown') c.end(protocol.encode(protocol.error(f.id, 'OFFLINE', `append: no answer from the host within 2000 ms (a slow link); ${protocol.UNKNOWN_OUTCOME}`)));
+    if (reply.mode === 'unknown') c.end(protocol.encode(protocol.error(f.id, 'OFFLINE', `append: no answer from the host within 2000 ms (a slow link); ${protocol.UNKNOWN_OUTCOME}`, 'UNKNOWN_OUTCOME')));
     else if (reply.mode === 'offline') c.end(protocol.encode(protocol.error(f.id, 'OFFLINE', 'the link is offline')));
     // 'silent': no answer, so the bridge's own deadline passes
   }));
@@ -563,9 +563,9 @@ test('link: the host revokes the link: its serve ends the stream AUTH, the daemo
   const r = await rig(t);
   const l = await r.start();
   await h.until(() => l.state() === 'online', 3000, 5);
-  const [id] = Object.keys(r.host.kv.get(auth.LINKS_KEY)!);
+  const [id] = Object.keys(r.host.kv.get(hostLinks.LINKS_KEY)!);
   assert.equal(r.sessions.at(-1)!.revoked(), false, 'not revoked yet: nothing sent');
-  auth.revokeLink(r.host, id);
+  hostLinks.revokeLink(r.host, id);
   for (const s of r.sessions) s.revoked(); // sub-human revoke SIGTERMs the link's serve processes
   assert.match(await l.done, /the host revoked this link/);
   assert.equal(l.state(), 'stopped');
@@ -579,10 +579,10 @@ test('link: an ssh link with its own key and a token that ssh now refuses is AUT
   const denied = { stderr: () => 'host@devbox: Permission denied (publickey).\r\n' };
   const sshTo: SshSpec = { kind: 'ssh', user: 'host', host: 'devbox', key: '/k/id_ed25519' };
   const own = { token: 'tok', transport: sshTo } as Link; // the fields keyRefused reads (no code)
-  const e1 = await link.keyRefused(own, denied, off);
+  const e1 = await linkConnect.keyRefused(own, denied, off);
   assert.deepEqual([e1!.code, /revoked/.test(e1!.message)], ['AUTH', true]);
-  assert.equal(await link.keyRefused({ ...own, token: undefined, invite: 'sh2.x' }, denied, off), off, 'not admitted yet: keep trying');
-  assert.equal(await link.keyRefused({ ...own, transport: { ...sshTo, key: undefined } }, denied, off), off, 'the user\'s own keys: maybe an agent not loaded');
-  assert.equal(await link.keyRefused(own, { stderr: () => 'ssh: connect to host devbox port 22: Connection refused' }, off), off);
-  assert.equal(await link.keyRefused(own, Promise.resolve(denied), off).then(e => e!.code), 'AUTH', 'an async transport');
+  assert.equal(await linkConnect.keyRefused({ ...own, token: undefined, invite: 'sh2.x' }, denied, off), off, 'not admitted yet: keep trying');
+  assert.equal(await linkConnect.keyRefused({ ...own, transport: { ...sshTo, key: undefined } }, denied, off), off, 'the user\'s own keys: maybe an agent not loaded');
+  assert.equal(await linkConnect.keyRefused(own, { stderr: () => 'ssh: connect to host devbox port 22: Connection refused' }, off), off);
+  assert.equal(await linkConnect.keyRefused(own, Promise.resolve(denied), off).then(e => e!.code), 'AUTH', 'an async transport');
 });

@@ -8,7 +8,7 @@
 //   unreachable: the new host's locator unreachable for the others: they go offline with a reason that says what to
 //     do (no hang); a fresh invite from the new host (/sub-human invite, its line, the admit) re-points carol
 //   promote: the host gone, bob's promote (refused while online, then with --confirm) takes the room at epoch 1;
-//     carol follows with `sub-human demote CODE INVITE PIN` (her line) and a bare /sub-human; the old host back is
+//     carol follows with `sub-human demote CODE` and her line pasted (INVITE PIN on stdin) and a bare /sub-human; the old host back is
 //     STALE for a mirror at epoch 1, and its demote sets its own log aside and mirrors bob
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,7 +21,8 @@ import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
 import * as identity from '../lib/identity.ts';
 import * as envelope from '../lib/room/envelope.ts';
-import * as link from '../lib/remote/link.ts';
+import * as linkSocket from '../lib/remote/link-socket.ts';
+import * as linkConnect from '../lib/remote/link-connect.ts';
 import * as links from '../lib/room/links.ts';
 import * as handoff from '../lib/handoff.ts';
 import * as client from '../lib/remote/client.ts';
@@ -47,8 +48,8 @@ interface Stub { bin: string; calls: () => string[][] }
 /** A Machine with this file's extras (machine() sets them). */
 type TestMachine = Machine & {
   stub: Stub;
-  cli: (args: string[], extra?: Record<string, string>) => SpawnSyncReturns<string>;
-  status: (code: string) => ReturnType<typeof link.status>;
+  cli: (args: string[], extra?: Record<string, string>, input?: string) => SpawnSyncReturns<string>;
+  status: (code: string) => ReturnType<typeof linkSocket.status>;
   store: (code: string) => ReturnType<typeof store.open>;
   read: (code: string) => readonly Entry[];
 };
@@ -83,15 +84,15 @@ function machine(t: TestContext, name: string, job: string): TestMachine {
   // its own TMPDIR: a daemon a pipe's server starts (the old host's follow link) has the dialer's, not this machine's hooks'
   const m = new Machine(t, name, { ...LINK_ENV, SUB_HUMAN_CLAUDE: stub.bin, TMPDIR: h.tmpDir(`sh-tmp-${name}-`, t) }) as TestMachine; // its extras set just below
   m.stub = stub;
-  m.cli = (args, extra = {}) => spawnSync(process.execPath, [h.BIN, ...args], { env: m.env(null, extra), cwd: m.cwd, encoding: 'utf8', timeout: 30_000 });
-  m.status = code => m.lib(() => link.status(code));
+  m.cli = (args, extra = {}, input = '') => spawnSync(process.execPath, [h.BIN, ...args], { env: m.env(null, extra), cwd: m.cwd, encoding: 'utf8', timeout: 30_000, input });
+  m.status = code => m.lib(() => linkSocket.status(code));
   m.store = code => m.lib(() => store.open(code));
   m.read = code => m.lib(() => store.open(code).readAll());
   t.after(() => {
     for (const code of m.lib(() => store.listRooms())) {
       const st = m.status(code);
       if (st.pid) { kill(childOf(st.pid)); kill(st.pid); }
-      fs.rmSync(path.dirname(link.socketPath(path.join(m.home, 'rooms', code))), { recursive: true, force: true });
+      fs.rmSync(path.dirname(linkSocket.socketPath(path.join(m.home, 'rooms', code))), { recursive: true, force: true });
     }
   });
   return m;
@@ -149,7 +150,7 @@ test('handoff e2e: planned, A to B with C following; the room\'s Claude moves; t
   const bs = B.store(code);
   assert.equal(bs.isHost, true);
   const moved = B.read(code).find(e => e.kind === 'host_changed')!;
-  assert.deepEqual([moved.epoch, moved.host, moved.machine, moved.from], [1, 'bob', B.lib(() => identity.machineId()), 'alice']);
+  assert.deepEqual([moved.epoch, moved.host, moved.machine, moved.from], [1, 'bob', B.lib(() => identity.machineIn(code)), 'alice']);
   B.lib(() => {
     assert.ok(envelope.verify(moved.accept, store.publicKey('bob', store.open(code))), 'bob\'s acceptance');
     assert.ok(envelope.verify(moved.ask, store.publicKey('alice', store.open(code))), 'alice\'s ask');
@@ -272,7 +273,7 @@ test('handoff e2e: promote when the host is gone; the old host back is STALE to 
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /this machine hosts room \S+ now/);
   assert.doesNotMatch(r.stdout, /epoch|(^|\s)sub-human demote/m);
-  assert.match(r.stdout, /carol: node \S+\/scripts\/sub-human demote .*\n.*alice: |alice: node \S+\/scripts\/sub-human demote .*\n.*carol: /, r.stdout);
+  assert.match(r.stdout, /carol: run node \S+\/scripts\/sub-human demote \S+ and paste: sh2\.\S+ \d{6}\n.*alice: |alice: run node \S+\/scripts\/sub-human demote \S+ and paste: .*\n.*carol: /, r.stdout);
   const carolInvite = inviteOf(/carol: .*/.exec(r.stdout)![0]), aliceInvite = inviteOf(/alice: .*/.exec(r.stdout)![0]);
   assert.match(B.lib(() => JSON.stringify(store.open(code).kv.get('remote/invites'))), /"machine":/, 'each bound to its machine');
   const e = B.read(code).at(-1)!;
@@ -280,7 +281,9 @@ test('handoff e2e: promote when the host is gone; the old host back is STALE to 
   await until(() => B.stub.calls().some(a => a.includes('--bg')), 8000, 50);
 
   // carol follows bob with her line (in a terminal), then a bare /sub-human takes her seat over the new link
-  const fol = C.cli(['demote', code, carolInvite.invite, carolInvite.pin]);
+  // the invite and its PIN never as arguments: refused before anything changes
+  assert.match(C.cli(['demote', code, carolInvite.invite, carolInvite.pin]).stderr, /on stdin \(or --from FILE\), never as arguments/);
+  const fol = C.cli(['demote', code], {}, `${carolInvite.invite} ${carolInvite.pin}\n`);
   assert.equal(fol.status, 0, fol.stderr);
   assert.match(fol.stdout, /Type \/sub-human in your session to join it again/);
   await until(() => C.lib(() => (links.get(code) || {}).token), 8000, 50);
@@ -297,7 +300,9 @@ test('handoff e2e: promote when the host is gone; the old host back is STALE to 
     (err: Error & { code?: string }) => err.code === 'STALE' && /moved away from this machine/.test(err.message));
 
   // demote: its own log is set aside, its room Claude stopped, and it mirrors bob
-  const d = A.cli(['demote', code, aliceInvite.invite, aliceInvite.pin]);
+  const from = path.join(h.tmpDir('sh-demote-', t), 'invite');
+  fs.writeFileSync(from, `${aliceInvite.pin}\n${aliceInvite.invite}\n`, { mode: 0o600 }); // either order, a file
+  const d = A.cli(['demote', code, '--from', from]);
   assert.equal(d.status, 0, d.stderr);
   assert.match(d.stdout, /follows its new host now; its own log is kept in .*orphaned-/);
   assert.ok(fs.readdirSync(hostDir).some(f => /^orphaned-.*\.jsonl$/.test(f)));
@@ -337,7 +342,7 @@ test('handoff e2e: over ssh (--via), each follower keeps its own link key and mu
   assert.equal(fs.readFileSync(path.join(dirC, 'known_hosts'), 'utf8'), `sub-human-${code} ${sshkeys.openssh(hostRaw!)}\n`);
   const reqC = (lc.request as string).split('.'); // shk1.CODE.REF.KEY.NAME: her key, not let in yet (no secret in it)
   assert.deepEqual([reqC[1], reqC[3], reqC[4]], [code, keyC.raw, 'carol']);
-  const cmd = C.lib(() => link.sshCommand(lc.transport as SshSpec, code, []));
+  const cmd = C.lib(() => linkConnect.sshCommand(lc.transport as SshSpec, code, []));
   for (const o of ['-i', keyC.file, 'ControlMaster=no', 'StrictHostKeyChecking=yes', `HostKeyAlias=sub-human-${code}`, '-J', 'jump.example']) assert.ok(cmd.includes(o), `${o} in ${cmd.join(' ')}`);
   // offline until bob lets her in; the reason says how (an invite from bob), and carries no request line to paste
   await until(() => /Over ssh bob has not let this machine in yet\. Ask bob for an invite/.test(C.status(code).reason || ''), 15_000, 50);
@@ -394,6 +399,6 @@ test('handoff e2e: the new host\'s claude binds (the old host\'s live claude rec
   const onB = bindRoomClaude(B, code);
   assert.doesNotMatch(JSON.stringify(onB.json || {}), /could not bind|name taken/, onB.stderr);
   const o = B.lib(() => identity.readMembers(code).claude);
-  assert.equal(o.machine, B.lib(() => identity.machineId()));
+  assert.equal(o.machine, B.lib(() => identity.machineIn(code)), 'its id in the room, as the old host recorded it');
   assert.equal(o.left_at, undefined);
 });

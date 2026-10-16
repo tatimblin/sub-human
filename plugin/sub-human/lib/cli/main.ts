@@ -15,7 +15,7 @@
  *       rows, health; lib/tail.ts documents them), switching (or going silent) if the seat changes.
  *       Settle: entries are batched and written as ONE set of events (at most one wake) after
  *       SUB_HUMAN_SETTLE_MS (1500) of quiet or SUB_HUMAN_SETTLE_MAX_MS (5000) at most (the room's Claude: 3000 / 10000,
- *       SUB_HUMAN_ROOM_CLAUDE_SETTLE_MS / SUB_HUMAN_ROOM_CLAUDE_SETTLE_MAX_MS). Each entry is judged again against the log at
+ *       unless those two are set). Each entry is judged again against the log at
  *       send time (answered / decided entries are dropped). A member_left X is held
  *       SUB_HUMAN_LEAVE_MS (8000): if X rejoins in that time both notices are dropped.
  *       A member's chat is a group chat (room.chatLines, no ids): "bob: <exact words>", "bob's Claude: …",
@@ -90,14 +90,17 @@
  *       shim, authorized_keys lines that bypass it, ssh, each link (state, last error, a hello to its host with
  *       both protocol versions, clock skew), Claude Code against the internals, hooks, Remote Control. --bundle
  *       writes the same, redacted, for a bug report. Exit 1 when a check fails.
+ *   sub-human options CODE [NAME on|off]
+ *       A room hosted here: its options (lib/room/options.ts), printed, or one set. login-same-person: a seat that
+ *       joins over this account's own ssh login is the host person's own for consent (default off: its own person).
  *   sub-human handoff NAME [--room CODE] [--as SEAT] [--ssh USER@HOST[:PORT]] | handoff --status [--room CODE]
  *   sub-human promote CODE [--as SEAT] [--ssh USER@HOST[:PORT]] [--force] --confirm CODE
- *   sub-human demote CODE INVITE PIN
+ *   sub-human demote CODE [--from FILE]   (the invite line and its PIN on stdin, or in FILE: never in argv)
  *       Moving the room's host (lib/handoff.ts; the bodies are lib/cli/handoff.ts): a planned handoff to a member on
  *       another machine (their card decides), the manual promote of this machine's copy when the host is gone for
  *       good (it can fork the room), and each other machine's way to follow it with the invite promote printed for
  *       it (the old host's own lines kept aside as orphaned).
- *   Run invite, admit, kick, prime, listen, link, serve, handoff, promote and demote in your own shell: the Bash guard
+ *   Run invite, admit, kick, prime, listen, link, serve, options, handoff, promote and demote in your own shell: the Bash guard
  *   refuses them to a model. doctor without --fix or --bundle is read only.
  */
 
@@ -332,7 +335,7 @@ function serve(args: readonly string[]) {
   if (flags.enroll !== undefined) return serveEnroll(flags.enroll, flags, rest);
   const code = rest[0];
   if (!flags.stdio || !code || rest.length > 1) die('usage: sub-human serve --stdio CODE [--link ID [--login]]');
-  const { LINK_ID_RE }: typeof import('../remote/auth.ts') = require('../remote/auth.ts');
+  const { LINK_ID_RE }: typeof import('../remote/host-links.ts') = require('../remote/host-links.ts');
   if (flags.link !== undefined && !LINK_ID_RE.test(flags.link)) die(`bad link id "${flags.link}"`);
   if (flags.login && flags.link === undefined) die('sub-human serve --login: names no --link ID');
   // sshd sets SSH_ORIGINAL_COMMAND only when a forced command runs (an authorized_keys command="…" or ForceCommand): a
@@ -377,24 +380,27 @@ function linkCmd(args: readonly string[]) {
   const opened = room.open(code).store;
   if (opened.isHost) die(`this machine hosts room "${code}"; there is no connection to ${flags.forget ? 'forget' : 'start'}`, 1);
   const s = opened as MirrorRoomStore; // not the host: the room's mirror
-  const link: typeof import('../remote/link.ts') = require('../remote/link.ts');
-  if (!flags.reset && !flags.forget) return link.run({ code }).then(() => process.exit(0), (e: Error) => die(e.message, 1));
-  const st = link.status(code);
+  if (!flags.reset && !flags.forget) {
+    const link: typeof import('../remote/link.ts') = require('../remote/link.ts');
+    return link.run({ code }).then(() => process.exit(0), (e: Error) => die(e.message, 1));
+  }
+  const linkSocket: typeof import('../remote/link-socket.ts') = require('../remote/link-socket.ts');
+  const st = linkSocket.status(code);
   if (st.running && flags.forget) die(`the connection to room ${code} is running (pid ${st.pid}); it forgets the room only once stopped (kill ${st.pid}, then run this again)`, 1);
   if (st.running) die(`the connection to room ${code} is running (pid ${st.pid}); it copies the room afresh only once stopped (kill ${st.pid}, then run this again)`, 1);
   if (flags.forget) return forgetLink(code, s, !!flags.force);
   s.reset();
   const text: typeof import('../text.ts') = require('../text.ts');
-  if (!link.start(code)) die(`the connection to room ${code} did not start; ${text.cliLine('doctor')} says why`, 1);
+  if (!linkSocket.start(code)) die(`the connection to room ${code} did not start; ${text.cliLine('doctor')} says why`, 1);
   console.log(`room ${code}: copying it again from the host`);
 }
 
 // link CODE --forget: the copy moves before the link file goes, so no moment has a bare rooms/<code> (that opens as a
 // room hosted here: a fork of the room)
 function forgetLink(code: string, s: MirrorRoomStore, force: boolean) {
-  const link: typeof import('../remote/link.ts') = require('../remote/link.ts');
-  const why = (require('../room/link-state.ts') as typeof import('../room/link-state.ts')).read(code)?.lastError || '';
-  if (!force && !why.includes(link.ROOM_CLOSED_REASON) && !why.includes(link.NO_SEAT_REASON)) {
+  const st = (require('../room/link-state.ts') as typeof import('../room/link-state.ts')).read(code);
+  const why = st?.lastError || '';
+  if (!force && st?.lastReason !== 'ROOM_CLOSED' && st?.lastReason !== 'NO_SEAT') {
     die(`room ${code}: the connection did not stop because the room closed or no seat of this machine is left (${why || 'no reason on record'}); add --force to forget it anyway`, 1);
   }
   const store: typeof import('../room/store.ts') = require('../room/store.ts');
@@ -408,6 +414,17 @@ function forgetLink(code: string, s: MirrorRoomStore, force: boolean) {
   console.log(archive ? `room ${code}: forgotten; this machine's copy is kept at ${archive}` : `room ${code}: forgotten (this machine had no copy of it)`);
 }
 
+// ---------- options CODE [NAME on|off]: lib/room/options.ts ----------
+function optionsCmd(args: readonly string[]) {
+  const [code, name, value, ...more] = args;
+  if (!code || more.length || (name !== undefined && value !== 'on' && value !== 'off')) die('usage: sub-human options CODE [login-same-person on|off]');
+  if (!identity.roomExists(code)) die(`no room ${code} on this machine`, 1);
+  const opts: typeof import('../room/options.ts') = require('../room/options.ts');
+  const s = room.open(code).store;
+  const cur = name === undefined ? opts.get(s) : opts.set(s, name, value === 'on');
+  for (const n of opts.NAMES) console.log(`${n}: ${cur[n] ? 'on' : 'off'}`);
+}
+
 type Command = (args: readonly string[]) => unknown;
 
 /** What an unknown command prints: one command per line, grouped (the header above has each in full). */
@@ -419,12 +436,13 @@ const USAGE = [
   '              invite --stop | invite --cancel [REF]',
   '              admit [REF] | kick NAME | listen [--port P] [--start | --stop | --status]',
   '  joiner:     prime ROOM | link CODE [--reset | --forget [--force]]',
-  '  moving:     handoff NAME | promote CODE | demote CODE INVITE PIN',
+  '  moving:     handoff NAME | promote CODE | demote CODE [--from FILE] (INVITE PIN on stdin)',
+  '  room:       options CODE [login-same-person on|off]',
   '  checks:     doctor [--fix] [--bundle [FILE]]',
   '  internal:   tail | serve --stdio CODE [--link ID [--login]] | agent-statusline',
 ].join('\n');
 const doctor: Command = args => (require('./doctor.ts') as typeof import('./doctor.ts')).main(args).then(c => process.exit(c), (e: Error) => die(e.message, 2));
-const cmds: Record<string, Command> = { doctor, tail, read, digest, show, who, tasks: tasksCmd, watch, serve, link: linkCmd, 'agent-statusline': agentStatusline };
+const cmds: Record<string, Command> = { doctor, tail, read, digest, show, who, tasks: tasksCmd, watch, serve, link: linkCmd, options: optionsCmd, 'agent-statusline': agentStatusline };
 // lib/cli/*: each returns the exit code
 const viaCli = (fn: 'invite' | 'admit' | 'kick' | 'prime'): Command => a => process.exit((require('./host.ts') as typeof import('./host.ts'))[fn](a));
 Object.assign(cmds, { invite: viaCli('invite'), admit: viaCli('admit'), kick: viaCli('kick'), prime: viaCli('prime') });

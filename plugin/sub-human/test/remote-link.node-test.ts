@@ -5,14 +5,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
 import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
 import * as links from '../lib/room/links.ts';
 import * as link from '../lib/remote/link.ts';
-import * as auth from '../lib/remote/auth.ts';
+import * as linkSocket from '../lib/remote/link-socket.ts';
+import * as linkConnect from '../lib/remote/link-connect.ts';
+import * as hostLinks from '../lib/remote/host-links.ts';
 import * as server from '../lib/remote/server.ts';
 import * as client from '../lib/remote/client.ts';
 import * as memory from '../lib/remote/transports/memory.ts';
@@ -30,7 +31,7 @@ import { RoomError } from '../lib/room/validate.ts';
 import * as realClock from '../lib/clock.ts';
 import * as config from '../lib/config.ts';
 import type { Clock } from '../lib/clock.ts';
-import type { LinkStatus } from '../lib/remote/link.ts';
+import type { LinkStatus } from '../lib/remote/link-socket.ts';
 import type { CodedError, RunningLink } from '../lib/remote/types-core.ts';
 import type { SshSpec } from '../lib/remote/types-rest.ts';
 import type { Link, LinkStateWord } from '../lib/room/types.ts';
@@ -91,25 +92,23 @@ test('store.open: a linked code is a mirror (isHost false) and exists before its
 
 test('link: the socket path is short whatever the home; locators name a home, never a command; handle is OFFLINE with no daemon', async t => {
   const deep = path.join('/', 'x'.repeat(200), 'rooms', 'vole-1234');
-  const p = link.socketPath(deep);
+  const p = linkSocket.socketPath(deep);
   assert.ok(Buffer.byteLength(p) < 104, p);
   assert.ok(p.startsWith(`/tmp/sub-human-${process.getuid!()}/`), p);
-  assert.notEqual(link.socketPath(deep + 'x'), p);
-  assert.equal(link.socketPath('/h/rooms/vole-1234'), '/h/rooms/vole-1234/.link/link.sock', 'a short home: in the mirror');
+  assert.notEqual(linkSocket.socketPath(deep + 'x'), p);
+  assert.equal(linkSocket.socketPath('/h/rooms/vole-1234'), '/h/rooms/vole-1234/.link/link.sock', 'a short home: in the mirror');
   // never TMPDIR: a daemon and a hook with different ones agree
   const old = process.env.TMPDIR;
   process.env.TMPDIR = h.tmpDir('sh-tmpdir-', t);
-  try { assert.equal(link.socketPath(deep), p); } finally { if (old === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = old; }
-  // a hook tries the recorded path, the computed one, then 0.4.1's
-  const legacy = link.socketPaths('/h/rooms/vole-1234').at(-1)!;
-  assert.ok(legacy.startsWith(os.tmpdir()) && legacy.endsWith('/link.sock'), legacy);
-  assert.deepEqual(link.socketPaths('/h/rooms/vole-1234', { socket: '/r/link.sock' }), ['/r/link.sock', '/h/rooms/vole-1234/.link/link.sock', legacy]);
-  assert.equal(link.socketPaths('/h/rooms/vole-1234', { socket: 'rel.sock' }).length, 2, 'a relative recorded path is ignored');
-  assert.equal(link.pipeLocator('/a/home'), 'pipe:/a/home');
-  assert.deepEqual(link.transportOf('pipe:/a/home'), { kind: 'pipe', home: '/a/home' });
-  for (const bad of ['pipe:relative', 'pipe:', '', 'tcp:host:22']) assert.equal(link.transportOf(bad), null, bad);
-  await assert.rejects(link.handle('append', { socket: path.join(h.tmpDir('sh-sock-', t), 'none.sock'), params: {} }), (e: CodedError) => e.code === 'OFFLINE');
-  await assert.rejects(link.handle('subscribe', { socket: '/x', params: {} }), (e: CodedError) => e.code === 'PROTOCOL', 'only the hooks\' ops are relayed');
+  try { assert.equal(linkSocket.socketPath(deep), p); } finally { if (old === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = old; }
+  // a hook tries the recorded path, then the computed one
+  assert.deepEqual(linkSocket.socketPaths('/h/rooms/vole-1234', { socket: '/r/link.sock' }), ['/r/link.sock', '/h/rooms/vole-1234/.link/link.sock']);
+  assert.deepEqual(linkSocket.socketPaths('/h/rooms/vole-1234', { socket: 'rel.sock' }), ['/h/rooms/vole-1234/.link/link.sock'], 'a relative recorded path is ignored');
+  assert.equal(linkConnect.pipeLocator('/a/home'), 'pipe:/a/home');
+  assert.deepEqual(linkConnect.transportOf('pipe:/a/home'), { kind: 'pipe', home: '/a/home' });
+  for (const bad of ['pipe:relative', 'pipe:', '', 'tcp:host:22']) assert.equal(linkConnect.transportOf(bad), null, bad);
+  await assert.rejects(linkSocket.handle('append', { socket: path.join(h.tmpDir('sh-sock-', t), 'none.sock'), params: {} }), (e: CodedError) => e.code === 'OFFLINE');
+  await assert.rejects(linkSocket.handle('subscribe', { socket: '/x', params: {} }), (e: CodedError) => e.code === 'PROTOCOL', 'only the hooks\' ops are relayed');
 });
 
 test('link: handle tries each socket in order; a missing one, or one in a directory open to others, is skipped', async t => {
@@ -123,48 +122,48 @@ test('link: handle tries each socket in order; a missing one, or one in a direct
   fs.chmodSync(open, 0o755);
   await serve(path.join(open, 'l.sock'), { ok: false, who: 'not ours' });
   await serve(path.join(mine, 'l.sock'), { ok: true, who: 'the daemon' });
-  const r = await link.handle('beat', { socket: [path.join(open, 'l.sock'), path.join(mine, 'none.sock'), path.join(mine, 'l.sock')], params: {} });
+  const r = await linkSocket.handle('beat', { socket: [path.join(open, 'l.sock'), path.join(mine, 'none.sock'), path.join(mine, 'l.sock')], params: {} });
   assert.deepEqual(r, { ok: true, who: 'the daemon' });
-  await assert.rejects(link.handle('beat', { socket: [path.join(open, 'l.sock')], params: {} }), (e: CodedError) => e.code === 'OFFLINE', 'never one in an open directory');
+  await assert.rejects(linkSocket.handle('beat', { socket: [path.join(open, 'l.sock')], params: {} }), (e: CodedError) => e.code === 'OFFLINE', 'never one in an open directory');
 });
 
 test('link: an ssh locator is a plain user@host[:port]; an invite can name neither an ssh option nor a command', () => {
-  assert.deepEqual(link.transportOf('ssh:me@host'), { kind: 'ssh', user: 'me', host: 'host' });
-  assert.deepEqual(link.transportOf('ssh:host@127.0.0.1:2222'), { kind: 'ssh', user: 'host', host: '127.0.0.1', port: 2222 });
-  assert.deepEqual(link.transportOf('ssh:a_b.c-d@dev.example.com:22'), { kind: 'ssh', user: 'a_b.c-d', host: 'dev.example.com', port: 22 });
-  assert.equal(link.sshLocator('me@far:2222'), 'ssh:me@far:2222');
+  assert.deepEqual(linkConnect.transportOf('ssh:me@host'), { kind: 'ssh', user: 'me', host: 'host' });
+  assert.deepEqual(linkConnect.transportOf('ssh:host@127.0.0.1:2222'), { kind: 'ssh', user: 'host', host: '127.0.0.1', port: 2222 });
+  assert.deepEqual(linkConnect.transportOf('ssh:a_b.c-d@dev.example.com:22'), { kind: 'ssh', user: 'a_b.c-d', host: 'dev.example.com', port: 22 });
+  assert.equal(linkConnect.sshLocator('me@far:2222'), 'ssh:me@far:2222');
   const bad = [
     '-oProxyCommand=sh@host', 'me@-oProxyCommand=sh', 'me@host -oProxyCommand=sh', 'me@host;id', 'me@host:22 id', 'me@host:0',
     'me@host:65536', 'me@host:-1', 'me@', '@host', 'host', 'me@ho st', 'me@host\n-oX', "me@ho'st", 'me@ho"st', 'me@%h', 'me@a@b',
     'me@[::1]', 'me@host:22:22', 'm e@host', '-l@host', 'me@host:2a',
   ];
   for (const d of bad) {
-    assert.equal(link.transportOf(`ssh:${d}`), null, d);
-    assert.equal(link.sshLocator(d), null, d);
+    assert.equal(linkConnect.transportOf(`ssh:${d}`), null, d);
+    assert.equal(linkConnect.sshLocator(d), null, d);
   }
 });
 
 test('link: the ssh command: BatchMode, this machine\'s own options, the port, "--" before the destination, a fixed remote command', () => {
-  const cmd = link.sshCommand({ kind: 'ssh', user: 'me', host: 'far', port: 2222 }, 'vole-1234', ['-i', '/k/id', '-o', 'UserKnownHostsFile=/k/kh']);
+  const cmd = linkConnect.sshCommand({ kind: 'ssh', user: 'me', host: 'far', port: 2222 }, 'vole-1234', ['-i', '/k/id', '-o', 'UserKnownHostsFile=/k/kh']);
   assert.deepEqual(cmd, ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2',
     '-i', '/k/id', '-o', 'UserKnownHostsFile=/k/kh', '-p', '2222', '--', 'me@far', 'sub-human serve --stdio vole-1234']);
   const old = process.env.SUB_HUMAN_SSH_OPTS;
   process.env.SUB_HUMAN_SSH_OPTS = ' -F /dev/null  -i /k/id ';
-  try { assert.deepEqual(link.sshCommand({ kind: 'ssh', user: 'me', host: 'far' }, 'vole-1234').slice(8, -3), ['-F', '/dev/null', '-i', '/k/id']); } finally {
+  try { assert.deepEqual(linkConnect.sshCommand({ kind: 'ssh', user: 'me', host: 'far' }, 'vole-1234').slice(8, -3), ['-F', '/dev/null', '-i', '/k/id']); } finally {
     if (old === undefined) delete process.env.SUB_HUMAN_SSH_OPTS; else process.env.SUB_HUMAN_SSH_OPTS = old;
   }
   // a link file edited by hand is checked again
-  assert.throws(() => link.sshCommand({ kind: 'ssh', user: '-oProxyCommand=sh', host: 'far' }, 'vole-1234', []), (e: CodedError) => e.code === 'INVALID');
-  assert.throws(() => link.sshCommand({ kind: 'ssh', user: 'me', host: 'far' }, 'vole-1234; id', []), (e: CodedError) => e.code === 'INVALID');
+  assert.throws(() => linkConnect.sshCommand({ kind: 'ssh', user: '-oProxyCommand=sh', host: 'far' }, 'vole-1234', []), (e: CodedError) => e.code === 'INVALID');
+  assert.throws(() => linkConnect.sshCommand({ kind: 'ssh', user: 'me', host: 'far' }, 'vole-1234; id', []), (e: CodedError) => e.code === 'INVALID');
 });
 
 test('ssh: a ProxyJump rides the locator (?via=), as plain as the destination; the link\'s own options pin the host key and the key; prime opens a ControlMaster the daemon rides under BatchMode', t => {
-  assert.deepEqual(link.transportOf('ssh:me@far:2222?via=bastion'), { kind: 'ssh', user: 'me', host: 'far', port: 2222, via: 'bastion' });
-  assert.deepEqual(link.transportOf('ssh:me@far?via=ops@jump.example:2200,jump2'), { kind: 'ssh', user: 'me', host: 'far', via: 'ops@jump.example:2200,jump2' });
-  assert.equal(link.sshLocator('me@far', { via: 'bastion' }), 'ssh:me@far?via=bastion');
+  assert.deepEqual(linkConnect.transportOf('ssh:me@far:2222?via=bastion'), { kind: 'ssh', user: 'me', host: 'far', port: 2222, via: 'bastion' });
+  assert.deepEqual(linkConnect.transportOf('ssh:me@far?via=ops@jump.example:2200,jump2'), { kind: 'ssh', user: 'me', host: 'far', via: 'ops@jump.example:2200,jump2' });
+  assert.equal(linkConnect.sshLocator('me@far', { via: 'bastion' }), 'ssh:me@far?via=bastion');
   for (const bad of ['ssh:me@far?via=-oProxyCommand=sh', 'ssh:me@far?via=a b', 'ssh:me@far?via=', 'ssh:me@far?jump=x', 'ssh:me@far?via=x?via=y',
-    'ssh:me@far?via=%h', 'ssh:me@far?via=j:0', 'ssh:me@far?via=a,b,c,d,e']) assert.equal(link.transportOf(bad), null, bad);
-  assert.equal(link.sshLocator('me@far', { via: '-J' }), null);
+    'ssh:me@far?via=%h', 'ssh:me@far?via=j:0', 'ssh:me@far?via=a,b,c,d,e']) assert.equal(linkConnect.transportOf(bad), null, bad);
+  assert.equal(linkConnect.sshLocator('me@far', { via: '-J' }), null);
 
   const home = h.freshHome(t);
   const spec: SshSpec = { kind: 'ssh', user: 'me', host: 'far', via: 'bastion', key: '/k/id_ed25519', knownHosts: '/k/known_hosts', alias: 'sub-human-vole-1234' };
@@ -204,9 +203,6 @@ test('mirror: applyLine appends a host line only when it chains; applyDoc writes
   mirror.applyDoc('members', { bob: { name: 'bob' } });
   mirror.applyDoc('presence/bob', { state: 'idle' });
   assert.deepEqual([mirror.members.read(), mirror.kv.get('presence/bob')], [{ bob: { name: 'bob' } }, { state: 'idle' }]);
-  // a 0.4.x host's members document names its Claude "orch": the mirror reads it as claude
-  mirror.applyDoc('members', { orch: { name: 'orch', role: 'orch', job: 'j1' }, bob: { name: 'bob', role: 'member' } });
-  assert.deepEqual(mirror.members.read(), { bob: { name: 'bob', role: 'member' }, claude: { name: 'claude', role: 'claude', job: 'j1' } });
   mirror.applyDoc('members', { bob: { name: 'bob' } });
   mirror.applyDoc('presence/bob', null);
   assert.deepEqual(mirror.kv.list('presence/'), []);
@@ -221,10 +217,9 @@ test('link: a mirror that is not the host\'s prefix is a FORK: the daemon stops 
   const host = store.open(code) as store.FsRoomStore;
   for (const text of ['a', 'b']) host.append({ kind: 'status', text }, { via: 'system', from: 'room', system: true });
   const mirror = new MirrorRoomStore(code, { dir: h.tmpDir('sh-mirror-', t) });
-  t.after(() => fs.rmSync(path.dirname(link.socketPath(mirror.dir)), { recursive: true, force: true }));
+  t.after(() => fs.rmSync(path.dirname(linkSocket.socketPath(mirror.dir)), { recursive: true, force: true }));
   mirror.applyLine(JSON.stringify({ id: 1, at: new Date().toISOString(), from: 'room', via: 'system', kind: 'status', to: 'room', text: 'not the host\'s', prev: store.hash12('') }));
-  const { secret } = auth.mintInvite(host, { locator: 'pipe:/test' });
-  const { token } = auth.redeemInvite(host, secret, { machine: 'm1' });
+  const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: 'm1', seats: [] });
   const sessions: ReturnType<typeof server.serve>[] = [];
   const connect = () => {
     const [a, b] = memory.pair();
@@ -246,14 +241,14 @@ test('link: a mirror that is not the host\'s prefix is a FORK: the daemon stops 
   assert.equal(fs.readFileSync(mirror.logFile, 'utf8'), fs.readFileSync(host.logFile, 'utf8'));
   again.stop('done');
   assert.equal(await again.done, 'done');
-  assert.equal(fs.existsSync(link.socketPath(mirror.dir)), false, 'the socket is gone with it');
+  assert.equal(fs.existsSync(linkSocket.socketPath(mirror.dir)), false, 'the socket is gone with it');
 });
 
 test('skew: a newer host\'s unknown entry kind, via and fields, an unknown document and an unknown event keep the link online; readers show them, never as a person\'s words', async t => {
   h.freshHome(t);
   const code = h.newRoom();
   const mirror = new MirrorRoomStore(code, { dir: h.tmpDir('sh-mirror-', t) });
-  t.after(() => fs.rmSync(path.dirname(link.socketPath(mirror.dir)), { recursive: true, force: true }));
+  t.after(() => fs.rmSync(path.dirname(linkSocket.socketPath(mirror.dir)), { recursive: true, force: true }));
   const at = new Date().toISOString();
   const lines: string[] = [];
   const add = (e: Record<string, unknown>) => { lines.push(JSON.stringify({ id: lines.length + 1, at, to: 'room', ...e, prev: store.hash12(lines.at(-1) || '') })); };
@@ -296,7 +291,7 @@ test('link: a lost connection is retried with decorrelated jitter: each delay in
   h.freshHome(t);
   const code = h.newRoom();
   const mirror = new MirrorRoomStore(code, { dir: h.tmpDir('sh-mirror-', t) });
-  t.after(() => fs.rmSync(path.dirname(link.socketPath(mirror.dir)), { recursive: true, force: true }));
+  t.after(() => fs.rmSync(path.dirname(linkSocket.socketPath(mirror.dir)), { recursive: true, force: true }));
   const at: number[] = [];
   const connect = () => { at.push(Date.now()); return Promise.reject(new RoomError('OFFLINE', 'no route')); };
   // random() = 1: the top of each range, so the delays grow 3x per failure up to the cap. The delays are read from

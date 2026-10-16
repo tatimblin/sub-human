@@ -24,8 +24,9 @@
  *   parse(locator) -> Spec | null     by the kind before the first ":"; null for an unknown kind or a refused rest
  *   open(spec, ctx = {}) -> Promise<Transport>   rejects RoomError INVALID for an unknown kind, else as the kind's open
  *   describe(spec) -> string          the kind's describe, else its kind
- *   lineTransport({write, shut}) -> {transport, receive(chunk), end()}   the shared half of every kind: write(line)
- *       sends one encoded frame, shut() releases the kind's resources at close(); the kind feeds what arrives
+ *   lineTransport({write, shut, ready?}) -> {transport, receive(chunk), end()}   the shared half of every kind: write(line)
+ *       sends one encoded frame, shut() releases the kind's resources at close(), ready() (transport.writable) says the
+ *       stream under it has room (a replay waits for it); the kind feeds what arrives
  *       to receive() (decoded, protocol.decoder) and calls end() when the other side is gone
  *   fromDuplex(stream, {readable?}?) -> Transport   frames over any node stream pair: written to stream, read from
  *       readable (default stream itself: a net.Socket, a tls socket, a stream from a WebSocket). Its end, close or
@@ -87,7 +88,7 @@ function describe(spec: SpecBase): string {
   return e && e.describe ? e.describe(spec) : String(spec && spec.kind);
 }
 
-function lineTransport({ write, shut }: { write(line: string): void; shut(): void }): LineTransport {
+function lineTransport({ write, shut, ready }: { write(line: string): void; shut(): void; ready?: () => boolean }): LineTransport {
   const frameFns: ((frame: DecodedFrame) => void)[] = [], closeFns: (() => void)[] = [];
   const dec = protocol.decoder();
   let closed = false;
@@ -101,6 +102,7 @@ function lineTransport({ write, shut }: { write(line: string): void; shut(): voi
     onFrame(fn) { frameFns.push(fn); },
     onClose(fn) { closeFns.push(fn); },
     close() { if (!closed) { shut(); end(); } },
+    ...(ready ? { writable: () => !closed && ready() } : {}),
   };
   const receive = (chunk: string | Buffer): void => { for (const f of dec.push(chunk)) for (const fn of frameFns) fn(f); };
   return { transport, receive, end };
@@ -110,6 +112,7 @@ function fromDuplex(stream: Duplex, { readable = stream }: { readable?: Readable
   const { transport, receive, end } = lineTransport({
     write: line => stream.write(line),
     shut: () => { stream.end(); stream.destroy(); if (readable !== stream) readable.destroy(); },
+    ready: () => !stream.writableNeedDrain,
   });
   readable.on('data', receive);
   for (const s of new Set([stream, readable])) { s.on('end', end); s.on('close', end); s.on('error', end); }

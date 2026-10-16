@@ -14,7 +14,10 @@ import * as identity from '../lib/identity.ts';
 import * as protocol from '../lib/remote/protocol.ts';
 import * as server from '../lib/remote/server.ts';
 import * as client from '../lib/remote/client.ts';
-import * as auth from '../lib/remote/auth.ts';
+import * as invites from '../lib/remote/invites.ts';
+import * as hostLinks from '../lib/remote/host-links.ts';
+import * as quota from '../lib/remote/quota.ts';
+import { MemoryRoomStore } from './support/memory-store.ts';
 import * as memory from '../lib/remote/transports/memory.ts';
 import * as pipe from '../lib/remote/transports/pipe.ts';
 import * as seatKey from '../hooks/seat-key.ts';
@@ -53,15 +56,15 @@ function served(t: TestContext, host: RoomStore, wrap: (tr: Transport) => Transp
   return wrap(a);
 }
 async function linked(t: TestContext, host: RoomStore, opts: Partial<ConnectOpts> = {}) {
-  const { invite } = auth.mintInvite(host, { locator: 'pipe:test' });
-  const c = await client.connect(served(t, host), { machine: REMOTE, invite, ...opts });
+  const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: opts.machine ?? REMOTE, seats: [] });
+  const c = await client.connect(served(t, host), { machine: REMOTE, token, ...opts });
   t.after(() => c.close());
   return c;
 }
 /** What the remote join hook sends: the seat's public key and a proof signed by its private key. */
 function seat(code: string, name: string, key = seatKey.ensure(code, name)) {
   const pubkey = seatKey.publicPem(code, name);
-  return { name, pubkey, proof: auth.proveSeat(key, { room: code, name, pubkey }) };
+  return { name, pubkey, proof: hostLinks.proveSeat(key, { room: code, name, pubkey }) };
 }
 const signed = (code: string, name: string, entry: EntryInput) => store.toPayload(code, entry, { via: 'human', from: name });
 const rejects = (p: Promise<unknown>, code: string) => assert.rejects(p, (e: CodedError) => e.code === code, `expected ${code}`);
@@ -115,7 +118,7 @@ test('remote (memory): hello with an invite gives a token once; join, beat, appe
 
   // a person's posts over a link are bounded (LINK_HUMAN_RATE_MAX per minute); an agent post has its own budget
   assert.deepEqual(await c.join(seat(code, 'alice')), { ok: true, rejoin: true });
-  for (let i = 0; i < config.LINK_HUMAN_RATE_MAX - 1; i++) await c.append(signed(code, 'alice', { kind: 'say', text: `fast ${i}` }));
+  for (let i = 0; i < config.LINK_QUOTAS['append.human'].max - 1; i++) await c.append(signed(code, 'alice', { kind: 'say', text: `fast ${i}` }));
   await assert.rejects(c.append(signed(code, 'alice', { kind: 'say', text: 'one too many' })), (e: CodedError) => e.code === 'RATE' && /alice posted/.test(e.message));
   await rejects(c.append(signed(code, 'alice', { kind: 'signoff', proposal_hash: 'abcdef012345', text: 'an answer counts too' })), 'RATE');
 
@@ -157,10 +160,10 @@ test('remote (memory): no token gets AUTH on every op but hello; a bad token, a 
 
   const hello = (opts: Partial<ConnectOpts>) => client.connect(served(t, host), { machine: REMOTE, ...opts });
   await rejects(hello({ token: 'not-a-token' }), 'AUTH');
-  const { invite } = auth.mintInvite(host, { locator: 'pipe:test' });
-  const [pre, c, loc, secret] = invite.split('.');
-  await rejects(hello({ invite: [pre, c, loc, secret.replace(/^./, ch => (ch === 'A' ? 'B' : 'A'))].join('.') }), 'AUTH');
-  await rejects(hello({ invite: [pre, 'vole-1234', loc, secret].join('.') }), 'AUTH');
+  const { invite } = invites.mintFor(host, { locator: 'pipe:test', machine: REMOTE, seats: [] });
+  const [pre, c, loc, secret, key] = invite.split('.');
+  await rejects(hello({ invite: [pre, c, loc, secret.replace(/^./, (ch: string) => (ch === 'A' ? 'B' : 'A')), key].join('.') }), 'AUTH');
+  await rejects(hello({ invite: [pre, 'vole-1234', loc, secret, key].join('.') }), 'AUTH');
   (await hello({ invite })).close();
   await rejects(hello({ invite }), 'AUTH');
 
@@ -177,18 +180,6 @@ test('remote (memory): no token gets AUTH on every op but hello; a bad token, a 
 });
 
 // ---------- protocol skew: fake versions on both ends (N-1, N, N+1) ----------
-/** A host from before 0.4 (protocol 1): it checks v === 1, knows no proto, and answers no server version. */
-function oldHost(t: TestContext) {
-  const [a, b] = memory.pair();
-  b.onFrame(f => {
-    if (f.op !== 'hello') return b.send(protocol.error(f.id, 'AUTH', 'say hello first'));
-    const p = f.params || {};
-    if (p.v !== 1) return b.send(protocol.error(f.id, 'PROTOCOL', `protocol v${p.v} is not served here (v1)`));
-    b.send(protocol.reply(f.id, { v: 1, caps: { ops: ['hello'] }, room: 'vole-1234', link: null, extra: { some: 'future field' } }));
-  });
-  t.after(() => a.close());
-  return a;
-}
 /** Raw hello frames against a host serving `proto`, as `version`. */
 async function rawHello(t: TestContext, host: RoomStore, params: Record<string, unknown>, opts: Partial<ServeOpts> = {}) {
   const [a, b] = memory.pair();
@@ -222,13 +213,12 @@ test('protocol skew: the host picks the highest common version; N-1 and N+1 peer
   const newHost = await at({}, { proto: { min: N.max, max: N.max + 1 }, version: '9.0.0' });
   assert.deepEqual([newHost.v, newHost.serverVersion], [N.max, '9.0.0']);
   newHost.close();
-  // N-1 joiner (0.3.0): hello {v: 1} with no proto or client, and it checks the reply's v === 1
-  const old = await rawHello(t, host, { v: 1, someFutureField: true });
-  assert.equal((old.result as { v: number }).v, 1, 'a 0.3.0 link still links');
-  // N-1 host (0.3.0): this joiner asks for v 1 and accepts its bare reply (no proto, no server, an unknown field)
-  const c = await client.connect(oldHost(t), { machine: REMOTE });
-  assert.deepEqual([c.v, c.serverVersion], [1, null]);
-  c.close();
+  // a 0.5 beta's joiner: its hello also says v (the version it needs at least), honoured; an unknown field ignored
+  const beta = await rawHello(t, host, { v: 2, proto: { min: 1, max: 2 }, client: '0.5.0-beta.15', someFutureField: true });
+  assert.equal((beta.result as { v: number }).v, 2, 'a beta.15 link still links');
+  // a hello with a version but no range (a joiner from before 0.5): PROTOCOL SKEW, it must update
+  const pre = await rawHello(t, host, { v: 1 });
+  assert.deepEqual([pre.error!.code, pre.error!.reason, /update it/.test(pre.error!.message)], ['PROTOCOL', 'SKEW', true]);
 });
 
 test('protocol skew: no common version is PROTOCOL naming the side that must update', async t => {
@@ -246,12 +236,9 @@ test('protocol skew: no common version is PROTOCOL naming the side that must upd
   // the host is behind
   await fails(at({ proto: { min: 5, max: 6 }, version: '0.9.0' }, { proto: { min: 3, max: 4 }, version: '0.4.0' }),
     /host runs sub-human 0\.4\.0 \(protocol 3–4\); you run 0\.9\.0 \(protocol 5–6\)\. The host must update/);
-  // a 0.3.0 joiner meets a host that dropped protocol 1: the message reaches it as the error it shows
-  const r = await rawHello(t, host, { v: 1 }, { proto: { min: 2, max: 3 }, version: '0.5.0' });
-  assert.deepEqual([r.error!.code, /you run an unknown sub-human version \(protocol 1\)\. Update your plugin/.test(r.error!.message)], ['PROTOCOL', true]);
-  // a host from before 0.4 and an sh2 invite (its PIN needs protocol 2): the host must update
-  await fails(client.connect(oldHost(t), { machine: REMOTE, invite: 'sh2.x', pin: '123456' }),
-    /^host runs an unknown sub-human version \(protocol 1\); you run .* \(protocol 1–2\)\. The host must update/);
+  // a joiner that speaks only protocol 1 meets a host that dropped it: the message reaches it as the error it shows
+  const r = await rawHello(t, host, { proto: { min: 1, max: 1 } }, { proto: { min: 2, max: 3 }, version: '0.5.0' });
+  assert.deepEqual([r.error!.code, r.error!.reason, /you run an unknown sub-human version \(protocol 1\)\. Update your plugin/.test(r.error!.message)], ['PROTOCOL', 'SKEW', true]);
   // a reply outside this end's range is refused here too
   await fails(at({ proto: { min: 1, max: 1 } }, { proto: { min: 1, max: 1 } }).then(() => at({ proto: { min: 3, max: 3 } }, {})), /must update|Update your plugin/);
 });
@@ -276,14 +263,14 @@ test('remote (memory): a link writes only as the seats it joined: another `from`
   await b.leave('bob', 'gone');
   const fresh = crypto.generateKeyPairSync('ed25519');
   const pubkey = fresh.publicKey.export({ type: 'spki', format: 'pem' }) as string;
-  await rejects(a.join({ name: 'bob', pubkey, proof: auth.proveSeat(fresh.privateKey, { room: code, name: 'bob', pubkey }) }), 'AUTH');
+  await rejects(a.join({ name: 'bob', pubkey, proof: hostLinks.proveSeat(fresh.privateKey, { room: code, name: 'bob', pubkey }) }), 'AUTH');
   assert.ok(identity.readMembers(code).bob.left_at);
   assert.equal(logLines(code).length, before + 1, 'only bob\'s own member_left was written');
 });
 
 test('remote (memory): a bound link (the card let one name in; a handoff\'s seats) joins its own seats only: another name, or a second seat, is AUTH', async t => {
   const { code, host } = hostRoom(t);
-  const { invite } = auth.mintFor(host, { locator: 'pipe:test', machine: REMOTE, seats: ['carol'] });
+  const { invite } = invites.mintFor(host, { locator: 'pipe:test', machine: REMOTE, seats: ['carol'] });
   const c = await client.connect(served(t, host), { machine: REMOTE, invite });
   t.after(() => c.close());
   const before = logLines(code).length;
@@ -293,8 +280,8 @@ test('remote (memory): a bound link (the card let one name in; a handoff\'s seat
   assert.deepEqual(await c.join(seat(code, 'carol')), { ok: true });
   assert.deepEqual(await c.join(seat(code, 'carol')), { ok: true, rejoin: true });
   await rejects(c.append(signed(code, 'bob', { kind: 'say', text: 'as bob' })), 'AUTH');
-  assert.deepEqual(auth.links(host)[c.link!].seats, ['carol']);
-  // an unbound link (an sh1 invite, a login) still picks its name at join time
+  assert.deepEqual(hostLinks.links(host)[c.link!].seats, ['carol']);
+  // an unbound link (a login's, an invite that binds no seat) still picks its name at join time
   const open = await linked(t, host);
   assert.deepEqual(await open.join(seat(code, 'erin')), { ok: true });
 });
@@ -380,7 +367,7 @@ test('remote (memory): over a flaky link a dropped frame is OFFLINE at the deadl
 
 test('remote (pipe): `sub-human serve --stdio CODE` as a child serves the host home; it exits when the link closes', async t => {
   const { code, host } = hostRoom(t);
-  const { invite } = auth.mintInvite(host, { locator: 'pipe:test' });
+  const { invite } = invites.mintFor(host, { locator: 'pipe:test', machine: REMOTE, seats: [] });
   const tr = pipe.spawn(process.execPath, [h.BIN, 'serve', '--stdio', code], { env: h.childEnv() });
   let closed = false;
   tr.onClose(() => { closed = true; });
@@ -400,39 +387,27 @@ test('remote (pipe): `sub-human serve --stdio CODE` as a child serves the host h
   assert.equal(closed, true);
 });
 
-test('remote (pipe): `serve --stdio CODE --link ID` (the SSH forced command) takes only that link\'s token or the invite reserved for it', async t => {
+test('remote (pipe): `serve --stdio CODE --link ID` (the SSH forced command) takes only that link\'s token; an invite over it stays unused', async t => {
   const { code, host } = hostRoom(t);
   const serveAs = (id?: string) => pipe.spawn(process.execPath, [h.BIN, 'serve', '--stdio', code, ...(id ? ['--link', id] : [])], { env: h.childEnv() });
-  const a = auth.mintInvite(host, { locator: 'ssh:me@far' });
-  const b = auth.mintInvite(host, { locator: 'ssh:me@far' });
-  const idA = auth.reserveLink(host, a.secret);
-  assert.equal(auth.reserveLink(host, a.secret), idA, 'reserved once');
-  const idB = auth.reserveLink(host, b.secret);
-  assert.notEqual(idA, idB);
-  assert.equal(auth.linkKnown(host, idA), true);
-  assert.equal(auth.linkKnown(host, 'ffffffffffff'), false);
-  // invite b over link A's forced command: AUTH, and b stays unused
-  await rejects(client.connect(serveAs(idA), { machine: REMOTE, invite: b.invite }), 'AUTH');
-  const ca = await client.connect(serveAs(idA), { machine: REMOTE, invite: a.invite });
-  assert.equal(ca.link, idA, 'the invite redeems to the link it was reserved for');
-  ca.close();
-  const cb = await client.connect(serveAs(idB), { machine: REMOTE, invite: b.invite });
-  assert.equal(cb.link, idB);
-  cb.close();
+  const a = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: REMOTE, seats: [] });
+  const b = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: 'other0machine001', seats: [] });
+  assert.equal(hostLinks.linkKnown(host, a.link.id), true);
+  assert.equal(hostLinks.linkKnown(host, 'ffffffffffff'), false);
   // a token presented over another link's forced command: AUTH; over its own: in
-  await rejects(client.connect(serveAs(idB), { machine: REMOTE, token: ca.token! }), 'AUTH');
-  const again = await client.connect(serveAs(idA), { machine: REMOTE, token: ca.token! });
-  assert.equal(again.link, idA);
-  again.close();
-  // an invite never reserved, over a forced command: AUTH
-  const c = auth.mintInvite(host, { locator: 'ssh:me@far' });
-  await rejects(client.connect(serveAs(idA), { machine: REMOTE, invite: c.invite }), 'AUTH');
-  assert.equal(auth.redeemInvite(host, c.secret, { machine: REMOTE }).link.id.length, 12, 'and stays unused');
+  await rejects(client.connect(serveAs(b.link.id), { machine: REMOTE, token: a.token }), 'AUTH');
+  const ca = await client.connect(serveAs(a.link.id), { machine: REMOTE, token: a.token });
+  assert.equal(ca.link, a.link.id);
+  ca.close();
+  // an invite not reserved for that link, over its forced command: AUTH, and it stays unused
+  const c = invites.mintFor(host, { locator: 'ssh:me@far', machine: REMOTE, seats: [] });
+  await assert.rejects(client.connect(serveAs(a.link.id), { machine: REMOTE, invite: c.invite }), (e: CodedError) => e.code === 'AUTH' && e.reason === 'INVITE_OTHER_LINK');
+  assert.equal(invites.redeemInvite(host, c.secret, { machine: REMOTE }).link.id.length, 12, 'and stays unused');
 });
 
 test('the forced-command line a host writes for a link: the stable shim, restrict, no versioned path; appended once, one key one link', t => {
   const { code } = hostRoom(t);
-  assert.deepEqual(auth.parseInvite(auth.mintInvite(store.open(code), { locator: 'ssh:host@127.0.0.1:2222' }).invite)!.locator, 'ssh:host@127.0.0.1:2222');
+  assert.deepEqual(invites.parseInvite(invites.mintFor(store.open(code), { locator: 'ssh:host@127.0.0.1:2222', machine: REMOTE, seats: [] }).invite)!.locator, 'ssh:host@127.0.0.1:2222');
   const KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOv2YxFcmD0qVf1aW0gk1oQfWb3m9e1bJ1l3xq3fQnHk';
   assert.equal(sshkeys.publicKey(`${KEY} me@laptop "quoted" $(id)\n`), KEY, 'the key\'s own comment is dropped');
   for (const bad of [`command="sh" ${KEY}`, `${KEY}\n${KEY}`, 'not a key']) assert.equal(sshkeys.publicKey(bad), null, bad);
@@ -501,4 +476,53 @@ test('remote (memory): subscribe {snapshot: true} gets the snapshot first only f
   await r.sub.ready;
   assert.ok(await h.until(() => r.got.filter(e => e.ev === 'entry').length === total, 5000, 10), `${r.got.length} of ${total}`);
   assert.ok(!r.got.some(e => e.ev === 'snapshot'));
+});
+
+test('quotas: one table for every op; a link\'s plans, seats and subscribes survive a reconnect; a connection\'s hellos are its own', async t => {
+  const { host } = hostRoom(t);
+  const made = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: REMOTE, seats: [] });
+  const dial = () => client.connect(served(t, host), { machine: REMOTE, token: made.token });
+  const plans = config.LINK_QUOTAS['blob.put'].max;
+  let c = await dial();
+  for (let i = 0; i < plans; i++) {
+    const bytes = Buffer.from(`# plan ${i}\n`);
+    await c.blobPut(`plans/${store.hash12(bytes)}.md`, bytes);
+    if (i === Math.floor(plans / 2)) { c.close(); c = await dial(); } // a reconnect resets nothing
+  }
+  const more = Buffer.from('# one too many\n');
+  await assert.rejects(c.blobPut(`plans/${store.hash12(more)}.md`, more), (e: CodedError) => e.code === 'RATE' && e.reason === 'QUOTA' && /try again in \d+ s/.test(e.message));
+  const again = Buffer.from('# plan 0\n');
+  assert.equal(await c.blobPut(`plans/${store.hash12(again)}.md`, again), `plans/${store.hash12(again)}.md`, 'a plan stored already is no new one');
+  c.close();
+  // one connection's hellos: the session's own count
+  const [a, b] = memory.pair();
+  const srv = server.serve(b, { store: host });
+  t.after(() => srv.close());
+  const got: DecodedFrame[] = [];
+  a.onFrame(f => got.push(f));
+  const n = config.LINK_QUOTAS['hello.session'].max;
+  for (let i = 1; i <= n + 1; i++) a.send(protocol.request(i, 'hello', { proto: protocol.PROTO, caps: {}, machine: REMOTE }));
+  await h.until(() => got.length === n + 1, 3000, 5);
+  assert.deepEqual(got.slice(0, n).map(f => !!f.result), new Array(n).fill(true));
+  assert.deepEqual([got[n].error!.code, got[n].error!.reason], ['RATE', 'QUOTA']);
+  a.close();
+});
+
+test('quotas: the log counts a seat\'s posts by via; a link window drops what has passed; a session window is per op', () => {
+  const now = Date.parse('2026-10-15T12:00:00Z');
+  const at = (ago: number) => new Date(now - ago).toISOString();
+  const es = [{ from: 'bob', via: 'agent', at: at(120_000) }, ...Array.from({ length: 29 }, () => ({ from: 'bob', via: 'agent', at: at(1000) })), { from: 'bob', via: 'human', at: at(500) }] as Entry[];
+  assert.equal(quota.fromLog(es, { from: 'bob', via: 'agent', windowMs: 60_000, now }), 29, 'the one older than the window is not counted');
+  quota.checkLog(es, { from: 'bob', via: 'agent', op: 'append.agent', now });
+  assert.throws(() => quota.checkLog([...es, { from: 'bob', via: 'agent', at: at(10) } as Entry], { from: 'bob', via: 'agent', op: 'append.agent', now }), (e: CodedError) => e.reason === 'QUOTA' && /bob posted 30 times in 1 min/.test(e.message));
+  const s = new MemoryRoomStore('otter-1234');
+  const seatQ = config.LINK_QUOTAS.seat;
+  for (let i = 0; i < seatQ.max; i++) quota.charge(s, 'abcdef012345', 'seat', { now });
+  assert.throws(() => quota.charge(s, 'abcdef012345', 'seat', { now }), (e: CodedError) => e.code === 'RATE');
+  quota.charge(s, '0123456789ab', 'seat', { now }); // another link: its own count
+  quota.charge(s, 'abcdef012345', 'seat', { now: now + seatQ.windowMs }); // the window passed
+  const w = quota.session();
+  for (let i = 0; i < config.LINK_QUOTAS.ping.max; i++) w.take('ping', now);
+  assert.throws(() => w.take('ping', now), (e: CodedError) => e.reason === 'QUOTA');
+  w.take('beat', now);
 });

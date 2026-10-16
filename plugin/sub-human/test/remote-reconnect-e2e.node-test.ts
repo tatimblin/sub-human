@@ -11,7 +11,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
-import * as link from '../lib/remote/link.ts';
+import * as linkSocket from '../lib/remote/link-socket.ts';
 import * as links from '../lib/room/links.ts';
 import { leaseFresh } from '../lib/room/members.ts';
 import { isAlive } from '../lib/io.ts';
@@ -39,12 +39,12 @@ async function room(t: TestContext, env?: Record<string, string>) {
   const lf = JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.json`), 'utf8'));
   assert.deepEqual(['enroll' in lf, 'invite' in lf, typeof lf.token], [false, false, 'string']);
   assert.equal(joined.json!.systemMessage, undefined, joined.stderr);
-  const daemon = remote.lib(() => link.status(code)).pid;
+  const daemon = remote.lib(() => linkSocket.status(code)).pid;
   t.after(() => {
     for (const c of children(daemon)) signal(c, 'SIGKILL');
     signal(daemon, 'SIGCONT');
     signal(daemon, 'SIGKILL');
-    fs.rmSync(path.dirname(link.socketPath(path.join(remote.home, 'rooms', code))), { recursive: true, force: true });
+    fs.rmSync(path.dirname(linkSocket.socketPath(path.join(remote.home, 'rooms', code))), { recursive: true, force: true });
   });
   const st = () => remote.lib(() => links.readState(code)) || {};
   const daemonLog = () => fs.readFileSync(path.join(remote.home, 'links', `${code}.log`), 'utf8');

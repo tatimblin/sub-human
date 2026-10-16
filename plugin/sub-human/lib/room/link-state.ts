@@ -11,8 +11,6 @@
  *   offline     not connected, retrying on its own (or its daemon is not running: the join hook restarts it)
  *   fork        for good: this copy no longer matches the host's log (`sub-human link --reset CODE`)
  *   stopped     for good: refused (AUTH, PROTOCOL), revoked, the room closed or moved with no way to follow
- * Older records said up / down (state file, before 0.4.1): LEGACY maps them (down with detail fork or stopped reads
- * as that).
  *
  * Sources, best first:
  *   links.readState(code)            the link daemon's record <home>/links/<code>.state.json {state, since, attempt,
@@ -23,9 +21,9 @@
  * daemon is not running" and dead: true; fork and stopped stay what they are.
  *
  *   read(code) -> State | null       null when this machine has no link to CODE (a room hosted here, or none)
- *       State = {state: STATES, since?, attempt?, lastError?, prevError?, rttMs?, queued?, pid?, detail?, dead?,
- *                source: 'state-file'|'link-doc'}
- *   normalize(state, detail?) -> STATES member   an old or new word to the vocabulary (unknown: 'offline')
+ *       State = {state: STATES, since?, attempt?, lastError?, lastReason?, lastCode?, prevError?, rttMs?, queued?, pid?,
+ *                detail?, dead?, source: 'state-file'|'link-doc'}; lastReason: lastError's typed reason (lib/reasons.ts)
+ *   normalize(state, detail?) -> STATES member   a word of the vocabulary (detail fork or stopped wins; unknown: 'offline')
  *   indicator(st, {now}?) -> string  the compact segment: "⇄ online", "… connecting", "… connecting (3)",
  *       "✕ offline 2m · 2 queued", "✕ stopped", "✕ out of step: /sub-human doctor"; '' for null
  *   isDown(st) -> bool               connecting after a first failure, offline, fork or stopped: worth leading a row with
@@ -33,16 +31,16 @@
  *   STATES                           Set of the five words
  */
 import { isAlive } from '../io.ts';
+import { isReason } from '../reasons.ts';
 import * as links from './links.ts';
 import { createRequire } from 'node:module';
 import type { LinkState, LinkStateWord } from './types.ts';
-import type { LinkStatus } from '../remote/link.ts';
+import type { LinkStatus } from '../remote/link-socket.ts';
 
 const require = createRequire(import.meta.url);
 
 
 const STATES = new Set<LinkStateWord>(['online', 'connecting', 'offline', 'fork', 'stopped']) as ReadonlySet<string>;
-const LEGACY: Record<string, LinkStateWord> = { up: 'online', down: 'offline' };
 const FOR_GOOD: ReadonlySet<string> = new Set<LinkStateWord>(['fork', 'stopped']);
 const isState = (s: unknown): s is LinkStateWord => STATES.has(s as string);
 
@@ -54,13 +52,12 @@ const clean = <O extends object>(o: O): O => Object.fromEntries(Object.entries(o
 
 function normalize(state: unknown, detail?: unknown): LinkStateWord {
   if (FOR_GOOD.has(detail as string)) return detail as LinkStateWord;
-  const s = LEGACY[state as string] || state;
-  return isState(s) ? s : 'offline';
+  return isState(state) ? state : 'offline';
 }
 
 /** The mirror's `link` document (lib/remote/link.ts status), or null when it cannot be read. */
 function linkDoc(code: string): LinkStatus | null {
-  try { return (require('../remote/link.ts') as typeof import('../remote/link.ts')).status(code); } catch { return null; }
+  try { return (require('../remote/link-socket.ts') as typeof import('../remote/link-socket.ts')).status(code); } catch { return null; }
 }
 
 const NOT_RUNNING = 'the link daemon is not running';
@@ -77,11 +74,12 @@ function readLink(code: string): LinkState | null {
   const doc = linkDoc(code);
   let f = null;
   try { f = links.readState(code); } catch { f = null; }
-  if (f && typeof f === 'object' && (STATES.has(f.state as string) || (f.state as string) in LEGACY)) {
+  if (f && typeof f === 'object' && STATES.has(f.state as string)) {
     const pid = num(f.pid);
     const dead = pid ? !isAlive(pid) : !!(doc && doc.pid && !doc.running);
     const st: LinkState = clean({
-      state: normalize(f.state, f.detail), since: str(f.since), attempt: num(f.attempt), lastError: str(f.lastError), prevError: str(f.prevError),
+      state: normalize(f.state, f.detail), since: str(f.since), attempt: num(f.attempt), lastError: str(f.lastError),
+      lastReason: isReason(f.lastReason) ? f.lastReason : undefined, lastCode: str(f.lastCode), prevError: str(f.prevError),
       rttMs: num(f.rttMs), queued: num(f.queued), pid, detail: str(f.detail), source: 'state-file' as const,
     });
     if (dead && !FOR_GOOD.has(st.state)) return { ...st, state: 'offline', lastError: st.lastError || NOT_RUNNING, dead: true };
@@ -91,7 +89,8 @@ function readLink(code: string): LinkState | null {
   const dead = !!(doc.pid && !doc.running);
   const state = normalize(doc.state);
   const lastError = str(doc.reason) || (dead ? NOT_RUNNING : undefined);
-  return clean({ state: dead && !FOR_GOOD.has(state) ? 'offline' : state, since: str(doc.since), lastError, ...(dead ? { dead: true } : {}), source: 'link-doc' as const });
+  const lastReason = !dead && isReason(doc.why) ? doc.why : undefined;
+  return clean({ state: dead && !FOR_GOOD.has(state) ? 'offline' : state, since: str(doc.since), lastError, lastReason, lastCode: str(doc.code), ...(dead ? { dead: true } : {}), source: 'link-doc' as const });
 }
 
 function ago(iso: string, now: number): string {

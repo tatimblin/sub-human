@@ -2,12 +2,12 @@
  * plugin/sub-human/lib/remote/client.ts: the asynchronous side of the protocol, one connection to a room's
  * server over a transport. The link daemon (lib/remote/link.ts) holds one per room; the protocol tests drive
  * one directly. Hooks never use it: they call the daemon through lib/remote/bridge.ts. It never loads the
- * signer: a via=human payload, and a join's seat proof (lib/remote/auth.ts proveSeat), reach it already
+ * signer: a via=human payload, and a join's seat proof (lib/remote/host-links.ts proveSeat), reach it already
  * signed.
  *
  *   connect(transport, {machine, token?, invite?, pin?, login?, epoch?, caps?, deadlineMs?, helloMs?, proto?, version?}) -> Promise<Client>
- *       hello carries {v, proto, client} (lib/remote/protocol.ts): the server picks the version; a version outside
- *       this end's range, or a refusal from a host too old or too new, is PROTOCOL with skewMessage (who must update).
+ *       hello carries {proto, client} (lib/remote/protocol.ts): the server picks the version; a version outside
+ *       this end's range, or a refusal from a host too old or too new, is PROTOCOL SKEW with skewMessage (who must update).
  *       pin: an sh2 invite's PIN (checked by the host, never here). login: true (no token, no invite): a link over the
  *       host account's own ssh login (lib/remote/server.ts); a host that returns no token for it is PROTOCOL. proto / version: fakes for the skew tests.
  *       epoch: the mirror's host epoch (lib/handoff.ts), sent in the hello; the server's is client.epoch (0 from a
@@ -16,7 +16,8 @@
  *       helloMs (default deadlineMs) bounds the hello alone: a transport such as ssh connects before it answers.
  *       A refused hello closes the transport and rejects.
  *   Client
- *     token, link, room, serverCaps, v (the version in use), serverVersion (the host's plugin version, null before 0.4)
+ *     token, link, room, serverCaps, v (the version in use), serverVersion (the host's plugin version), machine (this
+ *     machine's id in the room as the host records it, null from a host that sends none)
  *     request(op, params, {ms}?) -> Promise<result>   one op as the wire has it (the link daemon relays its hooks' ops
  *         so); ms: its own deadline instead of deadlineMs (the daemon waits longer for an @room post sent already)
  *     join({name, role?, pubkey, proof}) -> Promise<{ok, rejoin?}>
@@ -38,16 +39,16 @@
  *     drain(ms?) -> Promise          resolves once no call waits for a reply (or after ms, default deadlineMs): the
  *         link daemon closes a replaced connection only then, so a hook's op in flight on it is answered
  *     close()
- *   A reply with error rejects with RoomError(code, message), the code as the server sent it. A call with no
- *   reply within deadlineMs (default LINK_CALL_MS) rejects OFFLINE (its message says the outcome is unknown: the frame
- *   went out and may still land) and its late reply is dropped; a transport
+ *   A reply with error rejects with RoomError(code, message, reason?), the code and reason as the server sent them. A call
+ *   with no reply within deadlineMs (default LINK_CALL_MS) rejects OFFLINE with reason UNKNOWN_OUTCOME (the frame went out
+ *   and may still land) and its late reply is dropped; a transport
  *   that closed rejects every pending call with OFFLINE. Nothing is retried.
  */
 
 import * as protocol from './protocol.ts';
 import { RoomError } from '../room/validate.ts';
 import { LINK_CALL_MS } from '../config.ts';
-import type { CodedError, DecodedFrame, HelloResult, Op, OpResults, ProtoRange, StreamEvent } from './types-core.ts';
+import type { DecodedFrame, HelloResult, Op, OpResults, ProtoRange, StreamEvent } from './types-core.ts';
 import type { Entry } from '../room/types.ts';
 import type { Transport } from './types-rest.ts';
 
@@ -64,15 +65,16 @@ interface Pending {
   timer: NodeJS.Timeout;
 }
 
-/** The server's answer to hello (types-core HelloResult), as a host of any version sends it: one from before 0.4
- * names no proto, server or epoch. */
-type HelloReply = Pick<HelloResult, 'v' | 'link' | 'room'> & Partial<Pick<HelloResult, 'proto' | 'server' | 'token' | 'epoch'>> & {
+/** The server's answer to hello (types-core HelloResult), read defensively: what a host may leave out is optional. */
+type HelloReply = Pick<HelloResult, 'v' | 'link' | 'room'> & Partial<Pick<HelloResult, 'proto' | 'server' | 'token' | 'epoch' | 'machine'>> & {
   caps: ServerCaps | null;
 };
 
 export interface ConnectOpts {
   /** this machine's id (home.machineId; null when it could not be read: the host refuses the hello) */
   machine: string | null;
+  /** this home's machine key's proof (lib/remote/machine-key.ts): the host derives the machine's id from it */
+  machineKey?: { key: string; ts: number; sig: string };
   token?: string;
   invite?: string;
   pin?: string;
@@ -99,6 +101,8 @@ class Client {
   room: string | null;
   serverCaps: ServerCaps | null;
   epoch: number | null;
+  /** this machine's id in the room as the host records it (its hello's reply; null from a host that sends none) */
+  machine: string | null = null;
   declare v: number;
   declare serverVersion: string | null;
 
@@ -120,7 +124,7 @@ class Client {
     if (!p) return; // abandoned at its deadline, or not ours
     this.pending.delete(f.id as number);
     clearTimeout(p.timer);
-    if (f.error) p.reject(new RoomError(f.error.code, f.error.message));
+    if (f.error) p.reject(protocol.toError(f.error));
     else p.resolve(f.result);
   }
 
@@ -146,7 +150,7 @@ class Client {
   _request(op: string, params: object, id: number = ++this.seq, ms: number = this.deadlineMs): Promise<unknown> {
     if (this.closed) return Promise.reject(offline('the link is closed'));
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(id); reject(offline(`${op}: no answer within ${ms} ms; ${protocol.UNKNOWN_OUTCOME}`)); }, ms);
+      const timer = setTimeout(() => { this.pending.delete(id); reject(new RoomError('OFFLINE', `${op}: no answer within ${ms} ms; ${protocol.UNKNOWN_OUTCOME}`, 'UNKNOWN_OUTCOME')); }, ms);
       this.pending.set(id, { resolve, reject, timer });
       this.transport.send(protocol.request(id, op, params));
     });
@@ -194,27 +198,21 @@ class Client {
 
 /** transport: {send(frame), onFrame(fn), onClose(fn), close()}, or a Promise of one */
 async function connect(transport: Transport | Promise<Transport>, opts: ConnectOpts): Promise<Client> {
-  const { machine, token, invite, pin, login, epoch, caps = {}, deadlineMs = LINK_CALL_MS, helloMs = deadlineMs } = opts;
+  const { machine, machineKey, token, invite, pin, login, epoch, caps = {}, deadlineMs = LINK_CALL_MS, helloMs = deadlineMs } = opts;
   const proto: ProtoRange = opts.proto || protocol.PROTO, version: string = opts.version || protocol.PLUGIN_VERSION;
   const c = new Client(await transport, { deadlineMs });
   const cred: { invite?: string; pin?: string; token?: string; login?: boolean } = invite !== undefined ? { invite, ...(pin !== undefined ? { pin } : {}) } : token !== undefined ? { token } : login === true ? { login: true } : {};
-  // v: what this hello needs at least. An sh2 invite (its PIN) needs 2; anything else asks for the oldest version this
-  // end speaks, so a host from before 0.4 (it checks v === 1 and knows no proto) still answers.
+  // the version this hello needs at least: an sh2 invite's PIN needs 2
   const need = Math.max(proto.min, pin !== undefined ? 2 : 1);
   const me = { version, proto };
   try {
-    let r: HelloReply;
-    try {
-      r = await c._request('hello', { v: need, proto, client: version, caps, machine, ...cred, ...(Number.isInteger(epoch) ? { epoch } : {}) }, ++c.seq, helloMs);
-    } catch (e) {
-      throw olderHost(e, me) || e;
-    }
-    const theirs = protocol.rangeOf({ v: r.v, proto: r.proto });
+    const r: HelloReply = await c._request('hello', { proto, client: version, caps, machine, ...(machineKey ? { machine_key: machineKey } : {}), ...cred, ...(Number.isInteger(epoch) ? { epoch } : {}) }, ++c.seq, helloMs);
+    const theirs = protocol.rangeOf({ proto: r.proto });
     if (!theirs || r.v < proto.min || r.v > proto.max || r.v < need) {
-      throw new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: r.server, proto: theirs || { min: r.v, max: r.v } }, joiner: me }));
+      throw new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: r.server, proto: theirs || { min: r.v, max: r.v } }, joiner: me }), 'SKEW');
     }
-    if (cred.login && !r.token) throw new RoomError('PROTOCOL', `the host's sub-human (${r.server || 'before 0.4'}) makes no link over an ssh login; update it there, or join with an invite`);
-    Object.assign(c, { token: r.token || token || null, link: r.link, room: r.room, serverCaps: r.caps, v: r.v, serverVersion: r.server || null, epoch: Number.isInteger(r.epoch) ? r.epoch : 0 });
+    if (cred.login && !r.token) throw new RoomError('PROTOCOL', `the host's sub-human (${r.server || 'an unknown version'}) makes no link over an ssh login; update it there, or join with an invite`, 'SKEW');
+    Object.assign(c, { token: r.token || token || null, link: r.link, room: r.room, serverCaps: r.caps, v: r.v, serverVersion: r.server || null, epoch: Number.isInteger(r.epoch) ? r.epoch : 0, machine: typeof r.machine === 'string' && r.machine ? r.machine : null });
   } catch (e) {
     c.close();
     throw e;
@@ -222,14 +220,6 @@ async function connect(transport: Transport | Promise<Transport>, opts: ConnectO
   return c;
 }
 
-/** A host from before 0.4 refuses another v with "protocol vN is not served here (vM)": say who must update. */
-function olderHost(err: unknown, me: { version: string; proto: ProtoRange }): Error | null {
-  const e = err as CodedError | null; // anything thrown
-  const m = e && e.code === 'PROTOCOL' && /protocol v(\d+) is not served here \(v(\d+)\)/.exec(e.message);
-  if (!m) return null;
-  const v = Number(m[2]);
-  return new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: null, proto: { min: v, max: v } }, joiner: me }));
-}
 
 export { connect };
 export type { Client };

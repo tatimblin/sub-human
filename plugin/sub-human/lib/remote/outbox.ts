@@ -56,7 +56,7 @@ const queueable = (p: unknown): p is QueuedPost => {
  * @param {string} dir
  * @param {{max?: number, ageMs?: number}} [opts]
  */
-function open(dir: string, { max = config.LINK_OUTBOX_MAX, ageMs = config.envMs('SUB_HUMAN_LINK_OUTBOX_AGE_MS', config.LINK_OUTBOX_AGE_MS) }: { max?: number; ageMs?: number } = {}): Outbox {
+function open(dir: string, { max = config.LINK_OUTBOX_MAX, ageMs = config.LINK_OUTBOX_AGE_MS }: { max?: number; ageMs?: number } = {}): Outbox {
   const file = path.join(dir, 'outbox.json');
   const load = (): OutboxItem[] => { const v: unknown = readJson(file); return Array.isArray(v) ? v.filter(x => x && x.payload) : []; };
   let list = load();

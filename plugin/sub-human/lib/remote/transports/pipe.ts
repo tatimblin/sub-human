@@ -30,6 +30,7 @@ function spawn(cmd: string, args: string[], opts: { env?: NodeJS.ProcessEnv; cwd
   const { transport, receive, end } = lineTransport({
     write: line => child.stdin.write(line),
     shut: () => { child.stdin.end(); child.kill(); },
+    ready: () => !child.stdin.writableNeedDrain,
   });
   let tail = '';
   child.stderr.on('data', (d: Buffer) => { process.stderr.write(d); tail = (tail + d).slice(-2048); });
@@ -46,6 +47,7 @@ function stdio(): Transport {
   const { transport, receive, end } = lineTransport({
     write: line => process.stdout.write(line),
     shut: () => process.stdin.destroy(),
+    ready: () => !process.stdout.writableNeedDrain,
   });
   process.stdin.on('data', receive);
   process.stdin.on('end', end);

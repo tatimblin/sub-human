@@ -28,15 +28,14 @@
  *                                 (RoomError INVALID for another state). false, writing nothing, for a seat that is
  *                                 absent or left. now: tests only (the host's clock otherwise).
  *   publicView(members) -> members   the document as other machines see it: LOCAL_FIELDS stripped
- *   fromLegacy(members) -> members   0.4.x names read as new ones (every store's members.read runs it)
- *   ROOM_CLAUDE ("claude"), LEGACY_ROOM_CLAUDE ("orch", read only), roomClaudeName(name), PRESENCE_STATES, LOCAL_FIELDS
+ *   ROOM_CLAUDE ("claude"), PRESENCE_STATES, LOCAL_FIELDS
  */
 
 import { isAlive, validPid } from '../io.ts';
 import { pidStart } from '../lock.ts';
-import { machineId } from '../home.ts';
+import { machineId, isMine } from '../home.ts';
 import {
-  PRESENCE_DETAIL_MAX, PID_START_SLACK_S, SEAT_BEAT_MS, SEAT_LEASE_MS, ROOM_CLAUDE_BIND_MS, ROOM_CLAUDE_CLAIM_MS, envMs,
+  PRESENCE_DETAIL_MAX, PID_START_SLACK_S, SEAT_BEAT_MS, SEAT_LEASE_MS, ROOM_CLAUDE_BIND_MS, ROOM_CLAUDE_CLAIM_MS,
 } from '../config.ts';
 import { RoomError } from './validate.ts';
 import type { JoinResult, KvApi, Member, Members, MembersApi, Presence, PresenceInput, PresenceState, SeatRecord } from './types.ts';
@@ -53,24 +52,6 @@ type SeatLike = Partial<Member>;
 const PRESENCE_STATES: readonly PresenceState[] = ['working', 'idle', 'permission', 'error'];
 /** The room's Claude: its member name, role and SendMessage name (claude.CODE). */
 const ROOM_CLAUDE = 'claude';
-/** 0.4.x wrote the room's Claude as member and role "orch". Read only (fromLegacy, roomClaudeName); never written. */
-const LEGACY_ROOM_CLAUDE = 'orch';
-const roomClaudeName = <N,>(n: N): N | typeof ROOM_CLAUDE => (n === LEGACY_ROOM_CLAUDE ? ROOM_CLAUDE : n);
-
-/**
- * A members document as read, with 0.4.x names mapped (in place): the "orch" record becomes "claude" (unless a
- * "claude" record exists) and role "orch" becomes "claude". The next write of the document has only new names.
- */
-function fromLegacy<M extends Members | null | undefined>(ms: M): M {
-  if (!ms || typeof ms !== 'object') return ms;
-  const old: unknown = ms[LEGACY_ROOM_CLAUDE];
-  if (old !== undefined) {
-    delete ms[LEGACY_ROOM_CLAUDE];
-    if (old && typeof old === 'object' && !ms[ROOM_CLAUDE]) ms[ROOM_CLAUDE] = { ...(old as Member), name: ROOM_CLAUDE };
-  }
-  for (const m of Object.values(ms)) if (m && typeof m === 'object' && (m.role as string) === LEGACY_ROOM_CLAUDE) m.role = ROOM_CLAUDE;
-  return ms;
-}
 const LOCAL_FIELDS = ['pid', 'pid_start', 'session_id', 'cwd'] as const;
 const ROOM_CLAUDE_FIELDS = ['job', 'spawned_at', 'closing', 'by', 'job_session', 'claim'] as const; // kept across the room Claude's (re)bind
 
@@ -85,7 +66,7 @@ function startMatches(m: SeatLike): boolean {
 const leaseFresh = (m: SeatLike | null | undefined, now = Date.now()): boolean => { const t = Date.parse(String(m && m.seen_at)); return Number.isFinite(t) && now - t < SEAT_LEASE_MS; };
 function seatAlive(m: SeatLike | null | undefined): boolean { // unary: callers pass it to filter/some
   if (!m || !m.name || m.left_at) return false;
-  if (validPid(m.pid) && machineOf(m) === machineId()) return isAlive(m.pid) && startMatches(m);
+  if (validPid(m.pid) && isMine(machineOf(m))) return isAlive(m.pid) && startMatches(m);
   return leaseFresh(m);
 }
 
@@ -162,15 +143,15 @@ function publicView(members: Members | null | undefined): Members {
  */
 function roomClaudePresence(o: SeatLike | null | undefined, now = Date.now()): 'live' | 'starting' | null {
   if (!o || o.left_at || o.stopped_at || o.closing) return null;
-  if (validPid(o.pid) && machineOf(o) === machineId()) return seatAlive(o) ? 'live' : null;
+  if (validPid(o.pid) && isMine(machineOf(o))) return seatAlive(o) ? 'live' : null;
   if (o.joined_at && o.job !== 'pending' && !o.spawn_error && leaseFresh(o, now)) return 'live';
   const since = now - Date.parse(String(o.spawned_at || 0));
-  if (o.job === 'pending') return since <= envMs('SUB_HUMAN_ROOM_CLAUDE_CLAIM_MS', ROOM_CLAUDE_CLAIM_MS) ? 'starting' : null;
+  if (o.job === 'pending') return since <= ROOM_CLAUDE_CLAIM_MS ? 'starting' : null;
   if (o.job) return since <= ROOM_CLAUDE_BIND_MS ? 'starting' : null;
   return null;
 }
 
 export {
-  PRESENCE_STATES, LOCAL_FIELDS, ROOM_CLAUDE, LEGACY_ROOM_CLAUDE, roomClaudeName, fromLegacy, seatAlive,
+  PRESENCE_STATES, LOCAL_FIELDS, ROOM_CLAUDE, seatAlive,
   roomClaudePresence, leaseFresh, startMatches, ops, publicView,
 };

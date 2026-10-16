@@ -40,7 +40,7 @@ test('identity: join validates names, reserved names and roles', () => {
   const j = (name: string | null, role = 'member', extra: Partial<JoinRequest> = {}) =>
     identity.join({ code, name: name as string, role, pid: process.pid, session_id: 's1', cwd: '/x', ...extra });
   for (const bad of ['', 'a b', 'x'.repeat(33), 'semi;colon', null]) assert.equal(j(bad).ok, false, String(bad));
-  for (const r of ['claude', 'Claude', 'CLAUDE', 'orch', 'Orch', 'room', 'all', 'system', 'host', 'join', 'ROOM']) assert.match(j(r).error!, /reserved/, r);
+  for (const r of ['claude', 'Claude', 'CLAUDE', 'room', 'all', 'system', 'host', 'join', 'ROOM']) assert.match(j(r).error!, /reserved/, r);
   assert.match(j('alice', 'claude').error!, /joins as "claude"/);
   assert.match(j('orch', 'orch').error!, /invalid role/, 'no orch alias: not a role');
   assert.match(j('alice', 'orch').error!, /invalid role/);
@@ -383,34 +383,6 @@ test('identity: a seat of another machine is judged by its lease, whatever its p
   assert.match(identity.join({ code, name: 'zed', role: 'member', pid: process.pid }).error!, /name taken/, 'held on another machine');
   assert.equal(identity.resolveByPid(process.pid), null);
   assert.match(identity.join({ code, name: 'amy', role: 'member' }).error!, /invalid pid/, 'a seat of this machine needs its pid');
-});
-
-test('identity: a 0.4.x room names its Claude "orch" (members.json and the session index): read as claude, written as claude only', () => {
-  h.freshHome();
-  const code = h.newRoom();
-  const sid = 'aaaaaaaa-0000-4000-8000-0000000000aa';
-  const now = new Date().toISOString();
-  // members.json as 0.4.x wrote it: the room's Claude bound to this (live) process, plus a person
-  fs.writeFileSync(path.join(identity.roomDir(code), 'members.json'), JSON.stringify({
-    orch: { name: 'orch', role: 'orch', machine: identity.machineId(), pid: process.pid, session_id: sid, joined_at: now, seen_at: now, job: 'j0400' },
-    alice: { name: 'alice', role: 'member', machine: identity.machineId(), pid: process.ppid, joined_at: now, seen_at: now },
-  }));
-  const idx = { code, name: 'orch', role: 'orch', pid: process.pid, session_id: sid, address: `orch.${code}` };
-  fs.mkdirSync(path.join(identity.home(), 'sessions', 'by-sid'), { recursive: true });
-  fs.writeFileSync(path.join(identity.home(), 'sessions', 'by-sid', `${sid}.json`), JSON.stringify(idx));
-  const ms = identity.readMembers(code);
-  assert.deepEqual(Object.keys(ms).sort(), ['alice', 'claude']);
-  assert.deepEqual([ms.claude.name, ms.claude.role, ms.claude.job], ['claude', 'claude', 'j0400']);
-  assert.deepEqual(identity.liveMembers(code), ['alice'], 'the room\'s Claude is not a person');
-  assert.deepEqual(identity.lastSeat(sid), { code, name: 'claude', role: 'claude', address: `claude.${code}` });
-  const me = identity.resolveBySession(sid)!;
-  assert.deepEqual([me.name, me.role, me.address], ['claude', 'claude', `claude.${code}`]);
-  // the next write holds only new names
-  identity.updateRoomClaude(code, () => ({ orphan_since: now }));
-  const raw = JSON.parse(fs.readFileSync(path.join(identity.roomDir(code), 'members.json'), 'utf8'));
-  assert.deepEqual(Object.keys(raw).sort(), ['alice', 'claude']);
-  assert.deepEqual([raw.claude.name, raw.claude.role, raw.claude.job, raw.claude.orphan_since], ['claude', 'claude', 'j0400', now]);
-  assert.ok(!JSON.stringify(raw).includes('orch'), 'nothing written under the old name');
 });
 
 test('lock: pidStarts reads many pids\' start times with one ps call, the same pidStart reads one by one', () => {

@@ -7,7 +7,7 @@
  *   hostWeb(code, {tailscale?, funnel?, url?, port?, by?, now?}) -> {pin, ref, expires_at, short: true, line, locator,
  *       hostKey, base, mode, port, text}
  *       A short invite: `/sub-human join https://HOST/…/sub-human/ROOM 4829`, the 4-digit PIN the whole secret
- *       (lib/remote/auth.ts mintShort, kind ws, vouching for the listener's X25519 key inside the PAKE,
+ *       (lib/remote/invites.ts mintShort, kind ws, vouching for the listener's X25519 key inside the PAKE,
  *       lib/remote/enroll.ts); the host person's card admits the joiner. Starts the listener (idempotent,
  *       127.0.0.1:port, default 7420) and puts the room in its served set; the locator is wss://HOST/…/sub-human/ROOM.
  *       tailscale (`--web`): Tailscale Serve for /sub-human/CODE -> http://127.0.0.1:PORT on this node's MagicDNS name (tailnet
@@ -44,7 +44,7 @@ export interface FrontBase {
 }
 
 /** A web invite as hostWeb returns it. */
-export interface WebInvite extends ReturnType<typeof import('./auth.ts')['mintShort']> {
+export interface WebInvite extends ReturnType<typeof import('./invites.ts')['mintShort']> {
   short: true;
   line: string;
   locator: string;
@@ -109,7 +109,7 @@ function hostWeb(code: string, { tailscale = false, funnel = false, url, port, b
     'Stop serving it with /sub-human invite --stop (closing the room does too).',
   ];
   // the URL and a 4-digit PIN (lib/remote/enroll.ts over the listener's text frames)
-  const r = (require('./auth.ts') as typeof import('./auth.ts')).mintShort(store, { kind: 'ws', locator, hostKey, by, now });
+  const r = (require('./invites.ts') as typeof import('./invites.ts')).mintShort(store, { kind: 'ws', locator, hostKey, by, now });
   const line = `/sub-human join ${joinBase} ${r.pin}`;
   const text = (require('./hosting.ts') as typeof import('./hosting.ts')).shortText({
     code, how: `over the web through ${how} to this machine's listener on 127.0.0.1:${lport}`, line, ref: r.ref,

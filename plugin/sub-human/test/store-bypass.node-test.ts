@@ -51,7 +51,7 @@ function importers(target: string): string[] {
 }
 
 /** The store's own files: the only ones that may know a room's files (lib/room/store.ts lists them). */
-const STORE_FILES = ['lib/room/fs-store.ts', 'lib/room/log-io.ts', 'lib/room/snapshot.ts', 'lib/room/keys.ts', 'lib/room/registry.ts', 'lib/room/store-mirror.ts', 'lib/room/store.ts'];
+const STORE_FILES = ['lib/room/fs-store.ts', 'lib/room/log-io.ts', 'lib/room/watch.ts', 'lib/room/snapshot.ts', 'lib/room/keys.ts', 'lib/room/registry.ts', 'lib/room/store-mirror.ts', 'lib/room/store.ts'];
 
 test('store seam: only lib/room/fs-store.ts imports the log\'s bytes (lib/room/log-io.ts)', () => {
   assert.deepEqual(importers('lib/room/log-io.ts'), ['lib/room/fs-store.ts']);

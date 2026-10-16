@@ -13,9 +13,10 @@ import path from 'node:path';
 import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
 import * as link from '../lib/remote/link.ts';
+import * as linkSocket from '../lib/remote/link-socket.ts';
 import * as server from '../lib/remote/server.ts';
 import * as client from '../lib/remote/client.ts';
-import * as auth from '../lib/remote/auth.ts';
+import * as hostLinks from '../lib/remote/host-links.ts';
 import * as memory from '../lib/remote/transports/memory.ts';
 import { MirrorRoomStore } from '../lib/room/store-mirror.ts';
 import * as consent from '../lib/room/consent.ts';
@@ -40,8 +41,7 @@ function rig(t: TestContext, n: number, { seg, oldHost, tamper, before }: RigOpt
   const host = store.open(code) as FsRoomStore;
   if (before) before(host);
   for (let i = 1; i <= n; i++) host.append({ kind: 'status', text: `line ${i} ${'x'.repeat(i % 7 * 20)}` }, { via: 'system', from: 'claude', system: true });
-  const { secret } = auth.mintInvite(host, { locator: 'pipe:/test' });
-  const { token } = auth.redeemInvite(host, secret, { machine: REMOTE });
+  const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: REMOTE, seats: [] });
   const sessions: { close(): void }[] = [];
   t.after(() => sessions.forEach(s => s.close()));
   const events: string[] = []; // the stream events the mirror received, by name
@@ -54,7 +54,7 @@ function rig(t: TestContext, n: number, { seg, oldHost, tamper, before }: RigOpt
     return c;
   };
   const mirror = new MirrorRoomStore(code, { dir: h.tmpDir('sh-mirror-', t) });
-  t.after(() => fs.rmSync(path.dirname(link.socketPath(mirror.dir)), { recursive: true, force: true }));
+  t.after(() => fs.rmSync(path.dirname(linkSocket.socketPath(mirror.dir)), { recursive: true, force: true }));
   const logged: string[] = [];
   const start = () => link.serveMirror({ mirror, connect, log: m => { logged.push(m); }, retryMs: 30, retryMaxMs: 60, watch: false, seats: () => [] });
   const read = (f: string) => { try { return fs.readFileSync(f, 'utf8'); } catch { return ''; } };

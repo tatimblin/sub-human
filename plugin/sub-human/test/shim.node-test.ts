@@ -1,7 +1,6 @@
 // The stable SSH serve shim (lib/remote/shim.ts): refresh() writes <home>/bin/serve and its pointer only on a change
 // and refuses a temp root; the shim runs `sub-human serve ARGS` from the recorded root, else the newest version in
-// the plugin cache, with the recorded node, else node on PATH; migrateLines() rewrites what an older `authorize`
-// wrote for this home; `authorize --file` does that rewrite.
+// the plugin cache, with the recorded node, else node on PATH.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -10,7 +9,6 @@ import { spawnSync } from 'node:child_process';
 import * as h from './helpers.ts';
 import * as shim from '../lib/remote/shim.ts';
 
-const KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOv2YxFcmD0qVf1aW0gk1oQfWb3m9e1bJ1l3xq3fQnHk';
 const ALLOW = { SUB_HUMAN_ALLOW_TMP_ROOT: '1' };
 
 /** A fake plugin version dir whose CLI prints "<tag> <args>". */
@@ -74,29 +72,3 @@ test('the shim over the real plugin reaches `sub-human serve`', t => {
   assert.match(r.stderr, /no room "vole-1234"/);
 });
 
-test('migrateLines rewrites this home\'s old forced commands to the shim; other lines are kept', () => {
-  const home = '/h/.sub-human';
-  const old = `command="SUB_HUMAN_HOME=${home} /u/.nvm/versions/node/v24.15.0/bin/node /u/.claude/plugins/cache/m/sub-human/0.2.0/bin/sub-human serve --stdio vole-1234 --link abcdef012345",restrict ${KEY} sub-human:vole-1234:abcdef012345`;
-  const other = old.replace(`=${home} `, '=/elsewhere ');
-  const text = ['# mine', 'ssh-ed25519 AAAAx me@laptop', old, other, ''].join('\n');
-  const { text: out, migrated } = shim.migrateLines(text, home);
-  assert.equal(migrated, 1);
-  assert.deepEqual(out.split('\n'), ['# mine', 'ssh-ed25519 AAAAx me@laptop', shim.authorizedLine('vole-1234', 'abcdef012345', KEY, home), other, '']);
-  assert.equal(shim.migrateLines(out, home).migrated, 0, 'idempotent');
-});
-
-test('cli: doctor --fix rewrites an older line for this home to run the shim; other lines stay', t => {
-  h.freshHome(t);
-  const code = h.newRoom();
-  h.register('alice', 'member');
-  const run = (args: string[]) => spawnSync(process.execPath, [h.BIN, ...args], { env: h.childEnv(), encoding: 'utf8' });
-  const id = 'a1b2c3d4e5f6';
-  const home = path.resolve(process.env.SUB_HUMAN_HOME!);
-  const ak = path.join(h.tmpDir('sh-ak-', t), 'authorized_keys');
-  const old = `command="SUB_HUMAN_HOME=${home} ${process.execPath} ${h.BIN} serve --stdio ${code} --link ${id}",restrict ${KEY} sub-human:${code}:${id}`;
-  fs.writeFileSync(ak, `ssh-rsa AAAAB3 me\n${old}\n`, { mode: 0o600 });
-  const r = run(['doctor', '--fix', '--quick', '--authorized-keys', ak]);
-  assert.match(r.stdout, /fixed: rewrote 1 older sub-human line/, r.stderr);
-  assert.equal(fs.readFileSync(ak, 'utf8'), `ssh-rsa AAAAB3 me\n${shim.authorizedLine(code, id, KEY, home)}\n`);
-  assert.equal(fs.statSync(ak).mode & 0o777, 0o600);
-});

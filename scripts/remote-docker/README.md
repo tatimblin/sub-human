@@ -3,10 +3,15 @@
 Test and validation environments for remote rooms 1.0 (SSH) and 1.1 (wss through a TLS front). Everything runs in
 Docker on this Mac. Nothing touches this Mac's sshd, `~/.ssh` or `~/.sub-human`.
 
+**Stage 7 (the remote simplification): nothing here was run.** There was no Docker where it was done. The scenarios,
+the lab driver and the seat CLI were updated to the protocol as it now is (no sh1 invites: every join is the PIN join
+or the login join; typed error reasons; machine ids from the joiner's machine key; the login consent-merge option), and
+checked only with `node --check`. The "today" column below is the last run before Stage 7.
+
 | What | Command | Stack |
 |---|---|---|
 | The scenario suite (personas P1–P3, chaos, skew, security, 1.1) | `npm run test:remote-docker` or `node scripts/remote-docker/harness.js scenarios [--only ID[,ID]] [--out DIR] [--keep]` | `lab/compose.yml`, project `sub-human-lab` |
-| The original 11 assertions, with this Mac as the joiner | `npm run test:remote-docker:mac` or `harness.js run` | `compose.yml`, project `sub-human-remote` |
+| The original 11 assertions, with this Mac as the joiner: **not ported** to the PIN join yet (it linked with an sh1 invite, gone in Stage 7); `harness.js run` exits 2 saying so | `npm run test:remote-docker:mac` or `harness.js run` | `compose.yml`, project `sub-human-remote` |
 | Manual mode: real Claude sessions on this Mac join a devbox room | `harness.js up [--host-seat NAME] [--joiners A,B]`, `status`, `say [--to NAME] TEXT`, `cut`, `heal`, `latency MS`, `down` | `compose.yml` |
 
 ## Topology (`lab/compose.yml`)
@@ -28,7 +33,7 @@ Docker on this Mac. Nothing touches this Mac's sshd, `~/.ssh` or `~/.sub-human`.
               [devbox] <---------------+          fwd.js :7421 -> 127.0.0.1:7420    no UDP)
               sshd (user host), the host room,    (the tailscaled stand-in; the       |
               plugin /plugin (ro), node 24        1.1 ws listener will sit on 7420)   |
-              [devbox-old]  plugin 0.2.0 (cb4d344), baked in              [joiner-b] -+-> bastion:22
+              [devbox-old]  plugin 0.5.0-beta.15 (7c97bdb), baked in      [joiner-b] -+-> bastion:22
                                                                           P2 corporate  corp-proxy:3128
 ```
 
@@ -36,8 +41,9 @@ Docker on this Mac. Nothing touches this Mac's sshd, `~/.ssh` or `~/.sub-human`.
   `/home/host/.sub-human`. The plugin is mounted read-only at `/plugin`; `claude` is a stub, so no room Claude runs. It is on
   the internal `core` network only: a joiner reaches it through toxiproxy (the chaos-able WAN path), through the
   bastion (ProxyJump) or, for 1.1, through tls-front.
-- **devbox-old**: the same image with plugin 0.2.0 from `git archive cb4d344 plugin/sub-human` baked in
-  (`lab/Dockerfile.old`, built once by `lab.js` as `sub-human-lab-old:cb4d344`). Its `joiner` user is the 0.2.0 joiner.
+- **devbox-old**: the same image with the previous release, plugin 0.5.0-beta.15, from `git archive 7c97bdb
+  plugin/sub-human` baked in (`lab/Dockerfile.old`, built once by `lab.js` as `sub-human-lab-old:7c97bdb`; `LAB_OLD_REF`
+  for another). Its `joiner` user is the beta.15 joiner. Releases before 0.5 are not interoperated with any more.
 - **bastion**: sshd for user `jump`: `ForceCommand nologin`, `PermitTTY no`, forwarding only to `devbox:22`,
   `devbox-old:22` and `joiner-a:22`.
 - **joiner-a / joiner-b**: node 24, the plugin, an ssh client, user `joiner` with its own `SUB_HUMAN_HOME`, and
@@ -59,20 +65,20 @@ Docker on this Mac. Nothing touches this Mac's sshd, `~/.ssh` or `~/.sub-human`.
 
 | id | persona | what it proves | today |
 |---|---|---|---|
-| `p1-friends` | P1 | joiner-a joins by ssh with the real flow (`/sub-human invite --ssh`, the line `/sub-human join host@devbox CODE PIN --as bob` through the enrollment door, the host's card Let in, a bare `/sub-human`); posts reach the other side's tail in under 2 s, also with a 300 ms latency toxic each way; machine ids distinct; mirror byte-identical; `doctor` exits 0, `doctor --json` passes the link and the clock, `--bundle FILE` holds no token, secret, PIN or room code | pass |
+| `p1-friends` | P1 | joiner-a joins by ssh with the real flow (`/sub-human invite --ssh`, the line `/sub-human join host@devbox CODE PIN --as bob` through the enrollment door, the host's card Let in, a bare `/sub-human`); posts reach the other side's tail in under 2 s, also with a 300 ms latency toxic each way; machine ids distinct (bob's is the one his machine key gives, `k…`, kept in joiner-a's `machines.json`); mirror byte-identical; `doctor` exits 0, `doctor --json` passes the link and the clock, `--bundle FILE` holds no token, secret, PIN or room code | pass |
 | `p2-corporate` | P2 | joiner-b's isolation (no route, no DNS, only bastion and proxy); bea joins with the line from `invite --ssh … --via jump@bastion` (her link runs `ssh -J` with its own key and the pinned host key); a second home joins via the CONNECT proxy; bastion and proxy logs show the hops | pass |
 | `p3-sleep` | P3 | `docker pause devbox` 90 s (`LAB_SLEEP_S`): both links go offline, then come back within 30 s of the wake; a post while offline is queued (`⧗ queued`) and flushed exactly once; seats renewed with no left/joined line; no line lost or duplicated. `docker pause joiner-a` 45 s (`LAB_JOINER_SLEEP_S`): it catches up on the 6 posts it slept through. Default link timings | pass |
 | `half-open` | P3/P2 | a toxiproxy `timeout` toxic (bob) and iptables DROP (bea) black-hole the links; a post returns within 10 s (`⧗ sending`, kept under its nonce) and lands exactly once after the heal; both links are declared dead within 35 s by the app ping (`LAB_PING_DEADLINE_MS`) | pass |
 | `flap` | P1/P3 | 10 cuts in 60 s (alternating disable and `reset_peer`) while everyone posts; ends byte-identical; every accepted post once; no ghost; bea via the bastion is the control | pass |
 | `slow-link` | P1 | 5 s of upstream latency, past the hook's 3 s deadline: the hook says `⧗ sending (slow link)` within 3 s, never "nothing was sent"; the post lands exactly once (no ghost, no double) and the outbox empties | pass |
-| `skew` | mixed | 0.2.0 host ← current joiner, current host ← 0.2.0 joiner (sh1 both ways; no command makes or takes one any more, so on the current end the lab mints it and writes the link file with the plugin's lib, `seat-cli.js sh1/authorize/linkinvite`): compatible or a clear version message, never divergence; a hello as a 9.9.9 joiner (protocol 99) is refused `PROTOCOL` naming both versions and "The host must update" | pass |
-| `security` | all | `ssh devbox ls` with the link's own key (let in on the card) runs the forced command, not a shell; no pty; no `-W`; the bastion has no shell; homes 0700 with nothing group/world readable; no link token in any log, room file, process list or other file; 5 wrong PINs through the door burn the invite (each says the tries left) and the right one then gets nowhere; `/sub-human kick bob`: key removed, serve stopped, bob's link stops (AUTH) and his post is refused, bea untouched | pass |
+| `skew` | mixed | beta.15 host ← current joiner, current host ← beta.15 joiner, both over the PIN join (`invite --ssh`, the line typed with its PIN, the host's card), protocol 1..2 settling on 2: compatible (posts both ways, mirrors converge) or a clear version message, never divergence; a hello as a 9.9.9 joiner (protocol 99) into the host's serve over an ssh login is refused `PROTOCOL` (reason `SKEW`) naming both versions and "The host must update" | not run (Stage 7) |
+| `security` | all | `ssh devbox ls` with the link's own key (let in on the card) runs the forced command, not a shell; no pty; no `-W`; the bastion has no shell; homes 0700 with nothing group/world readable; no link token in any log, room file, process list or other file; 5 wrong PINs through the door burn the invite (each says the tries left) and the right one then gets nowhere; `/sub-human kick bob`: key removed, serve stopped, bob's link stops (AUTH, typed reason `LINK_REVOKED` or `KEY_REVOKED`) and his post is refused, bea untouched | pass (before Stage 7) |
 | `handoff` | P3 | alice (devbox) runs `/sub-human handoff bob joiner@joiner-a`; bob answers the card; joiner-a hosts at epoch 1 (both signatures in `host_changed`), devbox mirrors it; bea's re-pointed link is offline with a reason naming bob until bob lets her in (`doctor --json` shows the link moved, not reached); bob gives bea and devbox (`--via jump@bastion`) an invite each, they type its line, his card lets each in, a bare `/sub-human` joins both seats again; posts flow, `handoff --status` shows nobody left behind, every copy converges with the old lines kept | pass |
 | `tls-front` | 1.1 | `https://tls-front/` verifies against the lab CA and answers 502 with no listener; with a stand-in listener on the devbox loopback (`lab/ws-probe.js`) the upgrade is 101 and echoes, from joiner-a and from joiner-b only through corp-proxy | pass |
 | `wss` | 1.1 | the host's `sub-human listen` on 127.0.0.1:7420; `/sub-human invite --url https://tls-front` shows `/sub-human join https://tls-front/sub-human/CODE PIN` (no name, no secret in the URL); bob and (through corp-proxy) ben type it, the PAKE pins the listener key, alice's card lets each in, a bare `/sub-human` seats them; a wrong PIN is refused; posts flow both ways; mirrors converge; Caddy's log holds no post text | pass |
 | `tailscale` | 1.1 | opt-in (`TS_SERVE=1` and a tailscale CLI): the plugin's real `sub-human listen` and exactly the commands `invite --web` / `invite --stop` run (`tailscale serve --bg --https=443 --set-path=/sub-human-lab-<rand> http://127.0.0.1:<port>`, then `… --set-path=… off`), with a wss + Noise_NK handshake through the node's MagicDNS name pinned to the listener's key (never Funnel, never `serve reset`). The certificate is warmed first and the connect waits 45 s (a cold ts.net name takes ~20 s). A tailnet without Serve/HTTPS fails the serve check with the plugin's message (the admin URL), within 10 s | skip |
 | `wss-resilience` | P3/P2 (1.1) | bob (direct) and ben (corp-proxy) over wss: `docker pause devbox` `LAB_WSS_SLEEP_S` (45) s, both offline, a post queued, back within 30 s, the queued post once; iptables DROP to tls-front / corp-proxy, both dead within `LAB_PING_DEADLINE_MS` and back after the heal; the listener killed and restarted, both redial; converged throughout | pass |
-| `login` | P1 | bob's own key is an ordinary line in the devbox account's `authorized_keys`; `/sub-human join host@devbox CODE --as bob` (no invite, PIN or card) first fails at once on the unknown host key, naming `ssh host@devbox` to run once (BatchMode, no hang, no link minted); after that ssh it links and seats in one step through the host's shim (written by alice's join), `serve … --login` runs as host, the room line names the link, posts flow, mirror converges; a key restricted to another link (its forced-command line) gets AUTH on the login path and mints nothing; `/sub-human kick bob` stops the link | pass |
+| `login` | P1 | bob's own key is an ordinary line in the devbox account's `authorized_keys`; `/sub-human join host@devbox CODE --as bob` (no invite, PIN or card) first fails at once on the unknown host key, naming `ssh host@devbox` to run once (BatchMode, no hang, no link minted); after that ssh it links and seats in one step through the host's shim (written by alice's join), `serve … --login` runs as host, the room line names the link, posts flow, mirror converges; the login seat has no account by default (its own person for consent; `sub-human options CODE login-same-person on` in the host's shell makes it the owner's) and its machine id is its machine key's (`k…`); a key restricted to another link (the forced-command line a card's Let in writes, here written directly) gets AUTH on the login path and mints nothing; `/sub-human kick bob` stops the link | not run (Stage 7) |
 | `short` | P1/P2 (beta.6) | invites on real sshd and the web: `invite --ssh` writes the enrollment door (the room's public key, forced to `serve --enroll`) and shows `/sub-human join host@devbox CODE 4829`; bob (joiner-a, WAN) types a wrong PIN (4 tries left), then the right one: the PAKE through the door, devbox's real Ed25519 host key pinned from inside it, the door gone; alice's tail wakes her card, Let in writes his key as a one-link forced command, online, a bare `/sub-human` seats him, posts flow. ben (joiner-b, corp-proxy, tls-front) joins by URL + PIN the same way; mirrors converge; the front's log holds no PIN. mallory (joiner-b via the bastion) with the public enrollment key: no shell, pty or forwarding; 5 guesses burn the invite, the door closes, the right PIN then says the door is shut | pass |
 
 Statuses: **pass**; **fail** (a check failed: exit 1); **pending** (the feature is not in the plugin yet, so the
@@ -99,6 +105,7 @@ probe finds it and the scenario runs. You can also force things:
 | `outbox` | `lib/remote/outbox.ts` (or `outbox` in `link.ts`) | p3-sleep |
 | `autoRejoin` | the daemon renews this machine's seats on reconnect (`keepSeats` in `link.ts`) | p3-sleep |
 | `versionRange` | `protocol.skewMessage` (the hello's `proto` range) | skew |
+| `outbox`, `heartbeat`, `autoRejoin` (source markers) | `link.ts`, `link-engine.ts` and `link-connect.ts` together (Stage 7 split the daemon); `invites.ts`, else beta.15's `auth.ts`, for the sh2 / PIN markers | as above |
 | `ws`, `urlPin` | transport kind `ws`/`wss` or `ws.ts`/`listener.ts`; the join hook takes a URL + PIN | wss, wss-resilience |
 | `loginJoin` | the join hook builds a login link (`loginSpec`) | login |
 
@@ -112,7 +119,7 @@ redacted from every file.
 
 ## Running
 
-- Needs Docker (28 here). The first run builds `sub-human-lab:node24` and `sub-human-lab-old:cb4d344` and pulls
+- Needs Docker (28 here). The first run builds `sub-human-lab:node24` and `sub-human-lab-old:7c97bdb` and pulls
   toxiproxy and caddy. A full suite takes about 7 minutes, most of it the 90 s sleep, the 60 s flap and the 45 s
   heartbeat waits.
 - The suite is idempotent: it starts the stack (or reuses one left by `--keep`), resets every machine between
@@ -123,7 +130,7 @@ redacted from every file.
 - Link timings: `SUB_HUMAN_LINK_*_MS` in the harness's environment reach every machine's hooks, CLI and link daemons
   (a scenario may add its own `linkEnv`); the default run uses the plugin's own timings.
 - Knobs: `LAB_SLEEP_S`, `LAB_JOINER_SLEEP_S`, `LAB_FLAP_CUTS`, `LAB_FLAP_PERIOD_MS`, `LAB_HEARTBEAT_DEADLINE_MS`,
-  `LAB_PING_DEADLINE_MS`, `LAB_WSS_SLEEP_S` (45), `LAB_WS_PORT` (7420), `LAB_WS_FWD_PORT` (7421), `LAB_OLD_REF` (cb4d344), `LAB_STRICT`.
+  `LAB_PING_DEADLINE_MS`, `LAB_WSS_SLEEP_S` (45), `LAB_WS_PORT` (7420), `LAB_WS_FWD_PORT` (7421), `LAB_OLD_REF` (7c97bdb), `LAB_STRICT`.
 
 ## Files
 
@@ -132,4 +139,4 @@ redacted from every file.
 - `scenarios/`: one file per scenario, plus `_lib.js` (ssh routes and the delivery, link-state and convergence helpers).
 - `lab/`: `compose.yml`, `Dockerfile` (the one machine image), `Dockerfile.old`, `entry.sh` (roles), `seat-cli.js` /
   `seat-proc.js` (seats inside a machine), `fwd.js`, `ws-probe.js`, `tinyproxy.conf`, `Caddyfile`.
-- `compose.yml`, `Dockerfile` and `host-cli.js`: the original single-devbox stack (`run` and the manual mode).
+- `compose.yml`, `Dockerfile` and `host-cli.js`: the original single-devbox stack (the manual mode; `run` is not ported).

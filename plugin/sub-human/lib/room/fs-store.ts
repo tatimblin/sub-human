@@ -24,9 +24,11 @@
  * documents named). rotate() seals the active segment now (tests; an append rotates on its own when due).
  */
 
+import * as roomWatch from './watch.ts';
+import type { Change } from './watch.ts';
 import nodeFs from 'node:fs';
 import path from 'node:path';
-import { roomDir, machineId } from '../home.ts';
+import { roomDir, machineIn } from '../home.ts';
 import { withLock } from '../lock.ts';
 import { writeFileAtomic, writeJsonAtomic, readJson } from '../io.ts';
 import { RoomError } from './validate.ts';
@@ -134,6 +136,8 @@ class FsRoomStore implements RoomStore {
   recentFrom(): number { return logIo.recentFrom(this.dir); }
   snapshot(): (SnapshotWire & { held: number }) | null { return logIo.snapshotOf(this.dir); }
   tailer(opts: { fs?: TailerFs; after?: number } = {}): Tailer { return logIo.tailer(this.dir, opts); }
+  /** What changes in the room's directory (lib/room/watch.ts): the log, and which documents; null: anything may have. */
+  watch(onChange: (change: Change | null) => void): () => void { return roomWatch.watch(this.dir, onChange); }
   lineHash(id: number): string | null { return logIo.lineHash(this.dir, id); }
   validateChain(): ChainCheck { return logIo.validateChain(this.dir); }
   verifyChain(opts: { fromOffset?: number; prev?: string } = {}): ChainVerify { return logIo.verifyChain(this.dir, opts); }
@@ -170,7 +174,7 @@ class FsRoomStore implements RoomStore {
     const moved = path.join(d, MOVED);
     return logIo.appendLocked(d, tail => {
       const host = p.kind === 'host_changed' || fs.existsSync(moved) ? this.hostState() : undefined;
-      const r = placeAfter(p, { keys: this._keys, host, machine: machineId(), ...tail, now: Date.now() });
+      const r = placeAfter(p, { keys: this._keys, host, machine: machineIn(this.code), ...tail, now: Date.now() });
       if (r.e.kind === 'host_changed') fs.writeFileSync(moved, '', { mode: 0o600 });
       return r;
     });
@@ -208,7 +212,7 @@ class FsRoomStore implements RoomStore {
   setCursor(name: string, n: number): void { writeFileAtomic(this._cursorFile(name), String(n)); }
 
   // ----- members -----
-  _readMembers(): Members { try { return members.fromLegacy(readJson(this._membersFile, {}) || {}); } catch { return {}; } }
+  _readMembers(): Members { try { return readJson(this._membersFile, {}) || {}; } catch { return {}; } }
   _updateMembers(fn: (current: Members) => Members | null | undefined): Members | null {
     const file = this._membersFile;
     return withLock(file + '.lock', () => {

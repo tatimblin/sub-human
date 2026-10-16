@@ -17,7 +17,7 @@
  *   scanTail(newest, p, now) -> {last, recent, replayed}   the tail as a placement needs it (below)
  *   rates: per `from` per RATE_WINDOW_MS, agent posts to the room RATE_MAX, to one member RATE_ADDRESSED_MAX (a
  *       bucket per (from, to)), and a person's own entries RATE_HUMAN_MAX (high: a person never reaches it; a script
- *       flooding through the hooks does. A link's human posts have the host's lower cap, LINK_HUMAN_RATE_MAX,
+ *       flooding through the hooks does. A link's posts have the host's per-link quotas, LINK_QUOTAS,
  *       lib/remote/server.ts). RoomError RATE
  *   checkSigned(p, keys, now)    a via=human payload is the person's: v2, signed for this room, ts within
  *                                SIG_SKEW_MS of now, verified against their pinned key. RoomError AUTH
@@ -27,8 +27,7 @@
  *                                STALE (lib/handoff.ts writes host_changed)
  *   hostState(entries) -> {epoch, host?, machine?, locator?, id?}   the last host_changed entry, else epoch 0
  *   normalize(e)                 legacy display mapping (concern -> objection, agree -> signoff, plan_rev -> proposal
- *                                {hash}, plan_hash -> proposal_hash; 0.4.x's "orch" in from, to, by, owner ->
- *                                "claude"). The log itself is never rewritten.
+ *                                {hash}, plan_hash -> proposal_hash). The log itself is never rewritten.
  *   CHAT_KINDS                   say, status: the kinds a view may leave out (everything else decides state)
  *   blobRef(pathOrRef), checkKey(key), checkCursor(name)   the names a store's documents, blobs and cursors take
  */
@@ -38,7 +37,6 @@ import * as config from '../config.ts';
 import { hash12 } from '../text.ts';
 import { RoomError, validate } from './validate.ts';
 import * as envelope from './envelope.ts';
-import { roomClaudeName } from './members.ts';
 import { humanKey, publicKey } from './trust.ts';
 import type { Entry, EntryInput, HostState, Payload, PlaceOpts, TrustCtx, Validated, ValidateOpts } from './types.ts';
 
@@ -56,7 +54,6 @@ function normalize(e: Entry): Entry {
   else if (n.plan_hash && !n.proposal_hash) n.proposal_hash = n.plan_hash;
   delete n.plan_hash;
   if (n.to == null) n.to = 'room';
-  for (const k of ['from', 'to', 'by', 'owner'] as const) { const v = n[k]; if (typeof v === 'string') n[k] = roomClaudeName(v); } // 0.4.x "orch"
   return n;
 }
 
@@ -188,7 +185,7 @@ function placeAfter(p: Payload, { keys, host, machine, newest, prevLine, now }: 
     const who = p.via === 'human' ? p.from : `${p.from}'s Claude`;
     throw new RoomError('RATE', `rate limit: ${who} posted ${rateMax(p)} times${to} in the last minute; wait before posting again`);
   }
-  if (t.replayed) throw auth('this signed entry was placed already (its nonce is in the log)');
+  if (t.replayed) throw new RoomError('AUTH', 'this signed entry was placed already (its nonce is in the log)', 'PLACED_ALREADY');
   if (p.via === 'human') checkSigned(p, keys, now);
   checkPin(p, keys);
   const { sig, ...rest } = p;

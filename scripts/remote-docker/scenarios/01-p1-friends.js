@@ -36,8 +36,9 @@ module.exports = {
     t.check('the joiner holds a mirror, not the room; its link is online', !d0.isHost && d0.link && d0.link.state === 'online', `link ${d0.link && d0.link.state}`);
     const hostDump = host.dump(code);
     const bobJoin = hostDump.entries.find(e => e.kind === 'member_joined' && e.from === 'bob');
-    t.check("host's member_joined for bob carries joiner-a's machine id", bobJoin && bobJoin.machine === d0.machine && d0.machine !== hostDump.machine,
-      `bob ${bobJoin && bobJoin.machine}, devbox ${hostDump.machine}`);
+    // the id the host derived from joiner-a's machine key ('k' + 15 hex), which joiner-a keeps for the room (machineIn)
+    t.check("host's member_joined for bob carries joiner-a's machine id (its machine key's)", bobJoin && bobJoin.machine === d0.machineIn && /^k[0-9a-f]{15}$/.test(d0.machineIn || '') && d0.machineIn !== hostDump.machine,
+      `bob ${bobJoin && bobJoin.machine}, joiner-a in the room ${d0.machineIn}, devbox ${hostDump.machine}`);
 
     const base = await roundTrip(t, host, j, code, 'p1 plain');
     t.metric('plain', base);

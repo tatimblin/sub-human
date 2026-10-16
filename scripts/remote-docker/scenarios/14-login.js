@@ -3,8 +3,10 @@
 // an ordinary authorized_keys line (no command=), over the WAN path. Checked: a first connection to a host ssh does not
 // know yet fails at once with the exact `ssh host@devbox` to run once (BatchMode: no prompt, no hang) and mints no
 // link; after that one ssh, `/sub-human join host@devbox CODE --as bob` links and takes the seat in one step, through
-// the host's stable shim (written by alice's own join there); posts flow both ways; the room line names the link. A key
-// the host restricted to another link (its forced-command line) cannot use the login path: AUTH, no link. kick ends it.
+// the host's stable shim (written by alice's own join there); posts flow both ways; the room line names the link. The
+// login seat is its own person for consent (no account) unless the host turns on the room option login-same-person. A
+// key the host restricted to another link (its forced-command line) cannot use the login path: AUTH, no link. kick
+// ends it.
 const { WAN, delivered, converge, waitState } = require('./_lib.js');
 
 const AK = '/home/host/.ssh/authorized_keys';
@@ -60,10 +62,15 @@ module.exports = {
     t.check('posts flow both ways', a.ok && b.ok && d1.ok && d2.ok, `up ${d1.ok ? d1.t - a.t0 : null} ms, down ${d2.ok ? d2.t - b.t0 : null} ms`);
     const c = await converge(t, host, code, [seat]);
     t.check('mirror byte-identical to the host log, chains verify', c.ok, c.detail);
+    const ms = JSON.parse(host.dump(code).members || '{}');
+    t.check('by default the login seat is its own person: no account (login-same-person is off)', !!ms.bob && ms.bob.account === undefined, JSON.stringify(ms.bob || null));
+    t.check('its machine id is the one the joiner\'s machine key gives, not its home\'s', /^k[0-9a-f]{15}$/.test((ms.bob && ms.bob.machine) || ''), (ms.bob && ms.bob.machine) || 'none');
+    const opt = host.options(code, 'login-same-person', 'on');
+    t.check('the host person can turn login-same-person on, in their own shell', opt.ok && /login-same-person: on/.test(opt.out), opt.out);
 
-    // a key restricted to another link: the forced-command line a host writes for one link (here an sh1 invite's)
+    // a key restricted to another link: the forced-command line a host's admit writes for one link
     const carolPub = lab.keypair('joiner-a', 'id_carol');
-    const { linkId: other } = lab.authorize(lab.invite(code), carolPub);
+    lab.restrict(code, 'bbbbbbbbbbbb', carolPub); // a link id the host never made: the line alone is the restriction
     const confC = lab.sshConfig('joiner-a', 'carol', 'id_carol', WAN);
     const carol = lab.seat('joiner-a', { home: '.sub-human-carol' });
     const r = carol.login('carol', 'host@devbox', code, '-F', confC);

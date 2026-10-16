@@ -2,7 +2,7 @@
  * plugin/sub-human/lib/remote/protocol.ts: the wire protocol between a link (lib/remote/client.ts, on the
  * machine of a remote member) and a room's server (lib/remote/server.ts, on the host): the ops, the frame
  * shapes, the error codes and the line codec. Transport-agnostic (lib/remote/transports/*). Zero
- * dependencies beyond node:string_decoder and lib/config.ts.
+ * dependencies beyond node:string_decoder, lib/config.ts, lib/reasons.ts and RoomError.
  *
  * Frames, one JSON object per line (as mcp/room-server.ts speaks):
  *   request  {id, op, params}        reply {id, result} | {id, error: {code, message}}
@@ -22,17 +22,16 @@
  *   epoch                            hello and append may carry the mirror's host epoch (lib/handoff.ts); the hello
  *                                    reply carries the server's. A hello from a later epoch, or an append from another,
  *                                    is STALE (a host the room moved away from, or a copy not caught up)
- *   PROTO = {min: 1, max: 2}         the protocol versions this end speaks. hello carries {v, proto, client, caps}:
- *                                    v the version the client needs at least (1, or 2 for an sh2 invite: a host
- *                                    before 0.4 checks v === 1 and has no proto), proto its range, client its plugin
- *                                    version. The server answers {v, proto, server, caps, time}: time its clock (ms; additive,
- *                                    for the skew sub-human doctor reports), v = negotiate() of the two
- *                                    ranges (a hello without proto is the range [v, v]); no overlap is PROTOCOL with
- *                                    skewMessage(), which names the side that must update. v2: the sh2 invite and its PIN
+ *   PROTO = {min: 1, max: 2}         the protocol versions this end speaks. hello carries {proto, client, caps}: proto
+ *                                    its range, client its plugin version (a peer may also send v, the version it needs
+ *                                    at least, which the server honours). The server answers {v, proto, server, caps,
+ *                                    time}: time its clock (ms, for the skew sub-human doctor reports), v = negotiate()
+ *                                    of the two ranges; no overlap, or a hello with no proto, is PROTOCOL (reason SKEW)
+ *                                    with skewMessage(), which names the side that must update. v2: the sh2 invite and its PIN
  *   VERSION = PROTO.max              (kept for callers that name one version)
  *   PLUGIN_VERSION                   this plugin's version (.claude-plugin/plugin.json), '?' when unreadable
  *   negotiate(a, b) -> v | null      the highest version in both ranges {min, max}, null when they do not overlap
- *   rangeOf(params) -> {min, max} | null   a hello's range: its proto when well formed, else [v, v]
+ *   rangeOf(params) -> {min, max} | null   a hello's range: its proto when well formed, else null
  *   skewMessage({host, joiner}) -> string   {version, proto} each: "host runs sub-human 0.4.0 (protocol 3–4); you run
  *                                    0.3.0 (protocol 2). Update your plugin: /plugin update sub-human" (or "The host
  *                                    must update …" when the joiner is the newer side)
@@ -58,10 +57,15 @@
  *   CODES                            RoomError codes on both ends and on the wire, unchanged:
  *                                    INVALID RATE LOCK NO_ROOM (today's) + OFFLINE HOST_ONLY AUTH FORK PROTOCOL
  *                                    STALE (a write or hello from another host epoch than the server's)
+ *   reasons                          an error reply may carry reason beside its code (lib/reasons.ts: which failure
+ *                                    exactly, e.g. PLACED_ALREADY, INVITE_USED, UNKNOWN_OUTCOME); additive, a peer
+ *                                    without them sends none, and nothing depends on one arriving
  *   UNKNOWN_OUTCOME, unknownOutcome(err) -> bool   an OFFLINE whose request went out but got no answer in time (a slow
- *                                    link, a deadline): it may still land, so it is never "nothing was sent". The
- *                                    phrase rides in the message, so it survives the bridge and the daemon's socket
- *   request(id, op, params), reply(id, result), error(id, code, message), event(id, ev, data) -> frame
+ *                                    link, a deadline): it may still land, so it is never "nothing was sent". reason
+ *                                    UNKNOWN_OUTCOME (it survives the bridge and the daemon's socket); the phrase is
+ *                                    the message people read
+ *   request(id, op, params), reply(id, result), error(id, code, message, reason?), event(id, ev, data) -> frame
+ *   toError({code, message, reason?}) -> RoomError   an error reply's error, as thrown on this end
  *   encode(frame) -> string          one line, newline-terminated
  *   decoder() -> {push(chunk) -> frame[]}   buffers partial lines; a malformed line, or one longer than
  *                                    LINK_FRAME_MAX_BYTES, is a PROTOCOL error frame (id null) in its place
@@ -73,6 +77,8 @@ import { StringDecoder } from 'node:string_decoder';
 import fs from 'node:fs';
 import path from 'node:path';
 import { LINK_FRAME_MAX_BYTES } from '../config.ts';
+import { RoomError } from '../room/validate.ts';
+import { isReason, reasonOf } from '../reasons.ts';
 import type {
   FrameId, Op, EventName, WireCode, ProtoRange, PeerVersion, OpParams, RequestFrame, AnyRequest, ResultFrame,
   ErrorFrame, EventData, EventFrame, DecodedFrame, Caps, IncomingRequest,
@@ -86,11 +92,10 @@ const PLUGIN_VERSION: string = (() => {
 
 const isVersion = (n: unknown): n is number => Number.isInteger(n) && (n as number) >= 1 && (n as number) <= 1000;
 /** A hello's fields as they arrived: unchecked. */
-interface RangeFields { v?: unknown; proto?: { min?: unknown; max?: unknown } | null }
-/** @returns {{min: number, max: number} | null} */
-function rangeOf({ v, proto }: RangeFields = {}): ProtoRange | null {
-  if (proto && isVersion(proto.min) && isVersion(proto.max) && proto.min <= proto.max) return { min: proto.min, max: proto.max };
-  return isVersion(v) ? { min: v, max: v } : null;
+interface RangeFields { proto?: { min?: unknown; max?: unknown } | null }
+/** A hello's range, its proto when well formed; null otherwise (a hello with no proto is refused: PROTOCOL SKEW). */
+function rangeOf({ proto }: RangeFields = {}): ProtoRange | null {
+  return proto && isVersion(proto.min) && isVersion(proto.max) && proto.min <= proto.max ? { min: proto.min, max: proto.max } : null;
 }
 /** @returns {number | null} */
 function negotiate(a: ProtoRange, b: ProtoRange): number | null {
@@ -116,10 +121,10 @@ const CODES: Readonly<{ [C in WireCode]: C }> = Object.freeze({
 });
 
 const UNKNOWN_OUTCOME = 'the outcome is unknown: it went out and may still land';
-/** @returns {boolean} */
+/** An OFFLINE whose op went out (reason UNKNOWN_OUTCOME, or the bridge's unknown flag): never "nothing was sent". */
 const unknownOutcome = (e: unknown): boolean => {
-  const x = e as { code?: unknown; unknown?: unknown; message?: unknown } | null | undefined; // any thrown value
-  return !!x && x.code === CODES.OFFLINE && (x.unknown === true || String(x.message).includes(UNKNOWN_OUTCOME));
+  const x = e as { code?: unknown; unknown?: unknown } | null | undefined; // any thrown value
+  return !!x && x.code === CODES.OFFLINE && (x.unknown === true || reasonOf(x) === 'UNKNOWN_OUTCOME');
 };
 
 /** @returns {{id: number|string, op: string, params: object}} */
@@ -128,8 +133,10 @@ function request(id: FrameId, op: string, params?: object): AnyRequest;
 function request(id: FrameId, op: string, params: object = {}): AnyRequest { return { id, op, params }; }
 /** @returns {{id: number|string, result: *}} */
 const reply = <R>(id: FrameId | undefined, result: R): ResultFrame<R> => ({ id, result });
-/** @returns {{id: number|string, error: {code: string, message: string}}} */
-const error = (id: FrameId | undefined, code: string, message: unknown): ErrorFrame => ({ id, error: { code, message: String(message) } });
+/** An error reply; reason (lib/reasons.ts) rides beside the code when the error has one. */
+const error = (id: FrameId | undefined, code: string, message: unknown, reason?: string | null): ErrorFrame => ({ id, error: { code, message: String(message), ...(isReason(reason) ? { reason } : {}) } });
+/** The RoomError an error reply stands for, with its reason when it carries one this end knows. */
+const toError = (e: { code: string; message: unknown; reason?: unknown }): RoomError => new RoomError(e.code, String(e.message), isReason(e.reason) ? e.reason : null);
 /** @returns {{id: number|string, ev: string, data: *}} */
 const event = <E extends EventName>(id: FrameId, ev: E, data: EventData[E]): EventFrame<E> => ({ id, ev, data }) as EventFrame<E>;
 
@@ -171,5 +178,5 @@ const isEvent = (f: unknown): f is EventFrame => !!f && typeof (f as Fields)!.ev
 
 export {
   PROTO, VERSION, PLUGIN_VERSION, rangeOf, negotiate, skewMessage, OPS, EVENTS, FIELDS, CAPS, CODES, UNKNOWN_OUTCOME,
-  unknownOutcome, request, reply, error, event, encode, decoder, isRequest, isReply, isEvent,
+  unknownOutcome, request, reply, error, toError, event, encode, decoder, isRequest, isReply, isEvent,
 };

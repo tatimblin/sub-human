@@ -51,12 +51,12 @@ class MemoryRoomStore implements RoomStore {
     this.trust = store.trustOver(this._keys);
     const self = this;
     const base: Pick<MembersApi, 'read' | 'update'> = {
-      read: () => members.fromLegacy(clone(self._members.doc)),
+      read: () => clone(self._members.doc),
       // compare-and-set: fn sees a copy at version v; the write lands only if nobody wrote since (retry otherwise)
       update(fn) {
         for (;;) {
           const { v, doc } = self._members;
-          const next = fn(members.fromLegacy(clone(doc)));
+          const next = fn(clone(doc));
           if (!next) return null;
           if (self._members.v !== v) continue;
           self._members = { v: v + 1, doc: clone(next) };

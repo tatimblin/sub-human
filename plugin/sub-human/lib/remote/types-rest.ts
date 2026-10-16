@@ -16,6 +16,8 @@ export interface Transport {
   close(): void;
   /** the pipe kind: the child's last 2 KiB of stderr */
   stderr?: () => string;
+  /** false while the stream under it has more buffered than it wants (a replay waits: lib/remote/server.ts) */
+  writable?: () => boolean;
 }
 
 /** lineTransport's parts: the transport, and what its kind feeds it. */

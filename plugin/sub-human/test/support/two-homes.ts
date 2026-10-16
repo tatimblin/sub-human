@@ -10,10 +10,11 @@
  *     lease(seat)                     the hooks module's hello lease for the seat's session (with its nonce), as
  *                                     hooks/handlers/mod-hello.ts writes it; join and every prompt write it first
  *     join(seat, args), say(seat, text), plain(seat, text)          the join expansion; an @room post; a prompt
- *     invite1(code) -> string         an sh1 invite (no PIN) to a room hosted here, for a second home (internal: no
- *                                     command makes one; the robustness tests link with it)
- *     linkInvite1(code, invite)       this machine's link file for that invite (what a 0.4 sh1 join wrote); then
- *                                     join(seat, `NAME CODE`) takes the seat over it
+ *     inviteFor(code, joiner) -> string   a bound invite (no PIN, no card: lib/remote/invites.ts mintFor) to a room
+ *                                     hosted here, for the second home `joiner` (no command makes one with no card;
+ *                                     the robustness tests link with it)
+ *     linkInvite(code, invite)        this machine's link file for that invite; then join(seat, `NAME CODE`) takes
+ *                                     the seat over it
  *     joinVia(host, hostSeat, seat, {as?, line?, invite?}) -> Promise<{shown, line, code, pin, typed, admitted, seated}>
  *                                     (once seated, it waits until the seat resolves here: the mirror's members)
  *                                     the whole join from a second home: `/sub-human invite --pipe` (or invite: other
@@ -33,10 +34,11 @@ import type { TestContext } from 'node:test';
 import * as h from '../helpers.ts';
 import type { HookInput, HookJson } from '../hooks/helpers.ts';
 import * as identity from '../../lib/identity.ts';
-import * as auth from '../../lib/remote/auth.ts';
+import * as invites from '../../lib/remote/invites.ts';
 import * as store from '../../lib/room/store.ts';
 import * as links from '../../lib/room/links.ts';
-import * as link from '../../lib/remote/link.ts';
+import * as homeMod from '../../lib/home.ts';
+import * as linkConnect from '../../lib/remote/link-connect.ts';
 import * as admission from '../../lib/remote/admission.ts';
 
 const PROBE = path.join(import.meta.dirname, 'worker-probe.ts');
@@ -84,16 +86,17 @@ class Machine {
   }
 
   join(seat: Seat, args: string): MachineRun { this.lease(seat); return this.hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: args }, seat); }
-  /** An sh1 invite (no PIN) to room code hosted here, for a second home on this machine (pipe). */
-  invite1(code: string): string {
-    return this.lib(() => auth.mintInvite(store.open(code), { locator: `pipe:${this.home}` }).invite);
+  /** A bound invite (no PIN, no card) to room code hosted here, for the second home `joiner` on this machine (pipe). */
+  inviteFor(code: string, joiner: Machine): string {
+    const machine = joiner.lib(() => homeMod.machineId())!;
+    return this.lib(() => invites.mintFor(store.open(code), { locator: `pipe:${this.home}`, machine, seats: [] }).invite);
   }
 
-  /** This machine's link file for an sh1 invite (the join over it is then `NAME CODE`). */
-  linkInvite1(code: string, invite: string): void {
-    const inv = auth.parseInvite(invite);
+  /** This machine's link file for that invite (the join over it is then `NAME CODE`). */
+  linkInvite(code: string, invite: string): void {
+    const inv = invites.parseInvite(invite);
     if (!inv) throw new Error(`not an invite: ${invite}`);
-    const transport = link.transportOf(inv.locator);
+    const transport = linkConnect.transportOf(inv.locator);
     if (!transport) throw new Error(`no transport for ${inv.locator}`);
     this.lib(() => links.set(code, { code, transport, invite, created_at: new Date().toISOString() }));
   }

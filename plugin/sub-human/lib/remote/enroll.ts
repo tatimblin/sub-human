@@ -3,7 +3,7 @@
  * 4829` (or a URL and the PIN); the 4-digit PIN is the whole secret, and it never travels: both ends run CPace
  * (lib/remote/cpace.ts, ristretto255 + SHA-512, initiator-responder, explicit key confirmation) with it. Guessing is
  * online only: the host charges one of the invite's 5 tries for each attempt it answers (before it answers), so a
- * man in the middle or a prober gets one guess per attempt and the invite burns after 5 (lib/remote/auth.ts
+ * man in the middle or a prober gets one guess per attempt and the invite burns after 5 (lib/remote/invites.ts
  * startShort, failShort). Inside the PAKE the host vouches for the key the joiner then pins (sshd's Ed25519 host key over
  * ssh, the listener's X25519 key over the web), and hands over a fresh 128-bit secret (sealed with a key derived from
  * ISK) bound to the joiner's machine and its new link key. That secret redeems nothing until the host PERSON answers
@@ -52,14 +52,15 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import * as protocol from './protocol.ts';
 import * as cpace from './cpace.ts';
-import * as auth from './auth.ts';
+import * as invites from './invites.ts';
+import * as hostLinks from './host-links.ts';
 import { RoomError } from '../room/validate.ts';
 import * as config from '../config.ts';
 import { CODE_RE, NAME_RE } from '../text.ts';
 import { createRequire } from 'node:module';
 import type { LinkSpec, Transport, WsSpec } from './types-rest.ts';
 import type { CodedError, DecodedFrame, Invites, Joiner, ShortInvite } from './types-core.ts';
-import type { ShortAttempt } from './auth.ts';
+import type { ShortAttempt } from './invites.ts';
 import type { Conn } from './ws.ts';
 import type { RoomStore } from '../room/types.ts';
 
@@ -172,7 +173,7 @@ function serveEnroll(transport: Transport, { store, kind, log = () => {}, timeou
       const sid = unb64(p.sid, 16), Ya = unb64(p.ya, 32), ADa = unb64(p.ada);
       if (ADa.length > ADA_MAX) throw new RoomError('PROTOCOL', 'the joiner\'s details are too long');
       const joiner = joinerOf(ADa, kind);
-      const open = auth.startShort(store, { kind, now: now() });
+      const open = invites.startShort(store, { kind, now: now() });
       if (!open.length) {
         throw new RoomError('AUTH', `no invite for room ${store.code} is open here (used, burnt, cancelled or expired); ask the host for a new one`);
       }
@@ -181,7 +182,7 @@ function serveEnroll(transport: Transport, { store, kind, log = () => {}, timeou
         const adb = Buffer.from(JSON.stringify({ v: V, kind, room: store.code, key: o.hostKey }));
         const r = cpace.responder({ prs: Buffer.from(o.prs), ci: ci(store.code, kind), sid, ad: adb, Ya, ADa });
         if (!r) {
-          auth.failShort(store, open.map(x => x.key), { now: now() });
+          invites.failShort(store, open.map(x => x.key), { now: now() });
           throw new RoomError('PROTOCOL', 'the joiner\'s share is not a valid group element');
         }
         offers.push({ ...o, adb, Yb: r.Y, isk: r.isk, macKey: r.macKey });
@@ -191,7 +192,7 @@ function serveEnroll(transport: Transport, { store, kind, log = () => {}, timeou
     }
 
     function wrong(): never {
-      const { left, burnt } = auth.failShort(store, st!.offers.map(o => o.key), { now: now() }); // st: a start was answered
+      const { left, burnt } = invites.failShort(store, st!.offers.map(o => o.key), { now: now() }); // st: a start was answered
       roomLine(store, burnt ? `someone typed a wrong PIN for an invite to this room, its last try: the invite no longer works` : `someone typed a wrong PIN for an invite to this room (${left} ${left === 1 ? 'try' : 'tries'} left)`, log);
       throw new RoomError('AUTH', burnt || !left
         ? 'wrong PIN, and that was the last try: this invite no longer works. Ask the host for a new one (/sub-human invite on their side)'
@@ -203,7 +204,7 @@ function serveEnroll(transport: Transport, { store, kind, log = () => {}, timeou
       const o = Number.isInteger(i) ? st_.offers[i as number] : null;
       if (!o) throw new RoomError('PROTOCOL', 'enroll.finish names no offer');
       if (!cpace.equal(unb64(ta, 64), cpace.tag(o.macKey, st_.Ya, st_.ADa))) return wrong();
-      const r = auth.enrollShort(store, o.key, { tried: st_.offers.map(x => x.key), joiner: st_.joiner, now: now(), admitMs: config.envMs('SUB_HUMAN_ADMIT_TTL_MS', config.ADMIT_TTL_MS) });
+      const r = invites.enrollShort(store, o.key, { tried: st_.offers.map(x => x.key), joiner: st_.joiner, now: now(), admitMs: config.envMs('SUB_HUMAN_ADMIT_TTL_MS', config.ADMIT_TTL_MS) });
       const j = st_.joiner, fp = fingerprint(j.key);
       roomLine(store, `${j.name} on ${j.label}${fp ? ` (${fp})` : ''} typed an invite's PIN; waiting for ${o.by || 'the host'} to let them in (the card, or /sub-human admit ${r.ref})`, log);
       return { box: seal(boxKey(o.isk, st_.sid), { secret: r.secret, link: r.id, ref: r.ref, expires_at: r.expires_at }, st_.sid) };
@@ -268,7 +269,7 @@ async function joinEnroll({ code, kind, pin, joiner, transport, checkKey = () =>
   code: string; kind: string; pin: string; joiner: Omit<Joiner, 'key'> & { key?: string | null };
   transport: Transport | Promise<Transport>; checkKey?: (key: string | null) => void | Promise<void>; timeoutMs?: number;
 }): Promise<Enrolled> {
-  if (!KINDS.has(kind) || !CODE_RE.test(code) || !auth.SHORT_PIN_RE.test(String(pin))) throw new RoomError('INVALID', 'enrollment needs a room, a transport and a 4-digit PIN');
+  if (!KINDS.has(kind) || !CODE_RE.test(code) || !invites.SHORT_PIN_RE.test(String(pin))) throw new RoomError('INVALID', 'enrollment needs a room, a transport and a 4-digit PIN');
   const t = await transport;
   const ask = requester(t, timeoutMs);
   const sid = crypto.randomBytes(16);
@@ -299,7 +300,7 @@ async function joinEnroll({ code, kind, pin, joiner, transport, checkKey = () =>
     await checkKey(vouched.key); // before our tag goes out: an attempt through someone in between stops here
     const r2 = await ask(2, 'enroll.finish', { i: hit.i, ta: b64(cpace.tag(hit.macKey, a.Y, ADa)) });
     const body = unseal(boxKey(hit.isk, sid), r2 && r2.box, sid);
-    if (typeof body.secret !== 'string' || !auth.LINK_ID_RE.test(body.link) || typeof body.ref !== 'string') throw new RoomError('PROTOCOL', 'the host\'s answer is not well formed');
+    if (typeof body.secret !== 'string' || !hostLinks.LINK_ID_RE.test(body.link) || typeof body.ref !== 'string') throw new RoomError('PROTOCOL', 'the host\'s answer is not well formed');
     return { secret: body.secret, link: body.link, ref: body.ref, expires_at: body.expires_at, key: vouched.key };
   } catch (e) {
     if (spent && e && typeof e === 'object') (e as CodedError).spent = true;
@@ -365,11 +366,11 @@ const kindOf = (spec: LinkSpec): string => (spec.kind === 'wss' || spec.kind ===
 
 /** The link file's invite after enrollment: an sh2 invite string with the admission secret (never shown to anyone). */
 function inviteFor(code: string, spec: LinkSpec, secret: string, key: string | null): string {
-  const link: typeof import('./link.ts') = require('./link.ts');
+  const linkConnect: typeof import('./link-connect.ts') = require('./link-connect.ts');
   // an ssh spec in a link file was parsed from a locator, so its destination makes one again
-  const loc = spec.kind === 'ssh' ? link.sshLocator(`${spec.user}@${spec.host}${spec.port ? `:${spec.port}` : ''}`, spec.via ? { via: spec.via } : {})!
-    : spec.kind === 'pipe' ? link.pipeLocator(spec.home) : (require('./transports/ws.ts') as typeof import('./transports/ws.ts')).urlOf(spec as WsSpec);
-  return auth.formatInvite({ v: 2, code, locator: loc, secret, hostKey: spec.kind === 'pipe' ? null : key });
+  const loc = spec.kind === 'ssh' ? linkConnect.sshLocator(`${spec.user}@${spec.host}${spec.port ? `:${spec.port}` : ''}`, spec.via ? { via: spec.via } : {})!
+    : spec.kind === 'pipe' ? linkConnect.pipeLocator(spec.home) : (require('./transports/ws.ts') as typeof import('./transports/ws.ts')).urlOf(spec as WsSpec);
+  return invites.formatInvite({ code, locator: loc, secret, hostKey: spec.kind === 'pipe' ? null : key });
 }
 
 async function enrollLink(code: string): Promise<void> {
@@ -388,7 +389,7 @@ async function enrollLink(code: string): Promise<void> {
   const sshkeys = sshkeysMod();
   const linkKey = spec.kind === 'ssh' ? sshkeys.linkKey(dir, `sub-human:${code}:${l.enroll.name}`) : null;
   // no machine id readable: '', which the host refuses as not well formed
-  const joiner = { name: l.enroll.name, machine: (require('../home.ts') as typeof import('../home.ts')).machineId() ?? '', label: joinerLabel(), key: linkKey ? linkKey.raw : null };
+  const joiner = { name: l.enroll.name, machine: (require('../home.ts') as typeof import('../home.ts')).machineIn(code) ?? '', label: joinerLabel(), key: linkKey ? linkKey.raw : null };
   const { transport, sawKey } = await openTransport(spec, code, { dir });
   const checkKey = (vouched: string | null): void => {
     if (spec.kind === 'ssh') {
@@ -454,9 +455,9 @@ function openDoor(code: string, { file = sshkeysMod().authorizedKeysFile() }: { 
 
 function sweepDoors(code: string, { now = Date.now() }: { now?: number } = {}): number {
   const s = storeOf(code);
-  const invites: Invites = s.kv.get(auth.INVITES_KEY, null) || {};
-  const all = Object.values(invites).filter((i): i is ShortInvite => !!i && !!i.short && i.kind === 'ssh');
-  if (!all.length || all.some(i => auth.shortLive(i, now))) return 0;
+  const recs: Invites = s.kv.get(invites.INVITES_KEY, null) || {};
+  const all = Object.values(recs).filter((i): i is ShortInvite => !!i && !!i.short && i.kind === 'ssh');
+  if (!all.length || all.some(i => invites.shortLive(i, now))) return 0;
   const sshkeys = sshkeysMod();
   let n = 0;
   for (const f of new Set(all.map(i => i.door_file).filter((x): x is string => !!x))) {

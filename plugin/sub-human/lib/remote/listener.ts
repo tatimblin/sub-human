@@ -177,7 +177,7 @@ function untailscale(rec: ServedRoom | null, log: (msg: string) => void = () => 
   } catch (e) { log(`tailscale off: ${(e as Error).message}`); return { ok: false, error: (e as Error).message }; }
 }
 
-async function run({ port = defaultPort(), log = (msg: string): unknown => process.stderr.write(`${new Date().toISOString()} sub-human listen: ${msg}\n`), closedCheckMs = Number(process.env.SUB_HUMAN_LISTEN_CHECK_MS) || CLOSED_CHECK_MS, idleMs = Number(process.env.SUB_HUMAN_LISTEN_IDLE_MS) || LISTEN_IDLE_MS }: {
+async function run({ port = defaultPort(), log = (msg: string): unknown => process.stderr.write(`${new Date().toISOString()} sub-human listen: ${msg}\n`), closedCheckMs = Number(process.env.SUB_HUMAN_LISTEN_CHECK_MS) || CLOSED_CHECK_MS, idleMs = LISTEN_IDLE_MS }: {
   port?: number; log?: (msg: string) => unknown; closedCheckMs?: number; idleMs?: number;
 } = {}): Promise<{ why: string; port: number }> {
   const ws: typeof import('./ws.ts') = require('./ws.ts');

@@ -33,7 +33,6 @@
  */
 
 import { normalize } from './rules.ts';
-import { roomClaudeName } from './members.ts';
 import { proposal, answered, decided, approversOf } from './consent.ts';
 import { NO_TRUST } from './trust.ts';
 import type { Delivery, Entry, Lane, LaneViewer, Trust } from './types.ts';
@@ -112,7 +111,7 @@ function deliver(me: LaneViewer | null | undefined, e: Entry, { entries, trust =
     if (e.kind === 'member_joined' && e.from !== name && (!note || SPAWN_NOTE.test(note))) return 'wake';
     return l === 'pull' ? 'context' : 'none';
   }
-  if (isHostMove(e) || (isMove(e) && e.via === 'system' && e.from !== name && roomClaudeName(e.from) !== 'claude')) return 'notice'; // 0.4.x: "orch"
+  if (isHostMove(e) || (isMove(e) && e.via === 'system' && e.from !== name && e.from !== 'claude')) return 'notice';
   if (l === 'push') return me && (isMove(e) || chat(me, e)) ? 'notice' : 'wake';
   return l === 'pull' ? 'context' : 'none';
 }

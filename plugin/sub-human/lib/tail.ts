@@ -72,7 +72,7 @@ import * as config from './config.ts';
 import { stageOf } from './consent/review.ts';
 import { createRequire } from 'node:module';
 import type { TailEvent, TailSeat } from './types-app.ts';
-import type { LinkStatus } from './remote/link.ts';
+import type { LinkStatus } from './remote/link-socket.ts';
 import type { Flush } from './remote/types-core.ts';
 import type { Clock, TimerHandle } from './clock.ts';
 import type { Delivery, Entry } from './room/types.ts';
@@ -177,14 +177,14 @@ function timings() {
     settleMaxMs,
     // The headless room Claude waits longer (nobody watches its latency), so a burst of answers, task requests or a
     // join lands as one turn, unless the member values are set explicitly.
-    roomClaudeSettleMs: envMs('SUB_HUMAN_ROOM_CLAUDE_SETTLE_MS', process.env.SUB_HUMAN_SETTLE_MS ? settleMs : config.ROOM_CLAUDE_SETTLE_MS),
-    roomClaudeSettleMaxMs: envMs('SUB_HUMAN_ROOM_CLAUDE_SETTLE_MAX_MS', process.env.SUB_HUMAN_SETTLE_MAX_MS ? settleMaxMs : config.ROOM_CLAUDE_SETTLE_MAX_MS),
+    roomClaudeSettleMs: process.env.SUB_HUMAN_SETTLE_MS ? settleMs : config.ROOM_CLAUDE_SETTLE_MS,
+    roomClaudeSettleMaxMs: process.env.SUB_HUMAN_SETTLE_MAX_MS ? settleMaxMs : config.ROOM_CLAUDE_SETTLE_MAX_MS,
     leaveMs: envMs('SUB_HUMAN_LEAVE_MS', config.LEAVE_SETTLE_MS),
     healthMs: envMs('SUB_HUMAN_TAIL_HEALTH_MS', config.TAIL_HEALTH_MS),
-    backoffMs: envMs('SUB_HUMAN_TAIL_BACKOFF_MS', config.TAIL_BACKOFF_MS),
-    backoffMaxMs: envMs('SUB_HUMAN_TAIL_BACKOFF_MAX_MS', config.TAIL_BACKOFF_MAX_MS),
-    errorLogMs: envMs('SUB_HUMAN_TAIL_ERROR_LOG_MS', config.TAIL_ERROR_LOG_MS),
-    stallMs: envMs('SUB_HUMAN_TAIL_STALL_MS', config.TAIL_STALL_MS),
+    backoffMs: config.TAIL_BACKOFF_MS,
+    backoffMaxMs: config.TAIL_BACKOFF_MAX_MS,
+    errorLogMs: config.TAIL_ERROR_LOG_MS,
+    stallMs: config.TAIL_STALL_MS,
   };
 }
 
@@ -397,12 +397,9 @@ function errorLog(err: (s: string) => unknown, clock: Clock, everyMs: number): L
 // ---------- one seat's session ----------
 /** Where a seat's delivery starts: its saved cursor, else (its first run) its latest join, so nothing between the
  * join and the first lookup is lost, else the log's end. */
-function startCursor(rm: Pick<TailRoom, 'getCursor' | 'readView'>, saved: number, me: Identity, last: number): number {
+function startCursor(rm: Pick<TailRoom, 'readView'>, saved: number, me: Identity, last: number): number {
   const c = saved;
   if (c > 0 && c <= last) return c;
-  // 0.4.x kept the room's Claude's cursor as deliver-orch: an upgraded room resumes there, so no @claude is skipped
-  const old = me.role === 'claude' ? rm.getCursor('deliver-orch') : 0;
-  if (old > 0 && old <= last) return old;
   const joined = rm.readView({ after: Infinity }).filter(e => e.kind === 'member_joined' && e.from === me.name).at(-1);
   return joined ? joined.id : last;
 }
@@ -681,7 +678,7 @@ function runTail({
     roomClaude: deps.roomClaude ? () => deps.roomClaude! : (() => { let o: RoomClaudeLib | undefined; return () => o || (o = require('./room-claude.ts') as RoomClaudeLib); })(),
     identity: deps.identity || (require('./identity.ts') as IdentityLib),
     proposal: deps.proposal || (require('./proposal.ts') as ProposalLib),
-    linkStatus: deps.linkStatus || ((code: string) => (require('./remote/link.ts') as typeof import('./remote/link.ts')).status(code)),
+    linkStatus: deps.linkStatus || ((code: string) => (require('./remote/link-socket.ts') as typeof import('./remote/link-socket.ts')).status(code)),
     handoff: deps.handoff ? () => deps.handoff! : (() => { let m: HandoffLib | undefined; return () => m || (m = require('./handoff.ts') as HandoffLib); })(),
     admission: deps.admission ? () => deps.admission! : (() => { let m: AdmissionLib | undefined; return () => m || (m = require('./remote/admission.ts') as AdmissionLib); })(),
     sweepDoors: deps.sweepDoors || ((code: string) => (require('./remote/enroll.ts') as typeof import('./remote/enroll.ts')).sweepDoors(code)),

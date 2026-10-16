@@ -6,7 +6,7 @@
  *
  *   validate(entry, {via, from, system}) -> {via, kind, text, to, refs, hash, approvers, same, path, proposal_hash,
  *       normalized, edit_path, drafted, task, pubkey, machine, host}   throws RoomError INVALID with a message for the model
- *   RoomError(code, message)   code: INVALID | RATE | LOCK | NO_ROOM | AUTH (a signature, a replay or a pinned key refused)
+ *   RoomError(code, message, reason?)   reason: lib/reasons.ts; code: INVALID | RATE | LOCK | NO_ROOM | AUTH (a signature, a replay or a pinned key refused)
  * Rules: via "agent" writes say question status proposal task_req; via "human" say signoff objection proposal;
  * via "system" decision member_joined member_left task status, and only with {system: true}.
  * Size caps (lib/config.ts): text <= ENTRY_TEXT_MAX_BYTES UTF-8 bytes, refs <= ENTRY_REFS_MAX, approvers and
@@ -22,6 +22,7 @@
  */
 
 import { NAME_RE } from '../text.ts';
+import type { Reason } from '../reasons.ts';
 import { ENTRY_TEXT_MAX_BYTES, ENTRY_REFS_MAX, ENTRY_STR_MAX, ENTRY_LIST_MAX } from '../config.ts';
 import type { EntryInput, HostFields, Kind, TaskFields, TaskOp, Validated, ValidateOpts, Via } from './types.ts';
 
@@ -48,12 +49,19 @@ const MACHINE_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 /**
  * A room error, code: INVALID | RATE | LOCK | NO_ROOM | AUTH | STALE | HOST_ONLY, and over a link the protocol's codes
- * (lib/remote/protocol.ts CODES: OFFLINE, FORK, PROTOCOL, ...). unknown: an OFFLINE whose op went out (it may land).
+ * (lib/remote/protocol.ts CODES: OFFLINE, FORK, PROTOCOL, ...). reason: which one exactly (lib/reasons.ts), for code
+ * that decides; the message is for people. unknown: an OFFLINE whose op went out (it may land; reason UNKNOWN_OUTCOME).
  */
 class RoomError extends Error {
   declare code: string;
+  declare reason?: Reason;
   declare unknown?: boolean;
-  constructor(code: string, message: string) { super(message); this.code = code; }
+  constructor(code: string, message: string, reason?: Reason | null) {
+    super(message);
+    this.code = code;
+    if (reason) this.reason = reason;
+    if (reason === 'UNKNOWN_OUTCOME') this.unknown = true;
+  }
 }
 
 function bad(msg: string): never { throw new RoomError('INVALID', msg); }

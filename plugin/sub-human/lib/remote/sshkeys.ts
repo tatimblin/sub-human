@@ -15,8 +15,7 @@
  *                                              file), else /etc/ssh/ssh_host_ed25519_key.pub; null when unreadable
  *   knownHostsLine(alias, raw) -> string      "<alias> ssh-ed25519 AAAA…" (the link's HostKeyAlias)
  *   linkKey(dir, comment) -> {file, pub, raw} the link's own key in dir (id_ed25519, 0600), made once by ssh-keygen
- *   publicKey(text) -> "type base64" | null   the one public key line in text (ed25519, rsa, ecdsa, sk-*; no options;
- *                                              the lab's sh1 setup for a 0.2.0 joiner)
+ *   publicKey(text) -> "type base64" | null   the one public key line in text (ed25519, rsa, ecdsa, sk-*; no options)
  *   formatRequest({code, ref, key, name}) -> "shk1.CODE.REF.KEY.NAME"   a handoff follower's key the new host has not
  *                                              let in yet (the link file's request; no secret in it)
  *   authorizedKeysFile() -> string            SUB_HUMAN_AUTHORIZED_KEYS, else ~/.ssh/authorized_keys

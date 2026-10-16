@@ -16,8 +16,7 @@
  *                                    (watchSync): when the tailnet has Serve / HTTPS (or Funnel) off, the CLI prints
  *                                    "Serve is not enabled on your tailnet. To enable, visit: https://login.
  *                                    tailscale.com/f/serve?node=…" and then waits for an admin; so the first enable
- *                                    URL it prints, or no success within timeoutMs (SERVE_MS, 10 s;
- *                                    SUB_HUMAN_TAILSCALE_SERVE_MS), kills it and throws RoomError INVALID
+ *                                    URL it prints, or no success within timeoutMs (SERVE_MS, 10 s), kills it and throws RoomError INVALID
  *                                    notEnabled(…): the admin page, then "run /sub-human invite --web again".
  *                                    tailscaled not running or logged out: RoomError OFFLINE with what to do. Any other
  *                                    refusal: INVALID with Tailscale's own words
@@ -200,10 +199,7 @@ function watchSync({ bin: b, args, timeoutMs = SERVE_MS }: { bin: string; args: 
   }
 }
 
-const serveMs = (): number => {
-  const v = Number(process.env.SUB_HUMAN_TAILSCALE_SERVE_MS);
-  return Number.isFinite(v) && v > 0 ? v : SERVE_MS;
-};
+const serveMs = (): number => SERVE_MS;
 
 function on({ bin: b, path: p, port, funnel = false, timeoutMs = serveMs() }: {
   bin: string; path: string; port: number | string; funnel?: boolean; timeoutMs?: number;

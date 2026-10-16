@@ -6,20 +6,17 @@
  * SUB_HUMAN_HOME set). It uses the plugin mounted at /plugin the way Claude Code and its hooks module would: the
  * real hooks as child processes (the hello lease and the typed origin with its nonce written as the module does),
  * a live seat-proc.js standing in for each seat's claude process (it runs the seat's room tail and records what it
- * delivers). Works against the current plugin (scripts/sub-human) and 0.2.0 (bin/sub-human). Prints one JSON object.
+ * delivers). Works against the current plugin and the previous release (devbox-old: 0.5.0-beta.15, where the link
+ * daemon's status was in lib/remote/link.ts and the invites in lib/remote/auth.ts). Prints one JSON object.
  * State: $HOME/lab-seats<basename of SUB_HUMAN_HOME>.json, so one machine can hold two homes (two links to a room).
  *
  *   host NAME                     open a room here as NAME (`/sub-human NAME`): {code, machine, seat, out}
- *   join NAME INVITE [SSH_OPT…]   `/sub-human join NAME INVITE` as a 0.2.0 plugin takes an sh1 invite (devbox-old);
- *                                 SSH_OPT… become SUB_HUMAN_SSH_OPTS for this seat's hooks and so for the link daemon
- *                                 the join starts: {ok, out, ms, code}
- *   linkinvite NAME INVITE [SSH_OPT…]   the current plugin's way to an sh1 invite (a 0.2.0 host mints only those, and
- *                                 no command takes one any more): the link file it makes, then `/sub-human NAME CODE`
- *   sh1 CODE DEST                 (on a current host) an sh1 invite for DEST, minted with the plugin's lib: {invite}
- *   authorize INVITE PUBKEY [FILE]   (on a current host) the one-link forced-command line for PUBKEY and that invite's
- *                                 reserved link, appended to FILE (default ~/.ssh/authorized_keys): {linkId, out}
+ *   restrict CODE LINK PUBKEY [FILE]   (on a host) the one-link forced-command line a host's admit writes for PUBKEY
+ *                                 and link LINK, appended to FILE (default ~/.ssh/authorized_keys): {out}
  *   login NAME DEST CODE [SSH_OPT…]   `/sub-human join DEST CODE --as NAME`: a link over the person's own ssh login to
- *                                 DEST (no invite), with SSH_OPT… as for join: {ok, out, ms, code}; ok: the seat joined
+ *                                 DEST (no invite); SSH_OPT… become SUB_HUMAN_SSH_OPTS for this seat's hooks and so for
+ *                                 the link daemon the join starts: {ok, out, ms, code}; ok: the seat joined
+ *   options CODE NAME on|off      `sub-human options CODE NAME on|off` (the host's shell): the room's option
  *   rejoin NAME CODE              `/sub-human NAME CODE` (a room hosted here, or one this machine links to)
  *   say NAME TEXT                 NAME's `@room TEXT` through the prompt hook: {ok, ms, t0, out}
  *   prompt NAME TEXT              any typed prompt through the prompt hook (e.g. a slash-free command)
@@ -33,8 +30,8 @@
  *   card NAME LABEL               NAME answers the handoff card the hooks build (consent.ts Pre, then Post with
  *                                 LABEL, e.g. "Host it here"), as the person would on the AskUserQuestion card
  *   events NAME                   what NAME's tail delivered: [{t, ev}]
- *   dump CODE                     {code, machine, isHost, dir, log, entries, chain, members, link, home}
- *   link CODE                     the link daemon's status (lib/remote/link.ts status)
+ *   dump CODE                     {code, machine, machineIn, isHost, dir, log, entries, chain, members, link, home}
+ *   link CODE                     the link daemon's status (lib/remote/link-socket.ts status; beta.15: link.ts)
  *   probe                         what this plugin can do (feature detection for pending scenarios)
  */
 const fs = require('node:fs');
@@ -129,6 +126,9 @@ function walk(dir) {
   });
 }
 
+/** The link daemon's status: lib/remote/link-socket.ts, else (beta.15) lib/remote/link.ts. */
+const linkStatus = code => lib(fs.existsSync(path.join(PLUGIN, 'lib/remote/link-socket.ts')) ? 'remote/link-socket.ts' : 'remote/link.ts').status(code);
+
 function src(rel) { try { return fs.readFileSync(path.join(PLUGIN, /\.[jt]s$/.test(rel) ? pick(rel) : rel), 'utf8'); } catch { return ''; } }
 
 const cmds = {
@@ -142,35 +142,16 @@ const cmds = {
     return { ok: joinedOk(r.json), code, machine: lib('home.ts').machineId(), seat: { name, pid: seat.pid }, out: reason(r.json), ms: r.ms };
   },
 
-  join(name, invite, ...rest) {
-    const seat = seatWith(name, rest);
-    const r = expand(seat, `join ${name} ${invite}`);
-    const parsed = lib('remote/auth.ts').parseInvite(invite);
-    const out = reason(r.json) || '';
-    return { ok: joinedOk(r.json), out, ms: r.ms, code: parsed && parsed.code, stderr: r.stderr };
-  },
-
-  linkinvite(name, invite, ...rest) {
-    const seat = seatWith(name, rest);
-    const inv = lib('remote/auth.ts').parseInvite(invite);
-    lib('room/links.ts').set(inv.code, { code: inv.code, transport: lib('remote/link.ts').transportOf(inv.locator), invite, created_at: new Date().toISOString() });
-    const r = expand(seat, `${name} ${inv.code}`);
-    return { ok: joinedOk(r.json), out: reason(r.json) || '', ms: r.ms, code: inv.code, stderr: r.stderr };
-  },
-
-  sh1(code, dest) {
-    const locator = lib('remote/link.ts').sshLocator(dest);
-    return { invite: lib('remote/auth.ts').mintInvite(lib('room/store.ts').open(code), { locator }).invite };
-  },
-
-  authorize(invite, pub, file = path.join(USER_HOME, '.ssh', 'authorized_keys')) {
-    const auth = lib('remote/auth.ts'), sshkeys = lib('remote/sshkeys.ts');
-    const inv = auth.parseInvite(invite);
-    const id = auth.reserveLink(lib('room/store.ts').open(inv.code), inv.secret);
+  restrict(code, linkId, pub, file = path.join(USER_HOME, '.ssh', 'authorized_keys')) {
+    const sshkeys = lib('remote/sshkeys.ts');
     const key = sshkeys.publicKey(pub);
     const { shim, h } = lib('remote/hosting.ts').shimReady();
-    const r = sshkeys.appendAuthorized(file, shim.authorizedLine(inv.code, id, key, h), key);
-    return { linkId: id, out: `${r}: link ${id} of room ${inv.code}` };
+    return { out: `${sshkeys.appendAuthorized(file, shim.authorizedLine(code, linkId, key, h), key)}: link ${linkId} of room ${code}` };
+  },
+
+  options(code, name, value) {
+    const r = spawnSync(process.execPath, [CLI, 'options', code, name, value], { encoding: 'utf8', env: { ...process.env } });
+    return { ok: r.status === 0, out: (r.stdout + r.stderr).trim() };
   },
 
   login(name, dest, code, ...rest) {
@@ -272,13 +253,15 @@ const cmds = {
     let chain = null;
     try { chain = s.verifyChain(); } catch (e) { chain = { ok: false, error: e.message }; }
     let linkSt = null;
-    try { linkSt = s.isHost ? null : lib('remote/link.ts').status(code); } catch (e) { linkSt = { error: e.message }; }
+    try { linkSt = s.isHost ? null : linkStatus(code); } catch (e) { linkSt = { error: e.message }; }
     const homeSt = fs.existsSync(HOME) ? (fs.statSync(HOME).mode & 0o777).toString(8) : null;
-    return { code, machine: lib('home.ts').machineId(), isHost: !!s.isHost, dir: s.dir, log: read('log.jsonl') || '', members: read('members.json'),
+    // machineIn: this machine's id in the room as its host recorded it (a current plugin: the machine key's), else machine
+    const home = lib('home.ts');
+    return { code, machine: home.machineId(), machineIn: typeof home.machineIn === 'function' ? home.machineIn(code) : home.machineId(), isHost: !!s.isHost, dir: s.dir, log: read('log.jsonl') || '', members: read('members.json'),
       entries, chain, link: linkSt, home: { path: HOME, mode: homeSt, files: walk(HOME) } };
   },
 
-  link(code) { return lib('remote/link.ts').status(code || load().code); },
+  link(code) { return linkStatus(code || load().code); },
 
   probe() {
     const usage = spawnSync(process.execPath, [CLI, '__lab_probe__'], { encoding: 'utf8', env: { ...process.env } });
@@ -294,10 +277,12 @@ const cmds = {
       version, cli: [...words], kinds, ops: protocol.OPS || [], protocolVersion: protocol.VERSION,
       protocolExports: Object.keys(protocol), files, cliPath: CLI,
       src: {
-        auth: { sh2: /\bsh2\b/.test(src('lib/remote/auth.ts')), pin: /\bpin\b/i.test(src('lib/remote/auth.ts')) },
+        // the invites: lib/remote/invites.ts, else (beta.15) lib/remote/auth.ts
+        auth: { sh2: /\bsh2\b/.test(src('lib/remote/invites.ts') || src('lib/remote/auth.ts')), pin: /\bpin\b/i.test(src('lib/remote/invites.ts') || src('lib/remote/auth.ts')) },
         join: { hostSsh: /host\s+--ssh|--ssh\b/.test(src(joinSrc())), urlPin: /https?:\/\//.test(src(joinSrc())) && /\bpin\b/i.test(src(joinSrc())), login: /\bloginSpec\b/.test(src(joinSrc())) },
         // a seat kept across an outage: the daemon renews this machine's seats on every reconnect (keepSeats/beat)
-        link: { rejoin: /rejoin|keepSeats|localSeats/i.test(src('lib/remote/link.ts')), outbox: /outbox/i.test(src('lib/remote/link.ts')), ping: /\bping\b/.test(src('lib/remote/link.ts')), wake: /\bwake\b/i.test(src('lib/remote/link.ts')) },
+        // the daemon: lib/remote/link.ts with link-engine.ts and link-connect.ts (Stage 7), else link.ts alone
+        link: (d => ({ rejoin: /rejoin|keepSeats|localSeats/i.test(d), outbox: /outbox/i.test(d), ping: /\bping\b/.test(d), wake: /\bwake\b/i.test(d) }))(['link.ts', 'link-engine.ts', 'link-connect.ts'].map(f => src(`lib/remote/${f}`)).join('\n')),
         // the hello's version range: protocol.PROTO {min, max} and skewMessage (which side updates)
         hello: { range: typeof protocol.skewMessage === 'function' || /min_v|vmin|minVersion|MIN_VERSION/.test(src('lib/remote/protocol.ts') + src('lib/remote/server.ts')) },
       },
