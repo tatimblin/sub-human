@@ -243,8 +243,10 @@ function stream(s: Session, id: FrameId | undefined, after: number, snap: Snapsh
     if (queue.length) draining = setImmediate(drain);
   }
   function tick(change: Change | null, now = false): void {
-    // the link's record gone (a kick, in any process): the stream ends AUTH and the connection closes (s.held)
-    if ((!change || change.docs.has(hostLinks.LINKS_KEY)) && !s.held()) return;
+    // the link's record gone (a kick, in any process): the stream ends AUTH and the connection closes (s.held). Read on
+    // every tick, before anything else: a watch event for the links document may be missed, and the room closing
+    // (the kick took its last seat) must not end the stream as 'closed' first
+    if (!s.held()) return;
     let moved = !change || change.log;
     if (!change || change.log) {
       const { lines, entries, reset } = tailer.poll();

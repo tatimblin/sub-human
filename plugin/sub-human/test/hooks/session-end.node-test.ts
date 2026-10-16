@@ -19,7 +19,7 @@ test('session-end: logs member_left and marks the member left; reasons clear and
   assert.equal(r.code, 0, r.stderr);
   const e = w.entries().at(-1)!;
   assert.deepEqual([e.kind, e.from, e.via], ['member_left', 'alice', 'system']);
-  assert.match(e.text!, /prompt_input_exit/);
+  assert.match(e.text!, /left \(session ended\)/, 'Claude Code\'s token, in words');
   assert.ok(w.members().alice.left_at);
   // a second end (already left) logs nothing
   w.hook('session-end', fixture('session-end'), { as: 'alice' });

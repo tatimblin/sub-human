@@ -600,7 +600,7 @@ test('link: the host revokes the link: its serve ends the stream AUTH, the daemo
   assert.equal(r.sessions.at(-1)!.revoked(), false, 'not revoked yet: nothing sent');
   hostLinks.revokeLink(r.host, id);
   for (const s of r.sessions) s.revoked(); // sub-human revoke SIGTERMs the link's serve processes
-  assert.match(await l.done, /the host revoked this link/);
+  assert.match(await l.done, /the host removed this machine from room \S+ \(\/sub-human kick\)/);
   assert.equal(l.state(), 'stopped');
   assert.equal(r.mirror.kv.get('link').code, 'AUTH');
   await assert.rejects(r.hook('append', { payload: say(r.code, 'after revoke'), queue: true }), (e: CodedError) => e.code === 'OFFLINE');

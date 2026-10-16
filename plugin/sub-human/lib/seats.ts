@@ -139,11 +139,13 @@ function exit(code: string, name: string, reason: string, { deadlineMs }: { dead
   if (!identity.isHost(code)) return true;
   try { if (!identity.liveMembers(code).length) roomClaude.reapDetached(code); } catch { /* the room Claude's watchdog closes it */ }
   // Claude Code's SessionEnd token ("prompt_input_exit", "logout", "other") is written in words, as render reads it
-  const why = reason === 'left' || /\s/.test(reason) ? reason : 'session ended';
+  const why = CC_END_REASONS.has(reason) || /^[a-z]+(?:_[a-z]+)+$/.test(reason) ? 'session ended' : reason;
   room.open(code).append({ kind: 'member_left', text: `${name} left (${why})` }, asSystem(name));
   return true;
 }
 
+/** Claude Code's SessionEnd reasons (hooks/handlers/session-end.ts passes them): a leave's line says "session ended". */
+const CC_END_REASONS: ReadonlySet<string> = new Set(['prompt_input_exit', 'logout', 'other', 'clear', 'resume', 'bypass_permissions_disabled']);
 /** Some link the host records names this seat (lib/remote/host-links.ts LINKS_KEY; read, not imported). */
 function linked(s: { kv: { get<T>(key: string, dflt?: T): T | null } }, name: string): boolean {
   const recs = s.kv.get<Record<string, { seats?: unknown } | null>>('remote/links') || {};
