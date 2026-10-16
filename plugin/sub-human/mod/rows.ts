@@ -10,14 +10,15 @@
  *   - classic.PostToolUse Agent|Task (the old name): node row-map (which panel row the spawned agent is).
  *   - classic.SubagentStop: node row-hold (a row that gave up is told to hold again; its block continues it).
  *   - session.receive / prompt.submit: a row's hand-back (its final report, "left" or "error", which Claude Code
- *     delivers to the main conversation as a message of its own) is taken: a row ending starts no model turn (stage 8e
- *     I.2: "Still in room" after a leave). The row agents' ids are noted as they are spawned (classic.PostToolUse).
+ *     delivers to the main conversation as a message of its own) and its "finished" task notification are taken: a row
+ *     ending starts no model turn (stage 8e I.2: "Still in room" after a leave). The row agents' ids are noted as they
+ *     are spawned (classic.PostToolUse).
  * Failure: each .catch passes the event on as it is: the rows never disturb the session.
  */
 import { shimArgv, shimEnv, toClassic, toPre, mergePre, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { rowsNeeded } from './core/prefilter.ts';
 import { mergeClassic } from './core/prompt.ts';
-import { isRow, spawnedId, handbackFrom } from './core/rows.ts';
+import { isRow, spawnedId, handbackFrom, finishedFrom } from './core/rows.ts';
 import { prePayload } from './core/facts.ts';
 import { asHello } from './core/state.ts';
 import { facts } from './deliver.ts';
@@ -35,7 +36,9 @@ async function needed($: EngineInterface, sid: unknown, agentType: unknown): Pro
 const rowAgents = new Set<string>();
 /** The row agent a delivery is the hand-back of, or null. */
 const rowHandback = (text: unknown): string | null => { const id = handbackFrom(text); return id && rowAgents.has(id) ? id : null; };
-const ROW_ENDED = 'sub-human: a room row ended';
+/** The row agent a task notification says finished, or null (live: after the hand-back, it started the turn). */
+const rowFinished = (text: unknown): string | null => { const id = finishedFrom(text); return id && rowAgents.has(id) ? id : null; };
+const ROW_ENDED = 'sub-human: a room row ended (no turn for it)';
 
 const typeOf = (input: unknown) => (input && typeof input === 'object' ? (input as { subagent_type?: unknown }).subagent_type : undefined);
 
@@ -65,14 +68,14 @@ export function registerRows(on: On) {
   // a row's hand-back is no turn: taken before it is queued, or dropped as a prompt where it was not
   on('session.receive', { origin: { kind: 'peer' } }, ($, e, next) => {
     const id = e.origin.kind === 'peer' ? rowHandback(e.text) : null;
-    if (!id) return next(e);
-    rowAgents.delete(id);
-    return { consumed: ROW_ENDED };
+    return id ? { consumed: ROW_ENDED } : next(e);
   }).catch(($, e, next) => next(e));
-  on('prompt.submit', { origin: { kind: 'peer' } }, ($, e, next) => {
-    const id = e.origin && e.origin.kind === 'peer' ? rowHandback(e.text) : null;
-    if (!id) return next(e);
-    rowAgents.delete(id);
+  on('prompt.submit', { origin: [{ kind: 'peer' }, { kind: 'task-notification' }] }, ($, e, next) => {
+    // the hand-back first (the agent id stays noted: its "finished" notification follows), then that notification
+    if (e.origin && e.origin.kind === 'peer' && rowHandback(e.text)) return { drop: ROW_ENDED };
+    const done = e.origin && e.origin.kind === 'task-notification' ? rowFinished(e.text) : null;
+    if (!done) return next(e);
+    rowAgents.delete(done);
     return { drop: ROW_ENDED };
   }).catch(($, e, next) => next(e));
 

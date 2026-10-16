@@ -801,9 +801,10 @@
    "since": "2.1.296",
    "search": [
     "[Subagent hand-back] The text below is the final report of a subagent this session delegated to.",
-    "</agent-message>"
+    "</agent-message>",
+    "A task-notification fires each time this agent stops with no live background children of its own."
    ],
-   "note": "A background agent's final report reaches the main conversation as a message of its own (origin peer, \"Another Claude session sent a message:\" then <agent-message from=\"AGENT_ID\"> with the \"[Subagent hand-back]\" frame and the indented report), which starts a model turn. A room row ends with the word left (its seat left the room) or error: mod/rows.ts takes the hand-back of a row it saw spawned (session.receive consumed, else prompt.submit drop), so a row ending wakes no model (mod/core/rows.ts handbackFrom)."
+   "note": "A background agent's final report reaches the main conversation as a message of its own (origin peer, \"Another Claude session sent a message:\" then <agent-message from=\"AGENT_ID\"> with the \"[Subagent hand-back]\" frame and the indented report), which starts a model turn; then a task notification (origin task-notification, <task-notification><task-id>AGENT_ID</task-id>…<status>completed</status>) starts another. A room row ends with the word left (its seat left the room) or error: mod/rows.ts takes the hand-back of a row it saw spawned and its task notification (session.receive consumed, else prompt.submit drop), so a row ending wakes no model (mod/core/rows.ts handbackFrom)."
   },
   {
    "id": "plugin-settings-allowlist",
