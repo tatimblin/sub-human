@@ -284,7 +284,7 @@
     "STOP what you are doing and wait for the user to tell you how to proceed",
     "\"user-rejected\""
    ],
-   "note": "Remote Control deny (observed 2.1.292): with a note (\"Suggest edits\") the terminal's shapes (userFeedback, \"the user said:\"); a bare deny says \"STOP what you are doing…\" with no userFeedback: cc.planFeedback null, nothing recorded. An ordinary message typed on the phone right after a bare Deny is attached to the deny as that note (observed live), so a note is never an objection by itself: it waits for the person's Send on the confirm card (hooks/handlers/consent.ts)."
+   "note": "Remote Control deny (observed 2.1.292): with a note (\"Suggest edits\") the terminal's shapes (userFeedback, \"the user said:\"); a bare deny says \"STOP what you are doing…\" with no userFeedback: cc.planFeedback null, nothing recorded. An ordinary message typed on the phone right after a bare Deny is attached to the deny as that note (observed live), so a note is never an objection by itself: it waits for the person's Send on the confirm card (hooks/consent.ts)."
   },
   {
    "id": "auq-bridge-racer",
@@ -297,7 +297,7 @@
    "shape": [
     "let ~=!!(~.bridgeCallbacks||~.channelCallbacks&&!~.tool.requiresUserInteraction?.());"
    ],
-   "note": "A tool with its own permission dialog (AskUserQuestion, the plan view) is raced by Remote Control when the session has bridge callbacks: the phone gets the card and its answer resolves the dialog, as the terminal's would; the tool_response is Claude Code's, never the model's. The confirm card for a review's note relies on it (hooks/handlers/consent.ts). A card can still auto-resolve after the askUserQuestionTimeout idle (afkTimeoutMs): then nothing is recorded and the note waits."
+   "note": "A tool with its own permission dialog (AskUserQuestion, the plan view) is raced by Remote Control when the session has bridge callbacks: the phone gets the card and its answer resolves the dialog, as the terminal's would; the tool_response is Claude Code's, never the model's. The confirm card for a review's note relies on it (hooks/consent.ts). A card can still auto-resolve after the askUserQuestionTimeout idle (afkTimeoutMs): then nothing is recorded and the note waits."
   },
   {
    "id": "permission-denied-auto-only",
@@ -687,7 +687,7 @@
     "{kind:\"human\"}",
     "case\"human\":return"
    ],
-   "note": "A typed prompt's transcript user entry has no origin or {kind:\"human\"} (also typed through Remote Control: prompt.submit reports that one as \"bridge\"); peers, notifications, channels and plugins carry their own kind. cc.lastHumanPrompt takes only the person's; hooks/handlers/consent.ts picks the proposal a review opens from it (cc-2.1.292.md Remote Control)."
+   "note": "A typed prompt's transcript user entry has no origin or {kind:\"human\"} (also typed through Remote Control: prompt.submit reports that one as \"bridge\"); peers, notifications, channels and plugins carry their own kind. cc.lastHumanPrompt takes only the person's; hooks/consent.ts picks the proposal a review opens from it (cc-2.1.292.md Remote Control)."
   },
   {
    "id": "bridge-forwarded-rows",

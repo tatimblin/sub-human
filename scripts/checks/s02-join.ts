@@ -83,7 +83,7 @@ function remoteJoin(x: Ctx, det: Det, j: LogEntry | undefined, rh: string): void
   det('Nothing of sub-human\'s in devbox\'s authorized_keys: no door, no forced command (her login key is the only line)',
     !/sub-human/.test(ak), `${ak.split('\n').filter(Boolean).length} line(s); ${/sub-human/.test(ak) ? 'a sub-human line' : 'none of sub-human\'s'}`);
 
-  // the card: only the host person's own answer on it lets a machine in (hooks/handlers/consent.ts postAdmit), signed with A's seat key
+  // the card: only the host person's own answer on it lets a machine in (hooks/consent.ts postAdmit), signed with A's seat key
   const envelope = paths.pluginLib('room/envelope.ts');
   const recs = Object.values(readJson<Record<string, Admission | null> | null>(path.join(x.roomDir, 'remote', 'invites.json'), {}) || {}).filter((r): r is Admission => !!(r && r.admission && r.name === B));
   const rec = recs.at(-1);

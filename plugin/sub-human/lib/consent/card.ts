@@ -13,7 +13,7 @@
  *     other    an answer that is none of the card's labels (the person typed their own)
  *     answer   {label, notes?}: one of the card's labels, with the person's note on it (annotations)
  *   exact (default true): the card shown must be the hooks' card, option for option. The fallback consent card passes
- *   false: any call naming a pending proposal was rewritten to the hooks' card before it showed (hooks/handlers/consent.ts
+ *   false: any call naming a pending proposal was rewritten to the hooks' card before it showed (hooks/consent.ts
  *   Pre), and its answers carry the proposal's hash in the question.
  */
 

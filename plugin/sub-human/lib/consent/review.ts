@@ -5,7 +5,7 @@
  * state: {review, note}, the seat's two documents (members/NAME/review: the plan-view review; members/NAME/confirm: a
  * review's note waiting for the person's Send). The room's record of a proposal (who agreed, the decision) is not
  * here: lib/room/consent.ts fold is its one interpretation, and an answer reaches it only through the `answer` effect.
- * hooks/handlers/consent.ts gathers each event's facts (the transcript, the plan file, the room), runs the effects
+ * hooks/consent.ts gathers each event's facts (the transcript, the plan file, the room), runs the effects
  * (the lock, plan-file I/O, proposal.answer, the pick), stores the state and writes the say. Nothing here reads a
  * file, the clock or the room.
  *

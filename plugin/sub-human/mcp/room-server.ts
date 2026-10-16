@@ -19,7 +19,7 @@
  *       signature does not verify marked "(unverified)" (not their words for certain).
  *   propose({text|path, approvers?})   lib/proposal.create: stores plans/<hash>.md, appends `proposal`
  *       {hash, approvers, path}; approvers default to the humans present. Each approver answers a consent
- *       card (hooks/handlers/consent.ts); a proposer who is also an approver is told to open the card now. The reply
+ *       card (hooks/consent.ts); a proposer who is also an approver is told to open the card now. The reply
  *       names the read-only `show` by the shim's full path (lib/text.ts cliCmd): no `sub-human` is on a session's
  *       PATH. A proposal retires the proposer's earlier undecided one with the same title (lib/room/consent.ts), and says so; another
  *       sender's pending one with the same title is warned about (both stay open). A path's root is the seat's cwd

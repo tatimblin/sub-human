@@ -15,7 +15,7 @@
  *      streamed) {id, state: 'asked', from, to, epoch: next, locator?, ask?, at, expires_at}. A's server sends it to
  *      B's link only, as a private 'handoff' event (lib/remote/protocol.ts); B's daemon keeps it in B's mirror
  *      (onAsk: the session-local document `handoff`); B's tail wakes B's Claude, which opens the card.
- *   2. the card (hooks/handlers/consent.ts, AskUserQuestion; only B's own answer on the card as the hooks built it counts):
+ *   2. the card (hooks/consent.ts, AskUserQuestion; only B's own answer on the card as the hooks built it counts):
  *      it says the room's Claude then runs on B's model account (billing, rate limits) and that B's machine must stay
  *      reachable. "Not now": refuse (op handoff.refuse; A's tail tells the asker). "Host it here": accept.
  *   3. accept (B's hook): mints one single-use invite to B per other machine with a seat in the room (A's included;

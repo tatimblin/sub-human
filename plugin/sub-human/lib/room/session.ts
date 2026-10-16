@@ -8,7 +8,7 @@
  *    shown    {ids, log: [{id, via, at}]}: the join and leave notices already shown to the person, and how (via is
  *             "mod", the tail child; older logs hold "monitor" and "prompt"), so a restarted tail child does not
  *             send them again (the last SHOWN_MAX)
- *    review   the plan-view review (lib/proposal.ts readReview; hooks/handlers/consent.ts)
+ *    review   the plan-view review (lib/proposal.ts readReview; hooks/consent.ts)
  *    confirm  a review's note waiting for the person's Send (lib/proposal.ts readConfirm)
  *    pick     {hash|null, at}: the proposal the person's latest prompt named (lib/proposal.ts readPick)
  *    recheck  {hash, at}: a plan-view Yes that came as the view opened, asked again on the card (lib/proposal.ts readRecheck)

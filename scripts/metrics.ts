@@ -198,7 +198,7 @@ export function cardTurns(es: TEntry[]): CardTurn[] {
   const main = es.filter(e => !e.isSidechain && (e.type === 'user' || e.type === 'assistant'));
   for (const [i, e] of main.entries()) {
     if (e.type !== 'assistant') continue;
-    // the card, or the plan view (ExitPlanMode "proposal <hash>": hooks/handlers/consent.ts shows the proposal in the plan dialog)
+    // the card, or the plan view (ExitPlanMode "proposal <hash>": hooks/consent.ts shows the proposal in the plan dialog)
     const call = blocksOf(e).find(c => c && c.type === 'tool_use' && (c.name === 'AskUserQuestion' || c.name === 'ExitPlanMode') && HASH_RE.test(JSON.stringify(c.input || {})));
     if (!call) continue;
     // back to the entry that started this turn (a user entry that is not a tool result)

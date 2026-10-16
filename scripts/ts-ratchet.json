@@ -4,7 +4,7 @@
     "hooks": {
       "any": 0,
       "as": 9,
-      "nonNull": 12
+      "nonNull": 0
     },
     "lib": {
       "any": 0,

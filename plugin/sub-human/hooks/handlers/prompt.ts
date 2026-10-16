@@ -2,7 +2,7 @@
 // per prompt instead of two):
 //   1. hooks/handlers/at-room.ts handle(): an @room post (continue:false + "✓ sent"), a refusal (decision:block), and
 //      "working" presence;
-//   2. hooks/handlers/consent.ts onPrompt(): a plan-view review left open by Esc is resolved (the person's note recorded)
+//   2. hooks/consent.ts onPrompt(): a plan-view review left open by Esc is resolved (the person's note recorded)
 //      and, still in plan mode, the model is told to exit it first (additionalContext).
 // Both run on the same input, in that order, each guarded: a throw in one is logged and the other still runs.
 // Merging (what Claude Code did with the two hooks' outputs): when at-room stops the prompt (decision "block":
@@ -15,7 +15,7 @@
 // sub_human_origin to its stdin. Its output also carries consent's subHuman {reviewOpen} for the mod.
 import { capture, logError, out } from '../reply.ts';
 import * as atRoom from './at-room.ts';
-import * as consent from './consent.ts';
+import * as consent from '../consent.ts';
 import type { HookOutput, HookSpecificOutput, Reply } from '../types.ts';
 
 const EVENT = 'UserPromptSubmit';

@@ -1,6 +1,6 @@
 /**
  * plugin/sub-human/mod/consent.ts: consent's hooks, run only where a review or a card can be at stake. The review itself
- * stays in node (hooks/handlers/consent.ts): its lock, plan-file writes and via=human signing. $.state reviewMaybeOpen
+ * stays in node (hooks/consent.ts): its lock, plan-file writes and via=human signing. $.state reviewMaybeOpen
  * is set true by anything that may open a review (here, and in mod/deliver.ts) and set from consent's own subHuman
  * {reviewOpen} report after every run (SUB_HUMAN_SHIM=1); unset counts as true.
  *   - tool.call EnterPlanMode|ExitPlanMode: sets reviewMaybeOpen. An ExitPlanMode the person refused in the plan view

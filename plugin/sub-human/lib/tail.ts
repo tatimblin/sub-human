@@ -384,12 +384,12 @@ function remindersText(me: Identity, rm: Pick<TailRoom, 'readView'>, { proposal 
   const es = rm.readView({ after: Infinity });
   const ps = proposal.pendingFor(me, es) || [];
   if (!ps.length) return null;
-  // Only the one a review opens next (the person's pick, else the newest; hooks/handlers/consent.ts) is to be opened, the
+  // Only the one a review opens next (the person's pick, else the newest; hooks/consent.ts) is to be opened, the
   // others listed by short hash and title ("…, else the newest"), so the model is never told to open a proposal the
   // hooks will not show, and the person can name another.
   const p = proposal.picked(me, ps);
   if (!p) return null; // ps is not empty: never
-  // A note of the person's waits on it (hooks/handlers/consent.ts): reopening the review would drop the note, so point at the
+  // A note of the person's waits on it (hooks/consent.ts): reopening the review would drop the note, so point at the
   // confirm card instead. Until its no-answer close was told or the card offered again (stage told or reoffered), the
   // prompt may also carry consent's reoffer: this line then says the same (showConfirm), never a softer "if asked"
   // beside it. A card shown (stage asked) and not yet offered again was interrupted (lib/consent/review.ts).

@@ -2,7 +2,7 @@
  * plugin/sub-human/lib/room/consent.ts: the one fold of the room log into proposal / consent state, and the queries
  * over it. Pure: whether a person's answer is theirs comes in as trust (the store's RoomStore.trust: trust.ts).
  * stateLine and deliver() (render.ts, deliver.ts), the rows (lib/rows.ts) and the consent gate (lib/proposal.ts,
- * hooks/handlers/consent.ts) all read this, so they cannot disagree.
+ * hooks/consent.ts) all read this, so they cannot disagree.
  *
  *   fold(entries, trust) -> F   memoized per trust on (length, first and last entry): the store's cached reads give
  *                  the same entry objects call after call, so a repeat fold of an unchanged log is a lookup
