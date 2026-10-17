@@ -13,7 +13,7 @@
  *   (none) ─enter─► entering ─exit─► shown ─exited "Yes"──────────────► (none) | restore (the Yes changed the mode)
  *                      │               │ exit (a closing call) / stop / roomTool / prompt
  *                      │               ▼                                 restore ─enter─► allow; ─stop (mode back)─► (none)
- *                      └─(no plan file, nothing to show)─► exiting ─permission─► (restored, no dialog) ─exited─► (none)
+ *                      └─(no plan file, nothing to show)─► exiting ─permission─► (emptied, no dialog) ─exited─► (none), restored
  * A review closed with a note (the dialog's own tool_result, read only once it is on disk: `unread` until then) opens
  * the note; nothing is recorded until the person's Send on its card.
  * The note (Confirm.stage):
@@ -34,7 +34,8 @@
  * answerNeeded(review, event) says whether, and how, the handler reads the dialog's answer for an event.
  *
  * Effects run in order. save comes before a writePlan, so the backup is on disk first; restorePlan with a null backup
- * removes the file; answer is lib/proposal.ts answer then decide, its clearNote dropping the note only on success.
+ * removes the file; blankPlan empties it for the closing ExitPlanMode (which reads it as it runs: the person's own plan
+ * there would show as approved), and the restore follows at exited or the next prompt; answer is lib/proposal.ts answer then decide, its clearNote dropping the note only on success.
  * say is what the hook answers (context, deny, allow, ask, permit: a PermissionRequest allow with the mode set back);
  * its parts are lines, {answer: hash} (the answer effect's outcome line) or {ifRecorded}. Every model-facing line is
  * in NEXT and SAY below: one mechanic per phase and short outcome lines (CLAUDE.md "Unprescriptive").
@@ -94,6 +95,8 @@ export type ConsentEffect =
   | { do: 'save'; review: Review }
   | { do: 'writePlan'; file: string; hash: string; early: boolean }
   | { do: 'restorePlan'; file: string; backup: string | null }
+  /** the plan file emptied for the closing ExitPlanMode (lib/cc/env.ts LEAVE_PLAN_TEXT); restorePlan follows at exited */
+  | { do: 'blankPlan'; file: string }
   | { do: 'answer'; hash: string; choice: 'Agree' | 'Object'; notes?: string; clearNote?: boolean };
 
 export type Part = string | { answer: string } | { ifRecorded: string };
@@ -405,7 +408,10 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
 
     case 'permission': {
       if (!r || r.phase !== 'exiting') return none(state);
-      const [review, effects] = restore(r);
+      // the plan file emptied, not restored: the closing call reads it as it runs, and the person's own plan there
+      // would show as approved (lib/cc/env.ts LEAVE_PLAN_TEXT); exited (or the next prompt) restores it
+      const review: Review = r.file ? { ...r, restored: false } : r;
+      const effects: ConsentEffect[] = r.file ? [{ do: 'blankPlan', file: r.file }] : [];
       return { state: { ...state, review }, effects, say: { to: 'permit', mode: r.mode } };
     }
 

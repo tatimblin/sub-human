@@ -185,6 +185,12 @@ function admitAsked(me: Identity, call: Call): JoinRequest | null {
 }
 
 // ---------- running a step ----------
+/** The plan file emptied for a closing ExitPlanMode let through with no dialog (lib/cc/env.ts LEAVE_PLAN_TEXT); best
+ * effort: the person's plan comes back at exited either way. */
+function blankPlan(file: string): void {
+  try { writeFileAtomic(file, ccEnv.LEAVE_PLAN_TEXT); } catch (err) { c.logError(err, 'consent: plan file (leave)'); }
+}
+
 type Out = { say: Say | null; show?: { admit?: JoinRequest | undefined; card?: Proposal[] } };
 
 
@@ -202,6 +208,7 @@ function step(input: ConsentIn, me: Identity, make: (st: State) => ConsentEvent,
   for (let e = queue.shift(); e; e = queue.shift()) {
     if (e.do === 'save') { proposal.writeReview(me, e.review); disk.review = JSON.stringify(e.review); }
     else if (e.do === 'restorePlan') proposal.restorePlan({ phase: 'exiting', file: e.file, backup: e.backup, restored: false });
+    else if (e.do === 'blankPlan') blankPlan(e.file);
     else if (e.do === 'answer') {
       const res = record(me, e.hash, { choice: e.choice, ...(e.notes !== undefined ? { notes: e.notes } : {}) });
       answers.set(e.hash, { choice: e.choice, res });
@@ -458,6 +465,7 @@ function editStep(input: ConsentIn, me: Identity, ev: edit.EditEvent): boolean {
   for (let e = queue.shift(); e; e = queue.shift()) {
     if (e.do === 'save') proposal.writeEdit(me, e.edit);
     else if (e.do === 'restorePlan') proposal.restorePlan({ phase: 'exiting', file: e.file, backup: e.backup, restored: false });
+    else if (e.do === 'blankPlan') blankPlan(e.file);
     else if (e.do === 'seed') {
       const base = e.base ? (r => r.fold(r.readRecent()))(c.room.open(me.code)).plans.get(e.plan)?.versions.find(v => v.version === e.base) : undefined;
       writeFileAtomic(e.file, edit.seed(me.code, e.plan, e.base, base ? plans.textOf(me.code, base) : null));

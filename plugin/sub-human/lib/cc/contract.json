@@ -176,7 +176,22 @@
     "case\"setMode\":",
     "User approved Claude"
    ],
-   "note": "A PermissionRequest(ExitPlanMode) hook answering allow with updatedPermissions [{type:setMode, mode, destination:session}] leaves plan mode with no dialog in every mode (default, acceptEdits, bypassPermissions, dontAsk, auto, and with showClearContextOnPlanAccept on: cc-2.1.296-tasks-plans.md S3.5). The transcript still draws \"User approved Claude's plan\" for it. lib/cc/env.ts leavePlanMode: a review's restore and a room plan edit's closing call."
+   "note": "A PermissionRequest(ExitPlanMode) hook answering allow with updatedPermissions [{type:setMode, mode, destination:session}] leaves plan mode with no dialog in every mode (default, acceptEdits, bypassPermissions, dontAsk, auto, and with showClearContextOnPlanAccept on: cc-2.1.296-tasks-plans.md S3.5). The transcript draws \"User approved Claude's plan\" for it when the plan file holds a plan (exitplan-empty-plan: the hooks empty it first). lib/cc/env.ts leavePlanMode: a review's restore and a room plan edit's closing call."
+  },
+  {
+   "id": "exitplan-empty-plan",
+   "section": 3,
+   "stability": "incidental",
+   "since": "2.1.296",
+   "search": [
+    "User has approved exiting plan mode. You can now proceed.",
+    "\" Exited plan mode\""
+   ],
+   "shape": [
+    ",~=\"plan\"in ~&&typeof ~.plan===\"string\"?~.plan:void 0;",
+    "if(!~||~.trim()===\"\")return{type:\"tool_result\",content:\"User has approved exiting plan mode. You can now proceed.\""
+   ],
+   "note": "ExitPlanMode with no plan in its input (leavePlanMode's updatedInput is {}) reads the session plan file as it runs. A plan there is drawn as \"User approved Claude's plan · TITLE\" and handed to the model as \"User has approved your plan. You can now start coding … ## Approved Plan: TEXT\"; an empty file draws \" Exited plan mode\" and tells the model only \"User has approved exiting plan mode. You can now proceed.\" So the hooks empty the plan file at PermissionRequest (lib/cc/env.ts LEAVE_PLAN_TEXT) and put the person's own plan back at PostToolUse(ExitPlanMode) (or the next prompt): never the person's private plan shown or handed over as approved."
   },
   {
    "id": "exitplan-normalize",

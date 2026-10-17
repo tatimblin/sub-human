@@ -43,7 +43,7 @@ const TABLE: Record<string, Record<edit.EditEvent['type'], [string, string | nul
   seeded: { enter: ['seeded', 'allow', ''], attach: ['seeded', null, ''], exit: ['seeded', null, 'put'], put: ['stored', 'deny', 'save'],
     permission: ['seeded', null, ''], exited: ['none', 'context', 'restorePlan'], stop: ['seeded', null, ''], prompt: ['none', null, 'restorePlan'] },
   stored: { enter: ['stored', 'allow', ''], attach: ['stored', null, ''], exit: ['stored', null, ''], put: ['stored', 'deny', 'save'],
-    permission: ['stored', 'permit', 'restorePlan'], exited: ['none', 'context', 'restorePlan'], stop: ['stored', 'context', ''], prompt: ['none', null, 'restorePlan'] },
+    permission: ['stored', 'permit', 'blankPlan'], exited: ['none', 'context', 'restorePlan'], stop: ['stored', 'context', ''], prompt: ['none', null, 'restorePlan'] },
 };
 
 test('edit: every phase × every event, in one table', () => {
@@ -128,10 +128,13 @@ test('edit (hooks): seeded at the plan_mode attachment, stored at Pre(ExitPlanMo
   assert.equal(w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: text }, tool_use_id: 'tu2' }), { as: 'alice' }).stdout, '');
   const perm = w.hook('consent', ev('PermissionRequest', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {} }), { as: 'alice' });
   assert.deepEqual(hso(perm).decision, { behavior: 'allow', updatedInput: {}, updatedPermissions: [{ type: 'setMode', mode: 'default', destination: 'session' }] });
-  assert.equal(fs.readFileSync(file, 'utf8'), '# my own plan\n');
+  // the closing call reads the plan file as it runs: empty, so it shows "Exited plan mode", never the person's own
+  // plan as approved (lib/cc/env.ts LEAVE_PLAN_TEXT); the person's plan comes back at PostToolUse
+  assert.equal(fs.readFileSync(file, 'utf8'), '');
   const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: {}, tool_use_id: 'tu2', tool_response: { plan: text, filePath: file } }), { as: 'alice' });
   assert.match(must(ctx(post)), /^sub-human: plan mode closed with no approval: room plan room v1 was stored, not agreed/);
   assert.equal(editOf(w, 'alice'), null);
+  assert.equal(fs.readFileSync(file, 'utf8'), '# my own plan\n');
   assert.deepEqual(answers(w), [], 'an edit is never a sign-off');
 });
 
@@ -171,4 +174,34 @@ test('edit (hooks): no attachment came: ExitPlanMode seeds the plan file and ask
   w.hook('prompt', ev('UserPromptSubmit', null, { permission_mode: 'default', prompt: 'never mind' }), { as: 'alice' });
   assert.equal(editOf(w, 'alice'), null);
   assert.equal(fs.readFileSync(file, 'utf8'), '# mine\n');
+});
+
+test('edit (hooks, live 2026-10-17): the closing ExitPlanMode never sees the person\'s private plan; Esc or a crash before its PostToolUse, then the next prompt, still restores it', () => {
+  const w = new World({ alice: 'act', bob: 'sleep' });
+  const file = planFile(w, 'alice', '# PRIVATE: my own plan\n');
+  openEdit(w, 'alice');
+  w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'acceptEdits', tool_input: {} }), { as: 'alice' });
+  attach(w, 'alice', file);
+  const text = write(file, '# Paging\n', 'first');
+  w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: text, planFilePath: file }, tool_use_id: 'tu1' }), { as: 'alice' });
+  const perm = w.hook('consent', ev('PermissionRequest', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {} }), { as: 'alice' });
+  assert.deepEqual(hso(perm).decision, { behavior: 'allow', updatedInput: {}, updatedPermissions: [{ type: 'setMode', mode: 'acceptEdits', destination: 'session' }] });
+  assert.equal(fs.readFileSync(file, 'utf8'), '', 'what the closing call reads: nothing');
+  assert.equal(must(editOf(w, 'alice')).restored, false, 'the backup is still owed');
+  // no PostToolUse (Esc, a crash): the next prompt, outside plan mode, puts the person's plan back
+  w.hook('prompt', ev('UserPromptSubmit', null, { permission_mode: 'acceptEdits', prompt: 'next' }), { as: 'alice' });
+  assert.equal(fs.readFileSync(file, 'utf8'), '# PRIVATE: my own plan\n');
+  assert.equal(editOf(w, 'alice'), null);
+  // a person with no plan file of their own: the emptied file goes again
+  const w2 = new World({ alice: 'act', bob: 'sleep' });
+  const f2 = planFile(w2, 'alice', null);
+  openEdit(w2, 'alice');
+  w2.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {} }), { as: 'alice' });
+  attach(w2, 'alice', f2);
+  const t2 = write(f2, '# Paging\n', 'first');
+  w2.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: t2, planFilePath: f2 }, tool_use_id: 'tu1' }), { as: 'alice' });
+  w2.hook('consent', ev('PermissionRequest', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {} }), { as: 'alice' });
+  assert.equal(fs.readFileSync(f2, 'utf8'), '');
+  w2.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: {}, tool_use_id: 'tu1', tool_response: { plan: '', filePath: f2 } }), { as: 'alice' });
+  assert.equal(fs.existsSync(f2), false);
 });

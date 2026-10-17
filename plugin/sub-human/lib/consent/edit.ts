@@ -11,8 +11,11 @@
  *   open ─exit─► put ─stored─► stored (the receipt is the deny: no approval dialog) ─exit─► (passes)
  *        │            ─conflict─► open, base := the current version (the deny carries its text: reconcile, exit again)
  *        │            ─refused─► open (the deny says why)
- *   stored ─permission─► plan mode left with the person's mode put back, the plan file restored ─exited─► (none)
- *   a prompt outside plan mode while open: the edit is dropped (nothing stored), the plan file restored
+ *   stored ─permission─► plan mode left with the person's mode put back, the plan file emptied ─exited─► (none), the
+ *        plan file restored (the closing ExitPlanMode reads the file as it runs: empty, it shows "Exited plan mode";
+ *        the person's own plan put back before it would be drawn and handed to the model as an approved plan)
+ *   a prompt outside plan mode while open: the edit is dropped (nothing stored), the plan file restored; so does a
+ *        prompt after a stored edit whose PostToolUse never came (Esc, a crash)
  * An edit never shows the plan dialog and never records an answer: the store's receipt replaces the dialog, and
  * sign-off stays a separate request each person answers in their own review (invariant 2 of docs/next/ROOM-PLAN.md).
  *
@@ -47,6 +50,8 @@ export type EditEffect =
   | { do: 'save'; edit: PlanEdit }
   | { do: 'seed'; file: string; plan: string; base: number }
   | { do: 'restorePlan'; file: string; backup: string | null }
+  /** the plan file emptied for the closing ExitPlanMode (lib/cc/env.ts LEAVE_PLAN_TEXT); restorePlan follows at exited */
+  | { do: 'blankPlan'; file: string }
   | { do: 'put'; plan: string; base: number; text: string; summary: string };
 
 export type EditSay =
@@ -85,7 +90,7 @@ export const EDIT_SAY = {
   refused: (why: string): string => `sub-human: not stored: ${why}. Fix it in the plan file, then call ExitPlanMode again.`,
   offline: (why: string): string => `sub-human: not stored: the room's host did not answer (${why}). The edit stays in the plan file: call ExitPlanMode again later, or tell your person.`,
   left: (p: string, v: number | undefined, unchanged: boolean): string => `sub-human: plan mode closed with no approval: room plan ${p}${v ? ` v${v}` : ''} was ${unchanged ? 'left as it was' : 'stored, not agreed'} `
-    + '(any "approved" line above only marks how plan mode was left). Do not carry it out. Return to what you were doing.',
+    + '("approved exiting plan mode" above only marks how plan mode was left). Do not carry it out. Return to what you were doing.',
   notStored: (p: string): string => `sub-human: nothing was stored for room plan ${p}: the plan view's Yes is not a sign-off and stores nothing. To store an edit, ask the plan tool for an edit again.`,
   exitNow: (p: string): string => `sub-human: room plan ${p} is stored; call ExitPlanMode once more now (it only leaves plan mode, no dialog).`,
 };
@@ -188,7 +193,9 @@ export function reduce(edit: PlanEdit | null, ev: EditEvent): EditStep {
     }
     case 'permission': {
       if (e.phase !== 'stored') return none(e);
-      const [next, effects] = restore(e);
+      // the plan file emptied, not restored: the call reads it as it runs (exited, or the next prompt, restores it)
+      const next: PlanEdit = e.file ? { ...e, restored: false } : e;
+      const effects: EditEffect[] = e.file ? [{ do: 'blankPlan', file: e.file }] : [];
       return { edit: next, effects, say: { to: 'permit', mode: e.mode && e.mode !== 'plan' ? e.mode : 'default' } };
     }
     case 'exited': {
