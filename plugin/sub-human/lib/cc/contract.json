@@ -179,6 +179,19 @@
    "note": "A PermissionRequest(ExitPlanMode) hook answering allow with updatedPermissions [{type:setMode, mode, destination:session}] leaves plan mode with no dialog in every mode (default, acceptEdits, bypassPermissions, dontAsk, auto, and with showClearContextOnPlanAccept on: cc-2.1.296-tasks-plans.md S3.5). The transcript draws \"User approved Claude's plan\" for it when the plan file holds a plan (exitplan-empty-plan: the hooks empty it first). lib/cc/env.ts leavePlanMode: a review's restore and a room plan edit's closing call."
   },
   {
+   "id": "pretool-deny-context",
+   "section": 1,
+   "stability": "API",
+   "since": "2.1.296",
+   "search": [
+    "yield{type:\"additionalContext\""
+   ],
+   "shape": [
+    "if(~.additionalContexts&&~.additionalContexts.length>0)yield{type:\"additionalContext\",message:{message:"
+   ],
+   "note": "A PreToolUse hook's additionalContext reaches the model with a deny too: the PreToolUse pipeline yields the contexts after the permission decision, deny included, and the call's messages keep them. A deny's permissionDecisionReason is drawn to the person as the call's error, so a room plan edit's deny keeps its reason short and in the person's words and puts the model's next step in additionalContext (lib/cc/env.ts denyWithContext)."
+  },
+  {
    "id": "exitplan-empty-plan",
    "section": 3,
    "stability": "incidental",

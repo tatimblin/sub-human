@@ -171,6 +171,17 @@ const PLAN_ATTACHMENT_EVENT = 'PlanAttachment';
  */
 const LEAVE_PLAN_TEXT: '' = '';
 
+/**
+ * A PreToolUse deny whose reason is for the person (Claude Code draws it under the call as its error) and whose
+ * additionalContext is for the model: the context still reaches the model with a deny (it is yielded after the
+ * decision, not skipped), so the model's mechanics need not be in the red line the person reads.
+ * @cc yield{type:"additionalContext"
+ * @stability API
+ */
+function denyWithContext(reason: string, context: string): { hookSpecificOutput: { hookEventName: 'PreToolUse'; permissionDecision: 'deny'; permissionDecisionReason: string; additionalContext: string } } {
+  return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason, additionalContext: context } };
+}
+
 function leavePlanMode(mode: string | undefined): { hookSpecificOutput: { hookEventName: 'PermissionRequest'; decision: { behavior: 'allow'; updatedInput: Record<string, never>; updatedPermissions: { type: 'setMode'; mode: string | undefined; destination: 'session' }[] } } } {
   return { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow', updatedInput: {},
     updatedPermissions: [{ type: 'setMode', mode, destination: 'session' }] } } };
@@ -227,5 +238,5 @@ function matcherMatches(m: string | null | undefined, name: string, { toolEvent 
 
 export {
   ENV, sessionId, claudePid, taskListId, configDir, sanitizeId, tasksDir, plansDir, taskFile, projectDir, userSettingsFiles,
-  clearContextOnPlanAccept, globalConfigFile, modulesSwitch, matcherIsExact, matcherMatches, PLAN_ATTACHMENT_EVENT, leavePlanMode, LEAVE_PLAN_TEXT,
+  clearContextOnPlanAccept, globalConfigFile, modulesSwitch, matcherIsExact, matcherMatches, PLAN_ATTACHMENT_EVENT, leavePlanMode, LEAVE_PLAN_TEXT, denyWithContext,
 };

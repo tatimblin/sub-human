@@ -501,7 +501,7 @@ function editStep(input: ConsentIn, me: Identity, ev: edit.EditEvent): boolean {
   const event = String(input.hook_event_name);
   switch (say.to) {
     case 'context': c.context(event, say.text); break;
-    case 'deny': c.deny(say.text); break;
+    case 'deny': if (say.context) c.out(ccEnv.denyWithContext(say.text, say.context)); else c.deny(say.text); break;
     case 'allow': c.pre('allow', say.text); break;
     case 'permit': c.out(ccEnv.leavePlanMode(say.mode)); break;
     case 'attach': if (event === ccEnv.PLAN_ATTACHMENT_EVENT) attachOut = say.text; else c.context(event, say.text); break;
