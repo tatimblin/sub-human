@@ -16,7 +16,6 @@
  *              (lib/remote/link.ts), so no spent secret stays here
  *   join_as    the name the seat takes once the host lets an invite in (a bare /sub-human takes it)
  *   awaiting   the PIN held and the host person's card decides (no secret in it)
- *   moved      a handoff or promote re-pointed this link
  * The resume point is the mirror itself (its last line and that line's hash), not a field here.
  * has() is one stat (lib/room/store.ts open() asks on every call). dirOf(code) holds the link's own Noise key (0700);
  * remove() deletes it too. logFile(code) is the daemon's stderr.
@@ -27,7 +26,7 @@
  *   state      the one link vocabulary (lib/room/link-state.ts), as the mirror's document `link` has it: 'online'
  *              (hooks' writes cross now) | 'connecting' (the first dial, or a redial after a failure, a wake or a
  *              network change) | 'offline' (waiting to retry) | 'fork' | 'stopped' (both for good: `sub-human link
- *              --reset CODE` after a fork; a new join after stopped)
+ *              --forget CODE` and a new invite after a fork; a new join after stopped)
  *   attempt    dials since the link was last online (0 while online); lastError null while online
  *   prevError  once online again: why it last went offline
  *   rttMs      null before a pong; queued: @room posts in the outbox (lib/remote/outbox.ts)

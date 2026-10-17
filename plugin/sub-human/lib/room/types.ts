@@ -34,8 +34,6 @@ export type Kind = AgentKind | HumanKind | SystemKind;
 export type KnownKind = Kind;
 /** A task_req's op (validate.ts TASK_OPS). A `task` entry's op is any short word. */
 export type TaskOp = (typeof TASK_OPS)[number];
-/** A signed acceptance or request carried by host_changed (lib/handoff.ts makes them; validate.ts caps their size). */
-export type HostProof = Record<string, unknown>;
 
 /** The task fields of a task_req / task entry, as validate.ts taskFields() stores them (task_id always a string). */
 export interface TaskFields {
@@ -48,16 +46,6 @@ export interface TaskFields {
   status?: string;
   req?: number;
   blockedBy?: string[];
-}
-
-/** host_changed's fields (validate.ts hostFields): the room's authority moves to `host` on `machine`. */
-export interface HostFields {
-  epoch: number;
-  host: string;
-  locator: string;
-  accept?: HostProof;
-  ask?: HostProof;
-  promoted?: true;
 }
 
 /**
@@ -83,13 +71,6 @@ export type EntryInput = {
   by?: string;
   pubkey?: string | undefined;
   machine?: string | undefined;
-  // host_changed
-  epoch?: number;
-  host?: string;
-  locator?: string;
-  accept?: HostProof;
-  ask?: HostProof;
-  promoted?: true;
   // task_req / task
   op?: string;
   task_id?: string | number;
@@ -120,7 +101,7 @@ export interface PlaceOpts {
   queue?: boolean;
 }
 
-/** validate()'s answer: the checked fields, task and host fields gathered (null for other kinds). */
+/** validate()'s answer: the checked fields, task fields gathered (null for other kinds). */
 export interface Validated {
   via: Via;
   kind: Kind;
@@ -138,7 +119,6 @@ export interface Validated {
   task: TaskFields | null;
   pubkey: string | undefined;
   machine: string | undefined;
-  host: HostFields | null;
 }
 
 /**
@@ -160,13 +140,6 @@ export interface EntryFields extends TaskFields {
   by?: string;
   pubkey?: string;
   machine?: string;
-  // host_changed
-  epoch?: number;
-  host?: string;
-  locator?: string;
-  accept?: HostProof;
-  ask?: HostProof;
-  promoted?: true;
 }
 
 /**
@@ -225,15 +198,6 @@ export type EntryOf<K extends KnownKind> = Entry & { kind: K };
 export type KnownEntry = { [K in KnownKind]: EntryOf<K> }[KnownKind];
 /** A proposal whose hash the fold checked (consent.ts). */
 export type ProposalEntry = EntryOf<'proposal'> & { hash: ProposalHash };
-
-/** Who holds the room by its log (store.ts hostState): the last host_changed entry, else epoch 0. */
-export interface HostState {
-  epoch: number;
-  host?: string | undefined;
-  machine?: string | undefined;
-  locator?: string | undefined;
-  id?: number;
-}
 
 /** How far a via=human entry is the person's (trust.ts verdict). */
 export type HumanTrust = 'verified' | 'legacy' | 'unverified';
@@ -413,9 +377,9 @@ export interface WindowItem {
 /**
  * A log's snapshot as the wire carries it (lib/room/snapshot.ts; the subscribe stream's 'snapshot' event): the chain
  * head after the sealed lines and what a reader needs of them. entries: every non-chat entry with id <= id, in order
- * (the fold's input: proposals, answers, decisions, tasks, joins and leaves, host changes); window: the entries of
- * the last WINDOW_MS before line (rate buckets and nonces); pins: name -> PEM, the first member_joined key per name;
- * host: the last host_changed. pins and host are what entries give (a reader checks them, never trusts them).
+ * (the fold's input: proposals, answers, decisions, tasks, joins and leaves); window: the entries of the last
+ * WINDOW_MS before line (rate buckets and nonces); pins: name -> PEM, the first member_joined key per name. pins are
+ * what entries give (a reader checks them, never trusts them).
  */
 export interface SnapshotWire {
   id: number;
@@ -427,7 +391,6 @@ export interface SnapshotWire {
   entries: Entry[];
   window: WindowItem[];
   pins: Record<string, string>;
-  host: HostState;
 }
 
 /** <room>/snapshot.json: the wire form plus where this machine keeps the lines it covers (lib/room/log-io.ts). */
@@ -474,7 +437,6 @@ export interface RoomStore {
   /** this store's verdict on a via=human entry it read (trust.ts): a stable function, pass it on */
   readonly trust: Trust;
   pins(): Map<string, KeyObject>;
-  hostState(): HostState;
   setAside(): string | null;
   /** the store's cached array and its entries: read-only all the way out (an entry is flat, one level is enough) */
   readAll(): readonly Readonly<Entry>[];
@@ -585,7 +547,7 @@ export interface Link {
    * USER@HOST ROOM`) is an ssh spec with login: the person's own ssh login admits it */
   transport: LinkSpec;
   token?: LinkToken;
-  /** an sh2 invite (a handoff's, a promote's), or an invite line's SECRET word (protocol 3), until the token */
+  /** an invite line's SECRET word (protocol 3), until the token */
   invite?: InviteSecret;
   /** the PIN, from the moment it is typed until the host answered it (held, wrong, or throttled) */
   pin?: Pin | undefined;
@@ -601,7 +563,6 @@ export interface Link {
   join_sid?: string;
   /** what the join command last told the person (lib/remote/joining.ts): the tail does not repeat it */
   join_told?: string;
-  moved?: { epoch?: number; host: string; locator: string; at?: string; reached_at?: string; demoted?: boolean };
   created_at?: string;
 }
 

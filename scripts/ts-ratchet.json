@@ -8,7 +8,7 @@
     },
     "lib": {
       "any": 0,
-      "as": 143,
+      "as": 132,
       "nonNull": 0
     },
     "mcp": {
@@ -38,7 +38,7 @@
     },
     "test": {
       "any": 0,
-      "as": 284,
+      "as": 252,
       "nonNull": 0
     },
     "scripts": {

@@ -214,11 +214,9 @@ test('mirror: applyLine appends a host line only when it chains; applyDoc writes
   mirror.applyDoc('presence/bob', null);
   assert.deepEqual(mirror.kv.list('presence/'), []);
   assert.throws(() => mirror.applyDoc('rows/x', {}), (e: RoomError) => e.code === 'PROTOCOL');
-  mirror.reset();
-  assert.deepEqual([mirror.readAll(), mirror.members.read()], [[], {}]);
 });
 
-test('link: a mirror that is not the host\'s prefix is a FORK: the daemon stops and says so; after reset() it copies the room again', async t => {
+test('link: a mirror that is not the host\'s prefix is a FORK: the daemon stops and says so; a fresh copy (after --forget and a new join) follows the room', async t => {
   h.freshHome(t);
   const code = h.newRoom();
   const host = fsStore(store.open(code));
@@ -240,16 +238,17 @@ test('link: a mirror that is not the host\'s prefix is a FORK: the daemon stops 
   assert.equal(forked.state(), 'fork');
   const linkDoc = must(mirror.kv.get<{ state: string; pid: number }>('link'), 'the link document');
   assert.deepEqual([linkDoc.state, linkDoc.pid], ['fork', process.pid]);
-  assert.match(logged.join('\n'), new RegExp(`FORK in room ${code}.*sub-human link --reset ${code}`));
+  assert.match(logged.join('\n'), new RegExp(`FORK in room ${code}.*sub-human link --forget ${code}`));
   assert.equal(must(mirror.readAll()[0]).text, 'not the host\'s', 'nothing repaired');
 
-  mirror.reset();
-  const again = await link.serveMirror({ mirror, connect });
-  await h.until(() => again.state() === 'online' && fs.existsSync(mirror.logFile) && fs.readFileSync(mirror.logFile, 'utf8') === fs.readFileSync(host.logFile, 'utf8'), 3000, 10);
-  assert.equal(fs.readFileSync(mirror.logFile, 'utf8'), fs.readFileSync(host.logFile, 'utf8'));
+  const fresh = new MirrorRoomStore(code, { dir: h.tmpDir('sh-mirror-', t) });
+  t.after(() => fs.rmSync(path.dirname(linkSocket.socketPath(fresh.dir)), { recursive: true, force: true }));
+  const again = await link.serveMirror({ mirror: fresh, connect });
+  await h.until(() => again.state() === 'online' && fs.existsSync(fresh.logFile) && fs.readFileSync(fresh.logFile, 'utf8') === fs.readFileSync(host.logFile, 'utf8'), 3000, 10);
+  assert.equal(fs.readFileSync(fresh.logFile, 'utf8'), fs.readFileSync(host.logFile, 'utf8'));
   again.stop('done');
   assert.equal(await again.done, 'done');
-  assert.equal(fs.existsSync(linkSocket.socketPath(mirror.dir)), false, 'the socket is gone with it');
+  assert.equal(fs.existsSync(linkSocket.socketPath(fresh.dir)), false, 'the socket is gone with it');
 });
 
 test('skew: a newer host\'s unknown entry kind, via and fields, an unknown document and an unknown event keep the link online; readers show them, never as a person\'s words', async t => {

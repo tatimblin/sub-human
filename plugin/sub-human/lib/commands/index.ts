@@ -24,12 +24,11 @@ import { invite } from './invite.ts';
 import { admit } from './admit.ts';
 import { kick } from './kick.ts';
 import { leave } from './leave.ts';
-import { handoff } from './handoff.ts';
 import { bare, bindRoomClaude, join, named } from './join.ts';
 import type { Answer, VerbCtx, OpenVerb, Verb } from './types.ts';
 import type { Identity } from '../identity.ts';
 
-export const TABLE: Readonly<Record<string, Verb>> = Object.freeze({ '': bare, join, invite, admit, kick, leave, handoff });
+export const TABLE: Readonly<Record<string, Verb>> = Object.freeze({ '': bare, join, invite, admit, kick, leave });
 export const OPEN: Readonly<Record<string, OpenVerb>> = Object.freeze({ help, doctor });
 
 /** What run() knows of the session: VerbCtx without the seat, which it resolves (seat()) only once the lease checked. */

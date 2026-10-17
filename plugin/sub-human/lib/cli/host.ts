@@ -24,7 +24,6 @@
  *   maskPins(text, secrets, env?) -> text   inside Claude Code every PIN (and an invite line's SECRET) redacted
  *                                        (lib/cli/doctor/redact.ts redact) and PIN_HIDDEN
  *                appended; else text
- *                (invite here, promote in lib/cli/handoff.ts)
  */
 
 import fs from 'node:fs';

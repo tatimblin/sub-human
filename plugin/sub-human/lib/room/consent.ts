@@ -124,7 +124,6 @@ function compute(list: Entries, trust: Trust): Fold {
       }
       // a line that names a proposal and decides nothing (a say about it)
       case 'say': case 'question': case 'status': case 'task_req': case 'member_joined': case 'member_left': case 'task':
-      case 'host_changed':
         break;
       default: assertNever(e, 'entry kind');
     }

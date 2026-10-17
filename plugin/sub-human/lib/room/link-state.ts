@@ -9,8 +9,9 @@
  *   online      connected; hooks' writes cross now
  *   connecting  dialling: the first connection, or a redial (after a failure, a wake, a network change)
  *   offline     not connected, retrying on its own (or its daemon is not running: the join hook restarts it)
- *   fork        for good: this copy no longer matches the host's log (`sub-human link --reset CODE`)
- *   stopped     for good: refused (AUTH, PROTOCOL), revoked, the room closed or moved with no way to follow
+ *   fork        for good: this copy no longer matches the host's log (`sub-human link --forget CODE`, then a new
+ *               invite)
+ *   stopped     for good: refused (AUTH, PROTOCOL), revoked, or the room closed
  *
  * Sources, best first:
  *   links.readState(code)            the link daemon's record <home>/links/<code>.state.json {state, since, attempt,

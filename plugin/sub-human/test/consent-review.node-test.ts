@@ -38,7 +38,7 @@ const EVENTS: { [K in ConsentEvent['type']]: Extract<ConsentEvent, { type: K }> 
   stop: { type: 'stop', mode: 'plan', active: false, answer: { note: null }, target, live: true },
   roomTool: { type: 'roomTool', mode: 'plan', answer: { note: null }, target },
   prompt: { type: 'prompt', mode: 'plan', answer: { note: null }, target, live: true },
-  ask: { type: 'ask', admit: null, handoff: false, noteNamed: false, live: true, hit: pending, reviewable: true },
+  ask: { type: 'ask', admit: null, noteNamed: false, live: true, hit: pending, reviewable: true },
   answered: { type: 'answered', note: { kind: 'absent' }, target, afk: false, asked: true, answers: [{ hash: H, answer: { kind: 'answer', label: 'Agree' }, live: true }] },
   planFailed: { type: 'planFailed', early: false },
   rejected: { type: 'rejected', toolUseId: 'tu1', answer: { note: 'add a test' }, target },
@@ -111,7 +111,7 @@ test('review: the reducer is pure: it never changes the state it was given', () 
 
 // ---------- the note ----------
 const note = (stage: NoteStage | null, extra: Partial<Confirm> = {}): Confirm => ({ hash: H, note: 'open rate limiting', from: 'alice', title: 'Ship v3 Monday', at: 1, ...(stage ? { stage } : {}), ...extra });
-const ASK_NOTE: ConsentEvent = { type: 'ask', admit: null, handoff: false, noteNamed: true, live: true, hit: [], reviewable: true };
+const ASK_NOTE: ConsentEvent = { type: 'ask', admit: null, noteNamed: true, live: true, hit: [], reviewable: true };
 const STOP: ConsentEvent = { type: 'stop', mode: 'default', active: false, live: true };
 const PROMPT: ConsentEvent = { type: 'prompt', mode: 'default', live: true };
 const card = (a: Extract<ConsentEvent, { type: 'answered' }>['note']): ConsentEvent => ({ type: 'answered', note: a, target, afk: false, asked: false, answers: [] });
@@ -329,10 +329,9 @@ test('H (live verify): plan mode by hand, no EnterPlanMode: an ExitPlanMode whos
   assert.match(review.textOf(parts(post), () => '', false), /^Nothing recorded for proposal [0-9a-f]{12}: that plan was only its name/);
 });
 
-test('ask: a join request, then the handoff, then a waiting note, then the proposals the call names', () => {
+test('ask: a join request, then a waiting note, then the proposals the call names', () => {
   const ask = (e: Partial<Extract<ConsentEvent, { type: 'ask' }>>, note: Confirm | null = null) => review.reduce({ review: null, note }, { ...EVENTS.ask, ...e }, ctx);
-  assert.deepEqual(ask({ admit: 'abcdefabcdef', handoff: true }).say, { to: 'ask', text: '', show: { admit: 'abcdefabcdef' } });
-  assert.deepEqual(ask({ handoff: true, noteNamed: true }, note('waiting')).say, { to: 'ask', text: '', show: { handoff: true } });
+  assert.deepEqual(ask({ admit: 'abcdefabcdef', noteNamed: true }, note('waiting')).say, { to: 'ask', text: '', show: { admit: 'abcdefabcdef' } });
   assert.deepEqual(ask({ noteNamed: true }, note('waiting')).say, { to: 'ask', text: review.SAY.noteAsk('bob', H), show: { note: true } });
   assert.deepEqual(ask({ reviewable: false }).say, { to: 'ask', text: `room proposal ${H}`, show: { card: [H] } });
   assert.deepEqual(must(ask({ hit: [{ ...P0, viewable: false }] }).say).to, 'ask', 'too long for the plan view: the card');

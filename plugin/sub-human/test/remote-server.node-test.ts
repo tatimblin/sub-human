@@ -14,7 +14,6 @@ import * as identity from '../lib/identity.ts';
 import * as protocol from '../lib/remote/protocol.ts';
 import * as server from '../lib/remote/server.ts';
 import * as client from '../lib/remote/client.ts';
-import * as invites from '../lib/remote/invites.ts';
 import * as hostLinks from '../lib/remote/host-links.ts';
 import * as quota from '../lib/remote/quota.ts';
 import { MemoryRoomStore } from './support/memory-store.ts';
@@ -30,7 +29,7 @@ import type { RoomError } from '../lib/room/validate.ts';
 import type { Transport } from '../lib/remote/types-rest.ts';
 import type { Entry, EntryInput, Members, Presence, RoomStore } from '../lib/room/types.ts';
 import type { RoomCode } from '../lib/brand.ts';
-import { rc, sn, mid, inv } from './support/brands.ts';
+import { rc, sn, mid, tokenOf, wordOf } from './support/brands.ts';
 import { must } from './support/must.ts';
 import { fsStore } from './support/fs-store.ts';
 
@@ -164,12 +163,10 @@ test('remote (memory): no token gets AUTH on every op but hello; a bad token, a 
   const hello = (opts: Partial<ConnectOpts>) => client.connect(served(t, host), { machine: REMOTE, ...opts });
   // @ts-expect-error: not a link token, refused at run time
   await rejects(hello({ token: 'not-a-token' }), 'AUTH');
-  const { invite } = invites.mintFor(host, { locator: 'pipe:test', machine: REMOTE, seats: [] });
-  const [pre, c, loc, secret, key] = invite.split('.');
-  await rejects(hello({ invite: inv([pre, c, loc, must(secret).replace(/^./, (ch: string) => (ch === 'A' ? 'B' : 'A')), key].join('.')) }), 'AUTH');
-  await rejects(hello({ invite: inv([pre, rc('vole-1234'), loc, secret, key].join('.')) }), 'AUTH');
-  (await hello({ invite })).close();
-  await rejects(hello({ invite }), 'AUTH');
+  await rejects(hello({ invite: wordOf('no such invite') }), 'AUTH');
+  const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: REMOTE, seats: [] });
+  (await hello({ token })).close();
+  await rejects(hello({ token: tokenOf('another token') }), 'AUTH');
 
   const [a, b] = memory.pair();
   server.serve(b, { store: host });
@@ -275,10 +272,10 @@ test('remote (memory): a link writes only as the seats it joined: another `from`
   assert.equal(logLines(code).length, before + 1, 'only bob\'s own member_left was written');
 });
 
-test('remote (memory): a bound link (the card let one name in; a handoff\'s seats) joins its own seats only: another name, or a second seat, is AUTH', async t => {
+test('remote (memory): a bound link (the card let one name in) joins its own seats only: another name, or a second seat, is AUTH', async t => {
   const { code, host } = hostRoom(t);
-  const { invite } = invites.mintFor(host, { locator: 'pipe:test', machine: REMOTE, seats: ['carol'] });
-  const c = await client.connect(served(t, host), { machine: REMOTE, invite });
+  const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: REMOTE, seats: ['carol'], bound: true });
+  const c = await client.connect(served(t, host), { machine: REMOTE, token });
   t.after(() => c.close());
   const before = logLines(code).length;
   await rejects(c.join(seat(code, 'bob')), 'AUTH');
@@ -375,14 +372,14 @@ test('remote (memory): over a flaky link a dropped frame is OFFLINE at the deadl
 
 test('remote (pipe): `sub-human serve --stdio CODE` as a child serves the host home; it exits when the link closes', async t => {
   const { code, host } = hostRoom(t);
-  const { invite } = invites.mintFor(host, { locator: 'pipe:test', machine: REMOTE, seats: [] });
+  const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: REMOTE, seats: [] });
   const tr = pipe.spawn(process.execPath, [h.BIN, 'serve', '--stdio', code], { env: h.childEnv() });
   let closed = false;
   tr.onClose(() => { closed = true; });
   const anon = await client.connect(pipe.spawn(process.execPath, [h.BIN, 'serve', '--stdio', code], { env: h.childEnv() }), { machine: REMOTE });
   await rejects(anon.beat('alice'), 'AUTH');
   anon.close();
-  const c = await client.connect(tr, { machine: REMOTE, invite });
+  const c = await client.connect(tr, { machine: REMOTE, token });
   assert.deepEqual(await c.join(seat(code, 'alice')), { ok: true });
   const e = await c.append(signed(code, 'alice', { kind: 'say', text: 'over a pipe' }));
   const { got, sub } = collect(c, 0, store.hash12(''));
@@ -507,11 +504,11 @@ test('quotas: the log counts a seat\'s posts by via; a link window drops what ha
 test('kick (pipe): a `serve --stdio CODE` child names no link, yet the kick ends its stream with LINK_REVOKED, refuses its ops and closes it; the old token\'s hello says LINK_REVOKED', async t => {
   const { code, host } = hostRoom(t);
   const hosting = await import('../lib/remote/hosting.ts');
-  const { invite } = invites.mintFor(host, { locator: 'pipe:test', machine: REMOTE, seats: [] });
+  const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: REMOTE, seats: [] });
   const tr = pipe.spawn(process.execPath, [h.BIN, 'serve', '--stdio', code], { env: h.childEnv() });
   let closed = false;
   tr.onClose(() => { closed = true; });
-  const c = await client.connect(tr, { machine: REMOTE, invite });
+  const c = await client.connect(tr, { machine: REMOTE, token });
   t.after(() => c.close());
   assert.deepEqual(await c.join(seat(code, 'bob')), { ok: true });
   const ends: { reason: string; message?: string }[] = [];
@@ -583,6 +580,5 @@ test('remote (memory): params of the wrong shape are refused by the op\'s own ch
   await rejects(c.request('append', { payload: { from: 3, kind: 'say', text: 'x' } }), 'AUTH');
   await rejects(c.request('subscribe', { after: '0', hash: null }), 'INVALID');
   assert.deepEqual(await c.request('blob.get', { ref: 42 }), { bytes: null });
-  await rejects(c.request('handoff.refuse', { id: {} }), 'INVALID');
   assert.equal(logLines(code).length, before);
 });

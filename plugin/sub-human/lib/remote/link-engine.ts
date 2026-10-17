@@ -8,16 +8,14 @@
  *
  * Phases (lib/room/link-state.ts): connecting (the first dial, nothing online yet), online, offline (a retry timer or
  * a dial under way), and for good fork (the mirror is not the host's prefix) or stopped (AUTH, PROTOCOL, the room
- * closed, no seat left, a signal, moved with nowhere to go). A dial runs connect -> subscribe -> keepSeats -> flush,
+ * closed, no seat left, a signal). A dial runs connect -> subscribe -> keepSeats -> flush,
  * each an effect whose outcome comes back as an event; only after flush does the new connection replace the live one
  * (make before break), which is then retired (closed once the ops in flight on it are answered). One dial at a time.
  *
  * A failed step: FATAL codes stop the link; anything else keeps a live connection when there is one (a failed redial
- * changes nothing), else goes offline and retries after nextDelay. lost is a failed dial with no live one; movedAway
- * redials now (the new host). redial (a wake, a network change, a signal) dials now with the backoff reset. Timers:
+ * changes nothing), else goes offline and retries after nextDelay. lost is a failed dial with no live one. redial (a wake, a network change, a signal) dials now with the backoff reset. Timers:
  * ping every pingMs; no pong within pongMs makes the link suspect (a make-before-break redial); none within deadMs
- * (noPong) is a dead, half-open connection: a dial under way decides what comes next, else as lost. The person's words
- * for an offline reason (lib/handoff.ts whyOffline) ride in the event: the daemon computes them, the engine keeps them.
+ * (noPong) is a dead, half-open connection: a dial under way decides what comes next, else as lost.
  */
 
 import { assertNever } from '../../mod/core/never.ts';
@@ -58,9 +56,8 @@ type EngineEvent =
   | { type: 'start' }
   | { type: 'connected' | 'subscribed' | 'seated'; dial: number }
   | { type: 'flushed'; dial: number }
-  | { type: 'dialFailed'; dial: number; error: Failure; offline?: string }
-  | { type: 'lost'; conn: number; error: Failure; offline?: string }
-  | { type: 'movedAway'; conn: number }
+  | { type: 'dialFailed'; dial: number; error: Failure }
+  | { type: 'lost'; conn: number; error: Failure }
   | { type: 'redial'; why: string }
   | { type: 'timer'; name: TimerName }
   | { type: 'pong'; conn: number; rttMs: number }
@@ -145,7 +142,7 @@ function step(state: EngineState, event: EngineEvent, ctx: EngineCtx): { state: 
   }
 
   /** The live connection is gone (or there was none): offline, and a retry unless a dial or a retry is under way. */
-  function fail(e: Failure, offline?: string) {
+  function fail(e: Failure) {
     if (e.code === 'FORK') return stop('fork', e.message, 'FORK', e.reason || null);
     if (e.code === 'AUTH' || e.code === 'PROTOCOL') return stop('stopped', e.message, e.code, e.reason || null);
     const c = s.conn;
@@ -155,7 +152,7 @@ function step(state: EngineState, event: EngineEvent, ctx: EngineCtx): { state: 
     s.lastError = e.message;
     s.lastReason = e.reason || null;
     fx.push({ type: 'log', msg: `offline: ${e.message}` });
-    enter('offline', offline ?? e.message, null, e.reason || null);
+    enter('offline', e.message, null, e.reason || null);
     if (s.dial !== null || s.retrying) return; // that dial's outcome, or the retry already set, decides
     s.delay = nextDelay(s.delay, T.retryMs, T.retryMaxMs, random);
     s.retrying = true;
@@ -217,20 +214,12 @@ function step(state: EngineState, event: EngineEvent, ctx: EngineCtx): { state: 
         fx.push({ type: 'publish' });
         break;
       }
-      fail(event.error, event.offline);
+      fail(event.error);
       break;
     }
     case 'lost':
       if (event.conn !== s.conn || forGood(s)) break;
-      fail(event.error, event.offline);
-      break;
-    case 'movedAway':
-      if (event.conn !== s.conn || forGood(s)) break;
-      s.conn = null;
-      clear('ping', 'pong');
-      fx.push({ type: 'close', conn: event.conn });
-      enter('offline', 'the room moved; reconnecting to its new host');
-      redial('the room moved');
+      fail(event.error);
       break;
     case 'redial':
       redial(event.why);

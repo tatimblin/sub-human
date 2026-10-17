@@ -98,13 +98,8 @@ export const WS_CONNECT_MS = 45_000;           // SUB_HUMAN_WS_CONNECT_MS
 export const LINK_RETRY_MS = 1000;             // SUB_HUMAN_LINK_RETRY_MS
 export const LINK_RETRY_MAX_MS = 10_000;       // SUB_HUMAN_LINK_RETRY_MAX_MS: a healed link is back within ~10 s
 export const LINK_IDLE_MS = 60_000;            // SUB_HUMAN_LINK_IDLE_MS
-// A planned handoff (lib/handoff.ts): the ask waits this long for the target's card answer; the new host's
-// invites the old host hands out (also to a member that reconnects late) are kept this long; a manual promote
-// needs the link down at least PROMOTE_OFFLINE_MS (else --force).
-export const HANDOFF_ASK_MS: number = 10 * 60_000;
-export const HANDOFF_INVITE_MS: number = 24 * 60 * 60_000;
-export const HANDOFF_CALL_MS = 6000;           // the target's accept op (the old host appends, releases its room Claude): in a 10 s hook
-export const PROMOTE_OFFLINE_MS: number = 10 * 60_000;
+// A joiner the host person's card let in may redeem its admission for this long (lib/remote/admission.ts).
+export const ADMIT_CARD_MS: number = 24 * 60 * 60_000;
 // An invite's PIN is checked online only (lib/remote/invites.ts); it burns at the last wrong one, at INVITE_TTL_MS, or
 // on success.
 // After the n-th wrong PIN it takes none for PIN_BACKOFF_MS * 2^(n-1) (the joiner waits one step longer). At most
@@ -174,7 +169,6 @@ export const LINK_QUOTAS = {
   beat: { max: 120, windowMs: 60_000, per: 'session' },            // a lease renewal per seat every SEAT_BEAT_MS, and reconnects
   'blob.get': { max: 600, windowMs: 60_000, per: 'session' },      // plans fetched
   ping: { max: 60, windowMs: 60_000, per: 'session' },             // one every LINK_PING_MS
-  handoff: { max: 20, windowMs: 60_000, per: 'session' },          // handoff.accept and handoff.refuse
 } as const;
 
 /** One op's quota: at most max in any windowMs, counted where per says (above). */

@@ -22,12 +22,6 @@ export interface Parsed<S extends FlagSpec> {
   error?: string;
 }
 
-/** The output channels lib/cli/handoff.ts commands write through (main.ts passes die and console). */
-export interface CliIo {
-  die: (msg: string, code?: number) => never;
-  out: (line: string) => void;
-  err: (line: string) => void;
-}
 
 // ---------- doctor.ts ----------
 
@@ -92,7 +86,6 @@ export interface LinkReport {
   daemon: { running: boolean; pid?: number | null };
   state: LinkStateView;
   recent: string[];
-  moved: { epoch?: number | undefined; host?: string | undefined; locator?: string | undefined; demoted: boolean; reached: boolean } | null;
   reach?: Reach;
   /** The room is known to be closed: the mirror's room Claude stopped, or the host's hello says so. */
   closed?: true;
@@ -131,7 +124,6 @@ export interface Bundle {
     room: string;
     transport: { kind: string | undefined; host: string | undefined; user: string | undefined; port: number | undefined };
     credential: string;
-    moved: { epoch: number | undefined; demoted: boolean; reached: boolean } | undefined;
     daemon: { running: boolean };
     state: Pick<LinkState, 'state'> & { [K in 'since' | 'attempt' | 'rttMs' | 'queued' | 'lastError' | 'source']?: LinkState[K] | undefined };
     reach: (Pick<Reach, 'ok' | 'ms' | 'skipped' | 'protocol' | 'skewMs'> & { error: string | undefined; ssh_error: string[] | undefined }) | undefined;

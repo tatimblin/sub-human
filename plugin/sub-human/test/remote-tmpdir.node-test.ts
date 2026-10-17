@@ -1,6 +1,5 @@
 // The link daemon's socket never depends on TMPDIR: a daemon started under one TMPDIR (a listener's, sshd's, a pipe
-// server's after a handoff) serves the hooks of a session under another. Two homes on one machine (the pipe link);
-// the handoff case, the old host's follow link started inside the serving process, is in test/handoff-e2e.node-test.ts.
+// server's) serves the hooks of a session under another. Two homes on one machine (the pipe link).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

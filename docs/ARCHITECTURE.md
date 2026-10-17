@@ -588,7 +588,6 @@ The code that reads Claude Code is `lib/cc/`: `env.ts` (the session's env, the c
 - `lib/cli/doctor/redact.ts`: `doctor --bundle` (lib/cli/doctor.ts): the report as redacted JSON to attach to a bug report.
 - `lib/cli/doctor/rooms.ts`: the log of each room this home hosts, checked as the tail checks it: the hash chain over every segment this machine holds (store.validateChain) and every person's line judged against the keys the room pins (store.trust: verified, legacy, unverified).
 - `lib/cli/doctor/ssh.ts`: doctor's ssh checks (lib/cli/doctor.ts): the serve shim a host reached over ssh runs, ssh itself, and what ssh's stderr means for a link (one classifier: lib/remote/transports/ssh.ts classify).
-- `lib/cli/handoff.ts`: the CLI bodies of moving a room's host (lib/handoff.ts), for scripts/sub-human.
 - `lib/cli/host.ts`: the host's and the joiner's setup commands of scripts/sub-human, in the person's own shell (the Bash guard refuses them to a model).
 - `lib/cli/listen.ts`: the host's web listener commands of scripts/sub-human, in the person's own shell (the Bash guard refuses them to a model).
 - `lib/cli/main.ts`: the body of scripts/sub-human (a thin shim kept at its path: persisted artifacts run it), the read-only CLI over the room.
@@ -597,7 +596,6 @@ The code that reads Claude Code is `lib/cc/`: `env.ts` (the session's env, the c
 - `lib/commands/admit.ts`: `/sub-human admit [ID]` (host only): who is waiting to join, or let one in, as the host's card does (lib/remote/admission.ts letIn, signed with the seat's key: the join hook arms the signer).
 - `lib/commands/answer.ts`: the verbs' answers (types.ts Answer) and the words they share.
 - `lib/commands/doctor.ts`: `/sub-human doctor`: `sub-human doctor --quick` (lib/cli/doctor.ts), read only, and it runs without the hooks module (a refusal points to it). --fix and --bundle change or write files, so they run in a terminal outside Claude Code: the reply names the line.
-- `lib/commands/handoff.ts`: `/sub-human handoff NAME [USER@HOST[:PORT] [--via JUMP] \| https://FRONT]`: ask NAME to host the room this session is in (lib/handoff.ts ask, signed with the seat's key: the join hook arms the signer; NAME's card decides).
 - `lib/commands/help.ts`: `/sub-human help [anything]`, the full list of commands.
 - `lib/commands/index.ts`: every /sub-human command, as a table {verb: (args, ctx) => Answer} (types.ts). hooks/handlers/join.ts parses the hook's stdin, calls run() and renders the answer; the model never chooses an identity, and nothing here writes output.
 - `lib/commands/invite.ts`: `/sub-human invite [--ssh [DEST]] [--via J] \| --web \| --public \| --url U [--port P] \| --pipe \| --stop \| --cancel [ID]` (host only): an invite line and its PIN (lib/remote/hosting.ts hostInvite, webhost.ts hostWeb), shown to the person only (a secret: it holds the PIN); --stop stops serving the room over the web, --cancel cancels an unused invite (hosting.cancelInvite).
@@ -612,7 +610,6 @@ The code that reads Claude Code is `lib/cc/`: `env.ts` (the session's env, the c
 - `lib/env.ts`: every SUB_HUMAN_* environment knob the runtime reads, in one typed table, and the readers.
 - `lib/errors.ts`: reading what a catch caught. A catch variable is `unknown` (anything can be thrown), so every catch reads it through these, never through a cast.
 - `lib/gc.ts`: what a home stops keeping, so it does not grow with every room and session ever made.
-- `lib/handoff.ts`: moving a room's host to another member's machine. The host's machine holds the room's log, serves its links and runs its room Claude (billed to the host person's model account); a planned handoff moves all three before the host closes their laptop.
 - `lib/home.ts`: where the plugin's store lives on this machine, and which machine this is.
 - `lib/identity.ts`: where rooms live, who is in them, and which Claude session is asking.
 - `lib/io.ts`: small file and process helpers shared by every module.
@@ -677,7 +674,7 @@ The code that reads Claude Code is `lib/cc/`: `env.ts` (the session's env, the c
 - `lib/tail.ts`: the room tail behind `sub-human tail` (scripts/sub-human), the hooks module's child (mod/deliver.ts).
 - `lib/tasks.ts`: the room's shared task list. The headless room Claude's own native task list (CLAUDE_CODE_TASK_LIST_ID=sh-CODE) is the room's list.
 - `lib/text.ts`: the string helpers and name patterns every module shares.
-- `lib/types-app.ts`: shared types of the app slice (tail, rows, proposal, handoff, room-claude, tasks, seats, notices).
+- `lib/types-app.ts`: shared types of the app slice (tail, rows, proposal, room-claude, tasks, seats, notices).
 <!-- /gen:lib-modules -->
 
 Elsewhere: `hooks/run.ts` (the one node entry of every hook: stdin read once, one handler, one reply), `hooks/reply.ts` (the reply at the edge and the output helpers), `hooks/seat.ts` (`resolveSeat`, no signer), `hooks/context.ts` (the mechanics block), `lib/io.ts` (`readInput`), `hooks/seat-key.ts` (the signer), `scripts/sub-human` (the read-only CLI and the tail entry), `statusline/` (row text), `agents/` (`room-claude`, `room`, `participant`), `skills/sub-human/` (the join skill and the role texts the hooks inject).

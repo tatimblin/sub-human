@@ -29,7 +29,7 @@ const host = new Machine(undefined, 'host'), remote = new Machine(undefined, 're
 const alice = host.seat('alice'), bob = remote.seat('bob');
 host.join(alice, 'alice');
 const code = must(host.lib(() => store.listRooms()[0]), 'the room');
-remote.linkInvite(code, host.inviteFor(code, remote)); // the link file (a bound invite, no card), then the seat over it
+host.linkFor(code, remote); // the link file (a link's token, no card), then the seat over it
 const joined = remote.join(bob, `bob ${code}`);
 if (!joined.json?.hookSpecificOutput) throw new Error(`join: ${JSON.stringify(joined.json)} ${joined.stderr}`);
 const daemon = remote.lib(() => linkSocket.status(code)).pid;

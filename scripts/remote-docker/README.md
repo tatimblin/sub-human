@@ -31,8 +31,8 @@ checked only with `node --check`. The "today" column below is the last run befor
  [joiner-a]     [toxiproxy]           [bastion]             [tls-front]             [corp-proxy]
   P1 friend     :22001 -> devbox:22    sshd, user jump       Caddy, internal CA     tinyproxy :3128
   NET_ADMIN     :22003 -> devbox-old   no shell, no tty      https://tls-front/     CONNECT only,
-  sshd (for     latency / cut /        ProxyJump only to     -> devbox:7421          to :443 :22001
-  a handoff)    reset_peer / timeout   devbox, devbox-old,       |                   :22003
+  sshd          latency / cut /        ProxyJump only to     -> devbox:7421          to :443 :22001
+                reset_peer / timeout   devbox, devbox-old,       |                   :22003
                     |                  joiner-a                  |                       |
   ==================|==================|=========================|=====    ===============|=======
      core (internal)|                  |                         |          corp (internal: no
@@ -80,7 +80,6 @@ checked only with `node --check`. The "today" column below is the last run befor
 | `slow-link` | P1 | 5 s of upstream latency, past the hook's 3 s deadline: the hook says `⧗ sending (slow link)` within 3 s, never "nothing was sent"; the post lands exactly once (no ghost, no double) and the outbox empties | pass |
 | `skew` | mixed | beta.15 host ← current joiner: its line ends with a 4-digit PIN, refused here naming the host's update; current host ← beta.15 joiner: beta.15 refuses the SECRET line, and the host's invite text names the version it needs; a link made before keeps working (protocol 1..3 against 1..2 settles on 2, unit-tested); a hello as a 9.9.9 joiner (protocol 99) into the host's serve over an ssh login is refused `PROTOCOL` (reason `SKEW`) naming both versions and "The host must update" | not run (Stage 7b) |
 | `security` | all | nothing of sub-human's in the devbox account's `authorized_keys` (no door, no forced command); the bastion has no shell; homes 0700 with nothing group/world readable; no link token in any log, room file, process list or other file; PIN guessing pending (unit-tested); `/sub-human kick bob`: his link's token ends, serve stopped, bob's link stops (AUTH, typed reason) and his post is refused, bea untouched | not run (Stage 7b) |
-| `handoff` | P3 | alice (devbox) runs `/sub-human handoff bob joiner@joiner-a`; bob answers the card; joiner-a hosts at epoch 1 (both signatures in `host_changed`), devbox mirrors it; bea's re-pointed link (her own login, the invite bob's machine minted for hers) is offline with a reason naming bob and the way out while she has no login on joiner-a (`doctor --json` shows the link moved, not reached); once joiner-a's account takes her key and devbox's, each joins again over its login; posts flow, `handoff --status` shows nobody left behind, every copy converges with the old lines kept | not run (Stage 7b) |
 | `tls-front` | 1.1 | `https://tls-front/` verifies against the lab CA and answers 502 with no listener; with a stand-in listener on the devbox loopback (`lab/ws-probe.ts`) the upgrade is 101 and echoes, from joiner-a and from joiner-b only through corp-proxy | pass |
 | `wss` | 1.1 | the host's `sub-human listen` on 127.0.0.1:7420; `/sub-human invite --url https://tls-front` shows `/sub-human join https://tls-front/sub-human/CODE SECRET` and the PIN apart (no name, no `#`); bob and (through corp-proxy) ben type the line (the listener's key checked against it, Noise XK with a key of the link's own), then the PIN when asked; a wrong PIN is refused; alice's card lets each in, a bare `/sub-human` seats them; posts flow both ways; mirrors converge; Caddy's log holds no post text | not run (Stage 7b) |
 | `tailscale` | 1.1 | opt-in (`TS_SERVE=1` and a tailscale CLI): the plugin's real `sub-human listen` and exactly the commands `invite --web` / `invite --stop` run (`tailscale serve --bg --https=443 --set-path=/sub-human-lab-<rand> http://127.0.0.1:<port>`, then `… --set-path=… off`), with a wss + Noise_NK handshake through the node's MagicDNS name pinned to the listener's key (never Funnel, never `serve reset`). The certificate is warmed first and the connect waits 45 s (a cold ts.net name takes ~20 s). A tailnet without Serve/HTTPS fails the serve check with the plugin's message (the admin URL), within 10 s | skip |
@@ -98,17 +97,17 @@ protocol ops, files, source markers) and writes `features.json`. A scenario that
 pending, and a check made with `t.expect(…, feature)` is pending instead of failing. When the feature lands, the
 probe finds it and the scenario runs. You can also force things:
 
-- `LAB_FORCE=handoff,wss` runs those scenarios whatever the probe says.
+- `LAB_FORCE=wss,login` runs those scenarios whatever the probe says.
 - `LAB_FEATURES=outbox=1,ws=0` overrides single features.
 - The interfaces are assumed. Adapt them without editing the scenarios:
-  `LAB_HANDOFF_CMD` (default `handoff {name} joiner@joiner-a`, the `/sub-human` form), `LAB_WS_LISTEN_CMD` (default `listen --port {port}`).
+  `LAB_WS_LISTEN_CMD` (default `listen --port {port}`).
 
 | feature | detected by | used in |
 |---|---|---|
 | `inviteLine` | `lib/remote/invite-secret.ts` (protocol 3: an invite line and its PIN apart) | short |
 | `shortCode` | `lib/remote/enroll.ts` (0.5.0-beta.15's PIN over CPace: the old end in skew) | skew |
 | `hostSsh` | `hooks/handlers/join.ts` handles `--ssh` | p2-corporate |
-| `revoke`, `handoff`, `doctor` | the CLI's usage lists `kick` (`revoke` before 0.5.0-beta.6), `handoff`, `doctor` | security, handoff, p1-friends |
+| `revoke`, `doctor` | the CLI's usage lists `kick` (`revoke` before 0.5.0-beta.6), `doctor` | security, p1-friends |
 | `heartbeat` | protocol op `ping` (or `ping` in `link.ts`) | half-open |
 | `outbox` | `lib/remote/outbox.ts` (or `outbox` in `link.ts`) | p3-sleep |
 | `autoRejoin` | the daemon renews this machine's seats on reconnect (`keepSeats` in `link.ts`) | p3-sleep |

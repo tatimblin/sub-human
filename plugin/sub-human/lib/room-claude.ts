@@ -28,15 +28,14 @@
  * Stopping: reap, after the last member leaves, waits graceMs (a quick rejoin cancels), claims claude.closing under
  * the lock (one reaper wins), posts "room closed: complete task 1" to claude, waits up to waitMs for task 1, stops the
  * job and any strays, ends the bound process if `claude stop` left it up (ensureGone), and marks the room's Claude
- * stopped and left. releaseDetached (a planned handoff, lib/handoff.ts) only stops the job: the room goes on and its
- * Claude restarts on the new host. watchdog (the room Claude's tail and join's sweep) claims closing and starts the
+ * stopped and left. watchdog (the room Claude's tail and join's sweep) claims closing and starts the
  * reaper once no member has been live for orphanMs: members that crashed leave no SessionEnd, so this is what closes
  * their room. The orphan start is the latest left_at when every member left cleanly, else the first observation
  * (claude.orphan_since, cleared once a member is live again).
  *
  * Env: SUB_HUMAN_CLAUDE (the claude binary; tests use a stub), SUB_HUMAN_PLUGIN_DIR (force --plugin-dir; "" = none),
  *   SUB_HUMAN_REAP_GRACE_MS (default 10 s), SUB_HUMAN_REAP_WAIT_MS (default 20 s), SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS.
- * CLI: node lib/room-claude.ts cmd|spawn|reap [--claimed]|watchdog|release|start CODE [JSON|JOB]
+ * CLI: node lib/room-claude.ts cmd|spawn|reap [--claimed]|watchdog|start CODE [JSON|JOB]
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -407,13 +406,6 @@ function reapDetached(code: RoomCode, { claimed = false }: { claimed?: boolean }
   return detached(claimed ? ['reap', code, '--claimed'] : ['reap', code]);
 }
 
-const JOB_RE = /^[A-Za-z0-9_.-]{1,64}$/;
-function releaseDetached(code: RoomCode, job: string): number | null | undefined {
-  identity.roomDir(code);
-  if (!JOB_RE.test(String(job))) return null;
-  return detached(['release', code, String(job)]);
-}
-
 function watchdog(code: RoomCode, { now = clock.now(), orphanMs = orphanMsDefault(), alive = identity.seatAlive, reaper = reapDetached }: {
   now?: number, orphanMs?: number, alive?: Alive, reaper?: (code: RoomCode, opts: { claimed: boolean }) => unknown,
 } = {}): WatchdogState {
@@ -443,13 +435,13 @@ function watchdog(code: RoomCode, { now = clock.now(), orphanMs = orphanMsDefaul
 
 export {
   CLOSE_TEXT, PENDING, pluginDirFor, spawnPlan, command, needsSpawn, claimSpawn, spawn, stopStrays, watchStart, startDetached, reap,
-  reapDetached, releaseDetached, watchdog, taskListId, tasksDir,
+  reapDetached, watchdog, taskListId, tasksDir,
 };
 
 if (import.meta.main) {
   const [cmd, code, extra] = process.argv.slice(2);
   const die: (msg: string) => never = msg => { process.stderr.write(`room-claude.ts: ${msg}\n`); process.exit(2); };
-  if (!cmd || !identity.isRoomCode(code)) die('usage: node lib/room-claude.ts cmd|spawn|reap [--claimed]|watchdog|release|start CODE [JSON|JOB]');
+  if (!cmd || !identity.isRoomCode(code)) die('usage: node lib/room-claude.ts cmd|spawn|reap [--claimed]|watchdog|start CODE [JSON|JOB]');
   if (cmd === 'cmd') process.stdout.write(command(spawnPlan({ code })) + '\n');
   else if (cmd === 'spawn') { const r = spawn({ code }); process.stdout.write(JSON.stringify(r) + '\n'); process.exitCode = r.ok ? 0 : 1; }
   else if (cmd === 'start') {
@@ -463,6 +455,5 @@ if (import.meta.main) {
     if (r.ok) watchStart(code, r.job).catch(() => { /* the bind deadline still respawns */ }); // no top-level await: tests require() this
   } else if (cmd === 'reap') reap(code, { claimed: extra === '--claimed' }).then(r => process.stdout.write(r + '\n'), (e: unknown) => die(msgOf(e)));
   else if (cmd === 'watchdog') process.stdout.write(watchdog(code) + '\n');
-  else if (cmd === 'release') process.stdout.write((JOB_RE.test(String(extra)) && stopJob(extra) ? 'stopped' : 'not-stopped') + '\n');
   else die(`unknown command ${cmd}`);
 }

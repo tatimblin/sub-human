@@ -9,8 +9,8 @@ import * as roomWatch from '../lib/room/watch.ts';
 import type { Change } from '../lib/room/watch.ts';
 
 test('room watch: docKey maps a changed path to its document; the log, locks and temporary files are none', () => {
-  assert.deepEqual(['members.json', 'presence/bob.json', 'tasks.json', 'remote/handoff.json', 'log.jsonl', 'members.json.lock', 'x.tmp.json', 'snapshot.json'].map(roomWatch.docKey),
-    ['members', 'presence/bob', 'tasks', 'remote/handoff', null, null, null, null]);
+  assert.deepEqual(['members.json', 'presence/bob.json', 'tasks.json', 'remote/invites.json', 'log.jsonl', 'members.json.lock', 'x.tmp.json', 'snapshot.json'].map(roomWatch.docKey),
+    ['members', 'presence/bob', 'tasks', 'remote/invites', null, null, null, null]);
 });
 
 test('room watch: an append and a document write arrive as changes; unwatch stops them', async t => {

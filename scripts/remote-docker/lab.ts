@@ -28,7 +28,7 @@
  *                       online, then a bare `/sub-human` (the seat). Against devbox-old (beta.15) its line has a 4-digit
  *                       PIN and this joiner refuses it (the host must update): {join: {ok: false, out}}; a beta.15 joiner
  *                       refuses this host's line the same way
- *     features             {hostSsh, revoke, heartbeat, outbox, autoRejoin, handoff, doctor, ws, urlPin,
+ *     features             {hostSsh, revoke, heartbeat, outbox, autoRejoin, doctor, ws, urlPin,
  *                          versionRange, loginJoin, shortCode, inviteLine}: what the plugin in /plugin can do (seat-cli.ts probe), overridable with
  *                          LAB_FEATURES=outbox=1,ws=0
  *   runScenarios({out, only, log}) -> {ok, results}   each scenarios/NN-*.ts in order; evidence under out/<id>/
@@ -372,7 +372,6 @@ const FEATURES: Record<string, (p: Probe) => boolean> = {
   outbox: p => p.files.some(f => /^lib\/remote\/outbox\.[jt]s$/.test(f)) || p.src.link.outbox,
   autoRejoin: p => p.src.link.rejoin,
   wake: p => p.src.link.wake,
-  handoff: p => p.cli.includes('handoff'),
   doctor: p => p.cli.includes('doctor'),
   ws: p => p.kinds.some(k => /^wss?$/.test(k)) || p.files.some(f => /ws\.[jt]s$|listener\.[jt]s$/.test(f)),
   urlPin: p => p.src.join.urlPin,

@@ -7,11 +7,11 @@
  * with a proof signed by that seat's key. (The joiner's own registry of links is lib/room/links.ts.)
  *
  * create: machine is the id the host derived from the joiner's machine key (machine-key.ts; the reported id is then
- * only the label), or a bound invite's (the machine it was minted for, across a handoff). key: the Noise key a web
+ * only the label). key: the Noise key a web
  * link proved when it was made: every later hello over it must prove the same one (keyHolds). loginLink makes a link
  * for a connection over the host account's own ssh login (`serve --login`) with no invite, since whoever can run
  * commands as this account may mint one anyway; it takes the id the joiner chose (its serve's --link, so kick finds
- * the process). A bound link (the card let one name in; a handoff's seats) joins only those (mayJoinAs).
+ * the process). A bound link (the card let one name in) joins only those (mayJoinAs).
  *
  * revokeLink keeps the token's digest in the host-only document remote/revoked (the newest REVOKED_KEEP), so a hello
  * with it is AUTH LINK_REVOKED, not an unknown token. checkSeatProof: a join needs a fresh proof signed by the seat's

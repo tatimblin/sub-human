@@ -73,7 +73,7 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   // this machine: another home, linked to that room over the pipe transport, with no daemon running
   const home = h.freshHome(t);
   const user = h.tmpDir('sh-user-', t);
-  links.set(code, { code, transport: { kind: 'pipe', home: hostHome }, token: tokenOf('tok-' + crypto.randomBytes(16).toString('hex')), created_at: new Date().toISOString(), moved: { epoch: 2, host: 'carolyn', locator: 'pipe:' + hostHome } });
+  links.set(code, { code, transport: { kind: 'pipe', home: hostHome }, token: tokenOf('tok-' + crypto.randomBytes(16).toString('hex')), created_at: new Date().toISOString() });
   fs.writeFileSync(linkState.stateFile(code), JSON.stringify({ state: 'offline', since: new Date(Date.now() - 120_000).toISOString(), attempt: 4, lastError: 'no route to host', queued: 2 }));
   fs.writeFileSync(links.logFile(code), `2026-10-08T10:00:00.000Z sub-human link ${code}: offline: ssh exited 255\n`);
   fs.chmodSync(home, 0o755);
@@ -87,9 +87,8 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   assert.match(fixOf(byId(rep, 'home')), /^SUB_HUMAN_HOME=\S+ node \S+\/scripts\/sub-human doctor --fix in a terminal/, 'the CLI by its path: none is on PATH');
   const lc = byId(rep, `link:${code}`);
   assert.equal(lc.status, 'warn', lc.detail);
-  assert.match(lc.detail, new RegExp(`^pipe ${hostHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · daemon not running · ✕ offline 2m · 2 queued · last error: no route to host · the room moved to [^·]* · host reachable in \\d+ ms; protocol here 3 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), host 3 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), speaking v3`));
-  assert.match(fixOf(lc), /Ask carolyn for an invite/, 'the room moved and this link never reached the new host');
-  assert.match(lc.detail, /the room moved to carolyn's machine; not reached from here yet/);
+  assert.match(lc.detail, new RegExp(`^pipe ${hostHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · daemon not running · ✕ offline 2m · 2 queued · last error: no route to host · host reachable in \\d+ ms; protocol here 3 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), host 3 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), speaking v3`));
+  assert.match(fixOf(lc), /type \/sub-human in your session to start it again/, 'the daemon is not running');
   assert.doesNotMatch(lc.detail, /epoch|BatchMode/);
   const clock = byId(rep, `clock:${code}`);
   assert.equal(clock.status, 'pass', 'the host\'s hello carries its time: one machine, no skew');
@@ -132,7 +131,7 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   const text = fs.readFileSync(out, 'utf8');
   const b = JSON.parse(text) as Bundle;
   assert.equal(b.kind, 'sub-human-doctor-bundle');
-  for (const secret of [home, hostHome, user, code, KEY_B64, must(must(links.get(code)).token), 'carolyn']) assert.ok(!text.includes(secret), `the bundle holds ${secret}:\n${text}`);
+  for (const secret of [home, hostHome, user, code, KEY_B64, must(must(links.get(code)).token)]) assert.ok(!text.includes(secret), `the bundle holds ${secret}:\n${text}`);
   const bl = must(b.links[0], 'the bundle\'s link');
   assert.equal(bl.state.queued, 2);
   assert.equal(must(bl.reach).ok, true);
@@ -247,7 +246,7 @@ test('doctor: a room whose claude job started but never took its seat (e.g. bloc
 
 test('doctor: a link stopped on a spent invite says to ask the host for a new one (joining again would reuse it)', () => {
   // credential: linkChecks never reads it
-  const d = (state: LinkStateView): LinkReport => ({ code: rc('vole-1234'), transport: { kind: 'pipe', describe: 'pipe /x' }, credential: '', daemon: { running: false }, recent: [], moved: null, state });
+  const d = (state: LinkStateView): LinkReport => ({ code: rc('vole-1234'), transport: { kind: 'pipe', describe: 'pipe /x' }, credential: '', daemon: { running: false }, recent: [], state });
   for (const [why, lastReason] of [['this invite no longer works (too many wrong PINs, expired, or cancelled); ask the host for a new one', 'INVITE_BURNT'], ['this invite was used already (each invite works once); ask the host for a new one', 'INVITE_USED']] as const) {
     const c = first(doctor.linkChecks(d({ state: 'stopped', lastError: why, lastReason })));
     assert.match(fixOf(c), /ask the host for a new invite \(\/sub-human invite there\) and type the line it shows/);
@@ -263,7 +262,7 @@ test('doctor: a dormant link (the room closed, or no seat of this machine left) 
   assert.equal(linkMod.ROOM_CLOSED_REASON, 'the room was closed');
   assert.equal(linkMod.NO_SEAT_REASON, 'no seat of this machine is left in the room');
   // credential: linkChecks never reads it
-  const d = (state: LinkStateView, reach?: Reach): LinkReport => ({ code: rc('vole-1234'), transport: { kind: 'pipe', describe: 'pipe /x' }, credential: '', daemon: { running: false }, recent: [], moved: null, state, ...(reach ? { reach } : {}) });
+  const d = (state: LinkStateView, reach?: Reach): LinkReport => ({ code: rc('vole-1234'), transport: { kind: 'pipe', describe: 'pipe /x' }, credential: '', daemon: { running: false }, recent: [], state, ...(reach ? { reach } : {}) });
   const failed: Reach = { ok: false, ms: 3, error: 'the pipe command exited (1) before answering', skipped: false, stderr: '', hint: null, protocol: null, skewMs: null };
   const closed = first(doctor.linkChecks(d({ state: 'stopped', lastError: linkMod.ROOM_CLOSED_REASON, lastReason: 'ROOM_CLOSED' })));
   assert.equal(closed.status, 'info');

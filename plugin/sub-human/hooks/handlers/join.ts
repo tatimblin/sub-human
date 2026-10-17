@@ -3,7 +3,7 @@
 // one Answer; HELP in lib/commands/help.ts has them all); this file reads who asked and renders the answer as the
 // hook's one Reply (hooks/types.ts), which hooks/run.ts writes.
 // Who asked: the session id, its cwd, its claude process (CLAUDE_PID, or, run by the hooks module, the shim's parent)
-// and its seat (hooks/seat.ts whoami). It arms the seat key's signer (admit and handoff sign, and a seat taken pins
+// and its seat (hooks/seat.ts whoami). It arms the seat key's signer (admit signs, and a seat taken pins
 // its public key: hooks/seat-key.ts).
 // Two ways in. Normally the hooks module runs this script for the command first (mod/deliver.ts command.run;
 // sub_human_via "command.run" with the session's nonce, attested here against its lease) and shows what it says
@@ -31,7 +31,7 @@ import { assertNever } from '../../mod/core/never.ts';
 import type { JoinIn, Reply } from '../types.ts';
 import type { Answer } from '../../lib/commands/types.ts';
 
-// it signs (an admission answered with /sub-human admit, a handoff's ask): the seat-key signer, in this process only
+// it signs (an admission answered with /sub-human admit): the seat-key signer, in this process only
 seatKey.arm();
 
 const ROOM_CLAUDE_AGENT = 'sub-human:room-claude';

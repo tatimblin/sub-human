@@ -2,7 +2,7 @@
  * plugin/sub-human/lib/room/registry.ts: which RoomStore a room code opens, and the rooms on this machine.
  *
  *   open(code) is cached per home and code: a room this machine links to (lib/room/links.ts) is a MirrorRoomStore,
- *       any other an FsRoomStore; a link written or removed since (a handoff) gives the other kind at the next open.
+ *       any other an FsRoomStore; a link written or removed since (a join, a forget) gives the other kind at the next open.
  *       {dir} (and only then) gives an uncached FsRoomStore over that directory. forget(code) drops the cached one.
  *   isLeftover: a room directory with no link, no members document and no log, made more than LEFTOVER_MS ago: what
  *       a process still holding a forgotten room's seat wrote, never a room hosted here (roomExists says no; `sub-human
@@ -47,7 +47,7 @@ function open(c: RoomCode, { dir }: { dir?: string | undefined } = {}): RoomStor
   if (dir) return new FsRoomStore(c, { dir });
   const k = `${home()}\0${c}`;
   let s = stores.get(k);
-  if (!s || s.isHost === linked(c)) { // none yet, or a handoff wrote or removed the link since
+  if (!s || s.isHost === linked(c)) { // none yet, or a join or forget wrote or removed the link since
     s = linked(c) ? new (mirrorLib().MirrorRoomStore)(c) : new FsRoomStore(c);
     stores.set(k, s);
   }

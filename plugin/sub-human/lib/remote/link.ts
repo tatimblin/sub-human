@@ -18,9 +18,8 @@
  * serveMirror listens on socketPath(mirror.dir) (one daemon per socket: LOCK when another answers there). An empty
  * mirror subscribes with snapshot: true (the lines after it must chain to its head, else FORK). The stream goes into
  * the mirror whichever connection carries it (a line held already, same id and bytes, is skipped: two streams overlap
- * during a swap). A stream's end on the live connection: closed stops it (ROOM_CLOSED), moved redials the new host (or,
- * this machine being the new host, waits for the accepting hook to stop it, HANDOFF_SELF_STOP_MS at most), FORK
- * (LOG_RESET) and AUTH (LINK_REVOKED) stop it; FORK keeps the outbox (`sub-human link --reset CODE` re-mirrors). A link
+ * during a swap). A stream's end on the live connection: closed stops it (ROOM_CLOSED), FORK (LOG_RESET) and AUTH
+ * (LINK_REVOKED) stop it; FORK keeps the outbox (`sub-human link --forget CODE` sets the copy aside). A link
  * stopped LINK_REVOKED or TOKEN_UNKNOWN drops its token (dropToken).
  *
  * A hook's op while not online is OFFLINE at once (before the first connection it waits for it), except an @room
@@ -31,9 +30,7 @@
  *
  * Every change is written to the mirror's document `link` and to links/<code>.state.json (lib/room/links.ts LinkState,
  * for doctor, the room row and the statusline), both in the one vocabulary online | connecting | offline | fork |
- * stopped. A planned handoff (lib/handoff.ts): the private 'handoff' event is kept for this machine's seat; 'moved'
- * re-points the link file at the new host. The hello and every append carry the mirror's host epoch (STALE on a
- * mismatch); a make-before-break redial says hello with the epoch the mirror holds at that moment.
+ * stopped.
  */
 
 import fs from 'node:fs';
@@ -55,7 +52,7 @@ import * as homeMod from '../home.ts';
 import * as identityMod from '../identity.ts';
 import * as membersMod from '../room/members.ts';
 import type { Reason } from '../reasons.ts';
-import type { LinkDoc, LinkTimings, MovedEventData, RunningLink, SignedPayload, StreamEvent, Flush } from './types-core.ts';
+import type { LinkDoc, LinkTimings, RunningLink, SignedPayload, StreamEvent, Flush } from './types-core.ts';
 import type { Clock, TimerHandle } from '../clock.ts';
 import type { Entry, Link } from '../room/types.ts';
 import type { MirrorRoomStore } from '../room/store-mirror.ts';
@@ -66,7 +63,6 @@ import type net from 'node:net';
 import { errCode, msgOf } from '../errors.ts';
 import { assertNever } from '../../mod/core/never.ts';
 import type { RoomCode } from '../brand.ts';
-import type * as HandoffMod from '../handoff.ts';
 import type * as OutboxMod from './outbox.ts';
 import { lazy } from '../io.ts';
 
@@ -91,9 +87,7 @@ interface ServeMirrorOptions {
   outbox?: Outbox;
 }
 
-const HANDOFF_SELF_STOP_MS = 10_000;
-// the handoff and the outbox only when the link daemon needs them (start cost)
-const handoff = lazy<typeof HandoffMod>(import.meta.url, '../handoff.ts');
+// the outbox only when the link daemon needs it (start cost)
 const outboxMod = lazy<typeof OutboxMod>(import.meta.url, './outbox.ts');
 /** Why a link stopped for good with nothing wrong (reasons ROOM_CLOSED, NO_SEAT): a dormant link. */
 const ROOM_CLOSED_REASON = 'the room was closed';
@@ -201,7 +195,7 @@ async function serveMirror({
   const timers = new Map<TimerName, TimerHandle>();
   const dials = new Map<number, () => void>(); // a dial's id -> resolve its wake() promise once it ends
   const unwatch: (() => void)[] = [];
-  let pub: string | null = null, pubSince: string | null = null, flushed: Flush | null = null, movedHere = false;
+  let pub: string | null = null, pubSince: string | null = null, flushed: Flush | null = null;
   let srv: net.Server | null = null;
   const { promise: done, resolve: finish } = Promise.withResolvers<string>();
   const { promise: first, resolve: firstDone } = Promise.withResolvers<void>();
@@ -235,11 +229,10 @@ async function serveMirror({
     for (const [id, resolve] of dials) if (id !== st.dial) { dials.delete(id); resolve(); }
   }
 
-  /** A dial step's outcome: the next step's event, or dialFailed (offline: the person's words for it). */
+  /** A dial step's outcome: the next step's event, or dialFailed. */
   // each step ends in an engine event, its failure too (void: nothing else waits on it)
   const stepOf = (dial: number, p: Promise<unknown>, next: () => EngineEvent): void => void p.then(() => dispatch(next()), (e: unknown) => {
-    const f = failure(e);
-    dispatch({ type: 'dialFailed', dial, error: f, offline: handoff().whyOffline(mirror.code, f.message) });
+    dispatch({ type: 'dialFailed', dial, error: failure(e) });
   });
 
   /** A dial's client: the engine asks for one only once it connected (the client is in the map). */
@@ -306,7 +299,7 @@ async function serveMirror({
         break;
       case 'forked': {
         const kept = box.size() ? `; ${box.size()} queued @room post(s) are kept, not sent` : '';
-        log(`FORK in room ${mirror.code}: ${fx.why}. Nothing more is synced${kept}; sub-human link --reset ${mirror.code} re-mirrors`);
+        log(`FORK in room ${mirror.code}: ${fx.why}. Nothing more is synced${kept}; sub-human link --forget ${mirror.code} sets this copy aside (then join with a new invite)`);
         break;
       }
       case 'publish':
@@ -341,9 +334,7 @@ async function serveMirror({
       }
       throw new RoomError(st.phase === 'fork' ? 'FORK' : 'OFFLINE', `the link is ${st.phase}${st.reason ? `: ${st.reason}` : ''}`, st.phase === 'fork' ? st.why : 'NOT_SENT');
     }
-    const epoch = op === 'append' && typeof mirror.hostState === 'function' ? mirror.hostState().epoch : undefined;
-    const sent = epoch === undefined ? p : { ...p, epoch };
-    return post ? sendPost(id, c, sent, post) : answerBy(c.request(op, sent), op);
+    return post ? sendPost(id, c, p, post) : answerBy(c.request(op, p), op);
   }
 
   /** The hook gives up at LINK_CALL_MS, so the daemon answers first (relayMs): an op the host has not answered by
@@ -417,19 +408,16 @@ async function serveMirror({
         case 'entry': if (!held(mirror, data)) { const e = mirror.applyLine(data); if (c) prefetch(c, e); } break;
         case 'snapshot': if (!heldHead(mirror, data)) { mirror.applySnapshot(data); if (c) prefetchAll(c, data.entries); } break;
         case 'doc': applyDoc(data); break;
-        case 'handoff': handoff().onAsk(mirror, data); break;
-        case 'moved': moved(data); break;
         case 'end':
           if (id !== st.conn) break;
           if (data.reason === 'closed') {
             try { storeMod.unindexRooms([mirror.code]); } catch { /* the next look at the open rooms drops it */ } // closed: no open room here (stage 8e I.1)
             dispatch({ type: 'stop', phase: 'stopped', why: ROOM_CLOSED_REASON, reason: 'ROOM_CLOSED' });
           }
-          else if (data.reason === 'moved') { if (!movedHere) dispatch({ type: 'movedAway', conn: id }); } // the new host here: the accepting hook's reply is still to come
           else {
             const message = data.message ? String(data.message).slice(0, 200) : data.reason === 'FORK' ? 'the host log was reset' : 'the connection to the host closed';
             const reason: Reason | null = data.reason === 'FORK' ? 'LOG_RESET' : data.reason === 'AUTH' ? 'LINK_REVOKED' : null;
-            dispatch({ type: 'lost', conn: id, error: { code: data.reason, reason, message }, offline: handoff().whyOffline(mirror.code, message) });
+            dispatch({ type: 'lost', conn: id, error: { code: data.reason, reason, message } });
           }
           break;
         default: assertNever(ev, 'stream event');
@@ -438,15 +426,6 @@ async function serveMirror({
       const fork = errCode(e) === 'FORK';
       dispatch({ type: 'stop', phase: fork ? 'fork' : 'stopped', why: msgOf(e), code: fork ? 'FORK' : null, reason: reasonOf(e) || (fork ? 'NOT_CHAINED' : null) });
     }
-  }
-
-  function moved(data: MovedEventData) {
-    const r = handoff().onMoved(mirror, data);
-    log(`moved: ${r.reason}`);
-    if (r.self) {
-      movedHere = true; // the accepting hook takes the room over, then stops this daemon; its reply is still to come
-      setTimeout(() => dispatch({ type: 'stop', phase: 'stopped', why: r.reason }), HANDOFF_SELF_STOP_MS).unref();
-    } else if (r.stop) dispatch({ type: 'stop', phase: 'stopped', why: r.reason });
   }
 
   /** This machine's live seats renew their lease on the host, so one that lapsed while the link was down is back,

@@ -8,7 +8,7 @@
  *            from the log's tail (the newest lines first, stopping at the window): nothing extra is written
  *   link     hello (with a token or an invite), subscribe, seat (join and leave), blob.put: a window of times per link
  *            in the host-only kv document remote/quota ({linkId: {op: [ms, ...]}}), written once per counted op
- *   session  beat, blob.get, ping, handoff, and any hello on one connection: in the session's memory (they are
+ *   session  beat, blob.get, ping, and any hello on one connection: in the session's memory (they are
  *            frequent, cheap, or bounded elsewhere)
  *
  *   fromLog(entries, {from, via, now?}) -> n            the seat's lines in the window (newest first; stops at its start)

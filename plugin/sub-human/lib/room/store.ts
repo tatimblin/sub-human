@@ -20,15 +20,15 @@
  *       process must have installed a signer (trust.ts SIGNER, set by hooks/seat-key.ts arm(), which only the hook
  *       handlers that sign run; never the MCP server or the CLI). No signer, or no key for (room, from): INVALID.
  *   place, the server half: rules.ts admit() (validate() again), then atomically rules.ts placeAfter, in order:
- *       host (a log that says the room moved takes no more lines: STALE), rate (per `from` per RATE_WINDOW_MS:
+ *       rate (per `from` per RATE_WINDOW_MS:
  *       RATE_MAX agent posts, RATE_ADDRESSED_MAX per (from, to), RATE_HUMAN_MAX of a person's own: RATE), replay (a
  *       nonce already placed: AUTH), trust (a via=human payload must be v2, for this room, ts within SIG_SKEW_MS and
  *       verify against the key pinned for from; a member_joined pubkey that differs from the pinned one: AUTH), then
  *       id (monotonic), at, prev (hash12 of the previous line). A line over LOG_LINE_MAX_BYTES: INVALID.
  *   trust: pass it on wherever entries are judged or shown: the consent fold counts only verified and legacy
  *       answers, render marks the rest "(unverified)".
- *   setAside moves the log to orphaned-<time>.jsonl (dropping checkpoint and members document): a demoted old
- *       host's lines, kept and never merged.
+ *   setAside moves the log to orphaned-<time>.jsonl (dropping checkpoint and members document): a forgotten copy's
+ *       lines, kept and never merged.
  *   readView({after}) is what a hook judges delivery against: the same answer as readAll() for entries after `after`.
  *   pins: the first member_joined pubkey per name. lineHash(0) is hash12(''), the empty log.
  *   tailer lines are the stored lines verbatim (what the remote server streams).
@@ -59,7 +59,7 @@ export {
 } from './registry.ts';
 export { FsRoomStore } from './fs-store.ts';
 export {
-  RoomError, toPayload, admit, placeAfter, hostState, normalize, blobRef, checkKey, checkCursor, CHAT_KINDS, hash12,
+  RoomError, toPayload, admit, placeAfter, normalize, blobRef, checkKey, checkCursor, CHAT_KINDS, hash12,
 } from './rules.ts';
 export { SIGNER, humanKey, trustOver, NO_TRUST } from './trust.ts';
 export { keyDir, pubPath, localKey, hasLocalKey } from './keys.ts';

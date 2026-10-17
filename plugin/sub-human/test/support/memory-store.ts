@@ -14,9 +14,8 @@
 import * as store from '../../lib/room/store.ts';
 import * as envelope from '../../lib/room/envelope.ts';
 import * as members from '../../lib/room/members.ts';
-import { machineId } from '../../lib/home.ts';
 import type {
-  AppendOpts, BlobsApi, ChainCheck, ChainVerify, Entry, EntryInput, HostState, KvApi, Members, MembersApi, Payload, PlaceOpts,
+  AppendOpts, BlobsApi, ChainCheck, ChainVerify, Entry, EntryInput, KvApi, Members, MembersApi, Payload, PlaceOpts,
   Placed, ReadViewOpts, RoomStore, Tailer, Trust, TrustCtx,
 } from '../../lib/room/types.ts';
 import type { KeyObject } from 'node:crypto';
@@ -147,14 +146,13 @@ class MemoryRoomStore implements RoomStore {
   place(payload: Payload, opts: PlaceOpts = {}): Entry {
     const p = store.admit(this.code, payload, opts);
     const { e, line } = store.placeAfter(p, {
-      keys: this._keys, host: this.hostState(), machine: machineId(), newest: this.readAll().toReversed(), prevLine: this._lines.at(-1) ?? '', now: Date.now(),
+      keys: this._keys, newest: this.readAll().toReversed(), prevLine: this._lines.at(-1) ?? '', now: Date.now(),
     });
     this._lines.push(line);
     return e;
   }
 
   pins(): Map<string, KeyObject> { return envelope.pinnedKeys(this.readAll()); }
-  hostState(): HostState { return store.hostState(this.readAll()); }
   setAside(): string | null { return null; }
 
   tailer({ after }: { after?: number } = {}): Tailer {

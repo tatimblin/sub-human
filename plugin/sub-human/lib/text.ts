@@ -18,15 +18,15 @@
  *                            (~ for the home folder): what a message prints when only a shell can do it, since no
  *                            `sub-human` is on PATH. With a sub-human folder other than ~/.sub-human (SUB_HUMAN_HOME)
  *                            the line starts `SUB_HUMAN_HOME=<folder> `, so a terminal acts on this folder, not the
- *                            default one (verify12 remote/05a); {elsewhere: true} for a line another machine runs
- *                            (a handoff's demote line), whose folder this one does not know
+ *                            default one (verify12 remote/05a); {elsewhere: true} for a line another machine runs,
+ *                            whose folder this one does not know
  *   homePrefix(home, userHome) -> string   that prefix ('' for the default folder or none known); mod/core/guard.ts
  *                            homeEnv is the same rule for its doctor line (the module loads no node: modules)
  *   cliCmd(args) -> string   the same CLI as a Bash tool command, `<plugin root>/scripts/sub-human ARGS` (absolute, the
  *                            shim runs itself): what a session's Claude is told to run; the store guard's read-only
  *                            CLI rule (mod/core/guard.ts READ_CLI) allows that spelling
  *   localHm(iso) -> "21:40"  an ISO time as this machine's local hours and minutes ('' when it is no time): every
- *                            "until" a person reads (an invite, a handoff's card, a join request) is local
+ *                            "until" a person reads (an invite, a join request) is local
  */
 import os from 'node:os';
 import crypto from 'node:crypto';

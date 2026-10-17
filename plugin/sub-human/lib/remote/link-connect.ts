@@ -2,7 +2,7 @@
  * plugin/sub-human/lib/remote/link-connect.ts: how this machine reaches a room hosted elsewhere, from its link file
  * (lib/room/links.ts): the transport an invite's locator names, the hello with the link's credential, and what a
  * refused dial means. The link daemon (lib/remote/link.ts) dials with connectLink; the join flows (lib/remote/joining.ts,
- * lib/commands/*) and the handoff make locators and transports with the rest.
+ * lib/commands/*) make locators and transports with the rest.
  *
  * connectLink: an invite line's SECRET (invite-secret.ts) goes only to the host its tag names: over the web the
  * listener's key is fetched (transports/ws.ts fetchKey), checked against the tag and pinned before the Noise
@@ -23,7 +23,6 @@ import os from 'node:os';
 import path from 'node:path';
 import * as linksMod from '../room/links.ts';
 import * as homeMod from '../home.ts';
-import * as storeMod from '../room/store.ts';
 import * as config from '../config.ts';
 import { envStr } from '../env.ts';
 import { RoomError } from '../room/validate.ts';
@@ -142,13 +141,11 @@ async function connectLink(code: RoomCode): Promise<Client> {
   // and the host person's card (a login link would be the account owner's, with neither)
   const cred = l.token ? { token: l.token }
     : word ? { invite: l.invite, ...(sentPin ? { pin: l.pin } : {}), ...(l.join_as ? { as: { name: l.join_as, label: joinerLabel() } } : {}) }
-    : typeof l.invite === 'string' ? { invite: l.invite, ...(typeof l.pin === 'string' ? { pin: l.pin } : {}) }
     : { login: true };
-  const epoch = storeMod.open(code).hostState().epoch;
   // machine: this machine's id in the room (the host's, once it said one); machineKey: the proof the host derives it from
   // an invite line's hello proves the machine key over the host's challenge (a proof good in that session only)
   const signMachine = word ? (challenge: string) => machineKeyMod().proofFor(code, challenge) : undefined;
-  const opts = { machine: homeMod.machineIn(code), machineKey: machineKeyMod().proof(code), helloMs: config.LINK_HELLO_MS, caps: { ping: true }, epoch, ...(checkHost ? { checkHost } : {}), ...(signMachine ? { signMachine } : {}), ...cred };
+  const opts = { machine: homeMod.machineIn(code), machineKey: machineKeyMod().proof(code), helloMs: config.LINK_HELLO_MS, caps: { ping: true }, ...(checkHost ? { checkHost } : {}), ...(signMachine ? { signMachine } : {}), ...cred };
   const own = isWeb(l.transport) && l.transport.clientKey ? linkKey(code) : undefined; // XK: this link's own key
   const t = transports().open(l.transport, { code, ...(own ? { clientKey: own } : {}) });
   let c: Client;
@@ -167,7 +164,7 @@ async function connectLink(code: RoomCode): Promise<Client> {
     // the host's card may have let this machine in under another name than it asked for (its own sits there from
     // another machine): the seat takes the one the link is bound to
     const as = c.as && typeof rest.join_as === 'string' && c.as !== rest.join_as ? { join_as: c.as, join_renamed: rest.join_as } : {};
-    linksMod.set(code, { ...rest, ...as, ...(c.token ? { token: c.token } : {}), ...(rest.moved ? { moved: { ...rest.moved, reached_at: new Date().toISOString() } } : {}) }); // c.token: hello gives one for an invite or a login
+    linksMod.set(code, { ...rest, ...as, ...(c.token ? { token: c.token } : {}) }); // c.token: hello gives one for an invite or a login
   }
   return c;
 }

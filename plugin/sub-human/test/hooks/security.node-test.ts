@@ -280,7 +280,7 @@ test('Bash guard: allowed and denied commands', () => {
     `echo x >> ${home}/rooms/a/log.jsonl`, `cat "${home}/keys/a/bob.key"`, 'SUB_HUMAN_HOME=/tmp/x sub-human read',
     'export SUB_HUMAN_HOME=/tmp/x',
     `node -e "require('/x/sub-human/lib/seats.ts').exit('vole-1234','bob','gone')"`, 'node /x/sub-human/lib/remote/link.ts vole-1234',
-    'sub-human invite', '/repo/plugin/sub-human/scripts/sub-human invite --room vole-1234', 'sub-human link vole-1234 --reset',
+    'sub-human invite', '/repo/plugin/sub-human/scripts/sub-human invite --room vole-1234', 'sub-human link vole-1234 --forget',
     'sub-human serve --stdio vole-1234', 'echo x; sub-human invite', 'sub-human invite --ssh me@far',
     'sub-human serve --stdio vole-1234 --link abcdef012345',
     'sub-human invite --web', 'node scripts/sub-human invite --ssh me@far --via bastion', 'sub-human admit abcdef012345 --yes',

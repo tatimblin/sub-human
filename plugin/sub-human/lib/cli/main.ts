@@ -13,19 +13,15 @@
  *   verify CODE         a room's hash chain and every person's line against the pinned keys (lib/cli/doctor/rooms.ts)
  *   agent-statusline    Claude Code's subagentStatusLine command: never fails (prints nothing, exits 0)
  *   serve --stdio CODE  one remote connection to a room hosted here (lib/remote/server.ts). A room this machine only
- *               mirrors is not served, unless it moved away from here (lib/handoff.ts): then the old log read-only, so
- *               a member that reconnects late still gets the line that moved it. --login (over this account's own
+ *               mirrors is not served. --login (over this account's own
  *               ssh login) is refused under SSH_ORIGINAL_COMMAND: a forced command (a restricted key or a
  *               ForceCommand) is not the account's own login
- *   link CODE   the link daemon of a room hosted elsewhere (lib/remote/link.ts); --reset recopies the room,
- *               --forget drops it for good (never automatic: a closed room can open again; the copy is set aside
+ *   link CODE   the link daemon of a room hosted elsewhere (lib/remote/link.ts); --forget drops it for good (never automatic: a closed room can open again; the copy is set aside
  *               as rooms/<code>.forgotten-<time>, not a room code)
  *   invite, admit, kick, prime, listen   the host's steps (lib/cli/host.ts, lib/cli/listen.ts)
  *   doctor      what is wrong on this machine and the fix for each (lib/cli/doctor.ts)
  *   options     a hosted room's options (lib/room/options.ts)
- *   handoff, promote, demote   moving the room's host (lib/cli/handoff.ts); demote reads the invite line and PIN
- *               on stdin or from a file, never argv
- *   Run invite, admit, kick, prime, listen, link, serve, options, handoff, promote and demote in your own shell: the Bash guard
+ *   Run invite, admit, kick, prime, listen, link, serve and options in your own shell: the Bash guard
  *   refuses them to a model. doctor without --fix or --bundle is read only.
  */
 
@@ -43,11 +39,10 @@ import { readInput, sleepSync, lazy } from '../io.ts';
 import * as store from '../room/store.ts';
 import * as links from '../room/links.ts';
 import * as linkState from '../room/link-state.ts';
-import { cliLine } from '../text.ts';
 import { roomsDir } from '../home.ts';
 import { isObj } from '../decode.ts';
 import { parse as parseArgs } from './args.ts';
-import type { CliIo, FlagSpec, Parsed } from './types.ts';
+import type { FlagSpec, Parsed } from './types.ts';
 import type { MirrorRoomStore } from '../room/store-mirror.ts';
 import { errCode, msgOf, stackOf } from '../errors.ts';
 import type { RoomCode, EntryId } from '../brand.ts';
@@ -56,7 +51,6 @@ import type * as ProposalMod from '../proposal.ts';
 import type * as HostLinksMod from '../remote/host-links.ts';
 import type * as ServerMod from '../remote/server.ts';
 import type * as PipeMod from '../remote/transports/pipe.ts';
-import type * as HandoffMod from '../handoff.ts';
 import type * as LinkMod from '../remote/link.ts';
 import type * as LinkSocketMod from '../remote/link-socket.ts';
 import type * as OptionsMod from '../room/options.ts';
@@ -64,7 +58,6 @@ import type * as DoctorMod from './doctor.ts';
 import type * as RoomsMod from './doctor/rooms.ts';
 import type * as HostMod from './host.ts';
 import type * as ListenMod from './listen.ts';
-import type * as CliHandoffMod from './handoff.ts';
 import type * as ShimMod from '../remote/shim.ts';
 
 // Each command's own modules load when it runs (lazy, for start cost), so the tail and agent-statusline (run often)
@@ -72,7 +65,6 @@ import type * as ShimMod from '../remote/shim.ts';
 const hostLinksLib = lazy<typeof HostLinksMod>(import.meta.url, '../remote/host-links.ts');
 const serverLib = lazy<typeof ServerMod>(import.meta.url, '../remote/server.ts');
 const pipeLib = lazy<typeof PipeMod>(import.meta.url, '../remote/transports/pipe.ts');
-const handoffLib = lazy<typeof HandoffMod>(import.meta.url, '../handoff.ts');
 const linkLib = lazy<typeof LinkMod>(import.meta.url, '../remote/link.ts');
 const linkSocketLib = lazy<typeof LinkSocketMod>(import.meta.url, '../remote/link-socket.ts');
 const optionsLib = lazy<typeof OptionsMod>(import.meta.url, '../room/options.ts');
@@ -82,7 +74,6 @@ const proposalLib = lazy<typeof ProposalMod>(import.meta.url, '../proposal.ts');
 const doctorLib = lazy<typeof DoctorMod>(import.meta.url, './doctor.ts');
 const hostLib = lazy<typeof HostMod>(import.meta.url, './host.ts');
 const listenLib = lazy<typeof ListenMod>(import.meta.url, './listen.ts');
-const cliHandoffLib = lazy<typeof CliHandoffMod>(import.meta.url, './handoff.ts');
 const shimLib = lazy<typeof ShimMod>(import.meta.url, '../remote/shim.ts');
 
 const NOT_IN_ROOM = 'not in a room; type /sub-human in your Claude Code session';
@@ -325,12 +316,8 @@ function serve(args: readonly string[]) {
   if (!identity.roomExists(code)) die(`no room "${code}"`, 1);
   const server = serverLib();
   const pipe = pipeLib();
-  let s = room.open(code).store;
-  if (!s.isHost) {
-    const handoff = handoffLib();
-    if (!handoff.movedAway(s)) die(`room "${code}" is not hosted on this machine (it holds a copy)`, 1);
-    s = store.open(code, { dir: s.dir }); // the old log, read-only: it moved
-  }
+  const s = room.open(code).store;
+  if (!s.isHost) die(`room "${code}" is not hosted on this machine (it holds a copy)`, 1);
   const t = pipe.stdio();
   // the session closed its end (no link in time over the web, a silent peer): nothing is left for this process to do
   t.onClose(() => { setTimeout(() => process.exit(0), 200); });
@@ -342,11 +329,11 @@ function serve(args: readonly string[]) {
   process.once('SIGTERM', () => { const told = srv.revoked(); setTimeout(() => process.exit(0), told ? 200 : 0); });
 }
 
-// ---------- link CODE [--reset | --forget [--force]]: lib/remote/link.ts ----------
+// ---------- link CODE [--forget [--force]]: lib/remote/link.ts ----------
 function linkCmd(args: readonly string[]) {
-  const { flags, rest } = parseFlags(args, { reset: 0, forget: 0, force: 0 });
+  const { flags, rest } = parseFlags(args, { forget: 0, force: 0 });
   const code = rest[0];
-  if (!code || (flags.reset && flags.forget)) die('usage: sub-human link CODE [--reset | --forget [--force]]');
+  if (!code || rest.length > 1) die('usage: sub-human link CODE [--forget [--force]]');
   if (!identity.isRoomCode(code)) die(`no room ${code} on this machine`, 1);
   // a folder a process still holding a forgotten room's seat wrote (no link, no members, no log): never a room hosted
   // here; --forget sets it aside
@@ -356,24 +343,20 @@ function linkCmd(args: readonly string[]) {
   const opened = room.open(code).store;
   if (opened.isHost) die(`this machine hosts room "${code}"; there is no connection to ${flags.forget ? 'forget' : 'start'}`, 1);
   const s = opened as MirrorRoomStore; // not the host: the room's mirror
-  if (!flags.reset && !flags.forget) {
+  if (!flags.forget) {
     const link = linkLib();
     return link.run({ code }).then(() => process.exit(0), (e: unknown) => die(msgOf(e), 1));
   }
   const linkSocket = linkSocketLib();
   const st = linkSocket.status(code);
-  if (st.running && flags.forget) {
+  if (st.running) {
     // the person asked to forget it: the daemon is this machine's own, so --forget stops it first, once the host
     // heard this machine's seats leave over it (else the host sees "connection lost" ~2 min later)
     const told = tellHostLeaving(code, s, st.state);
     if (!stopDaemon(st.pid)) die(`the connection to room ${code} is running (pid ${st.pid}) and did not stop; kill ${st.pid}, then run this again`, 1);
     return forgetLink(code, s, true, st.pid, told);
   }
-  if (st.running) die(`the connection to room ${code} is running (pid ${st.pid}); it copies the room afresh only once stopped (kill ${st.pid}, then run this again)`, 1);
-  if (flags.forget) return forgetLink(code, s, !!flags.force);
-  s.reset();
-  if (!linkSocket.start(code)) die(`the connection to room ${code} did not start; ${cliLine('doctor')} says why`, 1);
-  console.log(`room ${code}: copying it again from the host`);
+  return forgetLink(code, s, !!flags.force);
 }
 
 // link CODE --forget: the copy moves before the link file goes, so no moment has a bare rooms/<code> (that opens as a
@@ -434,7 +417,7 @@ function forgetLink(code: RoomCode, s: MirrorRoomStore, force: boolean, stopped?
   if (!force && r !== 'ROOM_CLOSED' && r !== 'NO_SEAT' && !REVOKED.has(r)) {
     die(`room ${code}: the connection did not stop because the room closed, no seat of this machine is left or the host removed it (${why || 'no reason on record'}); add --force to forget it anyway`, 1);
   }
-  s.setAside(); // a demote's idiom: the log is kept beside the outbox, never merged
+  s.setAside(); // the log is kept beside the outbox, never merged
   let archive: string | null = path.join(roomsDir(), `${code}.forgotten-${new Date().toISOString().replace(/[:.]/g, '-')}`);
   try { fs.renameSync(s.dir, archive); } catch (e) { if (errCode(e) !== 'ENOENT') throw e; archive = null; }
   setAsideLinkFiles(code, archive);
@@ -474,8 +457,7 @@ const USAGE = [
   '              invite --web | --public | --url URL',
   '              invite --stop | invite --cancel [REF]',
   '              admit [REF] | kick NAME | listen [--port P] [--start | --stop | --status]',
-  '  joiner:     prime ROOM | link CODE [--reset | --forget [--force]]',
-  '  moving:     handoff NAME | promote CODE | demote CODE [--from FILE] (INVITE PIN on stdin)',
+  '  joiner:     prime ROOM | link CODE [--forget [--force]]',
   '  room:       options CODE [login-same-person on|off]',
   '  checks:     doctor [--fix] [--bundle [FILE]] | verify CODE',
   '  internal:   tail | serve --stdio CODE [--link ID [--login]] | agent-statusline',
@@ -498,9 +480,6 @@ const viaCli = (fn: 'invite' | 'admit' | 'kick' | 'prime'): Command => a => proc
 Object.assign(cmds, { invite: viaCli('invite'), admit: viaCli('admit'), kick: viaCli('kick'), prime: viaCli('prime') });
 // listen without --start/--stop/--status is the daemon itself: it returns null and keeps running
 Object.assign(cmds, { listen: (a: readonly string[]) => { const c = listenLib().listen(a); if (c !== null) process.exit(c); } });
-// handoff, promote, demote: lib/cli/handoff.ts
-const handoffCli = (name: 'handoff' | 'promote' | 'demote'): Command => args => cliHandoffLib()[name](args, { die, out: l => console.log(l), err: l => console.error(l) } satisfies CliIo);
-Object.assign(cmds, { handoff: handoffCli('handoff'), promote: handoffCli('promote'), demote: handoffCli('demote') });
 
 /** Run one command: argv is what follows `sub-human` (scripts/sub-human passes process.argv.slice(2)). */
 function main([cmd, ...args]: string[] = process.argv.slice(2)): void {

@@ -18,7 +18,7 @@
  *       (and is not decided); a decision on a proposal I am in; a `task` assigning me (owner me) that someone else
  *       asked for (its req is not mine); an objection on my own proposal.
  *     member notice: another person's say (not to me, no @me), another member's join or leave (not the room
- *       Claude's), a host_changed; and what asks the person, not the model: the room line that the log waits to split
+ *       Claude's); and what asks the person, not the model: the room line that the log waits to split
  *       (restart the old sessions), a decision on a proposal I am in that needs no wake, another approver's objection
  *       on a proposal I approve. Everything else that is not mine is context.
  *     the room's Claude (role claude) wake: to=claude only (a person's leading @claude tag; an "@claude" inside the
@@ -51,7 +51,6 @@ const mentions = (text: unknown, name: string): boolean => new RegExp(`(^|[^A-Za
 /** Whether name is in proposal p: an approver or its author. */
 const inProposal = (p: Entry | null, name: string): boolean => !!p && (approversOf(p).includes(name) || p.from === name);
 const isMove = (e: Entry): boolean => e.kind === 'member_joined' || e.kind === 'member_left';
-const isHostMove = (e: Entry): boolean => e.kind === 'host_changed' && e.via === 'system';
 /** The room Claude's row note says that row must be spawned (lib/rows.ts joinNote). */
 const SPAWN_NOTE = /no row running|is not running/;
 
@@ -125,7 +124,7 @@ function deliver(me: LaneViewer | null | undefined, e: Entry, { entries, trust =
     if (e.kind === 'member_joined' && e.from !== name && (!note || SPAWN_NOTE.test(note))) return 'wake';
     return l === 'pull' ? 'context' : 'none';
   }
-  if (isHostMove(e) || (isMove(e) && e.via === 'system' && e.from !== name && e.from !== 'claude')) return 'notice';
+  if ((isMove(e) && e.via === 'system' && e.from !== name && e.from !== 'claude')) return 'notice';
   if (l === 'push') return me && (isMove(e) || chat(me, e)) ? 'notice' : 'wake';
   if (l === 'pull' && me && personSees(String(name), e, entries, trust)) return 'notice';
   return l === 'pull' ? 'context' : 'none';

@@ -87,7 +87,7 @@ export type ConsentEvent =
   | { type: 'roomTool'; mode: string | undefined; answer?: ReviewAnswer | null; target?: Target | null; post?: boolean; noteLive?: boolean }
   | { type: 'rejected'; toolUseId: string | null; answer: ReviewAnswer | null; target?: Target | null }
   | { type: 'prompt'; mode: string | undefined; answer?: ReviewAnswer | null; target?: Target | null; live: boolean }
-  | { type: 'ask'; admit: string | null; handoff: boolean; noteNamed: boolean; live: boolean; hit: Pending[]; reviewable: boolean }
+  | { type: 'ask'; admit: string | null; noteNamed: boolean; live: boolean; hit: Pending[]; reviewable: boolean }
   | { type: 'answered'; note: CardAnswer; target?: Target | null; afk: boolean; asked: boolean;
       answers: { hash: string; answer: CardAnswer; live: boolean }[] }
   | { type: 'planFailed'; early: boolean };
@@ -104,7 +104,7 @@ export type Say =
   | { to: 'context'; parts: Part[] }
   | { to: 'deny'; parts: Part[] }
   | { to: 'allow'; text: string }
-  | { to: 'ask'; text: string; show: { plan: string } | { card: string[] } | { note: true } | { admit: string } | { handoff: true } }
+  | { to: 'ask'; text: string; show: { plan: string } | { card: string[] } | { note: true } | { admit: string } }
   | { to: 'permit'; mode: string | undefined };
 
 /** notice: a line for the person (the hook's systemMessage, a sub-human notice), beside what the model is told. */
@@ -129,7 +129,6 @@ export const NEXT = {
   card: (h: string) => `call AskUserQuestion with "proposal ${h}"`,
   /** a note's confirm card */
   note: (h: string) => `call AskUserQuestion with "objection ${h}"`,
-  handoff: 'call AskUserQuestion with "handoff"',
   admit: (ref: string) => `call AskUserQuestion with "admit ${ref}"`,
 };
 
@@ -212,12 +211,7 @@ export const SAY = {
   cardNoAnswer: (n: string): string => `Nothing was recorded: the card closed without ${n}'s answer. Reopening it later is fine. ${DONE}`,
   notYet: (n: string, h: string): string => `proposal ${h}: ${n} has not decided; nothing was recorded. Do not ask again unless ${n} asks.`,
   noChoice: (h: string): string => `proposal ${h}: no Agree/Object answer; nothing was recorded.`,
-  // the handoff card (lib/handoff.ts) and a join request's card (lib/remote/admission.ts)
-  handoffNoAnswer: (n: string): string => `Nothing was decided: the handoff card closed without ${n}'s answer. If ${n} asks, ${NEXT.handoff}. ${DONE}`,
-  handoffDeclined: (n: string, code: RoomCode, host: string): string => `${n} declined to host room ${code}; ${host} stays the host. ${DONE}`,
-  handoffUntold: (n: string, why: string): string => `${n} declined, but the host was not told (${why}); nothing moved. ${DONE}`,
-  handoffFailed: (n: string, why: string): string => `The room did NOT move: ${why}. ${n} has been told. ${DONE}`,
-  handoffMoved: (n: string, code: RoomCode): string => `Room ${code} is hosted on this machine now (${n} agreed on the card); its Claude runs on ${n}'s Claude account. Post nothing about it. ${DONE}`,
+  // a join request's card (lib/remote/admission.ts)
   admitUnknown: (ref: string, code: RoomCode): string => `Nothing was done: no join request ${ref} in room ${code}. ${DONE}`,
   admitNoAnswer: (n: string, who: string, ref: string): string => `Nothing was decided: the join card closed without ${n}'s answer; ${who} still waits. If ${n} asks, ${NEXT.admit(ref)}. ${DONE}`,
   admitRefused: (n: string, who: string): string => `${n} refused ${who}; nothing got in. Post nothing about it. ${DONE}`,
@@ -556,7 +550,6 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
 
     case 'ask': {
       if (ev.admit) return { state, effects: [], say: { to: 'ask', text: '', show: { admit: ev.admit } } };
-      if (ev.handoff) return { state, effects: [], say: { to: 'ask', text: '', show: { handoff: true } } };
       let note = state.note;
       if (note && !ev.live) note = null; // its proposal is no longer this seat's to answer
       if (note && ev.noteNamed) {

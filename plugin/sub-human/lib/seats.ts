@@ -276,7 +276,7 @@ function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd,
   }
   const host = identity.isHost(code);
   const same = !!cur && cur.code === code && cur.name === name;
-  // a link whose credentials a re-point replaced (lib/handoff.ts): the seat joins again over it, even if seated
+  // a link whose credentials a new join replaced (lib/remote/joining.ts): the seat joins again over it, even if seated
   const rebind = !host && !!(links.get(code) ?? {}).rebind;
   if (cur && same && !rebind) {
     joining().dropJoinAs(code);

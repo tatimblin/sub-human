@@ -7,15 +7,13 @@
  * Frames, one JSON object per line (as mcp/room-server.ts speaks): request {id, op, params}, reply {id, result} |
  * {id, error: {code, message, reason?}}, event {id, ev, data} on a subscribe stream (id: the subscribe request's).
  * Events: 'entry' (the host line, verbatim), 'doc' ({key, value}: members, presence/NAME, tasks; null for a document
- * that is gone), 'end' (closed: the room's Claude was stopped; FORK: the host log was reset under the stream; moved:
- * a 'moved' event came first), 'handoff' and 'moved' (private to one link, never in the log: lib/handoff.ts),
+ * that is gone), 'end' (closed: the room's Claude was stopped; FORK: the host log was reset under the stream),
  * 'snapshot' (sent first and only to a subscribe {after: 0, snapshot: true} when it fits a frame; the lines then
  * start after its id, and must chain to its head: FORK otherwise).
  *
  * hello carries {proto, client, caps}; the server answers with v = negotiate() of the two ranges; no overlap, or no
  * proto, is PROTOCOL (reason SKEW) with skewMessage(), which names the side that must update (need: the version what
- * was asked needs, so ranges that overlap below it still name the side that lacks it). hello and append may carry the
- * mirror's host epoch (lib/handoff.ts): one from a later epoch, or an append from another, is STALE. A client that
+ * was asked needs, so ranges that overlap below it still name the side that lacks it). A client that
  * pings says hello with caps {ping: true}, so the server may close a session that then goes silent (LINK_SILENT_MS).
  *
  * A code that is not one of CODES is never sent (the server and the link socket send INVALID) and reads as INVALID
@@ -68,14 +66,14 @@ function skewMessage({ host, joiner, need }: { host: PeerVersion; joiner: PeerVe
   return `${runs('host runs', host)}; ${runs('you run', joiner).replace(/^you run sub-human /, 'you run ')}${what}. ${fix}`;
 }
 /** The ops this end serves, the source of Op (types-core.ts re-exports it; OpParams and OpResults are keyed by it). */
-const OPS = ['hello', 'join', 'leave', 'beat', 'append', 'subscribe', 'blob.get', 'blob.put', 'ping', 'handoff.accept', 'handoff.refuse'] as const;
+const OPS = ['hello', 'join', 'leave', 'beat', 'append', 'subscribe', 'blob.get', 'blob.put', 'ping'] as const;
 export type Op = typeof OPS[number];
 /** The events a stream carries, the source of EventName (types-core.ts EventData is keyed by it). */
-const EVENTS = ['entry', 'doc', 'end', 'handoff', 'moved', 'snapshot'] as const;
+const EVENTS = ['entry', 'doc', 'end', 'snapshot'] as const;
 export type EventName = typeof EVENTS[number];
 const CAPS: Readonly<Caps> = Object.freeze({ ops: OPS, snapshot: true });
 /** The RoomError codes, the source of WireCode: on both ends and on the wire. */
-const CODE_NAMES = ['INVALID', 'RATE', 'LOCK', 'NO_ROOM', 'OFFLINE', 'HOST_ONLY', 'AUTH', 'FORK', 'PROTOCOL', 'STALE'] as const;
+const CODE_NAMES = ['INVALID', 'RATE', 'LOCK', 'NO_ROOM', 'OFFLINE', 'HOST_ONLY', 'AUTH', 'FORK', 'PROTOCOL'] as const;
 export type WireCode = typeof CODE_NAMES[number];
 const CODES: Readonly<{ [C in WireCode]: C }> = Object.freeze(Object.fromEntries(CODE_NAMES.map(c => [c, c])) as { [C in WireCode]: C }); // every name, keyed by itself
 const CODE_SET: ReadonlySet<string> = new Set(CODE_NAMES);

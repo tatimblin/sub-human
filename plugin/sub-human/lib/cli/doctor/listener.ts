@@ -32,7 +32,7 @@ function checkListener({ quick = false }: { quick?: boolean } = {}): Check[] {
     const id = `web:${code}`;
     if (!lib('remote/listener.ts').roomLive(code)) { out.push(check({ id, status: 'warn', title: `web ${code}`, detail: 'served over the web, but the room is closed or gone here', fix: `${cli(`invite --stop --room ${code}`)} in a terminal` })); continue; }
     const where = rec.url || rec.path || '?';
-    if (!rec.tailscale) { out.push(check({ id, status: 'info', title: `web ${code}`, detail: `${rec.mode === 'handoff' ? 'moved here by a handoff' : 'through your own front'} at ${where}` })); continue; }
+    if (!rec.tailscale) { out.push(check({ id, status: 'info', title: `web ${code}`, detail: `through your own front at ${where}` })); continue; }
     const kind = rec.tailscale.funnel ? 'funnel' : 'serve';
     if (!quick) {
       const bin = rec.tailscale.bin || ts.bin();

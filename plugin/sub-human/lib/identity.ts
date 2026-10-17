@@ -36,8 +36,7 @@
  * forkParent and forkedAway follow a conversation that ← (the agent view) moved into a bg job under a new id
  * (lib/cc/transcript.ts continuedIn, lastHome, lastTitle; CONTRACT session-fork-continued-in,
  * transcript-home-notice, transcript-custom-title); adoptFork moves the seat with no leave and no log line, since
- * the person never left. adoptLocalSeats, after this machine became the host (lib/handoff.ts), puts pid, pid_start
- * and session_id back from the indexes, which a mirror's members document never held.
+ * the person never left.
  *
  * The hooks module's lease, <home>/sessions/mods/<sid>.json (atomic, 0600): this session's function hooks are
  * loaded and have said hello (hooks/handlers/mod-hello.ts writes it, join requires it, session-end deletes it).
@@ -127,7 +126,8 @@ interface JoinRequest {
 type RoomClaudePatch = { [K in keyof Member]?: Member[K] | undefined };
 // MOD_LEASE_FRESH_MS only covers a module whose $.process parent is not claude itself: a resumed session id whose
 // lease is older than this, from a process that is gone, cannot join.
-// the room's own names, then every /sub-human verb, so `/sub-human doctor` is never a person called doctor
+// the room's own names, then every /sub-human verb, so `/sub-human doctor` is never a person called doctor (handoff,
+// promote and demote were verbs until 0.5: still reserved, so an old line fails clearly)
 const VERBS: readonly string[] = ['invite', 'join', 'kick', 'leave', 'doctor', 'help', 'admit', 'handoff', 'promote', 'demote'];
 const RESERVED: readonly string[] = [ROOM_CLAUDE, 'room', 'all', 'system', 'host', ...VERBS];
 const ROLES: readonly string[] = [ROOM_CLAUDE, 'member'];
@@ -445,25 +445,6 @@ function localSeats(code: RoomCode): string[] {
   return [...names];
 }
 
-function adoptLocalSeats(code: RoomCode): string[] {
-  let files: string[];
-  try { files = fs.readdirSync(byPidDir()); } catch { return []; }
-  const recs = files.map(f => readJson(path.join(byPidDir(), f), SEAT_INDEX, null)).filter((r): r is SeatIndex & { pid: number } => !!r && r.code === code && validPid(r.pid) && isAlive(r.pid));
-  if (!recs.length) return [];
-  const names: string[] = [];
-  membersOf(code).update(ms => {
-    names.length = 0;
-    for (const r of recs) {
-      const m = ms[r.name];
-      if (!m || m.left_at || (m.machine && !isMine(m.machine))) continue;
-      ms[r.name] = { ...m, machine: m.machine || machineIn(code), pid: r.pid, ...(r.pid_start != null ? { pid_start: r.pid_start } : {}), session_id: r.session_id || null };
-      names.push(r.name);
-    }
-    return names.length ? ms : null;
-  });
-  return names;
-}
-
 function lastSeat(sid: unknown): { code: RoomCode; name: SeatName; role: Role; address: string } | null {
   if (!isSessionId(sid)) return null;
   const rec = readJson(bySidFile(sid), SEAT_INDEX, null);
@@ -694,7 +675,7 @@ export {
   NAME_RE, CODE_RE, isRoomCode, isSeatName, isSessionId, RESERVED, VERBS, ROOM_CLAUDE, ANIMALS, PRESENCE_STATES, normalizeName, defaultName, home,
   roomDir, machineId, machineIn, isMine, newCode, roomExists, isHost, openRooms, unindexClosed, closedForGood, orphanRooms, roomOpen, roomClosing, address,
   readMembers, join, leave, rebindSession, updateRoomClaude, liveMembers, seatAlive, heartbeat,
-  leaseFresh, isAlive, claudePid, resolveByPid, resolveBySession, resolveSelf, lastSeat, forkParent, forkedAway, markForked, forkedOf, adoptFork, localSeats, adoptLocalSeats, dropSeatIndexes,
+  leaseFresh, isAlive, claudePid, resolveByPid, resolveBySession, resolveSelf, lastSeat, forkParent, forkedAway, markForked, forkedOf, adoptFork, localSeats, dropSeatIndexes,
   MOD_LEASE_FRESH_MS, writeModLease, readModLease, modLeaseOk, deleteModLease, pruneModLeases, pruneSessionIndexes, writePresence,
 };
 export type { Identity, SeatIndex, ModLease, JoinRequest, RoomClaudePatch, ForkParent, ForkedAway };

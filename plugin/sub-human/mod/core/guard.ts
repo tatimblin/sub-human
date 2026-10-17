@@ -32,7 +32,7 @@ const ENV_NAMES = /\bSUB_HUMAN_HOME\b/;
 /** Claude Code's prompt history, by name (before the hello says where Claude Code's directory is). */
 const HISTORY = /(?:^|[/\s'"])\.claude\/history\.jsonl\b/;
 /** The CLI commands a person runs in their own shell: an invite, letting a machine in or out, the link daemon, the room server, the room's options, moving the room's host, the web listener. */
-const PERSON_CLI = /(?:^|[\s;&|(`'"/])sub-human\s+(?:invite|admit|kick|prime|listen|link|serve|options|handoff|promote|demote)(?![\w-])/;
+const PERSON_CLI = /(?:^|[\s;&|(`'"/])sub-human\s+(?:invite|admit|kick|prime|listen|link|serve|options)(?![\w-])/;
 /** The host's serve shim asked to link a machine over an ssh login (`ssh you@host H/bin/serve --stdio CODE --link ID --login`),
  *  under any home path: a person's step (/sub-human join USER@HOST ROOM), as `sub-human serve` is. */
 const LOGIN_SERVE = /\bserve\b[^;&|\n]*--stdio\b[^;&|\n]*--login(?![\w-])/;
@@ -42,7 +42,7 @@ const DOT_HOME = /(?:^|[^\w.-])\.sub-human(?![\w-])/;
 const RUNS_JS = /(?:^|[\s;&|(`'"/])(?:node|nodejs|bun|deno|npx|tsx|ts-node)(?=[\s;&|)`'"]|$)/;
 /** The plugin's modules that write the store or hold the seat key (test/ files are not matched): .ts, and .js: an
  * older version in the plugin cache still holds its hooks under those names, and run with this home they write it. */
-const PLUGIN_CODE = /(?<!test\/)(?<![\w-])(?:lib\/(?:room|identity|proposal|consent|tasks|rows|notices|claude|io|lock|seats|remote|handoff|cli)(?![\w-])|hooks\/(?:handlers\/)?[\w-]+\.(?:[cm]?js|ts)\b|hooks\/(?:handlers\/)?(?:run|reply|seat|context|at-room|prompt|consent|join|seat-key|common|tasks|presence|session-end|session-restore|mod-hello|row-[\w-]+)(?![\w.-])|mcp\/[\w-]+(?:\.(?:[cm]?js|ts))?(?![\w-]))/;
+const PLUGIN_CODE = /(?<!test\/)(?<![\w-])(?:lib\/(?:room|identity|proposal|consent|tasks|rows|notices|claude|io|lock|seats|remote|cli)(?![\w-])|hooks\/(?:handlers\/)?[\w-]+\.(?:[cm]?js|ts)\b|hooks\/(?:handlers\/)?(?:run|reply|seat|context|at-room|prompt|consent|join|seat-key|common|tasks|presence|session-end|session-restore|mod-hello|row-[\w-]+)(?![\w.-])|mcp\/[\w-]+(?:\.(?:[cm]?js|ts))?(?![\w-]))/;
 /** Names the plugin outright, so the cwd need not be read. */
 const NAMES_PLUGIN = (cmd: string) => /sub-human/.test(cmd) || /lib\/room(?![\w-])/.test(cmd);
 
@@ -421,7 +421,7 @@ const withDefaults = (cmd: string): string => cmd.replace(/\$\{[A-Za-z_][A-Za-z0
 function verdictOf(cmd: string, ctx: GuardCtx): string | null {
   if (READ_CLI.test(cmd) || READ_DOCTOR.test(cmd)) return null;
   if (DOCTOR_WRITES.test(cmd)) return DOCTOR_WHY;
-  if (PERSON_CLI.test(cmd) || LOGIN_SERVE.test(cmd)) return 'it makes an invite, lets a machine in or out, or speaks for the room\'s connection: the person does that in their own session (/sub-human invite, admit, kick or handoff) or in a terminal outside Claude Code, never with !, which would put an invite and its PIN into this conversation';
+  if (PERSON_CLI.test(cmd) || LOGIN_SERVE.test(cmd)) return 'it makes an invite, lets a machine in or out, or speaks for the room\'s connection: the person does that in their own session (/sub-human invite, admit or kick) or in a terminal outside Claude Code, never with !, which would put an invite and its PIN into this conversation';
   if (ENV_NAMES.test(cmd)) return 'it names the store location variable (SUB_HUMAN_HOME)';
   if (DOT_HOME.test(cmd)) return 'it touches the room store (~/.sub-human)';
   for (const h of homeSpellings(ctx)) {

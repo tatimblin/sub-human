@@ -1,7 +1,6 @@
 // 1.1 with the rest of 1.0: `sub-human doctor` sees the host's web listener (pid, port, rooms), each room's Tailscale
 // path (present or gone, against a fake `tailscale`), Funnel's certificate-transparency warning, and a joiner's wss
-// link through its real transport. And a planned handoff to a new host reached over the web: the locator is a ws
-// URL, every invite the new host mints pins its listener's X25519 key, and the old host follows it over ws.
+// link through its real transport.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -13,14 +12,10 @@ import * as store from '../lib/room/store.ts';
 import * as linkSocket from '../lib/remote/link-socket.ts';
 import * as links from '../lib/room/links.ts';
 import * as listener from '../lib/remote/listener.ts';
-import * as invites from '../lib/remote/invites.ts';
-import * as hostLinks from '../lib/remote/host-links.ts';
-import * as handoff from '../lib/handoff.ts';
 import * as doctor from '../lib/cli/doctor.ts';
 import { Machine, childOf, kill } from './support/two-homes.ts';
 import * as noiseLib from '../lib/remote/noise.ts';
 import type { WsSpec } from '../lib/remote/types-rest.ts';
-import type { HandoffAskDoc } from '../lib/types-app.ts';
 import type { RoomCode } from '../lib/brand.ts';
 import type { Link } from '../lib/room/types.ts';
 import { must } from './support/must.ts';
@@ -30,8 +25,6 @@ const wsSpec = (l: Link): WsSpec => {
   assert.ok(l.transport.kind === 'ws' || l.transport.kind === 'wss', 'a web link');
   return l.transport;
 };
-/** The card the consent hook's Pre rewrites AskUserQuestion's input to. */
-interface Card { questions: { question: string }[] }
 
 const LINK_ENV = { SUB_HUMAN_LINK_RETRY_MS: '200', SUB_HUMAN_LINK_RETRY_MAX_MS: '600', SUB_HUMAN_LINK_IDLE_MS: '20000' };
 const freePort = () => new Promise<number>(r => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = (s.address() as AddressInfo).port; s.close(() => r(p)); }); });
@@ -111,45 +104,4 @@ test('doctor: the listener, a room\'s Tailscale path present or gone, Funnel\'s 
   assert.ok(probe.reply && must(probe.reply.v) >= 1);
   const wrongKey = await remote.lib(() => doctor.helloProbe({ ...wsSpec(lf), hostKey: noiseLib.generateKeyPair().pub.toString('base64url') }, code, { timeoutMs: 5000 }));
   assert.equal(wrongKey.ok, false, 'another pinned key gets no answer');
-});
-
-test('handoff to a new host reached over the web: a ws locator, invites pinning the new host\'s listener key, the old host following over ws', async t => {
-  const bport = await freePort();
-  const A = new Machine(t, 'a', LINK_ENV), B = new Machine(t, 'b', { ...LINK_ENV, SUB_HUMAN_LISTEN_PORT: String(bport) });
-  const alice = A.seat('alice'), bob = B.seat('bob');
-  assert.equal(must(A.join(alice, 'alice').json).decision, undefined);
-  const code = must(A.lib(() => store.listRooms()[0]), 'the room');
-  cleanup(t, [A, B], () => code);
-  // bob joins over the pipe (any transport); alice asks him to host the room behind his web front
-  assert.equal(must((await B.joinVia(A, alice, bob)).seated.json).decision, undefined);
-  const asked = must(A.join(alice, `handoff bob http://127.0.0.1:${bport}`).json);
-  assert.match(must(asked.reason), /asked bob to host room/, JSON.stringify(asked));
-  const loc = `ws://127.0.0.1:${bport}/sub-human/${code}`;
-  assert.equal(must(A.lib(() => handoff.hostDoc(store.open(code)))).locator, loc);
-  assert.ok(await h.until(() => B.lib(() => store.open(code).kv.get(handoff.ASK_DOC)), 5000, 50));
-  const id = must(B.lib(() => store.open(code).kv.get<HandoffAskDoc>(handoff.ASK_DOC))).id;
-  // bob's own answer on the card
-  const pre = B.hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: `handoff ${id}`, options: [] }] } }, bob);
-  const card = must(must(pre.json).hookSpecificOutput).updatedInput as Card;
-  const q = must(card.questions[0], 'the card\'s question').question;
-  const post = B.hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: card, tool_response: { questions: card.questions, answers: { [q]: 'Host it here' } } }, bob);
-  assert.match(must(must(post.json).systemMessage), /is hosted on this machine now, and its Claude runs on your Claude account/, post.stderr);
-
-  // B serves the room on its listener; the invite B minted for A pins B's listener key; A follows over ws
-  const bkey = B.lib(() => listener.hostKey());
-  assert.ok(B.lib(() => listener.status()).rooms[code], 'B serves the room over the web');
-  const minted = A.lib(() => handoff.hostDoc(store.open(code)));
-  const forA = minted && minted.invites && Object.values(minted.invites)[0];
-  if (forA) assert.equal(must(invites.parseInvite(forA)).hostKey, bkey, 'the handoff invite pins the new host\'s key');
-  assert.ok(await h.until(() => A.lib(() => linkSocket.status(code)).state === 'online', 10_000, 50), JSON.stringify(A.lib(() => linkSocket.status(code))));
-  const lf = must(A.lib(() => links.get(code)));
-  const { clientKey, ...pinned } = wsSpec(lf);
-  assert.deepEqual(pinned, { kind: 'ws', host: '127.0.0.1', port: bport, path: `/sub-human/${code}`, hostKey: bkey });
-  assert.match(String(clientKey), /^[A-Za-z0-9_-]{43}$/, 'a key of the link\'s own (XK)');
-  assert.ok(Object.values(B.lib(() => hostLinks.links(store.open(code)))).some(l => l.key === clientKey), 'the new host bound A\'s link to that key');
-  assert.equal(must(B.lib(() => store.open(code).readAll()).find(e => e.kind === 'host_changed')).locator, loc);
-  // alice posts through the new host, over ws
-  assert.equal(must(A.say(alice, 'over ws to the new host').json).continue, false);
-  assert.equal(must(B.lib(() => store.open(code).readAll()).at(-1)).text, 'over ws to the new host');
-  assert.ok(await h.until(() => A.log(code) === B.log(code), 5000, 50));
 });

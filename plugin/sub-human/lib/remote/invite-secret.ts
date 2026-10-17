@@ -30,8 +30,7 @@
  *                                       the joiner's machine key proves and, over the web, its link's XK key, so a
  *                                       thief holding the same line and PIN shows another check than the real joiner
  *   ROLES                               'listener', 'machine'
- *   isInviteSecret(v)                   v is an invite credential as a joiner keeps it: a word encode() made (WORD_RE), or
- *                                       an sh2 invite (lib/remote/invites.ts formatInvite: a handoff's, a promote's).
+ *   isInviteSecret(v)                   v is an invite credential as a joiner keeps it: a word encode() made (WORD_RE).
  *                                       The guard that makes the InviteSecret brand (lib/brand.ts): a secret, which
  *                                       a line a person or a log reads shows only through lib/cli/doctor/redact.ts redact()
  */
@@ -48,9 +47,7 @@ const WORD_RE: RegExp = new RegExp(`^[${ALPHABET}]{${WORD_LEN}}$`);
 const KEY_RE = /^[A-Za-z0-9_-]{43}$/;
 const LOOKALIKE: Readonly<Record<string, string>> = Object.freeze({ i: '1', l: '1', o: '0' });
 
-/** An sh2 invite's shape (lib/remote/invites.ts formatInvite; parseInvite reads it). */
-const SH2_RE = /^sh2\.[a-z]+-\d{4}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{16,128}\.(?:0|[A-Za-z0-9_-]{43})$/;
-const isInviteSecret = (v: unknown): v is InviteSecret => typeof v === 'string' && (WORD_RE.test(v) || SH2_RE.test(v));
+const isInviteSecret = (v: unknown): v is InviteSecret => typeof v === 'string' && WORD_RE.test(v);
 
 const mint = (): Buffer => crypto.randomBytes(SECRET_BYTES);
 

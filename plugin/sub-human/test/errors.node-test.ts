@@ -70,7 +70,7 @@ test('CODES: one source (CODE_NAMES); a code this end does not know reads as INV
   assert.ok(!protocol.isWireCode('ENOENT'));
   const e = protocol.toError({ code: 'SOMETHING_NEWER', message: 'a newer host', reason: 'QUOTA' });
   assert.deepEqual([e.code, e.message, e.reason], ['INVALID', 'a newer host', 'QUOTA']);
-  assert.equal(protocol.toError({ code: 'STALE', message: 'm' }).code, 'STALE');
+  assert.equal(protocol.toError({ code: 'STALE', message: 'm' }).code, 'INVALID', 'a code of an older protocol reads as INVALID');
 });
 
 test('REASON_CODE: every reason has a code of CODES (or null: a stop reason)', () => {

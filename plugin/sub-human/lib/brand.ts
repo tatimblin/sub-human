@@ -12,8 +12,8 @@
  *   ProposalHash   12 hex                 lib/text.ts isProposalHash / planHash (HASH_RE, hash12)
  *   EntryId        1, 2, …                lib/room/validate.ts isEntryId / entryId / nextEntryId (a positive safe integer)
  *   TaskId         "7", "a1"              lib/room/validate.ts isTaskId / taskId (a short id string)
- *   Pin            4 or 6 digits          lib/remote/invites.ts isPin / isShortPin / isPromotePin
- *   InviteSecret   an invite line's word  lib/remote/invite-secret.ts isInviteSecret (WORD_RE, or an sh2 invite's shape)
+ *   Pin            4 digits               lib/remote/invites.ts isPin / isShortPin
+ *   InviteSecret   an invite line's word  lib/remote/invite-secret.ts isInviteSecret (WORD_RE)
  *   LinkToken      a link's bearer token  lib/remote/host-links.ts isLinkToken (32 base64url)
  *
  * The secrets (Pin, InviteSecret, LinkToken) go into a line a person or a log reads only through lib/cli/doctor/

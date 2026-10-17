@@ -52,7 +52,7 @@ function redactor({ home = os.homedir(), shHome = lib('home.ts').home(), hosts =
     let s = String(text ?? '').replace(/\x1b\[[0-9;]*m/g, '');
     s = s.replace(KEY_RE, (_: string, type: string, b64: string) => `${type} ${fingerprint(b64)}`);
     s = s.replace(/\bsh\d\.[A-Za-z0-9._~:-]+/g, 'sh2.<invite>');
-    // an invite's PIN is its whole secret (join DEST ROOM 4829; a promote's sh2 PIN has 6 digits): any lone 4- or
+    // an invite's PIN is its whole secret (join DEST ROOM 4829; an older sh2 invite's PIN had 6 digits): any lone 4- or
     // 6-digit number goes
     s = s.replace(/(?<![\w.:/-])(?:\d{4}|\d{6})(?![\w.:/-])/g, '<pin>');
     for (const h of shHomes) s = s.replace(new RegExp(`${esc(h)}(?![^/\\s"':,)])`, 'g'), '<sub-human-home>');
@@ -83,7 +83,6 @@ function bundle(report: Report, { salt, env = process.env }: { salt?: string; en
     hosts: [...links.map(d => d.transport.host), ...webHosts()].filter((h): h is string => !!h),
     users: links.map(d => d.transport.user).filter((u): u is string => !!u),
     rooms: [...links.map(d => d.code), ...webRooms()],
-    members: links.map(d => d.moved && d.moved.host).filter((m): m is string => !!m && m.length > 1),
   });
   const config = lib('config.ts');
   const timings = Object.fromEntries(Object.entries(config).filter(([k, v]) => /^[A-Z][A-Z0-9_]+$/.test(k) && (typeof v === 'number' || typeof v === 'boolean')));
@@ -99,7 +98,6 @@ function bundle(report: Report, { salt, env = process.env }: { salt?: string; en
       room: `room-${hash8(d.code, s)}`,
       transport: { kind: d.transport.kind, host: d.transport.host ? `host-${hash8(d.transport.host, s)}` : undefined, user: d.transport.user ? `user-${hash8(d.transport.user, s)}` : undefined, port: opt(d.transport.port) },
       credential: d.credential,
-      moved: d.moved ? { epoch: d.moved.epoch, demoted: d.moved.demoted, reached: d.moved.reached } : undefined,
       daemon: { running: d.daemon.running },
       state: { state: d.state.state, since: opt(d.state.since), attempt: opt(d.state.attempt), rttMs: opt(d.state.rttMs), queued: opt(d.state.queued), lastError: d.state.lastError ? red(d.state.lastError) : undefined, source: d.state.source },
       reach: d.reach ? { ok: d.reach.ok, ms: d.reach.ms, skipped: d.reach.skipped, error: d.reach.error ? red(d.reach.error) : undefined, protocol: d.reach.protocol, skewMs: d.reach.skewMs, ssh_error: d.reach.stderr ? red(d.reach.stderr).split('\n').slice(-3) : undefined } : undefined,

@@ -3,7 +3,7 @@
 #   devbox   sshd for user `host` (keys only, no forwarding); /lab/fwd.ts, the stand-in for `tailscale serve`:
 #            0.0.0.0:$LAB_WS_FWD_PORT -> 127.0.0.1:$LAB_WS_PORT (the host's future ws listener, 1.1)
 #   bastion  sshd for user `jump`: no shell, no tty, TCP forwarding only to $LAB_PERMIT_OPEN (ProxyJump)
-#   joiner   sshd for user `joiner` (used only once a handoff makes this joiner the host)
+#   joiner   sshd for user `joiner` (nothing logs in: it keeps the container up with host keys of its own)
 #   proxy    tinyproxy with /lab/tinyproxy.conf: the corporate HTTP CONNECT egress
 # Every container makes its own sshd host keys at start, so no two machines share a host key.
 set -e

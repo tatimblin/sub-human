@@ -151,16 +151,4 @@ function webLocator(url: string, code: RoomCode): string {
   return loc;
 }
 
-/** Serve room CODE at a web locator this machine will host it at (a handoff or promote to here): the listener up and
- * the room in its served set. A Tailscale path is not set up here: run /sub-human invite --web after the move. */
-function serveAt(code: RoomCode, locator: string): { port: number; hostKey: string } {
-  const i = locator.indexOf(':');
-  const spec = wsT().parse(locator.slice(i + 1));
-  if (!spec) throw new RoomError('INVALID', `"${locator}" is not a web locator`);
-  const L = listener();
-  const { port } = L.start();
-  L.addRoom(code, { path: spec.path, url: wsT().urlOf({ ...spec, kind: locator.slice(0, i) }), mode: 'handoff', port });
-  return { port, hostKey: L.hostKey() };
-}
-
-export { hostWeb, unhost, ensure, frontBase, webLocator, serveAt };
+export { hostWeb, unhost, ensure, frontBase, webLocator };

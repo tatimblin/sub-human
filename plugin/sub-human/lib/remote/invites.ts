@@ -2,15 +2,9 @@
  * plugin/sub-human/lib/remote/invites.ts: a room's invites, on the host. An invite is single-use: its first hello
  * redeems it for a link (lib/remote/host-links.ts create), whose token (and, over the web, whose Noise key) is the
  * link's credential from then on. The host stores only sha256 digests, in the host-only kv document remote/invites
- * (never streamed), keyed by sha256(secret). Three records live there (lib/remote/types-core.ts): a bound invite
- * (below), an invite line's (protocol 3: a 128-bit secret in the line and a 4-digit PIN told apart, both checked here,
- * online) and an admission (that invite's joiner, waiting for the host person's card: lib/remote/admission.ts). Zero
+ * (never streamed), keyed by sha256(secret). Two records live there (lib/remote/types-core.ts): an invite line's
+ * (protocol 3: a 128-bit secret in the line and a 4-digit PIN told apart, both checked here, online) and an admission (that invite's joiner, waiting for the host person's card: lib/remote/admission.ts). Zero
  * dependencies beyond node:crypto.
- *
- * A bound invite (mintFor) is for one machine, its seats pre-bound. A handoff's (lib/handoff.ts) is minted by the
- * room's next host before it is the host (so no HOST_ONLY check) and carried to that machine over its existing
- * authenticated link, so it needs no PIN. A promote's, handed out by hand, has a 6-digit PIN (never in the invite).
- * It redeems on its machine only (INVITE_OTHER_MACHINE); a wrong PIN costs a try, the last burns it.
  *
  * An invite line's (mintInvite; at most SHORT_LIVE_MAX open per room), redeemed in one hello (server.ts):
  *   open: no pin is AUTH PIN_NEEDED and throttled (PIN_BACKOFF_MS doubling after each wrong PIN, per invite and per
@@ -27,42 +21,37 @@
 
 import crypto from 'node:crypto';
 import { RoomError } from '../room/validate.ts';
-import { isRoomCode, NAME_RE } from '../text.ts';
-import { INVITE_TTL_MS, INVITE_PIN_TRIES, HANDOFF_INVITE_MS, SHORT_LIVE_MAX } from '../config.ts';
+import { NAME_RE } from '../text.ts';
+import { INVITE_TTL_MS, INVITE_PIN_TRIES, SHORT_LIVE_MAX } from '../config.ts';
 import { testMs } from '../env.ts';
 import * as hostLinks from './host-links.ts';
 import * as admission from './admission.ts';
 import * as secretMod from './invite-secret.ts';
 import type { ReasonFor } from '../reasons.ts';
 import type {
-  AuthStore, BoundInvite, Invites, InviteRecord, ShortInvite, AdmissionRecord, LinkRecord, ParsedInvite, ShortKind,
+  AuthStore, Invites, InviteRecord, ShortInvite, AdmissionRecord, LinkRecord, ShortKind,
 } from './types-core.ts';
-import type { RoomCode, MachineId, Pin, InviteSecret, LinkToken } from '../brand.ts';
+import type { MachineId, Pin, LinkToken } from '../brand.ts';
 
-/** A redeemed invite: the link's token (once, in clear), its record, and what kind of invite it was. */
-interface Redeemed { token: LinkToken; link: LinkRecord; handoff: boolean; admission?: AdmissionRecord }
+/** A redeemed invite: the link's token (once, in clear), its record, and the admission it came from. */
+interface Redeemed { token: LinkToken; link: LinkRecord; admission?: AdmissionRecord }
 /** What a joiner asks to sit as (the hello's as): its seat's name and its machine's short name, as it says. */
 interface Asked { name: string; label: string }
 
-const INVITE_PREFIX = 'sh2';
-const PIN_RE: RegExp = /^[0-9]{6}$/;
 const SHORT_PIN_RE: RegExp = /^[0-9]{4}$/;
-const isPromotePin = (v: unknown): v is Pin => typeof v === 'string' && PIN_RE.test(v);
 const isShortPin = (v: unknown): v is Pin => typeof v === 'string' && SHORT_PIN_RE.test(v);
-const isPin = (v: unknown): v is Pin => isPromotePin(v) || isShortPin(v);
-/** A fresh PIN of n digits. */
-function newPin(n: 4 | 6): Pin {
-  const pin = String(crypto.randomInt(0, 10 ** n)).padStart(n, '0');
-  if (!isPin(pin)) throw new Error('a PIN is 4 or 6 digits'); // it always is
+const isPin: (v: unknown) => v is Pin = isShortPin;
+/** A fresh 4-digit PIN. */
+function newPin(): Pin {
+  const pin = String(crypto.randomInt(0, 10_000)).padStart(4, '0');
+  if (!isPin(pin)) throw new Error('a PIN is 4 digits'); // it always is
   return pin;
 }
-const HOST_KEY_RE = /^[A-Za-z0-9_-]{43}$/; // 32 bytes, base64url
 const REF_RE = /^[0-9a-f]{12}$/;
 const LABEL_RE = /^[A-Za-z0-9._-]{1,64}$/;
 /** How much of a joiner's label a room line or the card shows. */
 const LABEL_SHOWN = 24;
 const INVITES_KEY = 'remote/invites';
-const SECRET_RE = /^[A-Za-z0-9_-]{16,128}$/;
 /** The other machines an admission remembers presenting its used invite (one room line each). */
 const OTHERS_MAX = 8;
 const KINDS: readonly ShortKind[] = ['ssh', 'ws', 'pipe'];
@@ -75,42 +64,10 @@ const authError = (msg: string, reason: ReasonFor<'AUTH'>, note: string | null =
   return e;
 };
 
-function mintFor(store: AuthStore, { locator, machine, seats, pin: withPin = false, hostKey = null, now = Date.now() }: {
-  locator: string; machine: MachineId; seats: string[]; pin?: boolean; hostKey?: string | null; now?: number;
-}): { invite: InviteSecret; secret: string; pin?: Pin; expires_at?: string } {
-  if (hostKey !== null && !HOST_KEY_RE.test(String(hostKey))) throw new RoomError('INVALID', 'hostKey must be a 32-byte public key, base64url');
-  const secret = crypto.randomBytes(16).toString('base64url'); // 128 bits
-  const bound = { v: 2 as const, created_at: iso(now), machine, seats: [...seats] };
-  const pin = withPin ? newPin(6) : null;
-  const rec: BoundInvite = pin === null
-    ? { ...bound, handoff: true, expires_at: iso(now + HANDOFF_INVITE_MS) }
-    : { ...bound, expires_at: iso(now + INVITE_TTL_MS), tries: INVITE_PIN_TRIES, pin_sha256: pinDigest(secret, pin) };
-  store.kv.update(INVITES_KEY, (cur: Invites | null) => ({ ...cur, [sha256(secret)]: rec }));
-  const invite = formatInvite({ code: store.code, locator, secret, hostKey });
-  return pin === null ? { invite, secret } : { invite, secret, pin, expires_at: rec.expires_at };
-}
-
 const pinDigest = (secret: string, pin: string): string => sha256(`${secret}:${pin}`);
 const sameDigest = (a: unknown, b: unknown): boolean => typeof a === 'string' && typeof b === 'string' && a.length === b.length
   && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
 const left = (n: number): string => `${n} ${n === 1 ? 'try' : 'tries'} left`;
-
-/** A bound invite's checks, inside the invites update: {next record?, err to throw after} (err null: it holds). */
-function checkBound(inv: BoundInvite, secret: string, pin: unknown, now: number): { next?: BoundInvite; err: RoomError | null } {
-  if (now > Date.parse(inv.expires_at)) {
-    return inv.pin_sha256
-      ? { next: { ...inv, burnt_at: iso(now) }, err: authError('this invite expired (an invite with a PIN lasts 15 minutes); ask the host for a new one', 'INVITE_EXPIRED') }
-      : { err: authError('this handoff invite expired; ask the new host for a new one', 'INVITE_EXPIRED') };
-  }
-  if (!inv.pin_sha256) return { err: null };
-  if (typeof pin === 'string' && PIN_RE.test(pin) && sameDigest(pinDigest(secret, pin), inv.pin_sha256)) return { err: null };
-  const tries = Math.max(0, (Number(inv.tries) || 0) - 1);
-  if (!tries) {
-    return { next: { ...inv, burnt_at: iso(now) }, err: authError('wrong PIN, and that was the last try: this invite no longer works. Ask the host for a new one (/sub-human invite on their side)', 'PIN_LAST', 'an invite was burnt after its last wrong PIN') };
-  }
-  const msg = typeof pin === 'string' ? `wrong PIN (${left(tries)}). Check the digits with the host, then type the join line again` : 'this invite needs its PIN';
-  return { next: { ...inv, tries }, err: authError(msg, typeof pin === 'string' ? 'PIN_WRONG' : 'PIN_NEEDED', `a wrong PIN for an invite (${left(tries)})`) };
-}
 
 /** The kv key of an invite line's admission (the record the host person's card decides). */
 const admissionSlot = (secret: string): string => sha256(`${secret}/admission`);
@@ -191,7 +148,7 @@ function redeemInvite(store: AuthStore, secret: string, { machine, pin, proven =
 }): Redeemed {
   const key = sha256(secret);
   // set in the update (a property, so the closure's writes are seen after it)
-  const got: { link: { id: string; seats: string[]; bound: boolean; machine: MachineId; key: string | null } | null; err: RoomError | null; handoff: boolean; adm: AdmissionRecord | null } = { link: null, err: null, handoff: false, adm: null };
+  const got: { link: { id: string; seats: string[]; bound: boolean; machine: MachineId; key: string | null } | null; err: RoomError | null; adm: AdmissionRecord | null } = { link: null, err: null, adm: null };
   store.kv.update(INVITES_KEY, (stored: Invites | null) => {
     got.err = null;
     const cur = stored ?? {};
@@ -204,22 +161,14 @@ function redeemInvite(store: AuthStore, secret: string, { machine, pin, proven =
     }
     if (inv && inv.burnt_at) throw authError('this invite no longer works (too many wrong PINs, expired, or cancelled); ask the host for a new one', 'INVITE_BURNT');
     if (inv && inv.used_at) throw authError('this invite was used already (each invite works once); ask the host for a new one', 'INVITE_USED');
-    if (!inv || inv.admission) throw authError('this invite is unknown or was used already; ask the host for a new one', 'INVITE_UNKNOWN'); // an admission's key is never a secret's
-    if (inv.machine !== machine) throw authError('this invite is for another machine', 'INVITE_OTHER_MACHINE');
-    const r = checkBound(inv, secret, pin, now);
-    if (r.err) { got.err = r.err; return r.next ? { ...cur, [key]: r.next } : undefined; }
-    got.handoff = inv.handoff === true;
-    const id = inv.link || newId || hostLinks.newLinkId();
-    // its seats are pre-bound (a handoff's, a promote's), and it is that machine's: the binding is the host's own
-    got.link = { id, seats: [...inv.seats], bound: inv.seats.length > 0, machine: inv.machine, key: peerKey };
-    return { ...cur, [key]: { ...inv, used_at: iso(now), link: id } };
+    throw authError('this invite is unknown or was used already; ask the host for a new one', 'INVITE_UNKNOWN'); // an admission's key is never a secret's
   });
-  const { link: l, err, handoff, adm } = got;
+  const { link: l, err, adm } = got;
   if (err) throw err;
   if (!l) throw new Error('the invites update ended with no link and no error'); // every path without err sets link
   // an admission's machine: the one its joiner's machine key proves, else the reported one, checked
   const made = hostLinks.create(store, { id: l.id, machine: l.machine, seats: l.seats, bound: l.bound, label: machine, key: l.key, check: !!adm && !proven, now });
-  return { ...made, handoff, ...(adm ? { admission: adm } : {}) };
+  return { ...made, ...(adm ? { admission: adm } : {}) };
 }
 
 /**
@@ -234,7 +183,7 @@ function mintInvite(store: AuthStore, { kind, locator, by = null, now = Date.now
   if (!(KINDS as readonly string[]).includes(kind)) throw new RoomError('INVALID', `no invite over "${kind}"`);
   const raw = crypto.randomBytes(16);
   const secret = raw.toString('base64url');
-  const pin = newPin(4);
+  const pin = newPin();
   const made: { out: { ref: string; expires_at: string } | null } = { out: null }; // set in the update
   store.kv.update(INVITES_KEY, (cur: Invites | null) => {
     const live = Object.values(cur ?? {}).filter(i => inviteOpen(i, now));
@@ -247,24 +196,6 @@ function mintInvite(store: AuthStore, { kind, locator, by = null, now = Date.now
   });
   if (!made.out) throw new Error('the invites update did not run'); // it ran (or threw)
   return { secret: raw, pin, ...made.out };
-}
-
-// ---------- the sh2 invite string (bound invites: a handoff's, a promote's) ----------
-function formatInvite({ code, locator, secret, hostKey = null }: { code: RoomCode; locator: string; secret: string; hostKey?: string | null }): InviteSecret {
-  const invite = [INVITE_PREFIX, code, Buffer.from(locator).toString('base64url'), secret, hostKey || '0'].join('.');
-  if (!secretMod.isInviteSecret(invite)) throw new RoomError('INVALID', 'not an sh2 invite'); // mintFor's always is
-  return invite;
-}
-
-function parseInvite(text: unknown): ParsedInvite | null {
-  const parts = typeof text === 'string' ? text.trim().split('.') : [];
-  if (parts[0] !== INVITE_PREFIX || parts.length !== 5) return null;
-  const [, code = '', loc = '', secret = '', hk = ''] = parts; // five parts
-  if (!/^[A-Za-z0-9_-]+$/.test(loc)) return null;
-  const locator = Buffer.from(loc, 'base64url').toString('utf8');
-  if (!isRoomCode(code) || !locator || !SECRET_RE.test(secret)) return null;
-  if (hk !== '0' && !HOST_KEY_RE.test(hk)) return null;
-  return { v: 2, code, locator, secret, hostKey: hk === '0' ? null : hk };
 }
 
 const inviteRef = (secret: string): string => sha256(secret).slice(0, 12);
@@ -317,7 +248,7 @@ function burnFor(store: AuthStore, id: string, { now = Date.now() }: { now?: num
 const reserves = (store: AuthStore, id: string): boolean => Object.values(store.kv.get<Invites>(INVITES_KEY, null) ?? {}).some(inv => inv.link === id);
 
 export {
-  INVITE_PREFIX, PIN_RE, SHORT_PIN_RE, INVITES_KEY, mintFor, redeemInvite, formatInvite, parseInvite, inviteRef, findInvite,
-  burnInvite, burnFor, reserves, mintInvite, inviteOpen, admissionSlot, isPin, isShortPin, isPromotePin,
+  SHORT_PIN_RE, INVITES_KEY, redeemInvite, inviteRef, findInvite,
+  burnInvite, burnFor, reserves, mintInvite, inviteOpen, admissionSlot, isPin, isShortPin,
 };
 export type { Redeemed, Asked };

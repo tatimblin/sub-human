@@ -44,7 +44,7 @@ import * as seatsMod from '../seats.ts';
 import * as ioMod from '../io.ts';
 import * as configMod from '../config.ts';
 import type { LinkSpec } from './types-rest.ts';
-import type { InviteRecord, Invites, ParsedInvite, ShortInvite } from './types-core.ts';
+import type { InviteRecord, Invites, ShortInvite } from './types-core.ts';
 import type { Link, RoomStore } from '../room/types.ts';
 import type { Pinned } from '../commands/types.ts';
 import type { RoomCode, SeatName, InviteSecret, Pin } from '../brand.ts';
@@ -300,37 +300,6 @@ function kick(code: RoomCode, name: string): Ended {
 }
 
 // ---------- the joiner ----------
-/**
- * The link file's transport for an sh2 invite (a handoff's follower, a demote). Over ssh: the person's own ssh login to
- * the new host (a login spec; mux carried over from cur, and its remote home when cur reached the same destination).
- * Over ws/wss: the listener's X25519 key the invite carries, and a fresh key of the link's own (XK). null for a
- * locator this machine cannot use.
- */
-function linkTransport({ inv, cur = null }: { inv: ParsedInvite; cur?: Link | null }): LinkSpec | null {
-  const transport = linkConnect.transportOf(inv.locator);
-  if (!transport) return null;
-  const prev: { kind?: string; user?: string; host?: string; port?: unknown; mux?: boolean; remoteHome?: string } = (cur && cur.transport) ?? {};
-  if (transport.kind === 'ssh') {
-    const sameDest = prev.kind === 'ssh' && prev.user === transport.user && prev.host === transport.host && prev.port === transport.port;
-    const at = `${transport.user}@${transport.host}${transport.port ? `:${transport.port}` : ''}`;
-    const spec = sshT().loginSpec(at, { ...(transport.via ? { via: transport.via } : {}), ...(sameDest && prev.remoteHome ? { home: prev.remoteHome } : {}) });
-    if (!spec) return null;
-    return prev.mux === true ? { ...spec, mux: true } : spec;
-  }
-  if (transport.kind === 'wss' || transport.kind === 'ws') { // the listener's X25519 key, pinned; the link's own key (XK)
-    if (!inv.hostKey) throw new RoomError('INVALID', 'this web invite pins no host key; ask the host for a new one');
-    return { ...transport, hostKey: inv.hostKey, clientKey: linkConnect.linkKey(inv.code, { fresh: true }).pub.toString('base64url') };
-  }
-  return transport;
-}
-
-function joinInvite({ inv, invite, pin }: { inv: ParsedInvite; invite: InviteSecret; pin?: Pin }): { code: RoomCode } {
-  const transport = linkTransport({ inv, cur: links.get(inv.code) });
-  if (!transport) throw new RoomError('INVALID', `this invite reaches its room through "${inv.locator.split(':')[0]}", which this machine cannot use`);
-  links.set(inv.code, { code: inv.code, transport, invite, pin, created_at: new Date().toISOString() });
-  return { code: inv.code };
-}
-
 /** The PIN steps the host answered, from the link file and the daemon's stop (PIN_NEEDED, PIN_WRONG, PIN_THROTTLED). */
 const PIN_REASONS: ReadonlySet<string> = new Set(['PIN_NEEDED', 'PIN_WRONG', 'PIN_THROTTLED']);
 
@@ -395,5 +364,5 @@ function givePin(code: RoomCode, pin: Pin): void {
 }
 
 export {
-  hostInvite, inviteText, invitePinned, cancelInvite, kick, linkTransport, joinInvite, joinLine, givePin, outcome, joinText, shimReady, remoteLogin,
+  hostInvite, inviteText, invitePinned, cancelInvite, kick, joinLine, givePin, outcome, joinText, shimReady, remoteLogin,
 };

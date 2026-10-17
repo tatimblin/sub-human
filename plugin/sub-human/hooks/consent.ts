@@ -8,7 +8,7 @@
  * review lock (proposal.withReview), runs the effects, stores the state (members/NAME/review, members/NAME/confirm)
  * and writes the answer.
  *
- * The cards (a join request's, the handoff's, the note's and the fallback consent card) are read through
+ * The cards (a join request's, the note's and the fallback consent card) are read through
  * lib/consent/card.ts answerCard: only the person's answer on the card as the hooks built it counts.
  *
  * The plan file: cc.planFile, Claude Code's own record of it (the transcript's plan_mode attachment), or the path
@@ -33,12 +33,11 @@ import * as ccEnv from '../lib/cc/env.ts';
 import { writeFileAtomic } from '../lib/io.ts';
 import * as config from '../lib/config.ts';
 import * as env from '../lib/env.ts';
-import * as handoff from '../lib/handoff.ts';
 import * as envelope from '../lib/room/envelope.ts';
 import * as roomStore from '../lib/room/store.ts';
 import * as admission from '../lib/remote/admission.ts';
 import type { AnyHookIn, CardQuestion, HookOutput, Recorded } from './types.ts';
-import type { Card, HandoffAskDoc, Proposal, Review } from '../lib/types-app.ts';
+import type { Card, Proposal, Review } from '../lib/types-app.ts';
 import type { AdmissionRequest } from '../lib/remote/admission.ts';
 import type { Identity } from '../lib/identity.ts';
 import type { ConsentEffect, ConsentEvent, Pending, Say, State, Target } from '../lib/consent/review.ts';
@@ -62,7 +61,7 @@ const POST_TOOL = /^mcp__plugin_sub-human_room__post$/;
 /** The output helpers (hooks/reply.ts), the seat, the room and identity: what this file calls `c.`. */
 const c = { ...reply, whoami, room, identity };
 
-/** A one-question card's question (confirmCard, the handoff's and the admission's cards each build exactly one). */
+/** A one-question card's question (confirmCard and the admission's card each build exactly one). */
 function firstQuestion(cd: Card): Card['questions'][number] {
   const [q] = cd.questions;
   if (!q) throw new Error('a card with no question'); // never: each builder writes one
@@ -167,11 +166,6 @@ function onlyPending(pending: Proposal[], call: Call): Proposal[] {
   if (!only || pending.length !== 1 || !/propos/i.test(call.text)) return [];
   return call.words.some(t => /[a-f]/.test(t) && /\d/.test(t) && !only.hash.startsWith(t)) ? [] : pending;
 }
-/** The handoff waiting for me, when this card call is about it (it says "handoff", or carries the card's question). */
-function handoffAsked(me: Identity, call: Call): HandoffAskDoc | null {
-  const a = handoff.pendingAsk(me.code, me.name);
-  return a && (/handoff/i.test(call.text) || call.text.includes(handoff.question(a, me.code))) ? a : null;
-}
 /** A join request waiting for me on the host, when this card call is about it (it names its ref, or carries the card's
  * question, or says "admit" while exactly one waits). */
 function admitAsked(me: Identity, call: Call): JoinRequest | null {
@@ -183,7 +177,7 @@ function admitAsked(me: Identity, call: Call): JoinRequest | null {
 }
 
 // ---------- running a step ----------
-type Out = { say: Say | null; show?: { admit?: JoinRequest | undefined; handoff?: HandoffAskDoc | null | undefined; card?: Proposal[] } };
+type Out = { say: Say | null; show?: { admit?: JoinRequest | undefined; card?: Proposal[] } };
 
 
 /** The seat's state, reduce one event (made from it), run the effects, store the state, write the answer. */
@@ -248,7 +242,6 @@ function write(input: ConsentIn, me: Identity, say: Say, state: State, answers: 
       if ('plan' in s) return c.pre('ask', say.text, { updatedInput: { plan: proposal.read(me.code, s.plan) } });
       if ('note' in s) return state.note && c.pre('ask', say.text, { updatedInput: proposal.confirmCard(state.note) });
       if ('admit' in s && show.admit) return c.pre('ask', `room ${me.code}: ${show.admit.name} asks to join`, { updatedInput: admission.card(show.admit, me.code) });
-      if ('handoff' in s && show.handoff) return c.pre('ask', `room ${me.code}: ${show.handoff.from} asks ${me.name} to host it`, { updatedInput: handoff.card(show.handoff, me.code) });
       if ('card' in s && show.card) return c.pre('ask', say.text, { updatedInput: proposal.cardFor(show.card, me.code) });
     }
   }
@@ -258,7 +251,6 @@ function write(input: ConsentIn, me: Identity, say: Say, state: State, answers: 
 function preAsk(input: ConsentIn, me: Identity) {
   const call = callOf(input.tool_input);
   const ad = admitAsked(me, call);
-  const ho = ad ? null : handoffAsked(me, call);
   const pending = proposal.pendingFor(me);
   let hit = named(pending, call);
   if (!hit.length) hit = onlyPending(pending, call);
@@ -267,14 +259,14 @@ function preAsk(input: ConsentIn, me: Identity) {
     const q = cf ? proposal.confirmQuestion(cf) : null;
     const qs = input.tool_input && input.tool_input.questions;
     const noteNamed = !!cf && ((Array.isArray(qs) && qs.some(x => x && x.question === q)) || call.tokens.some(t => cf.hash.startsWith(t)));
-    return { type: 'ask', admit: ad ? ad.ref : null, handoff: !!ho, noteNamed,
+    return { type: 'ask', admit: ad ? ad.ref : null, noteNamed,
       live: !!cf && proposal.answerableFor(me).some(p => p.hash === cf.hash), hit: pendingOf(me, hit), reviewable: reviewable(input) };
-  }, { admit: ad ?? undefined, handoff: ho ?? undefined, card: hit });
+  }, { admit: ad ?? undefined, card: hit });
 }
 
 function postAsk(input: ConsentIn, me: Identity) {
   const r = responseOf(input);
-  if (postAdmit(input, me, r) || postHandoff(input, me, r)) return;
+  if (postAdmit(input, me, r)) return;
   const asked = [...(Array.isArray(r.questions) ? r.questions as CardQuestion[] : []), ...((input.tool_input && input.tool_input.questions) ?? [])]
     .some(q => q && proposal.QUESTION_RE.test(String(q.question)));
   const keys = r.answers && typeof r.answers === 'object' ? Object.keys(r.answers).filter(k => proposal.QUESTION_RE.test(k)) : [];
@@ -290,27 +282,6 @@ function postAsk(input: ConsentIn, me: Identity) {
       return { hash, answer: card.answerCard({ question: k, options }, r, input.tool_input, { exact: false }), live: answerable.some(p => p.hash === hash) };
     }),
   }));
-}
-
-/** Post(AskUserQuestion) for the handoff card: "Host it here" moves the room here (lib/handoff.ts accept), "Not now"
- * refuses; AFK or another answer records nothing. False when the call was not the handoff card. */
-function postHandoff(input: ConsentIn, me: Identity, r: ToolResponse): boolean {
-  const a = handoff.pendingAsk(me.code, me.name);
-  if (!a) return false;
-  const got = card.answerCard(firstQuestion(handoff.card(a, me.code)), r, input.tool_input);
-  if (got.kind === 'absent') return false;
-  const say = (t: string, top?: HookOutput) => c.context('PostToolUse', t, top);
-  const S = review.SAY;
-  if (got.kind !== 'answer') return say(S.handoffNoAnswer(me.name)), true;
-  if (got.label === handoff.NO) {
-    const res = handoff.refuse(me);
-    return say(res.ok ? S.handoffDeclined(me.name, me.code, a.from) : S.handoffUntold(me.name, String(res.error))), true;
-  }
-  const res = handoff.accept(me, { cwd: input.cwd, sign: (p: Record<string, unknown>) => envelope.sign(p, roomStore.humanKey(me.code, me.name), { room: me.code, from: me.name }) });
-  if (!res.ok) return say(S.handoffFailed(me.name, String(res.error)), { systemMessage: `sub-human: room ${me.code} did not move here: ${res.error}` }), true;
-  say(S.handoffMoved(me.name, me.code),
-    { systemMessage: `sub-human: room ${me.code} is hosted on this machine now, and its Claude runs on your Claude account. Keep this machine reachable for the others${res.note}` });
-  return true;
 }
 
 /** Post(AskUserQuestion) for a join request's card (lib/remote/admission.ts): "Let in" admits the machine (signed with

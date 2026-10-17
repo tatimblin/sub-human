@@ -38,7 +38,7 @@ type Relay = (op: string, params: { [field: string]: unknown }) => Promise<unkno
 const storeMod = lazy<typeof StoreMod>(import.meta.url, '../room/store.ts');
 const linksMod = lazy<typeof LinksMod>(import.meta.url, '../room/links.ts');
 const BIN = path.join(import.meta.dirname, '..', '..', 'scripts', 'sub-human');
-const RELAY: ReadonlySet<string> = new Set(['join', 'leave', 'beat', 'append', 'blob.get', 'blob.put', 'handoff.accept', 'handoff.refuse']);
+const RELAY: ReadonlySet<string> = new Set(['join', 'leave', 'beat', 'append', 'blob.get', 'blob.put']);
 const SUN_PATH_MAX = 103; // a unix socket's path: 104 bytes on macOS with its NUL (108 on Linux)
 const STOPPED: ReadonlySet<unknown> = new Set(['fork', 'stopped']);
 

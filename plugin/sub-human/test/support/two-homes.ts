@@ -10,11 +10,9 @@
  *     lease(seat)                     the hooks module's hello lease for the seat's session (with its nonce), as
  *                                     hooks/handlers/mod-hello.ts writes it; join and every prompt write it first
  *     join(seat, args), say(seat, text), plain(seat, text)          the join expansion; an @room post; a prompt
- *     inviteFor(code, joiner) -> string   a bound invite (no PIN, no card: lib/remote/invites.ts mintFor) to a room
- *                                     hosted here, for the second home `joiner` (no command makes one with no card;
- *                                     the robustness tests link with it)
- *     linkInvite(code, invite)        this machine's link file for that invite; then join(seat, `NAME CODE`) takes
- *                                     the seat over it
+ *     linkFor(code, joiner)           a link to a room hosted here for the second home `joiner`, its token written
+ *                                     to the joiner's link file (no invite, no PIN, no card: no command makes one;
+ *                                     the robustness tests link with it); then joiner.join(seat, `NAME CODE`)
  *     joinVia(host, hostSeat, seat, {as?, line?, pin?, invite?}) -> Promise<{shown, line, code, pin, typed, gave, admitted, seated}>
  *                                     (once seated, it waits until the seat resolves here: the mirror's members)
  *                                     the whole join from a second home: `/sub-human invite --pipe` (or invite: other
@@ -38,14 +36,14 @@ import * as h from '../helpers.ts';
 import type { HookInput, HookLine } from '../hooks/helpers.ts';
 import { must } from './must.ts';
 import * as identity from '../../lib/identity.ts';
-import * as invites from '../../lib/remote/invites.ts';
+import * as hostLinks from '../../lib/remote/host-links.ts';
 import * as store from '../../lib/room/store.ts';
 import * as links from '../../lib/room/links.ts';
 import * as homeMod from '../../lib/home.ts';
 import * as linkConnect from '../../lib/remote/link-connect.ts';
 import * as admission from '../../lib/remote/admission.ts';
 import * as linkSocket from '../../lib/remote/link-socket.ts';
-import type { RoomCode, InviteSecret } from '../../lib/brand.ts';
+import type { RoomCode } from '../../lib/brand.ts';
 import { roomCode } from '../../lib/text.ts';
 
 const PROBE = path.join(import.meta.dirname, 'worker-probe.ts');
@@ -64,7 +62,7 @@ class Machine {
 
   constructor(t: TestContext | undefined, name: string, env: Env = {}) {
     // first, so it runs before the home is removed (after hooks run in order): a web listener this home started
-    // (host --tailscale / --url, a handoff to a web locator) is killed, not left serving a deleted home
+    // (host --tailscale / --url) is killed, not left serving a deleted home
     if (t) t.after(() => this.killListener());
     this.home = h.tmpDir(`sh-${name}-`, t);
     this.user = h.tmpDir('sh-user-', t);
@@ -93,19 +91,13 @@ class Machine {
   }
 
   join(seat: Seat, args: string): MachineRun { this.lease(seat); return this.hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: args }, seat); }
-  /** A bound invite (no PIN, no card) to room code hosted here, for the second home `joiner` on this machine (pipe). */
-  inviteFor(code: RoomCode, joiner: Machine): InviteSecret {
-    const machine = must(joiner.lib(() => homeMod.machineId()), "the joiner's machine id");
-    return this.lib(() => invites.mintFor(store.open(code), { locator: `pipe:${this.home}`, machine, seats: [] }).invite);
-  }
-
-  /** This machine's link file for that invite (the join over it is then `NAME CODE`). */
-  linkInvite(code: RoomCode, invite: InviteSecret): void {
-    const inv = invites.parseInvite(invite);
-    if (!inv) throw new Error(`not an invite: ${invite}`);
-    const transport = linkConnect.transportOf(inv.locator);
-    if (!transport) throw new Error(`no transport for ${inv.locator}`);
-    this.lib(() => links.set(code, { code, transport, invite, created_at: new Date().toISOString() }));
+  /** A link (no invite, no PIN, no card) to room code hosted here, for the second home `joiner` on this machine (pipe):
+   * the joiner's link file holds its token (the join over it is then `NAME CODE`). */
+  linkFor(code: RoomCode, joiner: Machine): void {
+    const machine = must(joiner.lib(() => homeMod.machineIn(code)), "the joiner's machine id");
+    const { token } = this.lib(() => hostLinks.create(store.open(code), { id: hostLinks.newLinkId(), machine, seats: [] }));
+    const transport = must(linkConnect.transportOf(`pipe:${this.home}`), 'the pipe transport');
+    joiner.lib(() => links.set(code, { code, transport, token, created_at: new Date().toISOString() }));
   }
 
   /** The whole join from this (second) home: the host's invite line and its PIN, typed here, the host's admit, then the seat. */

@@ -62,8 +62,8 @@ const TABLE: { name: string; random?: () => number; run(r: ReturnType<typeof rig
     name: 'a failed first dial: offline with the reason, a retry after the jittered delay, attempts counted',
     run(r) {
       r.dispatch({ type: 'start' });
-      const out = r.dispatch({ type: 'dialFailed', dial: 1, error: { ...off(), reason: null }, offline: 'the host is unreachable' });
-      assert.deepEqual([r.st.phase, r.st.reason, r.st.lastError, r.st.retrying], ['offline', 'the host is unreachable', 'no route to host', true]);
+      const out = r.dispatch({ type: 'dialFailed', dial: 1, error: { ...off(), reason: null } });
+      assert.deepEqual([r.st.phase, r.st.reason, r.st.lastError, r.st.retrying], ['offline', 'no route to host', 'no route to host', true]);
       assert.deepEqual(r.of(out, 'setTimer'), [{ type: 'setTimer', name: 'retry', ms: 1000 }], 'random 0: the base delay');
       r.c.advance(999);
       assert.equal(r.st.dial, null);
@@ -186,16 +186,6 @@ const TABLE: { name: string; random?: () => number; run(r: ReturnType<typeof rig
       r.dialOk(2);
       r.dispatch({ type: 'lost', conn: 2, error: { code: 'FORK', reason: 'LOG_RESET', message: 'the host log was reset' } });
       assert.deepEqual([r.st.phase, r.st.why], ['fork', 'LOG_RESET']);
-    },
-  },
-  {
-    name: 'the room moved: offline with its reason, and a redial now',
-    run(r) {
-      r.dispatch({ type: 'start' });
-      r.dialOk(1);
-      const out = r.dispatch({ type: 'movedAway', conn: 1 });
-      assert.deepEqual([r.st.phase, r.st.reason, r.st.dial], ['offline', 'the room moved; reconnecting to its new host', 2]);
-      assert.deepEqual(r.of(out, 'close'), [{ type: 'close', conn: 1 }]);
     },
   },
   {

@@ -11,9 +11,6 @@
  * Size caps (lib/config.ts): text <= ENTRY_TEXT_MAX_BYTES UTF-8 bytes, refs <= ENTRY_REFS_MAX, approvers and
  * blockedBy <= ENTRY_LIST_MAX, any other string field <= ENTRY_STR_MAX (JS .length) (narrower caps below win).
  * member_joined may carry pubkey (the seat's Ed25519 SPKI PEM, which pins it: lib/room/envelope.ts) and machine.
- * host_changed (via system; lib/handoff.ts) moves the room's authority: epoch is one more than the last; locator is
- * how members reach the new host (an invite's locator); accept is the new host seat's signed acceptance (a planned
- * handoff), ask the old host seat's signed request; promoted: a manual promote, the old host unreachable.
  * append() also refuses a serialized line over LOG_LINE_MAX_BYTES.
  */
 
@@ -22,15 +19,15 @@ import type { Reason } from '../reasons.ts';
 import { markCoded } from '../errors.ts';
 import type { WireCode } from '../remote/types-core.ts';
 import { ENTRY_TEXT_MAX_BYTES, ENTRY_REFS_MAX, ENTRY_STR_MAX, ENTRY_LIST_MAX } from '../config.ts';
-import type { Entry, EntryInput, EntryOf, HostFields, Kind, KnownEntry, KnownKind, TaskFields, TaskOp, Validated, ValidateOpts, Via } from './types.ts';
+import type { Entry, EntryInput, EntryOf, Kind, KnownEntry, KnownKind, TaskFields, TaskOp, Validated, ValidateOpts, Via } from './types.ts';
 import type { EntryId, TaskId } from '../brand.ts';
 
 // The tables are the source of their unions (lib/room/types.ts Via, Kind, TaskOp), on lib/reasons.ts's
 // pattern: a word added here is a member there, and every switch over it must handle it.
 const AGENT_KINDS = ['say', 'question', 'status', 'proposal', 'task_req'] as const;
 const HUMAN_KINDS = ['say', 'signoff', 'objection', 'proposal'] as const;
-const SYSTEM_ONLY_KINDS = ['decision', 'member_joined', 'member_left', 'task', 'host_changed'] as const;
-const SYSTEM_KINDS: readonly ["decision", "member_joined", "member_left", "task", "host_changed", "status"] = [...SYSTEM_ONLY_KINDS, 'status'] as const;
+const SYSTEM_ONLY_KINDS = ['decision', 'member_joined', 'member_left', 'task'] as const;
+const SYSTEM_KINDS: readonly ["decision", "member_joined", "member_left", "task", "status"] = [...SYSTEM_ONLY_KINDS, 'status'] as const;
 const TASK_OPS = ['add', 'claim', 'release', 'done'] as const;
 const VIAS = ['human', 'agent', 'system'] as const;
 const KINDS: readonly Kind[] = [...new Set([...AGENT_KINDS, ...HUMAN_KINDS, ...SYSTEM_KINDS])];
@@ -57,15 +54,14 @@ const isKindOf = <K extends KnownKind, E extends Entry>(e: E | null | undefined,
 
 /** a hash a caller may name: 6-64 hex (a proposal's is 12, lib/text.ts HASH_RE; older logs hold longer ones) */
 const HASH_ARG_RE = /^[0-9a-f]{6,64}$/;
-const HOST_FIELDS = ['epoch', 'host', 'locator', 'accept', 'ask', 'promoted'];
 const TASK_FIELDS = ['op', 'task_id', 'subject', 'detail', 'evidence', 'owner', 'status', 'req', 'blockedBy'];
 const ENTRY_FIELDS = new Set(['kind', 'text', 'to', 'refs', 'hash', 'approvers', 'same', 'path', 'proposal_hash', 'normalized',
-  'edit_path', 'drafted', 'id', 'by', 'pubkey', 'machine', ...HOST_FIELDS, ...TASK_FIELDS]);
+  'edit_path', 'drafted', 'id', 'by', 'pubkey', 'machine', ...TASK_FIELDS]);
 const TASK_KINDS: ReadonlySet<unknown> = new Set(['task_req', 'task']);
 const PEM_RE = /^-----BEGIN PUBLIC KEY-----\n[A-Za-z0-9+/=\n]{1,512}-----END PUBLIC KEY-----\n$/;
 
 /**
- * A room error, code: INVALID | RATE | LOCK | NO_ROOM | AUTH | STALE | HOST_ONLY, and over a link the protocol's codes
+ * A room error, code: INVALID | RATE | LOCK | NO_ROOM | AUTH | HOST_ONLY, and over a link the protocol's codes
  * (lib/remote/protocol.ts CODES, the WireCode union's source: OFFLINE, FORK, PROTOCOL, ...). reason: which one exactly
  * (lib/reasons.ts, REASON_CODE pairs each with its code), for code that decides; the message is for people. unknown: an
  * OFFLINE whose op went out (it may land; reason UNKNOWN_OUTCOME). note: a line for the room beside the refusal (an
@@ -147,11 +143,10 @@ function validate(entry: EntryInput, opts: ValidateOpts): Validated {
   if (kind === 'objection' && via === 'human' && !proposal_hash) bad('a human objection requires proposal_hash');
   if (kind === 'decision' && !proposal_hash) bad('decision requires proposal_hash');
   if (kind !== 'member_joined' && pubkey !== undefined) bad('pubkey is only for member_joined');
-  if (kind !== 'member_joined' && kind !== 'host_changed' && machine !== undefined) bad('machine is only for member_joined and host_changed');
-  const host = hostFields(kind, entry);
+  if (kind !== 'member_joined' && machine !== undefined) bad('machine is only for member_joined');
   if (pubkey !== undefined && (typeof pubkey !== 'string' || !PEM_RE.test(pubkey))) bad('pubkey must be a PEM public key');
   if (machine !== undefined && !isMachineId(machine)) bad('invalid machine id');
-  return { via, kind, text, to, refs, hash, approvers, same, path: ppath, proposal_hash, normalized, edit_path, drafted, task, pubkey, machine, host };
+  return { via, kind, text, to, refs, hash, approvers, same, path: ppath, proposal_hash, normalized, edit_path, drafted, task, pubkey, machine };
 }
 
 /** A proposal's same groups, checked: disjoint groups of 2+ of its approvers, ENTRY_LIST_MAX names in all. */
@@ -166,30 +161,6 @@ function sameField(kind: string, same: unknown, approvers: string[] | undefined)
   if (new Set(names).size !== names.length) bad('same names a seat twice');
   if (!names.every(n => approvers && approvers.includes(n))) bad('same names only approvers');
   return same as string[][];
-}
-
-const PROOF_MAX = 4096; // a signed acceptance or request, as JSON
-/** The host_changed fields, checked (null for another kind, which may carry none of them). */
-function hostFields(kind: string, entry: EntryInput): HostFields | null {
-  if (kind !== 'host_changed') {
-    for (const k of HOST_FIELDS) if ((entry as Record<string, unknown>)[k] !== undefined) bad(`field "${k}" is only for host_changed`);
-    return null;
-  }
-  const { epoch, host, machine, locator, accept, ask, promoted } = entry;
-  if (typeof epoch !== 'number' || !Number.isInteger(epoch) || epoch < 1) bad('host_changed needs epoch, a positive integer');
-  if (typeof host !== 'string' || !NAME_RE.test(host)) bad('host_changed needs host, the new host\'s seat name');
-  if (!isMachineId(machine)) bad('host_changed needs the new host\'s machine id');
-  if (typeof locator !== 'string' || !locator || locator.length > 1024) bad('host_changed needs locator');
-  for (const [k, v] of [['accept', accept], ['ask', ask]]) {
-    if (v === undefined) continue;
-    if (!v || typeof v !== 'object' || Array.isArray(v) || JSON.stringify(v).length > PROOF_MAX) bad(`invalid ${k}`);
-  }
-  if (promoted !== undefined && promoted !== true) bad('promoted must be true');
-  const out: HostFields = { epoch, host, locator };
-  if (accept !== undefined) out.accept = accept;
-  if (ask !== undefined) out.ask = ask;
-  if (promoted) out.promoted = true;
-  return out;
 }
 
 const TASK_ID_RE = /^[A-Za-z0-9_-]{1,32}$/;

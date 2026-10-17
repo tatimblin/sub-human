@@ -51,7 +51,7 @@ test('protocol: frames encode to one line; the decoder keeps partial lines and a
   assert.deepEqual(bad.map(f => [f.id, must(f.error).code]), [[null, 'PROTOCOL'], [null, 'PROTOCOL']]);
   const big = d.push('"' + 'x'.repeat(config.LINK_FRAME_MAX_BYTES + 1));
   assert.equal(must(must(big[0]).error).code, 'PROTOCOL', 'an endless line is cut off, not buffered');
-  assert.deepEqual(Object.keys(protocol.CODES).slice(4), ['OFFLINE', 'HOST_ONLY', 'AUTH', 'FORK', 'PROTOCOL', 'STALE']);
+  assert.deepEqual(Object.keys(protocol.CODES).slice(4), ['OFFLINE', 'HOST_ONLY', 'AUTH', 'FORK', 'PROTOCOL']);
 });
 
 test('transports: a memory pair carries frames both ways as lines; close fires once on both ends; send after close is a no-op', async () => {
@@ -154,22 +154,13 @@ test('flaky: seeded drops and duplicates replay the same; cutAfter closes both e
   assert.deepEqual(gb.frames.map(x => x.id), [1, 2, 3]);
 });
 
-test('auth: a bound invite is one string for one machine, redeemed once for a token; the host keeps only digests; a link writes only as its seats', t => {
+test('auth: a link\'s token is kept as a digest on the host; a link writes only as its seats; revoking it kills the token', t => {
   h.freshHome(t);
   const s = new MemoryRoomStore(CODE);
-  const { invite, secret } = invites.mintFor(s, { locator: 'pipe:node serve', machine: mid('m-remote'), seats: [] });
-  assert.match(invite, /^sh2\.otter-1234\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{22}\.0$/);
-  assert.deepEqual(invites.parseInvite(invite), { v: 2, code: CODE, locator: 'pipe:node serve', secret, hostKey: null });
-  for (const bad of ['', `sh1.otter-1234.cGlwZQ.${secret}`, 'sh2.otter-1234.cGlwZQ.' + secret, `sh2.Otter.cGlwZQ.${secret}.0`, `sh2.otter-1234..${secret}.0`,
-    'sh2.otter-1234.cGlwZQ.short.0', null, `sh2.otter-1234.cGlwZQ.${secret}.short-key`, `sh2.otter-1234.cG!wZQ.${secret}.0`]) {
-    assert.equal(invites.parseInvite(bad), null, String(bad));
-  }
-  assert.throws(() => invites.redeemInvite(s, secret, { machine: mid('m-other') }), (e: RoomError) => e.code === 'AUTH' && e.reason === 'INVITE_OTHER_MACHINE');
-  const { token, link } = invites.redeemInvite(s, secret, { machine: mid('m-remote') });
-  assert.throws(() => invites.redeemInvite(s, secret, { machine: mid('m-remote') }), (e: RoomError) => e.code === 'AUTH' && e.reason === 'INVITE_USED', 'single use');
   assert.throws(() => invites.redeemInvite(s, 'never-minted-secret-0', { machine: mid('m') }), (e: RoomError) => e.code === 'AUTH' && e.reason === 'INVITE_UNKNOWN');
-  const stored = JSON.stringify([s.kv.get(invites.INVITES_KEY), s.kv.get(hostLinks.LINKS_KEY)]);
-  assert.ok(!stored.includes(secret) && !stored.includes(token), 'only sha256 digests on the host');
+  const { token, link } = hostLinks.create(s, { id: hostLinks.newLinkId(), machine: mid('m-remote'), seats: [] });
+  const stored = JSON.stringify(s.kv.get(hostLinks.LINKS_KEY));
+  assert.ok(!stored.includes(token), 'only sha256 digests on the host');
   assert.deepEqual(hostLinks.verifyToken(s, token), link);
   assert.equal(hostLinks.verifyToken(s, 'nope'), null);
   assert.equal(hostLinks.mayWriteAs(link, 'alice'), false);
@@ -177,51 +168,9 @@ test('auth: a bound invite is one string for one machine, redeemed once for a to
   assert.deepEqual(hostLinks.bindSeat(s, link.id, 'alice'), bound, 'binding twice is one binding');
   assert.deepEqual([hostLinks.mayWriteAs(bound, 'alice'), hostLinks.mayWriteAs(bound, 'bob'), hostLinks.mayWriteAs(null, 'alice')], [true, false, false]);
   assert.throws(() => hostLinks.bindSeat(s, 'nolink', 'alice'), (e: RoomError) => e.code === 'AUTH');
-});
-
-test('auth: an sh2 invite with a PIN (a promote\'s, handed out by hand) carries the room, locator, a 128-bit secret and the host key, never the PIN; the host checks the PIN online: 5 tries, 15 minutes, burnt on success or the last try', t => {
-  h.freshHome(t);
-  const s = new MemoryRoomStore(CODE);
-  const hostKey = must(crypto.generateKeyPairSync('ed25519').publicKey.export({ format: 'jwk' }).x);
-  const t0 = Date.parse('2026-10-08T12:00:00Z');
-  const mint = (opts: { now?: number } = {}) => invites.mintFor(s, { locator: 'ssh:me@far:2222', machine: mid('m'), seats: ['bob'], pin: true, hostKey, now: t0, ...opts });
-  const a = mint();
-  assert.match(a.invite, /^sh2\.otter-1234\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/);
-  assert.match(must(a.pin), /^[0-9]{6}$/);
-  assert.ok(!a.invite.includes(must(a.pin)) || !a.invite.split('.').includes(must(a.pin)), 'the PIN is not a part of the invite');
-  assert.equal(Buffer.from(a.secret, 'base64url').length, 16, '128 bits');
-  assert.deepEqual(invites.parseInvite(a.invite), { v: 2, code: CODE, locator: 'ssh:me@far:2222', secret: a.secret, hostKey });
-  assert.equal(must(invites.parseInvite(invites.mintFor(s, { locator: 'pipe:/h', machine: mid('m'), seats: [], pin: true }).invite)).hostKey, null, 'no key: "0"');
-  const stored = JSON.stringify(s.kv.get(invites.INVITES_KEY));
-  assert.ok(!stored.includes(a.secret) && !stored.includes(`"${a.pin}"`), 'neither the secret nor the PIN in clear on the host');
-
-  // no PIN or a wrong one: a try each, and the room line the server posts; the right one redeems and burns the invite
-  const wrong = String((Number(a.pin) + 1) % 1e6).padStart(6, '0');
-  assert.throws(() => invites.redeemInvite(s, a.secret, { machine: mid('m'), now: t0 }), (e: RoomError) => e.code === 'AUTH' && /needs its PIN/.test(e.message) && /4 tries left/.test(String(e.note)));
-  assert.throws(() => invites.redeemInvite(s, a.secret, { machine: mid('m'), pin: wrong, now: t0 }), (e: RoomError) => /wrong PIN \(3 tries left\)\. Check the digits with the host, then type the join line again/.test(e.message));
-  const ok = invites.redeemInvite(s, a.secret, { machine: mid('m'), pin: a.pin, now: t0 + 60_000 });
-  assert.equal(typeof ok.token, 'string');
-  assert.throws(() => invites.redeemInvite(s, a.secret, { machine: mid('m'), pin: a.pin, now: t0 }), (e: RoomError) => /used already/.test(e.message), 'single use');
-
-  // five wrong PINs burn it: the right one no longer works
-  const b = mint();
-  const bad = String((Number(b.pin) + 7) % 1e6).padStart(6, '0');
-  for (let i = 4; i >= 1; i--) assert.throws(() => invites.redeemInvite(s, b.secret, { machine: mid('m'), pin: bad, now: t0 }), (e: RoomError) => e.message.includes(`(${i} ${i === 1 ? 'try' : 'tries'} left)`));
-  assert.throws(() => invites.redeemInvite(s, b.secret, { machine: mid('m'), pin: bad, now: t0 }), (e: RoomError) => /last try: this invite no longer works/.test(e.message) && /burnt/.test(String(e.note)));
-  assert.throws(() => invites.redeemInvite(s, b.secret, { machine: mid('m'), pin: b.pin, now: t0 }), (e: RoomError) => /this invite no longer works/.test(e.message), 'burnt, said so');
-
-  // 15 minutes: an expired invite burns, PIN or not
-  const c = mint();
-  assert.throws(() => invites.redeemInvite(s, c.secret, { machine: mid('m'), pin: c.pin, now: t0 + 15 * 60_000 + 1 }), (e: RoomError) => /expired/.test(e.message));
-  assert.throws(() => invites.redeemInvite(s, c.secret, { machine: mid('m'), pin: c.pin, now: t0 }), (e: RoomError) => /this invite no longer works/.test(e.message));
-
-  // only its machine redeems it; revoking its link kills the token
-  const d = mint();
-  assert.throws(() => invites.redeemInvite(s, d.secret, { machine: mid('other'), pin: d.pin, now: t0 }), (e: RoomError) => /another machine/.test(e.message));
-  const dl = invites.redeemInvite(s, d.secret, { machine: mid('m'), pin: d.pin, now: t0 });
-  assert.deepEqual(must(must(hostLinks.revokeLink(s, dl.link.id)).link).id, dl.link.id);
-  assert.equal(hostLinks.verifyToken(s, dl.token), null, 'the token is dead');
-  assert.equal(hostLinks.revokeLink(s, dl.link.id), null, 'nothing left to revoke');
+  assert.deepEqual(must(must(hostLinks.revokeLink(s, link.id)).link).id, link.id);
+  assert.equal(hostLinks.verifyToken(s, token), null, 'the token is dead');
+  assert.equal(hostLinks.revokeLink(s, link.id), null, 'nothing left to revoke');
 });
 
 test('auth: a seat proof is signed by the seat key for this room, name and key, and fresh', t => {

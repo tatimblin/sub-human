@@ -22,7 +22,6 @@ export const HELP: string = [
   '  /sub-human admit [ID]         (host) who is waiting to join, and the ID that lets one in (the card does the same)',
   '  /sub-human kick NAME          (host) end the connection NAME joined over',
   '  /sub-human leave              leave the room (the session stays open)',
-  '  /sub-human handoff NAME [USER@HOST [--via JUMP] | https://FRONT]   ask NAME to host the room',
   '  /sub-human doctor             what is wrong on this machine, and how to fix it (read only)',
   '  /sub-human help               this list',
   '  @room TEXT    post your exact words to the room       @claude TEXT    the same, and wake the room\'s Claude',

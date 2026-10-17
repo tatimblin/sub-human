@@ -1,7 +1,7 @@
 /**
  * plugin/sub-human/lib/consent/card.ts: the person's answer on an AskUserQuestion card the hooks built. One reading
  * for every card whose answer the hooks act on: the fallback consent card (lib/proposal.ts card), a review note's
- * confirm card (Send / Discard), the handoff card (lib/handoff.ts) and a join request's card (lib/remote/admission.ts).
+ * confirm card (Send / Discard) and a join request's card (lib/remote/admission.ts).
  * Pure: no I/O. The tool_response is Claude Code's (the person's answer in the dialog, or on the phone), never the
  * model's; the tool_input is the model's call, read only to tell which card the call was.
  *

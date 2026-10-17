@@ -39,7 +39,7 @@
  *   appendLocked reads only the log's tail (newest first, then the snapshot's window) under the log lock, writes the
  *       placed line, then rotates when due. appendVerbatim is the mirror's one writer (a line as the host stored it).
  *   install: a mirror's start from its host's snapshot (PROTOCOL when a log is there already).
- *   setAside: every line held into one file (a demoted host's); remove: every log file (a mirror's reset).
+ *   setAside: every line held into one file (a forgotten copy's); remove: every log file.
  */
 
 import nodeFs from 'node:fs';
@@ -131,7 +131,7 @@ function validSnap(x: unknown): x is LogSnapshot {
   const s = x as LogSnapshot | null;
   return !!s && s.v === 1 && isInt(s.seg) && Array.isArray(s.segs) && isInt(s.held, 1) && isInt(s.base) && isInt(s.id, 1)
     && typeof s.hash === 'string' && typeof s.line === 'string' && isInt(s.count, 1) && Array.isArray(s.entries)
-    && Array.isArray(s.window) && !!s.pins && typeof s.pins === 'object' && !!s.host && typeof s.host === 'object';
+    && Array.isArray(s.window) && !!s.pins && typeof s.pins === 'object';
 }
 /** snapshot.json as last written (parsed once per change on disk); null when absent or not a snapshot. */
 function loadSnap(dir: string): LogSnapshot | null {
@@ -872,7 +872,7 @@ function rotate(dir: string, locked = false): boolean {
     const n = (snap ? snap.seg : 0) + 1;
     next = {
       // an installed mirror's first seal starts at its anchor (the snapshot's line, this segment's carry): no earlier
-      // segment here holds it, and a subscribe at the anchor (after a handoff) asks its hash
+      // segment here holds it, and a subscribe at the anchor asks its hash
       v: 1, ...wire, seg: n, segs: [...(snap ? snap.segs : []), [n, snap && snap.seg === 0 ? snap.id : v.cp.first, wire.id]],
       held: snap ? snap.held : v.cp.first, base: snap ? snap.base : 0, at: new Date().toISOString(),
     };

@@ -30,7 +30,7 @@ function run(w: World, args: string, { seat = null, lease = true, pid = process.
 const text = (a: Answer) => (a.kind === 'joined' ? a.say : a.text);
 
 test('commands: the table names every verb; help and doctor are the open ones', () => {
-  assert.deepEqual(Object.keys(commands.TABLE).sort(), ['', 'admit', 'handoff', 'invite', 'join', 'kick', 'leave']);
+  assert.deepEqual(Object.keys(commands.TABLE).sort(), ['', 'admit', 'invite', 'join', 'kick', 'leave']);
   assert.deepEqual(Object.keys(commands.OPEN).sort(), ['doctor', 'help']);
   for (const v of [...Object.keys(commands.TABLE), ...Object.keys(commands.OPEN)].filter(Boolean)) assert.ok(identity.RESERVED.includes(v), `${v} is no name`);
 });
@@ -66,7 +66,7 @@ test('commands: the hidden rule is the router\'s: join, invite, admit or a word 
   assert.deepEqual(commands.hide(['help'], { kind: 'say', text: 'x' }), { kind: 'say', text: 'x' });
 });
 
-test('commands: leave, kick, admit, invite and handoff', t => {
+test('commands: leave, kick, admit and invite; handoff is no verb (a reserved name)', t => {
   const w = new World({ alice: 'sleep', bob: 'sleep' }, { t });
   for (const v of ['kick bob', 'invite --pipe', 'admit']) assert.match(text(run(w, v)), /join a room first/, v);
   assert.match(text(run(w, 'kick alice', { seat: 'alice' })), /that is you; \/sub-human leave leaves the room/);
@@ -79,9 +79,7 @@ test('commands: leave, kick, admit, invite and handoff', t => {
   assert.match(text(inv), /its PIN apart from the line \(say it, or send it another way\): \d{4}\n/);
   assert.match(text(run(w, 'invite --pipe --web', { seat: 'alice' })), /pick one way at a time/);
   assert.match(text(run(w, 'admit zz', { seat: 'alice' })), /usage: \/sub-human admit/);
-  assert.match(text(run(w, 'handoff')), /join a room first/);
-  assert.match(text(run(w, 'handoff', { seat: 'alice' })), /usage: \/sub-human handoff NAME/);
-  assert.match(text(run(w, 'handoff bob --via j', { seat: 'alice' })), /--via goes with the ssh address/);
+  assert.equal(run(w, 'handoff bob', { seat: 'alice' }).kind, 'refused', 'a reserved word, never a name');
   assert.match(text(run(w, 'leave now', { seat: 'alice' })), /usage: \/sub-human leave/);
   assert.deepEqual(run(w, 'leave', { seat: 'bob' }), { kind: 'say', text: `left ${w.code} · /sub-human joins again` });
   assert.ok(must(w.members().bob).left_at);

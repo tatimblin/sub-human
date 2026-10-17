@@ -1,8 +1,7 @@
 /**
  * plugin/sub-human/lib/remote/admission.ts: the host person's consent to a machine that typed an invite line and its
  * PIN. The line and the PIN proved only that the joiner holds both (lib/remote/invites.ts); nothing gets in until a
- * person on the host answers "Let in" on the card their own Claude Code shows (hooks/consent.ts, like the
- * handoff card: only the answer on the card as the hooks built it counts, never the model's), or runs `sub-human admit
+ * person on the host answers "Let in" on the card their own Claude Code shows (hooks/consent.ts: only the answer on the card as the hooks built it counts, never the model's), or runs `sub-human admit
  * REF` in a shell (headless hosts), or types `/sub-human admit REF`. Then the joiner's link redeems its invite (check,
  * below, from lib/remote/invites.ts redeemInvite): on the machine its key proved, and over the web with the Noise key
  * its PIN's connection proved. Nothing is written outside the room's own store (no authorized_keys line). The room's
@@ -18,7 +17,7 @@
 
 import { INVITES_KEY } from './invites.ts';
 import { RoomError } from '../room/validate.ts';
-import { HANDOFF_INVITE_MS } from '../config.ts';
+import { ADMIT_CARD_MS } from '../config.ts';
 import type { AdmissionRecord, AuthStore, InviteRecord, Invites } from './types-core.ts';
 import type { RoomStore } from '../room/types.ts';
 import type { Card } from '../types-app.ts';
@@ -70,7 +69,7 @@ function admissions(store: AuthStore, { now = Date.now(), all = false }: { now?:
 }
 
 /**
- * The host person's answer to an admission: 'let-in' (the joiner may redeem it for HANDOFF_INVITE_MS) or 'refused'
+ * The host person's answer to an admission: 'let-in' (the joiner may redeem it for ADMIT_CARD_MS) or 'refused'
  * (burnt). AUTH when it is not waiting any more (answered, lapsed, revoked).
  */
 function decide(store: AuthStore, ref: string, { decision, by = null, sig = null, as, now = Date.now() }: {
@@ -87,7 +86,7 @@ function decide(store: AuthStore, ref: string, { decision, by = null, sig = null
     if (now > Date.parse(inv.expires_at)) throw new RoomError('AUTH', 'that join request lapsed; send them a new invite (/sub-human invite)', 'ADMIT_LAPSED');
     const at = iso(now);
     const next: AdmissionRecord = decision === 'let-in'
-      ? { ...inv, ...(as ? { name: as, asked_as: inv.name } : {}), admit: 'let-in', admitted_at: at, admitted_by: by, ...(sig ? { admit_sig: sig } : {}), admitted_until: iso(now + HANDOFF_INVITE_MS) }
+      ? { ...inv, ...(as ? { name: as, asked_as: inv.name } : {}), admit: 'let-in', admitted_at: at, admitted_by: by, ...(sig ? { admit_sig: sig } : {}), admitted_until: iso(now + ADMIT_CARD_MS) }
       : { ...inv, admit: 'refused', refused_at: at, refused_by: by, burnt_at: at };
     got.out = { ...next, slot, ref: slot.slice(0, 12) };
     return { ...cur, [slot]: next };

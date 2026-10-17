@@ -2,7 +2,7 @@
  * plugin/sub-human/lib/remote/machine-key.ts: this home's machine key, what its links present so the host derives the
  * machine's id from a key instead of taking the id a hello reports. An Ed25519 key pair made once per home,
  * <home>/keys/machine.json (0600, beside the seat keys: the hooks module refuses a model's Read under <home>/keys). Its
- * id is the same for every room and every host, so a machine that joins again (a new invite, a handoff's new host)
+ * id is the same for every room and every host, so a machine that joins again (a new invite)
  * is the machine it was; nobody without the private key can be it.
  *
  *   proof(room, now?) -> {key, ts, sig}   key: the raw public key (base64url), sig: Ed25519 over

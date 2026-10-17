@@ -2,7 +2,7 @@
 // log.idx) opens, folds and appends unchanged, then rotates like any other; a rotation a crash cut short is finished by
 // the next append; a lost snapshot is rebuilt from the sealed segments; an older plugin's appender, which knows only
 // log.jsonl, still chains after a rotation (the carry line); a segment that does not chain is never sealed (a break is
-// never laundered into a snapshot); a demoted host's segments are set aside as one log.
+// never laundered into a snapshot); a forgotten copy's segments are set aside as one log.
 import test from 'node:test';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
@@ -168,7 +168,7 @@ test('rotation: a segment whose chain breaks is never sealed; the break stays vi
   assert.deepEqual([v.ok, v.badAt], [false, 3]);
 });
 
-test('setAside: a demoted host\'s segments become one orphaned log, every line once, in order', t => {
+test('setAside (link --forget): a copy\'s segments become one orphaned log, every line once, in order', t => {
   const { s } = room(t, 1024);
   for (let i = 0; i < 25; i++) say(s, 'alice', `m${i} ${'z'.repeat(60)}`);
   assert.ok(s.snapshot());
@@ -181,7 +181,7 @@ test('setAside: a demoted host\'s segments become one orphaned log, every line o
 });
 
 // Review finding 11: a mirror that began from its host's snapshot keeps its anchor's hash across its own rotations
-// (a subscribe at the anchor after a handoff asks it), and a lost snapshot.json there is rebuilt from the snapshot it
+// (a subscribe at the anchor asks it), and a lost snapshot.json there is rebuilt from the snapshot it
 // began from plus its segments (the host's entries before its first line survive); a tailer many rotations behind
 // reads on without a reset (a reset reads as FORK to a link).
 test('mirror from a snapshot: the anchor\'s hash after its own rotation; a lost snapshot.json keeps the installed entries', t => {

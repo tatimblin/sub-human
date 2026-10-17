@@ -51,9 +51,6 @@ export const REASON_CODE = {
   QUOTA: 'RATE', // a link's per-op quota, lib/config.ts LINK_QUOTAS
   // PROTOCOL
   SKEW: 'PROTOCOL', // the two ends speak no common protocol version: protocol.skewMessage says who updates
-  // STALE
-  MOVED_AWAY: 'STALE', // the room moved to a newer host
-  BEHIND: 'STALE', // this copy has not caught up with a host change
   // FORK
   LOG_RESET: 'FORK', // the host's log was reset under a stream
   NOT_CHAINED: 'FORK', // a line, a snapshot or `after` that is not the mirror's

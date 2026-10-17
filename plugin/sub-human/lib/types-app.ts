@@ -1,13 +1,12 @@
 /**
- * plugin/sub-human/lib/types-app.ts: shared types of the app slice (tail, rows, proposal, handoff, room-claude, tasks,
+ * plugin/sub-human/lib/types-app.ts: shared types of the app slice (tail, rows, proposal, room-claude, tasks,
  * seats, notices). Types only: nothing here exists at run time.
  *
  * The shapes other modules own (a log entry, a member record, a seat, the clock) are theirs: lib/room/types.ts,
  * lib/identity.ts, lib/clock.ts.
  */
 
-import type { Entry, HostProof, ProposalState } from './room/types.ts';
-import type { HandoffAsk } from './remote/types-core.ts';
+import type { Entry, ProposalState } from './room/types.ts';
 import type { RoomCode } from './brand.ts';
 
 // ---------- lib/room/session.ts ----------
@@ -122,29 +121,6 @@ export interface Confirm {
   /** the person was told, once, what Send and Discard do after the card closed with no answer more than once (stage 8e D) */
   explained?: true;
 }
-
-// ---------- lib/handoff.ts ----------
-/** The host document remote/handoff. */
-export interface HandoffDoc {
-  id: string;
-  state: 'asked' | 'refused' | 'moved';
-  from: string;
-  to: string;
-  epoch: number;
-  at: string;
-  expires_at: string;
-  locator?: string;
-  ask?: HostProof;
-  machine?: string;
-  host_id?: number;
-  moved_at?: string;
-  refused_at?: string;
-  invites?: Record<string, string>;
-  invites_expire_at?: string;
-}
-/** The ask as the target's machine keeps it (the session-local document `handoff`): the 'handoff' event's data,
- * when it came, and when this seat's Claude was told. */
-export type HandoffAskDoc = HandoffAsk & { at?: string; told_at?: string };
 
 // ---------- lib/tail.ts ----------
 /** The seat a tail follows, as its `seat` event names it. */

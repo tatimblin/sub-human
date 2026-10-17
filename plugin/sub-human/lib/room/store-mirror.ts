@@ -23,10 +23,10 @@
  *       op `blob.get`.
  *   kv is local (rows/*, members/NAME/*, cursors, notices, link); set/update/delete of a streamed document
  *       (members, presence/*, tasks) is HOST_ONLY.
- * The daemon (lib/remote/link.ts) is the mirror's one writer, through applyLine, applySnapshot, applyDoc, applyBlob
- * and reset (`sub-human link --reset CODE`). A line whose prev does not hash-chain to the mirror's last line, or
+ * The daemon (lib/remote/link.ts) is the mirror's one writer, through applyLine, applySnapshot, applyDoc and
+ * applyBlob. A line whose prev does not hash-chain to the mirror's last line, or
  * whose id does not follow it, is FORK and nothing is written. A snapshot is checked first (lib/room/snapshot.ts
- * problem: PROTOCOL when malformed, FORK for a head that does not hash or pins and host its entries do not give);
+ * problem: PROTOCOL when malformed, FORK for a head that does not hash or pins its entries do not give);
  * the lines after it must chain to its head: a snapshot is never repaired or merged.
  */
 
@@ -45,7 +45,7 @@ import { unknownOutcome, UNKNOWN_OUTCOME } from '../remote/protocol.ts';
 import { SEAT_BEAT_MS } from '../config.ts';
 import type { LockOpts } from '../lock.ts';
 import type {
-  AppendOpts, BlobsApi, ChainCheck, ChainVerify, Entry, EntryInput, HostState, JoinOutcome, KvApi, Members, MembersApi,
+  AppendOpts, BlobsApi, ChainCheck, ChainVerify, Entry, EntryInput, JoinOutcome, KvApi, Members, MembersApi,
   Payload, Placed, PlaceOpts, Presence, PresenceInput, ReadViewOpts, RoomStore, SeatRecord, SnapshotWire, Tailer, TailerFs, Trust,
 } from './types.ts';
 import type { KeyObject } from 'node:crypto';
@@ -119,7 +119,6 @@ class MirrorRoomStore implements RoomStore {
   getCursor(reader: string): number { return this.local.getCursor(reader); }
   setCursor(reader: string, id: number): void { this.local.setCursor(reader, id); }
   pins(): Map<string, KeyObject> { return this.local.pins(); }
-  hostState(): HostState { return this.local.hostState(); }
   setAside(): string | null { return this.local.setAside(); }
   lock<R>(name: string, fn: () => R, opts?: LockOpts): R { return this.local.lock(name, fn, opts); }
 
@@ -137,7 +136,7 @@ class MirrorRoomStore implements RoomStore {
     return 'entry' in r ? r.entry : { ...payload, queued: r.queued, ...(r.slow ? { slow: true } : {}) };
   }
 
-  /** An op the daemon relays to the host as it is (lib/handoff.ts: handoff.accept, handoff.refuse). */
+  /** An op the daemon relays to the host as it is (link-socket.ts RELAY). */
   request<M extends RelayOp>(op: M, params: RelayParams[M], opts?: { deadlineMs?: number }): RelayApi[M]['result'] { return this._call(op, params, opts); }
 
   /** The daemon's document `link` (its socket path first: lib/remote/link.ts socketPaths), null when unreadable. */
@@ -194,7 +193,7 @@ class MirrorRoomStore implements RoomStore {
     const e = decodeEntry(v);
     const last = this.local.lastId();
     if (!e || !(e.id > last) || (e.prev !== undefined && e.prev !== this.local.lineHash(last))) {
-      throw new RoomError('FORK', `the host's line ${e?.id} does not follow this mirror's line ${last}; re-mirror with sub-human link --reset ${this.code}`);
+      throw new RoomError('FORK', `the host's line ${e?.id} does not follow this mirror's line ${last}; forget this copy (sub-human link --forget ${this.code}), then join with a new invite`);
     }
     this.local.appendVerbatim(line);
     return e;
@@ -203,7 +202,7 @@ class MirrorRoomStore implements RoomStore {
   /** The host's snapshot as the start of an empty mirror (the first sync of a link to a host that sent one). */
   applySnapshot(wire: SnapshotWire): void {
     const p = problem(wire);
-    if (p) throw new RoomError(p.code, p.code === 'FORK' ? `${p.reason}; re-mirror with sub-human link --reset ${this.code}` : p.reason);
+    if (p) throw new RoomError(p.code, p.code === 'FORK' ? `${p.reason}; forget this copy (sub-human link --forget ${this.code}), then join with a new invite` : p.reason);
     if (this.local.lastId() !== 0) throw new RoomError('PROTOCOL', `the host sent a snapshot to a mirror that holds lines already (room ${this.code})`);
     this.local.installSnapshot(wire);
   }
@@ -218,9 +217,6 @@ class MirrorRoomStore implements RoomStore {
 
   /** The mirror's copy of a plan (the daemon's prefetch). */
   applyBlob(ref: string, bytes: Uint8Array): string { return this.local.blobs.put(ref, bytes); }
-
-  /** Forget everything synced (the log, its checkpoint, the streamed documents); session-local documents and plans stay. */
-  reset(): void { this.local.reset(['tasks', ...this.local.kv.list('presence/')]); }
 }
 
 export { MirrorRoomStore };

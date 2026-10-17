@@ -1,7 +1,7 @@
 /**
  * plugin/sub-human/lib/room/rules.ts: the placement rules every RoomStore shares, so the chain and the checks are the
  * same whatever the backend (the file store, a test's memory store, the host placing a mirror's payload). Pure: the
- * log's newest entries, its keys and its host come in; nothing here reads a file.
+ * log's newest entries and its keys come in; nothing here reads a file.
  *
  *   toPayload(code, entry, opts) -> Payload    the client half of append: validate() (validate.ts), then sign a
  *       via=human payload with the seat's key (trust.ts humanKey: the hook's signer). The payload then carries room,
@@ -9,10 +9,9 @@
  *   admit(code, payload, {system}) -> Payload  the server half's first step: validate() again (signed here or on
  *       another machine) and rebuild the stored form, so a field validate() would drop or reshape breaks the
  *       signature instead of landing unsigned. system: the caller may write via=system (trusted callers only)
- *   placeAfter(p, {keys, host, machine, newest, prevLine, now}) -> {e, line}   place an admitted payload after the
- *       log's newest entries (newest first; prevLine: the last line as stored): host (checkHere), rate, replay,
- *       trust (checkSigned, checkPin), then id (monotonic), at, prev (hash12 of the previous line). Throws STALE,
- *       RATE, AUTH, or INVALID for a line over LOG_LINE_MAX_BYTES. The sig covers the payload, not its place, so a
+ *   placeAfter(p, {keys, newest, prevLine, now}) -> {e, line}   place an admitted payload after the log's newest
+ *       entries (newest first; prevLine: the last line as stored): rate, replay, trust (checkSigned, checkPin), then
+ *       id (monotonic), at, prev (hash12 of the previous line). Throws RATE, AUTH, or INVALID for a line over LOG_LINE_MAX_BYTES. The sig covers the payload, not its place, so a
  *       payload signed on one machine may be placed on another.
  *   scanTail(newest, p, now) -> {last, recent, replayed}   the tail as a placement needs it (below)
  *   rates: per `from` per RATE_WINDOW_MS, agent posts to the room RATE_MAX, to one member RATE_ADDRESSED_MAX (a
@@ -22,10 +21,6 @@
  *   checkSigned(p, keys, now)    a via=human payload is the person's: v2, signed for this room, ts within
  *                                SIG_SKEW_MS of now, verified against their pinned key. RoomError AUTH
  *   checkPin(p, keys)            a member_joined pubkey pins its name at first sight; another key for it: AUTH
- *   checkHere(host, p, machine)  a log whose host_changed names another machine takes no more lines but the
- *                                host_changed that brings the room back here (a later epoch naming this machine):
- *                                STALE (lib/handoff.ts writes host_changed)
- *   hostState(entries) -> {epoch, host?, machine?, locator?, id?}   the last host_changed entry, else epoch 0
  *   normalize(e)                 a copy of e addressed to the room when it names no one
  *   CHAT_KINDS                   say, status: the kinds a view may leave out (everything else decides state)
  *   blobRef(pathOrRef), checkKey(key), checkCursor(name)   the names a store's documents, blobs and cursors take
@@ -36,7 +31,7 @@ import { hash12 } from '../text.ts';
 import { RoomError, validate, nextEntryId } from './validate.ts';
 import * as envelope from './envelope.ts';
 import { humanKey, publicKey } from './trust.ts';
-import type { Entry, EntryInput, HostState, Payload, PlaceOpts, TrustCtx, Validated, ValidateOpts } from './types.ts';
+import type { Entry, EntryInput, Payload, PlaceOpts, TrustCtx, Validated, ValidateOpts } from './types.ts';
 import type { RoomCode } from '../brand.ts';
 
 const CHAT_KINDS: ReadonlySet<string> = new Set(['say', 'status']);
@@ -70,7 +65,6 @@ function fieldsOf(v: Validated, from: string): Payload {
   if (v.drafted) p.drafted = v.drafted;
   if (v.pubkey) p.pubkey = v.pubkey;
   if (v.machine) p.machine = v.machine;
-  if (v.host) Object.assign(p, v.host);
   if (v.text !== undefined) p.text = v.text;
   return p;
 }
@@ -139,40 +133,16 @@ function checkPin(p: Payload, keys: Pick<TrustCtx, 'code' | 'pins'>): void {
   if (pinned && !pinned.equals(key)) throw auth(`${p.from} is pinned to another key in room ${keys.code}; a lost key means a new name`);
 }
 
-// ---------- the host ----------
-function hostState(entries: Iterable<Entry | null | undefined> | null | undefined): HostState {
-  let h: HostState = { epoch: 0 };
-  for (const e of entries ?? []) h = hostStep(h, e);
-  return h;
-}
-/** hostState one entry further. */
-function hostStep(h: HostState, e: Entry | null | undefined): HostState {
-  if (e && e.kind === 'host_changed' && e.via === 'system' && typeof e.epoch === 'number' && Number.isInteger(e.epoch) && e.epoch > h.epoch) {
-    return { epoch: e.epoch, host: e.host, machine: e.machine, locator: e.locator, id: e.id };
-  }
-  return h;
-}
-
-function checkHere(h: HostState, p: Payload, machine: string | null | undefined, code: RoomCode): void {
-  if (!h.machine || h.machine === machine) return;
-  if (p.kind === 'host_changed' && p.machine === machine && p.epoch !== undefined && p.epoch > h.epoch) return;
-  throw new RoomError('STALE', `room ${code} moved to ${h.host}'s machine (epoch ${h.epoch}); this machine's copy takes no more lines`);
-}
-
 // ---------- placing ----------
 interface PlaceCtx {
   /** the room's keys (TrustCtx: its code and pinned keys) */
   keys: TrustCtx;
-  /** who holds the room by its log; with machine, checkHere runs first */
-  host?: HostState | undefined;
-  machine?: string | null;
   newest: Iterable<Entry>;
   prevLine: string;
   now: number;
 }
 
-function placeAfter(p: Payload, { keys, host, machine, newest, prevLine, now }: PlaceCtx): { e: Entry; line: string } {
-  if (host) checkHere(host, p, machine, keys.code);
+function placeAfter(p: Payload, { keys, newest, prevLine, now }: PlaceCtx): { e: Entry; line: string } {
   const t = scanTail(newest, p, now);
   if (rated(p) && t.recent >= rateMax(p)) {
     const to = bucket(p) === 'room' || bucket(p) === 'human' ? '' : ` to ${p.to}`;
@@ -207,7 +177,7 @@ const CURSOR_RE = /^[A-Za-z0-9_.-]{1,64}$/;
 const checkCursor = (name: string): string => { if (!CURSOR_RE.test(name)) throw new RoomError('INVALID', `invalid cursor name "${name}"`); return name; };
 
 export {
-  RoomError, CHAT_KINDS, KEY_SEG, BLOB_RE, normalize, fieldsOf, toPayload, admit, scanTail, checkSigned, checkPin, checkHere,
-  hostState, hostStep, placeAfter, checkKey, blobRef, checkCursor, hash12,
+  RoomError, CHAT_KINDS, KEY_SEG, BLOB_RE, normalize, fieldsOf, toPayload, admit, scanTail, checkSigned, checkPin,
+  placeAfter, checkKey, blobRef, checkCursor, hash12,
 };
 export type { PlaceCtx };

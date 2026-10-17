@@ -1,35 +1,35 @@
 // lib/consent/card.ts answerCard: the one reading of the person's answer on a card the hooks built (the consent
-// card, a note's confirm card, the handoff card, a join request's card).
+// card, a note's confirm card, a join request's card).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { answerCard } from '../lib/consent/card.ts';
 import type { CardSpec } from '../lib/consent/card.ts';
 
-const HOST = { label: 'Host it here', description: 'alice asks to move the room here.' }, NOT_NOW = { label: 'Not now', description: 'alice stays the host.' };
-const SPEC: CardSpec = { question: 'Host room vole-8126 on this machine? (handoff 3f9c2a)', options: [HOST, NOT_NOW] };
-const shown = (over: Partial<CardSpec> = {}) => ({ ...SPEC, header: 'Handoff', multiSelect: false, ...over });
+const LET_IN = { label: 'Let in', description: 'carol joins the room from her machine.' }, REFUSE = { label: 'Refuse', description: 'carol\'s join stops.' };
+const SPEC: CardSpec = { question: 'Let carol into room vole-8126? (admit 3f9c2a3f9c2a)', options: [LET_IN, REFUSE] };
+const shown = (over: Partial<CardSpec> = {}) => ({ ...SPEC, header: 'Join', multiSelect: false, ...over });
 const resp = (label: string | null, extra: Record<string, unknown> = {}) => ({ questions: [shown()], answers: label == null ? {} : { [SPEC.question]: label }, ...extra });
 
 test('answerCard: the card as built and one of its labels is the answer, with the person\'s note', () => {
-  assert.deepEqual(answerCard(SPEC, resp('Host it here')), { kind: 'answer', label: 'Host it here' });
-  assert.deepEqual(answerCard(SPEC, resp('Not now', { annotations: { [SPEC.question]: { notes: 'busy  ✓\n' } } })), { kind: 'answer', label: 'Not now', notes: 'busy  ✓\n' });
+  assert.deepEqual(answerCard(SPEC, resp('Let in')), { kind: 'answer', label: 'Let in' });
+  assert.deepEqual(answerCard(SPEC, resp('Refuse', { annotations: { [SPEC.question]: { notes: 'busy  ✓\n' } } })), { kind: 'answer', label: 'Refuse', notes: 'busy  ✓\n' });
 });
 
 test('answerCard: another call is absent; the question only in the model\'s call still counts as this card', () => {
   assert.deepEqual(answerCard(SPEC, { questions: [{ question: 'Which DB?' }], answers: { 'Which DB?': 'pg' } }), { kind: 'absent' });
   assert.deepEqual(answerCard(SPEC, {}, null), { kind: 'absent' });
-  assert.deepEqual(answerCard(SPEC, { answers: { [SPEC.question]: 'Host it here' } }), { kind: 'absent' }, 'answers alone do not make the card (exact)');
+  assert.deepEqual(answerCard(SPEC, { answers: { [SPEC.question]: 'Let in' } }), { kind: 'absent' }, 'answers alone do not make the card (exact)');
   assert.deepEqual(answerCard(SPEC, { questions: [] }, { questions: [{ question: SPEC.question }] }), { kind: 'none' }, 'asked, never answered');
 });
 
 test('answerCard: AFK, a followUp, no answer or a card shown other than as built is no answer', () => {
-  assert.deepEqual(answerCard(SPEC, resp('Host it here', { afkTimeoutMs: 60000 })), { kind: 'none' });
-  assert.deepEqual(answerCard(SPEC, resp('Host it here', { followUp: 'tell me more' })), { kind: 'none' });
+  assert.deepEqual(answerCard(SPEC, resp('Let in', { afkTimeoutMs: 60000 })), { kind: 'none' });
+  assert.deepEqual(answerCard(SPEC, resp('Let in', { followUp: 'tell me more' })), { kind: 'none' });
   assert.deepEqual(answerCard(SPEC, resp(null)), { kind: 'none' });
   // the model's own card with the hooks' question: swapped descriptions, a missing option, an extra one
-  const swapped = shown({ options: [{ ...HOST, description: NOT_NOW.description }, { ...NOT_NOW, description: HOST.description }] });
-  for (const q of [swapped, shown({ options: [HOST] }), shown({ options: [...SPEC.options, { label: 'Yes', description: '' }] })]) {
-    assert.deepEqual(answerCard(SPEC, { questions: [q], answers: { [SPEC.question]: 'Host it here' } }), { kind: 'none' });
+  const swapped = shown({ options: [{ ...LET_IN, description: REFUSE.description }, { ...REFUSE, description: LET_IN.description }] });
+  for (const q of [swapped, shown({ options: [LET_IN] }), shown({ options: [...SPEC.options, { label: 'Yes', description: '' }] })]) {
+    assert.deepEqual(answerCard(SPEC, { questions: [q], answers: { [SPEC.question]: 'Let in' } }), { kind: 'none' });
   }
 });
 

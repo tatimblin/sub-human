@@ -136,9 +136,7 @@ async function diagnoseLink(code: RoomCode, { quick, timeoutMs, env }: { quick: 
   if (st.pid) daemon = { running: lib('io.ts').isAlive(st.pid), pid: st.pid }; // the state record's own pid wins
   const recent = lastLogError(code);
   const out: LinkReport = { code, transport: { kind: t.kind, describe, user: t.user, host: t.host, port: t.port, home: t.home, ...(t.login === true ? { login: true } : {}) },
-    credential: l.token ? 'token' : l.awaiting ? 'waiting for the host person to let it in' : l.pin_wanted ? 'invite line (the host asks for its PIN)' : l.invite ? 'invite (not redeemed yet)' : t.login === true ? 'ssh login (not linked yet)' : 'none', daemon, state: st, recent,
-    // the room's host moved (lib/handoff.ts): the link file was re-pointed at the new host; reached once a token came
-    moved: l.moved ? { epoch: l.moved.epoch, host: l.moved.host, locator: l.moved.locator, demoted: !!l.moved.demoted, reached: !!l.moved.reached_at } : null };
+    credential: l.token ? 'token' : l.awaiting ? 'waiting for the host person to let it in' : l.pin_wanted ? 'invite line (the host asks for its PIN)' : l.invite ? 'invite (not redeemed yet)' : t.login === true ? 'ssh login (not linked yet)' : 'none', daemon, state: st, recent };
   const quiet = dormant(st);
   // the mirror's last word: the host stopped the room's Claude (it closed the room) before this link stopped
   try { if (lib('identity.ts').readMembers(code).claude?.stopped_at) out.closed = true; } catch { /* no mirror */ }
@@ -171,10 +169,6 @@ function linkChecks(d: LinkReport): Check[] {
   const why = d.state.lastReason || null;
   if (lastError && d.state.state !== 'online') bits.push(`last error: ${lastError}`);
   if (d.state.state === 'stopped' && why && REVOKED.has(why)) bits.push('the host ended this machine\'s link: not dialed');
-  if (d.moved) {
-    const where = `${d.moved.host || 'another'}'s machine`;
-    bits.push(d.moved.reached ? `the room moved to ${where}; this machine follows it` : `the room moved to ${where}; not reached from here yet`);
-  }
   let status: CheckStatus = d.state.state === 'online' ? 'pass' : d.state.state === 'fork' ? 'fail' : 'warn';
   let fix: string | undefined;
   const quiet = dormant(d.state);
@@ -184,17 +178,13 @@ function linkChecks(d: LinkReport): Check[] {
     // the host may have closed the room since this machine's last seat left: /sub-human would dial a closed room
     fix = `the connection stopped when this machine's last seat left. If the host still has the room open, type /sub-human in your session to start it again; if you no longer want the room, ${cli(`link ${d.code} --forget`)} in a terminal drops it`;
   }
-  else if (d.state.state === 'fork') fix = `this machine's copy no longer matches the host's: run ${cli(`link --reset ${d.code}`)} in a terminal (it copies the room afresh; anything not sent is kept aside)`;
-  else if (d.moved && !d.moved.reached && d.state.state !== 'online') {
-    const who = d.moved.host || 'its host';
-    fix = `${d.transport.login ? `over ssh this machine follows through your own ssh login to ${who}'s machine; without one, ask` : 'Ask'} ${who} for an invite (/sub-human invite${d.transport.login ? ' --web' : ''} there) and type the line it shows`;
-  } else if (d.transport.login && why && REVOKED.has(why)) {
+  else if (d.state.state === 'fork') fix = `this machine's copy no longer matches the host's: run ${cli(`link ${d.code} --forget --force`)} in a terminal (the copy is set aside, anything not sent with it), then ask the host for a new invite (/sub-human invite there) and type the line it shows`;
+  else if (d.transport.login && why && REVOKED.has(why)) {
     fix = `the host ended this connection: ask them first, then join again over your ssh login: /sub-human join ${d.transport.user}@${d.transport.host}${d.transport.port ? `:${d.transport.port}` : ''} ${d.code}`;
   } else if (why && SPENT.has(why)) {
     // the link's invite (or key) is spent: joining again or restarting the daemon would only reuse it
     fix = 'the invite this machine joined with no longer works (used, expired, or too many wrong PINs), or the host ended the connection: ask the host for a new invite (/sub-human invite there) and type the line it shows';
-  } else if (why === 'MOVED_AWAY' || d.state.lastCode === 'STALE') fix = 'the room moved to another host: ask its new host for an invite (/sub-human invite there) and type the line it shows';
-  else if (!d.daemon.running && d.state.state !== 'online') fix = 'the connection is not running: type /sub-human in your session to start it again';
+  } else if (!d.daemon.running && d.state.state !== 'online') fix = 'the connection is not running: type /sub-human in your session to start it again';
   if (d.reach) {
     const r = d.reach;
     const span = (x: ProtoRange | null | undefined) => (x && x.min !== undefined ? (x.min === x.max ? `${x.min}` : `${x.min}-${x.max}`) : '?');

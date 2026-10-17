@@ -27,11 +27,6 @@
  * holds: a host that began from a snapshot cannot replay what came before it). blob.put: content-addressed
  * (plans/<hash12>.md), written once.
  *
- * Host epochs (lib/handoff.ts): a hello from a mirror at a later epoch, or an append from another epoch, is STALE.
- * Once the log says the room moved, every op but WHILE_MOVED is STALE, and a stream ends after the lines with the
- * private 'moved' event (this link's machine's invite to the new host). A pending ask for one of the link's seats is
- * sent as the private 'handoff' event.
- *
  * A session whose hello carried caps {ping: true} and then sends nothing for silentMs (LINK_SILENT_MS) is closed (a
  * half-open link after a sleep). A web session with no link within authMs (LINK_AUTH_WAIT_MS) is closed: a Noise
  * handshake anyone can make holds a serve process no longer. Quotas (lib/config.ts LINK_QUOTAS) are counted before
@@ -48,7 +43,6 @@ import * as machineKey from './machine-key.ts';
 import * as inviteSecret from './invite-secret.ts';
 import * as seats from '../seats.ts';
 import * as proposal from '../proposal.ts';
-import * as handoff from '../handoff.ts';
 import * as members from '../room/members.ts';
 import * as envelope from '../room/envelope.ts';
 import * as room from '../room.ts';
@@ -81,10 +75,7 @@ interface Stream { tick(): void; stop(): void; end(reason: EventData['end']['rea
 type OpHandlers = { [K in Op]: (s: Session, params: WireParams<K>, id: FrameId | undefined) => OpResults[K] };
 
 const ANSWERS = new Set(['signoff', 'objection']);
-const WRITES = new Set(['join', 'leave', 'beat', 'append', 'handoff.accept', 'handoff.refuse']);
-const WHILE_MOVED = new Set(['hello', 'subscribe', 'blob.get', 'ping']); // what a host the room moved away from still serves
-const epochOf = (store: RoomStore): number => store.hostState().epoch;
-const stale = (msg: string, reason: ReasonFor<'STALE'> = 'MOVED_AWAY'): RoomError => new RoomError('STALE', msg, reason);
+const WRITES = new Set(['join', 'leave', 'beat', 'append']);
 const authError = (msg: string, reason: ReasonFor<'AUTH'> | null = null): RoomError => new RoomError('AUTH', msg, reason);
 const invalid = (msg: string): RoomError => new RoomError('INVALID', msg);
 
@@ -99,15 +90,9 @@ function redeem(s: Session, invite: unknown, machine: MachineId, pin: unknown, p
   const word = inviteSecret.decode(invite);
   const asked = as && typeof as === 'object' && typeof (as as { name?: unknown }).name === 'string'
     ? { name: (as as { name: string }).name, label: String((as as { label?: unknown }).label ?? '') } : null;
-  let secret: string;
   const opts = { machine, pin, proven, peerKey: s.peer, as: asked, ...(s.login && linkId ? { newId: linkId } : {}) };
-  if (word) { // an invite line's SECRET (protocol 3)
-    secret = inviteSecret.idOf(word.secret);
-  } else {
-    const inv = invites.parseInvite(invite);
-    if (!inv || inv.code !== store.code) throw authError(`not an invite to room ${store.code}`, 'INVITE_UNKNOWN');
-    secret = inv.secret;
-  }
+  if (!word) throw authError(`not an invite to room ${store.code}`, 'INVITE_UNKNOWN');
+  const secret = inviteSecret.idOf(word.secret); // an invite line's SECRET (protocol 3)
   let r: ReturnType<typeof invites.redeemInvite>;
   try {
     r = invites.redeemInvite(store, secret, opts);
@@ -116,7 +101,6 @@ function redeem(s: Session, invite: unknown, machine: MachineId, pin: unknown, p
     throw e;
   }
   if (r.admission) roomLine(s, `${r.admission.name}'s machine (${r.admission.label || machine}) joined the room, let in by ${r.admission.admitted_by || 'the host'}; undo with: /sub-human kick ${r.admission.name}`);
-  else if (r.handoff) roomLine(s, `a machine (${machine}) followed the room here with the invite its handoff gave it (link ${r.link.id})`);
   else roomLine(s, `a machine (${machine}) linked to the room with an invite and its PIN (link ${r.link.id})`);
   return r;
 }
@@ -159,8 +143,8 @@ function docsOf(store: RoomStore, keys: ReadonlySet<string> | null = null): Map<
   return docs;
 }
 const stopped = (ms: Members): boolean => !!(ms.claude && ms.claude.stopped_at);
-/** The documents whose change can move the room (closed, a handoff) besides a log line. */
-const MOVES: ReadonlySet<string> = new Set(['members', 'remote/handoff']);
+/** The documents whose change can close the room besides a log line. */
+const MOVES: ReadonlySet<string> = new Set(['members']);
 
 /**
  * Stream subscribe request `id`'s events from the line after `after` (with snap: the snapshot first, then the lines
@@ -173,7 +157,6 @@ function stream(s: Session, id: FrameId | undefined, after: number, snap: Snapsh
   if (snap) after = snap.id;
   const tailer = s.store.tailer({ after });
   const sent = new Map<string, string>(); // doc key -> the JSON last sent
-  const priv = { lastId: after }; // the private events sent (lib/handoff.ts streamEvent)
   const queue: string[] = []; // lines read, not sent yet
   let wasStopped = stopped(s.store.members.read());
   let draining: NodeJS.Timeout | NodeJS.Immediate | null = null, stopped_ = false;
@@ -201,21 +184,18 @@ function stream(s: Session, id: FrameId | undefined, after: number, snap: Snapsh
     // every tick, before anything else: a watch event for the links document may be missed, and the room closing
     // (the kick took its last seat) must not end the stream as 'closed' first
     if (!s.held()) return;
-    let moved = !change || change.log;
+    let recheck = !change || change.log;
     if (!change || change.log) {
-      const { lines, entries, reset } = tailer.poll();
+      const { lines, reset } = tailer.poll();
       if (reset) return end('FORK');
       queue.push(...lines);
-      for (const e of entries) if (e.id > priv.lastId) priv.lastId = e.id;
     }
     if (now) flushAll();
     else if (queue.length && !draining) drain();
     const keys = change ? new Set([...change.docs].filter(k => k === 'members' || k === 'tasks' || k.startsWith('presence/'))) : null;
     if (!keys || keys.size) sendDocs(docsOf(s.store, keys), !keys);
-    if (change && [...change.docs].some(k => MOVES.has(k))) moved = true;
-    if (!moved) return;
-    const p = handoff.streamEvent(s.store, s.link, priv);
-    if (p) { send(p.ev, p.data); if (p.end) return end('moved'); }
+    if (change && [...change.docs].some(k => MOVES.has(k))) recheck = true;
+    if (!recheck) return;
     const isStopped = stopped(s.store.members.read());
     if (isStopped && !wasStopped) return end('closed');
     wasStopped = isStopped;
@@ -246,7 +226,7 @@ function fits(id: FrameId | undefined, held: (SnapshotWire & { held: number }) |
 // ---------- ops ----------
 const OPS: OpHandlers = {
   hello(s, params) {
-    const { machine, token, invite, pin, caps, epoch, nonce, as } = params;
+    const { machine, token, invite, pin, caps, nonce, as } = params;
     const theirs = protocol.rangeOf(params);
     const client = typeof params.client === 'string' ? params.client.slice(0, 32) : null;
     if (!theirs) throw new RoomError('PROTOCOL', `this hello names no protocol range (a sub-human before 0.5${client ? `: ${client}` : ''}): update it (/plugin update sub-human)`, 'SKEW');
@@ -255,10 +235,6 @@ const OPS: OpHandlers = {
       throw new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: s.version, proto: s.proto }, joiner: { version: client, proto: theirs } }), 'SKEW');
     }
     if (!isMachineId(machine)) throw invalid('hello needs this machine\'s id');
-    const mine = epochOf(s.store);
-    if (typeof epoch === 'number' && Number.isInteger(epoch) && epoch > mine) {
-      throw stale(`room ${s.store.code} has moved away from this machine to a newer host. Run /sub-human doctor to see where it is`);
-    }
     s.link = null;
     s.v = v;
     s.peerVersion = { version: client, proto: theirs };
@@ -274,7 +250,7 @@ const OPS: OpHandlers = {
     s.link = r.link;
     if (isObj(caps) && caps.ping === true) s.expireSilent();
     // time: the host's clock (ms), so a joiner (sub-human doctor) can measure the skew that SIG_SKEW_MS bounds; additive
-    const out: OpResults['hello'] = { v, proto: s.proto, server: s.version, caps: protocol.CAPS, room: s.store.code, link: r.link ? r.link.id : null, epoch: mine, time: Date.now() };
+    const out: OpResults['hello'] = { v, proto: s.proto, server: s.version, caps: protocol.CAPS, room: s.store.code, link: r.link ? r.link.id : null, time: Date.now() };
     if (r.link) out.machine = r.link.machine; // additive: this machine's id in the room, as the host records it
     if (host) out.host = host;
     // a fresh challenge for this session's next hello (a refused hello keeps the one the joiner holds)
@@ -294,7 +270,7 @@ const OPS: OpHandlers = {
     hostLinks.checkSeatProof(proof, { room: s.store.code, name, pubkey });
     // a proof signed for a name that is no seat name: refused as identity.join would refuse it, before any binding
     if (typeof name !== 'string') throw invalid(`invalid name "${String(name)}" (letters, digits, . _ -, up to 32)`);
-    // s.link: run() lets no op but hello in without it. A bound link (the card let one name in; a handoff's seats) joins
+    // s.link: run() lets no op but hello in without it. A bound link (the card let one name in) joins
     // its own seats only, before any seat is taken. A login link is the host account's own: its seat is that person's
     const link = s.linked();
     if (!hostLinks.mayJoinAs(link, name)) throw authError(hostLinks.notBound(link, name), 'NOT_BOUND');
@@ -329,13 +305,8 @@ const OPS: OpHandlers = {
     return { ok };
   },
 
-  append(s, { payload, epoch }) {
+  append(s, { payload }) {
     if (!isObj(payload)) throw invalid('append needs {payload}');
-    const mine = epochOf(s.store);
-    if (typeof epoch === 'number' && Number.isInteger(epoch) && epoch !== mine) {
-      throw epoch < mine ? stale(`room ${s.store.code} changed hosts and this machine hasn't caught up yet; try again in a moment`, 'BEHIND')
-        : stale(`room ${s.store.code} has moved away from this machine to a newer host. Run /sub-human doctor to see where it is`);
-    }
     own(s, payload.from);
     if (payload.via === 'system') throw authError('a link never writes via "system"; the host writes the room\'s own entries');
     if (payload.via === 'human' || payload.via === 'agent') quota.checkLog(s.store.readAll(), { from: payload.from, via: payload.via, op: payload.via === 'human' ? 'append.human' : 'append.agent' });
@@ -349,12 +320,12 @@ const OPS: OpHandlers = {
   subscribe(s, { after, hash, snapshot }, id) {
     if (typeof after !== 'number' || !Number.isInteger(after) || after < 0) throw invalid('subscribe needs {after: id, hash}');
     if (s.store.lineHash(after) !== hash) {
-      throw new RoomError('FORK', `the host's line ${after} is not the mirror's; re-mirror with sub-human link --reset ${s.store.code}`, 'NOT_CHAINED');
+      throw new RoomError('FORK', `the host's line ${after} is not the mirror's; forget this copy (sub-human link --forget ${s.store.code}), then join with a new invite`, 'NOT_CHAINED');
     }
     const held = s.store.snapshot();
     const snap = snapshot === true && after === 0 ? fits(id, held) : null;
     if (!snap && held && after < held.held - 1) {
-      throw new RoomError('FORK', `this host holds room ${s.store.code}'s log only from line ${held.held - 1} (it began from its host's snapshot) and cannot replay the lines before; update sub-human on this machine, then sub-human link --reset ${s.store.code}`, 'NOT_CHAINED');
+      throw new RoomError('FORK', `this host holds room ${s.store.code}'s log only from line ${held.held - 1} (it began from its host's snapshot) and cannot replay the lines before; update sub-human on this machine, forget this copy (sub-human link --forget ${s.store.code}) and join with a new invite`, 'NOT_CHAINED');
     }
     for (const st of [...s.streams]) st.stop(); // one stream per connection: a new subscribe replaces the old (each is a poller)
     s.streams.add(stream(s, id, after, snap));
@@ -365,14 +336,6 @@ const OPS: OpHandlers = {
     const b = typeof ref === 'string' ? s.store.blobs.get(ref) : null; // blobs.get refuses any other ref (blobRef)
     return { bytes: b ? b.toString('base64') : null };
   },
-
-  'handoff.accept'(s, params) {
-    const r = handoff.serverAccept(s.store, s.linked(), params);
-    s.later = () => handoff.afterMoved(s.store, { job: r.job });
-    return { ok: true, epoch: r.epoch, entry: r.entry };
-  },
-
-  'handoff.refuse'(s, params) { return handoff.serverRefuse(s.store, s.linked(), params); },
 
   'blob.put'(s, { name, bytes }) {
     if (typeof bytes !== 'string') throw invalid('blob.put needs {name, bytes: base64}');
@@ -408,7 +371,6 @@ class Session {
   version: string;
   v: number | null;
   link: LinkRecord | null;
-  later: (() => void) | null;
   streams: Set<Stream>;
   quota: ReturnType<typeof quota.session>;
   silentMs: number;
@@ -431,7 +393,6 @@ class Session {
     this.version = version;
     this.v = null; // the version hello chose
     this.link = null;
-    this.later = null; // work an op leaves for after its reply (handoff.accept)
     this.streams = new Set(); // {tick, stop}
     this.quota = quota.session();
     this.silentMs = silentMs;
@@ -463,9 +424,6 @@ class Session {
     try { out = protocol.reply(f.id, this.run(f)); } catch (e) { out = this.failure(f, e); }
     if (WRITES.has(f.op)) for (const st of [...this.streams]) st.tick(); // the write's lines before its reply
     this.transport.send(out);
-    const later = this.later;
-    this.later = null;
-    if (later) setImmediate(() => { try { later(); } catch (e) { this.log(`sub-human serve: after ${f.op}: ${stackOf(e)}`); } });
   }
 
   run({ id, op, params }: IncomingRequest): unknown {
@@ -473,10 +431,6 @@ class Session {
     if (op !== 'hello' && !this.link) throw authError('say hello with this link\'s token first');
     // every op reads the link's record again: one the host revoked (a kick, in another process) gets nothing more
     if (op !== 'hello' && !this.held()) throw authError(revokedText(this.store.code), 'LINK_REVOKED');
-    if (!WHILE_MOVED.has(op) && handoff.movedAway(this.store)) {
-      const host = this.store.hostState?.().host; // movedAway: only a store with hostState moves
-      throw stale(`room ${this.store.code} moved to ${host}'s machine; this machine takes no more messages for it`);
-    }
     this.charge(op);
     const out = call(op, this, isObj(params) ? params : {}, id);
     if (op === 'hello' && this.link) quota.charge(this.store, this.link.id, 'hello'); // a link's hellos, across reconnects
@@ -492,7 +446,6 @@ class Session {
     else if (op === 'join' || op === 'leave') link('seat');
     else if (op === 'subscribe') link('subscribe');
     else if (op === 'beat' || op === 'blob.get' || op === 'ping') take(op);
-    else if (op === 'handoff.accept' || op === 'handoff.refuse') take('handoff');
   }
 
   failure(f: IncomingRequest, err: unknown): ErrorFrame {
@@ -523,7 +476,6 @@ class Session {
     if (!this.link) return true;
     const cur = hostLinks.links(this.store)[this.link.id];
     if (cur) { this.link = cur; return true; }
-    if (handoff.movedAway(this.store)) return true; // a demote clears the links with the room: the stream says 'moved'
     this.endRevoked();
     return false;
   }

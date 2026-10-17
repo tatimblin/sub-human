@@ -29,9 +29,8 @@
  *                             "left"/"joined": the daemon renews the seat's lapsed lease)
  *   {type:'invites', open}    on the host, the refs of the open invite lines when the set changes (the module takes
  *                             an invite off its status line once it is used, burnt, cancelled or expired)
- * An invite's join request (lib/remote/admission.ts, on the host) and a planned handoff's ask (lib/handoff.ts, on
- * the asked seat's mirror) are one wake each, once per seat; a lapsed request, or an ask declined or expired, is a
- * health line. A session with no seat that started an invite join (its link file's join_sid) is looked up every
+ * An invite's join request (lib/remote/admission.ts, on the host) is one wake, once per seat; a lapsed request is
+ * a health line. A session with no seat that started an invite join (its link file's join_sid) is looked up every
  * resolveMs until the host lets it in, with one chat line per answer (a seated session too: a kicked machine's copy
  * may still show its seat).
  */
@@ -59,18 +58,16 @@ import { FOR_CLAUDE, PULL_HEAD, PULL_END, pullDroppedLine } from '../mod/core/co
 import { msgOf } from './errors.ts';
 import type { RoomCode } from './brand.ts';
 import type * as RoomClaudeMod from './room-claude.ts';
-import type * as HandoffMod from './handoff.ts';
 import type * as AdmissionMod from './remote/admission.ts';
 import type * as InvitesMod from './remote/invites.ts';
 import type * as LinkSocketMod from './remote/link-socket.ts';
 import type * as SeatsMod from './seats.ts';
 import type * as JoiningMod from './remote/joining.ts';
 
-// The tail starts with every session: what only a room's Claude, a host, a handoff or a pending join reads loads at
+// The tail starts with every session: what only a room's Claude, a host or a pending join reads loads at
 // its first use (start cost).
 const roomClaudeLib = lazy<typeof RoomClaudeMod>(import.meta.url, './room-claude.ts');
 const linkSocketLib = lazy<typeof LinkSocketMod>(import.meta.url, './remote/link-socket.ts');
-const handoffLib = lazy<typeof HandoffMod>(import.meta.url, './handoff.ts');
 const admissionLib = lazy<typeof AdmissionMod>(import.meta.url, './remote/admission.ts');
 const invitesLib = lazy<typeof InvitesMod>(import.meta.url, './remote/invites.ts');
 const seatsLib = lazy<typeof SeatsMod>(import.meta.url, './seats.ts');
@@ -111,7 +108,6 @@ type IdentityLib = Pick<typeof identityMod, 'readMembers' | 'heartbeat'>;
 type ProposalLib = Pick<typeof proposalMod, 'pendingFor' | 'picked' | 'reminder' | 'readConfirm' | 'confirmCall' | 'showConfirm'>;
 type SessionLib = Pick<typeof sessionMod, 'shown' | 'markShown' | 'get' | 'put'>;
 type RoomClaudeLib = Pick<typeof RoomClaudeMod, 'watchdog'>;
-type HandoffLib = Pick<typeof HandoffMod, 'pendingAsk' | 'markTold' | 'hostDoc'>;
 type AdmissionLib = Pick<typeof AdmissionMod, 'lapse' | 'pending' | 'targets' | 'describe' | 'markTold'>;
 type InvitesLib = Pick<typeof InvitesMod, 'inviteOpen'>;
 /** runTail's deps (tests): each one replaces a module or call. */
@@ -124,16 +120,14 @@ interface TailDeps {
   identity: IdentityLib;
   proposal: ProposalLib;
   linkStatus(code: RoomCode): LinkStatus;
-  handoff: HandoffLib;
   admission: AdmissionLib;
   invites: InvitesLib;
   sweepSeats(code: RoomCode): unknown;
   pendingNews(sid: string): { state: 'waiting' | 'pin' | 'linked' | 'refused'; code: RoomCode; text: string } | null;
 }
 /** The deps as a session uses them: the lazily loaded modules behind a getter. */
-type Deps = Omit<TailDeps, 'roomClaude' | 'handoff' | 'admission' | 'invites'> & {
+type Deps = Omit<TailDeps, 'roomClaude' | 'admission' | 'invites'> & {
   roomClaude(): RoomClaudeLib;
-  handoff(): HandoffLib;
   admission(): AdmissionLib;
   invites(): InvitesLib;
 };
@@ -155,7 +149,6 @@ interface Session {
   lastTick: number;
   save(): void;
   stalled(): boolean;
-  moved(): boolean;
   killPoll(): void;
   stop(): void;
 }
@@ -590,29 +583,7 @@ function startSession(me: Identity, ctx: TailCtx): Session {
     if (l) emit([{ type: 'health', text: l.text }]);
     else if (was) emit([{ type: 'health', text: flushed ? `${LINK_BACK}; ${flushed}` : LINK_BACK }]);
   }
-  // A planned handoff: the ask waiting for this seat (a wake, once), or the asker told it was declined or expired.
-  let askKey: string | null = null;
   let invitesKey: string | null = null;
-  function handoffHealth(store: NonNullable<TailRoom['store']>) {
-    const ho = deps.handoff();
-    if (!store.isHost) {
-      const a = ho.pendingAsk(s.code, me.name, clock.now());
-      if (!a || a.told_at) return;
-      ho.markTold(s.code, a.id);
-      // one wake: its line for the person is drawn as the prompt (asUser), the (for Claude) line rides as context
-      emit([
-        { type: 'wake', text: `room: ${a.from} asks you to host room ${s.code} on this machine; your Claude shows you a card\n${FOR_CLAUDE} ${a.from} asks ${me.name} to host room ${s.code} on this machine (the room's Claude would then run on ${me.name}'s model account, and this machine must stay reachable). Only ${me.name} can answer: call AskUserQuestion with the question "handoff ${a.id}"; the hooks show the card. Don't answer for ${me.name} or post about it.` },
-      ]);
-      return;
-    }
-    const d = ho.hostDoc(store);
-    if (!d || d.from !== me.name) return;
-    const state = d.state === 'asked' && !(Date.parse(d.expires_at) > clock.now()) ? 'expired' : d.state;
-    const key = `${d.id}/${state}`;
-    if (key === askKey || (state !== 'refused' && state !== 'expired')) return;
-    askKey = key;
-    emit([{ type: 'health', text: `room handoff: ${d.to} ${state === 'refused' ? 'declined to host' : 'did not answer the ask to host'} room ${s.code}; this machine stays the host` }]);
-  }
   // An invite's join request (lib/remote/admission.ts), on the host: this seat's card, opened by its Claude once; a
   // request nobody answered lapses with a line.
   function admitHealth() {
@@ -643,8 +614,6 @@ function startSession(me: Identity, ctx: TailCtx): Session {
   function health() {
     try { deps.heartbeat(me); } catch (e) { log('seat heartbeat', e); } // the seat's lease (identity.heartbeat)
     sendRows();
-    if (s.moved()) return; // the room changed kind under this session: the next check starts it again
-    if (rm.store && me.role !== 'claude') { try { handoffHealth(rm.store); } catch (e) { log('handoff', e); } }
     if (rm.store && rm.store.isHost && me.role !== 'claude') { try { admitHealth(); } catch (e) { log('admission', e); } }
     if (rm.store && rm.store.isHost && me.role !== 'claude') { try { inviteHealth(rm.store); } catch (e) { log('invites', e); } }
     if (rm.store && !rm.store.isHost) linkHealth();
@@ -674,8 +643,6 @@ function startSession(me: Identity, ctx: TailCtx): Session {
   sendRows();
 
   s.stalled = () => clock.now() - s.lastTick > t.stallMs;
-  // (a room without a store throws: the catch)
-  s.moved = () => { try { if (!rm.store) return false; const there = deps.openRoom(me.code).store; return !!there && there.isHost !== rm.store.isHost; } catch { return false; } };
   s.killPoll = () => pollLoop.stop(); // tests: simulate a poll loop that died
   s.stop = () => {
     pollLoop.stop();
@@ -714,7 +681,6 @@ function runTail({
     identity: deps.identity ?? identityMod,
     proposal: deps.proposal ?? proposalMod,
     linkStatus: deps.linkStatus ?? ((code: RoomCode) => linkSocketLib().status(code)),
-    handoff: deps.handoff ? constant(deps.handoff) : handoffLib,
     admission: deps.admission ? constant(deps.admission) : admissionLib,
     invites: deps.invites ? constant(deps.invites) : invitesLib,
     sweepSeats: deps.sweepSeats ?? ((code: RoomCode) => seatsLib().sweep(code)),
@@ -771,7 +737,6 @@ function runTail({
     if (!failed) {
       const key = me ? `${me.code}/${me.name}/${me.role}` : null;
       if (sess && sess.key === key && sess.stalled()) { log('poll loop', new Error('stalled')); stopSess(); }
-      else if (sess && sess.key === key && sess.moved()) stopSess(); // a handoff: the room is hosted here now, or elsewhere
       if (!(sess && sess.key === key)) {
         stopSess();
         if (me) { try { sess = startSession(me, ctx); } catch (e) { log('session start', e); } }

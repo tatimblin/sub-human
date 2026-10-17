@@ -11,7 +11,7 @@
  *   machineIn(code) -> string   this machine's id in room CODE: the one the host recorded for this machine's link
  *                               (lib/remote/host-links.ts derives it from the link's own key and the hello's reply
  *                               carries it; lib/remote/link-connect.ts keeps it in <home>/machines.json {code: id}),
- *                               else machineId(). It stays when the room moves here (a handoff): the log names it
+ *                               else machineId()
  *   isMine(id) -> bool          id is this machine's, in any room: machineId() or one of machines.json's
  *   setMachineIn(code, id)      record it (atomic; the link daemon, after a hello)
  *                               machineId and machineIn are MachineIds (lib/text.ts isMachineId)

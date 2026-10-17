@@ -4,23 +4,20 @@
  * room's file names (test/store-bypass.node-test.ts) and the only one that imports log-io.ts (the log's bytes).
  *
  *   <room>/log*.jsonl, snapshot*.json, log.jsonl.lock   the log (log-io.ts names these files)
- *   <room>/log.moved        a host_changed was placed here: place() reads the log's host before each line
- *                           (rules.ts checkHere: the old host's log takes no more lines). Without it, an append
- *                           reads only the log's tail.
  *   <room>/members.json     the members document (members.update under members.json.lock)
  *   <room>/<key>.json       the kv documents, each updated under <key>.json.lock
  *   <room>/plans/<x>        blobs
  *   <room>/<name>.cursor    per-reader positions
  *   <room>/<name>.lock      lock(name): a room-wide mutex
  *
- * pins() and hostState() come from the log's non-chat entries (log-io.ts nonChat), carried forward one new line at a
+ * pins() come from the log's non-chat entries (log-io.ts nonChat), carried forward one new line at a
  * time: an append does not recompute them, inside the log lock or out. trust is trustOver(this room's keys).
  */
 
 import type { Change } from './watch.ts';
 import nodeFs from 'node:fs';
 import path from 'node:path';
-import { roomDir, machineIn } from '../home.ts';
+import { roomDir } from '../home.ts';
 import { withLock } from '../lock.ts';
 import { writeFileAtomic, writeJsonAtomic, readJson, readJsonRaw, lazy } from '../io.ts';
 import { objAs } from '../decode.ts';
@@ -30,11 +27,11 @@ import * as members from './members.ts';
 import * as logIo from './log-io.ts';
 import * as keys from './keys.ts';
 import { trustOver } from './trust.ts';
-import { admit, blobRef, checkCursor, checkKey, hostStep, KEY_SEG, BLOB_RE, placeAfter, toPayload } from './rules.ts';
+import { admit, blobRef, checkCursor, checkKey, KEY_SEG, BLOB_RE, placeAfter, toPayload } from './rules.ts';
 import type { KeyObject } from 'node:crypto';
 import type { LockOpts } from '../lock.ts';
 import type {
-  AppendOpts, BlobsApi, ChainCheck, ChainVerify, Entry, EntryInput, HostState, KvApi, KvUpdateOpts, Members, MembersApi,
+  AppendOpts, BlobsApi, ChainCheck, ChainVerify, Entry, EntryInput, KvApi, KvUpdateOpts, Members, MembersApi,
   Payload, Placed, PlaceOpts, ReadViewOpts, RoomStore, SnapshotWire, Tailer, TailerFs, Trust, TrustCtx,
 } from './types.ts';
 import type { RoomCode, EntryId } from '../brand.ts';
@@ -46,29 +43,27 @@ const fs = nodeFs;
 const roomWatch = lazy<typeof WatchMod>(import.meta.url, './watch.ts');
 /** lib/room/links.ts: only a room whose folder is missing asks it (start cost: every hook opens this module). */
 const linksLib = lazy<typeof LinksMod>(import.meta.url, './links.ts');
-const MOVED = 'log.moved';
 const MEMBERS = 'members.json';
 /** members.json: the room's own document (name -> Member); each reader checks the fields it uses. */
 const MEMBERS_DOC = objAs<Members>();
 
-/** pins and host as of `n` marked entries (the last of them `last`): carried forward as the marked list grows. */
-interface Derived { n: number; last: Entry | null; pins: Map<string, KeyObject>; host: HostState }
-const NONE: Derived = { n: 0, last: null, pins: new Map(), host: { epoch: 0 } };
+/** pins as of `n` marked entries (the last of them `last`): carried forward as the marked list grows. */
+interface Derived { n: number; last: Entry | null; pins: Map<string, KeyObject> }
+const NONE: Derived = { n: 0, last: null, pins: new Map() };
 
-/** Fold more non-chat entries into pins (first sight pins a name) and host. A new Derived; d is never changed. */
+/** Fold more non-chat entries into pins (first sight pins a name). A new Derived; d is never changed. */
 function carry(d: Derived, es: readonly Readonly<Entry>[], from: number): Derived {
-  let pins = d.pins, host = d.host;
+  let pins = d.pins;
   for (let i = from; i < es.length; i++) {
     const e = es[i];
     if (e === undefined) break; // i < es.length
-    host = hostStep(host, e);
     if (e.kind !== 'member_joined' || e.via !== 'system' || typeof e.from !== 'string' || pins.has(e.from)) continue;
     const key = envelope.parseKey(e.pubkey);
     if (!key) continue;
     if (pins === d.pins) pins = new Map(pins);
     pins.set(e.from, key);
   }
-  return { n: es.length, last: es.at(-1) ?? null, pins, host };
+  return { n: es.length, last: es.at(-1) ?? null, pins };
 }
 
 class FsRoomStore implements RoomStore {
@@ -171,8 +166,6 @@ class FsRoomStore implements RoomStore {
   }
   /** The keys pinned in the log: envelope.pinnedKeys over the non-chat entries. */
   pins(): Map<string, KeyObject> { return this._state().pins; }
-  /** The last host_changed entry's {epoch, host, machine, locator, id}, else {epoch: 0}. */
-  hostState(): HostState { return this._state().host; }
 
   // ----- writing -----
   append(entry: EntryInput, opts: AppendOpts & { queue: true }): Placed;
@@ -188,19 +181,13 @@ class FsRoomStore implements RoomStore {
     const p = admit(this.code, payload, opts);
     this._mustExist();
     fs.mkdirSync(d, { recursive: true, mode: 0o700 });
-    const moved = path.join(d, MOVED);
-    return logIo.appendLocked(d, tail => {
-      const host = p.kind === 'host_changed' || fs.existsSync(moved) ? this.hostState() : undefined;
-      const r = placeAfter(p, { keys: this._keys, host, machine: machineIn(this.code), ...tail, now: Date.now() });
-      if (r.e.kind === 'host_changed') fs.writeFileSync(moved, '', { mode: 0o600 });
-      return r;
-    });
+    return logIo.appendLocked(d, tail => placeAfter(p, { keys: this._keys, ...tail, now: Date.now() }));
   }
 
   setAside(): string | null {
     const file = path.join(this.dir, `orphaned-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl`);
     if (!logIo.setAside(this.dir, file)) return null;
-    for (const f of [this._membersFile, path.join(this.dir, MOVED)]) fs.rmSync(f, { force: true });
+    fs.rmSync(this._membersFile, { force: true });
     this._derived = NONE;
     return file;
   }
@@ -214,13 +201,6 @@ class FsRoomStore implements RoomStore {
   /** The host's snapshot as this log's start (the mirror checked it: lib/room/snapshot.ts problem); PROTOCOL when the
    * log holds lines already. */
   installSnapshot(wire: SnapshotWire): void { logIo.install(this.dir, wire); this._derived = NONE; }
-  /** Forget everything synced: the log, its segments and snapshot, the members document, and the documents named. */
-  reset(docs: readonly string[] = []): void {
-    logIo.remove(this.dir);
-    fs.rmSync(this._membersFile, { force: true });
-    for (const key of docs) fs.rmSync(this._kvFile(key), { force: true });
-    this._derived = NONE;
-  }
 
   // ----- cursors -----
   _cursorFile(name: string): string { return path.join(this.dir, `${checkCursor(name)}.cursor`); }

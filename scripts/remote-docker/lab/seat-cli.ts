@@ -20,7 +20,7 @@
  *   rejoin NAME CODE              `/sub-human NAME CODE` (a room hosted here, or one this machine links to)
  *   say NAME TEXT                 NAME's `@room TEXT` through the prompt hook: {ok, ms, t0, out}
  *   prompt NAME TEXT              any typed prompt through the prompt hook (e.g. a slash-free command)
- *   expand NAME ARGS              any `/sub-human ARGS` through the join hook (invite --ssh, kick, handoff, …)
+ *   expand NAME ARGS              any `/sub-human ARGS` through the join hook (invite --ssh, kick, …)
  *   leave NAME                    SessionEnd for NAME, then its seat process stops
  *   short NAME LINE [SSH_OPT…]    `/sub-human LINE --as NAME`: an invite's line as the host showed it, one argument
  *                                 ("join DEST ROOM SECRET [--via J] [--home H]" or "join URL SECRET"; a 0.5.0-beta.15
@@ -31,8 +31,6 @@
  *                                 pin_wanted, awaiting, refused, transport}
  *   admitcard NAME LABEL          NAME, on the host, answers the oldest join request's card ("Let in" / "Refuse"):
  *                                 {ok, question, out, ref, key, link}
- *   card NAME LABEL               NAME answers the handoff card the hooks build (consent.ts Pre, then Post with
- *                                 LABEL, e.g. "Host it here"), as the person would on the AskUserQuestion card
  *   events NAME                   what NAME's tail delivered: [{t, ev}]
  *   dump CODE                     {code, machine, machineIn, isHost, dir, log, entries, chain, members, link, home}
  *   link CODE                     the link daemon's status (lib/remote/link-socket.ts status; beta.15: link.ts)
@@ -85,7 +83,6 @@ interface Libs {
   'home.ts': { machineId(): string, machineIn?(code: string): string };
   'remote/shim.ts': { refresh(o: { force: boolean }): void };
   'remote/admission.ts': { pending(code: string): { ref: string, key: string, link: string }[] };
-  'handoff.ts': { ASK_DOC: string };
   'remote/link-socket.ts': { status(code: string): unknown };
   'remote/link.ts': { status(code: string): unknown };
   'remote/transports/index.ts': { kinds(): string[] };
@@ -261,20 +258,6 @@ const cmds: Record<string, (...args: string[]) => unknown> = {
     return { ok: /let \S+'s machine into room|refused/.test(ctx || ''), question: q, out: ctx, ref: req.ref, key: req.key, link: req.link, ms: pre.ms + post.ms, stderr: post.stderr };
   },
 
-  card(name, label) {
-    const seat = seatOf(name);
-    const code = load().code || lib('room/store.ts').listRooms()[0];
-    const ask = code ? lib('room/store.ts').open(code).kv.get(lib('handoff.ts').ASK_DOC) : null;
-    if (!ask) return { ok: false, out: 'no handoff ask on this machine' };
-    lease(seat);
-    const pre = hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: `handoff ${ask.id}`, options: [] }] } }, seat);
-    const card = pre.json && pre.json.hookSpecificOutput && pre.json.hookSpecificOutput.updatedInput;
-    const q = card ? card.questions[0]?.question : undefined;
-    if (!card || q === undefined) return { ok: false, out: 'the hooks built no card', pre: pre.json, stderr: pre.stderr };
-    const post = hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: card, tool_response: { questions: card.questions, answers: { [q]: label } } }, seat);
-    return { ok: !!(post.json && post.json.systemMessage), out: post.json && (post.json.systemMessage || post.json.reason), json: post.json, ms: pre.ms + post.ms, stderr: post.stderr };
-  },
-
   rejoin(name, code) {
     let seat: Seat;
     try { seat = seatOf(name); } catch { seat = newSeat(name); }
@@ -345,7 +328,7 @@ const cmds: Record<string, (...args: string[]) => unknown> = {
     try { kinds = lib('remote/transports/index.ts').kinds(); } catch { kinds = ['pipe', 'memory', 'ssh'].filter(k => src('lib/remote/link.ts').includes(`'${k}'`)); }
     const protocol = lib('remote/protocol.ts');
     const files = ['lib/remote/ws.ts', 'lib/remote/transports/ws.ts', 'lib/remote/listener.ts', 'lib/remote/outbox.ts', 'lib/remote/doctor.ts', 'lib/doctor.ts',
-      'lib/remote/seal.js', 'lib/remote/handoff.ts', 'lib/remote/noise.ts', 'lib/remote/tailscale.ts', 'lib/remote/enroll.ts'].map(pick).filter(f => fs.existsSync(path.join(PLUGIN, f)));
+      'lib/remote/seal.js', 'lib/remote/noise.ts', 'lib/remote/tailscale.ts', 'lib/remote/enroll.ts'].map(pick).filter(f => fs.existsSync(path.join(PLUGIN, f)));
     let version: unknown = null;
     try { version = parseJson<{ version?: unknown }>(src('.claude-plugin/plugin.json')).version; } catch { /* none */ }
     return {
