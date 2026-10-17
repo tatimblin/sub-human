@@ -157,7 +157,7 @@ function rowCalls(me: Me | null | undefined, members: MemberInput, { only = null
     const names = want ? all.filter(n => want.has(n)) : all;
     const lines = ['PARTICIPANT ROWS (one row per person; a row shows that person, not you. Do this now; it costs nothing while they wait):'];
     if (names.length) {
-      lines.push(`Make exactly these Agent tool calls, all in ONE message, then carry on (write nothing about them):`);
+      lines.push(`Make exactly these Agent tool calls, all in ONE message, then end your turn with the one word "ok" (write nothing about them):`);
       for (const n of names) lines.push(participantCall(n));
     } else if (want && all.length) {
       lines.push('Your rows are already running (their holds are live). Make no Agent calls for them now; a second copy would duplicate a row in the panel.');

@@ -23,7 +23,7 @@ import type { Identity } from '../../lib/identity.ts';
 const LEAD = 'sub-human: this session was resumed, and its rows are NOT running: they ended with the old process. '
   + 'The conversation may still list them as running; that list is from before the resume (the hooks checked: no row holds). '
   + 'Re-create them now, exactly as written:\n';
-const TAIL = '\nWrite no text: make only these calls and end your turn.';
+const TAIL = '\nMake only these calls, then end your turn with the one word "ok".';
 const WAIT_MS = envMs('SUB_HUMAN_REWAKE_WAIT_MS');
 
 function findSeat(input: HookIn<'SessionStart'>): Identity | null {

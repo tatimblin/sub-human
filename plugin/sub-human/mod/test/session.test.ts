@@ -67,7 +67,7 @@ test('a session index: mod-hello at session start', async ($, on) => {
 
 test('a resumed seat: session-restore puts it back (its context and title), then the hello, then row-rewake, whose calls are a wake', async ($, on) => {
   const restore = { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: 'SUB-HUMAN: you are alice', sessionTitle: SEAT.addr } }
-  const calls = 'sub-human: this session was resumed and its rows did not survive it. Re-create them now, exactly as written:\nAgent({subagent_type: "sub-human:room"})\nWrite no text: make only these calls and end your turn.'
+  const calls = 'sub-human: this session was resumed and its rows did not survive it. Re-create them now, exactly as written:\nAgent({subagent_type: "sub-human:room"})\nMake only these calls, then end your turn with the one word "ok".'
   const seen = world($, on, { indexed: true, seat: SEAT, answer: { 'session-restore.ts': { stdout: JSON.stringify(restore) }, 'row-rewake.ts': { exitCode: 2, stderr: calls } } })
   await start($)
   seen.runs.length = 0

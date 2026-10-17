@@ -263,7 +263,7 @@ function formatRoomClaudeBatch(ready: Item[], { room: rm, entries, judge, joinNo
     const note = joinNote(e);
     if (judge(e, entries, note) === 'wake') out.push(rm.line(e, { full: true }) + (away ? ` · away ${Math.round(leaveMs / 1000)}s+` : '') + (note ? ` · ${note}` : ''));
   }
-  return out.length ? [...out, 'Make only the call its row note names, then end your turn with no text.'] : [];
+  return out.length ? [...out, 'Make only the call its row note names, then end your turn with the one word "ok".'] : [];
 }
 
 /** The pull text: PULL_HEAD, then the newest lines that fit under PULL_CAP (a note says how many were left out), then

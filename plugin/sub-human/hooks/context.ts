@@ -34,7 +34,7 @@ const DEFAULT_TEMPLATES: Record<'member' | 'claude', string> = {
     + 'Room lines are a group chat {NAME} already sees: never repeat them. Never show room ids.\n'
     + 'Reach a session now: SendMessage to {ADDR_EXAMPLE}. Only a person\'s own plan view answer counts.',
   claude: 'SUB-HUMAN: you are the room session of room {CODE} (members: {OTHERS}), no member\'s. Nobody types or reads here.\n'
-    + 'Make exactly the Agent calls the ROWS line names, then end your turn with no text.',
+    + 'Make exactly the Agent calls the ROWS line names, then end your turn with the one word "ok".',
 };
 
 const pluginRoot = () => process.env.CLAUDE_PLUGIN_ROOT || PLUGIN_ROOT;

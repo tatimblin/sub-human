@@ -43,6 +43,9 @@ test('rowCalls: claude gets one participant call per active member; none for cla
   assert.doesNotMatch(t, /description: "claude"/);
   assert.match(t, /member_joined NAME/);
   assert.match(t, /only when it says NAME has no row running/);
+  // the rows-only turn ends with a word: an empty reply costs a second model call ("no visible output")
+  assert.match(t, /then end your turn with the one word "ok"/);
+  assert.doesNotMatch(t, /carry on|no text/);
   const none = rows.rowCalls({ code, name: sn('claude'), role: 'claude' }, { claude: must(ms.claude) });
   assert.match(none, /No members yet/);
 });

@@ -197,7 +197,7 @@ test('tail: the room session is woken only by a join whose row is not running: n
   assert.deepEqual(t.ids(), [9], t.text());
   assert.equal(rowsTurns(t), 1);
   assert.match(t.text(), /#9 carol\[system\] member_joined .* · row: carol has no row running; spawn it now: Agent sub-human:participant/);
-  assert.match(t.text(), /Make only the call its row note names, then end your turn with no text\./);
+  assert.match(t.text(), /Make only the call its row note names, then end your turn with the one word "ok"\./);
   assert.doesNotMatch(t.text(), /room now:/, 'no room state: it reads nothing else');
 });
 
