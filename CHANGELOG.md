@@ -2,7 +2,7 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
-## 0.5.0-beta.17 (unreleased): a smaller sub-human, an idle room session, the room plan
+## 0.5.0-beta.18 (unreleased): a smaller sub-human, an idle room session, the room plan
 
 Branch `room-plan` (docs/next/ROOM-PLAN.md). Tested on Claude Code 2.1.296.
 
@@ -22,8 +22,19 @@ Branch `room-plan` (docs/next/ROOM-PLAN.md). Tested on Claude Code 2.1.296.
 - **The room plan.** A room has named plans (`room` by default) with versions. "Update the room plan" seeds the current version into your Claude's plan file; ExitPlanMode stores the next version with the store's receipt, and no approval dialog (storing is not agreeing). Two edits from the same version: the second is refused with the first's text and reconciled. Sign-off is asked per version (`plan` op `ask`, by any member's Claude for its person) and answered in each person's plan view as before; a newer version retires the request on an older one. A Yes on your own plan is never your sign-off. The room row shows each plan's state; `sub-human plan [NAME] [--history]` prints one.
 - **Room upkeep** is any member's Claude's, when its person asks: edit a plan, ask for sign-off, add tasks and suggest owners, catch up (`read` with `brief`). The mechanics text says what it never does (answer for anyone, claim another's task, say a plan is agreed).
 
+### Fixed in live validation (three- and two-person rooms, local and over the pipe link)
+- The closing ExitPlanMode of a plan edit or a review no longer shows the person's own plan as approved: the plan file is empty for that call and comes back after it.
+- A hand edit left by shift+tab is kept as a draft (`<home>/drafts/CODE/`) and the person is told where. An edit's receipt is one short line for the person; what the model must do next goes to its context.
+- A sign-off is named by plan and version ("sign-off on plan paging v3, asked by alice"), and the request line says who is asked.
+- A dead link daemon: an `@room` is queued and the daemon started again; the link no longer reads online with a dead pid; the offline time counts from the last online; the queued count stays on the row; doctor says the link, not the host, is down, and a bare `/sub-human` redials an offline link at once.
+- The room guard reads a backtick inside single quotes as text (a `sed 's/`x`/…/' && python3 …` was refused).
+- A rows-only turn ends with "ok" (an empty one cost a second model call). A decision is a notice, never a wake.
+- Rows: each plan at its current version (an older version's decision is not news), "1/2 agreed, waiting on bob", "+N plans" when they do not fit, and joins only since you came.
+- The room session is not listed as a member called claude; a suggested task owner is told (a notice) and named in the brief; the bypass-permissions note shows on a join the module runs.
+- The CLI finds the room from a terminal (`--room`, `SUB_HUMAN_ROOM`, this session's seat, or the one open room) and `sub-human tasks` tags tasks with their plan version. gc deletes a closed room's native task list when it sets the room aside. The demo reads the invite's PIN off the status line.
+
 ### Claude Code internals
-- New contract entries: the task file schema, `.highwatermark`, the task locks (proper-lockfile), the list's auto-reset, the task view's watch, the hooks module's plan-mode attachment detail, the PermissionRequest `setMode` answer and the cross-session refuse notice (`docs/internals/cc-2.1.296-tasks-plans.md`). Gone: the TaskCreate/TaskUpdate/TaskCompleted entries and the Remote Control relay's.
+- New contract entries: the task file schema, `.highwatermark`, the task locks (proper-lockfile), the list's auto-reset, the task view's watch, the hooks module's plan-mode attachment detail, the PermissionRequest `setMode` answer, the cross-session refuse notice, an empty plan file on the closing ExitPlanMode (`exitplan-empty-plan`) and a denied PreToolUse's additionalContext (`pretool-deny-context`) (`docs/internals/cc-2.1.296-tasks-plans.md`). Gone: the TaskCreate/TaskUpdate/TaskCompleted entries and the Remote Control relay's.
 
 ## 0.5.0-beta.16 (unreleased)
 
