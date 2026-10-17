@@ -15,10 +15,12 @@ import * as store from '../lib/room/store.ts';
 import * as links from '../lib/room/links.ts';
 import * as gc from '../lib/gc.ts';
 import * as config from '../lib/config.ts';
+import * as tasks from '../lib/tasks.ts';
+import * as cc from '../lib/cc/env.ts';
 import { keyDir } from '../lib/room/keys.ts';
 import * as seatKey from '../hooks/seat-key.ts';
 import type { RoomCode } from '../lib/brand.ts';
-import { sn, tokenOf } from './support/brands.ts';
+import { rc, sn, tokenOf } from './support/brands.ts';
 import { must } from './support/must.ts';
 
 const DAY = 24 * 60 * 60_000;
@@ -109,6 +111,39 @@ test('gc: a closed room untouched for ROOM_GC_MS is set aside with its keys; one
   assert.ok(!fs.existsSync(path.join(path.dirname(oldDir), must(set[0]))) && !fs.existsSync(path.join(identity.home(), 'keys', must(set[0]))));
 });
 
+// Bug: every room ever opened kept its native task list (<config dir>/tasks/sh-CODE) for good, its open tasks in_progress.
+test('gc: a hosted room set aside takes its native task list (sh-CODE, only the plugin\'s files) with it; the log keeps its open tasks; another list stays', async t => {
+  h.freshHome(t);
+  const plain = await roomWith(), recorded = await roomWith(), foreign = await roomWith(), young = await roomWith();
+  const listOf = (code: RoomCode) => cc.tasksDir(`sh-${code}`);
+  // the room session's list as the plugin writes it: a task still open at close, projected by the host
+  for (const code of [plain, recorded, foreign, young]) {
+    assert.ok(tasks.apply(store.open(code), { op: 'add', subject: `open at close in ${code}` }, { by: 'alice' }).ok);
+    assert.ok(fs.readdirSync(listOf(code)).some(n => n.endsWith('.json')), 'the native files written');
+  }
+  // one list recorded at the room session's spawn in another config dir (task-files.ts dirOf reads it first)
+  const elsewhere = path.join(h.tmpDir('sub-human-test-claude2-'), 'tasks', `sh-${recorded}`);
+  fs.cpSync(listOf(recorded), elsewhere, { recursive: true });
+  identity.updateRoomClaude(recorded, () => ({ tasks_dir: elsewhere, stopped_at: new Date().toISOString() }));
+  // a file the plugin did not write for that room: the list is left alone
+  fs.writeFileSync(path.join(listOf(foreign), '99.json'), JSON.stringify({ id: '99', subject: 'mine', status: 'pending', metadata: {} }));
+  // a list no room here names: never touched
+  const stranger = listOf(rc('newt-0001'));
+  fs.mkdirSync(stranger, { recursive: true });
+  for (const c of [plain, recorded, foreign]) age(dirOf(c), 40);
+  const r = must(gc.sweep({ force: true }));
+  assert.deepEqual(r.rooms, [plain, recorded, foreign].sort());
+  assert.deepEqual(r.tasks.sort(), [listOf(plain), elsewhere].sort());
+  assert.ok(!fs.existsSync(listOf(plain)) && !fs.existsSync(elsewhere), 'the plugin\'s lists gone with their rooms');
+  assert.ok(fs.existsSync(listOf(recorded)), 'the recorded one went, not a guess beside it');
+  assert.ok(fs.existsSync(path.join(listOf(foreign), '99.json')), 'a list holding another file stays');
+  assert.ok(fs.existsSync(listOf(young)) && fs.existsSync(stranger), 'a room not set aside, and a list of no room here, stay');
+  // the log, set aside with the room, still says the task was open
+  const aside = must(fs.readdirSync(path.dirname(dirOf(young))).find(n => n.startsWith(`${plain}.gc-`)));
+  const log = fs.readFileSync(path.join(path.dirname(dirOf(young)), aside, 'log.jsonl'), 'utf8');
+  assert.match(log, /"kind":"task".*"status":"pending"/);
+});
+
 test('GC of a room with a never-left seat: a seat whose session crashed (no left_at, pid gone) keeps the room, however old', async t => {
   h.freshHome(t);
   const code = await roomWith({ left: false });
@@ -137,7 +172,7 @@ test('gc: at most once per GC_EVERY_MS and only within its budget; never the roo
   h.freshHome(t);
   const rooms = [await roomWith(), await roomWith(), await roomWith()];
   for (const c of rooms) age(dirOf(c), 40);
-  assert.deepEqual(gc.sweep({ budgetMs: 0 }), { rooms: [], aside: [], sessions: 0 }, 'no time: nothing done');
+  assert.deepEqual(gc.sweep({ budgetMs: 0 }), { rooms: [], aside: [], tasks: [], sessions: 0 }, 'no time: nothing done');
   assert.equal(gc.sweep(), null, 'not due again yet');
   assert.deepEqual(must(gc.sweep({ now: Date.now() + config.GC_EVERY_MS + 1000, keep: must(rooms[1]) })).rooms, [rooms[0], rooms[2]].sort(), 'due: all but the one kept');
 });

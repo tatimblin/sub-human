@@ -26,6 +26,10 @@
  * ("room CODE open", owner room) takes no request: it stays in_progress while the room is open, which keeps Claude
  * Code's list reset (every task completed: every file deleted) from firing.
  *
+ * At close only the room task completes. A task still open stays open in the log, the truth: nobody finished it, and a
+ * room that opens again goes on with it. Its native file is the room session's view, not a record: lib/gc.ts deletes
+ * the room's list (sh-CODE) when it sets the closed room aside.
+ *
  * Log entries (room.ts stores the caller's task `id` as `task_id`, since `id` is the entry's own id):
  *   task_req (via agent): {kind:'task_req', from = by = requester, text, op, task_id, subject, detail, evidence, owner, suggest, plan?, version?}
  *   task (via system, from room): {kind:'task', text, op, task_id, subject, detail, owner, status, blockedBy, req, suggest, plan?, version?}
