@@ -35,20 +35,12 @@ const first = (cs: Check[]): Check => must(cs[0], 'a check');
 // a job with only the fields checkRoomClaudes reads set
 const job = (j: Partial<AgentJob>): AgentJob => ({ pid: null, id: null, sessionId: null, status: null, state: null, kind: null, name: null, cwd: null, startedAt: null, ...j });
 
-test('doctor: node floor, Remote Control, ssh hints and argument errors', () => {
+test('doctor: node floor, ssh hints and argument errors (no Remote Control check)', () => {
   for (const v of ['24.3.0', '24.15.0', '25.0.0', '26.1.0']) assert.equal(doctor.checkNode(v).status, 'pass', v);
   for (const v of ['24.2.1', '24.0.0', '23.11.0']) assert.equal(doctor.checkNode(v).status, 'fail', v);
   const old = doctor.checkNode('22.11.0');
   assert.equal(old.status, 'fail');
   assert.match(fixOf(old), /Node 24\.3\+/);
-  assert.equal(doctor.checkRemoteControl({}, []).status, 'info');
-  for (const env of [{ CLAUDE_CODE_USE_BEDROCK: '1' }, { CLAUDE_CODE_USE_VERTEX: 'true' }, { ANTHROPIC_API_KEY: 'sk-x' }]) {
-    const c = doctor.checkRemoteControl(env, []);
-    assert.equal(c.status, 'warn', JSON.stringify(env));
-    assert.match(c.detail, /needs a claude\.ai subscription/);
-  }
-  assert.equal(doctor.checkRemoteControl({ CLAUDE_CODE_USE_BEDROCK: '0' }, []).status, 'info', '0 is off');
-  assert.equal(doctor.checkRemoteControl({}, [{ env: { CLAUDE_CODE_USE_BEDROCK: '1' } }]).status, 'warn', 'from a settings file too');
   // ssh refused: a login of the person's own (or a web invite); MFA or a jump host: the person's own ssh config
   const denied = doctor.sshHint('alice@box: Permission denied (publickey).');
   assert.ok(denied);
@@ -93,7 +85,7 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   assert.equal(clock.status, 'pass', 'the host\'s hello carries its time: one machine, no skew');
   assert.match(clock.detail, /^this machine is \d+ s (behind|ahead of) the host$/);
   assert.ok(byId(rep, 'shim'), 'shim checked');
-  assert.ok(byId(rep, 'remote_control'));
+  assert.ok(!rep.checks.some(c => c.id === 'remote_control'), 'no Remote Control check');
   const l = must(rep.links[0], 'the link');
   const reach = must(l.reach, 'its hello');
   assert.equal(reach.ok, true);

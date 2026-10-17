@@ -276,30 +276,6 @@
    "note": "Fallback: the note sits between \"the user said:\\n\" and \"\\n\\nNote: The user's next message\"."
   },
   {
-   "id": "plan-reject-remote",
-   "section": 3,
-   "stability": "incidental",
-   "since": "2.1.292",
-   "search": [
-    "STOP what you are doing and wait for the user to tell you how to proceed",
-    "\"user-rejected\""
-   ],
-   "note": "Remote Control deny (observed 2.1.292): with a note (\"Suggest edits\") the terminal's shapes (userFeedback, \"the user said:\"); a bare deny says \"STOP what you are doing…\" with no userFeedback: cc.planFeedback null, nothing recorded. An ordinary message typed on the phone right after a bare Deny is attached to the deny as that note (observed live), so a note is never an objection by itself: it waits for the person's Send on the confirm card (hooks/consent.ts)."
-  },
-  {
-   "id": "auq-bridge-racer",
-   "section": 3,
-   "stability": "incidental",
-   "since": "2.1.292",
-   "search": [
-    "Interrupting parked AskUserQuestion toolUseID="
-   ],
-   "shape": [
-    "let ~=!!(~.bridgeCallbacks||~.channelCallbacks&&!~.tool.requiresUserInteraction?.());"
-   ],
-   "note": "A tool with its own permission dialog (AskUserQuestion, the plan view) is raced by Remote Control when the session has bridge callbacks: the phone gets the card and its answer resolves the dialog, as the terminal's would; the tool_response is Claude Code's, never the model's. The confirm card for a review's note relies on it (hooks/consent.ts). A card can still auto-resolve after the askUserQuestionTimeout idle (afkTimeoutMs): then nothing is recorded and the note waits."
-  },
-  {
    "id": "permission-denied-auto-only",
    "section": 3,
    "stability": "incidental",
@@ -687,21 +663,7 @@
     "{kind:\"human\"}",
     "case\"human\":return"
    ],
-   "note": "A typed prompt's transcript user entry has no origin or {kind:\"human\"} (also typed through Remote Control: prompt.submit reports that one as \"bridge\"); peers, notifications, channels and plugins carry their own kind. cc.lastHumanPrompt takes only the person's; hooks/consent.ts picks the proposal a review opens from it (cc-2.1.292.md Remote Control)."
-  },
-  {
-   "id": "bridge-forwarded-rows",
-   "section": 8,
-   "stability": "incidental",
-   "since": "2.1.292",
-   "search": [
-    "[remote-bridge] Sending ",
-    "attachment.type===\"hook_system_message\")return!0;if("
-   ],
-   "shape": [
-    "if((~.type===\"user\"||~.type===\"assistant\")&&~.isVirtual)return!1;if(~.type===\"attachment\"){if(~.attachment.type===\"hook_system_message\")return!0;"
-   ],
-   "note": "Remote Control forwards user and assistant rows, a command hook's systemMessage (hook_system_message, shown as an assistant line) and a few system kinds, never a $.ui.log notice (system informational); an isMeta user row goes as isSynthetic (not shown there, as far as seen). A function hook's result has no systemMessage, so the module reaches the phone only through a turn: mod/deliver.ts relays room lines and an @room's refusal there as a prompt while the person types from Remote Control (cc-2.1.292.md Remote Control)."
+   "note": "A typed prompt's transcript user entry has no origin or {kind:\"human\"} (also typed through Remote Control: prompt.submit reports that one as \"bridge\"); peers, notifications, channels and plugins carry their own kind. cc.lastHumanPrompt takes only the person's (cc-2.1.292.md Remote Control)."
   },
   {
    "id": "plugin-prompt-frame",
@@ -1059,7 +1021,7 @@
     "if(~===void 0&&~.length===0&&!~)return{messages:[],shouldQuery:!1,command:~}",
     "${~.map(~).join(\"+\")}: ${~.text}"
    ],
-   "note": "An answer {} (no text, no context) of a typed prompt adds no row at all: the command line is not echoed and nothing reaches the model; a {text} answer is the command's output row, shown under \"sub-human: \" (the hooking plugins' names) and read by the model with its echoed command line (local_command rows go to the API), and the model repeats it on its next turn (seen live), so the module shows replies with $.ui.log and answers {text} only through Remote Control, for a prompt and a reply that hold no secret. A prompt run by the SDK, or with pasted blocks before it, is echoed as a user row even then: the module leaves those to the classic hook."
+   "note": "An answer {} (no text, no context) of a typed prompt adds no row at all: the command line is not echoed and nothing reaches the model; a {text} answer is the command's output row, shown under \"sub-human: \" (the hooking plugins' names) and read by the model with its echoed command line (local_command rows go to the API), and the model repeats it on its next turn (seen live), so the module answers {} and shows replies with $.ui.log. A prompt run by the SDK or through Remote Control, or with pasted blocks before it, is left to the classic hook."
   },
   {
    "id": "rename-command",

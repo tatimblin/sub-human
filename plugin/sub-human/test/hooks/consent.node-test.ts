@@ -775,12 +775,13 @@ const say = (w: World, prompt: string, tp: string) => {
 /** What bob's tail holds for his next prompt about the proposals awaiting him (lib/tail.ts remindersText). */
 // remindersText reads the seat's code, name and role only
 const reminders = (w: World) => w.lib(() => tailLib.remindersText({ code: w.code, name: sn('bob'), role: 'member' } as Identity, roomLib.open(w.code)));
-/** The live tool_result line of a Remote Control deny (2.1.292), with or without a note. */
-function phoneDeny(w: World, file: string, toolUseId: string, note: string | null) {
+/** The plan view's tool_result line when the person rejects it ("Tell Claude what to change" with a note, or a bare
+ * reject), as Claude Code writes it. */
+function planDeny(w: World, file: string, toolUseId: string, note: string | null) {
   const head = 'The user doesn\'t want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). ';
   const tail = '\n\nNote: The user\'s next message may contain a correction or preference. Pay close attention — if they explain what went wrong or how they\'d prefer you to work, consider saving that to memory for future sessions.';
   const content = note == null ? `${head}STOP what you are doing and wait for the user to tell you how to proceed.${tail}` : `${head}To tell you how to proceed, the user said:\n${note}${tail}`;
-  const f = path.join(w.cwd, `phone-${Math.random().toString(36).slice(2)}.jsonl`);
+  const f = path.join(w.cwd, `deny-${Math.random().toString(36).slice(2)}.jsonl`);
   fs.writeFileSync(f, [
     { type: 'attachment', attachment: { type: 'plan_mode', reminderType: 'full', isSubAgent: false, planFilePath: file, planExists: true } },
     { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content, is_error: true, tool_use_id: toolUseId }] },
@@ -1007,12 +1008,12 @@ test('H (live verify, verify1/08): plan mode by hand, the model skips EnterPlanM
   assert.match(String(hso(again).permissionDecisionReason), /nothing was shown and nothing is recorded/);
 });
 
-test('phone: a Remote Control deny with a note is bob\'s objection with that note; a bare deny records nothing', () => {
+test('deny: a reject with a note waits for bob\'s Send; a bare reject records nothing', () => {
   const run = (note: string | null) => {
     const { w, v2, file, tp } = two();
     w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {}, transcript_path: tp }), { as: 'bob' });
     w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu1', transcript_path: tp }), { as: 'bob' });
-    const tpd = phoneDeny(w, file, 'tu1', note);
+    const tpd = planDeny(w, file, 'tu1', note);
     const stop = w.hook('consent', ev('Stop', null, { permission_mode: 'plan', stop_hook_active: false, transcript_path: tpd }), { as: 'bob' });
     assert.match(must(ctx(stop)), /call ExitPlanMode now/);
     w.hook('consent', ev('PermissionRequest', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {} }), { as: 'bob' });
@@ -1029,21 +1030,21 @@ test('phone: a Remote Control deny with a note is bob\'s objection with that not
 });
 
 // ---------- a deny with a note never counts on its own: the confirm card ----------
-/** bob's plan view for alice's v3 is denied on the phone with `note` (or bare), and the review closes. */
-function deniedOnPhone(note: string | null) {
+/** bob's plan view for alice's v3 is rejected with `note` (or bare), and the review closes. */
+function denied(note: string | null) {
   const t = two();
   const { w, file, tp } = t;
   w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {}, transcript_path: tp }), { as: 'bob' });
   w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu1', transcript_path: tp }), { as: 'bob' });
-  const tpd = phoneDeny(w, file, 'tu1', note);
+  const tpd = planDeny(w, file, 'tu1', note);
   const stop = w.hook('consent', ev('Stop', null, { permission_mode: 'plan', stop_hook_active: false, transcript_path: tpd }), { as: 'bob' });
   w.hook('consent', ev('PermissionRequest', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {} }), { as: 'bob' });
   const post = ctx(w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: {}, tool_response: { plan: null } }), { as: 'bob' }));
   return { ...t, stop: ctx(stop), post };
 }
 
-test('confirm: a message typed after a phone Deny lands as the note; the card asks to send it to the proposer; Send records it (via=human, signed)', () => {
-  const { w, v3, post } = deniedOnPhone('open rate limiting');
+test('confirm: a reject\'s note; the card asks to send it to the proposer; Send records it (via=human, signed)', () => {
+  const { w, v3, post } = denied('open rate limiting');
   assert.deepEqual(answers(w), [], 'the note alone records nothing');
   assert.match(must(post), new RegExp(`call AskUserQuestion with "objection ${v3}"`));
   const { pre, post: sent, card } = confirm(w, v3, 'Send');
@@ -1063,13 +1064,13 @@ test('confirm: a message typed after a phone Deny lands as the note; the card as
 });
 
 test('confirm: Discard records nothing and the proposal stays pending; a bare deny records nothing and leaves no note', () => {
-  const { w, v3 } = deniedOnPhone('open rate limiting');
+  const { w, v3 } = denied('open rate limiting');
   const { post } = confirm(w, v3, 'Discard');
   assert.match(must(ctx(post)), /bob discarded the note; nothing was recorded and proposal [0-9a-f]{12} still awaits bob's answer/);
   assert.deepEqual(answers(w), []);
   assert.equal(waiting(w), null);
   assert.ok(w.lib(() => proposal.pendingFor(seat(w, 'bob'))).some(p => p.hash === v3), 'still bob\'s to answer');
-  const bare = deniedOnPhone(null);
+  const bare = denied(null);
   assert.match(must(bare.post), /closed the review of proposal [0-9a-f]{12} without answering; nothing was recorded/);
   assert.deepEqual(answers(bare.w), []);
   assert.equal(waiting(bare.w), null);
@@ -1078,7 +1079,7 @@ test('confirm: Discard records nothing and the proposal stays pending; a bare de
 });
 
 test('confirm: the model cannot answer the card for the person', () => {
-  const { w, v3 } = deniedOnPhone('open rate limiting');
+  const { w, v3 } = denied('open rate limiting');
   const cf = waiting(w);
   const q = w.lib(() => proposal.confirmQuestion(must(cf)));
   // Its own call with forged answers: Pre swaps in the hooks' card, answers and annotations dropped.
@@ -1119,7 +1120,7 @@ const RENUDGE = (v3: string) => `bob's note on ${v3} still waits; Esc was no ans
 const stopOf = (w: World, tp: string, active = false) => w.hook('consent', ev('Stop', null, { permission_mode: 'default', stop_hook_active: active, transcript_path: tp }), { as: 'bob', env: { SUB_HUMAN_SHIM: '1' } });
 
 test('confirm: Stop nudges once when the card was never shown; shim mode reports it open until then; a new review of that proposal drops the note', () => {
-  const { w, v3, tp } = deniedOnPhone('open rate limiting');
+  const { w, v3, tp } = denied('open rate limiting');
   const shim = { as: 'bob', env: { SUB_HUMAN_SHIM: '1' } };
   const stop = () => w.hook('consent', ev('Stop', null, { permission_mode: 'default', stop_hook_active: false, transcript_path: tp }), shim);
   const first = stop();
@@ -1140,7 +1141,7 @@ test('confirm: Stop nudges once when the card was never shown; shim mode reports
 });
 
 test('confirm: a card interrupted before bob answered (Pre, no Post) is offered again once, at the next prompt', () => {
-  const { w, v3, tp } = deniedOnPhone('open rate limiting');
+  const { w, v3, tp } = denied('open rate limiting');
   assert.equal(decision(w.hook('consent', preAsk({ questions: [{ question: `objection ${v3}` }] }), { as: 'bob' })), 'ask');
   // no Post: bob pressed Esc on the card. Shim mode reports it open, so the module still runs node for the prompt.
   const stop = w.hook('consent', ev('Stop', null, { permission_mode: 'default', stop_hook_active: false, transcript_path: tp }), { as: 'bob', env: { SUB_HUMAN_SHIM: '1' } });
@@ -1172,7 +1173,7 @@ test('confirm: a card interrupted before bob answered (Pre, no Post) is offered 
 });
 
 test('confirm: an interrupted card the model does not show again after reoffer: its Stop nudges once more, then never', () => {
-  const { w, v3, tp } = deniedOnPhone('open rate limiting');
+  const { w, v3, tp } = denied('open rate limiting');
   assert.equal(decision(w.hook('consent', preAsk({ questions: [{ question: `objection ${v3}` }] }), { as: 'bob' })), 'ask');
   // no Post (Esc); the model takes the "declined" for bob's choice and does not show the card on the next prompt
   assert.equal(ctx(promptOf(w, tp)), REOFFER(v3));
@@ -1195,7 +1196,7 @@ test('confirm: an interrupted card the model does not show again after reoffer: 
 });
 
 test('confirm: a renudge due for a proposal no longer bob\'s to answer drops the note instead', () => {
-  const { w, v3, tp } = deniedOnPhone('open rate limiting');
+  const { w, v3, tp } = denied('open rate limiting');
   w.hook('consent', preAsk({ questions: [{ question: `objection ${v3}` }] }), { as: 'bob' });
   promptOf(w, tp);
   const gone = 'f'.repeat(12); // decided, retired or answered elsewhere meanwhile: not pending for bob
@@ -1205,7 +1206,7 @@ test('confirm: a renudge due for a proposal no longer bob\'s to answer drops the
 });
 
 test('confirm: a card that closed with a Post (AFK, no Send/Discard) is not offered again: the model was told', () => {
-  const { w, v3, tp } = deniedOnPhone('open rate limiting');
+  const { w, v3, tp } = denied('open rate limiting');
   confirm(w, v3, 'Send', { resp: { afkTimeoutMs: 60000 } });
   assert.match(must(reminders(w)), /if bob asks, call AskUserQuestion/, 'told: the reminder no longer says now');
   const p = promptOf(w, tp);

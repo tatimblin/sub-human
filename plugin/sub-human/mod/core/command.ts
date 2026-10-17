@@ -7,8 +7,6 @@
  *   - typed here: {} (no row, no echo, nothing for the model) and the lines as $.ui.log notices. An output row ({text})
  *     would also be read by the model, which then repeats it on its next turn (seen live: "You've left …" under
  *     "left vole-8126"), and a reply that may hold a PIN must never reach it;
- *   - typed through Remote Control, where no notice shows: {text}, the command's own output row (the module answers
- *     only prompts that hold no secret there);
  *   - a join that worked: the command expands as before (next), the mechanics block handed to the expansion hook
  *     beneath in place of a second run (takeJoined), and a one-line confirmation as a notice.
  * In: command.run's {command, args, origin}. Out: whether the module answers, the shim's stdin, the reply read, the
@@ -23,8 +21,7 @@ import type { PinnedReport } from '../../hooks/types.ts';
 /** The command as command.run names it (a plugin skill's name, or its bare form). */
 export const COMMANDS: readonly string[] = Object.freeze(['sub-human:sub-human', 'sub-human']);
 
-/** The one rule for a prompt that may carry a secret (lib/commands/index.ts answers it hidden, the module leaves it to
- * the classic hook through Remote Control): `join`, `invite` and `admit`, any word of 3-10 digits (a PIN), and any word
+/** The one rule for a prompt that may carry a secret (lib/commands/index.ts answers it hidden): `join`, `invite` and `admit`, any word of 3-10 digits (a PIN), and any word
  * shaped like an invite line's SECRET (SECRET_WORD). */
 const SECRET_VERBS = ['join', 'invite', 'admit'];
 const DIGITS = /^[0-9]{3,10}$/;
@@ -38,8 +35,7 @@ export const mayHoldSecret = (args: unknown): boolean => { const a = words(args)
 export const hasPinWord = (args: unknown): boolean => words(args).some(secretShaped);
 
 /**
- * Whether the module answers this run itself. Typed here (composer): yes. Typed through Remote Control (bridge): only
- * a prompt that can hold no secret. Anything else (the SDK, whose prompt Claude Code echoes as a user row whatever the
+ * Whether the module answers this run itself. Typed here (composer): yes. Anything else (Remote Control, the SDK, whose prompt Claude Code echoes as a user row whatever the
  * answer; a plugin; a peer) and the room's Claude's own session (roomClaude: SUB_HUMAN_ROOM set; its launch binds
  * through the classic hook, which knows the agent type): no, the classic hook beneath answers, which keeps a typed PIN
  * out of the conversation itself.
@@ -47,7 +43,7 @@ export const hasPinWord = (args: unknown): boolean => words(args).some(secretSha
 export function answersItself(e: { args?: unknown; origin?: OriginLike } | null | undefined, { roomClaude = false, nonce = null }: { roomClaude?: boolean; nonce?: string | null } = {}): boolean {
   if (roomClaude || !nonce || !e || typeof e.args !== 'string') return false;
   const kind = e.origin && e.origin.kind;
-  return kind === 'composer' || (kind === 'bridge' && !mayHoldSecret(e.args));
+  return kind === 'composer';
 }
 
 /** hooks/handlers/join.ts's stdin: the UserPromptExpansion payload Claude Code would give it, marked as the module's. */
@@ -203,18 +199,13 @@ export const PINNED_MS: number = 15 * 60_000;
 
 /**
  * How a reply goes out: {result, logs, status?}. status: an invite's line and PIN, for $.ui.status (Claude Code draws
- * it under the prompt and saves it nowhere; a notice is a transcript row) for status.ms. Here: notices only, result {} (no row, no echo, nothing for the model). Through
- * Remote Control: a shareable reply is the command's output row (result {text}); one that is not (none should be: the
- * module answers only prompts that hold no secret there) says where it is instead.
+ * it under the prompt and saves it nowhere; a notice is a transcript row) for status.ms. Notices only, result {} (no
+ * row, no echo, nothing for the model).
  */
-export function answerOf(reply: JoinReply, { bridge = false, columns }: { bridge?: boolean; columns?: unknown } = {}): { result: { text?: string }; logs: string[]; status?: { status: string; ms: number; ref?: string } } {
+export function answerOf(reply: JoinReply, { columns }: { columns?: unknown } = {}): { result: { text?: string }; logs: string[]; status?: { status: string; ms: number; ref?: string } } {
   if (reply.kind === 'say' && reply.pinned) {
     const fit = pinFor(reply.pinned, reply.lines, columns);
-    const status = { status: { status: fit.status, ms: reply.pinned.ms, ...(reply.pinned.ref ? { ref: reply.pinned.ref } : {}) } };
-    if (!bridge) return { result: {}, logs: fit.lines, ...status };
-    return { result: { text: 'the reply is on the terminal of the machine this session runs on.' }, logs: fit.lines, ...status };
+    return { result: {}, logs: fit.lines, status: { status: fit.status, ms: reply.pinned.ms, ...(reply.pinned.ref ? { ref: reply.pinned.ref } : {}) } };
   }
-  if (!bridge) return { result: {}, logs: reply.lines };
-  if (reply.kind === 'say' && reply.shareable && reply.lines.length) return { result: { text: reply.lines.join('\n') }, logs: [] };
-  return { result: { text: 'the reply is on the terminal of the machine this session runs on.' }, logs: reply.lines };
+  return { result: {}, logs: reply.lines };
 }

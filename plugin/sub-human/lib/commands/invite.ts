@@ -33,7 +33,7 @@ export const invite: Verb = (argv, { cur: seat }) => {
     const r = web
       ? webhost().hostWeb(cur.code, { funnel: !!f.public, port: f.port !== undefined ? Number(f.port) : undefined, by: cur.name })
       : hosting.hostInvite(cur.code, { ssh: f.pipe ? undefined : f.ssh === undefined ? true : f.ssh, pipe: !!f.pipe, by: cur.name });
-    // for this terminal only, never the model, nor Remote Control: it holds the PIN. Through the hooks module the line
+    // for this terminal only, never the model: it holds the PIN. Through the hooks module the line
     // and the PIN are pinned under the prompt, which Claude Code does not save (a notice is a transcript row)
     return secret(r.text, { pinned: r.pinned });
   } catch (e) { return refused(msgOf(e)); }

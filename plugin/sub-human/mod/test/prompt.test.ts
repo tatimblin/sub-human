@@ -3,7 +3,7 @@
 // checks the hooks: a peer @room is dropped before anything beneath runs, an unseated prompt starts no node, a
 // seated one runs hooks/handlers/prompt.ts with the origin in its stdin, and the shim's answer and notices reach the session.
 import type { ClassicResultOf, EventOf, On } from 'claude-code'
-import { test, expect, mock, type Engine } from 'claude-code/testing'
+import { test, expect, type Engine } from 'claude-code/testing'
 import { SEAT, OUT, must, ran, scriptOf, session, start, stdinOf, helloOf, seatOf } from './support.ts'
 
 const SID = 'sid-p'
@@ -290,41 +290,16 @@ test('an unseated session writes no presence', async ($, on) => {
   expect(seen.presence.length).toBe(0)
 })
 
-test('an @room typed through Remote Control: a refusal is relayed as a prompt of its own (no notice shows there); "✓ sent" is not', async ($, on) => {
+test('an @room typed through Remote Control: a refusal is a notice as here (no relay, no model turn)', async ($, on) => {
   const refused = { decision: 'block', reason: '✗ not posted: the room is offline', systemMessage: 'sub-human: ✗ not posted: the room is offline', subHuman: { reviewOpen: false }, hookSpecificOutput: { hookEventName: 'UserPromptSubmit', suppressOriginalPrompt: true } }
   const seen = world($, on, { prompt: JSON.stringify(refused) })
-  const clock = mock.clock(on, { now: 0 })
   await start($)
   await submit($, '@room ship it', 'bridge')
   expect(seen.stdin[0]?.sub_human_origin).toBe('bridge')
   expect(seen.classic[0]?.block).toMatch(/offline/)
-  const relayed = () => seen.entered.filter(t => t.startsWith('sub-human: ✗'))
-  expect(relayed()).toEqual([]) // not from inside the hook that holds the prompt
-  expect(seen.logs).toEqual([]) // and no notice: the phone would not show it
-  await clock.advance(250)
-  const t0 = Date.now()
-  while (!relayed().length && Date.now() - t0 < 3000) await new Promise(r => setTimeout(r, 20))
-  expect(relayed()).toEqual(['sub-human: ✗ not posted: the room is offline']) // only the line the person reads
-  const i = seen.entered.length - 1
-  expect([...(seen.contexts[i] ?? []), ...(must(seen.classic[i], 'the relay\'s result').additionalContext ?? [])]).toEqual([expect.stringMatching(/^\(for Claude\) sub-human: .*It needs no reply/)])
-  expect(seen.scripts.filter(x => x === 'prompt.ts').length).toBe(1) // no node for the relay
-  // typed here, the same answer is a notice
-  const n = seen.logs.length
-  await submit($, '@room again')
-  expect(seen.logs.slice(n)).toEqual(['✗ not posted: the room is offline']) // $.ui.log puts "sub-human: " before it: never twice
-})
-
-test('an @room typed through Remote Control that posted ("✓ sent", no systemMessage) relays nothing: no model turn', async ($, on) => {
-  const sent = { continue: false, stopReason: SENT, subHuman: { reviewOpen: false }, hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } }
-  const seen = world($, on, { prompt: JSON.stringify(sent) })
-  const clock = mock.clock(on, { now: 0 })
-  await start($)
-  await submit($, '@room hi', 'bridge')
-  expect(seen.classic[0]?.preventContinuation).toBe(true)
-  await clock.advance(5000)
-  await new Promise(r => setTimeout(r, 200))
-  expect(seen.entered).toEqual(['@room hi']) // this world's engine enters every prompt; no relay after it
-  expect(seen.logs.filter(l => !/didn't arrive here/.test(l))).toEqual([]) // (this world runs no tail child)
+  expect(seen.logs).toEqual(['✗ not posted: the room is offline'])
+  await new Promise(r => setTimeout(r, 400))
+  expect(seen.entered).toEqual(['@room ship it'])
 })
 
 test('13 (K/Q): a plain prompt typed into the room\'s Claude is a stop with the hint, drawn as the hint alone: no "blocked by hook" frame, nothing put back in the input, no turn', async ($, on) => {

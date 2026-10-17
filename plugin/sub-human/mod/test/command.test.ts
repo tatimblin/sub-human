@@ -105,15 +105,12 @@ test('item 2 (D): a terminal narrower than the whole line pins the PIN and SECRE
   expect(statuses.at(-1)).toBeUndefined()
 })
 
-test('a reply with no secret is a notice here (the model never reads it, so never repeats it), and the output row through Remote Control', async ($, on) => {
+test('a reply with no secret is a notice here (the model never reads it, so never repeats it)', async ($, on) => {
   const seen = world($, on, { join: { subHuman: { say: 'left otter-4821 · /sub-human joins again', refused: false, shareable: true } } })
   await start($)
   const r = await typed($, 'leave')
   expect(r.text).toBeUndefined()
   expect(seen.logs).toEqual(['left otter-4821 · /sub-human joins again'])
-  const phone = await typed($, 'leave', 'bridge')
-  expect(phone.text).toMatch(/left otter-4821 · \/sub-human joins again$/)
-  expect(seen.logs.length).toBe(1)
   expect(seen.ran).toBe(0)
 })
 
@@ -130,12 +127,12 @@ test('a join that worked expands as before: the mechanics block reaches the expa
   expect(seen.logs).toEqual(['joined otter-4821 as alice, with bob · @room to talk'])
 })
 
-test('the room\'s Claude, the SDK and a PIN typed through Remote Control go to the classic hook; a shim that failed is one notice, and the command does not run', async ($, on) => {
+test('the room\'s Claude, the SDK and anything typed through Remote Control go to the classic hook; a shim that failed is one notice, and the command does not run', async ($, on) => {
   const seen = world($, on, { join: '' })
   await start($)
   await typed($, '', 'sdk')
   expect([seen.joins.length, seen.ran]).toEqual([0, 1])
-  await typed($, 'join dev otter-4821 4821', 'bridge')
+  await typed($, 'leave', 'bridge')
   expect([seen.joins.length, seen.ran]).toEqual([0, 2])
   const r = await typed($, 'help')
   expect([seen.joins.length, seen.ran]).toEqual([1, 2])

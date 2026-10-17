@@ -14,28 +14,22 @@
  *       and its process live (pass); its last start failed (spawn_error), or its job started over 90 s ago but never
  *       bound its seat (fail, with the job's state from `claude agents --json --all`)
  *   settingsFiles(env) -> [settings];  checkHooks(settings, env?) -> Check   settings that turn hooks off
- *   checkRemoteControl(env, settings) -> Check   whether Remote Control (the phone) is likely available: it needs a
- *       claude.ai login and is unavailable with Bedrock, Vertex, Foundry or an API key (informational)
  */
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { lib, cli, check, tilde, truthy } from './check.ts';
+import { lib, cli, check, tilde } from './check.ts';
 import type { Check, Report } from '../types.ts';
 import { msgOf } from '../../errors.ts';
 import type { RoomCode } from '../../brand.ts';
 import type * as BgMod from '../../cc/bg.ts';
 
-/** A Claude Code settings file, as the hooks and Remote Control checks read it. */
+/** A Claude Code settings file, as the hooks check reads it. */
 interface Settings {
   disableAllHooks?: unknown;
   allowManagedHooksOnly?: unknown;
   apiKeyHelper?: unknown;
   env?: Record<string, unknown>;
 }
-const NO_REMOTE_CONTROL: Record<string, string> = {
-  CLAUDE_CODE_USE_BEDROCK: 'Bedrock', CLAUDE_CODE_USE_VERTEX: 'Vertex', CLAUDE_CODE_USE_FOUNDRY: 'Foundry',
-  ANTHROPIC_API_KEY: 'an API key', ANTHROPIC_AUTH_TOKEN: 'an auth token',
-};
 
 function claudeVersion(env: NodeJS.ProcessEnv): string | null {
   const r = spawnSync('claude', ['--version'], { encoding: 'utf8', timeout: 15_000, env });
@@ -98,16 +92,6 @@ function checkHooks(settings: Settings[], env: NodeJS.ProcessEnv = process.env):
     return check({ id: 'hooks', status: 'fail', title: 'hooks', detail: 'Claude Code has plugin hooks modules switched off for now (its saved switch), so sub-human cannot join a room', fix: 'restart claude with network access, which refreshes the switch; if this stays, hooks modules are off for your account' });
   }
   return check({ id: 'hooks', status: 'pass', title: 'hooks', detail: 'no settings file turns hooks off; hooks modules are on' });
-}
-
-function checkRemoteControl(env: NodeJS.ProcessEnv, settings: Settings[]): Check {
-  const seen: string[] = [];
-  for (const [k, what] of Object.entries(NO_REMOTE_CONTROL)) {
-    if (truthy(env[k]) || settings.some(s => s.env && truthy(s.env[k]))) seen.push(what);
-  }
-  if (settings.some(s => typeof s.apiKeyHelper === 'string' && s.apiKeyHelper)) seen.push('an apiKeyHelper');
-  if (!seen.length) return check({ id: 'remote_control', status: 'info', title: 'Remote Control', detail: 'likely available (needs a claude.ai login): the phone drives your session, room cards included' });
-  return check({ id: 'remote_control', status: 'warn', title: 'Remote Control', detail: `likely unavailable: Claude Code here uses ${[...new Set(seen)].join(', ')}; Remote Control (the phone) needs a claude.ai subscription login`, fix: 'nothing to fix for the room itself; to use the phone, log in with a claude.ai account' });
 }
 
 const ROOM_CLAUDE_BIND_GRACE_MS = 90_000;
@@ -186,5 +170,5 @@ function checkDaemon({ version, env = process.env, status = () => lib('cc/bg.ts'
   return check({ id: 'daemon', status: 'pass', title: 'bg daemon', detail: `running (${who})` });
 }
 
-export { claudeVersion, checkClaude, checkDaemon, checkRoomClaudes, settingsFiles, checkHooks, checkRemoteControl };
+export { claudeVersion, checkClaude, checkDaemon, checkRoomClaudes, settingsFiles, checkHooks };
 export type { Settings };

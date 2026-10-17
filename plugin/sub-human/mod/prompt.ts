@@ -4,23 +4,19 @@
  * prompt-origin-composer); one the shim could not handle is refused, never let through as typed. The origin goes
  * to at-room with the session's nonce, which at-room checks against this session's lease. The origin hand-off is
  * a module variable: classic.UserPromptSubmit runs inside prompt.submit's next(e) (cc CONTRACT
- * prompt-submit-ups-order); a reload in between loses it, and at-room then refuses the @room. A typed prompt's origin
- * also says where the person is (onRemote): through Remote Control, room lines and an @room's refusal are relayed
- * as prompts (mod/deliver.ts), since the phone shows no $.ui.log notice. A relay is only the lines the person reads;
- * what the model needs (RELAY_CONTEXT) goes as context (prompt.submit, else classic.UserPromptSubmit
- * additionalContext), and no node runs for it. The room context the tail sent since the last turn (the pull lane,
+ * prompt-submit-ups-order); a reload in between loses it, and at-room then refuses the @room. The room context the tail sent since the last turn (the pull lane,
  * held by mod/deliver.ts) rides as context beside the next prompt that starts a turn, never as a user row of its own:
  * a row of it before the person's words read as one turn with them (stage 8e B). An @room's receipt (the shim's stop, "✓ sent") shows as itself: the
  * warning row Claude Code draws for the stop loses its "Operation stopped by hook: " frame (session.append).
  */
 import {
   gateVerdict, GATE_FAILED, isAtRoom, isAtClaude, needsNode, originQueue, originKind, mergeClassic, TYPED_ORIGINS, titleFor, failClosed, shimFailed,
-  writesWorking, onRemote, receiptBook, unseatedRefusal, roomClaudeCommand,
+  writesWorking, receiptBook, unseatedRefusal, roomClaudeCommand,
 } from './core/prompt.ts';
 import { shimArgv, shimEnv, toClassic, asNotice, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { reviewOpenOf, seatedOrUnsure } from './core/prefilter.ts';
-import { delivering, setRemote, queueRelay, isRelay, wakeContextOf, facts, presence, serialPulls } from './deliver.ts';
-import { RELAY_CONTEXT, pullContext, clearPulls } from './core/deliver.ts';
+import { delivering, wakeContextOf, facts, presence, serialPulls } from './deliver.ts';
+import { pullContext, clearPulls } from './core/deliver.ts';
 import { asHello, asNonce } from './core/state.ts';
 import type { ClassicHookInputs, EngineInterface, On } from 'claude-code';
 import type { Hello, Pulls, ShimResult } from './core/types.ts';
@@ -60,30 +56,6 @@ async function helloOf($: EngineInterface): Promise<Hello | null> {
   return asHello(value);
 }
 
-/** Refusals for the person on Remote Control, held by the UserPromptSubmit shim until its prompt.submit returns. */
-let refusals: string[] = [];
-
-/** Show text (an @room's refusal) to the person on Remote Control, where no notice shows (cc CONTRACT
- * bridge-forwarded-rows): held, then queued for the next relay (mod/deliver.ts) by the prompt.submit hook around
- * it, so the relay's submitter is that hook and this module's classic.UserPromptSubmit sees the relay (a plugin's
- * prompt skips the hook that submits it). */
-function relay(text: unknown) {
-  refusals.push(...String(text ?? '').split('\n'));
-}
-
-/** Queue the held refusals with this hook's $ (no $ crosses an import: mod/deliver.ts takes plain functions). */
-function sendRefusals($: EngineInterface) {
-  if (!refusals.length) return;
-  const lines = refusals;
-  refusals = [];
-  queueRelay({
-    now: () => $.clock.now(),
-    after: (ms, fn) => $.clock.after(ms, fn),
-    submit: t => $.prompt.submit({ text: t, asUser: true }),
-    log: t => $.ui.log(t),
-  }, lines);
-}
-
 /** Prompts prompt.submit gave the held room context: classic.UserPromptSubmit adds it only to one it did not reach
  * (a prompt the plugin submits from inside one of its own hooks skips its prompt.submit hook). */
 const pulled = new Set<string>();
@@ -103,12 +75,11 @@ function carried($: EngineInterface, upTo: number) {
   });
 }
 
-/** Relays the model has already been given RELAY_CONTEXT for (by prompt.submit), so the classic hook adds none. */
+/** Wakes the model has already been given their context for (by prompt.submit), so the classic hook adds none. */
 const contexted = new Set<string>();
 
 /** node hooks/handlers/prompt.ts with the classic payload (plus the origin), translated; its notices and report applied: a
- * notice is a $.ui.log line, or for a prompt typed through Remote Control a relay (mod/deliver.ts; the phone shows no
- * notice). An @room it did not handle (exit other than 0 or 2) is refused, and a person on Remote Control told. */
+ * notice is a $.ui.log line. An @room it did not handle (exit other than 0 or 2) is refused. */
 async function runPrompt(
   $: EngineInterface, e: ClassicHookInputs['UserPromptSubmit'], origin: string | null, hello: Hello | null,
 ): Promise<ShimResult> {
@@ -122,12 +93,9 @@ async function runPrompt(
     timeoutMs: SHIM_TIMEOUT_MS,
   });
   const failed = shimFailed(run) ? failClosed(e.prompt, hello) : null;
-  if (failed) {
-    if (origin === 'bridge') relay(failed.block);
-    return failed;
-  }
+  if (failed) return failed;
   const { result, systemMessage, subHuman } = toClassic('UserPromptSubmit', run);
-  if (systemMessage) { if (origin === 'bridge') relay(systemMessage); else for (const line of asNotice(systemMessage).split('\n')) if (line.trim()) $.ui.log(line); }
+  if (systemMessage) for (const line of asNotice(systemMessage).split('\n')) if (line.trim()) $.ui.log(line);
   const open = reviewOpenOf(subHuman);
   if (open !== undefined) await $.state.set(REVIEW, open);
   return result;
@@ -153,12 +121,6 @@ export function registerPrompt(on: On): void {
         return r;
       } finally { pulled.delete(e.text); stopped.delete(e.text); }
     };
-    // A relay this module submits: room lines for the person, never a post (its first line may read "room: …"). The
-    // model gets what it needs as context, which the phone does not show.
-    if (e.origin && e.origin.kind === 'plugin' && e.origin.name === $.plugin.name && isRelay(e.text)) {
-      contexted.add(e.text);
-      try { return await pass({ ...e, context: [...(e.context ?? []), RELAY_CONTEXT] }); } finally { contexted.delete(e.text); }
-    }
     // a member's wake submitted asUser (mod/deliver.ts): what the model alone needs of it rides as context
     const wake = e.origin && e.origin.kind === 'plugin' && e.origin.name === $.plugin.name ? wakeContextOf(e.text) : undefined;
     if (wake) {
@@ -169,7 +131,6 @@ export function registerPrompt(on: On): void {
     if (why) return { drop: why };
     let down = e;
     if (e.origin && TYPED_ORIGINS.includes(e.origin.kind)) {
-      setRemote(onRemote(e.origin)); // the phone (bridge) or this terminal: where room lines must go
       const sid = await $.session.id();
       const hello = await helloOf($);
       // "working" once the turn starts (mod/deliver.ts turn.start): a prompt stopped or refused below starts none
@@ -184,7 +145,7 @@ export function registerPrompt(on: On): void {
       }
     }
     const item = origins.push(e.text, originKind(e.origin));
-    try { return await pass(down); } finally { origins.drop(item); sendRefusals($); }
+    try { return await pass(down); } finally { origins.drop(item); }
   }).catch((_$, e, next) => (next.called || !isAtRoom(e.text) ? next(e) : { drop: GATE_FAILED }));
 
   // idle, waiting on the person, or stalled: written (not awaited) for a seat, or when unsure; the next typed prompt
@@ -218,10 +179,6 @@ export function registerPrompt(on: On): void {
       if (title) await $.state.set(TITLED, { sid: e.session_id, addr: title });
       const top: ShimResult = title ? { sessionTitle: title } : {};
       const { value: reviewFlag } = await $.state.get(REVIEW);
-      if (isRelay(e.prompt)) { // room lines for the person: no node, and the model's part as context it alone reads
-        const ctx = contexted.has(e.prompt) ? {} : { additionalContext: [RELAY_CONTEXT] };
-        return mergeClassic({ ...ctx, ...top }, await next(e));
-      }
       // a member's wake submitted asUser: its context, when prompt.submit above did not add it (the hook that submits a
       // prompt skips its own plugin's prompt.submit hook); the prompt goes on as any other (consent reads it too)
       const wake = wakeContextOf(e.prompt);
@@ -229,7 +186,7 @@ export function registerPrompt(on: On): void {
       const refused = unseatedRefusal(e, hello); // an @room with surely no seat: at-room's words, no node
       if (refused) {
         presence.pending = null; // stopped: no turn, no "working"
-        if (origins.take(e.prompt) === 'bridge') relay(refused.stopReason);
+        origins.take(e.prompt);
         const merged = mergeClassic({ ...refused, ...top }, await next(e));
         if (!merged.block) receipts.expect(merged.stopReason, isAtClaude(e.prompt) ? '@claude' : '@room'); // its warning row is the refusal alone, no frame
         return merged;

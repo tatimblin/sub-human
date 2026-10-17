@@ -22,9 +22,7 @@ test('command: it answers what was typed here, and through Remote Control only w
   };
   assert.equal(run('composer'), true);
   assert.equal(run('composer', 'join dev vole-1234 4821'), true, 'here a PIN is safe: the answer adds no row');
-  assert.equal(run('bridge', 'leave'), true);
-  for (const args of ['join dev vole-1234 4821', 'invite', 'admit', 'bob vole-1234 4821']) assert.equal(run('bridge', args), false, args);
-  for (const kind of ['sdk', 'plugin', 'peer', 'unclassified']) assert.equal(run(kind), false, kind);
+  for (const kind of ['bridge', 'sdk', 'plugin', 'peer', 'unclassified']) assert.equal(run(kind), false, kind);
   assert.equal(answersItself({ args: '', origin: { kind: 'composer' } }, { nonce: NONCE, roomClaude: true }), false, 'the room\'s Claude binds through the classic hook');
   assert.equal(answersItself({ args: '', origin: { kind: 'composer' } }, { nonce: null }), false, 'no nonce: join.ts could not tell it is the module');
 });
@@ -100,15 +98,12 @@ test('a lease that did not hold the nonce is read as stale (nothing ran: the mod
   assert.equal(appendCapped('a\nb\n', 'c', 2), 'b\nc\n');
 });
 
-test('command: here every reply is notices with an empty answer (no row, nothing for the model to repeat); through Remote Control only a shareable one is the output row', async () => {
+test('command: every reply is notices with an empty answer (no row, nothing for the model to repeat)', async () => {
   const { answerOf } = await load();
   const help: JoinReply = { kind: 'say', lines: ['commands:', '  /sub-human …'], refused: false, shareable: true };
   assert.deepEqual(answerOf(help), { result: {}, logs: help.lines });
-  assert.deepEqual(answerOf(help, { bridge: true }), { result: { text: 'commands:\n  /sub-human …' }, logs: [] });
   const secret: JoinReply = { kind: 'say', lines: ['  /sub-human join me@box vole-1234 4821'], refused: false, shareable: false };
   assert.deepEqual(answerOf(secret), { result: {}, logs: secret.lines });
-  const bridge = answerOf(secret, { bridge: true });
-  assert.ok(!JSON.stringify(bridge.result).includes('4821'), 'the PIN never goes to the phone or the model');
   assert.deepEqual(answerOf({ kind: 'failed', lines: ['✗ x'] }), { result: {}, logs: ['✗ x'] });
 });
 

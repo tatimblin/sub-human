@@ -4,7 +4,7 @@
  * shim refresh, the home's modes) and the bundle file. scripts/sub-human dispatches here. The checks live by subject in
  * lib/cli/doctor/: links.ts (the links, keyed on the typed reasons the link daemon records), ssh.ts (the shim, ssh
  * and its stderr), listener.ts (the web listener), claude.ts (Claude Code, the bg daemon, the
- * room's Claude, hooks, Remote Control), redact.ts (the bundle); check.ts what they share.
+ * room's Claude, hooks), redact.ts (the bundle); check.ts what they share.
  *
  * --fix refreshes the serve shim and pointer (lib/remote/shim.ts refresh) and repairs the home's modes (lib/home.ts
  * repairModes); --json is unredacted (it stays on this machine); --quick skips the hello to each link's host and the
@@ -19,7 +19,7 @@ import { checkShim, sshVersion, checkSsh, sshHint } from './doctor/ssh.ts';
 import { diagnoseLink, linkChecks, helloProbe } from './doctor/links.ts';
 import { checkListener } from './doctor/listener.ts';
 import { roomChecks, verifyRoom, verifyText } from './doctor/rooms.ts';
-import { claudeVersion, checkClaude, checkDaemon, checkRoomClaudes, settingsFiles, checkHooks, checkRemoteControl } from './doctor/claude.ts';
+import { claudeVersion, checkClaude, checkDaemon, checkRoomClaudes, settingsFiles, checkHooks } from './doctor/claude.ts';
 import { bundle, redactor } from './doctor/redact.ts';
 import type { Check, CheckStatus, DoctorOptions, Report } from './types.ts';
 import { parse } from './args.ts';
@@ -79,7 +79,7 @@ async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, env = proc
   const cl = checkClaude({ version: cv, quick, env });
   checks.push(cl.check, checkDaemon({ version: cv, env }));
   const settings = settingsFiles(env);
-  checks.push(checkHooks(settings, env), checkRemoteControl(env, settings));
+  checks.push(checkHooks(settings, env));
   checks.push(...checkListener({ quick }));
   return {
     generated_at: new Date().toISOString(),
@@ -150,5 +150,5 @@ async function main(args: readonly string[], { write = (s: string) => { process.
 
 export {
   diagnose, format, bundle, redactor, helloProbe, checkListener, checkRoomClaudes, linkChecks,
-  checkNode, checkRemoteControl, checkClaude, checkDaemon, sshHint, main, parseArgs, DOCTOR_HELLO_MS, roomChecks, verifyRoom, verifyText,
+  checkNode, checkClaude, checkDaemon, sshHint, main, parseArgs, DOCTOR_HELLO_MS, roomChecks, verifyRoom, verifyText,
 };

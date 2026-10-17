@@ -142,12 +142,6 @@ const NOTE = '\n\nNote: The user\'s next message';
  * "the user said:\n" (cut at the "Note: The user's next message" suffix). On 2.1.296 the entry also carries
  * toolUseResult "Error: <the text>", toolDenialKind "user-rejected" and permissionDecision {decision "reject",
  * source "user_reject"}, none of which is read.
- * Remote Control (the phone; observed on 2.1.292) answers the same dialog with the same shapes, so its note is
- * read the same way: "Suggest edits" / deny with a note is an is_error tool_result, toolDenialKind
- * "user-rejected", userFeedback "<note>", content "The user doesn't want to proceed with this tool use. The tool
- * use was rejected (…). To tell you how to proceed, the user said:\n<note>\n\nNote: The user's next message may
- * contain a correction or preference. …"; a bare deny has no userFeedback and reads "… STOP what you are doing
- * and wait for the user to tell you how to proceed.\n\nNote: …" (note null here: closed without answering).
  * @cc ?.feedbackIsFromUser&&
  * @stability incidental
  */

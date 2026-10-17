@@ -257,17 +257,14 @@ test('@claude: refused like @room when empty, forged or unattested; the room\'s 
   assert.equal(out.entries().length, 0);
 });
 
-test('typed through Remote Control (origin bridge), a refusal is also the systemMessage (relayed to the phone), "✓ sent" is not; typed here, neither', () => {
+test('typed through Remote Control (origin bridge), an @room posts and a refusal is a stop as here: no systemMessage either way', () => {
   const w = new World({ claude: 'sleep', alice: 'act' });
   const sent = atRoom(w, submit('@room from the phone', 'bridge'), { as: 'alice' });
   posted(sent);
-  assert.equal(ans(sent).systemMessage, undefined, 'no relay (a model turn) for a post that went through');
+  assert.equal(ans(sent).systemMessage, undefined);
   const empty = atRoom(w, submit('@room', 'bridge'), { as: 'alice' });
-  assert.equal(ans(empty).systemMessage, `sub-human: ${refusedStop(empty)}`);
-  const here = atRoom(w, submit('@room from the terminal'), { as: 'alice' });
-  posted(here);
-  assert.equal(ans(here).systemMessage, undefined);
-  assert.equal(ans(atRoom(w, submit('@room'), { as: 'alice' })).systemMessage, undefined);
+  assert.ok(refusedStop(empty));
+  assert.equal(ans(empty).systemMessage, undefined);
 });
 
 // ---------- who wrote it: only a typed origin posts (the mod's prompt.submit origin, through the shim) ----------

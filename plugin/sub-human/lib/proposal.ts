@@ -496,8 +496,7 @@ function restoreStale(me: Me | null | undefined, { force = false, now = Date.now
 // ---------- a review's note, waiting for the person's Send (hooks/consent.ts) ----------
 /**
  * The session's confirm: {hash, note, from, title, at, stage} (lib/consent/review.ts: where its card stands). A plan review rejected with a note ("Tell Claude what
- * to change", a phone deny with a note or "Suggest edits": Claude Code writes them alike, and a phone message typed
- * after a bare deny lands there too) records nothing by itself: the note waits here until the person answers the
+ * to change") records nothing by itself: the note waits here until the person answers the
  * confirm card. One per person: a newer note replaces it.
  */
 const readConfirm = (me: Me): Confirm | null => { try { return session.get(storeOf(me), me.name, 'confirm') ?? null; } catch { return null; } };

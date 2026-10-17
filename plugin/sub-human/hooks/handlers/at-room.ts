@@ -16,9 +16,7 @@
 // prompt with the reason. In a room hosted elsewhere whose link is down, the daemon queues the signed post instead
 // (lib/remote/outbox.ts) and "⧗ queued" ends the prompt; it is sent, in order, when the link is back. A post sent
 // over a slow link that the host has not answered in time is "⧗ sending (slow link)" (kept under its nonce: the late
-// copy is the post), and a deadline whose outcome is unknown is "⧗ not confirmed", never "not posted". Typed through Remote Control (origin bridge), a refusal is also the
-// systemMessage, which the module relays to the phone (a block line does not show there); "✓ sent" is not (the phone
-// shows the person's own row, and a relay costs a model turn).
+// copy is the post), and a deadline whose outcome is unknown is "⧗ not confirmed", never "not posted".
 import * as identity from '../../lib/identity.ts';
 import * as room from '../../lib/room.ts';
 import { oneLine } from '../../lib/text.ts';
@@ -38,13 +36,8 @@ import { attested as leaseAttests } from '../../mod/core/state.ts';
 // it signs the person's own words (via=human): the seat-key signer, in this process only (hooks/seat-key.ts)
 seatKey.arm();
 
-/** A person typing through Remote Control sees no block line there: a refusal also goes out as systemMessage, which
- * mod/prompt.ts relays to the phone (mod/deliver.ts relay). "✓ sent" stays a stop line only. */
-let toPhone = false;
-const phoneNote = (text: string) => (toPhone ? { systemMessage: `sub-human: ${text}` } : {});
-
 const block = (reason: string, extra: Partial<HookSpecificOutput> = {}) => out({
-  decision: 'block', reason, ...phoneNote(reason),
+  decision: 'block', reason,
   hookSpecificOutput: { hookEventName: 'UserPromptSubmit', suppressOriginalPrompt: true, ...extra },
 });
 
@@ -53,7 +46,7 @@ const block = (reason: string, extra: Partial<HookSpecificOutput> = {}) => out({
  * warning row as the reason alone). A block would draw "UserPromptSubmit operation blocked by hook:" and put the
  * prompt back in the input, where refusals piled up and a later Enter sent them all. block stays for a prompt whose
  * words must not reach the model as the person's (no or another origin). */
-const refuse = (reason: string) => out({ continue: false, stopReason: reason, ...phoneNote(reason), hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
+const refuse = (reason: string) => out({ continue: false, stopReason: reason, hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
 
 const TAIL_BYTES = config.TRANSCRIPT_TAIL_BYTES;
 /** The last TAIL_BYTES of a JSONL transcript as parsed entries (oldest first); [] when unreadable. */
@@ -114,7 +107,6 @@ function handle(input: PromptIn): void {
   const prompt = typeof input.prompt === 'string' ? input.prompt : '';
   // The origin the shim says the prompt came from (prompt.submit e.origin.kind), or null; it posts only attested.
   const claimed = typeof input.sub_human_origin === 'string' ? input.sub_human_origin : null;
-  toPhone = claimed === 'bridge';
   const raw = prompt.startsWith('/') ? null : parse(prompt);
   const wake = raw === null && !prompt.startsWith('/') ? parseClaude(prompt) : null;
   const tag = wake !== null ? '@claude' : '@room';
@@ -151,11 +143,11 @@ function handle(input: PromptIn): void {
   }
   if (placed && placed.slow) { // sent, the host slow to answer: the daemon holds it under its nonce until it does
     const q = `⧗ sending (slow connection): room ${me.code} hasn't confirmed this post yet; it shows in the room once the host has it. No need to type it again`;
-    return out({ continue: false, stopReason: q, ...phoneNote(q), hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
+    return out({ continue: false, stopReason: q, hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
   }
   if (placed && placed.queued) { // a room hosted elsewhere, its link down: the daemon holds it (lib/remote/outbox.ts)
     const q = `⧗ queued: room ${me.code} is offline; this post goes out when the connection is back (${placed.queued} waiting)`;
-    return out({ continue: false, stopReason: q, ...phoneNote(q), hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
+    return out({ continue: false, stopReason: q, hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
   }
   // @claude on the host with no room's Claude running (it stopped, or never bound): start it, as a rejoin would
   const start = wake !== null ? seats.ensureRoomClaude(me.code, input.cwd, me.name) : '';
