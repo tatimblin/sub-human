@@ -18,7 +18,7 @@
  *   repairModes() -> string[]   once per home and process: the home and its top-level store directories
  *                               (rooms, sessions, links, keys, bin) that exist, are this user's and are open to
  *                               group or others are made 0700 (a home made by an older version was 0755). Creates
- *                               nothing. Returns the directories it changed. lib/room/store.ts open() runs it.
+ *                               nothing. Returns the directories it changed. lib/room/registry.ts open() and createRoom run it.
  *   isTempPath(p) -> bool       p is inside a temp dir (os.tmpdir(), /tmp, /private/tmp, /var/tmp), lexically or
  *                               after realpath. A plugin root there is not recorded for the launchers in
  *                               <home>/bin (hooks/launcher.ts, lib/remote/shim.ts): anything on the machine

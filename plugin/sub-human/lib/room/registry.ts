@@ -3,6 +3,8 @@
  *
  *   open(code) is cached per home and code: a room this machine links to (lib/room/links.ts) is a MirrorRoomStore,
  *       any other an FsRoomStore; a link written or removed since (a join, a forget) gives the other kind at the next open.
+ *       The first open per home and process, and createRoom, close a home left open to group or others to 0700
+ *       (lib/home.ts repairModes): opening a room and joining one both come through here.
  *       {dir} (and only then) gives an uncached FsRoomStore over that directory. forget(code) drops the cached one.
  *   isLeftover: a room directory with no link, no members document and no log, made more than LEFTOVER_MS ago: what
  *       a process still holding a forgotten room's seat wrote, never a room hosted here (roomExists says no; `sub-human
@@ -18,7 +20,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { home, roomsDir, roomDir } from '../home.ts';
+import { home, roomsDir, roomDir, repairModes } from '../home.ts';
 import { withLock } from '../lock.ts';
 import { readJsonRaw, writeJsonAtomic, lazy } from '../io.ts';
 import { isObj } from '../decode.ts';
@@ -48,6 +50,7 @@ function open(c: RoomCode, { dir }: { dir?: string | undefined } = {}): RoomStor
   const k = `${home()}\0${c}`;
   let s = stores.get(k);
   if (!s || s.isHost === linked(c)) { // none yet, or a join or forget wrote or removed the link since
+    repairModes(); // a home made 0755 (an older version, a plain mkdir): 0700, once per home and process
     s = linked(c) ? new (mirrorLib().MirrorRoomStore)(c) : new FsRoomStore(c);
     stores.set(k, s);
   }
@@ -69,6 +72,7 @@ function isLeftover(c: RoomCode): boolean {
 const roomExists = (c: unknown): c is RoomCode => isRoomCode(c) && ((fs.existsSync(roomDir(c)) && !isLeftover(c)) || linked(c));
 function createRoom(c: RoomCode): boolean {
   fs.mkdirSync(roomsDir(), { recursive: true, mode: 0o700 }); // the home and rooms/ too when new: private
+  repairModes(); // an existing home made 0755 too
   try { fs.mkdirSync(roomDir(c), { mode: 0o700 }); } catch (e) { if (errCode(e) === 'EEXIST') return false; throw e; }
   indexRoom(c);
   return true;

@@ -2,7 +2,7 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
-## 0.5.0-beta.18 (unreleased): a smaller sub-human, an idle room session, the room plan
+## 0.5.0-beta.19 (unreleased): a smaller sub-human, an idle room session, the room plan
 
 Branch `room-plan` (docs/next/ROOM-PLAN.md). Tested on Claude Code 2.1.296.
 
@@ -32,9 +32,13 @@ Branch `room-plan` (docs/next/ROOM-PLAN.md). Tested on Claude Code 2.1.296.
 - Rows: each plan at its current version (an older version's decision is not news), "1/2 agreed, waiting on bob", "+N plans" when they do not fit, and joins only since you came.
 - The room session is not listed as a member called claude; a suggested task owner is told (a notice) and named in the brief; the bypass-permissions note shows on a join the module runs.
 - The CLI finds the room from a terminal (`--room`, `SUB_HUMAN_ROOM`, this session's seat, or the one open room) and `sub-human tasks` tags tasks with their plan version. gc deletes a closed room's native task list when it sets the room aside. The demo reads the invite's PIN off the status line.
+- A sign-off asked while the person is already in plan mode, holding a plan of their own, no longer shows that plan and never treats a Yes on it as approval: EnterPlanMode opens the review there too (the room plan in the view, a Yes is a sign-off only, plan mode and the person's plan come back), an ExitPlanMode that would show their own plan while a sign-off waits is turned back once with the way to open it, and a review closed without a Yes in plan mode closes in place.
+- A kept plan draft can be followed: the model reads it with the Read tool (Bash `cat` on the sub-human folder is refused), and the draft keeps the Summary line the person wrote.
+- The model is told when the person's own plan file is back after a review or an edit (it had taken the file for overwritten).
+- Opening or joining a room closes a sub-human folder made with a plain `mkdir` (0755) to 0700, as the README says; the check had been lost in a refactor and only `doctor --fix` did it.
 
 ### Claude Code internals
-- New contract entries: the task file schema, `.highwatermark`, the task locks (proper-lockfile), the list's auto-reset, the task view's watch, the hooks module's plan-mode attachment detail, the PermissionRequest `setMode` answer, the cross-session refuse notice, an empty plan file on the closing ExitPlanMode (`exitplan-empty-plan`) and a denied PreToolUse's additionalContext (`pretool-deny-context`) (`docs/internals/cc-2.1.296-tasks-plans.md`). Gone: the TaskCreate/TaskUpdate/TaskCompleted entries and the Remote Control relay's.
+- New contract entries: the task file schema, `.highwatermark`, the task locks (proper-lockfile), the list's auto-reset, the task view's watch, the hooks module's plan-mode attachment detail, the PermissionRequest `setMode` answer, the cross-session refuse notice, an empty plan file on the closing ExitPlanMode (`exitplan-empty-plan`) and a denied PreToolUse's additionalContext (`pretool-deny-context`), EnterPlanMode in plan mode (`enterplan-in-plan-mode`) (`docs/internals/cc-2.1.296-tasks-plans.md`). Gone: the TaskCreate/TaskUpdate/TaskCompleted entries and the Remote Control relay's.
 
 ## 0.5.0-beta.16 (unreleased)
 

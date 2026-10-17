@@ -12,6 +12,8 @@ import * as lock from '../lib/lock.ts';
 import * as config from '../lib/config.ts';
 import * as env from '../lib/env.ts';
 import * as text from '../lib/text.ts';
+import * as registry from '../lib/room/registry.ts';
+import { rc } from './support/brands.ts';
 import { must } from './support/must.ts';
 
 test('text.clip counts code points and never splits a surrogate pair; oneLine', () => {
@@ -146,4 +148,20 @@ test('lock: a pid\'s start time stays cached while kill(pid, 0) finds it (no ps 
   await h.until(() => !io.isAlive(must(a.pid)), 3000, 10);
   assert.equal(lock.pidStart(a.pid), null, 'gone: dropped, and ps finds nothing');
   assert.equal(calls(), 2);
+});
+
+test('G (live validation): opening or joining a room closes a home made with a plain mkdir (0755) to 0700', t => {
+  for (const how of ['join', 'open'] as const) {
+    const home = h.freshHome(t);
+    fs.chmodSync(home, 0o755);
+    if (how === 'join') h.register('alice');
+    else {
+      const code = rc('otter-0001'); // made by hand (h.newRoom would repair the home first)
+      fs.mkdirSync(path.join(home, 'rooms', code), { recursive: true, mode: 0o755 });
+      fs.chmodSync(path.join(home, 'rooms'), 0o755);
+      registry.open(code);
+    }
+    assert.equal(fs.statSync(home).mode & 0o777, 0o700, how);
+    assert.equal(fs.statSync(path.join(home, 'rooms')).mode & 0o777, 0o700, `${how}: rooms/`);
+  }
 });
