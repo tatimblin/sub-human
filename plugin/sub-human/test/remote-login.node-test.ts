@@ -337,7 +337,7 @@ test('login join: the argument forms are told apart; bad parts are refused befor
   const bad = (args: string, re: RegExp) => { const r = remote.join(bob, args); assert.equal(must(r.json).decision, 'block', args); assert.match(must(must(r.json).reason), re, args); };
   bad(`join me@devbox --as bob`, /which room/);
   bad(`join me@devbox ${code} extra --as bob`, /the line's SECRET \(its last long word\) did not come through whole/);
-  bad(`join me@devbox ${code} 4829 --as bob`, /that invite line comes from an older sub-human on the host \(a 4-digit PIN where the line's SECRET goes\): ask the host to update/);
+  bad(`join me@devbox ${code} 4829 --as bob`, /the line's SECRET \(its last long word\) did not come through whole/);
   bad(`join me@devbox not-a-code --as bob`, /"not-a-code" isn't a room/);
   bad(`join -oProxyCommand=x@y ${code} --as bob`, /isn't a plain USER@HOST/);
   bad(`join me@devbox ${code} --as bob --via jump`, /"--via" isn't a join option/);

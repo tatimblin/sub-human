@@ -501,7 +501,7 @@ test('SECURITY: every join, invite and admit prompt (and any with a word of digi
   const cases: [string, RegExp][] = [
     ['join dev vole-1234 48291', /the line's SECRET \(its last long word\) did not come through whole/], // not a SECRET
     ['join dev vole-1234 482', /did not come through whole/],
-    ['join dev vole-1234 4829', /that invite line comes from an older sub-human on the host/], // a 0.5.0-beta.15 line
+    ['join dev vole-1234 4829', /did not come through whole/], // a 0.5.0-beta.15 line: no SECRET
     [`join dev vole-1234 ${S} 4829`, /type the line without the PIN: the host's machine asks for the PIN once it has answered/],
     [`join dev vole-1234 ${S.slice(0, 30)}`, /did not come through whole/],
     [`join dev vole-1234 ${S} --home rel`, /--home "rel" isn't a plain absolute path/],

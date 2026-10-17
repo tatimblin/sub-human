@@ -39,7 +39,8 @@
  *       run more than once (side effects in it must be idempotent). A seat changes through join, leave and beat
  *       (lib/room/members.ts, the same rules for every store); on a mirror they are the host's ops, and the host logs
  *       the join (with the seat's key and a proof the hook's signer makes) and the leave (with its reason).
- *   blobs get/has/ref also take the absolute path older proposal entries stored; localPath is null off-machine.
+ *   blobs get/has/ref/localPath take a ref `plans/NAME` only (rules.ts blobRef); anything else, an absolute path
+ *       included, is null. localPath is null off-machine.
  *   lock(name, fn) is a room-wide mutex (the proposal answer lock).
  */
 

@@ -9,7 +9,7 @@
  *   tail        the hooks module's child (mod/deliver.ts): follows this session's seat, one JSON event per line for the
  *               mod to route (lib/tail.ts). Never exits on an error (logs, backs off, carries on); exits on
  *               --max-seconds, a signal, its parent going or stdout closing
- *   read, digest, who, show, tasks, watch   read-only views of the room (read and watch keep their own cursors)
+ *   read, who, show, tasks   read-only views of the room (read keeps its own cursor)
  *   verify CODE         a room's hash chain and every person's line against the pinned keys (lib/cli/doctor/rooms.ts)
  *   agent-statusline    Claude Code's subagentStatusLine command: never fails (prints nothing, exits 0)
  *   serve --stdio CODE  one remote connection to a room hosted here (lib/remote/server.ts). A room this machine only
@@ -156,7 +156,7 @@ function agentStatusline() {
   } catch { /* keep the default rendering */ }
 }
 
-// ---------- read / digest / show / who ----------
+// ---------- read / show / who ----------
 function read(args: readonly string[]) {
   const { flags, rest } = parseFlags(args, { id: 1, json: 0, room: 1 });
   if (!flags.id && rest.length) flags.id = rest.join(','); // `sub-human read 22`, as the cut marker says
@@ -174,12 +174,6 @@ function read(args: readonly string[]) {
   show(es);
   const last = es.at(-1);
   if (last) r.setCursor(cursor, last.id); // es is not empty
-}
-
-function digest(args: readonly string[]) {
-  const { flags } = parseFlags(args, { room: 1 });
-  const { r } = openRoom(flags.room);
-  process.stdout.write(r.digest() + '\n');
 }
 
 function show(args: readonly string[]) {
@@ -228,66 +222,6 @@ function tasksCmd(args: readonly string[]) {
     const subject = String(t.subject ?? '').replace(/\s+/g, ' ');
     console.log(`#${t.id}  ${word(t.status).padEnd(w)}  ${String(t.owner || '-').padEnd(o)}  ${subject}${blocked}`);
   }
-}
-
-// ---------- watch NAME ----------
-/** Who an entry is from, as a person reading a thread would say it. */
-function label(e: FmtEntry): string {
-  if (e.via === 'system') return 'room';
-  if (e.from === 'claude') return 'claude';
-  return e.via === 'agent' ? `${e.from}'s Claude` : e.from;
-}
-
-function inThread(name: string) {
-  return (e: FmtEntry) => e.from === name || e.to === name || (e.kind === 'task' && e.owner === name);
-}
-
-function watch(args: readonly string[]) {
-  const { flags, rest } = parseFlags(args, { room: 1, follow: 0, 'no-follow': 0 });
-  const name = rest[0];
-  if (!name) die('usage: sub-human watch NAME [--room CODE] [--follow|--no-follow]');
-  if (!identity.NAME_RE.test(name)) die(`bad name "${name}"`);
-  const { code, r } = openRoom(flags.room);
-  const color = process.stdout.isTTY && !('NO_COLOR' in process.env);
-  const c = (code_: string, s: string) => color ? `\x1b[${code_}m${s}\x1b[0m` : s;
-  const kindColor: Record<string, string> = {
-    decision: '1;32', signoff: '32', objection: '31', proposal: '1;34', task_req: '36', task: '36',
-    member_joined: '2;32', member_left: '2;31',
-  };
-  const show = inThread(name);
-  const print = (raw: FmtEntry) => {
-    const e = room.normalize(raw);
-    if (!show(e)) return;
-    const who = label(e) + (raw.via === 'human' && r.trust(raw) !== 'verified' ? ' (unverified)' : '');
-    const whoStr = e.via === 'human' ? c('1', who) : who === 'claude' ? c('35', who) : c('2', who);
-    const ph = e.hash || e.proposal_hash;
-    const meta = [
-      e.to && e.to !== 'room' && `→ ${e.to === name ? name : e.to}`,
-      e.refs && e.refs.length && `refs ${e.refs.map((r: number) => '#' + r).join(',')}`,
-      ph && `proposal ${ph.slice(0, 6)}`,
-      e.task_id && `task #${e.task_id}`].filter(Boolean).join('  ');
-    const head = c('2', `#${e.id} ${String(e.at || '').slice(11, 19)}`);
-    console.log(`${head}  ${whoStr}  ${c(kindColor[e.kind] || '2', e.kind)}${meta ? '  ' + c('2', meta) : ''}`);
-    console.log(String(e.text ?? '').split('\n').map(l => '    ' + l).join('\n') + '\n');
-  };
-  const follow = flags.follow ? true : flags['no-follow'] ? false : !!process.stdout.isTTY;
-  if (!follow) {
-    const es = r.readAll().filter((e: FmtEntry) => show(room.normalize(e)));
-    if (!es.length) return console.log(`(nothing from or to ${name} in room ${code})`);
-    return es.forEach(print);
-  }
-  console.log(c('2', `${name}'s thread in room ${code} (Ctrl-C to stop)`) + '\n');
-  process.stdout.on('error', () => process.exit(0));
-  // the whole thread, then each new line: a tailer from the log's start (a reset log is read again from its start)
-  const tl = r.tailer({ after: 0 });
-  let seen = 0;
-  const tick = () => {
-    const { entries, reset } = tl.poll();
-    if (reset) seen = 0;
-    for (const e of entries) if (e.id > seen) { seen = e.id; print(e); }
-  };
-  tick();
-  setInterval(tick, config.WATCH_POLL_MS);
 }
 
 // ---------- serve --stdio CODE: lib/remote/server.ts ----------
@@ -438,7 +372,7 @@ type Command = (args: readonly string[]) => unknown;
 /** What an unknown command prints: one command per line, grouped (the header above lists them). */
 const USAGE = [
   'usage: sub-human COMMAND',
-  '  the room:   read [--id N,M] | digest | show HASH | who | tasks [--json] | watch NAME',
+  '  the room:   read [--id N,M] | show HASH | who | tasks [--json]',
   '  host:       invite [--ssh [USER@HOST]] | invite --web | --public',
   '              invite --stop | invite --cancel [REF]',
   '              admit [REF] | kick NAME | listen [--port P] [--start | --stop | --status]',
@@ -458,7 +392,7 @@ const verify: Command = args => {
   console.log(`room ${code}: ${r.verifyText(v)}`);
   process.exit(v.chain.ok && !v.unverified.length ? 0 : 1);
 };
-const cmds: Record<string, Command> = { doctor, verify, tail, read, digest, show, who, tasks: tasksCmd, watch, serve, link: linkCmd, 'agent-statusline': agentStatusline };
+const cmds: Record<string, Command> = { doctor, verify, tail, read, show, who, tasks: tasksCmd, serve, link: linkCmd, 'agent-statusline': agentStatusline };
 // lib/cli/*: each returns the exit code
 const viaCli = (fn: 'invite' | 'admit' | 'kick'): Command => a => process.exit(hostLib()[fn](a));
 Object.assign(cmds, { invite: viaCli('invite'), admit: viaCli('admit'), kick: viaCli('kick') });

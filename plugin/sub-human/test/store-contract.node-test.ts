@@ -418,7 +418,6 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     r.append({ kind: 'proposal', text: 'proposal abcdef012345: x', hash: 'abcdef012345', approvers: ['alice'] }, { via: 'agent', from: 'bob' });
     assert.equal(r.proposals().length, 1);
     assert.match(r.stateLine({ name: 'alice' }), /^room now: proposal abcdef .* · you: answer needed .* · away: bob$/);
-    assert.match(r.digest(), new RegExp(`## members of ${CODE}`));
     assert.equal(r.deliver({ name: 'alice', role: 'member' }, must(r.readAll()[0]), { entries: r.readAll() }), 'wake');
   });
 }

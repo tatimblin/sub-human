@@ -25,7 +25,6 @@ import { pidStart } from '../lib/lock.ts';
 import * as protocol from '../lib/remote/protocol.ts';
 import * as ssh from '../lib/remote/transports/ssh.ts';
 import * as room from '../lib/room.ts';
-import * as render from '../lib/room/render.ts';
 import { lane } from '../lib/room/deliver.ts';
 import { RoomError } from '../lib/room/validate.ts';
 import * as realClock from '../lib/clock.ts';
@@ -276,7 +275,6 @@ test('skew: a newer host\'s unknown entry kind, via and fields, an unknown docum
   const chat = es.map(e => room.chatLines(e, { viewer: 'alice', entries: es }).join(' / '));
   assert.deepEqual(chat, ['room: a future room line', 'bob (via relay): not bob\'s own words', 'bob\'s Claude: plain']);
   assert.ok(es.every(e => typeof room.line(e, { full: true }) === 'string'));
-  assert.equal(typeof render.digest(es, { members: {}, code }), 'string');
   assert.deepEqual(es.map(e => lane({ name: 'alice', role: 'member' }, e, es)), ['pull', 'pull', 'pull'], 'nothing unknown wakes anyone');
 });
 

@@ -9,8 +9,6 @@
  *   stateLine: "room now: proposal 3fa2c1 waiting on bob · objected: dave · you: answer needed · away: carol"
  *     (waiting on = no answer yet, objected = current answer is an objection; ids:false drops the decision's "#N",
  *     for a member's wake, which the person sees too)
- *   digest: <= DIGEST_CAP chars: members, open proposals + approvers + answers, open objections/questions,
- *     decisions, last 10 human entries in full by the line() rule; the cap trims the oldest first.
  *   UNVERIFIED "(unverified)" follows the name of a via=human entry whose sig does not verify (a legacy line, or one
  *     written around append). It stays readable, never as the person's own words; the consent fold ignores it.
  * Join and leave notices ("bob joined", "bob rejoined", "bob left (connection lost)"; no room code, no ids), drawn by
@@ -28,19 +26,14 @@ import { normalize } from './rules.ts';
 import { parseEntry } from './validate.ts';
 import { assertNever } from '../../mod/core/never.ts';
 import { ROOM_CLAUDE } from './members.ts';
-import { fold, proposals, answers, answered, decided, approversOf } from './consent.ts';
+import { fold, proposals, answered, decided, approversOf } from './consent.ts';
 import { NO_TRUST, unverified } from './trust.ts';
 import { oneLine } from '../text.ts';
 import * as clock from '../clock.ts';
-import { TAIL_MAX, TEXT_MAX, CHAT_WRAP, CHAT_MAX, DIGEST_CAP, CHAT_LINES_MAX, CHAT_NEST, ROW_NOTICE_MS } from '../config.ts';
+import { TAIL_MAX, TEXT_MAX, CHAT_WRAP, CHAT_MAX, CHAT_LINES_MAX, CHAT_NEST, ROW_NOTICE_MS } from '../config.ts';
 import { envMs } from '../env.ts';
 import type { Entry, LaneViewer, Matrix, Members, Trust } from './types.ts';
 import { FOR_CLAUDE } from '../../mod/core/constants.ts';
-
-/** One digest line; id: the entry it shows, so the cap trims the oldest first. */
-interface DigestLine { id?: number; text: string }
-interface DigestSection { title: string | null; lines: DigestLine[] }
-interface DigestCtx { members?: Members | null; code?: string | null; trust?: Trust }
 
 const UNVERIFIED = '(unverified)';
 const NEST = CHAT_NEST; // "  │ ": every continuation line of a message, so none can pass as a line of its own
@@ -341,86 +334,6 @@ function fmt(e: Entry, { trust = NO_TRUST }: { trust?: Trust } = {}): string {
   return `[${header(e, trust)} ${String(e.at || '').slice(11, 19)}]\n${body}`;
 }
 
-// ---------- the compaction digest ----------
-/** The ordered digest sections; items carry an id so the cap can trim the oldest first. */
-function digestSections(entries: readonly Readonly<Entry>[] = [], { members = {}, code = null, trust = NO_TRUST }: DigestCtx = {}): DigestSection[] {
-  members = members ?? {};
-  const memberLines = Object.values(members).map(m => {
-    const last = entries.filter(e => e.from === m.name && e.via !== 'system').at(-1);
-    return { text: `  ${m.name} (${m.role})${m.left_at ? ' LEFT' : ''} last post ${last ? `#${last.id} ${String(last.at).slice(11, 19)}` : '-'}` };
-  });
-
-  const planLines: DigestLine[] = [];
-  const props = proposals(entries, trust);
-  const retired = fold(entries, trust).superseded; // a revision's earlier one is not waiting on anyone (lib/room/consent.ts pending)
-  const undecided = props.filter(p => !decided(p.hash, entries, trust) && !retired.has(p.hash));
-  for (const p of undecided.length ? undecided : props.slice(-1)) {
-    const m = answers(p.hash, approversOf(p), entries, trust);
-    const dec = decided(p.hash, entries, trust);
-    planLines.push({ text: `  proposal=${p.hash} (#${p.id} by ${who(p)}${p.path ? `, ${p.path}` : ''}) approvers: ${approversOf(p).join(' ') || '(none)'}${dec ? ` DECIDED #${dec.id}` : ''}` });
-    for (const n of approversOf(p)) {
-      const a = answered(n, p.hash, entries, trust);
-      planLines.push({ text: `  ${m.signed[n] ? '✔' : a ? '✗' : '–'} ${n}${a ? ` #${a.id}` : ''}` });
-    }
-    if (!dec) {
-      const f = fold(entries, trust).matrix(p.hash);
-      planLines.push({ text: `  waiting on: ${f.missing.join(', ') || '(nobody)'}${f.objected.length ? ` · objected: ${f.objected.join(', ')}` : ''}` });
-    }
-  }
-  if (!planLines.length) planLines.push({ text: '  (no proposals)' });
-
-  const closedBy = new Set<number>();
-  for (const e of entries) {
-    if ((e.from === ROOM_CLAUDE || e.kind === 'decision') && e.refs) e.refs.forEach(r => closedBy.add(r));
-  }
-  const open = entries.map(normalize)
-    .filter(e => (e.kind === 'objection' || e.kind === 'question') && !closedBy.has(e.id))
-    .map(e => ({ id: e.id, text: `  #${e.id} ${who(e)} ${e.kind}${e.proposal_hash ? ` proposal=${e.proposal_hash}` : ''}: ${e.text == null ? '(no notes)' : quote(e, 120)}` }));
-  const decisions = entries.map(normalize).filter(e => e.kind === 'decision')
-    .map(e => ({ id: e.id, text: `  #${e.id} proposal=${e.proposal_hash || '-'}: ${quote(e, 120)}` }));
-  const human = entries.filter(e => e.via === 'human').slice(-10)
-    .map(e => ({ id: e.id, text: `  #${e.id} ${humanName(e, trust)}${e.drafted === 'agent' ? ` (${e.from}, Claude's wording)` : ''} ${e.kind}: ${e.text == null ? '(no notes)' : quote(e, TEXT_MAX, { exact: true })}` }));
-
-  return [
-    { title: `members of ${code || 'this room'}`, lines: memberLines },
-    { title: 'open proposals and answers', lines: planLines },
-    { title: 'open objections and questions', lines: open },
-    { title: 'decisions', lines: decisions },
-    { title: 'last 10 human entries', lines: human },
-    { title: null, lines: [{ text: 'full text: the room MCP tool read({ids})' }] },
-  ];
-}
-
-function renderSections(sections: DigestSection[], trimmed: number): string {
-  const out = [`ROOM DIGEST (generated from the log; ${new Date().toISOString().slice(0, 19)}Z)`];
-  for (const s of sections) {
-    if (s.title) out.push(`## ${s.title}`);
-    if (s.title && !s.lines.length) out.push('  (none)');
-    for (const l of s.lines) out.push(l.text);
-  }
-  if (trimmed) out.push(`(${trimmed} older items trimmed to fit ${DIGEST_CAP} chars)`);
-  return out.join('\n');
-}
-
-function digest(entries: readonly Readonly<Entry>[] = [], ctx: DigestCtx = {}): string {
-  const sections = digestSections(entries, ctx);
-  let trimmed = 0;
-  let text = renderSections(sections, trimmed);
-  while (text.length > DIGEST_CAP) {
-    let oldest: { s: DigestSection; i: number; id: number } | null = null;
-    for (const s of sections) {
-      const i = s.lines.findIndex(l => l.id != null);
-      const id = s.lines[i]?.id;
-      if (id != null && (!oldest || id < oldest.id)) oldest = { s, i, id };
-    }
-    if (!oldest) { const tag = '\n[digest cut at the cap: sub-human digest]'; return text.slice(0, DIGEST_CAP - tag.length) + tag; }
-    oldest.s.lines.splice(oldest.i, 1);
-    trimmed++;
-    text = renderSections(sections, trimmed);
-  }
-  return text;
-}
-
 // ---------- join and leave notices ----------
 /** One join / leave notice (joinLeave). */
 interface Notice {
@@ -473,5 +386,5 @@ function rowSegment(es: readonly Readonly<Entry>[] | null | undefined, viewer: s
   return n.kind === 'member_left' ? `−${n.name} left${n.why}` : `+${n.name} ${n.rejoin ? 'rejoined' : 'joined'}`;
 }
 
-export { FOR_CLAUDE, line, chatLines, fmt, who, stateLine, digest, leftWhy, joinLeave, noticeText, rowSegment };
+export { FOR_CLAUDE, line, chatLines, fmt, who, stateLine, leftWhy, joinLeave, noticeText, rowSegment };
 export type { Notice };

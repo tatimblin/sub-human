@@ -23,7 +23,7 @@ export const FAILED = 'ROOM-GUARD: guard failed; denied to be safe.';
 
 // ---------- Bash ----------
 /** The read-only CLI, with plain arguments only (no pipes, redirects, substitutions or chained commands). */
-const READ_CLI = /^\s*(?:[\w./~-]*\/)?sub-human\s+(?:read|digest|who|tasks|watch|show|verify)(?:\s+[\w.,:=@-]+)*\s*$/;
+const READ_CLI = /^\s*(?:[\w./~-]*\/)?sub-human\s+(?:read|who|tasks|show|verify)(?:\s+[\w.,:=@-]+)*\s*$/;
 /** doctor, read only: no --fix (it rewrites the shim and the home's modes) and no --bundle (it writes a file). */
 const READ_DOCTOR = /^\s*(?:[\w./~-]*\/)?sub-human\s+doctor(?:\s+(?:--quick|--json|--timeout\s+\d+))*\s*$/;
 /** doctor that changes things: the person runs it. */
@@ -464,7 +464,7 @@ export const denyText = (why: string, root: unknown, homes: { home?: unknown; us
       known ? `they run \`${homeEnv(homes.home, homes.userHome)}node ${root}/scripts/sub-human doctor --bundle\` (or --fix) ` : 'they run it '}in a terminal outside Claude Code. In a session, /sub-human doctor is the read-only check.`;
   }
   if (why === TALK_WHY || why === TALK_ABOVE) return `ROOM-GUARD: the invite lines and PINs typed or shown in Claude Code are the people's own; a model never reads them. (Denied: ${why}.)`;
-  return `${MSG} (Denied: ${why}.) Use the room MCP tools${known ? `, or \`${root}/scripts/sub-human read|digest|who|tasks|show\`` : ''}.`;
+  return `${MSG} (Denied: ${why}.) Use the room MCP tools${known ? `, or \`${root}/scripts/sub-human read|who|tasks|show\`` : ''}.`;
 };
 
 // ---------- Write / Edit / MultiEdit / NotebookEdit ----------

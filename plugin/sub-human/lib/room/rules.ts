@@ -23,7 +23,7 @@
  *   checkPin(p, keys)            a member_joined pubkey pins its name at first sight; another key for it: AUTH
  *   normalize(e)                 a copy of e addressed to the room when it names no one
  *   CHAT_KINDS                   say, status: the kinds a view may leave out (everything else decides state)
- *   blobRef(pathOrRef), checkKey(key), checkCursor(name)   the names a store's documents, blobs and cursors take
+ *   blobRef(name), checkKey(key), checkCursor(name)   the names a store's documents, blobs and cursors take
  */
 
 import * as config from '../config.ts';

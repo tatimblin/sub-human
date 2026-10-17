@@ -55,12 +55,11 @@ test('line: full is the exact text with an explicit cut marker; compact never en
   assert.ok(cut.includes('"a\\nb x'), 'whitespace kept, escaped');
 });
 
-test('line / fmt / digest: drafted entries say whose wording', () => {
+test('line / fmt: drafted entries say whose wording', () => {
   fresh();
   const d = R.append({ kind: 'say', text: 'cap it at 50', drafted: 'agent' }, { via: 'human', from: 'alice' }); // #1
   assert.match(room.line(d), /^#1 alice\[human\] \(alice, Claude's wording\) say "cap it at 50"$/);
   assert.match(room.fmt(d), /\(alice, Claude's wording\)/);
-  assert.match(R.digest(), /#1 alice \(alice, Claude's wording\) say: "cap it at 50"/);
 });
 
 test('old logs: a `retract` line is an ordinary system line that hides nothing; a `provisional` post is an ordinary post', () => {
@@ -78,20 +77,8 @@ test('old logs: a `retract` line is an ordinary system line that hides nothing; 
   assert.equal(roomLane(ALICE, r, all), 'pull');
   assert.equal(roomLane({ name: 'bob', role: 'member' }, r, all), 'none', 'written under bob\'s name: his own');
   assert.equal(roomLane(ALICE, p, all), 'push');
-  const dg = R.digest();
-  assert.match(dg, /"forged"/);
-  assert.match(dg, /#3 carol \(unverified\) say: "early words"/);
+  assert.match(room.fmt(p), /early words/);
   assert.throws(() => sys('retract', { text: 'x', refs: [1] }), /kind/, 'nothing writes a retract now');
-});
-
-test('digest: human entries carry full text up to 2,000 chars, then the cut marker', () => {
-  fresh();
-  human('bob', 'say', { text: 'keep "400 instead" ' + 'y'.repeat(300) });
-  human('bob', 'say', { text: 'z'.repeat(2100) });
-  const d = R.digest();
-  assert.ok(d.includes('y'.repeat(300)), 'not clipped at 160');
-  assert.match(d, /" \[cut at 2000\/2100: read\(\{ids:\[2\]\}\)\]/);
-  assert.ok(!/…"/.test(d));
 });
 
 const prop = (from: string, hash: string, approvers: string[], via: 'agent' | 'human' = 'agent') => R.append({ kind: 'proposal', text: `${from} proposes`, hash, approvers }, { via, from });

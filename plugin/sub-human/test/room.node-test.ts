@@ -7,11 +7,10 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import * as h from './helpers.ts';
 import * as room from '../lib/room.ts';
-import * as identity from '../lib/identity.ts';
 import type { Room } from '../lib/room.ts';
 import { fsStore } from './support/fs-store.ts';
 import type { AppendOpts, Entry, EntryInput } from '../lib/room/types.ts';
-import { sn, eid } from './support/brands.ts';
+import { eid } from './support/brands.ts';
 import { must } from './support/must.ts';
 
 let R: Room; // the current test's room (fresh() opens it)
@@ -223,41 +222,6 @@ test('room: cursors persist per name and resume', () => {
   assert.deepEqual(R.readAfter(R.getCursor('mcp-alice')).map(e => e.id), [4, 5]);
   assert.deepEqual(R.readById([5, 2, 99].map(eid)).map(e => e.id), [5, 2]);
   assert.equal(R.lastId(), 5);
-});
-
-test('room: digest has members, plan + matrix, open items, decisions; capped at 9,500 chars', () => {
-  const code = fresh();
-  h.register('claude', 'claude');
-  const sleeper = h.spawnSleeper();
-  identity.join({ code, name: sn('alice'), role: 'member', pid: sleeper.pid, session_id: 's-a', cwd: '/tmp' });
-  agent('claude', 'proposal', { hash: H1, approvers: ['alice', 'bob'], path: '/p/plan.md' });
-  human('alice', 'signoff', { proposal_hash: H1 });
-  let d = R.digest();
-  assert.match(d, /## members of [a-z]+-\d{4}/);
-  assert.match(d, /claude \(claude\)/);
-  assert.match(d, /alice \(member\)/);
-  assert.match(d, /proposal=aaaaaaaaaaaa \(#1 by claude, \/p\/plan\.md\) approvers: alice bob/);
-  assert.match(d, /✔ alice #2/);
-  assert.match(d, /– bob/);
-  assert.match(d, /waiting on: bob/);
-  for (let i = 0; i < 300; i++) human(i % 2 ? 'alice' : 'bob', 'objection', { proposal_hash: H1, text: `item ${i} ` + 'z'.repeat(300) });
-  d = R.digest();
-  assert.ok(d.length <= room.DIGEST_CAP, String(d.length));
-  assert.match(d, /older items trimmed/);
-  assert.ok(d.includes('#302 '), 'newest kept');
-  assert.match(d, /the room MCP tool read\(\{ids\}\)/);
-  sleeper.kill();
-});
-
-test('room: digest skips a proposal its proposer revised (superseded), as pending() does', () => {
-  fresh();
-  const H3 = 'cccccccccccc', H4 = 'dddddddddddd';
-  R.append({ kind: 'proposal', text: `proposal ${H3}: Rate limits`, hash: H3, approvers: ['bob'] }, { via: 'agent', from: 'alice' });
-  R.append({ kind: 'proposal', text: `proposal ${H4}: Rate limits`, hash: H4, approvers: ['bob'] }, { via: 'agent', from: 'alice' });
-  const d = R.digest();
-  assert.match(d, /proposal=dddddddddddd /);
-  assert.doesNotMatch(d, /proposal=cccccccccccc/, 'the superseded one is not listed as waiting');
-  assert.equal((d.match(/waiting on: bob/g) || []).length, 1);
 });
 
 // ---------- chat rendering: what a human sees (no ids) ----------

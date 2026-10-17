@@ -8,14 +8,14 @@
  *     setCursor                                the store's (room/store.ts documents them)
  *     members() -> {name: record}              store.members.read()
  *     line(e, {full}?), chatLines(e, {viewer, entries}?), fmt(e)   render.ts, judged by this room's trust
- *     stateLine(me, entries?), digest(entries?)                    render.ts over this room's log and members
+ *     stateLine(me, entries?)                                      render.ts over this room's log and members
  *     fold(entries?), proposal(hash, entries?), proposals(entries?), answers(hash, approvers?, entries?),
  *     answered(name, hash, entries?), decided(hash, entries?)      consent.ts over this room's log
  *     deliver(me, e, {entries, note}?)         deliver.ts: none | context | notice | wake for seat me
  *     and the stateless helpers below}
  *   Stateless: line, chatLines, fmt, fold, deliver (each judging a person's line by trustOf: the store of the room
  *     the entry names; a caller holding the store it read from passes that store's trust instead), who, FOR_CLAUDE,
- *     normalize, hash12, approversOf, RoomError and the size caps (DIGEST_CAP, TAIL_MAX, CHAT_MAX, CHAT_WRAP,
+ *     normalize, hash12, approversOf, RoomError and the size caps (TAIL_MAX, CHAT_MAX, CHAT_WRAP,
  *     CHAT_LINES_MAX, CHAT_NEST).
  *   roomLine(store, text, log?)   a status line from the room itself (via system), best effort: what the host's
  *     people should know about invites, links and admissions (lib/remote/*)
@@ -25,7 +25,7 @@
  *   room/validate.ts  the envelope rules append() enforces; RoomError (INVALID | RATE | LOCK | NO_ROOM)
  *   room/consent.ts   fold(entries, trust): the one proposal / consent state every view reads, and its queries
  *   room/deliver.ts   deliver(me, e, state): what one entry is for one seat
- *   room/render.ts    line, fmt, who, chatLines, FOR_CLAUDE, stateLine, digest, join and leave notices
+ *   room/render.ts    line, fmt, who, chatLines, FOR_CLAUDE, stateLine, join and leave notices
  */
 
 import * as store from './room/store.ts';
@@ -33,7 +33,7 @@ import { RoomError } from './room/validate.ts';
 import * as consent from './room/consent.ts';
 import * as render from './room/render.ts';
 import * as delivery from './room/deliver.ts';
-import { DIGEST_CAP, TAIL_MAX, CHAT_MAX, CHAT_WRAP, CHAT_LINES_MAX, CHAT_NEST } from './config.ts';
+import { TAIL_MAX, CHAT_MAX, CHAT_WRAP, CHAT_LINES_MAX, CHAT_NEST } from './config.ts';
 import type { AppendOpts, ChainCheck, ChainVerify, Delivery, Entry, EntryInput, Fold, LaneViewer, Members, ProposalEntry, ReadViewOpts, RoomStore, Tailer, TailerFs, Trust } from './room/types.ts';
 import type { DeliverState } from './room/deliver.ts';
 import { msgOf } from './errors.ts';
@@ -70,12 +70,12 @@ function hostStore(code: RoomCode, { what = 'its host does this' }: { what?: str
 /** The stateless helpers and caps every Room carries (see the header). */
 interface Pure {
   RoomError: typeof RoomError;
-  DIGEST_CAP: typeof DIGEST_CAP; TAIL_MAX: typeof TAIL_MAX; CHAT_MAX: typeof CHAT_MAX; CHAT_WRAP: typeof CHAT_WRAP;
+  TAIL_MAX: typeof TAIL_MAX; CHAT_MAX: typeof CHAT_MAX; CHAT_WRAP: typeof CHAT_WRAP;
   CHAT_LINES_MAX: typeof CHAT_LINES_MAX; CHAT_NEST: typeof CHAT_NEST;
   hash12: typeof hash12; normalize: typeof normalize; FOR_CLAUDE: typeof FOR_CLAUDE; who: typeof who; approversOf: typeof approversOf;
 }
 const pure: Pure = {
-  RoomError, DIGEST_CAP, TAIL_MAX, CHAT_MAX, CHAT_WRAP, CHAT_LINES_MAX, CHAT_NEST, hash12, normalize, FOR_CLAUDE, who, approversOf,
+  RoomError, TAIL_MAX, CHAT_MAX, CHAT_WRAP, CHAT_LINES_MAX, CHAT_NEST, hash12, normalize, FOR_CLAUDE, who, approversOf,
 };
 
 /** One room: its store's calls plus the queries and renderings over its log (see the header). */
@@ -102,7 +102,6 @@ interface Room extends Pure {
   chatLines(e: Entry, opts?: { viewer?: string; entries?: Entries }): string[];
   fmt(e: Entry): string;
   stateLine(me: LaneViewer | null | undefined, entries?: Entries | null, opts?: { ids?: boolean }): string;
-  digest(entries?: Entries | null): string;
   fold(entries?: Entries | null): Fold;
   proposal(hash: string, entries?: Entries | null): ProposalEntry | null;
   proposals(entries?: Entries | null): ProposalEntry[];
@@ -140,7 +139,6 @@ function roomOver(s: RoomStore): Room {
     fmt: (e: Entry) => render.fmt(e, { trust }),
     stateLine: (me: LaneViewer | null | undefined, entries?: Entries | null, opts: { ids?: boolean } = {}) =>
       render.stateLine(me, all(entries), { ...opts, members: s.members.read(), trust }),
-    digest: (entries?: Entries | null) => render.digest(all(entries), { members: s.members.read(), code: s.code, trust }),
     fold: (entries?: Entries | null) => consent.fold(all(entries), trust),
     proposal: (hash: string, entries?: Entries | null) => consent.proposal(hash, all(entries), trust),
     proposals: (entries?: Entries | null) => consent.proposals(all(entries), trust),
@@ -163,7 +161,7 @@ function open(code: RoomCode, { store: s, dir }: { store?: RoomStore; dir?: stri
 }
 
 export {
-  RoomError, DIGEST_CAP, TAIL_MAX, CHAT_MAX, CHAT_WRAP, CHAT_LINES_MAX, CHAT_NEST, open, line, chatLines, fmt, fold, deliver,
+  RoomError, TAIL_MAX, CHAT_MAX, CHAT_WRAP, CHAT_LINES_MAX, CHAT_NEST, open, line, chatLines, fmt, fold, deliver,
   who, FOR_CLAUDE, normalize, hash12, approversOf, roomLine, hostStore, trustOf,
 };
 export { roomExists } from './room/store.ts';

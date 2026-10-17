@@ -76,7 +76,6 @@ const cli = (args: string[], env: Record<string, string> = {}) => spawnSync(h.BI
 const say = (from: string, text: string, extra: Partial<EntryInput> = {}, via: Via = 'human') => R.append({ kind: 'say', text, ...extra }, { via, from });
 const sys = (kind: string, from: string, extra: Partial<EntryInput> = {}) => R.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'system', from, system: true });
 
-const prop = (from: string, hash: string, approvers: string[]) => R.append({ kind: 'proposal', text: `${from} proposes`, hash, approvers }, { via: 'agent', from });
 
 // The tail's batching, settle, leave hold, cursor restart, room switch and error recovery are tested
 // in-process on a fake clock (test/tail.node-test.ts). These are the real-time smoke tests of the binary.
@@ -187,16 +186,11 @@ test('cli: who / read / digest resolve by session id, then ancestry', () => {
   assert.deepEqual(r.stdout.trim().split('\n').map(l => (JSON.parse(l) as { id: number }).id), [1, 2]);
   assert.match(cli(['read']).stdout, /no new messages/);
   assert.equal(cli(['read', '--id', '99']).status, 1);
-  r = cli(['digest']);
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /ROOM DIGEST/);
-  assert.match(r.stdout, /alice \(member\)/);
-  assert.ok(r.stdout.length <= room.DIGEST_CAP + 1);
-  assert.equal(cli(['digest', '--room', 'nope-0000']).status, 1);
+  for (const gone of ['digest', 'watch']) assert.equal(cli([gone, 'bob']).status, 2, `no ${gone} command`);
   assert.equal(cli(['post', 'hello']).status, 2, 'there is no post command');
   const usage = cli(['nope']).stderr;
   assert.match(usage, /^usage: sub-human COMMAND\n/);
-  for (const c of ['read [--id N,M]', 'digest', 'show HASH', 'who', 'tasks [--json]', 'watch NAME', 'invite [--ssh [USER@HOST]]', 'invite --web | --public', 'invite --cancel [REF]', 'admit [REF]', 'kick NAME', 'link CODE [--forget [--force]]', 'doctor', 'tail', 'serve --stdio CODE [--link ID [--login]]', 'agent-statusline']) assert.ok(usage.includes(c), c);
+  for (const c of ['read [--id N,M]', 'show HASH', 'who', 'tasks [--json]', 'invite [--ssh [USER@HOST]]', 'invite --web | --public', 'invite --cancel [REF]', 'admit [REF]', 'kick NAME', 'link CODE [--forget [--force]]', 'doctor', 'tail', 'serve --stdio CODE [--link ID [--login]]', 'agent-statusline']) assert.ok(usage.includes(c), c);
   assert.ok(usage.split('\n').every(l => l.length <= 100), 'readable lines, not one 600-character line');
   for (const gone of ['plan', 'statusline', 'host', 'unhost', 'revoke', 'authorize']) assert.equal(cli([gone]).status, 2, `${gone} is dropped`);
   bob.kill();
@@ -252,43 +246,6 @@ test('cli tasks: the room list from lib/tasks.ts list(code), plain and --json', 
   r = cli(['tasks', '--json', '--room', code]);
   assert.deepEqual((JSON.parse(r.stdout) as { id: string }[]).map(t => t.id), ['2', '3']);
   assert.equal(cli(['tasks', '--room', 'nope-0000']).status, 1);
-});
-
-test('cli watch NAME: their words, their Claude, sign-offs, joins/leaves, the room Claude; nobody else', () => {
-  h.freshHome();
-  const { code } = h.register('alice');
-  R = room.open(code);
-  const H = 'abcdef012345';
-  sys('member_joined', 'bob');                                                           // #1 shown
-  say('bob', 'I want cursor paging');                                                     // #2 shown
-  R.append({ kind: 'status', text: 'bob claude proposes' }, { via: 'agent', from: 'bob' }); // #3 shown
-  say('alice', 'alice talks to the room');                                                // #4 hidden
-  R.append({ kind: 'question', text: 'alice claude asks carol', to: 'carol' }, { via: 'agent', from: 'alice' }); // #5 hidden
-  R.append({ kind: 'question', text: 'bob, cursor or offset?', to: 'bob' }, { via: 'agent', from: 'claude' }); // #6 shown
-  say('claude', 'claude to the room', {}, 'agent');                                           // #7 hidden
-  prop('alice', H, ['bob']);                                                              // #8 hidden
-  say('bob', 'too broad\n  keep it small', { kind: 'objection', proposal_hash: H });      // #9 shown
-  say('bob', 'ok', { kind: 'signoff', proposal_hash: H });                                // #10 shown
-  sys('member_left', 'bob');                                                              // #11 shown
-  const r = cli(['watch', 'bob']);
-  assert.equal(r.status, 0, r.stderr);
-  const heads = r.stdout.split('\n').filter(l => /^#\d+ /.test(l));
-  assert.deepEqual(heads.map(l => Number(must(l.split(' ')[0]).slice(1))), [1, 2, 3, 6, 9, 10, 11], r.stdout);
-  const whoOf = (id: number) => must(heads.find(l => l.startsWith(`#${id} `))).split(/\s{2,}/)[1];
-  assert.equal(whoOf(1), 'room');
-  assert.equal(whoOf(2), 'bob');
-  assert.equal(whoOf(3), "bob's Claude");
-  assert.equal(whoOf(6), 'claude');
-  assert.equal(whoOf(9), 'bob');
-  assert.match(must(heads.find(l => l.startsWith('#9 '))), /objection {2}proposal abcdef$/);
-  assert.ok(r.stdout.includes('    too broad\n      keep it small\n'), 'text verbatim, indented');
-  assert.ok(!r.stdout.includes('\x1b['), 'no color when not a terminal');
-  // the room Claude's own thread labels it claude
-  const o = cli(['watch', 'claude']).stdout;
-  assert.match(o, /^#6 \S+ {2}claude {2}question {2}→ bob/m);
-  assert.match(o, /^#7 \S+ {2}claude {2}say/m);
-  assert.match(cli(['watch', 'zed']).stdout, /nothing from or to zed/);
-  assert.equal(cli(['watch']).status, 2);
 });
 
 test('cli link CODE --forget: refused on a room hosted here, and for a link stopped for another reason without --force; then the copy is archived and the link removed', () => {

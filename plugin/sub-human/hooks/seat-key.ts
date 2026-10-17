@@ -5,11 +5,9 @@
 //
 //   <home>/keys/<code>/          dir 0700
 //     <name>.key                 PKCS#8 PEM private key, 0600 (only this file reads it)
-//     <name>.pub                 SPKI PEM public key, 0600 (store.verifyHuman reads it only in a room whose log
-//                                pins no key: a room from before keys were pinned)
+//     <name>.pub                 SPKI PEM public key, 0600 (beside the key; the log's pinned key is the one checked)
 //
-//   ensure(code, name) -> KeyObject   the seat's private key, created on first use (join.ts creates it at join;
-//                                     a hook creates it lazily for a seat that joined before keys existed)
+//   ensure(code, name) -> KeyObject   the seat's private key, created on first use (join.ts creates it at join)
 //   publicPem(code, name) -> string   the seat's public key as SPKI PEM, for member_joined (creates it like ensure)
 //   arm()                             install ensure() as this process's signer: only the handlers that sign call it
 //                                     (hooks/handlers/at-room.ts, hooks/consent.ts, hooks/handlers/join.ts), as they load

@@ -88,7 +88,7 @@ test('guard: the deny text says the store is reached through sub-human and names
   const t = g.denyText('it touches the room store (~/.sub-human)', '/p');
   assert.match(t, /the room store is reached only through sub-human\./);
   assert.doesNotMatch(t, /written only by/, 'a read is denied too: the wording is not about writes');
-  assert.ok(t.includes('`/p/scripts/sub-human read|digest|who|tasks|show`'));
+  assert.ok(t.includes('`/p/scripts/sub-human read|who|tasks|show`'));
   assert.match(g.WRITE_DENY('Write', '/x'), /reached only through sub-human/);
 });
 

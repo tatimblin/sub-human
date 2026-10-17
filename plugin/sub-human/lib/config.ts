@@ -20,7 +20,6 @@ export const TAIL_POLL_MS = 250;               // SUB_HUMAN_POLL_MS: the tail's 
 export const FOLLOW_POLL_MS = 250;             // the remote server's poll of a room it cannot watch (lib/room/watch.ts)
 export const FOLLOW_SLOW_MS = 2000;            // and of one it watches (fs.watch), for an event the watcher missed
 export const REPLAY_BATCH = 500;               // lines per turn of a first sync's replay; the next waits for the transport to drain
-export const WATCH_POLL_MS = 500;              // `sub-human watch --follow` poll
 
 // ---------- the tail loop's health (lib/tail.ts) ----------
 // The tail never exits on an error (each mod restart costs a backoff): it logs, backs off and carries on. Every
@@ -206,7 +205,6 @@ export { PULL_CAP } from '../mod/core/constants.ts'; // the tail's room context 
 
 // ---------- size caps (code points unless noted) ----------
 export const CONTEXT_CAP = 9500;               // hook additionalContext (the CLI caps SessionStart / prompt context at 10k)
-export const DIGEST_CAP = 9500;                // room.digest()
 export const TAIL_MAX = 240;                   // room.line() compact form
 export const TEXT_MAX = 2000;                  // room.line({full}) text
 export const CHAT_WRAP = 400;                  // one chat output line

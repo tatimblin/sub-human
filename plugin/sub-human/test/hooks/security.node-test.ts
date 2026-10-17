@@ -69,7 +69,7 @@ test('a Bash-forged human signoff (node -e require(lib/room.ts).append({via:"hum
   const why = bashVerdict(cmd, { home: w.home, cwd: w.cwd });
   assert.ok(why);
   assert.match(denyText(why), /sub-human's own modules/);
-  assert.ok(denyText(why, '/p').includes('`/p/scripts/sub-human read|digest|who|tasks|show`'), 'the CLI by its path: scripts/ is not on PATH');
+  assert.ok(denyText(why, '/p').includes('`/p/scripts/sub-human read|who|tasks|show`'), 'the CLI by its path: scripts/ is not on PATH');
   assert.ok(!denyText(why).includes('scripts/'), 'no root, no path');
   assert.match(denyText(why), /the room store is reached only through sub-human\./, 'worded for reads as well as writes');
   // 2. run anyway (the guard is a string check): the store refuses, nothing is written
@@ -260,7 +260,7 @@ test('Bash guard: allowed and denied commands', () => {
   const home = '/Users/u/.sub-human';
   const ctx = { home, pluginRoot: '/repo/plugin/sub-human', cwd: '/repo' };
   const allow = [
-    'sub-human read', 'sub-human read --id 3,4', 'sub-human digest --room vole-1234', 'sub-human who', 'sub-human tasks --json',
+    'sub-human read', 'sub-human read --id 3,4', 'sub-human who', 'sub-human tasks --json',
     '/repo/plugin/sub-human/scripts/sub-human read 5', 'npm test', 'node --test plugin/sub-human/test',
     'node --test plugin/sub-human/test/hooks/at-room.node-test.ts', 'git diff plugin/sub-human/lib/room/store.ts',
     'cat plugin/sub-human/lib/room/store.ts', 'grep -n "require(" plugin/sub-human/lib/room.ts', 'sed -n 1,40p plugin/sub-human/hooks/at-room.ts',

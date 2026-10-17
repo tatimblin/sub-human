@@ -314,7 +314,7 @@ export interface BlobsApi {
   put(name: string, bytes: string | Uint8Array): string;
   get(ref: string): Buffer | null;
   has(ref: string): boolean;
-  ref(pathOrRef: unknown): string | null;
+  ref(name: unknown): string | null;
   localPath(ref: string): string | null;
 }
 

@@ -18,7 +18,7 @@
  *             step; over ssh through the person's own ssh login, --home as the line says); PIN (4 digits
  *             alone): the PIN the host's machine asked for (joining.givePin; never the seat either); HOST ROOM: over
  *             the person's own ssh login (joining.linkLogin; the seat once linked); a pipe HOST with no SECRET is an
- *             invite line without its SECRET; a line whose SECRET is 4 digits comes from a host before protocol 3
+ *             invite line without its SECRET
  *   bindRoomClaude   the room Claude's own launch `/sub-human` (agent_type sub-human:room-claude + SUB_HUMAN_ROOM), or a
  *             debugging `/sub-human [ROOM]` in a room-claude agent session: binds the seat `claude`
  */
@@ -49,8 +49,6 @@ const wsT = lazy<typeof WsMod>(import.meta.url, '../remote/transports/ws.ts');
 const sshT = lazy<typeof SshMod>(import.meta.url, '../remote/transports/ssh.ts');
 
 export const JOIN_USAGE: string = `usage: /sub-human join HOST ROOM SECRET (the line from an invite), then /sub-human join PIN when it asks. ${HELP_HINT}`;
-/** A line from a host before protocol 3: its last word is a 4-digit PIN, where an invite line has its SECRET. */
-const OLD_LINE = 'that invite line comes from an older sub-human on the host (a 4-digit PIN where the line\'s SECRET goes): ask the host to update (/plugin update sub-human) and invite you again';
 const NOT_WHOLE = 'the line\'s SECRET (its last long word) did not come through whole: paste the whole line the host sent you';
 const PIN_APART = 'type the line without the PIN: the host\'s machine asks for the PIN once it has answered (/sub-human join PIN)';
 const PIN_WORD = /^[0-9]{3,10}$/;
@@ -144,10 +142,9 @@ export const named: Verb = (args, ctx) => {
   return seat({ name, code: code || (ctx.cur && ctx.cur.name === name ? ctx.cur.code : null) }, ctx);
 };
 
-/** An invite line's SECRET word, or why it is not one (an old line's PIN, a cut paste). */
+/** An invite line's SECRET word, or why it is not one (a cut paste). */
 function secretOf(word: string | undefined): { word: InviteSecret } | { error: string } {
   if (word === undefined) return { error: JOIN_USAGE };
-  if (invites.SHORT_PIN_RE.test(word)) return { error: OLD_LINE };
   const d = inviteSecret.decode(word);
   return d ? { word: inviteSecret.encode(d.secret, d.tag) } : { error: NOT_WHOLE };
 }
