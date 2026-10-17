@@ -717,11 +717,11 @@ test('classic (no module answering): a reply is the block reason alone, never al
 
 /** Run join.ts as the module's command.run hook does (mod/core/command.ts joinPayload): no CLAUDE_PID, the lease's
  * nonce, this test process as the claude process (the shim's parent). */
-function viaModule(w: World, name: string, args: string, { nonce = 'ab'.repeat(16), leaseNonce = nonce }: { nonce?: string; leaseNonce?: string } = {}) {
+function viaModule(w: World, name: string, args: string, { nonce = 'ab'.repeat(16), leaseNonce = nonce, mode }: { nonce?: string; leaseNonce?: string; mode?: string } = {}) {
   w.pid[name] = process.pid;
   w.sid[name] = w.sid[name] || crypto.randomUUID();
   w.lib(() => identity.writeModLease(w.sid[name], { pid: process.pid, nonce: leaseNonce }));
-  const payload = { ...expand(args), sub_human_via: 'command.run', sub_human_nonce: nonce };
+  const payload = { ...expand(args), sub_human_via: 'command.run', sub_human_nonce: nonce, ...(mode ? { permission_mode: mode } : {}) };
   return w.hook('join', payload, { as: name, modLease: false, env: { CLAUDE_PID: undefined } });
 }
 
@@ -743,6 +743,14 @@ test('through the module (command.run): every reply is {subHuman: {say}}, never 
   assert.equal(seat(w, 'bob').pid, process.pid, 'the seat\'s claude process is the shim\'s parent');
   const left = must(must(viaModule(w, 'bob', 'leave').json).subHuman);
   assert.deepEqual([left.say, left.refused], [`left ${w.code} · /sub-human joins again`, false]);
+});
+
+test('through the module (room-plan live): a join in bypass-permissions mode says so in its line', () => {
+  const w = new World({ claude: 'sleep', alice: 'sleep' });
+  const bypass = must(must(viaModule(w, 'bob', `bob ${w.code}`, { mode: 'bypassPermissions' }).json).subHuman);
+  assert.match(must(bypass.say), /⚠ bypass-permissions mode: messages from other sessions can wait behind a dialog/);
+  const plain = must(must(viaModule(w, 'carol', `carol ${w.code}`, { mode: 'default' }).json).subHuman);
+  assert.doesNotMatch(must(plain.say), /bypass/);
 });
 
 test('SECURITY through the module: an invite and anything a PIN may be typed in are never shareable (notices only); a wrong nonce is not the module', () => {

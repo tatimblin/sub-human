@@ -69,7 +69,7 @@ export interface RejectedPayload extends PayloadBase { tool_name: string; tool_i
  * hooks/types.ts JoinIn). */
 export interface JoinPayload {
   hook_event_name: string; session_id: unknown; cwd: unknown; expansion_type: string; command_name: string; command_args: string;
-  command_source: string; sub_human_via: string; sub_human_nonce: unknown;
+  command_source: string; sub_human_via: string; sub_human_nonce: unknown; permission_mode?: string;
 }
 
 /** One $ call an event maps to (mod/core/deliver.ts route). */

@@ -46,11 +46,14 @@ export function answersItself(e: { args?: unknown; origin?: OriginLike } | null 
   return kind === 'composer';
 }
 
-/** hooks/handlers/join.ts's stdin: the UserPromptExpansion payload Claude Code would give it, marked as the module's. */
-export function joinPayload({ sid, cwd, args, nonce }: { sid: unknown; cwd: unknown; args: unknown; nonce: unknown }): JoinPayload {
+/** hooks/handlers/join.ts's stdin: the UserPromptExpansion payload Claude Code would give it, marked as the module's.
+ * mode: the session's permission mode as the module last saw it (mod/core/facts.ts), which the join warns about when it
+ * is bypassPermissions; left out when unknown, as a payload without one. */
+export function joinPayload({ sid, cwd, args, nonce, mode }: { sid: unknown; cwd: unknown; args: unknown; nonce: unknown; mode?: unknown }): JoinPayload {
   return {
     hook_event_name: 'UserPromptExpansion', session_id: sid, cwd, expansion_type: 'slash_command',
     command_name: 'sub-human:sub-human', command_args: String(args ?? ''), command_source: 'plugin',
+    ...(typeof mode === 'string' && mode ? { permission_mode: mode } : {}),
     sub_human_via: 'command.run', sub_human_nonce: nonce,
   };
 }
