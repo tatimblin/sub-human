@@ -27,15 +27,17 @@
  * Code's list reset (every task completed: every file deleted) from firing.
  *
  * Log entries (room.ts stores the caller's task `id` as `task_id`, since `id` is the entry's own id):
- *   task_req (via agent): {kind:'task_req', from = by = requester, text, op, task_id, subject, detail, evidence, owner, suggest}
- *   task (via system, from room): {kind:'task', text, op, task_id, subject, detail, owner, status, blockedBy, req, suggest}
+ *   task_req (via agent): {kind:'task_req', from = by = requester, text, op, task_id, subject, detail, evidence, owner, suggest, plan?, version?}
+ *   task (via system, from room): {kind:'task', text, op, task_id, subject, detail, owner, status, blockedBy, req, suggest, plan?, version?}
+ * An add may name the room plan it comes from (plan); the host tags it with that plan's current version, refused when
+ * the room has no such plan (lib/plans.ts).
  */
 
 import { clip, NAME_RE } from './text.ts';
 import * as config from './config.ts';
 import * as room from './room.ts';
 import * as taskFiles from './room/task-files.ts';
-import { RoomError } from './room/validate.ts';
+import { RoomError, PLAN_NAME_RE } from './room/validate.ts';
 import type { FoldedTask, Task, TaskReq } from './types-app.ts';
 import type { Entry, EntryInput, KvApi, RoomStore } from './room/types.ts';
 import type { Room } from './room.ts';
@@ -100,6 +102,7 @@ function foldAll(entries: readonly (Entry | null | undefined)[] | null | undefin
     if (typeof e.req === 'number') t.req = e.req;
     if (e.by) t.by = e.by;
     if (e.suggest) t.suggest = e.suggest;
+    if (e.plan && typeof e.version === 'number') { t.plan = e.plan; t.version = e.version; }
     m.set(id, t);
   }
   return [...m.values()].sort(byId);
@@ -168,6 +171,11 @@ function validate(input: unknown): { ok: true, req: TaskReq } | { ok: false, err
     if (NOT_OWNERS.includes(req.suggest.toLowerCase())) return no(`"${req.suggest}" cannot own a task`);
     out.suggest = req.suggest;
   }
+  if (req.plan != null && req.plan !== '') {
+    if (op !== 'add') return no('plan goes with add only');
+    if (typeof req.plan !== 'string' || !PLAN_NAME_RE.test(req.plan.trim().toLowerCase())) return no(`invalid plan name "${String(req.plan)}"`);
+    out.plan = req.plan.trim().toLowerCase();
+  }
   return { ok: true, req: out };
 }
 
@@ -205,9 +213,10 @@ function check(task: FoldedTask | null, req: TaskReq, by: string): string | null
 }
 
 /** The task after an accepted request. */
-function after(task: FoldedTask | null, req: TaskReq, by: string, id: string): FoldedTask {
+function after(task: FoldedTask | null, req: TaskReq, by: string, id: string, from: { plan: string; version: number } | null = null): FoldedTask {
   if (req.op === 'add' || !task) {
-    return { id, subject: req.subject ?? '', status: 'pending', owner: null, blockedBy: [], ...(req.detail ? { detail: req.detail } : {}), by, ...(req.suggest ? { suggest: req.suggest } : {}) };
+    return { id, subject: req.subject ?? '', status: 'pending', owner: null, blockedBy: [], ...(req.detail ? { detail: req.detail } : {}), by,
+      ...(req.suggest ? { suggest: req.suggest } : {}), ...(from ?? {}) };
   }
   if (req.op === 'claim') return { ...task, owner: by, status: 'in_progress' };
   if (req.op === 'release') return { ...task, owner: null, status: 'pending' };
@@ -216,10 +225,11 @@ function after(task: FoldedTask | null, req: TaskReq, by: string, id: string): F
 
 /** The `task` entry for t (its whole state; t.req: the request that made it, none for the room's own). */
 function taskEntry(t: FoldedTask, op: string): EntryInput {
-  const text = `#${t.id} "${t.subject}" ${op}${t.owner ? ` · ${t.owner}` : ''} · ${t.status}${t.req ? ` (req #${t.req})` : ''}`;
+  const text = `#${t.id} "${t.subject}" ${op}${t.owner ? ` · ${t.owner}` : ''} · ${t.status}${t.plan ? ` · plan ${t.plan} v${t.version}` : ''}${t.req ? ` (req #${t.req})` : ''}`;
   return {
     kind: 'task', text, op, id: t.id, subject: t.subject, status: t.status, owner: t.owner, blockedBy: t.blockedBy,
     ...(t.detail ? { detail: t.detail } : {}), ...(t.req ? { req: t.req } : {}), ...(t.suggest ? { suggest: t.suggest } : {}),
+    ...(t.plan && t.version ? { plan: t.plan, version: t.version } : {}),
   };
 }
 
@@ -243,16 +253,20 @@ function apply(store: RoomStore, input: unknown, { by }: { by: string }): Applie
     const task = req.id ? all.find(t => t.id === req.id) ?? null : null;
     const why = check(task, req, by);
     if (why) return { ok: false, error: why };
+    // an add from a plan: tagged with that plan's current version (the fold of the same entries)
+    const pv = req.plan ? r.fold(entries).plans.get(req.plan)?.current ?? null : null;
+    if (req.plan && !pv) return { ok: false, error: `no plan ${req.plan} in this room` };
+    const from = pv ? { plan: pv.plan, version: pv.version } : null;
     roomTaskIn(r, store, entries); // the room's first task request opens the room task first
     const id = req.op === 'add' ? taskFiles.nextId(store.code, foldAll(entries)) : String(req.id);
     const owner = req.op === 'claim' ? by : task ? task.owner : null;
     const ask = r.append({ kind: 'task_req', text: requestText({ ...req, ...(req.op === 'add' ? {} : { id }) }), op: req.op, id,
       ...(req.subject ? { subject: req.subject } : {}), ...(req.detail ? { detail: req.detail } : {}), ...(req.evidence ? { evidence: req.evidence } : {}),
-      ...(owner && req.op === 'claim' ? { owner } : {}), ...(req.suggest ? { suggest: req.suggest } : {}) }, { via: 'agent', from: by });
-    const next = { ...after(task, req, by, id), req: ask.id };
+      ...(owner && req.op === 'claim' ? { owner } : {}), ...(req.suggest ? { suggest: req.suggest } : {}), ...(from ?? {}) }, { via: 'agent', from: by });
+    const next = { ...after(task, req, by, id, from), req: ask.id };
     entries.push(ask, r.append(taskEntry(next, req.op), { via: 'system', from: ROOM, system: true }));
     finish(store, entries);
-    const what = req.op === 'add' ? `added #${id} "${next.subject}"${next.suggest ? ` (suggested owner: ${next.suggest}; they claim it)` : ''}`
+    const what = req.op === 'add' ? `added #${id} "${next.subject}"${from ? ` (from plan ${from.plan} v${from.version})` : ''}${next.suggest ? ` (suggested owner: ${next.suggest}; they claim it)` : ''}`
       : req.op === 'claim' ? `#${id} is yours now (in progress)` : req.op === 'release' ? `released #${id}; nobody owns it now` : `#${id} done`;
     return { ok: true, task: next, text: what };
   });

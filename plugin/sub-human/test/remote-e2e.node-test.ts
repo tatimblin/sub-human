@@ -15,19 +15,21 @@ import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
 import * as identity from '../lib/identity.ts';
 import * as proposal from '../lib/proposal.ts';
+import { propose } from './support/plan.ts';
 import * as rows from '../lib/rows.ts';
 import * as linkSocket from '../lib/remote/link-socket.ts';
 import { isAlive } from '../lib/io.ts';
 import { Machine, childOf, kill } from './support/two-homes.ts';
 import * as taskPlugin from '../mcp/task.ts';
+import * as plans from '../lib/plans.ts';
 
 import type { Proposal } from '../lib/types-app.ts';
 import type { Link, LinkState } from '../lib/room/types.ts';
 import { sn } from './support/brands.ts';
 import { must } from './support/must.ts';
 
-/** proposal.create's seat (a Pick of Identity, not exported). */
-type ProposalMe = NonNullable<Parameters<typeof proposal.create>[0]>;
+/** propose's seat (a Pick of Identity, not exported). */
+type ProposalMe = Parameters<typeof propose>[0];
 /** A tail's NDJSON event, the fields read here (lib/tail.ts). */
 interface TailEvent { type: string; text?: string; lines?: string[] }
 
@@ -67,6 +69,13 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   assert.ok(host.lib(() => store.open(code).readAll()).some(e => e.kind === 'task' && e.from === 'room' && e.subject === 'parser tests'), 'on the host\'s log');
   const taken = remote.lib(() => taskTool.call('task', { code, name: sn('bob'), role: 'member' }, { op: 'done', id: '99', evidence: 'x' }));
   assert.deepEqual([taken.isError, must(taken.content[0]).text], [true, 'refused: no task #99 in this room']);
+  // a plan edit from bob's machine is stored on the host (compare-and-swap there: lib/plans.ts put); its text reaches
+  // the mirror's blob store with the line, and a stale base comes back as a conflict with the current text
+  const v1 = remote.lib(() => plans.request(code, { plan: 'paging', base: 0, text: '# Paging\n\n1. cursor\n', summary: 'first draft' }, 'bob'));
+  assert.ok(v1.ok, JSON.stringify(v1));
+  await h.until(() => fs.existsSync(path.join(remote.home, 'rooms', code, 'plans', `${v1.version.hash}.md`)), 5000, 50);
+  const stale = remote.lib(() => plans.request(code, { plan: 'paging', base: 0, text: '# Paging\n\n1. offset\n' }, 'bob'));
+  assert.ok(!stale.ok && stale.conflict && stale.conflict.text === '# Paging\n\n1. cursor\n', JSON.stringify(stale));
   const linkFile = JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.json`), 'utf8')) as Link;
   assert.deepEqual([typeof linkFile.token, linkFile.invite], ['string', undefined], 'the invite became the token');
   assert.equal(fs.statSync(path.join(remote.home, 'links', `${code}.json`)).mode & 0o777, 0o600);
@@ -88,7 +97,7 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
 
   // a proposal naming bob: its plan is prefetched, his card answer is signed there and decided here
   const aliceMe: ProposalMe = { code, name: sn('alice') };
-  const p = host.lib(() => proposal.create(aliceMe, { text: '# Ship the parser\n\n1. merge\n', approvers: ['bob'] }));
+  const p = host.lib(() => propose(aliceMe, { text: '# Ship the parser\n\n1. merge\n', approvers: ['bob'] }));
   await h.until(() => fs.existsSync(path.join(remote.home, 'rooms', code, 'plans', `${p.hash}.md`)), 5000, 50);
   const card = remote.lib(() => proposal.card({ hash: p.hash, approvers: ['bob'] } as Proposal, code));
   assert.match(JSON.stringify(card), /Ship the parser/, 'the card shows the prefetched plan');
@@ -112,7 +121,7 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   assert.match(host.lib(() => rows.rowText(code, { member: sn('bob'), viewer: 'alice' })), /idle/);
 
   // a second proposal for bob, prefetched before the link goes down
-  const p2 = host.lib(() => proposal.create(aliceMe, { text: '# Ship the lexer\n', approvers: ['bob'] }));
+  const p2 = host.lib(() => propose(aliceMe, { text: '# Ship the lexer\n', approvers: ['bob'] }));
   await h.until(() => fs.existsSync(path.join(remote.home, 'rooms', code, 'plans', `${p2.hash}.md`)), 5000, 50);
 
   // the host's server dies: bob's @room posts are queued, nothing written anywhere yet; his tail says so once

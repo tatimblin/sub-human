@@ -3,7 +3,7 @@
  * stays in node (hooks/consent.ts): its lock, plan-file writes and via=human signing. $.state reviewMaybeOpen
  * is set true by anything that may open a review (here, and in mod/deliver.ts) and set from consent's own subHuman
  * {reviewOpen} report after every run (SUB_HUMAN_SHIM=1); unset counts as true.
- *   - tool.call EnterPlanMode|ExitPlanMode: sets reviewMaybeOpen. An ExitPlanMode the person refused in the plan view
+ *   - tool.call EnterPlanMode|ExitPlanMode and the room's plan tool: sets reviewMaybeOpen (an edit counts as open). An ExitPlanMode the person refused in the plan view
  *     (its call comes back denied or as an error: Claude Code runs no PostToolUse for it) goes to node consent at once,
  *     as a PostToolUseFailure with the refusal's text: a note there opens now, its line rides on the refusal the model
  *     reads, and the person gets a notice (lib/consent/review.ts rejected).
@@ -19,6 +19,9 @@
  *   - classic.PermissionRequest ExitPlanMode: node consent while a review may be open (it closes one without a dialog).
  *   - classic.Stop: node consent (the open-review nudge) while a review may be open; its additionalContext continues
  *     the turn (cc CONTRACT stop-additional-context).
+ *   - prompt.attachment plan_mode (main loop): node consent as a PlanAttachment event while a review or edit may be
+ *     open, with the plan file the attachment names; consent seeds a room plan edit there and its subHuman.attach line
+ *     is appended to the attachment's text.
  * Failure: each .catch passes the event on (a nudge, a card and a review are not gates: nothing is recorded unless the
  * person answered).
  */
@@ -34,6 +37,10 @@ import type { EngineInterface, On } from 'claude-code';
 import type { Hello, RunOutput, SubHumanRead } from './core/types.ts';
 
 const HELLO = { plugin: 'sub-human', key: 'hello' } as const;
+/** The room's plan tool: its edit op opens an edit the hooks then run (consent must see the next plan mode). */
+const PLAN_TOOL = 'mcp__plugin_sub-human_room__plan';
+/** The event consent takes a plan_mode attachment as (lib/cc/env.ts PLAN_ATTACHMENT_EVENT). */
+const PLAN_ATTACHMENT = 'PlanAttachment';
 const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' } as const;
 
 async function helloOf($: EngineInterface): Promise<Hello | null> {
@@ -66,7 +73,7 @@ async function apply($: EngineInterface, { systemMessage, subHuman }: { systemMe
 let draft = false;
 
 export function registerConsent(on: On): void {
-  on('tool.call', { tool: ['EnterPlanMode', 'ExitPlanMode'] }, async ($, e, next) => {
+  on('tool.call', { tool: ['EnterPlanMode', 'ExitPlanMode', PLAN_TOOL] }, async ($, e, next) => {
     await $.state.set(REVIEW, true);
     const r = await next(e);
     if (e.tool !== 'ExitPlanMode' || e.agentId || !(r.deny !== undefined || r.isError)) return r;
@@ -122,6 +129,24 @@ export function registerConsent(on: On): void {
     await apply($, said);
     return mergeClassic(result, await next(e));
   }).catch((_$, e, next) => next(e)); // a nudge, not a gate: the turn ends as it would
+
+  // a room plan edit's seed: the plan file is known here, as the request is made (cc CONTRACT module-plan-mode-detail);
+  // consent writes the base version there and gives a line to append to the reminder (never replacing its text: it
+  // carries plan mode's own rules). Main loop only; nothing runs while no edit or review may be open.
+  on('prompt.attachment', { type: 'plan_mode' }, async ($, e, next) => {
+    const r = await next(e);
+    if (e.agentId || r.text == null) return r;
+    const file = e.detail ? e.detail.planFilePath : undefined;
+    if (typeof file !== 'string' || !file) return r;
+    const sid = await $.session.id();
+    const hello = await helloOf($);
+    if (!seatedOrUnsure(hello, sid) || !consentNeeded(hello, sid, await flagOf($))) return r;
+    const payload = { hook_event_name: PLAN_ATTACHMENT, session_id: sid, cwd: await $.session.cwd().catch(() => undefined), plan_file_path: file, permission_mode: 'plan' };
+    const { subHuman, ...said } = toClassic(PLAN_ATTACHMENT, await runConsent($, payload, sid));
+    await apply($, { ...said, subHuman });
+    const line = subHuman && typeof subHuman.attach === 'string' ? subHuman.attach : '';
+    return line ? { text: `${r.text}\n\n${line}` } : r;
+  }).catch((_$, e, next) => next(e)); // no seed: the edit's ExitPlanMode seeds the file instead (lib/consent/edit.ts)
 
   // observe only: whether the person is typing (PromptHint isDraft), for a plan view about to open (item 8)
   on('ui.render', { component: 'PromptHint' }, (_$, e, next) => {

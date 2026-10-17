@@ -6,7 +6,7 @@
  * review's note waiting for the person's Send). The room's record of a proposal (who agreed, the decision) is not
  * here: lib/room/consent.ts fold is its one interpretation, and an answer reaches it only through the `answer` effect.
  * hooks/consent.ts gathers each event's facts (the transcript, the plan file, the room), runs the effects
- * (the lock, plan-file I/O, proposal.answer, the pick), stores the state and writes the say. Nothing here reads a
+ * (the lock, plan-file I/O, proposal.answer), stores the state and writes the say. Nothing here reads a
  * file, the clock or the room.
  *
  * The review (Review.phase), opened only by the hooks and only for a proposal the person's words pick:
@@ -39,8 +39,10 @@
  * its parts are lines, {answer: hash} (the answer effect's outcome line) or {ifRecorded}. Every model-facing line is
  * in NEXT and SAY below: one mechanic per phase and short outcome lines (CLAUDE.md "Unprescriptive").
  *
- * Planned (docs/next/PLAN-COLLAB-IMPL.md): versions, threads, withdraw and changes_requested become events and fields
- * on this state, not a second model; every comparison of the dialog's plan with the proposal goes through shownHash.
+ * A proposal is a sign-off request on one version of a room plan (lib/plans.ts). Editing a plan is lib/consent/edit.ts,
+ * a reducer of its own: while an edit is open the hooks route plan mode to it, never here, so an edit's ExitPlanMode
+ * never reaches a review and the person's own plan approved in the dialog is never an answer (only a review the hooks
+ * opened records one). Every comparison of the dialog's plan with the proposal goes through shownHash.
  */
 
 import { hash12 } from '../text.ts';
@@ -68,11 +70,7 @@ export interface Pending { hash: string; from: string | null; viewable: boolean 
 export interface Said { text: string; at: number }
 
 export type ConsentEvent =
-  | { type: 'enter'; mode: string | undefined; reviewable: boolean; pending: Pending[]; said: Said | null; named: string | null;
-      replaced: { old: string; hash: string } | null; kept: { hash: string | null; at: number } | null; propose: boolean; plan: PlanFile;
-      /** a pending proposal of this seat's own made since the person's latest prompt (the propose tool ran): the ask
-       * to propose is spent, and that proposal is the one to review */
-      proposedSince?: string | null }
+  | { type: 'enter'; mode: string | undefined; reviewable: boolean; pending: Pending[]; said: Said | null; named: string | null; plan: PlanFile }
   | { type: 'entered'; plan: PlanFile }
   | { type: 'exit'; toolUseId: string | null; answer?: ReviewAnswer | null; target?: Target | null; shown: { hash: string; from: string | null } | null;
       text: string | null; plan: PlanFile; callPlan: unknown; ownPlan: unknown; mode?: string | undefined;
@@ -82,7 +80,7 @@ export type ConsentEvent =
   | { type: 'permission' }
   | { type: 'exited'; toolUseId: string | null; mode: string | undefined; answer?: ReviewAnswer | null; target?: Target | null;
       response: { plan: unknown; edited: boolean; isAgent: boolean; filePath: unknown }; callPlan: unknown;
-      pending: Pending[]; callNames: string[]; reviewable: boolean; proposed: boolean }
+      pending: Pending[]; callNames: string[]; reviewable: boolean }
   | { type: 'stop'; mode: string | undefined; active: boolean; answer?: ReviewAnswer | null; target?: Target | null; live: boolean }
   | { type: 'roomTool'; mode: string | undefined; answer?: ReviewAnswer | null; target?: Target | null; post?: boolean; noteLive?: boolean }
   | { type: 'rejected'; toolUseId: string | null; answer: ReviewAnswer | null; target?: Target | null }
@@ -96,7 +94,6 @@ export type ConsentEffect =
   | { do: 'save'; review: Review }
   | { do: 'writePlan'; file: string; hash: string; early: boolean }
   | { do: 'restorePlan'; file: string; backup: string | null }
-  | { do: 'pick'; hash: string | null }
   | { do: 'answer'; hash: string; choice: 'Agree' | 'Object'; notes?: string; clearNote?: boolean };
 
 export type Part = string | { answer: string } | { ifRecorded: string };
@@ -110,7 +107,7 @@ export type Say =
 /** notice: a line for the person (the hook's systemMessage, a sub-human notice), beside what the model is told. */
 export interface ReviewStep { state: State; effects: ConsentEffect[]; say: Say | null; notice?: string }
 
-/** The hash the dialog's plan must have for an answer to count: the proposal's own (PLAN-COLLAB: the composed text's). */
+/** The hash the dialog's plan must have for an answer to count: the proposal's own (the version's). */
 export const shownHash = (r: Review): string | undefined => r.hash;
 
 // ---------- the words: one mechanic per phase, short outcome lines ----------
@@ -158,18 +155,15 @@ export const SAY = {
   done: `${DONE}`, // a template: an isolated declaration types it (a bare name it cannot)
   // the review
   opening: (n: string, h: string): string => `sub-human: opening room proposal ${h} for ${n}`,
-  replaced: (n: string, old: string, h: string): string => `sub-human: proposal ${old} was replaced by ${h}; opening ${h} for ${n}`,
   restoring: 'sub-human: restoring the mode after a room review',
   planBack: (n: string): string => `${n}'s plan mode is back. ${DONE}`,
   /** a Yes as the view opened */
   tooSoon: (n: string, h: string): string => `Nothing recorded yet: ${n}'s Yes came as the view opened, maybe keys meant for the prompt. Ask once on the card: ${NEXT.card(h)}; only that answer counts.`,
   tooSoonNotice: (title: string | null, h: string, typing: boolean): string => `your Yes on ${title ? `"${title}"` : `proposal ${h}`} came ${typing ? 'while you were typing' : 'right as the review opened'}, so it is not recorded yet: confirm it on the card that follows`,
   recheckAsk: (n: string, h: string): string => `room proposal ${h}: ${n}'s Yes came as the view opened; confirm it here`,
-  proposeFirst: (n: string): string => `sub-human: no room review now: ${n} asked you to propose something, so do that. The proposal awaiting ${n} stays pending.`,
   showOnly: (n: string, h: string): string => `sub-human: this plan mode is only to show ${n} room proposal ${h}. Call ExitPlanMode now with plan "proposal ${h}"; plan nothing (the hooks show its text).`,
   exitNow: `sub-human: ${NEXT.exit}.`,
   noReviewOpen: (n: string, h: string): string => `sub-human: proposal ${h} is not ${n}'s to answer now (already answered, decided or unknown); nothing was shown and nothing is recorded. Plan nothing for it.`,
-  stubPlan: (n: string, h: string): string => `Nothing recorded for proposal ${h}: that plan was only its name, not a review ${n} answered. ${NEXT.open(h)} to show it.`,
   /** the plan dialog's reason line: for the person, not the model */
   dialog: (n: string, h: string, from: string | null | undefined, mode: string | undefined): string => `room proposal ${h}${from ? ` from ${from}` : ''}, for ${n} (PgUp/PgDn scroll). `
     + `Agree: ${agreeHint(mode)}. Object: "Tell Claude what to change" + why. Esc: decide later.`,
@@ -193,7 +187,6 @@ export const SAY = {
   notAPlan: 'This was a room review, not a plan to carry out.',
   foreign: (n: string, h: string | undefined): string => ` The plan you passed was not shown (this plan mode showed ${n} room proposal ${h}; the plan file is back as it was).`,
   unshown: (n: string, hs: string, again: string): string => `Nothing recorded for ${hs}: no review opened, so ${n} did not answer (don't say they did). Ask again (${again}); don't carry it out.`,
-  offerPropose: (n: string, where: string): string => `sub-human: if ${n} wants the room to agree to this plan, call the room propose tool with ${where}. Only on ${n}'s word.`,
   stillOpen: (n: string, next: string): string => `sub-human: ${n}'s room review is still open: ${next}.`,
   roomToolDenied: (said: string): string => `sub-human: ${said ? `${said} ` : ''}Post nothing about the review. First ${NEXT.exit}; then return to what you were doing.`,
   promptExit: (said: string): string => `sub-human: ${said ? `${said} ` : ''}Before anything else, ${NEXT.exit}; then continue.`,
@@ -298,7 +291,7 @@ const stub = (t: string) => !t.trim() || /^\s*(?:the room )?proposal\s+[0-9a-f]{
  * removes the file. */
 const personsPlan = (t: string | null | undefined): string | null => (typeof t === 'string' && !stub(t) ? t : null);
 
-/** Post(ExitPlanMode) with no review shown although its dialog was a pending proposal's: tell the model, pick it. */
+/** Post(ExitPlanMode) with no review shown although its dialog was a pending proposal's: tell the model. */
 function unshown(ev: Extract<ConsentEvent, { type: 'exited' }>, ctx: ReviewCtx, hashes: string[]): { effects: ConsentEffect[]; say: Say } | null {
   if (!ev.pending.length || ev.response.isAgent) return null;
   const plan = typeof ev.response.plan === 'string' ? ev.response.plan : typeof ev.callPlan === 'string' ? ev.callPlan : '';
@@ -310,23 +303,7 @@ function unshown(ev: Extract<ConsentEvent, { type: 'exited' }>, ctx: ReviewCtx, 
   const [first] = hit;
   if (!first) return null;
   const again = ev.reviewable && hit.every(p => p.viewable) ? NEXT.open(first.hash) : NEXT.card(first.hash);
-  return { effects: [{ do: 'pick', hash: first.hash }], say: { to: 'context', parts: [SAY.unshown(ctx.name, hit.map(p => p.hash).join(', '), again)] } };
-}
-
-/** Post(ExitPlanMode) for the person's own plan: their own pending proposal unedited is their signoff; else offer to propose it. */
-function ownPlan(ev: Extract<ConsentEvent, { type: 'exited' }>, ctx: ReviewCtx): { effects: ConsentEffect[]; say: Say | null } {
-  const plan = ev.response.plan;
-  if (ev.response.isAgent || typeof plan !== 'string' || !plan.trim()) return { effects: [], say: null };
-  // "proposal HASH" with no review: not the person's plan, and not an answer (the dialog showed only the name)
-  const [, named] = /^\s*(?:the room )?proposal\s+([0-9a-f]{6,12})\s*\.?\s*$/i.exec(plan) ?? [];
-  if (named !== undefined) return { effects: [], say: { to: 'context', parts: [SAY.stubPlan(ctx.name, named)] } };
-  const h = hash12(Buffer.from(plan, 'utf8'));
-  if (!ev.response.edited && ev.pending.some(p => p.hash === h && p.from === ctx.name)) {
-    return { effects: [{ do: 'answer', hash: h, choice: 'Agree' }], say: { to: 'context', parts: [{ answer: h }] } };
-  }
-  if (ev.proposed) return { effects: [], say: null };
-  const where = ev.response.filePath ? `{path: ${JSON.stringify(ev.response.filePath)}}` : '{text: <the plan>}';
-  return { effects: [], say: { to: 'context', parts: [SAY.offerPropose(ctx.name, where)] } };
+  return { effects: [], say: { to: 'context', parts: [SAY.unshown(ctx.name, hit.map(p => p.hash).join(', '), again)] } };
 }
 
 const none = (state: State): ReviewStep => ({ state, effects: [], say: null });
@@ -341,23 +318,12 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
   switch (ev.type) {
     case 'enter': {
       if (r && r.phase === 'restore') return { state, effects: [], say: { to: 'allow', text: SAY.restoring } };
-      const newest = ev.pending.at(-1);
-      if (!newest || !ev.reviewable) return none(state);
+      const [oldest] = ev.pending;
+      if (!oldest || !ev.reviewable) return none(state);
       // a review left behind: its backup goes back before a new one is taken
-      const [old, effects] = r ? restore(r) : [r, [] as ConsentEffect[]];
-      const said = ev.said;
-      // The person asked their Claude to propose something: no review (a hash they named still opens one). Once the
-      // propose tool made that proposal (proposedSince), the ask is spent: the proposal opens like any other
-      const since = ev.proposedSince ? ev.pending.find(q => q.hash === ev.proposedSince) : undefined;
-      if (said && ev.propose && !since && !ev.pending.some(p => said.text.includes(p.hash.slice(0, 6)))) {
-        return { state: { ...state, review: old }, effects, say: ctxSay(SAY.proposeFirst(n)) };
-      }
-      // The person's pick, else the newest: never the model's choice. A pick made after their latest prompt stands.
-      const fresh = !!said && !(ev.kept && ev.kept.at > said.at);
-      const byHash = (h: string | null | undefined) => (h ? ev.pending.find(p => p.hash === h) : undefined);
-      const p = (fresh ? byHash(ev.named) ?? since : byHash(ev.kept && ev.kept.hash)) ?? newest;
-      if (fresh) effects.push({ do: 'pick', hash: byHash(ev.named) ? ev.named : since ? since.hash : null });
-      const was = fresh && ev.replaced && ev.replaced.hash === p.hash ? ev.replaced : null;
+      const [, effects] = r ? restore(r) : [r, [] as ConsentEffect[]];
+      // the request the person's latest words name (a hash, a plan's name), else the oldest: never the model's choice
+      const p = (ev.named ? ev.pending.find(q => q.hash === ev.named) : undefined) ?? oldest;
       let review: Review = { phase: 'entering', mode: ev.mode, at: ctx.now, hash: p.hash, from: p.from || null };
       const note = state.note && state.note.hash === p.hash ? null : state.note; // reviewed again: its note is superseded
       // the file as it will be once the left-behind review's restore has run (the facts were read before it)
@@ -365,7 +331,7 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
       const [shown, early] = showEarly(review, now);
       review = shown;
       return { state: { review, note }, effects: [...effects, ...early],
-        say: { to: 'allow', text: was ? SAY.replaced(n, was.old, p.hash) : SAY.opening(n, p.hash) } };
+        say: { to: 'allow', text: SAY.opening(n, p.hash) } };
     }
 
     case 'entered': {
@@ -445,10 +411,9 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
 
     case 'exited': {
       const fallback = (base: State, effects: ConsentEffect[], hashes: string[]): ReviewStep => {
+        // the person's own plan approved in the dialog is never an answer: only a review the hooks opened records one
         const u = unshown(ev, ctx, hashes);
-        if (u) return { state: base, effects: [...effects, ...u.effects], say: u.say };
-        const o = ownPlan(ev, ctx);
-        return { state: base, effects: [...effects, ...o.effects], say: o.say };
+        return u ? { state: base, effects: [...effects, ...u.effects], say: u.say } : { state: base, effects, say: null };
       };
       if (!r) return fallback(state, [], []);
       if (r.phase === 'entering') { // Pre(ExitPlanMode) never opened the review
@@ -564,7 +529,7 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
       const again = recheck ? ev.hit.find(p => p.hash === recheck.hash) : undefined;
       if (again) return { state: base, effects: [], say: { to: 'ask', text: SAY.recheckAsk(n, again.hash), show: { card: [again.hash] } } };
       if (ev.reviewable && ev.hit.every(p => p.viewable)) {
-        return { state: base, effects: [{ do: 'pick', hash: first.hash }], say: { to: 'deny', parts: [SAY.planView(n, first.hash)] } };
+        return { state: base, effects: [], say: { to: 'deny', parts: [SAY.planView(n, first.hash)] } };
       }
       return { state: base, effects: [], say: { to: 'ask', text: `room proposal ${ev.hit.map(p => p.hash).join(', ')}`, show: { card: ev.hit.map(p => p.hash) } } };
     }

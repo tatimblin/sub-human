@@ -29,12 +29,12 @@ const byPhase: Record<string, Review | null> = REVIEWS;
 
 /** Each event with the facts of an ordinary run: in plan mode where the event happens there, the person's Yes. */
 const EVENTS: { [K in ConsentEvent['type']]: Extract<ConsentEvent, { type: K }> } = {
-  enter: { type: 'enter', mode: 'default', reviewable: true, pending, said: null, named: null, replaced: null, kept: null, propose: false, plan },
+  enter: { type: 'enter', mode: 'default', reviewable: true, pending, said: null, named: null, plan },
   entered: { type: 'entered', plan },
   exit: { type: 'exit', toolUseId: 'tu2', answer: { note: null }, target, shown: { hash: H, from: 'alice' }, text: TEXT, plan, callPlan: `proposal ${H}`, ownPlan: undefined },
   permission: { type: 'permission' },
   exited: { type: 'exited', toolUseId: 'tu1', mode: 'default', answer: null, target, response: { plan: TEXT, edited: false, isAgent: false, filePath: undefined },
-    callPlan: undefined, pending: [], callNames: [], reviewable: true, proposed: false },
+    callPlan: undefined, pending: [], callNames: [], reviewable: true },
   stop: { type: 'stop', mode: 'plan', active: false, answer: { note: null }, target, live: true },
   roomTool: { type: 'roomTool', mode: 'plan', answer: { note: null }, target },
   prompt: { type: 'prompt', mode: 'plan', answer: { note: null }, target, live: true },
@@ -56,33 +56,33 @@ const shape = (s: ReviewStep) => [s.state.review ? s.state.review.phase : 'none'
 const TABLE: Record<string, Record<ConsentEvent['type'], [string, string | null, string]>> = {
   none: {
     enter: ['entering', 'allow', 'save,writePlan'], entered: ['none', null, ''], exit: ['none', null, ''], permission: ['none', null, ''],
-    exited: ['none', 'context', ''], stop: ['none', null, ''], roomTool: ['none', null, ''], prompt: ['none', null, ''],
-    ask: ['none', 'deny', 'pick'], answered: ['none', 'context', 'answer'], planFailed: ['none', null, ''], rejected: ['none', null, ''],
+    exited: ['none', null, ''], stop: ['none', null, ''], roomTool: ['none', null, ''], prompt: ['none', null, ''],
+    ask: ['none', 'deny', ''], answered: ['none', 'context', 'answer'], planFailed: ['none', null, ''], rejected: ['none', null, ''],
   },
   entering: {
     enter: ['entering', 'allow', 'save,writePlan'], entered: ['entering', 'context', 'save,writePlan'], exit: ['shown', 'ask', 'save,writePlan'],
-    permission: ['entering', null, ''], exited: ['none', 'context', ''], stop: ['entering', 'context', ''], roomTool: ['entering', null, ''],
-    prompt: ['exiting', 'context', ''], ask: ['entering', 'deny', 'pick'], answered: ['entering', 'context', 'answer'], planFailed: ['exiting', null, ''], rejected: ['entering', null, ''],
+    permission: ['entering', null, ''], exited: ['none', null, ''], stop: ['entering', 'context', ''], roomTool: ['entering', null, ''],
+    prompt: ['exiting', 'context', ''], ask: ['entering', 'deny', ''], answered: ['entering', 'context', 'answer'], planFailed: ['exiting', null, ''], rejected: ['entering', null, ''],
   },
   shown: {
     enter: ['entering', 'allow', 'restorePlan,save,writePlan'], entered: ['shown', null, ''], exit: ['exiting', null, ''], permission: ['shown', null, ''],
     exited: ['none', 'context', 'answer,restorePlan'], stop: ['exiting', 'context', ''], roomTool: ['exiting', 'deny', ''], prompt: ['exiting', 'context', ''],
-    ask: ['shown', 'deny', 'pick'], answered: ['shown', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', 'context', ''],
+    ask: ['shown', 'deny', ''], answered: ['shown', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', 'context', ''],
   },
   exiting: {
     enter: ['entering', 'allow', 'restorePlan,save,writePlan'], entered: ['exiting', null, ''], exit: ['exiting', null, ''], permission: ['exiting', 'permit', 'restorePlan'],
     exited: ['none', 'context', 'restorePlan'], stop: ['exiting', 'context', ''], roomTool: ['exiting', 'deny', ''], prompt: ['exiting', 'context', ''],
-    ask: ['exiting', 'deny', 'pick'], answered: ['exiting', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', null, ''],
+    ask: ['exiting', 'deny', ''], answered: ['exiting', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', null, ''],
   },
   unread: {
     enter: ['entering', 'allow', 'restorePlan,save,writePlan'], entered: ['exiting', null, ''], exit: ['exiting', null, ''], permission: ['exiting', 'permit', 'restorePlan'],
     exited: ['none', 'context', 'answer,restorePlan'], stop: ['exiting', 'context', ''], roomTool: ['exiting', 'deny', ''], prompt: ['exiting', 'context', ''],
-    ask: ['exiting', 'deny', 'pick'], answered: ['exiting', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', 'context', ''],
+    ask: ['exiting', 'deny', ''], answered: ['exiting', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', 'context', ''],
   },
   restore: {
     enter: ['restore', 'allow', ''], entered: ['restore', 'context', ''], exit: ['exiting', null, ''], permission: ['restore', null, ''],
     exited: ['restore', null, ''], stop: ['restore', 'context', ''], roomTool: ['restore', null, ''], prompt: ['none', null, ''],
-    ask: ['restore', 'deny', 'pick'], answered: ['restore', 'context', 'answer'], planFailed: ['exiting', null, ''], rejected: ['restore', null, ''],
+    ask: ['restore', 'deny', ''], answered: ['restore', 'context', 'answer'], planFailed: ['exiting', null, ''], rejected: ['restore', null, ''],
   },
 };
 
@@ -182,25 +182,17 @@ test('answerNeeded: which events read the dialog\'s answer, and which wait for i
   assert.equal(at({ ...REVIEWS.shown, resolved: true }, 'stop'), null, 'resolved once');
 });
 
-test('enter: the person\'s pick, else the earlier pick, else the newest; never the model\'s', () => {
-  const two = [{ hash: OTHER, from: 'alice', viewable: true }, P0];
+test('enter: the request the person\'s words name, else the oldest; never the model\'s; nothing is written for a pick', () => {
+  const two = [P0, { hash: OTHER, from: 'alice', viewable: true }];
   const enter = (e: Partial<Extract<ConsentEvent, { type: 'enter' }>>) => review.reduce({ review: null, note: null }, { ...EVENTS.enter, pending: two, ...e }, ctx);
-  assert.equal(rev(enter({})).hash, H, 'nothing named: the newest');
-  assert.deepEqual(enter({}).effects.map(e => e.do), ['save', 'writePlan'], 'no prompt of the person\'s: no pick written');
+  assert.equal(rev(enter({})).hash, H, 'nothing named: the oldest');
+  assert.deepEqual(enter({}).effects.map(e => e.do), ['save', 'writePlan']);
   const said = { text: `open ${OTHER.slice(0, 6)}`, at: 10 };
   const named = enter({ said, named: OTHER });
   assert.equal(rev(named).hash, OTHER);
-  assert.deepEqual(named.effects[0], { do: 'pick', hash: OTHER });
-  assert.deepEqual(enter({ said: { text: 'hi', at: 10 } }).effects[0], { do: 'pick', hash: null }, 'words that name none: the pick is cleared');
-  assert.equal(rev(enter({ said, named: H, kept: { hash: OTHER, at: 20 } })).hash, OTHER, 'a pick made after the prompt stands');
-  assert.equal(rev(enter({ said, named: H, kept: { hash: OTHER, at: 5 } })).hash, H, 'the prompt is newer than the pick');
-  assert.equal(rev(enter({ kept: { hash: 'cccccccccccc', at: 20 } })).hash, H, 'a pick no longer pending: the newest');
-  const replaced = enter({ said, named: H, replaced: { old: OTHER, hash: H } });
-  assert.deepEqual(replaced.say, { to: 'allow', text: `sub-human: proposal ${OTHER} was replaced by ${H}; opening ${H} for bob` });
-  // the person asked to propose something: no review, unless their words name a pending hash
-  const propose = enter({ said: { text: 'propose to alice: ship v4', at: 10 }, propose: true });
-  assert.deepEqual([propose.state.review, propose.say && propose.say.to], [null, 'context']);
-  assert.equal(rev(enter({ said: { text: `propose to alice: ${H.slice(0, 6)} again`, at: 10 }, propose: true, named: H })).phase, 'entering');
+  assert.deepEqual(named.effects.map(e => e.do), ['save', 'writePlan'], 'no pick document any more');
+  assert.equal(rev(enter({ said, named: 'cccccccccccc' })).hash, H, 'a name no longer pending: the oldest');
+  assert.deepEqual(named.say, { to: 'allow', text: `sub-human: opening room proposal ${OTHER} for bob` });
   // a review of the proposal the note waits on supersedes the note; another proposal's note stays
   assert.equal(review.reduce({ review: null, note: note('waiting') }, EVENTS.enter, ctx).state.note, null);
   assert.ok(review.reduce({ review: null, note: note('waiting', { hash: OTHER }) }, EVENTS.enter, ctx).state.note);
@@ -276,29 +268,18 @@ test('exited: a Yes records Agree only for the text unedited; a changed mode is 
   assert.equal(review.reduce(mode.state, { ...EVENTS.stop, mode: 'default' }, ctx).state.review, null);
 });
 
-test('exited with no review shown: the model is told nothing was recorded; the person\'s own plan is theirs', () => {
+test('exited with no review shown: the model is told nothing was recorded; a Yes on the person\'s own plan (an edit\'s included) records nothing', () => {
   const post = (e: Partial<Extract<ConsentEvent, { type: 'exited' }>>) => review.reduce({ review: null, note: null }, { ...EVENTS.exited, ...e }, ctx);
   const their = { hash: H, from: 'alice', viewable: true }, theirs = [their];
   const told = post({ pending: theirs });
-  assert.deepEqual(told.effects, [{ do: 'pick', hash: H }]);
+  assert.deepEqual(told.effects, []);
   assert.match(String(parts(told)[0]), /Nothing recorded for [0-9a-f]{12}: no review opened, so bob did not answer \(don't say they did\)/);
   assert.match(String(parts(post({ pending: [{ ...their, viewable: false }] }))[0]), /call AskUserQuestion with "proposal /, 'not viewable: the card');
   assert.deepEqual(post({ pending: theirs, response: { ...EVENTS.exited.response, isAgent: true } }).say, null, 'a subagent\'s plan');
-  // bob's own pending proposal, unedited: his signoff
-  assert.deepEqual(post({ pending: [{ hash: H, from: 'bob', viewable: true }] }).effects, [{ do: 'answer', hash: H, choice: 'Agree' }]);
-  assert.deepEqual(post({ proposed: true }).say, null, 'already in the room');
-  assert.match(String(parts(post({}))[0]), /call the room propose tool with \{text: <the plan>\}/);
-});
-
-test('G (live verify): the proposer who is also an approver: once the propose tool made the proposal, the review opens on it', () => {
-  const mine = [{ hash: OTHER, from: 'alice', viewable: true }, { hash: H, from: 'bob', viewable: true }];
-  const said = { text: 'Propose this to the room with the propose tool, title \'Readme pass\'', at: 10 };
-  const enter = (e: Partial<Extract<ConsentEvent, { type: 'enter' }>>) => review.reduce({ review: null, note: null }, { ...EVENTS.enter, pending: mine, said, propose: true, ...e }, ctx);
-  assert.equal(enter({}).state.review, null, 'before the proposal exists: propose first');
-  const opened = enter({ proposedSince: H });
-  assert.deepEqual([rev(opened).phase, rev(opened).hash, must(opened.say).to], ['entering', H, 'allow']);
-  assert.deepEqual(opened.effects[0], { do: 'pick', hash: H }, 'the proposal just made is the pick');
-  assert.equal(rev(opened).mode, 'default', 'the mode before plan mode, to put back');
+  // invariant 2: bob's own plan, the very text of a version he has a request for, approved in the dialog: no signoff
+  const own = post({ pending: [{ hash: H, from: 'bob', viewable: true }], response: { ...EVENTS.exited.response, plan: 'my own plan' } });
+  assert.deepEqual([own.effects, own.say], [[], null], 'the author\'s Yes on his own plan is never his signoff');
+  assert.deepEqual(post({}).say, null, 'the person\'s own plan: nothing to say (no offer to propose)');
 });
 
 test('H (live verify): plan mode by hand, no EnterPlanMode: an ExitPlanMode whose plan is "proposal HASH" opens the review there; never a bare view', () => {
@@ -324,9 +305,9 @@ test('H (live verify): plan mode by hand, no EnterPlanMode: an ExitPlanMode whos
   assert.match(review.textOf(parts(noText), () => '', false), /call AskUserQuestion with "proposal /);
   // no stub: Claude Code's own plan mode, as before
   assert.deepEqual(shape(exit({ stub: null })), ['none', null, '']);
-  // Post with no review and the stub as the plan: nothing recorded, never "propose your plan"
+  // Post with no review and the stub as the plan, nothing pending: nothing recorded, nothing said
   const post = review.reduce({ review: null, note: null }, { ...EVENTS.exited, response: { ...EVENTS.exited.response, plan: `proposal ${H}` }, pending: [] }, ctx);
-  assert.match(review.textOf(parts(post), () => '', false), /^Nothing recorded for proposal [0-9a-f]{12}: that plan was only its name/);
+  assert.deepEqual([post.effects, post.say], [[], null]);
 });
 
 test('ask: a join request, then a waiting note, then the proposals the call names', () => {

@@ -167,6 +167,7 @@ export const LINK_QUOTAS = {
   'blob.get': { max: 600, windowMs: 60_000, per: 'session' },      // plans fetched
   ping: { max: 60, windowMs: 60_000, per: 'session' },             // one every LINK_PING_MS
   task: { max: 60, windowMs: 60_000, per: 'link' },                // task requests (lib/tasks.ts apply)
+  plan: { max: 30, windowMs: 60_000, per: 'link' },                // plan versions offered (lib/plans.ts put)
 } as const;
 
 /** One op's quota: at most max in any windowMs, counted where per says (above). */

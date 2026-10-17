@@ -60,6 +60,7 @@ function fieldsOf(v: Validated, from: string): Payload {
     if (v.kind === 'task_req') p.by = from;
     Object.assign(p, v.task);
   }
+  if (v.plan) Object.assign(p, v.plan);
   if (v.normalized !== undefined) p.normalized = v.normalized;
   if (v.edit_path) p.edit_path = v.edit_path;
   if (v.drafted) p.drafted = v.drafted;
@@ -92,7 +93,9 @@ function admit(c: string | null | undefined, payload: Payload, { system }: Place
 /** A post's rate bucket: a person's own entries; an agent post's room, or the one member it is addressed to. */
 const bucket = (e: { via?: string; to?: string }): string => (e.via === 'human' ? 'human' : e.to && e.to !== 'room' ? e.to : 'room');
 const rateMax = (p: Payload): number => (p.via === 'human' ? config.RATE_HUMAN_MAX : bucket(p) === 'room' ? config.RATE_MAX : config.RATE_ADDRESSED_MAX);
-const rated = (p: Payload): boolean => p.via === 'agent' || p.via === 'human';
+/** A post counts toward its writer's rate; a plan version does not (the host's compare-and-swap wrote it, and the link
+ * quota `plan` bounds a machine's: lib/plans.ts put). */
+const rated = (p: Pick<Payload, 'via' | 'kind'>): boolean => (p.via === 'agent' && p.kind !== 'plan') || p.via === 'human';
 
 /**
  * The newest entries (newest first) as a placement needs them: the last id, the posts p.from made to p's bucket
@@ -109,7 +112,7 @@ function scanTail(newest: Iterable<Entry>, p: Payload, now: number): { last: num
     last ??= e.id || 0;
     const age = now - Date.parse(e.at);
     if (!span || age >= span) break;
-    if (age < rate && e.from === p.from && e.via === p.via && bucket(e) === b && ++recent >= max && !p.nonce) break;
+    if (age < rate && e.from === p.from && e.via === p.via && e.kind !== 'plan' && bucket(e) === b && ++recent >= max && !p.nonce) break;
     if (p.nonce && e.nonce === p.nonce) { replayed = true; break; }
   }
   return { last, recent, replayed };

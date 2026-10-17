@@ -120,7 +120,7 @@ test('demo-lib plan-run --seats and run-words: the run\'s people and scripted wo
   assert.deepEqual(readJson(f), { scenes: ['S1'], partial: true, seats: ['tristan', 'jess'], words: { say3: 'jess, can you take the HTTP side?', note5: 'a garbled cursor like `after=zzz` must 400, not 500 — add a test for it' } });
   const r = runInfo(d);
   assert.deepEqual([r.A, r.B, r.DEMO.say3], ['tristan', 'jess', 'jess, can you take the HTTP side?']);
-  assert.match(r.DEMO.plan4, /^let's plan cursor paging/); // a word the run did not write: the default
+  assert.match(r.DEMO.plan4, /^let's write a room plan for cursor paging/); // a word the run did not write: the default
   assert.deepEqual([runInfo(tmp()).A, runInfo(tmp()).B], ['alice', 'bob']); // no run.json
   assert.equal(lib(['run-words', f, 'say3']).status, 2); // a key with no text
 });

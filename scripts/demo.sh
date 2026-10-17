@@ -464,21 +464,22 @@ S2_ssh() {
 if [ "$FILM" = 1 ]; then
   SAY3="$SEAT_B, can you take the HTTP side of paging? I'll do the store"
   ASK3="ask $SEAT_A's Claude how createTask in store.js picks ids. just ask, change nothing"
-  PLAN4="let's plan cursor paging for GET /tasks: $SEAT_A does the store, I do the HTTP side"
-  # when the room's Claude asks before it proposes (each person answers once, by @claude): each for their own half
-  ANSWER_A="@claude listTasks({limit, after}) in store.js: newest first by createdAt then id, opaque cursor"
-  ANSWER_B="@claude ?limit&after, default 20, max 50, {items, nextCursor}. propose it to $SEAT_A and me"
+  PLAN4="let's write a room plan for cursor paging on GET /tasks: $SEAT_A does the store, I do the HTTP side. you draft it"
   NOTE5='a garbled cursor like `after=zzz` must 400, not 500 — add a test for it'
+  EDIT5A="update the room plan with my note: a garbled cursor must 400, with a test for it"
+  EDIT5B="update the room plan: the HTTP side returns {items, nextCursor}, default 20, max 50"
 else
   SAY3="$SEAT_B, can you take the parser tests? handler's in src/server.js"
   ASK3="ask $SEAT_A's Claude how createTask in src/store.js picks ids. just ask, change nothing"
-  PLAN4="let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first"
-  ANSWER_A="@claude default 20, max 50, {items, nextCursor}; a cursor past the end returns an empty page"
-  ANSWER_B="@claude fine with that; 400 on a bad cursor. please propose it to $SEAT_A and me"
+  PLAN4="let's write a room plan for cursor paging on GET /tasks: ?limit&after, opaque cursor, newest first. you draft it"
   NOTE5="add a test for a cursor past the end — \`after=zzz\` must 400, not 500"
+  EDIT5A="update the room plan with my note: a cursor past the end must 400, with a test for it"
+  EDIT5B="update the room plan: default page size 20, max 50"
 fi
+ASK4="ask $SEAT_A and me to sign off on the room plan"
+ASK5="ask $SEAT_A and me to sign off on the latest room plan"
 REPLY3="sure, once we've agreed how paging works"
-DWELL5="$SEAT_B asked|400, not 500"   # S5's revision: the page with B's note (in the room's Claude's words, so either)
+DWELL5="400"   # S5's latest version: the page with A's note (in his Claude's words)
 
 S3() { # pairing with no plan: @room both ways, then Claude↔Claude SendMessage
   local a=$SEAT_A b=$SEAT_B
@@ -507,31 +508,24 @@ S3() { # pairing with no plan: @room both ways, then Claude↔Claude SendMessage
   snap "$b's Claude asks $a's Claude natively (SendMessage to $a.$(room)); $a's Claude answers. No card, no turn for the room's Claude"
 }
 
-S4() { # let's plan: B @claude → the room's Claude proposes → each approver reads it in the plan view
+S4() { # let's plan: B's own Claude drafts room plan v1 (plan mode; the hooks store it, no dialog), then asks both to sign off
   local a=$SEAT_A b=$SEAT_B
   local before; before=$($LIB log-max)
-  mark plan "$b asks the room's Claude to plan cursor paging"
-  submit "$b" "@claude $PLAN4"
-  need wait_log --kind say --from "$b" --via human --after "$before" --timeout 30 || return 1
-  if ! wait_log --kind proposal --from claude --after "$before" --timeout 150 --what "the room's Claude proposes (or asks first)"; then
-    # the room's Claude asked the people first (post to=NAME or SendMessage): each answers in one @claude line
-    mark questions "The room's Claude asks them first; each answers"
-    snap "The room's Claude asks $a and $b before it writes the plan"
-    local seat answer
-    for seat in "$a" "$b"; do
-      answer=$ANSWER_A; [ "$seat" = "$b" ] && answer=$ANSWER_B
-      need $LIB wait-idle "sh-$seat" --timeout 60 || return 1
-      local n; n=$($LIB log-max)
-      submit "$seat" "$answer"
-      need wait_log --kind say --from "$seat" --via human --after "$n" --timeout 30 || return 1
-    done
-    need wait_log --kind proposal --from claude --after "$before" --timeout 420 --what "the room's Claude writes a plan and proposes it" || return 1
-  fi
-  need wait_card "$a" "$a's card is open" || return 1
-  mark proposal "The plan opens for $a and $b to review"
-  need wait_card "$b" "$b's card is open" || return 1
+  mark plan "$b asks her Claude to draft the room plan for cursor paging"
+  submit "$b" "$PLAN4"
+  need wait_log --kind plan --from "$b" --after "$before" --timeout 420 --what "$b's Claude stores room plan v1 (an edit in plan mode, the store's receipt)" || return 1
+  need $LIB wait-idle "sh-$b" --timeout 120 || return 1
+  settle "$a" "$b"
+  snap "$b's Claude edits the room plan in plan mode; the hooks store it as v1 and say so (no approval dialog: storing is not agreeing); $a's pane shows the new version"
+  local v1; v1=$($LIB log-max)
+  mark ask "$b asks for sign-off"
+  submit "$b" "$ASK4"
+  need wait_log --kind proposal --from "$b" --after "$v1" --timeout 120 --what "$b's Claude asks $a and $b to sign off on v1" || return 1
+  need wait_card "$a" "$a's review is open" || return 1
+  mark proposal "The sign-off request opens for $a and $b"
+  need wait_card "$b" "$b's review is open" || return 1
   paint "sh-$a"; paint "sh-$b"   # the plan view's first paint (wait-idle counts an open plan view as busy)
-  snap "The room's Claude proposes its plan: it opens in $a's and $b's native plan view, all of it scrollable (Yes / Tell Claude what to change / Esc)"
+  snap "The sign-off request opens in $a's and $b's native plan view, all of it scrollable (Yes / Tell Claude what to change / Esc)"
   read_plan "$a"
 }
 
@@ -547,24 +541,40 @@ read_plan() {
   record "$1 paged to the end of the proposal (${i}× PgDn)" "$ok"
 }
 
-S5() { # B objects with a note, A agrees; the room's Claude revises; both agree → decision
+S5() { # A objects with a note, B agrees; both Claudes edit the plan at once from v1 (a conflict, reconciled); both sign off → decision
   local a=$SEAT_A b=$SEAT_B
   local p1; p1=$($LIB last-id --kind proposal)
-  mark answers "$a agrees; $b objects with a note"
-  need card_answer "$a" Agree || return 1
-  need wait_log --kind signoff --from "$a" --via human --after "$p1" --timeout 30 || return 1
-  need card_answer "$b" Object "$NOTE5" || return 1
-  need wait_log --kind objection --from "$b" --via human --after "$p1" --timeout 30 || return 1
+  mark answers "$a objects with a note; $b agrees"
+  need card_answer "$a" Object "$NOTE5" || return 1
+  need wait_log --kind objection --from "$a" --via human --after "$p1" --timeout 30 || return 1
+  need card_answer "$b" Agree || return 1
+  need wait_log --kind signoff --from "$b" --via human --after "$p1" --timeout 30 || return 1
   settle "$a" "$b"
-  snap "$a agrees; $b objects with a note (via=human, byte-exact)"
-  need wait_log --kind proposal --from claude --after "$p1" --timeout 420 --what "the room's Claude revises and proposes again" || return 1
-  mark revision "The room's Claude revises the plan"
-  need wait_card "$a" "$a's card for the revision" || return 1
-  need wait_card "$b" "$b's card for the revision" || return 1
+  snap "$a objects with a note (via=human, byte-exact); $b agrees"
+  # both ask their own Claude for an edit at once: each starts from v1; the first ExitPlanMode stores v2, the second is
+  # refused with v2's text (the store's compare-and-swap) and reconciles into v3
+  mark edits "$a and $b each ask their Claude to update the plan, at the same time"
+  local e0; e0=$($LIB log-max)
+  need $LIB wait-idle "sh-$a" --timeout 90 || return 1
+  need $LIB wait-idle "sh-$b" --timeout 90 || return 1
+  $LIB submit "sh-$a" "$EDIT5A"
+  $LIB submit "sh-$b" "$EDIT5B"
+  need wait_log --kind plan --from "$a" --after "$e0" --timeout 600 --what "$a's Claude stores a version" || return 1
+  need wait_log --kind plan --from "$b" --after "$e0" --timeout 600 --what "$b's Claude stores a version" || return 1
+  need $LIB wait-idle "sh-$a" --timeout 120 || return 1
+  need $LIB wait-idle "sh-$b" --timeout 120 || return 1
+  settle "$a" "$b"
+  snap "Two edits from v1 at once: the first stores v2; the second's ExitPlanMode is refused with v2's text, its Claude keeps both changes and stores v3"
+  local v3; v3=$($LIB log-max)
+  submit "$b" "$ASK5"
+  need wait_log --kind proposal --from "$b" --after "$v3" --timeout 120 --what "$b's Claude asks both to sign off on the latest version" || return 1
+  mark revision "The latest version opens for both"
+  need wait_card "$a" "$a's review of the latest version" || return 1
+  need wait_card "$b" "$b's review of the latest version" || return 1
   paint "sh-$a"; paint "sh-$b"   # the plan view's first paint
-  snap "The room's Claude revises: a new proposal, opened again for each"
+  snap "The latest version opens again for each"
   local p2; p2=$($LIB last-id --kind proposal)
-  [ "$FILM" = 1 ] && DWELL="$DWELL5"   # each stops on the page with B's note before paging on
+  [ "$FILM" = 1 ] && DWELL="$DWELL5"   # each stops on the page with A's note before paging on
   need card_answer "$a" Agree || { DWELL=""; return 1; }
   need wait_log --kind signoff --from "$a" --via human --after "$p2" --timeout 30 || { DWELL=""; return 1; }
   need card_answer "$b" Agree || { DWELL=""; return 1; }
@@ -574,7 +584,7 @@ S5() { # B objects with a note, A agrees; the room's Claude revises; both agree 
   need $LIB wait-idle "sh-$a" --timeout 90 || return 1
   need $LIB wait-idle "sh-$b" --timeout 90 || return 1
   sleep 6   # the decision's notice reaches both seats after they go idle; it draws no pane text to wait on
-  snap "Both agree to the revision: a decision is logged; both Claudes are told once"
+  snap "Both agree to the latest version: a decision is logged; both Claudes are told once"
 }
 
 S6() { # shared tasks: alice's Claude adds, then claims; the host applies each at once; a non-owner done is refused; owner done
@@ -818,7 +828,7 @@ S10() { # leave: both exit → reap completes task 1 and stops the room's Claude
   fi
 }
 
-# S11: what carol says, and the proposal alice's Claude puts to her alone
+# S11: what carol says, and the plan alice's Claude writes and asks her alone to sign off on
 SAY11="hello from the second home"
 PLAN11=$'# Carol reviews the parser tests\n\n1. carol reads the parser tests\n2. she adds one case for an empty body\n'
 
@@ -861,11 +871,12 @@ S11() { # remote: carol joins from a second home (another machine, on this one) 
   snap "carol posts with @room from the second home: signed there, placed and verified on the host, back in her mirror"
   local b2; b2=$($LIB log-max)
   local plan; plan=$($LIB json-string "$PLAN11")
-  submit alice "call the mcp__plugin_sub-human_room__propose tool with text $plan and approvers [\"carol\"]. Only that tool call: do not edit any file"
+  submit alice "write the room plan named review with exactly this text: $plan (the mcp__plugin_sub-human_room__plan tool, op edit, name review, then plan mode as it says). Then ask carol alone to sign off on it (op ask, name review, approvers [\"carol\"]). Do not edit any other file"
+  need wait_log --kind plan --from alice --after "$b2" --timeout 300 --what "alice's Claude stores plan review v1" || return 1
   need wait_log --kind proposal --from alice --after "$b2" --timeout 120 || return 1
   need wait_card carol "carol's proposal is open (its plan was prefetched into her mirror)" || return 1
   sleep 2   # the plan view's first paint
-  snap "alice's Claude proposes to carol: it opens in carol's plan view on the other home"
+  snap "alice's Claude writes plan review and asks carol to sign off: it opens in carol's plan view on the other home"
   local p; p=$($LIB last-id --kind proposal)
   need card_answer carol Agree || return 1
   need wait_log --kind signoff --from carol --via human --after "$p" --timeout 30 || return 1
@@ -921,7 +932,7 @@ done
 fresh=(); [ "$RESET" = 1 ] && fresh=(--fresh)
 remote=(); [ "$REMOTE" = 1 ] && remote=(--remote "$SEAT_B=$LAPTOP/home")
 $LIB plan-run "$SNAP_DIR/run.json" --all "${ALL[*]}" --seats "$SEAT_A $SEAT_B" ${remote[@]+"${remote[@]}"} ${fresh[@]+"${fresh[@]}"} ${run[@]+"${run[@]}"}
-$LIB run-words "$SNAP_DIR/run.json" say3 "$SAY3" plan4 "$PLAN4" note5 "$NOTE5"
+$LIB run-words "$SNAP_DIR/run.json" say3 "$SAY3" plan4 "$PLAN4" note5 "$NOTE5" edit5a "$EDIT5A" edit5b "$EDIT5B"
 
 started=0; [ -z "$FROM" ] && started=1
 for SCENE in "${ALL[@]}"; do

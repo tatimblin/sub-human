@@ -11,6 +11,7 @@ import type { Op, EventName } from './protocol.ts';
 import type { Entry, LinkStateWord, Payload, PresenceInput, RoomStore, SnapshotWire } from '../room/types.ts';
 import type { MachineId, LinkToken, InviteSecret, Pin } from '../brand.ts';
 import type { FoldedTask } from '../types-app.ts';
+import type { Put } from '../plans.ts';
 
 // ---------- the wire protocol ----------
 
@@ -23,7 +24,7 @@ export interface ProtoRange { min: number; max: number }
 export type { Op, EventName };
 
 /** The ops the link daemon relays for its hooks (lib/remote/link.ts RELAY). */
-export type RelayOp = 'join' | 'leave' | 'beat' | 'append' | 'blob.get' | 'blob.put' | 'task';
+export type RelayOp = 'join' | 'leave' | 'beat' | 'append' | 'blob.get' | 'blob.put' | 'task' | 'plan.put';
 
 export type { WireCode } from './protocol.ts';
 
@@ -81,6 +82,8 @@ export interface BlobPutParams { name: string; bytes: string }
 export type PingParams = Record<string, never>;
 /** A seat's `task` tool request, for the host to apply (lib/tasks.ts apply): name, the link's own seat. */
 export interface TaskParams { name: string; req: unknown }
+/** A seat's plan edit, for the host to store (lib/plans.ts put): name, the link's own seat; req {plan, base, text, summary}. */
+export interface PlanPutParams { name: string; req: unknown }
 
 export interface OpParams {
   hello: HelloParams;
@@ -93,6 +96,7 @@ export interface OpParams {
   'blob.put': BlobPutParams;
   ping: PingParams;
   task: TaskParams;
+  'plan.put': PlanPutParams;
 }
 
 export interface HelloResult {
@@ -147,6 +151,8 @@ export interface OpResults {
   'blob.put': BlobPutResult;
   ping: PingResult;
   task: TaskResult;
+  /** lib/plans.ts put's answer: stored, a conflict with the current version, or why not */
+  'plan.put': Put;
 }
 
 /** A request frame for one op: {id, op, params}, discriminated on op. */

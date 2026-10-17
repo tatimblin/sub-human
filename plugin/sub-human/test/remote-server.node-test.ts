@@ -313,6 +313,32 @@ test('remote (memory): a task request is applied on the host at once: the result
   assert.equal(host.readAll().length, n, 'refusals log nothing');
 });
 
+test('remote (memory): a plan edit is stored on the host under compare-and-swap: stored, a conflict with the current text, or refused; only for the link\'s own seat; a link\'s append of a plan entry is refused; quota', async t => {
+  const { code, host } = hostRoom(t);
+  const c = await linked(t, host);
+  await c.join(seat(code, 'bob'));
+  const put = (req: object, name = 'bob') => c._request('plan.put', { name, req });
+  const v1 = await put({ plan: 'paging', base: 0, text: '# Paging\n\n1. cursor\n', summary: 'first draft' });
+  assert.ok(v1.ok && v1.version.version === 1 && v1.version.from === 'bob' && v1.version.for === 'bob');
+  const e = must(host.readAll().at(-1));
+  assert.deepEqual([e.kind, e.via, e.from, e.plan, e.version, e.base, e.for, e.text], ['plan', 'agent', 'bob', 'paging', 1, 0, 'bob', 'plan paging v1: first draft']);
+  assert.equal(must(host.blobs.get(`plans/${e.hash}.md`)).toString('utf8'), '# Paging\n\n1. cursor\n');
+  // a stale base: the current version and its text come back, nothing is stored
+  const n = host.readAll().length;
+  const stale = await put({ plan: 'paging', base: 0, text: '# Paging\n\n1. offset\n' });
+  assert.ok(!stale.ok && stale.conflict);
+  assert.deepEqual([stale.conflict.version.version, stale.conflict.text], [1, '# Paging\n\n1. cursor\n']);
+  assert.match(stale.error, /^plan paging v1 landed since your base v0 \(bob's Claude for bob: first draft\)/);
+  assert.deepEqual(await put({ plan: 'paging', base: 1, text: '' }), { ok: false, error: 'the plan is empty' });
+  assert.equal(host.readAll().length, n, 'conflicts and refusals log nothing');
+  await rejects(c.request('plan.put', { name: 'alice', req: { plan: 'paging', base: 1, text: 'x' } }), 'AUTH');
+  // a plan entry by the link's append op (around the compare-and-swap) is refused
+  await rejects(c.append({ from: 'bob', via: 'agent', kind: 'plan', to: 'room', text: 'plan paging v2', hash: H, path: `plans/${H}.md`, plan: 'paging', version: 2, base: 1 }), 'INVALID');
+  const q = config.LINK_QUOTAS.plan;
+  for (let i = 0; i < q.max - 4; i++) await c.request('plan.put', { name: 'bob', req: { plan: 'paging', base: 9, text: 'x' } }); // the four above, then conflicts: all counted
+  await assert.rejects(c.request('plan.put', { name: 'bob', req: { plan: 'paging', base: 1, text: 'x' } }), (err: RoomError) => err.code === 'RATE' && err.reason === 'QUOTA');
+});
+
 test('remote (memory): a remote answer is placed, then the host decides', async t => {
   const { code, host } = hostRoom(t);
   const c = await linked(t, host);

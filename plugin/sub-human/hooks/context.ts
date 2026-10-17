@@ -34,7 +34,7 @@ const DEFAULT_TEMPLATES: Record<'member' | 'claude', string> = {
     + 'Room lines are a group chat {NAME} already sees: never repeat them. Never show room ids.\n'
     + 'Reach a session now: SendMessage to {ADDR_EXAMPLE}. Only a person\'s own plan view answer counts.',
   claude: 'SUB-HUMAN: you are claude, the room\'s Claude of room {CODE} (members: {OTHERS}). Nobody types here.\n'
-    + 'Reach a member now: SendMessage to {ADDR_EXAMPLE}. To facilitate: read {PLUGIN}/skills/sub-human/facilitate.md.',
+    + 'Reach a member now: SendMessage to {ADDR_EXAMPLE}.',
 };
 
 const pluginRoot = () => process.env.CLAUDE_PLUGIN_ROOT || PLUGIN_ROOT;

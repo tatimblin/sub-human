@@ -1,43 +1,42 @@
 /**
- * plugin/sub-human/lib/proposal.ts: proposals and the consent card.
+ * plugin/sub-human/lib/proposal.ts: sign-off requests (proposals) on a room plan's versions, and the consent card.
  * Every write goes through room.append().
  *
  * Log entries:
- *   proposal  via=agent, from = the proposer, {hash, approvers[], same?, path, text}   (propose tool)
+ *   proposal  via=agent, from = who asked, {hash, approvers[], same?, path, plan, version, text}   (the plan tool's
+ *             ask: ask below; hash and path are the version's, lib/plans.ts; a room from before plans holds proposals
+ *             with no plan, which still fold and open)
  *   signoff | objection  via=human, from = the approver, {proposal_hash, text?}  (consent.ts, from the card;
  *             text = the card's notes, byte-exact, omitted when there are none)
  *   decision  via=system, from "room", {proposal_hash, refs: the answer ids, text "agreed: …" | "objected: …"}
  *             written once, when every approver has answered. text names one seat per person: "agreed: tristan (also
  *             laptop), bob".
  *
- * create stores the bytes as the blob plans/<hash>.md (hash = sha256/12; lib/room/store.ts blobs) and appends
- * `proposal` with that room-relative path. approvers default to the humans present; an identical open proposal is
- * not re-appended. same: groups of 2+ approvers that are one person (sameOf), for which the fold counts one answer.
- * retired: my undecided proposals with the same title this one supersedes (no longer pending; answers on them do
- * not carry over). Reading goes through lib/room/consent.ts fold (latest proposal per hash, latest answer per
- * person, an objection voids a signoff), the same fold stateLine, lane() and the rows read. pendingFor counts
+ * ask appends `proposal` on a plan's current version (its blob plans/<hash>.md is already stored: lib/plans.ts put).
+ * approvers default to the humans present; the same open request is not re-appended. same: groups of 2+ approvers
+ * that are one person (sameOf), for which the fold counts one answer. A newer version of the plan retires the request
+ * (lib/room/consent.ts superseded: no longer pending; answers do not carry over). Reading goes through
+ * lib/room/consent.ts fold (latest proposal per hash, latest answer per person, an objection voids a signoff), the
+ * same fold stateLine, lane() and the rows read. pendingFor counts
  * another seat of my person answering as mine; answerableFor goes by my own seat's answer only, so a card or review
  * already open still records (the hooks' answer paths).
  *
- * The session document (lib/room/session.ts) holds a seat's pick, review (the plan view), recheck (a plan-view Yes
- * that came as the view opened, asked again on the card) and confirm (a review's note waiting for the person's
- * Send). The lines telling the model to open a card are lib/consent/review.ts NEXT and showNote, shared with
+ * The session document (lib/room/session.ts) holds a seat's review (the plan view), recheck (a plan-view Yes that
+ * came as the view opened, asked again on the card) and confirm (a review's note waiting for the person's Send). A
+ * review opens the request the person's words name (namedIn: a hash, or a plan's name), else the oldest. The lines telling the model to open a card are lib/consent/review.ts NEXT and showNote, shared with
  * consent's reoffer and lib/tail.ts remindersText.
  */
 
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import * as identity from './identity.ts';
 import * as room from './room.ts';
 import * as session from './room/session.ts';
 import { writeFileAtomic } from './io.ts';
-import { clip, oneLine, hash12, isProposalHash, planHash } from './text.ts';
+import { clip, oneLine, hash12, isProposalHash } from './text.ts';
 import * as config from './config.ts';
-import * as cc from './cc/env.ts';
 import { NEXT, showNote } from './consent/review.ts';
-import type { Card, Confirm, Proposal, Recheck, Review } from './types-app.ts';
-import type { Entry, Matrix, Member, Members, ProposalState, Trust } from './room/types.ts';
+import type { Card, Confirm, PlanEdit, Proposal, Recheck, Review } from './types-app.ts';
+import type { Entry, Matrix, Member, Members, PlanVersion, ProposalState, Trust } from './room/types.ts';
 import type { Identity } from './identity.ts';
 import type { RoomCode, ProposalHash } from './brand.ts';
 
@@ -51,7 +50,6 @@ const VIEW_MAX = config.VIEW_MAX;           // the plan dialog withholds approva
 const UNSAFE_RE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/;
 const SUMMARY_MAX = config.SUMMARY_MAX;
 const SUMMARY_LINES = config.SUMMARY_LINES;
-const FILE_MAX = config.PROPOSAL_FILE_MAX;
 const TITLE_MAX = config.PROPOSAL_TITLE_MAX;
 
 class ProposalError extends Error {}
@@ -60,17 +58,9 @@ function refuse(m: string): never { throw new ProposalError(m); }
 /** A plan's ref in the room's blob store: room-relative, so the room can live anywhere (lib/room/store.ts blobs). */
 const planRef = (hash: ProposalHash) => `plans/${hash}.md`;
 const blobs = (code: RoomCode) => room.open(code).store.blobs;
-/** Where a person can open the stored plan (a local file; the ref when the store has none). */
-const planPath = (code: RoomCode, hash: ProposalHash): string => blobs(code).localPath(planRef(hash)) || planRef(hash);
 function read(code: RoomCode, hash: string | null | undefined): string | null {
   if (!isProposalHash(hash)) return null;
   try { const b: Buffer | null = blobs(code).get(planRef(hash)); return b == null ? null : b.toString('utf8'); } catch { return null; }
-}
-function store(code: RoomCode, buf: Buffer): ProposalHash {
-  const hash = planHash(buf);
-  const b = blobs(code);
-  if (!b.has(planRef(hash))) b.put(planRef(hash), buf);
-  return hash;
 }
 
 // the recent view: every non-chat entry (proposals, answers, decisions, revisions, revokes: all the consent fold reads)
@@ -142,12 +132,18 @@ function answerableFor(me: Me | null | undefined, entries?: readonly Readonly<En
 const planTitle = (text: string | null | undefined) => String(text || '').split('\n').map(l => l.replace(/^\s*(?:(?:#{1,6}|[-*+>]|\d{1,3}[.)])\s+)+/, '').trim()).find(Boolean) || '';
 const titles = new Map<string, string>(); // hash -> title: plans are content-addressed, so a hash's title never changes
 /**
- * The title people see for proposal hash: the stored plan's first line, else the entry's "proposal HASH: title"
- * text, else ''. Not clipped (the caller clips to its width).
+ * The title people see for proposal hash: a room plan's version ("plan paging v3"), else the stored text's first
+ * line, else the entry's "proposal HASH: title" text, else ''. Not clipped (the caller clips to its width).
  */
-function title(code: RoomCode, hash: string, entry?: Pick<Entry, 'text'> | null): string {
+function title(code: RoomCode, hash: string, entry?: Pick<Entry, 'text' | 'plan' | 'version'> | null): string {
   const known = titles.get(hash);
   if (known !== undefined) return known;
+  // the request's own plan and version (a display only: the consent fold reads a version from the plan entries; an
+  // entry with neither is a request from before plans), else, with no entry, the plan fold of the recent view (plan
+  // entries are non-chat: all of them are there)
+  let v: Pick<PlanVersion, 'plan' | 'version'> | null = entry && typeof entry.plan === 'string' && typeof entry.version === 'number' ? { plan: entry.plan, version: entry.version } : null;
+  if (!v && !entry) { try { const r = room.open(code); v = r.fold(r.readRecent()).versionOf(hash); } catch { /* no room */ } }
+  if (v) { const t = `plan ${v.plan} v${v.version}`; titles.set(hash, t); return t; }
   const t = planTitle(read(code, hash));
   if (t) { titles.set(hash, t); return t; }
   const m = entry && /^proposal [0-9a-f]{6,64}:\s*(.+)/.exec(String(entry.text || ''));
@@ -204,16 +200,11 @@ function viewable(p: Pick<Proposal, 'hash'>, code: RoomCode): boolean {
   return t != null && t.length <= VIEW_MAX && !UNSAFE_RE.test(t.replace(/\r\n/g, '\n'));
 }
 
-// ---------- which proposal a review opens (the hook picks; the model never does) ----------
-const STOP_WORDS = new Set(('a an and answer approve agree are be can do for from i in is it let me my now object of on one open '
-  + 'or please plan proposal proposals read review see show that the this to view want with you your').split(' '));
-const wordsOf = (s: string | null | undefined) => (String(s || '').toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
-
+// ---------- which request a review opens (the hook picks; the model never does) ----------
 /**
- * The pending proposal the person's words name, or null: a hash (a 6–12 hex prefix of exactly one; several
- * named: the oldest of them), else the proposal with the most words of the prompt that occur in its title and
- * in no other pending proposal's title (a unique best; "Open v3" -> "Ship v3 Monday"), else the same over the
- * full texts. Common words ("open", "the", "proposal") never count.
+ * The pending request the person's words name, or null: a hash (a 6–12 hex prefix of exactly one; several named: the
+ * oldest of them), else a plan's name standing alone in the words ("let me sign off on paging") when exactly one
+ * pending request is for that plan's version.
  */
 function namedIn(ps: Proposal[], prompt: string | null | undefined, code: RoomCode): Proposal | null {
   const s = String(prompt || '').toLowerCase();
@@ -221,66 +212,15 @@ function namedIn(ps: Proposal[], prompt: string | null | undefined, code: RoomCo
   const byHash = ps.filter(p => hex.some(t => p.hash.startsWith(t) && ps.filter(q => q.hash.startsWith(t)).length === 1));
   const [first] = byHash;
   if (first) return first;
-  const words = [...new Set(wordsOf(s))].filter(w => !STOP_WORDS.has(w));
-  if (!words.length || !ps.length) return null;
-  for (const field of [(p: Proposal) => title(code, p.hash, p.entry), (p: Proposal) => read(code, p.hash) || '']) {
-    const sets = ps.map(p => new Set(wordsOf(field(p))));
-    const scores = sets.map((set, i) => words.filter(w => set.has(w) && sets.every((o, j) => j === i || !o.has(w))).length);
-    const max = Math.max(...scores);
-    if (max > 0 && scores.filter(x => x === max).length === 1) return ps[scores.indexOf(max)] ?? null; // max is one of the scores
-  }
-  return null;
+  if (!ps.length) return null;
+  const words = new Set(s.match(/[a-z0-9][a-z0-9-]*/g) ?? []);
+  const f = (r => r.fold(r.readRecent()))(room.open(code));
+  const hits = ps.filter(p => { const v = f.versionOf(p.hash); return !!v && words.has(v.plan); });
+  return hits.length === 1 ? hits[0] ?? null : null;
 }
 
-/**
- * The words name no pending proposal's hash but an earlier revision's: a 6–12 hex prefix of exactly one proposal in
- * the room that a later one retired (lib/room/consent.ts superseded), followed to its latest revision, which must be
- * among ps. {old, p}, else null.
- */
-function replacedIn(ps: Proposal[], prompt: string | null | undefined, code: RoomCode): { old: string, p: Proposal } | null {
-  const hex = String(prompt || '').toLowerCase().match(/\b[0-9a-f]{6,12}\b/g) ?? [];
-  if (!hex.length || !ps.length || hex.some(t => ps.some(p => p.hash.startsWith(t)))) return null;
-  const f = room.open(code).fold();
-  for (const t of hex) {
-    const named = [...f.superseded.keys()].filter(h => h.startsWith(t));
-    const [old] = named;
-    if (old === undefined || named.length !== 1 || [...f.proposals.keys()].filter(h => h.startsWith(t)).length !== 1) continue;
-    let h = old;
-    for (let i = 0, next = f.superseded.get(h); i < 64 && next !== undefined; i++, next = f.superseded.get(h)) h = next; // a chain of revisions, bounded
-    const p = ps.find(x => x.hash === h);
-    if (p) return { old, p };
-  }
-  return null;
-}
-
-/**
- * The person's own words ask their Claude to propose something (not to open or answer a proposal): "propose to
- * alice: …", "please make a proposal …", "can you draft a proposal …". Such a prompt never opens a review: the
- * pending one waits for a prompt that asks for it, or a plain one.
- */
-const PROPOSE_RE = new RegExp('^\\s*(?:@\\S+\\s+)?(?:(?:ok(?:ay)?|now|so|please|pls|hey|then|and|let\'?s|can you|could you|would you|go ahead and)[\\s,]+)*'
-  + '(?:propose|(?:make|draft|write|send|put up|put forward|post|create)\\s+(?:a|another|my|our|the|this|new)?\\s*(?:new\\s+)?proposal(?!s? (?:from|by|of)\\b))\\b', 'i');
-const proposeIntent = (prompt: string | null | undefined): boolean => PROPOSE_RE.test(String(prompt || ''));
-
-/**
- * The session's pick: {hash|null, at}, the proposal the person's latest prompt named (hooks/consent.ts reads it from
- * the transcript at Pre(EnterPlanMode), or a card call named). A review opens that one while pending, else the newest.
- */
-const readPick = (me: Me): { hash: string | null, at: number } | null => { try { return session.get(storeOf(me), me.name, 'pick') ?? null; } catch { return null; } };
-/** Record what prompt names among ps (null when nothing) and return the proposal a review opens next; prompt null (not the person's words): the earlier pick stands. */
-function choose(me: Me, ps: Proposal[], prompt: string | null | undefined): Proposal | null {
-  if (prompt == null) return picked(me, ps);
-  const hit = namedIn(ps, prompt, me.code) ?? replacedIn(ps, prompt, me.code)?.p ?? null;
-  writePick(me, hit ? hit.hash : null);
-  return hit ?? ps.at(-1) ?? null;
-}
-/** Record the person's pick (null: their words named none); hooks/consent.ts's pick effect. */
-const writePick = (me: Me, hash: string | null): void => session.put(storeOf(me), me.name, 'pick', { hash, at: Date.now() });
-/** The proposal a review opens among ps (pending, oldest first): the person's pick when it is one of them, else the newest. */
-function picked(me: Me, ps: Proposal[]): Proposal | null {
-  const pk = readPick(me);
-  return (pk && pk.hash && ps.find(p => p.hash === pk.hash)) || ps.at(-1) || null;
-}
+/** The request a review opens among ps (pending, oldest first) when the person's words name none: the oldest. */
+const picked = (ps: Proposal[]): Proposal | null => ps[0] ?? null;
 
 /** How the model opens proposal hash for its person (the plan view; the hooks fall back to the card), how it shows
  * the confirm card for a waiting note, and the line telling it to show that card now (after an Esc on it: that the
@@ -288,81 +228,42 @@ function picked(me: Me, ps: Proposal[]): Proposal | null {
 const openCall: (h: string) => string = NEXT.open;
 const confirmCall: (h: string) => string = NEXT.note;
 const showConfirm: typeof showNote = showNote;
-/** A proposal as the re-ask lists it: `3fa2c1 "Ship v3 Monday"` (the short hash alone without a title or a room). */
+/** A proposal as the re-ask lists it: `3fa2c1 "plan paging v3"` (the short hash alone without a title or a room). */
 type Listed = Pick<Proposal, 'hash'> & { entry?: Proposal['entry'] | undefined };
 function listed(code: RoomCode | undefined, p: Listed): string {
   const t = code ? clip(title(code, p.hash, p.entry).replace(/\s+/g, ' ').trim(), TITLE_MAX) : '';
   return t ? `${p.hash.slice(0, 6)} "${t}"` : p.hash.slice(0, 6);
 }
-/** The re-ask (a review closed without an answer is fine to reopen). others: the other proposals awaiting name, listed by short hash and title (code: the room their titles come from). */
+/** The re-ask (a review closed without an answer is fine to reopen). others: the other requests awaiting name, listed by short hash and title (code: the room their titles come from). */
 function reminder(p: Pick<Proposal, 'hash'>, name: string, { code, others = [] }: { code?: RoomCode, others?: Listed[] } = {}): string {
-  const base = `proposal ${p.hash} still awaits ${name}'s answer (an earlier review closed without an answer is fine). Now ${openCall(p.hash)}, unless ${name} asked you to propose something: then do that, and this waits.`;
+  const what = code ? title(code, p.hash) : '';
+  const base = `${what.startsWith('plan ') ? `${what} (proposal ${p.hash})` : `proposal ${p.hash}`} still awaits ${name}'s sign-off (an earlier review closed without an answer is fine). When ${name} wants to answer, ${openCall(p.hash)}.`;
   if (!others.length) return base;
-  return `${base} (${others.length} more await ${name}'s answer: ${others.map(o => listed(code, o)).join(', ')}; the hooks open whichever ${name} names next, else the newest.)`;
+  return `${base} (${others.length} more await ${name}'s answer: ${others.map(o => listed(code, o)).join(', ')}; the hooks open whichever plan ${name} names, else the oldest.)`;
 }
 
-// ---------- writing ----------
-function expand(p: string, cwd: string | undefined): string {
-  if (p === '~' || p.startsWith('~/')) p = path.join(os.homedir(), p.slice(1));
-  return path.resolve(cwd || process.cwd(), p);
-}
-const realOr = (p: string): string => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
-const under = (x: string, r: string): boolean => x === r || x.startsWith(r.endsWith(path.sep) ? r : r + path.sep);
+// ---------- asking for sign-off on a plan version ----------
+/** The plan tool's ask arguments (checked here, so unknown). */
+interface AskArgs { plan?: unknown, approvers?: unknown }
+interface Asked { hash: ProposalHash, approvers: string[], plan: string, version: number, entry: Entry | undefined, again: boolean }
+
 /**
- * Where a proposal's path may point: the session's working directory (cwd: the seat's, which the MCP server passes;
- * else this process's, which Claude Code spawned there) and Claude Code's plan files. A working directory that is the
- * user's home, "/" or any directory above the home is no root: a session started in ~ proposes by text or from its plans.
+ * Ask the room's people to sign off on plan's current version (lib/plans.ts): a `proposal` entry on that version's
+ * hash, naming the plan and version. approvers default to the humans present. The same request still open is not
+ * appended again; a version decided already is refused (an objected one needs a new version first). Who may ask: any
+ * member's Claude for its person; only the people answer, each in their own session.
  */
-function allowedRoots(cwd: string | undefined): string[] {
-  const userHome = realOr(os.homedir());
-  const work = realOr(cwd || process.cwd());
-  const roots = [cc.plansDir()].map(realOr);
-  if (work !== path.parse(work).root && !under(userHome, work)) roots.unshift(work);
-  return roots;
-}
-/** Never proposed, whatever the root: the plugin's home, ~/.sub-human, ~/.ssh and Claude Code's config dir (its plans
- *  aside). */
-function forbidden(real: string): boolean {
-  const userHome = os.homedir();
-  const plans = realOr(cc.plansDir());
-  if (under(real, plans)) return false;
-  return [identity.home(), path.join(userHome, '.sub-human'), path.join(userHome, '.ssh'), path.join(userHome, '.claude'), cc.configDir()]
-    .map(realOr).some(r => under(real, r));
-}
-/** abs is inside one of the allowed roots once every link is resolved, and not in a forbidden place (a model's
- *  propose({path}) reads nothing else: the bytes are stored, streamed to every mirror and shown to the room). */
-function inside(abs: string, cwd: string | undefined): boolean {
-  let real: string;
-  try { real = fs.realpathSync(abs); } catch { return false; }
-  return !forbidden(real) && allowedRoots(cwd).some(r => under(real, r));
-}
-
-/** The propose tool's arguments (checked here, so unknown). */
-interface CreateArgs { text?: unknown, path?: unknown, approvers?: unknown }
-interface Created { hash: ProposalHash, approvers: string[], path: string, entry: Entry | undefined, again: boolean, retired: string[] }
-
-function create(me: Me | null | undefined, args: CreateArgs = {}, { cwd }: { cwd?: string | undefined } = {}): Created {
+function ask(me: Me | null | undefined, args: AskArgs = {}): Asked {
   if (!me || !me.code || !me.name) refuse('not in a room; run /sub-human');
   const r = room.open(me.code);
-  const { text, path: file } = args;
-  if ((text == null) === (file == null)) refuse('give exactly one of text or path');
-  let buf: Buffer;
-  if (file != null) {
-    if (typeof file !== 'string' || !file.trim()) refuse('path must be a file path');
-    const abs = expand(file, cwd);
-    let st: fs.Stats;
-    try { st = fs.statSync(abs); } catch { refuse(`no such file: ${abs}`); }
-    if (!st.isFile()) refuse(`not a file: ${abs}`);
-    if (!inside(abs, cwd)) refuse(`a proposal's path must be under the working directory (not ~ or /) or Claude Code's plans, and outside the room store, ~/.ssh and ~/.claude (${abs} is not); pass the text instead`);
-    if (st.size > FILE_MAX) refuse(`file too large (${st.size} bytes; max ${FILE_MAX})`);
-    buf = fs.readFileSync(abs);
-  } else {
-    if (typeof text !== 'string') refuse('text must be a string');
-    buf = Buffer.from(text, 'utf8');
-    if (buf.length > FILE_MAX) refuse(`text too large (max ${FILE_MAX} bytes)`);
-  }
-  if (!buf.toString('utf8').trim()) refuse('the proposal is empty');
-
+  const name = args.plan == null || args.plan === '' ? 'room' : String(args.plan).trim().toLowerCase();
+  const entries = r.readRecent();
+  const f = r.fold(entries);
+  const p = f.plans.get(name);
+  if (!p) refuse(`no plan ${name} in this room${f.plans.size ? ` (plans: ${[...f.plans.keys()].join(', ')})` : ''}; edit it first`);
+  const v = p.current;
+  const dec = f.decisions.get(v.hash);
+  if (dec) refuse(`plan ${name} v${v.version} is decided already (${String(dec.text || '')}); for another round, edit the plan first (a new version)`);
   const present = humans(me.code);
   let approvers: string[];
   if (args.approvers == null) approvers = present;
@@ -375,24 +276,15 @@ function create(me: Me | null | undefined, args: CreateArgs = {}, { cwd }: { cwd
     if (unknown.length) refuse(`not in the room: ${unknown.join(', ')} (present: ${present.join(', ') || 'nobody'})`);
   }
   if (!approvers.length) refuse('nobody to ask: no humans are in the room');
-  const same = sameOf(approvers, identity.readMembers(me.code) || {});
-
-  const hash = store(me.code, buf);
-  const stored = planPath(me.code, hash);
-  const entries = r.readRecent();
-  const open = proposals(entries, r.trust).find(p => p.hash === hash);
-  const before = r.fold(entries).superseded;
-  if (open && !decision(hash, entries, r.trust) && !before.has(hash) && open.approvers.length === approvers.length && approvers.every(a => open.approvers.includes(a))) {
-    return { hash, approvers, path: stored, entry: entries.find(e => e.id === open.id), again: true, retired: [] };
+  const open = f.proposals.get(v.hash);
+  if (open && !f.superseded.has(v.hash) && open.approvers.length === approvers.length && approvers.every(a => open.approvers.includes(a))) {
+    return { hash: v.hash, approvers, plan: name, version: v.version, entry: open.entry, again: true };
   }
-  // the entry stores the room-relative ref; `path` returned is where the proposer can open it
-  const entry: Entry = r.append({ kind: 'proposal', text: `proposal ${hash}: ${clip(planTitle(buf.toString('utf8')), TITLE_MAX)}`, hash, approvers,
-    ...(same.length ? { same } : {}), path: planRef(hash) },
+  const same = sameOf(approvers, identity.readMembers(me.code) || {});
+  const entry: Entry = r.append({ kind: 'proposal', text: `proposal ${v.hash}: plan ${name} v${v.version}${v.summary ? `: ${clip(v.summary, TITLE_MAX)}` : ''}`,
+    hash: v.hash, approvers, ...(same.length ? { same } : {}), path: planRef(v.hash), plan: name, version: v.version },
     { via: 'agent', from: me.name });
-  // what this entry retired: superseded by it now and not before (lib/room/consent.ts); a retired proposal proposed
-  // again is appended anew (above), which brings it back
-  const retired = [...r.fold([...entries, entry]).superseded].filter(([old, by]) => by === hash && !before.has(old)).map(([old]) => old);
-  return { hash, approvers, path: stored, entry, again: false, retired };
+  return { hash: v.hash, approvers, plan: name, version: v.version, entry, again: false };
 }
 
 function choiceOf(c: unknown): 'Agree' | 'Object' | 'Not yet' | null {
@@ -493,6 +385,12 @@ function restoreStale(me: Me | null | undefined, { force = false, now = Date.now
   });
 }
 
+// ---------- a room plan edit in this session (lib/consent/edit.ts; hooks/consent.ts) ----------
+/** The session's edit (the plan tool's edit op opens it; hooks/consent.ts runs it under withReview). */
+const readEdit = (me: Me): PlanEdit | null => { try { return session.get(storeOf(me), me.name, 'edit') ?? null; } catch { return null; } };
+const writeEdit = (me: Me, e: PlanEdit): void => session.put(storeOf(me), me.name, 'edit', e);
+function clearEdit(me: Me): void { try { session.put(storeOf(me), me.name, 'edit', undefined); } catch { /* none */ } }
+
 // ---------- a review's note, waiting for the person's Send (hooks/consent.ts) ----------
 /**
  * The session's confirm: {hash, note, from, title, at, stage} (lib/consent/review.ts: where its card stands). A plan review rejected with a note ("Tell Claude what
@@ -538,7 +436,7 @@ function repeatsNote(c: Pick<Confirm, 'note'> | null | undefined, text: unknown)
 
 export {
   QUESTION_RE, ProposalError, readReview, writeReview, clearReview, withReview, restorePlan, restoreStale,
-  readConfirm, writeConfirm, clearConfirm, readRecheck, writeRecheck, clearRecheck, confirmCard, confirmQuestion, repeatsNote, namedIn, choose, picked, readPick, writePick,
-  proposeIntent, create, proposals, pendingFor, answerableFor, personOf, card, cardFor, question, preview, viewable, openCall,
-  confirmCall, showConfirm, matrix, answer, decide, decision, humans, reminder, read, hash12, title, replacedIn,
+  readEdit, writeEdit, clearEdit, readConfirm, writeConfirm, clearConfirm, readRecheck, writeRecheck, clearRecheck, confirmCard, confirmQuestion, repeatsNote, namedIn, picked,
+  ask, proposals, pendingFor, answerableFor, personOf, card, cardFor, question, preview, viewable, openCall,
+  confirmCall, showConfirm, matrix, answer, decide, decision, humans, reminder, read, hash12, title,
 };

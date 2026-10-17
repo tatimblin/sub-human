@@ -265,14 +265,17 @@ test('chatLines: group-chat lines with no ids, exact words, multi-line and long 
   const d3 = sys('decision', { proposal_hash: H2, text: `objected: dave (proposal ${H2})`, refs: [p2.id, o3.id] }, 'room');
   assert.deepEqual(W(d3), ['room: "Ship v3 Monday" (bbbbbb) not agreed: changes requested by dave']);
   assert.deepEqual(C(d3), ['room: not agreed (objected: dave)'], 'without the log: no title');
-  // a revision (same sender, same title, the earlier one undecided) names what it replaces; another sender's does not
-  const H3 = 'cccccccccccc', H4 = 'dddddddddddd', H5 = 'eeeeeeeeeeee';
-  W(R.append({ kind: 'proposal', text: `proposal ${H3}: Rate limits`, hash: H3, approvers: ['bob'] }, { via: 'agent', from: 'alice' }));
-  const rev = R.append({ kind: 'proposal', text: `proposal ${H4}: Rate limits`, hash: H4, approvers: ['bob'] }, { via: 'agent', from: 'alice' });
-  assert.deepEqual(W(rev), ['alice\'s Claude proposed: Rate limits (dddddd)', `${room.CHAT_NEST}replaces "Rate limits" (cccccc)`]);
-  assert.deepEqual(C(rev), ['alice\'s Claude proposed: Rate limits (dddddd)'], 'without the log: no replaces line');
-  const twin = R.append({ kind: 'proposal', text: `proposal ${H5}: Rate limits`, hash: H5, approvers: ['alice'] }, { via: 'agent', from: 'bob' });
-  assert.deepEqual(W(twin), ['bob\'s Claude proposed: Rate limits (eeeeee)']);
+  // a room plan's versions: "NAME's Claude for NAME: plan …"; a newer version names the sign-off request it retires
+  const H3 = 'cccccccccccc', H4 = 'dddddddddddd';
+  const plan = (hash: string, version: number, from: string, summary: string) => R.append({ kind: 'plan', text: `plan limits v${version}: ${summary}`, hash, path: `plans/${hash}.md`,
+    plan: 'limits', version, base: version - 1, for: from, summary }, { via: 'agent', from, system: true });
+  assert.deepEqual(W(plan(H3, 1, 'alice', '100 a minute')), ["alice's Claude for you: plan limits v1: 100 a minute"]);
+  const ask = R.append({ kind: 'proposal', text: `proposal ${H3}: plan limits v1`, hash: H3, approvers: ['alice', 'bob'], plan: 'limits', version: 1 }, { via: 'agent', from: 'alice' });
+  assert.deepEqual(W(ask), ["alice's Claude asks for sign-off: plan limits v1 (cccccc) from you, bob"]);
+  const v2 = plan(H4, 2, 'bob', '60 a minute');
+  assert.deepEqual(W(v2), ["bob's Claude for bob: plan limits v2: 60 a minute", `${room.CHAT_NEST}retires the sign-off request for plan limits v1 (cccccc)`]);
+  assert.deepEqual(W(v2, 'bob'), ["bob's Claude for you: plan limits v2: 60 a minute", `${room.CHAT_NEST}retires the sign-off request for plan limits v1 (cccccc)`]);
+  assert.deepEqual(C(v2), ["bob's Claude for bob: plan limits v2: 60 a minute"], 'without the log: no retires line');
   const long = human('bob', 'say', { text: 'y'.repeat(room.CHAT_MAX + 10) });
   const ls = C(long);
   assert.equal(ls.at(-1), `(for Claude) that message is cut at ${room.CHAT_MAX}/${room.CHAT_MAX + 10} chars; read({ids:[${long.id}]}) has all of it`);

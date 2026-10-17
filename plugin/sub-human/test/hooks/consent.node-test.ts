@@ -11,6 +11,7 @@ import type { Identity } from '../../lib/identity.ts';
 import type { Card, Proposal, Review } from '../../lib/types-app.ts';
 import type * as Register from '../../mod/register.ts';
 import * as proposal from '../../lib/proposal.ts';
+import { propose } from '../support/plan.ts';
 import * as roomLib from '../../lib/room.ts';
 import * as tailLib from '../../lib/tail.ts';
 import { sn } from '../support/brands.ts';
@@ -26,7 +27,7 @@ const seat = (w: World, name: string): Seat => ({ code: w.code, name: sn(name), 
 /** A room with alice and bob (and room Claude); alice proposes `text` to `approvers`. */
 function world(text = '# Rename fetchUser\n\n1. rename\n2. alias\n', approvers?: string[]) {
   const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
-  const r = w.lib(() => proposal.create(seat(w, 'alice'), { text, ...(approvers ? { approvers } : {}) }));
+  const r = w.lib(() => propose(seat(w, 'alice'), { text, ...(approvers ? { approvers } : {}) }));
   return { w, hash: r.hash, path: r.path };
 }
 const preAsk = (input: HookInput): HookInput => ({ hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: input });
@@ -146,7 +147,7 @@ test('consent: all agree gives an "agreed" decision; matrix and pendingFor follo
 test('consent: preview is the full text up to 2000 chars and 20 lines, else a summary plus the path', () => {
   const w = new World({ alice: 'act', bob: 'sleep' });
   const me = { code: w.code, name: sn('alice') };
-  const pv = (text: string) => w.lib(() => { const r = proposal.create(me, { text }); return { p: proposal.preview({ hash: r.hash, path: must(r.entry).path } as Proposal, me.code), path: r.path }; });
+  const pv = (text: string) => w.lib(() => { const r = propose(me, { text }); return { p: proposal.preview({ hash: r.hash, path: must(r.entry).path } as Proposal, me.code), path: r.path }; });
   const exact = 'a'.repeat(2000);
   assert.equal(pv(exact).p, exact);
   const over = pv('b'.repeat(2001));
@@ -159,7 +160,7 @@ test('consent: preview is the full text up to 2000 chars and 20 lines, else a su
   assert.equal(pv(twenty).p, twenty);
 });
 
-test('consent: Post(ExitPlanMode) offers to propose once, never denies; a subagent plan is ignored', () => {
+test('consent: Post(ExitPlanMode) of the person\'s own plan says nothing and never denies; a subagent plan is ignored', () => {
   const w = new World({ alice: 'act', bob: 'sleep' });
   const plan = '# Plan\n\n1. paging\n';
   const file = path.join(w.userHome, '.claude', 'plans', 'snug-rocket.md');
@@ -167,32 +168,27 @@ test('consent: Post(ExitPlanMode) offers to propose once, never denies; a subage
   const ev = (extra = {}) => ({ hook_event_name: 'PostToolUse', tool_name: 'ExitPlanMode', tool_input: {}, tool_response: { plan, isAgent: false, filePath: file, ...extra } });
   const r = w.hook('consent', ev(), { as: 'alice' });
   assert.equal(r.code, 0);
-  assert.equal(hso(r).permissionDecision, undefined);
-  assert.match(must(ctx(r)), new RegExp(`propose tool with \\{path: ${JSON.stringify(file).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\}`));
+  assert.equal(r.stdout, '', 'no offer to propose: a room plan is edited with the plan tool');
   assert.equal(w.hook('consent', ev({ isAgent: true }), { as: 'alice' }).stdout, '');
-  const { hash } = w.lib(() => proposal.create({ code: w.code, name: sn('alice') }, { path: file }, { cwd: w.userHome }));
-  assert.equal(ctx(w.hook('consent', ev(), { as: 'alice' })), `alice agreed to proposal ${hash}.`, 'pending for alice: her approval is her signoff');
-  assert.equal(w.hook('consent', ev(), { as: 'alice' }).stdout, '', 'already proposed (same sha256/12)');
 });
 
-test('consent: approving my own pending proposal, unedited, in my own plan mode is my signoff; an edited one records nothing', () => {
+test('consent (invariant 2): a Yes on my own plan, the very text of a version I asked sign-off on, records nothing; only a hook-opened review does', () => {
   const run = (edited: boolean) => {
     const w = new World({ alice: 'act', bob: 'sleep' });
     const plan = '# Plan\n\n1. paging\n';
     const file = path.join(w.userHome, '.claude', 'plans', 'own-plan.md');
     fs.writeFileSync(file, plan);
-    const { hash } = w.lib(() => proposal.create(seat(w, 'bob'), { path: file, approvers: ['bob', 'alice'] }, { cwd: w.userHome }));
+    const { hash } = w.lib(() => propose(seat(w, 'bob'), { text: plan, approvers: ['bob', 'alice'] }));
     const r = w.hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'ExitPlanMode', permission_mode: 'default', tool_input: {},
       tool_response: { plan, isAgent: false, filePath: file, ...(edited ? { planWasEdited: true } : {}) } }, { as: 'bob' });
     return { w, hash, r };
   };
-  const { w, hash, r } = run(false);
-  assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.from, x.proposal_hash]), [['signoff', 'human', 'bob', hash]]);
-  assert.equal(ctx(r), `bob agreed to proposal ${hash}.`);
-  assert.deepEqual(decisions(w), [], 'alice has not answered');
-  const e = run(true);
-  assert.deepEqual(answers(e.w), []);
-  assert.doesNotMatch(ctx(e.r) || '', /agreed/);
+  for (const edited of [false, true]) {
+    const { w, hash, r } = run(edited);
+    assert.deepEqual(answers(w), [], 'no signoff from the author\'s own plan dialog');
+    assert.doesNotMatch(ctx(r) || '', /agreed/);
+    assert.deepEqual(w.lib(() => proposal.pendingFor(seat(w, 'bob'))).map(p => p.hash), [hash], 'still awaits bob, like everyone');
+  }
 });
 
 // ---------- the review in the native plan dialog ----------
@@ -751,18 +747,19 @@ test('Post(ExitPlanMode) with no review shown for a pending proposal: the model 
   assert.equal(fs.existsSync(file), false);
   assert.equal(review(w), null);
   assert.deepEqual(answers(w), []);
-  // A plan of bob's own that names no proposal: the propose offer, as before.
-  assert.match(must(ctx(w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: {}, tool_response: { plan: '# Refactor auth\n' } }), { as: 'bob' }))), /room propose tool/);
+  // A plan of bob's own that names no proposal: nothing said, nothing recorded.
+  assert.equal(w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: {}, tool_response: { plan: '# Refactor auth\n' } }), { as: 'bob' }).stdout, '');
 });
 
 // ---------- the hook picks and shows the proposal (the live run: two pending, a stale hello-world plan file) ----------
 const HELLO = '# Hello-world script\n\n1. create hello.sh\n2. chmod +x\n3. run it\n';
-/** alice proposes "Ship v2 Friday" then "Ship v3 Monday" to bob; bob's session plan file holds an unrelated plan. */
+/** alice asks bob to sign off on plan friday ("Ship v2 Friday") then plan monday ("Ship v3 Monday"); bob's session plan
+ * file holds an unrelated plan. */
 function two() {
   const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
   const me = seat(w, 'alice');
-  const v2 = w.lib(() => proposal.create(me, { text: 'Ship v2 Friday', approvers: ['bob'] })).hash;
-  const v3 = w.lib(() => proposal.create(me, { text: 'Ship v3 Monday', approvers: ['bob'] })).hash;
+  const v2 = w.lib(() => propose(me, { text: 'Ship v2 Friday', approvers: ['bob'], plan: 'friday' })).hash;
+  const v3 = w.lib(() => propose(me, { text: 'Ship v3 Monday', approvers: ['bob'], plan: 'monday' })).hash;
   const file = path.join(w.userHome, '.claude', 'plans', 'adaptive-shimmying-clover.md');
   fs.writeFileSync(file, HELLO);
   return { w, v2, v3, file, tp: transcript(w, file) };
@@ -790,149 +787,80 @@ function planDeny(w: World, file: string, toolUseId: string, note: string | null
   return f;
 }
 
-test('pick: the person\'s words name the proposal (hash, else words only its title has); else none', () => {
+test('pick: the person\'s words name the request (a hash, else a plan\'s name); else none', () => {
   const { w, v2, v3 } = two();
   const ps = w.lib(() => proposal.pendingFor({ code: w.code, name: sn('bob') }));
   const pick = (s: string) => { const p = w.lib(() => proposal.namedIn(ps, s, w.code)); return p && p.hash; };
-  assert.equal(pick('Open v3'), v3);
-  assert.equal(pick('show me the monday one'), v3);
-  assert.equal(pick('friday please'), v2);
+  assert.equal(pick('show me the monday plan'), v3);
+  assert.equal(pick('Friday please'), v2);
   assert.equal(pick(`review ${v3.slice(0, 6)}`), v3);
-  assert.equal(pick('ship it'), null, 'both titles have "ship": ambiguous');
+  assert.equal(pick('ship it'), null, 'a title\'s words are no name');
+  assert.equal(pick('open friday or monday'), null, 'two plans named: none');
   assert.equal(pick('open the proposal'), null);
   assert.equal(pick(''), null);
 });
 
-test('pick: two pending and bob says "Open v2": the review opens v2 whatever the model passes, and the reminder opens only v2', () => {
+test('pick: two pending and bob says "open the monday plan": the review opens it whatever the model passes; else the oldest', () => {
   const { w, v2, v3, file, tp } = two();
   const first = must(reminders(w));
-  assert.match(first, new RegExp(`proposal ${v3} still awaits bob's answer`), 'nothing named yet: the newest');
-  // the others are listed by short hash and title, so bob can name one; only the newest is to be opened
-  assert.match(first, new RegExp(`1 more await bob's answer: ${v2.slice(0, 6)} "Ship v2 Friday"; the hooks open whichever bob names next, else the newest`));
-  assert.doesNotMatch(first, new RegExp(`"proposal ${v2}"`));
-  say(w, 'Open v2', tp);
-  // Pre(EnterPlanMode): the review is v2's (bob's latest words in the transcript), and the plan file (known from an
-  // earlier plan mode) holds v2 now, the unrelated plan backed up first.
+  assert.match(first, new RegExp(`plan friday v1 \\(proposal ${v2}\\) still awaits bob's sign-off`), 'nothing named: the oldest');
+  // the others are listed by short hash and plan, so bob can name one; only the oldest is to be opened
+  assert.match(first, new RegExp(`1 more await bob's answer: ${v3.slice(0, 6)} "plan monday v1"; the hooks open whichever plan bob names, else the oldest`));
+  assert.doesNotMatch(first, new RegExp(`"proposal ${v3}"`));
+  say(w, 'open the monday plan', tp);
+  // Pre(EnterPlanMode): the review is monday's (bob's latest words in the transcript), and the plan file (known from an
+  // earlier plan mode) holds it now, the unrelated plan backed up first.
   assert.equal(decision(w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {}, transcript_path: tp }), { as: 'bob' })), 'allow');
-  assert.deepEqual([must(review(w)).phase, must(review(w)).hash, must(review(w)).backup], ['entering', v2, HELLO]);
-  const c = must(reminders(w));
-  assert.match(c, new RegExp(`proposal ${v2} still awaits bob's answer.*"proposal ${v2}"`));
-  assert.doesNotMatch(c, new RegExp(`"proposal ${v3}"`), 'the other one is only listed');
-  assert.match(c, new RegExp(`1 more await bob's answer: ${v3.slice(0, 6)} "Ship v3 Monday"`));
-  assert.equal(fs.readFileSync(file, 'utf8'), 'Ship v2 Friday');
-  // The model names the newest (as the old context told it): the dialog is still v2's.
-  const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: `proposal ${v3}` }, tool_use_id: 'tu1', transcript_path: tp }), { as: 'bob' });
+  assert.deepEqual([must(review(w)).phase, must(review(w)).hash, must(review(w)).backup], ['entering', v3, HELLO]);
+  assert.equal(fs.readFileSync(file, 'utf8'), 'Ship v3 Monday');
+  // The model names the oldest (as the reminder told it): the dialog is still monday's.
+  const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: `proposal ${v2}` }, tool_use_id: 'tu1', transcript_path: tp }), { as: 'bob' });
   assert.equal(decision(pre), 'ask');
-  assert.equal(planOf(pre), 'Ship v2 Friday');
-  assert.match(must(reason(pre)), new RegExp(`room proposal ${v2} from alice`));
-  const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: {}, tool_use_id: 'tu1', tool_response: { plan: 'Ship v2 Friday', filePath: file } }), { as: 'bob' });
-  assert.match(must(ctx(post)), new RegExp(`bob agreed to proposal ${v2}`));
-  assert.deepEqual(answers(w).map(x => [x.kind, x.proposal_hash]), [['signoff', v2]]);
+  assert.equal(planOf(pre), 'Ship v3 Monday');
+  assert.match(must(reason(pre)), new RegExp(`room proposal ${v3} from alice`));
+  const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: {}, tool_use_id: 'tu1', tool_response: { plan: 'Ship v3 Monday', filePath: file } }), { as: 'bob' });
+  assert.match(must(ctx(post)), new RegExp(`bob agreed to proposal ${v3}`));
+  assert.deepEqual(answers(w).map(x => [x.kind, x.proposal_hash]), [['signoff', v3]]);
   assert.equal(fs.readFileSync(file, 'utf8'), HELLO, 'the unrelated plan is back');
-  // Nothing named next time: the newest still pending (v3), and no others to list.
+  // the one still pending, and no others to list
   say(w, 'what now?', tp);
-  assert.match(must(reminders(w)), new RegExp(`proposal ${v3} still awaits`));
+  assert.match(must(reminders(w)), new RegExp(`proposal ${v2}\\) still awaits`));
   assert.doesNotMatch(must(reminders(w)), /more await/);
 });
 
-test('supersede: alice re-proposes with the same title: the old one is not pending, its answer is stale, decide is null', () => {
-  const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
+test('supersede: a new version of the plan retires the request on the older one: not pending, its answer stale, never decided; another plan stays', () => {
+  const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep', carol: 'sleep' });
   const alice = seat(w, 'alice'), bob = seat(w, 'bob');
-  const a = w.lib(() => proposal.create(alice, { text: '# Rate limits\n\n100 a minute', approvers: ['bob'] }));
-  assert.deepEqual(a.retired, []);
-  const b = w.lib(() => proposal.create(alice, { text: '# Rate limits\n\n60 a minute, burst 10', approvers: ['bob'] }));
-  assert.deepEqual(b.retired, [a.hash], 'the revision says what it retired');
-  assert.deepEqual(w.lib(() => proposal.pendingFor(bob)).map(p => p.hash), [b.hash], 'only the revision is pending');
+  const a = w.lib(() => propose(alice, { text: '# Rate limits\n\n100 a minute', approvers: ['bob'], plan: 'limits' }));
+  const b = w.lib(() => propose(bob, { text: '# Rate limits\n\n60 a minute, burst 10', approvers: ['bob'], plan: 'limits' }));
+  assert.deepEqual([a.version, b.version], [1, 2], 'any member\'s Claude edits the same plan: v2');
+  assert.deepEqual(w.lib(() => proposal.pendingFor(bob)).map(p => p.hash), [b.hash], 'only the current version is pending');
   assert.deepEqual(w.lib(() => proposal.answer(bob, { hash: a.hash }, { choice: 'Agree' })), { stale: true, why: 'answered, decided, superseded or unknown' });
   assert.deepEqual(answers(w), [], 'nothing recorded on the old one');
   const f = w.lib(() => roomLib.fold(w.entries()));
   assert.equal(f.superseded.get(a.hash), b.hash);
   assert.equal(must(f.status(a.hash)).state, 'superseded');
   assert.equal(must(f.status(b.hash)).state, 'open');
-  // bob answered the old one before the revision (not decided yet): it is never decided, and the answer does not carry over
+  // another plan, the same title: its own plan, both pending
+  const c = w.lib(() => propose(alice, { text: '# Rate limits\n\nalice: 100', approvers: ['carol'], plan: 'limits-api' }));
+  const d = w.lib(() => propose(bob, { text: '# Rate limits\n\nbob: 60', approvers: ['carol'], plan: 'limits-web' }));
+  assert.deepEqual(w.lib(() => proposal.pendingFor(seat(w, 'carol'))).map(p => p.hash), [c.hash, d.hash]);
+  // bob answered the old version before the new one (not decided yet): it is never decided, and the answer does not carry over
   const w2 = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
   const alice2 = { ...alice, code: w2.code }, bob2 = { ...bob, code: w2.code };
-  const old = w2.lib(() => proposal.create(alice2, { text: 'Ship Friday\n\nv1', approvers: ['bob'] }));
+  const old = w2.lib(() => propose(alice2, { text: 'Ship Friday\n\nv1', approvers: ['bob'], plan: 'ship' }));
   assert.ok(w2.lib(() => proposal.answer(bob2, { hash: old.hash }, { choice: 'Agree' })).entry);
-  const rev = w2.lib(() => proposal.create(alice2, { text: 'Ship Friday\n\nv2', approvers: ['bob'] }));
-  assert.deepEqual(rev.retired, [old.hash]);
-  assert.equal(w2.lib(() => proposal.decide(w2.code, old.hash)), null, 'a superseded proposal is never decided');
-  assert.deepEqual(w2.lib(() => proposal.pendingFor(bob2)).map(p => p.hash), [rev.hash], 'the old answer does not count for the revision');
-  // proposing the old text again brings it back (and retires the other)
-  const again = w2.lib(() => proposal.create(alice2, { text: 'Ship Friday\n\nv1', approvers: ['bob'] }));
-  assert.deepEqual([again.hash, again.retired], [old.hash, [rev.hash]]);
-});
-
-test('supersede: bob names a replaced proposal: the review opens its latest revision and says so, not the newest', () => {
-  const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
-  const alice = seat(w, 'alice');
-  const v1 = w.lib(() => proposal.create(alice, { text: '# Rate limits\n\n100 a minute', approvers: ['bob'] })).hash;
-  const v2 = w.lib(() => proposal.create(alice, { text: '# Rate limits\n\n80 a minute', approvers: ['bob'] })).hash;
-  const v3 = w.lib(() => proposal.create(alice, { text: '# Rate limits\n\n60 a minute, burst 10', approvers: ['bob'] })).hash;
-  const other = w.lib(() => proposal.create(alice, { text: '# Ship Monday\n\nv3', approvers: ['bob'] })).hash;
-  const ps = w.lib(() => proposal.pendingFor({ code: w.code, name: sn('bob') }));
-  assert.deepEqual(ps.map(p => p.hash), [v3, other]);
-  const was = w.lib(() => proposal.replacedIn(ps, `open ${v1.slice(0, 8)}`, w.code));
-  assert.deepEqual([must(was).old, must(was).p.hash], [v1, v3], 'followed through v2 to the latest revision');
-  assert.equal(w.lib(() => proposal.replacedIn(ps, `open ${v3}`, w.code)), null, 'a pending hash is not a replaced one');
-  assert.equal(w.lib(() => proposal.replacedIn(ps, 'open abcdef012345', w.code)), null, 'an unknown hash');
-  const file = path.join(w.userHome, '.claude', 'plans', 'adaptive-shimmying-clover.md');
-  fs.writeFileSync(file, HELLO);
-  const tp = transcript(w, file);
-  say(w, `open proposal ${v2}`, tp);
-  const pre = w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {}, transcript_path: tp }), { as: 'bob' });
-  assert.equal(decision(pre), 'allow');
-  assert.equal(reason(pre), `sub-human: proposal ${v2} was replaced by ${v3}; opening ${v3} for bob`);
-  assert.equal(must(review(w)).hash, v3, 'not the newest pending one');
-});
-
-test('supersede: a different sender with the same title is not a revision: both stay pending', () => {
-  const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep', carol: 'sleep' });
-  const alice = seat(w, 'alice'), bob = seat(w, 'bob');
-  const a = w.lib(() => proposal.create(alice, { text: '# Rate limits\n\nalice: 100', approvers: ['carol'] }));
-  const b = w.lib(() => proposal.create(bob, { text: '# Rate limits\n\nbob: 60', approvers: ['carol'] }));
-  assert.deepEqual(b.retired, []);
-  assert.deepEqual(w.lib(() => proposal.pendingFor(seat(w, 'carol'))).map(p => p.hash), [a.hash, b.hash]);
-});
-
-test('pick: "propose to alice: …" with a proposal pending for bob opens no review; a plain prompt after it does', () => {
-  const { w, v2, v3, file, tp } = two();
-  const enter = () => w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {}, transcript_path: tp }), { as: 'bob' });
-  for (const t of ['propose to alice: move the cron to 6am', 'please make a proposal to alice about the cron', 'can you draft a proposal for the API']) {
-    say(w, t, tp);
-    const r = enter();
-    assert.equal(decision(r), undefined, `${t}: plan mode left alone`);
-    assert.match(must(ctx(r)), /no room review now: bob asked you to propose something/);
-    assert.equal(review(w), null, 'no review state');
-    assert.equal(fs.readFileSync(file, 'utf8'), HELLO, 'the plan file untouched');
-  }
-  assert.deepEqual(answers(w), []);
-  // the reminder tells the model the same; asking for it (or a plain prompt) opens the review as before
-  assert.match(must(reminders(w)), /unless bob asked you to propose something: then do that, and this waits/);
-  for (const t of ['open the proposal', 'what now?']) {
-    say(w, t, tp);
-    assert.equal(decision(enter()), 'allow', t);
-    assert.equal(must(review(w)).hash, v3, `${t}: nothing named: the newest`);
-    w.lib(() => proposal.clearReview({ code: w.code, name: sn('bob') }));
-    fs.writeFileSync(file, HELLO);
-  }
-  // words of a pending title are not a pick when the person asks to propose; a hash named still is
-  say(w, 'propose to alice: ship v3 Tuesday instead', tp);
-  assert.equal(decision(enter()), undefined);
-  say(w, `propose to alice after we answer ${v2.slice(0, 8)}`, tp);
-  assert.equal(decision(enter()), 'allow');
-  assert.equal(must(review(w)).hash, v2);
-});
-
-test('proposeIntent: asks to propose, not to open or answer one', () => {
-  const yes = ['propose to alice: ship v3 Monday', 'Please propose X', 'ok, draft a proposal for the API', 'can you make a proposal to alice', 'post a proposal to alice'];
-  const no = ['open the proposal', 'open the v3 proposal', "open alice's proposal", 'answer the proposal', 'Open v3', 'what now?', 'review the proposal', 'show me proposals', 'open the proposal from alice'];
-  for (const t of yes) assert.equal(proposal.proposeIntent(t), true, t);
-  for (const t of no) assert.equal(proposal.proposeIntent(t), false, t);
+  const next = w2.lib(() => propose(alice2, { text: 'Ship Friday\n\nv2', approvers: ['bob'], plan: 'ship' }));
+  assert.equal(w2.lib(() => proposal.decide(w2.code, old.hash)), null, 'a superseded request is never decided');
+  assert.deepEqual(w2.lib(() => proposal.pendingFor(bob2)).map(p => p.hash), [next.hash], 'the old answer does not count for the new version');
+  // the old text again is v3, with the old hash: the request on it is back (it is the current version's)
+  const again = w2.lib(() => propose(alice2, { text: 'Ship Friday\n\nv1', approvers: ['bob'], plan: 'ship' }));
+  assert.deepEqual([again.hash, again.version], [old.hash, 3]);
+  assert.equal(w2.lib(() => roomLib.fold(w2.entries())).superseded.has(old.hash), false);
 });
 
 test('pick: a stale plan in the plan file, or the model\'s own copy of it, is never the dialog; the backup comes back', () => {
-  const { w, v2, file, tp } = two();
+  const { w, file, tp } = two();
   say(w, 'carry on', tp);
   w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'auto', tool_input: {}, transcript_path: tp }), { as: 'bob' });
   // The model writes the stale hello-world plan back over the proposal and passes it (the 12:55 call).
@@ -940,42 +868,41 @@ test('pick: a stale plan in the plan file, or the model\'s own copy of it, is ne
   const tp2 = transcript(w, file, null, { id: 'tu1', input: { plan: HELLO, planFilePath: file } });
   const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: HELLO, planFilePath: file }, tool_use_id: 'tu1', transcript_path: tp2 }), { as: 'bob' });
   assert.equal(decision(pre), 'ask');
-  assert.equal(planOf(pre), 'Ship v3 Monday');
-  assert.equal(fs.readFileSync(file, 'utf8'), 'Ship v3 Monday');
+  assert.equal(planOf(pre), 'Ship v2 Friday');
+  assert.equal(fs.readFileSync(file, 'utf8'), 'Ship v2 Friday');
   assert.equal(must(review(w)).backup, HELLO, 'the backup taken at Pre(EnterPlanMode)');
   // No plan at all in the call: the same dialog.
   const w2 = two();
   w2.w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {}, transcript_path: w2.tp }), { as: 'bob' });
-  assert.equal(planOf(w2.w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu1', transcript_path: w2.tp }), { as: 'bob' })), 'Ship v3 Monday');
+  assert.equal(planOf(w2.w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu1', transcript_path: w2.tp }), { as: 'bob' })), 'Ship v2 Friday');
   // Esc then a prompt (Shift+Tab out of plan mode): the unrelated plan is restored, nothing recorded.
   say(w, 'later', tp);
   assert.equal(fs.readFileSync(file, 'utf8'), HELLO);
   assert.equal(review(w), null);
   assert.deepEqual(answers(w), []);
-  void v2;
 });
 
 test('pick: the model hand-writes the proposal into the plan file without a hook review: an approval records nothing', () => {
-  const { w, v3, file } = two();
+  const { w, v2, v3, file } = two();
   fs.writeFileSync(file, 'Ship v3 Monday');
   // Already in plan mode, so no review opened; the model's own ExitPlanMode passes, the person says "Yes".
   assert.equal(w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: 'Ship v3 Monday', planFilePath: file }, tool_use_id: 'tu5' }), { as: 'bob' }).stdout, '');
   const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: { plan: 'Ship v3 Monday' }, tool_use_id: 'tu5', tool_response: { plan: 'Ship v3 Monday', filePath: file } }), { as: 'bob' });
   assert.match(must(ctx(post)), new RegExp(`Nothing recorded for ${v3}: no review opened, so bob did not answer \\(don't say they did\\)`));
   assert.deepEqual(answers(w), []);
-  // The next review opens the one that dialog was about.
+  // The next review opens the oldest: no pick is kept (only the person's words choose).
   w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {} }), { as: 'bob' });
-  assert.equal(must(review(w)).hash, v3);
+  assert.equal(must(review(w)).hash, v2);
 });
 
-test('G (live verify, verify1/04 and verify4/c2): bob asks his Claude to propose; the propose tool makes it; his EnterPlanMode then opens the review of it with its text', () => {
+test('G (live verify, verify1/04 and verify4/c2): bob asks his Claude for sign-off on his readme plan; his EnterPlanMode then opens the review of it, by the plan\'s name, with its text', () => {
   const { w, file, tp } = two();
   const me = seat(w, 'bob');
-  fs.appendFileSync(tp, JSON.stringify({ type: 'user', message: { role: 'user', content: "Propose this to the room with the propose tool, title 'Readme pass', text: 1. bob reviews the README. 2. alice fixes typos." }, timestamp: new Date(Date.now() - 2000).toISOString() }) + '\n');
-  const mine = w.lib(() => proposal.create(me, { text: '# Readme pass\n\n1. bob reviews the README.\n2. alice fixes typos.\n', approvers: ['alice', 'bob'] })).hash;
+  fs.appendFileSync(tp, JSON.stringify({ type: 'user', message: { role: 'user', content: 'Ask the room to sign off on the readme plan, and let me answer it' }, timestamp: new Date(Date.now() - 2000).toISOString() }) + '\n');
+  const mine = w.lib(() => propose(me, { text: '# Readme pass\n\n1. bob reviews the README.\n2. alice fixes typos.\n', approvers: ['alice', 'bob'], plan: 'readme' })).hash;
   const pre = w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'auto', tool_input: {}, transcript_path: tp }), { as: 'bob' });
-  assert.equal(decision(pre), 'allow', 'no "no room review now" once the proposal exists');
-  assert.equal(must(review(w)).hash, mine, 'the proposal just made, not the newest of alice\'s');
+  assert.equal(decision(pre), 'allow');
+  assert.equal(must(review(w)).hash, mine, 'the plan bob named, not the oldest of alice\'s');
   const exit = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: `proposal ${mine}` }, tool_use_id: 'tu1', transcript_path: tp }), { as: 'bob' });
   assert.equal(decision(exit), 'ask');
   assert.match(String(planOf(exit)), /^# Readme pass/, 'the text, never a bare "proposal HASH"');
@@ -1034,6 +961,7 @@ test('deny: a reject with a note waits for bob\'s Send; a bare reject records no
 function denied(note: string | null) {
   const t = two();
   const { w, file, tp } = t;
+  say(w, 'open the monday plan', tp);
   w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {}, transcript_path: tp }), { as: 'bob' });
   w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu1', transcript_path: tp }), { as: 'bob' });
   const tpd = planDeny(w, file, 'tu1', note);
@@ -1049,7 +977,7 @@ test('confirm: a reject\'s note; the card asks to send it to the proposer; Send 
   assert.match(must(post), new RegExp(`call AskUserQuestion with "objection ${v3}"`));
   const { pre, post: sent, card } = confirm(w, v3, 'Send');
   const q = must(card.questions[0]);
-  assert.equal(q.question, 'Send to alice as changes requested on "Ship v3 Monday": "open rate limiting"?');
+  assert.equal(q.question, 'Send to alice as changes requested on "plan monday v1": "open rate limiting"?');
   assert.deepEqual(q.options.map(o => o.label), ['Send', 'Discard']);
   assert.ok(q.options.every(o => o.preview === 'open rate limiting'), 'the whole note in the preview');
   assert.deepEqual(Object.keys(card), ['questions'], 'nothing of the model\'s call survives');
@@ -1230,7 +1158,7 @@ test('M (live verify, verify5/M): the plan view refused with a note: the module\
   assert.equal(r.code, 0, r.stderr);
   assert.equal(hso(r).hookEventName, 'PostToolUseFailure');
   assert.match(must(ctx(r)), new RegExp(`^sub-human: nothing is recorded yet: bob's note on ${hash} waits for its card \\(Send or Discard\\)`));
-  assert.match(must(r.json?.systemMessage), /^sub-human: your note on "Rename fetchUser" is not sent yet: Send or Discard on the card that follows decides$/);
+  assert.match(must(r.json?.systemMessage), /^sub-human: your note on "plan p\d+ v1" is not sent yet: Send or Discard on the card that follows decides$/);
   assert.equal(must(waiting(w)).note, note);
   assert.deepEqual(answers(w), []);
   // the model tries to post its paraphrase: refused while the note waits, whatever mode the module last saw
@@ -1276,7 +1204,7 @@ test('8 (live verify): a plan-view Yes that came as the view opened (or while bo
   assert.equal(decision(w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu1', transcript_path: tp }), guard)), 'ask');
   const yes = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: {}, tool_use_id: 'tu1', tool_response: { plan: fs.readFileSync(file, 'utf8'), filePath: file }, transcript_path: tp }), guard);
   assert.match(must(ctx(yes)), /^Nothing recorded yet: bob's Yes came as the view opened/);
-  assert.match(must(yes.json?.systemMessage), /your Yes on "Rename fetchUser" came right as the review opened, so it is not recorded yet/);
+  assert.match(must(yes.json?.systemMessage), /your Yes on "plan p\d+ v1" came right as the review opened, so it is not recorded yet/);
   assert.deepEqual(answers(w), []);
   // the card for it (not the plan view again), then Agree there: recorded via=human, once
   const pre = w.hook('consent', preAsk({ questions: [{ question: `proposal ${hash}`, header: 'x', options: [{ label: 'Agree' }] }] }), guard);

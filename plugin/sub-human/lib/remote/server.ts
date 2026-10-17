@@ -44,6 +44,7 @@ import * as inviteSecret from './invite-secret.ts';
 import * as seats from '../seats.ts';
 import * as proposal from '../proposal.ts';
 import * as tasks from '../tasks.ts';
+import * as plans from '../plans.ts';
 import * as members from '../room/members.ts';
 import * as envelope from '../room/envelope.ts';
 import * as room from '../room.ts';
@@ -75,7 +76,7 @@ interface Stream { tick(): void; stop(): void; end(reason: EventData['end']['rea
 type OpHandlers = { [K in Op]: (s: Session, params: WireParams<K>, id: FrameId | undefined) => OpResults[K] };
 
 const ANSWERS = new Set(['signoff', 'objection']);
-const WRITES = new Set(['join', 'leave', 'beat', 'append', 'task']);
+const WRITES = new Set(['join', 'leave', 'beat', 'append', 'task', 'plan.put']);
 const authError = (msg: string, reason: ReasonFor<'AUTH'> | null = null): RoomError => new RoomError('AUTH', msg, reason);
 const invalid = (msg: string): RoomError => new RoomError('INVALID', msg);
 
@@ -356,6 +357,13 @@ const OPS: OpHandlers = {
     own(s, name);
     return tasks.apply(s.store, req, { by: String(name) });
   },
+
+  // a seat's plan edit: stored here, on the host, under the room's plan lock (lib/plans.ts put: compare-and-swap on the
+  // plan's current version), so two machines' edits are one after the other; a conflict or a refusal is an answer
+  'plan.put'(s, { name, req }) {
+    own(s, name);
+    return plans.put(s.store, isObj(req) ? req : {}, { by: String(name) });
+  },
 };
 
 /** One op's handler on the params as they came (an object; WireParams: every field unknown until the op checks it). */
@@ -453,6 +461,7 @@ class Session {
     else if (op === 'join' || op === 'leave') link('seat');
     else if (op === 'subscribe') link('subscribe');
     else if (op === 'task') link('task');
+    else if (op === 'plan.put') link('plan');
     else if (op === 'beat' || op === 'blob.get' || op === 'ping') take(op);
   }
 

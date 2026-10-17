@@ -6,6 +6,7 @@
  *   peerIn, wakeIn, chatIn, pullIn             peer messages, room wakes, chat rows and their isMeta copies
  *   chatTurn, roomClaudeTurns, replyAfter, noModelTurn   which model turns room traffic started
  *   rowUserText, rowReply                      the row subagents' transcripts
+ *   toolResults(es)                            the text of every tool_result (a tool's or a hook's answer)
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -21,6 +22,15 @@ const isToolResults = (e: TEntry): boolean => Array.isArray(e.message && e.messa
 
 /** A tool call in a transcript, with the time of the entry it was in. */
 export type ToolUse = Block & { at: string | undefined };
+
+/** A transcript content block, as far as a tool_result's is read. */
+const isBlock = (c: unknown): c is { type?: string; content?: unknown } => typeof c === 'object' && c !== null;
+/** The text of every tool_result in a seat's transcript entries (what a tool or a hook answered its Claude). */
+export const toolResults = (es: { message?: { content?: unknown } }[]): string[] => es.flatMap(e => {
+  const content = e.message ? e.message.content : undefined;
+  const blocks = Array.isArray(content) ? content.filter(isBlock) : [];
+  return blocks.filter(c => c && c.type === 'tool_result').map(c => (typeof c.content === 'string' ? c.content : JSON.stringify(c.content ?? '')));
+});
 
 const inSpan = <E extends { timestamp?: string }>(es: E[], s: Span | null | undefined): (E & { timestamp: string })[] => (s ? es.filter((e): e is E & { timestamp: string } => !!e.timestamp && e.timestamp > s.from && e.timestamp <= s.to) : []);
 const toolUses = (es: TEntry[], name?: string): ToolUse[] => es.filter(e => e.type === 'assistant' && !e.isSidechain).flatMap(e => blocksOf(e).filter(c => c && c.type === 'tool_use' && (!name || c.name === name || new RegExp(name).test(c.name || ''))).map(c => ({ ...c, at: e.timestamp })));

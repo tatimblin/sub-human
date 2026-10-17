@@ -8,6 +8,12 @@
  * review lock (proposal.withReview), runs the effects, stores the state (members/NAME/review, members/NAME/confirm)
  * and writes the answer.
  *
+ * A room plan edit (the plan tool's edit op opened it in this session) is the other machine, lib/consent/edit.ts:
+ * while one is open, plan mode is the edit's (routeEdit): its seed at the plan_mode attachment (the module's
+ * PlanAttachment event) or at ExitPlanMode, its capture at Pre(ExitPlanMode) into lib/plans.ts put (on the host, or
+ * over the link's plan.put), the receipt or the conflict as the deny, and the closing call let through with the mode
+ * back. It records no answer.
+ *
  * The cards (a join request's, the note's and the fallback consent card) are read through
  * lib/consent/card.ts answerCard: only the person's answer on the card as the hooks built it counts.
  *
@@ -28,6 +34,8 @@ import * as identity from '../lib/identity.ts';
 import * as proposal from '../lib/proposal.ts';
 import * as review from '../lib/consent/review.ts';
 import * as card from '../lib/consent/card.ts';
+import * as edit from '../lib/consent/edit.ts';
+import * as plans from '../lib/plans.ts';
 import * as cc from '../lib/cc/transcript.ts';
 import * as ccEnv from '../lib/cc/env.ts';
 import { writeFileAtomic } from '../lib/io.ts';
@@ -37,7 +45,7 @@ import * as envelope from '../lib/room/envelope.ts';
 import * as roomStore from '../lib/room/store.ts';
 import * as admission from '../lib/remote/admission.ts';
 import type { AnyHookIn, CardQuestion, HookOutput, Recorded } from './types.ts';
-import type { Card, Proposal, Review } from '../lib/types-app.ts';
+import type { Card, PlanEdit, Proposal, Review } from '../lib/types-app.ts';
 import type { AdmissionRequest } from '../lib/remote/admission.ts';
 import type { Identity } from '../lib/identity.ts';
 import type { ConsentEffect, ConsentEvent, Pending, Say, State, Target } from '../lib/consent/review.ts';
@@ -194,7 +202,6 @@ function step(input: ConsentIn, me: Identity, make: (st: State) => ConsentEvent,
   for (let e = queue.shift(); e; e = queue.shift()) {
     if (e.do === 'save') { proposal.writeReview(me, e.review); disk.review = JSON.stringify(e.review); }
     else if (e.do === 'restorePlan') proposal.restorePlan({ phase: 'exiting', file: e.file, backup: e.backup, restored: false });
-    else if (e.do === 'pick') proposal.writePick(me, e.hash);
     else if (e.do === 'answer') {
       const res = record(me, e.hash, { choice: e.choice, ...(e.notes !== undefined ? { notes: e.notes } : {}) });
       answers.set(e.hash, { choice: e.choice, res });
@@ -235,8 +242,7 @@ function write(input: ConsentIn, me: Identity, say: Say, state: State, answers: 
     case 'context': return c.context(String(input.hook_event_name), text(say.parts));
     case 'deny': return c.deny(text(say.parts));
     case 'allow': return c.pre('allow', say.text);
-    case 'permit': return c.out({ hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow', updatedInput: {},
-      updatedPermissions: [{ type: 'setMode', mode: say.mode, destination: 'session' }] } } });
+    case 'permit': return c.out(ccEnv.leavePlanMode(say.mode));
     case 'ask': {
       const s = say.show;
       if ('plan' in s) return c.pre('ask', say.text, { updatedInput: { plan: proposal.read(me.code, s.plan) } });
@@ -338,29 +344,14 @@ function preEnter(input: ConsentIn, me: Identity) {
   input = { ...input, permission_mode: modeAtEnter(input) };
   step(input, me, st => {
     const base = { mode: input.permission_mode, reviewable: reviewable(input), plan: { file: null, text: null } };
-    if (st.review && st.review.phase === 'restore') return { type: 'enter', ...base, pending: [], said: null, named: null, replaced: null, kept: null, propose: false };
+    if (st.review && st.review.phase === 'restore') return { type: 'enter', ...base, pending: [], said: null, named: null };
     const ps = proposal.pendingFor(me).filter(p => proposal.viewable(p, me.code));
-    if (!ps.length || !base.reviewable) return { type: 'enter', ...base, pending: [], said: null, named: null, replaced: null, kept: null, propose: false };
-    // The person's pick is what their latest prompt names (cc.lastHumanPrompt: only their own words; a peer's or a
-    // plugin's prompt keeps the earlier pick); a superseded hash names its latest revision (replaced).
+    if (!ps.length || !base.reviewable) return { type: 'enter', ...base, pending: [], said: null, named: null };
+    // the request the person's latest prompt names (cc.lastHumanPrompt: only their own words), else the oldest
     const said = cc.lastHumanPrompt(lines(input));
-    const replaced = said ? proposal.replacedIn(ps, said.text, me.code) : null;
-    const hit = said ? proposal.namedIn(ps, said.text, me.code) ?? (replaced && replaced.p) : null;
-    const propose = !!said && proposal.proposeIntent(said.text);
-    return { type: 'enter', ...base, pending: pendingOf(me, ps), said, named: hit ? hit.hash : null,
-      replaced: replaced ? { old: replaced.old, hash: replaced.p.hash } : null, kept: proposal.readPick(me),
-      propose, plan: planOf(input), proposedSince: propose && said ? ownSince(me, ps, said.at) : null };
+    const hit = said ? proposal.namedIn(ps, said.text, me.code) : null;
+    return { type: 'enter', ...base, pending: pendingOf(me, ps), said, named: hit ? hit.hash : null, plan: planOf(input) };
   });
-}
-
-/** The newest pending proposal this seat made itself after `at` (its log line's time): the propose tool ran since. */
-function ownSince(me: Identity, ps: Proposal[], at: number): string | null {
-  const mine = ps.filter(p => p.from === me.name);
-  if (!mine.length) return null;
-  const rm = c.room.open(me.code);
-  const times = new Map(rm.readById(mine.map(p => p.id)).map(e => [e.id, Date.parse(e.at)]));
-  const hit = mine.filter(p => (times.get(p.id) || 0) > at).at(-1);
-  return hit ? hit.hash : null;
 }
 
 /** "proposal HASH" (the stub the model is told to pass), as a plan's whole text: the hash, or null. */
@@ -406,14 +397,12 @@ function postExit(input: ConsentIn, me: Identity) {
     const ti: ConsentToolInput = input.tool_input ?? {};
     const ev = { type: 'exited' as const, toolUseId: input.tool_use_id || null, mode: input.permission_mode, ...answerFacts(input, me, r, 'exited'),
       response: { plan: res.plan, edited: !!res.planWasEdited, isAgent: !!res.isAgent, filePath: res.filePath }, callPlan: ti.plan,
-      pending: [] as Pending[], callNames: [] as string[], reviewable: reviewable(input), proposed: false };
+      pending: [] as Pending[], callNames: [] as string[], reviewable: reviewable(input) };
     if (r && r.phase !== 'entering') return { ...ev, target: ev.target ?? targetOf(me, r.hash) };
     // no review shown: the dialog may still have been a pending proposal's (unshown), or the person's own plan
     const ps = proposal.pendingFor(me);
     const plan = typeof res.plan === 'string' ? res.plan : typeof ti.plan === 'string' ? ti.plan : '';
-    const own = typeof res.plan === 'string' && res.plan.trim() ? c.room.hash12(Buffer.from(res.plan, 'utf8')) : null;
-    return { ...ev, pending: pendingOf(me, ps), callNames: plan.length < 300 ? named(ps, callOf([ti, modelInput(input)])).map(p => p.hash) : [],
-      proposed: !!own && (rm => proposal.proposals(rm.readRecent(), rm.trust))(c.room.open(me.code)).some(p => p.hash === own) };
+    return { ...ev, pending: pendingOf(me, ps), callNames: plan.length < 300 ? named(ps, callOf([ti, modelInput(input)])).map(p => p.hash) : [] };
   });
 }
 
@@ -442,9 +431,100 @@ function prompt(input: ConsentIn, me: Identity) {
     live: !st.review && !!st.note && isPending(me, st.note.hash) }));
 }
 
+// ---------- a room plan edit (lib/consent/edit.ts) ----------
+/** A line the module appends to this run's plan_mode attachment (shim mode: subHuman.attach). */
+let attachOut = '';
+
+/** lib/plans.ts put's answer as the edit reducer reads it; a link that did not answer is offline. */
+function putOutcome(me: Identity, e: Extract<edit.EditEffect, { do: 'put' }>): edit.PutOutcome {
+  let r: plans.Put;
+  try { r = plans.request(me.code, { plan: e.plan, base: e.base, text: e.text, summary: e.summary }, me.name); } catch (err) {
+    if (err instanceof c.room.RoomError) return { kind: err.code === 'OFFLINE' ? 'offline' : 'refused', why: err.message };
+    throw err;
+  }
+  if (r.ok) return { kind: 'stored', version: r.version.version, ...(r.unchanged ? { unchanged: true } : {}) };
+  if (r.conflict) return { kind: 'conflict', version: r.conflict.version.version, who: plans.who(r.conflict.version), summary: r.conflict.version.summary, text: r.conflict.text };
+  return { kind: 'refused', why: r.error };
+}
+
+/** The seat's edit, reduce one event, run the effects (a put's answer reduced in turn), store the edit, write the say.
+ * Returns whether it said anything (Stop and a prompt then skip the review's step). */
+function editStep(input: ConsentIn, me: Identity, ev: edit.EditEvent): boolean {
+  const start = proposal.readEdit(me);
+  let cur = edit.reduce(start, ev);
+  let state = cur.edit;
+  let say = cur.say;
+  const queue: edit.EditEffect[] = [...cur.effects];
+  for (let e = queue.shift(); e; e = queue.shift()) {
+    if (e.do === 'save') proposal.writeEdit(me, e.edit);
+    else if (e.do === 'restorePlan') proposal.restorePlan({ phase: 'exiting', file: e.file, backup: e.backup, restored: false });
+    else if (e.do === 'seed') {
+      const base = e.base ? (r => r.fold(r.readRecent()))(c.room.open(me.code)).plans.get(e.plan)?.versions.find(v => v.version === e.base) : undefined;
+      writeFileAtomic(e.file, edit.seed(me.code, e.plan, e.base, base ? plans.textOf(me.code, base) : null));
+    } else if (e.do === 'put') {
+      cur = edit.reduce(state, { type: 'put', outcome: putOutcome(me, e) });
+      state = cur.edit;
+      say = cur.say;
+      queue.push(...cur.effects);
+    }
+  }
+  if (JSON.stringify(state) !== JSON.stringify(start)) { if (state) proposal.writeEdit(me, state); else proposal.clearEdit(me); }
+  if (!say) return false;
+  const event = String(input.hook_event_name);
+  switch (say.to) {
+    case 'context': c.context(event, say.text); break;
+    case 'deny': c.deny(say.text); break;
+    case 'allow': c.pre('allow', say.text); break;
+    case 'permit': c.out(ccEnv.leavePlanMode(say.mode)); break;
+    case 'attach': if (event === ccEnv.PLAN_ATTACHMENT_EVENT) attachOut = say.text; else c.context(event, say.text); break;
+  }
+  return true;
+}
+
+/** The plan file of a plan_mode attachment (the module's PlanAttachment payload) and what it holds. */
+function attachedPlan(input: ConsentIn): { file: string | null; text: string | null } {
+  const file = typeof input.plan_file_path === 'string' && input.plan_file_path ? input.plan_file_path : null;
+  let text: string | null = null;
+  if (file) { try { text = fs.readFileSync(file, 'utf8'); } catch { /* none yet */ } }
+  return { file, text };
+}
+
+/** An edit open in this session (none while a review is: the plan tool refuses an edit then). One left longer than
+ * REVIEW_STALE_MS is dropped here, its plan file restored. */
+function openEdit(me: Identity): PlanEdit | null {
+  const e = proposal.readEdit(me);
+  if (!e || proposal.readReview(me)) return null;
+  if (Date.now() - (Number(e.at) || 0) > config.REVIEW_STALE_MS) {
+    if (e.file && !e.restored) proposal.restorePlan({ phase: 'exiting', file: e.file, backup: typeof e.backup === 'string' ? e.backup : null, restored: false });
+    proposal.clearEdit(me);
+    return null;
+  }
+  return e;
+}
+
+/** The edit's events, while one is open: true when the edit took this event (plan mode is the edit's). */
+function routeEdit(input: ConsentIn, me: Identity): boolean {
+  const ev = input.hook_event_name, tool = input.tool_name;
+  if (!openEdit(me)) return false;
+  if (ev === ccEnv.PLAN_ATTACHMENT_EVENT) return editStep(input, me, { type: 'attach', plan: attachedPlan(input) }), true;
+  if (tool === 'EnterPlanMode' && ev === 'PreToolUse') return editStep(input, me, { type: 'enter', mode: modeAtEnter(input) }), true;
+  if (tool === 'EnterPlanMode' && ev === 'PostToolUse') return editStep(input, me, { type: 'attach', plan: planOf(input) }), true;
+  if (tool === 'ExitPlanMode' && ev === 'PreToolUse') {
+    const ti: ConsentToolInput = input.tool_input ?? {};
+    return editStep(input, me, { type: 'exit', plan: planOf(input), text: typeof ti.plan === 'string' ? ti.plan : null }), true;
+  }
+  if (tool === 'ExitPlanMode' && ev === 'PermissionRequest') return editStep(input, me, { type: 'permission' }), true;
+  if (tool === 'ExitPlanMode' && ev === 'PostToolUse') return editStep(input, me, { type: 'exited' }), true;
+  if (tool === 'ExitPlanMode' && ev === 'PostToolUseFailure') return true; // a dialog refused: an edit shows none
+  if (ev === 'Stop') return editStep(input, me, { type: 'stop', mode: input.permission_mode, active: !!input.stop_hook_active });
+  if (ev === 'UserPromptSubmit') return editStep(input, me, { type: 'prompt', mode: input.permission_mode });
+  return false;
+}
+
 /** Every event consent handles, for one hook input; an answer not recorded is told to the person (systemMessage). */
 function dispatch(input: ConsentIn): void {
   unsent = [];
+  attachOut = '';
   const r = c.capture(() => route(input));
   const note = unsent.length ? { systemMessage: `sub-human: ${unsent.join(' ')}` } : null;
   r.outputs.forEach((o, i) => c.out(note && i === 0 ? { ...o, ...note } : o));
@@ -457,6 +537,8 @@ function route(input: ConsentIn) {
   if (!me) return;
   const ev = input.hook_event_name, tool = input.tool_name;
   const locked = (fn: (input: ConsentIn, me: Identity) => unknown) => proposal.withReview(me, () => fn(input, me));
+  if (proposal.withReview(me, () => routeEdit(input, me))) return undefined;
+  if (ev === ccEnv.PLAN_ATTACHMENT_EVENT) return undefined;
   if (tool === 'AskUserQuestion' && ev === 'PreToolUse') return locked(preAsk);
   if (tool === 'AskUserQuestion' && ev === 'PostToolUse') return locked(postAsk);
   if (tool === 'EnterPlanMode' && ev === 'PreToolUse') return locked(preEnter);
@@ -474,13 +556,13 @@ function route(input: ConsentIn) {
 /** The UserPromptSubmit handler (hooks/handlers/prompt.ts runs it after at-room.ts's, in one process). */
 const onPrompt = (input: ConsentIn): void => { dispatch({ ...input, hook_event_name: 'UserPromptSubmit' }); };
 
-/** True when this session's seat has a review on record or a note consent must still offer (review.openOf), so the
- * module still runs node at the next turn end or prompt; false with no seat. noteWaits: any note of the seat waits for
+/** True when this session's seat has a room plan edit open, a review on record or a note consent must still offer
+ * (review.openOf), so the module still runs node at the next turn end, prompt or plan_mode attachment; false with no seat. noteWaits: any note of the seat waits for
  * its card (a room post is refused meanwhile). */
 function reviewOpen(input: ConsentIn): boolean {
   const me = c.whoami(input);
   if (!me) return false;
-  return review.openOf({ review: proposal.readReview(me), note: proposal.readConfirm(me) });
+  return !!proposal.readEdit(me) || review.openOf({ review: proposal.readReview(me), note: proposal.readConfirm(me) });
 }
 function noteWaits(input: ConsentIn): boolean {
   const me = c.whoami(input);
@@ -498,7 +580,7 @@ function shimDispatch(input: ConsentIn) {
   const outputs = r.outputs.filter(Boolean);
   const last = outputs.pop() ?? {};
   for (const o of outputs) process.stdout.write(JSON.stringify(o) + '\n');
-  c.out({ ...last, subHuman: { reviewOpen: reviewOpen(input), noteWaits: noteWaits(input) } });
+  c.out({ ...last, subHuman: { reviewOpen: reviewOpen(input), noteWaits: noteWaits(input), ...(attachOut ? { attach: attachOut } : {}) } });
 }
 
 /** Run by the hooks module (mod/core/shim.ts SHIM_MODE). */

@@ -18,7 +18,8 @@
  *       (and is not decided); a decision on a proposal I am in; a `task` assigning me (owner me) that someone else
  *       asked for (its req is not mine); an objection on my own proposal.
  *     member notice: another person's say (not to me, no @me), another member's join or leave (not the room
- *       Claude's); and what asks the person, not the model: the room line that the log waits to split
+ *       Claude's), another member's new version of a room plan (a `plan` entry: never a wake; its sign-off request,
+ *       a proposal, wakes the approvers as any proposal does); and what asks the person, not the model: the room line that the log waits to split
  *       (restart the old sessions), a decision on a proposal I am in that needs no wake, another approver's objection
  *       on a proposal I approve. Everything else that is not mine is context.
  *     the room's Claude (role claude) wake: to=claude only (a person's leading @claude tag; an "@claude" inside the
@@ -106,10 +107,11 @@ const chat = (me: LaneViewer, e: Entry): boolean => e.via === 'human' && e.kind 
 
 /**
  * A pulled entry the person must see, though their Claude needs no wake: the outcome of a proposal they are in (a
- * decision their own answer completed, or an objected one they did not write) and another approver's objection on a
- * proposal they approve. Live, these reached only the model as context.
+ * decision their own answer completed, or an objected one they did not write), another approver's objection on a
+ * proposal they approve, and a new version of a room plan. Live, these reached only the model as context.
  */
 function personSees(name: string, e: Entry, entries: readonly Readonly<Entry>[] | undefined, trust: Trust): boolean {
+  if (e.kind === 'plan') return true; // a new version of a room plan: every member sees it, nobody is woken
   if (!entries || !e.proposal_hash) return false;
   if (e.kind !== 'decision' && e.kind !== 'objection') return false;
   const p = proposal(e.proposal_hash, entries, trust);

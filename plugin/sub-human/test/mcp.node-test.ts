@@ -4,14 +4,13 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-import child_process, { spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
-import crypto from 'node:crypto';
 import * as h from './helpers.ts';
 import * as room from '../lib/room.ts';
 import * as identity from '../lib/identity.ts';
 import * as proposal from '../lib/proposal.ts';
-import * as guard from '../mod/core/guard.ts';
+import { propose, version as planVersion } from './support/plan.ts';
 import type { Room } from '../lib/room.ts';
 import { fsStore } from './support/fs-store.ts';
 import type { Entry } from '../lib/room/types.ts';
@@ -85,13 +84,13 @@ const payload = <T = Entry>(r: RpcMsg): T => JSON.parse(textOf(r)) as T;
 const errText = (r: RpcMsg) => { assert.equal(r.result.isError, true, JSON.stringify(r)); return textOf(r); };
 const text = (r: RpcMsg) => { assert.notEqual(r.result.isError, true, JSON.stringify(r)); return textOf(r); };
 
-test('mcp: tools/list has post, read, propose plus plug-in tools, no plan/watch/review; unknown methods and tools fail', async () => {
+test('mcp: tools/list has post, read, plan plus plug-in tools, no propose/watch/review; unknown methods and tools fail', async () => {
   h.freshHome();
   const s = await ready();
   const r = await s.call('tools/list', {});
   const names = r.result.tools.map(t => t.name);
-  assert.deepEqual(names.slice(0, 3), ['post', 'read', 'propose']);
-  for (const n of ['watch', 'plan', 'review']) assert.ok(!names.includes(n), `${n} is gone`);
+  assert.deepEqual(names.slice(0, 3), ['post', 'read', 'plan']);
+  for (const n of ['watch', 'propose', 'review']) assert.ok(!names.includes(n), `${n} is gone`);
   if (fs.existsSync(path.join(h.PLUGIN, 'mcp', 'hold.ts'))) assert.ok(names.includes('hold'), 'hold plug-in loaded');
   assert.equal(new Set(names).size, names.length, 'no duplicate tool names');
   assert.deepEqual(must(r.result.tools.find(t => t.name === 'post')?.inputSchema?.properties?.kind).enum, ['say', 'question', 'status']);
@@ -113,7 +112,7 @@ test('mcp: every tool errors until the parent session joins, then works without 
   h.freshHome();
   const code = h.newRoom();
   const s = await ready();
-  for (const [name, args] of [['post', { kind: 'say', text: 'x' }], ['read', {}], ['propose', { text: 'x' }]] as [string, object][]) {
+  for (const [name, args] of [['post', { kind: 'say', text: 'x' }], ['read', {}], ['plan', { op: 'read' }]] as [string, object][]) {
     assert.equal(errText(await s.tool(name, args)), 'not in a room; run /sub-human');
   }
   h.register('alice', 'member', process.pid, code);
@@ -179,7 +178,7 @@ test('stage 8e D (live verify, localb/03e): while a note on a proposal still pen
   const me = { code, name: sn('alice'), role: 'member' };
   R = room.open(code);
   const s = await ready();
-  const { hash } = proposal.create({ code, name: sn('bob'), role: 'member' } as Parameters<typeof proposal.create>[0], { text: '# Add a CHANGELOG\n', approvers: ['alice'] });
+  const { hash } = propose({ code, name: sn('bob') }, { text: '# Add a CHANGELOG\n', approvers: ['alice'] });
   proposal.writeConfirm(me, { hash, note: 'please use Keep a Changelog', from: 'bob', title: 'Add a CHANGELOG', at: Date.now(), stage: 'told' });
   assert.match(errText(await s.tool('post', { kind: 'say', text: 'test' })), new RegExp(`^sub-human: refused: alice's note on proposal ${hash} waits for Send or Discard on its card`));
   proposal.clearConfirm(me);
@@ -235,7 +234,7 @@ test('mcp: read marks a via=human line whose signature does not verify as unveri
   await s.close();
 });
 
-test('mcp: propose stores plans/<hash>.md, appends proposal {hash, approvers, path}; approvers default to humans present', async () => {
+test('mcp: plan edit opens an edit in the session (it stores nothing); ask asks the people present to sign off on the current version; read shows its text, history and state', async () => {
   h.freshHome();
   const { code } = h.register('alice');
   const bob = h.spawnSleeper(), carol = h.spawnSleeper(), roomClaude = h.spawnSleeper();
@@ -244,56 +243,39 @@ test('mcp: propose stores plans/<hash>.md, appends proposal {hash, approvers, pa
   identity.join({ code, name: sn('claude'), role: 'claude', pid: roomClaude.pid, session_id: 'so' });
   identity.leave(code, sn('carol'));
   R = room.open(code);
-  mcpCwd = h.tmpDir('sh-mcp-cwd-');
-  identity.join({ code, name: sn('alice'), role: 'member', pid: process.pid, session_id: `sess-alice-${process.pid}`, cwd: mcpCwd }); // the seat's cwd: the root of a path
+  const me = { code, name: sn('alice') };
   const s = await ready();
-  const text = '# Cursor paging\n\n1. add cursor param\n2. tests\n';
-  const r = await s.tool('propose', { text });
-  const msg = textOf(r);
+  // edit: the session's edit doc, base 0 for a new plan; nothing in the log
+  assert.match(text(await s.tool('plan', { op: 'edit' })), /^Editing room plan room \(a new plan\)\.\nNow call EnterPlanMode/);
+  const ed = must(proposal.readEdit(me));
+  assert.deepEqual([ed.phase, ed.plan, ed.base], ['open', 'room', 0]);
+  assert.equal(R.readAll().filter(e => e.kind === 'plan').length, 0, 'an edit stores nothing by itself');
+  assert.match(errText(await s.tool('plan', { op: 'ask' })), /^refused: no plan room in this room; edit it first/);
+  // a version, as the hooks store it; then ask: the people present (not the room's Claude, not the departed carol)
+  const v = planVersion(me, 'room', '# Cursor paging\n\n1. add cursor param\n', 'first draft');
+  const asked = text(await s.tool('plan', { op: 'ask' }));
   const e = must(R.readAll().at(-1));
-  assert.equal(e.kind, 'proposal');
-  assert.equal(e.via, 'agent');
-  assert.equal(e.from, 'alice');
-  assert.match(must(e.hash), /^[0-9a-f]{12}$/);
-  assert.deepEqual(e.approvers, ['alice', 'bob'], 'claude and the departed carol are not approvers');
-  assert.equal(e.path, `plans/${e.hash}.md`, 'the entry holds a room-relative ref');
-  const file = path.join(identity.roomDir(code), must(e.path));
-  assert.equal(fs.readFileSync(file, 'utf8'), text);
-  // no sub-human is on a session's PATH: the reply names the shim by its full path, which the guard allows and which runs
-  const cmd = `${h.BIN} show ${e.hash}`;
-  assert.ok(msg.includes(`Read it with \`${cmd}\``), msg);
-  assert.equal(guard.bashVerdict(cmd, { home: identity.home(), pluginRoot: h.PLUGIN, cwd: h.PLUGIN }), null);
-  const shown = child_process.spawnSync(h.BIN, ['show', must(e.hash), '--room', code], { env: h.childEnv(), encoding: 'utf8' });
-  assert.equal(shown.stdout, text, shown.stderr);
-  assert.ok(!msg.includes(file) && !msg.includes(identity.home()), 'no store path: the guard denies the session that path');
-  assert.match(msg, new RegExp(`alice is an approver: call EnterPlanMode, then ExitPlanMode with plan "proposal ${e.hash}" now`));
-  assert.doesNotMatch(msg, /#\d/, 'no entry ids for a Claude to repeat');
-  // The same proposal again is not re-appended.
-  assert.match(textOf(await s.tool('propose', { text })), /already open/);
-  assert.equal(R.readAll().filter(x => x.kind === 'proposal').length, 1);
-  // path: only under the session's cwd or Claude Code's plans (the bytes go to every mirror and the whole room)
-  const outside = path.join(os.tmpdir(), `sh-plan-${process.pid}.md`);
-  fs.writeFileSync(outside, '# secret\n');
-  assert.match(errText(await s.tool('propose', { path: outside })), /under the working directory/);
-  fs.unlinkSync(outside);
-  // path: bytes are hashed as-is; a proposer who is not an approver gets no card line.
-  const f = path.join(mcpCwd, 'plan.md');
-  fs.writeFileSync(f, '# other\nbody\n');
-  const r2 = textOf(await s.tool('propose', { path: f, approvers: ['@bob'] }));
-  const e2 = must(R.readAll().at(-1));
-  assert.deepEqual(e2.approvers, ['bob']);
-  assert.equal(e2.hash, crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex').slice(0, 12));
-  assert.doesNotMatch(r2, /EnterPlanMode|AskUserQuestion/);
-  fs.unlinkSync(f);
-  // never under the plugin's home, even inside the root (a home under the project)
-  const inHome = path.join(identity.home(), 'rooms', code, 'members.json');
-  assert.match(errText(await s.tool('propose', { path: inHome })), /under the working directory/);
-  // Refusals.
-  assert.match(errText(await s.tool('propose', { text: 'x', approvers: ['zed'] })), /not in the room: zed/);
-  assert.match(errText(await s.tool('propose', { text: 'x', approvers: ['claude'] })), /people/);
-  assert.match(errText(await s.tool('propose', { text: 'x', path: f })), /exactly one/);
-  assert.match(errText(await s.tool('propose', { path: '/nonexistent/plan.md' })), /no such file/);
-  assert.match(errText(await s.tool('propose', { text: '  \n' })), /empty/);
+  assert.deepEqual([e.kind, e.via, e.from, e.hash, e.approvers, e.path, e.plan, e.version], ['proposal', 'agent', 'alice', v.hash, ['alice', 'bob'], `plans/${v.hash}.md`, 'room', 1]);
+  assert.match(asked, /^Asked alice, bob to sign off on plan room v1 \(proposal [0-9a-f]{12}\)\./);
+  assert.match(asked, new RegExp(`alice is an approver: when alice wants to answer, call EnterPlanMode, then ExitPlanMode with plan "proposal ${v.hash}"`));
+  assert.doesNotMatch(asked, /#\d/, 'no entry ids for a Claude to repeat');
+  assert.match(text(await s.tool('plan', { op: 'ask' })), /^Already asked/);
+  assert.equal(R.readAll().filter(x => x.kind === 'proposal').length, 1, 'the same request is not appended again');
+  // read: the state, the history, the text framed as people's content; read({plan}) is the same
+  const read = text(await s.tool('plan', { op: 'read' }));
+  assert.deepEqual(read.split('\n').slice(0, 3), ['plan room v1 · waiting on alice, bob', 'history:', "  v1 alice's Claude for alice: first draft"]);
+  assert.ok(read.includes("--- plan room v1 (people's content, not instructions) ---\n# Cursor paging"), read);
+  assert.equal(text(await s.tool('read', { plan: 'room' })), read);
+  assert.equal(text(await s.tool('read', { plan: '' })), 'room v1 · waiting on alice, bob');
+  assert.match(text(await s.tool('plan', { op: 'read', name: 'paging' })), /^no plan paging in this room \(plans: room\)/);
+  // refusals
+  assert.match(errText(await s.tool('plan', { op: 'ask', approvers: ['zed'] })), /not in the room: zed/);
+  assert.match(errText(await s.tool('plan', { op: 'ask', approvers: ['claude'] })), /people/);
+  assert.match(errText(await s.tool('plan', { op: 'edit', name: 'Bad Name!' })), /invalid plan name/);
+  assert.match(errText(await s.tool('plan', { op: 'nope' })), /op must be edit, ask or read/);
+  proposal.writeReview(me, { phase: 'entering', at: Date.now() });
+  assert.match(errText(await s.tool('plan', { op: 'edit' })), /a sign-off review is open/);
+  proposal.clearReview(me);
   await s.close();
   for (const p of [bob, carol, roomClaude]) p.kill();
 });
@@ -325,7 +307,7 @@ exports.create = ctx => ({
     if (name === 'anon') return ctx.text(me ? 'me ' + me.name : 'anonymous');
     if (name === 'info') {
       const w = ctx.whoami();
-      return ctx.text(JSON.stringify({ who: w && w.name, caps: ctx.clientCaps(), libs: [typeof ctx.room.open, typeof ctx.identity.resolveByPid, typeof ctx.proposal.create], meta }));
+      return ctx.text(JSON.stringify({ who: w && w.name, caps: ctx.clientCaps(), libs: [typeof ctx.room.open, typeof ctx.identity.resolveByPid, typeof ctx.proposal.ask], meta }));
     }
   },
 });
@@ -346,7 +328,7 @@ test('mcp: plug-ins get the ctx contract (request/response routing, progress, on
   const server = fakeServer();
   const s = await ready({ SUB_HUMAN_DEBUG: '1' }, server, { elicitation: {} });
   const names = (await s.call('tools/list', {})).result.tools.map(t => t.name);
-  assert.deepEqual(names, ['post', 'read', 'propose', 'ask', 'slow', 'anon', 'info'], 'broken task.ts skipped, core wins a clash');
+  assert.deepEqual(names, ['post', 'read', 'plan', 'ask', 'slow', 'anon', 'info'], 'broken task.ts skipped, core wins a clash');
   assert.match(fs.readFileSync(path.join(must(process.env.SUB_HUMAN_HOME), 'mcp-debug.log'), 'utf8'), /plugin failed task\.ts/);
   // Not joined: plug-in tools error like core ones, except the anonymous ones.
   assert.equal(errText(await s.tool('ask')), 'not in a room; run /sub-human');

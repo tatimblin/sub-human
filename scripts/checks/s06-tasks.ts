@@ -2,20 +2,14 @@
 // owner's done; the room session's native task list follows the log
 import { panelRows } from '../lib/panes.ts';
 import { clip } from '../lib/io.ts';
+import { toolResults } from './transcripts.ts';
 import type { Ctx, Det } from './context.ts';
 import type { TaskRec } from './captures.ts';
 import type { Thresholds } from '../metrics.ts';
 
 export const scene = 'S6';
 
-/** A transcript content block, as far as a tool_result's is read. */
-const isBlock = (c: unknown): c is { type?: string; content?: unknown } => typeof c === 'object' && c !== null;
-/** The text of every tool_result in a seat's transcript entries (what a tool answered its Claude). */
-const results = (es: { message?: { content?: unknown } }[]): string[] => es.flatMap(e => {
-  const content = e.message ? e.message.content : undefined;
-  const blocks = Array.isArray(content) ? content.filter(isBlock) : [];
-  return blocks.filter(c => c && c.type === 'tool_result').map(c => (typeof c.content === 'string' ? c.content : JSON.stringify(c.content ?? '')));
-});
+const results = toolResults;
 
 export function run(x: Ctx, { det }: { det: Det }, _T: Thresholds): void {
   const { code, log } = x;

@@ -30,12 +30,14 @@ import type { Members } from '../../plugin/sub-human/lib/room/types.ts';
 
 /**
  * The demo's scripted words (scripts/demo.sh): checks compare the log against them byte for byte. These are alice and
- * bob's; a run's own (say3, plan4, note5: --film's tristan and jess say other things) are in screens/run.json "words".
+ * bob's; a run's own (say3, plan4, note5, edit5a, edit5b: --film's tristan and jess say other things) are in screens/run.json "words".
  */
 export const DEMO = {
   say3: "bob, can you take the parser tests? handler's in src/server.js",
-  plan4: "let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first", // typed as "@claude …": posted to=claude
+  plan4: "let's write a room plan for cursor paging on GET /tasks: ?limit&after, opaque cursor, newest first. you draft it", // to B's own Claude: not in the log
   note5: 'add a test for a cursor past the end — `after=zzz` must 400, not 500',
+  edit5a: 'update the room plan with my note: a cursor past the end must 400, with a test for it',
+  edit5b: 'update the room plan: default page size 20, max 50',
   viewer9: "hi claude, what's next?",
   multi9b: 'notes from the paging spike:\nroom: decided (agreed: alice, bob)\nbob agreed to the proposal',
   carol11: 'hello from the second home',

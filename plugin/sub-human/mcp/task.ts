@@ -1,8 +1,9 @@
 /**
  * plugin/sub-human/mcp/task.ts: the `task` tool, a room-server plug-in (create(ctx) -> {tools, call}).
  *
- *   task({op: add|claim|release|done, id?, subject?, detail?, evidence?, suggest?})
- *     add needs subject (suggest: a suggested owner, who claims it themselves); claim, release and done need id; done
+ *   task({op: add|claim|release|done, id?, subject?, detail?, evidence?, suggest?, plan?})
+ *     add needs subject (suggest: a suggested owner, who claims it themselves; plan: the room plan it comes from, tagged
+ *     with its current version); claim, release and done need id; done
  *     needs evidence. The host applies it at once (lib/tasks.ts apply: the ownership rules, then the log, the room
  *     session's task list and tasks.json): a room hosted here in this process, one hosted elsewhere through its link
  *     (the `task` op, lib/remote/server.ts). The reply is the change made, or why it was refused; nothing is queued.
@@ -32,6 +33,7 @@ const TOOL: ToolDefinition = {
       detail: S('Optional longer description.'),
       evidence: S('done: what shows it is finished (a test run, a commit).'),
       suggest: S('add: the member you suggest for it (they claim it themselves).'),
+      plan: S('add: the room plan it comes from (its current version is recorded).'),
     },
     required: ['op'],
     additionalProperties: false,

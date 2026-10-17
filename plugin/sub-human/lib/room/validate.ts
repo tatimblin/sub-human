@@ -6,8 +6,11 @@
  *
  * validate() throws RoomError INVALID with a message for the model. The tables (AGENT_KINDS, HUMAN_KINDS, ...) are
  * the source of lib/room/types.ts Kind, TaskOp and Via.
- * Rules: via "agent" writes say question status proposal task_req; via "human" say signoff objection proposal;
- * via "system" decision member_joined member_left task status, and only with {system: true}.
+ * Rules: via "agent" writes say question status proposal task_req plan; via "human" say signoff objection proposal;
+ * via "system" decision member_joined member_left task status, and only with {system: true}. A `plan` entry (via
+ * agent, from the editing seat) is written only by the host's plan.put (lib/plans.ts), which passes {system: true}:
+ * an append from anywhere else (a link's append op, the post tool) is refused, so every version passed its
+ * compare-and-swap.
  * Size caps (lib/config.ts): text <= ENTRY_TEXT_MAX_BYTES UTF-8 bytes, refs <= ENTRY_REFS_MAX, approvers and
  * blockedBy <= ENTRY_LIST_MAX, any other string field <= ENTRY_STR_MAX (JS .length) (narrower caps below win).
  * member_joined may carry pubkey (the seat's Ed25519 SPKI PEM, which pins it: lib/room/envelope.ts) and machine.
@@ -19,12 +22,12 @@ import type { Reason } from '../reasons.ts';
 import { markCoded } from '../errors.ts';
 import type { WireCode } from '../remote/types-core.ts';
 import { ENTRY_TEXT_MAX_BYTES, ENTRY_REFS_MAX, ENTRY_STR_MAX, ENTRY_LIST_MAX } from '../config.ts';
-import type { Entry, EntryInput, EntryOf, Kind, KnownEntry, KnownKind, TaskFields, TaskOp, Validated, ValidateOpts, Via } from './types.ts';
+import type { Entry, EntryInput, EntryOf, Kind, KnownEntry, KnownKind, PlanFields, TaskFields, TaskOp, Validated, ValidateOpts, Via } from './types.ts';
 import type { EntryId, TaskId } from '../brand.ts';
 
 // The tables are the source of their unions (lib/room/types.ts Via, Kind, TaskOp), on lib/reasons.ts's
 // pattern: a word added here is a member there, and every switch over it must handle it.
-const AGENT_KINDS = ['say', 'question', 'status', 'proposal', 'task_req'] as const;
+const AGENT_KINDS = ['say', 'question', 'status', 'proposal', 'task_req', 'plan'] as const;
 const HUMAN_KINDS = ['say', 'signoff', 'objection', 'proposal'] as const;
 const SYSTEM_ONLY_KINDS = ['decision', 'member_joined', 'member_left', 'task'] as const;
 const SYSTEM_KINDS: readonly ["decision", "member_joined", "member_left", "task", "status"] = [...SYSTEM_ONLY_KINDS, 'status'] as const;
@@ -40,6 +43,10 @@ const SYSTEM_ONLY_SET: ReadonlySet<Kind> = new Set(SYSTEM_ONLY_KINDS);
 const isVia = (v: unknown): v is Via => VIA_SET.has(v);
 const isKind = (k: unknown): k is Kind => KIND_SET.has(k);
 const isTaskOp = (op: unknown): op is TaskOp => TASK_OP_SET.has(op);
+/** Kinds via agent that only the host's own code writes ({system: true}): a plan version (lib/plans.ts put). */
+const HOST_PUT_KINDS: ReadonlySet<Kind> = new Set(['plan']);
+/** A room plan's name (lib/plans.ts): a short slug. */
+const PLAN_NAME_RE: RegExp = /^[a-z0-9][a-z0-9-]{0,23}$/;
 
 /**
  * A log line by its kind, for a reader that branches over several: the entry itself (no copy) as a KnownEntry, whose
@@ -55,8 +62,9 @@ const isKindOf = <K extends KnownKind, E extends Entry>(e: E | null | undefined,
 /** a hash a caller may name: 6-64 hex (a proposal's is 12, lib/text.ts HASH_RE; older logs hold longer ones) */
 const HASH_ARG_RE = /^[0-9a-f]{6,64}$/;
 const TASK_FIELDS = ['op', 'task_id', 'subject', 'detail', 'evidence', 'owner', 'status', 'req', 'blockedBy', 'suggest'];
+const PLAN_FIELDS = ['plan', 'version', 'base', 'for', 'summary'];
 const ENTRY_FIELDS = new Set(['kind', 'text', 'to', 'refs', 'hash', 'approvers', 'same', 'path', 'proposal_hash', 'normalized',
-  'edit_path', 'drafted', 'id', 'by', 'pubkey', 'machine', ...TASK_FIELDS]);
+  'edit_path', 'drafted', 'id', 'by', 'pubkey', 'machine', ...TASK_FIELDS, ...PLAN_FIELDS]);
 const TASK_KINDS: ReadonlySet<unknown> = new Set(['task_req', 'task']);
 const PEM_RE = /^-----BEGIN PUBLIC KEY-----\n[A-Za-z0-9+/=\n]{1,512}-----END PUBLIC KEY-----\n$/;
 
@@ -96,6 +104,7 @@ function validate(entry: EntryInput, opts: ValidateOpts): Validated {
   if (entry.by !== undefined && !(kind === 'task_req' && entry.by === opts.from)) bad('field "by" is not settable by callers (task_req stamps it)');
   for (const k of TASK_FIELDS) if (fields[k] !== undefined && !isTask) bad(`field "${k}" is only for task_req and task entries`);
   const task = isTask ? taskFields(kind, entry) : null;
+  const plan = planFields(kind, entry);
   const text = entry.text === undefined && task ? taskText(kind, task) : entry.text;
   const bareAnswer = entry.text === undefined && (kind === 'signoff' || (kind === 'objection' && via === 'human'));
   if (typeof opts.from !== 'string' || !NAME_RE.test(opts.from)) bad(`invalid from "${opts.from}"`);
@@ -108,6 +117,7 @@ function validate(entry: EntryInput, opts: ValidateOpts): Validated {
   } else if (!KINDS_BY_VIA[via].includes(kind)) {
     bad(`kind "${kind}" is not valid via ${via}. Use one of: ${KINDS_BY_VIA[via].join(', ')}`);
   }
+  if (HOST_PUT_KINDS.has(kind) && opts.system !== true) bad(`${kind} is written only by the host's plan tool (a version passes its compare-and-swap there)`);
   if (!bareAnswer) {
     if (typeof text !== 'string') bad('text must be a string');
     if (!text.trim()) bad('text is empty');
@@ -137,8 +147,8 @@ function validate(entry: EntryInput, opts: ValidateOpts): Validated {
   for (const [k, v] of [['edit_path', edit_path], ['path', ppath]]) {
     if (v !== undefined && (typeof v !== 'string' || !v || v.length > 1024)) bad(`invalid ${k}`);
   }
-  if (kind === 'proposal' && !hash) bad('proposal requires hash');
-  if (kind !== 'proposal' && (hash !== undefined || ppath !== undefined)) bad('hash and path are only for proposals');
+  if ((kind === 'proposal' || kind === 'plan') && !hash) bad(`${kind} requires hash`);
+  if (kind !== 'proposal' && kind !== 'plan' && (hash !== undefined || ppath !== undefined)) bad('hash and path are only for proposals and plans');
   if (kind === 'signoff' && !proposal_hash) bad('signoff requires proposal_hash');
   if (kind === 'objection' && via === 'human' && !proposal_hash) bad('a human objection requires proposal_hash');
   if (kind === 'decision' && !proposal_hash) bad('decision requires proposal_hash');
@@ -146,7 +156,30 @@ function validate(entry: EntryInput, opts: ValidateOpts): Validated {
   if (kind !== 'member_joined' && machine !== undefined) bad('machine is only for member_joined');
   if (pubkey !== undefined && (typeof pubkey !== 'string' || !PEM_RE.test(pubkey))) bad('pubkey must be a PEM public key');
   if (machine !== undefined && !isMachineId(machine)) bad('invalid machine id');
-  return { via, kind, text, to, refs, hash, approvers, same, path: ppath, proposal_hash, normalized, edit_path, drafted, task, pubkey, machine };
+  return { via, kind, text, to, refs, hash, approvers, same, path: ppath, proposal_hash, normalized, edit_path, drafted, task, plan, pubkey, machine };
+}
+
+/** A plan's fields, checked: a `plan` entry needs plan, version and base (for and summary optional); a proposal may name
+ * the plan and version it asks about, and a task_req or task the plan version it comes from (both or neither); no
+ * other kind carries any. */
+function planFields(kind: string, entry: EntryInput): PlanFields | null {
+  const fields: Record<string, unknown> = entry; // read by name: each is checked below
+  const has = PLAN_FIELDS.some(k => fields[k] !== undefined);
+  if (!has) { if (kind === 'plan') bad('plan requires plan, version and base'); return null; }
+  if (kind !== 'plan' && kind !== 'proposal' && !TASK_KINDS.has(kind)) bad('plan, version, base, for and summary are only for plans, proposals and tasks');
+  const { plan, version, base, for: who, summary } = entry;
+  if (typeof plan !== 'string' || !PLAN_NAME_RE.test(plan)) bad(`invalid plan name "${String(plan)}" (a-z, 0-9 and -, up to 24)`);
+  if (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 1) bad('version must be a positive integer');
+  const out: PlanFields = { plan, version };
+  if (kind !== 'plan') {
+    if (base !== undefined || who !== undefined || summary !== undefined) bad('base, for and summary are only for plans');
+    return out;
+  }
+  if (typeof base !== 'number' || !Number.isSafeInteger(base) || base < 0 || base >= version) bad('base must be an earlier version (0: none)');
+  out.base = base;
+  if (who !== undefined) { if (typeof who !== 'string' || !NAME_RE.test(who)) bad(`invalid for "${String(who)}"`); out.for = who; }
+  if (summary !== undefined) { optStr('summary', summary, 300); out.summary = summary; }
+  return out;
 }
 
 /** A proposal's same groups, checked: disjoint groups of 2+ of its approvers, ENTRY_LIST_MAX names in all. */
@@ -217,4 +250,4 @@ function taskText(kind: string, t: TaskFields): string {
 }
 
 export {
-  RoomError, validate, parseEntry, isKindOf, isEntryId, entryId, nextEntryId, isTaskId, taskId, isVia, isKind, isTaskOp, KINDS, AGENT_KINDS, HUMAN_KINDS, SYSTEM_KINDS, SYSTEM_ONLY_KINDS, TASK_OPS, VIAS };
+  RoomError, validate, parseEntry, PLAN_NAME_RE, isKindOf, isEntryId, entryId, nextEntryId, isTaskId, taskId, isVia, isKind, isTaskOp, KINDS, AGENT_KINDS, HUMAN_KINDS, SYSTEM_KINDS, SYSTEM_ONLY_KINDS, TASK_OPS, VIAS };

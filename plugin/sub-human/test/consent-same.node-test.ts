@@ -11,6 +11,7 @@ import * as room from '../lib/room.ts';
 import * as store from '../lib/room/store.ts';
 import * as consent from '../lib/room/consent.ts';
 import * as proposal from '../lib/proposal.ts';
+import { propose } from './support/plan.ts';
 import * as config from '../lib/config.ts';
 import { machineId } from '../lib/home.ts';
 import type { Entry, EntryInput, Member, Trust } from '../lib/room/types.ts';
@@ -95,7 +96,7 @@ test('create: the approvers are grouped by account; an invite\'s seat never merg
     bob: { machine: mid('shared0machine1') },          // two invites from one machine: two people
     carol: { machine: mid('shared0machine1') },
   });
-  const r = proposal.create({ code, name: sn('carol') }, { text: '# Ship v3\n' });
+  const r = propose({ code, name: sn('carol') }, { text: '# Ship v3\n' });
   assert.deepEqual([r.approvers, must(r.entry).same], [['tristan', 'laptop', 'bob', 'carol'], [['tristan', 'laptop']]]);
   assert.equal(proposal.personOf({ account: HOST }), HOST);
   const noAccount: Pick<Member, 'account' | 'machine'> = { machine: HOST };
@@ -117,13 +118,13 @@ test('create: several seats on the host are several people: login seats are the 
     tristan: { machine: HOST, account: HOST, owner: true },
     laptop: { machine: mid('laptop0machine1'), account: HOST },
   });
-  const r = proposal.create({ code, name: sn('alice') }, { text: '# Ship v3\n' });
+  const r = propose({ code, name: sn('alice') }, { text: '# Ship v3\n' });
   assert.deepEqual([r.approvers, must(r.entry).same], [['alice', 'tristan', 'laptop'], [['tristan', 'laptop']]], 'alice stays her own');
   const m = room.open(code).fold().matrix(r.hash);
   assert.deepEqual([m.people, m.missing], [2, ['alice', 'tristan']]);
-  const one = proposal.create({ code, name: sn('alice') }, { text: '# Ship v4\n', approvers: ['alice', 'tristan'] });
+  const one = propose({ code, name: sn('alice') }, { text: '# Ship v4\n', approvers: ['alice', 'tristan'] });
   assert.equal(must(one.entry).same, undefined, 'two plain seats on the host never merge: no group, no field');
-  const two = proposal.create({ code, name: sn('alice') }, { text: '# Ship v5\n', approvers: ['alice', 'laptop'] });
+  const two = propose({ code, name: sn('alice') }, { text: '# Ship v5\n', approvers: ['alice', 'laptop'] });
   assert.equal(must(two.entry).same, undefined, 'a host seat that is not the owner is not grouped with a login seat');
 });
 
@@ -137,7 +138,7 @@ test('create: a room from before the owner field: the earliest-joined host seat 
     tablet: { machine: mid('tablet0machine1'), account: HOST },
     guest: { machine: mid('phone0machine01') },
   });
-  const r = proposal.create({ code, name: sn('alice') }, { text: '# Ship v3\n' });
+  const r = propose({ code, name: sn('alice') }, { text: '# Ship v3\n' });
   assert.deepEqual(must(r.entry).same, [['tristan', 'phone', 'tablet']], 'an invite seat from the same machine stays its own');
 });
 
@@ -160,13 +161,3 @@ test('members.join: the first person\'s seat on the host is the owner, kept acro
   assert.equal(must(store.open(c2).members.read().bob).owner, undefined, 'a person was there first');
 });
 
-test('17: a proposal\'s title drops a numbered-list marker ("1. Add an MIT LICENSE file" is "Add an MIT LICENSE file"), as it drops a heading\'s', t => {
-  const code = seated(t, { alice: { machine: must(machineId()), account: must(machineId()) }, bob: { machine: mid('other0machine1') } });
-  // stage 8e F (live verify, locala/17): markers after a heading's ("# 1. Add X") go too (bob's: the rate limit is per seat)
-  for (const [text, want, name] of [['1. Add an MIT LICENSE file\n2. Link it\n', 'Add an MIT LICENSE file', 'alice'], ['12) Ship v3\n', 'Ship v3', 'alice'], ['## Ship v4\n', 'Ship v4', 'alice'], ['2026 plans\n', '2026 plans', 'alice'],
-    ['# 1. Add X\n', 'Add X', 'bob'], ['## 2) - Add Y\n', 'Add Y', 'bob'], ['> # Z\n', 'Z', 'bob']] as const) {
-    const r = proposal.create({ code, name: sn(name) }, { text });
-    assert.equal(must(r.entry).text, `proposal ${r.hash}: ${want}`, text);
-    assert.equal(proposal.title(code, r.hash), want);
-  }
-});

@@ -36,6 +36,7 @@ import type * as StoreMod from '../../plugin/sub-human/lib/room/store.ts';
 import type * as TextMod from '../../plugin/sub-human/lib/text.ts';
 import type * as BrandsMod from '../../plugin/sub-human/test/support/brands.ts';
 import type * as TwoHomesMod from '../../plugin/sub-human/test/support/two-homes.ts';
+import type * as PlanSupportMod from '../../plugin/sub-human/test/support/plan.ts';
 import type * as HoldMod from '../../plugin/sub-human/mcp/hold.ts';
 import type * as TaskMod from '../../plugin/sub-human/mcp/task.ts';
 import type * as RegisterMod from '../../plugin/sub-human/mod/register.ts';
@@ -66,6 +67,7 @@ export interface PluginLibs {
 export interface PluginTests {
   'support/brands.ts': typeof BrandsMod;
   'support/two-homes.ts': typeof TwoHomesMod;
+  'support/plan.ts': typeof PlanSupportMod;
 }
 
 /** Other plugin modules the scripts load (plugin/sub-human/<key>). */

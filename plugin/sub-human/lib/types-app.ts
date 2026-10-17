@@ -17,7 +17,7 @@ export interface SessionDoc {
   shown?: { ids: number[]; log: { id: number; via: string; at: string }[] };
   review?: Review;
   confirm?: Confirm;
-  pick?: { hash: string | null; at: number };
+  edit?: PlanEdit;
   recheck?: Recheck;
   holds?: Holds;
   blocks?: Record<string, number>;
@@ -62,6 +62,8 @@ export interface TaskReq {
   detail?: string;
   evidence?: string;
   suggest?: string;
+  /** add: the room plan it comes from; the host tags it with that plan's current version */
+  plan?: string;
 }
 /** One task as the log's `task` entries leave it (lib/tasks.ts foldAll): the room task and deleted ones included, with
  * what its native file carries (lib/room/task-files.ts project). */
@@ -116,6 +118,27 @@ export interface Review {
   shownAt?: number;
   /** the person had typed text in the prompt when the plan view opened: their keys may answer it, so a Yes is asked again */
   typing?: boolean;
+}
+/**
+ * members/NAME/session edit: a room plan edit in this seat's session (the plan tool's edit op opens it; the hooks run
+ * it: lib/consent/edit.ts). open: the plan file is (to be) seeded with the base version; stored: the version is in the
+ * room, and one more ExitPlanMode only leaves plan mode.
+ */
+export interface PlanEdit {
+  phase: 'open' | 'stored';
+  plan: string;
+  /** the version the edit started from (0: a new plan); a conflict moves it to the current one */
+  base: number;
+  at: number;
+  /** the person's mode at EnterPlanMode, put back when plan mode is left */
+  mode?: string | undefined;
+  /** the session plan file the edit was seeded into, and what it held before (null: no file) */
+  file?: string;
+  backup?: string | null;
+  restored?: boolean;
+  /** stored: the version it made (unchanged: the same text as the base) */
+  version?: number;
+  unchanged?: boolean;
 }
 /** members/NAME/session recheck: a Yes that came as the plan view opened, recorded only once the person confirms it on
  * the card (lib/consent/review.ts); asked once. */

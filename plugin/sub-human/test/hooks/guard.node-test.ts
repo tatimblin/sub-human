@@ -61,7 +61,7 @@ test('guard table', () => {
     // [tool, input, seated, expected decision]
     ['mcp__plugin_sub-human_room__post', { text: 'hi' }, true, 'allow'],
     ['mcp__plugin_sub-human_room__read', { ids: [1] }, true, 'allow'],
-    ['mcp__plugin_sub-human_room__propose', { text: 'x' }, true, 'allow'],
+    ['mcp__plugin_sub-human_room__plan', { op: 'read' }, true, 'allow'],
     ['mcp__plugin_sub-human_room__post', { text: 'hi' }, false, undefined], // not joined: no opinion
     ['mcp__plugin_sub-human_room__hold', { member: sn('bob') }, true, 'deny'], // main thread: never
     ['mcp__plugin_sub-human_room__task', { op: 'add', subject: 'x' }, true, 'allow'],

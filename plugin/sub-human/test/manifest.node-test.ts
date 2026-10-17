@@ -266,7 +266,7 @@ function rpc(msgs: [string, unknown][]) {
 test('mcp: every tool has a description, documented properties, additionalProperties:false and annotations', async () => {
   const r = await rpc([['initialize', { protocolVersion: '2025-06-18', capabilities: {} }], ['tools/list', {}]]);
   const tools = must(r.get(2)).result.tools;
-  assert.deepEqual(tools.map(t => t.name).sort(), ['hold', 'post', 'propose', 'read', 'task']);
+  assert.deepEqual(tools.map(t => t.name).sort(), ['hold', 'plan', 'post', 'read', 'task']);
   for (const t of tools) {
     assert.ok(typeof t.description === 'string' && t.description.length >= 60, `${t.name}: description`);
     assert.equal(t.inputSchema.type, 'object');
@@ -279,7 +279,7 @@ test('mcp: every tool has a description, documented properties, additionalProper
   const ann = (n: string) => must(must(by[n], n).annotations, `${n}: annotations`);
   assert.equal(ann('read').readOnlyHint, true);
   assert.equal(ann('hold').readOnlyHint, true);
-  for (const n of ['post', 'propose', 'task']) {
+  for (const n of ['post', 'plan', 'task']) {
     assert.equal(ann(n).readOnlyHint, false);
     assert.equal(ann(n).destructiveHint, false);
   }

@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { World, decision, room } from './helpers.ts';
 import type { Identity } from '../../lib/identity.ts';
 import * as proposal from '../../lib/proposal.ts';
+import { propose } from '../support/plan.ts';
 import * as rows from '../../lib/rows.ts';
 import { sn } from '../support/brands.ts';
 import { must } from '../support/must.ts';
@@ -17,7 +18,7 @@ test('consent table: proposal, re-proposal, revise, signoffs, objection after si
   const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep', carol: 'sleep', dave: 'sleep' });
   const me = (name: string): Me => ({ code: w.code, name: sn(name), role: name === 'claude' ? 'claude' : 'member' });
   const human = (from: string, kind: string, hash: string) => w.append({ kind, proposal_hash: hash }, { via: 'human', from });
-  const create = (who: string, text: string, approvers: string[]) => w.lib(() => proposal.create(me(who), { text, approvers }));
+  const create = (who: string, text: string, approvers: string[]) => w.lib(() => propose(me(who), { text, approvers }));
 
   const H1 = create('alice', '# Cursor paging\n\n1. after= cursor\n', ['bob', 'carol']).hash;  // #1
   human('bob', 'signoff', H1);                                                               // #2
@@ -39,7 +40,9 @@ test('consent table: proposal, re-proposal, revise, signoffs, objection after si
     [H3]: { alice: 'decided' },
   };
   const ANSWER: Record<string, string> = { agreed: 'agreed', objected: 'objected', needed: 'answer needed' };
-  const titles: Record<string, string> = { [H1]: 'Cursor paging', [H2]: 'Cursor paging v2', [H3]: 'Rename fetchUser' };
+  // each request is named by its plan version ("plan p2 v1": lib/proposal.ts title)
+  const titles: Record<string, string> = Object.fromEntries([H1, H2, H3].map(h => [h, w.lib(() => proposal.title(w.code, h))]));
+  assert.match(must(titles[H2]), /^plan p\d+ v1$/);
   const people = ['alice', 'bob', 'carol', 'dave'];
   const hashes = [H1, H2, H3];
   const needed = (name: string) => hashes.filter(h => want[h] && want[h][name] === 'needed');
@@ -65,7 +68,7 @@ test('consent table: proposal, re-proposal, revise, signoffs, objection after si
     // stateLine: the open proposals (H1, H2) and my part in each
     const line = w.lib(() => room.open(w.code).stateLine(me(name), entries));
     for (const h of [H1, H2]) {
-      const seg = line.replace(/^room now: /, '').split(/ · (?=proposal |away:|\+)/).find(s => s.startsWith(`proposal ${h.slice(0, 6)}`));
+      const seg = line.replace(/^room now: /, '').split(/ · (?=plan |proposal |away:|\+)/).find(s => s.includes(` ${h.slice(0, 6)} `));
       assert.ok(seg, `${line} has ${h.slice(0, 6)}`);
       const you = (/ · you: (agreed|objected|answer needed|not answered)/.exec(seg) || [])[1] || null;
       const exp = ANSWER[want[h]?.[name] ?? ''] || null;
@@ -104,7 +107,7 @@ test('consent table: proposal, re-proposal, revise, signoffs, objection after si
 test('consent table: a note waiting for the person\'s Send is no answer in any view; Send makes it an objection everywhere', () => {
   const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
   const me = (name: string): Me => ({ code: w.code, name: sn(name), role: name === 'claude' ? 'claude' : 'member' });
-  const H = w.lib(() => proposal.create(me('alice'), { text: '# Rate limiting\n\n1. 100 rps\n', approvers: ['bob'] })).hash;
+  const H = w.lib(() => propose(me('alice'), { text: '# Rate limiting\n\n1. 100 rps\n', approvers: ['bob'] })).hash;
   w.lib(() => proposal.writeConfirm(me('bob'), { hash: H, note: 'open rate limiting', from: 'alice', title: 'Rate limiting', at: Date.now() }));
   const views = () => {
     const entries = w.entries();
@@ -119,7 +122,7 @@ test('consent table: a note waiting for the person\'s Send is no answer in any v
   };
   const before = views();
   assert.deepEqual([before.pending, before.lane, before.you, before.missing], [true, 'wake', 'answer needed', ['bob']]);
-  assert.ok(before.row.startsWith('⚠ your answer needed Rate limiting'), before.row);
+  assert.ok(before.row.startsWith(`⚠ your answer needed ${w.lib(() => proposal.title(w.code, H))}`), before.row);
   // bob's Send on the confirm card (the hooks' card, his answer)
   const pre = w.hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: `objection ${H}` }] } }, { as: 'bob' });
   assert.equal(decision(pre), 'ask');

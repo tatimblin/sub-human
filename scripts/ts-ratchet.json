@@ -38,7 +38,7 @@
     },
     "test": {
       "any": 0,
-      "as": 250,
+      "as": 249,
       "nonNull": 0
     },
     "scripts": {

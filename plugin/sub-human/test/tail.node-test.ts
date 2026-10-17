@@ -615,20 +615,24 @@ test('tail: a room hosted elsewhere: one OFFLINE line when the link goes down, o
   assert.deepEqual(health().slice(4), ['not sent (it waited too long): "hi"']);
 });
 
-test('remindersText: the one a review opens next (the newest unless named), the others listed by short hash and title', () => {
+test('remindersText: the one a review opens next (the oldest unless named), the others listed by short hash and plan', () => {
   h.freshHome();
   const { code } = h.register('alice');
   const me = ident(code, 'alice', 'member');
+  const v = (from: string, hash: string, plan: string, version: number) => inRoom(code, r => r.append({ kind: 'plan', text: `plan ${plan} v${version}`, hash, path: `plans/${hash}.md`,
+    plan, version, base: version - 1, for: from }, { via: 'agent', from, system: true }));
   const p = (from: string, hash: string, title: string) => inRoom(code, r => r.append({ kind: 'proposal', text: `proposal ${hash}: ${title}`, hash, approvers: ['alice'] }, { via: 'agent', from }));
-  p('bob', 'aaaaaaaaaaaa', 'Ship v2 Friday');
-  p('carol', 'cccccccccccc', 'Rate limits');
-  p('bob', 'dddddddddddd', 'Ship v3 Monday');
+  v('bob', 'aaaaaaaaaaaa', 'friday', 1);
+  p('bob', 'aaaaaaaaaaaa', 'plan friday v1');
+  p('carol', 'cccccccccccc', 'Rate limits'); // a request from before plans: named by its title
+  v('bob', 'dddddddddddd', 'monday', 1);
+  p('bob', 'dddddddddddd', 'plan monday v1');
   const text = must(tailLib.remindersText(me, room.open(code)));
-  assert.match(text, /^proposal dddddddddddd still awaits alice's answer/);
-  assert.match(text, /\(2 more await alice's answer: aaaaaa "Ship v2 Friday", cccccc "Rate limits"; the hooks open whichever alice names next, else the newest\.\)$/);
-  // bob's revision of "Ship v3 Monday" retires his earlier one: it is no longer listed
-  p('bob', 'eeeeeeeeeeee', 'Ship v3 Monday');
-  assert.doesNotMatch(must(tailLib.remindersText(me, room.open(code))), /dddddd/);
+  assert.match(text, /^plan friday v1 \(proposal aaaaaaaaaaaa\) still awaits alice's sign-off/);
+  assert.match(text, /\(2 more await alice's answer: cccccc "Rate limits", dddddd "plan monday v1"; the hooks open whichever plan alice names, else the oldest\.\)$/);
+  // a newer version of plan friday retires the request on v1: it is no longer listed
+  v('carol', 'eeeeeeeeeeee', 'friday', 2);
+  assert.doesNotMatch(must(tailLib.remindersText(me, room.open(code))), /aaaaaa/);
   assert.equal(tailLib.remindersText({ ...me, role: 'claude' }, room.open(code)), null);
 });
 
@@ -639,7 +643,7 @@ test('remindersText: a note of mine waiting on the picked proposal points at the
   inRoom(code, r => r.append({ kind: 'proposal', text: 'proposal dddddddddddd: Ship v3 Monday', hash: 'dddddddddddd', approvers: ['alice'] }, { via: 'agent', from: 'bob' }));
   // a note on another proposal: the ordinary reminder
   proposal.writeConfirm(me, { hash: 'aaaaaaaaaaaa', note: 'open rate limiting', from: 'bob', title: null, at: Date.now() });
-  assert.match(must(tailLib.remindersText(me, room.open(code))), /^proposal dddddddddddd still awaits alice's answer/);
+  assert.match(must(tailLib.remindersText(me, room.open(code))), /^proposal dddddddddddd still awaits alice's sign-off/);
   // waiting, not yet offered again: show it now, as consent's reoffer on the same prompt says (never a softer line)
   const cf = { hash: 'dddddddddddd', note: 'open rate limiting', from: 'bob', title: 'Ship v3 Monday', at: Date.now() };
   for (const extra of [{}, { stage: 'waiting' as const }, { stage: 'nudged' as const }]) {

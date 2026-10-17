@@ -24,6 +24,8 @@ export type AnyHookIn = Partial<BaseHookInput> & {
   error?: string;
   /** the module's PreToolUse(ExitPlanMode) payload: the person had typed text in the prompt (PromptHint isDraft) */
   sub_human_typing?: boolean;
+  /** the module's PlanAttachment payload (mod/consent.ts: the plan_mode attachment's detail): the session's plan file */
+  plan_file_path?: string;
   agent_type?: string;
   source?: string;
 };
@@ -56,6 +58,8 @@ export interface SubHumanReport {
   reviewOpen?: boolean;
   /** consent: a note of the seat waits for its card (the module then sends a room post to consent) */
   noteWaits?: boolean;
+  /** consent, for a plan_mode attachment: a line the module appends to the attachment's text (a room plan edit's seed) */
+  attach?: string;
   /** an invite's line and PIN for the module's status line (never saved in the transcript) and how long it stays;
    * say then holds the text without them */
   pinned?: PinnedReport;

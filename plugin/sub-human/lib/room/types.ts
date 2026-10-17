@@ -35,6 +35,20 @@ export type KnownKind = Kind;
 /** A task_req's op (validate.ts TASK_OPS). A `task` entry's op is any short word. */
 export type TaskOp = (typeof TASK_OPS)[number];
 
+/**
+ * A room plan's fields (validate.ts planFields): on a `plan` entry (lib/plans.ts put) plan, version, base, for and
+ * summary; on a `proposal` (a sign-off request, lib/proposal.ts ask) plan and version, the version it asks about.
+ */
+export interface PlanFields {
+  plan?: string;
+  version?: number;
+  /** the version the edit started from (0: the plan's first) */
+  base?: number;
+  /** the person the editing seat's Claude acted for (always the seat's own person) */
+  for?: string;
+  summary?: string;
+}
+
 /** The task fields of a task_req / task entry, as validate.ts taskFields() stores them (task_id always a string). */
 export interface TaskFields {
   op?: string;
@@ -84,6 +98,12 @@ export type EntryInput = {
   req?: number;
   blockedBy?: (string | number)[];
   suggest?: string;
+  // plan / proposal (PlanFields)
+  plan?: string;
+  version?: number;
+  base?: number;
+  for?: string;
+  summary?: string;
 };
 
 /** validate()'s opts: from is the resolved seat name (never the model's); system: a trusted hook writes via=system. */
@@ -120,6 +140,7 @@ export interface Validated {
   edit_path: string | undefined;
   drafted: 'agent' | undefined;
   task: TaskFields | null;
+  plan: PlanFields | null;
   pubkey: string | undefined;
   machine: string | undefined;
 }
@@ -128,7 +149,7 @@ export interface Validated {
  * The data fields any stored entry may carry. Read from a log (possibly an older or newer version's), so readers
  * check what they use.
  */
-export interface EntryFields extends TaskFields {
+export interface EntryFields extends TaskFields, PlanFields {
   text?: string;
   to?: string;
   refs?: number[];
@@ -515,13 +536,39 @@ export interface ProposalStatus {
   state: 'open' | 'agreed' | 'blocked' | 'superseded';
 }
 
+/** One version of a room plan (a `plan` entry: lib/plans.ts put). */
+export interface PlanVersion {
+  plan: string;
+  version: number;
+  base: number;
+  hash: ProposalHash;
+  /** the editing seat; for: the person its Claude acted for */
+  from: string;
+  for: string;
+  summary: string;
+  id: EntryId;
+  at: string;
+  path: string | null;
+}
+/** A room plan: its versions in order, the newest last (current). */
+export interface PlanState {
+  name: string;
+  versions: PlanVersion[];
+  current: PlanVersion;
+}
+
 /** consent.ts fold(entries): the one proposal / consent state. */
 export interface Fold {
   proposals: Map<string, ProposalState>;
   answers: Map<string, Map<string, Stance>>;
   decisions: Map<string, Entry>;
-  /** hash -> the newer hash that retired it (same sender, same title, while undecided) */
+  /** hash -> the current version's hash of the plan whose older version it is (a sign-off request a newer version of
+   *  the same plan retired, while undecided) */
   superseded: Map<string, string>;
+  /** the room's plans by name, in the order each first appeared */
+  plans: Map<string, PlanState>;
+  /** a version's hash -> that version (the newest version with those bytes) */
+  versionOf(hash: string): PlanVersion | null;
   /** the answer that counts for name: the latest of its person's seats (a `same` group) */
   answerOf(hash: string, name: string): Stance | null;
   /** name's own latest answer (one per seat: lib/proposal.ts answer) */

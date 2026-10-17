@@ -140,6 +140,31 @@ function clearContextOnPlanAccept(cwd: string | null | undefined, env: Env = pro
   });
 }
 
+// ---------- plan mode ----------
+
+/**
+ * The event the hooks module sends consent for a `prompt.attachment` of type plan_mode (mod/consent.ts): its detail
+ * carries the session's plan file (planFilePath) as a request is made, the one point that knows it before the model's
+ * next call (PostToolUse(EnterPlanMode) does not: no plan_mode attachment and no slug in the transcript yet). A room
+ * plan edit is seeded there (lib/consent/edit.ts), and a line appended to the attachment's text.
+ * @cc "plan_mode_reentry"
+ * @stability API
+ */
+const PLAN_ATTACHMENT_EVENT = 'PlanAttachment';
+
+/**
+ * A PermissionRequest(ExitPlanMode) answer that lets the call through with no dialog and puts the session's mode back
+ * (a review's restore, an edit's closing call): allow with updatedPermissions [{type: setMode, mode, destination:
+ * session}]. Claude Code still draws "User approved Claude's plan" for it; the hooks' PostToolUse context says no one
+ * approved anything.
+ * @cc case"setMode":
+ * @stability API
+ */
+function leavePlanMode(mode: string | undefined): { hookSpecificOutput: { hookEventName: 'PermissionRequest'; decision: { behavior: 'allow'; updatedInput: Record<string, never>; updatedPermissions: { type: 'setMode'; mode: string | undefined; destination: 'session' }[] } } } {
+  return { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow', updatedInput: {},
+    updatedPermissions: [{ type: 'setMode', mode, destination: 'session' }] } } };
+}
+
 // ---------- the global config ----------
 
 /** The global config file Claude Code keeps its cached feature switches in: $CLAUDE_CONFIG_DIR/.claude.json, else
@@ -191,5 +216,5 @@ function matcherMatches(m: string | null | undefined, name: string, { toolEvent 
 
 export {
   ENV, sessionId, claudePid, taskListId, configDir, sanitizeId, tasksDir, plansDir, taskFile, projectDir, userSettingsFiles,
-  clearContextOnPlanAccept, globalConfigFile, modulesSwitch, matcherIsExact, matcherMatches,
+  clearContextOnPlanAccept, globalConfigFile, modulesSwitch, matcherIsExact, matcherMatches, PLAN_ATTACHMENT_EVENT, leavePlanMode,
 };

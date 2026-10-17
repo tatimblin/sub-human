@@ -7,7 +7,7 @@ disable-model-invocation: true
 allowed-tools:
   - mcp__plugin_sub-human_room__post
   - mcp__plugin_sub-human_room__read
-  - mcp__plugin_sub-human_room__propose
+  - mcp__plugin_sub-human_room__plan
   - mcp__plugin_sub-human_room__task
 ---
 

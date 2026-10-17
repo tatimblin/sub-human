@@ -155,6 +155,30 @@
    "note": "Transcript attachment {type:\"plan_mode\", planFilePath} (cc.planFile)."
   },
   {
+   "id": "module-plan-mode-detail",
+   "section": 10,
+   "stability": "API",
+   "since": "2.1.296",
+   "search": [
+    "\"plan_mode_reentry\""
+   ],
+   "shape": [
+    "case\"plan_mode\":{let{reminderType:~,planFilePath:~,planExists:~}=~;return(~===\"full\"||~===\"sparse\")&&typeof ~===\"string\"&&typeof ~===\"boolean\"?{type:~.type,...~,detail:{reminder:~,planFilePath:~,hasPlan:~}}:~}"
+   ],
+   "note": "The hooks module's prompt.attachment of type plan_mode carries detail {reminder full|sparse, planFilePath, hasPlan} as the request is made, and its text is rewritable: the one point that knows the plan file before the model's next call (PostToolUse(EnterPlanMode) does not: no plan_mode attachment, no slug in the transcript yet; cc-2.1.296-tasks-plans.md S3.1). mod/consent.ts sends it to consent (lib/cc/env.ts PLAN_ATTACHMENT_EVENT), which seeds a room plan edit there and appends a line."
+  },
+  {
+   "id": "exitplan-permission-setmode",
+   "section": 3,
+   "stability": "API",
+   "since": "2.1.296",
+   "search": [
+    "case\"setMode\":",
+    "User approved Claude"
+   ],
+   "note": "A PermissionRequest(ExitPlanMode) hook answering allow with updatedPermissions [{type:setMode, mode, destination:session}] leaves plan mode with no dialog in every mode (default, acceptEdits, bypassPermissions, dontAsk, auto, and with showClearContextOnPlanAccept on: cc-2.1.296-tasks-plans.md S3.5). The transcript still draws \"User approved Claude's plan\" for it. lib/cc/env.ts leavePlanMode: a review's restore and a room plan edit's closing call."
+  },
+  {
    "id": "exitplan-normalize",
    "section": 3,
    "stability": "API",

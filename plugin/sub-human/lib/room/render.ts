@@ -6,7 +6,7 @@
  *
  * line, chatLines and fmt are documented where they are defined. Never a bare "…": cut text always carries a marker
  * naming the read call for the rest.
- *   stateLine: "room now: proposal 3fa2c1 waiting on bob · objected: dave · you: answer needed · away: carol"
+ *   stateLine: "room now: plan paging v3 3fa2c1 waiting on bob · objected: dave · you: answer needed · away: carol"
  *     (waiting on = no answer yet, objected = current answer is an objection; ids:false drops the decision's "#N",
  *     for a member's wake, which the person sees too)
  *   UNVERIFIED "(unverified)" follows the name of a via=human entry whose sig does not verify (a legacy line, or one
@@ -164,20 +164,24 @@ function titleText(p: Entry): string {
 }
 
 /**
- * The proposal hash names, as people see it: its title in quotes and its short hash, '"Ship v3 Monday" (3fa2c1)'
- * (revisions can share a title), from the proposal entry in entries; null without entries or that entry.
+ * The proposal hash names, as people see it: a room plan's version, 'plan paging v3 (3fa2c1)', when a `plan` entry in
+ * entries has that hash; else its title in quotes and its short hash, '"Ship v3 Monday" (3fa2c1)' (a room from before
+ * plans); null without entries or either entry.
  */
 // Array.isArray, without its any[] (a readonly list stays the reader's type)
 const isList = (v: readonly Readonly<Entry>[] | undefined): v is readonly Readonly<Entry>[] => Array.isArray(v);
 
 function proposalLabel(hash: string | undefined, entries: readonly Readonly<Entry>[] | undefined): string | null {
   if (!hash || !isList(entries)) return null;
+  const v = entries.findLast(x => x && x.kind === 'plan' && x.hash === hash);
+  if (v && typeof v.plan === 'string' && typeof v.version === 'number') return `plan ${v.plan} v${v.version} (${hash.slice(0, 6)})`;
   const p = entries.find(x => x && x.kind === 'proposal' && x.hash === hash);
   const t = p && titleText(p);
   return t ? `"${t}" (${hash.slice(0, 6)})` : null;
 }
 
-/** The proposals entry e retired (lib/room/consent.ts superseded: same sender, same title), each labelled; [] without entries. */
+/** The sign-off requests plan version e retired (lib/room/consent.ts superseded: requests for an older version of the
+ * same plan, undecided), each labelled; [] without entries. */
 function retiredBy(e: Entry, entries: readonly Readonly<Entry>[] | undefined, trust: Trust): string[] {
   if (!isList(entries) || !e.hash) return [];
   const before = entries.filter(x => x && x.id < e.id);
@@ -240,10 +244,17 @@ function chatBody(e: Entry, viewer: string | undefined, entries: readonly Readon
     case 'member_joined': return { head: `${n.from} ${/\brejoined\b/.test(t) ? 'rejoined' : 'joined'}`, text: '' };
     case 'member_left': return { head: `${n.from} left${leftWhy(t)}`, text: '' };
     case 'proposal': {
-      // the short hash tells revisions apart; a revision names what it replaces (its earlier one, retired)
+      // a room plan's version: who asks whom to sign off on it; a proposal from before plans, by its title
+      const label = proposalLabel(n.hash, entries);
+      const to = (n.approvers ?? []).map(you).join(', ');
+      if (label && label.startsWith('plan ')) return { head: `${chatWho(n, trust)} asks for sign-off`, text: `${label}${to ? ` from ${to}` : ''}` };
       const h = n.hash ? ` (${String(n.hash).slice(0, 6)})` : '';
+      return { head: `${chatWho(n, trust)} proposed`, text: `${t.replace(TITLE_PREFIX, '')}${h}` };
+    }
+    case 'plan': {
+      // "bob's Claude for bob: plan paging v4: opaque cursor"; the requests it retired named after it
       const was = retiredBy(n, entries, trust);
-      return { head: `${chatWho(n, trust)} proposed`, text: `${t.replace(TITLE_PREFIX, '')}${h}${was.length ? `\nreplaces ${was.join(', ')}` : ''}` };
+      return { head: `${chatWho(n, trust)} for ${you(n.for || n.from)}`, text: `${t}${was.length ? `\nretires the sign-off request for ${was.join(', ')}` : ''}` };
     }
     case 'signoff': return { head: `${humanName(e, trust)} agreed to ${about()}`, text: '' };
     case 'objection':
@@ -302,15 +313,17 @@ function stateLine(me: LaneViewer | null | undefined, entries: readonly Readonly
   const parts: string[] = [];
   const name = (me && me.name) as string; // no seat: in no proposal
   const all = proposals(entries, trust);
-  const retired = fold(entries, trust).superseded; // a revision's earlier one is not open (lib/room/consent.ts)
+  const f = fold(entries, trust);
+  const retired = f.superseded; // a request for an older version of a plan is not open (lib/room/consent.ts)
   const open = all.filter(p => !decided(p.hash, entries, trust) && !retired.has(p.hash));
   const last = all.at(-1);
   const shown = open.length ? open.slice(-3) : last ? [last] : [];
   if (!shown.length) parts.push('no proposals');
   for (const p of shown) {
     const dec = decided(p.hash, entries, trust);
-    const where = dec ? `decided${ids ? ` #${dec.id}` : ''}` : waiting(fold(entries, trust).matrix(p.hash)) || 'agreed by all';
-    let s = `proposal ${p.hash.slice(0, 6)} ${where}`;
+    const where = dec ? `decided${ids ? ` #${dec.id}` : ''}` : waiting(f.matrix(p.hash)) || 'agreed by all';
+    const v = f.versionOf(p.hash);
+    let s = `${v ? `plan ${v.plan} v${v.version}` : 'proposal'} ${p.hash.slice(0, 6)} ${where}`;
     if (approversOf(p).includes(name)) {
       const a = answered(name, p.hash, entries, trust);
       // the open-the-card call is spelled out right in the notice: a model skipped it when it was only in the join text

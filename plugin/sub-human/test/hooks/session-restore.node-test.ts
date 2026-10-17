@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { World, fixture, identity, ctx, hso } from './helpers.ts';
 import * as rowsLib from '../../lib/rows.ts';
 import * as proposal from '../../lib/proposal.ts';
+import { propose } from '../support/plan.ts';
 import type { HookRun } from './helpers.ts';
 import { sn } from '../support/brands.ts';
 import { must } from '../support/must.ts';
@@ -113,7 +114,7 @@ test('session-restore: a review left open (plan file still the proposal) is rest
   const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
   const text = '# Cursor paging\n\n1. after=\n';
   const bob = { code: w.code, name: sn('bob'), role: 'member' };
-  const hash = w.lib(() => proposal.create(bob, { text, approvers: ['alice'] })).hash;
+  const hash = w.lib(() => propose(bob, { text, approvers: ['alice'] })).hash;
   const file = path.join(w.userHome, '.claude', 'plans', 'stuck.md');
   const alice = { code: w.code, name: sn('alice'), role: 'member' };
   const open = () => !!w.lib(() => proposal.readReview(alice)); // her session document's review

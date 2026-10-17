@@ -196,3 +196,19 @@ test('8: the prompt holding typed text as the plan view opens goes with ExitPlan
   expect(seen.consent.at(-1)?.stdin.sub_human_typing).toBeUndefined()
   await ui.unmount()
 })
+
+test('a plan_mode attachment runs consent only while a review or an edit may be open; consent\'s line is appended, the engine\'s text kept', async ($, on) => {
+  const seen = world(on, { answers: [{ subHuman: { reviewOpen: false } }, { subHuman: { reviewOpen: true, attach: 'sub-human: room plan room starts in the plan file' } }] })
+  on('prompt.attachment', (_$, e) => ({ text: e.text }))
+  await start($)
+  await stop($) // consent reports no review: the flag is false
+  const att: Parameters<typeof $.prompt.attachment>[0] = { type: 'plan_mode', text: 'plan mode rules', origin: { kind: 'engine' }, detail: { reminder: 'full', planFilePath: '/p/x.md', hasPlan: false } }
+  expect((await $.prompt.attachment(att)).text).toBe('plan mode rules')
+  expect(seen.consent.length).toBe(1)
+  // the plan tool (its edit op opens an edit): the next plan_mode attachment goes to consent
+  await $.tool.call({ tool: 'mcp__plugin_sub-human_room__plan' })
+  expect((await $.prompt.attachment(att)).text).toBe('plan mode rules\n\nsub-human: room plan room starts in the plan file')
+  const last = must(seen.consent.at(-1), 'the attachment run')
+  expect(last.stdin.hook_event_name).toBe('PlanAttachment')
+  expect(last.stdin.plan_file_path).toBe('/p/x.md')
+})

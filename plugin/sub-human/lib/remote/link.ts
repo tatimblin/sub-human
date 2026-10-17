@@ -381,10 +381,10 @@ async function serveMirror({
     });
   }
 
-  /** Every proposal's plan a snapshot names (as each line's are fetched as it arrives). */
+  /** Every proposal's and plan version's text a snapshot names (as each line's are fetched as it arrives). */
   function prefetchAll(c: Client, es: readonly Readonly<Entry>[]) { for (const e of es) prefetch(c, e); }
   function prefetch(c: Client, e: Entry) {
-    if (e.kind !== 'proposal' || !e.hash) return;
+    if ((e.kind !== 'proposal' && e.kind !== 'plan') || !e.hash) return;
     const ref = mirror.blobs.ref(e.path) || `plans/${e.hash}.md`;
     if (mirror.blobs.has(ref)) return;
     c.blobGet(ref).then(b => b && mirror.applyBlob(ref, b), (err: unknown) => log(`plan ${ref}: ${msgOf(err)}`));
