@@ -322,3 +322,21 @@ test('stage 8f item 5: $\'…\' inside ${…} in double quotes, $"…" strings a
   deny("cat <<'EOF'\n$'\nEOF\ncat /tmp/shv11/$'\\x68'ome/keys/k");
   allow("cat <<< 'a$'");
 });
+
+test('room-plan live: a backtick inside single quotes is a literal character, not a word\'s end (no bare "/" above the store)', () => {
+  const ctx: GuardCtx = { home: '/Users/u/.sub-human', userHome: '/Users/u', cwd: '/Users/u/repo', claudeDir: '/Users/u/.claude', sid: 'abcdef12-3456' };
+  const deny = (cmd: string) => assert.ok(g.bashVerdict(cmd, ctx), `should deny: ${cmd}`);
+  const allow = (cmd: string) => assert.equal(g.bashVerdict(cmd, ctx), null, `should allow: ${cmd}`);
+  // the live false deny: the sed alone was allowed, chained with a walker it read "/" above the store
+  allow("sed -e 's/`a`/c/' f.md && python3 x");
+  allow("sed -e 's/`a`/c/' f.md");
+  allow("grep -n '`code`' README.md; node build.js");
+  assert.equal(g.readQuotes("sed -e 's/`a`/c/' f"), "sed -e 's/a/c/' f");
+  assert.equal(g.readQuotes('echo "`date`"'), 'echo "`date`"', 'outside single quotes a backtick is kept');
+  // the real denials stay
+  deny("python3 -c 'import os; os.walk(\"/\")'");
+  deny("python3 -c 'open(\"/Users/u/.sub-human/keys/k\")'");
+  deny('python3 x `echo /Users/u/`');
+  deny('echo `cat /Users/u/.sub-human/keys/k`');
+  deny("cd / && rg '`x`'");
+});

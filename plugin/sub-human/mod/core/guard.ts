@@ -338,10 +338,21 @@ function heredocBody(cmd: string, i: number, hd: Heredoc): [string, string, numb
  */
 export function ansiC(cmd: string): string | null {
   if (!cmd.includes("$'") && !cmd.includes('$"')) return cmd;
-  return scanQuotes(cmd, 'u');
+  return scanQuotes(cmd, 'u', false);
 }
 
-function scanQuotes(cmd: string, start: Frame['k']): string | null {
+/**
+ * ansiC, and each backtick inside single quotes dropped: there it is a literal character, never a command
+ * substitution, so it must not split a path word (`sed -e 's/`a`/c/'` holds no path "/"). Words lose their backticks
+ * anyway (pathVerdict's unquote); this keeps the embedded-path scan from reading one as a word's end.
+ */
+export function readQuotes(cmd: string): string | null {
+  if (!cmd.includes("$'") && !cmd.includes('$"') && !(cmd.includes("'") && cmd.includes('`'))) return cmd;
+  return scanQuotes(cmd, 'u', true);
+}
+
+/** ticks: drop each backtick inside '…' (readQuotes). */
+function scanQuotes(cmd: string, start: Frame['k'], ticks: boolean): string | null {
   let out = '';
   const root = frame(start);
   const st: Frame[] = [root];
@@ -356,7 +367,7 @@ function scanQuotes(cmd: string, start: Frame['k']): string | null {
       // each heredoc this line opened: its body, literal when its word was quoted, else read as the shell does
       for (const hd of pending.splice(0)) {
         const [body, close, next] = heredocBody(cmd, i, hd);
-        const read = hd.quoted ? body : scanQuotes(body, 'h');
+        const read = hd.quoted ? body : scanQuotes(body, 'h', ticks);
         if (read === null) return null;
         out += read + close; i = next;
       }
@@ -380,7 +391,8 @@ function scanQuotes(cmd: string, start: Frame['k']): string | null {
     if (c === "'" && f.k !== 'v') { // inside "${…}" a ' is a plain character
       const close = cmd.indexOf("'", i + 1);
       const to = close < 0 ? cmd.length : close + 1;
-      out += cmd.slice(i, to); i = to; continue;
+      const span = cmd.slice(i, to);
+      out += ticks ? span.replace(/`/g, '') : span; i = to; continue;
     }
     if (c === '"') { st.push(frame('d')); out += c; i++; continue; }
     if (c === '`') { if (f.k === 'b') st.pop(); else st.push(frame('b')); out += c; i++; continue; }
@@ -406,8 +418,8 @@ function scanQuotes(cmd: string, start: Frame['k']): string | null {
 export function bashVerdict(command: unknown, ctx: GuardCtx = {}): string | null {
   const raw = typeof command === 'string' ? command : '';
   if (!raw.trim()) return null;
-  // $'…' words read as the shell reads them; one this cannot read is not placed, so it is denied
-  const read = ansiC(raw);
+  // $'…' words read as the shell reads them (and '…' as the literal it is); one this cannot read is not placed, so it is denied
+  const read = readQuotes(raw);
   if (read === null) return 'it has an ANSI-C quoted word ($\'…\') the guard cannot read whole';
   // a ${NAME:-word} is read both ways: NAME set (a variable, not placed) and unset (its word: "/h/${u:-h}ome")
   const unset = withDefaults(read);
