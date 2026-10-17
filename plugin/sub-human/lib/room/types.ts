@@ -208,11 +208,13 @@ export interface Entry extends EntryFields, Partial<Envelope> {
 export interface QueuedPost extends Payload {
   queued: number;
   slow?: true;
+  /** the link daemon was not running: the hook queued the post itself and started the daemon (store-mirror.ts) */
+  restarting?: true;
   id?: undefined;
 }
 
 /** What place() / append() return with opts.queue: the placed entry, or the post a mirror queued. */
-export type Placed = (Entry & { queued?: undefined; slow?: undefined }) | QueuedPost;
+export type Placed = (Entry & { queued?: undefined; slow?: undefined; restarting?: undefined }) | QueuedPost;
 
 // Per-kind entries. Only the kind is known (validate.ts parseEntry and isKindOf check nothing else): the other fields
 // are as optional as Entry's, since an older or hand-edited log may lack what this version writes (validate.ts says what).

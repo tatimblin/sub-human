@@ -141,6 +141,19 @@ test('outbox: only a signed @room or @claude post by a person is queueable; at m
   assert.equal(fs.existsSync(box.file), false, 'an empty outbox is no file');
 });
 
+test('outbox: two writers (the daemon\'s handle and a hook\'s, the daemon gone) see each other\'s posts; none is lost', t => {
+  h.freshHome(t);
+  const code = h.newRoom();
+  const dir = h.tmpDir('sh-outbox2-', t);
+  const daemon = outbox.open(dir), hook = outbox.open(dir);
+  daemon.add(sp(say(code, 'by the daemon')));
+  assert.equal(hook.add(sp(say(code, 'by the hook'))), 2, 'the hook counts the daemon\'s post');
+  assert.equal(daemon.size(), 2, 'the daemon reads the hook\'s post');
+  assert.equal(daemon.remove(must(daemon.first()).payload.nonce), true);
+  assert.deepEqual(hook.items().map(x => x.payload.text), ['by the hook']);
+  assert.equal(fs.existsSync(path.join(dir, 'outbox.lock')), false, 'the lock is released');
+});
+
 // ---------- serveMirror against a real server ----------
 /** What the daemon answers a hook's op: the placed entry, or a queued post. */
 interface HookReply { entry?: Entry; queued?: number; slow?: boolean }

@@ -19,14 +19,15 @@
  *                                    any field may be absent
  *   the mirror's document `link`     {pid, state, since, reason?, code?} (lib/remote/link.ts status)
  * A record whose daemon is gone (its pid, else the document's, is not alive) reads 'offline' with lastError "the link
- * daemon is not running" and dead: true; fork and stopped stay what they are.
+ * daemon is not running" and dead: true, never what the dead daemon last wrote (a kill -9 leaves "online"); its since
+ * is then the record's at when it said online (the last time it was known online). fork and stopped stay what they are.
  *
  *   read(code) -> State | null       null when this machine has no link to CODE (a room hosted here, or none)
  *       State = {state: STATES, since?, attempt?, lastError?, lastReason?, lastCode?, prevError?, rttMs?, queued?, pid?,
  *                detail?, dead?, source: 'state-file'|'link-doc'}; lastReason: lastError's typed reason (lib/reasons.ts)
  *   normalize(state, detail?) -> STATES member   a word of the vocabulary (detail fork or stopped wins; unknown: 'offline')
  *   indicator(st, {now}?) -> string  the compact segment: "⇄ online", "… connecting", "… connecting (3)",
- *       "✕ offline 2m · 2 queued", "✕ stopped" ("✕ removed by the host" after a kick), "✕ out of step: /sub-human
+ *       "✕ offline 2m · 2 queued", "✕ not running (offline 2m)" (dead), "✕ stopped" ("✕ removed by the host" after a kick), "✕ out of step: /sub-human
  *       doctor"; '' for null
  *   isDown(st) -> bool               connecting after a first failure, offline, fork or stopped: worth leading a row with
  *   stoppedForGood(st) -> bool       stopped: who this copy shows in the room is stale (the row shows no count)
@@ -92,7 +93,11 @@ function readLink(code: RoomCode): LinkState | null {
       lastReason: isReason(f.lastReason) ? f.lastReason : undefined, lastCode: str(f.lastCode), prevError: str(f.prevError),
       rttMs: num(f.rttMs), queued: num(f.queued), pid, detail: str(f.detail), source: 'state-file' as const,
     });
-    if (dead && !FOR_GOOD.has(st.state)) return { ...st, state: 'offline', lastError: st.lastError || NOT_RUNNING, dead: true };
+    if (dead && !FOR_GOOD.has(st.state)) {
+      // its record still says what it last wrote ("online" after a kill -9): offline since it was last known online
+      const since = f.state === 'online' ? str(f.at) ?? st.since : st.since;
+      return { ...st, state: 'offline', lastError: f.state === 'online' || !st.lastError ? NOT_RUNNING : st.lastError, dead: true, ...(since ? { since } : {}) };
+    }
     return st;
   }
   if (!doc || !doc.state) return { state: 'offline', lastError: NOT_RUNNING, dead: true, source: 'link-doc' };
@@ -118,6 +123,7 @@ function indicator(st: Partial<LinkState> | null | undefined, { now = Date.now()
   if (state === 'stopped') return `✕ ${REVOKED.has(String(st.lastReason)) ? 'removed by the host' : 'stopped'}${queued}`;
   if (state === 'connecting') return (st.attempt ?? 0) > 1 ? `… connecting (${st.attempt})${queued}` : `… connecting${queued}`;
   const t = st.since ? ago(st.since, now) : '';
+  if (st.dead) return `✕ not running${t ? ` (offline ${t})` : ''}${queued}`; // the daemon is gone: /sub-human or an @room starts it
   return `✕ offline${t ? ` ${t}` : ''}${queued}`;
 }
 

@@ -7,7 +7,8 @@
  * socketPath is one per room and home, from the mirror's directory alone: <dir>/.link/link.sock, or, when that is
  * longer than a socket path may be, /tmp/sub-human-<uid>/<hash12(dir)>/link.sock (never TMPDIR: see shortBase). Each
  * directory is 0700, a real directory and ours: the daemon refuses any other (AUTH), a hook skips it. handle answers
- * OFFLINE DAEMON_DOWN when no daemon listens; nothing is started from a hook's call. A stale socket file is replaced,
+ * OFFLINE DAEMON_DOWN when no daemon listens; nothing is started from the bridge's call (the mirror store, on DAEMON_DOWN,
+ * may queue an @room post and launch() one). A stale socket file is replaced,
  * a live one is LOCK.
  */
 
@@ -175,13 +176,19 @@ function stopReason(st: LinkDoc | null | undefined): { code: WireCode; reason: s
   return { code: protocol.isWireCode(st.code) ? st.code : st.state === 'fork' ? 'FORK' : 'OFFLINE', reason: st.reason, why: isReason(st.why) ? st.why : null };
 }
 
-function start(code: RoomCode): boolean {
-  if (status(code).running) return true;
+/** Start the daemon detached and return at once (a hook that must stay quick: the @room post queued with the daemon
+ * gone, lib/room/store-mirror.ts). A second daemon started meanwhile finds the first on the socket (LOCK) and exits. */
+function launch(code: RoomCode): void {
   const fd = fs.openSync(linksMod().logFile(code), 'a', 0o600);
   try { spawn(process.execPath, [BIN, 'link', code], { detached: true, stdio: ['ignore', fd, fd] }).unref(); } finally { fs.closeSync(fd); }
+}
+
+function start(code: RoomCode): boolean {
+  if (status(code).running) return true;
+  launch(code);
   for (const until = Date.now() + config.LINK_START_MS; Date.now() < until; sleepSync(20)) if (status(code).running) return true;
   return false;
 }
 
-export { socketPath, socketPaths, handle, listen, status, stopReason, start, RELAY };
+export { socketPath, socketPaths, handle, listen, status, stopReason, start, launch, RELAY };
 export type { LinkStatus, Relay };

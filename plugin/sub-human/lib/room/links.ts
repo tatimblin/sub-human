@@ -21,8 +21,9 @@
  * remove() deletes it too. logFile(code) is the daemon's stderr.
  *
  * The link's state, for observers (doctor, the statusline, the room row): <home>/links/<code>.state.json (0600),
- * written by the link daemon (lib/remote/link.ts) on every change of state and every pong, never by anyone else.
- * A file whose pid is not alive is a daemon that is gone (state then means nothing).
+ * written by the link daemon (lib/remote/link.ts) on every change of state and every pong, and once by a hook that
+ * finds that daemon gone (lib/room/store-mirror.ts _markGone: offline, before it starts the next one). A file whose
+ * pid is not alive is a daemon that is gone (its state then means nothing).
  *   state      the one link vocabulary (lib/room/link-state.ts), as the mirror's document `link` has it: 'online'
  *              (hooks' writes cross now) | 'connecting' (the first dial, or a redial after a failure, a wake or a
  *              network change) | 'offline' (waiting to retry) | 'fork' | 'stopped' (both for good: `sub-human link
