@@ -66,6 +66,8 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   const user = h.tmpDir('sh-user-', t);
   links.set(code, { code, transport: { kind: 'pipe', home: hostHome }, token: tokenOf('tok-' + crypto.randomBytes(16).toString('hex')), created_at: new Date().toISOString() });
   fs.writeFileSync(linkState.stateFile(code), JSON.stringify({ state: 'offline', since: new Date(Date.now() - 120_000).toISOString(), attempt: 4, lastError: 'no route to host', queued: 2 }));
+  fs.mkdirSync(path.join(home, 'rooms', code), { recursive: true });
+  fs.writeFileSync(path.join(home, 'rooms', code, 'outbox.json'), JSON.stringify([1, 2].map(i => ({ payload: { kind: 'say', text: `p${i}` }, queued_at: new Date().toISOString() }))));
   fs.writeFileSync(links.logFile(code), `2026-10-08T10:00:00.000Z sub-human link ${code}: offline: ssh exited 255\n`);
   fs.chmodSync(home, 0o755);
   const env = { SUB_HUMAN_HOME: home, HOME: user };

@@ -22,7 +22,8 @@
  * daemon is not running" and dead: true, never what the dead daemon last wrote (a kill -9 leaves "online"); its since
  * is then the record's at when it said online (the last time it was known online). fork and stopped stay what they are.
  *
- *   read(code) -> State | null       null when this machine has no link to CODE (a room hosted here, or none)
+ *   read(code) -> State | null       null when this machine has no link to CODE (a room hosted here, or none); queued
+ *       is the mirror's outbox file's count (the records' only as a fallback), so it shows while any post waits
  *       State = {state: STATES, since?, attempt?, lastError?, lastReason?, lastCode?, prevError?, rttMs?, queued?, pid?,
  *                detail?, dead?, source: 'state-file'|'link-doc'}; lastReason: lastError's typed reason (lib/reasons.ts)
  *   normalize(state, detail?) -> STATES member   a word of the vocabulary (detail fork or stopped wins; unknown: 'offline')
@@ -73,6 +74,16 @@ function linkDoc(code: RoomCode): LinkStatus | null {
 
 const NOT_RUNNING = 'the link daemon is not running';
 
+/** The @room posts waiting in the mirror's outbox (lib/remote/outbox.ts), read from the file itself: the records'
+ * count is only as fresh as their last write (a daemon gone, a post a hook queued while it was), and the file is what
+ * goes out. None waiting is undefined (no count shown); the record's count (fallback) only when the file cannot be
+ * read as a list. */
+function waiting(code: RoomCode, fallback: unknown): number | undefined {
+  let n: number | null;
+  try { n = linkSocketLib().waiting(code); } catch { n = null; }
+  return n === null ? num(fallback) : n || undefined;
+}
+
 /** Test seam: read() calls through this object, which a test may stub (test/link-state.node-test.ts); an ES module's own
  * exports are read-only. */
 const seam = { read: (code: RoomCode): LinkState | null => readLink(code) };
@@ -91,7 +102,7 @@ function readLink(code: RoomCode): LinkState | null {
     const st: LinkState = clean({
       state: normalize(f.state, f.detail), since: str(f.since), attempt: num(f.attempt), lastError: str(f.lastError),
       lastReason: isReason(f.lastReason) ? f.lastReason : undefined, lastCode: str(f.lastCode), prevError: str(f.prevError),
-      rttMs: num(f.rttMs), queued: num(f.queued), pid, detail: str(f.detail), source: 'state-file' as const,
+      rttMs: num(f.rttMs), queued: waiting(code, f.queued), pid, detail: str(f.detail), source: 'state-file' as const,
     });
     if (dead && !FOR_GOOD.has(st.state)) {
       // its record still says what it last wrote ("online" after a kill -9): offline since it was last known online
@@ -100,12 +111,13 @@ function readLink(code: RoomCode): LinkState | null {
     }
     return st;
   }
-  if (!doc || !doc.state) return { state: 'offline', lastError: NOT_RUNNING, dead: true, source: 'link-doc' };
+  const queued = waiting(code, doc?.queued);
+  if (!doc || !doc.state) return clean({ state: 'offline' as const, lastError: NOT_RUNNING, dead: true, queued, source: 'link-doc' as const });
   const dead = !!(doc.pid && !doc.running);
   const state = normalize(doc.state);
   const lastError = str(doc.reason) || (dead ? NOT_RUNNING : undefined);
   const lastReason = !dead && isReason(doc.why) ? doc.why : undefined;
-  return clean({ state: dead && !FOR_GOOD.has(state) ? 'offline' : state, since: str(doc.since), lastError, lastReason, lastCode: str(doc.code), ...(dead ? { dead: true } : {}), source: 'link-doc' as const });
+  return clean({ state: dead && !FOR_GOOD.has(state) ? 'offline' : state, since: str(doc.since), lastError, lastReason, lastCode: str(doc.code), queued, ...(dead ? { dead: true } : {}), source: 'link-doc' as const });
 }
 
 function ago(iso: string, now: number): string {
@@ -118,7 +130,7 @@ function indicator(st: Partial<LinkState> | null | undefined, { now = Date.now()
   if (!st) return '';
   const state = normalize(st.state, st.detail);
   const queued = (st.queued ?? 0) > 0 ? ` · ${st.queued} queued` : '';
-  if (state === 'online') return '⇄ online';
+  if (state === 'online') return `⇄ online${queued}`; // posts a slow host has not answered yet
   if (state === 'fork') return '✕ out of step: /sub-human doctor';
   if (state === 'stopped') return `✕ ${REVOKED.has(String(st.lastReason)) ? 'removed by the host' : 'stopped'}${queued}`;
   if (state === 'connecting') return (st.attempt ?? 0) > 1 ? `… connecting (${st.attempt})${queued}` : `… connecting${queued}`;

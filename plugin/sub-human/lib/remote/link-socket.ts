@@ -20,7 +20,7 @@ import * as protocol from './protocol.ts';
 import { RoomError } from '../room/validate.ts';
 import { isReason, reasonOf } from '../reasons.ts';
 import { errCode, msgOf } from '../errors.ts';
-import { isAlive, sleepSync, lazy } from '../io.ts';
+import { isAlive, sleepSync, lazy, readJsonRaw } from '../io.ts';
 import { hash12 } from '../text.ts';
 import { isObj } from '../decode.ts';
 import * as config from '../config.ts';
@@ -171,6 +171,17 @@ function status(code: RoomCode): LinkStatus {
   return { ...st, running: isAlive(st.pid) } as LinkStatus; // running: its pid (a number) lives
 }
 
+/** The @room posts waiting in the mirror's outbox file (lib/remote/outbox.ts): 0 when there is no file, null when it
+ * is there but not a list (a reader then falls back to the daemon's own count). */
+function waiting(code: RoomCode): number | null {
+  const dir = storeMod().open(code).dir;
+  if (!dir) return null;
+  const file = path.join(dir, 'outbox.json');
+  if (!fs.existsSync(file)) return 0;
+  const v = readJsonRaw(file);
+  return Array.isArray(v) ? v.length : null;
+}
+
 function stopReason(st: LinkDoc | null | undefined): { code: WireCode; reason: string; why: Reason | null } | null {
   if (!st || !STOPPED.has(st.state) || !st.reason) return null;
   return { code: protocol.isWireCode(st.code) ? st.code : st.state === 'fork' ? 'FORK' : 'OFFLINE', reason: st.reason, why: isReason(st.why) ? st.why : null };
@@ -190,5 +201,5 @@ function start(code: RoomCode): boolean {
   return false;
 }
 
-export { socketPath, socketPaths, handle, listen, status, stopReason, start, launch, RELAY };
+export { socketPath, socketPaths, handle, listen, status, waiting, stopReason, start, launch, RELAY };
 export type { LinkStatus, Relay };

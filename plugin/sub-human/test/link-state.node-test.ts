@@ -4,6 +4,8 @@ import test from 'node:test';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import path from 'node:path';
+import { roomDir } from '../lib/home.ts';
 import * as h from './helpers.ts';
 import * as links from '../lib/room/links.ts';
 import * as store from '../lib/room/store.ts';
@@ -21,6 +23,11 @@ function linked(t: TestContext) {
   store.createRoom(CODE);
 }
 const writeState = (st: unknown) => fs.writeFileSync(ls.stateFile(CODE), JSON.stringify(st));
+/** n @room posts waiting in the mirror's outbox (lib/remote/outbox.ts's file): what the row's count reads. */
+const queue = (n: number, code = CODE) => {
+  fs.mkdirSync(roomDir(code), { recursive: true });
+  fs.writeFileSync(path.join(roomDir(code), 'outbox.json'), JSON.stringify(Array.from({ length: n }, (_, i) => ({ payload: { kind: 'say', text: `p${i}` }, queued_at: new Date().toISOString() }))));
+};
 const setDoc = (doc: unknown) => store.open(CODE).kv.set('link', doc);
 
 test('link-state: null for a room hosted here (no link); the state file wins, read defensively', t => {
@@ -32,6 +39,7 @@ test('link-state: null for a room hosted here (no link); the state file wins, re
   linked(t);
   setDoc({ pid: process.pid, state: 'online', since: 'x' });
   writeState({ state: 'connecting', since: '2026-01-01T00:00:00.000Z', attempt: 3, lastError: 'ECONNREFUSED', rttMs: null, queued: 2, extra: 1 });
+  queue(2);
   assert.deepEqual(ls.read(CODE), { state: 'connecting', since: '2026-01-01T00:00:00.000Z', attempt: 3, lastError: 'ECONNREFUSED', queued: 2, source: 'state-file' });
   fs.writeFileSync(ls.stateFile(CODE), '{not json');
   assert.equal(must(ls.read(CODE)).source, 'link-doc', 'an unreadable state file falls back to the link document');
@@ -66,7 +74,7 @@ test('link-state: the daemon\'s record as lib/remote/link.ts writes it (links.wr
   linked(t);
   const at = new Date().toISOString();
   links.writeState(CODE, { state: 'online', since: at, attempt: 0, lastError: null, rttMs: 12, queued: 0, pid: process.pid, detail: 'online', at });
-  assert.deepEqual(ls.read(CODE), { state: 'online', since: at, attempt: 0, rttMs: 12, queued: 0, pid: process.pid, detail: 'online', source: 'state-file' });
+  assert.deepEqual(ls.read(CODE), { state: 'online', since: at, attempt: 0, rttMs: 12, pid: process.pid, detail: 'online', source: 'state-file' }, 'no outbox file: none waiting');
   const dead = await h.deadPid();
   links.writeState(CODE, { state: 'online', since: at, attempt: 0, lastError: null, rttMs: 12, queued: 1, pid: dead, detail: 'online', at });
   assert.deepEqual([must(ls.read(CODE)).state, must(ls.read(CODE)).lastError, must(ls.read(CODE)).dead], ['offline', 'the link daemon is not running', true]);
@@ -116,6 +124,7 @@ test('room row: the link leads while offline or connecting again and closes the 
   // read from the home when not given
   linked(t);
   writeState({ state: 'offline', queued: 1 });
+  queue(1);
   assert.equal(rows.rowText(CODE, { viewer: 'alice', entries: [], members: {}, taskSummary: '' }), '✕ offline · 1 queued · 0 here');
 });
 
@@ -130,4 +139,30 @@ test('agent statusline: the room row carries the link state', t => {
   const line = must(out.split('\n').map(l => JSON.parse(l) as { id: string; content: string })[0], 'a row');
   assert.equal(line.id, 'a1');
   assert.match(line.content, new RegExp(`^${code}  … connecting \\(2\\)`));
+});
+
+test('link-state: the queued count is the outbox file\'s, whatever the records say: it stays while posts wait, and goes once they are sent', async t => {
+  linked(t);
+  const at = new Date(Date.now() - 30_000).toISOString();
+  // a record written before the posts were queued (or by a daemon gone since): it says none
+  links.writeState(CODE, { state: 'offline', since: at, attempt: 5, lastError: 'no route to host', queued: 0, pid: process.pid, detail: 'offline', at });
+  queue(2);
+  assert.equal(must(ls.read(CODE)).queued, 2);
+  assert.match(ls.indicator(ls.read(CODE)), /^✕ offline \d+s · 2 queued$/);
+  links.writeState(CODE, { state: 'connecting', since: at, attempt: 6, lastError: 'no route to host', queued: 0, pid: process.pid, detail: 'offline', at });
+  assert.equal(ls.indicator(ls.read(CODE)), '… connecting (6) · 2 queued');
+  // the daemon is gone: its record is stale, the file is not
+  links.writeState(CODE, { state: 'offline', since: at, attempt: 6, lastError: 'no route to host', queued: 0, pid: await h.deadPid(), detail: 'offline', at });
+  assert.match(ls.indicator(ls.read(CODE)), /^✕ not running \(offline \d+s\) · 2 queued$/);
+  // the document alone (no state file) reads the file too
+  fs.rmSync(ls.stateFile(CODE));
+  setDoc({ pid: process.pid, state: 'offline', since: at, reason: 'no route' });
+  assert.equal(must(ls.read(CODE)).queued, 2);
+  // sent: the file goes, and so does the count, whatever a record still says
+  fs.rmSync(path.join(roomDir(CODE), 'outbox.json'));
+  links.writeState(CODE, { state: 'online', since: at, attempt: 0, lastError: null, queued: 2, pid: process.pid, detail: 'online', at });
+  assert.equal(ls.indicator(ls.read(CODE)), '⇄ online');
+  // online with a slow post the host has not answered yet: the row still says it waits
+  queue(1);
+  assert.equal(ls.indicator(ls.read(CODE)), '⇄ online · 1 queued');
 });
