@@ -12,6 +12,7 @@ import * as roomClaude from '../lib/room-claude.ts';
 import * as cc from '../lib/cc/bg.ts';
 import * as env from '../lib/env.ts';
 import * as room from '../lib/room.ts';
+import * as tasks from '../lib/tasks.ts';
 import type { AgentJob } from '../lib/cc/bg.ts';
 import { rc, sn } from './support/brands.ts';
 import type { RoomCode } from '../lib/brand.ts';
@@ -156,32 +157,30 @@ test('room-claude: needsSpawn with no record, a dead bound pid, or a spawn that 
   assert.equal(roomClaude.needsSpawn(code), true, 'bound pid died');
 });
 
-test('room-claude: reap waits the grace, marks closing, tells the room\'s Claude, waits for task 1, then stops the job', async () => {
+test('room-claude: reap waits the grace, marks closing, completes the room task itself (no model), then stops the job', async () => {
   h.freshHome();
   const code = h.newRoom();
   const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-cfg-'));
   const list = path.join(cfg, 'tasks', `sh-${code}`);
-  fs.mkdirSync(list, { recursive: true });
-  fs.writeFileSync(path.join(list, '1.json'), JSON.stringify({ id: '1', subject: `room ${code} open`, status: 'in_progress', owner: 'room' }));
   const s = stubClaude();
   const o = h.spawnSleeper();
   identity.updateRoomClaude(code, () => ({ job: 'cafe1234' }));
   identity.join({ code, name: sn('claude'), role: 'claude', pid: o.pid, session_id: 'so' });
   await withEnv({ SUB_HUMAN_CLAUDE: s.bin, CLAUDE_CONFIG_DIR: cfg, SUB_HUMAN_REAP_STOP_MS: '100' }, async () => {
-    const t0 = Date.now();
-    const p = roomClaude.reap(code, { graceMs: 150, waitMs: 3000, pollMs: 50 });
+    roomClaude.openTaskList(code);
+    tasks.openRoomTask(room.open(code).store);
+    assert.equal(must(identity.readMembers(code).claude).tasks_dir, list, 'the room session\'s list, recorded');
+    const file = () => JSON.parse(fs.readFileSync(path.join(list, '1.json'), 'utf8')) as { status: string; owner: string };
+    assert.deepEqual([file().status, file().owner], ['in_progress', 'room'], 'the room task, written before the session starts');
+    const p = roomClaude.reap(code, { graceMs: 150 });
     await h.sleep(60);
     assert.equal(identity.roomClosing(code), false, 'not closing during the grace');
-    await h.until(() => identity.roomClosing(code), 2000);
-    const R = room.open(code);
-    const e = must(R.readAll().at(-1));
-    assert.deepEqual([e.kind, e.to, e.via, e.text], ['status', 'claude', 'system', roomClaude.CLOSE_TEXT]);
-    assert.equal(s.calls().length, 0, 'no stop while task 1 is open');
-    await h.sleep(200);
-    fs.writeFileSync(path.join(list, '1.json'), JSON.stringify({ id: '1', status: 'completed', owner: 'room' }));
     assert.equal(await p, 'stopped');
-    const dt = Date.now() - t0;
-    assert.ok(dt < 3000, `stopped once task 1 completed (${dt} ms), not at the 20 s cap`);
+    const R = room.open(code);
+    const done = must(R.readAll().find(e => e.kind === 'task' && e.status === 'completed'));
+    assert.deepEqual([done.from, done.via, done.owner], ['room', 'system', 'room'], 'the reaper\'s own entry');
+    assert.equal(file().status, 'completed');
+    assert.ok(!R.readAll().some(e => e.kind === 'status' && e.to === 'claude'), 'nothing asked of a model');
     assert.deepEqual(s.calls().map(c => c.argv), [['stop', 'cafe1234'], ['agents', '--json', '--all']], 'then looks for strays');
     assert.equal(must(s.calls()[0]).env.CLAUDE_PID, undefined, 'clean env for stop');
     assert.equal(must(s.calls()[0]).env.CLAUDE_CONFIG_DIR, cfg, 'stop reaches the same daemon (CLAUDE_CONFIG_DIR is on the allowlist)');
@@ -198,24 +197,19 @@ test('room-claude: reap waits the grace, marks closing, tells the room\'s Claude
   o.kill();
 });
 
-test('room-claude: reap stops at the wait cap when task 1 stays open; a rejoin in the grace cancels; a second reaper backs off', async () => {
+test('room-claude: a rejoin in the grace cancels; a second reaper backs off', async () => {
   h.freshHome();
   const code = h.newRoom();
   const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-cfg-'));
-  const list = path.join(cfg, 'tasks', `sh-${code}`);
-  fs.mkdirSync(list, { recursive: true });
-  fs.writeFileSync(path.join(list, '1.json'), JSON.stringify({ id: '1', status: 'in_progress' }));
   const s = stubClaude();
   identity.updateRoomClaude(code, () => ({ job: 'beef0001' }));
   const alice = h.spawnSleeper();
   identity.join({ code, name: sn('alice'), role: 'member', pid: alice.pid, session_id: 'sa' });
   await withEnv({ SUB_HUMAN_CLAUDE: s.bin, CLAUDE_CONFIG_DIR: cfg }, async () => {
-    assert.equal(await roomClaude.reap(code, { graceMs: 20, waitMs: 100 }), 'cancelled', 'a live member');
+    assert.equal(await roomClaude.reap(code, { graceMs: 20 }), 'cancelled', 'a live member');
     assert.equal(identity.roomClosing(code), false);
     identity.leave(code, sn('alice'));
-    const t0 = Date.now();
-    const [a, b] = await Promise.all([roomClaude.reap(code, { graceMs: 20, waitMs: 400, pollMs: 50 }), roomClaude.reap(code, { graceMs: 120, waitMs: 400 })]);
-    assert.ok(Date.now() - t0 >= 400, 'waited the cap');
+    const [a, b] = await Promise.all([roomClaude.reap(code, { graceMs: 20 }), roomClaude.reap(code, { graceMs: 120 })]);
     assert.deepEqual([a, b], ['stopped', 'no-claude']);
     assert.deepEqual(s.calls().map(c => c.argv).filter(a => a[0] === 'stop'), [['stop', 'beef0001']]);
   });
@@ -517,7 +511,7 @@ test('room-claude: crash-all-members (SIGKILL) -> the watchdog reaps the room\'s
   // deadline on its result failed when two node starts (reaper, stub claude) took longer under load.
   let reaperPid: number | null | undefined = null;
   const reaper = (c: RoomCode, o: { claimed: boolean }) => { reaperPid = roomClaude.reapDetached(c, o); };
-  await withEnv({ SUB_HUMAN_CLAUDE: s.bin, CLAUDE_CONFIG_DIR: cfg, SUB_HUMAN_REAP_WAIT_MS: '0' }, async () => {
+  await withEnv({ SUB_HUMAN_CLAUDE: s.bin, CLAUDE_CONFIG_DIR: cfg }, async () => {
     assert.equal(roomClaude.watchdog(code, { now: t0, reaper }), 'waiting', 'no SessionEnd ran: the first observation starts the clock');
     assert.equal(roomClaude.watchdog(code, { now: t0 + 60_000, reaper }), 'reaping');
     assert.ok(reaperPid, 'the reaper was started');
@@ -527,8 +521,6 @@ test('room-claude: crash-all-members (SIGKILL) -> the watchdog reaps the room\'s
   assert.deepEqual(s.calls().map(c => c.argv).filter(a => a[0] === 'stop'), [['stop', 'dead00ff']]);
   const rec = must(identity.readMembers(code).claude);
   assert.ok(rec.closing && rec.left_at);
-  const R = room.open(code);
-  assert.ok(R.readAll().some(e => e.kind === 'status' && e.text === roomClaude.CLOSE_TEXT));
   assert.deepEqual(identity.orphanRooms(), []);
   o.kill();
 });

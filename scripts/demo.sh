@@ -380,7 +380,7 @@ S1() { # A joins with no room open: the room is created and the headless room's 
   claude_view
   need wait_pane "$a" "$(panel_row "$(room)")" 90 || return 1
   need $LIB wait-holds claude "$a" --timeout 120 || return 1
-  need $LIB wait-native-task "room $(room) open" --timeout 120 || return 1
+  need $LIB wait-task-list --timeout 120 || return 1
   settle "$a"
   snap "$a runs /sub-human $a: room $(room) opened, the room's Claude started in the background; one $(room) row in $a's panel, a $a row in the room Claude's panel"
 }
@@ -577,37 +577,36 @@ S5() { # B objects with a note, A agrees; the room's Claude revises; both agree 
   snap "Both agree to the revision: a decision is logged; both Claudes are told once"
 }
 
-S6() { # shared tasks: alice's Claude adds, then claims, the room's Claude applies natively; a non-owner done is refused; owner done
+S6() { # shared tasks: alice's Claude adds, then claims; the host applies each at once; a non-owner done is refused; owner done
   local before; before=$($LIB log-max)
   # explicit tool name: in run osprey-3059 the model used post ("taking this") instead of the task tool. add leaves
   # the task pending with no owner (lynx-5140), and claim needs its id: so add, then claim by id.
   submit alice "put \"cursor paging handler\" on the room task list: call the mcp__plugin_sub-human_room__task tool with op \"add\", subject \"cursor paging handler\". Only that tool call: do not use post, do not edit any file"
   need wait_log --kind task_req --from alice --after "$before" --timeout 120 || return 1
-  need wait_log --kind task --after "$before" --timeout 180 --what "the room's Claude applies the add natively (task entry)" || return 1
+  need wait_log --kind task --after "$before" --timeout 30 --what "the host applies the add at once (a task entry)" || return 1
   local t; t=$($LIB task-id)
   local b1; b1=$($LIB log-max)
   submit alice "claim it for me: call the mcp__plugin_sub-human_room__task tool with op \"claim\", id \"$t\". Only that tool call: do not start the work, do not edit any file"
   need wait_log --kind task_req --from alice --after "$b1" --timeout 120 || return 1
-  need $LIB wait-tasks --owner alice --status in_progress --timeout 180 || return 1
+  need $LIB wait-tasks --owner alice --status in_progress --timeout 30 || return 1
   # the room row's task summary (what the S6 check reads); best-effort
   wait_pane alice "$(room).*(tasks? [0-9]+ open|#[0-9]+ you)" 30 --what "alice's room row shows the task summary"
   settle alice
-  snap "alice's Claude calls task(add), then task(claim #$t): the room's Claude applies each with TaskCreate/TaskUpdate; the room row and sub-human tasks show it"
+  snap "alice's Claude calls task(add), then task(claim #$t): the host applies each at once; the room row, sub-human tasks and the room session's task list show it"
   local b2; b2=$($LIB log-max)
   # explicit: the model may otherwise answer in text and never calls the tool (learning run badger-3918); honest
   # evidence: with "I ran the tests, 3/3 pass" bob's Claude declined to send a claim it had not checked (run falcon-2880)
   submit bob "call the mcp__plugin_sub-human_room__task tool now with op \"done\", id \"$t\", evidence \"bob checking the owner gate; no tests run\". It is alice's task: I want to see that the room refuses it. Send the request anyway and report the tool's reply in one line"
-  need wait_log --kind task_req --from bob --after "$b2" --timeout 120 || return 1
-  need $LIB wait-claude-idle --after "$b2" --timeout 180 || return 1
-  mkdir -p "$SNAP_DIR/state/S6"; $LIB synthetic-gate "$t" > "$SNAP_DIR/state/S6/gate-bob.json"
+  # a refused request logs nothing: the tool's own reply is the refusal (checks/s06-tasks.ts reads bob's transcript)
+  need $LIB wait-idle sh-bob --timeout 120 || return 1
   settle bob
-  snap "bob's Claude asks done on alice's task #$t: refused, the task stays in progress"
+  snap "bob's Claude asks done on alice's task #$t: the tool refuses it at once (only alice may complete it); the task stays in progress"
   local b3; b3=$($LIB log-max)
   submit alice "the handler is in and npm test passes 3/3. call the mcp__plugin_sub-human_room__task tool with op \"done\", id \"$t\", evidence \"handler in, npm test 3/3 pass\". Only that tool call: do not edit or check any file"
   need wait_log --kind task_req --from alice --after "$b3" --timeout 120 || return 1
-  need $LIB wait-tasks --id "$t" --status completed --timeout 180 || return 1
+  need $LIB wait-tasks --id "$t" --status completed --timeout 30 || return 1
   settle alice
-  snap "alice's Claude asks done with evidence: the room's Claude completes #$t (the gate passes the owner's request)"
+  snap "alice's Claude asks done with evidence: the host completes #$t (her own task)"
 }
 
 # S6b (--film only): the agreed plan, built, real code on both sides. A's Claude puts the plan's two halves on the room
@@ -647,12 +646,12 @@ S6b() {
   local before; before=$($LIB log-max)
   local d="$SNAP_DIR/state/S6b" seat; mkdir -p "$d"
   mark split "$a's Claude splits the plan: the store for $a, the handler for $b"
-  submit "$a" "the plan's agreed. split it into two tasks on the room's task list: the store for me, the HTTP handler for $b. just the tasks for now"
+  submit "$a" "the plan's agreed. split it into two tasks on the room's task list and suggest owners: the store for me, the HTTP handler for $b. just the tasks for now"
   need wait_log --kind task_req --from "$a" --after "$before" --count 2 --timeout 120 --what "$a's Claude asks for both tasks" || return 1
   local h t
-  h=$($LIB task-for --owner "$a" --after "$before" --timeout 180 --what "the room's Claude adds $a's task (the store)")
-  t=$($LIB task-for --owner "$b" --after "$before" --timeout 180 --what "the room's Claude adds $b's task (the handler)")
-  [ -n "$h" ] && [ -n "$t" ] || { ABORT="S6b: the room's Claude did not add one task for $a and one for $b"; return 1; }
+  h=$($LIB task-for --owner "$a" --after "$before" --timeout 30 --what "the host adds the task suggested for $a (the store)")
+  t=$($LIB task-for --owner "$b" --after "$before" --timeout 30 --what "the host adds the task suggested for $b (the handler)")
+  [ -n "$h" ] && [ -n "$t" ] || { ABORT="S6b: no task suggested for $a and one for $b"; return 1; }
   settle "$a"
   snap "$a's Claude puts the agreed plan's two halves on the room task list: #$h the store, #$t the handler"
 

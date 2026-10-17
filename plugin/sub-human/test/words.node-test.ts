@@ -54,13 +54,11 @@ test('words: member text carries the mechanics (identity, address, @room, quotin
   }
 });
 
-test('words: claude fill is short and names the room task; agent body holds the apply rules', () => {
+test('words: claude fill is short; agent body says the plugin writes its task list (no task tools)', () => {
   const fillT = read(ROOM_CLAUDE_FILL);
   for (const p of ['{CODE}', '{OTHERS}', '{ADDR_EXAMPLE}', '{PLUGIN}']) assert.ok(fillT.includes(p), `claude fill lacks ${p}`);
   assert.ok(fill(fillT).length <= 500, `claude fill is ${fill(fillT).length} chars`);
-  assert.match(fillT, /room \{CODE\} open/);
-  assert.match(fillT, /in_progress/);
-  assert.match(fillT, /owner "room"/);
+  assert.doesNotMatch(fillT, /TaskCreate|TaskUpdate/);
   assert.match(fillT, /facilitate\.md/);
 
   const { fm, body } = frontmatter(read(AGENT));
@@ -68,8 +66,8 @@ test('words: claude fill is short and names the room task; agent body holds the 
   const description = must(fm.description, 'a description');
   assert.ok(description.length <= 200, `claude description is ${description.length} chars`);
   assert.ok(body.length <= 1900, `claude body is ${body.length} chars`);
-  for (const s of ['TaskCreate', 'TaskUpdate', 'one message', 'metadata {req: N, by: NAME}', 'only status completed', 'drops every field', 'completed',
-    'owner\'s done request', 'room closed', 'Task 1', 'SendMessage', 'propose', 'no #ids', 'No Bash',
+  assert.doesNotMatch(body, /TaskCreate|TaskUpdate/);
+  for (const s of ['the plugin writes it', 'Never change it', 'SendMessage', 'propose', 'no #ids', 'No Bash',
     'agreed, confirmed or approved', 'never ask here', 'one message per person', 'not the room', 'No status', 'open questions', 'one round']) {
     assert.ok(body.includes(s), `claude body lacks "${s}"`);
   }
@@ -79,7 +77,7 @@ test('words: room Claude tools are exactly the plan list (no Bash)', () => {
   const { fm } = frontmatter(read(AGENT));
   const tools = must(fm.tools, 'tools').split(',').map(s => s.trim());
   const want = ['Read', 'Grep', 'Glob', 'Write', 'Edit', 'Agent(sub-human:participant)', 'Agent(general-purpose)', 'SendMessage', 'ListAgents', 'ToolSearch',
-    'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet', ...['post', 'read', 'propose', 'hold'].map(t => PREFIX + t)];
+    ...['post', 'read', 'propose', 'hold'].map(t => PREFIX + t)];
   assert.deepEqual([...tools].sort(), [...want].sort());
   assert.ok(!tools.includes('Bash'));
 });

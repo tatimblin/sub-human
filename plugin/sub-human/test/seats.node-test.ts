@@ -162,11 +162,11 @@ test('decide on the host: once every approver answered, exactly once; an incompl
   assert.equal(mem.readAll().filter(e => e.kind === 'decision').length, 1);
 });
 
-test('members.publicView: other machines never see a seat\'s pid, pid_start, session_id or cwd', () => {
+test('members.publicView: other machines never see a seat\'s pid, pid_start, session_id, cwd or the room session\'s tasks_dir', () => {
   const ms: Members = { alice: { name: sn('alice'), role: 'member', machine: mid('m1'), pid: 42, pid_start: 7, session_id: sid('s'), cwd: '/x', joined_at: 'j', seen_at: 's' } };
   assert.deepEqual(members.publicView(ms), { alice: { name: 'alice', role: 'member', machine: 'm1', joined_at: 'j', seen_at: 's' } });
   assert.equal(must(ms.alice).pid, 42, 'the document itself is unchanged');
-  assert.deepEqual(members.LOCAL_FIELDS, ['pid', 'pid_start', 'session_id', 'cwd']);
+  assert.deepEqual(members.LOCAL_FIELDS, ['pid', 'pid_start', 'session_id', 'cwd', 'tasks_dir']);
 });
 
 /** A seat on another machine (no pid: it lives by its lease) whose lease ran out ago ms before now. */

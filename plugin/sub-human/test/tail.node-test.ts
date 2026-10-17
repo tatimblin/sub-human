@@ -176,7 +176,7 @@ test('tail: a member sees every join as a chat line; with its room row running, 
   assert.doesNotMatch(t.text(), /Agent|row:/);
 });
 
-test('tail: room Claude push is to=claude (a leading @claude), objections on its proposals, task_req (not decisions)', () => {
+test('tail: room Claude push is to=claude (a leading @claude) and objections on its proposals (not decisions, not task requests)', () => {
   h.freshHome();
   const { code } = h.register('claude', 'claude');
   sys(code, 'member_joined', 'claude');
@@ -188,12 +188,12 @@ test('tail: room Claude push is to=claude (a leading @claude), objections on its
   prop(code, 'claude', H1, ['alice', 'bob']);                                                    // #5 own: none
   sys(code, 'member_left', 'bob');                                                             // #6 pull
   say(code, 'alice', '', { kind: 'objection', proposal_hash: H1, text: 'no' });                // #7 push
-  inRoom(code, r => r.append({ kind: 'task_req', op: 'add', subject: 'parser tests' }, { via: 'agent', from: 'bob' })); // #8 push
+  inRoom(code, r => r.append({ kind: 'task_req', op: 'add', subject: 'parser tests' }, { via: 'agent', from: 'bob' })); // #8 pull
   sys(code, 'decision', 'room', { proposal_hash: H1 });                                        // #9 pull
   say(code, 'alice', 'end', { to: 'claude' });                                                 // #10 push: "@claude end"
   say(code, 'bob', '@claude not a tag');                                                       // #11 pull: "@room @claude not a tag"
   t.advance(1500);
-  assert.deepEqual(t.ids(), [7, 8, 10], t.text());
+  assert.deepEqual(t.ids(), [7, 10], t.text());
   assert.equal(t.batches(), 1);
   assert.match(t.text(), /#10 alice\[human\] say to=claude "end"/);
 });
@@ -551,7 +551,7 @@ test('tail: the room\'s Claude gets its push block as one wake, the pull lane as
   rows.writeHolds(code, sn('claude'), { members: ['bob'] });
   const t = startNd({ sid: 'so', deps: { roomClaude: { watchdog: () => 'live' } } });
   t.advance(300);
-  inRoom(code, r => r.append({ kind: 'task_req', text: 'please add tests', op: 'add', subject: 'tests' }, { via: 'agent', from: 'bob' })); // #1 push
+  say(code, 'bob', 'please add tests', { to: 'claude' });                               // #1 push
   say(code, 'bob', 'bob to the room');                                                  // #2 pull for the room's Claude
   t.advance(2000);
   assert.deepEqual(t.of('chat'), []);

@@ -46,6 +46,8 @@ export interface TaskFields {
   status?: string;
   req?: number;
   blockedBy?: string[];
+  /** add: a suggested owner (lib/tasks.ts apply), never the owner */
+  suggest?: string;
 }
 
 /**
@@ -81,6 +83,7 @@ export type EntryInput = {
   status?: string;
   req?: number;
   blockedBy?: (string | number)[];
+  suggest?: string;
 };
 
 /** validate()'s opts: from is the resolved seat name (never the model's); system: a trusted hook writes via=system. */
@@ -259,6 +262,9 @@ export interface Member {
   stopped_at?: string;
   spawn_error?: string;
   orphan_since?: string;
+  /** the room session's native task list directory (its config dir's tasks/sh-CODE), where the host projects the
+   * room's tasks (lib/room/task-files.ts); host only, never streamed */
+  tasks_dir?: string;
 }
 
 /** The members document: name -> seat record. */

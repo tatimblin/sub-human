@@ -8,7 +8,6 @@ import crypto from 'node:crypto';
 import { World, fixture, hso, identity, room, sleeper, withHome, PLUGIN, baseEnv, HOOKS } from './helpers.ts';
 import { pidStart } from '../../lib/lock.ts';
 import * as helpersLib from '../helpers.ts';
-import * as roomClaude from '../../lib/room-claude.ts';
 import * as common from '../../hooks/context.ts';
 import * as membersLib from '../../lib/room/members.ts';
 import * as linkSocket from '../../lib/remote/link-socket.ts';
@@ -68,12 +67,14 @@ test('/sub-human NAME with no open room: opens a room, joins as a member, spawns
   // the joiner's timing overrides (the test env sets the reaper's to 0) ride along for the room Claude's own reaper
   assert.deepEqual(settings.env, {
     SUB_HUMAN_HOME: w.home, SUB_HUMAN_ROOM: w.code, CLAUDE_CODE_TASK_LIST_ID: `sh-${w.code}`, CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
-    SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0', SUB_HUMAN_REAP_STOP_MS: '200',
+    SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_STOP_MS: '200',
   });
   assert.equal(settings.crossSessionInbound, 'accept');
   assert.equal(Object.keys(call.env).filter(k => k.startsWith('CLAUDE')).length, 0, 'no CLAUDE_* reaches the room\'s Claude');
   assert.equal(call.env.SUB_HUMAN_HOME, undefined, 'the room\'s Claude env comes only from --settings');
-  assert.equal(fs.existsSync(path.join(w.userHome, '.claude', 'tasks')), false, 'no sentinel file');
+  // the room session's task list, made before it starts (its task view watches it): nothing else in tasks/
+  assert.deepEqual(fs.readdirSync(path.join(w.userHome, '.claude', 'tasks')), [`sh-${w.code}`]);
+  assert.deepEqual(fs.readdirSync(path.join(w.userHome, '.claude', 'tasks', `sh-${w.code}`)), [], 'no task yet: the first request writes the room task');
   const c = must(hso(r).additionalContext);
   assert.ok(c.startsWith(`SUB-HUMAN: you are alice's Claude in room ${w.code}`), c.slice(0, 80));
   assert.doesNotMatch(c, /\{(NAME|CODE|OTHERS|ADDR_EXAMPLE|PLUGIN)\}/);
@@ -561,9 +562,9 @@ test('joining another room switches to it; the room\'s Claude cannot switch room
   let r = w.hook('join', expand(`alice ${newCode}`), { as: 'alice' });
   assert.equal(must(r.json).decision, undefined, must(r.json).reason);
   assert.match(must(hso(r).additionalContext), new RegExp(`in room ${newCode}`));
-  // alice was the old room's last member: its detached reaper (grace 0 in tests) may already have appended its
-  // "room closed" status after her departure, so the departure is the last entry that is not the reaper's.
-  const left = must(w.entries().filter(e => !(e.kind === 'status' && e.text === roomClaude.CLOSE_TEXT)).at(-1));
+  // alice was the old room's last member: its detached reaper (grace 0 in tests) may already have completed the room
+  // task after her departure, so the departure is the last entry that is not the room's own task line.
+  const left = must(w.entries().filter(e => !(e.kind === 'task' && e.from === 'room')).at(-1));
   assert.deepEqual([left.kind, left.from, left.via], ['member_left', 'alice', 'system'], 'old room logs the departure');
   assert.ok(seat(w, 'alice').left_at, 'old seat marked left');
   w.code = newCode;

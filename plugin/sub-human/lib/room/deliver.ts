@@ -22,7 +22,7 @@
  *       (restart the old sessions), a decision on a proposal I am in that needs no wake, another approver's objection
  *       on a proposal I approve. Everything else that is not mine is context.
  *     the room's Claude (role claude) wake: to=claude only (a person's leading @claude tag; an "@claude" inside the
- *       text is just words); task_req; an objection on its own proposal; another member's member_joined whose row
+ *       text is just words); an objection on its own proposal; another member's member_joined whose row
  *       note says no row is running (or is unknown). Everything else is context, decisions included: an objected
  *       one follows the objection that already woke it, and an agreed one needs nothing from it.
  *     card answers (both roles): a signoff is context (the decision carries it); an objection wakes the proposal's
@@ -67,7 +67,7 @@ function lane(me: LaneViewer | null | undefined, e: Entry, entries?: readonly Re
     return p && p.from === name ? 'push' : 'pull';
   }
   if (n.kind === 'decision' && entries && quietDecision(name, n, entries, trust)) return 'pull';
-  if (roomClaude) return n.kind === 'task_req' ? 'push' : 'pull';
+  if (roomClaude) return 'pull';
   if (n.kind === 'proposal' && approversOf(n).includes(name)) {
     if (!entries || !n.hash) return 'push';
     return answered(name, n.hash, entries, trust) || decided(n.hash, entries, trust) ? 'pull' : 'push';

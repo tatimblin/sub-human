@@ -43,6 +43,7 @@ import * as machineKey from './machine-key.ts';
 import * as inviteSecret from './invite-secret.ts';
 import * as seats from '../seats.ts';
 import * as proposal from '../proposal.ts';
+import * as tasks from '../tasks.ts';
 import * as members from '../room/members.ts';
 import * as envelope from '../room/envelope.ts';
 import * as room from '../room.ts';
@@ -74,7 +75,7 @@ interface Stream { tick(): void; stop(): void; end(reason: EventData['end']['rea
 type OpHandlers = { [K in Op]: (s: Session, params: WireParams<K>, id: FrameId | undefined) => OpResults[K] };
 
 const ANSWERS = new Set(['signoff', 'objection']);
-const WRITES = new Set(['join', 'leave', 'beat', 'append']);
+const WRITES = new Set(['join', 'leave', 'beat', 'append', 'task']);
 const authError = (msg: string, reason: ReasonFor<'AUTH'> | null = null): RoomError => new RoomError('AUTH', msg, reason);
 const invalid = (msg: string): RoomError => new RoomError('INVALID', msg);
 
@@ -348,6 +349,13 @@ const OPS: OpHandlers = {
   },
 
   ping() { return { pong: Date.now() }; },
+
+  // a seat's task request: applied here, on the host, under the room's tasks lock (lib/tasks.ts apply), so two machines'
+  // requests are one after the other; a refusal is an answer {ok: false}, not an error
+  task(s, { name, req }) {
+    own(s, name);
+    return tasks.apply(s.store, req, { by: String(name) });
+  },
 };
 
 /** One op's handler on the params as they came (an object; WireParams: every field unknown until the op checks it). */
@@ -444,6 +452,7 @@ class Session {
     if (op === 'hello') take('hello.session');
     else if (op === 'join' || op === 'leave') link('seat');
     else if (op === 'subscribe') link('subscribe');
+    else if (op === 'task') link('task');
     else if (op === 'beat' || op === 'blob.get' || op === 'ping') take(op);
   }
 

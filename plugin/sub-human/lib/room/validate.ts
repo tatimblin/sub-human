@@ -54,7 +54,7 @@ const isKindOf = <K extends KnownKind, E extends Entry>(e: E | null | undefined,
 
 /** a hash a caller may name: 6-64 hex (a proposal's is 12, lib/text.ts HASH_RE; older logs hold longer ones) */
 const HASH_ARG_RE = /^[0-9a-f]{6,64}$/;
-const TASK_FIELDS = ['op', 'task_id', 'subject', 'detail', 'evidence', 'owner', 'status', 'req', 'blockedBy'];
+const TASK_FIELDS = ['op', 'task_id', 'subject', 'detail', 'evidence', 'owner', 'status', 'req', 'blockedBy', 'suggest'];
 const ENTRY_FIELDS = new Set(['kind', 'text', 'to', 'refs', 'hash', 'approvers', 'same', 'path', 'proposal_hash', 'normalized',
   'edit_path', 'drafted', 'id', 'by', 'pubkey', 'machine', ...TASK_FIELDS]);
 const TASK_KINDS: ReadonlySet<unknown> = new Set(['task_req', 'task']);
@@ -197,11 +197,12 @@ function taskFields(kind: string, entry: EntryInput): TaskFields {
   optStr('status', entry.status, 32);
   const owner = entry.owner;
   if (owner !== undefined && owner !== null && !(typeof owner === 'string' && NAME_RE.test(owner))) bad(`invalid owner "${owner}"`);
+  if (entry.suggest !== undefined && !(typeof entry.suggest === 'string' && NAME_RE.test(entry.suggest))) bad(`invalid suggest "${String(entry.suggest)}"`);
   if (entry.req !== undefined && !(Number.isInteger(entry.req) && entry.req > 0)) bad('req must be a log id');
   if (entry.blockedBy !== undefined && !(Array.isArray(entry.blockedBy) && entry.blockedBy.every(b => taskId(b) !== null))) bad('blockedBy must be task ids');
   if (entry.blockedBy !== undefined && entry.blockedBy.length > ENTRY_LIST_MAX) bad(`too many blockedBy ids (the limit is ${ENTRY_LIST_MAX})`);
   // each was checked above (a string, a name, a log id)
-  for (const k of ['subject', 'detail', 'evidence', 'status', 'owner', 'req'] as const) if (fields[k] !== undefined && fields[k] !== null) (t as Record<string, unknown>)[k] = fields[k];
+  for (const k of ['subject', 'detail', 'evidence', 'status', 'owner', 'req', 'suggest'] as const) if (fields[k] !== undefined && fields[k] !== null) (t as Record<string, unknown>)[k] = fields[k];
   if (entry.blockedBy !== undefined) t.blockedBy = entry.blockedBy.map(String);
   return t;
 }

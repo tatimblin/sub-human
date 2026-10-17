@@ -3,16 +3,6 @@
  "min": "2.1.292",
  "entries": [
   {
-   "id": "task-completed-block-drops-fields",
-   "section": 1,
-   "stability": "incidental",
-   "since": "2.1.281",
-   "search": [
-    "TaskCompleted hooks cancelled (control stream closed)"
-   ],
-   "note": "A TaskCompleted block makes TaskUpdate return success:false, updatedFields:[] before the write: every field in that call (subject, metadata, owner) is discarded."
-  },
-  {
    "id": "hook-exit2-blocks",
    "section": 1,
    "stability": "API",
@@ -37,49 +27,6 @@
     "case\"block\":~.permissionBehavior=\"deny\",~.blockingError={blockingError:~.reason||\"Blocked by hook\""
    ],
    "note": "{\"decision\":\"block\",\"reason\"} is a blockingError."
-  },
-  {
-   "id": "task-completed-input",
-   "section": 1,
-   "stability": "API",
-   "since": "2.1.281",
-   "search": [
-    "(\"TaskCompleted\"),task_id:"
-   ],
-   "shape": [
-    "hook_event_name:~(\"TaskCompleted\"),task_id:~(),task_subject:~(),task_description:~().optional(),teammate_name:"
-   ],
-   "note": "TaskCompleted input has no metadata/owner/status; read the task file (which still has the old status)."
-  },
-  {
-   "id": "task-events-no-matcher",
-   "section": 1,
-   "stability": "API",
-   "since": "2.1.281",
-   "search": [
-    "case\"TeammateIdle\":case\"TaskCreated\":case\"TaskCompleted\":return;"
-   ],
-   "note": "TaskCreated/TaskCompleted/TeammateIdle have no matcher query: every hook fires."
-  },
-  {
-   "id": "task-update-schema",
-   "section": 1,
-   "stability": "API",
-   "since": "2.1.281",
-   "search": [
-    "Metadata keys to merge into the task. Set a key to null to delete it."
-   ],
-   "note": "TaskUpdate metadata merges; null deletes a key."
-  },
-  {
-   "id": "task-create-metadata",
-   "section": 1,
-   "stability": "API",
-   "since": "2.1.281",
-   "search": [
-    "Arbitrary metadata to attach to the task"
-   ],
-   "note": "TaskCreate accepts metadata."
   },
   {
    "id": "env-child-session",
@@ -339,7 +286,76 @@
    "search": [
     "where the v5 storage backend was built at start-up"
    ],
-   "note": "The experimental key-value task backend is off by default; files are the store."
+   "note": "The experimental key-value task backend is off by default; files are the store. The room's task list is files the plugin writes (lib/room/task-files.ts): with this backend on (its gate is the storageV5 taskListHighWaterMark key), the room session would not read them, so the probe fails and doctor says so."
+  },
+  {
+   "id": "task-file-schema",
+   "section": 4,
+   "stability": "incidental",
+   "since": "2.1.296",
+   "search": [
+    "\".highwatermark\""
+   ],
+   "shape": [
+    "id:~(),subject:~(),description:~(),activeForm:~().optional(),owner:~().optional(),status:~(),blocks:~(~()),blockedBy:~(~()),metadata:~(~(),~()).optional()})),~=\".highwatermark\""
+   ],
+   "note": "A task file is {id, subject, description, activeForm?, owner?, status pending|in_progress|completed, blocks[], blockedBy[], metadata?} (zod, safeParse: a file that fails is skipped and logged, never fatal). Extra metadata keys pass. lib/cc/tasks.ts NativeTask; lib/room/task-files.ts writes the room's (cc-2.1.296-tasks-plans.md S2.5)."
+  },
+  {
+   "id": "task-highwatermark",
+   "section": 4,
+   "stability": "incidental",
+   "since": "2.1.296",
+   "search": [
+    "[Tasks] raiseTaskIdMark",
+    "[Tasks] could not record skipped task id "
+   ],
+   "shape": [
+    "let[~,~]=await Promise.all([~(~,~),~(~,~)]);return Math.max(~,~)}"
+   ],
+   "note": "TaskCreate's id is max(highest <n>.json, .highwatermark)+1; .highwatermark only steers that allocation: a file the plugin writes at any id is shown. The projector raises the mark to its highest id (cc-2.1.296-tasks-plans.md S2.4)."
+  },
+  {
+   "id": "task-lockfile",
+   "section": 4,
+   "stability": "incidental",
+   "since": "2.1.296",
+   "search": [
+    "{retries:{retries:30,minTimeout:5,maxTimeout:100}",
+    "{stale:1e4,update:null,realpath:!0,retries:0,fs:",
+    "return r.lockfilePath||`${e}.lock`}",
+    "[Tasks] updateTask"
+   ],
+   "shape": [
+    "let ~=~(~(~),\".lock\");try{await ~().mkdir(~(~)),await ~(~,\"\",{flag:\"wx\"})}catch{}return ~}"
+   ],
+   "note": "File mode (storageV5 off, not diskless) locks with proper-lockfile (mkdir <realpath(target)>.lock; mtime refreshed every 5 s; stale after 10 s; 30 retries 5-100 ms): the list lock's target is <list>/.lock (an empty file made with wx), dir <list>/.lock.lock, taken by create, reset and restore; the task lock's target is <list>/<id>.json, dir <list>/<id>.json.lock, taken by update and claim (not the list lock). Observed with fs.watch (cc-2.1.296-tasks-plans.md S4.1). lib/cc/tasklock.ts speaks this protocol."
+  },
+  {
+   "id": "task-list-auto-reset",
+   "section": 4,
+   "stability": "incidental",
+   "since": "2.1.296",
+   "search": [
+    "[Tasks] resetTaskList",
+    "before a reset",
+    "Task list reset still in flight; not arming another hide until it settles"
+   ],
+   "note": "A session whose task view is mounted (any interactive or --bg session with the list, attached or not) resets the list 5 s after it reads every task completed: under the list lock it raises .highwatermark and deletes every *.json (not dotfiles, not temp names). Observed detached in a --bg job (cc-2.1.296-tasks-plans.md S2.3). The reason the room task stays in_progress until the reaper (lib/tasks.ts closeRoomTask)."
+  },
+  {
+   "id": "task-ui-watch",
+   "section": 4,
+   "stability": "incidental",
+   "since": "2.1.296",
+   "search": [
+    "Task list watcher error: ",
+    "useTasksV2 cannot be called outside of a TasksV2StoreContext provider"
+   ],
+   "shape": [
+    "var ~=5000,~=50,~=5000;class ~{"
+   ],
+   "note": "The task view fs.watch()es <tasksDir>/<list> and refetches 50 ms after a change, so a file written from outside shows at once (cc-2.1.296-tasks-plans.md S2.1). The watch is set when the view subscribes: if the dir does not exist then, fs.watch throws, the throw is swallowed and nothing polls, and files written later never show in that session: lib/room-claude.ts spawn writes the room task (and so the dir) before the room session starts."
   },
   {
    "id": "todo-tools-gate",

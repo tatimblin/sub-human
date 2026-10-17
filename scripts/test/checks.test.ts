@@ -53,7 +53,7 @@ test('checks: a partial run skips the scenes it did not plan (Metrics always run
 test('checks: every scene module declares its scene and a run function; baselines name the compared runs', () => {
   for (const m of SCENES) { assert.match(m.scene, /^(S\d+b?|Metrics)$/); assert.equal(typeof m.run, 'function'); }
   for (const r of Object.values(BASELINES.compare)) assert.ok(BASELINES.runs[r], r);
-  for (const k of ['wakes', 'noisePerCapture', 'callsPerReview', 'roomClaudeJoinCalls', 'roomClaudeTaskCalls'] as const) assert.equal(typeof BASELINES.thresholds[k], 'number');
+  for (const k of ['wakes', 'noisePerCapture', 'callsPerReview', 'roomClaudeJoinCalls'] as const) assert.equal(typeof BASELINES.thresholds[k], 'number');
   assert.equal(BASELINES.prices.default?.length, 4);
 });
 

@@ -1,25 +1,28 @@
 /**
  * plugin/sub-human/mcp/task.ts: the `task` tool, a room-server plug-in (create(ctx) -> {tools, call}).
  *
- *   task({op: add|claim|release|done, id?, subject?, detail?, evidence?, for?})
- *     add needs subject; claim, release and done need id; done needs evidence. Appends a task_req entry
- *     (via agent, from the resolved member; owner = for || me) and returns "queued; the room's Claude applies it".
- *     The room's Claude applies requests to its native task list (the room's list). With no live room Claude it returns
- *     "the room's Claude is not running: the room task list is unavailable" and appends nothing.
+ *   task({op: add|claim|release|done, id?, subject?, detail?, evidence?, suggest?})
+ *     add needs subject (suggest: a suggested owner, who claims it themselves); claim, release and done need id; done
+ *     needs evidence. The host applies it at once (lib/tasks.ts apply: the ownership rules, then the log, the room
+ *     session's task list and tasks.json): a room hosted here in this process, one hosted elsewhere through its link
+ *     (the `task` op, lib/remote/server.ts). The reply is the change made, or why it was refused; nothing is queued.
  */
 
 import * as tasks from '../lib/tasks.ts';
-import * as identity from '../lib/identity.ts';
 import * as room from '../lib/room.ts';
-import type { Me, PluginApi, PluginContext, JsonSchema, ToolArgs, ToolDefinition, ToolResult } from './types.ts';
-import type { RoomCode } from '../lib/brand.ts';
+import { msgOf } from '../lib/errors.ts';
+import { MirrorRoomStore } from '../lib/room/store-mirror.ts';
+import type { Me, PluginContext, JsonSchema, ToolArgs, ToolDefinition, ToolResult } from './types.ts';
+
+/** The plug-in (a PluginApi): its call reads only the seat's code, name and role, and answers at once. */
+interface TaskPlugin { tools: ToolDefinition[]; call(name: string, me: Pick<Me, 'code' | 'name' | 'role'>, args: ToolArgs): ToolResult }
 
 const S = (d: string): JsonSchema => ({ type: 'string', description: d });
 const TOOL: ToolDefinition = {
   name: 'task',
-  title: 'Request a room task change',
-  description: 'Ask the sub-human room\'s Claude to change the shared room task list; it is queued and the room\'s Claude applies it. '
-    + 'add needs subject; claim, release and done need id; done also needs evidence.',
+  title: 'Change the room task list',
+  description: 'Change the sub-human room\'s shared task list; the host applies it at once and replies with the change or why not. '
+    + 'add needs subject; claim (for yourself), release and done (your own task) need id; done also needs evidence.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -28,7 +31,7 @@ const TOOL: ToolDefinition = {
       subject: S('add: a short title.'),
       detail: S('Optional longer description.'),
       evidence: S('done: what shows it is finished (a test run, a commit).'),
-      for: S('The member it is for; default you.'),
+      suggest: S('add: the member you suggest for it (they claim it themselves).'),
     },
     required: ['op'],
     additionalProperties: false,
@@ -36,33 +39,24 @@ const TOOL: ToolDefinition = {
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
 };
 
-function create(ctx: Partial<Pick<PluginContext, 'text'>> = {}): PluginApi {
+function create(ctx: Partial<Pick<PluginContext, 'text'>> = {}): TaskPlugin {
   const text = ctx.text ?? ((s: unknown, isError?: boolean): ToolResult => ({ content: [{ type: 'text', text: String(s) }], ...(isError ? { isError: true } : {}) }));
 
-  function roomClaudeLive(code: RoomCode) {
-    const o = identity.readMembers(code).claude;
-    return !!(o && o.role === 'claude' && identity.seatAlive(o));
-  }
-
-  function call(name: string, me: Me, args: ToolArgs): ToolResult {
+  function call(name: string, me: Pick<Me, 'code' | 'name' | 'role'>, args: ToolArgs): ToolResult {
     if (name !== 'task') return text(`unknown tool ${name}`, true);
-    if (me.role === 'claude') return text('you hold the room task list: apply requests with TaskCreate/TaskUpdate', true);
-    const v = tasks.validate(args || {});
-    if (!v.ok) return text(`refused: ${v.error}`, true);
-    const r = v.req;
-    if (!roomClaudeLive(me.code)) return text("the room's Claude is not running: the room task list is unavailable");
-    const owner = r.for || me.name;
-    if (r.for) {
-      const m = identity.readMembers(me.code)[r.for];
-      if (!m || m.role === 'claude') return text(`refused: no member named ${r.for} in ${me.code}`, true);
-    }
-    const task: { op: string; owner: string; id?: string; subject?: string; detail?: string; evidence?: string } = { op: r.op, owner };
-    for (const k of ['id', 'subject', 'detail', 'evidence'] as const) if (r[k] !== undefined) task[k] = r[k];
-    room.open(me.code).append({ kind: 'task_req', text: tasks.requestText(task), ...task }, { via: 'agent', from: me.name });
-    return text('queued; the room\'s Claude applies it');
+    if (me.role === 'claude') return text('the room session takes no task requests', true);
+    const store = room.open(me.code).store;
+    let r: tasks.Applied;
+    try {
+      if (store.isHost) r = tasks.apply(store, args || {}, { by: me.name });
+      else if (store instanceof MirrorRoomStore) r = store.request('task', { name: me.name, req: args || {} });
+      else return text('not applied: this room has no host to ask', true);
+    } catch (e) { return text(`not applied: ${msgOf(e)}`, true); }
+    return r.ok ? text(r.text) : text(`refused: ${r.error}`, true);
   }
 
   return { tools: [TOOL], call };
 }
 
 export { create, TOOL };
+export type { TaskPlugin };

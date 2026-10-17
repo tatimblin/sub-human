@@ -2,7 +2,7 @@
  * Shared test helpers. Requiring this file:
  *   - strips inherited CLAUDE* env vars from process.env (a test run started inside Claude Code would
  *     otherwise carry the parent's CLAUDE_PID / CLAUDE_CODE_SESSION_ID and confuse identity), and
- *   - gives the process a fresh temp SUB_HUMAN_HOME, and
+ *   - gives the process a fresh temp SUB_HUMAN_HOME and a temp CLAUDE_CONFIG_DIR (its own; children get none), and
  *   - sets SUB_HUMAN_TEST=1 (lib/env.ts testMs: the test-only timing overrides).
  *
  *   freshHome() -> dir                   a new temp SUB_HUMAN_HOME (also set in process.env)
@@ -131,6 +131,9 @@ function freshHome(t?: TestContext): string {
   return dir;
 }
 freshHome();
+// Claude Code's config dir, for this process only (childEnv strips it with every CLAUDE* var: a child's is its HOME's
+// .claude): the room's native task list (lib/room/task-files.ts) and anything else under it never reach ~/.claude
+process.env.CLAUDE_CONFIG_DIR = tmpDir('sub-human-test-claude-');
 
 function newRoom(): RoomCode {
   current = identity().newCode();

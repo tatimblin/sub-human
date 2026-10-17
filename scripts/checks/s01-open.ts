@@ -31,9 +31,9 @@ export function run(x: Ctx, { det }: { det: Det }, T: Thresholds): void {
   const holds = x.holdsAt('S1', 1, 'claude');
   det(`The room's Claude's panel lists ${A}`, orr.some(r => r.label === A) && (holds.members || []).includes(A),
     `claude rows: ${orr.map(r => r.line).join(' | ') || 'none'}; claude's holds (its session document) members ${JSON.stringify(holds.members || [])}`);
-  const t1 = x.nativeTasks('S1', 1).find(t => t.id === '1');
-  det(`Room task #1 "room ${code} open" on the room Claude's native list (in_progress, owner room)`, t1 && t1.subject === `room ${code} open` && t1.status === 'in_progress' && t1.owner === 'room',
-    t1 ? `~/.claude/tasks/sh-${code}/1.json: "${t1.subject}" ${t1.status} owner ${t1.owner}` : 'no 1.json in the S1 copy of the native list');
+  const dir = ms.claude && ms.claude.tasks_dir;
+  det(`The room session's task list directory is made before it starts and recorded (members.json claude.tasks_dir ends tasks/sh-${code})`, !!dir && dir.endsWith(`/tasks/sh-${code}`) && fs.existsSync(dir),
+    `claude.tasks_dir ${dir || 'missing'}${dir ? (fs.existsSync(dir) ? ' (exists)' : ' (missing on disk)') : ''}`);
   const j = x.entries(A).filter(e => e.attachment && e.attachment.type === 'hook_additional_context' && e.attachment.hookEvent === 'UserPromptExpansion').map(e => [e.attachment?.content].flat().join('\n'))[0] || '';
   const fillLen = (j.split('\n\nROWS\n')[0] ?? '').length;
   det(`Member join block small: text ≤ ${T.joinText} chars, with ROWS ≤ ${T.joinBlock.toLocaleString('en-US')}`, j && fillLen <= T.joinText && j.length <= T.joinBlock,

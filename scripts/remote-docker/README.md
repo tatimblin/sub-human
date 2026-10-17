@@ -48,9 +48,9 @@ checked only with `node --check`. The "today" column below is the last run befor
   through tls-front. Its seats run with `SUB_HUMAN_LAB=1` and `SUB_HUMAN_WEB_FRONT=https://tls-front`, so
   `/sub-human invite --web` names the lab's front instead of Tailscale Serve (the knob is honoured only under the
   lab or the tests; a person uses Tailscale).
-- **devbox-old**: the same image with the previous release, plugin 0.5.0-beta.15, from `git archive 7c97bdb
-  plugin/sub-human` baked in (`lab/Dockerfile.old`, built once by `lab.ts` as `sub-human-lab-old:7c97bdb`; `LAB_OLD_REF`
-  for another). Its `joiner` user is the beta.15 joiner. Releases before 0.5 are not interoperated with any more.
+- **devbox-old**: the same image with the previous release, plugin 0.5.0-beta.16, from `git archive d67ed1f
+  plugin/sub-human` baked in (`lab/Dockerfile.old`, built once by `lab.ts` as `sub-human-lab-old:d67ed1f`; `LAB_OLD_REF`
+  for another). Its `joiner` user is the beta.16 joiner (protocol 3). Releases before 0.5 are not interoperated with any more.
 - **joiner-a / joiner-b**: node 24, the plugin, an ssh client, user `joiner` with its own `SUB_HUMAN_HOME`, and
   `NET_ADMIN` for iptables. They run the real hooks and CLI (`lab/seat-cli.ts`). Each seat has a `lab/seat-proc.ts`
   that stands in for its `claude` process and runs the plugin's own room tail, which renews the lease and records
@@ -73,7 +73,7 @@ checked only with `node --check`. The "today" column below is the last run befor
 | `half-open` | P3 | a toxiproxy `timeout` toxic (bob) and iptables DROP to toxiproxy (bea) black-hole the links; a post returns within 10 s (`⧗ sending`, kept under its nonce) and lands exactly once after the heal; both links are declared dead within 35 s by the app ping (`LAB_PING_DEADLINE_MS`) | pass |
 | `flap` | P1/P3 | 10 cuts in 60 s (alternating disable and `reset_peer`) while everyone posts; ends byte-identical; every accepted post once; no ghost; bea on her own WAN path is the control | pass |
 | `slow-link` | P1 | 5 s of upstream latency, past the hook's 3 s deadline: the hook says `⧗ sending (slow link)` within 3 s, never "nothing was sent"; the post lands exactly once (no ghost, no double) and the outbox empties | pass |
-| `skew` | mixed | beta.15 host ← current joiner: its line ends with a 4-digit PIN, refused here naming the host's update; current host ← beta.15 joiner: beta.15 refuses the SECRET line, and the host's invite text names the version it needs; a link made before keeps working (protocol 1..3 against 1..2 settles on 2, unit-tested); a hello as a 9.9.9 joiner (protocol 99) into the host's serve over an ssh login is refused `PROTOCOL` (reason `SKEW`) naming both versions and "The host must update" | not run (Stage 7b) |
+| `skew` | mixed | beta.16 host ← current joiner and the reverse: protocol 3 against 4, the hello refused `PROTOCOL` (`SKEW`) naming which side updates; a hello as a 9.9.9 joiner (protocol 99) into the host's serve over an ssh login is refused `PROTOCOL` (reason `SKEW`) naming both versions and "The host must update" | not run (Stage 7b) |
 | `security` | all | nothing of sub-human's in the devbox account's `authorized_keys` (no door, no forced command); homes 0700 with nothing group/world readable; no link token in any log, room file, process list or other file; PIN guessing pending (unit-tested); `/sub-human kick bob`: his link's token ends, serve stopped, bob's link stops (AUTH, typed reason) and his post is refused, bea untouched | not run (Stage 7b) |
 | `tls-front` | 1.1 | `https://tls-front/` verifies against the lab CA and answers 502 with no listener; with a stand-in listener on the devbox loopback (`lab/ws-probe.ts`) the upgrade is 101 and echoes, from joiner-a and joiner-b | pass |
 | `wss` | 1.1 | the host's `sub-human listen` on 127.0.0.1:7420; `/sub-human invite --web` (the devbox's `SUB_HUMAN_WEB_FRONT`) shows `/sub-human join https://tls-front/sub-human/CODE SECRET` and the PIN apart (no name, no `#`); bob and ben type the line (the listener's key checked against it, Noise XK with a key of the link's own), then the PIN when asked; a wrong PIN is refused; alice's card lets each in, a bare `/sub-human` seats them; posts flow both ways; mirrors converge; Caddy's log holds no post text | not run (Stage 7b) |
@@ -100,7 +100,7 @@ probe finds it and the scenario runs. You can also force things:
 | feature | detected by | used in |
 |---|---|---|
 | `inviteLine` | `lib/remote/invite-secret.ts` (protocol 3: an invite line and its PIN apart) | short |
-| `shortCode` | `lib/remote/enroll.ts` (0.5.0-beta.15's PIN over CPace: the old end in skew) | skew |
+| `shortCode` | `lib/remote/enroll.ts` (0.5.0-beta.15's PIN over CPace; set `LAB_OLD_REF=7c97bdb` for that end) | skew |
 | `hostSsh` | `hooks/handlers/join.ts` handles `--ssh` | p1-friends |
 | `revoke`, `doctor` | the CLI's usage lists `kick` (`revoke` before 0.5.0-beta.6), `doctor` | security, p1-friends |
 | `heartbeat` | protocol op `ping` (or `ping` in `link.ts`) | half-open |
@@ -121,7 +121,7 @@ redacted from every file.
 
 ## Running
 
-- Needs Docker (28 here). The first run builds `sub-human-lab:node24` and `sub-human-lab-old:7c97bdb` and pulls
+- Needs Docker (28 here). The first run builds `sub-human-lab:node24` and `sub-human-lab-old:d67ed1f` and pulls
   toxiproxy and caddy. A full suite takes about 7 minutes, most of it the 90 s sleep, the 60 s flap and the 45 s
   heartbeat waits.
 - The suite is idempotent: it starts the stack (or reuses one left by `--keep`), resets every machine between
@@ -132,7 +132,7 @@ redacted from every file.
 - Link timings: `SUB_HUMAN_LINK_*_MS` in the harness's environment reach every machine's hooks, CLI and link daemons
   (a scenario may add its own `linkEnv`); the default run uses the plugin's own timings.
 - Knobs: `LAB_SLEEP_S`, `LAB_JOINER_SLEEP_S`, `LAB_FLAP_CUTS`, `LAB_FLAP_PERIOD_MS`, `LAB_HEARTBEAT_DEADLINE_MS`,
-  `LAB_PING_DEADLINE_MS`, `LAB_WSS_SLEEP_S` (45), `LAB_WS_PORT` (7420), `LAB_WS_FWD_PORT` (7421), `LAB_OLD_REF` (7c97bdb), `LAB_STRICT`.
+  `LAB_PING_DEADLINE_MS`, `LAB_WSS_SLEEP_S` (45), `LAB_WS_PORT` (7420), `LAB_WS_FWD_PORT` (7421), `LAB_OLD_REF` (d67ed1f), `LAB_STRICT`.
 
 ## Files
 

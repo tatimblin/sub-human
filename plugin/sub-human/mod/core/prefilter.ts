@@ -17,15 +17,6 @@ export function consentNeeded(hello: Hello | null | undefined, sid: unknown, rev
   return reviewFlag !== false;
 }
 
-/** classic.PostToolUse TaskCreate|TaskUpdate and classic.TaskCompleted: hooks/handlers/tasks.ts acts only for the room's Claude, so
- * false when the seat is surely a member, or surely none and SUB_HUMAN_ROOM is unset (a room Claude launched before its
- * join has it: tasks.ts roomClaudeRoom). */
-export function tasksNeeded(hello: Hello | null | undefined, sid: unknown, roomEnv: unknown): boolean {
-  if (!sure(hello, sid) || !hello) return true;
-  if (hello.seat) return hello.seat.role === 'claude';
-  return typeof roomEnv === 'string' && roomEnv !== '';
-}
-
 /** Consent's report under SUB_HUMAN_SHIM=1 when it made one, else undefined. */
 export function reviewOpenOf(subHuman: SubHumanRead | null | undefined): boolean | undefined {
   return subHuman && typeof subHuman.reviewOpen === 'boolean' ? subHuman.reviewOpen : undefined;

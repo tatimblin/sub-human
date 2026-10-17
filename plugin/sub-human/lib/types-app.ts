@@ -54,14 +54,29 @@ export interface Task {
   blockedBy: string[];
   metadata?: { _internal?: unknown };
 }
-/** The `task` tool's request, normalized (validate). */
+/** The `task` tool's request, normalized (validate). suggest: add only, a suggested owner (never an owner). */
 export interface TaskReq {
   op: string;
   id?: string;
   subject?: string;
   detail?: string;
   evidence?: string;
-  for?: string;
+  suggest?: string;
+}
+/** One task as the log's `task` entries leave it (lib/tasks.ts foldAll): the room task and deleted ones included, with
+ * what its native file carries (lib/room/task-files.ts project). */
+export interface FoldedTask {
+  id: string;
+  subject: string;
+  detail?: string;
+  status: string;
+  owner: string | null;
+  blockedBy: string[];
+  req?: number;
+  by?: string;
+  suggest?: string;
+  plan?: string;
+  version?: number;
 }
 
 // ---------- lib/proposal.ts ----------

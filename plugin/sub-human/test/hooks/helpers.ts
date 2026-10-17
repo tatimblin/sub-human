@@ -118,7 +118,7 @@ class World {
     // Never launch a real room Claude: `claude` is /usr/bin/false unless a test passes a stub (SUB_HUMAN_CLAUDE).
     // consent: a plan-view Yes a test gives right after the view opens is a person's (item 8's guard is tested on its own)
     const guard = name === 'consent' || name === 'prompt' ? { SUB_HUMAN_YES_GUARD_MS: '1' } : {};
-    const e = baseEnv({ SUB_HUMAN_HOME: this.home, HOME: this.userHome, CLAUDE_PLUGIN_ROOT: PLUGIN, SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0', SUB_HUMAN_REAP_STOP_MS: '200', ...guard, ...env });
+    const e = baseEnv({ SUB_HUMAN_HOME: this.home, HOME: this.userHome, CLAUDE_PLUGIN_ROOT: PLUGIN, SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_STOP_MS: '200', ...guard, ...env });
     if (as) {
       e.CLAUDE_PID = String(this.pid[as]);
       if (session) inp.session_id = this.sid[as];

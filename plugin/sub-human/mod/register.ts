@@ -15,7 +15,6 @@ import { registerGuard } from './guard.ts';
 import { registerRender } from './render.ts';
 import { registerPrompt } from './prompt.ts';
 import { registerConsent } from './consent.ts';
-import { registerTasks } from './tasks.ts';
 import { registerDeliver } from './deliver.ts';
 import { registerSend } from './send.ts';
 import { registerRows } from './rows.ts';
@@ -52,8 +51,6 @@ export const HOOKS: readonly ModHook[] = [
   { event: 'classic.PermissionRequest', matcher: 'tool_name ExitPlanMode', file: 'mod/consent.ts', does: 'node consent (closes a review without a dialog) while a review may be open; a deny beneath wins' },
   { event: 'classic.Stop', matcher: '', file: 'mod/consent.ts', does: 'node consent (the open-review nudge) only while a review may be open or the seat is unknown' },
   { event: 'ui.render', matcher: 'PromptHint', file: 'mod/consent.ts', does: 'observes whether the prompt holds typed text (isDraft; always next(e)): an ExitPlanMode\'s consent payload carries it, so a plan-view Yes that keys meant for the prompt may have given is asked again on the card' },
-  { event: 'classic.PostToolUse', matcher: 'tool_name TaskCreate|TaskUpdate', file: 'mod/tasks.ts', does: 'node tasks (the room task mirror) only for the room\'s Claude or an unknown seat' },
-  { event: 'classic.TaskCompleted', matcher: '', file: 'mod/tasks.ts', does: 'node tasks (the gate; exit 2 -> block) only for the room\'s Claude or an unknown seat; .catch blocks in the room\'s Claude' },
   { event: 'tool.call', matcher: 'Agent', file: 'mod/rows.ts', does: 'keeps the call\'s agentId while it runs, for classic.PreToolUse beneath (which carries none); always next(e)' },
   { event: 'classic.PreToolUse', matcher: 'Agent', file: 'mod/rows.ts', does: 'node row-guard (denies a duplicate row, or a member\'s stray participant row) for a row agent in a seated or unsure session; next(e) always, ours above it (mergePre)' },
   { event: 'classic.PostToolUse', matcher: 'tool_name Agent|Task', file: 'mod/rows.ts', does: 'notes a row agent\'s id (its hand-back is no turn); node row-map (which panel row the spawned row agent is) for a row agent in a seated or unsure session' },
@@ -69,7 +66,6 @@ export function register(on: On): void {
   registerGuard(on);
   registerPrompt(on);
   registerConsent(on);
-  registerTasks(on);
   registerRows(on);
   registerRender(on);
   registerSend(on);

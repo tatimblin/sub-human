@@ -37,7 +37,7 @@ import { fsStore } from './support/fs-store.ts';
 type ServeOpts = Parameters<typeof server.serve>[1];
 
 // Never launch a real room Claude: a remote join on the host starts one as a local join does.
-Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
+Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0' });
 
 const REMOTE = mid('remote0machine01');
 const H = 'abcdef012345';
@@ -242,8 +242,11 @@ test('protocol skew: no common version is PROTOCOL naming the side that must upd
   assert.deepEqual([must(r.error).code, must(r.error).reason, /you run an older sub-human \(protocol 1\)\. Update your plugin/.test(must(r.error).message)], ['PROTOCOL', 'SKEW', true]);
   // a reply outside this end's range is refused here too
   await fails(at({ proto: { min: 1, max: 1 } }, { proto: { min: 1, max: 1 } }).then(() => at({ proto: { min: protocol.PROTO.max + 1, max: protocol.PROTO.max + 1 } }, {})), /must update|Update your plugin/);
-  // 0.5.0-beta.15 (protocol 1–2) and this version share none: the joiner is told to update
-  assert.deepEqual(protocol.PROTO, { min: 3, max: 3 });
+  // protocol 4 (tasks applied on the host, the room plan): a 0.5.0-beta.16 peer (protocol 3) is refused with the update
+  // message, whichever side it is
+  assert.deepEqual(protocol.PROTO, { min: 4, max: 4 });
+  await fails(at({ proto: { min: 3, max: 3 }, version: '0.5.0-beta.16' }, {}), /you run 0\.5\.0-beta\.16 \(protocol 3\)\. Update your plugin: \/plugin update sub-human$/);
+  await fails(at({}, { proto: { min: 3, max: 3 }, version: '0.5.0-beta.16' }), /^host runs sub-human 0\.5\.0-beta\.16 \(protocol 3\);.*The host must update/);
   await fails(at({}, { proto: { min: 1, max: 2 }, version: '0.5.0-beta.15' }), /The host must update/);
 });
 
@@ -288,6 +291,26 @@ test('remote (memory): a bound link (the card let one name in) joins its own sea
   // an unbound link (a login's, an invite that binds no seat) still picks its name at join time
   const open = await linked(t, host);
   assert.deepEqual(await open.join(seat(code, 'erin')), { ok: true });
+});
+
+test('remote (memory): a task request is applied on the host at once: the result, or the refusal, comes back over the link; only for the link\'s own seat; quota', async t => {
+  const { code, host } = hostRoom(t);
+  const c = await linked(t, host);
+  await c.join(seat(code, 'bob'));
+  const add = await c._request('task', { name: 'bob', req: { op: 'add', subject: 'parser tests' } });
+  assert.ok(add.ok);
+  assert.match(add.text, /^added #\d+ "parser tests"$/);
+  const id = add.task.id;
+  assert.deepEqual(host.readAll().slice(-2).map(e => [e.kind, e.from]), [['task_req', 'bob'], ['task', 'room']]);
+  assert.deepEqual(await c.request('task', { name: 'bob', req: { op: 'done', id, evidence: 'x' } }), { ok: false, error: `#${id} has no owner; claim it first, then ask for done with evidence` });
+  await rejects(c.request('task', { name: 'alice', req: { op: 'claim', id } }), 'AUTH');
+  const claimed = await c._request('task', { name: 'bob', req: { op: 'claim', id } });
+  assert.equal(claimed.ok && claimed.task.owner, 'bob');
+  const n = host.readAll().length;
+  const q = config.LINK_QUOTAS.task;
+  for (let i = 0; i < q.max - 4; i++) await c.request('task', { name: 'bob', req: { op: 'add' } }); // the four above, then refusals (no subject): all counted
+  await assert.rejects(c.request('task', { name: 'bob', req: { op: 'add' } }), (e: RoomError) => e.code === 'RATE' && e.reason === 'QUOTA');
+  assert.equal(host.readAll().length, n, 'refusals log nothing');
 });
 
 test('remote (memory): a remote answer is placed, then the host decides', async t => {

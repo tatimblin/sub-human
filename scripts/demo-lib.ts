@@ -59,17 +59,16 @@
  *                                                  Claude what to change" + note, Not yet = Esc) or, the fallback, on the
  *                                                  card. --dwell: paging the plan view, rest 1.5 s on the first page
  *                                                  that matches REGEX (the film: a person reading that part)
- *   demo-lib.ts wait-native-task <subject> [--timeout S]   wait until the room Claude's native list has it
+ *   demo-lib.ts wait-task-list [--timeout S]      wait until the room session's native task list directory exists
+ *                                                  (made before it starts: lib/room-claude.ts openTaskList)
  *   demo-lib.ts wait-tasks [--owner N] [--id N] [--subject S] [--status S] [--timeout S]   wait on <room>/tasks.json
  *   demo-lib.ts task-id [--owner N] [--subject S]   print the id of the newest such task in <room>/tasks.json
- *   demo-lib.ts task-for --owner N [--after ID] [--timeout S]   wait until the room's Claude has applied the newest
- *                                                  task add asked for N (after log entry ID); print its task id
+ *   demo-lib.ts task-for --owner N [--after ID] [--timeout S]   wait until the host has applied the newest task add
+ *                                                  suggested for N (after log entry ID); print its task id
  *   demo-lib.ts wait-claude-idle [--after ID] [--timeout S]   wait until the room Claude's transcript has an
  *                                                  end_turn after log entry ID and 6 s of quiet
  *   demo-lib.ts wait-job-gone [--timeout S]       wait until `claude agents --json` no longer lists the room's Claude job
  *   demo-lib.ts claude-transcript                   print the room's Claude session's transcript path
- *   demo-lib.ts synthetic-gate <id>               run hooks/run.ts tasks as the room Claude's TaskCompleted for task <id> over the
- *                                                  real log; print {status, stderr} (exit 2 = refused)
  *   demo-lib.ts synthetic-claude-prompt             run hooks/run.ts at-room as the room Claude's UserPromptSubmit (shim stdin) for a
  *                                                  typed "hi" (CLAUDE_PID = the room Claude's pid); print its output
  *   demo-lib.ts prune-index <index.json> <scene>…   drop those scenes' captures (before they run again)
@@ -594,12 +593,8 @@ async function card(o: Opts, T: number): Promise<number> {
   return pv ? answerPlanView(session, pv, choice, note, o.dwell) : answerCard(session, choice, note);
 }
 
-async function waitNativeTask(o: Opts, T: number): Promise<number> {
-  const subj = o._[0];
-  return exit(await until(o.what || `claude's native list has "${subj}"`, T, () => {
-    const dir = paths.tasksDir(roomCode() ?? '');
-    return fs.readdirSync(dir).filter(f => f.endsWith('.json')).some(f => (readJson<{ subject?: string } | null>(path.join(dir, f), {}) || {}).subject === subj);
-  }));
+async function waitTaskList(o: Opts, T: number): Promise<number> {
+  return exit(await until(o.what || 'the room session\'s task list directory exists', T, () => fs.existsSync(paths.tasksDir(roomCode() ?? ''))));
 }
 
 const roomTasks = (): RoomTask[] => readJson<RoomTask[] | null>(roomFile('tasks.json'), []) || [];
@@ -616,15 +611,15 @@ async function taskId(o: Opts): Promise<number> {
   return exit(t);
 }
 
-/** The task id the room's Claude gave the newest add asked for owner (a task_req add after `after`), or null. */
+/** The task id the host gave the newest add suggested for owner (a task_req add after `after`), or null. */
 export function taskFor(log: Array<Partial<LogEntry> & { id: number }>, owner: string | undefined, after: number | string = 0): string | null {
-  const req = log.filter(e => e.kind === 'task_req' && e.op === 'add' && e.owner === owner && e.id > +after).at(-1);
+  const req = log.filter(e => e.kind === 'task_req' && e.op === 'add' && (e.suggest === owner || e.owner === owner) && e.id > +after).at(-1);
   const t = req && log.find(e => e.kind === 'task' && e.op === 'add' && e.req === req.id);
   return t ? String(t.task_id) : null;
 }
 
 async function taskForCmd(o: Opts, T: number): Promise<number> {
-  const id = await until(o.what || `the room's Claude adds the task asked for ${o.owner}`, T, () => taskFor(readLog(roomCode()), o.owner, o.after || 0));
+  const id = await until(o.what || `the host adds the task suggested for ${o.owner}`, T, () => taskFor(readLog(roomCode()), o.owner, o.after || 0));
   if (id) print(id);
   return exit(id);
 }
@@ -666,14 +661,6 @@ function runAsRoomClaude(handler: string, input: unknown, roomClaude: RoomClaude
     env: { PATH: process.env.PATH, HOME: process.env.HOME, SUB_HUMAN_HOME: HOME_DIR(), CLAUDE_PID: String(roomClaude.pid || ''), CLAUDE_PLUGIN_ROOT: paths.PLUGIN, ...env },
   });
   return { status: r.status, stdout: (r.stdout || '').trim(), stderr: (r.stderr || '').trim() };
-}
-
-async function syntheticGate(o: Opts): Promise<number> {
-  const roomClaude = roomClaudeMember();
-  const input = { hook_event_name: 'TaskCompleted', session_id: roomClaude.session_id, task_id: String(arg(o, 0)), task_subject: '' };
-  const r = runAsRoomClaude('tasks', input, roomClaude, { CLAUDE_CODE_TASK_LIST_ID: paths.taskListId(roomCode() ?? '') });
-  print(JSON.stringify({ input, ...r, logMax: Math.max(0, ...readLog(roomCode()).map(e => e.id)) }, null, 1));
-  return 0;
 }
 
 async function syntheticRoomClaudePrompt(): Promise<number> {
@@ -779,7 +766,7 @@ export const COMMANDS: Record<string, Command> = {
   'wait-member': waitMember,
   'wait-idle': waitIdle,
   card,
-  'wait-native-task': waitNativeTask,
+  'wait-task-list': waitTaskList,
   'wait-tasks': waitTasks,
   'task-id': taskId,
   'task-for': taskForCmd,
@@ -787,7 +774,6 @@ export const COMMANDS: Record<string, Command> = {
   'claude-transcript': roomClaudeTranscriptCmd,
   'wait-claude-idle': waitRoomClaudeIdle,
   'wait-job-gone': waitJobGone,
-  'synthetic-gate': syntheticGate,
   'synthetic-claude-prompt': syntheticRoomClaudePrompt,
   count: async o => { print(filterLog(o).length); return 0; },
   'last-id': lastId,

@@ -47,8 +47,6 @@ export const LOCK_REUSE_CHECK_MS = 1000;       // a live owner's lock younger th
 // ---------- the room's Claude (lib/room-claude.ts) ----------
 export const SPAWN_TIMEOUT_MS = 30_000;        // `claude --bg` and `claude stop`
 export const REAP_GRACE_MS = 10_000;           // SUB_HUMAN_REAP_GRACE_MS (allowZero): a quick rejoin cancels the reap
-export const REAP_WAIT_MS = 20_000;            // SUB_HUMAN_REAP_WAIT_MS (allowZero): wait for task 1 before `claude stop`
-export const REAP_POLL_MS = 500;
 export const REAP_STOP_MS = 5000;              // after `claude stop`, the wait before the reaper ends the process itself
 export const ROOM_CLAUDE_BIND_MS = 120_000;           // a spawned room Claude that never bound in this long is spawned again
 export const ROOM_CLAUDE_WATCH_POLL_MS = 5_000;       // the detached starter checks its job this often until it binds (watchStart)
@@ -168,6 +166,7 @@ export const LINK_QUOTAS = {
   beat: { max: 120, windowMs: 60_000, per: 'session' },            // a lease renewal per seat every SEAT_BEAT_MS, and reconnects
   'blob.get': { max: 600, windowMs: 60_000, per: 'session' },      // plans fetched
   ping: { max: 60, windowMs: 60_000, per: 'session' },             // one every LINK_PING_MS
+  task: { max: 60, windowMs: 60_000, per: 'link' },                // task requests (lib/tasks.ts apply)
 } as const;
 
 /** One op's quota: at most max in any windowMs, counted where per says (above). */

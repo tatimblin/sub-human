@@ -3,7 +3,7 @@
  * scenario runner behind `harness.ts scenarios`. README.md has the topology and the scenario list.
  *
  *   new Lab({log})
- *     up()              build (the previous release's image from `git archive OLD_REF` once: 0.5.0-beta.15), start, wait for every sshd and for
+ *     up()              build (the previous release's image from `git archive OLD_REF` once: 0.5.0-beta.16), start, wait for every sshd and for
  *                       toxiproxy, create the proxies, copy tls-front's CA root to the joiners, probe the features
  *     reset()           between scenarios: unpause, every sub-human process stopped, homes, keys, authorized_keys
  *                       and known_hosts wiped, toxiproxy reset, iptables flushed
@@ -105,8 +105,8 @@ const DIR = import.meta.dirname;
 const LAB = path.join(DIR, 'lab');
 export const COMPOSE = path.join(LAB, 'compose.yml');
 const REPO = path.resolve(DIR, '..', '..');
-// the previous release, for the 0.5 <-> 0.5 skew scenario: 0.5.0-beta.15 (master's release commit)
-const OLD_REF = process.env.LAB_OLD_REF || '7c97bdb';
+// the previous release, for the 0.5 <-> 0.5 skew scenario: 0.5.0-beta.16 (protocol 3)
+const OLD_REF = process.env.LAB_OLD_REF || 'd67ed1f';
 const OLD_IMAGE = `sub-human-lab-old:${OLD_REF}`;
 export const PROJECT = process.env.LAB_PROJECT || 'sub-human-lab';
 const USERS: Record<string, string> = { devbox: 'host', 'devbox-old': 'host', 'joiner-a': 'joiner', 'joiner-b': 'joiner' };
@@ -205,7 +205,7 @@ export class Lab {
 
   async untoxic(proxy: string, name: string): Promise<void> { try { await this.toxi('DELETE', `/proxies/${proxy}/toxics/${name}`); } catch { /* none */ } }
 
-  /** The previous release's image (0.5.0-beta.15), from `git archive OLD_REF plugin/sub-human` (built once per ref; the tag is the cache). */
+  /** The previous release's image (0.5.0-beta.16), from `git archive OLD_REF plugin/sub-human` (built once per ref; the tag is the cache). */
   buildOld({ force = false } = {}): boolean {
     if (!force && sh('docker', ['image', 'inspect', OLD_IMAGE], { allowFail: true }).status === 0) return false;
     const ctx = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-lab-old-'));

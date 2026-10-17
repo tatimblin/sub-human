@@ -249,7 +249,7 @@ test('`sub-human serve` (the remote server) never loads a seat key or installs a
       server: loads().some(f => /remote[\\/\\\\]server\\.ts$/.test(f)),
       signer: typeof globalThis[Symbol.for('sub-human.human-signer')] })));
     require(${JSON.stringify(bin)});`;
-  const hello = JSON.stringify({ id: 1, op: 'hello', params: { proto: { min: 3, max: 3 }, caps: {}, machine: 'm1' } }) + '\n';
+  const hello = JSON.stringify({ id: 1, op: 'hello', params: { proto: { min: 4, max: 4 }, caps: {}, machine: 'm1' } }) + '\n';
   const r = spawnSync(process.execPath, ['-e', probe], { env: { PATH: process.env.PATH, HOME: w.userHome, SUB_HUMAN_HOME: w.home }, input: hello, encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   assert.equal((JSON.parse(r.stdout) as { result: { room: string } }).result.room, w.code, 'it served the hello');

@@ -35,7 +35,7 @@ import { sn, mid } from './support/brands.ts';
 import { must } from './support/must.ts';
 import { fsStore } from './support/fs-store.ts';
 
-Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
+Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0' });
 
 /** os.networkInterfaces() as netSignature takes it. */
 type Ifaces = Parameters<typeof link.netSignature>[0];

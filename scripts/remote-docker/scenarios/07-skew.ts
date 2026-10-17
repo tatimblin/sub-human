@@ -1,12 +1,10 @@
-// Version skew against the previous release (devbox-old: 0.5.0-beta.15, git ref 7c97bdb, baked into its image). Releases
-// before 0.5 are not interoperated with any more (their sh1 invites and v-only hello are gone). (a) a beta.15 host
-// (devbox-old) and a current joiner (joiner-a, over toxiproxy:22003); (b) a current host (devbox) and a beta.15 joiner
-// (the joiner user on devbox-old, straight over the core network). Protocol 3 changed the invite: a beta.15 host's
-// line ends with a 4-digit PIN, which this joiner refuses saying the host must update; this host's line ends with a
-// SECRET, which beta.15 refuses ("the PIN is the 4 digits"), and this host's invite text says the joiner needs a newer
-// sub-human. A link made before keeps working (protocol 1..3 against 1..2 settles on 2: test/remote-server). Each
-// direction must work fully or refuse with words that name the version and which side to update; never a
-// half-working room or a mirror that silently diverges. (Not run since Stage 7b.) (c) A hello from a client claiming protocol
+// Version skew against the previous release (devbox-old: 0.5.0-beta.16, git ref d67ed1f, LAB_OLD_REF, baked into its
+// image). (a) a beta.16 host (devbox-old) and a current joiner (joiner-a, over toxiproxy:22003); (b) a current host
+// (devbox) and a beta.16 joiner (the joiner user on devbox-old, straight over the core network). Both lines have the same
+// shape (protocol 3's SECRET), but protocol 4 (tasks applied on the host, the room plan) shares no version with 3: the
+// hello is refused PROTOCOL SKEW with the update message, "The host must update" one way and "Update your plugin" the
+// other. Each direction must refuse with words that name the version and which side to update; never a half-working
+// room or a mirror that silently diverges. (Not run since Stage 7b.) (c) A hello from a client claiming protocol
 // 99, straight into the current host's serve over an ssh login: PROTOCOL, naming the side that must update.
 import { WAN, CORE, delivered, converge } from './_lib.ts';
 import type { Hosts, T } from '../lab.ts';
@@ -39,7 +37,7 @@ async function direction(t: T, label: string, { hostSvc, joinerSvc, joinerUser, 
 }
 
 export const id = 'skew';
-export const title = 'beta.15 host vs current joiner and the reverse: compatible, or a clear version message; never silent corruption';
+export const title = 'beta.16 host vs current joiner and the reverse: a clear version message (protocol 3 vs 4); never silent corruption';
 export const persona = 'mixed versions';
 export const budgetMs = 120_000;
 export async function run(t: T): Promise<void> {
@@ -48,10 +46,10 @@ export async function run(t: T): Promise<void> {
   if (!probe || !old) { t.check('the lab probed both plugins', false); return; }
   t.log(`devbox plugin ${probe.version} (protocol v${probe.protocolVersion}); devbox-old plugin ${old.version} (protocol v${old.protocolVersion}, cli ${old.cliPath})`);
   t.check('devbox-old really is the previous release (a 0.5 beta)', old.version !== probe.version && /^0\.5\.0-beta\./.test(old.version || ''), `${old.version} vs ${probe.version}`);
-  t.check('the old end probes as having the PIN join and the version range', !!(old.src && old.src.hello.range) && old.files.some(f => /enroll/.test(f)), JSON.stringify(old.src || {}));
-  await direction(t, 'old host beta.15 <- new joiner', { hostSvc: 'devbox-old', joinerSvc: 'joiner-a', hosts: WAN, dest: 'host@devbox-old' });
+  t.check('the old end probes as having the version range (protocol 3)', !!(old.src && old.src.hello.range), JSON.stringify(old.src || {}));
+  await direction(t, 'old host beta.16 <- new joiner', { hostSvc: 'devbox-old', joinerSvc: 'joiner-a', hosts: WAN, dest: 'host@devbox-old' });
   await lab.reset();
-  await direction(t, 'new host <- old joiner beta.15', { hostSvc: 'devbox', joinerSvc: 'devbox-old', joinerUser: 'joiner', hosts: CORE, dest: 'host@devbox' });
+  await direction(t, 'new host <- old joiner beta.16', { hostSvc: 'devbox', joinerSvc: 'devbox-old', joinerUser: 'joiner', hosts: CORE, dest: 'host@devbox' });
 
   // (c) a client from the future
   await lab.reset();

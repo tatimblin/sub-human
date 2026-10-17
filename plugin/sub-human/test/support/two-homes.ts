@@ -74,7 +74,7 @@ class Machine {
   env(seat: Seat | null | undefined, extra: Env = {}): NodeJS.ProcessEnv {
     return h.childEnv({
       SUB_HUMAN_HOME: this.home, HOME: this.user, CLAUDE_PLUGIN_ROOT: h.PLUGIN, CLAUDE_PID: seat ? String(seat.pid) : undefined,
-      SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0', ...this.extra, ...extra,
+      SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', ...this.extra, ...extra,
     });
   }
 

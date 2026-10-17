@@ -31,5 +31,5 @@ Read this only when someone asks you to help the room decide or plan ("let's pla
 ## After a decision
 
 - Only when someone asks: help split the work (who owns what, which files, how the parts meet, what "done" means). Don't assign anyone who hasn't said yes in their own words.
-- Shared tasks go on your task list, which is the room's. Apply a batch of requests in one go; one post per requester only for those you can't apply.
+- Shared tasks: people's Claudes change the room's task list with the task tool; the plugin applies each request and writes your list.
 - When someone asks you to check their work, check against the decision, not your taste. If something drifted, say what, once, to them.

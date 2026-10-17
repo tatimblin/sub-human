@@ -97,7 +97,6 @@ export interface Thresholds {
   noisePerCapture: number;
   callsPerReview: number;
   roomClaudeJoinCalls: number;
-  roomClaudeTaskCalls: number;
   joinText: number;
   joinBlock: number;
 }

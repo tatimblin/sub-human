@@ -31,18 +31,18 @@ test('env.envMs: unset, empty, junk, negative and 0 give the fallback; an allowZ
     assert.equal(env.parseMs(raw, 7), want, String(raw));
   }
   assert.equal(env.parseMs('0', 7, { allowZero: true }), 0);
-  const was = { p: process.env.SUB_HUMAN_POLL_MS, r: process.env.SUB_HUMAN_REAP_WAIT_MS };
+  const was = { p: process.env.SUB_HUMAN_POLL_MS, r: process.env.SUB_HUMAN_REAP_GRACE_MS };
   try {
     delete process.env.SUB_HUMAN_POLL_MS;
     assert.equal(env.envMs('SUB_HUMAN_POLL_MS'), config.TAIL_POLL_MS, 'unset: the table\'s default');
     assert.equal(env.envMs('SUB_HUMAN_POLL_MS', 9), 9, 'unset: the caller\'s fallback');
     process.env.SUB_HUMAN_POLL_MS = '0';
     assert.equal(env.envMs('SUB_HUMAN_POLL_MS'), config.TAIL_POLL_MS, 'not an allowZero knob');
-    process.env.SUB_HUMAN_REAP_WAIT_MS = '0';
-    assert.equal(env.envMs('SUB_HUMAN_REAP_WAIT_MS'), 0, 'an allowZero knob');
+    process.env.SUB_HUMAN_REAP_GRACE_MS = '0';
+    assert.equal(env.envMs('SUB_HUMAN_REAP_GRACE_MS'), 0, 'an allowZero knob');
   } finally {
     if (was.p === undefined) delete process.env.SUB_HUMAN_POLL_MS; else process.env.SUB_HUMAN_POLL_MS = was.p;
-    if (was.r === undefined) delete process.env.SUB_HUMAN_REAP_WAIT_MS; else process.env.SUB_HUMAN_REAP_WAIT_MS = was.r;
+    if (was.r === undefined) delete process.env.SUB_HUMAN_REAP_GRACE_MS; else process.env.SUB_HUMAN_REAP_GRACE_MS = was.r;
   }
 });
 

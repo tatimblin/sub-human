@@ -34,7 +34,7 @@ import type { Link } from '../lib/room/types.ts';
 import { rc, sn, mid } from './support/brands.ts';
 import { must } from './support/must.ts';
 
-Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
+Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0' });
 
 const LINK_ENV = { SUB_HUMAN_LINK_RETRY_MS: '300', SUB_HUMAN_LINK_IDLE_MS: '1500' };
 const ID = 'abcdef012345';
@@ -141,7 +141,7 @@ test('server: a hello {login} makes a link only in a `serve --login` session, un
   await assert.rejects(dial({ linkId: '0123456789ab', login: true }, { token: must(c.token) }), authErr(/not link 0123456789ab's/));
   // an old host answers a login hello without a token: PROTOCOL, never a link with no credential
   const [a, b] = memory.pair();
-  b.onFrame(f => b.send(protocol().reply(f.id, { v: 3, proto: { min: 1, max: 9 }, server: '0.4.0', caps: [], room: code, link: null })));
+  b.onFrame(f => b.send(protocol().reply(f.id, { v: 4, proto: { min: 1, max: 9 }, server: '0.4.0', caps: [], room: code, link: null })));
   await assert.rejects(client.connect(a, { machine: mid('remote0machine01'), login: true }), (e: Error & { code?: string }) => e.code === 'PROTOCOL' && /makes no link over an ssh login/.test(e.message));
 });
 const protocol = () => protocolLib;

@@ -10,8 +10,11 @@
  * room Claude's own env comes from the --settings launch flag: SUB_HUMAN_HOME, SUB_HUMAN_ROOM,
  * CLAUDE_CODE_TASK_LIST_ID=sh-CODE, CLAUDE_CODE_ENABLE_TODO_TOOLS=1, the spawner's SUB_HUMAN_*_MS overrides, plus
  * crossSessionInbound "accept". No --model: it runs on the user's default model. cwd is the joiner's: --bg refuses
- * an untrusted cwd (a fresh temp dir is never trusted). Nothing is written into ~/.claude, and nothing there is ever
- * deleted.
+ * an untrusted cwd (a fresh temp dir is never trusted). Before it starts, openTaskList (the join, once its claim
+ * holds: lib/seats.ts ensureRoomClaude) records the room session's native task list directory (members.claude.tasks_dir:
+ * <its config dir>/tasks/sh-CODE) and makes it, so the session's task view watches a directory that exists (contract
+ * task-ui-watch); the tasks, the room task first, are written there as they are asked for (lib/tasks.ts apply). Those
+ * task files are the only thing written under the config dir; nothing there is ever deleted.
  *
  * Host only: claimSpawn, reapDetached and watchdog do nothing on a machine that does not hold the room, so the
  * room's Claude runs only where it was spawned.
@@ -26,7 +29,7 @@
  * stopped; no pid by the bind deadline records spawn_error and keeps the job (the next claim stops it as prevJob).
  *
  * Stopping: reap, after the last member leaves, waits graceMs (a quick rejoin cancels), claims claude.closing under
- * the lock (one reaper wins), posts "room closed: complete task 1" to claude, waits up to waitMs for task 1, stops the
+ * the lock (one reaper wins), completes the room task itself (lib/tasks.ts closeRoomTask: no model), stops the
  * job and any strays, ends the bound process if `claude stop` left it up (ensureGone), and marks the room's Claude
  * stopped and left. watchdog (the room Claude's tail and join's sweep) claims closing and starts the
  * reaper once no member has been live for orphanMs: members that crashed leave no SessionEnd, so this is what closes
@@ -34,7 +37,7 @@
  * (claude.orphan_since, cleared once a member is live again).
  *
  * Env: SUB_HUMAN_CLAUDE (the claude binary; tests use a stub), SUB_HUMAN_PLUGIN_DIR (force --plugin-dir; "" = none),
- *   SUB_HUMAN_REAP_GRACE_MS (default 10 s), SUB_HUMAN_REAP_WAIT_MS (default 20 s), SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS.
+ *   SUB_HUMAN_REAP_GRACE_MS (default 10 s), SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS.
  * CLI: node lib/room-claude.ts cmd|spawn|reap [--claimed]|watchdog|start CODE [JSON|JOB]
  */
 import fs from 'node:fs';
@@ -44,8 +47,8 @@ import crypto from 'node:crypto';
 import { spawn as spawnChild, spawnSync } from 'node:child_process';
 import * as identity from './identity.ts';
 import * as room from './room.ts';
-import { readJsonRaw } from './io.ts';
-import { decodeOr, isObj, obj, opt, str } from './decode.ts';
+import * as tasks from './tasks.ts';
+import { decodeOr, obj, opt, str } from './decode.ts';
 
 /** `start CODE JSON`: what spawnStart hands the detached helper. */
 const START_ARGS = obj({ cwd: opt(str), claim: opt(str), prevJob: opt(str) });
@@ -90,13 +93,12 @@ type WatchResult = 'bound' | 'gone' | 'failed' | 'timeout';
 const PLUGIN_ROOT = path.join(import.meta.dirname, '..');
 const AGENT = 'sub-human:room-claude';
 const LOGIN_ENV = ['HOME', 'USER', 'LOGNAME', 'SHELL', 'PATH', 'TERM', 'LANG', 'TMPDIR'];
-const CLOSE_TEXT = 'room closed: complete task 1';
 const PENDING = 'pending';
 const ENDED = new Set(['done', 'failed', 'stopped']);
 
 const claudeBin = () => envStr('SUB_HUMAN_CLAUDE') || 'claude';
 const taskListId = (code: RoomCode) => `sh-${code}`;
-const tasksDir = (code: RoomCode): string => ccEnv.tasksDir(taskListId(code));
+const tasksDir = (code: RoomCode, env: NodeJS.ProcessEnv = process.env): string => ccEnv.tasksDir(taskListId(code), env);
 const iso = (ms: number) => new Date(ms).toISOString();
 const claimMs = () => config.ROOM_CLAUDE_CLAIM_MS;
 const orphanMsDefault = () => envMs('SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS');
@@ -164,6 +166,15 @@ function needsSpawnRec(o: Member | null | undefined, now: number = clock.now()):
   return now - Date.parse(o.spawned_at || '0') > config.ROOM_CLAUDE_BIND_MS;
 }
 const needsSpawn = (code: RoomCode, now: number = clock.now()): boolean => needsSpawnRec(identity.readMembers(code).claude, now);
+
+/** The room session's task list, ready before it starts (see the header): its directory recorded (env: the spawner's,
+ * which the bg job shares: the same config dir) and made. Host only; idempotent. */
+function openTaskList(code: RoomCode, env: NodeJS.ProcessEnv = process.env): void {
+  if (!identity.isHost(code)) return;
+  const dir = tasksDir(code, env);
+  identity.updateRoomClaude(code, (o: Member | null): RoomClaudePatch | null => (o && o.tasks_dir === dir ? null : { tasks_dir: dir }));
+  fs.mkdirSync(dir, { recursive: true });
+}
 
 /** A claim on the room's Claude's start: prevJob is the old job to stop first. */
 interface Claim { claim: string, prevJob: string | null }
@@ -342,14 +353,6 @@ function startDetached({ code, cwd, claim, prevJob = null }: { code: RoomCode, c
 
 // ---------- stopping ----------
 
-/** Task 1 completed, or the list cleaned up (every visible task completed). Read only. */
-function roomTaskDone(code: RoomCode): boolean {
-  const dir = tasksDir(code);
-  if (!fs.existsSync(dir)) return true;
-  const t = readJsonRaw(path.join(dir, '1.json'));
-  return !t || (isObj(t) && t.status === 'completed');
-}
-
 const hasLiveMember = (members: Members, alive: Alive = identity.seatAlive): boolean =>
   Object.values(members).some(m => !!m && m.role !== 'claude' && alive(m));
 
@@ -366,10 +369,8 @@ function claimClose(code: RoomCode, now: number = clock.now()): { rec: Member } 
 
 async function reap(code: RoomCode, {
   graceMs = envMs('SUB_HUMAN_REAP_GRACE_MS'),
-  waitMs = envMs('SUB_HUMAN_REAP_WAIT_MS'),
-  pollMs = config.REAP_POLL_MS,
   claimed = false,
-}: { graceMs?: number, waitMs?: number, pollMs?: number, claimed?: boolean } = {}): Promise<ReapResult> {
+}: { graceMs?: number, claimed?: boolean } = {}): Promise<ReapResult> {
   if (!identity.roomExists(code)) return 'no-claude';
   let o: Member | undefined;
   if (claimed) {
@@ -381,11 +382,8 @@ async function reap(code: RoomCode, {
     if (!('rec' in c)) return c.why;
     o = c.rec;
   }
-  try {
-    room.open(code).append({ kind: 'status', text: CLOSE_TEXT, to: 'claude' }, { via: 'system', from: 'room', system: true });
-  } catch { /* the stop below still ends it */ }
-  const deadline = Date.now() + waitMs;
-  while (Date.now() < deadline && !roomTaskDone(code)) await clock.sleep(Math.min(pollMs, Math.max(0, deadline - Date.now())));
+  // the room task, completed by the plugin itself (Claude Code may then reset the list: the room is closing)
+  try { tasks.closeRoomTask(room.open(code).store); } catch { /* the stop below still ends it */ }
   // A start in flight records its job after this; it sees closing and stops that job itself.
   let job = identity.readMembers(code).claude?.job || o.job;
   if (job === PENDING && identity.readMembers(code).claude?.pid) job = findJob(code)?.id; // bound, starter died
@@ -434,7 +432,7 @@ function watchdog(code: RoomCode, { now = clock.now(), orphanMs = orphanMsDefaul
 }
 
 export {
-  CLOSE_TEXT, PENDING, pluginDirFor, spawnPlan, command, needsSpawn, claimSpawn, spawn, stopStrays, watchStart, startDetached, reap,
+  PENDING, pluginDirFor, spawnPlan, command, needsSpawn, claimSpawn, openTaskList, spawn, stopStrays, watchStart, startDetached, reap,
   reapDetached, watchdog, taskListId, tasksDir,
 };
 

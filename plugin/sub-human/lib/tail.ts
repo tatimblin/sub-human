@@ -62,6 +62,7 @@ import type * as AdmissionMod from './remote/admission.ts';
 import type * as InvitesMod from './remote/invites.ts';
 import type * as LinkSocketMod from './remote/link-socket.ts';
 import type * as SeatsMod from './seats.ts';
+import type * as TasksMod from './tasks.ts';
 import type * as JoiningMod from './remote/joining.ts';
 
 // The tail starts with every session: what only a room's Claude, a host or a pending join reads loads at
@@ -71,6 +72,7 @@ const linkSocketLib = lazy<typeof LinkSocketMod>(import.meta.url, './remote/link
 const admissionLib = lazy<typeof AdmissionMod>(import.meta.url, './remote/admission.ts');
 const invitesLib = lazy<typeof InvitesMod>(import.meta.url, './remote/invites.ts');
 const seatsLib = lazy<typeof SeatsMod>(import.meta.url, './seats.ts');
+const tasksLib = lazy<typeof TasksMod>(import.meta.url, './tasks.ts');
 const joiningLib = lazy<typeof JoiningMod>(import.meta.url, './remote/joining.ts');
 
 // ---------- types ----------
@@ -123,6 +125,8 @@ interface TailDeps {
   admission: AdmissionLib;
   invites: InvitesLib;
   sweepSeats(code: RoomCode): unknown;
+  /** the room session's task files, projected from the log again (lib/tasks.ts repair; the room session's tail, on the host) */
+  repairTasks(code: RoomCode): unknown;
   pendingNews(sid: string): { state: 'waiting' | 'pin' | 'linked' | 'refused'; code: RoomCode; text: string } | null;
 }
 /** The deps as a session uses them: the lazily loaded modules behind a getter. */
@@ -631,6 +635,7 @@ function startSession(me: Identity, ctx: TailCtx): Session {
     // seats that ended with no leave (a dead pid, a lease run out) are logged as left, before the watchdog counts them
     if (rm.store && rm.store.isHost) { try { deps.sweepSeats(s.code); } catch (e) { log('seat sweep', e); } }
     if (me.role === 'claude') deps.roomClaude().watchdog(s.code);
+    if (me.role === 'claude' && rm.store && rm.store.isHost) { try { deps.repairTasks(s.code); } catch (e) { log('task files', e); } }
   }
 
   // a timer callback that survives its own error
@@ -684,6 +689,7 @@ function runTail({
     admission: deps.admission ? constant(deps.admission) : admissionLib,
     invites: deps.invites ? constant(deps.invites) : invitesLib,
     sweepSeats: deps.sweepSeats ?? ((code: RoomCode) => seatsLib().sweep(code)),
+    repairTasks: deps.repairTasks ?? ((code: RoomCode) => tasksLib().repair(roomMod.open(code).store)),
     pendingNews: deps.pendingNews ?? ((s: string) => {
       // a cheap look first: the link files (most unseated tails have no pending join); the link code only when one is
       if (!linksMod.list().some(c => { const l = linksMod.get(c); return !!l && l.join_sid === s; })) return null;

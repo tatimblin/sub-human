@@ -112,8 +112,6 @@ From `mod/register.ts` (hooks.json `modules`), in registration order.
 | `classic.PermissionRequest` | `tool_name ExitPlanMode` | `mod/consent.ts` | node consent (closes a review without a dialog) while a review may be open; a deny beneath wins |
 | `classic.Stop` | (all) | `mod/consent.ts` | node consent (the open-review nudge) only while a review may be open or the seat is unknown |
 | `ui.render` | `PromptHint` | `mod/consent.ts` | observes whether the prompt holds typed text (isDraft; always next(e)): an ExitPlanMode's consent payload carries it, so a plan-view Yes that keys meant for the prompt may have given is asked again on the card |
-| `classic.PostToolUse` | `tool_name TaskCreate\|TaskUpdate` | `mod/tasks.ts` | node tasks (the room task mirror) only for the room's Claude or an unknown seat |
-| `classic.TaskCompleted` | (all) | `mod/tasks.ts` | node tasks (the gate; exit 2 -> block) only for the room's Claude or an unknown seat; .catch blocks in the room's Claude |
 | `tool.call` | `Agent` | `mod/rows.ts` | keeps the call's agentId while it runs, for classic.PreToolUse beneath (which carries none); always next(e) |
 | `classic.PreToolUse` | `Agent` | `mod/rows.ts` | node row-guard (denies a duplicate row, or a member's stray participant row) for a row agent in a seated or unsure session; next(e) always, ours above it (mergePre) |
 | `classic.PostToolUse` | `tool_name Agent\|Task` | `mod/rows.ts` | notes a row agent's id (its hand-back is no turn); node row-map (which panel row the spawned row agent is) for a row agent in a seated or unsure session |
@@ -135,7 +133,7 @@ Full names are `mcp__plugin_sub-human_room__<tool>`.
 | `read` | room (`mcp/room-server.ts`) | yes | Read the shared sub-human room log: with ids, those entries in full (e.g. a cut-off line); without, your unseen entries, oldest first, at most 100. |
 | `propose` | room (`mcp/room-server.ts`) | no | Ask people in the sub-human room to agree to a plan or decision (exactly one of text or path). |
 | `hold` | room (`mcp/hold.ts`) | yes | Internal to sub-human row agents (sub-human:participant with member, sub-human:room with room). |
-| `task` | room (`mcp/task.ts`) | no | Ask the sub-human room's Claude to change the shared room task list; it is queued and the room's Claude applies it. add needs subject; claim, release and done need id; done also needs evidence. |
+| `task` | room (`mcp/task.ts`) | no | Change the sub-human room's shared task list; the host applies it at once and replies with the change or why not. add needs subject; claim (for yourself), release and done (your own task) need id; done also needs evidence. |
 <!-- /gen:mcp-tools -->
 
 `hold` is allowed only for row subagents (the module's guard, `mod/guard.ts`, checks `agentId`); `task` is refused for the room's Claude, which applies requests natively.
@@ -481,13 +479,8 @@ The code that reads Claude Code is `lib/cc/`: `env.ts` (the session's env, the c
 <!-- gen:cc-contract -->
 | Id | § | Stability | Checked on | Note |
 |---|---|---|---|---|
-| `task-completed-block-drops-fields` | §1 | incidental | 2.1.281–2.1.296 | A TaskCompleted block makes TaskUpdate return success:false, updatedFields:[] before the write: every field in that call (subject, metadata, owner) is discarded. |
 | `hook-exit2-blocks` | §1 | API | 2.1.281–2.1.296 | Exit 2 makes stderr the blockingError. |
 | `hook-json-block` | §1 | API | 2.1.281–2.1.296 | {"decision":"block","reason"} is a blockingError. |
-| `task-completed-input` | §1 | API | 2.1.281–2.1.296 | TaskCompleted input has no metadata/owner/status; read the task file (which still has the old status). |
-| `task-events-no-matcher` | §1 | API | 2.1.281–2.1.296 | TaskCreated/TaskCompleted/TeammateIdle have no matcher query: every hook fires. |
-| `task-update-schema` | §1 | API | 2.1.281–2.1.296 | TaskUpdate metadata merges; null deletes a key. |
-| `task-create-metadata` | §1 | API | 2.1.281–2.1.296 | TaskCreate accepts metadata. |
 | `env-child-session` | §2 | env | 2.1.281–2.1.296 | Hooks, Bash, statusLine and subagentStatusLine get CLAUDE_PID and CLAUDE_CODE_SESSION_ID (cc.ENV, sessionId, claudePid). The SessionEnd command hook's shell check reads both to start node only for a session with a lease or a seat (hooks.json). |
 | `env-mcp-session` | §2 | env | 2.1.281–2.1.296 | MCP stdio servers get CLAUDE_CODE_SESSION_ID (fixed at spawn) but not CLAUDE_PID; the room server finds its seat by it (mcp/room-server.ts whoami). |
 | `env-plugin-mcp` | §2 | env | 2.1.281–2.1.296 | Plugin MCP servers get CLAUDE_PLUGIN_ROOT/DATA in env. |
@@ -509,7 +502,12 @@ The code that reads Claude Code is `lib/cc/`: `env.ts` (the session's env, the c
 | `task-list-id` | §4 | env | 2.1.281–2.1.296 | List id: env, team, teammate team, leader team, else session id (changes on /clear). |
 | `task-path` | §4 | incidental | 2.1.281–2.1.296 | <configDir>/tasks/<sanitized list>/<sanitized id>.json (cc.tasksDir, cc.taskFile). |
 | `config-dir` | §4 | env | 2.1.281–2.1.296 | CLAUDE_CONFIG_DIR replaces ~/.claude (cc.configDir). |
-| `task-store-v5-off` | §4 | env | 2.1.281–2.1.296 | The experimental key-value task backend is off by default; files are the store. |
+| `task-store-v5-off` | §4 | env | 2.1.281–2.1.296 | The experimental key-value task backend is off by default; files are the store. The room's task list is files the plugin writes (lib/room/task-files.ts): with this backend on (its gate is the storageV5 taskListHighWaterMark key), the room session would not read them, so the probe fails and doctor says so. |
+| `task-file-schema` | §4 | incidental | 2.1.296–2.1.296 | A task file is {id, subject, description, activeForm?, owner?, status pending\|in_progress\|completed, blocks[], blockedBy[], metadata?} (zod, safeParse: a file that fails is skipped and logged, never fatal). Extra metadata keys pass. lib/cc/tasks.ts NativeTask; lib/room/task-files.ts writes the room's (cc-2.1.296-tasks-plans.md S2.5). |
+| `task-highwatermark` | §4 | incidental | 2.1.296–2.1.296 | TaskCreate's id is max(highest <n>.json, .highwatermark)+1; .highwatermark only steers that allocation: a file the plugin writes at any id is shown. The projector raises the mark to its highest id (cc-2.1.296-tasks-plans.md S2.4). |
+| `task-lockfile` | §4 | incidental | 2.1.296–2.1.296 | File mode (storageV5 off, not diskless) locks with proper-lockfile (mkdir <realpath(target)>.lock; mtime refreshed every 5 s; stale after 10 s; 30 retries 5-100 ms): the list lock's target is <list>/.lock (an empty file made with wx), dir <list>/.lock.lock, taken by create, reset and restore; the task lock's target is <list>/<id>.json, dir <list>/<id>.json.lock, taken by update and claim (not the list lock). Observed with fs.watch (cc-2.1.296-tasks-plans.md S4.1). lib/cc/tasklock.ts speaks this protocol. |
+| `task-list-auto-reset` | §4 | incidental | 2.1.296–2.1.296 | A session whose task view is mounted (any interactive or --bg session with the list, attached or not) resets the list 5 s after it reads every task completed: under the list lock it raises .highwatermark and deletes every *.json (not dotfiles, not temp names). Observed detached in a --bg job (cc-2.1.296-tasks-plans.md S2.3). The reason the room task stays in_progress until the reaper (lib/tasks.ts closeRoomTask). |
+| `task-ui-watch` | §4 | incidental | 2.1.296–2.1.296 | The task view fs.watch()es <tasksDir>/<list> and refetches 50 ms after a change, so a file written from outside shows at once (cc-2.1.296-tasks-plans.md S2.1). The watch is set when the view subscribes: if the dir does not exist then, fs.watch throws, the throw is swallowed and nothing polls, and files written later never show in that session: lib/room-claude.ts spawn writes the room task (and so the dir) before the room session starts. |
 | `todo-tools-gate` | §4 | env | 2.1.281–2.1.296 | Newer models need CLAUDE_CODE_ENABLE_TODO_TOOLS for Task tools; bg sessions get them anyway. |
 | `bg-dispatch-line` | §5 | incidental | 2.1.281–2.1.296 | `claude --bg` stdout line 1 is "backgrounded · <short> · <name>" (cc.JOB_RE). |
 | `agents-json` | §5 | API | 2.1.281–2.1.296 | `claude agents --json [--all]` prints [{pid?, id, sessionId, status, state, ...}] (cc.jobs). |
@@ -575,6 +573,8 @@ The code that reads Claude Code is `lib/cc/`: `env.ts` (the session's env, the c
 - `lib/cc/bg.ts`: `claude --bg` jobs (the room's Claude), the bg daemon and the env it keeps from a dispatch.
 - `lib/cc/contract.ts`: the Claude Code internals contract (contract.json), typed, and the probe that checks a binary against it.
 - `lib/cc/env.ts`: what Claude Code tells a child about its session, and where it keeps its files and settings.
+- `lib/cc/tasklock.ts`: the lock Claude Code takes on its task files, spoken from outside, so the plugin's writes to the room's task list (lib/room/task-files.ts) and Claude Code's own (TaskCreate, TaskUpdate, the list reset) never interleave.
+- `lib/cc/tasks.ts`: Claude Code's native task list on disk (the file backend), as the plugin writes the room's (lib/room/task-files.ts project).
 - `lib/cc/transcript.ts`: reading a session's JSONL transcript and a prompt's pastes, as Claude Code writes them.
 - `lib/cli/args.ts`: the one flag parser of scripts/sub-human and lib/cli/*.ts.
 - `lib/cli/doctor.ts`: `sub-human doctor`, what is wrong with this machine's sub-human and how to fix it, and `doctor --bundle`, the same as redacted JSON to attach to a bug report.
@@ -661,6 +661,7 @@ The code that reads Claude Code is `lib/cc/`: `env.ts` (the session's env, the c
 - `lib/room/snapshot.ts`: a log's snapshot, pure (no I/O; lib/room/log-io.ts reads and writes <room>/snapshot.json, lib/room/store-mirror.ts checks the one a host sends).
 - `lib/room/store-mirror.ts`: MirrorRoomStore, the RoomStore of a room hosted on another machine: it composes an FsRoomStore over a directory the link daemon (lib/remote/link.ts) keeps line for line the host's log, so every reader (readView, the snapshot, tailer, verifyChain, rows, digests) is that store's, unchanged.
 - `lib/room/store.ts`: the RoomStore seam: the interface every store implements, and the one import the rest of the plugin takes the store from.
+- `lib/room/task-files.ts`: the room's native task list, written by the plugin.
 - `lib/room/trust.ts`: whether a via=human entry is the person's. Pure: no file, no store; the keys come in through a TrustCtx the store builds (its pinned keys, and the seat's local .pub for a legacy room).
 - `lib/room/types.ts`: the room's shared shapes, types only (import type).
 - `lib/room/validate.ts`: the room log's envelope rules (envelope v3): which kinds each `via` may write, the fields a caller may set, and the task fields of task_req / task entries. append() (store.ts) runs validate() before it signs, and place() runs it again on the payload before it takes the log lock.
@@ -668,7 +669,7 @@ The code that reads Claude Code is `lib/cc/`: `env.ts` (the session's env, the c
 - `lib/rows.ts`: participant rows in the agent panel. Reads the room log, members and presence; writes only the rows/* documents (lib/room/store.ts kv) and the holds and blocks of a seat's session document (lib/room/session.ts).
 - `lib/seats.ts`: entering and leaving a room, the one sequence the join hook, the session-end hook and the remote server (lib/remote/server.ts, for a seat on another machine) all run.
 - `lib/tail.ts`: the room tail behind `sub-human tail` (scripts/sub-human), the hooks module's child (mod/deliver.ts).
-- `lib/tasks.ts`: the room's shared task list. The headless room Claude's own native task list (CLAUDE_CODE_TASK_LIST_ID=sh-CODE) is the room's list.
+- `lib/tasks.ts`: the room's shared task list. The log is the truth: a member's Claude asks with the `task` tool (mcp/task.ts), and the host applies the request at once (apply), under the room's `tasks` lock: a refusal comes back at once, an accepted request is two log entries (the task_req, via agent, and the task's whole new state, a `task` entry via system from `room`).
 - `lib/text.ts`: the string helpers and name patterns every module shares.
 - `lib/types-app.ts`: shared types of the app slice (tail, rows, proposal, room-claude, tasks, seats, notices).
 <!-- /gen:lib-modules -->

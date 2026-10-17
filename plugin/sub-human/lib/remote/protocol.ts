@@ -34,7 +34,7 @@ import type {
   ErrorFrame, EventData, EventFrame, DecodedFrame, Caps, IncomingRequest, IncomingEvent,
 } from './types-core.ts';
 
-const PROTO: Readonly<ProtoRange> = Object.freeze({ min: 3, max: 3 });
+const PROTO: Readonly<ProtoRange> = Object.freeze({ min: 4, max: 4 });
 const PLUGIN_VERSION: string = (() => {
   let j: unknown;
   try { j = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '..', '.claude-plugin', 'plugin.json'), 'utf8')); } catch { return '?'; }
@@ -66,7 +66,7 @@ function skewMessage({ host, joiner, need }: { host: PeerVersion; joiner: PeerVe
   return `${runs('host runs', host)}; ${runs('you run', joiner).replace(/^you run sub-human /, 'you run ')}${what}. ${fix}`;
 }
 /** The ops this end serves, the source of Op (types-core.ts re-exports it; OpParams and OpResults are keyed by it). */
-const OPS = ['hello', 'join', 'leave', 'beat', 'append', 'subscribe', 'blob.get', 'blob.put', 'ping'] as const;
+const OPS = ['hello', 'join', 'leave', 'beat', 'append', 'subscribe', 'blob.get', 'blob.put', 'ping', 'task'] as const;
 export type Op = typeof OPS[number];
 /** The events a stream carries, the source of EventName (types-core.ts EventData is keyed by it). */
 const EVENTS = ['entry', 'doc', 'end', 'snapshot'] as const;

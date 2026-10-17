@@ -138,7 +138,7 @@ test('lane: member push/pull/none table (vole-8126 shapes + proposals + tasks)',
   assert.equal(L(d, R.readAll()), 'push');
 });
 
-test('lane: room Claude push is to=claude (a leading @claude tag), objections on its proposals, task_req; the rest (decisions too) is pull', () => {
+test('lane: room Claude push is to=claude (a leading @claude tag) and objections on its proposals; the rest (decisions, task requests too) is pull', () => {
   fresh();
   const L = (e: Entry, es?: readonly Entry[]) => roomLane(ROOM_CLAUDE, e, es);
   const mine = prop('claude', H1, ['alice', 'bob']);                        // #1 own: none
@@ -152,18 +152,18 @@ test('lane: room Claude push is to=claude (a leading @claude tag), objections on
   const s1 = answer('alice', 'signoff', H1);                               // #9 signoff on its proposal: pull (the decision carries it)
   const o2 = answer('alice', 'objection', H2, { text: 'no' });             // #10 answer on bob's: pull
   const dec = sys('decision', { proposal_hash: H1 }, 'claude');              // #11 pull: nothing for the room's Claude to act on
-  const req = taskReq('bob', 'add', { subject: 'parser tests' });          // #12 push
+  const req = taskReq('bob', 'add', { subject: 'parser tests' });          // #12 pull: the host applies it, nothing for a model
   const t = task({ task_id: 2, owner: 'bob', status: 'pending', req: 12 }); // #13 its own mirror: pull
   const ownPost = agent('claude', 'say');                                    // #14 none
   const want: [Entry, Lane][] = [[mine, 'none'], [theirs, 'pull'], [words, 'pull'], [atRoomClaude, 'push'], [toRoomClaude, 'push'], [chatter, 'pull'],
-    [left, 'pull'], [joined, 'pull'], [s1, 'pull'], [o2, 'push'], [dec, 'pull'], [req, 'push'], [t, 'pull'], [ownPost, 'none']];
+    [left, 'pull'], [joined, 'pull'], [s1, 'pull'], [o2, 'push'], [dec, 'pull'], [req, 'pull'], [t, 'pull'], [ownPost, 'none']];
   for (const [e, l] of want) assert.equal(L(e), l, `#${e.id} without entries`);
   const all = R.readAll();
   assert.equal(L(s1, all), 'pull');
   assert.equal(L(o2, all), 'pull', 'not its proposal');
   const o1 = answer('bob', 'objection', H1, { text: 'clamp' });
   assert.equal(L(o1, R.readAll()), 'push', 'an objection on its own proposal wakes it (to revise)');
-  assert.equal(L(req, all), 'push');
+  assert.equal(L(req, all), 'pull');
   assert.equal(req.by, 'bob');
 });
 

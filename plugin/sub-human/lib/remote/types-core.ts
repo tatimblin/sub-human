@@ -10,6 +10,7 @@ import type { Reason } from '../reasons.ts';
 import type { Op, EventName } from './protocol.ts';
 import type { Entry, LinkStateWord, Payload, PresenceInput, RoomStore, SnapshotWire } from '../room/types.ts';
 import type { MachineId, LinkToken, InviteSecret, Pin } from '../brand.ts';
+import type { FoldedTask } from '../types-app.ts';
 
 // ---------- the wire protocol ----------
 
@@ -22,7 +23,7 @@ export interface ProtoRange { min: number; max: number }
 export type { Op, EventName };
 
 /** The ops the link daemon relays for its hooks (lib/remote/link.ts RELAY). */
-export type RelayOp = 'join' | 'leave' | 'beat' | 'append' | 'blob.get' | 'blob.put';
+export type RelayOp = 'join' | 'leave' | 'beat' | 'append' | 'blob.get' | 'blob.put' | 'task';
 
 export type { WireCode } from './protocol.ts';
 
@@ -78,6 +79,8 @@ export interface SubscribeParams { after: number; hash: string | null; snapshot?
 export interface BlobGetParams { ref: string }
 export interface BlobPutParams { name: string; bytes: string }
 export type PingParams = Record<string, never>;
+/** A seat's `task` tool request, for the host to apply (lib/tasks.ts apply): name, the link's own seat. */
+export interface TaskParams { name: string; req: unknown }
 
 export interface OpParams {
   hello: HelloParams;
@@ -89,6 +92,7 @@ export interface OpParams {
   'blob.get': BlobGetParams;
   'blob.put': BlobPutParams;
   ping: PingParams;
+  task: TaskParams;
 }
 
 export interface HelloResult {
@@ -122,6 +126,8 @@ export interface AppendResult { entry: Entry }
 export interface BlobGetResult { bytes: string | null }
 export interface BlobPutResult { ref: string }
 export interface PingResult { pong: number }
+/** lib/tasks.ts apply's answer: the task after the request and a line for the requester's Claude, or why not. */
+export type TaskResult = { ok: true; task: FoldedTask; text: string } | { ok: false; error: string };
 
 /** What a hook hands the link daemon for each op it relays (lib/remote/link-socket.ts handle). */
 export type RelayParams = { [M in RelayOp]: M extends 'append' ? RelayAppendParams : OpParams[M] };
@@ -140,6 +146,7 @@ export interface OpResults {
   'blob.get': BlobGetResult;
   'blob.put': BlobPutResult;
   ping: PingResult;
+  task: TaskResult;
 }
 
 /** A request frame for one op: {id, op, params}, discriminated on op. */

@@ -345,7 +345,6 @@ test('prefilter: consent and the task hooks are skipped only when sure', async (
   const f = await load('mod/core/prefilter.ts');
   // hellos as the prefilter reads them: sid and seat only
   const member = mkHello({ seat: seatOf('alice') });
-  const roomClaude = mkHello({ seat: seatOf('claude', 'claude') });
   const none = mkHello();
   assert.equal(f.consentNeeded(none, 's1', undefined), false, 'no seat: no review');
   assert.equal(f.consentNeeded(member, 's1', undefined), true, 'flag unset: unsure');
@@ -354,13 +353,6 @@ test('prefilter: consent and the task hooks are skipped only when sure', async (
   assert.equal(f.consentNeeded(none, 's2', false), false, 'the flag alone is enough');
   assert.equal(f.consentNeeded(none, 's2', undefined), true, 'another session\'s hello');
   assert.equal(f.consentNeeded(null, 's1', undefined), true);
-  assert.equal(f.tasksNeeded(member, 's1', undefined), false);
-  assert.equal(f.tasksNeeded(roomClaude, 's1', undefined), true);
-  assert.equal(f.tasksNeeded(none, 's1', undefined), false);
-  assert.equal(f.tasksNeeded(none, 's1', 'otter-4821'), true, 'a room Claude before its join');
-  assert.equal(f.tasksNeeded(member, 's2', undefined), true);
-  assert.equal(f.tasksNeeded({ ...member, sid: null }, null, undefined), true);
-  assert.equal(f.tasksNeeded(null, 's1', undefined), true);
   assert.equal(f.reviewOpenOf({ reviewOpen: false }), false);
   assert.equal(f.reviewOpenOf({ reviewOpen: 'no' }), undefined);
   assert.equal(f.reviewOpenOf(undefined), undefined);

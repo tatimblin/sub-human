@@ -1,28 +1,31 @@
-// Tests for lib/tasks.ts (validate, gate, summary, the mirror file) and the mcp/task.ts plug-in.
+// lib/tasks.ts: validate, the ownership rules (check), apply on the host (the log, the native files, tasks.json),
+// the room task, summary; and the mcp/task.ts plug-in.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import * as h from './helpers.ts';
 import * as identity from '../lib/identity.ts';
 import * as room from '../lib/room.ts';
 import * as tasks from '../lib/tasks.ts';
-import * as io from '../lib/io.ts';
+import * as taskFiles from '../lib/room/task-files.ts';
+import * as ccTasks from '../lib/cc/tasks.ts';
 import * as taskPlugin from '../mcp/task.ts';
-import type { RawTask } from '../lib/tasks.ts';
 import type { Entry } from '../lib/room/types.ts';
-import type { Me, PluginApi, PluginContext, ToolArgs, ToolResult } from '../mcp/types.ts';
+import type { FoldedTask } from '../lib/types-app.ts';
+import type { Me, ToolResult } from '../mcp/types.ts';
 import { sn } from './support/brands.ts';
 import { must } from './support/must.ts';
 
 type Validated = ReturnType<typeof tasks.validate>;
-type Gated = ReturnType<typeof tasks.gate>;
 const vReq = (r: Validated) => (r.ok ? r.req : undefined);
 const vErr = (r: Validated) => (r.ok ? undefined : r.error);
-const gReq = (r: Gated) => (r.ok ? r.req : undefined);
-const gReason = (r: Gated) => (r.ok ? undefined : r.reason);
+const applied = (r: tasks.Applied) => (r.ok ? r.task : undefined);
+const refused = (r: tasks.Applied) => (r.ok ? undefined : r.error);
 
 // ---------- validate ----------
-test('validate: op shapes; done needs evidence', () => {
+test('validate: op shapes; done needs evidence; suggest goes with add only', () => {
   assert.equal(must(vReq(tasks.validate({ op: 'add', subject: '  parser   tests ' }))).subject, 'parser tests');
   assert.match(must(vErr(tasks.validate({ op: 'add' }))), /subject/);
   assert.match(must(vErr(tasks.validate({ op: 'claim' }))), /id/);
@@ -32,167 +35,158 @@ test('validate: op shapes; done needs evidence', () => {
   assert.match(must(vErr(tasks.validate({ op: 'done', id: '3', evidence: '   ' }))), /evidence/);
   assert.deepEqual(vReq(tasks.validate({ op: 'done', id: '3', evidence: 'npm test: 12 pass' })), { op: 'done', id: '3', evidence: 'npm test: 12 pass' });
   assert.match(must(vErr(tasks.validate({ op: 'delete', id: '3' }))), /op must be/);
-  assert.match(must(vErr(tasks.validate({ op: 'add', subject: 'x', for: 'room' }))), /cannot own/);
-  assert.match(must(vErr(tasks.validate({ op: 'add', subject: 'x', for: 'bad name' }))), /invalid name/);
+  assert.match(must(vErr(tasks.validate({ op: 'add', subject: 'x', suggest: 'room' }))), /cannot own/);
+  assert.match(must(vErr(tasks.validate({ op: 'add', subject: 'x', suggest: 'bad name' }))), /invalid name/);
+  assert.match(must(vErr(tasks.validate({ op: 'claim', id: '2', suggest: 'bob' }))), /suggest goes with add only/);
   assert.match(must(vErr(tasks.validate({ op: 'add', subject: 'x'.repeat(201) }))), /200/);
-  assert.equal(must(vReq(tasks.validate({ op: 'add', subject: 'x', for: 'bob' }))).for, 'bob');
+  assert.equal(must(vReq(tasks.validate({ op: 'add', subject: 'x', suggest: 'bob' }))).suggest, 'bob');
   assert.equal(tasks.validate(null).ok, false);
 });
 
-// ---------- gate ----------
-let nextId = 1;
-const req = (from: string, op: string, id: number, extra: Partial<Entry> = {}): Entry => ({ id: nextId++, from, via: 'agent', kind: 'task_req', text: `task ${op} #${id}`, op, task_id: String(id), owner: from, ...extra }) as Entry; // no at: gate reads none
-const human = (from: string, text: string, refs?: number[]): Entry => ({ id: nextId++, from, via: 'human', kind: 'say', text, ...(refs ? { refs } : {}) }) as Entry;
-const oldRetract = (ids: number[]): Entry => ({ id: nextId++, from: 'claude', via: 'system', kind: 'retract', text: 'retracted', refs: ids }) as Entry; // old logs only
-
-test('gate: the owner\'s done with evidence passes; another member\'s done fails', () => {
-  const code = h.newRoom();
-  const t = { id: '2', subject: 'parser tests', owner: 'bob' };
-  const claim = req('bob', 'claim', 2);
-  const done = req('bob', 'done', 2, { evidence: 'tests pass' });
-  const r = tasks.gate(code, t, [claim, done]);
-  assert.equal(r.ok, true);
-  assert.equal(must(gReq(r)).id, done.id);
-
-  const alice = req('alice', 'done', 2, { evidence: 'looks done' });
-  const r2 = tasks.gate(code, t, [claim, alice]);
-  assert.equal(r2.ok, false);
-  assert.equal(gReason(r2), 'only bob may complete #2; ask them');
-  // no request at all
-  assert.equal(tasks.gate(code, t, []).ok, false);
-  // another task's done does not count
-  assert.equal(tasks.gate(code, t, [req('bob', 'done', 3, { evidence: 'x' })]).ok, false);
-  // a done request with no evidence (e.g. a hand-written entry) does not count
-  assert.equal(tasks.gate(code, t, [req('bob', 'done', 2)]).ok, false);
+// ---------- the rules (pure) ----------
+const T = (over: Partial<FoldedTask> = {}): FoldedTask => ({ id: '2', subject: 'parser tests', status: 'pending', owner: null, blockedBy: [], ...over });
+test('check: add (anyone); claim for yourself unless another owns it; release and done by the owner only; the room task takes nothing', () => {
+  const ops = ['claim', 'release', 'done'] as const;
+  const rows: [string, FoldedTask | null, string, string | null][] = [
+    // [op, task, by, the refusal (null: allowed)]
+    ['claim', T(), 'bob', null],
+    ['claim', T({ owner: 'bob', status: 'in_progress' }), 'bob', null],
+    ['claim', T({ owner: 'alice', status: 'in_progress' }), 'bob', '#2 is alice\'s; ask them to release it'],
+    ['release', T({ owner: 'bob', status: 'in_progress' }), 'bob', null],
+    ['release', T({ owner: 'alice', status: 'in_progress' }), 'bob', 'only alice may release #2; ask them'],
+    ['release', T(), 'bob', '#2 has no owner to release it'],
+    ['done', T({ owner: 'bob', status: 'in_progress' }), 'bob', null],
+    ['done', T({ owner: 'alice', status: 'in_progress' }), 'bob', 'only alice may complete #2; ask them'],
+    ['done', T(), 'bob', '#2 has no owner; claim it first, then ask for done with evidence'],
+    ['done', T({ owner: 'bob', status: 'completed' }), 'bob', '#2 is done already'],
+    ['claim', null, 'bob', 'no task #2 in this room'],
+    ['claim', T({ status: 'deleted' }), 'bob', 'no task #2 in this room'],
+  ];
+  for (const [op, task, by, why] of rows) {
+    const req = { op, id: '2', ...(op === 'done' ? { evidence: 'tests pass' } : {}) };
+    assert.equal(tasks.check(task, req, by), why, `${op} ${JSON.stringify(task)} by ${by}`);
+  }
+  const roomTask = T({ id: '1', subject: 'room vole-1234 open', owner: 'room', status: 'in_progress' });
+  for (const op of ops) assert.match(must(tasks.check(roomTask, { op, id: '1', evidence: 'x' }, 'room')), /the room's open task; it stays open until the room closes/, op);
+  assert.equal(tasks.check(null, { op: 'add', subject: 'x' }, 'anyone'), null);
 });
 
-test('gate: the owner\'s [human] words citing another\'s done request pass', () => {
+// ---------- apply, on the host ----------
+function hosted() {
+  h.freshHome();
   const code = h.newRoom();
-  const t = { id: '4', subject: 'docs', owner: 'bob' };
-  const alice = req('alice', 'done', 4, { evidence: 'README updated' });
-  assert.equal(tasks.gate(code, t, [alice, human('bob', `yes, #${alice.id} is right`)]).ok, true);
-  assert.equal(tasks.gate(code, t, [alice, human('bob', 'unrelated', [alice.id])]).ok, true);
-  assert.equal(tasks.gate(code, t, [alice, human('alice', `#${alice.id} done`)]).ok, false);
-  assert.equal(tasks.gate(code, t, [alice, human('bob', `#${alice.id}0 is wrong`)]).ok, false);
+  h.register('alice');
+  const store = room.open(code).store;
+  return { code, store, R: room.open(code), dir: taskFiles.dirOf(code) };
+}
+const fileOf = (dir: string, id: string) => must(ccTasks.readTask(dir, id), `task file ${id}`);
+
+test('apply: add, claim, done: two log entries per request (the ask via agent, the task via system from room), the native file and tasks.json follow; a refusal writes nothing', () => {
+  const { code, store, R, dir } = hosted();
+  const room1 = tasks.openRoomTask(store);
+  assert.deepEqual([room1.id, room1.owner, room1.status], ['1', 'room', 'in_progress']);
+  assert.equal(fileOf(dir, '1').status, 'in_progress', 'the room task is a file before anything else');
+  const n0 = R.readAll().length;
+
+  const add = tasks.apply(store, { op: 'add', subject: 'parser tests', detail: 'the edge cases', suggest: 'bob' }, { by: 'alice' });
+  assert.ok(add.ok);
+  assert.match(add.text, /^added #2 "parser tests" \(suggested owner: bob; they claim it\)$/);
+  const [ask, task] = R.readAll().slice(n0);
+  assert.deepEqual([must(ask).kind, must(ask).via, must(ask).from, must(ask).by], ['task_req', 'agent', 'alice', 'alice']);
+  assert.deepEqual([must(task).kind, must(task).via, must(task).from, must(task).task_id, must(task).owner, must(task).req, must(task).suggest], ['task', 'system', 'room', '2', undefined, must(ask).id, 'bob']);
+  const f = fileOf(dir, '2');
+  assert.deepEqual([f.subject, f.description, f.status, f.owner, f.metadata], ['parser tests', 'the edge cases', 'pending', undefined, { room: code, req: must(ask).id, suggest: 'bob' }]);
+  assert.deepEqual(tasks.list(code).map(t => [t.id, t.owner, t.status]), [['2', null, 'pending']], 'tasks.json: no room task');
+
+  const n1 = R.readAll().length;
+  assert.equal(refused(tasks.apply(store, { op: 'done', id: '2', evidence: 'x' }, { by: 'alice' })), '#2 has no owner; claim it first, then ask for done with evidence');
+  assert.equal(refused(tasks.apply(store, { op: 'claim', id: '1' }, { by: 'alice' })), '#1 is the room\'s open task; it stays open until the room closes');
+  assert.equal(refused(tasks.apply(store, { op: 'done', id: '2' }, { by: 'alice' })), 'done needs evidence: what shows it is done (a test run, a commit, a file)');
+  assert.equal(R.readAll().length, n1, 'a refusal is immediate and logs nothing');
+
+  assert.deepEqual([must(applied(tasks.apply(store, { op: 'claim', id: '2' }, { by: 'bob' }))).owner, fileOf(dir, '2').owner, fileOf(dir, '2').status], ['bob', 'bob', 'in_progress']);
+  assert.equal(refused(tasks.apply(store, { op: 'claim', id: '2' }, { by: 'alice' })), '#2 is bob\'s; ask them to release it');
+  assert.equal(refused(tasks.apply(store, { op: 'done', id: '2', evidence: 'mine' }, { by: 'alice' })), 'only bob may complete #2; ask them');
+  const done = tasks.apply(store, { op: 'done', id: '2', evidence: 'npm test: 12 pass' }, { by: 'bob' });
+  assert.ok(done.ok);
+  assert.equal(fileOf(dir, '2').status, 'completed');
+  assert.equal(fileOf(dir, '1').status, 'in_progress', 'every other task done: the room task keeps the list from being reset');
+  assert.equal(tasks.summary(code, 'alice'), 'tasks: all 1 done');
+  assert.equal(ccTasks.markOf(dir), 2, 'the mark follows the highest id');
 });
 
-test('gate: a stale claim fails; an old retract line changes nothing', () => {
-  const code = h.newRoom();
-  const t = { id: '2', subject: 'parser tests', owner: 'bob' };
-  const done = req('bob', 'done', 2, { evidence: 'tests pass' });
-  assert.equal(tasks.gate(code, t, [done, oldRetract([done.id])]).ok, true);
-  // done, then a newer claim of the task: the done is stale
-  const done2 = req('bob', 'done', 2, { evidence: 'tests pass' });
-  const reclaim = req('bob', 'claim', 2);
-  assert.equal(tasks.gate(code, t, [done2, reclaim]).ok, false);
-  // a fresh done after the claim passes again
-  assert.equal(tasks.gate(code, t, [done2, reclaim, req('bob', 'done', 2, { evidence: 'again' })]).ok, true);
-  // unowned task
-  assert.match(must(gReason(tasks.gate(code, { id: '9', subject: 'x', owner: null }, []))), /no owner/);
+test('apply: ids come after the log\'s, the files\' and the mark; a lost or edited file comes back with repair', () => {
+  const { store, dir } = hosted();
+  tasks.openRoomTask(store);
+  fs.writeFileSync(path.join(dir, '.highwatermark'), '7'); // Claude Code reset the list once: ids up to 7 were handed out
+  const a = must(applied(tasks.apply(store, { op: 'add', subject: 'after the mark' }, { by: 'alice' })));
+  assert.equal(a.id, '8');
+  fs.rmSync(path.join(dir, '8.json'));
+  fs.writeFileSync(path.join(dir, '1.json'), '{"id":"1","subject":"edited","description":"","status":"completed","blocks":[],"blockedBy":[]}');
+  const r = tasks.repair(store);
+  assert.deepEqual(r.wrote.sort(), ['1', '8']);
+  assert.equal(fileOf(dir, '1').status, 'in_progress');
+  assert.equal(fileOf(dir, '8').subject, 'after the mark');
+  assert.deepEqual(tasks.repair(store), { wrote: [], removed: [] }, 'nothing to do: no write');
+  fs.writeFileSync(path.join(dir, '99.json'), '{}');
+  tasks.repair(store);
+  assert.ok(fs.existsSync(path.join(dir, '99.json')), 'a file the log does not know is left alone');
 });
 
-test('gate: the room-open task completes only while the room is closing', () => {
-  const code = h.newRoom();
-  const t1 = { id: '1', subject: `room ${code} open`, owner: 'room' };
-  const r = tasks.gate(code, t1, [req('bob', 'done', 1, { evidence: 'x' })]);
-  assert.equal(r.ok, false);
-  assert.match(must(gReason(r)), /stays open until the room closes/);
-  assert.equal(tasks.gate(code, { id: '1', subject: `room ${code} open` }, []).ok, false); // before its owner is set
-  assert.equal(tasks.gate(code, { id: '5', subject: 'probe', owner: 'room' }, []).ok, false); // owner room
-  assert.equal(tasks.gate(code, t1, [], { closing: true }).ok, true);
-  // closing read from members.json
-  assert.equal(tasks.isClosing(code), false);
-  const f = path.join(identity.roomDir(code), 'members.json');
-  io.writeJsonAtomic(f, { claude: { name: 'claude', role: 'claude', pid: 1, closing: true } });
-  assert.equal(tasks.isClosing(code), true);
-  assert.equal(tasks.gate(code, t1, []).ok, true);
+test('the room task: opened once (a respawn finds it), completed only by closeRoomTask; members never complete it', () => {
+  const { store, R, dir } = hosted();
+  const a = tasks.openRoomTask(store);
+  const n = R.readAll().length;
+  assert.deepEqual(tasks.openRoomTask(store), a, 'a respawn: the same task, no new entry');
+  assert.equal(R.readAll().length, n);
+  for (const op of ['claim', 'release'] as const) assert.match(must(refused(tasks.apply(store, { op, id: a.id }, { by: 'alice' }))), /room's open task/);
+  const closed = must(tasks.closeRoomTask(store));
+  assert.equal(closed.status, 'completed');
+  assert.equal(fileOf(dir, a.id).status, 'completed');
+  assert.equal(must(R.readAll().at(-1)).from, 'room');
+  assert.equal(tasks.closeRoomTask(store), null, 'nothing left open');
+});
+
+test('apply: two processes at once: the room\'s tasks lock serialises them; every request gets its own id and both land', async () => {
+  const { code, R } = hosted();
+  const script = `
+    import * as room from ${JSON.stringify(path.join(h.LIB, 'room.ts'))};
+    import * as tasks from ${JSON.stringify(path.join(h.LIB, 'tasks.ts'))};
+    const store = room.open(process.argv[1]).store;
+    const out = [];
+    for (let i = 0; i < 5; i++) out.push(tasks.apply(store, { op: 'add', subject: process.argv[2] + ' ' + i }, { by: process.argv[2] }).task.id);
+    process.stdout.write(JSON.stringify(out));`;
+  const run = (who: string) => new Promise<string[]>((resolve, reject) => {
+    const c = spawn(process.execPath, ['--input-type=module', '-e', script, code, who],
+      { env: { ...h.childEnv(), SUB_HUMAN_HOME: must(process.env.SUB_HUMAN_HOME), CLAUDE_CONFIG_DIR: must(process.env.CLAUDE_CONFIG_DIR) } });
+    let o = '', e = '';
+    c.stdout.on('data', d => { o += String(d); });
+    c.stderr.on('data', d => { e += String(d); });
+    c.on('close', code_ => (code_ === 0 ? resolve(JSON.parse(o) as string[]) : reject(new Error(e))));
+  });
+  const [a, b] = await Promise.all([run('alice'), run('bob')]); // each within the room's rate for one Claude
+  const ids = [...a, ...b];
+  assert.equal(new Set(ids).size, 10, `10 distinct ids: ${ids.join(',')}`);
+  const entries = R.readAll().filter((e: Entry) => e.kind === 'task');
+  assert.equal(entries.length, 11, 'and the room task, once');
+  assert.deepEqual(tasks.list(code).length, 10);
 });
 
 // ---------- the mirror file and summary ----------
-test('writeList omits the room task; list and summary per viewer', () => {
+test('list and summary per viewer (tasks.json)', () => {
   const code = h.newRoom();
   assert.deepEqual(tasks.list(code), []);
   assert.equal(tasks.summary(code, 'alice'), '');
-  tasks.writeList(code, [
-    { id: '1', subject: `room ${code} open`, status: 'in_progress', owner: 'room' },
-    { id: '4', subject: 'docs', status: 'in_progress', owner: 'bob', metadata: { x: 1 } } as RawTask, // a field the mirror drops
-    { id: '2', subject: 'parser tests', status: 'pending', owner: 'alice' },
-    { id: '3', subject: 'unowned', status: 'pending' },
-    { id: '5', subject: 'old', status: 'completed', owner: 'alice' },
+  const ent = (task_id: string, extra: Partial<Entry>): Entry => ({ id: Number(task_id), via: 'system', kind: 'task', task_id, subject: 's' + task_id, status: 'pending', ...extra }) as Entry; // a task snapshot: fold reads no from or at
+  tasks.refold(code, [
+    ent('1', { subject: `room ${code} open`, status: 'in_progress', owner: 'room' }), ent('4', { status: 'in_progress', owner: 'bob' }),
+    ent('2', { owner: 'alice' }), ent('3', {}), ent('5', { status: 'completed', owner: 'alice' }),
   ]);
-  const l = tasks.list(code);
-  assert.deepEqual(l.map(t => t.id), ['2', '3', '4', '5']);
-  assert.deepEqual(Object.keys(must(l[0])).sort(), ['blockedBy', 'id', 'owner', 'status', 'subject']);
+  assert.deepEqual(tasks.list(code).map(t => t.id), ['2', '3', '4', '5']);
   assert.equal(tasks.summary(code, 'alice'), 'tasks 3 open · #2 you · #4 bob');
   assert.equal(tasks.summary(code, 'bob'), 'tasks 3 open · #2 alice · #4 you');
   assert.deepEqual(tasks.mine(code, sn('alice')).map(t => t.id), ['2']);
-  tasks.writeList(code, [{ id: '2', subject: 'a', status: 'completed', owner: 'alice' }]);
-  assert.equal(tasks.summary(code, 'alice'), 'tasks: all 1 done');
-  tasks.writeList(code, ['1', '2', '3', '4', '5'].map(id => ({ id, subject: 's' + id, status: 'pending', owner: 'o' + id })));
-  assert.equal(tasks.summary(code, 'x'), 'tasks 5 open · #1 o1 · #2 o2 · #3 o3 · +2');
-});
-
-// ---------- mcp/task.ts ----------
-/** task.ts's call: no meta, a result every time, and it reads only the seat's code, name and role. */
-type Seat = Pick<Me, 'code' | 'name' | 'role'>;
-interface TaskApi extends Omit<PluginApi, 'call'> { call(name: string, me: Seat, args: ToolArgs): ToolResult }
-
-function ctxFor(): Pick<PluginContext, 'text'> & { room: typeof room; identity: typeof identity } {
-  return {
-    room, identity,
-    text: (s, isError) => ({ content: [{ type: 'text', text: String(s) }], ...(isError ? { isError: true } : {}) }),
-  };
-}
-const out = (r: ToolResult) => must(r.content[0]).text;
-
-test('task tool: the room Claude not running, refusals, queued request', () => {
-  h.freshHome();
-  const code = h.newRoom();
-  const sleeper = h.spawnSleeper();
-  const me: Seat & { pid: number } = { code, name: sn('alice'), role: 'member', pid: process.pid };
-  identity.join({ code, name: sn('alice'), role: 'member', pid: process.pid, session_id: 's-a' });
-  identity.join({ code, name: sn('bob'), role: 'member', pid: must(sleeper.pid), session_id: 's-b' });
-  const R = room.open(code);
-  const api = taskPlugin.create(ctxFor()) as TaskApi;
-  assert.deepEqual(api.tools.map(t => t.name), ['task']);
-  const { name, description, inputSchema } = must(api.tools[0]); // model-facing fields; annotations are client metadata
-  assert.ok(JSON.stringify({ name, description, inputSchema }).length <= 900);
-
-  assert.equal(out(api.call('task', me, { op: 'add', subject: 'parser tests' })), "the room's Claude is not running: the room task list is unavailable");
-  assert.equal(R.readAll().length, 0);
-
-  const roomClaudeProc = h.spawnSleeper();
-  identity.join({ code, name: sn('claude'), role: 'claude', pid: roomClaudeProc.pid, session_id: 's-o' });
-  let r = api.call('task', me, { op: 'done', id: '2' });
-  assert.equal(r.isError, true);
-  assert.match(out(r), /evidence/);
-  assert.match(out(api.call('task', me, { op: 'add', subject: 'x', for: 'carol' })), /no member named carol/);
-
-  r = api.call('task', me, { op: 'add', subject: 'parser tests', detail: 'cover the edge cases', for: 'bob' });
-  const e = must(R.readAll().at(-1));
-  assert.equal(out(r), 'queued; the room\'s Claude applies it');
-  assert.deepEqual([e.kind, e.from, e.via], ['task_req', 'alice', 'agent']);
-  assert.deepEqual(tasks.reqOf(e), { op: 'add', id: null, subject: 'parser tests', detail: 'cover the edge cases', evidence: null, owner: 'bob', status: null, req: null, by: 'alice' });
-
-  api.call('task', me, { op: 'done', id: '2', evidence: 'npm test green' });
-  const d = must(R.readAll().at(-1));
-  assert.deepEqual([tasks.reqOf(d).op, tasks.reqOf(d).id, tasks.reqOf(d).owner, tasks.reqOf(d).evidence], ['done', '2', 'alice', 'npm test green']);
-  assert.match(must(d.text), /done #2/);
-
-  // the room's Claude itself is told to use its native tools
-  assert.match(out(api.call('task', { code, name: sn('claude'), role: 'claude' }, { op: 'add', subject: 'x' })), /TaskCreate/);
-});
-
-test('gate: task.req (the native metadata) is tried first; fold keeps the last snapshot per task', () => {
-  const code = h.newRoom();
-  const t = { id: '2', subject: 'parser tests', owner: 'bob' };
-  const a = req('bob', 'done', 2, { evidence: 'first' });
-  const b = req('bob', 'done', 2, { evidence: 'second' });
-  assert.equal(must(gReq(tasks.gate(code, t, [a, b]))).id, b.id);
-  assert.equal(must(gReq(tasks.gate(code, { ...t, req: a.id }, [a, b]))).id, a.id);
-  assert.equal(must(gReq(tasks.gate(code, { ...t, req: 999 }, [a, b]))).id, b.id);
-
-  const ent = (task_id: string, extra: Partial<Entry>): Entry => ({ id: nextId++, via: 'system', kind: 'task', task_id, subject: 's' + task_id, status: 'pending', ...extra }) as Entry; // a task snapshot: fold reads no from or at
+  // fold: the last snapshot per task; a delete removes it; an agent's line is no task
   assert.deepEqual(tasks.fold([
     ent('3', { owner: 'bob' }), ent('2', { status: 'in_progress', owner: 'alice', blockedBy: ['3'] }), ent('3', {}),
     ent('4', {}), ent('4', { op: 'delete', status: 'deleted' }), { ...ent('5', {}), via: 'agent' }, ent('1', { subject: `room ${code} open` }),
@@ -200,7 +194,27 @@ test('gate: task.req (the native metadata) is tried first; fold keeps the last s
     { id: '2', subject: 's2', status: 'in_progress', owner: 'alice', blockedBy: ['3'] },
     { id: '3', subject: 's3', status: 'pending', owner: null, blockedBy: [] },
   ]);
-  assert.equal(tasks.metaReq({ req: '14', by: 'bob' }), 14);
-  assert.equal(tasks.metaReq({ req: 'x' }), null);
-  assert.equal(tasks.metaReq(null), null);
+});
+
+// ---------- mcp/task.ts ----------
+/** task.ts's call: it reads only the seat's code, name and role. */
+type Seat = Pick<Me, 'code' | 'name' | 'role'>;
+const out = (r: ToolResult) => must(r.content[0]).text;
+
+test('task tool: applied at once on the host (no room Claude needed); a refusal is an error result', () => {
+  const { code, R } = hosted();
+  identity.join({ code, name: sn('bob'), role: 'member', pid: must(h.spawnSleeper().pid), session_id: 's-b' });
+  const me: Seat = { code, name: sn('alice'), role: 'member' };
+  const api = taskPlugin.create();
+  assert.deepEqual(api.tools.map(t => t.name), ['task']);
+  const { name, description, inputSchema } = must(api.tools[0]); // model-facing fields
+  assert.ok(JSON.stringify({ name, description, inputSchema }).length <= 1000);
+  let r = api.call('task', me, { op: 'done', id: '2' });
+  assert.equal(r.isError, true);
+  assert.match(out(r), /^refused: done needs evidence/);
+  r = api.call('task', me, { op: 'add', subject: 'parser tests', suggest: 'bob' });
+  assert.equal(r.isError, undefined);
+  assert.match(out(r), /^added #\d+ "parser tests"/);
+  assert.deepEqual(R.readAll().slice(-2).map(e => [e.kind, e.from]), [['task_req', 'alice'], ['task', 'room']]);
+  assert.match(out(api.call('task', { code, name: sn('claude'), role: 'claude' }, { op: 'add', subject: 'x' })), /takes no task requests/);
 });

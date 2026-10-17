@@ -1,4 +1,4 @@
-// S10: leave: both exit, the reaper completes task 1 and stops the room's Claude; plus run-wide notice and id checks
+// S10: leave: both exit, the reaper completes the room task itself and stops the room's Claude; plus run-wide notice and id checks
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import * as paths from '../lib/paths.ts';
@@ -14,12 +14,14 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   const s = x.span('S10');
   const la = x.logIn(s).find(e => e.kind === 'member_left' && e.from === A), lb = x.logIn(s).find(e => e.kind === 'member_left' && e.from === B);
   det(`Both leave: member_left ${A} and ${B}`, la && lb, `${x.fmt(la)}; ${x.fmt(lb)}`);
-  const cl = log.find(e => e.kind === 'status' && e.to === 'claude' && e.via === 'system' && /room closed/.test(String(e.text)));
-  det('The reaper marks the room closing and tells the room\'s Claude "room closed: complete task 1"', cl && members.claude && members.claude.closing, `${x.fmt(cl)}; members.json claude.closing ${members.claude && members.claude.closing}`);
-  const t1 = x.nativeTasks('S10', 'last').find(t => t.id === '1');
-  const t1live = readJson<TaskRec | null>(path.join(paths.tasksDir(code), '1.json'), null);
-  const done1 = (t1 && t1.status === 'completed') || (t1live && t1live.status === 'completed');
-  det('The room\'s Claude completes task 1 (the gate allows it while closing)', done1, `task 1: ${t1 ? t1.status : t1live ? t1live.status : 'no file'} (S10 copy) ${t1live ? `/ ${t1live.status} (live)` : ''}`);
+  det('The reaper marks the room closing', members.claude && members.claude.closing, `members.json claude.closing ${members.claude && members.claude.closing}`);
+  // the room task exists once anyone asked for a task (S6): the reaper completes it itself, with the room's own entry
+  const roomTask = log.find(e => e.kind === 'task' && e.owner === 'room');
+  if (roomTask) {
+    const done1 = log.find(e => e.kind === 'task' && e.owner === 'room' && e.status === 'completed' && e.from === 'room' && e.via === 'system');
+    const t1live = readJson<TaskRec | null>(path.join(paths.tasksDir(code), `${roomTask.task_id}.json`), null);
+    det('The reaper completes the room task itself (the room\'s own task entry; no model)', !!done1, `${x.fmt(done1)}; its file: ${t1live ? t1live.status : 'gone (Claude Code reset the list once every task was completed)'}`);
+  }
   const ag = x.st<AgentRow[] | null>('S10', 'last', 'agents.json', null);
   const running = ag && ag.find(y => y.id === job || y.sessionId === roomClaudeSid);
   det('The room\'s Claude is stopped: claude agents no longer lists it', members.claude && members.claude.stopped_at && ag && !running,

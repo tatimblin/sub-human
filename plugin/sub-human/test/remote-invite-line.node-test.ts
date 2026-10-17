@@ -29,7 +29,7 @@ import type { RoomCode } from '../lib/brand.ts';
 import { sn } from './support/brands.ts';
 import { must } from './support/must.ts';
 
-Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
+Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0' });
 
 function hostRoom(t: TestContext) {
   h.freshHome(t);

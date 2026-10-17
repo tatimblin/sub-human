@@ -10,7 +10,6 @@
   "noisePerCapture": 1.4,
   "callsPerReview": 5,
   "roomClaudeJoinCalls": 2,
-  "roomClaudeTaskCalls": 14,
   "joinText": 900,
   "joinBlock": 1200
  },

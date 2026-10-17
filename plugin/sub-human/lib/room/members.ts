@@ -43,7 +43,7 @@ const PRESENCE_SET: ReadonlySet<unknown> = new Set(PRESENCE_STATES);
 const isPresenceState = (s: unknown): s is PresenceState => PRESENCE_SET.has(s);
 /** The room's Claude: its member name, role and SendMessage name (claude.CODE). */
 const ROOM_CLAUDE: 'claude' & SeatName = namedSeat('claude');
-const LOCAL_FIELDS = ['pid', 'pid_start', 'session_id', 'cwd'] as const;
+const LOCAL_FIELDS = ['pid', 'pid_start', 'session_id', 'cwd', 'tasks_dir'] as const;
 const ROOM_CLAUDE_FIELDS = ['job', 'spawned_at', 'closing', 'by', 'job_session', 'claim'] as const; // kept across the room Claude's (re)bind
 
 const machineOf = (m: SeatLike): string | null => m.machine || machineId();

@@ -29,7 +29,6 @@ const LOADERS = {
   prompt: () => import('./handlers/prompt.ts'),
   'at-room': () => import('./handlers/at-room.ts'),
   consent: () => import('./handlers/consent.ts'),
-  tasks: () => import('./handlers/tasks.ts'),
   presence: () => import('./handlers/presence.ts'),
   'row-guard': () => import('./handlers/row-guard.ts'),
   'row-map': () => import('./handlers/row-map.ts'),
@@ -80,7 +79,7 @@ async function run<K extends Name>(name: K, base: HookBase, raw: string, parseEr
   // checks each before use. The base fields are checked above.
   const input = base as InputOf<K>;
   // the import inside the capture: a handler that fails to load is logged like a throw, and exits 1 (a gate's caller
-  // fails closed on any exit but 0 and 2: mod/tasks.ts)
+  // fails closed on any exit but 0 and 2)
   const loaded: { h: Handler<InputOf<K>> | null } = { h: null };
   const got = await captureAsync(async () => {
     const h = loaded.h = await TABLE[name]();

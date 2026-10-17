@@ -19,6 +19,8 @@ import * as rows from '../lib/rows.ts';
 import * as linkSocket from '../lib/remote/link-socket.ts';
 import { isAlive } from '../lib/io.ts';
 import { Machine, childOf, kill } from './support/two-homes.ts';
+import * as taskPlugin from '../mcp/task.ts';
+
 import type { Proposal } from '../lib/types-app.ts';
 import type { Link, LinkState } from '../lib/room/types.ts';
 import { sn } from './support/brands.ts';
@@ -58,6 +60,13 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   const daemon = remote.lib(() => linkSocket.status(code));
   t.after(() => { kill(childOf(daemon.pid)); kill(daemon.pid); fs.rmSync(path.dirname(linkSocket.socketPath(path.join(remote.home, 'rooms', code))), { recursive: true, force: true }); });
   assert.deepEqual([daemon.running, daemon.state], [true, 'online']);
+  // a task request from bob's Claude goes over his link and is applied on the host at once (lib/tasks.ts apply)
+  const taskTool = taskPlugin.create();
+  const added = remote.lib(() => taskTool.call('task', { code, name: sn('bob'), role: 'member' }, { op: 'add', subject: 'parser tests' }));
+  assert.match(must(added.content[0]).text, /^added #\d+ "parser tests"$/, JSON.stringify(added));
+  assert.ok(host.lib(() => store.open(code).readAll()).some(e => e.kind === 'task' && e.from === 'room' && e.subject === 'parser tests'), 'on the host\'s log');
+  const taken = remote.lib(() => taskTool.call('task', { code, name: sn('bob'), role: 'member' }, { op: 'done', id: '99', evidence: 'x' }));
+  assert.deepEqual([taken.isError, must(taken.content[0]).text], [true, 'refused: no task #99 in this room']);
   const linkFile = JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.json`), 'utf8')) as Link;
   assert.deepEqual([typeof linkFile.token, linkFile.invite], ['string', undefined], 'the invite became the token');
   assert.equal(fs.statSync(path.join(remote.home, 'links', `${code}.json`)).mode & 0o777, 0o600);
