@@ -35,7 +35,7 @@ import { writeFileAtomic } from './io.ts';
 import { clip, oneLine, hash12, isProposalHash } from './text.ts';
 import * as config from './config.ts';
 import { NEXT, showNote } from './consent/review.ts';
-import type { Card, Confirm, PlanEdit, Proposal, Recheck, Review } from './types-app.ts';
+import type { Card, Confirm, PlanEdit, Proposal, Recheck, Review, Steer } from './types-app.ts';
 import type { Entry, Matrix, Member, Members, PlanVersion, ProposalState, Trust } from './room/types.ts';
 import type { Identity } from './identity.ts';
 import type { RoomCode, ProposalHash } from './brand.ts';
@@ -407,6 +407,12 @@ const readRecheck = (me: Me): Recheck | null => { try { return session.get(store
 const writeRecheck = (me: Me, r: Recheck): void => session.put(storeOf(me), me.name, 'recheck', r);
 function clearRecheck(me: Me): void { try { session.put(storeOf(me), me.name, 'recheck', undefined); } catch { /* none */ } }
 
+/** An ExitPlanMode denied once because it would show the person's own plan while a request waited (lib/consent/review.ts
+ * steer): {hash, plan, at} or null. */
+const readSteer = (me: Me): Steer | null => { try { return session.get(storeOf(me), me.name, 'steer') ?? null; } catch { return null; } };
+const writeSteer = (me: Me, s: Steer): void => session.put(storeOf(me), me.name, 'steer', s);
+function clearSteer(me: Me): void { try { session.put(storeOf(me), me.name, 'steer', undefined); } catch { /* none */ } }
+
 const CONFIRM_NOTE_MAX = 300;
 const CONFIRM_TITLE_MAX = 80;
 /** The confirm card's question: what Send does, in the person's words; the note clipped (the preview has it all). */
@@ -437,7 +443,7 @@ function repeatsNote(c: Pick<Confirm, 'note'> | null | undefined, text: unknown)
 
 export {
   QUESTION_RE, ProposalError, readReview, writeReview, clearReview, withReview, restorePlan, restoreStale,
-  readEdit, writeEdit, clearEdit, readConfirm, writeConfirm, clearConfirm, readRecheck, writeRecheck, clearRecheck, confirmCard, confirmQuestion, repeatsNote, namedIn, picked,
+  readEdit, writeEdit, clearEdit, readConfirm, writeConfirm, clearConfirm, readRecheck, writeRecheck, clearRecheck, readSteer, writeSteer, clearSteer, confirmCard, confirmQuestion, repeatsNote, namedIn, picked,
   ask, proposals, pendingFor, answerableFor, personOf, card, cardFor, question, preview, viewable, openCall,
   confirmCall, showConfirm, matrix, answer, decide, decision, humans, reminder, read, hash12, title,
 };

@@ -12,6 +12,8 @@
  *    confirm  a review's note waiting for the person's Send (lib/proposal.ts readConfirm)
  *    edit     a room plan edit in this session (lib/consent/edit.ts; the plan tool opens it)
  *    recheck  {hash, at}: a plan-view Yes that came as the view opened, asked again on the card (lib/proposal.ts readRecheck)
+ *    steer    {hash, plan, at}: an ExitPlanMode that would have shown the person's own plan while a sign-off waited,
+ *             denied once (lib/proposal.ts readSteer; lib/consent/review.ts)
  *    holds    the seat's live row holds, as mcp/hold.ts wrote them (lib/rows.ts readHolds)
  *    blocks   {agentId: n}: how often hooks/handlers/row-hold.ts blocked that row's stop (the last BLOCKS_MAX)}
  *

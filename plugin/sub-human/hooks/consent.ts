@@ -40,6 +40,7 @@ import * as plans from '../lib/plans.ts';
 import * as cc from '../lib/cc/transcript.ts';
 import * as ccEnv from '../lib/cc/env.ts';
 import { writeFileAtomic } from '../lib/io.ts';
+import { hash12 } from '../lib/text.ts';
 import * as config from '../lib/config.ts';
 import * as env from '../lib/env.ts';
 import * as envelope from '../lib/room/envelope.ts';
@@ -103,6 +104,13 @@ function record(me: Identity, hash: string, a: { choice: 'Agree' | 'Object'; not
 const REVIEW_MODES = ['default', 'acceptEdits', 'auto'];
 /** The clear-context approve option fires no PostToolUse and starts implementing: no review then. */
 const reviewable = (input: ConsentIn) => REVIEW_MODES.includes(String(input.permission_mode)) && !ccEnv.clearContextOnPlanAccept(input.cwd);
+/**
+ * An EnterPlanMode can open a review in those modes and in plan mode itself (the person was in plan mode already, maybe
+ * holding a plan of their own): Claude Code runs the call and its hooks there too (cc CONTRACT enterplan-in-plan-mode),
+ * the plan file is known (the transcript's plan_mode attachment), and the review writes the proposal there before the
+ * ExitPlanMode reads it. Left out, that ExitPlanMode showed the person's own plan, and a Yes approved it.
+ */
+const reviewableAtEnter = (input: ConsentIn) => (ccEnv.ENTER_IN_PLAN_MODE && input.permission_mode === 'plan' && !ccEnv.clearContextOnPlanAccept(input.cwd)) || reviewable(input);
 
 /** The transcript's lines, read once per hook run (the tail: the review is always recent). */
 function lines(input: ConsentIn): string[] {
@@ -199,13 +207,13 @@ type Out = { say: Say | null; show?: { admit?: JoinRequest | undefined; card?: P
 
 /** The seat's state, reduce one event (made from it), run the effects, store the state, write the answer. */
 function step(input: ConsentIn, me: Identity, make: (st: State) => ConsentEvent, show: Out['show'] = {}) {
-  const start: State = { review: proposal.readReview(me), note: proposal.readConfirm(me), recheck: proposal.readRecheck(me) };
+  const start: State = { review: proposal.readReview(me), note: proposal.readConfirm(me), recheck: proposal.readRecheck(me), steer: proposal.readSteer(me) };
   const ctx = { name: me.name, now: Date.now(), guardMs: env.testMs('SUB_HUMAN_YES_GUARD_MS') };
   const first = review.reduce(start, make(start), ctx);
   if (first.notice) unsent.push(first.notice);
   let state = first.state;
   let say = first.say;
-  const disk = { review: JSON.stringify(start.review), note: JSON.stringify(start.note), recheck: JSON.stringify(start.recheck ?? null) };
+  const disk = { review: JSON.stringify(start.review), note: JSON.stringify(start.note), recheck: JSON.stringify(start.recheck ?? null), steer: JSON.stringify(start.steer ?? null) };
   const answers = new Map<string, { choice: 'Agree' | 'Object'; res: Recorded }>();
   const queue: ConsentEffect[] = [...first.effects];
   for (let e = queue.shift(); e; e = queue.shift()) {
@@ -233,6 +241,7 @@ function step(input: ConsentIn, me: Identity, make: (st: State) => ConsentEvent,
   if (JSON.stringify(state.review) !== disk.review) { if (state.review) proposal.writeReview(me, state.review); else proposal.clearReview(me); }
   if (JSON.stringify(state.note) !== disk.note) { if (state.note) proposal.writeConfirm(me, state.note); else proposal.clearConfirm(me); }
   if (JSON.stringify(state.recheck ?? null) !== disk.recheck) { if (state.recheck) proposal.writeRecheck(me, state.recheck); else proposal.clearRecheck(me); }
+  if (JSON.stringify(state.steer ?? null) !== disk.steer) { if (state.steer) proposal.writeSteer(me, state.steer); else proposal.clearSteer(me); }
   if (say) write(input, me, say, state, answers, show);
 }
 
@@ -353,7 +362,7 @@ const MODE_FRESH_MS = 10_000;
 function preEnter(input: ConsentIn, me: Identity) {
   input = { ...input, permission_mode: modeAtEnter(input) };
   step(input, me, st => {
-    const base = { mode: input.permission_mode, reviewable: reviewable(input), plan: { file: null, text: null } };
+    const base = { mode: input.permission_mode, reviewable: reviewableAtEnter(input), plan: { file: null, text: null } };
     if (st.review && st.review.phase === 'restore') return { type: 'enter', ...base, pending: [], said: null, named: null };
     const ps = proposal.pendingFor(me).filter(p => proposal.viewable(p, me.code));
     if (!ps.length || !base.reviewable) return { type: 'enter', ...base, pending: [], said: null, named: null };
@@ -362,6 +371,22 @@ function preEnter(input: ConsentIn, me: Identity) {
     const hit = said ? proposal.namedIn(ps, said.text, me.code) : null;
     return { type: 'enter', ...base, pending: pendingOf(me, ps), said, named: hit ? hit.hash : null, plan: planOf(input) };
   });
+}
+
+/**
+ * The request a plan view of this ExitPlanMode would hide (lib/consent/review.ts steer): the session's own call (no
+ * subagent's), a request waiting for this seat that the plan view can show (the person's latest words name it, else
+ * the oldest), and the hash12 of the text the call carries (Claude Code's copy of the plan file: the person's own plan).
+ */
+function waitingOf(input: ConsentIn, me: Identity, ti: ConsentToolInput, plan: { text: string | null }): { hash: string; title: string | null; plan: string } | null {
+  if (input.agent_id || ccEnv.clearContextOnPlanAccept(input.cwd)) return null;
+  const ps = proposal.pendingFor(me).filter(p => proposal.viewable(p, me.code));
+  const [oldest] = ps;
+  if (!oldest) return null;
+  const said = cc.lastHumanPrompt(lines(input));
+  const p = (said ? proposal.namedIn(ps, said.text, me.code) : null) ?? oldest;
+  const text = typeof ti.plan === 'string' ? ti.plan : plan.text ?? '';
+  return { hash: p.hash, title: titleOf(me, p), plan: hash12(Buffer.from(text, 'utf8')) };
 }
 
 /** "proposal HASH" (the stub the model is told to pass), as a plan's whole text: the hash, or null. */
@@ -381,9 +406,12 @@ function preExit(input: ConsentIn, me: Identity) {
       // opens here (lib/consent/review.ts exit with stub), else the call is denied: never a bare view of the name
       const ti: ConsentToolInput = input.tool_input ?? {};
       const plan = planOf(input);
+      // Claude Code puts the plan file's text in the call's plan (cc CONTRACT exitplan-normalize): with the person's own
+      // plan there, the model's "proposal HASH" reaches no hook (the transcript's copy is written as the call ends, and
+      // carries the file's text too); a request waiting then steers the call (waitingOf)
       const own = modelInput(input);
       const word = stubHash(ti.plan) || stubHash(plan.text) || stubHash(own && own.plan);
-      if (!word) return ev;
+      if (!word) return { ...ev, waiting: waitingOf(input, me, ti, plan) };
       // the mode is plan already (the person's); a dialog whose Yes clears the context is still no place for a review
       const p = !ccEnv.clearContextOnPlanAccept(input.cwd) ? proposal.pendingFor(me).filter(x => proposal.viewable(x, me.code)).find(x => x.hash.startsWith(word)) : undefined;
       if (!p) return { ...ev, stub: { hash: word, live: false } };

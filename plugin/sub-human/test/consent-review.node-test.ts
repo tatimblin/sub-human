@@ -469,3 +469,73 @@ test('8 (live verify): a Yes within YES_GUARD_MS of the view being shown, or whi
   assert.deepEqual([closed.effects, closed.state.recheck], [[], null]);
   assert.equal(must(review.reduce(closed.state, EVENTS.ask, ctx).say).to, 'deny');
 });
+
+test('A (live validation): a sign-off asked while the person is in plan mode holding a plan of their own: the review opens there, the view shows the proposal, a Yes is a sign-off only, and their plan comes back', () => {
+  const own = { file: '/plans/x.md', text: '# my private plan\n\n1. secret step\n' };
+  // Pre(EnterPlanMode) made in plan mode: the review opens with plan as the mode to put back, the proposal written now
+  const enter = review.reduce({ review: null, note: null }, { ...EVENTS.enter, mode: 'plan', plan: own }, ctx);
+  assert.deepEqual(shape(enter), ['entering', 'allow', 'save,writePlan']);
+  assert.deepEqual([rev(enter).mode, rev(enter).backup, rev(enter).file], ['plan', own.text, own.file], 'their plan is backed up first');
+  assert.deepEqual(enter.effects[1], { do: 'writePlan', file: own.file, hash: H, early: true });
+  // Pre(ExitPlanMode): whatever the call carries (Claude Code reads the file: now the proposal), the view shows the proposal
+  const shown = review.reduce(enter.state, { ...EVENTS.exit, answer: null, mode: 'plan', plan: { file: own.file, text: TEXT }, callPlan: TEXT }, ctx);
+  assert.deepEqual(asked(shown).show, { plan: H }, 'the proposal, never their own plan');
+  assert.equal(rev(shown).backup, own.text);
+  // the Yes: a sign-off, their plan file back (and the model told so), plan mode put back with EnterPlanMode alone
+  const yes = review.reduce(shown.state, { ...EVENTS.exited, toolUseId: 'tu2', mode: 'default' }, { ...ctx, now: ctx.now + 10_000 });
+  assert.deepEqual(shape(yes), ['restore', 'context', 'answer,restorePlan']);
+  assert.deepEqual(yes.effects[1], { do: 'restorePlan', file: own.file, backup: own.text });
+  const said = review.textOf(parts(yes), () => '', true);
+  assert.match(said, /call EnterPlanMode to put bob's plan mode back/);
+  // Esc: closed right there (plan mode is theirs: no ExitPlanMode to leave it), their plan back, the model told
+  const esc = review.reduce(shown.state, { type: 'rejected', toolUseId: 'tu2', answer: { note: null }, target }, ctx);
+  assert.deepEqual(shape(esc), ['none', 'context', 'restorePlan']);
+  assert.deepEqual(esc.effects[0], { do: 'restorePlan', file: own.file, backup: own.text });
+  assert.match(review.textOf(parts(esc), () => '', false), /closed the review of proposal [0-9a-f]{12} without answering.*plan mode stays on.*plan file is back as it was/);
+  // a note in the view: the card comes next, the note waits
+  const noted = review.reduce(shown.state, { type: 'rejected', toolUseId: 'tu2', answer: { note: 'add a test' }, target }, ctx);
+  assert.deepEqual([shape(noted)[0], must(noted.state.note).note], ['none', 'add a test']);
+  assert.match(review.textOf(parts(noted), () => '', false), /call AskUserQuestion with "objection /);
+  assert.match(must(noted.notice), /your note on .* is not sent yet/);
+  // the dialog closed with no report (an Esc that ended the turn): the next prompt or the turn's end closes it alike
+  const closers: ConsentEvent[] = [{ ...EVENTS.prompt, answer: null }, { ...EVENTS.stop, answer: null }];
+  for (const e of closers) {
+    const at = review.reduce(shown.state, e, ctx);
+    assert.deepEqual(shape(at), ['none', 'context', 'restorePlan'], e.type);
+  }
+  // a closing ExitPlanMode all the same (a room tool moved the review to closing): denied, never let through
+  const closing = review.reduce(shown.state, { ...EVENTS.roomTool, answer: null }, ctx);
+  const close = review.reduce(closing.state, { ...EVENTS.exit, toolUseId: 'tu3', answer: null, shown: null, text: null, plan: { file: own.file, text: TEXT } }, ctx);
+  assert.deepEqual(shape(close), ['none', 'deny', 'restorePlan']);
+  assert.match(review.textOf(parts(close), () => '', false), /plan mode stays on.*plan file is back as it was/);
+  assert.deepEqual(shape(review.reduce(close.state, EVENTS.permission, ctx)), ['none', null, ''], 'no permission answer: nothing left to let through');
+  // nothing to show (answered elsewhere meanwhile) or no plan file: denied, their plan back, no dialog
+  const gone = review.reduce(enter.state, { ...EVENTS.exit, answer: null, shown: null, text: null, plan: { file: own.file, text: TEXT } }, ctx);
+  assert.deepEqual(shape(gone), ['none', 'deny', 'restorePlan']);
+  const noFile = review.reduce(enter.state, { ...EVENTS.exit, answer: null, plan: { file: null, text: null } }, ctx);
+  assert.deepEqual(shape(noFile), ['none', 'deny', 'restorePlan']);
+  assert.match(review.textOf(parts(noFile), () => '', false), /call AskUserQuestion with "proposal /);
+  // the proposal could not be written at the view: denied (the call would show their plan), the card instead
+  const failed = review.reduce(shown.state, { type: 'planFailed', early: false }, ctx);
+  assert.deepEqual(shape(failed), ['none', 'deny', 'restorePlan']);
+  // a review in its restore phase (the Yes left plan mode already) is not closed this way
+  const later = review.reduce(yes.state, { ...EVENTS.exit, toolUseId: 'tu4', answer: null }, ctx);
+  assert.deepEqual(shape(later), ['exiting', null, '']);
+});
+
+test('A (live validation): no review open, no stub, a sign-off waiting: an ExitPlanMode that would show the plan file is steered once; the same call again passes', () => {
+  const waiting = { hash: H, title: 'plan room v1', plan: 'aaaaaaaaaaaa' };
+  const exit = (state: State, e: Partial<Extract<ConsentEvent, { type: 'exit' }>> = {}, now = ctx.now) =>
+    review.reduce(state, { ...EVENTS.exit, shown: null, text: null, stub: null, waiting, ...e }, { ...ctx, now });
+  const first = exit({ review: null, note: null });
+  assert.deepEqual(shape(first), ['none', 'deny', '']);
+  assert.deepEqual(first.state.steer, { hash: H, plan: 'aaaaaaaaaaaa', at: ctx.now });
+  assert.match(review.textOf(parts(first), () => '', false), /bob has a sign-off waiting \(plan room v1\); this ExitPlanMode would show bob's own plan file instead, so nothing was shown\. To show the sign-off: call EnterPlanMode, then ExitPlanMode/);
+  const again = exit(first.state);
+  assert.deepEqual([shape(again), again.state.steer], [['none', null, ''], null], 'the person\'s own plan was meant');
+  assert.equal(must(exit(first.state, { waiting: { ...waiting, plan: 'bbbbbbbbbbbb' } }).say).to, 'deny', 'another text: steered');
+  assert.equal(must(exit(first.state, {}, ctx.now + 11 * 60_000).say).to, 'deny', 'long after: steered again');
+  assert.deepEqual(shape(exit({ review: null, note: null }, { waiting: null })), ['none', null, ''], 'nothing waiting: Claude Code\'s own plan view');
+  // EnterPlanMode opens the review: the memo goes
+  assert.equal(review.reduce(first.state, { ...EVENTS.enter, mode: 'plan' }, ctx).state.steer, undefined);
+});

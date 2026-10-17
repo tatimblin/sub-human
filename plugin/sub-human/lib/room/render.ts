@@ -329,7 +329,7 @@ function stateLine(me: LaneViewer | null | undefined, entries: readonly Readonly
     if (approversOf(p).includes(name)) {
       const a = answered(name, p.hash, entries, trust);
       // the open-the-card call is spelled out right in the notice: a model skipped it when it was only in the join text
-      const needed = `answer needed (call EnterPlanMode, then ExitPlanMode with plan "proposal ${p.hash}")`;
+      const needed = `answer needed (call EnterPlanMode, then ExitPlanMode with plan "proposal ${p.hash}"; EnterPlanMode first even when plan mode is on)`;
       s += ` · you: ${a ? (a.kind === 'signoff' ? 'agreed' : 'objected') : dec ? 'not answered' : needed}`;
     }
     parts.push(s);

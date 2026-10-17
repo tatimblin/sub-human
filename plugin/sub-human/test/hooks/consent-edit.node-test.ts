@@ -218,6 +218,32 @@ test('edit (hooks, live 2026-10-17): the closing ExitPlanMode never sees the per
   assert.equal(fs.existsSync(f2), false);
 });
 
+test('edit (A, live validation): an edit started while the person is in plan mode holding a plan of their own: no call ever shows or passes their plan, the receipt keeps plan mode, the plan comes back', () => {
+  for (const enter of [true, false]) { // EnterPlanMode called in plan mode, or not at all
+    const w = new World({ alice: 'act', bob: 'sleep' });
+    const mine = '# PRIVATE: alice\'s own plan\n';
+    const file = planFile(w, 'alice', mine);
+    openEdit(w, 'alice');
+    const outs: string[] = [];
+    if (enter) outs.push(w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'plan', tool_input: {} }), { as: 'alice' }).stdout);
+    if (enter) assert.equal(must(editOf(w, 'alice')).mode, 'plan');
+    // the model calls ExitPlanMode before the attachment came: Claude Code put her plan in the call; denied, seeded instead
+    const early = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: mine, planFilePath: file }, tool_use_id: 'tu0' }), { as: 'alice' });
+    assert.equal(decision(early), 'deny');
+    assert.match(fs.readFileSync(file, 'utf8'), /^<!-- sub-human plan room v0: /);
+    const text = write(file, '# Paging\n', 'first');
+    const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: text, planFilePath: file }, tool_use_id: 'tu1' }), { as: 'alice' });
+    outs.push(early.stdout, pre.stdout);
+    assert.equal(decision(pre), 'deny', 'the receipt is the deny: no dialog');
+    assert.match(must(hso(pre).additionalContext), /Plan mode was already on before the edit, so it stays on/);
+    assert.equal(fs.readFileSync(file, 'utf8'), mine, 'her plan is back at once');
+    assert.equal(editOf(w, 'alice'), null);
+    assert.equal(w.hook('consent', ev('PermissionRequest', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {} }), { as: 'alice' }).stdout, '', 'nothing lets a call through with no dialog');
+    assert.ok(outs.every(o => !o.includes('PRIVATE')), 'her plan is in no hook\'s answer');
+    assert.deepEqual(answers(w), []);
+  }
+});
+
 test('edit (live 2026-10-17): plan mode left with shift+tab before ExitPlanMode keeps the unstored edit as a draft, tells the person and the model, stores nothing', () => {
   // the reducer: a changed file is kept (the text below the marker), an untouched one is not
   const seeded = edit.seed('c', 'room', 1, '# v1\n');

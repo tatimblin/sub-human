@@ -153,6 +153,16 @@ function clearContextOnPlanAccept(cwd: string | null | undefined, env: Env = pro
 const PLAN_ATTACHMENT_EVENT = 'PlanAttachment';
 
 /**
+ * EnterPlanMode runs in plan mode too (it checks only that the call is the main session's), and so do its PreToolUse
+ * and PostToolUse hooks: a sign-off request that reaches a person already in plan mode opens its review at that call
+ * like anywhere else (hooks/consent.ts reviewableAtEnter), so the proposal, not the person's own plan, is in the plan
+ * file when ExitPlanMode reads it.
+ * @cc Only the main session can enter plan mode.
+ * @stability incidental
+ */
+const ENTER_IN_PLAN_MODE: true = true;
+
+/**
  * A PermissionRequest(ExitPlanMode) answer that lets the call through with no dialog and puts the session's mode back
  * (a review's restore, an edit's closing call): allow with updatedPermissions [{type: setMode, mode, destination:
  * session}]. The plan file is emptied first (LEAVE_PLAN_TEXT), so Claude Code draws "Exited plan mode", not "User
@@ -238,5 +248,5 @@ function matcherMatches(m: string | null | undefined, name: string, { toolEvent 
 
 export {
   ENV, sessionId, claudePid, taskListId, configDir, sanitizeId, tasksDir, plansDir, taskFile, projectDir, userSettingsFiles,
-  clearContextOnPlanAccept, globalConfigFile, modulesSwitch, matcherIsExact, matcherMatches, PLAN_ATTACHMENT_EVENT, leavePlanMode, LEAVE_PLAN_TEXT, denyWithContext,
+  clearContextOnPlanAccept, globalConfigFile, modulesSwitch, matcherIsExact, matcherMatches, PLAN_ATTACHMENT_EVENT, ENTER_IN_PLAN_MODE, leavePlanMode, LEAVE_PLAN_TEXT, denyWithContext,
 };

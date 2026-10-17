@@ -19,6 +19,7 @@ export interface SessionDoc {
   confirm?: Confirm;
   edit?: PlanEdit;
   recheck?: Recheck;
+  steer?: Steer;
   holds?: Holds;
   blocks?: Record<string, number>;
 }
@@ -148,6 +149,10 @@ export interface PlanEdit {
 /** members/NAME/session recheck: a Yes that came as the plan view opened, recorded only once the person confirms it on
  * the card (lib/consent/review.ts); asked once. */
 export interface Recheck { hash: string; at: number }
+/** members/NAME/session steer: an ExitPlanMode made in plan mode with no review open while a sign-off request waited,
+ * denied once because it would show the person's own plan file (lib/consent/review.ts steer): the request (hash) and
+ * the plan text's hash12 (plan). The same call again passes: the person's own plan was meant. */
+export interface Steer { hash: string; plan: string; at: number }
 /** Where a review's note stands (lib/consent/review.ts): waiting (its card never shown), nudged (Stop asked for the card
  * once), asked (the card was shown; no Post yet), reoffered (an interrupted card offered again at the next prompt),
  * told (the model was told the card closed without an answer, or every offer is spent: the card is the person's to ask for). */

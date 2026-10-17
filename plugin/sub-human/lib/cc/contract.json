@@ -207,6 +207,19 @@
    "note": "ExitPlanMode with no plan in its input (leavePlanMode's updatedInput is {}) reads the session plan file as it runs. A plan there is drawn as \"User approved Claude's plan · TITLE\" and handed to the model as \"User has approved your plan. You can now start coding … ## Approved Plan: TEXT\"; an empty file draws \" Exited plan mode\" and tells the model only \"User has approved exiting plan mode. You can now proceed.\" So the hooks empty the plan file at PermissionRequest (lib/cc/env.ts LEAVE_PLAN_TEXT) and put the person's own plan back at PostToolUse(ExitPlanMode) (or the next prompt): never the person's private plan shown or handed over as approved."
   },
   {
+   "id": "enterplan-in-plan-mode",
+   "section": 3,
+   "stability": "incidental",
+   "since": "2.1.296",
+   "search": [
+    "Only the main session can enter plan mode."
+   ],
+   "shape": [
+    "async validateInput(~){if(~.agentId)return{result:!1,message:\"Only the main session can enter plan mode.\",errorCode:1};return{result:!0}}"
+   ],
+   "note": "EnterPlanMode checks only that it is the main session: called in plan mode it runs as anywhere (\"Entered plan mode.\"), and its PreToolUse and PostToolUse hooks run (live 2026-10-17, cc-2.1.296-tasks-plans.md S3.9). A review opens there too (hooks/consent.ts reviewableAtEnter): the plan file is known from the transcript's plan_mode attachment, and the proposal is written there before ExitPlanMode reads it (exitplan-normalize puts the file's text in the call's plan, over the model's own). lib/cc/env.ts ENTER_IN_PLAN_MODE."
+  },
+  {
    "id": "exitplan-normalize",
    "section": 3,
    "stability": "API",
@@ -214,7 +227,7 @@
    "search": [
     "The plan content (injected by normalizeToolInput from disk)"
    ],
-   "note": "Pre/PermissionRequest hooks on ExitPlanMode see tool_input.plan and planFilePath."
+   "note": "Pre/PermissionRequest hooks on ExitPlanMode see tool_input.plan and planFilePath. Whenever the session plan file exists its text replaces the model's own plan ({...input, plan, planFilePath}): a person in plan mode with a plan of their own gets that plan in the call, whatever the model passed (live 2026-10-17: tool.call, the module's and the classic PreToolUse all saw the file's text where the model was told to pass \"proposal abc123def456\"; the transcript's copy, written as the call ends, holds the file's text too). So a model's \"proposal HASH\" is seen only when no plan file exists or it holds a stub: hooks/consent.ts preExit steers the rest (lib/consent/review.ts steer)."
   },
   {
    "id": "exitplan-strip",
@@ -224,7 +237,7 @@
    "search": [
     ",new Set([\"plan\",\"planFilePath\"])]])"
    ],
-   "note": "plan/planFilePath are stripped before the transcript copy (cc.toolUseInput reads the model's own input)."
+   "note": "plan/planFilePath are stripped before the transcript copy (cc.toolUseInput reads the model's own input). Not always: live 2026-10-17 (plan mode, a plan file of the person's own), the transcript's copy of the ExitPlanMode call held plan and planFilePath as injected from the file, so the model's own plan was not in it (exitplan-normalize)."
   },
   {
    "id": "exitplan-output",
