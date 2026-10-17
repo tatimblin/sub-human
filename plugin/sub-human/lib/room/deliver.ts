@@ -16,9 +16,11 @@
  *   The rules, by role:
  *     member wake: to=me or @me (in an agent's or a person's words); a proposal naming me that I have not answered
  *       (and is not decided); a `task` assigning me (owner me) that someone else asked for (its req is not mine); an
- *       objection on my own proposal. A decision never wakes: it reports, it asks nothing.
+ *       objection on my own proposal; another member's new version of a plan whose sign-off I asked for or objected to
+ *       (consent.ts revises: the request on the version before it, open or not agreed), so the revision comes back to
+ *       me. A decision never wakes: it reports, it asks nothing.
  *     member notice: another person's say (not to me, no @me), another member's join or leave (not the room
- *       Claude's), a task someone else added with me as its suggested owner (`suggest`), another member's new version of a room plan (a `plan` entry: never a wake; its sign-off request,
+ *       Claude's), a task someone else added with me as its suggested owner (`suggest`), another member's new version of a room plan (a `plan` entry: a wake only for the request's asker and objectors; its sign-off request,
  *       a proposal, wakes the approvers as any proposal does); and what asks the person, not the model: the room line that the log waits to split
  *       (restart the old sessions), a decision on a proposal I am in (its approvers and author), another approver's
  *       objection on a proposal I approve. Everything else that is not mine is context.
@@ -33,7 +35,7 @@
  */
 
 import { normalize } from './rules.ts';
-import { proposal, answered, decided, approversOf } from './consent.ts';
+import { proposal, answered, decided, approversOf, revises } from './consent.ts';
 import { NO_TRUST } from './trust.ts';
 import type { Delivery, Entry, Lane, LaneViewer, Trust } from './types.ts';
 
@@ -75,9 +77,17 @@ function lane(me: LaneViewer | null | undefined, e: Entry, entries?: readonly Re
     const req = entries.find(x => x.id === n.req);
     return req && (req.by || req.from) === name ? 'pull' : 'push';
   }
+  if (n.kind === 'plan' && entries && revisedFor(name, n, entries, trust)) return 'push';
   if (n.via === 'human') return 'push'; // a group chat: every person's own words reach every member
   return 'pull';
 }
+
+/** Whether plan version e comes after a sign-off request name asked for or objected to (consent.ts revises): the
+ * revision goes back to them. */
+const revisedFor = (name: string, e: Entry, entries: readonly Readonly<Entry>[], trust: Trust): boolean => {
+  const r = revises(e, entries, trust);
+  return !!r && (r.asker === name || r.objected.includes(name));
+};
 
 /** A task just added with name as its suggested owner, by someone else (lib/tasks.ts apply: suggest is never the
  * owner; they claim it themselves): their person is told, their Claude is not woken. */
@@ -95,7 +105,7 @@ const chat = (me: LaneViewer, e: Entry): boolean => e.via === 'human' && e.kind 
  * decision), another approver's objection on a proposal they approve, and a new version of a room plan.
  */
 function personSees(name: string, e: Entry, entries: readonly Readonly<Entry>[] | undefined, trust: Trust): boolean {
-  if (e.kind === 'plan') return true; // a new version of a room plan: every member sees it, nobody is woken
+  if (e.kind === 'plan') return true; // a new version of a room plan: every member sees it (its asker and objectors are woken: lane)
   if (e.kind === 'task') return suggestedTo(name, e, entries);
   if (e.kind === 'decision' && approversOf(e).includes(name)) return true; // its approvers, even with no log to judge by
   if (!entries || !e.proposal_hash) return false;

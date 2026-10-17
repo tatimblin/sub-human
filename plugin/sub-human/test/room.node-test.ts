@@ -276,7 +276,9 @@ test('chatLines: group-chat lines with no ids, exact words, multi-line and long 
   assert.deepEqual(W({ ...ask, approvers: ['bob'] }, 'bob'), ["alice's Claude asks you to sign off on plan limits v1 (cccccc)"]);
   assert.deepEqual(W({ ...ask, approvers: ['bob', 'carol', 'dan'] }, 'zed'), ["alice's Claude asks bob, carol and dan to sign off on plan limits v1 (cccccc)"]);
   const v2 = plan(H4, 2, 'bob', '60 a minute');
-  assert.deepEqual(W(v2), ["bob's Claude for bob: plan limits v2: 60 a minute", `${room.CHAT_NEST}retires the sign-off request for plan limits v1 (cccccc)`]);
+  // alice asked for v1's sign-off: her Claude is told v2 comes after it (deliver wakes it); bob, its editor, is not
+  assert.deepEqual(W(v2), ["bob's Claude for bob: plan limits v2: 60 a minute", `${room.CHAT_NEST}retires the sign-off request for plan limits v1 (cccccc)`,
+    '(for Claude) this v2 of plan limits comes after v1, whose sign-off alice asked for. Tell alice what changed (read, plan "limits"); if alice wants it, ask for sign-off on v2 (plan, op ask).']);
   assert.deepEqual(W(v2, 'bob'), ["bob's Claude for you: plan limits v2: 60 a minute", `${room.CHAT_NEST}retires the sign-off request for plan limits v1 (cccccc)`]);
   assert.deepEqual(C(v2), ["bob's Claude for bob: plan limits v2: 60 a minute"], 'without the log: no retires line');
   const long = human('bob', 'say', { text: 'y'.repeat(room.CHAT_MAX + 10) });

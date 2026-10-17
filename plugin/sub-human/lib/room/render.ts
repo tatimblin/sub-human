@@ -26,7 +26,7 @@ import { normalize } from './rules.ts';
 import { parseEntry } from './validate.ts';
 import { assertNever } from '../../mod/core/never.ts';
 import { ROOM_CLAUDE } from './members.ts';
-import { fold, proposals, answered, decided, approversOf } from './consent.ts';
+import { fold, proposals, answered, decided, approversOf, revises } from './consent.ts';
 import { NO_TRUST, unverified } from './trust.ts';
 import { oneLine } from '../text.ts';
 import * as clock from '../clock.ts';
@@ -286,6 +286,28 @@ function chatBody(e: Entry, viewer: string | undefined, entries: readonly Readon
  * viewer: the reader's name ("to you", "owner you"); entries: the log so far (a proposal's title).
  */
 function chatLines(e: Entry, { viewer, entries, trust = NO_TRUST }: { viewer?: string; entries?: readonly Readonly<Entry>[]; trust?: Trust } = {}): string[] {
+  const out = bodyLines(e, viewer, entries, trust);
+  const back = revisionLine(e, viewer, entries, trust);
+  return back ? [...out, back] : out;
+}
+
+/**
+ * For the asker and the objectors of the sign-off request a new plan version comes after (consent.ts revises; their
+ * Claudes are woken with it, deliver.ts): a "(for Claude)" line saying it answers their request, so the revision
+ * comes back to them. Mechanics only: telling the person, and asking again only if they want it. null for anyone else.
+ */
+function revisionLine(e: Entry, viewer: string | undefined, entries: readonly Readonly<Entry>[] | undefined, trust: Trust): string | null {
+  if (e.kind !== 'plan' || !viewer || !isList(entries) || e.from === viewer) return null;
+  const r = revises(e, entries, trust);
+  if (!r || (r.asker !== viewer && !r.objected.includes(viewer))) return null;
+  const v = `v${String(e.version)}`;
+  const objected = r.objected.length ? `; objected: ${r.objected.join(', ')}` : '';
+  return `${FOR_CLAUDE} this ${v} of plan ${r.plan} comes after v${r.version}, whose sign-off ${r.asker} asked for${objected}. `
+    + `Tell ${viewer} what changed (read, plan "${r.plan}"); if ${viewer} wants it, ask for sign-off on ${v} (plan, op ask).`;
+}
+
+/** chatLines without the revision line. */
+function bodyLines(e: Entry, viewer: string | undefined, entries: readonly Readonly<Entry>[] | undefined, trust: Trust): string[] {
   const { head, text } = chatBody(e, viewer, entries, trust);
   if (!text) return [head];
   const cps = Array.from(text);

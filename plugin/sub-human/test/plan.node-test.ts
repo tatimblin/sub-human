@@ -199,7 +199,7 @@ test('tasks: an add from a plan is tagged with its current version; an unknown p
   assert.match(tasks.validate({ op: 'claim', id: '2', plan: 'room' }).ok ? '' : 'plan goes with add only', /plan goes with add only/);
 });
 
-test('deliver: a new version is a notice for every other member, never a wake; nothing for its editor or the room session', () => {
+test('deliver: a version nobody asked about is a notice for every other member, never a wake; nothing for its editor or the room session', () => {
   const { R, store } = hosted();
   plans.put(store, { base: 0, text: 'v1' }, { by: 'bob' });
   const e = must(R.readAll().at(-1));
@@ -207,6 +207,52 @@ test('deliver: a new version is a notice for every other member, never a wake; n
   assert.equal(R.deliver({ name: 'alice', role: 'member' }, e, { entries }), 'notice');
   assert.equal(R.deliver({ name: 'bob', role: 'member' }, e, { entries }), 'none');
   assert.equal(R.deliver({ name: 'claude', role: 'claude' }, e, { entries }), 'none');
+});
+
+test('deliver: a new version after an open or objected sign-off request wakes who asked and who objected, with a line saying so', () => {
+  const { code, R, store } = hosted();
+  h.register('carol', 'member', 2, code);
+  const me = (n: string) => ({ code, name: sn(n) });
+  const as = (n: string) => ({ name: n, role: 'member' });
+  const last = () => must(R.readAll().at(-1));
+  const back = (e: Entry, viewer: string) => R.chatLines(e, { viewer, entries: R.readAll() }).filter(l => l.startsWith('(for Claude)'));
+
+  // open: alice asked everyone and objected herself ("ask bob"); bob's Claude stores v2 (the live repro's shape)
+  plans.put(store, { base: 0, text: 'hello world' }, { by: 'alice' });
+  const a = proposal.ask(me('alice'), {});
+  assert.ok(proposal.answer(me('alice'), a, { choice: 'Object', notes: 'ask bob' }).entry);
+  plans.put(store, { base: 1, text: 'goodbye world' }, { by: 'bob' });
+  let e = last();
+  const entries = R.readAll();
+  assert.equal(R.deliver(as('alice'), e, { entries }), 'wake', 'the asker (and objector) is woken: the revision comes back');
+  assert.equal(R.deliver(as('bob'), e, { entries }), 'none', 'never its editor');
+  assert.equal(R.deliver(as('carol'), e, { entries }), 'notice', 'an approver who neither asked nor objected is only told');
+  assert.equal(R.deliver({ name: 'claude', role: 'claude' }, e, { entries }), 'none');
+  assert.deepEqual(back(e, 'alice'), ['(for Claude) this v2 of plan room comes after v1, whose sign-off alice asked for; objected: alice. '
+    + 'Tell alice what changed (read, plan "room"); if alice wants it, ask for sign-off on v2 (plan, op ask).']);
+  assert.deepEqual(back(e, 'carol'), []);
+  assert.deepEqual(back(e, 'bob'), []);
+  assert.equal(R.deliver(as('alice'), e), 'notice', 'with no log to judge by: no wake');
+
+  // not agreed: carol asks on v2, alice objects, bob and carol agree, decided; bob's v3 wakes carol and alice
+  const b = proposal.ask(me('carol'), {});
+  assert.ok(proposal.answer(me('alice'), b, { choice: 'Object', notes: 'shorter' }).entry);
+  assert.ok(proposal.answer(me('bob'), b, { choice: 'Agree' }).entry);
+  assert.ok(proposal.answer(me('carol'), b, { choice: 'Agree' }).entry);
+  assert.match(String(must(proposal.decide(code, b.hash)).text), /^objected: alice/);
+  plans.put(store, { base: 2, text: 'bye' }, { by: 'bob' });
+  e = last();
+  const after: [string, string][] = [['alice', 'wake'], ['carol', 'wake'], ['bob', 'none']];
+  for (const [n, want] of after) assert.equal(R.deliver(as(n), e, { entries: R.readAll() }), want, n);
+  assert.match(back(e, 'carol')[0] ?? '', /comes after v2, whose sign-off carol asked for; objected: alice\./);
+
+  // agreed: a version after it is news, not a request coming back; and one after a version nobody asked about
+  const c = proposal.ask(me('alice'), {});
+  for (const n of ['alice', 'bob', 'carol']) assert.ok(proposal.answer(me(n), c, { choice: 'Agree' }).entry);
+  assert.ok(proposal.decide(code, c.hash));
+  plans.put(store, { base: 3, text: 'bye!' }, { by: 'bob' });
+  plans.put(store, { base: 4, text: 'bye!!' }, { by: 'carol' });
+  for (const x of R.readAll().slice(-2)) for (const n of ['alice', 'bob', 'carol']) assert.notEqual(R.deliver(as(n), x, { entries: R.readAll() }), 'wake', `${n} v${String(x.version)}`);
 });
 
 test('a test request through the support helper is a version and its request, as the plan tool makes them', () => {

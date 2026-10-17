@@ -14,6 +14,7 @@ import { createFake } from '../lib/clock.ts';
 import * as tailLib from '../lib/tail.ts';
 import * as session from '../lib/room/session.ts';
 import * as proposal from '../lib/proposal.ts';
+import * as plans from '../lib/plans.ts';
 import type { Room } from '../lib/room.ts';
 import { fsStore } from './support/fs-store.ts';
 import type { FakeClock } from '../lib/clock.ts';
@@ -173,6 +174,25 @@ test('tail (room-plan live): a task added with me as its suggested owner is a ch
   t.advance(1000);
   assert.deepEqual(t.lines(), ['room: task "handler tests" pending, suggested for you (claim it to take it)'], t.text());
   assert.deepEqual(t.of('wake'), []);
+});
+
+test('tail (live repro): another member\'s new version of a plan I asked to sign off and objected to wakes my Claude, saying so', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  h.register('bob', 'member', 1, code);
+  rows.writeHolds(code, sn('alice'), { room: true });
+  sys(code, 'member_joined', 'alice');
+  const store = room.open(code).store;
+  plans.put(store, { base: 0, text: 'hello world' }, { by: 'alice' });
+  const a = proposal.ask({ code, name: sn('alice') }, {});
+  assert.ok(proposal.answer({ code, name: sn('alice') }, a, { choice: 'Object', notes: 'ask bob' }).entry);
+  const t = startTail();
+  t.advance(300);
+  plans.put(store, { base: 1, text: 'goodbye world' }, { by: 'bob' });
+  t.advance(1000);
+  const wake = t.of('wake').flatMap(x => x.text.split('\n'));
+  assert.deepEqual(wake.filter(l => !l.startsWith('(for Claude)')), ["bob's Claude for bob: plan room v2", '  │ retires the sign-off request for plan room v1 (' + a.hash.slice(0, 6) + ')'], t.text());
+  assert.ok(wake.some(l => l.startsWith('(for Claude) this v2 of plan room comes after v1, whose sign-off alice asked for; objected: alice.')), t.text());
 });
 
 test('tail: a member sees every join as a chat line; with its room row running, no row-call invite', () => {

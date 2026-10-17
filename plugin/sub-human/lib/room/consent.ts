@@ -31,6 +31,8 @@
  *     every undecided request for an older one, so it is no longer pending ('superseded'). Answers stay with their
  *     hash: none carry over to the newer version. Which plan and version a proposal asks about is read from the plan
  *     fold by its hash, never from the proposal's own fields (any member's append may carry them).
+ *   - revises(e, entries): the request a new version comes after (open, or not agreed), its asker and objectors: the
+ *     people whose Claudes deliver.ts wakes with that version, so a revision comes back to who asked.
  * Recording (lib/proposal.ts answer, then decide) is idempotent on top of this: one answer per seat per hash,
  * so the fold's "latest" and the decision's refs agree for everything the hooks write.
  */
@@ -215,4 +217,23 @@ function answers(hash: string, approvers: string[] | null | undefined, entries: 
 const answered = (name: string, hash: string, entries: Entries, trust: Trust): Entry | null => fold(entries, trust).answerOf(hash, name)?.entry ?? null;
 const decided = (hash: string | undefined, entries: Entries, trust: Trust): Entry | null => (hash === undefined ? null : fold(entries, trust).decisions.get(hash) ?? null);
 
-export { fold, groupsOf, proposal, proposals, answers, answered, decided, approversOf };
+/** The sign-off request a new plan version e answers (deliver.ts wakes its asker and objectors with it). */
+interface Revised { hash: string; plan: string; version: number; asker: string; objected: string[] }
+/**
+ * The sign-off request plan version e comes after: the request on the version that was current just before e (same
+ * plan), still open or not agreed (an approver objected), with who asked and who objected; null for any other entry,
+ * a first version, a version nobody asked about, or one already agreed. entries: the log (e's own line may be in it).
+ */
+function revises(e: Entry, entries: Entries, trust: Trust): Revised | null {
+  if (e.kind !== 'plan' || typeof e.plan !== 'string' || typeof e.version !== 'number') return null;
+  const before = entries.filter(x => !!x && x.id < e.id);
+  const f = fold(before, trust);
+  const cur = f.plans.get(e.plan)?.current;
+  if (!cur || cur.version >= e.version) return null;
+  const st = f.status(cur.hash);
+  if (!st || st.state === 'agreed' || st.state === 'superseded') return null;
+  return { hash: cur.hash, plan: cur.plan, version: cur.version, asker: st.proposal.from, objected: st.matrix.objected };
+}
+
+export { fold, groupsOf, proposal, proposals, answers, answered, decided, approversOf, revises };
+export type { Revised };
