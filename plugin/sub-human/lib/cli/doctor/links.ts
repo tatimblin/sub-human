@@ -193,7 +193,15 @@ function linkChecks(d: LinkReport): Check[] {
     else if (r.ok) {
       const p: Partial<NonNullable<Reach['protocol']>> = r.protocol ?? {};
       const host = `${p.proto ? span(p.proto) : p.v} (sub-human ${p.server || '?'})`;
-      bits.push(`host reachable in ${r.ms} ms; protocol here ${local}, host ${host}, speaking v${p.v}`);
+      const versions = `protocol here ${local}, host ${host}, speaking v${p.v}`;
+      // the host answering is not this machine's link being up: say which is down, and what restarts it
+      const down = d.state.state === 'offline' || d.state.state === 'connecting';
+      if (down && !quiet) {
+        bits.push(`the host is up (it answered doctor in ${r.ms} ms; ${versions}), but this machine's link to it is down`);
+        if (!fix) fix = d.daemon.running
+          ? 'the host is up but this machine\'s link has not reconnected yet: it retries on its own; type /sub-human in your session to reconnect now'
+          : 'the host is up but this machine\'s link is not running: type /sub-human in your session to start it again (your next @room starts it too)';
+      } else bits.push(`host reachable in ${r.ms} ms; ${versions}`);
     } else {
       bits.push(`host unreachable: ${r.error}`);
       if (!quiet) status = 'fail';

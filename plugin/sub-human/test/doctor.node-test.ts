@@ -80,7 +80,7 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   assert.match(fixOf(byId(rep, 'home')), /^SUB_HUMAN_HOME=\S+ node \S+\/scripts\/sub-human doctor --fix in a terminal/, 'the CLI by its path: none is on PATH');
   const lc = byId(rep, `link:${code}`);
   assert.equal(lc.status, 'warn', lc.detail);
-  assert.match(lc.detail, new RegExp(`^pipe ${hostHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · daemon not running · ✕ offline 2m · 2 queued · last error: no route to host · host reachable in \\d+ ms; protocol here 4 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), host 4 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), speaking v4`));
+  assert.match(lc.detail, new RegExp(`^pipe ${hostHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · daemon not running · ✕ offline 2m · 2 queued · last error: no route to host · the host is up \\(it answered doctor in \\d+ ms; protocol here 4 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), host 4 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), speaking v4\\), but this machine's link to it is down`));
   assert.match(fixOf(lc), /type \/sub-human in your session to start it again/, 'the daemon is not running');
   assert.doesNotMatch(lc.detail, /epoch|BatchMode/);
   const clock = byId(rep, `clock:${code}`);
@@ -278,6 +278,25 @@ test('doctor: a dormant link (the room closed, or no seat of this machine left) 
     assert.doesNotMatch(fixOf(c), /--reset/);
   }
   assert.equal(first(doctor.linkChecks(d({ state: 'offline', lastError: 'no route' }, failed))).status, 'fail', 'an offline link the host does not answer');
+});
+
+test('doctor: a host that answers beside a link that is down says the host is up and this machine\'s link is down, and what restarts it', () => {
+  const reach: Reach = { ok: true, ms: 7, skipped: false, stderr: '', hint: null, protocol: { v: 4, proto: { min: 4, max: 4 }, server: '0.5.0' }, skewMs: 0 };
+  // credential: linkChecks never reads it
+  const d = (state: LinkStateView, running: boolean): LinkReport => ({ code: rc('vole-1234'), transport: { kind: 'pipe', describe: 'pipe /x' }, credential: '',
+    daemon: running ? { running: true, pid: 4242 } : { running: false }, recent: [], state, reach });
+  const offline = first(doctor.linkChecks(d({ state: 'offline', since: new Date(Date.now() - 90_000).toISOString(), attempt: 6, lastError: 'no route to host' }, true)));
+  assert.equal(offline.status, 'warn');
+  assert.match(offline.detail, /✕ offline 2m · last error: no route to host · the host is up \(it answered doctor in 7 ms; protocol here .*\), but this machine's link to it is down/);
+  assert.doesNotMatch(offline.detail, /host reachable/, 'never "reachable" beside "offline"');
+  assert.match(fixOf(offline), /^the host is up but this machine's link has not reconnected yet: it retries on its own; type \/sub-human in your session to reconnect now$/);
+  const gone = first(doctor.linkChecks(d({ state: 'offline', lastError: 'the link daemon is not running', dead: true }, false)));
+  assert.match(gone.detail, /daemon not running · ✕ not running .*the host is up \(it answered doctor in 7 ms; .*\), but this machine's link to it is down/);
+  assert.match(fixOf(gone), /type \/sub-human in your session to start it again/);
+  const up = first(doctor.linkChecks(d({ state: 'online' }, true)));
+  assert.equal(up.status, 'pass');
+  assert.match(up.detail, /⇄ online · host reachable in 7 ms; protocol here/);
+  assert.equal(up.fix, undefined);
 });
 
 test('doctor: a seatless link gets a hello, whose closed (or the mirror\'s stopped room Claude) picks the closed-room fix', async t => {

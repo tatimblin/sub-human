@@ -159,3 +159,17 @@ test('remote e2e: a request that is never queued (a task) finds the daemon dead:
   t.after(() => { const p = again().pid; for (const c of children(p)) signal(c, 'SIGKILL'); signal(p, 'SIGKILL'); });
   await h.until(() => r.st().state === 'online' && again().pid !== r.daemon, 10000, 50);
 });
+
+test('remote e2e: /sub-human\'s start() tells a running daemon that is offline to redial now, not after its backoff', async t => {
+  const r = await room(t, { SUB_HUMAN_LINK_RETRY_MS: '8000', SUB_HUMAN_LINK_RETRY_MAX_MS: '8000' });
+  await h.until(() => r.st().state === 'online', 5000, 50);
+  const [old] = children(r.daemon);
+  signal(old, 'SIGKILL');
+  await h.until(() => r.remote.lib(() => linkSocket.status(r.code)).state === 'offline', 5000, 20);
+  const asked = Date.now();
+  assert.equal(r.remote.lib(() => linkSocket.start(r.code)), true);
+  await h.until(() => r.st().state === 'online', 8000, 50);
+  assert.ok(Date.now() - asked < 6000, 'well inside the 8 s retry');
+  assert.match(r.daemonLog(), /SIGUSR2: redialing now/);
+  assert.equal(r.remote.lib(() => linkSocket.status(r.code)).pid, r.daemon, 'the same daemon');
+});

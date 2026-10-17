@@ -194,8 +194,22 @@ function launch(code: RoomCode): void {
   try { spawn(process.execPath, [BIN, 'link', code], { detached: true, stdio: ['ignore', fd, fd] }).unref(); } finally { fs.closeSync(fd); }
 }
 
+/** The daemon with this pid wrote its state record lately (it writes on every failed dial, at most LINK_RETRY_MAX_MS
+ * apart): the pid is that daemon's, not a process that took the number since, so a signal reaches the daemon. */
+function writing(code: RoomCode, pid: number): boolean {
+  const rec = linksMod().readState(code);
+  return !!rec && rec.pid === pid && Date.now() - Date.parse(String(rec.at)) < 60_000;
+}
+
+/** Make sure the daemon runs: one running and offline (its document's phase: a dial failed, so its SIGUSR2 handler is
+ * long installed; never while it first connects, when the signal could still end it) is told to redial now, as a wake
+ * is, so a bare /sub-human reconnects at once; none running is launched and waited for up to LINK_START_MS. */
 function start(code: RoomCode): boolean {
-  if (status(code).running) return true;
+  const st = status(code);
+  if (st.running) {
+    if (st.state === 'offline' && writing(code, st.pid)) { try { process.kill(st.pid, 'SIGUSR2'); } catch { /* gone meanwhile */ } }
+    return true;
+  }
   launch(code);
   for (const until = Date.now() + config.LINK_START_MS; Date.now() < until; sleepSync(20)) if (status(code).running) return true;
   return false;
