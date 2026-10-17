@@ -271,7 +271,10 @@ test('chatLines: group-chat lines with no ids, exact words, multi-line and long 
     plan: 'limits', version, base: version - 1, for: from, summary }, { via: 'agent', from, system: true });
   assert.deepEqual(W(plan(H3, 1, 'alice', '100 a minute')), ["alice's Claude for you: plan limits v1: 100 a minute"]);
   const ask = R.append({ kind: 'proposal', text: `proposal ${H3}: plan limits v1`, hash: H3, approvers: ['alice', 'bob'], plan: 'limits', version: 1 }, { via: 'agent', from: 'alice' });
-  assert.deepEqual(W(ask), ["alice's Claude asks for sign-off: plan limits v1 (cccccc) from you, bob"]);
+  // the approvers are who is asked (never "from": live 2026-10-17 read "from you, frank" as the requester)
+  assert.deepEqual(W(ask), ["alice's Claude asks you and bob to sign off on plan limits v1 (cccccc)"]);
+  assert.deepEqual(W({ ...ask, approvers: ['bob'] }, 'bob'), ["alice's Claude asks you to sign off on plan limits v1 (cccccc)"]);
+  assert.deepEqual(W({ ...ask, approvers: ['bob', 'carol', 'dan'] }, 'zed'), ["alice's Claude asks bob, carol and dan to sign off on plan limits v1 (cccccc)"]);
   const v2 = plan(H4, 2, 'bob', '60 a minute');
   assert.deepEqual(W(v2), ["bob's Claude for bob: plan limits v2: 60 a minute", `${room.CHAT_NEST}retires the sign-off request for plan limits v1 (cccccc)`]);
   assert.deepEqual(W(v2, 'bob'), ["bob's Claude for you: plan limits v2: 60 a minute", `${room.CHAT_NEST}retires the sign-off request for plan limits v1 (cccccc)`]);
