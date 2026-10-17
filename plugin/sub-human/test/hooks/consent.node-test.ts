@@ -1252,7 +1252,7 @@ test('A (live validation, the exact repro): bob holds his own plan in plan mode 
   const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: {}, tool_use_id: 'tu1', tool_response: { plan: text, isAgent: false, filePath: file }, transcript_path: tp }), at);
   assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.from, x.proposal_hash]), [['signoff', 'human', 'bob', hash]]);
   assert.equal(fs.readFileSync(file, 'utf8'), mine);
-  assert.match(must(ctx(post)), /call EnterPlanMode to put bob's plan mode back \(no dialog\)/);
+  assert.match(must(ctx(post)), /call EnterPlanMode to put bob's plan mode back \(no dialog\).*plan file is back as it was/);
   const back = w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {}, transcript_path: tp }), at);
   assert.equal(decision(back), 'allow');
   assert.match(must(ctx(w.hook('consent', ev('PostToolUse', 'EnterPlanMode', { permission_mode: 'plan', tool_input: {}, tool_response: {}, transcript_path: tp }), at))), /bob's plan mode is back/);

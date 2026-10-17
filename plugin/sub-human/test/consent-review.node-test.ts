@@ -539,3 +539,17 @@ test('A (live validation): no review open, no stub, a sign-off waiting: an ExitP
   // EnterPlanMode opens the review: the memo goes
   assert.equal(review.reduce(first.state, { ...EVENTS.enter, mode: 'plan' }, ctx).state.steer, undefined);
 });
+
+test('F (live validation): whenever the person\'s own plan file is put back, the model is told; not when there was none', () => {
+  const shownOwn = { ...REVIEWS.shown, backup: '# mine\n' };
+  const yes = review.reduce({ review: shownOwn, note: null }, { ...EVENTS.exited, mode: 'default' }, { ...ctx, now: ctx.now + 10_000 });
+  assert.match(review.textOf(parts(yes), () => '', true), /plan file is back as it was/);
+  const none = review.reduce({ review: { ...shownOwn, backup: null }, note: null }, { ...EVENTS.exited, mode: 'default' }, { ...ctx, now: ctx.now + 10_000 });
+  assert.doesNotMatch(review.textOf(parts(none), () => '', true), /plan file is back/);
+  const closed = review.reduce({ review: { ...REVIEWS.exiting }, note: null }, EVENTS.exited, ctx);
+  assert.match(review.textOf(parts(closed), () => '', false), /plan file is back as it was/);
+  // left plan mode another way: the next prompt carries it
+  const prompt = review.reduce({ review: { ...REVIEWS.exiting }, note: null }, { ...EVENTS.prompt, mode: 'default' }, ctx);
+  assert.deepEqual(shape(prompt), ['none', 'context', 'restorePlan']);
+  assert.match(review.textOf(parts(prompt), () => '', false), /plan file is back as it was/);
+});

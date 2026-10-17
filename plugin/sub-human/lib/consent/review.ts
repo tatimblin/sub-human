@@ -515,12 +515,14 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
         cur = { ...rest, phase: 'shown' };
       }
       const foreign: Part[] = cur.foreign ? [SAY.foreign(n, cur.hash)] : [];
+      /** the plan file's line (foreign says it already) */
+      const fileLine = (effects: ConsentEffect[]): Part[] => (foreign.length ? foreign : backLine(effects));
       if (cur.phase === 'exiting') {
         const res = resolve(cur, state.note, ev, ctx, true); // unread until now: the note, if any, waits for Send
         const [, effects] = restore(res.review);
         const card = cur.card ? SAY.cardInstead(n, cur.card) : '';
         const said = res.review.said ? `${res.review.said} ` : '';
-        return { state: { review: null, note: res.note }, effects, say: ctxSay(`${said}${SAY.reviewClosed}${card} ${DONE}`, ...foreign) };
+        return { state: { review: null, note: res.note }, effects, say: ctxSay(`${said}${SAY.reviewClosed}${card} ${DONE}`, ...(foreign.length ? foreign : backLine(effects))) };
       }
       if (cur.phase !== 'shown') return none(state);
       // A "Yes" in the dialog: only a person can choose it (the exiting phase above is the hook's own allow).
@@ -542,9 +544,9 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
       const withNotice = notice ? { notice } : {};
       if (ev.mode && ev.mode !== cur.mode && !cur.keepMode) {
         const { said: _s, ...rest } = back;
-        return { state: { ...state, recheck, review: { ...rest, phase: 'restore' } }, effects, say: ctxSay(...line, SAY.modeChanged(n, cur.mode), ...foreign), ...withNotice };
+        return { state: { ...state, recheck, review: { ...rest, phase: 'restore' } }, effects, say: ctxSay(...line, SAY.modeChanged(n, cur.mode), ...fileLine(effects)), ...withNotice };
       }
-      return { state: { ...state, recheck, review: null }, effects, say: ctxSay(...line, SAY.notAPlan, ...foreign), ...withNotice };
+      return { state: { ...state, recheck, review: null }, effects, say: ctxSay(...line, SAY.notAPlan, ...fileLine(effects)), ...withNotice };
     }
 
     case 'stop': {
@@ -605,7 +607,8 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
       // left plan mode another way: a note read only now still waits for Send
       const res = r.unread ? resolve(r, state.note, ev, ctx, true) : { review: r, note: state.note };
       const [, effects] = restore(res.review);
-      return { state: { review: null, note: res.note }, effects, say: null };
+      const back = backLine(effects);
+      return { state: { review: null, note: res.note }, effects, say: back.length ? ctxSay(...back) : null };
     }
 
     case 'ask': {

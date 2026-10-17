@@ -113,6 +113,8 @@ export const EDIT_SAY = {
   draftKept: (p: string, file: string): string => `sub-human: plan mode was left before the room plan ${p} edit was stored, so nothing was stored. `
     + `The edited text is kept at ${file}. If your person wants it in the room, open an edit again (the plan tool, op edit) and put that text in the plan file.`,
   draftNotice: (p: string, file: string): string => `your edit of room plan ${p} was not stored (plan mode was left first); its text is kept at ${file}. Ask your Claude to update the room plan with it`,
+  /** F (live validation): the person's own plan file put back after the edit (the model took it for overwritten) */
+  fileBack: 'The session plan file is back as it was before the edit (the person\'s own plan, unchanged).',
   exitNow: (p: string): string => `sub-human: room plan ${p} is stored; call ExitPlanMode once more now (it only leaves plan mode, no dialog).`,
 };
 
@@ -157,6 +159,9 @@ const none = (edit: PlanEdit | null): EditStep => ({ edit, effects: [], say: nul
 const deny = (text: string, context: string): EditSay => ({ to: 'deny', text, context });
 
 /** The plan file back as it was before the seed, once: the effect, and the edit marked restored. */
+/** The model's line when an effect puts the person's own plan back (none when the file held nothing). */
+const fileLine = (effects: EditEffect[]): string => (effects.some(x => x.do === 'restorePlan' && x.backup != null) ? ` ${EDIT_SAY.fileBack}` : '');
+
 function restore(e: PlanEdit): [PlanEdit, EditEffect[]] {
   if (!e.file || e.restored) return [e, []];
   return [{ ...e, restored: true }, [{ do: 'restorePlan', file: e.file, backup: typeof e.backup === 'string' ? e.backup : null }]];
@@ -221,7 +226,7 @@ export function reduce(edit: PlanEdit | null, ev: EditEvent): EditStep {
       // the person was in plan mode already (or entered it by hand: no EnterPlanMode of the edit's): it stays, and the edit is done
       if (e.mode === 'plan' || e.mode === undefined) {
         const [, effects] = restore(e);
-        return { edit: null, effects, say: deny(receipt, `${agreed}${EDIT_SAY.stayInPlan}`) };
+        return { edit: null, effects, say: deny(receipt, `${agreed}${EDIT_SAY.stayInPlan}${fileLine(effects)}`) };
       }
       const next: PlanEdit = { ...e, phase: 'stored', version: o.version, ...(o.unchanged ? { unchanged: true } : {}) };
       return { edit: next, effects: [{ do: 'save', edit: next }], say: deny(receipt, `${agreed}${LEAVE}`) };
@@ -235,8 +240,8 @@ export function reduce(edit: PlanEdit | null, ev: EditEvent): EditStep {
     }
     case 'exited': {
       const [, effects] = restore(e);
-      if (e.phase === 'stored') return { edit: null, effects, say: { to: 'context', text: EDIT_SAY.left(e.plan, e.version, !!e.unchanged) } };
-      return { edit: null, effects, say: { to: 'context', text: EDIT_SAY.notStored(e.plan) } };
+      if (e.phase === 'stored') return { edit: null, effects, say: { to: 'context', text: `${EDIT_SAY.left(e.plan, e.version, !!e.unchanged)}${fileLine(effects)}` } };
+      return { edit: null, effects, say: { to: 'context', text: `${EDIT_SAY.notStored(e.plan)}${fileLine(effects)}` } };
     }
     case 'stop': {
       if (ev.active || e.phase !== 'stored' || ev.mode !== 'plan') return none(e);
@@ -247,9 +252,10 @@ export function reduce(edit: PlanEdit | null, ev: EditEvent): EditStep {
       // plan mode left another way (or never entered): the edit is over; a stored one is in the room already
       const [, effects] = restore(e);
       const kept = unstored(e, ev);
-      if (!kept || !ev.draft) return { edit: null, effects, say: null };
+      const back = fileLine(effects).trim();
+      if (!kept || !ev.draft) return { edit: null, effects, say: back ? { to: 'context', text: back } : null };
       return { edit: null, effects: [{ do: 'keepDraft', file: ev.draft, text: kept }, ...effects],
-        say: { to: 'context', text: EDIT_SAY.draftKept(e.plan, ev.draft) }, notice: EDIT_SAY.draftNotice(e.plan, ev.draft) };
+        say: { to: 'context', text: `${EDIT_SAY.draftKept(e.plan, ev.draft)}${fileLine(effects)}` }, notice: EDIT_SAY.draftNotice(e.plan, ev.draft) };
     }
     default: return assertNever(ev, 'edit event');
   }

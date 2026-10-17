@@ -41,9 +41,9 @@ const TABLE: Record<string, Record<edit.EditEvent['type'], [string, string | nul
   open: { enter: ['open', 'allow', ''], attach: ['seeded', 'attach', 'save,seed'], exit: ['seeded', 'deny', 'save,seed'], put: ['none', 'deny', ''],
     permission: ['open', null, ''], exited: ['none', 'context', ''], stop: ['open', null, ''], prompt: ['none', null, ''] },
   seeded: { enter: ['seeded', 'allow', ''], attach: ['seeded', null, ''], exit: ['seeded', null, 'put'], put: ['stored', 'deny', 'save'],
-    permission: ['seeded', null, ''], exited: ['none', 'context', 'restorePlan'], stop: ['seeded', null, ''], prompt: ['none', null, 'restorePlan'] },
+    permission: ['seeded', null, ''], exited: ['none', 'context', 'restorePlan'], stop: ['seeded', null, ''], prompt: ['none', 'context', 'restorePlan'] },
   stored: { enter: ['stored', 'allow', ''], attach: ['stored', null, ''], exit: ['stored', null, ''], put: ['stored', 'deny', 'save'],
-    permission: ['stored', 'permit', 'blankPlan'], exited: ['none', 'context', 'restorePlan'], stop: ['stored', 'context', ''], prompt: ['none', null, 'restorePlan'] },
+    permission: ['stored', 'permit', 'blankPlan'], exited: ['none', 'context', 'restorePlan'], stop: ['stored', 'context', ''], prompt: ['none', 'context', 'restorePlan'] },
 };
 
 test('edit: every phase × every event, in one table', () => {
@@ -143,6 +143,7 @@ test('edit (hooks): seeded at the plan_mode attachment, stored at Pre(ExitPlanMo
   assert.equal(fs.readFileSync(file, 'utf8'), '');
   const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: {}, tool_use_id: 'tu2', tool_response: { plan: text, filePath: file } }), { as: 'alice' });
   assert.match(must(ctx(post)), /^sub-human: plan mode closed with no approval: room plan room v1 was stored, not agreed/);
+  assert.match(must(ctx(post)), /plan file is back as it was before the edit/, 'F: the model is told its person\'s plan came back');
   assert.equal(editOf(w, 'alice'), null);
   assert.equal(fs.readFileSync(file, 'utf8'), '# my own plan\n');
   assert.deepEqual(answers(w), [], 'an edit is never a sign-off');
@@ -235,7 +236,7 @@ test('edit (A, live validation): an edit started while the person is in plan mod
     const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: text, planFilePath: file }, tool_use_id: 'tu1' }), { as: 'alice' });
     outs.push(early.stdout, pre.stdout);
     assert.equal(decision(pre), 'deny', 'the receipt is the deny: no dialog');
-    assert.match(must(hso(pre).additionalContext), /Plan mode was already on before the edit, so it stays on/);
+    assert.match(must(hso(pre).additionalContext), /Plan mode was already on before the edit, so it stays on.*plan file is back as it was/);
     assert.equal(fs.readFileSync(file, 'utf8'), mine, 'her plan is back at once');
     assert.equal(editOf(w, 'alice'), null);
     assert.equal(w.hook('consent', ev('PermissionRequest', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {} }), { as: 'alice' }).stdout, '', 'nothing lets a call through with no dialog');
@@ -254,7 +255,7 @@ test('edit (live 2026-10-17): plan mode left with shift+tab before ExitPlanMode 
   assert.match(step.say && step.say.to === 'context' ? step.say.text : '', /nothing was stored\. The edited text is kept at \/h\/drafts\/c\/alice-room\.md/);
   assert.match(must(step.notice), /your edit of room plan room was not stored .* kept at \/h\/drafts\/c\/alice-room\.md/);
   const same = edit.reduce(SEEDED, { type: 'prompt', mode: 'default', plan: { file: '/plans/x.md', text: seeded }, seed: seeded, draft: '/d' });
-  assert.deepEqual([same.effects.map(e => e.do), same.say, same.notice], [['restorePlan'], null, undefined], 'nothing edited: nothing kept');
+  assert.deepEqual([same.effects.map(e => e.do), same.say, same.notice], [['restorePlan'], { to: 'context', text: edit.EDIT_SAY.fileBack }, undefined], 'nothing edited: nothing kept; the model told its person\'s plan is back (F)');
   assert.deepEqual(edit.reduce(STORED, { type: 'prompt', mode: 'default', plan: { file: '/plans/x.md', text: changed }, seed: seeded, draft: '/d' }).effects.map(e => e.do), ['restorePlan'], 'a stored edit is in the room already');
   // the hooks: the person edits the seeded file by hand, then shift+tab and a prompt
   const w = new World({ alice: 'act', bob: 'sleep' });

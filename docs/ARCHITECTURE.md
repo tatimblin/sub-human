@@ -267,7 +267,7 @@ ExitPlanMode Pre                   ──► capture (its plan, else the file; h
    conflict                        ──► base := the current version; the deny carries its text: reconcile, exit again
    refused / offline               ──► the deny says why; the edit stays open
 ExitPlanMode Post                  ──► edit cleared, the plan file restored from its backup; context "plan mode closed
-                                       with no approval: … stored, not agreed"
+                                       with no approval: … stored, not agreed" (and, when the person had a plan, that it is back)
 a prompt outside plan mode         ──► the edit dropped (nothing stored), the plan file restored; an open edit whose
                                        file differs from its seed (shift+tab before ExitPlanMode) is kept as a draft,
                                        <home>/drafts/CODE/NAME-PLAN.md, and the person and the model are told where
