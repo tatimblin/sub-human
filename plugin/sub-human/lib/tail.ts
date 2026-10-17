@@ -388,7 +388,7 @@ function linkLine(st: LinkStatus, code: RoomCode): { key: 'fork' | 'offline' | '
   if (st.running && st.state !== 'offline') return null;
   if (st.running) return { key: 'offline', text: `the connection to room ${code} is down (${st.reason}); @room posts wait and go out when it's back, card answers can't be sent until then` };
   if (st.state === 'stopped') return { key: 'stopped', text: `the connection to room ${code} stopped (${st.reason || 'for good'}); @room posts can't be sent${kept}. Run /sub-human doctor.` };
-  return { key: 'offline', text: `the connection to room ${code} isn't running; @room posts can't be sent${kept}. Type /sub-human to reconnect.` };
+  return { key: 'offline', text: `the connection to room ${code} isn't running${st.queued ? `; ${st.queued} @room post(s) wait` : ''}. Type /sub-human (or post with @room) to start it again.` };
 }
 /** What became of the @room posts queued while the link was down (the daemon's `link` flush). */
 function flushLine(f: Flush | null | undefined): string | null {

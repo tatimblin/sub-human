@@ -74,6 +74,32 @@ const TABLE: { name: string; random?: () => number; run(r: ReturnType<typeof rig
     },
   },
   {
+    name: 'since: an offline link counts from when it was last online, not from its last failed dial; a swap keeps online\'s',
+    run(r) {
+      r.dispatch({ type: 'start' });
+      r.dialOk(1);
+      const up = r.st.since;
+      r.c.advance(5000);
+      void r.dispatch({ type: 'redial', why: 'a wake' });
+      r.dialOk(2); // a swap: online all along
+      assert.equal(r.st.since, up, 'a swap is no change');
+      r.c.advance(1000);
+      const lost = r.c.now();
+      r.dispatch({ type: 'lost', conn: 2, error: { ...off(), reason: null } });
+      assert.deepEqual([r.st.phase, r.st.since], ['offline', lost]);
+      for (let i = 0; i < 4; i++) { // each retry dials (connecting) and fails (offline) again
+        r.c.advance(T.retryMs);
+        assert.equal(engine.shown(r.st), 'connecting');
+        r.dispatch({ type: 'dialFailed', dial: must(r.st.dial), error: { ...off(), reason: null } });
+        assert.deepEqual([r.st.phase, r.st.since], ['offline', lost], `still the time it went offline after ${i + 1} failed dials`);
+      }
+      const back = r.c.now();
+      r.c.advance(T.retryMs);
+      r.dialOk(must(r.st.dial));
+      assert.deepEqual([r.st.phase, r.st.since], ['online', back + T.retryMs]);
+    },
+  },
+  {
     name: 'backoff is decorrelated jitter: random 1 triples the delay up to retryMaxMs; online resets it',
     random: () => 1,
     run(r) {

@@ -7,7 +7,8 @@
  * socketPath is one per room and home, from the mirror's directory alone: <dir>/.link/link.sock, or, when that is
  * longer than a socket path may be, /tmp/sub-human-<uid>/<hash12(dir)>/link.sock (never TMPDIR: see shortBase). Each
  * directory is 0700, a real directory and ours: the daemon refuses any other (AUTH), a hook skips it. handle answers
- * OFFLINE DAEMON_DOWN when no daemon listens; nothing is started from a hook's call. A stale socket file is replaced,
+ * OFFLINE DAEMON_DOWN when no daemon listens; nothing is started from the bridge's call (the mirror store, on DAEMON_DOWN,
+ * may queue an @room post and launch() one). A stale socket file is replaced,
  * a live one is LOCK.
  */
 
@@ -19,7 +20,7 @@ import * as protocol from './protocol.ts';
 import { RoomError } from '../room/validate.ts';
 import { isReason, reasonOf } from '../reasons.ts';
 import { errCode, msgOf } from '../errors.ts';
-import { isAlive, sleepSync, lazy } from '../io.ts';
+import { isAlive, sleepSync, lazy, readJsonRaw } from '../io.ts';
 import { hash12 } from '../text.ts';
 import { isObj } from '../decode.ts';
 import * as config from '../config.ts';
@@ -170,18 +171,49 @@ function status(code: RoomCode): LinkStatus {
   return { ...st, running: isAlive(st.pid) } as LinkStatus; // running: its pid (a number) lives
 }
 
+/** The @room posts waiting in the mirror's outbox file (lib/remote/outbox.ts): 0 when there is no file, null when it
+ * is there but not a list (a reader then falls back to the daemon's own count). */
+function waiting(code: RoomCode): number | null {
+  const dir = storeMod().open(code).dir;
+  if (!dir) return null;
+  const file = path.join(dir, 'outbox.json');
+  if (!fs.existsSync(file)) return 0;
+  const v = readJsonRaw(file);
+  return Array.isArray(v) ? v.length : null;
+}
+
 function stopReason(st: LinkDoc | null | undefined): { code: WireCode; reason: string; why: Reason | null } | null {
   if (!st || !STOPPED.has(st.state) || !st.reason) return null;
   return { code: protocol.isWireCode(st.code) ? st.code : st.state === 'fork' ? 'FORK' : 'OFFLINE', reason: st.reason, why: isReason(st.why) ? st.why : null };
 }
 
-function start(code: RoomCode): boolean {
-  if (status(code).running) return true;
+/** Start the daemon detached and return at once (a hook that must stay quick: the @room post queued with the daemon
+ * gone, lib/room/store-mirror.ts). A second daemon started meanwhile finds the first on the socket (LOCK) and exits. */
+function launch(code: RoomCode): void {
   const fd = fs.openSync(linksMod().logFile(code), 'a', 0o600);
   try { spawn(process.execPath, [BIN, 'link', code], { detached: true, stdio: ['ignore', fd, fd] }).unref(); } finally { fs.closeSync(fd); }
+}
+
+/** The daemon with this pid wrote its state record lately (it writes on every failed dial, at most LINK_RETRY_MAX_MS
+ * apart): the pid is that daemon's, not a process that took the number since, so a signal reaches the daemon. */
+function writing(code: RoomCode, pid: number): boolean {
+  const rec = linksMod().readState(code);
+  return !!rec && rec.pid === pid && Date.now() - Date.parse(String(rec.at)) < 60_000;
+}
+
+/** Make sure the daemon runs: one running and offline (its document's phase: a dial failed, so its SIGUSR2 handler is
+ * long installed; never while it first connects, when the signal could still end it) is told to redial now, as a wake
+ * is, so a bare /sub-human reconnects at once; none running is launched and waited for up to LINK_START_MS. */
+function start(code: RoomCode): boolean {
+  const st = status(code);
+  if (st.running) {
+    if (st.state === 'offline' && writing(code, st.pid)) { try { process.kill(st.pid, 'SIGUSR2'); } catch { /* gone meanwhile */ } }
+    return true;
+  }
+  launch(code);
   for (const until = Date.now() + config.LINK_START_MS; Date.now() < until; sleepSync(20)) if (status(code).running) return true;
   return false;
 }
 
-export { socketPath, socketPaths, handle, listen, status, stopReason, start, RELAY };
+export { socketPath, socketPaths, handle, listen, status, waiting, stopReason, start, launch, RELAY };
 export type { LinkStatus, Relay };

@@ -13,9 +13,12 @@ import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
 import * as linkSocket from '../lib/remote/link-socket.ts';
 import * as links from '../lib/room/links.ts';
+import * as linkState from '../lib/room/link-state.ts';
 import { leaseFresh } from '../lib/room/members.ts';
 import { isAlive } from '../lib/io.ts';
 import type { Entry, Link } from '../lib/room/types.ts';
+import { MirrorRoomStore } from '../lib/room/store-mirror.ts';
+import { RoomError } from '../lib/room/validate.ts';
 import { Machine } from './support/two-homes.ts';
 import { must } from './support/must.ts';
 
@@ -109,4 +112,64 @@ test('remote e2e: a seat whose lease lapsed on the host during an outage is rene
   assert.equal(r.host.lib(() => leaseFresh(store.open(r.code).members.read().bob)), true, 'bob is back');
   assert.equal(r.host.log(r.code), before, 'no left or joined line');
   assert.equal(r.st().attempt, 0);
+});
+
+test('remote e2e: a link daemon killed (kill -9) loses no @room post: the hook queues it, starts the daemon again, and it lands', async t => {
+  const r = await room(t, { SUB_HUMAN_LINK_IDLE_MS: '60000' });
+  await h.until(() => r.st().state === 'online', 5000, 50);
+  for (const c of children(r.daemon)) signal(c, 'SIGKILL');
+  signal(r.daemon, 'SIGKILL');
+  await h.until(() => !isAlive(r.daemon), 3000, 20);
+  // its records still say "online" (it could not write anything); the readers say it is not running
+  assert.equal(r.st().state, 'online');
+  const seen = must(r.remote.lib(() => linkState.read(r.code)));
+  assert.deepEqual([seen.state, seen.dead, seen.lastError], ['offline', true, 'the link daemon is not running']);
+  assert.match(linkState.indicator(seen), /^✕ not running/);
+
+  const said = must(r.remote.say(r.bob, 'typed while the daemon was dead').json);
+  assert.equal(said.continue, false);
+  assert.match(String(said.stopReason), /^⧗ queued; restarting the link: .*\(1 waiting\)/);
+  const again = () => r.remote.lib(() => linkSocket.status(r.code));
+  t.after(() => { const p = again().pid; for (const c of children(p)) signal(c, 'SIGKILL'); signal(p, 'SIGKILL'); });
+  await h.until(() => r.host.log(r.code).includes('typed while the daemon was dead'), 10000, 50);
+  await h.until(r.same, 5000, 50);
+  assert.ok(r.same());
+  const placed = r.host.lib(() => store.open(r.code).readAll()).filter(e => e.text === 'typed while the daemon was dead');
+  assert.equal(placed.length, 1, 'once');
+  assert.notEqual(again().pid, r.daemon, 'a new daemon');
+  await h.until(() => r.st().state === 'online' && !r.st().queued, 5000, 50);
+  assert.equal(fs.existsSync(path.join(r.remote.home, 'rooms', r.code, 'outbox.json')), false, 'the outbox is empty');
+});
+
+test('remote e2e: a request that is never queued (a task) finds the daemon dead: it starts again, and the refusal says to try again', async t => {
+  const r = await room(t, { SUB_HUMAN_LINK_IDLE_MS: '60000' });
+  await h.until(() => r.st().state === 'online', 5000, 50);
+  for (const c of children(r.daemon)) signal(c, 'SIGKILL');
+  signal(r.daemon, 'SIGKILL');
+  await h.until(() => !isAlive(r.daemon), 3000, 20);
+  const err = r.remote.lib(() => {
+    const s = store.open(r.code);
+    assert.ok(s instanceof MirrorRoomStore);
+    try { s.request('task', { name: 'bob', req: { op: 'add', title: 'x' } }); return null; } catch (e) { return e; }
+  });
+  assert.ok(err instanceof RoomError);
+  assert.equal(err.code, 'OFFLINE');
+  assert.match(err.message, /connection was not running; it is starting again; nothing was sent: try again in a moment/);
+  const again = () => r.remote.lib(() => linkSocket.status(r.code));
+  t.after(() => { const p = again().pid; for (const c of children(p)) signal(c, 'SIGKILL'); signal(p, 'SIGKILL'); });
+  await h.until(() => r.st().state === 'online' && again().pid !== r.daemon, 10000, 50);
+});
+
+test('remote e2e: /sub-human\'s start() tells a running daemon that is offline to redial now, not after its backoff', async t => {
+  const r = await room(t, { SUB_HUMAN_LINK_RETRY_MS: '8000', SUB_HUMAN_LINK_RETRY_MAX_MS: '8000' });
+  await h.until(() => r.st().state === 'online', 5000, 50);
+  const [old] = children(r.daemon);
+  signal(old, 'SIGKILL');
+  await h.until(() => r.remote.lib(() => linkSocket.status(r.code)).state === 'offline', 5000, 20);
+  const asked = Date.now();
+  assert.equal(r.remote.lib(() => linkSocket.start(r.code)), true);
+  await h.until(() => r.st().state === 'online', 8000, 50);
+  assert.ok(Date.now() - asked < 6000, 'well inside the 8 s retry');
+  assert.match(r.daemonLog(), /SIGUSR2: redialing now/);
+  assert.equal(r.remote.lib(() => linkSocket.status(r.code)).pid, r.daemon, 'the same daemon');
 });

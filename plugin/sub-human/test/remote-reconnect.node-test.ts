@@ -141,6 +141,19 @@ test('outbox: only a signed @room or @claude post by a person is queueable; at m
   assert.equal(fs.existsSync(box.file), false, 'an empty outbox is no file');
 });
 
+test('outbox: two writers (the daemon\'s handle and a hook\'s, the daemon gone) see each other\'s posts; none is lost', t => {
+  h.freshHome(t);
+  const code = h.newRoom();
+  const dir = h.tmpDir('sh-outbox2-', t);
+  const daemon = outbox.open(dir), hook = outbox.open(dir);
+  daemon.add(sp(say(code, 'by the daemon')));
+  assert.equal(hook.add(sp(say(code, 'by the hook'))), 2, 'the hook counts the daemon\'s post');
+  assert.equal(daemon.size(), 2, 'the daemon reads the hook\'s post');
+  assert.equal(daemon.remove(must(daemon.first()).payload.nonce), true);
+  assert.deepEqual(hook.items().map(x => x.payload.text), ['by the hook']);
+  assert.equal(fs.existsSync(path.join(dir, 'outbox.lock')), false, 'the lock is released');
+});
+
 // ---------- serveMirror against a real server ----------
 /** What the daemon answers a hook's op: the placed entry, or a queued post. */
 interface HookReply { entry?: Entry; queued?: number; slow?: boolean }
@@ -264,6 +277,21 @@ test('link: no pong within deadMs and no new connection: the link is dead (OFFLI
   // online again: no current error; why it went offline is kept apart as prevError
   assert.equal(last(r).lastError, null);
   assert.match(must(last(r).prevError), /no pong within 250 ms|no route to host/);
+});
+
+test('link: while dials keep failing, the state record\'s since stays when the link went offline (the row\'s "offline 2m")', async t => {
+  const r = await rig(t);
+  const l = await r.start();
+  t.after(() => l.stop('done'));
+  await h.until(() => l.state() === 'online', 3000, 5);
+  r.refuse = true;
+  conn0(r).c.close();
+  await h.until(() => l.state() === 'offline', 3000, 5);
+  const down = must(r.states.findLast(s => s.state === 'offline')).since;
+  await h.until(() => (r.states.at(-1)?.attempt ?? 0) >= 4, 3000, 5);
+  const after = r.states.slice(r.states.findIndex(s => s.since === down));
+  assert.ok(after.some(s => s.state === 'connecting') && after.filter(s => s.state === 'offline').length >= 3, 'several failed dials');
+  assert.deepEqual([...new Set(after.map(s => s.since))], [down], 'one since through every failed dial');
 });
 
 test('link: wake() while online makes before it breaks: hooks\' appends during repeated swaps land once each, in order', async t => {

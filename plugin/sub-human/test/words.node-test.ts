@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { must } from './support/must.ts';
+import * as config from '../lib/config.ts';
 
 const ROOT = path.join(import.meta.dirname, '..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -113,6 +114,19 @@ test('words: README covers the plan topics', () => {
     'Agree', 'Object', 'sub-human tasks', 'Threat model', 'Bypass mode', 'function hooks', 'The room tail', 'SendMessage', 'claude.vole-8126', 'takes no typed input']) {
     assert.ok(t.includes(s), `README lacks "${s}"`);
   }
+});
+
+test('words: the README\'s link quotas are lib/config.ts LINK_QUOTAS (posts, plans stored, plan versions, task requests, subscribes, joins)', () => {
+  const t = read(README);
+  const q = config.LINK_QUOTAS;
+  const want = [
+    `${q['append.human'].max} posts a minute`, `${q['blob.put'].max} new plans stored an hour`, `${q.plan.max} plan versions`,
+    `${q.task.max} task requests a minute`, `${q.subscribe.max} subscribes`, `${q.seat.max} joins or leaves per 10 minutes`,
+  ];
+  assert.equal(q.plan.windowMs, 60_000);
+  assert.equal(q.task.windowMs, 60_000);
+  for (const s of want) assert.ok(t.includes(s), `README's quota list lacks "${s}"`);
+  assert.ok(!t.includes('PIN must be 4 digits'), 'an older joiner is told to update (protocol skew), not about the PIN');
 });
 
 test('words: plugin.json is valid and describes the slim plugin', () => {

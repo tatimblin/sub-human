@@ -11,9 +11,10 @@
 // refuses, and the person types it again. In the room's session, a typed prompt is refused (it takes no typed input);
 // with no origin it runs, so a reload never loses its rows turn. It writes no presence: the module is its one writer
 // (mod/prompt.ts, through hooks/handlers/presence.ts).
-// A post the store refuses (RATE, AUTH, or OFFLINE in a room hosted elsewhere whose link daemon is gone) blocks the
-// prompt with the reason. In a room hosted elsewhere whose link is down, the daemon queues the signed post instead
-// (lib/remote/outbox.ts) and "⧗ queued" ends the prompt; it is sent, in order, when the link is back. A post sent
+// A post the store refuses (RATE, AUTH, OFFLINE with the outbox full or the link over for good) blocks the prompt with
+// the reason. In a room hosted elsewhere whose link is down, the daemon queues the signed post instead
+// (lib/remote/outbox.ts) and "⧗ queued" ends the prompt; it is sent, in order, when the link is back. With no daemon
+// running (killed, crashed), the mirror store queues it itself and starts the daemon: "⧗ queued; restarting the link". A post sent
 // over a slow link that the host has not answered in time is "⧗ sending (slow link)" (kept under its nonce: the late
 // copy is the post), and a deadline whose outcome is unknown is "⧗ not confirmed", never "not posted".
 import * as identity from '../../lib/identity.ts';
@@ -133,14 +134,16 @@ function handle(input: PromptIn): void {
     if (!(err instanceof room.RoomError)) throw err;
     // it went out but no answer came in time: it may still land, so never "not posted" (typing it again would post twice)
     if (err.unknown) return refuse(`⧗ not confirmed: ${err.message}. Watch the room for it before you type it again.`);
-    return refuse(`✗ not posted: ${err.message}`); // OFFLINE (the outbox full, the daemon gone), RATE, AUTH
+    return refuse(`✗ not posted: ${err.message}`); // OFFLINE (the outbox full, the link over for good), RATE, AUTH
   }
   if (placed && placed.slow) { // sent, the host slow to answer: the daemon holds it under its nonce until it does
     const q = `⧗ sending (slow connection): room ${me.code} hasn't confirmed this post yet; it shows in the room once the host has it. No need to type it again`;
     return out({ continue: false, stopReason: q, hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
   }
   if (placed && placed.queued) { // a room hosted elsewhere, its link down: the daemon holds it (lib/remote/outbox.ts)
-    const q = `⧗ queued: room ${me.code} is offline; this post goes out when the connection is back (${placed.queued} waiting)`;
+    const q = placed.restarting // no daemon was running: the post is queued here and the daemon started again
+      ? `⧗ queued; restarting the link: room ${me.code}'s connection wasn't running, so it is starting again; this post goes out once it's back (${placed.queued} waiting)`
+      : `⧗ queued: room ${me.code} is offline; this post goes out when the connection is back (${placed.queued} waiting)`;
     return out({ continue: false, stopReason: q, hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
   }
   // it names who reads it, so under the stop's frame (cc CONTRACT ups-stop-frame) it reads as done, not as an error

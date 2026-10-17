@@ -195,7 +195,7 @@ async function serveMirror({
   const timers = new Map<TimerName, TimerHandle>();
   const dials = new Map<number, () => void>(); // a dial's id -> resolve its wake() promise once it ends
   const unwatch: (() => void)[] = [];
-  let pub: string | null = null, pubSince: string | null = null, flushed: Flush | null = null;
+  let flushed: Flush | null = null;
   let srv: net.Server | null = null;
   const { promise: done, resolve: finish } = Promise.withResolvers<string>();
   const { promise: first, resolve: firstDone } = Promise.withResolvers<void>();
@@ -210,10 +210,9 @@ async function serveMirror({
       ...(box.size() ? { queued: box.size() } : {}), ...(flushed ? { flush: flushed } : {}),
     };
     try { mirror.kv.set('link', doc); } catch (e) { log(`status: ${msgOf(e)}`); }
-    const p = engine.shown(st);
-    if (p !== pub) { pub = p; pubSince = iso(clock.now()); }
+    // since: the engine's, kept across failed dials, so an offline link's time counts from when it was last online
     const rec = {
-      state: p, since: pubSince, attempt: st.attempts, lastError: st.lastError, ...(st.lastReason ? { lastReason: st.lastReason } : {}),
+      state: engine.shown(st), since: iso(st.since), attempt: st.attempts, lastError: st.lastError, ...(st.lastReason ? { lastReason: st.lastReason } : {}),
       ...(st.code ? { lastCode: st.code } : {}), ...(st.prevError ? { prevError: st.prevError } : {}), rttMs: st.rttMs, queued: box.size(),
       pid: process.pid, detail: st.phase, at: iso(clock.now()),
     };
