@@ -152,7 +152,9 @@ function targetOf(me: Identity, hash: string | null | undefined): Target | null 
   const p = hash ? proposal.answerableFor(me).find(x => x.hash === hash) : undefined;
   return p ? { hash: p.hash, from: p.from || null, title: proposal.title(me.code, p.hash) || null } : null;
 }
-const pendingOf = (me: Identity, ps: Proposal[] = proposal.pendingFor(me)): Pending[] => ps.map(p => ({ hash: p.hash, from: p.from || null, viewable: proposal.viewable(p, me.code) }));
+const pendingOf = (me: Identity, ps: Proposal[] = proposal.pendingFor(me)): Pending[] => ps.map(p => ({ hash: p.hash, from: p.from || null, viewable: proposal.viewable(p, me.code), title: titleOf(me, p) }));
+/** The request's name for the person (lib/proposal.ts title: "plan paging v3"), or null. */
+const titleOf = (me: Identity, p: Proposal): string | null => { try { return proposal.title(me.code, p.hash, p.entry ?? null) || null; } catch { return null; } };
 const isPending = (me: Identity, hash: string | undefined) => !!hash && proposal.pendingFor(me).some(p => p.hash === hash);
 
 /** The model's call as text, scanned once: the hex tokens it names and its words (what a card call is about). */
@@ -385,7 +387,7 @@ function preExit(input: ConsentIn, me: Identity) {
       // the mode is plan already (the person's); a dialog whose Yes clears the context is still no place for a review
       const p = !ccEnv.clearContextOnPlanAccept(input.cwd) ? proposal.pendingFor(me).filter(x => proposal.viewable(x, me.code)).find(x => x.hash.startsWith(word)) : undefined;
       if (!p) return { ...ev, stub: { hash: word, live: false } };
-      return { ...ev, stub: { hash: p.hash, live: true }, shown: { hash: p.hash, from: p.from || null }, text: proposal.read(me.code, p.hash),
+      return { ...ev, stub: { hash: p.hash, live: true }, shown: { hash: p.hash, from: p.from || null, title: titleOf(me, p) }, text: proposal.read(me.code, p.hash),
         plan, callPlan: ti.plan, ownPlan: own && own.plan };
     }
     if (r.phase !== 'entering') return ev;
@@ -393,7 +395,7 @@ function preExit(input: ConsentIn, me: Identity) {
     const ti: ConsentToolInput = input.tool_input ?? {};
     // A blank plan: the call's transcript line may not be written yet (2.1.292 runs this hook first), so wait for it.
     const own = blank(ti.plan) && input.tool_use_id ? polled(input, () => modelInput(input)) : modelInput(input);
-    return { ...ev, shown: p ? { hash: p.hash, from: p.from || null } : null, text: p ? proposal.read(me.code, p.hash) : null,
+    return { ...ev, shown: p ? { hash: p.hash, from: p.from || null, title: titleOf(me, p) } : null, text: p ? proposal.read(me.code, p.hash) : null,
       plan: planOf(input), callPlan: ti.plan, ownPlan: own && own.plan };
   });
 }

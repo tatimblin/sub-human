@@ -266,7 +266,9 @@ test('review: the dialog shows the canonical text from the plan file; a person\'
   assert.match(must(ctx(w.hook('consent', ev('PostToolUse', 'EnterPlanMode', { permission_mode: 'plan', tool_input: {}, tool_response: {} }), { as: 'bob' }))), new RegExp(`only to show bob room proposal ${hash}\\. Call ExitPlanMode now with plan "proposal ${hash}"`));
   const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: `proposal ${hash}` }, tool_use_id: 'tu1', transcript_path: tp }), { as: 'bob' });
   assert.equal(decision(pre), 'ask');
-  assert.equal(reason(pre), `room proposal ${hash} from alice, for bob (PgUp/PgDn scroll). Agree: "Yes, manually approve edits" keeps your mode. Object: "Tell Claude what to change" + why. Esc: decide later.`);
+  // the request by its plan version (never a hash), and that agreeing is a sign-off on the text, not a go-ahead to build
+  assert.match(must(reason(pre)), /^sign-off on plan p\d+ v1, asked by alice, for bob: agreeing signs off on this text, it is not a go-ahead to build \(PgUp\/PgDn scroll\)\. Agree: "Yes, manually approve edits" keeps your mode\. Object: "Tell Claude what to change" \+ why\. Esc: decide later\.$/);
+  assert.ok(!must(reason(pre)).includes(hash), 'no hash in the person\'s line');
   assert.equal(planOf(pre), text);
   assert.equal(fs.readFileSync(file, 'utf8'), text, 'the dialog renders the file');
   // The same call again (a retried hook): the same dialog, not an exit.
@@ -479,14 +481,14 @@ test('review: the closing ExitPlanMode waits for a rejection line Claude Code ha
 });
 
 test('review: 2.1.292 runs Pre(ExitPlanMode) before the call\'s transcript line is written, with a blank plan: the only pending proposal is shown; the line is waited for', () => {
-  const { w, hash } = world();
+  const { w } = world();
   const file = path.join(w.userHome, '.claude', 'plans', 'late-line.md');
   const tp = transcript(w, file); // the plan_mode attachment only: the ExitPlanMode line is not there yet
   w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'auto', tool_input: {} }), { as: 'bob' });
   const t0 = Date.now();
   const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: '' }, tool_use_id: 'tu5', transcript_path: tp }), { as: 'bob', env: { SUB_HUMAN_EXIT_INPUT_WAIT_MS: '200' } });
   assert.equal(decision(pre), 'ask', pre.stderr);
-  assert.match(must(reason(pre)), new RegExp(`^room proposal ${hash} `));
+  assert.match(must(reason(pre)), /^sign-off on plan p\d+ v1, asked by alice, for bob: /);
   assert.ok(Date.now() - t0 >= 200, 'it polled the transcript first');
   assert.equal(must(review(w)).phase, 'shown');
   assert.ok(fs.readFileSync(file, 'utf8').length > 0, 'the proposal is in the plan file the dialog renders');
@@ -823,7 +825,8 @@ test('pick: two pending and bob says "open the monday plan": the review opens it
   const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: `proposal ${v2}` }, tool_use_id: 'tu1', transcript_path: tp }), { as: 'bob' });
   assert.equal(decision(pre), 'ask');
   assert.equal(planOf(pre), 'Ship v3 Monday');
-  assert.match(must(reason(pre)), new RegExp(`room proposal ${v3} from alice`));
+  assert.match(must(reason(pre)), /^sign-off on plan monday v1, asked by alice, for bob: /);
+  assert.ok(!must(reason(pre)).includes(v3));
   const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: {}, tool_use_id: 'tu1', tool_response: { plan: 'Ship v3 Monday', filePath: file } }), { as: 'bob' });
   assert.match(must(ctx(post)), new RegExp(`bob agreed to proposal ${v3}`));
   assert.deepEqual(answers(w).map(x => [x.kind, x.proposal_hash]), [['signoff', v3]]);

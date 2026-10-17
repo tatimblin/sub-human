@@ -278,8 +278,9 @@ When a request names you, your Claude opens it in Claude Code's plan-approval di
  ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
   Plan: cursor paging for GET /tasks
   …
-  │ room proposal 3fa2c1d0e9b8 from alice, for bob (PgUp/PgDn scroll). Agree: "Yes, manually approve edits"
-  │ keeps your mode. Object: "Tell Claude what to change" + why. Esc: decide later.
+  │ sign-off on plan paging v3, asked by alice, for bob: agreeing signs off on this text, it is not a go-ahead
+  │ to build (PgUp/PgDn scroll). Agree: "Yes, manually approve edits" keeps your mode. Object: "Tell Claude
+  │ what to change" + why. Esc: decide later.
  ❯ 1. Yes, and use auto mode
    2. Yes, manually approve edits
    3. Tell Claude what to change
