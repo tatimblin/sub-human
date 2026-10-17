@@ -112,7 +112,7 @@ test('lane: member push/pull/none table (vole-8126 shapes + proposals + tasks)',
   const ownAnswer = answer('alice', 'objection', H1, { text: 'clamp, do not 400' }); // #21 own: none
   const want: [Entry, Lane][] = [
     [own, 'none'], [words, 'push'], [chatter, 'pull'], [toMe, 'push'], [at, 'push'], [atOther, 'pull'], [roomClaudeRoom, 'pull'],
-    [p1, 'push'], [pBob, 'pull'], [join, 'pull'], [sign, 'pull'], [dec2, 'push'], [dec1, 'push'], [ownJoin, 'none'],
+    [p1, 'push'], [pBob, 'pull'], [join, 'pull'], [sign, 'pull'], [dec2, 'pull'], [dec1, 'pull'], [ownJoin, 'none'],
     [retract, 'none'], [req, 'pull'], [assigned, 'push'], [myReq, 'none'], [claimed, 'push'], [bobsTask, 'pull'], [ownAnswer, 'none'],
   ];
   for (const [e, l] of want) assert.equal(L(e), l, `#${e.id} without entries`);
@@ -121,7 +121,7 @@ test('lane: member push/pull/none table (vole-8126 shapes + proposals + tasks)',
   assert.equal(L(words, all), 'push', 'an old retract naming it changes nothing');
   assert.equal(L(p1, all), 'pull');
   assert.equal(L(dec2, all), 'pull');
-  assert.equal(L(dec1, all), 'push');
+  assert.equal(L(dec1, all), 'pull', 'a decision reports: never a wake');
   assert.equal(L(assigned, all), 'push');
   assert.equal(L(claimed, all), 'pull');
   assert.equal(roomLane({ name: 'carol', role: 'member' }, retract, all), 'pull', 'an ordinary system line');
@@ -131,11 +131,12 @@ test('lane: member push/pull/none table (vole-8126 shapes + proposals + tasks)',
   assert.equal(L(r, R.readAll()), 'push');
   answer('alice', 'signoff', H1);
   assert.equal(L(r, R.readAll()), 'pull');
-  // The proposer hears the decision on its own proposal.
+  // The proposer sees the decision on its own proposal (a notice), with no wake.
   fresh();
   prop('alice', H1, ['bob']);
   const d = sys('decision', { proposal_hash: H1 }, 'room');
-  assert.equal(L(d, R.readAll()), 'push');
+  assert.equal(L(d, R.readAll()), 'pull');
+  assert.equal(deliver(ALICE, d, { entries: R.readAll(), trust: room.trustOf }), 'notice');
 });
 
 test('lane: the room session reads nothing but another member\'s join (its rows turn): posts to claude, answers, decisions and tasks are none', () => {
@@ -189,7 +190,7 @@ test('lane (P3 wakes): every person\'s words reach every member (a group chat), 
   assert.equal(L(ALICE, d1), 'pull', 'an objected decision: nothing for a non-proposer');
   assert.equal(L(BOB, d1), 'pull', 'bob completed it (told by his card reply)');
   assert.equal(L(ROOM_CLAUDE, d1), 'none');
-  assert.equal(L(ALICE, d2), 'push', 'an agreed decision reaches the approver who did not complete it');
+  assert.equal(L(ALICE, d2), 'pull', 'an agreed decision wakes no approver (README: only lines to you and sign-off requests wake)');
   assert.equal(L(BOB, d2), 'pull', 'bob completed it');
   assert.equal(L(ROOM_CLAUDE, d2), 'none', 'an agreed decision needs nothing from the room session');
   // A member's own proposal: an objected decision still reaches its author.
@@ -197,8 +198,8 @@ test('lane (P3 wakes): every person\'s words reach every member (a group chat), 
   const o3 = answer('bob', 'objection', 'cccccccccccc', { text: 'no' });
   const d3 = sys('decision', { proposal_hash: 'cccccccccccc', text: 'objected: bob', refs: [o3.id] }, 'room');
   const all3 = R.readAll();
-  assert.equal(roomLane(ALICE, o3, all3), 'push');
-  assert.equal(roomLane(ALICE, d3, all3), 'push');
+  assert.equal(roomLane(ALICE, o3, all3), 'push', 'the objection wakes its author, to revise');
+  assert.equal(roomLane(ALICE, d3, all3), 'pull', 'the decision after it does not');
 });
 
 test('deliver (live verify, P): what asks the person is a notice, not context only: a decision or another approver\'s objection on a proposal they are in', () => {
@@ -219,6 +220,24 @@ test('deliver (live verify, P): what asks the person is a notice, not context on
   assert.equal(D(BOB, d1, all), 'notice', 'bob completed it: shown, no wake');
   assert.equal(D(CAROL, d1, all), 'context', 'not in it: context');
   assert.equal(D(CAROL, o1, all), 'context');
+});
+
+test('deliver (room-plan live): a decision is a notice for every approver and context for the rest; it never wakes', () => {
+  fresh();
+  const BOB = { name: 'bob', role: 'member' };
+  const CAROL = { name: 'carol', role: 'member' };
+  const D = (me: LaneViewer, e: Entry, es?: readonly Entry[]) => deliver(me, e, { entries: es, trust: room.trustOf });
+  prop('alice', H1, ['alice', 'bob']);
+  const a = answer('alice', 'signoff', H1);
+  const b = answer('bob', 'signoff', H1);
+  const d = sys('decision', { proposal_hash: H1, text: 'room: plan paging v3 agreed', approvers: ['alice', 'bob'], refs: [a.id, b.id] }, 'room');
+  const all = R.readAll();
+  for (const me of [ALICE, BOB]) {
+    assert.equal(D(me, d, all), 'notice', `${me.name}: shown, no wake`);
+    assert.equal(D(me, d), 'notice', `${me.name}: without the log, still no wake`);
+  }
+  assert.equal(D(CAROL, d, all), 'context');
+  assert.equal(D(ROOM_CLAUDE, d, all), 'none');
 });
 
 test('stateLine: open proposals, my answer, who is away', () => {

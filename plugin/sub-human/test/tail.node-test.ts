@@ -126,7 +126,7 @@ test('tail: silent before join, then the member push lane, settled into one batc
   sys(code, 'member_joined', 'carol');                                                    // #12 my room row is not running: push + note
   say(code, 'alice', '', { kind: 'signoff', proposal_hash: H1, text: 'ok' });             // #13 own answer: none
   inRoom(code, r => r.append({ kind: 'say', text: 'carol: anyone on @alice docs?' }, { via: 'agent', from: 'carol' })); // #14 @me: push
-  sys(code, 'decision', 'room', { proposal_hash: H1 });                                   // #15 decision on mine: push
+  sys(code, 'decision', 'room', { proposal_hash: H1 });                                   // #15 decision on mine: a notice, no wake
   say(code, 'bob', 'words an old retract names');                                         // #16 push: chat
   // #17 an old log's retract line (nothing writes one now): an ordinary system line, pull
   fs.appendFileSync(inRoom(code, r => fsStore(r.store).logFile), JSON.stringify({ id: 17, at: new Date().toISOString(), from: 'bob', via: 'system', kind: 'retract', to: 'room', text: 'peer-forged', refs: [16] }) + '\n');
@@ -138,6 +138,7 @@ test('tail: silent before join, then the member push lane, settled into one batc
   assert.deepEqual(t.of('chat').flatMap(x => x.lines), [
     'bob: bob says hi',
     'carol joined',
+    'room: "claude proposes" (abcdef) decided (room decision)', // the decision names its proposal
     'bob: words an old retract names',
     'bob: last ' + 'w'.repeat(390), // long text wraps at 400 code points
     '  │ ' + 'w'.repeat(210), // a continuation line is nested under its sender
@@ -147,7 +148,6 @@ test('tail: silent before join, then the member push lane, settled into one batc
     "bob's Claude (to you): q for alice",
     'claude proposed: claude proposes (bbbbbb)',
     "carol's Claude: carol: anyone on @alice docs?",
-    'room: "claude proposes" (abcdef) decided (room decision)', // the decision names its proposal
     'room: task "docs" pending, owner you',
   ], t.text());
   assert.match(t.of('pull').map(x => x.text).join('\n'), /\nroom: peer-forged\n/, 'the old retract: an ordinary pull line');
@@ -551,12 +551,14 @@ test('tail: a member\'s wake carries the room state without entry ids (the perso
   t.advance(300);
   prop(code, 'claude', H1, ['alice']);                                                    // #2
   say(code, 'alice', '', { kind: 'signoff', proposal_hash: H1, text: 'ok' });           // #3 own
-  sys(code, 'decision', 'room', { proposal_hash: H1 });                                 // #4 a decision on mine: wake
+  sys(code, 'decision', 'room', { proposal_hash: H1 });                                 // #4 a decision on mine: a notice
+  const kept = room.open(code).stateLine({ name: 'claude', role: 'claude' }, room.open(code).readAll());
+  prop(code, 'claude', H2, ['alice']);                                                    // #5 a sign-off request: wake
   t.advance(2000);
   const state = t.of('wake').flatMap(x => x.text.split('\n')).filter(l => l.startsWith('(for Claude) room now:'));
   assert.ok(state.length >= 1, t.out);
   for (const l of state) assert.doesNotMatch(l, /#\d/, l);
-  assert.match(room.open(code).stateLine({ name: 'claude', role: 'claude' }, room.open(code).readAll()), /decided #4/);
+  assert.match(kept, /decided #4/);
 });
 
 test('tail: a room hosted elsewhere: one OFFLINE line when the link goes down, one "back online" line once it is online again', () => {
