@@ -17,7 +17,7 @@ const PREFIX = 'mcp__plugin_sub-human_room__';
 const PLACEHOLDERS = ['{NAME}', '{CODE}', '{OTHERS}', '{ADDR_EXAMPLE}', '{PLUGIN}'];
 
 // Five members, a long installed plugin path: the worst case the join block sees.
-function fill(t: string, { name = 'alice', code = 'vole-8126', others = 'bob, carol, dave, erin, claude' } = {}) {
+function fill(t: string, { name = 'alice', code = 'vole-8126', others = 'bob, carol, dave, erin, frank' } = {}) {
   const plugin = '/Users/someone/.claude/plugins/cache/sub-human/sub-human/0.2.0';
   return t.replaceAll('{NAME}', name).replaceAll('{CODE}', code).replaceAll('{OTHERS}', others)
     .replaceAll('{ADDR_EXAMPLE}', `bob.${code}`).replaceAll('{PLUGIN}', plugin);

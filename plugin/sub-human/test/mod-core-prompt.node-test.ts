@@ -102,12 +102,15 @@ test('prompt: receiptBook keeps only an @room stop\'s own warning row, as the re
 });
 
 test('prompt (stage 8f item 4): the model row of an @room line\'s stop says it went to the room', async () => {
-  const { receiptBook, STOP_FRAME } = await load();
+  const { receiptBook, STOP_FRAME, RECEIPT_FOR_MODEL } = await load();
   const book = receiptBook();
   const SENT = "✓ sent to room otter-4821 (Claude wasn't asked)";
   const meta = (text: string) => ({ type: 'user', isMeta: true, content: [{ type: 'text', text }] });
   book.expect(SENT);
   assert.deepEqual(book.modelRow(meta(`${STOP_FRAME}${SENT}`)), meta(`sub-human: the person's @room line above went to the room, not to you (${SENT}); nothing is asked of you.`));
+  // a refusal went nowhere: never "your @room line went to the room" (the room session's refusal of a plain prompt, live)
+  assert.equal(RECEIPT_FOR_MODEL('✗ the room\'s session takes no typed input'), 'sub-human: the prompt above was refused and went nowhere (✗ the room\'s session takes no typed input); nothing is asked of you.');
+  assert.doesNotMatch(RECEIPT_FOR_MODEL('✗ not posted: there is nothing after @room.'), /went to the room/);
 });
 
 test('prompt: roomClaudeCommand refuses a command a person types into the room\'s Claude (/clear too); its launch and other origins run', async () => {

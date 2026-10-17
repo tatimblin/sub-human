@@ -143,7 +143,7 @@ test('bare /sub-human: not in a room, it opens one as the default name (git user
   // seated: the status, no model turn
   r = plain.hook('join', expand(''), { as: 'me', env: NO_GIT });
   assert.equal(must(r.json).decision, 'block');
-  assert.match(must(must(r.json).reason), new RegExp(`^sub-human: you're dana in room ${code}, nobody else here yet · another machine: /sub-human invite · leave: /sub-human leave( · starting the room's Claude….*)?$`));
+  assert.match(must(must(r.json).reason), new RegExp(`^sub-human: you're dana in room ${code}, nobody else here yet · another machine: /sub-human invite · leave: /sub-human leave( · starting the room session….*)?$`));
 });
 
 test('/sub-human CODE (a room code alone) joins that room as the default name, never as a person named after the room', () => {
@@ -276,8 +276,9 @@ test('NAME CODE joins a room whose claude runs: no spawn, no systemMessage; the 
   assert.equal(must(r.json).systemMessage, undefined);
   assert.equal(s.calls().length, 0);
   const c = must(hso(r).additionalContext);
-  assert.match(c, new RegExp(`room ${w.code} \\(with alice, claude\\)`));
+  assert.match(c, new RegExp(`room ${w.code} \\(with alice\\)`), 'people only: the room session is no one to talk to');
   assert.ok(c.includes(`alice.${w.code}`), 'ADDR_EXAMPLE');
+  assert.ok(!c.includes(`claude.${w.code}`), 'never the room session\'s address');
   assert.equal(seat(w, 'bob').session_id, w.sid.bob);
 });
 
@@ -291,7 +292,7 @@ test('joining a room with no live claude restarts it; a failed start is retried 
   assert.equal(seat(w, 'claude').job, null);
   const s = stub(w.code);
   const r2 = w.hook('join', expand(`bob ${w.code}`), { as: 'bob', env: { SUB_HUMAN_CLAUDE: s.bin } });
-  assert.match(must(must(r2.json).systemMessage), new RegExp(`^sub-human: you're already in ${w.code} as bob, with alice · starting the room's Claude… \\(the last start failed: .+\\)$`));
+  assert.match(must(must(r2.json).systemMessage), new RegExp(`^sub-human: you're already in ${w.code} as bob, with alice · starting the room session… \\(the last start failed: .+\\)$`));
   assert.ok(await until(() => seat(w, 'claude').job === '0b500131'));
   assert.equal(bgCalls(s).length, 1);
   const r3 = w.hook('join', expand(`bob ${w.code}`), { as: 'bob', env: { SUB_HUMAN_CLAUDE: s.bin } });
@@ -306,11 +307,11 @@ test('a seated bare /sub-human restarts a room Claude that failed to start, and 
   const s = stub(w.code);
   const r = w.hook('join', expand(''), { as: 'bob', env: { SUB_HUMAN_CLAUDE: s.bin } });
   assert.equal(must(r.json).decision, 'block', 'still the status, no model turn');
-  assert.match(must(must(r.json).reason), new RegExp(`^sub-human: you're bob in room ${w.code}, with alice · .* · starting the room's Claude… \\(the last start failed: .+\\)$`));
+  assert.match(must(must(r.json).reason), new RegExp(`^sub-human: you're bob in room ${w.code}, with alice · .* · starting the room session… \\(the last start failed: .+\\)$`));
   assert.ok(await until(() => seat(w, 'claude').job === '0b500131'));
   assert.equal(bgCalls(s).length, 1);
   const r2 = w.hook('join', expand(''), { as: 'bob', env: { SUB_HUMAN_CLAUDE: s.bin } });
-  assert.doesNotMatch(must(must(r2.json).reason), /starting the room's Claude/, 'a job that has not bound yet is not restarted');
+  assert.doesNotMatch(must(must(r2.json).reason), /starting the room session/, 'a job that has not bound yet is not restarted');
   assert.equal(bgCalls(s).length, 1);
 });
 
@@ -608,6 +609,15 @@ test('join writes no presence (the module is its one writer, on the next typed p
 
 // ---------- the mechanics block (hooks/context.ts contextBlock) ----------
 
+test('block (room-plan live): alone with the room session, the people are "nobody yet" and the SendMessage example is a placeholder, never claude.CODE', () => {
+  const w = new World({ claude: 'sleep', alice: 'sleep' });
+  const text = withHome(w.home, () => common.contextBlock(ident(w.code, 'alice', 'member'), 'joined'));
+  assert.match(text, /\(with nobody yet\)/, text);
+  assert.ok(text.includes(`NAME.${w.code}`), text);
+  assert.ok(!text.includes(`claude.${w.code}`), text);
+  assert.doesNotMatch(text, /\[starting\]/);
+});
+
 /** contextBlock in-process, with templates from `root` (a stub plugin root) and a 5-member room. */
 function blockFor(role: Role, root: string) {
   const w = new World({ claude: 'sleep', alice: 'sleep', bob: 'sleep', carol: 'sleep', dave: 'sleep', erin: 'sleep' });
@@ -649,7 +659,7 @@ test('block: <= 900 chars with 5 members (stub templates), placeholders filled, 
     assert.ok(text.includes(root), '{PLUGIN} filled');
     const calls = text.match(/^Agent\(\{.*\}\)$/gm) || [];
     if (role === 'member') {
-      assert.match(text, new RegExp(`members: bob, carol, dave, erin, claude\\)`));
+      assert.match(text, new RegExp(`members: bob, carol, dave, erin\\)`), 'people only');
       assert.ok(text.includes(`bob.${code}`), 'ADDR_EXAMPLE = the first other human');
       assert.equal(calls.length, 1);
       assert.match(calls[0], /sub-human:room.*members: bob, carol, dave, erin/);

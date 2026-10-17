@@ -441,7 +441,7 @@ Start with `/sub-human doctor` (see **Doctor**): it names most of these and the 
 | "Unknown command" for `/sub-human` | Launch with `--plugin-dir plugin/sub-human`, or install the plugin. |
 | `/sub-human` asks which room | More than one room is open, so add it: `/sub-human NAME ROOM`. |
 | `✗ "NAME" is taken in room …; pick another: /sub-human NAME` | Your default name (from git) is someone else's in that room. Type a name: `/sub-human dana2`. |
-| "the room's Claude could not start" (the room session) on join, or `Workspace not trusted` | Run `claude` in that folder once and accept trust, then join again. Without the room session the room still works: tasks are kept, but no session shows them as a native list and the room session's rows are missing. |
+| "the room session could not start" on join, or `Workspace not trusted` | Run `claude` in that folder once and accept trust, then join again. Without the room session the room still works: tasks are kept, but no session shows them as a native list and the room session's rows are missing. |
 | No rows in the panel | Accept workspace trust for this folder. After a resume they come back by themselves. |
 | A sign-off request didn't open | Ask your Claude to "show me the plan to sign off". `node <plugin root>/scripts/sub-human plan` in a terminal shows each plan's state, `node <plugin root>/scripts/sub-human plan NAME` its text and `show HASH` a version's. `sub-human` is not on the PATH, in a terminal or in a session. |
 | `✗ sub-human needs Claude Code 2.1.292 or newer, and this is …` | Update Claude Code (`claude update`) and restart it. |

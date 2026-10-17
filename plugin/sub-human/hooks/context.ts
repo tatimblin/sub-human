@@ -14,7 +14,6 @@ import * as identity from '../lib/identity.ts';
 import * as rows from '../lib/rows.ts';
 import * as text from '../lib/text.ts';
 import * as config from '../lib/config.ts';
-import { roomClaudePresence } from '../lib/room/members.ts';
 import type { Member } from '../lib/room/types.ts';
 import type { Identity } from '../lib/identity.ts';
 import type { RoomCode } from '../lib/brand.ts';
@@ -52,14 +51,13 @@ type TemplateVar = 'NAME' | 'CODE' | 'OTHERS' | 'ADDR_EXAMPLE' | 'PLUGIN';
 /** The placeholder values: {NAME} {CODE} {OTHERS} {ADDR_EXAMPLE} {PLUGIN}. */
 function fillVars(me: Identity, ms = members(me.code)): Record<TemplateVar, string> {
   const live = ms.filter(m => !hasLeft(m) && m.name !== me.name);
-  const humans = live.filter(m => m.role !== 'claude').map(m => m.name);
-  // the room's Claude only when it runs (or is starting): a stub or a failed start is not someone in the room
-  const o = me.role === 'claude' ? null : roomClaudePresence(ms.find(m => m.role === 'claude'));
-  const others = o ? [...humans, o === 'live' ? 'claude' : 'claude [starting]'] : humans;
-  const ex = humans[0] || (me.role === 'claude' ? 'NAME' : 'claude');
+  // people only: the room session is no one's to talk to (it reads no message and acts on nothing)
+  const humans = live.filter(m => m.role !== 'claude' && m.name !== identity.ROOM_CLAUDE).map(m => m.name);
+  // a person's address, else a placeholder: never claude.CODE, the idle room session that refuses messages
+  const [ex] = humans;
   return {
-    NAME: me.name, CODE: me.code, OTHERS: others.length ? others.join(', ') : 'nobody yet',
-    ADDR_EXAMPLE: identity.address(ex, me.code), PLUGIN: pluginRoot(),
+    NAME: me.name, CODE: me.code, OTHERS: humans.length ? humans.join(', ') : 'nobody yet',
+    ADDR_EXAMPLE: ex ? identity.address(ex, me.code) : `NAME.${me.code}`, PLUGIN: pluginRoot(),
   };
 }
 const fill = (t: string, vars: Record<TemplateVar, string>) => t.replace(/\{(NAME|CODE|OTHERS|ADDR_EXAMPLE|PLUGIN)\}/g, (_, k: TemplateVar) => vars[k]);
