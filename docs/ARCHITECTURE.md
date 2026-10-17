@@ -598,7 +598,7 @@ The code that reads Claude Code is `lib/cc/`: `env.ts` (the session's env, the c
 - `lib/commands/doctor.ts`: `/sub-human doctor`: `sub-human doctor --quick` (lib/cli/doctor.ts), read only, and it runs without the hooks module (a refusal points to it). --fix and --bundle change or write files, so they run in a terminal outside Claude Code: the reply names the line.
 - `lib/commands/help.ts`: `/sub-human help [anything]`, the full list of commands.
 - `lib/commands/index.ts`: every /sub-human command, as a table {verb: (args, ctx) => Answer} (types.ts). hooks/handlers/join.ts parses the hook's stdin, calls run() and renders the answer; the model never chooses an identity, and nothing here writes output.
-- `lib/commands/invite.ts`: `/sub-human invite [--ssh [DEST]] [--via J] \| --web \| --public \| --url U [--port P] \| --pipe \| --stop \| --cancel [ID]` (host only): an invite line and its PIN (lib/remote/hosting.ts hostInvite, webhost.ts hostWeb), shown to the person only (a secret: it holds the PIN); --stop stops serving the room over the web, --cancel cancels an unused invite (hosting.cancelInvite).
+- `lib/commands/invite.ts`: `/sub-human invite [--ssh [DEST]] \| --web \| --public [--port P] \| --pipe \| --stop \| --cancel [ID]` (host only): an invite line and its PIN (lib/remote/hosting.ts hostInvite, webhost.ts hostWeb), shown to the person only (a secret: it holds the PIN); --stop stops serving the room over the web, --cancel cancels an unused invite (hosting.cancelInvite).
 - `lib/commands/join.ts`: the verbs that take a seat. The name: NAME, else --as NAME, else identity.defaultName (git user.name, the local part of user.email, $USER; a taken default name is refused with the hint to pick one).
 - `lib/commands/kick.ts`: `/sub-human kick NAME` (host only): end the connection NAME joined over (lib/remote/hosting.ts kick).
 - `lib/commands/leave.ts`: `/sub-human leave`: exactly as exiting the session would, without /exit (lib/seats.ts exit).
@@ -641,11 +641,11 @@ The code that reads Claude Code is `lib/cc/`: `env.ts` (the session's env, the c
 - `lib/remote/transports/memory.ts`: the in-process transport, a connected pair over a MessageChannel, so the two ends may live on different threads (the store contract's remote backend runs the server on a worker: a thread that makes synchronous bridge calls must never host the server).
 - `lib/remote/transports/pipe.ts`: frames over a pair of pipes: a child process's stdio on the client side, this process's stdin/stdout on the server side (`scripts/sub-human serve --stdio CODE`).
 - `lib/remote/transports/ssh.ts`: the ssh kind, the pipe kind (./pipe.ts) with an `ssh` command in front.
-- `lib/remote/transports/ws.ts`: the `wss` and `ws` kinds (./index.ts register): protocol frames over a Noise channel (lib/remote/noise.ts) inside a WebSocket (lib/remote/ws.ts) to the host's listener (lib/remote/listener.ts), usually through a TLS front: Tailscale Serve or Funnel, or any HTTPS reverse proxy.
+- `lib/remote/transports/ws.ts`: the `wss` and `ws` kinds (./index.ts register): protocol frames over a Noise channel (lib/remote/noise.ts) inside a WebSocket (lib/remote/ws.ts) to the host's listener (lib/remote/listener.ts) through a TLS front: Tailscale Serve or Funnel (the tests and the lab: a front of their own).
 - `lib/remote/types-core.ts`: types only (erased at run time) for the remote core: the wire protocol, the host's invite and link records, and the link daemon's records.
 - `lib/remote/types-rest.ts`: the shared types of the transports, the invites (admission, hosting, webhost) and the listener.
-- `lib/remote/webhost.ts`: the host's side of a join over the web (1.1), shared by the join hook (`/sub-human invite --web`, `--public`, `--url URL`, `/sub-human invite --stop`: block reasons the person reads, never the model) and the CLI (lib/cli/host.ts).
-- `lib/remote/ws.ts`: a minimal WebSocket (RFC 6455) with no dependencies: the server end for the host's listener (lib/remote/listener.ts, an http server on 127.0.0.1 only) and the client end for the joiner's link daemon (lib/remote/transports/ws.ts) over net or tls, through an HTTP CONNECT proxy when the environment names one (a corporate network that allows only CONNECT to 443).
+- `lib/remote/webhost.ts`: the host's side of a join over the web (1.1), shared by the join hook (`/sub-human invite --web`, `--public`, `/sub-human invite --stop`: block reasons the person reads, never the model) and the CLI (lib/cli/host.ts).
+- `lib/remote/ws.ts`: a minimal WebSocket (RFC 6455) with no dependencies: the server end for the host's listener (lib/remote/listener.ts, an http server on 127.0.0.1 only) and the client end for the joiner's link daemon (lib/remote/transports/ws.ts) over net or tls.
 - `lib/room-claude.ts`: the room's own Claude (member claude, SendMessage name claude.CODE), a headless `claude --bg` session the join hook starts.
 - `lib/room.ts`: the room log (envelope v3). A facade over lib/room/*, so callers keep one import.
 - `lib/room/consent.ts`: the one fold of the room log into proposal / consent state, and the queries over it.
@@ -657,7 +657,6 @@ The code that reads Claude Code is `lib/cc/`: `env.ts` (the session's env, the c
 - `lib/room/links.ts`: the link registry on this machine: which rooms are mirrors of a room hosted elsewhere, and how to reach them.
 - `lib/room/log-io.ts`: the bytes of a room log, in segments (log.jsonl, log-NNNN.jsonl) and its snapshot.
 - `lib/room/members.ts`: the members document's rules, shared by every RoomStore (as placeAfter is for the log), so a seat is judged the same whichever machine holds the room.
-- `lib/room/options.ts`: a hosted room's options, the host document `options` (host-only, never streamed).
 - `lib/room/registry.ts`: which RoomStore a room code opens, and the rooms on this machine.
 - `lib/room/render.ts`: log entries as text, for Claude (ids kept) and for people (no ids).
 - `lib/room/rules.ts`: the placement rules every RoomStore shares, so the chain and the checks are the same whatever the backend (the file store, a test's memory store, the host placing a mirror's payload).

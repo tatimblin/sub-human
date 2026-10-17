@@ -3,12 +3,12 @@
 # never touches the older single-devbox stack (compose.yml, sub-human-remote).
 #
 # Networks
-#   core  internal: the devboxes, the bastion's inside leg, toxiproxy's upstream leg, tls-front's upstream leg
-#   edge  the "internet": joiner-a, toxiproxy, bastion, tls-front, corp-proxy's outside leg. The only network that
-#         publishes ports to this Mac (toxiproxy's api and its devbox ssh port, on 127.0.0.1, for the manual mode)
-#   corp  internal: joiner-b, the bastion, corp-proxy. No route out, no UDP; only bastion:22 and corp-proxy:3128
-# The devbox is on core only: a joiner reaches it through toxiproxy (the chaos-able WAN path), the bastion
-# (ProxyJump) or tls-front (1.1).
+#   core  internal: the devboxes, toxiproxy's upstream leg, tls-front's upstream leg
+#   edge  the "internet": joiner-a, joiner-b, toxiproxy, tls-front. The only network that publishes ports to this Mac
+#         (toxiproxy's api and its devbox ssh port, on 127.0.0.1, for the manual mode)
+# The devbox is on core only: a joiner reaches it through toxiproxy (the chaos-able WAN path: one proxy per joiner,
+# so a cut on one leaves the other's up) or tls-front (1.1, the stand-in for Tailscale Serve: the devbox's seats name
+# it through SUB_HUMAN_WEB_FRONT, honoured under SUB_HUMAN_LAB=1 only).
 name: sub-human-lab
 
 x-machine: &machine
@@ -27,6 +27,8 @@ services:
     environment:
       LAB_WS_PORT: ${LAB_WS_PORT:-7420}
       LAB_WS_FWD_PORT: ${LAB_WS_FWD_PORT:-7421}
+      SUB_HUMAN_LAB: '1'
+      SUB_HUMAN_WEB_FRONT: https://tls-front
     networks: [core]
 
   devbox-old:
@@ -38,14 +40,6 @@ services:
     volumes:
       - .:/lab:ro
     networks: [core]
-
-  bastion:
-    <<: *machine
-    command: [bastion]
-    hostname: bastion
-    environment:
-      LAB_PERMIT_OPEN: devbox:22 devbox-old:22 joiner-a:22
-    networks: [core, edge, corp]
 
   joiner-a:
     <<: *machine
@@ -59,13 +53,7 @@ services:
     command: [joiner]
     hostname: joiner-b
     cap_add: [NET_ADMIN]
-    networks: [corp]
-
-  corp-proxy:
-    <<: *machine
-    command: [proxy]
-    hostname: corp-proxy
-    networks: [corp, edge]
+    networks: [edge]
 
   toxiproxy:
     image: ghcr.io/shopify/toxiproxy:2.12.0
@@ -88,5 +76,3 @@ networks:
   core:
     internal: true
   edge: {}
-  corp:
-    internal: true

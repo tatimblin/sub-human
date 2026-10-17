@@ -56,12 +56,12 @@ export function restartLink(code: RoomCode): void {
   for (const until = Date.now() + 1000; Date.now() < until && identity.isAlive(st.pid);) sleepSync(20);
 }
 
-// the locator a link's transport came from (with its jump hosts: else every re-join over a bastion reads as a move)
-const locatorOf = (t: LinkSpec | null | undefined): string | null => (t && t.kind === 'ssh' ? linkConnect.sshLocator(`${t.user}@${t.host}${t.port ? `:${t.port}` : ''}`, t.via ? { via: t.via } : {}) : t && t.kind === 'pipe' ? linkConnect.pipeLocator(t.home)
+// the locator a link's transport came from
+const locatorOf = (t: LinkSpec | null | undefined): string | null => (t && t.kind === 'ssh' ? linkConnect.sshLocator(`${t.user}@${t.host}${t.port ? `:${t.port}` : ''}`) : t && t.kind === 'pipe' ? linkConnect.pipeLocator(t.home)
   : t && (t.kind === 'wss' || t.kind === 'ws') ? wsT().urlOf(t) : null);
 
 /** Where a link goes, for a person: "ssh you@host", the URL, or another sub-human folder here. */
-const whereOf = (t: LinkSpec | null | undefined): string => (!t ? 'another way' : t.kind === 'ssh' ? `ssh ${t.user ? `${t.user}@` : ''}${t.host}${t.port ? `:${t.port}` : ''}${t.via ? ` via ${t.via}` : ''}`
+const whereOf = (t: LinkSpec | null | undefined): string => (!t ? 'another way' : t.kind === 'ssh' ? `ssh ${t.user ? `${t.user}@` : ''}${t.host}${t.port ? `:${t.port}` : ''}`
   : t.kind === 'pipe' ? 'another sub-human folder on this machine' : (t.kind === 'wss' || t.kind === 'ws') ? wsT().urlOf(t) : 'another way');
 
 /**
@@ -83,7 +83,7 @@ function putBack(code: RoomCode, cur: Link | null): void {
   try { restartLink(code); links.set(code, cur); linkSocket.start(code); } catch { /* doctor says what the link file holds */ }
 }
 
-const sameLogin = (a: LinkSpec | undefined, b: SshSpec) => !!a && !!b && a.kind === 'ssh' && a.login === true && (['user', 'host', 'port', 'via', 'remoteHome'] as const).every(k => a[k] === b[k]); // a login link is ssh
+const sameLogin = (a: LinkSpec | undefined, b: SshSpec) => !!a && !!b && a.kind === 'ssh' && a.login === true && (['user', 'host', 'port', 'remoteHome'] as const).every(k => a[k] === b[k]); // a login link is ssh
 
 /** Where an invite join stands (hosting.joinText), as a step: a refusal when it was refused. tells: this session's tail
  * says what the host answers (the session that typed the line). */
@@ -137,11 +137,11 @@ export function givePin(pin: Pin, sid?: string | null): JoinStep {
   return stands(code, name, hosting.outcome(code), l.join_sid === sid && !!sid);
 }
 
-export function linkLogin({ dest: typed, code, via, home, name, isDefault }: {
-  dest: string; code: RoomCode; via: string | undefined; home: string | undefined; name: SeatName; isDefault: boolean;
+export function linkLogin({ dest: typed, code, home, name, isDefault }: {
+  dest: string; code: RoomCode; home: string | undefined; name: SeatName; isDefault: boolean;
 }): JoinStep {
   const dest = sshT().withUser(typed);
-  const spec = sshT().loginSpec(dest, { via, home });
+  const spec = sshT().loginSpec(dest, { home });
   if (!spec) return refuse(`--home "${home}" isn't a plain absolute path (the sub-human folder on that machine, e.g. /home/you/.sub-human).`);
   if (identity.roomExists(code) && identity.isHost(code)) return refuse(`room ${code} is hosted on this machine; join it with /sub-human ${name} ${code}.`);
   const cur: Link | null = links.get(code);
@@ -151,9 +151,8 @@ export function linkLogin({ dest: typed, code, via, home, name, isDefault }: {
   const live = liveElsewhere(code, cur, spent);
   if (live) return live;
   if (cur) restartLink(code); // a link replaced (one down, stopped or refused): dial with the new file
-  const mux = cur && cur.transport && cur.transport.kind === 'ssh' && cur.transport.mux === true && cur.transport.user === spec.user && cur.transport.host === spec.host && cur.transport.port === spec.port;
   try {
-    links.set(code, { code, transport: { ...spec, ...(mux ? { mux: true } : {}) }, created_at: new Date().toISOString(), ...(cur ? { rebind: true } : {}) });
+    links.set(code, { code, transport: spec, created_at: new Date().toISOString(), ...(cur ? { rebind: true } : {}) });
   } catch (e) { return refuse(msgOf(e)); }
   if (!linkSocket.start(code)) { putBack(code, cur); return refuse(NO_START(code)); }
   const o: Outcome = hosting.outcome(code);
@@ -167,7 +166,7 @@ export function linkLogin({ dest: typed, code, via, home, name, isDefault }: {
 }
 
 /** A pipe join (a second sub-human folder on this machine) has no login path: the invite line has a SECRET. */
-export const noSecret = (dest: string, code: RoomCode): string => `that looks like an invite line without its SECRET: /sub-human join ${dest} ${code} SECRET (the long word the host sent with it). If the host's line ended with a 4-digit PIN instead, it comes from an older sub-human on the host: ask them to update (/plugin update sub-human) and invite you again.`;
+export const noSecret = (dest: string, code: RoomCode): string => `that looks like an invite line without its SECRET: /sub-human join ${dest} ${code} SECRET (the long word the host sent with it).`;
 
 /** A link this machine's invite join is waiting on: join_as names the seat it asked for. */
 export type PendingLink = Link & { join_as: SeatName };

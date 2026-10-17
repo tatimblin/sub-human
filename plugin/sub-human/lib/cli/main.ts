@@ -18,10 +18,9 @@
  *               ForceCommand) is not the account's own login
  *   link CODE   the link daemon of a room hosted elsewhere (lib/remote/link.ts); --forget drops it for good (never automatic: a closed room can open again; the copy is set aside
  *               as rooms/<code>.forgotten-<time>, not a room code)
- *   invite, admit, kick, prime, listen   the host's steps (lib/cli/host.ts, lib/cli/listen.ts)
+ *   invite, admit, kick, listen   the host's steps (lib/cli/host.ts, lib/cli/listen.ts)
  *   doctor      what is wrong on this machine and the fix for each (lib/cli/doctor.ts)
- *   options     a hosted room's options (lib/room/options.ts)
- *   Run invite, admit, kick, prime, listen, link, serve and options in your own shell: the Bash guard
+ *   Run invite, admit, kick, listen, link and serve in your own shell: the Bash guard
  *   refuses them to a model. doctor without --fix or --bundle is read only.
  */
 
@@ -53,7 +52,6 @@ import type * as ServerMod from '../remote/server.ts';
 import type * as PipeMod from '../remote/transports/pipe.ts';
 import type * as LinkMod from '../remote/link.ts';
 import type * as LinkSocketMod from '../remote/link-socket.ts';
-import type * as OptionsMod from '../room/options.ts';
 import type * as DoctorMod from './doctor.ts';
 import type * as RoomsMod from './doctor/rooms.ts';
 import type * as HostMod from './host.ts';
@@ -67,7 +65,6 @@ const serverLib = lazy<typeof ServerMod>(import.meta.url, '../remote/server.ts')
 const pipeLib = lazy<typeof PipeMod>(import.meta.url, '../remote/transports/pipe.ts');
 const linkLib = lazy<typeof LinkMod>(import.meta.url, '../remote/link.ts');
 const linkSocketLib = lazy<typeof LinkSocketMod>(import.meta.url, '../remote/link-socket.ts');
-const optionsLib = lazy<typeof OptionsMod>(import.meta.url, '../room/options.ts');
 const roomsLib = lazy<typeof RoomsMod>(import.meta.url, './doctor/rooms.ts');
 const tailModule = lazy<typeof TailLib>(import.meta.url, '../tail.ts');
 const proposalLib = lazy<typeof ProposalMod>(import.meta.url, '../proposal.ts');
@@ -436,29 +433,16 @@ function forgetLeftover(code: RoomCode) {
   console.log(`room ${code}: a leftover folder (no log, no connection: something still running wrote it after the room was forgotten) is set aside at ${archive}; this machine has no room ${code}`);
 }
 
-// ---------- options CODE [NAME on|off]: lib/room/options.ts ----------
-function optionsCmd(args: readonly string[]) {
-  const [code, name, value, ...more] = args;
-  if (!code || more.length || (name !== undefined && value !== 'on' && value !== 'off')) die('usage: sub-human options CODE [login-same-person on|off]');
-  if (!identity.roomExists(code)) die(`no room ${code} on this machine`, 1);
-  const opts = optionsLib();
-  const s = room.open(code).store;
-  const cur = name === undefined ? opts.get(s) : opts.set(s, name, value === 'on');
-  for (const n of opts.NAMES) console.log(`${n}: ${cur[n] ? 'on' : 'off'}`);
-}
-
 type Command = (args: readonly string[]) => unknown;
 
 /** What an unknown command prints: one command per line, grouped (the header above lists them). */
 const USAGE = [
   'usage: sub-human COMMAND',
   '  the room:   read [--id N,M] | digest | show HASH | who | tasks [--json] | watch NAME',
-  '  host:       invite [--ssh [USER@HOST]] [--via JUMP]',
-  '              invite --web | --public | --url URL',
+  '  host:       invite [--ssh [USER@HOST]] | invite --web | --public',
   '              invite --stop | invite --cancel [REF]',
   '              admit [REF] | kick NAME | listen [--port P] [--start | --stop | --status]',
-  '  joiner:     prime ROOM | link CODE [--forget [--force]]',
-  '  room:       options CODE [login-same-person on|off]',
+  '  joiner:     link CODE [--forget [--force]]',
   '  checks:     doctor [--fix] [--bundle [FILE]] | verify CODE',
   '  internal:   tail | serve --stdio CODE [--link ID [--login]] | agent-statusline',
   '              serve --stdio CODE --via ws [--peer KEY] (the web listener\'s child)',
@@ -474,10 +458,10 @@ const verify: Command = args => {
   console.log(`room ${code}: ${r.verifyText(v)}`);
   process.exit(v.chain.ok && !v.unverified.length ? 0 : 1);
 };
-const cmds: Record<string, Command> = { doctor, verify, tail, read, digest, show, who, tasks: tasksCmd, watch, serve, link: linkCmd, options: optionsCmd, 'agent-statusline': agentStatusline };
+const cmds: Record<string, Command> = { doctor, verify, tail, read, digest, show, who, tasks: tasksCmd, watch, serve, link: linkCmd, 'agent-statusline': agentStatusline };
 // lib/cli/*: each returns the exit code
-const viaCli = (fn: 'invite' | 'admit' | 'kick' | 'prime'): Command => a => process.exit(hostLib()[fn](a));
-Object.assign(cmds, { invite: viaCli('invite'), admit: viaCli('admit'), kick: viaCli('kick'), prime: viaCli('prime') });
+const viaCli = (fn: 'invite' | 'admit' | 'kick'): Command => a => process.exit(hostLib()[fn](a));
+Object.assign(cmds, { invite: viaCli('invite'), admit: viaCli('admit'), kick: viaCli('kick') });
 // listen without --start/--stop/--status is the daemon itself: it returns null and keeps running
 Object.assign(cmds, { listen: (a: readonly string[]) => { const c = listenLib().listen(a); if (c !== null) process.exit(c); } });
 

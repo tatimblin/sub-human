@@ -62,9 +62,6 @@ export interface SshDest {
 
 export interface SshSpec extends SpecBase, SshDest {
   kind: 'ssh';
-  via?: string;
-  /** link options this machine wrote into its own link file */
-  mux?: boolean;
   /** a login link */
   login?: boolean;
   link?: string;

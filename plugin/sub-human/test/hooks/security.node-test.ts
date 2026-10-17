@@ -283,8 +283,8 @@ test('Bash guard: allowed and denied commands', () => {
     'sub-human invite', '/repo/plugin/sub-human/scripts/sub-human invite --room vole-1234', 'sub-human link vole-1234 --forget',
     'sub-human serve --stdio vole-1234', 'echo x; sub-human invite', 'sub-human invite --ssh me@far',
     'sub-human serve --stdio vole-1234 --link abcdef012345',
-    'sub-human invite --web', 'node scripts/sub-human invite --ssh me@far --via bastion', 'sub-human admit abcdef012345 --yes',
-    'sub-human kick bob', 'sub-human invite --cancel', 'sub-human invite --stop', 'sub-human prime vole-1234',
+    'sub-human invite --web', 'node scripts/sub-human invite --ssh me@far', 'sub-human admit abcdef012345 --yes',
+    'sub-human kick bob', 'sub-human invite --cancel', 'sub-human invite --stop',
     'sub-human doctor --fix', 'sub-human doctor --bundle /tmp/x.json', 'sub-human doctor --quick --fix',
     // a login link's serve, under any home: the person's /sub-human join USER@HOST ROOM, never the model's
     `ssh me@far '"$HOME"/.sub-human/bin/serve --stdio vole-1234 --link abcdef012345 --login'`,

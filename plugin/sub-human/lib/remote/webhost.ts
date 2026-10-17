@@ -1,6 +1,6 @@
 /**
  * plugin/sub-human/lib/remote/webhost.ts: the host's side of a join over the web (1.1), shared by the join hook
- * (`/sub-human invite --web`, `--public`, `--url URL`, `/sub-human invite --stop`: block reasons the person reads,
+ * (`/sub-human invite --web`, `--public`, `/sub-human invite --stop`: block reasons the person reads,
  * never the model) and the CLI (lib/cli/host.ts). The wire is
  * lib/remote/transports/ws.ts; the daemon lib/remote/listener.ts; the Tailscale calls lib/remote/tailscale.ts.
  *
@@ -8,8 +8,8 @@
  * listener's X25519 key (role 'listener': the joiner checks it before its Noise handshake), and a 4-digit PIN told
  * apart. It starts the listener (127.0.0.1 only) and puts the room in its served set. tailscale (`--web`): Tailscale
  * Serve for /sub-human/CODE on this node's MagicDNS name (tailnet only), its certificate warmed in the background;
- * funnel (`--public`): the same through Funnel (public; the text carries tailscale.CT_WARNING); url: any HTTPS front
- * that forwards to the listener. unhost (`invite --stop`) turns off the room's own Tailscale path only; links already
+ * funnel (`--public`): the same through Funnel (public; the text carries tailscale.CT_WARNING). The tests and the lab
+ * name a front of their own instead of Tailscale (lib/env.ts webFront: SUB_HUMAN_WEB_FRONT, never a person's). unhost (`invite --stop`) turns off the room's own Tailscale path only; links already
  * made keep their token but cannot reach the room over the web until it is hosted again.
  */
 
@@ -25,6 +25,7 @@ import type * as InvitesMod from './invites.ts';
 import type * as InviteSecretMod from './invite-secret.ts';
 import type * as HostingMod from './hosting.ts';
 import { lazy } from '../io.ts';
+import { webFront } from '../env.ts';
 import * as room from '../room.ts';
 
 // the listener, tailscale and the invite code only when a room is served over the web (start cost: hooks load this file)
@@ -59,19 +60,19 @@ function frontBase(text: string): FrontBase {
   let u: URL;
   try { u = new URL(String(text)); } catch { throw new RoomError('INVALID', `"${text}" is not a URL (https://host[:port][/prefix])`); }
   if ((u.protocol !== 'https:' && u.protocol !== 'http:') || u.username || u.password || u.search || u.hash) {
-    throw new RoomError('INVALID', `--url takes a plain https://host[:port][/prefix], not "${text}"`);
+    throw new RoomError('INVALID', `a front is a plain https://host[:port][/prefix], not "${text}"`);
   }
   const prefix = u.pathname.replace(/\/+$/, '');
   return { secure: u.protocol === 'https:', host: u.hostname, port: u.port ? Number(u.port) : undefined, prefix };
 }
 
-function hostWeb(code: RoomCode, { tailscale = false, funnel = false, url, port, by = null, now = Date.now() }: {
-  tailscale?: boolean; funnel?: boolean; url?: string | undefined; port?: number | undefined; by?: string | null; now?: number;
+function hostWeb(code: RoomCode, { funnel = false, port, by = null, now = Date.now() }: {
+  funnel?: boolean; port?: number | undefined; by?: string | null; now?: number;
 } = {}): WebInvite {
   const store = hostStore(code);
-  if (funnel) tailscale = true;
-  if (!tailscale && !url) throw new RoomError('INVALID', 'say how joiners reach the listener: --web (Tailscale), --public (Funnel), or --url https://YOUR-FRONT');
-  if (tailscale && url) throw new RoomError('INVALID', '--web / --public and --url are two ways to the same listener; pick one');
+  // the tests' and the lab's own front (never Funnel's: --public stays Tailscale's)
+  const url = funnel ? undefined : webFront();
+  const tailscale = !url;
   const L = listener();
   const served = L.status().rooms[code];
   const { port: lport } = L.start(port ? { port } : {});
@@ -79,7 +80,7 @@ function hostWeb(code: RoomCode, { tailscale = false, funnel = false, url, port,
   let base: FrontBase, mode: string, tsRec: TailscaleRec | null | undefined = null;
   if (tailscale) {
     const bin = ts().bin();
-    if (!bin) throw new RoomError('INVALID', 'no tailscale CLI here (not on PATH, no /Applications/Tailscale.app); install Tailscale, or use --url with a front of your own');
+    if (!bin) throw new RoomError('INVALID', 'no tailscale CLI here (not on PATH, no /Applications/Tailscale.app); install Tailscale, or invite over ssh (/sub-human invite)');
     const me = ts().self(bin);
     const same = served && served.tailscale && served.tailscale.path === roomPath && !!served.tailscale.funnel === !!funnel && served.tailscale.port === lport;
     if (served && served.tailscale && !same) L.untailscale(served);
@@ -90,8 +91,8 @@ function hostWeb(code: RoomCode, { tailscale = false, funnel = false, url, port,
     mode = funnel ? 'funnel' : 'tailscale';
   } else {
     if (served && served.tailscale) L.untailscale(served);
-    base = frontBase(url ?? ''); // checked above: one of tailscale and url (url is set here)
-    mode = 'url';
+    base = frontBase(url ?? ''); // not tailscale: url is set
+    mode = 'front';
   }
   const p = `${base.prefix}${roomPath}`;
   const locator = wsT().locator({ host: base.host, port: base.port, path: p }, base.secure);
@@ -99,7 +100,7 @@ function hostWeb(code: RoomCode, { tailscale = false, funnel = false, url, port,
   const hostKey = L.hostKey();
   const joinBase = `${base.secure ? 'https' : 'http'}://${base.host}${base.port ? `:${base.port}` : ''}${p}`;
   L.addRoom(code, { path: p, url: joinBase, mode, port: lport, ...(tsRec ? { tailscale: tsRec } : {}) });
-  const how = mode === 'funnel' ? 'Tailscale Funnel (public)' : mode === 'tailscale' ? 'Tailscale Serve (your tailnet only)' : `your front ${base.host}`;
+  const how = mode === 'funnel' ? 'Tailscale Funnel (public)' : mode === 'tailscale' ? 'Tailscale Serve (your tailnet only)' : `the front ${base.host}`;
   const notes = [
     ...(tsRec ? ['The first connection to a new ts.net name can take ~20 s while Tailscale issues its certificate; it is being fetched now, and their machine keeps trying.'] : []),
     ...(mode === 'funnel' ? [ts().CT_WARNING] : []),
@@ -143,12 +144,4 @@ function ensure(code: RoomCode): boolean {
   try { L.start(rec.port ? { port: rec.port } : {}); return true; } catch { return false; }
 }
 
-/** The wss locator of room CODE behind a front at URL (https://FRONT[/prefix]): wss://FRONT/prefix/sub-human/CODE. */
-function webLocator(url: string, code: RoomCode): string {
-  const b = frontBase(url);
-  const loc = wsT().locator({ host: b.host, port: b.port, path: `${b.prefix}/sub-human/${code}` }, b.secure);
-  if (!loc) throw new RoomError('INVALID', `"${url}" gives no plain URL for room ${code}`);
-  return loc;
-}
-
-export { hostWeb, unhost, ensure, frontBase, webLocator };
+export { hostWeb, unhost, ensure, frontBase };

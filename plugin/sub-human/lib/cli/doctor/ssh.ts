@@ -8,7 +8,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { lib, cli, check, tilde, isExec, readText } from './check.ts';
 import { assertNever } from '../../../mod/core/never.ts';
-import type { Check, LinkTransportView } from '../types.ts';
+import type { Check } from '../types.ts';
 
 /** <home>/bin/serve is the current shim and <home>/bin/current names an existing plugin and node. */
 function checkShim(): Check {
@@ -46,21 +46,19 @@ function checkSsh({ needed, version }: { needed: boolean; version: string | null
 
 
 /**
- * ssh's own complaint, as a hint (a login of the person's own, `sub-human prime` for an MFA bastion, `--via` for a
- * jump host). link: the link file's {code, transport} when known.
+ * ssh's own complaint, as a hint (a login of the person's own; a jump host or an interactive login is the person's
+ * ~/.ssh/config and their own first ssh).
  */
-function sshHint(stderr: unknown, link: { code?: string; transport?: LinkTransportView } = {}): string | null {
-  const code = link.code || 'CODE';
-  const t = link.transport ?? {};
+function sshHint(stderr: unknown): string | null {
   const p = lib('remote/transports/ssh.ts').classify(stderr);
   if (!p) return null;
   switch (p.kind) {
-    case 'mfa': return `the host or a jump host wants an interactive login (MFA): run ${cli(`prime ${code}`)} once in a terminal; the connection then rides that login for hours`;
-    case 'denied': return `the host refused your ssh login: joining over ssh needs a login of your own there (your key in its authorized_keys, as for any ssh). Without one, ask the host for an invite over the web (/sub-human invite --web). Behind a bastion with MFA, run ${cli(`prime ${code}`)} in a terminal first`;
+    case 'mfa': return 'the host or a jump host wants an interactive login (MFA): sub-human logs in with your keys only. Ask the host for an invite over the web instead (/sub-human invite --web)';
+    case 'denied': return 'the host refused your ssh login: joining over ssh needs a login of your own there (your key in its authorized_keys, as for any ssh). Without one, ask the host for an invite over the web (/sub-human invite --web)';
     case 'host-key': return 'the host key is unknown or changed: run `ssh USER@HOST` once by hand to check and accept it, then join again';
-    case 'dns': return `the host name does not resolve from here (VPN or tailnet down?)${t.via ? '' : '; if it is only reachable through a jump host, ask the host for an invite with --via JUMP (/sub-human invite --via JUMP)'}`;
+    case 'dns': return 'the host name does not resolve from here (VPN or tailnet down?); a host behind a jump host needs an alias with ProxyJump in your ~/.ssh/config, then join with that alias';
     case 'refused': return 'nothing listens for ssh on that port';
-    case 'timeout': return `the host does not answer (asleep, offline or firewalled)${t.via ? '' : '; behind a bastion, the invite needs --via JUMP (/sub-human invite --via JUMP)'}`;
+    case 'timeout': return 'the host does not answer (asleep, offline or firewalled); behind a bastion, use an alias with ProxyJump in your ~/.ssh/config';
     case 'no-plugin': return 'the host found no sub-human plugin or node to run: on the host, start Claude Code once';
     case 'no-shim': case 'old-host': case 'no-room': case 'not-hosted': case 'serve-refused': return null;
     default: return assertNever(p, 'ssh problem');

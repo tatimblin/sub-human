@@ -510,7 +510,8 @@ test('SECURITY: every join, invite and admit prompt (and any with a word of digi
     ['join https://box/sub-human/vole-1234 48291', /did not come through whole/],
     ['join https://box/sub-human/vole-1234', /needs the SECRET/],
     [`join https://box/sub-human/vole-1234 ${S} 4829`, /type the line without the PIN/],
-    [`join https://box/sub-human/vole-1234 ${S} --via j`, /--via and --home go with an ssh address/],
+    [`join https://box/sub-human/vole-1234 ${S} --home /x`, /--home goes with an ssh address/],
+    [`join dev vole-1234 ${S} --via j`, /"--via" isn't a join option/],
     [`join https://box/x/4829 ${S}`, /isn't a join address.*Paste the whole line the host sent you/],
     [`join YOU@box vole-1234 ${S}`, /placeholder/],
     ['join dev 4829', /"4829" isn't a room/],
@@ -816,7 +817,7 @@ test('/sub-human join ROOM joins that room on this machine (the default name, or
   const none = w.hook('join', expand('join otter-0000 --as fay'), { as: 'you' });
   assert.match(must(must(none.json).reason), /there's no room otter-0000 on this machine/);
   assert.equal(must(must(none.json).hookSpecificOutput).suppressOriginalPrompt, true, 'a join prompt is hidden, whatever it is');
-  assert.match(must(must(w.hook('join', expand(`join ${w.code} --via j`), { as: 'you' }).json).reason), /--via and --home go with the other machine's address/);
+  assert.match(must(must(w.hook('join', expand(`join ${w.code} --home /x`), { as: 'you' }).json).reason), /--home goes with the other machine's address/);
   assert.match(must(must(w.hook('join', expand('join dev'), { as: 'you' }).json).reason), /which room/);
 });
 

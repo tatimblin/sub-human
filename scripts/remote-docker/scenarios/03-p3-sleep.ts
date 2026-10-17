@@ -3,7 +3,7 @@
 // links come back by themselves, the outbox flushes exactly once, every line is on every mirror once, nothing lost.
 // (2) A joiner sleeps: `docker pause joiner-a` for LAB_JOINER_SLEEP_S (45) s while the room goes on; on waking it
 // catches up (its tail delivers what it missed) and can post.
-import { WAN, JUMP, delivered, waitState, converge, entries, linkState } from './_lib.ts';
+import { WAN, WAN_B, delivered, waitState, converge, entries, linkState } from './_lib.ts';
 import type { T } from '../lab.ts';
 
 const SLEEP_S = Number(process.env.LAB_SLEEP_S || 90);
@@ -18,9 +18,9 @@ export async function run(t: T): Promise<void> {
   const { lab, sleep } = t;
   const { code, host } = lab.hostRoom();
   const a = await lab.join({ svc: 'joiner-a', name: 'bob', code, hosts: WAN });
-  const b = await lab.join({ svc: 'joiner-b', name: 'bea', code, hosts: JUMP, via: 'bastion' });
+  const b = await lab.join({ svc: 'joiner-b', name: 'bea', code, hosts: WAN_B });
   for (const j of [a, b]) t.ev.invite(j.invite, j.pin);
-  if (!t.check('bob (WAN) and bea (bastion) join', a.join.ok && b.join.ok, `${a.join.out || 'ok'} / ${b.join.out || 'ok'}`)) return;
+  if (!t.check('bob and bea join (each over her own WAN path)', a.join.ok && b.join.ok, `${a.join.out || 'ok'} / ${b.join.out || 'ok'}`)) return;
   host.say('alice', 'p3 before sleep');
   a.seat.say('bob', 'p3 bob before');
   const c0 = await converge(t, host, code, [a.seat, b.seat]);

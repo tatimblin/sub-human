@@ -20,6 +20,10 @@
  *       a timing the tests shorten that would weaken a guard if a person (or a steered model) set it
  *   parseMs(raw, fallback, {allowZero}?) -> number   envMs on a value
  *   envNum(name, env?) / envFlag(name, env?) / envStr(name, env?)
+ *   webFront(env?) -> string | undefined     SUB_HUMAN_WEB_FRONT, honoured only under the test preload or the lab
+ *                                            (SUB_HUMAN_TEST=1 or SUB_HUMAN_LAB=1): a front of the tests' own (a TLS
+ *                                            stand-in, or the listener itself) that `invite --web` names instead of
+ *                                            Tailscale Serve. Not a user knob: people use Tailscale
  *   segmentMaxBytes() -> number              config.SEGMENT_MAX_BYTES, or SUB_HUMAN_SEGMENT_BYTES (at least 256; tests
  *                                            rotate after a few lines), read at each append
  *   TIMING_ENV_RE                            the ms knobs' names (derived from ENV)
@@ -76,6 +80,7 @@ export const ENV = {
   SUB_HUMAN_SEGMENT_BYTES: { kind: 'num', does: 'the log segment size (tests rotate after a few lines): segmentMaxBytes' },
   // ----- flags (envFlag: "1") -----
   SUB_HUMAN_TEST: { kind: 'flag', does: 'the test preload (test/helpers.ts): testMs knobs are honoured' },
+  SUB_HUMAN_LAB: { kind: 'flag', does: 'the remote-rooms lab (scripts/remote-docker): webFront is honoured' },
   SUB_HUMAN_ALLOW_TMP_ROOT: { kind: 'flag', does: 'a plugin root under a temp folder is used' },
   SUB_HUMAN_SHIM: { kind: 'flag', does: 'consent runs as the hooks module\'s shim' },
   SUB_HUMAN_DEBUG: { kind: 'flag', does: 'the room MCP server logs' },
@@ -92,6 +97,7 @@ export const ENV = {
   SUB_HUMAN_TAILSCALE: { kind: 'path', does: 'the tailscale binary' },
   SUB_HUMAN_TAILSCALE_WARM: { kind: 'str', does: '"0": no warm-up request to a Tailscale URL' },
   SUB_HUMAN_MACHINE_LABEL: { kind: 'str', does: 'this machine\'s short name (default the host name)' },
+  SUB_HUMAN_WEB_FRONT: { kind: 'str', does: 'not a user knob: the tests\' and the lab\'s HTTPS front for --web (webFront)' },
 } as const;
 // the table's shape, checked apart from the table: an exported `satisfies` is a type an isolated declaration cannot infer
 ENV satisfies Record<`SUB_HUMAN_${string}`, Knob>;
@@ -162,6 +168,10 @@ const envNum = (name: Of<'num'>, env: Env = process.env): number => Number(env[n
 const envFlag = (name: Of<'flag'>, env: Env = process.env): boolean => env[name] === '1';
 const envStr = (name: EnvName, env: Env = process.env): string | undefined => env[name];
 
+function webFront(env: Env = process.env): string | undefined {
+  return envFlag('SUB_HUMAN_TEST', env) || envFlag('SUB_HUMAN_LAB', env) ? envStr('SUB_HUMAN_WEB_FRONT', env) || undefined : undefined;
+}
+
 function segmentMaxBytes(): number {
   const n = envNum('SUB_HUMAN_SEGMENT_BYTES');
   return Number.isInteger(n) && n >= 256 ? n : config.SEGMENT_MAX_BYTES;
@@ -181,4 +191,4 @@ function timingEnv(src: Env | null = process.env): Record<string, string> {
   return out;
 }
 
-export { parseMs, envMs, testMs, envNum, envFlag, envStr, segmentMaxBytes, TIMING_ENV_RE, timingEnv };
+export { parseMs, envMs, testMs, envNum, envFlag, envStr, webFront, segmentMaxBytes, TIMING_ENV_RE, timingEnv };

@@ -6,8 +6,8 @@
 //         line (his link checks the host's machine key against it, then shows the SECRET), the host asks for the PIN, a
 //         wrong one costs a try, the right one waits for the card; alice's Let in; the link comes online; a bare
 //         /sub-human seats him; posts flow; authorized_keys holds only the login lines people set up
-//   web   `/sub-human invite --url https://tls-front` shows a URL + SECRET and the PIN apart; ben on joiner-b, through
-//         corp-proxy and the TLS front, joins the same way (the listener's key checked against the line, Noise XK with a
+//   web   `/sub-human invite --web` (the devbox's SUB_HUMAN_WEB_FRONT: https://tls-front) shows a URL + SECRET and the
+//         PIN apart; ben on joiner-b, through the TLS front, joins the same way (the listener's key checked against the line, Noise XK with a
 //         key of his link's own); the card lets him in; the front's log holds neither the PIN nor the SECRET
 // A stranger with no login of their own, a stolen line without its PIN and PIN guessing are the unit tests' (test/
 // remote-invite-ssh, remote-invite-line, remote-short): this scenario marks them pending.
@@ -16,13 +16,12 @@ import type { T } from '../lab.ts';
 
 const AK = '/home/host/.ssh/authorized_keys';
 const LAB_CA_ENV = { NODE_EXTRA_CA_CERTS: '/etc/lab-ca.crt' };
-const CORP_PROXY = 'http://corp-proxy:3128';
-const LINE_RE = /\/sub-human (join (\S+) (?:([a-z]+-\d{4}) )?([0-9a-z]{39})(?: --(?:via|home) \S+)*)\n/;
+const LINE_RE = /\/sub-human (join (\S+) (?:([a-z]+-\d{4}) )?([0-9a-z]{39})(?: --home \S+)?)\n/;
 const PIN_RE = /apart from the line[^\n]*: (\d{4})\n/;
 
 export const id = 'short';
 export const title = 'invite lines: a SECRET and a PIN told apart, over ssh (the joiner\'s own login) and the web; the host person\'s card admits';
-export const persona = 'P1 friends / P2 corporate';
+export const persona = 'P1 friends';
 export const requires = ['inviteLine'];
 export const budgetMs = 240_000;
 export async function run(t: T): Promise<void> {
@@ -66,17 +65,17 @@ export async function run(t: T): Promise<void> {
   t.check('posts flow from bob', a.ok && d1.ok);
   t.check('authorized_keys still holds only the login lines people set up', !/sub-human/.test(ak()));
 
-  // ---- web, through corp-proxy and the TLS front ----
+  // ---- web, through the TLS front ----
   await wssHost(t, lab);
-  const ws = host.expand('alice', 'invite --url https://tls-front');
+  const ws = host.expand('alice', 'invite --web');
   const wm = LINE_RE.exec(`${ws.out}\n`), wp = PIN_RE.exec(`${ws.out}\n`);
   if (wm) t.ev.invite(wm[1], wp && wp[1]);
-  if (!t.check('invite --url shows a URL + SECRET (no #) and the PIN apart', !!wm && !!wp && wm[2] === `https://tls-front/sub-human/${code}` && !/#/.test(ws.out || ''), (ws.out || '').slice(0, 200)) || !wm || !wp) return;
-  const ben = lab.seat('joiner-b', { env: { ...LAB_CA_ENV, HTTPS_PROXY: CORP_PROXY, https_proxy: CORP_PROXY } });
+  if (!t.check('invite --web shows a URL + SECRET (no #) and the PIN apart', !!wm && !!wp && wm[2] === `https://tls-front/sub-human/${code}` && !/#/.test(ws.out || ''), (ws.out || '').slice(0, 200)) || !wm || !wp) return;
+  const ben = lab.seat('joiner-b', { env: LAB_CA_ENV });
   const [, webLine = '', , , webSecret = ''] = wm, [, webPin = ''] = wp;
   const bt = ben.short('ben', webLine);
   const basked = bt.asked || await t.until(() => !!ben.linkfile(code).pin_wanted, 30_000, 250);
-  t.check('ben (joiner-b, through corp-proxy and tls-front): the listener\'s key checked against the line; the host asks for the PIN', basked && bt.hidden, (bt.out || '').slice(0, 200));
+  t.check('ben (joiner-b, through tls-front): the listener\'s key checked against the line; the host asks for the PIN', basked && bt.hidden, (bt.out || '').slice(0, 200));
   const bj = ben.pin('ben', webPin);
   t.check('ben\'s PIN is checked inside the Noise channel (XK, a key of his link\'s own)', bj.waiting && bj.hidden, (bj.out || '').slice(0, 200));
   const bc = host.admitcard('alice', 'Let in');

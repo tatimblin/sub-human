@@ -1,9 +1,9 @@
 // Network flap: 10 cuts in 60 s on bob's WAN path, alternating a disabled proxy (every connection closed) and a
-// reset_peer toxic (TCP RST), 3 s down and 3 s up, while alice and bob keep posting. bea (via the bastion) is the
-// control and never loses her link. At the end: bob online, every mirror byte-identical to the host, each accepted
+// reset_peer toxic (TCP RST), 3 s down and 3 s up, while alice and bob keep posting. bea (her own WAN path, devbox-ssh-b) is
+// the control and never loses her link. At the end: bob online, every mirror byte-identical to the host, each accepted
 // post exactly once, each refused post absent (a refused post that lands anyway is a ghost: the person was told
 // "nothing was sent").
-import { WAN, JUMP, waitState, converge, entries } from './_lib.ts';
+import { WAN, WAN_B, waitState, converge, entries } from './_lib.ts';
 import type { SeatDriver, T } from '../lab.ts';
 
 const CUTS = Number(process.env.LAB_FLAP_CUTS || 10);
@@ -17,7 +17,7 @@ export async function run(t: T): Promise<void> {
   const { lab, sleep } = t;
   const { code, host } = lab.hostRoom();
   const a = await lab.join({ svc: 'joiner-a', name: 'bob', code, hosts: WAN });
-  const b = await lab.join({ svc: 'joiner-b', name: 'bea', code, hosts: JUMP, via: 'bastion' });
+  const b = await lab.join({ svc: 'joiner-b', name: 'bea', code, hosts: WAN_B });
   for (const j of [a, b]) t.ev.invite(j.invite, j.pin);
   if (!t.check('bob and bea join', a.join.ok && b.join.ok)) return;
   const posts: Record<'host' | 'bobOk' | 'bobRefused' | 'bea', string[]> = { host: [], bobOk: [], bobRefused: [], bea: [] };
@@ -62,7 +62,7 @@ export async function run(t: T): Promise<void> {
   t.check('every accepted post (alice, bob, bea) is in the log exactly once', !missing.length, missing.length ? `not once: ${missing.slice(0, 4).join(', ')}` : `${posts.host.length + posts.bobOk.length + posts.bea.length} posts`);
   const ghosts = posts.bobRefused.filter(s => count(s) > 0);
   t.bug('no ghost: a post bob was told was not sent is not in the log', !ghosts.length, ghosts.length ? `landed anyway: ${ghosts.join(', ')}` : `${posts.bobRefused.length} refused, none landed`);
-  t.check("bea's link (the control, via the bastion) stayed up and every one of her posts went through", posts.bea.length === CUTS, `${posts.bea.length}/${CUTS}`);
+  t.check("bea's link (the control, her own WAN path) stayed up and every one of her posts went through", posts.bea.length === CUTS, `${posts.bea.length}/${CUTS}`);
   const linkLog = lab.exec('joiner-a', ['cat', `${a.seat.home}/links/${code}.log`], { allowFail: true }).stdout;
   t.ev.write('bob-link.log', linkLog);
   const onlines = (linkLog.match(/online: subscribed/g) || []).length;

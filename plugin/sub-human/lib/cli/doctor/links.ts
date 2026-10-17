@@ -148,7 +148,7 @@ async function diagnoseLink(code: RoomCode, { quick, timeoutMs, env }: { quick: 
     const reply: HelloReply = r.reply ?? {};
     const hostTime = replyTime(reply);
     out.reach = {
-      ok: r.ok, ms: r.ms, error: r.error, ...(r.code ? { code: r.code } : {}), skipped: !!r.skipped, hint: r.ok ? null : (spec && spec.kind === 'ssh' ? (spec.login === true && lib('remote/transports/ssh.ts').loginFailure(r.stderr ?? '', spec, code)) || sshHint(r.stderr, { code, transport: spec }) : null),
+      ok: r.ok, ms: r.ms, error: r.error, ...(r.code ? { code: r.code } : {}), skipped: !!r.skipped, hint: r.ok ? null : (spec && spec.kind === 'ssh' ? (spec.login === true && lib('remote/transports/ssh.ts').loginFailure(r.stderr ?? '', spec, code)) || sshHint(r.stderr) : null),
       stderr: r.stderr || '',
       protocol: r.ok ? { v: reply.v, proto: reply.proto ?? null, server: typeof reply.server === 'string' ? reply.server : null } : null,
       skewMs: r.ok && hostTime !== null && r.t0 !== undefined && r.t1 !== undefined ? Math.round(hostTime - (r.t0 + r.t1) / 2) : null, // an answer carries t0 and t1

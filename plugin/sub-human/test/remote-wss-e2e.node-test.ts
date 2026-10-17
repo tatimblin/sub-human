@@ -1,4 +1,4 @@
-// 1.1 end to end on one machine, two homes (test/support/two-homes.ts): the host's `/sub-human invite --url` starts the
+// 1.1 end to end on one machine, two homes (test/support/two-homes.ts): the host's `/sub-human invite --web` (behind a test front: lib/env.ts webFront) starts the
 // listener (127.0.0.1 only) and shows a join URL + SECRET and the PIN apart, to the person only; the joiner's
 // `/sub-human join URL SECRET` asks the listener for its key, checks it against the line's tag, pins it, and runs Noise
 // XK with a key of the link's own; the host asks for the PIN, `/sub-human join PIN` gives it, and the host's card lets
@@ -111,7 +111,7 @@ async function webJoin({ host, remote, alice, bob, code }: Rig, reason: string |
 test('wss 1.1: the listener gives its key to a text request, refuses a handshake to another key, a room it does not serve, and plain HTTP; XK proves the link\'s own key', async t => {
   const R = await rig(t);
   const { port, host, alice, code } = R;
-  assert.ok(shortShown(must(host.join(alice, `invite --url http://127.0.0.1:${port}`).json?.reason)));
+  assert.ok(shortShown(must(host.join(alice, 'invite --web', { SUB_HUMAN_WEB_FRONT: `http://127.0.0.1:${port}` }).json?.reason)));
   const pinned = Buffer.from(host.lib(() => listener.hostKey()), 'base64url');
   assert.equal(fs.statSync(path.join(host.home, 'listen', 'host-x25519.json')).mode & 0o777, 0o600);
   const ss = spawnSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN'], { encoding: 'utf8' }).stdout;
@@ -157,7 +157,7 @@ test('wss 1.1 reconnect: the link comes back after the listener restarts and aft
   const down = (f: ChildProcess) => new Promise(r => { f.once('exit', r); f.kill('SIGKILL'); });
   let f = await front();
   t.after(() => f.kill('SIGKILL'));
-  const m = await webJoin(R, must(host.join(alice, `invite --url https://localhost:${frontPort}`).json?.reason));
+  const m = await webJoin(R, must(host.join(alice, 'invite --web', { SUB_HUMAN_WEB_FRONT: `https://localhost:${frontPort}` }).json?.reason));
   assert.equal(m.dest, `https://localhost:${frontPort}/sub-human/${code}`);
   assert.equal(linkFile(remote, code).transport.kind, 'wss');
   await posts(t, R, 'before any restart');
@@ -238,7 +238,7 @@ test('the room closing stops serving it: the listener drops it and turns its Tai
   assert.ok(await h.until(() => fs.readFileSync(calls, 'utf8').includes(`serve --https=443 --set-path=/sub-human/${code} off`), 3000, 50));
 });
 
-test('a web invite: invite --url shows URL + SECRET and the PIN apart (no #, no NAME); the line\'s tag names the listener\'s key, checked before the Noise handshake; XK with a key of the link\'s own, through a TLS front; the card lets the machine in', { skip: spawnSync('openssl', ['version']).status !== 0 && 'no openssl' }, async t => {
+test('a web invite: invite --web behind a front shows URL + SECRET and the PIN apart (no #, no NAME); the line\'s tag names the listener\'s key, checked before the Noise handshake; XK with a key of the link\'s own, through a TLS front; the card lets the machine in', { skip: spawnSync('openssl', ['version']).status !== 0 && 'no openssl' }, async t => {
   const certDir = h.tmpDir('sh-front-', t);
   if (!testCa(certDir)) return t.skip('openssl could not make a test CA');
   const R = await rig(t, {}, { NODE_EXTRA_CA_CERTS: path.join(certDir, 'ca.pem') });
@@ -250,7 +250,7 @@ test('a web invite: invite --url shows URL + SECRET and the PIN apart (no #, no 
     c.once('exit', () => no(new Error('the front exited')));
   });
   t.after(() => f.kill('SIGKILL'));
-  const out = host.join(alice, `invite --url https://localhost:${frontPort}`);
+  const out = host.join(alice, 'invite --web', { SUB_HUMAN_WEB_FRONT: `https://localhost:${frontPort}` });
   assert.equal(must(out.json).systemMessage, undefined, 'the SECRET and the PIN stay off Remote Control');
   const st = host.lib(() => listener.status());
   assert.ok(st.running && st.port === port && st.rooms[code], JSON.stringify(st));
@@ -296,7 +296,7 @@ test('a web invite: invite --url shows URL + SECRET and the PIN apart (no #, no 
 test('a web invite: a text message that is not a key request is refused; a key request gets the key', async t => {
   const R = await rig(t);
   const { port, host, alice, code } = R;
-  host.join(alice, `invite --url http://127.0.0.1:${port}`);
+  host.join(alice, 'invite --web', { SUB_HUMAN_WEB_FRONT: `http://127.0.0.1:${port}` });
   const ask = async (text: string, p = `/sub-human/${code}`) => {
     const conn = await ws.connect(`ws://127.0.0.1:${port}${p}`, { timeoutMs: 5000 });
     return new Promise<{ code: number; got: string[] }>(r => {

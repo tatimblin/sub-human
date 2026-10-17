@@ -1,12 +1,11 @@
 // lib/remote/ws.ts: the zero-dependency WebSocket. Its server end against Node's built-in WebSocket client (interop),
 // its client end against its own server and against hand-made frames (fragmentation, control frames in between,
-// masking rules, the size limit, bad UTF-8), through an HTTP CONNECT proxy, over TLS, and the proxy environment.
+// masking rules, the size limit, bad UTF-8), over TLS.
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import net from 'node:net';
-import http from 'node:http';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync, spawn } from 'node:child_process';
@@ -179,34 +178,6 @@ test('ws keepalive: a peer that stops answering is terminated after two ping int
   assert.ok(Date.now() - t0 < 1000);
 });
 
-test('ws client through an HTTP CONNECT proxy', async t => {
-  const { port } = await echoServer(t);
-  const seen: (string | undefined)[] = [];
-  const proxy = http.createServer((_q, s) => s.end());
-  proxy.on('connect', (req, sock, head) => {
-    seen.push(req.url);
-    const [hh, pp] = must(req.url).split(':');
-    const up = net.connect(Number(pp), hh, () => { sock.write('HTTP/1.1 200 Connection established\r\n\r\n'); up.write(head); up.pipe(sock).pipe(up); });
-    up.on('error', () => sock.destroy());
-    sock.on('error', () => up.destroy());
-  });
-  await new Promise<void>(r => proxy.listen(0, '127.0.0.1', r));
-  t.after(() => proxy.close());
-  // loopback is never proxied from the environment, so name the proxy outright
-  const c = await ws.connect(`ws://127.0.0.1:${port}/p`, { proxy: `http://127.0.0.1:${portOf(proxy)}` });
-  const m = once<Msg>(c, 'message');
-  c.send('via');
-  assert.equal((await m)[0].toString(), '/p:via');
-  assert.deepEqual(seen, [`127.0.0.1:${port}`]);
-  c.terminate();
-  // a proxy that refuses
-  const deny = http.createServer();
-  deny.on('connect', (_req, sock) => sock.end('HTTP/1.1 403 Forbidden\r\n\r\n'));
-  await new Promise<void>(r => deny.listen(0, '127.0.0.1', r));
-  t.after(() => deny.close());
-  await assert.rejects(ws.connect(`wss://example.invalid/x`, { proxy: `http://127.0.0.1:${portOf(deny)}` }), /refused CONNECT example\.invalid:443: HTTP\/1\.1 403/);
-});
-
 test('ws client over TLS (wss) with a CA of our own', { skip: spawnSync('openssl', ['version']).status !== 0 && 'no openssl' }, async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-ws-tls-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -226,21 +197,6 @@ test('ws client over TLS (wss) with a CA of our own', { skip: spawnSync('openssl
   c.send('sec');
   assert.equal((await m)[0].toString(), '/tls:sec');
   c.terminate();
-});
-
-test('proxyFor: HTTPS_PROXY for wss, HTTP_PROXY for ws, NO_PROXY and loopback bypass it', () => {
-  const env = { HTTPS_PROXY: 'http://corp:3128', http_proxy: 'http://plain:80', NO_PROXY: 'internal.corp, .ts.net,box:8443' };
-  assert.equal(ws.proxyFor('wss://tls-front/x', env), 'http://corp:3128');
-  assert.equal(ws.proxyFor('ws://tls-front/x', env), 'http://plain:80');
-  assert.equal(ws.proxyFor('wss://a.internal.corp/x', env), null);
-  assert.equal(ws.proxyFor('wss://internal.corp/x', env), null);
-  assert.equal(ws.proxyFor('wss://box.tail1a2b.ts.net/x', env), null);
-  assert.equal(ws.proxyFor('wss://box:8443/x', env), null);
-  assert.equal(ws.proxyFor('wss://box/x', env), 'http://corp:3128');
-  assert.equal(ws.proxyFor('wss://127.0.0.1:7420/x', env), null);
-  assert.equal(ws.proxyFor('wss://localhost/x', env), null);
-  assert.equal(ws.proxyFor('wss://x/y', { https_proxy: 'http://p:1', no_proxy: '*' }), null);
-  assert.equal(ws.proxyFor('wss://x/y', {}), null);
 });
 
 test('listener: it exits on its own once its home is gone (no listener left serving a deleted home)', async t => {
@@ -312,7 +268,7 @@ test('kick: the listener\'s child (`serve --stdio CODE --via ws --peer KEY`) nam
 test('listener (item 16): once the last room it served closed and no connection is open, it exits at once, not after LISTEN_IDLE_MS', async t => {
   h.freshHome(t);
   const listenerMod = await import('../lib/remote/listener.ts');
-  listenerMod.addRoom(rc('vole-0042'), { path: '/sub-human/vole-0042', url: 'https://box/sub-human/vole-0042', mode: 'url' });
+  listenerMod.addRoom(rc('vole-0042'), { path: '/sub-human/vole-0042', url: 'https://box/sub-human/vole-0042', mode: 'front' });
   const t0 = Date.now();
   const r = await listenerMod.run({ port: 0, closedCheckMs: 50, idleMs: 600_000, log: () => {} });
   assert.equal(r.why, 'the last room it served closed');

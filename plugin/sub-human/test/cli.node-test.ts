@@ -196,7 +196,7 @@ test('cli: who / read / digest resolve by session id, then ancestry', () => {
   assert.equal(cli(['post', 'hello']).status, 2, 'there is no post command');
   const usage = cli(['nope']).stderr;
   assert.match(usage, /^usage: sub-human COMMAND\n/);
-  for (const c of ['read [--id N,M]', 'digest', 'show HASH', 'who', 'tasks [--json]', 'watch NAME', 'invite [--ssh [USER@HOST]] [--via JUMP]', 'invite --cancel [REF]', 'admit [REF]', 'kick NAME', 'prime ROOM', 'link CODE [--forget [--force]]', 'options CODE', 'doctor', 'tail', 'serve --stdio CODE [--link ID [--login]]', 'agent-statusline']) assert.ok(usage.includes(c), c);
+  for (const c of ['read [--id N,M]', 'digest', 'show HASH', 'who', 'tasks [--json]', 'watch NAME', 'invite [--ssh [USER@HOST]]', 'invite --web | --public', 'invite --cancel [REF]', 'admit [REF]', 'kick NAME', 'link CODE [--forget [--force]]', 'doctor', 'tail', 'serve --stdio CODE [--link ID [--login]]', 'agent-statusline']) assert.ok(usage.includes(c), c);
   assert.ok(usage.split('\n').every(l => l.length <= 100), 'readable lines, not one 600-character line');
   for (const gone of ['plan', 'statusline', 'host', 'unhost', 'revoke', 'authorize']) assert.equal(cli([gone]).status, 2, `${gone} is dropped`);
   bob.kill();

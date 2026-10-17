@@ -81,13 +81,13 @@ export function planState(p: string): DialogState | null {
 
 /**
  * The line /sub-human invite showed in a capture, without its "/sub-human ", or null: "join DEST ROOM SECRET" (DEST
- * an ssh address or pipe:HOME; SECRET the line's 39 characters; then any --via and --home) or "join URL SECRET". The
+ * an ssh address or pipe:HOME; SECRET the line's 39 characters; then any --home) or "join URL SECRET". The
  * pane may wrap it: a line break (and the next line's indent) inside a word is dropped first. The last one shown wins.
  * The PIN is shown apart from the line: pinIn reads it.
  */
 export function joinLineIn(txt: string | null | undefined): string | null {
   const joined = unwrap(txt);
-  const re = /\/sub-human (join (?:https?:\/\/\S+|\S+ [a-z]+-\d{4}) [0-9a-z]{39}(?: --(?:via|home) \S+)*)(?=\s|$)/g;
+  const re = /\/sub-human (join (?:https?:\/\/\S+|\S+ [a-z]+-\d{4}) [0-9a-z]{39}(?: --home \S+)?)(?=\s|$)/g;
   const all = [...joined.matchAll(re)].map(m => m[1]);
   return all.at(-1) || null;
 }

@@ -21,7 +21,7 @@
  * last try, a PIN that held and the new link are each a room line, so the host sees them.
  *
  * join: bindSeat before seats.enter (a link revoked meanwhile gets no seat; a refused seat gives the binding back);
- * over a login link with login-same-person on (lib/room/options.ts) the seat's account is the host's. append: own
+ * over a login link (the host account's own ssh login) the seat's account is the host's. append: own
  * `from` only, never via system; a signoff or objection is followed by proposal.decide() (host only, idempotent).
  * subscribe: hash12 of the host's line `after` must equal hash, else FORK (also for a line before the first this host
  * holds: a host that began from a snapshot cannot replay what came before it). blob.put: content-addressed
@@ -51,7 +51,6 @@ import type { ReasonFor } from '../reasons.ts';
 import { reasonOf } from '../reasons.ts';
 import { errCode, msgOf, stackOf } from '../errors.ts';
 import { machineIn } from '../home.ts';
-import * as options from '../room/options.ts';
 import { isObj } from '../decode.ts';
 import {
   FOLLOW_POLL_MS, REPLAY_BATCH, PROPOSAL_FILE_MAX, LINK_SILENT_MS, LINK_FRAME_MAX_BYTES, LINK_AUTH_WAIT_MS,
@@ -275,8 +274,8 @@ const OPS: OpHandlers = {
     const link = s.linked();
     if (!hostLinks.mayJoinAs(link, name)) throw authError(hostLinks.notBound(link, name), 'NOT_BOUND');
     if (!isSeatName(name)) throw invalid(`invalid name "${name}" (letters, digits, . _ -, up to 32)`); // as identity.join says
-    // a login link's seat is the host person's own (one person with the host's seats) only where the room says so
-    const account = link.login && options.loginSamePerson(s.store) ? machineIn(s.store.code) ?? undefined : undefined;
+    // a login link's seat is the host person's own (one person with the host's seats): whoever logs in as the account
+    const account = link.login ? machineIn(s.store.code) ?? undefined : undefined;
     // bound first: a link revoked meanwhile is AUTH LINK_REVOKED before any seat exists (no seat with no link); a seat
     // then refused gives the binding back
     const had = link.seats.includes(name);

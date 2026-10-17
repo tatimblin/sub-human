@@ -1,7 +1,7 @@
 // 1.1 wss: the host listens on 127.0.0.1:$LAB_WS_PORT (7420) in the devbox; tls-front plays Tailscale Serve/Funnel.
-// bob (joiner-a) types the line `/sub-human invite --url https://tls-front` shows, `/sub-human join
-// https://tls-front/sub-human/CODE SECRET --as bob`, then the PIN when asked; ben (joiner-b) does the same with
-// HTTPS_PROXY=http://corp-proxy:3128 as his only way out. The listener's key is checked against the line, then Noise XK
+// bob (joiner-a) types the line `/sub-human invite --web` shows (the devbox's SUB_HUMAN_WEB_FRONT names tls-front,
+// honoured under SUB_HUMAN_LAB=1), `/sub-human join https://tls-front/sub-human/CODE SECRET --as bob`, then the PIN
+// when asked; ben (joiner-b) does the same. The listener's key is checked against the line, then Noise XK
 // with a key of the link's own; alice's card lets each machine in, and a bare /sub-human seats them. Posts flow,
 // mirrors converge, a wrong PIN is refused, and Caddy (the stand-in for Tailscale) sees only ciphertext: no PIN, SECRET
 // or post in its log. (Not run since Stage 7b.)
@@ -14,7 +14,7 @@ const LINE_RE = /\/sub-human (join https:\/\/tls-front\/\S+ ([0-9a-z]{39}))\n/;
 const PIN_RE = /apart from the line[^\n]*: (\d{4})\n/;
 
 function mint(t: T, host: SeatDriver): { line: string | undefined, pin: string, out: string } {
-  const r = host.expand('alice', 'invite --url https://tls-front');
+  const r = host.expand('alice', 'invite --web');
   const out = (r.json && r.json.reason) || JSON.stringify(r.json || {}); // the block reason: the person's text
   const m = LINE_RE.exec(`${out}\n`) || [];
   const p = PIN_RE.exec(`${out}\n`) || [];
@@ -23,8 +23,8 @@ function mint(t: T, host: SeatDriver): { line: string | undefined, pin: string, 
 }
 
 export const id = 'wss';
-export const title = '1.1: join by the https://tls-front/... URL + SECRET line and the PIN apart, also through corp-proxy; the card lets each in';
-export const persona = 'P1 friends / P2 corporate (1.1)';
+export const title = '1.1: join by the https://tls-front/... URL + SECRET line and the PIN apart; the card lets each in';
+export const persona = 'P1 friends (1.1)';
 export const requires = ['ws', 'urlPin'];
 export const budgetMs = 120_000;
 export async function run(t: T): Promise<void> {
@@ -38,12 +38,12 @@ export async function run(t: T): Promise<void> {
 
   const env = { NODE_EXTRA_CA_CERTS: '/etc/lab-ca.crt' };
   const joins: { seat: SeatDriver, name: string }[] = [];
-  const machines: [string, string, Record<string, string>][] = [['joiner-a', 'bob', {}], ['joiner-b', 'ben', { HTTPS_PROXY: 'http://corp-proxy:3128', https_proxy: 'http://corp-proxy:3128' }]];
-  for (const [svc, name, extra] of machines) {
+  const machines: [string, string][] = [['joiner-a', 'bob'], ['joiner-b', 'ben']];
+  for (const [svc, name] of machines) {
     const inv = mint(t, host);
     const line = inv.line ?? '';
     if (!t.check(`the host mints a URL + SECRET line and a PIN apart for ${name} (no NAME, no #)`, line && inv.pin.length === 4 && !/#/.test(line), inv.out.slice(0, 160))) continue;
-    const seat = lab.seat(svc, { env: { ...env, ...extra } });
+    const seat = lab.seat(svc, { env });
     const typed = seat.short(name, line);
     const asked = typed.asked || await t.until(() => !!seat.linkfile(code).pin_wanted, 45_000, 250);
     t.check(`${name}: the listener's key matches the line; the host asks for the PIN`, asked && typed.hidden, (typed.out || '').slice(0, 120));
@@ -51,7 +51,7 @@ export async function run(t: T): Promise<void> {
     t.check(`${name}: a wrong PIN is refused, in a hidden step`, !bad.ok && bad.hidden && /wrong PIN/.test(bad.out || ''), (bad.out || '').slice(0, 120));
     await sleep(4500); // this machine's wait after a wrong PIN
     const l = seat.pin(name, inv.pin);
-    t.check(`${name}'s PIN holds over wss${extra.HTTPS_PROXY ? ' through corp-proxy' : ''}; alice's card asks`, l.waiting && l.hidden, (l.out || '').slice(0, 160));
+    t.check(`${name}'s PIN holds over wss; alice's card asks`, l.waiting && l.hidden, (l.out || '').slice(0, 160));
     const card = host.admitcard('alice', 'Let in');
     t.check(`alice lets ${name} in on the card`, card.ok, (card.out || '').slice(0, 120));
     const up = await waitState(seat, code, 'online', 45_000);
@@ -74,6 +74,4 @@ export async function run(t: T): Promise<void> {
   const caddy = lab.composeLogs('tls-front');
   t.ev.write('tls-front.txt', caddy);
   t.check('the TLS front logged no post text (it carries Noise ciphertext only)', !/wss (from|to) b/.test(caddy));
-  const prox = lab.composeLogs('corp-proxy');
-  if (joins.some(j => j.name === 'ben')) t.check('corp-proxy carried ben\'s CONNECT to tls-front:443', /tls-front:443/.test(prox));
 }

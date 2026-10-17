@@ -21,7 +21,7 @@ function checkListener({ quick = false }: { quick?: boolean } = {}): Check[] {
   let st: ListenerStatus;
   try { st = lib('remote/listener.ts').status(); } catch (e) { return [check({ id: 'listener', status: 'warn', title: 'listener', detail: `could not read its state: ${msgOf(e)}` })]; }
   const codes = Object.keys(st.rooms || {});
-  if (!codes.length && !st.running) return [check({ id: 'listener', status: 'info', title: 'listener', detail: 'no room is served over the web here (/sub-human invite --web or --url starts it)' })];
+  if (!codes.length && !st.running) return [check({ id: 'listener', status: 'info', title: 'listener', detail: 'no room is served over the web here (/sub-human invite --web starts it)' })];
   const out = [st.running
     ? check({ id: 'listener', status: 'pass', title: 'listener', detail: `running (pid ${st.pid}) on 127.0.0.1:${st.port} · ${codes.length ? `serves ${codes.join(', ')}` : 'serves no room'}${st.conns ? ` · ${st.conns} connection(s)` : ''}` })
     : check({ id: 'listener', status: 'fail', title: 'listener', detail: `not running, but ${codes.join(', ')} ${codes.length === 1 ? 'is' : 'are'} served over the web: joiners cannot reach ${codes.length === 1 ? 'it' : 'them'}`, fix: `/sub-human invite --web again in the room (or ${cli('listen --start')} in a terminal); its log: ${tilde(lib('remote/listener.ts').logFile())}` })];
@@ -32,7 +32,7 @@ function checkListener({ quick = false }: { quick?: boolean } = {}): Check[] {
     const id = `web:${code}`;
     if (!lib('remote/listener.ts').roomLive(code)) { out.push(check({ id, status: 'warn', title: `web ${code}`, detail: 'served over the web, but the room is closed or gone here', fix: `${cli(`invite --stop --room ${code}`)} in a terminal` })); continue; }
     const where = rec.url || rec.path || '?';
-    if (!rec.tailscale) { out.push(check({ id, status: 'info', title: `web ${code}`, detail: `through your own front at ${where}` })); continue; }
+    if (!rec.tailscale) { out.push(check({ id, status: 'info', title: `web ${code}`, detail: `through a front of its own at ${where}` })); continue; }
     const kind = rec.tailscale.funnel ? 'funnel' : 'serve';
     if (!quick) {
       const bin = rec.tailscale.bin || ts.bin();

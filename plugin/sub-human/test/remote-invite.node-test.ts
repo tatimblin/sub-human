@@ -1,5 +1,5 @@
 // The host's invite over ssh, without sshd (the dial through an ssh login is test/remote-invite-ssh.node-test.ts, and the
-// lab): `/sub-human invite` shows `/sub-human join DEST ROOM SECRET [--via J] [--home H]` with the PIN apart and no
+// lab): `/sub-human invite` shows `/sub-human join DEST ROOM SECRET [--home H]` with the PIN apart and no
 // NAME, and writes nothing to authorized_keys; the CLI's `sub-human invite` does the same in a terminal (the SECRET and
 // the PIN masked inside Claude Code); a linked machine given another invite to the same host through the same bastion
 // is linked already.
@@ -30,21 +30,21 @@ function room(t: TestContext) {
   return { host, remote, alice, bob, code };
 }
 
-test('invite over ssh: the line with --via, the host folder and no NAME, the PIN apart; nothing in authorized_keys; the CLI the same, masked inside Claude Code', t => {
+test('invite over ssh: the line with the host folder and no NAME, the PIN apart; nothing in authorized_keys; the CLI the same, masked inside Claude Code', t => {
   const { host, alice, code } = room(t);
   const ak = path.join(host.user, '.ssh', 'authorized_keys');
   const env = { SUB_HUMAN_ALLOW_TMP_ROOT: '1', SUB_HUMAN_AUTHORIZED_KEYS: ak };
   Object.assign(host.extra, env);
   const esc = (x: string) => x.replace(/[.]/g, '\\.');
-  const shown = host.join(alice, 'invite --ssh me@127.0.0.1:1 --via jump.example');
+  const shown = host.join(alice, 'invite --ssh me@127.0.0.1:1');
   assert.ok(hiddenBlock(shown), shown.stderr);
   assert.equal(must(shown.json).systemMessage, undefined, 'the SECRET and the PIN stay off Remote Control');
-  assert.match(reason(shown), new RegExp(`\n  /sub-human join me@127\\.0\\.0\\.1:1 ${code} [0-9a-z]{39} --via jump\\.example --home ${esc(host.home)}\n`));
+  assert.match(reason(shown), new RegExp(`\n  /sub-human join me@127\\.0\\.0\\.1:1 ${code} [0-9a-z]{39} --home ${esc(host.home)}\n`));
   assert.match(reason(shown), /apart from the line \(say it, or send it another way\): \d{4}\n/);
   assert.match(reason(shown), /their own ssh login to this account/);
   assert.equal(fs.existsSync(ak), false, 'no door, no line');
   assert.match(reason(host.join(alice, 'invite --ssh -oProxyCommand=x@far')), /not a plain user@host/);
-  assert.match(reason(host.join(alice, 'invite --ssh me@far --via -oX')), /--via .* is not a plain/);
+  assert.match(reason(host.join(alice, 'invite --ssh me@far --via jump')), /isn't an invite option/, 'no --via: a jump host is the joiner\'s own ssh config');
   assert.match(reason(host.join(alice, 'invite --ssh YOU@far')), /placeholder/);
   // a bare ssh alias: the line names it as given (the joiner's own config resolves it); the record holds user@alias
   // as this machine's ssh reads it (SUB_HUMAN_SSH_OPTS's -F config: its User)
@@ -76,17 +76,18 @@ test('invite over ssh: the line with --via, the host folder and no NAME, the PIN
   assert.equal(cli(['invite', '--pipe', '--web', '--room', code]).status, 2);
   assert.equal(cli(['admit', 'shk1.nope', '--yes']).status, 2);
   assert.equal(cli(['kick']).status, 2);
-  for (const gone of ['host', 'unhost', 'revoke', 'authorize']) assert.equal(cli([gone]).status, 2, gone);
+  for (const gone of ['host', 'unhost', 'revoke', 'authorize', 'prime', 'options']) assert.equal(cli([gone]).status, 2, gone);
+  assert.equal(cli(['invite', '--url', 'https://front.example', '--room', code]).status, 2, 'no --url: a front is Tailscale\'s');
   const cancel = cli(['invite', '--cancel', '--room', code]);
   assert.match(cancel.stdout, /has 3 open invites/);
   assert.equal(fs.existsSync(ak), false, 'still nothing in authorized_keys');
 });
 
-test('join: a linked machine given another invite to the same host through the same bastion is linked already, not a move', t => {
+test('join: a linked machine given another invite to the same host is linked already, not a move', t => {
   const { remote, bob, code } = room(t);
-  const transport: SshSpec = { kind: 'ssh', user: 'host', host: 'devbox', via: 'jump@bastion' };
+  const transport: SshSpec = { kind: 'ssh', user: 'host', host: 'devbox' };
   remote.lib(() => links.set(code, { code, transport, token: tokenOf('tok'), created_at: new Date().toISOString() }));
-  const r = remote.join(bob, `join host@devbox ${code} ${inviteSecret.encode(inviteSecret.mint(), Buffer.alloc(8))} --via jump@bastion`);
+  const r = remote.join(bob, `join host@devbox ${code} ${inviteSecret.encode(inviteSecret.mint(), Buffer.alloc(8))}`);
   assert.ok(hiddenBlock(r));
   assert.match(reason(r), /this machine is in room .* already; \/sub-human \S+ \S+ takes your place there/, must(r.json).reason);
   const kept = must(remote.lib(() => links.get(code)));

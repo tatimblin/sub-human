@@ -163,32 +163,17 @@ test('link: the ssh command: BatchMode, this machine\'s own options, the port, "
   assert.throws(() => ssh.command({ kind: 'ssh', user: 'me', host: 'far' }, 'vole-1234; id', []), (e: RoomError) => e.code === 'INVALID');
 });
 
-test('ssh: a ProxyJump rides the locator (?via=), as plain as the destination; the link\'s own options pin the host key and the key; prime opens a ControlMaster the daemon rides under BatchMode', t => {
-  assert.deepEqual(linkConnect.transportOf('ssh:me@far:2222?via=bastion'), { kind: 'ssh', user: 'me', host: 'far', port: 2222, via: 'bastion' });
-  assert.deepEqual(linkConnect.transportOf('ssh:me@far?via=ops@jump.example:2200,jump2'), { kind: 'ssh', user: 'me', host: 'far', via: 'ops@jump.example:2200,jump2' });
-  assert.equal(linkConnect.sshLocator('me@far', { via: 'bastion' }), 'ssh:me@far?via=bastion');
-  for (const bad of ['ssh:me@far?via=-oProxyCommand=sh', 'ssh:me@far?via=a b', 'ssh:me@far?via=', 'ssh:me@far?jump=x', 'ssh:me@far?via=x?via=y',
-    'ssh:me@far?via=%h', 'ssh:me@far?via=j:0', 'ssh:me@far?via=a,b,c,d,e']) assert.equal(linkConnect.transportOf(bad), null, bad);
-  assert.equal(linkConnect.sshLocator('me@far', { via: '-J' }), null);
-
-  const home = h.freshHome(t);
-  const spec: SshSpec = { kind: 'ssh', user: 'me', host: 'far', via: 'bastion' };
-  assert.deepEqual(ssh.command(spec, rc('vole-1234'), []).slice(8), ['-J', 'bastion', '--', 'me@far', 'sub-human serve --stdio vole-1234']);
-  const cp = path.join(home, 'ssh', 'cm-%C');
-  assert.deepEqual(ssh.command({ ...spec, mux: true }, rc('vole-1234'), []).slice(2, 10), ['-o', 'BatchMode=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2', '-o', 'ControlMaster=no']);
-  assert.ok(ssh.command({ ...spec, mux: true }, rc('vole-1234'), []).includes(`ControlPath=${cp}`), 'rides the primed master; never becomes one');
-  const prime = ssh.primeCommand(spec, rc('vole-1234'), { opts: [] });
-  assert.deepEqual(prime.slice(0, 6), ['ssh', '-M', '-N', '-f', '-o', 'ControlPersist=8h']);
-  assert.ok(!prime.includes('BatchMode=yes'), 'the person answers the MFA prompt once');
-  assert.ok(prime.includes(`ControlPath=${cp}`));
-  assert.throws(() => ssh.primeCommand(spec, rc('vole-1234'), { persist: '8h; id' }), (e: RoomError) => e.code === 'INVALID');
-  // the primed master too: SUB_HUMAN_SSH_OPTS after every pinned option, and before the destination
-  const primeOpts = ssh.primeCommand(spec, rc('vole-1234'), { opts: ['-o', 'StrictHostKeyChecking=no', '-o', `ControlPath=/tmp/elsewhere`] });
-  assert.ok(primeOpts.indexOf(`ControlPath=${cp}`) < primeOpts.indexOf('ControlPath=/tmp/elsewhere'), primeOpts.join(' '));
-  assert.ok(primeOpts.indexOf('StrictHostKeyChecking=no') < primeOpts.indexOf('--'), 'options before the destination');
-  for (const bad of [{ via: '-x' }, { user: '-oProxyCommand=x' }]) {
-    assert.throws(() => ssh.command({ ...spec, ...bad }, rc('vole-1234'), []), (e: RoomError) => e.code === 'INVALID', JSON.stringify(bad));
-  }
+test('ssh: the locator is a plain user@host[:port] (a jump host is the person\'s ~/.ssh/config, never the locator); SUB_HUMAN_SSH_OPTS go after the pinned options', t => {
+  assert.deepEqual(linkConnect.transportOf('ssh:me@far:2222'), { kind: 'ssh', user: 'me', host: 'far', port: 2222 });
+  for (const bad of ['ssh:me@far?via=bastion', 'ssh:me@far?via=-oProxyCommand=sh', 'ssh:-oProxyCommand=sh@far', 'ssh:me@far:0']) assert.equal(linkConnect.transportOf(bad), null, bad);
+  assert.equal(linkConnect.sshLocator('me@far'), 'ssh:me@far');
+  h.freshHome(t);
+  const spec: SshSpec = { kind: 'ssh', user: 'me', host: 'far' };
+  assert.deepEqual(ssh.command(spec, rc('vole-1234'), []).slice(8), ['--', 'me@far', 'sub-human serve --stdio vole-1234']);
+  const withOpts = ssh.command(spec, rc('vole-1234'), ['-o', 'StrictHostKeyChecking=no']);
+  assert.ok(withOpts.indexOf('BatchMode=yes') < withOpts.indexOf('StrictHostKeyChecking=no'), withOpts.join(' '));
+  assert.ok(withOpts.indexOf('StrictHostKeyChecking=no') < withOpts.indexOf('--'), 'options before the destination');
+  assert.throws(() => ssh.command({ ...spec, user: '-oProxyCommand=x' }, rc('vole-1234'), []), (e: RoomError) => e.code === 'INVALID');
 });
 
 test('mirror: applyLine appends a host line only when it chains; applyDoc writes only the room documents', t => {

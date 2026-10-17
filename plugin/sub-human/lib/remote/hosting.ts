@@ -4,7 +4,7 @@
  * model) and the CLI (lib/cli/host.ts). The joiner's side is joinLine() and givePin() below; the dial is the link
  * daemon's (lib/remote/link-connect.ts connectLink).
  *
- * hostInvite: an invite line `/sub-human join DEST ROOM SECRET [--via J] [--home H]` and a 4-digit PIN the person
+ * hostInvite: an invite line `/sub-human join DEST ROOM SECRET [--home H]` and a 4-digit PIN the person
  * tells apart (SECRET's tag names this home's machine key: lib/remote/invite-secret.ts). Over ssh the joiner's own
  * ssh login to this account runs the stable serve shim (shim.ts: it must be writable); nothing is written to
  * authorized_keys, and a joiner without a login here is invited over the web instead (webhost.ts). pipe: a second
@@ -188,12 +188,11 @@ function inviteText({ code, how, line, pin, ref, extra = [], pinned, cut = false
 /** An invite line's SECRET word for this home's machine key (ssh, a pipe). */
 const machineWord = (secret: Buffer): InviteSecret => inviteSecret.encode(secret, inviteSecret.tagOf(secret, 'machine', machineKey.publicKey()));
 
-function hostInvite(code: RoomCode, { ssh = true, via, pipe = false, by = null, now = Date.now() }: {
-  ssh?: true | string | undefined; via?: string | undefined; pipe?: boolean; by?: string | null; now?: number;
+function hostInvite(code: RoomCode, { ssh = true, pipe = false, by = null, now = Date.now() }: {
+  ssh?: true | string | undefined; pipe?: boolean; by?: string | null; now?: number;
 } = {}): HostedInvite {
   const store = hostStore(code);
   if (pipe) { // a second home on this machine (tests, the demo)
-    if (via !== undefined) throw new RoomError('INVALID', '--via is for an ssh invite');
     const locator = linkConnect.pipeLocator();
     const r = invites.mintInvite(store, { kind: 'pipe', locator, by, now });
     const word = machineWord(r.secret);
@@ -209,17 +208,15 @@ function hostInvite(code: RoomCode, { ssh = true, via, pipe = false, by = null, 
   // a bare ssh alias (`devbox`): the line shows it as given, and the joiner's own ssh config resolves it there (the
   // join's withUser); the invite's record holds this machine's reading of it (ssh -G: the user)
   const full = sshT().withUser(dest);
-  const locator = sshT().locator(full, via !== undefined ? { via } : {});
-  if (!locator) {
-    throw new RoomError('INVALID', sshT().dest(full) ? `--via "${via}" is not a plain [user@]host[:port]` : `"${dest}" is not a plain user@host[:port] or ssh alias${ssh === true ? ' (set SUB_HUMAN_SSH_ADDR, or give --ssh USER@HOST)' : ''}`);
-  }
+  const locator = sshT().locator(full);
+  if (!locator) throw new RoomError('INVALID', `"${dest}" is not a plain user@host[:port] or ssh alias${ssh === true ? ' (set SUB_HUMAN_SSH_ADDR, or give --ssh USER@HOST)' : ''}`);
   const { h } = shimReady(); // their login runs <home>/bin/serve
   const ownHome = path.resolve(h) === path.join(os.homedir(), '.sub-human'); // where their login looks by default
   const r = invites.mintInvite(store, { kind: 'ssh', locator, by, now });
   const word = machineWord(r.secret);
-  const line = `/sub-human join ${dest} ${code} ${word}${via ? ` --via ${via}` : ''}${ownHome ? '' : ` --home ${h}`}`;
+  const line = `/sub-human join ${dest} ${code} ${word}${ownHome ? '' : ` --home ${h}`}`;
   const parts = {
-    code, how: `over ssh ${dest}${via ? ` via ${via}` : ''}`, line, pin: r.pin, ref: r.ref,
+    code, how: `over ssh ${dest}`, line, pin: r.pin, ref: r.ref,
     extra: [
       `Over ssh this needs their own ssh login to this account (${os.userInfo().username}), set up as for any ssh login: sub-human writes nothing to authorized_keys. No login here? Invite them over the web: /sub-human invite --web`,
       ...reachHints(dest, ssh === true && !envStr('SUB_HUMAN_SSH_ADDR')),

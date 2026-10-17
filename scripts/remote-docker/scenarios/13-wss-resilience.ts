@@ -1,9 +1,9 @@
-// 1.1 wss under the P3 conditions: bob (joiner-a, direct) and ben (joiner-b, through corp-proxy) join over
+// 1.1 wss under the P3 conditions: bob (joiner-a) and ben (joiner-b) join over
 // https://tls-front (Caddy, the stand-in for Tailscale Serve/Funnel) to the devbox listener. Then:
 //   (1) the host sleeps: `docker pause devbox` for LAB_WSS_SLEEP_S (45) s. Both links go offline (the app ping),
 //       a post meanwhile is queued in the outbox, and after the wake both come back within 30 s and the queued post
 //       lands exactly once;
-//   (2) half-open: iptables DROP between joiner-a and tls-front, and between joiner-b and corp-proxy. Both links are
+//   (2) half-open: iptables DROP between each joiner and tls-front. Both links are
 //       declared dead within LAB_PING_DEADLINE_MS (35 s), then come back once healed;
 //   (3) the listener restarts (kill, start again): both links redial by themselves.
 // Every phase ends byte-identical with chains verified.
@@ -16,7 +16,7 @@ const RECONNECT_MS = 30_000;
 
 export const id = 'wss-resilience';
 export const title = `1.1 wss: host sleeps ${SLEEP_S} s, half-open paths, the listener restarts: reconnect, outbox once, converge`;
-export const persona = 'P3 sleep / P2 corporate (1.1)';
+export const persona = 'P3 sleep (1.1)';
 export const requires = ['ws', 'urlPin', 'heartbeat', 'outbox'];
 export const budgetMs = (SLEEP_S + 200) * 1000;
 export async function run(t: T): Promise<void> {
@@ -24,9 +24,9 @@ export async function run(t: T): Promise<void> {
   const { code, host } = lab.hostRoom();
   await wssHost(t, lab);
   const a = await wssJoin(t, lab, host, code, 'joiner-a', 'bob');
-  const b = await wssJoin(t, lab, host, code, 'joiner-b', 'ben', { proxy: true });
+  const b = await wssJoin(t, lab, host, code, 'joiner-b', 'ben');
   const sa = a.seat, sb = b.seat; // set whenever the join went through
-  if (!t.check('bob (direct) and ben (corp-proxy) join over wss', a.ok && b.ok, `${a.out || 'ok'} / ${b.out || 'ok'}`) || !sa || !sb) return;
+  if (!t.check('bob and ben join over wss', a.ok && b.ok, `${a.out || 'ok'} / ${b.out || 'ok'}`) || !sa || !sb) return;
   const seats = [sa, sb];
   host.say('alice', 'wss-r before');
   t.check('consistent before', (await converge(t, host, code, seats)).ok);
@@ -55,9 +55,9 @@ export async function run(t: T): Promise<void> {
 
   // (2) half-open: packets vanish, nothing closes
   const ip = (svc: string, name: string): string => lab.exec(svc, ['getent', 'hosts', name]).stdout.trim().split(/\s+/)[0] ?? '';
-  const front = ip('joiner-a', 'tls-front'), proxy = ip('joiner-b', 'corp-proxy');
+  const front = ip('joiner-a', 'tls-front'), frontB = ip('joiner-b', 'tls-front');
   lab.exec('joiner-a', ['sh', '-c', `iptables -A OUTPUT -d ${front} -j DROP && iptables -A INPUT -s ${front} -j DROP`]);
-  lab.exec('joiner-b', ['sh', '-c', `iptables -A OUTPUT -d ${proxy} -j DROP && iptables -A INPUT -s ${proxy} -j DROP`]);
+  lab.exec('joiner-b', ['sh', '-c', `iptables -A OUTPUT -d ${frontB} -j DROP && iptables -A INPUT -s ${frontB} -j DROP`]);
   const dead = (s: SeatDriver): Promise<number | null> => waitState(s, code, ['offline', 'connecting'], PING_DEADLINE_MS + 15_000);
   const [da, db] = await Promise.all([dead(sa), dead(sb)]);
   t.metric('wssDeadAfterMs', { bob: da, ben: db });

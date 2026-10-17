@@ -97,7 +97,7 @@ test('doctor: the listener, a room\'s Tailscale path present or gone, Funnel\'s 
 
   // a joiner's wss link: doctor's hello goes over the WebSocket and the pinned Noise channel
   host.lib(() => listener.start({ port }));
-  await remote.joinVia(host, alice, bob, { invite: `invite --url http://127.0.0.1:${port}` });
+  await remote.joinVia(host, alice, bob, { front: `http://127.0.0.1:${port}` });
   const lf = must(remote.lib(() => links.get(code)));
   const probe = await remote.lib(() => doctor.helloProbe(lf.transport, code, { timeoutMs: 5000 }));
   assert.equal(probe.ok, true, probe.error);

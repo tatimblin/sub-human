@@ -12,8 +12,8 @@
  * Nothing touches this Mac's sshd, ~/.ssh or ~/.sub-human.
  *
  *   node scripts/remote-docker/harness.ts scenarios [--only ID[,ID]] [--out DIR] [--keep]
- *       The multi-machine lab (lab/compose.yml, project sub-human-lab; lab.ts): devbox, devbox-old (0.5.0-beta.15), bastion,
- *       joiner-a, joiner-b, toxiproxy, corp-proxy, tls-front. Runs scenarios/NN-*.ts in order (README.md lists
+ *       The multi-machine lab (lab/compose.yml, project sub-human-lab; lab.ts): devbox, devbox-old (the previous release),
+ *       joiner-a, joiner-b, toxiproxy, tls-front. Runs scenarios/NN-*.ts in order (README.md lists
  *       them), each from a clean reset, and writes per-scenario evidence (transcript, logs and their hashes,
  *       timings, summary.json) to DIR, default /tmp/sub-human-lab-<time>/. A scenario whose feature is not in the
  *       plugin yet is PENDING. Exit 0 unless one FAILED. --keep leaves the stack up afterwards.

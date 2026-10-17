@@ -16,7 +16,6 @@
  *   login NAME DEST CODE [SSH_OPT…]   `/sub-human join DEST CODE --as NAME`: a link over the person's own ssh login to
  *                                 DEST (no invite); SSH_OPT… become SUB_HUMAN_SSH_OPTS for this seat's hooks and so for
  *                                 the link daemon the join starts: {ok, out, ms, code}; ok: the seat joined
- *   options CODE NAME on|off      `sub-human options CODE NAME on|off` (the host's shell): the room's option
  *   rejoin NAME CODE              `/sub-human NAME CODE` (a room hosted here, or one this machine links to)
  *   say NAME TEXT                 NAME's `@room TEXT` through the prompt hook: {ok, ms, t0, out}
  *   prompt NAME TEXT              any typed prompt through the prompt hook (e.g. a slash-free command)
@@ -203,11 +202,6 @@ const cmds: Record<string, (...args: string[]) => unknown> = {
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     fs.appendFileSync(file, line + '\n', { mode: 0o600 });
     return { out: `added: link ${linkId} of room ${code}` };
-  },
-
-  options(code, name, value) {
-    const r = spawnSync(process.execPath, [CLI, 'options', code, name, value], { encoding: 'utf8', env: { ...process.env } });
-    return { ok: r.status === 0, out: (r.stdout + r.stderr).trim() };
   },
 
   login(name, dest, code, ...rest) {

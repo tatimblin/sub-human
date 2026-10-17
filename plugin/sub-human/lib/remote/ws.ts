@@ -1,18 +1,14 @@
 /**
  * plugin/sub-human/lib/remote/ws.ts: a minimal WebSocket (RFC 6455) with no dependencies: the server end for the
  * host's listener (lib/remote/listener.ts, an http server on 127.0.0.1 only) and the client end for the joiner's
- * link daemon (lib/remote/transports/ws.ts) over net or tls, through an HTTP CONNECT proxy when the environment
- * names one (a corporate network that allows only CONNECT to 443). Node's global WebSocket is not used: it has no
- * proxy support. No extensions (no permessage-deflate) and no subprotocols are negotiated.
+ * link daemon (lib/remote/transports/ws.ts) over net or tls. No extensions (no permessage-deflate) and no subprotocols are negotiated.
  *
  * A frame or a reassembled message larger than maxPayload (default 1 MiB) closes 1009. Fragmented messages are
  * reassembled; control frames may come between fragments. A server refuses unmasked client frames, a client masked
  * server frames (1002). Text must be valid UTF-8 (1007). 'error' is emitted only with a listener; a protocol error
  * closes and emits close. pingMs > 0: a ping every pingMs, and no frame at all from the peer for two intervals
  * terminates the connection (a half-open link; it also keeps idle proxies from cutting it). connect rejects an Error
- * with code WS_CONNECT and a message that says which step failed (proxy, TLS, the HTTP status). proxyFor: wss/https
- * reads HTTPS_PROXY (else ALL_PROXY), ws/http HTTP_PROXY, either case; none for a host NO_PROXY names ("*", a host,
- * ".suffix" or "suffix" for the domain and its subdomains, host:port) or a loopback host.
+ * with code WS_CONNECT and a message that says which step failed (TLS, the HTTP status).
  */
 
 import net from 'node:net';
@@ -34,11 +30,9 @@ interface ServerOptions extends AcceptOptions {
   accept?(req: http.IncomingMessage): boolean | number;
 }
 interface ConnectOptions extends AcceptOptions {
-  proxy?: string | null;
   headers?: Record<string, string>;
   timeoutMs?: number;
   tls?: tls.ConnectionOptions;
-  env?: NodeJS.ProcessEnv;
 }
 /** An HTTP answer head read off a socket. */
 interface Head { status: number; headers: Record<string, string>; rest: Buffer; line: string }
@@ -279,28 +273,6 @@ function createServer({ host = '127.0.0.1', port, onConnection, accept: allow = 
 }
 
 // ---------- the client end ----------
-const LOOPBACK = (h: string): boolean => h === 'localhost' || /^127\./.test(h) || h === '::1' || h === '[::1]';
-
-function proxyFor(url: string, env: NodeJS.ProcessEnv = process.env): string | null {
-  const u = new URL(url);
-  const secure = u.protocol === 'wss:' || u.protocol === 'https:';
-  const host = u.hostname.replace(/^\[|\]$/g, '').toLowerCase();
-  const port = u.port || (secure ? '443' : '80');
-  if (LOOPBACK(host)) return null;
-  const no = String(env.NO_PROXY ?? env.no_proxy ?? '').split(/[\s,]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
-  for (const n of no) {
-    if (n === '*') return null;
-    const [nh = '', np] = n.split(/:(?=\d+$)/); // split gives at least one part
-    if (np && np !== port) continue;
-    const d = nh.replace(/^\*?\./, '');
-    if (host === d || host.endsWith(`.${d}`)) return null;
-  }
-  const p = secure
-    ? env.HTTPS_PROXY || env.https_proxy || env.ALL_PROXY || env.all_proxy
-    : env.HTTP_PROXY || env.http_proxy || env.ALL_PROXY || env.all_proxy;
-  return p ? String(p) : null;
-}
-
 const connectError = (msg: string): Error & { code: 'WS_CONNECT' } => Object.assign(new Error(msg), { code: 'WS_CONNECT' as const });
 
 /** Read an HTTP response head off socket: {status, headers, rest}. */
@@ -338,40 +310,15 @@ function tcp(host: string, port: number, secure: boolean, tlsOpts: tls.Connectio
   });
 }
 
-async function viaProxy(proxyUrl: string, host: string, port: number, tlsOpts: tls.ConnectionOptions): Promise<net.Socket> {
-  const p = new URL(proxyUrl);
-  if (p.protocol !== 'http:' && p.protocol !== 'https:') throw connectError(`proxy ${p.protocol} is not supported (an http:// CONNECT proxy)`);
-  const s = await tcp(p.hostname.replace(/^\[|\]$/g, ''), Number(p.port || (p.protocol === 'https:' ? 443 : 80)), p.protocol === 'https:', tlsOpts, 'proxy');
-  const auth = p.username ? `Proxy-Authorization: Basic ${Buffer.from(`${decodeURIComponent(p.username)}:${decodeURIComponent(p.password)}`).toString('base64')}\r\n` : '';
-  const target = `${net.isIPv6(host) ? `[${host}]` : host}:${port}`;
-  s.write(`CONNECT ${target} HTTP/1.1\r\nHost: ${target}\r\n${auth}\r\n`);
-  const r = await readHead(s, `proxy ${p.host}`);
-  if (r.status !== 200) { s.destroy(); throw connectError(`proxy ${p.host} refused CONNECT ${target}: ${r.line}`); }
-  if (r.rest.length) s.unshift(r.rest);
-  return s;
-}
-
-async function connect(url: string, { proxy, headers = {}, maxPayload, pingMs, timeoutMs = 15_000, tls: tlsOpts = {}, env = process.env }: ConnectOptions = {}): Promise<Conn> {
+async function connect(url: string, { headers = {}, maxPayload, pingMs, timeoutMs = 15_000, tls: tlsOpts = {} }: ConnectOptions = {}): Promise<Conn> {
   const u = new URL(url);
   const secure = u.protocol === 'wss:' || u.protocol === 'https:';
   if (!secure && u.protocol !== 'ws:' && u.protocol !== 'http:') throw connectError(`not a WebSocket URL: ${u.protocol}`);
   const host = u.hostname.replace(/^\[|\]$/g, '');
   const port = Number(u.port || (secure ? 443 : 80));
-  const px = proxy === undefined ? proxyFor(url, env) : proxy;
   let sock = null as net.Socket | null, timer: NodeJS.Timeout | undefined; // (as: set inside work, read in catch)
   const work = (async () => {
-    if (px) {
-      const raw = await viaProxy(px, host, port, tlsOpts);
-      sock = raw;
-      if (secure) {
-        sock = await new Promise<tls.TLSSocket>((resolve, reject) => {
-          const t = tls.connect({ socket: raw, servername: net.isIP(host) ? undefined : host, ALPNProtocols: ['http/1.1'], ...tlsOpts });
-          t.once('secureConnect', () => { t.off('error', no); resolve(t); });
-          const no = (e: Error) => reject(connectError(`TLS to ${host} through the proxy: ${e.message}`));
-          t.once('error', no);
-        });
-      }
-    } else sock = await tcp(host, port, secure, tlsOpts, secure ? 'TLS to' : 'connect to');
+    sock = await tcp(host, port, secure, tlsOpts, secure ? 'TLS to' : 'connect to');
     const key = crypto.randomBytes(16).toString('base64');
     const hostHeader = `${net.isIPv6(host) ? `[${host}]` : host}${u.port ? `:${u.port}` : ''}`;
     const extra = Object.entries(headers).map(([k, v]) => `${k}: ${v}\r\n`).join('');
@@ -392,4 +339,4 @@ async function connect(url: string, { proxy, headers = {}, maxPayload, pingMs, t
   } finally { clearTimeout(timer); }
 }
 
-export { Conn, accept, createServer, connect, proxyFor, acceptKey, MAX_PAYLOAD };
+export { Conn, accept, createServer, connect, acceptKey, MAX_PAYLOAD };

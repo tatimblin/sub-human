@@ -3,7 +3,7 @@
  * shell (the Bash guard refuses them to a model). The work is lib/remote/listener.ts and lib/remote/webhost.ts.
  *
  *   listen(args)   sub-human listen [--port 7420]          run the listener in this process (`/sub-human invite
- *                                                          --web | --url` starts it detached, the same way)
+ *                                                          --web` starts it detached, the same way)
  *                  sub-human listen --start [--port P]     start it detached unless it runs (idempotent)
  *                  sub-human listen --stop                 stop it (idempotent)
  *                  sub-human listen --status               its state as JSON (pid, port, rooms served)

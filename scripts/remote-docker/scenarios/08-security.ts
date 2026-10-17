@@ -1,14 +1,14 @@
-// Security checks on a live room (alice on devbox, bob over the WAN path, bea through the bastion), each joined with
+// Security checks on a live room (alice on devbox, bob and bea each over a WAN path), each joined with
 // an invite line over their own ssh login (protocol 3; not run since Stage 7b, no Docker where it was written):
 //   - nothing of sub-human's in the devbox account's authorized_keys (no door, no forced command): only the login lines
-//     people set up; the bastion account has no shell
+//     people set up
 //   - the stores are private: both homes 0700, nothing in them group- or world-readable
-//   - no secret in any log: link tokens appear nowhere but the joiner's own link file (sshd, tinyproxy, caddy and
+//   - no secret in any log: link tokens appear nowhere but the joiner's own link file (sshd, caddy and
 //     toxiproxy logs, link logs, the tails' output, the room logs and members, ps on every machine)
 //   - a wrong PIN 5x burns the invite: pending here (test/remote-short, remote-invite-line cover it)
 //   - /sub-human kick bob: the link's token is gone, its serve is stopped, bob's link stops (AUTH:
 //     it does not redial, and a post is refused, not queued); bea's link is untouched
-import { WAN, JUMP, waitState } from './_lib.ts';
+import { WAN, WAN_B, waitState } from './_lib.ts';
 import type { Joined, LinkJson, SeatDriver, T } from '../lab.ts';
 import { parseJson } from '../../lib/io.ts';
 
@@ -20,7 +20,7 @@ export async function run(t: T): Promise<void> {
   const { lab } = t;
   const { code, host } = lab.hostRoom();
   const a = await lab.join({ svc: 'joiner-a', name: 'bob', code, hosts: WAN });
-  const b = await lab.join({ svc: 'joiner-b', name: 'bea', code, hosts: JUMP, via: 'bastion' });
+  const b = await lab.join({ svc: 'joiner-b', name: 'bea', code, hosts: WAN_B });
   if (!t.check('bob and bea join', a.join.ok && b.join.ok)) return;
   a.seat.say('bob', 'security hello');
   host.say('alice', 'security hello back');
@@ -36,8 +36,6 @@ export async function run(t: T): Promise<void> {
   const ak = lab.exec('devbox', ['sh', '-c', 'cat /home/host/.ssh/authorized_keys 2>/dev/null || true']).stdout;
   t.ev.write('authorized_keys.txt', ak);
   t.check('nothing of sub-human\'s in authorized_keys (no enrollment door, no forced-command line)', !/sub-human|command=/.test(ak), `${ak.split('\n').filter(Boolean).length} line(s)`);
-  const jump = lab.exec('joiner-b', ['sh', '-c', `timeout 20 ssh -n -F ${b.conf} jump@bastion id`], { user: 'joiner', allowFail: true, timeout: 30_000 });
-  t.check('the bastion account has no shell (ForceCommand nologin)', !/uid=/.test(jump.stdout), (jump.stdout + jump.stderr).trim().split('\n')[0]);
 
   // private stores
   for (const [svc, seat] of [['devbox', host], ['joiner-a', a.seat], ['joiner-b', b.seat]] as const satisfies readonly (readonly [string, SeatDriver])[]) {
@@ -49,7 +47,7 @@ export async function run(t: T): Promise<void> {
 
   // no secrets anywhere they could leak
   const sources: Record<string, string> = {};
-  sources['compose logs (sshd, tinyproxy, caddy, toxiproxy)'] = lab.composeLogs();
+  sources['compose logs (sshd, caddy, toxiproxy)'] = lab.composeLogs();
   for (const [j, svc] of pairs) {
     sources[`${svc} link log`] = lab.exec(svc, ['sh', '-c', `cat ${j.seat.home}/links/*.log 2>/dev/null`], { allowFail: true }).stdout;
     sources[`${svc} tail events`] = lab.exec(svc, ['sh', '-c', 'cat /home/joiner/lab-events-*.ndjson'], { allowFail: true }).stdout;
@@ -58,7 +56,7 @@ export async function run(t: T): Promise<void> {
   }
   sources['devbox home (only hashes stored)'] = lab.exec('devbox', ['sh', '-c', 'grep -rl -F -f /dev/stdin /home/host || true'], { allowFail: true, input: all.join('\n') + '\n' }).stdout;
   sources['devbox room log + members'] = lab.exec('devbox', ['sh', '-c', `cat /home/host/.sub-human/rooms/${code}/*.json* 2>/dev/null`], { allowFail: true }).stdout;
-  for (const svc of ['devbox', 'bastion', 'joiner-a', 'joiner-b']) sources[`ps on ${svc}`] = lab.exec(svc, ['ps', '-eo', 'user,pid,args'], { allowFail: true }).stdout;
+  for (const svc of ['devbox', 'joiner-a', 'joiner-b']) sources[`ps on ${svc}`] = lab.exec(svc, ['ps', '-eo', 'user,pid,args'], { allowFail: true }).stdout;
   const leaks: string[] = [];
   for (const [where, text] of Object.entries(sources)) {
     for (const s of all) if (String(text).includes(s)) leaks.push(`${where}: ${secrets.includes(s) ? 'invite secret' : 'link token'}`);

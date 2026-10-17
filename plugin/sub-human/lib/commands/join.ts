@@ -15,7 +15,7 @@
  *             A word of digits is no name (it looks like a PIN)
  *   join      `/sub-human join …`: ROOM (a room code alone): that room on this machine, as `/sub-human ROOM`;
  *             HOST ROOM SECRET or URL SECRET: an invite line (joining.linkLine: link only, never the seat in that
- *             step; over ssh through the person's own ssh login, --via and --home as the line says); PIN (4 digits
+ *             step; over ssh through the person's own ssh login, --home as the line says); PIN (4 digits
  *             alone): the PIN the host's machine asked for (joining.givePin; never the seat either); HOST ROOM: over
  *             the person's own ssh login (joining.linkLogin; the seat once linked); a pipe HOST with no SECRET is an
  *             invite line without its SECRET; a line whose SECRET is 4 digits comes from a host before protocol 3
@@ -153,11 +153,11 @@ function secretOf(word: string | undefined): { word: InviteSecret } | { error: s
 }
 
 /** `/sub-human join URL SECRET`: the web form of an invite line. */
-function joinWeb(r: string[], flags: { as?: string; via?: string; home?: string }, ctx: VerbCtx): Answer {
+function joinWeb(r: string[], flags: { as?: string; home?: string }, ctx: VerbCtx): Answer {
   const [url, word, extra] = r;
   if (r.length === 3 && extra !== undefined && PIN_WORD.test(extra)) return refused(PIN_APART);
   if (r.length !== 2 || url === undefined) return refused(r.length < 2 ? 'a web join needs the SECRET the host sent with the address: /sub-human join URL SECRET' : JOIN_USAGE);
-  if (flags.via !== undefined || flags.home !== undefined) return refused('--via and --home go with an ssh address, not a web one');
+  if (flags.home !== undefined) return refused('--home goes with an ssh address, not a web one');
   const w = secretOf(word);
   if ('error' in w) return refused(w.error);
   const BAD = 'that isn\'t a join address (https://HOST/…/sub-human/ROOM). Paste the whole line the host sent you.';
@@ -174,19 +174,19 @@ function joinWeb(r: string[], flags: { as?: string; via?: string; home?: string 
 }
 
 export const join: Verb = (argv, ctx) => {
-  const p = parse(argv, { as: 1, via: 1, home: 1 });
+  const p = parse(argv, { as: 1, home: 1 });
   if (p.error) return refused(`${p.error}. ${JOIN_USAGE}`);
   const flag = p.rest.find(a => a.startsWith('--'));
   if (flag) return refused(`"${flag}" isn't a join option. ${JOIN_USAGE}`);
   const r = p.rest;
-  const { via, home } = p.flags;
+  const { home } = p.flags;
   if (/^https?:\/\//.test(r[0] || '')) return joinWeb(r, p.flags, ctx);
   if (r.length === 1 && invites.isShortPin(r[0])) { // `/sub-human join 4829`: the PIN an invite line's host asked for
-    if (via !== undefined || home !== undefined || p.flags.as !== undefined) return refused('the PIN goes alone: /sub-human join PIN (the name went with the line)');
+    if (home !== undefined || p.flags.as !== undefined) return refused('the PIN goes alone: /sub-human join PIN (the name went with the line)');
     return then(joining.givePin(r[0], ctx.sid), ctx);
   }
   if (r.length === 1 && identity.isRoomCode(r[0])) { // `/sub-human join vole-8126`: that room on this machine
-    if (via !== undefined || home !== undefined) return refused(`--via and --home go with the other machine's address: /sub-human join HOST ${r[0]}`);
+    if (home !== undefined) return refused(`--home goes with the other machine's address: /sub-human join HOST ${r[0]}`);
     const n = nameFor(p.flags.as, ctx.cwd);
     if ('error' in n) return refused(n.error);
     return seat({ name: n.name, code: r[0], isDefault: p.flags.as === undefined }, ctx);
@@ -202,16 +202,16 @@ export const join: Verb = (argv, ctx) => {
     const n = nameFor(p.flags.as, ctx.cwd);
     if ('error' in n) return refused(n.error);
     if (local) {
-      if (via !== undefined || home !== undefined) return refused('--via and --home go with an ssh address');
+      if (home !== undefined) return refused('--home goes with an ssh address');
       const transport = linkConnect.transportOf(dest.startsWith('/') ? `pipe:${dest}` : dest);
       return transport ? then(joining.linkLine({ name: n.name, code, word: w.word, transport, sid: ctx.sid }), ctx) : refused(`"${dest}" isn't a sub-human folder on this machine`);
     }
     if (sshT().placeholder(dest)) return refused(YOU_HINT(dest));
     const full = sshT().withUser(dest);
     if (!sshT().dest(full)) return refused(`"${dest}" isn't a plain USER@HOST[:PORT] or ssh alias`);
-    if (via !== undefined && !sshT().jump(via)) return refused(`--via "${via}" isn't a plain [USER@]HOST[:PORT] list`);
-    // over ssh an invite line goes through the person's own ssh login to the host (a login spec), as the line says
-    const transport = sshT().loginSpec(full, { ...(via !== undefined ? { via } : {}), ...(home !== undefined ? { home } : {}) });
+    // over ssh an invite line goes through the person's own ssh login to the host (a login spec), as the line says;
+    // a jump host is the person's ~/.ssh/config's (ProxyJump on an alias), which ssh reads
+    const transport = sshT().loginSpec(full, home !== undefined ? { home } : {});
     if (!transport) return refused(`--home "${home}" isn't a plain absolute path (the sub-human folder on that machine, e.g. /home/you/.sub-human).`);
     return then(joining.linkLine({ name: n.name, code, word: w.word, transport, sid: ctx.sid }), ctx);
   }
@@ -219,11 +219,10 @@ export const join: Verb = (argv, ctx) => {
   if (local) return refused(joining.noSecret(dest, code));
   if (sshT().placeholder(dest)) return refused(YOU_HINT(dest));
   if (!sshT().dest(sshT().withUser(dest))) return refused(`"${sshT().withUser(dest)}" isn't a plain USER@HOST[:PORT] or ssh alias. ${JOIN_USAGE}`);
-  if (via !== undefined && !sshT().jump(via)) return refused(`--via "${via}" isn't a plain [USER@]HOST[:PORT] (several hops: comma-separated).`);
   if (home !== undefined && !sshT().loginSpec(sshT().withUser(dest), { home })) return refused(`--home "${home}" isn't a plain absolute path (the sub-human folder on that machine, e.g. /home/you/.sub-human).`);
   const n = nameFor(p.flags.as, ctx.cwd);
   if ('error' in n) return refused(n.error);
-  return then(joining.linkLogin({ dest, code, via, home, name: n.name, isDefault: p.flags.as === undefined }), ctx);
+  return then(joining.linkLogin({ dest, code, home, name: n.name, isDefault: p.flags.as === undefined }), ctx);
 };
 
 /** The room Claude's own launch (see the header). */

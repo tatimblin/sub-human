@@ -9,14 +9,15 @@
  *     hook(handler, input, seat, {env}?) -> spawnSync result + json   hooks/run.ts <handler> as seat
  *     lease(seat)                     the hooks module's hello lease for the seat's session (with its nonce), as
  *                                     hooks/handlers/mod-hello.ts writes it; join and every prompt write it first
- *     join(seat, args), say(seat, text), plain(seat, text)          the join expansion; an @room post; a prompt
+ *     join(seat, args, env?), say(seat, text), plain(seat, text)    the join expansion (env: e.g. SUB_HUMAN_WEB_FRONT
+ *                                     for `invite --web`); an @room post; a prompt
  *     linkFor(code, joiner)           a link to a room hosted here for the second home `joiner`, its token written
  *                                     to the joiner's link file (no invite, no PIN, no card: no command makes one;
  *                                     the robustness tests link with it); then joiner.join(seat, `NAME CODE`)
- *     joinVia(host, hostSeat, seat, {as?, line?, pin?, invite?}) -> Promise<{shown, line, code, pin, typed, gave, admitted, seated}>
+ *     joinVia(host, hostSeat, seat, {as?, line?, pin?, invite?, front?}) -> Promise<{shown, line, code, pin, typed, gave, admitted, seated}>
  *                                     (once seated, it waits until the seat resolves here: the mirror's members)
  *                                     the whole join from a second home: `/sub-human invite --pipe` (or invite: other
- *                                     invite args, e.g. `invite --url U`) on the host, unless line (and its pin) is
+ *                                     invite args; front: `invite --web` behind that test front, lib/env.ts webFront) on the host, unless line (and its pin) is
  *                                     given; the line typed here (a hidden step), the PIN once the host asks for it
  *                                     (`/sub-human join PIN`, hidden too), the host's `/sub-human admit REF`, the link
  *                                     online, then a bare /sub-human (the seat)
@@ -62,7 +63,7 @@ class Machine {
 
   constructor(t: TestContext | undefined, name: string, env: Env = {}) {
     // first, so it runs before the home is removed (after hooks run in order): a web listener this home started
-    // (host --tailscale / --url) is killed, not left serving a deleted home
+    // (invite --web) is killed, not left serving a deleted home
     if (t) t.after(() => this.killListener());
     this.home = h.tmpDir(`sh-${name}-`, t);
     this.user = h.tmpDir('sh-user-', t);
@@ -90,7 +91,7 @@ class Machine {
     return { ...r, json: r.stdout.trim() ? JSON.parse(r.stdout) as HookLine : null }; // a hook's answer, as it printed it
   }
 
-  join(seat: Seat, args: string): MachineRun { this.lease(seat); return this.hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: args }, seat); }
+  join(seat: Seat, args: string, env: Env = {}): MachineRun { this.lease(seat); return this.hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: args }, seat, { env }); }
   /** A link (no invite, no PIN, no card) to room code hosted here, for the second home `joiner` on this machine (pipe):
    * the joiner's link file holds its token (the join over it is then `NAME CODE`). */
   linkFor(code: RoomCode, joiner: Machine): void {
@@ -101,8 +102,8 @@ class Machine {
   }
 
   /** The whole join from this (second) home: the host's invite line and its PIN, typed here, the host's admit, then the seat. */
-  async joinVia(host: Machine, hostSeat: Seat, seat: Seat, { as = seat.name, line, pin, invite = 'invite --pipe', ms = 15_000 }: { as?: string; line?: string; pin?: string; invite?: string; ms?: number } = {}) {
-    const shown = line ? null : host.join(hostSeat, invite);
+  async joinVia(host: Machine, hostSeat: Seat, seat: Seat, { as = seat.name, line, pin, invite = 'invite --pipe', front, ms = 15_000 }: { as?: string; line?: string; pin?: string; invite?: string; front?: string; ms?: number } = {}) {
+    const shown = line ? null : front ? host.join(hostSeat, 'invite --web', { SUB_HUMAN_WEB_FRONT: front }) : host.join(hostSeat, invite);
     const inv = shownInvite(line ? `/sub-human ${line.replace(/^\/sub-human /, '')}${pin ? `\napart from the line: ${pin}` : ''}` : shown?.json?.reason || '');
     if (!inv) throw new Error(`no invite line in: ${JSON.stringify(shown && shown.json)}`);
     const { code } = inv;

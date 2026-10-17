@@ -49,16 +49,15 @@ test('doctor: node floor, Remote Control, ssh hints and argument errors', () => 
   }
   assert.equal(doctor.checkRemoteControl({ CLAUDE_CODE_USE_BEDROCK: '0' }, []).status, 'info', '0 is off');
   assert.equal(doctor.checkRemoteControl({}, [{ env: { CLAUDE_CODE_USE_BEDROCK: '1' } }]).status, 'warn', 'from a settings file too');
-  // ssh refused: a login of the person's own (or a web invite); an older link's own key: removed by the host; prime for MFA
-  const denied = doctor.sshHint('alice@box: Permission denied (publickey).', { code: rc('vole-1234') });
+  // ssh refused: a login of the person's own (or a web invite); MFA or a jump host: the person's own ssh config
+  const denied = doctor.sshHint('alice@box: Permission denied (publickey).');
   assert.ok(denied);
   assert.match(denied, /refused your ssh login: joining over ssh needs a login of your own there .* ask the host for an invite over the web \(\/sub-human invite --web\)/);
-  assert.match(denied, /sub-human prime vole-1234/);
-  assert.doesNotMatch(denied, /authorize\b|shk1|ssh-agent|SUB_HUMAN_SSH_OPTS|let in/, 'no sh1/sh2-era or admit-a-key advice');
-  assert.match(must(doctor.sshHint('Permission denied (publickey,keyboard-interactive).', { code: rc('vole-1234') })), /interactive login \(MFA\): run SUB_HUMAN_HOME=\S+ node \S+\/scripts\/sub-human prime vole-1234 once in a terminal/);
+  assert.doesNotMatch(denied, /authorize\b|shk1|ssh-agent|SUB_HUMAN_SSH_OPTS|let in|prime/, 'no sh1/sh2-era, admit-a-key or prime advice');
+  assert.match(must(doctor.sshHint('Permission denied (publickey,keyboard-interactive).')), /interactive login \(MFA\).*\/sub-human invite --web/);
   assert.match(must(doctor.sshHint('Host key verification failed.')), /host key/);
-  assert.match(must(doctor.sshHint('ssh: Could not resolve hostname box: nodename nor servname provided')), /does not resolve.*--via JUMP/);
-  assert.match(must(doctor.sshHint('ssh: connect to host box port 22: Operation timed out')), /does not answer.*\/sub-human invite --via JUMP/);
+  assert.match(must(doctor.sshHint('ssh: Could not resolve hostname box: nodename nor servname provided')), /does not resolve.*ProxyJump in your ~\/\.ssh\/config/);
+  assert.match(must(doctor.sshHint('ssh: connect to host box port 22: Operation timed out')), /does not answer.*ProxyJump/);
   assert.equal(doctor.sshHint('something else'), null);
   assert.throws(() => doctor.parseArgs(['--nope']), /usage: sub-human doctor/);
   assert.throws(() => doctor.parseArgs(['--timeout', 'x']), /--timeout/);

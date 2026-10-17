@@ -31,7 +31,7 @@ test('panes: the line /sub-human invite showed and its PIN apart, also when the 
   const shown = `⏺ sub-human: invite to room vole-1234 for one machine, from another sub-human folder on this machine. It works once\n\n    /sub-human join pipe:${home.slice(0, 9)}\n    ${home.slice(9)} vole-1234 ${S.slice(0, 20)}\n    ${S.slice(20)}\n\n  and tell them its PIN apart from the line (say it, or send it another way):\n  4829\n  Their machine asks them for the PIN`;
   assert.equal(joinLineIn(shown), `join pipe:${home} vole-1234 ${S}`);
   assert.equal(pinIn(shown), '4829');
-  assert.equal(joinLineIn(`  /sub-human join dev@box vole-1234 ${S} --via jump --home /srv/sh\n`), `join dev@box vole-1234 ${S} --via jump --home /srv/sh`);
+  assert.equal(joinLineIn(`  /sub-human join dev@box vole-1234 ${S} --home /srv/sh\n`), `join dev@box vole-1234 ${S} --home /srv/sh`);
   assert.equal(joinLineIn(`  /sub-human join https://box.ts.net/sub-human/vole-1234 ${S}\n`), `join https://box.ts.net/sub-human/vole-1234 ${S}`);
   assert.equal(joinLineIn('no line here'), null);
   assert.equal(joinLineIn('/sub-human join dev vole-1234 4829'), null, 'a 0.5.0-beta.15 line is no invite line now');

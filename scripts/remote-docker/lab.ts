@@ -13,17 +13,16 @@
  *     toxi(method, path, body)   the toxiproxy API
  *     keypair(svc, name) -> pubkey      ~/.ssh/NAME (ed25519) for the joiner user
  *     sshConfig(svc, name, hosts)       ~/.ssh/NAME.conf: one Host block per entry, then the shared defaults
- *     trustOnBastion(pub)   the joiner's key on the bastion (a jump host's account)
  *     restrict(code, linkId, pub, {svc})   the one-link forced-command line an admit wrote before protocol 3, appended
  *                       to the devbox account's authorized_keys (what a key let in for one other connection looks like;
  *                       nothing writes one now)
  *     authorizeLogin(pub, {svc, user?})   the joiner's key as an ordinary login line in the host account's authorized_keys: the
  *                       person's own ssh login, set up as any is (an ssh invite rides it; the plugin writes no line)
- *     hostInvite(hostSeat, name, {dest, via}) -> {line, word, pin, text}   `/sub-human invite --ssh DEST [--via JUMP]`:
+ *     hostInvite(hostSeat, name, {dest}) -> {line, word, pin, text}   `/sub-human invite --ssh DEST`:
  *                       the line (protocol 3: its SECRET word; beta.15: word null, the PIN at its end) and the PIN
  *     join(opts) -> Promise<{seat, name, invite, pin, linkId, conf, join, pub}>   a joiner over one ssh path: its own
  *                       login to the host account, invite --ssh on the host's seat, the line typed on the joiner
- *                       (`/sub-human join DEST ROOM SECRET [--via J] --as NAME`: the host's key checked, the SECRET
+ *                       (`/sub-human join DEST ROOM SECRET --as NAME`: the host's key checked, the SECRET
  *                       shown), the PIN when the host asks (`/sub-human join PIN`), the host's card (Let in), the link
  *                       online, then a bare `/sub-human` (the seat). Against devbox-old (beta.15) its line has a 4-digit
  *                       PIN and this joiner refuses it (the host must update): {join: {ok: false, out}}; a beta.15 joiner
@@ -111,9 +110,10 @@ const OLD_REF = process.env.LAB_OLD_REF || '7c97bdb';
 const OLD_IMAGE = `sub-human-lab-old:${OLD_REF}`;
 export const PROJECT = process.env.LAB_PROJECT || 'sub-human-lab';
 const USERS: Record<string, string> = { devbox: 'host', 'devbox-old': 'host', 'joiner-a': 'joiner', 'joiner-b': 'joiner' };
-const MACHINES = ['devbox', 'devbox-old', 'bastion', 'joiner-a', 'joiner-b'];
+const MACHINES = ['devbox', 'devbox-old', 'joiner-a', 'joiner-b'];
 const PROXIES = [
   { name: 'devbox-ssh', listen: '0.0.0.0:22001', upstream: 'devbox:22' },
+  { name: 'devbox-ssh-b', listen: '0.0.0.0:22002', upstream: 'devbox:22' }, // joiner-b's own WAN path
   { name: 'old-ssh', listen: '0.0.0.0:22003', upstream: 'devbox-old:22' },
 ];
 export const CA = '/etc/lab-ca.crt'; // outside every home: reset() wipes those
@@ -174,7 +174,6 @@ export class Lab {
       svc, user, home: subHome, cli,
       host: (name: string) => run<HookRun & { code: string | null, machine: string }>('host', name),
       restrict: (code: string, linkId: string, pub: string, file?: string) => run<{ out: string }>('restrict', code, linkId, pub, ...(file ? [file] : [])),
-      options: (code: string, name: string, value: string) => run<{ ok: boolean, out: string }>('options', code, name, value),
       login: (name: string, dest: string, code: string, ...opts: string[]) => run<HookRun & { out: string }>('login', name, dest, code, ...opts),
       rejoin: (name: string, code: string) => run<HookRun>('rejoin', name, code),
       say: (name: string, text: string) => run<HookRun>('say', name, text),
@@ -255,7 +254,7 @@ export class Lab {
       // bracketed first letters: the pattern does not match this shell's own command line
       `P='[s]eat-proc|[s]ub-human (link|serve|tail|listen)|[w]s-probe|[b]in/serve'; pkill -f "$P"; sleep 0.3; pkill -9 -f "$P"`,
       'iptables -F 2>/dev/null',
-      'for u in host jump joiner; do d=/home/$u; rm -rf $d/.sub-human* $d/work $d/lab-* $d/.ssh/*; done',
+      'for u in host joiner; do d=/home/$u; rm -rf $d/.sub-human* $d/work $d/lab-* $d/.ssh/*; done',
       'rm -rf /tmp/sh-* 2>/dev/null; true',
     ].join('; ');
     for (const svc of MACHINES) this.exec(svc, ['sh', '-c', wipe], { allowFail: true });
@@ -293,10 +292,6 @@ export class Lab {
     this.exec(svc, ['sh', '-c', `mkdir -p /home/${user}/.ssh && cat >> /home/${user}/.ssh/authorized_keys && chown -R ${user}:${user} /home/${user}/.ssh && chmod 0600 /home/${user}/.ssh/authorized_keys`], { input: pub + '\n' });
   }
 
-  trustOnBastion(pub: string): void {
-    this.exec('bastion', ['sh', '-c', 'cat >> /home/jump/.ssh/authorized_keys && chown jump:jump /home/jump/.ssh/authorized_keys && chmod 0600 /home/jump/.ssh/authorized_keys'], { input: pub + '\n' });
-  }
-
   /** The standard rig most scenarios start from: alice hosts on SVC; returns {code, host}. */
   hostRoom(svc = 'devbox', name = 'alice'): { code: string, host: SeatDriver, hostName: string, machine: string } {
     const host = this.seat(svc);
@@ -305,12 +300,12 @@ export class Lab {
     return { code: h.code, host, hostName: name, machine: h.machine };
   }
 
-  /** `/sub-human invite --ssh DEST [--via JUMP]` in NAME's session on hostSeat: the line (no "/sub-human "), its SECRET
-   * word (null from a beta.15 host, whose line ends with the PIN) and the PIN. */
-  hostInvite(hostSeat: SeatDriver, name: string, { dest = 'host@devbox', via }: { dest?: string, via?: string | undefined } = {}): { line: string, word: string | null, pin: string, text: string } {
-    const r = hostSeat.expand(name, `invite --ssh ${dest}${via ? ` --via ${via}` : ''}`);
+  /** `/sub-human invite --ssh DEST` in NAME's session on hostSeat: the line (no "/sub-human "), its SECRET word (null
+   * from a beta.15 host, whose line ends with the PIN) and the PIN. */
+  hostInvite(hostSeat: SeatDriver, name: string, { dest = 'host@devbox' }: { dest?: string } = {}): { line: string, word: string | null, pin: string, text: string } {
+    const r = hostSeat.expand(name, `invite --ssh ${dest}`);
     const text = r.out || '';
-    const m = /\/sub-human (join \S+ [a-z]+-\d{4} ([0-9a-z]{39})(?: --(?:via|home) \S+)*)\n/.exec(`${text}\n`);
+    const m = /\/sub-human (join \S+ [a-z]+-\d{4} ([0-9a-z]{39})(?: --home \S+)?)\n/.exec(`${text}\n`);
     const p = /apart from the line[^\n]*: (\d{4})\n/.exec(`${text}\n`);
     if (m && p) return { line: m[1] ?? '', word: m[2] ?? '', pin: p[1] ?? '', text };
     const old = /\/sub-human (join \S+ [a-z]+-\d{4} (\d{4})(?: --via \S+)?)\n/.exec(`${text}\n`); // a beta.15 host's
@@ -319,14 +314,13 @@ export class Lab {
   }
 
   async join(opts: JoinOpts): Promise<Joined> {
-    const { svc, name, code, hosts, via, viaFlag, host, hostName = 'alice', user = USERS[svc], hostSvc = 'devbox', dest = 'host@devbox', key = `id_${name}`, ms = 30_000 } = opts;
+    const { svc, name, code, hosts, host, hostName = 'alice', user = USERS[svc], hostSvc = 'devbox', dest = 'host@devbox', key = `id_${name}`, ms = 30_000 } = opts;
     const t0 = Date.now();
     const pub = this.keypair(svc, key, user);
     const conf = this.sshConfig(svc, name, key, hosts, user);
-    if (via === 'bastion') this.trustOnBastion(pub);
     this.authorizeLogin(pub, { svc: hostSvc }); // their own ssh login to the host account: what an ssh invite rides
     const hostSeat = host || this.seat(hostSvc);
-    const { line, word, pin, text } = this.hostInvite(hostSeat, hostName, { dest, via: viaFlag });
+    const { line, word, pin, text } = this.hostInvite(hostSeat, hostName, { dest });
     const seat = this.seat(svc, { user, ...(opts.home ? { home: opts.home } : {}) });
     const typed = seat.short(name, line, '-F', conf);
     const refused = (out: string): Joined => ({ seat, name, invite: line, pin, text, linkId: null, conf, pub, linked: typed, admitted: null, join: { ok: false, out, ms: Date.now() - t0 } });
@@ -354,7 +348,7 @@ export class Lab {
 
 /** lab.join's options. */
 export interface JoinOpts {
-  svc: string; name: string; code: string; hosts: Hosts; via?: string; viaFlag?: string; host?: SeatDriver; hostName?: string;
+  svc: string; name: string; code: string; hosts: Hosts; host?: SeatDriver; hostName?: string;
   user?: string | undefined; hostSvc?: string; dest?: string; key?: string; ms?: number; home?: string;
 }
 /** lab.join's answer: the joiner's seat driver and every step's result. */

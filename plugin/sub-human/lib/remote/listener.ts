@@ -1,7 +1,7 @@
 /**
  * plugin/sub-human/lib/remote/listener.ts: the host's WebSocket listener daemon (`scripts/sub-human listen [--port
- * 7420]`), one per home. It binds 127.0.0.1 only; a TLS front (Tailscale Serve or Funnel, the lab's Caddy, a
- * person's own reverse proxy) is the only way in from elsewhere. A WebSocket whose first message is TEXT asks for the
+ * 7420]`), one per home. It binds 127.0.0.1 only; a TLS front (Tailscale Serve or Funnel; the lab's Caddy) is the
+ * only way in from elsewhere. A WebSocket whose first message is TEXT asks for the
  * host's public key ({"op": "key"}, answered {"v": 3, "key"} and closed: an invite line's first dial checks it against
  * the line's tag before anything secret goes). For each other WebSocket it runs the Noise handshake as
  * the responder with the host's static X25519 key (lib/remote/transports/ws.ts serverChannel: XK), checks the room the joiner names is one this home serves over ws, and only then spawns
@@ -230,7 +230,7 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
     const refusal = (code: string): Refusal | null => {
       if (!isRoomCode(code)) return { code: 'PROTOCOL', message: 'not a room code' };
       if (at && CODE_RE.test(at) && at !== code) return { code: 'PROTOCOL', message: `this URL is for room ${at}, not ${code}` };
-      if (!(read().rooms ?? {})[code] || !roomLive(code)) return { code: 'OFFLINE', message: `room ${code} is not open for joins over the web here (the host can run /sub-human invite --web or --url again)` };
+      if (!(read().rooms ?? {})[code] || !roomLive(code)) return { code: 'OFFLINE', message: `room ${code} is not open for joins over the web here (the host can run /sub-human invite --web again)` };
       return null;
     };
     let ch: { duplex: Duplex; hello: { room: string }; peer: Buffer | null }, first: { data: Buffer; binary: boolean };

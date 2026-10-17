@@ -1,7 +1,7 @@
 /**
  * plugin/sub-human/lib/remote/transports/ws.ts: the `wss` and `ws` kinds (./index.ts register): protocol frames
  * over a Noise channel (lib/remote/noise.ts) inside a WebSocket (lib/remote/ws.ts) to the host's listener
- * (lib/remote/listener.ts), usually through a TLS front: Tailscale Serve or Funnel, or any HTTPS reverse proxy.
+ * (lib/remote/listener.ts) through a TLS front: Tailscale Serve or Funnel (the tests and the lab: a front of their own).
  * The front sees TLS-decrypted WebSocket frames that hold only Noise ciphertext; only the holder of the X25519 key
  * the link pins can read them or answer. The PIN, the invite line's secret and the link token travel inside.
  *
@@ -20,7 +20,7 @@
  * uses its answer only once the line's tag names it (link-connect.ts), so nothing secret goes before. After the
  * handshake each write is cut into Noise messages of at most noise.MAX_PLAINTEXT bytes, one binary WebSocket message
  * each; a message that does not decrypt, or a text message, closes the conn (1002 / 1003). open connects within
- * WS_CONNECT_MS (45 s: a ts.net name's first TLS handshake waits on its certificate), through HTTPS_PROXY / NO_PROXY.
+ * WS_CONNECT_MS (45 s: a ts.net name's first TLS handshake waits on its certificate).
  */
 
 import { Duplex } from 'node:stream';

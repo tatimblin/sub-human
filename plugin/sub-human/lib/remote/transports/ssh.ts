@@ -5,9 +5,9 @@
  * stable shim (remoteCommand), an invite line's or a plain `/sub-human join USER@HOST ROOM`'s alike.
  *
  * Every ssh option comes from this machine: SUB_HUMAN_SSH_OPTS (tests, -i KEY, -F FILE) and the link options its own
- * link file holds (lib/room/links.ts), never an invite; a link file edited by hand is checked again (INVALID). mux:
- * ride a master `sub-human prime CODE` opened (one MFA prompt for hours; ControlMaster=no, so the daemon never becomes
- * one). BatchMode stays on, so the daemon never waits on a prompt. remoteCommand over a login link runs
+ * link file holds (lib/room/links.ts), never an invite; a link file edited by hand is checked again (INVALID). A
+ * jump host goes in ~/.ssh/config (ProxyJump on an alias), which ssh reads. BatchMode stays on, so the daemon never
+ * waits on a prompt. remoteCommand over a login link runs
  * `<home>/bin/serve --stdio CODE --link ID --login`; a forced-command key can never send --login (its line fixes the
  * arguments, and scripts/sub-human serve refuses --login under SSH_ORIGINAL_COMMAND). classify reads ssh's stderr in
  * one place (the link daemon, loginProblem, doctor); loginProblem is what stops a link (AUTH) until the person acts,
@@ -24,13 +24,11 @@ import { assertNever } from '../../../mod/core/never.ts';
 /** SUB_HUMAN_SSH_OPTS: extra ssh options, space separated. */
 const sshOpts = (): string[] => String(envStr('SUB_HUMAN_SSH_OPTS') || '').split(/\s+/).filter(Boolean);
 import CryptoMod from 'node:crypto';
-import FsMod from 'node:fs';
 import type { KindEntry, OpenCtx, SshDest, SshSpec, Transport } from '../types-rest.ts';
 import type { ReasonFor } from '../../reasons.ts';
 import type { RoomCode } from '../../brand.ts';
 import type * as PipeMod from './pipe.ts';
 import { lazy } from '../../io.ts';
-import * as homeMod from '../../home.ts';
 
 // the pipe only for a connection that opens (start cost)
 const pipeLib = lazy<typeof PipeMod>(import.meta.url, './pipe.ts');
@@ -38,8 +36,6 @@ const pipeLib = lazy<typeof PipeMod>(import.meta.url, './pipe.ts');
 const SSH_USER = '[A-Za-z_][A-Za-z0-9_.-]{0,31}';
 const SSH_HOST = '[A-Za-z0-9](?:[A-Za-z0-9.-]{0,252})';
 const SSH_RE = new RegExp(`^(${SSH_USER})@(${SSH_HOST})(?::([0-9]{1,5}))?$`);
-const HOP_RE = new RegExp(`^(?:${SSH_USER}@)?${SSH_HOST}(?::([0-9]{1,5}))?$`);
-const LOCAL_PATH_RE = /^\/[^\0\n"'%]*$/;
 const LINK_ID_RE = /^[0-9a-f]{12}$/;
 const HOME_RE = /^\/[A-Za-z0-9_/.@+,:-]+$/; // lib/remote/shim.ts PLAIN_PATH_RE: nothing a remote shell expands
 
@@ -75,64 +71,34 @@ function withUser(text: string, { bin = 'ssh', opts = sshOpts() }: { bin?: strin
 // an example's word left in: YOU@box, USER@box, NAME@box, or a bare NAME / USER / YOU / HOST
 const placeholder = (text: string): boolean => /^(?:YOU|USER|NAME|you|user|name)@/.test(String(text)) || /^(?:YOU|USER|NAME|HOST|DEST)$/.test(String(text)) || /@(?:HOST|DEST)$/.test(String(text));
 
-function jump(text: string): string | null {
-  const hops = String(text).split(',');
-  if (hops.length > 4) return null;
-  for (const h of hops) {
-    const m = HOP_RE.exec(h);
-    if (!m || (m[1] !== undefined && !(Number(m[1]) >= 1 && Number(m[1]) <= 65535))) return null;
-  }
-  return String(text);
-}
-
-function parse(rest: string): (SshDest & { via?: string }) | null {
-  const [d = '', q, ...more] = String(rest).split('?'); // split gives at least one part
-  if (more.length) return null;
-  const spec = dest(d);
-  if (!spec || q === undefined) return spec;
-  const m = /^via=(.+)$/.exec(q);
-  const via = m && m[1] !== undefined && jump(m[1]); // (.+) always matches
-  return via ? { ...spec, via } : null;
-}
+const parse = (rest: string): SshDest | null => dest(String(rest));
 
 const at = (d: SshDest): string => `${d.user}@${d.host}${d.port ? `:${d.port}` : ''}`;
 
-function locator(text: string, { via }: { via?: string } = {}): string | null {
+function locator(text: string): string | null {
   const d = dest(text);
-  if (!d || (via !== undefined && !jump(via))) return null;
-  return `ssh:${at(d)}${via !== undefined ? `?via=${via}` : ''}`;
+  return d ? `ssh:${at(d)}` : null;
 }
 
-const controlPath = (h: string = homeMod.home()): string => path.join(path.resolve(h), 'ssh', 'cm-%C');
-
-/** The spec, checked again; the link options its local fields ask for. */
-function checked(spec: SshSpec, code: RoomCode): { d: SshDest; local: string[]; tail: string[] } {
+/** The spec, checked again: the destination ssh is given. */
+function checked(spec: SshSpec, code: RoomCode): { d: SshDest; tail: string[] } {
   const d = spec && dest(at(spec));
   if (!d) throw new RoomError('INVALID', 'the link\'s ssh destination is not a plain user@host[:port]');
-  if (spec.via !== undefined && !jump(spec.via)) throw new RoomError('INVALID', 'the link\'s ProxyJump is not a plain [user@]host[:port] list');
   const { CODE_RE } = textMod;
   if (!CODE_RE.test(code)) throw new RoomError('INVALID', `invalid room code "${code}"`);
-  const local: string[] = [];
-  const file = (k: string, v: unknown): string => { if (typeof v !== 'string' || !LOCAL_PATH_RE.test(v)) throw new RoomError('INVALID', `the link's ${k} is not a plain absolute path`); return v; };
   if (spec.login === true) {
     if (!LINK_ID_RE.test(String(spec.link))) throw new RoomError('INVALID', 'the login link names no link id (12 hex)');
     if (spec.remoteHome !== undefined && !HOME_RE.test(String(spec.remoteHome))) throw new RoomError('INVALID', 'the login link\'s remote home is not a plain absolute path');
   }
-  if (spec.mux === true) {
-    const cp = controlPath(); // its own %C is the one ssh expands; the home may hold none
-    file('control path', path.dirname(cp));
-    local.push('-o', `ControlPath=${cp}`);
-  }
-  return { d, local, tail: [...(spec.via !== undefined ? ['-J', spec.via] : []), ...(d.port ? ['-p', String(d.port)] : []), '--', `${d.user}@${d.host}`] };
+  return { d, tail: [...(d.port ? ['-p', String(d.port)] : []), '--', `${d.user}@${d.host}`] };
 }
 
 function command(spec: SshSpec, code: RoomCode, opts: string[] = sshOpts()): [string, ...string[]] {
-  const { local, tail } = checked(spec, code);
-  const mux = spec.mux === true ? ['-o', 'ControlMaster=no'] : [];
-  // ssh takes an option's first value: the pinned ones (local: the mux ControlPath)
-  // come before SUB_HUMAN_SSH_OPTS, so the environment adds options and never weakens those
+  const { tail } = checked(spec, code);
+  // ssh takes an option's first value: the pinned ones come before SUB_HUMAN_SSH_OPTS, so the environment adds
+  // options and never weakens those
   return ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2',
-    ...mux, ...local, ...opts, ...tail, remoteCommand(spec, code)];
+    ...opts, ...tail, remoteCommand(spec, code)];
 }
 
 function remoteCommand(spec: Pick<SshSpec, 'login' | 'link' | 'remoteHome'>, code: RoomCode): string {
@@ -144,13 +110,13 @@ function remoteCommand(spec: Pick<SshSpec, 'login' | 'link' | 'remoteHome'>, cod
 }
 
 /** text: user@host[:port]. link: the id the host records the link under, so `/sub-human kick` finds its serve by argv. */
-function loginSpec(text: string, { via, home, link = CryptoMod.randomBytes(6).toString('hex') }: { via?: string | undefined; home?: string | undefined; link?: string } = {}): SshSpec | null {
+function loginSpec(text: string, { home, link = CryptoMod.randomBytes(6).toString('hex') }: { home?: string | undefined; link?: string } = {}): SshSpec | null {
   const d = dest(text);
-  if (!d || (via !== undefined && !jump(via)) || (home !== undefined && !HOME_RE.test(String(home))) || !LINK_ID_RE.test(String(link))) return null;
-  return { kind: 'ssh', ...d, ...(via !== undefined ? { via } : {}), login: true, link, ...(home !== undefined ? { remoteHome: path.resolve(home) } : {}) };
+  if (!d || (home !== undefined && !HOME_RE.test(String(home))) || !LINK_ID_RE.test(String(link))) return null;
+  return { kind: 'ssh', ...d, login: true, link, ...(home !== undefined ? { remoteHome: path.resolve(home) } : {}) };
 }
 
-const loginCommand = (spec: SshSpec): string => ['ssh', ...(spec.port ? ['-p', String(spec.port)] : []), ...(spec.via ? ['-J', spec.via] : []), `${spec.user}@${spec.host}`].join(' ');
+const loginCommand = (spec: SshSpec): string => ['ssh', ...(spec.port ? ['-p', String(spec.port)] : []), `${spec.user}@${spec.host}`].join(' ');
 
 /** What ssh's stderr says went wrong, in one place: the link daemon (lib/remote/link-connect.ts), loginFailure and
  * doctor's hints read it. null: nothing this knows (the connection may still pass). */
@@ -181,13 +147,12 @@ function loginProblem(stderr: string, spec: SshSpec, code: RoomCode, { first = f
   const where = `${spec.user}@${spec.host}`;
   const once = loginCommand(spec);
   const home = spec.remoteHome || '~/.sub-human';
-  const { cliLine } = textMod;
   const p = classify(stderr);
   if (!p) return null;
-  if (p.kind === 'mfa' && !/Permission denied/i.test(String(stderr || ''))) return null; // a prompt BatchMode refused: may pass once primed
+  if (p.kind === 'mfa' && !/Permission denied/i.test(String(stderr || ''))) return null; // a prompt BatchMode refused: may pass once logged in by hand
   switch (p.kind) {
     case 'host-key': return { reason: 'SSH_HOST_KEY', message: `ssh doesn't know ${where}'s host key yet (or it changed), and sub-human never answers ssh's questions. Run \`${once}\` once in a terminal, check and accept the key, then join again` };
-    case 'denied': case 'mfa': return { reason: 'SSH_DENIED', message: `${where} refused your ssh login: sub-human logs in with your ssh keys or agent only, never a password. Check that \`${once}\` logs in without one, then join again; behind MFA, run \`${cliLine(`prime ${code}`)}\` in a terminal first` };
+    case 'denied': case 'mfa': return { reason: 'SSH_DENIED', message: `${where} refused your ssh login: sub-human logs in with your ssh keys or agent only, never a password. Check that \`${once}\` logs in without one, then join again; behind MFA (an interactive login), run \`${once}\` yourself once first` };
     case 'no-shim': return { reason: 'SSH_NO_SHIM', message: `${where} isn't set up for joining yet (no ${home}/bin/serve). On that machine, open the room in Claude Code (/sub-human), then join again${spec.remoteHome ? '' : '; if its sub-human folder is somewhere else, add --home PATH'}` };
     case 'old-host': return { reason: 'SSH_OLD_HOST', message: `the sub-human on ${where} is too old for joining over an ssh login: update it there (/plugin update sub-human), or ask its host for an invite (/sub-human invite)` };
     case 'no-plugin': return { reason: 'SSH_NO_SHIM', message: `${where} found no sub-human plugin or node to run: on that machine, start Claude Code once, then join again` };
@@ -205,25 +170,17 @@ function loginProblem(stderr: string, spec: SshSpec, code: RoomCode, { first = f
 /** loginProblem's words alone. */
 const loginFailure = (stderr: string, spec: SshSpec, code: RoomCode): string | null => loginProblem(stderr, spec, code)?.message ?? null;
 
-function primeCommand(spec: SshSpec, code: RoomCode, { persist = '8h', opts = sshOpts() }: { persist?: string; opts?: string[] } = {}): string[] {
-  if (!/^[0-9]{1,5}[smhd]?$/.test(persist)) throw new RoomError('INVALID', `--persist "${persist}" is not a time (e.g. 8h)`);
-  const { local, tail } = checked({ ...spec, mux: true }, code);
-  // as in command(): the pinned options (the master's ControlPath) before the env's
-  return ['ssh', '-M', '-N', '-f', '-o', `ControlPersist=${persist}`, '-o', 'ServerAliveInterval=15', ...local, ...opts, ...tail];
-}
-
 const kind: Required<KindEntry<SshSpec>> = {
   parse,
   open(spec, ctx: OpenCtx = {}): Transport {
     if (!ctx.code) throw new RoomError('INVALID', 'an ssh transport connects to a room: open(spec, {code})');
-    if (spec.mux === true) FsMod.mkdirSync(path.dirname(controlPath()), { recursive: true, mode: 0o700 });
     const [cmd, ...args] = command(spec, ctx.code);
     return pipeLib().spawn(cmd, args);
   },
-  describe: spec => `ssh ${at(spec)}${spec.via ? ` via ${spec.via}` : ''}${spec.login === true ? ' (your ssh login)' : ''}`,
+  describe: spec => `ssh ${at(spec)}${spec.login === true ? ' (your ssh login)' : ''}`,
 };
 
 export {
-  withUser, placeholder, dest, jump, parse, locator, command, remoteCommand, loginSpec, loginCommand,
-  loginFailure, loginProblem, classify, primeCommand, controlPath, kind,
+  withUser, placeholder, dest, parse, locator, command, remoteCommand, loginSpec, loginCommand,
+  loginFailure, loginProblem, classify, kind,
 };

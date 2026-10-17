@@ -3,7 +3,7 @@
 // know yet fails at once with the exact `ssh host@devbox` to run once (BatchMode: no prompt, no hang) and mints no
 // link; after that one ssh, `/sub-human join host@devbox CODE --as bob` links and takes the seat in one step, through
 // the host's stable shim (written by alice's own join there); posts flow both ways; the room line names the link. The
-// login seat is its own person for consent (no account) unless the host turns on the room option login-same-person. A
+// login seat is the host person's own for consent (its account is the host account's: whoever logs in as it). A
 // key the host restricted to another link (its forced-command line) cannot use the login path: AUTH, no link. kick
 // ends it.
 import { WAN, delivered, converge, waitState } from './_lib.ts';
@@ -63,10 +63,8 @@ export async function run(t: T): Promise<void> {
   const c = await converge(t, host, code, [seat]);
   t.check('mirror byte-identical to the host log, chains verify', c.ok, c.detail);
   const ms = parseJson<MembersFile>(host.dump(code).members || '{}');
-  t.check('by default the login seat is its own person: no account (login-same-person is off)', !!ms.bob && ms.bob.account === undefined, JSON.stringify(ms.bob || null));
+  t.check('the login seat is the host account\'s own person (its account is the host\'s machine)', !!ms.bob && !!ms.bob.account, JSON.stringify(ms.bob || null));
   t.check('its machine id is the one the joiner\'s machine key gives, not its home\'s', /^k[0-9a-f]{15}$/.test((ms.bob && ms.bob.machine) || ''), (ms.bob && ms.bob.machine) || 'none');
-  const opt = host.options(code, 'login-same-person', 'on');
-  t.check('the host person can turn login-same-person on, in their own shell', opt.ok && /login-same-person: on/.test(opt.out), opt.out);
 
   // a key restricted to another link: the forced-command line a host's admit writes for one link
   const carolPub = lab.keypair('joiner-a', 'id_carol');

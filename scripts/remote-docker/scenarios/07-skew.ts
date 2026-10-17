@@ -40,7 +40,7 @@ async function direction(t: T, label: string, { hostSvc, joinerSvc, joinerUser, 
 
 export const id = 'skew';
 export const title = 'beta.15 host vs current joiner and the reverse: compatible, or a clear version message; never silent corruption';
-export const persona = 'P2 corporate (mixed versions)';
+export const persona = 'mixed versions';
 export const budgetMs = 120_000;
 export async function run(t: T): Promise<void> {
   const { lab } = t;

@@ -62,7 +62,7 @@ test('commands: the hidden rule is the router\'s: join, invite, admit or a word 
   const me: Identity = { code: w.code, name: sn('alice'), role: 'member', session_id: null, pid: null, address: `alice.${w.code}` };
   const joined: Answer = { kind: 'joined', me, lead: 'joined', say: `joined ${w.code} as alice` };
   assert.equal(commands.hide(['join', 'dev', w.code], joined), joined, 'a login join has no PIN: the seat goes to the model');
-  assert.deepEqual(commands.hide(['join', 'dev', w.code, '--via', '2222'], joined), { kind: 'secret', text: `joined ${w.code} as alice · type /sub-human to bring the room to your Claude`, refused: false });
+  assert.deepEqual(commands.hide(['join', 'dev', w.code, '--home', '2222'], joined), { kind: 'secret', text: `joined ${w.code} as alice · type /sub-human to bring the room to your Claude`, refused: false });
   assert.deepEqual(commands.hide(['help'], { kind: 'say', text: 'x' }), { kind: 'say', text: 'x' });
 });
 

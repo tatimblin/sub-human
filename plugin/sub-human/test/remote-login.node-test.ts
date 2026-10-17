@@ -27,9 +27,7 @@ import { fakeSsh } from './support/fake-ssh.ts';
 import * as protocolLib from '../lib/remote/protocol.ts';
 import * as seatKey from '../hooks/seat-key.ts';
 import { machineIn } from '../lib/home.ts';
-import * as options from '../lib/room/options.ts';
 import * as machineKey from '../lib/remote/machine-key.ts';
-import { MemoryRoomStore } from './support/memory-store.ts';
 import * as linksLib from '../lib/room/links.ts';
 import type { RoomCode } from '../lib/brand.ts';
 import type { Link } from '../lib/room/types.ts';
@@ -68,23 +66,20 @@ function setup(t: TestContext, fake: Record<string, string> = {}, { defaultHome 
 }
 
 test('ssh.loginSpec / remoteCommand / command: the person\'s own ssh (BatchMode, their config and known_hosts) names the host\'s stable shim', () => {
-  const spec = ssh.loginSpec('me@devbox:2222', { via: 'jump@bastion', link: ID });
-  assert.deepEqual(spec, { kind: 'ssh', user: 'me', host: 'devbox', port: 2222, via: 'jump@bastion', login: true, link: ID });
+  const spec = ssh.loginSpec('me@devbox:2222', { link: ID });
+  assert.deepEqual(spec, { kind: 'ssh', user: 'me', host: 'devbox', port: 2222, login: true, link: ID });
   assert.equal(ssh.remoteCommand(spec, rc('vole-1234')), `"$HOME"/.sub-human/bin/serve --stdio vole-1234 --link ${ID} --login`);
   assert.equal(ssh.remoteCommand({ ...spec, remoteHome: '/srv/sh' }, rc('vole-1234')), `env SUB_HUMAN_HOME=/srv/sh /srv/sh/bin/serve --stdio vole-1234 --link ${ID} --login`);
   const admitted: SshSpec = { kind: 'ssh', user: 'me', host: 'x' };
   assert.equal(ssh.remoteCommand(admitted, rc('vole-1234')), 'sub-human serve --stdio vole-1234', 'an admitted key\'s command is unchanged');
   const cmd = ssh.command(spec, rc('vole-1234'), []);
   assert.deepEqual(cmd, ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2',
-    '-J', 'jump@bastion', '-p', '2222', '--', 'me@devbox', `"$HOME"/.sub-human/bin/serve --stdio vole-1234 --link ${ID} --login`]);
+    '-p', '2222', '--', 'me@devbox', `"$HOME"/.sub-human/bin/serve --stdio vole-1234 --link ${ID} --login`]);
   assert.ok(!cmd.some(a => /StrictHostKeyChecking|UserKnownHostsFile|IdentitiesOnly/.test(a)), 'normal known_hosts checking, the person\'s own keys');
-  // a primed master (sub-human prime) is ridden as for any ssh link
-  assert.ok(ssh.command({ ...spec, mux: true }, rc('vole-1234'), []).includes('ControlMaster=no'));
-  assert.ok(ssh.primeCommand(spec, rc('vole-1234'), { opts: [] }).includes('-M'));
-  assert.equal(ssh.loginCommand(spec), 'ssh -p 2222 -J jump@bastion me@devbox');
-  assert.match(ssh.kind.describe(spec), /^ssh me@devbox:2222 via jump@bastion \(your ssh login\)$/);
+  assert.equal(ssh.loginCommand(spec), 'ssh -p 2222 me@devbox');
+  assert.match(ssh.kind.describe(spec), /^ssh me@devbox:2222 \(your ssh login\)$/);
   // nothing an option or a shell would read
-  for (const bad of [['-oProxyCommand=x@y'], ['me@devbox', { via: '-oX' }], ['me@devbox', { home: 'rel/path' }], ['me@devbox', { home: '/a b' }], ['me@devbox', { home: '/a;rm' }], ['me@devbox', { link: 'XYZ' }]] as Parameters<typeof ssh.loginSpec>[]) {
+  for (const bad of [['-oProxyCommand=x@y'], ['me@devbox', { home: 'rel/path' }], ['me@devbox', { home: '/a b' }], ['me@devbox', { home: '/a;rm' }], ['me@devbox', { link: 'XYZ' }]] as Parameters<typeof ssh.loginSpec>[]) {
     assert.equal(ssh.loginSpec(...bad), null, JSON.stringify(bad));
   }
   assert.throws(() => ssh.command({ ...spec, link: '../x' }, rc('vole-1234'), []), /link id/);
@@ -95,8 +90,8 @@ test('ssh.loginFailure: what only the person can fix names the exact step; anyth
   const spec = must(ssh.loginSpec('me@devbox', { link: ID }));
   const f = (s: string) => ssh.loginFailure(s, spec, rc('vole-1234'));
   assert.match(must(f('Host key verification failed.')), /Run `ssh me@devbox` once in a terminal, check and accept the key, then join again/);
-  assert.match(must(ssh.loginFailure('Host key verification failed.', { ...spec, port: 2222, via: 'b' }, rc('vole-1234'))), /`ssh -p 2222 -J b me@devbox`/);
-  assert.match(must(f('me@devbox: Permission denied (publickey).')), /refused your ssh login: sub-human logs in with your ssh keys or agent only, never a password\..*run `(?:SUB_HUMAN_HOME=\S+ )?node \S+\/scripts\/sub-human prime vole-1234` in a terminal first/);
+  assert.match(must(ssh.loginFailure('Host key verification failed.', { ...spec, port: 2222 }, rc('vole-1234'))), /`ssh -p 2222 me@devbox`/);
+  assert.match(must(f('me@devbox: Permission denied (publickey).')), /refused your ssh login: sub-human logs in with your ssh keys or agent only, never a password\..*behind MFA \(an interactive login\), run `ssh me@devbox` yourself once first/);
   assert.match(must(f('sh: 1: /home/me/.sub-human/bin/serve: not found')), /me@devbox isn't set up for joining yet \(no ~\/\.sub-human\/bin\/serve\)\. On that machine, open the room in Claude Code \(\/sub-human\), then join again; .*--home PATH/);
   assert.match(must(f('zsh:1: no such file or directory: /home/me/.sub-human/bin/serve')), /isn't set up for joining yet/);
   assert.match(must(ssh.loginFailure('env: /srv/sh/bin/serve: No such file or directory', { ...spec, remoteHome: '/srv/sh' }, rc('vole-1234'))), /\(no \/srv\/sh\/bin\/serve\)/);
@@ -151,7 +146,7 @@ test('server: a hello {login} makes a link only in a `serve --login` session, un
 });
 const protocol = () => protocolLib;
 
-test('server: a login link\'s seat is the host person\'s own only when the room says so (login-same-person); an invite\'s never', async t => {
+test('server: a login link\'s seat is the host person\'s own (whoever logs in as the account); an invite\'s never', async t => {
   h.freshHome(t);
   const code = h.newRoom();
   const host = store.open(code);
@@ -167,14 +162,9 @@ test('server: a login link\'s seat is the host person\'s own only when the room 
     t.after(() => c.close());
     return c;
   };
-  // the default: a login link's seat is its own person (on a shared login, everyone who has it would be the owner)
   await seat(await open({ linkId: ID, login: true }, { login: true }), 'laptop');
   const laptop = must(host.members.read().laptop);
-  assert.deepEqual([laptop.machine, laptop.account], ['remote0machine01', undefined]);
-  // the host person's option: such a seat is theirs
-  assert.throws(() => options.set(new MemoryRoomStore(code, { isHost: false }), 'login-same-person', true), (e: RoomError) => e.code === 'HOST_ONLY');
-  assert.throws(() => options.set(host, 'everything', true), (e: RoomError) => e.code === 'INVALID');
-  options.set(host, 'login-same-person', true);
+  assert.deepEqual([laptop.machine, laptop.account], ['remote0machine01', machineIn(code)]);
   await seat(await open({ linkId: 'aaaaaaaaaaaa', login: true }, { login: true, machineKey: machineKey.proof(code) }), 'desk'); // another machine
   const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: mid('remote0machine02'), seats: [] });
   await seat(await open({}, { token }), 'guest');
@@ -182,8 +172,6 @@ test('server: a login link\'s seat is the host person\'s own only when the room 
   const guest = must(ms.guest);
   assert.deepEqual([must(ms.desk).account], [machineIn(code)]);
   assert.deepEqual([guest.machine, guest.account], ['remote0machine02', undefined], 'over an invite: never');
-  options.set(host, 'login-same-person', false);
-  assert.deepEqual(options.get(host), {});
 });
 
 test('server: a hello\'s machine key gives the id the host records; one only reported may not be the host\'s or another link\'s', async t => {
@@ -298,20 +286,16 @@ test('ssh.withUser / placeholder: only a bare alias is expanded; no ssh or a bad
   assert.equal(ssh.placeholder('yousef@dev'), false);
 });
 
-test('login e2e: --home names a host home that is not ~/.sub-human; a primed (mux) link keeps riding its master on a re-join', t => {
+test('login e2e: --home names a host home that is not ~/.sub-human', t => {
   const { host, remote, bob, code, sshLog } = setup(t, {}, { defaultHome: false });
   const miss = remote.join(bob, `join me@devbox ${code} --as bob`);
   stopDaemon(t, remote, code);
   assert.equal(must(miss.json).decision, 'block');
   assert.match(must(must(miss.json).reason), /could not reach room .* over ssh me@devbox \(your ssh login\): me@devbox isn't set up for joining yet \(no ~\/\.sub-human\/bin\/serve\)\. On that machine, open the room in Claude Code \(\/sub-human\), then join again; if its sub-human folder is somewhere else, add --home PATH/);
   assert.deepEqual(links(host, code), {}, 'nothing minted');
-  // as `sub-human prime CODE` leaves it: the link rides a master; the re-join to the same destination keeps that
-  remote.lib(() => { const l = must(linksLib.get(code)); linksLib.set(code, { ...l, transport: { ...sshSpec(l), mux: true } }); });
   const r = remote.join(bob, `join me@devbox ${code} --as bob --home ${host.home}`);
   assert.equal(must(r.json).decision, undefined, must(r.json).reason || r.stderr);
-  assert.equal(sshSpec(remote.lib(() => linksLib.get(code))).mux, true);
   const argv = must(sshCalls(sshLog).at(-1), 'the last ssh call');
-  assert.ok(argv.includes('ControlMaster=no'), 'the daemon rides the master, never becomes one');
   assert.match(must(argv.at(-1)), new RegExp(`^env SUB_HUMAN_HOME=${host.home.replace(/[.]/g, '\\.')} .*/bin/serve --stdio ${code} --link [0-9a-f]{12} --login$`));
   assert.equal(Object.keys(links(host, code)).length, 1);
 });
@@ -319,10 +303,10 @@ test('login e2e: --home names a host home that is not ~/.sub-human; a primed (mu
 test('login e2e: an unknown host key fails at once with the exact ssh to run once; a refused login names BatchMode; neither mints a link', t => {
   const a = setup(t, { FAKE_SSH_FAIL: 'hostkey' });
   const t0 = Date.now();
-  const r = a.remote.join(a.bob, `join me@devbox:2222 ${a.code} --as bob --via jump@bastion`);
+  const r = a.remote.join(a.bob, `join me@devbox:2222 ${a.code} --as bob`);
   stopDaemon(t, a.remote, a.code);
   assert.equal(must(r.json).decision, 'block');
-  assert.match(must(must(r.json).reason), /ssh doesn't know me@devbox's host key yet \(or it changed\), and sub-human never answers ssh's questions\. Run `ssh -p 2222 -J jump@bastion me@devbox` once in a terminal/);
+  assert.match(must(must(r.json).reason), /ssh doesn't know me@devbox's host key yet \(or it changed\), and sub-human never answers ssh's questions\. Run `ssh -p 2222 me@devbox` once in a terminal/);
   assert.ok(Date.now() - t0 < 5000, 'no wait for the join timeout');
   assert.deepEqual(links(a.host, a.code), {});
   // a later /sub-human NAME CODE (after the person accepted the key) dials again; here it is still refused, and says so
@@ -356,7 +340,7 @@ test('login join: the argument forms are told apart; bad parts are refused befor
   bad(`join me@devbox ${code} 4829 --as bob`, /that invite line comes from an older sub-human on the host \(a 4-digit PIN where the line's SECRET goes\): ask the host to update/);
   bad(`join me@devbox not-a-code --as bob`, /"not-a-code" isn't a room/);
   bad(`join -oProxyCommand=x@y ${code} --as bob`, /isn't a plain USER@HOST/);
-  bad(`join me@devbox ${code} --as bob --via -oX`, /--via "-oX" isn't a plain/);
+  bad(`join me@devbox ${code} --as bob --via jump`, /"--via" isn't a join option/);
   bad(`join me@devbox ${code} --as bob --home relative`, /--home "relative" isn't a plain absolute path/);
   bad(`join me@devbox ${code} --as claude`, /"claude" is reserved/);
   assert.equal(remote.lib(() => linksLib.list()).length, 0);

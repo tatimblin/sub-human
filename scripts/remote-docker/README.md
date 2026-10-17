@@ -26,43 +26,39 @@ checked only with `node --check`. The "today" column below is the last run befor
 ```
                           this Mac (127.0.0.1: toxiproxy api + devbox-ssh, for the manual mode)
                                     |
-  ======================= edge (the "internet") =================================================
-     |               |                    |                     |                       |
- [joiner-a]     [toxiproxy]           [bastion]             [tls-front]             [corp-proxy]
-  P1 friend     :22001 -> devbox:22    sshd, user jump       Caddy, internal CA     tinyproxy :3128
-  NET_ADMIN     :22003 -> devbox-old   no shell, no tty      https://tls-front/     CONNECT only,
-  sshd          latency / cut /        ProxyJump only to     -> devbox:7421          to :443 :22001
-                reset_peer / timeout   devbox, devbox-old,       |                   :22003
-                    |                  joiner-a                  |                       |
-  ==================|==================|=========================|=====    ===============|=======
-     core (internal)|                  |                         |          corp (internal: no
-                    v                  v                         v           route, no DNS out,
-              [devbox] <---------------+          fwd.ts :7421 -> 127.0.0.1:7420    no UDP)
-              sshd (user host), the host room,    (the tailscaled stand-in; the       |
-              plugin /plugin (ro), node 24        1.1 ws listener will sit on 7420)   |
-              [devbox-old]  plugin 0.5.0-beta.15 (7c97bdb), baked in      [joiner-b] -+-> bastion:22
-                                                                          P2 corporate  corp-proxy:3128
+  ======================= edge (the "internet") ===========================
+     |              |                 |                         |
+ [joiner-a]     [joiner-b]        [toxiproxy]               [tls-front]
+  P1 friend      P1/P3 friend      :22001 -> devbox:22       Caddy, internal CA
+  NET_ADMIN      NET_ADMIN         :22002 -> devbox:22 (b)   https://tls-front/
+  sshd           sshd              :22003 -> devbox-old      -> devbox:7421
+                                   latency / cut /              |
+                                   reset_peer / timeout         |
+  =================================|============================|==========
+     core (internal)               v                            v
+                               [devbox]   fwd.ts :7421 -> 127.0.0.1:7420 (the tailscaled stand-in;
+                               sshd (user host), the host room,  the plugin's ws listener sits on 7420)
+                               plugin /plugin (ro), node 24, SUB_HUMAN_LAB=1, SUB_HUMAN_WEB_FRONT=https://tls-front
+                               [devbox-old]  the previous release (LAB_OLD_REF), baked in
 ```
 
 - **devbox**: node 24, sshd (keys only, `AllowTcpForwarding no`), user `host` with the room in
   `/home/host/.sub-human`. The plugin is mounted read-only at `/plugin`; `claude` is a stub, so no room Claude runs. It is on
-  the internal `core` network only: a joiner reaches it through toxiproxy (the chaos-able WAN path), through the
-  bastion (ProxyJump) or, for 1.1, through tls-front.
+  the internal `core` network only: a joiner reaches it through toxiproxy (the chaos-able WAN path) or, for 1.1,
+  through tls-front. Its seats run with `SUB_HUMAN_LAB=1` and `SUB_HUMAN_WEB_FRONT=https://tls-front`, so
+  `/sub-human invite --web` names the lab's front instead of Tailscale Serve (the knob is honoured only under the
+  lab or the tests; a person uses Tailscale).
 - **devbox-old**: the same image with the previous release, plugin 0.5.0-beta.15, from `git archive 7c97bdb
   plugin/sub-human` baked in (`lab/Dockerfile.old`, built once by `lab.ts` as `sub-human-lab-old:7c97bdb`; `LAB_OLD_REF`
   for another). Its `joiner` user is the beta.15 joiner. Releases before 0.5 are not interoperated with any more.
-- **bastion**: sshd for user `jump`: `ForceCommand nologin`, `PermitTTY no`, forwarding only to `devbox:22`,
-  `devbox-old:22` and `joiner-a:22`.
 - **joiner-a / joiner-b**: node 24, the plugin, an ssh client, user `joiner` with its own `SUB_HUMAN_HOME`, and
   `NET_ADMIN` for iptables. They run the real hooks and CLI (`lab/seat-cli.ts`). Each seat has a `lab/seat-proc.ts`
   that stands in for its `claude` process and runs the plugin's own room tail, which renews the lease and records
   every delivery with a timestamp. A joiner's ssh routing is its own `~/.ssh/NAME.conf`, passed to the link
-  daemon as `SUB_HUMAN_SSH_OPTS=-F …`. Every invite says `ssh:host@devbox`; the config decides the path.
-  joiner-b sits on `corp`, so it can reach only `bastion:22` and `corp-proxy:3128`.
-- **toxiproxy**: `devbox-ssh` (:22001) and `old-ssh` (:22003). It is used for latency, disable (cut), `reset_peer`
-  and `timeout` (half-open) toxics.
-- **corp-proxy**: tinyproxy (`lab/tinyproxy.conf`), CONNECT to 443, 22001 and 22003 only. Every CONNECT is logged.
-  The ssh path through it is `ProxyCommand nc -X connect -x corp-proxy:3128 %h %p`; the wss path is `HTTPS_PROXY`.
+  daemon as `SUB_HUMAN_SSH_OPTS=-F …`. Every invite says `ssh:host@devbox`; the config decides the path (joiner-a
+  through toxiproxy :22001, joiner-b through its own :22002, so a cut on one leaves the other up).
+- **toxiproxy**: `devbox-ssh` (:22001), `devbox-ssh-b` (:22002, joiner-b's) and `old-ssh` (:22003). It is used for
+  latency, disable (cut), `reset_peer` and `timeout` (half-open) toxics.
 - **tls-front**: Caddy with `tls internal` for `https://tls-front/` (`lab/Caddyfile`). It forwards everything,
   WebSocket upgrades included, to `devbox:$LAB_WS_FWD_PORT` (7421), where `lab/fwd.ts` hands the connection to the
   host's `127.0.0.1:$LAB_WS_PORT` (7420), the plugin's `sub-human listen`. This is the shape of Tailscale Serve/Funnel: a third party terminates
@@ -73,19 +69,18 @@ checked only with `node --check`. The "today" column below is the last run befor
 | id | persona | what it proves | today |
 |---|---|---|---|
 | `p1-friends` | P1 | joiner-a joins by ssh with the real flow (its key a login on devbox; `/sub-human invite --ssh`, the line `/sub-human join host@devbox CODE SECRET --as bob`, then `/sub-human join PIN` when the host asks, the host's card Let in, a bare `/sub-human`); posts reach the other side's tail in under 2 s, also with a 300 ms latency toxic each way; machine ids distinct (bob's is the one his machine key gives, `k…`, kept in joiner-a's `machines.json`); mirror byte-identical; `doctor` exits 0, `doctor --json` passes the link and the clock, `--bundle FILE` holds no token, secret, PIN or room code | not run (Stage 7b) |
-| `p2-corporate` | P2 | joiner-b's isolation (no route, no DNS, only bastion and proxy); bea joins with the line from `invite --ssh … --via jump@bastion` (her own login, `ssh -J`, her own known_hosts); a second home joins via the CONNECT proxy; bastion and proxy logs show the hops | not run (Stage 7b) |
 | `p3-sleep` | P3 | `docker pause devbox` 90 s (`LAB_SLEEP_S`): both links go offline, then come back within 30 s of the wake; a post while offline is queued (`⧗ queued`) and flushed exactly once; seats renewed with no left/joined line; no line lost or duplicated. `docker pause joiner-a` 45 s (`LAB_JOINER_SLEEP_S`): it catches up on the 6 posts it slept through. Default link timings | pass |
-| `half-open` | P3/P2 | a toxiproxy `timeout` toxic (bob) and iptables DROP (bea) black-hole the links; a post returns within 10 s (`⧗ sending`, kept under its nonce) and lands exactly once after the heal; both links are declared dead within 35 s by the app ping (`LAB_PING_DEADLINE_MS`) | pass |
-| `flap` | P1/P3 | 10 cuts in 60 s (alternating disable and `reset_peer`) while everyone posts; ends byte-identical; every accepted post once; no ghost; bea via the bastion is the control | pass |
+| `half-open` | P3 | a toxiproxy `timeout` toxic (bob) and iptables DROP to toxiproxy (bea) black-hole the links; a post returns within 10 s (`⧗ sending`, kept under its nonce) and lands exactly once after the heal; both links are declared dead within 35 s by the app ping (`LAB_PING_DEADLINE_MS`) | pass |
+| `flap` | P1/P3 | 10 cuts in 60 s (alternating disable and `reset_peer`) while everyone posts; ends byte-identical; every accepted post once; no ghost; bea on her own WAN path is the control | pass |
 | `slow-link` | P1 | 5 s of upstream latency, past the hook's 3 s deadline: the hook says `⧗ sending (slow link)` within 3 s, never "nothing was sent"; the post lands exactly once (no ghost, no double) and the outbox empties | pass |
 | `skew` | mixed | beta.15 host ← current joiner: its line ends with a 4-digit PIN, refused here naming the host's update; current host ← beta.15 joiner: beta.15 refuses the SECRET line, and the host's invite text names the version it needs; a link made before keeps working (protocol 1..3 against 1..2 settles on 2, unit-tested); a hello as a 9.9.9 joiner (protocol 99) into the host's serve over an ssh login is refused `PROTOCOL` (reason `SKEW`) naming both versions and "The host must update" | not run (Stage 7b) |
-| `security` | all | nothing of sub-human's in the devbox account's `authorized_keys` (no door, no forced command); the bastion has no shell; homes 0700 with nothing group/world readable; no link token in any log, room file, process list or other file; PIN guessing pending (unit-tested); `/sub-human kick bob`: his link's token ends, serve stopped, bob's link stops (AUTH, typed reason) and his post is refused, bea untouched | not run (Stage 7b) |
-| `tls-front` | 1.1 | `https://tls-front/` verifies against the lab CA and answers 502 with no listener; with a stand-in listener on the devbox loopback (`lab/ws-probe.ts`) the upgrade is 101 and echoes, from joiner-a and from joiner-b only through corp-proxy | pass |
-| `wss` | 1.1 | the host's `sub-human listen` on 127.0.0.1:7420; `/sub-human invite --url https://tls-front` shows `/sub-human join https://tls-front/sub-human/CODE SECRET` and the PIN apart (no name, no `#`); bob and (through corp-proxy) ben type the line (the listener's key checked against it, Noise XK with a key of the link's own), then the PIN when asked; a wrong PIN is refused; alice's card lets each in, a bare `/sub-human` seats them; posts flow both ways; mirrors converge; Caddy's log holds no post text | not run (Stage 7b) |
+| `security` | all | nothing of sub-human's in the devbox account's `authorized_keys` (no door, no forced command); homes 0700 with nothing group/world readable; no link token in any log, room file, process list or other file; PIN guessing pending (unit-tested); `/sub-human kick bob`: his link's token ends, serve stopped, bob's link stops (AUTH, typed reason) and his post is refused, bea untouched | not run (Stage 7b) |
+| `tls-front` | 1.1 | `https://tls-front/` verifies against the lab CA and answers 502 with no listener; with a stand-in listener on the devbox loopback (`lab/ws-probe.ts`) the upgrade is 101 and echoes, from joiner-a and joiner-b | pass |
+| `wss` | 1.1 | the host's `sub-human listen` on 127.0.0.1:7420; `/sub-human invite --web` (the devbox's `SUB_HUMAN_WEB_FRONT`) shows `/sub-human join https://tls-front/sub-human/CODE SECRET` and the PIN apart (no name, no `#`); bob and ben type the line (the listener's key checked against it, Noise XK with a key of the link's own), then the PIN when asked; a wrong PIN is refused; alice's card lets each in, a bare `/sub-human` seats them; posts flow both ways; mirrors converge; Caddy's log holds no post text | not run (Stage 7b) |
 | `tailscale` | 1.1 | opt-in (`TS_SERVE=1` and a tailscale CLI): the plugin's real `sub-human listen` and exactly the commands `invite --web` / `invite --stop` run (`tailscale serve --bg --https=443 --set-path=/sub-human-lab-<rand> http://127.0.0.1:<port>`, then `… --set-path=… off`), with a wss + Noise_NK handshake through the node's MagicDNS name pinned to the listener's key (never Funnel, never `serve reset`). The certificate is warmed first and the connect waits 45 s (a cold ts.net name takes ~20 s). A tailnet without Serve/HTTPS fails the serve check with the plugin's message (the admin URL), within 10 s | skip |
-| `wss-resilience` | P3/P2 (1.1) | bob (direct) and ben (corp-proxy) over wss: `docker pause devbox` `LAB_WSS_SLEEP_S` (45) s, both offline, a post queued, back within 30 s, the queued post once; iptables DROP to tls-front / corp-proxy, both dead within `LAB_PING_DEADLINE_MS` and back after the heal; the listener killed and restarted, both redial; converged throughout | pass |
-| `login` | P1 | bob's own key is an ordinary line in the devbox account's `authorized_keys`; `/sub-human join host@devbox CODE --as bob` (no invite, PIN or card) first fails at once on the unknown host key, naming `ssh host@devbox` to run once (BatchMode, no hang, no link minted); after that ssh it links and seats in one step through the host's shim (written by alice's join), `serve … --login` runs as host, the room line names the link, posts flow, mirror converges; the login seat has no account by default (its own person for consent; `sub-human options CODE login-same-person on` in the host's shell makes it the owner's) and its machine id is its machine key's (`k…`); a key restricted to another link (the forced-command line a card's Let in writes, here written directly) gets AUTH on the login path and mints nothing; `/sub-human kick bob` stops the link | not run (Stage 7) |
-| `short` | P1/P2 | invite lines on real sshd and the web: `invite --ssh` writes nothing to `authorized_keys` and shows the line and the PIN apart; bob (joiner-a, WAN, his own login) types the line, the host asks for the PIN, a wrong PIN (4 tries left), the right one; alice's card; online; a bare `/sub-human` seats him; posts flow. ben (joiner-b, corp-proxy, tls-front) joins by URL + SECRET, then the PIN; mirrors converge; the front's log holds no PIN or SECRET. Strangers and PIN guessing: pending (unit-tested) | not run (Stage 7b) |
+| `wss-resilience` | P3 (1.1) | bob and ben over wss: `docker pause devbox` `LAB_WSS_SLEEP_S` (45) s, both offline, a post queued, back within 30 s, the queued post once; iptables DROP to tls-front, both dead within `LAB_PING_DEADLINE_MS` and back after the heal; the listener killed and restarted, both redial; converged throughout | pass |
+| `login` | P1 | bob's own key is an ordinary line in the devbox account's `authorized_keys`; `/sub-human join host@devbox CODE --as bob` (no invite, PIN or card) first fails at once on the unknown host key, naming `ssh host@devbox` to run once (BatchMode, no hang, no link minted); after that ssh it links and seats in one step through the host's shim (written by alice's join), `serve … --login` runs as host, the room line names the link, posts flow, mirror converges; the login seat's account is the host's (whoever logs in as the account is its person) and its machine id is its machine key's (`k…`); a key restricted to another link (the forced-command line a card's Let in writes, here written directly) gets AUTH on the login path and mints nothing; `/sub-human kick bob` stops the link | not run (Stage 7) |
+| `short` | P1 | invite lines on real sshd and the web: `invite --ssh` writes nothing to `authorized_keys` and shows the line and the PIN apart; bob (joiner-a, WAN, his own login) types the line, the host asks for the PIN, a wrong PIN (4 tries left), the right one; alice's card; online; a bare `/sub-human` seats him; posts flow. ben (joiner-b, tls-front) joins by URL + SECRET, then the PIN; mirrors converge; the front's log holds no PIN or SECRET. Strangers and PIN guessing: pending (unit-tested) | not run (Stage 7b) |
 
 Statuses: **pass**; **fail** (a check failed: exit 1); **pending** (the feature is not in the plugin yet, so the
 scenario or check is not run); **bug** (a known plugin bug; exit 0 unless `LAB_STRICT=1`); **skip** (opt-in).
@@ -106,7 +101,7 @@ probe finds it and the scenario runs. You can also force things:
 |---|---|---|
 | `inviteLine` | `lib/remote/invite-secret.ts` (protocol 3: an invite line and its PIN apart) | short |
 | `shortCode` | `lib/remote/enroll.ts` (0.5.0-beta.15's PIN over CPace: the old end in skew) | skew |
-| `hostSsh` | `hooks/handlers/join.ts` handles `--ssh` | p2-corporate |
+| `hostSsh` | `hooks/handlers/join.ts` handles `--ssh` | p1-friends |
 | `revoke`, `doctor` | the CLI's usage lists `kick` (`revoke` before 0.5.0-beta.6), `doctor` | security, p1-friends |
 | `heartbeat` | protocol op `ping` (or `ping` in `link.ts`) | half-open |
 | `outbox` | `lib/remote/outbox.ts` (or `outbox` in `link.ts`) | p3-sleep |
@@ -145,5 +140,5 @@ redacted from every file.
 - `lab.ts`: the lab controller and the scenario runner.
 - `scenarios/`: one file per scenario, plus `_lib.ts` (ssh routes and the delivery, link-state and convergence helpers).
 - `lab/`: `compose.yml`, `Dockerfile` (the one machine image), `Dockerfile.old`, `entry.sh` (roles), `seat-cli.ts` /
-  `seat-proc.ts` (seats inside a machine), `fwd.ts`, `ws-probe.ts`, `tinyproxy.conf`, `Caddyfile`.
+  `seat-proc.ts` (seats inside a machine), `fwd.ts`, `ws-probe.ts`, `Caddyfile`.
 - `compose.yml`, `Dockerfile` and `host-cli.ts`: the original single-devbox stack (the manual mode; `run` is not ported).

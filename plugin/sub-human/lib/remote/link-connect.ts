@@ -56,7 +56,7 @@ const wsMod = lazy<typeof WsMod>(import.meta.url, './transports/ws.ts');
 const machineKeyMod = lazy<typeof MachineKeyMod>(import.meta.url, './machine-key.ts');
 
 const pipeLocator = (h: string = homeMod.home()): string => `pipe:${h}`;
-const sshLocator = (dest: string, opts?: { via?: string }): string | null => ssh().locator(dest, opts);
+const sshLocator = (dest: string): string | null => ssh().locator(dest);
 const transportOf = (locator: string): ReturnType<typeof TransportsMod['parse']> => transports().parse(locator);
 
 /** A link the host refused before it held a token: drop the invite, its PIN and the pending rebind; say why. */
