@@ -279,6 +279,21 @@ test('link: no pong within deadMs and no new connection: the link is dead (OFFLI
   assert.match(must(last(r).prevError), /no pong within 250 ms|no route to host/);
 });
 
+test('link: while dials keep failing, the state record\'s since stays when the link went offline (the row\'s "offline 2m")', async t => {
+  const r = await rig(t);
+  const l = await r.start();
+  t.after(() => l.stop('done'));
+  await h.until(() => l.state() === 'online', 3000, 5);
+  r.refuse = true;
+  conn0(r).c.close();
+  await h.until(() => l.state() === 'offline', 3000, 5);
+  const down = must(r.states.findLast(s => s.state === 'offline')).since;
+  await h.until(() => (r.states.at(-1)?.attempt ?? 0) >= 4, 3000, 5);
+  const after = r.states.slice(r.states.findIndex(s => s.since === down));
+  assert.ok(after.some(s => s.state === 'connecting') && after.filter(s => s.state === 'offline').length >= 3, 'several failed dials');
+  assert.deepEqual([...new Set(after.map(s => s.since))], [down], 'one since through every failed dial');
+});
+
 test('link: wake() while online makes before it breaks: hooks\' appends during repeated swaps land once each, in order', async t => {
   const r = await rig(t);
   const l = await r.start();

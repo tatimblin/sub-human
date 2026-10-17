@@ -36,6 +36,7 @@ interface EngineState {
   /** the code it stopped with (AUTH, PROTOCOL, FORK), and the typed reason */
   code: string | null;
   why: Reason | null;
+  /** when it last went online, down (connecting or offline: kept across failed dials), fork or stopped */
   since: number;
   conn: number | null;
   dial: number | null;
@@ -80,6 +81,7 @@ interface EngineCtx { timings: LinkTimings; random?: () => number; now: number }
 
 const FATAL: ReadonlySet<unknown> = new Set(['FORK', 'AUTH', 'PROTOCOL']);
 const FOR_GOOD: ReadonlySet<unknown> = new Set(['fork', 'stopped']);
+const DOWN: ReadonlySet<unknown> = new Set(['connecting', 'offline']);
 const forGood = (s: EngineState): boolean => FOR_GOOD.has(s.phase);
 const shown = (s: EngineState): LinkStateWord => (s.phase === 'offline' && s.dial !== null ? 'connecting' : s.phase);
 
@@ -100,8 +102,11 @@ function step(state: EngineState, event: EngineEvent, ctx: EngineCtx): { state: 
   const fx: EngineEffect[] = [];
   const T = ctx.timings;
   const random = ctx.random ?? Math.random;
+  // since: when the link last changed between online, down (connecting or offline), fork and stopped. A failed dial
+  // or a swap is no change: an offline link's time counts from when it was last online (or from the start, if never)
   const enter = (phase: LinkStateWord, reason: string | null = null, code: string | null = null, why: Reason | null = null) => {
-    Object.assign(s, { phase, reason, code, why, since: ctx.now });
+    const same = phase === s.phase || (DOWN.has(phase) && DOWN.has(s.phase));
+    Object.assign(s, { phase, reason, code, why, ...(same ? {} : { since: ctx.now }) });
     fx.push({ type: 'publish' });
   };
   const clear = (...names: TimerName[]) => {
