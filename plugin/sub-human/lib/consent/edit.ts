@@ -15,7 +15,10 @@
  *        plan file restored (the closing ExitPlanMode reads the file as it runs: empty, it shows "Exited plan mode";
  *        the person's own plan put back before it would be drawn and handed to the model as an approved plan)
  *   a prompt outside plan mode while open: the edit is dropped (nothing stored), the plan file restored; so does a
- *        prompt after a stored edit whose PostToolUse never came (Esc, a crash)
+ *        prompt after a stored edit whose PostToolUse never came (Esc, a crash). An open edit whose plan file differs
+ *        from its seed (plan mode left with shift+tab before ExitPlanMode: a hand edit, or the model's) is not lost:
+ *        its text is kept in a draft file, and the person and the model are told where (nothing stored: storing is an
+ *        ExitPlanMode in an edit the person asked for, and a version names its editor's Claude)
  * An edit never shows the plan dialog and never records an answer: the store's receipt replaces the dialog, and
  * sign-off stays a separate request each person answers in their own review (invariant 2 of docs/next/ROOM-PLAN.md).
  *
@@ -44,7 +47,9 @@ export type EditEvent =
   | { type: 'permission' }
   | { type: 'exited' }
   | { type: 'stop'; mode: string | undefined; active: boolean }
-  | { type: 'prompt'; mode: string | undefined };
+  /** plan: the edit's plan file now; seed: what the hooks seeded there (null: unknown); draft: where an unstored edit's
+   * text would be kept */
+  | { type: 'prompt'; mode: string | undefined; plan?: PlanFile; seed?: string | null; draft?: string | null };
 
 export type EditEffect =
   | { do: 'save'; edit: PlanEdit }
@@ -52,7 +57,9 @@ export type EditEffect =
   | { do: 'restorePlan'; file: string; backup: string | null }
   /** the plan file emptied for the closing ExitPlanMode (lib/cc/env.ts LEAVE_PLAN_TEXT); restorePlan follows at exited */
   | { do: 'blankPlan'; file: string }
-  | { do: 'put'; plan: string; base: number; text: string; summary: string };
+  | { do: 'put'; plan: string; base: number; text: string; summary: string }
+  /** an unstored edit's text kept for the person (the plan file is restored after) */
+  | { do: 'keepDraft'; file: string; text: string };
 
 export type EditSay =
   | { to: 'context'; text: string }
@@ -61,7 +68,8 @@ export type EditSay =
   | { to: 'attach'; text: string }
   | { to: 'permit'; mode: string };
 
-export interface EditStep { edit: PlanEdit | null; effects: EditEffect[]; say: EditSay | null }
+/** notice: a line for the person (the hook's systemMessage), beside what the model is told. */
+export interface EditStep { edit: PlanEdit | null; effects: EditEffect[]; say: EditSay | null; notice?: string }
 
 /** The most of a conflicting version's text a deny carries (the rest: the read tool). */
 const CONFLICT_TEXT_MAX = 12_000;
@@ -92,6 +100,9 @@ export const EDIT_SAY = {
   left: (p: string, v: number | undefined, unchanged: boolean): string => `sub-human: plan mode closed with no approval: room plan ${p}${v ? ` v${v}` : ''} was ${unchanged ? 'left as it was' : 'stored, not agreed'} `
     + '("approved exiting plan mode" above only marks how plan mode was left). Do not carry it out. Return to what you were doing.',
   notStored: (p: string): string => `sub-human: nothing was stored for room plan ${p}: the plan view's Yes is not a sign-off and stores nothing. To store an edit, ask the plan tool for an edit again.`,
+  draftKept: (p: string, file: string): string => `sub-human: plan mode was left before the room plan ${p} edit was stored, so nothing was stored. `
+    + `The edited text is kept at ${file}. If your person wants it in the room, open an edit again (the plan tool, op edit) and put that text in the plan file.`,
+  draftNotice: (p: string, file: string): string => `your edit of room plan ${p} was not stored (plan mode was left first); its text is kept at ${file}. Ask your Claude to update the room plan with it`,
   exitNow: (p: string): string => `sub-human: room plan ${p} is stored; call ExitPlanMode once more now (it only leaves plan mode, no dialog).`,
 };
 
@@ -146,6 +157,17 @@ function seedInto(e: PlanEdit, plan: PlanFile): [PlanEdit, EditEffect[]] | null 
   const [back, undo] = e.file && e.file !== plan.file ? restore(e) : [e, kept];
   const next: PlanEdit = { ...back, file: plan.file, backup: plan.text, restored: false };
   return [next, [...undo, { do: 'save', edit: next }, { do: 'seed', file: plan.file, plan: e.plan, base: e.base }]];
+}
+
+/** An open edit's text that was never stored: the plan file (still the edit's, not restored) differs from its seed.
+ * The text below the closing marker, or the whole file when the header is broken; null when nothing differs. */
+function unstored(e: PlanEdit, ev: Extract<EditEvent, { type: 'prompt' }>): string | null {
+  if (e.phase !== 'open' || !e.file || e.restored || !ev.plan || ev.plan.file !== e.file) return null;
+  const now = ev.plan.text;
+  if (now == null || ev.seed == null || now === ev.seed) return null;
+  const got = capture(now);
+  const text = 'error' in got ? now : got.text;
+  return text.trim() ? text : null;
 }
 
 export function reduce(edit: PlanEdit | null, ev: EditEvent): EditStep {
@@ -211,7 +233,10 @@ export function reduce(edit: PlanEdit | null, ev: EditEvent): EditStep {
       if (ev.mode === 'plan') return none(e);
       // plan mode left another way (or never entered): the edit is over; a stored one is in the room already
       const [, effects] = restore(e);
-      return { edit: null, effects, say: null };
+      const kept = unstored(e, ev);
+      if (!kept || !ev.draft) return { edit: null, effects, say: null };
+      return { edit: null, effects: [{ do: 'keepDraft', file: ev.draft, text: kept }, ...effects],
+        say: { to: 'context', text: EDIT_SAY.draftKept(e.plan, ev.draft) }, notice: EDIT_SAY.draftNotice(e.plan, ev.draft) };
     }
     default: return assertNever(ev, 'edit event');
   }

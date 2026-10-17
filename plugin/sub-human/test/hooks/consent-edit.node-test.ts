@@ -205,3 +205,33 @@ test('edit (hooks, live 2026-10-17): the closing ExitPlanMode never sees the per
   w2.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: {}, tool_use_id: 'tu1', tool_response: { plan: '', filePath: f2 } }), { as: 'alice' });
   assert.equal(fs.existsSync(f2), false);
 });
+
+test('edit (live 2026-10-17): plan mode left with shift+tab before ExitPlanMode keeps the unstored edit as a draft, tells the person and the model, stores nothing', () => {
+  // the reducer: a changed file is kept (the text below the marker), an untouched one is not
+  const seeded = edit.seed('c', 'room', 1, '# v1\n');
+  const changed = seeded.replace('# v1\n', '# v1\n\n2. my hand edit\n');
+  const step = edit.reduce(SEEDED, { type: 'prompt', mode: 'default', plan: { file: '/plans/x.md', text: changed }, seed: seeded, draft: '/h/drafts/c/alice-room.md' });
+  assert.deepEqual(step.effects, [{ do: 'keepDraft', file: '/h/drafts/c/alice-room.md', text: '# v1\n\n2. my hand edit\n' }, { do: 'restorePlan', file: '/plans/x.md', backup: 'mine' }]);
+  assert.equal(step.edit, null);
+  assert.match(step.say && step.say.to === 'context' ? step.say.text : '', /nothing was stored\. The edited text is kept at \/h\/drafts\/c\/alice-room\.md/);
+  assert.match(must(step.notice), /your edit of room plan room was not stored .* kept at \/h\/drafts\/c\/alice-room\.md/);
+  const same = edit.reduce(SEEDED, { type: 'prompt', mode: 'default', plan: { file: '/plans/x.md', text: seeded }, seed: seeded, draft: '/d' });
+  assert.deepEqual([same.effects.map(e => e.do), same.say, same.notice], [['restorePlan'], null, undefined], 'nothing edited: nothing kept');
+  assert.deepEqual(edit.reduce(STORED, { type: 'prompt', mode: 'default', plan: { file: '/plans/x.md', text: changed }, seed: seeded, draft: '/d' }).effects.map(e => e.do), ['restorePlan'], 'a stored edit is in the room already');
+  // the hooks: the person edits the seeded file by hand, then shift+tab and a prompt
+  const w = new World({ alice: 'act', bob: 'sleep' });
+  w.lib(() => plans.put(storeOf(w), { base: 0, text: '# v1\n' }, { by: 'bob' }));
+  const file = planFile(w, 'alice', '# mine\n');
+  openEdit(w, 'alice', 1);
+  w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {} }), { as: 'alice' });
+  attach(w, 'alice', file);
+  write(file, '# v1\n\n2. hand edit\n', '');
+  const r = w.hook('prompt', ev('UserPromptSubmit', null, { permission_mode: 'default', prompt: 'ok' }), { as: 'alice' });
+  const draft = path.join(w.home, 'drafts', w.code, 'alice-room.md');
+  assert.equal(fs.readFileSync(draft, 'utf8'), '# v1\n\n2. hand edit\n');
+  assert.equal(fs.readFileSync(file, 'utf8'), '# mine\n', 'the person\'s own plan is back');
+  assert.equal(editOf(w, 'alice'), null);
+  assert.match(r.stdout, /your edit of room plan room was not stored/);
+  assert.match(r.stdout, /The edited text is kept at /);
+  assert.equal(w.entries().filter(e => e.kind === 'plan').length, 1, 'nothing stored');
+});

@@ -258,13 +258,17 @@ the model edits the plan file
 ExitPlanMode Pre                   ──► capture (its plan, else the file; header off) ─► lib/plans.ts request: put on the host, else the link's
                                        plan.put. Every outcome is the PreToolUse deny, so no approval dialog shows:
    stored                          ──► "stored as vN" ─► the model's next ExitPlanMode passes; PermissionRequest: allow
-                                       with setMode (lib/cc/env.ts leavePlanMode) back to the person's mode (a person
-                                       already in plan mode stays there: the receipt ends the edit)
+                                       with setMode (lib/cc/env.ts leavePlanMode) back to the person's mode, the plan
+                                       file emptied (the call reads it as it runs: "Exited plan mode", never the
+                                       person's own plan shown as approved; a person already in plan mode stays there:
+                                       the receipt ends the edit)
    conflict                        ──► base := the current version; the deny carries its text: reconcile, exit again
    refused / offline               ──► the deny says why; the edit stays open
 ExitPlanMode Post                  ──► edit cleared, the plan file restored from its backup; context "plan mode closed
                                        with no approval: … stored, not agreed"
-a prompt outside plan mode         ──► the edit dropped (nothing stored), the plan file restored
+a prompt outside plan mode         ──► the edit dropped (nothing stored), the plan file restored; an open edit whose
+                                       file differs from its seed (shift+tab before ExitPlanMode) is kept as a draft,
+                                       <home>/drafts/CODE/NAME-PLAN.md, and the person and the model are told where
 ```
 
 `lib/plans.ts` put runs on the host under the room's `plan` lock: compare-and-swap on the plan's current version (a `base` other than the current one is a conflict carrying the current version and its text; the same text again is `unchanged`), then the blob and the `plan` entry (`{system: true}`, from the editing seat, `for` its person). An edit never shows the plan dialog and never records an answer: the store's receipt stands in for the dialog, and sign-off is a separate request each person answers once, the editor included.
