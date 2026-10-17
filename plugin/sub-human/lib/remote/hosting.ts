@@ -181,7 +181,7 @@ function inviteText({ code, how, line, pin, ref, extra = [], pinned, cut = false
     'When they have typed both, a card here asks you to let them in; nothing gets in before you answer.',
     `Sent it to the wrong place? /sub-human invite --cancel ${ref} cancels just this invite.`,
     ...extra,
-    `They need sub-human ${protocol.PLUGIN_VERSION} or newer (an older one says the PIN must be 4 digits, or that the invite is from a newer version): /plugin update sub-human.`,
+    `They need sub-human ${protocol.PLUGIN_VERSION} or newer; an older one is told the host runs a newer version and to update (/plugin update sub-human).`,
   ].join('\n');
 }
 

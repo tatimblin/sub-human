@@ -6,8 +6,9 @@
  * Where each count lives, so that reconnecting does not reset what costs the host something:
  *   log      append.human, append.agent: the room's own lines by that seat (via human / agent) in the window, read
  *            from the log's tail (the newest lines first, stopping at the window): nothing extra is written
- *   link     hello (with a token or an invite), subscribe, seat (join and leave), blob.put: a window of times per link
- *            in the host-only kv document remote/quota ({linkId: {op: [ms, ...]}}), written once per counted op
+ *   link     hello (with a token or an invite), subscribe, seat (join and leave), blob.put, task (task requests) and
+ *            plan (plan versions offered): a window of times per link in the host-only kv document remote/quota
+ *            ({linkId: {op: [ms, ...]}}), written once per counted op
  *   session  beat, blob.get, ping, and any hello on one connection: in the session's memory (they are
  *            frequent, cheap, or bounded elsewhere)
  *

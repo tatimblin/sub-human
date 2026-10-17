@@ -81,7 +81,8 @@ test('an invite over pipe: the host sees the line and the PIN apart; the line, t
   assert.match(reason(out), /tell them its PIN apart from the line \(say it, or send it another way\): \d{4}\n/);
   assert.ok(!new RegExp(`join \\S+ \\S+ ${word}[^\\n]*${pin}`).test(reason(out)), 'the PIN is not on the line');
   assert.match(reason(out), /a card here asks you to let them in/);
-  assert.match(reason(out), /They need sub-human \S+ or newer/);
+  assert.match(reason(out), /They need sub-human \S+ or newer; an older one is told the host runs a newer version and to update \(\/plugin update sub-human\)\./);
+  assert.doesNotMatch(reason(out), /PIN must be 4 digits/, 'an older (protocol 3) joiner meets the version skew, not a PIN rule');
 
   stopDaemon(t, remote, code);
   const typed = await typeLine(remote, bob, code, m.line, 'bob');
