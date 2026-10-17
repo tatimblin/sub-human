@@ -18,8 +18,8 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   // the edit's ExitPlanMode came back with the store's receipt (a deny: no approval dialog), and nothing was answered
   const s4 = x.span('S4');
   const es = x.inSpan(x.entries(B), s4);
-  const receipt = toolResults(es).find(t => /stored as room plan room v1\. Not agreed/.test(t));
-  det(`${B}'s Claude was told the receipt ("stored as room plan room v1. Not agreed …"), no approval dialog`, !!receipt, receipt ? receipt.slice(0, 120) : 'no receipt in its transcript');
+  const receipt = toolResults(es).find(t => /saved as room plan room v1, not agreed yet/.test(t));
+  det(`${B}'s Claude was told the receipt ("saved as room plan room v1, not agreed yet"), no approval dialog`, !!receipt, receipt ? receipt.slice(0, 120) : 'no receipt in its transcript');
   const answered = log.filter(e => (e.kind === 'signoff' || e.kind === 'objection') && v1 && e.proposal_hash === v1.hash && e.id < (props[0]?.id ?? Infinity));
   det('The edit recorded no answer (an edit is never a sign-off)', answered.length === 0, answered.map(x.fmt).join('; ') || 'none');
   const p1 = props[0];

@@ -378,7 +378,8 @@ function restoreStale(me: Me | null | undefined, { force = false, now = Date.now
     if (st.file && !st.restored && st.hash) {
       let cur: Buffer | null = null;
       try { cur = fs.readFileSync(st.file); } catch { /* gone */ }
-      if (cur && hash12(cur) === st.hash) { restorePlan(st); out = 'restored'; }
+      // the proposal's text, or nothing (emptied for the closing ExitPlanMode: lib/cc/env.ts LEAVE_PLAN_TEXT)
+      if (cur && (hash12(cur) === st.hash || !cur.length)) { restorePlan(st); out = 'restored'; }
     }
     clearReview(me);
     return out;

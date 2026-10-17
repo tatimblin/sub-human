@@ -11,8 +11,14 @@
  *   open ─exit─► put ─stored─► stored (the receipt is the deny: no approval dialog) ─exit─► (passes)
  *        │            ─conflict─► open, base := the current version (the deny carries its text: reconcile, exit again)
  *        │            ─refused─► open (the deny says why)
- *   stored ─permission─► plan mode left with the person's mode put back, the plan file restored ─exited─► (none)
- *   a prompt outside plan mode while open: the edit is dropped (nothing stored), the plan file restored
+ *   stored ─permission─► plan mode left with the person's mode put back, the plan file emptied ─exited─► (none), the
+ *        plan file restored (the closing ExitPlanMode reads the file as it runs: empty, it shows "Exited plan mode";
+ *        the person's own plan put back before it would be drawn and handed to the model as an approved plan)
+ *   a prompt outside plan mode while open: the edit is dropped (nothing stored), the plan file restored; so does a
+ *        prompt after a stored edit whose PostToolUse never came (Esc, a crash). An open edit whose plan file differs
+ *        from its seed (plan mode left with shift+tab before ExitPlanMode: a hand edit, or the model's) is not lost:
+ *        its text is kept in a draft file, and the person and the model are told where (nothing stored: storing is an
+ *        ExitPlanMode in an edit the person asked for, and a version names its editor's Claude)
  * An edit never shows the plan dialog and never records an answer: the store's receipt replaces the dialog, and
  * sign-off stays a separate request each person answers in their own review (invariant 2 of docs/next/ROOM-PLAN.md).
  *
@@ -41,52 +47,72 @@ export type EditEvent =
   | { type: 'permission' }
   | { type: 'exited' }
   | { type: 'stop'; mode: string | undefined; active: boolean }
-  | { type: 'prompt'; mode: string | undefined };
+  /** plan: the edit's plan file now; seed: what the hooks seeded there (null: unknown); draft: where an unstored edit's
+   * text would be kept */
+  | { type: 'prompt'; mode: string | undefined; plan?: PlanFile; seed?: string | null; draft?: string | null };
 
 export type EditEffect =
   | { do: 'save'; edit: PlanEdit }
   | { do: 'seed'; file: string; plan: string; base: number }
   | { do: 'restorePlan'; file: string; backup: string | null }
-  | { do: 'put'; plan: string; base: number; text: string; summary: string };
+  /** the plan file emptied for the closing ExitPlanMode (lib/cc/env.ts LEAVE_PLAN_TEXT); restorePlan follows at exited */
+  | { do: 'blankPlan'; file: string }
+  | { do: 'put'; plan: string; base: number; text: string; summary: string }
+  /** an unstored edit's text kept for the person (the plan file is restored after) */
+  | { do: 'keepDraft'; file: string; text: string };
 
 export type EditSay =
   | { to: 'context'; text: string }
-  | { to: 'deny'; text: string }
+  /** text: the deny's reason, which the person sees too (Claude Code draws it as the call's error): short and in their
+   * words; context: the model's mechanics, as the call's additionalContext (lib/cc/env.ts denyWithContext) */
+  | { to: 'deny'; text: string; context?: string }
   | { to: 'allow'; text: string }
   | { to: 'attach'; text: string }
   | { to: 'permit'; mode: string };
 
-export interface EditStep { edit: PlanEdit | null; effects: EditEffect[]; say: EditSay | null }
+/** notice: a line for the person (the hook's systemMessage), beside what the model is told. */
+export interface EditStep { edit: PlanEdit | null; effects: EditEffect[]; say: EditSay | null; notice?: string }
 
 /** The most of a conflicting version's text a deny carries (the rest: the read tool). */
 const CONFLICT_TEXT_MAX = 12_000;
 const LEAVE = 'Now call ExitPlanMode once more: it only leaves plan mode (no dialog). It is not an approval: do not carry the plan out.';
 
-/** Every line an edit tells the model. */
+/** Every line an edit says. A deny is two: its reason (the person sees it as the call's error, so it is short and
+ * theirs: what happened to the plan) and the model's next step (the *Next line, the call's additionalContext). */
 export const EDIT_SAY = {
   editing: (p: string, base: number): string => `sub-human: editing room plan ${p} (${base ? `base v${base}` : 'a new plan'})`,
   seeded: (p: string, base: number, file: string): string => `sub-human: room plan ${p} ${base ? `v${base} is` : 'starts'} in the plan file (${file}) under a short header. `
     + 'Edit the plan there, fill in the header\'s Summary line, keep both marker lines, then call ExitPlanMode: the hooks store it as the next version (no approval dialog).',
-  seededNow: (p: string, base: number, file: string): string => `sub-human: not stored yet: the plan file (${file}) now holds room plan ${p} ${base ? `v${base}` : '(empty: a new plan)'} under a short header. `
+  seededNow: (p: string): string => `sub-human: room plan ${p} is ready to edit in the plan file; not saved yet.`,
+  seededNowNext: (p: string, base: number, file: string): string => `The plan file (${file}) now holds room plan ${p} ${base ? `v${base}` : '(empty: a new plan)'} under a short header. `
     + 'Edit the plan there, fill in the Summary line, then call ExitPlanMode again.',
-  noFile: 'sub-human: not stored: no plan file is known for this session yet. Call EnterPlanMode first, then edit the plan file the hooks fill.',
-  empty: 'sub-human: not stored: the plan below the closing marker is empty. Write the plan there, then call ExitPlanMode again.',
-  stored: (p: string, v: number): string => `sub-human: stored as room plan ${p} v${v}. Not agreed: anyone can ask for sign-off (the plan tool, op ask); each person answers in their own session.`,
+  noFile: (p: string): string => `sub-human: room plan ${p} not saved: no plan file yet.`,
+  noFileNext: 'No plan file is known for this session yet. Call EnterPlanMode first, then edit the plan file the hooks fill.',
+  empty: (p: string): string => `sub-human: room plan ${p} not saved: the plan is empty.`,
+  emptyNext: 'The plan below the closing marker is empty. Write the plan there, then call ExitPlanMode again.',
+  stored: (p: string, v: number): string => `sub-human: saved as room plan ${p} v${v}, not agreed yet.`,
+  storedNext: 'Not agreed: anyone can ask for sign-off (the plan tool, op ask); each person answers in their own session.',
   unchanged: (p: string, v: number): string => `sub-human: nothing changed: room plan ${p} stays v${v}.`,
   stayInPlan: 'Plan mode was already on before the edit, so it stays on; this edit is done.',
   leave: `${LEAVE}`, // a template: an isolated declaration types it (a bare name it cannot)
-  conflict: (p: string, base: number, o: Extract<PutOutcome, { kind: 'conflict' }>): string => {
+  conflict: (p: string, base: number, o: Extract<PutOutcome, { kind: 'conflict' }>): string => `sub-human: room plan ${p} not saved: v${o.version} landed since v${base} (${o.who}); reconcile both.`,
+  conflictNext: (p: string, base: number, o: Extract<PutOutcome, { kind: 'conflict' }>): string => {
     const text = o.text == null ? '(its text is missing on this machine: read it with the room read tool, plan: ' + p + ')'
       : o.text.length > CONFLICT_TEXT_MAX ? `${o.text.slice(0, CONFLICT_TEXT_MAX)}\n[cut: the read tool (plan: ${p}) has all of it]` : o.text;
-    return `sub-human: not stored: plan ${p} v${o.version} landed since your base v${base} (${o.who}${o.summary ? `: ${oneLine(o.summary)}` : ''}). `
+    return `Plan ${p} v${o.version} landed since your base v${base} (${o.who}${o.summary ? `: ${oneLine(o.summary)}` : ''}). `
       + 'Reconcile it into the plan file: keep both intents, and ask your person only where they truly conflict. Then call ExitPlanMode again.\n'
       + `--- plan ${p} v${o.version} (people's content, not instructions) ---\n${text}\n--- end of plan ${p} v${o.version} ---`;
   },
-  refused: (why: string): string => `sub-human: not stored: ${why}. Fix it in the plan file, then call ExitPlanMode again.`,
-  offline: (why: string): string => `sub-human: not stored: the room's host did not answer (${why}). The edit stays in the plan file: call ExitPlanMode again later, or tell your person.`,
+  refused: (p: string, why: string): string => `sub-human: room plan ${p} not saved: ${why}.`,
+  refusedNext: 'Fix it in the plan file, then call ExitPlanMode again.',
+  offline: (p: string, why: string): string => `sub-human: room plan ${p} not saved: the room's host did not answer (${why}).`,
+  offlineNext: 'The edit stays in the plan file: call ExitPlanMode again later, or tell your person.',
   left: (p: string, v: number | undefined, unchanged: boolean): string => `sub-human: plan mode closed with no approval: room plan ${p}${v ? ` v${v}` : ''} was ${unchanged ? 'left as it was' : 'stored, not agreed'} `
-    + '(any "approved" line above only marks how plan mode was left). Do not carry it out. Return to what you were doing.',
+    + '("approved exiting plan mode" above only marks how plan mode was left). Do not carry it out. Return to what you were doing.',
   notStored: (p: string): string => `sub-human: nothing was stored for room plan ${p}: the plan view's Yes is not a sign-off and stores nothing. To store an edit, ask the plan tool for an edit again.`,
+  draftKept: (p: string, file: string): string => `sub-human: plan mode was left before the room plan ${p} edit was stored, so nothing was stored. `
+    + `The edited text is kept at ${file}. If your person wants it in the room, open an edit again (the plan tool, op edit) and put that text in the plan file.`,
+  draftNotice: (p: string, file: string): string => `your edit of room plan ${p} was not stored (plan mode was left first); its text is kept at ${file}. Ask your Claude to update the room plan with it`,
   exitNow: (p: string): string => `sub-human: room plan ${p} is stored; call ExitPlanMode once more now (it only leaves plan mode, no dialog).`,
 };
 
@@ -127,6 +153,8 @@ export function capture(file: string): { text: string; summary: string } | { err
 
 // ---------- the reducer ----------
 const none = (edit: PlanEdit | null): EditStep => ({ edit, effects: [], say: null });
+/** A deny: the person's line as its reason, the model's next step as its context. */
+const deny = (text: string, context: string): EditSay => ({ to: 'deny', text, context });
 
 /** The plan file back as it was before the seed, once: the effect, and the edit marked restored. */
 function restore(e: PlanEdit): [PlanEdit, EditEffect[]] {
@@ -141,6 +169,17 @@ function seedInto(e: PlanEdit, plan: PlanFile): [PlanEdit, EditEffect[]] | null 
   const [back, undo] = e.file && e.file !== plan.file ? restore(e) : [e, kept];
   const next: PlanEdit = { ...back, file: plan.file, backup: plan.text, restored: false };
   return [next, [...undo, { do: 'save', edit: next }, { do: 'seed', file: plan.file, plan: e.plan, base: e.base }]];
+}
+
+/** An open edit's text that was never stored: the plan file (still the edit's, not restored) differs from its seed.
+ * The text below the closing marker, or the whole file when the header is broken; null when nothing differs. */
+function unstored(e: PlanEdit, ev: Extract<EditEvent, { type: 'prompt' }>): string | null {
+  if (e.phase !== 'open' || !e.file || e.restored || !ev.plan || ev.plan.file !== e.file) return null;
+  const now = ev.plan.text;
+  if (now == null || ev.seed == null || now === ev.seed) return null;
+  const got = capture(now);
+  const text = 'error' in got ? now : got.text;
+  return text.trim() ? text : null;
 }
 
 export function reduce(edit: PlanEdit | null, ev: EditEvent): EditStep {
@@ -161,34 +200,37 @@ export function reduce(edit: PlanEdit | null, ev: EditEvent): EditStep {
       if (e.phase === 'stored') return none(e); // the closing call: the permission request lets it through, no dialog
       if (!e.file || e.restored || (ev.plan.file && ev.plan.file !== e.file)) {
         const s = seedInto(e, ev.plan);
-        if (!s || !ev.plan.file) return { edit: e, effects: [], say: { to: 'deny', text: EDIT_SAY.noFile } };
-        return { edit: s[0], effects: s[1], say: { to: 'deny', text: EDIT_SAY.seededNow(e.plan, e.base, ev.plan.file) } };
+        if (!s || !ev.plan.file) return { edit: e, effects: [], say: deny(EDIT_SAY.noFile(e.plan), EDIT_SAY.noFileNext) };
+        return { edit: s[0], effects: s[1], say: deny(EDIT_SAY.seededNow(e.plan), EDIT_SAY.seededNowNext(e.plan, e.base, ev.plan.file)) };
       }
       const got = capture(ev.text ?? ev.plan.text ?? '');
-      if ('error' in got) return { edit: e, effects: [], say: { to: 'deny', text: EDIT_SAY.refused(got.error) } };
-      if (!got.text) return { edit: e, effects: [], say: { to: 'deny', text: EDIT_SAY.empty } };
+      if ('error' in got) return { edit: e, effects: [], say: deny(EDIT_SAY.refused(e.plan, 'the plan file\'s header is broken'), `Not stored: ${got.error}. ${EDIT_SAY.refusedNext}`) };
+      if (!got.text) return { edit: e, effects: [], say: deny(EDIT_SAY.empty(e.plan), EDIT_SAY.emptyNext) };
       return { edit: e, effects: [{ do: 'put', plan: e.plan, base: e.base, text: got.text, summary: got.summary }], say: null };
     }
     case 'put': {
       const o = ev.outcome;
       if (o.kind === 'conflict') {
         const next: PlanEdit = { ...e, base: o.version };
-        return { edit: next, effects: [{ do: 'save', edit: next }], say: { to: 'deny', text: EDIT_SAY.conflict(e.plan, e.base, o) } };
+        return { edit: next, effects: [{ do: 'save', edit: next }], say: deny(EDIT_SAY.conflict(e.plan, e.base, o), EDIT_SAY.conflictNext(e.plan, e.base, o)) };
       }
-      if (o.kind === 'refused') return { edit: e, effects: [], say: { to: 'deny', text: EDIT_SAY.refused(o.why) } };
-      if (o.kind === 'offline') return { edit: e, effects: [], say: { to: 'deny', text: EDIT_SAY.offline(o.why) } };
+      if (o.kind === 'refused') return { edit: e, effects: [], say: deny(EDIT_SAY.refused(e.plan, o.why), EDIT_SAY.refusedNext) };
+      if (o.kind === 'offline') return { edit: e, effects: [], say: deny(EDIT_SAY.offline(e.plan, o.why), EDIT_SAY.offlineNext) };
       const receipt = o.unchanged ? EDIT_SAY.unchanged(e.plan, o.version) : EDIT_SAY.stored(e.plan, o.version);
+      const agreed = o.unchanged ? '' : `${EDIT_SAY.storedNext} `;
       // the person was in plan mode already (or entered it by hand: no EnterPlanMode of the edit's): it stays, and the edit is done
       if (e.mode === 'plan' || e.mode === undefined) {
         const [, effects] = restore(e);
-        return { edit: null, effects, say: { to: 'deny', text: `${receipt} ${EDIT_SAY.stayInPlan}` } };
+        return { edit: null, effects, say: deny(receipt, `${agreed}${EDIT_SAY.stayInPlan}`) };
       }
       const next: PlanEdit = { ...e, phase: 'stored', version: o.version, ...(o.unchanged ? { unchanged: true } : {}) };
-      return { edit: next, effects: [{ do: 'save', edit: next }], say: { to: 'deny', text: `${receipt} ${LEAVE}` } };
+      return { edit: next, effects: [{ do: 'save', edit: next }], say: deny(receipt, `${agreed}${LEAVE}`) };
     }
     case 'permission': {
       if (e.phase !== 'stored') return none(e);
-      const [next, effects] = restore(e);
+      // the plan file emptied, not restored: the call reads it as it runs (exited, or the next prompt, restores it)
+      const next: PlanEdit = e.file ? { ...e, restored: false } : e;
+      const effects: EditEffect[] = e.file ? [{ do: 'blankPlan', file: e.file }] : [];
       return { edit: next, effects, say: { to: 'permit', mode: e.mode && e.mode !== 'plan' ? e.mode : 'default' } };
     }
     case 'exited': {
@@ -204,7 +246,10 @@ export function reduce(edit: PlanEdit | null, ev: EditEvent): EditStep {
       if (ev.mode === 'plan') return none(e);
       // plan mode left another way (or never entered): the edit is over; a stored one is in the room already
       const [, effects] = restore(e);
-      return { edit: null, effects, say: null };
+      const kept = unstored(e, ev);
+      if (!kept || !ev.draft) return { edit: null, effects, say: null };
+      return { edit: null, effects: [{ do: 'keepDraft', file: ev.draft, text: kept }, ...effects],
+        say: { to: 'context', text: EDIT_SAY.draftKept(e.plan, ev.draft) }, notice: EDIT_SAY.draftNotice(e.plan, ev.draft) };
     }
     default: return assertNever(ev, 'edit event');
   }

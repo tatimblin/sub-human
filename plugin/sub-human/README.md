@@ -259,8 +259,10 @@ A room has plans, each with a name (`room` unless someone names another topic, s
 **Editing.** Ask your Claude ("let's write a room plan for cursor paging; you write the first version", "update the room plan: max 50 per page"). It calls the room's `plan` tool (op `edit`), then enters plan mode: the hooks put the plan's current version into its plan file under a short header that says it is a group-contributed plan and names the version it starts from. Your Claude edits the plan there, as with any plan, and calls ExitPlanMode. The hooks store it as the next version and tell your Claude so, with no approval dialog: storing an edit is not agreeing to it, and nothing about it asks you to say yes.
 
 ```
-⏺ sub-human: stored as room plan room v2. Not agreed: anyone can ask for sign-off (the plan tool, op ask); each person answers in their own session.
+  ⎿  Error: sub-human: saved as room plan room v2, not agreed yet.
 ```
+
+Claude Code draws the receipt under the call the way it draws a refused call; it is the receipt, not a failure (what your Claude does next goes to it separately).
 
 Your own plan file is put back as it was, and your permission mode too. Everyone else sees one line, `alice's Claude for alice: plan room v2: max 50 per page`; it wakes no one.
 
@@ -276,8 +278,9 @@ When a request names you, your Claude opens it in Claude Code's plan-approval di
  ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
   Plan: cursor paging for GET /tasks
   …
-  │ room proposal 3fa2c1d0e9b8 from alice, for bob (PgUp/PgDn scroll). Agree: "Yes, manually approve edits"
-  │ keeps your mode. Object: "Tell Claude what to change" + why. Esc: decide later.
+  │ sign-off on plan paging v3, asked by alice, for bob: agreeing signs off on this text, it is not a go-ahead
+  │ to build (PgUp/PgDn scroll). Agree: "Yes, manually approve edits" keeps your mode. Object: "Tell Claude
+  │ what to change" + why. Esc: decide later.
  ❯ 1. Yes, and use auto mode
    2. Yes, manually approve edits
    3. Tell Claude what to change

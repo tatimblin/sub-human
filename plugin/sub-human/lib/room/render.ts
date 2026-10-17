@@ -246,8 +246,10 @@ function chatBody(e: Entry, viewer: string | undefined, entries: readonly Readon
     case 'proposal': {
       // a room plan's version: who asks whom to sign off on it; a proposal from before plans, by its title
       const label = proposalLabel(n.hash, entries);
-      const to = (n.approvers ?? []).map(you).join(', ');
-      if (label && label.startsWith('plan ')) return { head: `${chatWho(n, trust)} asks for sign-off`, text: `${label}${to ? ` from ${to}` : ''}` };
+      // "frank asks you and bob to sign off on plan api v3 (82e9fb)": the approvers are who is asked, never "from"
+      const who = (n.approvers ?? []).map(you).filter((x): x is string => !!x);
+      const to = who.length > 1 ? `${who.slice(0, -1).join(', ')} and ${who.at(-1) ?? ''}` : who[0] ?? '';
+      if (label && label.startsWith('plan ')) return { head: `${chatWho(n, trust)} asks ${to || 'for sign-off'}${to ? ' to sign off on' : ' on'} ${label}`, text: '' };
       const h = n.hash ? ` (${String(n.hash).slice(0, 6)})` : '';
       return { head: `${chatWho(n, trust)} proposed`, text: `${t.replace(TITLE_PREFIX, '')}${h}` };
     }

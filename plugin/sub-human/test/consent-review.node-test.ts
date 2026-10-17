@@ -70,12 +70,12 @@ const TABLE: Record<string, Record<ConsentEvent['type'], [string, string | null,
     ask: ['shown', 'deny', ''], answered: ['shown', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', 'context', ''],
   },
   exiting: {
-    enter: ['entering', 'allow', 'restorePlan,save,writePlan'], entered: ['exiting', null, ''], exit: ['exiting', null, ''], permission: ['exiting', 'permit', 'restorePlan'],
+    enter: ['entering', 'allow', 'restorePlan,save,writePlan'], entered: ['exiting', null, ''], exit: ['exiting', null, ''], permission: ['exiting', 'permit', 'blankPlan'],
     exited: ['none', 'context', 'restorePlan'], stop: ['exiting', 'context', ''], roomTool: ['exiting', 'deny', ''], prompt: ['exiting', 'context', ''],
     ask: ['exiting', 'deny', ''], answered: ['exiting', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', null, ''],
   },
   unread: {
-    enter: ['entering', 'allow', 'restorePlan,save,writePlan'], entered: ['exiting', null, ''], exit: ['exiting', null, ''], permission: ['exiting', 'permit', 'restorePlan'],
+    enter: ['entering', 'allow', 'restorePlan,save,writePlan'], entered: ['exiting', null, ''], exit: ['exiting', null, ''], permission: ['exiting', 'permit', 'blankPlan'],
     exited: ['none', 'context', 'answer,restorePlan'], stop: ['exiting', 'context', ''], roomTool: ['exiting', 'deny', ''], prompt: ['exiting', 'context', ''],
     ask: ['exiting', 'deny', ''], answered: ['exiting', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', 'context', ''],
   },
@@ -404,6 +404,18 @@ test('stage 8e D (live verify, localb/03c-f): a note told already whose card wen
   assert.equal(again.notice, undefined, 'once');
   assert.equal(must(again.state.note).hash, H, 'never dropped');
   assert.equal(review.reduce({ review: null, note: note('told') }, { ...PROMPT, live: false }, ctx).notice, undefined, 'a note no longer live says nothing');
+});
+
+test('the plan view\'s line names the request as people know it (plan NAME vN; a request from before plans by its title), and says agreeing is a sign-off on the text, not a go-ahead to build', () => {
+  assert.match(review.SAY.dialog('bob', H, 'alice', 'default', 'plan paging v3'), /^sign-off on plan paging v3, asked by alice, for bob: agreeing signs off on this text, it is not a go-ahead to build /);
+  assert.match(review.SAY.dialog('bob', H, null, 'default', 'Ship v3 Monday'), new RegExp(`^sign-off on "Ship v3 Monday" \\(${H.slice(0, 6)}\\), for bob: `));
+  assert.match(review.SAY.dialog('bob', H, 'alice', 'default'), new RegExp(`^sign-off on room proposal ${H}, asked by alice`));
+  assert.equal(review.SAY.opening('bob', H, 'plan paging v3'), 'sub-human: opening plan paging v3 for bob');
+  // the title rides from the pending request into the review and its dialog
+  const entering = review.reduce({ review: null, note: null }, { type: 'enter', mode: 'default', reviewable: true, pending: [{ hash: H, from: 'alice', viewable: true, title: 'plan paging v3' }], said: null, named: null, plan: { file: null, text: null } }, ctx);
+  assert.equal(must(entering.state.review).title, 'plan paging v3');
+  const shown = review.reduce(entering.state, { type: 'exit', toolUseId: 'tu1', shown: { hash: H, from: 'alice' }, text: 'x', plan: { file: '/plans/x.md', text: null }, callPlan: undefined, ownPlan: undefined }, ctx);
+  assert.match(must(shown.say && shown.say.to === 'ask' ? shown.say.text : null), /^sign-off on plan paging v3, asked by alice, for bob/);
 });
 
 test('stage 8e H (live verify, localb/07e): the plan view\'s hint names only a "Yes" the dialog offers: the one that keeps default or auto, else any Yes (the mode comes back)', () => {

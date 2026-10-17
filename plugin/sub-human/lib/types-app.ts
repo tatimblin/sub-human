@@ -104,6 +104,8 @@ export interface Review {
   at?: number;
   hash?: string;
   from?: string | null;
+  /** how the person knows the request ("plan paging v3": lib/proposal.ts title), for the dialog's line */
+  title?: string | null;
   file?: string;
   backup?: string | null;
   restored?: boolean;
