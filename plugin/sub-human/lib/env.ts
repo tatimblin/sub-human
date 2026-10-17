@@ -85,7 +85,7 @@ export const ENV = {
   SUB_HUMAN_DEBUG: { kind: 'flag', does: 'the room MCP server logs' },
   // ----- strings and paths (envStr: the value as set) -----
   SUB_HUMAN_HOME: { kind: 'path', does: 'the store (default ~/.sub-human)' },
-  SUB_HUMAN_ROOM: { kind: 'str', does: 'the room a room\'s Claude was started for' },
+  SUB_HUMAN_ROOM: { kind: 'str', does: 'the room a room\'s Claude was started for; the CLI\'s room without --room' },
   SUB_HUMAN_VIA: { kind: 'str', does: '"module": a hook run by the hooks module (mod/core/shim.ts)' },
   SUB_HUMAN_CLAUDE: { kind: 'path', does: 'the claude binary (default claude)' },
   SUB_HUMAN_PLUGIN_DIR: { kind: 'path', does: 'the room\'s Claude\'s --plugin-dir ("" for none)' },

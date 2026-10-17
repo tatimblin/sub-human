@@ -111,7 +111,7 @@ function foldAll(entries: readonly (Entry | null | undefined)[] | null | undefin
 /** The list as people see it: the room task and deleted tasks left out. */
 const fold = (entries: readonly (Entry | null | undefined)[] | null | undefined): Task[] => foldAll(entries)
   .filter(t => t.status !== 'deleted' && !isRoomTask(t))
-  .map(t => ({ id: t.id, subject: t.subject, status: t.status, owner: t.owner, blockedBy: t.blockedBy }));
+  .map(t => ({ id: t.id, subject: t.subject, status: t.status, owner: t.owner, blockedBy: t.blockedBy, ...(t.plan && t.version ? { plan: t.plan, version: t.version } : {}) }));
 
 function refold(code: RoomCode, entries: readonly Readonly<Entry>[], kv: KvApi = kvOf(code)): Task[] {
   const t = fold(entries);

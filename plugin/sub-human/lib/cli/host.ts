@@ -14,7 +14,8 @@
  *   admit(args)  sub-human admit [REF [--refuse] [--yes]] [--room ROOM]: the join requests waiting (no REF: list
  *                them); REF: let that one in after y/N (lib/remote/admission.ts letIn), or --refuse. The card in the
  *                host's session is the usual way; this is for a host with no session open
- *   hostedRoom(explicit?) -> code   --room, else the one open room hosted here (Error NO_ROOM otherwise)
+ *   hostedRoom(explicit?) -> code   --room, else SUB_HUMAN_ROOM, else the one open room hosted here (Error NO_ROOM
+ *                otherwise, naming the open ones)
  *   inClaudeCode(env?) -> bool      run inside Claude Code (CLAUDECODE=1 or CLAUDE_CODE_SESSION_ID): its ! shell, whose
  *                output becomes part of the conversation
  *   maskPins(text, secrets, env?) -> text   inside Claude Code every PIN (and an invite line's SECRET) redacted
@@ -31,6 +32,7 @@ import type * as WebhostMod from '../remote/webhost.ts';
 import type * as HostingMod from '../remote/hosting.ts';
 import type * as AdmissionMod from '../remote/admission.ts';
 import { lazy } from '../io.ts';
+import { envStr } from '../env.ts';
 import * as identity from '../identity.ts';
 import * as text from '../text.ts';
 
@@ -56,8 +58,9 @@ function maskPins(text: string, secrets: readonly (Secret | null | undefined)[],
   return `${out}\n${PIN_HIDDEN}`;
 }
 
-/** The room: --room, else the one open room hosted here. */
-function hostedRoom(explicit?: string): RoomCode {
+/** The room: --room, else SUB_HUMAN_ROOM, else the one open room hosted here. */
+function hostedRoom(given?: string): RoomCode {
+  const explicit = given || envStr('SUB_HUMAN_ROOM');
   if (explicit) {
     if (!identity.isRoomCode(explicit)) throw new Error(`invalid room code "${explicit}"`); // as lib/home.ts roomDir says
     return explicit;

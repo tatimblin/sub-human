@@ -316,14 +316,14 @@ The room has one shared task list. The room session shows it as its native Claud
 
 ## The `sub-human` CLI
 
-`plugin/sub-human/scripts/sub-human` reads the room. Inside a room session it finds your room by itself. It never posts as anyone; only the host's connection commands (`admit`, `kick`, `invite --cancel`) add a line from the room itself. It lives in the plugin's `scripts/`, not `bin/`: claude.ai rejects a plugin with a top-level `bin/` when an organization distributes it, so the CLI is not on the Bash tool's `PATH`. Claude reads the room with the room MCP tools; in your own shell, run it by its path (`node <plugin root>/scripts/sub-human …`) or alias it.
+`plugin/sub-human/scripts/sub-human` reads the room. Inside a room session it finds your room by itself. In a terminal, a command that needs a room takes `--room ROOM`, else `SUB_HUMAN_ROOM`, else the one room open on this machine's sub-human folder; with more than one open (or none) it names them and asks for `--room ROOM`. It never posts as anyone; only the host's connection commands (`admit`, `kick`, `invite --cancel`) add a line from the room itself. It lives in the plugin's `scripts/`, not `bin/`: claude.ai rejects a plugin with a top-level `bin/` when an organization distributes it, so the CLI is not on the Bash tool's `PATH`. Claude reads the room with the room MCP tools; in your own shell, run it by its path (`node <plugin root>/scripts/sub-human …`) or alias it.
 
 | Command | Prints |
 |---|---|
-| `read` | The room log. |
-| `who [--room ROOM]` | Who this session is in its room; with `--room`, each person in that room. |
-| `tasks [--json]` | The room's shared task list (open, in progress, done: the rows' words). |
-| `plan [NAME] [--history]` | A room plan's current text, its versions and where its sign-off stands; with no NAME, each plan's line. |
+| `read [--room ROOM]` | The room log. |
+| `who [--room ROOM]` | Who this session is in its room; with `--room` (or in a terminal, with no seat), each person in that room. |
+| `tasks [--json] [--room ROOM]` | The room's shared task list (open, in progress, done: the rows' words); a task added from a room plan is tagged `[plan NAME vN]`. |
+| `plan [NAME] [--history] [--room ROOM]` | A room plan's current text, its versions and where its sign-off stands; with no NAME, each plan's line. |
 | `verify CODE` | A room's log checked: the hash chain over every segment and every person's line against the keys the room pins. Exit 1 when either fails. |
 | `invite [--room ROOM] [--ssh [USER@HOST[:PORT]]]` | An invite line (`/sub-human join DEST ROOM SECRET`) and its PIN apart, as `/sub-human invite` shows them; over ssh to this machine by default. |
 | `invite [--room ROOM] --web \| --public [--port P]` | The same over the web: the listener and Tailscale Serve (or Funnel), and a URL + SECRET line with its PIN. |

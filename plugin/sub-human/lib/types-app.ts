@@ -52,6 +52,9 @@ export interface Task {
   status: string;
   owner: string | null;
   blockedBy: string[];
+  /** the room plan it was added from, and that plan's version then (lib/tasks.ts fold) */
+  plan?: string;
+  version?: number;
   metadata?: { _internal?: unknown };
 }
 /** The `task` tool's request, normalized (validate). suggest: add only, a suggested owner (never an owner). */

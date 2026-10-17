@@ -2,8 +2,9 @@
  * plugin/sub-human/lib/cli/main.ts: the body of scripts/sub-human (a thin shim kept at its path: persisted artifacts
  * run it), the read-only CLI over the room. There is no post command: writes come only
  * from the plugin's hooks and the MCP server (the host's admit and kick add a line from the room itself, via
- * system). Without --room / CODE, the room is this session's
- * (identity.resolveSelf(): the session id env, then the nearest registered ancestor claude pid).
+ * system). Without --room / CODE, the room is SUB_HUMAN_ROOM's, else this session's (identity.resolveSelf(): the
+ * session id env, then the nearest registered ancestor claude pid), else the one room open on this home (a plain
+ * terminal); with more than one open, or none, the error lists them and names --room CODE (openRoom).
  *
  * Subcommands (each one's usage error and the README carry the detail):
  *   tail        the hooks module's child (mod/deliver.ts): follows this session's seat, one JSON event per line for the
@@ -41,6 +42,7 @@ import * as links from '../room/links.ts';
 import * as linkState from '../room/link-state.ts';
 import { roomsDir } from '../home.ts';
 import { isObj } from '../decode.ts';
+import { envStr } from '../env.ts';
 import { parse as parseArgs } from './args.ts';
 import type { FlagSpec, Parsed } from './types.ts';
 import type { MirrorRoomStore } from '../room/store-mirror.ts';
@@ -76,8 +78,6 @@ const hostLib = lazy<typeof HostMod>(import.meta.url, './host.ts');
 const listenLib = lazy<typeof ListenMod>(import.meta.url, './listen.ts');
 const shimLib = lazy<typeof ShimMod>(import.meta.url, '../remote/shim.ts');
 
-const NOT_IN_ROOM = 'not in a room; type /sub-human in your Claude Code session';
-
 function die(msg: string, code = 2): never {
   process.stderr.write(msg + '\n');
   process.exit(code);
@@ -98,16 +98,33 @@ const intList = (s: string): EntryId[] => String(s).split(',').filter(Boolean).m
 
 type FmtEntry = Parameters<typeof room.fmt>[0];
 
-/** Open the room: an explicit code, else this session's. Returns {code, me|null, r: Room}. */
+/**
+ * Open the room a command names: --room CODE, else SUB_HUMAN_ROOM (lib/env.ts), else this session's seat, else the
+ * one room open on this home (a plain terminal has no seat). With none of them, or more than one room open, it dies
+ * naming the open rooms and --room CODE. Returns {code, me|null (this session's seat when in that room), r: Room}.
+ */
 function openRoom(explicit?: string) {
-  if (explicit) {
-    if (!identity.roomExists(explicit)) die(`no room "${explicit}"`, 1);
+  const named = explicit || envStr('SUB_HUMAN_ROOM') || undefined;
+  if (named) {
+    if (!identity.roomExists(named)) die(`no room "${named}"`, 1);
     const me = identity.resolveSelf();
-    return { code: explicit, me: me && me.code === explicit ? me : null, r: room.open(explicit) };
+    return { code: named, me: me && me.code === named ? me : null, r: room.open(named) };
   }
   const me = identity.resolveSelf();
-  if (!me) die(NOT_IN_ROOM, 1);
-  return { code: me.code, me, r: room.open(me.code) };
+  if (me) return { code: me.code, me, r: room.open(me.code) };
+  const code = soleOpenRoom();
+  return { code, me: null, r: room.open(code) };
+}
+
+/** The one room open on this home (lib/identity.ts openRooms), else die saying which are and how to name one. */
+function soleOpenRoom(): RoomCode {
+  let open: RoomCode[] = [];
+  try { open = identity.openRooms(); } catch { /* none known */ }
+  const [only, ...more] = open;
+  if (only !== undefined && !more.length) return only;
+  return die(open.length
+    ? `${open.length} rooms are open here (${open.join(', ')}); name one with --room CODE`
+    : 'no room is open here; name one with --room CODE (in a Claude Code session, /sub-human joins one)', 1);
 }
 
 // ---------- tail: lib/tail.ts runTail ----------
@@ -188,19 +205,20 @@ function show(args: readonly string[]) {
   process.stdout.write(text.endsWith('\n') ? text : text + '\n');
 }
 
+/** code's people: who is in it, by name and role. */
+function whoIn(code: RoomCode) {
+  const ms = Object.values(identity.readMembers(code) || {}).filter(m => m && m.name && !m.left_at);
+  if (!ms.length) return console.log(`(nobody in room ${code})`);
+  for (const m of ms) console.log(`${m.name} (${m.role}${m.lapsed_at ? ', away' : ''}) in ${code}`);
+}
+
 function who(args: readonly string[] = []) {
   const { flags, rest } = parseFlags(args, { room: 1 });
   if (rest.length) die('usage: sub-human who [--room CODE]');
-  if (flags.room !== undefined) { // the room's people: who is in it, by name and role
-    const { code } = openRoom(flags.room);
-    const ms = Object.values(identity.readMembers(code) || {}).filter(m => m && m.name && !m.left_at);
-    if (!ms.length) return console.log(`(nobody in room ${code})`);
-    for (const m of ms) console.log(`${m.name} (${m.role}${m.lapsed_at ? ', away' : ''}) in ${code}`);
-    return;
-  }
-  const me = identity.resolveSelf();
-  if (!me) die(NOT_IN_ROOM, 1);
-  console.log(`${me.name} (${me.role}) in ${me.code}`);
+  if (flags.room !== undefined) return whoIn(openRoom(flags.room).code); // the room's people
+  const { code, me } = openRoom();
+  if (me) return console.log(`${me.name} (${me.role}) in ${me.code}`);
+  whoIn(code); // no seat here (a terminal): the room's people
 }
 
 // ---------- plan ----------
@@ -234,7 +252,9 @@ function tasksCmd(args: readonly string[]) {
   for (const t of list) {
     const blocked = Array.isArray(t.blockedBy) && t.blockedBy.length ? `  (blocked by ${t.blockedBy.map((b: string | number) => '#' + b).join(',')})` : '';
     const subject = String(t.subject ?? '').replace(/\s+/g, ' ');
-    console.log(`#${t.id}  ${word(t.status).padEnd(w)}  ${String(t.owner || '-').padEnd(o)}  ${subject}${blocked}`);
+    // the room plan it came from, at the version it was added under (lib/tasks.ts after)
+    const plan = t.plan && typeof t.version === 'number' ? `  [plan ${t.plan} v${t.version}]` : '';
+    console.log(`#${t.id}  ${word(t.status).padEnd(w)}  ${String(t.owner || '-').padEnd(o)}  ${subject}${plan}${blocked}`);
   }
 }
 

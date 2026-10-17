@@ -28,6 +28,7 @@ test('brief: framed as people\'s content; plans with state and history, tasks wi
   for (const n of ['alice', 'bob']) assert.ok(proposal.answer({ code, name: sn(n) }, ask, { choice: 'Agree' }).entry);
   assert.ok(proposal.decide(code, ask.hash));
   assert.ok(tasks.apply(store, { op: 'add', subject: 'listTasks paging', plan: 'room' }, { by: 'alice' }).ok);
+  assert.deepEqual(tasks.list(code).map(t => [t.plan, t.version]), [['room', 2]], 'tasks.json (what `sub-human tasks` reads) keeps the plan tag');
   R.append({ kind: 'say', text: 'bob, can you take the handler?' }, { via: 'human', from: 'alice' });
   R.append({ kind: 'say', text: 'note to self' }, { via: 'agent', from: 'bob' });
   const b = brief(code, { viewer: 'bob' });

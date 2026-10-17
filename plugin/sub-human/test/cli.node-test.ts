@@ -160,7 +160,7 @@ test('cli: who / read / digest resolve by session id, then ancestry', () => {
   const code = h.newRoom();
   let r = cli(['who']);
   assert.equal(r.status, 1);
-  assert.match(r.stderr, /not in a room; type \/sub-human in your Claude Code session/);
+  assert.match(r.stderr, /^no room is open here; name one with --room CODE/);
   assert.equal(cli(['read']).status, 1);
   const bob = h.spawnSleeper();
   identity.join({ code, name: sn('bob'), role: 'member', pid: bob.pid, session_id: 'sbob' });
@@ -226,6 +226,37 @@ test('cli show HASH: a proposal\'s stored text, this session\'s room or --room; 
   assert.equal(r.stdout, text, r.stderr);
 });
 
+// A plain terminal: no seat is this process's ancestor (CLAUDE_PID 1 and no session id), the people's seats are other
+// processes'. The one open room is the room; SUB_HUMAN_ROOM names one; two open rooms are listed, with --room CODE.
+test('cli from a terminal: the one open room, SUB_HUMAN_ROOM, else the open rooms listed and --room CODE', () => {
+  h.freshHome();
+  const term = { CLAUDE_PID: '1' };
+  const alice = h.spawnSleeper(), bob = h.spawnSleeper();
+  const code = h.newRoom();
+  identity.join({ code, name: sn('alice'), role: 'member', pid: must(alice.pid), session_id: 'salice' });
+  planVersion({ code, name: sn('alice') }, 'room', '# Paging\n', 'first draft');
+  for (const cmd of [['plan'], ['tasks'], ['who'], ['read']]) {
+    const r = cli(cmd, term);
+    assert.equal(r.status, 0, `${cmd.join(' ')}: ${r.stderr}`);
+    assert.doesNotMatch(r.stderr, /not in a room/);
+  }
+  assert.match(cli(['plan'], term).stdout, /^room v1\b/, 'the open room\'s plan');
+  assert.equal(cli(['who'], term).stdout, `alice (member) in ${code}\n`, 'no seat: the room\'s people');
+  assert.equal(cli(['tasks'], term).stdout, `(no tasks in room ${code})\n`);
+  const other = h.newRoom();
+  identity.join({ code: other, name: sn('bob'), role: 'member', pid: must(bob.pid), session_id: 'sbob' });
+  let r = cli(['plan'], term);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, new RegExp(`^2 rooms are open here \\(.*${code}.*\\); name one with --room CODE\\n$`));
+  assert.ok(r.stderr.includes(other), r.stderr);
+  r = cli(['tasks'], { ...term, SUB_HUMAN_ROOM: other });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, `(no tasks in room ${other})\n`, 'SUB_HUMAN_ROOM names the room');
+  assert.equal(cli(['tasks', '--room', code], { ...term, SUB_HUMAN_ROOM: other }).stdout, `(no tasks in room ${code})\n`, '--room wins');
+  assert.equal(cli(['tasks'], { ...term, SUB_HUMAN_ROOM: 'nope-0000' }).status, 1);
+  alice.kill(); bob.kill();
+});
+
 // ---------- plan ----------
 test('cli plan: every plan\'s line; one plan\'s state, history and text; --history; --room; usage', () => {
   h.freshHome();
@@ -254,14 +285,14 @@ test('cli tasks: the room list from lib/tasks.ts list(code), plain and --json', 
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stdout, `(no tasks in room ${code})\n`);
   const list = [
-    { id: '2', subject: 'parser   tests', status: 'in_progress', owner: 'bob', blockedBy: [] },
+    { id: '2', subject: 'parser   tests', status: 'in_progress', owner: 'bob', blockedBy: [], plan: 'room', version: 2 },
     { id: '3', subject: 'docs', status: 'pending', owner: null, blockedBy: ['2'] },
     { id: '1', subject: `room ${code} open`, status: 'in_progress', owner: 'room', metadata: { _internal: true } },
   ];
   fs.writeFileSync(path.join(must(R.store.dir), 'tasks.json'), JSON.stringify(list));
   r = cli(['tasks']);
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(r.stdout, '#2  in progress  bob  parser tests\n#3  open         -    docs  (blocked by #2)\n', 'the rows\' words: open, in progress, done');
+  assert.equal(r.stdout, '#2  in progress  bob  parser tests  [plan room v2]\n#3  open         -    docs  (blocked by #2)\n', 'the rows\' words: open, in progress, done; the plan a task came from');
   r = cli(['tasks', '--json', '--room', code]);
   assert.deepEqual((JSON.parse(r.stdout) as { id: string }[]).map(t => t.id), ['2', '3']);
   assert.equal(cli(['tasks', '--room', 'nope-0000']).status, 1);
