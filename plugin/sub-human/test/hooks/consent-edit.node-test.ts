@@ -12,6 +12,7 @@ import * as proposal from '../../lib/proposal.ts';
 import * as room from '../../lib/room.ts';
 import * as plans from '../../lib/plans.ts';
 import * as edit from '../../lib/consent/edit.ts';
+import * as guard from '../../mod/core/guard.ts';
 import type { PlanEdit } from '../../lib/types-app.ts';
 import { sn } from '../support/brands.ts';
 import { must } from '../support/must.ts';
@@ -264,13 +265,15 @@ test('edit (live 2026-10-17): plan mode left with shift+tab before ExitPlanMode 
   openEdit(w, 'alice', 1);
   w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {} }), { as: 'alice' });
   attach(w, 'alice', file);
-  write(file, '# v1\n\n2. hand edit\n', '');
+  write(file, '# v1\n\n2. hand edit\n', 'a hand edit');
   const r = w.hook('prompt', ev('UserPromptSubmit', null, { permission_mode: 'default', prompt: 'ok' }), { as: 'alice' });
   const draft = path.join(w.home, 'drafts', w.code, 'alice-room.md');
-  assert.equal(fs.readFileSync(draft, 'utf8'), '# v1\n\n2. hand edit\n');
+  assert.equal(fs.readFileSync(draft, 'utf8'), 'Summary of this edit: a hand edit\n\n# v1\n\n2. hand edit\n', 'B: the Summary line the person wrote is kept');
   assert.equal(fs.readFileSync(file, 'utf8'), '# mine\n', 'the person\'s own plan is back');
   assert.equal(editOf(w, 'alice'), null);
   assert.match(r.stdout, /your edit of room plan room was not stored/);
-  assert.match(r.stdout, /The edited text is kept at /);
+  assert.match(r.stdout, /The edited text is kept at .*: read it with the Read tool/);
+  // B (live validation): the draft can be followed: the Read guard leaves <home>/drafts alone (only secrets are denied)
+  assert.equal(guard.readVerdict([draft], { home: w.home, realHome: w.home }), null);
   assert.equal(w.entries().filter(e => e.kind === 'plan').length, 1, 'nothing stored');
 });

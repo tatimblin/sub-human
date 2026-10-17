@@ -111,7 +111,8 @@ export const EDIT_SAY = {
     + '("approved exiting plan mode" above only marks how plan mode was left). Do not carry it out. Return to what you were doing.',
   notStored: (p: string): string => `sub-human: nothing was stored for room plan ${p}: the plan view's Yes is not a sign-off and stores nothing. To store an edit, ask the plan tool for an edit again.`,
   draftKept: (p: string, file: string): string => `sub-human: plan mode was left before the room plan ${p} edit was stored, so nothing was stored. `
-    + `The edited text is kept at ${file}. If your person wants it in the room, open an edit again (the plan tool, op edit) and put that text in the plan file.`,
+    + `The edited text is kept at ${file}: read it with the Read tool (Bash cannot reach the sub-human folder). If your person wants it in the room, open an edit again (the plan tool, op edit), `
+    + 'put its plan below the closing marker and its Summary line, if it has one, in the header.',
   draftNotice: (p: string, file: string): string => `your edit of room plan ${p} was not stored (plan mode was left first); its text is kept at ${file}. Ask your Claude to update the room plan with it`,
   /** F (live validation): the person's own plan file put back after the edit (the model took it for overwritten) */
   fileBack: 'The session plan file is back as it was before the edit (the person\'s own plan, unchanged).',
@@ -177,14 +178,16 @@ function seedInto(e: PlanEdit, plan: PlanFile): [PlanEdit, EditEffect[]] | null 
 }
 
 /** An open edit's text that was never stored: the plan file (still the edit's, not restored) differs from its seed.
- * The text below the closing marker, or the whole file when the header is broken; null when nothing differs. */
+ * The text below the closing marker, under the header's Summary line when one was written (so it is not lost), or the
+ * whole file when the header is broken; null when nothing differs. */
 function unstored(e: PlanEdit, ev: Extract<EditEvent, { type: 'prompt' }>): string | null {
   if (e.phase !== 'open' || !e.file || e.restored || !ev.plan || ev.plan.file !== e.file) return null;
   const now = ev.plan.text;
   if (now == null || ev.seed == null || now === ev.seed) return null;
   const got = capture(now);
   const text = 'error' in got ? now : got.text;
-  return text.trim() ? text : null;
+  if (!text.trim()) return null;
+  return 'error' in got || !got.summary ? text : `Summary of this edit: ${got.summary}\n\n${text}`;
 }
 
 export function reduce(edit: PlanEdit | null, ev: EditEvent): EditStep {

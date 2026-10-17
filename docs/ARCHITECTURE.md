@@ -270,7 +270,8 @@ ExitPlanMode Post                  ──► edit cleared, the plan file restore
                                        with no approval: … stored, not agreed" (and, when the person had a plan, that it is back)
 a prompt outside plan mode         ──► the edit dropped (nothing stored), the plan file restored; an open edit whose
                                        file differs from its seed (shift+tab before ExitPlanMode) is kept as a draft,
-                                       <home>/drafts/CODE/NAME-PLAN.md, and the person and the model are told where
+                                       <home>/drafts/CODE/NAME-PLAN.md (its Summary line kept), and the person and the model
+                                       are told where (the model reads it with Read: the Bash guard keeps it from the home)
 ```
 
 `lib/plans.ts` put runs on the host under the room's `plan` lock: compare-and-swap on the plan's current version (a `base` other than the current one is a conflict carrying the current version and its text; the same text again is `unchanged`), then the blob and the `plan` entry (`{system: true}`, from the editing seat, `for` its person). An edit never shows the plan dialog and never records an answer: the store's receipt stands in for the dialog, and sign-off is a separate request each person answers once, the editor included.
