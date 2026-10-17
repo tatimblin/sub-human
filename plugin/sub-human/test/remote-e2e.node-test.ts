@@ -19,7 +19,7 @@ import { propose } from './support/plan.ts';
 import * as rows from '../lib/rows.ts';
 import * as linkSocket from '../lib/remote/link-socket.ts';
 import { isAlive } from '../lib/io.ts';
-import { Machine, childOf, kill } from './support/two-homes.ts';
+import { Machine, childOf, kill, stopDaemon } from './support/two-homes.ts';
 import * as taskPlugin from '../mcp/task.ts';
 import * as plans from '../lib/plans.ts';
 
@@ -202,4 +202,36 @@ test('remote e2e: an invite used already is refused at join with that reason, no
   assert.doesNotMatch(must(must(refused.json).reason), /offline|hung up/);
   assert.equal(must(must(refused.json).hookSpecificOutput).suppressOriginalPrompt, true, 'the SECRET stays out of the conversation');
   assert.doesNotMatch(host.log(code), /carol/);
+});
+
+test('remote e2e: a SendMessage round trip between Claudes on two machines, through the room (mod/send.ts)', async t => {
+  const host = new Machine(t, 'host'), remote = new Machine(t, 'remote', LINK_ENV);
+  const alice = host.seat('alice'), carol = host.seat('carol'), bob = remote.seat('bob');
+  host.join(alice, 'alice');
+  const code = must(host.lib(() => store.listRooms()[0]), 'the room');
+  host.join(carol, `carol ${code}`);
+  stopDaemon(t, remote, code);
+  host.linkFor(code, remote);
+  const seated = remote.join(bob, `bob ${code}`);
+  assert.match(must(must(must(seated.json).hookSpecificOutput).additionalContext), /SUB-HUMAN: you are bob's Claude/, seated.stderr);
+  await h.until(() => remote.lib(() => identity.readMembers(code)).bob, 5000, 50);
+
+  // alice's Claude asks bob's: bob is on another machine, so the module posts it to the room addressed to him
+  assert.equal(await host.send(carol, code, `alice.${code}`, 'native'), 'engine', 'a seat on this machine: the native send');
+  assert.deepEqual(await host.send(alice, code, `bob.${code}`, 'what are you working on?'), { isDelivered: true });
+  const asked = must(host.lib(() => store.open(code).readAll()).at(-1));
+  assert.deepEqual([asked.kind, asked.via, asked.from, asked.to], ['say', 'agent', 'alice', 'bob']);
+  // it wakes bob's Claude on his machine, with the address to answer at
+  const bobSees = events(await remote.tail(bob, 2), ['wake']);
+  assert.match(bobSees, /alice's Claude \(to you\): what are you working on\?/);
+  assert.match(bobSees, new RegExp(`\\(for Claude\\) to answer alice's Claude: SendMessage alice\\.${code}`));
+
+  // bob's Claude answers at that address: from his machine it goes through the room the same way, back to alice's
+  assert.deepEqual(await remote.send(bob, code, `alice.${code}`, 'the parser tests'), { isDelivered: true });
+  await h.until(() => host.lib(() => store.open(code).readAll()).some(e => e.from === 'bob' && e.to === 'alice'), 5000, 50);
+  const [aliceSees, carolSees] = await Promise.all([host.tail(alice, 2), host.tail(carol, 2)]);
+  assert.match(events(aliceSees, ['wake']), /bob's Claude \(to you\): the parser tests/);
+  assert.match(events(aliceSees, ['wake']), new RegExp(`\\(for Claude\\) to answer bob's Claude: SendMessage bob\\.${code}`));
+  assert.doesNotMatch(events(carolSees, ['wake']), /the parser tests/, 'addressed: no wake for anyone else');
+  assert.equal(remote.log(code), host.log(code), 'the mirror holds both');
 });

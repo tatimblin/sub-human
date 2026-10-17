@@ -25,6 +25,11 @@
  *                                     line (without "/sub-human "), its parts and the PIN told apart
  *     workers(script, input, seat) -> n     worker threads that hook started (test/support/worker-probe.ts)
  *     tail(seat, seconds) -> Promise<stdout>   seat's tail (scripts/sub-human tail, its NDJSON events) for that long
+ *     mcp(seat, tool, args) -> Promise<result>   one tools/call on the room's MCP server (mcp/room-server.ts) as seat
+ *     send(seat, code, to, text) -> Promise<{isDelivered, reason?} | 'engine'>   a SendMessage as the hooks module's
+ *                                     session.send hook takes it (mod/send.ts: the same files read, mod/core/send.ts
+ *                                     judges): a seat on another machine is posted to through the room; 'engine' when
+ *                                     the module would pass it on (a seat on this machine: the native send)
  *     lib(fn)                         fn with this machine's home, in this process
  *     log(code) -> string             the room's log.jsonl as stored here ('' when none)
  */
@@ -46,11 +51,15 @@ import * as admission from '../../lib/remote/admission.ts';
 import * as linkSocket from '../../lib/remote/link-socket.ts';
 import type { RoomCode } from '../../lib/brand.ts';
 import { roomCode } from '../../lib/text.ts';
+import { remotePeer, postArgs, postResult } from '../../mod/core/send.ts';
 
 const PROBE = path.join(import.meta.dirname, 'worker-probe.ts');
 
 /** A seat on a Machine: a live sleeper's pid standing in for its claude, a session id and the module's nonce. */
 interface Seat { name: string; pid: number; sid: string; nonce: string }
+/** A tools/call result from the room's MCP server. */
+interface McpResult { isError?: boolean; content?: { type: string; text: string }[] }
+const isMcpResult = (v: unknown): v is McpResult => !!v && typeof v === 'object';
 /** A hook run on a Machine: spawnSync's result plus stdout parsed (null when it printed nothing). */
 type MachineRun = SpawnSyncReturns<string> & { json: HookLine | null };
 type Env = Record<string, string | undefined>;
@@ -144,6 +153,38 @@ class Machine {
       c.stdout.on('data', d => { out += d; });
       c.on('exit', () => resolve(out));
     });
+  }
+
+  mcp(seat: Seat, tool: string, args: Record<string, unknown>): Promise<McpResult> {
+    const env = this.env(seat, { CLAUDE_CODE_SESSION_ID: seat.sid });
+    return new Promise<McpResult>((resolve, reject) => {
+      const c = spawn(process.execPath, [h.MCP], { env, cwd: this.cwd, stdio: ['pipe', 'pipe', 'ignore'] });
+      let buf = '';
+      const timer = setTimeout(() => { c.kill('SIGKILL'); reject(new Error(`mcp ${tool}: no answer`)); }, 15_000);
+      c.stdout.on('data', d => {
+        buf += String(d);
+        for (const line of buf.split('\n').slice(0, -1)) {
+          const m: unknown = JSON.parse(line);
+          const result: unknown = m && typeof m === 'object' && Reflect.get(m, 'id') === 2 ? Reflect.get(m, 'result') : null;
+          if (isMcpResult(result)) { clearTimeout(timer); c.kill(); resolve(result); }
+        }
+        buf = buf.slice(buf.lastIndexOf('\n') + 1);
+      });
+      const send = (m: object) => c.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...m }) + '\n');
+      send({ id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'two-homes', version: '0' } } });
+      send({ method: 'notifications/initialized' });
+      send({ id: 2, method: 'tools/call', params: { name: tool, arguments: args } });
+    });
+  }
+
+  async send(seat: Seat, code: RoomCode, to: string, text: string): Promise<ReturnType<typeof postResult> | 'engine'> {
+    const read = (f: string): unknown => { try { return JSON.parse(fs.readFileSync(path.join(this.home, f), 'utf8')); } catch { return null; } };
+    const inRooms = read('machines.json'), machine = read('machine.json');
+    const inRoom: unknown = inRooms && typeof inRooms === 'object' ? Reflect.get(inRooms, code) : undefined;
+    const id: unknown = typeof inRoom === 'string' && inRoom ? inRoom : machine && typeof machine === 'object' ? Reflect.get(machine, 'id') : undefined;
+    const name = remotePeer(to, { name: seat.name, code, role: 'member', addr: `${seat.name}.${code}` }, read(`rooms/${code}/members.json`), id);
+    if (!name) return 'engine';
+    return postResult(name, await this.mcp(seat, 'post', postArgs(name, text)));
   }
 
   /** Kill the listener whose pid this home's listen/state.json holds (no-op without one). */
