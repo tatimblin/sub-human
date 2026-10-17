@@ -40,6 +40,7 @@ import type * as PlanSupportMod from '../../plugin/sub-human/test/support/plan.t
 import type * as HoldMod from '../../plugin/sub-human/mcp/hold.ts';
 import type * as TaskMod from '../../plugin/sub-human/mcp/task.ts';
 import type * as RegisterMod from '../../plugin/sub-human/mod/register.ts';
+import type * as CommandMod from '../../plugin/sub-human/mod/core/command.ts';
 
 const require: <M>(id: string) => M = createRequire(import.meta.url);
 
@@ -75,6 +76,7 @@ export interface PluginFiles {
   'mcp/hold.ts': typeof HoldMod;
   'mcp/task.ts': typeof TaskMod;
   'mod/register.ts': typeof RegisterMod;
+  'mod/core/command.ts': typeof CommandMod;
 }
 
 export const pluginLib = <K extends keyof PluginLibs>(name: K): PluginLibs[K] => require(path.join(PLUGIN, 'lib', name));

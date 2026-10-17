@@ -565,6 +565,16 @@ async function answerCard(session: string, choice: string, note: string): Promis
 }
 
 /** The host's join-request card (lib/remote/admission.ts): move onto "Let in" and Enter. */
+/** What read finds in session's pane, looking again for up to READ_OFF_MS: an invite's line and PIN go on the status
+ * line, which Claude Code may draw a moment after the notice the driver waited for. */
+const READ_OFF_MS = 5000;
+async function readOff(session: string, read: (txt: string) => string | null): Promise<string | null> {
+  for (const end = Date.now() + READ_OFF_MS; ; await sleep(250)) {
+    const v = read(pane(session));
+    if (v || Date.now() >= end) return v;
+  }
+}
+
 async function admitCard(o: Opts, T: number): Promise<number> {
   const session = arg(o, 0);
   if (!(await until(`${session}: the join request's card open`, T, () => admitCardState(pane(session))))) return 1;
@@ -752,8 +762,8 @@ export const COMMANDS: Record<string, Command> = {
   ready: async (o, T) => exit(await ready(arg(o, 0), T)),
   readonly: async o => exit(readonlyAttached(arg(o, 0))),
   pane: async o => { process.stdout.write(pane(arg(o, 0))); return 0; },
-  'join-line': async o => { const l = joinLineIn(pane(arg(o, 0))); if (l) process.stdout.write(l + '\n'); return exit(!!l); },
-  'join-pin': async o => { const p = pinIn(pane(arg(o, 0))); if (p) process.stdout.write(p + '\n'); return exit(!!p); },
+  'join-line': async o => { const l = await readOff(arg(o, 0), joinLineIn); if (l) process.stdout.write(l + '\n'); return exit(!!l); },
+  'join-pin': async o => { const p = await readOff(arg(o, 0), pinIn); if (p) process.stdout.write(p + '\n'); return exit(!!p); },
   'admit-card': admitCard,
   'wait-pane': waitPane,
   'wait-paint': waitPaint,

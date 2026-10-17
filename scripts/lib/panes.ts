@@ -83,21 +83,37 @@ export function planState(p: string): DialogState | null {
  * The line /sub-human invite showed in a capture, without its "/sub-human ", or null: "join DEST ROOM SECRET" (DEST
  * an ssh address or pipe:HOME; SECRET the line's 39 characters; then any --home) or "join URL SECRET". The
  * pane may wrap it: a line break (and the next line's indent) inside a word is dropped first. The last one shown wins.
+ * The plugin shows it one of three ways (lib/remote/hosting.ts invitePinned and inviteText, mod/core/command.ts pinFor):
+ *   whole on the status line under the prompt: "⚠ sub-human: PIN 8238 · /sub-human join DEST ROOM SECRET"
+ *   cut, when the terminal is narrower: the notice shows the line with the word SECRET in its place, and the status
+ *     line "⚠ sub-human: PIN 8238 · SECRET <word>": the two are put back together here
+ *   in the text, without the hooks module (and `sub-human invite` in a terminal): "  /sub-human join …"
  * The PIN is shown apart from the line: pinIn reads it.
  */
 export function joinLineIn(txt: string | null | undefined): string | null {
   const joined = unwrap(txt);
-  const re = /\/sub-human (join (?:https?:\/\/\S+|\S+ [a-z]+-\d{4}) [0-9a-z]{39}(?: --home \S+)?)(?=\s|$)/g;
-  const all = [...joined.matchAll(re)].map(m => m[1]);
-  return all.at(-1) || null;
+  const head = String.raw`\/sub-human (join (?:https?:\/\/\S+|\S+ [a-z]+-\d{4}) )`;
+  const tail = String.raw`((?: --home \S+)?)(?=\s|$)`;
+  const shown: { at: number, line: string }[] = [];
+  for (const m of joined.matchAll(new RegExp(`${head}([0-9a-z]{39})${tail}`, 'g'))) shown.push({ at: m.index, line: `${m[1]}${m[2]}${m[3]}` });
+  // the cut form: the line with SECRET in the word's place, and the word on the status line
+  const word = [...joined.matchAll(/\bPIN \d{4} · SECRET ([0-9a-z]{39})(?=\s|$)/g)].at(-1)?.[1];
+  if (word) for (const m of joined.matchAll(new RegExp(`${head}SECRET${tail}`, 'g'))) shown.push({ at: m.index, line: `${m[1]}${word}${m[2]}` });
+  return shown.sort((a, b) => a.at - b.at).at(-1)?.line || null;
 }
 
 /** The pane may wrap a long word: a line break (and the next line's indent) inside one is dropped. */
 const unwrap = (txt: string | null | undefined): string => (txt || '').replace(/([A-Za-z0-9_./:@-])\n[ \t│⎿]*(?=[A-Za-z0-9_./:@-])/g, '$1'); // one wrap, not a blank line
 
-/** The PIN an invite showed apart from its line ("…apart from the line (say it, or send it another way): 4829"). */
+/**
+ * The PIN an invite showed apart from its line: on the status line ("PIN 4829 · /sub-human join …" or, cut,
+ * "PIN 4829 · SECRET <word>": lib/remote/hosting.ts invitePinned) or, without the hooks module, in the text
+ * ("…apart from the line (say it, or send it another way): 4829"). The last one shown wins.
+ */
 export function pinIn(txt: string | null | undefined): string | null {
-  const all = [...String(txt || '').replace(/[\s│⎿]+/g, ' ').matchAll(/apart from the line \(say it, or send it another way\): (\d{4})\b/g)].map(m => m[1]);
+  const flat = String(txt || '').replace(/[\s│⎿]+/g, ' ');
+  const re = /\bPIN (\d{4}) · (?:\/sub-human join |SECRET )|apart from the line \(say it, or send it another way\): (\d{4})\b/g;
+  const all = [...flat.matchAll(re)].map(m => m[1] ?? m[2]);
   return all.at(-1) || null;
 }
 
