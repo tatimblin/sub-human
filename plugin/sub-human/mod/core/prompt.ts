@@ -172,7 +172,10 @@ export function mergeClassic(ours: ShimResult | null = {}, theirs: ShimResult | 
 export const STOP_FRAME = 'Operation stopped by hook: ';
 
 /** What the model reads in place of a receipt's stop row: the person's @room line was the room's, not a request. */
-export const RECEIPT_FOR_MODEL = (receipt: string): string => `sub-human: the person's @room line above went to the room, not to you (${receipt}); nothing is asked of you.`;
+export const RECEIPT_FOR_MODEL = (receipt: string): string => (receipt.startsWith('✗')
+  // a refusal ("✗ …": the room session's, a not-posted @room): the prompt went nowhere, the room included
+  ? `sub-human: the prompt above was refused and went nowhere (${receipt}); nothing is asked of you.`
+  : `sub-human: the person's @room line above went to the room, not to you (${receipt}); nothing is asked of you.`);
 
 /** A row as session.append hands it, as far as receiptBook reads it. */
 type RowLike = { type?: unknown; content?: unknown };

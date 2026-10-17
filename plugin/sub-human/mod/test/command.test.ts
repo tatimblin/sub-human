@@ -69,6 +69,17 @@ test('typed here: join.ts runs once through the shim with the nonce; an invite c
   expect(seen.logs).toEqual(['invite to room otter-4821 for one machine …', '  /sub-human join me@box otter-4821 4821'])
 })
 
+test('room-plan live: the join\'s payload carries the session\'s permission mode as last seen, so join.ts can warn about bypass-permissions', async ($, on) => {
+  const seen = world($, on, { join: { subHuman: { say: 'help', refused: false, shareable: true } } })
+  on('classic.SessionStart', () => ({}))
+  await start($)
+  await typed($, 'help')
+  expect(must(seen.joins[0], 'the first join').stdin.permission_mode).toBeUndefined()
+  await $.classic.SessionStart({ session_id: SID, source: 'startup', cwd: '/w', permission_mode: 'bypassPermissions' })
+  await typed($, 'help')
+  expect(must(seen.joins[1], 'the second join').stdin.permission_mode).toBe('bypassPermissions')
+})
+
 test('an invite\'s line and PIN go to the status line (saved in no transcript), the notices say where they are', async ($, on) => {
   const say = 'invite to room otter-4821 for one machine … are pinned under the prompt until 12:15 …'
   const seen = world($, on, { join: { subHuman: { say, refused: false, shareable: false, pinned: { status: 'invite to otter-4821 until 12:15: /sub-human join me@box otter-4821 SECRET  ·  its PIN, apart from the line (say it, or send it another way): 4821', ms: 900000 } } } })

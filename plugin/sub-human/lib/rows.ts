@@ -69,6 +69,10 @@ interface RowProposal {
   /** how many people the approvers are: a person in two seats counts once */
   people: number;
   superseded: boolean;
+  /** a sign-off request for a version of a room plan (its hash is the version's) */
+  plan: boolean;
+  /** a plan's request for a version older than the plan's current one: history, never the row's news */
+  stale: boolean;
   name: string;
 }
 /** rowText's options. */
@@ -157,7 +161,7 @@ function rowCalls(me: Me | null | undefined, members: MemberInput, { only = null
     const names = want ? all.filter(n => want.has(n)) : all;
     const lines = ['PARTICIPANT ROWS (one row per person; a row shows that person, not you. Do this now; it costs nothing while they wait):'];
     if (names.length) {
-      lines.push(`Make exactly these Agent tool calls, all in ONE message, then carry on (write nothing about them):`);
+      lines.push(`Make exactly these Agent tool calls, all in ONE message, then end your turn with the one word "ok" (write nothing about them):`);
       for (const n of names) lines.push(participantCall(n));
     } else if (want && all.length) {
       lines.push('Your rows are already running (their holds are live). Make no Agent calls for them now; a second copy would duplicate a row in the panel.');
@@ -373,8 +377,11 @@ function proposals(es: readonly Readonly<Entry>[], code: RoomCode | null | undef
     const verdict: RowProposal['verdict'] = {};
     for (const n of fp.approvers) if (m.answers[n]) verdict[n] = m.answers[n];
     const d = f.decisions.get(fp.hash);
+    const v = f.versionOf(fp.hash);
+    const cur = v ? f.plans.get(v.plan)?.current : null;
     return { id: fp.id, hash: fp.hash, from: fp.from, approvers: fp.approvers, verdict, decided: d ? d.id : 0,
-      agreed: m.agreed.length, objectors: m.objected, also: m.also, people: m.people, superseded: f.superseded.has(fp.hash), name: label(code, fp) };
+      agreed: m.agreed.length, objectors: m.objected, also: m.also, people: m.people, superseded: f.superseded.has(fp.hash),
+      plan: !!v, stale: !!v && !!cur && cur.hash !== fp.hash, name: label(code, fp) };
   });
 }
 /** What a row calls a proposal: its title (lib/proposal.ts title), clipped; the short hash when it has none. */
@@ -387,9 +394,10 @@ function label(code: RoomCode | null | undefined, fp: { hash: string, entry?: En
 const decidedText = (p: RowProposal, c: Paint) => (p.objectors.length ? c.warn(`✖ blocked ${p.name}`) : c.ok(`✔ decided ${p.name}`));
 /** Undecided, unretired proposals that name `name` and that `name` has not answered (newest last). */
 const awaiting = (ps: RowProposal[], name: string) => ps.filter(p => !p.decided && !p.superseded && p.approvers.includes(name) && !p.verdict[name]);
-/** The proposal a row reports for `name`: the newest unretired one that names them, else the newest unretired one. */
+/** The proposal a row reports for `name`: the newest unretired one that names them, else the newest unretired one.
+ * A request for an older version of a plan is retired too, decided or not (a decision on v1 says nothing of v6). */
 function latestFor(ps: RowProposal[], name: string): RowProposal | null {
-  const live = ps.filter(p => !p.superseded);
+  const live = ps.filter(p => !p.superseded && !p.stale);
   return live.filter(p => p.approvers.includes(name)).at(-1) ?? live.at(-1) ?? null;
 }
 
@@ -465,20 +473,24 @@ function roomText({ code, viewer, es, ms, now, c }: RowCtx, summary: string, lin
   // (lib/room/link-state.ts indicator: "✕ offline 2m · 2 queued", "… connecting (3)", "⇄ online")
   const linkSeg: string = linkState.indicator(link, { now });
   if (linkSeg && link?.state !== 'online') parts.push(linkState.isDown(link) ? c.warn(linkSeg) : c.dim(linkSeg));
-  // a join or (settled) leave of the last 2 minutes leads the row: "+bob joined", "−bob left (session ended)" (lib/room/render.ts)
-  const move = rowSegment(es, viewer, { now });
+  // a join or (settled) leave of the last 2 minutes leads the row: "+bob joined", "−bob left (session ended)" (lib/room/render.ts);
+  // only since the viewer's own (last) join: who was here before they came is no news to them
+  const since = viewer ? lastJoinAt(es, viewer) : 0;
+  const move = rowSegment(since ? es.slice(since) : es, viewer, { now });
   if (move) parts.push(c.dim(move));
   const ps = proposals(es, code);
   const need = viewer ? awaiting(ps, viewer) : [];
-  const p = viewer ? latestFor(ps, viewer) : ps.at(-1);
+  // a room plan's state is its plan segment below (its current version), never a request's for an older one
+  const loose = ps.filter(x => !x.plan);
+  const p = viewer ? latestFor(loose, viewer) : loose.filter(x => !x.superseded).at(-1);
   const needs = need.at(-1);
   if (needs) {
     parts.push(c.warn(`⚠ your answer needed ${needs.name}${need.length > 1 ? ` +${need.length - 1}` : ''}`));
   } else if (p) {
     const v = viewer && p.verdict[viewer];
-    const n = `${p.agreed}/${p.people}`;
+    const n = `${p.agreed}/${p.people} agreed`;
     if (p.decided) parts.push(decidedText(p, c));
-    else if (v && v.kind === 'signoff') parts.push(c.ok(`✓ agreed ${p.name} ${n}`));
+    else if (v && v.kind === 'signoff') parts.push(`proposal ${p.name} ${n} ${c.ok('(✓ you)')}`); // not decided: a count, no ✔
     else if (v && v.kind === 'objection') parts.push(c.warn('✖ objected'));
     else parts.push(`proposal ${p.name} ${n}`);
     // another person's objections: the viewer's own (from any of their seats) is the "✖ objected" above
@@ -494,30 +506,48 @@ function roomText({ code, viewer, es, ms, now, c }: RowCtx, summary: string, lin
     if (mail) parts.push(c.warn(`✉ ${mail} for you`));
   }
   const named = new Set([needs, p].flatMap(x => (x ? [x.hash] : [])));
-  for (const seg of planSegs(es, code, named)) parts.push(c.dim(seg));
-  if (summary) parts.push(summary);
-  if (linkSeg && link?.state === 'online') parts.push(c.dim(linkSeg));
-  return fit(parts);
+  const tail = [summary, linkSeg && link?.state === 'online' ? c.dim(linkSeg) : ''];
+  return fitPlans(parts, planSegs(es, code, named), tail, c);
+}
+
+/** The id of name's last join in es (0: none). */
+function lastJoinAt(es: readonly Readonly<Entry>[], name: string): number {
+  for (let i = es.length - 1; i >= 0; i--) { const e = es[i]; if (e && e.kind === 'member_joined' && e.from === name) return i; }
+  return 0;
+}
+
+/** fit(head, plans, tail) with every plan segment kept whole: the newest plans as many as fit, then "+N plans" (the
+ * tail, the task summary, gives way first). */
+function fitPlans(head: string[], plans: { segs: string[]; more: number }, tail: string[], c: Paint): string {
+  const all = plans.segs.length + plans.more;
+  for (let k = plans.segs.length; k >= 0; k--) {
+    const rest = all - k;
+    const shown = [...plans.segs.slice(0, k), ...(rest ? [`+${rest} ${rest === 1 ? 'plan' : 'plans'}`] : [])].map(c.dim);
+    const out = fit([...head, ...shown, ...tail]);
+    if (shown.every(s => out.includes(s))) return out;
+  }
+  return fit([...head, ...tail]);
 }
 
 const PLANS_SHOWN = 3;
 /**
- * The room's plans at a glance (lib/room/consent.ts plans and status), the latest edited first, at most PLANS_SHOWN
- * then "+N plans": "paging v4 waiting on bob", "release v2 agreed", "api v1 draft" (no request on the current
- * version), "api v3 not agreed". A plan whose current version the row already names (named: hashes) is left out.
+ * The room's plans at a glance (lib/room/consent.ts plans and status), each at its current version, the latest edited
+ * first, at most PLANS_SHOWN (more: how many past them; fitPlans says "+N plans"): "paging v4 1/2 agreed, waiting on
+ * bob", "release v2 agreed", "api v1 draft" (no request on the current version), "api v3 not agreed". A plan whose
+ * current version the row already names (named: hashes) is left out.
  */
-function planSegs(es: readonly Readonly<Entry>[], code: RoomCode | null | undefined, named: ReadonlySet<string>): string[] {
+function planSegs(es: readonly Readonly<Entry>[], code: RoomCode | null | undefined, named: ReadonlySet<string>): { segs: string[]; more: number } {
   const f = code ? room.open(code).fold(es) : room.fold(es);
   const ps = [...f.plans.values()].filter(x => !named.has(x.current.hash)).sort((a, b) => b.current.id - a.current.id);
   const state = (h: string): string => {
     const st = f.status(h);
     if (!st || st.state === 'superseded') return 'draft';
     if (st.decision) return st.matrix.objected.length ? 'not agreed' : 'agreed';
-    return st.matrix.missing.length ? `waiting on ${st.matrix.missing.join(', ')}` : 'waiting';
+    // undecided: a count, never "agreed" alone ("paging v3 1/2 agreed, waiting on bob")
+    const n = `${st.matrix.agreed.length}/${st.matrix.people} agreed`;
+    return st.matrix.missing.length ? `${n}, waiting on ${st.matrix.missing.join(', ')}` : n;
   };
-  const out = ps.slice(0, PLANS_SHOWN).map(x => `${x.name} v${x.current.version} ${state(x.current.hash)}`);
-  if (ps.length > PLANS_SHOWN) out.push(`+${ps.length - PLANS_SHOWN} plans`);
-  return out;
+  return { segs: ps.slice(0, PLANS_SHOWN).map(x => `${x.name} v${x.current.version} ${state(x.current.hash)}`), more: Math.max(0, ps.length - PLANS_SHOWN) };
 }
 
 /** member's participant row, or with no member the room row, as viewer sees it. tasks, taskSummary and link default to

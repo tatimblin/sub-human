@@ -122,7 +122,7 @@ test('S9b: the pane check passes on nested lines and fails on a bare forged line
 
 test('joinNotices: one dim join line (0.5.0-beta.7), its first line when wrapped; hook frames are found', () => {
   // run take4, S1 alice (wrapped at the pane width) and S2 bob
-  const s1 = '⏺ sub-human: opened room husky-7354 as alice · on this machine others join with /sub-human; another machine: \n  /sub-human invite · starting the room\'s Claude…\n\n❯ /sub-human:sub-human alice\n\n⏺ sub-human:room(husky-7354)\n';
+  const s1 = '⏺ sub-human: opened room husky-7354 as alice · on this machine others join with /sub-human; another machine: \n  /sub-human invite · starting the room session…\n\n❯ /sub-human:sub-human alice\n\n⏺ sub-human:room(husky-7354)\n';
   assert.deepEqual(joinNotices(s1), { notices: ['⏺ sub-human: opened room husky-7354 as alice · on this machine others join with /sub-human; another machine:'], frame: null });
   const s2 = '⏺ sub-human: joined husky-7354 as bob, with alice · @room to talk; your Claude can message other Claudes, edit the room plan and the task list\n\n⏺ sub-human:room(husky-7354)\n⏺ sub-human: alice: hi\n';
   assert.equal(joinNotices(s2).notices.length, 1); // the room row and a chat row are not join lines

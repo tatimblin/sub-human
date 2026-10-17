@@ -94,10 +94,10 @@ function ensureRoomClaude(code: RoomCode, cwd: string | null | undefined, by: st
     try { roomClaude.openTaskList(code); } catch { /* the room session's tail repairs it (lib/tasks.ts repair) */ }
     seam.startDetached({ code, cwd: cwd || (room.open(code).store.kv.get<{ cwd?: string }>(WORKDIR) ?? {}).cwd, ...c });
   } catch (e) {
-    return ` · the room's Claude could not start (${(msgOf(e) || String(e)).slice(0, 200)}); /sub-human still works, but there is no room task list`;
+    return ` · the room session could not start (${(msgOf(e) || String(e)).slice(0, 200)}); /sub-human still works, but there is no room task list`;
   }
   const failed = last && last.spawn_error ? ` (the last start failed: ${last.spawn_error})` : '';
-  return ` · starting the room's Claude…${failed}`;
+  return ` · starting the room session…${failed}`;
 }
 
 function enter({ code, name, role = 'member', machine = identity.machineIn(code), account, pid, session_id, cwd, pubkey, keepPrevious }: EnterOpts): EnterResult {

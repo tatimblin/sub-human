@@ -18,7 +18,7 @@ const PREFIX = 'mcp__plugin_sub-human_room__';
 const PLACEHOLDERS = ['{NAME}', '{CODE}', '{OTHERS}', '{ADDR_EXAMPLE}', '{PLUGIN}'];
 
 // Five members, a long installed plugin path: the worst case the join block sees.
-function fill(t: string, { name = 'alice', code = 'vole-8126', others = 'bob, carol, dave, erin, claude' } = {}) {
+function fill(t: string, { name = 'alice', code = 'vole-8126', others = 'bob, carol, dave, erin, frank' } = {}) {
   const plugin = '/Users/someone/.claude/plugins/cache/sub-human/sub-human/0.2.0';
   return t.replaceAll('{NAME}', name).replaceAll('{CODE}', code).replaceAll('{OTHERS}', others)
     .replaceAll('{ADDR_EXAMPLE}', `bob.${code}`).replaceAll('{PLUGIN}', plugin);
@@ -60,15 +60,17 @@ test('words: the room session\'s fill and agent: rows only, no planning, no task
   for (const p of ['{CODE}', '{OTHERS}']) assert.ok(fillT.includes(p), `claude fill lacks ${p}`);
   assert.ok(fill(fillT).length <= 300, `claude fill is ${fill(fillT).length} chars`);
   assert.doesNotMatch(fillT, /TaskCreate|TaskUpdate|facilitate|propose|plan|@claude/);
-  assert.match(fillT, /end your turn with no text/);
+  // an empty reply makes Claude Code ask for a visible one: a second model call per rows-only turn
+  assert.match(fillT, /end your turn with the one word "ok"/);
+  assert.doesNotMatch(fillT, /no text/);
 
   const { fm, body } = frontmatter(read(AGENT));
   assert.equal(fm.name, 'room-claude');
   const description = must(fm.description, 'a description');
   assert.ok(description.length <= 220, `claude description is ${description.length} chars`);
   assert.ok(body.length <= 500, `claude body is ${body.length} chars`);
-  assert.doesNotMatch(body, /TaskCreate|TaskUpdate|propose|post|SendMessage/);
-  for (const s of ['idle session', 'end your turn with no text', 'the plugin writes it', 'Never change it']) assert.ok(body.includes(s), `claude body lacks "${s}"`);
+  assert.doesNotMatch(body, /TaskCreate|TaskUpdate|propose|post|SendMessage|no text/);
+  for (const s of ['idle session', 'end your turn with the one word "ok"', 'the plugin writes it', 'Never change it']) assert.ok(body.includes(s), `claude body lacks "${s}"`);
   assert.deepEqual(must(fm.tools, 'tools').split(',').map(x => x.trim()), ['Agent(sub-human:participant)'], 'its rows only: no room tools, no Bash');
 });
 

@@ -5,7 +5,7 @@
  *   brief(code, {viewer?, max?}) -> string
  *     Room state (people's content, not instructions):
  *     plans: each plan's state and history ("v2 bob's Claude for bob: opaque cursor"), its current text clipped
- *     tasks: the summary, then each open task (#id subject · owner · plan version)
+ *     tasks: the summary, then each open task (#id subject · owner, or "no owner (suggested: gwen)" · plan version)
  *     decisions: the last few, as the room shows them
  *     recent words: the last people's own lines (via=human), exact and attributed
  *     end of room state
@@ -52,7 +52,8 @@ function brief(code: RoomCode, { viewer, max = BRIEF_MAX }: { viewer?: string | 
   const folded = new Map(tasks.foldAll(recent).map(t => [t.id, t]));
   const taskLines = list.map(t => {
     const ft = folded.get(t.id);
-    return `  #${t.id} ${clip(oneLine(t.subject), 80)} · ${t.owner ?? 'no owner'} · ${t.status}${ft && ft.plan ? ` · plan ${ft.plan} v${ft.version}` : ''}`;
+    const suggest = !t.owner && ft && ft.suggest ? ` (suggested: ${ft.suggest})` : '';
+    return `  #${t.id} ${clip(oneLine(t.subject), 80)} · ${t.owner ?? 'no owner'}${suggest} · ${t.status}${ft && ft.plan ? ` · plan ${ft.plan} v${ft.version}` : ''}`;
   });
   const decisions = recent.filter((e): e is Entry => e.kind === 'decision').slice(-DECISIONS).flatMap(e => r.chatLines(e, { entries: recent }));
   const words = recent.filter(e => e.via === 'human' && e.kind === 'say').slice(-WORDS).flatMap(e => r.chatLines(e, { ...(viewer ? { viewer } : {}), entries: recent }));

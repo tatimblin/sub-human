@@ -52,6 +52,9 @@ test('command: the payload is the UserPromptExpansion join.ts reads, marked as t
   const p = joinPayload({ sid: 's1', cwd: '/w', args: 'invite', nonce: NONCE });
   assert.deepEqual([p.hook_event_name, p.session_id, p.cwd, p.command_name, p.command_args, p.sub_human_via, p.sub_human_nonce],
     ['UserPromptExpansion', 's1', '/w', 'sub-human:sub-human', 'invite', 'command.run', NONCE]);
+  assert.equal('permission_mode' in p, false, 'unknown: left out');
+  // room-plan live: join.ts warns about bypass-permissions mode only when the payload says so
+  assert.equal(joinPayload({ sid: 's1', cwd: '/w', args: '', nonce: NONCE, mode: 'bypassPermissions' }).permission_mode, 'bypassPermissions');
 });
 
 test('command: a reply is read as a join, a notice, or a failure (one line pointing to the doctor); a classic block is a failure here', async () => {

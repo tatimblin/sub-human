@@ -56,7 +56,7 @@ test('seats: enter logs member_joined with the pubkey and machine; exit leaves, 
   const { code, mem } = memoryRoom(t, { isHost: true });
   const pubkey = seatKey.publicPem(code, sn('alice'));
   const r = seats.enter({ code, name: sn('alice'), pid: process.pid, session_id: 'sa', cwd: '/x', pubkey });
-  assert.deepEqual(r, { ok: true, note: ' · starting the room\'s Claude…' });
+  assert.deepEqual(r, { ok: true, note: ' · starting the room session…' }, 'the room session, not a member called claude');
   const joined = must(mem.readAll().at(-1));
   assert.deepEqual([joined.kind, joined.from, joined.pubkey, joined.machine], ['member_joined', 'alice', pubkey, identity.machineId()]);
   assert.equal(must(identity.resolveBySession('sa')).name, 'alice');

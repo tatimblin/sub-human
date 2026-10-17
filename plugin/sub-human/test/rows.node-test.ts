@@ -43,6 +43,9 @@ test('rowCalls: claude gets one participant call per active member; none for cla
   assert.doesNotMatch(t, /description: "claude"/);
   assert.match(t, /member_joined NAME/);
   assert.match(t, /only when it says NAME has no row running/);
+  // the rows-only turn ends with a word: an empty reply costs a second model call ("no visible output")
+  assert.match(t, /then end your turn with the one word "ok"/);
+  assert.doesNotMatch(t, /carry on|no text/);
   const none = rows.rowCalls({ code, name: sn('claude'), role: 'claude' }, { claude: must(ms.claude) });
   assert.match(none, /No members yet/);
 });
@@ -151,13 +154,13 @@ test('rowText (room row): answer needed, agreed, objected, decided, mail and the
   const es = mk([prop(['alice', 'bob']), answer('bob', 'signoff'), { kind: 'say', from: 'claude', via: 'agent', to: 'alice' }]);
   const o = (extra?: RowOpts): RowOpts => ({ entries: es, taskSummary: '', ...extra });
   assert.equal(rows.rowText(code, { viewer: 'alice', ...o() }), '⚠ your answer needed 593da0 · ✉ 1 for you');
-  assert.equal(rows.rowText(code, { viewer: 'bob', ...o() }), '✓ agreed 593da0 1/2');
+  assert.equal(rows.rowText(code, { viewer: 'bob', ...o() }), 'proposal 593da0 1/2 agreed (✓ you)', 'a count, not a decided look');
   // stage 8e I.3: alice's Claude answered it: read, the count goes
   const replied = [...es, ...mk([{}, {}, {}, { kind: 'say', from: 'alice', via: 'agent', to: 'claude' }]).slice(3)];
   assert.equal(rows.rowText(code, { viewer: 'alice', ...o({ entries: replied }) }), '⚠ your answer needed 593da0');
   es.push(...mk([{}, {}, {}, answer('alice', 'objection')]).slice(3));
   assert.equal(rows.rowText(code, { viewer: 'alice', ...o() }), '✖ objected');
-  assert.equal(rows.rowText(code, { viewer: 'bob', ...o() }), '✓ agreed 593da0 1/2 · ✖ 1 objection');
+  assert.equal(rows.rowText(code, { viewer: 'bob', ...o() }), 'proposal 593da0 1/2 agreed (✓ you) · ✖ 1 objection');
   es.push({ id: eid(5), at: new Date().toISOString(), ...decision() });
   assert.equal(rows.rowText(code, { viewer: 'bob', ...o() }), '✖ blocked 593da0', 'alice objected');
   assert.equal(rows.rowText(code, { viewer: 'bob', ...o({ taskSummary: 'tasks 3 open · #2 you · #4 bob' }) }), '✖ blocked 593da0 · tasks 3 open · #2 you · #4 bob');
@@ -276,7 +279,7 @@ test('rowText: a proposal is named by its stored plan\'s title (clipped), not it
   const mk = (list: Partial<Entry>[]): Entry[] => list.map((e, i) => ({ id: i + 1, at: new Date().toISOString(), text: 'x', to: 'room', ...e }) as Entry); // {} lines: fillers
   const es = mk([prop(['alice', 'bob'], h1), answer('bob', 'signoff', h1)]);
   assert.equal(rows.rowText(code, { viewer: 'alice', entries: es, taskSummary: '' }), '⚠ your answer needed Cursor paging for /users');
-  assert.equal(rows.rowText(code, { viewer: 'bob', entries: es, taskSummary: '' }), '✓ agreed Cursor paging for /users 1/2');
+  assert.equal(rows.rowText(code, { viewer: 'bob', entries: es, taskSummary: '' }), 'proposal Cursor paging for /users 1/2 agreed (✓ you)');
   es.push(...mk([{}, {}, answer('alice', 'signoff', h1), decision(h1)]).slice(2));
   assert.equal(rows.rowText(code, { member: sn('alice'), viewer: 'claude', entries: es, tasks: [] }), '✔ decided Cursor paging for /users');
   const long = mk([prop(['alice'], h2)]);
@@ -301,9 +304,49 @@ test('rowText (room row): each room plan at a glance, the latest edited first, a
   // a request on release v1, carol asked: it leads the row, and release is not repeated; then agreed by both
   const ask = at(4, { kind: 'proposal', hash: H('b'), approvers: ['alice', 'carol'], plan: 'release', version: 1, text: 'x' });
   const carol = rows.rowText(code, { viewer: 'carol', entries: [...es, ask], taskSummary: '' });
-  assert.ok(carol.startsWith('⚠ your answer needed plan release v1 · paging v2 draft'), carol); // the row's width cuts the rest
+  assert.equal(carol, '⚠ your answer needed plan release v1 · +2 plans', 'the plans that do not fit are counted, never cut silently');
   assert.doesNotMatch(carol, /release v1 draft/);
-  assert.ok(rows.rowText(code, { viewer: 'bob', entries: [...es, ask], taskSummary: '' }).startsWith('proposal plan release v1 0/2 · paging v2 draft'));
+  const bob = rows.rowText(code, { viewer: 'bob', entries: [...es, ask], taskSummary: '' });
+  assert.match(bob, /^\d+ here · paging v2 draft · api v1 draft · \+1 plan$/, 'not asked: the plans, latest edited first');
   const more = ['a', 'b', 'c', 'd', 'e'].map((n, i) => at(i, pl(n, 1, H(String(i + 1)))));
   assert.match(rows.rowText(code, { viewer: 'carol', entries: more, taskSummary: '' }), /^\d+ here · e v1 draft · d v1 draft · c v1 draft · \+2 plans$/);
+});
+
+test('rowText (room-plan live): each plan at its current version; a decision on an older one never reads as current, a half-agreed request is a count, the current draft survives fitting', () => {
+  const Hx = (c: string) => c.repeat(12);
+  const at = (i: number, e: Partial<Entry>): Entry => ({ from: 'alice', kind: 'say', via: 'agent', to: 'room', ...e, id: eid(i + 1), at: new Date(Date.now() - (30 - i) * 1000).toISOString() });
+  const pl = (name: string, version: number, hash: string): Partial<Entry> => ({ kind: 'plan', from: 'alice', plan: name, version, base: version - 1, hash, path: `plans/${hash}.md`, for: 'alice', text: `plan ${name} v${version}` });
+  const ask = (name: string, version: number, hash: string): Partial<Entry> => ({ kind: 'proposal', via: 'agent', from: 'alice', hash, approvers: ['alice', 'bob'], plan: name, version, text: `plan ${name} v${version}` });
+  const { code } = makeRoom([{ name: sn('alice') }, { name: sn('bob') }]);
+  // room v1 asked and decided, then edited on to v6 with no request; paging v3 asked, alice agreed; release v1
+  const es: Entry[] = [
+    pl('room', 1, Hx('1')), ask('room', 1, Hx('1')), answer('alice', 'signoff', Hx('1')), answer('bob', 'signoff', Hx('1')), decision(Hx('1')),
+    pl('release', 1, Hx('7')),
+    ...[2, 3, 4, 5].map(v => pl('room', v, Hx(String(v)))),
+    pl('paging', 1, Hx('a')), pl('paging', 2, Hx('b')), pl('paging', 3, Hx('c')), ask('paging', 3, Hx('c')), answer('alice', 'signoff', Hx('c')),
+    pl('room', 6, Hx('6')),
+  ].map((e, i) => at(i, e));
+  const alice = rows.rowText(code, { viewer: 'alice', entries: es, taskSummary: 'tasks 2 open · #1 you' });
+  fitsRow(alice);
+  assert.doesNotMatch(alice, /decided|v1 agreed|✓ agreed/, alice);
+  assert.match(alice, /room v6 draft · \+2 plans/, 'the newest plan leads; the ones that do not fit are counted');
+  // with room enough, the half-agreed request reads as a count
+  const paging = rows.rowText(code, { viewer: 'alice', entries: es.slice(0, -1), taskSummary: '' });
+  assert.match(paging, /paging v3 1\/2 agreed, waiting on bob/, paging);
+  assert.doesNotMatch(paging, /decided|✓ agreed/, paging);
+  // bob is asked on paging v3: his answer leads; the other plans are counted
+  assert.equal(rows.rowText(code, { viewer: 'bob', entries: es, taskSummary: '' }), '⚠ your answer needed plan paging v3 · +2 plans');
+  // the participant row: alice's agreement is hers on v3, not the old decision on v1
+  assert.match(rows.rowText(code, { member: sn('alice'), viewer: 'bob', entries: es, tasks: [] }), /✓ agreed plan paging v3/);
+  assert.doesNotMatch(rows.rowText(code, { member: sn('bob'), viewer: 'alice', entries: es.slice(0, 10), tasks: [] }), /decided/, 'room v5 is current: the v1 decision is history');
+});
+
+test('rowText (room-plan live): the join marker shows only who came after the viewer, never who was here before', () => {
+  const { code } = makeRoom([{ name: sn('alice') }, { name: sn('bob') }, { name: sn('carol') }]);
+  const at = (i: number, e: Partial<Entry>): Entry => ({ from: 'alice', kind: 'say', via: 'system', to: 'room', text: 'x', ...e, id: eid(i + 1), at: new Date(Date.now() - (5 - i) * 1000).toISOString() });
+  const es = [at(0, { kind: 'member_joined', from: 'alice' }), at(1, { kind: 'member_joined', from: 'bob' })];
+  assert.doesNotMatch(rows.rowText(code, { viewer: 'bob', entries: es, taskSummary: '' }), /alice/, 'alice was here when bob came');
+  assert.match(rows.rowText(code, { viewer: 'alice', entries: es, taskSummary: '' }), /^\+bob joined/);
+  es.push(at(2, { kind: 'member_joined', from: 'carol' }));
+  assert.match(rows.rowText(code, { viewer: 'bob', entries: es, taskSummary: '' }), /^\+carol joined/, 'one after him still shows');
 });

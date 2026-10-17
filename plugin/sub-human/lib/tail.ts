@@ -263,7 +263,7 @@ function formatRoomClaudeBatch(ready: Item[], { room: rm, entries, judge, joinNo
     const note = joinNote(e);
     if (judge(e, entries, note) === 'wake') out.push(rm.line(e, { full: true }) + (away ? ` · away ${Math.round(leaveMs / 1000)}s+` : '') + (note ? ` · ${note}` : ''));
   }
-  return out.length ? [...out, 'Make only the call its row note names, then end your turn with no text.'] : [];
+  return out.length ? [...out, 'Make only the call its row note names, then end your turn with the one word "ok".'] : [];
 }
 
 /** The pull text: PULL_HEAD, then the newest lines that fit under PULL_CAP (a note says how many were left out), then
@@ -300,6 +300,8 @@ function formatNdBatch(ready: Item[], ctx: FormatCtx): { events: TailEvent[], mo
     const lines = rm.chatLines(e, { viewer: me.name, entries });
     if (d === 'context') { pull.push(...lines); continue; }
     if (d === 'notice') {
+      // a task suggested to me: say so (the line names no suggestion); I claim it myself if I take it
+      if (e.kind === 'task' && e.suggest === me.name && !e.owner && lines[0] !== undefined) lines[0] += ', suggested for you (claim it to take it)';
       chat.push(...lines.filter(l => !l.startsWith(FOR_CLAUDE)));
       pull.push(...lines);
       if (isMove(e)) moved.push(e.id);

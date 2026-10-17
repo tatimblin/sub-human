@@ -431,7 +431,7 @@ export function registerDeliver(on: On): void {
       const ms = async () => { const t1 = await nowMs($); return t0 === null || t1 === null ? null : t1 - t0; };
       try {
         const run = await $.process.run(shimArgv(root, 'join'), {
-          stdin: JSON.stringify(joinPayload({ sid, cwd, args: e.args, nonce: n })),
+          stdin: JSON.stringify(joinPayload({ sid, cwd, args: e.args, nonce: n, mode: facts.of(sid).permission_mode })),
           env: shimEnv({ session_id: sid }, root),
           timeoutMs: SHIM_TIMEOUT_MS,
         });
