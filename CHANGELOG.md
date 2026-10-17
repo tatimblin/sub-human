@@ -2,9 +2,9 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
-## 0.5.0-beta.19 (unreleased): a smaller sub-human, an idle room session, the room plan
+## 0.5.0-beta.19 (2026-10-17), private beta: a smaller sub-human, an idle room session, the room plan
 
-Branch `room-plan` (docs/next/ROOM-PLAN.md). Tested on Claude Code 2.1.296.
+Branch `room-plan` (docs/next/ROOM-PLAN.md); also carries 0.5.0-beta.16 below. Tested on Claude Code 2.1.296.
 
 **Update both ends of every link.** The link protocol is 4 (the room's tasks and plans are applied on the host): a 0.5.0-beta.16 peer is refused with the update message. Restart every session, and close and reopen rooms that were open before the update (the room session starts differently).
 
@@ -40,7 +40,7 @@ Branch `room-plan` (docs/next/ROOM-PLAN.md). Tested on Claude Code 2.1.296.
 ### Claude Code internals
 - New contract entries: the task file schema, `.highwatermark`, the task locks (proper-lockfile), the list's auto-reset, the task view's watch, the hooks module's plan-mode attachment detail, the PermissionRequest `setMode` answer, the cross-session refuse notice, an empty plan file on the closing ExitPlanMode (`exitplan-empty-plan`) and a denied PreToolUse's additionalContext (`pretool-deny-context`), EnterPlanMode in plan mode (`enterplan-in-plan-mode`) (`docs/internals/cc-2.1.296-tasks-plans.md`). Gone: the TaskCreate/TaskUpdate/TaskCompleted entries and the Remote Control relay's.
 
-## 0.5.0-beta.16 (unreleased)
+## 0.5.0-beta.16 (released as part of 0.5.0-beta.19)
 
 Hardening from the October 2026 review (branch `fix/stage0-hardening`).
 

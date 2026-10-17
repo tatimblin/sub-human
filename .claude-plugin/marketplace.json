@@ -11,7 +11,7 @@
     {
       "name": "sub-human",
       "source": "./plugin/sub-human",
-      "description": "Work together from separate Claude Code sessions on one machine: one command joins a shared room, @room posts your exact words, Claudes message each other natively, a headless helper keeps the room's task list, and consent is a card each person answers."
+      "description": "Work together from separate Claude Code sessions, on one machine or over a link: one command joins a shared room, @room posts your exact words, Claudes message each other natively, a room plan is edited in plan mode with versions, tasks are shared, and sign-off opens in each person's plan view."
     }
   ]
 }
