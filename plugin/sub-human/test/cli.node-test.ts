@@ -267,6 +267,20 @@ test('cli tasks: the room list from lib/tasks.ts list(code), plain and --json', 
   assert.equal(cli(['tasks', '--room', 'nope-0000']).status, 1);
 });
 
+test('cli link CODE --forget: a copy out of step (FORK) is forgotten as the FORK message says, without --force', () => {
+  h.freshHome();
+  const code = h.newRoom();
+  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: tokenOf('t') });
+  const s = onDisk(store.open(code));
+  fs.mkdirSync(must(s.dir), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(s.logFile, '{"id":1}\n');
+  links.writeState(code, { state: 'fork', since: new Date().toISOString(), attempt: 0, lastError: 'FORK: the host\'s line 3 is not the mirror\'s', lastReason: 'NOT_CHAINED', rttMs: null, queued: 0, detail: 'fork', at: new Date().toISOString() });
+  const r = cli(['link', code, '--forget']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /forgotten/);
+  assert.equal(links.has(code), false);
+});
+
 test('cli link CODE --forget: refused on a room hosted here, and for a link stopped for another reason without --force; then the copy is archived and the link removed', () => {
   const stopped = (lastError: string, lastReason?: string) => ({ state: 'stopped', since: new Date().toISOString(), attempt: 0, lastError, ...(lastReason ? { lastReason } : {}), rttMs: null, queued: 0, detail: 'stopped', at: new Date().toISOString() });
   h.freshHome();
@@ -289,7 +303,7 @@ test('cli link CODE --forget: refused on a room hosted here, and for a link stop
   links.writeState(code, stopped('AUTH: unknown link token'));
   const r2 = cli(['link', code, '--forget']);
   assert.equal(r2.status, 1);
-  assert.match(r2.stderr, /did not stop because the room closed, no seat of this machine is left or the host removed it \(AUTH: unknown link token\); add --force/);
+  assert.match(r2.stderr, /did not stop because the room closed, no seat of this machine is left, the host removed it or this copy fell out of step \(AUTH: unknown link token\); add --force/);
   assert.ok(links.has(code) && fs.existsSync(s.logFile), 'nothing moved');
   assert.equal(cli(['link', code, '--reset']).status, 2, 'no --reset: a copy out of step is forgotten, then joined again');
 

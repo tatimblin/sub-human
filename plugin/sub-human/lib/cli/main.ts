@@ -354,13 +354,17 @@ function setAsideLinkFiles(code: RoomCode, archive: string | null) {
   }
 }
 
+/** A link stopped out of step with the host's log (lib/reasons.ts: FORK). */
+const FORKED: ReadonlySet<string> = new Set(['LOG_RESET', 'NOT_CHAINED']);
+
 function forgetLink(code: RoomCode, s: MirrorRoomStore, force: boolean, stopped?: number, told = '') {
   const st = linkState.read(code);
   const why = st?.lastError || '';
-  // dormant (the room closed, no seat left) or spent (the host removed this machine: its token gets nowhere now)
+  // dormant (the room closed, no seat left), spent (the host removed this machine: its token gets nowhere now) or out
+  // of step (a FORK: this copy no longer matches the host's log; forgetting it and joining again is the way back)
   const r = String(st?.lastReason);
-  if (!force && r !== 'ROOM_CLOSED' && r !== 'NO_SEAT' && !REVOKED.has(r)) {
-    die(`room ${code}: the connection did not stop because the room closed, no seat of this machine is left or the host removed it (${why || 'no reason on record'}); add --force to forget it anyway`, 1);
+  if (!force && r !== 'ROOM_CLOSED' && r !== 'NO_SEAT' && !REVOKED.has(r) && !FORKED.has(r) && st?.state !== 'fork') {
+    die(`room ${code}: the connection did not stop because the room closed, no seat of this machine is left, the host removed it or this copy fell out of step (${why || 'no reason on record'}); add --force to forget it anyway`, 1);
   }
   s.setAside(); // the log is kept beside the outbox, never merged
   let archive: string | null = path.join(roomsDir(), `${code}.forgotten-${new Date().toISOString().replace(/[:.]/g, '-')}`);

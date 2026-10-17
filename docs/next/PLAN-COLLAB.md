@@ -1,6 +1,6 @@
 # Plan collaboration
 
-Status: design, 2026-10-08. Not built. Sources:
+Status: superseded by [ROOM-PLAN.md](ROOM-PLAN.md) (2026-10-17: one living room plan, no Remote Control relay, no room Claude revising). Was: design, 2026-10-08, not built. Sources:
 - the decisions the user reached in conversation (recorded under Decisions, verbatim in substance);
 - the code on `master` as of `2d425b6` (`lib/proposal.ts`, `lib/room/consent.ts`, `lib/room/lanes.ts`, `lib/room/render.ts`, `lib/rows.ts`, `lib/tasks.ts`, `mcp/room-server.ts` `propose`, `mcp/task.ts`, `hooks/consent.ts`, `agents/room-claude.md`, `skills/sub-human/{member,facilitate}.md`);
 - `feature/remote-rooms` `7065803` and `ea26ae6`: the hook picks the proposal from the person's words (`proposal.choose` / `picked`, `members/NAME/pick`) and always shows that proposal's text in the native plan view; Remote Control "Suggest edits" (deny with a note) records an objection with the note, a bare deny records nothing; only a hook-opened review records. `answer` (any machine) and `decide` (host only) replace `record` there. This note targets the code after that branch merges.

@@ -261,7 +261,7 @@ function plan(me: Me, args: ToolArgs) {
     }
     const lines = [`${r.again ? 'Already asked' : 'Asked'} ${r.approvers.join(', ')} to sign off on plan ${r.plan} v${r.version} (proposal ${r.hash}).`,
       'Each answers in the plan view in their own session. Never say anyone agreed until the room records it.'];
-    if (r.approvers.includes(me.name)) lines.push(`${me.name} is an approver: when ${me.name} wants to answer, ${proposal.openCall(r.hash)}.`);
+    if (r.approvers.includes(me.name)) lines.push(`${me.name} is an approver: ${proposal.openCall(r.hash)} now so ${me.name} can read and answer it.`);
     return text(lines.join('\n'));
   }
   if (args.op !== 'edit') return text('refused: op must be edit, ask or read', true);

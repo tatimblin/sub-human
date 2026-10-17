@@ -90,7 +90,7 @@ function ensureRoomClaude(code: RoomCode, cwd: string | null | undefined, by: st
     last = identity.readMembers(code).claude ?? null;
     const c = roomClaude.claimSpawn(code, { by });
     if (!c) return '';
-    // the room's task list and its room task, before the room session's task view first reads the directory
+    // the room's task list directory, made before the room session's task view first reads it (the room task comes with the first request)
     try { roomClaude.openTaskList(code); } catch { /* the room session's tail repairs it (lib/tasks.ts repair) */ }
     seam.startDetached({ code, cwd: cwd || (room.open(code).store.kv.get<{ cwd?: string }>(WORKDIR) ?? {}).cwd, ...c });
   } catch (e) {

@@ -257,7 +257,7 @@ test('mcp: plan edit opens an edit in the session (it stores nothing); ask asks 
   const e = must(R.readAll().at(-1));
   assert.deepEqual([e.kind, e.via, e.from, e.hash, e.approvers, e.path, e.plan, e.version], ['proposal', 'agent', 'alice', v.hash, ['alice', 'bob'], `plans/${v.hash}.md`, 'room', 1]);
   assert.match(asked, /^Asked alice, bob to sign off on plan room v1 \(proposal [0-9a-f]{12}\)\./);
-  assert.match(asked, new RegExp(`alice is an approver: when alice wants to answer, call EnterPlanMode, then ExitPlanMode with plan "proposal ${v.hash}"`));
+  assert.match(asked, new RegExp(`alice is an approver: call EnterPlanMode, then ExitPlanMode with plan "proposal ${v.hash}" now so alice can read and answer it`));
   assert.doesNotMatch(asked, /#\d/, 'no entry ids for a Claude to repeat');
   assert.match(text(await s.tool('plan', { op: 'ask' })), /^Already asked/);
   assert.equal(R.readAll().filter(x => x.kind === 'proposal').length, 1, 'the same request is not appended again');

@@ -2,7 +2,30 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
-## Unreleased
+## 0.5.0-beta.17 (unreleased): a smaller sub-human, an idle room session, the room plan
+
+Branch `room-plan` (docs/next/ROOM-PLAN.md). Tested on Claude Code 2.1.296.
+
+**Update both ends of every link.** The link protocol is 4 (the room's tasks and plans are applied on the host): a 0.5.0-beta.16 peer is refused with the update message. Restart every session, and close and reopen rooms that were open before the update (the room session starts differently).
+
+### Removed
+- **Host handoff**: `/sub-human handoff`, `sub-human handoff | promote | demote`, the `host_changed` entry and host epochs, the `STALE` code, `link --reset` and bound handoff invites. When the host leaves, the room waits; a copy that no longer matches the host's (FORK) is forgotten with `sub-human link --forget CODE` and joined again with a new invite. `handoff`, `promote` and `demote` stay reserved names for one release.
+- **Corporate-network options**: `sub-human prime`, `--via` jump hosts (ssh uses your `~/.ssh/config`, ProxyJump included, as any ssh), the WebSocket client's CONNECT proxy, `invite --url` (any HTTPS front) and `sub-human options` / `login-same-person`.
+- **The phone relay**: room lines are no longer sent to Remote Control as prompts of their own. An `@room` typed on the phone still posts.
+- **`sub-human watch` and `sub-human digest`.** `sub-human plan` and the room tool's `read` with `brief` cover what they gave.
+- **`@claude`.** It is an ordinary prompt to your own Claude now, in a room or not. Ask your own Claude, or `@room` the room.
+- **The `propose` room tool**, revisions by title, the review's pick document, the propose-intent rule and `facilitate.md`.
+
+### Changed
+- **Tasks are applied by the host at once.** Your Claude's `task` request (add, with an optional suggested owner or the plan it comes from; claim; release; done with evidence) is checked and applied on the host under the room's lock, and the reply is the change or why not; nothing is queued for a model. The host writes the room session's native task files from the log (under Claude Code's own file locks), so the room's list shows it at once. The room task ("room CODE open") keeps the list from being cleared until the room closes.
+- **The room session** (member `claude`, `claude.CODE`) is idle: it holds the task list and the members' rows, runs one short rows-only turn at start and per join, takes no typed input, refuses Claudes' messages (`crossSessionInbound: refuse`) and never plans or posts.
+- **The room plan.** A room has named plans (`room` by default) with versions. "Update the room plan" seeds the current version into your Claude's plan file; ExitPlanMode stores the next version with the store's receipt, and no approval dialog (storing is not agreeing). Two edits from the same version: the second is refused with the first's text and reconciled. Sign-off is asked per version (`plan` op `ask`, by any member's Claude for its person) and answered in each person's plan view as before; a newer version retires the request on an older one. A Yes on your own plan is never your sign-off. The room row shows each plan's state; `sub-human plan [NAME] [--history]` prints one.
+- **Room upkeep** is any member's Claude's, when its person asks: edit a plan, ask for sign-off, add tasks and suggest owners, catch up (`read` with `brief`). The mechanics text says what it never does (answer for anyone, claim another's task, say a plan is agreed).
+
+### Claude Code internals
+- New contract entries: the task file schema, `.highwatermark`, the task locks (proper-lockfile), the list's auto-reset, the task view's watch, the hooks module's plan-mode attachment detail, the PermissionRequest `setMode` answer and the cross-session refuse notice (`docs/internals/cc-2.1.296-tasks-plans.md`). Gone: the TaskCreate/TaskUpdate/TaskCompleted entries and the Remote Control relay's.
+
+## 0.5.0-beta.16 (unreleased)
 
 Hardening from the October 2026 review (branch `fix/stage0-hardening`).
 

@@ -178,7 +178,8 @@ export function reduce(edit: PlanEdit | null, ev: EditEvent): EditStep {
       if (o.kind === 'refused') return { edit: e, effects: [], say: { to: 'deny', text: EDIT_SAY.refused(o.why) } };
       if (o.kind === 'offline') return { edit: e, effects: [], say: { to: 'deny', text: EDIT_SAY.offline(o.why) } };
       const receipt = o.unchanged ? EDIT_SAY.unchanged(e.plan, o.version) : EDIT_SAY.stored(e.plan, o.version);
-      if (e.mode === 'plan') { // the person was in plan mode already: it stays, and the edit is done
+      // the person was in plan mode already (or entered it by hand: no EnterPlanMode of the edit's): it stays, and the edit is done
+      if (e.mode === 'plan' || e.mode === undefined) {
         const [, effects] = restore(e);
         return { edit: null, effects, say: { to: 'deny', text: `${receipt} ${EDIT_SAY.stayInPlan}` } };
       }

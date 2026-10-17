@@ -1,6 +1,6 @@
 # Plan collaboration: implementation plan
 
-Status: plan, 2026-10-08. Not started. Builds [PLAN-COLLAB.md](PLAN-COLLAB.md) (the design, with its Decided list; those answers are final and not reopened here). Code read: `master` at `2d425b6`, and `feature/remote-rooms-v2` at `3af1914`, the port of the remote-rooms work in progress.
+Status: superseded by [ROOM-PLAN.md](ROOM-PLAN.md) (2026-10-17: one living room plan, no Remote Control relay, no room Claude revising). Was: plan, 2026-10-08, not started. Builds [PLAN-COLLAB.md](PLAN-COLLAB.md) (the design, with its Decided list; those answers are final and not reopened here). Code read: `master` at `2d425b6`, and `feature/remote-rooms-v2` at `3af1914`, the port of the remote-rooms work in progress.
 
 **Assumption: the port lands first.** Every PR below except PR0 is written against `master` after `feature/remote-rooms-v2` merges: `proposal.answer` (any machine, signed) + `proposal.decide` (host only, `identity.isHost`), the server calling `decide` after it places an answer (`lib/remote/server.ts` on v2, line 156), sig v2 and the envelope (`lib/room/envelope.ts`), `MirrorRoomStore` (`isHost = false`, writes as ops, `kv` local), the hook's pick (`proposal.choose` / `picked`, `members/NAME/pick`), the proposal text always in the plan view through `updatedInput.plan` and the plan file (backup, restore), and "Suggest edits" (a deny with a note) as an objection. Line numbers marked *v2* are on that branch; the rest are on `master`.
 

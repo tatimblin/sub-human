@@ -1,6 +1,6 @@
 # Room plan: a smaller sub-human, an idle room session, one living plan
 
-Status: plan, 2026-10-17. Not started. Branch `shrink` at `d67ed1f` (0.5.0-beta.16, local only). Paths are relative to `plugin/sub-human/` unless they start with `scripts/`, `docs/` or `/`. Line numbers are approximate (read on `d67ed1f`).
+Status: built on branch `room-plan` (2026-10-17, Phases 0–8, 0.5.0-beta.17; spike findings in `docs/internals/cc-2.1.296-tasks-plans.md`). Planned from branch `shrink` at `d67ed1f` (0.5.0-beta.16, local only). Paths are relative to `plugin/sub-human/` unless they start with `scripts/`, `docs/` or `/`. Line numbers are approximate (read on `d67ed1f`).
 
 ## 1. Context
 

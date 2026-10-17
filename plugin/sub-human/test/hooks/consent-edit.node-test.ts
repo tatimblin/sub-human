@@ -38,7 +38,7 @@ const shape = (s: edit.EditStep): [string, string | null, string] => [s.edit ? (
 const TABLE: Record<string, Record<edit.EditEvent['type'], [string, string | null, string]>> = {
   none: { enter: ['none', null, ''], attach: ['none', null, ''], exit: ['none', null, ''], put: ['none', null, ''], permission: ['none', null, ''],
     exited: ['none', null, ''], stop: ['none', null, ''], prompt: ['none', null, ''] },
-  open: { enter: ['open', 'allow', ''], attach: ['seeded', 'attach', 'save,seed'], exit: ['seeded', 'deny', 'save,seed'], put: ['stored', 'deny', 'save'],
+  open: { enter: ['open', 'allow', ''], attach: ['seeded', 'attach', 'save,seed'], exit: ['seeded', 'deny', 'save,seed'], put: ['none', 'deny', ''],
     permission: ['open', null, ''], exited: ['none', 'context', ''], stop: ['open', null, ''], prompt: ['none', null, ''] },
   seeded: { enter: ['seeded', 'allow', ''], attach: ['seeded', null, ''], exit: ['seeded', null, 'put'], put: ['stored', 'deny', 'save'],
     permission: ['seeded', null, ''], exited: ['none', 'context', 'restorePlan'], stop: ['seeded', null, ''], prompt: ['none', null, 'restorePlan'] },
@@ -64,6 +64,8 @@ test('edit: the capture, the receipt, a conflict and a refusal; the mode put bac
   assert.deepEqual(edit.reduce(STORED, EVENTS.permission).say, { to: 'permit', mode: 'default' });
   assert.deepEqual(edit.reduce({ ...STORED, mode: 'acceptEdits' }, EVENTS.permission).say, { to: 'permit', mode: 'acceptEdits' });
   // the person was in plan mode before: the receipt ends the edit there, plan mode stays
+  const byHand: PlanEdit = { phase: 'open', plan: 'room', base: 1, at: 1, file: '/plans/x.md', backup: null, restored: false }; // no EnterPlanMode of the edit's
+  assert.equal(edit.reduce(byHand, EVENTS.put).edit, null, 'plan mode entered by hand: it stays, the edit is done');
   const inPlan = edit.reduce({ ...SEEDED, mode: 'plan' }, EVENTS.put);
   assert.deepEqual([inPlan.edit, inPlan.effects.map(e => e.do)], [null, ['restorePlan']]);
   assert.match(inPlan.say && inPlan.say.to === 'deny' ? inPlan.say.text : '', /Plan mode was already on before the edit, so it stays on/);
