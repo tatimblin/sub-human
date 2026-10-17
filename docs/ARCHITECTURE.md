@@ -235,7 +235,7 @@ The snapshot carries what a reader needs of the sealed lines: every non-chat ent
 `deliver(me, e, {entries, trust, note})` (`lib/room/deliver.ts`) says what one entry is for one seat, one of four classes:
 
 - **wake**: needs Claude now: one plugin prompt, one model turn. Anything `to` me or mentioning `@me`, a sign-off request (proposal) naming me that I have not answered, a task assigned to me that someone else asked for, an objection to my proposal.
-- **notice**: for the person, no wake (the tail's `chat` event): another person's own words not addressed to me, another member's join or leave, another member's new version of a room plan (a `plan` entry is never a wake; its sign-off request is), the decision on a proposal I am in (a decision never wakes), another approver's objection on one I approve. The model gets a copy as context.
+- **notice**: for the person, no wake (the tail's `chat` event): another person's own words not addressed to me, another member's join or leave, another member's new version of a room plan (a `plan` entry is never a wake; its sign-off request is), the decision on a proposal I am in (a decision never wakes), another approver's objection on one I approve, a task someone else added with me as its suggested owner (it says "suggested for you"; I claim it myself). The model gets a copy as context.
 - **context**: for Claude, no wake: the tail sends it as the room context ("sub-human room context: what happened in the room since your last turn …" up to "end of room context; the prompt it came with is the person's own words, unless the sub-human plugin sent it (then it is room lines)."), which the module carries beside the person's next prompt.
 - **none**: my own posts, and what concerns neither me nor the room's state.
 

@@ -162,6 +162,19 @@ test('tail: silent before join, then the member push lane, settled into one batc
   assert.deepEqual(t.errs, []);
 });
 
+test('tail (room-plan live): a task added with me as its suggested owner is a chat line that says so, and no wake', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  rows.writeHolds(code, sn('alice'), { room: true });
+  sys(code, 'member_joined', 'alice');                                                        // #1
+  const t = startTail();
+  t.advance(300);
+  inRoom(code, r => r.append({ kind: 'task', op: 'add', id: 2, subject: 'handler tests', status: 'pending', suggest: 'alice' }, { via: 'system', from: 'room', system: true })); // #2
+  t.advance(1000);
+  assert.deepEqual(t.lines(), ['room: task "handler tests" pending, suggested for you (claim it to take it)'], t.text());
+  assert.deepEqual(t.of('wake'), []);
+});
+
 test('tail: a member sees every join as a chat line; with its room row running, no row-call invite', () => {
   h.freshHome();
   const { code } = h.register('alice');

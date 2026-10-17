@@ -18,7 +18,7 @@
  *       (and is not decided); a `task` assigning me (owner me) that someone else asked for (its req is not mine); an
  *       objection on my own proposal. A decision never wakes: it reports, it asks nothing.
  *     member notice: another person's say (not to me, no @me), another member's join or leave (not the room
- *       Claude's), another member's new version of a room plan (a `plan` entry: never a wake; its sign-off request,
+ *       Claude's), a task someone else added with me as its suggested owner (`suggest`), another member's new version of a room plan (a `plan` entry: never a wake; its sign-off request,
  *       a proposal, wakes the approvers as any proposal does); and what asks the person, not the model: the room line that the log waits to split
  *       (restart the old sessions), a decision on a proposal I am in (its approvers and author), another approver's
  *       objection on a proposal I approve. Everything else that is not mine is context.
@@ -79,6 +79,14 @@ function lane(me: LaneViewer | null | undefined, e: Entry, entries?: readonly Re
   return 'pull';
 }
 
+/** A task just added with name as its suggested owner, by someone else (lib/tasks.ts apply: suggest is never the
+ * owner; they claim it themselves): their person is told, their Claude is not woken. */
+function suggestedTo(name: string, e: Entry, entries: readonly Readonly<Entry>[] | undefined): boolean {
+  if (e.op !== 'add' || e.suggest !== name || e.owner) return false;
+  const req = entries && e.req ? entries.find(x => x.id === e.req) : null;
+  return !(req && (req.by || req.from) === name);
+}
+
 /** A member's pushed entry that is group chat, not a request: another person's own words not addressed to me. */
 const chat = (me: LaneViewer, e: Entry): boolean => e.via === 'human' && e.kind === 'say' && e.to !== me.name && !mentions(e.text, String(me.name));
 
@@ -88,6 +96,7 @@ const chat = (me: LaneViewer, e: Entry): boolean => e.via === 'human' && e.kind 
  */
 function personSees(name: string, e: Entry, entries: readonly Readonly<Entry>[] | undefined, trust: Trust): boolean {
   if (e.kind === 'plan') return true; // a new version of a room plan: every member sees it, nobody is woken
+  if (e.kind === 'task') return suggestedTo(name, e, entries);
   if (e.kind === 'decision' && approversOf(e).includes(name)) return true; // its approvers, even with no log to judge by
   if (!entries || !e.proposal_hash) return false;
   if (e.kind !== 'decision' && e.kind !== 'objection') return false;

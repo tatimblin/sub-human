@@ -8,6 +8,7 @@ import * as plans from '../lib/plans.ts';
 import * as proposal from '../lib/proposal.ts';
 import * as tasks from '../lib/tasks.ts';
 import { brief, BRIEF_MAX } from '../lib/room/brief.ts';
+import { deliver } from '../lib/room/deliver.ts';
 import { sn } from './support/brands.ts';
 import { must } from './support/must.ts';
 
@@ -36,6 +37,28 @@ test('brief: framed as people\'s content; plans with state and history, tasks wi
   assert.match(b, /\ntasks:\n  tasks 1 open\n  #\d+ listTasks paging · no owner · pending · plan room v2\n/);
   assert.match(b, /\ndecisions:\n  room: plan room v2 \([0-9a-f]{6}\) agreed \(alice, bob\)\n/);
   assert.match(b, /\nrecent words:\n  alice: bob, can you take the handler\?\nend of room state$/, 'a person\'s words, not a Claude\'s');
+});
+
+test('brief and delivery (room-plan live): a suggested owner shows in the brief and is told with a notice, never woken', () => {
+  const { code, R, store } = hosted();
+  h.register('gwen', 'member', 1, code);
+  const added = tasks.apply(store, { op: 'add', subject: 'handler tests', suggest: 'gwen' }, { by: 'alice' });
+  assert.ok(added.ok);
+  assert.match(brief(code), /\n  #\d+ handler tests · no owner \(suggested: gwen\) · pending\n/);
+  const all = R.readAll();
+  const t = must(all.findLast(e => e.kind === 'task'));
+  const D = (name: string) => deliver({ name, role: 'member' }, t, { entries: all, trust: room.trustOf });
+  assert.equal(D('gwen'), 'notice', 'the suggested person sees it; her Claude is not woken');
+  assert.equal(D('bob'), 'context');
+  assert.equal(D('alice'), 'context', 'alice asked for it');
+  assert.equal(deliver({ name: 'gwen', role: 'member' }, t), 'notice', 'without the log too');
+  // she suggested herself: no news for her
+  assert.ok(tasks.apply(store, { op: 'add', subject: 'docs', suggest: 'gwen' }, { by: 'gwen' }).ok);
+  const all2 = R.readAll();
+  assert.equal(deliver({ name: 'gwen', role: 'member' }, must(all2.findLast(e => e.kind === 'task')), { entries: all2, trust: room.trustOf }), 'context');
+  // once claimed, the suggestion is history in the brief
+  assert.ok(tasks.apply(store, { op: 'claim', id: added.ok ? added.task.id : '' }, { by: 'gwen' }).ok);
+  assert.match(brief(code), /\n  #\d+ handler tests · gwen · in_progress\n/);
 });
 
 test('brief: a plan that says to ignore instructions stays content: framed, quoted, nothing recorded', () => {
