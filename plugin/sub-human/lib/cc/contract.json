@@ -727,7 +727,17 @@
    "search": [
     "Inbound cross-session peer messages (SendMessage from your other sessions)"
    ],
-   "note": "crossSessionInbound accept|hold|refuse; the room's Claude sets accept."
+   "note": "crossSessionInbound accept|hold|refuse; the room session sets refuse (lib/cc/bg.ts ROOM_SESSION_INBOUND)."
+  },
+  {
+   "id": "cross-session-refuse-notice",
+   "section": 8,
+   "stability": "incidental",
+   "since": "2.1.296",
+   "search": [
+    "is not accepting cross-session messages"
+   ],
+   "note": "With crossSessionInbound refuse the recipient gets nothing (no transcript line, no turn); the sender's SendMessage first reports sent, then a notice says the message was refused and not delivered (cc-2.1.296-tasks-plans.md S1.5). The room session refuses: lib/cc/bg.ts ROOM_SESSION_INBOUND."
   },
   {
    "id": "harbor-kite-gate",

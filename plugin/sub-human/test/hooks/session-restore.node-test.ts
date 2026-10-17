@@ -27,7 +27,7 @@ test('session-restore: after /clear, rebinds the new session id by CLAUDE_PID an
   assert.ok(c.startsWith(`SUB-HUMAN: you are alice's Claude in room ${w.code}`), c.slice(0, 100));
   assert.doesNotMatch(c, /\{(NAME|CODE|OTHERS|ADDR_EXAMPLE|PLUGIN)\}/);
   assert.match(c, /\(restored after clear\)$/);
-  assert.ok(c.length <= 1200, `block ${c.length}`);
+  assert.ok(c.length <= 1900, `block ${c.length}`);
   assert.equal(hso(r).sessionTitle, `alice.${w.code}`, 'the native address');
   assert.equal(seat(w, 'alice').session_id, NEW_SID);
   assert.deepEqual(w.lib(() => identity.resolveBySession(NEW_SID)), { code: w.code, name: sn('alice'), role: 'member', session_id: NEW_SID, pid: process.pid, address: `alice.${w.code}` });
@@ -42,7 +42,7 @@ test('session-restore: ROWS asks to re-create rows only if missing after clear/c
   const r2 = w.hook('session-restore', { ...fixture('session-start-clear'), source: 'compact' }, { as: 'alice' });
   assert.match(context(r2), /restored after compact/);
   const ro = w.hook('session-restore', { ...fixture('session-start-clear'), source: 'compact' }, { as: 'claude' });
-  assert.ok(context(ro).startsWith(`SUB-HUMAN: you are claude, the room's Claude of room ${w.code}`), context(ro).slice(0, 80));
+  assert.ok(context(ro).startsWith(`SUB-HUMAN: you are the room session of room ${w.code}`), context(ro).slice(0, 80));
   assert.equal(hso(ro).sessionTitle, `claude.${w.code}`);
 });
 

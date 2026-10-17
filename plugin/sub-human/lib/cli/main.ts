@@ -9,7 +9,8 @@
  *   tail        the hooks module's child (mod/deliver.ts): follows this session's seat, one JSON event per line for the
  *               mod to route (lib/tail.ts). Never exits on an error (logs, backs off, carries on); exits on
  *               --max-seconds, a signal, its parent going or stdout closing
- *   read, who, show, tasks   read-only views of the room (read keeps its own cursor)
+ *   read, who, show, tasks, plan   read-only views of the room (read keeps its own cursor); plan [NAME] [--history]:
+ *                            a room plan's current text with its history and sign-off state, or every plan's line
  *   verify CODE         a room's hash chain and every person's line against the pinned keys (lib/cli/doctor/rooms.ts)
  *   agent-statusline    Claude Code's subagentStatusLine command: never fails (prints nothing, exits 0)
  *   serve --stdio CODE  one remote connection to a room hosted here (lib/remote/server.ts). A room this machine only
@@ -47,6 +48,7 @@ import { errCode, msgOf, stackOf } from '../errors.ts';
 import type { RoomCode, EntryId } from '../brand.ts';
 import { entryId } from '../room/validate.ts';
 import type * as ProposalMod from '../proposal.ts';
+import type * as PlansMod from '../plans.ts';
 import type * as HostLinksMod from '../remote/host-links.ts';
 import type * as ServerMod from '../remote/server.ts';
 import type * as PipeMod from '../remote/transports/pipe.ts';
@@ -68,6 +70,7 @@ const linkSocketLib = lazy<typeof LinkSocketMod>(import.meta.url, '../remote/lin
 const roomsLib = lazy<typeof RoomsMod>(import.meta.url, './doctor/rooms.ts');
 const tailModule = lazy<typeof TailLib>(import.meta.url, '../tail.ts');
 const proposalLib = lazy<typeof ProposalMod>(import.meta.url, '../proposal.ts');
+const plansLib = lazy<typeof PlansMod>(import.meta.url, '../plans.ts');
 const doctorLib = lazy<typeof DoctorMod>(import.meta.url, './doctor.ts');
 const hostLib = lazy<typeof HostMod>(import.meta.url, './host.ts');
 const listenLib = lazy<typeof ListenMod>(import.meta.url, './listen.ts');
@@ -198,6 +201,17 @@ function who(args: readonly string[] = []) {
   const me = identity.resolveSelf();
   if (!me) die(NOT_IN_ROOM, 1);
   console.log(`${me.name} (${me.role}) in ${me.code}`);
+}
+
+// ---------- plan ----------
+/** plan [NAME] [--room CODE] [--history]: lib/plans.ts describe (no NAME: one line per plan). */
+function planCmd(args: readonly string[]) {
+  const { flags, rest } = parseFlags(args, { room: 1, history: 0 });
+  if (rest.length > 1) die('usage: sub-human plan [NAME] [--room CODE] [--history]');
+  const { code } = openRoom(flags.room);
+  const [name] = rest;
+  if (flags.history && name === undefined) die('usage: sub-human plan NAME --history');
+  console.log(plansLib().describe(code, name ?? null, { history: !!flags.history }));
 }
 
 // ---------- tasks ----------
@@ -372,7 +386,7 @@ type Command = (args: readonly string[]) => unknown;
 /** What an unknown command prints: one command per line, grouped (the header above lists them). */
 const USAGE = [
   'usage: sub-human COMMAND',
-  '  the room:   read [--id N,M] | show HASH | who | tasks [--json]',
+  '  the room:   read [--id N,M] | show HASH | who | tasks [--json] | plan [NAME] [--history]',
   '  host:       invite [--ssh [USER@HOST]] | invite --web | --public',
   '              invite --stop | invite --cancel [REF]',
   '              admit [REF] | kick NAME | listen [--port P] [--start | --stop | --status]',
@@ -392,7 +406,7 @@ const verify: Command = args => {
   console.log(`room ${code}: ${r.verifyText(v)}`);
   process.exit(v.chain.ok && !v.unverified.length ? 0 : 1);
 };
-const cmds: Record<string, Command> = { doctor, verify, tail, read, show, who, tasks: tasksCmd, serve, link: linkCmd, 'agent-statusline': agentStatusline };
+const cmds: Record<string, Command> = { doctor, verify, tail, read, show, who, tasks: tasksCmd, plan: planCmd, serve, link: linkCmd, 'agent-statusline': agentStatusline };
 // lib/cli/*: each returns the exit code
 const viaCli = (fn: 'invite' | 'admit' | 'kick'): Command => a => process.exit(hostLib()[fn](a));
 Object.assign(cmds, { invite: viaCli('invite'), admit: viaCli('admit'), kick: viaCli('kick') });

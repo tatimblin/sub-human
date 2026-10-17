@@ -138,47 +138,28 @@ test('lane: member push/pull/none table (vole-8126 shapes + proposals + tasks)',
   assert.equal(L(d, R.readAll()), 'push');
 });
 
-test('lane: room Claude push is to=claude (a leading @claude tag) and objections on its proposals; the rest (decisions, task requests too) is pull', () => {
+test('lane: the room session reads nothing but another member\'s join (its rows turn): posts to claude, answers, decisions and tasks are none', () => {
   fresh();
   const L = (e: Entry, es?: readonly Entry[]) => roomLane(ROOM_CLAUDE, e, es);
-  const mine = prop('claude', H1, ['alice', 'bob']);                        // #1 own: none
-  const theirs = prop('bob', H2, ['alice'], 'human');                      // #2 pull
-  const words = human('alice', 'say');                                     // #3 human chatter: pull
-  const atRoomClaude = human('bob', 'say', { text: 'let us plan cursor paging', to: 'claude' }); // #4 push: "@claude let us plan…"
-  const toRoomClaude = agent('alice', 'question', { to: 'claude' });              // #5 push
-  const chatter = agent('alice', 'status');                                // #6 pull
-  const left = sys('member_left', {}, 'bob');                              // #7 pull
-  const joined = sys('member_joined', {}, 'carol');                        // #8 pull (tail adds the row note)
-  const s1 = answer('alice', 'signoff', H1);                               // #9 signoff on its proposal: pull (the decision carries it)
-  const o2 = answer('alice', 'objection', H2, { text: 'no' });             // #10 answer on bob's: pull
-  const dec = sys('decision', { proposal_hash: H1 }, 'claude');              // #11 pull: nothing for the room's Claude to act on
-  const req = taskReq('bob', 'add', { subject: 'parser tests' });          // #12 pull: the host applies it, nothing for a model
-  const t = task({ task_id: 2, owner: 'bob', status: 'pending', req: 12 }); // #13 its own mirror: pull
-  const ownPost = agent('claude', 'say');                                    // #14 none
-  const want: [Entry, Lane][] = [[mine, 'none'], [theirs, 'pull'], [words, 'pull'], [atRoomClaude, 'push'], [toRoomClaude, 'push'], [chatter, 'pull'],
-    [left, 'pull'], [joined, 'pull'], [s1, 'pull'], [o2, 'push'], [dec, 'pull'], [req, 'pull'], [t, 'pull'], [ownPost, 'none']];
-  for (const [e, l] of want) assert.equal(L(e), l, `#${e.id} without entries`);
-  const all = R.readAll();
-  assert.equal(L(s1, all), 'pull');
-  assert.equal(L(o2, all), 'pull', 'not its proposal');
+  const mine = prop('claude', H1, ['alice', 'bob']);
+  const theirs = prop('bob', H2, ['alice'], 'human');
+  const words = human('alice', 'say');
+  const toRoomClaude = human('bob', 'say', { text: 'let us plan cursor paging', to: 'claude' });
+  const agentTo = agent('alice', 'question', { to: 'claude' });
+  const mention = human('bob', 'say', { text: '@claude let us plan cursor paging' });
+  const left = sys('member_left', {}, 'bob');
+  const joined = sys('member_joined', {}, 'carol');                        // push (the tail adds the row note)
   const o1 = answer('bob', 'objection', H1, { text: 'clamp' });
-  assert.equal(L(o1, R.readAll()), 'push', 'an objection on its own proposal wakes it (to revise)');
-  assert.equal(L(req, all), 'pull');
-  assert.equal(req.by, 'bob');
-});
-
-test('lane: only to=claude wakes the room Claude; "@claude" inside a post\'s text (an "@room @claude …" post, a mid-text mention) does not', () => {
-  fresh();
-  const L = (e: Entry) => roomLane(ROOM_CLAUDE, e);
-  const roomTagged = human('bob', 'say', { text: '@claude let us plan cursor paging' }); // what "@room @claude let us plan…" posts
-  const mid = human('bob', 'say', { text: 'ask @claude later' });                       // "@room ask @claude later"
-  const agentMention = agent('alice', 'say', { text: '@claude can you plan this?' });
-  const oldTag = human('bob', 'say', { text: '@orch let us plan' });                     // 0.4.x's "@room @orch …": no alias
-  assert.deepEqual([roomTagged, mid, agentMention, oldTag].map(L), ['pull', 'pull', 'pull', 'pull']);
-  // a member named in the text is still woken by it: the rule is the room Claude's only
-  const atAlice = human('bob', 'say', { text: 'ask @alice later' });
-  assert.equal(roomLane({ name: 'carol', role: 'member' }, atAlice), 'push');
-  assert.equal(roomLane(ALICE, agent('bob', 'say', { text: 'ping @alice' })), 'push');
+  const dec = sys('decision', { proposal_hash: H1 }, 'room');
+  const req = taskReq('bob', 'add', { subject: 'parser tests' });
+  const t = task({ task_id: 2, owner: 'bob', status: 'pending', req: req.id });
+  const ownJoin = sys('member_joined', {}, 'claude');
+  const want: [Entry, Lane][] = [[mine, 'none'], [theirs, 'none'], [words, 'none'], [toRoomClaude, 'none'], [agentTo, 'none'], [mention, 'none'],
+    [left, 'none'], [joined, 'push'], [o1, 'none'], [dec, 'none'], [req, 'none'], [t, 'none'], [ownJoin, 'none']];
+  for (const [e, l] of want) assert.equal(L(e), l, `#${e.id} without entries`);
+  for (const [e, l] of want) assert.equal(L(e, R.readAll()), l, `#${e.id} with entries`);
+  // a member named in the text is still woken by it
+  assert.equal(roomLane({ name: 'carol', role: 'member' }, human('bob', 'say', { text: 'ask @carol later' })), 'push');
 });
 
 test('lane (P3 wakes): every person\'s words reach every member (a group chat), card answers and quiet decisions', () => {
@@ -191,7 +172,7 @@ test('lane (P3 wakes): every person\'s words reach every member (a group chat), 
   const email = human('bob', 'say', { text: 'mail ops@claude.example' });
   for (const [e, l] of [[atRoomClaude, 'push'], [atBob, 'push'], [plain, 'push'], [email, 'push']] as [Entry, Lane][]) assert.equal(roomLane(ALICE, e), l, `#${e.id}`);
   assert.equal(roomLane(BOB, atBob), 'push', 'bob is named');
-  assert.equal(roomLane(ROOM_CLAUDE, atRoomClaude), 'push');
+  assert.equal(roomLane(ROOM_CLAUDE, atRoomClaude), 'none', 'the room session reads none of it');
   // Round 1: alice agrees, bob objects last; round 2: alice agrees, bob agrees last. The room's Claude proposed.
   prop('claude', H1, ['alice', 'bob']);
   const a1 = answer('alice', 'signoff', H1);
@@ -204,13 +185,13 @@ test('lane (P3 wakes): every person\'s words reach every member (a group chat), 
   const all = R.readAll();
   const L = (me: LaneViewer, e: Entry) => roomLane(me, e, all);
   assert.deepEqual([a1, o1, a2, s2].map(e => L(ALICE, e)), ['none', 'pull', 'none', 'pull'], 'answers never wake another approver');
-  assert.deepEqual([a1, o1, a2, s2].map(e => L(ROOM_CLAUDE, e)), ['pull', 'push', 'pull', 'pull'], 'only an objection wakes the proposer');
+  assert.deepEqual([a1, o1, a2, s2].map(e => L(ROOM_CLAUDE, e)), ['none', 'none', 'none', 'none'], 'the room session reads no answer');
   assert.equal(L(ALICE, d1), 'pull', 'an objected decision: nothing for a non-proposer');
   assert.equal(L(BOB, d1), 'pull', 'bob completed it (told by his card reply)');
-  assert.equal(L(ROOM_CLAUDE, d1), 'pull', 'the objection already woke the proposer to revise');
+  assert.equal(L(ROOM_CLAUDE, d1), 'none');
   assert.equal(L(ALICE, d2), 'push', 'an agreed decision reaches the approver who did not complete it');
   assert.equal(L(BOB, d2), 'pull', 'bob completed it');
-  assert.equal(L(ROOM_CLAUDE, d2), 'pull', 'an agreed decision needs nothing from the room\'s Claude');
+  assert.equal(L(ROOM_CLAUDE, d2), 'none', 'an agreed decision needs nothing from the room session');
   // A member's own proposal: an objected decision still reaches its author.
   prop('alice', 'cccccccccccc', ['bob']);
   const o3 = answer('bob', 'objection', 'cccccccccccc', { text: 'no' });

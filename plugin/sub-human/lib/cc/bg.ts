@@ -204,8 +204,18 @@ function runningVersion(pid: unknown, { timeoutMs = 3000 }: { timeoutMs?: number
   return m?.[1] ?? null;
 }
 
+/**
+ * The room session's crossSessionInbound setting (its --settings at spawn: lib/room-claude.ts spawnPlan): refuse. A
+ * peer's SendMessage to claude.CODE then reaches nothing (no transcript line, no turn), and the sender's tool says the
+ * message was refused and not delivered; the plugin's own wakes (a member_joined, a submitted prompt) are no
+ * cross-session messages and still arrive (cc-2.1.296-tasks-plans.md S1.5).
+ * @cc is not accepting cross-session messages
+ * @stability incidental
+ */
+const ROOM_SESSION_INBOUND = 'refuse';
+
 export {
-  JOB_RE, parseDispatch, agentsCmd, stopCmd, parseAgentsJson, jobs, parseDaemonStatus, daemonStatus, exeState,
+  ROOM_SESSION_INBOUND, JOB_RE, parseDispatch, agentsCmd, stopCmd, parseAgentsJson, jobs, parseDaemonStatus, daemonStatus, exeState,
   runningVersion, DAEMON_ENV_ALLOW, daemonEnv,
 };
 export type { AgentJob, JobsOpts, DaemonStatus, ExeStateOpts };

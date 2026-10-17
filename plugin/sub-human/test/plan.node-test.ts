@@ -199,14 +199,14 @@ test('tasks: an add from a plan is tagged with its current version; an unknown p
   assert.match(tasks.validate({ op: 'claim', id: '2', plan: 'room' }).ok ? '' : 'plan goes with add only', /plan goes with add only/);
 });
 
-test('deliver: a new version is a notice for every other member and context for the room session, never a wake; nothing for its editor', () => {
+test('deliver: a new version is a notice for every other member, never a wake; nothing for its editor or the room session', () => {
   const { R, store } = hosted();
   plans.put(store, { base: 0, text: 'v1' }, { by: 'bob' });
   const e = must(R.readAll().at(-1));
   const entries = R.readAll();
   assert.equal(R.deliver({ name: 'alice', role: 'member' }, e, { entries }), 'notice');
   assert.equal(R.deliver({ name: 'bob', role: 'member' }, e, { entries }), 'none');
-  assert.equal(R.deliver({ name: 'claude', role: 'claude' }, e, { entries }), 'context');
+  assert.equal(R.deliver({ name: 'claude', role: 'claude' }, e, { entries }), 'none');
 });
 
 test('a test request through the support helper is a version and its request, as the plan tool makes them', () => {

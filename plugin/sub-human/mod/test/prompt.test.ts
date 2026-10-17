@@ -217,16 +217,14 @@ test('an @room fails closed: a shim that cannot run or exits other than 0 or 2 r
   expect(must(seen.classic[1], 'classic 1').block).toBe(undefined)
 })
 
-test('@claude in a room: a peer one is dropped like an @room, a typed one runs node, a failed shim refuses it', async ($, on) => {
+test('@claude in a room is an ordinary prompt too: a peer one is not dropped, a failed shim refuses nothing (the room session reads nothing)', async ($, on) => {
   const seen = world($, on, { exitCode: 1 })
   await start($)
   const r = await submit($, '@claude plan it', 'peer')
-  expect(r.drop).toMatch(/this @claude came from another Claude session/)
-  expect(seen.entered).toEqual([])
+  expect(r.drop).toBe(undefined)
+  expect(seen.entered).toEqual(['@claude plan it'])
   await submit($, '@claude ship it')
-  expect(seen.scripts).toEqual(['mod-hello.ts', 'prompt.ts'])
-  expect(seen.classic[0]?.block).toMatch(/could not check who wrote this @claude/)
-  expect(seen.classic[0]?.suppressOriginalPrompt).toBe(true)
+  expect(seen.classic.every(c => c.block === undefined)).toBe(true)
 })
 
 test('@claude outside a room is an ordinary prompt: no drop, no node, even from a peer', async ($, on) => {
@@ -303,7 +301,7 @@ test('an @room typed through Remote Control: a refusal is a notice as here (no r
 })
 
 test('13 (K/Q): a plain prompt typed into the room\'s Claude is a stop with the hint, drawn as the hint alone: no "blocked by hook" frame, nothing put back in the input, no turn', async ($, on) => {
-  const HINT = '✗ the room\'s Claude takes no typed input; type @claude in your own session, or ask your Claude to message claude.otter-4821'
+  const HINT = '✗ the room\'s session (claude.otter-4821) takes no typed input; type in your own session: @room for the room, or ask your own Claude'
   const seen = world($, on, { hello: helloOf(seatOf('claude', 'claude')), prompt: JSON.stringify({ continue: false, stopReason: HINT, subHuman: { reviewOpen: false } }) })
   const append = rows(on)
   await start($)

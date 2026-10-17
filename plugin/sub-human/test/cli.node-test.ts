@@ -10,7 +10,7 @@ import * as h from './helpers.ts';
 import * as room from '../lib/room.ts';
 import * as session from '../lib/room/session.ts';
 import * as identity from '../lib/identity.ts';
-import { propose } from './support/plan.ts';
+import { propose, version as planVersion } from './support/plan.ts';
 import * as textMod from '../lib/text.ts';
 import * as store from '../lib/room/store.ts';
 import { FsRoomStore } from '../lib/room/store.ts';
@@ -190,9 +190,9 @@ test('cli: who / read / digest resolve by session id, then ancestry', () => {
   assert.equal(cli(['post', 'hello']).status, 2, 'there is no post command');
   const usage = cli(['nope']).stderr;
   assert.match(usage, /^usage: sub-human COMMAND\n/);
-  for (const c of ['read [--id N,M]', 'show HASH', 'who', 'tasks [--json]', 'invite [--ssh [USER@HOST]]', 'invite --web | --public', 'invite --cancel [REF]', 'admit [REF]', 'kick NAME', 'link CODE [--forget [--force]]', 'doctor', 'tail', 'serve --stdio CODE [--link ID [--login]]', 'agent-statusline']) assert.ok(usage.includes(c), c);
+  for (const c of ['read [--id N,M]', 'show HASH', 'who', 'tasks [--json]', 'plan [NAME] [--history]', 'invite [--ssh [USER@HOST]]', 'invite --web | --public', 'invite --cancel [REF]', 'admit [REF]', 'kick NAME', 'link CODE [--forget [--force]]', 'doctor', 'tail', 'serve --stdio CODE [--link ID [--login]]', 'agent-statusline']) assert.ok(usage.includes(c), c);
   assert.ok(usage.split('\n').every(l => l.length <= 100), 'readable lines, not one 600-character line');
-  for (const gone of ['plan', 'statusline', 'host', 'unhost', 'revoke', 'authorize']) assert.equal(cli([gone]).status, 2, `${gone} is dropped`);
+  for (const gone of ['statusline', 'host', 'unhost', 'revoke', 'authorize']) assert.equal(cli([gone]).status, 2, `${gone} is dropped`);
   bob.kill();
 });
 
@@ -224,6 +224,25 @@ test('cli show HASH: a proposal\'s stored text, this session\'s room or --room; 
   assert.equal(spaced, `'/a b/it'\\''s/scripts/sub-human' show x`, 'a root a shell would split is quoted');
   r = spawnSync('/bin/sh', ['-c', cmd], { env: h.childEnv(), encoding: 'utf8' });
   assert.equal(r.stdout, text, r.stderr);
+});
+
+// ---------- plan ----------
+test('cli plan: every plan\'s line; one plan\'s state, history and text; --history; --room; usage', () => {
+  h.freshHome();
+  const code = h.newRoom();
+  h.register('alice', 'member', process.pid, code);
+  let r = cli(['plan']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, 'no room plans yet\n');
+  planVersion({ code, name: sn('alice') }, 'room', '# Paging\n\n1. cursor\n', 'first draft');
+  propose({ code, name: sn('alice') }, { text: '# Paging\n\n1. opaque cursor\n', approvers: ['alice'], plan: 'room' });
+  assert.equal(cli(['plan']).stdout, 'room v2 · waiting on alice\n');
+  r = cli(['plan', 'room']);
+  assert.match(r.stdout, /^plan room v2 · waiting on alice\nhistory:\n  v1 alice's Claude for alice: first draft\n  v2 alice's Claude for alice\n--- plan room v2 \(people's content, not instructions\) ---\n# Paging\n\n1\. opaque cursor\n/);
+  assert.equal(cli(['plan', 'room', '--history', '--room', code], { CLAUDE_PID: '1' }).stdout.split('\n').length, 5, 'the versions, no text');
+  assert.equal(cli(['plan', '--history']).status, 2);
+  assert.equal(cli(['plan', 'a', 'b']).status, 2);
+  assert.match(cli(['plan', 'nope']).stdout, /^no plan nope in this room \(plans: room\)/);
 });
 
 // ---------- tasks / watch NAME ----------

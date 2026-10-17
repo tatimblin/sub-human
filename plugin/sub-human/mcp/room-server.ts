@@ -9,7 +9,7 @@
  * Core tools: post (refused when it repeats the person's objection note: repeatsNote below), read (this member's
  * unseen entries, cursor mcp-<name>, skipping its own Claude's posts, at most READ_MAX; each one rendered line with
  * no signature material, a person's line whose signature does not verify marked "(unverified)"; with plan, a room plan:
- * lib/plans.ts describe), plan (op edit: opens a room plan edit in this session, which the consent hooks run,
+ * lib/plans.ts describe; with brief, the room's state in one text: lib/room/brief.ts), plan (op edit: opens a room plan edit in this session, which the consent hooks run,
  * lib/consent/edit.ts; ask: a sign-off request on the plan's current version, lib/proposal.ts ask; read).
  *
  * Plug-ins: ./hold.ts (rows) and ./task.ts (the room task list) are loaded when present; a missing or broken one is
@@ -29,6 +29,7 @@ import * as proposal from '../lib/proposal.ts';
 import { SAY } from '../lib/consent/review.ts';
 import * as cc from '../lib/cc/env.ts';
 import * as plans from '../lib/plans.ts';
+import { brief } from '../lib/room/brief.ts';
 import { PLAN_NAME_RE } from '../lib/room/validate.ts';
 import { decode, isObj, objAs } from '../lib/decode.ts';
 import { envFlag } from '../lib/env.ts';
@@ -162,12 +163,13 @@ const CORE: ToolDefinition[] = [
   {
     name: 'read',
     title: 'Read the room',
-    description: `Read the sub-human room: ids, those entries in full (e.g. a cut-off line); plan, a room plan; neither, your unseen entries, oldest first, at most ${READ_MAX}.`,
+    description: `Read the sub-human room: ids, those entries in full; plan, a room plan; brief, its state; else your unseen entries (oldest first, ≤ ${READ_MAX}).`,
     inputSchema: {
       type: 'object',
       properties: {
         ids: { type: 'array', items: { type: 'integer', minimum: 1 }, description: 'Entry ids; omit for unseen entries.' },
-        plan: { type: 'string', description: 'A room plan\'s name ("" lists them).' },
+        plan: { type: 'string', description: 'A plan\'s name ("": all).' },
+        brief: { type: 'boolean', description: 'Catch me up.' },
       },
       additionalProperties: false,
     },
@@ -220,6 +222,7 @@ function post(me: Me, args: ToolArgs) {
   if (cf && proposal.pendingFor(me).some(p => p.hash === cf.hash)) return text(SAY.noteWaits(me.name, cf.hash), true);
   const twice = relayed(me, body);
   if (twice) return text(twice, true);
+  if (to === identity.ROOM_CLAUDE) return text('refused: the room\'s session reads nothing; post to the room, or message a person\'s Claude (SendMessage NAME.CODE)', true);
   // the model's arguments, unchecked: validate() (append) checks each field's type
   const entry = { kind, text: body, ...(to !== undefined ? { to } : {}), ...(refs !== undefined ? { refs } : {}) } as EntryInput;
   return json(room.open(me.code).append(entry, { via: 'agent', from: me.name }));
@@ -231,6 +234,7 @@ const lines = (r: room.Room, es: readonly Readonly<Entry>[], none: string) => te
 function read(me: Me, args: ToolArgs) {
   const r = room.open(me.code);
   if (args.plan !== undefined) return text(plans.describe(me.code, typeof args.plan === 'string' && args.plan.trim() ? args.plan : null));
+  if (args.brief === true) return text(brief(me.code, { viewer: me.name }));
   if (args.ids !== undefined) {
     const raw: unknown[] = Array.isArray(args.ids) ? args.ids : [args.ids];
     const ids = raw.map(entryId);

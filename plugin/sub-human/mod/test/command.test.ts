@@ -201,7 +201,7 @@ test('the room\'s Claude: a typed /clear is answered with the refusal and never 
   const seen = world($, on, { room: 'otter-4821' })
   await start($)
   const r = await command($, { command: 'clear', args: '', origin: { kind: 'composer' } })
-  expect(r.text).toMatch(/the room's Claude takes no typed input, commands included/)
+  expect(r.text).toMatch(/the room's session takes no typed input, commands included/)
   expect(seen.ran).toBe(0)
 })
 

@@ -310,7 +310,7 @@ function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd,
   const me: Identity = { code, name, role: 'member', pid, session_id: session_id || null, address: identity.address(name, code) };
   const msg = created
     ? `opened room ${code} as ${name} · on this machine others join with /sub-human; another machine: /sub-human invite`
-    : `${r.rejoin ? 'rejoined' : 'joined'} ${code} as ${name}, ${withWhom(code, name)} · @room to talk, @claude to ask the room's Claude`;
+    : `${r.rejoin ? 'rejoined' : 'joined'} ${code} as ${name}, ${withWhom(code, name)} · @room to talk; your Claude can message other Claudes, edit the room plan and the task list`;
   return { ok: true, me, lead: created ? 'room opened' : r.rejoin ? 'rejoined' : 'joined', msg: `${msg}${r.note}` };
 }
 

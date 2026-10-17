@@ -44,16 +44,13 @@ test('prompt: the origin hand-off gives a kind only to the prompt whose text it 
   assert.equal(q.take('@room two'), 'composer');
 });
 
-test('prompt: parse and parseClaude take the tag with one whitespace character after it (a newline too), as hooks/handlers/at-room.ts does', async () => {
+test('prompt: parse takes the tag with one whitespace character after it (a newline too), as hooks/handlers/at-room.ts does; @claude is no tag', async () => {
   const p = await load();
   const rooms: [string, string | null][] = [['@room hi', 'hi'], ['@room', ''], ['@room\nhi', 'hi'], ['@Room hi', null], ['@room  x', ' x'], ['@roommate hi', null], ['room: hi', null], [' @room hi', null]];
   for (const [text, want] of rooms) {
     assert.equal(p.parse(text), want, JSON.stringify(text));
   }
-  const claudes: [string, string | null][] = [['@claude plan', 'plan'], ['@claude\nplan', 'plan'], ['@Claude', null], ['@claude', ''], ['@claudette', null]];
-  for (const [text, want] of claudes) {
-    assert.equal(p.parseClaude(text), want, JSON.stringify(text));
-  }
+  for (const text of ['@claude plan', '@claude']) assert.equal(p.posts(text, { seat: {} }), false, `${text}: a plain prompt to the person's own Claude`);
 });
 
 test('prompt: an @room the shim could not handle is refused, never let through; one wording with at-room\'s', async () => {
@@ -104,20 +101,18 @@ test('prompt: receiptBook keeps only an @room stop\'s own warning row, as the re
   assert.equal(book.rewrite({ type: 'system', content: [{ type: 'text', text: `${STOP_FRAME}b` }, { type: 'text', text: 'x' }] }), null, 'one text block only');
 });
 
-test('prompt (stage 8f item 4): the model row of an @claude line\'s stop names @claude, an @room line\'s @room', async () => {
+test('prompt (stage 8f item 4): the model row of an @room line\'s stop says it went to the room', async () => {
   const { receiptBook, STOP_FRAME } = await load();
   const book = receiptBook();
-  const WAKE = "✓ sent; the room's Claude was woken", SENT = "✓ sent to room otter-4821 (Claude wasn't asked)";
+  const SENT = "✓ sent to room otter-4821 (Claude wasn't asked)";
   const meta = (text: string) => ({ type: 'user', isMeta: true, content: [{ type: 'text', text }] });
-  book.expect(WAKE, '@claude');
   book.expect(SENT);
-  assert.deepEqual(book.modelRow(meta(`${STOP_FRAME}${WAKE}`)), meta(`sub-human: the person's @claude line above went to the room, not to you (${WAKE}); nothing is asked of you.`));
   assert.deepEqual(book.modelRow(meta(`${STOP_FRAME}${SENT}`)), meta(`sub-human: the person's @room line above went to the room, not to you (${SENT}); nothing is asked of you.`));
 });
 
 test('prompt: roomClaudeCommand refuses a command a person types into the room\'s Claude (/clear too); its launch and other origins run', async () => {
   const { roomClaudeCommand } = await load();
-  assert.match(must(roomClaudeCommand('clear', { kind: 'composer' }, 'otter-4821')), /^✗ the room's Claude takes no typed input, commands included; .*claude\.otter-4821$/);
+  assert.match(must(roomClaudeCommand('clear', { kind: 'composer' }, 'otter-4821')), /^✗ the room's session takes no typed input, commands included \(room otter-4821\); type in your own session: @room for the room, or ask your own Claude$/);
   assert.ok(roomClaudeCommand('compact', { kind: 'bridge' }, 'otter-4821'));
   assert.equal(roomClaudeCommand('sub-human', { kind: 'composer' }, 'otter-4821'), null, 'its launch: at-room answers a typed one');
   assert.equal(roomClaudeCommand('clear', { kind: 'sdk' }, 'otter-4821'), null, 'the launcher, not a person');
@@ -125,12 +120,11 @@ test('prompt: roomClaudeCommand refuses a command a person types into the room\'
 });
 
 test('prompt: a paste that starts the prompt is unwrapped before the tag is read (live: a pasted "@room …" went to the model)', async () => {
-  const { parse, parseClaude, isAtRoom, unwrapLead } = await load();
+  const { parse, isAtRoom, unwrapLead } = await load();
   const pasted = '\n\n<pasted_content id="1">\n@room the long notes\nline two\n</pasted_content id="1">\n';
   assert.equal(isAtRoom(pasted), true);
   assert.equal(parse(pasted), 'the long notes\nline two');
   assert.equal(parse(`${pasted}and after`), 'the long notes\nline twoand after', 'the text after the paste follows its body');
-  assert.equal(parseClaude('<pasted_content id="2">\n@claude plan it\n</pasted_content id="2">'), 'plan it');
   assert.equal(parse('<pasted_content id="1">\nnot a tag @room\n</pasted_content id="1">'), null);
   assert.equal(parse('hello <pasted_content id="1">\n@room x\n</pasted_content id="1">'), null, 'a paste later in the prompt is just words');
   assert.deepEqual(unwrapLead('@room plain'), { text: '@room plain', unwrapped: false });

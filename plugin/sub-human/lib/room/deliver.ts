@@ -22,10 +22,8 @@
  *       a proposal, wakes the approvers as any proposal does); and what asks the person, not the model: the room line that the log waits to split
  *       (restart the old sessions), a decision on a proposal I am in that needs no wake, another approver's objection
  *       on a proposal I approve. Everything else that is not mine is context.
- *     the room's Claude (role claude) wake: to=claude only (a person's leading @claude tag; an "@claude" inside the
- *       text is just words); an objection on its own proposal; another member's member_joined whose row
- *       note says no row is running (or is unknown). Everything else is context, decisions included: an objected
- *       one follows the objection that already woke it, and an agreed one needs nothing from it.
+ *     the room's session (role claude) reads nothing but its rows: another member's member_joined whose row note
+ *       says no row is running (or is unknown) wakes it (its rows-only turn); everything else is none.
  *     card answers (both roles): a signoff is context (the decision carries it); an objection wakes the proposal's
  *       author only (to revise).
  *     decisions (judged): context for the member whose answer completed it (the card's own reply, hooks consent,
@@ -60,7 +58,8 @@ function lane(me: LaneViewer | null | undefined, e: Entry, entries?: readonly Re
   const roomClaude = !!me && me.role === 'claude';
   const n = normalize(e);
   if (n.from === name && !(n.via === 'system' && (n.kind === 'decision' || n.kind === 'task'))) return 'none';
-  if (n.to === name || (!roomClaude && mentions(n.text, name))) return 'push';
+  if (roomClaude) return n.kind === 'member_joined' ? 'push' : 'none'; // the room session keeps rows, and reads nothing else
+  if (n.to === name || mentions(n.text, name)) return 'push';
   if ((n.kind === 'signoff' || n.kind === 'objection') && n.proposal_hash) {
     if (n.kind === 'signoff') return 'pull';
     if (!entries) return 'push';
@@ -68,7 +67,6 @@ function lane(me: LaneViewer | null | undefined, e: Entry, entries?: readonly Re
     return p && p.from === name ? 'push' : 'pull';
   }
   if (n.kind === 'decision' && entries && quietDecision(name, n, entries, trust)) return 'pull';
-  if (roomClaude) return 'pull';
   if (n.kind === 'proposal' && approversOf(n).includes(name)) {
     if (!entries || !n.hash) return 'push';
     return answered(name, n.hash, entries, trust) || decided(n.hash, entries, trust) ? 'pull' : 'push';
@@ -121,11 +119,7 @@ function personSees(name: string, e: Entry, entries: readonly Readonly<Entry>[] 
 function deliver(me: LaneViewer | null | undefined, e: Entry, { entries, trust = NO_TRUST, note = '' }: DeliverState = {}): Delivery {
   const l = lane(me, e, entries, trust);
   const name = me && me.name;
-  if (me && me.role === 'claude') {
-    if (l === 'push') return 'wake';
-    if (e.kind === 'member_joined' && e.from !== name && (!note || SPAWN_NOTE.test(note))) return 'wake';
-    return l === 'pull' ? 'context' : 'none';
-  }
+  if (me && me.role === 'claude') return l === 'push' && (!note || SPAWN_NOTE.test(note)) ? 'wake' : 'none';
   if ((isMove(e) && e.via === 'system' && e.from !== name && e.from !== 'claude')) return 'notice';
   if (l === 'push') return me && (isMove(e) || chat(me, e)) ? 'notice' : 'wake';
   if (l === 'pull' && me && personSees(String(name), e, entries, trust)) return 'notice';

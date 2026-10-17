@@ -488,16 +488,36 @@ function roomText({ code, viewer, es, ms, now, c }: RowCtx, summary: string, lin
     parts.push(c.dim(`${ms.filter(m => isActive(m) && !isRoomClaude(m)).length} here`));
   }
   if (viewer) {
-    // read once the viewer or their Claude answered anything after it; the room's Claude's answer to the viewer's
-    // own @claude is read too: it was shown to them as it came
+    // read once the viewer or their Claude answered anything after it
     const own = lastWhere(es, e => e.from === viewer && (e.via === 'human' || e.via === 'agent'));
-    const asked = !!own && own.to === 'claude';
-    const mail = countAfter(es, e => e.to === viewer && e.from !== viewer && !(asked && e.from === 'claude'), own?.id || 0);
+    const mail = countAfter(es, e => e.to === viewer && e.from !== viewer, own?.id || 0);
     if (mail) parts.push(c.warn(`✉ ${mail} for you`));
   }
+  const named = new Set([needs, p].flatMap(x => (x ? [x.hash] : [])));
+  for (const seg of planSegs(es, code, named)) parts.push(c.dim(seg));
   if (summary) parts.push(summary);
   if (linkSeg && link?.state === 'online') parts.push(c.dim(linkSeg));
   return fit(parts);
+}
+
+const PLANS_SHOWN = 3;
+/**
+ * The room's plans at a glance (lib/room/consent.ts plans and status), the latest edited first, at most PLANS_SHOWN
+ * then "+N plans": "paging v4 waiting on bob", "release v2 agreed", "api v1 draft" (no request on the current
+ * version), "api v3 not agreed". A plan whose current version the row already names (named: hashes) is left out.
+ */
+function planSegs(es: readonly Readonly<Entry>[], code: RoomCode | null | undefined, named: ReadonlySet<string>): string[] {
+  const f = code ? room.open(code).fold(es) : room.fold(es);
+  const ps = [...f.plans.values()].filter(x => !named.has(x.current.hash)).sort((a, b) => b.current.id - a.current.id);
+  const state = (h: string): string => {
+    const st = f.status(h);
+    if (!st || st.state === 'superseded') return 'draft';
+    if (st.decision) return st.matrix.objected.length ? 'not agreed' : 'agreed';
+    return st.matrix.missing.length ? `waiting on ${st.matrix.missing.join(', ')}` : 'waiting';
+  };
+  const out = ps.slice(0, PLANS_SHOWN).map(x => `${x.name} v${x.current.version} ${state(x.current.hash)}`);
+  if (ps.length > PLANS_SHOWN) out.push(`+${ps.length - PLANS_SHOWN} plans`);
+  return out;
 }
 
 /** member's participant row, or with no member the room row, as viewer sees it. tasks, taskSummary and link default to

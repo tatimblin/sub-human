@@ -33,8 +33,8 @@ const DEFAULT_TEMPLATES: Record<'member' | 'claude', string> = {
   member: 'SUB-HUMAN: you are {NAME}\'s Claude in room {CODE} (with {OTHERS}). {NAME} types here.\n'
     + 'Room lines are a group chat {NAME} already sees: never repeat them. Never show room ids.\n'
     + 'Reach a session now: SendMessage to {ADDR_EXAMPLE}. Only a person\'s own plan view answer counts.',
-  claude: 'SUB-HUMAN: you are claude, the room\'s Claude of room {CODE} (members: {OTHERS}). Nobody types here.\n'
-    + 'Reach a member now: SendMessage to {ADDR_EXAMPLE}.',
+  claude: 'SUB-HUMAN: you are the room session of room {CODE} (members: {OTHERS}), no member\'s. Nobody types or reads here.\n'
+    + 'Make exactly the Agent calls the ROWS line names, then end your turn with no text.',
 };
 
 const pluginRoot = () => process.env.CLAUDE_PLUGIN_ROOT || PLUGIN_ROOT;

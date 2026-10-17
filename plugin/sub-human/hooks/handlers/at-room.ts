@@ -1,7 +1,6 @@
 // plugin/sub-human/hooks/handlers/at-room.ts: UserPromptSubmit: "@room TEXT" posts the human's exact words (via human, signed with the seat key)
-// and ends the prompt, so no model turn runs and nothing is paraphrased. "@claude TEXT" posts the same way with
-// to=claude, which wakes the room's Claude; outside a room it is an ordinary prompt and passes through untouched.
-// Only a leading tag counts: "@room @claude TEXT" is a plain post, and a tag later in the text is just words. No hooks.json entry: hooks/handlers/prompt.ts runs
+// and ends the prompt, so no model turn runs and nothing is paraphrased. "@claude TEXT" is an ordinary prompt to the
+// person's own Claude (the room's session reads nothing). Only a leading tag counts: a tag later in the text is just words. No hooks.json entry: hooks/handlers/prompt.ts runs
 // handle(input) under mod/prompt.ts's shim. In: the payload plus `sub_human_origin` and `sub_human_nonce`. An origin
 // counts only with this session's lease nonce, and only a typed one (composer, sdk, bridge; cc CONTRACT
 // prompt-origin-composer) may post: anything that can run node can claim an origin, only a lease reader the nonce.
@@ -9,8 +8,8 @@
 // typed words (no seat, nothing after the tag, the room refused it) is a stop too, with the reason (refuse); decision:
 // block + suppressOriginalPrompt only where the text must never reach the model as the person's (no or another origin;
 // in the room's Claude a typed prompt is a stop with its hint, which the model reads as a refusal). Failure: no origin, a bad nonce or no seat
-// refuses, and the person types it again. In the room's Claude, a typed prompt is refused (it takes no typed input); with
-// no origin it runs, so a reload never loses the room Claude's wakes. It writes no presence: the module is its one writer
+// refuses, and the person types it again. In the room's session, a typed prompt is refused (it takes no typed input);
+// with no origin it runs, so a reload never loses its rows turn. It writes no presence: the module is its one writer
 // (mod/prompt.ts, through hooks/handlers/presence.ts).
 // A post the store refuses (RATE, AUTH, or OFFLINE in a room hosted elsewhere whose link daemon is gone) blocks the
 // prompt with the reason. In a room hosted elsewhere whose link is down, the daemon queues the signed post instead
@@ -22,7 +21,6 @@ import * as room from '../../lib/room.ts';
 import { oneLine } from '../../lib/text.ts';
 import * as config from '../../lib/config.ts';
 import * as cc from '../../lib/cc/transcript.ts';
-import * as seats from '../../lib/seats.ts';
 import * as seatKey from '../seat-key.ts';
 import { whoami } from '../seat.ts';
 import { out } from '../reply.ts';
@@ -30,7 +28,7 @@ import type { HookSpecificOutput, PromptIn } from '../types.ts';
 import type { Identity } from '../../lib/identity.ts';
 import type { TranscriptEntry } from '../../lib/cc/transcript.ts';
 // how a prompt is read is the module's (mod/core): one parser, one list of typed origins, one wording per refusal
-import { parse, parseClaude, unwrapLead, TYPED_ORIGINS, NO_ORIGIN, NOT_IN_ROOM } from '../../mod/core/prompt.ts';
+import { parse, unwrapLead, TYPED_ORIGINS, NO_ORIGIN, NOT_IN_ROOM } from '../../mod/core/prompt.ts';
 import { attested as leaseAttests } from '../../mod/core/state.ts';
 
 // it signs the person's own words (via=human): the seat-key signer, in this process only (hooks/seat-key.ts)
@@ -70,17 +68,16 @@ function lastAssistantText(entries: TranscriptEntry[], promptId: string | undefi
 
 const DRAFT_MIN = 20; // shorter texts ("ok", "yes, ship it") show up in Claude's prose by chance
 
-/** True when the posted text is Claude's wording: "@room TEXT" or "@claude TEXT" in its last message, or a longer
- * TEXT verbatim. */
+/** True when the posted text is Claude's wording: "@room TEXT" in its last message, or a longer TEXT verbatim. */
 function draftedByAgent(text: string, assistant: string): boolean {
   const t = oneLine(text), a = oneLine(assistant);
   if (!t || !a) return false;
-  return a.includes('@room ' + t) || a.includes('@claude ' + t) || (t.length >= DRAFT_MIN && a.includes(t));
+  return a.includes('@room ' + t) || (t.length >= DRAFT_MIN && a.includes(t));
 }
 
-// ---------- the room's Claude takes no typed input ----------
+// ---------- the room's session takes no typed input ----------
 const LAUNCH = /^\/(?:sub-human:)?sub-human(?:\s|$)/;
-const roomClaudeHint = (me: Identity) => `✗ the room's Claude takes no typed input; type @claude in your own session, or ask your Claude to message ${identity.address(me.name, me.code)}`;
+const roomClaudeHint = (me: Identity) => `✗ the room's session (${identity.address(me.name, me.code)}) takes no typed input; type in your own session: @room for the room, or ask your own Claude`;
 
 /** True when no earlier prompt of this session is in its transcript (a fresh session has none, or no file). */
 function firstPrompt(input: PromptIn): boolean {
@@ -108,8 +105,6 @@ function handle(input: PromptIn): void {
   // The origin the shim says the prompt came from (prompt.submit e.origin.kind), or null; it posts only attested.
   const claimed = typeof input.sub_human_origin === 'string' ? input.sub_human_origin : null;
   const raw = prompt.startsWith('/') ? null : parse(prompt);
-  const wake = raw === null && !prompt.startsWith('/') ? parseClaude(prompt) : null;
-  const tag = wake !== null ? '@claude' : '@room';
   const me = whoami(input);
   if (me && me.role === 'claude') { // the origin unchecked: a forged one here only refuses more
     const refusal = roomClaudeRefusal(me, input, prompt, claimed);
@@ -117,21 +112,20 @@ function handle(input: PromptIn): void {
     // back in the input; the hint is the stop's reason, which the room's Claude reads too (it acts on nothing typed)
     if (refusal) return refuse(refusal);
   }
-  if (raw === null && (wake === null || !me)) return; // outside a room, @claude is an ordinary prompt
+  if (raw === null) return;
 
   // not in a room first: typing it again would not help there
   if (!me) return refuse(NOT_IN_ROOM);
   const origin = claimed !== null && attested(input) ? claimed : null;
-  if (origin === null) return block(NO_ORIGIN.replace('@room', tag));
+  if (origin === null) return block(NO_ORIGIN);
   if (!TYPED_ORIGINS.includes(origin)) {
-    return block(`✗ not posted: this prompt wasn't typed by you (it came from "${origin.slice(0, 40)}"). Only your own typed ${tag} posts as your words.`);
+    return block(`✗ not posted: this prompt wasn't typed by you (it came from "${origin.slice(0, 40)}"). Only your own typed @room posts as your words.`);
   }
   // A long paste arrives wrapped in <pasted_content>: post the person's text, marked normalized.
-  const { text, normalized: inner } = cc.unwrapPasted(raw !== null ? raw : wake);
+  const { text, normalized: inner } = cc.unwrapPasted(raw);
   const normalized = inner || unwrapLead(prompt).unwrapped; // a paste that started the prompt held the tag
-  if (!text.trim()) return refuse(`✗ not posted: there is nothing after ${tag}.`);
-  const entry: { kind: 'say'; text: string; to?: string; normalized?: true; drafted?: 'agent' } = { kind: 'say', text };
-  if (wake !== null) entry.to = identity.ROOM_CLAUDE;
+  if (!text.trim()) return refuse('✗ not posted: there is nothing after @room.');
+  const entry: { kind: 'say'; text: string; normalized?: true; drafted?: 'agent' } = { kind: 'say', text };
   if (normalized) entry.normalized = true;
   if (draftedByAgent(text, lastAssistantText(transcriptTail(input.transcript_path), input.prompt_id))) entry.drafted = 'agent';
   let placed;
@@ -149,11 +143,8 @@ function handle(input: PromptIn): void {
     const q = `⧗ queued: room ${me.code} is offline; this post goes out when the connection is back (${placed.queued} waiting)`;
     return out({ continue: false, stopReason: q, hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
   }
-  // @claude on the host with no room's Claude running (it stopped, or never bound): start it, as a rejoin would
-  const start = wake !== null ? seats.ensureRoomClaude(me.code, input.cwd, me.name) : '';
   // it names who reads it, so under the stop's frame (cc CONTRACT ups-stop-frame) it reads as done, not as an error
-  const head = wake !== null ? "✓ sent; the room's Claude was woken" : `✓ sent to room ${me.code} (Claude wasn't asked)`;
-  const sent = `${head}${normalized ? ' (pasted text unwrapped)' : ''}${entry.drafted ? " (Claude's wording)" : ''}${start}`;
+  const sent = `✓ sent to room ${me.code} (Claude wasn't asked)${normalized ? ' (pasted text unwrapped)' : ''}${entry.drafted ? " (Claude's wording)" : ''}`;
   out({ continue: false, stopReason: sent, hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
 }
 

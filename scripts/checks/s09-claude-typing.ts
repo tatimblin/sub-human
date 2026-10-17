@@ -7,7 +7,7 @@ export const scene = 'S9';
 export function run(x: Ctx, { det }: { det: Det }): void {
   const s = x.span('S9');
   const v = x.cap('S9', 'viewer') || '';
-  det('A viewer attached with claude attach and typed: the prompt is refused with the hint', /the room's Claude takes no typed input; type @claude in your own session, or ask your Claude to message claude\./.test(v),
+  det('A viewer attached with claude attach and typed: the prompt is refused with the hint', /the room's session \(claude\.[a-z]+-\d{4}\) takes no typed input; type in your own session/.test(v),
     (/the room's Claude takes no typed input[^\n]*/.exec(v) || [`no refusal in ${x.capName('S9', 'viewer')}`])[0]);
   const typed = x.entries('claude').filter(e => e.type === 'user' && x.textOf(e.message && e.message.content).includes(x.DEMO.viewer9));
   const n = x.roomClaudeTurns(s);

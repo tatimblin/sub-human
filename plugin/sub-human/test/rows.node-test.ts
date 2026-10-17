@@ -155,10 +155,6 @@ test('rowText (room row): answer needed, agreed, objected, decided, mail and the
   // stage 8e I.3: alice's Claude answered it: read, the count goes
   const replied = [...es, ...mk([{}, {}, {}, { kind: 'say', from: 'alice', via: 'agent', to: 'claude' }]).slice(3)];
   assert.equal(rows.rowText(code, { viewer: 'alice', ...o({ entries: replied }) }), '⚠ your answer needed 593da0');
-  // stage 8f item 4: the room's Claude answering alice's own @claude is no mail left for her; bob's line after it is
-  const answered = mk([{ kind: 'say', from: 'alice', via: 'human', to: 'claude' }, { kind: 'say', from: 'claude', via: 'agent', to: 'alice' }]);
-  assert.equal(rows.rowText(code, { viewer: 'alice', entries: answered, taskSummary: '' }), '2 here');
-  assert.equal(rows.rowText(code, { viewer: 'alice', entries: [...answered, ...mk([{}, {}, { kind: 'say', from: 'bob', via: 'human', to: 'alice' }]).slice(2)], taskSummary: '' }), '2 here · ✉ 1 for you');
   es.push(...mk([{}, {}, {}, answer('alice', 'objection')]).slice(3));
   assert.equal(rows.rowText(code, { viewer: 'alice', ...o() }), '✖ objected');
   assert.equal(rows.rowText(code, { viewer: 'bob', ...o() }), '✓ agreed 593da0 1/2 · ✖ 1 objection');
@@ -291,4 +287,23 @@ test('rowText: a proposal is named by its stored plan\'s title (clipped), not it
   const titled = mk([{ ...prop(['alice'], 'c0ffee000003'), text: 'proposal c0ffee000003: rename fetchUser' }]);
   assert.equal(rows.rowText(code, { viewer: 'alice', entries: titled, taskSummary: '' }), '⚠ your answer needed rename fetchUser');
   assert.equal(rows.rowText(code, { viewer: 'alice', entries: mk([prop(['alice'], 'c0ffee000004')]), taskSummary: '' }), '⚠ your answer needed c0ffee');
+});
+
+test('rowText (room row): each room plan at a glance, the latest edited first, at most 3 then "+N plans"; a plan the row already names is left out', () => {
+  const H = (c: string) => c.repeat(12);
+  /** A log line at position i (ids from 1, a second apart, ending now). */
+  const at = (i: number, e: Partial<Entry>): Entry => ({ from: 'alice', kind: 'say', via: 'agent', to: 'room', ...e, id: eid(i + 1), at: new Date(Date.now() - (10 - i) * 1000).toISOString() });
+  const pl = (name: string, version: number, hash: string, from = 'alice'): Partial<Entry> => ({ kind: 'plan', from, plan: name, version, base: version - 1, hash, path: `plans/${hash}.md`, for: from, text: `plan ${name} v${version}` });
+  const es: Entry[] = [pl('paging', 1, H('a')), pl('release', 1, H('b')), pl('api', 1, H('c')), pl('paging', 2, H('d'), 'bob')].map((e, i) => at(i, e));
+  const code = rc('marmot-2509');
+  const o = { entries: es, taskSummary: '' };
+  assert.match(rows.rowText(code, { viewer: 'carol', ...o }), /^\d+ here · paging v2 draft · api v1 draft · release v1 draft$/);
+  // a request on release v1, carol asked: it leads the row, and release is not repeated; then agreed by both
+  const ask = at(4, { kind: 'proposal', hash: H('b'), approvers: ['alice', 'carol'], plan: 'release', version: 1, text: 'x' });
+  const carol = rows.rowText(code, { viewer: 'carol', entries: [...es, ask], taskSummary: '' });
+  assert.ok(carol.startsWith('⚠ your answer needed plan release v1 · paging v2 draft'), carol); // the row's width cuts the rest
+  assert.doesNotMatch(carol, /release v1 draft/);
+  assert.ok(rows.rowText(code, { viewer: 'bob', entries: [...es, ask], taskSummary: '' }).startsWith('proposal plan release v1 0/2 · paging v2 draft'));
+  const more = ['a', 'b', 'c', 'd', 'e'].map((n, i) => at(i, pl(n, 1, H(String(i + 1)))));
+  assert.match(rows.rowText(code, { viewer: 'carol', entries: more, taskSummary: '' }), /^\d+ here · e v1 draft · d v1 draft · c v1 draft · \+2 plans$/);
 });

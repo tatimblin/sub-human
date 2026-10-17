@@ -69,7 +69,7 @@ test('/sub-human NAME with no open room: opens a room, joins as a member, spawns
     SUB_HUMAN_HOME: w.home, SUB_HUMAN_ROOM: w.code, CLAUDE_CODE_TASK_LIST_ID: `sh-${w.code}`, CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
     SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_STOP_MS: '200',
   });
-  assert.equal(settings.crossSessionInbound, 'accept');
+  assert.equal(settings.crossSessionInbound, 'refuse', 'a peer\'s message would start a turn: nobody needs to reach it');
   assert.equal(Object.keys(call.env).filter(k => k.startsWith('CLAUDE')).length, 0, 'no CLAUDE_* reaches the room\'s Claude');
   assert.equal(call.env.SUB_HUMAN_HOME, undefined, 'the room\'s Claude env comes only from --settings');
   // the room session's task list, made before it starts (its task view watches it): nothing else in tasks/
@@ -102,7 +102,7 @@ test('the room\'s Claude\'s launch /sub-human binds it (agent_type sub-human:roo
   const o = seat(w, 'claude');
   assert.deepEqual([o.role, o.pid, o.job, o.session_id], ['claude', process.pid, '0b500131', w.sid.claude]);
   const c = must(hso(r).additionalContext);
-  assert.ok(c.startsWith(`SUB-HUMAN: you are claude, the room's Claude of room ${w.code} (members: alice)`), c.slice(0, 100));
+  assert.ok(c.startsWith(`SUB-HUMAN: you are the room session of room ${w.code} (members: alice)`), c.slice(0, 100));
   assert.match(c, /subagent_type: "sub-human:participant", description: "alice"/);
   assert.equal(w.entries().length, 0, 'the room\'s Claude logs no member_joined');
   const again = w.hook('join', input, { as: 'claude', env: { SUB_HUMAN_ROOM: w.code } });
@@ -118,7 +118,7 @@ test('debug launch: a room-claude agent session without SUB_HUMAN_ROOM opens a r
   w.pid.me = process.pid; w.sid.me = 'aaaaaaaa-0000-4000-8000-000000000003';
   const input = { ...expand(''), agent_type: 'sub-human:room-claude' };
   const r = w.hook('join', input, { as: 'me', env: { SUB_HUMAN_ROOM: undefined } });
-  const m = /the room's Claude of room ([a-z]+-\d{4})/.exec(must(hso(r).additionalContext));
+  const m = /the room session of room ([a-z]+-\d{4})/.exec(must(hso(r).additionalContext));
   assert.ok(m && must(r.json).systemMessage === undefined, JSON.stringify(r.json));
   w.code = rc(must(m[1]));
   assert.equal(seat(w, 'claude').pid, process.pid);
@@ -681,9 +681,10 @@ test('block: no template file (or one without placeholders) falls back to the bu
     const shipped = atReference(got.text, got.code);
     assert.doesNotMatch(shipped, /\{(NAME|CODE|OTHERS|ADDR_EXAMPLE|PLUGIN)\}/);
     assert.match(shipped, /\nROWS\n/);
-    // D's budget: the template fill <= 900 with 5 members, the whole block (with ROWS) <= 1,200
-    assert.ok(must(shipped.split('\n\nROWS\n')[0]).length <= 900, `${role} fill ${must(shipped.split('\n\nROWS\n')[0]).length}`);
-    assert.ok(shipped.length <= 1200, `${role} shipped block ${shipped.length}`);
+    // D's budget: the template fill <= 1,400 with 5 members (the member's room upkeep block included), the whole block
+    // (with ROWS) <= 1,900
+    assert.ok(must(shipped.split('\n\nROWS\n')[0]).length <= 1400, `${role} fill ${must(shipped.split('\n\nROWS\n')[0]).length}`);
+    assert.ok(shipped.length <= 1900, `${role} shipped block ${shipped.length}`);
   }
 });
 
@@ -728,7 +729,7 @@ test('through the module (command.run): every reply is {subHuman: {say}}, never 
   assert.equal(joined.decision, undefined);
   assert.match(must(must(joined.hookSpecificOutput).additionalContext), /^SUB-HUMAN: you are bob's Claude in room /);
   assert.equal(must(joined.subHuman).joined, true);
-  assert.match(must(must(joined.subHuman).say), new RegExp(`^joined ${w.code} as bob, with alice · @room to talk, @claude to ask the room's Claude`));
+  assert.match(must(must(joined.subHuman).say), new RegExp(`^joined ${w.code} as bob, with alice · @room to talk; your Claude can message other Claudes, edit the room plan and the task list`));
   assert.equal(seat(w, 'bob').pid, process.pid, 'the seat\'s claude process is the shim\'s parent');
   const left = must(must(viaModule(w, 'bob', 'leave').json).subHuman);
   assert.deepEqual([left.say, left.refused], [`left ${w.code} · /sub-human joins again`, false]);

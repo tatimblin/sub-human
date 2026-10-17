@@ -10,7 +10,7 @@
  * warning row Claude Code draws for the stop loses its "Operation stopped by hook: " frame (session.append).
  */
 import {
-  gateVerdict, GATE_FAILED, isAtRoom, isAtClaude, needsNode, originQueue, originKind, mergeClassic, TYPED_ORIGINS, titleFor, failClosed, shimFailed,
+  gateVerdict, GATE_FAILED, isAtRoom, needsNode, originQueue, originKind, mergeClassic, TYPED_ORIGINS, titleFor, failClosed, shimFailed,
   writesWorking, receiptBook, unseatedRefusal, roomClaudeCommand,
 } from './core/prompt.ts';
 import { shimArgv, shimEnv, toClassic, asNotice, SHIM_TIMEOUT_MS } from './core/shim.ts';
@@ -127,7 +127,7 @@ export function registerPrompt(on: On): void {
       contexted.add(e.text);
       try { return await pass({ ...e, context: [...(e.context ?? []), wake] }); } finally { contexted.delete(e.text); }
     }
-    const why = gateVerdict(e, isAtClaude(e.text) ? await helloOf($) : null);
+    const why = gateVerdict(e);
     if (why) return { drop: why };
     let down = e;
     if (e.origin && TYPED_ORIGINS.includes(e.origin.kind)) {
@@ -188,7 +188,7 @@ export function registerPrompt(on: On): void {
         presence.pending = null; // stopped: no turn, no "working"
         origins.take(e.prompt);
         const merged = mergeClassic({ ...refused, ...top }, await next(e));
-        if (!merged.block) receipts.expect(merged.stopReason, isAtClaude(e.prompt) ? '@claude' : '@room'); // its warning row is the refusal alone, no frame
+        if (!merged.block) receipts.expect(merged.stopReason); // its warning row is the refusal alone, no frame
         return merged;
       }
       if (!needsNode(e, hello, { delivering: delivering(e.session_id), reviewFlag })) {
@@ -198,7 +198,7 @@ export function registerPrompt(on: On): void {
       }
       const ours = await runPrompt($, e, origins.take(e.prompt), hello);
       const merged = mergeClassic(mergeClassic(ours, top), await next(e)); // both contexts kept (a wake's and node's)
-      if (ours.preventContinuation && !merged.block) receipts.expect(merged.stopReason, isAtClaude(e.prompt) ? '@claude' : '@room');
+      if (ours.preventContinuation && !merged.block) receipts.expect(merged.stopReason);
       if (merged.block || merged.preventContinuation) presence.pending = null; // stopped or refused: no turn, no "working"
       return merged;
     })();

@@ -34,6 +34,10 @@ export function run(x: Ctx, { det }: { det: Det }, T: Thresholds): void {
   const dir = ms.claude && ms.claude.tasks_dir;
   det(`The room session's task list directory is made before it starts and recorded (members.json claude.tasks_dir ends tasks/sh-${code})`, !!dir && dir.endsWith(`/tasks/sh-${code}`) && fs.existsSync(dir),
     `claude.tasks_dir ${dir || 'missing'}${dir ? (fs.existsSync(dir) ? ' (exists)' : ' (missing on disk)') : ''}`);
+  // the room session runs only its rows turn: its only tool is Agent (a participant row), never a room tool or a plan
+  const calls = x.toolUses(x.inSpan(x.entries('claude'), x.span('S1'))).map(c => c.name);
+  det('The room session\'s turn is rows only: every call it makes is an Agent call (a participant row)', calls.length > 0 && calls.every(n => n === 'Agent'),
+    `${calls.length} call(s): ${[...new Set(calls)].join(', ') || 'none'}`);
   const j = x.entries(A).filter(e => e.attachment && e.attachment.type === 'hook_additional_context' && e.attachment.hookEvent === 'UserPromptExpansion').map(e => [e.attachment?.content].flat().join('\n'))[0] || '';
   const fillLen = (j.split('\n\nROWS\n')[0] ?? '').length;
   det(`Member join block small: text ≤ ${T.joinText} chars, with ROWS ≤ ${T.joinBlock.toLocaleString('en-US')}`, j && fillLen <= T.joinText && j.length <= T.joinBlock,

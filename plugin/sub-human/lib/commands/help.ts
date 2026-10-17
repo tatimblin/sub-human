@@ -24,7 +24,7 @@ export const HELP: string = [
   '  /sub-human leave              leave the room (the session stays open)',
   '  /sub-human doctor             what is wrong on this machine, and how to fix it (read only)',
   '  /sub-human help               this list',
-  '  @room TEXT    post your exact words to the room       @claude TEXT    the same, and wake the room\'s Claude',
+  '  @room TEXT    post your exact words to the room; your Claude can message other Claudes, edit the room plan and the task list',
 ].join('\n');
 
 export const help: OpenVerb = () => say(HELP);

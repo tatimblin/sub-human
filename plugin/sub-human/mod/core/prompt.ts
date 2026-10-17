@@ -3,8 +3,8 @@
  * (mod/prompt.ts registers the hooks). In: a prompt.submit event, or a classic UserPromptSubmit payload plus the
  * hello. Out: a drop reason, whether node must run, the session title, the merged classic result, and an @room
  * receipt's row without Claude Code's "Operation stopped by hook: " frame (receiptBook).
- * Failure: closed for an @room, and an @claude in a room (GATE_FAILED, failClosed): either let through would reach the model as the
- * person's words. Anything else unsure runs node.
+ * Failure: closed for an @room (GATE_FAILED, failClosed): let through, it would reach the model as the person's words.
+ * Anything else unsure runs node. "@claude …" is a plain prompt (the room's session reads nothing).
  * The tag parsers, TYPED_ORIGINS and the refusal wordings are owned here: hooks/handlers/at-room.ts imports them, so the
  * module and node read a prompt the same way.
  */
@@ -29,7 +29,7 @@ export function roomClaudeCommand(command: unknown, origin: { kind?: unknown } |
   const kind = origin && origin.kind;
   if (kind !== 'composer' && kind !== 'bridge') return null;
   if (command === 'sub-human' || command === 'sub-human:sub-human') return null; // at-room's own refusal answers it
-  return `✗ the room's Claude takes no typed input, commands included; type @claude in your own session, or ask your Claude to message claude.${code}`;
+  return `✗ the room's session takes no typed input, commands included (room ${code}); type in your own session: @room for the room, or ask your own Claude`;
 }
 
 /** A paste at the very start of a prompt, as Claude Code wraps a long one (lib/cc/transcript.ts PASTED_RE, cc CONTRACT
@@ -60,29 +60,19 @@ export function tagged(prompt: string, tag: RegExp): string | null {
 
 export const isAtRoom = (text: unknown): boolean => parse(text) !== null;
 
-/** "@claude TEXT" -> TEXT; anything else null. In a room it posts like @room and wakes the room's Claude; outside one
- * it is a plain prompt. */
-export function parseClaude(prompt: unknown): string | null {
-  if (typeof prompt !== 'string') return null;
-  return tagged(unwrapLead(prompt).text, /^@claude(?=\s|$)/);
-}
-
-export const isAtClaude = (text: unknown): boolean => parseClaude(text) !== null;
-
-/** A prompt that posts as the person's words: an @room, or an @claude in a seated session (hello.seat). */
-export const posts = (text: unknown, hello: SeatedLike): boolean => isAtRoom(text) || (isAtClaude(text) && !!(hello && hello.seat));
+/** A prompt that posts as the person's words: an @room. */
+export const posts = (text: unknown, _hello?: SeatedLike): boolean => isAtRoom(text);
 
 const kindOf = (e: SubmitLike): string => (e && e.origin && typeof e.origin.kind === 'string' ? e.origin.kind : 'unclassified');
 
-/** prompt.submit: the drop reason for an @room (or, in a room, an @claude) no person typed (a peer, a notification,
- * a plugin, an unclassified socket write); null lets it on. hello: the session's, for whether it is seated. */
-export function gateVerdict(e: SubmitLike, hello: SeatedLike): string | null {
-  if (!e || !posts(e.text, hello)) return null;
+/** prompt.submit: the drop reason for an @room no person typed (a peer, a notification, a plugin, an unclassified
+ * socket write); null lets it on. */
+export function gateVerdict(e: SubmitLike, _hello?: SeatedLike): string | null {
+  if (!e || !posts(e.text)) return null;
   const kind = kindOf(e);
   if (TYPED_ORIGINS.includes(kind)) return null;
-  const tag = isAtRoom(e.text) ? '@room' : '@claude';
   const who = kind === 'peer' || kind === 'peer-send-message' ? 'another Claude session' : `"${kind.slice(0, 40)}"`;
-  return `✗ not posted: this ${tag} came from ${who}, not from you. Only your own typed ${tag} posts as your words.`;
+  return `✗ not posted: this @room came from ${who}, not from you. Only your own typed @room posts as your words.`;
 }
 
 /** The refusal when nobody could check who wrote an @room, here or in at-room (no origin, or one without the nonce): the
@@ -98,8 +88,7 @@ export const NOT_IN_ROOM = '✗ not posted: this session isn\'t in a room. Join 
 export const unseatedRefusal = (e: { session_id?: unknown; prompt?: unknown } | null | undefined, hello: Hello | null | undefined): ShimResult | null => (
   e && hello && hello.sid === e.session_id && !hello.seat && isAtRoom(e.prompt) ? { preventContinuation: true, stopReason: NOT_IN_ROOM } : null);
 
-export const failClosed = (prompt: unknown, hello?: SeatedLike): ShimResult | null => (posts(prompt, hello)
-  ? { block: isAtRoom(prompt) ? GATE_FAILED : GATE_FAILED.replace('@room', '@claude'), suppressOriginalPrompt: true } : null);
+export const failClosed = (prompt: unknown, _hello?: SeatedLike): ShimResult | null => (posts(prompt) ? { block: GATE_FAILED, suppressOriginalPrompt: true } : null);
 
 /** The shim did not handle the prompt: any exit but 0 (answered) or 2 (blocked). */
 export const shimFailed = (run: RunOutput | null | undefined): boolean => !run || (run.exitCode !== 0 && run.exitCode !== 2);
@@ -115,7 +104,7 @@ export function needsNode(
   { delivering = false, reviewFlag }: { delivering?: boolean; reviewFlag?: unknown } = {},
 ): boolean {
   if (!hello || !e || hello.sid !== e.session_id) return true; // not this session's hello: unsure
-  if (posts(e.prompt, hello)) return true;
+  if (posts(e.prompt)) return true;
   if (!hello.seat) return false;
   return hello.seat.role === 'claude' || !delivering || reviewFlag !== false;
 }
@@ -182,28 +171,27 @@ export function mergeClassic(ours: ShimResult | null = {}, theirs: ShimResult | 
  * CONTRACT ups-stop-frame). An @room's receipt ("✓ sent", "⧗ queued: …") is such a stop. */
 export const STOP_FRAME = 'Operation stopped by hook: ';
 
-/** What the model reads in place of a receipt's stop row: the person's @room (or @claude) line was the room's, not a
- * request; tag names the one they typed. */
-export const RECEIPT_FOR_MODEL = (receipt: string, tag: '@room' | '@claude' = '@room') => `sub-human: the person's ${tag} line above went to the room, not to you (${receipt}); nothing is asked of you.`;
+/** What the model reads in place of a receipt's stop row: the person's @room line was the room's, not a request. */
+export const RECEIPT_FOR_MODEL = (receipt: string): string => `sub-human: the person's @room line above went to the room, not to you (${receipt}); nothing is asked of you.`;
 
 /** A row as session.append hands it, as far as receiptBook reads it. */
 type RowLike = { type?: unknown; content?: unknown };
 
 /**
  * The receipts this module's prompt hook stopped a prompt with, waiting for their warning row (session.append, door
- * notice). expect(reason, tag?) as the stop leaves the hook (tag: what the person typed, @room or @claude); rewrite(row) answers that row with the frame cut off, the
+ * notice). expect(reason) as the stop leaves the hook; rewrite(row) answers that row with the frame cut off, the
  * receipt alone (cc CONTRACT session-append-notice-rewrite), or null for any other row. Only a system row that is
  * exactly the frame around a waiting receipt is ours: another plugin's stop, a second copy, or a row after a reload
  * keeps the engine's words. modelRow(row) answers the stop's isMeta user row (the model's copy) in RECEIPT_FOR_MODEL's
  * words, leaving the receipt waiting. A receipt whose row never came (a block beneath won) is forgotten after `max` more.
  */
 export function receiptBook(max = 8) {
-  const waiting: { reason: string; tag: '@room' | '@claude' }[] = [];
+  const waiting: { reason: string }[] = [];
   const find = (reason: string) => waiting.findIndex(w => w.reason === reason);
   return {
-    expect(reason: unknown, tag: '@room' | '@claude' = '@room'): void {
+    expect(reason: unknown): void {
       if (typeof reason !== 'string' || !reason) return;
-      waiting.push({ reason, tag });
+      waiting.push({ reason });
       if (waiting.length > max) waiting.shift();
     },
     rewrite<M extends RowLike>(row: M | null | undefined): M | null {
@@ -225,7 +213,7 @@ export function receiptBook(max = 8) {
       const i = typeof text === 'string' && text.startsWith(STOP_FRAME) ? find(text.slice(STOP_FRAME.length)) : -1;
       const w = waiting[i]; // none at -1
       if (!w) return null;
-      const said = RECEIPT_FOR_MODEL(w.reason, w.tag);
+      const said = RECEIPT_FOR_MODEL(w.reason);
       return { ...row, content: typeof row.content === 'string' ? said : [{ type: 'text', text: said }] };
     },
     get size(): number { return waiting.length; },

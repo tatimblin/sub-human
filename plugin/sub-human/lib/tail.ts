@@ -256,14 +256,14 @@ class Batcher<T extends { e: { id: number } } = Item> {
 }
 
 // ---------- formatters ----------
-/** The room Claude's block: stateLine, then one full line per entry that wakes it. */
-function formatRoomClaudeBatch(ready: Item[], { me, room: rm, entries, judge, joinNote, leaveMs }: FormatCtx): string[] {
+/** The room session's block (its rows-only turn): one full line per join that wakes it, with its row note. */
+function formatRoomClaudeBatch(ready: Item[], { room: rm, entries, judge, joinNote, leaveMs }: FormatCtx): string[] {
   const out: string[] = [];
   for (const { e, away } of ready) {
     const note = joinNote(e);
     if (judge(e, entries, note) === 'wake') out.push(rm.line(e, { full: true }) + (away ? ` · away ${Math.round(leaveMs / 1000)}s+` : '') + (note ? ` · ${note}` : ''));
   }
-  return out.length ? [rm.stateLine(me, entries), ...out] : [];
+  return out.length ? [...out, 'Make only the call its row note names, then end your turn with no text.'] : [];
 }
 
 /** The pull text: PULL_HEAD, then the newest lines that fit under PULL_CAP (a note says how many were left out), then

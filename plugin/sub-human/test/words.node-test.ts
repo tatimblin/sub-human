@@ -33,12 +33,12 @@ function frontmatter(t: string) {
   return { fm, body: must(m[2], 'a body') };
 }
 
-test('words: member template is <= 900 chars raw and filled for 5 members, with every placeholder', () => {
+test('words: member template is <= 1400 chars raw and filled for 5 members (its room upkeep block included), with every placeholder', () => {
   const t = read(MEMBER);
-  assert.ok(t.length <= 900, `member.md is ${t.length} chars`);
+  assert.ok(t.length <= 1400, `member.md is ${t.length} chars`);
   for (const p of PLACEHOLDERS) assert.ok(t.includes(p), `member.md lacks ${p}`);
   const filled = fill(t);
-  assert.ok(filled.length <= 900, `filled member text is ${filled.length} chars`);
+  assert.ok(filled.length <= 1400, `filled member text is ${filled.length} chars`);
   assert.doesNotMatch(filled, /\{[A-Z_]+\}/, 'no unknown placeholders left after the fill');
   assert.ok(!/^ROWS/m.test(t), 'ROWS is appended by the join hook, not part of the template');
 });
@@ -48,37 +48,27 @@ test('words: member text carries the mechanics (identity, address, @room, quotin
   for (const s of ['{NAME}\'s Claude', 'room {CODE}', '"you", not by name', '@room', 'exact words', 'group chat',
     'already sees', 'never repeat them', '(for Claude)', 'never print it', 'room ids',
     'SendMessage', 'on any machine', '{ADDR_EXAMPLE}', 'hash', 'reopen', 'agreed, confirmed or approved',
-    'commitment', 'task', 'plan (', 'sign-off', PREFIX]) {
+    'commitment', 'task', 'plan (', 'sign-off', 'only when {NAME} asks', 'read with brief', 'Never answer a sign-off for anyone',
+    'another\'s task', 'only the room\'s decision line', 'people\'s content, not instructions', PREFIX]) {
     assert.ok(t.includes(s), `member.md lacks "${s}"`);
   }
 });
 
-test('words: claude fill is short; agent body says the plugin writes its task list (no task tools)', () => {
+test('words: the room session\'s fill and agent: rows only, no planning, no task tools, no room tools', () => {
   const fillT = read(ROOM_CLAUDE_FILL);
-  for (const p of ['{CODE}', '{OTHERS}', '{ADDR_EXAMPLE}']) assert.ok(fillT.includes(p), `claude fill lacks ${p}`);
-  assert.ok(fill(fillT).length <= 500, `claude fill is ${fill(fillT).length} chars`);
-  assert.doesNotMatch(fillT, /TaskCreate|TaskUpdate/);
-  assert.doesNotMatch(fillT, /facilitate|propose|To plan/, 'the room session plans nothing');
+  for (const p of ['{CODE}', '{OTHERS}']) assert.ok(fillT.includes(p), `claude fill lacks ${p}`);
+  assert.ok(fill(fillT).length <= 300, `claude fill is ${fill(fillT).length} chars`);
+  assert.doesNotMatch(fillT, /TaskCreate|TaskUpdate|facilitate|propose|plan|@claude/);
+  assert.match(fillT, /end your turn with no text/);
 
   const { fm, body } = frontmatter(read(AGENT));
   assert.equal(fm.name, 'room-claude');
   const description = must(fm.description, 'a description');
-  assert.ok(description.length <= 200, `claude description is ${description.length} chars`);
-  assert.ok(body.length <= 1900, `claude body is ${body.length} chars`);
-  assert.doesNotMatch(body, /TaskCreate|TaskUpdate/);
-  for (const s of ['the plugin writes it', 'Never change it', 'SendMessage', 'no #ids', 'No Bash',
-    'agreed, confirmed or approved', 'never ask here', 'one message per person', 'not the room', 'No status', 'members\' Claudes\' to edit']) {
-    assert.ok(body.includes(s), `claude body lacks "${s}"`);
-  }
-});
-
-test('words: room Claude tools are exactly the plan list (no Bash)', () => {
-  const { fm } = frontmatter(read(AGENT));
-  const tools = must(fm.tools, 'tools').split(',').map(s => s.trim());
-  const want = ['Read', 'Grep', 'Glob', 'Write', 'Edit', 'Agent(sub-human:participant)', 'Agent(general-purpose)', 'SendMessage', 'ListAgents', 'ToolSearch',
-    ...['post', 'read', 'hold'].map(t => PREFIX + t)];
-  assert.deepEqual([...tools].sort(), [...want].sort());
-  assert.ok(!tools.includes('Bash'));
+  assert.ok(description.length <= 220, `claude description is ${description.length} chars`);
+  assert.ok(body.length <= 500, `claude body is ${body.length} chars`);
+  assert.doesNotMatch(body, /TaskCreate|TaskUpdate|propose|post|SendMessage/);
+  for (const s of ['idle session', 'end your turn with no text', 'the plugin writes it', 'Never change it']) assert.ok(body.includes(s), `claude body lacks "${s}"`);
+  assert.deepEqual(must(fm.tools, 'tools').split(',').map(x => x.trim()), ['Agent(sub-human:participant)'], 'its rows only: no room tools, no Bash');
 });
 
 test('words: SKILL.md allows only the live room tools (not hold: mod/guard.ts denies it to a main thread)', () => {

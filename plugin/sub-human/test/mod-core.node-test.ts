@@ -211,25 +211,19 @@ test('prompt: the gate drops only an @room that no person typed', async () => {
   assert.equal(p.isAtRoom('room'), false);
 });
 
-test('prompt: a seated session gates an untyped @claude like an @room, an unseated one lets it through', async () => {
+test('prompt: @claude is a plain prompt, seated or not (the room session reads nothing); "@room @claude x" posts "@claude x"', async () => {
   const p = await load('mod/core/prompt.ts');
-  assert.equal(p.parseClaude('@room @claude x'), null, 'only a leading tag');
   assert.equal(p.parse('@room @claude x'), '@claude x', 'a plain @room post');
   // hellos as the core reads them: sid and seat only
   const seated = mkHello({ seat: seatOf('alice') });
   const unseated = mkHello();
   const peer = { text: '@claude plan it', origin: { kind: 'peer' } };
-  assert.match(must(p.gateVerdict(peer, seated)), /^✗ not posted: this @claude came from another Claude session/);
-  assert.equal(p.gateVerdict(peer, unseated), null, 'outside a room @claude is a plain prompt');
-  assert.equal(p.gateVerdict(peer, null), null, 'no hello: at-room decides');
-  assert.equal(p.gateVerdict({ ...peer, origin: { kind: 'composer' } }, seated), null);
-  assert.equal(p.gateVerdict({ text: 'ask @claude', origin: { kind: 'peer' } }, seated), null);
-  assert.deepEqual(p.failClosed('@claude ship it', seated), { block: p.NO_ORIGIN.replace('@room', '@claude'), suppressOriginalPrompt: true });
-  assert.equal(p.failClosed('@claude ship it', unseated), null);
-  assert.equal(p.failClosed('@claude ship it'), null);
+  for (const h of [seated, unseated, null]) assert.equal(p.gateVerdict(peer, h), null, 'a peer\'s @claude is a plain prompt too');
+  assert.match(must(p.gateVerdict({ text: '@room x', origin: { kind: 'peer' } }, seated)), /^✗ not posted: this @room came from another Claude session/);
+  assert.equal(p.failClosed('@claude ship it', seated), null);
   const e = (prompt: string) => ({ session_id: 's1', prompt });
   assert.equal(p.needsNode(e('@claude hi'), unseated), false, 'unseated: an ordinary prompt, no node');
-  assert.equal(p.needsNode(e('@claude hi'), seated, { delivering: true, reviewFlag: false }), true, 'the post is signed in node');
+  assert.equal(p.needsNode(e('@claude hi'), seated, { delivering: true, reviewFlag: false }), false, 'seated: an ordinary prompt too');
 });
 
 test('prompt: needsNode skips node only for a surely unseated session and a prompt that is not an @room', async () => {

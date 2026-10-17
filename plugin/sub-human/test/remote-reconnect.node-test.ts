@@ -127,7 +127,7 @@ test('outbox: only a signed @room or @claude post by a person is queueable; at m
   assert.equal(outbox.queueable(store.toPayload(code, { kind: 'say', text: 'x', to: 'alice' }, { via: 'agent', from: 'bob' })), false);
   assert.equal(outbox.queueable({ ...p, nonce: undefined }), false, 'unsigned');
   assert.equal(outbox.queueable({ ...p, to: 'alice' }), false, 'addressed');
-  assert.equal(outbox.queueable({ ...p, to: 'claude' }), true, 'an @claude post is queued like an @room');
+  assert.equal(outbox.queueable({ ...p, to: 'claude' }), false, 'no @claude any more: addressed, not queued');
   const dir = h.tmpDir('sh-outbox-', t);
   const box = outbox.open(dir, { max: 3, ageMs: 1000 });
   assert.deepEqual([box.add(sp(p), 0), box.add(sp(say(code, 'two')), 500), box.add(sp(say(code, 'three')), 900)], [1, 2, 3]);
