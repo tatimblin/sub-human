@@ -52,6 +52,11 @@ function redactor({ home = os.homedir(), shHome = lib('home.ts').home(), hosts =
     let s = String(text ?? '').replace(/\x1b\[[0-9;]*m/g, '');
     s = s.replace(KEY_RE, (_: string, type: string, b64: string) => `${type} ${fingerprint(b64)}`);
     s = s.replace(/\bsh\d\.[A-Za-z0-9._~:-]+/g, 'sh2.<invite>');
+    // an invite line's SECRET, whatever its letters: a web line's URL fragment (join https://HOST/…/ROOM#SECRET), or a
+    // word of its shape after join; then the PIN typed after it on the same line, of any length
+    s = s.replace(/#[0-9A-Za-z]{32,48}(?![0-9A-Za-z])/g, '#<secret>');
+    s = s.replace(/(\bjoin [^\n]*?)(?<![\w-])[0-9A-Za-z]{32,48}(?![\w-])/g, '$1<secret>');
+    s = s.replace(/(<secret>)( +)\d{3,10}(?![\w.:/-])/g, '$1$2<pin>');
     // an invite's PIN is its whole secret (join DEST ROOM 4829; an older sh2 invite's PIN had 6 digits): any lone 4- or
     // 6-digit number goes
     s = s.replace(/(?<![\w.:/-])(?:\d{4}|\d{6})(?![\w.:/-])/g, '<pin>');

@@ -6,7 +6,7 @@
 //         line (his link checks the host's machine key against it, then shows the SECRET), the host asks for the PIN, a
 //         wrong one costs a try, the right one waits for the card; alice's Let in; the link comes online; a bare
 //         /sub-human seats him; posts flow; authorized_keys holds only the login lines people set up
-//   web   `/sub-human invite --web` (the devbox's SUB_HUMAN_WEB_FRONT: https://tls-front) shows a URL + SECRET and the
+//   web   `/sub-human invite --web` (the devbox's SUB_HUMAN_WEB_FRONT: https://tls-front) shows a URL#SECRET and the
 //         PIN apart; ben on joiner-b, through the TLS front, joins the same way (the listener's key checked against the line, Noise XK with a
 //         key of his link's own); the card lets him in; the front's log holds neither the PIN nor the SECRET
 // A stranger with no login of their own, a stolen line without its PIN and PIN guessing are the unit tests' (test/
@@ -16,7 +16,7 @@ import type { T } from '../lab.ts';
 
 const AK = '/home/host/.ssh/authorized_keys';
 const LAB_CA_ENV = { NODE_EXTRA_CA_CERTS: '/etc/lab-ca.crt' };
-const LINE_RE = /\/sub-human (join (\S+) (?:([a-z]+-\d{4}) )?([0-9a-z]{39})(?: --home \S+)?)\n/;
+const LINE_RE = /\/sub-human (join ([^\s#]+)(?: ([a-z]+-\d{4}))?[ #]([0-9a-z]{39})(?: --home \S+)?)\n/; // a web line's SECRET: its URL's fragment
 const PIN_RE = /apart from the line[^\n]*: (\d{4})\n/;
 
 export const id = 'short';
@@ -70,7 +70,7 @@ export async function run(t: T): Promise<void> {
   const ws = host.expand('alice', 'invite --web');
   const wm = LINE_RE.exec(`${ws.out}\n`), wp = PIN_RE.exec(`${ws.out}\n`);
   if (wm) t.ev.invite(wm[1], wp && wp[1]);
-  if (!t.check('invite --web shows a URL + SECRET (no #) and the PIN apart', !!wm && !!wp && wm[2] === `https://tls-front/sub-human/${code}` && !/#/.test(ws.out || ''), (ws.out || '').slice(0, 200)) || !wm || !wp) return;
+  if (!t.check('invite --web shows URL#SECRET (the SECRET as the URL\'s fragment) and the PIN apart', !!wm && !!wp && wm[2] === `https://tls-front/sub-human/${code}` && (wm[1] ?? '').includes('#'), (ws.out || '').slice(0, 200)) || !wm || !wp) return;
   const ben = lab.seat('joiner-b', { env: LAB_CA_ENV });
   const [, webLine = '', , , webSecret = ''] = wm, [, webPin = ''] = wp;
   const bt = ben.short('ben', webLine);

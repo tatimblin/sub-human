@@ -45,6 +45,20 @@ test('command: a word shaped like an invite line\'s SECRET is hidden wherever it
     assert.equal(hasPinWord(args), true, args);
   }
   for (const args of ['bob vole-1234', 'a-very-long-name-with-dashes-in-it vole-1234', 'abcdefghij']) assert.equal(mayHoldSecret(args), false, args);
+  // a web line: the SECRET as the URL's fragment, the PIN after it, typed with join or without
+  for (const args of [`https://box.ts.net/sub-human/vole-1234#${word}`, `https://box.ts.net/sub-human/vole-1234#${word} 4829`, `bob https://box/sub-human/vole-1234#${word.toUpperCase()}`]) {
+    assert.equal(mayHoldSecret(args), true, args);
+    assert.equal(hasPinWord(args), true, args);
+  }
+  assert.equal(hasPinWord('https://box.ts.net/sub-human/vole-1234#top'), false, 'a short fragment is no SECRET');
+});
+
+test('command: fragmentSecret reads a web line\'s SECRET from its URL', async () => {
+  const { fragmentSecret } = await load();
+  const s = 'k'.repeat(39);
+  assert.equal(fragmentSecret(`https://box.ts.net/sub-human/vole-1234#${s}`), s);
+  assert.equal(fragmentSecret(`https://box.ts.net/sub-human/vole-1234#${s}.`), s, 'a full stop after it is no part of it');
+  for (const w of ['https://box.ts.net/sub-human/vole-1234', `https://box/vole-1234#${'k'.repeat(20)}`, `https://box/vole-1234#${'k'.repeat(49)}`, s]) assert.equal(fragmentSecret(w), null, w);
 });
 
 test('command: the payload is the UserPromptExpansion join.ts reads, marked as the module\'s', async () => {
@@ -80,6 +94,8 @@ test('verify12 local/37: a run that did not answer says how long it ran and what
   assert.equal(failDetail({ ms: 250, exitCode: 0 }), 'after 0.3 s');
   assert.equal(failDetail({}), '');
   assert.equal(lastLine(`join dev vole-1234 4821 2hmejp4am3wm6rh3767dwrkeg99yyp05ry9js2b.`), 'join dev vole-1234 … …');
+  assert.equal(lastLine('join https://box.ts.net/sub-human/vole-1234#2hmejp4am3wm6rh3767dwrkeg99yyp05ry9js2b 4821'), 'join https://box.ts.net/sub-human/vole-1234#… …', 'a web line keeps its URL; its fragment and the PIN after it go');
+  assert.equal(lastLine('join dev vole-1234 2hmejp4am3wm6rh3767dwrkeg99yyp05ry9js2b 4821'), 'join dev vole-1234 … …', 'the line with its PIN after it');
   assert.equal(lastLine('x'.repeat(400)).length, 160);
 });
 

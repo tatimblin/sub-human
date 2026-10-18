@@ -1,6 +1,6 @@
 // 1.1 wss: the host listens on 127.0.0.1:$LAB_WS_PORT (7420) in the devbox; tls-front plays Tailscale Serve/Funnel.
 // bob (joiner-a) types the line `/sub-human invite --web` shows (the devbox's SUB_HUMAN_WEB_FRONT names tls-front,
-// honoured under SUB_HUMAN_LAB=1), `/sub-human join https://tls-front/sub-human/CODE SECRET --as bob`, then the PIN
+// honoured under SUB_HUMAN_LAB=1), `/sub-human join https://tls-front/sub-human/CODE#SECRET --as bob`, then the PIN
 // when asked; ben (joiner-b) does the same. The listener's key is checked against the line, then Noise XK
 // with a key of the link's own; alice's card lets each machine in, and a bare /sub-human seats them. Posts flow,
 // mirrors converge, a wrong PIN is refused, and Caddy (the stand-in for Tailscale) sees only ciphertext: no PIN, SECRET
@@ -10,7 +10,7 @@ import { delivered, converge, waitState } from './_lib.ts';
 import type { SeatDriver, T } from '../lab.ts';
 
 const WS_PORT = Number(process.env.LAB_WS_PORT || 7420);
-const LINE_RE = /\/sub-human (join https:\/\/tls-front\/\S+ ([0-9a-z]{39}))\n/;
+const LINE_RE = /\/sub-human (join https:\/\/tls-front\/[^\s#]+#([0-9a-z]{39}))\n/;
 const PIN_RE = /apart from the line[^\n]*: (\d{4})\n/;
 
 function mint(t: T, host: SeatDriver): { line: string | undefined, pin: string, out: string } {
@@ -23,7 +23,7 @@ function mint(t: T, host: SeatDriver): { line: string | undefined, pin: string, 
 }
 
 export const id = 'wss';
-export const title = '1.1: join by the https://tls-front/... URL + SECRET line and the PIN apart; the card lets each in';
+export const title = '1.1: join by the https://tls-front/...#SECRET line and the PIN apart; the card lets each in';
 export const persona = 'P1 friends (1.1)';
 export const requires = ['ws', 'urlPin'];
 export const budgetMs = 120_000;
@@ -42,7 +42,7 @@ export async function run(t: T): Promise<void> {
   for (const [svc, name] of machines) {
     const inv = mint(t, host);
     const line = inv.line ?? '';
-    if (!t.check(`the host mints a URL + SECRET line and a PIN apart for ${name} (no NAME, no #)`, line && inv.pin.length === 4 && !/#/.test(line), inv.out.slice(0, 160))) continue;
+    if (!t.check(`the host mints a URL#SECRET line and a PIN apart for ${name} (no NAME)`, line && inv.pin.length === 4, inv.out.slice(0, 160))) continue;
     const seat = lab.seat(svc, { env });
     const typed = seat.short(name, line);
     const asked = typed.asked || await t.until(() => !!seat.linkfile(code).pin_wanted, 45_000, 250);

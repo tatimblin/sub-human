@@ -81,7 +81,8 @@ export function planState(p: string): DialogState | null {
 
 /**
  * The line /sub-human invite showed in a capture, without its "/sub-human ", or null: "join DEST ROOM SECRET" (DEST
- * an ssh address or pipe:HOME; SECRET the line's 39 characters; then any --home) or "join URL SECRET". The
+ * an ssh address or pipe:HOME; SECRET the line's 39 characters; then any --home) or "join URL#SECRET" (an older
+ * host's "join URL SECRET" too). The
  * pane may wrap it: a line break (and the next line's indent) inside a word is dropped first. The last one shown wins.
  * The plugin shows it one of three ways (lib/remote/hosting.ts invitePinned and inviteText, mod/core/command.ts pinFor):
  *   whole on the status line under the prompt: "⚠ sub-human: PIN 8238 · /sub-human join DEST ROOM SECRET"
@@ -92,7 +93,7 @@ export function planState(p: string): DialogState | null {
  */
 export function joinLineIn(txt: string | null | undefined): string | null {
   const joined = unwrap(txt);
-  const head = String.raw`\/sub-human (join (?:https?:\/\/\S+|\S+ [a-z]+-\d{4}) )`;
+  const head = String.raw`\/sub-human (join (?:https?:\/\/[^\s#]+[ #]|\S+ [a-z]+-\d{4} ))`; // a web line's SECRET: its URL's fragment
   const tail = String.raw`((?: --home \S+)?)(?=\s|$)`;
   const shown: { at: number, line: string }[] = [];
   for (const m of joined.matchAll(new RegExp(`${head}([0-9a-z]{39})${tail}`, 'g'))) shown.push({ at: m.index, line: `${m[1]}${m[2]}${m[3]}` });

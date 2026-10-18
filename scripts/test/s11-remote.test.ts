@@ -43,6 +43,8 @@ test('panes: the line /sub-human invite showed and its PIN apart, also when the 
   assert.equal(joinLineIn(cut.replace(/⚠.*/, '')), null, 'the cut line without its word is no line');
   assert.equal(joinLineIn(`  /sub-human join dev@box vole-1234 ${S} --home /srv/sh\n`), `join dev@box vole-1234 ${S} --home /srv/sh`);
   assert.equal(joinLineIn(`  /sub-human join https://box.ts.net/sub-human/vole-1234 ${S}\n`), `join https://box.ts.net/sub-human/vole-1234 ${S}`);
+  assert.equal(joinLineIn(`  /sub-human join https://box.ts.net/sub-human/vole-1234#${S}\n`), `join https://box.ts.net/sub-human/vole-1234#${S}`, 'the SECRET as the URL\'s fragment');
+  assert.equal(joinLineIn(`⏺   /sub-human join https://box.ts.net/sub-human/vole-1234#SECRET\n\n  ⚠ sub-human: PIN 0412 · SECRET ${S}`), `join https://box.ts.net/sub-human/vole-1234#${S}`, 'and cut');
   assert.equal(joinLineIn('no line here'), null);
   assert.equal(joinLineIn('/sub-human join dev vole-1234 4829'), null, 'a 0.5.0-beta.15 line is no invite line now');
   assert.equal(pinIn('no PIN here 4829'), null);

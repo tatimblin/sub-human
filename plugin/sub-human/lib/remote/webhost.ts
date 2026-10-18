@@ -4,9 +4,9 @@
  * never the model) and the CLI (lib/cli/host.ts). The wire is
  * lib/remote/transports/ws.ts; the daemon lib/remote/listener.ts; the Tailscale calls lib/remote/tailscale.ts.
  *
- * hostWeb: an invite line `/sub-human join https://HOST/…/sub-human/ROOM SECRET`, its SECRET's tag naming the
- * listener's X25519 key (role 'listener': the joiner checks it before its Noise handshake), and a 4-digit PIN told
- * apart. It starts the listener (127.0.0.1 only) and puts the room in its served set. tailscale (`--web`): Tailscale
+ * hostWeb: an invite line `/sub-human join https://HOST/…/sub-human/ROOM#SECRET` (the SECRET as the URL's fragment,
+ * which the joiner never sends anywhere: the dial is to the URL without it), its SECRET's tag naming the listener's
+ * X25519 key (role 'listener': the joiner checks it before its Noise handshake), and a 4-digit PIN told apart. It starts the listener (127.0.0.1 only) and puts the room in its served set. tailscale (`--web`): Tailscale
  * Serve for /sub-human/CODE on this node's MagicDNS name (tailnet only), its certificate warmed in the background;
  * funnel (`--public`): the same through Funnel (public; the text carries tailscale.CT_WARNING). The tests and the lab
  * name a front of their own instead of Tailscale (lib/env.ts webFront: SUB_HUMAN_WEB_FRONT, never a person's). unhost (`invite --stop`) turns off the room's own Tailscale path only; links already
@@ -106,11 +106,11 @@ function hostWeb(code: RoomCode, { funnel = false, port, by = null, now = Date.n
     ...(mode === 'funnel' ? [ts().CT_WARNING] : []),
     'Stop serving it with /sub-human invite --stop (closing the room does too).',
   ];
-  // the URL and the line's SECRET, its tag naming the listener's key; the PIN told apart
+  // the URL with the line's SECRET as its fragment, its tag naming the listener's key; the PIN told apart
   const r = invitesLib().mintInvite(store, { kind: 'ws', locator, by, now });
   const secret = inviteSecretLib();
   const word = secret.encode(r.secret, secret.tagOf(r.secret, 'listener', hostKey));
-  const line = `/sub-human join ${joinBase} ${word}`;
+  const line = `/sub-human join ${joinBase}#${word}`;
   const hosting = hostingLib();
   const parts = {
     code, how: `over the web through ${how} to this machine's listener on 127.0.0.1:${lport}`, line, pin: r.pin, ref: r.ref,

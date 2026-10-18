@@ -419,7 +419,7 @@ export class Evidence {
     for (const p of this.pins || []) t = t.replace(new RegExp(`(PIN\\D{0,3}|another way\\): |sh2\\.\\S+\\s+)${p}\\b`, 'g'), '$1<pin>');
     // a line's PIN step (join 4829), or a beta.15 line: join DEST ROOM 4829, or join URL 4829
     for (const p of this.pins || []) t = t.replace(new RegExp(`(join\\s+(?:\\S+(?:\\s+[a-z]+-\\d{4})?\\s+)?)${p}\\b`, 'g'), '$1<pin>');
-    t = t.replace(/(\/sub-human join \S+(?: [a-z]+-\d{4})? )[0-9a-z]{39}\b/g, '$1<redacted>'); // any invite line's SECRET
+    t = t.replace(/(\/sub-human join [^\s#]+(?: [a-z]+-\d{4})?[ #])[0-9a-z]{39}\b/g, '$1<redacted>'); // any invite line's SECRET (a web line's: its URL's fragment)
     return t.replace(/\b(sh[12])\.([a-z]+-\d{4}|[A-Z0-9]{4,8})\.([A-Za-z0-9_-]+)\.[A-Za-z0-9_-]{16,}/g, '$1.$2.$3.<redacted>');
   }
   log(msg: string): void {

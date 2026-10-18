@@ -23,6 +23,8 @@ import { Machine, shownInvite, childOf, kill, hiddenBlock, stopDaemon } from './
 import type { MachineRun, Seat } from './support/two-homes.ts';
 import * as identityLib from '../lib/identity.ts';
 import * as hosting from '../lib/remote/hosting.ts';
+import * as inviteSecret from '../lib/remote/invite-secret.ts';
+import type { Invites } from '../lib/remote/types-core.ts';
 import * as links from '../lib/room/links.ts';
 import type { RoomCode } from '../lib/brand.ts';
 import type { Link } from '../lib/room/types.ts';
@@ -164,6 +166,64 @@ test('an invite over pipe: the host sees the line and the PIN apart; the line, t
   }
   const inv = JSON.stringify(host.lib((): unknown => store.open(code).kv.get(invites.INVITES_KEY)));
   assert.ok(!inv.includes(`"${pin}"`) && !inv.includes(word), 'the host keeps neither in clear');
+});
+
+test('an invite in one line: the line with the PIN after it links in one hidden step (the PIN in the first hello, once the host\'s key is checked); the card lets the machine in', async t => {
+  const { host, remote, alice, bob, code } = room(t);
+  const m = shown(reason(host.join(alice, 'invite --pipe')));
+  stopDaemon(t, remote, code);
+  const typed = remote.join(bob, `${m.line} ${m.pin} --as bob`);
+  assert.ok(hiddenBlock(typed), typed.stderr);
+  for (const s of [m.pin, m.word]) assert.ok(!modelSees(typed).includes(s) && !reason(typed).includes(s), 'neither the PIN nor the SECRET reaches the model, nor is echoed');
+  const req = must(await until(() => host.lib(() => admission.pending(code)).at(-1), 8000, 'the card\'s request'), 'the request');
+  assert.equal(req.name, 'bob');
+  const lf = linkFile(remote, code);
+  assert.equal('pin' in lf, false, 'the PIN left the link file once the host answered');
+  assert.equal('pin_wanted' in lf, false, 'the host never asked for it');
+  assert.equal(must(lf.awaiting).ref, req.ref);
+  assert.equal(lf.join_as, 'bob');
+  assert.match(reason(remote.join(bob, '')), /checked your PIN\. A card there now asks them to let you in/, 'a bare /sub-human waits for the card');
+  card(host, alice, req.ref, 'Let in');
+  await until(() => remote.lib(() => linkSocket.status(code)).state === 'online', 10000, 'the link online');
+  assert.equal(must(remote.join(bob, '').json).decision, undefined, 'a bare /sub-human takes the seat');
+  assert.ok(remote.lib(() => identityLib.readMembers(code)).bob, 'bob is seated');
+  for (const f of [host.log(code), remote.log(code), fs.readFileSync(path.join(remote.home, 'links', `${code}.log`), 'utf8')]) {
+    assert.ok(!f.includes(` ${m.pin}`) && !f.includes(m.word), 'neither the PIN nor the SECRET is in any log');
+  }
+});
+
+test('an invite in one line: a wrong PIN on the line costs a try and is asked for again, never a card; a line for another host sends neither the SECRET nor the PIN', async t => {
+  const { host, remote, alice, bob, code } = room(t);
+  const m = shown(reason(host.join(alice, 'invite --pipe')));
+  const tries = (word: string) => {
+    const ref = invites.inviteRef(inviteSecret.idOf(must(inviteSecret.decode(word)).secret));
+    const rec = must(Object.entries(host.lib(() => store.open(code).kv.get<Invites>(invites.INVITES_KEY)) ?? {}).find(([k]) => k.startsWith(ref)), 'the invite')[1];
+    return 'tries' in rec ? rec.tries : null;
+  };
+  const wrong = String((Number(m.pin) + 1) % 10_000).padStart(4, '0');
+  stopDaemon(t, remote, code);
+  const typed = remote.join(bob, `${m.line} ${wrong} --as bob`);
+  assert.ok(hiddenBlock(typed) && !reason(typed).includes(wrong));
+  await until(() => remote.lib(() => (links.get(code) || {}).pin_wanted?.why === 'PIN_WRONG'), 8000, 'the host refusing the PIN');
+  assert.equal(tries(m.word), 4, 'one try spent');
+  assert.equal('pin' in linkFile(remote, code), false, 'a refused PIN is dropped from the link file');
+  assert.match(reason(remote.join(bob, '')), /wrong PIN \(4 tries left\)\. Check the digits with the host, then type it again: \/sub-human join PIN/);
+  assert.equal(host.lib(() => admission.pending(code)).length, 0, 'a wrong PIN never makes a card');
+
+  // a line whose tag names another machine's key: the host's proof does not match, so neither the SECRET nor the PIN goes
+  const other = new Machine(t, 'other', LINK_ENV);
+  const carol = other.seat('carol');
+  stopDaemon(t, other, code);
+  const m2 = shown(reason(host.join(alice, 'invite --pipe')));
+  const d = must(inviteSecret.decode(m2.word));
+  const forged = inviteSecret.encode(d.secret, inviteSecret.tagOf(d.secret, 'machine', Buffer.alloc(32, 9).toString('base64url')));
+  other.join(carol, `${m2.line.replace(m2.word, forged)} ${m2.pin} --as carol`);
+  await until(() => other.lib(() => (links.get(code) || {}).refused), 8000, 'the refusal');
+  assert.equal(must(other.lib(() => links.get(code))?.refused).why, 'HOST_KEY_MISMATCH');
+  const lf = linkFile(other, code);
+  assert.equal('pin' in lf || 'invite' in lf, false, 'the line and its PIN are dropped');
+  assert.equal(tries(m2.word), 5, 'no try spent: the host never saw the PIN');
+  assert.equal(host.lib(() => admission.pending(code)).length, 0);
 });
 
 test('an invite: a wrong PIN costs a try with a room line and is asked for again; the right one too soon waits; after the wait it works', async t => {

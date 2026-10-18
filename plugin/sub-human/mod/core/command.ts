@@ -22,14 +22,18 @@ import type { PinnedReport } from '../../hooks/types.ts';
 export const COMMANDS: readonly string[] = Object.freeze(['sub-human:sub-human', 'sub-human']);
 
 /** The one rule for a prompt that may carry a secret (lib/commands/index.ts answers it hidden): `join`, `invite` and `admit`, any word of 3-10 digits (a PIN), and any word
- * shaped like an invite line's SECRET (SECRET_WORD). */
+ * shaped like an invite line's SECRET (SECRET_WORD) or carrying one as its fragment (a web line's URL#SECRET). */
 const SECRET_VERBS = ['join', 'invite', 'admit'];
 const DIGITS = /^[0-9]{3,10}$/;
 /** An invite line's SECRET (lib/remote/invite-secret.ts: 39 characters of Crockford base32, read in either case), with
  * room for a paste that lost or doubled a few: any word of 32-48 letters and digits is taken for one. */
 export const SECRET_WORD: RegExp = /^[0-9A-Za-z]{32,48}$/;
+/** A web invite line's SECRET as its URL's fragment (`https://HOST/…/sub-human/ROOM#SECRET`), SECRET_WORD's shape. */
+const FRAGMENT = /#[0-9A-Za-z]{32,48}(?![0-9A-Za-z])/;
+/** The SECRET a word carries as its fragment, or null. */
+export const fragmentSecret = (w: string): string | null => FRAGMENT.exec(w)?.[0].slice(1) ?? null;
 const words = (args: unknown) => String(args ?? '').trim().split(/\s+/).filter(Boolean);
-const secretShaped = (w: string) => DIGITS.test(w) || SECRET_WORD.test(w);
+const secretShaped = (w: string) => DIGITS.test(w) || SECRET_WORD.test(w) || FRAGMENT.test(w);
 export const mayHoldSecret = (args: unknown): boolean => { const a = words(args); const [verb = ''] = a; return SECRET_VERBS.includes(verb) || a.some(secretShaped); };
 /** A word of the prompt is PIN- or SECRET-shaped: lib/commands/index.ts never hands such a prompt a seat's block. */
 export const hasPinWord = (args: unknown): boolean => words(args).some(secretShaped);
@@ -80,7 +84,9 @@ export function lastLine(text: unknown): string {
   const parts = line.replace(/^sub-human: /, '').split(/(\s+)/);
   // a number with its unit after it ("10000 ms") is a measure, not a PIN
   const unit = (i: number) => /^(ms|s|bytes|KiB|MiB)\b/.test(parts[i + 2] || '');
-  const masked = parts.map((w, i) => (secretShaped(w.replace(/[.,;:)("']+$|^[("']+/g, '')) && !unit(i) ? '…' : w)).join('');
+  // a URL keeps all but its fragment's SECRET
+  const mask = (w: string, i: number) => (FRAGMENT.test(w) ? w.replace(FRAGMENT, '#…') : secretShaped(w.replace(/[.,;:)("']+$|^[("']+/g, '')) && !unit(i) ? '…' : w);
+  const masked = parts.map(mask).join('');
   return masked.length > 160 ? `${masked.slice(0, 159)}…` : masked;
 }
 
