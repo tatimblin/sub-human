@@ -477,7 +477,7 @@ test('/sub-human invite: an invite line for my room, shown to me only (a hidden 
   assert.ok(m, shown.reason);
   const pin = /tell them its PIN apart from the line \(say it, or send it another way\): (\d{4})\n/.exec(must(shown.reason));
   assert.ok(pin, shown.reason);
-  assert.match(must(shown.reason), /the line alone gets nobody in, nor does the PIN/);
+  assert.match(must(shown.reason), /The line without its PIN asks you here, on a card; the PIN alone gets nobody in/);
   assert.match(must(shown.reason), /\/sub-human invite --cancel [0-9a-f]{12}/);
   assert.notEqual(must(new RegExp(`${w.code} ([0-9a-z]{39})`).exec(must(must(w.hook('join', expand('invite --pipe'), { as: 'alice' }).json).reason)))[1], m[1], 'a new one each time');
   for (const [args, re] of [['invite --frobnicate', /usage: \/sub-human invite/], ['invite --pipe --web', /pick one/], ['invite --ssh NAME@box', /placeholder/], ['invite --ssh USER@box', /placeholder/]] as const) {

@@ -1,5 +1,7 @@
 # Join in one line: URL + PIN lets you in, no PIN asks the host
 
+**Implemented** on branch `join-one-line` (steps 1-7, 0.5.0-beta.23); the live two-machine verify below is still to do.
+
 Goal: a friend joins with one pasted line. With the right PIN they are seated with no card and no follow-up command. Without the PIN, the host is asked. The host's only job in the normal case is sending the line and saying the PIN.
 
 Sources: the live join on 2026-10-17 (room egret-3408; host transcript `f4dbf026`, joiner transcript `~/repos/subhuman-debug/03104d56`), plus three research passes run on 2026-10-18: a threat model, UX and prior art, and implementation cost. Paths below are relative to `plugin/sub-human/`.

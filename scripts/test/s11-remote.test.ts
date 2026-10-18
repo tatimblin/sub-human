@@ -108,7 +108,7 @@ test('S11: carol from a second home passes every check over real evidence; a bro
   host.join(alice, 'alice');
   const code = must(host.lib(() => store.listRooms()[0]), 'the room');
   host.join(bob, `bob ${code}`);
-  const via = await remote.joinVia(host, alice, carol);
+  const via = await remote.joinVia(host, alice, carol, { knock: true }); // as S11: the line alone, alice's card lets her in
   const shown = via.shown?.json?.reason;
   assert.ok(typeof shown === 'string', 'the invite showed');
   const joined = via.seated.json;
@@ -145,6 +145,8 @@ test('S11: carol from a second home passes every check over real evidence; a bro
   const shape = (l: { token?: unknown, transport?: unknown }) => ({ mode: (fs.statSync(linkFile).mode & 0o777).toString(8), token: typeof l.token === 'string', invite: 'invite' in l, transport: l.transport });
   fs.writeFileSync(path.join(st, 'link-file.json'), JSON.stringify(shape(parseJson<{ token?: unknown, transport?: unknown }>(fs.readFileSync(linkFile, 'utf8')))));
   const at = new Date().toISOString();
+  // her pane once the module took the seat (a stand-in)
+  fs.writeFileSync(path.join(st, 'take-carol.txt'), `⏺ sub-human: joined ${code} as carol\n❯ You're in room ${code} as carol (check 3f9c-2a71, as the host's room line shows)\n`);
   const caps: [string, number, string][] = [['alice', 1, shown], ['alice', 2, `⏺ carol: ${DEMO.carol11}`], ['carol', 1, `❯ /sub-human\n  ⎿ joined ${code} as carol`]];
   fs.writeFileSync(path.join(screens, 'index.json'), JSON.stringify(caps.map(([seat, step]) => ({ scene: 'S11', session: `sh-${seat}`, step, time: at, txt: `S11-${step}-${seat}.txt`, room: code }))));
   for (const [seat, step, text] of caps) fs.writeFileSync(path.join(screens, `S11-${step}-${seat}.txt`), text);
@@ -158,7 +160,7 @@ test('S11: carol from a second home passes every check over real evidence; a bro
   const run = () => must(runChecks(context({ screens, home: host.home, room: code, home2: remote.home }), { scenes: [mod] }).S11, 'the S11 results');
   const res = run();
   assert.deepEqual(res.filter(c => !c.pass).map(c => `${c.check}: ${c.evidence}`), []);
-  assert.equal(res.length, 12);
+  assert.equal(res.length, 14);
   assert.ok(res.every(c => c.kind === 'deterministic'));
 
   const fails = () => run().filter(c => !c.pass).map(c => c.check.split(':')[0]);

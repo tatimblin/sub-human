@@ -177,7 +177,7 @@ function inviteText({ code, how, line, pin, ref, extra = [], pinned, cut = false
     ];
   return [
     ...send,
-    'They type the PIN after the line, or alone once their machine asks for it; the line alone gets nobody in, nor does the PIN. After 5 wrong PINs the invite stops working.',
+    'They type the PIN after the line (or alone, when their machine asks for it). The line without its PIN asks you here, on a card; the PIN alone gets nobody in. After 5 wrong PINs the invite stops working.',
     'The right PIN lets their machine in with no card here; the room says who joined, from which machine, with its check and how to kick them if it is not them.',
     `Sent it to the wrong place? /sub-human invite --cancel ${ref} cancels just this invite.`,
     ...extra,
