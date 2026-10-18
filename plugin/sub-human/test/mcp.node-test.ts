@@ -18,6 +18,7 @@ import type { ToolDefinition } from '../mcp/types.ts';
 import { sn } from './support/brands.ts';
 import { must } from './support/must.ts';
 import * as edit from '../lib/consent/edit.ts';
+import * as verdict from '../lib/cc/verdict.ts';
 
 /** A JSON-RPC line from the server, as these tests read it: each test reads the fields it expects to be there. */
 interface RpcMsg {
@@ -316,7 +317,14 @@ test('mcp: plan put stores the model\'s text under compare-and-swap (stored, unc
   assert.match(said, /^Editing room plan room \(base v3, alice's Claude for alice\)\. Plan mode's edit is off with this Claude Code, so do not call EnterPlanMode:\nwrite it with the plan tool's put, version 3 \(the base\)/);
   assert.equal(proposal.readEdit(me), null, 'no edit for the hooks to run');
   assert.match(text(await s.tool('plan', { op: 'edit' })), /^Editing room plan room \(base v3, .*\nNow call EnterPlanMode/, 'on: plan mode, as before');
-  for (const x of [s, bobs, off]) await x.close();
+  // the same from what this machine found for its Claude Code (lib/cc/verdict.ts), with no SUB_HUMAN_CC_OFF: a failed
+  // plan-edit entry for the version last seen here turns edit to put
+  verdict.record('2.1.999', ['module-plan-mode-detail']);
+  verdict.noteSeen('2.1.999');
+  const found = await ready({});
+  assert.match(text(await found.tool('plan', { op: 'edit' })), /Plan mode's edit is off with this Claude Code, so do not call EnterPlanMode:\nwrite it with the plan tool's put/);
+  fs.rmSync(path.join(must(process.env.SUB_HUMAN_HOME), 'cc'), { recursive: true, force: true });
+  for (const x of [s, bobs, off, found]) await x.close();
   bob.kill();
 });
 
