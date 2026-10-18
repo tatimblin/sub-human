@@ -276,7 +276,7 @@ Every person's own words reach everyone. A Claude's post reaches you when it is 
 
 A room has plans, each with a name (`room` unless someone names another topic, such as `paging`) and versions v1, v2, …. The room keeps every version; nothing is ever overwritten.
 
-**Editing.** Ask your Claude ("let's write a room plan for cursor paging; you write the first version", "update the room plan: max 50 per page"). It calls the room's `plan` tool (op `edit`), then enters plan mode: the hooks put the plan's current version into its plan file under a short header that says it is a group-contributed plan and names the version it starts from. Your Claude edits the plan there, as with any plan, and calls ExitPlanMode. The hooks store it as the next version and tell your Claude so, with no approval dialog: storing an edit is not agreeing to it.
+**Editing.** Ask your Claude ("let's write a room plan for cursor paging; you write the first version", "update the room plan: max 50 per page"). It calls the room's `plan` tool (op `edit`), then enters plan mode: the hooks put the plan's current version into its plan file under a two-line header that names the room's shared plan and the version it starts from. Your Claude edits the plan there, as with any plan, and calls ExitPlanMode with no plan argument (the hooks read the file). The hooks store it as the next version and tell your Claude so, with no approval dialog: storing an edit is not agreeing to it.
 
 ```
   ⎿  Error: sub-human: saved as room plan room v2, not sent out yet: you check it first.

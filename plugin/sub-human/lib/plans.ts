@@ -123,7 +123,7 @@ function put(store: RoomStore, args: PutArgs, { by }: { by: string }): Put {
 }
 
 /** "bob's Claude for bob": who wrote a version. */
-const who = (v: Pick<PlanVersion, 'from' | 'for'>): string => `${v.from}'s Claude for ${v.for}`;
+const who = (v: Pick<PlanVersion, 'from' | 'for'>): string => (v.for && v.for !== v.from ? `${v.from}'s Claude for ${v.for}` : `${v.from}'s Claude`);
 
 /** put on the host (this process holds the room) or through the link's plan.put op (a room hosted elsewhere). */
 function request(code: RoomCode, args: PutArgs, by: string): Put {

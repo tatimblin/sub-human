@@ -328,7 +328,7 @@ test('remote (memory): a plan edit is stored on the host under compare-and-swap:
   const stale = await put({ plan: 'paging', base: 0, text: '# Paging\n\n1. offset\n' });
   assert.ok(!stale.ok && stale.conflict);
   assert.deepEqual([stale.conflict.version.version, stale.conflict.text], [1, '# Paging\n\n1. cursor\n']);
-  assert.match(stale.error, /^plan paging v1 landed since your base v0 \(bob's Claude for bob: first draft\)/);
+  assert.match(stale.error, /^plan paging v1 landed since your base v0 \(bob's Claude: first draft\)/);
   assert.deepEqual(await put({ plan: 'paging', base: 1, text: '' }), { ok: false, error: 'the plan is empty' });
   assert.equal(host.readAll().length, n, 'conflicts and refusals log nothing');
   await rejects(c.request('plan.put', { name: 'alice', req: { plan: 'paging', base: 1, text: 'x' } }), 'AUTH');

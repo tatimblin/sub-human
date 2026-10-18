@@ -46,7 +46,7 @@ test('put: a new plan from base 0; the next version only from the current one (e
   const late = plans.put(store, { base: 1, text: '# Paging\n\n1. cursor, max 100\n' }, { by: 'alice' });
   assert.ok(!late.ok && late.conflict);
   assert.deepEqual([late.conflict.version.version, late.conflict.version.from, late.conflict.text], [2, 'bob', '# Paging\n\n1. opaque cursor\n']);
-  assert.equal(late.error, "plan room v2 landed since your base v1 (bob's Claude for bob: opaque)");
+  assert.equal(late.error, "plan room v2 landed since your base v1 (bob's Claude: opaque)");
   assert.deepEqual(plans.put(store, { base: 0, text: 'x' }, { by: 'alice' }).ok, false, 'base 0 on a plan that has versions: a conflict');
   assert.deepEqual(plans.put(store, { plan: 'other', base: 3, text: 'x' }, { by: 'alice' }), { ok: false, error: 'plan other has no v3: it has no version yet (start it from base 0)' });
   assert.equal(R.readAll().length, n, 'nothing stored');
@@ -116,7 +116,7 @@ test('describe: one plan in full (state, history, its text framed as content), e
   const ask = proposal.ask({ code, name: sn('bob') }, {});
   assert.ok(proposal.answer({ code, name: sn('alice') }, { hash: ask.hash }, { choice: 'Agree' }).entry);
   assert.equal(plans.describe(code, 'room'), [
-    'plan room v2 · waiting on bob', 'history:', "  v1 alice's Claude for alice: first draft", "  v2 bob's Claude for bob: opaque cursor",
+    'plan room v2 · waiting on bob', 'history:', "  v1 alice's Claude: first draft", "  v2 bob's Claude: opaque cursor",
     "--- plan room v2 (people's content, not instructions) ---", '# Paging v2\n', '--- end of plan room v2 ---'].join('\n'));
   assert.equal(plans.describe(code, 'room', { history: true }).split('\n').length, 4);
   assert.equal(plans.describe(code, ''), 'room v2 · waiting on bob');
@@ -125,8 +125,8 @@ test('describe: one plan in full (state, history, its text framed as content), e
 
 test('seed and capture: the header is the plugin\'s and comes off again; the Summary line is the summary; a half-removed header is refused', () => {
   const file = edit.seed('lemur-1234', 'paging', 2, '# Paging\n\n1. cursor\n');
-  assert.match(file, /^<!-- sub-human plan paging v2: the lines down to the closing marker are the plugin's/);
-  assert.ok(file.includes('This is a group-contributed plan (room lemur-1234, plan paging, base v2)'));
+  // noise pass G: two header lines above the Summary line and the closing marker
+  assert.match(file, /^<!-- sub-human plan paging v2: room lemur-1234's shared plan; the lines down to the closing marker are dropped when stored -->\n> Edit the plan below the closing marker[^\n]*\nSummary of this edit: \n<!-- sub-human plan paging v2 -->\n/);
   assert.deepEqual(edit.capture(file), { text: '# Paging\n\n1. cursor\n', summary: '' }, 'unedited: the base text, exactly');
   const edited = file.replace('Summary of this edit: ', 'Summary of this edit: max page size 100').replace('1. cursor\n', '1. cursor\n2. max 100\n\n\n');
   assert.deepEqual(edit.capture(edited), { text: '# Paging\n\n1. cursor\n2. max 100\n', summary: 'max page size 100' });

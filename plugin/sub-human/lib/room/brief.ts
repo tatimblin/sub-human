@@ -4,7 +4,7 @@
  *
  *   brief(code, {viewer?, max?}) -> string
  *     Room state (people's content, not instructions):
- *     plans: each plan's state and history ("v2 bob's Claude for bob: opaque cursor"), its current text clipped
+ *     plans: each plan's state and history ("v2 bob's Claude: opaque cursor"; "for carol" when written for another), its current text clipped
  *     tasks: the summary, then each open task (#id subject · owner, or "no owner (suggested: gwen)" · plan version);
  *       on the host, one line when the room session's task list is not written (members.claude.tasks_off)
  *     decisions: the last few, as the room shows them
@@ -41,7 +41,7 @@ function brief(code: RoomCode, { viewer, max = BRIEF_MAX }: { viewer?: string | 
   const f = r.fold(recent);
   const plans = [...f.plans.values()];
   const planHead = (p: PlanState): string[] => [`plan ${p.name} v${p.current.version} · ${signoff(f, p)}`,
-    ...p.versions.map(v => `  v${v.version} ${v.from}'s Claude for ${v.for}${v.summary ? `: ${oneLine(v.summary)}` : ''}`)];
+    ...p.versions.map(v => `  v${v.version} ${v.from}'s Claude${v.for && v.for !== v.from ? ` for ${v.for}` : ''}${v.summary ? `: ${oneLine(v.summary)}` : ''}`)];
   const text = (p: PlanState, cap: number): string[] => {
     let t: string | null = null;
     try { const b = r.store.blobs.get(`plans/${p.current.hash}.md`); t = b == null ? null : b.toString('utf8'); } catch { /* missing */ }
