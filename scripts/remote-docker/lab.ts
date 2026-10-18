@@ -23,8 +23,9 @@
  *     join(opts) -> Promise<{seat, name, invite, pin, linkId, conf, join, pub}>   a joiner over one ssh path: its own
  *                       login to the host account, invite --ssh on the host's seat, the line typed on the joiner
  *                       (`/sub-human join DEST ROOM SECRET --as NAME`: the host's key checked, the SECRET
- *                       shown), the PIN when the host asks (`/sub-human join PIN`), the host's card (Let in), the link
- *                       online, then a bare `/sub-human` (the seat). Against devbox-old (beta.15) its line has a 4-digit
+ *                       shown; with no PIN it knocks), the PIN while the host's card waits (`/sub-human join PIN`:
+ *                       the right one lets it in, no card; an older host's card is answered Let in), the link online,
+ *                       then a bare `/sub-human` (the seat). Against devbox-old (beta.15) its line has a 4-digit
  *                       PIN and this joiner refuses it (the host must update): {join: {ok: false, out}}; a beta.15 joiner
  *                       refuses this host's line the same way
  *     features             {hostSsh, revoke, heartbeat, outbox, autoRejoin, doctor, ws, urlPin,
@@ -62,9 +63,9 @@ export interface HookJson {
 /** A command run through a hook: host/login/rejoin/expand/say/prompt/card. */
 export interface HookRun { ok: boolean, out?: string | null, json?: HookJson | null, ms: number, t0: number, stderr?: string, code?: string | null, machine?: string }
 /** short / pin: an invite's line typed, the PIN given. */
-export interface Typed { ok: boolean, asked?: boolean, waiting: boolean, out: string, ms: number, hidden: boolean, stderr?: string }
+export interface Typed { ok: boolean, asked?: boolean, knocked?: boolean, waiting: boolean, linked?: boolean, out: string, ms: number, hidden: boolean, stderr?: string }
 /** linkfile: this machine's link file without its secrets. */
-export interface LinkFile { exists: boolean, token?: boolean, invite?: boolean, pin?: boolean, pin_wanted?: unknown, awaiting?: unknown, refused?: unknown, transport?: { login?: boolean, key?: unknown, knownHosts?: unknown } | null }
+export interface LinkFile { exists: boolean, token?: boolean, invite?: boolean, pin?: boolean, pin_wanted?: unknown, awaiting?: unknown, refused?: unknown, transport?: { login?: boolean, key?: unknown, knownHosts?: unknown, link?: string } | null }
 /** admitcard: the host's answer to a join request's card. */
 export interface Admitted { ok: boolean, question?: string, out?: string, ref?: string, key?: string, link?: string, ms?: number, stderr?: string }
 /** One event a seat's tail delivered (lab/seat-proc.ts). */
@@ -326,15 +327,17 @@ export class Lab {
     const refused = (out: string): Joined => ({ seat, name, invite: line, pin, text, linkId: null, conf, pub, linked: typed, admitted: null, join: { ok: false, out, ms: Date.now() - t0 } });
     if (!word) return refused(typed.out); // a beta.15 host's line: this joiner says the host must update
     if (!typed.ok) return refused(typed.out); // a beta.15 joiner refuses this host's line; or the host refused it
-    // the host asks for the PIN once the daemon reached it (the hook's reply may come before)
-    const asked = !!typed.asked || await until(() => { const l = seat.linkfile(code); return !!l.pin_wanted || !!l.refused; }, ms, 250);
+    // the line with no PIN knocks once the daemon reached the host (a host before the knock asks for the PIN); the
+    // hook's reply may come before
+    const asked = !!typed.asked || !!typed.knocked || await until(() => { const l = seat.linkfile(code); return !!l.pin_wanted || !!l.awaiting || !!l.refused; }, ms, 250);
     const lf = seat.linkfile(code);
-    if (!asked || !lf.pin_wanted) return refused(`${typed.out} ${JSON.stringify(lf.refused || seat.link(code))}`);
+    if (!asked || !(lf.pin_wanted || lf.awaiting)) return refused(`${typed.out} ${JSON.stringify(lf.refused || seat.link(code))}`);
+    // the right PIN lets the machine in with no card; a host that still sends a checked PIN to its card: Let in
     const gave = seat.pin(name, pin);
-    const admitted = gave.waiting ? hostSeat.admitcard(hostName, 'Let in') : null;
-    const linkId = (admitted && admitted.link) || null;
-    // the daemon redials (jittered backoff) until the card lets the machine in
-    const online = !!(admitted && admitted.ok) && await until(() => { try { return seat.link(code).state === 'online'; } catch { return false; } }, ms, 250);
+    const admitted = gave.waiting && !gave.linked ? hostSeat.admitcard(hostName, 'Let in') : null;
+    const linkId = (admitted && admitted.link) || seat.linkfile(code).transport?.link || null;
+    // the daemon comes online (once the card lets the machine in: it redials, jittered backoff)
+    const online = !!(gave.linked || (admitted && admitted.ok)) && await until(() => { try { return seat.link(code).state === 'online'; } catch { return false; } }, ms, 250);
     const seated: { ok: boolean, out?: string | null } = online ? seat.expand(name, '') // a bare /sub-human takes the seat
       : { ok: false, out: `not linked: ${gave.out || ''} ${admitted ? `card: ${admitted.out}` : ''} link ${JSON.stringify(seat.link(code))}` };
     return { seat, name, invite: line, word, pin, linkId, conf, pub, linked: typed, gave, admitted, join: { ...seated, ms: Date.now() - t0 } };
@@ -419,7 +422,7 @@ export class Evidence {
     for (const p of this.pins || []) t = t.replace(new RegExp(`(PIN\\D{0,3}|another way\\): |sh2\\.\\S+\\s+)${p}\\b`, 'g'), '$1<pin>');
     // a line's PIN step (join 4829), or a beta.15 line: join DEST ROOM 4829, or join URL 4829
     for (const p of this.pins || []) t = t.replace(new RegExp(`(join\\s+(?:\\S+(?:\\s+[a-z]+-\\d{4})?\\s+)?)${p}\\b`, 'g'), '$1<pin>');
-    t = t.replace(/(\/sub-human join \S+(?: [a-z]+-\d{4})? )[0-9a-z]{39}\b/g, '$1<redacted>'); // any invite line's SECRET
+    t = t.replace(/(\/sub-human join [^\s#]+(?: [a-z]+-\d{4})?[ #])[0-9a-z]{39}\b/g, '$1<redacted>'); // any invite line's SECRET (a web line's: its URL's fragment)
     return t.replace(/\b(sh[12])\.([a-z]+-\d{4}|[A-Z0-9]{4,8})\.([A-Za-z0-9_-]+)\.[A-Za-z0-9_-]{16,}/g, '$1.$2.$3.<redacted>');
   }
   log(msg: string): void {

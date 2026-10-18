@@ -192,4 +192,5 @@ export type TailEvent =
   | { type: 'wake', text: string }
   | { type: 'rows', text: string | null }
   | { type: 'health', text: string }
-  | { type: 'invites', open: string[] };
+  | { type: 'invites', open: string[] }
+  | { type: 'take', code: string, name: string, text: string, check?: string };

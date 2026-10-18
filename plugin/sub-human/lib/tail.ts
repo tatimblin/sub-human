@@ -29,6 +29,10 @@
  *                             "left"/"joined": the daemon renews the seat's lapsed lease)
  *   {type:'invites', open}    on the host, the refs of the open invite lines when the set changes (the module takes
  *                             an invite off its status line once it is used, burnt, cancelled or expired)
+ *   {type:'take', code, name, text, check?}   a seatless session's invite join the host let in (lib/remote/joining.ts
+ *                             pendingNews 'linked'), once: the module takes the seat in a new turn (mod/deliver.ts
+ *                             takeSeat); text is what the person reads when it cannot (type /sub-human), check this
+ *                             machine's join check, which the host's room line shows too
  * An invite's join request (lib/remote/admission.ts, on the host) is one wake, once per seat; a lapsed request is
  * a health line. A session with no seat that started an invite join (its link file's join_sid) is looked up every
  * resolveMs until the host lets it in, with one chat line per answer (a seated session too: a kicked machine's copy
@@ -131,7 +135,7 @@ interface TailDeps {
   /** the room session's task list was made (members.claude.tasks_dir) but the session does not hold its seat now (it
    * never bound, crashed or is starting again), and the room is not closing: a member's tail on the host repairs it */
   roomSessionDown(code: RoomCode): boolean;
-  pendingNews(sid: string): { state: 'waiting' | 'pin' | 'linked' | 'refused'; code: RoomCode; text: string } | null;
+  pendingNews(sid: string): { state: 'waiting' | 'pin' | 'linked' | 'refused'; code: RoomCode; text: string; name?: string; line?: string; check?: string } | null;
 }
 /** The deps as a session uses them: the lazily loaded modules behind a getter. */
 type Deps = Omit<TailDeps, 'roomClaude' | 'admission' | 'invites'> & {
@@ -600,7 +604,7 @@ function startSession(me: Identity, ctx: TailCtx): Session {
   function admitHealth() {
     const adm = deps.admission();
     for (const q of adm.lapse(s.code, { now: clock.now() })) {
-      emit([{ type: 'health', text: `room: ${adm.describe(q)} typed your invite and its PIN, but nobody let them in within ${Math.round((Date.parse(q.expires_at) - Date.parse(q.created_at)) / 60_000)} minutes; their join stopped` }]);
+      emit([{ type: 'health', text: `room: ${adm.describe(q)} typed your invite line without its PIN, but nobody let them in within ${Math.round((Date.parse(q.expires_at) - Date.parse(q.created_at)) / 60_000)} minutes; their join stopped` }]);
     }
     for (const q of adm.pending(s.code, { now: clock.now() })) {
       if ((q.told ?? []).includes(me.name) || !adm.targets(s.code, q).includes(me.name)) continue;
@@ -608,7 +612,7 @@ function startSession(me: Identity, ctx: TailCtx): Session {
       // one wake: its line for the person is drawn as the prompt (asUser, no frame), the (for Claude) line
       // rides as context, as every member wake (mod/core/deliver.ts wakeParts)
       emit([
-        { type: 'wake', text: `room: ${adm.describe(q)} typed your invite and its PIN and wants to join; your Claude shows you a card (or: /sub-human admit ${q.ref})\n${FOR_CLAUDE} ${adm.describe(q)} typed ${me.name}'s invite line and its PIN on another machine and asks to join room ${s.code}. Only ${me.name} can let them in: call AskUserQuestion with the question "admit ${q.ref}"; the hooks show the card. Don't answer for ${me.name} or post about it.` },
+        { type: 'wake', text: `room: ${adm.describe(q)} typed your invite line without its PIN and asks to join; your Claude shows you a card (or: /sub-human admit ${q.ref})\n${FOR_CLAUDE} ${adm.describe(q)} typed ${me.name}'s invite line without its PIN on another machine and asks to join room ${s.code}. Only ${me.name} can let them in: call AskUserQuestion with the question "admit ${q.ref}"; the hooks show the card. Don't answer for ${me.name} or post about it.` },
       ]);
     }
   }
@@ -726,21 +730,25 @@ function runTail({
   let sess: Session | null = null, timer: TimerHandle | null = null, stopped = false;
   // an invite join this session started: what became of it, said once per state and text (waiting: look again soon);
   // once no join waits (its seat taken), the next join's news is new, even word for word the last one's (a re-invite
-  // after a kick)
+  // after a kick). Let in, with no seat here: one take event, whether the command's own answer said it (join_told) or
+  // not; the module takes the seat in a turn of its own, never the prompt that carried the line or the PIN
   let told: string | null = null;
-  const news = (): boolean => {
+  const news = (seated: boolean): boolean => {
     if (!sid) return false;
     let n: ReturnType<TailDeps['pendingNews']> = null;
     try { n = d.pendingNews(sid); } catch (e) { log('pending join', e); return false; }
     if (!n) { told = null; return false; }
     if (n.state === 'waiting') return true;
-    if (!n.text) return false; // the command's own answer said it
-    const key = `${n.code}/${n.state}/${n.text}`; // a PIN asked for again (wrong, too soon) is news again
-    if (key === told) return false;
+    const take = n.state === 'linked' && !seated;
+    if (!take && !n.text) return false; // the command's own answer said it
+    const key = take ? `${n.code}/take` : `${n.code}/${n.state}/${n.text}`; // a PIN asked for again (wrong, too soon) is news again
+    if (key === told) return take; // taking: look again soon, for the seat
     told = key;
-    const ev: TailEvent = { type: 'chat', lines: [n.text] };
+    const ev: TailEvent = take
+      ? { type: 'take', code: n.code, name: n.name ?? '', text: n.line ?? n.text, ...(n.check ? { check: n.check } : {}) }
+      : { type: 'chat', lines: [n.text] };
     try { write(JSON.stringify(ev) + '\n', () => {}); } catch (e) { log('pending join', e); }
-    return false;
+    return take;
   };
 
   function stopSess() {
@@ -764,10 +772,10 @@ function runTail({
         sendSeat(sess ? me : null);
       }
     }
-    const waiting = !failed && !me && !sess && news();
+    const waiting = !failed && !me && !sess && news(false);
     // seated, yet a join of this session's waits (a kicked machine typing a new invite line: its copy of the room may
-    // still show the seat): its news is said too
-    if (!failed && me && sid) news();
+    // still show the seat): its news is said too, as chat (no take: the seat here is the person's to leave)
+    if (!failed && me && sid) news(true);
     if (!stopped) timer = clock.setTimeout(check, sess || me || waiting ? tm.resolveMs : tm.unseatedMs);
   }
 

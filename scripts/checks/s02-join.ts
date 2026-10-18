@@ -55,7 +55,8 @@ export function run(x: Ctx, { det, beh }: { det: Det, beh: Beh }, T: Thresholds)
 /**
  * --film: B joined from another machine (her own sub-human home, x.remote[B]) over ssh to the private sshd
  * (scripts/devbox.sh, in DEVBOX next to her machine's dir) through her own ssh login: the link, nothing of the
- * plugin's in authorized_keys, the card, her seat over the link, the SECRET and the PIN kept from every Claude.
+ * plugin's in authorized_keys, the PIN that let her in with no card, her seat taken on its own over the link, the SECRET
+ * and the PIN kept from every Claude.
  */
 /** A links registry file (<home>/links/CODE.json), the parts checked. */
 interface LinkFile {
@@ -83,33 +84,38 @@ function remoteJoin(x: Ctx, det: Det, j: LogEntry | undefined, rh: string): void
   det('Nothing of sub-human\'s in devbox\'s authorized_keys: no door, no forced command (her login key is the only line)',
     !/sub-human/.test(ak), `${ak.split('\n').filter(Boolean).length} line(s); ${/sub-human/.test(ak) ? 'a sub-human line' : 'none of sub-human\'s'}`);
 
-  // the card: only the host person's own answer on it lets a machine in (hooks/consent.ts postAdmit), signed with A's seat key
-  const envelope = paths.pluginLib('room/envelope.ts');
+  // the PIN typed on the line let her machine in with no card (lib/remote/invites.ts: admitted_by 'pin', no person's
+  // signature), and the room says who joined, from which machine, its check and the kick that undoes a stranger
   const recs = Object.values(readJson<Record<string, Admission | null> | null>(path.join(x.roomDir, 'remote', 'invites.json'), {}) || {}).filter((r): r is Admission => !!(r && r.admission && r.name === B));
   const rec = recs.at(-1);
-  const key = envelope.pinnedKeys(log).get(A);
-  const signed = !!(rec && rec.admit_sig && key && envelope.verify(rec.admit_sig, key) && rec.admit_sig.from === A && rec.admit_sig.kind === 'admit');
-  const line = log.find(e => e.kind === 'status' && e.from === 'room' && typeof e.text === 'string' && e.text.startsWith(`${A} let ${B} (`));
-  det(`${A}'s card let ${B}'s machine in: the admission (ssh) is "let-in" by ${A}, signed with ${A}'s seat key (the card's answer, via=human), and the room says so`,
-    rec && rec.kind === 'ssh' && rec.admit === 'let-in' && rec.admitted_by === A && signed && !!line,
-    rec ? `admission ${rec.kind} ${rec.admit} by ${rec.admitted_by}, label ${rec.label}; signature ${signed ? `verified against ${A}'s pinned key` : 'missing or not verified'}; ${x.fmt(line)}` : `no admission record for ${B} in remote/invites.json`);
+  const linked = log.find(e => e.kind === 'status' && e.from === 'room' && typeof e.text === 'string' && e.text.startsWith(`${B} joined from `));
+  const lineOk = !!linked && /\(check [0-9a-f]{4}-[0-9a-f]{4}/.test(String(linked.text)) && String(linked.text).includes(`not them? /sub-human kick ${B}`);
+  const carded = log.find(e => e.kind === 'status' && e.from === 'room' && typeof e.text === 'string' && e.text.startsWith(`${A} let ${B} (`));
+  det(`The right PIN let ${B}'s machine in with no card: the admission (ssh) is "let-in" by the PIN, signed by no one, and the room line "${B} joined from … (check …) · not them? /sub-human kick ${B}"`,
+    rec && rec.kind === 'ssh' && rec.admit === 'let-in' && rec.admitted_by === 'pin' && !rec.admit_sig && lineOk && !carded,
+    rec ? `admission ${rec.kind} ${rec.admit} by ${rec.admitted_by}, label ${rec.label}; signature ${rec.admit_sig ? 'set' : 'none'}; ${x.fmt(linked)}${carded ? `; a card's line too: ${x.fmt(carded)}` : ''}` : `no admission record for ${B} in remote/invites.json`);
+
+  // no bare /sub-human: her hooks module took the seat in a turn of its own (mod/deliver.ts takeSeat)
+  const take = readText(x.stateFile('S2', `take-${B}.txt`)) || '';
+  const took = new RegExp(`You're in room ${esc(code)} as ${esc(B)}`).test(take);
+  det(`${B}'s session took its seat on its own: "You're in room ${code} as ${B}" in her pane`, took,
+    took ? `in state/S2/take-${B}.txt` : 'not in state/S2/take-B.txt (or not saved)');
 
   const host = (readJson<{ id?: string } | null>(x.stateFile('S2', 'machine-host.json'), {}) || {}).id;
   // her id in the room: the one the host derived from her home's machine key (machines.json), else her home's own
   const hers = ((readJson<Record<string, string> | null>(path.join(rh, 'machines.json'), {}) || {})[code]) || (readJson<{ id?: string } | null>(path.join(rh, 'machine.json'), {}) || {}).id;
-  const linked = log.find(e => e.kind === 'status' && e.from === 'room' && typeof e.text === 'string' && e.text.startsWith(`${B}'s machine (`) && /joined the room/.test(e.text));
   det(`${B}'s seat arrived over the link: member_joined ${B} carries her machine's id (not the host's), after her machine's link joined the room`,
     j && hers && j.machine === hers && j.machine !== host && linked && linked.id < j.id,
     `${x.fmt(j)}; machine ${j ? j.machine : '?'} (hers ${hers || 'unknown'}, host ${host || 'not saved'}); ${x.fmt(linked)}`);
 
   // the SECRET and the PIN: the hook shows them to A and takes them from B; no Claude ever gets either. A's transcript
   // keeps the invite's lines as display rows (type system, the dim "sub-human: …" lines A saw; Claude Code never sends
-  // those to the model); any other entry holding the SECRET or "join PIN" (a prompt, a meta copy, an answer, a tool
-  // call) is a leak
+  // those to the model); any other entry holding the SECRET or the PIN (typed after the line, or as "PIN NNNN": a
+  // prompt, a meta copy, an answer, a tool call) is a leak
   const shown = (readText(x.stateFile('S2', 'join-line.txt')) || '').trim();
   const secret = (/ ([0-9a-z]{39})(?: |$)/.exec(shown) || [])[1];
   const pin = (readText(x.stateFile('S2', 'join-pin.txt')) || '').trim();
-  const needles = secret && /^\d{4}$/.test(pin) ? [secret, `join ${pin}`] : [];
+  const needles = secret && /^\d{4}$/.test(pin) ? [secret, `PIN ${pin}`, `join ${pin}`] : [];
   const files = [...new Set([A, B].flatMap(s => jsonlUnder(paths.seatProjectDir(s))).concat(x.seatFiles('claude')))];
   let display = 0;
   const leaked: string[] = [];
@@ -122,7 +128,7 @@ function remoteJoin(x: Ctx, det: Det, j: LogEntry | undefined, rh: string): void
       if (e.type === 'system') display++; else leaked.push(`${path.basename(f)} ${e.type}${e.isMeta ? ' (meta)' : ''}`);
     }
   }
-  det('The SECRET and the PIN reached no Claude: no model-bound entry in any transcript (either seat, their subagents, the room\'s Claude) holds the line\'s SECRET or "join PIN"', needles.length > 0 && leaked.length === 0,
+  det('The SECRET and the PIN reached no Claude: no model-bound entry in any transcript (either seat, their subagents, the room\'s Claude) holds the line\'s SECRET or its PIN',needles.length > 0 && leaked.length === 0,
     needles.length ? `${files.length} transcript file(s) read; ${leaked.length ? `in ${leaked.slice(0, 4).join(', ')}` : 'in none'}; ${display} display-only row(s) (the invite ${A} saw)` : 'state/S2/join-line.txt or join-pin.txt not saved');
 }
 

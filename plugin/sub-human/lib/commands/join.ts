@@ -9,14 +9,17 @@
  *             conversation: identity.forkParent; restored, as session-restore does), else finish a join the host has
  *             let in (a link file's join_as), else join the one open room, or open one, as the default name. Never a
  *             new room while the default name's seat is live in another session of this folder (seats.liveSeatHere):
- *             that is refused with where the seat is
+ *             that is refused with where the seat is. From the hooks module with a room (ctx.take: it seats a join the
+ *             host let in on its own, mod/deliver.ts takeSeat): only that join's seat (letIn), else nothing
  *   named     `/sub-human NAME [ROOM]` (or `--as NAME`): join ROOM (else the one open room, else a new one) as NAME, leaving any other
  *             room; `/sub-human ROOM` (a room code alone): that room as the default name, never a person named after it.
  *             A word of digits is no name (it looks like a PIN)
  *   join      `/sub-human join …`: ROOM (a room code alone): that room on this machine, as `/sub-human ROOM`;
- *             HOST ROOM SECRET or URL SECRET: an invite line (joining.linkLine: link only, never the seat in that
- *             step; over ssh through the person's own ssh login, --home as the line says); PIN (4 digits
- *             alone): the PIN the host's machine asked for (joining.givePin; never the seat either); HOST ROOM: over
+ *             HOST ROOM SECRET, URL#SECRET or URL SECRET, each with the PIN after it or not: an invite line
+ *             (joining.linkLine: link only, never the seat in that step; a PIN typed with it goes in the first hello,
+ *             once the host's key is checked; over ssh through the person's own ssh login, --home as the line says);
+ *             PIN (4 digits alone): the PIN the host's machine asked for, or one typed while a line with no PIN waits
+ *             for the host's card (joining.givePin: the right one links at once; never the seat either); HOST ROOM: over
  *             the person's own ssh login (joining.linkLogin; the seat once linked); a pipe HOST with no SECRET is an
  *             invite line without its SECRET
  *   bindRoomClaude   the room Claude's own launch `/sub-human` (agent_type sub-human:room-claude + SUB_HUMAN_ROOM), or a
@@ -31,7 +34,7 @@ import * as invites from '../remote/invites.ts';
 import * as inviteSecret from '../remote/invite-secret.ts';
 import * as joining from '../remote/joining.ts';
 import { parse } from '../cli/args.ts';
-import { SECRET_WORD } from '../../mod/core/command.ts';
+import { SECRET_WORD, fragmentSecret } from '../../mod/core/command.ts';
 import fs from 'node:fs';
 import { projectDir } from '../cc/env.ts';
 import { envStr } from '../env.ts';
@@ -39,7 +42,7 @@ import { HELP_HINT, USAGE, refused, say } from './answer.ts';
 import type { Answer, VerbCtx, Verb } from './types.ts';
 import type { Identity } from '../identity.ts';
 import type { JoinStep, Wanted } from '../remote/joining.ts';
-import type { SeatName, InviteSecret } from '../brand.ts';
+import type { RoomCode, SeatName, InviteSecret, Pin } from '../brand.ts';
 import type * as WsMod from '../remote/transports/ws.ts';
 import type * as SshMod from '../remote/transports/ssh.ts';
 import { lazy } from '../io.ts';
@@ -48,9 +51,8 @@ import { lazy } from '../io.ts';
 const wsT = lazy<typeof WsMod>(import.meta.url, '../remote/transports/ws.ts');
 const sshT = lazy<typeof SshMod>(import.meta.url, '../remote/transports/ssh.ts');
 
-export const JOIN_USAGE: string = `usage: /sub-human join HOST ROOM SECRET (the line from an invite), then /sub-human join PIN when it asks. ${HELP_HINT}`;
+export const JOIN_USAGE: string = `usage: /sub-human join LINE PIN (the line from an invite, the PIN the host told you after it; or the line alone, then /sub-human join PIN when it asks). ${HELP_HINT}`;
 const NOT_WHOLE = 'the line\'s SECRET (its last long word) did not come through whole: paste the whole line the host sent you';
-const PIN_APART = 'type the line without the PIN: the host\'s machine asks for the PIN once it has answered (/sub-human join PIN)';
 const PIN_WORD = /^[0-9]{3,10}$/;
 const YOU_HINT = (d: string) => `"${d}" still has the example's placeholder: put your user name on that machine in place of ${d.split('@')[0]} (or just its ssh alias, e.g. dev)`;
 const NOT_A_NAME = (n: string) => (PIN_WORD.test(n) ? `"${n}" looks like a PIN, not a name: a PIN goes in as /sub-human join PIN once an invite line asks for it`
@@ -98,7 +100,15 @@ function forked(ctx: VerbCtx): Answer | null {
   return { kind: 'joined', me, lead: 'restored after the agent view', say: `you're ${from.name} in room ${from.code} again (this session went on from the one that held the seat), ${seats.withWhom(from.code, from.name)}` };
 }
 
+/** The hooks module seating the join the host let in to room code (ctx.take): that join's seat, else nothing (say '':
+ * the person took it first, or it is not this session's), never a status, another room or a new one. */
+function letIn(code: RoomCode, ctx: VerbCtx): Answer {
+  const l = ctx.cur ? null : joining.letIn(code, ctx.sid);
+  return l ? then(joining.finishJoin(l), ctx) : say('');
+}
+
 export const bare: Verb = (_args, ctx) => {
+  if (ctx.take) return letIn(ctx.take, ctx);
   const { cur, cwd } = ctx;
   if (cur) {
     const l = identity.isHost(cur.code) ? null : links.get(cur.code);
@@ -132,7 +142,7 @@ export const named: Verb = (args, ctx) => {
   const [name, code] = args;
   if (name === undefined) return refused(USAGE); // route() sends a bare /sub-human to bare
   // a SECRET-shaped word is never echoed, nor taken for a name or a room: it belongs in an invite line
-  if (args.some(a => SECRET_WORD.test(a))) return refused(`that looks like an invite line's SECRET: the whole line goes in as /sub-human join HOST ROOM SECRET. ${USAGE}`);
+  if (args.some(a => SECRET_WORD.test(a) || fragmentSecret(a) !== null)) return refused(`that looks like an invite line's SECRET: the whole line goes in as /sub-human join LINE PIN. ${USAGE}`);
   if (PIN_WORD.test(name)) return refused(NOT_A_NAME(name));
   if (code !== undefined && PIN_WORD.test(code)) return refused(`"${code}" looks like a PIN, not a room: a PIN goes in as /sub-human join PIN once an invite line asks for it`);
   if (name.startsWith('-')) return refused(`"${name}" goes with join (/sub-human join HOST ROOM SECRET ${name} …). ${USAGE}`);
@@ -149,14 +159,27 @@ function secretOf(word: string | undefined): { word: InviteSecret } | { error: s
   return d ? { word: inviteSecret.encode(d.secret, d.tag) } : { error: NOT_WHOLE };
 }
 
-/** `/sub-human join URL SECRET`: the web form of an invite line. */
+/** The PIN typed after an invite line, or why it is not one; none typed: no PIN (the host's machine asks for it). */
+function pinAfter(word: string | undefined): { pin?: Pin } | { error: string } {
+  if (word === undefined) return {};
+  if (invites.isShortPin(word)) return { pin: word };
+  return { error: PIN_WORD.test(word) ? 'a PIN is 4 digits: /sub-human join LINE PIN' : JOIN_USAGE };
+}
+
+/** `/sub-human join URL#SECRET [PIN]` (or URL SECRET [PIN]): the web form of an invite line. */
 function joinWeb(r: string[], flags: { as?: string; home?: string }, ctx: VerbCtx): Answer {
-  const [url, word, extra] = r;
-  if (r.length === 3 && extra !== undefined && PIN_WORD.test(extra)) return refused(PIN_APART);
-  if (r.length !== 2 || url === undefined) return refused(r.length < 2 ? 'a web join needs the SECRET the host sent with the address: /sub-human join URL SECRET' : JOIN_USAGE);
+  const [typed = '', ...after] = r;
+  const hash = typed.indexOf('#');
+  const url = hash < 0 ? typed : typed.slice(0, hash);
+  // the SECRET as the URL's fragment, else the word after it; then the PIN, if typed
+  const [word, extra, ...more] = hash < 0 ? after : [typed.slice(hash + 1), ...after];
+  if (word === undefined || word === '') return refused('a web join needs the SECRET the host sent with the address: /sub-human join URL#SECRET');
+  if (more.length) return refused(JOIN_USAGE);
   if (flags.home !== undefined) return refused('--home goes with an ssh address, not a web one');
   const w = secretOf(word);
   if ('error' in w) return refused(w.error);
+  const p = pinAfter(extra);
+  if ('error' in p) return refused(p.error);
   const BAD = 'that isn\'t a join address (https://HOST/…/sub-human/ROOM). Paste the whole line the host sent you.';
   const [, scheme, where] = /^(https?):\/\/([^#\s]+)$/.exec(url) ?? [];
   const spec = where !== undefined ? wsT().parse(`//${where.replace(/\/+$/, '')}`) : null;
@@ -167,7 +190,7 @@ function joinWeb(r: string[], flags: { as?: string; home?: string }, ctx: VerbCt
   const loc = wsT().locator(spec, scheme === 'https');
   const transport = loc && linkConnect.transportOf(loc);
   if (!transport) return refused(BAD);
-  return then(joining.linkLine({ name: n.name, code, word: w.word, transport, sid: ctx.sid }), ctx);
+  return then(joining.linkLine({ name: n.name, code, word: w.word, transport, sid: ctx.sid, module: ctx.module === true, ...p }), ctx);
 }
 
 export const join: Verb = (argv, ctx) => {
@@ -180,7 +203,7 @@ export const join: Verb = (argv, ctx) => {
   if (/^https?:\/\//.test(r[0] || '')) return joinWeb(r, p.flags, ctx);
   if (r.length === 1 && invites.isShortPin(r[0])) { // `/sub-human join 4829`: the PIN an invite line's host asked for
     if (home !== undefined || p.flags.as !== undefined) return refused('the PIN goes alone: /sub-human join PIN (the name went with the line)');
-    return then(joining.givePin(r[0], ctx.sid), ctx);
+    return then(joining.givePin(r[0], ctx.sid, ctx.module === true), ctx);
   }
   if (r.length === 1 && identity.isRoomCode(r[0])) { // `/sub-human join vole-8126`: that room on this machine
     if (home !== undefined) return refused(`--home goes with the other machine's address: /sub-human join HOST ${r[0]}`);
@@ -189,19 +212,20 @@ export const join: Verb = (argv, ctx) => {
     return seat({ name: n.name, code: r[0], isDefault: p.flags.as === undefined }, ctx);
   }
   const [dest, code, word, extra] = r;
-  if (r.length === 4 && extra !== undefined && PIN_WORD.test(extra)) return refused(PIN_APART);
-  if (dest === undefined || code === undefined || r.length > 3) return refused(r.length === 1 && dest !== undefined ? (PIN_WORD.test(dest) ? 'a PIN is 4 digits: /sub-human join PIN' : `which room? ${JOIN_USAGE}`) : JOIN_USAGE);
+  if (dest === undefined || code === undefined || r.length > 4) return refused(r.length === 1 && dest !== undefined ? (PIN_WORD.test(dest) ? 'a PIN is 4 digits: /sub-human join PIN' : `which room? ${JOIN_USAGE}`) : JOIN_USAGE);
   if (!identity.isRoomCode(code)) return refused(`"${code}" isn't a room (like vole-8126). ${JOIN_USAGE}`);
   const local = /^pipe:\//.test(dest) || dest.startsWith('/'); // a second home on this machine (tests, the demo)
   if (word !== undefined) {
     const w = secretOf(word);
     if ('error' in w) return refused(w.error);
+    const pin = pinAfter(extra);
+    if ('error' in pin) return refused(pin.error);
     const n = nameFor(p.flags.as, ctx.cwd);
     if ('error' in n) return refused(n.error);
     if (local) {
       if (home !== undefined) return refused('--home goes with an ssh address');
       const transport = linkConnect.transportOf(dest.startsWith('/') ? `pipe:${dest}` : dest);
-      return transport ? then(joining.linkLine({ name: n.name, code, word: w.word, transport, sid: ctx.sid }), ctx) : refused(`"${dest}" isn't a sub-human folder on this machine`);
+      return transport ? then(joining.linkLine({ name: n.name, code, word: w.word, transport, sid: ctx.sid, module: ctx.module === true, ...pin }), ctx) : refused(`"${dest}" isn't a sub-human folder on this machine`);
     }
     if (sshT().placeholder(dest)) return refused(YOU_HINT(dest));
     const full = sshT().withUser(dest);
@@ -210,7 +234,7 @@ export const join: Verb = (argv, ctx) => {
     // a jump host is the person's ~/.ssh/config's (ProxyJump on an alias), which ssh reads
     const transport = sshT().loginSpec(full, home !== undefined ? { home } : {});
     if (!transport) return refused(`--home "${home}" isn't a plain absolute path (the sub-human folder on that machine, e.g. /home/you/.sub-human).`);
-    return then(joining.linkLine({ name: n.name, code, word: w.word, transport, sid: ctx.sid }), ctx);
+    return then(joining.linkLine({ name: n.name, code, word: w.word, transport, sid: ctx.sid, module: ctx.module === true, ...pin }), ctx);
   }
   // no SECRET: over the person's own ssh login (a second home on this machine has none: the line lost its SECRET)
   if (local) return refused(joining.noSecret(dest, code));

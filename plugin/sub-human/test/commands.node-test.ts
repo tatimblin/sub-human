@@ -63,6 +63,11 @@ test('commands: the hidden rule is the router\'s: join, invite, admit or a word 
   const joined: Answer = { kind: 'joined', me, lead: 'joined', say: `joined ${w.code} as alice` };
   assert.equal(commands.hide(['join', 'dev', w.code], joined), joined, 'a login join has no PIN: the seat goes to the model');
   assert.deepEqual(commands.hide(['join', 'dev', w.code, '--home', '2222'], joined), { kind: 'secret', text: `joined ${w.code} as alice · type /sub-human to bring the room to your Claude`, refused: false });
+  // a web line with its SECRET as the URL's fragment and the PIN after it: whatever it answers, hidden
+  const line = ['join', `https://box.ts.net/sub-human/${w.code}#${'k'.repeat(39)}`, '4829'];
+  assert.equal(commands.hide(line, joined).kind, 'secret');
+  assert.equal(commands.hide(line.slice(0, 2), joined).kind, 'secret', 'the line alone too');
+  assert.deepEqual(commands.hide(line, { kind: 'say', text: 'x' }), { kind: 'secret', text: 'x', refused: false });
   assert.deepEqual(commands.hide(['help'], { kind: 'say', text: 'x' }), { kind: 'say', text: 'x' });
 });
 

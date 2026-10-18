@@ -35,7 +35,7 @@ import type { RunningLink } from '../lib/remote/types-core.ts';
 import type { SshSpec } from '../lib/remote/types-rest.ts';
 import type { Link, LinkStateWord } from '../lib/room/types.ts';
 import type { RoomCode } from '../lib/brand.ts';
-import { rc, sn, mid, tokenOf, wordOf } from './support/brands.ts';
+import { rc, sn, mid, tokenOf, wordOf, pin as pinOf } from './support/brands.ts';
 import { must } from './support/must.ts';
 import { fsStore } from './support/fs-store.ts';
 
@@ -425,6 +425,32 @@ test('link: a join the host let in whose person has not typed /sub-human yet kee
   links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: tokenOf('t') }); // the seat taken: join_as gone
   await h.until(() => stopped, 3000, 20);
   assert.equal(stopped, link.NO_SEAT_REASON);
+});
+
+test('a knock waiting: the command says the bare /sub-human unless the hooks module ran it; a PIN an older host answered ADMIT_WAITING held, and the text says so', async t => {
+  h.freshHome(t);
+  const hosting = await import('../lib/remote/hosting.ts');
+  const secret = await import('../lib/remote/invite-secret.ts');
+  const code = rc('vole-9875');
+  const word = wordOf('y');
+  const decoded = must(secret.decode(word));
+  const waiting = new RoomError('OFFLINE', 'waiting for the host to let this machine in; the link keeps trying', 'ADMIT_WAITING');
+  const base: Link = { code, transport: { kind: 'pipe', home: '/h' }, invite: word, join_as: 'bob', created_at: new Date().toISOString() };
+  // the line alone knocked (no PIN went)
+  links.set(code, base);
+  assert.equal(linkConnect.keepAnswer(code, waiting, decoded, false), true);
+  assert.equal(must(links.get(code)?.awaiting).pin, undefined);
+  const asked = hosting.joinText(code, sn('bob'), { state: 'waiting' });
+  assert.match(asked, /^Asked the host to let you in to room vole-9875 \(their card shows check [0-9a-f]{4}-[0-9a-f]{4}\)\. If they gave you a PIN: \/sub-human join PIN\. Once they do, type \/sub-human to join/);
+  assert.match(hosting.joinText(code, sn('bob'), { state: 'waiting' }, { tells: true }), /This session takes your seat once they let you in/);
+  // the PIN went with the line and an older host still asks its card: the PIN held, nobody asks for it again
+  links.set(code, { ...base, pin: pinOf('4829') });
+  assert.equal(linkConnect.keepAnswer(code, waiting, decoded, true), true);
+  const lf = must(links.get(code));
+  assert.deepEqual(['pin' in lf, must(lf.awaiting).pin], [false, true], 'the PIN left the link file; the wait remembers it held');
+  const held = hosting.joinText(code, sn('bob'), { state: 'waiting' });
+  assert.match(held, /^Your PIN was accepted; the host's sub-human is older, so their card asks them to let you in to room vole-9875 \(it shows check [0-9a-f]{4}-[0-9a-f]{4}\)\. Once they do/);
+  assert.doesNotMatch(held, /If they gave you a PIN/);
 });
 
 test('join news: what the join command already said is not said again by the tail', async t => {

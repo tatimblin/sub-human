@@ -63,6 +63,9 @@ export interface HelloParams {
   /** an invite line's SECRET word */
   invite?: InviteSecret;
   pin?: Pin;
+  /** with an invite and no pin: ask the host person's card instead of being asked for the PIN (additive; a host before
+   *  it ignores it and answers PIN_NEEDED) */
+  knock?: boolean;
   /** the seat an invite line's PIN asks for, and this machine's short name (both as the joiner says) */
   as?: { name: string; label: string };
   /** a fresh random word; the reply's host proves the host home's machine key over it */
@@ -262,6 +265,8 @@ export interface AdmissionRecord extends InviteLife {
   told?: string[];
   /** the other machines (proven ids) that presented this used invite: the room heard of each once (invites.ts) */
   others?: string[];
+  /** the knock this machine's right PIN replaced (invites.ts): that machine's link is refused from then on */
+  replaced?: { machine: MachineId; key: string | null; name: string };
 }
 /** One record of the host document remote/invites, keyed by sha256(secret). */
 export type InviteRecord = ShortInvite | AdmissionRecord;

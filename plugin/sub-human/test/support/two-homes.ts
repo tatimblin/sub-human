@@ -11,17 +11,21 @@
  *                                     hooks/handlers/mod-hello.ts writes it; join and every prompt write it first
  *     join(seat, args, env?), say(seat, text), plain(seat, text)    the join expansion (env: e.g. SUB_HUMAN_WEB_FRONT
  *                                     for `invite --web`); an @room post; a prompt
+ *     take(seat, code)                the hooks module seating a let-in join on its own (the tail's take: no args, the
+ *                                     nonce, sub_human_take)
  *     linkFor(code, joiner)           a link to a room hosted here for the second home `joiner`, its token written
  *                                     to the joiner's link file (no invite, no PIN, no card: no command makes one;
  *                                     the robustness tests link with it); then joiner.join(seat, `NAME CODE`)
- *     joinVia(host, hostSeat, seat, {as?, line?, pin?, invite?, front?}) -> Promise<{shown, line, code, pin, typed, gave, admitted, seated}>
+ *     letIn(hostSeat, code)           the host person's Let in on the card of the join request waiting in room code
+ *     joinVia(host, hostSeat, seat, {as?, line?, pin?, invite?, front?, knock?}) -> Promise<{shown, line, code, pin, typed, gave, seated}>
  *                                     (once seated, it waits until the seat resolves here: the mirror's members)
  *                                     the whole join from a second home: `/sub-human invite --pipe` (or invite: other
  *                                     invite args; front: `invite --web` behind that test front, lib/env.ts webFront) on the host, unless line (and its pin) is
- *                                     given; the line typed here (a hidden step), the PIN once the host asks for it
- *                                     (`/sub-human join PIN`, hidden too), the host's `/sub-human admit REF`, the link
- *                                     online, then a bare /sub-human (the seat)
- *   shownInvite(text) -> {line, dest, code, word, pin} | null   an invite's text as the host's person reads it: the
+ *                                     given; the line typed here (a hidden step: it knocks), the PIN while the card waits
+ *                                     (`/sub-human join PIN`, hidden too; the right one lets it in, no card), or with
+ *                                     knock no PIN: the host's card's Let in (letIn); the link online, then a bare
+ *                                     /sub-human (the seat)
+ *   shownInvite(text) ->{line, dest, code, word, pin} | null   an invite's text as the host's person reads it: the
  *                                     line (without "/sub-human "), its parts and the PIN told apart
  *     workers(script, input, seat) -> n     worker threads that hook started (test/support/worker-probe.ts)
  *     tail(seat, seconds) -> Promise<stdout>   seat's tail (scripts/sub-human tail, its NDJSON events) for that long
@@ -45,11 +49,11 @@ import type { HookInput, HookLine } from '../hooks/helpers.ts';
 import { must } from './must.ts';
 import * as identity from '../../lib/identity.ts';
 import * as hostLinks from '../../lib/remote/host-links.ts';
+import * as admission from '../../lib/remote/admission.ts';
 import * as store from '../../lib/room/store.ts';
 import * as links from '../../lib/room/links.ts';
 import * as homeMod from '../../lib/home.ts';
 import * as linkConnect from '../../lib/remote/link-connect.ts';
-import * as admission from '../../lib/remote/admission.ts';
 import * as linkSocket from '../../lib/remote/link-socket.ts';
 import type { RoomCode } from '../../lib/brand.ts';
 import { roomCode } from '../../lib/text.ts';
@@ -103,6 +107,17 @@ class Machine {
   }
 
   join(seat: Seat, args: string, env: Env = {}): MachineRun { this.lease(seat); return this.hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: args }, seat, { env }); }
+  /** A /sub-human command the hooks module ran (mod/deliver.ts command.run: the session's nonce), not the classic hook. */
+  modJoin(seat: Seat, args: string): MachineRun {
+    this.lease(seat);
+    return this.hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: args, sub_human_via: 'command.run', sub_human_nonce: seat.nonce }, seat);
+  }
+  /** The hooks module seating a let-in join on its own (mod/deliver.ts takeSeat on the tail's take): the join hook with
+   * no args, the session's nonce and the room (mod/core/command.ts joinPayload take). */
+  take(seat: Seat, code: RoomCode): MachineRun {
+    this.lease(seat);
+    return this.hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: '', sub_human_via: 'command.run', sub_human_nonce: seat.nonce, sub_human_take: code }, seat);
+  }
   /** A link (no invite, no PIN, no card) to room code hosted here, for the second home `joiner` on this machine (pipe):
    * the joiner's link file holds its token (the join over it is then `NAME CODE`). */
   linkFor(code: RoomCode, joiner: Machine): void {
@@ -113,26 +128,39 @@ class Machine {
   }
 
   /** The whole join from this (second) home: the host's invite line and its PIN, typed here, the host's admit, then the seat. */
-  async joinVia(host: Machine, hostSeat: Seat, seat: Seat, { as = seat.name, line, pin, invite = 'invite --pipe', front, ms = 15_000 }: { as?: string; line?: string; pin?: string; invite?: string; front?: string; ms?: number } = {}) {
+  /** The host person's Let in on the card of the one join request waiting in room code (the hooks build the card from
+   * "admit REF" in consent's PreToolUse; its PostToolUse records the answer, signed with hostSeat's key). */
+  letIn(hostSeat: Seat, code: RoomCode): MachineRun {
+    const ref = must(this.lib(() => admission.pending(code))[0], 'a join request waiting for the card').ref;
+    const pre = this.hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: `admit ${ref}`, options: [] }] } }, hostSeat);
+    const card: unknown = must(must(pre.json).hookSpecificOutput, `the card for ${ref}`).updatedInput;
+    const questions: unknown[] = card && typeof card === 'object' && 'questions' in card && Array.isArray(card.questions) ? card.questions : [];
+    const first = questions[0];
+    const q = must(first && typeof first === 'object' && 'question' in first && typeof first.question === 'string' ? first.question : null, 'the card\'s question');
+    return this.hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: { questions }, tool_response: { questions, answers: { [q]: 'Let in' } } }, hostSeat);
+  }
+
+  async joinVia(host: Machine, hostSeat: Seat, seat: Seat, { as = seat.name, line, pin, invite = 'invite --pipe', front, knock = false, ms = 15_000 }: { as?: string; line?: string; pin?: string; invite?: string; front?: string; knock?: boolean; ms?: number } = {}) {
     const shown = line ? null : front ? host.join(hostSeat, 'invite --web', { SUB_HUMAN_WEB_FRONT: front }) : host.join(hostSeat, invite);
     const inv = shownInvite(line ? `/sub-human ${line.replace(/^\/sub-human /, '')}${pin ? `\napart from the line: ${pin}` : ''}` : shown?.json?.reason || '');
     if (!inv) throw new Error(`no invite line in: ${JSON.stringify(shown && shown.json)}`);
     const { code } = inv;
     const typed = this.join(seat, `${inv.line}${as ? ` --as ${as}` : ''}`);
-    const asked = await h.until(() => this.lib(() => !!(links.get(code) || {}).pin_wanted), ms, 50);
-    if (!asked) throw new Error(`the host never asked for the PIN: ${JSON.stringify(typed.json)} ${typed.stderr} ${JSON.stringify(this.lib(() => links.get(code)))}`);
-    const gave = this.join(seat, `join ${inv.pin}`);
-    const ref = await h.until(() => { try { const q = host.lib(() => admission.pending(code)); return q.at(-1)?.ref ?? null; } catch { return null; } }, ms, 50);
-    if (!ref) throw new Error(`no join request on the host: ${JSON.stringify(gave.json)} ${gave.stderr}`);
-    const admitted = host.join(hostSeat, `admit ${ref}`);
+    // the line alone knocks (the host's card waits); a host before the knock asks for the PIN instead
+    const asked = await h.until(() => this.lib(() => { const l = links.get(code); return !!(l && (l.awaiting || l.pin_wanted)); }), ms, 50);
+    if (!asked) throw new Error(`the host never answered the line: ${JSON.stringify(typed.json)} ${typed.stderr} ${JSON.stringify(this.lib(() => links.get(code)))}`);
+    // knock: the host person's card lets it in (consent's Pre builds it, its Post records the Let in); else the right
+    // PIN lets the machine in by itself: no card, no admit on the host
+    const gave = knock ? host.letIn(hostSeat, code) : this.join(seat, `join ${inv.pin}`);
     const linked = await h.until(() => this.lib(() => (links.get(code) || {}).token), ms, 50);
-    if (!linked) throw new Error(`the link never came up: ${JSON.stringify(this.lib(() => links.get(code)))}`);
+    if (!linked) throw new Error(`the link never came up: ${JSON.stringify(gave.json)} ${gave.stderr} ${JSON.stringify(this.lib(() => links.get(code)))}`);
     const seated = this.join(seat, '');
     // the seat is the host's to record: this home's mirror shows it once the members document streams back, and
     // until then a hook here cannot resolve it (a prompt typed that fast reads "not in a room")
     if (seated.json && !seated.json.decision) await h.until(() => this.lib(() => identity.resolveBySession(seat.sid)), ms, 50);
-    return { shown, line: inv.line, code, pin: inv.pin, typed, gave, admitted, seated };
+    return { shown, line: inv.line, code, pin: inv.pin, typed, gave, seated };
   }
+
   plain(seat: Seat, text: string): MachineRun {
     this.lease(seat);
     const input = { hook_event_name: 'UserPromptSubmit', prompt: text, prompt_id: crypto.randomUUID(), sub_human_origin: 'composer', sub_human_nonce: seat.nonce };
@@ -206,7 +234,7 @@ class Machine {
 
 /** An invite's text as the host's person reads it (lib/remote/hosting.ts inviteText): the line and the PIN told apart. */
 function shownInvite(text: string): { line: string; dest: string; code: RoomCode; word: string; pin: string } | null {
-  const m = /\/sub-human (join (\S+)(?: ([a-z]+-\d{4}))? ([0-9a-z]{39})((?: --(?:via|home) \S+)*))\s*$/m.exec(text);
+  const m = /\/sub-human (join ([^\s#]+)(?: ([a-z]+-\d{4}))?[ #]([0-9a-z]{39})((?: --(?:via|home) \S+)*))\s*$/m.exec(text);
   const p = /apart from the line[^\n]*: (\d{4})\s*$/m.exec(text);
   if (!m || !p) return null;
   const [, line = '', dest = '', named, word = ''] = m;

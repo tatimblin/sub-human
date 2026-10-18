@@ -1,8 +1,8 @@
 // An invite over ssh end to end, two homes and no sshd (test/support/fake-ssh.ts plays sshd for the host account the
 // joiner logs into with their own ssh login). /sub-human invite --ssh shows `/sub-human join DEST ROOM SECRET --home H`
 // and the PIN apart, and writes nothing to authorized_keys; the joiner's line dials through that login: the host's
-// machine key is checked against the line before the SECRET goes, the host asks for the PIN, the PIN typed, the host
-// person's card lets the machine in, a bare /sub-human seats it, bound to its name, under the link id its serve's argv
+// machine key is checked against the line before the SECRET goes, the line with no PIN knocks, the PIN typed while the
+// host's card waits lets the machine in (no card), a bare /sub-human seats it, bound to its name, under the link id its serve's argv
 // carries (kick finds it). A joiner without a login of their own, or a line that names another host, sends nothing.
 import test from 'node:test';
 import type { TestContext } from 'node:test';
@@ -50,7 +50,7 @@ async function until<T>(fn: () => T, ms = 10_000, what = 'condition'): Promise<T
   throw new Error(`timed out waiting for ${what}`);
 }
 
-test('ssh invite: the line names the person\'s own ssh login (and the host\'s folder); nothing goes to authorized_keys; the line, the PIN, the card, the seat', async t => {
+test('ssh invite: the line names the person\'s own ssh login (and the host\'s folder); nothing goes to authorized_keys; the line, the PIN (no card), the seat', async t => {
   const { host, remote, alice, bob, code, ak } = rig(t);
   const out = host.join(alice, 'invite --ssh me@devbox');
   assert.ok(hiddenBlock(out), out.stderr);
@@ -63,7 +63,7 @@ test('ssh invite: the line names the person\'s own ssh login (and the host\'s fo
 
   const typed = remote.join(bob, `${m.line} --as bob`);
   assert.ok(hiddenBlock(typed), typed.stderr);
-  await until(() => remote.lib(() => !!(links.get(code) || {}).pin_wanted), 10_000, 'the host asking for the PIN');
+  await until(() => remote.lib(() => !!(links.get(code) || {}).awaiting), 10_000, 'the line knocking (the host\'s card waits)');
   const lf = must(remote.lib(() => links.get(code)));
   const t0 = lf.transport;
   assert.ok(t0.kind === 'ssh', 'an ssh link');
@@ -74,11 +74,10 @@ test('ssh invite: the line names the person\'s own ssh login (and the host\'s fo
   assert.equal(fs.existsSync(remote.lib(() => links.dirOf(code))), false, 'no key of its own: nothing in a link folder');
 
   const gave = remote.join(bob, `join ${m.pin}`);
-  assert.match(must(gave.json?.reason), /checked your PIN\. A card there now asks them to let you in \(check [0-9a-f]{4}-[0-9a-f]{4}\)/);
-  const req = must(host.lib(() => admission.pending(code))[0], 'the request');
-  assert.equal(req.link, linkId, 'the request reserves the link id its login names');
-  assert.equal(req.key, null);
-  assert.match(must(host.join(alice, `admit ${req.ref}`).json?.reason), /let in: bob/);
+  assert.match(must(gave.json?.reason), new RegExp(`the host let you in to room ${code}: type /sub-human to join it as bob`), 'the right PIN lets it in (classic: no module takes the seat, so the bare /sub-human does)');
+  assert.equal(host.lib(() => admission.pending(code)).length, 0, 'no card');
+  const rec = must(host.lib(() => admission.admissions(store.open(code), { all: true }))[0], 'the admission record');
+  assert.deepEqual([rec.link, rec.key, rec.admit, rec.admitted_by], [linkId, null, 'let-in', 'pin'], 'let in by the PIN, on the link id its login names');
   await until(() => remote.lib(() => (links.get(code) || {}).token), 10_000, 'the token');
   const seated = remote.join(bob, '');
   assert.equal(must(seated.json).decision, undefined, seated.stdout);

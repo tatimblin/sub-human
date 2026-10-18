@@ -7,9 +7,12 @@
  * connectLink: an invite line's SECRET (invite-secret.ts) goes only to the host its tag names: over the web the
  * listener's key is fetched (transports/ws.ts fetchKey), checked against the tag and pinned before the Noise
  * handshake; over ssh and a pipe the host proves its machine key over a nonce first (client.ts checkHost). A host that
- * does not hold the named key gets nothing: AUTH HOST_KEY_MISMATCH. The host's answers are kept in the link file:
- * PIN_NEEDED / PIN_WRONG / PIN_THROTTLED -> pin_wanted (the PIN dropped, the line kept: the join asks again),
- * ADMIT_WAITING -> awaiting {ref, check} (the PIN held). A token replaces the invite and its PIN, so a redial never
+ * does not hold the named key gets nothing: AUTH HOST_KEY_MISMATCH. A line with no PIN knocks (hello knock: true):
+ * the host asks its person's card, and a host before the knock answers PIN_NEEDED. The host's answers are kept in the
+ * link file: PIN_NEEDED / PIN_WRONG / PIN_THROTTLED -> pin_wanted (the PIN dropped, the line kept: the join asks
+ * again), ADMIT_WAITING -> awaiting {ref, check} (the knock waits for the card; a PIN typed meanwhile is sent on the
+ * next dial, and the right one lets it in at once; a wrong or too-early one is kept in pin_wanted and the link keeps
+ * dialing, so the card can still let it in). A token replaces the invite and its PIN, so a redial never
  * sends the PIN again; an invite the host refused (AUTH) is scrubbed with its PIN, so the link file keeps no secret in
  * clear. The machine id the host derives from this home's machine key is kept (home.ts setMachineIn).
  *
@@ -86,11 +89,21 @@ function keepAnswer(code: RoomCode, e: unknown, word: { secret: Buffer }, sentPi
       const ref = secretMod().admissionRef(word.secret);
       // the check the host's card shows: this machine's proven id and, over the web, this link's own key
       const check = secretMod().joinCheck(machineKeyMod().idOf(machineKeyMod().publicKey()), ownKey);
-      linksMod.set(code, { ...rest, awaiting: cur.awaiting ?? { at, ref, check, expires_at: new Date(Date.now() + config.ADMIT_TTL_MS).toISOString() } });
+      const awaiting = cur.awaiting ?? { at, ref, check, expires_at: new Date(Date.now() + config.ADMIT_TTL_MS).toISOString() };
+      // a PIN that went and is answered ADMIT_WAITING held: an older host still asks its card after a right PIN
+      linksMod.set(code, { ...rest, awaiting: sentPin ? { ...awaiting, pin: true } : awaiting });
     }
     return true;
   }
   return false;
+}
+
+/** A PIN refused (wrong, or too soon) while this machine's knock waits for the host's card: the card can still let it
+ * in, so the link keeps dialing (OFFLINE ADMIT_WAITING, never a stop); the PIN step stays in pin_wanted. */
+function stillKnocking(code: RoomCode, e: unknown): unknown {
+  const why = reasonOf(e);
+  if (errCode(e) !== 'AUTH' || (why !== 'PIN_WRONG' && why !== 'PIN_THROTTLED') || !linksMod.get(code)?.awaiting) return e;
+  return new RoomError('OFFLINE', `${msgOf(e)}; the host's card still waits`, 'ADMIT_WAITING');
 }
 
 const keyFile = (code: RoomCode): string => path.join(linksMod.dirOf(code), 'client-x25519.json');
@@ -140,7 +153,8 @@ async function connectLink(code: RoomCode): Promise<Client> {
   // an invite before the login: an invite line over ssh rides the person's own login, and still goes through its PIN
   // and the host person's card (a login link would be the account owner's, with neither)
   const cred = l.token ? { token: l.token }
-    : word ? { invite: l.invite, ...(sentPin ? { pin: l.pin } : {}), ...(l.join_as ? { as: { name: l.join_as, label: joinerLabel() } } : {}) }
+    // no PIN: knock (the host person's card decides); a host before the knock asks for the PIN instead
+    : word ? { invite: l.invite, ...(sentPin ? { pin: l.pin } : l.join_as ? { knock: true } : {}), ...(l.join_as ? { as: { name: l.join_as, label: joinerLabel() } } : {}) }
     : { login: true };
   // machine: this machine's id in the room (the host's, once it said one); machineKey: the proof the host derives it from
   // an invite line's hello proves the machine key over the host's challenge (a proof good in that session only)
@@ -151,7 +165,7 @@ async function connectLink(code: RoomCode): Promise<Client> {
   let c: Client;
   try { c = await clientMod().connect(t, opts); } catch (e) {
     // an invite line's PIN steps: kept in the link file (the join asks for the PIN again, or waits for the card)
-    if (word && keepAnswer(code, e, word, sentPin, own ? own.pub.toString('base64url') : null)) throw e;
+    if (word && keepAnswer(code, e, word, sentPin, own ? own.pub.toString('base64url') : null)) throw stillKnocking(code, e);
     // the host refused the invite (a wrong PIN, burnt, used, expired): it and its PIN are spent here too, so the link
     // file keeps no secret in clear (a new join writes a fresh one)
     if (!l.token && typeof l.invite === 'string' && errCode(e) === 'AUTH') scrubRefused(code, msgOf(e), reasonOf(e));
@@ -185,4 +199,4 @@ async function loginRefused(l: Link, t: TransportLike | Promise<TransportLike>, 
   return why ? new RoomError('AUTH', why.message, why.reason) : e;
 }
 
-export { connectLink, loginRefused, linkKey, joinerLabel, pipeLocator, sshLocator, transportOf };
+export { connectLink, keepAnswer, loginRefused, linkKey, joinerLabel, pipeLocator, sshLocator, transportOf };

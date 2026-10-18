@@ -102,7 +102,8 @@ export const ADMIT_CARD_MS: number = 24 * 60 * 60_000;
 // An invite's PIN is checked online only (lib/remote/invites.ts); it burns at the last wrong one, at INVITE_TTL_MS, or
 // on success.
 // After the n-th wrong PIN it takes none for PIN_BACKOFF_MS * 2^(n-1) (the joiner waits one step longer). At most
-// SHORT_LIVE_MAX open per room. A joiner whose PIN held waits ADMIT_TTL_MS for the host person's card.
+// SHORT_LIVE_MAX open per room. A joiner whose PIN held is let in at once; a join request with no PIN waits
+// ADMIT_TTL_MS for the host person's card.
 export const INVITE_TTL_MS: number = 15 * 60_000;
 export const INVITE_PIN_TRIES = 5;
 export const PIN_BACKOFF_MS = 2000;              // SUB_HUMAN_PIN_BACKOFF_MS, honoured under the tests only (testMs)

@@ -2,6 +2,23 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 0.5.0-beta.23 (2026-10-18), private beta: join in one line
+
+Tested on Claude Code 2.1.296 (the unit and hooks-module wiring tests; the demo's S2 and S11 and the lab were updated but not run).
+
+### Added
+- **Join in one line.** The joiner types the invite line with the PIN after it, `/sub-human join URL#SECRET PIN` (over ssh `/sub-human join HOST ROOM SECRET PIN`), and is in: the right PIN lets the machine in with no card on the host and no second command. A web line now carries its SECRET as the URL's `#` fragment; the old `URL SECRET` form still works, and so does a PIN typed later with `/sub-human join PIN`.
+- **The host sees who joined.** A machine let in by its PIN gives the host's room one line, `NAME joined from MACHINE (check XXXX-XXXX) · not them? /sub-human kick NAME`: the joiner's screen shows the same check. A name that sits in the room from another machine is renamed (`NAME2`) as the card does.
+- **The seat is taken for you.** Once a machine is let in (by its PIN or the host's card), the session that typed the line takes its seat on its own, in a turn of its own that holds no secret: `You're in room CODE as NAME (check …)`. A bare `/sub-human` is only needed when that session was closed before the host answered.
+- **No PIN knocks.** The line alone asks the host: their Claude Code shows the Let in / Refuse card with the check, and the joiner reads `Asked the host to let you in …`; they can still type `/sub-human join PIN` while it waits. A knock spends no PIN try. A wrong PIN never turns into a card, and once one was typed for an invite, a knock from any machine is asked for the PIN. The right PIN from another machine replaces a waiting knock (someone with only a leaked line can't lock the real joiner out): the knock's card goes, its join stops, and the room says so with both checks.
+- **Copy card.** After `/sub-human invite`, a card asks whether to copy the invite line to your clipboard (Copy / Skip): the line only, never the PIN (`pbcopy`, `wl-copy`, `xclip` or `clip.exe`). `/sub-human invite --no-card`, or `SUB_HUMAN_INVITE_CARD=0`, leaves it out; a session that is not interactive never shows it.
+
+### Changed
+- **`/sub-human invite` goes over your tailnet when Tailscale is up here** (Tailscale Serve, as `--web`), else over ssh as before; `SUB_HUMAN_SSH_ADDR` set keeps it on ssh, and `--ssh` names ssh. Funnel is never chosen for you: a tailnet invite ends with `Off your tailnet? /sub-human invite --public`, and a joiner whose connection to a ts.net name times out is told the host may need `--public`. A tailnet invite that fails falls back to ssh with one line why.
+- The admit wake on the host now comes only for a knock (a line typed without its PIN).
+- A web invite says that an older sub-human on the joiner's side takes the line with a space in place of the `#`.
+- The plugin's README, skill hint and help describe the new flow first; the demo's S2 (jess over ssh) types the line with the PIN, and S11 (carol over the pipe) keeps the knock and the card.
+
 ## 0.5.0-beta.22 (2026-10-18), private beta: finding node, and the lab green again
 
 Tested on Claude Code 2.1.296 (and a headless session with no node on `PATH`: the room server connected).

@@ -14,8 +14,8 @@
  *   wssHost(t, lab, code, host) -> port   (1.1) the host's listener on devbox 127.0.0.1:LAB_WS_PORT (LAB_WS_LISTEN_CMD)
  *   wssJoin(t, lab, host, code, svc, name) -> Promise<{seat, name, ok, out}>   (1.1) alice mints a URL + SECRET line and a PIN
  *                                     for https://tls-front (`/sub-human invite --web`: the devbox's SUB_HUMAN_WEB_FRONT,
- *                                     honoured under SUB_HUMAN_LAB=1), NAME types the line, alice's card lets them in, a
- *                                     bare /sub-human seats
+ *                                     honoured under SUB_HUMAN_LAB=1), NAME types the line (it knocks), then the PIN,
+ *                                     which lets them in with no card; a bare /sub-human seats
  */
 import type { Dump, Hosts, Lab, LogLine, SeatDriver, T } from '../lab.ts';
 import { parseJson } from '../../lib/io.ts';
@@ -83,7 +83,7 @@ export async function converge(t: T, host: SeatDriver, code: string, mirrors: Se
 }
 
 export const WS_PORT = Number(process.env.LAB_WS_PORT || 7420);
-const WEB_LINE_RE = /\/sub-human (join https:\/\/tls-front\/\S+ [0-9a-z]{39})\n/;
+const WEB_LINE_RE = /\/sub-human (join https:\/\/tls-front\/[^\s#]+[ #][0-9a-z]{39})\n/; // URL#SECRET (an older host's URL SECRET)
 const PIN_RE = /apart from the line[^\n]*: (\d{4})\n/;
 const LAB_CA_ENV = { NODE_EXTRA_CA_CERTS: '/etc/lab-ca.crt' };
 
@@ -103,11 +103,10 @@ export async function wssJoin(t: T, lab: Lab, host: SeatDriver, code: string, sv
   t.ev.invite(line, pin);
   const seat = lab.seat(svc, { env: LAB_CA_ENV });
   const typed = seat.short(name, line);
-  if (!(typed.asked || await t.until(() => !!seat.linkfile(code).pin_wanted, 45_000, 250))) return { seat, name, ok: false, out: typed.out };
+  // with no PIN the line knocks (the host's card waits); the PIN typed then lets it in with no card
+  if (!(typed.asked || typed.knocked || await t.until(() => { const l = seat.linkfile(code); return !!(l.pin_wanted || l.awaiting); }, 45_000, 250))) return { seat, name, ok: false, out: typed.out };
   const l = seat.pin(name, pin);
-  if (!l.waiting) return { seat, name, ok: false, out: l.out };
-  const card = host.admitcard('alice', 'Let in');
-  if (!card.ok) return { seat, name, ok: false, out: `card: ${card.out}` };
+  if (!l.linked) return { seat, name, ok: false, out: l.out };
   if ((await waitState(seat, code, 'online', 45_000)) === null) return { seat, name, ok: false, out: `not online: ${JSON.stringify(seat.link(code))}` };
   const j = seat.expand(name, '');
   return { seat, name, ok: j.ok, out: j.out };

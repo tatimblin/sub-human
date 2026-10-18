@@ -17,19 +17,24 @@
  */
 import type { JoinPayload, JoinReply, HookJson, HookJsonSpecific, Loose, OriginLike, PinnedStatus, RunOutput, SubHumanRead } from './types.ts';
 import type { PinnedReport } from '../../hooks/types.ts';
+import { copyLine } from './copy.ts';
 
 /** The command as command.run names it (a plugin skill's name, or its bare form). */
 export const COMMANDS: readonly string[] = Object.freeze(['sub-human:sub-human', 'sub-human']);
 
 /** The one rule for a prompt that may carry a secret (lib/commands/index.ts answers it hidden): `join`, `invite` and `admit`, any word of 3-10 digits (a PIN), and any word
- * shaped like an invite line's SECRET (SECRET_WORD). */
+ * shaped like an invite line's SECRET (SECRET_WORD) or carrying one as its fragment (a web line's URL#SECRET). */
 const SECRET_VERBS = ['join', 'invite', 'admit'];
 const DIGITS = /^[0-9]{3,10}$/;
 /** An invite line's SECRET (lib/remote/invite-secret.ts: 39 characters of Crockford base32, read in either case), with
  * room for a paste that lost or doubled a few: any word of 32-48 letters and digits is taken for one. */
 export const SECRET_WORD: RegExp = /^[0-9A-Za-z]{32,48}$/;
+/** A web invite line's SECRET as its URL's fragment (`https://HOST/…/sub-human/ROOM#SECRET`), SECRET_WORD's shape. */
+const FRAGMENT = /#[0-9A-Za-z]{32,48}(?![0-9A-Za-z])/;
+/** The SECRET a word carries as its fragment, or null. */
+export const fragmentSecret = (w: string): string | null => FRAGMENT.exec(w)?.[0].slice(1) ?? null;
 const words = (args: unknown) => String(args ?? '').trim().split(/\s+/).filter(Boolean);
-const secretShaped = (w: string) => DIGITS.test(w) || SECRET_WORD.test(w);
+const secretShaped = (w: string) => DIGITS.test(w) || SECRET_WORD.test(w) || FRAGMENT.test(w);
 export const mayHoldSecret = (args: unknown): boolean => { const a = words(args); const [verb = ''] = a; return SECRET_VERBS.includes(verb) || a.some(secretShaped); };
 /** A word of the prompt is PIN- or SECRET-shaped: lib/commands/index.ts never hands such a prompt a seat's block. */
 export const hasPinWord = (args: unknown): boolean => words(args).some(secretShaped);
@@ -48,13 +53,15 @@ export function answersItself(e: { args?: unknown; origin?: OriginLike } | null 
 
 /** hooks/handlers/join.ts's stdin: the UserPromptExpansion payload Claude Code would give it, marked as the module's.
  * mode: the session's permission mode as the module last saw it (mod/core/facts.ts), which the join warns about when it
- * is bypassPermissions; left out when unknown, as a payload without one. */
-export function joinPayload({ sid, cwd, args, nonce, mode }: { sid: unknown; cwd: unknown; args: unknown; nonce: unknown; mode?: unknown }): JoinPayload {
+ * is bypassPermissions; left out when unknown, as a payload without one. take: the room whose let-in join the module
+ * seats on its own (mod/deliver.ts takeSeat, args ''): that join's seat, or nothing (never a new room). */
+export function joinPayload({ sid, cwd, args, nonce, mode, take }: { sid: unknown; cwd: unknown; args: unknown; nonce: unknown; mode?: unknown; take?: string }): JoinPayload {
   return {
     hook_event_name: 'UserPromptExpansion', session_id: sid, cwd, expansion_type: 'slash_command',
     command_name: 'sub-human:sub-human', command_args: String(args ?? ''), command_source: 'plugin',
     ...(typeof mode === 'string' && mode ? { permission_mode: mode } : {}),
     sub_human_via: 'command.run', sub_human_nonce: nonce,
+    ...(take ? { sub_human_take: take } : {}),
   };
 }
 
@@ -80,7 +87,9 @@ export function lastLine(text: unknown): string {
   const parts = line.replace(/^sub-human: /, '').split(/(\s+)/);
   // a number with its unit after it ("10000 ms") is a measure, not a PIN
   const unit = (i: number) => /^(ms|s|bytes|KiB|MiB)\b/.test(parts[i + 2] || '');
-  const masked = parts.map((w, i) => (secretShaped(w.replace(/[.,;:)("']+$|^[("']+/g, '')) && !unit(i) ? '…' : w)).join('');
+  // a URL keeps all but its fragment's SECRET
+  const mask = (w: string, i: number) => (FRAGMENT.test(w) ? w.replace(FRAGMENT, '#…') : secretShaped(w.replace(/[.,;:)("']+$|^[("']+/g, '')) && !unit(i) ? '…' : w);
+  const masked = parts.map(mask).join('');
   return masked.length > 160 ? `${masked.slice(0, 159)}…` : masked;
 }
 
@@ -151,10 +160,12 @@ export function readReply(run: RunOutput | null | undefined, { ms = null, error 
   const one = (s: unknown) => (typeof s === 'string' && s ? s.replace(/\n/g, ' ') : null);
   const status = p && one(p.status);
   const short = p && one(p.short);
+  const line = p && copyLine(p.line); // the copy card's line: never one with a PIN-shaped word (mod/core/copy.ts)
   const pinned: PinnedStatus | null = p && status ? {
     status, ms: Math.min(Number(p.ms) > 0 ? Number(p.ms) : PINNED_MS, PINNED_MS),
     ...(short && typeof p.cut === 'string' && p.cut ? { short, cut: noticeLines(p.cut) } : {}),
     ...(typeof p.ref === 'string' && /^[0-9a-f]{12}$/.test(p.ref) ? { ref: p.ref } : {}),
+    ...(line ? { line } : {}),
   } : null;
   return { kind: 'say', lines: noticeLines(say.say), refused: say.refused === true, shareable: say.shareable === true, ...(pinned ? { pinned } : {}) };
 }
@@ -205,10 +216,12 @@ export const PINNED_MS: number = 15 * 60_000;
  * it under the prompt and saves it nowhere; a notice is a transcript row) for status.ms. Notices only, result {} (no
  * row, no echo, nothing for the model).
  */
-export function answerOf(reply: JoinReply, { columns }: { columns?: unknown } = {}): { result: { text?: string }; logs: string[]; status?: { status: string; ms: number; ref?: string } } {
+export function answerOf(reply: JoinReply, { columns }: { columns?: unknown } = {}): { result: { text?: string }; logs: string[]; status?: { status: string; ms: number; ref?: string; line?: string } } {
   if (reply.kind === 'say' && reply.pinned) {
-    const fit = pinFor(reply.pinned, reply.lines, columns);
-    return { result: {}, logs: fit.lines, status: { status: fit.status, ms: reply.pinned.ms, ...(reply.pinned.ref ? { ref: reply.pinned.ref } : {}) } };
+    const p = reply.pinned;
+    const fit = pinFor(p, reply.lines, columns);
+    // line: the copy card's, with its ref only (mod/core/copy.ts)
+    return { result: {}, logs: fit.lines, status: { status: fit.status, ms: p.ms, ...(p.ref ? { ref: p.ref } : {}), ...(p.ref && p.line ? { line: p.line } : {}) } };
   }
   return { result: {}, logs: reply.lines };
 }

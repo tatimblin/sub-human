@@ -30,7 +30,7 @@ import * as admission from './admission.ts';
 import * as inviteSecret from './invite-secret.ts';
 import * as machineKey from './machine-key.ts';
 import * as protocol from './protocol.ts';
-import { SECRET_WORD } from '../../mod/core/command.ts';
+import { SECRET_WORD, fragmentSecret } from '../../mod/core/command.ts';
 import { RoomError } from '../room/validate.ts';
 import { localHm, isSeatName } from '../text.ts';
 import { INVITE_TTL_MS, LINK_JOIN_WAIT_MS } from '../config.ts';
@@ -145,7 +145,7 @@ function reachHints(dest: string, defaulted: boolean): string[] {
  */
 function invitePinned({ code, how, line, pin, ref, expires_at, extra = [] }: { code: RoomCode; how: string; line: string; pin: string; ref: string; expires_at: string; extra?: string[] }): Pinned {
   const at = localHm(expires_at);
-  const word = line.split(' ').find(w => SECRET_WORD.test(w));
+  const word = line.split(' ').map(w => fragmentSecret(w) ?? w).find(w => SECRET_WORD.test(w)); // a web line's: its URL's fragment
   return {
     status: `PIN ${pin} · ${line}`,
     text: inviteText({ code, how, line: '', pin: '', ref, extra, pinned: at || 'it expires' }),
@@ -177,8 +177,8 @@ function inviteText({ code, how, line, pin, ref, extra = [], pinned, cut = false
     ];
   return [
     ...send,
-    'Their machine asks them for the PIN once this one has answered; the line alone gets nobody in, nor does the PIN. After 5 wrong PINs the invite stops working.',
-    'When they have typed both, a card here asks you to let them in; nothing gets in before you answer.',
+    'They type the PIN after the line (or alone, when their machine asks for it). The line without its PIN asks you here, on a card; the PIN alone gets nobody in. After 5 wrong PINs the invite stops working.',
+    'The right PIN lets their machine in with no card here; the room says who joined, from which machine, with its check and how to kick them if it is not them.',
     `Sent it to the wrong place? /sub-human invite --cancel ${ref} cancels just this invite.`,
     ...extra,
     `They need sub-human ${protocol.PLUGIN_VERSION} or newer; an older one is told the host runs a newer version and to update (/plugin update sub-human).`,
@@ -310,7 +310,9 @@ function outcome(code: RoomCode, { waitMs = LINK_JOIN_WAIT_MS }: { waitMs?: numb
     if (stopped && stopped.why && PIN_REASONS.has(stopped.why) && lf && lf.pin_wanted) return { state: 'pin', ...(stopped.why !== 'PIN_NEEDED' ? { reason: stopped.reason } : {}) };
     if (stopped) return { state: 'refused', reason: stopped.reason };
     if (st.state === 'online' && lf && lf.token) return { state: 'linked' };
-    if (st.state === 'offline' && lf && lf.awaiting) return { state: 'waiting', reason: st.reason };
+    // a PIN typed while a knock waits, answered wrong or too soon: said, while the link keeps waiting for the card
+    if (lf && lf.awaiting && lf.pin === undefined && lf.pin_wanted && lf.pin_wanted.why) return { state: 'pin', ...(lf.pin_wanted.message ? { reason: lf.pin_wanted.message } : {}) };
+    if (st.state === 'offline' && lf && lf.awaiting && lf.pin === undefined) return { state: 'waiting', reason: st.reason };
     if (Date.now() >= until) return { state: 'waiting', reason: st.reason };
   }
 }
@@ -321,7 +323,9 @@ function joinText(code: RoomCode, name: SeatName, o: Outcome, { tells = false }:
     // the card may have let this machine in under another name (its own sits in the room from another machine)
     const as = typeof lf.join_as === 'string' ? lf.join_as : name;
     const why = lf.join_renamed ? ` (${lf.join_renamed} is in the room from another machine, and a seat's key never moves, so the host let this machine in as ${as})` : '';
-    return `the host let you in to room ${code}: type /sub-human to join it as ${as}${why}`;
+    // tells: this session's hooks module takes the seat itself (mod/deliver.ts takeSeat); else a bare /sub-human does
+    return tells ? `the host let you in to room ${code}: this session takes your seat as ${as} now${why}`
+      : `the host let you in to room ${code}: type /sub-human to join it as ${as}${why}`;
   }
   if (o.state === 'refused') return `could not join room ${code}: ${o.reason}`;
   if (o.state === 'pin') {
@@ -331,8 +335,10 @@ function joinText(code: RoomCode, name: SeatName, o: Outcome, { tells = false }:
   }
   if (lf.awaiting) {
     // no name yet: the host's card picks it (NAME2 when NAME sits in the room from another machine)
-    return `the host's machine checked your PIN. A card there now asks them to let you in (${lf.awaiting.check}). `
-      + (tells ? 'This session tells you when they do; then type /sub-human to join' : 'Once they do, type /sub-human to join')
+    // the PIN went and held, but an older host still asks its card (a newer one lets a right PIN in with no card)
+    return (lf.awaiting.pin ? `Your PIN was accepted; the host's sub-human is older, so their card asks them to let you in to room ${code} (it shows ${lf.awaiting.check}). `
+      : `Asked the host to let you in to room ${code} (their card shows ${lf.awaiting.check}). If they gave you a PIN: /sub-human join PIN. `)
+      + (tells ? 'This session takes your seat once they let you in' : 'Once they do, type /sub-human to join')
       + ` (the request waits ${minutes(configMod.ADMIT_TTL_MS)} minutes)`;
   }
   const t: { kind?: string; host?: string } = lf.transport ?? {};
@@ -342,14 +348,15 @@ function joinText(code: RoomCode, name: SeatName, o: Outcome, { tells = false }:
 }
 
 /**
- * `/sub-human join DEST ROOM SECRET` (or URL SECRET): the link file for an invite line, before any dial: the transport
- * (a web one with a fresh key of the link's own), the SECRET word and join_as. The daemon dials (lib/remote/link-
- * connect.ts connectLink): the host key the line names first, then the SECRET; the host asks for the PIN.
+ * `/sub-human join DEST ROOM SECRET [PIN]` (or URL#SECRET, URL SECRET): the link file for an invite line, before any
+ * dial: the transport (a web one with a fresh key of the link's own), the SECRET word, the PIN typed with it and
+ * join_as. The daemon dials (lib/remote/link-connect.ts connectLink): the host key the line names first, then the
+ * SECRET with the PIN; with no PIN the host asks for it.
  */
-function joinLine({ code, transport, word, name, sid }: { code: RoomCode; transport: LinkSpec; word: InviteSecret; name: string; sid?: string | null | undefined }): { code: RoomCode } {
+function joinLine({ code, transport, word, name, sid, pin }: { code: RoomCode; transport: LinkSpec; word: InviteSecret; name: string; sid?: string | null | undefined; pin?: Pin | undefined }): { code: RoomCode } {
   const t: LinkSpec = transport.kind === 'wss' || transport.kind === 'ws'
     ? { ...transport, clientKey: linkConnect.linkKey(code, { fresh: true }).pub.toString('base64url') } : transport;
-  links.set(code, { code, transport: t, invite: word, join_as: name, ...(sid ? { join_sid: sid } : {}), created_at: new Date().toISOString() });
+  links.set(code, { code, transport: t, invite: word, ...(pin !== undefined ? { pin } : {}), join_as: name, ...(sid ? { join_sid: sid } : {}), created_at: new Date().toISOString() });
   return { code };
 }
 

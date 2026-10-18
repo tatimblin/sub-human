@@ -24,9 +24,11 @@ export type Answer =
  * status, the one line "PIN 4090 · <the invite line>"; text, what the notices say instead (no secret in it); ms, how
  * long the status stays (the invite's life). When status is wider than the terminal (the module knows its width),
  * short ("PIN 4090 · SECRET <word>") is pinned instead and cut is the notice text: the line with SECRET in place of
- * the word. ref: the invite's, so the module takes it off once the invite is used, burnt or cancelled. The classic
- * hook still shows the whole text (Answer secret's text). */
-export interface Pinned { status: string; text: string; ms: number; short?: string; cut?: string; ref?: string }
+ * the word. ref: the invite's, so the module takes it off once the invite is used, burnt or cancelled. line: the invite
+ * line alone, never the PIN, set only when the module may offer its copy card (lib/commands/invite.ts: not with
+ * --no-card or SUB_HUMAN_INVITE_CARD=0); the module keeps it in memory and writes it to the clipboard on the person's
+ * Copy (mod/core/copy.ts). The classic hook still shows the whole text (Answer secret's text). */
+export interface Pinned { status: string; text: string; ms: number; short?: string; cut?: string; ref?: string; line?: string }
 
 /** What every verb is handed. pid and cur are known only once the hooks module's lease checked (the verbs marked
  * `open` run before: help, doctor). */
@@ -45,6 +47,11 @@ export interface VerbCtx {
   pubkey(code: RoomCode, name: SeatName): string;
   /** this process runs as the plugin's hook: the root of scripts/sub-human (doctor runs it) */
   pluginRoot: string;
+  /** the hooks module seats the join the host let in to this room on its own (bare only; join.ts bare) */
+  take?: RoomCode;
+  /** the hooks module ran this command (hooks/handlers/join.ts module): its tail says what the host answers and takes
+   * the seat once let in; classic (no module): a bare /sub-human does */
+  module?: boolean;
 }
 
 /** One verb: its words after the verb, and the context. */

@@ -1,5 +1,5 @@
 // S11: remote: carol joins from a second home (another machine, on this one) with the line alice's /sub-human invite
-// showed her (alice's card lets her in); carol's @room and her signoff are signed in her home and verified on the host; her mirror holds the
+// showed her (no PIN: she knocks, alice's card lets her in, her session takes the seat itself); carol's @room and her signoff are signed in her home and verified on the host; her mirror holds the
 // host's lines byte for byte; nothing session-local of hers reaches the host; her link daemon stops after she leaves
 import fs from 'node:fs';
 import path from 'node:path';
@@ -7,6 +7,10 @@ import * as paths from '../lib/paths.ts';
 import { parseJson, readJson, readText } from '../lib/io.ts';
 import type { Ctx, Det } from './context.ts';
 import type { LogEntry } from './log.ts';
+import type { Envelope } from '../../plugin/sub-human/lib/room/types.ts';
+
+/** An admission record (<room>/remote/invites.json), the parts checked. */
+interface Admission { admission?: unknown, name?: string, kind?: string, admit?: string, admitted_by?: string, admit_sig?: Partial<Envelope> & { kind?: string } }
 
 const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch (e) { return e instanceof Error && 'code' in e && e.code === 'EPERM'; } };
 
@@ -37,7 +41,23 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   const quoted = ['alice', 'carol'].flatMap(s => x.inSpan(x.entries(s), x.span('S11'))).filter(e => e.type === 'assistant' && LINE.test(x.textOf(e.message && e.message.content)));
   det('no Claude sees it: no assistant text in S11 quotes the line with its SECRET, or the PIN', quoted.length === 0, quoted.length ? `${quoted.length} assistant message(s) quote one` : 'none');
 
-  const warned = /sub-human: (?:opened room|joined |in room )[^\n]*/.exec(x.cap('S11', 'carol') || '');
+  // the line alone knocked: alice's card let carol's machine in (a person's answer, signed with her seat key), and
+  // carol's hooks module took the seat in a turn of its own (no bare /sub-human)
+  const envelope = paths.pluginLib('room/envelope.ts');
+  const recs = Object.values(readJson<Record<string, Admission | null> | null>(path.join(x.roomDir, 'remote', 'invites.json'), {}) || {})
+    .filter((r): r is Admission => !!(r && r.admission && r.name === 'carol'));
+  const rec = recs.at(-1);
+  const key = envelope.pinnedKeys(log).get('alice');
+  const signed = !!(rec && rec.admit_sig && key && envelope.verify(rec.admit_sig, key) && rec.admit_sig.from === 'alice' && rec.admit_sig.kind === 'admit');
+  det('carol typed the line without its PIN, so alice\'s card decided: the admission (pipe) is "let-in" by alice, signed with her seat key',
+    rec && rec.kind === 'pipe' && rec.admit === 'let-in' && rec.admitted_by === 'alice' && signed,
+    rec ? `admission ${rec.kind} ${rec.admit} by ${rec.admitted_by}; signature ${signed ? 'verified against alice\'s pinned key' : 'missing or not verified'}` : 'no admission record for carol in remote/invites.json');
+  const take = readText(x.stateFile('S11', 'take-carol.txt')) || '';
+  const took = take.includes(`You're in room ${code} as carol`);
+  det(`carol's session took its seat on its own once let in: "You're in room ${code} as carol" in her pane`, took,
+    took ? 'in state/S11/take-carol.txt' : 'not in state/S11/take-carol.txt (or not saved)');
+
+  const warned = /sub-human:(?:opened room|joined |in room )[^\n]*/.exec(x.cap('S11', 'carol') || '');
   det('carol\'s join prints no line (a join that works shows no warning-styled systemMessage)', !warned, warned ? `"${warned[0]}" in ${x.capName('S11', 'carol')}` : `none in ${x.capName('S11', 'carol')}`);
 
   const say = log.find(e => e.kind === 'say' && e.from === 'carol' && e.via === 'human' && e.text === DEMO.carol11);

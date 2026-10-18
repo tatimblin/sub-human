@@ -78,8 +78,11 @@ export function handle(input: JoinIn): Reply | null {
   if (!module && input.sub_human_via === 'command.run') return STALE;
   // the module's $.process.run child has no CLAUDE_PID of this session: its parent is the claude process
   const pid = identity.claudePid() || (module ? process.ppid : null);
+  // the module seating a join the host let in, on its own (mod/deliver.ts takeSeat): only from the module, never typed
+  const take = module && !args.length && identity.isRoomCode(input.sub_human_take) ? input.sub_human_take : null;
   const a = commands.run(args, {
-    sid: input.session_id, cwd: input.cwd || process.cwd(), pid, roomClaudeAgent: input.agent_type === ROOM_CLAUDE_AGENT,
+    ...(take ? { take } : {}),
+    sid: input.session_id, cwd: input.cwd || process.cwd(), pid, roomClaudeAgent: input.agent_type === ROOM_CLAUDE_AGENT, module,
     pubkey: seatKey.publicPem, pluginRoot: PLUGIN_ROOT, seat: () => whoami(input),
   });
   return toReply(a, input, module);

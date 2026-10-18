@@ -72,7 +72,7 @@ export const ENV = {
   SUB_HUMAN_WS_CONNECT_MS: { kind: 'ms', does: 'a web link\'s connect' },
   SUB_HUMAN_YES_GUARD_MS: { kind: 'ms', test: true, does: 'consent: a plan-view Yes this soon records nothing' },
   SUB_HUMAN_PIN_BACKOFF_MS: { kind: 'ms', test: true, does: 'the wait after a wrong PIN' },
-  SUB_HUMAN_ADMIT_TTL_MS: { kind: 'ms', test: true, does: 'a held join waits for the host\'s card' },
+  SUB_HUMAN_ADMIT_TTL_MS: { kind: 'ms', test: true, does: 'a join request with no PIN waits for the host\'s card' },
   // ----- numbers (envNum: Number(value); the caller's fallback) -----
   SUB_HUMAN_LISTEN_CHECK_MS: { kind: 'num', does: 'the listener: how often it checks for closed rooms' },
   SUB_HUMAN_LISTEN_PORT: { kind: 'num', does: 'the web listener\'s port' },
@@ -95,6 +95,7 @@ export const ENV = {
   SUB_HUMAN_AUTHORIZED_KEYS: { kind: 'path', does: 'the authorized_keys file (default ~/.ssh/authorized_keys)' },
   SUB_HUMAN_TAILSCALE: { kind: 'path', does: 'the tailscale binary' },
   SUB_HUMAN_TAILSCALE_WARM: { kind: 'str', does: '"0": no warm-up request to a Tailscale URL' },
+  SUB_HUMAN_INVITE_CARD: { kind: 'str', does: '"0": no card offering to copy an invite\'s line to the clipboard (as /sub-human invite --no-card)' },
   SUB_HUMAN_MACHINE_LABEL: { kind: 'str', does: 'this machine\'s short name (default the host name)' },
   SUB_HUMAN_WEB_FRONT: { kind: 'str', does: 'not a user knob: the tests\' and the lab\'s HTTPS front for --web (webFront)' },
   SUB_HUMAN_NODE: { kind: 'path', does: 'the node every plugin command runs on (hooks/node.sh), before any it looks for' },

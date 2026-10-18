@@ -477,7 +477,7 @@ test('/sub-human invite: an invite line for my room, shown to me only (a hidden 
   assert.ok(m, shown.reason);
   const pin = /tell them its PIN apart from the line \(say it, or send it another way\): (\d{4})\n/.exec(must(shown.reason));
   assert.ok(pin, shown.reason);
-  assert.match(must(shown.reason), /the line alone gets nobody in, nor does the PIN/);
+  assert.match(must(shown.reason), /The line without its PIN asks you here, on a card; the PIN alone gets nobody in/);
   assert.match(must(shown.reason), /\/sub-human invite --cancel [0-9a-f]{12}/);
   assert.notEqual(must(new RegExp(`${w.code} ([0-9a-z]{39})`).exec(must(must(w.hook('join', expand('invite --pipe'), { as: 'alice' }).json).reason)))[1], m[1], 'a new one each time');
   for (const [args, re] of [['invite --frobnicate', /usage: \/sub-human invite/], ['invite --pipe --web', /pick one/], ['invite --ssh NAME@box', /placeholder/], ['invite --ssh USER@box', /placeholder/]] as const) {
@@ -504,15 +504,25 @@ test('SECURITY: every join, invite and admit prompt (and any with a word of digi
     ['join dev vole-1234 48291', /the line's SECRET \(its last long word\) did not come through whole/], // not a SECRET
     ['join dev vole-1234 482', /did not come through whole/],
     ['join dev vole-1234 4829', /did not come through whole/], // a 0.5.0-beta.15 line: no SECRET
-    [`join dev vole-1234 ${S} 4829`, /type the line without the PIN: the host's machine asks for the PIN once it has answered/],
+    [`join dev vole-1234 ${S} 48291`, /a PIN is 4 digits: \/sub-human join LINE PIN/], // the line with a PIN after it: refused here only for a PIN that is none
+    [`join dev vole-1234 ${S} 4829 x`, /usage: \/sub-human join LINE PIN/],
+    [`join dev vole-1234 ${S} bob`, /usage: \/sub-human join LINE PIN/],
     [`join dev vole-1234 ${S.slice(0, 30)}`, /did not come through whole/],
     [`join dev vole-1234 ${S} --home rel`, /--home "rel" isn't a plain absolute path/],
     [`join dev vole-1234 ${S} --frob`, /"--frob" isn't a join option/],
     [`join dev vole-1234 ${S} extra x`, /usage: \/sub-human join/],
     ['join https://box/sub-human/vole-1234 48291', /did not come through whole/],
     ['join https://box/sub-human/vole-1234', /needs the SECRET/],
-    [`join https://box/sub-human/vole-1234 ${S} 4829`, /type the line without the PIN/],
+    [`join https://box/sub-human/vole-1234 ${S} 482`, /a PIN is 4 digits/],
     [`join https://box/sub-human/vole-1234 ${S} --home /x`, /--home goes with an ssh address/],
+    ['join https://box/sub-human/vole-1234#', /needs the SECRET/],
+    [`join https://box/sub-human/vole-1234#${S.slice(0, 30)} 4829`, /did not come through whole/],
+    [`join https://box/sub-human/vole-1234#${S} 48291`, /a PIN is 4 digits/],
+    [`join https://box/sub-human/vole-1234#${S} ${S}`, /usage: \/sub-human join LINE PIN/],
+    [`join https://box/sub-human/vole-1234#${S} 4829 x`, /usage/],
+    [`join https://box/sub-human/vole-1234#${S} 4829 --home /x`, /--home goes with an ssh address/],
+    [`join https://box/x/4829#${S} 4829`, /isn't a join address/],
+    [`https://box/sub-human/vole-1234#${S}`, /that looks like an invite line's SECRET/], // "join" left out
     [`join dev vole-1234 ${S} --via j`, /"--via" isn't a join option/],
     [`join https://box/x/4829 ${S}`, /isn't a join address.*Paste the whole line the host sent you/],
     [`join YOU@box vole-1234 ${S}`, /placeholder/],
@@ -539,6 +549,10 @@ test('SECURITY: every join, invite and admit prompt (and any with a word of digi
   }
   // a mistyped PIN or SECRET never lands anywhere the model reads, nor in the reply
   for (const word of ['48291', '4829123', S.slice(0, 30)]) assert.ok(!must(must(w.hook('join', expand(`join dev vole-1234 ${word}`), { as: 'me' }).json).reason).includes(word));
+  for (const line of [`join dev vole-1234 ${S} 48291`, `join https://box/sub-human/vole-1234#${S} 48291`, `join https://box/x/4829#${S} 4829`]) {
+    const said = must(must(w.hook('join', expand(line), { as: 'me' }).json).reason);
+    assert.ok(!said.includes(S) && !said.includes('4829'), `${line}: neither the SECRET nor the PIN is echoed`);
+  }
   for (const word of ['48291', '4829']) assert.ok(!must(must(w.hook('join', expand(`join ${word}`), { as: 'me' }).json).reason).includes(word));
   assert.deepEqual(fs.readdirSync(w.home).filter(d => d === 'links'), [], 'no link written');
   // without the hooks module's lease, a join is still hidden
@@ -717,11 +731,11 @@ test('classic (no module answering): a reply is the block reason alone, never al
 
 /** Run join.ts as the module's command.run hook does (mod/core/command.ts joinPayload): no CLAUDE_PID, the lease's
  * nonce, this test process as the claude process (the shim's parent). */
-function viaModule(w: World, name: string, args: string, { nonce = 'ab'.repeat(16), leaseNonce = nonce, mode }: { nonce?: string; leaseNonce?: string; mode?: string } = {}) {
+function viaModule(w: World, name: string, args: string, { nonce = 'ab'.repeat(16), leaseNonce = nonce, mode, take }: { nonce?: string; leaseNonce?: string; mode?: string; take?: string } = {}) {
   w.pid[name] = process.pid;
   w.sid[name] = w.sid[name] || crypto.randomUUID();
   w.lib(() => identity.writeModLease(w.sid[name], { pid: process.pid, nonce: leaseNonce }));
-  const payload = { ...expand(args), sub_human_via: 'command.run', sub_human_nonce: nonce, ...(mode ? { permission_mode: mode } : {}) };
+  const payload = { ...expand(args), sub_human_via: 'command.run', sub_human_nonce: nonce, ...(mode ? { permission_mode: mode } : {}), ...(take ? { sub_human_take: take } : {}) };
   return w.hook('join', payload, { as: name, modLease: false, env: { CLAUDE_PID: undefined } });
 }
 
@@ -743,6 +757,23 @@ test('through the module (command.run): every reply is {subHuman: {say}}, never 
   assert.equal(seat(w, 'bob').pid, process.pid, 'the seat\'s claude process is the shim\'s parent');
   const left = must(must(viaModule(w, 'bob', 'leave').json).subHuman);
   assert.deepEqual([left.say, left.refused], [`left ${w.code} · /sub-human joins again`, false]);
+});
+
+test('through the module (PLAN-JOIN step 3): a take (no args, the room) with no let-in join of this session\'s says nothing and opens no room; seated, no status either', () => {
+  const plain = new World({}, { room: false });
+  spawnSync('git', ['init', '-q', plain.cwd]);
+  spawnSync('git', ['-C', plain.cwd, 'config', 'user.name', 'Dana Scully']);
+  const none = must(must(viaModule(plain, 'me', '', { take: 'vole-1234' }).json).subHuman);
+  assert.deepEqual([none.say, none.joined], ['', undefined]);
+  const opened = path.join(plain.home, 'rooms');
+  assert.equal(fs.existsSync(opened) && fs.readdirSync(opened).length, false, 'never a room of its own');
+  const w = new World({ claude: 'sleep', alice: 'sleep' });
+  assert.equal(must(viaModule(w, 'bob', `bob ${w.code}`).json).subHuman?.joined, true);
+  const seated = must(must(viaModule(w, 'bob', '', { take: w.code }).json).subHuman);
+  assert.equal(seated.say, '', 'seated already: nothing (a status would be a notice nobody asked for)');
+  // a take is the module's alone, and only bare: words with it are the command they are
+  const typed = must(must(viaModule(w, 'bob', 'help', { take: w.code }).json).subHuman);
+  assert.match(must(typed.say), /^commands:/);
 });
 
 test('through the module (room-plan live): a join in bypass-permissions mode says so in its line', () => {
@@ -771,6 +802,9 @@ test('SECURITY through the module: an invite and anything a PIN may be typed in 
   assert.doesNotMatch(must(must(inv.pinned).cut), new RegExp(`[0-9a-z]{39}|PIN ${pin}|\\b${pin}\\b(?!.*${w.code})`));
   assert.match(must(must(inv.pinned).ref), /^[0-9a-f]{12}$/);
   assert.ok(must(inv.say).includes(must(must(inv.pinned).ref)), 'the notices name the ref --cancel takes');
+  // PLAN-JOIN step 5: the line alone for the module's copy card, the status less its PIN; never the PIN itself
+  assert.equal(`PIN ${pin} · ${must(must(inv.pinned).line)}`, must(inv.pinned).status);
+  assert.ok(!must(must(inv.pinned).line).split(/\s+/).includes(must(pin)));
   for (const args of ['join dev vole-1234 48291', `join dev vole-1234 ${SECRET} --frob`, `x ${w.code} 4829`, `x ${SECRET}`, 'join 4829', 'admit']) {
     const r = must(must(viaModule(w, 'me', args).json).subHuman);
     assert.equal(r.shareable, false, args);
