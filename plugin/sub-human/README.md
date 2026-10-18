@@ -66,12 +66,16 @@ On the host, in a session that is in the room:
 ```
 
 ```
-sub-human: invite to room vole-8126 for one machine, over the web through Tailscale Serve (your tailnet only) to this machine's listener on 127.0.0.1:7420. It works once, for 15 minutes. Its PIN and the line to send them are pinned under the prompt until 14:05: Claude Code saves neither in this conversation. Send the line; tell them the PIN apart from it (say it, or send it another way).
-sub-human: They type the PIN after the line (or alone, when their machine asks for it). The line without its PIN asks you here, on a card; the PIN alone gets nobody in. After 5 wrong PINs the invite stops working.
-sub-human: The right PIN lets their machine in with no card here; the room says who joined, from which machine, with its check and how to kick them if it is not them.
-sub-human: Sent it to the wrong place? /sub-human invite --cancel 3f9c2a1b7e0d cancels just this invite.
+sub-human: invite to room vole-8126 for one machine, over Tailscale Serve (your tailnet only), until 14:05: the line and its PIN are under the prompt (not saved in this conversation). Send the line; say the PIN separately.
+sub-human: Cancel it: /sub-human invite --cancel 3f9c2a1b7e0d · stop serving the room: /sub-human invite --stop
+sub-human: They type the PIN after the line; the line alone asks you on a card, the PIN alone gets nobody in, and 5 wrong PINs end the invite. The right PIN lets them in with no card: the room shows who joined, with a check and the kick.
+sub-human: Their machine checks this one's key (Xk3v9QpL0aZr…, named in the line) before it sends anything, so nothing in between can read along.
+sub-human: No sub-human on their machine yet? In Claude Code there: /plugin marketplace add tatimblin/sub-human, then /plugin install sub-human@sub-human, and restart it.
+sub-human: The first connection to a new ts.net name can take ~20 s while Tailscale issues its certificate; it is being fetched now, and their machine keeps trying.
 sub-human: Off your tailnet? /sub-human invite --public
 ```
+
+That is the room's first invite. Later invites to the same room show only the first two lines: the rules, the key check, the install hint, the certificate's wait, the pointer to `--public` and Funnel's warning are said once per room on this host. An invite works once, for 15 minutes.
 
 and under the prompt, on the plugin's status line:
 
@@ -79,7 +83,7 @@ and under the prompt, on the plugin's status line:
 ⚠ sub-human: PIN 4829 · /sub-human join https://box.tail1a2b.ts.net/sub-human/vole-8126#4f9k2m8q7r3t6v1w0x5y9z2a8b7c6d5e4f3g2h1
 ```
 
-Then a card asks **Copy the invite line to your clipboard? (the PIN is not copied)** — **Copy** / **Skip**. Copy puts the line, never the PIN, on your clipboard (`pbcopy`, `wl-copy`, `xclip` or `clip.exe`); Skip copies nothing. There is no card with `--no-card`, with `SUB_HUMAN_INVITE_CARD=0` in your environment, or in a session that is not interactive. Send the line by any channel; say the PIN by another.
+Then a card asks **Copy the invite line to your clipboard? (the PIN is not copied)** — **Copy** / **Skip**. Copy puts the line, never the PIN, on your clipboard (`pbcopy`, `wl-copy`, `xclip` or `clip.exe`); Skip copies nothing. After a Copy, the session's later invites are copied with no card (`line copied`); after a Skip, it asks no more. There is no card with `--no-card`, with `SUB_HUMAN_INVITE_CARD=0` in your environment, or in a session that is not interactive. Send the line by any channel; say the PIN by another.
 
 When they have typed both, your room shows one line, `carol joined from carols-mbp (check 3f9c-2a71) · not them? /sub-human kick carol`, and nothing asks you anything. Their screen shows the same check; if it is not them, kick them. When they typed the line alone, **your Claude Code shows you a card**: `Let carol (check 3f9c-2a71) on carols-mbp join room vole-8126? — Let in / Refuse`; only your answer there admits them (see [The card](#the-card)). A wrong PIN never makes a card.
 
@@ -121,18 +125,17 @@ A right PIN is your consent, said ahead: the room line names the machine with it
 
 ### Invite details
 
-An ssh invite (Tailscale not up here, `--ssh`, or `SUB_HUMAN_SSH_ADDR` set) reads the same, with `over ssh me@devbox.local` and two more lines:
+An ssh invite (Tailscale not up here, `--ssh`, or `SUB_HUMAN_SSH_ADDR` set) reads the same, with `over ssh me@devbox.local`, no `--stop`, and with the room's first invite one more line:
 
 ```
 sub-human: Over ssh this needs their own ssh login to this account (me), set up as for any ssh login: sub-human writes nothing to authorized_keys. No login here? Invite them over the web: /sub-human invite --web
-sub-human: They need sub-human VERSION or newer; an older one is told the host runs a newer version and to update (/plugin update sub-human).
 ```
 
 Its line is `/sub-human join me@devbox.local vole-8126 SECRET`: HOST ROOM SECRET, and the joiner adds the PIN after it the same way. When Tailscale is up but the tailnet invite fails, the invite says why and is over ssh instead.
 
 The status line is one line, and Claude Code cuts it at the terminal's width. When the whole line does not fit, it holds only `PIN 4829 · SECRET 4f9k…` and the notice gives the line with the word `SECRET` in its place, to fill in as you send it (the copy card still copies the whole line); in a terminal outside Claude Code, `sub-human invite` prints a new invite whole. The status line goes at once when you cancel the invite, within a few seconds once it is used or burnt, and when it expires.
 
-These dim lines are shown to you, never to your Claude, and your `/sub-human invite` itself leaves no row. VERSION is your own sub-human's version: theirs needs to be at least as new. The line's **SECRET** (a web line's `#` fragment, an ssh line's last word) is 39 characters (letters and digits only, so a chat app or mail client leaves it alone) that hold 128 bits of single-use randomness and a short tag of this machine's key. With no address given (no `--ssh`, no `SUB_HUMAN_SSH_ADDR`), an ssh invite also says that it used this machine's own name (a Mac's `.local` name reaches only the same local network) and how to give another, and, when this machine takes no ssh logins (on a Mac, Remote Login is off in System Settings → General → Sharing), that their ssh will fail and `/sub-human invite --web` is the other way. When this machine's sub-human folder is not `~/.sub-human`, an ssh line adds `--home PATH` (where their login finds it). The line carries no name (theirs comes from their git name, or `--as NAME`). `sub-human invite [--room ROOM] [--ssh [USER@HOST]] [--via JUMP]` prints the same in a terminal outside Claude Code; inside Claude Code (its `!` mode) it masks the SECRET and the PIN, because that output becomes part of the conversation. An address that still has an example's placeholder (`NAME@…`, `USER@…`, `YOU@…`) is refused.
+These dim lines are shown to you, never to your Claude, and your `/sub-human invite` itself leaves no row. Their sub-human needs to be as new as yours: an older one is told so when it dials. The line's **SECRET** (a web line's `#` fragment, an ssh line's last word) is 39 characters (letters and digits only, so a chat app or mail client leaves it alone) that hold 128 bits of single-use randomness and a short tag of this machine's key. With no address given (no `--ssh`, no `SUB_HUMAN_SSH_ADDR`), an ssh invite also says that it used this machine's own name (a Mac's `.local` name reaches only the same local network) and how to give another, and, when this machine takes no ssh logins (on a Mac, Remote Login is off in System Settings → General → Sharing), that their ssh will fail and `/sub-human invite --web` is the other way. When this machine's sub-human folder is not `~/.sub-human`, an ssh line adds `--home PATH` (where their login finds it). The line carries no name (theirs comes from their git name, or `--as NAME`). `sub-human invite [--room ROOM] [--ssh [USER@HOST]] [--via JUMP]` prints the same in a terminal outside Claude Code; inside Claude Code (its `!` mode) it masks the SECRET and the PIN, because that output becomes part of the conversation. An address that still has an example's placeholder (`NAME@…`, `USER@…`, `YOU@…`) is refused.
 
 `/sub-human invite --cancel` cancels the open invite (with several open, it lists them: `/sub-human invite --cancel REF`).
 
@@ -247,6 +250,8 @@ The room session (`claude.vole-8126`) takes no typed input and reads nothing. It
 ⏺ ✓ sent to room vole-8126 (Claude wasn't asked)
 ```
 
+Later ones in the same session read just `⏺ ✓ sent`.
+
 If your Claude Code shows the receipt as "Operation stopped by hook: ✓ sent …", that is the same receipt: nothing went wrong. A refusal of your own words (no room, nothing after the tag, the room refused it, its connection stopped) is the same kind of line, starting with `✗`, and your prompt is not put back in the input: type it again when it says so. A long paste that starts with `@room` posts too (marked `(pasted text unwrapped)`).
 
 - Only a leading tag counts: `@room ask bob later` posts, `ask @room` does not.
@@ -273,19 +278,29 @@ Every person's own words reach everyone. A Claude's post reaches you when it is 
 
 A room has plans, each with a name (`room` unless someone names another topic, such as `paging`) and versions v1, v2, …. The room keeps every version; nothing is ever overwritten.
 
-**Editing.** Ask your Claude ("let's write a room plan for cursor paging; you write the first version", "update the room plan: max 50 per page"). It calls the room's `plan` tool (op `edit`), then enters plan mode: the hooks put the plan's current version into its plan file under a short header that says it is a group-contributed plan and names the version it starts from. Your Claude edits the plan there, as with any plan, and calls ExitPlanMode. The hooks store it as the next version and tell your Claude so, with no approval dialog: storing an edit is not agreeing to it, and nothing about it asks you to say yes.
+**Editing.** Ask your Claude ("let's write a room plan for cursor paging; you write the first version", "update the room plan: max 50 per page"). It calls the room's `plan` tool (op `edit`), then enters plan mode: the hooks put the plan's current version into its plan file under a two-line header that names the room's shared plan and the version it starts from. Your Claude edits the plan there, as with any plan, and calls ExitPlanMode with no plan argument (the hooks read the file). The hooks store it as the next version and tell your Claude so, with no approval dialog: storing an edit is not agreeing to it.
 
 ```
-  ⎿  Error: sub-human: saved as room plan room v2, not agreed yet.
+  ⎿  Error: sub-human: saved as room plan room v2, not sent out yet: you check it first.
 ```
 
 Claude Code draws the receipt under the call the way it draws a refused call; it is the receipt, not a failure (what your Claude does next goes to it separately).
 
-Your own plan file is put back as it was, and your permission mode too. Everyone else sees one line, `alice's Claude for alice: plan room v2: max 50 per page`; it wakes no one.
+Your own plan file is put back as it was, and your permission mode too. Everyone else sees one line, `alice's Claude: plan room v2: max 50 per page`; it wakes no one. When it goes out, the request is one line too, `alice's Claude asks you and bob to sign off on plan room v2` (with the summary after it when both arrive together).
+
+**You check your own version first.** Nobody else is asked about a version your Claude wrote until you have seen it. Right after storing it, your Claude opens it for you in the plan view (the line reads `your new version, plan room v2, for alice: nobody else is asked until you send it out`):
+
+| You do | What happens |
+|---|---|
+| A **Yes** option | It goes out: everyone in the room is asked to sign off on it, and your Yes is your own sign-off (you are not asked again). |
+| **Tell Claude what to change**, then type what | Nothing is sent or recorded; your Claude writes the next version with your changes, and that one comes back to you first. Iterate as often as you like before anyone else is asked. |
+| **Esc** | It stays unsent; ask your Claude to show it again when you are ready. A newer version replaces it. |
+
+Until you send it out, nobody (you or another member's Claude) can ask for sign-off on it. Every version is still kept in the room, and others see the one line above.
 
 **Two edits at once.** Each edit starts from a version. If someone else's version landed first, yours is not stored: your Claude is told so, with that version's text, and asked to keep both changes (asking you only where they truly conflict) and store again. So no edit silently replaces another. At most five plans may be open (not agreed) at a time.
 
-**Sign-off.** Ask your Claude to "ask alice and me to sign off". It asks the room (op `ask`; any member's Claude may) for the current version, naming approvers (by default everyone in the room). A newer version of the same plan retires the request on an older one: answers given there do not carry over, and the new version is asked again. When someone else's Claude stores that newer version, the Claude of whoever asked for the sign-off, and of anyone who objected, is told at once, so the revision comes back to you to read and, if you want, to ask about again. If you opened the room and sit in it again from another machine over your own ssh login (`/sub-human join USER@HOST ROOM`), your seats count as one approver: the answer you give last, from either, is yours, and the decision names one seat ("agreed: tristan (also laptop)"). Seats that joined by invite are each their own person, and so is every other seat on the host itself, since people can share a machine.
+**Sign-off.** Your Yes on your own new version asks everyone. To ask again, or only some people, ask your Claude to "ask alice and me to sign off". It asks the room (op `ask`; any member's Claude may, once the version's author has sent it out) for the current version, naming approvers (by default everyone in the room). A newer version of the same plan retires the request on an older one: answers given there do not carry over, and the new version is asked again. When someone else's Claude stores that newer version, the Claude of whoever asked for the sign-off, and of anyone who objected, is told at once, so the revision comes back to you to read and, if you want, to ask about again. If you opened the room and sit in it again from another machine over your own ssh login (`/sub-human join USER@HOST ROOM`), your seats count as one approver: the answer you give last, from either, is yours, and the decision names one seat ("agreed: tristan (also laptop)"). Seats that joined by invite are each their own person, and so is every other seat on the host itself, since people can share a machine.
 
 When a request names you, your Claude opens it in Claude Code's plan-approval dialog, the same view your own plans use. The plugin's hooks put the version's text there, byte for byte, whatever your Claude wrote:
 
@@ -308,7 +323,7 @@ When a request names you, your Claude opens it in Claude Code's plan-approval di
 | You do | Recorded |
 |---|---|
 | A **Yes** option | Your sign-off on that exact version (`via=human`). |
-| **Tell Claude what to change**, then type why | Nothing yet: a notice says your note is not sent, and a card asks `Send to alice as changes requested on "…": "…"?`. **Send** records your objection, with your words byte for byte; it blocks that version. **Discard** records nothing. Until you answer the card, your Claude's room posts are refused, so its own wording of your note cannot reach the room first. |
+| **Tell Claude what to change**, then type why | Nothing yet: a card asks `Send to alice as changes requested on "…": "…"?`. **Send** records your objection, with your words byte for byte; it blocks that version. **Discard** records nothing. Until you answer the card, your Claude's room posts are refused, so its own wording of your note cannot reach the room first. Once sent, the note goes to the plan's author: their Claude is told you asked for changes and that it may revise, as they decide; your Claude may write the next version itself when your note says how (or leave it to the author). Whoever writes a version checks it first, as above, and two written at once meet the compare-and-swap below. |
 | **Esc**, or Ctrl+G edits before a Yes | Nothing. |
 
 Only an answer in a review the hooks opened counts: a Yes on a plan of your own (even one with the very text of a version) records nothing, and your Claude's own edit never asks you for a Yes.
@@ -317,7 +332,7 @@ Only an answer in a review the hooks opened counts: a Yes on a plan of your own 
 
 Your mode is never changed by a review. Showing the plan briefly enters plan mode without asking, and the hooks put you back in your own mode afterwards with no dialog: at once after an answer, or on your next prompt after Esc. A "Yes" that names another mode is set back too; the one the hint names keeps it without that extra step. Agreeing is not a go-ahead to build: your Claude does not carry the plan out.
 
-Say "show me the plan to sign off" and your Claude opens it again. With several waiting, name the plan you mean ("the paging plan", or its hash): the hooks open the one your own last words name, else the oldest, never one your Claude chose. When everyone named has agreed, the room logs a `decision` (`room: plan room v3 (3fa2c1) agreed (alice, bob)`).
+Say "show me the plan to sign off" and your Claude opens it again. With several waiting, name the plan you mean ("the paging plan", or its hash): the hooks open the one your own last words name, else the oldest, never one your Claude chose. When everyone named has agreed, the room logs a `decision` (`room: plan room v3 agreed (alice, bob)`); when someone objected, `room: plan room v3 not agreed: you asked for changes · bob agreed` (your note is in your objection's own line, not repeated).
 
 **The card, as a fallback.** When the plan view can't be used, a question card opens instead (Not yet / Agree / Object, **n** adds a note): in bypass or don't-ask mode, when `showClearContextOnPlanAccept` is on (that approval path clears the context and starts building), or for a plan over 200,000 characters. The card shows the plan beside the options when it fits (up to 2,000 characters and about 20 lines), otherwise a summary and the path. Not yet, Esc, "Chat about this" or no answer record nothing.
 

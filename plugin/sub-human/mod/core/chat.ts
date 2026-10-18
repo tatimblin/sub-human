@@ -4,7 +4,7 @@
  * or null so the engine draws the row itself.
  */
 import { parseAddr } from './seat.ts';
-import { CHAT_NEST as NEST, CHAT_LINES_MAX, FOR_CLAUDE } from './constants.ts';
+import { CHAT_NEST as NEST, CHAT_LINES_MAX, PEER_LINES_MAX, CHAT_BLANK, FOR_CLAUDE, messageLines } from './constants.ts';
 
 // one copy with lib/room/render.ts: mod/core/constants.ts owns them
 export { NEST, CHAT_LINES_MAX, FOR_CLAUDE };
@@ -15,18 +15,19 @@ const clean = (s: unknown) => String(s).replace(/\r\n?/g, '\n').replace(UNSAFE, 
 
 /**
  * A message another member's Claude sent: "bob's Claude: <first line>" ("the room's Claude: …" from claude.CODE),
- * further lines under NEST as lib/room/render.ts chatLines lays out a message, at most CHAT_LINES_MAX then
- * "[+N more lines: ctrl+o]". null when fromName is not a seat address ("NAME.CODE").
+ * further lines under NEST as lib/room/render.ts chatLines lays out a Claude's message to another: blank lines kept
+ * (a bare CHAT_BLANK), at most PEER_LINES_MAX then "[+N more lines: ctrl+o]". null when fromName is not a seat
+ * address ("NAME.CODE").
  */
 export function peerLines(fromName: unknown, text: unknown): string[] | null {
   const who = parseAddr(fromName);
   if (!who) return null;
   const label = who.name === 'claude' ? 'the room\'s Claude' : `${who.name}'s Claude`;
-  let lines = clean(text).split('\n').map(l => l.replace(/\s+$/, '')).filter(l => l.trim());
+  let lines = messageLines(clean(text), true);
   if (!lines.length) return [label];
-  const more = Math.max(0, lines.length - CHAT_LINES_MAX);
-  if (more) lines = lines.slice(0, CHAT_LINES_MAX);
-  const out = lines.map((l, i) => (i ? NEST + l : `${label}: ${l.replace(/^\s+/, '')}`));
+  const more = Math.max(0, lines.length - PEER_LINES_MAX);
+  if (more) lines = lines.slice(0, PEER_LINES_MAX);
+  const out = lines.map((l, i) => (!i ? `${label}: ${l.replace(/^\s+/, '')}` : l ? NEST + l : CHAT_BLANK));
   if (more) out.push(`${NEST}[+${more} more line${more === 1 ? '' : 's'}: ctrl+o]`);
   return out;
 }

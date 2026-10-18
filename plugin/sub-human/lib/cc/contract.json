@@ -831,7 +831,7 @@
     "{row:{...~(~,\"info\"),uuid:~}}:{reason:\"a notice that is not one text block\"}",
     "type:\"system\",subtype:\"informational\",content:~,isMeta:!1,timestamp:new Date().toISOString(),uuid:~(),level:~"
    ],
-   "note": "A plugin's $.session.append system row is kept in the transcript as {\"type\":\"system\",\"subtype\":\"informational\",\"content\":TEXT,\"level\":\"info\"} (drawn only in the ctrl+o view: session-append-notice-hidden). The hooks module appends \"sub-human: home FOLDER\" once a session holds a seat (mod/deliver.ts markHome), and an agent-view fork, whose bg job dropped a shell's SUB_HUMAN_HOME, reads the last one from the transcript it continued (lib/cc/transcript.ts lastHome, lib/identity.ts forkedAway): also after a leave, which renames the session (transcript-custom-title then says nothing)."
+   "note": "A plugin's $.session.append system row is kept in the transcript as {\"type\":\"system\",\"subtype\":\"informational\",\"content\":TEXT,\"level\":\"info\"} (drawn only in the ctrl+o view: session-append-notice-hidden). The hooks module appends \"sub-human: home FOLDER\" once a session holds a seat in a folder other than ~/.sub-human (mod/deliver.ts markHome; no mark reads as the default folder), and an agent-view fork, whose bg job dropped a shell's SUB_HUMAN_HOME, reads the last one from the transcript it continued (lib/cc/transcript.ts lastHome, lib/identity.ts forkedAway): also after a leave, which renames the session (transcript-custom-title then says nothing)."
   },
   {
    "id": "subagent-handback-message",

@@ -29,7 +29,6 @@ import * as hostLinks from './host-links.ts';
 import * as admission from './admission.ts';
 import * as inviteSecret from './invite-secret.ts';
 import * as machineKey from './machine-key.ts';
-import * as protocol from './protocol.ts';
 import { SECRET_WORD, fragmentSecret } from '../../mod/core/command.ts';
 import { RoomError } from '../room/validate.ts';
 import { localHm, isSeatName } from '../text.ts';
@@ -127,62 +126,80 @@ function remoteLogin(): 'on' | 'off' | null {
 
 /** What an ssh invite to this machine's own default address adds: the name it guessed, and Remote Login off (an
  * address the person gave, or SUB_HUMAN_SSH_ADDR, may well reach another sshd: no hint then). */
-function reachHints(dest: string, defaulted: boolean): string[] {
-  if (!defaulted) return [];
+function reachHints(dest: string, defaulted: boolean): { always: string[]; once: [string, string][] } {
+  if (!defaulted) return { always: [], once: [] };
   const host = dest.split('@').pop() || dest;
-  const out = [`${host} is this machine's own name${/\.local$/i.test(host) ? ', which only machines on the same local network can reach' : ''}. If they reach it by another name, invite with /sub-human invite --ssh USER@HOST (or set SUB_HUMAN_SSH_ADDR; an alias from their ssh config works too).`];
+  const once: [string, string][] = [['reach', `${host} is this machine's own name${/\.local$/i.test(host) ? ', which only machines on the same local network can reach' : ''}. If they reach it by another name, invite with /sub-human invite --ssh USER@HOST (or set SUB_HUMAN_SSH_ADDR; an alias from their ssh config works too).`]];
+  const always: string[] = [];
   if (remoteLogin() === 'off') {
-    out.push(process.platform === 'darwin'
+    always.push(process.platform === 'darwin'
       ? 'Remote Login is off on this Mac, so their ssh to it will fail: turn it on (System Settings > General > Sharing > Remote Login), or invite over the web: /sub-human invite --web'
       : 'no ssh server is running on this machine, so their ssh to it will fail: start sshd, or invite over the web: /sub-human invite --web');
   }
-  return out;
+  return { always, once };
+}
+
+/** The once-per-room notes an invite shows (onceNotes), and what the next one does (INVITE_RULES). */
+const INVITE_RULES = 'They type the PIN after the line; the line alone asks you on a card, the PIN alone gets nobody in, and 5 wrong PINs end the invite. The right PIN lets them in with no card: the room shows who joined, with a check and the kick.';
+/** For a joiner with no sub-human yet: the plugin README's install. */
+const INSTALL_HINT = 'No sub-human on their machine yet? In Claude Code there: /plugin marketplace add tatimblin/sub-human, then /plugin install sub-human@sub-human, and restart it.';
+const NOTES_KEY = 'remote/invite-notes';
+/**
+ * The texts of notes (key, text) not shown with an earlier invite to this room on this host, each then marked shown
+ * (the host-only kv document remote/invite-notes, never streamed): an invite says its rules, the install, a web
+ * line's key check and Funnel's warning once per room, not each time. Best effort: an unreadable record shows them all.
+ */
+function onceNotes(store: RoomStore, notes: readonly (readonly [string, string])[]): string[] {
+  const fresh = new Set<string>();
+  try {
+    store.kv.update<string[]>(NOTES_KEY, cur => {
+      const had = new Set(Array.isArray(cur) ? cur.filter(k => typeof k === 'string') : []);
+      for (const [k] of notes) if (!had.has(k)) { fresh.add(k); had.add(k); }
+      return [...had];
+    });
+  } catch { return notes.map(([, t]) => t); }
+  return notes.filter(([k]) => fresh.has(k)).map(([, t]) => t);
+}
+
+/** An invite's parts, as its texts are made from them. extra: shown each time; notes: the once-per-room ones left. */
+interface InviteParts {
+  code: RoomCode; how: string; line: string; pin: string; ref: string; expires_at: string;
+  extra?: string[]; notes?: string[]; web?: boolean;
 }
 
 /**
  * The invite's text and its pinned form: the line and the PIN on one status line (drawn under the prompt, never saved
  * in the conversation's transcript), and the text that says where they are instead.
  */
-function invitePinned({ code, how, line, pin, ref, expires_at, extra = [] }: { code: RoomCode; how: string; line: string; pin: string; ref: string; expires_at: string; extra?: string[] }): Pinned {
-  const at = localHm(expires_at);
-  const word = line.split(' ').map(w => fragmentSecret(w) ?? w).find(w => SECRET_WORD.test(w)); // a web line's: its URL's fragment
+function invitePinned(p: InviteParts): Pinned {
+  const word = p.line.split(' ').map(w => fragmentSecret(w) ?? w).find(w => SECRET_WORD.test(w)); // a web line's: its URL's fragment
   return {
-    status: `PIN ${pin} · ${line}`,
-    text: inviteText({ code, how, line: '', pin: '', ref, extra, pinned: at || 'it expires' }),
-    ms: Math.max(0, Date.parse(expires_at) - Date.now()) || INVITE_TTL_MS,
-    ref,
+    status: `PIN ${p.pin} · ${p.line}`,
+    text: inviteText(p, 'pinned'),
+    ms: Math.max(0, Date.parse(p.expires_at) - Date.now()) || INVITE_TTL_MS,
+    ref: p.ref,
     ...(word ? {
-      short: `PIN ${pin} · SECRET ${word}`,
-      cut: inviteText({ code, how, line: line.split(word).join('SECRET'), pin: '', ref, extra, pinned: at || 'it expires', cut: true }),
+      short: `PIN ${p.pin} · SECRET ${word}`,
+      cut: inviteText({ ...p, line: p.line.split(word).join('SECRET') }, 'cut'),
     } : {}),
   };
 }
 
-/** The text an invite is shown with: the line the joiner types, the PIN apart from it, and what happens next here. */
-function inviteText({ code, how, line, pin, ref, extra = [], pinned, cut = false }: { code: RoomCode; how: string; line: string; pin: string; ref: string; extra?: string[]; pinned?: string; cut?: boolean }): string {
-  const send = pinned && cut
-    ? [
-      `invite to room ${code} for one machine, ${how}. It works once, for ${minutes(INVITE_TTL_MS)} minutes. The whole line is wider than this terminal, so only its PIN and SECRET are pinned under the prompt (until ${pinned}; Claude Code saves neither in this conversation). Send them this line with SECRET replaced by the word under the prompt:`,
-      `  ${line}`,
-      'and tell them the PIN apart from it (say it, or send it another way). In a wider terminal the whole line shows under the prompt; `sub-human invite` in a terminal outside Claude Code prints a new invite whole.',
-    ]
-    : pinned
-    ? [`invite to room ${code} for one machine, ${how}. It works once, for ${minutes(INVITE_TTL_MS)} minutes. Its PIN and the line to send them are pinned under the prompt until ${pinned}: Claude Code saves neither in this conversation. Send the line; tell them the PIN apart from it (say it, or send it another way).`]
-    : [
-      `invite to room ${code} for one machine, ${how}. It works once, for ${minutes(INVITE_TTL_MS)} minutes; send them this line:`,
-      '',
-      `  ${line}`,
-      '',
-      `and tell them its PIN apart from the line (say it, or send it another way): ${pin}`,
-    ];
-  return [
-    ...send,
-    'They type the PIN after the line (or alone, when their machine asks for it). The line without its PIN asks you here, on a card; the PIN alone gets nobody in. After 5 wrong PINs the invite stops working.',
-    'The right PIN lets their machine in with no card here; the room says who joined, from which machine, with its check and how to kick them if it is not them.',
-    `Sent it to the wrong place? /sub-human invite --cancel ${ref} cancels just this invite.`,
-    ...extra,
-    `They need sub-human ${protocol.PLUGIN_VERSION} or newer; an older one is told the host runs a newer version and to update (/plugin update sub-human).`,
-  ].join('\n');
+/**
+ * The text an invite is shown with, in two or three rows: what it is, where and until when, and the line and its PIN
+ * (whole: in the text; pinned: under the prompt; cut: the line with SECRET for the word under the prompt), then how to
+ * cancel it (and, over the web, stop serving the room); then what is shown each time (extra) and once (notes).
+ */
+function inviteText({ code, how, line, pin, ref, expires_at, extra = [], notes = [], web = false }: InviteParts, form: 'whole' | 'pinned' | 'cut' = 'whole'): string {
+  const at = localHm(expires_at);
+  const what = `invite to room ${code} for one machine, ${how}, ${at ? `until ${at}` : `for ${minutes(INVITE_TTL_MS)} minutes`}`;
+  const send = form === 'cut'
+    ? [`${what}. The line is wider than this terminal: its PIN and SECRET are under the prompt (not saved in this conversation). Send this line with SECRET replaced by the word there, and say the PIN separately:`, `  ${line}`]
+    : form === 'pinned'
+    ? [`${what}: the line and its PIN are under the prompt (not saved in this conversation). Send the line; say the PIN separately.`]
+    : [`${what}. Send them this line:`, '', `  ${line}`, '', `and tell them its PIN apart from the line (say it, or send it another way): ${pin}`];
+  const stop = web ? ' · stop serving the room: /sub-human invite --stop' : '';
+  return [...send, `Cancel it: /sub-human invite --cancel ${ref}${stop}`, ...extra, ...notes].join('\n');
 }
 
 /** An invite line's SECRET word for this home's machine key (ssh, a pipe). */
@@ -197,10 +214,12 @@ function hostInvite(code: RoomCode, { ssh = true, pipe = false, by = null, now =
     const r = invites.mintInvite(store, { kind: 'pipe', locator, by, now });
     const word = machineWord(r.secret);
     const line = `/sub-human join ${locator} ${code} ${word}`;
-    const how = 'from another sub-human folder on this machine';
+    const parts = {
+      code, how: 'from another sub-human folder on this machine', line, pin: r.pin, ref: r.ref, expires_at: r.expires_at,
+      notes: onceNotes(store, [['rules', INVITE_RULES]]),
+    };
     return {
-      pin: r.pin, ref: r.ref, expires_at: r.expires_at, short: true, locator, word, line, text: inviteText({ code, how, line, pin: r.pin, ref: r.ref }),
-      pinned: invitePinned({ code, how, line, pin: r.pin, ref: r.ref, expires_at: r.expires_at }),
+      pin: r.pin, ref: r.ref, expires_at: r.expires_at, short: true, locator, word, line, text: inviteText(parts), pinned: invitePinned(parts),
     };
   }
   const dest = ssh === true ? selfAddress() : String(ssh);
@@ -215,16 +234,18 @@ function hostInvite(code: RoomCode, { ssh = true, pipe = false, by = null, now =
   const r = invites.mintInvite(store, { kind: 'ssh', locator, by, now });
   const word = machineWord(r.secret);
   const line = `/sub-human join ${dest} ${code} ${word}${ownHome ? '' : ` --home ${h}`}`;
+  const reach = reachHints(dest, ssh === true && !envStr('SUB_HUMAN_SSH_ADDR'));
   const parts = {
-    code, how: `over ssh ${dest}`, line, pin: r.pin, ref: r.ref,
-    extra: [
-      `Over ssh this needs their own ssh login to this account (${os.userInfo().username}), set up as for any ssh login: sub-human writes nothing to authorized_keys. No login here? Invite them over the web: /sub-human invite --web`,
-      ...reachHints(dest, ssh === true && !envStr('SUB_HUMAN_SSH_ADDR')),
-    ],
+    code, how: `over ssh ${dest}`, line, pin: r.pin, ref: r.ref, expires_at: r.expires_at, extra: reach.always,
+    notes: onceNotes(store, [
+      ['rules', INVITE_RULES],
+      ['ssh', `Over ssh this needs their own ssh login to this account (${os.userInfo().username}), set up as for any ssh login: sub-human writes nothing to authorized_keys. No login here? Invite them over the web: /sub-human invite --web`],
+      ...reach.once,
+      ['install', INSTALL_HINT],
+    ]),
   };
   return {
-    pin: r.pin, ref: r.ref, expires_at: r.expires_at, short: true, locator, word, line,
-    text: inviteText(parts), pinned: invitePinned({ ...parts, expires_at: r.expires_at }),
+    pin: r.pin, ref: r.ref, expires_at: r.expires_at, short: true, locator, word, line, text: inviteText(parts), pinned: invitePinned(parts),
   };
 }
 
@@ -368,5 +389,5 @@ function givePin(code: RoomCode, pin: Pin): void {
 }
 
 export {
-  hostInvite, inviteText, invitePinned, cancelInvite, kick, joinLine, givePin, outcome, joinText, shimReady, remoteLogin,
+  hostInvite, inviteText, invitePinned, onceNotes, INVITE_RULES, INSTALL_HINT, cancelInvite, kick, joinLine, givePin, outcome, joinText, shimReady, remoteLogin,
 };

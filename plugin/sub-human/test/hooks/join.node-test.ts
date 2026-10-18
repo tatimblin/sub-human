@@ -143,7 +143,7 @@ test('bare /sub-human: not in a room, it opens one as the default name (git user
   // seated: the status, no model turn
   r = plain.hook('join', expand(''), { as: 'me', env: NO_GIT });
   assert.equal(must(r.json).decision, 'block');
-  assert.match(must(must(r.json).reason), new RegExp(`^sub-human: you're dana in room ${code}, nobody else here yet · another machine: /sub-human invite · leave: /sub-human leave( · starting the room session….*)?$`));
+  assert.match(must(must(r.json).reason), new RegExp(`^sub-human: you're dana in room ${code}, nobody else here yet · another machine: /sub-human invite · leave: /sub-human leave( · the room session is starting again \\(.*\\))?$`));
 });
 
 test('/sub-human CODE (a room code alone) joins that room as the default name, never as a person named after the room', () => {
@@ -292,7 +292,7 @@ test('joining a room with no live claude restarts it; a failed start is retried 
   assert.equal(seat(w, 'claude').job, null);
   const s = stub(w.code);
   const r2 = w.hook('join', expand(`bob ${w.code}`), { as: 'bob', env: { SUB_HUMAN_CLAUDE: s.bin } });
-  assert.match(must(must(r2.json).systemMessage), new RegExp(`^sub-human: you're already in ${w.code} as bob, with alice · starting the room session… \\(the last start failed: .+\\)$`));
+  assert.match(must(must(r2.json).systemMessage), new RegExp(`^sub-human: you're already in ${w.code} as bob, with alice · the room session is starting again \\(the last start failed: .+\\)$`));
   assert.ok(await until(() => seat(w, 'claude').job === '0b500131'));
   assert.equal(bgCalls(s).length, 1);
   const r3 = w.hook('join', expand(`bob ${w.code}`), { as: 'bob', env: { SUB_HUMAN_CLAUDE: s.bin } });
@@ -307,11 +307,11 @@ test('a seated bare /sub-human restarts a room Claude that failed to start, and 
   const s = stub(w.code);
   const r = w.hook('join', expand(''), { as: 'bob', env: { SUB_HUMAN_CLAUDE: s.bin } });
   assert.equal(must(r.json).decision, 'block', 'still the status, no model turn');
-  assert.match(must(must(r.json).reason), new RegExp(`^sub-human: you're bob in room ${w.code}, with alice · .* · starting the room session… \\(the last start failed: .+\\)$`));
+  assert.match(must(must(r.json).reason), new RegExp(`^sub-human: you're bob in room ${w.code}, with alice · .* · the room session is starting again \\(the last start failed: .+\\)$`));
   assert.ok(await until(() => seat(w, 'claude').job === '0b500131'));
   assert.equal(bgCalls(s).length, 1);
   const r2 = w.hook('join', expand(''), { as: 'bob', env: { SUB_HUMAN_CLAUDE: s.bin } });
-  assert.doesNotMatch(must(must(r2.json).reason), /starting the room session/, 'a job that has not bound yet is not restarted');
+  assert.doesNotMatch(must(must(r2.json).reason), /starting again/, 'a job that has not bound yet is not restarted');
   assert.equal(bgCalls(s).length, 1);
 });
 
@@ -477,9 +477,13 @@ test('/sub-human invite: an invite line for my room, shown to me only (a hidden 
   assert.ok(m, shown.reason);
   const pin = /tell them its PIN apart from the line \(say it, or send it another way\): (\d{4})\n/.exec(must(shown.reason));
   assert.ok(pin, shown.reason);
-  assert.match(must(shown.reason), /The line without its PIN asks you here, on a card; the PIN alone gets nobody in/);
-  assert.match(must(shown.reason), /\/sub-human invite --cancel [0-9a-f]{12}/);
-  assert.notEqual(must(new RegExp(`${w.code} ([0-9a-z]{39})`).exec(must(must(w.hook('join', expand('invite --pipe'), { as: 'alice' }).json).reason)))[1], m[1], 'a new one each time');
+  assert.match(must(shown.reason), /the line alone asks you on a card, the PIN alone gets nobody in, and 5 wrong PINs end the invite/);
+  assert.match(must(shown.reason), /\nCancel it: \/sub-human invite --cancel [0-9a-f]{12}\n/);
+  const again = must(must(w.hook('join', expand('invite --pipe'), { as: 'alice' }).json).reason);
+  assert.notEqual(must(new RegExp(`${w.code} ([0-9a-z]{39})`).exec(again))[1], m[1], 'a new one each time');
+  // noise pass C: the rules show with the room's first invite only; the next is the line, its PIN and the cancel
+  assert.doesNotMatch(again, /5 wrong PINs/);
+  assert.equal(again.split('\n').length, 6, again);
   for (const [args, re] of [['invite --frobnicate', /usage: \/sub-human invite/], ['invite --pipe --web', /pick one/], ['invite --ssh NAME@box', /placeholder/], ['invite --ssh USER@box', /placeholder/]] as const) {
     const r = must(w.hook('join', expand(args), { as: 'alice' }).json);
     assert.match(must(r.reason), re, args);
@@ -791,7 +795,7 @@ test('SECURITY through the module: an invite and anything a PIN may be typed in 
   // the line and the PIN are pinned (the module's status line: no transcript row holds them); the notices say where
   assert.doesNotMatch(must(inv.say), new RegExp(`[0-9a-z]{39}`));
   assert.doesNotMatch(must(inv.say), /: \d{4}\b/);
-  assert.match(must(inv.say), /pinned under the prompt until \d\d:\d\d: Claude Code saves neither in this conversation/);
+  assert.match(must(inv.say), /until \d\d:\d\d: the line and its PIN are under the prompt \(not saved in this conversation\)\. Send the line; say the PIN separately\./);
   // item 2 (D): the PIN first and short, then the line; nothing before it that costs width
   assert.match(must(inv.pinned).status, new RegExp(`^PIN \\d{4} · /sub-human join pipe:\\S+ ${w.code} [0-9a-z]{39}$`));
   assert.ok(must(inv.pinned).ms > 14 * 60_000 && must(inv.pinned).ms <= 15 * 60_000);

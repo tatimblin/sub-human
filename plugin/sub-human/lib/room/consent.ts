@@ -31,6 +31,10 @@
  *     every undecided request for an older one, so it is no longer pending ('superseded'). Answers stay with their
  *     hash: none carry over to the newer version. Which plan and version a proposal asks about is read from the plan
  *     fold by its hash, never from the proposal's own fields (any member's append may carry them).
+ *   - A draft is a request addressed to its own asker, its one approver (lib/proposal.ts ask draft): the author's
+ *     check of a version they wrote, before anyone else is asked. It pends and is answered like any request (the
+ *     author's Yes is their sign-off on the hash, so it still counts once the version goes out), and no decision is
+ *     written on it (lib/proposal.ts decide).
  *   - revises(e, entries): the request a new version comes after (open, or not agreed), its asker and objectors: the
  *     people whose Claudes deliver.ts wakes with that version, so a revision comes back to who asked.
  * Recording (lib/proposal.ts answer, then decide) is idempotent on top of this: one answer per seat per hash,
@@ -109,7 +113,8 @@ function compute(list: Entries, trust: Trust): Fold {
       if (!isProposal(e)) continue;
       proposals.delete(e.hash);
       const approvers = Array.isArray(e.approvers) ? e.approvers : [];
-      proposals.set(e.hash, { id: e.id, hash: e.hash, from: e.from, approvers, same: groupsOf(e.same, approvers), path: e.path || null, entry: e });
+      const draft = e.to === e.from && approvers.length === 1 && approvers[0] === e.from;
+      proposals.set(e.hash, { id: e.id, hash: e.hash, from: e.from, approvers, same: groupsOf(e.same, approvers), path: e.path || null, draft, entry: e });
       continue;
     }
     const h = e.proposal_hash;

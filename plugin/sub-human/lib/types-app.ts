@@ -22,6 +22,8 @@ export interface SessionDoc {
   steer?: Steer;
   holds?: Holds;
   blocks?: Record<string, number>;
+  /** ids the consent hook already told this seat's model (a decision its answer made): the room context skips them */
+  reported?: number[];
 }
 
 // ---------- lib/rows.ts ----------
@@ -88,7 +90,7 @@ export interface FoldedTask {
 // ---------- lib/proposal.ts ----------
 /** A proposal as proposals() / pendingFor() list it: the fold's latest entry per hash (lib/room/consent.ts), shaped
  * (lib/proposal.ts shape keeps no entry; a caller that has one may pass it along). */
-export type Proposal = Pick<ProposalState, 'id' | 'hash' | 'approvers' | 'path' | 'from'> & { entry?: Entry };
+export type Proposal = Pick<ProposalState, 'id' | 'hash' | 'approvers' | 'path' | 'from'> & { entry?: Entry; draft?: boolean };
 /** An AskUserQuestion input (the card the hooks show). */
 export interface Card {
   questions: {
@@ -107,6 +109,11 @@ export interface Review {
   from?: string | null;
   /** how the person knows the request ("plan paging v3": lib/proposal.ts title), for the dialog's line */
   title?: string | null;
+  /** the author's own check of a version they wrote (lib/proposal.ts ask draft): a Yes sends it out, a note asks for
+   * another version, and nothing is recorded but the Yes */
+  draft?: boolean;
+  /** a draft's review closed with a note: the person wants another version (nothing sent or recorded) */
+  revise?: boolean;
   file?: string;
   backup?: string | null;
   restored?: boolean;
@@ -147,6 +154,8 @@ export interface PlanEdit {
   /** stored: the version it made (unchanged: the same text as the base) */
   version?: number;
   unchanged?: boolean;
+  /** stored: the author's check of that version (lib/proposal.ts ask draft), which the person answers next */
+  check?: string;
 }
 /** members/NAME/session recheck: a Yes that came as the plan view opened, recorded only once the person confirms it on
  * the card (lib/consent/review.ts); asked once. */
@@ -192,5 +201,5 @@ export type TailEvent =
   | { type: 'wake', text: string }
   | { type: 'rows', text: string | null }
   | { type: 'health', text: string }
-  | { type: 'invites', open: string[] }
+  | { type: 'invites', open: string[], expired?: string[] }
   | { type: 'take', code: string, name: string, text: string, check?: string };

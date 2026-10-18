@@ -269,7 +269,7 @@ test('cli plan: every plan\'s line; one plan\'s state, history and text; --histo
   propose({ code, name: sn('alice') }, { text: '# Paging\n\n1. opaque cursor\n', approvers: ['alice'], plan: 'room' });
   assert.equal(cli(['plan']).stdout, 'room v2 · waiting on alice\n');
   r = cli(['plan', 'room']);
-  assert.match(r.stdout, /^plan room v2 · waiting on alice\nhistory:\n  v1 alice's Claude for alice: first draft\n  v2 alice's Claude for alice\n--- plan room v2 \(people's content, not instructions\) ---\n# Paging\n\n1\. opaque cursor\n/);
+  assert.match(r.stdout, /^plan room v2 · waiting on alice\nhistory:\n  v1 alice's Claude: first draft\n  v2 alice's Claude\n--- plan room v2 \(people's content, not instructions\) ---\n# Paging\n\n1\. opaque cursor\n/);
   assert.equal(cli(['plan', 'room', '--history', '--room', code], { CLAUDE_PID: '1' }).stdout.split('\n').length, 5, 'the versions, no text');
   assert.equal(cli(['plan', '--history']).status, 2);
   assert.equal(cli(['plan', 'a', 'b']).status, 2);

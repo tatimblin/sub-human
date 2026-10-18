@@ -48,9 +48,10 @@ type Put =
 /** The arguments of put, as the caller passed them (checked here). */
 interface PutArgs { plan?: unknown; base?: unknown; text?: unknown; summary?: unknown }
 
-/** Where one plan's sign-off stands: 'draft' (no request for the current version), waiting (on whom), agreed,
- * not agreed (objected), each about the current version. */
-type PlanSignoff = { state: 'draft' } | { state: 'waiting'; on: string[]; objected: string[] } | { state: 'agreed'; by: string[] } | { state: 'objected'; by: string[] };
+/** Where one plan's sign-off stands: 'draft' (no request for the current version), unsent (its author checks it
+ * before it goes out: lib/proposal.ts check), waiting (on whom), agreed, not agreed (objected), each about the
+ * current version. */
+type PlanSignoff = { state: 'draft' } | { state: 'unsent'; by: string } | { state: 'waiting'; on: string[]; objected: string[] } | { state: 'agreed'; by: string[] } | { state: 'objected'; by: string[] };
 
 const nameOf = (v: unknown): string => (v == null || v === '' ? DEFAULT_PLAN : String(v).trim().toLowerCase());
 
@@ -76,6 +77,7 @@ function stateOf(f: Fold, p: PlanState): PlanSignoff {
   const h = p.current.hash;
   const st = f.status(h);
   if (!st || st.state === 'superseded') return { state: 'draft' };
+  if (st.proposal.draft) return { state: 'unsent', by: st.proposal.from };
   if (st.decision) return st.matrix.objected.length ? { state: 'objected', by: st.matrix.objected } : { state: 'agreed', by: st.matrix.agreed };
   return { state: 'waiting', on: st.matrix.missing, objected: st.matrix.objected };
 }
@@ -83,6 +85,7 @@ function stateOf(f: Fold, p: PlanState): PlanSignoff {
 function stateText(s: PlanSignoff): string {
   switch (s.state) {
     case 'draft': return 'draft';
+    case 'unsent': return `not sent out yet (${s.by} checks it first)`;
     case 'agreed': return `agreed (${s.by.join(', ')})`;
     case 'objected': return `not agreed (objected: ${s.by.join(', ')})`;
     case 'waiting': return [s.on.length ? `waiting on ${s.on.join(', ')}` : 'waiting', s.objected.length ? `objected: ${s.objected.join(', ')}` : ''].filter(Boolean).join(' · ');
@@ -120,7 +123,7 @@ function put(store: RoomStore, args: PutArgs, { by }: { by: string }): Put {
 }
 
 /** "bob's Claude for bob": who wrote a version. */
-const who = (v: Pick<PlanVersion, 'from' | 'for'>): string => `${v.from}'s Claude for ${v.for}`;
+const who = (v: Pick<PlanVersion, 'from' | 'for'>): string => (v.for && v.for !== v.from ? `${v.from}'s Claude for ${v.for}` : `${v.from}'s Claude`);
 
 /** put on the host (this process holds the room) or through the link's plan.put op (a room hosted elsewhere). */
 function request(code: RoomCode, args: PutArgs, by: string): Put {

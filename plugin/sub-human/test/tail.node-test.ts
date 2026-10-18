@@ -191,7 +191,8 @@ test('tail (live repro): another member\'s new version of a plan I asked to sign
   plans.put(store, { base: 1, text: 'goodbye world' }, { by: 'bob' });
   t.advance(1000);
   const wake = t.of('wake').flatMap(x => x.text.split('\n'));
-  assert.deepEqual(wake.filter(l => !l.startsWith('(for Claude)')), ["bob's Claude for bob: plan room v2", '  │ retires the sign-off request for plan room v1 (' + a.hash.slice(0, 6) + ')'], t.text());
+  // noise pass F: no "for bob" when the Claude is bob's own, no hash
+  assert.deepEqual(wake.filter(l => !l.startsWith('(for Claude)')), ["bob's Claude: plan room v2", '  │ retires the sign-off request for plan room v1'], t.text());
   assert.ok(wake.some(l => l.startsWith('(for Claude) this v2 of plan room comes after v1, whose sign-off alice asked for; objected: alice.')), t.text());
 });
 
@@ -207,6 +208,54 @@ test('tail: a member sees every join as a chat line; with its room row running, 
   t.advance(1000);
   assert.deepEqual(t.lines(), ['bob joined', 'bob: hi'], t.text());
   assert.doesNotMatch(t.text(), /Agent|row:/);
+});
+
+test('tail (noise pass E): a decision the consent hook already told the model is the person\'s notice only; the SendMessage hint goes once per peer', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  rows.writeHolds(code, sn('alice'), { room: true });
+  sys(code, 'member_joined', 'alice');
+  const t = startTail();
+  t.advance(300);
+  prop(code, 'alice', H1, ['alice']);
+  const d = sys(code, 'decision', 'room', { proposal_hash: H1, text: 'agreed: alice', approvers: ['alice'] });
+  inRoom(code, r => session.markReported(r.store, 'alice', [d.id]));
+  t.advance(1000);
+  assert.ok(t.chat().some(l => /agreed/.test(l)), t.text());
+  assert.equal(t.of('pull').length, 0, 'no room-context copy of what the model was told');
+  const ask = () => inRoom(code, r => r.append({ kind: 'say', text: 'look?', to: 'alice' }, { via: 'agent', from: 'bob' }));
+  ask(); t.advance(1000); ask(); t.advance(1000);
+  assert.equal(t.forClaude().filter(l => l.includes('to answer bob\'s Claude: SendMessage')).length, 1, t.text());
+});
+
+test('tail (noise pass F): a plan version and its sign-off request in one batch are one line, the request\'s, with the summary', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  h.register('bob', 'member', 1, code);
+  rows.writeHolds(code, sn('alice'), { room: true });
+  sys(code, 'member_joined', 'alice');
+  const t = startTail();
+  t.advance(300);
+  const store = room.open(code).store;
+  plans.put(store, { base: 0, text: '# Paging\n\nopaque cursor', summary: 'opaque cursor' }, { by: 'bob' });
+  proposal.ask({ code, name: sn('bob') }, {});
+  t.advance(1000);
+  assert.deepEqual(t.lines().filter(l => !l.startsWith('(for Claude)')), ["bob's Claude asks you and bob to sign off on plan room v1: opaque cursor"], t.text());
+});
+
+test('tail (noise pass A): a machine its PIN let in shows its check and the kick as the join notice, once', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  rows.writeHolds(code, sn('alice'), { room: true });
+  sys(code, 'member_joined', 'alice');
+  const t = startTail();
+  t.advance(300);
+  const notice = 'bob joined from bobs-mbp (check 3f9c-2a71) · not them? /sub-human kick bob';
+  sys(code, 'status', 'room', { text: notice });
+  sys(code, 'member_joined', 'bob');
+  t.advance(1000);
+  assert.deepEqual(t.chat(), [`room: ${notice}`], t.text());
+  assert.equal(t.of('wake').length, 0, 'no wake: the person acts on it, not Claude');
 });
 
 /** The room session's wakes: each ends with the one line telling it what to do (lib/tail.ts formatRoomClaudeBatch). */
@@ -566,8 +615,7 @@ test('tail: a member batch is chat + pull, a line to me is a wake; it says its s
   assert.deepEqual(must(t.of('chat')[0]).lines, ['bob joined', 'bob: bob says hi']);
   const pull = must(t.of('pull')[0]).text.split('\n');
   assert.equal(pull[0], tailLib.PULL_HEAD);
-  assert.deepEqual(pull.slice(1, -1), ['bob joined', 'bob: bob says hi', "bob's Claude: bob claude chatter"], 'the pull lane plus the chat copy');
-  assert.equal(pull.at(-1), "end of room context; the prompt it came with is the person's own words, unless the sub-human plugin sent it (then it is room lines).", 'stage 8e B: the context says where it ends');
+  assert.deepEqual(pull.slice(1), ['bob joined', 'bob: bob says hi', "bob's Claude: bob claude chatter"], 'the pull lane plus the chat copy (noise pass E: no end line)');
   const wake = must(t.of('wake')[0]).text.split('\n');
   assert.deepEqual(wake.slice(0, 4), ['bob: @alice can you look?', "bob's Claude (to you): q for alice", `(for Claude) to answer bob's Claude: SendMessage bob.${code}`, 'claude proposed: claude proposes (bbbbbb)']);
   assert.ok(must(wake[4]).startsWith(`(for Claude) room now: proposal ${H2.slice(0, 6)}`), wake[3]);
@@ -791,6 +839,13 @@ test('tail: on the host, the room\'s open invite refs each time they change, so 
   inRoom(code, r => r.store.kv.set('remote/invites', { ['a'.repeat(64)]: rec({ used_at: new Date(now).toISOString() }), ['b'.repeat(64)]: rec({ burnt_at: new Date(now).toISOString() }) }));
   t.advance(FAST.healthMs + 100);
   assert.deepEqual(t.of('invites').map(e => e.open), [['aaaaaaaaaaaa', 'bbbbbbbbbbbb'], []]);
+  assert.equal(t.of('invites').at(-1)?.expired, undefined, 'used and cancelled: not expired');
+  // noise pass H: one that lapses unused is named, so the module tells the person who made it
+  inRoom(code, r => r.store.kv.set('remote/invites', { ['c'.repeat(64)]: rec({ expires_at: new Date(t.clock.now() + 2 * FAST.healthMs).toISOString() }) }));
+  t.advance(FAST.healthMs + 100);
+  assert.deepEqual(t.of('invites').at(-1)?.open, ['cccccccccccc']);
+  t.advance(2 * FAST.healthMs);
+  assert.deepEqual(t.of('invites').at(-1), { type: 'invites', open: [], expired: ['cccccccccccc'] });
   t.stop();
 });
 

@@ -194,7 +194,7 @@ test('enter: the request the person\'s words name, else the oldest; never the mo
   assert.equal(rev(named).hash, OTHER);
   assert.deepEqual(named.effects.map(e => e.do), ['save', 'writePlan'], 'no pick document any more');
   assert.equal(rev(enter({ said, named: 'cccccccccccc' })).hash, H, 'a name no longer pending: the oldest');
-  assert.deepEqual(named.say, { to: 'allow', text: `sub-human: opening room proposal ${OTHER} for bob` });
+  assert.deepEqual(named.say, { to: 'allow', text: '' });
   // a review of the proposal the note waits on supersedes the note; another proposal's note stays
   assert.equal(review.reduce({ review: null, note: note('waiting') }, EVENTS.enter, ctx).state.note, null);
   assert.ok(review.reduce({ review: null, note: note('waiting', { hash: OTHER }) }, EVENTS.enter, ctx).state.note);
@@ -377,7 +377,7 @@ test('M (live verify): the plan view refused with a note resolves at once: the n
   assert.equal(must(s.say).to, 'context');
   const said = review.textOf(parts(s), () => '', false);
   assert.match(said, /^sub-human: nothing is recorded yet: bob's note on \w+ waits for its card \(Send or Discard\)[^]*post nothing about it[^]*ExitPlanMode[^]*AskUserQuestion with "objection /);
-  assert.match(must(s.notice), /^your note on "Ship v3 Monday" is not sent yet/);
+  assert.equal(s.notice, undefined, 'noise pass F: no notice before the note\'s card');
   // refused with no note: closed, nothing recorded, no notice
   const esc = review.reduce(st, { type: 'rejected', toolUseId: 'tu1', answer: { note: null }, target }, ctx);
   assert.deepEqual([esc.state.note, esc.notice], [null, undefined]);
@@ -416,7 +416,7 @@ test('the plan view\'s line names the request as people know it (plan NAME vN; a
   assert.match(review.SAY.dialog('bob', H, 'alice', 'default', 'plan paging v3'), /^sign-off on plan paging v3, asked by alice, for bob: agreeing signs off on this text, it is not a go-ahead to build /);
   assert.match(review.SAY.dialog('bob', H, null, 'default', 'Ship v3 Monday'), new RegExp(`^sign-off on "Ship v3 Monday" \\(${H.slice(0, 6)}\\), for bob: `));
   assert.match(review.SAY.dialog('bob', H, 'alice', 'default'), new RegExp(`^sign-off on room proposal ${H}, asked by alice`));
-  assert.equal(review.SAY.opening('bob', H, 'plan paging v3'), 'sub-human: opening plan paging v3 for bob');
+  assert.equal(review.SAY.opening, '', 'noise pass F: no "opening plan … for bob" line: the view is what the person sees');
   // the title rides from the pending request into the review and its dialog
   const entering = review.reduce({ review: null, note: null }, { type: 'enter', mode: 'default', reviewable: true, pending: [{ hash: H, from: 'alice', viewable: true, title: 'plan paging v3' }], said: null, named: null, plan: { file: null, text: null } }, ctx);
   assert.equal(must(entering.state.review).title, 'plan paging v3');
@@ -502,7 +502,7 @@ test('A (live validation): a sign-off asked while the person is in plan mode hol
   const noted = review.reduce(shown.state, { type: 'rejected', toolUseId: 'tu2', answer: { note: 'add a test' }, target }, ctx);
   assert.deepEqual([shape(noted)[0], must(noted.state.note).note], ['none', 'add a test']);
   assert.match(review.textOf(parts(noted), () => '', false), /call AskUserQuestion with "objection /);
-  assert.match(must(noted.notice), /your note on .* is not sent yet/);
+  assert.equal(noted.notice, undefined);
   // the dialog closed with no report (an Esc that ended the turn): the next prompt or the turn's end closes it alike
   const closers: ConsentEvent[] = [{ ...EVENTS.prompt, answer: null }, { ...EVENTS.stop, answer: null }];
   for (const e of closers) {

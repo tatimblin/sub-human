@@ -175,7 +175,10 @@ export const STOP_FRAME = 'Operation stopped by hook: ';
 export const RECEIPT_FOR_MODEL = (receipt: string): string => (receipt.startsWith('✗')
   // a refusal ("✗ …": the room session's, a not-posted @room): the prompt went nowhere, the room included
   ? `sub-human: the prompt above was refused and went nowhere (${receipt}); nothing is asked of you.`
-  : `sub-human: the person's @room line above went to the room, not to you (${receipt}); nothing is asked of you.`);
+  : 'sub-human: that @room line went to the room; nothing is asked of you.');
+
+/** A "✓ sent to room CODE (Claude wasn't asked)" receipt after the session's first: "✓ sent" (its other notes kept). */
+export const SENT_AGAIN = (receipt: string): string => receipt.replace(/^✓ sent to room \S+ \(Claude wasn't asked\)/, '✓ sent');
 
 /** A row as session.append hands it, as far as receiptBook reads it. */
 type RowLike = { type?: unknown; content?: unknown };
@@ -183,13 +186,15 @@ type RowLike = { type?: unknown; content?: unknown };
 /**
  * The receipts this module's prompt hook stopped a prompt with, waiting for their warning row (session.append, door
  * notice). expect(reason) as the stop leaves the hook; rewrite(row) answers that row with the frame cut off, the
- * receipt alone (cc CONTRACT session-append-notice-rewrite), or null for any other row. Only a system row that is
+ * receipt alone (cc CONTRACT session-append-notice-rewrite; after the session's first "✓ sent to room …", "✓ sent"),
+ * or null for any other row. Only a system row that is
  * exactly the frame around a waiting receipt is ours: another plugin's stop, a second copy, or a row after a reload
  * keeps the engine's words. modelRow(row) answers the stop's isMeta user row (the model's copy) in RECEIPT_FOR_MODEL's
  * words, leaving the receipt waiting. A receipt whose row never came (a block beneath won) is forgotten after `max` more.
  */
 export function receiptBook(max = 8) {
   const waiting: { reason: string }[] = [];
+  let sent = false; // a "✓ sent to room …" receipt was drawn whole once in this session: the next ones are "✓ sent"
   const find = (reason: string) => waiting.findIndex(w => w.reason === reason);
   return {
     expect(reason: unknown): void {
@@ -205,7 +210,10 @@ export function receiptBook(max = 8) {
       const w = waiting[i]; // none at -1: no receipt waits for it
       if (!w) return null;
       waiting.splice(i, 1);
-      return { ...row, content: [{ type: 'text', text: w.reason }] };
+      const whole = w.reason.startsWith('✓ sent to room ');
+      const text = whole && sent ? SENT_AGAIN(w.reason) : w.reason;
+      if (whole) sent = true;
+      return { ...row, content: [{ type: 'text', text }] };
     },
     /** The stop's model row (an isMeta user row, the frame around a waiting receipt) in RECEIPT_FOR_MODEL's words; the
      * receipt stays waiting for its warning row. null: any other row. */

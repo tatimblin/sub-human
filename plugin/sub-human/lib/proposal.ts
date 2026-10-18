@@ -12,6 +12,10 @@
  *             written once, when every approver has answered. text names one seat per person: "agreed: tristan (also
  *             laptop), bob".
  *
+ * check appends the author's own check of a version just stored, before anyone else is asked: a `proposal` addressed
+ * to its asker (to = from), who is its one approver (lib/room/consent.ts draft); sendOut, run once the author's Yes on
+ * it is recorded, asks everyone present (that Yes counts as their sign-off); decide never decides a draft, and ask
+ * refuses a version whose draft has no Yes yet.
  * ask appends `proposal` on a plan's current version (its blob plans/<hash>.md is already stored: lib/plans.ts put).
  * approvers default to the humans present; the same open request is not re-appended. same: groups of 2+ approvers
  * that are one person (sameOf), for which the fold counts one answer. A newer version of the plan retires the request
@@ -109,7 +113,7 @@ function sameOf(approvers: string[], ms: Members): string[][] {
 }
 
 // ---------- reading the log (lib/room/consent.ts fold: the same semantics as stateLine, lane and the rows) ----------
-const shape = (p: ProposalState): Proposal => ({ id: p.id, hash: p.hash, approvers: p.approvers, path: p.path, from: p.from });
+const shape = (p: ProposalState): Proposal => ({ id: p.id, hash: p.hash, approvers: p.approvers, path: p.path, from: p.from, ...(p.draft ? { draft: true } : {}) });
 const proposals = (entries: readonly Readonly<Entry>[], trust: Trust = room.trustOf): Proposal[] => [...room.fold(entries, trust).proposals.values()].map(shape);
 
 const decision = (hash: string, entries: readonly Readonly<Entry>[], trust: Trust = room.trustOf): Entry | null => room.fold(entries, trust).decisions.get(hash) ?? null;
@@ -182,7 +186,12 @@ function preview(p: Proposal, code: RoomCode): string {
 
 function cardQuestion(p: Proposal, code: RoomCode): Card['questions'][number] {
   const pv = preview(p, code);
-  const desc = {
+  // a draft is the person's own new version: Agree sends it out, Object keeps it theirs to change (nothing recorded)
+  const desc = p.draft ? {
+    'Not yet': 'Decide later; nobody else is asked yet',
+    Agree: 'Send it out: the others are asked to sign off (this is your sign-off)',
+    Object: 'Keep editing: nobody is asked; press n to say what to change',
+  } : {
     'Not yet': 'Decide later; nothing is recorded',
     Agree: `Sign off on ${p.hash}${p.from ? ` from ${p.from}` : ''}`,
     Object: 'Block it; press n to say why',
@@ -219,8 +228,9 @@ function namedIn(ps: Proposal[], prompt: string | null | undefined, code: RoomCo
   return hits.length === 1 ? hits[0] ?? null : null;
 }
 
-/** The request a review opens among ps (pending, oldest first) when the person's words name none: the oldest. */
-const picked = (ps: Proposal[]): Proposal | null => ps[0] ?? null;
+/** The request a review opens among ps (pending, oldest first) when the person's words name none: their own new
+ * version not sent out yet (a draft pending for a seat is its own), else the oldest. */
+const picked = (ps: Proposal[]): Proposal | null => ps.findLast(p => !!p.draft) ?? ps[0] ?? null;
 
 /** How the model opens proposal hash for its person (the plan view; the hooks fall back to the card), how it shows
  * the confirm card for a waiting note, and the line telling it to show that card now (after an Esc on it: that the
@@ -235,9 +245,11 @@ function listed(code: RoomCode | undefined, p: Listed): string {
   return t ? `${p.hash.slice(0, 6)} "${t}"` : p.hash.slice(0, 6);
 }
 /** The re-ask (a review closed without an answer is fine to reopen). others: the other requests awaiting name, listed by short hash and title (code: the room their titles come from). */
-function reminder(p: Pick<Proposal, 'hash'>, name: string, { code, others = [] }: { code?: RoomCode, others?: Listed[] } = {}): string {
+function reminder(p: Pick<Proposal, 'hash' | 'draft'>, name: string, { code, others = [] }: { code?: RoomCode, others?: Listed[] } = {}): string {
   const what = code ? title(code, p.hash) : '';
-  const base = `${what.startsWith('plan ') ? `${what} (proposal ${p.hash})` : `proposal ${p.hash}`} still awaits ${name}'s sign-off (an earlier review closed without an answer is fine). When ${name} wants to answer, ${openCall(p.hash)}.`;
+  const named = what.startsWith('plan ') ? `${what} (proposal ${p.hash})` : `proposal ${p.hash}`;
+  const base = p.draft ? `${named}, ${name}'s own new version, is not sent out yet. When ${name} wants to send it out or change it, ${openCall(p.hash)}.`
+    : `${named} still awaits ${name}'s sign-off (an earlier review closed without an answer is fine). When ${name} wants to answer, ${openCall(p.hash)}.`;
   if (!others.length) return base;
   return `${base} (${others.length} more await ${name}'s answer: ${others.map(o => listed(code, o)).join(', ')}; the hooks open whichever plan ${name} names, else the oldest.)`;
 }
@@ -250,8 +262,9 @@ interface Asked { hash: ProposalHash, approvers: string[], plan: string, version
 /**
  * Ask the room's people to sign off on plan's current version (lib/plans.ts): a `proposal` entry on that version's
  * hash, naming the plan and version. approvers default to the humans present. The same request still open is not
- * appended again; a version decided already is refused (an objected one needs a new version first). Who may ask: any
- * member's Claude for its person; only the people answer, each in their own session.
+ * appended again; a version decided already is refused (an objected one needs a new version first), and so is one
+ * its author has not sent out yet (a draft without their Yes: check below). Who may ask: any member's Claude for its
+ * person; only the people answer, each in their own session.
  */
 function ask(me: Me | null | undefined, args: AskArgs = {}): Asked {
   if (!me || !me.code || !me.name) refuse('not in a room; run /sub-human');
@@ -277,14 +290,65 @@ function ask(me: Me | null | undefined, args: AskArgs = {}): Asked {
   }
   if (!approvers.length) refuse('nobody to ask: no humans are in the room');
   const open = f.proposals.get(v.hash);
-  if (open && !f.superseded.has(v.hash) && open.approvers.length === approvers.length && approvers.every(a => open.approvers.includes(a))) {
-    return { hash: v.hash, approvers, plan: name, version: v.version, entry: open.entry, again: true };
+  const live = open && !f.superseded.has(v.hash) ? open : undefined;
+  if (live && live.draft && f.ownAnswer(v.hash, live.from)?.kind !== 'signoff') {
+    refuse(`plan ${name} v${v.version} is not sent out yet: ${live.from === me.name ? `${me.name} checks it first (${openCall(v.hash)})` : `its author ${live.from} checks it first, in their own session`}`);
+  }
+  if (live && !live.draft && live.approvers.length === approvers.length && approvers.every(a => live.approvers.includes(a))) {
+    return { hash: v.hash, approvers, plan: name, version: v.version, entry: live.entry, again: true };
   }
   const same = sameOf(approvers, identity.readMembers(me.code) || {});
   const entry: Entry = r.append({ kind: 'proposal', text: `proposal ${v.hash}: plan ${name} v${v.version}${v.summary ? `: ${clip(v.summary, TITLE_MAX)}` : ''}`,
     hash: v.hash, approvers, ...(same.length ? { same } : {}), path: planRef(v.hash), plan: name, version: v.version },
     { via: 'agent', from: me.name });
   return { hash: v.hash, approvers, plan: name, version: v.version, entry, again: false };
+}
+
+/**
+ * The author's check of the version they just stored (whoever writes a version is asked first): a draft, a request
+ * addressed to me with me its one approver, on plan's version while it is current and mine. It pends for me alone (the
+ * plan view, the card as fallback), and only my Yes sends it out (sendOut). Returns its hash, or null when that
+ * version is no longer current or mine, is decided or asked about already, or the room cannot be reached (nothing
+ * changed then: anyone may ask as before).
+ */
+function check(me: Me, plan: string, version: number): ProposalHash | null {
+  try {
+    const r = room.open(me.code);
+    const f = r.fold(r.readRecent());
+    const v = f.plans.get(plan)?.current;
+    if (!v || v.version !== version || v.from !== me.name || f.decisions.has(v.hash)) return null;
+    const open = f.proposals.get(v.hash);
+    if (open && !f.superseded.has(v.hash)) return open.draft && open.from === me.name && !f.ownAnswer(v.hash, me.name) ? v.hash : null;
+    r.append({ kind: 'proposal', to: me.name, text: `proposal ${v.hash}: plan ${plan} v${v.version}${v.summary ? `: ${clip(v.summary, TITLE_MAX)}` : ''}`,
+      hash: v.hash, approvers: [me.name], path: planRef(v.hash), plan, version: v.version }, { via: 'agent', from: me.name });
+    return v.hash;
+  } catch (e) {
+    if (e instanceof room.RoomError) return null;
+    throw e;
+  }
+}
+
+/** What sendOut did: the request it made (and the decision, in a room of one), or why it made none. */
+type Sent = { asked: Asked; decision: Entry | null } | { error: string };
+/**
+ * The author's Yes on their draft (hash) is recorded: ask everyone present to sign off on that version (ask; the Yes
+ * is the author's own sign-off on it already), then the decision when that completes it (a room of one). null when
+ * hash is no draft of mine.
+ */
+function sendOut(me: Me, hash: string): Sent | null {
+  const r = room.open(me.code);
+  const f = r.fold(r.readRecent());
+  const p = f.proposals.get(hash);
+  const v = f.versionOf(hash);
+  if (!p || !p.draft || p.from !== me.name || !v) return null;
+  if (f.superseded.has(hash)) return { error: `a newer version of plan ${v.plan} landed meanwhile` };
+  try {
+    const asked = ask(me, { plan: v.plan });
+    return { asked, decision: decide(me.code, hash) };
+  } catch (e) {
+    if (e instanceof ProposalError || e instanceof room.RoomError) return { error: e.message };
+    throw e;
+  }
 }
 
 function choiceOf(c: unknown): 'Agree' | 'Object' | 'Not yet' | null {
@@ -327,7 +391,7 @@ function decide(code: RoomCode, hash: string): Entry | null {
     const entries = r.readRecent();
     const f = r.fold(entries);
     const cur = f.proposals.get(hash);
-    if (!cur || f.decisions.has(hash) || f.superseded.has(hash)) return null;
+    if (!cur || cur.draft || f.decisions.has(hash) || f.superseded.has(hash)) return null; // a draft is sent out, never decided
     const m = matrix(cur, entries, r.trust);
     if (!m.complete) return null;
     const text = m.objected.length
@@ -411,6 +475,8 @@ function clearRecheck(me: Me): void { try { session.put(storeOf(me), me.name, 'r
  * steer): {hash, plan, at} or null. */
 const readSteer = (me: Me): Steer | null => { try { return session.get(storeOf(me), me.name, 'steer') ?? null; } catch { return null; } };
 const writeSteer = (me: Me, s: Steer): void => session.put(storeOf(me), me.name, 'steer', s);
+/** The entries the consent hook just told the model of: the room context does not repeat them (best effort). */
+function markReported(me: Me, ids: number[]): void { try { session.markReported(storeOf(me), me.name, ids); } catch { /* the context repeats it */ } }
 function clearSteer(me: Me): void { try { session.put(storeOf(me), me.name, 'steer', undefined); } catch { /* none */ } }
 
 const CONFIRM_NOTE_MAX = 300;
@@ -441,9 +507,10 @@ function repeatsNote(c: Pick<Confirm, 'note'> | null | undefined, text: unknown)
   return note.length < NOTE_MATCH_MIN ? post === note : post.includes(note);
 }
 
+export type { Asked, Sent };
 export {
   QUESTION_RE, ProposalError, readReview, writeReview, clearReview, withReview, restorePlan, restoreStale,
-  readEdit, writeEdit, clearEdit, readConfirm, writeConfirm, clearConfirm, readRecheck, writeRecheck, clearRecheck, readSteer, writeSteer, clearSteer, confirmCard, confirmQuestion, repeatsNote, namedIn, picked,
-  ask, proposals, pendingFor, answerableFor, personOf, card, cardFor, question, preview, viewable, openCall,
+  readEdit, writeEdit, clearEdit, readConfirm, writeConfirm, clearConfirm, readRecheck, writeRecheck, clearRecheck, readSteer, writeSteer, clearSteer, markReported, confirmCard, confirmQuestion, repeatsNote, namedIn, picked,
+  ask, check, sendOut, proposals, pendingFor, answerableFor, personOf, card, cardFor, question, preview, viewable, openCall,
   confirmCall, showConfirm, matrix, answer, decide, decision, humans, reminder, read, hash12, title,
 };

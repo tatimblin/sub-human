@@ -23,7 +23,7 @@
  *
  * join: bindSeat before seats.enter (a link revoked meanwhile gets no seat; a refused seat gives the binding back);
  * over a login link (the host account's own ssh login) the seat's account is the host's. append: own
- * `from` only, never via system; a signoff or objection is followed by proposal.decide() (host only, idempotent).
+ * `from` only, never via system; a signoff, an objection or a request is followed by proposal.decide() (host only, idempotent).
  * subscribe: hash12 of the host's line `after` must equal hash, else FORK (also for a line before the first this host
  * holds: a host that began from a snapshot cannot replay what came before it). blob.put: content-addressed
  * (plans/<hash12>.md), written once.
@@ -107,7 +107,8 @@ function redeem(s: Session, invite: unknown, machine: MachineId, pin: unknown, k
   if (a && a.admitted_by === 'pin') {
     // its PIN replaced a knock from another machine (the line alone): the room hears both checks
     if (a.replaced) roomLine(s, `a machine that knocked without the PIN (${a.replaced.name}, ${inviteSecret.joinCheck(a.replaced.machine, a.replaced.key)}) was replaced by the one with the PIN (${a.name}, ${inviteSecret.joinCheck(a.machine, a.key)}): its card is gone, and its join stops`);
-    const renamed = a.asked_as ? `; asked as ${a.asked_as}, who sits here from another machine` : '';
+    // the people's join notice (lib/room/render.ts linkJoined reads it back): keep its shape
+    const renamed = a.asked_as ? `; wanted "${a.asked_as}", taken` : '';
     roomLine(s, `${a.name} joined from ${a.label || machine} (${inviteSecret.joinCheck(a.machine, a.key)}${renamed}) · not them? /sub-human kick ${a.name}`);
   } else if (a) roomLine(s, `${a.name}'s machine (${a.label || machine}) joined the room, let in by ${a.admitted_by || 'the host'}; undo with: /sub-human kick ${a.name}`);
   else roomLine(s, `a machine (${machine}) linked to the room with an invite and its PIN (link ${r.link.id})`);
@@ -320,8 +321,10 @@ const OPS: OpHandlers = {
     if (payload.via === 'system') throw authError('a link never writes via "system"; the host writes the room\'s own entries');
     if (payload.via === 'human' || payload.via === 'agent') quota.checkLog(s.store.readAll(), { from: payload.from, via: payload.via, op: payload.via === 'human' ? 'append.human' : 'append.agent' });
     const entry = s.store.place(payload as Partial<Payload> as Payload); // place() checks every field (rules.ts admit, validate.ts)
-    if (ANSWERS.has(entry.kind) && entry.proposal_hash) {
-      try { proposal.decide(s.store.code, entry.proposal_hash); } catch (e) { s.log(`sub-human serve: decide: ${stackOf(e)}`); }
+    // a request too: one sent out with every answer in already (an author's Yes on their own version, in a room of one)
+    const decides = ANSWERS.has(entry.kind) ? entry.proposal_hash : entry.kind === 'proposal' ? entry.hash : undefined;
+    if (decides) {
+      try { proposal.decide(s.store.code, decides); } catch (e) { s.log(`sub-human serve: decide: ${stackOf(e)}`); }
     }
     return { entry };
   },

@@ -103,7 +103,10 @@ function record(me: Identity, hash: string, a: { choice: 'Agree' | 'Object'; not
       : `✗ ${what} was not recorded: ${err.message}. Answer again once the room is reachable.`);
     return { failed: err.message, ...(err.unknown ? { unknown: true } : {}) };
   }
-  return res.stale ? res : { ...res, decision: proposal.decide(me.code, hash) };
+  if (res.stale) return res;
+  // the author's Yes on their own new version sends it out (asks the others); a draft is never decided
+  const sent = a.choice === 'Agree' ? proposal.sendOut(me, hash) : null;
+  return { ...res, decision: sent ? null : proposal.decide(me.code, hash), sent };
 }
 
 // ---------- facts ----------
@@ -164,9 +167,10 @@ function answerFacts(input: ConsentIn, me: Identity, r: Review | null, type: Con
 /** The proposal hash while this seat may still answer it (lib/proposal.ts answerableFor), with its title. */
 function targetOf(me: Identity, hash: string | null | undefined): Target | null {
   const p = hash ? proposal.answerableFor(me).find(x => x.hash === hash) : undefined;
-  return p ? { hash: p.hash, from: p.from || null, title: proposal.title(me.code, p.hash) || null } : null;
+  return p ? { hash: p.hash, from: p.from || null, title: proposal.title(me.code, p.hash) || null, ...(p.draft ? { draft: true } : {}) } : null;
 }
-const pendingOf = (me: Identity, ps: Proposal[] = proposal.pendingFor(me)): Pending[] => ps.map(p => ({ hash: p.hash, from: p.from || null, viewable: proposal.viewable(p, me.code), title: titleOf(me, p) }));
+const pendingOf = (me: Identity, ps: Proposal[] = proposal.pendingFor(me)): Pending[] => ps.map(p => ({ hash: p.hash, from: p.from || null, viewable: proposal.viewable(p, me.code), title: titleOf(me, p),
+  ...(p.draft ? { draft: true } : {}) }));
 /** The request's name for the person (lib/proposal.ts title: "plan paging v3"), or null. */
 const titleOf = (me: Identity, p: Proposal): string | null => { try { return proposal.title(me.code, p.hash, p.entry ?? null) || null; } catch { return null; } };
 const isPending = (me: Identity, hash: string | undefined) => !!hash && proposal.pendingFor(me).some(p => p.hash === hash);
@@ -248,7 +252,13 @@ function step(input: ConsentIn, me: Identity, make: (st: State) => ConsentEvent,
   if (JSON.stringify(state.note) !== disk.note) { if (state.note) proposal.writeConfirm(me, state.note); else proposal.clearConfirm(me); }
   if (JSON.stringify(state.recheck ?? null) !== disk.recheck) { if (state.recheck) proposal.writeRecheck(me, state.recheck); else proposal.clearRecheck(me); }
   if (JSON.stringify(state.steer ?? null) !== disk.steer) { if (state.steer) proposal.writeSteer(me, state.steer); else proposal.clearSteer(me); }
-  if (say) write(input, me, say, state, answers, show);
+  if (say) {
+    write(input, me, say, state, answers, show);
+    // the decisions the outcome line names: the room context does not tell the model again
+    const told = [...answers.values()].flatMap(({ res }) => [res.decision, res.sent && 'asked' in res.sent ? res.sent.decision : null])
+      .flatMap(d => (d ? [d.id] : []));
+    proposal.markReported(me, told);
+  }
 }
 
 /** The answer effect's outcome line for hash. */
@@ -257,6 +267,11 @@ function outcome(me: Identity, hash: string, a: { choice: 'Agree' | 'Object'; re
   const { res } = a;
   if (res.failed) return review.SAY.failed(me.name, hash, res.failed, !!res.unknown);
   if (res.stale) return review.SAY.stale(hash);
+  const sent = res.sent;
+  if (sent) {
+    if ('error' in sent) return review.SAY.sendFailed(me.name, hash, sent.error);
+    return review.SAY.sent(me.name, `plan ${sent.asked.plan} v${sent.asked.version}`, sent.asked.approvers.filter(a => a !== me.name).join(', '), sent.decision && sent.decision.text);
+  }
   return (a.choice === 'Agree' ? review.SAY.agreed : review.SAY.objected)(me.name, hash, res.decision && res.decision.text);
 }
 
@@ -310,7 +325,8 @@ function postAsk(input: ConsentIn, me: Identity) {
     afk: !!(r.afkTimeoutMs || r.followUp), asked,
     answers: keys.map(k => {
       const [, hash = ''] = proposal.QUESTION_RE.exec(k) ?? []; // keys passed QUESTION_RE (its group always matches)
-      return { hash, answer: card.answerCard({ question: k, options }, r, input.tool_input, { exact: false }), live: answerable.some(p => p.hash === hash) };
+      const p = answerable.find(x => x.hash === hash);
+      return { hash, answer: card.answerCard({ question: k, options }, r, input.tool_input, { exact: false }), live: !!p, ...(p && p.draft ? { draft: true } : {}) };
     }),
   }));
 }
@@ -374,7 +390,8 @@ function preEnter(input: ConsentIn, me: Identity) {
     if (!ps.length || !base.reviewable) return { type: 'enter', ...base, pending: [], said: null, named: null };
     // the request the person's latest prompt names (cc.lastHumanPrompt: only their own words), else the oldest
     const said = cc.lastHumanPrompt(lines(input));
-    const hit = said ? proposal.namedIn(ps, said.text, me.code) : null;
+    // the request the person's words name, else their own new version not sent out yet, else the oldest (picked)
+    const hit = (said ? proposal.namedIn(ps, said.text, me.code) : null) ?? proposal.picked(ps);
     return { type: 'enter', ...base, pending: pendingOf(me, ps), said, named: hit ? hit.hash : null, plan: planOf(input) };
   });
 }
@@ -390,7 +407,7 @@ function waitingOf(input: ConsentIn, me: Identity, ti: ConsentToolInput, plan: {
   const [oldest] = ps;
   if (!oldest) return null;
   const said = cc.lastHumanPrompt(lines(input));
-  const p = (said ? proposal.namedIn(ps, said.text, me.code) : null) ?? oldest;
+  const p = (said ? proposal.namedIn(ps, said.text, me.code) : null) ?? proposal.picked(ps) ?? oldest;
   const text = typeof ti.plan === 'string' ? ti.plan : plan.text ?? '';
   return { hash: p.hash, title: titleOf(me, p), plan: hash12(Buffer.from(text, 'utf8')) };
 }
@@ -421,7 +438,7 @@ function preExit(input: ConsentIn, me: Identity) {
       // the mode is plan already (the person's); a dialog whose Yes clears the context is still no place for a review
       const p = !ccEnv.clearContextOnPlanAccept(input.cwd) ? proposal.pendingFor(me).filter(x => proposal.viewable(x, me.code)).find(x => x.hash.startsWith(word)) : undefined;
       if (!p) return { ...ev, stub: { hash: word, live: false } };
-      return { ...ev, stub: { hash: p.hash, live: true }, shown: { hash: p.hash, from: p.from || null, title: titleOf(me, p) }, text: proposal.read(me.code, p.hash),
+      return { ...ev, stub: { hash: p.hash, live: true }, shown: { hash: p.hash, from: p.from || null, title: titleOf(me, p), ...(p.draft ? { draft: true } : {}) }, text: proposal.read(me.code, p.hash),
         plan, callPlan: ti.plan, ownPlan: own && own.plan };
     }
     if (r.phase !== 'entering') return ev;
@@ -429,7 +446,7 @@ function preExit(input: ConsentIn, me: Identity) {
     const ti: ConsentToolInput = input.tool_input ?? {};
     // A blank plan: the call's transcript line may not be written yet (2.1.292 runs this hook first), so wait for it.
     const own = blank(ti.plan) && input.tool_use_id ? polled(input, () => modelInput(input)) : modelInput(input);
-    return { ...ev, shown: p ? { hash: p.hash, from: p.from || null, title: titleOf(me, p) } : null, text: p ? proposal.read(me.code, p.hash) : null,
+    return { ...ev, shown: p ? { hash: p.hash, from: p.from || null, title: titleOf(me, p), ...(p.draft ? { draft: true } : {}) } : null, text: p ? proposal.read(me.code, p.hash) : null,
       plan: planOf(input), callPlan: ti.plan, ownPlan: own && own.plan };
   });
 }
@@ -499,8 +516,15 @@ function promptFacts(me: Identity): Pick<Extract<edit.EditEvent, { type: 'prompt
   return { plan: { file: e.file, text }, seed, draft: path.join(c.identity.home(), 'drafts', me.code, `${me.name}-${e.plan}.md`) };
 }
 
-/** lib/plans.ts put's answer as the edit reducer reads it (plans.outcome). */
-const putOutcome = (me: Identity, e: Extract<edit.EditEffect, { do: 'put' }>): edit.PutOutcome => plans.outcome(me.code, { plan: e.plan, base: e.base, text: e.text, summary: e.summary }, me.name);
+/** lib/plans.ts put's answer as the edit reducer reads it (plans.outcome), with the author's check of a new version
+ * (lib/proposal.ts check: the person is asked before anyone else). */
+const putOutcome = (me: Identity, e: Extract<edit.EditEffect, { do: 'put' }>): edit.PutOutcome => authorCheck(me, e.plan, plans.outcome(me.code, { plan: e.plan, base: e.base, text: e.text, summary: e.summary }, me.name));
+/** A version just stored, new: the author's check of it made (lib/proposal.ts check), its hash in the outcome. */
+function authorCheck(me: Identity, plan: string, o: edit.PutOutcome): edit.PutOutcome {
+  if (o.kind !== 'stored' || o.unchanged) return o;
+  const h = proposal.check(me, plan, o.version);
+  return h ? { ...o, check: h } : o;
+}
 
 /** The seat's edit, reduce one event, run the effects (a put's answer reduced in turn), store the edit, write the say.
  * Returns whether it said anything (Stop and a prompt then skip the review's step). */

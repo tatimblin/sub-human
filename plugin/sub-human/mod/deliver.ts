@@ -20,7 +20,7 @@ import { mergeClassic } from './core/prompt.ts';
 import { factsBook, type FactsBook } from './core/facts.ts';
 import { asHello, asNonce, mintNonce } from './core/state.ts';
 import { ccNotice } from './core/cc.ts';
-import { copyBook, copyWake, type CopyBook } from './core/copy.ts';
+import { copyBook, copyWake, copyTo, clipboardCommands, AUTO_COPIED, NO_TOOL, type CopyBook } from './core/copy.ts';
 import { assertNever } from './core/never.ts';
 import type { EngineInterface, On, SessionAppendArgs } from 'claude-code';
 import type { JoinReply, Pulls, TailEvent, TailSeat } from './core/types.ts';
@@ -131,13 +131,16 @@ async function logFailure($: EngineInterface, hello: ReturnType<typeof asHello>,
 /** The session ids and folders whose transcript names the folder already (module state: a reload names it once more). */
 const homeMarked = new Set<string>();
 /**
- * A seated session's sub-human folder, once per session id and folder, as a system row in its transcript (stored at
+ * A seated session's sub-human folder, once per session id and folder, when it is not the default ~/.sub-human, as a
+ * system row in its transcript (stored at
  * level info: drawn only in the ctrl+o view; cc CONTRACT transcript-home-notice). The agent view's fork runs in a bg
  * job that drops a shell's SUB_HUMAN_HOME, and reads the folder from the transcript it continued (lib/identity.ts
  * forkedAway). Never throws.
  */
 async function markHome($: EngineInterface, hello: NonNullable<ReturnType<typeof parseHello>>) {
   if (!hello.seat || !hello.sid) return;
+  // the default folder (~/.sub-human) needs no row: a fork with no mark is read as in it (lib/identity.ts forkedAway)
+  if (hello.home === homeOf(undefined, hello.userHome)) return;
   const key = `${hello.sid}\n${hello.home}`;
   if (homeMarked.has(key)) return;
   homeMarked.add(key);
@@ -404,7 +407,11 @@ async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
       case 'hold-rows': await $.state.set(ROWS, a.text); break;
       case 'submit': void submitWake($, a.text, { seen: a.seen }); break; // not awaited: it resolves as the turn starts
       case 'mid-turn-wake': await midTurnWake($, a.text); break;
-      case 'invites': copies.keepOpen(a.open); if (pinnedRef && !a.open.includes(pinnedRef)) unpin($); break;
+      case 'invites':
+        copies.keepOpen(a.open);
+        if (pinnedRef && a.expired && a.expired.includes(pinnedRef)) $.ui.log(INVITE_EXPIRED);
+        if (pinnedRef && !a.open.includes(pinnedRef)) unpin($);
+        break;
       case 'take': void takeSeat($, c, a); break; // not awaited: the shim runs, then the wake resolves as its turn starts
       default: assertNever(a, 'delivery action');
     }
@@ -468,8 +475,11 @@ function pinStatus($: EngineInterface, { status, ms, ref }: { status: string; ms
   const mine = ++pinnedAt;
   pinnedRef = ref || null;
   $.ui.status(status);
-  try { $.clock.after(ms, () => { if (mine === pinnedAt) unpin($); }); } catch { /* it stays until the next one replaces it */ }
+  // its life over while still pinned: it lapsed unused (a use or a cancel takes it off before)
+  try { $.clock.after(ms, () => { if (mine === pinnedAt) { $.ui.log(INVITE_EXPIRED); unpin($); } }); } catch { /* it stays until the next one replaces it */ }
 }
+/** The person's line when the invite they made lapsed unused. */
+const INVITE_EXPIRED = 'invite expired; /sub-human invite for a new one';
 /** The invite is over (used, burnt, cancelled or expired): off the status line now. */
 function unpin($: EngineInterface): void {
   ++pinnedAt;
@@ -483,18 +493,34 @@ const copyNow = async ($: EngineInterface): Promise<number> => (await nowMs($)) 
 /**
  * The invite's copy card (mod/core/copy.ts): after /sub-human invite answered with a line, one wake asks the model to
  * call AskUserQuestion with "copy invite REF" (the ref only; the line stays in `copies`). Never on the same idle turn as
- * a take's wake: while a take runs it waits for it (at most ~10 s), then goes as any wake (mid-turn: the person's line
- * a notice, the wake appended). An invite over before then gets no card. Never throws.
+ * a take's wake: while a take runs it waits for it (at most ~10 s), then goes as any wake (framed: it has no line for
+ * the person; mid-turn appended). An invite over before then gets no card. After the person picked Copy on a card this
+ * session the line is copied with no card ("line copied"); after Skip nothing is offered. Never throws.
  */
 async function offerCopy($: EngineInterface, ref: string) {
   try {
+    const choice = copies.choice();
+    if (choice === 'skip') return; // Skip once: no card again this session
     for (let i = 0; taking.size && i < 20; i++) await new Promise<void>(resolve => { $.clock.after(500, resolve); });
-    if (!copies.lineFor(ref, await copyNow($))) return;
+    const line = copies.lineFor(ref, await copyNow($));
+    if (!line) return;
+    // Copy once: later invites are copied with no card, and no turn
+    if (choice === 'copy') { $.ui.log(await clip($, line, AUTO_COPIED)); return; }
+    // no line for the person: the wake goes framed, as the plugin's own message (copy.ts copyWake)
     const text = copyWake(ref);
-    const [shown = ''] = text.split('\n');
-    if (turns.running !== null) { $.ui.log(shown); await midTurnWake($, text); }
-    else await submitWake($, text, { member: true, seen: [shown] });
+    if (turns.running !== null) await midTurnWake($, text);
+    else await submitWake($, text, { member: true });
   } catch { /* the line stays pinned on the status line */ }
+}
+
+/** The line to the first clipboard tool that takes it, on stdin (copy.ts copyTo): `copied` when one did, else NO_TOOL. */
+async function clip($: EngineInterface, line: string, copied: string): Promise<string> {
+  const or = (p: Promise<string | undefined>) => p.catch(() => undefined);
+  const commands = clipboardCommands({
+    WAYLAND_DISPLAY: await or($.env.get('WAYLAND_DISPLAY')), DISPLAY: await or($.env.get('DISPLAY')),
+    WSL_DISTRO_NAME: await or($.env.get('WSL_DISTRO_NAME')), WSL_INTEROP: await or($.env.get('WSL_INTEROP')),
+  });
+  return (await copyTo((argv, init) => $.process.run(argv, init), line, commands)) === 'copied' ? copied : NO_TOOL;
 }
 
 export function registerDeliver(on: On): void {

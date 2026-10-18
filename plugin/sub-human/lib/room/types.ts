@@ -507,6 +507,9 @@ export interface ProposalState {
   /** the approvers that are one person: groups of 2+, disjoint (consent.ts groupsOf) */
   same: string[][];
   path: string | null;
+  /** the author's own check of a version before it goes out (lib/proposal.ts ask draft): addressed to its asker, its
+   * one approver; their Yes sends it out (a request to the others), and no decision is written on it */
+  draft: boolean;
   entry: ProposalEntry;
 }
 

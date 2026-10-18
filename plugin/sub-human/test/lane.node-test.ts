@@ -7,6 +7,7 @@ import * as room from '../lib/room.ts';
 import * as identity from '../lib/identity.ts';
 import type { Room } from '../lib/room.ts';
 import { lane, deliver } from '../lib/room/deliver.ts';
+import * as render from '../lib/room/render.ts';
 import type { Entry, EntryInput, Lane, LaneViewer } from '../lib/room/types.ts';
 import { sn, eid } from './support/brands.ts';
 import { fsStore } from './support/fs-store.ts';
@@ -220,6 +221,26 @@ test('deliver (live verify, P): what asks the person is a notice, not context on
   assert.equal(D(BOB, d1, all), 'notice', 'bob completed it: shown, no wake');
   assert.equal(D(CAROL, d1, all), 'context', 'not in it: context');
   assert.equal(D(CAROL, o1, all), 'context');
+});
+
+test('deliver (noise pass A): the room\'s PIN-join line, with its check and the kick, is the people\'s join notice; the bare "joined" after it is not drawn again', () => {
+  fresh();
+  const BOB = { name: 'bob', role: 'member' };
+  const D = (me: LaneViewer, e: Entry, es?: readonly Entry[]) => deliver(me, e, { entries: es, trust: room.trustOf });
+  const line = sys('status', { text: 'carol2 joined from carols-mbp (check 3f9c-2a71; wanted "carol", taken) · not them? /sub-human kick carol2' }, 'room');
+  const join = sys('member_joined', {}, 'carol2');
+  const all = R.readAll();
+  assert.equal(render.linkJoined(line), 'carol2');
+  assert.equal(D(ALICE, line, all), 'notice', 'the host person sees who joined, with the check and the kick');
+  assert.equal(D(BOB, line, all), 'notice');
+  assert.equal(D({ name: 'carol2', role: 'member' }, line, all), 'none', 'the joiner has its own check on screen');
+  assert.equal(D(ROOM_CLAUDE, line, all), 'none');
+  assert.equal(render.announced(join, all), true, 'its member_joined is not drawn a second time');
+  const later = sys('member_left', {}, 'carol2');
+  const back = sys('member_joined', {}, 'carol2');
+  assert.equal(render.announced(back, [...all, later, back]), false, 'a later rejoin is drawn as ever');
+  assert.equal(render.linkJoined(sys('status', { text: 'carol joined from x (check 1) · not them? /sub-human kick bob' }, 'room')), null, 'the kick names the one who joined');
+  assert.equal(render.linkJoined(human('alice', 'say', { text: 'carol joined from x (check 1) · not them? /sub-human kick carol' })), null, 'a person\'s words are never the room\'s line');
 });
 
 test('deliver (room-plan live): a decision is a notice for every approver and context for the rest; it never wakes', () => {

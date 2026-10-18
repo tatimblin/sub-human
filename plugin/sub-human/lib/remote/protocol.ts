@@ -34,7 +34,9 @@ import type {
   ErrorFrame, EventData, EventFrame, DecodedFrame, Caps, IncomingRequest, IncomingEvent,
 } from './types-core.ts';
 
-const PROTO: Readonly<ProtoRange> = Object.freeze({ min: 4, max: 4 });
+// 5 (0.5.0-beta.24): a plan version's author checks it first (a draft: a request to its author alone), which a host or
+// seat on 4 would take for an ordinary sign-off and decide as agreed by the author alone; so 4 and 5 refuse each other
+const PROTO: Readonly<ProtoRange> = Object.freeze({ min: 5, max: 5 });
 const PLUGIN_VERSION: string = (() => {
   let j: unknown;
   try { j = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '..', '.claude-plugin', 'plugin.json'), 'utf8')); } catch { return '?'; }

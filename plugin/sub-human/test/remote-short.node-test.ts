@@ -94,9 +94,10 @@ test('an invite over pipe: the host sees the line and the PIN apart; the line al
   const { pin, word } = m;
   assert.match(reason(out), /tell them its PIN apart from the line \(say it, or send it another way\): \d{4}\n/);
   assert.ok(!new RegExp(`join \\S+ \\S+ ${word}[^\\n]*${pin}`).test(reason(out)), 'the PIN is not on the line');
-  assert.match(reason(out), /The right PIN lets their machine in with no card here; the room says who joined/);
+  assert.match(reason(out), /The right PIN lets them in with no card: the room shows who joined, with a check and the kick\./);
   assert.doesNotMatch(reason(out), /a card here asks you/);
-  assert.match(reason(out), /They need sub-human \S+ or newer; an older one is told the host runs a newer version and to update \(\/plugin update sub-human\)\./);
+  // noise pass C: no version line for the host (an older joiner is told when it dials)
+  assert.doesNotMatch(reason(out), /They need sub-human/);
   assert.doesNotMatch(reason(out), /PIN must be 4 digits/, 'an older (protocol 3) joiner meets the version skew, not a PIN rule');
 
   stopDaemon(t, remote, code);

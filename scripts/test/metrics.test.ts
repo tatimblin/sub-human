@@ -95,4 +95,7 @@ test('chat: the room context beside a prompt (stage 8e) counts as a pull and sta
   const m = seatTranscriptMetrics([{ es: [human, ctx, a('m1'), end] }]);
   assert.equal(m.chat.pulls, 1);
   assert.equal(m.chat.turns, 0);
+  // 0.5.0-beta.24: the shorter head counts the same
+  const now: TEntry = { type: 'attachment', attachment: { type: 'hook_additional_context', hookEvent: 'UserPromptSubmit', content: ['room since your last turn (FYI):\nbob joined'] } };
+  assert.equal(seatTranscriptMetrics([{ es: [human, now, a('m1'), end] }]).chat.pulls, 1);
 });

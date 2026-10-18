@@ -10,7 +10,9 @@
  * only ever handles the ref. A module reload forgets it (the card then says the invite is gone).
  *
  *   1. /sub-human invite answered with a line (mod/deliver.ts command.run): the book holds it, and once the command
- *      returned the module submits copyWake(ref) as a wake of its own (mid-turn: appended, as any wake).
+ *      returned the module submits copyWake(ref) as a wake of its own, framed (mid-turn: appended, as any wake). Once
+ *      the person picked Copy in this session, a later invite's line is copied with no card (AUTO_COPIED); once they
+ *      picked Skip, no card is offered again (copyBook choice).
  *   2. The model calls AskUserQuestion with the question "copy invite REF" (copyAsked). mod/consent.ts's PreToolUse
  *      answers ask with copyCard() as updatedInput (Copy / Skip), or denies with GONE when the book no longer holds
  *      that invite (used, burnt, cancelled, expired: the tail's `invites` event and the invite's life drop it).
@@ -20,14 +22,15 @@
  *
  *   COPY_QUESTION, COPY, SKIP, copyCard()         the card
  *   copyAsked(input) -> {ref} | null              the call is the copy card's ("copy invite REF"; ref null: none named)
- *   copyWake(ref) -> string                       the wake: one line for the person, the rest for the model
+ *   copyWake(ref) -> string                       the wake: one "(for Claude)" line, the ref only
  *   copyLine(line) -> string | null               a line the module may hold: one line, no PIN-shaped word in it
- *   copyBook()                                    the module's memory: hold, drop, keepOpen, lineFor, ask, askedRef
+ *   copyBook()                                    the module's memory: hold, drop, keepOpen, lineFor, ask, askedRef,
+ *                                                 choose, choice
  *   clipboardCommands(env) -> {name, argv}[]      pbcopy, clip.exe (WSL), wl-copy (Wayland), xclip (X11), in order
  *   copyTo(run, line, commands) -> 'copied'|'none' each in turn until one exits 0; a missing tool, a failure or a
  *                                                 timeout tries the next
- *   copyOutcome(answer, line) -> {copy} | {say}   what the person's answer does
- *   COPIED, NO_TOOL, GONE, NOT_COPIED             what the person and the model are told (copySaid: the model's)
+ *   copyOutcome(answer, line) -> {copy} | {say}   what the person's answer does, and the session's choice
+ *   COPIED, AUTO_COPIED, NO_TOOL, GONE, NOT_COPIED   what the person sees (copySaid: the model's, asking nothing)
  */
 import { FOR_CLAUDE } from './constants.ts';
 import { answerCard, type CardAnswer, type CardResponse, type CardSpec } from './card.ts';
@@ -63,11 +66,12 @@ export function copyAsked(input: unknown): { ref: string | null } | null {
   return text.includes(COPY_QUESTION) ? { ref: null } : null;
 }
 
-/** The wake after an invite: its one line for the person (drawn as the prompt), the rest for the model. */
-export const copyWake = (ref: string): string => [
-  `sub-human: your Claude asks whether to copy invite ${ref}'s line to your clipboard (never its PIN)`,
-  `${FOR_CLAUDE} sub-human: the person just made an invite (ref ${ref}); its line and PIN are pinned on their status line, which you cannot see. Ask whether to copy the line: call AskUserQuestion with the question "copy invite ${ref}"; the hooks show the card and do the copy, and you never see the line or the PIN. Don't answer for them, ask for the line or the PIN, or post about it.`,
-].join('\n');
+/**
+ * The wake after an invite: one "(for Claude)" line, the ref only. It has no line for the person, so it goes framed
+ * as the plugin's own message (core/deliver.ts wakeParts null): never as a prompt the person seems to have typed, and
+ * without the room-lines context of a wake.
+ */
+export const copyWake = (ref: string): string => `${FOR_CLAUDE} sub-human: the person made invite ${ref}. Call AskUserQuestion with the question "copy invite ${ref}" (the hooks show their Copy / Skip card and copy; you never see the line or its PIN), then reply with nothing.`;
 
 const PIN_WORD = /^[0-9]{3,10}$/;
 /** line, when the module may hold and copy it: one line of at most 2000 characters with no word that could be a PIN
@@ -79,7 +83,11 @@ export function copyLine(line: unknown): string | null {
   return l.split(/\s+/).some(w => PIN_WORD.test(w)) ? null : l;
 }
 
-/** The module's memory of the lines it may copy, by invite ref (time passed in), and which card call asked for which. */
+/** The person's answer on the card, for the rest of the session: Copy copies later invites with no card, Skip asks
+ * no more (null: not answered yet). */
+export type CopyChoice = 'copy' | 'skip' | null;
+/** The module's memory of the lines it may copy, by invite ref (time passed in), which card call asked for which, and
+ * the session's choice. */
 export interface CopyBook {
   hold(ref: string, line: string, until: number): void;
   drop(ref: string): void;
@@ -90,10 +98,13 @@ export interface CopyBook {
   /** The card call toolUseId was shown for ref (PreToolUse), so its PostToolUse knows which line. */
   ask(toolUseId: string, ref: string): void;
   askedRef(toolUseId: string): string | null;
+  choose(c: Exclude<CopyChoice, null>): void;
+  choice(): CopyChoice;
 }
 export function copyBook(): CopyBook {
   const lines = new Map<string, { line: string; until: number }>();
   const asked = new Map<string, string>();
+  let chosen: CopyChoice = null;
   return {
     hold(ref, line, until) { if (REF.test(ref)) lines.set(ref, { line, until }); },
     drop(ref) { lines.delete(ref); },
@@ -107,6 +118,8 @@ export function copyBook(): CopyBook {
     refs(now) { return [...lines.entries()].filter(([, h]) => now < h.until).map(([r]) => r); },
     ask(toolUseId, ref) { if (toolUseId) { asked.set(toolUseId, ref); if (asked.size > 16) asked.delete(asked.keys().next().value ?? ''); } },
     askedRef(toolUseId) { const r = asked.get(toolUseId) ?? null; asked.delete(toolUseId); return r; },
+    choose(c) { chosen = c; },
+    choice() { return chosen; },
   };
 }
 
@@ -141,17 +154,20 @@ export async function copyTo(run: Runner, line: string, commands: readonly Clipb
   return 'none';
 }
 
-export const COPIED = 'Copied. Say the PIN separately.';
+export const COPIED = 'copied';
+/** A later invite in a session whose person picked Copy: copied with no card. */
+export const AUTO_COPIED = 'line copied';
 export const NO_TOOL = 'No clipboard tool found; the line is pinned on your status line.';
 export const GONE = 'that invite is gone, run /sub-human invite again';
-export const NOT_COPIED = 'Nothing copied; the line stays pinned on your status line.';
-/** What the model reads after the card: the person's line, and that nothing else is asked of it. */
-export const copySaid = (said: string): string => `sub-human: ${said} (The person sees this too. Don't repeat it, ask for the line or the PIN, or post about it; return to what you were doing.)`;
+export const NOT_COPIED = 'not copied';
+/** What the model reads after the card: that the person saw the outcome, and nothing is asked of it. */
+export const copySaid = (said: string): string => `sub-human: the copy card is answered (${said}); the person sees that. Reply with nothing.`;
 
 /** What the person's answer on the card does: copy line (Copy, with the line still held), or say a line (gone, or
- * nothing copied). */
-export function copyOutcome(response: CardResponse | null | undefined, input: { questions?: unknown } | null | undefined, line: string | null): { copy: string } | { say: string } {
+ * nothing copied); choice: what the session does with its later invites (Copy or Skip picked on the card as built). */
+export function copyOutcome(response: CardResponse | null | undefined, input: { questions?: unknown } | null | undefined, line: string | null): ({ copy: string } | { say: string }) & { choice?: 'copy' | 'skip' } {
   const got: CardAnswer = answerCard(COPY_SPEC, response, input);
-  if (got.kind !== 'answer' || got.label !== COPY) return { say: NOT_COPIED };
-  return line ? { copy: line } : { say: GONE };
+  if (got.kind !== 'answer' || (got.label !== COPY && got.label !== SKIP)) return { say: NOT_COPIED };
+  if (got.label === SKIP) return { say: NOT_COPIED, choice: 'skip' };
+  return line ? { copy: line, choice: 'copy' } : { say: GONE, choice: 'copy' };
 }

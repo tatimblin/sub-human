@@ -11,8 +11,9 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   const anyA = log.find(y => y.kind === 'say' && y.from === A && y.via === 'human');
   det(`${A}'s @room text byte-exact, via=human`, !!e, e ? `#${e.id} === typed (${Buffer.byteLength(String(e.text))} bytes)` : `first ${A} say: ${x.fmt(anyA)}`);
   const t = x.cap('S3', A) || '';
+  // the session's first receipt names the room; a later one is "⏺ ✓ sent" (0.5.0-beta.24)
   const receipt = `⏺ ✓ sent to room ${code} (Claude wasn't asked)`;
-  const rc = e && t.split('\n').some(l => l.trimEnd() === receipt);
+  const rc = e && t.split('\n').some(l => l.trimEnd() === receipt || l.trimEnd() === '⏺ ✓ sent');
   det(`One receipt line "${receipt}" (no id); no "Operation stopped by hook", no "blocked by hook"`, rc && !/stopped by hook|blocked by hook/.test(t) && !/✓ posted|as #\d/.test(t), rc ? `receipt for #${e.id} in ${x.capName('S3', A)}` : `no receipt in ${x.capName('S3', A)}`);
   const turn = x.noModelTurn(A, e);
   det(`${A}'s @room ran no model turn`, turn.pass, turn.evidence);

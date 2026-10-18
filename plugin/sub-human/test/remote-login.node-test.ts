@@ -141,7 +141,7 @@ test('server: a hello {login} makes a link only in a `serve --login` session, un
   await assert.rejects(dial({ linkId: '0123456789ab', login: true }, { token: must(c.token) }), authErr(/not link 0123456789ab's/));
   // an old host answers a login hello without a token: PROTOCOL, never a link with no credential
   const [a, b] = memory.pair();
-  b.onFrame(f => b.send(protocol().reply(f.id, { v: 4, proto: { min: 1, max: 9 }, server: '0.4.0', caps: [], room: code, link: null })));
+  b.onFrame(f => b.send(protocol().reply(f.id, { v: protocol().PROTO.max, proto: { min: 1, max: 9 }, server: '0.4.0', caps: [], room: code, link: null })));
   await assert.rejects(client.connect(a, { machine: mid('remote0machine01'), login: true }), (e: Error & { code?: string }) => e.code === 'PROTOCOL' && /makes no link over an ssh login/.test(e.message));
 });
 const protocol = () => protocolLib;

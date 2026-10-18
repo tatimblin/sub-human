@@ -52,6 +52,7 @@
  */
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
@@ -527,7 +528,10 @@ function forkedAway(sid: unknown, dir: string | null | undefined, now: number = 
     const title = lastTitle(file) || '';
     const was = lastHome(file);
     if (was) return realish(was) !== realish(home()) ? { sid: old, title, home: was } : null;
-    return isAddress(title) ? { sid: old, title } : null;
+    // no mark on a seat's transcript: the module marks only a folder other than the default (mod/deliver.ts markHome),
+    // so a fork in the default folder is in the same one; elsewhere, which folder it was is not known
+    if (!isAddress(title) || realish(home()) === realish(path.join(os.homedir(), '.sub-human'))) return null;
+    return { sid: old, title };
   }
   return null;
 }
