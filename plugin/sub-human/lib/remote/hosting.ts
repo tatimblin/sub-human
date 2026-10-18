@@ -310,7 +310,9 @@ function outcome(code: RoomCode, { waitMs = LINK_JOIN_WAIT_MS }: { waitMs?: numb
     if (stopped && stopped.why && PIN_REASONS.has(stopped.why) && lf && lf.pin_wanted) return { state: 'pin', ...(stopped.why !== 'PIN_NEEDED' ? { reason: stopped.reason } : {}) };
     if (stopped) return { state: 'refused', reason: stopped.reason };
     if (st.state === 'online' && lf && lf.token) return { state: 'linked' };
-    if (st.state === 'offline' && lf && lf.awaiting) return { state: 'waiting', reason: st.reason };
+    // a PIN typed while a knock waits, answered wrong or too soon: said, while the link keeps waiting for the card
+    if (lf && lf.awaiting && lf.pin === undefined && lf.pin_wanted && lf.pin_wanted.why) return { state: 'pin', ...(lf.pin_wanted.message ? { reason: lf.pin_wanted.message } : {}) };
+    if (st.state === 'offline' && lf && lf.awaiting && lf.pin === undefined) return { state: 'waiting', reason: st.reason };
     if (Date.now() >= until) return { state: 'waiting', reason: st.reason };
   }
 }

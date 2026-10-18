@@ -11,7 +11,8 @@
  * the host asks its person's card, and a host before the knock answers PIN_NEEDED. The host's answers are kept in the
  * link file: PIN_NEEDED / PIN_WRONG / PIN_THROTTLED -> pin_wanted (the PIN dropped, the line kept: the join asks
  * again), ADMIT_WAITING -> awaiting {ref, check} (the knock waits for the card; a PIN typed meanwhile is sent on the
- * next dial, and the right one lets it in at once). A token replaces the invite and its PIN, so a redial never
+ * next dial, and the right one lets it in at once; a wrong or too-early one is kept in pin_wanted and the link keeps
+ * dialing, so the card can still let it in). A token replaces the invite and its PIN, so a redial never
  * sends the PIN again; an invite the host refused (AUTH) is scrubbed with its PIN, so the link file keeps no secret in
  * clear. The machine id the host derives from this home's machine key is kept (home.ts setMachineIn).
  *
@@ -95,6 +96,14 @@ function keepAnswer(code: RoomCode, e: unknown, word: { secret: Buffer }, sentPi
   return false;
 }
 
+/** A PIN refused (wrong, or too soon) while this machine's knock waits for the host's card: the card can still let it
+ * in, so the link keeps dialing (OFFLINE ADMIT_WAITING, never a stop); the PIN step stays in pin_wanted. */
+function stillKnocking(code: RoomCode, e: unknown): unknown {
+  const why = reasonOf(e);
+  if (errCode(e) !== 'AUTH' || (why !== 'PIN_WRONG' && why !== 'PIN_THROTTLED') || !linksMod.get(code)?.awaiting) return e;
+  return new RoomError('OFFLINE', `${msgOf(e)}; the host's card still waits`, 'ADMIT_WAITING');
+}
+
 const keyFile = (code: RoomCode): string => path.join(linksMod.dirOf(code), 'client-x25519.json');
 /** The link's own Noise key (made once; fresh: a new one, for a new invite's link). */
 function linkKey(code: RoomCode, { fresh = false }: { fresh?: boolean } = {}): NoiseMod.KeyPair {
@@ -154,7 +163,7 @@ async function connectLink(code: RoomCode): Promise<Client> {
   let c: Client;
   try { c = await clientMod().connect(t, opts); } catch (e) {
     // an invite line's PIN steps: kept in the link file (the join asks for the PIN again, or waits for the card)
-    if (word && keepAnswer(code, e, word, sentPin, own ? own.pub.toString('base64url') : null)) throw e;
+    if (word && keepAnswer(code, e, word, sentPin, own ? own.pub.toString('base64url') : null)) throw stillKnocking(code, e);
     // the host refused the invite (a wrong PIN, burnt, used, expired): it and its PIN are spent here too, so the link
     // file keeps no secret in clear (a new join writes a fresh one)
     if (!l.token && typeof l.invite === 'string' && errCode(e) === 'AUTH') scrubRefused(code, msgOf(e), reasonOf(e));

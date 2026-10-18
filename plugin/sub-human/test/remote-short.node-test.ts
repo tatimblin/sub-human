@@ -309,6 +309,28 @@ test('an invite: a wrong PIN costs a try with a room line and is asked for again
   assert.ok(!said.includes(` ${wrong}`) && !said.includes(` ${m.pin}`));
 });
 
+test('a knock, then a wrong PIN: the link keeps waiting for the card, and Let in links it and the module takes the seat with no PIN typed again', async t => {
+  const { host, remote, alice, bob, code } = room(t);
+  const m = shown(reason(host.join(alice, 'invite --pipe')));
+  const wrong = String((Number(m.pin) + 1) % 10_000).padStart(4, '0');
+  stopDaemon(t, remote, code);
+  await typeLine(remote, bob, code, m.line, 'bob');
+  const first = remote.join(bob, `join ${wrong}`);
+  assert.match(reason(first), /wrong PIN \(4 tries left\)/);
+  await sleep(600);
+  const st = remote.lib(() => linkSocket.status(code));
+  assert.equal(remote.lib(() => linkSocket.stopReason(st)), null, 'the link did not stop: the card can still let it in');
+  const ref = must(host.lib(() => admission.pending(code))[0], 'the card still waits').ref;
+  const yes = card(host, alice, ref, 'Let in');
+  assert.match(ctx(yes.post), /alice let bob's machine into room/);
+  await until(() => remote.lib(() => linkSocket.status(code)).state === 'online', 10000, 'the link online');
+  const lf = linkFile(remote, code);
+  assert.ok(lf.token && !('pin_wanted' in lf) && !('awaiting' in lf), JSON.stringify(Object.keys(lf)));
+  const seated = remote.take(bob, code);
+  assert.equal(subHuman(seated).joined, true, seated.stdout);
+  assert.ok(remote.lib(() => identityLib.readMembers(code)).bob, 'bob is seated');
+});
+
 test('an invite: five wrong PINs burn it; the right one after that is asked for no more', async t => {
   // the waits short (the pipe's serve runs with the joiner's environment)
   const { host, remote, alice, code } = room(t, { ...LINK_ENV, SUB_HUMAN_PIN_BACKOFF_MS: '20' });
