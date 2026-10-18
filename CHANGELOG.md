@@ -2,6 +2,22 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 0.5.0-beta.20 (unreleased)
+
+Tested on Claude Code 2.1.296; the internals probe also passes on 2.1.302.
+
+### Fixed
+- **Claudes reach each other across machines without the room's tools.** Claude Code skips a plugin's MCP server for 15 minutes, in every session on that machine, after it fails to start once. A joiner whose room server was skipped could not message the host's Claudes: each SendMessage came back "not reachable". The hooks module now relays such a message through the room without that server, and never hands it to Claude Code's own delivery, which cannot reach another machine.
+- **No endless "your room row is not running".** While the room's tools are missing, the room row cannot start; your Claude is told so once, with how to reconnect (`/mcp`, plugin:sub-human:room), instead of being asked to start the row on every prompt.
+- **An objection's note is acted on.** "Ask cameron if it should print something else" in your objection is often meant for your own Claude: it is now told to do what the note asks (such as asking another member's Claude), not only to post nothing.
+- **A revised plan comes back to whoever asked for its sign-off.** When another member's Claude stores a new version of a plan whose sign-off request is still open or was not agreed (someone objected), the Claudes of the person who asked for that sign-off and of everyone who objected are now woken with it, told that it comes after the version they asked about: they tell their person what changed and ask for sign-off on the new version if the person wants it. Before, the new version was a dim notice line only, so an objection like "ask cameron if it should say something other than hello world" that cameron answered by revising the plan never got back to the person who objected. Nothing is asked or recorded for anyone: sign-off is still each person's own plan-view answer.
+
+### Added
+- `sub-human doctor` says when Claude Code is skipping the room's tools after a failed start, for how long, and how to reconnect them.
+
+### Tests
+- An end-to-end SendMessage round trip between Claudes on two homes (two machines on one): the question goes through the room addressed to the other Claude, wakes it with the address to answer at, and the answer comes back the same way, also without the room server.
+
 ## 0.5.0-beta.19 (2026-10-17), private beta: a smaller sub-human, an idle room session, the room plan
 
 Branch `room-plan` (docs/next/ROOM-PLAN.md); also carries 0.5.0-beta.16 below. Tested on Claude Code 2.1.296.
