@@ -178,7 +178,7 @@ function inviteText({ code, how, line, pin, ref, extra = [], pinned, cut = false
   return [
     ...send,
     'They type the PIN after the line, or alone once their machine asks for it; the line alone gets nobody in, nor does the PIN. After 5 wrong PINs the invite stops working.',
-    'When they have typed both, a card here asks you to let them in; nothing gets in before you answer.',
+    'The right PIN lets their machine in with no card here; the room says who joined, from which machine, with its check and how to kick them if it is not them.',
     `Sent it to the wrong place? /sub-human invite --cancel ${ref} cancels just this invite.`,
     ...extra,
     `They need sub-human ${protocol.PLUGIN_VERSION} or newer; an older one is told the host runs a newer version and to update (/plugin update sub-human).`,

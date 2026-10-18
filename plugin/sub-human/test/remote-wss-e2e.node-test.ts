@@ -1,8 +1,8 @@
 // 1.1 end to end on one machine, two homes (test/support/two-homes.ts): the host's `/sub-human invite --web` (behind a test front: lib/env.ts webFront) starts the
-// listener (127.0.0.1 only) and shows a join URL + SECRET and the PIN apart, to the person only; the joiner's
-// `/sub-human join URL SECRET` asks the listener for its key, checks it against the line's tag, pins it, and runs Noise
-// XK with a key of the link's own; the host asks for the PIN, `/sub-human join PIN` gives it, and the host's card lets
-// the machine in; a bare /sub-human takes the seat; posts flow and the mirror converges. A wrong PIN costs a try. The link daemon's reconnect
+// listener (127.0.0.1 only) and shows a join URL#SECRET and the PIN apart, to the person only; the joiner's
+// `/sub-human join URL#SECRET [PIN]` (or the older URL SECRET) asks the listener for its key, checks it against the
+// line's tag, pins it, and runs Noise XK with a key of the link's own; the PIN, on the line or as `/sub-human join PIN`
+// once the host asks, lets the machine in with no card, and the room hears its check; a bare /sub-human takes the seat; posts flow and the mirror converges. A wrong PIN costs a try. The link daemon's reconnect
 // works over ws: the listener restarted and a TLS front (the shape of Tailscale Serve) restarted. `--web` / `--public`
 // run the exact tailscale commands against a fake `tailscale` on PATH, and `invite --stop` turns only that path off.
 import test from 'node:test';
@@ -283,7 +283,7 @@ test('a web invite: invite --web behind a front shows URL#SECRET (the SECRET as 
   assert.match(lg, new RegExp(`room ${code}: a connection from 127\\.0\\.0\\.1 \\(key [A-Za-z0-9_-]{12}…\\); serve pid \\d+`));
 });
 
-test('a web invite in one line: URL#SECRET PIN links in one hidden step; the PIN rides the first hello once the listener\'s key is checked; the host is never asked for it again; the card lets the machine in', async t => {
+test('a web invite in one line: URL#SECRET PIN links in one hidden step; the PIN rides the first hello once the listener\'s key is checked; the host is never asked for it, and the right PIN lets the machine in with no card; the room hears its check', async t => {
   const R = await rig(t);
   const { port, host, remote, alice, bob, code } = R;
   const m = must(shortShown(must(host.join(alice, 'invite --web', { SUB_HUMAN_WEB_FRONT: `http://127.0.0.1:${port}` }).json?.reason)));
@@ -291,15 +291,17 @@ test('a web invite in one line: URL#SECRET PIN links in one hidden step; the PIN
   const typed = remote.join(bob, `${m.line} ${m.pin} --as bob`);
   assert.ok(hiddenBlock(typed), typed.stderr);
   for (const s of [m.pin, m.word]) assert.ok(!modelSees(typed).includes(s) && !must(typed.json?.reason).includes(s), 'neither the PIN nor the SECRET reaches the model, nor is echoed');
-  const req = await h.until(() => host.lib(() => admission.pending(code)).at(-1), 15_000, 50);
-  assert.ok(req, 'the PIN came with the line: the card\'s request, no PIN asked for');
+  assert.ok(await h.until(() => remote.lib(() => !!(links.get(code) || {}).token), 15_000, 50), 'the PIN came with the line: linked in its first hello');
   const lf = linkFile(remote, code);
   assert.equal(lf.transport.hostKey, host.lib(() => listener.hostKey()), 'the listener\'s key, checked against the tag and pinned');
   assert.equal('pin' in lf, false, 'the PIN left the link file once the host answered');
   assert.equal('pin_wanted' in lf, false, 'the host never asked for the PIN');
-  assert.equal(must(lf.awaiting).ref, req.ref);
-  assert.equal(req.key, lf.transport.clientKey, 'the request is bound to the key the PIN came with');
-  letIn(host, alice, req.ref);
+  assert.equal('awaiting' in lf, false, 'nothing waits for a card');
+  assert.equal(host.lib(() => admission.pending(code)).length, 0, 'no card');
+  const req = must(host.lib(() => admission.admissions(store.open(code), { all: true }))[0], 'the admission record');
+  assert.deepEqual([req.key, req.admitted_by, req.name], [lf.transport.clientKey, 'pin', 'bob'], 'let in by the PIN, bound to the key it came with');
+  const check = inviteSecret.joinCheck(req.machine, req.key);
+  assert.match(host.log(code), new RegExp(`bob joined from \\S+ \\(${check}\\) · not them\\? /sub-human kick bob`), 'the room line names the check, with the kick');
   assert.ok(await h.until(() => linkState(remote, code) === 'online', 15_000, 50), 'online once let in');
   assert.equal(must(remote.join(bob, '').json).decision, undefined, 'a bare /sub-human takes the seat');
   const lg = fs.readFileSync(path.join(host.home, 'listen', 'listen.log'), 'utf8');

@@ -2,8 +2,9 @@
 // /sub-human invite --pipe shows `/sub-human join pipe:HOME ROOM SECRET` and, apart from it, a 4-digit PIN, to the
 // person only; the joiner types the line (a hidden step: the model never sees the SECRET), the link daemon checks the
 // host's key against it and shows the host the SECRET, the host asks for the PIN, and the joiner types `/sub-human join
-// PIN` (hidden too); the right PIN links the machine in that hello, with no card (a room line names its check and the
-// kick), and a bare /sub-human then takes the seat. A join request with no PIN (written as PLAN-JOIN step 4's knock
+// PIN` (hidden too), or types the PIN after the line, which sends it in the first hello once the host's key is checked;
+// the right PIN links the machine in that hello, with no card (a room line names its check and the kick), and a bare
+// /sub-human then takes the seat. A join request with no PIN (written as PLAN-JOIN step 4's knock
 // will make it: Machine.knock) wakes the host seat's Claude, whose card (hooks/consent.ts) is its only way in: Let in
 // links the machine, Refuse stops it, an AFK card records nothing, and a request nobody answers lapses. A wrong PIN costs a try with a room line and is asked for again, the
 // fifth burns the invite; neither the SECRET nor the PIN is ever in a log, a link file after the host answered it, or
@@ -83,7 +84,8 @@ test('an invite over pipe: the host sees the line and the PIN apart; the line, t
   const { pin, word } = m;
   assert.match(reason(out), /tell them its PIN apart from the line \(say it, or send it another way\): \d{4}\n/);
   assert.ok(!new RegExp(`join \\S+ \\S+ ${word}[^\\n]*${pin}`).test(reason(out)), 'the PIN is not on the line');
-  assert.match(reason(out), /a card here asks you to let them in/);
+  assert.match(reason(out), /The right PIN lets their machine in with no card here; the room says who joined/);
+  assert.doesNotMatch(reason(out), /a card here asks you/);
   assert.match(reason(out), /They need sub-human \S+ or newer; an older one is told the host runs a newer version and to update \(\/plugin update sub-human\)\./);
   assert.doesNotMatch(reason(out), /PIN must be 4 digits/, 'an older (protocol 3) joiner meets the version skew, not a PIN rule');
 
@@ -191,22 +193,24 @@ test('a join request with no PIN (as PLAN-JOIN step 4\'s knock makes it): the ho
   assert.ok(admitted.admit_sig && (admitted.admit_sig as { from?: string }).from === 'alice', 'the answer is signed with alice\'s seat key');
 });
 
-test('an invite in one line: the line with the PIN after it links in one hidden step (the PIN in the first hello, once the host\'s key is checked); the card lets the machine in', async t => {
+test('an invite in one line: the line with the PIN after it links in one hidden step (the PIN in the first hello, once the host\'s key is checked); the right PIN lets the machine in with no card, and the room hears its check', async t => {
   const { host, remote, alice, bob, code } = room(t);
   const m = shown(reason(host.join(alice, 'invite --pipe')));
   stopDaemon(t, remote, code);
   const typed = remote.join(bob, `${m.line} ${m.pin} --as bob`);
   assert.ok(hiddenBlock(typed), typed.stderr);
   for (const s of [m.pin, m.word]) assert.ok(!modelSees(typed).includes(s) && !reason(typed).includes(s), 'neither the PIN nor the SECRET reaches the model, nor is echoed');
-  const req = must(await until(() => host.lib(() => admission.pending(code)).at(-1), 8000, 'the card\'s request'), 'the request');
-  assert.equal(req.name, 'bob');
+  await until(() => remote.lib(() => (links.get(code) || {}).token), 8000, 'linked in the first hello');
   const lf = linkFile(remote, code);
   assert.equal('pin' in lf, false, 'the PIN left the link file once the host answered');
   assert.equal('pin_wanted' in lf, false, 'the host never asked for it');
-  assert.equal(must(lf.awaiting).ref, req.ref);
+  assert.equal('awaiting' in lf, false, 'nothing waits for a card');
   assert.equal(lf.join_as, 'bob');
-  assert.match(reason(remote.join(bob, '')), /checked your PIN\. A card there now asks them to let you in/, 'a bare /sub-human waits for the card');
-  card(host, alice, req.ref, 'Let in');
+  assert.equal(host.lib(() => admission.pending(code)).length, 0, 'no card on the host');
+  const rec = must(host.lib(() => admission.admissions(store.open(code), { all: true }))[0], 'the admission record');
+  assert.deepEqual([rec.admit, rec.admitted_by, rec.name], ['let-in', 'pin', 'bob']);
+  const said = host.lib(() => store.open(code).readAll()).filter(e => e.from === 'room' && e.kind === 'status').map(e => e.text).join('\n');
+  assert.match(said, /^bob joined from \S+ \(check [0-9a-f]{4}-[0-9a-f]{4}\) · not them\? \/sub-human kick bob$/m);
   await until(() => remote.lib(() => linkSocket.status(code)).state === 'online', 10000, 'the link online');
   assert.equal(must(remote.join(bob, '').json).decision, undefined, 'a bare /sub-human takes the seat');
   assert.ok(remote.lib(() => identityLib.readMembers(code)).bob, 'bob is seated');

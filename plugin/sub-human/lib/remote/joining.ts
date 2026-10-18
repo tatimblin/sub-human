@@ -2,8 +2,8 @@
  * plugin/sub-human/lib/remote/joining.ts: the joiner's side of `/sub-human join …` (lib/commands/join.ts parses it): the
  * link file, the link daemon's start and what the person reads next. An invite line only links this machine, in one
  * step the person types (the line with the PIN after it) or two (the line, then the PIN the host's machine asks for;
- * lib/remote/link-connect.ts dials, and sends a PIN only once the host's key is checked), and the host's card lets it
- * in: no step ever takes the seat, so the seat's mechanics block never goes to the model with a secret-bearing prompt. A join over the person's own ssh login (no invite) links and then takes the seat.
+ * lib/remote/link-connect.ts dials, and sends a PIN only once the host's key is checked); the right PIN lets it in in
+ * that hello (a join request with no PIN waits for the host's card): no step ever takes the seat, so the seat's mechanics block never goes to the model with a secret-bearing prompt. A join over the person's own ssh login (no invite) links and then takes the seat.
  *
  * A join over the person's own ssh login is said explicitly (no SECRET is no invite), and its refusal says that an
  * invite line ends with its SECRET. Either join, for a room this machine is linked to live another way, is refused
