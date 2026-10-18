@@ -84,6 +84,9 @@ test('closeOff, parseCc and ccNotice: the one line, only when something is off',
   assert.equal(parseCc(null), null);
   assert.equal(ccNotice({ version: '2.1.302', verified: false, off: [] }), null);
   assert.equal(ccNotice(null), null);
+  // only what SUB_HUMAN_CC_OFF forced: the line does not blame the version
+  assert.equal(ccNotice({ version: '2.1.302', verified: false, off: ['tasks'], forced: ['tasks'] }), 'SUB_HUMAN_CC_OFF: the room task list is off (tasks are kept in the room).');
+  assert.deepEqual(parseCc({ version: '2.1.302', verified: false, off: ['tasks'], forced: ['tasks', 'bogus'] }), { version: '2.1.302', verified: false, off: ['tasks'], forced: ['tasks'] });
   assert.equal(ccNotice({ version: '2.1.302', verified: false, off: ['tasks', 'plan-edit', 'sign-off'] }),
     "Claude Code 2.1.302 isn't verified with sub-human yet: the room task list is off (tasks are kept in the room), plan edits use the plan tool, sign-off is a question Claude Code asks you, not the plan view. sub-human doctor has details.");
   assert.match(must(ccNotice({ version: '2.1.296', verified: true, off: ['tasks'] })), /^SUB_HUMAN_CC_OFF: the room task list is off/);
@@ -150,6 +153,8 @@ test('ensure: the probed version is verified with no probe; another starts the r
   const f = must(verdict.file('9.9.1'));
   withLock(`${f}.lock`, () => { assert.equal(verdict.run('9.9.1', { env: { CLAUDE_BIN: fakeBinary(dir, '9.9.1'), PATH: '' } }), null); });
   assert.equal(fs.existsSync(f), false);
+  // the misses above keep ensure from starting a runner for the hour: forget them
+  fs.rmSync(`${f}.miss`, { force: true });
   // in the background, from ensure (as mod-hello calls it): the stand-in has one internal, so every gated feature falls back
   process.env.CLAUDE_BIN = fakeBinary(dir, '9.9.1');
   assert.equal(verdict.ensure('9.9.1'), null, 'never waits');
@@ -161,6 +166,25 @@ test('ensure: the probed version is verified with no probe; another starts the r
   assert.deepEqual(verdict.hello('9.9.3'), { version: '9.9.3', verified: null, off: [] }, 'not checked yet');
 });
 
+test('run probes the session\'s own binary first; a version nothing here can read is not run again on every hello', async t => {
+  h.freshHome(t);
+  const dir = h.tmpDir('sh-verdict-own-', t);
+  // the claude on PATH (CLAUDE_BIN here) is another version: the session's own executable is the one probed
+  const v = must(verdict.run('9.8.1', { env: { CLAUDE_BIN: fakeBinary(dir, '9.8.0'), PATH: '' }, bin: fakeBinary(dir, '9.8.1') }));
+  assert.equal(v.version, '9.8.1');
+  // none of them is the version: nothing judged, and a miss is kept
+  assert.equal(verdict.run('9.8.2', { env: { CLAUDE_BIN: fakeBinary(dir, '9.8.0'), PATH: '' }, bin: path.join(dir, 'gone') }), null);
+  const f = must(verdict.file('9.8.2'));
+  assert.ok(fs.existsSync(`${f}.miss`));
+  // so ensure starts no runner for it for a while, even once a binary of it is on hand
+  const was = process.env.CLAUDE_BIN;
+  t.after(() => { if (was === undefined) delete process.env.CLAUDE_BIN; else process.env.CLAUDE_BIN = was; });
+  process.env.CLAUDE_BIN = fakeBinary(dir, '9.8.2');
+  assert.equal(verdict.ensure('9.8.2'), null);
+  await new Promise(r => setTimeout(r, 1500));
+  assert.equal(verdict.read('9.8.2'), null);
+});
+
 test('mod-hello: hands the module the version\'s verdict, keeps the version in the lease and as the one seen', async t => {
   const w = new World({ claude: 'sleep' }, { t });
   const sid = '0b9c6f8e-1111-4222-8333-444455550002';
@@ -170,7 +194,7 @@ test('mod-hello: hands the module the version\'s verdict, keeps the version in t
   assert.equal(fileField(path.join(w.home, 'sessions', 'mods', `${sid}.json`), 'cc_version'), contract.PROBED_VERSION);
   assert.equal(fileField(path.join(w.home, 'cc', 'seen.json'), 'version'), contract.PROBED_VERSION);
   const forcedRun = w.hook('mod-hello', { session_id: sid, cc_version: contract.PROBED_VERSION }, { env: { SUB_HUMAN_CC_OFF: 'sign-off' } });
-  assert.deepEqual(field(forcedRun.stdout, 'cc'), { version: contract.PROBED_VERSION, verified: true, off: ['plan-edit', 'sign-off'] });
+  assert.deepEqual(field(forcedRun.stdout, 'cc'), { version: contract.PROBED_VERSION, verified: true, off: ['plan-edit', 'sign-off'], forced: ['plan-edit', 'sign-off'] });
   // a version not checked here: verified null at once, the runner's verdict in the background
   const dir = h.tmpDir('sh-verdict-bin-', t);
   const fresh = w.hook('mod-hello', { session_id: sid, cc_version: '9.9.4' }, { env: { CLAUDE_BIN: fakeBinary(dir, '9.9.4'), PATH: '' } });

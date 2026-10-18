@@ -171,6 +171,10 @@ function checkRoomClaudes({ now = Date.now(), jobs = () => lib('cc/bg.ts').jobs(
       continue;
     }
     if (bound || now - since < ROOM_CLAUDE_BIND_GRACE_MS) continue;
+    if (o.pid && o.left_at) { // it took its seat, then its job ended or was stopped while the room is open
+      out.push(check({ id: `room-claude:${code}`, status: 'warn', title: `room's Claude ${code}`, detail: `its job ${o.job} took its seat, then stopped (${o.left_at}): the room's Claude is not running; the room and its tasks are kept, and the host repairs the task list`, fix: `claude logs ${o.job} shows why; ${RESTART(code)}` }));
+      continue;
+    }
     let state: string | null = null;
     try { state = (jobs() ?? []).find(j => j.id === o.job)?.state || null; } catch { state = null; }
     const ended = !!state && ['done', 'failed', 'stopped'].includes(state);

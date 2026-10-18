@@ -50,7 +50,7 @@ function hello(input: HelloIn): Hello {
   try {
     const version = input.cc_version;
     if (typeof version === 'string' && verdict.file(version)) {
-      cc = verdict.hello(version, verdict.ensure(version));
+      cc = verdict.hello(version, verdict.ensure(version, { pid: identity.claudePid() || process.ppid }));
       verdict.noteSeen(version);
     }
   } catch (err) { process.stderr.write(`sub-human mod-hello: no verdict: ${err instanceof Error ? err.message : err}\n`); }

@@ -38,18 +38,21 @@ export const FALLBACK: Readonly<Record<Gated, string>> = Object.freeze({
 });
 
 export function parseCc(v: unknown): Cc | null {
-  const o: { version?: unknown; verified?: unknown; off?: unknown } | null = v && typeof v === 'object' ? v : null;
+  const o: { version?: unknown; verified?: unknown; off?: unknown; forced?: unknown } | null = v && typeof v === 'object' ? v : null;
   if (!o || !isCcVersion(o.version)) return null;
+  const forced = closeOff(Array.isArray(o.forced) ? o.forced : []);
   return {
     version: o.version,
     verified: typeof o.verified === 'boolean' ? o.verified : null,
     off: closeOff(Array.isArray(o.off) ? o.off : []),
+    ...(forced.length ? { forced } : {}),
   };
 }
 
 export function ccNotice(cc: Cc | null | undefined): string | null {
   if (!cc || !cc.off.length) return null;
   const what = cc.off.map(f => FALLBACK[f]).join(', ');
-  if (cc.verified === true) return `SUB_HUMAN_CC_OFF: ${what}.`;
+  // only what SUB_HUMAN_CC_OFF forced: the version is not to blame
+  if (cc.verified === true || cc.off.every(f => cc.forced?.includes(f))) return `SUB_HUMAN_CC_OFF: ${what}.`;
   return `Claude Code ${cc.version} isn't verified with sub-human yet: ${what}. sub-human doctor has details.`;
 }

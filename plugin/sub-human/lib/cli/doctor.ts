@@ -78,6 +78,13 @@ async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, env = proc
   const cv = claudeVersion(env);
   const cl = checkClaude({ version: cv, quick, env });
   checks.push(cl.check, checkDaemon({ version: cv, env }));
+  // the version this machine's sessions last ran (lib/cc/verdict.ts seen), when it is not the `claude` on PATH's
+  let ran: string | null = null;
+  try { ran = lib('cc/verdict.ts').seen(); } catch { /* none kept */ }
+  if (ran && ran !== cv) {
+    const s = checkClaude({ version: ran, quick: true, env }).check;
+    checks.push({ ...s, id: 'claude-session', title: 'Claude Code (sessions)', detail: `the sessions here last ran ${s.detail}` });
+  }
   const settings = settingsFiles(env);
   checks.push(checkHooks(settings, env), checkRoomTools({ env }));
   checks.push(...checkListener({ quick }));

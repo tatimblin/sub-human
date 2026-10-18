@@ -196,6 +196,18 @@ test('doctor redactor: each rule alone', () => {
   assert.equal(doctor.redactor({ home: '/home/zed', shHome: '/home/zed/.sub-human' })('/home/zed/.sub-human/x'), '~/.sub-human/x');
 });
 
+test('doctor: a room session that took its seat and then stopped is said to have stopped, not never bound', t => {
+  h.freshHome(t);
+  const { code } = h.register('alice', 'member', process.pid);
+  const old = new Date(Date.now() - 5 * 60_000).toISOString();
+  identity.updateRoomClaude(code, () => ({ job: 'job777', spawned_at: old, pid: 4242, joined_at: old, left_at: new Date().toISOString() }));
+  const c = first(doctor.checkRoomClaudes({ jobs: () => [job({ id: 'job777', state: 'stopped' })] }));
+  assert.equal(c.status, 'warn');
+  assert.match(c.detail, /job job777 took its seat, then stopped/);
+  assert.doesNotMatch(c.detail, /never took its seat/);
+  assert.match(fixOf(c), /claude logs job777/);
+});
+
 test('doctor: a room whose claude job started but never took its seat (e.g. blocked) fails, with the job\'s log', t => {
   h.freshHome(t);
   const { code } = h.register('alice', 'member', process.pid);

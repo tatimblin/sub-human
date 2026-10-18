@@ -40,7 +40,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { home } from '../home.ts';
 import { readJson, writeJsonAtomic, lazy } from '../io.ts';
 import { obj, str, arr } from '../decode.ts';
@@ -51,10 +51,12 @@ import type { Gated, Cc } from '../../mod/core/cc.ts';
 import type * as ContractMod from './contract.ts';
 import type * as LockMod from '../lock.ts';
 import type * as IdentityMod from '../identity.ts';
+import type * as BgMod from './bg.ts';
 
 const contractLib = lazy<typeof ContractMod>(import.meta.url, './contract.ts');
 const lockLib = lazy<typeof LockMod>(import.meta.url, '../lock.ts');
 const identityLib = lazy<typeof IdentityMod>(import.meta.url, '../identity.ts');
+const bgLib = lazy<typeof BgMod>(import.meta.url, './bg.ts');
 
 /** A version's verdict, as kept in <home>/cc/<version>.json. */
 interface Verdict { version: string; probedAt: string; contract: string; failed: string[]; off: Gated[] }
@@ -138,7 +140,17 @@ function record(version: string, failed: readonly string[]): Verdict | null {
   return v;
 }
 
-function ensure(version: unknown): Verdict | null {
+/** A runner that found no binary of the version (the session's own, CLAUDE_BIN, PATH, the cask) leaves missOf; the
+ * hellos start no other for MISS_MS, so a version nothing here can read is not probed on every hello. */
+const missOf = (f: string): string => `${f}.miss`;
+const MISS_MS = 3_600_000;
+const missedLately = (f: string): boolean => {
+  try { return Date.now() - fs.statSync(missOf(f)).mtimeMs < MISS_MS; } catch { return false; }
+};
+
+/** The kept verdict for version, else one started in the background. pid: the session's claude process, whose own
+ * executable is probed first (the `claude` on PATH may be another version). */
+function ensure(version: unknown, { pid }: { pid?: number | null } = {}): Verdict | null {
   const f = file(version);
   if (!f || !isCcVersion(version)) return null;
   const kept = read(version);
@@ -146,18 +158,31 @@ function ensure(version: unknown): Verdict | null {
   if (contractLib().compareVersions(version, contractLib().PROBED_VERSION) === 0) {
     return record(version, []); // the version every entry was checked on: nothing to probe
   }
-  if (!fs.existsSync(lockOf(f))) runDetached(version);
+  if (!fs.existsSync(lockOf(f)) && !missedLately(f)) runDetached(version, exeOf(pid));
   return null;
 }
 
-function runDetached(version: string): void {
+/** pid's executable, absolute: /proc on Linux (cc.exeState); on macOS `ps` names only `claude` for one started from
+ * PATH, so the first text mapping `lsof` lists (the executable) instead. Only on a hello with no verdict yet. */
+function exeOf(pid: number | null | undefined): string | null {
+  if (!pid) return null;
+  try {
+    const st = bgLib().exeState(pid);
+    if (st && !st.deleted && path.isAbsolute(st.exe)) return st.exe;
+    const out = String(spawnSync('lsof', ['-a', '-p', String(pid), '-d', 'txt', '-Fn'], { encoding: 'utf8', timeout: 3000 }).stdout || '');
+    const exe = /^n(\/.+)$/m.exec(out)?.[1];
+    return exe && path.isAbsolute(exe) ? exe : null;
+  } catch { return null; }
+}
+
+function runDetached(version: string, bin: string | null = null): void {
   if (!isCcVersion(version)) return;
-  const p = spawn(process.execPath, [import.meta.filename, 'run', version], { detached: true, stdio: 'ignore', env: { ...process.env, SUB_HUMAN_HOME: home() } });
+  const p = spawn(process.execPath, [import.meta.filename, 'run', version, ...(bin ? [bin] : [])], { detached: true, stdio: 'ignore', env: { ...process.env, SUB_HUMAN_HOME: home() } });
   p.on('error', () => { /* the next hello starts another */ });
   p.unref();
 }
 
-function run(version: string, { env = process.env }: { env?: NodeJS.ProcessEnv } = {}): Verdict | null {
+function run(version: string, { env = process.env, bin }: { env?: NodeJS.ProcessEnv; bin?: string | null } = {}): Verdict | null {
   const f = file(version);
   if (!f) return null;
   fs.mkdirSync(dir(), { recursive: true, mode: 0o700 });
@@ -166,15 +191,19 @@ function run(version: string, { env = process.env }: { env?: NodeJS.ProcessEnv }
       const kept = read(version);
       if (kept) return kept;
       const cc = contractLib();
-      const bin = cc.locateBinary({ env });
-      if (!bin) return null;
-      const buf = fs.readFileSync(bin);
-      // only the binary this version is: a session on 2.1.296 is not judged by a 2.1.302 put on PATH since
-      if (cc.compareVersions(cc.binaryVersion(buf), version) !== 0) return null;
-      const results = cc.probe(buf);
-      // every entry missing is a probe that read the wrong thing, not every internal changed at once
-      if (results.every(r => !r.ok)) return null;
-      return record(version, results.filter(r => !r.ok).map(r => r.id));
+      // only the binary this version is: a session on 2.1.296 is not judged by a 2.1.302 put on PATH since. The
+      // session's own executable first, then CLAUDE_BIN, PATH and the cask
+      const tries = [...new Set([bin ? cc.locateBinary({ bin, env: {} }) : null, cc.locateBinary({ env })].filter((b): b is string => !!b))];
+      for (const b of tries) {
+        const buf = fs.readFileSync(b);
+        if (cc.compareVersions(cc.binaryVersion(buf), version) !== 0) continue;
+        const results = cc.probe(buf);
+        // every entry missing is a probe that read the wrong thing, not every internal changed at once
+        if (results.every(r => !r.ok)) continue;
+        return record(version, results.filter(r => !r.ok).map(r => r.id));
+      }
+      fs.writeFileSync(missOf(f), '');
+      return null;
     }, { timeoutMs: 100, staleMs: RUN_STALE_MS });
   } catch (e) {
     if (errCode(e) === 'LOCK') return null; // another runner is on it
@@ -183,15 +212,16 @@ function run(version: string, { env = process.env }: { env?: NodeJS.ProcessEnv }
 }
 
 function hello(version: string, v: Verdict | null = read(version)): Cc {
-  return { version, verified: v ? verified(v) : null, off: closeOff([...forced(), ...(v?.off ?? [])]) };
+  const f = forced();
+  return { version, verified: v ? verified(v) : null, off: closeOff([...f, ...(v?.off ?? [])]), ...(f.length ? { forced: f } : {}) };
 }
 
-export { file, read, verified, judge, record, forced, offFor, off, sessionVersion, seen, noteSeen, ensure, runDetached, run, hello };
+export { file, read, verified, judge, record, forced, offFor, off, sessionVersion, seen, noteSeen, ensure, exeOf, runDetached, run, hello };
 export type { Verdict };
 
 if (import.meta.main) {
-  const [cmd, version] = process.argv.slice(2);
-  if (cmd !== 'run' || !isCcVersion(version)) { process.stderr.write('usage: node lib/cc/verdict.ts run VERSION\n'); process.exit(2); }
-  const v = run(version);
+  const [cmd, version, bin] = process.argv.slice(2);
+  if (cmd !== 'run' || !isCcVersion(version)) { process.stderr.write('usage: node lib/cc/verdict.ts run VERSION [BINARY]\n'); process.exit(2); }
+  const v = run(version, { bin: bin ?? null });
   process.stdout.write(JSON.stringify(v) + '\n');
 }
