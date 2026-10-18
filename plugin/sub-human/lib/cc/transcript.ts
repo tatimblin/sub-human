@@ -193,7 +193,7 @@ function toolUseInput(lines: readonly TranscriptLine[], toolUseId: string | null
     const e = asEntry(line);
     const c = e && e.message && e.message.content;
     const b = (Array.isArray(c) ? c as (ContentBlock | null)[] : []).find(x => x && x.type === 'tool_use' && x.id === toolUseId);
-    if (b) return b.input;
+    if (b) return b.input ?? null; // a block with no input: none
   }
   return null;
 }

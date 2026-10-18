@@ -157,6 +157,38 @@ test('toolUseInput: the model input from the assistant tool_use block', () => {
   assert.equal(cc.toolUseInput(lines, 'zz'), null);
 });
 
+test('the readers on a transcript they cannot use (gone, a directory, torn lines, shapes they do not know): never throw, and give no value', () => {
+  const dir = fs.mkdtempSync(path.join(tmp, 'garbled-'));
+  const shapes: unknown[] = [null, 5, 'str', true, [], {}, [null, 5, 'x', [], { type: 'text', text: 5 }, { type: 'tool_result' }],
+    { content: null }, { content: 5 }, { content: [null, 7, 'x', { type: 'tool_use', id: 't1' }, { type: 'tool_result', tool_use_id: 't1', is_error: true, content: { a: 1 } }] }];
+  // every field these readers look at, set to each shape, under each type they look for (the ids and words in a string
+  // field too, so the raw-line prefilters pass)
+  const lines = ['5', 'null', '"s"', '[1,2]', '{torn', 'true'];
+  for (const v of shapes) for (const type of ['user', 'assistant', 'system', 'continued-in', 'custom-title', 'attachment', 5, null]) {
+    lines.push(J({ type, message: v, content: v, attachment: v, origin: v, timestamp: v, userFeedback: v, continuedInSessionId: v, customTitle: v, promptId: v,
+      isMeta: v, words: 't1 tool_result "tool_use" "user" "plan_mode" planFilePath "continued-in" "custom-title" sub-human: home' }));
+  }
+  const file = path.join(dir, 't.jsonl');
+  fs.writeFileSync(file, lines.join('\n'));
+  for (const ls of [lines, cc.parseLines(lines), [...lines].reverse()]) {
+    assert.equal(cc.planFile(ls), null);
+    assert.equal(cc.toolUseInput(ls, 't1'), null);
+    assert.equal(cc.lastHumanPrompt(ls), null);
+    // an error tool_result whose note is in no field the readers know: no note (closed, never an answer)
+    assert.deepEqual(cc.planAnswer(ls, 't1'), { note: null });
+    assert.equal(cc.planFeedback(ls, 't1'), null);
+  }
+  for (const f of [path.join(dir, 'none.jsonl'), dir, '', 5, null, undefined]) {
+    assert.deepEqual([cc.readLines(f), cc.readEntries(f, { tailBytes: 64 })], [[], []], String(f));
+    assert.deepEqual([cc.continuedIn(f), cc.lastTitle(f), cc.lastHome(f)], [null, null, null], String(f));
+  }
+  // a continued-in record or a title whose field is not a string gives none
+  fs.writeFileSync(file, [J({ type: 'continued-in', continuedInSessionId: 5 }), J({ type: 'custom-title', customTitle: { t: 'alice.vole-8126' } }), J({ type: 'system', content: ['sub-human: home /x'] })].join('\n'));
+  assert.deepEqual([cc.continuedIn(file), cc.lastTitle(file), cc.lastHome(file)], [null, null, null]);
+  assert.equal(cc.contentText({ text: 'x' }), '');
+  assert.deepEqual(cc.rejectionAnswer(''), { note: null });
+});
+
 // ---------- prompts ----------
 
 test('pasted content', () => {

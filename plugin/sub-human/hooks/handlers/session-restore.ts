@@ -17,6 +17,10 @@
 //            is recorded (identity.markForked) and the person told why and how to get back; /sub-human there then
 //            opens no room and joins none this folder lacks (lib/seats.ts take). The fork does not adopt that folder
 //            for itself: its room server, status line and Bash all find the store by SUB_HUMAN_HOME, which it lacks.
+//            A fork whose record cannot be read (no transcript, torn lines, a shape the readers do not know) while a
+//            session of this directory that changed just now holds a live seat (identity.forkUnread) also takes no seat:
+//            the person is told in one line (UNREAD) how to take it back. Nothing here throws past the hook: a fork
+//            that cannot be placed starts unseated.
 // Context = the same mechanics block as join (hooks/context.ts contextBlock: the role template filled + ROWS, i.e.
 // lib/rows.ts rowCalls(), which lists only the rows with no live hold: rows survive /clear and compaction, and
 // a re-spawn would duplicate the room row). On --resume the hold server is new, so every row is
@@ -53,9 +57,17 @@ function rowsLead(me: Identity): string {
   return rows.rowsNeeded(me.code, me, { held }).length ? PARTIAL : '';
 }
 
+/** The person's line for a fork that could not be placed (identity.forkUnread: addr the seat it may have come from). A
+ * bare /sub-human looks for the record again (lib/commands/join.ts forked), and while the seat is live elsewhere says
+ * where it is: never a second seat. */
+const UNREAD = (addr: string | null): string => `sub-human: this session took no seat: Claude Code's transcript did not say which session it continued`
+  + `${addr ? `, so ${addr} stayed there` : ''}. Run /sub-human to take your seat back.`;
+
 /** The seat the conversation left behind when ← moved it here (see the header), or one it held in another sub-human
- * folder (away: its SUB_HUMAN_HOME was only in the shell, which Claude Code's bg job drops), or null. */
-function forkOrigin(input: HookIn<'SessionStart'>): { parent: identity.ForkParent } | { away: identity.ForkedAway } | null {
+ * folder (away: its SUB_HUMAN_HOME was only in the shell, which Claude Code's bg job drops), or a seated session of this
+ * directory whose transcript gave no record (unread: its address), or null. */
+type ForkOrigin = { parent: identity.ForkParent } | { away: identity.ForkedAway } | { unread: string };
+function forkOrigin(input: HookIn<'SessionStart'>): ForkOrigin | null {
   const dir = typeof input.transcript_path === 'string' && input.transcript_path ? path.dirname(input.transcript_path) : projectDir(input.cwd);
   if (!dir || !input.session_id) return null;
   for (const until = Date.now() + envMs('SUB_HUMAN_FORK_WAIT_MS'); ; sleepSync(100)) {
@@ -63,15 +75,19 @@ function forkOrigin(input: HookIn<'SessionStart'>): { parent: identity.ForkParen
     if (p) return { parent: p };
     const away = identity.forkedAway(input.session_id, dir);
     if (away) return { away };
-    if (Date.now() >= until) return null;
+    if (Date.now() >= until) { const unread = identity.forkUnread(input.session_id, dir); return unread ? { unread } : null; }
   }
 }
 
 /** A fork whose seat is in another sub-human folder (stage 8e E): recorded, so a bare /sub-human here opens no room. */
 let forkedAway: identity.ForkedAway | null = null;
+/** A fork that could not be placed: the person's line (UNREAD). */
+let unplaced: string | null = null;
 
 function adopt(input: HookIn<'SessionStart'>, pid: number): Identity | null {
-  const origin = forkOrigin(input);
+  let origin: ForkOrigin | null;
+  try { origin = forkOrigin(input); } catch (err) { logError(err, 'session-restore: fork'); unplaced = UNREAD(null); return null; }
+  if (origin && 'unread' in origin) { unplaced = UNREAD(origin.unread); return null; }
   if (origin && 'away' in origin && input.session_id) {
     forkedAway = origin.away;
     try { identity.markForked(input.session_id, origin.away); } catch (err) { logError(err, 'session-restore: fork'); }
@@ -114,10 +130,12 @@ function reseat(input: HookIn<'SessionStart'>): Identity | null {
 
 export function handle(input: HookIn<'SessionStart'>): void {
   forkedAway = null;
+  unplaced = null;
   const me = reseat(input);
   if (!me) {
     // the person learns now why the room is gone here, and how to get it back
     if (forkedAway) out({ systemMessage: `sub-human: ${forkedText(forkedAway, input.session_id)}` });
+    else if (unplaced) out({ systemMessage: unplaced });
     return;
   }
   try {

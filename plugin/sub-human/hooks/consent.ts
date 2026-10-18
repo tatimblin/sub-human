@@ -451,12 +451,14 @@ function preRoomTool(input: ConsentIn, me: Identity) {
     post: POST_TOOL.test(String(input.tool_name || '')), noteLive: !!st.note && isPending(me, st.note.hash) }));
 }
 /** The dialog's rejection, reported by the module (mod/consent.ts) as a PostToolUseFailure of the ExitPlanMode call:
- * the note from the transcript's tool_result, else from the refusal's own text (the line may not be on disk yet). */
+ * the note from the transcript's tool_result, else from the refusal's own text (the line may not be on disk yet, or
+ * be in a shape that gives no note: the refusal's text is the person's words either way). */
 function rejectedExit(input: ConsentIn, me: Identity) {
   step(input, me, st => {
     const id = input.tool_use_id || null;
     const fromDisk = id ? cc.planAnswer(lines(input), id) : null;
-    const answer = fromDisk ?? cc.rejectionAnswer(typeof input.error === 'string' ? input.error : '');
+    const fromError = cc.rejectionAnswer(typeof input.error === 'string' ? input.error : '');
+    const answer = fromDisk && fromDisk.note !== null ? fromDisk : fromError.note !== null ? fromError : fromDisk ?? fromError;
     return { type: 'rejected', toolUseId: id, answer, target: st.review ? targetOf(me, st.review.hash) : null };
   });
 }

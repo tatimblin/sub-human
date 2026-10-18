@@ -185,6 +185,44 @@ test('session-restore: a fork with no continued-in record (claude --resume X --f
   assert.equal(r.code, 0, r.stderr);
   assert.equal(ctx(r), undefined);
   assert.equal(seat(w, 'alice').session_id, w.sid.alice);
+  // the person is told, in one line, how to get the seat back (a bare /sub-human looks again, or says where it is)
+  assert.equal(ans(r).systemMessage, `sub-human: this session took no seat: Claude Code's transcript did not say which session it continued, so alice.${w.code} stayed there. Run /sub-human to take your seat back.`);
+});
+
+test('session-restore: a fork whose old transcript is garbled or unreadable starts unseated with one line, never throws, never takes a seat', () => {
+  const w = new World({ claude: 'sleep', alice: 'sleep', bob: 'sleep' });
+  const oldSid = must(w.sid.alice);
+  const transcript = forkTranscripts(w, oldSid, NEW_SID, { record: false });
+  const old = path.join(path.dirname(transcript), `${oldSid}.jsonl`);
+  const run = () => w.hook('session-restore', { ...fixture('session-start-clear'), source: 'fork', session_id: NEW_SID, transcript_path: transcript }, { as: 'alice', session: false, env: { SUB_HUMAN_FORK_WAIT_MS: '1' } });
+  const unseated = (r: HookRun, what: string) => {
+    assert.equal(r.code, 0, `${what}: ${r.stderr}`);
+    assert.equal(r.stderr, '', what);
+    assert.equal(ctx(r), undefined, `${what}: no mechanics block`);
+    assert.match(must(ans(r).systemMessage), new RegExp(`^sub-human: this session took no seat: .*alice\\.${w.code} stayed there\\. Run /sub-human to take your seat back\\.$`), what);
+    assert.deepEqual([seat(w, 'alice').session_id, seat(w, 'alice').left_at], [oldSid, undefined], `${what}: the seat stays with the old session`);
+    assert.equal(w.lib(() => identity.resolveBySession(NEW_SID)), null, `${what}: no seat here`);
+  };
+  w.pid.alice = process.pid;
+  // a shape the readers do not know: torn lines, non-objects, a record whose fields are not what 2.1.x writes
+  fs.writeFileSync(old, ['{torn', '5', 'null', '[1,2]', '"continued-in"',
+    JSON.stringify({ type: 'continued-in', continuedInSessionId: 5 }), JSON.stringify({ type: 'continued_in', continuedIn: NEW_SID }),
+    JSON.stringify({ type: 'custom-title', customTitle: { t: `alice.${w.code}` } }), JSON.stringify({ type: 'system', content: ['sub-human: home /elsewhere'] })].join('\n') + '\n');
+  unseated(run(), 'garbled');
+  // a transcript that cannot be read at all
+  fs.chmodSync(old, 0o000);
+  try { unseated(run(), 'unreadable'); } finally { fs.chmodSync(old, 0o644); }
+  // a record naming another session is another fork's: nothing said
+  fs.writeFileSync(old, JSON.stringify({ type: 'continued-in', continuedInSessionId: 'a3c1e1f2-0000-4000-8000-000000000000' }) + '\n');
+  const other = run();
+  assert.equal(other.stdout, '');
+  assert.equal(seat(w, 'alice').session_id, oldSid);
+  // no seated session in the folder: a fork of a session that sat nowhere hears nothing
+  const plain = new World({ claude: 'sleep' });
+  plain.pid.me = process.pid; plain.sid.me = NEW_SID;
+  const dir = fs.mkdtempSync(path.join(plain.home, '..', 'proj-'));
+  fs.writeFileSync(path.join(dir, 'f1d2d3d4-0000-4000-8000-000000000000.jsonl'), '{torn\n');
+  assert.equal(plain.hook('session-restore', { ...fixture('session-start-clear'), source: 'fork', session_id: NEW_SID, transcript_path: path.join(dir, `${NEW_SID}.jsonl`) }, { as: 'me', session: false, env: { SUB_HUMAN_FORK_WAIT_MS: '1' } }).stdout, '');
 });
 
 test('session-restore: a fork waits for the continued-in record Claude Code writes just after the job starts', () => {

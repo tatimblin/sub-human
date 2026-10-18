@@ -1318,3 +1318,100 @@ test('A (live validation): a steered ExitPlanMode called again with the same pla
   // no request waiting for bob (alice's own seat: she asked): never steered
   assert.equal(w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: mine, planFilePath: file }, tool_use_id: 'tu5', transcript_path: tp }), { as: 'claude' }).stdout, '');
 });
+
+// ---------- a transcript the readers cannot use (Claude Code changed its JSONL, or the file is gone) ----------
+/** A transcript in shapes these readers do not know: torn lines, non-objects, and for tool use `id` a plan_mode
+ * attachment, a tool_use and a tool_result whose fields are not where 2.1.x writes them; the person's words (`words`)
+ * likewise. */
+function garbled(w: World, id: string, file: string, words = '') {
+  const f = path.join(w.cwd, `garbled-${Math.random().toString(36).slice(2)}.jsonl`);
+  fs.writeFileSync(f, ['{torn', '5', 'null', '"plan_mode"', '[1,2]',
+    JSON.stringify({ type: 'attachment', attachment: { kind: 'plan_mode', path: file } }),
+    JSON.stringify({ type: 'attachment', attachment: `plan_mode planFilePath ${file}` }),
+    JSON.stringify({ type: 'assistant', message: { content: { type: 'tool_use', id, input: { plan: 'proposal 000000' } } } }),
+    JSON.stringify({ type: 'user', message: { content: [null, 5, { type: 'tool_result', toolUseId: id, error: true, content: said('from a field no reader knows') }] }, userFeedback: { note: 'x' } }),
+    JSON.stringify({ type: 'user', message: 'tool_result', tool_use_id: id }),
+    ...(words ? [JSON.stringify({ type: 'user', message: words, origin: 'human' }), JSON.stringify({ type: 'user', message: { content: [{ type: 'input_text', text: words }] } })] : []),
+  ].join('\n') + '\n');
+  return f;
+}
+
+test('an unreadable or garbled transcript never blocks a sign-off: no plan file known, the review falls back to the card, and only the person\'s Agree there records', () => {
+  const { w, hash } = world();
+  const file = path.join(w.userHome, '.claude', 'plans', 'gone.md');
+  for (const tp of [garbled(w, 'tu1', file), path.join(w.cwd, 'missing.jsonl'), w.cwd]) {
+    w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {}, transcript_path: tp }), { as: 'bob' });
+    const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: `proposal ${hash}` }, tool_use_id: 'tu1', transcript_path: tp }), { as: 'bob', env: { SUB_HUMAN_EXIT_INPUT_WAIT_MS: '50' } });
+    assert.equal(pre.code, 0, pre.stderr);
+    assert.equal(pre.stdout, '', `${tp}: nothing to show, never a deny`);
+    // plan mode is left: the closing call is allowed with the mode set back
+    assert.equal(permOf(w.hook('consent', ev('PermissionRequest', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, transcript_path: tp }), { as: 'bob' })).updatedPermissions[0]?.mode, 'default');
+    const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: {}, tool_use_id: 'tu1', tool_response: { plan: null }, transcript_path: tp }), { as: 'bob' });
+    assert.match(must(ctx(post)), new RegExp(`call AskUserQuestion with "proposal ${hash}"`), tp);
+    assert.equal(review(w), null, tp);
+    assert.equal(fs.existsSync(file), false, 'no plan file written on a guess');
+    assert.deepEqual(answers(w), [], `${tp}: nothing recorded without the person's answer`);
+  }
+  // the card: only the person's Agree on it records (via=human)
+  const card = cardOf(w.hook('consent', preAsk({ questions: [{ question: `proposal ${hash}` }] }), { as: 'bob' }));
+  w.hook('consent', postAsk({ ...card, answers: { [Q(hash)]: 'Agree' } }), { as: 'bob' });
+  assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.from, x.proposal_hash]), [['signoff', 'human', 'bob', hash]]);
+});
+
+test('a review whose answer line comes in a shape the readers do not know: no answer, never a wrong one; plan mode is left, a Yes still records, and a refusal\'s note comes from its own text', () => {
+  const { w, hash } = world();
+  const env = { SUB_HUMAN_EXIT_INPUT_WAIT_MS: '50' };
+  const open = (name: string) => {
+    const file = path.join(w.userHome, '.claude', 'plans', `${name}.md`);
+    const tp = transcript(w, file, null, { id: 'tu1', input: { plan: `proposal ${hash}` } });
+    w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'auto', tool_input: {} }), { as: 'bob' });
+    assert.equal(decision(w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu1', transcript_path: tp }), { as: 'bob' })), 'ask');
+    return file;
+  };
+  // the dialog closed (Esc, or a note), its line unreadable: Stop reads no answer, the closing call goes through with
+  // the mode back, and the review is closed without an answer
+  for (const [i, missing] of [false, true].entries()) {
+    const file = open(`closed-${i}`);
+    const tp = missing ? path.join(w.cwd, 'missing.jsonl') : garbled(w, 'tu1', file);
+    const stop = w.hook('consent', ev('Stop', null, { permission_mode: 'plan', stop_hook_active: false, transcript_path: tp }), { as: 'bob' });
+    assert.equal(stop.code, 0, stop.stderr);
+    assert.match(must(ctx(stop)), /review is still open: call ExitPlanMode now/);
+    assert.equal(w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu2', transcript_path: tp }), { as: 'bob', env }).stdout, '', 'never denied: plan mode is left');
+    assert.equal(permOf(w.hook('consent', ev('PermissionRequest', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {} }), { as: 'bob' })).updatedPermissions[0]?.mode, 'auto');
+    const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: {}, tool_use_id: 'tu2', tool_response: { plan: null }, transcript_path: tp }), { as: 'bob', env });
+    assert.match(must(ctx(post)), /bob closed the review of proposal [0-9a-f]{12} without answering; nothing was recorded/);
+    assert.equal(review(w), null);
+    assert.equal(waiting(w), null, 'no note made up');
+    assert.deepEqual(answers(w), []);
+  }
+  // a refusal reported by the module with the transcript garbled: the note is the refusal's own text, and waits for Send
+  const f2 = open('rejected');
+  const note = 'clamp the page size';
+  const tpr = garbled(w, 'tu1', f2);
+  // its line on disk, the note in a field no reader knows: no note there, so the refusal's own text gives it
+  fs.appendFileSync(tpr, JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'tu1', is_error: true, content: { text: said(note) } }] } }) + '\n');
+  const rej = w.hook('consent', ev('PostToolUseFailure', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu1', transcript_path: tpr, error: said(note) }), { as: 'bob' });
+  assert.equal(rej.code, 0, rej.stderr);
+  assert.equal(must(waiting(w)).note, note);
+  assert.deepEqual(answers(w), [], 'a note alone records nothing');
+  w.hook('consent', ev('PermissionRequest', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {} }), { as: 'bob' });
+  w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: {}, tool_response: { plan: null } }), { as: 'bob' });
+  assert.equal(review(w), null);
+  confirm(w, hash, 'Discard');
+  assert.deepEqual(answers(w), []);
+  // the person's Yes: the dialog's own answer (its PostToolUse), which no transcript decides
+  const f3 = open('yes');
+  const yes = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: {}, tool_use_id: 'tu1', tool_response: { plan: TEXT, filePath: f3 }, transcript_path: garbled(w, 'tu1', f3) }), { as: 'bob' });
+  assert.match(must(ctx(yes)), new RegExp(`bob agreed to proposal ${hash}`));
+  assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.from, x.proposal_hash]), [['signoff', 'human', 'bob', hash]]);
+});
+
+test('pick: the person\'s words in a shape the readers do not know name nothing: the review opens the oldest request', () => {
+  const { w, v2, file } = two();
+  const tp = garbled(w, 'tu1', file, 'open the monday plan');
+  // the plan file is known from an earlier plan mode; the words are not readable as the person's prompt
+  fs.appendFileSync(tp, JSON.stringify({ type: 'attachment', attachment: { type: 'plan_mode', planFilePath: file } }) + '\n');
+  assert.equal(decision(w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {}, transcript_path: tp }), { as: 'bob' })), 'allow');
+  assert.equal(must(review(w)).hash, v2, 'the oldest');
+  assert.deepEqual(answers(w), []);
+});

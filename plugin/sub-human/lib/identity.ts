@@ -475,6 +475,29 @@ function forkParent(sid: unknown, dir: string | null | undefined): ForkParent | 
   return null;
 }
 
+/** A fork that forkParent could not place: a session of this directory that holds a live seat, whose transcript changed
+ * within FORK_SCAN_MS and gives no continued-in record (unreadable, or a shape these readers do not know). Its seat's
+ * address, or null. The seat stays where it is (never taken on a guess); session-restore tells the person how to get
+ * it back. */
+function forkUnread(sid: unknown, dir: string | null | undefined, now: number = Date.now()): string | null {
+  if (!isSessionId(sid) || typeof dir !== 'string' || !dir) return null;
+  let names: string[];
+  try { names = fs.readdirSync(path.dirname(bySidFile(sid))); } catch { return null; }
+  for (const f of names) {
+    const old = f.replace(/\.json$/, '');
+    if (old === sid || !isSessionId(old)) continue;
+    const transcript = path.join(dir, `${old}.jsonl`);
+    try { if (now - fs.statSync(transcript).mtimeMs > FORK_SCAN_MS) continue; } catch { continue; } // not a session of this directory
+    const rec = readJson(bySidFile(old), SEAT_INDEX, null);
+    if (!rec || !roomExists(rec.code)) continue;
+    const m = indexedSeat(rec);
+    if (!m || m.left_at || m.session_id !== old) continue;
+    if (continuedIn(transcript) !== null) continue; // a record naming another session: another fork's
+    return address(rec.name, rec.code);
+  }
+  return null;
+}
+
 /** How recently a transcript must have changed to be the one an agent-view fork continued (its continued-in record is
  * written just after the fork starts): only those are read, however many sessions the folder keeps. */
 const FORK_SCAN_MS = 10 * 60_000;
@@ -675,7 +698,7 @@ export {
   NAME_RE, CODE_RE, isRoomCode, isSeatName, isSessionId, RESERVED, VERBS, ROOM_CLAUDE, ANIMALS, PRESENCE_STATES, normalizeName, defaultName, home,
   roomDir, machineId, machineIn, isMine, newCode, roomExists, isHost, openRooms, unindexClosed, closedForGood, orphanRooms, roomOpen, roomClosing, address,
   readMembers, join, leave, rebindSession, updateRoomClaude, liveMembers, seatAlive, heartbeat,
-  leaseFresh, isAlive, claudePid, resolveByPid, resolveBySession, resolveSelf, lastSeat, forkParent, forkedAway, markForked, forkedOf, adoptFork, localSeats, dropSeatIndexes,
+  leaseFresh, isAlive, claudePid, resolveByPid, resolveBySession, resolveSelf, lastSeat, forkParent, forkUnread, forkedAway, markForked, forkedOf, adoptFork, localSeats, dropSeatIndexes,
   MOD_LEASE_FRESH_MS, writeModLease, readModLease, modLeaseOk, deleteModLease, pruneModLeases, pruneSessionIndexes, writePresence,
 };
 export type { Identity, SeatIndex, ModLease, JoinRequest, RoomClaudePatch, ForkParent, ForkedAway };
