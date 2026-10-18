@@ -372,7 +372,7 @@ test('daemon-env-allowlist: a shape, not the exact arrays: each group\'s array m
   // the groups are DAEMON_ENV_ALLOW
   assert.deepEqual([...new Set(must(e.contains).flatMap(g => g.names))].sort(), [...cc.DAEMON_ENV_ALLOW].sort());
   const g = { what: 'base', in: 'new Set(["A_KEY_ANCHOR_LONG",', names: ['A_KEY_ANCHOR_LONG', 'B_KEY'] };
-  const run = (text: string) => must(cc.probe(Buffer.from(text, 'latin1'), { entries: [{ id: 'x', stability: 'env', search: ['A_KEY_ANCHOR_LONG'], contains: [g], note: '' }] })[0]);
+  const run = (text: string) => must(cc.probe(Buffer.from(text, 'latin1'), { entries: [{ id: 'x', stability: 'env', feature: 'room-session', search: ['A_KEY_ANCHOR_LONG'], contains: [g], note: '' }] })[0]);
   assert.equal(run('var q=new Set(["A_KEY_ANCHOR_LONG",...x,"B_KEY"]),z=1;').ok, true);
   assert.equal(run('var q=new Set(["A_KEY_ANCHOR_LONG","NEW_KEY",...x,"B_KEY","LATER"]);').ok, true, 'keys added and moved pass');
   const dropped = run('var q=new Set(["A_KEY_ANCHOR_LONG",...x,"C_KEY"]);"B_KEY";');
@@ -381,7 +381,7 @@ test('daemon-env-allowlist: a shape, not the exact arrays: each group\'s array m
   assert.match(String(run('"A_KEY_ANCHOR_LONG"').missing[0]), /^contains: base: no array at /);
   // a shape anchor
   const sh = { what: 'set', in: '~=new Set([...~,...~,"CLAUDE_', names: ['CLAUDE_X'] };
-  const r = must(cc.probe(Buffer.from('a,Qz=new Set([...q6e,...l5n,"CLAUDE_Y","CLAUDE_X"]);', 'latin1'), { entries: [{ id: 'y', stability: 'env', contains: [sh], note: '' }] })[0]);
+  const r = must(cc.probe(Buffer.from('a,Qz=new Set([...q6e,...l5n,"CLAUDE_Y","CLAUDE_X"]);', 'latin1'), { entries: [{ id: 'y', stability: 'env', feature: 'room-session', contains: [sh], note: '' }] })[0]);
   assert.equal(r.ok, true);
   assert.deepEqual([...must(cc.arrayAt(String.raw`x=["a","b\"",...y,["c"],"d"]`, 0))], ['a', String.raw`b\"`, 'd'], 'escapes and nested arrays skipped');
   assert.equal(cc.arrayAt('x=["a"', 0), null);

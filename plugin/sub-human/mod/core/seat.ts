@@ -3,8 +3,9 @@
  * functions. The module keeps the parsed hello in $.state (sub-human/hello) so a hot reload keeps it.
  *
  *   parseHello(stdout, sid) -> hello | null
- *       hello = {sid, home, realHome, userHome, pluginRoot, seat: {name, code, role, addr} | null, restorable, pending}. null
- *       when the output is not a hello (then the module "does not know" and every prefilter runs node).
+ *       hello = {sid, home, realHome, userHome, pluginRoot, seat: {name, code, role, addr} | null, restorable, pending,
+ *       cc?: {version, verified, off} (mod/core/cc.ts parseCc; absent when mod-hello was given no version)}. null when the
+ *       output is not a hello (then the module "does not know" and every prefilter runs node).
  *   homeOf(subHumanHome, userHome) -> string | null   where the store lives: SUB_HUMAN_HOME, else ~/.sub-human (lib/home.ts
  *       home() is this rule)
  *   sidIndex(home, sid) -> path | null    the session index a seat of this session id has (<home>/sessions/by-sid/<sid>
@@ -19,6 +20,7 @@
  *                                  SessionId: the only constructors of them; seatName(v), roomCode(v), sessionId(v) ->
  *                                  the brand | null; namedSeat("claude") a name the code itself spells, checked once
  */
+import { parseCc } from './cc.ts';
 import type { Hello, HelloSeat } from './types.ts';
 import type { RoomCode, SeatName, SessionId } from '../../lib/brand.ts';
 
@@ -61,9 +63,10 @@ export function parseHello(stdout: unknown, sid: unknown): Hello | null {
   let v: unknown;
   try { v = JSON.parse(String(stdout || '').trim()); } catch { return null; }
   // every field read is checked below
-  const o: { home?: unknown; realHome?: unknown; userHome?: unknown; pluginRoot?: unknown; seat?: unknown; restorable?: unknown; pending?: unknown } | null = v && typeof v === 'object' ? v : null;
+  const o: { home?: unknown; realHome?: unknown; userHome?: unknown; pluginRoot?: unknown; seat?: unknown; restorable?: unknown; pending?: unknown; cc?: unknown } | null = v && typeof v === 'object' ? v : null;
   const home = o && typeof o === 'object' ? ABS(o.home) : null;
   if (!o || !home) return null;
+  const cc = parseCc(o.cc);
   return {
     sid: typeof sid === 'string' ? sid : null,
     home,
@@ -73,6 +76,7 @@ export function parseHello(stdout: unknown, sid: unknown): Hello | null {
     seat: parseSeat(o.seat),
     restorable: o.restorable === true,
     pending: o.pending === true,
+    ...(cc ? { cc } : {}),
   };
 }
 

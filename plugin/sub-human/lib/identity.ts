@@ -40,8 +40,9 @@
  *
  * The hooks module's lease, <home>/sessions/mods/<sid>.json (atomic, 0600): this session's function hooks are
  * loaded and have said hello (hooks/handlers/mod-hello.ts writes it, join requires it, session-end deletes it).
- * {session_id, pid, pid_start?, at, nonce?}: nonce is the module's secret for the session (32 hex), which
- * hooks/handlers/at-room.ts requires beside an origin. Keep it one small flat object.
+ * {session_id, pid, pid_start?, at, nonce?, cc_version?}: nonce is the module's secret for the session (32 hex), which
+ * hooks/handlers/at-room.ts requires beside an origin; cc_version the Claude Code the session runs on, as the module
+ * read it ($.session.version), so a node hook finds its verdict (lib/cc/verdict.ts). Keep it one small flat object.
  *
  * Presence (presence/<name> = {state, at, detail?}, written by members.beat): working | idle | permission |
  * error (StopFailure; detail = code).
@@ -60,6 +61,7 @@ import { home, roomDir, machineId, machineIn, isMine } from './home.ts';
 import { pidStart, pidStarts } from './lock.ts';
 import { NAME_RE, CODE_RE, isRoomCode, isSeatName, isSessionId } from './text.ts';
 import { sidIndex } from '../mod/core/seat.ts';
+import { isCcVersion } from '../mod/core/cc.ts';
 import { SEAT_BEAT_MS, MOD_LEASE_FRESH_MS, SESSION_INDEX_TTL_MS } from './config.ts';
 import {
   seatAlive, leaseFresh, startMatches, PRESENCE_STATES, isPresenceState, ROOM_CLAUDE,
@@ -102,9 +104,10 @@ interface ModLease {
   pid_start?: number | undefined;
   at?: string | undefined;
   nonce?: string | undefined;
+  cc_version?: string | undefined;
 }
 /** A lease as read (writeModLease). */
-const MOD_LEASE = obj({ session_id: refine(str, isSessionId, 'a session id'), pid: opt(nullable(num)), pid_start: opt(num), at: opt(str), nonce: opt(str) });
+const MOD_LEASE = obj({ session_id: refine(str, isSessionId, 'a session id'), pid: opt(nullable(num)), pid_start: opt(num), at: opt(str), nonce: opt(str), cc_version: opt(str) });
 
 /** join()'s argument. */
 interface JoinRequest {
@@ -328,7 +331,7 @@ function resolveBySession(sid: unknown): Identity | null {
 
 const NONCE_RE = /^[0-9a-f]{32}$/;
 
-function writeModLease(sid: unknown, { pid: pidArg, nonce }: { pid?: unknown; nonce?: unknown } = {}): boolean {
+function writeModLease(sid: unknown, { pid: pidArg, nonce, ccVersion }: { pid?: unknown; nonce?: unknown; ccVersion?: unknown } = {}): boolean {
   if (!isSessionId(sid)) return false;
   const pid = Number(pidArg);
   const rec: ModLease = { session_id: sid, pid: validPid(pid) ? pid : null };
@@ -336,6 +339,7 @@ function writeModLease(sid: unknown, { pid: pidArg, nonce }: { pid?: unknown; no
   if (start != null) rec.pid_start = start;
   rec.at = new Date().toISOString();
   if (typeof nonce === 'string' && NONCE_RE.test(nonce)) rec.nonce = nonce;
+  if (isCcVersion(ccVersion)) rec.cc_version = ccVersion;
   writeJsonAtomic(modLeaseFile(sid), rec);
   return true;
 }

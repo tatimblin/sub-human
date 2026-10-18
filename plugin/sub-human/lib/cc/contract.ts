@@ -3,8 +3,9 @@
  *
  * contract.json is the data: `probed` (the Claude Code version every entry was last checked against), `min` (the oldest
  * that runs the plugin: function hooks) and `entries`, one per undocumented behaviour the plugin relies on:
- *   id, section (§ in docs/internals/cc-2.1.281.md), stability (API | env | incidental), since (the first version it was
- *   checked on), search (literal strings, all must be in the binary), shape? (code where `~` is one minified
+ *   id, section (§ in docs/internals/cc-2.1.281.md), stability (API | env | incidental), feature (FEATURES: the part of
+ *   sub-human that stands on it; lib/cc/verdict.ts turns a failed entry's feature to its fallback), since (the first
+ *   version it was checked on), search (literal strings, all must be in the binary), shape? (code where `~` is one minified
  *   identifier), contains? (arrays that must hold names: see probe), degraded? ([{from, issue, note}]: a version on which
  *   the behaviour was reported to change while the probe may still pass), note.
  * scripts/probe-cc.ts reads the JSON itself and runs probe() over the installed binary; `sub-human doctor` runs it too
@@ -12,6 +13,8 @@
  * lib/cc/{env,transcript,bg}.ts that relies on an entry names one of its search strings in a `@cc` tag.
  *
  *   CONTRACT, PROBED_VERSION, MIN_VERSION       the JSON's entries, probed and min
+ *   FEATURES                                    every feature an entry may name (core: the plumbing every feature
+ *                                               needs; cosmetic: drawing only; test: the wiring tests)
  *   compareVersions(a, b) -> -1|0|1|null        numeric per dot-separated part; null for an unreadable one
  *   degradedOn(version, entries?) -> [{id, issue, note}]   entries reported degraded on that version or later
  *   shapeRe(shape)                              a shape as a RegExp: `~` = one minified identifier, the rest literal
@@ -29,6 +32,9 @@ import path from 'node:path';
 
 type Env = NodeJS.ProcessEnv;
 type Stability = 'API' | 'env' | 'incidental';
+const FEATURES = ['core', 'room-session', 'tasks', 'plan-edit', 'sign-off', 'rows', 'delivery', 'addressing', 'fork', 'statusline', 'cosmetic', 'test'] as const;
+/** The part of sub-human an entry's behaviour serves (contract.json `feature`). */
+type Feature = typeof FEATURES[number];
 
 /**
  * One `contains` group: the array literal at (the first `[` at or after a match of) `in` holds every name, as one of its
@@ -42,6 +48,7 @@ interface ContractEntry {
   id: string;
   section?: number;
   stability: Stability | 'test';
+  feature: Feature;
   since?: string;
   search?: string | readonly string[];
   shape?: string | readonly string[];
@@ -212,5 +219,5 @@ function binaryVersion(buf: Buffer): string | null {
   return v?.[1] ?? null;
 }
 
-export { CONTRACT, PROBED_VERSION, MIN_VERSION, compareVersions, degradedOn, shapeRe, arrayAt, probe, locateBinary, binaryVersion };
-export type { ContractEntry, ContainsGroup, Degraded, ProbeResult, Stability };
+export { FEATURES, CONTRACT, PROBED_VERSION, MIN_VERSION, compareVersions, degradedOn, shapeRe, arrayAt, probe, locateBinary, binaryVersion };
+export type { ContractEntry, ContainsGroup, Degraded, Feature, ProbeResult, Stability };

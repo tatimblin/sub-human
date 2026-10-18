@@ -19,6 +19,7 @@ import { restoreNeeded } from './core/prefilter.ts';
 import { mergeClassic } from './core/prompt.ts';
 import { factsBook, type FactsBook } from './core/facts.ts';
 import { asHello, asNonce, mintNonce } from './core/state.ts';
+import { ccNotice } from './core/cc.ts';
 import { assertNever } from './core/never.ts';
 import type { EngineInterface, On, SessionAppendArgs } from 'claude-code';
 import type { JoinReply, Pulls, TailEvent, TailSeat } from './core/types.ts';
@@ -74,17 +75,34 @@ function presenceRun($: EngineInterface, event: 'Working' | 'TurnEnd'): Promise<
 /** The session id whose lease this module process has written (mod-hello ran for it): join and at-room need one. */
 let leased: string | null = null;
 
+/** The Claude Code version this session runs on ($.session.version), read once per module process; null: unknown. */
+let ccVersion: Promise<string | null> | null = null;
+const versionOf = ($: EngineInterface): Promise<string | null> =>
+  (ccVersion ??= $.session.version().then(v => (v && typeof v.version === 'string' ? v.version : null), () => null));
+
+/** The versions whose fallbacks this module process has told the person about (ccNotice: once each). */
+const ccTold = new Set<string>();
+/** A seated session on a version with features off: one line, once per version, after the join's own lines. */
+function tellCc($: EngineInterface, hello: NonNullable<ReturnType<typeof parseHello>>) {
+  const line = hello.seat ? ccNotice(hello.cc) : null;
+  if (!line || !hello.cc || ccTold.has(hello.cc.version)) return;
+  ccTold.add(hello.cc.version);
+  const say = () => { $.ui.log(line); };
+  try { $.clock.after(2 * CONFIRM_AFTER_MS, say); } catch { say(); }
+}
+
 /** Run hooks/handlers/mod-hello.ts for sid and keep its answer in $.state (only a good answer replaces the last one). */
 async function sayHello($: EngineInterface, sid: string) {
   const root = $.plugin.root;
   const nonce = typeof sid === 'string' && sid ? await nonceFor($, sid) : null;
+  const version = await versionOf($);
   const run = await $.process.run(shimArgv(root, 'mod-hello'), {
-    stdin: JSON.stringify(nonce ? { session_id: sid, nonce } : { session_id: sid }),
+    stdin: JSON.stringify({ session_id: sid, ...(nonce ? { nonce } : {}), ...(version ? { cc_version: version } : {}) }),
     env: shimEnv({ session_id: sid }, root),
     timeoutMs: SHIM_TIMEOUT_MS,
   });
   const hello = run.exitCode === 0 ? parseHello(run.stdout, sid) : null;
-  if (hello) { await $.state.set(HELLO, hello); leased = sid; void markHome($, hello); }
+  if (hello) { await $.state.set(HELLO, hello); leased = sid; void markHome($, hello); tellCc($, hello); }
   return hello;
 }
 
@@ -405,6 +423,7 @@ function unpin($: EngineInterface): void {
 export function registerDeliver(on: On): void {
   on('session.start', async ($, e, next) => {
     try {
+      void versionOf($); // read once, for every hello this session says
       const sid = await $.session.id();
       await $.state.set(REVIEW, true);
       await startHello($, sid).catch(() => refresh($, sid));

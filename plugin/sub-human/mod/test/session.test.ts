@@ -4,7 +4,7 @@
 // back through node session-restore, then says hello; a resume also runs row-rewake in the background, whose row calls
 // become a wake. A session surely without a seat does none of it.
 import type { EventOf, On } from 'claude-code'
-import { test, expect, type ClassicFields, type Engine } from 'claude-code/testing'
+import { test, expect, mock, type ClassicFields, type Engine } from 'claude-code/testing'
 import { SEAT, helloOf, must, ran, scriptOf, session, start, stdinOf, type Seat } from './support.ts'
 
 const SID = 'sid-s'
@@ -14,8 +14,8 @@ const HOME = '/u/.sub-human'
  * other scripts answering from `answer` ({stdout, exitCode, stderr}); what ran, the prompts submitted, the writes
  * the guard let through. */
 type Answer = { stdout?: string; exitCode?: number; stderr?: string }
-type Options = { indexed?: boolean; seat?: Seat | null; answer?: Record<string, Answer> }
-function world(_engine: Engine, on: On, { indexed = false, seat = null, answer = {} }: Options = {}) {
+type Options = { indexed?: boolean; seat?: Seat | null; answer?: Record<string, Answer>; cc?: Record<string, unknown> }
+function world(_engine: Engine, on: On, { indexed = false, seat = null, answer = {}, cc }: Options = {}) {
   const seen: { runs: string[]; stdin: Record<string, Record<string, unknown>>; prompts: string[]; asUser: boolean[]; logs: string[] } = { runs: [], stdin: {}, prompts: [], asUser: [], logs: [] }
   session(on, SID)
   on('session.cwd', () => ({ value: '/w' }))
@@ -27,7 +27,7 @@ function world(_engine: Engine, on: On, { indexed = false, seat = null, answer =
     const script = scriptOf(e)
     seen.runs.push(script)
     seen.stdin[script] = stdinOf(e)
-    if (script === 'mod-hello.ts') return ran(JSON.stringify(helloOf(seat)))
+    if (script === 'mod-hello.ts') return ran(JSON.stringify({ ...helloOf(seat), ...(cc ? { cc } : {}) }))
     const a = answer[script] ?? {}
     return ran(a.stdout ?? '', a.exitCode ?? 0, a.stderr ?? '')
   })
@@ -138,6 +138,34 @@ test('stage 8f item 1: a hello that names a seat appends the hidden home notice 
   await new Promise(r => setTimeout(r, 50))
   expect(seen.runs).toContain('mod-hello.ts')
   expect(appended.length).toBe(1)
+})
+
+test('the hello carries the Claude Code version; a seated hello with features off says so once per version, after the join\'s lines', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  on('session.version', () => ({ value: { version: '2.1.302', base: '2.1.302' } }))
+  const seen = world($, on, { indexed: true, seat: SEAT, cc: { version: '2.1.302', verified: false, off: ['tasks', 'plan-edit', 'sign-off'] } })
+  const hellos = () => seen.runs.filter(r => r === 'mod-hello.ts').length
+  await start($)
+  await until(() => hellos() === 1)
+  expect(seen.stdin['mod-hello.ts']?.cc_version).toBe('2.1.302')
+  expect(seen.logs).toEqual([])
+  await clock.advance(400)
+  expect(seen.logs).toEqual(["Claude Code 2.1.302 isn't verified with sub-human yet: the room task list is off (tasks are kept in the room), plan edits use the plan tool, sign-off uses the question card. sub-human doctor has details."])
+  // another hello for the same version: nothing more
+  await $.classic.SessionStart({ session_id: SID, source: 'resume', cwd: '/w', transcript_path: '/t.jsonl' })
+  await until(() => hellos() === 2)
+  await clock.advance(400)
+  expect(seen.logs.length).toBe(1)
+})
+
+test('a hello with no seat says nothing of the version', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  on('session.version', () => ({ value: { version: '2.1.302', base: '2.1.302' } }))
+  const seen = world($, on, { indexed: true, seat: null, cc: { version: '2.1.302', verified: false, off: ['tasks'] } })
+  await start($)
+  await new Promise(r => setTimeout(r, 30))
+  await clock.advance(400)
+  expect(seen.logs).toEqual([])
 })
 
 test('stage 8f item 1: a session with no seat appends no home notice', async ($, on) => {
