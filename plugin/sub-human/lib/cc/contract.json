@@ -364,9 +364,11 @@
    "stability": "env",
    "since": "2.1.281",
    "search": [
-    "where the v5 storage backend was built at start-up"
+    "where the v5 storage backend was built at start-up",
+    "\"tengu_hover_rest\",!1)",
+    "CLAUDE_CODE_HOVER_REST"
    ],
-   "note": "The experimental key-value task backend is off by default; files are the store. The room's task list is files the plugin writes (lib/room/task-files.ts): with this backend on (its gate is the storageV5 taskListHighWaterMark key), the room session would not read them, so the probe fails and doctor says so."
+   "note": "The experimental key-value task backend is off by default; files are the store. The room's task list is files the plugin writes (lib/room/task-files.ts): with this backend on, the room session would not read them. Its gate is tengu_hover_rest (the env switch CLAUDE_CODE_HOVER_REST first, else the cached feature; checked on 2.1.296 and 2.1.302): cc tasks.check sees it on, records members.claude.tasks_off and the plugin projects nothing, the brief and doctor say so."
   },
   {
    "id": "task-file-schema",

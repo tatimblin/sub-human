@@ -7,7 +7,9 @@
  *   verifyRoom(code) -> RoomVerify   {code, count, chain: {ok, badAt?, line?}, unverified: [id], legacy: n}
  *   roomChecks() -> [Check]          room:CODE per hosted room: pass; fail when the chain breaks or a person's line
  *                                    does not verify (a line written outside the plugin, or a key that is not theirs);
- *                                    a leftover folder (registry isLeftover) warns with `link CODE --forget`
+ *                                    a leftover folder (registry isLeftover) warns with `link CODE --forget`;
+ *                                    room-tasks:CODE warns while the room session's task list is not written
+ *                                    (members.claude.tasks_off: lib/cc/tasks.ts check said no)
  *   verifyText(v) -> string          one room's verdict, for the CLI
  */
 import { check, cli } from './check.ts';
@@ -54,8 +56,14 @@ export function roomChecks(): Check[] {
         out.push(check({ id: `room:${code}`, status: 'warn', title: `room ${code}`, detail: 'a leftover folder with no log and no connection, not a room hosted here', fix: `set it aside: ${cli(`link ${code} --forget`)}` }));
         continue;
       }
-      if (!store.open(code).isHost) continue;
+      const s = store.open(code);
+      if (!s.isHost) continue;
       v = verifyRoom(code);
+      const off = s.members.read().claude?.tasks_off;
+      if (off) {
+        out.push(check({ id: `room-tasks:${code}`, status: 'warn', title: `room ${code} task list`, detail: `not shown in the room session: ${off}; the tasks are kept in the room (the task tool, the brief, the rows)`,
+          fix: 'nothing is lost; it comes back by itself once the check passes. After a Claude Code update, see whether sub-human has a newer version' }));
+      }
     } catch (e) {
       out.push(check({ id: `room:${code}`, status: 'warn', title: `room ${code}`, detail: `its log could not be read: ${e instanceof Error ? e.message : e}` }));
       continue;

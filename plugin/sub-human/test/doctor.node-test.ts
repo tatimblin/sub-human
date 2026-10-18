@@ -420,6 +420,17 @@ test('doctor: each hosted room\'s log is checked (live: a forged unverified line
   assert.match(r.stdout, new RegExp(`^room ${code}: the hash chain breaks`));
 });
 
+test('doctor: a hosted room whose room task list is not written (members.claude.tasks_off) warns with the reason; none once it clears', t => {
+  h.freshHome(t);
+  const code = h.newRoom();
+  identity.updateRoomClaude(code, () => ({ job: 'cafe0001', tasks_off: 'task file 2.json no longer reads as a task' }));
+  const of = () => doctor.roomChecks().filter(c => c.id === `room-tasks:${code}`);
+  assert.deepEqual(of().map(c => c.status), ['warn']);
+  assert.match(first(of()).detail, /^not shown in the room session: task file 2\.json no longer reads as a task; the tasks are kept in the room/);
+  identity.updateRoomClaude(code, () => ({ tasks_off: undefined }));
+  assert.deepEqual(of(), []);
+});
+
 test('doctor: a link the host ended is not dialed (live: "reachable, speaking v3" for a revoked link)', async t => {
   const hostHome = h.freshHome(t);
   const code = h.newRoom();

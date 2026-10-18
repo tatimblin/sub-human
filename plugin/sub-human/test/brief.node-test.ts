@@ -7,6 +7,7 @@ import * as room from '../lib/room.ts';
 import * as plans from '../lib/plans.ts';
 import * as proposal from '../lib/proposal.ts';
 import * as tasks from '../lib/tasks.ts';
+import * as identity from '../lib/identity.ts';
 import { brief, BRIEF_MAX } from '../lib/room/brief.ts';
 import { deliver } from '../lib/room/deliver.ts';
 import { sn } from './support/brands.ts';
@@ -38,6 +39,15 @@ test('brief: framed as people\'s content; plans with state and history, tasks wi
   assert.match(b, /\ntasks:\n  tasks 1 open\n  #\d+ listTasks paging · no owner · pending · plan room v2\n/);
   assert.match(b, /\ndecisions:\n  room: plan room v2 \([0-9a-f]{6}\) agreed \(alice, bob\)\n/);
   assert.match(b, /\nrecent words:\n  alice: bob, can you take the handler\?\nend of room state$/, 'a person\'s words, not a Claude\'s');
+});
+
+test('brief: while the room session\'s task list is not written (members.claude.tasks_off), one line says so; the tasks are still listed', () => {
+  const { code, store } = hosted();
+  assert.ok(tasks.apply(store, { op: 'add', subject: 'paging' }, { by: 'alice' }).ok);
+  identity.updateRoomClaude(code, () => ({ tasks_off: "Claude Code's key-value task store is on (tengu_hover_rest), so it does not read task files" }));
+  assert.match(brief(code), /\ntasks:\n  tasks 1 open\n  #\d+ paging · no owner · pending\n  room task list not shown: Claude Code's key-value task store is on \(tengu_hover_rest\), so it does not read task files; tasks are kept in the room\ndecisions:/);
+  identity.updateRoomClaude(code, () => ({ tasks_off: undefined }));
+  assert.ok(!brief(code).includes('room task list not shown'));
 });
 
 test('brief and delivery (room-plan live): a suggested owner shows in the brief and is told with a notice, never woken', () => {

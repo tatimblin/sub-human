@@ -18,8 +18,10 @@
  *   apply(store, input, {by}) -> {ok:true, task, text} | {ok:false, error}   host only (HOST_ONLY otherwise)
  *   openRoomTask(store) / closeRoomTask(store)   the room task: written with the room's first task request (or
  *       openRoomTask), completed by the reaper at close (lib/room-claude.ts), never by a member
- *   repair(store) -> {wrote, removed}  project the log again, under the tasks lock (every health tick on the host: the
- *       room session's tail, and a member's while the room session is down: lib/tail.ts)
+ *   repair(store) -> {wrote, removed, skipped?}  project the log again, under the tasks lock (every health tick on the
+ *       host: the room session's tail, and a member's while the room session is down: lib/tail.ts), after the task
+ *       store's preflight (lib/room/task-files.ts preflight: while it fails, members.claude.tasks_off says why and
+ *       nothing is projected; once it passes, this projection writes the list again)
  *   reqOf(e), requestText(req), isRoomTask(t, code?)
  *
  * The rules (check): add, by anyone (suggest names a suggested owner, recorded, never the owner); claim, only for
@@ -42,10 +44,12 @@ import { clip, NAME_RE } from './text.ts';
 import * as config from './config.ts';
 import * as room from './room.ts';
 import * as taskFiles from './room/task-files.ts';
+import { msgOf } from './errors.ts';
 import { RoomError, PLAN_NAME_RE } from './room/validate.ts';
 import type { FoldedTask, Task, TaskReq } from './types-app.ts';
 import type { Entry, EntryInput, KvApi, RoomStore } from './room/types.ts';
 import type { Room } from './room.ts';
+import type { Projected } from './room/task-files.ts';
 import type { RoomCode, SeatName } from './brand.ts';
 
 /** reqOf: a task_req or task entry's task fields. */
@@ -239,10 +243,13 @@ function taskEntry(t: FoldedTask, op: string): EntryInput {
 }
 
 /** The log read under the lock, the task appended, then the projection and tasks.json (a failed projection is
- * repaired by the next one: the log has it). */
+ * repaired by the next one: the log has it; none while members.claude.tasks_off is set). */
 function finish(store: RoomStore, entries: Entry[]): void {
   const all = foldAll(entries);
-  try { taskFiles.project(store.code, all); } catch { /* repair() writes it again */ }
+  try { taskFiles.project(store.code, all); } catch (e) {
+    // stderr only: the MCP server's and the link server's stdout is their protocol
+    process.stderr.write(`sub-human: room ${store.code}: the room task list was not written (${msgOf(e)}); the next repair writes it\n`);
+  }
   refold(store.code, entries, store.kv);
 }
 
@@ -317,8 +324,12 @@ function closeRoomTask(store: RoomStore): FoldedTask | null {
 /** The projection again, from the log as it is: files lost, edited or deleted come back. Under the room's tasks lock,
  * so a repair never writes a fold older than an apply's, and two repairers (the room session's tail, a host member's)
  * take turns. */
-function repair(store: RoomStore): { wrote: string[]; removed: string[] } {
-  return store.lock('tasks', () => taskFiles.project(store.code, foldAll(room.open(store.code, { store }).readRecent())));
+function repair(store: RoomStore): Projected {
+  return store.lock('tasks', () => {
+    const off = taskFiles.preflight(store.code);
+    if (off) return { wrote: [], removed: [], skipped: off };
+    return taskFiles.project(store.code, foldAll(room.open(store.code, { store }).readRecent()));
+  });
 }
 
 export {

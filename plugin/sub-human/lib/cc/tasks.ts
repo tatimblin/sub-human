@@ -12,12 +12,18 @@
  *   readTask(dir, id) -> NativeTask | null   a file as read (null: none, or not a task)
  *   fileIds(dir) -> number[]             the ids of the <n>.json files, ascending
  *   markOf(dir) -> number; raiseMark(dir, id)   the high-water mark (0: none); raised, never lowered
+ *   check(dir, {env?}) -> {ok: true} | {ok: false, reason}   whether the room's list can still be the file store Claude
+ *                                        Code reads (below); the plugin projects nothing while it says no
+ *   storeV5On(env?) -> boolean           the key-value task backend's gate is on
+ *   tasksOffByVerdict() -> reason | null   the per-version verdict turned the tasks feature off (a seam, null for now)
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { writeFileAtomic } from '../io.ts';
+import { writeFileAtomic, sleepSync } from '../io.ts';
 import { decode, isObj, obj, str, opt, arr, unknown_ } from '../decode.ts';
+import { errCode } from '../errors.ts';
+import { cachedSwitch } from './env.ts';
 
 /** The status words a task file takes (the schema's enum). */
 export type NativeStatus = 'pending' | 'in_progress' | 'completed';
@@ -84,4 +90,82 @@ function raiseMark(dir: string, id: number): void {
   if (id > markOf(dir)) writeFileAtomic(path.join(dir, MARK), String(id));
 }
 
-export { taskJson, readTask, fileIds, markOf, raiseMark };
+// ---------- the preflight ----------
+
+/** What check answers. */
+export type TaskStoreCheck = { ok: true } | { ok: false, reason: string };
+
+/** The env switch beside the gate (Claude Code reads it first, then the cached feature). */
+const V5_ENV = 'CLAUDE_CODE_HOVER_REST';
+
+/**
+ * The storage backend gate (tengu_hover_rest: the env switch, else the cached feature). On, Claude Code keeps tasks
+ * (with settings, the global config and more) in a key-value store, not in <list>/<id>.json, so the room session
+ * would not read the files the plugin writes. Off by default.
+ * @cc "tengu_hover_rest",!1)
+ * @stability env
+ */
+function storeV5On(env: NodeJS.ProcessEnv = process.env): boolean {
+  const v = env[V5_ENV];
+  if (v !== undefined && v !== '') return /^(1|true|yes|on)$/i.test(v.trim());
+  return cachedSwitch('tengu_hover_rest', env) === true;
+}
+
+/**
+ * The per-version verdict's word on the tasks feature: a reason when it turned tasks off, else null.
+ * TODO(lib/cc/verdict.ts): return `off('tasks')`'s reason once the verdict lands; null until then.
+ */
+function tasksOffByVerdict(): string | null {
+  return null;
+}
+
+/** The lock entries Claude Code's proper-lockfile layout makes (lib/cc/tasklock.ts): the list lock's target file, its
+ * lock dir, and a task's lock dir. Any other name with "lock" in it is a layout this plugin does not know. */
+function knownLock(name: string, st: fs.Stats): boolean {
+  if (name === '.lock') return st.isFile();
+  return (name === '.lock.lock' || /^\d+\.json\.lock$/.test(name)) && st.isDirectory();
+}
+
+/** dir, or the nearest directory above it that exists, is a directory this process may write in. */
+function writableDir(dir: string): string | null {
+  for (let d = dir; ; d = path.dirname(d)) {
+    let st: fs.Stats;
+    try { st = fs.statSync(d); } catch (e) {
+      if ((errCode(e) === 'ENOENT' || errCode(e) === 'ENOTDIR') && path.dirname(d) !== d) continue;
+      return `${d} cannot be read`;
+    }
+    if (!st.isDirectory()) return `${d} is not a directory`;
+    try { fs.accessSync(d, fs.constants.W_OK | fs.constants.X_OK); } catch { return `${d} is not writable`; }
+    return null;
+  }
+}
+
+/**
+ * Whether the room's list can still be the file store: the gate of the key-value backend is off (storeV5On), the
+ * directory is one this process can write (or can make), every <n>.json in it still reads as a task (NATIVE; a file
+ * Claude Code is writing in place is read again once), and no lock entry has a layout the plugin does not know. The
+ * verdict's word comes first (tasksOffByVerdict).
+ */
+function check(dir: string, { env = process.env }: { env?: NodeJS.ProcessEnv } = {}): TaskStoreCheck {
+  const verdict = tasksOffByVerdict();
+  if (verdict) return { ok: false, reason: verdict };
+  if (storeV5On(env)) return { ok: false, reason: "Claude Code's key-value task store is on (tengu_hover_rest), so it does not read task files" };
+  const where = writableDir(dir);
+  if (where) return { ok: false, reason: `the task list directory: ${where}` };
+  let names: string[] = [];
+  try { names = fs.readdirSync(dir); } catch (e) { if (errCode(e) !== 'ENOENT') return { ok: false, reason: `the task list directory cannot be read (${errCode(e) ?? 'error'})` }; }
+  for (const name of names) {
+    if (!/lock/i.test(name)) continue;
+    let st: fs.Stats;
+    try { st = fs.lstatSync(path.join(dir, name)); } catch { continue; } // released meanwhile
+    if (!knownLock(name, st)) return { ok: false, reason: `an unknown task lock layout (${name})` };
+  }
+  for (const id of fileIds(dir)) {
+    if (readTask(dir, id)) continue;
+    sleepSync(50);
+    if (!readTask(dir, id) && fs.existsSync(path.join(dir, `${id}.json`))) return { ok: false, reason: `task file ${id}.json no longer reads as a task` };
+  }
+  return { ok: true };
+}
+
+export { taskJson, readTask, fileIds, markOf, raiseMark, check, storeV5On, tasksOffByVerdict };

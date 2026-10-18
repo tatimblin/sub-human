@@ -14,7 +14,7 @@
  * an untrusted cwd (a fresh temp dir is never trusted). Before it starts, openTaskList (the join, once its claim
  * holds: lib/seats.ts ensureRoomClaude) records the room session's native task list directory (members.claude.tasks_dir:
  * <its config dir>/tasks/sh-CODE) and makes it, so the session's task view watches a directory that exists (contract
- * task-ui-watch); the tasks, the room task first, are written there as they are asked for (lib/tasks.ts apply). Those
+ * task-ui-watch), and runs the task store's preflight (lib/room/task-files.ts preflight: members.claude.tasks_off); the tasks, the room task first, are written there as they are asked for (lib/tasks.ts apply). Those
  * task files are the only thing written under the config dir; nothing there is ever deleted.
  *
  * Host only: claimSpawn, reapDetached and watchdog do nothing on a machine that does not hold the room, so the
@@ -51,6 +51,7 @@ import { spawn as spawnChild, spawnSync } from 'node:child_process';
 import * as identity from './identity.ts';
 import * as room from './room.ts';
 import * as tasks from './tasks.ts';
+import * as taskFiles from './room/task-files.ts';
 import { decodeOr, obj, opt, str } from './decode.ts';
 import { sleepSync } from './io.ts';
 
@@ -175,7 +176,9 @@ function openTaskList(code: RoomCode, env: NodeJS.ProcessEnv = process.env): voi
   if (!identity.isHost(code)) return;
   const dir = tasksDir(code, env);
   identity.updateRoomClaude(code, (o: Member | null): RoomClaudePatch | null => (o && o.tasks_dir === dir ? null : { tasks_dir: dir }));
-  fs.mkdirSync(dir, { recursive: true });
+  try { fs.mkdirSync(dir, { recursive: true }); } catch { /* the preflight names why */ }
+  // the task store as this Claude Code keeps it: while it is not the files, members.claude.tasks_off says why
+  taskFiles.preflight(code, { dir, env });
 }
 
 /** A claim on the room's Claude's start: prevJob is the old job to stop first. */

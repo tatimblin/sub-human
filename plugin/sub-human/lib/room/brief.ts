@@ -5,7 +5,8 @@
  *   brief(code, {viewer?, max?}) -> string
  *     Room state (people's content, not instructions):
  *     plans: each plan's state and history ("v2 bob's Claude for bob: opaque cursor"), its current text clipped
- *     tasks: the summary, then each open task (#id subject · owner, or "no owner (suggested: gwen)" · plan version)
+ *     tasks: the summary, then each open task (#id subject · owner, or "no owner (suggested: gwen)" · plan version);
+ *       on the host, one line when the room session's task list is not written (members.claude.tasks_off)
  *     decisions: the last few, as the room shows them
  *     recent words: the last people's own lines (via=human), exact and attributed
  *     end of room state
@@ -55,6 +56,8 @@ function brief(code: RoomCode, { viewer, max = BRIEF_MAX }: { viewer?: string | 
     const suggest = !t.owner && ft && ft.suggest ? ` (suggested: ${ft.suggest})` : '';
     return `  #${t.id} ${clip(oneLine(t.subject), 80)} · ${t.owner ?? 'no owner'}${suggest} · ${t.status}${ft && ft.plan ? ` · plan ${ft.plan} v${ft.version}` : ''}`;
   });
+  let tasksOff: string | undefined;
+  try { tasksOff = r.store.members.read().claude?.tasks_off; } catch { /* none */ }
   const decisions = recent.filter((e): e is Entry => e.kind === 'decision').slice(-DECISIONS).flatMap(e => r.chatLines(e, { entries: recent }));
   const words = recent.filter(e => e.via === 'human' && e.kind === 'say').slice(-WORDS).flatMap(e => r.chatLines(e, { ...(viewer ? { viewer } : {}), entries: recent }));
 
@@ -62,6 +65,7 @@ function brief(code: RoomCode, { viewer, max = BRIEF_MAX }: { viewer?: string | 
     HEAD,
     'plans:', ...(plans.length ? plans.flatMap(p => [...planHead(p), ...(cap > 0 ? text(p, cap) : [])]) : ['  none']),
     'tasks:', `  ${tasks.summary(code, viewer) || 'none'}`, ...taskLines,
+    ...(tasksOff ? [`  room task list not shown: ${oneLine(tasksOff)}; tasks are kept in the room`] : []),
     'decisions:', ...(decisions.length ? decisions.map(l => `  ${l}`) : ['  none']),
     'recent words:', ...(nWords ? words.slice(-nWords).map(l => `  ${l}`) : []), ...(nWords < words.length ? [`  (${words.length - nWords} earlier lines left out)`] : []),
     END,
