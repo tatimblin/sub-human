@@ -272,7 +272,7 @@ test('`sub-human serve` (the remote server) never loads a seat key or installs a
   const probe = `${LOADS}
     process.argv = [process.argv[0], ${JSON.stringify(bin)}, 'serve', '--stdio', ${JSON.stringify(w.code)}];
     process.on('exit', () => process.stderr.write('PROBE' + JSON.stringify({
-      loaded: loads().filter(f => /seat-key|hooks[\\/\\\\]/.test(f)),
+      loaded: loads().filter(f => /seat-key|hooks[\\/\\\\]/.test(f) && !/hooks[\\/\\\\]compile-cache\.js$/.test(f)), // the compile cache's preload holds no key
       server: loads().some(f => /remote[\\/\\\\]server\\.ts$/.test(f)),
       signer: typeof globalThis[Symbol.for('sub-human.human-signer')] })));
     require(${JSON.stringify(bin)});`;

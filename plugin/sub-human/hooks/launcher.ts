@@ -79,7 +79,7 @@ function writeLauncher(root: string = process.env.CLAUDE_PLUGIN_ROOT || path.joi
   const body = launcherBody(ordered);
   let cur = '';
   try { cur = fs.readFileSync(f, 'utf8'); } catch { /* none yet */ }
-  if (cur !== body) writeFileAtomic(f, body, { mode: 0o755 });
+  if (cur !== body) writeFileAtomic(f, body, { mode: 0o700 }); // run as this user only, like everything in the home
   return f;
 }
 
