@@ -13,7 +13,10 @@
  * lib/consent/edit.ts; put: stores a version from the model's text, lib/plans.ts request, the fallback where plan mode's
  * edit cannot run (lib/cc/verdict.ts off plan-edit: edit answers put, and the edit reducer's own fallback); the seat is
  * its from and for, and it records no sign-off; ask: a sign-off request on the plan's current version, lib/proposal.ts
- * ask; read).
+ * ask; signoff: the sign-off fallback where the plan view cannot take one (lib/cc/verdict.ts off sign-off; refused
+ * otherwise): one MCP question (elicitation/create, cc CONTRACT mcp-elicitation) that Claude Code shows the person and
+ * the model never sees, whose answer is recorded via=human and signed (hooks/seat-key.ts signing: the one path here that
+ * loads the seat key, armed for that answer alone); read).
  *
  * Plug-ins: ./hold.ts (rows) and ./task.ts (the room task list) are loaded when present; a missing or broken one is
  * logged and skipped. Each exports create(ctx) -> PluginApi (mcp/types.ts). A plug-in's tool is called with me = null
@@ -44,11 +47,17 @@ const MESSAGE = objAs<JsonRpcIncoming>();
 import type { Entry } from '../lib/room/types.ts';
 import type { CallMeta, CallToolParams, JsonRpcId, JsonRpcIncoming, JsonRpcOutgoing, Me, OutgoingRequest, PluginApi, PluginContext, ProgressToken, ToolArgs, ToolDefinition, ToolResult } from './types.ts';
 import { msgOf, stackOf } from '../lib/errors.ts';
-import { loadAt } from '../lib/io.ts';
+import { loadAt, lazy } from '../lib/io.ts';
+import type * as SeatKeyMod from '../hooks/seat-key.ts';
 import { entryId } from '../lib/room/validate.ts';
 
 
+/** The seat key's signer, loaded only for a sign-off the person answered in the MCP question (signoff below). */
+const seatKey = lazy<typeof SeatKeyMod>(import.meta.url, '../hooks/seat-key.ts');
+
 const READ_MAX = 100;
+/** The most of a plan's text the sign-off question carries (the rest: `sub-human plan NAME`). */
+const SIGNOFF_TEXT_MAX = 1500;
 const PLUGINS = ['hold.ts', 'task.ts'];
 // MCP revisions this server speaks (newest first): answer with the client's when listed, else our newest.
 const NEWEST_PROTOCOL = '2025-11-25';
@@ -182,11 +191,12 @@ const CORE: ToolDefinition[] = [
     name: 'plan',
     title: 'The room plan',
     description: 'The sub-human room\'s plans. edit, then EnterPlanMode, edit the plan file, ExitPlanMode: the hooks store the next '
-      + 'version. put: store text instead, when told to. ask: people sign off on the current one, each in their own session. read.',
+      + 'version. ask: people sign off on the current one, each in their own session. read. Only when told to: put stores text '
+      + 'instead; signoff asks your person.',
     inputSchema: {
       type: 'object',
       properties: {
-        op: { type: 'string', enum: ['edit', 'put', 'ask', 'read'], description: 'edit, put, ask or read.' },
+        op: { type: 'string', enum: ['edit', 'put', 'ask', 'signoff', 'read'], description: 'One of the ops above.' },
         name: { type: 'string', description: 'Default "room".' },
         version: { type: 'integer', minimum: 0, description: 'put: the base (0: new).' },
         text: { type: 'string', description: 'put: the whole plan.' },
@@ -238,9 +248,67 @@ function put(me: Me, name: string, args: ToolArgs) {
   return text(r.text, r.error);
 }
 
+/** The plan view cannot take a sign-off in this session's Claude Code (lib/cc/verdict.ts), so signoff may ask instead. */
+const signoffOff = (): boolean => { const sid = cc.sessionId(); return verdict.off('sign-off', sid ? { sid } : {}); };
+/** The client shows a form-mode MCP question (elicitation: {} is form in the 2025-06-18 revision). */
+const canAsk = (): boolean => { const e = clientCapabilities.elicitation; return isObj(e) && (!Object.keys(e).length || isObj(e.form)); };
+/** What the person can pick in the sign-off question, and the choice each records. */
+const CHOICES = { agree: 'Agree', object: 'Object' } as const;
+const isChoice = (v: unknown): v is keyof typeof CHOICES => v === 'agree' || v === 'object';
+
+/**
+ * signoff: the sign-off fallback. The request waiting for this seat on plan name (version, else the newest), shown to
+ * the person as one MCP question that Claude Code draws in its own dialog: the model only starts it and reads the
+ * outcome. Only the client's answer to our own request records anything (accept with agree or object; decline, cancel,
+ * an error or any other content records nothing); the model's arguments only pick the request. The answer is signed
+ * as the person's (via=human) with the seat key, armed for that one append. Refused while the plan view works (the
+ * primary), for the room session, where the client shows no form, and unless this server's parent is the seat's
+ * Claude Code (a copy of the server the model ran itself could answer its own question).
+ */
+async function signoff(me: Me, name: string, args: ToolArgs, meta: CallMeta): Promise<ToolResult> {
+  if (me.role === 'claude') return text('refused: the room session signs off on nothing', true);
+  const f = (r => r.fold(r.readRecent()))(room.open(me.code));
+  const want = typeof args.version === 'number' ? args.version : null;
+  const asked = proposal.answerableFor(me).filter(x => { const v = f.versionOf(x.hash); return !!v && v.plan === name && (want === null || v.version === want); });
+  const p = asked.at(-1);
+  const v = p ? f.versionOf(p.hash) : null;
+  if (!p || !v) return text(`refused: no sign-off request on plan ${name}${want === null ? '' : ` v${want}`} waits for ${me.name}`, true);
+  if (!signoffOff()) return text(`refused: ${me.name} signs off in the plan view: ${proposal.openCall(p.hash)}.`, true);
+  if (me.pid !== process.ppid) return text('refused: only the seat\'s own Claude Code can ask its person', true);
+  if (!canAsk()) return text(`refused: this Claude Code shows no MCP question, so ${me.name} cannot sign off in this session; nothing was recorded`, true);
+  const all = proposal.read(me.code, p.hash) ?? '(the plan\'s text is missing on this machine)';
+  const body = all.length > SIGNOFF_TEXT_MAX ? `${all.slice(0, SIGNOFF_TEXT_MAX)}\n[cut: \`sub-human plan ${name}\` prints all of it]` : all;
+  // the dialog shows the message's first lines only (live, 2.1.296: "… (+N more lines)"): the question and where to read
+  // the plan come first, the text after for a client that shows it all
+  const message = `Sign off on room plan ${name} v${v.version} (${p.hash.slice(0, 6)}), asked by ${p.from || 'a member'}'s Claude?`
+    + `${v.summary ? ` Its summary: ${v.summary}` : ''}\nThe whole plan: in the chat, or \`sub-human plan ${name}\` in a terminal.\n\n${body}`;
+  const req = request('elicitation/create', { mode: 'form', message, requestedSchema: { type: 'object', properties: {
+    answer: { type: 'string', title: 'Your answer', enum: Object.keys(CHOICES) },
+    note: { type: 'string', title: 'Note (what should change, if you object)' },
+  }, required: ['answer'] } });
+  if (meta.id !== undefined) onCancel(meta.id, () => { if (req.id) cancelRequest(req.id, 'the tool call was cancelled'); });
+  let res: unknown;
+  try { res = await req; } catch (e) { return text(`nothing recorded: the question did not open or close with an answer (${isObj(e) && typeof e.message === 'string' ? e.message : msgOf(e)})`, true); }
+  const content = isObj(res) && res.action === 'accept' && isObj(res.content) ? res.content : null;
+  const picked = content ? content.answer : undefined;
+  if (!content || !isChoice(picked)) return text(`nothing recorded: ${me.name} gave no answer in the question Claude Code showed them (${isObj(res) && typeof res.action === 'string' ? res.action : 'no reply'}). Never say they agreed.`);
+  const choice = CHOICES[picked];
+  const notes = choice === 'Object' && typeof content.note === 'string' && content.note.trim() ? content.note : undefined;
+  let got: ReturnType<typeof proposal.answer>;
+  try { got = seatKey().signing(() => proposal.answer(me, { hash: p.hash }, { choice, ...(notes ? { notes } : {}) })); } catch (e) {
+    if (e instanceof room.RoomError) return text(`not recorded: ${e.message}. Ask again once the room is reachable.`, true);
+    throw e;
+  }
+  if (got.stale) return text(`nothing recorded: the request was answered, decided or replaced meanwhile (${got.why})`, true);
+  const decided = proposal.decide(me.code, p.hash);
+  // the model never saw the question: say that the person answered it, or it reads the record as made in their name
+  return text(`sub-human: ${me.name} answered in the question Claude Code showed them (you never see it): ${choice === 'Agree' ? 'agreed to' : 'objected to'} plan ${name} v${v.version} (proposal ${p.hash})`
+    + `${notes ? `, with the note "${notes}"` : ''}. Recorded as their answer.${decided ? ` The room's decision: ${decided.text}.` : ''}`);
+}
+
 /** The plan tool: edit (open an edit in this session: lib/consent/edit.ts runs it; where plan mode's edit is off, the
- * answer says to put instead), put, ask (lib/proposal.ts ask) or read. */
-function plan(me: Me, args: ToolArgs) {
+ * answer says to put instead), put, ask (lib/proposal.ts ask), signoff or read. */
+function plan(me: Me, args: ToolArgs, meta: CallMeta): ToolResult | Promise<ToolResult> {
   const name = plans.nameOf(args.name);
   if (args.op === 'read') return text(plans.describe(me.code, name));
   if (args.op === 'ask') {
@@ -249,13 +317,18 @@ function plan(me: Me, args: ToolArgs) {
       if (e instanceof proposal.ProposalError) return text(`refused: ${e.message}`, true);
       throw e;
     }
+    const off = signoffOff();
     const lines = [`${r.again ? 'Already asked' : 'Asked'} ${r.approvers.join(', ')} to sign off on plan ${r.plan} v${r.version} (proposal ${r.hash}).`,
-      'Each answers in the plan view in their own session. Never say anyone agreed until the room records it.'];
-    if (r.approvers.includes(me.name)) lines.push(`${me.name} is an approver: ${proposal.openCall(r.hash)} now so ${me.name} can read and answer it.`);
+      off ? 'Each answers in their own session. Never say anyone agreed until the room records it.' : 'Each answers in the plan view in their own session. Never say anyone agreed until the room records it.'];
+    if (r.approvers.includes(me.name)) {
+      lines.push(off ? `${me.name} is an approver: show them the plan (op read), then call the plan tool, op signoff, name ${r.plan}: Claude Code asks them in a question only they answer.`
+        : `${me.name} is an approver: ${proposal.openCall(r.hash)} now so ${me.name} can read and answer it.`);
+    }
     return text(lines.join('\n'));
   }
   if (args.op === 'put') return put(me, name, args);
-  if (args.op !== 'edit') return text('refused: op must be edit, put, ask or read', true);
+  if (args.op === 'signoff') return signoff(me, name, args, meta);
+  if (args.op !== 'edit') return text('refused: op must be edit, put, ask, signoff or read', true);
   if (!PLAN_NAME_RE.test(name)) return text(`refused: invalid plan name "${name}" (a-z, 0-9 and -, up to 24)`, true);
   if (me.role === 'claude') return text('refused: the room session edits no plan', true);
   if (planEditOff()) {
@@ -331,10 +404,11 @@ function callTool(id: JsonRpcId, params: CallToolParams | undefined) {
   try { me = whoami(); } catch (e) { log('whoami failed', msgOf(e)); }
   if (!owner || name === undefined) { // a core tool
     if (!me) return settle(id, text('not in a room; run /sub-human', true));
-    let r;
+    let r: ToolResult | Promise<ToolResult>;
     try {
-      r = name === 'post' ? post(me, args) : name === 'read' ? read(me, args) : plan(me, args);
+      r = name === 'post' ? post(me, args) : name === 'read' ? read(me, args) : plan(me, args, meta);
     } catch (e) { r = text(`refused: ${msgOf(e)}`, true); }
+    if (r instanceof Promise) return void r.then(v => settle(id, v), (e: unknown) => settle(id, text(`refused: ${msgOf(e)}`, true)));
     return settle(id, r);
   }
   if (!me && !owner.anonymous.has(name)) return settle(id, text('not in a room; run /sub-human', true));

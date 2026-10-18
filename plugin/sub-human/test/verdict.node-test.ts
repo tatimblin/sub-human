@@ -85,7 +85,7 @@ test('closeOff, parseCc and ccNotice: the one line, only when something is off',
   assert.equal(ccNotice({ version: '2.1.302', verified: false, off: [] }), null);
   assert.equal(ccNotice(null), null);
   assert.equal(ccNotice({ version: '2.1.302', verified: false, off: ['tasks', 'plan-edit', 'sign-off'] }),
-    "Claude Code 2.1.302 isn't verified with sub-human yet: the room task list is off (tasks are kept in the room), plan edits use the plan tool, sign-off uses the question card. sub-human doctor has details.");
+    "Claude Code 2.1.302 isn't verified with sub-human yet: the room task list is off (tasks are kept in the room), plan edits use the plan tool, sign-off is a question Claude Code asks you, not the plan view. sub-human doctor has details.");
   assert.match(must(ccNotice({ version: '2.1.296', verified: true, off: ['tasks'] })), /^SUB_HUMAN_CC_OFF: the room task list is off/);
   const out = { home: '/h', seat: null, cc: { version: '2.1.302', verified: false, off: ['sign-off'] } };
   assert.deepEqual(must(parseHello(JSON.stringify(out), 's1')).cc, { version: '2.1.302', verified: false, off: ['plan-edit', 'sign-off'] });

@@ -11,9 +11,12 @@
 //   publicPem(code, name) -> string   the seat's public key as SPKI PEM, for member_joined (creates it like ensure)
 //   arm()                             install ensure() as this process's signer: only the handlers that sign call it
 //                                     (hooks/handlers/at-room.ts, hooks/consent.ts, hooks/handlers/join.ts), as they load
+//   signing(fn) -> T                  fn with ensure() as the signer and none after: the room MCP server's sign-off
+//                                     fallback (mcp/room-server.ts signoff), for the person's answer in Claude Code's own
+//                                     MCP question (elicitation), which the model never sees or answers
 //
-// The room MCP server, the CLI and the tail never require this file (test/security.node-test.ts checks it), so
-// they cannot sign. The Bash guard (mod/guard.ts, the hooks module) denies commands that name the keys or run these hooks.
+// The CLI and the tail never require this file, and the room MCP server only loads it for that one answer (it holds
+// no signer before or after: test/hooks/security.node-test.ts checks both), so none of them can sign otherwise. The Bash guard (mod/guard.ts, the hooks module) denies commands that name the keys or run these hooks.
 // Threat model: one machine, one OS user. This stops a model from forging a person; it is no defence against a
 // local user, who can read their own files.
 import fs from 'node:fs';
@@ -68,6 +71,14 @@ function ensure(code: RoomCode, name: SeatName): crypto.KeyObject {
 const publicPem = (code: RoomCode, name: SeatName): string => crypto.createPublicKey(ensure(code, name)).export({ type: 'spki', format: 'pem' }).toString(); // PEM: always a string
 
 // globalThis has no declared slot for the signer: lib/room/store.ts reads it back by the same symbol
-function arm(): void { (globalThis as Record<symbol, unknown>)[store.SIGNER] = ensure; }
+const slots = (): Record<symbol, unknown> => globalThis;
+function arm(): void { slots()[store.SIGNER] = ensure; }
 
-export { ensure, publicPem, arm, keyPath };
+function signing<T>(fn: () => T): T {
+  const g = slots();
+  const had = g[store.SIGNER];
+  g[store.SIGNER] = ensure;
+  try { return fn(); } finally { if (had === undefined) delete g[store.SIGNER]; else g[store.SIGNER] = had; }
+}
+
+export { ensure, publicPem, arm, signing, keyPath };

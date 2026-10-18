@@ -150,7 +150,7 @@ test('the hello carries the Claude Code version; a seated hello with features of
   expect(seen.stdin['mod-hello.ts']?.cc_version).toBe('2.1.302')
   expect(seen.logs).toEqual([])
   await clock.advance(400)
-  expect(seen.logs).toEqual(["Claude Code 2.1.302 isn't verified with sub-human yet: the room task list is off (tasks are kept in the room), plan edits use the plan tool, sign-off uses the question card. sub-human doctor has details."])
+  expect(seen.logs).toEqual(["Claude Code 2.1.302 isn't verified with sub-human yet: the room task list is off (tasks are kept in the room), plan edits use the plan tool, sign-off is a question Claude Code asks you, not the plan view. sub-human doctor has details."])
   // another hello for the same version: nothing more
   await $.classic.SessionStart({ session_id: SID, source: 'resume', cwd: '/w', transcript_path: '/t.jsonl' })
   await until(() => hellos() === 2)

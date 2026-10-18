@@ -1,6 +1,7 @@
 // The human capability and the guards around it (threat model: one machine, one OS user; a model must not be
 // able to forge or hide a person's words): via=human needs the seat key's signature, which only hook processes
-// make (hooks/seat-key.ts); the room MCP server never loads it; the Bash guard denies running the plugin's
+// make (hooks/seat-key.ts); the room MCP server loads it only for the sign-off fallback's one answer (signing: armed
+// for that append alone, the answer Claude Code's own MCP question returned); the Bash guard denies running the plugin's
 // modules or touching the store; readers mark unsigned human lines "(unverified)" and consent ignores forged
 // answers. prompt.submit's origin attests a typed @room (mod/core/prompt.ts): the gate drops any other before a
 // hook runs, and at-room posts only with a typed sub_human_origin (none at all is refused too) beside the nonce in
@@ -218,7 +219,7 @@ test('the mod\'s prompt gate drops an @room no person typed, before any hook; a 
   assert.equal(parse('@room x'), 'x');
 });
 
-test('the room MCP server, hold and task never load a seat key and cannot write via=human', t => {
+test('the room MCP server, hold and task load no seat key and cannot write via=human (room-server.ts only lazily, for the sign-off fallback)', t => {
   const w = new World({ claude: 'sleep', alice: 'act' }, { t });
   const probe = `${LOADS}
     const path = require('node:path');
@@ -232,11 +233,37 @@ test('the room MCP server, hold and task never load a seat key and cannot write 
   const r = spawnSync(process.execPath, ['-e', probe], { env: { PATH: process.env.PATH, HOME: w.userHome, SUB_HUMAN_HOME: w.home }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(JSON.parse(r.stdout), { loaded: [], signer: 'undefined', err: 'INVALID' });
-  // and no file outside hooks/ requires the key module
+  // and no file outside hooks/ requires the key module, but for room-server.ts's one lazy load (its signoff op)
   const walk = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).flatMap(x => x.isDirectory() ? walk(path.join(d, x.name)) : [path.join(d, x.name)]);
+  const server = path.join(PLUGIN, 'mcp', 'room-server.ts');
   for (const f of [...walk(path.join(PLUGIN, 'mcp')), ...walk(path.join(PLUGIN, 'lib')), path.join(PLUGIN, 'scripts', 'sub-human')]) {
-    assert.doesNotMatch(fs.readFileSync(f, 'utf8'), /require\([^)]*seat-key|(?:\bfrom\s*|import\(\s*|import\.meta\.url,\s*)['"][^'"]*seat-key|\.key['"`]/, f);
+    let src = fs.readFileSync(f, 'utf8');
+    if (f === server) {
+      const lazyLoad = "const seatKey = lazy<typeof SeatKeyMod>(import.meta.url, '../hooks/seat-key.ts');";
+      assert.equal(src.split(lazyLoad).length, 2, 'room-server.ts loads the key module once, lazily');
+      assert.equal(src.match(/seatKey\(\)/g)?.length, 1, 'and calls it in one place');
+      assert.match(src, /seatKey\(\)\.signing\(\(\) => proposal\.answer\(/, 'only to sign the person\'s answer');
+      src = src.replace(lazyLoad, '').replace("import type * as SeatKeyMod from '../hooks/seat-key.ts';", '');
+    }
+    assert.doesNotMatch(src, /require\([^)]*seat-key|(?:\bfrom\s*|import\(\s*|import\.meta\.url,\s*)['"][^'"]*seat-key|\.key['"`]/, f);
   }
+});
+
+test('seat-key signing: the signer is there for fn alone, and none (or the one before) after, even when fn throws', () => {
+  const g: Record<symbol, unknown> = globalThis;
+  const slot = Symbol.for('sub-human.human-signer');
+  const before = g[slot];
+  delete g[slot];
+  try {
+    assert.equal(seatKeyLib.signing(() => typeof g[slot]), 'function');
+    assert.equal(g[slot], undefined);
+    assert.throws(() => seatKeyLib.signing(() => { throw new Error('x'); }), /x/);
+    assert.equal(g[slot], undefined);
+    const mine = () => null;
+    g[slot] = mine;
+    seatKeyLib.signing(() => null);
+    assert.equal(g[slot], mine, 'an armed process keeps its signer');
+  } finally { if (before === undefined) delete g[slot]; else g[slot] = before; }
 });
 
 test('`sub-human serve` (the remote server) never loads a seat key or installs a signer', t => {

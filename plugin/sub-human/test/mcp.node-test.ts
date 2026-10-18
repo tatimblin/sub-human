@@ -273,7 +273,7 @@ test('mcp: plan edit opens an edit in the session (it stores nothing); ask asks 
   assert.match(errText(await s.tool('plan', { op: 'ask', approvers: ['zed'] })), /not in the room: zed/);
   assert.match(errText(await s.tool('plan', { op: 'ask', approvers: ['claude'] })), /people/);
   assert.match(errText(await s.tool('plan', { op: 'edit', name: 'Bad Name!' })), /invalid plan name/);
-  assert.match(errText(await s.tool('plan', { op: 'nope' })), /op must be edit, put, ask or read/);
+  assert.match(errText(await s.tool('plan', { op: 'nope' })), /op must be edit, put, ask, signoff or read/);
   proposal.writeReview(me, { phase: 'entering', at: Date.now() });
   assert.match(errText(await s.tool('plan', { op: 'edit' })), /a sign-off review is open/);
   proposal.clearReview(me);
@@ -317,6 +317,72 @@ test('mcp: plan put stores the model\'s text under compare-and-swap (stored, unc
   assert.equal(proposal.readEdit(me), null, 'no edit for the hooks to run');
   assert.match(text(await s.tool('plan', { op: 'edit' })), /^Editing room plan room \(base v3, .*\nNow call EnterPlanMode/, 'on: plan mode, as before');
   for (const x of [s, bobs, off]) await x.close();
+  bob.kill();
+});
+
+test('mcp: plan signoff (sign-off off) asks the person one MCP question and records only the client\'s answer to it, signed as theirs; refused while the plan view works', async () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  const bob = h.spawnSleeper();
+  identity.join({ code, name: sn('bob'), role: 'member', pid: bob.pid, session_id: 'sb' });
+  R = room.open(code);
+  const me = { code, name: sn('alice') };
+  const asked = propose(me, { plan: 'room', text: '# Paging\n\n1. cursor\n', approvers: ['alice', 'bob'] });
+  const human = () => must(R).readAll().filter(e => e.via === 'human' && (e.kind === 'signoff' || e.kind === 'objection'));
+  // on: the plan view is the way; nothing is asked
+  const on = await ready({}, undefined, { elicitation: {} });
+  assert.match(errText(await on.tool('plan', { op: 'signoff' })), /^refused: alice signs off in the plan view: call EnterPlanMode/);
+  assert.equal(on.requests.length, 0);
+  // off, but the client shows no form: refused, nothing asked
+  const off = { SUB_HUMAN_CC_OFF: 'sign-off' };
+  const noForm = await ready(off);
+  assert.match(errText(await noForm.tool('plan', { op: 'signoff' })), /shows no MCP question.*nothing was recorded/);
+  assert.equal(noForm.requests.length, 0);
+  // another process naming alice's session (not her Claude Code: the server's parent is not her seat's pid): refused
+  const bobs = await ready({ ...off, CLAUDE_CODE_SESSION_ID: 'sb' }, undefined, { elicitation: {} });
+  assert.match(errText(await bobs.tool('plan', { op: 'signoff' })), /^refused: only the seat's own Claude Code can ask its person/);
+  // off: one question per call; only the client's accept with agree or object records anything
+  const s = await ready(off, undefined, { elicitation: { form: {} } });
+  let asks = 0;
+  const answerWith = async (args: object, reply: object) => {
+    const call = s.tool('plan', { op: 'signoff', ...args });
+    await h.until(() => s.requests.length > asks);
+    const req = must(s.requests[asks++]);
+    s.write({ id: req.id, ...reply });
+    return { req, res: await call };
+  };
+  const first = await answerWith({ answer: 'agree', choice: 'Agree', agree: true }, { result: { action: 'decline' } });
+  assert.equal(first.req.method, 'elicitation/create');
+  const params: unknown = first.req.params;
+  assert.ok(params && typeof params === 'object' && 'message' in params && typeof params.message === 'string', 'a message');
+  assert.match(JSON.stringify(params), /^\{"mode":"form",.*"requestedSchema":\{"type":"object","properties":\{"answer":\{"type":"string","title":"Your answer","enum":\["agree","object"\]\}/);
+  assert.match(params.message, new RegExp(`^Sign off on room plan room v1 \\(${asked.hash.slice(0, 6)}\\), asked by alice's Claude\\?\nThe whole plan: in the chat, or \`sub-human plan room\` in a terminal\\.\n\n# Paging\n\n1\\. cursor\n`));
+  assert.match(text(first.res), /^nothing recorded: alice gave no answer in the question Claude Code showed them \(decline\)\. Never say they agreed\./, 'the model\'s own "agree" counts for nothing');
+  assert.match(text((await answerWith({}, { result: { action: 'cancel' } })).res), /^nothing recorded/);
+  assert.match(text((await answerWith({}, { result: { action: 'accept', content: { answer: 'yes' } } })).res), /^nothing recorded/, 'an answer the form does not offer');
+  assert.match(text((await answerWith({}, { result: { action: 'accept' } })).res), /^nothing recorded/);
+  assert.match(errText((await answerWith({}, { error: { code: -1, message: 'no dialog' } })).res), /^nothing recorded: the question did not open or close with an answer \(no dialog\)/);
+  assert.deepEqual(human(), [], 'nothing recorded yet');
+  // the person objects with a note: recorded as theirs, signed (it reads as verified), with the note byte-exact
+  const obj = await answerWith({}, { result: { action: 'accept', content: { answer: 'object', note: 'max page size first' } } });
+  assert.equal(text(obj.res), `sub-human: alice answered in the question Claude Code showed them (you never see it): objected to plan room v1 (proposal ${asked.hash}), with the note "max page size first". Recorded as their answer.`);
+  const [o] = human();
+  assert.deepEqual([o?.kind, o?.from, o?.proposal_hash, o?.text], ['objection', 'alice', asked.hash, 'max page size first']);
+  assert.doesNotMatch(must(R).line(must(o), { full: true }), /unverified/, 'signed with the seat key');
+  assert.match(errText(await s.tool('plan', { op: 'signoff' })), /^refused: no sign-off request on plan room waits for alice/, 'one answer per request');
+  // a new version asked again; an agree (its note is dropped: only an objection carries one)
+  const again = propose(me, { plan: 'room', text: '# Paging\n\n1. cursor\n2. max 100\n', approvers: ['alice', 'bob'] });
+  const ok = await answerWith({ version: 2 }, { result: { action: 'accept', content: { answer: 'agree', note: 'fine' } } });
+  assert.equal(text(ok.res), `sub-human: alice answered in the question Claude Code showed them (you never see it): agreed to plan room v2 (proposal ${again.hash}). Recorded as their answer.`);
+  const a = must(human().at(-1));
+  assert.deepEqual([a.kind, a.from, a.proposal_hash, a.text], ['signoff', 'alice', again.hash, undefined]);
+  assert.doesNotMatch(must(R).line(a, { full: true }), /unverified/);
+  assert.match(errText(await s.tool('plan', { op: 'signoff', version: 1 })), /no sign-off request on plan room v1 waits/);
+  // the ask line points an approver at signoff while the plan view cannot take it
+  const v3 = planVersion(me, 'room', '# Paging v3\n');
+  assert.ok(v3);
+  assert.match(text(await s.tool('plan', { op: 'ask' })), /alice is an approver: show them the plan \(op read\), then call the plan tool, op signoff, name room: Claude Code asks them/);
+  for (const x of [on, noForm, bobs, s]) await x.close();
   bob.kill();
 });
 

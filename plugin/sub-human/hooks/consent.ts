@@ -15,6 +15,10 @@
  * back. It records no answer. Where plan mode's edit cannot run (lib/cc/verdict.ts off plan-edit, or the reducer's
  * fallback when the plan file or its text cannot be found), the edit goes through the plan tool's put instead.
  *
+ * Where the plan view cannot take a sign-off (lib/cc/verdict.ts off sign-off), no review opens: plan mode is the
+ * person's alone, and a call meant to open one (EnterPlanMode while a request waits, ExitPlanMode with "proposal HASH")
+ * is denied with the plan tool's signoff (mcp/room-server.ts) as the next step (signoffElsewhere).
+ *
  * The cards (a join request's, the note's and the fallback consent card) are read through
  * lib/consent/card.ts answerCard: only the person's answer on the card as the hooks built it counts.
  *
@@ -586,12 +590,42 @@ function dispatch(input: ConsentIn): void {
   if (r.threw) throw r.error;
 }
 
+/** The person's line and the model's next step when a call would open a sign-off the plan view cannot take here. */
+const ELSEWHERE = {
+  deny: 'sub-human: sign-off opens as a question here, not in the plan view.',
+  next: (n: string, plan: string): string => `To show ${n} the sign-off request on plan ${plan}, call the room's plan tool: op signoff, name ${plan}; `
+    + `Claude Code asks ${n} directly and only their answer counts. Plan mode stays ${n}'s own: enter it only for a plan of theirs`
+    + ' (if you are in it for the request, ask them to leave it with shift+tab).',
+};
+
+/** True for a plan-mode event, which signoffElsewhere takes whole while sign-off is off. */
+const PLAN_EVENT = (input: ConsentIn): boolean => input.tool_name === 'EnterPlanMode' || input.tool_name === 'ExitPlanMode';
+
+/** Sign-off off: a plan-mode call that would open a review is denied with the plan tool's signoff as the next step;
+ * every other plan-mode event passes untouched (no review, no steer: the plan is the person's). */
+function signoffElsewhere(input: ConsentIn, me: Identity): void {
+  if (input.hook_event_name !== 'PreToolUse' || input.agent_id) return;
+  const ps = proposal.pendingFor(me);
+  let hit: Proposal | undefined;
+  if (input.tool_name === 'EnterPlanMode' && input.permission_mode !== 'plan') hit = ps[0];
+  if (input.tool_name === 'ExitPlanMode') {
+    const ti: ConsentToolInput = input.tool_input ?? {};
+    const own = modelInput(input);
+    const word = stubHash(ti.plan) || stubHash(own && own.plan);
+    hit = word ? ps.find(x => x.hash.startsWith(word)) : undefined;
+  }
+  if (!hit) return;
+  const v = (r => r.fold(r.readRecent()))(c.room.open(me.code)).versionOf(hit.hash);
+  c.out(ccEnv.denyWithContext(ELSEWHERE.deny, ELSEWHERE.next(me.name, v ? v.plan : plans.DEFAULT_PLAN)));
+}
+
 function route(input: ConsentIn) {
   const me = c.whoami(input);
   if (!me) return;
   const ev = input.hook_event_name, tool = input.tool_name;
   const locked = (fn: (input: ConsentIn, me: Identity) => unknown) => proposal.withReview(me, () => fn(input, me));
   if (proposal.withReview(me, () => routeEdit(input, me))) return undefined;
+  if (PLAN_EVENT(input) && verdict.off('sign-off', { sid: input.session_id })) return signoffElsewhere(input, me);
   if (ev === ccEnv.PLAN_ATTACHMENT_EVENT) return undefined;
   if (tool === 'AskUserQuestion' && ev === 'PreToolUse') return locked(preAsk);
   if (tool === 'AskUserQuestion' && ev === 'PostToolUse') return locked(postAsk);

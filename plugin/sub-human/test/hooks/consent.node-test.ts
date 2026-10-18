@@ -1415,3 +1415,23 @@ test('pick: the person\'s words in a shape the readers do not know name nothing:
   assert.equal(must(review(w)).hash, v2, 'the oldest');
   assert.deepEqual(answers(w), []);
 });
+
+test('consent (sign-off off): no review opens; a call meant to open one is denied with the plan tool\'s signoff; plan mode is otherwise the person\'s', () => {
+  const { w, hash } = world('# Paging\n\n1. cursor\n', ['alice', 'bob']);
+  const off = { SUB_HUMAN_CC_OFF: 'sign-off' };
+  const enter = w.hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'EnterPlanMode', permission_mode: 'default', tool_input: {} }, { as: 'bob', env: off });
+  assert.deepEqual([decision(enter), reason(enter)], ['deny', 'sub-human: sign-off opens as a question here, not in the plan view.']);
+  assert.match(must(hso(enter).additionalContext), /call the room's plan tool: op signoff, name p\d+; Claude Code asks bob directly/);
+  const stub = w.hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'ExitPlanMode', permission_mode: 'plan', tool_input: { plan: `proposal ${hash}` }, tool_use_id: 't1' }, { as: 'bob', env: off });
+  assert.equal(decision(stub), 'deny');
+  // the person's own plan mode and plan: untouched, no review, nothing recorded
+  assert.equal(w.hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'EnterPlanMode', permission_mode: 'plan', tool_input: {} }, { as: 'bob', env: off }).stdout, '');
+  assert.equal(w.hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'ExitPlanMode', permission_mode: 'plan', tool_input: { plan: '# my own plan\n' }, tool_use_id: 't2' }, { as: 'bob', env: off }).stdout, '');
+  assert.equal(w.hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'ExitPlanMode', permission_mode: 'default', tool_input: { plan: '# my own plan\n' }, tool_use_id: 't2', tool_response: { plan: '# my own plan\n' } }, { as: 'bob', env: off }).stdout, '');
+  assert.equal(w.lib(() => proposal.readReview(seat(w, 'bob'))), null);
+  assert.deepEqual(answers(w), []);
+  // on: the same EnterPlanMode opens the review as before
+  const onEnter = w.hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'EnterPlanMode', permission_mode: 'default', tool_input: {} }, { as: 'bob' });
+  assert.notEqual(decision(onEnter), 'deny');
+  assert.ok(w.lib(() => proposal.readReview(seat(w, 'bob'))), 'the review opened');
+});

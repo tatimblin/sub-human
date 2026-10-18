@@ -34,7 +34,7 @@ export const FALLBACK: Readonly<Record<Gated, string>> = Object.freeze({
   'room-session': 'the room session may not start (the room keeps its tasks)',
   tasks: 'the room task list is off (tasks are kept in the room)',
   'plan-edit': 'plan edits use the plan tool',
-  'sign-off': 'sign-off uses the question card',
+  'sign-off': 'sign-off is a question Claude Code asks you, not the plan view',
 });
 
 export function parseCc(v: unknown): Cc | null {
