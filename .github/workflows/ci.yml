@@ -5,17 +5,22 @@ on:
     branches: [main, master]
   pull_request:
   workflow_dispatch:
+  # nightly: the canary job only (the other jobs skip a scheduled run)
+  schedule:
+    - cron: '17 6 * * *'
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # a push never cancels the nightly canary, nor the canary a push
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'schedule' && 'canary' || github.ref }}
   cancel-in-progress: true
 
 jobs:
   test:
     name: test (node ${{ matrix.node }}, ${{ matrix.os }})
+    if: github.event_name != 'schedule'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -39,7 +44,7 @@ jobs:
         run: |
           git config --global user.name "sub-human CI"
           git config --global user.email "ci@sub-human.invalid"
-      - name: npm ci (typescript, @types/node and oxlint: the typecheck and the linter only)
+      - name: 'npm ci (typescript, @types/node and oxlint: the typecheck and the linter only)'
         run: npm ci
       - name: npm test (the typecheck first; the mods tests skip without Claude Code)
         run: npm test
@@ -56,6 +61,7 @@ jobs:
 
   remote-docker:
     name: remote rooms over real SSH (docker)
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -68,3 +74,34 @@ jobs:
           node-version: '24'
       - name: npm run test:remote-docker
         run: npm run test:remote-docker
+
+  # An early warning: install Claude Code's latest and next from npm and run the probe (without the typings check),
+  # the hooks module's wiring tests (a modules-off skip fails) and plugin validate --strict against each.
+  canary:
+    name: canary (claude-code@${{ matrix.tag }})
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        tag: [latest, next]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: git identity (the wiring tests make throwaway repos)
+        run: |
+          git config --global user.name "sub-human CI"
+          git config --global user.email "ci@sub-human.invalid"
+      - run: npm ci
+      - name: npm run canary
+        run: npm run canary -- ${{ matrix.tag }}
+      - name: keep the summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canary-${{ matrix.tag }}
+          path: scripts/canary/last.json
+          if-no-files-found: ignore

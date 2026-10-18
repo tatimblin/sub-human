@@ -17,3 +17,6 @@ trailer/capture/*
 
 # trailer agent skills: npx skills add remotion-dev/skills (trailer/skills-lock.json pins them)
 trailer/.claude/skills/
+
+# npm run canary's last summary (scripts/canary.ts)
+scripts/canary/

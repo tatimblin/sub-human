@@ -2,7 +2,7 @@
 /**
  * scripts/probe-cc.ts: check the installed Claude Code binary against plugin/sub-human/lib/cc/contract.json.
  *
- *   node scripts/probe-cc.ts [--json] [--bin PATH] [--extra FILE.json] [--only id,id,...]
+ *   node scripts/probe-cc.ts [--json] [--bin PATH] [--extra FILE.json] [--only id,id,...] [--no-typings]
  *
  * Reads the entries from contract.json itself. Finds the binary (lib/cc/contract.ts locateBinary: --bin, else
  * $CLAUDE_BIN, else `claude` on PATH with symlinks resolved, else the newest
@@ -13,7 +13,8 @@
  * FAIL, 2 when no binary is found.
  * It also fails (a FAIL `typings` line; `typings` in --json) when the committed typings snapshot,
  * typings/claude-code/index.d.ts, was written by another Claude Code than contract.json `probed`: refresh it with
- * `npm run typings` (scripts/typings.ts) after a session has loaded the plugin on the probed version.
+ * `npm run typings` (scripts/typings.ts) after a session has loaded the plugin on the probed version. --no-typings
+ * skips that check (a SKIP line; `typings: null` in --json): scripts/canary.ts probes a newer binary than `probed`.
  * Extra entries ({id, search, shape?, stability?, note?}[]) come from --extra FILE or $CC_PROBE_EXTRA (JSON text);
  * the tests use that to feed a mutated string and expect a failure. --only limits the run to those CONTRACT ids
  * (extras always run). --json also reports `ms` (wall)
@@ -83,8 +84,8 @@ function main(): never {
   const results = cc.probe(buf, { entries });
   const degraded = cc.degradedOn(ver, contract.entries);
   const failed = results.filter(r => !r.ok);
-  const typings = typingsCheck();
-  const ok = failed.length === 0 && typings.ok;
+  const typings = process.argv.includes('--no-typings') ? null : typingsCheck();
+  const ok = failed.length === 0 && (typings?.ok ?? true);
   const ms = Date.now() - t0;
   const cpu = process.cpuUsage();
   const cpuMs = Math.round((cpu.user + cpu.system) / 1000);
@@ -97,7 +98,9 @@ function main(): never {
       for (const m of r.missing) process.stdout.write(`      missing: ${JSON.stringify(m).slice(0, 160)}\n`);
     }
     for (const d of degraded) process.stdout.write(`NOTE  ${d.id.padEnd(34)} reported changed on ${ver}${d.issue ? ` (#${d.issue})` : ''}: ${d.note}\n`);
-    process.stdout.write(typings.ok
+    process.stdout.write(!typings
+      ? `SKIP  ${'typings'.padEnd(34)} --no-typings\n`
+      : typings.ok
       ? `PASS  ${'typings'.padEnd(34)} typings/claude-code written by ${typings.version}\n`
       : `FAIL  ${'typings'.padEnd(34)} typings/claude-code written by ${typings.version ?? '(unreadable)'}, contract.json probed ${typings.probed}: npm run typings\n`);
     process.stdout.write(`${results.length - failed.length}/${results.length} pass in ${ms} ms\n`);
