@@ -3,7 +3,7 @@
  * link file, the link daemon's start and what the person reads next. An invite line only links this machine, in one
  * step the person types (the line with the PIN after it) or two (the line, then the PIN the host's machine asks for;
  * lib/remote/link-connect.ts dials, and sends a PIN only once the host's key is checked); the right PIN lets it in in
- * that hello (a join request with no PIN waits for the host's card): no step ever takes the seat, so the seat's mechanics block never goes to the model with a secret-bearing prompt. A join over the person's own ssh login (no invite) links and then takes the seat.
+ * that hello (a join request with no PIN waits for the host's card): no step ever takes the seat, so the seat's mechanics block never goes to the model with a secret-bearing prompt. Once let in, the hooks module takes it in a turn of its own (the tail's take, mod/deliver.ts takeSeat: letIn), else a bare /sub-human does. A join over the person's own ssh login (no invite) links and then takes the seat.
  *
  * A join over the person's own ssh login is said explicitly (no SECRET is no invite), and its refusal says that an
  * invite line ends with its SECRET. Either join, for a room this machine is linked to live another way, is refused
@@ -11,7 +11,8 @@
  *
  * pendingNews: the invite join this session started, for the seatless session's tail (lib/tail.ts), which says each
  * state once: 'waiting' (dialing, or the card not answered), 'pin', 'linked' or 'refused'. text is '' when the
- * command's own answer said the same (join_told), so the person reads it once. A stop from before the join's line
+ * command's own answer said the same (join_told), so the person reads it once; 'linked' is the tail's take whatever
+ * its text, with this machine's join check (checkOf) for the line that says the seat was taken. A stop from before the join's line
  * (the kicked link it replaced) is not its refusal.
  */
 import * as identity from '../identity.ts';
@@ -29,10 +30,15 @@ import { REVOKED } from '../reasons.ts';
 import type { RoomCode, SeatName, InviteSecret, Pin } from '../brand.ts';
 import type * as WsMod from './transports/ws.ts';
 import type * as SshMod from './transports/ssh.ts';
+import type * as SecretMod from './invite-secret.ts';
+import type * as MachineKeyMod from './machine-key.ts';
 
 // a transport only for the join that uses it (start cost)
 const wsT = lazy<typeof WsMod>(import.meta.url, './transports/ws.ts');
 const sshT = lazy<typeof SshMod>(import.meta.url, './transports/ssh.ts');
+// the check, only once a join is let in (the tail's news)
+const secretLib = lazy<typeof SecretMod>(import.meta.url, './invite-secret.ts');
+const machineKeyLib = lazy<typeof MachineKeyMod>(import.meta.url, './machine-key.ts');
 
 /** The seat a command asks to take: code null for the one open room, else a new one. isDefault: the name was not
  * typed (a taken one says how to pick another). pending: a join the host let in. */
@@ -179,6 +185,21 @@ function pendingJoins(): PendingLink[] {
 
 export const pendingJoin = (): PendingLink | null => pendingJoins()[0] ?? null;
 
+/** The join this session (sid) started for room code that the host let in (a token): the one the hooks module seats on
+ * its own (lib/commands/join.ts letIn), else null. */
+export const letIn = (code: RoomCode, sid: string | undefined): PendingLink | null =>
+  (sid ? pendingJoins().find(l => l.code === code && l.join_sid === sid && !!l.token) ?? null : null);
+
+/** The check this machine proved itself with (lib/remote/invite-secret.ts joinCheck: its machine id and, over the web,
+ * the link's own key), as the host's card and room line show it; null when it cannot be read. */
+function checkOf(l: Link): string | null {
+  try {
+    const t = l.transport;
+    const key = t && (t.kind === 'wss' || t.kind === 'ws') && typeof t.clientKey === 'string' ? t.clientKey : null;
+    return secretLib().joinCheck(machineKeyLib().idOf(machineKeyLib().publicKey()), key);
+  } catch { return null; }
+}
+
 export function finishJoin(l: PendingLink): JoinStep {
   const code = l.code, name = l.join_as; // pendingJoin: a seat name
   const why = linkSocket.stopReason(linkSocket.status(code));
@@ -224,8 +245,10 @@ export function dropJoinAs(code: RoomCode): void {
   } catch { /* a stale join_as only names the seat again */ }
 }
 
-/** What a seatless session's tail says about the invite join it started (see the header); waiting: nothing yet. */
-export interface News { code: RoomCode; name: string; state: 'waiting' | 'pin' | 'linked' | 'refused'; text: string }
+/** What a seatless session's tail says about the invite join it started (see the header); waiting: nothing yet.
+ * linked also carries line, its text even when told (what the person reads when the module cannot take the seat), and
+ * check, this machine's (checkOf). */
+export interface News { code: RoomCode; name: string; state: 'waiting' | 'pin' | 'linked' | 'refused'; text: string; line?: string; check?: string }
 
 export function pendingNews(sid: string | null | undefined): News | null {
   if (!sid) return null;
@@ -243,6 +266,10 @@ export function pendingNews(sid: string | null | undefined): News | null {
   const old = !!st.since && typeof l.created_at === 'string' && Date.parse(st.since) < Date.parse(l.created_at);
   const stopped = old ? null : linkSocket.stopReason(st);
   if (stopped && !l.token) return fresh({ code, name, state: 'refused', text: `✗ could not join room ${code}: ${stopped.reason}` });
-  if (l.token && st.state === 'online') return fresh({ code, name, state: 'linked', text: hosting.joinText(code, name, { state: 'linked' }) });
+  if (l.token && st.state === 'online') {
+    const line = hosting.joinText(code, name, { state: 'linked' });
+    const check = checkOf(l);
+    return { ...fresh({ code, name, state: 'linked', text: line }), line, ...(check ? { check } : {}) };
+  }
   return { code, name, state: 'waiting', text: '' };
 }

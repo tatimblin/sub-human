@@ -731,11 +731,11 @@ test('classic (no module answering): a reply is the block reason alone, never al
 
 /** Run join.ts as the module's command.run hook does (mod/core/command.ts joinPayload): no CLAUDE_PID, the lease's
  * nonce, this test process as the claude process (the shim's parent). */
-function viaModule(w: World, name: string, args: string, { nonce = 'ab'.repeat(16), leaseNonce = nonce, mode }: { nonce?: string; leaseNonce?: string; mode?: string } = {}) {
+function viaModule(w: World, name: string, args: string, { nonce = 'ab'.repeat(16), leaseNonce = nonce, mode, take }: { nonce?: string; leaseNonce?: string; mode?: string; take?: string } = {}) {
   w.pid[name] = process.pid;
   w.sid[name] = w.sid[name] || crypto.randomUUID();
   w.lib(() => identity.writeModLease(w.sid[name], { pid: process.pid, nonce: leaseNonce }));
-  const payload = { ...expand(args), sub_human_via: 'command.run', sub_human_nonce: nonce, ...(mode ? { permission_mode: mode } : {}) };
+  const payload = { ...expand(args), sub_human_via: 'command.run', sub_human_nonce: nonce, ...(mode ? { permission_mode: mode } : {}), ...(take ? { sub_human_take: take } : {}) };
   return w.hook('join', payload, { as: name, modLease: false, env: { CLAUDE_PID: undefined } });
 }
 
@@ -757,6 +757,23 @@ test('through the module (command.run): every reply is {subHuman: {say}}, never 
   assert.equal(seat(w, 'bob').pid, process.pid, 'the seat\'s claude process is the shim\'s parent');
   const left = must(must(viaModule(w, 'bob', 'leave').json).subHuman);
   assert.deepEqual([left.say, left.refused], [`left ${w.code} · /sub-human joins again`, false]);
+});
+
+test('through the module (PLAN-JOIN step 3): a take (no args, the room) with no let-in join of this session\'s says nothing and opens no room; seated, no status either', () => {
+  const plain = new World({}, { room: false });
+  spawnSync('git', ['init', '-q', plain.cwd]);
+  spawnSync('git', ['-C', plain.cwd, 'config', 'user.name', 'Dana Scully']);
+  const none = must(must(viaModule(plain, 'me', '', { take: 'vole-1234' }).json).subHuman);
+  assert.deepEqual([none.say, none.joined], ['', undefined]);
+  const opened = path.join(plain.home, 'rooms');
+  assert.equal(fs.existsSync(opened) && fs.readdirSync(opened).length, false, 'never a room of its own');
+  const w = new World({ claude: 'sleep', alice: 'sleep' });
+  assert.equal(must(viaModule(w, 'bob', `bob ${w.code}`).json).subHuman?.joined, true);
+  const seated = must(must(viaModule(w, 'bob', '', { take: w.code }).json).subHuman);
+  assert.equal(seated.say, '', 'seated already: nothing (a status would be a notice nobody asked for)');
+  // a take is the module's alone, and only bare: words with it are the command they are
+  const typed = must(must(viaModule(w, 'bob', 'help', { take: w.code }).json).subHuman);
+  assert.match(must(typed.say), /^commands:/);
 });
 
 test('through the module (room-plan live): a join in bypass-permissions mode says so in its line', () => {

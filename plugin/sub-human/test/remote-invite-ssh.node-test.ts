@@ -74,7 +74,7 @@ test('ssh invite: the line names the person\'s own ssh login (and the host\'s fo
   assert.equal(fs.existsSync(remote.lib(() => links.dirOf(code))), false, 'no key of its own: nothing in a link folder');
 
   const gave = remote.join(bob, `join ${m.pin}`);
-  assert.match(must(gave.json?.reason), new RegExp(`the host let you in to room ${code}: type /sub-human to join it as bob`), 'the right PIN lets it in');
+  assert.match(must(gave.json?.reason), new RegExp(`the host let you in to room ${code}: this session takes your seat as bob now`), 'the right PIN lets it in');
   assert.equal(host.lib(() => admission.pending(code)).length, 0, 'no card');
   const rec = must(host.lib(() => admission.admissions(store.open(code), { all: true }))[0], 'the admission record');
   assert.deepEqual([rec.link, rec.key, rec.admit, rec.admitted_by], [linkId, null, 'let-in', 'pin'], 'let in by the PIN, on the link id its login names');

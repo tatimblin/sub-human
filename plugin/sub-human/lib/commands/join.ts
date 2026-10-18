@@ -9,7 +9,8 @@
  *             conversation: identity.forkParent; restored, as session-restore does), else finish a join the host has
  *             let in (a link file's join_as), else join the one open room, or open one, as the default name. Never a
  *             new room while the default name's seat is live in another session of this folder (seats.liveSeatHere):
- *             that is refused with where the seat is
+ *             that is refused with where the seat is. From the hooks module with a room (ctx.take: it seats a join the
+ *             host let in on its own, mod/deliver.ts takeSeat): only that join's seat (letIn), else nothing
  *   named     `/sub-human NAME [ROOM]` (or `--as NAME`): join ROOM (else the one open room, else a new one) as NAME, leaving any other
  *             room; `/sub-human ROOM` (a room code alone): that room as the default name, never a person named after it.
  *             A word of digits is no name (it looks like a PIN)
@@ -40,7 +41,7 @@ import { HELP_HINT, USAGE, refused, say } from './answer.ts';
 import type { Answer, VerbCtx, Verb } from './types.ts';
 import type { Identity } from '../identity.ts';
 import type { JoinStep, Wanted } from '../remote/joining.ts';
-import type { SeatName, InviteSecret, Pin } from '../brand.ts';
+import type { RoomCode, SeatName, InviteSecret, Pin } from '../brand.ts';
 import type * as WsMod from '../remote/transports/ws.ts';
 import type * as SshMod from '../remote/transports/ssh.ts';
 import { lazy } from '../io.ts';
@@ -98,7 +99,15 @@ function forked(ctx: VerbCtx): Answer | null {
   return { kind: 'joined', me, lead: 'restored after the agent view', say: `you're ${from.name} in room ${from.code} again (this session went on from the one that held the seat), ${seats.withWhom(from.code, from.name)}` };
 }
 
+/** The hooks module seating the join the host let in to room code (ctx.take): that join's seat, else nothing (say '':
+ * the person took it first, or it is not this session's), never a status, another room or a new one. */
+function letIn(code: RoomCode, ctx: VerbCtx): Answer {
+  const l = ctx.cur ? null : joining.letIn(code, ctx.sid);
+  return l ? then(joining.finishJoin(l), ctx) : say('');
+}
+
 export const bare: Verb = (_args, ctx) => {
+  if (ctx.take) return letIn(ctx.take, ctx);
   const { cur, cwd } = ctx;
   if (cur) {
     const l = identity.isHost(cur.code) ? null : links.get(cur.code);

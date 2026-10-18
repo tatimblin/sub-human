@@ -100,6 +100,31 @@ test('deliver: the tail\'s invites event (the host\'s open invite refs) is one i
   assert.equal(d.parseEvent(JSON.stringify({ type: 'invites' })), null);
 });
 
+test('deliver (PLAN-JOIN step 3): the tail\'s take is one take action whether a turn runs or not; one with no room code is nothing', async () => {
+  const d = await import('../mod/core/deliver.ts');
+  const ev = d.parseEvent(JSON.stringify({ type: 'take', code: 'otter-4821', name: 'bob', text: 'type /sub-human', check: 'check 3f9c-2a71' }));
+  assert.deepEqual(ev, { type: 'take', code: 'otter-4821', name: 'bob', text: 'type /sub-human', check: 'check 3f9c-2a71' });
+  for (const turnRunning of [false, true]) assert.deepEqual(d.route(ev, { turnRunning }), [{ do: 'take', code: 'otter-4821', name: 'bob', text: 'type /sub-human', check: 'check 3f9c-2a71' }]);
+  assert.deepEqual(d.parseEvent(JSON.stringify({ type: 'take', code: 'otter-4821' })), { type: 'take', code: 'otter-4821', name: '', text: '' });
+  assert.equal(d.parseEvent(JSON.stringify({ type: 'take', code: '../x', name: 'bob' })), null);
+  assert.equal(d.takeFallback('otter-4821', ''), 'the host let you in to room otter-4821: type /sub-human to join it');
+});
+
+test('deliver (PLAN-JOIN step 3): a taken seat\'s wake is one line for the person (with the check) and the seat\'s block as (for Claude) lines; it holds nothing else', async () => {
+  const d = await import('../mod/core/deliver.ts');
+  const context = 'SUB-HUMAN: you are bob\'s Claude in room otter-4821 (with alice).\n\nROWS: Agent({…})';
+  const w = d.takeWake({ code: 'otter-4821', name: 'bob', check: 'check 3f9c-2a71', context });
+  assert.equal(w.shown, 'You\'re in room otter-4821 as bob (check 3f9c-2a71, as the host\'s room line shows)');
+  const parts = must(d.wakeParts(w.text), 'a member wake');
+  assert.equal(parts.shown, w.shown, 'the person sees the one line');
+  assert.deepEqual(parts.context.split('\n').slice(1), [
+    `(for Claude) ${d.TAKE_CONTEXT}`,
+    '(for Claude) SUB-HUMAN: you are bob\'s Claude in room otter-4821 (with alice).',
+    '(for Claude) ROWS: Agent({…})',
+  ]);
+  assert.equal(d.takeWake({ code: 'otter-4821', name: '', context: '' }).shown, 'You\'re in room otter-4821');
+});
+
 test('deliver (item 5): a member\'s wake goes as its lines for the person, bare, and its "(for Claude)" lines as context; one with none goes framed', async () => {
   const d = await import('../mod/core/deliver.ts');
   const wake = `${d.WAKE_HEAD}\nalice: @bob just say ok\n  │ please\n(for Claude) room now: proposal a1 waiting on bob`;

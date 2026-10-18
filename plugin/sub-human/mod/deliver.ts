@@ -9,7 +9,7 @@
  */
 import {
   tailArgv, tailEnv, lineBuffer, parseEvent, route, restartDelay, nextFails, noticeDue, turnLedger, spawnWanted, logLines,
-  rewakePrompt, wakeParts, holdPull, DELIVERY_ERROR_NOTICE, MOD_RESTART_TELL_FAILS, REWAKE_TIMEOUT_MS,
+  rewakePrompt, wakeParts, holdPull, takeWake, takeFallback, DELIVERY_ERROR_NOTICE, MOD_RESTART_TELL_FAILS, REWAKE_TIMEOUT_MS,
 } from './core/deliver.ts';
 import { parseHello, localHello, homeOf, sidIndex } from './core/seat.ts';
 import { homeMark } from './core/constants.ts';
@@ -397,9 +397,57 @@ async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
       case 'submit': void submitWake($, a.text, { seen: a.seen }); break; // not awaited: it resolves as the turn starts
       case 'mid-turn-wake': await midTurnWake($, a.text); break;
       case 'invites': if (pinnedRef && !a.open.includes(pinnedRef)) unpin($); break;
+      case 'take': void takeSeat($, c, a); break; // not awaited: the shim runs, then the wake resolves as its turn starts
       default: assertNever(a, 'delivery action');
     }
   }
+}
+
+/** The rooms whose let-in join this module process is seating now (takeSeat): one run each. */
+const taking = new Set<string>();
+
+/**
+ * The tail's take: a join this session started was let in (the PIN in the join's own hello, or the host's card later).
+ * The seat is taken here, as a bare /sub-human would take it: join.ts through the shim with no args and the room
+ * (sub_human_take: that join's seat or nothing, never a new room), then one wake in a turn of its own, never the prompt
+ * that carried the line or the PIN (lib/remote/joining.ts's invariant): "You're in room CODE as NAME (check …)" for the
+ * person, the seat's mechanics block for the model (takeWake), which then makes the room row's calls. Mid-turn: shown
+ * as a notice and appended, as any wake. A reply with nothing to take (the person typed /sub-human first) says nothing;
+ * one that failed says why and the line that asks for a bare /sub-human (the tail's text). Never throws.
+ */
+async function takeSeat($: EngineInterface, c: Child, a: { code: string; name: string; text: string; check?: string }) {
+  if (taking.has(a.code)) return;
+  taking.add(a.code);
+  try {
+    const root = $.plugin.root, sid = c.sid;
+    const run = async (): Promise<JoinReply> => {
+      try {
+        await ensureLease($, sid);
+        const nonce = asNonce((await $.state.get(NONCE)).value, sid);
+        if (!nonce) return { kind: 'stale', lines: [] };
+        const r = await $.process.run(shimArgv(root, 'join'), {
+          stdin: JSON.stringify(joinPayload({ sid, cwd: await $.session.cwd(), args: '', nonce, mode: facts.of(sid).permission_mode, take: a.code })),
+          env: shimEnv({ session_id: sid }, root),
+          timeoutMs: SHIM_TIMEOUT_MS,
+        });
+        return readReply(r);
+      } catch (error) { return readReply(null, { error }); }
+    };
+    let reply = await run();
+    if (reply.kind === 'stale') { await refresh($, sid).catch(() => {}); reply = await run(); }
+    if (reply.kind !== 'joined') {
+      if (reply.kind === 'say' && !reply.lines.length) return; // nothing to take: the seat is taken already
+      for (const line of [...reply.lines, takeFallback(a.code, a.text)]) $.ui.log(line);
+      return;
+    }
+    try { await refresh($, sid); childFor($, sid, asHello((await $.state.get(HELLO)).value)); } catch { /* the tail looks the seat up itself */ }
+    const hello = asHello((await $.state.get(HELLO)).value);
+    const seat = hello && hello.sid === sid ? hello.seat : null;
+    const { text, shown } = takeWake({ code: seat ? seat.code : a.code, name: seat ? seat.name : a.name, check: a.check, context: reply.context });
+    for (const line of reply.lines) $.ui.log(line); // the seat's line, as a typed /sub-human's confirmation
+    if (turns.running !== null) { $.ui.log(shown); await midTurnWake($, text); }
+    else await submitWake($, text, { member: true, seen: [shown] });
+  } catch { await noteError($); } finally { taking.delete(a.code); }
 }
 
 /** An invite's line and PIN on this plugin's status line, under the prompt (Claude Code saves it in no transcript, as it

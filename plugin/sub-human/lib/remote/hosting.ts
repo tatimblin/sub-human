@@ -321,7 +321,9 @@ function joinText(code: RoomCode, name: SeatName, o: Outcome, { tells = false }:
     // the card may have let this machine in under another name (its own sits in the room from another machine)
     const as = typeof lf.join_as === 'string' ? lf.join_as : name;
     const why = lf.join_renamed ? ` (${lf.join_renamed} is in the room from another machine, and a seat's key never moves, so the host let this machine in as ${as})` : '';
-    return `the host let you in to room ${code}: type /sub-human to join it as ${as}${why}`;
+    // tells: this session's hooks module takes the seat itself (mod/deliver.ts takeSeat); else a bare /sub-human does
+    return tells ? `the host let you in to room ${code}: this session takes your seat as ${as} now${why}`
+      : `the host let you in to room ${code}: type /sub-human to join it as ${as}${why}`;
   }
   if (o.state === 'refused') return `could not join room ${code}: ${o.reason}`;
   if (o.state === 'pin') {
