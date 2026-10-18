@@ -3,7 +3,7 @@
  * link file, the link daemon's start and what the person reads next. An invite line only links this machine, in one
  * step the person types (the line with the PIN after it) or two (the line, then the PIN the host's machine asks for;
  * lib/remote/link-connect.ts dials, and sends a PIN only once the host's key is checked); the right PIN lets it in in
- * that hello (a join request with no PIN waits for the host's card): no step ever takes the seat, so the seat's mechanics block never goes to the model with a secret-bearing prompt. A join over the person's own ssh login (no invite) links and then takes the seat.
+ * that hello (a line with no PIN knocks and waits for the host's card; a host before the knock asks for the PIN): no step ever takes the seat, so the seat's mechanics block never goes to the model with a secret-bearing prompt. A join over the person's own ssh login (no invite) links and then takes the seat.
  *
  * A join over the person's own ssh login is said explicitly (no SECRET is no invite), and its refusal says that an
  * invite line ends with its SECRET. Either join, for a room this machine is linked to live another way, is refused
@@ -118,9 +118,10 @@ export function linkLine({ name, code, word, transport, sid, pin }: { name: Seat
   return stands(code, name, o, !!sid);
 }
 
-/** The invite joins this machine started that wait for their PIN (the host asked), this session's first, newest first. */
+/** The invite joins this machine started that take a PIN (the host asked for it, or a knock waits for the card: the
+ * right PIN lets it in without the card), this session's first, newest first. */
 export function pinJoin(sid?: string | null): PendingLink | null {
-  const all = pendingJoins().filter(l => !!l.pin_wanted && typeof l.invite === 'string');
+  const all = pendingJoins().filter(l => (!!l.pin_wanted || !!l.awaiting) && typeof l.invite === 'string');
   return all.find(l => !!sid && l.join_sid === sid) ?? all[0] ?? null;
 }
 

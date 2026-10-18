@@ -13,8 +13,14 @@
  *     joiner in: an admission record (under admissionSlot) let in by 'pin' and used, and the link made in that same
  *     hello, on the machine its key proved and, over the web, bound to the Noise key it proved and to that one name (the
  *     free NAME2 when its own sits here from another machine: admission.ts taken). A PIN goes only with a proven machine.
- *   used: its admission decides (admission.ts check; a card's 'let-in' redeems once). Another machine gets INVITE_USED,
- *     and the room a line naming both checks (invite-secret.ts joinCheck), once per machine (`others`, at most OTHERS_MAX).
+ *   knock: a hello with knock: true and no pin (a newer joiner that typed the line alone; an older one never knocks and
+ *     is asked for the PIN) uses the invite and asks the host person's card: an admission 'asked' for the machine its
+ *     key proved (and its Noise key), lapsing after ADMIT_TTL_MS, answered OFFLINE ADMIT_WAITING. It spends no try; a
+ *     machine that typed a wrong PIN for the invite waits out its backoff (PIN_THROTTLED), then gets PIN_NEEDED.
+ *   used: its admission decides (admission.ts check; a card's 'let-in' redeems once). A PIN from the knocking machine
+ *     while the card waits is checked as above: the right one lets it in at once (admitted_by 'pin'), a wrong one costs
+ *     a try and the last burns the knock too. Another machine gets INVITE_USED (one knock per invite), and the room a
+ *     line naming both checks (invite-secret.ts joinCheck), once per machine (`others`, at most OTHERS_MAX).
  * A wrong PIN, the last try and a second machine carry error.note, the room line; server.ts says the joined one.
  *
  * isPin and its kin make the Pin brand (lib/brand.ts), which lib/cli/doctor/redact.ts treats as a secret.
@@ -82,12 +88,32 @@ const inviteOpen = (inv: unknown, now: number = Date.now()): inv is ShortInvite 
 /** The wait after the n-th wrong PIN (n >= 1): PIN_BACKOFF_MS, doubling. */
 const backoff = (n: number): number => testMs('SUB_HUMAN_PIN_BACKOFF_MS') * 2 ** Math.min(Math.max(0, n - 1), 10);
 
+/** A PIN against an invite line's record (proven: the machine its key proved): null when it holds, else the error,
+ * with the records a wrong one writes (a try spent, the waits per invite and per source; the last burns the invite and
+ * whatever burn names besides: the knock that waits on it). */
+function checkPin(cur: Invites, key: string, secret: string, inv: ShortInvite, { pin, proven, name, burn = {}, now }: {
+  pin: unknown; proven: MachineId; name: string; burn?: Invites; now: number;
+}): { next?: Invites; err: RoomError } | null {
+  const ref = key.slice(0, 12);
+  const src = (inv.sources ?? {})[proven];
+  const wait = Math.max(inv.next_at ? Date.parse(inv.next_at) - now : 0, src ? Date.parse(src.next_at) - now : 0);
+  if (wait > 0) return { err: throttled(wait) };
+  if (typeof pin === 'string' && SHORT_PIN_RE.test(pin) && sameDigest(pinDigest(secret, pin), inv.pin_sha256)) return null;
+  const tries = Math.max(0, inv.tries - 1), wrong = (inv.wrong || 0) + 1, srcWrong = (src ? src.wrong : 0) + 1;
+  const sources = { ...(inv.sources ?? {}), [proven]: { wrong: srcWrong, next_at: iso(now + backoff(srcWrong + 1)) } };
+  const rec: ShortInvite = { ...inv, tries, wrong, next_at: iso(now + backoff(wrong)), sources, ...(tries ? {} : { burnt_at: iso(now) }) };
+  return tries
+    ? { next: { ...cur, [key]: rec }, err: authError(`wrong PIN (${left(tries)}). Check the digits with the host, then type it again`, 'PIN_WRONG', `a wrong PIN for invite ${ref} (${left(tries)}; it asked to join as ${name})`) }
+    : { next: { ...cur, ...burn, [key]: rec }, err: authError('wrong PIN, and that was the last try: this invite no longer works. Ask the host for a new one (/sub-human invite on their side)', 'PIN_LAST', `invite ${ref} burnt after its last wrong PIN`) };
+}
+const throttled = (wait: number): RoomError => authError(`too many PINs tried just now: wait ${Math.ceil(wait / 1000)} s, then type the PIN again`, 'PIN_THROTTLED');
+
 /**
- * An invite line's PIN step and its redemption, inside the invites update (see the header). Returns the records to
- * write (next), the link to make once the update is done (made), and the error to throw after (err).
+ * An invite line's PIN step, its knock and its redemption, inside the invites update (see the header). Returns the
+ * records to write (next), the link to make once the update is done (made), and the error to throw after (err).
  */
-function redeemShort(cur: Invites, key: string, secret: string, inv: ShortInvite, { pin, proven, peerKey, as, alt, linkId, now }: {
-  pin: unknown; proven: MachineId | null; peerKey: string | null; as: Asked | null; alt: string | null; linkId: string | undefined; now: number;
+function redeemShort(cur: Invites, key: string, secret: string, inv: ShortInvite, { pin, knock, proven, peerKey, as, alt, linkId, now }: {
+  pin: unknown; knock: boolean; proven: MachineId | null; peerKey: string | null; as: Asked | null; alt: string | null; linkId: string | undefined; now: number;
 }):{ next?: Invites; err: RoomError; made?: undefined; adm?: undefined } | { next: Invites; err: null; made: { id: string; machine: MachineId; seats: string[]; key: string | null }; adm: AdmissionRecord } {
   const ref = key.slice(0, 12);
   // burnt, or no try left (a record whose last wrong PIN did not mark it burnt): it takes no PIN, right or wrong
@@ -95,8 +121,9 @@ function redeemShort(cur: Invites, key: string, secret: string, inv: ShortInvite
   if (inv.used_at) {
     const slot = admissionSlot(secret);
     const adm = cur[slot];
-    // another machine than the one whose PIN held: the invite is spent for it (each invite works once). The room hears
-    // of it once per machine: if the real joiner is the second one, the one waiting on the card is not them
+    // another machine than the one whose PIN or knock holds it: the invite is spent for it (each invite works once,
+    // and takes one knock). The room hears of it once per machine: if the real joiner is the second one, the one
+    // waiting on the card is not them
     if (!adm || !adm.admission || adm.machine !== proven) {
       const used = authError('this invite was used already (each invite works once); ask the host for a new one', 'INVITE_USED');
       if (!adm || !adm.admission || !proven || (adm.others ?? []).includes(proven) || (adm.others ?? []).length >= OTHERS_MAX) return { err: used };
@@ -106,6 +133,16 @@ function redeemShort(cur: Invites, key: string, secret: string, inv: ShortInvite
       return { err: Object.assign(used, { note }), next: { ...cur, [admissionSlot(secret)]: { ...adm, others: [...(adm.others ?? []), proven] } } };
     }
     const r = admission.check(adm, { machine: proven || '', linkId, peerKey, now });
+    // a PIN typed while its knock waits for the card: the right one lets it in now, as on the line (a wrong one costs
+    // a try, and the last burns the knock with the invite)
+    if (r.err && r.err.reason === 'ADMIT_WAITING' && pin !== undefined) {
+      const bad = checkPin(cur, key, secret, inv, { pin, proven: adm.machine, name: adm.name, burn: { [slot]: { ...adm, burnt_at: iso(now) } }, now });
+      if (bad) return bad;
+      const at = iso(now);
+      const name = alt ?? adm.name;
+      const ok: AdmissionRecord = { ...adm, name, ...(alt ? { asked_as: adm.name } : {}), admit: 'let-in', admitted_at: at, admitted_by: 'pin', admitted_until: at, used_at: at };
+      return { err: null, adm: ok, next: { ...cur, [slot]: ok }, made: { id: adm.link, machine: adm.machine, seats: [name], key: adm.kind === 'ws' ? adm.key : null } };
+    }
     if (r.err) return { err: r.err, ...(r.next ? { next: { ...cur, [slot]: r.next } } : {}) };
     return {
       err: null, adm, next: { ...cur, [slot]: { ...adm, used_at: iso(now) } },
@@ -115,27 +152,36 @@ function redeemShort(cur: Invites, key: string, secret: string, inv: ShortInvite
   if (now > Date.parse(inv.expires_at)) {
     return { next: { ...cur, [key]: { ...inv, burnt_at: iso(now) } }, err: authError('this invite expired (it lasts 15 minutes); ask the host for a new one', 'INVITE_EXPIRED') };
   }
-  if (pin === undefined) return { err: authError(`the host's machine has this invite (${left(inv.tries)}): type the 4-digit PIN they told you`, 'PIN_NEEDED') };
+  const needed = (more = ''): RoomError => authError(`the host's machine has this invite (${left(inv.tries)})${more}: type the 4-digit PIN they told you`, 'PIN_NEEDED');
+  // no PIN and no knock (an older joiner's first hello): it is asked for the PIN, charged nothing
+  if (pin === undefined && (!knock || !proven)) return { err: needed() };
   if (!proven) return { err: new RoomError('PROTOCOL', 'a PIN goes only with this machine\'s key, proved in this connection: a newer sub-human does that; update it (/plugin update sub-human)', 'SKEW') };
-  if (!as || !NAME_RE.test(as.name)) return { err: new RoomError('INVALID', 'a PIN goes with the name to join as') };
+  if (!as || !NAME_RE.test(as.name)) return { err: new RoomError('INVALID', `${pin === undefined ? 'a knock' : 'a PIN'} goes with the name to join as`) };
   // what the joiner says it is called: its charset only, and short, since a room line every Claude reads carries it
   const label = LABEL_RE.test(String(as.label)) ? as.label.slice(0, LABEL_SHOWN) : 'a-machine';
-  const src = (inv.sources ?? {})[proven];
-  const wait = Math.max(inv.next_at ? Date.parse(inv.next_at) - now : 0, src ? Date.parse(src.next_at) - now : 0);
-  if (wait > 0) return { err: authError(`too many PINs tried just now: wait ${Math.ceil(wait / 1000)} s, then type the PIN again`, 'PIN_THROTTLED') };
-  if (typeof pin !== 'string' || !SHORT_PIN_RE.test(pin) || !sameDigest(pinDigest(secret, pin), inv.pin_sha256)) {
-    const tries = Math.max(0, inv.tries - 1), wrong = (inv.wrong || 0) + 1, srcWrong = (src ? src.wrong : 0) + 1;
-    const sources = { ...(inv.sources ?? {}), [proven]: { wrong: srcWrong, next_at: iso(now + backoff(srcWrong + 1)) } };
-    const rec: ShortInvite = { ...inv, tries, wrong, next_at: iso(now + backoff(wrong)), sources, ...(tries ? {} : { burnt_at: iso(now) }) };
-    const next = { ...cur, [key]: rec };
-    return tries
-      ? { next, err: authError(`wrong PIN (${left(tries)}). Check the digits with the host, then type it again`, 'PIN_WRONG', `a wrong PIN for invite ${ref} (${left(tries)}; it asked to join as ${as.name})`) }
-      : { next, err: authError('wrong PIN, and that was the last try: this invite no longer works. Ask the host for a new one (/sub-human invite on their side)', 'PIN_LAST', `invite ${ref} burnt after its last wrong PIN`) };
-  }
-  // the right PIN: let in by it, and linked in this hello (no card). A name that sits here from another machine is let
-  // in as the free one (admission.ts taken), as the card would; admit_sig stays unset (no person signed)
   const id = linkId || hostLinks.newLinkId();
   const at = iso(now);
+  if (pin === undefined) {
+    // a knock: no try spent. A machine that typed a wrong PIN for this invite waits out its backoff, and then only
+    // the right PIN gets it in (a miss never turns into a card)
+    const src = (inv.sources ?? {})[proven];
+    const wait = src ? Date.parse(src.next_at) - now : 0;
+    if (wait > 0) return { err: throttled(wait) };
+    if (src) return { err: needed(', and this machine typed a wrong PIN for it') };
+    // the knock uses the invite (one per invite), and its admission asks the host person's card
+    const asked: AdmissionRecord = {
+      v: 2, admission: true, from: ref, kind: inv.kind, by: inv.by || null, machine: proven, name: as.name, label,
+      key: peerKey, link: id, admit: 'asked', created_at: at, expires_at: iso(now + testMs('SUB_HUMAN_ADMIT_TTL_MS')),
+    };
+    return {
+      next: { ...cur, [key]: { ...inv, used_at: at, link: id }, [admissionSlot(secret)]: asked },
+      err: new RoomError('OFFLINE', `${admission.WAITING}; the link keeps trying`, 'ADMIT_WAITING'),
+    };
+  }
+  const bad = checkPin(cur, key, secret, inv, { pin, proven, name: as.name, now });
+  if (bad) return bad;
+  // the right PIN: let in by it, and linked in this hello (no card). A name that sits here from another machine is let
+  // in as the free one (admission.ts taken), as the card would; admit_sig stays unset (no person signed)
   const adm: AdmissionRecord = {
     v: 2, admission: true, from: ref, kind: inv.kind, by: inv.by || null, machine: proven, name: alt ?? as.name, ...(alt ? { asked_as: as.name } : {}), label,
     key: peerKey, link: id, admit: 'let-in', created_at: at, expires_at: at, admitted_at: at, admitted_by: 'pin', admitted_until: at, used_at: at,
@@ -144,8 +190,8 @@ function redeemShort(cur: Invites, key: string, secret: string, inv: ShortInvite
   return { next, err: null, adm, made: { id, machine: proven, seats: [adm.name], key: inv.kind === 'ws' ? peerKey : null } };
 }
 
-function redeemInvite(store: AuthStore, secret: string, { machine, pin, proven = null, peerKey = null, as = null, newId, now = Date.now() }: {
-  machine: MachineId; pin?: unknown; proven?: MachineId | null; peerKey?: string | null; as?: Asked | null; newId?: string; now?: number;
+function redeemInvite(store: AuthStore, secret: string, { machine, pin, knock = false, proven = null, peerKey = null, as = null, newId, now = Date.now() }: {
+  machine: MachineId; pin?: unknown; knock?: boolean; proven?: MachineId | null; peerKey?: string | null; as?: Asked | null; newId?: string; now?: number;
 }): Redeemed {
   const key = sha256(secret);
   // the name a right PIN lets in when the one asked for sits here from another machine (read before the update's lock)
@@ -157,7 +203,7 @@ function redeemInvite(store: AuthStore, secret: string, { machine, pin, proven =
     const cur = stored ?? {};
     const inv = cur[key];
     if (inv && inv.short) {
-      const r = redeemShort(cur, key, secret, inv, { pin, proven, peerKey, as, alt, linkId: newId, now });
+      const r = redeemShort(cur, key, secret, inv, { pin, knock, proven, peerKey, as, alt, linkId: newId, now });
       got.err = r.err;
       if (r.made) { got.adm = r.adm; got.link = { ...r.made, bound: true }; } // made: with the admission it came from
       return r.next;

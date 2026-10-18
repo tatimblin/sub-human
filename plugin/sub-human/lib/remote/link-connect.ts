@@ -7,9 +7,11 @@
  * connectLink: an invite line's SECRET (invite-secret.ts) goes only to the host its tag names: over the web the
  * listener's key is fetched (transports/ws.ts fetchKey), checked against the tag and pinned before the Noise
  * handshake; over ssh and a pipe the host proves its machine key over a nonce first (client.ts checkHost). A host that
- * does not hold the named key gets nothing: AUTH HOST_KEY_MISMATCH. The host's answers are kept in the link file:
- * PIN_NEEDED / PIN_WRONG / PIN_THROTTLED -> pin_wanted (the PIN dropped, the line kept: the join asks again),
- * ADMIT_WAITING -> awaiting {ref, check} (the PIN held). A token replaces the invite and its PIN, so a redial never
+ * does not hold the named key gets nothing: AUTH HOST_KEY_MISMATCH. A line with no PIN knocks (hello knock: true):
+ * the host asks its person's card, and a host before the knock answers PIN_NEEDED. The host's answers are kept in the
+ * link file: PIN_NEEDED / PIN_WRONG / PIN_THROTTLED -> pin_wanted (the PIN dropped, the line kept: the join asks
+ * again), ADMIT_WAITING -> awaiting {ref, check} (the knock waits for the card; a PIN typed meanwhile is sent on the
+ * next dial, and the right one lets it in at once). A token replaces the invite and its PIN, so a redial never
  * sends the PIN again; an invite the host refused (AUTH) is scrubbed with its PIN, so the link file keeps no secret in
  * clear. The machine id the host derives from this home's machine key is kept (home.ts setMachineIn).
  *
@@ -140,7 +142,8 @@ async function connectLink(code: RoomCode): Promise<Client> {
   // an invite before the login: an invite line over ssh rides the person's own login, and still goes through its PIN
   // and the host person's card (a login link would be the account owner's, with neither)
   const cred = l.token ? { token: l.token }
-    : word ? { invite: l.invite, ...(sentPin ? { pin: l.pin } : {}), ...(l.join_as ? { as: { name: l.join_as, label: joinerLabel() } } : {}) }
+    // no PIN: knock (the host person's card decides); a host before the knock asks for the PIN instead
+    : word ? { invite: l.invite, ...(sentPin ? { pin: l.pin } : l.join_as ? { knock: true } : {}), ...(l.join_as ? { as: { name: l.join_as, label: joinerLabel() } } : {}) }
     : { login: true };
   // machine: this machine's id in the room (the host's, once it said one); machineKey: the proof the host derives it from
   // an invite line's hello proves the machine key over the host's challenge (a proof good in that session only)

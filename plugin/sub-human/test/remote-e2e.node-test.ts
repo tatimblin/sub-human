@@ -50,11 +50,11 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   const code = must(host.lib(() => store.listRooms()[0]), 'the room');
   host.join(carol, `carol ${code}`);
   // bob links from the other home with the line (a hidden step: the join hook starts his link daemon, which checks
-  // the host's key against the line and shows the host the SECRET), then the PIN the host asked for (hidden too),
-  // which lets him in (no card), and a bare /sub-human takes his seat
+  // the host's key against the line and shows the host the SECRET: with no PIN it knocks), then the PIN while the
+  // host's card waits (hidden too), which lets him in (no card), and a bare /sub-human takes his seat
   const via = await remote.joinVia(host, alice, bob);
   assert.equal(must(must(via.shown).json).decision, 'block', 'shown to the person, never to the model');
-  assert.match(must(must(via.typed.json).reason), /has your invite \(5 PIN tries left\)\. Type the 4-digit PIN they told you: \/sub-human join PIN/, via.typed.stderr);
+  assert.match(must(must(via.typed.json).reason), /Asked the host to let you in to room \S+ \(their card shows check [0-9a-f]{4}-[0-9a-f]{4}\)\. If they gave you a PIN: \/sub-human join PIN\./, via.typed.stderr);
   assert.match(must(must(via.gave.json).reason), new RegExp(`the host let you in to room ${code}: type /sub-human`), via.gave.stderr);
   const joined = via.seated;
   assert.equal(must(joined.json).systemMessage, undefined, joined.stderr);

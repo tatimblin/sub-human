@@ -331,8 +331,8 @@ function joinText(code: RoomCode, name: SeatName, o: Outcome, { tells = false }:
   }
   if (lf.awaiting) {
     // no name yet: the host's card picks it (NAME2 when NAME sits in the room from another machine)
-    return `the host's machine checked your PIN. A card there now asks them to let you in (${lf.awaiting.check}). `
-      + (tells ? 'This session tells you when they do; then type /sub-human to join' : 'Once they do, type /sub-human to join')
+    return `Asked the host to let you in to room ${code} (their card shows ${lf.awaiting.check}). If they gave you a PIN: /sub-human join PIN. `
+      + (tells ? 'This session tells you when they let you in; then type /sub-human to join' : 'Once they do, type /sub-human to join')
       + ` (the request waits ${minutes(configMod.ADMIT_TTL_MS)} minutes)`;
   }
   const t: { kind?: string; host?: string } = lf.transport ?? {};
