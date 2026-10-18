@@ -23,7 +23,7 @@
  *
  * join: bindSeat before seats.enter (a link revoked meanwhile gets no seat; a refused seat gives the binding back);
  * over a login link (the host account's own ssh login) the seat's account is the host's. append: own
- * `from` only, never via system; a signoff or objection is followed by proposal.decide() (host only, idempotent).
+ * `from` only, never via system; a signoff, an objection or a request is followed by proposal.decide() (host only, idempotent).
  * subscribe: hash12 of the host's line `after` must equal hash, else FORK (also for a line before the first this host
  * holds: a host that began from a snapshot cannot replay what came before it). blob.put: content-addressed
  * (plans/<hash12>.md), written once.
@@ -320,8 +320,10 @@ const OPS: OpHandlers = {
     if (payload.via === 'system') throw authError('a link never writes via "system"; the host writes the room\'s own entries');
     if (payload.via === 'human' || payload.via === 'agent') quota.checkLog(s.store.readAll(), { from: payload.from, via: payload.via, op: payload.via === 'human' ? 'append.human' : 'append.agent' });
     const entry = s.store.place(payload as Partial<Payload> as Payload); // place() checks every field (rules.ts admit, validate.ts)
-    if (ANSWERS.has(entry.kind) && entry.proposal_hash) {
-      try { proposal.decide(s.store.code, entry.proposal_hash); } catch (e) { s.log(`sub-human serve: decide: ${stackOf(e)}`); }
+    // a request too: one sent out with every answer in already (an author's Yes on their own version, in a room of one)
+    const decides = ANSWERS.has(entry.kind) ? entry.proposal_hash : entry.kind === 'proposal' ? entry.hash : undefined;
+    if (decides) {
+      try { proposal.decide(s.store.code, decides); } catch (e) { s.log(`sub-human serve: decide: ${stackOf(e)}`); }
     }
     return { entry };
   },

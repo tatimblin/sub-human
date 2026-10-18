@@ -24,6 +24,9 @@
  *        ExitPlanMode in an edit the person asked for, and a version names its editor's Claude)
  * An edit never shows the plan dialog and never records an answer: the store's receipt replaces the dialog, and
  * sign-off stays a separate request each person answers in their own review (invariant 2 of docs/next/ROOM-PLAN.md).
+ * A new version is its author's to check first: the hooks make that check (lib/proposal.ts check, the outcome's check)
+ * once it is stored, and the receipt and the closing line name the review that opens it (the author's Yes there sends
+ * the version out; nobody else is asked before).
  *
  * putReceipt(plan, base, outcome) is the plan tool's put answer (mcp/room-server.ts) in the receipt's own first lines,
  * so the model reads a put and a plan-mode edit alike.
@@ -33,14 +36,16 @@
  */
 
 import { oneLine } from '../text.ts';
+import { NEXT } from './review.ts';
 import { assertNever } from '../../mod/core/never.ts';
 import type { PlanEdit } from '../types-app.ts';
 
 /** The edit's facts about the session plan file (null: none known). */
 export interface PlanFile { file: string | null; text: string | null }
-/** What lib/plans.ts put answered, as the reducer reads it. who: "bob's Claude for bob". */
+/** What lib/plans.ts put answered, as the reducer reads it. who: "bob's Claude for bob". check: the author's check of
+ * the stored version (lib/proposal.ts check), which the person answers before anyone else is asked. */
 export type PutOutcome =
-  | { kind: 'stored'; version: number; unchanged?: boolean }
+  | { kind: 'stored'; version: number; unchanged?: boolean; check?: string }
   | { kind: 'conflict'; version: number; who: string; summary: string; text: string | null }
   | { kind: 'refused'; why: string }
   | { kind: 'offline'; why: string };
@@ -100,6 +105,12 @@ export const EDIT_SAY = {
   emptyNext: 'The plan below the closing marker is empty. Write the plan there, then call ExitPlanMode again.',
   stored: (p: string, v: number): string => `sub-human: saved as room plan ${p} v${v}, not agreed yet.`,
   storedNext: 'Not agreed: anyone can ask for sign-off (the plan tool, op ask); each person answers in their own session.',
+  /** stored, and the author's check made: nobody is asked until the person sends it out */
+  storedCheck: (p: string, v: number): string => `sub-human: saved as room plan ${p} v${v}, not sent out yet: you check it first.`,
+  checkNext: 'Nobody else is asked yet: your person checks it first.',
+  checkThen: (h: string): string => `Then ${NEXT.open(h)}: your person sends it out or asks for changes.`,
+  leftCheck: (p: string, v: number | undefined, h: string): string => `sub-human: plan mode closed with no approval: room plan ${p}${v ? ` v${v}` : ''} was stored, not sent out `
+    + `("approved exiting plan mode" above only marks how plan mode was left). Do not carry it out. Next, ${NEXT.open(h)}: your person sends it out or asks for changes.`,
   unchanged: (p: string, v: number): string => `sub-human: nothing changed: room plan ${p} stays v${v}.`,
   stayInPlan: 'Plan mode was already on before the edit, so it stays on; this edit is done.',
   leave: `${LEAVE}`, // a template: an isolated declaration types it (a bare name it cannot)
@@ -252,15 +263,16 @@ export function reduce(edit: PlanEdit | null, ev: EditEvent): EditStep {
       }
       if (o.kind === 'refused') return { edit: e, effects: [], say: deny(EDIT_SAY.refused(e.plan, o.why), EDIT_SAY.refusedNext) };
       if (o.kind === 'offline') return { edit: e, effects: [], say: deny(EDIT_SAY.offline(e.plan, o.why), EDIT_SAY.offlineNext) };
-      const receipt = o.unchanged ? EDIT_SAY.unchanged(e.plan, o.version) : EDIT_SAY.stored(e.plan, o.version);
-      const agreed = o.unchanged ? '' : `${EDIT_SAY.storedNext} `;
+      const check = !o.unchanged && o.check ? o.check : null;
+      const receipt = o.unchanged ? EDIT_SAY.unchanged(e.plan, o.version) : check ? EDIT_SAY.storedCheck(e.plan, o.version) : EDIT_SAY.stored(e.plan, o.version);
+      const agreed = o.unchanged ? '' : `${check ? EDIT_SAY.checkNext : EDIT_SAY.storedNext} `;
       // the person was in plan mode already (or entered it by hand: no EnterPlanMode of the edit's): it stays, and the edit is done
       if (e.mode === 'plan' || e.mode === undefined) {
         const [, effects] = restore(e);
-        return { edit: null, effects, say: deny(receipt, `${agreed}${EDIT_SAY.stayInPlan}${fileLine(effects)}`) };
+        return { edit: null, effects, say: deny(receipt, `${agreed}${EDIT_SAY.stayInPlan}${fileLine(effects)}${check ? ` ${EDIT_SAY.checkThen(check)}` : ''}`) };
       }
-      const next: PlanEdit = { ...e, phase: 'stored', version: o.version, ...(o.unchanged ? { unchanged: true } : {}) };
-      return { edit: next, effects: [{ do: 'save', edit: next }], say: deny(receipt, `${agreed}${LEAVE}`) };
+      const next: PlanEdit = { ...e, phase: 'stored', version: o.version, ...(o.unchanged ? { unchanged: true } : {}), ...(check ? { check } : {}) };
+      return { edit: next, effects: [{ do: 'save', edit: next }], say: deny(receipt, `${agreed}${LEAVE}${check ? ` ${EDIT_SAY.checkThen(check)}` : ''}`) };
     }
     case 'permission': {
       if (e.phase === 'open') return none(e);
@@ -271,6 +283,7 @@ export function reduce(edit: PlanEdit | null, ev: EditEvent): EditStep {
     }
     case 'exited': {
       const [, effects] = restore(e);
+      if (e.phase === 'stored' && e.check) return { edit: null, effects, say: { to: 'context', text: `${EDIT_SAY.leftCheck(e.plan, e.version, e.check)}${fileLine(effects)}` } };
       if (e.phase === 'stored') return { edit: null, effects, say: { to: 'context', text: `${EDIT_SAY.left(e.plan, e.version, !!e.unchanged)}${fileLine(effects)}` } };
       if (e.phase === 'put') return { edit: null, effects, say: { to: 'context', text: `${EDIT_SAY.leftPut(e.plan)}${fileLine(effects)}` } };
       return { edit: null, effects, say: { to: 'context', text: `${EDIT_SAY.notStored(e.plan)}${fileLine(effects)}` } };
@@ -294,10 +307,11 @@ export function reduce(edit: PlanEdit | null, ev: EditEvent): EditStep {
 }
 
 /** The plan tool's put answer (mcp/room-server.ts): the receipt's own first line, then the model's next step for a put;
- * error: nothing was stored. */
-export function putReceipt(p: string, base: number, o: PutOutcome): { text: string; error: boolean } {
+ * error: nothing was stored. then: how the person checks the version where the plan view cannot (default checkThen). */
+export function putReceipt(p: string, base: number, o: PutOutcome, then?: string): { text: string; error: boolean } {
   switch (o.kind) {
     case 'stored': return o.unchanged ? { text: EDIT_SAY.unchanged(p, o.version), error: false }
+      : o.check ? { text: `${EDIT_SAY.storedCheck(p, o.version)}\n${EDIT_SAY.checkNext} ${then ?? EDIT_SAY.checkThen(o.check)}`, error: false }
       : { text: `${EDIT_SAY.stored(p, o.version)}\n${EDIT_SAY.storedNext}`, error: false };
     case 'conflict': return { text: `${EDIT_SAY.conflict(p, base, o)}\n${EDIT_SAY.conflictNext(p, base, o, 'put')}`, error: true };
     case 'refused': return { text: `${EDIT_SAY.refused(p, o.why)}\n${EDIT_SAY.putRefusedNext}`, error: true };

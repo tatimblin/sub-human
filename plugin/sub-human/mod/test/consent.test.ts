@@ -212,3 +212,20 @@ test('a plan_mode attachment runs consent only while a review or an edit may be 
   expect(last.stdin.hook_event_name).toBe('PlanAttachment')
   expect(last.stdin.plan_file_path).toBe('/p/x.md')
 })
+
+test('author first: an ExitPlanMode refused with a note on the person\'s own new version: consent\'s line (write the next version) rides on the refusal, and no note card holds the post tool', async ($, on) => {
+  const refusal = "The user doesn't want to proceed with this tool use. … the user said:\ncap pages at 100\n\nNote: The user's next message …"
+  const line = 'sub-human: First call ExitPlanMode now (no plan needed; the hooks close the review). Then: Nothing was sent or recorded: bob wants changes to their own new version (plan room v2).'
+  const answer = { hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: line }, subHuman: { reviewOpen: true, noteWaits: false } }
+  const seen = world(on, { answers: [{ subHuman: { reviewOpen: true, noteWaits: false } }, answer, { subHuman: { reviewOpen: false, noteWaits: false } }], exit: { deny: refusal } })
+  await start($)
+  const r = await exitPlan($, 'proposal abcdef012345')
+  expect(seen.consent.map(c => c.stdin.hook_event_name)).toEqual(['PreToolUse', 'PostToolUseFailure'])
+  expect(r.deny).toBe(`${refusal}\n\n${line}`)
+  expect(seen.logs).toEqual([]) // no notice: nothing waits for the person
+  // the closing ExitPlanMode (consent closes the review), then the room is clear: a read runs no consent
+  await $.tool.call({ tool: 'ExitPlanMode' })
+  const runs = seen.consent.length
+  await $.tool.call({ tool: READ })
+  expect(seen.consent.length).toBe(runs)
+})

@@ -14,6 +14,7 @@ import * as plans from '../../lib/plans.ts';
 import * as edit from '../../lib/consent/edit.ts';
 import * as guard from '../../mod/core/guard.ts';
 import type { PlanEdit } from '../../lib/types-app.ts';
+import type { Entry } from '../../lib/room/types.ts';
 import { sn } from '../support/brands.ts';
 import { must } from '../support/must.ts';
 
@@ -134,9 +135,11 @@ test('edit (hooks): seeded at the plan_mode attachment, stored at Pre(ExitPlanMo
   const text = write(file, '# Paging\n\n1. cursor\n', 'first draft');
   const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: text, planFilePath: file }, tool_use_id: 'tu1' }), { as: 'alice' });
   assert.equal(decision(pre), 'deny');
-  assert.equal(reason(pre), 'sub-human: saved as room plan room v1, not agreed yet.');
-  assert.match(must(hso(pre).additionalContext), /^Not agreed: anyone can ask for sign-off .* Now call ExitPlanMode once more/);
-  const v = must(w.entries().at(-1));
+  assert.equal(reason(pre), 'sub-human: saved as room plan room v1, not sent out yet: you check it first.');
+  assert.match(must(hso(pre).additionalContext), /^Nobody else is asked yet: your person checks it first\. Now call ExitPlanMode once more.* Then call EnterPlanMode, then ExitPlanMode with plan "proposal [0-9a-f]{12}"/);
+  // the author's own check after the version (lib/proposal.ts check): a request addressed to alice alone
+  assert.deepEqual(((e: Entry) => [e.kind, e.to, e.approvers])(must(w.entries().at(-1))), ['proposal', 'alice', ['alice']]);
+  const v = must(w.entries().at(-2));
   assert.deepEqual([v.kind, v.via, v.from, v.for, v.plan, v.version, v.base, v.text], ['plan', 'agent', 'alice', 'alice', 'room', 1, 0, 'plan room v1: first draft']);
   assert.equal(w.lib(() => plans.textOf(w.code, must(plans.current(w.code)))), '# Paging\n\n1. cursor\n');
   // the closing ExitPlanMode passes Pre; PermissionRequest lets it through with the mode back; the file restored
@@ -147,7 +150,7 @@ test('edit (hooks): seeded at the plan_mode attachment, stored at Pre(ExitPlanMo
   // plan as approved (lib/cc/env.ts LEAVE_PLAN_TEXT); the person's plan comes back at PostToolUse
   assert.equal(fs.readFileSync(file, 'utf8'), '');
   const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: {}, tool_use_id: 'tu2', tool_response: { plan: text, filePath: file } }), { as: 'alice' });
-  assert.match(must(ctx(post)), /^sub-human: plan mode closed with no approval: room plan room v1 was stored, not agreed/);
+  assert.match(must(ctx(post)), /^sub-human: plan mode closed with no approval: room plan room v1 was stored, not sent out .* Next, call EnterPlanMode/);
   assert.match(must(ctx(post)), /plan file is back as it was before the edit/, 'F: the model is told its person\'s plan came back');
   assert.equal(editOf(w, 'alice'), null);
   assert.equal(fs.readFileSync(file, 'utf8'), '# my own plan\n');
@@ -173,7 +176,7 @@ test('edit (hooks): a conflict denies with the current version\'s text; the next
   assert.equal(w.entries().filter(e => e.kind === 'plan').length, 2, 'nothing stored for bob yet');
   const both = write(file, '# Paging\n\n1. opaque cursor\n2. max 100\n', 'opaque cursor and max 100');
   const again = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: both, planFilePath: file }, tool_use_id: 'tu2' }), { as: 'bob' });
-  assert.match(must(reason(again)), /^sub-human: saved as room plan room v3, not agreed yet\.$/);
+  assert.match(must(reason(again)), /^sub-human: saved as room plan room v3, not sent out yet: you check it first\.$/);
   assert.deepEqual(w.entries().filter(e => e.kind === 'plan').map(e => [e.version, e.base, e.from]), [[1, 0, 'alice'], [2, 1, 'alice'], [3, 2, 'bob']]);
 });
 

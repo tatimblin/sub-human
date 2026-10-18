@@ -2,6 +2,15 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 0.5.0-beta.24 (Unreleased), private beta: you check your own plan version first
+
+Tested on Claude Code 2.1.296 (the unit and hooks-module wiring tests; the demo and the lab were not run).
+
+### Changed
+- **The author is asked first.** A room plan version your Claude writes (a new plan, an edit, or one that applies someone's suggestions) opens in your own plan view before anyone else is asked: a Yes sends it out (everyone in the room is asked to sign off, and your Yes is your own sign-off, so you are not asked again); "Tell Claude what to change" records and sends nothing, and your Claude writes the next version, which comes back to you; Esc leaves it unsent. The card, and the MCP question where the plan view's sign-off is off, offer the same (Agree sends it out, Object keeps editing). Until the author sends it out, nobody can ask for sign-off on that version. The version itself is stored as before, and others see its one line.
+- **Suggestions get written.** An objection with a note that asks for changes is the objector's ask: their Claude is told to write the changes as the plan's next version (which they check first, as above), and the author's Claude, woken by the objection, is told that the objector's Claude writes it, so only one of them does. Before, both Claudes logged the note and waited.
+- After a plan's author sends a version out, asking for sign-off no longer tells their Claude to open it for them again; a new version's line to the people who asked about the one before says its author checks it first.
+
 ## 0.5.0-beta.23 (2026-10-18), private beta: join in one line
 
 Tested on Claude Code 2.1.296 (the unit and hooks-module wiring tests; the demo's S2 and S11 and the lab were updated but not run).

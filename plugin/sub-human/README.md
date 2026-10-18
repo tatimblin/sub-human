@@ -273,19 +273,29 @@ Every person's own words reach everyone. A Claude's post reaches you when it is 
 
 A room has plans, each with a name (`room` unless someone names another topic, such as `paging`) and versions v1, v2, …. The room keeps every version; nothing is ever overwritten.
 
-**Editing.** Ask your Claude ("let's write a room plan for cursor paging; you write the first version", "update the room plan: max 50 per page"). It calls the room's `plan` tool (op `edit`), then enters plan mode: the hooks put the plan's current version into its plan file under a short header that says it is a group-contributed plan and names the version it starts from. Your Claude edits the plan there, as with any plan, and calls ExitPlanMode. The hooks store it as the next version and tell your Claude so, with no approval dialog: storing an edit is not agreeing to it, and nothing about it asks you to say yes.
+**Editing.** Ask your Claude ("let's write a room plan for cursor paging; you write the first version", "update the room plan: max 50 per page"). It calls the room's `plan` tool (op `edit`), then enters plan mode: the hooks put the plan's current version into its plan file under a short header that says it is a group-contributed plan and names the version it starts from. Your Claude edits the plan there, as with any plan, and calls ExitPlanMode. The hooks store it as the next version and tell your Claude so, with no approval dialog: storing an edit is not agreeing to it.
 
 ```
-  ⎿  Error: sub-human: saved as room plan room v2, not agreed yet.
+  ⎿  Error: sub-human: saved as room plan room v2, not sent out yet: you check it first.
 ```
 
 Claude Code draws the receipt under the call the way it draws a refused call; it is the receipt, not a failure (what your Claude does next goes to it separately).
 
 Your own plan file is put back as it was, and your permission mode too. Everyone else sees one line, `alice's Claude for alice: plan room v2: max 50 per page`; it wakes no one.
 
+**You check your own version first.** Nobody else is asked about a version your Claude wrote until you have seen it. Right after storing it, your Claude opens it for you in the plan view (the line reads `your new version, plan room v2, for alice: nobody else is asked until you send it out`):
+
+| You do | What happens |
+|---|---|
+| A **Yes** option | It goes out: everyone in the room is asked to sign off on it, and your Yes is your own sign-off (you are not asked again). |
+| **Tell Claude what to change**, then type what | Nothing is sent or recorded; your Claude writes the next version with your changes, and that one comes back to you first. Iterate as often as you like before anyone else is asked. |
+| **Esc** | It stays unsent; ask your Claude to show it again when you are ready. A newer version replaces it. |
+
+Until you send it out, nobody (you or another member's Claude) can ask for sign-off on it. Every version is still kept in the room, and others see the one line above.
+
 **Two edits at once.** Each edit starts from a version. If someone else's version landed first, yours is not stored: your Claude is told so, with that version's text, and asked to keep both changes (asking you only where they truly conflict) and store again. So no edit silently replaces another. At most five plans may be open (not agreed) at a time.
 
-**Sign-off.** Ask your Claude to "ask alice and me to sign off". It asks the room (op `ask`; any member's Claude may) for the current version, naming approvers (by default everyone in the room). A newer version of the same plan retires the request on an older one: answers given there do not carry over, and the new version is asked again. When someone else's Claude stores that newer version, the Claude of whoever asked for the sign-off, and of anyone who objected, is told at once, so the revision comes back to you to read and, if you want, to ask about again. If you opened the room and sit in it again from another machine over your own ssh login (`/sub-human join USER@HOST ROOM`), your seats count as one approver: the answer you give last, from either, is yours, and the decision names one seat ("agreed: tristan (also laptop)"). Seats that joined by invite are each their own person, and so is every other seat on the host itself, since people can share a machine.
+**Sign-off.** Your Yes on your own new version asks everyone. To ask again, or only some people, ask your Claude to "ask alice and me to sign off". It asks the room (op `ask`; any member's Claude may, once the version's author has sent it out) for the current version, naming approvers (by default everyone in the room). A newer version of the same plan retires the request on an older one: answers given there do not carry over, and the new version is asked again. When someone else's Claude stores that newer version, the Claude of whoever asked for the sign-off, and of anyone who objected, is told at once, so the revision comes back to you to read and, if you want, to ask about again. If you opened the room and sit in it again from another machine over your own ssh login (`/sub-human join USER@HOST ROOM`), your seats count as one approver: the answer you give last, from either, is yours, and the decision names one seat ("agreed: tristan (also laptop)"). Seats that joined by invite are each their own person, and so is every other seat on the host itself, since people can share a machine.
 
 When a request names you, your Claude opens it in Claude Code's plan-approval dialog, the same view your own plans use. The plugin's hooks put the version's text there, byte for byte, whatever your Claude wrote:
 
@@ -308,7 +318,7 @@ When a request names you, your Claude opens it in Claude Code's plan-approval di
 | You do | Recorded |
 |---|---|
 | A **Yes** option | Your sign-off on that exact version (`via=human`). |
-| **Tell Claude what to change**, then type why | Nothing yet: a notice says your note is not sent, and a card asks `Send to alice as changes requested on "…": "…"?`. **Send** records your objection, with your words byte for byte; it blocks that version. **Discard** records nothing. Until you answer the card, your Claude's room posts are refused, so its own wording of your note cannot reach the room first. |
+| **Tell Claude what to change**, then type why | Nothing yet: a notice says your note is not sent, and a card asks `Send to alice as changes requested on "…": "…"?`. **Send** records your objection, with your words byte for byte; it blocks that version. **Discard** records nothing. Until you answer the card, your Claude's room posts are refused, so its own wording of your note cannot reach the room first. Once sent, a note that asks for changes is your ask: your Claude writes them as the plan's next version (which you check first, as above), and the author's Claude is told that yours is writing it, so only one of them does. |
 | **Esc**, or Ctrl+G edits before a Yes | Nothing. |
 
 Only an answer in a review the hooks opened counts: a Yes on a plan of your own (even one with the very text of a version) records nothing, and your Claude's own edit never asks you for a Yes.

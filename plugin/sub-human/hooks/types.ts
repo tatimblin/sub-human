@@ -3,6 +3,7 @@
 // Identity; a member: room/types.ts Member; cards, proposals, reviews and notes: types-app.ts).
 import type { BaseHookInput, ClassicHookInputs } from 'claude-code';
 import type { Entry } from '../lib/room/types.ts';
+import type { Sent } from '../lib/proposal.ts';
 import type { Answer, Pinned } from '../lib/commands/types.ts';
 
 /** A classic hook event's name (PreToolUse, Stop, ...). */
@@ -130,9 +131,10 @@ export interface CardQuestion { question?: unknown; header?: unknown; multiSelec
 /** lib/proposal.ts answer, then decide: what consent's record() hands back. failed: a RoomError (the link to the host
  * is down); unknown: the answer went out and may still land. */
 export type Recorded =
-  | { stale: true; why: string; entry?: undefined; decision?: undefined; failed?: undefined; unknown?: undefined }
-  | { entry: Entry; decision: Entry | null; stale?: undefined; failed?: undefined; unknown?: undefined }
-  | { failed: string; unknown?: true; stale?: undefined; entry?: undefined; decision?: undefined };
+  | { stale: true; why: string; entry?: undefined; decision?: undefined; sent?: undefined; failed?: undefined; unknown?: undefined }
+  /** sent: the author's Yes on their own new version sent it out (lib/proposal.ts sendOut), with what it did */
+  | { entry: Entry; decision: Entry | null; sent?: Sent | null; stale?: undefined; failed?: undefined; unknown?: undefined }
+  | { failed: string; unknown?: true; stale?: undefined; entry?: undefined; decision?: undefined; sent?: undefined };
 
 /** An Agent / Task call's input as the row hooks read it (untrusted: each field checked). */
 export interface AgentCall { subagent_type?: unknown; prompt?: unknown; description?: unknown; name?: unknown }

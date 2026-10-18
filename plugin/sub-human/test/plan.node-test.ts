@@ -229,7 +229,7 @@ test('deliver: a new version after an open or objected sign-off request wakes wh
   assert.equal(R.deliver(as('carol'), e, { entries }), 'notice', 'an approver who neither asked nor objected is only told');
   assert.equal(R.deliver({ name: 'claude', role: 'claude' }, e, { entries }), 'none');
   assert.deepEqual(back(e, 'alice'), ['(for Claude) this v2 of plan room comes after v1, whose sign-off alice asked for; objected: alice. '
-    + 'Tell alice what changed (read, plan "room"); if alice wants it, ask for sign-off on v2 (plan, op ask).']);
+    + 'Tell alice what changed (read, plan "room"); its author checks it first, and their Yes asks for sign-off.']);
   assert.deepEqual(back(e, 'carol'), []);
   assert.deepEqual(back(e, 'bob'), []);
   assert.equal(R.deliver(as('alice'), e), 'notice', 'with no log to judge by: no wake');
@@ -259,4 +259,54 @@ test('a test request through the support helper is a version and its request, as
   const { code, R } = hosted();
   const r = propose({ code, name: sn('alice') }, { text: '# x', approvers: ['bob'], plan: 'x' });
   assert.deepEqual(R.readAll().slice(-2).map(e => [e.kind, e.hash]), [['plan', r.hash], ['proposal', r.hash]]);
+});
+
+test('author first (lib/proposal.ts check): only the current version\'s author gets its check, once; a newer version retires an unsent one; the review and the reminder pick it first', () => {
+  const { code, R, store } = hosted();
+  const me = (n: string) => ({ code, name: sn(n) });
+  const v1 = must(stored(plans.put(store, { base: 0, text: '# v1' }, { by: 'alice' })));
+  assert.equal(proposal.check(me('bob'), 'room', 1), null, 'not bob\'s version');
+  assert.equal(proposal.check(me('alice'), 'room', 2), null, 'no such version');
+  assert.equal(proposal.check(me('alice'), 'room', 1), v1.hash);
+  assert.equal(proposal.check(me('alice'), 'room', 1), v1.hash, 'the same check again: no second request');
+  assert.equal(R.readAll().filter(e => e.kind === 'proposal').length, 1);
+  assert.match(plans.describe(code), /^room v1 · not sent out yet \(alice checks it first\)$/);
+  // a pending request of another plan, older: the review and the reminder still pick alice's own unsent version
+  plans.put(store, { plan: 'other', base: 0, text: '# other' }, { by: 'bob' });
+  const older = proposal.ask(me('bob'), { plan: 'other' });
+  const ps = proposal.pendingFor(me('alice'));
+  assert.deepEqual(ps.map(p => p.hash).sort(), [older.hash, v1.hash].sort());
+  const oldestFirst = [must(ps.find(p => p.hash === older.hash)), must(ps.find(p => p.hash === v1.hash))];
+  assert.equal(must(proposal.picked(oldestFirst)).hash, v1.hash);
+  assert.match(proposal.reminder(must(ps.find(p => p.draft)), 'alice', { code }), /^plan room v1 \(proposal [0-9a-f]{12}\), alice's own new version, is not sent out yet\. When alice wants to send it out or change it, call EnterPlanMode/);
+  // bob writes v2 before alice sent v1 out: her check is retired, bob's is made, and nothing is decided on either
+  must(stored(plans.put(store, { base: 1, text: '# v2' }, { by: 'bob' })));
+  const h2 = must(proposal.check(me('bob'), 'room', 2));
+  assert.deepEqual(proposal.pendingFor(me('alice')).map(p => p.hash), [older.hash]);
+  assert.deepEqual(proposal.pendingFor(me('bob')).filter(p => p.draft).map(p => p.hash), [h2]);
+  assert.equal(proposal.decide(code, h2), null);
+  // bob's Yes: his sign-off, then the request to everyone present
+  assert.ok(proposal.answer(me('bob'), { hash: h2 }, { choice: 'Agree' }).entry);
+  assert.equal(proposal.decide(code, h2), null, 'a draft is never decided');
+  const sent = must(proposal.sendOut(me('bob'), h2));
+  assert.ok(!('error' in sent));
+  assert.deepEqual([sent.asked.approvers, sent.asked.again, sent.decision], [['alice', 'bob'], false, null]);
+  assert.deepEqual(proposal.pendingFor(me('bob')).map(p => p.hash), [older.hash], 'bob is not asked again');
+  assert.equal(proposal.sendOut(me('alice'), h2), null, 'only a draft of mine');
+});
+
+test('author first: an objection with a note tells its asker\'s Claude that the objector\'s Claude writes the changes; nobody else, and not without a note', () => {
+  const { code, R, store } = hosted();
+  h.register('carol', 'member', 2, code);
+  const me = (n: string) => ({ code, name: sn(n) });
+  plans.put(store, { base: 0, text: 'hello' }, { by: 'alice' });
+  const a = proposal.ask(me('alice'), {});
+  const bare = must(proposal.answer(me('carol'), a, { choice: 'Object' }).entry);
+  const noted = must(proposal.answer(me('bob'), a, { choice: 'Object', notes: 'cap at 100' }).entry);
+  const back = (e: Entry, viewer: string) => R.chatLines(e, { viewer, entries: R.readAll() }).filter(l => l.startsWith('(for Claude)'));
+  assert.deepEqual(back(noted, 'alice'), ['(for Claude) bob\'s note asks for changes: bob\'s Claude writes them as the next version, which comes back to alice. Change the plan yourself only if alice asks.']);
+  assert.equal(R.deliver({ name: 'alice', role: 'member' }, noted, { entries: R.readAll() }), 'wake');
+  assert.deepEqual(back(noted, 'carol'), []);
+  assert.deepEqual(back(noted, 'bob'), []);
+  assert.deepEqual(back(bare, 'alice'), []);
 });
