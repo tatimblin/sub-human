@@ -26,10 +26,12 @@
  *     workers(script, input, seat) -> n     worker threads that hook started (test/support/worker-probe.ts)
  *     tail(seat, seconds) -> Promise<stdout>   seat's tail (scripts/sub-human tail, its NDJSON events) for that long
  *     mcp(seat, tool, args) -> Promise<result>   one tools/call on the room's MCP server (mcp/room-server.ts) as seat
- *     send(seat, code, to, text) -> Promise<{isDelivered, reason?} | 'engine'>   a SendMessage as the hooks module's
- *                                     session.send hook takes it (mod/send.ts: the same files read, mod/core/send.ts
- *                                     judges): a seat on another machine is posted to through the room; 'engine' when
- *                                     the module would pass it on (a seat on this machine: the native send)
+ *     send(seat, code, to, text, {server?}) -> Promise<{isDelivered, reason?} | 'engine'>   a SendMessage as the
+ *                                     hooks module's session.send hook takes it (mod/send.ts: the same files read,
+ *                                     mod/core/send.ts judges): a seat on another machine is posted to through the room
+ *                                     (the room server's post; server: false, hooks/handlers/send.ts as when that
+ *                                     server is not connected); 'engine' when the module would pass it on (a seat on
+ *                                     this machine: the native send)
  *     lib(fn)                         fn with this machine's home, in this process
  *     log(code) -> string             the room's log.jsonl as stored here ('' when none)
  */
@@ -51,7 +53,7 @@ import * as admission from '../../lib/remote/admission.ts';
 import * as linkSocket from '../../lib/remote/link-socket.ts';
 import type { RoomCode } from '../../lib/brand.ts';
 import { roomCode } from '../../lib/text.ts';
-import { remotePeer, postArgs, postResult } from '../../mod/core/send.ts';
+import { remotePeer, postArgs, postResult, relayResult } from '../../mod/core/send.ts';
 
 const PROBE = path.join(import.meta.dirname, 'worker-probe.ts');
 
@@ -177,13 +179,14 @@ class Machine {
     });
   }
 
-  async send(seat: Seat, code: RoomCode, to: string, text: string): Promise<ReturnType<typeof postResult> | 'engine'> {
+  async send(seat: Seat, code: RoomCode, to: string, text: string, { server = true }: { server?: boolean } = {}): Promise<ReturnType<typeof postResult> | 'engine'> {
     const read = (f: string): unknown => { try { return JSON.parse(fs.readFileSync(path.join(this.home, f), 'utf8')); } catch { return null; } };
     const inRooms = read('machines.json'), machine = read('machine.json');
     const inRoom: unknown = inRooms && typeof inRooms === 'object' ? Reflect.get(inRooms, code) : undefined;
     const id: unknown = typeof inRoom === 'string' && inRoom ? inRoom : machine && typeof machine === 'object' ? Reflect.get(machine, 'id') : undefined;
     const name = remotePeer(to, { name: seat.name, code, role: 'member', addr: `${seat.name}.${code}` }, read(`rooms/${code}/members.json`), id);
     if (!name) return 'engine';
+    if (!server) return relayResult(name, this.hook('send', { to: name, text }, seat)); // the room server not connected
     return postResult(name, await this.mcp(seat, 'post', postArgs(name, text)));
   }
 

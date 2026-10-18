@@ -234,4 +234,16 @@ test('remote e2e: a SendMessage round trip between Claudes on two machines, thro
   assert.match(events(aliceSees, ['wake']), new RegExp(`\\(for Claude\\) to answer bob's Claude: SendMessage bob\\.${code}`));
   assert.doesNotMatch(events(carolSees, ['wake']), /the parser tests/, 'addressed: no wake for anyone else');
   assert.equal(remote.log(code), host.log(code), 'the mirror holds both');
+
+  // live 2026-10-17: bob's room server was held back (a failed start, cached 15 minutes) and his reply fell through to
+  // the engine's "not reachable". Without the server the module relays through node (hooks/handlers/send.ts): the same post
+  assert.deepEqual(await remote.send(bob, code, `alice.${code}`, 'sent without the room server', { server: false }), { isDelivered: true });
+  await h.until(() => host.lib(() => store.open(code).readAll()).some(e => e.text === 'sent without the room server'), 5000, 50);
+  const relayed = must(host.lib(() => store.open(code).readAll()).find(e => e.text === 'sent without the room server'));
+  assert.deepEqual([relayed.kind, relayed.via, relayed.from, relayed.to], ['say', 'agent', 'bob', 'alice']);
+  assert.match(events(await host.tail(alice, 2), ['wake']), /bob's Claude \(to you\): sent without the room server/);
+  // and its refusals are the post tool's, said as the reason, never passed on to the engine
+  const refused = await remote.send(bob, code, `alice.${code}`, '', { server: false });
+  if (refused === 'engine' || refused.isDelivered) return assert.fail(JSON.stringify(refused));
+  assert.match(refused.reason, /^Not sent to alice \(on another machine, reached through the room\): refused: /);
 });

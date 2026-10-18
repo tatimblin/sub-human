@@ -8,12 +8,12 @@
     },
     "lib": {
       "any": 0,
-      "as": 127,
+      "as": 128,
       "nonNull": 0
     },
     "mcp": {
       "any": 0,
-      "as": 5,
+      "as": 4,
       "nonNull": 0
     },
     "mod/core": {

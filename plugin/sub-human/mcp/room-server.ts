@@ -26,7 +26,7 @@ import path from 'node:path';
 import * as identity from '../lib/identity.ts';
 import * as room from '../lib/room.ts';
 import * as proposal from '../lib/proposal.ts';
-import { SAY } from '../lib/consent/review.ts';
+import { agentPost, POST_KINDS } from '../lib/agent-post.ts';
 import * as cc from '../lib/cc/env.ts';
 import * as plans from '../lib/plans.ts';
 import { brief } from '../lib/room/brief.ts';
@@ -36,7 +36,7 @@ import { envFlag } from '../lib/env.ts';
 
 /** A JSON-RPC message from Claude Code: an object, each field checked by handle(). */
 const MESSAGE = objAs<JsonRpcIncoming>();
-import type { Entry, EntryInput } from '../lib/room/types.ts';
+import type { Entry } from '../lib/room/types.ts';
 import type { CallMeta, CallToolParams, JsonRpcId, JsonRpcIncoming, JsonRpcOutgoing, Me, OutgoingRequest, PluginApi, PluginContext, ProgressToken, ToolArgs, ToolDefinition, ToolResult } from './types.ts';
 import { msgOf, stackOf } from '../lib/errors.ts';
 import { loadAt } from '../lib/io.ts';
@@ -45,8 +45,6 @@ import { entryId } from '../lib/room/validate.ts';
 
 const READ_MAX = 100;
 const PLUGINS = ['hold.ts', 'task.ts'];
-const POST_KINDS = ['say', 'question', 'status'];
-const RELAY_WINDOW_MS = 10 * 60_000; // a post repeating the person's objection sent this recently is refused (relayed)
 // MCP revisions this server speaks (newest first): answer with the client's when listed, else our newest.
 const NEWEST_PROTOCOL = '2025-11-25';
 const PROTOCOL_VERSIONS: readonly string[] = [NEWEST_PROTOCOL, '2025-06-18', '2025-03-26', '2024-11-05'];
@@ -150,7 +148,7 @@ const CORE: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        kind: { type: 'string', enum: POST_KINDS, description: 'say: a note; question: wants an answer; status: progress or done.' },
+        kind: { type: 'string', enum: [...POST_KINDS], description: 'say: a note; question: wants an answer; status: progress or done.' },
         text: { type: 'string', description: 'The note. Quote people exactly, no #ids.' },
         to: { type: 'string', description: 'One member it is for (the room still sees it).' },
         refs: { type: 'array', items: { type: 'integer' }, description: 'Room entry ids it cites.' },
@@ -194,38 +192,9 @@ const CORE: ToolDefinition[] = [
   },
 ];
 
-/**
- * A post that relays the person's objection note (proposal.repeatsNote): the note waiting for their Send on the
- * confirm card, or one they sent in the last RELAY_WINDOW_MS. Either way the room would show it twice; the refusal
- * says why, else null. The receiving side does not dedupe.
- */
-function relayed(me: Me, body: unknown): string | null {
-  if (typeof body !== 'string') return null;
-  const cf = proposal.readConfirm(me);
-  if (cf && proposal.repeatsNote(cf, body)) {
-    return `refused: that is ${me.name}'s note on proposal ${cf.hash}, which waits for ${me.name}'s Send; posting it would relay it twice. ${proposal.confirmCall(cf.hash)} so ${me.name} can send or discard it.`;
-  }
-  const since = Date.now() - RELAY_WINDOW_MS;
-  const sent = room.open(me.code).readRecent().findLast(e => e.kind === 'objection' && e.via === 'human' && e.from === me.name
-    && typeof e.text === 'string' && Date.parse(e.at) >= since && proposal.repeatsNote({ note: e.text }, body));
-  return sent ? `refused: ${me.name} already sent that note as their objection to proposal ${sent.proposal_hash}; the room shows it, so posting it would relay it twice.` : null;
-}
-
 function post(me: Me, args: ToolArgs) {
-  const { kind, text: body, to, refs } = args;
-  if (typeof kind !== 'string' || !POST_KINDS.includes(kind)) {
-    return text(`refused: kind must be one of ${POST_KINDS.join(', ')}. To ask for agreement, use plan (op ask); only people answer it, in their own session.`, true);
-  }
-  // a note waiting for the person's Send or Discard: the card decides what the room gets. Consent's PreToolUse refuses
-  // this first; the server says the same when no hook ran
-  const cf = proposal.readConfirm(me);
-  if (cf && proposal.pendingFor(me).some(p => p.hash === cf.hash)) return text(SAY.noteWaits(me.name, cf.hash), true);
-  const twice = relayed(me, body);
-  if (twice) return text(twice, true);
-  if (to === identity.ROOM_CLAUDE) return text('refused: the room\'s session reads nothing; post to the room, or message a person\'s Claude (SendMessage NAME.CODE)', true);
-  // the model's arguments, unchecked: validate() (append) checks each field's type
-  const entry = { kind, text: body, ...(to !== undefined ? { to } : {}), ...(refs !== undefined ? { refs } : {}) } as EntryInput;
-  return json(room.open(me.code).append(entry, { via: 'agent', from: me.name }));
+  const r = agentPost(me, args);
+  return r.ok ? json(r.entry) : text(r.error, true);
 }
 
 /** Entries as the model reads them: one rendered line each (render.line full), the trust marker in it. */

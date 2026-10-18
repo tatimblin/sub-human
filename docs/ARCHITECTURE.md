@@ -595,6 +595,7 @@ The code that reads Claude Code is `lib/cc/`: `env.ts` (the session's env, the c
 `lib/` only; each line is the module's header comment, whose full text documents its exports.
 
 <!-- gen:lib-modules -->
+- `lib/agent-post.ts`: a Claude's post to the room (via agent, from its seat), with the rules the room server's `post` tool keeps.
 - `lib/brand.ts`: the branded ids and secrets, types only (erased: nothing here runs).
 - `lib/cache-dir.js`: where node's compile cache lives (hooks/compile-cache.js, scripts/sub-human): <home>/cache, 0700.
 - `lib/cc/bg.ts`: `claude --bg` jobs (the room's Claude), the bg daemon and the env it keeps from a dispatch.
