@@ -3,7 +3,7 @@
   "private": true,
   "description": "Dev scripts for the sub-human Claude Code plugin (the plugin has no dependencies; typescript, @types/node and oxlint only check its types and lint it).",
   "engines": {
-    "node": ">=24.3"
+    "node": "^22.18 || >=24.3"
   },
   "scripts": {
     "test": "npm run --silent typecheck && npm run --silent test:plugin && npm run --silent test:scripts && npm run --silent test:mods",

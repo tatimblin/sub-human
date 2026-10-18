@@ -22,4 +22,10 @@ Without the room server, a member's Claude had no room tools (`post`, `read`, `p
 - says once that the room's tools are not connected (`mod/core/rows.ts` `ROWS_DOWN`) instead of the rows' Agent calls, which would fail again on every prompt;
 - shows the cached failure in `sub-human doctor` (`room-tools`, from `lib/cc/env.ts` `mcpFailureLeft`).
 
+Since 0.5.0-beta.21 the start itself is made hard to fail, so the cache is not written in the first place:
+
+- `.mcp.json` starts the server through `hooks/node.sh`, which finds a node that runs the plugin (22.18+ or 24.3+): the one it last ran with, then `PATH`'s, then Homebrew, nvm, fnm, mise, asdf and Volta. A Claude Code started where `PATH` has no node or an older one (an IDE, the desktop app, a shell without nvm) was the likeliest first failure: the joiner's node came from nvm. Every hook and the module's shims and tail go through it too.
+- The entry is `mcp/room.ts`: when `mcp/room-server.ts` fails to load (a broken or half-written install), it still answers `initialize`, lists no tools and answers every call with the error and what to do, so the connect succeeds.
+- A seat whose server is not connected is told once per time it goes down, as a `$.ui.log` line and as context for Claude (`mod/core/rows.ts` `TOOLS_DOWN`), on its next typed prompt; that prompt's `$.mcp.connect` also connects a server the session has not yet.
+
 `/mcp`, then Reconnect on `plugin:sub-human:room`, brings the tools back in a running session.

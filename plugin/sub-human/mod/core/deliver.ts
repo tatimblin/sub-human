@@ -47,7 +47,8 @@ export const WAKE_CONTEXT: string = `${FOR_CLAUDE} sub-human: the prompt above i
 const TYPES: { readonly [T in TailEvent['type']]: true } = { seat: true, chat: true, pull: true, wake: true, rows: true, health: true, invites: true };
 const isType = (t: unknown): t is TailEvent['type'] => typeof t === 'string' && Object.hasOwn(TYPES, t);
 
-export const tailArgv = (root: unknown): string[] => ['node', `${root}/scripts/sub-human`, 'tail', '--ndjson'];
+/** The room tail, on a node that runs the plugin (hooks/node.sh, as every node command Claude Code starts). */
+export const tailArgv = (root: unknown): string[] => ['sh', `${root}/hooks/node.sh`, `${root}/scripts/sub-human`, 'tail', '--ndjson'];
 
 // The same env a shimmed hook gets (an empty CLAUDE_PID: a child of the mod inherits whatever claude inherited,
 // cc CONTRACT process-run-stdin); a child with no session id looks its seat up by nothing rather than by ''.

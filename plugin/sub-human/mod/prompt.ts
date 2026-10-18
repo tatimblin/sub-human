@@ -18,7 +18,7 @@ import { reviewOpenOf, seatedOrUnsure } from './core/prefilter.ts';
 import { delivering, wakeContextOf, facts, presence, serialPulls } from './deliver.ts';
 import { pullContext, clearPulls } from './core/deliver.ts';
 import { asHello, asNonce } from './core/state.ts';
-import { rowsToSay } from './core/rows.ts';
+import { rowsToSay, toolsDownStep, TOOLS_DOWN, TOOLS_DOWN_NOTICE } from './core/rows.ts';
 import type { ClassicHookInputs, EngineInterface, On } from 'claude-code';
 import type { Hello, Pulls, ShimResult } from './core/types.ts';
 
@@ -32,6 +32,7 @@ const roomUp = async ($: EngineInterface): Promise<boolean> => {
   try { return (await $.mcp.connect(SERVER)).isConnected; } catch { return true; }
 };
 const INJECTED = { plugin: 'sub-human', key: 'rowsInjected' } as const;
+const TOOLS_DOWN_SAID = { plugin: 'sub-human', key: 'toolsDown' } as const;
 const NONCE = { plugin: 'sub-human', key: 'nonce' } as const;
 const PULLS = { plugin: 'sub-human', key: 'pulls' } as const;
 const origins = originQueue();
@@ -146,9 +147,18 @@ export function registerPrompt(on: On): void {
         const { value: rows } = await $.state.get(ROWS);
         const { value: injected } = await $.state.get(INJECTED);
         const held = typeof rows === 'string' && rows ? rows : null;
+        const up = await roomUp($);
+        // the room server down: the person and Claude are told once per time it goes down (TOOLS_DOWN)
+        const { value: wasDown } = await $.state.get(TOOLS_DOWN_SAID);
+        const step = toolsDownStep(wasDown === true, up);
+        if (step.say) {
+          $.ui.log(TOOLS_DOWN_NOTICE);
+          down = { ...down, context: [...(down.context ?? []), TOOLS_DOWN] };
+        }
+        if (step.down !== (wasDown === true)) await $.state.set(TOOLS_DOWN_SAID, step.down);
         // a row's only tool is the room server's hold: while that server is down, the calls are not asked for (ROWS_DOWN once)
-        const say = rowsToSay(held, held ? await roomUp($) : true);
-        if (say && say !== injected) down = { ...e, context: [...(e.context ?? []), say] };
+        const say = rowsToSay(held, up);
+        if (say && say !== injected) down = { ...down, context: [...(down.context ?? []), say] };
         if (say !== (injected ?? null)) await $.state.set(INJECTED, say); // none held: the same text again is a change
       }
     }

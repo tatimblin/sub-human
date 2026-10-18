@@ -27,8 +27,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        # 24.3.0: the floor (engines, hooks.json's node check): the first 24 that strips types without a warning
-        node: ['24.3.0', '24', '26']
+        # 22.18.0: the floor (engines, hooks/node.sh, doctor): the first node that strips types with no flag or warning
+        # and has import.meta.main
+        node: ['22.18.0', '22', '24', '26']
         include:
           - os: macos-latest
             node: '24'

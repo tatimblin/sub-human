@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "v=$(node -v 2>/dev/null); case \"$v\" in v24.[3-9]*|v24.[1-9][0-9]*|v2[5-9].*|v[3-9][0-9].*|v[1-9][0-9][0-9]*) ;; *) echo \"sub-human needs Node 24.3 or newer on the PATH that Claude Code was started with, and found $([ -n \"$v\" ] && echo \"node $v\" || echo 'none (node: command not found)'). Install it (https://nodejs.org, or nvm, fnm or mise) and restart claude from a shell where node -v works.\" >&2; exit 2;; esac; exec node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/run.ts\" join",
+            "command": "exec sh \"${CLAUDE_PLUGIN_ROOT}/hooks/node.sh\" --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/run.ts\" join",
             "timeout": 10
           }
         ]
@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"${SUB_HUMAN_HOME:-$HOME/.sub-human}/sessions\"; s=\"$CLAUDE_CODE_SESSION_ID\"; [ -z \"$s\" ] || [ -e \"$h/mods/$s.json\" ] || [ -e \"$h/by-sid/$s.json\" ] || [ -e \"$h/by-pid/$CLAUDE_PID.json\" ] || { while IFS= read -r _; do :; done; exit 0; }; exec node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/run.ts\" session-end",
+            "command": "h=\"${SUB_HUMAN_HOME:-$HOME/.sub-human}/sessions\"; s=\"$CLAUDE_CODE_SESSION_ID\"; [ -z \"$s\" ] || [ -e \"$h/mods/$s.json\" ] || [ -e \"$h/by-sid/$s.json\" ] || [ -e \"$h/by-pid/$CLAUDE_PID.json\" ] || { while IFS= read -r _; do :; done; exit 0; }; exec sh \"${CLAUDE_PLUGIN_ROOT}/hooks/node.sh\" --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/run.ts\" session-end",
             "timeout": 5
           }
         ]

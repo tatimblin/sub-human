@@ -44,9 +44,10 @@ const scriptOf = (cmd: string) => {
   const m = /\$\{CLAUDE_PLUGIN_ROOT\}\/hooks\/run\.ts" ([a-z-]+)$/.exec(cmd);
   return m ? `hooks/handlers/${m[1]}.ts` : null;
 };
-const PRELOAD = 'node --import "${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js" ';
-// the join alone checks for node first, so a missing one says what to do (it is the first thing a person runs)
-const NODE_CHECK = /^v=\$\(node -v 2>\/dev\/null\); case "\$v" in [\s\S]+? >&2; exit 2;; esac; exec /;
+// hooks/node.sh finds a node that runs the plugin (22.18+), or says what to do; then the compile cache, then the hook
+const PRELOAD = 'sh "${CLAUDE_PLUGIN_ROOT}/hooks/node.sh" --import "${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js" ';
+// the join runs it at once (it is the first thing a person runs)
+const NODE_CHECK = /^exec /;
 // SessionEnd starts node only when this session may hold a lease or a seat (its files under <home>/sessions)
 const SEAT_CHECK = /^h="\$\{SUB_HUMAN_HOME:-\$HOME\/\.sub-human\}\/sessions"; [\s\S]+?\|\| \{ while IFS= read -r _; do :; done; exit 0; \}; exec /;
 // Top-level alternatives of a regex (splits on | outside parentheses and classes).
@@ -67,24 +68,45 @@ function alternatives(re: string) {
   return out;
 }
 
-test('hooks.json: the join with no node on PATH, or one older than 24.3, says what to do (exit 2, its stderr shown); with node it runs the hook', () => {
+test('hooks.json: the join with no node 22.18+ (none on PATH, an older one, none in the install places) says what to do (exit 2, its stderr shown); with one it runs the hook (hooks/node.sh)', () => {
   const join = must([...allHooks()].find(x => x.event === 'UserPromptExpansion')).hook.command;
-  const bare = spawnSync('/bin/sh', ['-c', join], { env: { PATH: '/nonexistent', CLAUDE_PLUGIN_ROOT: PLUGIN }, encoding: 'utf8' });
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-nodebin-'));
+  const bin = path.join(tmp, 'bin');
+  fs.mkdirSync(bin);
+  const env = (PATH: string, more: Record<string, string> = {}) => ({ PATH, HOME: tmp, SUB_HUMAN_NODE_ROOT: tmp, CLAUDE_PLUGIN_ROOT: PLUGIN, ...more });
+  const fake = (file: string, v: string) => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, `#!/bin/sh\nif [ "$1" = -v ]; then echo ${v}; exit 0; fi\necho "${v} ran $*"\n`, { mode: 0o755 });
+  };
+  const ran = (v: string) => `${v} ran --import ${PLUGIN}/hooks/compile-cache.js ${PLUGIN}/hooks/run.ts join\n`;
+  const bare = spawnSync('/bin/sh', ['-c', join], { env: env('/nonexistent:/usr/bin:/bin'), encoding: 'utf8' });
   assert.equal(bare.status, 2);
-  assert.match(bare.stderr, /^sub-human needs Node 24\.3 or newer on the PATH .*found none \(node: command not found\)\..*restart claude from a shell where node -v works\.\n$/);
-  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-nodebin-'));
-  const fake = (v: string) => fs.writeFileSync(path.join(bin, 'node'), `#!/bin/sh\nif [ "$1" = -v ]; then echo ${v}; exit 0; fi\necho "ran $*"\n`, { mode: 0o755 });
-  for (const v of ['v24.2.1', 'v24.0.0', 'v22.12.0', 'v8.9.4']) {
-    fake(v);
-    const old = spawnSync('/bin/sh', ['-c', join], { env: { PATH: bin, CLAUDE_PLUGIN_ROOT: PLUGIN }, encoding: 'utf8' });
+  assert.match(bare.stderr, /^sub-human needs Node 22\.18\+ or 24\.3\+ \(not 23\), and found none \(node: command not found\)\. Install it .*restart claude\.\n$/);
+  for (const v of ['v22.17.9', 'v22.12.0', 'v23.11.0', 'v24.2.1', 'v20.19.0', 'v8.9.4']) {
+    fake(path.join(bin, 'node'), v);
+    const old = spawnSync('/bin/sh', ['-c', join], { env: env(`${bin}:/usr/bin:/bin`), encoding: 'utf8' });
     assert.equal(old.status, 2, v);
-    assert.match(old.stderr, new RegExp(`^sub-human needs Node 24\\.3 or newer .*found node ${v.replace(/\./g, '\\.')}\\. `), v);
+    assert.match(old.stderr, new RegExp(`^sub-human needs Node 22\\.18\\+ or 24\\.3\\+ \\(not 23\\), and found node ${v.replace(/\./g, '\\.')} at ${bin}/node\\. `), v);
   }
-  for (const v of ['v24.3.0', 'v24.15.0', 'v25.0.0', 'v26.1.0', 'v30.0.0', 'v100.0.0']) {
-    fake(v);
-    assert.equal(execFileSync('/bin/sh', ['-c', join], { env: { PATH: bin, CLAUDE_PLUGIN_ROOT: PLUGIN }, encoding: 'utf8' }),
-      `ran --import ${PLUGIN}/hooks/compile-cache.js ${PLUGIN}/hooks/run.ts join\n`, v);
+  for (const v of ['v22.18.0', 'v22.22.2', 'v24.3.0', 'v25.0.0', 'v100.0.0']) {
+    fake(path.join(bin, 'node'), v);
+    assert.equal(execFileSync('/bin/sh', ['-c', join], { env: env(`${bin}:/usr/bin:/bin`), encoding: 'utf8' }), ran(v), v);
   }
+  // PATH's node too old: an nvm, then a Homebrew install place, is taken
+  fake(path.join(bin, 'node'), 'v20.19.0');
+  fake(path.join(tmp, '.nvm', 'versions', 'node', 'v24.15.0', 'bin', 'node'), 'v24.15.0');
+  assert.equal(execFileSync('/bin/sh', ['-c', join], { env: env(`${bin}:/usr/bin:/bin`), encoding: 'utf8' }), ran('v24.15.0'));
+  fake(path.join(tmp, 'opt', 'homebrew', 'bin', 'node'), 'v22.18.1');
+  assert.equal(execFileSync('/bin/sh', ['-c', join], { env: env('/nonexistent:/usr/bin:/bin'), encoding: 'utf8' }), ran('v22.18.1'), 'Homebrew before nvm');
+  // the node the plugin last ran with (<home>/bin/current, line 2) first, with no version check
+  const last = path.join(tmp, 'last', 'node');
+  fake(last, 'v99.0.0');
+  fs.mkdirSync(path.join(tmp, '.sub-human', 'bin'), { recursive: true });
+  fs.writeFileSync(path.join(tmp, '.sub-human', 'bin', 'current'), `${PLUGIN}\n${last}\n\n`);
+  assert.equal(execFileSync('/bin/sh', ['-c', join], { env: env(`${bin}:/usr/bin:/bin`), encoding: 'utf8' }), ran('v99.0.0'));
+  fs.rmSync(last);
+  assert.equal(execFileSync('/bin/sh', ['-c', join], { env: env(`${bin}:/usr/bin:/bin`), encoding: 'utf8' }), ran('v22.18.1'), 'a recorded node since removed: searched again');
+  fs.rmSync(tmp, { recursive: true, force: true });
 });
 
 test('hooks.json: every command runs node on a script that exists in the plugin (the EnterPlanMode mode note runs none)', () => {
@@ -106,7 +128,7 @@ test('every ${CLAUDE_PLUGIN_ROOT}/ path in hooks.json and .mcp.json, and every m
   const collect = (s: unknown) => { for (const m of String(s).matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}\/([^"'\s]+)/g)) paths.push(must(m[1])); };
   for (const { hook } of allHooks()) collect(hook.command);
   for (const srv of Object.values(readJson<McpJson>('.mcp.json').mcpServers)) { collect(srv.command); (srv.args || []).forEach(collect); }
-  assert.ok(paths.includes('mcp/room-server.ts') && paths.includes('hooks/compile-cache.js') && paths.includes('hooks/run.ts'), paths.join(' '));
+  assert.ok(['mcp/room.ts', 'hooks/node.sh', 'hooks/compile-cache.js', 'hooks/run.ts'].every(p => paths.includes(p)), paths.join(' '));
   for (const rel of paths) assert.ok(fs.existsSync(path.join(PLUGIN, rel)), `${rel} is missing`);
   for (const rel of readJson<HooksJson>('hooks/hooks.json').modules) assert.ok(fs.existsSync(path.join(PLUGIN, 'hooks', rel)), `module ${rel} is missing`);
 });
@@ -138,11 +160,11 @@ test('hooks.json: SessionEnd starts node only for a session with a lease, a sess
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-end-'));
   const bin = path.join(tmp, 'bin'), log = path.join(tmp, 'ran'), home = path.join(tmp, 'home');
   fs.mkdirSync(bin);
-  fs.writeFileSync(path.join(bin, 'node'), `#!/bin/sh\necho "$*" >> ${JSON.stringify(log)}\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'node'), `#!/bin/sh\nif [ "$1" = -v ]; then echo v24.15.0; exit 0; fi\necho "$*" >> ${JSON.stringify(log)}\n`, { mode: 0o755 });
   const ran = (env: Record<string, string>) => {
     try { fs.rmSync(log); } catch { /* none */ }
     const r = spawnSync('/bin/sh', ['-c', end], { input: '{"hook_event_name":"SessionEnd","session_id":"s1"}', encoding: 'utf8',
-      env: { PATH: `${bin}:/usr/bin:/bin`, HOME: tmp, SUB_HUMAN_HOME: home, CLAUDE_PLUGIN_ROOT: PLUGIN, CLAUDE_PID: '4242', CLAUDE_CODE_SESSION_ID: 's1', ...env } });
+      env: { PATH: `${bin}:/usr/bin:/bin`, HOME: tmp, SUB_HUMAN_HOME: home, SUB_HUMAN_NODE_ROOT: tmp, CLAUDE_PLUGIN_ROOT: PLUGIN, CLAUDE_PID: '4242', CLAUDE_CODE_SESSION_ID: 's1', ...env } });
     assert.equal(r.status, 0, r.stderr);
     return fs.existsSync(log);
   };

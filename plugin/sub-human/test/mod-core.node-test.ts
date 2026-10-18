@@ -176,7 +176,7 @@ test('shim: the stdout -> ClassicResult table covers every output shape the hook
   for (const [what, event, run, want] of T) assert.deepEqual(toClassic(event, run), want, what);
   assert.deepEqual(shimEnv({ session_id: 's1' }, '/p'), { CLAUDE_PLUGIN_ROOT: '/p', CLAUDE_PID: '', SUB_HUMAN_VIA: 'module', CLAUDE_CODE_SESSION_ID: 's1' });
   assert.deepEqual(shimEnv({}, '/p'), { CLAUDE_PLUGIN_ROOT: '/p', CLAUDE_PID: '', SUB_HUMAN_VIA: 'module' });
-  assert.deepEqual(shimArgv('/p', 'prompt'), ['node', '--import', '/p/hooks/compile-cache.js', '/p/hooks/run.ts', 'prompt']);
+  assert.deepEqual(shimArgv('/p', 'prompt'), ['sh', '/p/hooks/node.sh', '--import', '/p/hooks/compile-cache.js', '/p/hooks/run.ts', 'prompt']);
 });
 
 test('shim: a real hook\'s output translates (at-room posting through prompt.ts)', async t => {
@@ -261,7 +261,7 @@ test('prompt: a seated member skips node only while the tail child delivers and 
 // ---------- delivery (mod/core/deliver.ts) ----------
 test('deliver: the child\'s argv and env; lines out of pieces; only well-formed events', async () => {
   const d = await load('mod/core/deliver.ts');
-  assert.deepEqual(d.tailArgv('/p'), ['node', '/p/scripts/sub-human', 'tail', '--ndjson']);
+  assert.deepEqual(d.tailArgv('/p'), ['sh', '/p/hooks/node.sh', '/p/scripts/sub-human', 'tail', '--ndjson']);
   assert.deepEqual(d.tailEnv('sid-1', '/p'), { CLAUDE_PLUGIN_ROOT: '/p', CLAUDE_PID: '', CLAUDE_CODE_SESSION_ID: 'sid-1' });
   assert.equal(d.PULL_DELIVERY, 'at-most-once');
   const b = d.lineBuffer();
@@ -482,6 +482,17 @@ test('rows while the room server is down: said once instead of the spawn calls a
   assert.equal(rowsToSay('SUB-HUMAN ROWS: calls', false), ROWS_DOWN);
   assert.equal(rowsToSay(null, false), null, 'nothing held: nothing said');
   assert.match(ROWS_DOWN, /don't spawn it.*\/mcp reconnects plugin:sub-human:room/);
+});
+
+test('the room server down: told once per time it goes down (toolsDownStep)', async () => {
+  const { toolsDownStep, TOOLS_DOWN, TOOLS_DOWN_NOTICE } = await load('mod/core/rows.ts');
+  assert.deepEqual(toolsDownStep(false, false), { say: true, down: true }, 'goes down: say it');
+  assert.deepEqual(toolsDownStep(true, false), { say: false, down: true }, 'still down: said already');
+  assert.deepEqual(toolsDownStep(true, true), { say: false, down: false }, 'back up: forget it');
+  assert.deepEqual(toolsDownStep(false, true), { say: false, down: false });
+  assert.match(TOOLS_DOWN_NOTICE, /@room and messages to other Claudes still work.*\/mcp/);
+  assert.doesNotMatch(TOOLS_DOWN_NOTICE, /^sub-human: /, '$.ui.log adds the lead');
+  assert.match(TOOLS_DOWN, /Don't call them/);
 });
 
 test('mod-hello: prints the home and this session\'s seat, and writes the lease (0600)', t => {
