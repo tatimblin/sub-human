@@ -142,6 +142,8 @@ test('note: every stage × every event that moves it, in one table; Send leaves 
   }
   const send = review.reduce({ review: null, note: note('asked') }, NOTE_EVENTS.send, ctx);
   assert.deepEqual(send.effects, [{ do: 'answer', hash: H, choice: 'Object', notes: 'open rate limiting', clearNote: true }]);
+  // the note sent: the model is told to act on what it asks of it (live: "ask cameron if…" was never asked)
+  assert.equal(review.textOf(parts(send), h => `[${h}]`, true), `${review.SAY.recorded} ${review.SAY.noteFollow('bob')} [${H}]`);
 });
 
 test('note: one whose proposal is no longer the seat\'s is dropped wherever it is met; Send on a stale one too', () => {
@@ -329,8 +331,12 @@ test('answered: the consent card records each Agree/Object, says Not yet, and no
   ] });
   assert.deepEqual(four.effects, [{ do: 'answer', hash: H, choice: 'Object', notes: 'why' }]);
   const text = review.textOf(parts(four), h => `[${h}]`, true);
-  assert.equal(text, `${review.SAY.recorded} [${H}] ${review.SAY.notYet('bob', 'cccccccccccc')} ${review.SAY.noChoice('dddddddddddd')} ${review.SAY.stale(OTHER)} Return to what you were doing.`);
+  // an objection with a note: the note may be the person's request to their own Claude ("ask cameron if…"): the
+  // model is told to act on it, second (a long text is cut at its end), in place of "return to what you were doing"
+  assert.equal(text, `${review.SAY.recorded} ${review.SAY.noteFollow('bob')} [${H}] ${review.SAY.notYet('bob', 'cccccccccccc')} ${review.SAY.noChoice('dddddddddddd')} ${review.SAY.stale(OTHER)}`);
   assert.equal(review.textOf(parts(four), h => `[${h}]`, false).startsWith(`[${H}]`), true, 'Recorded only when one was');
+  const bare = answered({ answers: [{ hash: H, answer: { kind: 'answer', label: 'Object' }, live: true }] });
+  assert.equal(review.textOf(parts(bare), h => `[${h}]`, true), `${review.SAY.recorded} [${H}] Return to what you were doing.`, 'no note: nothing to follow');
   assert.deepEqual(parts(answered({ afk: true })), [review.SAY.cardNoAnswer('bob')]);
   assert.deepEqual(answered({ answers: [], asked: false }).say, null, 'not a consent card');
 });

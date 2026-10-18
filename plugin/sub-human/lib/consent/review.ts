@@ -162,6 +162,9 @@ export const SAY_MAX = 600;
 /** Every line the consent hook says; n a person's name, h a proposal hash. */
 export const SAY = {
   recorded: 'Recorded. The room shows it (and any note) already: post nothing about it. Agreeing is not a go-ahead to build; wait for the decision and your people.',
+  /** after an objection with a note: the note is the person's words to the room and, often, to their own Claude ("ask
+   * cameron if…"); live 2026-10-17 the model took "post nothing" as "do nothing" and the question was never asked */
+  noteFollow: (n: string): string => `If ${n}'s note asks you to do something (e.g. ask another member's Claude: SendMessage NAME.CODE), do it now; don't repeat the note.`,
   agreed: (n: string, h: string, decided?: string | null): string => `${n} agreed to proposal ${h}${decided ? `; the room decided: ${decided}` : ''}.`,
   objected: (n: string, h: string, decided?: string | null): string => `${n} objected to proposal ${h}${decided ? `; the room decided: ${decided}` : ''}.`,
   failed: (n: string, h: string, why: string, unknown: boolean): string => `proposal ${h}: NOT ${unknown ? 'confirmed, it may still be recorded' : 'recorded'} (${why}); ${n} has been told. Post nothing for them; open it again when ${n} asks.`,
@@ -642,7 +645,7 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
         if (!ev.target || ev.target.hash !== cf.hash) return { state: { ...state, note: null }, effects: [], say: ctxSay(SAY.stale(cf.hash)) };
         // not sent (the room unreachable): the note waits for another Send (clearNote only on success)
         return { state, effects: [{ do: 'answer', hash: cf.hash, choice: 'Object', notes: cf.note, clearNote: true }],
-          say: ctxSay({ ifRecorded: SAY.recorded }, { answer: cf.hash }, { ifRecorded: DONE }) };
+          say: ctxSay({ ifRecorded: SAY.recorded }, ...(cf.note.trim() ? [{ ifRecorded: SAY.noteFollow(n) }, { answer: cf.hash }] : [{ answer: cf.hash }, { ifRecorded: DONE }])) };
       }
       if (!ev.answers.length && !ev.asked) return none(state); // not a consent card
       // the recheck is asked once: any card for its proposal settles it, answered or not
@@ -659,7 +662,9 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
         effects.push({ do: 'answer', hash: a.hash, choice: a.answer.label, ...(a.answer.notes !== undefined ? { notes: a.answer.notes } : {}) });
         parts.push({ answer: a.hash });
       }
-      parts.push(DONE);
+      const noted = effects.some(x => x.do === 'answer' && x.choice === 'Object' && typeof x.notes === 'string' && x.notes.trim());
+      if (noted) parts.splice(1, 0, { ifRecorded: SAY.noteFollow(n) }); // second: a long text is cut at its end
+      else parts.push(DONE);
       return { state, effects, say: ctxSay(...parts) };
     }
     default: return assertNever(ev, 'consent event');
