@@ -32,9 +32,11 @@ const text = (a: Answer) => (a.kind === 'joined' ? a.say : a.text);
 const pinnedOf = (a: Answer) => (a.kind === 'secret' && a.pinned ? a.pinned : null);
 
 /** Stub the tailnet (up or not) and the web invite (a pipe invite dressed as one of mode, or a throw); restored after t. */
-function stub(t: TestContext, { up, mode = 'tailscale', fail = null }: { up: boolean; mode?: string; fail?: string | null }) {
-  const calls: { up: number; web: { funnel: boolean | undefined }[] } = { up: 0, web: [] };
+function stub(t: TestContext, { up, mode = 'tailscale', fail = null, state = { running: false, served: false } }: { up: boolean; mode?: string; fail?: string | null; state?: { running: boolean; served: boolean } }) {
+  const calls: { up: number; web: { funnel: boolean | undefined }[]; unhost: RoomCode[] } = { up: 0, web: [], unhost: [] };
   inviteMod.seam.tailnetUp = () => { calls.up++; return up; };
+  inviteMod.seam.webState = () => state;
+  inviteMod.seam.unhost = (code: RoomCode) => { calls.unhost.push(code); return { removed: false, text: '' }; };
   inviteMod.seam.hostWeb = (code: RoomCode, o = {}): WebInvite => {
     calls.web.push({ funnel: o.funnel });
     if (fail !== null) throw new Error(fail);
@@ -91,8 +93,9 @@ test('invite: Tailscale not up here, --ssh, or SUB_HUMAN_SSH_ADDR set: ssh as be
 
 test('invite: a tailnet invite that fails falls back to ssh and says why', t => {
   const w = new World({ alice: 'sleep' }, { t });
-  stub(t, { up: true, fail: 'Tailscale Serve isn\'t enabled on your tailnet yet.' });
+  const calls = stub(t, { up: true, fail: 'Tailscale Serve isn\'t enabled on your tailnet yet.' });
   const a = run(w, 'invite');
+  assert.deepEqual(calls.unhost, [w.code], 'the listener the failed invite started is stopped (it serves no room)');
   assert.equal(a.kind, 'secret');
   assert.equal(a.kind === 'secret' && a.refused, false);
   assert.match(text(a), /^Not over your tailnet: Tailscale Serve isn't enabled on your tailnet yet\. This invite is over ssh instead\.\n\n/);
@@ -100,6 +103,13 @@ test('invite: a tailnet invite that fails falls back to ssh and says why', t => 
   assert.match(pinnedOf(a)?.text ?? '', /^Not over your tailnet/);
   // asked for by name, the same failure is the answer
   assert.match(text(run(w, 'invite --web')), /Tailscale Serve isn't enabled/);
+  assert.equal(calls.unhost.length, 1, '--web that fails stops nothing');
+  // a listener that ran before, or served this room already, is left alone
+  for (const state of [{ running: true, served: false }, { running: false, served: true }]) {
+    const again = stub(t, { up: true, fail: 'no.', state });
+    assert.match(text(run(w, 'invite')), /^Not over your tailnet/);
+    assert.deepEqual(again.unhost, [], JSON.stringify(state));
+  }
 });
 
 test('invite: tailnetUp is the CLI and its status (a fake tailscale; none at that path: down)', t => {
@@ -112,6 +122,8 @@ test('invite: tailnetUp is the CLI and its status (a fake tailscale; none at tha
   assert.equal(real(), false, 'no binary there');
   fs.writeFileSync(bin, '#!/bin/sh\n[ "$1" = status ] || exit 9\nprintf \'%s\\n\' \'{"BackendState":"Running","Self":{"DNSName":"box.tail1a2b.ts.net.","Online":true}}\'\n', { mode: 0o755 });
   assert.equal(real(), true, 'up');
+  fs.writeFileSync(bin, '#!/bin/sh\n[ "$1" = status ] || exit 9\nprintf \'%s\\n\' \'{"BackendState":"Running","Self":{"DNSName":"box.tail1a2b.ts.net.","Online":false}}\'\n', { mode: 0o755 });
+  assert.equal(real(), false, 'this machine offline on its tailnet');
   fs.writeFileSync(bin, '#!/bin/sh\nprintf \'%s\\n\' \'{"BackendState":"NeedsLogin"}\'\n', { mode: 0o755 });
   assert.equal(real(), false, 'logged out');
   fs.writeFileSync(bin, '#!/bin/sh\necho "failed to connect to local Tailscale daemon" >&2; exit 1\n', { mode: 0o755 });

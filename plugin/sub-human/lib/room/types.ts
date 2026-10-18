@@ -612,7 +612,8 @@ export interface Link {
   pin?: Pin | undefined;
   /** an invite line's host asked for its PIN (left: tries; why/message: the last wrong or throttled one) */
   pin_wanted?: { at: string; left?: number; why?: string; message?: string };
-  awaiting?: { at: string; ref: string; check: string; expires_at: string };
+  /** the host's card decides (pin: the PIN went with the line and held, and an older host's card still asks) */
+  awaiting?: { at: string; ref: string; check: string; expires_at: string; pin?: true };
   refused?: { at: string; reason: string; why?: string };
   rebind?: unknown;
   join_as?: string;

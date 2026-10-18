@@ -82,7 +82,7 @@ export function handle(input: JoinIn): Reply | null {
   const take = module && !args.length && identity.isRoomCode(input.sub_human_take) ? input.sub_human_take : null;
   const a = commands.run(args, {
     ...(take ? { take } : {}),
-    sid: input.session_id, cwd: input.cwd || process.cwd(), pid, roomClaudeAgent: input.agent_type === ROOM_CLAUDE_AGENT,
+    sid: input.session_id, cwd: input.cwd || process.cwd(), pid, roomClaudeAgent: input.agent_type === ROOM_CLAUDE_AGENT, module,
     pubkey: seatKey.publicPem, pluginRoot: PLUGIN_ROOT, seat: () => whoami(input),
   });
   return toReply(a, input, module);

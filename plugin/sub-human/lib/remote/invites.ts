@@ -16,11 +16,15 @@
  *   knock: a hello with knock: true and no pin (a newer joiner that typed the line alone; an older one never knocks and
  *     is asked for the PIN) uses the invite and asks the host person's card: an admission 'asked' for the machine its
  *     key proved (and its Noise key), lapsing after ADMIT_TTL_MS, answered OFFLINE ADMIT_WAITING. It spends no try; a
- *     machine that typed a wrong PIN for the invite waits out its backoff (PIN_THROTTLED), then gets PIN_NEEDED.
- *   used: its admission decides (admission.ts check; a card's 'let-in' redeems once). A PIN from the knocking machine
- *     while the card waits is checked as above: the right one lets it in at once (admitted_by 'pin'), a wrong one costs
- *     a try and the last burns the knock too. Another machine gets INVITE_USED (one knock per invite), and the room a
- *     line naming both checks (invite-secret.ts joinCheck), once per machine (`others`, at most OTHERS_MAX).
+ *     machine that typed a wrong PIN for the invite waits out its backoff (PIN_THROTTLED), then gets PIN_NEEDED, and
+ *     once any machine typed a wrong one every knock gets PIN_NEEDED (a miss on one machine is no card from another).
+ *   used: its admission decides (admission.ts check; a card's 'let-in' redeems once). A PIN while the card waits is
+ *     checked as above: the right one lets it in at once (admitted_by 'pin'), a wrong one costs a try and the last
+ *     burns the knock too. From another machine than the knock's, the right PIN replaces the knock (the line may have
+ *     leaked; the PIN is the host's word): the card goes, the knocking machine gets ADMIT_REFUSED from then on
+ *     (`replaced`), and the room a line with both checks. A knock never replaces anything: another machine with no
+ *     PIN gets INVITE_USED (one knock per invite), and the room a line naming both checks (invite-secret.ts joinCheck),
+ *     once per machine (`others`, at most OTHERS_MAX).
  * A wrong PIN, the last try and a second machine carry error.note, the room line; server.ts says the joined one.
  *
  * isPin and its kin make the Pin brand (lib/brand.ts), which lib/cli/doctor/redact.ts treats as a secret.
@@ -85,6 +89,9 @@ const inviteOpen = (inv: unknown, now: number = Date.now()): inv is ShortInvite 
   return !!i && i.short === true && i.v === 4 && !i.used_at && !i.burnt_at && now <= Date.parse(i.expires_at) && i.tries > 0;
 };
 
+/** What the joiner says it is called: its charset only, and short, since a room line every Claude reads carries it. */
+const labelOf = (as: Asked): string => LABEL_RE.test(String(as.label)) ? as.label.slice(0, LABEL_SHOWN) : 'a-machine';
+
 /** The wait after the n-th wrong PIN (n >= 1): PIN_BACKOFF_MS, doubling. */
 const backoff = (n: number): number => testMs('SUB_HUMAN_PIN_BACKOFF_MS') * 2 ** Math.min(Math.max(0, n - 1), 10);
 
@@ -121,6 +128,27 @@ function redeemShort(cur: Invites, key: string, secret: string, inv: ShortInvite
   if (inv.used_at) {
     const slot = admissionSlot(secret);
     const adm = cur[slot];
+    // the machine whose knock a PIN replaced (below): its link ends refused, and it never takes anything back
+    if (adm && adm.admission && proven && adm.replaced && adm.replaced.machine === proven && adm.machine !== proven) {
+      return { err: authError('a machine with this invite\'s PIN joined in this one\'s place (this one knocked without it); ask the host for a new invite', 'ADMIT_REFUSED') };
+    }
+    // a PIN from another machine while a knock waits for the card: the knock had the line alone, the PIN is the host's
+    // consent said ahead. Checked as on the line (a wrong one costs a try, waits, never makes a card, and the last burns
+    // the knock with the invite); the right one withdraws the knock (its card goes, its link is refused) and lets this
+    // machine in. A knock never displaces anything (it is INVITE_USED below)
+    if (adm && adm.admission && proven && adm.machine !== proven && pin !== undefined && adm.admit === 'asked' && !adm.burnt_at && now <= Date.parse(adm.expires_at)) {
+      if (!as || !NAME_RE.test(as.name)) return { err: new RoomError('INVALID', 'a PIN goes with the name to join as') };
+      const bad = checkPin(cur, key, secret, inv, { pin, proven, name: as.name, burn: { [slot]: { ...adm, burnt_at: iso(now) } }, now });
+      if (bad) return bad;
+      const at = iso(now);
+      const id = linkId || hostLinks.newLinkId();
+      const ok: AdmissionRecord = {
+        v: 2, admission: true, from: ref, kind: inv.kind, by: inv.by || null, machine: proven, name: alt ?? as.name, ...(alt ? { asked_as: as.name } : {}), label: labelOf(as),
+        key: peerKey, link: id, admit: 'let-in', created_at: at, expires_at: at, admitted_at: at, admitted_by: 'pin', admitted_until: at, used_at: at,
+        replaced: { machine: adm.machine, key: adm.key, name: adm.name },
+      };
+      return { err: null, adm: ok, next: { ...cur, [key]: { ...inv, link: id }, [slot]: ok }, made: { id, machine: proven, seats: [ok.name], key: inv.kind === 'ws' ? peerKey : null } };
+    }
     // another machine than the one whose PIN or knock holds it: the invite is spent for it (each invite works once,
     // and takes one knock). The room hears of it once per machine: if the real joiner is the second one, the one
     // waiting on the card is not them
@@ -157,17 +185,18 @@ function redeemShort(cur: Invites, key: string, secret: string, inv: ShortInvite
   if (pin === undefined && (!knock || !proven)) return { err: needed() };
   if (!proven) return { err: new RoomError('PROTOCOL', 'a PIN goes only with this machine\'s key, proved in this connection: a newer sub-human does that; update it (/plugin update sub-human)', 'SKEW') };
   if (!as || !NAME_RE.test(as.name)) return { err: new RoomError('INVALID', `${pin === undefined ? 'a knock' : 'a PIN'} goes with the name to join as`) };
-  // what the joiner says it is called: its charset only, and short, since a room line every Claude reads carries it
-  const label = LABEL_RE.test(String(as.label)) ? as.label.slice(0, LABEL_SHOWN) : 'a-machine';
+  const label = labelOf(as);
   const id = linkId || hostLinks.newLinkId();
   const at = iso(now);
   if (pin === undefined) {
     // a knock: no try spent. A machine that typed a wrong PIN for this invite waits out its backoff, and then only
-    // the right PIN gets it in (a miss never turns into a card)
+    // the right PIN gets it in (a miss never turns into a card). Once any machine typed a wrong one, no machine knocks:
+    // a guesser that missed on one machine gets no clean card from another
     const src = (inv.sources ?? {})[proven];
     const wait = src ? Date.parse(src.next_at) - now : 0;
     if (wait > 0) return { err: throttled(wait) };
     if (src) return { err: needed(', and this machine typed a wrong PIN for it') };
+    if ((inv.wrong ?? 0) > 0 || (inv.next_at && Date.parse(inv.next_at) > now)) return { err: needed(', and a wrong PIN was typed for it: this invite needs its PIN now') };
     // the knock uses the invite (one per invite), and its admission asks the host person's card
     const asked: AdmissionRecord = {
       v: 2, admission: true, from: ref, kind: inv.kind, by: inv.by || null, machine: proven, name: as.name, label,

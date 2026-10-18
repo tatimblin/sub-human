@@ -107,6 +107,11 @@ class Machine {
   }
 
   join(seat: Seat, args: string, env: Env = {}): MachineRun { this.lease(seat); return this.hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: args }, seat, { env }); }
+  /** A /sub-human command the hooks module ran (mod/deliver.ts command.run: the session's nonce), not the classic hook. */
+  modJoin(seat: Seat, args: string): MachineRun {
+    this.lease(seat);
+    return this.hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: args, sub_human_via: 'command.run', sub_human_nonce: seat.nonce }, seat);
+  }
   /** The hooks module seating a let-in join on its own (mod/deliver.ts takeSeat on the tail's take): the join hook with
    * no args, the session's nonce and the room (mod/core/command.ts joinPayload take). */
   take(seat: Seat, code: RoomCode): MachineRun {

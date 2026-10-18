@@ -9,8 +9,8 @@
  * --no-card, or SUB_HUMAN_INVITE_CARD=0, leaves the line out: no card, nothing the module could copy.
  *
  * With no way named, the tailnet (Tailscale Serve, as --web) when Tailscale is up here (seam.tailnetUp: its CLI and
- * `tailscale status`, checked before the listener starts), else ssh; SUB_HUMAN_SSH_ADDR set keeps ssh. A tailnet
- * invite that fails falls back to ssh with one line why. Funnel is never chosen: its hostname goes into public
+ * `tailscale status` naming this machine online, checked before the listener starts), else ssh; SUB_HUMAN_SSH_ADDR set
+ * keeps ssh. A tailnet invite that fails falls back to ssh with one line why, and stops the listener it started. Funnel is never chosen: its hostname goes into public
  * certificate-transparency logs, so a tailnet-only invite ends with the pointer to --public (OFF_TAILNET) instead.
  */
 import * as hosting from '../remote/hosting.ts';
@@ -30,17 +30,19 @@ const ts = lazy<typeof TailscaleMod>(import.meta.url, '../remote/tailscale.ts');
 export const INVITE_USAGE: string = `usage: /sub-human invite (over your tailnet when Tailscale is up here, else ssh; --ssh for ssh, --public for anyone on the internet; --no-card: no card offering to copy the line). ${HELP_HINT}`;
 export const OFF_TAILNET = 'Off your tailnet? /sub-human invite --public';
 
-/** Whether Tailscale is usable here: its CLI, and `tailscale status` naming this machine (no serve, no Funnel). */
+/** Whether Tailscale is usable here: its CLI, and `tailscale status` naming this machine, online (no serve, no Funnel). */
 function tailnetUp(): boolean {
   const b = ts().bin();
   if (!b) return false;
-  try { ts().self(b); return true; } catch { return false; }
+  try { return ts().self(b).online; } catch { return false; }
 }
 
-/** The tests' stubs: whether the tailnet is up here, and the web invite itself. */
-export const seam: { tailnetUp: () => boolean; hostWeb: typeof WebhostMod.hostWeb } = {
+/** The tests' stubs: whether the tailnet is up here, the web invite itself, and the listener's state and stop. */
+export const seam: { tailnetUp: () => boolean; hostWeb: typeof WebhostMod.hostWeb; webState: typeof WebhostMod.webState; unhost: typeof WebhostMod.unhost } = {
   tailnetUp,
   hostWeb: (...a) => webhost().hostWeb(...a),
+  webState: (...a) => webhost().webState(...a),
+  unhost: (...a) => webhost().unhost(...a),
 };
 
 export const invite: Verb = (argv, { cur: seat }) => {
@@ -61,10 +63,14 @@ export const invite: Verb = (argv, { cur: seat }) => {
     const ssh = () => hosting.hostInvite(cur.code, { ssh: f.pipe ? undefined : f.ssh === undefined ? true : f.ssh, pipe: !!f.pipe, by: cur.name });
     let r: { text: string; pinned: Pinned; line: string; mode?: string }, why = '';
     if (web || tailnet) {
+      const before = tailnet ? seam.webState(cur.code) : null;
       try {
         r = seam.hostWeb(cur.code, { funnel: !!f.public, port: f.port !== undefined ? Number(f.port) : undefined, by: cur.name });
       } catch (e) {
         if (!tailnet) throw e;
+        // the listener this failed invite started serves nothing: unhost drops the room's record if it got that far and
+        // stops the listener once it serves no room (one that ran before, or served this room already, is left alone)
+        if (before && !before.running && !before.served) { try { seam.unhost(cur.code); } catch { /* best effort */ } }
         why = `Not over your tailnet: ${msgOf(e)} This invite is over ssh instead.\n\n`;
         r = ssh();
       }

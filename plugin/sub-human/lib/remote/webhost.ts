@@ -114,7 +114,12 @@ function hostWeb(code: RoomCode, { funnel = false, port, by = null, now = Date.n
   const hosting = hostingLib();
   const parts = {
     code, how: `over the web through ${how} to this machine's listener on 127.0.0.1:${lport}`, line, pin: r.pin, ref: r.ref,
-    extra: [`Their machine checks this one's key (${hostKey.slice(0, 12)}…, named in the line) before it sends anything, so nothing in between can read along.`, ...notes],
+    extra: [
+      `Their machine checks this one's key (${hostKey.slice(0, 12)}…, named in the line) before it sends anything, so nothing in between can read along.`,
+      // a joiner before 0.5.0-beta.23 refuses the # (its URL SECRET form takes the SECRET as a word of its own)
+      'An older sub-human on their side takes the line with a space in place of the #.',
+      ...notes,
+    ],
   };
   const text = hosting.inviteText(parts);
   const pinned = hosting.invitePinned({ ...parts, expires_at: r.expires_at });
@@ -133,6 +138,13 @@ function unhost(code: RoomCode): { removed: boolean; text: string } {
   return { removed: !!rec, text };
 }
 
+/** Whether the web listener runs, and whether it serves room code (lib/commands/invite.ts: before a tailnet invite,
+ * so one that fails stops only a listener it started). */
+function webState(code: RoomCode): { running: boolean; served: boolean } {
+  const st = listener().status();
+  return { running: st.running, served: !!st.rooms[code] };
+}
+
 /** The listener back for a room this home serves over the web, if it is not running (a reboot, a crash): the join
  * hook calls it when a seat of the host joins. Best effort; true when it runs. */
 function ensure(code: RoomCode): boolean {
@@ -144,4 +156,4 @@ function ensure(code: RoomCode): boolean {
   try { L.start(rec.port ? { port: rec.port } : {}); return true; } catch { return false; }
 }
 
-export { hostWeb, unhost, ensure, frontBase };
+export { hostWeb, unhost, ensure, frontBase, webState };

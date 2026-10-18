@@ -89,7 +89,9 @@ function keepAnswer(code: RoomCode, e: unknown, word: { secret: Buffer }, sentPi
       const ref = secretMod().admissionRef(word.secret);
       // the check the host's card shows: this machine's proven id and, over the web, this link's own key
       const check = secretMod().joinCheck(machineKeyMod().idOf(machineKeyMod().publicKey()), ownKey);
-      linksMod.set(code, { ...rest, awaiting: cur.awaiting ?? { at, ref, check, expires_at: new Date(Date.now() + config.ADMIT_TTL_MS).toISOString() } });
+      const awaiting = cur.awaiting ?? { at, ref, check, expires_at: new Date(Date.now() + config.ADMIT_TTL_MS).toISOString() };
+      // a PIN that went and is answered ADMIT_WAITING held: an older host still asks its card after a right PIN
+      linksMod.set(code, { ...rest, awaiting: sentPin ? { ...awaiting, pin: true } : awaiting });
     }
     return true;
   }
@@ -197,4 +199,4 @@ async function loginRefused(l: Link, t: TransportLike | Promise<TransportLike>, 
   return why ? new RoomError('AUTH', why.message, why.reason) : e;
 }
 
-export { connectLink, loginRefused, linkKey, joinerLabel, pipeLocator, sshLocator, transportOf };
+export { connectLink, keepAnswer, loginRefused, linkKey, joinerLabel, pipeLocator, sshLocator, transportOf };

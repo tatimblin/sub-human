@@ -92,7 +92,8 @@ function putBack(code: RoomCode, cur: Link | null): void {
 const sameLogin = (a: LinkSpec | undefined, b: SshSpec) => !!a && !!b && a.kind === 'ssh' && a.login === true && (['user', 'host', 'port', 'remoteHome'] as const).every(k => a[k] === b[k]); // a login link is ssh
 
 /** Where an invite join stands (hosting.joinText), as a step: a refusal when it was refused. tells: this session's tail
- * says what the host answers (the session that typed the line). */
+ * says what the host answers and takes the seat (the session that typed the line, run by the hooks module; classic,
+ * a bare /sub-human takes it). */
 function stands(code: RoomCode, name: SeatName, o: Outcome, tells = false): JoinStep {
   const text = hosting.joinText(code, name, o, { tells });
   told(code, text);
@@ -104,7 +105,7 @@ function told(code: RoomCode, text: string): void {
   try { const l = links.get(code); if (l) links.set(code, { ...l, join_told: text }); } catch { /* the tail may repeat it */ }
 }
 
-export function linkLine({ name, code, word, transport, sid, pin }: { name: SeatName; code: RoomCode; word: InviteSecret; transport: LinkSpec; sid?: string | null | undefined; pin?: Pin | undefined }): JoinStep {
+export function linkLine({ name, code, word, transport, sid, module = false, pin }: { name: SeatName; code: RoomCode; word: InviteSecret; transport: LinkSpec; sid?: string | null | undefined; module?: boolean; pin?: Pin | undefined }): JoinStep {
   if (identity.roomExists(code) && identity.isHost(code)) return refuse(`room ${code} is hosted on this machine; join it with /sub-human ${name} ${code}.`);
   const cur: Link | null = links.get(code);
   // a link that stopped as spent (kicked: its token gets nowhere now) is replaced by the new line, never re-seated over
@@ -121,7 +122,7 @@ export function linkLine({ name, code, word, transport, sid, pin }: { name: Seat
   if (!linkSocket.start(code)) { putBack(code, cur); return refuse(NO_START(code)); }
   const o = hosting.outcome(code);
   if (o.state === 'refused') putBack(code, cur);
-  return stands(code, name, o, !!sid);
+  return stands(code, name, o, !!sid && module);
 }
 
 /** The invite joins this machine started that take a PIN (the host asked for it, or a knock waits for the card: the
@@ -131,7 +132,7 @@ export function pinJoin(sid?: string | null): PendingLink | null {
   return all.find(l => !!sid && l.join_sid === sid) ?? all[0] ?? null;
 }
 
-export function givePin(pin: Pin, sid?: string | null): JoinStep {
+export function givePin(pin: Pin, sid?: string | null, module = false): JoinStep {
   const l = pinJoin(sid);
   if (!l) {
     const any = pendingJoins().find(j => typeof j.invite === 'string' && !j.awaiting);
@@ -141,7 +142,7 @@ export function givePin(pin: Pin, sid?: string | null): JoinStep {
   restartLink(code);
   try { hosting.givePin(code, pin); } catch (e) { return refuse(msgOf(e)); }
   if (!linkSocket.start(code)) return refuse(NO_START(code));
-  return stands(code, name, hosting.outcome(code), l.join_sid === sid && !!sid);
+  return stands(code, name, hosting.outcome(code), l.join_sid === sid && !!sid && module);
 }
 
 export function linkLogin({ dest: typed, code, home, name, isDefault }: {

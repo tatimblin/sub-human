@@ -265,6 +265,8 @@ export interface AdmissionRecord extends InviteLife {
   told?: string[];
   /** the other machines (proven ids) that presented this used invite: the room heard of each once (invites.ts) */
   others?: string[];
+  /** the knock this machine's right PIN replaced (invites.ts): that machine's link is refused from then on */
+  replaced?: { machine: MachineId; key: string | null; name: string };
 }
 /** One record of the host document remote/invites, keyed by sha256(secret). */
 export type InviteRecord = ShortInvite | AdmissionRecord;

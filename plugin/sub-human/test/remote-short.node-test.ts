@@ -107,6 +107,7 @@ test('an invite over pipe: the host sees the line and the PIN apart; the line al
   assert.equal(lf0.invite, word);
   assert.equal(lf0.pin_wanted, undefined, 'the line alone is no PIN step: it knocks');
   assert.match(reason(typed), new RegExp(`Asked the host to let you in to room ${code} \\(their card shows check [0-9a-f]{4}-[0-9a-f]{4}\\)\\. If they gave you a PIN: /sub-human join PIN\\.`));
+  assert.match(reason(typed), /Once they do, type \/sub-human to join/, 'typed with no hooks module (classic): nothing takes the seat on its own, so it says the bare /sub-human');
   assert.equal(host.lib(() => admission.pending(code)).length, 1, 'the line alone asks the host\'s card');
   const knocked = must(host.lib(() => invites.findInvite(store.open(code), must(host.lib(() => admission.pending(code))[0]).from)), 'the invite').invite;
   assert.ok(knocked.short === true && knocked.tries === 5 && knocked.used_at, 'the knock used the invite, and spent no try');
@@ -117,11 +118,10 @@ test('an invite over pipe: the host sees the line and the PIN apart; the line al
   assert.equal(remote.lib(() => identityLib.resolveBySession(bob.sid)), null, 'no seat, and never a room of its own');
 
   // the right PIN, typed while the card waits, lets the machine in with no card: the command's own answer says it is linked
-  const linked = remote.join(bob, `join ${pin}`);
-  assert.ok(hiddenBlock(linked), linked.stderr);
-  assert.ok(!modelSees(linked).includes(pin), 'the PIN is in nothing the model or Remote Control get');
-  assert.ok(!reason(linked).includes(pin), 'and not echoed');
-  assert.match(reason(linked), new RegExp(`the host let you in to room ${code}: this session takes your seat as bob now`));
+  // (typed through the hooks module, which takes the seat itself: the answer says so)
+  const linked = remote.modJoin(bob, `join ${pin}`);
+  assert.ok(!linked.stdout.includes(pin) && !linked.stderr.includes(pin), 'the PIN is in nothing the model or Remote Control get, and not echoed');
+  assert.match(subHuman(linked).say, new RegExp(`the host let you in to room ${code}: this session takes your seat as bob now`));
   const lf = linkFile(remote, code);
   assert.equal('pin' in lf, false, 'the PIN left the link file once the host answered');
   assert.equal('pin_wanted' in lf, false);

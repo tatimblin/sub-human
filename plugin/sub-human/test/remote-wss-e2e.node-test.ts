@@ -100,7 +100,9 @@ async function webJoin({ remote, bob, code }: Rig, reason: string | undefined) {
 test('wss 1.1: the listener gives its key to a text request, refuses a handshake to another key, a room it does not serve, and plain HTTP; XK proves the link\'s own key', async t => {
   const R = await rig(t);
   const { port, host, alice, code } = R;
-  assert.ok(shortShown(must(host.join(alice, 'invite --web', { SUB_HUMAN_WEB_FRONT: `http://127.0.0.1:${port}` }).json?.reason)));
+  const shown = must(host.join(alice, 'invite --web', { SUB_HUMAN_WEB_FRONT: `http://127.0.0.1:${port}` }).json?.reason);
+  assert.ok(shortShown(shown));
+  assert.match(shown, /An older sub-human on their side takes the line with a space in place of the #\./, 'a joiner before the # form is told how to type it');
   const pinned = Buffer.from(host.lib(() => listener.hostKey()), 'base64url');
   assert.equal(fs.statSync(path.join(host.home, 'listen', 'host-x25519.json')).mode & 0o777, 0o600);
   const ss = spawnSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN'], { encoding: 'utf8' }).stdout;

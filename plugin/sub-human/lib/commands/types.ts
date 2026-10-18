@@ -49,6 +49,9 @@ export interface VerbCtx {
   pluginRoot: string;
   /** the hooks module seats the join the host let in to this room on its own (bare only; join.ts bare) */
   take?: RoomCode;
+  /** the hooks module ran this command (hooks/handlers/join.ts module): its tail says what the host answers and takes
+   * the seat once let in; classic (no module): a bare /sub-human does */
+  module?: boolean;
 }
 
 /** One verb: its words after the verb, and the context. */

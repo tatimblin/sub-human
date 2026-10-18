@@ -190,7 +190,7 @@ function joinWeb(r: string[], flags: { as?: string; home?: string }, ctx: VerbCt
   const loc = wsT().locator(spec, scheme === 'https');
   const transport = loc && linkConnect.transportOf(loc);
   if (!transport) return refused(BAD);
-  return then(joining.linkLine({ name: n.name, code, word: w.word, transport, sid: ctx.sid, ...p }), ctx);
+  return then(joining.linkLine({ name: n.name, code, word: w.word, transport, sid: ctx.sid, module: ctx.module === true, ...p }), ctx);
 }
 
 export const join: Verb = (argv, ctx) => {
@@ -203,7 +203,7 @@ export const join: Verb = (argv, ctx) => {
   if (/^https?:\/\//.test(r[0] || '')) return joinWeb(r, p.flags, ctx);
   if (r.length === 1 && invites.isShortPin(r[0])) { // `/sub-human join 4829`: the PIN an invite line's host asked for
     if (home !== undefined || p.flags.as !== undefined) return refused('the PIN goes alone: /sub-human join PIN (the name went with the line)');
-    return then(joining.givePin(r[0], ctx.sid), ctx);
+    return then(joining.givePin(r[0], ctx.sid, ctx.module === true), ctx);
   }
   if (r.length === 1 && identity.isRoomCode(r[0])) { // `/sub-human join vole-8126`: that room on this machine
     if (home !== undefined) return refused(`--home goes with the other machine's address: /sub-human join HOST ${r[0]}`);
@@ -225,7 +225,7 @@ export const join: Verb = (argv, ctx) => {
     if (local) {
       if (home !== undefined) return refused('--home goes with an ssh address');
       const transport = linkConnect.transportOf(dest.startsWith('/') ? `pipe:${dest}` : dest);
-      return transport ? then(joining.linkLine({ name: n.name, code, word: w.word, transport, sid: ctx.sid, ...pin }), ctx) : refused(`"${dest}" isn't a sub-human folder on this machine`);
+      return transport ? then(joining.linkLine({ name: n.name, code, word: w.word, transport, sid: ctx.sid, module: ctx.module === true, ...pin }), ctx) : refused(`"${dest}" isn't a sub-human folder on this machine`);
     }
     if (sshT().placeholder(dest)) return refused(YOU_HINT(dest));
     const full = sshT().withUser(dest);
@@ -234,7 +234,7 @@ export const join: Verb = (argv, ctx) => {
     // a jump host is the person's ~/.ssh/config's (ProxyJump on an alias), which ssh reads
     const transport = sshT().loginSpec(full, home !== undefined ? { home } : {});
     if (!transport) return refused(`--home "${home}" isn't a plain absolute path (the sub-human folder on that machine, e.g. /home/you/.sub-human).`);
-    return then(joining.linkLine({ name: n.name, code, word: w.word, transport, sid: ctx.sid, ...pin }), ctx);
+    return then(joining.linkLine({ name: n.name, code, word: w.word, transport, sid: ctx.sid, module: ctx.module === true, ...pin }), ctx);
   }
   // no SECRET: over the person's own ssh login (a second home on this machine has none: the line lost its SECRET)
   if (local) return refused(joining.noSecret(dest, code));
