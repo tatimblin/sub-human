@@ -25,6 +25,17 @@ export type SubHumanHello = {
   /** This session started a join with a PIN that waits for the host's card (a link file's join_sid): its tail says
    * when the host let it in, so the module starts one though the session has no seat. */
   pending?: boolean;
+  /** The Claude Code this session runs on, as this machine checked it (lib/cc/verdict.ts); absent: not known. */
+  cc?: SubHumanCc;
+};
+
+/** A Claude Code version's verdict, as hooks/handlers/mod-hello.ts read it (mod/core/cc.ts parseCc). */
+export type SubHumanCc = {
+  version: string;
+  /** Every internal sub-human relies on checked out on it; null: not checked yet (a check runs in the background). */
+  verified: boolean | null;
+  /** The features that run their fallback on it (mod/core/cc.ts GATED), SUB_HUMAN_CC_OFF's included. */
+  off: ('room-session' | 'tasks' | 'plan-edit' | 'sign-off')[];
 };
 
 declare module 'claude-code' {

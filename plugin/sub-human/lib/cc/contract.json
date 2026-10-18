@@ -6,6 +6,7 @@
    "id": "hook-exit2-blocks",
    "section": 1,
    "stability": "API",
+   "feature": "core",
    "since": "2.1.281",
    "search": [
     "\"No stderr output\""
@@ -19,6 +20,7 @@
    "id": "hook-json-block",
    "section": 1,
    "stability": "API",
+   "feature": "core",
    "since": "2.1.281",
    "search": [
     "Valid types are: approve, block"
@@ -32,6 +34,7 @@
    "id": "env-child-session",
    "section": 2,
    "stability": "env",
+   "feature": "core",
    "since": "2.1.281",
    "search": [
     "CLAUDE_CODE_CHILD_SESSION:\"1\",CLAUDE_CODE_SESSION_ATTENDED",
@@ -43,6 +46,7 @@
    "id": "env-mcp-session",
    "section": 2,
    "stability": "env",
+   "feature": "core",
    "since": "2.1.281",
    "search": [
     "CLAUDE_CODE_CHROME_MCP_ORG_DENIED:\"1\""
@@ -56,6 +60,7 @@
    "id": "env-plugin-mcp",
    "section": 2,
    "stability": "env",
+   "feature": "core",
    "since": "2.1.281",
    "search": [
     ".path,CLAUDE_PLUGIN_DATA:"
@@ -69,6 +74,7 @@
    "id": "env-clear-session-id",
    "section": 2,
    "stability": "incidental",
+   "feature": "core",
    "since": "2.1.281",
    "search": [
     "conversation_reset\",newConversationId"
@@ -79,6 +85,7 @@
    "id": "env-nested-strip",
    "section": 2,
    "stability": "incidental",
+   "feature": "core",
    "since": "2.1.281",
    "search": [
     "CLAUDECODE,delete "
@@ -92,6 +99,7 @@
    "id": "hook-input-common",
    "section": 2,
    "stability": "API",
+   "feature": "core",
    "since": "2.1.281",
    "search": [
     "Subagent identifier. Present only when the hook fires from within a subagent"
@@ -102,6 +110,7 @@
    "id": "mcp-stdio-ppid",
    "section": 2,
    "stability": "incidental",
+   "feature": "core",
    "since": "2.1.292",
    "search": [
     "stdio:[\"pipe\",\"pipe\",this._serverParams.stderr??\"inherit\"],shell:!1",
@@ -116,6 +125,7 @@
    "id": "mcp-failure-cache",
    "section": 2,
    "stability": "incidental",
+   "feature": "core",
    "since": "2.1.296",
    "search": [
     "Skipping connection (recent failure cached; retries automatically in 15 min, or edit the plugin config to retry now)",
@@ -131,6 +141,7 @@
    "id": "mcp-progress-resets-idle-timeout",
    "section": 2,
    "stability": "incidental",
+   "feature": "rows",
    "since": "2.1.292",
    "search": [
     "aborting: no response or progress notification for ",
@@ -146,6 +157,7 @@
    "id": "mcp-server-shared-by-subagents",
    "section": 2,
    "stability": "incidental",
+   "feature": "rows",
    "since": "2.1.292",
    "search": [
     "Skipping frontmatter MCP servers: blocked by "
@@ -160,6 +172,7 @@
    "id": "plan-mode-attachment",
    "section": 3,
    "stability": "incidental",
+   "feature": "sign-off",
    "since": "2.1.281",
    "search": [
     "type:\"plan_mode\",reminderType:"
@@ -173,6 +186,7 @@
    "id": "module-plan-mode-detail",
    "section": 10,
    "stability": "API",
+   "feature": "plan-edit",
    "since": "2.1.296",
    "search": [
     "\"plan_mode_reentry\""
@@ -186,6 +200,7 @@
    "id": "exitplan-permission-setmode",
    "section": 3,
    "stability": "API",
+   "feature": "sign-off",
    "since": "2.1.296",
    "search": [
     "case\"setMode\":",
@@ -197,6 +212,7 @@
    "id": "pretool-deny-context",
    "section": 1,
    "stability": "API",
+   "feature": "plan-edit",
    "since": "2.1.296",
    "search": [
     "yield{type:\"additionalContext\""
@@ -210,6 +226,7 @@
    "id": "exitplan-empty-plan",
    "section": 3,
    "stability": "incidental",
+   "feature": "sign-off",
    "since": "2.1.296",
    "search": [
     "User has approved exiting plan mode. You can now proceed.",
@@ -225,6 +242,7 @@
    "id": "enterplan-in-plan-mode",
    "section": 3,
    "stability": "incidental",
+   "feature": "sign-off",
    "since": "2.1.296",
    "search": [
     "Only the main session can enter plan mode."
@@ -238,6 +256,7 @@
    "id": "exitplan-normalize",
    "section": 3,
    "stability": "API",
+   "feature": "sign-off",
    "since": "2.1.281",
    "search": [
     "The plan content (injected by normalizeToolInput from disk)"
@@ -248,6 +267,7 @@
    "id": "exitplan-strip",
    "section": 3,
    "stability": "incidental",
+   "feature": "sign-off",
    "since": "2.1.281",
    "search": [
     ",new Set([\"plan\",\"planFilePath\"])]])"
@@ -258,6 +278,7 @@
    "id": "exitplan-output",
    "section": 3,
    "stability": "API",
+   "feature": "sign-off",
    "since": "2.1.281",
    "search": [
     "The file path where the plan was saved"
@@ -268,6 +289,7 @@
    "id": "plan-reject-dialog",
    "section": 3,
    "stability": "incidental",
+   "feature": "sign-off",
    "since": "2.1.281",
    "search": [
     "\"(See attached image)\""
@@ -281,6 +303,7 @@
    "id": "plan-reject-user-feedback",
    "section": 3,
    "stability": "incidental",
+   "feature": "sign-off",
    "since": "2.1.281",
    "search": [
     "?.feedbackIsFromUser&&"
@@ -295,6 +318,7 @@
    "id": "plan-reject-text",
    "section": 3,
    "stability": "incidental",
+   "feature": "sign-off",
    "since": "2.1.281",
    "search": [
     "To tell you how to proceed, the user said:\n",
@@ -306,6 +330,7 @@
    "id": "permission-denied-auto-only",
    "section": 3,
    "stability": "incidental",
+   "feature": "sign-off",
    "since": "2.1.281",
    "search": [
     "decisionReason.classifier===\"auto-mode\""
@@ -316,6 +341,7 @@
    "id": "clear-context-setting",
    "section": 3,
    "stability": "API",
+   "feature": "sign-off",
    "since": "2.1.281",
    "search": [
     "When true, the plan-approval dialog offers a \"clear context\" option. Defaults to false."
@@ -326,6 +352,7 @@
    "id": "task-list-id",
    "section": 4,
    "stability": "env",
+   "feature": "tasks",
    "since": "2.1.281",
    "search": [
     "CLAUDE_CODE_TASK_LIST_ID)return "
@@ -339,6 +366,7 @@
    "id": "task-path",
    "section": 4,
    "stability": "incidental",
+   "feature": "tasks",
    "since": "2.1.281",
    "search": [
     "return e.replace(/[^a-zA-Z0-9_-]/g,\"-\")}"
@@ -352,6 +380,7 @@
    "id": "config-dir",
    "section": 4,
    "stability": "env",
+   "feature": "core",
    "since": "2.1.281",
    "search": [
     "new Set([\"CLAUDE_CONFIG_DIR\",\"CLAUDE_INTERNAL_FC_OVERRIDES\","
@@ -362,6 +391,7 @@
    "id": "task-store-v5-off",
    "section": 4,
    "stability": "env",
+   "feature": "tasks",
    "since": "2.1.281",
    "search": [
     "where the v5 storage backend was built at start-up"
@@ -372,6 +402,7 @@
    "id": "task-file-schema",
    "section": 4,
    "stability": "incidental",
+   "feature": "tasks",
    "since": "2.1.296",
    "search": [
     "\".highwatermark\""
@@ -385,6 +416,7 @@
    "id": "task-highwatermark",
    "section": 4,
    "stability": "incidental",
+   "feature": "tasks",
    "since": "2.1.296",
    "search": [
     "[Tasks] raiseTaskIdMark",
@@ -399,6 +431,7 @@
    "id": "task-lockfile",
    "section": 4,
    "stability": "incidental",
+   "feature": "tasks",
    "since": "2.1.296",
    "search": [
     "{retries:{retries:30,minTimeout:5,maxTimeout:100}",
@@ -415,6 +448,7 @@
    "id": "task-list-auto-reset",
    "section": 4,
    "stability": "incidental",
+   "feature": "tasks",
    "since": "2.1.296",
    "search": [
     "[Tasks] resetTaskList",
@@ -427,6 +461,7 @@
    "id": "task-ui-watch",
    "section": 4,
    "stability": "incidental",
+   "feature": "tasks",
    "since": "2.1.296",
    "search": [
     "Task list watcher error: ",
@@ -441,6 +476,7 @@
    "id": "todo-tools-gate",
    "section": 4,
    "stability": "env",
+   "feature": "tasks",
    "since": "2.1.281",
    "search": [
     ".CLAUDE_CODE_ENABLE_TODO_TOOLS===!0"
@@ -451,6 +487,7 @@
    "id": "bg-dispatch-line",
    "section": 5,
    "stability": "incidental",
+   "feature": "room-session",
    "since": "2.1.281",
    "search": [
     "backgrounded \\xB7 "
@@ -461,6 +498,7 @@
    "id": "agents-json",
    "section": 5,
    "stability": "API",
+   "feature": "room-session",
    "since": "2.1.281",
    "search": [
     "isAgentsJsonInvocation",
@@ -472,6 +510,7 @@
    "id": "bg-stop",
    "section": 5,
    "stability": "API",
+   "feature": "room-session",
    "since": "2.1.281",
    "search": [
     "Stop a background session. Its conversation is kept"
@@ -482,6 +521,7 @@
    "id": "bg-logs",
    "section": 5,
    "stability": "API",
+   "feature": "room-session",
    "since": "2.1.281",
    "search": [
     "Print the background session's recent terminal output."
@@ -492,6 +532,7 @@
    "id": "daemon-env-filter",
    "section": 5,
    "stability": "env",
+   "feature": "room-session",
    "since": "2.1.281",
    "search": [
     "daemon_bg_dispatch_ingest"
@@ -505,6 +546,7 @@
    "id": "daemon-env-allowlist",
    "section": 5,
    "stability": "env",
+   "feature": "room-session",
    "since": "2.1.281",
    "search": [
     "new Set([\"CLAUDE_CONFIG_DIR\",\"CLAUDE_INTERNAL_FC_OVERRIDES\",",
@@ -662,6 +704,7 @@
    "id": "daemon-status",
    "section": 5,
    "stability": "incidental",
+   "feature": "room-session",
    "since": "2.1.296",
    "search": [
     "Show daemon pid, version, uptime",
@@ -674,6 +717,7 @@
    "id": "daemon-upgrade-exit",
    "section": 5,
    "stability": "incidental",
+   "feature": "room-session",
    "since": "2.1.296",
    "search": [
     "exiting for upgrade",
@@ -685,6 +729,7 @@
    "id": "bg-worker-env",
    "section": 5,
    "stability": "incidental",
+   "feature": "room-session",
    "since": "2.1.281",
    "search": [
     "CLAUDE_CODE_SESSION_KIND:\"bg\",CLAUDE_BG_BACKEND:\"daemon\",FORCE_COLOR"
@@ -695,6 +740,7 @@
    "id": "bg-provider-env",
    "section": 5,
    "stability": "incidental",
+   "feature": "room-session",
    "since": "2.1.281",
    "search": [
     "ignored these saved environment entries in the job's state.json",
@@ -706,6 +752,7 @@
    "id": "matcher-rule",
    "section": 7,
    "stability": "API",
+   "feature": "core",
    "since": "2.1.281",
    "search": [
     "Invalid regex pattern in hook matcher",
@@ -717,6 +764,7 @@
    "id": "hook-if",
    "section": 7,
    "stability": "API",
+   "feature": "core",
    "since": "2.1.281",
    "search": [
     "Permission rule syntax to filter when this hook runs (e.g., \"Bash(git *)\")"
@@ -727,6 +775,7 @@
    "id": "stop-additional-context",
    "section": 7,
    "stability": "incidental",
+   "feature": "sign-off",
    "since": "2.1.281",
    "search": [
     "{type:\"hook_additional_context\",content:"
@@ -741,6 +790,7 @@
    "id": "prompt-origin-composer",
    "section": 8,
    "stability": "incidental",
+   "feature": "delivery",
    "since": "2.1.292",
    "search": [
     "{kind:\"bridge\"}:{kind:\"composer\"}"
@@ -754,6 +804,7 @@
    "id": "transcript-prompt-origin",
    "section": 8,
    "stability": "incidental",
+   "feature": "delivery",
    "since": "2.1.292",
    "search": [
     "{kind:\"human\"}",
@@ -765,6 +816,7 @@
    "id": "plugin-prompt-frame",
    "section": 8,
    "stability": "incidental",
+   "feature": "delivery",
    "since": "2.1.292",
    "search": [
     "This is how Claude Code surfaces a prompt a plugin submits between ",
@@ -779,6 +831,7 @@
    "id": "cross-session-inbound",
    "section": 8,
    "stability": "API",
+   "feature": "room-session",
    "since": "2.1.281",
    "search": [
     "Inbound cross-session peer messages (SendMessage from your other sessions)"
@@ -789,6 +842,7 @@
    "id": "cross-session-refuse-notice",
    "section": 8,
    "stability": "incidental",
+   "feature": "room-session",
    "since": "2.1.296",
    "search": [
     "is not accepting cross-session messages"
@@ -799,6 +853,7 @@
    "id": "harbor-kite-gate",
    "section": 8,
    "stability": "env",
+   "feature": "addressing",
    "since": "2.1.281",
    "search": [
     "\"tengu_harbor_kite\",!0)"
@@ -812,6 +867,7 @@
    "id": "pasted-content",
    "section": 8,
    "stability": "incidental",
+   "feature": "delivery",
    "since": "2.1.281",
    "search": [
     "<pasted_content id=\"",
@@ -823,6 +879,7 @@
    "id": "session-title-address",
    "section": 8,
    "stability": "incidental",
+   "feature": "addressing",
    "since": "2.1.292",
    "search": [
     "Hook sessionTitle applied (",
@@ -842,6 +899,7 @@
    "id": "session-fork-continued-in",
    "section": 8,
    "stability": "incidental",
+   "feature": "fork",
    "since": "2.1.296",
    "search": [
     "?\"fork\":\"resume\"",
@@ -855,6 +913,7 @@
    "id": "transcript-custom-title",
    "section": 8,
    "stability": "incidental",
+   "feature": "fork",
    "since": "2.1.296",
    "search": [
     "\"type\":\"custom-title\"",
@@ -866,6 +925,7 @@
    "id": "transcript-home-notice",
    "section": 8,
    "stability": "incidental",
+   "feature": "fork",
    "since": "2.1.296",
    "search": [
     "\"a notice that is not one text block\""
@@ -880,6 +940,7 @@
    "id": "subagent-handback-message",
    "section": 8,
    "stability": "incidental",
+   "feature": "rows",
    "since": "2.1.296",
    "search": [
     "[Subagent hand-back] The text below is the final report of a subagent this session delegated to.",
@@ -892,6 +953,7 @@
    "id": "plugin-settings-allowlist",
    "section": 9,
    "stability": "API",
+   "feature": "statusline",
    "since": "2.1.281",
    "search": [
     "=[\"agent\",\"subagentStatusLine\"];",
@@ -904,6 +966,7 @@
    "id": "subagent-statusline-precedence",
    "section": 9,
    "stability": "incidental",
+   "feature": "statusline",
    "since": "2.1.281",
    "search": [
     "settings_load_started"
@@ -917,6 +980,7 @@
    "id": "subagent-statusline-raw",
    "section": 9,
    "stability": "incidental",
+   "feature": "statusline",
    "since": "2.1.281",
    "search": [
     "Skipping subagentStatusLine execution - workspace trust not accepted"
@@ -927,6 +991,7 @@
    "id": "hook-events",
    "section": 10,
    "stability": "API",
+   "feature": "core",
    "since": "2.1.281",
    "search": [
     "\"Setup\",\"TeammateIdle\",\"TaskCreated\",\"TaskCompleted\",\"Elicitation\""
@@ -937,6 +1002,7 @@
    "id": "hooks-modules",
    "section": 10,
    "stability": "env",
+   "feature": "core",
    "since": "2.1.281",
    "search": [
     "\"tengu_plugin_hooks_modules\"",
@@ -950,6 +1016,7 @@
    "id": "hooks-json-modules",
    "section": 10,
    "stability": "API",
+   "feature": "core",
    "since": "2.1.292",
    "search": [
     "or `modules` (hooks modules), or both",
@@ -962,6 +1029,7 @@
    "id": "module-dollar-local",
    "section": 10,
    "stability": "incidental",
+   "feature": "core",
    "since": "2.1.292",
    "search": [
     "$ is passed to something other than a named function,",
@@ -973,6 +1041,7 @@
    "id": "module-event-once",
    "section": 10,
    "stability": "incidental",
+   "feature": "core",
    "since": "2.1.292",
    "search": [
     "\" without a matcher\""
@@ -986,6 +1055,7 @@
    "id": "modules-headless",
    "section": 10,
    "stability": "env",
+   "feature": "core",
    "since": "2.1.292",
    "search": [
     "in a tool server's daemon"
@@ -999,6 +1069,7 @@
    "id": "classic-chain-order",
    "section": 10,
    "stability": "incidental",
+   "feature": "core",
    "since": "2.1.292",
    "search": [
     "function-hook chain`",
@@ -1015,6 +1086,7 @@
    "id": "prompt-submit-ups-order",
    "section": 10,
    "stability": "incidental",
+   "feature": "delivery",
    "since": "2.1.292",
    "search": [
     "the prompt was removed from the queue before it ran"
@@ -1028,6 +1100,7 @@
    "id": "usermessage-draw-only",
    "section": 10,
    "stability": "incidental",
+   "feature": "cosmetic",
    "since": "2.1.292",
    "search": [
     "[\"origin\",\"isExpanded\",\"task\",\"from\"]"
@@ -1041,6 +1114,7 @@
    "id": "render-own-prompt-reentry",
    "section": 10,
    "stability": "incidental",
+   "feature": "delivery",
    "since": "2.1.296",
    "search": [
     "Prompt from the ",
@@ -1058,6 +1132,7 @@
    "id": "plugin-types-state",
    "section": 10,
    "stability": "incidental",
+   "feature": "core",
    "since": "2.1.292",
    "search": [
     "must name it in interface PluginState {",
@@ -1069,6 +1144,7 @@
    "id": "session-append-note",
    "section": 10,
    "stability": "incidental",
+   "feature": "delivery",
    "since": "2.1.292",
    "search": [
     "door:\"note\",origin:{kind:\"plugin\",name:",
@@ -1080,6 +1156,7 @@
    "id": "session-append-notice-hidden",
    "section": 10,
    "stability": "incidental",
+   "feature": "fork",
    "since": "2.1.292",
    "search": [
     "\"a notice that is not one text block\"",
@@ -1094,6 +1171,7 @@
    "id": "ui-log-notice",
    "section": 10,
    "stability": "incidental",
+   "feature": "cosmetic",
    "since": "2.1.292",
    "search": [
     "$.ui.log (to debug): "
@@ -1107,6 +1185,7 @@
    "id": "command-run-every-command",
    "section": 10,
    "stability": "incidental",
+   "feature": "cosmetic",
    "since": "2.1.292",
    "search": [
     "a hook's own answer after next() dropped"
@@ -1120,6 +1199,7 @@
    "id": "command-run-empty-answer",
    "section": 10,
    "stability": "incidental",
+   "feature": "cosmetic",
    "since": "2.1.292",
    "search": [
     "but no command.run hook answered it"
@@ -1134,6 +1214,7 @@
    "id": "rename-command",
    "section": 10,
    "stability": "incidental",
+   "feature": "addressing",
    "since": "2.1.296",
    "search": [
     "name:\"rename\",aliases:[\"name\"],supportsNonInteractive:!0",
@@ -1145,6 +1226,7 @@
    "id": "expansion-block-frame",
    "section": 10,
    "stability": "incidental",
+   "feature": "cosmetic",
    "since": "2.1.292",
    "search": [
     "UserPromptExpansion operation blocked by hook:",
@@ -1159,6 +1241,7 @@
    "id": "ups-stop-frame",
    "section": 10,
    "stability": "incidental",
+   "feature": "delivery",
    "since": "2.1.292",
    "search": [
     "Operation stopped by hook",
@@ -1174,6 +1257,7 @@
    "id": "session-append-notice-rewrite",
    "section": 10,
    "stability": "incidental",
+   "feature": "cosmetic",
    "since": "2.1.292",
    "search": [
     "session.append: a rewrite of row"
@@ -1196,6 +1280,7 @@
    "id": "modules-switch-cache",
    "section": 10,
    "stability": "incidental",
+   "feature": "core",
    "since": "2.1.292",
    "search": [
     "cachedGrowthBookFeatures",
@@ -1207,6 +1292,7 @@
    "id": "fs-write-plain",
    "section": 10,
    "stability": "incidental",
+   "feature": "core",
    "since": "2.1.292",
    "search": [
     "$.fs.write ("
@@ -1220,6 +1306,7 @@
    "id": "process-run-stdin",
    "section": 10,
    "stability": "API",
+   "feature": "core",
    "since": "2.1.292",
    "search": [
     "toolCgroupClass:\"plugin\""
@@ -1234,6 +1321,7 @@
    "id": "plugin-test-discovery",
    "section": 10,
    "stability": "incidental",
+   "feature": "test",
    "since": "2.1.292",
    "search": [
     ".isFile()&&/\\.test\\.tsx?$/.test(",
@@ -1245,6 +1333,7 @@
    "id": "plugin-test-off",
    "section": 10,
    "stability": "env",
+   "feature": "test",
    "since": "2.1.292",
    "search": [
     "hooks modules are turned off here (disableAllHooks, allowManagedHooksOnly or a policy)",

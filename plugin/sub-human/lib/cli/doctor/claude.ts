@@ -3,8 +3,10 @@
  *
  *   claudeVersion(env) -> string | null   `claude --version`
  *   checkClaude({version, quick, env}) -> {check, probe?}   claude: the version against cc.MIN_VERSION and
- *       cc.PROBED_VERSION; when it differs from the probed one, unless --quick, the internals probe (lib/cc/contract.ts
- *       probe, ~3 s); an internal reported changed on that version (CONTRACT degraded) is named in the detail.
+ *       cc.PROBED_VERSION; when it differs from the probed one, this machine's verdict for it (lib/cc/verdict.ts read,
+ *       also with --quick: the internals that failed and the features that fall back), else, unless --quick, the
+ *       internals probe (lib/cc/contract.ts probe, ~3 s), kept as the verdict; an internal reported changed on that
+ *       version (CONTRACT degraded) is named in the detail.
  *       Info "probe could not run" (no probe in the report) when the binary found has no VERSION marker (a launcher), is
  *       another version than `claude --version`, or lacks every internal
  *   checkDaemon({version, status?, exe?}) -> Check   the bg daemon (`claude daemon status`, also with --quick): its
@@ -25,6 +27,8 @@ import type { Check, Report } from '../types.ts';
 import { msgOf } from '../../errors.ts';
 import type { RoomCode } from '../../brand.ts';
 import type * as BgMod from '../../cc/bg.ts';
+import type * as VerdictMod from '../../cc/verdict.ts';
+import { FALLBACK } from '../../../mod/core/cc.ts';
 
 /** A Claude Code settings file, as the hooks check reads it. */
 interface Settings {
@@ -52,8 +56,11 @@ function checkClaude({ version, quick, env }: { version: string | null; quick: b
   const deg = cc.degradedOn(version);
   const degraded = deg.length ? `; reported changed on this version: ${deg.map(d => d.issue ? `${d.id} (#${d.issue})` : d.id).join(', ')}` : '';
   if (same) return { check: check({ id: 'claude', status: 'pass', title: 'Claude Code', detail: `${version}, the version its internals were checked on${degraded}` }) };
+  // this machine's verdict for the version (lib/cc/verdict.ts: a hello's background check, or an earlier doctor's)
+  const kept = lib('cc/verdict.ts').read(version);
+  if (kept) return fromVerdict(kept, degraded);
   if (quick) {
-    return { check: check({ id: 'claude', status: 'info', title: 'Claude Code', detail: `${version}; internals last checked on ${cc.PROBED_VERSION} (run without --quick to check them)${degraded}` }) };
+    return { check: check({ id: 'claude', status: 'info', title: 'Claude Code', detail: `${version}; internals last checked on ${cc.PROBED_VERSION}, not yet on this machine (run without --quick to check them)${degraded}` }) };
   }
   const bin = cc.locateBinary({ env });
   if (!bin) return { check: check({ id: 'claude', status: 'info', title: 'Claude Code', detail: `${version}; the binary was not found to check its internals` }) };
@@ -70,11 +77,31 @@ function checkClaude({ version, quick, env }: { version: string | null; quick: b
   const missing = results.filter(r => !r.ok).map(r => r.id);
   // every entry missing is a probe that read the wrong thing, not every internal changed at once
   if (missing.length === results.length) return cannot(`none of the ${results.length} internals was found in ${tilde(bin)}; set CLAUDE_BIN to the Claude Code binary`);
+  let v: VerdictMod.Verdict | null = null;
+  try { v = lib('cc/verdict.ts').record(version, missing); } catch { /* not kept: the report below stands */ }
+  if (v) return fromVerdict(v, degraded);
   if (!missing.length) return { check: check({ id: 'claude', status: 'pass', title: 'Claude Code', detail: `${version}; all ${results.length} internals sub-human relies on are present${degraded}` }), probe: { total: results.length, missing } };
   return {
-    check: check({ id: 'claude', status: 'warn', title: 'Claude Code', detail: `${version}; ${missing.length} of ${results.length} internals changed since ${cc.PROBED_VERSION}: ${missing.join(', ')}${degraded}`, fix: `update sub-human (/plugin update sub-human); if it persists, report it with ${cli('doctor --bundle')}` }),
+    check: check({ id: 'claude', status: 'warn', title: 'Claude Code', detail: `${version}; ${missing.length} of ${results.length} internals changed since ${cc.PROBED_VERSION}: ${missing.join(', ')}${degraded}`, fix: claudeFix() }),
     probe: { total: results.length, missing },
   };
+}
+
+const claudeFix = (): string => `update sub-human (/plugin update sub-human); if it persists, report it with ${cli('doctor --bundle')}`;
+
+/** The claude check from a version's verdict: the entries the probe did not find (those reported changed are in
+ * degraded already) and the features that run their fallback on it. */
+function fromVerdict(v: VerdictMod.Verdict, degraded: string): { check: Check; probe: Report['probe'] } {
+  const cc = lib('cc/contract.ts');
+  const total = cc.CONTRACT.length;
+  const reported = new Set(cc.degradedOn(v.version).map(d => d.id));
+  const changed = v.failed.filter(id => !reported.has(id));
+  const when = v.probedAt.slice(0, 10);
+  const probe = { total, missing: changed };
+  if (!v.failed.length) return { check: check({ id: 'claude', status: 'pass', title: 'Claude Code', detail: `${v.version}; all ${total} internals sub-human relies on are present (checked here ${when})` }), probe };
+  const what = changed.length ? `${changed.length} of ${total} internals changed since ${cc.PROBED_VERSION} (checked here ${when}): ${changed.join(', ')}` : `checked here ${when}`;
+  const fallbacks = v.off.length ? `; falls back: ${v.off.map(f => FALLBACK[f]).join(', ')}` : '; no feature falls back (the changes are in plumbing or drawing, which may misbehave)';
+  return { check: check({ id: 'claude', status: 'warn', title: 'Claude Code', detail: `${v.version}; ${what}${degraded}${fallbacks}`, fix: claudeFix() }), probe };
 }
 
 function settingsFiles(env: NodeJS.ProcessEnv): Settings[] {

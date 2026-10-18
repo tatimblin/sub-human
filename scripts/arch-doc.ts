@@ -10,7 +10,7 @@
  *   hooks        hooks/hooks.json: event, matcher, script, timeout, async
  *   mod-hooks    the hooks module's function hooks: mod/register.ts HOOKS (event, matcher, file, what it does)
  *   mcp-tools    the room MCP server's tools/list (spawned for real, so plug-ins are included)
- *   cc-contract  lib/cc/contract.json: id, internals-doc section, stability, the versions it was checked on, note
+ *   cc-contract  lib/cc/contract.json: id, internals-doc section, stability, feature, the versions it was checked on, note
  *                (and a version it was reported to change on)
  *   lib-modules  lib/**.ts (and lib's .js): each module's header comment, first sentence
  *
@@ -30,7 +30,7 @@ interface ListedTool { name: string, description: string, annotations?: { readOn
 /** lib/cc/contract.json, as far as this reads it. */
 interface ContractJson {
   probed: string;
-  entries: { id: string, section: string, stability: string, since: string, note: string, degraded?: { from: string, issue?: number, note: string }[] }[];
+  entries: { id: string, section: string, stability: string, feature: string, since: string, note: string, degraded?: { from: string, issue?: number, note: string }[] }[];
 }
 /** The generated sections, by marker name. */
 export type Sections = Record<string, string>;
@@ -131,8 +131,8 @@ async function mcpSection(): Promise<string> {
 function ccSection(): string {
   const { probed, entries } = parseJson<ContractJson>(fs.readFileSync(path.join(PLUGIN, 'lib', 'cc', 'contract.json'), 'utf8'));
   const degraded = (c: ContractJson['entries'][number]): string => (c.degraded || []).map(d => ` **Reported changed from ${d.from}${d.issue ? ` (#${d.issue})` : ''}:** ${d.note}`).join('');
-  const rows = entries.map(c => [code(c.id), `§${c.section}`, c.stability, `${c.since}–${probed}`, cell(c.note + degraded(c))]);
-  return table(['Id', '§', 'Stability', 'Checked on', 'Note'], rows);
+  const rows = entries.map(c => [code(c.id), `§${c.section}`, c.stability, c.feature, `${c.since}–${probed}`, cell(c.note + degraded(c))]);
+  return table(['Id', '§', 'Stability', 'Feature', 'Checked on', 'Note'], rows);
 }
 
 // ---------- lib modules ----------

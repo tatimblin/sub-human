@@ -20,6 +20,7 @@ import type * as IoMod from '../../io.ts';
 import type * as ContractMod from '../../cc/contract.ts';
 import type * as EnvMod from '../../cc/env.ts';
 import type * as BgMod from '../../cc/bg.ts';
+import type * as VerdictMod from '../../cc/verdict.ts';
 import type * as ConfigMod from '../../config.ts';
 import type * as LibEnvMod from '../../env.ts';
 import type * as IdentityMod from '../../identity.ts';
@@ -48,6 +49,7 @@ interface Libs {
   'cc/contract.ts': typeof ContractMod;
   'cc/env.ts': typeof EnvMod;
   'cc/bg.ts': typeof BgMod;
+  'cc/verdict.ts': typeof VerdictMod;
   'config.ts': typeof ConfigMod;
   'env.ts': typeof LibEnvMod;
   'identity.ts': typeof IdentityMod;
