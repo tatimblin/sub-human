@@ -25,7 +25,7 @@ export const CHAT_LINES_MAX = 20;
  * CHAT_NEST (CHAT_BLANK). */
 export const PEER_LINES_MAX = 400;
 /** A blank line inside a message, drawn so it still reads as part of it. */
-export const CHAT_BLANK = CHAT_NEST.trimEnd();
+export const CHAT_BLANK: string = CHAT_NEST.trimEnd();
 /** A message's lines for drawing: trailing space cut; blank lines dropped (keep: false) or kept as '' with the runs
  * at either end cut and any run inside cut to one. */
 export function messageLines(text: string, keep: boolean): string[] {
@@ -43,7 +43,7 @@ export const FOR_CLAUDE = '(for Claude)';
  * rides as a context block of its own beside the person's next prompt (mod/prompt.ts), never as a user row of its own
  * (stage 8e B), so no end line is needed. PULL_END_OLD: an older tail's end line, dropped where it is read. */
 export const PULL_HEAD = 'room since your last turn (FYI):';
-export const PULL_END_OLD = /^end of room context; /;
+export const PULL_END_OLD: RegExp = /^end of room context; /;
 /** The room context's size, in characters. */
 export const PULL_CAP = 1500;
 /** The room context's note of lines left out under PULL_CAP. */
