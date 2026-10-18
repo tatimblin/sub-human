@@ -802,6 +802,9 @@ test('SECURITY through the module: an invite and anything a PIN may be typed in 
   assert.doesNotMatch(must(must(inv.pinned).cut), new RegExp(`[0-9a-z]{39}|PIN ${pin}|\\b${pin}\\b(?!.*${w.code})`));
   assert.match(must(must(inv.pinned).ref), /^[0-9a-f]{12}$/);
   assert.ok(must(inv.say).includes(must(must(inv.pinned).ref)), 'the notices name the ref --cancel takes');
+  // PLAN-JOIN step 5: the line alone for the module's copy card, the status less its PIN; never the PIN itself
+  assert.equal(`PIN ${pin} · ${must(must(inv.pinned).line)}`, must(inv.pinned).status);
+  assert.ok(!must(must(inv.pinned).line).split(/\s+/).includes(must(pin)));
   for (const args of ['join dev vole-1234 48291', `join dev vole-1234 ${SECRET} --frob`, `x ${w.code} 4829`, `x ${SECRET}`, 'join 4829', 'admit']) {
     const r = must(must(viaModule(w, 'me', args).json).subHuman);
     assert.equal(r.shareable, false, args);

@@ -17,6 +17,7 @@
  */
 import type { JoinPayload, JoinReply, HookJson, HookJsonSpecific, Loose, OriginLike, PinnedStatus, RunOutput, SubHumanRead } from './types.ts';
 import type { PinnedReport } from '../../hooks/types.ts';
+import { copyLine } from './copy.ts';
 
 /** The command as command.run names it (a plugin skill's name, or its bare form). */
 export const COMMANDS: readonly string[] = Object.freeze(['sub-human:sub-human', 'sub-human']);
@@ -159,10 +160,12 @@ export function readReply(run: RunOutput | null | undefined, { ms = null, error 
   const one = (s: unknown) => (typeof s === 'string' && s ? s.replace(/\n/g, ' ') : null);
   const status = p && one(p.status);
   const short = p && one(p.short);
+  const line = p && copyLine(p.line); // the copy card's line: never one with a PIN-shaped word (mod/core/copy.ts)
   const pinned: PinnedStatus | null = p && status ? {
     status, ms: Math.min(Number(p.ms) > 0 ? Number(p.ms) : PINNED_MS, PINNED_MS),
     ...(short && typeof p.cut === 'string' && p.cut ? { short, cut: noticeLines(p.cut) } : {}),
     ...(typeof p.ref === 'string' && /^[0-9a-f]{12}$/.test(p.ref) ? { ref: p.ref } : {}),
+    ...(line ? { line } : {}),
   } : null;
   return { kind: 'say', lines: noticeLines(say.say), refused: say.refused === true, shareable: say.shareable === true, ...(pinned ? { pinned } : {}) };
 }
@@ -213,10 +216,12 @@ export const PINNED_MS: number = 15 * 60_000;
  * it under the prompt and saves it nowhere; a notice is a transcript row) for status.ms. Notices only, result {} (no
  * row, no echo, nothing for the model).
  */
-export function answerOf(reply: JoinReply, { columns }: { columns?: unknown } = {}): { result: { text?: string }; logs: string[]; status?: { status: string; ms: number; ref?: string } } {
+export function answerOf(reply: JoinReply, { columns }: { columns?: unknown } = {}): { result: { text?: string }; logs: string[]; status?: { status: string; ms: number; ref?: string; line?: string } } {
   if (reply.kind === 'say' && reply.pinned) {
-    const fit = pinFor(reply.pinned, reply.lines, columns);
-    return { result: {}, logs: fit.lines, status: { status: fit.status, ms: reply.pinned.ms, ...(reply.pinned.ref ? { ref: reply.pinned.ref } : {}) } };
+    const p = reply.pinned;
+    const fit = pinFor(p, reply.lines, columns);
+    // line: the copy card's, with its ref only (mod/core/copy.ts)
+    return { result: {}, logs: fit.lines, status: { status: fit.status, ms: p.ms, ...(p.ref ? { ref: p.ref } : {}), ...(p.ref && p.line ? { line: p.line } : {}) } };
   }
   return { result: {}, logs: reply.lines };
 }

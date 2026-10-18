@@ -129,3 +129,24 @@ test('ws offline: a ts.net name that never answers (or does not resolve) says th
   assert.equal(wsT.offline('box.tail1a2b.ts.net', new Error('wss://box.tail1a2b.ts.net/x answered 404 Not Found instead of a WebSocket upgrade')).message.includes(hint), false, 'it answered: not a reach problem');
   assert.equal(wsT.offline('front.example', new Error('no WebSocket to front.example within 45000 ms')).message.includes(hint), false, 'not a ts.net name');
 });
+
+// PLAN-JOIN step 5: the line alone rides beside the pinned status for the module's copy card, never the PIN; --no-card
+// and SUB_HUMAN_INVITE_CARD=0 leave it out (no card, nothing the module could copy)
+test('invite: the pinned form carries the line alone for the copy card (no PIN in it); --no-card or SUB_HUMAN_INVITE_CARD=0 leaves it out', t => {
+  const w = new World({ alice: 'sleep' }, { t });
+  stub(t, { up: false });
+  const p = pinnedOf(run(w, 'invite'));
+  assert.ok(p && p.line, 'the line for the card');
+  const [, pin = ''] = /^PIN (\d+) · /.exec(p.status) ?? [];
+  assert.match(pin, /^\d{4}$/);
+  assert.equal(p.status, `PIN ${pin} · ${p.line}`, 'the status line is the PIN and this line');
+  assert.ok(!p.line.split(/\s+/).includes(pin), 'the line holds no PIN');
+  assert.match(p.line, /^\/sub-human join /);
+  assert.equal(pinnedOf(run(w, 'invite --no-card'))?.line, undefined);
+  const was = process.env.SUB_HUMAN_INVITE_CARD;
+  t.after(() => { if (was === undefined) delete process.env.SUB_HUMAN_INVITE_CARD; else process.env.SUB_HUMAN_INVITE_CARD = was; });
+  process.env.SUB_HUMAN_INVITE_CARD = '0';
+  const off = pinnedOf(run(w, 'invite'));
+  assert.ok(off, 'still pinned');
+  assert.equal(off.line, undefined);
+});

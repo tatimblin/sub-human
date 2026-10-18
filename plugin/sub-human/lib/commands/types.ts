@@ -24,9 +24,11 @@ export type Answer =
  * status, the one line "PIN 4090 · <the invite line>"; text, what the notices say instead (no secret in it); ms, how
  * long the status stays (the invite's life). When status is wider than the terminal (the module knows its width),
  * short ("PIN 4090 · SECRET <word>") is pinned instead and cut is the notice text: the line with SECRET in place of
- * the word. ref: the invite's, so the module takes it off once the invite is used, burnt or cancelled. The classic
- * hook still shows the whole text (Answer secret's text). */
-export interface Pinned { status: string; text: string; ms: number; short?: string; cut?: string; ref?: string }
+ * the word. ref: the invite's, so the module takes it off once the invite is used, burnt or cancelled. line: the invite
+ * line alone, never the PIN, set only when the module may offer its copy card (lib/commands/invite.ts: not with
+ * --no-card or SUB_HUMAN_INVITE_CARD=0); the module keeps it in memory and writes it to the clipboard on the person's
+ * Copy (mod/core/copy.ts). The classic hook still shows the whole text (Answer secret's text). */
+export interface Pinned { status: string; text: string; ms: number; short?: string; cut?: string; ref?: string; line?: string }
 
 /** What every verb is handed. pid and cur are known only once the hooks module's lease checked (the verbs marked
  * `open` run before: help, doctor). */

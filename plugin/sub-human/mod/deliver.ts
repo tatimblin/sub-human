@@ -20,6 +20,7 @@ import { mergeClassic } from './core/prompt.ts';
 import { factsBook, type FactsBook } from './core/facts.ts';
 import { asHello, asNonce, mintNonce } from './core/state.ts';
 import { ccNotice } from './core/cc.ts';
+import { copyBook, copyWake, type CopyBook } from './core/copy.ts';
 import { assertNever } from './core/never.ts';
 import type { EngineInterface, On, SessionAppendArgs } from 'claude-code';
 import type { JoinReply, Pulls, TailEvent, TailSeat } from './core/types.ts';
@@ -56,6 +57,13 @@ function nonceFor($: EngineInterface, sid: string): Promise<string | null> {
  * module sees notes the session's transcript path and permission mode; tool.call stashes the call's agentId. Module
  * state: a reload forgets it until the next event. */
 export const facts: FactsBook = factsBook();
+/** The invite lines the copy card may copy (mod/core/copy.ts), by ref: memory only, never written anywhere. Held when
+ * /sub-human invite answers here, dropped once the invite is over (the tail's `invites` event, a cancel, its life);
+ * mod/consent.ts reads it for the card. A reload forgets them (the card then says the invite is gone). */
+export const copies: CopyBook = copyBook();
+/** Whether a person is at the prompt (session.start's isInteractive): no copy card in a `-p` run or the SDK. Module
+ * state; null until session.start said. */
+let interactive: boolean | null = null;
 /** The last presence the module wrote or saw for seat (address|sid). A typed prompt (mod/prompt.ts) only marks
  * "working" as pending; the turn it starts writes it (turn.start below), so a prompt the plugin stops or refuses (no
  * turn: an @room's receipt, a refusal) writes nothing. turn.complete writes
@@ -396,7 +404,7 @@ async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
       case 'hold-rows': await $.state.set(ROWS, a.text); break;
       case 'submit': void submitWake($, a.text, { seen: a.seen }); break; // not awaited: it resolves as the turn starts
       case 'mid-turn-wake': await midTurnWake($, a.text); break;
-      case 'invites': if (pinnedRef && !a.open.includes(pinnedRef)) unpin($); break;
+      case 'invites': copies.keepOpen(a.open); if (pinnedRef && !a.open.includes(pinnedRef)) unpin($); break;
       case 'take': void takeSeat($, c, a); break; // not awaited: the shim runs, then the wake resolves as its turn starts
       default: assertNever(a, 'delivery action');
     }
@@ -469,8 +477,29 @@ function unpin($: EngineInterface): void {
   $.ui.status(undefined);
 }
 
+/** $.clock.now(), else the process's own clock (the copy book's times only compare with each other). */
+const copyNow = async ($: EngineInterface): Promise<number> => (await nowMs($)) ?? Date.now();
+
+/**
+ * The invite's copy card (mod/core/copy.ts): after /sub-human invite answered with a line, one wake asks the model to
+ * call AskUserQuestion with "copy invite REF" (the ref only; the line stays in `copies`). Never on the same idle turn as
+ * a take's wake: while a take runs it waits for it (at most ~10 s), then goes as any wake (mid-turn: the person's line
+ * a notice, the wake appended). An invite over before then gets no card. Never throws.
+ */
+async function offerCopy($: EngineInterface, ref: string) {
+  try {
+    for (let i = 0; taking.size && i < 20; i++) await new Promise<void>(resolve => { $.clock.after(500, resolve); });
+    if (!copies.lineFor(ref, await copyNow($))) return;
+    const text = copyWake(ref);
+    const [shown = ''] = text.split('\n');
+    if (turns.running !== null) { $.ui.log(shown); await midTurnWake($, text); }
+    else await submitWake($, text, { member: true, seen: [shown] });
+  } catch { /* the line stays pinned on the status line */ }
+}
+
 export function registerDeliver(on: On): void {
   on('session.start', async ($, e, next) => {
+    interactive = e.isInteractive;
     try {
       void versionOf($); // read once, for every hello this session says
       const sid = await $.session.id();
@@ -544,8 +573,15 @@ export function registerDeliver(on: On): void {
     }
     const { result, logs, status } = answerOf(reply, { columns: e.presentation && e.presentation.columns });
     for (const line of logs) $.ui.log(line);
-    if (status) pinStatus($, status);
-    else if (cancels(e.args, reply, pinnedRef)) unpin($);
+    if (status) {
+      pinStatus($, status);
+      // the copy card: a person at the prompt, and a line join.ts handed over (not --no-card); after this hook returned
+      if (status.line && status.ref && interactive !== false) {
+        const ref = status.ref;
+        copies.hold(ref, status.line, (await copyNow($)) + status.ms);
+        try { $.clock.after(2 * CONFIRM_AFTER_MS, () => { void offerCopy($, ref); }); } catch { /* no clock: no card; the line stays pinned */ }
+      }
+    } else if (cancels(e.args, reply, pinnedRef)) { if (pinnedRef) copies.drop(pinnedRef); unpin($); }
     if (!fresh) { try { await refresh($, sid); } catch { /* the next refresh tries again */ } }
     // a leave ends this session's delivery now, whatever the hello says: a room hosted elsewhere may still list the
     // seat for a moment (a session cut off kept its tail and heard "carol left" after its leave)
