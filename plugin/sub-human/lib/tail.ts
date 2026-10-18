@@ -59,7 +59,7 @@ import type { Clock, TimerHandle } from './clock.ts';
 import type { Delivery, Entry } from './room/types.ts';
 import type { Identity } from './identity.ts';
 import type { Room } from './room.ts';
-import { FOR_CLAUDE, PULL_HEAD, PULL_END, pullDroppedLine } from '../mod/core/constants.ts';
+import { FOR_CLAUDE, PULL_HEAD, pullDroppedLine } from '../mod/core/constants.ts';
 import { msgOf } from './errors.ts';
 import type { RoomCode } from './brand.ts';
 import type * as RoomClaudeMod from './room-claude.ts';
@@ -113,7 +113,7 @@ type Pending<T> = T & { at: number };
 type RowsLib = Pick<typeof rowsMod, 'joinNote' | 'missingRows' | 'rowsNeeded' | 'readHolds' | 'sessionRowMap' | 'rowCalls'>;
 type IdentityLib = Pick<typeof identityMod, 'readMembers' | 'heartbeat'>;
 type ProposalLib = Pick<typeof proposalMod, 'pendingFor' | 'picked' | 'reminder' | 'readConfirm' | 'confirmCall' | 'showConfirm'>;
-type SessionLib = Pick<typeof sessionMod, 'shown' | 'markShown' | 'get' | 'put'>;
+type SessionLib = Pick<typeof sessionMod, 'shown' | 'markShown' | 'get' | 'put'> & Partial<Pick<typeof sessionMod, 'reported'>>;
 type RoomClaudeLib = Pick<typeof RoomClaudeMod, 'watchdog'>;
 type AdmissionLib = Pick<typeof AdmissionMod, 'lapse' | 'pending' | 'targets' | 'describe' | 'markTold'>;
 type InvitesLib = Pick<typeof InvitesMod, 'inviteOpen'>;
@@ -174,6 +174,10 @@ interface FormatCtx {
   joinNote(e: Entry): string;
   seen: Set<number>;
   leaveMs: number;
+  /** ids the consent hook already told the model of (lib/room/session.ts reported): no room-context copy */
+  reported?: ReadonlySet<number>;
+  /** the peers whose "to answer X's Claude" hint this session's model was given already (once per peer) */
+  hinted?: Set<string>;
 }
 /** A seat's read cursor (cursorKeeper): saw each id, hold and release the ones in flight, save the highest done. */
 interface Cursor {
@@ -275,12 +279,12 @@ function formatRoomClaudeBatch(ready: Item[], { room: rm, entries, judge, joinNo
   return out.length ? [...out, 'Make only the call its row note names, then end your turn with the one word "ok".'] : [];
 }
 
-/** The pull text: PULL_HEAD, then the newest lines that fit under PULL_CAP (a note says how many were left out), then
- * PULL_END (mod/core/constants.ts: the module carries it as context beside the person's next prompt). */
+/** The pull text: PULL_HEAD, then the newest lines that fit under PULL_CAP (a note says how many were left out)
+ * (mod/core/constants.ts: the module carries it as context beside the person's next prompt). */
 function pullText(lines: string[]): string | null {
   if (!lines.length) return null;
   const kept: string[] = [];
-  let size = PULL_HEAD.length + PULL_END.length + 1;
+  let size = PULL_HEAD.length + 1;
   for (let i = lines.length - 1; i >= 0; i--) {
     const l = lines[i];
     if (l === undefined || size + l.length + 1 > config.PULL_CAP - 80) break; // i < lines.length
@@ -289,7 +293,7 @@ function pullText(lines: string[]): string | null {
   }
   const dropped = lines.length - kept.length;
   const more = dropped ? [pullDroppedLine(dropped)] : [];
-  return [PULL_HEAD, ...more, ...kept, PULL_END].join('\n');
+  return [PULL_HEAD, ...more, ...kept].join('\n');
 }
 
 /**
@@ -297,7 +301,7 @@ function pullText(lines: string[]): string | null {
  * leave ids sent as chat (session.markShown).
  */
 function formatNdBatch(ready: Item[], ctx: FormatCtx): { events: TailEvent[], moved: number[] } {
-  const { me, room: rm, entries, judge, joinNote, seen } = ctx;
+  const { me, room: rm, entries, judge, joinNote, seen, reported, hinted } = ctx;
   const chat: string[] = [], pull: string[] = [], wake: string[] = [], moved: number[] = [], pushed: Item[] = [];
   let state = false;
   for (const p of ready) {
@@ -309,21 +313,24 @@ function formatNdBatch(ready: Item[], ctx: FormatCtx): { events: TailEvent[], mo
     // a join the room's PIN line already announced (its check and the kick): no second, bare "joined"
     if (d === 'notice' && announced(e, entries)) { moved.push(e.id); continue; }
     const lines = rm.chatLines(e, { viewer: me.name, entries });
-    if (d === 'context') { pull.push(...lines); continue; }
+    // what the consent hook already told the model (the decision its answer made): the person's notice only
+    const told = !!reported && reported.has(e.id);
+    if (d === 'context') { if (!told) pull.push(...lines); continue; }
     if (d === 'notice') {
       // a task suggested to me: say so (the line names no suggestion); I claim it myself if I take it
       if (e.kind === 'task' && e.suggest === me.name && !e.owner && lines[0] !== undefined) lines[0] += ', suggested for you (claim it to take it)';
       chat.push(...lines.filter(l => !l.startsWith(FOR_CLAUDE)));
-      pull.push(...lines);
+      if (!told) pull.push(...lines);
       if (isMove(e)) moved.push(e.id);
       continue;
     }
     wake.push(...lines);
     // a Claude's post addressed to me: answer that Claude, not the room (on another machine the post is how
     // its SendMessage arrived; mod/send.ts carries the reply back the same way)
-    if (e.via === 'agent' && e.to === me.name && e.from && e.from !== me.name) {
+    if (e.via === 'agent' && e.to === me.name && e.from && e.from !== me.name && !(hinted && hinted.has(e.from))) {
       const who = e.from === 'claude' ? "the room's Claude" : `${e.from}'s Claude`;
       wake.push(`${FOR_CLAUDE} to answer ${who}: SendMessage ${e.from}.${me.code}`);
+      if (hinted) hinted.add(e.from); // once per peer per session
     }
     if (STATE_KINDS.has(e.kind)) state = true;
   }
@@ -466,16 +473,18 @@ function cursorKeeper(write: (id: number) => void, after: number, { log, dead }:
  * One settled batch as ONE write (at most one wake). Each entry is judged again against the log at flush time
  * (lane with entries: signed, decided, superseded); the cursor moves past the batch once it is written.
  */
-function flushBatch(ready: Item[], { me, rm, judge, joinNote, leaveMs, session, emit, cursor }: {
+function flushBatch(ready: Item[], { me, rm, judge, joinNote, leaveMs, session, emit, cursor, hinted }: {
   me: Identity, rm: TailRoom, judge: Judge, joinNote: (e: Entry) => string, leaveMs: number, session: SessionLib,
-  emit: (events: TailEvent[], done?: () => void) => unknown, cursor: Cursor,
+  emit: (events: TailEvent[], done?: () => void) => unknown, cursor: Cursor, hinted: Set<string>,
 }): unknown {
   const [head] = ready;
   if (!head) return undefined; // the batcher flushes a batch that is not empty
   const entries = rm.readView({ after: head.e.id - 1 });
   const done = () => { for (const p of ready) cursor.release(p.e.id); cursor.save(); };
   const seen = me.role === 'claude' || !rm.store ? new Set<number>() : session.shown(rm.store, me.name);
-  const { events, moved } = formatNdBatch(ready, { me, room: rm, entries, judge, joinNote, leaveMs, seen });
+  let reported: ReadonlySet<number> = new Set();
+  if (me.role !== 'claude' && rm.store && session.reported) { try { reported = session.reported(rm.store, me.name); } catch { /* none */ } }
+  const { events, moved } = formatNdBatch(ready, { me, room: rm, entries, judge, joinNote, leaveMs, seen, reported, hinted });
   if (!events.length) return done();
   if (moved.length && rm.store) { try { session.markShown(rm.store, me.name, moved, 'mod'); } catch { /* best effort */ } }
   return emit(events, done);
@@ -531,7 +540,7 @@ function startSession(me: Identity, ctx: TailCtx): Session {
     try { return rows.joinNote(me, e.from); } catch { return ''; }
   };
 
-  const flushCtx = { me, rm, judge, joinNote, leaveMs: t.leaveMs, session, emit, cursor };
+  const flushCtx = { me, rm, judge, joinNote, leaveMs: t.leaveMs, session, emit, cursor, hinted: new Set<string>() };
   const onFlush = (ready: Item[]) => flushBatch(ready, flushCtx);
   const batch = new Batcher<Item>({ clock, settleMs, settleMaxMs, retryMs: t.backoffMs, onFlush, onError: e => log('flush', e) });
 

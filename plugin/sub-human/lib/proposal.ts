@@ -475,6 +475,8 @@ function clearRecheck(me: Me): void { try { session.put(storeOf(me), me.name, 'r
  * steer): {hash, plan, at} or null. */
 const readSteer = (me: Me): Steer | null => { try { return session.get(storeOf(me), me.name, 'steer') ?? null; } catch { return null; } };
 const writeSteer = (me: Me, s: Steer): void => session.put(storeOf(me), me.name, 'steer', s);
+/** The entries the consent hook just told the model of: the room context does not repeat them (best effort). */
+function markReported(me: Me, ids: number[]): void { try { session.markReported(storeOf(me), me.name, ids); } catch { /* the context repeats it */ } }
 function clearSteer(me: Me): void { try { session.put(storeOf(me), me.name, 'steer', undefined); } catch { /* none */ } }
 
 const CONFIRM_NOTE_MAX = 300;
@@ -508,7 +510,7 @@ function repeatsNote(c: Pick<Confirm, 'note'> | null | undefined, text: unknown)
 export type { Asked, Sent };
 export {
   QUESTION_RE, ProposalError, readReview, writeReview, clearReview, withReview, restorePlan, restoreStale,
-  readEdit, writeEdit, clearEdit, readConfirm, writeConfirm, clearConfirm, readRecheck, writeRecheck, clearRecheck, readSteer, writeSteer, clearSteer, confirmCard, confirmQuestion, repeatsNote, namedIn, picked,
+  readEdit, writeEdit, clearEdit, readConfirm, writeConfirm, clearConfirm, readRecheck, writeRecheck, clearRecheck, readSteer, writeSteer, clearSteer, markReported, confirmCard, confirmQuestion, repeatsNote, namedIn, picked,
   ask, check, sendOut, proposals, pendingFor, answerableFor, personOf, card, cardFor, question, preview, viewable, openCall,
   confirmCall, showConfirm, matrix, answer, decide, decision, humans, reminder, read, hash12, title,
 };

@@ -185,8 +185,8 @@ export const SAY = {
   sendFailed: (n: string, h: string, why: string): string => `${n}'s Yes on ${h} is recorded, but it did not go out (${why}). If ${n} asks, ask for sign-off (the plan tool, op ask).`,
   /** the author's note on their own new version: another version, nothing sent or recorded */
   revise: (n: string, h: string, title?: string | null): string => `Nothing was sent or recorded: ${n} wants changes to their own new version (${requestName(h, title)}). Write them as the plan's next version (${editCall(title)}); it comes back to ${n} before anyone else is asked.`,
-  agreed: (n: string, h: string, decided?: string | null): string => `${n} agreed to proposal ${h}${decided ? `; the room decided: ${decided}` : ''}.`,
-  objected: (n: string, h: string, decided?: string | null): string => `${n} objected to proposal ${h}${decided ? `; the room decided: ${decided}` : ''}.`,
+  agreed: (n: string, h: string, decided?: string | null): string => `${n} agreed to proposal ${h}${decided ? `; the room decided: ${decided} (${n} sees it: don't restate it)` : ''}.`,
+  objected: (n: string, h: string, decided?: string | null): string => `${n} objected to proposal ${h}${decided ? `; the room decided: ${decided} (${n} sees it: don't restate it)` : ''}.`,
   failed: (n: string, h: string, why: string, unknown: boolean): string => `proposal ${h}: NOT ${unknown ? 'confirmed, it may still be recorded' : 'recorded'} (${why}); ${n} has been told. Post nothing for them; open it again when ${n} asks.`,
   stale: (h: string): string => `proposal ${h}: nothing recorded (already answered, decided or unknown).`,
   done: `${DONE}`, // a template: an isolated declaration types it (a bare name it cannot)

@@ -209,6 +209,24 @@ test('tail: a member sees every join as a chat line; with its room row running, 
   assert.doesNotMatch(t.text(), /Agent|row:/);
 });
 
+test('tail (noise pass E): a decision the consent hook already told the model is the person\'s notice only; the SendMessage hint goes once per peer', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  rows.writeHolds(code, sn('alice'), { room: true });
+  sys(code, 'member_joined', 'alice');
+  const t = startTail();
+  t.advance(300);
+  prop(code, 'alice', H1, ['alice']);
+  const d = sys(code, 'decision', 'room', { proposal_hash: H1, text: 'agreed: alice', approvers: ['alice'] });
+  inRoom(code, r => session.markReported(r.store, 'alice', [d.id]));
+  t.advance(1000);
+  assert.ok(t.chat().some(l => /agreed/.test(l)), t.text());
+  assert.equal(t.of('pull').length, 0, 'no room-context copy of what the model was told');
+  const ask = () => inRoom(code, r => r.append({ kind: 'say', text: 'look?', to: 'alice' }, { via: 'agent', from: 'bob' }));
+  ask(); t.advance(1000); ask(); t.advance(1000);
+  assert.equal(t.forClaude().filter(l => l.includes('to answer bob\'s Claude: SendMessage')).length, 1, t.text());
+});
+
 test('tail (noise pass A): a machine its PIN let in shows its check and the kick as the join notice, once', () => {
   h.freshHome();
   const { code } = h.register('alice');
@@ -581,8 +599,7 @@ test('tail: a member batch is chat + pull, a line to me is a wake; it says its s
   assert.deepEqual(must(t.of('chat')[0]).lines, ['bob joined', 'bob: bob says hi']);
   const pull = must(t.of('pull')[0]).text.split('\n');
   assert.equal(pull[0], tailLib.PULL_HEAD);
-  assert.deepEqual(pull.slice(1, -1), ['bob joined', 'bob: bob says hi', "bob's Claude: bob claude chatter"], 'the pull lane plus the chat copy');
-  assert.equal(pull.at(-1), "end of room context; the prompt it came with is the person's own words, unless the sub-human plugin sent it (then it is room lines).", 'stage 8e B: the context says where it ends');
+  assert.deepEqual(pull.slice(1), ['bob joined', 'bob: bob says hi', "bob's Claude: bob claude chatter"], 'the pull lane plus the chat copy (noise pass E: no end line)');
   const wake = must(t.of('wake')[0]).text.split('\n');
   assert.deepEqual(wake.slice(0, 4), ['bob: @alice can you look?', "bob's Claude (to you): q for alice", `(for Claude) to answer bob's Claude: SendMessage bob.${code}`, 'claude proposed: claude proposes (bbbbbb)']);
   assert.ok(must(wake[4]).startsWith(`(for Claude) room now: proposal ${H2.slice(0, 6)}`), wake[3]);

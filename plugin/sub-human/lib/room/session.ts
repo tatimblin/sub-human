@@ -15,7 +15,9 @@
  *    steer    {hash, plan, at}: an ExitPlanMode that would have shown the person's own plan while a sign-off waited,
  *             denied once (lib/proposal.ts readSteer; lib/consent/review.ts)
  *    holds    the seat's live row holds, as mcp/hold.ts wrote them (lib/rows.ts readHolds)
- *    blocks   {agentId: n}: how often hooks/handlers/row-hold.ts blocked that row's stop (the last BLOCKS_MAX)}
+ *    blocks   {agentId: n}: how often hooks/handlers/row-hold.ts blocked that row's stop (the last BLOCKS_MAX)
+ *    reported the ids the consent hook already told the model of (hooks/consent.ts: a decision its answer made); the
+ *             tail's room context leaves them out (reported, markReported)}
  *
  *   read(store, name) -> SessionDoc      the document ({v: 1} for a seat that has none yet)
  *   get(store, name, field), put(store, name, field, value)   one field (value undefined: removed)
@@ -91,5 +93,17 @@ function setBlocks(s: SessionStore, name: string, id: string, n: number): void {
   });
 }
 
-export { read, update, get, put, shown, markShown, blocks, setBlocks };
+/** The entries the consent hook already told this seat's model of (a decision its answer made): the tail leaves them
+ * out of the room context, the person still sees them. The last REPORTED_MAX kept. */
+const REPORTED_MAX = 50;
+function reported(s: SessionStore, name: string): Set<number> {
+  const v = read(s, name).reported;
+  return new Set(Array.isArray(v) ? v : []);
+}
+function markReported(s: SessionStore, name: string, ids: number[]): void {
+  if (!ids.length) return;
+  update(s, name, d => ({ ...d, reported: [...new Set([...(Array.isArray(d.reported) ? d.reported : []), ...ids])].slice(-REPORTED_MAX) }));
+}
+
+export { read, update, get, put, shown, markShown, reported, markReported, blocks, setBlocks };
 export type { SessionStore };

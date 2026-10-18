@@ -252,7 +252,13 @@ function step(input: ConsentIn, me: Identity, make: (st: State) => ConsentEvent,
   if (JSON.stringify(state.note) !== disk.note) { if (state.note) proposal.writeConfirm(me, state.note); else proposal.clearConfirm(me); }
   if (JSON.stringify(state.recheck ?? null) !== disk.recheck) { if (state.recheck) proposal.writeRecheck(me, state.recheck); else proposal.clearRecheck(me); }
   if (JSON.stringify(state.steer ?? null) !== disk.steer) { if (state.steer) proposal.writeSteer(me, state.steer); else proposal.clearSteer(me); }
-  if (say) write(input, me, say, state, answers, show);
+  if (say) {
+    write(input, me, say, state, answers, show);
+    // the decisions the outcome line names: the room context does not tell the model again
+    const told = [...answers.values()].flatMap(({ res }) => [res.decision, res.sent && 'asked' in res.sent ? res.sent.decision : null])
+      .flatMap(d => (d ? [d.id] : []));
+    proposal.markReported(me, told);
+  }
 }
 
 /** The answer effect's outcome line for hash. */

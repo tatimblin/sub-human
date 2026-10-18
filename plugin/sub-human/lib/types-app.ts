@@ -22,6 +22,8 @@ export interface SessionDoc {
   steer?: Steer;
   holds?: Holds;
   blocks?: Record<string, number>;
+  /** ids the consent hook already told this seat's model (a decision its answer made): the room context skips them */
+  reported?: number[];
 }
 
 // ---------- lib/rows.ts ----------
