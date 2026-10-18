@@ -53,7 +53,7 @@ import * as admission from '../../lib/remote/admission.ts';
 import * as linkSocket from '../../lib/remote/link-socket.ts';
 import type { RoomCode } from '../../lib/brand.ts';
 import { roomCode } from '../../lib/text.ts';
-import { remotePeer, postArgs, postResult, relayResult } from '../../mod/core/send.ts';
+import { peerOf, postArgs, postResult, relayResult } from '../../mod/core/send.ts';
 
 const PROBE = path.join(import.meta.dirname, 'worker-probe.ts');
 
@@ -180,11 +180,9 @@ class Machine {
   }
 
   async send(seat: Seat, code: RoomCode, to: string, text: string, { server = true }: { server?: boolean } = {}): Promise<ReturnType<typeof postResult> | 'engine'> {
-    const read = (f: string): unknown => { try { return JSON.parse(fs.readFileSync(path.join(this.home, f), 'utf8')); } catch { return null; } };
-    const inRooms = read('machines.json'), machine = read('machine.json');
-    const inRoom: unknown = inRooms && typeof inRooms === 'object' ? Reflect.get(inRooms, code) : undefined;
-    const id: unknown = typeof inRoom === 'string' && inRoom ? inRoom : machine && typeof machine === 'object' ? Reflect.get(machine, 'id') : undefined;
-    const name = remotePeer(to, { name: seat.name, code, role: 'member', addr: `${seat.name}.${code}` }, read(`rooms/${code}/members.json`), id);
+    // the module's own judgement (mod/core/send.ts peerOf, as mod/send.ts runs it), over this home's files
+    const read = (f: string): unknown => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
+    const name = await peerOf(to, { name: seat.name, code, role: 'member', addr: `${seat.name}.${code}` }, this.home, read);
     if (!name) return 'engine';
     if (!server) return relayResult(name, this.hook('send', { to: name, text }, seat)); // the room server not connected
     return postResult(name, await this.mcp(seat, 'post', postArgs(name, text)));
