@@ -132,7 +132,7 @@ Full names are `mcp__plugin_sub-human_room__<tool>`.
 |---|---|---|---|
 | `post` | room (`mcp/room-server.ts`) | no | Post a note to the shared sub-human room as your human's Claude (labelled as yours, never as their words). |
 | `read` | room (`mcp/room-server.ts`) | yes | Read the sub-human room: ids, those entries in full; plan, a room plan; brief, its state; else your unseen entries (oldest first, ≤ 100). |
-| `plan` | room (`mcp/room-server.ts`) | no | The sub-human room's plans. edit, then EnterPlanMode, edit the plan file, ExitPlanMode: the hooks store the next version. ask: people sign off on the current one, each in their own session. read. |
+| `plan` | room (`mcp/room-server.ts`) | no | The sub-human room's plans. edit, then EnterPlanMode, edit the plan file, ExitPlanMode: the hooks store the next version. put: store text instead, when told to. ask: people sign off on the current one, each in their own session. read. |
 | `hold` | room (`mcp/hold.ts`) | yes | Internal to sub-human row agents (sub-human:participant with member, sub-human:room with room). |
 | `task` | room (`mcp/task.ts`) | no | Change the sub-human room's shared task list; the host applies it at once and replies with the change or why not. add needs subject; claim (for yourself), release and done (your own task) need id; done also needs evidence. |
 <!-- /gen:mcp-tools -->

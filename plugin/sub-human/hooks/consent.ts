@@ -12,7 +12,8 @@
  * while one is open, plan mode is the edit's (routeEdit): its seed at the plan_mode attachment (the module's
  * PlanAttachment event) or at ExitPlanMode, its capture at Pre(ExitPlanMode) into lib/plans.ts put (on the host, or
  * over the link's plan.put), the receipt or the conflict as the deny, and the closing call let through with the mode
- * back. It records no answer.
+ * back. It records no answer. Where plan mode's edit cannot run (lib/cc/verdict.ts off plan-edit, or the reducer's
+ * fallback when the plan file or its text cannot be found), the edit goes through the plan tool's put instead.
  *
  * The cards (a join request's, the note's and the fallback consent card) are read through
  * lib/consent/card.ts answerCard: only the person's answer on the card as the hooks built it counts.
@@ -46,6 +47,7 @@ import * as env from '../lib/env.ts';
 import * as envelope from '../lib/room/envelope.ts';
 import * as roomStore from '../lib/room/store.ts';
 import * as admission from '../lib/remote/admission.ts';
+import * as verdict from '../lib/cc/verdict.ts';
 import type { AnyHookIn, CardQuestion, HookOutput, Recorded } from './types.ts';
 import type { Card, PlanEdit, Proposal, Review } from '../lib/types-app.ts';
 import type { AdmissionRequest } from '../lib/remote/admission.ts';
@@ -493,17 +495,8 @@ function promptFacts(me: Identity): Pick<Extract<edit.EditEvent, { type: 'prompt
   return { plan: { file: e.file, text }, seed, draft: path.join(c.identity.home(), 'drafts', me.code, `${me.name}-${e.plan}.md`) };
 }
 
-/** lib/plans.ts put's answer as the edit reducer reads it; a link that did not answer is offline. */
-function putOutcome(me: Identity, e: Extract<edit.EditEffect, { do: 'put' }>): edit.PutOutcome {
-  let r: plans.Put;
-  try { r = plans.request(me.code, { plan: e.plan, base: e.base, text: e.text, summary: e.summary }, me.name); } catch (err) {
-    if (err instanceof c.room.RoomError) return { kind: err.code === 'OFFLINE' ? 'offline' : 'refused', why: err.message };
-    throw err;
-  }
-  if (r.ok) return { kind: 'stored', version: r.version.version, ...(r.unchanged ? { unchanged: true } : {}) };
-  if (r.conflict) return { kind: 'conflict', version: r.conflict.version.version, who: plans.who(r.conflict.version), summary: r.conflict.version.summary, text: r.conflict.text };
-  return { kind: 'refused', why: r.error };
-}
+/** lib/plans.ts put's answer as the edit reducer reads it (plans.outcome). */
+const putOutcome = (me: Identity, e: Extract<edit.EditEffect, { do: 'put' }>): edit.PutOutcome => plans.outcome(me.code, { plan: e.plan, base: e.base, text: e.text, summary: e.summary }, me.name);
 
 /** The seat's edit, reduce one event, run the effects (a put's answer reduced in turn), store the edit, write the say.
  * Returns whether it said anything (Stop and a prompt then skip the review's step). */
@@ -550,11 +543,12 @@ function attachedPlan(input: ConsentIn): { file: string | null; text: string | n
 }
 
 /** An edit open in this session (none while a review is: the plan tool refuses an edit then). One left longer than
- * REVIEW_STALE_MS is dropped here, its plan file restored. */
-function openEdit(me: Identity): PlanEdit | null {
+ * REVIEW_STALE_MS is dropped here, its plan file restored; so is one not yet stored once plan mode's edit is off for the
+ * session's Claude Code (lib/cc/verdict.ts off plan-edit: the plan tool's put instead), so plan mode stays the person's. */
+function openEdit(me: Identity, sid: unknown): PlanEdit | null {
   const e = proposal.readEdit(me);
   if (!e || proposal.readReview(me)) return null;
-  if (Date.now() - (Number(e.at) || 0) > config.REVIEW_STALE_MS) {
+  if (Date.now() - (Number(e.at) || 0) > config.REVIEW_STALE_MS || (e.phase === 'open' && verdict.off('plan-edit', { sid }))) {
     if (e.file && !e.restored) proposal.restorePlan({ phase: 'exiting', file: e.file, backup: typeof e.backup === 'string' ? e.backup : null, restored: false });
     proposal.clearEdit(me);
     return null;
@@ -565,13 +559,13 @@ function openEdit(me: Identity): PlanEdit | null {
 /** The edit's events, while one is open: true when the edit took this event (plan mode is the edit's). */
 function routeEdit(input: ConsentIn, me: Identity): boolean {
   const ev = input.hook_event_name, tool = input.tool_name;
-  if (!openEdit(me)) return false;
+  if (!openEdit(me, input.session_id)) return false;
   if (ev === ccEnv.PLAN_ATTACHMENT_EVENT) return editStep(input, me, { type: 'attach', plan: attachedPlan(input) }), true;
   if (tool === 'EnterPlanMode' && ev === 'PreToolUse') return editStep(input, me, { type: 'enter', mode: modeAtEnter(input) }), true;
   if (tool === 'EnterPlanMode' && ev === 'PostToolUse') return editStep(input, me, { type: 'attach', plan: planOf(input) }), true;
   if (tool === 'ExitPlanMode' && ev === 'PreToolUse') {
     const ti: ConsentToolInput = input.tool_input ?? {};
-    return editStep(input, me, { type: 'exit', plan: planOf(input), text: typeof ti.plan === 'string' ? ti.plan : null }), true;
+    return editStep(input, me, { type: 'exit', plan: planOf(input), text: typeof ti.plan === 'string' ? ti.plan : null, mode: input.permission_mode }), true;
   }
   if (tool === 'ExitPlanMode' && ev === 'PermissionRequest') return editStep(input, me, { type: 'permission' }), true;
   if (tool === 'ExitPlanMode' && ev === 'PostToolUse') return editStep(input, me, { type: 'exited' }), true;

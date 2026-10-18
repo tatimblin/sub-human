@@ -131,7 +131,9 @@ export interface Review {
  * room, and one more ExitPlanMode only leaves plan mode.
  */
 export interface PlanEdit {
-  phase: 'open' | 'stored';
+  /** put: plan mode's edit could not run in this Claude Code (lib/consent/edit.ts fallback): the model stores the edit with
+   * the plan tool's put, and the next ExitPlanMode only leaves plan mode */
+  phase: 'open' | 'stored' | 'put';
   plan: string;
   /** the version the edit started from (0: a new plan); a conflict moves it to the current one */
   base: number;

@@ -10,6 +10,8 @@
  *       is a conflict that carries the current version and its text, for the editor to reconcile.
  *   request(code, args, by) -> Put   put on the host, or over the link's plan.put op from a mirror (its own lock would
  *       serialise nothing)
+ *   outcome(code, args, by) -> PutOutcome   request's answer as the edit reducer and the plan tool's put read it
+ *       (lib/consent/edit.ts): a link that did not answer is offline, any other RoomError refused
  *   current(code, name) -> PlanVersion | null; textOf(code, v) -> string | null; stateOf(fold, plan) -> PlanSignoff
  *   describe(code, name?) -> string   for the read tool and `sub-human plan`: the plan's text with its history and
  *       sign-off state, or every plan's one line
@@ -25,6 +27,7 @@ import { MirrorRoomStore } from './room/store-mirror.ts';
 import { planHash, oneLine, clip } from './text.ts';
 import type { Fold, PlanState, PlanVersion, RoomStore } from './room/types.ts';
 import type { RoomCode } from './brand.ts';
+import type { PutOutcome } from './consent/edit.ts';
 
 /** The plan an edit, a request or a read names when it names none. */
 const DEFAULT_PLAN = 'room';
@@ -127,6 +130,17 @@ function request(code: RoomCode, args: PutArgs, by: string): Put {
   throw new RoomError('HOST_ONLY', 'this room has no host to ask');
 }
 
+function outcome(code: RoomCode, args: PutArgs, by: string): PutOutcome {
+  let r: Put;
+  try { r = request(code, args, by); } catch (err) {
+    if (err instanceof RoomError) return { kind: err.code === 'OFFLINE' ? 'offline' : 'refused', why: err.message };
+    throw err;
+  }
+  if (r.ok) return { kind: 'stored', version: r.version.version, ...(r.unchanged ? { unchanged: true } : {}) };
+  if (r.conflict) return { kind: 'conflict', version: r.conflict.version.version, who: who(r.conflict.version), summary: r.conflict.version.summary, text: r.conflict.text };
+  return { kind: 'refused', why: r.error };
+}
+
 const current = (code: RoomCode, name: string = DEFAULT_PLAN): PlanVersion | null => (r => r.fold(r.readRecent()))(room.open(code)).plans.get(nameOf(name))?.current ?? null;
 
 /** One line per version: "v2 bob's Claude for bob (base v1): opaque cursor". */
@@ -150,5 +164,5 @@ function describe(code: RoomCode, name?: string | null, { history = false }: { h
     text ?? '(the text is missing on this machine)', `--- end of plan ${p.name} v${p.current.version} ---`].join('\n');
 }
 
-export { DEFAULT_PLAN, OPEN_MAX, put, request, current, textOf, stateOf, stateText, describe, historyLine, refOf, nameOf, who };
+export { DEFAULT_PLAN, OPEN_MAX, put, request, outcome, current, textOf, stateOf, stateText, describe, historyLine, refOf, nameOf, who };
 export type { Put, PutArgs, PlanSignoff };

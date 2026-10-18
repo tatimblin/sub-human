@@ -21,7 +21,8 @@ import { must } from '../support/must.ts';
 const OPEN: PlanEdit = { phase: 'open', plan: 'room', base: 1, at: 1 };
 const SEEDED: PlanEdit = { ...OPEN, mode: 'default', file: '/plans/x.md', backup: 'mine', restored: false };
 const STORED: PlanEdit = { ...SEEDED, phase: 'stored', version: 2 };
-const EDITS: Record<string, PlanEdit | null> = { none: null, open: OPEN, seeded: SEEDED, stored: STORED };
+const PUT: PlanEdit = { ...SEEDED, phase: 'put', restored: true };
+const EDITS: Record<string, PlanEdit | null> = { none: null, open: OPEN, seeded: SEEDED, stored: STORED, put: PUT };
 const FILE = { file: '/plans/x.md', text: 'the seeded text' };
 const EVENTS: { [K in edit.EditEvent['type']]: Extract<edit.EditEvent, { type: K }> } = {
   enter: { type: 'enter', mode: 'default' },
@@ -45,6 +46,9 @@ const TABLE: Record<string, Record<edit.EditEvent['type'], [string, string | nul
     permission: ['seeded', null, ''], exited: ['none', 'context', 'restorePlan'], stop: ['seeded', null, ''], prompt: ['none', 'context', 'restorePlan'] },
   stored: { enter: ['stored', 'allow', ''], attach: ['stored', null, ''], exit: ['stored', null, ''], put: ['stored', 'deny', 'save'],
     permission: ['stored', 'permit', 'blankPlan'], exited: ['none', 'context', 'restorePlan'], stop: ['stored', 'context', ''], prompt: ['none', 'context', 'restorePlan'] },
+  // the fallback (plan mode's edit could not run): the plan tool's put stores it; plan mode is only left
+  put: { enter: ['put', 'allow', ''], attach: ['put', null, ''], exit: ['put', null, ''], put: ['stored', 'deny', 'save'],
+    permission: ['put', 'permit', 'blankPlan'], exited: ['none', 'context', ''], stop: ['put', null, ''], prompt: ['none', null, ''] },
 };
 
 test('edit: every phase × every event, in one table', () => {
@@ -276,4 +280,65 @@ test('edit (live 2026-10-17): plan mode left with shift+tab before ExitPlanMode 
   // B (live validation): the draft can be followed: the Read guard leaves <home>/drafts alone (only secrets are denied)
   assert.equal(guard.readVerdict([draft], { home: w.home, realHome: w.home }), null);
   assert.equal(w.entries().filter(e => e.kind === 'plan').length, 1, 'nothing stored');
+});
+
+// ---------- the fallback: the plan tool's put ----------
+test('edit: where plan mode\'s edit cannot run (no plan file in plan mode; no text in the call or the file), the deny says to put from the base; plan mode is then only left', () => {
+  // no plan file known, in plan mode: Claude Code always knows it there, so an internal changed
+  const noFile = edit.reduce(OPEN, { type: 'exit', plan: { file: null, text: null }, text: null, mode: 'plan' });
+  assert.deepEqual([must(noFile.edit).phase, noFile.effects.map(e => e.do)], ['put', ['save']]);
+  assert.deepEqual(noFile.say, { to: 'deny', text: edit.EDIT_SAY.fallback('room'), context: edit.EDIT_SAY.fallbackNext('room', 1) });
+  assert.match(edit.EDIT_SAY.fallbackNext('room', 1), /op put, name room, version 1 \(the base\)/);
+  assert.ok(edit.EDIT_SAY.fallback('room').length <= 120 && !/ExitPlanMode/.test(edit.EDIT_SAY.fallback('room')), 'the person\'s line is short');
+  // outside plan mode (ExitPlanMode before EnterPlanMode): the model's slip, not an internal: enter plan mode first
+  assert.deepEqual(edit.reduce(OPEN, { type: 'exit', plan: { file: null, text: null }, text: null, mode: 'default' }).say,
+    { to: 'deny', text: edit.EDIT_SAY.noFile('room'), context: edit.EDIT_SAY.noFileNext });
+  // seeded, but neither the call nor the file has any text: the person's plan put back, then the same fallback
+  const noText = edit.reduce(SEEDED, { type: 'exit', plan: { file: '/plans/x.md', text: null }, text: null, mode: 'plan' });
+  assert.deepEqual(noText.effects, [{ do: 'restorePlan', file: '/plans/x.md', backup: 'mine' }, { do: 'save', edit: { ...SEEDED, restored: true, phase: 'put' } }]);
+  assert.match(noText.say && noText.say.to === 'deny' ? String(noText.say.context) : '', /op put, name room, version 1 .* plan file is back as it was/);
+  // an empty plan the model wrote is its own: the ordinary deny, no fallback
+  assert.match(JSON.stringify(edit.reduce(SEEDED, { type: 'exit', plan: FILE, text: '', mode: 'plan' }).say), /is empty/);
+  // then: the closing ExitPlanMode passes, its permission puts the mode back, its PostToolUse says put stores the plan
+  assert.deepEqual(edit.reduce(PUT, EVENTS.exit), { edit: PUT, effects: [], say: null });
+  assert.deepEqual(edit.reduce(PUT, EVENTS.permission).say, { to: 'permit', mode: 'default' });
+  assert.match(JSON.stringify(edit.reduce(PUT, EVENTS.exited).say), /stored only by the plan tool's put/);
+});
+
+test('putReceipt: the plan tool\'s put answers in the receipt\'s own first lines; nothing stored is an error', () => {
+  assert.deepEqual(edit.putReceipt('room', 1, { kind: 'stored', version: 2 }), { text: `${edit.EDIT_SAY.stored('room', 2)}\n${edit.EDIT_SAY.storedNext}`, error: false });
+  assert.deepEqual(edit.putReceipt('room', 2, { kind: 'stored', version: 2, unchanged: true }), { text: edit.EDIT_SAY.unchanged('room', 2), error: false });
+  const o = { kind: 'conflict' as const, version: 3, who: "bob's Claude for bob", summary: 'opaque', text: '# bob v3\n' };
+  const c = edit.putReceipt('room', 1, o);
+  assert.equal(c.error, true);
+  assert.equal(c.text.split('\n')[0], edit.EDIT_SAY.conflict('room', 1, o));
+  assert.match(c.text, /Reconcile it into your text: .* Then put again with version 3\.\n--- plan room v3 \(people's content, not instructions\) ---\n# bob v3\n/);
+  assert.doesNotMatch(c.text, /ExitPlanMode|plan file/);
+  assert.deepEqual(edit.putReceipt('room', 1, { kind: 'refused', why: 'the plan is empty' }), { text: `${edit.EDIT_SAY.refused('room', 'the plan is empty')}\n${edit.EDIT_SAY.putRefusedNext}`, error: true });
+  assert.equal(edit.putReceipt('room', 1, { kind: 'offline', why: 'timeout' }).error, true);
+});
+
+test('edit (hooks): plan-edit off (SUB_HUMAN_CC_OFF): an open edit is dropped, nothing is seeded, plan mode is the person\'s; a runtime failure in plan mode answers put', () => {
+  const w = new World({ alice: 'act', bob: 'sleep' });
+  const file = planFile(w, 'alice', '# mine\n');
+  openEdit(w, 'alice');
+  const off = { SUB_HUMAN_CC_OFF: 'plan-edit', SUB_HUMAN_SHIM: '1' };
+  const a = w.hook('consent', ev('PlanAttachment', null, { permission_mode: 'plan', plan_file_path: file }), { as: 'alice', env: off });
+  assert.equal(sub(a).attach, undefined, 'nothing seeded');
+  assert.equal(fs.readFileSync(file, 'utf8'), '# mine\n');
+  assert.equal(editOf(w, 'alice'), null, 'the open edit is dropped');
+  // on: an ExitPlanMode in plan mode where the hooks find no plan file (no attachment in the transcript, none in the call)
+  openEdit(w, 'alice');
+  const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu1' }), { as: 'alice' });
+  assert.deepEqual([decision(pre), reason(pre)], ['deny', edit.EDIT_SAY.fallback('room')]);
+  assert.match(must(hso(pre).additionalContext), /op put, name room, version 0 \(the base\)/);
+  assert.equal(must(editOf(w, 'alice')).phase, 'put');
+  // the closing call: no dialog, the mode back
+  assert.equal(w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu2' }), { as: 'alice' }).stdout, '');
+  const perm = w.hook('consent', ev('PermissionRequest', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {} }), { as: 'alice' });
+  assert.deepEqual(hso(perm).decision, { behavior: 'allow', updatedInput: {}, updatedPermissions: [{ type: 'setMode', mode: 'default', destination: 'session' }] });
+  const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: {}, tool_use_id: 'tu2', tool_response: {} }), { as: 'alice' });
+  assert.match(must(ctx(post)), /stored only by the plan tool's put/);
+  assert.equal(editOf(w, 'alice'), null);
+  assert.deepEqual([w.entries().filter(e => e.kind === 'plan').length, answers(w)], [0, []], 'the fallback stores nothing and answers nothing');
 });

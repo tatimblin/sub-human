@@ -21,7 +21,8 @@
  *     the turn (cc CONTRACT stop-additional-context).
  *   - prompt.attachment plan_mode (main loop): node consent as a PlanAttachment event while a review or edit may be
  *     open, with the plan file the attachment names; consent seeds a room plan edit there and its subHuman.attach line
- *     is appended to the attachment's text.
+ *     is appended to the attachment's text. Not while the hello's verdict turns plan-edit off (no edit opens then: the
+ *     plan tool's put stores one).
  * Failure: each .catch passes the event on (a nudge, a card and a review are not gates: nothing is recorded unless the
  * person answered).
  */
@@ -141,6 +142,7 @@ export function registerConsent(on: On): void {
     const sid = await $.session.id();
     const hello = await helloOf($);
     if (!seatedOrUnsure(hello, sid) || !consentNeeded(hello, sid, await flagOf($))) return r;
+    if (hello && hello.cc && hello.cc.off.includes('plan-edit')) return r; // plan mode's edit is off: no edit to seed (the plan tool's put)
     const payload = { hook_event_name: PLAN_ATTACHMENT, session_id: sid, cwd: await $.session.cwd().catch(() => undefined), plan_file_path: file, permission_mode: 'plan' };
     const { subHuman, ...said } = toClassic(PLAN_ATTACHMENT, await runConsent($, payload, sid));
     await apply($, { ...said, subHuman });
