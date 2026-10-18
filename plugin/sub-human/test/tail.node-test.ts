@@ -718,32 +718,51 @@ test('remindersText: a note of mine waiting on the picked proposal points at the
   }
 });
 
-test('tail: a session with no seat and a PIN join waiting looks again every resolveMs and says once that the host let it in (or why it stopped)', () => {
+test('tail: a session with no seat and a PIN join waiting looks again every resolveMs; let in, it asks the module once to take the seat (PLAN-JOIN step 3), or says why it stopped', () => {
   h.freshHome();
   const clock = createFake({ now: Date.now() });
   const out: string[] = [];
-  let news: { state: 'waiting' | 'linked' | 'refused'; code: RoomCode; text: string } | null = { state: 'waiting', code: rc('vole-1234'), text: '' };
+  let news: { state: 'waiting' | 'linked' | 'refused'; code: RoomCode; text: string; name?: string; line?: string; check?: string } | null = { state: 'waiting', code: rc('vole-1234'), text: '' };
   let asked = 0;
   tailLib.runTail({
     clock, lookup: () => null, timings: { ...FAST, resolveMs: 100, unseatedMs: 5000 }, sid: 'sid-1', err: () => {},
     write: (s, d) => { out.push(s); d(); },
     deps: { pendingNews: (sid: string) => { asked++; assert.equal(sid, 'sid-1'); return news; } },
   });
-  const chat = () => out.flatMap(s => s.split('\n').filter(Boolean)).map(l => JSON.parse(l) as TailEvent).filter((e): e is EventOf<'chat'> => e.type === 'chat');
+  const evs = () => out.flatMap(s => s.split('\n').filter(Boolean)).map(l => JSON.parse(l) as TailEvent);
+  const chat = () => evs().filter((e): e is EventOf<'chat'> => e.type === 'chat');
+  const takes = () => evs().filter((e): e is EventOf<'take'> => e.type === 'take');
   clock.advance(350);
   assert.ok(asked >= 3, `waiting: asked again every resolveMs (${asked})`);
   assert.deepEqual(chat(), []);
-  news = { state: 'linked', code: rc('vole-1234'), text: 'the host let you in to room vole-1234: type /sub-human to join it as bob' };
+  // let in: the command's own answer said so (text ''), the take event goes out all the same, once, with the line for
+  // the person when the module cannot take it and this machine's check; never as chat
+  const line = 'the host let you in to room vole-1234: type /sub-human to join it as bob';
+  news = { state: 'linked', code: rc('vole-1234'), text: '', name: 'bob', line, check: 'check 3f9c-2a71' };
   clock.advance(100);
-  clock.advance(20_000);
-  assert.deepEqual(chat(), [{ type: 'chat', lines: [news.text] }], 'said once');
   const before = asked;
-  clock.advance(10_000);
-  assert.ok(asked - before <= 2, 'no longer waiting: back to the unseated pace');
+  clock.advance(1000);
+  assert.ok(asked - before >= 5, `taking: it looks again every resolveMs, for the seat (${asked - before})`);
+  clock.advance(20_000);
+  assert.deepEqual(takes(), [{ type: 'take', code: 'vole-1234', name: 'bob', text: line, check: 'check 3f9c-2a71' }], 'asked once');
+  assert.deepEqual(chat(), [], 'the take is no chat line');
   news = { state: 'refused', code: rc('vole-1234'), text: 'could not join room vole-1234: the host refused to let this machine in' };
   clock.advance(5000);
-  assert.equal(chat().length, 2);
-  assert.deepEqual(must(chat()[1]).lines, [news.text]);
+  assert.equal(chat().length, 1);
+  assert.deepEqual(must(chat()[0]).lines, [news.text]);
+  const after = asked;
+  clock.advance(10_000);
+  assert.ok(asked - after <= 2, 'no longer waiting: back to the unseated pace');
+});
+
+test('tail: a let-in join with no line of its own (the command said it) still asks for the take; a tail started again asks again (the take is idempotent)', () => {
+  h.freshHome();
+  for (let run = 0; run < 2; run++) {
+    const t = startTail({ lookup: () => null, timings: { resolveMs: 100, unseatedMs: 5000 }, sid: 'sid-1', deps: { pendingNews: () => ({ state: 'linked', code: rc('vole-1234'), text: '' }) } });
+    t.advance(2000);
+    assert.deepEqual(t.events().filter(e => e.type !== 'seat'), [{ type: 'take', code: 'vole-1234', name: '', text: '' }]);
+    t.stop();
+  }
 });
 
 test('tail: a session with no seat and no join of its own says nothing (and never looks without a session id)', () => {

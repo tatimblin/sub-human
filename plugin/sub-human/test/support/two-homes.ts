@@ -11,6 +11,8 @@
  *                                     hooks/handlers/mod-hello.ts writes it; join and every prompt write it first
  *     join(seat, args, env?), say(seat, text), plain(seat, text)    the join expansion (env: e.g. SUB_HUMAN_WEB_FRONT
  *                                     for `invite --web`); an @room post; a prompt
+ *     take(seat, code)                the hooks module seating a let-in join on its own (the tail's take: no args, the
+ *                                     nonce, sub_human_take)
  *     linkFor(code, joiner)           a link to a room hosted here for the second home `joiner`, its token written
  *                                     to the joiner's link file (no invite, no PIN, no card: no command makes one;
  *                                     the robustness tests link with it); then joiner.join(seat, `NAME CODE`)
@@ -111,6 +113,12 @@ class Machine {
   }
 
   join(seat: Seat, args: string, env: Env = {}): MachineRun { this.lease(seat); return this.hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: args }, seat, { env }); }
+  /** The hooks module seating a let-in join on its own (mod/deliver.ts takeSeat on the tail's take): the join hook with
+   * no args, the session's nonce and the room (mod/core/command.ts joinPayload take). */
+  take(seat: Seat, code: RoomCode): MachineRun {
+    this.lease(seat);
+    return this.hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: '', sub_human_via: 'command.run', sub_human_nonce: seat.nonce, sub_human_take: code }, seat);
+  }
   /** A link (no invite, no PIN, no card) to room code hosted here, for the second home `joiner` on this machine (pipe):
    * the joiner's link file holds its token (the join over it is then `NAME CODE`). */
   linkFor(code: RoomCode, joiner: Machine): void {

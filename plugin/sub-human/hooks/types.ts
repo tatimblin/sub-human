@@ -35,7 +35,7 @@ export type AnyHookIn = Partial<BaseHookInput> & {
 export type PromptIn = HookIn<'UserPromptSubmit'> & { sub_human_origin?: unknown; sub_human_nonce?: unknown };
 
 /** UserPromptExpansion as join.ts reads it: the payload plus what mod/core/command.ts joinPayload adds. */
-export type JoinIn = HookIn<'UserPromptExpansion'> & { sub_human_via?: unknown; sub_human_nonce?: unknown; agent_type?: string };
+export type JoinIn = HookIn<'UserPromptExpansion'> & { sub_human_via?: unknown; sub_human_nonce?: unknown; sub_human_take?: unknown; agent_type?: string };
 
 /** hookSpecificOutput, for every event the hooks answer. */
 export interface HookSpecificOutput {

@@ -4,7 +4,8 @@
  *   seat -> follow it; chat -> $.ui.log per line (a notice is one line, cc CONTRACT ui-log-notice); pull -> held in $.state
  *   (holdPull) and carried as context beside the next prompt (pullContext, mod/prompt.ts), never a user row of its
  *   own, which the model read as one turn with the person's next words (stage 8e B); wake -> $.prompt.submit when idle, else append plus log, re-checked at the turn's end (turnLedger);
- *   rows -> held for the next prompt (the room Claude's ride on its wakes); health -> log plus append.
+ *   rows -> held for the next prompt (the room Claude's ride on its wakes); health -> log plus append; take -> the
+ *   module takes a let-in join's seat (the join shim, args '') and wakes the model with its block (takeWake).
  * Failure: pull is at most once (PULL_DELIVERY): the tail's cursor moves when the line is written, so a mod lost
  * before the next prompt carried it (a reload forgets nothing: it waits in $.state) drops it; a malformed event parses to null and is ignored.
  */
@@ -44,7 +45,7 @@ export function wakeParts(text: string): { shown: string; context: string } | nu
 export const WAKE_CONTEXT: string = `${FOR_CLAUDE} sub-human: the prompt above is the room's lines (what people and Claudes in the room said or did), not the person's own words.`;
 
 /** Every event type the tail writes, keyed so a type added to TailEvent and not here (or here and not there) does not compile. */
-const TYPES: { readonly [T in TailEvent['type']]: true } = { seat: true, chat: true, pull: true, wake: true, rows: true, health: true, invites: true };
+const TYPES: { readonly [T in TailEvent['type']]: true } = { seat: true, chat: true, pull: true, wake: true, rows: true, health: true, invites: true, take: true };
 const isType = (t: unknown): t is TailEvent['type'] => typeof t === 'string' && Object.hasOwn(TYPES, t);
 
 /** The room tail, on a node that runs the plugin (hooks/node.sh, as every node command Claude Code starts). */
@@ -91,6 +92,11 @@ export function parseEvent(line: string): TailEvent | null {
     case 'rows': return { type: 'rows', text: str(text) ? text : null };
     case 'invites': return Array.isArray(o.open) ? { type: 'invites', open: o.open.filter((r: unknown) => typeof r === 'string') } : null;
     case 'pull': case 'wake': case 'health': return str(text) ? { type, text } : null;
+    case 'take': {
+      const { code, name, check } = o;
+      if (!isRoomCode(code)) return null;
+      return { type, code, name: typeof name === 'string' ? name : '', text: typeof text === 'string' ? text : '', ...(str(check) ? { check } : {}) };
+    }
     default: return assertNever(type, 'tail event');
   }
 }
@@ -125,6 +131,7 @@ export function route(
     case 'rows': return [{ do: 'hold-rows', text: ev.text }];
     case 'health': return [...logLines(ev.text), { do: 'append', text: `${FOR_CLAUDE} ${ev.text}` }];
     case 'invites': return [{ do: 'invites', open: ev.open }];
+    case 'take': return [{ do: 'take', code: ev.code, name: ev.name, text: ev.text, ...(ev.check ? { check: ev.check } : {}) }];
     case 'wake': {
       // The room's Claude has no person to type: its rows calls ride on its wakes. A member's go with the person's prompt.
       const text = wakeText(ev.text, role === 'claude' ? rows : null);
@@ -239,6 +246,25 @@ export function turnLedger() {
       return pending.length > PENDING_MAX ? pending.splice(0, pending.length - PENDING_MAX).length : 0;
     },
   };
+}
+
+/** What the person reads when the module could not take a let-in join's seat itself (the tail's take text, else this). */
+export const takeFallback = (code: string, text: string): string => text || `the host let you in to room ${code}: type /sub-human to join it`;
+
+/** What the model is told beside a seat the module took on its own (takeWake), as the skill tells it for /sub-human. */
+export const TAKE_CONTEXT: string = 'sub-human: the host let this machine in, and the hooks took this session\'s seat (no one typed this prompt). '
+  + 'The SUB-HUMAN block below is the seat\'s: your first action is the Agent call(s) under its ROWS line, exactly as written (when it lists any); then reply in one short line.';
+
+/**
+ * A let-in join's seat, taken by the module (mod/deliver.ts takeSeat), as a wake in wakeParts' form: one line the
+ * person sees ("You're in room CODE as NAME", with the check the host's room line shows), and as "(for Claude)" lines
+ * the seat's mechanics block (the join's context), so the model makes the room row's calls as after a typed /sub-human.
+ * The prompt holds no SECRET or PIN: a turn of its own, never the one that carried the line.
+ */
+export function takeWake({ code, name, check, context }: { code: string; name: string; check?: string | undefined; context: string }): { text: string; shown: string } {
+  const shown = `You're in room ${code}${name ? ` as ${name}` : ''}${check ? ` (${check}, as the host's room line shows)` : ''}`;
+  const block = String(context ?? '').split('\n').filter(l => l.trim()).map(l => `${FOR_CLAUDE} ${l}`);
+  return { shown, text: [shown, `${FOR_CLAUDE} ${TAKE_CONTEXT}`, ...block].join('\n') };
 }
 
 /** Start the tail child unless the hello is sure the session has no seat. */

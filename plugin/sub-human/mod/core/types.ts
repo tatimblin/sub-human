@@ -69,7 +69,7 @@ export interface RejectedPayload extends PayloadBase { tool_name: string; tool_i
  * hooks/types.ts JoinIn). */
 export interface JoinPayload {
   hook_event_name: string; session_id: unknown; cwd: unknown; expansion_type: string; command_name: string; command_args: string;
-  command_source: string; sub_human_via: string; sub_human_nonce: unknown; permission_mode?: string;
+  command_source: string; sub_human_via: string; sub_human_nonce: unknown; permission_mode?: string; sub_human_take?: string;
 }
 
 /** One $ call an event maps to (mod/core/deliver.ts route). */
@@ -78,7 +78,8 @@ export type DeliverAction =
   | { do: 'submit'; text: string; seen: string[] }
   | { do: 'hold-rows'; text: string | null }
   | { do: 'seat'; seat: TailSeat | null }
-  | { do: 'invites'; open: string[] };
+  | { do: 'invites'; open: string[] }
+  | { do: 'take'; code: string; name: string; text: string; check?: string };
 
 /** The room context waiting for the next prompt ($.state pulls, mod/core/deliver.ts holdPull): each pull event's lines
  * by id (the prompt that carried ids up to N clears them), and how many lines PULL_CAP left out. */

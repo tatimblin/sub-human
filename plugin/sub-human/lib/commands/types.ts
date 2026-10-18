@@ -45,6 +45,8 @@ export interface VerbCtx {
   pubkey(code: RoomCode, name: SeatName): string;
   /** this process runs as the plugin's hook: the root of scripts/sub-human (doctor runs it) */
   pluginRoot: string;
+  /** the hooks module seats the join the host let in to this room on its own (bare only; join.ts bare) */
+  take?: RoomCode;
 }
 
 /** One verb: its words after the verb, and the context. */

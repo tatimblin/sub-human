@@ -3,8 +3,9 @@
 // person only; the joiner types the line (a hidden step: the model never sees the SECRET), the link daemon checks the
 // host's key against it and shows the host the SECRET, the host asks for the PIN, and the joiner types `/sub-human join
 // PIN` (hidden too), or types the PIN after the line, which sends it in the first hello once the host's key is checked;
-// the right PIN links the machine in that hello, with no card (a room line names its check and the kick), and a bare
-// /sub-human then takes the seat. A join request with no PIN (written as PLAN-JOIN step 4's knock
+// the right PIN links the machine in that hello, with no card (a room line names its check and the kick), and the
+// hooks module then takes the seat in a turn of its own (the tail's take event, the join hook with sub_human_take: PLAN-JOIN
+// step 3), its line naming the same check; a bare /sub-human still does, where no module took it. A join request with no PIN (written as PLAN-JOIN step 4's knock
 // will make it: Machine.knock) wakes the host seat's Claude, whose card (hooks/consent.ts) is its only way in: Let in
 // links the machine, Refuse stops it, an AFK card records nothing, and a request nobody answers lapses. A wrong PIN costs a try with a room line and is asked for again, the
 // fifth burns the invite; neither the SECRET nor the PIN is ever in a log, a link file after the host answered it, or
@@ -38,6 +39,13 @@ const modelSees = (r: MachineRun) => JSON.stringify([r.json && r.json.hookSpecif
 const shown = (reason: string | undefined) => must(shownInvite(String(reason)), 'an invite line');
 const reason = (r: MachineRun) => must(must(r.json, 'a hook answer').reason, 'a reason');
 const ctx = (r: MachineRun) => must(must(r.json, 'a hook answer').hookSpecificOutput?.additionalContext, 'context');
+/** The module's reply (hooks/reply.ts {subHuman: {say, joined?}}), as join.ts printed it for a run the module made. */
+function subHuman(r: MachineRun): { say: string; joined: boolean } {
+  const o: unknown = JSON.parse(r.stdout);
+  const s: unknown = o && typeof o === 'object' && 'subHuman' in o ? o.subHuman : null;
+  if (!s || typeof s !== 'object' || !('say' in s) || typeof s.say !== 'string') throw new Error(`no module reply: ${r.stdout} ${r.stderr}`);
+  return { say: s.say, joined: 'joined' in s && s.joined === true };
+}
 const linkFile = (m: Machine, code: RoomCode) => JSON.parse(fs.readFileSync(path.join(m.home, 'links', `${code}.json`), 'utf8')) as Link; // the record as stored
 const events = (out: string) => out.split('\n').filter(Boolean).map(l => JSON.parse(l) as TailEvent); // a tail's NDJSON
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -72,7 +80,7 @@ async function typeLine(remote: Machine, seat: Seat, code: RoomCode, line: strin
   return r;
 }
 
-test('an invite over pipe: the host sees the line and the PIN apart; the line, then the PIN, link in hidden steps; the right PIN lets the machine in with no card, and the room hears its check; a bare /sub-human takes the seat', async t => {
+test('an invite over pipe: the host sees the line and the PIN apart; the line, then the PIN, link in hidden steps; the right PIN lets the machine in with no card, and the room hears its check; the module takes the seat in a turn of its own, with the same check', async t => {
   const { host, remote, alice, bob, code } = room(t);
   const out = host.join(alice, 'invite --pipe');
   assert.ok(hiddenBlock(out), 'the invite: a hidden block');
@@ -99,13 +107,16 @@ test('an invite over pipe: the host sees the line and the PIN apart; the line, t
   assert.equal(host.lib(() => admission.pending(code)).length, 0, 'the line alone makes no request');
   const bare0 = remote.join(bob, '');
   assert.match(reason(bare0), /has your invite \(5 PIN tries left\)\. Type the 4-digit PIN they told you: \/sub-human join PIN/, 'a bare /sub-human asks for the PIN, never takes a seat');
+  const early = remote.take(bob, code);
+  assert.deepEqual(subHuman(early), { say: '', joined: false }, 'the module\'s take before the host let it in: nothing');
+  assert.equal(remote.lib(() => identityLib.resolveBySession(bob.sid)), null, 'no seat, and never a room of its own');
 
   // the right PIN lets the machine in, with no card: the command's own answer says it is linked
   const linked = remote.join(bob, `join ${pin}`);
   assert.ok(hiddenBlock(linked), linked.stderr);
   assert.ok(!modelSees(linked).includes(pin), 'the PIN is in nothing the model or Remote Control get');
   assert.ok(!reason(linked).includes(pin), 'and not echoed');
-  assert.match(reason(linked), new RegExp(`the host let you in to room ${code}: type /sub-human to join it as bob`));
+  assert.match(reason(linked), new RegExp(`the host let you in to room ${code}: this session takes your seat as bob now`));
   const lf = linkFile(remote, code);
   assert.equal('pin' in lf, false, 'the PIN left the link file once the host answered');
   assert.equal('pin_wanted' in lf, false);
@@ -125,11 +136,22 @@ test('an invite over pipe: the host sees the line and the PIN apart; the line, t
   const said = host.lib(() => store.open(code).readAll()).filter(e => e.from === 'room' && e.kind === 'status').map(e => e.text).join('\n');
   assert.match(said, /^bob joined from \S+ \(check [0-9a-f]{4}-[0-9a-f]{4}\) · not them\? \/sub-human kick bob$/m);
   assert.doesNotMatch(said, /waiting for alice to let them in|let in by/);
+  const check = must(/\((check [0-9a-f]{4}-[0-9a-f]{4})\)/.exec(said), 'the room line\'s check')[1];
 
-  const seated = remote.join(bob, '');
-  assert.equal(must(seated.json).decision, undefined, seated.stdout);
+  // bob's tail, with no seat: one take event (the command's answer said it already, so no chat), with the same check
+  const told = events(await remote.tail(bob, 2));
+  const takes = told.filter((e): e is Extract<TailEvent, { type: 'take' }> => e.type === 'take');
+  assert.equal(takes.length, 1, JSON.stringify(told));
+  assert.deepEqual(takes[0], { type: 'take', code, name: 'bob', text: `the host let you in to room ${code}: type /sub-human to join it as bob`, check });
+  assert.equal(told.filter(e => e.type === 'chat').length, 0, JSON.stringify(told));
+  // the module takes it (mod/deliver.ts takeSeat): the seat's block for the model, in a run whose prompt holds nothing
+  const seated = remote.take(bob, code);
+  assert.equal(subHuman(seated).joined, true, seated.stdout);
+  assert.match(ctx(seated), /^SUB-HUMAN: you are bob's Claude in room /);
+  assert.ok(!ctx(seated).includes(pin) && !ctx(seated).includes(word), 'neither the PIN nor the SECRET is in the block');
   assert.ok(remote.lib(() => identityLib.readMembers(code)).bob, 'bob is seated');
   assert.equal('join_as' in linkFile(remote, code), false, 'the seat is taken: nothing pending');
+  assert.deepEqual(subHuman(remote.take(bob, code)), { say: '', joined: false }, 'a second take (a tail started again): nothing, not a status');
   for (const f of [host.log(code), remote.log(code), fs.readFileSync(path.join(remote.home, 'links', `${code}.log`), 'utf8')]) {
     assert.ok(!f.includes(` ${pin}`) && !f.includes(word), 'neither the PIN nor the SECRET is in any log');
   }
@@ -137,7 +159,7 @@ test('an invite over pipe: the host sees the line and the PIN apart; the line, t
   assert.ok(!inv.includes(`"${pin}"`) && !inv.includes(word), 'the host keeps neither in clear');
 });
 
-test('a join request with no PIN (as PLAN-JOIN step 4\'s knock makes it): the host\'s tail wakes its Claude to open the card once; an AFK card records nothing; Let in links the machine, signed; its session is told; a bare /sub-human takes the seat', async t => {
+test('a join request with no PIN (as PLAN-JOIN step 4\'s knock makes it): the host\'s tail wakes its Claude to open the card once; an AFK card records nothing; Let in links the machine, signed; its session\'s tail asks the module to take the seat; with no module there, a bare /sub-human takes it', async t => {
   const { host, remote, alice, bob, code } = room(t);
   const m = shown(reason(host.join(alice, 'invite --pipe')));
   stopDaemon(t, remote, code);
@@ -178,10 +200,12 @@ test('a join request with no PIN (as PLAN-JOIN step 4\'s knock makes it): the ho
   const yes = card(host, alice, req0.ref, 'Let in');
   assert.match(ctx(yes.post), /alice let bob's machine into room/);
   await until(() => remote.lib(() => linkSocket.status(code)).state === 'online', 10000, 'the link online');
-  // the joiner's session, still without a seat, is told by its tail that the host let it in, once
+  // the joiner's session, still without a seat: its tail asks the module to take it, once, with the line the person
+  // reads when nothing takes it (the session closed), and the check the card showed
   const told = events(await remote.tail(bob, 2));
-  const letIn = told.filter(e => e.type === 'chat' && e.lines.includes(`the host let you in to room ${code}: type /sub-human to join it as bob`));
-  assert.equal(letIn.length, 1, JSON.stringify(told));
+  const letIn = told.filter((e): e is Extract<TailEvent, { type: 'take' }> => e.type === 'take');
+  assert.deepEqual(letIn, [{ type: 'take', code, name: 'bob', text: `the host let you in to room ${code}: type /sub-human to join it as bob`, check: awaiting.check }], JSON.stringify(told));
+  // the bare fallback: no module took it, the person types /sub-human
   const seated = remote.join(bob, '');
   assert.equal(must(seated.json).decision, undefined, seated.stdout);
   assert.ok(remote.lib(() => identityLib.readMembers(code)).bob, 'bob is seated');
@@ -450,6 +474,8 @@ test('a re-invite after a kick (stage 8f item 2): the session that typed the new
   const chat = told.flatMap(e => e.type === 'chat' ? e.lines : []);
   const said = [reason(gave), ...chat].filter(l => l.includes(`the host let you in to room ${code}`));
   assert.equal(said.length, 1, `${reason(gave)} ${JSON.stringify(told)}`);
+  // once the kicked copy's seat is gone here, the tail asks the module to take the new one: at most once
+  assert.ok(told.filter(e => e.type === 'take').length <= 1, JSON.stringify(told));
   // the kick's stop is no answer to the new line: its join is never said to be refused (live, verify11)
   assert.equal(chat.filter(l => l.startsWith('✗ could not join')).length, 0, JSON.stringify(told));
 });
