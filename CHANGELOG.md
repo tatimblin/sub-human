@@ -2,6 +2,28 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 0.5.0-beta.21 (unreleased)
+
+Tested on Claude Code 2.1.296 and 2.1.302 (the canary: the internals probe, the hooks module's wiring tests and `plugin validate --strict` on each).
+
+### Added
+- **sub-human checks each new Claude Code version itself.** The first session on a Claude Code version it was not released against checks every internal it relies on in the background (a few seconds, once per version) and keeps the answer. A feature whose internals changed switches to a fallback that works without them, and you get one line saying which: the room task list is turned off (tasks are kept in the room), plan edits go through the plan tool instead of plan mode, sign-off is a question Claude Code asks you instead of the plan view. Nothing else is turned off: a change elsewhere only marks the version unverified. `sub-human doctor` shows the answer for the running version.
+- **Sign-off without the plan view** (`plan signoff`, used only while the plan view's internals are off): Claude Code's own MCP question dialog asks you to agree or object (with a note). Only your answer there is recorded; the model never sees or answers the question.
+- **Plan edits without plan mode** (`plan put`): a new version stored with the same compare-and-swap, used when plan mode's internals are off or a plan-mode edit could not be captured.
+- `npm run canary [latest|next|X.Y.Z]` (and a nightly CI job) runs the probe, the hooks-module tests and validate against a Claude Code release from npm, in a scratch prefix and config dir.
+
+### Changed
+- The room session's job is found by its name in `claude agents --json`, not from `claude --bg`'s first output line; its client gets your env minus your session's own keys, not a copy of Claude Code's allowlist.
+- The room's task files are checked before they are written (the store is still files, Claude Code's own files still read, the lock layout is known, the key-value task backend is off); if not, the list is not shown, the brief and doctor say why, and it comes back when the check passes.
+- The host repairs the room's task files while the room session is down.
+
+### Fixed
+- A room whose room session never started, and whose members all crashed, is now closed.
+- The room session's join no longer drops where its task list is.
+- A fork whose transcript does not say which session it continued takes no seat and says to run `/sub-human`, instead of nothing.
+- An objection's note is kept when the transcript cannot be read (it is taken from the refusal itself).
+- `ci.yml` was not valid YAML (an unquoted ": " in a step name), which is likely why every Actions run failed with no jobs (#22).
+
 ## 0.5.0-beta.20 (unreleased)
 
 Tested on Claude Code 2.1.296; the internals probe also passes on 2.1.302.

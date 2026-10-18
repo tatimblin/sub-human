@@ -20,7 +20,7 @@ import type { ContractEntry, Feature } from '../lib/cc/contract.ts';
 const entry = (id: string, feature: Feature, extra: Partial<ContractEntry> = {}): ContractEntry => ({ id, stability: 'incidental', feature, search: [`${id}-search`], note: id, ...extra });
 const ENTRIES = [
   entry('a-core', 'core'), entry('a-tasks', 'tasks'), entry('a-sign', 'sign-off'), entry('a-edit', 'plan-edit'),
-  entry('a-rows', 'rows'), entry('a-look', 'cosmetic'), entry('a-test', 'test'), entry('a-room', 'room-session'),
+  entry('a-rows', 'rows'), entry('a-look', 'cosmetic'), entry('a-test', 'test'), entry('a-room', 'room-session'), entry('a-ask', 'fallback'),
   entry('a-later', 'delivery', { degraded: [{ from: '9.0.0', note: 'reported changed' }] }),
 ];
 const judged = (failed: string[], version = '2.1.900') => verdict.judge(version, failed, { entries: ENTRIES, now: Date.parse('2026-10-17T00:00:00Z') });
@@ -60,8 +60,8 @@ test('contract: every entry names a feature, one of FEATURES', () => {
 test('judge: core, cosmetic and test failures gate nothing (unverified only); a gated one turns its feature off; sign-off implies plan-edit', () => {
   const none = judged([]);
   assert.deepEqual([none.failed, none.off, verdict.verified(none)], [[], [], true]);
-  const plumbing = judged(['a-core', 'a-look', 'a-test', 'a-rows']);
-  assert.deepEqual(plumbing.off, [], 'no fallback for plumbing, drawing, the tests or rows');
+  const plumbing = judged(['a-core', 'a-look', 'a-test', 'a-rows', 'a-ask']);
+  assert.deepEqual(plumbing.off, [], 'no fallback for plumbing, drawing, the tests, rows or a fallback itself');
   assert.equal(verdict.verified(plumbing), false);
   assert.deepEqual(judged(['a-tasks']).off, ['tasks']);
   assert.deepEqual(judged(['a-edit']).off, ['plan-edit']);

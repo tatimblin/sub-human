@@ -125,7 +125,7 @@
    "id": "mcp-elicitation",
    "section": 2,
    "stability": "incidental",
-   "feature": "sign-off",
+   "feature": "fallback",
    "since": "2.1.296",
    "search": [
     "elicitation:{form:{},url:{}}",

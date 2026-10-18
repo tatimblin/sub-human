@@ -32,8 +32,9 @@ import path from 'node:path';
 
 type Env = NodeJS.ProcessEnv;
 type Stability = 'API' | 'env' | 'incidental';
-const FEATURES = ['core', 'room-session', 'tasks', 'plan-edit', 'sign-off', 'rows', 'delivery', 'addressing', 'fork', 'statusline', 'cosmetic', 'test'] as const;
-/** The part of sub-human an entry's behaviour serves (contract.json `feature`). */
+const FEATURES = ['core', 'room-session', 'tasks', 'plan-edit', 'sign-off', 'rows', 'delivery', 'addressing', 'fork', 'statusline', 'cosmetic', 'test', 'fallback'] as const;
+/** The part of sub-human an entry's behaviour serves (contract.json `feature`). `fallback`: what a fallback itself relies on, never
+ * gated (turning a feature to the fallback that the failed entry carries would leave it nowhere to go). */
 type Feature = typeof FEATURES[number];
 
 /**
