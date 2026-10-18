@@ -288,6 +288,10 @@ export interface Member {
   /** the room session's native task list directory (its config dir's tasks/sh-CODE), where the host projects the
    * room's tasks (lib/room/task-files.ts); host only, never streamed */
   tasks_dir?: string;
+  /** why that list is not written now (lib/cc/tasks.ts check said no: the task store changed, the directory is not
+   * writable, ...): the tasks stay in the log, nothing is projected; cleared when the check passes again. Host only,
+   * never streamed */
+  tasks_off?: string;
 }
 
 /** The members document: name -> seat record. */

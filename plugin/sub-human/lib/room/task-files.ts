@@ -11,7 +11,13 @@
  *                                    rename), under Claude Code's own list lock and each task's lock (lib/cc/tasklock.ts);
  *                                    a deleted task's file goes; .highwatermark is raised to the highest id, so a
  *                                    TaskCreate never reuses one. A file the log does not know is left alone
+ *                                    {skipped: reason} too, writing nothing, while members.claude.tasks_off is set
  *   nextId(code, tasks, {dir?}) -> string   one more than the highest of the log's ids, the files' and the mark
+ *   preflight(code, {dir?}) -> reason | null   lib/cc/tasks.ts check on the list's directory, recorded as
+ *                                    members.claude.tasks_off (set, or cleared once it passes again; written only
+ *                                    when it changes). The room session's start (lib/room-claude.ts openTaskList)
+ *                                    and every repair (lib/tasks.ts) run it; a change Claude Code made to its task
+ *                                    store then costs the room session's view, never a task: the log keeps them
  *
  * Claude Code's list reset (contract task-list-auto-reset: once every task is completed, a session showing the list
  * deletes every file) never fires while the room is open: the room task ("room CODE open", owner room) stays
@@ -27,7 +33,7 @@ import { writeFileAtomic } from '../io.ts';
 import * as identity from '../identity.ts';
 import type { NativeTask, NativeStatus } from '../cc/tasks.ts';
 import type { FoldedTask } from '../types-app.ts';
-import type { Members } from './types.ts';
+import type { Member, Members } from './types.ts';
 import type { RoomCode } from '../brand.ts';
 
 /** The room's list id: the room session's CLAUDE_CODE_TASK_LIST_ID. */
@@ -63,8 +69,16 @@ function native(code: RoomCode, t: FoldedTask, all: readonly FoldedTask[]): Nati
   };
 }
 
-function project(code: RoomCode, tasks: readonly FoldedTask[], { dir = dirOf(code) }: { dir?: string } = {}): { wrote: string[]; removed: string[] } {
+/** What project did: the ids written and removed; skipped, the recorded reason it wrote nothing. */
+interface Projected { wrote: string[]; removed: string[]; skipped?: string }
+
+function project(code: RoomCode, tasks: readonly FoldedTask[], { dir }: { dir?: string } = {}): Projected {
   const wrote: string[] = [], removed: string[] = [];
+  let ms: Members | null = null;
+  try { ms = identity.readMembers(code); } catch { /* no record: the default dir */ }
+  const off = ms?.claude?.tasks_off;
+  if (off) return { wrote, removed, skipped: off };
+  dir ??= dirOf(code, ms);
   const live = tasks.filter(t => /^\d+$/.test(t.id));
   withListLock(dir, () => {
     for (const t of live) {
@@ -93,4 +107,17 @@ function nextId(code: RoomCode, tasks: readonly FoldedTask[], { dir = dirOf(code
   return String(Math.max(0, ...ids, ccTasks.markOf(dir), ...ccTasks.fileIds(dir)) + 1);
 }
 
-export { listId, dirOf, project, nextId };
+function preflight(code: RoomCode, { dir, env = process.env }: { dir?: string; env?: NodeJS.ProcessEnv } = {}): string | null {
+  const ms = identity.readMembers(code);
+  const r = ccTasks.check(dir ?? dirOf(code, ms), { env });
+  const reason = r.ok ? null : r.reason;
+  const cur = ms.claude?.tasks_off ?? null;
+  // a plain read first: the tick that changes nothing takes no lock (and no room session record: nothing to record on)
+  if (ms.claude && cur !== reason) {
+    identity.updateRoomClaude(code, (o: Member | null) => ((o?.tasks_off ?? null) === reason ? null : { tasks_off: reason ?? undefined }));
+  }
+  return reason;
+}
+
+export { listId, dirOf, project, nextId, preflight };
+export type { Projected };

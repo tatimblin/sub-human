@@ -125,8 +125,12 @@ interface TailDeps {
   admission: AdmissionLib;
   invites: InvitesLib;
   sweepSeats(code: RoomCode): unknown;
-  /** the room session's task files, projected from the log again (lib/tasks.ts repair; the room session's tail, on the host) */
+  /** the room session's task files, projected from the log again (lib/tasks.ts repair; on the host: the room session's
+   * tail, and a member's while roomSessionDown) */
   repairTasks(code: RoomCode): unknown;
+  /** the room session's task list was made (members.claude.tasks_dir) but the session does not hold its seat now (it
+   * never bound, crashed or is starting again), and the room is not closing: a member's tail on the host repairs it */
+  roomSessionDown(code: RoomCode): boolean;
   pendingNews(sid: string): { state: 'waiting' | 'pin' | 'linked' | 'refused'; code: RoomCode; text: string } | null;
 }
 /** The deps as a session uses them: the lazily loaded modules behind a getter. */
@@ -638,7 +642,11 @@ function startSession(me: Identity, ctx: TailCtx): Session {
     // seats that ended with no leave (a dead pid, a lease run out) are logged as left, before the watchdog counts them
     if (rm.store && rm.store.isHost) { try { deps.sweepSeats(s.code); } catch (e) { log('seat sweep', e); } }
     if (me.role === 'claude') deps.roomClaude().watchdog(s.code);
-    if (me.role === 'claude' && rm.store && rm.store.isHost) { try { deps.repairTasks(s.code); } catch (e) { log('task files', e); } }
+    // the task files never depend on the room session alone: while it is down, a member's tail on the host repairs them
+    // (more than one may: repair runs under the room's tasks lock, so they take turns)
+    if (rm.store && rm.store.isHost && (me.role === 'claude' || deps.roomSessionDown(s.code))) {
+      try { deps.repairTasks(s.code); } catch (e) { log('task files', e); }
+    }
   }
 
   // a timer callback that survives its own error
@@ -693,6 +701,10 @@ function runTail({
     invites: deps.invites ? constant(deps.invites) : invitesLib,
     sweepSeats: deps.sweepSeats ?? ((code: RoomCode) => seatsLib().sweep(code)),
     repairTasks: deps.repairTasks ?? ((code: RoomCode) => tasksLib().repair(roomMod.open(code).store)),
+    roomSessionDown: deps.roomSessionDown ?? ((code: RoomCode) => {
+      const o = identityMod.readMembers(code).claude;
+      return !!o && !!o.tasks_dir && !o.closing && !o.stopped_at && !identityMod.seatAlive(o);
+    }),
     pendingNews: deps.pendingNews ?? ((s: string) => {
       // a cheap look first: the link files (most unseated tails have no pending join); the link code only when one is
       if (!linksMod.list().some(c => { const l = linksMod.get(c); return !!l && l.join_sid === s; })) return null;

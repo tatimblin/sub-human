@@ -233,10 +233,24 @@ const globalConfigFile = (env: Env = process.env): string => {
  * undefined when unknown (no file, no entry: the default, on). Read only.
  */
 function modulesSwitch(env: Env = process.env): boolean | undefined {
+  return cachedSwitch('tengu_plugin_hooks_modules', env);
+}
+
+/** The last global config parsed, kept while its file's mtime and size stay (a tail asks every health tick). */
+let parsed: { file: string; mtimeMs: number; size: number; json: unknown } | null = null;
+
+/** A boolean feature switch as Claude Code last cached it (the global config's cachedGrowthBookFeatures[name]), or
+ * undefined (no file, no entry, not a boolean). Read only. */
+function cachedSwitch(name: string, env: Env = process.env): boolean | undefined {
+  const file = globalConfigFile(env);
   let j: unknown;
-  try { j = JSON.parse(fs.readFileSync(globalConfigFile(env), 'utf8')); } catch { return undefined; }
+  try {
+    const st = fs.statSync(file);
+    if (parsed && parsed.file === file && parsed.mtimeMs === st.mtimeMs && parsed.size === st.size) j = parsed.json;
+    else { j = JSON.parse(fs.readFileSync(file, 'utf8')); parsed = { file, mtimeMs: st.mtimeMs, size: st.size, json: j }; }
+  } catch { return undefined; }
   const at = (o: unknown, k: string): unknown => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined);
-  const v = at(at(j, 'cachedGrowthBookFeatures'), 'tengu_plugin_hooks_modules');
+  const v = at(at(j, 'cachedGrowthBookFeatures'), name);
   return typeof v === 'boolean' ? v : undefined;
 }
 
@@ -269,5 +283,5 @@ function matcherMatches(m: string | null | undefined, name: string, { toolEvent 
 
 export {
   ENV, sessionId, claudePid, taskListId, configDir, mcpFailureLeft, sanitizeId, tasksDir, plansDir, taskFile, projectDir, userSettingsFiles,
-  clearContextOnPlanAccept, globalConfigFile, modulesSwitch, matcherIsExact, matcherMatches, PLAN_ATTACHMENT_EVENT, ENTER_IN_PLAN_MODE, leavePlanMode, LEAVE_PLAN_TEXT, denyWithContext,
+  clearContextOnPlanAccept, globalConfigFile, modulesSwitch, cachedSwitch, matcherIsExact, matcherMatches, PLAN_ATTACHMENT_EVENT, ENTER_IN_PLAN_MODE, leavePlanMode, LEAVE_PLAN_TEXT, denyWithContext,
 };
