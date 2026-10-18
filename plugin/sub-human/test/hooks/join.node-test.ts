@@ -504,15 +504,25 @@ test('SECURITY: every join, invite and admit prompt (and any with a word of digi
     ['join dev vole-1234 48291', /the line's SECRET \(its last long word\) did not come through whole/], // not a SECRET
     ['join dev vole-1234 482', /did not come through whole/],
     ['join dev vole-1234 4829', /did not come through whole/], // a 0.5.0-beta.15 line: no SECRET
-    [`join dev vole-1234 ${S} 4829`, /type the line without the PIN: the host's machine asks for the PIN once it has answered/],
+    [`join dev vole-1234 ${S} 48291`, /a PIN is 4 digits: \/sub-human join LINE PIN/], // the line with a PIN after it: refused here only for a PIN that is none
+    [`join dev vole-1234 ${S} 4829 x`, /usage: \/sub-human join LINE PIN/],
+    [`join dev vole-1234 ${S} bob`, /usage: \/sub-human join LINE PIN/],
     [`join dev vole-1234 ${S.slice(0, 30)}`, /did not come through whole/],
     [`join dev vole-1234 ${S} --home rel`, /--home "rel" isn't a plain absolute path/],
     [`join dev vole-1234 ${S} --frob`, /"--frob" isn't a join option/],
     [`join dev vole-1234 ${S} extra x`, /usage: \/sub-human join/],
     ['join https://box/sub-human/vole-1234 48291', /did not come through whole/],
     ['join https://box/sub-human/vole-1234', /needs the SECRET/],
-    [`join https://box/sub-human/vole-1234 ${S} 4829`, /type the line without the PIN/],
+    [`join https://box/sub-human/vole-1234 ${S} 482`, /a PIN is 4 digits/],
     [`join https://box/sub-human/vole-1234 ${S} --home /x`, /--home goes with an ssh address/],
+    ['join https://box/sub-human/vole-1234#', /needs the SECRET/],
+    [`join https://box/sub-human/vole-1234#${S.slice(0, 30)} 4829`, /did not come through whole/],
+    [`join https://box/sub-human/vole-1234#${S} 48291`, /a PIN is 4 digits/],
+    [`join https://box/sub-human/vole-1234#${S} ${S}`, /usage: \/sub-human join LINE PIN/],
+    [`join https://box/sub-human/vole-1234#${S} 4829 x`, /usage/],
+    [`join https://box/sub-human/vole-1234#${S} 4829 --home /x`, /--home goes with an ssh address/],
+    [`join https://box/x/4829#${S} 4829`, /isn't a join address/],
+    [`https://box/sub-human/vole-1234#${S}`, /that looks like an invite line's SECRET/], // "join" left out
     [`join dev vole-1234 ${S} --via j`, /"--via" isn't a join option/],
     [`join https://box/x/4829 ${S}`, /isn't a join address.*Paste the whole line the host sent you/],
     [`join YOU@box vole-1234 ${S}`, /placeholder/],
@@ -539,6 +549,10 @@ test('SECURITY: every join, invite and admit prompt (and any with a word of digi
   }
   // a mistyped PIN or SECRET never lands anywhere the model reads, nor in the reply
   for (const word of ['48291', '4829123', S.slice(0, 30)]) assert.ok(!must(must(w.hook('join', expand(`join dev vole-1234 ${word}`), { as: 'me' }).json).reason).includes(word));
+  for (const line of [`join dev vole-1234 ${S} 48291`, `join https://box/sub-human/vole-1234#${S} 48291`, `join https://box/x/4829#${S} 4829`]) {
+    const said = must(must(w.hook('join', expand(line), { as: 'me' }).json).reason);
+    assert.ok(!said.includes(S) && !said.includes('4829'), `${line}: neither the SECRET nor the PIN is echoed`);
+  }
   for (const word of ['48291', '4829']) assert.ok(!must(must(w.hook('join', expand(`join ${word}`), { as: 'me' }).json).reason).includes(word));
   assert.deepEqual(fs.readdirSync(w.home).filter(d => d === 'links'), [], 'no link written');
   // without the hooks module's lease, a join is still hidden

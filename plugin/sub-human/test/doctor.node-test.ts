@@ -188,6 +188,13 @@ test('doctor redactor: each rule alone', () => {
   assert.equal(red(`id ${'ab'.repeat(8)}`), 'id <hex>');
   assert.equal(red('link aaaaaaaaaaaa'), 'link aaaaaaaaaaaa', 'a 12-hex link id stays');
   assert.equal(red('sh2.vole-1234.c3NoOm1l.ZmFrZXNlY3JldGZha2VzZWNyZXQ.0'), 'sh2.<invite>');
+  // an invite line's SECRET and the PIN typed after it, whatever their letters
+  const S = 'kqmnpzstvwxyabcdefghjkmnpqrstvwxyzabcde'; // no digit: SECRET's shape all the same
+  assert.equal(red(`/sub-human join https://x.ts.net/sub-human/vole-1234#${S} 4829`), '/sub-human join https://x.ts.net/sub-human/vole-1234#<secret> <pin>');
+  assert.equal(red(`/sub-human join https://x.ts.net/sub-human/vole-1234#${S}`), '/sub-human join https://x.ts.net/sub-human/vole-1234#<secret>');
+  assert.equal(red(`join https://x.ts.net/sub-human/vole-1234#${S} 48291 --as bob`), 'join https://x.ts.net/sub-human/vole-1234#<secret> <pin> --as bob', 'a PIN of another length too');
+  assert.equal(red(`join dev vole-1234 ${S} 482`), 'join dev vole-1234 <secret> <pin>');
+  assert.equal(red(`join dev vole-1234 ${S} --home /srv/sh`), 'join dev vole-1234 <secret> --home /srv/sh');
   assert.equal(red('\x1b[31mred\x1b[0m'), 'red');  const tmp = doctor.redactor({ home: '/home/zed', shHome: '/tmp/sh-x', salt: 's' });
   assert.equal(tmp('state in /tmp/sh-x/links/a.json'), 'state in <sub-human-home>/links/a.json', 'a SUB_HUMAN_HOME outside $HOME');
   assert.equal(tmp('/tmp/sh-xy'), '/tmp/sh-xy', 'whole path segments only');

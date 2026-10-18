@@ -83,7 +83,7 @@ export async function converge(t: T, host: SeatDriver, code: string, mirrors: Se
 }
 
 export const WS_PORT = Number(process.env.LAB_WS_PORT || 7420);
-const WEB_LINE_RE = /\/sub-human (join https:\/\/tls-front\/\S+ [0-9a-z]{39})\n/;
+const WEB_LINE_RE = /\/sub-human (join https:\/\/tls-front\/[^\s#]+[ #][0-9a-z]{39})\n/; // URL#SECRET (an older host's URL SECRET)
 const PIN_RE = /apart from the line[^\n]*: (\d{4})\n/;
 const LAB_CA_ENV = { NODE_EXTRA_CA_CERTS: '/etc/lab-ca.crt' };
 
