@@ -839,6 +839,13 @@ test('tail: on the host, the room\'s open invite refs each time they change, so 
   inRoom(code, r => r.store.kv.set('remote/invites', { ['a'.repeat(64)]: rec({ used_at: new Date(now).toISOString() }), ['b'.repeat(64)]: rec({ burnt_at: new Date(now).toISOString() }) }));
   t.advance(FAST.healthMs + 100);
   assert.deepEqual(t.of('invites').map(e => e.open), [['aaaaaaaaaaaa', 'bbbbbbbbbbbb'], []]);
+  assert.equal(t.of('invites').at(-1)?.expired, undefined, 'used and cancelled: not expired');
+  // noise pass H: one that lapses unused is named, so the module tells the person who made it
+  inRoom(code, r => r.store.kv.set('remote/invites', { ['c'.repeat(64)]: rec({ expires_at: new Date(t.clock.now() + 2 * FAST.healthMs).toISOString() }) }));
+  t.advance(FAST.healthMs + 100);
+  assert.deepEqual(t.of('invites').at(-1)?.open, ['cccccccccccc']);
+  t.advance(2 * FAST.healthMs);
+  assert.deepEqual(t.of('invites').at(-1), { type: 'invites', open: [], expired: ['cccccccccccc'] });
   t.stop();
 });
 

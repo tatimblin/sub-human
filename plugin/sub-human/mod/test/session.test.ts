@@ -15,7 +15,7 @@ const HOME = '/u/.sub-human'
  * the guard let through. */
 type Answer = { stdout?: string; exitCode?: number; stderr?: string }
 type Options = { indexed?: boolean; seat?: Seat | null; answer?: Record<string, Answer>; cc?: Record<string, unknown> }
-function world(_engine: Engine, on: On, { indexed = false, seat = null, answer = {}, cc }: Options = {}) {
+function world(_engine: Engine, on: On, { indexed = false, seat = null, answer = {}, cc, home }: Options & { home?: string } = {}) {
   const seen: { runs: string[]; stdin: Record<string, Record<string, unknown>>; prompts: string[]; asUser: boolean[]; logs: string[] } = { runs: [], stdin: {}, prompts: [], asUser: [], logs: [] }
   session(on, SID)
   on('session.cwd', () => ({ value: '/w' }))
@@ -27,7 +27,7 @@ function world(_engine: Engine, on: On, { indexed = false, seat = null, answer =
     const script = scriptOf(e)
     seen.runs.push(script)
     seen.stdin[script] = stdinOf(e)
-    if (script === 'mod-hello.ts') return ran(JSON.stringify({ ...helloOf(seat), ...(cc ? { cc } : {}) }))
+    if (script === 'mod-hello.ts') return ran(JSON.stringify({ ...helloOf(seat), ...(home ? { home, realHome: home } : {}), ...(cc ? { cc } : {}) }))
     const a = answer[script] ?? {}
     return ran(a.stdout ?? '', a.exitCode ?? 0, a.stderr ?? '')
   })
@@ -125,14 +125,14 @@ test('stage 8e E: a fork whose seat is in another sub-human folder: session-rest
   expect(seen.runs).toEqual(['session-restore.ts', 'mod-hello.ts'])
 })
 
-test('stage 8f item 1: a hello that names a seat appends the hidden home notice once per session and folder; one with no seat appends none', async ($, on) => {
+test('stage 8f item 1: a hello that names a seat in another folder appends the hidden home notice once per session and folder; the default folder and no seat append none', async ($, on) => {
   const appended: EventOf['session.append']['message'][] = []
   on('session.append', (_$, e, next) => { appended.push(e.message); return next(e) })
-  const seen = world($, on, { indexed: true, seat: SEAT })
+  const seen = world($, on, { indexed: true, seat: SEAT, home: '/u/work/.sub-human' })
   await start($)
   await until(() => appended.length === 1)
   expect(appended[0]?.type).toBe('system')
-  expect(appended[0]?.content).toEqual([{ type: 'text', text: 'sub-human: home /u/.sub-human' }])
+  expect(appended[0]?.content).toEqual([{ type: 'text', text: 'sub-human: home /u/work/.sub-human' }])
   // another hello for the same session and folder (a resume's restore): no second notice
   await $.classic.SessionStart({ session_id: SID, source: 'resume', cwd: '/w', transcript_path: '/t.jsonl' })
   await new Promise(r => setTimeout(r, 50))
@@ -166,6 +166,16 @@ test('a hello with no seat says nothing of the version', async ($, on) => {
   await new Promise(r => setTimeout(r, 30))
   await clock.advance(400)
   expect(seen.logs).toEqual([])
+})
+
+test('noise pass H: a seat in the default folder (~/.sub-human) appends no home notice', async ($, on) => {
+  const appended: unknown[] = []
+  on('session.append', (_$, e, next) => { appended.push(e.message); return next(e) })
+  const seen = world($, on, { indexed: true, seat: SEAT })
+  await start($)
+  await until(() => seen.runs.includes('mod-hello.ts'))
+  await new Promise(r => setTimeout(r, 50))
+  expect(appended).toEqual([])
 })
 
 test('stage 8f item 1: a session with no seat appends no home notice', async ($, on) => {

@@ -250,6 +250,8 @@ The room session (`claude.vole-8126`) takes no typed input and reads nothing. It
 ⏺ ✓ sent to room vole-8126 (Claude wasn't asked)
 ```
 
+Later ones in the same session read just `⏺ ✓ sent`.
+
 If your Claude Code shows the receipt as "Operation stopped by hook: ✓ sent …", that is the same receipt: nothing went wrong. A refusal of your own words (no room, nothing after the tag, the room refused it, its connection stopped) is the same kind of line, starting with `✗`, and your prompt is not put back in the input: type it again when it says so. A long paste that starts with `@room` posts too (marked `(pasted text unwrapped)`).
 
 - Only a leading tag counts: `@room ask bob later` posts, `ask @room` does not.

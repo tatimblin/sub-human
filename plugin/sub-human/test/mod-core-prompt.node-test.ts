@@ -91,6 +91,11 @@ test('prompt: receiptBook keeps only an @room stop\'s own warning row, as the re
   assert.equal(book.rewrite(notice(SENT)), null, 'no frame');
   assert.deepEqual(book.rewrite(notice(`${STOP_FRAME}${SENT}`)), notice(SENT));
   assert.equal(book.rewrite(notice(`${STOP_FRAME}${SENT}`)), null, 'once');
+  // noise pass H: the session's next "✓ sent to room …" is just "✓ sent" (its other notes kept)
+  book.expect(SENT);
+  assert.deepEqual(book.rewrite(notice(`${STOP_FRAME}${SENT}`)), notice('✓ sent'));
+  book.expect(`${SENT} (pasted text unwrapped)`);
+  assert.deepEqual(book.rewrite(notice(`${STOP_FRAME}${SENT} (pasted text unwrapped)`)), notice('✓ sent (pasted text unwrapped)'));
   book.expect('a'); book.expect('b'); book.expect('c');
   assert.equal(book.size, 2, 'a stop whose row never came is forgotten');
   assert.equal(book.rewrite(notice(`${STOP_FRAME}a`)), null);
@@ -107,7 +112,7 @@ test('prompt (stage 8f item 4): the model row of an @room line\'s stop says it w
   const SENT = "✓ sent to room otter-4821 (Claude wasn't asked)";
   const meta = (text: string) => ({ type: 'user', isMeta: true, content: [{ type: 'text', text }] });
   book.expect(SENT);
-  assert.deepEqual(book.modelRow(meta(`${STOP_FRAME}${SENT}`)), meta(`sub-human: the person's @room line above went to the room, not to you (${SENT}); nothing is asked of you.`));
+  assert.deepEqual(book.modelRow(meta(`${STOP_FRAME}${SENT}`)), meta('sub-human: that @room line went to the room; nothing is asked of you.'));
   // a refusal went nowhere: never "your @room line went to the room" (the room session's refusal of a plain prompt, live)
   assert.equal(RECEIPT_FOR_MODEL('✗ the room\'s session takes no typed input'), 'sub-human: the prompt above was refused and went nowhere (✗ the room\'s session takes no typed input); nothing is asked of you.');
   assert.doesNotMatch(RECEIPT_FOR_MODEL('✗ not posted: there is nothing after @room.'), /went to the room/);

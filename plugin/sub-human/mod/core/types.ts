@@ -78,7 +78,7 @@ export type DeliverAction =
   | { do: 'submit'; text: string; seen: string[] }
   | { do: 'hold-rows'; text: string | null }
   | { do: 'seat'; seat: TailSeat | null }
-  | { do: 'invites'; open: string[] }
+  | { do: 'invites'; open: string[]; expired?: string[] }
   | { do: 'take'; code: string; name: string; text: string; check?: string };
 
 /** The room context waiting for the next prompt ($.state pulls, mod/core/deliver.ts holdPull): each pull event's lines

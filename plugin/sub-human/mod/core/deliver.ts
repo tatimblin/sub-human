@@ -91,7 +91,11 @@ export function parseEvent(line: string): TailEvent | null {
     }
     case 'chat': return Array.isArray(o.lines) && o.lines.length ? { type: 'chat', lines: o.lines.map(String) } : null;
     case 'rows': return { type: 'rows', text: str(text) ? text : null };
-    case 'invites': return Array.isArray(o.open) ? { type: 'invites', open: o.open.filter((r: unknown) => typeof r === 'string') } : null;
+    case 'invites': {
+      if (!Array.isArray(o.open)) return null;
+      const expired = Array.isArray(o.expired) ? o.expired.filter((r: unknown): r is string => typeof r === 'string') : [];
+      return { type: 'invites', open: o.open.filter((r: unknown) => typeof r === 'string'), ...(expired.length ? { expired } : {}) };
+    }
     case 'pull': case 'wake': case 'health': return str(text) ? { type, text } : null;
     case 'take': {
       const { code, name, check } = o;
@@ -116,7 +120,7 @@ export const logLines = (x: unknown): { do: 'log'; text: string }[] => (Array.is
 
 /**
  * [action], each {do:'log'|'append'|'mid-turn-wake', text} | {do:'submit', text, seen} |
- * {do:'hold-rows', text|null} | {do:'seat', seat} | {do:'invites', open} (the room's open invite refs: the module unpins one not among them). A mid-turn wake is appended now and handed to turnLedger, since the
+ * {do:'hold-rows', text|null} | {do:'seat', seat} | {do:'invites', open, expired?} (the room's open invite refs: the module unpins one not among them, and says so when it lapsed unused: expired). A mid-turn wake is appended now and handed to turnLedger, since the
  * request in flight may not carry it. A submit's `seen` are the lines the person would see, logged when the submit
  * does not take the wake.
  */
@@ -131,7 +135,7 @@ export function route(
     case 'pull': return [{ do: 'hold-pull', text: ev.text }];
     case 'rows': return [{ do: 'hold-rows', text: ev.text }];
     case 'health': return [...logLines(ev.text), { do: 'append', text: `${FOR_CLAUDE} ${ev.text}` }];
-    case 'invites': return [{ do: 'invites', open: ev.open }];
+    case 'invites': return [{ do: 'invites', open: ev.open, ...(ev.expired ? { expired: ev.expired } : {}) }];
     case 'take': return [{ do: 'take', code: ev.code, name: ev.name, text: ev.text, ...(ev.check ? { check: ev.check } : {}) }];
     case 'wake': {
       // The room's Claude has no person to type: its rows calls ride on its wakes. A member's go with the person's prompt.

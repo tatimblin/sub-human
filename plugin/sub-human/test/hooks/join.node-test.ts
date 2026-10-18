@@ -143,7 +143,7 @@ test('bare /sub-human: not in a room, it opens one as the default name (git user
   // seated: the status, no model turn
   r = plain.hook('join', expand(''), { as: 'me', env: NO_GIT });
   assert.equal(must(r.json).decision, 'block');
-  assert.match(must(must(r.json).reason), new RegExp(`^sub-human: you're dana in room ${code}, nobody else here yet · another machine: /sub-human invite · leave: /sub-human leave( · starting the room session….*)?$`));
+  assert.match(must(must(r.json).reason), new RegExp(`^sub-human: you're dana in room ${code}, nobody else here yet · another machine: /sub-human invite · leave: /sub-human leave( · the room session is starting again \\(.*\\))?$`));
 });
 
 test('/sub-human CODE (a room code alone) joins that room as the default name, never as a person named after the room', () => {
@@ -292,7 +292,7 @@ test('joining a room with no live claude restarts it; a failed start is retried 
   assert.equal(seat(w, 'claude').job, null);
   const s = stub(w.code);
   const r2 = w.hook('join', expand(`bob ${w.code}`), { as: 'bob', env: { SUB_HUMAN_CLAUDE: s.bin } });
-  assert.match(must(must(r2.json).systemMessage), new RegExp(`^sub-human: you're already in ${w.code} as bob, with alice · starting the room session… \\(the last start failed: .+\\)$`));
+  assert.match(must(must(r2.json).systemMessage), new RegExp(`^sub-human: you're already in ${w.code} as bob, with alice · the room session is starting again \\(the last start failed: .+\\)$`));
   assert.ok(await until(() => seat(w, 'claude').job === '0b500131'));
   assert.equal(bgCalls(s).length, 1);
   const r3 = w.hook('join', expand(`bob ${w.code}`), { as: 'bob', env: { SUB_HUMAN_CLAUDE: s.bin } });
@@ -307,11 +307,11 @@ test('a seated bare /sub-human restarts a room Claude that failed to start, and 
   const s = stub(w.code);
   const r = w.hook('join', expand(''), { as: 'bob', env: { SUB_HUMAN_CLAUDE: s.bin } });
   assert.equal(must(r.json).decision, 'block', 'still the status, no model turn');
-  assert.match(must(must(r.json).reason), new RegExp(`^sub-human: you're bob in room ${w.code}, with alice · .* · starting the room session… \\(the last start failed: .+\\)$`));
+  assert.match(must(must(r.json).reason), new RegExp(`^sub-human: you're bob in room ${w.code}, with alice · .* · the room session is starting again \\(the last start failed: .+\\)$`));
   assert.ok(await until(() => seat(w, 'claude').job === '0b500131'));
   assert.equal(bgCalls(s).length, 1);
   const r2 = w.hook('join', expand(''), { as: 'bob', env: { SUB_HUMAN_CLAUDE: s.bin } });
-  assert.doesNotMatch(must(must(r2.json).reason), /starting the room session/, 'a job that has not bound yet is not restarted');
+  assert.doesNotMatch(must(must(r2.json).reason), /starting again/, 'a job that has not bound yet is not restarted');
   assert.equal(bgCalls(s).length, 1);
 });
 

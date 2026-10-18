@@ -131,13 +131,16 @@ async function logFailure($: EngineInterface, hello: ReturnType<typeof asHello>,
 /** The session ids and folders whose transcript names the folder already (module state: a reload names it once more). */
 const homeMarked = new Set<string>();
 /**
- * A seated session's sub-human folder, once per session id and folder, as a system row in its transcript (stored at
+ * A seated session's sub-human folder, once per session id and folder, when it is not the default ~/.sub-human, as a
+ * system row in its transcript (stored at
  * level info: drawn only in the ctrl+o view; cc CONTRACT transcript-home-notice). The agent view's fork runs in a bg
  * job that drops a shell's SUB_HUMAN_HOME, and reads the folder from the transcript it continued (lib/identity.ts
  * forkedAway). Never throws.
  */
 async function markHome($: EngineInterface, hello: NonNullable<ReturnType<typeof parseHello>>) {
   if (!hello.seat || !hello.sid) return;
+  // the default folder (~/.sub-human) needs no row: a fork with no mark is read as in it (lib/identity.ts forkedAway)
+  if (hello.home === homeOf(undefined, hello.userHome)) return;
   const key = `${hello.sid}\n${hello.home}`;
   if (homeMarked.has(key)) return;
   homeMarked.add(key);
@@ -404,7 +407,11 @@ async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
       case 'hold-rows': await $.state.set(ROWS, a.text); break;
       case 'submit': void submitWake($, a.text, { seen: a.seen }); break; // not awaited: it resolves as the turn starts
       case 'mid-turn-wake': await midTurnWake($, a.text); break;
-      case 'invites': copies.keepOpen(a.open); if (pinnedRef && !a.open.includes(pinnedRef)) unpin($); break;
+      case 'invites':
+        copies.keepOpen(a.open);
+        if (pinnedRef && a.expired && a.expired.includes(pinnedRef)) $.ui.log(INVITE_EXPIRED);
+        if (pinnedRef && !a.open.includes(pinnedRef)) unpin($);
+        break;
       case 'take': void takeSeat($, c, a); break; // not awaited: the shim runs, then the wake resolves as its turn starts
       default: assertNever(a, 'delivery action');
     }
@@ -468,8 +475,11 @@ function pinStatus($: EngineInterface, { status, ms, ref }: { status: string; ms
   const mine = ++pinnedAt;
   pinnedRef = ref || null;
   $.ui.status(status);
-  try { $.clock.after(ms, () => { if (mine === pinnedAt) unpin($); }); } catch { /* it stays until the next one replaces it */ }
+  // its life over while still pinned: it lapsed unused (a use or a cancel takes it off before)
+  try { $.clock.after(ms, () => { if (mine === pinnedAt) { $.ui.log(INVITE_EXPIRED); unpin($); } }); } catch { /* it stays until the next one replaces it */ }
 }
+/** The person's line when the invite they made lapsed unused. */
+const INVITE_EXPIRED = 'invite expired; /sub-human invite for a new one';
 /** The invite is over (used, burnt, cancelled or expired): off the status line now. */
 function unpin($: EngineInterface): void {
   ++pinnedAt;

@@ -26,13 +26,15 @@ async function until(cond: () => boolean, ms = 3000) {
 type Seen = {
   prompts: string[]; contexts: string[]; logs: string[]; appends: string[]
   clip: { argv: readonly string[]; stdin: string | undefined }[]; ids: string[]; cards: EventOf['tool.call'][]; tick: () => Promise<unknown>
+  advance: (ms: number) => Promise<unknown>
 }
 /** The engine beneath: mod-hello, join.ts answering an invite (with the line unless noCard) or a cancel, clipboard
  * tools answering `clip` (exit codes in order; then 127), the prompts the module submits, and the card calls. */
 function world(engine: Engine, on: On, { ref, noCard = false, clip = [0] }: { ref: string; noCard?: boolean; clip?: number[] }) {
-  const seen: Seen = { prompts: [], contexts: [], logs: [], appends: [], clip: [], ids: [], cards: [], tick: async () => {} }
+  const seen: Seen = { prompts: [], contexts: [], logs: [], appends: [], clip: [], ids: [], cards: [], tick: async () => {}, advance: async () => {} }
   const clock = mock.clock(on, { now: 1_000_000 })
   seen.tick = () => clock.advance(1000)
+  seen.advance = (ms: number) => clock.advance(ms)
   const line = lineOf(ref)
   session(on, SID)
   on('session.cwd', () => ({ value: '/w' }))
@@ -176,4 +178,14 @@ test('no card in a session nobody types in (-p, the SDK)', async ($, on) => {
   await typed($, 'invite'); await seen.tick()
   await new Promise(r => setTimeout(r, 400))
   expect(seen.prompts).toEqual([])
+})
+
+test('noise pass H: an invite that lapses unused tells its maker in one line', async ($, on) => {
+  const ref = 'c0ffee000005'
+  const seen = world($, on, { ref, noCard: true })
+  await start($)
+  await typed($, 'invite')
+  await seen.advance(900_000)
+  await until(() => seen.logs.includes('invite expired; /sub-human invite for a new one'))
+  expect(seen.logs.filter(l => l.startsWith('invite expired')).length).toBe(1)
 })

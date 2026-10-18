@@ -96,8 +96,8 @@ function ensureRoomClaude(code: RoomCode, cwd: string | null | undefined, by: st
   } catch (e) {
     return ` · the room session could not start (${(msgOf(e) || String(e)).slice(0, 200)}); /sub-human still works, but there is no room task list`;
   }
-  const failed = last && last.spawn_error ? ` (the last start failed: ${last.spawn_error})` : '';
-  return ` · starting the room session…${failed}`;
+  // a start that works says nothing (the room row shows it); only a failure before it is worth a line
+  return last && last.spawn_error ? ` · the room session is starting again (the last start failed: ${last.spawn_error})` : '';
 }
 
 function enter({ code, name, role = 'member', machine = identity.machineIn(code), account, pid, session_id, cwd, pubkey, keepPrevious }: EnterOpts): EnterResult {

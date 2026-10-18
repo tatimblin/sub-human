@@ -27,8 +27,9 @@
  *   {type:'health', text}     a hash-chain break (one line per break); in a room hosted elsewhere linkLine each time
  *                             the link goes off and LINK_BACK once it is online again (one quiet line, no
  *                             "left"/"joined": the daemon renews the seat's lapsed lease)
- *   {type:'invites', open}    on the host, the refs of the open invite lines when the set changes (the module takes
- *                             an invite off its status line once it is used, burnt, cancelled or expired)
+ *   {type:'invites', open, expired?}   on the host, the refs of the open invite lines when the set changes (the module
+ *                             takes an invite off its status line once it is used, burnt, cancelled or expired), and
+ *                             the ones that just lapsed unused (the module tells the person who made it)
  *   {type:'take', code, name, text, check?}   a seatless session's invite join the host let in (lib/remote/joining.ts
  *                             pendingNews 'linked'), once: the module takes the seat in a new turn (mod/deliver.ts
  *                             takeSeat); text is what the person reads when it cannot (type /sub-human), check this
@@ -52,6 +53,7 @@ import * as sessionMod from './room/session.ts';
 import * as roomMod from './room.ts';
 import * as linksMod from './room/links.ts';
 import { announced } from './room/render.ts';
+import { isObj } from './decode.ts';
 import type { TailEvent, TailSeat } from './types-app.ts';
 import type { LinkStatus } from './remote/link-socket.ts';
 import type { Flush } from './remote/types-core.ts';
@@ -188,6 +190,9 @@ interface Cursor {
 }
 
 const STATE_KINDS = new Set(['proposal', 'signoff', 'objection', 'decision']);
+/** An invite record that lapsed unused: past its expiry, never used or cancelled, tries left. */
+const lapsed = (r: unknown, now: number): boolean => isObj(r) && !r.used_at && !r.burnt_at && typeof r.expires_at === 'string'
+  && now > Date.parse(r.expires_at) && Number(r.tries) > 0;
 /** A request addressed to its own asker, its one approver: the author's check (lib/room/consent.ts draft). */
 const isDraft = (e: Entry): boolean => e.to === e.from && Array.isArray(e.approvers) && e.approvers.length === 1 && e.approvers[0] === e.from;
 /** A plan version's summary from its first chat line ("bob's Claude: plan NAME vN: SUMMARY", made safe by chatLines), or ''. */
@@ -642,11 +647,15 @@ function startSession(me: Identity, ctx: TailCtx): Session {
   function inviteHealth(store: NonNullable<TailRoom['store']>) {
     const all = store.kv.get<Record<string, unknown>>('remote/invites', null) ?? {};
     const inv = deps.invites();
-    const open = Object.entries(all).filter(([, i]) => inv.inviteOpen(i, clock.now())).map(([k]) => k.slice(0, 12)).sort();
+    const now = clock.now();
+    const open = Object.entries(all).filter(([, i]) => inv.inviteOpen(i, now)).map(([k]) => k.slice(0, 12)).sort();
     const key = open.join(',');
     if (key === invitesKey) return;
+    // the ones open before that lapsed unused (not used, cancelled or out of tries): the module tells their maker
+    const was = invitesKey ? invitesKey.split(',') : [];
+    const expired = Object.entries(all).filter(([k, i]) => was.includes(k.slice(0, 12)) && lapsed(i, now)).map(([k]) => k.slice(0, 12));
     invitesKey = key;
-    emit([{ type: 'invites', open }]);
+    emit([{ type: 'invites', open, ...(expired.length ? { expired } : {}) }]);
   }
   function health() {
     try { deps.heartbeat(me); } catch (e) { log('seat heartbeat', e); } // the seat's lease (identity.heartbeat)
