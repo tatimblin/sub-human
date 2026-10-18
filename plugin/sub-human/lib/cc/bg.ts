@@ -13,7 +13,10 @@ import { envStr } from '../env.ts';
 
 type Env = NodeJS.ProcessEnv;
 
-/** One `claude agents --json` row (parseAgentsJson): missing fields null. */
+/**
+ * One `claude agents --json` row (parseAgentsJson): missing fields null.
+ * @cc With --json: also include completed background sessions
+ */
 interface AgentJob {
   pid: number | null;
   id: string | null;
@@ -64,6 +67,7 @@ const stopCmd = (id: unknown): string[] => ['stop', String(id)];
  * (missing fields null; interactive sessions have no id), or null when it isn't a JSON array.
  * status: idle|waiting|busy (live only); state: working|blocked|done|failed|stopped (bg only).
  * @cc pass its full session id (lowercase, as `claude agents --json` prints it)
+ * @cc With --json: also include completed background sessions
  * @stability API
  */
 function parseAgentsJson(text: unknown): AgentJob[] | null {
