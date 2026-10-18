@@ -2,6 +2,18 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 0.5.0-beta.22 (2026-10-18), private beta: finding node, and the lab green again
+
+Tested on Claude Code 2.1.296 (and a headless session with no node on `PATH`: the room server connected).
+
+### Changed
+- **Finding node.** Among the places node is installed, the newest one that runs sub-human is taken, not the first by name (nvm's v22.18 came before v24). It also looks in each version manager's own folder setting (`NVM_DIR`, `FNM_DIR`, `MISE_DATA_DIR`, `ASDF_DATA_DIR`, `VOLTA_HOME`, `NODENV_ROOT`, `N_PREFIX`, `XDG_DATA_HOME`), fnm's old `~/.fnm`, Homebrew's `node@24` and `node@22`, nodenv, Linuxbrew, Nix, Snap and MacPorts.
+- **`SUB_HUMAN_NODE`** names the node sub-human runs on, before any it looks for: set it in your shell or in your own settings' `env` when it picks the wrong one.
+
+### Fixed
+- Node's compile-cache folder and the row status launcher in the sub-human folder were readable by other users (inside the private folder, so not reachable); both are private now.
+- Two lab checks still expected behaviour from before beta.19, and one waited too little for a slow CI machine.
+
 ## 0.5.0-beta.21 (2026-10-18), private beta: hardened against Claude Code upgrades
 
 Tested on Claude Code 2.1.296 and 2.1.302 (the canary: the internals probe, the hooks module's wiring tests and `plugin validate --strict` on each).
