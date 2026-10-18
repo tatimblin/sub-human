@@ -97,6 +97,7 @@ export const ENV = {
   SUB_HUMAN_TAILSCALE_WARM: { kind: 'str', does: '"0": no warm-up request to a Tailscale URL' },
   SUB_HUMAN_MACHINE_LABEL: { kind: 'str', does: 'this machine\'s short name (default the host name)' },
   SUB_HUMAN_WEB_FRONT: { kind: 'str', does: 'not a user knob: the tests\' and the lab\'s HTTPS front for --web (webFront)' },
+  SUB_HUMAN_NODE: { kind: 'path', does: 'the node every plugin command runs on (hooks/node.sh), before any it looks for' },
   SUB_HUMAN_NODE_ROOT: { kind: 'path', does: 'not a user knob: hooks/node.sh looks for node\'s install places under this folder instead of / (the tests)' },
   SUB_HUMAN_CC_OFF: { kind: 'str', does: 'features forced to their fallback, comma separated (room-session, tasks, plan-edit, sign-off): lib/cc/verdict.ts forced, for tests and live checks' },
 } as const;

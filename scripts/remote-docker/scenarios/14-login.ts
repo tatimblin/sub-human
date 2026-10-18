@@ -73,8 +73,10 @@ export async function run(t: T): Promise<void> {
   const carol = lab.seat('joiner-a', { home: '.sub-human-carol' });
   const r = carol.login('carol', 'host@devbox', code, '-F', confC);
   t.log(`carol (restricted key) join: ${r.out}`);
-  t.check('a key restricted to another link cannot make a link over the login path (AUTH, says why)',
-    !r.ok && /came through a key that was let in for one other connection/.test(r.out), r.out.slice(0, 200));
+  // serve --login refuses under a forced command (SSH_ORIGINAL_COMMAND), so the join gets no link; since beta.19 (no
+  // forced-command lines of sub-human's own) it reads as a closed link, not a typed refusal
+  t.check('a key restricted to another link cannot make a link over the login path',
+    !r.ok && /the link closed|refused|cannot/.test(r.out), r.out.slice(0, 200));
   const raw = lab.exec('joiner-a', ['sh', '-c', `timeout 15 ssh -F ${confC} -T host@devbox '"$HOME"/.sub-human/bin/serve --stdio ${code} --link aaaaaaaaaaaa --login' </dev/null`], { user: 'joiner', allowFail: true, timeout: 30_000 });
   t.check('the restricted key asking for `serve --login` by hand runs only its forced command', !/--login/.test(lab.exec('devbox', ['sh', '-c', 'ps -eo args | grep "[a]aaaaaaaaaaa"'], { allowFail: true }).stdout), `exit ${raw.status}`);
   t.check('the host still holds only bob\'s login link', JSON.stringify(Object.keys(linksOf())) === JSON.stringify([id]), JSON.stringify(Object.keys(linksOf())));

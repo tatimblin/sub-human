@@ -81,7 +81,7 @@ test('hooks.json: the join with no node 22.18+ (none on PATH, an older one, none
   const ran = (v: string) => `${v} ran --import ${PLUGIN}/hooks/compile-cache.js ${PLUGIN}/hooks/run.ts join\n`;
   const bare = spawnSync('/bin/sh', ['-c', join], { env: env('/nonexistent:/usr/bin:/bin'), encoding: 'utf8' });
   assert.equal(bare.status, 2);
-  assert.match(bare.stderr, /^sub-human needs Node 22\.18\+ or 24\.3\+ \(not 23\), and found none \(node: command not found\)\. Install it .*restart claude\.\n$/);
+  assert.match(bare.stderr, /^sub-human needs Node 22\.18\+ or 24\.3\+ \(not 23\), and found none \(node: command not found\)\. Install it .*restart claude, or name one in SUB_HUMAN_NODE\.\n$/);
   for (const v of ['v22.17.9', 'v22.12.0', 'v23.11.0', 'v24.2.1', 'v20.19.0', 'v8.9.4']) {
     fake(path.join(bin, 'node'), v);
     const old = spawnSync('/bin/sh', ['-c', join], { env: env(`${bin}:/usr/bin:/bin`), encoding: 'utf8' });
@@ -96,8 +96,19 @@ test('hooks.json: the join with no node 22.18+ (none on PATH, an older one, none
   fake(path.join(bin, 'node'), 'v20.19.0');
   fake(path.join(tmp, '.nvm', 'versions', 'node', 'v24.15.0', 'bin', 'node'), 'v24.15.0');
   assert.equal(execFileSync('/bin/sh', ['-c', join], { env: env(`${bin}:/usr/bin:/bin`), encoding: 'utf8' }), ran('v24.15.0'));
+  // the newest that runs it wins, not the first in name order (v22.18 before v24 in nvm's own folder)
   fake(path.join(tmp, 'opt', 'homebrew', 'bin', 'node'), 'v22.18.1');
-  assert.equal(execFileSync('/bin/sh', ['-c', join], { env: env('/nonexistent:/usr/bin:/bin'), encoding: 'utf8' }), ran('v22.18.1'), 'Homebrew before nvm');
+  fake(path.join(tmp, '.nvm', 'versions', 'node', 'v22.9.0', 'bin', 'node'), 'v22.9.0');
+  fake(path.join(tmp, '.nvm', 'versions', 'node', 'v24.2.0', 'bin', 'node'), 'v24.2.0');
+  assert.equal(execFileSync('/bin/sh', ['-c', join], { env: env('/nonexistent:/usr/bin:/bin'), encoding: 'utf8' }), ran('v24.15.0'), 'the newest');
+  fake(path.join(tmp, 'opt', 'homebrew', 'opt', 'node@24', 'bin', 'node'), 'v24.22.1');
+  fake(path.join(tmp, 'fnmdir', 'node-versions', 'v24.16.0', 'installation', 'bin', 'node'), 'v24.16.0');
+  assert.equal(execFileSync('/bin/sh', ['-c', join], { env: env('/nonexistent:/usr/bin:/bin'), encoding: 'utf8' }), ran('v24.22.1'), 'Homebrew\'s keg-only node@24');
+  fake(path.join(tmp, 'fnmdir', 'node-versions', 'v26.0.0', 'installation', 'bin', 'node'), 'v26.0.0');
+  assert.equal(execFileSync('/bin/sh', ['-c', join], { env: env('/nonexistent:/usr/bin:/bin', { FNM_DIR: path.join(tmp, 'fnmdir') }), encoding: 'utf8' }), ran('v26.0.0'), 'FNM_DIR');
+  fs.rmSync(path.join(tmp, 'fnmdir'), { recursive: true });
+  fs.rmSync(path.join(tmp, 'opt', 'homebrew', 'opt'), { recursive: true });
+  fs.rmSync(path.join(tmp, '.nvm'), { recursive: true });
   // the node the plugin last ran with (<home>/bin/current, line 2) first, with no version check
   const last = path.join(tmp, 'last', 'node');
   fake(last, 'v99.0.0');
@@ -106,6 +117,10 @@ test('hooks.json: the join with no node 22.18+ (none on PATH, an older one, none
   assert.equal(execFileSync('/bin/sh', ['-c', join], { env: env(`${bin}:/usr/bin:/bin`), encoding: 'utf8' }), ran('v99.0.0'));
   fs.rmSync(last);
   assert.equal(execFileSync('/bin/sh', ['-c', join], { env: env(`${bin}:/usr/bin:/bin`), encoding: 'utf8' }), ran('v22.18.1'), 'a recorded node since removed: searched again');
+  // a node the person names comes first, as given
+  const named = path.join(tmp, 'named', 'node');
+  fake(named, 'v30.1.0');
+  assert.equal(execFileSync('/bin/sh', ['-c', join], { env: env(`${bin}:/usr/bin:/bin`, { SUB_HUMAN_NODE: named }), encoding: 'utf8' }), ran('v30.1.0'), 'SUB_HUMAN_NODE');
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 

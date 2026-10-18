@@ -74,7 +74,7 @@ export async function run(t: T): Promise<void> {
     t.check('/sub-human kick bob ends his link (its token; his ssh login is the account\'s to keep or remove)', /bob is out of room/.test(r.out || '') && !!a.linkId, (r.out || '').slice(0, 160));
     const gone = await t.until(() => !lab.exec('devbox', ['sh', '-c', `pgrep -f '[s]erve --stdio ${code} --link ${a.linkId}' || true`]).stdout.trim(), 10_000, 300);
     t.check("kick stops that link's serve", gone, gone ? 'none running' : 'still running');
-    const st = await waitState(a.seat, code, ['stopped'], 20_000);
+    const st = await waitState(a.seat, code, ['stopped'], 45_000); // CI runners are slow: 20 s timed out with the link stopped just after
     const post = a.seat.say('bob', 'after kick');
     const ls = a.seat.link(code);
     t.check("bob's link stops (AUTH, it does not redial) and his post is refused, not queued", st !== null && ls.code === 'AUTH' && !post.ok,
