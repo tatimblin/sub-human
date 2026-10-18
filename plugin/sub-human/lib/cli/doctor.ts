@@ -19,7 +19,7 @@ import { checkShim, sshVersion, checkSsh, sshHint } from './doctor/ssh.ts';
 import { diagnoseLink, linkChecks, helloProbe } from './doctor/links.ts';
 import { checkListener } from './doctor/listener.ts';
 import { roomChecks, verifyRoom, verifyText } from './doctor/rooms.ts';
-import { claudeVersion, checkClaude, checkDaemon, checkRoomClaudes, settingsFiles, checkHooks } from './doctor/claude.ts';
+import { claudeVersion, checkClaude, checkDaemon, checkRoomClaudes, settingsFiles, checkHooks, checkRoomTools } from './doctor/claude.ts';
 import { bundle, redactor } from './doctor/redact.ts';
 import type { Check, CheckStatus, DoctorOptions, Report } from './types.ts';
 import { parse } from './args.ts';
@@ -79,7 +79,7 @@ async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, env = proc
   const cl = checkClaude({ version: cv, quick, env });
   checks.push(cl.check, checkDaemon({ version: cv, env }));
   const settings = settingsFiles(env);
-  checks.push(checkHooks(settings, env));
+  checks.push(checkHooks(settings, env), checkRoomTools({ env }));
   checks.push(...checkListener({ quick }));
   return {
     generated_at: new Date().toISOString(),

@@ -89,6 +89,27 @@ const sanitizeId = (s: unknown): string => String(s).replace(/[^a-zA-Z0-9_-]/g, 
  * @stability incidental
  */
 const tasksDir = (listId: string, env: Env = process.env): string => path.join(configDir(env), 'tasks', sanitizeId(listId));
+/** How long Claude Code skips a plugin's stdio MCP server after it failed to connect (the cache's default ttl). */
+const MCP_FAILURE_TTL_MS = 900_000;
+/**
+ * The ms left while Claude Code skips the plugin MCP server `name` ("plugin:sub-human:room") after a failed start in
+ * any session: <configDir>/mcp-needs-auth-cache.json holds {[name]: {timestamp, id?, ttlMs?}}, and every session
+ * started within the ttl gets the server "failed" with "Skipping connection (recent failure cached ...)" (live
+ * 2026-10-17, a joiner's room tools were gone for his whole session). null: none recorded, or expired.
+ * @cc Skipping connection (recent failure cached; retries automatically in 15 min, or edit the plugin config to retry now)
+ * @stability incidental
+ */
+function mcpFailureLeft(name: string, { env = process.env, now = Date.now() }: { env?: Env; now?: number } = {}): number | null {
+  let all: unknown;
+  try { all = JSON.parse(fs.readFileSync(path.join(configDir(env), 'mcp-needs-auth-cache.json'), 'utf8')); } catch { return null; }
+  const e: unknown = all && typeof all === 'object' ? Reflect.get(all, name) : null;
+  const at: unknown = e && typeof e === 'object' ? Reflect.get(e, 'timestamp') : null;
+  const ttl: unknown = e && typeof e === 'object' ? Reflect.get(e, 'ttlMs') : null;
+  if (typeof at !== 'number') return null;
+  const left = at + (typeof ttl === 'number' ? ttl : MCP_FAILURE_TTL_MS) - now;
+  return left > 0 ? left : null;
+}
+
 /** <configDir>/plans: where Claude Code keeps the plan-mode files (cc.planFile names one). */
 const plansDir = (env: Env = process.env): string => `${configDir(env)}/plans`;
 
@@ -247,6 +268,6 @@ function matcherMatches(m: string | null | undefined, name: string, { toolEvent 
 }
 
 export {
-  ENV, sessionId, claudePid, taskListId, configDir, sanitizeId, tasksDir, plansDir, taskFile, projectDir, userSettingsFiles,
+  ENV, sessionId, claudePid, taskListId, configDir, mcpFailureLeft, sanitizeId, tasksDir, plansDir, taskFile, projectDir, userSettingsFiles,
   clearContextOnPlanAccept, globalConfigFile, modulesSwitch, matcherIsExact, matcherMatches, PLAN_ATTACHMENT_EVENT, ENTER_IN_PLAN_MODE, leavePlanMode, LEAVE_PLAN_TEXT, denyWithContext,
 };

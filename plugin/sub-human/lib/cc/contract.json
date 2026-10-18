@@ -108,9 +108,24 @@
     "{ echo 0 > \"$0\"/cgroup.procs; } 2>/dev/null; exec \"$@\""
    ],
    "shape": [
-    "let ~=~.CLAUDE_CODE_SHELL_PREFIX||~.command,"
+    "?[~([~.command,...~.args])]:~.args,{command:~,args:~,pending:~,capped:~}="
    ],
-   "note": "A stdio MCP server is spawned without a shell (the Linux cgroup wrapper ends in exec), so its process.ppid is the claude pid; the room server resolves its caller that way when its session id names no seat (after a /clear, env-clear-session-id). Not so when the user sets CLAUDE_CODE_SHELL_PREFIX (cc-2.1.292.md Review spikes, S-mcp a)."
+   "note": "A stdio MCP server is spawned without a shell (the Linux cgroup wrapper ends in exec), so its process.ppid is the claude pid; the room server resolves its caller that way when its session id names no seat (after a /clear, env-clear-session-id). Not so when the user sets CLAUDE_CODE_SHELL_PREFIX (cc-2.1.292.md Review spikes, S-mcp a). 2.1.302 reads the prefix inside a function (shellPrefix) but spawns the same: the configured command unless CLAUDE_CODE_SHELL_PREFIX is set; the shape is the spawn's argv, common to both."
+  },
+  {
+   "id": "mcp-failure-cache",
+   "section": 2,
+   "stability": "incidental",
+   "since": "2.1.296",
+   "search": [
+    "Skipping connection (recent failure cached; retries automatically in 15 min, or edit the plugin config to retry now)",
+    "\"mcp-needs-auth-cache.json\")"
+   ],
+   "shape": [
+    "&&~.pluginSource!==void 0)~(~,~(~),void 0,~);",
+    "var ~=\"v1\",~=900000,"
+   ],
+   "note": "A plugin's stdio MCP server that fails to connect once, in any session, is written to <configDir>/mcp-needs-auth-cache.json ({[name]: {timestamp, id}}, 15 minutes), and every session started meanwhile skips it (\"failed\": \"Skipping connection (recent failure cached ...)\"). Live 2026-10-17 (2.1.302) a joiner's room server was skipped for his whole session: no room tools, no rows, SendMessage to the host's Claudes fell through to \"not reachable\". So nothing the members' Claudes need depends on that server alone: mod/send.ts relays through node when it is not connected, the rows calls are not asked for while it is down (mod/core/rows.ts ROWS_DOWN), and doctor names the cached failure (lib/cc/env.ts mcpFailureLeft)."
   },
   {
    "id": "mcp-progress-resets-idle-timeout",
@@ -493,7 +508,7 @@
    "since": "2.1.281",
    "search": [
     "new Set([\"CLAUDE_CONFIG_DIR\",\"CLAUDE_INTERNAL_FC_OVERRIDES\",",
-    "[\"PATH\",\"CLAUDE_CODE_EXTRA_BODY\",\"CLAUDE_CODE_HOST_CREDS_FILE\","
+    "[\"PATH\",\"CLAUDE_CODE_EXTRA_BODY\","
    ],
    "shape": [
     "=~(~.flatMap((~)=>[~.endpoint,...~.companions]))",
@@ -641,7 +656,7 @@
      ]
     }
    ],
-   "note": "The daemon's dispatch allowlist is a set built from a few arrays (the base set, l5n and extra keys in 2.1.296). Each `contains` group names an array by a literal or shape at its start and the keys it must hold: a key added, moved or reordered passes, one dropped fails. The groups are cc.DAEMON_ENV_ALLOW (lib/cc/bg.ts), so daemonEnv forwards what the daemon keeps."
+   "note": "The daemon's dispatch allowlist is a set built from a few arrays (the base set, l5n and extra keys in 2.1.296). Each `contains` group names an array by a literal or shape at its start and the keys it must hold: a key added, moved or reordered passes, one dropped fails. The groups are cc.DAEMON_ENV_ALLOW (lib/cc/bg.ts), so daemonEnv forwards what the daemon keeps. 2.1.302 adds CLAUDE_CODE_AUTO_MODE_MODEL inside l5n, so the search is the array's first two keys only."
   },
   {
    "id": "daemon-status",
@@ -949,9 +964,10 @@
    "stability": "incidental",
    "since": "2.1.292",
    "search": [
-    "$ is followed only into a function declared in this same file, never across an import"
+    "$ is passed to something other than a named function,",
+    "$ is followed nowhere else"
    ],
-   "note": "A module that passes $ to an imported function does not load (validate says the same): every $ call sits in the file that registers the hook, so mod/core/*.ts stays $-free (S1)."
+   "note": "A module that passes $ to an imported function does not load (validate says the same): every $ call sits in the file that registers the hook, so mod/core/*.ts stays $-free (S1). 2.1.302 also follows $ into a function declaration imported from the module's own files; sub-human keeps every $ call local, which loads on both."
   },
   {
    "id": "module-event-once",
@@ -1110,9 +1126,9 @@
    ],
    "shape": [
     "if(~===void 0&&~.length===0&&!~)return{messages:[],shouldQuery:!1,command:~}",
-    "${~.map(~).join(\"+\")}: ${~.text}"
+    "}: ${~.text}`:~.text,"
    ],
-   "note": "An answer {} (no text, no context) of a typed prompt adds no row at all: the command line is not echoed and nothing reaches the model; a {text} answer is the command's output row, shown under \"sub-human: \" (the hooking plugins' names) and read by the model with its echoed command line (local_command rows go to the API), and the model repeats it on its next turn (seen live), so the module answers {} and shows replies with $.ui.log. A prompt run by the SDK or through Remote Control, or with pasted blocks before it, is left to the classic hook."
+   "note": "An answer {} (no text, no context) of a typed prompt adds no row at all: the command line is not echoed and nothing reaches the model; a {text} answer is the command's output row, shown under \"sub-human: \" (the hooking plugins' names) and read by the model with its echoed command line (local_command rows go to the API), and the model repeats it on its next turn (seen live), so the module answers {} and shows replies with $.ui.log. A prompt run by the SDK or through Remote Control, or with pasted blocks before it, is left to the classic hook. 2.1.302 builds the same \"<plugins>: <text>\" output row (the joined names in a variable first)."
   },
   {
    "id": "rename-command",
@@ -1149,10 +1165,10 @@
     "cmd_prompt_submit_hook_stopped"
    ],
    "shape": [
-    "if(~.preventContinuation){let ~=~(~.stopReason);return ~.messages=[...~.messages,~(~),~(~)]",
-    "var ~=(~)=>~(~,\"warning\",void 0,~);var ~=(~)=>~===void 0?~:`${~}: ${~}`;"
+    ".preventContinuation){let ~=~(~.stopReason);return ~.messages=[...~.messages,~(~),~(~",
+    "var ~=(~)=>~===void 0?~:`${~}: ${~}`;var ~=(~)=>~({content:~,isMeta:!0});"
    ],
-   "note": "A UserPromptSubmit stop (continue:false, a function hook's preventContinuation) keeps the person's row and adds two: an isMeta user row the model reads and a system warning row the person sees, both \"Operation stopped by hook: <stopReason>\". Nothing else ends a typed non-slash prompt without a turn and without a frame: a prompt.submit drop draws \"Prompt dropped by a hook: <reason>\" (and loses the person's row), an answer without next \"Prompt not submitted: …\". An @room's receipt is such a stop; mod/prompt.ts rewrites its warning row (session-append-notice-rewrite) and words the isMeta copy as a receipt that asks the model nothing (a session.append text rewrite, which the typings allow for any row)."
+   "note": "A UserPromptSubmit stop (continue:false, a function hook's preventContinuation) keeps the person's row and adds two: an isMeta user row the model reads and a system warning row the person sees, both \"Operation stopped by hook: <stopReason>\". Nothing else ends a typed non-slash prompt without a turn and without a frame: a prompt.submit drop draws \"Prompt dropped by a hook: <reason>\" (and loses the person's row), an answer without next \"Prompt not submitted: …\". An @room's receipt is such a stop; mod/prompt.ts rewrites its warning row (session-append-notice-rewrite) and words the isMeta copy as a receipt that asks the model nothing (a session.append text rewrite, which the typings allow for any row). 2.1.302 keeps both rows (the warning row gains a promptSubmitEnding field)."
   },
   {
    "id": "session-append-notice-rewrite",

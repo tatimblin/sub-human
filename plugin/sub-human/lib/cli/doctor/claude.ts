@@ -14,6 +14,9 @@
  *       and its process live (pass); its last start failed (spawn_error), or its job started over 90 s ago but never
  *       bound its seat (fail, with the job's state from `claude agents --json --all`)
  *   settingsFiles(env) -> [settings];  checkHooks(settings, env?) -> Check   settings that turn hooks off
+ *   checkRoomTools({env?, now?}) -> Check   the room's tools (MCP server plugin:sub-human:room): a failed start Claude
+ *       Code cached (lib/cc/env.ts mcpFailureLeft) is a warn, since every session started before it expires gets no
+ *       room tools (rows, plan edits); else info
  */
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -94,6 +97,16 @@ function checkHooks(settings: Settings[], env: NodeJS.ProcessEnv = process.env):
   return check({ id: 'hooks', status: 'pass', title: 'hooks', detail: 'no settings file turns hooks off; hooks modules are on' });
 }
 
+/** The room server's name in Claude Code (its key in .mcp.json, plugin-scoped). */
+const ROOM_SERVER = 'plugin:sub-human:room';
+function checkRoomTools({ env = process.env, now = Date.now() }: { env?: NodeJS.ProcessEnv; now?: number } = {}): Check {
+  const left = lib('cc/env.ts').mcpFailureLeft(ROOM_SERVER, { env, now });
+  if (left == null) return check({ id: 'room-tools', status: 'info', title: 'room tools', detail: 'no failed start of the room\'s tools recorded by Claude Code' });
+  return check({ id: 'room-tools', status: 'warn', title: 'room tools',
+    detail: `the room's tools (${ROOM_SERVER}) failed to start in a session here; Claude Code skips them in every session started in the next ${Math.ceil(left / 60_000)} min (no room rows or plan edits there; SendMessage and @room still work)`,
+    fix: `in a session, /mcp and reconnect ${ROOM_SERVER}; if it fails again, run node on the plugin's mcp/room-server.ts to see why, and report it` });
+}
+
 const ROOM_CLAUDE_BIND_GRACE_MS = 90_000;
 
 const DAEMON_HINT = 'the bg daemon check says whether the daemon runs a Claude Code that was upgraded away since, and how to restart it';
@@ -170,5 +183,5 @@ function checkDaemon({ version, env = process.env, status = () => lib('cc/bg.ts'
   return check({ id: 'daemon', status: 'pass', title: 'bg daemon', detail: `running (${who})` });
 }
 
-export { claudeVersion, checkClaude, checkDaemon, checkRoomClaudes, settingsFiles, checkHooks };
+export { claudeVersion, checkClaude, checkDaemon, checkRoomClaudes, settingsFiles, checkHooks, checkRoomTools };
 export type { Settings };

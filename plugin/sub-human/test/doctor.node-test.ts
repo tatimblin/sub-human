@@ -14,6 +14,7 @@ import * as linkState from '../lib/room/link-state.ts';
 import * as identity from '../lib/identity.ts';
 import * as linkMod from '../lib/remote/link.ts';
 import * as store from '../lib/room/store.ts';
+import { checkRoomTools } from '../lib/cli/doctor/claude.ts';
 import type { Bundle, Check, LinkReport, LinkStateView, Reach, Report } from '../lib/cli/types.ts';
 import type { AgentJob } from '../lib/cc/bg.ts';
 import { MirrorRoomStore } from '../lib/room/store-mirror.ts';
@@ -432,4 +433,17 @@ test('doctor: a link the host ended is not dialed (live: "reachable, speaking v3
   assert.match(c.detail, /the host ended this machine's link: not dialed/);
   assert.doesNotMatch(c.detail, /speaking v/);
   assert.match(fixOf(c), /ask the host for a new invite/);
+});
+
+test('room tools: a failed start of the room server that Claude Code cached (15 min, every session) is a warn with the time left', t => {
+  const dir = h.tmpDir('sh-cc-config-', t);
+  const env = { ...process.env, CLAUDE_CONFIG_DIR: dir };
+  const now = 1_800_000_000_000;
+  assert.equal(checkRoomTools({ env, now }).status, 'info', 'no cache file');
+  fs.writeFileSync(path.join(dir, 'mcp-needs-auth-cache.json'), JSON.stringify({ 'plugin:sub-human:room': { timestamp: now - 4 * 60_000, id: 'x' }, other: { timestamp: now } }));
+  const c = checkRoomTools({ env, now });
+  assert.equal(c.status, 'warn');
+  assert.match(c.detail, /failed to start in a session here; Claude Code skips them in every session started in the next 11 min/);
+  assert.match(c.fix ?? '', /\/mcp and reconnect plugin:sub-human:room/);
+  assert.equal(checkRoomTools({ env, now: now + 12 * 60_000 }).status, 'info', 'expired');
 });
