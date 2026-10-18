@@ -1,8 +1,8 @@
 // An invite over ssh end to end, two homes and no sshd (test/support/fake-ssh.ts plays sshd for the host account the
 // joiner logs into with their own ssh login). /sub-human invite --ssh shows `/sub-human join DEST ROOM SECRET --home H`
 // and the PIN apart, and writes nothing to authorized_keys; the joiner's line dials through that login: the host's
-// machine key is checked against the line before the SECRET goes, the host asks for the PIN, the PIN typed, the host
-// person's card lets the machine in, a bare /sub-human seats it, bound to its name, under the link id its serve's argv
+// machine key is checked against the line before the SECRET goes, the line with no PIN knocks, the PIN typed while the
+// host's card waits lets the machine in (no card), a bare /sub-human seats it, bound to its name, under the link id its serve's argv
 // carries (kick finds it). A joiner without a login of their own, or a line that names another host, sends nothing.
 import test from 'node:test';
 import type { TestContext } from 'node:test';
@@ -63,7 +63,7 @@ test('ssh invite: the line names the person\'s own ssh login (and the host\'s fo
 
   const typed = remote.join(bob, `${m.line} --as bob`);
   assert.ok(hiddenBlock(typed), typed.stderr);
-  await until(() => remote.lib(() => !!(links.get(code) || {}).pin_wanted), 10_000, 'the host asking for the PIN');
+  await until(() => remote.lib(() => !!(links.get(code) || {}).awaiting), 10_000, 'the line knocking (the host\'s card waits)');
   const lf = must(remote.lib(() => links.get(code)));
   const t0 = lf.transport;
   assert.ok(t0.kind === 'ssh', 'an ssh link');

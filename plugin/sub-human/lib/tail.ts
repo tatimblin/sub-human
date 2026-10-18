@@ -604,7 +604,7 @@ function startSession(me: Identity, ctx: TailCtx): Session {
   function admitHealth() {
     const adm = deps.admission();
     for (const q of adm.lapse(s.code, { now: clock.now() })) {
-      emit([{ type: 'health', text: `room: ${adm.describe(q)} typed your invite and its PIN, but nobody let them in within ${Math.round((Date.parse(q.expires_at) - Date.parse(q.created_at)) / 60_000)} minutes; their join stopped` }]);
+      emit([{ type: 'health', text: `room: ${adm.describe(q)} typed your invite line without its PIN, but nobody let them in within ${Math.round((Date.parse(q.expires_at) - Date.parse(q.created_at)) / 60_000)} minutes; their join stopped` }]);
     }
     for (const q of adm.pending(s.code, { now: clock.now() })) {
       if ((q.told ?? []).includes(me.name) || !adm.targets(s.code, q).includes(me.name)) continue;
@@ -612,7 +612,7 @@ function startSession(me: Identity, ctx: TailCtx): Session {
       // one wake: its line for the person is drawn as the prompt (asUser, no frame), the (for Claude) line
       // rides as context, as every member wake (mod/core/deliver.ts wakeParts)
       emit([
-        { type: 'wake', text: `room: ${adm.describe(q)} typed your invite and its PIN and wants to join; your Claude shows you a card (or: /sub-human admit ${q.ref})\n${FOR_CLAUDE} ${adm.describe(q)} typed ${me.name}'s invite line and its PIN on another machine and asks to join room ${s.code}. Only ${me.name} can let them in: call AskUserQuestion with the question "admit ${q.ref}"; the hooks show the card. Don't answer for ${me.name} or post about it.` },
+        { type: 'wake', text: `room: ${adm.describe(q)} typed your invite line without its PIN and asks to join; your Claude shows you a card (or: /sub-human admit ${q.ref})\n${FOR_CLAUDE} ${adm.describe(q)} typed ${me.name}'s invite line without its PIN on another machine and asks to join room ${s.code}. Only ${me.name} can let them in: call AskUserQuestion with the question "admit ${q.ref}"; the hooks show the card. Don't answer for ${me.name} or post about it.` },
       ]);
     }
   }

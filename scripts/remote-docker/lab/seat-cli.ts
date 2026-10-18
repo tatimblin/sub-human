@@ -23,9 +23,13 @@
  *   leave NAME                    SessionEnd for NAME, then its seat process stops
  *   short NAME LINE [SSH_OPT…]    `/sub-human LINE --as NAME`: an invite's line as the host showed it, one argument
  *                                 ("join DEST ROOM SECRET [--via J] [--home H]" or "join URL SECRET"; a 0.5.0-beta.15
- *                                 host's "join DEST ROOM PIN"): {ok, asked, waiting, out, hidden}: asked once the host
- *                                 asks for the PIN (protocol 3), waiting once it checked a PIN (beta.15: in one step)
- *   pin NAME PIN                  `/sub-human join PIN`: the PIN the host asked for: {ok, waiting, out, hidden}
+ *                                 host's "join DEST ROOM PIN"): {ok, asked, knocked, waiting, linked, out, hidden}:
+ *                                 asked once the host asks for the PIN (a host before the knock), knocked (and waiting)
+ *                                 once the line with no PIN asked the host's card, waiting too once an older host
+ *                                 checked a PIN for its card, linked once the PIN on the line let it in
+ *   pin NAME PIN                  `/sub-human join PIN`: the PIN the host asked for, or typed while a knock waits:
+ *                                 {ok, linked, waiting, out, hidden} (linked: the right PIN let it in, no card; waiting:
+ *                                 an older host's card asks)
  *   linkfile CODE                 this machine's link file, without its secrets: {exists, token, invite, pin,
  *                                 pin_wanted, awaiting, refused, transport}
  *   admitcard NAME LABEL          NAME, on the host, answers the oldest join request's card ("Let in" / "Refuse"):
@@ -215,16 +219,21 @@ const cmds: Record<string, (...args: string[]) => unknown> = {
     const seat = seatWith(name, rest);
     const r = expand(seat, `${String(line).replace(/^\/sub-human /, '')} --as ${name}`);
     const out = reason(r.json) || '';
-    const asked = /Type the 4-digit PIN they told you/.test(out), waiting = /checked your PIN/.test(out);
-    return { ok: asked || waiting || /the host let you in/.test(out) || /still connecting/.test(out), asked, waiting, out, ms: r.ms, hidden: hidden(r.json), stderr: r.stderr };
+    // asked: the host asks for the PIN (a host before the knock); knocked: the line with no PIN asked the host's card;
+    // waiting: a card waits (the knock's, or a host before 0.5.x step 2 that checked a PIN); linked: let in already
+    const asked = /Type the 4-digit PIN they told you/.test(out), knocked = /Asked the host to let you in/.test(out);
+    const waiting = knocked || /checked your PIN/.test(out), linked = /the host let you in/.test(out);
+    return { ok: asked || waiting || linked || /still connecting/.test(out), asked, knocked, waiting, linked, out, ms: r.ms, hidden: hidden(r.json), stderr: r.stderr };
   },
 
-  // `/sub-human join PIN`: the PIN the host's machine asked for
+  // `/sub-human join PIN`: the PIN the host's machine asked for, or one typed while a knock waits for the card. linked:
+  // the right PIN let the machine in (no card); waiting: a host that still sends a checked PIN to its card
   pin(name, pin) {
     const seat = seatOf(name);
     const r = expand(seat, `join ${pin}`);
     const out = reason(r.json) || '';
-    return { ok: /checked your PIN/.test(out), waiting: /checked your PIN/.test(out), out, ms: r.ms, hidden: hidden(r.json), stderr: r.stderr };
+    const linked = /the host let you in/.test(out), waiting = /checked your PIN/.test(out);
+    return { ok: linked || waiting, linked, waiting, out, ms: r.ms, hidden: hidden(r.json), stderr: r.stderr };
   },
 
   linkfile(code) {

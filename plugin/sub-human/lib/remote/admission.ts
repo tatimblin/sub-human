@@ -1,7 +1,7 @@
 /**
  * plugin/sub-human/lib/remote/admission.ts: the host person's consent to a machine that typed an invite line. A right
  * PIN is that consent, said ahead (lib/remote/invites.ts writes the record let in, admitted_by 'pin', and links it in
- * the same hello: no card). A request with no PIN (admit 'asked') gets in only once a person on the host answers "Let
+ * the same hello: no card). A request with no PIN (a knock: the hello's knock, invites.ts; admit 'asked') gets in only once a person on the host answers "Let
  * in" on the card their own Claude Code shows (hooks/consent.ts: only the answer on the card as the hooks built it counts, never the model's), or runs `sub-human admit
  * REF` in a shell (headless hosts), or types `/sub-human admit REF`. Then the joiner's link redeems its invite (check,
  * below, from lib/remote/invites.ts redeemInvite): on the machine its key proved, and over the web with the Noise key
@@ -11,7 +11,7 @@
  *
  * The records live in the host document remote/invites, under invites.admissionSlot(secret). A request asks the card
  * of req.by when that seat is in the room on this machine, else of every person seated here (targets). The card and the
- * joiner's screen both show the check of the machine (and web key) that proved itself with the PIN, to compare. A name
+ * joiner's screen both show the check of the machine (and web key) that knocked, to compare. A name
  * that sits in the room from another machine can't be let in as itself (its key never moves): the card offers the
  * free NAME2, NAME3, … instead (taken; a right PIN takes it with no card), which the joiner's hello then learns (server.ts).
  */
@@ -137,7 +137,7 @@ function targets(code: RoomCode, req: AdmissionRequest): SeatName[] {
 }
 
 /** What the card and the joiner's screen both show, to compare: the check of the machine (and web key) that proved
- *  itself with the PIN (lib/remote/invite-secret.ts joinCheck), never something the line alone gives. */
+ *  itself when it knocked (lib/remote/invite-secret.ts joinCheck), never something the line alone gives. */
 const fp = (req: AdmissionRequest): string => inviteSecret.joinCheck(req.machine, req.key);
 const describe = (req: AdmissionRequest): string => `${req.name} (${fp(req)}) on ${req.label || 'another machine'}`;
 const question = (req: AdmissionRequest, code: RoomCode): string => `Let ${describe(req)} join room ${code}? (admit ${req.ref})`;
@@ -176,7 +176,7 @@ function card(req: AdmissionRequest, code: RoomCode): Card {
       header: 'Join',
       multiSelect: false,
       options: [
-        { label: LET_IN, description: `${req.name} typed your invite line and its PIN on another machine (the name is what they say; ${fp(req)} is what their screen shows). Let in: that machine joins room ${code} as ${req.name} only. Undo any time: /sub-human kick ${req.name}.` },
+        { label: LET_IN, description: `${req.name} typed your invite line without its PIN on another machine (the name is what they say; ${fp(req)} is what their screen shows). Let in: that machine joins room ${code} as ${req.name} only. Undo any time: /sub-human kick ${req.name}.` },
         { label: REFUSE, description: 'Nothing gets in; their join stops. The invite is used up either way.' },
       ],
     }],

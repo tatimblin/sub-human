@@ -18,7 +18,8 @@
  *             HOST ROOM SECRET, URL#SECRET or URL SECRET, each with the PIN after it or not: an invite line
  *             (joining.linkLine: link only, never the seat in that step; a PIN typed with it goes in the first hello,
  *             once the host's key is checked; over ssh through the person's own ssh login, --home as the line says);
- *             PIN (4 digits alone): the PIN the host's machine asked for (joining.givePin; never the seat either); HOST ROOM: over
+ *             PIN (4 digits alone): the PIN the host's machine asked for, or one typed while a line with no PIN waits
+ *             for the host's card (joining.givePin: the right one links at once; never the seat either); HOST ROOM: over
  *             the person's own ssh login (joining.linkLogin; the seat once linked); a pipe HOST with no SECRET is an
  *             invite line without its SECRET
  *   bindRoomClaude   the room Claude's own launch `/sub-human` (agent_type sub-human:room-claude + SUB_HUMAN_ROOM), or a

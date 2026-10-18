@@ -12,7 +12,8 @@
  *
  * hello: the highest common protocol (protocol.negotiate; none is PROTOCOL SKEW, whose skewMessage says which side
  * must update). Credentials: a token (a link bound to a Noise key holds only over a connection that proved it:
- * KEY_MISMATCH); an invite (invites.ts redeemInvite; an invite line's SECRET over the web only with XK's peer key); or
+ * KEY_MISMATCH); an invite (invites.ts redeemInvite, with its PIN or knock: true; an invite line's SECRET over the web
+ * only with XK's peer key); or
  * login: true, accepted only by a serve run with --login over the host account's own ssh login (never a forced
  * command; the CLI refuses --login under SSH_ORIGINAL_COMMAND), trusted as a process of the account owner. nonce: the
  * reply carries the host home's machine key and its signature over the nonce (machine-key.ts hostProof), which an
@@ -86,12 +87,12 @@ function own(s: Session, name: unknown): asserts name is SeatName {
   if (!isSeatName(name) || !hostLinks.mayWriteAs(s.link, name)) throw authError(`${String(name)} has not joined over this link`, 'NOT_JOINED');
 }
 
-function redeem(s: Session, invite: unknown, machine: MachineId, pin: unknown, proven: MachineId | null, as: unknown): Credential {
+function redeem(s: Session, invite: unknown, machine: MachineId, pin: unknown, knock: boolean, proven: MachineId | null, as: unknown): Credential {
   const { store, linkId } = s;
   const word = inviteSecret.decode(invite);
   const asked = as && typeof as === 'object' && typeof (as as { name?: unknown }).name === 'string'
     ? { name: (as as { name: string }).name, label: String((as as { label?: unknown }).label ?? '') } : null;
-  const opts = { machine, pin, proven, peerKey: s.peer, as: asked, ...(s.login && linkId ? { newId: linkId } : {}) };
+  const opts = { machine, pin, knock, proven, peerKey: s.peer, as: asked, ...(s.login && linkId ? { newId: linkId } : {}) };
   if (!word) throw authError(`not an invite to room ${store.code}`, 'INVITE_UNKNOWN');
   const secret = inviteSecret.idOf(word.secret); // an invite line's SECRET (protocol 3)
   let r: ReturnType<typeof invites.redeemInvite>;
@@ -251,7 +252,7 @@ const OPS: OpHandlers = {
     const proven = bound || (inviteSecret.decode(invite) ? null : machineKey.verify(params.machine_key, s.store.code));
     // nonce: the host home's machine key proves itself first, so a joiner sends an invite line's secret only after
     const host = typeof nonce === 'string' && machineKey.NONCE_RE.test(nonce) ? machineKey.hostProof(s.store.code, nonce) : null;
-    const r: Credential = invite !== undefined ? redeem(s, invite, machine, pin, proven, as) : token !== undefined ? known(s, token)
+    const r: Credential = invite !== undefined ? redeem(s, invite, machine, pin, params.knock === true, proven, as) : token !== undefined ? known(s, token)
       : params.login === true ? viaLogin(s, machine, proven) : { link: null };
     s.link = r.link;
     if (isObj(caps) && caps.ping === true) s.expireSilent();

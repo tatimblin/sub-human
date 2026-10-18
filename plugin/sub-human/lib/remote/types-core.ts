@@ -63,6 +63,9 @@ export interface HelloParams {
   /** an invite line's SECRET word */
   invite?: InviteSecret;
   pin?: Pin;
+  /** with an invite and no pin: ask the host person's card instead of being asked for the PIN (additive; a host before
+   *  it ignores it and answers PIN_NEEDED) */
+  knock?: boolean;
   /** the seat an invite line's PIN asks for, and this machine's short name (both as the joiner says) */
   as?: { name: string; label: string };
   /** a fresh random word; the reply's host proves the host home's machine key over it */

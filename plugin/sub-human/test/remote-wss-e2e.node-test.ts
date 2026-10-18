@@ -81,14 +81,14 @@ async function posts(_t: TestContext, { host, remote, alice, bob, code }: Rig, t
 }
 
 const shortShown = (reason: string | undefined) => shownInvite(String(reason));
-/** bob joins with the line the host was shown: the key check and the SECRET, the PIN when asked (it lets him in: no
- * card), the link online, a bare /sub-human. */
+/** bob joins with the line the host was shown: the key check and the SECRET (with no PIN it knocks), the PIN while the
+ * host's card waits (it lets him in: no card), the link online, a bare /sub-human. */
 async function webJoin({ remote, bob, code }: Rig, reason: string | undefined) {
   const m = shortShown(reason);
   assert.ok(m, reason);
   remote.join(bob, `${m.line} --as bob`);
   const logOf = () => { try { return fs.readFileSync(path.join(remote.home, 'links', `${code}.log`), 'utf8'); } catch (e) { return (e as Error).message; } };
-  assert.ok(await h.until(() => remote.lib(() => !!(links.get(code) || {}).pin_wanted), 15_000, 50), `the host asks for the PIN: ${logOf()}`);
+  assert.ok(await h.until(() => remote.lib(() => !!(links.get(code) || {}).awaiting), 15_000, 50), `the line knocks (the host's card waits): ${logOf()}`);
   const j = remote.join(bob, `join ${m.pin}`);
   assert.match(must(j.json?.reason), /the host let you in to room/, logOf());
   assert.ok(await h.until(() => linkState(remote, code) === 'online', 15_000, 50), 'online once let in');
@@ -252,7 +252,7 @@ test('a web invite: invite --web behind a front shows URL#SECRET (the SECRET as 
   assert.ok(inviteSecret.keyHolds(d, 'listener', host.lib(() => listener.hostKey())), 'the tag names the listener\'s key');
   // the older form (URL SECRET, the SECRET as a word of its own) still joins; a wrong PIN first: one try, and the room hears it
   remote.join(bob, `join ${m.dest} ${m.word} --as bob`);
-  assert.ok(await h.until(() => remote.lib(() => !!(links.get(code) || {}).pin_wanted), 15_000, 50), 'the host asks for the PIN');
+  assert.ok(await h.until(() => remote.lib(() => !!(links.get(code) || {}).awaiting), 15_000, 50), 'the line knocks (the host\'s card waits)');
   const lf0 = linkFile(remote, code);
   assert.equal(lf0.transport.hostKey, host.lib(() => listener.hostKey()), 'the listener key, pinned once the line\'s tag named it');
   assert.match(must(lf0.transport.clientKey), /^[A-Za-z0-9_-]{43}$/, 'a key of the link\'s own');

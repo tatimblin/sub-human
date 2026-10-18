@@ -473,7 +473,7 @@ test('stage 8e G (live verify, remote/99x): an invite\'s join request is one wak
   const wakes = t.of('wake');
   assert.equal(wakes.length, 1, t.out);
   const [shown, ...rest] = must(wakes[0]).text.split('\n');
-  assert.equal(shown, 'room: bob (check 59e9-554c) on mac typed your invite and its PIN and wants to join; your Claude shows you a card (or: /sub-human admit a6a8c73830ec)');
+  assert.equal(shown, 'room: bob (check 59e9-554c) on mac typed your invite line without its PIN and asks to join; your Claude shows you a card (or: /sub-human admit a6a8c73830ec)');
   assert.ok(rest.length && rest.every(l => l.startsWith('(for Claude) ')), rest.join('|'));
   assert.equal(t.of('chat').length, 0);
 });

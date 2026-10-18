@@ -52,6 +52,8 @@ export interface ConnectOpts {
   token?: LinkToken;
   invite?: InviteSecret | undefined;
   pin?: Pin | undefined;
+  /** with an invite and no pin: ask the host person's card (types-core HelloParams knock) */
+  knock?: boolean;
   /** the seat an invite line's PIN asks for, and this machine's short name */
   as?: { name: string; label: string };
   /** signs this machine's key over the host's challenge (machine-key.ts proofFor); with an invite the credential then
@@ -177,11 +179,11 @@ class Client {
 
 /** Says hello; resolves once the server answered. helloMs bounds the hello alone (ssh connects before it answers). */
 async function connect(transport: Transport | Promise<Transport>, opts: ConnectOpts): Promise<Client> {
-  const { machine, machineKey, signMachine, token, invite, pin, as, checkHost, login, caps = {}, deadlineMs = LINK_CALL_MS, helloMs = deadlineMs } = opts;
+  const { machine, machineKey, signMachine, token, invite, pin, knock, as, checkHost, login, caps = {}, deadlineMs = LINK_CALL_MS, helloMs = deadlineMs } = opts;
   const proto: ProtoRange = opts.proto ?? protocol.PROTO, version: string = opts.version || protocol.PLUGIN_VERSION;
   const c = new Client(await transport, { deadlineMs });
-  const cred: { invite?: InviteSecret; pin?: Pin; as?: { name: string; label: string }; token?: LinkToken; login?: boolean } = invite !== undefined
-    ? { invite, ...(pin !== undefined ? { pin } : {}), ...(as ? { as } : {}) } : token !== undefined ? { token } : login === true ? { login: true } : {};
+  const cred: { invite?: InviteSecret; pin?: Pin; knock?: true; as?: { name: string; label: string }; token?: LinkToken; login?: boolean } = invite !== undefined
+    ? { invite, ...(pin !== undefined ? { pin } : knock === true ? { knock: true as const } : {}), ...(as ? { as } : {}) } : token !== undefined ? { token } : login === true ? { login: true } : {};
   const me = { version, proto };
   const base = { proto, client: version, caps, machine, ...(machineKey ? { machine_key: machineKey } : {}) };
   const skew = (r: HelloReply): RoomError => {
