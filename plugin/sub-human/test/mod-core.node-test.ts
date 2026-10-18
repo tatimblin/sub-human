@@ -357,14 +357,18 @@ test('prefilter: consent and the task hooks are skipped only when sure', async (
 // ---------- chat ----------
 test('chat: a peer message is "NAME\'s Claude: …" with nested continuation lines; room lines show (for Claude) as a dim marker', async () => {
   const { peerLines, roomRows, NEST } = await load('mod/core/chat.ts');
-  assert.deepEqual(peerLines('bob.otter-4821', '  done\n\nnext: tests  \n'), ["bob's Claude: done", `${NEST}next: tests`]);
+  // noise pass B: a Claude's message keeps its blank lines (a bare "  │", runs cut to one, none at either end)
+  assert.deepEqual(peerLines('bob.otter-4821', '\n  done\n\n\nnext: tests  \n\n'), ["bob's Claude: done", NEST.trimEnd(), `${NEST}next: tests`]);
   assert.deepEqual(peerLines('bob.otter-4821', ''), ["bob's Claude"]);
   assert.equal(peerLines('Some session', 'hi'), null);
   assert.equal(peerLines(undefined, 'hi'), null);
-  const many = Array.from({ length: 25 }, (_, i) => `l${i}`).join('\n');
+  // a diff of 300 lines shows whole; past PEER_LINES_MAX, the marker
+  const diff = Array.from({ length: 300 }, (_, i) => `+l${i}`).join('\n');
+  assert.equal(peerLines('bob.otter-4821', diff)?.length, 300);
+  const many = Array.from({ length: 405 }, (_, i) => `l${i}`).join('\n');
   const out = peerLines('bob.otter-4821', many);
   assert.ok(out);
-  assert.equal(out.length, 21);
+  assert.equal(out.length, 401);
   assert.equal(out.at(-1), `${NEST}[+5 more lines: ctrl+o]`);
   assert.deepEqual(peerLines('bob.otter-4821', 'a‮b\u0007c\r\nd'), ["bob's Claude: abc", `${NEST}d`]);
   const plain = (t: string) => ({ text: t, dim: false });

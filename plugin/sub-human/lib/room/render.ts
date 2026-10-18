@@ -30,10 +30,10 @@ import { fold, proposals, answered, decided, approversOf, revises } from './cons
 import { NO_TRUST, unverified } from './trust.ts';
 import { oneLine } from '../text.ts';
 import * as clock from '../clock.ts';
-import { TAIL_MAX, TEXT_MAX, CHAT_WRAP, CHAT_MAX, CHAT_LINES_MAX, CHAT_NEST, ROW_NOTICE_MS } from '../config.ts';
+import { TAIL_MAX, TEXT_MAX, CHAT_WRAP, CHAT_MAX, PEER_CHAT_MAX, CHAT_LINES_MAX, PEER_LINES_MAX, CHAT_NEST, CHAT_BLANK, ROW_NOTICE_MS } from '../config.ts';
 import { envMs } from '../env.ts';
 import type { Entry, LaneViewer, Matrix, Members, Trust } from './types.ts';
-import { FOR_CLAUDE } from '../../mod/core/constants.ts';
+import { FOR_CLAUDE, messageLines } from '../../mod/core/constants.ts';
 
 const UNVERIFIED = '(unverified)';
 const NEST = CHAT_NEST; // "  │ ": every continuation line of a message, so none can pass as a line of its own
@@ -284,7 +284,8 @@ function chatBody(e: Entry, viewer: string | undefined, entries: readonly Readon
  * "room: decided …", "bob agreed …", "alice: …" or "(for Claude) …" line. Lines are wrapped at CHAT_WRAP
  * code points (NEST included). At most CHAT_LINES_MAX text lines show, then "  │ [+N more lines: read({ids:[ID]})]".
  * A text longer than CHAT_MAX is cut with a visible "[cut: …]" and a "(for Claude) …" line naming the read
- * call for the rest. \r, other controls and bidi overrides never reach the output (safeText).
+ * call for the rest. A say or question to one member keeps its blank lines (each a bare "  │", CHAT_BLANK; the
+ * group chat drops them); one Claude's to another (code, a diff) shows PEER_LINES_MAX lines and PEER_CHAT_MAX chars. \r, other controls and bidi overrides never reach the output (safeText).
  * viewer: the reader's name ("to you", "owner you"); entries: the log so far (a proposal's title).
  */
 function chatLines(e: Entry, { viewer, entries, trust = NO_TRUST }: { viewer?: string; entries?: readonly Readonly<Entry>[]; trust?: Trust } = {}): string[] {
@@ -327,19 +328,26 @@ function revisionLine(e: Entry, viewer: string | undefined, entries: readonly Re
 function bodyLines(e: Entry, viewer: string | undefined, entries: readonly Readonly<Entry>[] | undefined, trust: Trust): string[] {
   const { head, text } = chatBody(e, viewer, entries, trust);
   if (!text) return [head];
+  // a message to one member keeps its blank lines; one Claude's to another (code, a diff) shows nearly whole
+  const addressed = !!e.to && e.to !== 'room' && (e.kind === 'say' || e.kind === 'question');
+  const peer = addressed && e.via === 'agent';
+  const max = peer ? PEER_CHAT_MAX : CHAT_MAX, linesMax = peer ? PEER_LINES_MAX : CHAT_LINES_MAX;
   const cps = Array.from(text);
-  const cut = cps.length > CHAT_MAX;
-  const shown = cut ? cps.slice(0, CHAT_MAX).join('') + ' [cut: the rest is in the room log]' : text;
-  let lines = safeText(shown).split('\n').map(l => l.replace(/\s+$/, '')).filter(l => l.trim());
+  const cut = cps.length > max;
+  const shown = cut ? cps.slice(0, max).join('') + ' [cut: the rest is in the room log]' : text;
+  let lines = messageLines(safeText(shown), addressed);
   if (!lines.length) return [head];
-  const more = Math.max(0, lines.length - CHAT_LINES_MAX);
-  if (more) lines = lines.slice(0, CHAT_LINES_MAX);
+  const more = Math.max(0, lines.length - linesMax);
+  if (more) lines = lines.slice(0, linesMax);
   lines[0] = `${head}: ${(lines[0] ?? '').replace(/^\s+/, '')}`; // lines is not empty
   const nested = CHAT_WRAP - NEST.length;
   const out: string[] = [];
-  lines.forEach((l, i) => wrap(l, i ? nested : CHAT_WRAP, nested).forEach((piece, j) => out.push(i || j ? NEST + piece : piece)));
+  lines.forEach((l, i) => {
+    if (i && !l) { out.push(CHAT_BLANK); return; }
+    wrap(l, i ? nested : CHAT_WRAP, nested).forEach((piece, j) => out.push(i || j ? NEST + piece : piece));
+  });
   if (more) out.push(`${NEST}[+${more} more line${more === 1 ? '' : 's'}: read({ids:[${e.id}]})]`);
-  if (cut) out.push(`${FOR_CLAUDE} that message is cut at ${CHAT_MAX}/${cps.length} chars; read({ids:[${e.id}]}) has all of it`);
+  if (cut) out.push(`${FOR_CLAUDE} that message is cut at ${max}/${cps.length} chars; read({ids:[${e.id}]}) has all of it`);
   return out;
 }
 

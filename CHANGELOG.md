@@ -13,6 +13,7 @@ Tested on Claude Code 2.1.296 (the unit and hooks-module wiring tests; the demo 
 
 ### Fixed (less noise, from a two-person test)
 - **You see who joined.** The line for a machine its PIN let in, `NAME joined from MACHINE (check …) · not them? /sub-human kick NAME`, reached only Claude, and the room showed a bare `NAME joined`. It is now the join notice the people see (the bare one is not drawn after it), and a renamed joiner reads `(check …; wanted "carol", taken)`.
+- **Messages between Claudes keep their shape.** A message to one member keeps its blank lines (drawn as a bare `│`), and one Claude's message to another (code, a diff) shows up to 400 lines and nearly all an entry holds, where it was cut at 20 lines and 1,500 characters. The room's group chat stays compact.
 
 ## 0.5.0-beta.23 (2026-10-18), private beta: join in one line
 
