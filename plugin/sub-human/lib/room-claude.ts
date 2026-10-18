@@ -5,9 +5,10 @@
  * Nobody launches it by hand; for debugging, `node lib/room-claude.ts cmd CODE` prints
  * the exact command and `node lib/room-claude.ts spawn CODE` runs it (both from the cwd the room's Claude should work in).
  *
- * The launch (spawnPlan): the env is only what the `claude` client needs to run and reach the bg daemon (the login
- * basics plus cc.daemonEnv's allowlist; no CLAUDE_PID, session id or SUB_HUMAN_*: the daemon would drop them). The
- * room Claude's own env comes from the --settings launch flag: SUB_HUMAN_HOME, SUB_HUMAN_ROOM,
+ * The launch (spawnPlan): the env is the spawner's minus the member session's own keys and SUB_HUMAN_* (cc.clientEnv:
+ * CLAUDE_PID, the session id, its task list id, ...; the bg daemon filters a dispatch's env itself, contract
+ * daemon-env-filter), with the login basics filled in when missing. The room Claude's own env comes from the
+ * --settings launch flag: SUB_HUMAN_HOME, SUB_HUMAN_ROOM,
  * CLAUDE_CODE_TASK_LIST_ID=sh-CODE, CLAUDE_CODE_ENABLE_TODO_TOOLS=1, the spawner's SUB_HUMAN_*_MS overrides, plus
  * crossSessionInbound "refuse" (a peer's message would start a turn; nobody needs to reach it). No --model: it runs on the user's default model. cwd is the joiner's: --bg refuses
  * an untrusted cwd (a fresh temp dir is never trusted). Before it starts, openTaskList (the join, once its claim
@@ -24,7 +25,8 @@
  * hook returns at once. spawn stops prevJob (a room Claude that never bound may still run) and, with a current
  * claim, any other live claude.CODE job (stopStrays); it records the job only while the claim is current and the
  * room not closing, else stops the job it just made. A failure records {job: null, spawn_error} so the next join
- * retries and can say why. `claude --bg` succeeding does not mean the room's Claude runs (the bg daemon can crash it
+ * retries and can say why. The job is the newest live one named claude.CODE that `claude agents --json` lists (findJob,
+ * asked a few times while the daemon registers it); the id `claude --bg` prints is a hint only. `claude --bg` succeeding does not mean the room's Claude runs (the bg daemon can crash it
  * before its first turn), so watchStart polls until it binds: a failed/stopped/done job records spawn_error and is
  * stopped; no pid by the bind deadline records spawn_error and keeps the job (the next claim stops it as prevJob).
  *
@@ -34,7 +36,8 @@
  * stopped and left. watchdog (the room Claude's tail and join's sweep) claims closing and starts the
  * reaper once no member has been live for orphanMs: members that crashed leave no SessionEnd, so this is what closes
  * their room. The orphan start is the latest left_at when every member left cleanly, else the first observation
- * (claude.orphan_since, cleared once a member is live again).
+ * (claude.orphan_since, cleared once a member is live again). A room whose room Claude never started (spawn_error, no
+ * job) is closed the same way once its members are gone (identity.ts roomClaudeActive), with no job to stop.
  *
  * Env: SUB_HUMAN_CLAUDE (the claude binary; tests use a stub), SUB_HUMAN_PLUGIN_DIR (force --plugin-dir; "" = none),
  *   SUB_HUMAN_REAP_GRACE_MS (default 10 s), SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS.
@@ -49,6 +52,7 @@ import * as identity from './identity.ts';
 import * as room from './room.ts';
 import * as tasks from './tasks.ts';
 import { decodeOr, obj, opt, str } from './decode.ts';
+import { sleepSync } from './io.ts';
 
 /** `start CODE JSON`: what spawnStart hands the detached helper. */
 const START_ARGS = obj({ cwd: opt(str), claim: opt(str), prevJob: opt(str) });
@@ -92,7 +96,6 @@ type WatchResult = 'bound' | 'gone' | 'failed' | 'timeout';
 
 const PLUGIN_ROOT = path.join(import.meta.dirname, '..');
 const AGENT = 'sub-human:room-claude';
-const LOGIN_ENV = ['HOME', 'USER', 'LOGNAME', 'SHELL', 'PATH', 'TERM', 'LANG', 'TMPDIR'];
 const PENDING = 'pending';
 const ENDED = new Set(['done', 'failed', 'stopped']);
 
@@ -103,18 +106,17 @@ const iso = (ms: number) => new Date(ms).toISOString();
 const claimMs = () => config.ROOM_CLAUDE_CLAIM_MS;
 const orphanMsDefault = () => envMs('SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS');
 
-/** The login basics plus the daemon's dispatch allowlist; USER/LOGNAME are needed to stay logged in. */
+/** The spawner's env for the `claude` client (cc.clientEnv), with the login basics filled in when missing:
+ * USER/LOGNAME are needed to stay logged in. */
 function cleanEnv(src: NodeJS.ProcessEnv = process.env): Record<string, string> {
-  const e: Record<string, string> = {};
-  for (const k of LOGIN_ENV) { const v = src[k]; if (v) e[k] = v; }
-  Object.assign(e, cc.daemonEnv(src));
+  const e = cc.clientEnv(src);
   let user = '';
   try { user = os.userInfo().username; } catch { /* none */ }
   e.USER = e.USER || src.LOGNAME || user;
   e.LOGNAME = e.LOGNAME || e.USER;
   e.HOME = e.HOME || os.homedir();
   e.TERM = e.TERM || 'xterm-256color';
-  for (const k of Object.keys(e)) if (!e[k]) delete e[k];
+  for (const k of ['USER', 'LOGNAME']) if (!e[k]) delete e[k];
   return e;
 }
 
@@ -197,16 +199,29 @@ function claimSpawn(code: RoomCode, { now = clock.now(), by = null }: { now?: nu
   return out;
 }
 
-/** The job `claude agents --json` lists for this room (name claude.CODE, still running), else the parsed id. */
-function findJob(code: RoomCode, { parsed = null, env = cleanEnv() }: { parsed?: string | null, env?: Record<string, string> } = {}): { id: string, sessionId?: string | null } | null {
-  const list: AgentJob[] | null = cc.jobs({ bin: claudeBin(), env, timeout: config.SPAWN_TIMEOUT_MS });
-  const fallback = parsed ? { id: parsed, sessionId: null } : null;
-  if (!list) return fallback;
+/** What findJob answers: the job, or null. */
+type Found = { id: string, sessionId?: string | null } | null;
+
+/**
+ * The newest live job named claude.CODE that `claude agents --json` lists (hint, the id `claude --bg` printed,
+ * first when listed; never one of skip, the jobs stopped before this launch). The list is asked up to `tries` times,
+ * gapMs apart, while the daemon registers a fresh job. None listed (or no list): the hint, if any
+ * (watchStart then sees whether it binds).
+ */
+function findJob(code: RoomCode, { hint = null, skip = [], env = cleanEnv(), tries = 1, gapMs = config.ROOM_CLAUDE_FIND_GAP_MS }: {
+  hint?: string | null, skip?: readonly (string | null | undefined)[], env?: Record<string, string>, tries?: number, gapMs?: number,
+} = {}): Found {
   const name = `claude.${code}`;
-  const mine = list.filter((j): j is AgentJob & { id: string } => !!j.id && j.kind !== 'interactive' && !ENDED.has(j.state ?? '')
-    && (j.name === name || (!!parsed && j.id === parsed)));
-  const pick = mine.find(j => j.id === parsed) ?? mine.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))[0];
-  return pick ? { id: pick.id, sessionId: pick.sessionId } : fallback;
+  for (let i = 0; i < tries; i++) {
+    if (i) sleepSync(gapMs);
+    const list: AgentJob[] | null = cc.jobs({ bin: claudeBin(), env, timeout: config.SPAWN_TIMEOUT_MS });
+    if (!list) break; // unreadable: asking again says no more
+    const mine = list.filter((j): j is AgentJob & { id: string } => !!j.id && j.kind !== 'interactive' && !ENDED.has(j.state ?? '')
+      && !skip.includes(j.id) && (j.name === name || (!!hint && j.id === hint)));
+    const pick = mine.find(j => j.id === hint) ?? mine.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))[0];
+    if (pick) return { id: pick.id, sessionId: pick.sessionId };
+  }
+  return hint ? { id: hint, sessionId: null } : null;
 }
 
 /**
@@ -251,17 +266,21 @@ function spawn(opts: SpawnOpts): SpawnResult {
   const { code, claim = null, prevJob = null } = opts;
   const plan = spawnPlan(opts);
   if (prevJob) stopJob(prevJob); // a respawn never leaves the old job running beside the new one
+  const stopped: (string | null)[] = [prevJob];
   if (claim) {
     // nor one the record lost; only while this claim is current (a stale starter must not stop the new job)
     const o = (() => { try { return identity.readMembers(code).claude ?? null; } catch { return null; } })();
-    if (o && o.claim === claim && !o.closing) stopStrays(code, [prevJob]);
+    if (o && o.claim === claim && !o.closing) stopped.push(...stopStrays(code, [prevJob]));
   }
   const r = spawnSync(plan.bin, plan.args, {
     cwd: plan.cwd, env: plan.env, encoding: 'utf8', timeout: config.SPAWN_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'],
   });
   const text = `${r.stdout || ''}\n${r.stderr || ''}`;
-  const parsed = cc.parseDispatch(text);
-  const found = r.error || (r.status !== 0 && !parsed) ? null : findJob(code, { parsed, env: plan.env });
+  const hint = cc.parseDispatch(text);
+  // the job by its name (the dispatch line is a hint): a launch that failed to start (or exited non-zero with no
+  // dispatch line) has none to look for
+  const found = r.error || (r.status !== 0 && !hint) ? null
+    : findJob(code, { hint, skip: stopped, env: plan.env, tries: config.ROOM_CLAUDE_FIND_TRIES });
   const mine = (o: Member | null) => !claim || (!!o && o.claim === claim);
   if (!found) {
     const said = text.split('\n').map(s => s.trim()).filter(Boolean).find(s => /trust|error|not /i.test(s));

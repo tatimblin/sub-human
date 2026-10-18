@@ -1,5 +1,6 @@
 /**
- * plugin/sub-human/lib/cc/bg.ts: `claude --bg` jobs (the room's Claude), the bg daemon and the env it keeps from a dispatch.
+ * plugin/sub-human/lib/cc/bg.ts: `claude --bg` jobs (the room's Claude), the bg daemon and the env a `claude --bg` client is
+ * handed (clientEnv).
  *
  * `@cc` tags as in lib/cc/env.ts. The runners take a spawnSync stand-in (`run`) so tests spawn nothing.
  */
@@ -8,7 +9,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import type { SpawnSyncOptionsWithStringEncoding } from 'node:child_process';
-import { CONTRACT } from './contract.ts';
 import { envStr } from '../env.ts';
 
 type Env = NodeJS.ProcessEnv;
@@ -27,14 +27,16 @@ interface AgentJob {
 }
 
 /**
- * `claude --bg` prints "backgrounded · <short id> · <name>" on stdout (no --json for --bg).
+ * `claude --bg` prints "backgrounded · <short id> · <name>" on stdout (no --json for --bg). A hint only: the job is
+ * found by its name in `claude agents --json` (lib/room-claude.ts findJob); the id read here is preferred when listed,
+ * and used alone only while that list cannot be read.
  * @cc backgrounded \xB7
  * @stability incidental
  */
 const JOB_RE: RegExp = /backgrounded\s*·\s*([0-9a-z]{4,40})\b/i;
 
 /**
- * The job id from `claude --bg` output, or null.
+ * The job id from `claude --bg` output, or null (a hint: see JOB_RE).
  * @cc backgrounded \xB7
  * @stability incidental
  */
@@ -87,7 +89,7 @@ interface JobsOpts {
 
 /**
  * Run `claude agents --json [--all]` and parse it: the array, or null when the command fails or prints
- * something else (callers then fall back to the id they parsed with JOB_RE at dispatch).
+ * something else (callers then fall back to the id JOB_RE read at dispatch, a hint).
  * opts: {all, bin = SUB_HUMAN_CLAUDE || 'claude', env, timeout = 15000, run = spawnSync}.
  * @cc isAgentsJsonInvocation
  * @stability API
@@ -130,30 +132,39 @@ function daemonStatus({ bin = envStr('SUB_HUMAN_CLAUDE') || 'claude', env = proc
   return parseDaemonStatus(r.stdout);
 }
 
-// ---------- the daemon's env allowlist ----------
+// ---------- the env a `claude --bg` client is handed ----------
 
 /**
- * The env keys the bg daemon keeps from a `claude --bg` dispatch: every name of contract.json daemon-env-allowlist's
- * `contains` groups (the base set, l5n and the extra keys in 2.1.296; cc-2.1.292.md and cc-2.1.296.md list what each
- * release added). Every other caller env key (CLAUDE_CODE_TASK_LIST_ID, SUB_HUMAN_*, HOME, ...) is dropped; the worker
- * runs with the daemon's own process.env plus these. Auth secrets (ANTHROPIC_API_KEY, ...) are not in it. Pass state to
- * a bg job through argv (`--settings '{"env":{...}}'`) instead.
- * @cc daemon_bg_dispatch_ingest
- * @stability env
+ * Keys never handed to a `claude --bg` client spawned from a member's session (lib/room-claude.ts). The client and,
+ * when the client cold-starts it, the bg daemon run with that env, and the daemon starts every job from its own
+ * process.env: a member's session keys would make the room session (and every later bg job) look like a child of that
+ * member's session. The daemon's own dispatch filter (contract daemon-env-filter) drops them from the dispatch anyway,
+ * which is why the full env can be passed at all; the room session's own env goes through --settings env.
+ *   CLAUDECODE, CLAUDE_CODE_SESSION_ID, CLAUDE_CODE_CHILD_SESSION, CLAUDE_CODE_SESSION_ATTENDED, CLAUDE_PID, AI_AGENT,
+ *     CLAUDE_EFFORT, TRACEPARENT, CLAUDE_CODE_EXECPATH: what Claude Code stamps on its child processes (a hook's, a
+ *     Bash command's): the member's session, its pid, effort, trace and binary, and the mark of a child session;
+ *   CLAUDE_CODE_ENTRYPOINT, CLAUDE_CODE_BRIDGE_SESSION_ID, CLAUDE_CODE_MESSAGING_SOCKET, CLAUDE_CODE_MESSAGING_TOKEN:
+ *     how the member's session was started and its cross-session messaging endpoint and token (the room session gets
+ *     its own from the daemon);
+ *   CLAUDE_CODE_TASK_LIST_ID: the member's own task list (the room's, sh-CODE, goes through --settings env);
+ *   CLAUDE_PLUGIN_ROOT, CLAUDE_PLUGIN_DATA, CLAUDE_PROJECT_DIR, CLAUDE_ENV_FILE: the hook's own context;
+ *   TMUX, TMUX_PANE: the member's terminal pane, not the room session's (it has none);
+ *   SUB_HUMAN_* (DENY_PREFIX): this process's knobs; the room's state goes through --settings env.
+ * Empty values are kept (an env-level login such as CLAUDE_SECURESTORAGE_CONFIG_DIR="" must reach the client).
  */
-const DAEMON_ENV_ALLOW: readonly string[] = Object.freeze([...new Set(
-  (CONTRACT.find(e => e.id === 'daemon-env-allowlist')?.contains ?? []).flatMap(g => g.names),
-)]);
-const DAEMON_ENV_SET = new Set(DAEMON_ENV_ALLOW);
+const CLIENT_ENV_DENY: readonly string[] = Object.freeze([
+  'CLAUDECODE', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_SESSION_ATTENDED', 'CLAUDE_PID', 'AI_AGENT',
+  'CLAUDE_EFFORT', 'TRACEPARENT', 'CLAUDE_CODE_EXECPATH', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_BRIDGE_SESSION_ID', 'CLAUDE_CODE_MESSAGING_SOCKET',
+  'CLAUDE_CODE_MESSAGING_TOKEN', 'CLAUDE_CODE_TASK_LIST_ID', 'CLAUDE_PLUGIN_ROOT', 'CLAUDE_PLUGIN_DATA', 'CLAUDE_PROJECT_DIR',
+  'CLAUDE_ENV_FILE', 'TMUX', 'TMUX_PANE',
+]);
+const CLIENT_ENV_DENY_SET = new Set(CLIENT_ENV_DENY);
+const DENY_PREFIX = 'SUB_HUMAN_';
 
-/**
- * env reduced to what the daemon would keep from it (exact, case-sensitive key match, as the daemon does).
- * @cc daemon_bg_dispatch_ingest
- * @stability env
- */
-function daemonEnv(env: Env = process.env): Record<string, string> {
+/** env without the CLIENT_ENV_DENY keys and SUB_HUMAN_* (exact, case-sensitive key match); empty values kept. */
+function clientEnv(env: Env = process.env): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(env)) if (DAEMON_ENV_SET.has(k) && v !== undefined) out[k] = v;
+  for (const [k, v] of Object.entries(env)) if (v !== undefined && !CLIENT_ENV_DENY_SET.has(k) && !k.startsWith(DENY_PREFIX)) out[k] = v;
   return out;
 }
 
@@ -216,6 +227,6 @@ const ROOM_SESSION_INBOUND = 'refuse';
 
 export {
   ROOM_SESSION_INBOUND, JOB_RE, parseDispatch, agentsCmd, stopCmd, parseAgentsJson, jobs, parseDaemonStatus, daemonStatus, exeState,
-  runningVersion, DAEMON_ENV_ALLOW, daemonEnv,
+  runningVersion, CLIENT_ENV_DENY, clientEnv,
 };
 export type { AgentJob, JobsOpts, DaemonStatus, ExeStateOpts };

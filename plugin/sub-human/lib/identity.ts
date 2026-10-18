@@ -10,7 +10,7 @@
  * open, join and close), with one ps call for every live local pid (lib/lock.ts pidStarts). A room is open with
  * >= 1 live member seat and not closing; one where only the room's Claude is left is not (orphanRooms: join sweeps
  * those through roomClaude.watchdog). A room closed for good (every person's seat left, one whose session crashed
- * has not; its room Claude stopped or never started) leaves the index, only a join reopens it, and it is the only
+ * has not; its room Claude stopped, or never asked for) leaves the index, only a join reopens it, and it is the only
  * kind lib/gc.ts sets aside. roomOpen counts the room's Claude too (a resume may rejoin a room whose room Claude
  * is waiting out the reap grace). isHost: the room Claude's spawn, reap and watchdog and proposal decisions run
  * only on the machine that holds the room.
@@ -629,8 +629,11 @@ function openRooms(): RoomCode[] {
   return open.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0)).map(r => r.code);
 }
 
-/** The room's Claude record still owns a job or a live seat (not stopped, not left). */
-const roomClaudeActive = (o: Member | null | undefined): boolean => !!o && !o.stopped_at && (seatAlive(o) || (!o.left_at && !!o.job));
+/** The room's Claude record still owns a job or a live seat (not stopped, not left), or never started (a spawn that
+ * failed outright: no job, spawn_error): the reaper still has a room to close (its room task, the open-rooms index),
+ * so orphanRooms sweeps it once its members are gone. */
+const roomClaudeActive = (o: Member | null | undefined): boolean => !!o && !o.stopped_at
+  && (seatAlive(o) || (!o.left_at && (!!o.job || !!o.spawn_error)));
 
 function orphanRooms(): RoomCode[] {
   const out: RoomCode[] = [];

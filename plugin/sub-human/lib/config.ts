@@ -48,6 +48,8 @@ export const LOCK_REUSE_CHECK_MS = 1000;       // a live owner's lock younger th
 export const SPAWN_TIMEOUT_MS = 30_000;        // `claude --bg` and `claude stop`
 export const REAP_GRACE_MS = 10_000;           // SUB_HUMAN_REAP_GRACE_MS (allowZero): a quick rejoin cancels the reap
 export const REAP_STOP_MS = 5000;              // after `claude stop`, the wait before the reaper ends the process itself
+export const ROOM_CLAUDE_FIND_TRIES = 4;              // `claude agents --json` asked this often for a fresh job (findJob)
+export const ROOM_CLAUDE_FIND_GAP_MS = 500;           // that far apart
 export const ROOM_CLAUDE_BIND_MS = 120_000;           // a spawned room Claude that never bound in this long is spawned again
 export const ROOM_CLAUDE_WATCH_POLL_MS = 5_000;       // the detached starter checks its job this often until it binds (watchStart)
 

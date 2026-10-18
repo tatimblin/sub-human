@@ -478,7 +478,7 @@ test('stage 8e G (live verify, remote/99x): an invite\'s join request is one wak
   assert.equal(t.of('chat').length, 0);
 });
 
-test('tail: on the host the health tick sweeps the seats (lib/seats.ts sweep); a room hosted elsewhere never does', () => {
+test('tail: on the host the health tick sweeps the seats (lib/seats.ts sweep); a room hosted elsewhere never does (nor repairs tasks)', () => {
   h.freshHome();
   const { code } = h.register('alice');
   sys(code, 'member_joined', 'alice');
@@ -489,9 +489,47 @@ test('tail: on the host the health tick sweeps the seats (lib/seats.ts sweep); a
   t.stop();
   const mswept: string[] = [];
   const remote = (c: RoomCode) => { const r = room.open(c); return { ...r, store: { ...r.store, isHost: false } }; };
-  const m = startTail({ deps: { openRoom: remote, linkStatus: () => ({ running: true, state: 'online' }) as LinkStatus, sweepSeats: c => mswept.push(c) } });
+  const mrepaired: string[] = [];
+  const m = startTail({ deps: { openRoom: remote, linkStatus: () => ({ running: true, state: 'online' }) as LinkStatus, sweepSeats: c => mswept.push(c),
+    repairTasks: c => mrepaired.push(c), roomSessionDown: () => true } });
   m.advance(FAST.healthMs * 2 + 100);
   assert.deepEqual(mswept, []);
+  assert.deepEqual(mrepaired, [], 'nor repairs the task files: they are the host\'s');
+});
+
+test('tail: on the host a member\'s health tick repairs the task files only while the room session is down; the room session\'s always', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  sys(code, 'member_joined', 'alice');
+  let down = false;
+  const repaired: string[] = [];
+  const t = startTail({ deps: { repairTasks: c => repaired.push(c), roomSessionDown: () => down } });
+  t.advance(FAST.healthMs * 2 + 100);
+  assert.deepEqual(repaired, [], 'the room session is up: it repairs them itself');
+  down = true;
+  t.advance(FAST.healthMs * 2 + 100);
+  assert.ok(repaired.length >= 2 && repaired.every(c => c === code), repaired.join(','));
+  // a room hosted elsewhere never repairs (the files are the host's): the seat-sweep test below
+});
+
+test('tail: roomSessionDown (the default): a recorded task list whose room session holds no seat, not closing', async () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  sys(code, 'member_joined', 'alice');
+  const repaired: string[] = [];
+  const run = () => { const t = startTail({ deps: { repairTasks: c => repaired.push(c) } }); t.advance(FAST.healthMs + 100); t.stop(); const n = repaired.length; repaired.length = 0; return n > 0; };
+  assert.equal(run(), false, 'no room session record');
+  identity.updateRoomClaude(code, () => ({ job: 'cafe0001', tasks_dir: '/x/tasks/sh-' + code }));
+  assert.equal(run(), true, 'spawned, never bound');
+  const o = h.spawnSleeper();
+  identity.join({ code, name: sn('claude'), role: 'claude', pid: o.pid, session_id: 'so' });
+  assert.equal(must(identity.readMembers(code).claude).tasks_dir, '/x/tasks/sh-' + code, 'the recorded list survives the bind');
+  assert.equal(run(), false, 'bound and live');
+  o.kill();
+  await h.until(() => !identity.isAlive(o.pid));
+  assert.equal(run(), true, 'its process died');
+  identity.updateRoomClaude(code, () => ({ closing: new Date().toISOString() }));
+  assert.equal(run(), false, 'closing');
 });
 
 /** The link daemon's status as linkStatus answers it; the fakes below carry only what the tail reads. */

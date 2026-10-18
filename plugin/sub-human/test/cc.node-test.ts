@@ -246,17 +246,19 @@ test('exeState: /proc/PID/exe " (deleted)" on Linux; elsewhere ps -o comm=, dele
   assert.equal(must(self).deleted, false);
 });
 
-test('DAEMON_ENV_ALLOW and daemonEnv', () => {
-  for (const k of ['PATH', 'CLAUDE_CONFIG_DIR', 'ANTHROPIC_MODEL', 'CLAUDE_CODE_USE_BEDROCK', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_PLUGIN_DIRS',
-    // added to the daemon's allowlist in 2.1.292
-    'CLAUDE_CODE_CLIENT_DATA_URL', 'CLAUDE_CODE_3P_SEEDED_OPUS_DEFAULT', 'CLAUDE_CODE_DISABLE_PROACTIVITY', 'CLAUDE_CODE_AUTO_MODE_TIER', 'CLAUDE_BG_AUTO_MEMORY_OFF',
-    // and in 2.1.296
-    'CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL', 'CLAUDE_CODE_RESTRICT_PERSONAL_CONFIG'])
-    assert.ok(cc.DAEMON_ENV_ALLOW.includes(k), k);
-  for (const k of ['HOME', 'CLAUDE_CODE_TASK_LIST_ID', 'CLAUDE_CODE_ENABLE_TODO_TOOLS', 'SUB_HUMAN_HOME', 'ANTHROPIC_API_KEY'])
-    assert.ok(!cc.DAEMON_ENV_ALLOW.includes(k), k);
-  assert.equal(new Set(cc.DAEMON_ENV_ALLOW).size, cc.DAEMON_ENV_ALLOW.length);
-  assert.deepEqual(cc.daemonEnv({ PATH: '/bin', HOME: '/h', CLAUDE_CODE_TASK_LIST_ID: 'x' }), { PATH: '/bin' });
+test('clientEnv: the full env minus the member session\'s own keys and SUB_HUMAN_*; empty values kept', () => {
+  const env = {
+    PATH: '/bin', HOME: '/h', CLAUDE_CONFIG_DIR: '/cfg', ANTHROPIC_BASE_URL: 'https://gw', CLAUDE_CODE_DISABLE_PROACTIVITY: '1',
+    CLAUDE_SECURESTORAGE_CONFIG_DIR: '', ANY_NEW_KEY: 'x',
+    CLAUDECODE: '1', CLAUDE_PID: '1', CLAUDE_CODE_SESSION_ID: 's', CLAUDE_CODE_CHILD_SESSION: '1', CLAUDE_CODE_MESSAGING_TOKEN: 't',
+    CLAUDE_CODE_TASK_LIST_ID: 'x', TMUX: '/t', SUB_HUMAN_HOME: '/sh', SUB_HUMAN_ROOM: 'r', undef: undefined,
+  };
+  assert.deepEqual(cc.clientEnv(env), {
+    PATH: '/bin', HOME: '/h', CLAUDE_CONFIG_DIR: '/cfg', ANTHROPIC_BASE_URL: 'https://gw', CLAUDE_CODE_DISABLE_PROACTIVITY: '1',
+    CLAUDE_SECURESTORAGE_CONFIG_DIR: '', ANY_NEW_KEY: 'x',
+  });
+  for (const k of ['CLAUDE_PID', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_CODE_TASK_LIST_ID']) assert.ok(cc.CLIENT_ENV_DENY.includes(k), k);
+  assert.equal(new Set(cc.CLIENT_ENV_DENY).size, cc.CLIENT_ENV_DENY.length);
 });
 
 // ---------- matcher ----------
@@ -306,7 +308,7 @@ test('CONTRACT entries are well formed and unique', () => {
     for (const d of e.degraded || []) assert.ok(VER.test(d.from) && must(cc.compareVersions(d.from, cc.PROBED_VERSION)) > 0 && d.note, e.id);
     assert.ok(e.note, e.id);
   }
-  for (const id of ['task-lockfile', 'task-list-auto-reset', 'subagent-statusline-precedence', 'daemon-env-allowlist', 'matcher-rule',
+  for (const id of ['task-lockfile', 'task-list-auto-reset', 'subagent-statusline-precedence', 'daemon-env-filter', 'matcher-rule',
     'hooks-json-modules', 'classic-chain-order', 'prompt-submit-ups-order', 'session-append-notice-hidden', 'ui-log-notice', 'process-run-stdin', 'plugin-test-off', 'plugin-types-state', 'prompt-origin-composer',
     'mcp-stdio-ppid', 'mcp-progress-resets-idle-timeout', 'mcp-server-shared-by-subagents', 'session-title-address'])
     assert.ok(ids.has(id), id);
@@ -335,10 +337,7 @@ test('every @cc tag in lib/cc/*.ts names a string some CONTRACT entry searches f
   for (const t of tags) assert.ok(all.has(t) || all.has(t + ' ') || all.has(t.replace(/\\n/g, '\n')), t);
 });
 
-test('daemon-env-allowlist: a shape, not the exact arrays: each group\'s array must hold its names, in any order, more allowed', () => {
-  const e = must(cc.CONTRACT.find(x => x.id === 'daemon-env-allowlist'));
-  // the groups are DAEMON_ENV_ALLOW
-  assert.deepEqual([...new Set(must(e.contains).flatMap(g => g.names))].sort(), [...cc.DAEMON_ENV_ALLOW].sort());
+test('contains groups: a shape, not the exact arrays: each group\'s array must hold its names, in any order, more allowed', () => {
   const g = { what: 'base', in: 'new Set(["A_KEY_ANCHOR_LONG",', names: ['A_KEY_ANCHOR_LONG', 'B_KEY'] };
   const run = (text: string) => must(cc.probe(Buffer.from(text, 'latin1'), { entries: [{ id: 'x', stability: 'env', search: ['A_KEY_ANCHOR_LONG'], contains: [g], note: '' }] })[0]);
   assert.equal(run('var q=new Set(["A_KEY_ANCHOR_LONG",...x,"B_KEY"]),z=1;').ok, true);

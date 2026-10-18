@@ -23,17 +23,20 @@ interface StubCall { argv: string[]; env: Record<string, string>; cwd: string }
 
 /** A stub claude: appends {argv, env, cwd} to calls.jsonl; `--bg` prints the backgrounded line; `agents --json`
  * prints `agents` (a JSON array) when given, else nothing (cc.jobs() then fails and the parsed id is used);
- * `before`, when given, is what it prints until the first `--bg`. */
-function stubClaude({ out = 'backgrounded · 0b500131 · claude.x', agents = null, before = null }:
-  { out?: string; agents?: object[] | null; before?: object[] | null } = {}) {
+ * `before`, when given, is what it prints until the first `--bg`, and for `late` more `agents` calls after it (a
+ * daemon that lists a fresh job only after a moment). */
+function stubClaude({ out = 'backgrounded · 0b500131 · claude.x', agents = null, before = null, late = 0 }:
+  { out?: string; agents?: object[] | null; before?: object[] | null; late?: number } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-stub-'));
   const log = path.join(dir, 'calls.jsonl');
   const bin = path.join(dir, 'claude');
   const bg = path.join(dir, 'bg');
+  // after --bg, the bg file counts the agents calls: `before` while fewer than `late` were made
+  const after = `(() => { const f = require('fs'); if (!f.existsSync(${JSON.stringify(bg)})) return false; const n = f.readFileSync(${JSON.stringify(bg)}, 'utf8').length; f.appendFileSync(${JSON.stringify(bg)}, '.'); return n >= ${late}; })()`;
   fs.writeFileSync(bin, `#!${process.execPath}\n` +
     `require('fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify({argv: process.argv.slice(2), env: process.env, cwd: process.cwd()}) + '\\n');\n` +
     `if (process.argv.includes('--bg')) { require('fs').writeFileSync(${JSON.stringify(bg)}, ''); console.log(${JSON.stringify(out)}); }\n` +
-    (agents ? `if (process.argv[2] === 'agents') console.log(${before ? `require('fs').existsSync(${JSON.stringify(bg)}) ? ${JSON.stringify(JSON.stringify(agents))} : ${JSON.stringify(JSON.stringify(before))}` : JSON.stringify(JSON.stringify(agents))});\n` : ''));
+    (agents ? `if (process.argv[2] === 'agents') console.log(${before ? `${after} ? ${JSON.stringify(JSON.stringify(agents))} : ${JSON.stringify(JSON.stringify(before))}` : JSON.stringify(JSON.stringify(agents))});\n` : ''));
   fs.chmodSync(bin, 0o755);
   const calls = (): StubCall[] => { try { return fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l) as StubCall); } catch { return []; } };
   return { bin, calls, dir };
@@ -53,14 +56,14 @@ function withEnv<T>(vars: Record<string, string | undefined>, fn: () => T): T {
   return r;
 }
 
-test('room-claude: spawnPlan argv, --settings env, clean env (no CLAUDE_* from the parent), joiner cwd', () => {
+test('room-claude: spawnPlan argv, --settings env, clean env (no member session keys from the parent), joiner cwd', () => {
   h.freshHome();
   const code = h.newRoom();
-  const parent = { HOME: '/Users/a', USER: 'a', PATH: '/bin:/a b/c', TERM: 'xterm', CLAUDE_PID: '1', CLAUDE_CODE_SESSION_ID: 's', CLAUDECODE: '1', SECRET: 'x', LANG: 'C' };
+  const parent = { HOME: '/Users/a', USER: 'a', PATH: '/bin:/a b/c', TERM: 'xterm', CLAUDE_PID: '1', CLAUDE_CODE_SESSION_ID: 's', CLAUDECODE: '1', OTHER: 'x', LANG: 'C' };
   const p = withEnv({ SUB_HUMAN_PLUGIN_DIR: '/p/sub-human' }, () => roomClaude.spawnPlan({ code, cwd: '/work', env: parent }));
   assert.equal(p.cwd, '/work');
-  assert.deepEqual(Object.keys(p.env).sort(), ['HOME', 'LANG', 'LOGNAME', 'PATH', 'TERM', 'USER']);
-  assert.ok(Object.keys(p.env).every(k => !k.startsWith('CLAUDE')), 'no CLAUDE_* from the parent');
+  assert.deepEqual(Object.keys(p.env).sort(), ['HOME', 'LANG', 'LOGNAME', 'OTHER', 'PATH', 'TERM', 'USER']);
+  assert.ok(Object.keys(p.env).every(k => !k.startsWith('CLAUDE')), 'no CLAUDE_PID, session id or CLAUDECODE from the parent');
   assert.equal(p.env.LOGNAME, 'a');
   const a = p.args;
   assert.deepEqual(a.slice(0, 3), ['--bg', '-n', `claude.${code}`]);
@@ -183,7 +186,7 @@ test('room-claude: reap waits the grace, marks closing, completes the room task 
     assert.ok(!R.readAll().some(e => e.kind === 'status' && e.to === 'claude'), 'nothing asked of a model');
     assert.deepEqual(s.calls().map(c => c.argv), [['stop', 'cafe1234'], ['agents', '--json', '--all']], 'then looks for strays');
     assert.equal(must(s.calls()[0]).env.CLAUDE_PID, undefined, 'clean env for stop');
-    assert.equal(must(s.calls()[0]).env.CLAUDE_CONFIG_DIR, cfg, 'stop reaches the same daemon (CLAUDE_CONFIG_DIR is on the allowlist)');
+    assert.equal(must(s.calls()[0]).env.CLAUDE_CONFIG_DIR, cfg, 'stop reaches the same daemon (CLAUDE_CONFIG_DIR is passed)');
     const rec = must(identity.readMembers(code).claude);
     assert.ok(rec.left_at && rec.stopped_at && rec.closing);
     // item 16: the stub's `claude stop` left the room Claude's process up (as the daemon did live): the reaper ended it
@@ -228,20 +231,22 @@ test('room-claude: the CLI prints the manual command and refuses a bad code', ()
 
 // ---------- spawn env, claim, job lookup, respawn, watchdog ----------
 
-test('room-claude: the spawn env is the login basics plus the daemon allowlist (cc.DAEMON_ENV_ALLOW), nothing else', () => {
+test('room-claude: the spawn env is the spawner\'s minus the member session\'s keys (cc.CLIENT_ENV_DENY) and SUB_HUMAN_*', () => {
   h.freshHome();
   const code = h.newRoom();
   const parent: Record<string, string> = {
     HOME: '/Users/a', USER: 'a', PATH: '/bin', TERM: 'xterm', SHELL: '/bin/zsh', TMPDIR: '/t', LANG: 'C',
     CLAUDE_CONFIG_DIR: '/cfg', ANTHROPIC_BASE_URL: 'https://gw', CLAUDE_CODE_USE_BEDROCK: '1', AWS_PROFILE: 'p', ANTHROPIC_MODEL: 'm',
-    CLAUDE_CODE_DISABLE_PROACTIVITY: '1', // in the daemon allowlist since 2.1.292
-    CLAUDE_PID: '1', CLAUDE_CODE_SESSION_ID: 's', CLAUDECODE: '1', CLAUDE_CODE_TASK_LIST_ID: 'x', SUB_HUMAN_HOME: '/h', SECRET: 'x',
+    CLAUDE_CODE_DISABLE_PROACTIVITY: '1', CLAUDE_CODE_SOME_FUTURE_KEY: '1', // a key a later release adds to its allowlist: no list to keep
+    CLAUDE_SECURESTORAGE_CONFIG_DIR: '', // an env-level login: kept though empty
+    CLAUDE_PID: '1', CLAUDE_CODE_SESSION_ID: 's', CLAUDECODE: '1', CLAUDE_CODE_TASK_LIST_ID: 'x', SUB_HUMAN_HOME: '/h',
+    CLAUDE_CODE_MESSAGING_SOCKET: '/sock', TMUX: '/tmux',
   };
   const env = roomClaude.spawnPlan({ code, env: parent }).env;
-  const login = ['HOME', 'USER', 'LOGNAME', 'SHELL', 'PATH', 'TERM', 'LANG', 'TMPDIR'];
-  for (const k of Object.keys(env)) assert.ok(login.includes(k) || cc.DAEMON_ENV_ALLOW.includes(k), `${k} is neither login nor allowlisted`);
-  for (const k of ['CLAUDE_CONFIG_DIR', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_USE_BEDROCK', 'AWS_PROFILE', 'ANTHROPIC_MODEL', 'CLAUDE_CODE_DISABLE_PROACTIVITY']) assert.equal(env[k], parent[k], k);
-  for (const k of ['CLAUDE_PID', 'CLAUDE_CODE_SESSION_ID', 'CLAUDECODE', 'CLAUDE_CODE_TASK_LIST_ID', 'SUB_HUMAN_HOME', 'SECRET']) assert.equal(env[k], undefined, k);
+  for (const k of ['CLAUDE_CONFIG_DIR', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_USE_BEDROCK', 'AWS_PROFILE', 'ANTHROPIC_MODEL', 'CLAUDE_CODE_DISABLE_PROACTIVITY',
+    'CLAUDE_CODE_SOME_FUTURE_KEY', 'CLAUDE_SECURESTORAGE_CONFIG_DIR', 'SHELL', 'TMPDIR']) assert.equal(env[k], parent[k], k);
+  for (const k of ['CLAUDE_PID', 'CLAUDE_CODE_SESSION_ID', 'CLAUDECODE', 'CLAUDE_CODE_TASK_LIST_ID', 'SUB_HUMAN_HOME', 'CLAUDE_CODE_MESSAGING_SOCKET', 'TMUX']) assert.equal(env[k], undefined, k);
+  for (const k of Object.keys(env)) assert.ok(!cc.CLIENT_ENV_DENY.includes(k) && !k.startsWith('SUB_HUMAN_'), k);
 });
 
 test('room-claude: claimSpawn: one claim wins, the second sees it; a stale pending claim expires; closing rooms are not claimed', () => {
@@ -302,6 +307,26 @@ test('room-claude: spawn with a claim stops the previous job first, finds the jo
   assert.deepEqual(must(s.calls()[2]).argv, ['stop', 'cccc2222'], 'the live stray only: not prevJob again, an ended job or another room');
   const o = must(identity.readMembers(code).claude);
   assert.deepEqual([o.job, o.job_session, o.claim, o.by], ['bbbb1111', 'bbbb1111-full', undefined, 'alice']);
+});
+
+test('room-claude: the job comes from `claude agents --json` by its name, asked again while the daemon registers it; the dispatch line is a hint', () => {
+  h.freshHome();
+  const code = h.newRoom();
+  const agents = [{ id: 'abcd0001', kind: 'background', name: `claude.${code}`, state: 'working', startedAt: 5, sessionId: 'abcd0001-full' }];
+  // listed only on the third look; no dispatch line at all
+  const s = stubClaude({ out: '', agents, before: [], late: 2 });
+  const r = withEnv({ SUB_HUMAN_CLAUDE: s.bin, SUB_HUMAN_PLUGIN_DIR: '' }, () => roomClaude.spawn({ code, cwd: os.tmpdir() }));
+  assert.deepEqual(r, { ok: true, job: 'abcd0001' });
+  assert.deepEqual(s.calls().map(x => x.argv[0]), ['--bg', 'agents', 'agents', 'agents']);
+  assert.equal(must(identity.readMembers(code).claude).job_session, 'abcd0001-full');
+  // a dispatch line naming another id than the one listed: the listed job by its name wins
+  const s2 = stubClaude({ out: `backgrounded · ffff9999 · claude.${code}`, agents });
+  assert.deepEqual(withEnv({ SUB_HUMAN_CLAUDE: s2.bin, SUB_HUMAN_PLUGIN_DIR: '' }, () => roomClaude.spawn({ code, cwd: os.tmpdir() })), { ok: true, job: 'abcd0001' });
+  // never listed and no dispatch line: no job, after a bounded number of looks
+  const s3 = stubClaude({ out: 'started', agents: [], before: [] });
+  const r3 = withEnv({ SUB_HUMAN_CLAUDE: s3.bin, SUB_HUMAN_PLUGIN_DIR: '' }, () => roomClaude.spawn({ code, cwd: os.tmpdir() }));
+  assert.equal(r3.ok, false);
+  assert.equal(s3.calls().filter(x => x.argv[0] === 'agents').length, 4);
 });
 
 test('room-claude: a superseded claim stops the job it made; a failed start records spawn_error and clears the claim', () => {
@@ -523,6 +548,36 @@ test('room-claude: crash-all-members (SIGKILL) -> the watchdog reaps the room\'s
   assert.ok(rec.closing && rec.left_at);
   assert.deepEqual(identity.orphanRooms(), []);
   o.kill();
+});
+
+test('room-claude: a room whose room Claude never started (spawn_error, no job) and whose members all crashed is swept and closed', async () => {
+  h.freshHome();
+  const code = h.newRoom();
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-cfg-'));
+  const s = stubClaude();
+  const a = h.spawnSleeper();
+  identity.join({ code, name: sn('alice'), role: 'member', pid: a.pid });
+  await withEnv({ SUB_HUMAN_CLAUDE: s.bin, CLAUDE_CONFIG_DIR: cfg }, async () => {
+    roomClaude.openTaskList(code);
+    tasks.openRoomTask(room.open(code).store);
+    // the hard failure spawn records: no job, why
+    identity.updateRoomClaude(code, () => ({ job: null, spawn_error: 'Workspace not trusted' }));
+    assert.deepEqual(identity.orphanRooms(), [], 'alice is live');
+    a.kill('SIGKILL');
+    await h.until(() => !identity.isAlive(a.pid), 3000);
+    assert.deepEqual(identity.orphanRooms(), [code], 'stranded: swept like any orphan');
+    const reaped: RoomCode[] = [];
+    const t0 = Date.now();
+    assert.equal(roomClaude.watchdog(code, { now: t0, reaper: c => reaped.push(c) }), 'waiting');
+    assert.equal(roomClaude.watchdog(code, { now: t0 + 60_000, reaper: c => reaped.push(c) }), 'reaping');
+    assert.deepEqual(reaped, [code]);
+    assert.equal(await roomClaude.reap(code, { claimed: true }), 'stopped', 'the reaper copes with no job');
+  });
+  const rec = must(identity.readMembers(code).claude);
+  assert.ok(rec.stopped_at && rec.left_at);
+  assert.ok(!s.calls().some(c => c.argv[0] === 'stop'), 'no job to stop');
+  assert.ok(room.open(code).readAll().some(e => e.kind === 'task' && e.status === 'completed'), 'the room task completed');
+  assert.deepEqual(identity.orphanRooms(), []);
 });
 
 test('room-claude: the watchdog CLI entry prints its state', () => {
