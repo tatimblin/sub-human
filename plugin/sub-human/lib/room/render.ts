@@ -164,7 +164,7 @@ function titleText(p: Entry): string {
 }
 
 /**
- * The proposal hash names, as people see it: a room plan's version, 'plan paging v3 (3fa2c1)', when a `plan` entry in
+ * The proposal hash names, as people see it: a room plan's version, 'plan paging v3', when a `plan` entry in
  * entries has that hash; else its title in quotes and its short hash, '"Ship v3 Monday" (3fa2c1)' (a room from before
  * plans); null without entries or either entry.
  */
@@ -174,7 +174,7 @@ const isList = (v: readonly Readonly<Entry>[] | undefined): v is readonly Readon
 function proposalLabel(hash: string | undefined, entries: readonly Readonly<Entry>[] | undefined): string | null {
   if (!hash || !isList(entries)) return null;
   const v = entries.findLast(x => x && x.kind === 'plan' && x.hash === hash);
-  if (v && typeof v.plan === 'string' && typeof v.version === 'number') return `plan ${v.plan} v${v.version} (${hash.slice(0, 6)})`;
+  if (v && typeof v.plan === 'string' && typeof v.version === 'number') return `plan ${v.plan} v${v.version}`; // no hash: people act by its name
   const p = entries.find(x => x && x.kind === 'proposal' && x.hash === hash);
   const t = p && titleText(p);
   return t ? `"${t}" (${hash.slice(0, 6)})` : null;
@@ -194,24 +194,25 @@ function retiredBy(e: Entry, entries: readonly Readonly<Entry>[] | undefined, tr
 const noteOf = (o: Entry): string => (o.text == null || /^Object$/.test(String(o.text)) ? '' : String(o.text));
 
 /**
- * A decision as people read it: '"Ship v3 Monday" agreed (bob)', or '"Ship v3 Monday" not agreed: changes
- * requested by bob: keep status · agreed: alice' (each objector's note from the answers the decision refs). Without
- * the proposal in entries: 'decided (agreed: bob)' / 'not agreed (objected: bob)'.
+ * A decision as people read it: 'plan api v3 agreed (you, bob)', or 'plan api v3 not agreed: you asked for changes ·
+ * carol objected · bob agreed' (asked for changes: an objection with a note, which its objection line already showed;
+ * the note is not said again). Without the proposal in entries: 'decided (agreed: bob)' / 'not agreed (objected: bob)'.
  */
-function decisionText(n: Entry, entries: readonly Readonly<Entry>[] | undefined): string {
+function decisionText(n: Entry, entries: readonly Readonly<Entry>[] | undefined, viewer?: string): string {
   const label = proposalLabel(n.proposal_hash, entries);
   const s = String(n.text ?? '').replace(/\s*\(proposal [0-9a-f]+\)\s*$/, '');
   const m = /^objected: ([^·]*?)(?: · agreed: (.*))?$/.exec(s);
   if (!label || !entries) return m ? `not agreed (${s})` : `decided (${s})`; // no title to name it by (a label means entries are there)
-  if (!m) return /^agreed: /.test(s) ? `${label} agreed (${s.slice(8)})` : `${label} decided (${s})`;
+  const names = (list: string): string[] => list.split(/,\s*/).filter(Boolean).map(x => (x === viewer ? 'you' : x));
+  const and = (xs: string[]): string => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs.at(-1) ?? ''}` : xs[0] ?? '');
+  if (!m) return /^agreed: /.test(s) ? `${label} agreed (${names(s.slice(8)).join(', ')})` : `${label} decided (${s})`;
   const refs = new Set(n.refs ?? []);
-  const objs = entries.filter(x => x && refs.has(x.id) && x.kind === 'objection');
-  const by = (m[1] ?? '').split(/,\s*/).filter(Boolean).map(name => {
-    const o = objs.find(x => x.from === name);
-    const note = o ? oneLine(safeText(noteOf(o))) : '';
-    return note ? `${name}: ${note}` : name;
-  });
-  return `${label} not agreed: changes requested by ${by.join(' · ')}${m[2] ? ` · agreed: ${m[2]}` : ''}`;
+  const noted = new Set(entries.filter(x => x && refs.has(x.id) && x.kind === 'objection' && noteOf(x).trim()).map(x => x.from));
+  const objectors = (m[1] ?? '').split(/,\s*/).filter(Boolean);
+  const asked = names(objectors.filter(x => noted.has(x)).join(','));
+  const bare = names(objectors.filter(x => !noted.has(x)).join(','));
+  const parts = [asked.length && `${and(asked)} asked for changes`, bare.length && `${and(bare)} objected`, m[2] && `${and(names(m[2]))} agreed`].filter(Boolean);
+  return `${label} not agreed: ${parts.join(' · ')}`;
 }
 
 /**
@@ -256,16 +257,18 @@ function chatBody(e: Entry, viewer: string | undefined, entries: readonly Readon
       return { head: `${chatWho(n, trust)} proposed`, text: `${t.replace(TITLE_PREFIX, '')}${h}` };
     }
     case 'plan': {
-      // "bob's Claude for bob: plan paging v4: opaque cursor"; the requests it retired named after it
+      // "bob's Claude: plan paging v4: opaque cursor" ("for carol" when it wrote it for someone else); the requests it
+      // retired named after it
       const was = retiredBy(n, entries, trust);
-      return { head: `${chatWho(n, trust)} for ${you(n.for || n.from)}`, text: `${t}${was.length ? `\nretires the sign-off request for ${was.join(', ')}` : ''}` };
+      const owner = n.for && n.for !== n.from ? ` for ${you(n.for)}` : '';
+      return { head: `${chatWho(n, trust)}${owner}`, text: `${t}${was.length ? `\nretires the sign-off request for ${was.join(', ')}` : ''}` };
     }
     case 'signoff': return { head: `${humanName(e, trust)} agreed to ${about()}`, text: '' };
     case 'objection':
       return n.via === 'human' && n.proposal_hash
         ? { head: `${humanName(e, trust)} objected to ${about()}`, text: noteOf(n) }
         : { head: chatWho(n, trust), text: t };
-    case 'decision': return { head: 'room', text: decisionText(n, entries) };
+    case 'decision': return { head: 'room', text: decisionText(n, entries, viewer) };
     case 'task': {
       const status = n.status ? ` ${n.status}` : '';
       return { head: 'room', text: `task "${n.subject || n.task_id || '?'}"${status}${n.owner ? `, owner ${you(n.owner)}` : ''}` };

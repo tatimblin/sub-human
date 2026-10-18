@@ -191,7 +191,8 @@ test('tail (live repro): another member\'s new version of a plan I asked to sign
   plans.put(store, { base: 1, text: 'goodbye world' }, { by: 'bob' });
   t.advance(1000);
   const wake = t.of('wake').flatMap(x => x.text.split('\n'));
-  assert.deepEqual(wake.filter(l => !l.startsWith('(for Claude)')), ["bob's Claude for bob: plan room v2", '  │ retires the sign-off request for plan room v1 (' + a.hash.slice(0, 6) + ')'], t.text());
+  // noise pass F: no "for bob" when the Claude is bob's own, no hash
+  assert.deepEqual(wake.filter(l => !l.startsWith('(for Claude)')), ["bob's Claude: plan room v2", '  │ retires the sign-off request for plan room v1'], t.text());
   assert.ok(wake.some(l => l.startsWith('(for Claude) this v2 of plan room comes after v1, whose sign-off alice asked for; objected: alice.')), t.text());
 });
 
@@ -225,6 +226,21 @@ test('tail (noise pass E): a decision the consent hook already told the model is
   const ask = () => inRoom(code, r => r.append({ kind: 'say', text: 'look?', to: 'alice' }, { via: 'agent', from: 'bob' }));
   ask(); t.advance(1000); ask(); t.advance(1000);
   assert.equal(t.forClaude().filter(l => l.includes('to answer bob\'s Claude: SendMessage')).length, 1, t.text());
+});
+
+test('tail (noise pass F): a plan version and its sign-off request in one batch are one line, the request\'s, with the summary', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  h.register('bob', 'member', 1, code);
+  rows.writeHolds(code, sn('alice'), { room: true });
+  sys(code, 'member_joined', 'alice');
+  const t = startTail();
+  t.advance(300);
+  const store = room.open(code).store;
+  plans.put(store, { base: 0, text: '# Paging\n\nopaque cursor', summary: 'opaque cursor' }, { by: 'bob' });
+  proposal.ask({ code, name: sn('bob') }, {});
+  t.advance(1000);
+  assert.deepEqual(t.lines().filter(l => !l.startsWith('(for Claude)')), ["bob's Claude asks you and bob to sign off on plan room v1: opaque cursor"], t.text());
 });
 
 test('tail (noise pass A): a machine its PIN let in shows its check and the kick as the join notice, once', () => {

@@ -191,7 +191,9 @@ export const SAY = {
   stale: (h: string): string => `proposal ${h}: nothing recorded (already answered, decided or unknown).`,
   done: `${DONE}`, // a template: an isolated declaration types it (a bare name it cannot)
   // the review
-  opening: (n: string, h: string, title?: string | null): string => `sub-human: opening ${requestName(h, title)} for ${n}`,
+  /** the plan view's allow: no line (the view itself is what the person sees; "opening … for NAME" was their own name
+   * in the third person) */
+  opening: '',
   restoring: 'sub-human: restoring the mode after a room review',
   planBack: (n: string): string => `${n}'s plan mode is back. ${DONE}`,
   /** a Yes as the view opened */
@@ -220,8 +222,6 @@ export const SAY = {
   /** the dialog's rejection with a note, said in its own result (live, the model posted a paraphrase before the card) */
   rejectedNote: (n: string, h: string): string => `sub-human: nothing is recorded yet: ${n}'s note on ${h} waits for its card (Send or Discard), which decides what the room gets; post nothing about it. First call ExitPlanMode now (no plan needed); then ${NEXT.note(h)}.`,
   rejectedClosed: (n: string, h: string): string => `sub-human: ${n} closed the review of proposal ${h} without answering; nothing was recorded. First ${NEXT.exit}; then ${DONE.toLowerCase()}`,
-  /** the person's notice at the rejection */
-  noteNotice: (title: string | null, h: string): string => `your note on ${title ? `"${title}"` : `proposal ${h}`} is not sent yet: Send or Discard on the card that follows decides`,
   /** a post while a note waits for its card */
   noteWaits: (n: string, h: string): string => `sub-human: refused: ${n}'s note on proposal ${h} waits for Send or Discard on its card, which decides what the room gets. Post nothing about it; ${NEXT.note(h)}.`,
   nothingToShow: (h: string | undefined): string => `${h ? `proposal ${h}` : 'the room proposal'}: nothing to show (already answered, decided or unknown); nothing was recorded.`,
@@ -495,7 +495,7 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
       const [shown, early] = showEarly(review, now);
       review = shown;
       return { state: { review, note }, effects: [...effects, ...early],
-        say: { to: 'allow', text: SAY.opening(n, p.hash, p.title) } };
+        say: { to: 'allow', text: SAY.opening } };
     }
 
     case 'entered': {
@@ -620,9 +620,7 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
       if (!r || !r.tool_use_id || r.tool_use_id !== ev.toolUseId || r.resolved || !(r.phase === 'shown' || r.unread)) return none(state);
       const h = r.hash || '';
       if (r.mode === 'plan') { // the person's own plan mode: closed here, no ExitPlanMode to leave it
-        const closed = closedHere(state, r, ev, ctx);
-        const note = closed.state.note !== state.note ? closed.state.note : null;
-        return note ? { ...closed, notice: SAY.noteNotice(note.title, h) } : closed;
+        return closedHere(state, r, ev, ctx); // a note's card follows at once: no notice before it
       }
       const res = resolve(r, state.note, ev, ctx, true);
       const added = res.note !== state.note ? res.note : null;
@@ -632,8 +630,7 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
           say: ctxSay(`sub-human: First ${NEXT.exit}. Then: ${res.review.said ?? ''}`) };
       }
       return { state: { review: { ...res.review, phase: 'exiting' }, note: res.note }, effects: [],
-        say: ctxSay(added ? SAY.rejectedNote(n, h) : SAY.rejectedClosed(n, h)),
-        ...(added ? { notice: SAY.noteNotice(added.title, h) } : {}) };
+        say: ctxSay(added ? SAY.rejectedNote(n, h) : SAY.rejectedClosed(n, h)) };
     }
 
     case 'prompt': {

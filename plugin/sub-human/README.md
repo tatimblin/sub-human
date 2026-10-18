@@ -284,7 +284,7 @@ A room has plans, each with a name (`room` unless someone names another topic, s
 
 Claude Code draws the receipt under the call the way it draws a refused call; it is the receipt, not a failure (what your Claude does next goes to it separately).
 
-Your own plan file is put back as it was, and your permission mode too. Everyone else sees one line, `alice's Claude for alice: plan room v2: max 50 per page`; it wakes no one.
+Your own plan file is put back as it was, and your permission mode too. Everyone else sees one line, `alice's Claude: plan room v2: max 50 per page`; it wakes no one. When it goes out, the request is one line too, `alice's Claude asks you and bob to sign off on plan room v2` (with the summary after it when both arrive together).
 
 **You check your own version first.** Nobody else is asked about a version your Claude wrote until you have seen it. Right after storing it, your Claude opens it for you in the plan view (the line reads `your new version, plan room v2, for alice: nobody else is asked until you send it out`):
 
@@ -321,7 +321,7 @@ When a request names you, your Claude opens it in Claude Code's plan-approval di
 | You do | Recorded |
 |---|---|
 | A **Yes** option | Your sign-off on that exact version (`via=human`). |
-| **Tell Claude what to change**, then type why | Nothing yet: a notice says your note is not sent, and a card asks `Send to alice as changes requested on "…": "…"?`. **Send** records your objection, with your words byte for byte; it blocks that version. **Discard** records nothing. Until you answer the card, your Claude's room posts are refused, so its own wording of your note cannot reach the room first. Once sent, a note that asks for changes is your ask: your Claude writes them as the plan's next version (which you check first, as above), and the author's Claude is told that yours is writing it, so only one of them does. |
+| **Tell Claude what to change**, then type why | Nothing yet: a card asks `Send to alice as changes requested on "…": "…"?`. **Send** records your objection, with your words byte for byte; it blocks that version. **Discard** records nothing. Until you answer the card, your Claude's room posts are refused, so its own wording of your note cannot reach the room first. Once sent, a note that asks for changes is your ask: your Claude writes them as the plan's next version (which you check first, as above), and the author's Claude is told that yours is writing it, so only one of them does. |
 | **Esc**, or Ctrl+G edits before a Yes | Nothing. |
 
 Only an answer in a review the hooks opened counts: a Yes on a plan of your own (even one with the very text of a version) records nothing, and your Claude's own edit never asks you for a Yes.
@@ -330,7 +330,7 @@ Only an answer in a review the hooks opened counts: a Yes on a plan of your own 
 
 Your mode is never changed by a review. Showing the plan briefly enters plan mode without asking, and the hooks put you back in your own mode afterwards with no dialog: at once after an answer, or on your next prompt after Esc. A "Yes" that names another mode is set back too; the one the hint names keeps it without that extra step. Agreeing is not a go-ahead to build: your Claude does not carry the plan out.
 
-Say "show me the plan to sign off" and your Claude opens it again. With several waiting, name the plan you mean ("the paging plan", or its hash): the hooks open the one your own last words name, else the oldest, never one your Claude chose. When everyone named has agreed, the room logs a `decision` (`room: plan room v3 (3fa2c1) agreed (alice, bob)`).
+Say "show me the plan to sign off" and your Claude opens it again. With several waiting, name the plan you mean ("the paging plan", or its hash): the hooks open the one your own last words name, else the oldest, never one your Claude chose. When everyone named has agreed, the room logs a `decision` (`room: plan room v3 agreed (alice, bob)`); when someone objected, `room: plan room v3 not agreed: you asked for changes · bob agreed` (your note is in your objection's own line, not repeated).
 
 **The card, as a fallback.** When the plan view can't be used, a question card opens instead (Not yet / Agree / Object, **n** adds a note): in bypass or don't-ask mode, when `showClearContextOnPlanAccept` is on (that approval path clears the context and starts building), or for a plan over 200,000 characters. The card shows the plan beside the options when it fits (up to 2,000 characters and about 20 lines), otherwise a summary and the path. Not yet, Esc, "Chat about this" or no answer record nothing.
 

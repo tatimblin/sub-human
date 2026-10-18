@@ -1172,7 +1172,7 @@ test('M (live verify, verify5/M): the plan view refused with a note: the module\
   assert.equal(r.code, 0, r.stderr);
   assert.equal(hso(r).hookEventName, 'PostToolUseFailure');
   assert.match(must(ctx(r)), new RegExp(`^sub-human: nothing is recorded yet: bob's note on ${hash} waits for its card \\(Send or Discard\\)`));
-  assert.match(must(r.json?.systemMessage), /^sub-human: your note on "plan p\d+ v1" is not sent yet: Send or Discard on the card that follows decides$/);
+  assert.equal(r.json?.systemMessage, undefined, 'noise pass F: the card follows; no notice before it');
   assert.equal(must(waiting(w)).note, note);
   assert.deepEqual(answers(w), []);
   // the model tries to post its paraphrase: refused while the note waits, whatever mode the module last saw
@@ -1239,7 +1239,7 @@ test('A (live validation, the exact repro): bob holds his own plan in plan mode 
   const at = { as: 'bob' };
   const enter = w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'plan', tool_input: {}, transcript_path: tp }), at);
   assert.equal(decision(enter), 'allow');
-  assert.match(must(reason(enter)), /opening plan p\d+ v1 for bob/);
+  assert.equal(reason(enter) ?? '', '', 'noise pass F: no "opening … for bob" line');
   assert.equal(fs.readFileSync(file, 'utf8'), text, 'the proposal is in the plan file before ExitPlanMode reads it');
   assert.match(must(ctx(w.hook('consent', ev('PostToolUse', 'EnterPlanMode', { permission_mode: 'plan', tool_input: {}, tool_response: {}, transcript_path: tp }), at))), /only to show bob room proposal/);
   // Claude Code reads the file into the call's plan (now the proposal); the hooks ask with the proposal's text either way
