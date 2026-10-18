@@ -101,7 +101,12 @@ function redeem(s: Session, invite: unknown, machine: MachineId, pin: unknown, p
     if (e instanceof RoomError && e.note) roomLine(s, e.note); // an invite's PIN tries
     throw e;
   }
-  if (r.admission) roomLine(s, `${r.admission.name}'s machine (${r.admission.label || machine}) joined the room, let in by ${r.admission.admitted_by || 'the host'}; undo with: /sub-human kick ${r.admission.name}`);
+  const a = r.admission;
+  // a right PIN let it in with no card: the check names the machine, and the kick undoes a stranger with the line and PIN
+  if (a && a.admitted_by === 'pin') {
+    const renamed = a.asked_as ? `; asked as ${a.asked_as}, who sits here from another machine` : '';
+    roomLine(s, `${a.name} joined from ${a.label || machine} (${inviteSecret.joinCheck(a.machine, a.key)}${renamed}) · not them? /sub-human kick ${a.name}`);
+  } else if (a) roomLine(s, `${a.name}'s machine (${a.label || machine}) joined the room, let in by ${a.admitted_by || 'the host'}; undo with: /sub-human kick ${a.name}`);
   else roomLine(s, `a machine (${machine}) linked to the room with an invite and its PIN (link ${r.link.id})`);
   return r;
 }

@@ -14,14 +14,17 @@
  *     linkFor(code, joiner)           a link to a room hosted here for the second home `joiner`, its token written
  *                                     to the joiner's link file (no invite, no PIN, no card: no command makes one;
  *                                     the robustness tests link with it); then joiner.join(seat, `NAME CODE`)
- *     joinVia(host, hostSeat, seat, {as?, line?, pin?, invite?, front?}) -> Promise<{shown, line, code, pin, typed, gave, admitted, seated}>
+ *     joinVia(host, hostSeat, seat, {as?, line?, pin?, invite?, front?}) -> Promise<{shown, line, code, pin, typed, gave, seated}>
  *                                     (once seated, it waits until the seat resolves here: the mirror's members)
  *                                     the whole join from a second home: `/sub-human invite --pipe` (or invite: other
  *                                     invite args; front: `invite --web` behind that test front, lib/env.ts webFront) on the host, unless line (and its pin) is
  *                                     given; the line typed here (a hidden step), the PIN once the host asks for it
- *                                     (`/sub-human join PIN`, hidden too), the host's `/sub-human admit REF`, the link
+ *                                     (`/sub-human join PIN`, hidden too; the right one lets it in, no card), the link
  *                                     online, then a bare /sub-human (the seat)
- *   shownInvite(text) -> {line, dest, code, word, pin} | null   an invite's text as the host's person reads it: the
+ *     knock(host, code, {label?, ttlMs?}) -> Promise<ref>   a join request with no PIN for the line typed here, written on
+ *                                     the host as PLAN-JOIN step 4's knock will make it; this home redials without a
+ *                                     PIN and waits for the host's card (the card's tests, until the knock is built)
+ *   shownInvite(text) ->{line, dest, code, word, pin} | null   an invite's text as the host's person reads it: the
  *                                     line (without "/sub-human "), its parts and the PIN told apart
  *     workers(script, input, seat) -> n     worker threads that hook started (test/support/worker-probe.ts)
  *     tail(seat, seconds) -> Promise<stdout>   seat's tail (scripts/sub-human tail, its NDJSON events) for that long
@@ -49,8 +52,13 @@ import * as store from '../../lib/room/store.ts';
 import * as links from '../../lib/room/links.ts';
 import * as homeMod from '../../lib/home.ts';
 import * as linkConnect from '../../lib/remote/link-connect.ts';
-import * as admission from '../../lib/remote/admission.ts';
 import * as linkSocket from '../../lib/remote/link-socket.ts';
+import * as invites from '../../lib/remote/invites.ts';
+import * as inviteSecret from '../../lib/remote/invite-secret.ts';
+import * as machineKey from '../../lib/remote/machine-key.ts';
+import * as joining from '../../lib/remote/joining.ts';
+import * as envMod from '../../lib/env.ts';
+import type { AdmissionRecord, Invites } from '../../lib/remote/types-core.ts';
 import type { RoomCode } from '../../lib/brand.ts';
 import { roomCode } from '../../lib/text.ts';
 import { peerOf, postArgs, postResult, relayResult } from '../../mod/core/send.ts';
@@ -122,16 +130,47 @@ class Machine {
     const asked = await h.until(() => this.lib(() => !!(links.get(code) || {}).pin_wanted), ms, 50);
     if (!asked) throw new Error(`the host never asked for the PIN: ${JSON.stringify(typed.json)} ${typed.stderr} ${JSON.stringify(this.lib(() => links.get(code)))}`);
     const gave = this.join(seat, `join ${inv.pin}`);
-    const ref = await h.until(() => { try { const q = host.lib(() => admission.pending(code)); return q.at(-1)?.ref ?? null; } catch { return null; } }, ms, 50);
-    if (!ref) throw new Error(`no join request on the host: ${JSON.stringify(gave.json)} ${gave.stderr}`);
-    const admitted = host.join(hostSeat, `admit ${ref}`);
+    // the right PIN lets the machine in by itself: no card, no admit on the host
     const linked = await h.until(() => this.lib(() => (links.get(code) || {}).token), ms, 50);
-    if (!linked) throw new Error(`the link never came up: ${JSON.stringify(this.lib(() => links.get(code)))}`);
+    if (!linked) throw new Error(`the link never came up: ${JSON.stringify(gave.json)} ${gave.stderr} ${JSON.stringify(this.lib(() => links.get(code)))}`);
     const seated = this.join(seat, '');
     // the seat is the host's to record: this home's mirror shows it once the members document streams back, and
     // until then a hook here cannot resolve it (a prompt typed that fast reads "not in a room")
     if (seated.json && !seated.json.decision) await h.until(() => this.lib(() => identity.resolveBySession(seat.sid)), ms, 50);
-    return { shown, line: inv.line, code, pin: inv.pin, typed, gave, admitted, seated };
+    return { shown, line: inv.line, code, pin: inv.pin, typed, gave, seated };
+  }
+
+  /** A join request with no PIN on host, for the invite line this (second) home typed, as PLAN-JOIN step 4's knock
+   * will make it (the invite used, its admission 'asked' for this machine, and over the web this link's own key); then
+   * this home's daemon dials again without a PIN and hears ADMIT_WAITING until the host's card answers. The ref. */
+  async knock(host: Machine, code: RoomCode, { label = 'a-machine', ttlMs = envMod.testMs('SUB_HUMAN_ADMIT_TTL_MS'), ms = 15_000 }: { label?: string; ttlMs?: number; ms?: number } = {}): Promise<string> {
+    const lf = must(this.lib(() => links.get(code)), 'the link file');
+    const word = must(inviteSecret.decode(lf.invite), 'the invite line\'s SECRET');
+    const id = inviteSecret.idOf(word.secret);
+    const machine = this.lib(() => machineKey.idOf(machineKey.publicKey()));
+    const web = lf.transport.kind === 'ws' || lf.transport.kind === 'wss';
+    const key = web ? this.lib(() => linkConnect.linkKey(code).pub.toString('base64url')) : null;
+    const name = must(lf.join_as, 'the name it asked for');
+    host.lib(() => store.open(code).kv.update(invites.INVITES_KEY, (cur: Invites | null) => {
+      const k = crypto.createHash('sha256').update(id).digest('hex');
+      const inv = must(must(cur)[k], 'the invite');
+      if (inv.short !== true) throw new Error('not an invite line\'s record');
+      const now = Date.now(), at = new Date(now).toISOString(), link = hostLinks.newLinkId();
+      const adm: AdmissionRecord = {
+        v: 2, admission: true, from: k.slice(0, 12), kind: inv.kind, by: inv.by, machine, name, label, key, link,
+        admit: 'asked', created_at: at, expires_at: new Date(now + ttlMs).toISOString(),
+      };
+      return { ...cur, [k]: { ...inv, used_at: at, link }, [invites.admissionSlot(id)]: adm };
+    }));
+    this.lib(() => {
+      joining.restartLink(code);
+      const { pin_wanted: _asked, pin: _pin, ...rest } = must(links.get(code), 'the link file');
+      links.set(code, rest);
+      if (!linkSocket.start(code)) throw new Error('the link daemon did not start');
+    });
+    const waiting = await h.until(() => this.lib(() => (links.get(code) || {}).awaiting), ms, 50);
+    if (!waiting) throw new Error(`the host never answered ADMIT_WAITING: ${JSON.stringify(this.lib(() => links.get(code)))}`);
+    return waiting.ref;
   }
   plain(seat: Seat, text: string): MachineRun {
     this.lease(seat);

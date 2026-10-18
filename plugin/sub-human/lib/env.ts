@@ -72,7 +72,7 @@ export const ENV = {
   SUB_HUMAN_WS_CONNECT_MS: { kind: 'ms', does: 'a web link\'s connect' },
   SUB_HUMAN_YES_GUARD_MS: { kind: 'ms', test: true, does: 'consent: a plan-view Yes this soon records nothing' },
   SUB_HUMAN_PIN_BACKOFF_MS: { kind: 'ms', test: true, does: 'the wait after a wrong PIN' },
-  SUB_HUMAN_ADMIT_TTL_MS: { kind: 'ms', test: true, does: 'a held join waits for the host\'s card' },
+  SUB_HUMAN_ADMIT_TTL_MS: { kind: 'ms', test: true, does: 'a join request with no PIN waits for the host\'s card' },
   // ----- numbers (envNum: Number(value); the caller's fallback) -----
   SUB_HUMAN_LISTEN_CHECK_MS: { kind: 'num', does: 'the listener: how often it checks for closed rooms' },
   SUB_HUMAN_LISTEN_PORT: { kind: 'num', does: 'the web listener\'s port' },

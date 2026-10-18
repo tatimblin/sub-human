@@ -1,10 +1,11 @@
 /**
- * plugin/sub-human/lib/remote/admission.ts: the host person's consent to a machine that typed an invite line and its
- * PIN. The line and the PIN proved only that the joiner holds both (lib/remote/invites.ts); nothing gets in until a
- * person on the host answers "Let in" on the card their own Claude Code shows (hooks/consent.ts: only the answer on the card as the hooks built it counts, never the model's), or runs `sub-human admit
+ * plugin/sub-human/lib/remote/admission.ts: the host person's consent to a machine that typed an invite line. A right
+ * PIN is that consent, said ahead (lib/remote/invites.ts writes the record let in, admitted_by 'pin', and links it in
+ * the same hello: no card). A request with no PIN (admit 'asked') gets in only once a person on the host answers "Let
+ * in" on the card their own Claude Code shows (hooks/consent.ts: only the answer on the card as the hooks built it counts, never the model's), or runs `sub-human admit
  * REF` in a shell (headless hosts), or types `/sub-human admit REF`. Then the joiner's link redeems its invite (check,
  * below, from lib/remote/invites.ts redeemInvite): on the machine its key proved, and over the web with the Noise key
- * its PIN's connection proved. Nothing is written outside the room's own store (no authorized_keys line). The room's
+ * its connection proved. Nothing is written outside the room's own store (no authorized_keys line). The room's
  * tail on the host wakes the seat's Claude to open the card once (lib/tail.ts); a request nobody answers lapses after
  * ADMIT_TTL_MS.
  *
@@ -12,7 +13,7 @@
  * of req.by when that seat is in the room on this machine, else of every person seated here (targets). The card and the
  * joiner's screen both show the check of the machine (and web key) that proved itself with the PIN, to compare. A name
  * that sits in the room from another machine can't be let in as itself (its key never moves): the card offers the
- * free NAME2, NAME3, … instead (taken), which the joiner's hello then learns (server.ts).
+ * free NAME2, NAME3, … instead (taken; a right PIN takes it with no card), which the joiner's hello then learns (server.ts).
  */
 
 import { INVITES_KEY } from './invites.ts';
@@ -141,7 +142,8 @@ const fp = (req: AdmissionRequest): string => inviteSecret.joinCheck(req.machine
 const describe = (req: AdmissionRequest): string => `${req.name} (${fp(req)}) on ${req.label || 'another machine'}`;
 const question = (req: AdmissionRequest, code: RoomCode): string => `Let ${describe(req)} join room ${code}? (admit ${req.ref})`;
 
-function taken(code: RoomCode, req: AdmissionRequest): string | null {
+/** The free name (NAME2, NAME3, …) a joiner gets when its own sits in the room from another machine, else null. */
+function taken(code: RoomCode, req: Pick<AdmissionRecord, 'name' | 'machine'>): string | null {
   let ms: Record<string, { name?: string; role?: string; machine?: string | null } | undefined>;
   try { ms = identity.readMembers(code) || {}; } catch { return null; }
   const m = ms[req.name];

@@ -1,9 +1,10 @@
 // An invite line (protocol 3) at the wire, the host's end on a real hosted store and the joiner's as client.connect
 // over the memory transport: the host keeps no PIN in clear; a hello with the SECRET and no PIN is asked for the PIN and
 // charged nothing; a wrong PIN costs a try, waits (per invite, longer per source machine) and the fifth burns the
-// invite; the right PIN makes an admission bound to the machine its key proves (and, over the web, the Noise key its
-// connection proved) and the hello waits for the card; once let in, that machine (and key) alone redeems it, for the
-// one name. Over ssh and a pipe the host proves its machine key over the joiner's nonce first: a host the line does not
+// invite, and none makes a card; the right PIN lets in the machine its key proves (and, over the web, the Noise key its
+// connection proved) and links it in the same hello, for the one name, with a room line naming its check and the kick.
+// A join request with no PIN (made here as PLAN-JOIN step 4's knock will make it) waits for the card; once let in, that
+// machine (and key) alone redeems it. Over ssh and a pipe the host proves its machine key over the joiner's nonce first: a host the line does not
 // name gets nothing. A link made over the web is its key; a protocol-2 link keeps its token. An older peer gets SKEW.
 import test from 'node:test';
 import type { TestContext } from 'node:test';
@@ -25,7 +26,7 @@ import type { RoomStore } from '../lib/room/types.ts';
 import type { Invites, ShortInvite, AdmissionRecord } from '../lib/remote/types-core.ts';
 import type { RoomError } from '../lib/room/validate.ts';
 import type { ConnectOpts } from '../lib/remote/client.ts';
-import type { RoomCode } from '../lib/brand.ts';
+import type { RoomCode, MachineId } from '../lib/brand.ts';
 import { sn } from './support/brands.ts';
 import { must } from './support/must.ts';
 
@@ -49,6 +50,24 @@ const admissionOf = (host: RoomStore, id: string): AdmissionRecord => {
   return rec;
 };
 const roomLines = (host: RoomStore) => host.readAll().filter(e => e.from === 'room').map(e => e.text);
+/** Every admission record of the room, whatever its state. */
+const allAdmissions = (host: RoomStore) => Object.values(records(host)).filter(i => i.admission === true);
+
+/** A join request with no PIN, as a knock will make it (PLAN-JOIN step 4): the invite used, its admission asked. */
+function ask(host: RoomStore, r: { id: string; ref: string }, m: { id: MachineId }, { name = 'carol', label = 'carols-mbp', key = null }: { name?: string; label?: string; key?: string | null } = {}): AdmissionRecord {
+  const now = Date.now(), at = new Date(now).toISOString(), link = hostLinks.newLinkId();
+  host.kv.update(invites.INVITES_KEY, (cur: Invites | null) => {
+    const k = crypto.createHash('sha256').update(r.id).digest('hex');
+    const inv = must(must(cur)[k], 'the invite');
+    assert.ok(inv.short === true, 'an invite line\'s record');
+    const adm: AdmissionRecord = {
+      v: 2, admission: true, from: r.ref, kind: inv.kind, by: 'alice', machine: m.id, name, label, key, link,
+      admit: 'asked', created_at: at, expires_at: new Date(now + config.ADMIT_TTL_MS).toISOString(),
+    };
+    return { ...cur, [k]: { ...inv, used_at: at, link }, [invites.admissionSlot(r.id)]: adm };
+  });
+  return admissionOf(host, r.id);
+}
 
 /** A machine of the joiner's own: an Ed25519 key, and its proof for room code (what machine-key.ts proof makes). */
 function machine() {
@@ -116,7 +135,7 @@ test('ssh and pipe: the host proves its machine key over the joiner\'s nonce fir
   assert.match(e3.message, /host runs sub-human 0\.5\.0-beta\.15 \(protocol 1–2\).*The host must update/);
 });
 
-test('the PIN online: none asked for (free), a wrong one costs a try and a room line, the right one waits for the card; the throttle per invite and per source', async t => {
+test('the PIN online: none asked for (free), a wrong one costs a try and a room line and makes no card, the right one links in that hello (no card); the throttle per invite and per source', async t => {
   const { host } = hostRoom(t);
   const r = mint(host);
   const carol = machine(), mallory = machine();
@@ -135,14 +154,20 @@ test('the PIN online: none asked for (free), a wrong one costs a try and a room 
   assert.equal(recordOf(host, r.ref).tries, 4, 'a throttled PIN costs nothing');
   now += 2100;
   assert.equal(must(redeem(mallory, wrong)).reason, 'PIN_THROTTLED', 'the machine that was wrong waits one step longer (4 s)');
-  const held = must(redeem(carol, r.pin));
-  assert.deepEqual([held.code, held.reason], ['OFFLINE', 'ADMIT_WAITING'], 'another machine past the invite\'s wait: the right PIN holds');
-  assert.match(String(held.note), /carol on carols-mbp typed invite [0-9a-f]{12}'s PIN; waiting for alice to let them in \(the card, or \/sub-human admit [0-9a-f]{12}\)/);
+  assert.deepEqual(allAdmissions(host), [], 'a wrong PIN never makes a card');
+  // another machine past the invite's wait: the right PIN lets it in and links it in the same hello
+  const made = invites.redeemInvite(host, r.id, { machine: carol.id, proven: carol.id, as, pin: r.pin, now });
+  assert.deepEqual([made.link.seats, made.link.bound, made.link.machine, made.link.key], [['carol'], true, carol.id, undefined]);
+  assert.ok(made.token, 'the link\'s token, in this hello');
   const adm = admissionOf(host, r.id);
-  assert.deepEqual([adm.admit, adm.machine, adm.name, adm.label, adm.key, adm.by], ['asked', carol.id, 'carol', 'carols-mbp', null, 'alice']);
-  assert.equal(inviteSecret.admissionRef(r.secret), invites.admissionSlot(r.id).slice(0, 12), 'the joiner computes the request\'s ref itself');
+  assert.deepEqual([adm.admit, adm.admitted_by, adm.machine, adm.name, adm.label, adm.key, adm.by, adm.link], ['let-in', 'pin', carol.id, 'carol', 'carols-mbp', null, 'alice', made.link.id]);
+  assert.equal(adm.admit_sig, undefined, 'no person signed it: the PIN let it in');
+  assert.ok(adm.used_at, 'redeemed already');
+  assert.equal(made.admission?.admitted_by, 'pin', 'the server\'s room line reads how it got in');
+  assert.deepEqual(admission.admissions(host), [], 'no card: nothing waits for the host person');
+  assert.equal(inviteSecret.admissionRef(r.secret), invites.admissionSlot(r.id).slice(0, 12), 'the joiner computes the record\'s ref itself');
   assert.ok(recordOf(host, r.ref).used_at, 'the invite is used: no more PINs');
-  assert.equal(must(redeem(carol)).reason, 'ADMIT_WAITING', 'its redial without the PIN waits for the card');
+  assert.equal(must(redeem(carol)).reason, 'INVITE_USED', 'the line again from the same machine: used (its token is the credential now)');
   const second = must(redeem(mallory, r.pin));
   assert.equal(second.reason, 'INVITE_USED', 'another machine with the line and the PIN: used');
   // the check the card shows is the machine's, not the line's: a thief with the line and the PIN shows another one,
@@ -152,12 +177,28 @@ test('the PIN online: none asked for (free), a wrong one costs a try and a room 
   assert.match(carolCheck, /^check [0-9a-f]{4}-[0-9a-f]{4}$/);
   assert.equal(admission.describe({ ...adm, slot: invites.admissionSlot(r.id), ref: adm.from }), `carol (${carolCheck}) on carols-mbp`);
   assert.ok(String(second.note).includes(malloryCheck) && String(second.note).includes(carolCheck), String(second.note));
-  assert.match(String(second.note), /a second machine \(check .*\) presented invite [0-9a-f]{12}, which carol \(check .*\) used already: if carol's screen does not show .*, refuse the card and invite again/);
+  assert.match(String(second.note), /a second machine \(check .*\) presented invite [0-9a-f]{12}, which carol \(check .*\) used already: if carol's screen does not show .*, kick them \(\/sub-human kick carol\) and invite again/);
   assert.equal(must(redeem(mallory, r.pin)).note, undefined, 'one room line per machine');
-  assert.equal(adm.from, r.ref, 'the request names the invite it came from');
-  admission.decide(host, invites.admissionSlot(r.id).slice(0, 12), { decision: 'let-in', by: 'alice', now });
-  const made = invites.redeemInvite(host, r.id, { machine: carol.id, proven: carol.id, as, now });
-  assert.deepEqual([made.link.seats, made.link.bound, made.link.machine, made.link.key], [['carol'], true, carol.id, undefined]);
+  assert.equal(adm.from, r.ref, 'the record names the invite it came from');
+  assert.deepEqual(Object.keys(hostLinks.links(host)), [made.link.id], 'one link: the second machine got none');
+});
+
+test('a join request with no PIN (a knock) waits for the card: ADMIT_WAITING until let in, then that machine alone redeems it, once', t => {
+  const { host } = hostRoom(t);
+  const r = mint(host);
+  const carol = machine(), mallory = machine();
+  const as = { name: 'carol', label: 'carols-mbp' };
+  const redeem = (m: ReturnType<typeof machine>) => { try { invites.redeemInvite(host, r.id, { machine: m.id, proven: m.id, as }); return null; } catch (e) { return e as RoomError; } };
+  const req = ask(host, r, carol);
+  assert.equal(must(admission.admissions(host)[0], 'the request').link, req.link, 'the card asks');
+  assert.equal(must(redeem(carol)).reason, 'ADMIT_WAITING');
+  const second = must(redeem(mallory));
+  assert.equal(second.reason, 'INVITE_USED');
+  assert.match(String(second.note), /if carol's screen does not show .*, refuse the card and invite again/);
+  admission.decide(host, invites.admissionSlot(r.id).slice(0, 12), { decision: 'let-in', by: 'alice' });
+  const made = invites.redeemInvite(host, r.id, { machine: carol.id, proven: carol.id, as });
+  assert.deepEqual([made.link.seats, made.link.bound, made.link.machine, made.link.id], [['carol'], true, carol.id, req.link]);
+  assert.equal(made.admission?.admitted_by, 'alice');
   assert.equal(must(redeem(carol)).reason, 'INVITE_USED', 'once');
 });
 
@@ -174,6 +215,7 @@ test('five wrong PINs burn the invite; the right one after that is refused', t =
   }
   assert.equal(must(last).reason, 'PIN_LAST');
   assert.match(String(must(last).note), /burnt after its last wrong PIN/);
+  assert.deepEqual(allAdmissions(host), [], 'no wrong PIN, nor the last, falls back to a card');
   const m = machine();
   assert.throws(() => invites.redeemInvite(host, r.id, { machine: m.id, proven: m.id, as: { name: 'x', label: 'x' }, pin: r.pin, now }), (e: RoomError) => e.reason === 'INVITE_BURNT');
   // no try left but no burnt_at (a record whose last wrong PIN was not marked): the right PIN is refused all the same
@@ -182,25 +224,30 @@ test('five wrong PINs burn the invite; the right one after that is refused', t =
   assert.throws(() => invites.redeemInvite(host, z.id, { machine: m.id, proven: m.id, as: { name: 'x', label: 'x' }, pin: z.pin, now: Date.now() }), (e: RoomError) => e.reason === 'INVITE_BURNT');
 });
 
-test('over the web: the admission is bound to the Noise key the PIN\'s connection proved, the link too; an invite line needs protocol 3', async t => {
+test('over the web: the link the right PIN makes is bound to the Noise key its connection proved, and a card\'s too; the room line names the check; an invite line needs protocol 3', async t => {
   const { host } = hostRoom(t);
   const r = mint(host, 'ws');
   const carol = machine();
   const K = crypto.randomBytes(32).toString('base64url'), K2 = crypto.randomBytes(32).toString('base64url');
   const web = (peer: string | null) => ({ via: 'ws' as const, peer });
   const as = { name: 'carol', label: 'carols-mbp' };
-  const e1 = await refused(dial(t, host, carol, { invite: r.word, pin: r.pin, as }, web(K)));
-  assert.equal(e1.reason, 'ADMIT_WAITING');
-  const adm = admissionOf(host, r.id);
-  assert.equal(adm.key, K);
-  admission.decide(host, invites.admissionSlot(r.id).slice(0, 12), { decision: 'let-in', by: 'alice' });
-  const e2 = await refused(dial(t, host, carol, { invite: r.word }, web(K2)));
-  assert.equal(e2.reason, 'KEY_MISMATCH', 'only the key the PIN came with redeems it');
-  const c = await dial(t, host, carol, { invite: r.word }, web(K));
-  assert.ok(c.token);
+  const c = await dial(t, host, carol, { invite: r.word, pin: r.pin, as }, web(K));
+  assert.ok(c.token, 'the right PIN: linked in this hello');
+  assert.equal(admissionOf(host, r.id).key, K);
   const link = must(hostLinks.links(host)[must(c.link)]);
   assert.deepEqual([link.key, link.seats, link.bound], [K, ['carol'], true]);
+  const check = inviteSecret.joinCheck(carol.id, K);
+  assert.ok(roomLines(host).includes(`carol joined from carols-mbp (${check}) · not them? /sub-human kick carol`), JSON.stringify(roomLines(host)));
+  assert.deepEqual(admission.admissions(host), [], 'no card');
   c.close();
+  // a card's admission (a join request with no PIN) is bound to the key its connection proved: only that key redeems it
+  const k = mint(host, 'ws');
+  ask(host, k, carol, { key: K });
+  admission.decide(host, invites.admissionSlot(k.id).slice(0, 12), { decision: 'let-in', by: 'alice' });
+  assert.equal((await refused(dial(t, host, carol, { invite: k.word }, web(K2)))).reason, 'KEY_MISMATCH', 'only the key the request came with redeems it');
+  const c2 = await dial(t, host, carol, { invite: k.word }, web(K));
+  assert.ok(c2.token);
+  c2.close();
   // the link is its key: the token over another key gets nowhere; over its own key it does
   assert.equal((await refused(dial(t, host, carol, { token: must(c.token) }, web(K2)))).reason, 'KEY_MISMATCH');
   (await dial(t, host, carol, { token: must(c.token) }, web(K))).close();
@@ -229,8 +276,10 @@ test('machine-key: an invite line\'s machine proof is bound to the session\'s ch
   assert.equal(recordOf(host, r.ref).tries, 5, 'neither cost a try');
   assert.equal(machineKey.verifyFor(carol.proofFor(host.code, 'a'.repeat(24)), host.code, 'b'.repeat(24)), null);
   assert.equal(machineKey.verifyFor(carol.proofFor(host.code, 'a'.repeat(24)), host.code, 'a'.repeat(24)), carol.id);
-  // the joiner itself, in its own session: the PIN holds
-  assert.equal((await refused(dial(t, host, carol, { invite: r.word, pin: r.pin, as }, web))).reason, 'ADMIT_WAITING');
+  // the joiner itself, in its own session: the PIN holds, and links it
+  const c = await dial(t, host, carol, { invite: r.word, pin: r.pin, as }, web);
+  assert.ok(c.token);
+  c.close();
 });
 
 test('machine-key: the host proof verifies only for its room and nonce', () => {
@@ -263,21 +312,29 @@ test('the PIN\'s backoff and the card\'s wait take their SUB_HUMAN_* overrides o
   const wrong = String((Number(r.pin) + 1) % 10_000).padStart(4, '0');
   assert.throws(() => invites.redeemInvite(host, r.id, { machine: m.id, proven: m.id, as: { name: 'carol', label: 'x'.repeat(64) }, pin: wrong, now }));
   assert.equal(Date.parse(must(recordOf(host, r.ref).next_at)) - now, config.PIN_BACKOFF_MS);
-  try { invites.redeemInvite(host, r.id, { machine: m.id, proven: m.id, as: { name: 'carol', label: 'x'.repeat(64) }, pin: r.pin, now: now + 60_000 }); } catch { /* waiting */ }
+  invites.redeemInvite(host, r.id, { machine: m.id, proven: m.id, as: { name: 'carol', label: 'x'.repeat(64) }, pin: r.pin, now: now + 60_000 });
   const adm = admissionOf(host, r.id);
   assert.equal(adm.label, 'x'.repeat(24), 'the card and the room line show 24 characters of it');
-  assert.equal(Date.parse(adm.expires_at) - (now + 60_000), config.ADMIT_TTL_MS, 'the card\'s real wait');
+  assert.equal(env.testMs('SUB_HUMAN_ADMIT_TTL_MS'), config.ADMIT_TTL_MS, 'the card\'s real wait');
 });
 
-test('R4 (live verify, verify6/11): a name that sits in the room from another machine: the card offers "Let in as NAME2" only, the link is bound to it, and the joiner\'s hello learns it', async t => {
+test('R4 (live verify, verify6/11): a name that sits in the room from another machine: the right PIN lets it in as NAME2 (no card), the card offers "Let in as NAME2" only; the link is bound to it, and the joiner\'s hello learns it', async t => {
   const { code, host } = hostRoom(t);
-  const old = machine(), carol = machine();
+  const old = machine(), carol = machine(), dave = machine();
   const at = new Date().toISOString();
   host.members.update(ms => ({ ...ms, carol: { name: sn('carol'), role: 'member', machine: old.id, joined_at: at, seen_at: at } }));
-  const r = mint(host);
   const as = { name: 'carol', label: 'carols-new-mbp' };
-  const held = await refused(dial(t, host, carol, { invite: r.word, pin: r.pin, as, checkHost: checkHost(code, r.word) }));
-  assert.equal(held.reason, 'ADMIT_WAITING');
+  // the right PIN: renamed as the card would, with no card
+  const p = mint(host);
+  const byPin = await dial(t, host, dave, { invite: p.word, pin: p.pin, as, checkHost: checkHost(code, p.word) });
+  assert.equal(byPin.as, 'carol2', 'the hello says the name the link is bound to');
+  assert.deepEqual(must(hostLinks.links(host)[must(byPin.link)]).seats, ['carol2']);
+  assert.deepEqual([admissionOf(host, p.id).name, admissionOf(host, p.id).asked_as], ['carol2', 'carol']);
+  assert.ok(roomLines(host).includes(`carol2 joined from carols-new-mbp (${inviteSecret.joinCheck(dave.id)}; asked as carol, who sits here from another machine) · not them? /sub-human kick carol2`), JSON.stringify(roomLines(host)));
+  byPin.close();
+  // a join request with no PIN: the card
+  const r = mint(host);
+  ask(host, r, carol, { label: 'carols-new-mbp' });
   const req = must(admission.pending(code)[0], 'the request');
   assert.equal(admission.taken(code, req), 'carol2');
   const options = must(admission.card(req, code).questions[0]).options.map(o => o.label);
@@ -292,7 +349,7 @@ test('R4 (live verify, verify6/11): a name that sits in the room from another ma
   assert.deepEqual(link.seats, ['carol2']);
   // the same machine as the seat's (a rejoin from its own home): the plain card, as before
   const r2 = mint(host);
-  await refused(dial(t, host, old, { invite: r2.word, pin: r2.pin, as, checkHost: checkHost(code, r2.word) }));
+  ask(host, r2, old);
   const req2 = must(admission.pending(code).find(q => q.machine === old.id));
   assert.equal(admission.taken(code, req2), null);
   assert.equal(must(must(admission.card(req2, code).questions[0]).options[0]).label, admission.LET_IN);
