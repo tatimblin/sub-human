@@ -81,7 +81,7 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   assert.match(fixOf(byId(rep, 'home')), /^SUB_HUMAN_HOME=\S+ node \S+\/scripts\/sub-human doctor --fix in a terminal/, 'the CLI by its path: none is on PATH');
   const lc = byId(rep, `link:${code}`);
   assert.equal(lc.status, 'warn', lc.detail);
-  assert.match(lc.detail, new RegExp(`^pipe ${hostHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · daemon not running · ✕ offline 2m · 2 queued · last error: no route to host · the host is up \\(it answered doctor in \\d+ ms; protocol here 4 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), host 4 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), speaking v4\\), but this machine's link to it is down`));
+  assert.match(lc.detail, new RegExp(`^pipe ${hostHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · daemon not running · ✕ offline 2m · 2 queued · last error: no route to host · the host is up \\(it answered doctor in \\d+ ms; protocol here 5 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), host 5 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), speaking v5\\), but this machine's link to it is down`));
   assert.match(fixOf(lc), /type \/sub-human in your session to start it again/, 'the daemon is not running');
   assert.doesNotMatch(lc.detail, /epoch|BatchMode/);
   const clock = byId(rep, `clock:${code}`);
@@ -92,8 +92,8 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   const l = must(rep.links[0], 'the link');
   const reach = must(l.reach, 'its hello');
   assert.equal(reach.ok, true);
-  assert.equal(must(reach.protocol).v, 4);
-  assert.deepEqual(must(reach.protocol).proto, { min: 4, max: 4 });
+  assert.equal(must(reach.protocol).v, 5);
+  assert.deepEqual(must(reach.protocol).proto, { min: 5, max: 5 });
   // the midpoint of a slow spawn can sit seconds from the moment the host answered: bound it loosely
   assert.ok(Math.abs(must(reach.skewMs)) < 60_000, `skew ${reach.skewMs}`);
   assert.deepEqual(l.recent, [`2026-10-08T10:00:00.000Z sub-human link ${code}: offline: ssh exited 255`]);

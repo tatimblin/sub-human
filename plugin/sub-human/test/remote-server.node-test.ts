@@ -244,7 +244,11 @@ test('protocol skew: no common version is PROTOCOL naming the side that must upd
   await fails(at({ proto: { min: 1, max: 1 } }, { proto: { min: 1, max: 1 } }).then(() => at({ proto: { min: protocol.PROTO.max + 1, max: protocol.PROTO.max + 1 } }, {})), /must update|Update your plugin/);
   // protocol 4 (tasks applied on the host, the room plan): a 0.5.0-beta.16 peer (protocol 3) is refused with the update
   // message, whichever side it is
-  assert.deepEqual(protocol.PROTO, { min: 4, max: 4 });
+  // protocol 5 (0.5.0-beta.24, the author's own check of a version first): a 0.5.0-beta.23 peer (protocol 4) would
+  // decide that check as a sign-off, so either side on it is refused with the update message
+  assert.deepEqual(protocol.PROTO, { min: 5, max: 5 });
+  await fails(at({ proto: { min: 4, max: 4 }, version: '0.5.0-beta.23' }, {}), /you run 0\.5\.0-beta\.23 \(protocol 4\)\. Update your plugin: \/plugin update sub-human$/);
+  await fails(at({}, { proto: { min: 4, max: 4 }, version: '0.5.0-beta.23' }), /^host runs sub-human 0\.5\.0-beta\.23 \(protocol 4\);.*The host must update/);
   await fails(at({ proto: { min: 3, max: 3 }, version: '0.5.0-beta.16' }, {}), /you run 0\.5\.0-beta\.16 \(protocol 3\)\. Update your plugin: \/plugin update sub-human$/);
   await fails(at({}, { proto: { min: 3, max: 3 }, version: '0.5.0-beta.16' }), /^host runs sub-human 0\.5\.0-beta\.16 \(protocol 3\);.*The host must update/);
   await fails(at({}, { proto: { min: 1, max: 2 }, version: '0.5.0-beta.15' }), /The host must update/);

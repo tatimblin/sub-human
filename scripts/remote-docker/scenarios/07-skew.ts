@@ -1,7 +1,8 @@
 // Version skew against the previous release (devbox-old: 0.5.0-beta.16, git ref d67ed1f, LAB_OLD_REF, baked into its
 // image). (a) a beta.16 host (devbox-old) and a current joiner (joiner-a, over toxiproxy:22003); (b) a current host
 // (devbox) and a beta.16 joiner (the joiner user on devbox-old, straight over the core network). Both lines have the same
-// shape (protocol 3's SECRET), but protocol 4 (tasks applied on the host, the room plan) shares no version with 3: the
+// shape (protocol 3's SECRET), but protocol 5 (0.5.0-beta.24: 4's tasks and room plan, and the author's check first)
+// shares no version with 3: the
 // hello is refused PROTOCOL SKEW with the update message, "The host must update" one way and "Update your plugin" the
 // other. Each direction must refuse with words that name the version and which side to update; never a half-working
 // room or a mirror that silently diverges. (Not run since Stage 7b.) (c) A hello from a client claiming protocol
@@ -37,7 +38,7 @@ async function direction(t: T, label: string, { hostSvc, joinerSvc, joinerUser, 
 }
 
 export const id = 'skew';
-export const title = 'beta.16 host vs current joiner and the reverse: a clear version message (protocol 3 vs 4); never silent corruption';
+export const title = 'beta.16 host vs current joiner and the reverse: a clear version message (protocol 3 vs 5); never silent corruption';
 export const persona = 'mixed versions';
 export const budgetMs = 120_000;
 export async function run(t: T): Promise<void> {
