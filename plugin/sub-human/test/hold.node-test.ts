@@ -1,6 +1,6 @@
 // mcp/hold.ts through its plug-in contract (create(ctx) -> {tools, call}) with a fake ctx: streaming,
 // STOP on leave, JOINED / RESPAWN for the member's room row, duplicate holds, and cancel handling.
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -15,6 +15,11 @@ import type { JsonRpcId, Me, ProgressToken, ToolArgs, ToolResult } from '../mcp/
 import type { LinkState, Member } from '../lib/room/types.ts';
 import { rc, sn } from './support/brands.ts';
 import { must } from './support/must.ts';
+
+// The hold's poll timer is unref'd (mcp/hold.ts; in the server, stdin keeps the process alive). Node 22's test runner
+// ends a test whose only pending work is an unref'd timer, so this keeps the loop alive while these tests run.
+const alive = setInterval(() => {}, 1 << 30);
+after(() => clearInterval(alive));
 
 Object.assign(process.env, {
   SUB_HUMAN_HOLD_BEAT_MS: '150', SUB_HUMAN_HOLD_POLL_MS: '20', SUB_HUMAN_HOLD_GRACE_MS: '250',

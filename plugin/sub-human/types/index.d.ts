@@ -52,6 +52,8 @@ declare module 'claude-code' {
       rows: string | null;
       /** The rows text mod/prompt.ts last added to a typed prompt: it rides again only once it changes; null: none. */
       rowsInjected: string | null;
+      /** The room server was found not connected and the person told (mod/core/rows.ts TOOLS_DOWN), until it is up. */
+      toolsDown: boolean;
       /** The session id and address mod/prompt.ts last set as the title: titled again after a /clear or a switch. */
       titled: { sid: string; addr: string };
       /** How many times the room's delivery failed this session (mod/deliver.ts): an event not applied, a tail

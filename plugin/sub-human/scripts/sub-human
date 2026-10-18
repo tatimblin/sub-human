@@ -3,7 +3,7 @@
 // plugin/sub-human/scripts/sub-human: the sub-human CLI. Its body and its usage are lib/cli/main.ts.
 // This path is frozen: the serve shim (<home>/bin/serve), authorized_keys lines, the row launcher and the link and
 // listener daemons all run it. Under the plugin's "type": "module" an extensionless file is ESM, and node strips no
-// types from it, so it stays this plain shim: the compile cache on (node 24), then the TypeScript body.
+// types from it, so it stays this plain shim: the compile cache on (node 22.18+), then the TypeScript body.
 import module from 'node:module';
 import { cacheDir } from '../lib/cache-dir.js';
 

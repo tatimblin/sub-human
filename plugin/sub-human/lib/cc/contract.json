@@ -149,7 +149,7 @@
     "&&~.pluginSource!==void 0)~(~,~(~),void 0,~);",
     "var ~=\"v1\",~=900000,"
    ],
-   "note": "A plugin's stdio MCP server that fails to connect once, in any session, is written to <configDir>/mcp-needs-auth-cache.json ({[name]: {timestamp, id}}, 15 minutes), and every session started meanwhile skips it (\"failed\": \"Skipping connection (recent failure cached ...)\"). Live 2026-10-17 (2.1.302) a joiner's room server was skipped for his whole session: no room tools, no rows, SendMessage to the host's Claudes fell through to \"not reachable\". So nothing the members' Claudes need depends on that server alone: mod/send.ts relays through node when it is not connected, the rows calls are not asked for while it is down (mod/core/rows.ts ROWS_DOWN), and doctor names the cached failure (lib/cc/env.ts mcpFailureLeft)."
+   "note": "A plugin's stdio MCP server that fails to connect once, in any session, is written to <configDir>/mcp-needs-auth-cache.json ({[name]: {timestamp, id}}, 15 minutes), and every session started meanwhile skips it (\"failed\": \"Skipping connection (recent failure cached ...)\"). Live 2026-10-17 (2.1.302) a joiner's room server was skipped for his whole session: no room tools, no rows, SendMessage to the host's Claudes fell through to \"not reachable\". So nothing the members' Claudes need depends on that server alone: mod/send.ts relays through node when it is not connected, the rows calls are not asked for while it is down (mod/core/rows.ts ROWS_DOWN), and doctor names the cached failure (lib/cc/env.ts mcpFailureLeft). Since 0.5.0-beta.21 the start is made hard to fail: .mcp.json runs hooks/node.sh (a node that runs the plugin, wherever it is installed) on mcp/room.ts (which still answers, with no tools, when room-server.ts fails to load), and a seat is told once when the server is not connected (mod/core/rows.ts TOOLS_DOWN)."
   },
   {
    "id": "mcp-progress-resets-idle-timeout",
@@ -352,6 +352,25 @@
    "note": "PermissionDenied fires only for auto-mode classifier denials; no hook carries a user rejection note."
   },
   {
+   "id": "askuserquestion-answers",
+   "section": 3,
+   "stability": "incidental",
+   "feature": "core",
+   "since": "2.1.296",
+   "search": [
+    "The answers provided by the user (question text -> answer string; multi-select answers are comma-separated)",
+    "Set when the dialog auto-resolved after this many milliseconds of idle (user away from keyboard). Absent on every human-resolved path.",
+    "Set when the user asked for another round of questions instead of (or after partially) answering.",
+    "Optional per-question annotations from the user (e.g., notes on preview selections). Keyed by question text.",
+    "message:\"Answer questions?\",updatedInput:"
+   ],
+   "shape": [
+    "{data:{questions:~,answers:~,...~?.trim()&&{response:~},...~&&{annotations:~},...~&&{afkTimeoutMs:~},...~===!0&&{followUp:!0}}}",
+    "async checkPermissions(~){return{behavior:\"ask\",message:\"Answer questions?\",updatedInput:~(~)}}"
+   ],
+   "note": "What a PostToolUse(AskUserQuestion) hook reads as tool_response is the tool's own result, {questions, answers, response?, annotations?, afkTimeoutMs?, followUp?}: answers keyed by the exact question text as shown (a multi-select answer comma-joined), annotations[question].notes the person's note on their choice, afkTimeoutMs set only when the dialog closed itself after idle (\"Absent on every human-resolved path\"), followUp true when the person asked for another round instead; questions is the card as shown. The documented hook API covers the rest: a PreToolUse answer of permissionDecision \"ask\" with updatedInput replaces the call's input before the tool's own dialog (the tool itself always asks: \"Answer questions?\" with its input), and PostToolUse carries tool_response; the shape of AskUserQuestion's tool_response is this entry. Only an answer given in the dialog (or by whatever answers it for the person: Remote Control, a PermissionRequest hook; afkTimeoutMs is refused from outside as a host field) fills answers. lib/consent/card.ts answerCard reads it for every card the hooks built: hooks/consent.ts postAsk (the fallback consent card, the review note's Send / Discard card) and postAdmit (a join request's Let in / Refuse card, lib/remote/admission.ts). Feature core: the admission card has no other route, so a failed entry leaves the version unverified rather than turning the plan view's sign-off to its fallback."
+  },
+  {
    "id": "clear-context-setting",
    "section": 3,
    "stability": "API",
@@ -521,6 +540,26 @@
     "pass its full session id (lowercase, as `claude agents --json` prints it)"
    ],
    "note": "`claude agents --json [--all]` prints [{pid?, id, sessionId, status, state, ...}] (cc.jobs)."
+  },
+  {
+   "id": "agents-json-fields",
+   "section": 5,
+   "stability": "API",
+   "feature": "room-session",
+   "since": "2.1.296",
+   "search": [
+    "\"cli_agents_json\"",
+    "With --json: also include completed background sessions",
+    "Print active sessions (interactive and background) as a JSON array and exit (for scripting; does not require a TTY)"
+   ],
+   "shape": [
+    "{...~&&{pid:~.pid},id:~.id,cwd:~?.cwd??~.state.cwd,kind:\"background\",startedAt:~?.startedAt??Date.parse(~.state.createdAt),sessionId:~?.sessionId??~.state.sessionId,...~&&{name:~},...~?.status&&{status:~(~.status)},",
+    "...~?.status===\"waiting\"&&~.waitingFor&&{waitingFor:~.waitingFor},state:~})}",
+    "return ~===\"success\"?\"done\":~===\"failure\"?\"failed\":\"stopped\";if(~.tempo===\"blocked\"||~===\"waiting\")return\"blocked\";return\"working\"}",
+    "kind:~.kind===\"bg\"?\"background\":\"interactive\",startedAt:~.startedAt,...~.sessionId&&{sessionId:~.sessionId},",
+    "return ~===\"idle\"?\"idle\":~===\"waiting\"?\"waiting\":\"busy\"}"
+   ],
+   "note": "The rows of `claude agents --json [--all]` (printAgentsJson, sorted by startedAt): a background job's row is {pid? (only while its worker runs), id (the short job id), cwd, kind: \"background\", startedAt (ms), sessionId, name?, status? (idle|waiting|busy, only while running), waitingFor?, state: working|blocked|done|failed|stopped}; without --all a job with no worker is listed only while working or blocked. A live session with no job (an interactive one, or a bg one with no job id) is {pid, cwd, kind: \"interactive\"|\"background\", startedAt, sessionId?, name?, status?, waitingFor?}, with no id and no state. lib/cc/bg.ts parseAgentsJson reads pid, id, sessionId, status, state, kind, name, cwd and startedAt; lib/room-claude.ts findJob takes the newest row with an id, kind not interactive and a state not done/failed/stopped whose name is claude.CODE (or whose id is the dispatch hint). agents-json holds the command itself."
   },
   {
    "id": "bg-stop",
@@ -1038,6 +1077,23 @@
     "=(~)=>~(~(~.plugin,~.text),\"notice\");"
    ],
    "note": "$.ui.log lines are stored as system notices at level \"notice\": drawn dim as \"<plugin>: <text>\" in the default view, kept across --resume, never read by the model, no wake (S4). One line each: a newline in the text is drawn as U+FFFD (cc-2.1.292.md Function hooks), so mod/deliver.ts logs a chat batch line by line."
+  },
+  {
+   "id": "module-ui-status-untranscribed",
+   "section": 10,
+   "stability": "incidental",
+   "feature": "core",
+   "since": "2.1.296",
+   "search": [
+    "): no status row in a headless session; kept here: ",
+    "event:\"$.ui.status\",pluginName:"
+   ],
+   "shape": [
+    "status:(~,~)=>{let ~=this.requireHost(),~=`plugin-status-${~}`;if(~.removeNotification(~),~!==void 0)~.addNotification({key:~,kind:\"event\",text:~(~,~),priority:\"low\",pinned:!0})}",
+    "status:(~,~)=>{if(~({type:\"system\",subtype:\"ui_status\",plugin:~,text:~??null}))return;",
+    "\"ui.status\":{check:(~)=>~?.text===void 0?void 0:~(~.text),run:~(\"ui.status\",(~,~)=>~(~.text,~))}"
+   ],
+   "note": "$.ui.status(text) is pinned app state, not a row: the engine's ui.status request runs the session's status(plugin, text), which removes and re-adds the notification \"plugin-status-<plugin>\" ({kind: \"event\", priority: \"low\", pinned: true}) on the notification bar under the prompt; undefined only removes it. In a headless session it is a system/ui_status message on the SDK output stream (or, with none, a debug-log line). Unlike $.ui.log (ui-log-notice, a stored notice) and $.session.append, nothing on this path appends to the conversation, so the model never reads it and --resume never draws it. What the binary does not show: that no other code copies notifications into the transcript (the typings say \"leaves the transcript and the model untouched\" only of ui.toast); the claim rests on this path (cc-2.1.296.md, where the invite moved here off $.ui.log), not on a live check of a transcript. The text is also written to the engine's debug log (\"$.ui.status (<plugin>): <text>\") when debug logging is on. mod/deliver.ts pinStatus pins an invite's line (its SECRET) and PIN there for the invite's life and unpins it when the invite is over."
   },
   {
    "id": "command-run-every-command",

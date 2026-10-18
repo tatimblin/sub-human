@@ -25,8 +25,10 @@ import type { Check, CheckStatus, DoctorOptions, Report } from './types.ts';
 import { parse } from './args.ts';
 
 
-/** 24.3: the first 24 that strips TypeScript without an ExperimentalWarning (every hook is .ts). */
-const NODE_MIN = [24, 3] as const;
+/** The nodes that run the plugin: TypeScript stripped with no flag and no ExperimentalWarning (every hook is .ts) and
+ * import.meta.main: 22.18+, 24.3+ and 25 on (23 never had import.meta.main). hooks/node.sh holds the same rule. */
+const NODE_MIN = [22, 18] as const;
+const nodeRuns = (major: number, minor: number): boolean => (major === 22 && minor >= 18) || (major === 24 && minor >= 3) || major >= 25;
 const STORE_DIRS = ['rooms', 'sessions', 'links', 'keys', 'bin'];
 
 function pluginVersion(): string | null {
@@ -43,9 +45,9 @@ function checkPlugin() {
 function checkNode(version: string = process.versions.node): Check {
   const [major = NaN, minor = NaN] = String(version).split('.').map(Number);
   const min = NODE_MIN.join('.');
-  return major > NODE_MIN[0] || (major === NODE_MIN[0] && minor >= NODE_MIN[1])
+  return nodeRuns(major, minor)
     ? check({ id: 'node', status: 'pass', title: 'node', detail: `v${version}` })
-    : check({ id: 'node', status: 'fail', title: 'node', detail: `v${version}; sub-human needs Node ${min} or newer`, fix: `install Node ${min}+ (e.g. nvm install ${NODE_MIN[0]}); the hooks run on the node Claude Code finds on PATH` });
+    : check({ id: 'node', status: 'fail', title: 'node', detail: `v${version}; sub-human needs Node ${min} or newer (24.3+ on 24; not 23)`, fix: `install Node ${min}+ or 24 (e.g. nvm install 24); the hooks run on node from PATH, else from Homebrew, nvm, fnm, mise, asdf or Volta (hooks/node.sh)` });
 }
 
 function checkHome() {

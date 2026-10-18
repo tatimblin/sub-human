@@ -53,4 +53,12 @@ export function finishedFrom(text: unknown): string | null {
 /** Said once, instead of the rows calls, while the room server is not connected in this session. */
 export const ROWS_DOWN = "SUB-HUMAN ROWS: the room's tools (plugin:sub-human:room) are not connected in this session, so its room row cannot start: don't spawn it. Tell the person once: /mcp reconnects plugin:sub-human:room. SendMessage to other Claudes and @room still work.";
 
+/** A seated session whose room server is not connected (Claude Code skipped or lost it: cc CONTRACT mcp-failure-cache),
+ * told once per time it goes down: the person by a $.ui.log line, Claude by context. mod/prompt.ts asks on every typed
+ * prompt of a seat ($.mcp.connect, which also connects a server the session has not yet). */
+export const TOOLS_DOWN_NOTICE = "the room's tools are not connected in this session, so plans and the task list can't be changed from here and Claude can't read the room; @room and messages to other Claudes still work. /mcp, then plugin:sub-human:room, Reconnect brings them back (sub-human doctor says why).";
+export const TOOLS_DOWN = "SUB-HUMAN: the room's tools (plugin:sub-human:room: post, read, plan, task) are not connected in this session. Don't call them; SendMessage to other Claudes still reaches them. The person was told how to reconnect (/mcp).";
+/** wasDown: said already for this time down; up: connected now. say: tell both now; down: what to remember. */
+export const toolsDownStep = (wasDown: boolean, up: boolean): { say: boolean; down: boolean } => ({ say: !up && !wasDown, down: !up });
+
 export const rowsToSay = (held: string | null, up: boolean): string | null => (held ? (up ? held : ROWS_DOWN) : null);

@@ -8,7 +8,7 @@
  * the engine, whose only answer there is "not reachable". Anything it cannot judge (no seat, an unreadable file)
  * passes on to the engine unchanged.
  */
-import { remotePeer, postArgs, postResult, relayResult } from './core/send.ts';
+import { peerOf, postArgs, postResult, relayResult } from './core/send.ts';
 import { shimArgv, shimEnv, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { asHello } from './core/state.ts';
 import type { On } from 'claude-code';
@@ -22,15 +22,8 @@ export function registerSend(on: On): void {
   on('session.send', async ($, e, next) => {
     const hello = asHello((await $.state.get(HELLO)).value);
     const seat = hello?.seat;
-    if (!hello || !seat || !e.to.endsWith('.' + seat.code)) return next(e);
-    const [members, machine, inRooms] = await Promise.all([
-      $.fs.read(`${hello.home}/rooms/${seat.code}/members.json`).then(parse, () => null),
-      $.fs.read(`${hello.home}/machine.json`).then(parse, () => null),
-      $.fs.read(`${hello.home}/machines.json`).then(parse, () => null),
-    ]);
-    // this machine in the room: the id the host recorded for its link (lib/home.ts machineIn), else the home's own
-    const inRoom = (inRooms as Record<string, unknown> | null)?.[seat.code];
-    const name = remotePeer(e.to, seat, members, typeof inRoom === 'string' && inRoom ? inRoom : (machine as { id?: unknown } | null)?.id);
+    if (!hello || !seat) return next(e);
+    const name = await peerOf(e.to, seat, hello.home, (f: string) => $.fs.read(f).then(parse, () => null));
     if (!name) return next(e);
     const room = await $.mcp.connect(SERVER).catch(() => null);
     if (room && room.isConnected) return postResult(name, await $.mcp.call(room.server, 'post', postArgs(name, e.text)));

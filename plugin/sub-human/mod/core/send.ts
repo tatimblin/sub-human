@@ -10,6 +10,11 @@
  *   remotePeer(to, seat, members, thisMachine) -> name | null
  *       the member `to` names when it is NAME.CODE of this seat's room, not this seat, a seat that has not left, and
  *       on another machine than this one; null otherwise (the engine delivers, or refuses, as it would).
+ *   sendFiles(home, code) -> the files a send reads: the room's members document, this home's machine.json and
+ *       machines.json (this machine's id in each room it joined over a link)
+ *   peerOf(to, seat, read) -> name | null   remotePeer over what those files say (read(file) -> parsed JSON or null):
+ *       this machine in the room is the id the host recorded for its link (lib/home.ts machineIn), else the home's own.
+ *       mod/send.ts and the two-home tests (test/support/two-homes.ts) both judge a send through it
  *   postArgs(name, text) -> the room post tool's arguments
  *   postResult(name, result) -> the session.send answer for the post's MCP result
  *   relayResult(name, run) -> the session.send answer for hooks/handlers/send.ts (the relay without the room server,
@@ -31,6 +36,20 @@ export function remotePeer(
   const m = (members as Record<string, PeerRecord | undefined>)[a.name];
   if (!m || typeof m !== 'object' || m.left_at) return null;
   return typeof m.machine === 'string' && m.machine && m.machine !== thisMachine ? a.name : null;
+}
+
+export const sendFiles = (home: string, code: string): { members: string; machine: string; machines: string } =>
+  ({ members: `${home}/rooms/${code}/members.json`, machine: `${home}/machine.json`, machines: `${home}/machines.json` });
+
+export async function peerOf(
+  to: unknown, seat: HelloSeat | null | undefined, home: string, read: (file: string) => Promise<unknown> | unknown,
+): Promise<string | null> {
+  if (!seat || typeof to !== 'string' || !to.endsWith('.' + seat.code)) return null;
+  const f = sendFiles(home, seat.code);
+  const [members, machine, machines] = await Promise.all([read(f.members), read(f.machine), read(f.machines)]);
+  const inRoom: unknown = machines && typeof machines === 'object' ? Reflect.get(machines, seat.code) : undefined;
+  const own: unknown = machine && typeof machine === 'object' ? Reflect.get(machine, 'id') : undefined;
+  return remotePeer(to, seat, members, typeof inRoom === 'string' && inRoom ? inRoom : own);
 }
 
 export const postArgs = (name: string, text: string): {

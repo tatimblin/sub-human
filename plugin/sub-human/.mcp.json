@@ -1,11 +1,12 @@
 {
   "mcpServers": {
     "room": {
-      "command": "node",
+      "command": "sh",
       "args": [
+        "${CLAUDE_PLUGIN_ROOT}/hooks/node.sh",
         "--import",
         "${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js",
-        "${CLAUDE_PLUGIN_ROOT}/mcp/room-server.ts"
+        "${CLAUDE_PLUGIN_ROOT}/mcp/room.ts"
       ]
     }
   }

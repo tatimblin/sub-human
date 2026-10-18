@@ -30,9 +30,9 @@ const CLASSIC_FIELDS: Record<string, string[] | undefined> = {
 };
 const COMMON = ['block', 'preventContinuation', 'stopReason'];
 
-/** node on hooks/run.ts <handler> (hooks/handlers/<handler>.ts), the compile cache preloaded as hooks.json does it
+/** hooks/node.sh (a node that runs the plugin) on hooks/run.ts <handler> (hooks/handlers/<handler>.ts), the compile cache preloaded as hooks.json does it
  * (hooks/compile-cache.js). */
-export const shimArgv = (root: unknown, handler: string): string[] => ['node', '--import', `${root}/hooks/compile-cache.js`, `${root}/hooks/run.ts`, handler];
+export const shimArgv = (root: unknown, handler: string): string[] => ['sh', `${root}/hooks/node.sh`, '--import', `${root}/hooks/compile-cache.js`, `${root}/hooks/run.ts`, handler];
 
 /** A command hook's systemMessage as a $.ui.log line: without its own "sub-human: " lead, which $.ui.log adds (cc
  * CONTRACT ui-log-notice), so no line reads "sub-human: sub-human: …". */

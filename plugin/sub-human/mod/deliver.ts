@@ -403,7 +403,8 @@ async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
 }
 
 /** An invite's line and PIN on this plugin's status line, under the prompt (Claude Code saves it in no transcript, as it
- * does a notice), until the invite's life is over; a newer one replaces it. */
+ * does a notice: cc CONTRACT module-ui-status-untranscribed), until the invite's life is over; a newer one replaces it.
+ * Claude Code's debug log (--debug) does keep the status text. */
 let pinnedAt = 0;
 /** The pinned invite's ref: the tail's `invites` event (the room's open invites) takes it off once it is not open. */
 let pinnedRef: string | null = null;

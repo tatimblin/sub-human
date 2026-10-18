@@ -28,7 +28,7 @@
     },
     "mod": {
       "any": 0,
-      "as": 10,
+      "as": 8,
       "nonNull": 0
     },
     "statusline": {

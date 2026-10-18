@@ -37,11 +37,11 @@ const first = (cs: Check[]): Check => must(cs[0], 'a check');
 const job = (j: Partial<AgentJob>): AgentJob => ({ pid: null, id: null, sessionId: null, status: null, state: null, kind: null, name: null, cwd: null, startedAt: null, ...j });
 
 test('doctor: node floor, ssh hints and argument errors (no Remote Control check)', () => {
-  for (const v of ['24.3.0', '24.15.0', '25.0.0', '26.1.0']) assert.equal(doctor.checkNode(v).status, 'pass', v);
-  for (const v of ['24.2.1', '24.0.0', '23.11.0']) assert.equal(doctor.checkNode(v).status, 'fail', v);
+  for (const v of ['22.18.0', '22.22.2', '24.3.0', '24.15.0', '25.0.0', '26.1.0']) assert.equal(doctor.checkNode(v).status, 'pass', v);
+  for (const v of ['24.2.1', '24.0.0', '23.11.0', '22.17.9', '20.19.0']) assert.equal(doctor.checkNode(v).status, 'fail', v);
   const old = doctor.checkNode('22.11.0');
   assert.equal(old.status, 'fail');
-  assert.match(fixOf(old), /Node 24\.3\+/);
+  assert.match(fixOf(old), /Node 22\.18\+ or 24/);
   // ssh refused: a login of the person's own (or a web invite); MFA or a jump host: the person's own ssh config
   const denied = doctor.sshHint('alice@box: Permission denied (publickey).');
   assert.ok(denied);

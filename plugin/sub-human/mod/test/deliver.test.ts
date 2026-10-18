@@ -119,9 +119,10 @@ test('a seated session starts the tail child: node scripts/sub-human tail --ndjs
   await start($)
   await until(() => seen.spawns.length === 1)
   const e = must(seen.spawns[0], 'the tail child')
-  expect(e.argv[0]).toBe('node')
-  expect(e.argv[1]).toMatch(/\/scripts\/sub-human$/)
-  expect(e.argv.slice(2)).toEqual(['tail', '--ndjson'])
+  expect(e.argv[0]).toBe('sh')
+  expect(e.argv[1]).toMatch(/\/hooks\/node\.sh$/)
+  expect(e.argv[2]).toMatch(/\/scripts\/sub-human$/)
+  expect(e.argv.slice(3)).toEqual(['tail', '--ndjson'])
   expect(e.env?.CLAUDE_CODE_SESSION_ID).toBe(SID)
   expect(e.env?.CLAUDE_PID).toBe('')
   seen.release()
@@ -201,6 +202,31 @@ test('rows are held and ride on the person\'s next typed prompt as context, once
   await new Promise(r => setTimeout(r, 50))
   await $.prompt.submit({ text: 'what next?', origin: { kind: 'composer' }, wait: false })
   expect(contexts.at(-1)).toEqual(['SUB-HUMAN ROWS: your room row is not running'])
+  seen.release()
+})
+
+test('the room server down: a seated typed prompt tells the person (a notice) and Claude (context) once; back up and down again, once more', async ($, on) => {
+  const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT })] })
+  let up = false
+  on('mcp.connect', () => ({ value: up ? { isConnected: true, server: 'plugin:sub-human:room' } : { isConnected: false, reason: 'failed', message: 'Skipping connection (recent failure cached)' } }))
+  const typed = (text: string) => $.prompt.submit({ text, origin: { kind: 'composer' }, wait: false })
+  const down = () => seen.logs.filter(l => /room's tools are not connected/.test(l)).length
+  await start($)
+  await until(() => seen.spawns.length === 1)
+  await new Promise(r => setTimeout(r, 50))
+  await typed('one')
+  expect(down()).toBe(1)
+  expect(must(seen.logs.find(l => /room's tools are not connected/.test(l)))).toMatch(/@room and messages to other Claudes still work.*\/mcp/)
+  expect((seen.contexts.at(-1) ?? []).join('\n')).toMatch(/^SUB-HUMAN: the room's tools .* are not connected in this session\. Don't call them/)
+  await typed('two')
+  expect(down()).toBe(1)
+  expect(seen.contexts.at(-1) ?? []).toEqual([])
+  up = true
+  await typed('three')
+  expect([down(), seen.contexts.at(-1) ?? []]).toEqual([1, []])
+  up = false
+  await typed('four')
+  expect(down()).toBe(2)
   seen.release()
 })
 

@@ -15,7 +15,7 @@ across machines, over ssh or the web.
 /plugin install sub-human@sub-human
 ```
 
-Then restart Claude Code. You need Claude Code 2.1.292+, Node 24.3+, and macOS or Linux.
+Then restart Claude Code. You need Claude Code 2.1.292+, Node 22.18+ or 24.3+, and macOS or Linux.
 
 ## Use it
 

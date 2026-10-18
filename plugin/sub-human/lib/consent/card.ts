@@ -48,6 +48,11 @@ function same(q: ShownQuestion, spec: CardSpec): boolean {
     && opts.every((o, i) => { const so = spec.options[i]; return !!o && !!so && o.label === so.label && o.description === so.description; }); // as long: so is there
 }
 
+/**
+ * The person's answer on one card, from AskUserQuestion's tool_response (answers keyed by question text, annotations,
+ * afkTimeoutMs, followUp): see the file header.
+ * @cc The answers provided by the user (question text -> answer string; multi-select answers are comma-separated)
+ */
 export function answerCard(spec: CardSpec, response: CardResponse | null | undefined, input?: { questions?: unknown } | null,
   { exact = true }: { exact?: boolean } = {}): CardAnswer {
   const r = response && typeof response === 'object' ? response : {};
