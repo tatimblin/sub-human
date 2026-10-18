@@ -295,7 +295,7 @@ test('author first (lib/proposal.ts check): only the current version\'s author g
   assert.equal(proposal.sendOut(me('alice'), h2), null, 'only a draft of mine');
 });
 
-test('author first: an objection with a note tells its asker\'s Claude that the objector\'s Claude writes the changes; nobody else, and not without a note', () => {
+test('author first (noise pass I): an objection with a note tells its asker\'s Claude it may revise, its person deciding (who writes is not prescribed); nobody else, and not without a note', () => {
   const { code, R, store } = hosted();
   h.register('carol', 'member', 2, code);
   const me = (n: string) => ({ code, name: sn(n) });
@@ -304,9 +304,34 @@ test('author first: an objection with a note tells its asker\'s Claude that the 
   const bare = must(proposal.answer(me('carol'), a, { choice: 'Object' }).entry);
   const noted = must(proposal.answer(me('bob'), a, { choice: 'Object', notes: 'cap at 100' }).entry);
   const back = (e: Entry, viewer: string) => R.chatLines(e, { viewer, entries: R.readAll() }).filter(l => l.startsWith('(for Claude)'));
-  assert.deepEqual(back(noted, 'alice'), ['(for Claude) bob\'s note asks for changes: bob\'s Claude writes them as the next version, which comes back to alice. Change the plan yourself only if alice asks.']);
+  assert.deepEqual(back(noted, 'alice'), ['(for Claude) bob asked for changes (the note above); you may revise the plan (plan, op edit) if alice wants it.']);
   assert.equal(R.deliver({ name: 'alice', role: 'member' }, noted, { entries: R.readAll() }), 'wake');
   assert.deepEqual(back(noted, 'carol'), []);
   assert.deepEqual(back(noted, 'bob'), []);
   assert.deepEqual(back(bare, 'alice'), []);
+});
+
+test('noise pass I: after a noted objection both Claudes may write the next version at once: the second meets the compare-and-swap, reconciles, and each version still goes to its own author first', () => {
+  const { code, R, store } = hosted();
+  const me = (n: string) => ({ code, name: sn(n) });
+  must(stored(plans.put(store, { base: 0, text: '# v1' }, { by: 'alice' })));
+  const h1 = must(proposal.check(me('alice'), 'room', 1));
+  assert.ok(proposal.answer(me('alice'), { hash: h1 }, { choice: 'Agree' }).entry);
+  const sent = must(proposal.sendOut(me('alice'), h1));
+  assert.ok(!('error' in sent));
+  assert.ok(proposal.answer(me('bob'), { hash: h1 }, { choice: 'Object', notes: 'cap at 100' }).entry);
+  // both start from v1: alice's Claude stores v2 first, her check is made
+  must(stored(plans.put(store, { base: 1, text: '# v1\ncap 100' }, { by: 'alice' })));
+  const h2 = must(proposal.check(me('alice'), 'room', 2));
+  // bob's Claude, also from v1: refused with v2 to reconcile, nothing stored, no check for him
+  const late = plans.put(store, { base: 1, text: '# v1\nmax 100' }, { by: 'bob' });
+  assert.ok(!late.ok && late.conflict && late.conflict.version.version === 2, JSON.stringify(late));
+  assert.equal(proposal.check(me('bob'), 'room', 2), null, 'v2 is alice\'s to check');
+  // reconciled from v2: v3 is bob's, his check is made, and alice's unsent v2 is retired (she is not asked about it)
+  must(stored(plans.put(store, { base: 2, text: '# v1\ncap 100 (max)' }, { by: 'bob' })));
+  const h3 = must(proposal.check(me('bob'), 'room', 3));
+  assert.deepEqual(proposal.pendingFor(me('bob')).filter(p => p.draft).map(p => p.hash), [h3]);
+  assert.deepEqual(proposal.pendingFor(me('alice')).filter(p => p.draft).map(p => p.hash), [], 'her v2 check retired by v3');
+  assert.ok(proposal.answer(me('alice'), { hash: h2 }, { choice: 'Agree' }).stale, 'a Yes on the retired v2 records nothing');
+  assert.equal(R.readAll().filter(e => e.kind === 'decision').length, 0, 'nothing decided along the way');
 });

@@ -323,7 +323,7 @@ When a request names you, your Claude opens it in Claude Code's plan-approval di
 | You do | Recorded |
 |---|---|
 | A **Yes** option | Your sign-off on that exact version (`via=human`). |
-| **Tell Claude what to change**, then type why | Nothing yet: a card asks `Send to alice as changes requested on "…": "…"?`. **Send** records your objection, with your words byte for byte; it blocks that version. **Discard** records nothing. Until you answer the card, your Claude's room posts are refused, so its own wording of your note cannot reach the room first. Once sent, a note that asks for changes is your ask: your Claude writes them as the plan's next version (which you check first, as above), and the author's Claude is told that yours is writing it, so only one of them does. |
+| **Tell Claude what to change**, then type why | Nothing yet: a card asks `Send to alice as changes requested on "…": "…"?`. **Send** records your objection, with your words byte for byte; it blocks that version. **Discard** records nothing. Until you answer the card, your Claude's room posts are refused, so its own wording of your note cannot reach the room first. Once sent, the note goes to the plan's author: their Claude is told you asked for changes and that it may revise, as they decide; your Claude may write the next version itself when your note says how (or leave it to the author). Whoever writes a version checks it first, as above, and two written at once meet the compare-and-swap below. |
 | **Esc**, or Ctrl+G edits before a Yes | Nothing. |
 
 Only an answer in a review the hooks opened counts: a Yes on a plan of your own (even one with the very text of a version) records nothing, and your Claude's own edit never asks you for a Yes.

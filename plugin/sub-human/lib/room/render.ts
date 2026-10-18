@@ -301,15 +301,16 @@ function chatLines(e: Entry, { viewer, entries, trust = NO_TRUST }: { viewer?: s
 const isDraft = (n: Entry): boolean => { const a = approversOf(n); return n.to === n.from && a.length === 1 && a[0] === n.from; };
 
 /**
- * For the asker of a request another person objected to with a note: a "(for Claude)" line saying who writes the
- * changes (the objector's Claude, told so with its person's note: lib/consent/review.ts noteFollow), so both Claudes
- * do not write the next version. null for anyone else, or an objection with no note.
+ * For the asker of a request another person objected to with a note: a "(for Claude)" line saying the note asks it
+ * for changes and that it may revise, its person deciding. Who writes the next version is the models' to work out (the
+ * objector's Claude may too: lib/consent/review.ts noteFollow); either version goes to its own author first, and two at
+ * once meet the plans' compare-and-swap. null for anyone else, or an objection with no note.
  */
 function changesLine(e: Entry, viewer: string | undefined, entries: readonly Readonly<Entry>[] | undefined, trust: Trust): string | null {
   if (e.kind !== 'objection' || e.via !== 'human' || !viewer || e.from === viewer || !noteOf(e).trim() || !isList(entries)) return null;
   const p = proposals(entries, trust).find(x => x.hash === e.proposal_hash);
   if (!p || p.from !== viewer) return null;
-  return `${FOR_CLAUDE} ${e.from}'s note asks for changes: ${e.from}'s Claude writes them as the next version, which comes back to ${viewer}. Change the plan yourself only if ${viewer} asks.`;
+  return `${FOR_CLAUDE} ${e.from} asked for changes (the note above); you may revise the plan (plan, op edit) if ${viewer} wants it.`;
 }
 
 /**
