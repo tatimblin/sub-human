@@ -209,9 +209,9 @@ test('mod-hello: hands the module the version\'s verdict, keeps the version in t
   assert.ok(isObj(plain) && !('cc' in plain));
 });
 
-test('exeOf: a live process\'s own executable (Linux /proc, else lsof on macOS), so the check probes the session\'s claude; none for no pid or a dead one', () => {
+test('exeOf: a live process\'s own executable (Linux /proc, else lsof on macOS), so the check probes the session\'s claude; none for no pid or a dead one', async () => {
   const real = (p: string | null) => (p ? fs.realpathSync(p) : p);
   assert.equal(real(verdict.exeOf(process.pid)), fs.realpathSync(process.execPath));
   assert.equal(verdict.exeOf(null), null);
-  assert.equal(verdict.exeOf(h.deadPid()), null);
+  assert.equal(verdict.exeOf(await h.deadPid()), null);
 });

@@ -78,14 +78,14 @@ test('store seam: the import scan finds a bypass', () => {
 // ---------- what imports cannot show: names of room files and paths into a room ----------
 /**
  * Direct reads kept on purpose, each matched by file and line. Only reads: every write still goes through the store.
- * mod/send.ts: the hooks module runs in Claude Code's module runtime, where the store (node:fs) cannot load,
- * so it reads the members document with $.fs.read to tell whether a SendMessage's target seat is on another machine.
+ * mod/core/send.ts sendFiles (read by mod/send.ts and the two-home tests): the hooks module runs in Claude Code's
+ * module runtime, where the store (node:fs) cannot load, so it reads the members document with $.fs.read to tell whether a SendMessage's target seat is on another machine.
  * The alternatives cost every send to a room address a node child or a room-server round trip. The read is the
  * FsRoomStore layout (a mirror keeps the host's members document in the same file); remotePeer (mod/core/send.ts)
  * checks each field it reads, and a read that fails passes the send on to the engine unchanged.
  */
 const ALLOWED = [
-  { rel: 'mod/send.ts', line: /^\s*\$\.fs\.read\(`\$\{hello\.home\}\/rooms\/\$\{seat\.code\}\/members\.json`\)\.then\(parse, \(\) => null\),$/ },
+  { rel: 'mod/core/send.ts', line: /^\s*\(\{ members: `\$\{home\}\/rooms\/\$\{code\}\/members\.json`, machine: `\$\{home\}\/machine\.json`, machines: `\$\{home\}\/machines\.json` \}\);$/ },
 ];
 const allowed = (rel: string, l: string): boolean => ALLOWED.some(a => a.rel === rel && a.line.test(l));
 const FILE_NAMES = /['"`/][^'"`\n]*\b(log\.jsonl|log\.idx|log\.moved|log-(?:\d+|\$\{[^}]*\})\.jsonl|snapshot\.json|members\.json|tasks\.json|review\.json|session\.json|holds-[^'"`]*\.json|\.cursor)\b/;
@@ -120,6 +120,6 @@ test('store seam: each allowed read is still in its file, and the allowance cove
   for (const a of ALLOWED) {
     assert.equal((src.get(a.rel) || '').split('\n').filter(l => a.line.test(l)).length, 1, `${a.rel}: the allowed read is gone or moved; drop or update its ALLOWED entry`);
   }
-  assert.ok(!allowed('mod/send.ts', "  $.fs.read(`${hello.home}/rooms/${seat.code}/tasks.json`).then(parse, () => null),"));
+  assert.ok(!allowed('mod/core/send.ts', "  ({ members: `${home}/rooms/${code}/tasks.json`, machine: `${home}/machine.json`, machines: `${home}/machines.json` });"));
   assert.ok(!allowed('mod/deliver.ts', "  $.fs.read(`${hello.home}/rooms/${seat.code}/members.json`).then(parse, () => null),"));
 });
