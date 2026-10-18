@@ -85,12 +85,13 @@ const everything = (seen: Seen) => JSON.stringify([seen.prompts, seen.contexts, 
 
 test('an invite with its line: one wake naming the ref only; the card on "copy invite REF"; Copy puts the line, never the PIN, on the clipboard', async ($, on) => {
   const ref = 'c0ffee000001'
-  const seen = world($, on, { ref })
+  const seen = world($, on, { ref, clip: [0, 0] })
   await start($)
   await typed($, 'invite'); await seen.tick()
   await until(() => seen.prompts.length === 1)
-  expect(seen.prompts[0]).toContain(`copy invite ${ref}`)
-  expect(seen.contexts.join('\n')).toContain(`call AskUserQuestion with the question "copy invite ${ref}"`)
+  // noise pass D: one framed line for the model, no line drawn as the person's, no room-lines context
+  expect(seen.prompts[0]).toBe(`(for Claude) sub-human: the person made invite ${ref}. Call AskUserQuestion with the question "copy invite ${ref}" (the hooks show their Copy / Skip card and copy; you never see the line or its PIN), then reply with nothing.`)
+  expect(seen.contexts.join('\n')).not.toContain("room's lines")
   expect(everything(seen)).not.toContain(SECRET)
   expect(everything(seen)).not.toContain(PIN)
   await ask($, ref)
@@ -100,10 +101,30 @@ test('an invite with its line: one wake naming the ref only; the card on "copy i
   expect(seen.clip[0]?.stdin).toBe(lineOf(ref))
   expect(seen.clip[0]?.stdin).not.toContain(PIN)
   expect(JSON.stringify(seen.clip[0]?.argv)).not.toContain(SECRET)
-  expect(seen.logs).toContain('Copied. Say the PIN separately.')
-  expect((post.additionalContext ?? []).join('\n')).toContain('Copied. Say the PIN separately.')
+  expect(seen.logs).toContain('copied')
+  expect((post.additionalContext ?? []).join('\n')).toContain('Reply with nothing.')
   expect(JSON.stringify(post)).not.toContain(SECRET)
   expect(seen.prompts.length).toBe(1)
+  // Copy once: the session's next invite is copied with no card and no turn
+  await typed($, 'invite'); await seen.tick()
+  await until(() => seen.clip.length === 2)
+  expect(seen.clip[1]?.stdin).toBe(lineOf(ref))
+  await until(() => seen.logs.includes('line copied'))
+  expect(seen.prompts.length).toBe(1)
+})
+
+test('Skip once: the session\'s next invite offers no card', async ($, on) => {
+  const ref = 'c0ffee000004'
+  const seen = world($, on, { ref })
+  await start($)
+  await typed($, 'invite'); await seen.tick()
+  await until(() => seen.prompts.length === 1)
+  await ask($, ref)
+  await answer($, seen, 'Skip')
+  await typed($, 'invite'); await seen.tick(); await seen.tick()
+  await new Promise(r => setTimeout(r, 200))
+  expect(seen.prompts.length).toBe(1)
+  expect(seen.clip).toEqual([])
 })
 
 test('Skip copies nothing; with no clipboard tool the card says so', async ($, on) => {
@@ -115,7 +136,7 @@ test('Skip copies nothing; with no clipboard tool the card says so', async ($, o
   await ask($, ref)
   await answer($, seen, 'Skip')
   expect(seen.clip).toEqual([])
-  expect(seen.logs).toContain('Nothing copied; the line stays pinned on your status line.')
+  expect(seen.logs).toContain('not copied')
   await ask($, ref)
   await answer($, seen, 'Copy')
   expect(seen.clip.length).toBeGreaterThan(0)

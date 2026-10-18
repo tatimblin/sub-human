@@ -6,10 +6,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   copyAsked, copyCard, copyWake, copyLine, copyBook, clipboardCommands, copyTo, copyOutcome, copySaid,
-  COPY_QUESTION, COPY, SKIP, COPIED, NO_TOOL, GONE, NOT_COPIED, CLIPBOARD_TIMEOUT_MS, type Runner,
+  COPY_QUESTION, COPY, SKIP, COPIED, AUTO_COPIED, NO_TOOL, GONE, NOT_COPIED, CLIPBOARD_TIMEOUT_MS, type Runner,
 } from '../mod/core/copy.ts';
 import { readReply, answerOf } from '../mod/core/command.ts';
 import { FOR_CLAUDE } from '../mod/core/constants.ts';
+import { wakeParts } from '../mod/core/deliver.ts';
 
 const REF = '3f9c2a1b7e0d';
 const SECRET = 'K'.repeat(39);
@@ -36,19 +37,20 @@ test('copy card: the call is the card\'s when it asks "copy invite REF" or carri
   assert.equal(copyAsked({ questions: [{ question: `copy invite ${REF}0` }] }), null, 'not a 12-hex ref');
 });
 
-test('copy card: the wake shows the person one line and gives the model the ref only, never the line or a PIN', () => {
+test('copy card (noise pass D): the wake is one line for the model, none for the person (no prompt they seem to have typed), the ref only', () => {
   const w = copyWake(REF);
-  const [shown, ...rest] = w.split('\n');
-  assert.ok(shown && !shown.startsWith(FOR_CLAUDE));
-  assert.ok(rest.length && rest.every(l => l.startsWith(FOR_CLAUDE)));
-  assert.match(w, new RegExp(`call AskUserQuestion with the question "copy invite ${REF}"`));
+  assert.equal(w.split('\n').length, 1);
+  assert.ok(w.startsWith(FOR_CLAUDE));
+  assert.equal(wakeParts(w), null, 'framed as the plugin\'s message, with no room-lines context');
+  assert.match(w, new RegExp(`Call AskUserQuestion with the question "copy invite ${REF}"`));
+  assert.match(w, /then reply with nothing\.$/);
   assert.doesNotMatch(w, /sub-human join|#|\b\d{4}\b/);
 });
 
 test('copy card: Copy copies the held line; Skip, AFK, a follow-up, a typed answer or an edited card copies nothing', () => {
   const input = copyCard();
-  assert.deepEqual(copyOutcome(answered(COPY), input, LINE), { copy: LINE });
-  assert.deepEqual(copyOutcome(answered(SKIP), input, LINE), { say: NOT_COPIED });
+  assert.deepEqual(copyOutcome(answered(COPY), input, LINE), { copy: LINE, choice: 'copy' });
+  assert.deepEqual(copyOutcome(answered(SKIP), input, LINE), { say: NOT_COPIED, choice: 'skip' }, 'Skip: no card again this session');
   assert.deepEqual(copyOutcome(answered(COPY, { afkTimeoutMs: 60000 }), input, LINE), { say: NOT_COPIED }, 'AFK');
   assert.deepEqual(copyOutcome(answered(COPY, { followUp: true }), input, LINE), { say: NOT_COPIED }, 'follow-up');
   assert.deepEqual(copyOutcome(answered('yes please'), input, LINE), { say: NOT_COPIED }, 'typed its own');
@@ -58,7 +60,7 @@ test('copy card: Copy copies the held line; Skip, AFK, a follow-up, a typed answ
 });
 
 test('copy card: an invite gone before the answer (used, expired, cancelled) is said so on Copy', () => {
-  assert.deepEqual(copyOutcome(answered(COPY), copyCard(), null), { say: GONE });
+  assert.deepEqual(copyOutcome(answered(COPY), copyCard(), null), { say: GONE, choice: 'copy' });
   assert.equal(GONE, 'that invite is gone, run /sub-human invite again');
   const book = copyBook();
   book.hold(REF, LINE, 1000);
@@ -75,6 +77,9 @@ test('copy card: an invite gone before the answer (used, expired, cancelled) is 
   book.ask('toolu_1', REF);
   assert.equal(book.askedRef('toolu_1'), REF);
   assert.equal(book.askedRef('toolu_1'), null, 'read once');
+  assert.equal(book.choice(), null);
+  book.choose('copy');
+  assert.equal(book.choice(), 'copy');
 });
 
 test('copy card: the PIN is never what is copied: join.ts\'s line excludes it, and a line with a PIN-shaped word is not held', () => {
@@ -125,7 +130,8 @@ test('clipboard: the line goes on stdin (never an argument) to the first tool th
 });
 
 test('copy card: what the person and the model are told', () => {
-  assert.equal(COPIED, 'Copied. Say the PIN separately.');
+  assert.equal(COPIED, 'copied');
+  assert.equal(AUTO_COPIED, 'line copied');
   assert.equal(NO_TOOL, 'No clipboard tool found; the line is pinned on your status line.');
-  assert.match(copySaid(COPIED), /^sub-human: Copied\. Say the PIN separately\. /);
+  assert.equal(copySaid(COPIED), 'sub-human: the copy card is answered (copied); the person sees that. Reply with nothing.');
 });

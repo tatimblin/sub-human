@@ -20,7 +20,7 @@ import { mergeClassic } from './core/prompt.ts';
 import { factsBook, type FactsBook } from './core/facts.ts';
 import { asHello, asNonce, mintNonce } from './core/state.ts';
 import { ccNotice } from './core/cc.ts';
-import { copyBook, copyWake, type CopyBook } from './core/copy.ts';
+import { copyBook, copyWake, copyTo, clipboardCommands, AUTO_COPIED, NO_TOOL, type CopyBook } from './core/copy.ts';
 import { assertNever } from './core/never.ts';
 import type { EngineInterface, On, SessionAppendArgs } from 'claude-code';
 import type { JoinReply, Pulls, TailEvent, TailSeat } from './core/types.ts';
@@ -483,18 +483,34 @@ const copyNow = async ($: EngineInterface): Promise<number> => (await nowMs($)) 
 /**
  * The invite's copy card (mod/core/copy.ts): after /sub-human invite answered with a line, one wake asks the model to
  * call AskUserQuestion with "copy invite REF" (the ref only; the line stays in `copies`). Never on the same idle turn as
- * a take's wake: while a take runs it waits for it (at most ~10 s), then goes as any wake (mid-turn: the person's line
- * a notice, the wake appended). An invite over before then gets no card. Never throws.
+ * a take's wake: while a take runs it waits for it (at most ~10 s), then goes as any wake (framed: it has no line for
+ * the person; mid-turn appended). An invite over before then gets no card. After the person picked Copy on a card this
+ * session the line is copied with no card ("line copied"); after Skip nothing is offered. Never throws.
  */
 async function offerCopy($: EngineInterface, ref: string) {
   try {
+    const choice = copies.choice();
+    if (choice === 'skip') return; // Skip once: no card again this session
     for (let i = 0; taking.size && i < 20; i++) await new Promise<void>(resolve => { $.clock.after(500, resolve); });
-    if (!copies.lineFor(ref, await copyNow($))) return;
+    const line = copies.lineFor(ref, await copyNow($));
+    if (!line) return;
+    // Copy once: later invites are copied with no card, and no turn
+    if (choice === 'copy') { $.ui.log(await clip($, line, AUTO_COPIED)); return; }
+    // no line for the person: the wake goes framed, as the plugin's own message (copy.ts copyWake)
     const text = copyWake(ref);
-    const [shown = ''] = text.split('\n');
-    if (turns.running !== null) { $.ui.log(shown); await midTurnWake($, text); }
-    else await submitWake($, text, { member: true, seen: [shown] });
+    if (turns.running !== null) await midTurnWake($, text);
+    else await submitWake($, text, { member: true });
   } catch { /* the line stays pinned on the status line */ }
+}
+
+/** The line to the first clipboard tool that takes it, on stdin (copy.ts copyTo): `copied` when one did, else NO_TOOL. */
+async function clip($: EngineInterface, line: string, copied: string): Promise<string> {
+  const or = (p: Promise<string | undefined>) => p.catch(() => undefined);
+  const commands = clipboardCommands({
+    WAYLAND_DISPLAY: await or($.env.get('WAYLAND_DISPLAY')), DISPLAY: await or($.env.get('DISPLAY')),
+    WSL_DISTRO_NAME: await or($.env.get('WSL_DISTRO_NAME')), WSL_INTEROP: await or($.env.get('WSL_INTEROP')),
+  });
+  return (await copyTo((argv, init) => $.process.run(argv, init), line, commands)) === 'copied' ? copied : NO_TOOL;
 }
 
 export function registerDeliver(on: On): void {

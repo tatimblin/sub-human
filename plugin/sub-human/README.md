@@ -83,7 +83,7 @@ and under the prompt, on the plugin's status line:
 ⚠ sub-human: PIN 4829 · /sub-human join https://box.tail1a2b.ts.net/sub-human/vole-8126#4f9k2m8q7r3t6v1w0x5y9z2a8b7c6d5e4f3g2h1
 ```
 
-Then a card asks **Copy the invite line to your clipboard? (the PIN is not copied)** — **Copy** / **Skip**. Copy puts the line, never the PIN, on your clipboard (`pbcopy`, `wl-copy`, `xclip` or `clip.exe`); Skip copies nothing. There is no card with `--no-card`, with `SUB_HUMAN_INVITE_CARD=0` in your environment, or in a session that is not interactive. Send the line by any channel; say the PIN by another.
+Then a card asks **Copy the invite line to your clipboard? (the PIN is not copied)** — **Copy** / **Skip**. Copy puts the line, never the PIN, on your clipboard (`pbcopy`, `wl-copy`, `xclip` or `clip.exe`); Skip copies nothing. After a Copy, the session's later invites are copied with no card (`line copied`); after a Skip, it asks no more. There is no card with `--no-card`, with `SUB_HUMAN_INVITE_CARD=0` in your environment, or in a session that is not interactive. Send the line by any channel; say the PIN by another.
 
 When they have typed both, your room shows one line, `carol joined from carols-mbp (check 3f9c-2a71) · not them? /sub-human kick carol`, and nothing asks you anything. Their screen shows the same check; if it is not them, kick them. When they typed the line alone, **your Claude Code shows you a card**: `Let carol (check 3f9c-2a71) on carols-mbp join room vole-8126? — Let in / Refuse`; only your answer there admits them (see [The card](#the-card)). A wrong PIN never makes a card.
 

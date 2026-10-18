@@ -101,9 +101,12 @@ async function copyPost($: EngineInterface, e: { tool_use_id?: unknown; tool_inp
     ?? copyAsked(e.tool_input)?.ref ?? (refs.length === 1 ? refs[0] ?? null : null);
   const line = ref ? copies.lineFor(ref, now) : null;
   const out = copyOutcome(isRec(e.tool_response) ? e.tool_response : null, isRec(e.tool_input) ? e.tool_input : null, line);
+  // the session's later invites: copied with no card after a Copy, no card after a Skip (mod/deliver.ts offerCopy)
+  if (out.choice) copies.choose(out.choice);
   let said: string;
   if ('say' in out) said = out.say;
   else {
+    // the module's $ stays in the file that uses it: the same steps as mod/deliver.ts clip
     const or = (p: Promise<string | undefined>) => p.catch(() => undefined);
     const commands = clipboardCommands({
       WAYLAND_DISPLAY: await or($.env.get('WAYLAND_DISPLAY')), DISPLAY: await or($.env.get('DISPLAY')),
