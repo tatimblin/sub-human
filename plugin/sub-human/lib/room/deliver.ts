@@ -20,7 +20,8 @@
  *       (consent.ts revises: the request on the version before it, open or not agreed), so the revision comes back to
  *       me. A decision never wakes: it reports, it asks nothing.
  *     member notice: another person's say (not to me, no @me), another member's join or leave (not the room
- *       Claude's), a task someone else added with me as its suggested owner (`suggest`), another member's new version of a room plan (a `plan` entry: a wake only for the request's asker and objectors; its sign-off request,
+ *       Claude's), the room's line for a machine its PIN let in (render.ts linkJoined: its check and the kick; the bare
+ *       "joined" after it is not drawn again, render.ts announced; none for the one it names), a task someone else added with me as its suggested owner (`suggest`), another member's new version of a room plan (a `plan` entry: a wake only for the request's asker and objectors; its sign-off request,
  *       a proposal, wakes the approvers as any proposal does); and what asks the person, not the model: the room line that the log waits to split
  *       (restart the old sessions), a decision on a proposal I am in (its approvers and author), another approver's
  *       objection on a proposal I approve. Everything else that is not mine is context.
@@ -37,6 +38,7 @@
 import { normalize } from './rules.ts';
 import { proposal, answered, decided, approversOf, revises } from './consent.ts';
 import { NO_TRUST } from './trust.ts';
+import { linkJoined } from './render.ts';
 import type { Delivery, Entry, Lane, LaneViewer, Trust } from './types.ts';
 
 /** What deliver() judges an entry against. */
@@ -119,6 +121,9 @@ function deliver(me: LaneViewer | null | undefined, e: Entry, { entries, trust =
   const name = me && me.name;
   if (me && me.role === 'claude') return l === 'push' && (!note || SPAWN_NOTE.test(note)) ? 'wake' : 'none';
   if ((isMove(e) && e.via === 'system' && e.from !== name && e.from !== 'claude')) return 'notice';
+  // the room's line for a machine its PIN let in, with its check and the kick: the people's join notice
+  const joined = me ? linkJoined(e) : null;
+  if (joined) return joined === name ? 'none' : 'notice';
   if (l === 'push') return me && (isMove(e) || chat(me, e)) ? 'notice' : 'wake';
   if (l === 'pull' && me && personSees(String(name), e, entries, trust)) return 'notice';
   return l === 'pull' ? 'context' : 'none';

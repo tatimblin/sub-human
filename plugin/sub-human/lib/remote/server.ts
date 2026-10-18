@@ -107,7 +107,8 @@ function redeem(s: Session, invite: unknown, machine: MachineId, pin: unknown, k
   if (a && a.admitted_by === 'pin') {
     // its PIN replaced a knock from another machine (the line alone): the room hears both checks
     if (a.replaced) roomLine(s, `a machine that knocked without the PIN (${a.replaced.name}, ${inviteSecret.joinCheck(a.replaced.machine, a.replaced.key)}) was replaced by the one with the PIN (${a.name}, ${inviteSecret.joinCheck(a.machine, a.key)}): its card is gone, and its join stops`);
-    const renamed = a.asked_as ? `; asked as ${a.asked_as}, who sits here from another machine` : '';
+    // the people's join notice (lib/room/render.ts linkJoined reads it back): keep its shape
+    const renamed = a.asked_as ? `; wanted "${a.asked_as}", taken` : '';
     roomLine(s, `${a.name} joined from ${a.label || machine} (${inviteSecret.joinCheck(a.machine, a.key)}${renamed}) · not them? /sub-human kick ${a.name}`);
   } else if (a) roomLine(s, `${a.name}'s machine (${a.label || machine}) joined the room, let in by ${a.admitted_by || 'the host'}; undo with: /sub-human kick ${a.name}`);
   else roomLine(s, `a machine (${machine}) linked to the room with an invite and its PIN (link ${r.link.id})`);

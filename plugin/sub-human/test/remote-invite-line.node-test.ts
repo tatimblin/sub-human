@@ -472,7 +472,7 @@ test('R4 (live verify, verify6/11): a name that sits in the room from another ma
   assert.equal(byPin.as, 'carol2', 'the hello says the name the link is bound to');
   assert.deepEqual(must(hostLinks.links(host)[must(byPin.link)]).seats, ['carol2']);
   assert.deepEqual([admissionOf(host, p.id).name, admissionOf(host, p.id).asked_as], ['carol2', 'carol']);
-  assert.ok(roomLines(host).includes(`carol2 joined from carols-new-mbp (${inviteSecret.joinCheck(dave.id)}; asked as carol, who sits here from another machine) · not them? /sub-human kick carol2`), JSON.stringify(roomLines(host)));
+  assert.ok(roomLines(host).includes(`carol2 joined from carols-new-mbp (${inviteSecret.joinCheck(dave.id)}; wanted "carol", taken) · not them? /sub-human kick carol2`), JSON.stringify(roomLines(host)));
   byPin.close();
   // a join request with no PIN: the card
   const r = mint(host);

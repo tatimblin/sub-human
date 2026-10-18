@@ -51,6 +51,7 @@ import * as proposalMod from './proposal.ts';
 import * as sessionMod from './room/session.ts';
 import * as roomMod from './room.ts';
 import * as linksMod from './room/links.ts';
+import { announced } from './room/render.ts';
 import type { TailEvent, TailSeat } from './types-app.ts';
 import type { LinkStatus } from './remote/link-socket.ts';
 import type { Flush } from './remote/types-core.ts';
@@ -305,6 +306,8 @@ function formatNdBatch(ready: Item[], ctx: FormatCtx): { events: TailEvent[], mo
     const d = judge(e, entries, me.role === 'claude' ? joinNote(e) : undefined);
     if (d === 'none') continue;
     if (me.role === 'claude' && d === 'wake') { pushed.push(p); continue; }
+    // a join the room's PIN line already announced (its check and the kick): no second, bare "joined"
+    if (d === 'notice' && announced(e, entries)) { moved.push(e.id); continue; }
     const lines = rm.chatLines(e, { viewer: me.name, entries });
     if (d === 'context') { pull.push(...lines); continue; }
     if (d === 'notice') {

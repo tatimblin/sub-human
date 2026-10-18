@@ -11,6 +11,9 @@ Tested on Claude Code 2.1.296 (the unit and hooks-module wiring tests; the demo 
 - **Suggestions get written.** An objection with a note that asks for changes is the objector's ask: their Claude is told to write the changes as the plan's next version (which they check first, as above), and the author's Claude, woken by the objection, is told that the objector's Claude writes it, so only one of them does. Before, both Claudes logged the note and waited.
 - After a plan's author sends a version out, asking for sign-off no longer tells their Claude to open it for them again; a new version's line to the people who asked about the one before says its author checks it first.
 
+### Fixed (less noise, from a two-person test)
+- **You see who joined.** The line for a machine its PIN let in, `NAME joined from MACHINE (check …) · not them? /sub-human kick NAME`, reached only Claude, and the room showed a bare `NAME joined`. It is now the join notice the people see (the bare one is not drawn after it), and a renamed joiner reads `(check …; wanted "carol", taken)`.
+
 ## 0.5.0-beta.23 (2026-10-18), private beta: join in one line
 
 Tested on Claude Code 2.1.296 (the unit and hooks-module wiring tests; the demo's S2 and S11 and the lab were updated but not run).

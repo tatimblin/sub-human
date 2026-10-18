@@ -422,6 +422,29 @@ function joinLeave(es: readonly Readonly<Entry>[] | null | undefined, viewer: st
   }));
 }
 
+/**
+ * The room's line for a machine its PIN let in (lib/remote/server.ts linkJoinText): "NAME joined from MACHINE (check
+ * …) · not them? /sub-human kick NAME". linkJoined: the NAME such a status line names, else null. announced: whether
+ * member_joined e follows such a line for its name (no other join or leave of that name between): that line is the
+ * person's join notice, so the bare "NAME joined" is not drawn again.
+ */
+const LINK_JOIN = /^(\S+) joined from .* · not them\? \/sub-human kick \1$/;
+function linkJoined(e: Entry | null | undefined): string | null {
+  if (!e || e.kind !== 'status' || e.via !== 'system' || e.from !== 'room') return null;
+  const m = LINK_JOIN.exec(String(e.text ?? ''));
+  return m?.[1] ?? null;
+}
+function announced(e: Entry, entries: readonly Readonly<Entry>[] | undefined): boolean {
+  if (e.kind !== 'member_joined' || e.via !== 'system' || !isList(entries)) return false;
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const x = entries[i];
+    if (!x || x.id >= e.id) continue;
+    if (linkJoined(x) === e.from) return true;
+    if (isMove(x) && x.from === e.from) return false;
+  }
+  return false;
+}
+
 function noticeText(n: Pick<Notice, 'kind' | 'name' | 'rejoin'> & { why?: string }): string {
   if (n.kind === 'member_left') return `${n.name} left${n.why || ''}`;
   return `${n.name} ${n.rejoin ? 'rejoined' : 'joined'}`;
@@ -440,5 +463,5 @@ function rowSegment(es: readonly Readonly<Entry>[] | null | undefined, viewer: s
   return n.kind === 'member_left' ? `−${n.name} left${n.why}` : `+${n.name} ${n.rejoin ? 'rejoined' : 'joined'}`;
 }
 
-export { FOR_CLAUDE, line, chatLines, fmt, who, stateLine, leftWhy, joinLeave, noticeText, rowSegment };
+export { FOR_CLAUDE, line, chatLines, fmt, who, stateLine, leftWhy, joinLeave, noticeText, rowSegment, linkJoined, announced };
 export type { Notice };

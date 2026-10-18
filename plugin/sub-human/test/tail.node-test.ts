@@ -209,6 +209,21 @@ test('tail: a member sees every join as a chat line; with its room row running, 
   assert.doesNotMatch(t.text(), /Agent|row:/);
 });
 
+test('tail (noise pass A): a machine its PIN let in shows its check and the kick as the join notice, once', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  rows.writeHolds(code, sn('alice'), { room: true });
+  sys(code, 'member_joined', 'alice');
+  const t = startTail();
+  t.advance(300);
+  const notice = 'bob joined from bobs-mbp (check 3f9c-2a71) · not them? /sub-human kick bob';
+  sys(code, 'status', 'room', { text: notice });
+  sys(code, 'member_joined', 'bob');
+  t.advance(1000);
+  assert.deepEqual(t.chat(), [`room: ${notice}`], t.text());
+  assert.equal(t.of('wake').length, 0, 'no wake: the person acts on it, not Claude');
+});
+
 /** The room session's wakes: each ends with the one line telling it what to do (lib/tail.ts formatRoomClaudeBatch). */
 const rowsTurns = (t: { lines(): string[] }): number => t.lines().filter(l => l.startsWith('Make only the call its row note names')).length;
 
