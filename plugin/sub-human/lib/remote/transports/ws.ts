@@ -20,7 +20,8 @@
  * uses its answer only once the line's tag names it (link-connect.ts), so nothing secret goes before. After the
  * handshake each write is cut into Noise messages of at most noise.MAX_PLAINTEXT bytes, one binary WebSocket message
  * each; a message that does not decrypt, or a text message, closes the conn (1002 / 1003). open connects within
- * WS_CONNECT_MS (45 s: a ts.net name's first TLS handshake waits on its certificate).
+ * WS_CONNECT_MS (45 s: a ts.net name's first TLS handshake waits on its certificate); a ts.net name it cannot reach
+ * in that time (or resolve) says the host may need Funnel (offline: OFF_TAILNET_HINT).
  */
 
 import { Duplex } from 'node:stream';
@@ -199,12 +200,24 @@ async function serverChannel(conn: Conn, { s, check = () => null, timeoutMs = HA
   return { duplex: channel(conn, hs.split(), after.rest()), hello: hello as WsHello, peer: hs.remoteStatic };
 }
 
+// a ts.net name the joiner's machine cannot reach (no answer within WS_CONNECT_MS, or no such name for it): a host's
+// Serve answers inside its tailnet only, so the host may need Funnel
+const TS_NET_RE = /\.ts\.net\.?$/i;
+const UNREACHED_RE = /no WebSocket to \S+ within \d+ ms|ENOTFOUND|EAI_AGAIN/;
+const OFF_TAILNET_HINT = 'if this machine is not on the host\'s tailnet, the host may need /sub-human invite --public';
+
+/** connect()'s failure as OFFLINE, with the --public hint for a ts.net name it could not reach. */
+function offline(host: string, e: unknown): RoomError {
+  const m = msgOf(e);
+  return new RoomError('OFFLINE', TS_NET_RE.test(host) && UNREACHED_RE.test(m) ? `${m} (${OFF_TAILNET_HINT})` : m);
+}
+
 /** The listener's X25519 key, as it says it (a TEXT request): checked by the caller against an invite line's tag. */
 async function fetchKey(spec: WsAddr & SpecBase, { timeoutMs = envMs('SUB_HUMAN_WS_CONNECT_MS') }: { timeoutMs?: number } = {}): Promise<string> {
   const s = parse(`//${hostPort(spec)}${spec.path}`);
   if (!s) throw new RoomError('INVALID', 'the link\'s WebSocket URL is not a plain host[:port]/path');
   let conn: Conn;
-  try { conn = await ws().connect(urlOf({ ...s, kind: spec.kind }), { maxPayload: 4096, timeoutMs }); } catch (e) { throw new RoomError('OFFLINE', msgOf(e)); }
+  try { conn = await ws().connect(urlOf({ ...s, kind: spec.kind }), { maxPayload: 4096, timeoutMs }); } catch (e) { throw offline(s.host, e); }
   try {
     conn.send(JSON.stringify({ op: 'key', v: 3 }));
     const m = await firstAny(conn, HANDSHAKE_MS);
@@ -228,7 +241,7 @@ const kind: Required<KindEntry<WsSpec>> = {
     let conn: Conn;
     try {
       conn = await ws().connect(url, { maxPayload: noise().MAX_MESSAGE + 64, timeoutMs: envMs('SUB_HUMAN_WS_CONNECT_MS') });
-    } catch (e) { throw new RoomError('OFFLINE', msgOf(e)); }
+    } catch (e) { throw offline(s.host, e); }
     try {
       const duplex = await clientChannel(conn, { rs: Buffer.from(spec.hostKey, 'base64url'), code: ctx.code, s: own });
       return transportsLib().fromDuplex(duplex);
@@ -240,4 +253,4 @@ const kind: Required<KindEntry<WsSpec>> = {
   describe: spec => `${spec.kind} ${hostPort(spec)}${spec.path}`,
 };
 
-export { parse, locator, urlOf, PROLOGUE, clientChannel, serverChannel, firstAny, fetchKey, kind };
+export { parse, locator, urlOf, offline, OFF_TAILNET_HINT, PROLOGUE, clientChannel, serverChannel, firstAny, fetchKey, kind };
