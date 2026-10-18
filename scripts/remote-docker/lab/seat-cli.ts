@@ -268,7 +268,9 @@ const cmds: Record<string, (...args: string[]) => unknown> = {
   say(name, ...words) {
     const r = typed(seatOf(name), `@room ${words.join(' ')}`);
     // out: a refusal's reason, else the line the person reads ("✓ sent", "⧗ queued …", "⧗ sending (slow link) …")
-    return { ok: !!(r.json && r.json.continue === false), out: reason(r.json) || (r.json && r.json.stopReason) || null, json: r.json, ms: r.ms, t0: r.t0, stderr: r.stderr };
+    // ok: posted or queued; a refusal stops the prompt too, with "✗ not posted: …" as its stop reason
+    const stop = r.json && r.json.continue === false ? String(r.json.stopReason ?? '') : null;
+    return { ok: stop !== null && !stop.startsWith('✗'), out: reason(r.json) || (r.json && r.json.stopReason) || null, json: r.json, ms: r.ms, t0: r.t0, stderr: r.stderr };
   },
 
   prompt(name, ...words) {
