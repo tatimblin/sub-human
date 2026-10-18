@@ -76,6 +76,12 @@ function draftedByAgent(text: string, assistant: string): boolean {
   return a.includes('@room ' + t) || (t.length >= DRAFT_MIN && a.includes(t));
 }
 
+/** draftedByAgent over the transcript's last assistant turn; false when the transcript gives no readable assistant text
+ * (none, unreadable, a shape these readers do not know): the person's words post alone, never blocked by the read. */
+function drafted(text: string, input: PromptIn): boolean {
+  try { return draftedByAgent(text, lastAssistantText(transcriptTail(input.transcript_path), input.prompt_id)); } catch { return false; }
+}
+
 // ---------- the room's session takes no typed input ----------
 const LAUNCH = /^\/(?:sub-human:)?sub-human(?:\s|$)/;
 const roomClaudeHint = (me: Identity) => `✗ the room's session (${identity.address(me.name, me.code)}) takes no typed input; type in your own session: @room for the room, or ask your own Claude`;
@@ -128,7 +134,7 @@ function handle(input: PromptIn): void {
   if (!text.trim()) return refuse('✗ not posted: there is nothing after @room.');
   const entry: { kind: 'say'; text: string; normalized?: true; drafted?: 'agent' } = { kind: 'say', text };
   if (normalized) entry.normalized = true;
-  if (draftedByAgent(text, lastAssistantText(transcriptTail(input.transcript_path), input.prompt_id))) entry.drafted = 'agent';
+  if (drafted(text, input)) entry.drafted = 'agent';
   let placed;
   try { placed = room.open(me.code).append(entry, { via: 'human', from: me.name, queue: true }); } catch (err) {
     if (!(err instanceof room.RoomError)) throw err;

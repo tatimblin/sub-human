@@ -291,6 +291,32 @@ test('drafted:"agent" when the posted text is verbatim in Claude\'s last message
   assert.deepEqual(w.entries().map(e => e.drafted), ['agent', undefined, 'agent', undefined, undefined]);
 });
 
+test('no readable assistant text (no transcript, unreadable, torn lines, shapes the readers do not know): the person\'s words post alone, never blocked', () => {
+  const w = new World({ claude: 'sleep', alice: 'act' });
+  const draft = 'cap the page at 50 and clamp limit=500 to 50';
+  const file = path.join(w.cwd, 'garbled.jsonl');
+  // the draft is in the file, but in no shape these readers take for an assistant turn's text
+  fs.writeFileSync(file, ['{torn', '5', 'null', `"@room ${draft}"`, '[1,2]',
+    JSON.stringify({ type: 'assistant', message: `@room ${draft}` }),
+    JSON.stringify({ type: 'assistant', message: { content: { text: `@room ${draft}` } } }),
+    JSON.stringify({ type: 'assistant', message: { content: [null, 5, `@room ${draft}`, { type: 'text', text: { draft } }, { type: 'output_text', text: `@room ${draft}` }] } }),
+    JSON.stringify({ type: 'assistant_message', message: { content: [{ type: 'text', text: `@room ${draft}` }] } }),
+    JSON.stringify({ type: 'user', promptId: 5, message: null }),
+  ].join('\n') + '\n');
+  const unreadable = path.join(w.cwd, 'locked.jsonl');
+  fs.writeFileSync(unreadable, JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: `@room ${draft}` }] } }) + '\n');
+  fs.chmodSync(unreadable, 0o000);
+  const cases: (string | undefined)[] = [undefined, path.join(w.cwd, 'missing.jsonl'), w.cwd, file, unreadable];
+  try {
+    for (const [i, tp] of cases.entries()) {
+      const r = atRoom(w, { ...submit(`@room ${draft}`), ...(tp === undefined ? {} : { transcript_path: tp }), prompt_id: `p-${i}` }, { as: 'alice' });
+      assert.equal(r.code, 0, r.stderr);
+      assert.doesNotMatch(posted(r), /Claude's wording/, String(tp));
+    }
+  } finally { fs.chmodSync(unreadable, 0o644); }
+  assert.deepEqual(w.entries().map(e => [e.text, e.via, e.drafted]), cases.map(() => [draft, 'human', undefined]));
+});
+
 test('a plain prompt outputs nothing (the title, digest and rows are the mod\'s) and writes no presence (the mod is its one writer)', () => {
   const w = new World({ claude: 'sleep', alice: 'act' });
   rowsRunning(w, 'alice', { room: true });
