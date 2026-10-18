@@ -2,7 +2,7 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
-## 0.5.0-beta.21 (unreleased)
+## 0.5.0-beta.21 (2026-10-18), private beta: hardened against Claude Code upgrades
 
 Tested on Claude Code 2.1.296 and 2.1.302 (the canary: the internals probe, the hooks module's wiring tests and `plugin validate --strict` on each).
 
@@ -24,7 +24,7 @@ Tested on Claude Code 2.1.296 and 2.1.302 (the canary: the internals probe, the 
 - An objection's note is kept when the transcript cannot be read (it is taken from the refusal itself).
 - `ci.yml` was not valid YAML (an unquoted ": " in a step name), which is likely why every Actions run failed with no jobs (#22).
 
-## 0.5.0-beta.20 (unreleased)
+## 0.5.0-beta.20 (released as part of 0.5.0-beta.21)
 
 Tested on Claude Code 2.1.296; the internals probe also passes on 2.1.302.
 
