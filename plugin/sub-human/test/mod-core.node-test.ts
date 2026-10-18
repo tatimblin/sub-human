@@ -21,6 +21,7 @@ import type * as prefilterMod from '../mod/core/prefilter.ts';
 import type * as promptMod from '../mod/core/prompt.ts';
 import type * as seatMod from '../mod/core/seat.ts';
 import type * as sendMod from '../mod/core/send.ts';
+import type * as rowsCoreMod from '../mod/core/rows.ts';
 import type * as shimMod from '../mod/core/shim.ts';
 import type * as stateMod from '../mod/core/state.ts';
 import type * as registerMod from '../mod/register.ts';
@@ -48,6 +49,7 @@ interface Mods {
   'mod/core/prompt.ts': typeof promptMod;
   'mod/core/seat.ts': typeof seatMod;
   'mod/core/send.ts': typeof sendMod;
+  'mod/core/rows.ts': typeof rowsCoreMod;
   'mod/core/shim.ts': typeof shimMod;
   'mod/core/state.ts': typeof stateMod;
   'mod/register.ts': typeof registerMod;
@@ -461,6 +463,25 @@ test('send: SendMessage to a seat on another machine goes through the room; ever
   assert.deepEqual(postResult('alice', { content: [{ type: 'text', text: '{"id":7}' }] }), { isDelivered: true });
   assert.deepEqual(postResult('alice', { isError: true, content: [{ type: 'text', text: 'refused: rate' }] }),
     { isDelivered: false, reason: 'Not sent to alice (on another machine, reached through the room): refused: rate' });
+});
+
+test('send without the room server (live 2026-10-17: held back, the relay fell through to "not reachable"): hooks/handlers/send.ts answers', async () => {
+  const { relayResult } = await load('mod/core/send.ts');
+  assert.deepEqual(relayResult('alice', { stdout: '{"isDelivered":true}\n' }), { isDelivered: true });
+  assert.deepEqual(relayResult('alice', { stdout: 'noise\n{"isDelivered":false,"reason":"refused: rate"}\n' }),
+    { isDelivered: false, reason: 'Not sent to alice (on another machine, reached through the room): refused: rate' });
+  const crashed = relayResult('alice', { stdout: '', stderr: 'Error: boom', exitCode: 1 });
+  assert.equal(crashed.isDelivered, false, 'never passed on: the engine only says "not reachable"');
+  assert.match(crashed.isDelivered ? '' : crashed.reason, /not connected in this session and the relay failed \(Error: boom\); \/mcp reconnects them$/);
+  assert.equal(relayResult('alice', null).isDelivered, false);
+});
+
+test('rows while the room server is down: said once instead of the spawn calls a row could not make', async () => {
+  const { rowsToSay, ROWS_DOWN } = await load('mod/core/rows.ts');
+  assert.equal(rowsToSay('SUB-HUMAN ROWS: calls', true), 'SUB-HUMAN ROWS: calls');
+  assert.equal(rowsToSay('SUB-HUMAN ROWS: calls', false), ROWS_DOWN);
+  assert.equal(rowsToSay(null, false), null, 'nothing held: nothing said');
+  assert.match(ROWS_DOWN, /don't spawn it.*\/mcp reconnects plugin:sub-human:room/);
 });
 
 test('mod-hello: prints the home and this session\'s seat, and writes the lease (0600)', t => {

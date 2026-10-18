@@ -12,6 +12,11 @@
  *                                    spawned (the agent view's fork, or a reload) still ends without a turn
  *   finishedFrom(text) -> id|null    the agent a task notification says finished (<task-notification> with
  *                                    <task-id>ID</task-id> and <status>completed</status>; the same CONTRACT entry)
+ *   ROWS_DOWN, rowsToSay(held, up) -> text|null   what a typed prompt carries for the rows: the held rows calls while
+ *                                    the room server is connected (a row agent's only tool is its hold), else ROWS_DOWN,
+ *                                    so a row that cannot start is not asked for again and again (live 2026-10-17: with
+ *                                    the server held back, every participant spawn was refused for zero tools and the
+ *                                    calls came back with each prompt); mod/prompt.ts says each text once
  */
 export const PARTICIPANT = 'sub-human:participant';
 export const ROOM_AGENT = 'sub-human:room';
@@ -44,3 +49,8 @@ export function finishedFrom(text: unknown): string | null {
   const m = FINISHED.exec(String(text ?? ''));
   return m?.[1] ?? null; // the group always matches when m does
 }
+
+/** Said once, instead of the rows calls, while the room server is not connected in this session. */
+export const ROWS_DOWN = "SUB-HUMAN ROWS: the room's tools (plugin:sub-human:room) are not connected in this session, so its room row cannot start: don't spawn it. Tell the person once: /mcp reconnects plugin:sub-human:room. SendMessage to other Claudes and @room still work.";
+
+export const rowsToSay = (held: string | null, up: boolean): string | null => (held ? (up ? held : ROWS_DOWN) : null);

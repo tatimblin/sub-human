@@ -18,6 +18,7 @@ import { reviewOpenOf, seatedOrUnsure } from './core/prefilter.ts';
 import { delivering, wakeContextOf, facts, presence, serialPulls } from './deliver.ts';
 import { pullContext, clearPulls } from './core/deliver.ts';
 import { asHello, asNonce } from './core/state.ts';
+import { rowsToSay } from './core/rows.ts';
 import type { ClassicHookInputs, EngineInterface, On } from 'claude-code';
 import type { Hello, Pulls, ShimResult } from './core/types.ts';
 
@@ -25,6 +26,11 @@ const HELLO = { plugin: 'sub-human', key: 'hello' } as const;
 const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' } as const;
 const TITLED = { plugin: 'sub-human', key: 'titled' } as const;
 const ROWS = { plugin: 'sub-human', key: 'rows' } as const;
+const SERVER = 'room'; // the room server's key in .mcp.json
+/** Whether the room server is connected in this session (unsure: yes, as before). */
+const roomUp = async ($: EngineInterface): Promise<boolean> => {
+  try { return (await $.mcp.connect(SERVER)).isConnected; } catch { return true; }
+};
 const INJECTED = { plugin: 'sub-human', key: 'rowsInjected' } as const;
 const NONCE = { plugin: 'sub-human', key: 'nonce' } as const;
 const PULLS = { plugin: 'sub-human', key: 'pulls' } as const;
@@ -140,8 +146,10 @@ export function registerPrompt(on: On): void {
         const { value: rows } = await $.state.get(ROWS);
         const { value: injected } = await $.state.get(INJECTED);
         const held = typeof rows === 'string' && rows ? rows : null;
-        if (held && held !== injected) down = { ...e, context: [...(e.context ?? []), held] };
-        if (held !== (injected ?? null)) await $.state.set(INJECTED, held); // none held: the same text again is a change
+        // a row's only tool is the room server's hold: while that server is down, the calls are not asked for (ROWS_DOWN once)
+        const say = rowsToSay(held, held ? await roomUp($) : true);
+        if (say && say !== injected) down = { ...e, context: [...(e.context ?? []), say] };
+        if (say !== (injected ?? null)) await $.state.set(INJECTED, say); // none held: the same text again is a change
       }
     }
     const item = origins.push(e.text, originKind(e.origin));
