@@ -56,7 +56,7 @@ test('invite over ssh: the line with the host folder and no NAME, the PIN apart;
   Object.keys(host.extra).forEach(k => { if (!(k in aliasEnv)) delete host.extra[k]; });
   assert.ok(hiddenBlock(al), al.stderr);
   assert.match(reason(al), new RegExp(`\n  /sub-human join devbox ${code} [0-9a-z]{39} --home \\S+\n`));
-  assert.match(reason(al), /over ssh devbox\./);
+  assert.match(reason(al), /over ssh devbox, until \d\d:\d\d\./);
   const locs = Object.values(host.lib(() => store.open(code).kv.get<Invites>(invites.INVITES_KEY)) || {}).map(i => (i as { locator?: string }).locator); // an admission record has none
   assert.ok(locs.includes('ssh:dev@devbox'), JSON.stringify(locs));
   host.join(alice, `invite --cancel ${must(/invite --cancel ([0-9a-f]{12})/.exec(reason(al)))[1]}`);

@@ -477,9 +477,13 @@ test('/sub-human invite: an invite line for my room, shown to me only (a hidden 
   assert.ok(m, shown.reason);
   const pin = /tell them its PIN apart from the line \(say it, or send it another way\): (\d{4})\n/.exec(must(shown.reason));
   assert.ok(pin, shown.reason);
-  assert.match(must(shown.reason), /The line without its PIN asks you here, on a card; the PIN alone gets nobody in/);
-  assert.match(must(shown.reason), /\/sub-human invite --cancel [0-9a-f]{12}/);
-  assert.notEqual(must(new RegExp(`${w.code} ([0-9a-z]{39})`).exec(must(must(w.hook('join', expand('invite --pipe'), { as: 'alice' }).json).reason)))[1], m[1], 'a new one each time');
+  assert.match(must(shown.reason), /the line alone asks you on a card, the PIN alone gets nobody in, and 5 wrong PINs end the invite/);
+  assert.match(must(shown.reason), /\nCancel it: \/sub-human invite --cancel [0-9a-f]{12}\n/);
+  const again = must(must(w.hook('join', expand('invite --pipe'), { as: 'alice' }).json).reason);
+  assert.notEqual(must(new RegExp(`${w.code} ([0-9a-z]{39})`).exec(again))[1], m[1], 'a new one each time');
+  // noise pass C: the rules show with the room's first invite only; the next is the line, its PIN and the cancel
+  assert.doesNotMatch(again, /5 wrong PINs/);
+  assert.equal(again.split('\n').length, 6, again);
   for (const [args, re] of [['invite --frobnicate', /usage: \/sub-human invite/], ['invite --pipe --web', /pick one/], ['invite --ssh NAME@box', /placeholder/], ['invite --ssh USER@box', /placeholder/]] as const) {
     const r = must(w.hook('join', expand(args), { as: 'alice' }).json);
     assert.match(must(r.reason), re, args);
@@ -791,7 +795,7 @@ test('SECURITY through the module: an invite and anything a PIN may be typed in 
   // the line and the PIN are pinned (the module's status line: no transcript row holds them); the notices say where
   assert.doesNotMatch(must(inv.say), new RegExp(`[0-9a-z]{39}`));
   assert.doesNotMatch(must(inv.say), /: \d{4}\b/);
-  assert.match(must(inv.say), /pinned under the prompt until \d\d:\d\d: Claude Code saves neither in this conversation/);
+  assert.match(must(inv.say), /until \d\d:\d\d: the line and its PIN are under the prompt \(not saved in this conversation\)\. Send the line; say the PIN separately\./);
   // item 2 (D): the PIN first and short, then the line; nothing before it that costs width
   assert.match(must(inv.pinned).status, new RegExp(`^PIN \\d{4} · /sub-human join pipe:\\S+ ${w.code} [0-9a-z]{39}$`));
   assert.ok(must(inv.pinned).ms > 14 * 60_000 && must(inv.pinned).ms <= 15 * 60_000);

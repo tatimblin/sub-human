@@ -102,7 +102,11 @@ test('wss 1.1: the listener gives its key to a text request, refuses a handshake
   const { port, host, alice, code } = R;
   const shown = must(host.join(alice, 'invite --web', { SUB_HUMAN_WEB_FRONT: `http://127.0.0.1:${port}` }).json?.reason);
   assert.ok(shortShown(shown));
-  assert.match(shown, /An older sub-human on their side takes the line with a space in place of the #\./, 'a joiner before the # form is told how to type it');
+  // noise pass C: the room's first invite says the key check and the install once; nothing on the older # form
+  assert.match(shown, /Their machine checks this one's key \(\S+…, named in the line\) before it sends anything/);
+  assert.match(shown, /No sub-human on their machine yet\? In Claude Code there: \/plugin marketplace add tatimblin\/sub-human, then \/plugin install sub-human@sub-human/);
+  assert.doesNotMatch(shown, /An older sub-human|space in place of the #|They need sub-human/);
+  assert.match(shown, /\nCancel it: \/sub-human invite --cancel [0-9a-f]{12} · stop serving the room: \/sub-human invite --stop\n/);
   const pinned = Buffer.from(host.lib(() => listener.hostKey()), 'base64url');
   assert.equal(fs.statSync(path.join(host.home, 'listen', 'host-x25519.json')).mode & 0o777, 0o600);
   const ss = spawnSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN'], { encoding: 'utf8' }).stdout;
@@ -196,9 +200,11 @@ esac
   const p = `/sub-human/${code}`;
   const lines = () => fs.readFileSync(calls, 'utf8').trim().split('\n');
   assert.deepEqual(lines(), ['status --json', `serve --bg --https=443 --set-path=${p} http://127.0.0.1:${port}`]);
-  // again: a new invite, the same serve path (not run twice)
-  host.join(alice, 'invite --web');
+  // again: a new invite, the same serve path (not run twice), and no certificate wait: Tailscale has it now
+  const again = must(host.join(alice, 'invite --web').json?.reason);
   assert.equal(lines().filter(l => l.startsWith('serve')).length, 1);
+  assert.doesNotMatch(again, /~20 s|checks this one's key|5 wrong PINs|Off your tailnet/, 'once per room');
+  assert.equal(again.split('\n').length, 6, again);
   // --public: opt-in, the serve path off first, then funnel, with the one-line CT warning
   const fun = host.join(alice, 'invite --public');
   assert.match(must(fun.json?.reason), /Tailscale Funnel \(public\)/);

@@ -66,12 +66,16 @@ On the host, in a session that is in the room:
 ```
 
 ```
-sub-human: invite to room vole-8126 for one machine, over the web through Tailscale Serve (your tailnet only) to this machine's listener on 127.0.0.1:7420. It works once, for 15 minutes. Its PIN and the line to send them are pinned under the prompt until 14:05: Claude Code saves neither in this conversation. Send the line; tell them the PIN apart from it (say it, or send it another way).
-sub-human: They type the PIN after the line (or alone, when their machine asks for it). The line without its PIN asks you here, on a card; the PIN alone gets nobody in. After 5 wrong PINs the invite stops working.
-sub-human: The right PIN lets their machine in with no card here; the room says who joined, from which machine, with its check and how to kick them if it is not them.
-sub-human: Sent it to the wrong place? /sub-human invite --cancel 3f9c2a1b7e0d cancels just this invite.
+sub-human: invite to room vole-8126 for one machine, over Tailscale Serve (your tailnet only), until 14:05: the line and its PIN are under the prompt (not saved in this conversation). Send the line; say the PIN separately.
+sub-human: Cancel it: /sub-human invite --cancel 3f9c2a1b7e0d · stop serving the room: /sub-human invite --stop
+sub-human: They type the PIN after the line; the line alone asks you on a card, the PIN alone gets nobody in, and 5 wrong PINs end the invite. The right PIN lets them in with no card: the room shows who joined, with a check and the kick.
+sub-human: Their machine checks this one's key (Xk3v9QpL0aZr…, named in the line) before it sends anything, so nothing in between can read along.
+sub-human: No sub-human on their machine yet? In Claude Code there: /plugin marketplace add tatimblin/sub-human, then /plugin install sub-human@sub-human, and restart it.
+sub-human: The first connection to a new ts.net name can take ~20 s while Tailscale issues its certificate; it is being fetched now, and their machine keeps trying.
 sub-human: Off your tailnet? /sub-human invite --public
 ```
+
+That is the room's first invite. Later invites to the same room show only the first two lines: the rules, the key check, the install hint, the certificate's wait, the pointer to `--public` and Funnel's warning are said once per room on this host. An invite works once, for 15 minutes.
 
 and under the prompt, on the plugin's status line:
 
@@ -121,18 +125,17 @@ A right PIN is your consent, said ahead: the room line names the machine with it
 
 ### Invite details
 
-An ssh invite (Tailscale not up here, `--ssh`, or `SUB_HUMAN_SSH_ADDR` set) reads the same, with `over ssh me@devbox.local` and two more lines:
+An ssh invite (Tailscale not up here, `--ssh`, or `SUB_HUMAN_SSH_ADDR` set) reads the same, with `over ssh me@devbox.local`, no `--stop`, and with the room's first invite one more line:
 
 ```
 sub-human: Over ssh this needs their own ssh login to this account (me), set up as for any ssh login: sub-human writes nothing to authorized_keys. No login here? Invite them over the web: /sub-human invite --web
-sub-human: They need sub-human VERSION or newer; an older one is told the host runs a newer version and to update (/plugin update sub-human).
 ```
 
 Its line is `/sub-human join me@devbox.local vole-8126 SECRET`: HOST ROOM SECRET, and the joiner adds the PIN after it the same way. When Tailscale is up but the tailnet invite fails, the invite says why and is over ssh instead.
 
 The status line is one line, and Claude Code cuts it at the terminal's width. When the whole line does not fit, it holds only `PIN 4829 · SECRET 4f9k…` and the notice gives the line with the word `SECRET` in its place, to fill in as you send it (the copy card still copies the whole line); in a terminal outside Claude Code, `sub-human invite` prints a new invite whole. The status line goes at once when you cancel the invite, within a few seconds once it is used or burnt, and when it expires.
 
-These dim lines are shown to you, never to your Claude, and your `/sub-human invite` itself leaves no row. VERSION is your own sub-human's version: theirs needs to be at least as new. The line's **SECRET** (a web line's `#` fragment, an ssh line's last word) is 39 characters (letters and digits only, so a chat app or mail client leaves it alone) that hold 128 bits of single-use randomness and a short tag of this machine's key. With no address given (no `--ssh`, no `SUB_HUMAN_SSH_ADDR`), an ssh invite also says that it used this machine's own name (a Mac's `.local` name reaches only the same local network) and how to give another, and, when this machine takes no ssh logins (on a Mac, Remote Login is off in System Settings → General → Sharing), that their ssh will fail and `/sub-human invite --web` is the other way. When this machine's sub-human folder is not `~/.sub-human`, an ssh line adds `--home PATH` (where their login finds it). The line carries no name (theirs comes from their git name, or `--as NAME`). `sub-human invite [--room ROOM] [--ssh [USER@HOST]] [--via JUMP]` prints the same in a terminal outside Claude Code; inside Claude Code (its `!` mode) it masks the SECRET and the PIN, because that output becomes part of the conversation. An address that still has an example's placeholder (`NAME@…`, `USER@…`, `YOU@…`) is refused.
+These dim lines are shown to you, never to your Claude, and your `/sub-human invite` itself leaves no row. Their sub-human needs to be as new as yours: an older one is told so when it dials. The line's **SECRET** (a web line's `#` fragment, an ssh line's last word) is 39 characters (letters and digits only, so a chat app or mail client leaves it alone) that hold 128 bits of single-use randomness and a short tag of this machine's key. With no address given (no `--ssh`, no `SUB_HUMAN_SSH_ADDR`), an ssh invite also says that it used this machine's own name (a Mac's `.local` name reaches only the same local network) and how to give another, and, when this machine takes no ssh logins (on a Mac, Remote Login is off in System Settings → General → Sharing), that their ssh will fail and `/sub-human invite --web` is the other way. When this machine's sub-human folder is not `~/.sub-human`, an ssh line adds `--home PATH` (where their login finds it). The line carries no name (theirs comes from their git name, or `--as NAME`). `sub-human invite [--room ROOM] [--ssh [USER@HOST]] [--via JUMP]` prints the same in a terminal outside Claude Code; inside Claude Code (its `!` mode) it masks the SECRET and the PIN, because that output becomes part of the conversation. An address that still has an example's placeholder (`NAME@…`, `USER@…`, `YOU@…`) is refused.
 
 `/sub-human invite --cancel` cancels the open invite (with several open, it lists them: `/sub-human invite --cancel REF`).
 

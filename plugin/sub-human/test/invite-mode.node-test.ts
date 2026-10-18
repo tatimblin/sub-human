@@ -61,6 +61,8 @@ test('invite: no way named and Tailscale up here: the tailnet (never Funnel), wi
   assert.ok(p.text.endsWith(`\n${inviteMod.OFF_TAILNET}`), 'the pinned text says it too');
   if (p.cut !== undefined) assert.ok(p.cut.endsWith(`\n${inviteMod.OFF_TAILNET}`), 'and the cut one');
   assert.doesNotMatch(p.text, /PIN \d{4}/, 'the pinned text still holds no PIN');
+  // noise pass C: once per room
+  assert.doesNotMatch(text(run(w, 'invite')), /Off your tailnet/, 'the room\'s next invite leaves it out');
 });
 
 test('invite: --web is tailnet-only too (the pointer); --public is Funnel (none)', t => {

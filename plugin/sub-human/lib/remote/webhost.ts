@@ -8,7 +8,8 @@
  * which the joiner never sends anywhere: the dial is to the URL without it), its SECRET's tag naming the listener's
  * X25519 key (role 'listener': the joiner checks it before its Noise handshake), and a 4-digit PIN told apart. It starts the listener (127.0.0.1 only) and puts the room in its served set. tailscale (`--web`): Tailscale
  * Serve for /sub-human/CODE on this node's MagicDNS name (tailnet only), its certificate warmed in the background;
- * funnel (`--public`): the same through Funnel (public; the text carries tailscale.CT_WARNING). The tests and the lab
+ * funnel (`--public`): the same through Funnel (public; the room's first Funnel invite carries tailscale.CT_WARNING:
+ * hosting.onceNotes, as the key check, the rules and the install hint, and the certificate's wait on a first serve). The tests and the lab
  * name a front of their own instead of Tailscale (lib/env.ts webFront: SUB_HUMAN_WEB_FRONT, never a person's). unhost (`invite --stop`) turns off the room's own Tailscale path only; links already
  * made keep their token but cannot reach the room over the web until it is hosted again.
  */
@@ -77,7 +78,7 @@ function hostWeb(code: RoomCode, { funnel = false, port, by = null, now = Date.n
   const served = L.status().rooms[code];
   const { port: lport } = L.start(port ? { port } : {});
   const roomPath = `/sub-human/${code}`;
-  let base: FrontBase, mode: string, tsRec: TailscaleRec | null | undefined = null;
+  let base: FrontBase, mode: string, tsRec: TailscaleRec | null | undefined = null, warmed = false;
   if (tailscale) {
     const bin = ts().bin();
     if (!bin) throw new RoomError('INVALID', 'no tailscale CLI here (not on PATH, no /Applications/Tailscale.app); install Tailscale, or invite over ssh (/sub-human invite)');
@@ -86,7 +87,7 @@ function hostWeb(code: RoomCode, { funnel = false, port, by = null, now = Date.n
     if (served && served.tailscale && !same) L.untailscale(served);
     tsRec = same ? served.tailscale : ts().on({ bin, path: roomPath, port: lport, funnel });
     // the name's certificate: Tailscale fetches it on the first HTTPS request (~20 s cold); start that now, not waited for
-    if (!same) ts().warm(`https://${me.dnsName}${roomPath}`);
+    if (!same) { ts().warm(`https://${me.dnsName}${roomPath}`); warmed = true; }
     base = { secure: true, host: me.dnsName, port: undefined, prefix: '' };
     mode = funnel ? 'funnel' : 'tailscale';
   } else {
@@ -100,29 +101,25 @@ function hostWeb(code: RoomCode, { funnel = false, port, by = null, now = Date.n
   const hostKey = L.hostKey();
   const joinBase = `${base.secure ? 'https' : 'http'}://${base.host}${base.port ? `:${base.port}` : ''}${p}`;
   L.addRoom(code, { path: p, url: joinBase, mode, port: lport, ...(tsRec ? { tailscale: tsRec } : {}) });
-  const how = mode === 'funnel' ? 'Tailscale Funnel (public)' : mode === 'tailscale' ? 'Tailscale Serve (your tailnet only)' : `the front ${base.host}`;
-  const notes = [
-    ...(tsRec ? ['The first connection to a new ts.net name can take ~20 s while Tailscale issues its certificate; it is being fetched now, and their machine keeps trying.'] : []),
-    ...(mode === 'funnel' ? [ts().CT_WARNING] : []),
-    'Stop serving it with /sub-human invite --stop (closing the room does too).',
-  ];
+  const how = mode === 'funnel' ? 'over Tailscale Funnel (public)' : mode === 'tailscale' ? 'over Tailscale Serve (your tailnet only)' : `over the web through ${base.host}`;
   // the URL with the line's SECRET as its fragment, its tag naming the listener's key; the PIN told apart
   const r = invitesLib().mintInvite(store, { kind: 'ws', locator, by, now });
   const secret = inviteSecretLib();
   const word = secret.encode(r.secret, secret.tagOf(r.secret, 'listener', hostKey));
   const line = `/sub-human join ${joinBase}#${word}`;
   const hosting = hostingLib();
-  const parts = {
-    code, how: `over the web through ${how} to this machine's listener on 127.0.0.1:${lport}`, line, pin: r.pin, ref: r.ref,
-    extra: [
-      `Their machine checks this one's key (${hostKey.slice(0, 12)}…, named in the line) before it sends anything, so nothing in between can read along.`,
-      // a joiner before 0.5.0-beta.23 refuses the # (its URL SECRET form takes the SECRET as a word of its own)
-      'An older sub-human on their side takes the line with a space in place of the #.',
-      ...notes,
-    ],
-  };
+  // shown once per room (hosting.onceNotes); the certificate's wait only while Tailscale has just started fetching it
+  const notes = hosting.onceNotes(store, [
+    ['rules', hosting.INVITE_RULES],
+    ['key', `Their machine checks this one's key (${hostKey.slice(0, 12)}…, named in the line) before it sends anything, so nothing in between can read along.`],
+    ...(mode === 'funnel' ? [['funnel', ts().CT_WARNING] as const] : []),
+    ['install', hosting.INSTALL_HINT],
+    // Tailscale fetched the name's certificate for this room's first serve: later ones find it there
+    ...(warmed ? [['cert', 'The first connection to a new ts.net name can take ~20 s while Tailscale issues its certificate; it is being fetched now, and their machine keeps trying.'] as const] : []),
+  ]);
+  const parts = { code, how, line, pin: r.pin, ref: r.ref, expires_at: r.expires_at, notes, web: true };
   const text = hosting.inviteText(parts);
-  const pinned = hosting.invitePinned({ ...parts, expires_at: r.expires_at });
+  const pinned = hosting.invitePinned(parts);
   return { pin: r.pin, ref: r.ref, expires_at: r.expires_at, short: true, line, word, locator, hostKey, base: joinBase, mode, port: lport, text, pinned };
 }
 
