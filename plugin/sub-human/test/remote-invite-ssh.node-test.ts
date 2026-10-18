@@ -50,7 +50,7 @@ async function until<T>(fn: () => T, ms = 10_000, what = 'condition'): Promise<T
   throw new Error(`timed out waiting for ${what}`);
 }
 
-test('ssh invite: the line names the person\'s own ssh login (and the host\'s folder); nothing goes to authorized_keys; the line, the PIN, the card, the seat', async t => {
+test('ssh invite: the line names the person\'s own ssh login (and the host\'s folder); nothing goes to authorized_keys; the line, the PIN (no card), the seat', async t => {
   const { host, remote, alice, bob, code, ak } = rig(t);
   const out = host.join(alice, 'invite --ssh me@devbox');
   assert.ok(hiddenBlock(out), out.stderr);
@@ -74,11 +74,10 @@ test('ssh invite: the line names the person\'s own ssh login (and the host\'s fo
   assert.equal(fs.existsSync(remote.lib(() => links.dirOf(code))), false, 'no key of its own: nothing in a link folder');
 
   const gave = remote.join(bob, `join ${m.pin}`);
-  assert.match(must(gave.json?.reason), /checked your PIN\. A card there now asks them to let you in \(check [0-9a-f]{4}-[0-9a-f]{4}\)/);
-  const req = must(host.lib(() => admission.pending(code))[0], 'the request');
-  assert.equal(req.link, linkId, 'the request reserves the link id its login names');
-  assert.equal(req.key, null);
-  assert.match(must(host.join(alice, `admit ${req.ref}`).json?.reason), /let in: bob/);
+  assert.match(must(gave.json?.reason), new RegExp(`the host let you in to room ${code}: type /sub-human to join it as bob`), 'the right PIN lets it in');
+  assert.equal(host.lib(() => admission.pending(code)).length, 0, 'no card');
+  const rec = must(host.lib(() => admission.admissions(store.open(code), { all: true }))[0], 'the admission record');
+  assert.deepEqual([rec.link, rec.key, rec.admit, rec.admitted_by], [linkId, null, 'let-in', 'pin'], 'let in by the PIN, on the link id its login names');
   await until(() => remote.lib(() => (links.get(code) || {}).token), 10_000, 'the token');
   const seated = remote.join(bob, '');
   assert.equal(must(seated.json).decision, undefined, seated.stdout);

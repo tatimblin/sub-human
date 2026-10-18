@@ -651,7 +651,7 @@ The code that reads Claude Code is `lib/cc/`: `env.ts` (the session's env, the c
 - `lib/plans.ts`: the room's plans. A plan has a name (default `room`) and versions v1, v2, ...; each version is a blob plans/<hash>.md (the room's blob store, lib/room/store.ts blobs) and a `plan` log entry (via agent, from the editing seat, for its person).
 - `lib/proposal.ts`: sign-off requests (proposals) on a room plan's versions, and the consent card.
 - `lib/reasons.ts`: the typed reason beside an error's code. A RoomError's code (INVALID, AUTH, OFFLINE, FORK, ...: lib/remote/protocol.ts CODES) says what kind of failure it is; its reason, when it has one, says exactly which, so code that decides (the link daemon's outbox, the mirror's "outcome unknown", doctor's fix lines, the join's answer) keys on a constant, never on the message's words.
-- `lib/remote/admission.ts`: the host person's consent to a machine that typed an invite line and its PIN.
+- `lib/remote/admission.ts`: the host person's consent to a machine that typed an invite line.
 - `lib/remote/bridge.ts`: a synchronous call from a hook's thread to asynchronous work on a worker thread, with a deadline.
 - `lib/remote/client.ts`: the asynchronous side of the protocol, one connection to a room's server over a transport.
 - `lib/remote/host-links.ts`: the links a hosted room knows, on the host: the host-only kv document remote/links, keyed by link id, never streamed.

@@ -3,18 +3,19 @@
  * redeems it for a link (lib/remote/host-links.ts create), whose token (and, over the web, whose Noise key) is the
  * link's credential from then on. The host stores only sha256 digests, in the host-only kv document remote/invites
  * (never streamed), keyed by sha256(secret). Two records live there (lib/remote/types-core.ts): an invite line's
- * (protocol 3: a 128-bit secret in the line and a 4-digit PIN told apart, both checked here, online) and an admission (that invite's joiner, waiting for the host person's card: lib/remote/admission.ts). Zero
+ * (protocol 3: a 128-bit secret in the line and a 4-digit PIN told apart, both checked here, online) and an admission (that invite's joiner: lib/remote/admission.ts). Zero
  * dependencies beyond node:crypto.
  *
  * An invite line's (mintInvite; at most SHORT_LIVE_MAX open per room), redeemed in one hello (server.ts):
  *   open: no pin is AUTH PIN_NEEDED and throttled (PIN_BACKOFF_MS doubling after each wrong PIN, per invite and per
  *     source machine, the id its machine key proves) is PIN_THROTTLED, neither charged; a wrong PIN costs a try
- *     (PIN_WRONG), the last burns it (PIN_LAST). The right one uses the invite, and an admission record (under
- *     admissionSlot) waits for the host person's card: OFFLINE ADMIT_WAITING. A PIN goes only with a proven machine.
- *   used: its admission decides (admission.ts check); let in, the link is made on the machine its key proved and, over
- *     the web, bound to the Noise key it proved and to that one name. Another machine gets INVITE_USED, and the room a
- *     line naming both checks (invite-secret.ts joinCheck), once per machine (`others`, at most OTHERS_MAX).
- * A wrong PIN, the last try, a PIN that held and a second machine carry error.note, the room line.
+ *     (PIN_WRONG), the last burns it (PIN_LAST), and never makes a card. The right one uses the invite and lets the
+ *     joiner in: an admission record (under admissionSlot) let in by 'pin' and used, and the link made in that same
+ *     hello, on the machine its key proved and, over the web, bound to the Noise key it proved and to that one name (the
+ *     free NAME2 when its own sits here from another machine: admission.ts taken). A PIN goes only with a proven machine.
+ *   used: its admission decides (admission.ts check; a card's 'let-in' redeems once). Another machine gets INVITE_USED,
+ *     and the room a line naming both checks (invite-secret.ts joinCheck), once per machine (`others`, at most OTHERS_MAX).
+ * A wrong PIN, the last try and a second machine carry error.note, the room line; server.ts says the joined one.
  *
  * isPin and its kin make the Pin brand (lib/brand.ts), which lib/cli/doctor/redact.ts treats as a secret.
  */
@@ -85,9 +86,9 @@ const backoff = (n: number): number => testMs('SUB_HUMAN_PIN_BACKOFF_MS') * 2 **
  * An invite line's PIN step and its redemption, inside the invites update (see the header). Returns the records to
  * write (next), the link to make once the update is done (made), and the error to throw after (err).
  */
-function redeemShort(cur: Invites, key: string, secret: string, inv: ShortInvite, { pin, proven, peerKey, as, linkId, now }: {
-  pin: unknown; proven: MachineId | null; peerKey: string | null; as: Asked | null; linkId: string | undefined; now: number;
-}): { next?: Invites; err: RoomError; made?: undefined; adm?: undefined } | { next: Invites; err: null; made: { id: string; machine: MachineId; seats: string[]; key: string | null }; adm: AdmissionRecord } {
+function redeemShort(cur: Invites, key: string, secret: string, inv: ShortInvite, { pin, proven, peerKey, as, alt, linkId, now }: {
+  pin: unknown; proven: MachineId | null; peerKey: string | null; as: Asked | null; alt: string | null; linkId: string | undefined; now: number;
+}):{ next?: Invites; err: RoomError; made?: undefined; adm?: undefined } | { next: Invites; err: null; made: { id: string; machine: MachineId; seats: string[]; key: string | null }; adm: AdmissionRecord } {
   const ref = key.slice(0, 12);
   // burnt, or no try left (a record whose last wrong PIN did not mark it burnt): it takes no PIN, right or wrong
   if (inv.burnt_at || !(Number(inv.tries) > 0)) return { err: authError('this invite no longer works (too many wrong PINs, expired, or cancelled); ask the host for a new one', 'INVITE_BURNT') };
@@ -101,7 +102,7 @@ function redeemShort(cur: Invites, key: string, secret: string, inv: ShortInvite
       if (!adm || !adm.admission || !proven || (adm.others ?? []).includes(proven) || (adm.others ?? []).length >= OTHERS_MAX) return { err: used };
       const second = secretMod.joinCheck(proven, peerKey);
       const note = `a second machine (${second}) presented invite ${ref}, which ${adm.name} (${secretMod.joinCheck(adm.machine, adm.key)}) used already: `
-        + `if ${adm.name}'s screen does not show ${secretMod.joinCheck(adm.machine, adm.key)}, refuse the card${adm.admit === 'let-in' ? ` (let in already: /sub-human kick ${adm.name})` : ''} and invite again`;
+        + `if ${adm.name}'s screen does not show ${secretMod.joinCheck(adm.machine, adm.key)}, ${adm.admit === 'let-in' ? `kick them (/sub-human kick ${adm.name})` : 'refuse the card'} and invite again`;
       return { err: Object.assign(used, { note }), next: { ...cur, [admissionSlot(secret)]: { ...adm, others: [...(adm.others ?? []), proven] } } };
     }
     const r = admission.check(adm, { machine: proven || '', linkId, peerKey, now });
@@ -131,22 +132,24 @@ function redeemShort(cur: Invites, key: string, secret: string, inv: ShortInvite
       ? { next, err: authError(`wrong PIN (${left(tries)}). Check the digits with the host, then type it again`, 'PIN_WRONG', `a wrong PIN for invite ${ref} (${left(tries)}; it asked to join as ${as.name})`) }
       : { next, err: authError('wrong PIN, and that was the last try: this invite no longer works. Ask the host for a new one (/sub-human invite on their side)', 'PIN_LAST', `invite ${ref} burnt after its last wrong PIN`) };
   }
+  // the right PIN: let in by it, and linked in this hello (no card). A name that sits here from another machine is let
+  // in as the free one (admission.ts taken), as the card would; admit_sig stays unset (no person signed)
   const id = linkId || hostLinks.newLinkId();
+  const at = iso(now);
   const adm: AdmissionRecord = {
-    v: 2, admission: true, from: ref, kind: inv.kind, by: inv.by || null, machine: proven, name: as.name, label,
-    key: peerKey, link: id, admit: 'asked', created_at: iso(now), expires_at: iso(now + testMs('SUB_HUMAN_ADMIT_TTL_MS')),
+    v: 2, admission: true, from: ref, kind: inv.kind, by: inv.by || null, machine: proven, name: alt ?? as.name, ...(alt ? { asked_as: as.name } : {}), label,
+    key: peerKey, link: id, admit: 'let-in', created_at: at, expires_at: at, admitted_at: at, admitted_by: 'pin', admitted_until: at, used_at: at,
   };
-  const next = { ...cur, [key]: { ...inv, used_at: iso(now), link: id }, [admissionSlot(secret)]: adm };
-  const waiting = Object.assign(new RoomError('OFFLINE', `${admission.WAITING}; the link keeps trying`, 'ADMIT_WAITING'), {
-    note: `${as.name} on ${label} typed invite ${ref}'s PIN; waiting for ${inv.by || 'the host'} to let them in (the card, or /sub-human admit ${admissionSlot(secret).slice(0, 12)})`,
-  });
-  return { next, err: waiting };
+  const next = { ...cur, [key]: { ...inv, used_at: at, link: id }, [admissionSlot(secret)]: adm };
+  return { next, err: null, adm, made: { id, machine: proven, seats: [adm.name], key: inv.kind === 'ws' ? peerKey : null } };
 }
 
 function redeemInvite(store: AuthStore, secret: string, { machine, pin, proven = null, peerKey = null, as = null, newId, now = Date.now() }: {
   machine: MachineId; pin?: unknown; proven?: MachineId | null; peerKey?: string | null; as?: Asked | null; newId?: string; now?: number;
 }): Redeemed {
   const key = sha256(secret);
+  // the name a right PIN lets in when the one asked for sits here from another machine (read before the update's lock)
+  const alt = pin !== undefined && proven && as ? admission.taken(store.code, { name: as.name, machine: proven }) : null;
   // set in the update (a property, so the closure's writes are seen after it)
   const got: { link: { id: string; seats: string[]; bound: boolean; machine: MachineId; key: string | null } | null; err: RoomError | null; adm: AdmissionRecord | null } = { link: null, err: null, adm: null };
   store.kv.update(INVITES_KEY, (stored: Invites | null) => {
@@ -154,7 +157,7 @@ function redeemInvite(store: AuthStore, secret: string, { machine, pin, proven =
     const cur = stored ?? {};
     const inv = cur[key];
     if (inv && inv.short) {
-      const r = redeemShort(cur, key, secret, inv, { pin, proven, peerKey, as, linkId: newId, now });
+      const r = redeemShort(cur, key, secret, inv, { pin, proven, peerKey, as, alt, linkId: newId, now });
       got.err = r.err;
       if (r.made) { got.adm = r.adm; got.link = { ...r.made, bound: true }; } // made: with the admission it came from
       return r.next;
