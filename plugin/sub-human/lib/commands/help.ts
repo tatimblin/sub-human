@@ -15,6 +15,7 @@ export const HELP: string = [
   '      --web | --public               over the web: Tailscale Serve (your tailnet) or Tailscale Funnel (public)',
   '      --stop                         stop serving this room over the web',
   '      --cancel [ID]                  cancel an invite nobody used yet (ID: only when several are open; it lists them)',
+  '      --no-card                      no card offering to copy the line to your clipboard (the PIN is never copied)',
   '  /sub-human join HOST ROOM SECRET [PIN] [--as NAME] [--home PATH]   the line from an invite, the PIN the host told you after it',
   '  /sub-human join URL#SECRET [PIN] [--as NAME]              the same over the web',
   '  /sub-human join PIN           the PIN alone, when their machine asks for it; then the host lets you in',
