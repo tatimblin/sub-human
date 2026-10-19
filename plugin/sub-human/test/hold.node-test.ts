@@ -190,7 +190,10 @@ test('hold {room}: RESPAWN when a child row is cancelled (Esc-kill); not when th
   w.cancel(c.id);
   w.cancel(r2.id);
   w.cancel(b2.id);
-  await sleep(200);
+  // The cancels armed each child's respawn check as setTimeout(RESPAWN_MS); a timer of the same length armed after them
+  // fires after them, so the checks have run (and found no room hold) before r3 exists, however late a loaded runner
+  // fires them. A fixed sleep let a late check land after r3 and see r3 as the live room.
+  await sleep(Number(process.env.SUB_HUMAN_HOLD_RESPAWN_MS));
   const r3 = w.call({ room: w.code });       // main re-spawns the room, which spawns its children itself
   w.call({ member: sn('bob') }); w.call({ member: sn('carol') });
   assert.ok(await pending(r3.p, 300), 'no stale RESPAWN after a cascade');
