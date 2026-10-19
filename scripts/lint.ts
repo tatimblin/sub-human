@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 /**
- * lint: npm run lint. Two parts, and it fails when either does:
+ * lint: npm run lint. Three parts, and it fails when any does:
  *   1. oxlint with its type-aware rules (oxlint-tsgolint, built on tsgo) over the repo (.oxlintrc.json). On the plugin
  *      and the scripts the type-safety rules are errors (no-explicit-any, no-non-null-assertion, the no-unsafe-*
  *      family, the promise rules, consistent-type-imports, ...): one fails the run. no-unsafe-type-assertion and
  *      prefer-nullish-coalescing, and the correctness category, warn.
  *   2. the ratchet (scripts/ts-ratchet.ts): the type escapes per directory may not rise above scripts/ts-ratchet.json.
  *      Lint bans `any` and `!` but not a cast, and allows a reasoned disable; the ratchet caps all three.
+ *   3. directory-lint (scripts/directory-lint.ts): the plugin directory's review rules this plugin has tripped
+ *      (permission answers a reviewer cannot read, computed command paths, inline programs, invisible characters,
+ *      the checklist limits), over plugin/sub-human.
  *
  * tsgolint types each file by the nearest tsconfig.json whose project holds it, and takes no tsconfig of ours
  * (oxlint's --tsconfig is only for import resolution). Claude Code writes its own plugin/sub-human/tsconfig.json
@@ -43,7 +46,8 @@ function oxlint(args: string[]): number {
 function main(argv: string[]): number {
   const lint = oxlint(argv);
   const ratchet = spawnSync(process.execPath, [path.join(import.meta.dirname, 'ts-ratchet.ts')], { cwd: REPO, stdio: 'inherit' }).status ?? 1;
-  return lint || ratchet;
+  const directory = spawnSync(process.execPath, [path.join(import.meta.dirname, 'directory-lint.ts')], { cwd: REPO, stdio: 'inherit' }).status ?? 1;
+  return lint || ratchet || directory;
 }
 
 if (import.meta.main) process.exit(main(process.argv.slice(2)));
