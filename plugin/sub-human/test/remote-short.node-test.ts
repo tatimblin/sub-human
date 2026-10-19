@@ -289,6 +289,7 @@ test('an invite: a wrong PIN costs a try with a room line and is asked for again
   const wrong = String((Number(m.pin) + 1) % 10_000).padStart(4, '0');
   stopDaemon(t, remote, code);
   await typeLine(remote, bob, code, m.line, 'bob');
+  const t0 = Date.now(); // before the wrong PIN: the time measured from here is never less than what passed since
   const first = remote.join(bob, `join ${wrong}`);
   assert.ok(hiddenBlock(first));
   assert.match(reason(first), /wrong PIN \(4 tries left\)\. Check the digits with the host, then type it again: \/sub-human join PIN/);
@@ -299,10 +300,15 @@ test('an invite: a wrong PIN costs a try with a room line and is asked for again
   const rejoin = remote.join(bob, `bob ${code}`);
   assert.match(reason(rejoin), /wrong PIN \(4 tries left\)/, 'a seat never re-sends a refused PIN');
   const fast = remote.join(bob, `join ${m.pin}`);
+  const passed = Date.now() - t0;
   const w = /too many PINs tried just now: wait (\d) s, then type the PIN again: \/sub-human join PIN/.exec(reason(fast));
-  assert.ok(w, `too soon after a wrong one: ${must(fast.json).reason}`);
-  assert.ok(Number(w[1]) > 2, 'the machine that typed it wrong waits longer than the invite (4 s, not 2)');
-  await sleep(Number(w[1]) * 1000 + 200);
+  // the machine that typed it wrong waits 4 s from the wrong PIN, the invite 2 s: what is left plus what passed is over
+  // 3.5 s only for the machine's wait, however long the steps between took (a slow runner: CI's node 22 on Linux)
+  if (passed < 3500) {
+    assert.ok(w, `too soon after a wrong one: ${must(fast.json).reason}`);
+    assert.ok(Number(w[1]) * 1000 + passed > 3500, `the machine that typed it wrong waits longer than the invite (4 s, not 2): ${w[1]} s left after ${passed} ms`);
+  }
+  await sleep(w ? Number(w[1]) * 1000 + 200 : 0);
   const ok = remote.join(bob, `join ${m.pin}`);
   assert.match(reason(ok), new RegExp(`the host let you in to room ${code}`), 'the right PIN: linked, no card');
   const said = host.lib(() => store.open(code).readAll()).filter(e => e.from === 'room').map(e => e.text).join('\n');
@@ -354,7 +360,8 @@ test('an invite: five wrong PINs burn it; the right one after that is asked for 
 });
 
 test('an invite: Refuse stops the join; a request nobody answers lapses; kick NAME withdraws a waiting one', async t => {
-  const { host, remote, alice, bob, code } = room(t, { ...LINK_ENV, SUB_HUMAN_ADMIT_TTL_MS: '1500' });
+  // a request's life: long enough for the card's answer on a slow runner, short enough to watch one lapse
+  const { host, remote, alice, bob, code } = room(t, { ...LINK_ENV, SUB_HUMAN_ADMIT_TTL_MS: '5000' });
   stopDaemon(t, remote, code);
   // a knock (the line with no PIN), the card's way in; it waits ADMIT_TTL_MS (the pipe's serve runs with the joiner's
   // environment)
@@ -374,7 +381,7 @@ test('an invite: Refuse stops the join; a request nobody answers lapses; kick NA
   const carol = remote.seat('carol');
   await both(carol, 'carol');
   ref = must(host.lib(() => admission.pending(code))[0]).ref;
-  await sleep(1700);
+  await sleep(5200);
   const ev = events(await host.tail(alice, 1.2));
   assert.ok(ev.some(e => e.type === 'health' && /nobody let them in/.test(e.text)), JSON.stringify(ev));
   const late = host.hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: `admit ${ref}`, options: [] }] } }, alice);
