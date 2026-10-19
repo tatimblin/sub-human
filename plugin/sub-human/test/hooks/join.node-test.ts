@@ -621,7 +621,7 @@ test('join writes no presence (the module is its one writer, on the next typed p
   const r = w.hook('join', expand(`alice ${w.code}`), { as: 'alice', env: { SUB_HUMAN_ALLOW_TMP_ROOT: '1' } });
   assert.equal(r.code, 0, r.stderr);
   assert.equal(w.lib(() => room.open(w.code).store.kv.get('presence/alice', null)), null);
-  // a seat has rows: the launcher the plugin's subagentStatusLine runs (hooks/launcher.ts), and the serve shim
+  // a seat has rows: the launcher a person's opt-in subagentStatusLine runs (hooks/launcher.ts), and the serve shim
   assert.match(fs.readFileSync(path.join(w.home, 'bin', 'row-status'), 'utf8'), /agent-statusline/);
 });
 

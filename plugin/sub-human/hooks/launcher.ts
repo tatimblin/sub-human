@@ -1,11 +1,12 @@
-// plugin/sub-human/hooks/launcher.ts: write the launcher the plugin's settings.json `subagentStatusLine` runs, whenever a
-// seat is taken or put back (refresh(): hooks/handlers/join.ts on a join, session-restore.ts on clear, compact and
-// resume), in that process: a session with no seat has no rows, so it writes nothing and starts no node for it.
-// ${CLAUDE_PLUGIN_ROOT} is empty in settings.json (docs/internals/cc-2.1.281.md §9), so the setting names a
-// fixed path instead:
-//   "${SUB_HUMAN_HOME:-$HOME/.sub-human}/bin/row-status"
+// plugin/sub-human/hooks/launcher.ts: write <home>/bin/row-status, the launcher a person's own opt-in
+// `subagentStatusLine` runs (README "Rows"), whenever a seat is taken or put back (refresh(): hooks/handlers/join.ts
+// on a join, session-restore.ts on clear, compact and resume), in that process: a session with no seat has no rows,
+// so it writes nothing and starts no node for it. The plugin sets no subagentStatusLine itself and never writes a
+// settings file: a plugin's settings.json command gets no ${CLAUDE_PLUGIN_ROOT} (docs/internals/cc-2.1.281.md §9),
+// and a path the shell computes is refused by the plugin directory. The person adds, to their user settings,
+//   "subagentStatusLine": {"type": "command", "command": "\"${SUB_HUMAN_HOME:-$HOME/.sub-human}/bin/row-status\""}
 // (a status line command runs through the shell, so the env default expands there). The status line process
-// inherits claude's env, so SUB_HUMAN_HOME reaches the CLI unchanged.
+// inherits claude's env, so SUB_HUMAN_HOME reaches the CLI unchanged. Without that line the rows show their names.
 //
 // Which plugin root it runs. Several roots can write the one stable path (an installed plugin, a --plugin-dir
 // checkout, a demo copy), and the status line process can't say which one its session loaded. So:
@@ -45,7 +46,7 @@ const cliOf = (root: string) => path.join(root, 'scripts', 'sub-human');
 function launcherBody(roots: string | string[]): string {
   const list = Array.isArray(roots) ? roots : [roots];
   const lines = list.map(r => `[ -f ${q(cliOf(r))} ] && exec node ${q(cliOf(r))} agent-statusline "$@"`);
-  return '#!/bin/sh\n# written by sub-human hooks/launcher.ts (a seat taken or put back); the plugin\'s subagentStatusLine runs it.\n'
+  return '#!/bin/sh\n# written by sub-human hooks/launcher.ts (a seat taken or put back); a subagentStatusLine you add runs it.\n'
     + '# Roots in order: outside temp dirs first, newest first (see launcher.ts).\n'
     + `${lines.join('\n')}\nexit 0\n`;
 }
@@ -85,11 +86,11 @@ function writeLauncher(root: string = process.env.CLAUDE_PLUGIN_ROOT || path.joi
 
 export { launcherBody, isTempRoot, writeLauncher };
 
-/** The launcher and the serve shim, best effort: a failure is a line on stderr (the rows fall back to their default
- * text) and never fails the hook it runs in. */
+/** The launcher and the serve shim, best effort: a failure is a line on stderr (the rows show their names) and never
+ * fails the hook it runs in. */
 export function refresh(): void {
   try {
     if (!writeLauncher()) process.stderr.write('sub-human row-launcher: plugin root is under a temp dir; not used for the row status line (set SUB_HUMAN_ALLOW_TMP_ROOT=1 to allow)\n');
-  } catch (e) { process.stderr.write(`sub-human row-launcher error: ${e instanceof Error && e.stack || e}\n`); /* rows fall back to their default text */ }
+  } catch (e) { process.stderr.write(`sub-human row-launcher error: ${e instanceof Error && e.stack || e}\n`); /* the rows show their names */ }
   try { shim.refresh(); } catch (e) { process.stderr.write(`sub-human serve shim error: ${e instanceof Error && e.message || e}\n`); }
 }

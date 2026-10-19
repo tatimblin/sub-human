@@ -1,5 +1,5 @@
 // hooks/handlers/row-map.ts (PostToolUse Agent), row-hold.ts (SubagentStop), row-guard.ts, row-rewake.ts, and
-// hooks/launcher.ts (the row status line's launcher, written by a join or a restore).
+// hooks/launcher.ts (the launcher a person's opt-in subagentStatusLine runs, written by a join or a restore).
 // Payload shapes are the ones logged in P0 (Claude Code 2.1.281).
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -138,8 +138,12 @@ test('launcher: writes an executable launcher under SUB_HUMAN_HOME/bin that runs
   // and the SSH serve shim with its pointer at this plugin (lib/remote/shim.ts)
   assert.equal(fs.statSync(path.join(home, 'bin', 'serve')).mode & 0o777, 0o700);
   assert.ok(fs.readFileSync(path.join(home, 'bin', 'current'), 'utf8').startsWith(path.resolve(PLUGIN) + '\n'));
-  // The plugin settings point at the same place, through the shell's env default.
-  const settings = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'settings.json'), 'utf8')) as { subagentStatusLine: { type: string; command: string } };
+  // The plugin sets no subagentStatusLine (no settings.json); the README's opt-in line for the person's own settings
+  // points at the launcher, through the shell's env default.
+  assert.ok(!fs.existsSync(path.join(PLUGIN, 'settings.json')), 'the plugin ships no settings.json');
+  const readme = fs.readFileSync(path.join(PLUGIN, 'README.md'), 'utf8');
+  const line = must(/```json\n("subagentStatusLine": .*)\n```/.exec(readme), 'the README\'s opt-in line')[1];
+  const settings = JSON.parse(`{${must(line, 'the line')}}`) as { subagentStatusLine: { type: string; command: string } };
   assert.equal(settings.subagentStatusLine.type, 'command');
   const cmd = settings.subagentStatusLine.command;
   const resolved = spawnSync('/bin/sh', ['-c', `printf %s ${cmd}`], { env: env({ SUB_HUMAN_HOME: home }), encoding: 'utf8' }).stdout;

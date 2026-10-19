@@ -1,6 +1,7 @@
 /**
  * plugin/sub-human/statusline/segments.ts: the participant and room rows in the agent panel
- * (`sub-human agent-statusline`, Claude Code's subagentStatusLine). There is no main status line.
+ * (`sub-human agent-statusline`, through <home>/bin/row-status: the subagentStatusLine a person may add to their own
+ * settings, README "Rows"; the plugin sets none). There is no main status line.
  *
  *   agentStatusline(input, {env}?) -> string   one {"id","content"} JSON line per row task in input.tasks, found
  *       through the row map (lib/rows.ts readRowMap), else by description (a member name or the room code).

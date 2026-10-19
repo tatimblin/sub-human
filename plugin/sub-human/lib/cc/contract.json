@@ -835,44 +835,6 @@
    "note": "A background agent's final report reaches the main conversation as a message of its own (origin peer, \"Another Claude session sent a message:\" then <agent-message from=\"AGENT_ID\"> with the \"[Subagent hand-back]\" frame and the indented report), which starts a model turn; then a task notification (origin task-notification, <task-notification><task-id>AGENT_ID</task-id>…<status>completed</status>) starts another. A room row ends with the word left (its seat left the room) or error: mod/rows.ts takes the hand-back of a row it saw spawned and its task notification (session.receive consumed, else prompt.submit drop), so a row ending wakes no model (mod/core/rows.ts handbackFrom)."
   },
   {
-   "id": "plugin-settings-allowlist",
-   "section": 9,
-   "stability": "API",
-   "feature": "statusline",
-   "since": "2.1.281",
-   "search": [
-    "=[\"agent\",\"subagentStatusLine\"];",
-    "Loaded settings from settings.json for plugin ",
-    "Loaded settings from manifest for plugin "
-   ],
-   "note": "Plugin settings.json keeps only agent and subagentStatusLine."
-  },
-  {
-   "id": "subagent-statusline-precedence",
-   "section": 9,
-   "stability": "incidental",
-   "feature": "statusline",
-   "since": "2.1.281",
-   "search": [
-    "settings_load_started"
-   ],
-   "shape": [
-    "let ~=~.store.pluginBase,~={};if(~)~=~(~,~,~);"
-   ],
-   "note": "Any user/project/local/flag subagentStatusLine overrides the plugin's."
-  },
-  {
-   "id": "subagent-statusline-raw",
-   "section": 9,
-   "stability": "incidental",
-   "feature": "statusline",
-   "since": "2.1.281",
-   "search": [
-    "Skipping subagentStatusLine execution - workspace trust not accepted"
-   ],
-   "note": "subagentStatusLine command gets no ${CLAUDE_PLUGIN_ROOT} substitution nor PLUGIN_ROOT/DATA env."
-  },
-  {
    "id": "hook-events",
    "section": 10,
    "stability": "API",

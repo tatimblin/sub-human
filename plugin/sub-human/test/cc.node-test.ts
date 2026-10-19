@@ -340,7 +340,7 @@ test('CONTRACT entries are well formed and unique', () => {
     for (const d of e.degraded || []) assert.ok(VER.test(d.from) && must(cc.compareVersions(d.from, cc.PROBED_VERSION)) > 0 && d.note, e.id);
     assert.ok(e.note, e.id);
   }
-  for (const id of ['task-lockfile', 'task-list-auto-reset', 'subagent-statusline-precedence', 'daemon-env-filter', 'matcher-rule',
+  for (const id of ['task-lockfile', 'task-list-auto-reset', 'daemon-env-filter', 'matcher-rule',
     'hooks-json-modules', 'classic-chain-order', 'prompt-submit-ups-order', 'session-append-notice-hidden', 'ui-log-notice', 'process-run-stdin', 'plugin-test-off', 'plugin-types-state', 'prompt-origin-composer',
     'mcp-stdio-ppid', 'mcp-progress-resets-idle-timeout', 'mcp-server-shared-by-subagents', 'session-title-address'])
     assert.ok(ids.has(id), id);
