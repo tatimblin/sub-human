@@ -184,18 +184,10 @@ const PLAN_ATTACHMENT_EVENT = 'PlanAttachment';
 const ENTER_IN_PLAN_MODE: true = true;
 
 /**
- * A PermissionRequest(ExitPlanMode) answer that lets the call through with no dialog and puts the session's mode back
- * (a review's restore, an edit's closing call): allow with updatedPermissions [{type: setMode, mode, destination:
- * session}]. The plan file is emptied first (LEAVE_PLAN_TEXT), so Claude Code draws "Exited plan mode", not "User
- * approved Claude's plan"; the hooks' PostToolUse context says no one approved anything.
- * @cc case"setMode":
- * @stability API
- */
-/**
- * What the session plan file holds while leavePlanMode lets ExitPlanMode through: nothing. With no plan in its input
- * the call reads the file as it runs; an empty one draws "Exited plan mode" and tells the model only that plan mode was
- * left, where a plan there (the person's own, put back too early) would be drawn and handed over as approved. The
- * hooks empty the file at PermissionRequest and put the person's plan back at PostToolUse (or the next prompt).
+ * What a closing ExitPlanMode's plan is (the consent hook's ask sets it as the call's plan) and what the session plan
+ * file holds meanwhile: nothing. An empty plan draws "Exited plan mode" and tells the model only that plan mode was
+ * left, where a plan (the person's own, put back too early) would be drawn and handed over as approved. The hooks put
+ * the person's plan back at PostToolUse (or the next prompt).
  * @cc User has approved exiting plan mode. You can now proceed.
  * @cc " Exited plan mode"
  * @stability incidental
@@ -211,11 +203,6 @@ const LEAVE_PLAN_TEXT: '' = '';
  */
 function denyWithContext(reason: string, context: string): { hookSpecificOutput: { hookEventName: 'PreToolUse'; permissionDecision: 'deny'; permissionDecisionReason: string; additionalContext: string } } {
   return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason, additionalContext: context } };
-}
-
-function leavePlanMode(mode: string | undefined): { hookSpecificOutput: { hookEventName: 'PermissionRequest'; decision: { behavior: 'allow'; updatedInput: Record<string, never>; updatedPermissions: { type: 'setMode'; mode: string | undefined; destination: 'session' }[] } } } {
-  return { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow', updatedInput: {},
-    updatedPermissions: [{ type: 'setMode', mode, destination: 'session' }] } } };
 }
 
 // ---------- the global config ----------
@@ -283,5 +270,5 @@ function matcherMatches(m: string | null | undefined, name: string, { toolEvent 
 
 export {
   ENV, sessionId, claudePid, taskListId, configDir, mcpFailureLeft, sanitizeId, tasksDir, plansDir, taskFile, projectDir, userSettingsFiles,
-  clearContextOnPlanAccept, globalConfigFile, modulesSwitch, cachedSwitch, matcherIsExact, matcherMatches, PLAN_ATTACHMENT_EVENT, ENTER_IN_PLAN_MODE, leavePlanMode, LEAVE_PLAN_TEXT, denyWithContext,
+  clearContextOnPlanAccept, globalConfigFile, modulesSwitch, cachedSwitch, matcherIsExact, matcherMatches, PLAN_ATTACHMENT_EVENT, ENTER_IN_PLAN_MODE, LEAVE_PLAN_TEXT, denyWithContext,
 };

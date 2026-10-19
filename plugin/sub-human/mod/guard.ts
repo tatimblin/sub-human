@@ -8,9 +8,8 @@
  */
 import {
   bashVerdict, needsCwd, denyText, writeTarget, absTarget, ancestors, writeVerdict, WRITE_DENY,
-  roomToolVerdict, failClosed, HOLD_DENY, FAILED, readVerdict, READ_DENY, searchVerdict, searchTargets,
+  failClosed, HOLD_DENY, FAILED, readVerdict, READ_DENY, searchVerdict, searchTargets,
 } from './core/guard.ts';
-import { seated } from './core/seat.ts';
 import { asHello } from './core/state.ts';
 import type { EngineInterface, On } from 'claude-code';
 import type { GuardCtx, Hello } from './core/types.ts';
@@ -122,9 +121,4 @@ export function registerGuard(on: On): void {
 
   on('tool.call', { tool: 'mcp__plugin_sub-human_room__hold' }, (_$, e, next) => (e.agentId ? next(e) : { deny: HOLD_DENY }))
     .catch((_$, e, next) => (next.called || e.agentId ? next(e) : { deny: HOLD_DENY }));
-
-  on('tool.check', { tool: /^mcp__plugin_sub-human_room__/ }, async ($, e, next) => {
-    const v = roomToolVerdict(e, seated(await helloOf($)));
-    return v ?? next(e);
-  }).catch((_$, e, next) => roomToolVerdict(e, false) ?? next(e));
 }

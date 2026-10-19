@@ -25,7 +25,6 @@ export function isReview(call: Block, es: TEntry[], hashes: Set<string>): boolea
   return !/^User has approved exiting plan mode/.test(t);
 }
 
-const MODE: Record<string, RegExp> = { auto: /auto mode on/, acceptEdits: /accept edits on/, plan: /plan mode on/, default: /^(?![\s\S]*(auto mode on|accept edits on|plan mode on))/ };
 
 export const scene = 'S5';
 
@@ -52,7 +51,8 @@ export function run(x: Ctx, { det }: { det: Det; beh: Beh }): void {
   const human = [A, B].map(n => log.filter(e => e.from === n && (e.kind === 'signoff' || e.kind === 'objection') && e.via !== 'human').length);
   det('Every answer came from a review or a card (via=human); no Claude answered', human.every(n => n === 0), `non-human answers: ${A} ${human[0]}, ${B} ${human[1]}`);
   { const ch = x.chainOk(); det('Hash chain valid', ch.ok, ch.evidence); }
-  // after each review the seat is back in its own permission mode, and its session plan file is restored
+  // after each review the seat has left plan mode and its session plan file is restored (its mode is the one the
+  // person picked leaving plan mode: 0.5.1 puts none back, and Claude Code's own "Exit plan mode?" offers default)
   // (put back as it was, or removed when it did not exist before: plans-before.txt vs the S5 last step's plans.txt)
   const before = new Set((readText(x.stateFile('plans-before.txt')) || '').split('\n').filter(Boolean));
   const after = x.stText('S5', 'last', 'plans.txt');
@@ -68,8 +68,8 @@ export function run(x: Ctx, { det }: { det: Det; beh: Beh }): void {
     const foot = x.cap('S5', seat, 'last') || '';
     const files = [...new Set(enters.map(e => e.attachment?.planFilePath).filter((f): f is string => !!f))];
     const left = after == null ? null : files.filter(f => after.split('\n').includes(path.basename(f)) && !before.has(path.basename(f)));
-    const ok = mode0 && reviews.length >= 2 && exits.length >= enters.length && lastMode === mode0 && MODE[mode0] && MODE[mode0].test(foot) && left && left.length === 0;
-    det(`${seat}: after each review, back in the original permission mode and the session plan file restored`, ok,
+    const ok = reviews.length >= 1 && exits.length >= enters.length && lastMode !== 'plan' && left && left.length === 0;
+    det(`${seat}: after each review, plan mode left and the session plan file restored`, ok,
       `${reviews.length} reviews (${enters.length} plan_mode, ${exits.length} plan_mode_exit); mode ${mode0} → last ${lastMode}; footer ${(/⏵⏵ [a-z ]+ on|⏸ plan mode on/.exec(foot) || ['(no mode label)'])[0]} in ${x.capName('S5', seat, 'last')}; plan file ${files.map(f => path.basename(f)).join(', ') || 'none'}: ${left == null ? 'no plans.txt saved' : left.length ? 'still has the proposal' : before.size && files.some(f => before.has(path.basename(f))) ? 'restored' : 'removed (did not exist before)'}`);
   }
 }

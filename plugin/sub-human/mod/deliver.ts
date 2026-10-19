@@ -520,7 +520,7 @@ async function clip($: EngineInterface, line: string, copied: string): Promise<s
     WAYLAND_DISPLAY: await or($.env.get('WAYLAND_DISPLAY')), DISPLAY: await or($.env.get('DISPLAY')),
     WSL_DISTRO_NAME: await or($.env.get('WSL_DISTRO_NAME')), WSL_INTEROP: await or($.env.get('WSL_INTEROP')),
   });
-  return (await copyTo((argv, init) => $.process.run(argv, init), line, commands)) === 'copied' ? copied : NO_TOOL;
+  return (await copyTo((name, init) => $.process.run(['sh', `${$.plugin.root}/scripts/clip.sh`, name], init), line, commands)) === 'copied' ? copied : NO_TOOL;
 }
 
 export function registerDeliver(on: On): void {

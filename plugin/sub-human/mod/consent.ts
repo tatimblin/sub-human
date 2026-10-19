@@ -10,16 +10,16 @@
  *   - classic.PreToolUse AskUserQuestion|EnterPlanMode|ExitPlanMode and the room tools: node consent (a room tool other
  *     than post only while a review may be open: mod/core/prefilter.ts consentPreNeeded; post always, for a waiting note); its event carries the call alone, so the
  *     payload gets session_id, transcript_path and permission_mode from what the module last saw (mod/core/facts.ts).
- *     next(e) always runs and ours stands above it (mergePre): a module that answered without it would skip every
- *     other plugin's and the person's hooks (cc CONTRACT classic-chain-order). An allow's reason, which the command
- *     hook's allow showed the person, is a notice.
+ *     It answers only deny or ask, each written out in its return (the plugin directory checks that the person keeps
+ *     every permission decision): ask is the plan view of a review, a card, or Claude Code's own "exit plan mode?" for
+ *     a closing call; deny is a guard. With neither, the call goes on to the hooks beneath (next(e)), so the module
+ *     never allows anything, and never skips another plugin's or the person's hooks unless it denies or asks.
  *   - classic.PostToolUse AskUserQuestion|EnterPlanMode|ExitPlanMode: node consent wherever a seat is or may be.
  *   - the invite's copy card (PLAN-JOIN step 5, mod/core/copy.ts): the module's alone, no node, since the invite line is
  *     only in its memory (mod/deliver.ts copies). Pre: the Copy / Skip card for "copy invite REF" while that line is
  *     held, else a deny that the invite is gone. Post: Copy writes the line (never the PIN) to a clipboard tool on stdin.
  *   - ui.render PromptHint: observed only (next(e) always): whether the prompt holds typed text, sent with an
  *     ExitPlanMode's PreToolUse payload (sub_human_typing) so a plan-view Yes typed into by mistake is asked again.
- *   - classic.PermissionRequest ExitPlanMode: node consent while a review may be open (it closes one without a dialog).
  *   - classic.Stop: node consent (the open-review nudge) while a review may be open; its additionalContext continues
  *     the turn (cc CONTRACT stop-additional-context).
  *   - prompt.attachment plan_mode (main loop): node consent as a PlanAttachment event while a review or edit may be
@@ -29,9 +29,7 @@
  * Failure: each .catch passes the event on (a nudge, a card and a review are not gates: nothing is recorded unless the
  * person answered).
  */
-import {
-  shimArgv, shimEnv, toClassic, toPre, mergePre, toPermission, mergePermission, SHIM_TIMEOUT_MS, SHIM_MODE, asNotice,
-} from './core/shim.ts';
+import { shimArgv, shimEnv, toClassic, toPre, SHIM_TIMEOUT_MS, SHIM_MODE, asNotice } from './core/shim.ts';
 import { consentNeeded, consentPreNeeded, reviewOpenOf, seatedOrUnsure } from './core/prefilter.ts';
 import { mergeClassic } from './core/prompt.ts';
 import { prePayload, rejectedPayload } from './core/facts.ts';
@@ -112,7 +110,7 @@ async function copyPost($: EngineInterface, e: { tool_use_id?: unknown; tool_inp
       WAYLAND_DISPLAY: await or($.env.get('WAYLAND_DISPLAY')), DISPLAY: await or($.env.get('DISPLAY')),
       WSL_DISTRO_NAME: await or($.env.get('WSL_DISTRO_NAME')), WSL_INTEROP: await or($.env.get('WSL_INTEROP')),
     });
-    said = (await copyTo((argv, init) => $.process.run(argv, init), out.copy, commands)) === 'copied' ? COPIED : NO_TOOL;
+    said = (await copyTo((name, init) => $.process.run(['sh', `${$.plugin.root}/scripts/clip.sh`, name], init), out.copy, commands)) === 'copied' ? COPIED : NO_TOOL;
   }
   $.ui.log(said);
   return copySaid(said);
@@ -144,19 +142,22 @@ export function registerConsent(on: On): void {
   on('classic.PreToolUse', { tool: ['AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode', /^mcp__plugin_sub-human_room__/] }, async ($, e, next) => {
     // the invite's copy card is the module's alone (the line is only in its memory): no node consent for it
     const copy = e.tool === 'AskUserQuestion' ? isCopyCard(e) : null;
-    if (copy) return mergePre(await copyPre($, copy, e.tool_use_id), await next(e));
+    if (copy) {
+      const card = await copyPre($, copy, e.tool_use_id);
+      if ('deny' in card) return { deny: card.deny };
+      return { ask: card.ask, updatedInput: card.updatedInput };
+    }
     const sid = await $.session.id();
     if (!consentPreNeeded(await helloOf($), sid, e.tool, await flagOf($))) return next(e);
-    // EnterPlanMode: the hooks beneath first, the plugin's own command hook among them, which notes the mode the call
-    // is made in (this event carries none, and the module's last-seen mode is stale after a shift+tab: item 7 H)
-    const first = e.tool === 'EnterPlanMode' ? await next(e) : null;
     const base = prePayload(e, { sid, cwd: await $.session.cwd().catch(() => undefined), facts: facts.of(sid), agentId: facts.agentOf(e.tool_use_id) });
     // ExitPlanMode: whether the person had typed text in the prompt as the view opens (their next keys go to it: item 8)
     const payload = e.tool === 'ExitPlanMode' && draft ? { ...base, sub_human_typing: true } : base;
-    const { result, allowReason, ...said } = toPre(await runConsent($, payload, sid));
+    const { result, ...said } = toPre(await runConsent($, payload, sid));
     await apply($, said);
-    if (allowReason) $.ui.log(asNotice(allowReason));
-    return mergePre(result, first ?? await next(e));
+    const context = result.additionalContext ? { additionalContext: result.additionalContext } : {};
+    if ('deny' in result) return { deny: result.deny, ...context };
+    if ('ask' in result) return { ask: result.ask, ...(result.updatedInput ? { updatedInput: result.updatedInput } : {}), ...context };
+    return next(e);
   }).catch((_$, e, next) => next(e)); // the call goes on as without consent: nothing is recorded
 
   on('classic.PostToolUse', { tool_name: ['AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode'] }, async ($, e, next) => {
@@ -169,15 +170,6 @@ export function registerConsent(on: On): void {
     await apply($, said);
     return mergeClassic(result, await next(e));
   }).catch((_$, e, next) => next(e));
-
-  on('classic.PermissionRequest', { tool_name: 'ExitPlanMode' }, async ($, e, next) => {
-    facts.noteEvent(e);
-    const hello = await helloOf($);
-    if (!(seatedOrUnsure(hello, e.session_id) && consentNeeded(hello, e.session_id, await flagOf($)))) return next(e);
-    const { result, subHuman } = toPermission(await runConsent($, e, e.session_id));
-    await apply($, { subHuman });
-    return mergePermission(result, await next(e));
-  }).catch((_$, e, next) => next(e)); // the dialog shows as it would
 
   on('classic.Stop', async ($, e, next) => {
     facts.noteEvent(e);

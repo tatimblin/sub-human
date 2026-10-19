@@ -10,10 +10,14 @@
  * file, the clock or the room.
  *
  * The review (Review.phase), opened only by the hooks and only for a proposal the person's words pick:
- *   (none) ─enter─► entering ─exit─► shown ─exited "Yes"──────────────► (none) | restore (the Yes changed the mode)
+ *   (none) ─enter─► entering ─exit─► shown ─exited "Yes"──────────────► (none), in the mode the Yes picked | restore (they
+ *                      │               │                                      were in plan mode before: EnterPlanMode again)
  *                      │               │ exit (a closing call) / stop / roomTool / prompt
- *                      │               ▼                                 restore ─enter─► allow; ─stop (mode back)─► (none)
- *                      └─(no plan file, nothing to show)─► exiting ─permission─► (emptied, no dialog) ─exited─► (none), restored
+ *                      │               ▼                                 restore ─enter─► (none said); ─stop (mode back)─► (none)
+ *                      └─(no plan file, nothing to show)─► exiting ─exit─► ask, the plan emptied (Claude Code's own
+ *                                                          "exit plan mode?", which the person answers) ─exited─► (none), restored
+ * The hooks never answer a permission check with allow: entering plan mode asks nothing anyway, and leaving it is the
+ * person's own answer to Claude Code's question.
  * A review closed with a note (the dialog's own tool_result, read only once it is on disk: `unread` until then) opens
  * the note; nothing is recorded until the person's Send on its card.
  * The note (Confirm.stage):
@@ -40,7 +44,7 @@
  * Effects run in order. save comes before a writePlan, so the backup is on disk first; restorePlan with a null backup
  * removes the file; blankPlan empties it for the closing ExitPlanMode (which reads it as it runs: the person's own plan
  * there would show as approved), and the restore follows at exited or the next prompt; answer is lib/proposal.ts answer then decide, its clearNote dropping the note only on success.
- * say is what the hook answers (context, deny, allow, ask, permit: a PermissionRequest allow with the mode set back);
+ * say is what the hook answers (context, deny, or ask: the plan view, the card, or the closing call's "exit plan mode?");
  * its parts are lines, {answer: hash} (the answer effect's outcome line) or {ifRecorded}. Every model-facing line is
  * in NEXT and SAY below: one mechanic per phase and short outcome lines (CLAUDE.md "Unprescriptive").
  *
@@ -91,7 +95,6 @@ export type ConsentEvent =
       waiting?: { hash: string; title?: string | null; plan: string } | null;
       /** the person had typed text in the prompt as the view opened (the module's PromptHint isDraft) */
       typing?: boolean }
-  | { type: 'permission' }
   | { type: 'exited'; toolUseId: string | null; mode: string | undefined; answer?: ReviewAnswer | null; target?: Target | null;
       response: { plan: unknown; edited: boolean; isAgent: boolean; filePath: unknown }; callPlan: unknown;
       pending: Pending[]; callNames: string[]; reviewable: boolean }
@@ -116,9 +119,7 @@ export type Part = string | { answer: string } | { ifRecorded: string };
 export type Say =
   | { to: 'context'; parts: Part[] }
   | { to: 'deny'; parts: Part[] }
-  | { to: 'allow'; text: string }
-  | { to: 'ask'; text: string; show: { plan: string } | { card: string[] } | { note: true } | { admit: string } }
-  | { to: 'permit'; mode: string | undefined };
+  | { to: 'ask'; text: string; show: { plan: string } | { card: string[] } | { note: true } | { admit: string } | { leave: true } };
 
 /** notice: a line for the person (the hook's systemMessage, a sub-human notice), beside what the model is told. */
 export interface ReviewStep { state: State; effects: ConsentEffect[]; say: Say | null; notice?: string }
@@ -134,7 +135,7 @@ export const NEXT = {
   /** entering: show the proposal the hooks picked */
   show: (h: string) => `call ExitPlanMode now with plan "proposal ${h}"`,
   /** shown / exiting: close the review */
-  exit: 'call ExitPlanMode now (no plan needed; the hooks close the review)',
+  exit: 'call ExitPlanMode now (no plan needed: the hooks close the review; your person leaves plan mode)',
   /** restore: put the person's mode back (plan mode: EnterPlanMode alone) */
   restore: (n: string, mode: string | undefined): string => (mode === 'plan' ? `call EnterPlanMode to put ${n}'s plan mode back (no dialog)`
     : `call EnterPlanMode, then ExitPlanMode, to restore ${n}'s ${mode} mode (no dialogs)`),
@@ -152,8 +153,10 @@ export const NEXT = {
 const KEEP: Record<string, string | undefined> = { default: 'Yes, manually approve edits', auto: 'Yes, and use auto mode' };
 /** A mode as the person reads it in the hint. */
 const MODE_WORDS: Record<string, string | undefined> = { plan: 'plan', acceptEdits: 'accept-edits', bypassPermissions: 'bypass-permissions', dontAsk: "don't-ask" };
-/** The dialog's Agree: the option that keeps the mode, else any Yes (the mode comes back). */
-const agreeHint = (mode: string | undefined) => (KEEP[String(mode)] ? `"${KEEP[String(mode)]}" keeps your mode` : `any "Yes" (your ${MODE_WORDS[String(mode)] || 'own'} mode comes back)`);
+/** The dialog's Agree: the option that keeps the mode; in plan mode any Yes (the review puts plan mode back); else any
+ * Yes, which leaves plan mode in the mode it names (the hooks put no other mode back: no permission answer of theirs). */
+const agreeHint = (mode: string | undefined) => (KEEP[String(mode)] ? `"${KEEP[String(mode)]}" keeps your mode`
+  : mode === 'plan' ? `any "Yes" (your ${MODE_WORDS.plan || 'plan'} mode comes back)` : 'any "Yes" (it sets the mode it names)');
 const DONE = 'Return to what you were doing.';
 /** A review's closing words end with DONE, unless the person asked for another version (revise: that is next). */
 const doneUnless = (r: Review | null | undefined): Part[] => (r && r.revise ? [] : [DONE]);
@@ -192,10 +195,8 @@ export const SAY = {
   stale: (h: string): string => `proposal ${h}: nothing recorded (already answered, decided or unknown).`,
   done: `${DONE}`, // a template: an isolated declaration types it (a bare name it cannot)
   // the review
-  /** the plan view's allow: no line (the view itself is what the person sees; "opening … for NAME" was their own name
-   * in the third person) */
-  opening: '',
-  restoring: 'sub-human: restoring the mode after a room review',
+  /** a closing ExitPlanMode's ask: Claude Code's own "exit plan mode?" question, with nothing in it approved */
+  leaving: 'sub-human: the room review is over; this only leaves plan mode (no plan is approved)',
   planBack: (n: string): string => `${n}'s plan mode is back. ${DONE}`,
   /** a Yes as the view opened */
   tooSoon: (n: string, h: string): string => `Nothing recorded yet: ${n}'s Yes came as the view opened, maybe keys meant for the prompt. Ask once on the card: ${NEXT.card(h)}; only that answer counts.`,
@@ -311,7 +312,7 @@ export function answerNeeded(r: Review | null, ev: { type: ConsentEvent['type'];
     case 'stop': return ev.mode === 'plan' && r.phase !== 'restore' && r.phase !== 'entering' ? 'now' : null;
     case 'roomTool': return r.phase === 'shown' || r.phase === 'exiting' ? 'now' : null;
     case 'prompt': return (ev.mode === 'plan' && r.phase !== 'restore') || r.unread ? 'now' : null;
-    case 'enter': case 'entered': case 'planFailed': case 'permission': case 'rejected': case 'ask': case 'answered': return null;
+    case 'enter': case 'entered': case 'planFailed': case 'rejected': case 'ask': case 'answered': return null;
     default: return assertNever(ev.type, 'consent event');
   }
 }
@@ -460,6 +461,20 @@ function closeInPlan(prev: State, step: ReviewStep, ctx: ReviewCtx): ReviewStep 
 }
 
 /**
+ * A closing ExitPlanMode (the review over, or nothing to show): the call goes on as Claude Code's own "exit plan
+ * mode?" question, its plan emptied so nothing is shown or handed over as approved (lib/cc/env.ts LEAVE_PLAN_TEXT), the
+ * plan file emptied too until exited (or the next prompt) puts the person's own plan back. The person answers it: the
+ * hooks never leave plan mode for them.
+ */
+function leaving(step: ReviewStep): ReviewStep {
+  const rv = step.state.review;
+  if (step.say || !rv || rv.phase !== 'exiting') return step;
+  const review: Review = rv.file ? { ...rv, restored: false } : rv;
+  const effects: ConsentEffect[] = rv.file ? [...step.effects, { do: 'blankPlan', file: rv.file }] : step.effects;
+  return { ...step, state: { ...step.state, review }, effects, say: { to: 'ask', text: SAY.leaving, show: { leave: true } } };
+}
+
+/**
  * A review in the person's own plan mode closed where it stands (live validation: after an Esc the model would not
  * call the ExitPlanMode the person had just refused): the dialog's answer read now, the plan file put back, the review
  * cleared; plan mode stays on, so no ExitPlanMode is needed. A note opened here waits for its card.
@@ -482,7 +497,7 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
   const r = state.review;
   switch (ev.type) {
     case 'enter': {
-      if (r && r.phase === 'restore') return { state, effects: [], say: { to: 'allow', text: SAY.restoring } };
+      if (r && r.phase === 'restore') return { state, effects: [], say: null };
       const [oldest] = ev.pending;
       if (!oldest || !ev.reviewable) return none(state);
       // a review left behind: its backup goes back before a new one is taken
@@ -495,8 +510,7 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
       const now = r && r.file && r.file === ev.plan.file && !r.restored ? { file: r.file, text: typeof r.backup === 'string' ? r.backup : null } : ev.plan;
       const [shown, early] = showEarly(review, now);
       review = shown;
-      return { state: { review, note }, effects: [...effects, ...early],
-        say: { to: 'allow', text: SAY.opening } };
+      return { state: { review, note }, effects: [...effects, ...early], say: null };
     }
 
     case 'entered': {
@@ -518,16 +532,7 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
       return closeInPlan(state, { state: { ...state, review: { ...back, phase: 'exiting', card: r.hash } }, effects, say: null }, ctx);
     }
 
-    case 'exit': return closeInPlan(state, exitStep(state, ev, ctx), ctx);
-
-    case 'permission': {
-      if (!r || r.phase !== 'exiting') return none(state);
-      // the plan file emptied, not restored: the closing call reads it as it runs, and the person's own plan there
-      // would show as approved (lib/cc/env.ts LEAVE_PLAN_TEXT); exited (or the next prompt) restores it
-      const review: Review = r.file ? { ...r, restored: false } : r;
-      const effects: ConsentEffect[] = r.file ? [{ do: 'blankPlan', file: r.file }] : [];
-      return { state: { ...state, review }, effects, say: { to: 'permit', mode: r.mode } };
-    }
+    case 'exit': return leaving(closeInPlan(state, exitStep(state, ev, ctx), ctx));
 
     case 'exited': {
       const fallback = (base: State, effects: ConsentEffect[], hashes: string[]): ReviewStep => {
@@ -577,7 +582,9 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
       const [back, e] = restore(cur);
       effects.push(...e);
       const withNotice = notice ? { notice } : {};
-      if (ev.mode && ev.mode !== cur.mode && !cur.keepMode) {
+      // a Yes leaves plan mode in the mode the person picked there (Claude Code's own options); only a person who was in
+      // plan mode before the review is put back, with EnterPlanMode alone (it asks nothing)
+      if (ev.mode && ev.mode !== cur.mode && !cur.keepMode && cur.mode === 'plan') {
         const { said: _s, ...rest } = back;
         return { state: { ...state, recheck, review: { ...rest, phase: 'restore' } }, effects, say: ctxSay(...line, SAY.modeChanged(n, cur.mode), ...fileLine(effects)), ...withNotice };
       }

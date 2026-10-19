@@ -20,13 +20,13 @@ type ToolInput = Record<string, unknown>;
 const real = (p: string) => { try { return fs.realpathSync(p); } catch { return undefined; } };
 /** abs as placed under its nearest existing ancestor's real path (undefined: none exists). */
 const placedOf = (abs: string) => { for (const a of g.ancestors(abs)) { const r = real(a); if (r) return path.join(r, abs.slice(a.length)); } return undefined; };
-/** What mod/guard.ts decides for one call: 'allow' | 'deny' | undefined (no opinion). */
+/** What mod/guard.ts decides for one call: 'deny' | undefined (no opinion). */
 function decide(tool: string, input: ToolInput,
-  { w, seated = false, hello = true, agentId }: { w: Pick<World, 'home' | 'userHome' | 'cwd'>; seated?: boolean; hello?: boolean; agentId?: string }) {
+  { w, hello = true, agentId }: { w: Pick<World, 'home' | 'userHome' | 'cwd'>; seated?: boolean; hello?: boolean; agentId?: string }) {
   const realHome = real(w.home);
   const ctx: GuardCtx = hello ? { home: w.home, ...(realHome ? { realHome } : {}), userHome: w.userHome, pluginRoot: PLUGIN } : {};
   const at = { cwd: w.cwd, ...(hello ? { userHome: w.userHome } : {}) }; // what absTarget reads of ctx
-  if (tool.startsWith(g.MCP_PREFIX)) { const v = g.roomToolVerdict({ tool, agentId }, seated); return v ? v.decision : undefined; }
+  if (tool.startsWith(g.MCP_PREFIX)) return tool === g.HOLD && !agentId ? 'deny' : undefined; // tool.call's hold deny; the rest: Claude Code's own prompt
   if (tool === 'Bash') return g.bashVerdict(input.command, { ...ctx, cwd: w.cwd, realCwd: real(w.cwd) }) ? 'deny' : undefined;
   if (tool === 'Read') {
     const p = g.writeTarget(input);
@@ -59,12 +59,12 @@ test('guard table', () => {
   const realH = fs.realpathSync(H);
   const T: [string, ToolInput, boolean, string | undefined][] = [
     // [tool, input, seated, expected decision]
-    ['mcp__plugin_sub-human_room__post', { text: 'hi' }, true, 'allow'],
-    ['mcp__plugin_sub-human_room__read', { ids: [1] }, true, 'allow'],
-    ['mcp__plugin_sub-human_room__plan', { op: 'read' }, true, 'allow'],
-    ['mcp__plugin_sub-human_room__post', { text: 'hi' }, false, undefined], // not joined: no opinion
+    ['mcp__plugin_sub-human_room__post', { text: 'hi' }, true, undefined],
+    ['mcp__plugin_sub-human_room__read', { ids: [1] }, true, undefined],
+    ['mcp__plugin_sub-human_room__plan', { op: 'read' }, true, undefined],
+    ['mcp__plugin_sub-human_room__post', { text: 'hi' }, false, undefined], // no opinion, joined or not: Claude Code asks
     ['mcp__plugin_sub-human_room__hold', { member: sn('bob') }, true, 'deny'], // main thread: never
-    ['mcp__plugin_sub-human_room__task', { op: 'add', subject: 'x' }, true, 'allow'],
+    ['mcp__plugin_sub-human_room__task', { op: 'add', subject: 'x' }, true, undefined],
     ['Write', { file_path: path.join(H, 'rooms', w.code, 'log.jsonl'), content: 'x' }, true, 'deny'],
     ['Write', { file_path: path.join(realH, 'rooms', 'new.json'), content: 'x' }, false, 'deny'],
     ['Edit', { file_path: path.join(H, 'rooms', w.code, 'members.json'), old_string: 'a', new_string: 'b' }, true, 'deny'],
@@ -189,9 +189,9 @@ test('guard: Glob is denied in a secret directory, by its path or its pattern\'s
   assert.equal(glob('**/*', w.home), undefined, 'names only: a Glob from the home lists, it reads nothing');
 });
 
-test('guard: hold is allowed for row subagents only', () => {
+test('guard: hold is denied outside a row subagent, and left to Claude Code inside one', () => {
   const w = new World({ claude: 'sleep', alice: 'act' });
-  assert.equal(decide('mcp__plugin_sub-human_room__hold', { room: w.code }, { w, seated: true, agentId: 'a1' }), 'allow');
+  assert.equal(decide('mcp__plugin_sub-human_room__hold', { room: w.code }, { w, seated: true, agentId: 'a1' }), undefined);
   assert.equal(decide('mcp__plugin_sub-human_room__hold', { room: w.code }, { w, seated: false }), 'deny');
 });
 

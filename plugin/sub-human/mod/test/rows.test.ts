@@ -34,7 +34,7 @@ const base = { session_id: SID, cwd: '/w', transcript_path: '/t.jsonl', permissi
 const posted = ($: Engine, input: Record<string, unknown>, extra: Partial<ClassicFields<'PostToolUse'>> = {}) => $.classic.PostToolUse({ ...base, tool_name: 'Agent', tool_input: input, tool_response: { agentId: 'a7' }, tool_use_id: 'tu-1', ...extra })
 const stopped = ($: Engine, type: string) => $.classic.SubagentStop({ ...base, agent_id: 'a7', agent_transcript_path: '/t/a7.jsonl', agent_type: type, stop_hook_active: false, last_assistant_message: '' })
 
-test('a row agent\'s spawn: row-guard with the call as the classic payload (agent_id from its tool.call), its deny above the hooks beneath, which still ran', async ($, on) => {
+test('a row agent\'s spawn: row-guard with the call as the classic payload (agent_id from its tool.call), its deny written out: the call goes no further', async ($, on) => {
   const deny = { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'sub-human: The room row otter-4821 is already running' } }
   const seen = world(on, { answer: { 'row-guard.ts': deny } })
   await start($)
@@ -46,7 +46,7 @@ test('a row agent\'s spawn: row-guard with the call as the classic payload (agen
     agentId: 'parent-1',
   })
   expect(seen.runs.map(x => x.script)).toEqual(['row-guard.ts'])
-  expect(seen.beneathPre).toEqual(['Agent'])
+  expect(seen.beneathPre).toEqual([]) // a deny is the module's return: the hooks beneath do not run for that call
   // a classic.PreToolUse deny reaches the model as the call's error result
   expect([r.isError, r.text]).toEqual([true, 'sub-human: The room row otter-4821 is already running'])
   const { stdin } = must(seen.runs[0], 'the row-guard run')

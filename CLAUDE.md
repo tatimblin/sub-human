@@ -51,6 +51,7 @@ node scripts/checks.ts && node scripts/walkthrough.ts
 - **The room's Claude takes no typed input.** The room session (member `claude`) refuses a typed prompt with a hint, refuses Claudes' messages and reads nothing but joins (its rows turn).
 - **Keep the agent-panel rows.** A member's panel shows the room row with the members inside it. The room session's panel lists every human.
 - **Consent is native.** A proposal opens in the plan view, with the question card as fallback. Only the human's answer there (`via=human`) records agreement.
+- **The person keeps every permission decision.** No hook answers a permission check with allow (Anthropic's plugin directory checks this): a module hook returns `next(e)`, or an object written out in its return with a fixed `deny` or `ask`. No `tool.check` or `PermissionRequest` hook.
 - **Unprescriptive.** Planning is optional, there is no required workflow, and the injected text covers mechanics only and stays small.
 - **Internals are allowed if listed.** Each undocumented Claude Code behaviour goes in `lib/cc/contract.json` with the binary search string that proves it (and a `@cc` tag on the `lib/cc/*.ts` export that relies on it), and `npm run probe` verifies them. Notes go in `docs/internals/`.
 - **Local git only.** No pushes and no remote PRs unless asked.

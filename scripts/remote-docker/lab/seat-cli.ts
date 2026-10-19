@@ -173,10 +173,10 @@ const hidden = (j: HookJson | null): boolean => !!(j && j.hookSpecificOutput && 
 
 function walk(dir: string): { rel: string, mode: string, dir: boolean, size: number }[] {
   if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir, { recursive: true, encoding: 'utf8' }).sort().map(rel => {
-    const p = path.join(dir, rel);
-    const st = fs.lstatSync(p);
-    return { rel, mode: (st.mode & 0o777).toString(8), dir: st.isDirectory(), size: st.size };
+  // a file gone between the listing and its lstat (a lock taken and dropped meanwhile: session.json.lock) is skipped
+  return fs.readdirSync(dir, { recursive: true, encoding: 'utf8' }).sort().flatMap(rel => {
+    const st = fs.lstatSync(path.join(dir, rel), { throwIfNoEntry: false });
+    return st ? [{ rel, mode: (st.mode & 0o777).toString(8), dir: st.isDirectory(), size: st.size }] : [];
   });
 }
 

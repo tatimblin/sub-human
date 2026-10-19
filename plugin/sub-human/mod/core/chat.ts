@@ -10,7 +10,7 @@ import { CHAT_NEST as NEST, CHAT_LINES_MAX, PEER_LINES_MAX, CHAT_BLANK, FOR_CLAU
 export { NEST, CHAT_LINES_MAX, FOR_CLAUDE };
 
 /** Control and bidi characters never reach the drawing (as lib/room/render.ts safeText). */
-const UNSAFE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/g;
+const UNSAFE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 const clean = (s: unknown) => String(s).replace(/\r\n?/g, '\n').replace(UNSAFE, '');
 
 /**

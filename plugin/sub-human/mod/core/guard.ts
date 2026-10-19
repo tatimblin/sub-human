@@ -18,7 +18,6 @@ export const HOLD: string = MCP_PREFIX + 'hold';
 export const WRITE_TOOLS: readonly string[] = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'];
 const MSG = 'ROOM-GUARD: the room store is reached only through sub-human. Post with the room MCP tools; read with the room MCP read tool.';
 export const HOLD_DENY = 'sub-human: hold is for row agents only (sub-human:participant / sub-human:room); never call it yourself. Spawn the row agents listed under ROWS instead.';
-export const ROOM_ALLOW = 'sub-human: room tool for a joined session.';
 export const FAILED = 'ROOM-GUARD: guard failed; denied to be safe.';
 
 // ---------- Bash ----------
@@ -586,15 +585,8 @@ export function searchTargets(tool: string, input: { path?: unknown; pattern?: u
 export const READ_DENY = (p: string | null, tool = 'Read') => `ROOM-GUARD: the seat signing keys, the links' secrets and the invite lines and PINs typed here are the people's own; a model never reads or searches them. (Denied: ${tool} on ${p || 'the working directory'}.)`;
 
 // ---------- the room MCP tools ----------
-/** hold only from a row subagent (agentId), never a main thread; the rest allowed for a seated session. */
-export function roomToolVerdict(
-  { tool, agentId }: { tool?: unknown; agentId?: unknown } = {}, seated = false,
-): { decision: 'deny' | 'allow'; reason: string } | null {
-  const t = String(tool || '');
-  if (!t.startsWith(MCP_PREFIX)) return null;
-  if (t === HOLD && !agentId) return { decision: 'deny', reason: HOLD_DENY };
-  return seated ? { decision: 'allow', reason: ROOM_ALLOW } : null;
-}
+// hold runs only in a row subagent (agentId), never a main thread: mod/guard.ts's tool.call denies it (HOLD_DENY).
+// The rest get Claude Code's own permission prompt like any MCP tool: the plugin answers no permission check for them.
 
 /** A guard that failed denies only a call that plausibly touches the store: denying everything would break sessions. */
 export function failClosed(e: unknown): boolean {

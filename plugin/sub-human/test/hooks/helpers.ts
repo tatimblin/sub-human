@@ -17,10 +17,12 @@ import type { TestContext } from 'node:test';
 import * as common from '../helpers.ts';
 import * as identity from '../../lib/identity.ts';
 import * as room from '../../lib/room.ts';
+import * as proposal from '../../lib/proposal.ts';
 import type { AppendOpts, Entry, EntryInput, Members } from '../../lib/room/types.ts';
 import type { HookOutput, HookSpecificOutput } from '../../hooks/types.ts';
 import type { RoomCode } from '../../lib/brand.ts';
 import { sn } from '../support/brands.ts';
+import { must } from '../support/must.ts';
 
 const PLUGIN = path.join(import.meta.dirname, '..', '..');
 const HOOKS = path.join(PLUGIN, 'hooks');
@@ -108,6 +110,18 @@ class World {
 
   /** The hooks module's hello lease for session id sid (hooks/handlers/mod-hello.ts writes it on session.start; join needs it). */
   modLease(sid: unknown): void { if (sid) this.lib(() => identity.writeModLease(sid)); }
+
+  /**
+   * EnterPlanMode as Claude Code runs it: its PreToolUse (the hooks answer none: it asks nothing), then its PostToolUse,
+   * where consent opens a review (or an edit takes its mode). The Post carries the mode the call was made in, as the
+   * hooks.json note gives it. Returns the Post's run, and whether a review is open for `as` after it.
+   */
+  enterPlan(input: HookInput, opts: { as?: string; env?: Record<string, string | undefined>; session?: boolean } = {}): HookRun & { pre: HookRun; opened: boolean } {
+    const pre = this.hook('consent', input, opts);
+    const post = this.hook('consent', { ...input, hook_event_name: 'PostToolUse', tool_response: {} }, opts);
+    const r = opts.as ? this.lib(() => proposal.readReview({ code: this.code, name: sn(must(opts.as)) })) : null;
+    return { ...post, pre, opened: !!r && r.phase === 'entering' };
+  }
 
   /**
    * Run hook `name` (hooks/run.ts name: hooks/handlers/name.ts) with stdin `input`, as identity `as` (sets CLAUDE_PID and session_id). For join, the session's

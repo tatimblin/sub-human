@@ -17,7 +17,7 @@
  *     the fork's refusal, stage 8f item 1).
  * Failure: each .catch passes the event on as it is: the rows never disturb the session.
  */
-import { shimArgv, shimEnv, toClassic, toPre, mergePre, SHIM_TIMEOUT_MS } from './core/shim.ts';
+import { shimArgv, shimEnv, toClassic, toPre, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { rowsNeeded } from './core/prefilter.ts';
 import { mergeClassic } from './core/prompt.ts';
 import { isRow, spawnedId, handbackFrom, finishedFrom, rowReportFrom } from './core/rows.ts';
@@ -64,7 +64,10 @@ export function registerRows(on: On): void {
     const root = $.plugin.root;
     const payload = prePayload(e, { sid, cwd: await $.session.cwd().catch(() => undefined), facts: facts.of(sid), agentId: facts.agentOf(e.tool_use_id) });
     const run = await $.process.run(shimArgv(root, 'row-guard'), { stdin: JSON.stringify(payload), env: shimEnv({ session_id: sid }, root), timeoutMs: SHIM_TIMEOUT_MS });
-    return mergePre(toPre(run).result, await next(e));
+    // a deny (a duplicate row, a stray participant row) written out, else the hooks beneath: it never approves a call
+    const { result } = toPre(run);
+    if ('deny' in result) return { deny: result.deny, ...(result.additionalContext ? { additionalContext: result.additionalContext } : {}) };
+    return next(e);
   }).catch((_$, e, next) => next(e)); // never disturb the session: the spawn goes on (hold.ts stops a duplicate itself)
 
   on('classic.PostToolUse', { tool_name: ['Agent', 'Task'] }, async ($, e, next) => {

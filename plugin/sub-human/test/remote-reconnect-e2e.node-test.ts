@@ -168,8 +168,9 @@ test('remote e2e: /sub-human\'s start() tells a running daemon that is offline t
   await h.until(() => r.remote.lib(() => linkSocket.status(r.code)).state === 'offline', 5000, 20);
   const asked = Date.now();
   assert.equal(r.remote.lib(() => linkSocket.start(r.code)), true);
-  await h.until(() => r.st().state === 'online', 8000, 50);
+  // the redial in the log and the link online again, together: a state read can still be the one from before the kill
+  // and the log line can land after the state (CI's Linux runners)
+  await h.until(() => /SIGUSR2: redialing now/.test(r.daemonLog()) && r.st().state === 'online', 8000, 50);
   assert.ok(Date.now() - asked < 6000, 'well inside the 8 s retry');
-  assert.match(r.daemonLog(), /SIGUSR2: redialing now/);
   assert.equal(r.remote.lib(() => linkSocket.status(r.code)).pid, r.daemon, 'the same daemon');
 });

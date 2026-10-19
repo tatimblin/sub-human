@@ -144,6 +144,9 @@ function spawnPlan({ code, cwd, home = identity.home(), pluginDir = pluginDirFor
       CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
     },
     crossSessionInbound: cc.ROOM_SESSION_INBOUND,
+    // its row agents' one tool: a background session has nobody to answer a permission prompt, and the plugin's
+    // hooks answer none (no allow anywhere); this session's own launch settings, never a settings file
+    permissions: { allow: ['mcp__plugin_sub-human_room__hold'] },
   };
   const args = ['--bg', '-n', `claude.${code}`];
   if (pluginDir) args.push('--plugin-dir', pluginDir);

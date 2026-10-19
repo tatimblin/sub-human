@@ -63,7 +63,7 @@ import type { CardResponse } from '../lib/consent/card.ts';
 interface ConsentToolInput { plan?: unknown; questions?: CardQuestion[]; planFilePath?: unknown }
 /** AskUserQuestion's or ExitPlanMode's response, as far as consent reads it. */
 interface ToolResponse extends CardResponse { plan?: unknown; planWasEdited?: unknown; isAgent?: unknown; filePath?: unknown }
-/** Every event consent handles (PreToolUse, PostToolUse, PermissionRequest, Stop, UserPromptSubmit), with the
+/** Every event consent handles (PreToolUse, PostToolUse, Stop, UserPromptSubmit), with the
  * transcript's lines once read (lines()). */
 type ConsentIn = Omit<AnyHookIn, 'tool_input' | 'permission_mode'> & { tool_input?: ConsentToolInput; _lines?: string[] | null; permission_mode?: string | undefined };
 /** An invite's join request waiting on the host (lib/remote/admission.ts pending). */
@@ -216,7 +216,7 @@ type Out = { say: Say | null; show?: { admit?: JoinRequest | undefined; card?: P
 
 
 /** The seat's state, reduce one event (made from it), run the effects, store the state, write the answer. */
-function step(input: ConsentIn, me: Identity, make: (st: State) => ConsentEvent, show: Out['show'] = {}) {
+function step(input: ConsentIn, me: Identity, make: (st: State) => ConsentEvent, show: Out['show'] = {}, quiet = false) {
   const start: State = { review: proposal.readReview(me), note: proposal.readConfirm(me), recheck: proposal.readRecheck(me), steer: proposal.readSteer(me) };
   const ctx = { name: me.name, now: Date.now(), guardMs: env.testMs('SUB_HUMAN_YES_GUARD_MS') };
   const first = review.reduce(start, make(start), ctx);
@@ -252,7 +252,7 @@ function step(input: ConsentIn, me: Identity, make: (st: State) => ConsentEvent,
   if (JSON.stringify(state.note) !== disk.note) { if (state.note) proposal.writeConfirm(me, state.note); else proposal.clearConfirm(me); }
   if (JSON.stringify(state.recheck ?? null) !== disk.recheck) { if (state.recheck) proposal.writeRecheck(me, state.recheck); else proposal.clearRecheck(me); }
   if (JSON.stringify(state.steer ?? null) !== disk.steer) { if (state.steer) proposal.writeSteer(me, state.steer); else proposal.clearSteer(me); }
-  if (say) {
+  if (say && !quiet) {
     write(input, me, say, state, answers, show);
     // the decisions the outcome line names: the room context does not tell the model again
     const told = [...answers.values()].flatMap(({ res }) => [res.decision, res.sent && 'asked' in res.sent ? res.sent.decision : null])
@@ -281,10 +281,9 @@ function write(input: ConsentIn, me: Identity, say: Say, state: State, answers: 
   switch (say.to) {
     case 'context': return c.context(String(input.hook_event_name), text(say.parts));
     case 'deny': return c.deny(text(say.parts));
-    case 'allow': return c.pre('allow', say.text);
-    case 'permit': return c.out(ccEnv.leavePlanMode(say.mode));
     case 'ask': {
       const s = say.show;
+      if ('leave' in s) return c.pre('ask', say.text, { updatedInput: { plan: ccEnv.LEAVE_PLAN_TEXT } });
       if ('plan' in s) return c.pre('ask', say.text, { updatedInput: { plan: proposal.read(me.code, s.plan) } });
       if ('note' in s) return state.note && c.pre('ask', say.text, { updatedInput: proposal.confirmCard(state.note) });
       if ('admit' in s && show.admit) return c.pre('ask', `room ${me.code}: ${show.admit.name} asks to join`, { updatedInput: admission.card(show.admit, me.code) });
@@ -381,7 +380,10 @@ function modeAtEnter(input: ConsentIn): string | undefined {
 }
 const MODE_FRESH_MS = 10_000;
 
-function preEnter(input: ConsentIn, me: Identity) {
+/** The review EnterPlanMode opens, picked as it is entered (at its PostToolUse: the hooks answer no PreToolUse of it,
+ * so it asks nothing; the mode it was made in is the hooks.json note's, written before it ran). Says nothing itself:
+ * entered, right after, tells the model what to show. */
+function enterReview(input: ConsentIn, me: Identity) {
   input = { ...input, permission_mode: modeAtEnter(input) };
   step(input, me, st => {
     const base = { mode: input.permission_mode, reviewable: reviewableAtEnter(input), plan: { file: null, text: null } };
@@ -393,7 +395,7 @@ function preEnter(input: ConsentIn, me: Identity) {
     // the request the person's words name, else their own new version not sent out yet, else the oldest (picked)
     const hit = (said ? proposal.namedIn(ps, said.text, me.code) : null) ?? proposal.picked(ps);
     return { type: 'enter', ...base, pending: pendingOf(me, ps), said, named: hit ? hit.hash : null, plan: planOf(input) };
-  });
+  }, {}, true);
 }
 
 /**
@@ -418,7 +420,9 @@ const stubHash = (t: unknown): string | null => {
   return m?.[1] ?? null; // the group always matches when m does
 };
 
-function preExit(input: ConsentIn, me: Identity) {
+/** handoff: the closing call of a stored edit (showCheck): its plan and the model's own input are the edit's, never
+ * read (no wait for the transcript, no "plan you passed was not shown"). */
+function preExit(input: ConsentIn, me: Identity, handoff = false) {
   step(input, me, st => {
     const r = st.review;
     const ev = { type: 'exit' as const, toolUseId: input.tool_use_id || null, ...answerFacts(input, me, r, 'exit'),
@@ -445,7 +449,7 @@ function preExit(input: ConsentIn, me: Identity) {
     const p = proposal.pendingFor(me).filter(x => proposal.viewable(x, me.code)).find(x => x.hash === r.hash);
     const ti: ConsentToolInput = input.tool_input ?? {};
     // A blank plan: the call's transcript line may not be written yet (2.1.292 runs this hook first), so wait for it.
-    const own = blank(ti.plan) && input.tool_use_id ? polled(input, () => modelInput(input)) : modelInput(input);
+    const own = handoff ? null : blank(ti.plan) && input.tool_use_id ? polled(input, () => modelInput(input)) : modelInput(input);
     return { ...ev, shown: p ? { hash: p.hash, from: p.from || null, title: titleOf(me, p), ...(p.draft ? { draft: true } : {}) } : null, text: p ? proposal.read(me.code, p.hash) : null,
       plan: planOf(input), callPlan: ti.plan, ownPlan: own && own.plan };
   });
@@ -467,8 +471,23 @@ function postExit(input: ConsentIn, me: Identity) {
   });
 }
 
-function permExit(input: ConsentIn, me: Identity) { step(input, me, () => ({ type: 'permission' })); }
-function postEnter(input: ConsentIn, me: Identity) { step(input, me, st => ({ type: 'entered', plan: st.review && st.review.phase === 'entering' ? planOf(input) : { file: null, text: null } })); }
+function postEnter(input: ConsentIn, me: Identity) {
+  enterReview(input, me);
+  step(input, me, st => ({ type: 'entered', plan: st.review && st.review.phase === 'entering' ? planOf(input) : { file: null, text: null } }));
+}
+
+/**
+ * The closing call of a stored edit opens the author's check here (lib/consent/edit.ts say check): the edit is over
+ * (its plan file already put back), the check's review opens as EnterPlanMode would open it, in the mode the person was
+ * in before the edit, and this ExitPlanMode shows it (preExit: the plan view's ask with the version as the plan). The
+ * call's own plan is the edit's file, so it is not passed on: no "plan you passed was not shown".
+ */
+function showCheck(input: ConsentIn, me: Identity, hash: string, mode: string | undefined) {
+  const ps = proposal.pendingFor(me).filter(p => proposal.viewable(p, me.code));
+  step({ ...input, permission_mode: mode }, me, () => ({ type: 'enter', mode, reviewable: true, plan: planOf(input), pending: pendingOf(me, ps), said: null, named: hash }), {}, true);
+  const ti: ConsentToolInput = input.tool_input ?? {};
+  preExit({ ...input, tool_input: ti.planFilePath !== undefined ? { planFilePath: ti.planFilePath } : {} }, me, true);
+}
 function preRoomTool(input: ConsentIn, me: Identity) {
   step(input, me, st => ({ type: 'roomTool', mode: input.permission_mode, ...answerFacts(input, me, st.review, 'roomTool'),
     post: POST_TOOL.test(String(input.tool_name || '')), noteLive: !!st.note && isPending(me, st.note.hash) }));
@@ -542,7 +561,7 @@ function editStep(input: ConsentIn, me: Identity, ev: edit.EditEvent): boolean {
     else if (e.do === 'keepDraft') {
       try { fs.mkdirSync(path.dirname(e.file), { recursive: true }); writeFileAtomic(e.file, e.text); } catch (err) { c.logError(err, 'consent: plan draft'); }
     } else if (e.do === 'put') {
-      cur = edit.reduce(state, { type: 'put', outcome: putOutcome(me, e) });
+      cur = edit.reduce(state, { type: 'put', outcome: putOutcome(me, e), ...(ev.type === 'exit' && ev.showCheck ? { showCheck: true } : {}) });
       state = cur.edit;
       say = cur.say;
       queue.push(...cur.effects);
@@ -555,8 +574,8 @@ function editStep(input: ConsentIn, me: Identity, ev: edit.EditEvent): boolean {
   switch (say.to) {
     case 'context': c.context(event, say.text); break;
     case 'deny': if (say.context) c.out(ccEnv.denyWithContext(say.text, say.context)); else c.deny(say.text); break;
-    case 'allow': c.pre('allow', say.text); break;
-    case 'permit': c.out(ccEnv.leavePlanMode(say.mode)); break;
+    case 'leave': c.pre('ask', say.text, { updatedInput: { plan: ccEnv.LEAVE_PLAN_TEXT } }); break;
+    case 'check': showCheck(input, me, say.hash, say.mode); break;
     case 'attach': if (event === ccEnv.PLAN_ATTACHMENT_EVENT) attachOut = say.text; else c.context(event, say.text); break;
   }
   return true;
@@ -589,13 +608,18 @@ function routeEdit(input: ConsentIn, me: Identity): boolean {
   const ev = input.hook_event_name, tool = input.tool_name;
   if (!openEdit(me, input.session_id)) return false;
   if (ev === ccEnv.PLAN_ATTACHMENT_EVENT) return editStep(input, me, { type: 'attach', plan: attachedPlan(input) }), true;
-  if (tool === 'EnterPlanMode' && ev === 'PreToolUse') return editStep(input, me, { type: 'enter', mode: modeAtEnter(input) }), true;
-  if (tool === 'EnterPlanMode' && ev === 'PostToolUse') return editStep(input, me, { type: 'attach', plan: planOf(input) }), true;
+  if (tool === 'EnterPlanMode' && ev === 'PreToolUse') return true; // asks nothing: the mode is noted, the edit enters at Post
+  if (tool === 'EnterPlanMode' && ev === 'PostToolUse') {
+    editStep(input, me, { type: 'enter', mode: modeAtEnter(input) });
+    return editStep(input, me, { type: 'attach', plan: planOf(input) }), true;
+  }
   if (tool === 'ExitPlanMode' && ev === 'PreToolUse') {
     const ti: ConsentToolInput = input.tool_input ?? {};
-    return editStep(input, me, { type: 'exit', plan: planOf(input), text: typeof ti.plan === 'string' ? ti.plan : null, mode: input.permission_mode }), true;
+    const e = proposal.readEdit(me);
+    // the author's check opens in this call when the plan view can show it in the person's own mode, sign-off on
+    const shown = !!e && reviewable({ ...input, permission_mode: e.mode }) && !verdict.off('sign-off', { sid: input.session_id });
+    return editStep(input, me, { type: 'exit', plan: planOf(input), text: typeof ti.plan === 'string' ? ti.plan : null, mode: input.permission_mode, showCheck: shown }), true;
   }
-  if (tool === 'ExitPlanMode' && ev === 'PermissionRequest') return editStep(input, me, { type: 'permission' }), true;
   if (tool === 'ExitPlanMode' && ev === 'PostToolUse') return editStep(input, me, { type: 'exited' }), true;
   if (tool === 'ExitPlanMode' && ev === 'PostToolUseFailure') return true; // a dialog refused: an edit shows none
   if (ev === 'Stop') return editStep(input, me, { type: 'stop', mode: input.permission_mode, active: !!input.stop_hook_active });
@@ -653,10 +677,9 @@ function route(input: ConsentIn) {
   if (ev === ccEnv.PLAN_ATTACHMENT_EVENT) return undefined;
   if (tool === 'AskUserQuestion' && ev === 'PreToolUse') return locked(preAsk);
   if (tool === 'AskUserQuestion' && ev === 'PostToolUse') return locked(postAsk);
-  if (tool === 'EnterPlanMode' && ev === 'PreToolUse') return locked(preEnter);
+  if (tool === 'EnterPlanMode' && ev === 'PreToolUse') return undefined; // asks nothing: the review opens at its PostToolUse
   if (tool === 'EnterPlanMode' && ev === 'PostToolUse') return locked(postEnter);
   if (tool === 'ExitPlanMode' && ev === 'PreToolUse') return locked(preExit);
-  if (tool === 'ExitPlanMode' && ev === 'PermissionRequest') return locked(permExit);
   if (tool === 'ExitPlanMode' && ev === 'PostToolUse') return locked(postExit);
   if (tool === 'ExitPlanMode' && ev === 'PostToolUseFailure') return locked(rejectedExit);
   if (/^mcp__plugin_sub-human_room__/.test(tool || '') && ev === 'PreToolUse') return locked(preRoomTool);

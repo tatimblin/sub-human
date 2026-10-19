@@ -4,6 +4,10 @@
 // mod/test/copy.test.ts (npm run test:mods).
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import {
   copyAsked, copyCard, copyWake, copyLine, copyBook, clipboardCommands, copyTo, copyOutcome, copySaid,
   COPY_QUESTION, COPY, SKIP, COPIED, AUTO_COPIED, NO_TOOL, GONE, NOT_COPIED, CLIPBOARD_TIMEOUT_MS, type Runner,
@@ -19,6 +23,8 @@ const PIN = '4821';
 
 /** AskUserQuestion's tool_response for the card as the hooks built it, answered with label (or as given). */
 const answered = (label: string, extra: Record<string, unknown> = {}) => ({ questions: copyCard().questions, answers: { [COPY_QUESTION]: label }, ...extra });
+
+const PLUGIN = path.join(import.meta.dirname, '..');
 
 test('copy card: the question and its two options, as the plan words them', () => {
   const [q] = copyCard().questions;
@@ -103,25 +109,36 @@ test('clipboard: pbcopy, then wl-copy (Wayland) and xclip -selection clipboard (
   assert.deepEqual(names({ WAYLAND_DISPLAY: 'wayland-0', DISPLAY: ':0' }), ['pbcopy', 'wl-copy', 'xclip']);
   assert.deepEqual(names({ DISPLAY: ':0' }), ['pbcopy', 'xclip']);
   assert.deepEqual(names({ WSL_DISTRO_NAME: 'Ubuntu' }), ['clip.exe', 'pbcopy']);
-  const xclip = clipboardCommands({ DISPLAY: ':0' }).find(c => c.name === 'xclip');
-  assert.match(xclip?.argv.join(' ') ?? '', /exec xclip -selection clipboard >\/dev\/null/);
+});
+
+test('clipboard: scripts/clip.sh runs the named tool with the line on stdin, 127 when it is missing, 2 for a name it does not know', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-clip-'));
+  const out = path.join(tmp, 'got');
+  fs.writeFileSync(path.join(tmp, 'xclip'), `#!/bin/sh\necho "$*" > ${JSON.stringify(out)}.args\ncat > ${JSON.stringify(out)}\n`, { mode: 0o755 });
+  const clip = (name: string, PATH: string) => spawnSync('/bin/sh', [path.join(PLUGIN, 'scripts', 'clip.sh'), name], { input: LINE, env: { PATH }, encoding: 'utf8' }).status;
+  assert.equal(clip('xclip', `${tmp}:/usr/bin:/bin`), 0);
+  assert.equal(fs.readFileSync(out, 'utf8'), LINE);
+  assert.equal(fs.readFileSync(`${out}.args`, 'utf8').trim(), '-selection clipboard');
+  assert.equal(clip('wl-copy', '/nonexistent'), 127);
+  assert.equal(clip('rm', `${tmp}:/usr/bin:/bin`), 2);
+  fs.rmSync(tmp, { recursive: true, force: true });
 });
 
 test('clipboard: the line goes on stdin (never an argument) to the first tool that exits 0; missing, failing or timed-out tools are skipped', async () => {
-  const calls: { argv: readonly string[]; stdin: string; timeoutMs: number }[] = [];
-  const stub = (codes: (number | 'reject')[]): Runner => async (argv, init) => {
-    calls.push({ argv, ...init });
+  const calls: { name: string; stdin: string; timeoutMs: number }[] = [];
+  const stub = (codes: (number | 'reject')[]): Runner => async (name, init) => {
+    calls.push({ name, ...init });
     const c = codes[calls.length - 1] ?? 127;
     if (c === 'reject') throw new Error('timed out');
     return { exitCode: c };
   };
   const cmds = clipboardCommands({ WAYLAND_DISPLAY: 'w', DISPLAY: ':0' });
   assert.equal(await copyTo(stub([127, 'reject', 0]), LINE, cmds), 'copied');
-  assert.equal(calls.length, 3);
+  assert.deepEqual(calls.map(c => c.name), ['pbcopy', 'wl-copy', 'xclip']);
   for (const c of calls) {
     assert.equal(c.stdin, LINE);
     assert.equal(c.timeoutMs, CLIPBOARD_TIMEOUT_MS);
-    assert.ok(!c.argv.some(a => a.includes(SECRET)), 'the line is never in an argument');
+    assert.ok(!c.name.includes(SECRET), 'the line is never in an argument');
   }
   calls.length = 0;
   assert.equal(await copyTo(stub([127, 1, 127]), LINE, cmds), 'none');
