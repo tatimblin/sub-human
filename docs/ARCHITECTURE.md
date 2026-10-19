@@ -60,7 +60,7 @@ The row hooks are the module's (`mod/rows.ts`), and start node only for a row ag
 <!-- gen:hooks -->
 | Event | Matcher | Handler (hooks/run.ts) | Timeout | Async |
 |---|---|---|---|---|
-| UserPromptExpansion | `^(sub-human:)?sub-human$` | `hooks/handlers/join.ts` | 10 s | — |
+| UserPromptExpansion | `^(sub-human:)?sub-human$` | `sh "${CLAUDE_PLUGIN_ROOT}/hooks/join.sh"` | 10 s | — |
 | PreToolUse | `EnterPlanMode` | `sh "${CLAUDE_PLUGIN_ROOT}/hooks/mode-note.sh"` | 5 s | — |
 | SessionEnd | (all) | `sh "${CLAUDE_PLUGIN_ROOT}/hooks/session-end.sh"` | 5 s | — |
 <!-- /gen:hooks -->

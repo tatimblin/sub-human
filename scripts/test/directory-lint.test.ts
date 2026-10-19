@@ -105,6 +105,9 @@ test('COMMAND_PATH_COMPUTED: words; another variable, a missing file, -c, an ope
     'sh "${CLAUDE_PLUGIN_ROOT}/hooks/*.sh"',
     'sh "$(dirname x)/run.sh"',
     'sh `which run`',
+    // two plugin paths on one line (the join hook's old command), and a leading exec
+    'sh "${CLAUDE_PLUGIN_ROOT}/hooks/run.sh" --import "${CLAUDE_PLUGIN_ROOT}/hooks/run.sh" x',
+    'exec sh "${CLAUDE_PLUGIN_ROOT}/hooks/run.sh"',
   ]) {
     const root = plugin({ 'settings.json': JSON.stringify({ subagentStatusLine: { type: 'command', command } }) });
     const f = checkCommands(root);
