@@ -50,7 +50,7 @@ jobs:
       - name: npm test (the typecheck first; the mods tests skip without Claude Code)
         run: npm test
       # oxlint's type-aware rules and the type-escape ratchet; the same on every node, so once.
-      # npm run validate needs the claude CLI, which CI does not install (as test:mods)
+      # (npm run validate runs in the validate job, which installs the claude CLI; test:mods still skips here)
       - name: lint
         if: matrix.os == 'ubuntu-latest' && matrix.node == '24'
         run: npm run lint
@@ -59,6 +59,37 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
         run: node scripts/check-version.ts "origin/$BASE_REF"
+
+  # claude plugin validate --strict on every push and PR, with the Claude Code version the plugin was probed on
+  # (lib/cc/contract.json "probed"), installed as the canary does: npm i --prefix a temp dir (never global), the
+  # platform package's native binary, a fresh CLAUDE_CONFIG_DIR. The directory's other rules: npm run lint
+  # (scripts/directory-lint.ts).
+  validate:
+    name: plugin validate --strict (claude-code@probed)
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: install Claude Code (the probed version)
+        id: cc
+        run: |
+          version=$(node -p "require('./plugin/sub-human/lib/cc/contract.json').probed")
+          prefix="$RUNNER_TEMP/claude-code"
+          npm i --prefix "$prefix" --no-audit --no-fund --no-save "@anthropic-ai/claude-code@$version"
+          bin="$prefix/node_modules/@anthropic-ai/claude-code-linux-x64/claude"
+          [ -x "$bin" ] || bin="$prefix/node_modules/@anthropic-ai/claude-code/bin/claude.exe"
+          "$bin" --version
+          echo "bin=$bin" >> "$GITHUB_OUTPUT"
+      - name: claude plugin validate plugin/sub-human --strict
+        env:
+          CLAUDE_CONFIG_DIR: ${{ runner.temp }}/claude-config
+        run: |
+          mkdir -p "$CLAUDE_CONFIG_DIR"
+          "${{ steps.cc.outputs.bin }}" plugin validate plugin/sub-human --strict
 
   remote-docker:
     name: remote rooms over real SSH (docker)
