@@ -7,7 +7,7 @@ import { context } from '../checks/context.ts';
 
 // the API the scene modules read (checks/context.ts composes it from captures, transcripts, log and cost)
 const API = [
-  'DEMO', 'A', 'B', 'remote', 'rowsDir', 'sessionOf', 'screens', 'home', 'home2', 'code', 'roomDir', 'log', 'members', 'roomClaudeSid', 'job', 'index', 'props', 'runStart',
+  'DEMO', 'A', 'B', 'remote', 'rowsDir', 'sessionOf', 'screens', 'home', 'home2', 'code', 'roomDir', 'log', 'members', 'roomClaudeSid', 'job', 'index', 'props', 'drafts', 'runStart',
   'caps', 'cap', 'capName', 'span', 'stateDir', 'st', 'stText', 'nativeTasks', 'stateFile', 'holdsAt',
   'seatFiles', 'entries', 'inSpan', 'toolUses', 'assistantIds', 'peerIn', 'wakeIn', 'chatIn', 'pullIn', 'chatTurn', 'roomClaudeTurns', 'textOf',
   'byKind', 'fmt', 'logIn', 'replyAfter', 'shownLog', 'shownVia', 'noModelTurn', 'rowUserText', 'rowReply', 'chainOk', 'cost',

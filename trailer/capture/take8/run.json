@@ -1,0 +1,102 @@
+{
+ "take": "take8",
+ "started": "2026-10-19T01:08:57.628Z",
+ "interval": 100,
+ "sessions": {
+  "tristan": "sh-tristan",
+  "jess": "sh-jess",
+  "claude": "sh-claude"
+ },
+ "scenes": [
+  {
+   "scene": "S1",
+   "startT": 275,
+   "started": "2026-10-19T01:08:57.904Z",
+   "endT": 22554,
+   "ended": "2026-10-19T01:09:20.182Z",
+   "status": "ok"
+  },
+  {
+   "scene": "S2",
+   "startT": 22611,
+   "started": "2026-10-19T01:09:20.239Z",
+   "endT": 85233,
+   "ended": "2026-10-19T01:10:22.862Z",
+   "status": "ok"
+  },
+  {
+   "scene": "S3",
+   "startT": 85295,
+   "started": "2026-10-19T01:10:22.924Z",
+   "endT": 172999,
+   "ended": "2026-10-19T01:11:50.627Z",
+   "status": "ok"
+  },
+  {
+   "scene": "S4",
+   "startT": 173061,
+   "started": "2026-10-19T01:11:50.689Z",
+   "endT": 291410,
+   "ended": "2026-10-19T01:13:49.038Z",
+   "status": "ok"
+  },
+  {
+   "scene": "S5",
+   "startT": 291464,
+   "started": "2026-10-19T01:13:49.092Z",
+   "endT": 479106,
+   "ended": "2026-10-19T01:16:56.734Z",
+   "status": "ok"
+  },
+  {
+   "scene": "S6b",
+   "startT": 479161,
+   "started": "2026-10-19T01:16:56.790Z",
+   "endT": 776238,
+   "ended": "2026-10-19T01:21:53.867Z",
+   "status": "ok"
+  },
+  {
+   "scene": "S10",
+   "startT": 776294,
+   "started": "2026-10-19T01:21:53.923Z",
+   "endT": 890995,
+   "ended": "2026-10-19T01:23:48.624Z",
+   "status": "ok"
+  }
+ ],
+ "ended": "2026-10-19T01:23:48.776Z",
+ "durationMs": 891148,
+ "room": "walrus-8139",
+ "counts": {
+  "lines": 2707,
+  "frames": 2679,
+  "markers": 27
+ },
+ "checks": {
+  "summary": {
+   "deterministic": {
+    "pass": 66,
+    "fail": 11
+   },
+   "behavioural": {
+    "pass": 3,
+    "warn": 1
+   }
+  },
+  "failed": [
+   "Metrics: Member join text small (report)",
+   "S2: jess's join shows one line, \"sub-human: joined CODE as jess, with tristan · …\", and no \"blocked by hook\" frame",
+   "S2: tristan sees the chat line \"jess joined\" (a lasting line, no room code, no ids)",
+   "S2: The join reached tristan as one chat row and one copy for tristan's Claude, with no model turn",
+   "S3: jess gets tristan's exact words once: a chat row \"tristan: <the words>\" for jess, one copy for jess's Claude",
+   "S3: tristan's Claude receives it as a peer message from jess (origin.kind peer)",
+   "S3: tristan's Claude answers natively (SendMessage back; jess receives it)",
+   "S4: tristan reads the whole plan: PgDn pages through the plan view to its end (the \"room proposal HASH\" line)",
+   "S6b: The handoff: tristan's Claude tells jess's Claude the store is pushed before jess's checkout pulls it",
+   "S10: The room's Claude is stopped: claude agents no longer lists it",
+   "S10: jess sees the chat line \"tristan left\" once the leave settled (8 s)"
+  ],
+  "pass": false
+ }
+}

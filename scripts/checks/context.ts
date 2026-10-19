@@ -13,7 +13,7 @@
  *                          holdsAt)
  *   checks/transcripts.ts  the seats' transcripts (entries, inSpan, toolUses, assistantIds, peerIn, wakeIn, chatIn,
  *                          pullIn, chatTurn, roomClaudeTurns, replyAfter, noModelTurn, rowUserText, rowReply)
- *   checks/log.ts          the room log (byKind, fmt, logIn, props, shownLog, shownVia, chainOk)
+ *   checks/log.ts          the room log (byKind, fmt, logIn, props, drafts, shownLog, shownVia, chainOk)
  *   checks/cost.ts         cost()
  */
 import fs from 'node:fs';
