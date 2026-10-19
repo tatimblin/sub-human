@@ -26,6 +26,7 @@ export const HELP: string = [
   '  /sub-human doctor             what is wrong on this machine, and how to fix it (read only)',
   '  /sub-human help               this list',
   '  @room TEXT    post your exact words to the room; your Claude can message other Claudes, edit the room plan and the task list',
+  'rows show names; for their live status (tasks, plans, sign-off, link) add the subagentStatusLine line in the README\'s Rows section to your ~/.claude/settings.json',
 ].join('\n');
 
 export const help: OpenVerb = () => say(HELP);
