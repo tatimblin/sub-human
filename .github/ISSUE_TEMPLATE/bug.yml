@@ -1,0 +1,33 @@
+name: Bug
+description: Something didn't work.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw instead. Paste the exact `sub-human:` or `✗` line if there was one.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: /sub-human doctor
+      description: The output of `/sub-human doctor` (or `node <plugin root>/scripts/sub-human doctor --bundle` in a shell). It leaves out secrets and PINs, but look it over before you paste.
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where was the room?
+      options:
+        - All on one machine
+        - Another machine, over ssh
+        - Another machine, over the web (Tailscale Serve, Funnel or my own front)
+        - Not sure
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: sub-human, Claude Code, Node and OS (doctor shows them all).

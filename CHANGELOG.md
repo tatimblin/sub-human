@@ -2,6 +2,19 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 0.5.0, public: the repo opens
+
+Tested on Claude Code 2.1.296 (the unit and hooks-module wiring tests). No change to the plugin's behaviour, and the wire protocol is still 5: 0.5.0 and 0.5.0-beta.24 share rooms.
+
+### Added
+- **MIT license** (`LICENSE`, also in the plugin folder, and `license` in plugin.json). The Claude Code declarations under `typings/` are Claude Code's and not covered by it (`typings/README.md`).
+- **`SECURITY.md`**: how to report a vulnerability privately, what sub-human protects and what it doesn't, and the privacy note (no server, no telemetry).
+- **`CONTRIBUTING.md`** and issue templates (a bug with `/sub-human doctor`'s output, "I got stuck", and links to Discussions and private security reports).
+- `homepage` and `repository` in plugin.json.
+
+### Changed
+- **The README** says what sub-human is ("subagents, but for humans"), how it differs from sharing one session or exporting context, how to try it alone with two sessions, the current one-line join (the line with its PIN after it), and the beta's known limits. The old `handoff` command and the room's Claude answering `@claude` are gone from it, as they are from the plugin.
+
 ## 0.5.0-beta.24, private beta: you check your own plan version first
 
 Tested on Claude Code 2.1.296 (the unit and hooks-module wiring tests; the demo and the lab were not run).

@@ -183,7 +183,7 @@ test('doctor redactor: each rule alone', () => {
   assert.match(red('zed@box.lan'), /^user-[0-9a-f]{8}@host-[0-9a-f]{8}$/);
   assert.match(red('connect to box.lan port 22'), /^connect to host-[0-9a-f]{8} port 22$/);
   assert.equal(red('box.land'), 'box.land', 'whole names only');
-  assert.match(red('from 192.168.4.43'), /^from ip-[0-9a-f]{8}$/);
+  assert.match(red('from 192.0.2.43'), /^from ip-[0-9a-f]{8}$/);
   assert.equal(red('token: abc123secretvalue'), 'token: <redacted>');
   assert.equal(red(`id ${'ab'.repeat(8)}`), 'id <hex>');
   assert.equal(red('link aaaaaaaaaaaa'), 'link aaaaaaaaaaaa', 'a 12-hex link id stays');
