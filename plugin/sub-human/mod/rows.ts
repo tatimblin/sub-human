@@ -66,7 +66,11 @@ export function registerRows(on: On): void {
     const run = await $.process.run(shimArgv(root, 'row-guard'), { stdin: JSON.stringify(payload), env: shimEnv({ session_id: sid }, root), timeoutMs: SHIM_TIMEOUT_MS });
     // a deny (a duplicate row, a stray participant row) written out, else the hooks beneath: it never approves a call
     const { result } = toPre(run);
-    if ('deny' in result) return { deny: result.deny, ...(result.additionalContext ? { additionalContext: result.additionalContext } : {}) };
+    const ctx = result.additionalContext;
+    if ('deny' in result) {
+      if (ctx) return { deny: result.deny, additionalContext: ctx };
+      return { deny: result.deny };
+    }
     return next(e);
   }).catch((_$, e, next) => next(e)); // never disturb the session: the spawn goes on (hold.ts stops a duplicate itself)
 

@@ -154,9 +154,19 @@ export function registerConsent(on: On): void {
     const payload = e.tool === 'ExitPlanMode' && draft ? { ...base, sub_human_typing: true } : base;
     const { result, ...said } = toPre(await runConsent($, payload, sid));
     await apply($, said);
-    const context = result.additionalContext ? { additionalContext: result.additionalContext } : {};
-    if ('deny' in result) return { deny: result.deny, ...context };
-    if ('ask' in result) return { ask: result.ask, ...(result.updatedInput ? { updatedInput: result.updatedInput } : {}), ...context };
+    // each answer written out, one branch per shape: the plugin directory reads no spread in a permission answer
+    const ctx = result.additionalContext;
+    const input = result.updatedInput;
+    if ('deny' in result) {
+      if (ctx) return { deny: result.deny, additionalContext: ctx };
+      return { deny: result.deny };
+    }
+    if ('ask' in result) {
+      if (input && ctx) return { ask: result.ask, updatedInput: input, additionalContext: ctx };
+      if (input) return { ask: result.ask, updatedInput: input };
+      if (ctx) return { ask: result.ask, additionalContext: ctx };
+      return { ask: result.ask };
+    }
     return next(e);
   }).catch((_$, e, next) => next(e)); // the call goes on as without consent: nothing is recorded
 

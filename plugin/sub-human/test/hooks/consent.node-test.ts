@@ -582,6 +582,8 @@ test('hooks.json: consent is the module\'s (mod/consent.ts); its classic.PreTool
     const rets = body.match(/return [^;]+;/g) || [];
     assert.ok(rets.length, f);
     for (const ret of rets) assert.match(ret, /^return (next\(e\)|\{ (deny|ask): )/, `${f}: ${ret}`);
+    // and plain key: value members only: the directory does not read a spread in a returned object
+    for (const ret of rets.filter(r => r.startsWith('return {'))) assert.doesNotMatch(ret, /\.\.\./, `${f}: no spread in ${ret}`);
     assert.doesNotMatch(body, /\ballow\b/, `${f}: no allow`);
   }
 });

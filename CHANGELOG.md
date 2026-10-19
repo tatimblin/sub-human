@@ -2,6 +2,13 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 0.5.2: permission answers written out for the plugin directory
+
+Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests. The wire protocol is still 5: 0.5.2, 0.5.1 and 0.5.0 share rooms.
+
+### Changed
+- The hooks module's permission answers (consent's and the row guard's classic.PreToolUse) are written out as plain objects, one branch per shape, with no spread, so the plugin directory can read each one. Behaviour is unchanged.
+
 ## 0.5.1: the person keeps every permission decision (Anthropic's plugin directory)
 
 Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, and a full film demo run (take11: every scene; the checks as before this change, 66 pass, 11 fail on wording 0.5.0-beta.24 changed and the room session's leak). The wire protocol is still 5: 0.5.1 and 0.5.0 share rooms.
