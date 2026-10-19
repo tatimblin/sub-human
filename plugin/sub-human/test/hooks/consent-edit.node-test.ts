@@ -14,7 +14,6 @@ import * as plans from '../../lib/plans.ts';
 import * as edit from '../../lib/consent/edit.ts';
 import * as guard from '../../mod/core/guard.ts';
 import type { PlanEdit } from '../../lib/types-app.ts';
-import type { Entry } from '../../lib/room/types.ts';
 import { sn } from '../support/brands.ts';
 import { must } from '../support/must.ts';
 
@@ -30,7 +29,6 @@ const EVENTS: { [K in edit.EditEvent['type']]: Extract<edit.EditEvent, { type: K
   attach: { type: 'attach', plan: FILE },
   exit: { type: 'exit', plan: FILE, text: edit.seed('c', 'room', 1, '# v2 text\n').replace('Summary of this edit: ', 'Summary of this edit: s') },
   put: { type: 'put', outcome: { kind: 'stored', version: 2 } },
-  permission: { type: 'permission' },
   exited: { type: 'exited' },
   stop: { type: 'stop', mode: 'plan', active: false },
   prompt: { type: 'prompt', mode: 'default' },
@@ -39,21 +37,21 @@ const shape = (s: edit.EditStep): [string, string | null, string] => [s.edit ? (
   s.say ? s.say.to : null, s.effects.map(e => e.do).join(',')];
 // edit phase × event -> [phase after, say, effects]
 const TABLE: Record<string, Record<edit.EditEvent['type'], [string, string | null, string]>> = {
-  none: { enter: ['none', null, ''], attach: ['none', null, ''], exit: ['none', null, ''], put: ['none', null, ''], permission: ['none', null, ''],
+  none: { enter: ['none', null, ''], attach: ['none', null, ''], exit: ['none', null, ''], put: ['none', null, ''],
     exited: ['none', null, ''], stop: ['none', null, ''], prompt: ['none', null, ''] },
-  open: { enter: ['open', 'allow', ''], attach: ['seeded', 'attach', 'save,seed'], exit: ['seeded', 'deny', 'save,seed'], put: ['none', 'deny', ''],
-    permission: ['open', null, ''], exited: ['none', 'context', ''], stop: ['open', null, ''], prompt: ['none', null, ''] },
-  seeded: { enter: ['seeded', 'allow', ''], attach: ['seeded', null, ''], exit: ['seeded', null, 'put'], put: ['stored', 'deny', 'save'],
-    permission: ['seeded', null, ''], exited: ['none', 'context', 'restorePlan'], stop: ['seeded', null, ''], prompt: ['none', 'context', 'restorePlan'] },
-  stored: { enter: ['stored', 'allow', ''], attach: ['stored', null, ''], exit: ['stored', null, ''], put: ['stored', 'deny', 'save'],
-    permission: ['stored', 'permit', 'blankPlan'], exited: ['none', 'context', 'restorePlan'], stop: ['stored', 'context', ''], prompt: ['none', 'context', 'restorePlan'] },
-  // the fallback (plan mode's edit could not run): the plan tool's put stores it; plan mode is only left
-  put: { enter: ['put', 'allow', ''], attach: ['put', null, ''], exit: ['put', null, ''], put: ['stored', 'deny', 'save'],
-    permission: ['put', 'permit', 'blankPlan'], exited: ['none', 'context', ''], stop: ['put', null, ''], prompt: ['none', null, ''] },
+  open: { enter: ['open', null, ''], attach: ['seeded', 'attach', 'save,seed'], exit: ['seeded', 'deny', 'save,seed'], put: ['none', 'deny', ''],
+    exited: ['none', 'context', ''], stop: ['open', null, ''], prompt: ['none', null, ''] },
+  seeded: { enter: ['seeded', null, ''], attach: ['seeded', null, ''], exit: ['seeded', null, 'put'], put: ['stored', 'deny', 'save'],
+    exited: ['none', 'context', 'restorePlan'], stop: ['seeded', null, ''], prompt: ['none', 'context', 'restorePlan'] },
+  stored: { enter: ['stored', null, ''], attach: ['stored', null, ''], exit: ['stored', 'leave', 'blankPlan'], put: ['stored', 'deny', 'save'],
+    exited: ['none', 'context', 'restorePlan'], stop: ['stored', 'context', ''], prompt: ['none', 'context', 'restorePlan'] },
+  // the fallback (plan mode's edit could not run): the plan tool's put stores it; plan mode is only left (the person's answer)
+  put: { enter: ['put', null, ''], attach: ['put', null, ''], exit: ['put', 'leave', 'blankPlan'], put: ['stored', 'deny', 'save'],
+    exited: ['none', 'context', ''], stop: ['put', null, ''], prompt: ['none', null, ''] },
 };
 
 test('edit: every phase × every event, in one table', () => {
-  const types: edit.EditEvent['type'][] = ['enter', 'attach', 'exit', 'put', 'permission', 'exited', 'stop', 'prompt'];
+  const types: edit.EditEvent['type'][] = ['enter', 'attach', 'exit', 'put', 'exited', 'stop', 'prompt'];
   for (const [phase, row] of Object.entries(TABLE)) {
     assert.deepEqual(Object.keys(row).sort(), [...types].sort(), `${phase}: a row for every event`);
     const cur = EDITS[phase];
@@ -68,15 +66,23 @@ test('edit: the capture, the receipt, a conflict and a refusal; the mode put bac
   const stored = edit.reduce(SEEDED, EVENTS.put);
   // the receipt: the deny's reason is the person's line (drawn as the call's error), the mechanics are the model's context
   assert.deepEqual(stored.say, { to: 'deny', text: 'sub-human: saved as room plan room v2, not agreed yet.',
-    context: `${edit.EDIT_SAY.storedNext} Now call ExitPlanMode({}) once more: it only leaves plan mode (no dialog, not an approval: do not carry the plan out).` });
+    context: `${edit.EDIT_SAY.storedNext} Now call ExitPlanMode({}) once more: it only leaves plan mode (Claude Code asks your person; not an approval: do not carry the plan out).` });
   for (const ev of [EVENTS.put, { type: 'put' as const, outcome: { kind: 'refused' as const, why: 'x' } }, { type: 'put' as const, outcome: { kind: 'offline' as const, why: 'timeout' } },
     { type: 'put' as const, outcome: { kind: 'conflict' as const, version: 3, who: 'bob', summary: '', text: 'long\n'.repeat(500) } }]) {
     const say = edit.reduce(SEEDED, ev).say;
     assert.ok(say && say.to === 'deny' && say.context, ev.outcome.kind);
     assert.ok(say.text.length <= 120 && !/ExitPlanMode|\n/.test(say.text), `${ev.outcome.kind}: the person's line is short and has no model mechanics: ${say.text}`);
   }
-  assert.deepEqual(edit.reduce(STORED, EVENTS.permission).say, { to: 'permit', mode: 'default' });
-  assert.deepEqual(edit.reduce({ ...STORED, mode: 'acceptEdits' }, EVENTS.permission).say, { to: 'permit', mode: 'acceptEdits' });
+  // the closing call: Claude Code's own "exit plan mode?" (an ask, the plan emptied), which the person answers
+  const leave = edit.reduce(STORED, EVENTS.exit);
+  assert.deepEqual([leave.say, leave.effects], [{ to: 'leave', text: edit.EDIT_SAY.leaving('room') }, [{ do: 'blankPlan', file: '/plans/x.md' }]]);
+  // with the author's check made and the plan view able to show it: the edit ends and this call opens the check
+  const check = edit.reduce({ ...STORED, check: 'a1b2c3d4e5f6' }, { ...EVENTS.exit, showCheck: true });
+  assert.deepEqual([check.edit, check.say, check.effects.map(e => e.do)], [null, { to: 'check', hash: 'a1b2c3d4e5f6', mode: 'default' }, ['restorePlan']]);
+  // not shown (the plan view cannot here): the leave, and the receipt said how the person checks it
+  assert.equal(edit.reduce({ ...STORED, check: 'a1b2c3d4e5f6' }, EVENTS.exit).say?.to, 'leave');
+  const told = edit.reduce(SEEDED, { type: 'put', outcome: { kind: 'stored', version: 2, check: 'a1b2c3d4e5f6' }, showCheck: true }).say;
+  assert.match(told && told.to === 'deny' ? String(told.context) : '', /it shows the new version to your person in the plan view/);
   // the person was in plan mode before: the receipt ends the edit there, plan mode stays
   const byHand: PlanEdit = { phase: 'open', plan: 'room', base: 1, at: 1, file: '/plans/x.md', backup: null, restored: false }; // no EnterPlanMode of the edit's
   assert.equal(edit.reduce(byHand, EVENTS.put).edit, null, 'plan mode entered by hand: it stays, the edit is done');
@@ -117,12 +123,13 @@ const write = (file: string, body: string, summary: string) => {
   return fs.readFileSync(file, 'utf8');
 };
 
-test('edit (hooks): seeded at the plan_mode attachment, stored at Pre(ExitPlanMode) with the receipt as the deny, the mode back with no dialog, the person\'s plan file restored; no answer recorded', () => {
+test('edit (hooks): seeded at the plan_mode attachment, stored at Pre(ExitPlanMode) with the receipt as the deny; the closing call shows the author\'s check, whose Yes sends it out; the person\'s plan file restored', () => {
   const w = new World({ alice: 'act', bob: 'sleep' });
   const file = planFile(w, 'alice', '# my own plan\n');
   openEdit(w, 'alice');
-  const enter = w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {} }), { as: 'alice' });
-  assert.deepEqual([decision(enter), reason(enter)], ['allow', 'sub-human: editing room plan room (a new plan)']);
+  // EnterPlanMode asks nothing: no answer at Pre; the edit takes the mode it was made in at Post (the hooks.json note's)
+  assert.equal(w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {} }), { as: 'alice' }).stdout, '');
+  w.hook('consent', ev('PostToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {}, tool_response: {} }), { as: 'alice' });
   assert.equal(must(editOf(w, 'alice')).mode, 'default');
   // the attachment (shim mode, as the module runs it): the file seeded, the line to append, the backup kept
   const a = attach(w, 'alice', file);
@@ -137,25 +144,28 @@ test('edit (hooks): seeded at the plan_mode attachment, stored at Pre(ExitPlanMo
   const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: text, planFilePath: file }, tool_use_id: 'tu1' }), { as: 'alice' });
   assert.equal(decision(pre), 'deny');
   assert.equal(reason(pre), 'sub-human: saved as room plan room v1, not sent out yet: you check it first.');
-  assert.match(must(hso(pre).additionalContext), /^Nobody else is asked yet: your person checks it first\. Now call ExitPlanMode\(\{\}\) once more.* Then call EnterPlanMode, then ExitPlanMode with plan "proposal [0-9a-f]{12}"/);
+  assert.match(must(hso(pre).additionalContext), /^Nobody else is asked yet: your person checks it first\. Now call ExitPlanMode\(\{\}\) once more: it shows the new version to your person in the plan view/);
   // the author's own check after the version (lib/proposal.ts check): a request addressed to alice alone
-  assert.deepEqual(((e: Entry) => [e.kind, e.to, e.approvers])(must(w.entries().at(-1))), ['proposal', 'alice', ['alice']]);
+  const check = must(w.entries().at(-1));
+  assert.deepEqual([check.kind, check.to, check.approvers], ['proposal', 'alice', ['alice']]);
   const v = must(w.entries().at(-2));
   assert.deepEqual([v.kind, v.via, v.from, v.for, v.plan, v.version, v.base, v.text], ['plan', 'agent', 'alice', 'alice', 'room', 1, 0, 'plan room v1: first draft']);
   assert.equal(w.lib(() => plans.textOf(w.code, must(plans.current(w.code)))), '# Paging\n\n1. cursor\n');
-  // the closing ExitPlanMode passes Pre; PermissionRequest lets it through with the mode back; the file restored
-  assert.equal(w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: text }, tool_use_id: 'tu2' }), { as: 'alice' }).stdout, '');
-  const perm = w.hook('consent', ev('PermissionRequest', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {} }), { as: 'alice' });
-  assert.deepEqual(hso(perm).decision, { behavior: 'allow', updatedInput: {}, updatedPermissions: [{ type: 'setMode', mode: 'default', destination: 'session' }] });
-  // the closing call reads the plan file as it runs: empty, so it shows "Exited plan mode", never the person's own
-  // plan as approved (lib/cc/env.ts LEAVE_PLAN_TEXT); the person's plan comes back at PostToolUse
-  assert.equal(fs.readFileSync(file, 'utf8'), '');
-  const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: {}, tool_use_id: 'tu2', tool_response: { plan: text, filePath: file } }), { as: 'alice' });
-  assert.match(must(ctx(post)), /^sub-human: plan mode closed with no approval: room plan room v1 was stored, not sent out .* Next, call EnterPlanMode/);
-  assert.match(must(ctx(post)), /plan file is back as it was before the edit/, 'F: the model is told its person\'s plan came back');
-  assert.equal(editOf(w, 'alice'), null);
+  // the closing ExitPlanMode is the author's check: the edit ends, the plan view (an ask) shows the stored version
+  const close = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: text, planFilePath: file }, tool_use_id: 'tu2' }), { as: 'alice' });
+  assert.equal(decision(close), 'ask');
+  assert.match(must(reason(close)), /^your new version, plan room v1, for alice: nobody else is asked until you send it out/);
+  assert.deepEqual(hso(close).updatedInput, { plan: '# Paging\n\n1. cursor\n' });
+  assert.equal(editOf(w, 'alice'), null, 'the edit is over: the review has it');
+  assert.equal(fs.readFileSync(file, 'utf8'), '# Paging\n\n1. cursor\n', 'the view reads the version from the file');
+  // alice's Yes there: her sign-off (via=human), and it sends v1 out to bob; her plan file back
+  const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: { plan: '# Paging\n\n1. cursor\n' }, tool_use_id: 'tu2',
+    tool_response: { plan: '# Paging\n\n1. cursor\n', filePath: file } }), { as: 'alice' });
+  assert.match(must(ctx(post)), /alice sent plan room v1 out: bob asked to sign off/);
+  assert.deepEqual(answers(w).map(e => [e.kind, e.from, e.via]), [['signoff', 'alice', 'human']]);
+  const out = must(w.entries().filter(e => e.kind === 'proposal').at(-1));
+  assert.deepEqual([out.to, out.approvers?.includes('bob')], ['room', true]);
   assert.equal(fs.readFileSync(file, 'utf8'), '# my own plan\n');
-  assert.deepEqual(answers(w), [], 'an edit is never a sign-off');
 });
 
 test('edit (hooks): a conflict denies with the current version\'s text; the next ExitPlanMode stores on top of it', () => {
@@ -199,32 +209,37 @@ test('edit (hooks): no attachment came: ExitPlanMode seeds the plan file and ask
 });
 
 test('edit (hooks, live 2026-10-17): the closing ExitPlanMode never sees the person\'s private plan; Esc or a crash before its PostToolUse, then the next prompt, still restores it', () => {
+  // bypass permissions (a mode the plan view does not open a review in): the closing call is Claude Code's own
+  // "exit plan mode?", not the author's check
   const w = new World({ alice: 'act', bob: 'sleep' });
   const file = planFile(w, 'alice', '# PRIVATE: my own plan\n');
   openEdit(w, 'alice');
-  w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'acceptEdits', tool_input: {} }), { as: 'alice' });
-  attach(w, 'alice', file);
+  w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'bypassPermissions', tool_input: {} }), { as: 'alice' });
+  w.hook('consent', ev('PostToolUse', 'EnterPlanMode', { permission_mode: 'bypassPermissions', tool_input: {}, tool_response: {} }), { as: 'alice' });
+  w.hook('consent', ev('PlanAttachment', null, { permission_mode: 'plan', plan_file_path: file }), { as: 'alice', env: { SUB_HUMAN_SHIM: '1' } });
   const text = write(file, '# Paging\n', 'first');
   w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: text, planFilePath: file }, tool_use_id: 'tu1' }), { as: 'alice' });
-  const perm = w.hook('consent', ev('PermissionRequest', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {} }), { as: 'alice' });
-  assert.deepEqual(hso(perm).decision, { behavior: 'allow', updatedInput: {}, updatedPermissions: [{ type: 'setMode', mode: 'acceptEdits', destination: 'session' }] });
+  const leave = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: text, planFilePath: file }, tool_use_id: 'tu2' }), { as: 'alice' });
+  assert.deepEqual([decision(leave), hso(leave).updatedInput], ['ask', { plan: '' }], 'an ask with nothing in it: the person leaves plan mode');
   assert.equal(fs.readFileSync(file, 'utf8'), '', 'what the closing call reads: nothing');
   assert.equal(must(editOf(w, 'alice')).restored, false, 'the backup is still owed');
-  // no PostToolUse (Esc, a crash): the next prompt, outside plan mode, puts the person's plan back
-  w.hook('prompt', ev('UserPromptSubmit', null, { permission_mode: 'acceptEdits', prompt: 'next' }), { as: 'alice' });
+  assert.ok(!leave.stdout.includes('PRIVATE'));
+  // no PostToolUse (the person said No, Esc, a crash): the next prompt, outside plan mode, puts the person's plan back
+  w.hook('prompt', ev('UserPromptSubmit', null, { permission_mode: 'bypassPermissions', prompt: 'next' }), { as: 'alice' });
   assert.equal(fs.readFileSync(file, 'utf8'), '# PRIVATE: my own plan\n');
   assert.equal(editOf(w, 'alice'), null);
-  // a person with no plan file of their own: the emptied file goes again
+  // with the plan view on: the closing call shows the stored version (never her plan), and her Yes restores the file;
+  // a person with no plan file of their own: the file goes again
   const w2 = new World({ alice: 'act', bob: 'sleep' });
   const f2 = planFile(w2, 'alice', null);
   openEdit(w2, 'alice');
-  w2.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {} }), { as: 'alice' });
+  w2.hook('consent', ev('PostToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {}, tool_response: {} }), { as: 'alice' });
   attach(w2, 'alice', f2);
   const t2 = write(f2, '# Paging\n', 'first');
   w2.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: t2, planFilePath: f2 }, tool_use_id: 'tu1' }), { as: 'alice' });
-  w2.hook('consent', ev('PermissionRequest', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {} }), { as: 'alice' });
-  assert.equal(fs.readFileSync(f2, 'utf8'), '');
-  w2.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: {}, tool_use_id: 'tu1', tool_response: { plan: '', filePath: f2 } }), { as: 'alice' });
+  const shown = w2.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: t2, planFilePath: f2 }, tool_use_id: 'tu2' }), { as: 'alice' });
+  assert.deepEqual([decision(shown), hso(shown).updatedInput], ['ask', { plan: '# Paging\n' }]);
+  w2.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: { plan: '# Paging\n' }, tool_use_id: 'tu2', tool_response: { plan: '# Paging\n', filePath: f2 } }), { as: 'alice' });
   assert.equal(fs.existsSync(f2), false);
 });
 
@@ -236,6 +251,7 @@ test('edit (A, live validation): an edit started while the person is in plan mod
     openEdit(w, 'alice');
     const outs: string[] = [];
     if (enter) outs.push(w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'plan', tool_input: {} }), { as: 'alice' }).stdout);
+    if (enter) outs.push(w.hook('consent', ev('PostToolUse', 'EnterPlanMode', { permission_mode: 'plan', tool_input: {}, tool_response: {} }), { as: 'alice' }).stdout);
     if (enter) assert.equal(must(editOf(w, 'alice')).mode, 'plan');
     // the model calls ExitPlanMode before the attachment came: Claude Code put her plan in the call; denied, seeded instead
     const early = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: mine, planFilePath: file }, tool_use_id: 'tu0' }), { as: 'alice' });
@@ -248,7 +264,6 @@ test('edit (A, live validation): an edit started while the person is in plan mod
     assert.match(must(hso(pre).additionalContext), /Plan mode was already on before the edit, so it stays on.*plan file is back as it was/);
     assert.equal(fs.readFileSync(file, 'utf8'), mine, 'her plan is back at once');
     assert.equal(editOf(w, 'alice'), null);
-    assert.equal(w.hook('consent', ev('PermissionRequest', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {} }), { as: 'alice' }).stdout, '', 'nothing lets a call through with no dialog');
     assert.ok(outs.every(o => !o.includes('PRIVATE')), 'her plan is in no hook\'s answer');
     assert.deepEqual(answers(w), []);
   }
@@ -303,9 +318,8 @@ test('edit: where plan mode\'s edit cannot run (no plan file in plan mode; no te
   assert.match(noText.say && noText.say.to === 'deny' ? String(noText.say.context) : '', /op put, name room, version 1 .* plan file is back as it was/);
   // an empty plan the model wrote is its own: the ordinary deny, no fallback
   assert.match(JSON.stringify(edit.reduce(SEEDED, { type: 'exit', plan: FILE, text: '', mode: 'plan' }).say), /is empty/);
-  // then: the closing ExitPlanMode passes, its permission puts the mode back, its PostToolUse says put stores the plan
-  assert.deepEqual(edit.reduce(PUT, EVENTS.exit), { edit: PUT, effects: [], say: null });
-  assert.deepEqual(edit.reduce(PUT, EVENTS.permission).say, { to: 'permit', mode: 'default' });
+  // then: the closing ExitPlanMode asks to leave plan mode (the person answers), its PostToolUse says put stores the plan
+  assert.deepEqual(edit.reduce(PUT, EVENTS.exit), { edit: { ...PUT, restored: false }, effects: [{ do: 'blankPlan', file: '/plans/x.md' }], say: { to: 'leave', text: edit.EDIT_SAY.leaving('room') } });
   assert.match(JSON.stringify(edit.reduce(PUT, EVENTS.exited).say), /stored only by the plan tool's put/);
 });
 
@@ -337,10 +351,9 @@ test('edit (hooks): plan-edit off (SUB_HUMAN_CC_OFF): an open edit is dropped, n
   assert.deepEqual([decision(pre), reason(pre)], ['deny', edit.EDIT_SAY.fallback('room')]);
   assert.match(must(hso(pre).additionalContext), /op put, name room, version 0 \(the base\)/);
   assert.equal(must(editOf(w, 'alice')).phase, 'put');
-  // the closing call: no dialog, the mode back
-  assert.equal(w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu2' }), { as: 'alice' }).stdout, '');
-  const perm = w.hook('consent', ev('PermissionRequest', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {} }), { as: 'alice' });
-  assert.deepEqual(hso(perm).decision, { behavior: 'allow', updatedInput: {}, updatedPermissions: [{ type: 'setMode', mode: 'default', destination: 'session' }] });
+  // the closing call: Claude Code's own "exit plan mode?" (an ask, the plan emptied), which the person answers
+  const leave = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu2' }), { as: 'alice' });
+  assert.deepEqual([decision(leave), hso(leave).updatedInput], ['ask', { plan: '' }]);
   const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: {}, tool_use_id: 'tu2', tool_response: {} }), { as: 'alice' });
   assert.match(must(ctx(post)), /stored only by the plan tool's put/);
   assert.equal(editOf(w, 'alice'), null);

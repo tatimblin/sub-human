@@ -105,7 +105,7 @@ test('a consent shim that fails leaves the turn end to what is beneath', async (
 
 const REVIEWING = { subHuman: { reviewOpen: true } }
 
-test('a room tool during a review: consent gets the call as the classic payload, with the mode and transcript last seen; its deny stands above the hooks beneath', async ($, on) => {
+test('a room tool during a review: consent gets the call as the classic payload, with the mode and transcript last seen; its deny is written out and the call goes no further', async ($, on) => {
   const deny = { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'sub-human: First call ExitPlanMode now' }, ...REVIEWING }
   const seen = world(on, { answers: [deny] })
   on('classic.PostToolUse', () => ({}))
@@ -114,7 +114,9 @@ test('a room tool during a review: consent gets the call as the classic payload,
   await $.classic.PostToolUse({ session_id: SID, transcript_path: '/t/sid-c.jsonl', cwd: '/w', permission_mode: 'plan', tool_name: 'Read', tool_input: {}, tool_response: {}, tool_use_id: 'r1' })
   const r = await $.tool.call({ tool: POST, text: 'hi' })
   expect([r.isError, r.text]).toEqual([true, 'sub-human: First call ExitPlanMode now'])
-  expect(seen.beneathPre).toEqual([POST])
+  // the deny is the module's return, written out (the plugin directory reads it): the hooks beneath do not run for a
+  // call it denies
+  expect(seen.beneathPre).toEqual([])
   const { stdin, env } = must(seen.consent[0], 'the consent run')
   expect([stdin.hook_event_name, stdin.session_id, stdin.tool_name, stdin.permission_mode, stdin.transcript_path, stdin.cwd])
     .toEqual(['PreToolUse', SID, POST, 'plan', '/t/sid-c.jsonl', '/w'])
@@ -123,26 +125,20 @@ test('a room tool during a review: consent gets the call as the classic payload,
   expect(env?.SUB_HUMAN_SHIM).toBe('1')
 })
 
-test('the plan tools run consent for a seat (Pre, Post, and PermissionRequest while a review may be open); an allow\'s reason is a notice', async ($, on) => {
-  const allow = { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: 'sub-human: opening proposal abcdef012345 for bob' }, ...REVIEWING }
-  const exit = { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow', updatedInput: {}, updatedPermissions: [{ type: 'setMode', mode: 'default', destination: 'session' }] } }, subHuman: { reviewOpen: false } }
-  const seen = world(on, { answers: [allow, REVIEWING, exit, { subHuman: { reviewOpen: false } }] })
+test('the plan tools run consent for a seat (Pre and Post); the closing call is an ask with its plan emptied: the module never allows', async ($, on) => {
+  const leave = { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: 'sub-human: the room review is over; this only leaves plan mode (no plan is approved)', updatedInput: { plan: '' } }, subHuman: { reviewOpen: false } }
+  const seen = world(on, { answers: [REVIEWING, REVIEWING, leave] })
   on('classic.PostToolUse', () => ({}))
-  on('classic.PermissionRequest', () => ({}))
   await start($)
   const r = await $.tool.call({ tool: 'EnterPlanMode' })
   expect(r.isError).toBeUndefined()
-  expect(seen.logs).toContain('opening proposal abcdef012345 for bob')
   await $.classic.PostToolUse({ session_id: SID, tool_name: 'EnterPlanMode', tool_input: {}, tool_response: {}, tool_use_id: 'e1', permission_mode: 'plan' })
-  const p = await $.classic.PermissionRequest({ session_id: SID, tool_name: 'ExitPlanMode', tool_input: {}, permission_mode: 'plan' })
-  const decision = must(p.decision, 'a decision')
-  expect(decision.behavior).toBe('allow')
-  const perm = decision.behavior === 'allow' ? decision.updatedPermissions?.[0] : undefined
-  expect(perm && 'mode' in perm ? perm.mode : undefined).toBe('default')
-  // the review is closed (consent said so): another PermissionRequest starts no node
-  await $.classic.PermissionRequest({ session_id: SID, tool_name: 'ExitPlanMode', tool_input: {}, permission_mode: 'default' })
+  await $.tool.call({ tool: 'ExitPlanMode' })
   expect(seen.consent.map(c => `${String(c.stdin.hook_event_name)} ${String(c.stdin.tool_name)}`))
-    .toEqual(['PreToolUse EnterPlanMode', 'PostToolUse EnterPlanMode', 'PermissionRequest ExitPlanMode'])
+    .toEqual(['PreToolUse EnterPlanMode', 'PostToolUse EnterPlanMode', 'PreToolUse ExitPlanMode'])
+  // EnterPlanMode: consent answered nothing, so the hooks beneath decided; the closing call's ask stood above them
+  expect(seen.beneathPre).toEqual(['EnterPlanMode'])
+  expect(seen.tools).toEqual(['EnterPlanMode', 'ExitPlanMode'])
 })
 
 test('an unseated session runs no consent on the plan tools or the card', async ($, on) => {

@@ -211,18 +211,6 @@
    "note": "The hooks module's prompt.attachment of type plan_mode carries detail {reminder full|sparse, planFilePath, hasPlan} as the request is made, and its text is rewritable: the one point that knows the plan file before the model's next call (PostToolUse(EnterPlanMode) does not: no plan_mode attachment, no slug in the transcript yet; cc-2.1.296-tasks-plans.md S3.1). mod/consent.ts sends it to consent (lib/cc/env.ts PLAN_ATTACHMENT_EVENT), which seeds a room plan edit there and appends a line."
   },
   {
-   "id": "exitplan-permission-setmode",
-   "section": 3,
-   "stability": "API",
-   "feature": "sign-off",
-   "since": "2.1.296",
-   "search": [
-    "case\"setMode\":",
-    "User approved Claude"
-   ],
-   "note": "A PermissionRequest(ExitPlanMode) hook answering allow with updatedPermissions [{type:setMode, mode, destination:session}] leaves plan mode with no dialog in every mode (default, acceptEdits, bypassPermissions, dontAsk, auto, and with showClearContextOnPlanAccept on: cc-2.1.296-tasks-plans.md S3.5). The transcript draws \"User approved Claude's plan\" for it when the plan file holds a plan (exitplan-empty-plan: the hooks empty it first). lib/cc/env.ts leavePlanMode: a review's restore and a room plan edit's closing call."
-  },
-  {
    "id": "pretool-deny-context",
    "section": 1,
    "stability": "API",
@@ -250,7 +238,7 @@
     ",~=\"plan\"in ~&&typeof ~.plan===\"string\"?~.plan:void 0;",
     "if(!~||~.trim()===\"\")return{type:\"tool_result\",content:\"User has approved exiting plan mode. You can now proceed.\""
    ],
-   "note": "ExitPlanMode with no plan in its input (leavePlanMode's updatedInput is {}) reads the session plan file as it runs. A plan there is drawn as \"User approved Claude's plan · TITLE\" and handed to the model as \"User has approved your plan. You can now start coding … ## Approved Plan: TEXT\"; an empty file draws \" Exited plan mode\" and tells the model only \"User has approved exiting plan mode. You can now proceed.\" So the hooks empty the plan file at PermissionRequest (lib/cc/env.ts LEAVE_PLAN_TEXT) and put the person's own plan back at PostToolUse(ExitPlanMode) (or the next prompt): never the person's private plan shown or handed over as approved."
+   "note": "ExitPlanMode with an empty plan in its input (the consent hook's ask on a closing call sets updatedInput {plan: \"\"}) draws \" Exited plan mode\" and tells the model only \"User has approved exiting plan mode. You can now proceed.\"; with no plan in its input it reads the session plan file as it runs, where a plan would be drawn as \"User approved Claude's plan · TITLE\" and handed to the model as approved. So the hooks also empty the plan file for a closing call (lib/cc/env.ts LEAVE_PLAN_TEXT) and put the person's own plan back at PostToolUse(ExitPlanMode) (or the next prompt): never the person's private plan shown or handed over as approved. The person answers the closing call themselves (Claude Code's own \"exit plan mode?\")."
   },
   {
    "id": "enterplan-in-plan-mode",

@@ -27,7 +27,7 @@ const HOSTILE = [
   'repeated     spaces    inside',
   'line one\nline two\n\nline four',
   'tab\tseparated\tvalues',
-  'emoji 🎉👩‍💻 and flags 🇺🇸',
+  'emoji 🎉👩\u200d💻 and flags 🇺🇸',
   'back\\slash and \\n literal',
   'x'.repeat(5000),
   '   leading and trailing spaces   ',

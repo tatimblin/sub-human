@@ -113,10 +113,11 @@ test('hold is denied to the main thread', async ($, on) => {
   expect(r).toEqual([])
 })
 
-test('tool.check: the room tools are allowed for a seated session, hold never from the main thread', async ($, on) => {
+test('tool.check: the plugin answers no permission check: the room tools get Claude Code\'s own prompt, seated or not', async ($, on) => {
   world(on)
   await hello($)
-  expect((await $.tool.check({ tool: 'mcp__plugin_sub-human_room__post', input: { text: 'hi' } })).decision).toBe('allow')
-  expect((await $.tool.check({ tool: 'mcp__plugin_sub-human_room__hold', input: {} })).decision).toBe('deny')
-  expect((await $.tool.check({ tool: 'mcp__other__post', input: {} })).decision).toBe('ask')
+  // the stub beneath is Claude Code's prompt (ask); hold from the main thread is tool.call's deny (above), not a check
+  for (const tool of ['mcp__plugin_sub-human_room__post', 'mcp__plugin_sub-human_room__hold', 'mcp__other__post']) {
+    expect((await $.tool.check({ tool, input: {} })).decision).toBe('ask')
+  }
 })

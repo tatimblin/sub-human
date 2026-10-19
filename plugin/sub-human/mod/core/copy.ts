@@ -26,7 +26,7 @@
  *   copyLine(line) -> string | null               a line the module may hold: one line, no PIN-shaped word in it
  *   copyBook()                                    the module's memory: hold, drop, keepOpen, lineFor, ask, askedRef,
  *                                                 choose, choice
- *   clipboardCommands(env) -> {name, argv}[]      pbcopy, clip.exe (WSL), wl-copy (Wayland), xclip (X11), in order
+ *   clipboardCommands(env) -> {name}[]            pbcopy, clip.exe (WSL), wl-copy (Wayland), xclip (X11), in order (scripts/clip.sh runs one)
  *   copyTo(run, line, commands) -> 'copied'|'none' each in turn until one exits 0; a missing tool, a failure or a
  *                                                 timeout tries the next
  *   copyOutcome(answer, line) -> {copy} | {say}   what the person's answer does, and the session's choice
@@ -123,31 +123,31 @@ export function copyBook(): CopyBook {
   };
 }
 
-/** One clipboard tool: its name and the argv that runs it with the line on stdin. Through sh, so a tool that is not
- * installed exits 127 (not a rejected start) and one that forks to keep the selection (xclip, wl-copy) does not hold
- * the run open on its output. The line is never in the argv. */
-export interface ClipboardCommand { name: string; argv: string[] }
-const viaSh = (name: string, cmd: string): ClipboardCommand => ({ name, argv: ['sh', '-c', `command -v ${name} >/dev/null 2>&1 || exit 127; exec ${cmd} >/dev/null 2>&1`] });
+/** One clipboard tool, by name: scripts/clip.sh NAME runs it with the line on stdin (127 when it is not installed,
+ * its output dropped so a tool that forks to keep the selection does not hold the run open). The call sites spell
+ * that argv out at $.process.run (mod/consent.ts, mod/deliver.ts), so the directory reads the program run. The line
+ * is never in the argv. */
+export interface ClipboardCommand { name: 'pbcopy' | 'wl-copy' | 'xclip' | 'clip.exe' }
 /** The clipboard tools to try, in order: pbcopy (macOS); clip.exe first under WSL; wl-copy with a Wayland display,
  * xclip -selection clipboard with an X display. */
 export function clipboardCommands(env: { WAYLAND_DISPLAY?: string | undefined; DISPLAY?: string | undefined; WSL_DISTRO_NAME?: string | undefined; WSL_INTEROP?: string | undefined }): ClipboardCommand[] {
   const out: ClipboardCommand[] = [];
-  if (env.WSL_DISTRO_NAME || env.WSL_INTEROP) out.push(viaSh('clip.exe', 'clip.exe'));
-  out.push(viaSh('pbcopy', 'pbcopy'));
-  if (env.WAYLAND_DISPLAY) out.push(viaSh('wl-copy', 'wl-copy'));
-  if (env.DISPLAY) out.push(viaSh('xclip', 'xclip -selection clipboard'));
+  if (env.WSL_DISTRO_NAME || env.WSL_INTEROP) out.push({ name: 'clip.exe' });
+  out.push({ name: 'pbcopy' });
+  if (env.WAYLAND_DISPLAY) out.push({ name: 'wl-copy' });
+  if (env.DISPLAY) out.push({ name: 'xclip' });
   return out;
 }
 /** How long one clipboard tool may take. */
 export const CLIPBOARD_TIMEOUT_MS = 3000;
 
-/** A process runner as $.process.run is one (the tests pass a stub). */
-export type Runner = (argv: readonly string[], init: { stdin: string; timeoutMs: number }) => Promise<{ exitCode: number }>;
+/** Runs one clipboard tool by name, as the call site's $.process.run of scripts/clip.sh (the tests pass a stub). */
+export type Runner = (name: ClipboardCommand['name'], init: { stdin: string; timeoutMs: number }) => Promise<{ exitCode: number }>;
 /** The line to the first tool that exits 0; a tool missing (127), failing or timing out (a rejection) tries the next. */
 export async function copyTo(run: Runner, line: string, commands: readonly ClipboardCommand[]): Promise<'copied' | 'none'> {
   for (const c of commands) {
     try {
-      const r = await run(c.argv, { stdin: line, timeoutMs: CLIPBOARD_TIMEOUT_MS });
+      const r = await run(c.name, { stdin: line, timeoutMs: CLIPBOARD_TIMEOUT_MS });
       if (r.exitCode === 0) return 'copied';
     } catch { /* the next one */ }
   }

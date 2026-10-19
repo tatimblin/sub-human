@@ -370,7 +370,7 @@ test('chat: a peer message is "NAME\'s Claude: …" with nested continuation lin
   assert.ok(out);
   assert.equal(out.length, 401);
   assert.equal(out.at(-1), `${NEST}[+5 more lines: ctrl+o]`);
-  assert.deepEqual(peerLines('bob.otter-4821', 'a‮b\u0007c\r\nd'), ["bob's Claude: abc", `${NEST}d`]);
+  assert.deepEqual(peerLines('bob.otter-4821', 'a\u202eb\u0007c\r\nd'), ["bob's Claude: abc", `${NEST}d`]);
   const plain = (t: string) => ({ text: t, dim: false });
   assert.deepEqual(roomRows('bob: hi\n  │ more\n(for Claude) room now: no proposals\ncarol joined'),
     [plain('bob: hi'), plain('  │ more'), { text: '(for Claude) room now: no proposals', dim: true }, plain('carol joined')]);
@@ -411,10 +411,6 @@ test('guard: write targets, ancestors and the verdict before and after mod-hello
   assert.ok(g.writeVerdict(['/u/.sub-human/x'], {}), 'before hello: the .sub-human spelling');
   assert.ok(g.writeVerdict([], {}, '~/.sub-human/rooms/x'));
   assert.equal(g.writeVerdict(['/w/.sub-human-notes.md'], {}), null);
-  assert.deepEqual(g.roomToolVerdict({ tool: g.HOLD }, true), { decision: 'deny', reason: g.HOLD_DENY });
-  assert.deepEqual(g.roomToolVerdict({ tool: g.HOLD, agentId: 'a1' }, true), { decision: 'allow', reason: g.ROOM_ALLOW });
-  assert.equal(g.roomToolVerdict({ tool: g.MCP_PREFIX + 'post' }, false), null);
-  assert.equal(g.roomToolVerdict({ tool: 'Bash' }, true), null);
   assert.equal(g.failClosed({ tool: 'Write', file_path: '/x/sub-human/y' }), true);
   assert.equal(g.failClosed({ tool: 'Write', file_path: '/x/y' }), false);
 });

@@ -32,7 +32,6 @@ const EVENTS: { [K in ConsentEvent['type']]: Extract<ConsentEvent, { type: K }> 
   enter: { type: 'enter', mode: 'default', reviewable: true, pending, said: null, named: null, plan },
   entered: { type: 'entered', plan },
   exit: { type: 'exit', toolUseId: 'tu2', answer: { note: null }, target, shown: { hash: H, from: 'alice' }, text: TEXT, plan, callPlan: `proposal ${H}`, ownPlan: undefined },
-  permission: { type: 'permission' },
   exited: { type: 'exited', toolUseId: 'tu1', mode: 'default', answer: null, target, response: { plan: TEXT, edited: false, isAgent: false, filePath: undefined },
     callPlan: undefined, pending: [], callNames: [], reviewable: true },
   stop: { type: 'stop', mode: 'plan', active: false, answer: { note: null }, target, live: true },
@@ -55,32 +54,32 @@ const shape = (s: ReviewStep) => [s.state.review ? s.state.review.phase : 'none'
 // review phase × event -> [phase after, say, effects]
 const TABLE: Record<string, Record<ConsentEvent['type'], [string, string | null, string]>> = {
   none: {
-    enter: ['entering', 'allow', 'save,writePlan'], entered: ['none', null, ''], exit: ['none', null, ''], permission: ['none', null, ''],
+    enter: ['entering', null, 'save,writePlan'], entered: ['none', null, ''], exit: ['none', null, ''],
     exited: ['none', null, ''], stop: ['none', null, ''], roomTool: ['none', null, ''], prompt: ['none', null, ''],
     ask: ['none', 'deny', ''], answered: ['none', 'context', 'answer'], planFailed: ['none', null, ''], rejected: ['none', null, ''],
   },
   entering: {
-    enter: ['entering', 'allow', 'save,writePlan'], entered: ['entering', 'context', 'save,writePlan'], exit: ['shown', 'ask', 'save,writePlan'],
-    permission: ['entering', null, ''], exited: ['none', null, ''], stop: ['entering', 'context', ''], roomTool: ['entering', null, ''],
+    enter: ['entering', null, 'save,writePlan'], entered: ['entering', 'context', 'save,writePlan'], exit: ['shown', 'ask', 'save,writePlan'],
+    exited: ['none', null, ''], stop: ['entering', 'context', ''], roomTool: ['entering', null, ''],
     prompt: ['exiting', 'context', ''], ask: ['entering', 'deny', ''], answered: ['entering', 'context', 'answer'], planFailed: ['exiting', null, ''], rejected: ['entering', null, ''],
   },
   shown: {
-    enter: ['entering', 'allow', 'restorePlan,save,writePlan'], entered: ['shown', null, ''], exit: ['exiting', null, ''], permission: ['shown', null, ''],
+    enter: ['entering', null, 'restorePlan,save,writePlan'], entered: ['shown', null, ''], exit: ['exiting', 'ask', 'blankPlan'],
     exited: ['none', 'context', 'answer,restorePlan'], stop: ['exiting', 'context', ''], roomTool: ['exiting', 'deny', ''], prompt: ['exiting', 'context', ''],
     ask: ['shown', 'deny', ''], answered: ['shown', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', 'context', ''],
   },
   exiting: {
-    enter: ['entering', 'allow', 'restorePlan,save,writePlan'], entered: ['exiting', null, ''], exit: ['exiting', null, ''], permission: ['exiting', 'permit', 'blankPlan'],
+    enter: ['entering', null, 'restorePlan,save,writePlan'], entered: ['exiting', null, ''], exit: ['exiting', 'ask', 'blankPlan'],
     exited: ['none', 'context', 'restorePlan'], stop: ['exiting', 'context', ''], roomTool: ['exiting', 'deny', ''], prompt: ['exiting', 'context', ''],
     ask: ['exiting', 'deny', ''], answered: ['exiting', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', null, ''],
   },
   unread: {
-    enter: ['entering', 'allow', 'restorePlan,save,writePlan'], entered: ['exiting', null, ''], exit: ['exiting', null, ''], permission: ['exiting', 'permit', 'blankPlan'],
+    enter: ['entering', null, 'restorePlan,save,writePlan'], entered: ['exiting', null, ''], exit: ['exiting', 'ask', 'blankPlan'],
     exited: ['none', 'context', 'answer,restorePlan'], stop: ['exiting', 'context', ''], roomTool: ['exiting', 'deny', ''], prompt: ['exiting', 'context', ''],
     ask: ['exiting', 'deny', ''], answered: ['exiting', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', 'context', ''],
   },
   restore: {
-    enter: ['restore', 'allow', ''], entered: ['restore', 'context', ''], exit: ['exiting', null, ''], permission: ['restore', null, ''],
+    enter: ['restore', null, ''], entered: ['restore', 'context', ''], exit: ['exiting', 'ask', 'blankPlan'],
     exited: ['restore', null, ''], stop: ['restore', 'context', ''], roomTool: ['restore', null, ''], prompt: ['none', null, ''],
     ask: ['restore', 'deny', ''], answered: ['restore', 'context', 'answer'], planFailed: ['exiting', null, ''], rejected: ['restore', null, ''],
   },
@@ -194,7 +193,7 @@ test('enter: the request the person\'s words name, else the oldest; never the mo
   assert.equal(rev(named).hash, OTHER);
   assert.deepEqual(named.effects.map(e => e.do), ['save', 'writePlan'], 'no pick document any more');
   assert.equal(rev(enter({ said, named: 'cccccccccccc' })).hash, H, 'a name no longer pending: the oldest');
-  assert.deepEqual(named.say, { to: 'allow', text: '' });
+  assert.equal(named.say, null, 'entering says nothing (no permission answer: EnterPlanMode asks nothing anyway)');
   // a review of the proposal the note waits on supersedes the note; another proposal's note stays
   assert.equal(review.reduce({ review: null, note: note('waiting') }, EVENTS.enter, ctx).state.note, null);
   assert.ok(review.reduce({ review: null, note: note('waiting', { hash: OTHER }) }, EVENTS.enter, ctx).state.note);
@@ -256,7 +255,7 @@ test('the dialog closed: a note opens the note (nothing recorded), Esc nothing, 
   assert.match(review.textOf(parts(post), () => '', false), new RegExp(`^bob closed the review of proposal ${H} without answering`));
 });
 
-test('exited: a Yes records Agree only for the text unedited; a changed mode is set back; a stale one records nothing', () => {
+test('exited: a Yes records Agree only for the text unedited; a mode the Yes picked stands (plan mode alone is set back); a stale one records nothing', () => {
   const yes = (e: Partial<Extract<ConsentEvent, { type: 'exited' }>>) => review.reduce({ review: REVIEWS.shown, note: null }, { ...EVENTS.exited, ...e }, ctx);
   assert.deepEqual(yes({}).effects[0], { do: 'answer', hash: H, choice: 'Agree' });
   for (const response of [{ plan: TEXT, edited: true, isAgent: false, filePath: undefined }, { plan: TEXT + 'x', edited: false, isAgent: false, filePath: undefined }]) {
@@ -265,9 +264,11 @@ test('exited: a Yes records Agree only for the text unedited; a changed mode is 
   }
   assert.deepEqual(yes({ target: null }).effects.map(e => e.do), ['restorePlan']);
   const mode = yes({ mode: 'acceptEdits' });
-  assert.deepEqual([rev(mode).phase, rev(mode).restored], ['restore', true]);
-  // then: enter allows silently; a Stop once the mode is back clears it
-  assert.equal(review.reduce(mode.state, { ...EVENTS.stop, mode: 'default' }, ctx).state.review, null);
+  assert.deepEqual([mode.state.review, mode.effects.map(e => e.do)], [null, ['answer', 'restorePlan']], 'the Yes picked the mode: it stands, no restore');
+  // a person who was in plan mode before: put back with EnterPlanMode (it asks nothing); a Stop once it is back clears it
+  const inPlan = review.reduce({ review: { ...REVIEWS.shown, mode: 'plan' }, note: null }, { ...EVENTS.exited, mode: 'default' }, ctx);
+  assert.deepEqual([rev(inPlan).phase, rev(inPlan).restored], ['restore', true]);
+  assert.equal(review.reduce(inPlan.state, { ...EVENTS.stop, mode: 'plan' }, ctx).state.review, null);
 });
 
 test('exited with no review shown: the model is told nothing was recorded; a Yes on the person\'s own plan (an edit\'s included) records nothing', () => {
@@ -416,7 +417,6 @@ test('the plan view\'s line names the request as people know it (plan NAME vN; a
   assert.match(review.SAY.dialog('bob', H, 'alice', 'default', 'plan paging v3'), /^sign-off on plan paging v3, asked by alice, for bob: agreeing signs off on this text, it is not a go-ahead to build /);
   assert.match(review.SAY.dialog('bob', H, null, 'default', 'Ship v3 Monday'), new RegExp(`^sign-off on "Ship v3 Monday" \\(${H.slice(0, 6)}\\), for bob: `));
   assert.match(review.SAY.dialog('bob', H, 'alice', 'default'), new RegExp(`^sign-off on room proposal ${H}, asked by alice`));
-  assert.equal(review.SAY.opening, '', 'noise pass F: no "opening plan … for bob" line: the view is what the person sees');
   // the title rides from the pending request into the review and its dialog
   const entering = review.reduce({ review: null, note: null }, { type: 'enter', mode: 'default', reviewable: true, pending: [{ hash: H, from: 'alice', viewable: true, title: 'plan paging v3' }], said: null, named: null, plan: { file: null, text: null } }, ctx);
   assert.equal(must(entering.state.review).title, 'plan paging v3');
@@ -424,11 +424,11 @@ test('the plan view\'s line names the request as people know it (plan NAME vN; a
   assert.match(must(shown.say && shown.say.to === 'ask' ? shown.say.text : null), /^sign-off on plan paging v3, asked by alice, for bob/);
 });
 
-test('stage 8e H (live verify, localb/07e): the plan view\'s hint names only a "Yes" the dialog offers: the one that keeps default or auto, else any Yes (the mode comes back)', () => {
+test('stage 8e H (live verify, localb/07e): the plan view\'s hint names only a "Yes" the dialog offers: the one that keeps default or auto; in plan mode any Yes (plan mode comes back); else any Yes, which sets the mode it names', () => {
   const hint = (mode: string | undefined) => must(/Agree: (.*?)\. Object/.exec(review.SAY.dialog('bob', H, 'alice', mode)))[1];
   assert.deepEqual(['default', 'auto', 'acceptEdits', 'plan', 'bypassPermissions', 'dontAsk', undefined].map(hint), [
-    '"Yes, manually approve edits" keeps your mode', '"Yes, and use auto mode" keeps your mode', 'any "Yes" (your accept-edits mode comes back)',
-    'any "Yes" (your plan mode comes back)', 'any "Yes" (your bypass-permissions mode comes back)', 'any "Yes" (your don\'t-ask mode comes back)', 'any "Yes" (your own mode comes back)',
+    '"Yes, manually approve edits" keeps your mode', '"Yes, and use auto mode" keeps your mode', 'any "Yes" (it sets the mode it names)',
+    'any "Yes" (your plan mode comes back)', 'any "Yes" (it sets the mode it names)', 'any "Yes" (it sets the mode it names)', 'any "Yes" (it sets the mode it names)',
   ]);
   // every option it names is one the dialog shows (Claude Code 2.1.296: "Yes, and use auto mode", "Yes, manually approve edits")
   for (const m of ['default', 'auto', 'acceptEdits', 'plan']) for (const named of review.SAY.dialog('bob', H, 'alice', m).match(/"Yes[^"]*"/g) || []) {
@@ -478,9 +478,9 @@ test('8 (live verify): a Yes within YES_GUARD_MS of the view being shown, or whi
 
 test('A (live validation): a sign-off asked while the person is in plan mode holding a plan of their own: the review opens there, the view shows the proposal, a Yes is a sign-off only, and their plan comes back', () => {
   const own = { file: '/plans/x.md', text: '# my private plan\n\n1. secret step\n' };
-  // Pre(EnterPlanMode) made in plan mode: the review opens with plan as the mode to put back, the proposal written now
+  // EnterPlanMode made in plan mode: the review opens with plan as the mode to put back, the proposal written now
   const enter = review.reduce({ review: null, note: null }, { ...EVENTS.enter, mode: 'plan', plan: own }, ctx);
-  assert.deepEqual(shape(enter), ['entering', 'allow', 'save,writePlan']);
+  assert.deepEqual(shape(enter), ['entering', null, 'save,writePlan']);
   assert.deepEqual([rev(enter).mode, rev(enter).backup, rev(enter).file], ['plan', own.text, own.file], 'their plan is backed up first');
   assert.deepEqual(enter.effects[1], { do: 'writePlan', file: own.file, hash: H, early: true });
   // Pre(ExitPlanMode): whatever the call carries (Claude Code reads the file: now the proposal), the view shows the proposal
@@ -514,7 +514,6 @@ test('A (live validation): a sign-off asked while the person is in plan mode hol
   const close = review.reduce(closing.state, { ...EVENTS.exit, toolUseId: 'tu3', answer: null, shown: null, text: null, plan: { file: own.file, text: TEXT } }, ctx);
   assert.deepEqual(shape(close), ['none', 'deny', 'restorePlan']);
   assert.match(review.textOf(parts(close), () => '', false), /plan mode stays on.*plan file is back as it was/);
-  assert.deepEqual(shape(review.reduce(close.state, EVENTS.permission, ctx)), ['none', null, ''], 'no permission answer: nothing left to let through');
   // nothing to show (answered elsewhere meanwhile) or no plan file: denied, their plan back, no dialog
   const gone = review.reduce(enter.state, { ...EVENTS.exit, answer: null, shown: null, text: null, plan: { file: own.file, text: TEXT } }, ctx);
   assert.deepEqual(shape(gone), ['none', 'deny', 'restorePlan']);
@@ -524,9 +523,10 @@ test('A (live validation): a sign-off asked while the person is in plan mode hol
   // the proposal could not be written at the view: denied (the call would show their plan), the card instead
   const failed = review.reduce(shown.state, { type: 'planFailed', early: false }, ctx);
   assert.deepEqual(shape(failed), ['none', 'deny', 'restorePlan']);
-  // a review in its restore phase (the Yes left plan mode already) is not closed this way
+  // a review in its restore phase (the Yes left plan mode already) is not closed this way: an ExitPlanMode then is
+  // Claude Code's own "exit plan mode?" (the plan emptied), which the person answers
   const later = review.reduce(yes.state, { ...EVENTS.exit, toolUseId: 'tu4', answer: null }, ctx);
-  assert.deepEqual(shape(later), ['exiting', null, '']);
+  assert.deepEqual(shape(later), ['exiting', 'ask', 'blankPlan']);
 });
 
 test('A (live validation): no review open, no stub, a sign-off waiting: an ExitPlanMode that would show the plan file is steered once; the same call again passes', () => {

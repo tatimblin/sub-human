@@ -1,18 +1,22 @@
 // Wiring: the skeleton (mod/register.ts). Run with `npm run test:mods` (claude plugin test plugin/sub-human).
-// The test's $ has no state noun, so what the module kept in $.state sub-human/hello is read through the guard:
-// a room tool is allowed (tool.check) only once the hello names a seat.
+// The test's $ has no state noun, so what the module kept in $.state sub-human/hello is read through the guard: a
+// Bash command that names the hello's home (a custom one, not the .sub-human spelling) is denied only once the module
+// knows it. The room tools are never allowed by the module: Claude Code's own prompt (ask) answers them, seated or not.
 import type { EventOf, On } from 'claude-code'
 import { test, expect, type Engine } from 'claude-code/testing'
 import { OUT as HELLO, ran, scriptOf, must, session, stdinOf } from './support.ts'
 
 const POST = 'mcp__plugin_sub-human_room__post'
-const OUT = { ...HELLO, realHome: '/private/u/.sub-human' }
+const OUT = { ...HELLO, home: '/srv/rh', realHome: '/private/srv/rh' }
 /** The engine beneath: a session id, and the verdict a room tool gets without the module (ask). */
 function world(on: On, sid = 'sid-test') {
   session(on, sid)
   on('tool.check', () => ({ decision: 'ask' }))
+  on('tool.call', () => ({ result: 'ran', text: 'ran' }))
 }
 const verdict = async ($: Engine) => (await $.tool.check({ tool: POST, input: { text: 'hi' } })).decision
+/** Whether the module knows the hello's home: its guard denies a Bash command that writes there. */
+const knows = async ($: Engine) => /ROOM-GUARD/.test(String((await $.tool.call({ tool: 'Bash', command: 'echo x >> /srv/rh/rooms/a/log.jsonl' })).deny ?? ''))
 
 test('session.start runs hooks/run.ts mod-hello with the payload session id and keeps the hello in $.state', async ($, on) => {
   const runs: EventOf['process.run'][] = []
@@ -36,20 +40,22 @@ test('session.start runs hooks/run.ts mod-hello with the payload session id and 
   expect(env.CLAUDE_CODE_SESSION_ID).toBe(sid)
   expect(env.CLAUDE_PID).toBe('')
   expect(env.CLAUDE_PLUGIN_ROOT).toBe(must(run.argv[4], 'the runner path').replace(/\/hooks\/run\.ts$/, ''))
-  expect(await verdict($)).toBe('allow')
+  expect(await knows($)).toBe(true)
+  expect(await verdict($)).toBe('ask')
 })
 
 test('a failed hello leaves $.state as it was (the module does not know)', async ($, on) => {
   world(on)
   on('process.run', () => ran('', 1))
   await $.session.start({ cwd: '/w', surface: null, isInteractive: false })
-  expect(await verdict($)).toBe('ask')
+  expect(await knows($)).toBe(false)
 })
 
-test('a hello with no seat keeps the room tools behind the permission prompt', async ($, on) => {
+test('a hello with no seat: the home is known, and the room tools stay behind Claude Code\'s own prompt (as they do with a seat)', async ($, on) => {
   world(on)
   on('process.run', () => ran(JSON.stringify({ ...OUT, seat: null })))
   await $.session.start({ cwd: '/w', surface: null, isInteractive: false })
+  expect(await knows($)).toBe(true)
   expect(await verdict($)).toBe('ask')
 })
 
@@ -62,7 +68,8 @@ test('the join (classic.UserPromptExpansion /sub-human): the lease first, the jo
   expect(r.additionalContext).toEqual(['joined'])
   // no hello for this session id yet: its lease (the join refuses a session without one), then the new seat's
   expect(order).toEqual(['hello', 'join', 'hello'])
-  expect(await verdict($)).toBe('allow')
+  expect(await knows($)).toBe(true)
+  expect(await verdict($)).toBe('ask')
   // the same session again: the lease is written already
   await $.classic.UserPromptExpansion({ expansion_type: 'slash_command', command_name: 'sub-human', command_args: '', prompt: '/sub-human', session_id: 'sid-join' })
   expect(order).toEqual(['hello', 'join', 'hello', 'join', 'hello'])

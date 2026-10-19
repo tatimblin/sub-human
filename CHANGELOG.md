@@ -2,6 +2,26 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 0.5.1: the person keeps every permission decision (Anthropic's plugin directory)
+
+Tested on Claude Code 2.1.296 (the unit and hooks-module wiring tests, and a film demo run). The wire protocol is still 5: 0.5.1 and 0.5.0 share rooms.
+
+### Changed
+- **No permission answer is ever an allow.** The plugin's hooks answer a tool call only with a deny or an ask, each written out in the hook's return, else the hooks beneath decide, as the plugin directory requires:
+  - The room's MCP tools get Claude Code's own permission prompt, like any MCP tool. Pick "Yes, and don't ask again" once per tool; in auto mode the classifier decides.
+  - Entering plan mode for a review asks nothing (it never did); the review now opens at EnterPlanMode's PostToolUse.
+  - A review's or an edit's closing call is Claude Code's own "Exit plan mode?" question (an ask with the plan emptied), which the person answers, where the hooks used to let it through silently with the mode set back.
+  - A plan view's Yes leaves plan mode in the mode it names, as with any plan; only a person who was in plan mode before is put back there (EnterPlanMode, which asks nothing). The hint in the view says which Yes keeps your mode.
+- **One screen for your own new version.** After your Claude stores a room plan edit, its closing ExitPlanMode opens your check of that version right there (the plan view with the version's text; Yes sends it out). There used to be a second, hidden step first.
+
+### Fixed (plugin directory checks)
+- The hooks.json shell lines (the EnterPlanMode mode note, SessionEnd's guard) are scripts now (`hooks/mode-note.sh`, `hooks/session-end.sh`), so each command names a file under the plugin.
+- The invite copy card runs `scripts/clip.sh NAME`, not an inline `sh -c` program.
+- Invisible bidi characters in `mod/core/chat.ts` (and in tests) are written as escapes.
+
+### Added
+- An icon (`.claude-plugin/icon.png`) and a README section on what the plugin runs, writes and sends.
+
 ## 0.5.0, public: the repo opens
 
 Tested on Claude Code 2.1.296 (the unit and hooks-module wiring tests). No change to the plugin's behaviour, and the wire protocol is still 5: 0.5.0 and 0.5.0-beta.24 share rooms.

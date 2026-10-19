@@ -38,6 +38,14 @@ function* allHooks() {
     for (const g of groups) for (const hk of g.hooks) yield { event, matcher: g.matcher, hook: hk };
   }
 }
+/** A hooks.json command as the shell runs it: a command that only runs a script of the plugin's hooks/ folder is that
+ * script's body (comment lines dropped, ${0%/*} read as the folder it is in, ${CLAUDE_PLUGIN_ROOT}/hooks). */
+const commandText = (cmd: string): string => {
+  const m = /^sh "\$\{CLAUDE_PLUGIN_ROOT\}\/hooks\/([a-z-]+\.sh)"$/.exec(cmd);
+  if (!m) return cmd;
+  return fs.readFileSync(path.join(PLUGIN, 'hooks', m[1] ?? ''), 'utf8').split('\n').filter(l => l.trim() && !l.trim().startsWith('#')).join('\n').trim()
+    .replaceAll('${0%/*}', '${CLAUDE_PLUGIN_ROOT}/hooks');
+};
 /** The hook's script: the last plugin path in its command (the first is the compile-cache preload). */
 /** The handler file a hooks.json command runs: `node … hooks/run.ts NAME` -> hooks/handlers/NAME.ts. */
 const scriptOf = (cmd: string) => {
@@ -126,14 +134,15 @@ test('hooks.json: the join with no node 22.18+ (none on PATH, an older one, none
 
 test('hooks.json: every command runs node on a script that exists in the plugin (the EnterPlanMode mode note runs none)', () => {
   for (const { event, hook } of allHooks()) {
-    if (event === 'PreToolUse') { assert.doesNotMatch(hook.command, /\bnode\b/); continue; }
+    const cmd = commandText(hook.command);
+    if (event === 'PreToolUse') { assert.doesNotMatch(cmd, /\bnode\b/); continue; }
     assert.equal(hook.type, 'command', event);
     const check = event === 'UserPromptExpansion' ? NODE_CHECK : SEAT_CHECK;
-    assert.match(hook.command, check, hook.command);
+    assert.match(cmd, check, cmd);
     // the compile cache preloaded, then the hook (hooks/compile-cache.js)
-    assert.ok(hook.command.replace(check, '').startsWith(PRELOAD), `${event}: ${hook.command}`);
-    assert.match(hook.command.replace(check, '').slice(PRELOAD.length), /^"\$\{CLAUDE_PLUGIN_ROOT\}\/hooks\/run\.ts" [a-z-]+$/, `${event}: ${hook.command}`);
-    const rel = scriptOf(hook.command);
+    assert.ok(cmd.replace(check, '').startsWith(PRELOAD), `${event}: ${cmd}`);
+    assert.match(cmd.replace(check, '').slice(PRELOAD.length), /^"\$\{CLAUDE_PLUGIN_ROOT\}\/hooks\/run\.ts" [a-z-]+$/, `${event}: ${cmd}`);
+    const rel = scriptOf(cmd);
     assert.ok(fs.existsSync(path.join(PLUGIN, must(rel))), `${event}: ${rel} is missing`);
   }
 });
@@ -342,7 +351,7 @@ test('hooks.json: the EnterPlanMode note (item 7 H) writes the call\'s permissio
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-mode-'));
   const home = path.join(tmp, 'home');
   const run = (sid: string, input: string) => {
-    const r = spawnSync('/bin/sh', ['-c', note], { input, encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: tmp, SUB_HUMAN_HOME: home, CLAUDE_CODE_SESSION_ID: sid } });
+    const r = spawnSync('/bin/sh', ['-c', note], { input, encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: tmp, SUB_HUMAN_HOME: home, CLAUDE_CODE_SESSION_ID: sid, CLAUDE_PLUGIN_ROOT: PLUGIN } });
     assert.equal(r.status, 0, r.stderr);
   };
   const file = (sid: string) => path.join(home, 'sessions', 'mode', sid);

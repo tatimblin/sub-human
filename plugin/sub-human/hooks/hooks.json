@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"${SUB_HUMAN_HOME:-$HOME/.sub-human}/sessions\"; s=\"$CLAUDE_CODE_SESSION_ID\"; case \"$s\" in \"\"|*/*|.*) cat >/dev/null; exit 0;; esac; [ -e \"$h/by-sid/$s.json\" ] || { cat >/dev/null; exit 0; }; m=$(tr -d '\\n' | sed -n 's/.*\"permission_mode\": *\"\\([A-Za-z]*\\)\".*/\\1/p'); [ -n \"$m\" ] || exit 0; umask 077; mkdir -p \"$h/mode\" 2>/dev/null && printf '%s\\n' \"$m\" > \"$h/mode/$s\" 2>/dev/null; exit 0",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/mode-note.sh\"",
             "timeout": 5
           }
         ]
@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"${SUB_HUMAN_HOME:-$HOME/.sub-human}/sessions\"; s=\"$CLAUDE_CODE_SESSION_ID\"; [ -z \"$s\" ] || [ -e \"$h/mods/$s.json\" ] || [ -e \"$h/by-sid/$s.json\" ] || [ -e \"$h/by-pid/$CLAUDE_PID.json\" ] || { while IFS= read -r _; do :; done; exit 0; }; exec sh \"${CLAUDE_PLUGIN_ROOT}/hooks/node.sh\" --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/run.ts\" session-end",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/session-end.sh\"",
             "timeout": 5
           }
         ]

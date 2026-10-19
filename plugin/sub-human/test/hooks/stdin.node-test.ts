@@ -16,13 +16,21 @@ import { must } from '../support/must.ts';
 interface HookEntry { command: string; timeout?: number }
 interface HooksJson { hooks: Record<string, { matcher?: string; hooks: HookEntry[] }[]> }
 
+/** A hooks.json command as the shell runs it: a command that only runs a script of the plugin's hooks/ folder is that
+ * script's body (comment lines dropped, ${0%/*} read as the folder it is in, ${CLAUDE_PLUGIN_ROOT}/hooks). */
+const commandText = (cmd: string): string => {
+  const m = /^sh "\$\{CLAUDE_PLUGIN_ROOT\}\/hooks\/([a-z-]+\.sh)"$/.exec(cmd);
+  if (!m) return cmd;
+  return fs.readFileSync(path.join(PLUGIN, 'hooks', m[1] ?? ''), 'utf8').split('\n').filter(l => l.trim() && !l.trim().startsWith('#')).join('\n').trim()
+    .replaceAll('${0%/*}', '${CLAUDE_PLUGIN_ROOT}/hooks');
+};
 const HOOKS_JSON = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')) as HooksJson;
 /** handler -> its smallest timeout (s): a hooks.json entry's, else the module's shim timeout (10 s). */
 const TIMEOUTS = new Map<string, number>(HANDLERS.map(h => [h, 10]));
 for (const groups of Object.values(HOOKS_JSON.hooks)) {
   for (const g of groups) {
     for (const h of g.hooks) {
-      for (const m of h.command.matchAll(/hooks\/run\.ts\\?"? ([a-z-]+)/g)) { const name = must(m[1]); TIMEOUTS.set(name, Math.min(TIMEOUTS.get(name) ?? Infinity, h.timeout ?? 60)); }
+      for (const m of commandText(h.command).matchAll(/hooks\/run\.ts\\?"? ([a-z-]+)/g)) { const name = must(m[1]); TIMEOUTS.set(name, Math.min(TIMEOUTS.get(name) ?? Infinity, h.timeout ?? 60)); }
     }
   }
 }
@@ -33,9 +41,10 @@ const INPUTS = ['', '{"hook_event_name":"Pre', 'not json', 'null', '[]', '"text"
 test('stdin: every hooks.json entry runs hooks/run.ts with a handler that exists, and every handler file is one run.ts knows', () => {
   const named = new Set<string>();
   for (const [ev, groups] of Object.entries(HOOKS_JSON.hooks)) for (const g of groups) for (const h of g.hooks) {
-    if (ev === 'PreToolUse') { assert.doesNotMatch(h.command, /\bnode\b/, 'the EnterPlanMode mode note runs no node'); continue; }
-    const m = /hooks\/run\.ts\\?"? ([a-z-]+)/.exec(h.command);
-    assert.ok(m, `a hooks.json command runs hooks/run.ts: ${h.command}`);
+    const cmd = commandText(h.command);
+    if (ev === 'PreToolUse') { assert.doesNotMatch(cmd, /\bnode\b/, 'the EnterPlanMode mode note runs no node'); continue; }
+    const m = /hooks\/run\.ts\\?"? ([a-z-]+)/.exec(cmd);
+    assert.ok(m, `a hooks.json command runs hooks/run.ts: ${cmd}`);
     named.add(must(m[1]));
   }
   for (const n of named) assert.ok(HANDLERS.includes(n), n);

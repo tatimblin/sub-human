@@ -42,7 +42,7 @@ function world(engine: Engine, on: On, { ref, noCard = false, clip = [0] }: { re
   on('ui.log', (_$, e) => { seen.logs.push(e.text); return { value: undefined } })
   on('ui.status', () => ({ value: undefined }))
   on('process.run', (_$, e) => {
-    if (e.argv[0] === 'sh' && e.argv[1] === '-c') {
+    if (e.argv[0] === 'sh' && String(e.argv[1]).endsWith('/scripts/clip.sh')) {
       seen.clip.push({ argv: e.argv, stdin: e.init?.stdin })
       return ran('', clip[seen.clip.length - 1] ?? 127)
     }
@@ -103,6 +103,7 @@ test('an invite with its line: one wake naming the ref only; the card on "copy i
   expect(seen.clip[0]?.stdin).toBe(lineOf(ref))
   expect(seen.clip[0]?.stdin).not.toContain(PIN)
   expect(JSON.stringify(seen.clip[0]?.argv)).not.toContain(SECRET)
+  expect(seen.clip[0]?.argv.slice(2)).toEqual(['pbcopy'])
   expect(seen.logs).toContain('copied')
   expect((post.additionalContext ?? []).join('\n')).toContain('Reply with nothing.')
   expect(JSON.stringify(post)).not.toContain(SECRET)

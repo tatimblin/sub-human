@@ -50,7 +50,7 @@ test('contract: every entry names a feature, one of FEATURES', () => {
   for (const f of GATED) { assert.ok(contract.FEATURES.includes(f), f); assert.ok(FALLBACK[f], f); }
   // the plan view's own internals gate sign-off; the edit receipt's gate plan-edit
   const of = (id: string) => must(contract.CONTRACT.find(e => e.id === id), id).feature;
-  assert.equal(of('exitplan-permission-setmode'), 'sign-off');
+  assert.equal(of('exitplan-empty-plan'), 'sign-off');
   assert.equal(of('module-plan-mode-detail'), 'plan-edit');
   assert.equal(of('task-file-schema'), 'tasks');
   assert.equal(of('bg-dispatch-line'), 'room-session');
