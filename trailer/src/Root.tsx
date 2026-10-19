@@ -80,13 +80,13 @@ export const RemotionRoot: React.FC = () => {
         height={720}
         calculateMetadata={calculateTrailerMetadata}
         defaultProps={{
-          take: 'take7',
+          take: 'take8',
           edit: 'readme' as const,
           seats: [] as string[],
           music: null,
           musicVolume: 0.5,
           keyClicks: false,
-          scrubWords: [],
+          scrubWords: ['tristantimblin'],
           dropRows: [],
           compact: false,
         }}

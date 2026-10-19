@@ -2,11 +2,13 @@ import { ALICE_BOB, TRISTAN_JESS, type Cast } from './cast';
 import type { Capture } from './lib/capture';
 import { testsStory, type Story } from './edits/trailer';
 import { halvesStory } from './edits/halves';
+import { authorStory } from './edits/author';
 
 /**
  * Per take: who is in it (the cast: names and colours, name plates, captions, tag labels) and which story its
  * cuts tell. The synthetic and fixture takes are alice and bob, with bob's Claude writing the
- * tests; take7 is tristan and jess, both Claudes writing code (take6, an aborted take, is not listed). A take not
+ * tests; take7 is tristan and jess, both Claudes writing code (take6, an aborted take, is not listed); take8 the same
+ * build with 0.5.0-beta.24's join and plan flow (edits/author.ts). A take not
  * listed here gets the newest story, with its two people read from the capture (the first two sessions that are not
  * "claude", in the capture's order).
  */
@@ -22,6 +24,7 @@ export const TAKES: Record<string, TakeConfig> = {
   synthetic: TESTS,
   fixture: TESTS,
   take7: { cast: TRISTAN_JESS, story: halvesStory, style: 'v3' },
+  take8: { cast: TRISTAN_JESS, story: authorStory, style: 'v3' },
 };
 
 export function castFor(take: string, cap: Capture): Cast {

@@ -12,7 +12,7 @@ each other, your Claudes can message each other, you can share a task list, and 
 each of you signs off on yourself. It works on one machine or across machines, over ssh or the web, with no server in
 between.
 
-![Two machines in one sub-human room: tristan opens a room on devbox, jess joins from her laptop over ssh and asks the room's Claude for a plan, both approve it in their own plan view, and tristan's Claude builds his half](docs/media/sub-human-readme-loop.webp)
+![Two machines in one sub-human room: jess joins tristan's room from her laptop with an invite line and a PIN, her Claude drafts a room plan that she checks first, it opens for tristan in his own plan view, both sign off, and the tests pass for both after each Claude builds its half](docs/media/sub-human-readme-loop.webp)
 
 ## Why
 

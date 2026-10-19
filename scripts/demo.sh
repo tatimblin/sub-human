@@ -397,7 +397,7 @@ S2() { # B joins (--film: from another machine, over ssh: S2_ssh)
   # the join as a group-chat line in A's pane ("sub-human: B joined": the hooks module's $.ui.log notice, no
   # model turn); kept as evidence
   mkdir -p "$SNAP_DIR/state/S2"
-  wait_pane "$a" "^\s*(⏺ |⎿ )?(sub-human: )?$b joined\s*$" 60 --what "$a sees the chat line \"$b joined\"" && $LIB pane "sh-$a" > "$SNAP_DIR/state/S2/notice-$a.txt"
+  wait_pane "$a" "^\s*(⏺ |⎿ )?(sub-human: )?(room: )?$b joined(\s*$| from )" 60 --what "$a sees the chat line \"$b joined\"" && $LIB pane "sh-$a" > "$SNAP_DIR/state/S2/notice-$a.txt"
   need wait_pane "$b" "$(panel_row "$(room)")" 90 || return 1
   need $LIB wait-holds claude "$b" --timeout 120 || return 1
   need $LIB wait-holds "$a" "$b" --timeout 90 || return 1
@@ -462,8 +462,6 @@ else
   EDIT5A="update the room plan with my note: a cursor past the end must 400, with a test for it"
   EDIT5B="update the room plan: default page size 20, max 50"
 fi
-ASK4="ask $SEAT_A and me to sign off on the room plan"
-ASK5="ask $SEAT_A and me to sign off on the latest room plan"
 REPLY3="sure, once we've agreed how paging works"
 DWELL5="400"   # S5's latest version: the page with A's note (in his Claude's words)
 
@@ -485,33 +483,36 @@ S3() { # pairing with no plan: @room both ways, then Claude↔Claude SendMessage
   need $LIB wait-idle "sh-$a" --timeout 90 || return 1
   mark claudes "$b's Claude asks $a's Claude directly"
   submit "$b" "$ASK3"
-  # the engine's "Message from @B.CODE", or the hooks module's drawing of that peer row (mod/render.ts: "B's Claude: …")
-  need wait_pane "$a" "Message from @?$b\.|^\s*$b's Claude: " 120 --what "$a's pane shows a message from $b's Claude" || return 1
+  # the engine's "Message from @B.CODE", or the hooks module's drawing of that peer row (lib/room/render.ts: "B's Claude (to you): …")
+  need wait_pane "$a" "Message from @?$b\.|^\s*(❯ |⏺ )?$b's Claude( \([^)]*\))?: " 120 --what "$a's pane shows a message from $b's Claude" || return 1
   need $LIB wait-idle "sh-$a" --timeout 120 || return 1
-  need wait_pane "$b" "Message from @?$a\.|^\s*$a's Claude: " 120 --what "$b's pane shows $a's Claude's answer" || return 1
+  need wait_pane "$b" "Message from @?$a\.|^\s*(❯ |⏺ )?$a's Claude( \([^)]*\))?: " 120 --what "$b's pane shows $a's Claude's answer" || return 1
   need $LIB wait-idle "sh-$b" --timeout 120 || return 1
   settle "$a" "$b"
   snap "$b's Claude asks $a's Claude natively (SendMessage to $a.$(room)); $a's Claude answers. No card, no turn for the room's Claude"
 }
 
-S4() { # let's plan: B's own Claude drafts room plan v1 (plan mode; the hooks store it, no dialog), then asks both to sign off
+S4() { # let's plan: B's own Claude drafts room plan v1 (plan mode; the hooks store it, no dialog); B checks it first in
+  # her own plan view (0.5.0-beta.24: nobody else is asked about a version before its author), and her Yes sends it out
   local a=$SEAT_A b=$SEAT_B
   local before; before=$($LIB log-max)
   mark plan "$b asks her Claude to draft the room plan for cursor paging"
   submit "$b" "$PLAN4"
   need wait_log --kind plan --from "$b" --after "$before" --timeout 420 --what "$b's Claude stores room plan v1 (an edit in plan mode, the store's receipt)" || return 1
-  need $LIB wait-idle "sh-$b" --timeout 120 || return 1
-  settle "$a" "$b"
-  snap "$b's Claude edits the room plan in plan mode; the hooks store it as v1 and say so (no approval dialog: storing is not agreeing); $a's pane shows the new version"
-  local v1; v1=$($LIB log-max)
-  mark ask "$b asks for sign-off"
-  submit "$b" "$ASK4"
-  need wait_log --kind proposal --from "$b" --after "$v1" --timeout 120 --what "$b's Claude asks $a and $b to sign off on v1" || return 1
+  need wait_card "$b" "$b's own check of v1 is open (nobody else is asked yet)" || return 1
+  mark check "$b checks her Claude's version first; nobody else is asked yet"
+  paint "sh-$b"
+  settle "$a"
+  snap "$b's Claude stores v1 (no approval dialog: storing is not agreeing) and opens it for $b first, in her plan view; $a's pane shows the new version's line, and nobody asks $a yet"
+  need card_answer "$b" Agree || return 1
+  need wait_log --kind signoff --from "$b" --via human --after "$before" --timeout 30 --what "$b's Yes on her own version (her sign-off)" || return 1
+  mark ask "$b sends it out"
+  need wait_log --kind proposal --from "$b" --after "$before" --count 2 --timeout 60 --what "$b's Yes sends v1 out: a sign-off request to everyone" || return 1
   need wait_card "$a" "$a's review is open" || return 1
-  mark proposal "The sign-off request opens for $a and $b"
-  need wait_card "$b" "$b's review is open" || return 1
-  paint "sh-$a"; paint "sh-$b"   # the plan view's first paint (wait-idle counts an open plan view as busy)
-  snap "The sign-off request opens in $a's and $b's native plan view, all of it scrollable (Yes / Tell Claude what to change / Esc)"
+  mark proposal "The sign-off request opens for $a"
+  paint "sh-$a"   # the plan view's first paint (wait-idle counts an open plan view as busy)
+  settle "$b"
+  snap "The sign-off request opens in $a's native plan view, all of it scrollable (Yes / Tell Claude what to change / Esc); $b's Yes already counts as hers"
   read_plan "$a"
 }
 
@@ -527,45 +528,36 @@ read_plan() {
   record "$1 paged to the end of the proposal (${i}× PgDn)" "$ok"
 }
 
-S5() { # A objects with a note, B agrees; both Claudes edit the plan at once from v1 (a conflict, reconciled); both sign off → decision
+S5() { # A objects with a note; his own Claude works the note in as v2, which he checks first and sends out (his Yes is his
+  # sign-off); v2 opens for B, who agrees → decision. (B's Yes on v1 does not carry over: a new version is asked anew.)
   local a=$SEAT_A b=$SEAT_B
   local p1; p1=$($LIB last-id --kind proposal)
-  mark answers "$a objects with a note; $b agrees"
+  mark answers "$a objects with a note"
   need card_answer "$a" Object "$NOTE5" || return 1
   need wait_log --kind objection --from "$a" --via human --after "$p1" --timeout 30 || return 1
-  need card_answer "$b" Agree || return 1
-  need wait_log --kind signoff --from "$b" --via human --after "$p1" --timeout 30 || return 1
   settle "$a" "$b"
-  snap "$a objects with a note (via=human, byte-exact); $b agrees"
-  # both ask their own Claude for an edit at once: each starts from v1; the first ExitPlanMode stores v2, the second is
-  # refused with v2's text (the store's compare-and-swap) and reconciles into v3
-  mark edits "$a and $b each ask their Claude to update the plan, at the same time"
+  snap "$a objects with a note (via=human, byte-exact); $b had agreed with her Yes"
+  mark edits "$a asks his Claude to work his note into the plan"
   local e0; e0=$($LIB log-max)
   need $LIB wait-idle "sh-$a" --timeout 90 || return 1
-  need $LIB wait-idle "sh-$b" --timeout 90 || return 1
-  $LIB submit "sh-$a" "$EDIT5A"
-  $LIB submit "sh-$b" "$EDIT5B"
-  need wait_log --kind plan --from "$a" --after "$e0" --timeout 600 --what "$a's Claude stores a version" || return 1
-  need wait_log --kind plan --from "$b" --after "$e0" --timeout 600 --what "$b's Claude stores a version" || return 1
-  need $LIB wait-idle "sh-$a" --timeout 120 || return 1
-  need $LIB wait-idle "sh-$b" --timeout 120 || return 1
-  settle "$a" "$b"
-  snap "Two edits from v1 at once: the first stores v2; the second's ExitPlanMode is refused with v2's text, its Claude keeps both changes and stores v3"
-  local v3; v3=$($LIB log-max)
-  submit "$b" "$ASK5"
-  need wait_log --kind proposal --from "$b" --after "$v3" --timeout 120 --what "$b's Claude asks both to sign off on the latest version" || return 1
-  mark revision "The latest version opens for both"
-  need wait_card "$a" "$a's review of the latest version" || return 1
-  need wait_card "$b" "$b's review of the latest version" || return 1
-  paint "sh-$a"; paint "sh-$b"   # the plan view's first paint
-  snap "The latest version opens again for each"
-  local p2; p2=$($LIB last-id --kind proposal)
-  [ "$FILM" = 1 ] && DWELL="$DWELL5"   # each stops on the page with A's note before paging on
+  submit "$a" "$EDIT5A"
+  need wait_log --kind plan --from "$a" --after "$e0" --timeout 600 --what "$a's Claude stores the next version" || return 1
+  need wait_card "$a" "$a's own check of his Claude's version is open" || return 1
+  paint "sh-$a"
+  settle "$b"
+  snap "$a's Claude stores the next version with his note and opens it for $a first"
+  [ "$FILM" = 1 ] && DWELL="$DWELL5"   # he stops on the page with his note before paging on
   need card_answer "$a" Agree || { DWELL=""; return 1; }
-  need wait_log --kind signoff --from "$a" --via human --after "$p2" --timeout 30 || { DWELL=""; return 1; }
+  DWELL=""
+  need wait_log --kind signoff --from "$a" --via human --after "$e0" --timeout 30 || return 1
+  need wait_card "$b" "$b's review of the latest version" || return 1
+  mark revision "The latest version opens for $b"
+  paint "sh-$b"
+  snap "The latest version opens for $b, with $a's note in it"
+  [ "$FILM" = 1 ] && DWELL="$DWELL5"
   need card_answer "$b" Agree || { DWELL=""; return 1; }
   DWELL=""
-  need wait_log --kind decision --after "$p2" --timeout 30 || return 1
+  need wait_log --kind decision --after "$e0" --timeout 30 || return 1
   mark agreed "Both agree: the decision is logged"
   need $LIB wait-idle "sh-$a" --timeout 90 || return 1
   need $LIB wait-idle "sh-$b" --timeout 90 || return 1
@@ -672,7 +664,7 @@ S6b() {
   [ -z "$fail" ] && { wait_commit "$BASE/origin.git" "$a" 900 "$a's Claude pushes $a's commit to the origin" || fail="$a's commit never reached the origin (900 s)"; }
   if [ -z "$fail" ]; then
     mark pushed "$a's Claude pushes the store"
-    wait_pane "$b" "Message from @?$a\.|^\s*$a's Claude: " 180 --new --what "$b's pane shows $a's Claude's message (the store is pushed)" \
+    wait_pane "$b" "Message from @?$a\.|^\s*(❯ |⏺ )?$a's Claude( \([^)]*\))?: " 180 --new --what "$b's pane shows $a's Claude's message (the store is pushed)" \
       && mark handoff "$a's Claude tells $b's: the store is pushed"
     wait_commit "$BASE/$b" "$a" 900 "$b's checkout holds $a's commit ($b's Claude pulled)" || fail="$b's checkout never got $a's commit (900 s)"
   fi

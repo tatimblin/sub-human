@@ -1,11 +1,11 @@
-// S5: A objects with a note, B agrees; A's and B's Claudes edit the plan at once from v1 (the second reconciles a
-// conflict or builds on the first); B asks again; both sign off on the latest version -> decision
+// S5: A objects with a note (B agreed to v1 with the Yes that sent it out); A's Claude works the note in as v2, A
+// checks it first and his Yes sends it out; B agrees -> decision. (The store's compare-and-swap between two edits at
+// once is covered by the plugin's tests, test/plan.node-test.ts.)
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { readText } from '../lib/io.ts';
 import type { Ctx, Det, Beh } from './context.ts';
 import { blocksOf } from '../metrics.ts';
-import { toolResults } from './transcripts.ts';
 import type { Block, TEntry } from '../metrics.ts';
 
 const hash12 = (t: string): string => crypto.createHash('sha256').update(Buffer.from(t, 'utf8')).digest('hex').slice(0, 12);
@@ -29,23 +29,17 @@ const MODE: Record<string, RegExp> = { auto: /auto mode on/, acceptEdits: /accep
 
 export const scene = 'S5';
 
-export function run(x: Ctx, { det, beh }: { det: Det; beh: Beh }): void {
-  const { log, props, DEMO, A, B } = x;
+export function run(x: Ctx, { det }: { det: Det; beh: Beh }): void {
+  const { log, props, drafts, DEMO, A, B } = x;
   const p1 = props[0], p2 = props.at(-1) !== p1 ? props.at(-1) : undefined;
   const ob = p1 && log.find(e => e.kind === 'objection' && e.from === A && e.proposal_hash === p1.hash);
   det(`${A}'s objection via=human; the note byte-exact`, ob && ob.via === 'human' && ob.text === DEMO.note5, ob ? `${x.fmt(ob)} (${ob.text === DEMO.note5 ? '===' : '!=='} typed)` : 'no objection');
   const sb = p1 && log.find(e => e.kind === 'signoff' && e.from === B && e.proposal_hash === p1.hash);
-  det(`${B}'s agreement on v1 via=human`, sb && sb.via === 'human', x.fmt(sb));
-  // two more versions, one by each person's Claude, each built on the one before (the store's compare-and-swap)
+  det(`${B}'s agreement on v1 via=human (her Yes when she checked it)`, sb && sb.via === 'human', x.fmt(sb));
+  // the next version, by A's Claude, on v1
   const vs = log.filter(e => e.kind === 'plan' && e.plan === 'room').map(e => ({ v: e.version, base: e.base, from: e.from, id: e.id }));
-  const later = vs.filter(v => (v.v ?? 0) > 1);
-  det(`v2 and v3 by ${A}'s and ${B}'s Claudes, each on the version before (base v1, then v2)`,
-    later.length >= 2 && later.every(v => v.base === (v.v ?? 0) - 1) && [A, B].every(n => later.some(v => v.from === n)),
-    vs.map(v => `v${v.v} base v${v.base} ${v.from} #${v.id}`).join(', ') || 'no versions');
-  // the second edit came back with a conflict (its base was stale): the deny carries the other's version; when the
-  // two did not overlap, the second simply started from the first's version (not a failure)
-  const conflicts = [A, B].map(n => toolResults(x.inSpan(x.entries(n), x.span('S5'))).filter(t => /landed since your base v1/.test(t)).length);
-  beh('A concurrent edit met the other\'s version as a conflict (0: they did not overlap)', conflicts.every(n => n === 0) ? 1 : 0, 0, `${A} ${conflicts[0]}, ${B} ${conflicts[1]} conflict deny(s)`);
+  const v2 = vs.find(v => v.v === 2);
+  det(`v2 by ${A}'s Claude, on v1`, v2 && v2.from === A && v2.base === 1, vs.map(v => `v${v.v} base v${v.base} ${v.from} #${v.id}`).join(', ') || 'no versions');
   const last = vs.at(-1);
   det('A new sign-off request on the latest version', p2 && last && p2.hash !== p1?.hash && p2.version === last.v && p2.id > last.id,
     p2 ? `${p1?.hash.slice(0, 6)} → ${p2.hash.slice(0, 6)} (#${p2.id}, v${p2.version})` : 'no request after the edits');
@@ -62,7 +56,7 @@ export function run(x: Ctx, { det, beh }: { det: Det; beh: Beh }): void {
   // (put back as it was, or removed when it did not exist before: plans-before.txt vs the S5 last step's plans.txt)
   const before = new Set((readText(x.stateFile('plans-before.txt')) || '').split('\n').filter(Boolean));
   const after = x.stText('S5', 'last', 'plans.txt');
-  const hashes = new Set(props.map(p => p.hash));
+  const hashes = new Set([...props, ...drafts].map(p => p.hash));
   for (const seat of [A, B]) {
     const s5to = x.span('S5')?.to;
     const es = x.entries(seat).filter(e => !e.isSidechain && e.timestamp && e.timestamp >= x.runStart && s5to !== undefined && e.timestamp <= s5to); // this run's, up to S5's end
