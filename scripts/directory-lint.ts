@@ -9,7 +9,8 @@
  *
  *   MOD_PERMISSION_ANSWER_UNREAD  mod/**.ts (not mod/test): a classic.PreToolUse hook, a tool.call hook that answers
  *       `{ deny` itself, and each one's .catch handler, may only `return next(e)` (or, in tool.call, a const bound to
- *       `await next(e)`, passed through) or an object literal of plain `key: value` members with a fixed `deny` or
+ *       `await next(e)`, passed through, also as `{ ...r, key: value }` that adds members but no deny, ask or allow)
+ *       or an object literal of plain `key: value` members with a fixed `deny` or
  *       `ask` key: no spread, no computed key, no method or getter, no `allow`. A ternary is judged branch by branch.
  *       A tool.check or a classic.PermissionRequest hook is refused outright: the plugin answers no permission check.
  *   COMMAND_PATH_COMPUTED  every command in hooks/hooks.json, .mcp.json (command and args), settings.json (any
@@ -164,18 +165,23 @@ function handlerAt(m: string, from: number, limit: number): Handler | null {
 }
 
 /** Why a returned value src[from,to) is not a readable answer, or null when it is. */
-function judgeValue(src: string, m: string, from: number, to: number, nextVars: ReadonlySet<string>): string | null {
+function judgeValue(src: string, m: string, from: number, to: number, nextVars: ReadonlySet<string>, passOn = false): string | null {
   while (from < to && /\s/.test(m[from] ?? '')) from++;
   while (to > from && /\s/.test(m[to - 1] ?? '')) to--;
-  if (m[from] === '(' && matching(m, from) === to - 1) return judgeValue(src, m, from + 1, to - 1, nextVars);
+  if (m[from] === '(' && matching(m, from) === to - 1) return judgeValue(src, m, from + 1, to - 1, nextVars, passOn);
   const t = ternary(m, from, to);
-  if (t) return judgeValue(src, m, t[0] + 1, t[1], nextVars) ?? judgeValue(src, m, t[1] + 1, to, nextVars);
+  if (t) return judgeValue(src, m, t[0] + 1, t[1], nextVars, passOn) ?? judgeValue(src, m, t[1] + 1, to, nextVars, passOn);
   const aw = /^await\s+/.exec(src.slice(from, to));
-  if (aw) return judgeValue(src, m, from + aw[0].length, to, nextVars);
+  if (aw) return judgeValue(src, m, from + aw[0].length, to, nextVars, passOn);
   const text = src.slice(from, to);
   if (/^next\(\s*[\w$]+\s*\)$/.test(text)) return null;
   if (/^[\w$]+$/.test(text)) return nextVars.has(text) ? null : `returns \`${text}\`, a value not written out`;
   if (m[from] !== '{' || matching(m, from) !== to - 1) return `returns \`${(text.split('\n')[0] ?? '').slice(0, 60)}\`, not next(e) or an object literal`;
+  const members = topLevelSplit(m, from + 1, to - 1, ',').map(([a, b]) => src.slice(a, b).trim()).filter(Boolean);
+  // tool.call only: the tool's own answer passed on with context added (`{ ...r, context }`, r bound to await next(e)):
+  // no deny, ask or allow of the hook's own, nothing computed; it decides nothing (the directory flags no such return)
+  const head = /^\.\.\.([\w$]+)$/.exec(members[0] ?? '');
+  if (passOn && head && nextVars.has(head[1] ?? '') && members.slice(1).every(x => /^([\w$]+)\s*:/.test(x) && !/^(?:deny|ask|allow)\s*:/.test(x))) return null;
   let keyed = false;
   for (const [a, b] of topLevelSplit(m, from + 1, to - 1, ',')) {
     const member = src.slice(a, b).trim();
@@ -204,7 +210,7 @@ function judgeHandler(src: string, m: string, h: Handler, file: string, event: s
   }
   const out: Finding[] = [];
   for (const [a, b] of ranges) {
-    const why = judgeValue(src, m, a, b, nextVars);
+    const why = judgeValue(src, m, a, b, nextVars, event === 'tool.call');
     if (why) out.push({ file, line: lineAt(src, a), rule: R1, message: `a ${event} hook ${why}`, fix: R1_FIX });
   }
   return out;

@@ -67,7 +67,11 @@ test('MOD_PERMISSION_ANSWER_UNREAD: a spread, a computed key, a method, allow, a
   }
   // the .catch handler is judged too, and a tool.call hook that answers { deny
   assert.equal(checkPermissionAnswers("on('classic.PreToolUse', ($, e, next) => next(e)).catch((_$, e, next) => ({ ...e }));", 'm').length, 1);
-  assert.equal(checkPermissionAnswers("on('tool.call', async ($, e, next) => {\n  const r = await next(e);\n  return c ? { deny: 'x' } : { ...r, context: [] };\n});", 'm').length, 1);
+  // a tool.call hook may pass the tool's own answer on with context added ({ ...r, context }, r bound to await next(e));
+  // never with a deny, ask or allow beside the spread, nor a spread of anything else
+  const passOn = (ret: string): number => checkPermissionAnswers(`on('tool.call', async ($, e, next) => {\n  const r = await next(e);\n  return c ? { deny: 'x' } : ${ret};\n});`, 'm').length;
+  assert.equal(passOn('{ ...r, context: [] }'), 0);
+  for (const ret of ["{ ...r, deny: 'y' }", '{ ...r, allow: true }', '{ ...other, context: [] }', '{ context: [], ...r }']) assert.equal(passOn(ret), 1, ret);
   // a tool.call hook that never answers { deny is out of scope; a brace or `return` in a string or comment is not code
   assert.equal(checkPermissionAnswers("on('tool.call', async ($, e, next) => { const r = await next(e); return { ...r }; });", 'm').length, 0);
   assert.equal(checkPermissionAnswers("on('classic.PreToolUse', async ($, e, next) => {\n  // return { ...x }\n  const s = '} return {...y}';\n  return next(e);\n});", 'm').length, 0);
