@@ -2,6 +2,21 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 0.5.2: the plugin directory's last blockers; its rules checked in CI
+
+Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, `claude plugin validate --strict`. The wire protocol is still 5: 0.5.2, 0.5.1 and 0.5.0 share rooms.
+
+### Changed
+- **The row status is opt-in.** The plugin no longer sets a `subagentStatusLine` and ships no `settings.json`: the plugin directory refuses its command path, which the shell computes (Claude Code gives a plugin's settings command no plugin root). Rows show their names. Their live status (the room row's `⚠ your answer needed …`, `tasks 3 open · #2 you`, plans at a glance, the link's state; members' `✓ agreed …`, `◼ #2 …`) comes back with one line in your own `~/.claude/settings.json`: `"subagentStatusLine": { "type": "command", "command": "\"${SUB_HUMAN_HOME:-$HOME/.sub-human}/bin/row-status\"" }` (README "Rows"). It replaces any `subagentStatusLine` you already have; the plugin never writes it. `/sub-human help` points to it.
+- The hooks module's permission answers (consent's and the row guard's classic.PreToolUse) are written out as plain objects, one branch per shape, with no spread, so the plugin directory can read each one. Behaviour is unchanged.
+
+### Added (development)
+- `scripts/directory-lint.ts`, run by `npm run lint`: the plugin directory's rules this plugin has met (permission answers written out, literal `${CLAUDE_PLUGIN_ROOT}/<file>` command paths, no inline programs in the module's process calls, no invisible characters, the file count and size limits), each finding with its fix.
+- CI runs `claude plugin validate plugin/sub-human --strict` on every push and pull request (Claude Code pinned to the contract's probed version).
+
+### Internals
+- The contract drops `plugin-settings-allowlist`, `subagent-statusline-precedence` and `subagent-statusline-raw`.
+
 ## 0.5.1: the person keeps every permission decision (Anthropic's plugin directory)
 
 Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, and a full film demo run (take11: every scene; the checks as before this change, 66 pass, 11 fail on wording 0.5.0-beta.24 changed and the room session's leak). The wire protocol is still 5: 0.5.1 and 0.5.0 share rooms.

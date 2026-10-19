@@ -55,7 +55,7 @@ function attested(input: JoinIn): boolean {
 function toReply(a: Answer, input: JoinIn, module: boolean): Reply {
   switch (a.kind) {
     case 'joined': {
-      launcher.refresh(); // the row status line's launcher and the serve shim, now that this session has rows
+      launcher.refresh(); // the opt-in row status launcher and the serve shim, now that this session has rows
       const bypass = input.permission_mode === 'bypassPermissions' && a.me.role !== 'claude' ? BYPASS : '';
       const warn = bypass || TROUBLE.test(a.say) ? `sub-human: ${a.say}${bypass}` : null;
       return { kind: 'joined', context: contextBlock(a.me, a.lead), say: module ? `${a.say}${bypass}` : a.say, warn, module };

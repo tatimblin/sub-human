@@ -13,7 +13,7 @@
  *   read, who, show, tasks, plan   read-only views of the room (read keeps its own cursor); plan [NAME] [--history]:
  *                            a room plan's current text with its history and sign-off state, or every plan's line
  *   verify CODE         a room's hash chain and every person's line against the pinned keys (lib/cli/doctor/rooms.ts)
- *   agent-statusline    Claude Code's subagentStatusLine command: never fails (prints nothing, exits 0)
+ *   agent-statusline    the opt-in subagentStatusLine's command (<home>/bin/row-status): never fails (prints nothing, exits 0)
  *   serve --stdio CODE  one remote connection to a room hosted here (lib/remote/server.ts). A room this machine only
  *               mirrors is not served. --login (over this account's own
  *               ssh login) is refused under SSH_ORIGINAL_COMMAND: a forced command (a restricted key or a

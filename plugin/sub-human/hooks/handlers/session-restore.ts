@@ -141,7 +141,7 @@ export function handle(input: HookIn<'SessionStart'>): void {
   try {
     proposal.restoreStale(me, { force: input.source === 'clear' || input.source === 'resume' || input.source === 'fork' });
   } catch (err) { logError(err, 'session-restore: review'); }
-  launcher.refresh(); // the row status line's launcher and the serve shim, for this seat's rows
+  launcher.refresh(); // the opt-in row status launcher and the serve shim, for this seat's rows
   const after = input.source === 'fork' ? 'the agent view' : input.source || 'start';
   const fork = input.source === 'fork';
   const text = contextBlock(me, `restored after ${after}`, { rowsLead: fork ? RECREATE : rowsLead(me), allRows: fork });

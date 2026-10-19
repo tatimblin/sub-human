@@ -177,7 +177,7 @@ function Zho(e,n,r){if(!(n?/^[a-zA-Z0-9_|, -]+$/:/^[a-zA-Z0-9_|]+$/).test(e))ret
 - **`${CLAUDE_PLUGIN_ROOT}` is not substituted** in the plugin settings `subagentStatusLine.command`.
   - It is run raw: `Ge(ee,[],{shell:!0,...})` with env `{...process.env, ...M0e, CLAUDE_PROJECT_DIR}`. **No CLAUDE_PLUGIN_ROOT or CLAUDE_PLUGIN_DATA is set in its env either.** Search `Skipping subagentStatusLine execution - workspace trust not accepted`.
   - A `${CLAUDE_PLUGIN_ROOT}` there would expand to an empty string in the shell.
-  - The current approach, `${SUB_HUMAN_HOME:-$HOME/.sub-human}/bin/row-status`, is correct.
+  - sub-human used `${SUB_HUMAN_HOME:-$HOME/.sub-human}/bin/row-status` here until 0.5.2. The plugin directory refuses a command path the shell computes (COMMAND_PATH_COMPUTED), so since 0.5.2 the plugin ships no settings.json: a person adds that line to their own user settings (README "Rows"), and the contract no longer lists this section's entries.
 - **`CLAUDE_PLUGIN_DATA` export.**
   - Hooks: exported (only when the plugin has a source id). The plugin's command string also gets `${CLAUDE_PLUGIN_ROOT}` and `${CLAUDE_PLUGIN_DATA}` substitution.
   - Plugin MCP stdio servers: exported in env.

@@ -195,6 +195,8 @@ claude_args() { # seat [extra…]
   [ "$FILM" = 1 ] && tools+=('Bash(npm test:*)' 'Bash(git add:*)' 'Bash(git commit:*)' 'Bash(git pull:*)' \
     'Bash(git push:*)' 'Bash(git status:*)' 'Bash(git diff:*)' 'Bash(git log:*)' 'Bash(git fetch:*)')
   printf '%q ' --allowedTools "${tools[@]}"
+  # the row status as a person turns it on (README "Rows": the line in their own settings; the plugin sets none)
+  printf '%q ' --settings '{"subagentStatusLine":{"type":"command","command":"\"${SUB_HUMAN_HOME:-$HOME/.sub-human}/bin/row-status\""}}'
   [ $# -gt 0 ] && printf '%q ' "$@"
 }
 

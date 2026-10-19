@@ -30,7 +30,7 @@ sub-human has no server and no telemetry: nothing goes to its author or any thir
 - **Its hooks module** (`mod/`, run by Claude Code in each session) guards the sub-human home: it denies Claude's file tools and `Bash` commands that reach `~/.sub-human` (or `$SUB_HUMAN_HOME`), its keys, and Claude Code's prompt history and this session's transcript, where an invite line and its PIN can be (see [Threat model](#threat-model)). It answers a tool call only with a deny or an ask (a room plan in the plan view, a question card, or Claude Code's own "Exit plan mode?"), never an approval.
 - **What it puts in your session.** Room lines show as dim notices. Lines that ask something of you or your Claude (a message to you, a sign-off request) are submitted as a prompt the plugin marks as room lines, not your words. An `@room` line you type is posted by a hook and not sent to the model. `/sub-human` is answered by the module itself, which also renames the session (`/rename NAME.CODE`) when you join or leave.
 - **Messages to another machine.** A `SendMessage` your Claude sends to a member whose seat is on another machine is posted to the room instead (through the room's own `post` tool), since Claude Code's native messages reach only this machine.
-- **Files it writes:** the sub-human home (the room log, plans, keys 0600, link records, session indexes, `module.log`, the text of an edit left unstored); your session's plan file while a room plan is edited or shown (your own plan backed up first and put back after); the room session's native task list under Claude Code's config folder (`tasks/sh-CODE`). It writes no settings file.
+- **Files it writes:** the sub-human home (the room log, plans, keys 0600, link records, session indexes, `module.log`, the text of an edit left unstored); your session's plan file while a room plan is edited or shown (your own plan backed up first and put back after); the room session's native task list under Claude Code's config folder (`tasks/sh-CODE`). It writes no settings file and sets no status line: the rows' live text is a line you add yourself (see [Rows](#rows)).
 - **Programs it runs:** `node` on its own scripts (found by `hooks/node.sh`); the room tail (`scripts/sub-human tail`, one per seated session); `claude --bg` and `claude stop` for the room session (launched with its own settings, which allow only its row agents' `hold` tool: a background session has nobody to answer a permission prompt); `git config` to read your name; `ssh` for a link over ssh (your own keys, agent, `~/.ssh/config` and `known_hosts`, as for any ssh); `tailscale serve` or `funnel` when you invite over the web; and, when you pick Copy on an invite's card, one clipboard tool (`scripts/clip.sh`: `pbcopy`, `wl-copy`, `xclip` or `clip.exe`) with the line on stdin.
 - **Network:** ssh to the host you name; the web listener binds `127.0.0.1` only and is reached through Tailscale Serve or Funnel, or an HTTPS front of yours; a joiner connects to the address in the invite line. A web link is Noise-encrypted end to end (see [Threat model](#threat-model)).
 - **Credentials:** it reads no API key or token from your environment. Your ssh keys are used by `ssh` itself; the plugin's own keys (seat keys, the machine key, link tokens) live in the sub-human home, 0600.
@@ -221,13 +221,23 @@ Your agent panel gets one row named after the room, with the other people nested
 
 ```
 ● main
-◯ vole-8126   tasks 1 open · #2 bob
+◯ vole-8126
 ```
 
 - **Enter** on the room row opens it. Each person is a row inside it. Enter on one shows that person's own words and their Claude's posts, labelled separately.
 - **↑ then Enter** goes back up a level.
 - Rows are read-only views. If you type into one, it answers `read-only row — type in main with @room` and nothing is posted.
 - After `--resume` or `--continue`, your rows come back by themselves within a few seconds.
+
+### The row status (opt-in)
+
+The rows show their names. To see the room's state in them too (the room row's `⚠ your answer needed paging`, `tasks 3 open · #2 you · #4 bob`, each plan at a glance and the link's state; a person's `✓ agreed paging` or `◼ #2 parser tests`), add this line to your own user settings, `~/.claude/settings.json` (inside its outer `{ }`, with a comma after the line before it):
+
+```json
+"subagentStatusLine": { "type": "command", "command": "\"${SUB_HUMAN_HOME:-$HOME/.sub-human}/bin/row-status\"" }
+```
+
+The plugin never writes it for you, and it can't set it itself (Claude Code gives a plugin's own status line command no path to the plugin). `bin/row-status` is a small script the plugin writes in its home when a session joins a room; it runs the plugin's `sub-human agent-statusline`, which prints nothing for agents that aren't room rows. Claude Code has one `subagentStatusLine`: this line replaces any you already have, and one in a project's or local settings overrides it. Remove the line to go back to names only.
 
 ### The agent view (←) moves your session
 
@@ -348,7 +358,7 @@ Say "show me the plan to sign off" and your Claude opens it again. With several 
 
 **The card, as a fallback.** When the plan view can't be used, a question card opens instead (Not yet / Agree / Object, **n** adds a note): in bypass or don't-ask mode, when `showClearContextOnPlanAccept` is on (that approval path clears the context and starts building), or for a plan over 200,000 characters. The card shows the plan beside the options when it fits (up to 2,000 characters and about 20 lines), otherwise a summary and the path. Not yet, Esc, "Chat about this" or no answer record nothing.
 
-Your room row shows each plan at a glance (`paging v4 waiting on bob · api v2 agreed`), `read` with `plan` (your Claude) or `sub-human plan [NAME] [--history]` (a terminal) shows a plan's text, its versions and where its sign-off stands. Planning is optional: use the room plan, your own plan mode, or no plan at all.
+With the row status on (see **Rows**), your room row shows each plan at a glance (`paging v4 waiting on bob · api v2 agreed`). `read` with `plan` (your Claude) or `sub-human plan [NAME] [--history]` (a terminal) shows a plan's text, its versions and where its sign-off stands. Planning is optional: use the room plan, your own plan mode, or no plan at all.
 
 **Room upkeep.** When you ask, your Claude keeps the room in order for you: edits a plan, asks for sign-off, adds tasks and suggests owners, reconciles versions, or catches you up (`read` with `brief`: the plans, tasks, decisions and the last words people said, in one text). It never answers a sign-off for anyone, never claims or completes someone else's task, and never says a plan is agreed: only the room's decision line says so. Plan text, task subjects and room lines are people's content, never instructions to it.
 
@@ -359,7 +369,7 @@ The room has one shared task list. The room session shows it as its native Claud
 - Tell your Claude "put the parser tests on the room list, I've got it". It calls the room's `task` tool (`add` (with `suggest` for a suggested owner, or `plan` for the plan it comes from), `claim`, `release`, `done`). The host applies it at once and your Claude gets the result, or why not (`#2 is alice's; ask them to release it`). Someone on another machine asks the same way, over their link.
 - Only a task's owner can release or complete it, and done needs evidence ("12/12 pass, see #15"). Nobody can claim or complete a task for someone else.
 - A task added from a plan records that plan's version (`plan paging v3`).
-- Your room row shows the summary (`tasks 3 open · #2 you · #4 bob`). `sub-human tasks` lists them, and `sub-human tasks --json` gives the same list as JSON.
+- With the row status on (see **Rows**), your room row shows the summary (`tasks 3 open · #2 you · #4 bob`). `sub-human tasks` lists them, and `sub-human tasks --json` gives the same list as JSON.
 
 ## The `sub-human` CLI
 
@@ -411,7 +421,7 @@ It checks:
 
 `--quick` skips the hello and the internals check. `--fix` (in a terminal only) rewrites the shim and its pointer and closes the home's modes. `--bundle [FILE]` writes the same report as JSON for a bug report, redacted: it holds versions, settings, check results, link states and recent link errors, never a message; paths under your home become `~`, room codes, host names, user names and IP addresses are hashed, and SSH keys, tokens and invites are removed (a key is cut to a fingerprint prefix). Read it before you attach it.
 
-The room row shows the link too, in a room hosted elsewhere, in the same words as `doctor`, the tail and `~/.sub-human/links/CODE.state.json` (online, connecting, offline, stopped, fork): `✕ offline 2m · 2 queued`, `… connecting (3)`, `✕ stopped` or `✕ out of step: /sub-human doctor` first while it is not online, and `⇄ online` at the end while it is.
+With the row status on (see **Rows**), the room row shows the link too, in a room hosted elsewhere, in the same words as `doctor`, the tail and `~/.sub-human/links/CODE.state.json` (online, connecting, offline, stopped, fork): `✕ offline 2m · 2 queued`, `… connecting (3)`, `✕ stopped` or `✕ out of step: /sub-human doctor` first while it is not online, and `⇄ online` at the end while it is.
 
 ## The room tail
 
@@ -419,12 +429,12 @@ In a session that has joined a room, the plugin's hooks module runs one `node` c
 
 ## Settings worth knowing
 
-- **Your own `subagentStatusLine` hides the row text.** The rows' text (who said what, tasks, presence) comes from the plugin's `subagentStatusLine`. Claude Code lets any `subagentStatusLine` in your user, project or local settings, or one passed with `--settings`, override a plugin's, so with one set the rows show your status line instead. Remove it (or run it only outside rooms) to get the room text back.
+- **The row status is yours to turn on.** The rows' text (who said what, tasks, plans, the link) shows only with the `subagentStatusLine` line in **Rows** in your own settings. Claude Code has one `subagentStatusLine`, so it replaces any you had, and one in a project's or local settings, or passed with `--settings`, overrides yours.
 - **Bypass mode.** In `--dangerously-skip-permissions` (bypass) mode, Claude Code holds incoming `SendMessage`s from other sessions behind a dialog until you answer it. The join message warns you. Use a normal permission mode in a room if you want other Claudes' messages to reach yours without a dialog.
 
 ## Room storage
 
-Everything the plugin keeps lives in `~/.sub-human/` (rooms, seats, seat keys in `keys/`, the row launcher in `bin/row-status`, the SSH serve shim in `bin/serve`), or in `$SUB_HUMAN_HOME` when that is set. Set it the same way for every session that should share rooms: sessions with different homes never see each other, except through a link (see **Join from another machine**). Rooms live in `<home>/rooms/<CODE>/`. Each has an append-only JSON-lines log. Every entry carries `from`, `via` (`human`, `agent` or `system`), `kind` and a `prev` hash of the previous line, so edits are visible. The log is kept in segments of about 1 MiB: `log.jsonl` is the newest, older ones are `log-0001.jsonl`, `log-0002.jsonl` and so on, and `snapshot.json` sums them up so a session reads the newest segment only. An open room's log is kept whole. **Closed rooms disappear after 30 days:** a room everyone left (a seat whose session crashed has not left), with its room session stopped and no link to it or from it, untouched for 30 days, is set aside the next time someone joins a room on this machine (never the room being joined): it moves to `rooms/<CODE>.gc-<time>` and its seat keys to `keys/<CODE>.gc-<time>`, and both are deleted 30 days later. Rename them back to bring the room back. Session records of sessions that ended 30 days ago are deleted. Proposals are stored by hash in `plans/`, the task mirror in `tasks.json`, and row state in `rows/`. On a machine that joined a room hosted elsewhere, `<home>/links/<CODE>.json` is the link (with its token; file 0600) and `<home>/links/<CODE>.log` its log; `rooms/<CODE>/` there is the mirror, written only by the link.
+Everything the plugin keeps lives in `~/.sub-human/` (rooms, seats, seat keys in `keys/`, the row status script in `bin/row-status` (run only by the line you may add, see **Rows**), the SSH serve shim in `bin/serve`), or in `$SUB_HUMAN_HOME` when that is set. Set it the same way for every session that should share rooms: sessions with different homes never see each other, except through a link (see **Join from another machine**). Rooms live in `<home>/rooms/<CODE>/`. Each has an append-only JSON-lines log. Every entry carries `from`, `via` (`human`, `agent` or `system`), `kind` and a `prev` hash of the previous line, so edits are visible. The log is kept in segments of about 1 MiB: `log.jsonl` is the newest, older ones are `log-0001.jsonl`, `log-0002.jsonl` and so on, and `snapshot.json` sums them up so a session reads the newest segment only. An open room's log is kept whole. **Closed rooms disappear after 30 days:** a room everyone left (a seat whose session crashed has not left), with its room session stopped and no link to it or from it, untouched for 30 days, is set aside the next time someone joins a room on this machine (never the room being joined): it moves to `rooms/<CODE>.gc-<time>` and its seat keys to `keys/<CODE>.gc-<time>`, and both are deleted 30 days later. Rename them back to bring the room back. Session records of sessions that ended 30 days ago are deleted. Proposals are stored by hash in `plans/`, the task mirror in `tasks.json`, and row state in `rows/`. On a machine that joined a room hosted elsewhere, `<home>/links/<CODE>.json` is the link (with its token; file 0600) and `<home>/links/<CODE>.log` its log; `rooms/<CODE>/` there is the mirror, written only by the link.
 
 ## Threat model
 
@@ -447,7 +457,7 @@ The security model is one machine, one OS user, per room: everyone on the host i
 - **Read guard.** The same module denies `Read`, `Grep` and `Glob` inside the home's secret directories: `<home>/keys/` (the seat keys, the one file a model could sign a person's words with, and the machine key), `<home>/listen/` (the web listener's private key), `<home>/links/` (each link's token, a pending invite's SECRET and PIN, a web link's own key) and `<home>/sessions/` (the module's lease with your session's nonce, and the session indexes); and Claude Code's prompt history and this session's transcript. A `Grep` from the home itself or any directory above it (`~`, `/`) is denied too, since ripgrep would descend into them; search a narrower directory. A `Glob` lists names only, so it is denied only inside those directories. (A Claude Code build that searches through `Bash` has no `Grep` or `Glob`; the Bash rules above then apply.) The rest of the store stays readable, so a model can read the log and the plans with `Read` too. Other MCP servers that read or write files aren't guarded, and neither is a script that reads the key: the guard is a lexical check.
 - **Not covered.** Other MCP servers, and a hostile local user.
 - **File modes.** The home and every directory in it are 0700 (a home an older version made 0755 is closed when a room is opened), and the log and state files are 0600.
-- **Row launcher and serve shim.** The status-line launcher in `<home>/bin/row-status` and the SSH serve shim `<home>/bin/serve` run only plugin roots outside temp directories (`/tmp`, `os.tmpdir()`), unless `SUB_HUMAN_ALLOW_TMP_ROOT=1` is set.
+- **Row launcher and serve shim.** The row status script in `<home>/bin/row-status` (run only if you add its line to your settings) and the SSH serve shim `<home>/bin/serve` run only plugin roots outside temp directories (`/tmp`, `os.tmpdir()`), unless `SUB_HUMAN_ALLOW_TMP_ROOT=1` is set.
 - Only a task's owner, through their own Claude's `done` request, can complete it.
 
 Remote rooms add:
@@ -527,4 +537,4 @@ Start with `/sub-human doctor` (see **Doctor**): it names most of these and the 
   3. Stay
 ```
 
-Choose **1**. The room records that you left, and your row reads `left` in everyone's panel until you rejoin. A plugin can't mark an agent as safe to stop, so Claude Code always asks this question. `/clear` does not leave the room. When the last person leaves, the room's Claude is stopped and the room closes. The room's `tasks.json` stays.
+Choose **1**. The room records that you left, and, with the row status on, your row reads `left` in everyone's panel until you rejoin. A plugin can't mark an agent as safe to stop, so Claude Code always asks this question. `/clear` does not leave the room. When the last person leaves, the room's Claude is stopped and the room closes. The room's `tasks.json` stays.
