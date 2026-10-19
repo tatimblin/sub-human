@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "exec sh \"${CLAUDE_PLUGIN_ROOT}/hooks/node.sh\" --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/run.ts\" join",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/join.sh\"",
             "timeout": 10
           }
         ]

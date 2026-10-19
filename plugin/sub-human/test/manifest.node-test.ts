@@ -150,7 +150,7 @@ test('hooks.json: every command runs node on a script that exists in the plugin 
 test('every ${CLAUDE_PLUGIN_ROOT}/ path in hooks.json and .mcp.json, and every module, exists (validate does not check them)', () => {
   const paths: string[] = [];
   const collect = (s: unknown) => { for (const m of String(s).matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}\/([^"'\s]+)/g)) paths.push(must(m[1])); };
-  for (const { hook } of allHooks()) collect(hook.command);
+  for (const { hook } of allHooks()) { collect(hook.command); collect(commandText(hook.command)); }
   for (const srv of Object.values(readJson<McpJson>('.mcp.json').mcpServers)) { collect(srv.command); (srv.args || []).forEach(collect); }
   assert.ok(['mcp/room.ts', 'hooks/node.sh', 'hooks/compile-cache.js', 'hooks/run.ts'].every(p => paths.includes(p)), paths.join(' '));
   for (const rel of paths) assert.ok(fs.existsSync(path.join(PLUGIN, rel)), `${rel} is missing`);
@@ -219,7 +219,7 @@ test('hooks.json: every blocking hook has a timeout (<= 10 s, row-rewake aside);
 });
 
 test('budgets: the join\'s waits fit its hook timeout, and every lock gives up before the hook it runs in is killed', () => {
-  const timeoutOf = (script: string) => Math.min(...[...allHooks()].filter(x => scriptOf(x.hook.command) === `hooks/handlers/${script}`).map(x => x.hook.timeout));
+  const timeoutOf = (script: string) => Math.min(...[...allHooks()].filter(x => scriptOf(commandText(x.hook.command)) === `hooks/handlers/${script}`).map(x => x.hook.timeout));
   const join = timeoutOf('join.ts') * 1000;
   assert.equal(join, SHIM_TIMEOUT_MS, 'the module runs join.ts under the same budget');
   // a re-join over a new link: stop the old daemon (1 s, lib/remote/joining.ts restartLink), start the new one, wait for its

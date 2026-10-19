@@ -2,6 +2,16 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 0.5.3: the join hook runs one script (plugin directory)
+
+Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, `claude plugin validate --strict`. The wire protocol is still 5.
+
+### Changed
+- The `/sub-human` join hook runs `sh "${CLAUDE_PLUGIN_ROOT}/hooks/join.sh"`, which starts node as before. Its command used to name three plugin files on one line after `exec`, which the plugin directory refused to read (COMMAND_PATH_COMPUTED). Behaviour is unchanged.
+
+### Added (development)
+- `directory-lint` refuses a hook or settings command that names more than one plugin path or starts with `exec`/`eval`.
+
 ## 0.5.2: the plugin directory's last blockers; its rules checked in CI
 
 Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, `claude plugin validate --strict`. The wire protocol is still 5: 0.5.2, 0.5.1 and 0.5.0 share rooms.

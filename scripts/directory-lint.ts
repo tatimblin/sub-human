@@ -13,7 +13,8 @@
  *       or an object literal of plain `key: value` members with a fixed `deny` or
  *       `ask` key: no spread, no computed key, no method or getter, no `allow`. A ternary is judged branch by branch.
  *       A tool.check or a classic.PermissionRequest hook is refused outright: the plugin answers no permission check.
- *   COMMAND_PATH_COMPUTED  every command in hooks/hooks.json, .mcp.json (command and args), settings.json (any
+ *   COMMAND_PATH_COMPUTED  (a hook or settings command names at most one plugin path and starts with no exec/eval)
+ *                          every command in hooks/hooks.json, .mcp.json (command and args), settings.json (any
  *       `command`) and inline hooks/mcpServers in .claude-plugin/plugin.json names files only as
  *       `${CLAUDE_PLUGIN_ROOT}/<literal path to a file that exists>`: no other variable or expansion, no `$(`, no
  *       backticks, no glob or brace, no shell operator, no `-c`/`-e`/`--eval`/`-p`/`--print`.
@@ -362,10 +363,16 @@ function mcpCommands(servers: unknown): { cmd: string, single: boolean }[] {
 export function checkCommands(root: string): Finding[] {
   const out: Finding[] = [];
   const judge = (file: string, text: string, cmd: string, single: boolean): void => {
-    for (const w of single ? [cmd] : words(cmd)) {
+    const ws = single ? [cmd] : words(cmd);
+    for (const w of ws) {
       const why = judgeWord(w, root);
       if (why) out.push({ file, line: lineOfValue(text, cmd), rule: R2, message: why, fix: R2_FIX });
     }
+    if (single) return;
+    // a hook or settings command: the directory reads one file under the plugin root, run by `sh` or by itself
+    const named = ws.filter(w => w.startsWith(ROOT_VAR)).length;
+    if (named > 1) out.push({ file, line: lineOfValue(text, cmd), rule: R2, message: `names ${named} plugin paths; the directory reads one`, fix: 'run one script, sh "${CLAUDE_PLUGIN_ROOT}/<file>.sh", and name the rest inside it' });
+    if (ws[0] === 'exec' || ws[0] === 'eval') out.push({ file, line: lineOfValue(text, cmd), rule: R2, message: `starts with the shell builtin \`${ws[0]}\``, fix: 'run the script itself: sh "${CLAUDE_PLUGIN_ROOT}/<file>.sh"' });
   };
   const hooks = readJsonFile(path.join(root, 'hooks', 'hooks.json'));
   if (hooks) for (const c of commandsIn(hooks.data)) judge('hooks/hooks.json', hooks.text, c, false);
