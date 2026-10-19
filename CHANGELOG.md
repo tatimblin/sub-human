@@ -4,7 +4,7 @@ Each release names the Claude Code versions it was tested on. Marketplace instal
 
 ## 0.5.1: the person keeps every permission decision (Anthropic's plugin directory)
 
-Tested on Claude Code 2.1.296 (the unit and hooks-module wiring tests, and a film demo run). The wire protocol is still 5: 0.5.1 and 0.5.0 share rooms.
+Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, and a full film demo run (take11: every scene; the checks as before this change, 66 pass, 11 fail on wording 0.5.0-beta.24 changed and the room session's leak). The wire protocol is still 5: 0.5.1 and 0.5.0 share rooms.
 
 ### Changed
 - **No permission answer is ever an allow.** The plugin's hooks answer a tool call only with a deny or an ask, each written out in the hook's return, else the hooks beneath decide, as the plugin directory requires:
@@ -12,6 +12,7 @@ Tested on Claude Code 2.1.296 (the unit and hooks-module wiring tests, and a fil
   - Entering plan mode for a review asks nothing (it never did); the review now opens at EnterPlanMode's PostToolUse.
   - A review's or an edit's closing call is Claude Code's own "Exit plan mode?" question (an ask with the plan emptied), which the person answers, where the hooks used to let it through silently with the mode set back.
   - A plan view's Yes leaves plan mode in the mode it names, as with any plan; only a person who was in plan mode before is put back there (EnterPlanMode, which asks nothing). The hint in the view says which Yes keeps your mode.
+  - After "Tell Claude what to change" or Esc, Claude Code's "Exit plan mode?" offers only "switch to default": a person in auto mode returns to default there (shift+tab back to auto). In default mode the room tools then ask once each.
 - **One screen for your own new version.** After your Claude stores a room plan edit, its closing ExitPlanMode opens your check of that version right there (the plan view with the version's text; Yes sends it out). There used to be a second, hidden step first.
 
 ### Fixed (plugin directory checks)

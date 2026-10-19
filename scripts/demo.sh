@@ -187,9 +187,14 @@ claude_args() { # seat [extra…]
   local seat=$1; shift
   printf '%q ' --plugin-dir "$PLUGIN"
   [ -n "$MEMBER_MODEL" ] && printf '%q ' --model "$MEMBER_MODEL"
+  # the room's tools as a person has them after answering Claude Code's prompt once ("Yes, and don't ask again"): the
+  # plugin answers no permission check (0.5.1), and a seat can leave auto mode (a review's "Exit plan mode?" goes to default)
+  local tools=(mcp__plugin_sub-human_room__post mcp__plugin_sub-human_room__read mcp__plugin_sub-human_room__plan
+    mcp__plugin_sub-human_room__task mcp__plugin_sub-human_room__hold)
   # film: S6b's tests and git run with no permission dialog per command (approve-until answers any other dialog)
-  [ "$FILM" = 1 ] && printf '%q ' --allowedTools 'Bash(npm test:*)' 'Bash(git add:*)' 'Bash(git commit:*)' 'Bash(git pull:*)' \
-    'Bash(git push:*)' 'Bash(git status:*)' 'Bash(git diff:*)' 'Bash(git log:*)' 'Bash(git fetch:*)'
+  [ "$FILM" = 1 ] && tools+=('Bash(npm test:*)' 'Bash(git add:*)' 'Bash(git commit:*)' 'Bash(git pull:*)' \
+    'Bash(git push:*)' 'Bash(git status:*)' 'Bash(git diff:*)' 'Bash(git log:*)' 'Bash(git fetch:*)')
+  printf '%q ' --allowedTools "${tools[@]}"
   [ $# -gt 0 ] && printf '%q ' "$@"
 }
 
