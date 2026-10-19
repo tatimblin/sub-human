@@ -102,8 +102,9 @@ function bigRoom(n = N): { code: RoomCode } {
   return { code };
 }
 
-/** In this process over a room of n entries: the first append and status line, then their medians after warm-up. */
-function measure(n: number): { code: RoomCode; home: string; panel: object; cold: { append: number; statusline: number }; got: { append: number; statusline: number }; max: { append: number; statusline: number }; sealed: boolean } {
+/** A room of n entries in this process: its first append and status line, and the two calls to time later. */
+interface Room { code: RoomCode; home: string; panel: object; cold: { append: number; statusline: number }; post: () => unknown; line: () => void; sealed: () => boolean }
+function room(n: number): Room {
   const { code } = bigRoom(n);
   seatKey.arm();
   const s = store.open(code);
@@ -112,10 +113,25 @@ function measure(n: number): { code: RoomCode; home: string; panel: object; cold
   const panel = { session_id: 'sid-alice', tasks: [{ id: 't1', status: 'running', description: code }, { id: 't2', status: 'running', description: 'bob' }] };
   const line = () => { const o = agentStatusline(panel, { env: { NO_COLOR: '1' } }); assert.match(o, /"t1"/); };
   const cold = { append: time(post), statusline: time(line) };
-  for (let i = 0; i < 3; i++) { post(); line(); }
-  const append: number[] = [], status: number[] = [];
-  for (let i = 0; i < RUNS; i++) { append.push(time(post)); status.push(time(line)); }
-  return { code, home: identity.home(), panel, cold, got: { append: median(append), statusline: median(status) }, max: { append: Math.max(...append), statusline: Math.max(...status) }, sealed: !!s.snapshot() };
+  return { code, home: identity.home(), panel, cold, post, line, sealed: () => !!s.snapshot() };
+}
+interface Sampled { append: number; statusline: number }
+/** The medians of RUNS appends and status lines per room after warm-up, taken in BLOCKS turns between the rooms (each
+ * turn starts with a warm-up call in that room's home, whose caches the other room's turn displaced): a burst of load on
+ * a runner then hits both rooms alike, as in freshPair (a 20.6 ms status line under load against 1.1 ms taken before
+ * the big room was built). */
+const BLOCKS = 5;
+function sample(rooms: Room[]): { got: Sampled; max: Sampled }[] {
+  const xs = rooms.map((): { append: number[]; status: number[] } => ({ append: [], status: [] }));
+  for (let b = 0; b < BLOCKS; b++) {
+    rooms.forEach((r, i) => {
+      process.env.SUB_HUMAN_HOME = r.home;
+      const x = must(xs[i], 'samples');
+      for (let w = 0; w < (b ? 1 : 3); w++) { r.post(); r.line(); }
+      for (let j = 0; j < RUNS / BLOCKS; j++) { x.append.push(time(r.post)); x.status.push(time(r.line)); }
+    });
+  }
+  return xs.map(x => ({ got: { append: median(x.append), statusline: median(x.status) }, max: { append: Math.max(...x.append), statusline: Math.max(...x.status) } }));
 }
 
 /** One fresh process: its first append and status line over room code (imports done before timing). */
@@ -146,9 +162,11 @@ function freshPair(a: { code: RoomCode; home: string; panel: object }, b: { code
 }
 
 test(`perf: an @room post and the status line over a ${N}-entry log stay in budget`, { skip, timeout: 300_000 }, () => {
-  const small = measure(SMALL);
-  const big = measure(N);
-  assert.ok(big.sealed, 'the first append sealed the old log');
+  const smallR = room(SMALL);
+  const bigR = room(N);
+  assert.ok(bigR.sealed(), 'the first append sealed the old log');
+  const [smallS, bigS] = sample([smallR, bigR]);
+  const small = { ...smallR, ...must(smallS, 'the small room') }, big = { ...bigR, ...must(bigS, 'the big room') };
   const { a: smallFresh, b: bigFresh } = freshPair(small, big);
   if (process.env.SUB_HUMAN_PERF_REPORT === '1') {
     process.stderr.write(`perf N=${N}: append cold ${big.cold.append.toFixed(1)} ms, median ${big.got.append.toFixed(1)} ms (max ${big.max.append.toFixed(1)}; ${SMALL} entries: ${small.got.append.toFixed(1)}); `
