@@ -1,0 +1,15 @@
+name: I got stuck
+description: Installing, inviting someone or joining was confusing, even if nothing "broke".
+labels: [onboarding]
+body:
+  - type: textarea
+    id: step
+    attributes:
+      label: Where did you get stuck?
+      description: The step, what you typed, and what you expected to happen.
+    validations:
+      required: true
+  - type: textarea
+    id: fixed
+    attributes:
+      label: What got you unstuck (if anything)?

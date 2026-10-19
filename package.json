@@ -2,6 +2,11 @@
   "name": "sub-human-repo",
   "private": true,
   "description": "Dev scripts for the sub-human Claude Code plugin (the plugin has no dependencies; typescript, @types/node and oxlint only check its types and lint it).",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tatimblin/sub-human.git"
+  },
   "engines": {
     "node": "^22.18 || >=24.3"
   },
