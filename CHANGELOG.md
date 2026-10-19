@@ -2,7 +2,7 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
-## 0.5.0-beta.24 (Unreleased), private beta: you check your own plan version first
+## 0.5.0-beta.24, private beta: you check your own plan version first
 
 Tested on Claude Code 2.1.296 (the unit and hooks-module wiring tests; the demo and the lab were not run).
 
