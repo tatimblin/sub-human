@@ -125,6 +125,9 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   await h.until(() => fs.existsSync(path.join(remote.home, 'rooms', code, 'plans', `${p2.hash}.md`)), 5000, 50);
 
   // the host's server dies: bob's @room posts are queued, nothing written anywhere yet; his tail says so once
+  // bob's tail, from before the outage to back online: started first, so a slow runner (a node process per hook
+  // below) cannot let the link come back before the tail has seen it down
+  const across = remote.tail(bob, RETRY_MS / 1000 + 10);
   const server = childOf(daemon.pid);
   kill(server);
   await h.until(() => remote.lib(() => linkSocket.status(code)).state === 'offline', 5000, 20);
@@ -146,7 +149,6 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   assert.doesNotMatch(must(must(must(unsent.json).hookSpecificOutput).additionalContext), /Recorded\./);
   assert.equal(remote.log(code), before.mirror);
   assert.doesNotMatch(host.log(code), /is anyone there/);
-  const across = remote.tail(bob, RETRY_MS / 1000 + 3); // bob's tail, from offline to back online
 
   // the daemon reconnects with {after, hash}: no gap, no duplicate, the queued posts in order, and bob posts again
   await h.until(() => remote.lib(() => linkSocket.status(code)).state === 'online', RETRY_MS + 5000, 50);
