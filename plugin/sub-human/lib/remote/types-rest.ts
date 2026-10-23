@@ -81,6 +81,9 @@ export interface WsSpec extends SpecBase, WsAddr {
   hostKey?: string;
   /** the link's own X25519 public key, base64url (its pair in the link's folder): XK proves it on every connection */
   clientKey?: string;
+  /** the person's own ssh login to the host machine that carries the link to its listener on loopback (ssh -W):
+   * kind ws, host 127.0.0.1, a port */
+  tunnel?: SshDest;
 }
 
 /** What a locator parses to and a link file keeps (lib/room/types.ts Link.transport): the built-in kinds but memory,

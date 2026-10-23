@@ -22,6 +22,10 @@
  * each; a message that does not decrypt, or a text message, closes the conn (1002 / 1003). open connects within
  * WS_CONNECT_MS (45 s: a ts.net name's first TLS handshake waits on its certificate); a ts.net name it cannot reach
  * in that time (or resolve) says the host may need Funnel (offline: OFF_TAILNET_HINT).
+ *
+ * A spec with `tunnel` (an ssh-forward invite: `ws://127.0.0.1:PORT/sub-human/CODE`, tunnelSpec) reaches the listener
+ * through the person's own ssh login to the host machine, any account there (./ssh.ts tunnel, `ssh -W`), in place of a
+ * TCP connection; everything above the bytes is the same. A failed dial says what ssh said (ssh.ts forwardProblem).
  */
 
 import { Duplex } from 'node:stream';
@@ -35,7 +39,13 @@ import type { RoomCode } from '../../brand.ts';
 import type * as NoiseMod from '../noise.ts';
 import type * as WsMod from '../ws.ts';
 import type * as TransportsMod from './index.ts';
+import type * as SshMod from './ssh.ts';
+import type { SshDest } from '../types-rest.ts';
+import { isRoomCode } from '../../text.ts';
 import { lazy } from '../../io.ts';
+
+// ssh only for a link that rides the person's own ssh login (a tunnel)
+const sshT = lazy<typeof SshMod>(import.meta.url, './ssh.ts');
 
 // the transport table only to wrap a connection (start cost)
 const transportsLib = lazy<typeof TransportsMod>(import.meta.url, './index.ts');
@@ -212,12 +222,41 @@ function offline(host: string, e: unknown): RoomError {
   return new RoomError('OFFLINE', TS_NET_RE.test(host) && UNREACHED_RE.test(m) ? `${m} (${OFF_TAILNET_HINT})` : m);
 }
 
+/** A tunnel's checked port (see WsSpec.tunnel), or INVALID. */
+function tunnelPort(spec: WsAddr & SpecBase & { tunnel?: SshDest | undefined }, tn: SshDest): number {
+  if (spec.kind !== 'ws' || spec.host !== '127.0.0.1' || !spec.port || !sshT().dest(`${tn.user}@${tn.host}${tn.port ? `:${tn.port}` : ''}`)) {
+    throw new RoomError('INVALID', 'the link\'s ssh tunnel is not a plain user@host[:port] to a ws://127.0.0.1:PORT listener');
+  }
+  return spec.port;
+}
+
+/** A WebSocket to spec's listener: through its ssh tunnel when it has one (what ssh said, when it failed), else
+ * straight to the URL. first: the link has never connected (a host name ssh cannot resolve stops it). */
+async function dial(spec: WsAddr & SpecBase & { tunnel?: SshDest | undefined }, url: string, opts: WsMod.ConnectOptions, code: RoomCode | null, first: boolean): Promise<Conn> {
+  const tn = spec.tunnel;
+  if (!tn) { try { return await ws().connect(url, opts); } catch (e) { throw offline(spec.host, e); } }
+  const port = tunnelPort(spec, tn);
+  const held: { t?: ReturnType<typeof SshMod.tunnel> } = {};
+  try {
+    return await ws().connect(url, { ...opts, socket: () => { const t = sshT().tunnel(tn, port); held.t = t; return Promise.resolve(t.stream); } });
+  } catch (e) {
+    const used = held.t;
+    if (used) {
+      await Promise.race([used.exited, new Promise(r => setTimeout(r, 1000))]);
+      const why = code ? sshT().forwardProblem(used.stderr(), tn, port, code, { first }) : null;
+      if (why) throw why;
+    }
+    throw new RoomError('OFFLINE', `${msgOf(e)} (over ssh ${tn.user}@${tn.host})`);
+  }
+}
+
+const codeOf = (path: string): RoomCode | null => { const c = path.split('/').filter(Boolean).pop(); return c !== undefined && isRoomCode(c) ? c : null; };
+
 /** The listener's X25519 key, as it says it (a TEXT request): checked by the caller against an invite line's tag. */
-async function fetchKey(spec: WsAddr & SpecBase, { timeoutMs = envMs('SUB_HUMAN_WS_CONNECT_MS') }: { timeoutMs?: number } = {}): Promise<string> {
+async function fetchKey(spec: WsAddr & SpecBase & { tunnel?: SshDest | undefined }, { timeoutMs = envMs('SUB_HUMAN_WS_CONNECT_MS') }: { timeoutMs?: number } = {}): Promise<string> {
   const s = parse(`//${hostPort(spec)}${spec.path}`);
   if (!s) throw new RoomError('INVALID', 'the link\'s WebSocket URL is not a plain host[:port]/path');
-  let conn: Conn;
-  try { conn = await ws().connect(urlOf({ ...s, kind: spec.kind }), { maxPayload: 4096, timeoutMs }); } catch (e) { throw offline(s.host, e); }
+  const conn = await dial({ ...spec, ...s }, urlOf({ ...s, kind: spec.kind }), { maxPayload: 4096, timeoutMs }, codeOf(s.path), true);
   try {
     conn.send(JSON.stringify({ op: 'key', v: 3 }));
     const m = await firstAny(conn, HANDSHAKE_MS);
@@ -238,10 +277,7 @@ const kind: Required<KindEntry<WsSpec>> = {
     const own = ctx.clientKey; // the link's own key
     if (spec.clientKey === undefined || !own || own.pub.toString('base64url') !== spec.clientKey) throw new RoomError('INVALID', 'the link\'s own key is missing or is not the one its file names; join again with a new invite');
     const url = urlOf({ ...s, kind: spec.kind });
-    let conn: Conn;
-    try {
-      conn = await ws().connect(url, { maxPayload: noise().MAX_MESSAGE + 64, timeoutMs: envMs('SUB_HUMAN_WS_CONNECT_MS') });
-    } catch (e) { throw offline(s.host, e); }
+    const conn = await dial({ ...spec, ...s }, url, { maxPayload: noise().MAX_MESSAGE + 64, timeoutMs: envMs('SUB_HUMAN_WS_CONNECT_MS') }, ctx.code, false);
     try {
       const duplex = await clientChannel(conn, { rs: Buffer.from(spec.hostKey, 'base64url'), code: ctx.code, s: own });
       return transportsLib().fromDuplex(duplex);
@@ -250,7 +286,12 @@ const kind: Required<KindEntry<WsSpec>> = {
       throw e;
     }
   },
-  describe: spec => `${spec.kind} ${hostPort(spec)}${spec.path}`,
+  describe: spec => (spec.tunnel ? `ssh ${spec.tunnel.user}@${spec.tunnel.host} to its listener :${spec.port}` : `${spec.kind} ${hostPort(spec)}${spec.path}`),
 };
 
-export { parse, locator, urlOf, offline, OFF_TAILNET_HINT, PROLOGUE, clientChannel, serverChannel, firstAny, fetchKey, kind };
+/** The link spec of an ssh-forward invite line: room code's path on the listener at port, reached over ssh as d. */
+function tunnelSpec(d: SshDest, port: number, code: RoomCode): WsSpec {
+  return { kind: 'ws', host: '127.0.0.1', port, path: `/sub-human/${code}`, tunnel: d };
+}
+
+export { parse, locator, urlOf, tunnelSpec, offline, OFF_TAILNET_HINT, PROLOGUE, clientChannel, serverChannel, firstAny, fetchKey, kind };

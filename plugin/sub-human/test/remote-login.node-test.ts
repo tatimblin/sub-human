@@ -92,9 +92,9 @@ test('ssh.loginFailure: what only the person can fix names the exact step; anyth
   assert.match(must(f('Host key verification failed.')), /Run `ssh me@devbox` once in a terminal, check and accept the key, then join again/);
   assert.match(must(ssh.loginFailure('Host key verification failed.', { ...spec, port: 2222 }, rc('vole-1234'))), /`ssh -p 2222 me@devbox`/);
   assert.match(must(f('me@devbox: Permission denied (publickey).')), /refused your ssh login: sub-human logs in with your ssh keys or agent only, never a password\..*behind MFA \(an interactive login\), run `ssh me@devbox` yourself once first/);
-  assert.match(must(f('sh: 1: /home/me/.sub-human/bin/serve: not found')), /me@devbox isn't set up for joining yet \(no ~\/\.sub-human\/bin\/serve\)\. On that machine, open the room in Claude Code \(\/sub-human\), then join again; .*--home PATH/);
-  assert.match(must(f('zsh:1: no such file or directory: /home/me/.sub-human/bin/serve')), /isn't set up for joining yet/);
-  assert.match(must(ssh.loginFailure('env: /srv/sh/bin/serve: No such file or directory', { ...spec, remoteHome: '/srv/sh' }, rc('vole-1234'))), /\(no \/srv\/sh\/bin\/serve\)/);
+  assert.match(must(f('sh: 1: /home/me/.sub-human/bin/serve: not found')), /me@devbox has no sub-human at ~\/\.sub-human\/bin\/serve\. If the room is in someone else's account on devbox, you can't join through theirs: ask them for \/sub-human invite --forward, which goes through your own login there\. If it's your own account, open the room there in Claude Code \(\/sub-human\), then join again; .*--home PATH/);
+  assert.match(must(f('zsh:1: no such file or directory: /home/me/.sub-human/bin/serve')), /has no sub-human at/);
+  assert.match(must(ssh.loginFailure('env: /srv/sh/bin/serve: No such file or directory', { ...spec, remoteHome: '/srv/sh' }, rc('vole-1234'))), /has no sub-human at \/srv\/sh\/bin\/serve\./);
   assert.match(must(f('no room "vole-1234"')), /room vole-1234 isn't open on me@devbox/);
   assert.match(must(f('usage: sub-human serve --stdio CODE [--link ID]')), /too old for joining over an ssh login/);
   for (const s of ['Host key verification failed.', 'me@devbox: Permission denied (publickey).', 'sh: 1: /home/me/.sub-human/bin/serve: not found']) {
@@ -291,7 +291,7 @@ test('login e2e: --home names a host home that is not ~/.sub-human', t => {
   const miss = remote.join(bob, `join me@devbox ${code} --as bob`);
   stopDaemon(t, remote, code);
   assert.equal(must(miss.json).decision, 'block');
-  assert.match(must(must(miss.json).reason), /could not reach room .* over ssh me@devbox \(your ssh login\): me@devbox isn't set up for joining yet \(no ~\/\.sub-human\/bin\/serve\)\. On that machine, open the room in Claude Code \(\/sub-human\), then join again; if its sub-human folder is somewhere else, add --home PATH/);
+  assert.match(must(must(miss.json).reason), /could not reach room .* over ssh me@devbox \(your ssh login\): me@devbox has no sub-human at ~\/\.sub-human\/bin\/serve\. .*invite --forward.* If it's your own account, open the room there in Claude Code \(\/sub-human\), then join again; if its sub-human folder is somewhere else, add --home PATH/);
   assert.deepEqual(links(host, code), {}, 'nothing minted');
   const r = remote.join(bob, `join me@devbox ${code} --as bob --home ${host.home}`);
   assert.equal(must(r.json).decision, undefined, must(r.json).reason || r.stderr);

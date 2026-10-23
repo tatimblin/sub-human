@@ -22,6 +22,7 @@ import type { RoomCode } from '../brand.ts';
 import type * as ListenerMod from './listener.ts';
 import type * as TailscaleMod from './tailscale.ts';
 import type * as WsMod from './transports/ws.ts';
+import type * as SshMod from './transports/ssh.ts';
 import type * as InvitesMod from './invites.ts';
 import type * as InviteSecretMod from './invite-secret.ts';
 import type * as HostingMod from './hosting.ts';
@@ -37,6 +38,7 @@ const invitesLib = lazy<typeof InvitesMod>(import.meta.url, './invites.ts');
 const listener = lazy<typeof ListenerMod>(import.meta.url, './listener.ts');
 const ts = lazy<typeof TailscaleMod>(import.meta.url, './tailscale.ts');
 const wsT = lazy<typeof WsMod>(import.meta.url, './transports/ws.ts');
+const sshT = lazy<typeof SshMod>(import.meta.url, './transports/ssh.ts');
 
 /** A front's base URL, checked. */
 export interface FrontBase {
@@ -123,6 +125,42 @@ function hostWeb(code: RoomCode, { funnel = false, port, by = null, now = Date.n
   return { pin: r.pin, ref: r.ref, expires_at: r.expires_at, short: true, line, word, locator, hostKey, base: joinBase, mode, port: lport, text, pinned };
 }
 
+/**
+ * An ssh-forward invite (`/sub-human invite --forward`): the line `/sub-human join HOST CODE SECRET --forward PORT`
+ * for someone who logs in to this machine as themselves, not this account. Their ssh carries the web link to the
+ * listener on loopback (transports/ws.ts tunnelSpec), so the SECRET's tag names the listener's key, as hostWeb's.
+ * HOST: SUB_HUMAN_SSH_ADDR or this machine's name, with no user (each joiner's own ssh config or name fills it in).
+ * A room already served over the web keeps its record (its Tailscale path stays): the listener serves it either way.
+ */
+function hostForward(code: RoomCode, { port, by = null, now = Date.now() }: { port?: number | undefined; by?: string | null; now?: number } = {}): WebInvite {
+  const store = hostStore(code);
+  const hosting = hostingLib();
+  const host = hosting.selfAddress().replace(/^[^@]*@/, '');
+  if (!sshT().dest(`u@${host}`)) throw new RoomError('INVALID', `"${host}" is not a plain host name or ssh alias (set SUB_HUMAN_SSH_ADDR to the name others reach this machine at)`);
+  const L = listener();
+  const { port: lport } = L.start(port ? { port } : {});
+  const roomPath = `/sub-human/${code}`;
+  if (!L.status().rooms[code]) L.addRoom(code, { path: roomPath, url: `ws://127.0.0.1:${lport}${roomPath}`, mode: 'ssh-forward', port: lport });
+  const locator = wsT().locator({ host: '127.0.0.1', port: lport, path: roomPath }, false);
+  if (!locator) throw new RoomError('INVALID', `no plain URL for room ${code} on port ${lport}`);
+  const hostKey = L.hostKey();
+  const r = invitesLib().mintInvite(store, { kind: 'ws', locator, by, now });
+  const secret = inviteSecretLib();
+  const word = secret.encode(r.secret, secret.tagOf(r.secret, 'listener', hostKey));
+  const line = `/sub-human join ${host} ${code} ${word} --forward ${lport}`;
+  const notes = hosting.onceNotes(store, [
+    ['rules', hosting.INVITE_RULES],
+    ['forward', `They log in to ${host} as themselves (their own account there, as user@${host} if their name differs); nothing is installed for them. Their ssh must be allowed to forward ports (sshd's AllowTcpForwarding, on by default).`],
+    ['key', `Their machine checks this one's key (${hostKey.slice(0, 12)}…, named in the line) before it sends anything.`],
+    ['install', hosting.INSTALL_HINT],
+  ]);
+  const parts = { code, how: `over their own ssh login to ${host}`, line, pin: r.pin, ref: r.ref, expires_at: r.expires_at, notes, web: true };
+  return {
+    pin: r.pin, ref: r.ref, expires_at: r.expires_at, short: true, line, word, locator, hostKey, base: `ws://127.0.0.1:${lport}${roomPath}`, mode: 'ssh-forward', port: lport,
+    text: hosting.inviteText(parts), pinned: hosting.invitePinned(parts),
+  };
+}
+
 function unhost(code: RoomCode): { removed: boolean; text: string } {
   const L = listener();
   const rec = L.removeRoom(code);
@@ -153,4 +191,4 @@ function ensure(code: RoomCode): boolean {
   try { L.start(rec.port ? { port: rec.port } : {}); return true; } catch { return false; }
 }
 
-export { hostWeb, unhost, ensure, frontBase, webState };
+export { hostWeb, hostForward, unhost, ensure, frontBase, webState };

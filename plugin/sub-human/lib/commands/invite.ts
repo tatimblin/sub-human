@@ -1,7 +1,7 @@
 /**
- * plugin/sub-human/lib/commands/invite.ts: `/sub-human invite [--ssh [DEST]] | --web | --public [--port P] | --pipe |
+ * plugin/sub-human/lib/commands/invite.ts: `/sub-human invite [--ssh [DEST]] | --web | --public [--port P] | --forward [--port P] | --pipe |
  * --stop | --cancel [ID]` [--no-card] (host only): an invite line and its PIN (lib/remote/hosting.ts hostInvite,
- * webhost.ts hostWeb), shown to the person only (a secret: it holds the PIN); --stop stops serving the room over the
+ * webhost.ts hostWeb; --forward: webhost.ts hostForward, the web link over the joiner's own ssh login here), shown to the person only (a secret: it holds the PIN); --stop stops serving the room over the
  * web, --cancel cancels an unused invite (hosting.cancelInvite).
  *
  * The copy card (PLAN-JOIN step 5): the pinned form also carries the line alone (Pinned line, never the PIN), so the
@@ -30,7 +30,7 @@ import { lazy } from '../io.ts';
 const webhost = lazy<typeof WebhostMod>(import.meta.url, '../remote/webhost.ts');
 const ts = lazy<typeof TailscaleMod>(import.meta.url, '../remote/tailscale.ts');
 
-export const INVITE_USAGE: string = `usage: /sub-human invite (over your tailnet when Tailscale is up here, else ssh; --ssh for ssh, --public for anyone on the internet; --no-card: no card offering to copy the line). ${HELP_HINT}`;
+export const INVITE_USAGE: string = `usage: /sub-human invite (over your tailnet when Tailscale is up here, else ssh; --ssh for ssh, --forward for someone who logs in to this machine as themselves, --public for anyone on the internet; --no-card: no card offering to copy the line). ${HELP_HINT}`;
 export const OFF_TAILNET = 'Off your tailnet? /sub-human invite --public';
 
 /** Whether Tailscale is usable here: its CLI, and `tailscale status` naming this machine, online (no serve, no Funnel). */
@@ -41,9 +41,10 @@ function tailnetUp(): boolean {
 }
 
 /** The tests' stubs: whether the tailnet is up here, the web invite itself, and the listener's state and stop. */
-export const seam: { tailnetUp: () => boolean; hostWeb: typeof WebhostMod.hostWeb; webState: typeof WebhostMod.webState; unhost: typeof WebhostMod.unhost } = {
+export const seam: { tailnetUp: () => boolean; hostWeb: typeof WebhostMod.hostWeb; hostForward: typeof WebhostMod.hostForward; webState: typeof WebhostMod.webState; unhost: typeof WebhostMod.unhost } = {
   tailnetUp,
   hostWeb: (...a) => webhost().hostWeb(...a),
+  hostForward: (...a) => webhost().hostForward(...a),
   webState: (...a) => webhost().webState(...a),
   unhost: (...a) => webhost().unhost(...a),
 };
@@ -51,12 +52,12 @@ export const seam: { tailnetUp: () => boolean; hostWeb: typeof WebhostMod.hostWe
 export const invite: Verb = (argv, { cur: seat }) => {
   const cur = hostOnly(seat, 'invite');
   if (typeof cur === 'string') return refused(cur);
-  const p = parse(argv, { ssh: '?', web: 0, public: 0, port: 1, pipe: 0, stop: 0, cancel: '?', 'no-card': 0 });
+  const p = parse(argv, { ssh: '?', web: 0, public: 0, forward: 0, port: 1, pipe: 0, stop: 0, cancel: '?', 'no-card': 0 });
   const f = p.flags;
   const bad = p.error ? p.error.split(' ')[0] : p.rest.length ? p.rest[0] : f.port !== undefined && !/^[0-9]{1,5}$/.test(f.port) ? '--port' : null;
   if (bad !== null) return refused(`"${bad}" isn't an invite option. ${INVITE_USAGE}`);
   const web = !!(f.web || f.public);
-  const ways = [f.ssh !== undefined, web, !!f.pipe, !!f.stop, f.cancel !== undefined].filter(Boolean).length;
+  const ways = [f.ssh !== undefined, web, !!f.forward, !!f.pipe, !!f.stop, f.cancel !== undefined].filter(Boolean).length;
   if (ways > 1) return refused(`pick one way at a time. ${INVITE_USAGE}`);
   try {
     if (f.stop) return say(webhost().unhost(cur.code).text);
@@ -65,7 +66,8 @@ export const invite: Verb = (argv, { cur: seat }) => {
     const tailnet = ways === 0 && envStr('SUB_HUMAN_SSH_ADDR') === undefined && seam.tailnetUp();
     const ssh = () => hosting.hostInvite(cur.code, { ssh: f.pipe ? undefined : f.ssh === undefined ? true : f.ssh, pipe: !!f.pipe, by: cur.name });
     let r: { text: string; pinned: Pinned; line: string; mode?: string }, why = '';
-    if (web || tailnet) {
+    if (f.forward) r = seam.hostForward(cur.code, { port: f.port !== undefined ? Number(f.port) : undefined, by: cur.name });
+    else if (web || tailnet) {
       const before = tailnet ? seam.webState(cur.code) : null;
       try {
         r = seam.hostWeb(cur.code, { funnel: !!f.public, port: f.port !== undefined ? Number(f.port) : undefined, by: cur.name });

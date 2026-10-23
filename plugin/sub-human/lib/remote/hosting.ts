@@ -239,7 +239,7 @@ function hostInvite(code: RoomCode, { ssh = true, pipe = false, by = null, now =
     code, how: `over ssh ${dest}`, line, pin: r.pin, ref: r.ref, expires_at: r.expires_at, extra: reach.always,
     notes: onceNotes(store, [
       ['rules', INVITE_RULES],
-      ['ssh', `Over ssh this needs their own ssh login to this account (${os.userInfo().username}), set up as for any ssh login: sub-human writes nothing to authorized_keys. No login here? Invite them over the web: /sub-human invite --web`],
+      ['ssh', `Over ssh this needs their own ssh login to this account (${os.userInfo().username}), set up as for any ssh login: sub-human writes nothing to authorized_keys. They log in to this machine as someone else? /sub-human invite --forward`],
       ...reach.once,
       ['install', INSTALL_HINT],
     ]),
@@ -390,4 +390,5 @@ function givePin(code: RoomCode, pin: Pin): void {
 
 export {
   hostInvite, inviteText, invitePinned, onceNotes, INVITE_RULES, INSTALL_HINT, cancelInvite, kick, joinLine, givePin, outcome, joinText, shimReady, remoteLogin,
+  selfAddress,
 };

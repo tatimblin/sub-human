@@ -2,6 +2,20 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 0.5.5: join a shared machine as yourself (`invite --forward`)
+
+Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, `claude plugin validate --strict`, and the Docker lab's `forward` scenario on real OpenSSH (a second account, forwarding off then on). Not yet run: a live two-account check on a real shared machine. The wire protocol is still 5; joining over `--forward` needs 0.5.5 on the joiner's side (an older one refuses the flag).
+
+### Added
+- **`/sub-human invite --forward`** (#27): for someone who can ssh to the host machine only as their own account, not the host's, with no Tailscale. The line is `/sub-human join HOST ROOM SECRET --forward PORT`. The joiner's own `ssh -W 127.0.0.1:PORT HOST` carries the web link to the host's listener on loopback: the key check, the PIN or card, and Noise XK are unchanged. No shell runs there and nothing is installed in their account. The target is always 127.0.0.1, never taken from the line.
+- An sshd that refuses forwarding stops the join with `SSH_FORWARD_REFUSED` and what to ask its admin; nothing listening on the port retries (offline). The tunnel pins `-o LogLevel=INFO`, without which OpenSSH does not say why a forward failed.
+
+### Changed
+- An ssh join that finds no `~/.sub-human/bin/serve` (you logged in as yourself, not the room's host) and a refused ssh login now point to `/sub-human invite --forward`, instead of telling you to open the room there. The ssh invite's first note does too, in place of `--web`.
+
+### Internals
+- `ws.connect` takes a stream it is handed (`socket`), which the tunnel uses in place of TCP. A ws link spec may carry `tunnel: {user, host, port?}`.
+
 ## 0.5.4: a card after you leave
 
 Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, `claude plugin validate --strict`. The wire protocol is still 5.

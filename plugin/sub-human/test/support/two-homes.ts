@@ -234,7 +234,7 @@ class Machine {
 
 /** An invite's text as the host's person reads it (lib/remote/hosting.ts inviteText): the line and the PIN told apart. */
 function shownInvite(text: string): { line: string; dest: string; code: RoomCode; word: string; pin: string } | null {
-  const m = /\/sub-human (join ([^\s#]+)(?: ([a-z]+-\d{4}))?[ #]([0-9a-z]{39})((?: --(?:via|home) \S+)*))\s*$/m.exec(text);
+  const m = /\/sub-human (join ([^\s#]+)(?: ([a-z]+-\d{4}))?[ #]([0-9a-z]{39})((?: --(?:via|home|forward) \S+)*))\s*$/m.exec(text);
   const p = /apart from the line[^\n]*: (\d{4})\s*$/m.exec(text);
   if (!m || !p) return null;
   const [, line = '', dest = '', named, word = ''] = m;
