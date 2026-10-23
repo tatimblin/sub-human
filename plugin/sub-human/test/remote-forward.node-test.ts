@@ -114,11 +114,13 @@ test('forward: someone else on the host machine holding the port gets nothing se
 
 test('forward: argv, ssh\'s words, and the join\'s refusals', async t => {
   assert.deepEqual(sshT.forwardCommand({ user: 'bob', host: 'devbox', port: 2222 }, 7420, []),
-    ['ssh', '-o', 'BatchMode=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2', '-W', '127.0.0.1:7420', '-p', '2222', '--', 'bob@devbox']);
+    ['ssh', '-o', 'BatchMode=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2', '-o', 'LogLevel=INFO', '-W', '127.0.0.1:7420', '-p', '2222', '--', 'bob@devbox']);
   assert.throws(() => sshT.forwardCommand({ user: '-oProxyCommand=x', host: 'devbox' }, 7420, []), /not a plain/);
   assert.throws(() => sshT.forwardCommand({ user: 'bob', host: 'devbox' }, 70000, []), /no port/);
   assert.equal(sshT.classify('channel 0: open failed: administratively prohibited: open failed\r\nstdio forwarding failed')?.kind, 'forward-refused');
   assert.equal(sshT.classify('channel 0: open failed: connect failed: Connection refused\r\nstdio forwarding failed')?.kind, 'forward-unreached');
+  // below LogLevel INFO OpenSSH says only this (checked on the Docker lab's real sshd): no reason, so it may pass
+  assert.equal(sshT.classify('stdio forwarding failed\r\n')?.kind, 'forward-unreached');
   const d = { user: 'bob', host: 'devbox' }, code = rc('vole-1234');
   assert.equal(sshT.forwardProblem('channel 0: open failed: administratively prohibited: open failed', d, 7420, code)?.reason, 'SSH_FORWARD_REFUSED');
   const un = must(sshT.forwardProblem('channel 0: open failed: connect failed: Connection refused', d, 7420, code));

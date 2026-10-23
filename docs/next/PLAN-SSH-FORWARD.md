@@ -2,8 +2,8 @@
 
 **Status:** implemented on branch `ssh-forward-join` as 0.5.4. Steps 1-6 and 9 are done, with the simplicity review's cuts: steps 1 and 3 merged, the argv trimmed (`-W` implies `-T`/`ExitOnForwardFailure`), `--forward` takes no DEST, and the squatter is a node test (`test/remote-forward.node-test.ts`). Still to do:
 - Step 7: doctor. Only the hints exist (`doctor/ssh.ts` sshHint knows the two new kinds); there is no probe.
-- Step 8: the Docker lab scenario with a second account. Docker wasn't running when this was built.
-- A live check on a real box: the real OpenSSH strings, and whether `AllowTcpForwarding` is on. If corp images turn it off, the `ssh HOST nc 127.0.0.1 PORT` fallback the review suggested becomes v1 scope.
+- Step 8 is done: `scripts/remote-docker/scenarios/16-forward.ts` passes on real OpenSSH. It showed that the reason for a failed forward appears only at `LogLevel INFO`, so the tunnel pins `-o LogLevel=INFO`.
+- A live check on a real box: whether `AllowTcpForwarding` is on. If corp images turn it off, the `ssh HOST nc 127.0.0.1 PORT` fallback the review suggested becomes v1 scope.
 - `SOURCE_MAX` is shared by every forwarded joiner (all of them reach the listener from 127.0.0.1).
 
 Goal: alice hosts a room in her account on a shared dev box. bob can ssh to that box only as `bob@devbox`. bob types the line alice sends him, plus the PIN, and joins. No Tailscale is involved, and nothing is installed in bob's account on the box.

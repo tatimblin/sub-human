@@ -190,7 +190,9 @@ function forwardCommand(d: SshDest, port: number, opts: string[] = sshOpts()): [
   const c = dest(at(d));
   if (!c) throw new RoomError('INVALID', 'the tunnel\'s ssh destination is not a plain user@host[:port]');
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new RoomError('INVALID', 'the tunnel names no port (1-65535)');
-  return ['ssh', '-o', 'BatchMode=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2', ...opts,
+  // LogLevel=INFO: ssh says why a forward failed ("channel 0: open failed: administratively prohibited" / "connect
+  // failed") only at INFO or above, and a person's config may set ERROR or QUIET; a -o beats the config file
+  return ['ssh', '-o', 'BatchMode=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2', '-o', 'LogLevel=INFO', ...opts,
     '-W', `127.0.0.1:${port}`, ...(c.port ? ['-p', String(c.port)] : []), '--', `${c.user}@${c.host}`];
 }
 

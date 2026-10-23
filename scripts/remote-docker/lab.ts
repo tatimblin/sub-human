@@ -65,7 +65,7 @@ export interface HookRun { ok: boolean, out?: string | null, json?: HookJson | n
 /** short / pin: an invite's line typed, the PIN given. */
 export interface Typed { ok: boolean, asked?: boolean, knocked?: boolean, waiting: boolean, linked?: boolean, out: string, ms: number, hidden: boolean, stderr?: string }
 /** linkfile: this machine's link file without its secrets. */
-export interface LinkFile { exists: boolean, token?: boolean, invite?: boolean, pin?: boolean, pin_wanted?: unknown, awaiting?: unknown, refused?: unknown, transport?: { login?: boolean, key?: unknown, knownHosts?: unknown, link?: string } | null }
+export interface LinkFile { exists: boolean, token?: boolean, invite?: boolean, pin?: boolean, pin_wanted?: unknown, awaiting?: unknown, refused?: unknown, transport?: { kind?: string, host?: string, login?: boolean, key?: unknown, knownHosts?: unknown, link?: string, tunnel?: { user?: string, host?: string } } | null }
 /** admitcard: the host's answer to a join request's card. */
 export interface Admitted { ok: boolean, question?: string, out?: string, ref?: string, key?: string, link?: string, ms?: number, stderr?: string }
 /** One event a seat's tail delivered (lab/seat-proc.ts). */
