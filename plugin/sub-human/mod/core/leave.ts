@@ -118,7 +118,7 @@ const TITLE_MAX = 60;
 export function issueUrl({ text, versions }: { text: string; versions: string }): string {
   const body = text.length > FEEDBACK_MAX ? `${text.slice(0, FEEDBACK_MAX)}…` : text;
   const first = (body.split('\n')[0] ?? '').trim();
-  const title = `Feedback: ${first.length > TITLE_MAX ? `${first.slice(0, TITLE_MAX)}…` : first}`.trim();
+  const title = first ? `Feedback: ${first.length > TITLE_MAX ? `${first.slice(0, TITLE_MAX)}…` : first}` : 'Feedback';
   const q = new URLSearchParams({ template: 'feedback.yml', title, ...(body ? { feedback: body } : {}), ...(versions ? { versions } : {}) });
   return `${REPO_URL}/issues/new?${q.toString()}`;
 }

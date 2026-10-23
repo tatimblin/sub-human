@@ -88,7 +88,7 @@ test('issueUrl: the feedback template, the text and versions by field id, the ti
   assert.equal(u.searchParams.get('versions'), 'sub-human 0.5.5 · Claude Code 2.1.296');
   const none = new URL(issueUrl({ text: '', versions: '' }));
   assert.equal(none.searchParams.get('feedback'), null);
-  assert.equal(none.searchParams.get('title'), 'Feedback:');
+  assert.equal(none.searchParams.get('title'), 'Feedback');
   const long = issueUrl({ text: 'x'.repeat(20_000), versions: '' });
   assert.ok(long.length < 8000, `under GitHub's URL limit (${long.length})`);
   assert.equal(new URL(long).searchParams.get('feedback')?.length, FEEDBACK_MAX + 1);
