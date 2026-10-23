@@ -49,7 +49,8 @@ function world(on: On,{ refused = false, stillSeated = false, star = 0, opens = 
     if (script === 'mod-hello.ts') return ran(JSON.stringify(seated ? OUT : helloOf(null)))
     if (script === 'join.ts') {
       const args = String(stdinOf(e).command_args)
-      if (args === 'who') return ran(JSON.stringify({ subHuman: { say: `✗ room ${CODE}: link 4821 down, secret ${'K'.repeat(39)}`, refused: true, shareable: true } }))
+      if (args === 'who') return ran(JSON.stringify({ subHuman: { say: `alice is in room ${CODE}`, refused: false, shareable: true } }))
+      if (args === 'kick bob') return ran(JSON.stringify({ subHuman: { say: `alice: room ${CODE}: link 4821 down, secret ${'K'.repeat(39)}`, refused: true, shareable: true } }))
       if (args === 'leave') {
         if (refused) return ran(JSON.stringify({ subHuman: { say: 'this session is not in a room; /sub-human joins one.', refused: true, shareable: true } }))
         seated = stillSeated
@@ -113,23 +114,30 @@ test('Star on a headless box: no gh, no opener: the URL in a notice', async ($, 
   await until(() => seen.logs.includes('star sub-human at https://github.com/tatimblin/sub-human'))
 })
 
-test('text typed: the issue form with the text, the versions and sub-human\'s own lines of the session, masked', async ($, on) => {
+test('text typed: the issue form with the text, the versions; no session snippet when nothing went wrong', async ($, on) => {
   const seen = world(on, { answer: 'the rows flicker', opens: [127] })
   await start($)
   await typed($, 'who')
   await typed($, 'leave'); await seen.tick()
   await until(() => seen.runs.length === 1)
-  const sent = String(seen.runs[0]?.stdin)
-  const url = new URL(sent)
+  const url = new URL(String(seen.runs[0]?.stdin))
   expect(url.pathname).toBe('/tatimblin/sub-human/issues/new')
   expect(url.searchParams.get('feedback')).toBe('the rows flicker')
   expect(url.searchParams.get('versions')).toBe('sub-human 9.9.9 · Claude Code 2.1.296')
-  const snippet = String(url.searchParams.get('session'))
-  expect(snippet).toContain('> /sub-human who')
-  expect(snippet).toContain('> /sub-human leave')
-  expect(snippet).toContain('left ROOM')
-  expect(snippet).toContain('SECRET')
-  for (const leak of [CODE, 'K'.repeat(39), '4821', 'alice']) expect(sent).not.toContain(leak)
+  expect(url.searchParams.get('session')).toBe(null)
+})
+
+test('after a refusal: the snippet has the commands and the refusal, masked (name, room, secret, number); no reply that worked', async ($, on) => {
+  const seen = world(on, { answer: 'kick broke', opens: [127] })
+  await start($)
+  await typed($, 'who')
+  await typed($, 'kick bob')
+  await typed($, 'leave'); await seen.tick()
+  await until(() => seen.runs.length === 1)
+  const sent = String(seen.runs[0]?.stdin)
+  const snippet = String(new URL(sent).searchParams.get('session'))
+  expect(snippet).toBe('> /sub-human who\n> /sub-human kick\n✗ NAME: room ROOM: link NNNN down, secret SECRET\n> /sub-human leave')
+  for (const leak of [CODE, 'K'.repeat(39), '4821', 'alice', 'bob']) expect(sent).not.toContain(leak)
   await until(() => seen.logs.some(l => l.startsWith('write your feedback here (nothing is sent until you press Submit): https://github.com/tatimblin/sub-human/issues/new?')))
 })
 

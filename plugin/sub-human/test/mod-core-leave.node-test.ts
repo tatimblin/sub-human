@@ -48,21 +48,23 @@ test('issueUrl: the feedback template, the text, versions and session by field i
   assert.ok((new URL(wide).searchParams.get('feedback')?.length ?? 0) > 500);
 });
 
-test('saidBook: command verbs never arguments, each reply line, the latest SNIPPET_LINES', () => {
+test('saidBook: command verbs never arguments, failure lines, the latest SNIPPET_LINES; anyFailed', () => {
   const b = saidBook();
   b.command(`join box otter-4821 ${'K'.repeat(39)} 4090`);
   b.command('/etc/passwd');
   b.command('');
-  b.note('one\ntwo\n\n');
-  assert.deepEqual(b.lines(), ['> /sub-human join', '> /sub-human …', '> /sub-human', 'one', 'two']);
-  for (let i = 0; i < 30; i++) b.note(`line ${i}`);
+  assert.equal(b.anyFailed(), false);
+  b.failed('✗ one\ntwo\n\n');
+  assert.equal(b.anyFailed(), true);
+  assert.deepEqual(b.lines(), ['> /sub-human join', '> /sub-human …', '> /sub-human', '✗ one', '✗ two']);
+  for (let i = 0; i < 30; i++) b.failed(`line ${i}`);
   assert.equal(b.lines().length, SNIPPET_LINES);
-  assert.equal(b.lines().at(-1), 'line 29');
+  assert.equal(b.lines().at(-1), '✗ line 29');
 });
 
-test('sessionSnippet: room codes, SECRET-shaped words and PIN-shaped numbers masked; versions kept; cut from the end', () => {
-  const s = sessionSnippet([`left ${CODE} · /sub-human joins again`, `✗ secret ${'K'.repeat(39)} PIN 4090`, 'needs Claude Code 2.1.296 or newer, port 7']);
-  assert.equal(s, 'left ROOM · /sub-human joins again\n✗ secret SECRET PIN NNNN\nneeds Claude Code 2.1.296 or newer, port 7');
+test('sessionSnippet: names given, room codes, SECRET-shaped words and PIN-shaped numbers masked; versions kept; cut from the end', () => {
+  const s = sessionSnippet([`✗ alice: left ${CODE}, ask Alice.bob`, `✗ secret ${'K'.repeat(39)} PIN 4090`, 'needs Claude Code 2.1.296 or newer, port 7, malice'], ['alice', 'x']);
+  assert.equal(s, '✗ NAME: left ROOM, ask NAME.bob\n✗ secret SECRET PIN NNNN\nneeds Claude Code 2.1.296 or newer, port 7, malice');
   assert.equal(sessionSnippet([]), '');
   const cut = sessionSnippet(Array(20).fill('x'.repeat(19).concat(' ').repeat(10)));
   assert.equal(cut.length, SNIPPET_MAX + 1);

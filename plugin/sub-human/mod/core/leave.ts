@@ -50,28 +50,33 @@ export const SNIPPET_LINES = 20;
 const TITLE_MAX = 60;
 
 /**
- * What sub-human said in this session, for the feedback issue: the module keeps its own lines (each /sub-human
- * command's verb, never its arguments, and the replies and errors it showed; never the room's chat, which is other
- * people's words), at most SNIPPET_LINES. Those replies never held an invite line or a PIN; still, anything shaped like
- * a room code, a SECRET or a PIN is masked here, so the snippet names nothing of a room. The person sees it in the
- * form before they submit.
+ * What went wrong in this session, for the feedback issue: the module keeps each /sub-human command's verb (never its
+ * arguments) and only the lines that say something failed (a refusal, a run that did not answer, a delivery error);
+ * never a reply that worked (help, who: noise, and names) nor the room's chat (other people's words). At most
+ * SNIPPET_LINES, the latest. Those lines never held an invite line or a PIN; still, sessionSnippet masks anything
+ * shaped like a room code, a SECRET or a PIN, and the names it is given. The person sees it in the form before they
+ * submit.
  */
-export interface SaidBook { note(line: string): void; command(args: unknown): void; lines(): string[] }
+export interface SaidBook { failed(line: string): void; command(args: unknown): void; lines(): string[]; anyFailed(): boolean }
 export function saidBook(): SaidBook {
   const kept: string[] = [];
+  let failures = 0;
   const push = (l: string) => { kept.push(l); if (kept.length > SNIPPET_LINES) kept.shift(); };
   return {
-    note(line) { for (const l of String(line).split('\n')) if (l.trim()) push(l.trimEnd()); },
+    failed(line) { for (const l of String(line).split('\n')) if (l.trim()) { push(l.startsWith('✗') ? l.trimEnd() : `✗ ${l.trim()}`); failures++; } },
     command(args) {
       const verb = typeof args === 'string' ? args.trim().split(/\s+/)[0] ?? '' : '';
       push(`> /sub-human${/^[a-z][a-z-]{0,15}$/.test(verb) ? ` ${verb}` : verb ? ' …' : ''}`);
     },
     lines() { return [...kept]; },
+    anyFailed() { return failures > 0; },
   };
 }
-/** The snippet, masked and cut to SNIPPET_MAX from its end (the latest lines matter most); '' for none. */
-export function sessionSnippet(lines: readonly string[]): string {
-  const masked = lines.map(l => l
+const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** The snippet, masked (names: each one given, as NAME) and cut to SNIPPET_MAX from its end; '' for none. */
+export function sessionSnippet(lines: readonly string[], names: readonly string[] = []): string {
+  const named = names.filter(n => /^[A-Za-z0-9._-]{2,32}$/.test(n));
+  const masked = lines.map(l => named.reduce((s, n) => s.replace(new RegExp(`(?<![A-Za-z0-9._-])${escape(n)}(?![A-Za-z0-9_-])`, 'gi'), 'NAME'), l)
     .replace(/\b[a-z]+-\d{4}\b/g, 'ROOM')
     .replace(/\b[0-9A-Za-z]{20,}\b/g, 'SECRET')
     .replace(/(?<![\d.])\b\d{3,10}\b(?![\d.])/g, 'NNNN'));

@@ -70,6 +70,8 @@ let leaveOffered = false;
 /** sub-human's own lines this session (command verbs, replies, delivery errors; never the room's chat), for the
  * feedback issue's snippet (mod/core/leave.ts saidBook). Module memory only. */
 const said: SaidBook = saidBook();
+/** Every seat name this module process has known, masked in that snippet. */
+const names = new Set<string>();
 /** Whether a person is at the prompt (session.start's isInteractive): no copy card in a `-p` run or the SDK. Module
  * state; null until session.start said. */
 let interactive: boolean | null = null;
@@ -233,7 +235,7 @@ function noteError($: EngineInterface, { tell = true } = {}): Promise<void> {
       if (at === null ? noticedAt !== -Infinity : !noticeDue(noticedAt, at)) return;
       noticedAt = at ?? 0;
       $.ui.log(DELIVERY_ERROR_NOTICE);
-      said.note(DELIVERY_ERROR_NOTICE);
+      said.failed(DELIVERY_ERROR_NOTICE);
     } catch { /* nowhere left to say it */ }
   });
   return counting;
@@ -407,6 +409,7 @@ async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
     switch (a.do) {
       case 'seat': {
         c.seat = a.seat;
+        if (a.seat) names.add(a.seat.name);
         // no seat: once the hello says this session has none and waits for no join, the tail has nothing to deliver
         if (!a.seat) { const h = asHello((await $.state.get(HELLO)).value); if (h && h.sid === c.sid && !spawnWanted(h)) stopChild(c.sid); }
         break;
@@ -542,7 +545,9 @@ async function offerLeave($: EngineInterface, sid: string, code: string) {
       $.ui.log(r && r.exitCode === 0 ? STARRED : (await openUrl($, REPO_URL)) === 'opened' ? starOpened() : starShown());
       return;
     }
-    const url = issueUrl({ text: out.text, versions: await versionsOf($), session: sessionSnippet(said.lines()) });
+    // what went wrong this session, when something did (names masked: this seat's, and every one it has known)
+    const session = said.anyFailed() ? sessionSnippet(said.lines(), [...names]) : '';
+    const url = issueUrl({ text: out.text, versions: await versionsOf($), session });
     $.ui.log((await openUrl($, url)) === 'opened' ? issueOpened() : issueShown(url));
   } catch { /* no card */ }
 }
@@ -638,6 +643,7 @@ export function registerDeliver(on: On): void {
     // a run that did not answer: what is true now (a leave the shim gave up on may have finished), so no stale seat
     // stays on show; the notice says the seat went
     const mine = before && before.sid === sid ? before.seat : null;
+    if (mine) names.add(mine.name);
     let gone: string | null = null;
     let fresh = false; // the hello below is said already
     if ((reply.kind === 'failed' || reply.kind === 'stale') && mine) {
@@ -661,7 +667,8 @@ export function registerDeliver(on: On): void {
     }
     const { result, logs, status } = answerOf(reply, { columns: e.presentation && e.presentation.columns });
     said.command(e.args);
-    for (const line of logs) { $.ui.log(line); said.note(line); }
+    const failedHere = reply.kind === 'failed' || reply.kind === 'stale' || (reply.kind === 'say' && reply.refused);
+    for (const line of logs) { $.ui.log(line); if (failedHere) said.failed(line); }
     if (status) {
       pinStatus($, status);
       // the copy card: a person at the prompt, and a line join.ts handed over (not --no-card); after this hook returned
