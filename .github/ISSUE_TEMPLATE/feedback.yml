@@ -1,0 +1,25 @@
+name: Feedback
+description: What worked, what didn't, what you wish it did. (/sub-human leave's card opens this filled in.)
+labels: [feedback]
+body:
+  - type: textarea
+    id: feedback
+    attributes:
+      label: Your feedback
+      description: Anything goes. Nothing about your room is filled in for you; leave out room codes, invite lines and PINs.
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where was the room?
+      options:
+        - All on one machine
+        - Another machine, over ssh
+        - Another machine, over the web (Tailscale Serve, Funnel or my own front)
+        - Not sure
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: sub-human and Claude Code.

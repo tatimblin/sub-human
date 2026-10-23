@@ -21,6 +21,7 @@ import { factsBook, type FactsBook } from './core/facts.ts';
 import { asHello, asNonce, mintNonce } from './core/state.ts';
 import { ccNotice } from './core/cc.ts';
 import { copyBook, copyWake, copyTo, clipboardCommands, AUTO_COPIED, NO_TOOL, type CopyBook } from './core/copy.ts';
+import { leaveBook, leaveWake, type LeaveBook } from './core/leave.ts';
 import { assertNever } from './core/never.ts';
 import type { EngineInterface, On, SessionAppendArgs } from 'claude-code';
 import type { JoinReply, Pulls, TailEvent, TailSeat } from './core/types.ts';
@@ -61,6 +62,9 @@ export const facts: FactsBook = factsBook();
  * /sub-human invite answers here, dropped once the invite is over (the tail's `invites` event, a cancel, its life);
  * mod/consent.ts reads it for the card. A reload forgets them (the card then says the invite is gone). */
 export const copies: CopyBook = copyBook();
+/** The leave card's memory (mod/core/leave.ts): the room just left, waiting for its card; offered once per session.
+ * mod/consent.ts reads it for the card. */
+export const leaves: LeaveBook = leaveBook();
 /** Whether a person is at the prompt (session.start's isInteractive): no copy card in a `-p` run or the SDK. Module
  * state; null until session.start said. */
 let interactive: boolean | null = null;
@@ -513,6 +517,23 @@ async function offerCopy($: EngineInterface, ref: string) {
   } catch { /* the line stays pinned on the status line */ }
 }
 
+/**
+ * The leave card (mod/core/leave.ts): after a /sub-human leave went through, one wake asks the model to call
+ * AskUserQuestion with "left room CODE". Not when the session took a seat again before it fires (a leave and a join at
+ * once), nor beside a take's wake (it waits for the take, as offerCopy). Framed: it has no line for the person. Never
+ * throws.
+ */
+async function offerLeave($: EngineInterface, sid: string, code: string) {
+  try {
+    for (let i = 0; taking.size && i < 20; i++) await new Promise<void>(resolve => { $.clock.after(500, resolve); });
+    const now = asHello((await $.state.get(HELLO)).value);
+    if (now && now.sid === sid && now.seat) { leaves.done(); return; }
+    const text = leaveWake(code);
+    if (turns.running !== null) await midTurnWake($, text);
+    else await submitWake($, text, { member: true });
+  } catch { leaves.done(); }
+}
+
 /** The line to the first clipboard tool that takes it, on stdin (copy.ts copyTo): `copied` when one did, else NO_TOOL. */
 async function clip($: EngineInterface, line: string, copied: string): Promise<string> {
   const or = (p: Promise<string | undefined>) => p.catch(() => undefined);
@@ -596,6 +617,11 @@ export function registerDeliver(on: On): void {
       // not from this hook (the engine refuses a command.run raised inside one): just after it, on the clock
       const rename = () => { void $.command.run({ command: 'rename', args: left }).then(() => $.state.set(TITLED, { sid, addr: left }), () => { /* the next prompt titles it */ }); };
       try { $.clock.after(CONFIRM_AFTER_MS, rename); } catch { /* no clock: the next prompt titles it (mod/core/prompt.ts titleFor) */ }
+      // the leave card (mod/core/leave.ts): a person at the prompt, once per session, after the rename
+      const code = mine ? mine.code : null;
+      if (code && interactive !== false && (await $.env.get('SUB_HUMAN_LEAVE_CARD').catch(() => undefined)) !== '0' && leaves.left(code)) {
+        try { $.clock.after(2 * CONFIRM_AFTER_MS, () => { void offerLeave($, sid, code); }); } catch { leaves.done(); }
+      }
     }
     const { result, logs, status } = answerOf(reply, { columns: e.presentation && e.presentation.columns });
     for (const line of logs) $.ui.log(line);
