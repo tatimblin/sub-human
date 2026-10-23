@@ -36,6 +36,12 @@ test('leaveAsked: the wake\'s question, the card\'s own, and nothing else', () =
   assert.equal(leaveAsked({ questions: [{ question: 'copy invite 3f9c2a1b7e0d' }] }), null);
   assert.equal(leaveAsked({ questions: [{ question: 'Which file should I edit?' }] }), null);
   assert.equal(leaveAsked({ questions: [{ question: 'left room otter-48211' }] }), null);
+  assert.deepEqual(leaveAsked({ questions: [{ question: 'Left room Otter-4821' }] }), { code: CODE }, 'case aside');
+  // only a question, whole: never a question that mentions it, nor an answer or a note on another card
+  assert.equal(leaveAsked({ questions: [{ question: `Should we wait now that carol left room ${CODE}?` }] }), null);
+  const consent = { questions: [{ question: 'Agree to plan v2?' }] };
+  assert.equal(leaveAsked(consent, { ...consent, answers: { 'Agree to plan v2?': `carol left room ${CODE}, wait` } }), null);
+  assert.equal(leaveAsked(consent, { ...consent, annotations: { 'Agree to plan v2?': { notes: `left room ${CODE}` } } }), null);
 });
 
 test('leaveWake: one framed (for Claude) line naming the code, nothing for the person', () => {
@@ -67,6 +73,7 @@ test('leaveOutcome: each label, typed text as feedback, a note on Write feedback
   assert.deepEqual(leaveOutcome(answered(FEEDBACK, { annotations: { [leaveQuestion(CODE)]: { notes: ' rows flicker ' } } }), input, CODE), { kind: 'feedback', text: 'rows flicker' });
   assert.deepEqual(leaveOutcome(answered('the PIN step confused me'), input, CODE), { kind: 'feedback', text: 'the PIN step confused me' });
   assert.deepEqual(leaveOutcome(answered(STAR, { afkTimeoutMs: 60000 }), input, CODE), { kind: 'close' });
+  assert.deepEqual(leaveOutcome(answered(STAR, { followUp: 'more' }), input, CODE), { kind: 'close' });
   const edited = [{ ...leaveCard(CODE).questions[0], options: [{ label: STAR, description: 'x' }] }];
   assert.deepEqual(leaveOutcome({ questions: edited, answers: { [leaveQuestion(CODE)]: STAR } }, { questions: edited }, CODE), { kind: 'close' });
   assert.deepEqual(leaveOutcome(null, input, CODE), { kind: 'close' });
@@ -98,6 +105,9 @@ test('openCommands: wslview under WSL, open, xdg-open with a display; a headless
   assert.deepEqual(openCommands({ DISPLAY: ':0' }).map(c => c.name), ['open', 'xdg-open']);
   assert.deepEqual(openCommands({ WAYLAND_DISPLAY: 'wayland-0' }).map(c => c.name), ['open', 'xdg-open']);
   assert.deepEqual(openCommands({ WSL_DISTRO_NAME: 'Ubuntu' }).map(c => c.name), ['wslview', 'open']);
+  // over ssh a browser would open on the far machine's screen: none, the URL is shown
+  assert.deepEqual(openCommands({ SSH_CONNECTION: '10.0.0.2 50000 10.0.0.3 22', DISPLAY: ':0' }), []);
+  assert.deepEqual(openCommands({ SSH_TTY: '/dev/ttys004' }), []);
 });
 
 test('openWith: the first opener that exits 0, the URL on stdin; a rejection or 127 tries the next', async () => {
@@ -124,6 +134,10 @@ test('scripts/open.sh opens only this plugin\'s GitHub pages, and refuses an ope
   assert.equal(sh('https://evil.example/x', 'xdg-open'), 2);
   assert.equal(sh('https://github.com/tatimblin/sub-human-evil', 'xdg-open'), 2);
   assert.equal(sh(`${REPO_URL}/issues/new?x=1`, 'nope'), 2);
+  assert.equal(sh(`${REPO_URL}/../../evil/x`, 'xdg-open'), 2);
+  assert.equal(sh(`${REPO_URL}@evil.example`, 'xdg-open'), 2);
+  // a URL with no newline after it is read all the same (to the opener's 127 here)
+  assert.equal(spawnSync('/bin/sh', [path.join(PLUGIN, 'scripts/open.sh'), 'xdg-open'], { input: REPO_URL, env: { PATH: '/nonexistent' } }).status, 127);
   // no opener on PATH: 127, so the next is tried
   assert.equal(sh(`${REPO_URL}/issues/new?x=1`, 'xdg-open'), 127);
   assert.equal(sh(REPO_URL, 'wslview'), 127);

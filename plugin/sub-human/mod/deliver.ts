@@ -526,8 +526,9 @@ async function offerCopy($: EngineInterface, ref: string) {
 async function offerLeave($: EngineInterface, sid: string, code: string) {
   try {
     for (let i = 0; taking.size && i < 20; i++) await new Promise<void>(resolve => { $.clock.after(500, resolve); });
+    // seated again, or the conversation was cleared (/clear: a new session id) before it fired: no card
     const now = asHello((await $.state.get(HELLO)).value);
-    if (now && now.sid === sid && now.seat) { leaves.done(); return; }
+    if ((await $.session.id()) !== sid || (now && now.sid === sid && now.seat)) { leaves.done(); return; }
     const text = leaveWake(code);
     if (turns.running !== null) await midTurnWake($, text);
     else await submitWake($, text, { member: true });

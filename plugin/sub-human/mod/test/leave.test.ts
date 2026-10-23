@@ -181,6 +181,20 @@ test('no card when the session is seated again before it fires', async ($, on) =
   expect(seen.prompts).toEqual([])
 })
 
+test('another card whose answer mentions "left room CODE" goes on to consent as before; the leave keeps its card', async ($, on) => {
+  const seen = world($, on)
+  await leave($, seen)
+  const questions = [{ question: 'Agree to plan v2?', header: 'Plan', multiSelect: false, options: [{ label: 'Yes', description: '' }] }]
+  const post = await $.classic.PostToolUse({
+    session_id: SID, tool_name: 'AskUserQuestion', tool_use_id: 'other', tool_input: { questions },
+    tool_response: { questions, answers: { 'Agree to plan v2?': `carol left room ${CODE}, wait for her` } },
+  })
+  expect(JSON.stringify(post)).not.toContain('leave card')
+  expect(seen.runs).toEqual([])
+  await ask($)
+  expect(JSON.stringify(seen.cards.at(-1))).toContain(QUESTION)
+})
+
 test('once per session: a second leave makes no second card', async ($, on) => {
   const seen = world($, on)
   await leave($, seen)

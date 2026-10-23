@@ -53,15 +53,23 @@ export const leaveCard = (code: string): LeaveCard => ({
 /** The card's question as answerCard reads it. */
 export const leaveSpec = (code: string): CardSpec => ({ question: leaveQuestion(code), options: (leaveCard(code).questions[0]?.options ?? []).map(o => ({ label: o.label, description: o.description })) });
 
-const CODE = /(?:left room|You left room) ([a-z]+-\d{4})(?!\d)/;
-/** An AskUserQuestion call (or its result) that is the leave card's: it says "left room CODE" (the wake's question),
- * or carries the card's own question. null: not the leave card. */
+/** The wake's question, whole ("left room CODE"), and the card's own question, whole. */
+const ASKED = /^left room ([a-z]+-\d{4})$/i;
+const SHOWN = /^You left room ([a-z]+-\d{4})\. Thanks for trying sub-human!$/;
+const field = (v: unknown, key: string): unknown => (v && typeof v === 'object' && !Array.isArray(v) ? Object.getOwnPropertyDescriptor(v, key)?.value : undefined);
+const questionsOf = (v: unknown): string[] => {
+  const qs = field(v, 'questions');
+  return Array.isArray(qs) ? qs.map((q: unknown) => field(q, 'question')).filter((q): q is string => typeof q === 'string') : [];
+};
+/**
+ * An AskUserQuestion call (or its result) that is the leave card's: one of its questions (input's or the result's
+ * shown questions, never the answers or notes) is exactly the wake's "left room CODE" or the card's own question.
+ * null: not the leave card, so any other card (consent's, a join request's, the model's own) goes on as before.
+ */
 export function leaveAsked(input: unknown, response?: unknown): { code: string } | null {
-  for (const v of [input, response]) {
-    let text = '';
-    try { text = JSON.stringify(v ?? {}); } catch { continue; }
-    const m = CODE.exec(text);
-    if (m && m[1]) return { code: m[1] };
+  for (const q of [...questionsOf(input), ...questionsOf(response)]) {
+    const m = ASKED.exec(q.trim()) ?? SHOWN.exec(q);
+    if (m && m[1]) return { code: m[1].toLowerCase() };
   }
   return null;
 }
@@ -120,10 +128,12 @@ export const versionsLine = (plugin: string | null, cc: string | null): string =
 
 /** One browser opener, by name: scripts/open.sh NAME runs it with the URL on stdin (127 when it is not there). */
 export interface OpenCommand { name: 'open' | 'wslview' | 'xdg-open' }
-/** The openers to try, in order: wslview under WSL; open (macOS: open.sh checks); xdg-open with a display. A
- * headless box (ssh in, no display) gets none past open, and the notice carries the URL. */
-export function openCommands(env: { WAYLAND_DISPLAY?: string | undefined; DISPLAY?: string | undefined; WSL_DISTRO_NAME?: string | undefined; WSL_INTEROP?: string | undefined }): OpenCommand[] {
+/** The openers to try, in order: wslview under WSL; open (macOS: open.sh checks); xdg-open with a display. A session
+ * over ssh gets none (a browser would open on the far machine's screen, which nobody is looking at), and the notice
+ * carries the URL. */
+export function openCommands(env: { WAYLAND_DISPLAY?: string | undefined; DISPLAY?: string | undefined; WSL_DISTRO_NAME?: string | undefined; WSL_INTEROP?: string | undefined; SSH_CONNECTION?: string | undefined; SSH_TTY?: string | undefined }): OpenCommand[] {
   const out: OpenCommand[] = [];
+  if (env.SSH_CONNECTION || env.SSH_TTY) return out;
   if (env.WSL_DISTRO_NAME || env.WSL_INTEROP) out.push({ name: 'wslview' });
   out.push({ name: 'open' });
   if (env.WAYLAND_DISPLAY || env.DISPLAY) out.push({ name: 'xdg-open' });

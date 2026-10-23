@@ -138,6 +138,7 @@ async function openUrl($: EngineInterface, url: string): Promise<'opened' | 'non
   const commands = openCommands({
     WAYLAND_DISPLAY: await or($.env.get('WAYLAND_DISPLAY')), DISPLAY: await or($.env.get('DISPLAY')),
     WSL_DISTRO_NAME: await or($.env.get('WSL_DISTRO_NAME')), WSL_INTEROP: await or($.env.get('WSL_INTEROP')),
+    SSH_CONNECTION: await or($.env.get('SSH_CONNECTION')), SSH_TTY: await or($.env.get('SSH_TTY')),
   });
   return openWith((name, init) => $.process.run(['sh', `${$.plugin.root}/scripts/open.sh`, name], init), url, commands);
 }
@@ -157,8 +158,9 @@ async function versionsOf($: EngineInterface): Promise<string> {
  * URL; Write feedback (or text typed on the card): the new-issue form filled in, opened or shown. Nothing is posted for
  * the person. They get the outcome as a notice, the model as context. */
 async function leavePost($: EngineInterface, e: { tool_input?: unknown; tool_response?: unknown }, asked: { code: string }): Promise<string> {
-  const code = leaves.waiting(asked.code) ?? asked.code;
-  leaves.done();
+  // only this code's leave is answered (another code's, still waiting, keeps its card)
+  const code = asked.code;
+  if (leaves.waiting(code)) leaves.done();
   const out = leaveOutcome(isRec(e.tool_response) ? e.tool_response : null, isRec(e.tool_input) ? e.tool_input : null, code);
   let said: string;
   if (out.kind === 'close') said = 'closed';
