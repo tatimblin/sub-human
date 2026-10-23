@@ -1,30 +1,25 @@
 /**
  * plugin/sub-human/mod/core/leave.ts: the card after a leave (docs/next/PLAN-LEAVE-CARD.md), as pure functions;
- * mod/deliver.ts and mod/consent.ts make the $ calls. Built as the invite's copy card is (mod/core/copy.ts): a hook
- * cannot open a dialog, so a wake asks the model for AskUserQuestion and the hooks put this card in its place.
+ * mod/deliver.ts makes the $ calls.
  *
  *   1. /sub-human leave went through in a session a person types in (mod/deliver.ts command.run, leftName): once per
- *      session, unless SUB_HUMAN_LEAVE_CARD=0 or the session took a seat again before it fires, the module submits
- *      leaveWake(code), framed (it has no line for the person).
- *   2. The model calls AskUserQuestion with "left room CODE" (leaveAsked). mod/consent.ts's PreToolUse answers ask with
- *      leaveCard(code) as updatedInput, or denies (NOTHING_LEFT) when no leave is waiting for its card.
- *   3. PostToolUse: leaveOutcome reads the answer (mod/core/card.ts answerCard, exact). Close, AFK or an edited card:
- *      nothing. Star on GitHub: scripts/star.sh (gh, when logged in), else the repo page opened (scripts/open.sh), else
- *      its URL in a notice. Write feedback, or text typed on the card: GitHub's new-issue form, filled in
- *      (issueUrl), opened or shown the same way; the person reads it and presses Submit there. Nothing is posted for them.
- * What a URL carries: the person's own text and the two versions. Never a room code, a name, a line of the room.
+ *      session, unless SUB_HUMAN_LEAVE_CARD=0, the session took a seat again or was cleared before it fires, the module
+ *      opens the card itself ($.ui.ask: Claude Code's own AskUserQuestion dialog, no model turn): leaveQuestion(code),
+ *      Close / Star on GitHub, and the dialog's own free-text row, where typing sends feedback.
+ *   2. leaveOutcome reads the answer. Close, or the dialog dismissed: nothing. Star on GitHub: scripts/star.sh (gh,
+ *      when logged in), else the repo page opened (scripts/open.sh), else its URL in a notice. Text typed: GitHub's
+ *      new-issue form, filled in (issueUrl), opened or shown the same way; the person reads it and presses Submit
+ *      there. Nothing is posted for them.
+ * What a URL carries: the person's own text, the two versions, and sub-human's own recent lines in this session
+ * (saidBook: command verbs, replies, errors; codes, SECRETs and PINs masked). Never the room's chat or an invite line.
  *
- *   LEAVE_HEADER, CLOSE, STAR, FEEDBACK, leaveQuestion(code), leaveCard(code), leaveSpec(code)   the card
- *   leaveAsked(input, response?) -> {code} | null    the call is the leave card's
- *   leaveWake(code) -> string                        the wake: one "(for Claude)" line
- *   leaveBook()                                      the module's memory: the code waiting for its card, shown once
- *   leaveOutcome(response, input, code) -> LeaveOutcome
- *   REPO, REPO_URL, issueUrl({text, versions})        where Star and Write feedback go
- *   openCommands(env) -> OpenCommand[]               the browser openers to try, in order (scripts/open.sh runs one)
- *   STARRED, starOpened, starShown, issueOpened, issueShown, leaveSaid   what the person and the model see
+ *   LEAVE_HEADER, CLOSE, STAR, LEAVE_OPTIONS, leaveQuestion(code)   the card
+ *   leaveOutcome(answer) -> LeaveOutcome
+ *   REPO, REPO_URL, issueUrl({text, versions, session}), versionsLine   where Star and feedback go
+ *   saidBook(), sessionSnippet(lines)                               sub-human's own lines this session, masked
+ *   openCommands(env) -> OpenCommand[], openWith                    the browser openers (scripts/open.sh runs one)
+ *   STARRED, starOpened, starShown, issueOpened, issueShown         what the person sees
  */
-import { FOR_CLAUDE } from './constants.ts';
-import { answerCard, type CardResponse, type CardSpec } from './card.ts';
 
 export const REPO = 'tatimblin/sub-human';
 export const REPO_URL: string = `https://github.com/${REPO}`;
@@ -32,96 +27,79 @@ export const REPO_URL: string = `https://github.com/${REPO}`;
 export const LEAVE_HEADER = 'Left room';
 export const CLOSE = 'Close';
 export const STAR = 'Star on GitHub';
-export const FEEDBACK = 'Write feedback';
+/** The card's options, labels alone; the dialog adds its own free-text row ("Type something."), which is feedback. */
+export const LEAVE_OPTIONS: readonly string[] = [CLOSE, STAR];
 
-export const leaveQuestion = (code: string): string => `You left room ${code}. Thanks for trying sub-human!`;
+export const leaveQuestion = (code: string): string => `You left room ${code}. Thanks for trying sub-human! Type below to send feedback.`;
 
-/** The card as AskUserQuestion's input: one question, Close / Star on GitHub / Write feedback. */
-export type LeaveCard = { questions: { question: string; header: string; multiSelect: false; options: { label: string; description: string }[] }[] };
-export const leaveCard = (code: string): LeaveCard => ({
-  questions: [{
-    question: leaveQuestion(code),
-    header: LEAVE_HEADER,
-    multiSelect: false,
-    options: [
-      { label: CLOSE, description: 'Nothing else.' },
-      { label: STAR, description: `Stars ${REPO} (with gh when you are logged in; else opens the page).` },
-      { label: FEEDBACK, description: 'Opens a feedback issue on GitHub, filled in with anything you type here. You check it and press Submit.' },
-    ],
-  }],
-});
-/** The card's question as answerCard reads it. */
-export const leaveSpec = (code: string): CardSpec => ({ question: leaveQuestion(code), options: (leaveCard(code).questions[0]?.options ?? []).map(o => ({ label: o.label, description: o.description })) });
-
-/** The wake's question, whole ("left room CODE"), and the card's own question, whole. */
-const ASKED = /^left room ([a-z]+-\d{4})$/i;
-const SHOWN = /^You left room ([a-z]+-\d{4})\. Thanks for trying sub-human!$/;
-const field = (v: unknown, key: string): unknown => (v && typeof v === 'object' && !Array.isArray(v) ? Object.getOwnPropertyDescriptor(v, key)?.value : undefined);
-const questionsOf = (v: unknown): string[] => {
-  const qs = field(v, 'questions');
-  return Array.isArray(qs) ? qs.map((q: unknown) => field(q, 'question')).filter((q): q is string => typeof q === 'string') : [];
-};
-/**
- * An AskUserQuestion call (or its result) that is the leave card's: one of its questions (input's or the result's
- * shown questions, never the answers or notes) is exactly the wake's "left room CODE" or the card's own question.
- * null: not the leave card, so any other card (consent's, a join request's, the model's own) goes on as before.
- */
-export function leaveAsked(input: unknown, response?: unknown): { code: string } | null {
-  for (const q of [...questionsOf(input), ...questionsOf(response)]) {
-    const m = ASKED.exec(q.trim()) ?? SHOWN.exec(q);
-    if (m && m[1]) return { code: m[1].toLowerCase() };
-  }
-  return null;
-}
-
-/** The wake after a leave: one "(for Claude)" line, framed as the plugin's own message (core/deliver.ts wakeParts null). */
-export const leaveWake = (code: string): string => `${FOR_CLAUDE} sub-human: the person left room ${code}. Call AskUserQuestion with the question "left room ${code}" (the hooks show their card and act on the answer), then reply with nothing.`;
-
-/** The module's memory: the code whose leave waits for its card (the only one the card is shown for), and whether
- * this session was offered one already (once per session). */
-export interface LeaveBook {
-  /** A leave went through: true when its card should be offered (none offered yet this session). */
-  left(code: string): boolean;
-  /** The code waiting for its card, if it is code (or, code null, whichever waits). */
-  waiting(code: string | null): string | null;
-  /** The card for the waiting code was answered (or will not be shown). */
-  done(): void;
-}
-export function leaveBook(): LeaveBook {
-  let offered = false;
-  let pending: string | null = null;
-  return {
-    left(code) { if (offered) return false; offered = true; pending = code; return true; },
-    waiting(code) { return pending && (code === null || code === pending) ? pending : null; },
-    done() { pending = null; },
-  };
-}
-
-/** What the person's answer does: nothing, star, or feedback (text: what they typed on the card, '' for none). */
+/** What the person's answer does: nothing, star, or feedback (the text they typed). */
 export type LeaveOutcome = { kind: 'close' } | { kind: 'star' } | { kind: 'feedback'; text: string };
-export function leaveOutcome(response: CardResponse | null | undefined, input: { questions?: unknown } | null | undefined, code: string): LeaveOutcome {
-  const got = answerCard(leaveSpec(code), response, input);
-  if (got.kind === 'other') return { kind: 'feedback', text: got.label.trim() };
-  if (got.kind !== 'answer') return { kind: 'close' };
-  if (got.label === STAR) return { kind: 'star' };
-  if (got.label === FEEDBACK) return { kind: 'feedback', text: (got.notes ?? '').trim() };
-  return { kind: 'close' };
+/** The answer $.ui.ask resolved to: a label, or the text typed in the free-text row; null: dismissed. */
+export function leaveOutcome(answer: string | null | undefined): LeaveOutcome {
+  const a = typeof answer === 'string' ? answer.trim() : '';
+  if (!a || a === CLOSE) return { kind: 'close' };
+  if (a === STAR) return { kind: 'star' };
+  return { kind: 'feedback', text: a };
 }
 
 /** The most of the person's text a URL carries (GitHub refuses a new-issue URL past about 8 KB, once encoded). */
 export const FEEDBACK_MAX = 2000;
+/** The most of the session snippet a URL carries, and how many of sub-human's lines it keeps (the latest). */
+export const SNIPPET_MAX = 1500;
+export const SNIPPET_LINES = 20;
 const TITLE_MAX = 60;
+
+/**
+ * What sub-human said in this session, for the feedback issue: the module keeps its own lines (each /sub-human
+ * command's verb, never its arguments, and the replies and errors it showed; never the room's chat, which is other
+ * people's words), at most SNIPPET_LINES. Those replies never held an invite line or a PIN; still, anything shaped like
+ * a room code, a SECRET or a PIN is masked here, so the snippet names nothing of a room. The person sees it in the
+ * form before they submit.
+ */
+export interface SaidBook { note(line: string): void; command(args: unknown): void; lines(): string[] }
+export function saidBook(): SaidBook {
+  const kept: string[] = [];
+  const push = (l: string) => { kept.push(l); if (kept.length > SNIPPET_LINES) kept.shift(); };
+  return {
+    note(line) { for (const l of String(line).split('\n')) if (l.trim()) push(l.trimEnd()); },
+    command(args) {
+      const verb = typeof args === 'string' ? args.trim().split(/\s+/)[0] ?? '' : '';
+      push(`> /sub-human${/^[a-z][a-z-]{0,15}$/.test(verb) ? ` ${verb}` : verb ? ' …' : ''}`);
+    },
+    lines() { return [...kept]; },
+  };
+}
+/** The snippet, masked and cut to SNIPPET_MAX from its end (the latest lines matter most); '' for none. */
+export function sessionSnippet(lines: readonly string[]): string {
+  const masked = lines.map(l => l
+    .replace(/\b[a-z]+-\d{4}\b/g, 'ROOM')
+    .replace(/\b[0-9A-Za-z]{20,}\b/g, 'SECRET')
+    .replace(/(?<![\d.])\b\d{3,10}\b(?![\d.])/g, 'NNNN'));
+  const text = masked.join('\n');
+  return text.length > SNIPPET_MAX ? `…${text.slice(text.length - SNIPPET_MAX)}` : text;
+}
+
 /**
  * GitHub's new-issue form for .github/ISSUE_TEMPLATE/feedback.yml, its fields filled in by id: feedback (the person's
- * text, cut at FEEDBACK_MAX), versions; the title from the text's first line. Only what is passed in goes in.
+ * text, cut at FEEDBACK_MAX), versions, session (sessionSnippet's, when there is one); the title from the text's first
+ * line. Only what is passed in goes in.
  */
-export function issueUrl({ text, versions }: { text: string; versions: string }): string {
-  const body = text.length > FEEDBACK_MAX ? `${text.slice(0, FEEDBACK_MAX)}…` : text;
+export function issueUrl({ text, versions, session = '' }: { text: string; versions: string; session?: string }): string {
+  let body = text.length > FEEDBACK_MAX ? `${text.slice(0, FEEDBACK_MAX)}…` : text;
   const first = (body.split('\n')[0] ?? '').trim();
   const title = first ? `Feedback: ${first.length > TITLE_MAX ? `${first.slice(0, TITLE_MAX)}…` : first}` : 'Feedback';
-  const q = new URLSearchParams({ template: 'feedback.yml', title, ...(body ? { feedback: body } : {}), ...(versions ? { versions } : {}) });
-  return `${REPO_URL}/issues/new?${q.toString()}`;
+  const build = (s: string) => `${REPO_URL}/issues/new?${new URLSearchParams({
+    template: 'feedback.yml', title, ...(body ? { feedback: body } : {}), ...(versions ? { versions } : {}), ...(s ? { session: s } : {}),
+  }).toString()}`;
+  // encoded, text other than ASCII grows up to 9 times: the snippet gives way first (its oldest lines), then the text
+  let s = session;
+  let url = build(s);
+  while (url.length > URL_MAX && s) { s = s.length > 40 ? `…${s.slice(Math.ceil(s.length / 4))}` : ''; url = build(s); }
+  while (url.length > URL_MAX && body) { body = body.length > 40 ? `${body.slice(0, Math.floor(body.length * 3 / 4))}…` : ''; url = build(s); }
+  return url;
 }
+/** The longest new-issue URL made (GitHub refuses one past about 8 KB). */
+export const URL_MAX = 7500;
 /** The versions line: sub-human's and Claude Code's, whichever are known. */
 export const versionsLine = (plugin: string | null, cc: string | null): string =>
   [plugin ? `sub-human ${plugin}` : '', cc ? `Claude Code ${cc}` : ''].filter(Boolean).join(' · ');
@@ -161,7 +139,3 @@ export const starOpened = (): string => `opened ${REPO_URL}: the Star button is 
 export const starShown = (): string => `star sub-human at ${REPO_URL}`;
 export const issueOpened = (): string => 'opened a feedback issue in your browser: check it and press Submit';
 export const issueShown = (url: string): string => `write your feedback here (nothing is sent until you press Submit): ${url}`;
-/** What the model reads after the card: the person saw the outcome, and nothing is asked of it. */
-export const leaveSaid = (said: string): string => `sub-human: the leave card is answered (${said}); the person sees that. Reply with nothing.`;
-/** The deny for a leave card call with no leave waiting (asked twice, or never left). */
-export const NOTHING_LEFT = 'sub-human: no room was just left here; nothing to show.';

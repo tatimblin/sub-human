@@ -21,7 +21,10 @@ import { factsBook, type FactsBook } from './core/facts.ts';
 import { asHello, asNonce, mintNonce } from './core/state.ts';
 import { ccNotice } from './core/cc.ts';
 import { copyBook, copyWake, copyTo, clipboardCommands, AUTO_COPIED, NO_TOOL, type CopyBook } from './core/copy.ts';
-import { leaveBook, leaveWake, type LeaveBook } from './core/leave.ts';
+import {
+  leaveQuestion, leaveOutcome, issueUrl, versionsLine, openCommands, openWith, LEAVE_OPTIONS, LEAVE_HEADER, REPO_URL,
+  STARRED, STAR_TIMEOUT_MS, starOpened, starShown, issueOpened, issueShown, saidBook, sessionSnippet, type SaidBook,
+} from './core/leave.ts';
 import { assertNever } from './core/never.ts';
 import type { EngineInterface, On, SessionAppendArgs } from 'claude-code';
 import type { JoinReply, Pulls, TailEvent, TailSeat } from './core/types.ts';
@@ -62,9 +65,11 @@ export const facts: FactsBook = factsBook();
  * /sub-human invite answers here, dropped once the invite is over (the tail's `invites` event, a cancel, its life);
  * mod/consent.ts reads it for the card. A reload forgets them (the card then says the invite is gone). */
 export const copies: CopyBook = copyBook();
-/** The leave card's memory (mod/core/leave.ts): the room just left, waiting for its card; offered once per session.
- * mod/consent.ts reads it for the card. */
-export const leaves: LeaveBook = leaveBook();
+/** The leave card (mod/core/leave.ts) was offered in this module process: once per session. */
+let leaveOffered = false;
+/** sub-human's own lines this session (command verbs, replies, delivery errors; never the room's chat), for the
+ * feedback issue's snippet (mod/core/leave.ts saidBook). Module memory only. */
+const said: SaidBook = saidBook();
 /** Whether a person is at the prompt (session.start's isInteractive): no copy card in a `-p` run or the SDK. Module
  * state; null until session.start said. */
 let interactive: boolean | null = null;
@@ -228,6 +233,7 @@ function noteError($: EngineInterface, { tell = true } = {}): Promise<void> {
       if (at === null ? noticedAt !== -Infinity : !noticeDue(noticedAt, at)) return;
       noticedAt = at ?? 0;
       $.ui.log(DELIVERY_ERROR_NOTICE);
+      said.note(DELIVERY_ERROR_NOTICE);
     } catch { /* nowhere left to say it */ }
   });
   return counting;
@@ -518,21 +524,49 @@ async function offerCopy($: EngineInterface, ref: string) {
 }
 
 /**
- * The leave card (mod/core/leave.ts): after a /sub-human leave went through, one wake asks the model to call
- * AskUserQuestion with "left room CODE". Not when the session took a seat again before it fires (a leave and a join at
- * once), nor beside a take's wake (it waits for the take, as offerCopy). Framed: it has no line for the person. Never
- * throws.
+ * The leave card (mod/core/leave.ts): after a /sub-human leave went through, the module opens it itself ($.ui.ask:
+ * Claude Code's own dialog, no model turn), then acts on the answer. Not when the session took a seat again or was
+ * cleared (/clear: a new session id) before it fires, nor while a take runs (it waits for it, as offerCopy). Dismissed:
+ * nothing. Never throws.
  */
 async function offerLeave($: EngineInterface, sid: string, code: string) {
   try {
     for (let i = 0; taking.size && i < 20; i++) await new Promise<void>(resolve => { $.clock.after(500, resolve); });
-    // seated again, or the conversation was cleared (/clear: a new session id) before it fired: no card
     const now = asHello((await $.state.get(HELLO)).value);
-    if ((await $.session.id()) !== sid || (now && now.sid === sid && now.seat)) { leaves.done(); return; }
-    const text = leaveWake(code);
-    if (turns.running !== null) await midTurnWake($, text);
-    else await submitWake($, text, { member: true });
-  } catch { leaves.done(); }
+    if ((await $.session.id()) !== sid || (now && now.sid === sid && now.seat)) return;
+    const answer = await $.ui.ask(leaveQuestion(code), { options: LEAVE_OPTIONS, header: LEAVE_HEADER }).catch(() => null);
+    const out = leaveOutcome(answer);
+    if (out.kind === 'close') return;
+    if (out.kind === 'star') {
+      const r = await $.process.run(['sh', `${$.plugin.root}/scripts/star.sh`], { timeoutMs: STAR_TIMEOUT_MS }).catch(() => null);
+      $.ui.log(r && r.exitCode === 0 ? STARRED : (await openUrl($, REPO_URL)) === 'opened' ? starOpened() : starShown());
+      return;
+    }
+    const url = issueUrl({ text: out.text, versions: await versionsOf($), session: sessionSnippet(said.lines()) });
+    $.ui.log((await openUrl($, url)) === 'opened' ? issueOpened() : issueShown(url));
+  } catch { /* no card */ }
+}
+
+/** The URL to the first browser opener that takes it, on stdin (scripts/open.sh: only this plugin's GitHub pages). */
+async function openUrl($: EngineInterface, url: string): Promise<'opened' | 'none'> {
+  const or = (p: Promise<string | undefined>) => p.catch(() => undefined);
+  const commands = openCommands({
+    WAYLAND_DISPLAY: await or($.env.get('WAYLAND_DISPLAY')), DISPLAY: await or($.env.get('DISPLAY')),
+    WSL_DISTRO_NAME: await or($.env.get('WSL_DISTRO_NAME')), WSL_INTEROP: await or($.env.get('WSL_INTEROP')),
+    SSH_CONNECTION: await or($.env.get('SSH_CONNECTION')), SSH_TTY: await or($.env.get('SSH_TTY')),
+  });
+  return openWith((name, init) => $.process.run(['sh', `${$.plugin.root}/scripts/open.sh`, name], init), url, commands);
+}
+
+/** sub-human's version (its plugin.json) and Claude Code's, for the feedback form; '' when neither is known. */
+async function versionsOf($: EngineInterface): Promise<string> {
+  let plugin: string | null = null;
+  try {
+    const v: unknown = JSON.parse(await $.fs.read(`${$.plugin.root}/.claude-plugin/plugin.json`));
+    const version: unknown = v && typeof v === 'object' ? Object.getOwnPropertyDescriptor(v, 'version')?.value : undefined;
+    if (typeof version === 'string') plugin = version;
+  } catch { /* unknown */ }
+  return versionsLine(plugin, await versionOf($));
 }
 
 /** The line to the first clipboard tool that takes it, on stdin (copy.ts copyTo): `copied` when one did, else NO_TOOL. */
@@ -620,12 +654,14 @@ export function registerDeliver(on: On): void {
       try { $.clock.after(CONFIRM_AFTER_MS, rename); } catch { /* no clock: the next prompt titles it (mod/core/prompt.ts titleFor) */ }
       // the leave card (mod/core/leave.ts): a person at the prompt, once per session, after the rename
       const code = mine ? mine.code : null;
-      if (code && interactive !== false && (await $.env.get('SUB_HUMAN_LEAVE_CARD').catch(() => undefined)) !== '0' && leaves.left(code)) {
-        try { $.clock.after(2 * CONFIRM_AFTER_MS, () => { void offerLeave($, sid, code); }); } catch { leaves.done(); }
+      if (code && !leaveOffered && interactive !== false && (await $.env.get('SUB_HUMAN_LEAVE_CARD').catch(() => undefined)) !== '0') {
+        leaveOffered = true;
+        try { $.clock.after(2 * CONFIRM_AFTER_MS, () => { void offerLeave($, sid, code); }); } catch { /* no clock: no card */ }
       }
     }
     const { result, logs, status } = answerOf(reply, { columns: e.presentation && e.presentation.columns });
-    for (const line of logs) $.ui.log(line);
+    said.command(e.args);
+    for (const line of logs) { $.ui.log(line); said.note(line); }
     if (status) {
       pinStatus($, status);
       // the copy card: a person at the prompt, and a line join.ts handed over (not --no-card); after this hook returned

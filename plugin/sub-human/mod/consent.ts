@@ -18,10 +18,6 @@
  *   - the invite's copy card (PLAN-JOIN step 5, mod/core/copy.ts): the module's alone, no node, since the invite line is
  *     only in its memory (mod/deliver.ts copies). Pre: the Copy / Skip card for "copy invite REF" while that line is
  *     held, else a deny that the invite is gone. Post: Copy writes the line (never the PIN) to a clipboard tool on stdin.
- *   - the leave card (docs/next/PLAN-LEAVE-CARD.md, mod/core/leave.ts): the module's alone, no node (the seat is gone).
- *     Pre: Close / Star on GitHub / Write feedback for "left room CODE" while that leave waits for it, else a deny.
- *     Post: Star runs scripts/star.sh (gh), else opens the repo page; Write feedback opens the filled-in new-issue form
- *     (scripts/open.sh), else shows its URL. Nothing is posted for the person.
  *   - ui.render PromptHint: observed only (next(e) always): whether the prompt holds typed text, sent with an
  *     ExitPlanMode's PreToolUse payload (sub_human_typing) so a plan-view Yes typed into by mistake is asked again.
  *   - classic.Stop: node consent (the open-review nudge) while a review may be open; its additionalContext continues
@@ -38,12 +34,8 @@ import { consentNeeded, consentPreNeeded, reviewOpenOf, seatedOrUnsure } from '.
 import { mergeClassic } from './core/prompt.ts';
 import { prePayload, rejectedPayload } from './core/facts.ts';
 import { asHello } from './core/state.ts';
-import { facts, copies, leaves } from './deliver.ts';
+import { facts, copies } from './deliver.ts';
 import { copyAsked, copyCard, copyOutcome, copySaid, copyTo, clipboardCommands, COPY_QUESTION, COPIED, NO_TOOL, GONE } from './core/copy.ts';
-import {
-  leaveAsked, leaveCard, leaveOutcome, leaveSaid, versionsLine, issueUrl, openCommands, openWith, NOTHING_LEFT, REPO_URL,
-  STARRED, STAR_TIMEOUT_MS, starOpened, starShown, issueOpened, issueShown,
-} from './core/leave.ts';
 import type { EngineInterface, On } from 'claude-code';
 import type { Hello, RunOutput, SubHumanRead } from './core/types.ts';
 
@@ -124,59 +116,6 @@ async function copyPost($: EngineInterface, e: { tool_use_id?: unknown; tool_inp
   return copySaid(said);
 }
 
-/** The leave card's Pre: the card (Close / Star on GitHub / Write feedback) in place of the call's input while that
- * leave waits for it, else a deny (mod/core/leave.ts). */
-function leavePre(asked: { code: string }): { ask: string; updatedInput: Record<string, unknown> } | { deny: string } {
-  const code = leaves.waiting(asked.code);
-  if (!code) return { deny: NOTHING_LEFT };
-  return { ask: `sub-human: you left room ${code}`, updatedInput: leaveCard(code) };
-}
-
-/** The URL to the first browser opener that takes it, on stdin (scripts/open.sh: only this plugin's GitHub pages). */
-async function openUrl($: EngineInterface, url: string): Promise<'opened' | 'none'> {
-  const or = (p: Promise<string | undefined>) => p.catch(() => undefined);
-  const commands = openCommands({
-    WAYLAND_DISPLAY: await or($.env.get('WAYLAND_DISPLAY')), DISPLAY: await or($.env.get('DISPLAY')),
-    WSL_DISTRO_NAME: await or($.env.get('WSL_DISTRO_NAME')), WSL_INTEROP: await or($.env.get('WSL_INTEROP')),
-    SSH_CONNECTION: await or($.env.get('SSH_CONNECTION')), SSH_TTY: await or($.env.get('SSH_TTY')),
-  });
-  return openWith((name, init) => $.process.run(['sh', `${$.plugin.root}/scripts/open.sh`, name], init), url, commands);
-}
-
-/** sub-human's version (its plugin.json) and Claude Code's, for the feedback form; '' when neither is known. */
-async function versionsOf($: EngineInterface): Promise<string> {
-  let plugin: string | null = null;
-  try {
-    const v: unknown = JSON.parse(await $.fs.read(`${$.plugin.root}/.claude-plugin/plugin.json`));
-    if (isRec(v) && typeof v.version === 'string') plugin = v.version;
-  } catch { /* unknown */ }
-  const cc = await $.session.version().then(v => (v && typeof v.version === 'string' ? v.version : null), () => null);
-  return versionsLine(plugin, cc);
-}
-
-/** The leave card's Post: the person's answer read (exact); Star: gh (scripts/star.sh), else the page opened, else its
- * URL; Write feedback (or text typed on the card): the new-issue form filled in, opened or shown. Nothing is posted for
- * the person. They get the outcome as a notice, the model as context. */
-async function leavePost($: EngineInterface, e: { tool_input?: unknown; tool_response?: unknown }, asked: { code: string }): Promise<string> {
-  // only this code's leave is answered (another code's, still waiting, keeps its card)
-  const code = asked.code;
-  if (leaves.waiting(code)) leaves.done();
-  const out = leaveOutcome(isRec(e.tool_response) ? e.tool_response : null, isRec(e.tool_input) ? e.tool_input : null, code);
-  let said: string;
-  if (out.kind === 'close') said = 'closed';
-  else if (out.kind === 'star') {
-    const r = await $.process.run(['sh', `${$.plugin.root}/scripts/star.sh`], { timeoutMs: STAR_TIMEOUT_MS }).catch(() => null);
-    if (r && r.exitCode === 0) said = STARRED;
-    else said = (await openUrl($, REPO_URL)) === 'opened' ? starOpened() : starShown();
-    $.ui.log(said);
-  } else {
-    const url = issueUrl({ text: out.text, versions: await versionsOf($) });
-    said = (await openUrl($, url)) === 'opened' ? issueOpened() : issueShown(url);
-    $.ui.log(said);
-  }
-  return leaveSaid(said);
-}
-
 /** The AskUserQuestion call (or its result) is the copy card's: it asks "copy invite …", or shows the card's question. */
 const isCopyCard = (input: unknown, response?: unknown): ReturnType<typeof copyAsked> => copyAsked(input)
   ?? (isRec(response) && JSON.stringify(response.questions ?? []).includes(COPY_QUESTION) ? { ref: null } : null);
@@ -203,13 +142,6 @@ export function registerConsent(on: On): void {
   on('classic.PreToolUse', { tool: ['AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode', /^mcp__plugin_sub-human_room__/] }, async ($, e, next) => {
     // the invite's copy card is the module's alone (the line is only in its memory): no node consent for it
     const copy = e.tool === 'AskUserQuestion' ? isCopyCard(e) : null;
-    // the leave card is the module's too: the seat is gone, there is nothing for node to decide
-    const left = e.tool === 'AskUserQuestion' && !copy ? leaveAsked(e) : null;
-    if (left) {
-      const card = leavePre(left);
-      if ('deny' in card) return { deny: card.deny };
-      return { ask: card.ask, updatedInput: card.updatedInput };
-    }
     if (copy) {
       const card = await copyPre($, copy, e.tool_use_id);
       if ('deny' in card) return { deny: card.deny };
@@ -243,8 +175,6 @@ export function registerConsent(on: On): void {
     if (e.tool_name === 'AskUserQuestion' && isCopyCard(e.tool_input, e.tool_response)) {
       return mergeClassic({ additionalContext: [await copyPost($, e)] }, await next(e));
     }
-    const left = e.tool_name === 'AskUserQuestion' ? leaveAsked(e.tool_input, e.tool_response) : null;
-    if (left) return mergeClassic({ additionalContext: [await leavePost($, e, left)] }, await next(e));
     if (!seatedOrUnsure(await helloOf($), e.session_id)) return next(e);
     const { result, ...said } = toClassic('PostToolUse', await runConsent($, e, e.session_id));
     await apply($, said);

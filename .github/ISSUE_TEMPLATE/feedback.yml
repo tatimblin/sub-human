@@ -18,6 +18,12 @@ body:
         - Another machine, over ssh
         - Another machine, over the web (Tailscale Serve, Funnel or my own front)
         - Not sure
+  - type: textarea
+    id: session
+    attributes:
+      label: What sub-human said in your session
+      description: Filled in from the session you left, for debugging - the commands you ran (not their arguments) and sub-human's replies and errors, with room codes, secrets and PINs masked. Never the room's chat. Delete anything you'd rather not share.
+      render: text
   - type: input
     id: versions
     attributes:
