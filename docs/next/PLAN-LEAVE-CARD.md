@@ -1,6 +1,9 @@
 # PLAN-LEAVE-CARD: a card after `/sub-human leave`
 
-Status: planned, not built. Branch `leave-card` (from origin/master 16eed85).
+Status: built as 0.5.4 (branch `leave-card`). It shipped differently from the plan below in three ways:
+- **The card opens itself.** The module opens it with `$.ui.ask` (Claude Code's own dialog), so there's no wake and no model turn. mod/consent.ts is untouched.
+- **Two options, no descriptions.** The options are Close / Star on GitHub, with labels only. The dialog's own free-text row ("Type something.") is the feedback, and the question says so.
+- **A debugging snippet.** The feedback issue gets a `session` field when something failed this session. It holds the command verbs and failure lines, with names, room codes, SECRETs and PINs masked.
 
 ## What the person sees
 
