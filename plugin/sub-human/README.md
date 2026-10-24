@@ -86,6 +86,7 @@ On the host, in a session that is in the room:
 /sub-human invite --public                     # Tailscale Funnel: for someone off your tailnet (never chosen for you)
 /sub-human invite --ssh me@devbox.local:2222   # over ssh, at this address (an alias works: --ssh devbox)
 /sub-human invite --web                        # over your tailnet, by name
+/sub-human invite --forward                    # for someone who logs in to this machine as themselves (a shared dev box)
 /sub-human invite --no-card                    # no card offering to copy the line
 ```
 
@@ -152,7 +153,7 @@ A right PIN is your consent, said ahead: the room line names the machine with it
 An ssh invite (Tailscale not up here, `--ssh`, or `SUB_HUMAN_SSH_ADDR` set) reads the same, with `over ssh me@devbox.local`, no `--stop`, and with the room's first invite one more line:
 
 ```
-sub-human: Over ssh this needs their own ssh login to this account (me), set up as for any ssh login: sub-human writes nothing to authorized_keys. No login here? Invite them over the web: /sub-human invite --web
+sub-human: Over ssh this needs their own ssh login to this account (me), set up as for any ssh login: sub-human writes nothing to authorized_keys. They log in to this machine as someone else? /sub-human invite --forward
 ```
 
 Its line is `/sub-human join me@devbox.local vole-8126 SECRET`: HOST ROOM SECRET, and the joiner adds the PIN after it the same way. When Tailscale is up but the tailnet invite fails, the invite says why and is over ssh instead.
@@ -182,7 +183,17 @@ That is the whole step: no invite, no PIN, no card. It links the machine and tak
 - **Not through a restricted key.** The host's `serve --login` refuses to run under any forced command (sshd's `SSH_ORIGINAL_COMMAND`), so a key restricted by its `authorized_keys` line can't make itself a link.
 - `kick`, `doctor`, the link state and the outbox work as for any link. Your seat there is its own person for consent, as an invite's is. `/sub-human kick carol` stops the link, but that login can link again: to shut it out, take its key out of `authorized_keys`.
 
-Two ways in: **SSH** (the joiner's own ssh login to the host's account: with an invite line, as their own name and seat, or alone, as above) and **the web** (an invite line naming the host's listener, through Tailscale, any HTTPS front of yours or a `CONNECT` proxy; see [Join from anywhere: Tailscale](#join-from-anywhere-tailscale)). Someone with no ssh login on the host joins over the web: sub-human never writes to `authorized_keys`. Host on a machine that stays awake (a dev box): when the host sleeps, the room is down for everyone.
+Three ways in: **SSH** (the joiner's own ssh login to the host's account: with an invite line, as their own name and seat, or alone, as above), **their own login to the host machine** (`--forward`, below) and **the web** (an invite line naming the host's listener, through Tailscale, any HTTPS front of yours or a `CONNECT` proxy; see [Join from anywhere: Tailscale](#join-from-anywhere-tailscale)). sub-human never writes to `authorized_keys`. Host on a machine that stays awake (a dev box): when the host sleeps, the room is down for everyone.
+
+### A shared machine: `/sub-human invite --forward`
+
+You host in your account on a dev box; they can ssh to that box, but only as themselves (`bob@devbox`), and no Tailscale. `/sub-human invite --forward` starts the web listener (127.0.0.1 only) and shows:
+
+```
+/sub-human join devbox vole-8126 k7q…3m --forward 7420
+```
+
+They type it with the PIN after it, in Claude Code on their own computer. Their sub-human runs `ssh -W 127.0.0.1:7420 devbox` with their own keys and `~/.ssh/config` (their user name from it, or type `bob@devbox`), and carries the web link over it: the listener's key checked against the line, the PIN or your card, a Noise key of the link's own. No shell runs there and nothing is installed in their account. The host name is `SUB_HUMAN_SSH_ADDR` without its user, else this machine's name; `--port P` picks the listener's port. Their login must be allowed to forward ports: sshd's `AllowTcpForwarding` (on by default). When it is off, the join says so (`SSH_FORWARD_REFUSED`); ask the machine's admin. Each dial is one ssh login (the first join two), so a box behind MFA wants `ControlMaster` in their ssh config.
 
 ### Join from anywhere: Tailscale
 
@@ -467,6 +478,7 @@ The security model is one machine, one OS user, per room: everyone on the host i
 
   The read-only CLI (`<plugin root>/scripts/sub-human read`, `who`, `tasks`, `plan`, `show HASH`, `verify CODE`) stays allowed, and so do reading the plugin's source and running its tests. This is a lexical check of the command's words, and a model with `Bash` as the same user can still get past it: a path built at run time (a variable, string arithmetic in an interpreter), a script written to a file first, a symlink made first. So the seat key's signature proves a person's words only against a Claude that has not been steered into reading the key: a Claude that reads it can sign as that seat. What the guard does not stop, the log still shows when it is written around: a line placed outside the plugin breaks the hash chain or carries no valid signature (`sub-human doctor` checks every hosted room's log, `sub-human verify CODE` one room), and an unverified line counts for nothing.
 - **Read guard.** The same module denies `Read`, `Grep` and `Glob` inside the home's secret directories: `<home>/keys/` (the seat keys, the one file a model could sign a person's words with, and the machine key), `<home>/listen/` (the web listener's private key), `<home>/links/` (each link's token, a pending invite's SECRET and PIN, a web link's own key) and `<home>/sessions/` (the module's lease with your session's nonce, and the session indexes); and Claude Code's prompt history and this session's transcript. A `Grep` from the home itself or any directory above it (`~`, `/`) is denied too, since ripgrep would descend into them; search a narrower directory. A `Glob` lists names only, so it is denied only inside those directories. (A Claude Code build that searches through `Bash` has no `Grep` or `Glob`; the Bash rules above then apply.) The rest of the store stays readable, so a model can read the log and the plans with `Read` too. Other MCP servers that read or write files aren't guarded, and neither is a script that reads the key: the guard is a lexical check.
+- **The listener on a shared machine.** It binds 127.0.0.1, so every account on the host machine can reach it (`--forward` relies on that). Without an invite line's SECRET and its PIN, or your Let in, that gets nothing; it can learn the listener's public key, whether a room code is served, and tie up the listener's connection slots (all forwarded joiners come from 127.0.0.1 and share one source's 8). Someone who takes the port while the listener is down holds no key a line names: the joiner's first dial stops there (nothing secret sent), and a link already made fails its handshake.
 - **Not covered.** Other MCP servers, and a hostile local user.
 - **File modes.** The home and every directory in it are 0700 (a home an older version made 0755 is closed when a room is opened), and the log and state files are 0600.
 - **Row launcher and serve shim.** The row status script in `<home>/bin/row-status` (run only if you add its line to your settings) and the SSH serve shim `<home>/bin/serve` run only plugin roots outside temp directories (`/tmp`, `os.tmpdir()`), unless `SUB_HUMAN_ALLOW_TMP_ROOT=1` is set.
@@ -526,7 +538,9 @@ Start with `/sub-human doctor` (see **Doctor**): it names most of these and the 
 | `the line's SECRET … did not come through whole` | The long last word of the line was cut or changed by the way it was sent. Paste the whole line again. |
 | `Asked the host to let you in …` and nothing more | You typed the line without its PIN, and the host person has not answered their card yet (their Claude opens it; or `/sub-human admit` there). This session takes your seat once they let you in; if they gave you a PIN, `/sub-human join PIN` lets you in now. After 10 minutes it lapses: ask for a new invite. |
 | `… is not the one the invite line names … Nothing secret was sent` | Whoever answered (the ssh host your address reached, or the listener at that URL) does not hold the key the line's SECRET names: a wrong address or alias, a reinstalled host, another host with the same room, or someone in between. Check with the host. |
-| SSH invite: `refused your ssh login` | An ssh invite rides your own ssh login to the host's account, and you have none there (or it needs a password). Ask for `/sub-human invite --web`, or have a login set up. |
+| SSH invite: `refused your ssh login` | An ssh invite rides your own ssh login to the host's account, and you have none there (or it needs a password). Your own account on that machine? Ask for `/sub-human invite --forward`. Else `/sub-human invite --web`, or have a login set up. |
+| SSH: `has no sub-human at ~/.sub-human/bin/serve` | You logged in as yourself, but the room is in someone else's account there. Ask them for `/sub-human invite --forward`. |
+| Forward join: `doesn't let … forward ports` | The machine's sshd turns forwarding off for your login (`AllowTcpForwarding no`, `DisableForwarding`). Ask its admin to allow local forwarding, or ask the host for another kind of invite. |
 | Web join: `the host did not prove the key this link pinned` | Whoever answered at that URL is not the listener the link was made for (a changed host key, the wrong front, or someone in between). Ask the host for a new invite. |
 | Web join: `still connecting (Tailscale may be issuing a certificate …)` | A new ts.net name's first TLS handshake waits on its certificate (~20 s). The link keeps trying; type `/sub-human` in a moment. |
 | Web join: `still connecting` and the link log says `answered 502` / `404` | The front reaches no listener: on the host, `sub-human listen --status`; with Tailscale, `tailscale serve status` should list `/sub-human/CODE`. Run `/sub-human invite --web` again. |

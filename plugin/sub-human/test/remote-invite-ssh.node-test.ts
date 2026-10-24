@@ -57,7 +57,7 @@ test('ssh invite: the line names the person\'s own ssh login (and the host\'s fo
   const m = must(shownInvite(must(out.json?.reason)));
   assert.ok(m, must(out.json?.reason));
   assert.equal(m.line, `join me@devbox ${code} ${m.word} --home ${host.home}`, 'a host folder that is not ~/.sub-human goes in the line');
-  assert.match(must(out.json?.reason), /Over ssh this needs their own ssh login to this account \(\S+\), set up as for any ssh login: sub-human writes nothing to authorized_keys\. No login here\? Invite them over the web: \/sub-human invite --web/);
+  assert.match(must(out.json?.reason), /Over ssh this needs their own ssh login to this account \(\S+\), set up as for any ssh login: sub-human writes nothing to authorized_keys\. They log in to this machine as someone else\? \/sub-human invite --forward/);
   assert.equal(fs.existsSync(ak), false, 'no line written');
   assert.ok(fs.existsSync(path.join(host.home, 'bin', 'serve')), 'the shim their login runs');
 

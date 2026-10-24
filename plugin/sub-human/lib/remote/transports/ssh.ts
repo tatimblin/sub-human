@@ -12,9 +12,14 @@
  * arguments, and scripts/sub-human serve refuses --login under SSH_ORIGINAL_COMMAND). classify reads ssh's stderr in
  * one place (the link daemon, loginProblem, doctor); loginProblem is what stops a link (AUTH) until the person acts,
  * null for what may pass (a timeout, a refused connection).
+ *
+ * tunnel: the person's own login to the host machine as any account (`ssh -W 127.0.0.1:PORT`), a byte stream to the
+ * host's web listener on its loopback, which the ws kind (./ws.ts, a spec with `tunnel`) speaks its Noise link over.
+ * No shell runs there; forwardProblem says what ssh's stderr means for one.
  */
 
 import path from 'node:path';
+import { Duplex } from 'node:stream';
 import { RoomError } from '../../room/validate.ts';
 import childProcess from 'node:child_process';
 import * as textMod from '../../text.ts';
@@ -118,10 +123,15 @@ function loginSpec(text: string, { home, link = CryptoMod.randomBytes(6).toStrin
 
 const loginCommand = (spec: SshSpec): string => ['ssh', ...(spec.port ? ['-p', String(spec.port)] : []), `${spec.user}@${spec.host}`].join(' ');
 
+/** A login refused as USER: the joiner may have a login of their own there, not USER's. */
+const OTHER_ACCOUNT = (d: SshDest): string => `No login as ${d.user} on ${d.host}? Ask the room's host for /sub-human invite --forward: it goes through your own login there`;
+
 /** What ssh's stderr says went wrong, in one place: the link daemon (lib/remote/link-connect.ts), loginFailure and
  * doctor's hints read it. null: nothing this knows (the connection may still pass). */
 type SshProblem =
   | { kind: 'mfa' | 'host-key' | 'dns' | 'refused' | 'timeout' | 'no-shim' | 'old-host' | 'no-plugin' | 'no-room' | 'not-hosted' }
+  // a tunnel (ssh -W): the host machine's sshd refused to forward; nothing listens on the port there
+  | { kind: 'forward-refused' | 'forward-unreached' }
   | { kind: 'denied'; publickey: boolean }
   | { kind: 'serve-refused'; detail: string };
 
@@ -130,6 +140,10 @@ function classify(stderr: unknown): SshProblem | null {
   if (/keyboard-interactive|Verification code|one-time password|Duo two-factor/i.test(s) && !/publickey\)\.?\s*$/i.test(s.trim())) return { kind: 'mfa' };
   if (/Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED|No (?:\S+ )?host key is known/i.test(s)) return { kind: 'host-key' };
   if (/Permission denied/i.test(s)) return { kind: 'denied', publickey: /Permission denied \(publickey/.test(s) };
+  // OpenSSH's client for a -W the server refused (AllowTcpForwarding, DisableForwarding, PermitOpen), and for one it
+  // accepted with nothing listening at the target
+  if (/open failed: administratively prohibited/i.test(s)) return { kind: 'forward-refused' };
+  if (/open failed: connect failed/i.test(s) || /stdio forwarding failed/i.test(s)) return { kind: 'forward-unreached' };
   if (/bin\/serve/.test(s) && /not found|No such file|Unknown command|can't open/i.test(s)) return { kind: 'no-shim' };
   if (/^usage: sub-human serve --stdio CODE \[--link ID\]$/m.test(s)) return { kind: 'old-host' };
   if (/sub-human: no (plugin install|node)/.test(s)) return { kind: 'no-plugin' };
@@ -152,8 +166,8 @@ function loginProblem(stderr: string, spec: SshSpec, code: RoomCode, { first = f
   if (p.kind === 'mfa' && !/Permission denied/i.test(String(stderr || ''))) return null; // a prompt BatchMode refused: may pass once logged in by hand
   switch (p.kind) {
     case 'host-key': return { reason: 'SSH_HOST_KEY', message: `ssh doesn't know ${where}'s host key yet (or it changed), and sub-human never answers ssh's questions. Run \`${once}\` once in a terminal, check and accept the key, then join again` };
-    case 'denied': case 'mfa': return { reason: 'SSH_DENIED', message: `${where} refused your ssh login: sub-human logs in with your ssh keys or agent only, never a password. Check that \`${once}\` logs in without one, then join again; behind MFA (an interactive login), run \`${once}\` yourself once first` };
-    case 'no-shim': return { reason: 'SSH_NO_SHIM', message: `${where} isn't set up for joining yet (no ${home}/bin/serve). On that machine, open the room in Claude Code (/sub-human), then join again${spec.remoteHome ? '' : '; if its sub-human folder is somewhere else, add --home PATH'}` };
+    case 'denied': case 'mfa': return { reason: 'SSH_DENIED', message: `${where} refused your ssh login: sub-human logs in with your ssh keys or agent only, never a password. Check that \`${once}\` logs in without one, then join again; behind MFA (an interactive login), run \`${once}\` yourself once first. ${OTHER_ACCOUNT(spec)}` };
+    case 'no-shim': return { reason: 'SSH_NO_SHIM', message: `${where} has no sub-human at ${home}/bin/serve. If the room is in someone else's account on ${spec.host}, you can't join through theirs: ask them for /sub-human invite --forward, which goes through your own login there. If it's your own account, open the room there in Claude Code (/sub-human), then join again${spec.remoteHome ? '' : '; if its sub-human folder is somewhere else, add --home PATH'}` };
     case 'old-host': return { reason: 'SSH_OLD_HOST', message: `the sub-human on ${where} is too old for joining over an ssh login: update it there (/plugin update sub-human), or ask its host for an invite (/sub-human invite)` };
     case 'no-plugin': return { reason: 'SSH_NO_SHIM', message: `${where} found no sub-human plugin or node to run: on that machine, start Claude Code once, then join again` };
     case 'no-room': return { reason: 'SSH_NO_ROOM', message: `room ${code} isn't open on ${where} (nothing by that name in ${home}): check the room's name, or open it there first` };
@@ -162,13 +176,63 @@ function loginProblem(stderr: string, spec: SshSpec, code: RoomCode, { first = f
     // a name ssh cannot resolve on the first connection is a typo or a missing alias, not a network blip: say so and
     // stop; a link that connected before keeps retrying (a laptop offline resolves nothing for a while)
     case 'dns': return first ? { reason: 'SSH_HOST_UNKNOWN', message: `ssh cannot find ${spec.host} (${(/(Could not resolve hostname[^\n]*|Name or service not known|nodename nor servname[^\n]*)/i.exec(String(stderr || '')) || ['no such host'])[0].trim()}): check the name, or use an alias from your ~/.ssh/config, then join again` } : null;
-    case 'refused': case 'timeout': return null;
+    case 'refused': case 'timeout': case 'forward-refused': case 'forward-unreached': return null;
     default: return assertNever(p, 'ssh problem');
   }
 }
 
 /** loginProblem's words alone. */
 const loginFailure = (stderr: string, spec: SshSpec, code: RoomCode): string | null => loginProblem(stderr, spec, code)?.message ?? null;
+
+/** `ssh -W 127.0.0.1:PORT` as d: the person's own login to the host machine, forwarding to its listener on loopback.
+ * The target is always 127.0.0.1 (never from an invite); -W implies -T, -N and ExitOnForwardFailure. */
+function forwardCommand(d: SshDest, port: number, opts: string[] = sshOpts()): [string, ...string[]] {
+  const c = dest(at(d));
+  if (!c) throw new RoomError('INVALID', 'the tunnel\'s ssh destination is not a plain user@host[:port]');
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new RoomError('INVALID', 'the tunnel names no port (1-65535)');
+  // LogLevel=INFO: ssh says why a forward failed ("channel 0: open failed: administratively prohibited" / "connect
+  // failed") only at INFO or above, and a person's config may set ERROR or QUIET; a -o beats the config file
+  return ['ssh', '-o', 'BatchMode=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2', '-o', 'LogLevel=INFO', ...opts,
+    '-W', `127.0.0.1:${port}`, ...(c.port ? ['-p', String(c.port)] : []), '--', `${c.user}@${c.host}`];
+}
+
+/** A byte stream through forwardCommand; stderr: ssh's last 2 KiB; exited: settles once ssh is gone. */
+function tunnel(d: SshDest, port: number): { stream: Duplex; stderr(): string; exited: Promise<void> } {
+  const [cmd, ...args] = forwardCommand(d, port);
+  const child = childProcess.spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+  let tail = '';
+  child.stderr.on('data', (b: Buffer) => { tail = (tail + b.toString()).slice(-2048); });
+  child.stderr.on('error', () => { /* the child is gone */ });
+  const exited = new Promise<void>(r => { child.once('exit', () => r()); child.once('error', () => r()); });
+  const stream = Duplex.from({ readable: child.stdout, writable: child.stdin });
+  // destroying it (a dial given up) emits AbortError; what went wrong is ssh's stderr, read by the caller
+  stream.on('error', () => {});
+  child.stdin.on('error', () => {});
+  stream.on('close', () => { if (child.exitCode === null) child.kill(); });
+  child.once('error', e => stream.destroy(e));
+  // ssh gone (its stdio drained first: 'close'): the stream ends too, whatever its writable half was doing
+  child.once('close', () => stream.destroy());
+  return { stream, stderr: () => tail, exited };
+}
+
+/** Why a tunnel to d's port cannot work until the person acts (AUTH), or what to say while it retries (OFFLINE);
+ * null when ssh said nothing this knows. first: the link has never connected (a name ssh cannot resolve is a typo). */
+function forwardProblem(stderr: string, d: SshDest, port: number, code: RoomCode, { first = false }: { first?: boolean } = {}): RoomError | null {
+  const where = `${d.user}@${d.host}`;
+  const p = classify(stderr);
+  if (!p) return null;
+  switch (p.kind) {
+    case 'forward-refused': return new RoomError('AUTH', `${d.host}'s sshd doesn't let ${where} forward ports (its AllowTcpForwarding or DisableForwarding), which joining through your own login needs. Ask the machine's admin to allow local forwarding for you, or ask the room's host for an invite another way`, 'SSH_FORWARD_REFUSED');
+    case 'forward-unreached': return new RoomError('OFFLINE', `nothing answers on ${d.host}'s port ${port}: the room's host may need to run /sub-human invite --forward again`);
+    case 'host-key': case 'mfa': case 'dns': {
+      const why = loginProblem(stderr, { kind: 'ssh', ...d }, code, { first });
+      return why ? new RoomError('AUTH', why.message, why.reason) : null;
+    }
+    case 'denied': return new RoomError('AUTH', `${d.host} refused your ssh login as ${d.user}: sub-human logs in with your ssh keys or agent only, never a password. Check that \`${loginCommand({ kind: 'ssh', ...d })}\` logs in without one (your own user name there? join as USER@${d.host}), then join again`, 'SSH_DENIED');
+    case 'refused': case 'timeout': case 'no-shim': case 'old-host': case 'no-plugin': case 'no-room': case 'not-hosted': case 'serve-refused': return null;
+    default: return assertNever(p, 'ssh problem');
+  }
+}
 
 const kind: Required<KindEntry<SshSpec>> = {
   parse,
@@ -182,5 +246,5 @@ const kind: Required<KindEntry<SshSpec>> = {
 
 export {
   withUser, placeholder, dest, parse, locator, command, remoteCommand, loginSpec, loginCommand,
-  loginFailure, loginProblem, classify, kind,
+  loginFailure, loginProblem, classify, forwardCommand, tunnel, forwardProblem, kind,
 };

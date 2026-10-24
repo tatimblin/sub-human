@@ -41,6 +41,7 @@ export const REASON_CODE = {
   // an ssh login link that cannot work until the person acts (SSH_HOST_UNKNOWN: ssh cannot resolve the host's name,
   // on a login link's first connection)
   SSH_HOST_KEY: 'AUTH', SSH_DENIED: 'AUTH', SSH_NO_SHIM: 'AUTH', SSH_NO_ROOM: 'AUTH', SSH_OLD_HOST: 'AUTH', SSH_HOST_UNKNOWN: 'AUTH',
+  SSH_FORWARD_REFUSED: 'AUTH', // the host machine's sshd lets this login forward no port (an ssh tunnel to its listener)
   // OFFLINE
   UNKNOWN_OUTCOME: 'OFFLINE', // the op went out and got no answer in time: it may still land, retrying is safe
   NOT_SENT: 'OFFLINE', // nothing went out

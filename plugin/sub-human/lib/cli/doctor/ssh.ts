@@ -60,6 +60,8 @@ function sshHint(stderr: unknown): string | null {
     case 'refused': return 'nothing listens for ssh on that port';
     case 'timeout': return 'the host does not answer (asleep, offline or firewalled); behind a bastion, use an alias with ProxyJump in your ~/.ssh/config';
     case 'no-plugin': return 'the host found no sub-human plugin or node to run: on the host, start Claude Code once';
+    case 'forward-refused': return 'the host machine\'s sshd lets your login forward no port (AllowTcpForwarding): ask its admin to allow local forwarding, or the room\'s host for another invite';
+    case 'forward-unreached': return 'nothing listens on the host machine\'s listener port: the room\'s host can run /sub-human invite --forward again';
     case 'no-shim': case 'old-host': case 'no-room': case 'not-hosted': case 'serve-refused': return null;
     default: return assertNever(p, 'ssh problem');
   }

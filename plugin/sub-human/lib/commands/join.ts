@@ -193,13 +193,38 @@ function joinWeb(r: string[], flags: { as?: string; home?: string }, ctx: VerbCt
   return then(joining.linkLine({ name: n.name, code, word: w.word, transport, sid: ctx.sid, module: ctx.module === true, ...p }), ctx);
 }
 
+/** `/sub-human join HOST ROOM SECRET --forward PORT [PIN]`: an ssh-forward invite line, over the person's own ssh login
+ * to the host machine (any account there) to its listener on loopback (transports/ws.ts tunnelSpec). */
+function joinForward(r: string[], flags: { as?: string; home?: string; forward: string }, ctx: VerbCtx): Answer {
+  const USAGE_F = `usage: /sub-human join HOST ROOM SECRET --forward PORT PIN (the line the host sent you, the PIN after it). ${HELP_HINT}`;
+  const [dest, code, word, extra, ...more] = r;
+  if (dest !== undefined && (/^[a-z]+:/.test(dest) || dest.startsWith('/'))) return refused(`--forward goes with the host machine's name or ssh alias, not "${dest}". ${USAGE_F}`);
+  if (dest === undefined || code === undefined || word === undefined || more.length) return refused(USAGE_F);
+  if (flags.home !== undefined) return refused('--home goes with a login to the host\'s own account, not with --forward');
+  const port = /^[0-9]{1,5}$/.test(flags.forward) ? Number(flags.forward) : 0;
+  if (!(port >= 1 && port <= 65535)) return refused(`"${flags.forward}" isn't a port: --forward PORT, as the line says`);
+  if (!identity.isRoomCode(code)) return refused(`"${code}" isn't a room (like vole-8126). ${USAGE_F}`);
+  if (sshT().placeholder(dest)) return refused(YOU_HINT(dest));
+  const d = sshT().dest(sshT().withUser(dest));
+  if (!d) return refused(`"${dest}" isn't a plain HOST, USER@HOST[:PORT] or ssh alias`);
+  const w = secretOf(word);
+  if ('error' in w) return refused(w.error);
+  const pin = pinAfter(extra);
+  if ('error' in pin) return refused(pin.error);
+  const n = nameFor(flags.as, ctx.cwd);
+  if ('error' in n) return refused(n.error);
+  const transport = wsT().tunnelSpec(d, port, code);
+  return then(joining.linkLine({ name: n.name, code, word: w.word, transport, sid: ctx.sid, module: ctx.module === true, ...pin }), ctx);
+}
+
 export const join: Verb = (argv, ctx) => {
-  const p = parse(argv, { as: 1, home: 1 });
+  const p = parse(argv, { as: 1, home: 1, forward: 1 });
   if (p.error) return refused(`${p.error}. ${JOIN_USAGE}`);
   const flag = p.rest.find(a => a.startsWith('--'));
   if (flag) return refused(`"${flag}" isn't a join option. ${JOIN_USAGE}`);
   const r = p.rest;
-  const { home } = p.flags;
+  const { home, forward } = p.flags;
+  if (forward !== undefined) return joinForward(r, { ...p.flags, forward }, ctx);
   if (/^https?:\/\//.test(r[0] || '')) return joinWeb(r, p.flags, ctx);
   if (r.length === 1 && invites.isShortPin(r[0])) { // `/sub-human join 4829`: the PIN an invite line's host asked for
     if (home !== undefined || p.flags.as !== undefined) return refused('the PIN goes alone: /sub-human join PIN (the name went with the line)');

@@ -1,7 +1,7 @@
 /**
  * plugin/sub-human/lib/remote/ws.ts: a minimal WebSocket (RFC 6455) with no dependencies: the server end for the
  * host's listener (lib/remote/listener.ts, an http server on 127.0.0.1 only) and the client end for the joiner's
- * link daemon (lib/remote/transports/ws.ts) over net or tls. No extensions (no permessage-deflate) and no subprotocols are negotiated.
+ * link daemon (lib/remote/transports/ws.ts) over net or tls, or a stream it is handed (an ssh tunnel). No extensions (no permessage-deflate) and no subprotocols are negotiated.
  *
  * A frame or a reassembled message larger than maxPayload (default 1 MiB) closes 1009. Fragmented messages are
  * reassembled; control frames may come between fragments. A server refuses unmasked client frames, a client masked
@@ -33,6 +33,8 @@ interface ConnectOptions extends AcceptOptions {
   headers?: Record<string, string>;
   timeoutMs?: number;
   tls?: tls.ConnectionOptions;
+  /** the byte stream to speak over instead of a TCP connection of its own (an ssh tunnel; ws: only) */
+  socket?: () => Promise<Duplex>;
 }
 /** An HTTP answer head read off a socket. */
 interface Head { status: number; headers: Record<string, string>; rest: Buffer; line: string }
@@ -310,15 +312,16 @@ function tcp(host: string, port: number, secure: boolean, tlsOpts: tls.Connectio
   });
 }
 
-async function connect(url: string, { headers = {}, maxPayload, pingMs, timeoutMs = 15_000, tls: tlsOpts = {} }: ConnectOptions = {}): Promise<Conn> {
+async function connect(url: string, { headers = {}, maxPayload, pingMs, timeoutMs = 15_000, tls: tlsOpts = {}, socket }: ConnectOptions = {}): Promise<Conn> {
   const u = new URL(url);
   const secure = u.protocol === 'wss:' || u.protocol === 'https:';
   if (!secure && u.protocol !== 'ws:' && u.protocol !== 'http:') throw connectError(`not a WebSocket URL: ${u.protocol}`);
+  if (secure && socket) throw connectError('a stream of its own carries ws: only');
   const host = u.hostname.replace(/^\[|\]$/g, '');
   const port = Number(u.port || (secure ? 443 : 80));
-  let sock = null as net.Socket | null, timer: NodeJS.Timeout | undefined; // (as: set inside work, read in catch)
+  let sock = null as Duplex | null, timer: NodeJS.Timeout | undefined; // (as: set inside work, read in catch)
   const work = (async () => {
-    sock = await tcp(host, port, secure, tlsOpts, secure ? 'TLS to' : 'connect to');
+    sock = socket ? await socket() : await tcp(host, port, secure, tlsOpts, secure ? 'TLS to' : 'connect to');
     const key = crypto.randomBytes(16).toString('base64');
     const hostHeader = `${net.isIPv6(host) ? `[${host}]` : host}${u.port ? `:${u.port}` : ''}`;
     const extra = Object.entries(headers).map(([k, v]) => `${k}: ${v}\r\n`).join('');
@@ -340,3 +343,4 @@ async function connect(url: string, { headers = {}, maxPayload, pingMs, timeoutM
 }
 
 export { Conn, accept, createServer, connect, acceptKey, MAX_PAYLOAD };
+export type { ConnectOptions };

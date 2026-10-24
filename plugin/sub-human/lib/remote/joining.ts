@@ -23,7 +23,7 @@ import * as hosting from './hosting.ts';
 import { sleepSync, lazy } from '../io.ts';
 import { cliLine } from '../text.ts';
 import type { Link } from '../room/types.ts';
-import type { LinkSpec, SshSpec } from './types-rest.ts';
+import type { LinkSpec, SshSpec, WsSpec } from './types-rest.ts';
 import type { Outcome } from './hosting.ts';
 import { msgOf } from '../errors.ts';
 import { REVOKED } from '../reasons.ts';
@@ -62,13 +62,16 @@ export function restartLink(code: RoomCode): void {
   for (const until = Date.now() + 1000; Date.now() < until && identity.isAlive(st.pid);) sleepSync(20);
 }
 
+// a web link's URL, or for one over an ssh tunnel the login and port it rides
+const viaOf = (t: WsSpec): string => (t.tunnel ? `ssh ${t.tunnel.user}@${t.tunnel.host}${t.tunnel.port ? `:${t.tunnel.port}` : ''} to port ${t.port ?? ''}` : wsT().urlOf(t));
+
 // the locator a link's transport came from
 const locatorOf = (t: LinkSpec | null | undefined): string | null => (t && t.kind === 'ssh' ? linkConnect.sshLocator(`${t.user}@${t.host}${t.port ? `:${t.port}` : ''}`) : t && t.kind === 'pipe' ? linkConnect.pipeLocator(t.home)
-  : t && (t.kind === 'wss' || t.kind === 'ws') ? wsT().urlOf(t) : null);
+  : t && (t.kind === 'wss' || t.kind === 'ws') ? viaOf(t) : null);
 
 /** Where a link goes, for a person: "ssh you@host", the URL, or another sub-human folder here. */
 const whereOf = (t: LinkSpec | null | undefined): string => (!t ? 'another way' : t.kind === 'ssh' ? `ssh ${t.user ? `${t.user}@` : ''}${t.host}${t.port ? `:${t.port}` : ''}`
-  : t.kind === 'pipe' ? 'another sub-human folder on this machine' : (t.kind === 'wss' || t.kind === 'ws') ? wsT().urlOf(t) : 'another way');
+  : t.kind === 'pipe' ? 'another sub-human folder on this machine' : (t.kind === 'wss' || t.kind === 'ws') ? viaOf(t) : 'another way');
 
 /**
  * A join another way while this machine's link to code is live (a token, not spent, its daemon running and not
