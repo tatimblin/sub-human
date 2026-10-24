@@ -13,7 +13,7 @@ Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, `
   - Text typed on the card opens a new issue (the new `feedback` template), filled in with:
     - the text;
     - the two versions;
-    - what sub-human said in the session: command verbs, replies and errors, with room codes, SECRETs and PINs masked, and never the room's chat.
+    - when something failed this session, a debugging snippet: the `/sub-human` commands run (verbs only) and the refusals and errors, with names, room codes, SECRETs and PINs masked. Never the room's chat.
 
     You press Submit; nothing is posted for you.
   - No card in a session nobody types in, after a refused leave, when the session is seated again or cleared first, or with `SUB_HUMAN_LEAVE_CARD=0`.
