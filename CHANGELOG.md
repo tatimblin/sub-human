@@ -2,6 +2,23 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 0.5.4: a card after you leave
+
+Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, `claude plugin validate --strict`. The wire protocol is still 5.
+
+### Added
+- **After `/sub-human leave`, once per session, a card: Close, Star on GitHub, or type to send feedback.**
+  - The module opens it itself, in Claude Code's own question dialog. There is no model turn.
+  - Star uses `gh` when you're logged in, else opens the repo page, else shows its link. In a session over ssh, links are shown instead of opened.
+  - Text typed on the card opens a new issue (the new `feedback` template), filled in with:
+    - the text;
+    - the two versions;
+    - when something failed this session, a debugging snippet: the `/sub-human` commands run (verbs only) and the refusals and errors, with names, room codes, SECRETs and PINs masked. Never the room's chat.
+
+    You press Submit; nothing is posted for you.
+  - No card in a session nobody types in, after a refused leave, when the session is seated again or cleared first, or with `SUB_HUMAN_LEAVE_CARD=0`.
+  - New `scripts/open.sh` (opens only this plugin's GitHub pages, URL on stdin) and `scripts/star.sh`.
+
 ## 0.5.3: the join hook runs one script (plugin directory)
 
 Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, `claude plugin validate --strict`. The wire protocol is still 5.

@@ -96,6 +96,7 @@ export const ENV = {
   SUB_HUMAN_TAILSCALE: { kind: 'path', does: 'the tailscale binary' },
   SUB_HUMAN_TAILSCALE_WARM: { kind: 'str', does: '"0": no warm-up request to a Tailscale URL' },
   SUB_HUMAN_INVITE_CARD: { kind: 'str', does: '"0": no card offering to copy an invite\'s line to the clipboard (as /sub-human invite --no-card)' },
+  SUB_HUMAN_LEAVE_CARD: { kind: 'str', does: '"0": no card after /sub-human leave (Close, Star on GitHub, Write feedback; the hooks module reads it)' },
   SUB_HUMAN_MACHINE_LABEL: { kind: 'str', does: 'this machine\'s short name (default the host name)' },
   SUB_HUMAN_WEB_FRONT: { kind: 'str', does: 'not a user knob: the tests\' and the lab\'s HTTPS front for --web (webFront)' },
   SUB_HUMAN_NODE: { kind: 'path', does: 'the node every plugin command runs on (hooks/node.sh), before any it looks for' },

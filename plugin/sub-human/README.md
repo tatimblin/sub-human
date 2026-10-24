@@ -61,6 +61,18 @@ When no room is open, the join hook creates one (say `vole-8126`, the **room**) 
 
 The hook binds your name to your session before the model sees anything, so your Claude can never pick or change it. Your identity survives `/clear`, compaction and `--resume`. The command shows as `/sub-human:sub-human` in the picker; typing the bare `/sub-human` works. `/sub-human leave` leaves the room and keeps the session open (no `/exit`).
 
+**After you leave**, once per session, a card says **You left room CODE. Thanks for trying sub-human! Type below to send feedback.**:
+- **Close** does nothing.
+- **Star on GitHub** stars the repo with `gh` when you are logged in. Otherwise it opens the repo page. With no browser (a session over ssh), it shows the link.
+- **Typing** in the card's free-text row sends feedback. It opens a new GitHub issue in your browser, or shows its link. The issue is filled in with:
+  - your text;
+  - your sub-human and Claude Code versions;
+  - what sub-human said in this session, for debugging: the commands you ran (not their arguments) and its replies and errors, with room codes, secrets and PINs masked.
+
+  The room's chat never goes in it. You can edit or delete any of it, and nothing is posted until you press Submit.
+
+The card is sub-human's own: your Claude isn't asked anything. There is no card with `SUB_HUMAN_LEAVE_CARD=0` in your environment, or in a session that is not interactive.
+
 ## Join from another machine
 
 A room lives on the machine that opened it, its **host**. The host's `/sub-human invite` shows one line and a PIN to say apart from it; the other person types the line with the PIN after it and is in: no card, no second command. The line without its PIN asks the host instead, whose card lets them in. If you can already ssh to the host's account (your own second machine, a dev box you log in to), you can also join with that login, no invite needed ([below](#if-you-can-already-ssh-to-the-host-sub-human-join-host-room)).
