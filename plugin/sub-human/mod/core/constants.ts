@@ -7,6 +7,8 @@
  *       out (a Claude's message to another keeps its blank lines and shows far more), and the head of a line only for Claude
  *   PULL_HEAD, PULL_END_OLD, PULL_CAP, pullDroppedLine   the room context the model reads with the person's next prompt
  *   HOME_MARK, homeMark(home)    the hidden notice that names a seated session's sub-human folder in its transcript
+ *   BYPASS_NOTE    the end of a join's line in bypass-permissions mode (hooks/handlers/join.ts adds it; mod/deliver.ts
+ *       redoes it for the mode the join's expansion ran in: mod/core/command.ts bypassNoted)
  */
 
 /** The tail child's first restart delay, doubled per failure in a row up to MOD_RESTART_MAX_MS. */
@@ -54,3 +56,6 @@ export const pullDroppedLine = (n: number) => `(${n} earlier ${n === 1 ? 'line' 
  * bg job it runs in drops a shell's SUB_HUMAN_HOME. */
 export const HOME_MARK = 'sub-human: home ';
 export const homeMark = (home: string) => `${HOME_MARK}${home}`;
+
+/** The end of a join's line for the person when the session is in bypass-permissions mode (a member's seat). */
+export const BYPASS_NOTE = ' · ⚠ bypass-permissions mode: messages from other sessions can wait behind a dialog; restart in another mode to get them live';
