@@ -179,8 +179,8 @@ function sweepTaskLists(now: number, until: number, force: boolean, keep: string
   const prev = readJson(tasksStateFile(), GC_STATE, null);
   if (!force && prev && now - Date.parse(prev.at) < TASKS_GC_EVERY_MS) return [];
   writeJsonAtomic(tasksStateFile(), { at: new Date(now).toISOString(), ...(prev && prev.after ? { after: prev.after } : {}) }, { compact: true });
-  // a join waits on this: the job list gets 3 s, not jobs()'s 15 (it is read only when there is a folder to delete)
-  const r = staleTaskLists({ now, keep, until, after: prev?.after, jobs: jobs ?? (() => bg().jobs({ timeout: 3000 })) });
+  // a join waits on this: the job list gets 1 s, not jobs()'s 15 (it is read only when there is a folder to delete)
+  const r = staleTaskLists({ now, keep, until, after: prev?.after, jobs: jobs ?? (() => bg().jobs({ timeout: 1000 })) });
   const gone = removeTaskLists(r.lists);
   writeJsonAtomic(tasksStateFile(), { at: new Date(now).toISOString(), ...(!r.done && r.last ? { after: r.last } : {}) }, { compact: true });
   return gone;

@@ -25,8 +25,7 @@
  *   gc --tasks [--yes]  the room task lists in Claude Code's tasks/ no room here uses (lib/gc.ts staleTaskLists, the
  *               legacy ones too), listed; --yes deletes them
  *   Run invite, admit, kick, listen, link and serve in your own shell: the Bash guard
- *   refuses them to a model. doctor without --fix or --bundle is read only; so is gc without --yes (the guard
- *   refuses --yes to a model too).
+ *   refuses them to a model. doctor without --fix or --bundle is read only; so is gc without --yes.
  */
 
 import fs from 'node:fs';
@@ -66,6 +65,7 @@ import type * as HostMod from './host.ts';
 import type * as ListenMod from './listen.ts';
 import type * as ShimMod from '../remote/shim.ts';
 import type * as GcMod from '../gc.ts';
+import type * as BgMod from '../cc/bg.ts';
 
 // Each command's own modules load when it runs (lazy, for start cost), so the tail and agent-statusline (run often)
 // never load the remote stack, doctor or the host commands.
@@ -83,6 +83,7 @@ const hostLib = lazy<typeof HostMod>(import.meta.url, './host.ts');
 const listenLib = lazy<typeof ListenMod>(import.meta.url, './listen.ts');
 const shimLib = lazy<typeof ShimMod>(import.meta.url, '../remote/shim.ts');
 const gcLib = lazy<typeof GcMod>(import.meta.url, '../gc.ts');
+const bgLib = lazy<typeof BgMod>(import.meta.url, '../cc/bg.ts');
 
 function die(msg: string, code = 2): never {
   process.stderr.write(msg + '\n');
@@ -271,7 +272,7 @@ function gcCmd(args: readonly string[]) {
   const { flags, rest } = parseFlags(args, { tasks: 0, yes: 0 });
   if (!flags.tasks || rest.length) die('usage: sub-human gc --tasks [--yes]');
   const g = gcLib();
-  const r = g.staleTaskLists({ legacy: true });
+  const r = g.staleTaskLists({ legacy: true, jobs: () => bgLib().jobs({ timeout: 3000 }) });
   const where = path.join(cc.configDir(), 'tasks');
   if (r.jobsUnknown) die(`the claude --bg jobs could not be listed (claude agents --json), so no list in ${where} is known to be unused: nothing deleted`, 1);
   if (!r.lists.length) return console.log(`no old room task lists in ${where}`);

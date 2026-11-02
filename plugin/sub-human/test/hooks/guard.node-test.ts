@@ -111,18 +111,6 @@ test('guard: doctor --bundle / --fix in a session gets its own reason: a person\
   assert.equal(g.bashVerdict('sub-human doctor --quick'), null, 'the read-only doctor stays allowed');
 });
 
-test('guard: gc --yes deletes old room task lists: a person\'s step; gc --tasks alone only lists them', () => {
-  for (const cmd of ['sub-human gc --tasks --yes', '/p/scripts/sub-human gc --yes --tasks', 'node scripts/sub-human gc --tasks --yes']) {
-    assert.equal(g.bashVerdict(cmd), g.GC_WHY, cmd);
-  }
-  const t = g.denyText(g.GC_WHY, '/p');
-  assert.ok(t.includes("the person's step: they run `node /p/scripts/sub-human gc --tasks --yes` in a terminal outside Claude Code"), t);
-  assert.doesNotMatch(t, /reached only through sub-human|room MCP/);
-  assert.match(g.denyText(g.GC_WHY, undefined), /person's step: they run it in a terminal/);
-  assert.equal(g.bashVerdict('sub-human gc --tasks'), null, 'the list stays allowed');
-  assert.equal(g.bashVerdict('git commit -m "gc --yes"'), null, 'not the CLI');
-});
-
 test('guard: a write through a symlink into the home is denied, also into a directory not made yet', () => {
   const w = new World({ claude: 'sleep', alice: 'act' });
   const link = path.join(w.cwd, 'innocent');

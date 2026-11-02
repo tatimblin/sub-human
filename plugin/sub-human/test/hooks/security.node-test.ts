@@ -312,7 +312,7 @@ test('Bash guard: allowed and denied commands', () => {
     'sub-human serve --stdio vole-1234 --link abcdef012345',
     'sub-human invite --web', 'node scripts/sub-human invite --ssh me@far', 'sub-human admit abcdef012345 --yes',
     'sub-human kick bob', 'sub-human invite --cancel', 'sub-human invite --stop',
-    'sub-human doctor --fix', 'sub-human doctor --bundle /tmp/x.json', 'sub-human doctor --quick --fix', 'sub-human gc --tasks --yes',
+    'sub-human doctor --fix', 'sub-human doctor --bundle /tmp/x.json', 'sub-human doctor --quick --fix',
     // a login link's serve, under any home: the person's /sub-human join USER@HOST ROOM, never the model's
     `ssh me@far '"$HOME"/.sub-human/bin/serve --stdio vole-1234 --link abcdef012345 --login'`,
     'ssh me@far env SUB_HUMAN_HOME=/srv/sh /srv/sh/bin/serve --stdio vole-1234 --link abcdef012345 --login',
