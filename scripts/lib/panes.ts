@@ -82,8 +82,10 @@ export function planState(p: string): DialogState | null {
 /**
  * The line /sub-human invite showed in a capture, without its "/sub-human ", or null: "join DEST ROOM SECRET" (DEST
  * an ssh address or pipe:HOME; SECRET the line's 39 characters; then any --home) or "join URL#SECRET" (an older
- * host's "join URL SECRET" too). The
- * pane may wrap it: a line break (and the next line's indent) inside a word is dropped first. The last one shown wins.
+ * host's "join URL SECRET" too). The pane may wrap it anywhere, at a space or inside a word (Claude Code hard-wraps,
+ * so tmux -J cannot join it): each line break becomes a mark (`markWraps`), the patterns read a mark between two words
+ * as their space and one inside a word as nothing, and the words are put back together without it. The last one
+ * shown wins.
  * The plugin shows it one of three ways (lib/remote/hosting.ts invitePinned and inviteText, mod/core/command.ts pinFor):
  *   whole on the status line under the prompt: "⚠ sub-human: PIN 8238 · /sub-human join DEST ROOM SECRET"
  *   cut, when the terminal is narrower: the notice shows the line with the word SECRET in its place, and the status
@@ -92,19 +94,42 @@ export function planState(p: string): DialogState | null {
  * The PIN is shown apart from the line: pinIn reads it.
  */
 export function joinLineIn(txt: string | null | undefined): string | null {
-  const joined = unwrap(txt);
-  const head = String.raw`\/sub-human (join (?:https?:\/\/[^\s#]+[ #]|\S+ [a-z]+-\d{4} ))`; // a web line's SECRET: its URL's fragment
-  const tail = String.raw`((?: --home \S+)?)(?=\s|$)`;
+  const marked = markWraps(txt);
+  const any = String.raw`[^\s\x1f]`; // a character of a word (\S, less the mark)
+  const url = `${lit('http')}(?:${IN}s)?${IN}${lit('://')}${IN}${word(String.raw`[^\s#\x1f]`)}`;
+  const room = `${word('[a-z]')}${IN}-${IN}${count(String.raw`\d`, 4)}`;
+  const head = `${lit('/sub-human')}${SP}${lit('join')}${SP}(?:(?<url>${url})(?<hash>${IN}#${IN}|${SP})|(?<dest>${word(any)})${SP}(?<room>${room})${SP})`; // a web line's SECRET: its URL's fragment
+  const tail = `(?:${SP}${lit('--home')}${SP}(?<home>${word(any)}))?${END}`;
+  const line = (g: Record<string, string | undefined> | undefined, secret: string): string => {
+    const at = g?.url ? `${unmark(g.url)}${g.hash?.includes('#') ? '#' : ' '}` : `${unmark(g?.dest)} ${unmark(g?.room)} `;
+    return `join ${at}${secret}${g?.home ? ` --home ${unmark(g.home)}` : ''}`;
+  };
   const shown: { at: number, line: string }[] = [];
-  for (const m of joined.matchAll(new RegExp(`${head}([0-9a-z]{39})${tail}`, 'g'))) shown.push({ at: m.index, line: `${m[1]}${m[2]}${m[3]}` });
+  for (const m of marked.matchAll(new RegExp(`${head}(?<secret>${SECRET})${tail}`, 'g'))) shown.push({ at: m.index, line: line(m.groups, unmark(m.groups?.secret)) });
   // the cut form: the line with SECRET in the word's place, and the word on the status line
-  const word = [...joined.matchAll(/\bPIN \d{4} · SECRET ([0-9a-z]{39})(?=\s|$)/g)].at(-1)?.[1];
-  if (word) for (const m of joined.matchAll(new RegExp(`${head}SECRET${tail}`, 'g'))) shown.push({ at: m.index, line: `${m[1]}${word}${m[2]}` });
+  const status = new RegExp(String.raw`\b${lit('PIN')}${SP}${count(String.raw`\d`, 4)}${SP}·${SP}${lit('SECRET')}${SP}(?<secret>${SECRET})${END}`, 'g');
+  const secret = unmark([...marked.matchAll(status)].at(-1)?.groups?.secret);
+  if (secret) for (const m of marked.matchAll(new RegExp(`${head}${lit('SECRET')}${tail}`, 'g'))) shown.push({ at: m.index, line: line(m.groups, secret) });
   return shown.sort((a, b) => a.at - b.at).at(-1)?.line || null;
 }
 
-/** The pane may wrap a long word: a line break (and the next line's indent) inside one is dropped. */
-const unwrap = (txt: string | null | undefined): string => (txt || '').replace(/([A-Za-z0-9_./:@-])\n[ \t│⎿]*(?=[A-Za-z0-9_./:@-])/g, '$1'); // one wrap, not a blank line
+/** What markWraps puts for one line break: the line's trailing blanks, the break and the next line's indent. */
+const WRAP = '\x1f';
+/**
+ * In a pattern: a space between two words (or the break it became); a break inside a word (or none), only before a
+ * character a word goes on with (not the next row's ⏺); a word's end.
+ */
+const SP = String.raw`[ \x1f]`, IN = String.raw`(?:\x1f(?=[\w./:@~#-]))?`, END = String.raw`(?=[\s\x1f]|$)`;
+/** `s` as typed, a break allowed between any two of its characters. */
+const lit = (s: string): string => s.split('').map(c => c.replace(/[\\^$.*+?()[\]{}|/-]/g, String.raw`\$&`)).join(IN);
+/** One or more characters of class `c`, and exactly `n` of them, a break allowed between any two. */
+const word = (c: string): string => `${c}(?:${IN}${c})*`;
+const count = (c: string, n: number): string => Array<string>(n).fill(c).join(IN);
+/** The line's SECRET word: 39 characters of Crockford base32, as shown (lowercase). */
+const SECRET = count('[0-9a-z]', 39);
+/** Each line break as one mark: one wrap, not a blank line (that is two marks, which no pattern reads). */
+const markWraps = (txt: string | null | undefined): string => (txt || '').replace(/[ \t]*\n[ \t│⎿]*/g, WRAP);
+const unmark = (s: string | undefined): string => (s ?? '').replaceAll(WRAP, '');
 
 /**
  * The PIN an invite showed apart from its line: on the status line ("PIN 4829 · /sub-human join …" or, cut,

@@ -48,6 +48,21 @@ test('panes: the line /sub-human invite showed and its PIN apart, also when the 
   assert.equal(joinLineIn('no line here'), null);
   assert.equal(joinLineIn('/sub-human join dev vole-1234 4829'), null, 'a 0.5.0-beta.15 line is no invite line now');
   assert.equal(pinIn('no PIN here 4829'), null);
+  // Claude Code hard-wraps: at a space (the space dropped, or kept at the line's end) or inside a word, at any column
+  const wraps = (l: string): string[] => Array.from({ length: l.length - 1 }, (_, j) => j + 1).flatMap(i => {
+    const at = (a: number, b: number): string => `${l.slice(0, a)}\n    ${l.slice(b)}`;
+    return l[i] === ' ' ? [at(i, i + 1), at(i + 1, i + 1)] : [at(i, i)];
+  });
+  for (const l of [`join devbox vole-1234 ${S} --home ${home}`, `join https://box.ts.net/sub-human/vole-1234#${S}`, `join https://box.ts.net/sub-human/vole-1234 ${S}`]) {
+    for (const w of wraps(`/sub-human ${l}`)) assert.equal(joinLineIn(`⏺ sub-human: invite to room vole-1234\n\n  ${w}\n\n  and tell them its PIN`), l, w);
+  }
+  for (const w of wraps(`/sub-human join devbox vole-1234 SECRET --home ${home}`)) {
+    assert.equal(joinLineIn(`⏺   ${w}\n⏺ and tell them the PIN apart from it\n\n  ⚠ sub-human: PIN 0412 · SECRET ${S}`), `join devbox vole-1234 ${S} --home ${home}`, `cut: ${w}`);
+  }
+  for (const w of wraps(`PIN 0412 · SECRET ${S}`)) {
+    assert.equal(joinLineIn(`⏺   /sub-human join devbox vole-1234 SECRET\n\n  ⚠ sub-human: ${w}`), `join devbox vole-1234 ${S}`, `the word: ${w}`);
+  }
+  assert.equal(joinLineIn(`  /sub-human join devbox vole-1234 ${S.slice(0, 20)}\n\n  ${S.slice(20)}`), null, 'a blank line is no wrap');
   const card = 'Let carol (check 3f9c-2a71) on carols-mbp join room vole-1234? (admit 3f9c2a0b1c2d)\n❯ 1. Let in\n  2. Refuse\n  3. Type something';
   assert.deepEqual(admitCardState(card)?.opts.map(o => [o.n, o.label, o.cur]), [[1, 'Let in', true], [2, 'Refuse', false], [3, 'Type something', false]]);
   assert.equal(admitCardState('Agree to proposal abcdefabcdef?\n❯ 1. Agree'), null);
