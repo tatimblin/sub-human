@@ -27,6 +27,7 @@ import PathMod from 'node:path';
 // the module's rules (mod/core): the command's names, which prompt may hold a PIN, and the nonce check
 import { COMMANDS, mayHoldSecret } from '../../mod/core/command.ts';
 import { attested as leaseAttests } from '../../mod/core/state.ts';
+import { BYPASS_NOTE } from '../../mod/core/constants.ts';
 import { assertNever } from '../../mod/core/never.ts';
 import type { JoinIn, Reply } from '../types.ts';
 import type { Answer } from '../../lib/commands/types.ts';
@@ -36,7 +37,6 @@ seatKey.arm();
 
 const ROOM_CLAUDE_AGENT = 'sub-human:room-claude';
 const PLUGIN_ROOT = PathMod.join(import.meta.dirname, '..', '..');
-const BYPASS = ' · ⚠ bypass-permissions mode: messages from other sessions can wait behind a dialog; restart in another mode to get them live';
 /** A note in a join's message that the person must hear: the room's Claude could not start, or its last start failed. */
 const TROUBLE = /could not start|the last start failed: /;
 
@@ -56,7 +56,7 @@ function toReply(a: Answer, input: JoinIn, module: boolean): Reply {
   switch (a.kind) {
     case 'joined': {
       launcher.refresh(); // the opt-in row status launcher and the serve shim, now that this session has rows
-      const bypass = input.permission_mode === 'bypassPermissions' && a.me.role !== 'claude' ? BYPASS : '';
+      const bypass = input.permission_mode === 'bypassPermissions' && a.me.role !== 'claude' ? BYPASS_NOTE : '';
       const warn = bypass || TROUBLE.test(a.say) ? `sub-human: ${a.say}${bypass}` : null;
       return { kind: 'joined', context: contextBlock(a.me, a.lead), say: module ? `${a.say}${bypass}` : a.say, warn, module };
     }
