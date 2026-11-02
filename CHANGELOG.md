@@ -8,7 +8,8 @@ Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, a
 
 ### Changed
 - **The guard keeps out of your session's own files** (#30). Claude can read Claude Code's prompt history and transcripts again, as in any session. The guard still keeps the sub-human home (its seat signing keys and link secrets) out of reach.
-- **`find`'s patterns are not paths** (#30): `-name`, `-path`, `-regex` and the like no longer read as reaching the home, so `find ~/repos -name x -not -path '*/node_modules/*'` runs. Starting points, `-newer`/`-samefile` files, `-fprint` files and `-exec` commands are still checked.
+- **`find`'s patterns are not paths** (#30): `-name`, `-path`, `-regex` and the like no longer read as reaching the home, so `find ~/repos -name x -not -path '*/node_modules/*'` runs. Starting points, `-newer`/`-samefile` files, `-fprint` files and `-exec` commands are still checked. A `find` that only lists names (no `-exec`, `-ok` or `-delete`) may start anywhere, `~` and `/` included, as a Glob may.
+- **`python3`, `node` and other interpreters run from any folder** (#10), `~` included. Code that names a path into the home is still denied.
 - `/sub-human tasks` (or `who`, `read`, `show`, `plan`, `verify`) answers with where that command lives instead of renaming your seat to "tasks". `/sub-human --as tasks` still sits as someone called tasks.
 - A room's task line uses the same words as `sub-human tasks`: open, in progress, done.
 - A sign-off request doesn't ask someone who has already agreed: "asks you to sign off on plan docs v1 (alice agreed)".
