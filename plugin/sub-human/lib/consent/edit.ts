@@ -152,6 +152,8 @@ export const EDIT_SAY = {
   draftKept: (p: string, file: string): string => `sub-human: plan mode was left before the room plan ${p} edit was stored, so nothing was stored. `
     + `The edited text is kept at ${file}: read it with the Read tool (Bash cannot reach the sub-human folder). If your person wants it in the room, open an edit again (the plan tool, op edit), `
     + 'put its plan below the closing marker and its Summary line, if it has one, in the header.',
+  /** an open edit dropped by the timeout (REVIEW_STALE_MS) or by plan-edit turning off, not by plan mode being left */
+  draftDropped: (p: string, file: string): string => `your edit of room plan ${p} was not stored (it was left open too long); its text is kept at ${file}. Ask your Claude to update the room plan with it`,
   draftNotice: (p: string, file: string): string => `your edit of room plan ${p} was not stored (plan mode was left first); its text is kept at ${file}. Ask your Claude to update the room plan with it`,
   /** F (live validation): the person's own plan file put back after the edit (the model took it for overwritten) */
   fileBack: 'The session plan file is back as it was before the edit (the person\'s own plan, unchanged).',

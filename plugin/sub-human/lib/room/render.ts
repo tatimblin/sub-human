@@ -271,8 +271,10 @@ function chatBody(e: Entry, viewer: string | undefined, entries: readonly Readon
     case 'decision': return { head: 'room', text: decisionText(n, entries, viewer) };
     case 'task': {
       const status = n.status ? ` ${n.status}` : '';
-      // an add naming the viewer as its suggested owner: said to them alone; they claim it themselves if they take it
-      const mine = n.op === 'add' && !n.owner && !!viewer && n.suggest === viewer ? ', suggested for you (claim it to take it)' : '';
+      // an add naming the viewer as its suggested owner, by someone else: said to them alone; they claim it themselves
+      const req = n.req && isList(entries) ? entries.find(x => x && x.id === n.req) : null;
+      const mine = n.op === 'add' && !n.owner && !!viewer && n.suggest === viewer && !(req && (req.by || req.from) === viewer)
+        ? ', suggested for you (claim it to take it)' : '';
       return { head: 'room', text: `task "${n.subject || n.task_id || '?'}"${status}${n.owner ? `, owner ${you(n.owner)}` : ''}${mine}` };
     }
     case 'task_req': return { head: chatWho(n, trust), text: `asks to ${n.op} task "${n.subject || n.task_id || '?'}"` };

@@ -323,7 +323,7 @@ test('edit (#16): an open edit the timeout drops keeps its edited text as a draf
   stale();
   const r = prompt();
   assert.equal(fs.readFileSync(draft, 'utf8'), 'Summary of this edit: a stale edit\n\n# v1\n\n2. left too long\n');
-  assert.match(r.stdout, /your edit of room plan room was not stored .* kept at /);
+  assert.match(r.stdout, /your edit of room plan room was not stored \(it was left open too long\); its text is kept at /);
   assert.equal(fs.readFileSync(file, 'utf8'), '# mine\n', 'the person\'s own plan is back');
   assert.equal(editOf(w, 'alice'), null);
   assert.equal(w.entries().filter(e => e.kind === 'plan').length, 1, 'nothing stored');

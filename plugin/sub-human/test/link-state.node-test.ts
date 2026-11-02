@@ -57,6 +57,8 @@ test('link-state: without the state file, the link document says it in the same 
   }
   setDoc({ pid: process.pid, state: 'offline', reason: 'no route' });
   assert.equal(must(ls.read(CODE)).lastError, 'no route');
+  setDoc({ state: 'online' });
+  assert.deepEqual([must(ls.read(CODE)).state, must(ls.read(CODE)).dead], ['offline', true], 'a document with no pid: no live daemon wrote it');
 });
 
 test('link-state: a daemon that died reads offline, whatever its last record said (a fork stays a fork)', async t => {

@@ -115,7 +115,7 @@ function readLink(code: RoomCode): LinkState | null {
   }
   const queued = waiting(code, doc?.queued);
   if (!doc || !doc.state) return clean({ state: 'offline' as const, lastError: NOT_RUNNING, dead: true, queued, source: 'link-doc' as const });
-  const dead = !!(doc.pid && !doc.running);
+  const dead = !doc.running; // running: its pid lives (a document with no pid: no live daemon wrote it)
   const state = normalize(doc.state);
   const lastError = str(doc.reason) || (dead ? NOT_RUNNING : undefined);
   const lastReason = !dead && isReason(doc.why) ? doc.why : undefined;

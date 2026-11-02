@@ -257,6 +257,11 @@ test('chatLines: group-chat lines with no ids, exact words, multi-line and long 
   // with the log, an answer and a decision name their proposal by title (with two pending, which one was decided)
   const all = R.readAll();
   const W = (e: Entry, viewer = 'alice') => room.chatLines(e, { viewer, entries: R.readAll() });
+  // a suggestion the viewer asked for herself is not said back to her
+  const ownAsk = R.append({ kind: 'task_req', op: 'add', subject: 'own tests', suggest: 'alice' }, { via: 'agent', from: 'alice' });
+  const own = sys('task', { op: 'add', id: 4, subject: 'own tests', status: 'pending', suggest: 'alice', req: ownAsk.id });
+  assert.deepEqual(W(own), ['room: task "own tests" pending']);
+  assert.deepEqual(W(own, 'bob'), ['room: task "own tests" pending']);
   assert.deepEqual(W(must(all.find(x => x.kind === 'signoff'))), ['bob agreed to "cursor paging" (aaaaaa)']);
   assert.deepEqual(W(must(all.find(x => x.kind === 'objection'))), ['bob objected to "cursor paging" (aaaaaa): add the 400 test']);
   assert.deepEqual(W(must(all.find(x => x.kind === 'decision'))), ['room: "cursor paging" (aaaaaa) agreed (you, bob)']);

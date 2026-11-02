@@ -605,7 +605,8 @@ function openEdit(me: Identity, sid: unknown): PlanEdit | null {
     const step = edit.reduce(e, { type: 'prompt', mode: undefined, ...promptFacts(me) }); // the facts read before the restore
     for (const x of step.effects) if (x.do !== 'put') editEffect(me, x);
     proposal.clearEdit(me);
-    if (step.notice) unsent.push(step.notice);
+    const kept = step.effects.find(x => x.do === 'keepDraft');
+    if (kept) unsent.push(edit.EDIT_SAY.draftDropped(e.plan, kept.file)); // the reducer's notice says plan mode was left
     return null;
   }
   return e;
