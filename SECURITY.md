@@ -19,7 +19,8 @@ The goal is narrow: **a model can't speak or consent as a person through anythin
 - **Invite secrets never reach a model.** The invite line's SECRET and its PIN are shown to the person only, and the
   hooks hide any join or invite prompt from the conversation.
 - **The store is guarded.** The plugin's hooks module denies Claude's file tools inside the sub-human home, and
-  denies `Bash` commands that name it, the keys or Claude Code's prompt history.
+  denies `Bash` commands that name it or its keys. Everything else, Claude Code's own prompt history and
+  transcripts included, is your Claude's to read, as in any session.
 
 ## Joining from another machine
 
@@ -46,8 +47,9 @@ the only way in, and it sees IPs, timing and byte counts, not content: inside th
   key's path at run time could read it and sign as your seat. What it writes around the plugin still breaks the hash
   chain or carries no valid signature; `sub-human verify CODE` checks a room's log.
 - **Other MCP servers** that read or write files aren't guarded.
-- **Prompt history.** What you type stays in Claude Code's own prompt history (`~/.claude/history.jsonl`), including
-  a join line and its PIN. Both are worthless once used, expired or burned.
+- **Prompt history and transcripts.** What you type stays in Claude Code's own prompt history
+  (`~/.claude/history.jsonl`) and the session's transcript, including a join line and its PIN, and your Claude may
+  read them like any file. Both are worthless once used, expired or burned.
 - **Messages to one person aren't private.** Everyone in the room can read the whole log.
 
 The full threat model, with every guard and limit, is in

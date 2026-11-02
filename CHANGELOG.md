@@ -2,6 +2,27 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 0.5.7: your session, unguarded; fixes from a live run
+
+Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, and live runs of two seats with real Claude sessions. The wire protocol is still 5.
+
+### Changed
+- **The guard keeps out of your session's own files** (#30). Claude can read Claude Code's prompt history and transcripts again, as in any session. The guard still keeps the sub-human home (its seat signing keys and link secrets) out of reach.
+- **`find`'s patterns are not paths** (#30): `-name`, `-path`, `-regex` and the like no longer read as reaching the home, so `find ~/repos -name x -not -path '*/node_modules/*'` runs. Starting points, `-newer`/`-samefile` files, `-fprint` files and `-exec` commands are still checked. A `find` that only lists names (no `-exec`, `-ok` or `-delete`) may start anywhere, `~` and `/` included, as a Glob may.
+- **`python3`, `node` and other interpreters run from any folder** (#10), `~` included. Code that names a path into the home is still denied.
+- `/sub-human tasks` (or `who`, `read`, `show`, `plan`, `verify`) answers with where that command lives instead of renaming your seat to "tasks". `/sub-human --as tasks` still sits as someone called tasks.
+- A room's task line uses the same words as `sub-human tasks`: open, in progress, done.
+- A sign-off request doesn't ask someone who has already agreed: "asks you to sign off on plan docs v1 (alice agreed)".
+- A room plan edit says it works from plan mode too, so a Claude already in plan mode uses it instead of writing a plain plan.
+- The README says what Esc on a sign-off does: plan mode stays on until your next message brings "Exit plan mode?" (or shift+tab).
+
+### Fixed
+- Renaming yourself in the same room logs "alice left (now erin)", not "switched rooms", and the new name doesn't replay the old one's lines.
+- A row agent's end shows as `sub-human: row closed`, not "Prompt dropped by a hook: sub-human: row ended, nothing to do". Claude Code still draws it as a warning row.
+
+### Docs
+- README "Rows": "Waiting for N background agents to finish" is Claude Code's own line while the rows run.
+
 ## 0.5.6: fixes from the issue sweep
 
 Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, and a live run of two seats with real Claude sessions. The wire protocol is still 5.

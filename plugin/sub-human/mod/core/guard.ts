@@ -1,11 +1,12 @@
 /**
  * plugin/sub-human/mod/core/guard.ts: the store guard's verdicts as pure functions (no `$`, no node imports),
  * shared by the hooks module (mod/guard.ts) and the node tests (test/hooks/guard.node-test.ts, security.node-test.ts).
- * In: the tool input and ctx {home, realHome, userHome, pluginRoot, realPluginRoot, cwd, realCwd, claudeDir, sid},
+ * In: the tool input and ctx {home, realHome, userHome, pluginRoot, realPluginRoot, cwd, realCwd},
  * every field optional (an unknown home leaves only the string rules). Out: a deny reason the model reads, or null.
  * It is a lexical check of the command's words: it follows `cd`, expands ~, $HOME and braces, and matches glob words
- * against the protected paths (the home; Claude Code's prompt history and this session's transcript, where an invite
- * line and its PIN may be), and it denies a recursive or file-reading tool pointed at a directory above them. A model
+ * against the protected path (the home, which holds the seat signing keys), and it denies a recursive or file-reading
+ * tool pointed at a directory above it. Claude Code's own files (the prompt history, transcripts) are the person's
+ * and their Claude's to read, as in any session. A model
  * that builds a path at run time (a variable, an interpreter's string arithmetic, a symlink made first) still gets past
  * it: what it cannot get past is the log's hash chain, and the seat key's signature only against a Claude that never
  * read the key (README "What it protects against").
@@ -28,8 +29,6 @@ const READ_DOCTOR = /^\s*(?:[\w./~-]*\/)?sub-human\s+doctor(?:\s+(?:--quick|--js
 /** doctor that changes things: the person runs it. */
 const DOCTOR_WRITES = /(?:^|[\s;&|(`'"/])sub-human\s+doctor\b[^;&|\n]*--(?:fix|bundle)(?![\w-])/;
 const ENV_NAMES = /\bSUB_HUMAN_HOME\b/;
-/** Claude Code's prompt history, by name (before the hello says where Claude Code's directory is). */
-const HISTORY = /(?:^|[/\s'"])\.claude\/history\.jsonl\b/;
 /** The CLI commands a person runs in their own shell: an invite, letting a machine in or out, the link daemon, the room server, the web listener. */
 const PERSON_CLI = /(?:^|[\s;&|(`'"/])sub-human\s+(?:invite|admit|kick|listen|link|serve)(?![\w-])/;
 /** The host's serve shim asked to link a machine over an ssh login (`ssh you@host H/bin/serve --stdio CODE --link ID --login`),
@@ -89,6 +88,8 @@ export const needsCwd = (command: unknown): boolean => {
  * its words name, which the path rules see). */
 const WALKERS = new Set(['rg', 'ag', 'ack', 'find', 'fd', 'fdfind', 'tar', 'bsdtar', 'zip', '7z', 'rsync', 'xargs', 'python', 'python3',
   'node', 'nodejs', 'bun', 'deno', 'perl', 'ruby', 'php', 'eval', 'osascript', 'pax', 'cpio']);
+/** Interpreters: walkers by the paths their words and code name, never by where they are run from (#10). */
+const INTERPRETERS = new Set(['python', 'python3', 'node', 'nodejs', 'bun', 'deno', 'perl', 'ruby', 'php', 'osascript']);
 /** Shells: walkers only with -c (a script they run as code). cp and scp: only recursive. */
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'fish']);
 /** Tools whose plain words are paths they read (their words resolve against the cwd, or the last cd). */
@@ -155,22 +156,11 @@ export function reach(p: string, root: string): 'under' | 'above' | null {
 interface Protected { root: string; why: string; above: string }
 const STORE_WHY = 'it touches the room store';
 const STORE_ABOVE = 'it searches or reads a directory above the room store, which holds the seat signing keys';
-const TALK_WHY = 'it reads Claude Code\'s prompt history or this session\'s transcript, where an invite line and its PIN can be';
-const TALK_ABOVE = 'it searches a directory above Claude Code\'s prompt history or this session\'s transcript, where an invite line and its PIN can be';
 
-/** The paths bashVerdict and the Read guard protect: each home spelling (and the real one), Claude Code's
- * history.jsonl, and this session's transcript (projects/<any>/<sid>.jsonl and its subagents' directory). */
+/** The paths bashVerdict protects: each home spelling (and the real one). */
 export function protectedPaths(ctx: GuardCtx = {}): Protected[] {
   const out: Protected[] = [];
   for (const h of [ctx.home, ctx.realHome]) if (typeof h === 'string' && h.startsWith('/') && normalize(h).length >= 4) out.push({ root: normalize(h), why: STORE_WHY, above: STORE_ABOVE });
-  const cd = typeof ctx.claudeDir === 'string' && ctx.claudeDir.startsWith('/') ? normalize(ctx.claudeDir) : null;
-  if (cd && cd.length > 1) {
-    out.push({ root: `${cd}/history.jsonl`, why: TALK_WHY, above: TALK_ABOVE });
-    if (typeof ctx.sid === 'string' && /^[\w-]{8,}$/.test(ctx.sid)) {
-      out.push({ root: `${cd}/projects/*/${ctx.sid}.jsonl`, why: TALK_WHY, above: TALK_ABOVE });
-      out.push({ root: `${cd}/projects/*/${ctx.sid}`, why: TALK_WHY, above: TALK_ABOVE });
-    }
-  }
   return out;
 }
 
@@ -188,6 +178,56 @@ function placeWord(w: string, base: string | null, userHome: string | null): str
 
 const unquote = (w: string): string => w.replace(/["'`\\]/g, '');
 const isRecursiveGrep = (args: string[]): boolean => args.some(a => /^-[a-zA-Z]*[rR]/.test(a) || a === '--recursive' || a === '--dereference-recursive' || /^--directories=recurse$/.test(a) || a === 'recurse');
+
+/** One command's words as pathVerdict reads them: unquoted, a redirect's operator dropped. */
+const wordsOf = (seg: string): string[] => seg.trim().split(/\s+/).filter(Boolean).map(unquote).map(w => w.replace(/^\d*[<>]+&?/, '')).filter(Boolean);
+
+/** The index of the tool's word in words: past assignments, wrappers and their options, and timeout's duration. */
+function toolAt(words: string[]): number {
+  let i = 0;
+  for (let w = words[0]; w !== undefined; w = words[++i]) {
+    if (!(/^\w+=/.test(w) || WRAPPERS.has(w) || /^-/.test(w) && i > 0 && WRAPPERS.has(words[i - 1] ?? ''))) break;
+  }
+  const next = words[i];
+  if (next !== undefined && words[i - 1] === 'timeout' && /^\d/.test(next)) i++;
+  return i;
+}
+const toolOf = (words: string[], i: number): string => (words[i] || '').split('/').pop() || '';
+
+/** find's primaries whose value is a pattern it matches names against (or -printf's format), never a path it reads. */
+const FIND_PATTERNS = new Set(['-name', '-iname', '-path', '-ipath', '-wholename', '-iwholename', '-regex', '-iregex', '-lname', '-ilname', '-printf']);
+/** find's primaries that run a command: its words up to a ; or + word. */
+const FIND_EXEC = new Set(['-exec', '-execdir', '-ok', '-okdir']);
+
+/** find's words (its args): how many starting points come first (the words before its expression's first word that
+ * starts with -, ! or (), the words the path rules see (the starting points and every word of the expression but a
+ * pattern: a -newer reference and a -fprint file are paths), and each command it runs (-exec and the like). */
+function findWords(args: string[]): { starts: number; paths: string[]; execs: string[][] } {
+  const first = args.findIndex(a => /^[-!(]/.test(a));
+  const paths: string[] = [], execs: string[][] = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i] ?? ''; // i is in range
+    if (FIND_PATTERNS.has(a)) { i++; continue; }
+    if (a === '-fprintf') { paths.push(args[i + 1] ?? ''); i += 2; continue; } // its file is a path, its format a pattern
+    if (FIND_EXEC.has(a)) {
+      const end = args.findIndex((w, j) => j > i && (w === ';' || w === '+'));
+      execs.push(args.slice(i + 1, end < 0 ? args.length : end));
+      i = end < 0 ? args.length : end;
+      continue;
+    }
+    paths.push(a);
+  }
+  return { starts: first < 0 ? args.length : first, paths, execs };
+}
+
+/** Whether sep (one of the pieces' separators) is a word the shell passes on to the command, as find's expression
+ * spells its \( \) and -exec's \; (or '(' quoted alone): after an odd run of backslashes, or between two quotes. */
+function passedOn(before: string, sep: string, after: string): boolean {
+  if (!/^[();]$/.test(sep)) return false;
+  if (/(?:^|[^\\])(?:\\\\)*\\$/.test(before)) return true;
+  const q = /(?:^|\s)(['"])$/.exec(before)?.[1];
+  return q !== undefined && after.startsWith(q) && /^(?:\s|$)/.test(after.slice(1));
+}
 
 /** The reason a command reaches a protected path, or null (see the header: lexical, and it follows cd). */
 export function pathVerdict(cmd: string, ctx: GuardCtx = {}): string | null {
@@ -209,27 +249,30 @@ export function pathVerdict(cmd: string, ctx: GuardCtx = {}): string | null {
     }
     return null;
   };
-  for (const seg of cmd.split(/\|\||&&|[;|&\n()]/)) {
-    const words = seg.trim().split(/\s+/).filter(Boolean).map(unquote).map(w => w.replace(/^\d*[<>]+&?/, '')).filter(Boolean);
-    let i = 0;
-    for (let w = words[0]; w !== undefined; w = words[++i]) {
-      if (!(/^\w+=/.test(w) || WRAPPERS.has(w) || /^-/.test(w) && i > 0 && WRAPPERS.has(words[i - 1] ?? ''))) break;
-    }
-    const next = words[i];
-    if (next !== undefined && words[i - 1] === 'timeout' && /^\d/.test(next)) i++;
-    const tool = (words[i] || '').split('/').pop() || '';
-    const args = words.slice(i + 1);
+  /** One command's words: the reason it reaches a protected path, or null. */
+  const command = (words: string[]): string | null => {
+    const i = toolAt(words);
+    const tool = toolOf(words, i);
+    let args = words.slice(i + 1);
     if (tool === 'cd' || tool === 'pushd') {
       const target = args.find(a => !a.startsWith('-')) ?? '~';
       const why = check(target, base); // a cd into the store is the store
       if (why) return why;
       const [first = target] = braceExpand(target); // never empty
       base = placeWord(first, base, userHome);
-      continue;
+      return null;
     }
-    const walker = WALKERS.has(tool) || (SHELLS.has(tool) && args.includes('-c')) || (['grep', 'egrep', 'fgrep'].includes(tool) && isRecursiveGrep(args))
+    const find = tool === 'find' ? findWords(args) : null;
+    // a find that only lists names (no -exec/-ok, no -delete) reads no file: it may start above the store, as a Glob may
+    const listsNames = !!find && !find.execs.length && !args.includes('-delete');
+    const walker = (WALKERS.has(tool) && !listsNames) || (SHELLS.has(tool) && args.includes('-c')) || (['grep', 'egrep', 'fgrep'].includes(tool) && isRecursiveGrep(args))
       || (['cp', 'scp'].includes(tool) && args.some(a => /^-[a-zA-Z]*[rRa]/.test(a)));
     if (walker) walks = true;
+    if (find) {
+      // each command find runs is a command of its own, from where find stands
+      for (const run of find.execs) { const at = base; const why = commands(run.join(' ')); base = at; if (why) return why; }
+      args = find.paths;
+    }
     const reads = READERS.has(tool);
     let plain = 0;
     for (const a of args) {
@@ -241,9 +284,32 @@ export function pathVerdict(cmd: string, ctx: GuardCtx = {}): string | null {
       if (why) return why;
     }
     // a walker with no path word (rg PATTERN, grep -r PATTERN, find -name X) walks where it stands
-    const [arg0] = args;
-    if (walker && base && (tool === 'find' ? arg0 === undefined || arg0.startsWith('-') : plain <= 1)) { const why = check('.', base); if (why) return why; }
-  }
+    if (walker && base && !INTERPRETERS.has(tool) && (find ? find.starts === 0 : plain <= 1)) { const why = check('.', base); if (why) return why; }
+    return null;
+  };
+  /** A command line's commands, split where the shell may end one (also inside quotes: a sh -c string's commands). */
+  const commands = (text: string): string | null => {
+    const parts = text.split(/(\|\||&&|[;|&\n()])/); // pieces, a separator between each two
+    for (let k = 0; k < parts.length; k += 2) {
+      let seg = parts[k] ?? '';
+      const more: string[][] = [];
+      const head = wordsOf(seg);
+      if (toolOf(head, toolAt(head)) === 'find') {
+        // find's \( \) and \; are words of its expression: the pieces they split off are its expression too, and each is
+        // also read as a command of its own (after find's) unless it starts as an expression's piece does (-, ! or empty)
+        for (; k + 2 < parts.length && passedOn(seg, parts[k + 1] ?? '', parts[k + 2] ?? ''); k += 2) {
+          const piece = parts[k + 2] ?? '';
+          seg += (parts[k + 1] ?? '') + piece;
+          const words = wordsOf(piece);
+          if (words[0] !== undefined && !/^[-!]/.test(words[0])) more.push(words);
+        }
+      }
+      for (const words of [wordsOf(seg), ...more]) { const why = command(words); if (why) return why; }
+    }
+    return null;
+  };
+  const why = commands(cmd);
+  if (why) return why;
   // paths inside other words: an interpreter's code, a quoted string
   for (const m of cmd.matchAll(EMBEDDED)) { const why = check(unquote(m[0]), base); if (why) return why; }
   const [above] = aboves;
@@ -440,7 +506,6 @@ function verdictOf(cmd: string, ctx: GuardCtx): string | null {
       if (!/[\w.-]/.test(cmd[i + h.length] || '')) return 'it touches the room store'; // not /home2 or .sub-humanoid
     }
   }
-  if (HISTORY.test(cmd)) return TALK_WHY;
   const reached = pathVerdict(cmd, ctx);
   if (reached) return reached;
   if (RUNS_JS.test(cmd) && PLUGIN_CODE.test(cmd)) {
@@ -474,7 +539,6 @@ export const denyText = (why: string, root: unknown, homes: { home?: unknown; us
     return `ROOM-GUARD: sub-human ${why} (the shim, the home's modes, a bundle file), so they are the person's step: ${
       known ? `they run \`${homeEnv(homes.home, homes.userHome)}node ${root}/scripts/sub-human doctor --bundle\` (or --fix) ` : 'they run it '}in a terminal outside Claude Code. In a session, /sub-human doctor is the read-only check.`;
   }
-  if (why === TALK_WHY || why === TALK_ABOVE) return `ROOM-GUARD: the invite lines and PINs typed or shown in Claude Code are the people's own; a model never reads them. (Denied: ${why}.)`;
   return `${MSG} (Denied: ${why}.) Use the room MCP tools${known ? `, or \`${root}/scripts/sub-human read|who|tasks|show\`` : ''}.`;
 };
 
@@ -544,8 +608,6 @@ const secretRoots = (ctx: GuardCtx): string[] => homesOf(ctx).flatMap(h => SECRE
  */
 export function readVerdict(candidates: unknown[], ctx: GuardCtx = {}, raw: unknown = ''): string | null {
   const cands = candidates.filter((c): c is string => typeof c === 'string' && !!c);
-  const talk = protectedPaths(ctx).filter(p => p.why === TALK_WHY);
-  if (cands.some(c => talk.some(t => reach(c, t.root) === 'under')) || HISTORY.test(String(raw || ''))) return 'it reads Claude Code\'s prompt history or this session\'s transcript';
   const roots = secretRoots(ctx);
   if (roots.length) return cands.some(c => roots.some(r => isUnder(c, r))) ? 'it reads a seat signing key or a link\'s secret' : null;
   return [...cands, String(raw || '')].some(c => SECRET_SEGMENT.test(c)) ? 'it reads a seat signing key or a link\'s secret (~/.sub-human)' : null;
@@ -563,8 +625,6 @@ export function searchVerdict(tool: string, candidates: unknown[], ctx: GuardCtx
   const cands = candidates.filter((c): c is string => typeof c === 'string' && !!c);
   const homes = homesOf(ctx);
   const above = (c: string, h: string) => c === '/' || isUnder(h, c);
-  const talk = protectedPaths(ctx).filter(p => p.why === TALK_WHY);
-  if (cands.some(c => talk.some(t => reach(c, t.root) !== null))) return TALK_ABOVE;
   if (homes.length) return cands.some(c => homes.some(h => above(normalize(c), h))) ? 'it searches the room store\'s home or a directory above it, which holds the seat signing keys' : null;
   return [...cands, String(raw || '')].some(c => DOT_HOME_END.test(c)) ? 'it searches the room store (~/.sub-human), which holds the seat signing keys' : null;
 }

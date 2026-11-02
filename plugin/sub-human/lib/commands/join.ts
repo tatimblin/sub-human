@@ -13,7 +13,8 @@
  *             host let in on its own, mod/deliver.ts takeSeat): only that join's seat (letIn), else nothing
  *   named     `/sub-human NAME [ROOM]` (or `--as NAME`): join ROOM (else the one open room, else a new one) as NAME, leaving any other
  *             room; `/sub-human ROOM` (a room code alone): that room as the default name, never a person named after it.
- *             A word of digits is no name (it looks like a PIN)
+ *             A word of digits is no name (it looks like a PIN), and a CLI command (CLI_VERBS: `/sub-human tasks`) says
+ *             where it runs instead of taking a seat by that name
  *   join      `/sub-human join …`: ROOM (a room code alone): that room on this machine, as `/sub-human ROOM`;
  *             HOST ROOM SECRET, URL#SECRET or URL SECRET, each with the PIN after it or not: an invite line
  *             (joining.linkLine: link only, never the seat in that step; a PIN typed with it goes in the first hello,
@@ -55,6 +56,17 @@ export const JOIN_USAGE: string = `usage: /sub-human join LINE PIN (the line fro
 const NOT_WHOLE = 'the line\'s SECRET (its last long word) did not come through whole: paste the whole line the host sent you';
 const PIN_WORD = /^[0-9]{3,10}$/;
 const YOU_HINT = (d: string) => `"${d}" still has the example's placeholder: put your user name on that machine in place of ${d.split('@')[0]} (or just its ssh alias, e.g. dev)`;
+/** The CLI's commands that are no /sub-human verb (lib/cli/main.ts COMMANDS; a test keeps the two in step). They are not
+ * RESERVED: identity.join refuses a reserved name on every join, so a seat already called "show" or "tasks" would be
+ * locked out of its own room. `/sub-human tasks` answers cliHint instead; `/sub-human --as tasks` is still that name. */
+export const CLI_VERBS: readonly string[] = ['read', 'show', 'who', 'tasks', 'plan', 'verify', 'link', 'listen', 'serve', 'tail', 'agent-statusline'];
+const READS: readonly string[] = ['read', 'show', 'who', 'tasks', 'plan', 'verify'];
+/** What `/sub-human VERB …` answers for a CLI command: where it runs, never a seat taken under that name. */
+function cliHint(verb: string, root: string): Answer {
+  const where = `in a terminal: node ${root.replace(/\/+$/, '')}/scripts/sub-human ${verb}`;
+  return say(`${verb} is a sub-human CLI command, not a /sub-human one: ${READS.includes(verb) ? `ask your Claude (it reads the room), or ${where}` : where}`
+    + ` · to sit as someone called ${verb}: /sub-human --as ${verb}`);
+}
 const NOT_A_NAME = (n: string) => (PIN_WORD.test(n) ? `"${n}" looks like a PIN, not a name: a PIN goes in as /sub-human join PIN once an invite line asks for it`
   : `"${n}" isn't a name (letters, digits, . _ -, up to 32)`);
 
@@ -141,6 +153,7 @@ export const named: Verb = (args, ctx) => {
   }
   const [name, code] = args;
   if (name === undefined) return refused(USAGE); // route() sends a bare /sub-human to bare
+  if (CLI_VERBS.includes(name.toLowerCase())) return cliHint(name.toLowerCase(), ctx.pluginRoot);
   // a SECRET-shaped word is never echoed, nor taken for a name or a room: it belongs in an invite line
   if (args.some(a => SECRET_WORD.test(a) || fragmentSecret(a) !== null)) return refused(`that looks like an invite line's SECRET: the whole line goes in as /sub-human join LINE PIN. ${USAGE}`);
   if (PIN_WORD.test(name)) return refused(NOT_A_NAME(name));

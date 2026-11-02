@@ -46,10 +46,6 @@ export interface GuardCtx {
   realPluginRoot?: string | null | undefined;
   cwd?: string | null;
   realCwd?: string | null | undefined;
-  /** Claude Code's directory (CLAUDE_CONFIG_DIR, else ~/.claude): its history.jsonl and this session's transcript */
-  claudeDir?: string | null;
-  /** this session's id: its transcript is projects/<any>/<sid>.jsonl */
-  sid?: string | null;
 }
 
 /** A tail child's seat event's seat, as parseEvent checks it: its name and code (lib/tail.ts sends role and addr too). */

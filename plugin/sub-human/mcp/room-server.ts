@@ -191,18 +191,18 @@ const CORE: ToolDefinition[] = [
   {
     name: 'plan',
     title: 'The room plan',
-    description: 'The sub-human room\'s plans. edit, then EnterPlanMode, edit the plan file, ExitPlanMode({}): the hooks store the next '
-      + 'version (your person checks it first). ask: people sign off on the current one. read. Only when told to: put stores text '
-      + 'instead; signoff asks your person.',
+    description: 'Sub-human room plans. edit (fine in plan mode), then EnterPlanMode, edit the plan file, ExitPlanMode({}): the hooks '
+      + 'store the next version (your person checks it first). ask: people sign off on the current one. read. Only when told '
+      + 'to: put stores text instead; signoff asks your person.',
     inputSchema: {
       type: 'object',
       properties: {
-        op: { type: 'string', enum: ['edit', 'put', 'ask', 'signoff', 'read'], description: 'One of the ops above.' },
+        op: { type: 'string', enum: ['edit', 'put', 'ask', 'signoff', 'read'], description: 'An op above.' },
         name: { type: 'string', description: 'Default "room".' },
         version: { type: 'integer', minimum: 0, description: 'put: the base (0: new).' },
         text: { type: 'string', description: 'put: the whole plan.' },
         summary: { type: 'string', description: 'put: one line.' },
-        approvers: { type: 'array', items: { type: 'string' }, description: 'ask: default everyone present.' },
+        approvers: { type: 'array', items: { type: 'string' }, description: 'ask: default: all present.' },
       },
       required: ['op'],
       additionalProperties: false,

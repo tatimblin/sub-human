@@ -14,13 +14,15 @@
  *     ending starts no model turn (stage 8e I.2: "Still in room" after a leave). The row agents' ids are noted as they
  *     are spawned (classic.PostToolUse); a hand-back whose report is a row's last word (`left`, `error`) is a row's
  *     too, also one this process never saw spawned (the agent view's fork: its "type /sub-human again" contradicted
- *     the fork's refusal, stage 8f item 1).
+ *     the fork's refusal, stage 8f item 1). A local agent's hand-back and notification come as prompts, so the drop
+ *     is what takes them; its warning row reads "sub-human: row closed" (session.append) in place of Claude Code's
+ *     "Prompt dropped by a hook: …" frame. No hook ends them without a row.
  * Failure: each .catch passes the event on as it is: the rows never disturb the session.
  */
 import { shimArgv, shimEnv, toClassic, toPre, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { rowsNeeded } from './core/prefilter.ts';
 import { mergeClassic } from './core/prompt.ts';
-import { isRow, spawnedId, handbackFrom, finishedFrom, rowReportFrom } from './core/rows.ts';
+import { isRow, spawnedId, handbackFrom, finishedFrom, rowReportFrom, rowEndedRow, ROW_ENDED } from './core/rows.ts';
 import { prePayload } from './core/facts.ts';
 import { asHello } from './core/state.ts';
 import { facts } from './deliver.ts';
@@ -47,8 +49,6 @@ const rowHandback = (text: unknown): string | null => {
 };
 /** The row agent a task notification says finished, or null (live: after the hand-back, it started the turn). */
 const rowFinished = (text: unknown): string | null => { const id = finishedFrom(text); return id && rowAgents.has(id) ? id : null; };
-/** Why a row's hand-back starts no turn: Claude Code draws it as "Prompt dropped by a hook: …" when it came as a prompt. */
-const ROW_ENDED = 'sub-human: row ended, nothing to do';
 
 const typeOf = (input: unknown) => (input && typeof input === 'object' ? (input as { subagent_type?: unknown }).subagent_type : undefined);
 
@@ -96,6 +96,13 @@ export function registerRows(on: On): void {
     rowAgents.delete(done);
     return { drop: ROW_ENDED };
   }).catch((_$, e, next) => next(e));
+  // that drop's warning row, "Prompt dropped by a hook: sub-human: row ended, nothing to do", reads "sub-human: row
+  // closed" (cc CONTRACT session-append-notice-rewrite): no hook takes a local agent's hand-back or notification
+  // without a row, and a rewrite keeps the row (a warning, at least one character)
+  on('session.append', { door: 'notice' }, (_$, e, next) => {
+    const row = rowEndedRow(e.message);
+    return next(row ? { ...e, message: row } : e);
+  }).catch((_$, e, next) => next(e)); // a failure keeps the engine's words
 
   on('classic.SubagentStop', async ($, e, next) => {
     if (!(await needed($, e.session_id, e.agent_type))) return next(e);

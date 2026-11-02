@@ -27,6 +27,8 @@
  *                            CLI rule (mod/core/guard.ts READ_CLI) allows that spelling
  *   localHm(iso) -> "21:40"  an ISO time as this machine's local hours and minutes ('' when it is no time): every
  *                            "until" a person reads (an invite, a join request) is local
+ *   taskWord(status) -> "open"   a native task status as people read it: open, in progress, done (the room's notice
+ *                            line and the `tasks` CLI); --json and the Claude-facing brief keep the native word
  */
 import os from 'node:os';
 import crypto from 'node:crypto';
@@ -87,8 +89,12 @@ function cliCmd(args = ''): string {
 
 const localHm = (iso: unknown): string => { const d = new Date(String(iso)); return Number.isNaN(d.getTime()) ? '' : d.toTimeString().slice(0, 5); };
 
+/** The rows' words for a native task status (lib/tasks.ts summary "tasks 3 open"): what a person reads. */
+const TASK_WORDS: Readonly<Record<string, string>> = { pending: 'open', in_progress: 'in progress', completed: 'done' };
+const taskWord = (s: unknown): string => TASK_WORDS[String(s)] ?? String(s ?? '');
+
 export {
-  clip, oneLine, cliLine, cliCmd, homePrefix, localHm, NAME_RE, CODE_RE, SID_SAFE, HASH_RE, MACHINE_RE, hash12, isProposalHash, planHash,
+  clip, oneLine, cliLine, cliCmd, homePrefix, localHm, taskWord, NAME_RE, CODE_RE, SID_SAFE, HASH_RE, MACHINE_RE, hash12, isProposalHash, planHash,
   isMachineId,
   isSeatName, isRoomCode, isSessionId, seatName, roomCode, sessionId,
 };

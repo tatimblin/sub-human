@@ -10,7 +10,7 @@
  * their Claude.
  * Then: OPEN verbs (help, doctor) run without the hooks module; every other needs this session's lease
  * (identity.modLeaseOk: the module's guard, prompt gate and delivery run), else noModule() says why. Any first word
- * not in TABLE is a NAME or a ROOM (join.ts named). A room Claude's seat takes no other command than its binding.
+ * not in TABLE is a NAME or a ROOM (join.ts named), or a CLI command, which named answers with where it runs. A room Claude's seat takes no other command than its binding.
  */
 import * as identity from '../identity.ts';
 import * as contract from '../cc/contract.ts';

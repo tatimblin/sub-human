@@ -149,7 +149,7 @@ test('tail: silent before join, then the member push lane, settled into one batc
     "bob's Claude (to you): q for alice",
     'claude proposed: claude proposes (bbbbbb)',
     "carol's Claude: carol: anyone on @alice docs?",
-    'room: task "docs" pending, owner you',
+    'room: task "docs" open, owner you',
   ], t.text());
   assert.match(t.of('pull').map(x => x.text).join('\n'), /\nroom: peer-forged\n/, 'the old retract: an ordinary pull line');
   assert.doesNotMatch(t.chat().join('\n'), /#\d/, 'no ids in what the human sees');
@@ -172,7 +172,7 @@ test('tail (room-plan live): a task added with me as its suggested owner is a ch
   t.advance(300);
   inRoom(code, r => r.append({ kind: 'task', op: 'add', id: 2, subject: 'handler tests', status: 'pending', suggest: 'alice' }, { via: 'system', from: 'room', system: true })); // #2
   t.advance(1000);
-  assert.deepEqual(t.lines(), ['room: task "handler tests" pending, suggested for you (claim it to take it)'], t.text());
+  assert.deepEqual(t.lines(), ['room: task "handler tests" open, suggested for you (claim it to take it)'], t.text());
   assert.deepEqual(t.of('wake'), []);
 });
 

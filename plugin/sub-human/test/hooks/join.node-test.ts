@@ -10,6 +10,7 @@ import { pidStart } from '../../lib/lock.ts';
 import * as helpersLib from '../helpers.ts';
 import * as common from '../../hooks/context.ts';
 import * as membersLib from '../../lib/room/members.ts';
+import * as session from '../../lib/room/session.ts';
 import * as linkSocket from '../../lib/remote/link-socket.ts';
 import * as inviteSecret from '../../lib/remote/invite-secret.ts';
 import type { HookLine, HookRun } from './helpers.ts';
@@ -943,5 +944,20 @@ test('R2 (live verify, verify6/14): a refused /sub-human NAME CODE leaves the se
   assert.equal(must(ok.json).decision, undefined, ok.stdout);
   assert.ok(seat(w, 'alice').left_at);
   assert.equal(must(w.lib(() => identity.resolveBySession(w.sid.alice))).name, 'erin');
-  assert.ok(w.entries().some(e => e.text === 'alice left (switched rooms)'));
+  assert.ok(w.entries().some(e => e.text === 'alice left (now erin)'), 'the same room: a rename, not a switch of rooms');
+  assert.ok(!w.entries().some(e => /switched rooms/.test(String(e.text))));
+});
+
+test('a rename in the same room and back (live: /sub-human tasks read as a name): the seat taken again reads on from here, not from the cursor it saved before, so its own join and leave never come back to it', () => {
+  const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
+  const cursor = (name: string) => w.lib(() => session.get(room.open(w.code).store, name, 'cursor'));
+  w.lib(() => session.put(room.open(w.code).store, 'alice', 'cursor', 1)); // alice's tail saved it long ago
+  assert.equal(must(w.hook('join', expand(`erin ${w.code}`), { as: 'alice' }).json).decision, undefined);
+  const last = () => w.entries().at(-1)?.id;
+  assert.equal(cursor('erin'), last(), 'erin starts at the log\'s end');
+  const back = w.hook('join', expand(`alice ${w.code}`), { as: 'alice' });
+  assert.equal(must(back.json).decision, undefined, back.stdout);
+  assert.equal(must(w.lib(() => identity.resolveBySession(w.sid.alice))).name, 'alice');
+  assert.ok(w.entries().some(e => e.text === 'erin left (now alice)'));
+  assert.equal(cursor('alice'), last(), 'not 1: erin joined, alice left, erin left are this session\'s own');
 });
