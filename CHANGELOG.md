@@ -2,21 +2,6 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
-## 0.5.8: old room task lists are cleaned up
-
-Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, and a dry run of `gc --tasks` on a real `~/.claude/tasks`. The wire protocol is still 5.
-
-### Added
-- **Stale room task lists in `~/.claude/tasks` are deleted on their own** (#11). Each room session's native task list (`sh-CODE/`) was kept forever. Once a day, the tidy-up a join already runs deletes a list only when:
-  - its room is gone from this home (not open, set aside or linked);
-  - no `claude --bg` job is using it (the job list is read within 1 s, and if it can't be read, nothing is deleted);
-  - it and every file in it are over 30 days old;
-  - it holds only `.lock`, `.highwatermark` and task files stamped with that room's code.
-
-  A symlink, a folder or a file of anything else keeps it.
-- **`sub-human gc --tasks`** lists the older room task lists, from before tasks were stamped, whose first task is the room's own `room CODE open`. It deletes them, and the stamped ones, only with `--yes`. Run it in a terminal. `/sub-human doctor` shows a line while any are left.
-- `/sub-human gc` answers with where that command lives, like the other CLI commands.
-
 ## 0.5.7: your session, unguarded; fixes from a live run
 
 Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, and live runs of two seats with real Claude sessions. The wire protocol is still 5.
