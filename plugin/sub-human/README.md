@@ -251,6 +251,7 @@ Your agent panel gets one row named after the room, with the other people nested
 - **↑ then Enter** goes back up a level.
 - Rows are read-only views. If you type into one, it answers `read-only row — type in main with @room` and nothing is posted.
 - After `--resume` or `--continue`, your rows come back by themselves within a few seconds.
+- Each row is a background agent, so Claude Code's line after each turn reads **"Waiting for N background agents to finish"** (N counts your rows) in place of "Worked for 12s". This is expected: your prompt is free and nothing is stuck. `"showTurnDuration": false` in your own settings hides both.
 
 ### The row status (opt-in)
 
@@ -269,8 +270,6 @@ The plugin never writes it for you, and it can't set it itself (Claude Code give
 Two things change with the move. The conversation now runs under Claude Code's background daemon, so closing the terminal does not end it (`/exit` in it does). And the daemon passes on only some environment variables: a session started with `SUB_HUMAN_HOME` set in the shell loses it there, so the moved session no longer sees your rooms. Put `SUB_HUMAN_HOME` in the `env` of your own Claude Code settings instead if you use the agent view. When that happens, the moved session says so as it starts (the folder its conversation sat in, also after a `/sub-human leave`: sub-human notes the folder in the session's transcript when you join, in a line shown only in the ctrl+o view), and `/sub-human` there opens no room in the default folder and joins none that folder lacks. To go back, in a terminal: `claude stop <short id>` (the moved session runs in the background, and `claude --resume` refuses it until it is stopped), then `SUB_HUMAN_HOME=<your folder> claude --resume <session id>` and `/sub-human`; the notice gives both lines with the ids and the folder filled in. Or set the `env` entry for next time.
 
 To look at the room session without moving your session, use `claude logs <id>` in another terminal (below).
-
-While the rows run, Claude Code prints **"✻ Waiting for N background agents to finish"** after each turn, where N counts your rows. This is expected. Your prompt is still free, and nothing is stuck. Setting `"showTurnDuration": false` in your own settings hides the line, along with "Worked for 12s". The plugin never writes your settings.
 
 ## The room session
 
