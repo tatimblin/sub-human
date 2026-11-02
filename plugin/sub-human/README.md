@@ -43,7 +43,7 @@ sub-human has no server and no telemetry: nothing goes to its author or any thir
 /sub-human join https://…/vole-8126#… 4829  # on their machine: the line, the PIN after it, and they're in
 ```
 
-`/sub-human help` lists every command (words after it are ignored). In a room, a bare `/sub-human` says who is here and how to invite.
+`/sub-human help` lists every command (words after it are ignored). In a room, a bare `/sub-human` says who is here and how to invite. The CLI's commands (`tasks`, `who`, `read`, `show`, `plan`, `verify`, … see **The `sub-human` CLI**) are not `/sub-human` ones: `/sub-human tasks` says where it runs (ask your Claude, or the CLI in a terminal) and takes no seat; to sit as someone called `tasks`, type `/sub-human --as tasks`. Changing your name in the same room (`/sub-human erin`) logs `alice left (now erin)`.
 
 ## Join: one command
 

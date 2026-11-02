@@ -111,6 +111,34 @@ test('commands: NAME [ROOM], ROOM, join ROOM and the bare command take a seat; a
   assert.equal(as(`bob ${w.code}`).kind, 'joined', 'the same seat again: already joined');
 });
 
+test('commands: a CLI command (/sub-human tasks) says where it runs and takes no seat by that name; --as still can', t => {
+  const w = new World({ alice: 'sleep', bob: 'sleep' }, { t });
+  const before = w.entries().length;
+  for (const args of ['tasks', 'Who', 'show abc123', `plan ${w.code}`]) {
+    for (const seat of [null, 'alice']) {
+      const a = run(w, args, { seat });
+      const verb = must(args.split(' ')[0]).toLowerCase();
+      assert.equal(a.kind, 'say', `${args} as ${seat}`);
+      assert.equal(text(a), `${verb} is a sub-human CLI command, not a /sub-human one: ask your Claude (it reads the room), or in a terminal: node ${PLUGIN.replace(/\/+$/, '')}/scripts/sub-human ${verb} · to sit as someone called ${verb}: /sub-human --as ${verb}`);
+    }
+  }
+  assert.match(text(run(w, 'listen', { seat: 'alice' })), /^listen is a sub-human CLI command, not a \/sub-human one: in a terminal: node \S+\/scripts\/sub-human listen · /);
+  assert.equal(must(w.lib(() => identity.resolveBySession(w.sid.alice))).name, 'alice', 'still alice');
+  assert.equal(w.entries().length, before, 'nothing logged: no join, no leave');
+  // not reserved: a seat already called tasks (an older version let it) can still join, and --as takes the name
+  assert.ok(!identity.RESERVED.includes('tasks'));
+  const as = run(w, '--as tasks', { seat: 'bob' });
+  assert.equal(as.kind, 'joined', text(as));
+  assert.match(text(as), new RegExp(`^joined ${w.code} as tasks`));
+});
+
+test('commands: every CLI command is a /sub-human verb (reserved) or a CLI verb (/sub-human answers where it runs)', async () => {
+  const { COMMANDS } = await import('../lib/cli/main.ts');
+  const { CLI_VERBS } = await import('../lib/commands/join.ts');
+  for (const c of COMMANDS) assert.ok(identity.VERBS.includes(c) !== CLI_VERBS.includes(c), `${c}: in exactly one list`);
+  for (const c of CLI_VERBS) assert.ok(COMMANDS.includes(c), `${c} is no CLI command`);
+});
+
 test('commands: the room\'s Claude agent session binds its seat and takes no other command; a room Claude seat is refused', t => {
   const w = new World({ alice: 'sleep', claude: 'sleep' }, { t });
   assert.match(text(run(w, 'bob', { roomClaudeAgent: true })), /this session runs the room's Claude agent/);

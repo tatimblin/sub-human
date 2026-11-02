@@ -438,6 +438,8 @@ const viaCli = (fn: 'invite' | 'admit' | 'kick'): Command => a => process.exit(h
 Object.assign(cmds, { invite: viaCli('invite'), admit: viaCli('admit'), kick: viaCli('kick') });
 // listen without --start/--stop/--status is the daemon itself: it returns null and keeps running
 Object.assign(cmds, { listen: (a: readonly string[]) => { const c = listenLib().listen(a); if (c !== null) process.exit(c); } });
+/** Every command's name (lib/commands/join.ts CLI_VERBS must name each that is no /sub-human verb; a test checks). */
+const COMMANDS: readonly string[] = Object.freeze(Object.keys(cmds));
 
 /** Run one command: argv is what follows `sub-human` (scripts/sub-human passes process.argv.slice(2)). */
 function main([cmd, ...args]: string[] = process.argv.slice(2)): void {
@@ -453,4 +455,4 @@ function main([cmd, ...args]: string[] = process.argv.slice(2)): void {
   }
 }
 
-export { main };
+export { main, COMMANDS };
