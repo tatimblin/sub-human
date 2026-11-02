@@ -144,6 +144,12 @@ test('words: a room plan edit is said to be fine in plan mode, in the member tex
   assert.match(read('mcp/room-server.ts'), /Sub-human room plans\. edit \(fine in plan mode\), then EnterPlanMode/);
 });
 
+test('words: the README promises no "Exit plan mode?" right after an Esc: Esc ends the turn, and the next message brings it (live, 2.1.296)', () => {
+  const t = read(README);
+  assert.doesNotMatch(t, /After Esc or "Tell Claude what to change", your Claude leaves plan mode/);
+  assert.match(t, /Esc ends Claude's turn, so plan mode stays on and nothing more happens until you write again: your next message first brings that same question/);
+});
+
 test('words: a review is the plan view in the person\'s own session, never "a card" or "their terminal" (the card is only the hooks\' fallback)', () => {
   for (const f of [MEMBER, ROOM_CLAUDE_FILL, AGENT]) {
     const t = read(f);
