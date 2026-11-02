@@ -18,7 +18,7 @@ import { lib, cli, check, tilde, PLUGIN_ROOT, DOCTOR_HELLO_MS } from './doctor/c
 import { checkShim, sshVersion, checkSsh, sshHint } from './doctor/ssh.ts';
 import { diagnoseLink, linkChecks, helloProbe } from './doctor/links.ts';
 import { checkListener } from './doctor/listener.ts';
-import { roomChecks, verifyRoom, verifyText } from './doctor/rooms.ts';
+import { roomChecks, taskListChecks, verifyRoom, verifyText } from './doctor/rooms.ts';
 import { claudeVersion, checkClaude, checkDaemon, checkRoomClaudes, settingsFiles, checkHooks, checkRoomTools } from './doctor/claude.ts';
 import { bundle, redactor } from './doctor/redact.ts';
 import type { Check, CheckStatus, DoctorOptions, Report } from './types.ts';
@@ -75,7 +75,7 @@ async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, env = proc
   const links = await Promise.all(codes.map(code => diagnoseLink(code, { quick, timeoutMs, env })));
   if (!codes.length) checks.push(check({ id: 'links', status: 'info', title: 'connections', detail: 'none to a room hosted on another machine' }));
   for (const d of links) checks.push(...linkChecks(d));
-  checks.push(...roomChecks());
+  checks.push(...roomChecks(), ...taskListChecks());
   checks.push(...checkRoomClaudes());
   const cv = claudeVersion(env);
   const cl = checkClaude({ version: cv, quick, env });
@@ -159,5 +159,5 @@ async function main(args: readonly string[], { write = (s: string) => { process.
 
 export {
   diagnose, format, bundle, redactor, helloProbe, checkListener, checkRoomClaudes, linkChecks,
-  checkNode, checkClaude, checkDaemon, sshHint, main, parseArgs, DOCTOR_HELLO_MS, roomChecks, verifyRoom, verifyText,
+  checkNode, checkClaude, checkDaemon, sshHint, main, parseArgs, DOCTOR_HELLO_MS, roomChecks, taskListChecks, verifyRoom, verifyText,
 };

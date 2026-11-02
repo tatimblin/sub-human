@@ -59,7 +59,7 @@ const YOU_HINT = (d: string) => `"${d}" still has the example's placeholder: put
 /** The CLI's commands that are no /sub-human verb (lib/cli/main.ts COMMANDS; a test keeps the two in step). They are not
  * RESERVED: identity.join refuses a reserved name on every join, so a seat already called "show" or "tasks" would be
  * locked out of its own room. `/sub-human tasks` answers cliHint instead; `/sub-human --as tasks` is still that name. */
-export const CLI_VERBS: readonly string[] = ['read', 'show', 'who', 'tasks', 'plan', 'verify', 'link', 'listen', 'serve', 'tail', 'agent-statusline'];
+export const CLI_VERBS: readonly string[] = ['read', 'show', 'who', 'tasks', 'plan', 'verify', 'gc', 'link', 'listen', 'serve', 'tail', 'agent-statusline'];
 const READS: readonly string[] = ['read', 'show', 'who', 'tasks', 'plan', 'verify'];
 /** What `/sub-human VERB …` answers for a CLI command: where it runs, never a seat taken under that name. */
 function cliHint(verb: string, root: string): Answer {

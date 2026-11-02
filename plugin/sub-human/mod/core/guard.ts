@@ -28,6 +28,8 @@ const READ_CLI = /^\s*(?:[\w./~-]*\/)?sub-human\s+(?:read|who|tasks|show|verify)
 const READ_DOCTOR = /^\s*(?:[\w./~-]*\/)?sub-human\s+doctor(?:\s+(?:--quick|--json|--timeout\s+\d+))*\s*$/;
 /** doctor that changes things: the person runs it. */
 const DOCTOR_WRITES = /(?:^|[\s;&|(`'"/])sub-human\s+doctor\b[^;&|\n]*--(?:fix|bundle)(?![\w-])/;
+/** gc --yes deletes old room task lists: the person runs it (without --yes it only lists them). */
+const GC_WRITES = /(?:^|[\s;&|(`'"/])sub-human\s+gc\b[^;&|\n]*--yes(?![\w-])/;
 const ENV_NAMES = /\bSUB_HUMAN_HOME\b/;
 /** The CLI commands a person runs in their own shell: an invite, letting a machine in or out, the link daemon, the room server, the web listener. */
 const PERSON_CLI = /(?:^|[\s;&|(`'"/])sub-human\s+(?:invite|admit|kick|listen|link|serve)(?![\w-])/;
@@ -498,6 +500,7 @@ const withDefaults = (cmd: string): string => cmd.replace(/\$\{[A-Za-z_][A-Za-z0
 function verdictOf(cmd: string, ctx: GuardCtx): string | null {
   if (READ_CLI.test(cmd) || READ_DOCTOR.test(cmd)) return null;
   if (DOCTOR_WRITES.test(cmd)) return DOCTOR_WHY;
+  if (GC_WRITES.test(cmd)) return GC_WHY;
   if (PERSON_CLI.test(cmd) || LOGIN_SERVE.test(cmd)) return 'it makes an invite, lets a machine in or out, or speaks for the room\'s connection: the person does that in their own session (/sub-human invite, admit or kick) or in a terminal outside Claude Code, never with !, which would put an invite and its PIN into this conversation';
   if (ENV_NAMES.test(cmd)) return 'it names the store location variable (SUB_HUMAN_HOME)';
   if (DOT_HOME.test(cmd)) return 'it touches the room store (~/.sub-human)';
@@ -519,6 +522,8 @@ function verdictOf(cmd: string, ctx: GuardCtx): string | null {
 
 /** bashVerdict's reason for doctor --fix / --bundle: denyText gives it its own text (the store is not what it is about). */
 export const DOCTOR_WHY = 'doctor --fix and --bundle change or write files';
+/** bashVerdict's reason for gc --yes: denyText gives it its own text too. */
+export const GC_WHY = 'gc --yes deletes old room task lists';
 
 /** `SUB_HUMAN_HOME=<home> ` when home (absolute) is not the default ~/.sub-human, so a terminal acts on this folder
  *  (lib/text.ts homePrefix is the same rule, for node); '' otherwise. */
@@ -538,6 +543,10 @@ export const denyText = (why: string, root: unknown, homes: { home?: unknown; us
   if (why === DOCTOR_WHY) {
     return `ROOM-GUARD: sub-human ${why} (the shim, the home's modes, a bundle file), so they are the person's step: ${
       known ? `they run \`${homeEnv(homes.home, homes.userHome)}node ${root}/scripts/sub-human doctor --bundle\` (or --fix) ` : 'they run it '}in a terminal outside Claude Code. In a session, /sub-human doctor is the read-only check.`;
+  }
+  if (why === GC_WHY) {
+    return `ROOM-GUARD: sub-human ${why} in Claude Code's tasks folder, so it is the person's step: ${
+      known ? `they run \`${homeEnv(homes.home, homes.userHome)}node ${root}/scripts/sub-human gc --tasks --yes\` ` : 'they run it '}in a terminal outside Claude Code. Without --yes, gc --tasks only lists them.`;
   }
   return `${MSG} (Denied: ${why}.) Use the room MCP tools${known ? `, or \`${root}/scripts/sub-human read|who|tasks|show\`` : ''}.`;
 };

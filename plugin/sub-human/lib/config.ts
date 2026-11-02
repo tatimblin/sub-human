@@ -187,6 +187,7 @@ export const FORK_RECORD_WAIT_MS = 3000;     // SUB_HUMAN_FORK_WAIT_MS: session-
 export const ROWS_TTL_MS: number = 7 * 24 * 60 * 60_000;
 export const GC_EVERY_MS: number = 6 * 60 * 60_000;           // at most one sweep of the home this often (<home>/gc.json)
 export const GC_BUDGET_MS = 250;                      // a sweep stops when it has run this long; the next one goes on
+export const TASKS_GC_EVERY_MS: number = 24 * 60 * 60_000;    // a sweep looks at Claude Code's tasks/ at most this often (<home>/gc-task-lists.json)
 
 // ---------- room log integrity (lib/room/{store,validate,render}.ts) ----------
 export const ENTRY_TEXT_MAX_BYTES: number = 16 * 1024; // an entry's text, UTF-8 bytes (validate)

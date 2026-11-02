@@ -11,10 +11,14 @@
  *                                    room-tasks:CODE warns while the room session's task list is not written
  *                                    (members.claude.tasks_off: lib/cc/tasks.ts check said no)
  *   verifyText(v) -> string          one room's verdict, for the CLI
+ *   taskListChecks({jobs?}) -> [Check]   task-lists, info, while Claude Code's tasks/ holds room task lists no room
+ *                                    here uses (lib/gc.ts staleTaskLists, legacy too): how many, and
+ *                                    `sub-human gc --tasks`, which lists them (--yes deletes)
  */
-import { check, cli } from './check.ts';
+import { check, cli, lib } from './check.ts';
 import type { Check } from '../types.ts';
 import type { RoomCode } from '../../brand.ts';
+import type { StaleOpts } from '../../gc.ts';
 import * as store from '../../room/store.ts';
 
 
@@ -72,4 +76,10 @@ export function roomChecks(): Check[] {
     out.push(check({ id: `room:${code}`, status: bad ? 'fail' : 'pass', title: `room ${code}`, detail: verifyText(v), fix: bad ? `the room's log was written outside sub-human: tell the room, and keep a copy (${cli(`verify ${code}`)} lists it); the people's own lines are the verified ones` : undefined }));
   }
   return out;
+}
+
+export function taskListChecks({ jobs }: { jobs?: StaleOpts['jobs'] } = {}): Check[] {
+  let n = 0;
+  try { n = lib('gc.ts').staleTaskLists({ legacy: true, ...(jobs ? { jobs } : {}) }).lists.length; } catch { return []; }
+  return n ? [check({ id: 'task-lists', status: 'info', title: 'task lists', detail: `${n} old room task list${n === 1 ? '' : 's'} · ${cli('gc --tasks')}` })] : [];
 }

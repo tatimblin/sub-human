@@ -24,6 +24,7 @@ import type * as VerdictMod from '../../cc/verdict.ts';
 import type * as ConfigMod from '../../config.ts';
 import type * as LibEnvMod from '../../env.ts';
 import type * as IdentityMod from '../../identity.ts';
+import type * as GcMod from '../../gc.ts';
 import type * as LinksMod from '../../room/links.ts';
 import type * as LinkStateMod from '../../room/link-state.ts';
 import type * as EnvelopeMod from '../../room/envelope.ts';
@@ -53,6 +54,7 @@ interface Libs {
   'config.ts': typeof ConfigMod;
   'env.ts': typeof LibEnvMod;
   'identity.ts': typeof IdentityMod;
+  'gc.ts': typeof GcMod;
   'room/links.ts': typeof LinksMod;
   'room/link-state.ts': typeof LinkStateMod;
   'room/envelope.ts': typeof EnvelopeMod;
