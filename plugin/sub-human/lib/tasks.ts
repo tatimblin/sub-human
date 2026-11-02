@@ -19,7 +19,8 @@
  *   openRoomTask(store) / closeRoomTask(store)   the room task: written with the room's first task request (or
  *       openRoomTask), completed by the reaper at close (lib/room-claude.ts), never by a member
  *   repair(store) -> {wrote, removed, skipped?}  project the log again, under the tasks lock (every health tick on the
- *       host: the room session's tail, and a member's while the room session is down: lib/tail.ts), after the task
+ *       host: the room session's tail, and a member's while the room session is down: lib/tail.ts; none once the room
+ *       is closing, so a list the reaper deleted stays deleted), after the task
  *       store's preflight (lib/room/task-files.ts preflight: while it fails, members.claude.tasks_off says why and
  *       nothing is projected; once it passes, this projection writes the list again)
  *   reqOf(e), requestText(req), isRoomTask(t, code?)
@@ -30,8 +31,9 @@
  * Code's list reset (every task completed: every file deleted) from firing.
  *
  * At close only the room task completes. A task still open stays open in the log, the truth: nobody finished it, and a
- * room that opens again goes on with it. Its native file is the room session's view, not a record: lib/gc.ts deletes
- * the room's list (sh-CODE) when it sets the closed room aside.
+ * room that opens again goes on with it. Its native file is the room session's view, not a record: the reaper deletes
+ * the room's list (sh-CODE) once the room session is gone (lib/room-claude.ts reap); one the reaper kept goes when
+ * lib/gc.ts sets the closed room aside, or with Claude Code's retention sweep (contract task-list-retention).
  *
  * Log entries (room.ts stores the caller's task `id` as `task_id`, since `id` is the entry's own id):
  *   task_req (via agent): {kind:'task_req', from = by = requester, text, op, task_id, subject, detail, evidence, owner, suggest, plan?, version?}
@@ -44,6 +46,7 @@ import { clip, NAME_RE } from './text.ts';
 import * as config from './config.ts';
 import * as room from './room.ts';
 import * as taskFiles from './room/task-files.ts';
+import * as identity from './identity.ts';
 import { msgOf } from './errors.ts';
 import { RoomError, PLAN_NAME_RE } from './room/validate.ts';
 import type { FoldedTask, Task, TaskReq } from './types-app.ts';
@@ -327,6 +330,8 @@ function closeRoomTask(store: RoomStore): FoldedTask | null {
  * take turns. */
 function repair(store: RoomStore): Projected {
   return store.lock('tasks', () => {
+    // a closing room's list is the reaper's: one it deleted is not made again (a closed room is never joined again)
+    if (identity.roomClosing(store.code)) return { wrote: [], removed: [], skipped: 'the room is closing' };
     const off = taskFiles.preflight(store.code);
     if (off) return { wrote: [], removed: [], skipped: off };
     return taskFiles.project(store.code, foldAll(room.open(store.code, { store }).readRecent()));

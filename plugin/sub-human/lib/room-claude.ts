@@ -15,7 +15,8 @@
  * holds: lib/seats.ts ensureRoomClaude) records the room session's native task list directory (members.claude.tasks_dir:
  * <its config dir>/tasks/sh-CODE) and makes it, so the session's task view watches a directory that exists (contract
  * task-ui-watch), and runs the task store's preflight (lib/room/task-files.ts preflight: members.claude.tasks_off); the tasks, the room task first, are written there as they are asked for (lib/tasks.ts apply). Those
- * task files are the only thing written under the config dir; nothing there is ever deleted.
+ * task files are the only thing written under the config dir, and reap deletes their folder once the room session is
+ * gone (lib/room/task-files.ts remove: only a folder that is all the plugin's for this room, with no lock held).
  *
  * Host only: claimSpawn, reapDetached and watchdog do nothing on a machine that does not hold the room, so the
  * room's Claude runs only where it was spawned.
@@ -32,8 +33,9 @@
  *
  * Stopping: reap, after the last member leaves, waits graceMs (a quick rejoin cancels), claims claude.closing under
  * the lock (one reaper wins), completes the room task itself (lib/tasks.ts closeRoomTask: no model), stops the
- * job and any strays, ends the bound process if `claude stop` left it up (ensureGone), and marks the room's Claude
- * stopped and left. watchdog (the room Claude's tail and join's sweep) claims closing and starts the
+ * job and any strays, ends the bound process if `claude stop` left it up (ensureGone), deletes the room session's
+ * native task list once that process is gone (under the room's tasks lock; the log keeps every task, and a closing
+ * room is never joined or repaired again), and marks the room's Claude stopped and left. watchdog (the room Claude's tail and join's sweep) claims closing and starts the
  * reaper once no member has been live for orphanMs: members that crashed leave no SessionEnd, so this is what closes
  * their room. The orphan start is the latest left_at when every member left cleanly, else the first observation
  * (claude.orphan_since, cleared once a member is live again). A room whose room Claude never started (spawn_error, no
@@ -246,6 +248,9 @@ async function ensureGone(rec: Pick<Member, 'pid' | 'pid_start' | 'machine'> | n
   }
   return !mine();
 }
+/** Test seam: reap ends the bound process through this object, which a test may stub (test/room-claude.node-test.ts);
+ * an ES module's own exports cannot be replaced from outside. */
+const seam: { ensureGone: typeof ensureGone } = { ensureGone };
 
 function stopJob(job: string | null | undefined): boolean {
   if (!job || job === PENDING) return false;
@@ -416,7 +421,11 @@ async function reap(code: RoomCode, {
   stopStrays(code, [job]); // a job the record lost would outlive the room
   // `claude stop` answering is not the process gone (live: the room's Claude, its MCP server and tail ran on for
   // minutes after stopped_at): the bound process, by its pid and start time, ends here if it is still up
-  await ensureGone(identity.readMembers(code).claude ?? o);
+  const gone = await seam.ensureGone(identity.readMembers(code).claude ?? o);
+  // the room session's native list ends with it, while closing still keeps a start and a repair from making it again;
+  // a list it keeps (not all the plugin's, a lock held, the process not gone) Claude Code's retention sweep takes
+  // (contract task-list-retention). The log keeps every task (sub-human tasks reads tasks.json)
+  if (gone) { try { room.open(code).store.lock('tasks', () => taskFiles.remove(code)); } catch { /* it stays */ } }
   identity.updateRoomClaude(code, () => ({ stopped_at: new Date().toISOString() }));
   try { identity.leave(code, identity.ROOM_CLAUDE, {}); } catch { /* already left */ }
   try { identity.unindexClosed(code); } catch { /* the next look at the open rooms drops it */ }
@@ -458,7 +467,7 @@ function watchdog(code: RoomCode, { now = clock.now(), orphanMs = orphanMsDefaul
 
 export {
   PENDING, pluginDirFor, spawnPlan, command, needsSpawn, claimSpawn, openTaskList, spawn, stopStrays, watchStart, startDetached, reap,
-  reapDetached, watchdog, taskListId, tasksDir,
+  reapDetached, watchdog, taskListId, tasksDir, seam,
 };
 
 if (import.meta.main) {
