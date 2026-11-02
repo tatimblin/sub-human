@@ -11,6 +11,7 @@ import type { HookInput, HookRun } from './helpers.ts';
 import * as proposal from '../../lib/proposal.ts';
 import * as room from '../../lib/room.ts';
 import * as plans from '../../lib/plans.ts';
+import * as config from '../../lib/config.ts';
 import * as edit from '../../lib/consent/edit.ts';
 import * as guard from '../../mod/core/guard.ts';
 import type { PlanEdit } from '../../lib/types-app.ts';
@@ -298,6 +299,33 @@ test('edit (live 2026-10-17): plan mode left with shift+tab before ExitPlanMode 
   assert.match(r.stdout, /The edited text is kept at .*: read it with the Read tool/);
   // B (live validation): the draft can be followed: the Read guard leaves <home>/drafts alone (only secrets are denied)
   assert.equal(guard.readVerdict([draft], { home: w.home, realHome: w.home }), null);
+  assert.equal(w.entries().filter(e => e.kind === 'plan').length, 1, 'nothing stored');
+});
+
+test('edit (#16): an open edit the timeout drops keeps its edited text as a draft and tells the person; an unedited one keeps none', () => {
+  const w = new World({ alice: 'act', bob: 'sleep' });
+  w.lib(() => plans.put(storeOf(w), { base: 0, text: '# v1\n' }, { by: 'bob' }));
+  const file = planFile(w, 'alice', '# mine\n');
+  const draft = path.join(w.home, 'drafts', w.code, 'alice-room.md');
+  const stale = () => w.lib(() => proposal.writeEdit(seat(w, 'alice'), { ...must(proposal.readEdit(seat(w, 'alice'))), at: Date.now() - config.REVIEW_STALE_MS - 1000 }));
+  // in plan mode still (a prompt there drops nothing itself): only the timeout ends the edit
+  const prompt = () => w.hook('prompt', ev('UserPromptSubmit', null, { permission_mode: 'plan', prompt: 'ok' }), { as: 'alice' });
+  openEdit(w, 'alice', 1);
+  attach(w, 'alice', file);
+  stale();
+  prompt();
+  assert.equal(fs.existsSync(draft), false, 'nothing edited: no draft');
+  assert.equal(fs.readFileSync(file, 'utf8'), '# mine\n');
+  assert.equal(editOf(w, 'alice'), null);
+  openEdit(w, 'alice', 1);
+  attach(w, 'alice', file);
+  write(file, '# v1\n\n2. left too long\n', 'a stale edit');
+  stale();
+  const r = prompt();
+  assert.equal(fs.readFileSync(draft, 'utf8'), 'Summary of this edit: a stale edit\n\n# v1\n\n2. left too long\n');
+  assert.match(r.stdout, /your edit of room plan room was not stored .* kept at /);
+  assert.equal(fs.readFileSync(file, 'utf8'), '# mine\n', 'the person\'s own plan is back');
+  assert.equal(editOf(w, 'alice'), null);
   assert.equal(w.entries().filter(e => e.kind === 'plan').length, 1, 'nothing stored');
 });
 
