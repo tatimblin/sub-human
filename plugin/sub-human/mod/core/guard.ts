@@ -189,6 +189,56 @@ function placeWord(w: string, base: string | null, userHome: string | null): str
 const unquote = (w: string): string => w.replace(/["'`\\]/g, '');
 const isRecursiveGrep = (args: string[]): boolean => args.some(a => /^-[a-zA-Z]*[rR]/.test(a) || a === '--recursive' || a === '--dereference-recursive' || /^--directories=recurse$/.test(a) || a === 'recurse');
 
+/** One command's words as pathVerdict reads them: unquoted, a redirect's operator dropped. */
+const wordsOf = (seg: string): string[] => seg.trim().split(/\s+/).filter(Boolean).map(unquote).map(w => w.replace(/^\d*[<>]+&?/, '')).filter(Boolean);
+
+/** The index of the tool's word in words: past assignments, wrappers and their options, and timeout's duration. */
+function toolAt(words: string[]): number {
+  let i = 0;
+  for (let w = words[0]; w !== undefined; w = words[++i]) {
+    if (!(/^\w+=/.test(w) || WRAPPERS.has(w) || /^-/.test(w) && i > 0 && WRAPPERS.has(words[i - 1] ?? ''))) break;
+  }
+  const next = words[i];
+  if (next !== undefined && words[i - 1] === 'timeout' && /^\d/.test(next)) i++;
+  return i;
+}
+const toolOf = (words: string[], i: number): string => (words[i] || '').split('/').pop() || '';
+
+/** find's primaries whose value is a pattern it matches names against (or -printf's format), never a path it reads. */
+const FIND_PATTERNS = new Set(['-name', '-iname', '-path', '-ipath', '-wholename', '-iwholename', '-regex', '-iregex', '-lname', '-ilname', '-printf']);
+/** find's primaries that run a command: its words up to a ; or + word. */
+const FIND_EXEC = new Set(['-exec', '-execdir', '-ok', '-okdir']);
+
+/** find's words (its args): how many starting points come first (the words before its expression's first word that
+ * starts with -, ! or (), the words the path rules see (the starting points and every word of the expression but a
+ * pattern: a -newer reference and a -fprint file are paths), and each command it runs (-exec and the like). */
+function findWords(args: string[]): { starts: number; paths: string[]; execs: string[][] } {
+  const first = args.findIndex(a => /^[-!(]/.test(a));
+  const paths: string[] = [], execs: string[][] = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i] ?? ''; // i is in range
+    if (FIND_PATTERNS.has(a)) { i++; continue; }
+    if (a === '-fprintf') { paths.push(args[i + 1] ?? ''); i += 2; continue; } // its file is a path, its format a pattern
+    if (FIND_EXEC.has(a)) {
+      const end = args.findIndex((w, j) => j > i && (w === ';' || w === '+'));
+      execs.push(args.slice(i + 1, end < 0 ? args.length : end));
+      i = end < 0 ? args.length : end;
+      continue;
+    }
+    paths.push(a);
+  }
+  return { starts: first < 0 ? args.length : first, paths, execs };
+}
+
+/** Whether sep (one of the pieces' separators) is a word the shell passes on to the command, as find's expression
+ * spells its \( \) and -exec's \; (or '(' quoted alone): after an odd run of backslashes, or between two quotes. */
+function passedOn(before: string, sep: string, after: string): boolean {
+  if (!/^[();]$/.test(sep)) return false;
+  if (/(?:^|[^\\])(?:\\\\)*\\$/.test(before)) return true;
+  const q = /(?:^|\s)(['"])$/.exec(before)?.[1];
+  return q !== undefined && after.startsWith(q) && /^(?:\s|$)/.test(after.slice(1));
+}
+
 /** The reason a command reaches a protected path, or null (see the header: lexical, and it follows cd). */
 export function pathVerdict(cmd: string, ctx: GuardCtx = {}): string | null {
   const prot = protectedPaths(ctx);
@@ -209,27 +259,28 @@ export function pathVerdict(cmd: string, ctx: GuardCtx = {}): string | null {
     }
     return null;
   };
-  for (const seg of cmd.split(/\|\||&&|[;|&\n()]/)) {
-    const words = seg.trim().split(/\s+/).filter(Boolean).map(unquote).map(w => w.replace(/^\d*[<>]+&?/, '')).filter(Boolean);
-    let i = 0;
-    for (let w = words[0]; w !== undefined; w = words[++i]) {
-      if (!(/^\w+=/.test(w) || WRAPPERS.has(w) || /^-/.test(w) && i > 0 && WRAPPERS.has(words[i - 1] ?? ''))) break;
-    }
-    const next = words[i];
-    if (next !== undefined && words[i - 1] === 'timeout' && /^\d/.test(next)) i++;
-    const tool = (words[i] || '').split('/').pop() || '';
-    const args = words.slice(i + 1);
+  /** One command's words: the reason it reaches a protected path, or null. */
+  const command = (words: string[]): string | null => {
+    const i = toolAt(words);
+    const tool = toolOf(words, i);
+    let args = words.slice(i + 1);
     if (tool === 'cd' || tool === 'pushd') {
       const target = args.find(a => !a.startsWith('-')) ?? '~';
       const why = check(target, base); // a cd into the store is the store
       if (why) return why;
       const [first = target] = braceExpand(target); // never empty
       base = placeWord(first, base, userHome);
-      continue;
+      return null;
     }
     const walker = WALKERS.has(tool) || (SHELLS.has(tool) && args.includes('-c')) || (['grep', 'egrep', 'fgrep'].includes(tool) && isRecursiveGrep(args))
       || (['cp', 'scp'].includes(tool) && args.some(a => /^-[a-zA-Z]*[rRa]/.test(a)));
     if (walker) walks = true;
+    const find = tool === 'find' ? findWords(args) : null;
+    if (find) {
+      // each command find runs is a command of its own, from where find stands
+      for (const run of find.execs) { const at = base; const why = commands(run.join(' ')); base = at; if (why) return why; }
+      args = find.paths;
+    }
     const reads = READERS.has(tool);
     let plain = 0;
     for (const a of args) {
@@ -241,9 +292,32 @@ export function pathVerdict(cmd: string, ctx: GuardCtx = {}): string | null {
       if (why) return why;
     }
     // a walker with no path word (rg PATTERN, grep -r PATTERN, find -name X) walks where it stands
-    const [arg0] = args;
-    if (walker && base && (tool === 'find' ? arg0 === undefined || arg0.startsWith('-') : plain <= 1)) { const why = check('.', base); if (why) return why; }
-  }
+    if (walker && base && (find ? find.starts === 0 : plain <= 1)) { const why = check('.', base); if (why) return why; }
+    return null;
+  };
+  /** A command line's commands, split where the shell may end one (also inside quotes: a sh -c string's commands). */
+  const commands = (text: string): string | null => {
+    const parts = text.split(/(\|\||&&|[;|&\n()])/); // pieces, a separator between each two
+    for (let k = 0; k < parts.length; k += 2) {
+      let seg = parts[k] ?? '';
+      const more: string[][] = [];
+      const head = wordsOf(seg);
+      if (toolOf(head, toolAt(head)) === 'find') {
+        // find's \( \) and \; are words of its expression: the pieces they split off are its expression too, and each is
+        // also read as a command of its own (after find's) unless it starts as an expression's piece does (-, ! or empty)
+        for (; k + 2 < parts.length && passedOn(seg, parts[k + 1] ?? '', parts[k + 2] ?? ''); k += 2) {
+          const piece = parts[k + 2] ?? '';
+          seg += (parts[k + 1] ?? '') + piece;
+          const words = wordsOf(piece);
+          if (words[0] !== undefined && !/^[-!]/.test(words[0])) more.push(words);
+        }
+      }
+      for (const words of [wordsOf(seg), ...more]) { const why = command(words); if (why) return why; }
+    }
+    return null;
+  };
+  const why = commands(cmd);
+  if (why) return why;
   // paths inside other words: an interpreter's code, a quoted string
   for (const m of cmd.matchAll(EMBEDDED)) { const why = check(unquote(m[0]), base); if (why) return why; }
   const [above] = aboves;
