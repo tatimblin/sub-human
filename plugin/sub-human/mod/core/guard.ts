@@ -88,6 +88,8 @@ export const needsCwd = (command: unknown): boolean => {
  * its words name, which the path rules see). */
 const WALKERS = new Set(['rg', 'ag', 'ack', 'find', 'fd', 'fdfind', 'tar', 'bsdtar', 'zip', '7z', 'rsync', 'xargs', 'python', 'python3',
   'node', 'nodejs', 'bun', 'deno', 'perl', 'ruby', 'php', 'eval', 'osascript', 'pax', 'cpio']);
+/** Interpreters: walkers by the paths their words and code name, never by where they are run from (#10). */
+const INTERPRETERS = new Set(['python', 'python3', 'node', 'nodejs', 'bun', 'deno', 'perl', 'ruby', 'php', 'osascript']);
 /** Shells: walkers only with -c (a script they run as code). cp and scp: only recursive. */
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'fish']);
 /** Tools whose plain words are paths they read (their words resolve against the cwd, or the last cd). */
@@ -260,10 +262,12 @@ export function pathVerdict(cmd: string, ctx: GuardCtx = {}): string | null {
       base = placeWord(first, base, userHome);
       return null;
     }
-    const walker = WALKERS.has(tool) || (SHELLS.has(tool) && args.includes('-c')) || (['grep', 'egrep', 'fgrep'].includes(tool) && isRecursiveGrep(args))
+    const find = tool === 'find' ? findWords(args) : null;
+    // a find that only lists names (no -exec/-ok, no -delete) reads no file: it may start above the store, as a Glob may
+    const listsNames = !!find && !find.execs.length && !args.includes('-delete');
+    const walker = (WALKERS.has(tool) && !listsNames) || (SHELLS.has(tool) && args.includes('-c')) || (['grep', 'egrep', 'fgrep'].includes(tool) && isRecursiveGrep(args))
       || (['cp', 'scp'].includes(tool) && args.some(a => /^-[a-zA-Z]*[rRa]/.test(a)));
     if (walker) walks = true;
-    const find = tool === 'find' ? findWords(args) : null;
     if (find) {
       // each command find runs is a command of its own, from where find stands
       for (const run of find.execs) { const at = base; const why = commands(run.join(' ')); base = at; if (why) return why; }
@@ -280,7 +284,7 @@ export function pathVerdict(cmd: string, ctx: GuardCtx = {}): string | null {
       if (why) return why;
     }
     // a walker with no path word (rg PATTERN, grep -r PATTERN, find -name X) walks where it stands
-    if (walker && base && (find ? find.starts === 0 : plain <= 1)) { const why = check('.', base); if (why) return why; }
+    if (walker && base && !INTERPRETERS.has(tool) && (find ? find.starts === 0 : plain <= 1)) { const why = check('.', base); if (why) return why; }
     return null;
   };
   /** A command line's commands, split where the shell may end one (also inside quotes: a sh -c string's commands). */

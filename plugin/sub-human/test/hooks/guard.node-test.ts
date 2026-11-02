@@ -216,7 +216,10 @@ test('guard (live verify, stage 8c): Bash that reaches the home by a glob, a ?, 
   deny('cd .. && grep -r PRIVATE .');
   deny('grep -r PRIVATE ..');
   deny('ssh-keygen -y -f /tmp/shv4/home/keys/a/bob.key');
-  deny('find / -name "*.key"');
+  deny('find / -name "*.key" -delete');
+  deny('find / -name "*.key" | xargs cat');
+  // a find that only lists names reads no file, as a Glob (#30)
+  allow('find / -name "*.key"');
   // what a session does every day, Claude Code's own history and transcripts included (the person's, as anywhere)
   allow('cat ~/.claude/history.jsonl');
   allow('grep 4829 ~/.claude/projects/*/*.jsonl');
@@ -247,13 +250,22 @@ test('#30: find\'s patterns are not paths; its starting points, reference files,
   allow('find ~/repos \\( -name a -o -name b \\)');
   allow("find ~/repos '(' -name a -o -path '*/x/*' ')' -print");
   allow("find ~/repos -name '*.ts' -exec grep -l foo {} \\;");
+  // a find that only lists names may start above the store (#30)
+  allow('find / -name "*.key"');
+  allow('find ~ -name build.sbt');
+  allow('find \\( -name x \\)');
   // what stays denied
-  deny('find / -name "*.key"');
   deny('find /tmp -name "*.key" -exec cat {} +', { ...ctx, home: '/tmp/shv4/home', cwd: '/tmp/w' });
   deny("find ~/repos -path '*/.sub-human/keys/*'");
   deny('find ~ -name x | xargs cat');
-  deny('find ~ -name build.sbt');
-  deny('find \\( -name x \\)');
+  deny('find ~ -name x -delete');
+  deny('find ~/.sub-human/keys -name x');
+  // an interpreter is placed by the paths it names, not by where it runs (#10)
+  allow("python3 -c 'print(1)'");
+  allow("node -e 'console.log(1)'");
+  allow('python3 script.py');
+  deny("python3 -c \"import os; print(list(os.walk('/')))\"");
+  deny("python3 -c \"print(open('/Users/me/.sub-human/keys/k').read())\"");
   // a non-default home, reached by a relative word the string rules cannot see
   const other: GuardCtx = { home: '/Users/me/sh/home', userHome: '/Users/me', cwd: '/Users/me/sh/work' };
   allow('find ~/repos -name ../home/keys/k', other);
@@ -266,10 +278,11 @@ test('#30: find\'s patterns are not paths; its starting points, reference files,
   deny('find ~/repos \\( -name x -exec cat ../home/keys/k \\; \\)', other);
   deny("find ~/repos -name x -exec sh -c 'cd ..; cat home/keys/k' \\;", other);
   deny('find ~/repos -name x -execdir cat ../home/keys/k +', other);
-  deny('find .. -name x', other);
+  allow('find .. -name x', other);
+  deny('find .. -name x -exec cat {} +', other);
   // a \; the shell does not pass on to find ($'\\' is a word of its own): what follows is still a command
   deny("find ~/repos -name $'\\\\'; cat -name ../home/keys/k", other);
-  deny("find . -name $'\\\\'; cd /tmp", { ...other, cwd: '/Users/me/sh' });
+  deny("find . -name $'\\\\'; cd home", { ...other, cwd: '/Users/me/sh' });
 });
 
 test('guard (live verify, stage 8c): Read of the module lease (sessions/) is denied; the prompt history and transcripts read', () => {
