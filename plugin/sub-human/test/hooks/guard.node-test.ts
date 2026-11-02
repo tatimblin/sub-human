@@ -236,6 +236,42 @@ test('guard (live verify, stage 8c): Bash that reaches the home by a glob, a ?, 
   allow('ls ~/.claude/projects');
 });
 
+test('#30: find\'s patterns are not paths; its starting points, reference files, -fprint files and -exec commands are', () => {
+  const ctx: GuardCtx = { home: '/Users/me/.sub-human', userHome: '/Users/me', cwd: '/Users/me', claudeDir: '/Users/me/.claude', sid: 'aaaaaaaa-0000-4000-8000-000000000001' };
+  const deny = (cmd: string, at: GuardCtx = ctx) => assert.ok(g.bashVerdict(cmd, at), `should deny: ${cmd}`);
+  const allow = (cmd: string, at: GuardCtx = ctx) => assert.equal(g.bashVerdict(cmd, at), null, `should allow: ${cmd}`);
+  // the live false denies: a pattern was placed against the cwd (~), and its * matched .sub-human
+  allow("find ~/repos -name x -not -path '*/node_modules/*'");
+  allow("find ~/repos -maxdepth 8 -path '*/project/target/active.json' -newermt '2026-10-28 16:50' -printf '%TT %p\\n'");
+  allow("find . -name '*.ts' -path '*/lib/*'", { ...ctx, cwd: '/Users/me/repos/app' });
+  allow('find ~/repos \\( -name a -o -name b \\)');
+  allow("find ~/repos '(' -name a -o -path '*/x/*' ')' -print");
+  allow("find ~/repos -name '*.ts' -exec grep -l foo {} \\;");
+  // what stays denied
+  deny('find / -name "*.key"');
+  deny('find /tmp -name "*.key" -exec cat {} +', { ...ctx, home: '/tmp/shv4/home', cwd: '/tmp/w' });
+  deny("find ~/repos -path '*/.sub-human/keys/*'");
+  deny('find ~ -name x | xargs cat');
+  deny('find ~ -name build.sbt');
+  deny('find \\( -name x \\)');
+  // a non-default home, reached by a relative word the string rules cannot see
+  const other: GuardCtx = { home: '/Users/me/sh/home', userHome: '/Users/me', cwd: '/Users/me/sh/work' };
+  allow('find ~/repos -name ../home/keys/k', other);
+  deny('find ~/repos -newer ../home/keys/k', other);
+  deny('find ~/repos -anewer ../home/keys/k', other);
+  deny('find ~/repos -samefile ../home/keys/k', other);
+  deny('find ~/repos -fprint ../home/keys/out', other);
+  deny("find ~/repos -fprintf ../home/keys/out '%p'", other);
+  deny('find ~/repos -name x -exec cat ../home/keys/k \\;', other);
+  deny('find ~/repos \\( -name x -exec cat ../home/keys/k \\; \\)', other);
+  deny("find ~/repos -name x -exec sh -c 'cd ..; cat home/keys/k' \\;", other);
+  deny('find ~/repos -name x -execdir cat ../home/keys/k +', other);
+  deny('find .. -name x', other);
+  // a \; the shell does not pass on to find ($'\\' is a word of its own): what follows is still a command
+  deny("find ~/repos -name $'\\\\'; cat -name ../home/keys/k", other);
+  deny("find . -name $'\\\\'; cd /tmp", { ...other, cwd: '/Users/me/sh' });
+});
+
 test('guard (live verify, stage 8c): Read of the module lease (sessions/), the prompt history and this session\'s transcript is denied', () => {
   const ctx: GuardCtx = { home: '/tmp/shv4/home', realHome: '/tmp/shv4/home', userHome: '/Users/me', claudeDir: '/Users/me/.claude', sid: 'aaaaaaaa-0000-4000-8000-000000000001' };
   assert.ok(g.readVerdict(['/tmp/shv4/home/sessions/mods/aaaaaaaa-0000-4000-8000-000000000001.json'], ctx));
