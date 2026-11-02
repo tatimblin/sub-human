@@ -16,6 +16,7 @@ import * as store from '../lib/room/store.ts';
 import { FsRoomStore } from '../lib/room/store.ts';
 import { MirrorRoomStore } from '../lib/room/store-mirror.ts';
 import * as links from '../lib/room/links.ts';
+import * as tasks from '../lib/tasks.ts';
 import * as linkMod from '../lib/remote/link.ts';
 import { roomsDir } from '../lib/home.ts';
 import type { Room } from '../lib/room.ts';
@@ -296,6 +297,20 @@ test('cli tasks: the room list from lib/tasks.ts list(code), plain and --json', 
   r = cli(['tasks', '--json', '--room', code]);
   assert.deepEqual((JSON.parse(r.stdout) as { id: string }[]).map(t => t.id), ['2', '3']);
   assert.equal(cli(['tasks', '--room', 'nope-0000']).status, 1);
+});
+
+test('cli tasks: an unowned task shows its suggested owner; an owned one does not (#13)', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  R = room.open(code);
+  // applied on the host, as a member's task tool asks: tasks.json keeps the add's suggestion
+  assert.ok(tasks.apply(R.store, { op: 'add', subject: 'handler tests', suggest: 'gwen' }, { by: 'alice' }).ok);
+  assert.ok(tasks.apply(R.store, { op: 'add', subject: 'docs', suggest: 'bob' }, { by: 'alice' }).ok);
+  assert.ok(tasks.apply(R.store, { op: 'claim', id: '3' }, { by: 'bob' }).ok);
+  assert.deepEqual(tasks.list(code).map(t => t.suggest), ['gwen', 'bob'], 'a claim keeps it, as the log does');
+  const r = cli(['tasks']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, '#2  open         -    handler tests  (suggested: gwen)\n#3  in progress  bob  docs\n', 'only while nobody owns it');
 });
 
 test('cli link CODE --forget: a copy out of step (FORK) is forgotten as the FORK message says, without --force', () => {

@@ -250,6 +250,10 @@ test('chatLines: group-chat lines with no ids, exact words, multi-line and long 
   assert.deepEqual(C(R.append({ kind: 'signoff', proposal_hash: H1 }, { via: 'human', from: 'bob' })), ['bob agreed to the proposal']);
   assert.deepEqual(C(sys('decision', { proposal_hash: H1, text: `agreed: alice, bob (proposal ${H1})` }, 'room')), ['room: decided (agreed: alice, bob)']);
   assert.deepEqual(C(sys('task', { op: 'update', id: 2, subject: 'docs', owner: 'alice', status: 'in_progress' })), ['room: task "docs" in_progress, owner you']);
+  // an add with a suggested owner: the suggested person's line says so; nobody else's names it (#19)
+  const sug = sys('task', { op: 'add', id: 3, subject: 'handler tests', status: 'pending', suggest: 'alice' });
+  assert.deepEqual(C(sug), ['room: task "handler tests" pending, suggested for you (claim it to take it)']);
+  assert.deepEqual(C(sug, 'bob'), ['room: task "handler tests" pending']);
   // with the log, an answer and a decision name their proposal by title (with two pending, which one was decided)
   const all = R.readAll();
   const W = (e: Entry, viewer = 'alice') => room.chatLines(e, { viewer, entries: R.readAll() });
