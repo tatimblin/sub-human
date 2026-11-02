@@ -6,12 +6,23 @@
  *
  *   dirOf(code, members?) -> path    the list's directory: the one recorded at spawn (members.claude.tasks_dir, the
  *                                    room session's config dir), else cc tasksDir('sh-CODE') from this process's env
- *   project(code, tasks, {dir?}) -> {wrote, removed}   every task as a file (lib/cc/tasks.ts NativeTask), written only
- *                                    when its text differs, atomically (a temp name that never ends in .json, then
+ *   project(code, tasks, {dir?, now?}) -> {wrote, removed}   every task as a file (lib/cc/tasks.ts NativeTask), written
+ *                                    only when its text differs, atomically (a temp name that never ends in .json, then
  *                                    rename), under Claude Code's own list lock and each task's lock (lib/cc/tasklock.ts);
  *                                    a deleted task's file goes; .highwatermark is raised to the highest id, so a
  *                                    TaskCreate never reuses one. A file the log does not know is left alone
- *                                    {skipped: reason} too, writing nothing, while members.claude.tasks_off is set
+ *                                    {skipped: reason} too, writing nothing, while members.claude.tasks_off is set.
+ *                                    Then the folder is touched once it is TASK_LIST_TOUCH_MS old (cc touchList), so
+ *                                    Claude Code's retention sweep (contract task-list-retention) never takes the list
+ *                                    of a room that is open (repair projects every health tick). The list lock's mkdir
+ *                                    already freshens the folder; the touch keeps that from resting on the lock's layout
+ *   ownedDir(code, members?) -> path | null   the list's directory when it is the plugin's to delete: named sh-CODE
+ *                                    under a tasks/ folder, a real directory, holding only plain .lock, .highwatermark
+ *                                    and N.json files, each N.json stamped for this room (metadata.room), and no lock
+ *                                    dir (.lock.lock, N.json.lock) fresher than Claude Code's stale age. Else null
+ *   remove(code, {members?}) -> {removed, why?}   ownedDir, then rm -r: the reaper's (lib/room-claude.ts reap), once
+ *                                    the room session is gone, and gc's when it sets a hosted room aside (lib/gc.ts).
+ *                                    Never inside withListLock (it makes the folder)
  *   nextId(code, tasks, {dir?}) -> string   one more than the highest of the log's ids, the files' and the mark
  *   preflight(code, {dir?}) -> reason | null   lib/cc/tasks.ts check on the list's directory, recorded as
  *                                    members.claude.tasks_off (set, or cleared once it passes again; written only
@@ -28,8 +39,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as ccEnv from '../cc/env.ts';
 import * as ccTasks from '../cc/tasks.ts';
-import { withListLock, withTaskLock } from '../cc/tasklock.ts';
+import { withListLock, withTaskLock, STALE_MS } from '../cc/tasklock.ts';
 import { writeFileAtomic } from '../io.ts';
+import { TASK_LIST_TOUCH_MS } from '../config.ts';
+import { errCode } from '../errors.ts';
 import * as identity from '../identity.ts';
 import type { NativeTask, NativeStatus } from '../cc/tasks.ts';
 import type { FoldedTask } from '../types-app.ts';
@@ -72,7 +85,7 @@ function native(code: RoomCode, t: FoldedTask, all: readonly FoldedTask[]): Nati
 /** What project did: the ids written and removed; skipped, the recorded reason it wrote nothing. */
 interface Projected { wrote: string[]; removed: string[]; skipped?: string }
 
-function project(code: RoomCode, tasks: readonly FoldedTask[], { dir }: { dir?: string } = {}): Projected {
+function project(code: RoomCode, tasks: readonly FoldedTask[], { dir, now = Date.now() }: { dir?: string; now?: number } = {}): Projected {
   const wrote: string[] = [], removed: string[] = [];
   let ms: Members | null = null;
   try { ms = identity.readMembers(code); } catch { /* no record: the default dir */ }
@@ -99,7 +112,47 @@ function project(code: RoomCode, tasks: readonly FoldedTask[], { dir }: { dir?: 
     const top = Math.max(0, ...live.map(t => Number(t.id)));
     if (top) ccTasks.raiseMark(dir, top);
   });
+  ccTasks.touchList(dir, { now, olderMs: TASK_LIST_TOUCH_MS });
   return { wrote, removed };
+}
+
+/** What may be in a list the plugin deletes: Claude Code's list lock target, the mark, and task files. */
+const PLAIN = /^(?:\.lock|\.highwatermark|\d+\.json)$/;
+/** Claude Code's lock dirs (lib/cc/tasklock.ts): the list's and a task's. */
+const LOCK_DIR = /^(?:\.lock|\d+\.json)\.lock$/;
+
+/** The list's directory and whether the plugin may delete it (see the header), with why not. */
+function owned(code: RoomCode, members: Members | null | undefined, now: number): { dir: string } | { why: string } {
+  const dir = dirOf(code, members);
+  if (path.basename(dir) !== ccEnv.sanitizeId(listId(code)) || path.basename(path.dirname(dir)) !== 'tasks') return { why: 'not a room list' };
+  let st: fs.Stats;
+  try { st = fs.lstatSync(dir); } catch { return { why: 'none' }; } // never made, or Claude Code removed it
+  if (!st.isDirectory()) return { why: 'not a directory' };
+  let names: string[];
+  try { names = fs.readdirSync(dir); } catch { return { why: 'unreadable' }; }
+  for (const n of names) {
+    let e: fs.Stats;
+    try { e = fs.lstatSync(path.join(dir, n)); } catch { continue; } // gone meanwhile
+    if (LOCK_DIR.test(n) && e.isDirectory()) {
+      if (now - e.mtimeMs < STALE_MS) return { why: `a lock is held (${n})` };
+      continue;
+    }
+    if (!PLAIN.test(n) || !e.isFile()) return { why: `not the plugin's (${n})` };
+    if (n.endsWith('.json') && ccTasks.readTask(dir, n.slice(0, -'.json'.length))?.metadata?.room !== code) return { why: `not this room's (${n})` };
+  }
+  return { dir };
+}
+
+function ownedDir(code: RoomCode, members?: Members | null, { now = Date.now() }: { now?: number } = {}): string | null {
+  const o = owned(code, members, now);
+  return 'dir' in o ? o.dir : null;
+}
+
+function remove(code: RoomCode, { members, now = Date.now() }: { members?: Members | null; now?: number } = {}): { removed: boolean; why?: string } {
+  const o = owned(code, members, now);
+  if (!('dir' in o)) return { removed: false, why: o.why };
+  try { fs.rmSync(o.dir, { recursive: true, force: true }); } catch (e) { return { removed: false, why: errCode(e) ?? 'rm failed' }; }
+  return { removed: true };
 }
 
 function nextId(code: RoomCode, tasks: readonly FoldedTask[], { dir = dirOf(code) }: { dir?: string } = {}): string {
@@ -119,5 +172,5 @@ function preflight(code: RoomCode, { dir, env = process.env }: { dir?: string; e
   return reason;
 }
 
-export { listId, dirOf, project, nextId, preflight };
+export { listId, dirOf, project, ownedDir, remove, nextId, preflight };
 export type { Projected };

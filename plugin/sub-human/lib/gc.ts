@@ -14,10 +14,10 @@
  *                 links.ts: a mirror's link goes with `sub-human link --forget`; nor the host's records of the
  *                 machines linked to it, the room's remote/links document), and nothing in its directory changed
  *                 for ROOM_GC_MS (SUB_HUMAN_ROOM_GC_MS; 30 days)
- *       tasks     with a room hosted here set aside, its native task list goes (roomTaskList: the room session's
- *                 sh-CODE folder under Claude Code's tasks/, only when every task file in it is the plugin's for that
- *                 room). The files are a projection of the log (lib/room/task-files.ts): a room brought back from
- *                 aside projects them again. Tasks still open at close stay open in the log, the truth
+ *       tasks     with a room hosted here set aside, its native task list goes if the reaper kept it (lib/room/
+ *                 task-files.ts ownedDir: the room session's sh-CODE folder under Claude Code's tasks/, only when
+ *                 everything in it is the plugin's for that room). The files are a projection of the log: a room
+ *                 brought back from aside projects them again. Tasks still open at close stay open in the log, the truth
  *       aside    the folders set aside (`link --forget`'s rooms/CODE.forgotten-TIME, GC's rooms/CODE.gc-TIME with
  *                 keys/CODE.gc-TIME), deleted ROOM_GC_MS after they were set aside
  *       sessions  lib/identity.ts pruneSessionIndexes (by-sid and by-pid records of ended sessions, SESSION_INDEX_TTL_MS)
@@ -37,7 +37,6 @@ import { obj, str, opt } from './decode.ts';
 import { GC_BUDGET_MS, GC_EVERY_MS } from './config.ts';
 import { envMs } from './env.ts';
 import type { RoomCode } from './brand.ts';
-import type { Members } from './room/types.ts';
 import type * as RowsMod from './rows.ts';
 import type * as TaskFilesMod from './room/task-files.ts';
 
@@ -45,27 +44,6 @@ import type * as TaskFilesMod from './room/task-files.ts';
 const rows = lazy<typeof RowsMod>(import.meta.url, './rows.ts');
 // the native task list's place: only a sweep that sets a hosted room aside needs it
 const taskFiles = lazy<typeof TaskFilesMod>(import.meta.url, './room/task-files.ts');
-
-/** A native task file, as far as the sweep reads it: the room the plugin wrote it for (task-files.ts native). */
-const TASK_ROOM = obj({ metadata: opt(obj({ room: opt(str) })) });
-
-/**
- * The native task list of a room hosted here (lib/room/task-files.ts dirOf: the folder recorded at the room session's
- * spawn, else <config dir>/tasks/sh-CODE), the directory to delete once the room is closed for good, or null. Only a
- * folder named exactly sh-CODE under a tasks/ folder, and only when every task file in it is one the plugin wrote for
- * this room (metadata.room CODE): a list that holds anything else is left alone.
- */
-function roomTaskList(code: RoomCode, ms: Members): string | null {
-  const dir = taskFiles().dirOf(code, ms);
-  if (path.basename(dir) !== `sh-${code}` || path.basename(path.dirname(dir)) !== 'tasks') return null;
-  let names: string[];
-  try { names = fs.readdirSync(dir); } catch { return null; } // none (never started, or Claude Code removed it)
-  for (const n of names.filter(f => f.endsWith('.json'))) {
-    const t = readJson(path.join(dir, n), TASK_ROOM, null);
-    if (!t || t.metadata?.room !== code) return null;
-  }
-  return dir;
-}
 
 /** <home>/gc.json: when the last sweep started, and the room after which the next one goes on. */
 /** <home>/gc.json: when the last sweep began, and the room it stopped after. */
@@ -105,7 +83,7 @@ function sweep({ now = Date.now(), budgetMs = GC_BUDGET_MS, force = false, keep 
       if (hostLinked(code)) continue;
       // a mirror never had a list here (the room session runs on the host): a sh-CODE beside it is another home's
       let list: string | null = null;
-      try { list = identity.isHost(code) ? roomTaskList(code, ms) : null; } catch { /* the list stays */ }
+      try { list = identity.isHost(code) ? taskFiles().ownedDir(code, ms) : null; } catch { /* the list stays */ }
       store.setAsideRoom(code, now);
       out.rooms.push(code);
       if (list) { try { fs.rmSync(list, { recursive: true, force: true }); out.tasks.push(list); } catch { /* it stays */ } }

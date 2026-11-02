@@ -14,6 +14,9 @@
  *   markOf(dir) -> number; raiseMark(dir, id)   the high-water mark (0: none); raised, never lowered
  *   check(dir, {env?}) -> {ok: true} | {ok: false, reason}   whether the room's list can still be the file store Claude
  *                                        Code reads (below); the plugin projects nothing while it says no
+ *   touchList(dir, {now, olderMs}) -> boolean   the list's folder made fresh (utimes) when its own mtime is older
+ *                                        than olderMs: Claude Code's retention sweep removes a tasks/ folder by that
+ *                                        mtime alone (contract task-list-retention)
  *   storeV5On(env?) -> boolean           the key-value task backend's gate is on
  *   tasksOffByVerdict() -> reason | null   the per-version verdict turned the tasks feature off
  */
@@ -174,4 +177,19 @@ function check(dir: string, { env = process.env }: { env?: NodeJS.ProcessEnv } =
   return { ok: true };
 }
 
-export { taskJson, readTask, fileIds, markOf, raiseMark, check, storeV5On, tasksOffByVerdict };
+/**
+ * Claude Code's retention sweep (at most daily) runs `rm -r` on every folder under <config>/tasks whose own mtime is
+ * older than cleanupPeriodDays, whatever it holds: a list whose folder is touched within that never goes.
+ * @cc tengu_retention_sweep
+ * @stability incidental
+ */
+function touchList(dir: string, { now = Date.now(), olderMs }: { now?: number; olderMs: number }): boolean {
+  try {
+    if (now - fs.statSync(dir).mtimeMs <= olderMs) return false;
+    const t = new Date(now);
+    fs.utimesSync(dir, t, t);
+    return true;
+  } catch { return false; } // none: nothing to keep
+}
+
+export { taskJson, readTask, fileIds, markOf, raiseMark, touchList, check, storeV5On, tasksOffByVerdict };
