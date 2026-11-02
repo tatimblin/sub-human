@@ -2,6 +2,23 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 0.5.6: fixes from the issue sweep
+
+Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, and a live run of two seats with real Claude sessions. The wire protocol is still 5.
+
+### Fixed
+- **A link with no daemon behind it reads "✕ not running"**, not "✕ offline" or "⇄ online" (#17). A state record or link document with no pid was read as a live daemon's; only the daemon writes them, always with its pid. A record still saying online after a kill -9 already read not running; a test now holds it (#12).
+- **An open room-plan edit dropped by the timeout keeps its text** as a draft, as one left by leaving plan mode does, and the person is told where (#16).
+- **`sub-human tasks` shows a task's suggested owner** (`(suggested: NAME)`) while nobody owns it (#13). `tasks.json` keeps `suggest`; a room's file gets it on its next task change.
+- **The bypass-permissions note on a `/sub-human` join reads the mode the join ran in**, not the last mode the module saw (#14).
+- The demo's join-line reader no longer fails when the pane wraps exactly at a space (#18).
+
+### Changed
+- The task line's "suggested for you (claim it to take it)" is written in `render.ts`, not added by the tail (#19). It is still shown only to the suggested person, and not when they asked for it themselves.
+
+### Docs
+- The README links [Introducing sub-human: subagents, for humans](https://tristantimblin.dev/txt/subhumans/).
+
 ## 0.5.5: join a shared machine as yourself (`invite --forward`)
 
 Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, `claude plugin validate --strict`, and the Docker lab's `forward` scenario on real OpenSSH (a second account, forwarding off then on). Not yet run: a live two-account check on a real shared machine. The wire protocol is still 5; joining over `--forward` needs 0.5.5 on the joiner's side (an older one refuses the flag).

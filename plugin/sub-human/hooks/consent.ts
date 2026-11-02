@@ -545,6 +545,17 @@ function authorCheck(me: Identity, plan: string, o: edit.PutOutcome): edit.PutOu
   return h ? { ...o, check: h } : o;
 }
 
+/** One of the edit's effects run, all but a put (editStep reduces its answer in turn). */
+function editEffect(me: Identity, e: Exclude<edit.EditEffect, { do: 'put' }>): void {
+  if (e.do === 'save') proposal.writeEdit(me, e.edit);
+  else if (e.do === 'restorePlan') proposal.restorePlan({ phase: 'exiting', file: e.file, backup: e.backup, restored: false });
+  else if (e.do === 'blankPlan') blankPlan(e.file);
+  else if (e.do === 'seed') writeFileAtomic(e.file, seedText(me, e.plan, e.base));
+  else {
+    try { fs.mkdirSync(path.dirname(e.file), { recursive: true }); writeFileAtomic(e.file, e.text); } catch (err) { c.logError(err, 'consent: plan draft'); }
+  }
+}
+
 /** The seat's edit, reduce one event, run the effects (a put's answer reduced in turn), store the edit, write the say.
  * Returns whether it said anything (Stop and a prompt then skip the review's step). */
 function editStep(input: ConsentIn, me: Identity, ev: edit.EditEvent): boolean {
@@ -554,18 +565,11 @@ function editStep(input: ConsentIn, me: Identity, ev: edit.EditEvent): boolean {
   let say = cur.say;
   const queue: edit.EditEffect[] = [...cur.effects];
   for (let e = queue.shift(); e; e = queue.shift()) {
-    if (e.do === 'save') proposal.writeEdit(me, e.edit);
-    else if (e.do === 'restorePlan') proposal.restorePlan({ phase: 'exiting', file: e.file, backup: e.backup, restored: false });
-    else if (e.do === 'blankPlan') blankPlan(e.file);
-    else if (e.do === 'seed') writeFileAtomic(e.file, seedText(me, e.plan, e.base));
-    else if (e.do === 'keepDraft') {
-      try { fs.mkdirSync(path.dirname(e.file), { recursive: true }); writeFileAtomic(e.file, e.text); } catch (err) { c.logError(err, 'consent: plan draft'); }
-    } else if (e.do === 'put') {
-      cur = edit.reduce(state, { type: 'put', outcome: putOutcome(me, e), ...(ev.type === 'exit' && ev.showCheck ? { showCheck: true } : {}) });
-      state = cur.edit;
-      say = cur.say;
-      queue.push(...cur.effects);
-    }
+    if (e.do !== 'put') { editEffect(me, e); continue; }
+    cur = edit.reduce(state, { type: 'put', outcome: putOutcome(me, e), ...(ev.type === 'exit' && ev.showCheck ? { showCheck: true } : {}) });
+    state = cur.edit;
+    say = cur.say;
+    queue.push(...cur.effects);
   }
   if (JSON.stringify(state) !== JSON.stringify(start)) { if (state) proposal.writeEdit(me, state); else proposal.clearEdit(me); }
   if (cur.notice) unsent.push(cur.notice);
@@ -591,13 +595,18 @@ function attachedPlan(input: ConsentIn): { file: string | null; text: string | n
 
 /** An edit open in this session (none while a review is: the plan tool refuses an edit then). One left longer than
  * REVIEW_STALE_MS is dropped here, its plan file restored; so is one not yet stored once plan mode's edit is off for the
- * session's Claude Code (lib/cc/verdict.ts off plan-edit: the plan tool's put instead), so plan mode stays the person's. */
+ * session's Claude Code (lib/cc/verdict.ts off plan-edit: the plan tool's put instead), so plan mode stays the person's.
+ * A drop is the reducer's prompt outside plan mode: an unstored edit's text is kept as a draft and the person told where
+ * (the model is not: this event may be another handler's to answer). */
 function openEdit(me: Identity, sid: unknown): PlanEdit | null {
   const e = proposal.readEdit(me);
   if (!e || proposal.readReview(me)) return null;
   if (Date.now() - (Number(e.at) || 0) > config.REVIEW_STALE_MS || (e.phase === 'open' && verdict.off('plan-edit', { sid }))) {
-    if (e.file && !e.restored) proposal.restorePlan({ phase: 'exiting', file: e.file, backup: typeof e.backup === 'string' ? e.backup : null, restored: false });
+    const step = edit.reduce(e, { type: 'prompt', mode: undefined, ...promptFacts(me) }); // the facts read before the restore
+    for (const x of step.effects) if (x.do !== 'put') editEffect(me, x);
     proposal.clearEdit(me);
+    const kept = step.effects.find(x => x.do === 'keepDraft');
+    if (kept) unsent.push(edit.EDIT_SAY.draftDropped(e.plan, kept.file)); // the reducer's notice says plan mode was left
     return null;
   }
   return e;

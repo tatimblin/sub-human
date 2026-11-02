@@ -55,6 +55,8 @@ export interface Task {
   status: string;
   owner: string | null;
   blockedBy: string[];
+  /** the suggested owner an add named (kept after a claim, as the log keeps it; shown only while nobody owns it) */
+  suggest?: string;
   /** the room plan it was added from, and that plan's version then (lib/tasks.ts fold) */
   plan?: string;
   version?: number;

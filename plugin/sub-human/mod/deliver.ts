@@ -13,7 +13,7 @@ import {
 } from './core/deliver.ts';
 import { parseHello, localHello, homeOf, sidIndex } from './core/seat.ts';
 import { homeMark } from './core/constants.ts';
-import { answersItself, joinPayload, readReply, answerOf, cancels, leftName, goneAfter, failLogLine, appendCapped, MODULE_LOG, CONFIRM_AFTER_MS } from './core/command.ts';
+import { answersItself, bypassNoted, joinPayload, readReply, answerOf, cancels, leftName, goneAfter, failLogLine, appendCapped, MODULE_LOG, CONFIRM_AFTER_MS } from './core/command.ts';
 import { shimArgv, shimEnv, toClassic, asNotice, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { restoreNeeded } from './core/prefilter.ts';
 import { mergeClassic } from './core/prompt.ts';
@@ -634,8 +634,10 @@ export function registerDeliver(on: On): void {
       joined = { sid, context: reply.context };
       try {
         const r = await next(e);
+        // the bypass note as the mode the command ran in: its expansion (the hook below, inside next) noted it (#14)
+        const lines = bypassNoted(reply.lines, facts.of(sid).permission_mode);
         // after the command's own row, which Claude Code adds once this hook returns
-        const confirm = () => { for (const line of reply.lines) $.ui.log(line); };
+        const confirm = () => { for (const line of lines) $.ui.log(line); };
         try { $.clock.after(CONFIRM_AFTER_MS, confirm); } catch { confirm(); }
         return r;
       } finally { joined = null; }

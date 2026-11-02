@@ -18,9 +18,10 @@
  *                                    lastError, rttMs, queued, pid, detail, at} (lib/room/links.ts). Read defensively:
  *                                    any field may be absent
  *   the mirror's document `link`     {pid, state, since, reason?, code?} (lib/remote/link.ts status)
- * A record whose daemon is gone (its pid, else the document's, is not alive) reads 'offline' with lastError "the link
- * daemon is not running" and dead: true, never what the dead daemon last wrote (a kill -9 leaves "online"); its since
- * is then the record's at when it said online (the last time it was known online). fork and stopped stay what they are.
+ * A record whose daemon is gone (its pid, else the document's, is not alive; with neither, no daemon wrote it) reads
+ * 'offline' with lastError "the link daemon is not running" and dead: true, never what the dead daemon last wrote (a
+ * kill -9 leaves "online"); its since is then the record's at when it said online (the last time it was known online).
+ * fork and stopped stay what they are.
  *
  *   read(code) -> State | null       null when this machine has no link to CODE (a room hosted here, or none); queued
  *       is the mirror's outbox file's count (the records' only as a fallback), so it shows while any post waits
@@ -98,7 +99,8 @@ function readLink(code: RoomCode): LinkState | null {
   try { f = links.readState(code); } catch { f = null; }
   if (f && typeof f === 'object' && STATES.has(f.state)) {
     const pid = num(f.pid);
-    const dead = pid ? !isAlive(pid) : !!(doc && doc.pid && !doc.running);
+    // the daemon writes its pid in every record (lib/remote/link.ts publish): none here or in the document, no daemon wrote it
+    const dead = pid ? !isAlive(pid) : doc?.pid ? !doc.running : true;
     const st: LinkState = clean({
       state: normalize(f.state, f.detail), since: str(f.since), attempt: num(f.attempt), lastError: str(f.lastError),
       lastReason: isReason(f.lastReason) ? f.lastReason : undefined, lastCode: str(f.lastCode), prevError: str(f.prevError),
@@ -113,7 +115,7 @@ function readLink(code: RoomCode): LinkState | null {
   }
   const queued = waiting(code, doc?.queued);
   if (!doc || !doc.state) return clean({ state: 'offline' as const, lastError: NOT_RUNNING, dead: true, queued, source: 'link-doc' as const });
-  const dead = !!(doc.pid && !doc.running);
+  const dead = !doc.running; // running: its pid lives (a document with no pid: no live daemon wrote it)
   const state = normalize(doc.state);
   const lastError = str(doc.reason) || (dead ? NOT_RUNNING : undefined);
   const lastReason = !dead && isReason(doc.why) ? doc.why : undefined;

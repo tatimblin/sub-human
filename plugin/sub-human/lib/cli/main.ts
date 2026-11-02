@@ -254,7 +254,9 @@ function tasksCmd(args: readonly string[]) {
     const subject = String(t.subject ?? '').replace(/\s+/g, ' ');
     // the room plan it came from, at the version it was added under (lib/tasks.ts after)
     const plan = t.plan && typeof t.version === 'number' ? `  [plan ${t.plan} v${t.version}]` : '';
-    console.log(`#${t.id}  ${word(t.status).padEnd(w)}  ${String(t.owner || '-').padEnd(o)}  ${subject}${plan}${blocked}`);
+    // the suggested owner an add named, while nobody owns it (lib/room/brief.ts says the same)
+    const suggest = !t.owner && t.suggest ? `  (suggested: ${t.suggest})` : '';
+    console.log(`#${t.id}  ${word(t.status).padEnd(w)}  ${String(t.owner || '-').padEnd(o)}  ${subject}${plan}${suggest}${blocked}`);
   }
 }
 

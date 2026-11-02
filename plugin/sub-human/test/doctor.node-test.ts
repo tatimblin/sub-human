@@ -81,7 +81,7 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   assert.match(fixOf(byId(rep, 'home')), /^SUB_HUMAN_HOME=\S+ node \S+\/scripts\/sub-human doctor --fix in a terminal/, 'the CLI by its path: none is on PATH');
   const lc = byId(rep, `link:${code}`);
   assert.equal(lc.status, 'warn', lc.detail);
-  assert.match(lc.detail, new RegExp(`^pipe ${hostHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · daemon not running · ✕ offline 2m · 2 queued · last error: no route to host · the host is up \\(it answered doctor in \\d+ ms; protocol here 5 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), host 5 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), speaking v5\\), but this machine's link to it is down`));
+  assert.match(lc.detail, new RegExp(`^pipe ${hostHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · daemon not running · ✕ not running \\(offline 2m\\) · 2 queued · last error: no route to host · the host is up \\(it answered doctor in \\d+ ms; protocol here 5 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), host 5 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), speaking v5\\), but this machine's link to it is down`));
   assert.match(fixOf(lc), /type \/sub-human in your session to start it again/, 'the daemon is not running');
   assert.doesNotMatch(lc.detail, /epoch|BatchMode/);
   const clock = byId(rep, `clock:${code}`);

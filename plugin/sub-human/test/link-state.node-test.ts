@@ -57,6 +57,8 @@ test('link-state: without the state file, the link document says it in the same 
   }
   setDoc({ pid: process.pid, state: 'offline', reason: 'no route' });
   assert.equal(must(ls.read(CODE)).lastError, 'no route');
+  setDoc({ state: 'online' });
+  assert.deepEqual([must(ls.read(CODE)).state, must(ls.read(CODE)).dead], ['offline', true], 'a document with no pid: no live daemon wrote it');
 });
 
 test('link-state: a daemon that died reads offline, whatever its last record said (a fork stays a fork)', async t => {
@@ -123,9 +125,27 @@ test('room row: the link leads while offline or connecting again and closes the 
   assert.equal(rows.rowText(code, { viewer: 'alice', ...o({ state: 'stopped', lastReason: 'ROOM_CLOSED' }) }), '✕ stopped · tasks 1 open');
   // read from the home when not given
   linked(t);
-  writeState({ state: 'offline', queued: 1 });
+  writeState({ state: 'offline', queued: 1, pid: process.pid });
   queue(1);
   assert.equal(rows.rowText(CODE, { viewer: 'alice', entries: [], members: {}, taskSummary: '' }), '✕ offline · 1 queued · 0 here');
+});
+
+test('link-state: a record with no pid, and no document\'s, no daemon wrote: not running, whatever state it says (#17)', t => {
+  linked(t);
+  for (const state of ['offline', 'online']) {
+    writeState({ state, since: new Date().toISOString(), lastError: 'no route to host' });
+    const st = must(ls.read(CODE), state);
+    assert.equal(st.dead, true, state);
+    assert.equal(st.state, 'offline', state);
+    assert.match(ls.indicator(st), /^✕ not running/, state);
+  }
+});
+
+test('room row: a record still saying online after its daemon died (kill -9) reads not running (#12)', async t => {
+  linked(t);
+  const at = new Date(Date.now() - 120_000).toISOString();
+  writeState({ state: 'online', since: at, attempt: 0, queued: 0, pid: await h.deadPid(), detail: 'online', at });
+  assert.equal(rows.rowText(CODE, { viewer: 'alice', entries: [], members: {}, taskSummary: '' }), '✕ not running (offline 2m) · 0 here');
 });
 
 test('agent statusline: the room row carries the link state', t => {
