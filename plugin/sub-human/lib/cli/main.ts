@@ -43,6 +43,7 @@ import * as linkState from '../room/link-state.ts';
 import { roomsDir } from '../home.ts';
 import { isObj } from '../decode.ts';
 import { envStr } from '../env.ts';
+import { taskWord } from '../text.ts';
 import { parse as parseArgs } from './args.ts';
 import type { FlagSpec, Parsed } from './types.ts';
 import type { MirrorRoomStore } from '../room/store-mirror.ts';
@@ -244,10 +245,8 @@ function tasksCmd(args: readonly string[]) {
   list = list.filter(t => t && !(t.metadata && t.metadata._internal));
   if (flags.json) return console.log(JSON.stringify(list));
   if (!list.length) return console.log(`(no tasks in room ${code})`);
-  // the rows' words (lib/tasks.ts summary: "tasks 3 open"): open, in progress, done
-  const words: Record<string, string> = { pending: 'open', in_progress: 'in progress', completed: 'done' };
-  const word = (s: unknown) => words[String(s)] || String(s || '');
-  const w = Math.max(...list.map(t => word(t.status).length));
+  // the rows' words (lib/text.ts taskWord, the room's notice line too): open, in progress, done
+  const w = Math.max(...list.map(t => taskWord(t.status).length));
   const o = Math.max(...list.map(t => String(t.owner || '-').length));
   for (const t of list) {
     const blocked = Array.isArray(t.blockedBy) && t.blockedBy.length ? `  (blocked by ${t.blockedBy.map((b: string | number) => '#' + b).join(',')})` : '';
@@ -256,7 +255,7 @@ function tasksCmd(args: readonly string[]) {
     const plan = t.plan && typeof t.version === 'number' ? `  [plan ${t.plan} v${t.version}]` : '';
     // the suggested owner an add named, while nobody owns it (lib/room/brief.ts says the same)
     const suggest = !t.owner && t.suggest ? `  (suggested: ${t.suggest})` : '';
-    console.log(`#${t.id}  ${word(t.status).padEnd(w)}  ${String(t.owner || '-').padEnd(o)}  ${subject}${plan}${suggest}${blocked}`);
+    console.log(`#${t.id}  ${taskWord(t.status).padEnd(w)}  ${String(t.owner || '-').padEnd(o)}  ${subject}${plan}${suggest}${blocked}`);
   }
 }
 

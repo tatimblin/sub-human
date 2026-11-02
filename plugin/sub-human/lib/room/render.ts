@@ -28,7 +28,7 @@ import { assertNever } from '../../mod/core/never.ts';
 import { ROOM_CLAUDE } from './members.ts';
 import { fold, proposals, answered, decided, approversOf, revises } from './consent.ts';
 import { NO_TRUST, unverified } from './trust.ts';
-import { oneLine } from '../text.ts';
+import { oneLine, taskWord } from '../text.ts';
 import * as clock from '../clock.ts';
 import { TAIL_MAX, TEXT_MAX, CHAT_WRAP, CHAT_MAX, PEER_CHAT_MAX, CHAT_LINES_MAX, PEER_LINES_MAX, CHAT_NEST, CHAT_BLANK, ROW_NOTICE_MS } from '../config.ts';
 import { envMs } from '../env.ts';
@@ -270,7 +270,8 @@ function chatBody(e: Entry, viewer: string | undefined, entries: readonly Readon
         : { head: chatWho(n, trust), text: t };
     case 'decision': return { head: 'room', text: decisionText(n, entries, viewer) };
     case 'task': {
-      const status = n.status ? ` ${n.status}` : '';
+      // the rows' words (open, in progress, done), as the tasks CLI says them
+      const status = n.status ? ` ${taskWord(n.status)}` : '';
       // an add naming the viewer as its suggested owner, by someone else: said to them alone; they claim it themselves
       const req = n.req && isList(entries) ? entries.find(x => x && x.id === n.req) : null;
       const mine = n.op === 'add' && !n.owner && !!viewer && n.suggest === viewer && !(req && (req.by || req.from) === viewer)

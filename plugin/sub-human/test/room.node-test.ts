@@ -249,19 +249,21 @@ test('chatLines: group-chat lines with no ids, exact words, multi-line and long 
   assert.deepEqual(C(R.append({ kind: 'objection', proposal_hash: H1, text: 'add the 400 test' }, { via: 'human', from: 'bob' })), ['bob objected to the proposal: add the 400 test']);
   assert.deepEqual(C(R.append({ kind: 'signoff', proposal_hash: H1 }, { via: 'human', from: 'bob' })), ['bob agreed to the proposal']);
   assert.deepEqual(C(sys('decision', { proposal_hash: H1, text: `agreed: alice, bob (proposal ${H1})` }, 'room')), ['room: decided (agreed: alice, bob)']);
-  assert.deepEqual(C(sys('task', { op: 'update', id: 2, subject: 'docs', owner: 'alice', status: 'in_progress' })), ['room: task "docs" in_progress, owner you']);
+  assert.deepEqual(C(sys('task', { op: 'update', id: 2, subject: 'docs', owner: 'alice', status: 'in_progress' })), ['room: task "docs" in progress, owner you']);
+  // the rows' words, as `sub-human tasks` says them (live: the notice read "pending", the CLI "open")
+  assert.deepEqual(C(sys('task', { op: 'update', id: 2, subject: 'docs', owner: 'alice', status: 'completed' })), ['room: task "docs" done, owner you']);
   // an add with a suggested owner: the suggested person's line says so; nobody else's names it (#19)
   const sug = sys('task', { op: 'add', id: 3, subject: 'handler tests', status: 'pending', suggest: 'alice' });
-  assert.deepEqual(C(sug), ['room: task "handler tests" pending, suggested for you (claim it to take it)']);
-  assert.deepEqual(C(sug, 'bob'), ['room: task "handler tests" pending']);
+  assert.deepEqual(C(sug), ['room: task "handler tests" open, suggested for you (claim it to take it)']);
+  assert.deepEqual(C(sug, 'bob'), ['room: task "handler tests" open']);
   // with the log, an answer and a decision name their proposal by title (with two pending, which one was decided)
   const all = R.readAll();
   const W = (e: Entry, viewer = 'alice') => room.chatLines(e, { viewer, entries: R.readAll() });
   // a suggestion the viewer asked for herself is not said back to her
   const ownAsk = R.append({ kind: 'task_req', op: 'add', subject: 'own tests', suggest: 'alice' }, { via: 'agent', from: 'alice' });
   const own = sys('task', { op: 'add', id: 4, subject: 'own tests', status: 'pending', suggest: 'alice', req: ownAsk.id });
-  assert.deepEqual(W(own), ['room: task "own tests" pending']);
-  assert.deepEqual(W(own, 'bob'), ['room: task "own tests" pending']);
+  assert.deepEqual(W(own), ['room: task "own tests" open']);
+  assert.deepEqual(W(own, 'bob'), ['room: task "own tests" open']);
   assert.deepEqual(W(must(all.find(x => x.kind === 'signoff'))), ['bob agreed to "cursor paging" (aaaaaa)']);
   assert.deepEqual(W(must(all.find(x => x.kind === 'objection'))), ['bob objected to "cursor paging" (aaaaaa): add the 400 test']);
   assert.deepEqual(W(must(all.find(x => x.kind === 'decision'))), ['room: "cursor paging" (aaaaaa) agreed (you, bob)']);

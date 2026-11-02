@@ -402,7 +402,7 @@ The room has one shared task list. The room session shows it as its native Claud
 |---|---|
 | `read [--room ROOM]` | The room log. |
 | `who [--room ROOM]` | Who this session is in its room; with `--room` (or in a terminal, with no seat), each person in that room. |
-| `tasks [--json] [--room ROOM]` | The room's shared task list (open, in progress, done: the rows' words); a task added from a room plan is tagged `[plan NAME vN]`. |
+| `tasks [--json] [--room ROOM]` | The room's shared task list (open, in progress, done: the rows' words, and the room's task lines; `--json` keeps the native `pending`, `in_progress`, `completed`); a task added from a room plan is tagged `[plan NAME vN]`. |
 | `plan [NAME] [--history] [--room ROOM]` | A room plan's current text, its versions and where its sign-off stands; with no NAME, each plan's line. |
 | `verify CODE` | A room's log checked: the hash chain over every segment and every person's line against the keys the room pins. Exit 1 when either fails. |
 | `invite [--room ROOM] [--ssh [USER@HOST[:PORT]]]` | An invite line (`/sub-human join DEST ROOM SECRET`) and its PIN apart, as `/sub-human invite` shows them; over ssh to this machine by default. |
