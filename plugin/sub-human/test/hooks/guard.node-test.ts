@@ -196,7 +196,7 @@ test('guard: hold is denied outside a row subagent, and left to Claude Code insi
 });
 
 test('guard (live verify, stage 8c): Bash that reaches the home by a glob, a ?, a brace, a cd, or a walker above it is denied', () => {
-  const ctx: GuardCtx = { home: '/tmp/shv4/home', realHome: '/private/tmp/shv4/home', userHome: '/Users/me', cwd: '/tmp/shv4/alice', claudeDir: '/Users/me/.claude', sid: 'aaaaaaaa-0000-4000-8000-000000000001' };
+  const ctx: GuardCtx = { home: '/tmp/shv4/home', realHome: '/private/tmp/shv4/home', userHome: '/Users/me', cwd: '/tmp/shv4/alice' };
   const deny = (cmd: string) => assert.ok(g.bashVerdict(cmd, ctx), `should deny: ${cmd}`);
   const allow = (cmd: string) => assert.equal(g.bashVerdict(cmd, ctx), null, `should allow: ${cmd}`);
   // the live finds: each printed a seat key's path or contents
@@ -217,12 +217,12 @@ test('guard (live verify, stage 8c): Bash that reaches the home by a glob, a ?, 
   deny('grep -r PRIVATE ..');
   deny('ssh-keygen -y -f /tmp/shv4/home/keys/a/bob.key');
   deny('find / -name "*.key"');
-  // Claude Code's history and this session's transcript: an invite line and its PIN can be in them
-  deny('cat ~/.claude/history.jsonl');
-  deny('grep 4829 ~/.claude/projects/*/*.jsonl');
-  deny('grep -r 4829 ~/.claude');
-  deny('tail -n 5 /Users/me/.claude/projects/-tmp-shv4/aaaaaaaa-0000-4000-8000-000000000001.jsonl');
-  // what a session does every day
+  // what a session does every day, Claude Code's own history and transcripts included (the person's, as anywhere)
+  allow('cat ~/.claude/history.jsonl');
+  allow('grep 4829 ~/.claude/projects/*/*.jsonl');
+  allow('grep -r 4829 ~/.claude');
+  allow('tail -n 5 /Users/me/.claude/projects/-tmp-shv4/aaaaaaaa-0000-4000-8000-000000000001.jsonl');
+  allow('ls -lt ~/.claude/projects/other/*.jsonl');
   allow('grep -r foo src');
   allow('cat /tmp/other/notes.txt');
   allow('ls /tmp');
@@ -237,7 +237,7 @@ test('guard (live verify, stage 8c): Bash that reaches the home by a glob, a ?, 
 });
 
 test('#30: find\'s patterns are not paths; its starting points, reference files, -fprint files and -exec commands are', () => {
-  const ctx: GuardCtx = { home: '/Users/me/.sub-human', userHome: '/Users/me', cwd: '/Users/me', claudeDir: '/Users/me/.claude', sid: 'aaaaaaaa-0000-4000-8000-000000000001' };
+  const ctx: GuardCtx = { home: '/Users/me/.sub-human', userHome: '/Users/me', cwd: '/Users/me' };
   const deny = (cmd: string, at: GuardCtx = ctx) => assert.ok(g.bashVerdict(cmd, at), `should deny: ${cmd}`);
   const allow = (cmd: string, at: GuardCtx = ctx) => assert.equal(g.bashVerdict(cmd, at), null, `should allow: ${cmd}`);
   // the live false denies: a pattern was placed against the cwd (~), and its * matched .sub-human
@@ -272,17 +272,16 @@ test('#30: find\'s patterns are not paths; its starting points, reference files,
   deny("find . -name $'\\\\'; cd /tmp", { ...other, cwd: '/Users/me/sh' });
 });
 
-test('guard (live verify, stage 8c): Read of the module lease (sessions/), the prompt history and this session\'s transcript is denied', () => {
-  const ctx: GuardCtx = { home: '/tmp/shv4/home', realHome: '/tmp/shv4/home', userHome: '/Users/me', claudeDir: '/Users/me/.claude', sid: 'aaaaaaaa-0000-4000-8000-000000000001' };
+test('guard (live verify, stage 8c): Read of the module lease (sessions/) is denied; the prompt history and transcripts read', () => {
+  const ctx: GuardCtx = { home: '/tmp/shv4/home', realHome: '/tmp/shv4/home', userHome: '/Users/me' };
   assert.ok(g.readVerdict(['/tmp/shv4/home/sessions/mods/aaaaaaaa-0000-4000-8000-000000000001.json'], ctx));
   assert.ok(g.readVerdict(['/tmp/shv4/home/sessions/by-sid/x.json'], ctx));
   assert.ok(g.readVerdict([], {}, '~/.sub-human/sessions/mods/x.json'), 'before the hello, by its spelling');
-  assert.ok(g.readVerdict(['/Users/me/.claude/history.jsonl'], ctx));
-  assert.ok(g.readVerdict([], {}, '~/.claude/history.jsonl'), 'before the hello, by its name');
-  assert.ok(g.readVerdict(['/Users/me/.claude/projects/-w/aaaaaaaa-0000-4000-8000-000000000001.jsonl'], ctx));
-  assert.equal(g.readVerdict(['/Users/me/.claude/projects/-w/bbbbbbbb-0000-4000-8000-000000000002.jsonl'], ctx), null, 'another session\'s transcript reads');
+  assert.equal(g.readVerdict(['/Users/me/.claude/history.jsonl'], ctx), null);
+  assert.equal(g.readVerdict([], {}, '~/.claude/history.jsonl'), null, 'before the hello too');
+  assert.equal(g.readVerdict(['/Users/me/.claude/projects/-w/aaaaaaaa-0000-4000-8000-000000000001.jsonl'], ctx), null, 'this session\'s transcript reads');
   assert.equal(g.readVerdict(['/tmp/shv4/home/rooms/x/log.jsonl'], ctx), null, 'the room log reads');
-  assert.ok(g.searchVerdict('Grep', ['/Users/me/.claude'], ctx), 'a Grep above the history');
+  assert.equal(g.searchVerdict('Grep', ['/Users/me/.claude'], ctx), null, 'a Grep of Claude Code\'s directory');
 });
 
 test('R5 (live verify, verify6/07): ANSI-C quoting ($\'…\') is decoded as the shell does before the word is placed; one the guard cannot read is denied', () => {
@@ -308,7 +307,7 @@ test('R5 (live verify, verify6/07): ANSI-C quoting ($\'…\') is decoded as the 
 });
 
 test('stage 8e A (live verify, verify8/guard/04, 06): a $ inside single quotes, double quotes or after a backslash is no ANSI-C quote; everyday shell lines with $ are allowed', () => {
-  const ctx: GuardCtx = { home: '/tmp/shv8/x/home', realHome: '/private/tmp/shv8/x/home', userHome: '/Users/u', cwd: '/tmp/w', claudeDir: '/Users/u/.claude', sid: 'abcdef12-3456' };
+  const ctx: GuardCtx = { home: '/tmp/shv8/x/home', realHome: '/private/tmp/shv8/x/home', userHome: '/Users/u', cwd: '/tmp/w' };
   // the three live false denies first, then everyday lines with $ (the stage 8c guard allowed each)
   const everyday = [
     "grep -n 'foo$' README.md", "grep -cE '^[0-9]+$' /etc/hosts", "printf '%s\\n' 'a$'",
@@ -360,7 +359,7 @@ test('stage 8f item 5: $\'…\' inside ${…} in double quotes, $"…" strings a
 });
 
 test('room-plan live: a backtick inside single quotes is a literal character, not a word\'s end (no bare "/" above the store)', () => {
-  const ctx: GuardCtx = { home: '/Users/u/.sub-human', userHome: '/Users/u', cwd: '/Users/u/repo', claudeDir: '/Users/u/.claude', sid: 'abcdef12-3456' };
+  const ctx: GuardCtx = { home: '/Users/u/.sub-human', userHome: '/Users/u', cwd: '/Users/u/repo' };
   const deny = (cmd: string) => assert.ok(g.bashVerdict(cmd, ctx), `should deny: ${cmd}`);
   const allow = (cmd: string) => assert.equal(g.bashVerdict(cmd, ctx), null, `should allow: ${cmd}`);
   // the live false deny: the sed alone was allowed, chained with a walker it read "/" above the store

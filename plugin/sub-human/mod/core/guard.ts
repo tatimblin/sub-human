@@ -1,11 +1,12 @@
 /**
  * plugin/sub-human/mod/core/guard.ts: the store guard's verdicts as pure functions (no `$`, no node imports),
  * shared by the hooks module (mod/guard.ts) and the node tests (test/hooks/guard.node-test.ts, security.node-test.ts).
- * In: the tool input and ctx {home, realHome, userHome, pluginRoot, realPluginRoot, cwd, realCwd, claudeDir, sid},
+ * In: the tool input and ctx {home, realHome, userHome, pluginRoot, realPluginRoot, cwd, realCwd},
  * every field optional (an unknown home leaves only the string rules). Out: a deny reason the model reads, or null.
  * It is a lexical check of the command's words: it follows `cd`, expands ~, $HOME and braces, and matches glob words
- * against the protected paths (the home; Claude Code's prompt history and this session's transcript, where an invite
- * line and its PIN may be), and it denies a recursive or file-reading tool pointed at a directory above them. A model
+ * against the protected path (the home, which holds the seat signing keys), and it denies a recursive or file-reading
+ * tool pointed at a directory above it. Claude Code's own files (the prompt history, transcripts) are the person's
+ * and their Claude's to read, as in any session. A model
  * that builds a path at run time (a variable, an interpreter's string arithmetic, a symlink made first) still gets past
  * it: what it cannot get past is the log's hash chain, and the seat key's signature only against a Claude that never
  * read the key (README "What it protects against").
@@ -28,8 +29,6 @@ const READ_DOCTOR = /^\s*(?:[\w./~-]*\/)?sub-human\s+doctor(?:\s+(?:--quick|--js
 /** doctor that changes things: the person runs it. */
 const DOCTOR_WRITES = /(?:^|[\s;&|(`'"/])sub-human\s+doctor\b[^;&|\n]*--(?:fix|bundle)(?![\w-])/;
 const ENV_NAMES = /\bSUB_HUMAN_HOME\b/;
-/** Claude Code's prompt history, by name (before the hello says where Claude Code's directory is). */
-const HISTORY = /(?:^|[/\s'"])\.claude\/history\.jsonl\b/;
 /** The CLI commands a person runs in their own shell: an invite, letting a machine in or out, the link daemon, the room server, the web listener. */
 const PERSON_CLI = /(?:^|[\s;&|(`'"/])sub-human\s+(?:invite|admit|kick|listen|link|serve)(?![\w-])/;
 /** The host's serve shim asked to link a machine over an ssh login (`ssh you@host H/bin/serve --stdio CODE --link ID --login`),
@@ -155,22 +154,11 @@ export function reach(p: string, root: string): 'under' | 'above' | null {
 interface Protected { root: string; why: string; above: string }
 const STORE_WHY = 'it touches the room store';
 const STORE_ABOVE = 'it searches or reads a directory above the room store, which holds the seat signing keys';
-const TALK_WHY = 'it reads Claude Code\'s prompt history or this session\'s transcript, where an invite line and its PIN can be';
-const TALK_ABOVE = 'it searches a directory above Claude Code\'s prompt history or this session\'s transcript, where an invite line and its PIN can be';
 
-/** The paths bashVerdict and the Read guard protect: each home spelling (and the real one), Claude Code's
- * history.jsonl, and this session's transcript (projects/<any>/<sid>.jsonl and its subagents' directory). */
+/** The paths bashVerdict protects: each home spelling (and the real one). */
 export function protectedPaths(ctx: GuardCtx = {}): Protected[] {
   const out: Protected[] = [];
   for (const h of [ctx.home, ctx.realHome]) if (typeof h === 'string' && h.startsWith('/') && normalize(h).length >= 4) out.push({ root: normalize(h), why: STORE_WHY, above: STORE_ABOVE });
-  const cd = typeof ctx.claudeDir === 'string' && ctx.claudeDir.startsWith('/') ? normalize(ctx.claudeDir) : null;
-  if (cd && cd.length > 1) {
-    out.push({ root: `${cd}/history.jsonl`, why: TALK_WHY, above: TALK_ABOVE });
-    if (typeof ctx.sid === 'string' && /^[\w-]{8,}$/.test(ctx.sid)) {
-      out.push({ root: `${cd}/projects/*/${ctx.sid}.jsonl`, why: TALK_WHY, above: TALK_ABOVE });
-      out.push({ root: `${cd}/projects/*/${ctx.sid}`, why: TALK_WHY, above: TALK_ABOVE });
-    }
-  }
   return out;
 }
 
@@ -514,7 +502,6 @@ function verdictOf(cmd: string, ctx: GuardCtx): string | null {
       if (!/[\w.-]/.test(cmd[i + h.length] || '')) return 'it touches the room store'; // not /home2 or .sub-humanoid
     }
   }
-  if (HISTORY.test(cmd)) return TALK_WHY;
   const reached = pathVerdict(cmd, ctx);
   if (reached) return reached;
   if (RUNS_JS.test(cmd) && PLUGIN_CODE.test(cmd)) {
@@ -548,7 +535,6 @@ export const denyText = (why: string, root: unknown, homes: { home?: unknown; us
     return `ROOM-GUARD: sub-human ${why} (the shim, the home's modes, a bundle file), so they are the person's step: ${
       known ? `they run \`${homeEnv(homes.home, homes.userHome)}node ${root}/scripts/sub-human doctor --bundle\` (or --fix) ` : 'they run it '}in a terminal outside Claude Code. In a session, /sub-human doctor is the read-only check.`;
   }
-  if (why === TALK_WHY || why === TALK_ABOVE) return `ROOM-GUARD: the invite lines and PINs typed or shown in Claude Code are the people's own; a model never reads them. (Denied: ${why}.)`;
   return `${MSG} (Denied: ${why}.) Use the room MCP tools${known ? `, or \`${root}/scripts/sub-human read|who|tasks|show\`` : ''}.`;
 };
 
@@ -618,8 +604,6 @@ const secretRoots = (ctx: GuardCtx): string[] => homesOf(ctx).flatMap(h => SECRE
  */
 export function readVerdict(candidates: unknown[], ctx: GuardCtx = {}, raw: unknown = ''): string | null {
   const cands = candidates.filter((c): c is string => typeof c === 'string' && !!c);
-  const talk = protectedPaths(ctx).filter(p => p.why === TALK_WHY);
-  if (cands.some(c => talk.some(t => reach(c, t.root) === 'under')) || HISTORY.test(String(raw || ''))) return 'it reads Claude Code\'s prompt history or this session\'s transcript';
   const roots = secretRoots(ctx);
   if (roots.length) return cands.some(c => roots.some(r => isUnder(c, r))) ? 'it reads a seat signing key or a link\'s secret' : null;
   return [...cands, String(raw || '')].some(c => SECRET_SEGMENT.test(c)) ? 'it reads a seat signing key or a link\'s secret (~/.sub-human)' : null;
@@ -637,8 +621,6 @@ export function searchVerdict(tool: string, candidates: unknown[], ctx: GuardCtx
   const cands = candidates.filter((c): c is string => typeof c === 'string' && !!c);
   const homes = homesOf(ctx);
   const above = (c: string, h: string) => c === '/' || isUnder(h, c);
-  const talk = protectedPaths(ctx).filter(p => p.why === TALK_WHY);
-  if (cands.some(c => talk.some(t => reach(c, t.root) !== null))) return TALK_ABOVE;
   if (homes.length) return cands.some(c => homes.some(h => above(normalize(c), h))) ? 'it searches the room store\'s home or a directory above it, which holds the seat signing keys' : null;
   return [...cands, String(raw || '')].some(c => DOT_HOME_END.test(c)) ? 'it searches the room store (~/.sub-human), which holds the seat signing keys' : null;
 }
