@@ -289,6 +289,17 @@ test('chatLines: group-chat lines with no ids, exact words, multi-line and long 
   assert.deepEqual(W(ask), ["alice's Claude asks you and bob to sign off on plan limits v1"]);
   assert.deepEqual(W({ ...ask, approvers: ['bob'] }, 'bob'), ["alice's Claude asks you to sign off on plan limits v1"]);
   assert.deepEqual(W({ ...ask, approvers: ['bob', 'carol', 'dan'] }, 'zed'), ["alice's Claude asks bob, carol and dan to sign off on plan limits v1"]);
+  // the author checked it first and agreed: she is not asked again (live 2.1.296: bob read "asks alice and you")
+  const H5 = 'eeeeeeeeeeee';
+  R.append({ kind: 'plan', text: 'plan docs v1: a guide', hash: H5, path: `plans/${H5}.md`, plan: 'docs', version: 1, base: 0, for: 'alice', summary: 'a guide' }, { via: 'agent', from: 'alice', system: true });
+  const check = R.append({ kind: 'proposal', to: 'alice', text: `proposal ${H5}: plan docs v1`, hash: H5, approvers: ['alice'], plan: 'docs', version: 1 }, { via: 'agent', from: 'alice' });
+  assert.deepEqual(W(check), ["alice's Claude asks you to check plan docs v1 before it goes out"]);
+  human('alice', 'signoff', { proposal_hash: H5 });
+  const out = R.append({ kind: 'proposal', text: `proposal ${H5}: plan docs v1`, hash: H5, approvers: ['alice', 'bob'], plan: 'docs', version: 1 }, { via: 'agent', from: 'alice' });
+  assert.deepEqual(W(out, 'bob'), ["alice's Claude asks you to sign off on plan docs v1 (alice agreed)"]);
+  assert.deepEqual(W(out), ["alice's Claude asks bob to sign off on plan docs v1 (you agreed)"]);
+  human('bob', 'signoff', { proposal_hash: H5 });
+  assert.deepEqual(W(out, 'bob'), ["alice's Claude asks you to sign off on plan docs v1 (alice agreed)"], 'a later answer does not rewrite the request');
   const v2 = plan(H4, 2, 'bob', '60 a minute');
   // alice asked for v1's sign-off: her Claude is told v2 comes after it (deliver wakes it); bob, its editor, is not
   assert.deepEqual(W(v2), ["bob's Claude: plan limits v2: 60 a minute", `${room.CHAT_NEST}retires the sign-off request for plan limits v1`,

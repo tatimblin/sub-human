@@ -190,6 +190,9 @@ function retiredBy(e: Entry, entries: readonly Readonly<Entry>[] | undefined, tr
     .map(([old]) => proposalLabel(old, before) || `(${old.slice(0, 6)})`);
 }
 
+/** Names as a sentence lists them: "bob", "you and bob", "bob, carol and dan". */
+const and = (xs: readonly string[]): string => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs.at(-1) ?? ''}` : xs[0] ?? '');
+
 /** An objection's note, or '' for none (a bare "Object" answer). */
 const noteOf = (o: Entry): string => (o.text == null || /^Object$/.test(String(o.text)) ? '' : String(o.text));
 
@@ -204,7 +207,6 @@ function decisionText(n: Entry, entries: readonly Readonly<Entry>[] | undefined,
   const m = /^objected: ([^·]*?)(?: · agreed: (.*))?$/.exec(s);
   if (!label || !entries) return m ? `not agreed (${s})` : `decided (${s})`; // no title to name it by (a label means entries are there)
   const names = (list: string): string[] => list.split(/,\s*/).filter(Boolean).map(x => (x === viewer ? 'you' : x));
-  const and = (xs: string[]): string => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs.at(-1) ?? ''}` : xs[0] ?? '');
   if (!m) return /^agreed: /.test(s) ? `${label} agreed (${names(s.slice(8)).join(', ')})` : `${label} decided (${s})`;
   const refs = new Set(n.refs ?? []);
   const noted = new Set(entries.filter(x => x && refs.has(x.id) && x.kind === 'objection' && noteOf(x).trim()).map(x => x.from));
@@ -248,11 +250,15 @@ function chatBody(e: Entry, viewer: string | undefined, entries: readonly Readon
       // a room plan's version: who asks whom to sign off on it; a proposal from before plans, by its title
       const label = proposalLabel(n.hash, entries);
       // "frank asks you and bob to sign off on plan api v3 (82e9fb)": the approvers are who is asked, never "from"
-      const who = (n.approvers ?? []).map(you).filter((x): x is string => !!x);
-      const to = who.length > 1 ? `${who.slice(0, -1).join(', ')} and ${who.at(-1) ?? ''}` : who[0] ?? '';
+      // an approver who already agreed to this version (the author's Yes on their own check, before it went out) is
+      // not asked again: "alice's Claude asks you to sign off on plan api v3 (alice agreed)" (the fold, up to this line)
+      const m = n.hash && isList(entries) ? fold([...entries.filter(x => x && x.id < n.id), n], trust).matrix(n.hash, approversOf(n)) : null;
+      const who = (n.approvers ?? []).filter(a => !m || m.signed[a] == null).map(you).filter((x): x is string => !!x);
+      const to = and(who);
+      const agreed = m && m.agreed.length ? ` (${and(m.agreed.map(a => you(a) ?? a))} agreed)` : '';
       // the author's own check before it goes out (lib/proposal.ts check): addressed to its asker, its one approver
       if (label && label.startsWith('plan ') && isDraft(n)) return { head: `${chatWho(n, trust)} asks ${you(n.from) ?? n.from} to check ${label} before it goes out`, text: '' };
-      if (label && label.startsWith('plan ')) return { head: `${chatWho(n, trust)} asks ${to || 'for sign-off'}${to ? ' to sign off on' : ' on'} ${label}`, text: '' };
+      if (label && label.startsWith('plan ')) return { head: `${chatWho(n, trust)} asks ${to || 'for sign-off'}${to ? ' to sign off on' : ' on'} ${label}${agreed}`, text: '' };
       const h = n.hash ? ` (${String(n.hash).slice(0, 6)})` : '';
       return { head: `${chatWho(n, trust)} proposed`, text: `${t.replace(TITLE_PREFIX, '')}${h}` };
     }

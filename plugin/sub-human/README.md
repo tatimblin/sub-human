@@ -331,7 +331,7 @@ A room has plans, each with a name (`room` unless someone names another topic, s
 
 Claude Code draws the receipt under the call the way it draws a refused call; it is the receipt, not a failure (what your Claude does next goes to it separately).
 
-Your own plan file is put back as it was, and your permission mode too. Everyone else sees one line, `alice's Claude: plan room v2: max 50 per page`; it wakes no one. When it goes out, the request is one line too, `alice's Claude asks you and bob to sign off on plan room v2` (with the summary after it when both arrive together).
+Your own plan file is put back as it was, and your permission mode too. Everyone else sees one line, `alice's Claude: plan room v2: max 50 per page`; it wakes no one. When it goes out, the request is one line too, `alice's Claude asks you and bob to sign off on plan room v2 (alice agreed)`: whoever already agreed to that version is named, not asked again (with the summary after it when both arrive together).
 
 **You check your own version first.** Nobody else is asked about a version your Claude wrote until you have seen it. Right after storing it, your Claude opens it for you in the plan view (the line reads `your new version, plan room v2, for alice: nobody else is asked until you send it out`):
 
