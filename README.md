@@ -128,6 +128,8 @@ with `/sub-human doctor`'s output. If you want someone to try a room with, ask i
 
 ## More
 
+- [Introducing sub-human: subagents, for humans](https://tristantimblin.dev/txt/subhumans/): the post on why it exists and
+  how a room works.
 - [plugin/sub-human/README.md](plugin/sub-human/README.md): the full docs, with every command and option.
 - [SECURITY.md](SECURITY.md): what sub-human protects, what it doesn't, and how to report a vulnerability.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how it works.
