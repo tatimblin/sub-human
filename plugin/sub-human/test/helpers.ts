@@ -2,7 +2,7 @@
  * Shared test helpers. Requiring this file:
  *   - strips inherited CLAUDE* env vars from process.env (a test run started inside Claude Code would
  *     otherwise carry the parent's CLAUDE_PID / CLAUDE_CODE_SESSION_ID and confuse identity), and
- *   - gives the process a fresh temp SUB_HUMAN_HOME and a temp CLAUDE_CONFIG_DIR (its own; children get none), and
+ *   - gives the process a fresh temp SUB_HUMAN_HOME and a temp CLAUDE_CONFIG_DIR (childEnv passes it on), and
  *   - sets SUB_HUMAN_TEST=1 (lib/env.ts testMs: the test-only timing overrides).
  *
  *   freshHome() -> dir                   a new temp SUB_HUMAN_HOME (also set in process.env)
@@ -10,7 +10,8 @@
  *   register(name, role='member', pid=process.pid, code=current room) -> {code, name, role, pid}
  *       joins via identity.join and asserts ok. The test process's own pid is a real ancestor of every
  *       child it spawns, so a child resolves to whatever is registered for process.pid.
- *   childEnv(extra) -> env               process.env minus NODE_TEST_CONTEXT and CLAUDE*, plus extra
+ *   childEnv(extra) -> env               process.env minus NODE_TEST_CONTEXT and CLAUDE*, plus extra; the temp
+ *                                        CLAUDE_CONFIG_DIR stays unless extra sets HOME (that HOME's .claude) or its own
  *   spawnSleeper(sec) -> ChildProcess    a live, non-ancestor process (for "other session" pids)
  *   deadPid() -> Promise<int>            the pid of a process that has exited
  *   sleep(ms), until(fn, ms)
@@ -25,6 +26,11 @@
  * home again, so the exit handler also leaves a small detached sweeper that removes the same dirs again
  * after 2 s and 10 s. Dirs live for the whole process, so nothing loses its home mid-run.
  * SUB_HUMAN_KEEP_TMP=1 keeps everything (for debugging a failure).
+ *
+ * The real config dir: no test may make a room's native task list (tasks/sh-CODE, lib/room/task-files.ts) under the
+ * Claude Code config dir the run inherited (CLAUDE_CONFIG_DIR, else ~/.claude). Each temp dir's room codes are noted as
+ * it is removed; at exit, a list there named for one of them and born since the process started prints REAL CONFIG
+ * TOUCHED and fails the test file (exit code 1).
  *
  * npm run test:plugin preloads this file (--import) into every test process, so the tracking and the CLAUDE*
  * stripping apply per process even to test files that never import it. It loads no lib/ module at import time.
@@ -76,8 +82,26 @@ function installTmpTracking(): TmpTracking {
   fs.promises.mkdtemp = async function (this: unknown, ...a: unknown[]) { return note(await pmkdtemp.apply(this, a)); } as typeof fs.promises.mkdtemp;
   syncBuiltinESMExports(); // a module that imports { mkdtempSync } from 'node:fs' by name gets the wrapper too
 
+  // the real config dir, as inherited (read before the CLAUDE* vars are stripped below), and when this process began
+  const realTasks = path.join((process.env.CLAUDE_CONFIG_DIR || path.join(process.env.HOME || os.homedir(), '.claude')).normalize('NFC'), 'tasks');
+  const began = Date.now() - process.uptime() * 1000 - 20;
+  /** The room codes seen in this process's temp dirs (a home's rooms/, at its top or one folder down), noted as each goes. */
+  const codes = new Set<string>();
+  const ls = (d: string): string[] => { try { return fs.readdirSync(d); } catch { return []; } };
+  const noteCodes = (d: string) => { for (const r of [path.join(d, 'rooms'), ...ls(d).map(n => path.join(d, n, 'rooms'))]) for (const c of ls(r)) codes.add(c); };
+  function realConfigGuard() {
+    for (const c of codes) {
+      const list = path.join(realTasks, `sh-${c}`);
+      let born: number;
+      try { born = fs.statSync(list).birthtimeMs; } catch { continue; }
+      if (born < began) continue;
+      process.stderr.write(`REAL CONFIG TOUCHED: a test made ${list}\n`);
+      process.exitCode = 1;
+    }
+  }
+
   const keep = () => process.env.SUB_HUMAN_KEEP_TMP === '1';
-  const rm = (d: string) => { try { fs.rmSync(d, { recursive: true, force: true, maxRetries: 2 }); } catch { /* best effort */ } };
+  const rm = (d: string) => { noteCodes(d); try { fs.rmSync(d, { recursive: true, force: true, maxRetries: 2 }); } catch { /* best effort */ } };
   const removed = new Set<string>();
   function cleanup() {
     if (keep()) return;
@@ -87,7 +111,9 @@ function installTmpTracking(): TmpTracking {
   function remove(d: string) { if (keep()) return; rm(d); dirs.delete(d); removed.add(d); }
 
   process.on('exit', () => {
+    if (keep()) for (const d of dirs) noteCodes(d);
     cleanup();
+    try { realConfigGuard(); } catch { /* the guard never fails the run on its own */ }
     if (keep() || !removed.size) return;
     // A detached child may still write into a removed home (mkdir -p recreates it): sweep again later.
     const sweep = `const fs=require('fs'),d=process.argv.slice(1),r=()=>{for(const x of d)try{fs.rmSync(x,{recursive:true,force:true})}catch{}};setTimeout(r,2000);setTimeout(r,10000);`;
@@ -131,8 +157,8 @@ function freshHome(t?: TestContext): string {
   return dir;
 }
 freshHome();
-// Claude Code's config dir, for this process only (childEnv strips it with every CLAUDE* var: a child's is its HOME's
-// .claude): the room's native task list (lib/room/task-files.ts) and anything else under it never reach ~/.claude
+// Claude Code's config dir, for this process and the children childEnv makes (a child given its own HOME gets that
+// HOME's .claude): the room's native task list (lib/room/task-files.ts) and anything else under it never reach ~/.claude
 process.env.CLAUDE_CONFIG_DIR = tmpDir('sub-human-test-claude-');
 
 function newRoom(): RoomCode {
@@ -152,6 +178,7 @@ function register(name: string, role = 'member', pid = process.pid, code: RoomCo
 function childEnv(extra: Record<string, string | undefined> = {}): NodeJS.ProcessEnv {
   const env = stripClaude({ ...process.env });
   delete env.NODE_TEST_CONTEXT;
+  if (!('HOME' in extra) && !('CLAUDE_CONFIG_DIR' in extra)) env.CLAUDE_CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR;
   for (const [k, v] of Object.entries(extra)) { if (v === undefined) delete env[k]; else env[k] = v; }
   return env;
 }

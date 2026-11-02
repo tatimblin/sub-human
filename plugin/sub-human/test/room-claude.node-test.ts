@@ -183,7 +183,6 @@ test('room-claude: reap waits the grace, marks closing, completes the room task 
     const R = room.open(code);
     const done = must(R.readAll().find(e => e.kind === 'task' && e.status === 'completed'));
     assert.deepEqual([done.from, done.via, done.owner], ['room', 'system', 'room'], 'the reaper\'s own entry');
-    assert.equal(file().status, 'completed');
     assert.ok(!R.readAll().some(e => e.kind === 'status' && e.to === 'claude'), 'nothing asked of a model');
     assert.deepEqual(s.calls().map(c => c.argv), [['stop', 'cafe1234'], ['agents', '--json', '--all']], 'then looks for strays');
     assert.equal(must(s.calls()[0]).env.CLAUDE_PID, undefined, 'clean env for stop');
@@ -192,13 +191,44 @@ test('room-claude: reap waits the grace, marks closing, completes the room task 
     assert.ok(rec.left_at && rec.stopped_at && rec.closing);
     // item 16: the stub's `claude stop` left the room Claude's process up (as the daemon did live): the reaper ended it
     assert.equal(identity.isAlive(o.pid), false, 'the bound process is gone before stopped_at is written');
-    assert.ok(fs.existsSync(list), 'never deletes the task list');
+    assert.equal(fs.existsSync(list), false, 'the room session\'s list ends with it');
+    assert.deepEqual(tasks.repair(R.store), { wrote: [], removed: [], skipped: 'the room is closing' }, 'a late repair makes no list again');
+    assert.equal(fs.existsSync(list), false);
+    assert.ok(R.readAll().some(e => e.kind === 'task' && e.subject === `room ${code} open`), 'the log keeps every task');
     // stage 8e I.1: closed for good, it is off the open-rooms index at once (no look at the open rooms needed)
     const idx = (JSON.parse(fs.readFileSync(path.join(identity.home(), 'open-rooms.json'), 'utf8')) as { rooms: Record<string, unknown> }).rooms;
     assert.equal(idx[code], undefined, JSON.stringify(idx));
     assert.deepEqual(identity.openRooms(), []);
   });
   o.kill();
+});
+
+test('room-claude: reap keeps a list that is not all the plugin\'s for this room, one with a lock held, and one whose process may be up', async t => {
+  const cases: [string, (list: string) => void, boolean][] = [
+    ['a foreign file', list => fs.writeFileSync(path.join(list, 'notes.txt'), 'mine'), true],
+    ['a task stamped for another room', list => fs.writeFileSync(path.join(list, '7.json'), JSON.stringify({ id: '7', subject: 's', description: '', status: 'pending', blocks: [], blockedBy: [], metadata: { room: 'newt-9999' } })), true],
+    ['a fresh list lock', list => fs.mkdirSync(path.join(list, '.lock.lock')), true],
+    ['the process not gone', () => {}, false],
+  ];
+  const real = roomClaude.seam.ensureGone;
+  t.after(() => { roomClaude.seam.ensureGone = real; });
+  for (const [why, spoil, gone] of cases) {
+    h.freshHome();
+    const code = h.newRoom();
+    const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-cfg-'));
+    const list = path.join(cfg, 'tasks', `sh-${code}`);
+    const s = stubClaude();
+    identity.updateRoomClaude(code, () => ({ job: 'cafe5678' }));
+    roomClaude.seam.ensureGone = () => Promise.resolve(gone);
+    await withEnv({ SUB_HUMAN_CLAUDE: s.bin, CLAUDE_CONFIG_DIR: cfg }, async () => {
+      roomClaude.openTaskList(code);
+      tasks.openRoomTask(room.open(code).store);
+      spoil(list);
+      assert.equal(await roomClaude.reap(code, { graceMs: 0 }), 'stopped', why);
+    });
+    assert.ok(fs.existsSync(path.join(list, '1.json')), `${why}: the list stays`);
+    assert.ok(must(identity.readMembers(code).claude).stopped_at, `${why}: the room still closes`);
+  }
 });
 
 test('room-claude: a rejoin in the grace cancels; a second reaper backs off', async () => {
@@ -537,7 +567,11 @@ test('room-claude: crash-all-members (SIGKILL) -> the watchdog reaps the room\'s
   // deadline on its result failed when two node starts (reaper, stub claude) took longer under load.
   let reaperPid: number | null | undefined = null;
   const reaper = (c: RoomCode, o: { claimed: boolean }) => { reaperPid = roomClaude.reapDetached(c, o); };
+  const list = path.join(cfg, 'tasks', `sh-${code}`);
   await withEnv({ SUB_HUMAN_CLAUDE: s.bin, CLAUDE_CONFIG_DIR: cfg }, async () => {
+    roomClaude.openTaskList(code);
+    tasks.openRoomTask(room.open(code).store);
+    assert.ok(fs.existsSync(path.join(list, '1.json')));
     assert.equal(roomClaude.watchdog(code, { now: t0, reaper }), 'waiting', 'no SessionEnd ran: the first observation starts the clock');
     assert.equal(roomClaude.watchdog(code, { now: t0 + 60_000, reaper }), 'reaping');
     assert.ok(reaperPid, 'the reaper was started');
@@ -545,6 +579,7 @@ test('room-claude: crash-all-members (SIGKILL) -> the watchdog reaps the room\'s
     assert.ok(must(identity.readMembers(code).claude).stopped_at, 'reaper finished');
   });
   assert.deepEqual(s.calls().map(c => c.argv).filter(a => a[0] === 'stop'), [['stop', 'dead00ff']]);
+  assert.equal(fs.existsSync(list), false, 'the watchdog\'s reaper deletes the list too');
   const rec = must(identity.readMembers(code).claude);
   assert.ok(rec.closing && rec.left_at);
   assert.deepEqual(identity.orphanRooms(), []);

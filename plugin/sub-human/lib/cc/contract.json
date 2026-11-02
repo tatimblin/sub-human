@@ -481,6 +481,22 @@
    "note": "A session whose task view is mounted (any interactive or --bg session with the list, attached or not) resets the list 5 s after it reads every task completed: under the list lock it raises .highwatermark and deletes every *.json (not dotfiles, not temp names). Observed detached in a --bg job (cc-2.1.296-tasks-plans.md S2.3). The reason the room task stays in_progress until the reaper (lib/tasks.ts closeRoomTask)."
   },
   {
+   "id": "task-list-retention",
+   "section": 4,
+   "stability": "incidental",
+   "feature": "core",
+   "since": "2.1.296",
+   "search": [
+    "tengu_retention_sweep",
+    "cleanup_sweep_root_refused"
+   ],
+   "shape": [
+    "function ~(){return ~(\"session-env\")}function ~(){return ~(\"tasks\")}",
+    "if((await ~.stat(~)).mtime<~){if(await ~?.(~))continue;await ~.rm(~,{recursive:!0,force:!0})"
+   ],
+   "note": "Claude Code's retention sweep (at most once a day, by <config>/.last-cleanup) runs rm -r on every folder under <config>/tasks whose own mtime is older than cleanupPeriodDays (default 30), whatever it holds (cc-2.1.296-tasks-plans.md S5). The backstop for a room list the reaper kept (lib/room/task-files.ts remove); project touches a live list's folder daily (lib/cc/tasks.ts touchList) so an idle open room's list is not swept. Feature core, not tasks: without the sweep only kept lists pile up, and the room task list still works."
+  },
+  {
    "id": "task-ui-watch",
    "section": 4,
    "stability": "incidental",

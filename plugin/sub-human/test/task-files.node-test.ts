@@ -137,3 +137,84 @@ test('openTaskList runs the preflight at the room session\'s start', () => {
   roomClaude.openTaskList(code, env);
   assert.equal(must(identity.readMembers(code).claude).tasks_off, undefined, 'a later start that passes clears it');
 });
+
+/** A room whose recorded list is <tmp>/tasks/sh-CODE, with these files (name -> JSON, or a string as it is). */
+function ownedCase(files: (code: string) => Record<string, unknown> = () => ({})) {
+  h.freshHome();
+  const code = h.newRoom();
+  const dir = path.join(h.tmpDir('sh-tf-'), 'tasks', `sh-${code}`);
+  fs.mkdirSync(dir, { recursive: true });
+  identity.updateRoomClaude(code, () => ({ tasks_dir: dir }));
+  for (const [f, v] of Object.entries(files(code))) fs.writeFileSync(path.join(dir, f), typeof v === 'string' ? v : JSON.stringify(v));
+  return { code, dir };
+}
+const stamped = (id: number, room: string) => ({ id: String(id), subject: `task ${id}`, description: '', status: 'pending', blocks: [], blockedBy: [], metadata: { room } });
+const whole = (code: string) => ({ '.lock': '', '.highwatermark': '2', '1.json': stamped(1, code), '2.json': stamped(2, code) });
+
+test('ownedDir: only sh-CODE under tasks/, a real directory of plain .lock, .highwatermark and N.json files all stamped for the room, no lock held', () => {
+  let c = ownedCase();
+  assert.equal(taskFiles.ownedDir(c.code), c.dir, 'empty');
+  c = ownedCase(whole);
+  assert.equal(taskFiles.ownedDir(c.code), c.dir, 'all stamped');
+  fs.mkdirSync(path.join(c.dir, '1.json.lock'));
+  assert.equal(taskFiles.ownedDir(c.code), null, 'a task lock held');
+  const old = new Date(Date.now() - 60_000);
+  fs.utimesSync(path.join(c.dir, '1.json.lock'), old, old);
+  assert.equal(taskFiles.ownedDir(c.code), c.dir, 'a stale lock dir is no hold');
+  fs.mkdirSync(path.join(c.dir, '.lock.lock'));
+  assert.deepEqual(taskFiles.remove(c.code), { removed: false, why: 'a lock is held (.lock.lock)' });
+
+  const keep: [string, (dir: string, code: string) => void][] = [
+    ['a foreign file', d => fs.writeFileSync(path.join(d, 'notes.txt'), 'mine')],
+    ['another room\'s task', d => fs.writeFileSync(path.join(d, '1.json'), JSON.stringify(stamped(1, 'newt-9999')))],
+    ['an unstamped task', d => fs.writeFileSync(path.join(d, '1.json'), JSON.stringify({ ...stamped(1, 'x'), metadata: {} }))],
+    ['not a task', d => fs.writeFileSync(path.join(d, '1.json'), '{')],
+    ['a folder', d => fs.mkdirSync(path.join(d, 'sub'))],
+    ['a symlinked task', (d, code) => { const f = path.join(h.tmpDir('sh-tf-'), 'x.json'); fs.writeFileSync(f, JSON.stringify(stamped(1, code))); fs.symlinkSync(f, path.join(d, '1.json')); }],
+  ];
+  for (const [why, spoil] of keep) {
+    c = ownedCase();
+    spoil(c.dir, c.code);
+    assert.equal(taskFiles.ownedDir(c.code), null, why);
+    assert.equal(taskFiles.remove(c.code).removed, false, why);
+    assert.ok(fs.existsSync(c.dir), `${why}: stays`);
+  }
+
+  // the folder itself a symlink to a list: never followed
+  c = ownedCase();
+  const target = path.join(h.tmpDir('sh-tf-'), 'tasks', `sh-${c.code}`);
+  fs.mkdirSync(target, { recursive: true });
+  fs.rmSync(c.dir, { recursive: true });
+  fs.symlinkSync(target, c.dir);
+  assert.equal(taskFiles.ownedDir(c.code), null, 'a symlinked folder');
+  assert.ok(fs.existsSync(target));
+  // a recorded dir that is not this room's list is ignored: this process's own sh-CODE, which was never made
+  c = ownedCase();
+  identity.updateRoomClaude(c.code, () => ({ tasks_dir: path.join(path.dirname(c.dir), 'sh-other-0001') }));
+  assert.equal(taskFiles.dirOf(c.code), ccEnv.tasksDir(`sh-${c.code}`));
+  assert.deepEqual(taskFiles.remove(c.code), { removed: false, why: 'none' });
+  assert.ok(fs.existsSync(c.dir));
+
+  c = ownedCase(whole);
+  assert.deepEqual(taskFiles.remove(c.code), { removed: true });
+  assert.equal(fs.existsSync(c.dir), false);
+});
+
+test('project: touches the list\'s folder once a day, so Claude Code\'s retention sweep never takes an open room\'s list', () => {
+  const { code, dir } = ownedCase();
+  const DAY = 24 * 60 * 60_000;
+  const aged = (days: number) => { const t = new Date(Date.now() - days * DAY); fs.utimesSync(dir, t, t); };
+  aged(2);
+  assert.equal(ccTasks.touchList(dir, { olderMs: DAY }), true, 'an aged folder');
+  assert.ok(Date.now() - fs.statSync(dir).mtimeMs < 5000);
+  aged(0.5);
+  const before = fs.statSync(dir).mtimeMs;
+  assert.equal(ccTasks.touchList(dir, { olderMs: DAY }), false, 'a fresh one is not');
+  assert.equal(fs.statSync(dir).mtimeMs, before);
+  assert.equal(ccTasks.touchList(path.join(dir, 'none'), { olderMs: DAY }), false, 'none: nothing made');
+  assert.equal(fs.existsSync(path.join(dir, 'none')), false);
+  // a projection that writes nothing leaves the folder young all the same
+  aged(40);
+  taskFiles.project(code, [], { dir });
+  assert.ok(Date.now() - fs.statSync(dir).mtimeMs < 5000, 'an idle room\'s projection keeps its list young');
+});

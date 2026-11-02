@@ -440,6 +440,8 @@ test('remote (pipe): `sub-human serve --stdio CODE` as a child serves the host h
   await h.until(() => got.lines.length === logLines(code).length, 5000, 20);
   assert.deepEqual(got.lines, logLines(code));
   assert.equal((JSON.parse(must(got.lines.at(-1))) as Entry).id, e.id);
+  // the join's room session list (lib/room-claude.ts openTaskList) is under this process's temp config dir
+  assert.equal(fs.existsSync(path.join(must(process.env.CLAUDE_CONFIG_DIR), 'tasks', `sh-${code}`)), true, 'the child had the temp config');
   c.close();
   await h.until(() => closed, 5000, 20);
   assert.equal(closed, true);

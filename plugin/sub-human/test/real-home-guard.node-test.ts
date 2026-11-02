@@ -26,6 +26,36 @@ test('guard: every test process has a temp SUB_HUMAN_HOME, never the real one, a
   assert.equal(seen, process.env.SUB_HUMAN_HOME, 'a child resolves the temp home');
 });
 
+test('guard: children get the temp CLAUDE_CONFIG_DIR, unless they are given a HOME of their own', () => {
+  const cfg = process.env.CLAUDE_CONFIG_DIR;
+  assert.ok(cfg && isTempPath(cfg), String(cfg));
+  assert.equal(h.childEnv().CLAUDE_CONFIG_DIR, cfg);
+  const seen = spawnSync(process.execPath, ['-e', `process.stdout.write(require(${JSON.stringify(path.join(h.LIB, 'cc', 'env.ts'))}).configDir())`],
+    { env: h.childEnv(), encoding: 'utf8' }).stdout;
+  assert.equal(seen, cfg, 'a child resolves the temp config dir');
+  assert.equal(h.childEnv({ HOME: '/nowhere' }).CLAUDE_CONFIG_DIR, undefined, 'HOME/.claude for a child with its own HOME');
+  assert.equal(h.childEnv({ CLAUDE_CONFIG_DIR: '/x' }).CLAUDE_CONFIG_DIR, '/x');
+});
+
+test('guard: a test process that makes a room\'s task list in the config dir it inherited fails at exit; an older one does not', t => {
+  const real = h.tmpDir('sh-realcfg-', t);
+  fs.mkdirSync(path.join(real, 'tasks', 'sh-old-1111'), { recursive: true }); // made before the run: not this test's
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200); // well before the child starts
+  // the child's helpers.ts reads the inherited CLAUDE_CONFIG_DIR as the real one; its own room's list lands there
+  const src = (leak: boolean) => `const fs=require('fs'),path=require('path'),home=process.env.SUB_HUMAN_HOME;
+    for (const c of ['old-1111','new-2222']) fs.mkdirSync(path.join(home,'rooms',c),{recursive:true});
+    if (${leak}) fs.mkdirSync(path.join(${JSON.stringify(real)},'tasks','sh-new-2222'));`;
+  const run = (leak: boolean) => spawnSync(process.execPath, ['--import', path.join(import.meta.dirname, 'helpers.ts'), '-e', src(leak)],
+    { env: { ...h.childEnv({ HOME: os.homedir() }), CLAUDE_CONFIG_DIR: real }, encoding: 'utf8', timeout: 20_000 });
+  const clean = run(false);
+  assert.equal(clean.status, 0, clean.stderr);
+  assert.doesNotMatch(clean.stderr, /REAL CONFIG TOUCHED/);
+  const leaked = run(true);
+  assert.equal(leaked.status, 1, leaked.stderr);
+  assert.match(leaked.stderr, /REAL CONFIG TOUCHED: a test made .*sh-new-2222/);
+  assert.doesNotMatch(leaked.stderr, /sh-old-1111/);
+});
+
 /** A fake user whose ~/.sub-human records an installed plugin (a root under the plugin cache, with a CLI). */
 function fakeUser(t: TestContext) {
   const user = h.tmpDir('sh-user-', t);

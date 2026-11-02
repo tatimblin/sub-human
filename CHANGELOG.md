@@ -2,6 +2,17 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 0.5.8: a room's task list ends with its room session
+
+Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, and `npm run probe`. The wire protocol is still 5.
+
+### Changed
+- **A room's task list in `~/.claude/tasks` is deleted when its room session ends** (#11). Each room session's native list (`sh-CODE/`) used to stay until the closed room was set aside, 30 days on. Now the reaper deletes it once the room session's process is gone, whichever way the room closed: the last person leaving, a kick, every member crashing, or a room session that never started. It deletes only a folder where everything is the plugin's for that room (`.lock`, `.highwatermark` and task files stamped with the room's code) and no lock is held. The room's log keeps every task, and `sub-human tasks --room CODE` still lists them.
+- **Claude Code's own cleanup takes the rest.** A list the reaper keeps, and the old ones from before this release, go when Claude Code's daily cleanup finds them older than `cleanupPeriodDays` (30 days by default). An open room's list is touched once a day so that cleanup never takes it.
+
+### Fixed
+- `npm run test:plugin` no longer leaves three empty `sh-*` folders in the real `~/.claude/tasks` per run: test children keep the test's own config folder, and a test that makes a room list in the real one fails.
+
 ## 0.5.7: your session, unguarded; fixes from a live run
 
 Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, and live runs of two seats with real Claude sessions. The wire protocol is still 5.

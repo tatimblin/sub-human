@@ -101,6 +101,18 @@ Seen with a raw `fs.watch` during a model's TaskCreate + TaskUpdate: `rename 5.j
 
 **S4.3.** A stray `9.json.tmp-999` is ignored by the view, the id allocator and the reset (all filter `*.json`); the reset does not delete it, so the projector cleans its own leftovers.
 
+## S5. Retention and teams
+
+Added 2026-11-02 for issue #11 (room lists outliving their rooms). Read from the 2.1.296 binary; contract entry `task-list-retention`.
+
+**S5.1. The retention sweep removes old `tasks/` folders.** The sweep (telemetry `tengu_retention_sweep`) runs at most once a day: it is skipped while `<config>/.last-cleanup` is younger than `86400000` ms. Among its steps is `function at(){return B("tasks")}`, beside `B("session-env")` and `B("uploads")`. `B(name)` reads `<config>/<name>`, and for each entry that is a directory, `if((await m.stat(F)).mtime<y){…await m.rm(F,{recursive:!0,force:!0})}`. The cutoff `y` is `uS()`: `Date.now()` minus `cleanupPeriodDays` (`?? 30`; 0 turns the sweep off) days. It goes by the folder's own mtime, whatever the folder holds: a list whose files changed but whose folder did not (an in-place rewrite) still ages. Creating or removing an entry in the folder (a task file, the list lock's `.lock.lock` mkdir and rmdir) freshens it.
+
+What the plugin does with it: the reaper deletes a room's list when the room session ends (`lib/room/task-files.ts` remove); the sweep takes any list the reaper kept, within the person's own `cleanupPeriodDays`. `project` touches a live list's folder once it is a day old (`lib/cc/tasks.ts` touchList), so an idle open room's list is never swept.
+
+**S5.2. No separate config dir for room sessions.** The tasks folder is always `<config dir>/tasks`, and the only knob that moves it is `CLAUDE_CONFIG_DIR`. That also names the login: the keychain service name (`` `Claude Code${OAUTH_FILE_SUFFIX}${kind}${c}` ``) takes `c` = `-<sha256(configDir)[:8]>` when `CLAUDE_CONFIG_DIR` is set (unless `CLAUDE_SECURESTORAGE_CONFIG_DIR` names another), so a room session on its own config dir would be logged out. Trust, plugins, settings and the bg daemon live there too.
+
+**S5.3. Teams.** The binary's own words for the per-call team field: "Sessions have a single implicit team; this carries the session-derived team name and will be removed in a future release." The room session is a separate `--bg` job, not a teammate, so a team cannot own its list. Notes only, no contract entry.
+
 ## Surprises
 
 1. **The missing list dir** (S2.1): a session started before `<tasks>/sh-CODE/` exists never shows the list. Write the dir and task 1 before the spawn.
