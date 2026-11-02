@@ -65,8 +65,9 @@ type RowLike = { type?: unknown; content?: unknown };
  * other row: only a system row whose one text block is exactly the frame around ROW_ENDED. */
 export function rowEndedRow<M extends RowLike>(row: M | null | undefined): M | null {
   if (!row || row.type !== 'system' || !Array.isArray(row.content) || row.content.length !== 1) return null;
-  const block = row.content[0] as { type?: unknown; text?: unknown } | null;
-  if (!block || block.type !== 'text' || block.text !== DROP_FRAME + ROW_ENDED) return null;
+  const block: unknown = row.content[0];
+  if (typeof block !== 'object' || block === null || !('type' in block) || !('text' in block)) return null;
+  if (block.type !== 'text' || block.text !== DROP_FRAME + ROW_ENDED) return null;
   return { ...row, content: [{ type: 'text', text: ROW_CLOSED }] };
 }
 
