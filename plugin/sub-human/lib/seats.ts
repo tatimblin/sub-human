@@ -25,8 +25,8 @@
  *   instead. The room's Claude, left seats and lapsed ones are not swept.
  * take: the /sub-human join's seat (lib/commands/join.ts). code null: the one open room (orphans swept first), else
  *   a new one; several open is a refusal. In a room hosted elsewhere the link is started first (lib/remote/joining.ts
- *   ensureLinked). Another seat of this session is left only once the new one is taken ("switched rooms"), never on
- *   a refused join. Every take first runs lib/gc.ts sweep (at most every GC_EVERY_MS, within GC_BUDGET_MS), and a
+ *   ensureLinked). Another seat of this session is left only once the new one is taken ("switched rooms"; in the same
+ *   room "now NAME", and the new seat's delivery cursor moves to the log's end), never on a refused join. Every take first runs lib/gc.ts sweep (at most every GC_EVERY_MS, within GC_BUDGET_MS), and a
  *   seat taken sweeps its room's row maps of ended sessions.
  */
 
@@ -38,6 +38,7 @@ import { envMs } from './env.ts';
 import { validPid, lazy } from './io.ts';
 import { pidStarts } from './lock.ts';
 import * as links from './room/links.ts';
+import * as session from './room/session.ts';
 import { roomClaudePresence } from './room/members.ts';
 import type { JoinOutcome, Member } from './room/types.ts';
 import type { Identity } from './identity.ts';
@@ -298,7 +299,13 @@ function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd,
     }
     return no(`could not join ${code} as ${name}: ${r.error || 'unknown error'}${cur && !same ? `; you're still ${cur.name} in room ${cur.code}` : ''}`);
   }
-  if (cur && !same) exit(cur.code, cur.name, 'switched rooms'); // exactly as exiting the session would
+  if (cur && !same) {
+    const renamed = cur.code === code;
+    exit(cur.code, cur.name, renamed ? `now ${name}` : 'switched rooms'); // exactly as exiting the session would
+    // the same room under a new name: this session read the log up to here as its old seat, so the new seat's
+    // delivery starts here too, not at a cursor it saved last time (its old seat's join and leave are this session's own)
+    if (renamed) { try { const rm = room.open(code); session.put(rm.store, name, 'cursor', rm.lastId()); } catch { /* the tail starts from the saved cursor */ } }
+  }
   const linked = rebind ? links.get(code) : null; // rebind: read from it above
   if (linked) { const { rebind: _done, ...l } = linked; links.set(code, l); }
   joining().dropJoinAs(code);
