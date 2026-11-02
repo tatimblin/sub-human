@@ -387,6 +387,23 @@ test('M (live verify): the plan view refused with a note resolves at once: the n
   assert.equal(review.reduce({ review: { ...REVIEWS.shown, resolved: true }, note: null }, { type: 'rejected', toolUseId: 'tu1', answer: { note: 'x' }, target }, ctx).say, null);
 });
 
+test('live 2.1.296: Esc on a review the hooks put in plan mode leaves it open; only the next prompt has the model ask "exit plan mode?" (Esc ends the turn, and no Stop runs on a user interrupt)', () => {
+  const st: State = { review: REVIEWS.shown, note: null };
+  const esc = review.reduce(st, { type: 'rejected', toolUseId: 'tu1', answer: { note: null }, target }, ctx);
+  assert.deepEqual(shape(esc), ['exiting', 'context', ''], 'closed, nothing recorded, the review waits to leave plan mode');
+  assert.ok(!esc.effects.some(e => e.do === 'answer'), 'Esc records nothing');
+  // the refusal's line: the model reads it only on its next turn
+  assert.match(review.textOf(parts(esc), () => '', false), /closed the review of proposal \w+ without answering; nothing was recorded\. First call ExitPlanMode/);
+  // the person's next prompt, still in plan mode: leave it first
+  const next = review.reduce(esc.state, { type: 'prompt', mode: 'plan', answer: null, target, live: true }, ctx);
+  assert.equal(rev(next).phase, 'exiting');
+  assert.match(review.textOf(parts(next), () => '', false), /Before anything else, call ExitPlanMode/);
+  // that call: Claude Code's own "exit plan mode?", the plan emptied, which the person answers
+  const leave = review.reduce(next.state, EVENTS.exit, ctx);
+  assert.deepEqual(shape(leave), ['exiting', 'ask', 'blankPlan']);
+  assert.equal(asked(leave).text, review.SAY.leaving);
+});
+
 test('M (live verify): while a note waits for its card the post tool is refused with the reason (any mode); other room tools pass; a note no longer live is dropped', () => {
   for (const stage of ['waiting', 'nudged', 'asked', 'reoffered', 'told'] as NoteStage[]) {
     const s = review.reduce({ review: null, note: note(stage) }, { type: 'roomTool', mode: 'auto', post: true, noteLive: true }, ctx);

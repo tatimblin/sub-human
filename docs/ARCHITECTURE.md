@@ -130,7 +130,7 @@ Full names are `mcp__plugin_sub-human_room__<tool>`.
 |---|---|---|---|
 | `post` | room (`mcp/room-server.ts`) | no | Post a note to the shared sub-human room as your human's Claude (labelled as yours, never as their words). |
 | `read` | room (`mcp/room-server.ts`) | yes | Read the sub-human room: ids, those entries in full; plan, a room plan; brief, its state; else your unseen entries (oldest first, ≤ 100). |
-| `plan` | room (`mcp/room-server.ts`) | no | The sub-human room's plans. edit, then EnterPlanMode, edit the plan file, ExitPlanMode({}): the hooks store the next version (your person checks it first). ask: people sign off on the current one. read. |
+| `plan` | room (`mcp/room-server.ts`) | no | Sub-human room plans. edit (fine in plan mode), then EnterPlanMode, edit the plan file, ExitPlanMode({}): the hooks store the next version (your person checks it first). ask: people sign off on the current one. read. |
 | `hold` | room (`mcp/hold.ts`) | yes | Internal to sub-human row agents (sub-human:participant with member, sub-human:room with room). |
 | `task` | room (`mcp/task.ts`) | no | Change the sub-human room's shared task list; the host applies it at once and replies with the change or why not. add needs subject; claim (for yourself), release and done (your own task) need id; done also needs evidence. |
 <!-- /gen:mcp-tools -->
@@ -303,7 +303,10 @@ approver's Claude: EnterPlanMode ──► asks nothing (no answer at Pre); cons
                                       plan mode?"); the model is told to open the confirm card
    confirm card (AskUserQuestion) ──► Pre: the hooks' card (Send / Discard); Post: only the person's Send on that card →
                                       objection via=human, note byte-exact; Discard drops the note; AFK keeps it
-   Esc                            ──► nothing ("closed without answering"); Stop / next prompt / restore close the review
+   Esc                            ──► nothing ("closed without answering"); Stop / next prompt / restore close the review.
+                                      Esc ends the turn and no Stop hook runs on a user interrupt, so a review the hooks
+                                      put in plan mode waits for the person's next prompt, whose context has the model
+                                      call ExitPlanMode first (the "exit plan mode?" ask); no hook can start a turn
    no review shown                ──► Post(ExitPlanMode): nothing recorded, even for the version's exact text
 the person already in plan mode   ──► the same review, mode plan: EnterPlanMode runs (and its hooks) in plan mode too, so
   (maybe with a plan of their own)    the proposal is in the plan file before ExitPlanMode reads it (a call's plan is the
