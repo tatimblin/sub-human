@@ -126,3 +126,28 @@ test('stage 8e I.2 (live verify, remote/16b; shv9 carol): a row\'s hand-back ("l
   expect(err.drop).toBe('sub-human: row ended, nothing to do')
   expect(entered.length).toBe(2)
 })
+
+test('live 2.1.296: a row-ended drop\'s warning row reads "sub-human: row closed", without Claude Code\'s frame; no other row changes', async ($, on) => {
+  world(on, { seat: null })
+  const kept: string[] = []
+  on('session.append', (_$, e, next) => {
+    const block = must(e.message.content[0], 'a content block')
+    if (block.type !== 'text') throw new Error(`a ${block.type} block`)
+    kept.push(String(block.text))
+    return next(e)
+  })
+  await start($)
+  let n = 0
+  const append = async (text: string, type: 'system' | 'user' = 'system') => {
+    await $.session.append({
+      message: { type, ...(type === 'system' ? { name: 'informational' } : { role: 'user', isMeta: true }), content: [{ type: 'text', text }] },
+      door: type === 'system' ? 'notice' : 'note', origin: { kind: 'engine' }, uuid: `r${n++}`,
+    }).catch(() => null)
+    return kept.at(-1)
+  }
+  const DROPPED = 'Prompt dropped by a hook: sub-human: row ended, nothing to do'
+  expect(await append(DROPPED)).toBe('sub-human: row closed')
+  expect(await append(DROPPED)).toBe('sub-human: row closed') // the hand-back's and the notification's: each its own row
+  expect(await append('Prompt dropped by a hook: another plugin')).toBe('Prompt dropped by a hook: another plugin')
+  expect(await append(DROPPED, 'user')).toBe(DROPPED) // only the warning row
+})

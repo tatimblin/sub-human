@@ -50,6 +50,26 @@ export function finishedFrom(text: unknown): string | null {
   return m?.[1] ?? null; // the group always matches when m does
 }
 
+/** Why a row's hand-back or "finished" notification starts no turn: mod/rows.ts's prompt.submit drop reason. */
+export const ROW_ENDED = 'sub-human: row ended, nothing to do';
+/** @cc Prompt dropped by a hook
+ * How Claude Code draws a prompt.submit drop between turns: a warning row "Prompt dropped by a hook: <reason>"
+ * (CONTRACT ups-stop-frame; mid-turn it is a toast and no row). @stability incidental */
+export const DROP_FRAME = 'Prompt dropped by a hook: ';
+/** What that row says instead: its level stays (a warning) and a rewrite needs a character, so the row itself stays. */
+export const ROW_CLOSED = 'sub-human: row closed';
+
+/** A row as session.append hands it, as far as rowEndedRow reads it. */
+type RowLike = { type?: unknown; content?: unknown };
+/** The warning row of a row-ended drop, as ROW_CLOSED (cc CONTRACT session-append-notice-rewrite), or null for any
+ * other row: only a system row whose one text block is exactly the frame around ROW_ENDED. */
+export function rowEndedRow<M extends RowLike>(row: M | null | undefined): M | null {
+  if (!row || row.type !== 'system' || !Array.isArray(row.content) || row.content.length !== 1) return null;
+  const block = row.content[0] as { type?: unknown; text?: unknown } | null;
+  if (!block || block.type !== 'text' || block.text !== DROP_FRAME + ROW_ENDED) return null;
+  return { ...row, content: [{ type: 'text', text: ROW_CLOSED }] };
+}
+
 /** Said once, instead of the rows calls, while the room server is not connected in this session. */
 export const ROWS_DOWN = "SUB-HUMAN ROWS: the room's tools (plugin:sub-human:room) are not connected in this session, so its room row cannot start: don't spawn it. Tell the person once: /mcp reconnects plugin:sub-human:room. SendMessage to other Claudes and @room still work.";
 

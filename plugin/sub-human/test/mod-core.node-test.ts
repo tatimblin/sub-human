@@ -484,6 +484,17 @@ test('rows while the room server is down: said once instead of the spawn calls a
   assert.match(ROWS_DOWN, /don't spawn it.*\/mcp reconnects plugin:sub-human:room/);
 });
 
+test('rowEndedRow: only the warning row of a row-ended drop, as "sub-human: row closed"', async () => {
+  const { rowEndedRow, DROP_FRAME, ROW_ENDED, ROW_CLOSED } = await load('mod/core/rows.ts');
+  const notice = (text: string) => ({ type: 'system', name: 'informational', content: [{ type: 'text', text }] });
+  assert.deepEqual(rowEndedRow(notice(DROP_FRAME + ROW_ENDED)), notice(ROW_CLOSED));
+  assert.equal(rowEndedRow(notice(`${DROP_FRAME}another plugin`)), null);
+  assert.equal(rowEndedRow(notice(ROW_ENDED)), null, 'the reason alone is not the frame');
+  assert.equal(rowEndedRow({ type: 'user', content: [{ type: 'text', text: DROP_FRAME + ROW_ENDED }] }), null);
+  assert.equal(rowEndedRow({ type: 'system', content: [{ type: 'text', text: DROP_FRAME + ROW_ENDED }, { type: 'text', text: 'x' }] }), null);
+  assert.equal(rowEndedRow(null), null);
+});
+
 test('the room server down: told once per time it goes down (toolsDownStep)', async () => {
   const { toolsDownStep, TOOLS_DOWN, TOOLS_DOWN_NOTICE } = await load('mod/core/rows.ts');
   assert.deepEqual(toolsDownStep(false, false), { say: true, down: true }, 'goes down: say it');
