@@ -139,6 +139,11 @@ test('words: plugin.json is valid and describes the slim plugin', () => {
   assert.doesNotMatch(p.description, /sign-off form|room Claude facilitates/i);
 });
 
+test('words: a room plan edit is said to be fine in plan mode, in the member text and the plan tool\'s description (live, 2.1.296: plan mode\'s own "run no non-readonly tools" kept a Claude from the plan tool, so it wrote a plain plan)', () => {
+  assert.match(read(MEMBER), /\(plan edit, allowed in plan mode;/);
+  assert.match(read('mcp/room-server.ts'), /Sub-human room plans\. edit \(fine in plan mode\), then EnterPlanMode/);
+});
+
 test('words: a review is the plan view in the person\'s own session, never "a card" or "their terminal" (the card is only the hooks\' fallback)', () => {
   for (const f of [MEMBER, ROOM_CLAUDE_FILL, AGENT]) {
     const t = read(f);
