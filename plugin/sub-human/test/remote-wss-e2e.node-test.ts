@@ -102,11 +102,10 @@ test('wss 1.1: the listener gives its key to a text request, refuses a handshake
   const { port, host, alice, code } = R;
   const shown = must(host.join(alice, 'invite --web', { SUB_HUMAN_WEB_FRONT: `http://127.0.0.1:${port}` }).json?.reason);
   assert.ok(shortShown(shown));
-  // noise pass C: the room's first invite says the key check and the install once; nothing on the older # form
-  assert.match(shown, /Their machine checks this one's key \(\S+…, named in the line\) before it sends anything/);
-  assert.match(shown, /No sub-human on their machine yet\? In Claude Code there: \/plugin marketplace add tatimblin\/sub-human, then \/plugin install sub-human@sub-human/);
+  // 0.6.0: the key check, the install, the rules and how to cancel or stop are the README's; nothing on the older # form
+  assert.doesNotMatch(shown, /Their machine checks this one's key|No sub-human on their machine yet|Cancel it:/);
   assert.doesNotMatch(shown, /An older sub-human|space in place of the #|They need sub-human/);
-  assert.match(shown, /\nCancel it: \/sub-human invite --cancel [0-9a-f]{12} · stop serving the room: \/sub-human invite --stop\n/);
+  assert.match(shown, /^sub-human: Invite ready \(over the web through 127\.0\.0\.1\) until \d\d:\d\d\. Send them this line:\n/);
   const pinned = Buffer.from(host.lib(() => listener.hostKey()), 'base64url');
   assert.equal(fs.statSync(path.join(host.home, 'listen', 'host-x25519.json')).mode & 0o777, 0o600);
   const ss = spawnSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN'], { encoding: 'utf8' }).stdout;
@@ -204,7 +203,7 @@ esac
   const again = must(host.join(alice, 'invite --web').json?.reason);
   assert.equal(lines().filter(l => l.startsWith('serve')).length, 1);
   assert.doesNotMatch(again, /~20 s|checks this one's key|5 wrong PINs|Off your tailnet/, 'once per room');
-  assert.equal(again.split('\n').length, 6, again);
+  assert.equal(again.split('\n').length, 5, again);
   // --public: opt-in, the serve path off first, then funnel, with the one-line CT warning
   const fun = host.join(alice, 'invite --public');
   assert.match(must(fun.json?.reason), /Tailscale Funnel \(public\)/);

@@ -139,10 +139,8 @@ function reachHints(dest: string, defaulted: boolean): { always: string[]; once:
   return { always, once };
 }
 
-/** The once-per-room notes an invite shows (onceNotes), and what the next one does (INVITE_RULES). */
-const INVITE_RULES = 'They type the PIN after the line; the line alone asks you on a card, the PIN alone gets nobody in, and 5 wrong PINs end the invite. The right PIN lets them in with no card: the room shows who joined, with a check and the kick.';
-/** For a joiner with no sub-human yet: the plugin README's install. */
-const INSTALL_HINT = 'No sub-human on their machine yet? In Claude Code there: /plugin marketplace add tatimblin/sub-human, then /plugin install sub-human@sub-human, and restart it.';
+// An invite's rules (the PIN after the line; the line alone asks on a card; 5 wrong PINs end it), the install for a
+// joiner with no sub-human and the ssh notes are the README's ("Another machine"), not the invite's: it is one line.
 const NOTES_KEY = 'remote/invite-notes';
 /**
  * The texts of notes (key, text) not shown with an earlier invite to this room on this host, each then marked shown
@@ -186,20 +184,23 @@ function invitePinned(p: InviteParts): Pinned {
 }
 
 /**
- * The text an invite is shown with, in two or three rows: what it is, where and until when, and the line and its PIN
- * (whole: in the text; pinned: under the prompt; cut: the line with SECRET for the word under the prompt), then how to
- * cancel it (and, over the web, stop serving the room); then what is shown each time (extra) and once (notes).
+ * The text an invite is shown with: one line, "Invite ready until 18:16 · line and PIN below the prompt" (pinned: the
+ * line and its PIN under the prompt); cut: the line with SECRET for the word under the prompt, on a second line;
+ * whole (no module to pin it): the line and its PIN in the text. Then what is shown each time (extra: what would make
+ * the join fail) and once (notes: a public URL's warning, a certificate's first wait). Cancelling, stopping and the
+ * rules are the README's.
  */
-function inviteText({ code, how, line, pin, ref, expires_at, extra = [], notes = [], web = false }: InviteParts, form: 'whole' | 'pinned' | 'cut' = 'whole'): string {
+function inviteText({ how, line, pin, expires_at, extra = [], notes = [] }: InviteParts, form: 'whole' | 'pinned' | 'cut' = 'whole'): string {
   const at = localHm(expires_at);
-  const what = `invite to room ${code} for one machine, ${how}, ${at ? `until ${at}` : `for ${minutes(INVITE_TTL_MS)} minutes`}`;
+  const until = at ? `until ${at}` : `for ${minutes(INVITE_TTL_MS)} minutes`;
+  // the line is in the text only with no module to pin it: then how it reaches them is said too
+  const what = form === 'whole' ? `Invite ready (${how}) ${until}` : `Invite ready ${until}`;
   const send = form === 'cut'
-    ? [`${what}. The line is wider than this terminal: its PIN and SECRET are under the prompt (not saved in this conversation). Send this line with SECRET replaced by the word there, and say the PIN separately:`, `  ${line}`]
+    ? [`${what} · PIN and SECRET below the prompt. Send this line with SECRET replaced, and say the PIN separately:`, `  ${line}`]
     : form === 'pinned'
-    ? [`${what}: the line and its PIN are under the prompt (not saved in this conversation). Send the line; say the PIN separately.`]
+    ? [`${what} · line and PIN below the prompt`]
     : [`${what}. Send them this line:`, '', `  ${line}`, '', `and tell them its PIN apart from the line (say it, or send it another way): ${pin}`];
-  const stop = web ? ' · stop serving the room: /sub-human invite --stop' : '';
-  return [...send, `Cancel it: /sub-human invite --cancel ${ref}${stop}`, ...extra, ...notes].join('\n');
+  return [...send, ...extra, ...notes].join('\n');
 }
 
 /** An invite line's SECRET word for this home's machine key (ssh, a pipe). */
@@ -216,7 +217,6 @@ function hostInvite(code: RoomCode, { ssh = true, pipe = false, by = null, now =
     const line = `/sub-human join ${locator} ${code} ${word}`;
     const parts = {
       code, how: 'from another sub-human folder on this machine', line, pin: r.pin, ref: r.ref, expires_at: r.expires_at,
-      notes: onceNotes(store, [['rules', INVITE_RULES]]),
     };
     return {
       pin: r.pin, ref: r.ref, expires_at: r.expires_at, short: true, locator, word, line, text: inviteText(parts), pinned: invitePinned(parts),
@@ -235,15 +235,8 @@ function hostInvite(code: RoomCode, { ssh = true, pipe = false, by = null, now =
   const word = machineWord(r.secret);
   const line = `/sub-human join ${dest} ${code} ${word}${ownHome ? '' : ` --home ${h}`}`;
   const reach = reachHints(dest, ssh === true && !envStr('SUB_HUMAN_SSH_ADDR'));
-  const parts = {
-    code, how: `over ssh ${dest}`, line, pin: r.pin, ref: r.ref, expires_at: r.expires_at, extra: reach.always,
-    notes: onceNotes(store, [
-      ['rules', INVITE_RULES],
-      ['ssh', `Over ssh this needs their own ssh login to this account (${os.userInfo().username}), set up as for any ssh login: sub-human writes nothing to authorized_keys. They log in to this machine as someone else? /sub-human invite --forward`],
-      ...reach.once,
-      ['install', INSTALL_HINT],
-    ]),
-  };
+  // the ssh notes (their own login to this account; --forward; another name for this machine) are the README's
+  const parts = { code, how: `over ssh ${dest}`, line, pin: r.pin, ref: r.ref, expires_at: r.expires_at, extra: reach.always };
   return {
     pin: r.pin, ref: r.ref, expires_at: r.expires_at, short: true, locator, word, line, text: inviteText(parts), pinned: invitePinned(parts),
   };
@@ -389,6 +382,6 @@ function givePin(code: RoomCode, pin: Pin): void {
 }
 
 export {
-  hostInvite, inviteText, invitePinned, onceNotes, INVITE_RULES, INSTALL_HINT, cancelInvite, kick, joinLine, givePin, outcome, joinText, shimReady, remoteLogin,
+  hostInvite, inviteText, invitePinned, onceNotes, cancelInvite, kick, joinLine, givePin, outcome, joinText, shimReady, remoteLogin,
   selfAddress,
 };

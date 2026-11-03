@@ -81,7 +81,7 @@ test('commands: leave, kick, admit and invite; handoff is no verb (a reserved na
   assert.ok(inv.kind === 'secret', inv.kind);
   assert.equal(inv.refused, false, 'an invite is no refusal');
   assert.match(text(inv), new RegExp(`/sub-human join pipe:\\S+ ${w.code} [0-9a-z]{39}\n`));
-  assert.match(text(inv), /its PIN apart from the line \(say it, or send it another way\): \d{4}\n/);
+  assert.match(text(inv), /its PIN apart from the line \(say it, or send it another way\): \d{4}$/);
   assert.match(text(run(w, 'invite --pipe --web', { seat: 'alice' })), /pick one way at a time/);
   assert.match(text(run(w, 'admit zz', { seat: 'alice' })), /usage: \/sub-human admit/);
   assert.equal(run(w, 'handoff bob', { seat: 'alice' }).kind, 'refused', 'a reserved word, never a name');

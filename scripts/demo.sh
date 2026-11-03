@@ -429,7 +429,7 @@ S2_ssh() {
   local d="$SNAP_DIR/state/S2"; mkdir -p "$d"
   mark invite "$a invites $b's machine: one line, and a PIN told apart"
   submit "$a" "/sub-human invite"
-  need wait_pane "$a" "invite to room $(room) for one machine, over ssh devbox" 30 --what "$a's pane shows the ssh invite (to $a, never to $a's Claude)" || return 1
+  need wait_pane "$a" "Invite ready" 30 --what "$a's pane shows the ssh invite (to $a, never to $a's Claude)" || return 1
   local line; line=$($LIB join-line "sh-$a")
   [[ "$line" =~ ^join\ devbox\ $(room)\ [0-9a-z]{39}(\ --home\ [^ ]+)?$ ]] || { ABORT="S2: no \"join devbox $(room) SECRET\" line readable in $a's pane (read: ${line:-nothing})"; return 1; }
   local pin; pin=$($LIB join-pin "sh-$a")
@@ -820,7 +820,7 @@ PLAN11=$'# Carol reviews the parser tests\n\n1. carol reads the parser tests\n2.
 S11() { # remote: carol joins from a second home (another machine, on this one) over the pipe link; @room; a signoff
   local before; before=$($LIB log-max)
   submit alice "/sub-human invite --pipe --no-card"   # no copy card: it would hold alice's pane
-  need wait_pane alice "invite to room $(room)" 30 --what "alice's pane shows the invite line (to her, never to her Claude)" || return 1
+  need wait_pane alice "Invite ready" 30 --what "alice's pane shows the invite line (to her, never to her Claude)" || return 1
   local line; line=$($LIB join-line sh-alice)
   [ -n "$line" ] || { ABORT="S11: no invite line readable in alice's pane"; return 1; }
   local pin; pin=$($LIB join-pin sh-alice)   # shown to alice apart from the line; carol knocks without it

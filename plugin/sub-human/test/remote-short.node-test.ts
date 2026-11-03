@@ -92,9 +92,9 @@ test('an invite over pipe: the host sees the line and the PIN apart; the line al
   assert.equal(m.dest, `pipe:${host.home}`);
   assert.equal(m.code, code);
   const { pin, word } = m;
-  assert.match(reason(out), /tell them its PIN apart from the line \(say it, or send it another way\): \d{4}\n/);
+  assert.match(reason(out), /tell them its PIN apart from the line \(say it, or send it another way\): \d{4}$/);
   assert.ok(!new RegExp(`join \\S+ \\S+ ${word}[^\\n]*${pin}`).test(reason(out)), 'the PIN is not on the line');
-  assert.match(reason(out), /The right PIN lets them in with no card: the room shows who joined, with a check and the kick\./);
+  assert.doesNotMatch(reason(out), /The right PIN lets them in with no card/, 'the rules are the README\'s (0.6.0)');
   assert.doesNotMatch(reason(out), /a card here asks you/);
   // noise pass C: no version line for the host (an older joiner is told when it dials)
   assert.doesNotMatch(reason(out), /They need sub-human/);

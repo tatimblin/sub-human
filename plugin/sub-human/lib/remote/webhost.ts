@@ -111,11 +111,9 @@ function hostWeb(code: RoomCode, { funnel = false, port, by = null, now = Date.n
   const line = `/sub-human join ${joinBase}#${word}`;
   const hosting = hostingLib();
   // shown once per room (hosting.onceNotes); the certificate's wait only while Tailscale has just started fetching it
+  // the rules, the key check and the install are the README's; a public URL's warning stays the invite's
   const notes = hosting.onceNotes(store, [
-    ['rules', hosting.INVITE_RULES],
-    ['key', `Their machine checks this one's key (${hostKey.slice(0, 12)}…, named in the line) before it sends anything, so nothing in between can read along.`],
     ...(mode === 'funnel' ? [['funnel', ts().CT_WARNING] as const] : []),
-    ['install', hosting.INSTALL_HINT],
     // Tailscale fetched the name's certificate for this room's first serve: later ones find it there
     ...(warmed ? [['cert', 'The first connection to a new ts.net name can take ~20 s while Tailscale issues its certificate; it is being fetched now, and their machine keeps trying.'] as const] : []),
   ]);
@@ -148,13 +146,8 @@ function hostForward(code: RoomCode, { port, by = null, now = Date.now() }: { po
   const secret = inviteSecretLib();
   const word = secret.encode(r.secret, secret.tagOf(r.secret, 'listener', hostKey));
   const line = `/sub-human join ${host} ${code} ${word} --forward ${lport}`;
-  const notes = hosting.onceNotes(store, [
-    ['rules', hosting.INVITE_RULES],
-    ['forward', `They log in to ${host} as themselves (their own account there, as user@${host} if their name differs); nothing is installed for them. Their ssh must be allowed to forward ports (sshd's AllowTcpForwarding, on by default).`],
-    ['key', `Their machine checks this one's key (${hostKey.slice(0, 12)}…, named in the line) before it sends anything.`],
-    ['install', hosting.INSTALL_HINT],
-  ]);
-  const parts = { code, how: `over their own ssh login to ${host}`, line, pin: r.pin, ref: r.ref, expires_at: r.expires_at, notes, web: true };
+  // the forward's notes (their own login; AllowTcpForwarding), the key check and the install are the README's
+  const parts = { code, how: `over their own ssh login to ${host}`, line, pin: r.pin, ref: r.ref, expires_at: r.expires_at, web: true };
   return {
     pin: r.pin, ref: r.ref, expires_at: r.expires_at, short: true, line, word, locator, hostKey, base: `ws://127.0.0.1:${lport}${roomPath}`, mode: 'ssh-forward', port: lport,
     text: hosting.inviteText(parts), pinned: hosting.invitePinned(parts),

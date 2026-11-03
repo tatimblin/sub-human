@@ -35,7 +35,7 @@ import { mergeClassic } from './core/prompt.ts';
 import { prePayload, rejectedPayload } from './core/facts.ts';
 import { asHello } from './core/state.ts';
 import { facts, copies } from './deliver.ts';
-import { copyAsked, copyCard, copyOutcome, copySaid, copyTo, clipboardCommands, COPY_QUESTION, COPIED, NO_TOOL, GONE } from './core/copy.ts';
+import { copyAsked, copyCard, copyOutcome, copySaid, copyTo, copyNews, clipboardCommands, COPY_QUESTION, COPIED, NO_TOOL, GONE } from './core/copy.ts';
 import type { EngineInterface, On } from 'claude-code';
 import type { Hello, RunOutput, SubHumanRead } from './core/types.ts';
 
@@ -112,7 +112,7 @@ async function copyPost($: EngineInterface, e: { tool_use_id?: unknown; tool_inp
     });
     said = (await copyTo((name, init) => $.process.run(['sh', `${$.plugin.root}/scripts/clip.sh`, name], init), out.copy, commands)) === 'copied' ? COPIED : NO_TOOL;
   }
-  $.ui.log(said);
+  if (copyNews(said)) $.ui.log(said); else $.ui.log(`copy card: ${said}`, { to: 'debug' });
   return copySaid(said);
 }
 

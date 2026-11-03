@@ -35,8 +35,10 @@ export function run(x: Ctx, { det }: { det: Det }): void {
     j && j.via === 'system' && typeof j.pubkey === 'string' && j.machine && j.machine === carolId && j.machine !== hostId,
     `${x.fmt(j)}; machine ${j ? j.machine : '?'} (carol's home ${carolId || 'not saved'}, host ${hostId || 'not saved'}); pubkey ${j && j.pubkey ? 'pinned' : 'missing'}`);
 
-  const shown = (x.cap('S11', 'alice') || '').includes(`invite to room ${code}`);
-  det('alice\'s /sub-human invite shows her the invite in her pane', shown, shown ? `"invite to room ${code}" in ${x.capName('S11', 'alice')}` : `not in ${x.capName('S11', 'alice')}`);
+  // 0.6.0: "Invite ready until HH:MM · line and PIN below the prompt" (before: "invite to room CODE …")
+  const cap = x.cap('S11', 'alice') || '';
+  const shown = cap.includes('Invite ready') || cap.includes(`invite to room ${code}`);
+  det('alice\'s /sub-human invite shows her the invite in her pane', shown, shown ? `"Invite ready" in ${x.capName('S11', 'alice')}` : `not in ${x.capName('S11', 'alice')}`);
   const LINE = /\/sub-human join \S+ [a-z]+-\d{4} [0-9a-z]{39}\b|\/sub-human join \d{4}\b/;
   const quoted = ['alice', 'carol'].flatMap(s => x.inSpan(x.entries(s), x.span('S11'))).filter(e => e.type === 'assistant' && LINE.test(x.textOf(e.message && e.message.content)));
   det('no Claude sees it: no assistant text in S11 quotes the line with its SECRET, or the PIN', quoted.length === 0, quoted.length ? `${quoted.length} assistant message(s) quote one` : 'none');

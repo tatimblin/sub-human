@@ -29,7 +29,8 @@ const PLUGIN = path.join(import.meta.dirname, '..');
 test('copy card: the question and its two options, as the plan words them', () => {
   const [q] = copyCard().questions;
   assert.ok(q);
-  assert.equal(q.question, 'Copy the invite line to your clipboard? (the PIN is not copied)');
+  assert.equal(q.question, 'Copy the invite?');
+  assert.match(q.options[0]?.description ?? '', /The PIN is not copied/, 'the option says what is not copied');
   assert.deepEqual(q.options.map(o => o.label), [COPY, SKIP]);
   assert.equal(q.multiSelect, false);
 });

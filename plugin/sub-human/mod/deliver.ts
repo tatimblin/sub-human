@@ -21,7 +21,7 @@ import { mergeClassic } from './core/prompt.ts';
 import { factsBook, type FactsBook } from './core/facts.ts';
 import { asHello, asNonce, mintNonce } from './core/state.ts';
 import { ccNotice } from './core/cc.ts';
-import { copyBook, copyWake, copyTo, clipboardCommands, AUTO_COPIED, NO_TOOL, type CopyBook } from './core/copy.ts';
+import { copyBook, copyWake, copyTo, copyNews, clipboardCommands, AUTO_COPIED, NO_TOOL, type CopyBook } from './core/copy.ts';
 import {
   leaveQuestion, leaveOutcome, issueUrl, versionsLine, openCommands, openWith, LEAVE_OPTIONS, LEAVE_HEADER, REPO_URL,
   STARRED, STAR_TIMEOUT_MS, starOpened, starShown, issueOpened, issueShown, saidBook, sessionSnippet, type SaidBook,
@@ -533,7 +533,7 @@ async function offerCopy($: EngineInterface, ref: string) {
     const line = copies.lineFor(ref, await copyNow($));
     if (!line) return;
     // Copy once: later invites are copied with no card, and no turn
-    if (choice === 'copy') { $.ui.log(await clip($, line, AUTO_COPIED)); return; }
+    if (choice === 'copy') { const said = await clip($, line, AUTO_COPIED); if (copyNews(said)) $.ui.log(said); else $.ui.log(`copy: ${said}`, { to: 'debug' }); return; }
     // no line for the person: the wake goes framed, as the plugin's own message (copy.ts copyWake)
     const text = copyWake(ref);
     if (turns.running !== null) await midTurnWake($, text);

@@ -235,7 +235,9 @@ test('every verb is a reserved name: /sub-human doctor or help is never a person
   for (const v of ['invite', 'join', 'kick', 'leave', 'doctor', 'help', 'admit', 'handoff']) assert.ok(identity.RESERVED.includes(v), v);
   const w = new World({ claude: 'sleep', alice: 'act' });
   const h = w.hook('join', expand('help'), { as: 'alice' });
-  assert.match(must(must(h.json).reason), /\/sub-human invite .*\n[\s\S]*\/sub-human join HOST ROOM SECRET[\s\S]*\/sub-human join PIN /);
+  // the six-line help (the join forms, admit and kick are the README's)
+  assert.match(must(must(h.json).reason), /\/sub-human invite +Invite someone on another machine\n[\s\S]*\/sub-human leave +Leave the room/);
+  assert.equal(must(must(h.json).reason).split('\n').length, 6);
   assert.equal(w.members().help, undefined);
   for (const name of ['kick', 'leave', 'doctor']) {
     const r = w.hook('join', expand(`${name} vole-1234`), { as: 'alice' });
@@ -477,15 +479,16 @@ test('/sub-human invite: an invite line for my room, shown to me only (a hidden 
   assert.deepEqual([shown.systemMessage, shown.hookSpecificOutput], [undefined, { hookEventName: 'UserPromptExpansion', suppressOriginalPrompt: true }]);
   const m = new RegExp(`\n  /sub-human join pipe:${w.home.replace(/[.]/g, '\\.')} ${w.code} ([0-9a-z]{39})\n`).exec(must(shown.reason));
   assert.ok(m, shown.reason);
-  const pin = /tell them its PIN apart from the line \(say it, or send it another way\): (\d{4})\n/.exec(must(shown.reason));
+  const pin = /tell them its PIN apart from the line \(say it, or send it another way\): (\d{4})$/.exec(must(shown.reason));
   assert.ok(pin, shown.reason);
-  assert.match(must(shown.reason), /the line alone asks you on a card, the PIN alone gets nobody in, and 5 wrong PINs end the invite/);
-  assert.match(must(shown.reason), /\nCancel it: \/sub-human invite --cancel [0-9a-f]{12}\n/);
+  // the rules and how to cancel are the README's (0.6.0): the invite is its line and PIN
+  assert.doesNotMatch(must(shown.reason), /5 wrong PINs|Cancel it/);
+  assert.match(must(shown.reason), /^sub-human: Invite ready \(from another sub-human folder on this machine\) until \d\d:\d\d\. Send them this line:\n/);
   const again = must(must(w.hook('join', expand('invite --pipe'), { as: 'alice' }).json).reason);
   assert.notEqual(must(new RegExp(`${w.code} ([0-9a-z]{39})`).exec(again))[1], m[1], 'a new one each time');
-  // noise pass C: the rules show with the room's first invite only; the next is the line, its PIN and the cancel
+  // noise pass C: the rules (the README's since 0.6.0) never show
   assert.doesNotMatch(again, /5 wrong PINs/);
-  assert.equal(again.split('\n').length, 6, again);
+  assert.equal(again.split('\n').length, 5, again);
   for (const [args, re] of [['invite --frobnicate', /usage: \/sub-human invite/], ['invite --pipe --web', /pick one/], ['invite --ssh NAME@box', /placeholder/], ['invite --ssh USER@box', /placeholder/]] as const) {
     const r = must(w.hook('join', expand(args), { as: 'alice' }).json);
     assert.match(must(r.reason), re, args);
@@ -730,7 +733,7 @@ test('classic (no module answering): a reply is the block reason alone, never al
   assert.equal(must(r.json).reason, 'sub-human: ✗ usage: /sub-human [NAME] joins or opens a room. All commands: /sub-human help');
   const inv = w.hook('join', expand('invite --pipe'), { as: 'alice' });
   assert.equal(must(inv.json).decision, 'block');
-  assert.match(must(must(inv.json).reason), /^sub-human: invite to room /, 'an invite is no refusal: no ✗');
+  assert.match(must(must(inv.json).reason), /^sub-human: Invite ready /, 'an invite is no refusal: no ✗');
   assert.equal(must(inv.json).systemMessage, undefined, 'the invite stays off Remote Control');
   assert.equal(must(must(inv.json).hookSpecificOutput).suppressOriginalPrompt, true);
 });
@@ -751,7 +754,7 @@ test('through the module (command.run): every reply is {subHuman: {say}}, never 
   assert.equal(help.decision, undefined);
   assert.equal(must(help.subHuman).refused, false);
   assert.equal(must(help.subHuman).shareable, true, 'help holds no secret: the command\'s own output');
-  assert.match(must(must(help.subHuman).say), /^commands:\n {2}\/sub-human /);
+  assert.match(must(must(help.subHuman).say), /^\/sub-human +Join the room here, or open one\n/);
   const bad = must(must(viaModule(w, 'me', 'a b c').json).subHuman);
   assert.deepEqual([bad.refused, bad.shareable], [true, true]);
   assert.match(must(bad.say), /^✗ usage: \/sub-human \[NAME\]/);
@@ -779,7 +782,7 @@ test('through the module (PLAN-JOIN step 3): a take (no args, the room) with no 
   assert.equal(seated.say, '', 'seated already: nothing (a status would be a notice nobody asked for)');
   // a take is the module's alone, and only bare: words with it are the command they are
   const typed = must(must(viaModule(w, 'bob', 'help', { take: w.code }).json).subHuman);
-  assert.match(must(typed.say), /^commands:/);
+  assert.match(must(typed.say), /^\/sub-human +Join the room here/);
 });
 
 test('through the module: a join in bypass-permissions mode is the same one line (the module\'s debug log says the mode)', () => {
@@ -797,17 +800,17 @@ test('SECURITY through the module: an invite and anything a PIN may be typed in 
   // the line and the PIN are pinned (the module's status line: no transcript row holds them); the notices say where
   assert.doesNotMatch(must(inv.say), new RegExp(`[0-9a-z]{39}`));
   assert.doesNotMatch(must(inv.say), /: \d{4}\b/);
-  assert.match(must(inv.say), /until \d\d:\d\d: the line and its PIN are under the prompt \(not saved in this conversation\)\. Send the line; say the PIN separately\./);
+  assert.match(must(inv.say), /^Invite ready until \d\d:\d\d · line and PIN below the prompt$/, 'one line');
   // item 2 (D): the PIN first and short, then the line; nothing before it that costs width
   assert.match(must(inv.pinned).status, new RegExp(`^PIN \\d{4} · /sub-human join pipe:\\S+ ${w.code} [0-9a-z]{39}$`));
   assert.ok(must(inv.pinned).ms > 14 * 60_000 && must(inv.pinned).ms <= 15 * 60_000);
   // for a terminal too narrow for the line: the PIN and the SECRET alone, and notices with SECRET in the word's place
   assert.match(must(must(inv.pinned).short), /^PIN \d{4} · SECRET [0-9a-z]{39}$/);
-  assert.match(must(must(inv.pinned).cut), new RegExp(`\\n  /sub-human join pipe:\\S+ ${w.code} SECRET\\n`));
+  assert.match(must(must(inv.pinned).cut), new RegExp(`\\n  /sub-human join pipe:\\S+ ${w.code} SECRET$`));
   const pin = must(/^PIN (\d{4})/.exec(must(inv.pinned).status))[1];
   assert.doesNotMatch(must(must(inv.pinned).cut), new RegExp(`[0-9a-z]{39}|PIN ${pin}|\\b${pin}\\b(?!.*${w.code})`));
   assert.match(must(must(inv.pinned).ref), /^[0-9a-f]{12}$/);
-  assert.ok(must(inv.say).includes(must(must(inv.pinned).ref)), 'the notices name the ref --cancel takes');
+  assert.ok(!must(inv.say).includes(must(must(inv.pinned).ref)), 'no hex ref in the one line (--cancel with none takes the one open invite)');
   // PLAN-JOIN step 5: the line alone for the module's copy card, the status less its PIN; never the PIN itself
   assert.equal(`PIN ${pin} · ${must(must(inv.pinned).line)}`, must(inv.pinned).status);
   assert.ok(!must(must(inv.pinned).line).split(/\s+/).includes(must(pin)));
@@ -847,17 +850,17 @@ test('the block lists the room\'s Claude only while it runs or is starting: neve
   assert.match(text, new RegExp(`room ${w.code} \\(with bob\\)`), text.slice(0, 120));
 });
 
-test('/sub-human help WORDS shows the list (it was refused), without the module too', () => {
+test('/sub-human help WORDS shows the six lines (no topics), without the module too', () => {
   const w = new World({ claude: 'sleep', alice: 'act' });
   for (const args of ['help', 'help join', 'help me please']) {
     const r = w.hook('join', expand(args), { as: 'alice', modLease: false });
     assert.equal(must(r.json).decision, 'block', args);
-    assert.match(must(must(r.json).reason), /^sub-human: commands:\n {2}\/sub-human /, args);
+    assert.match(must(must(r.json).reason), /^sub-human: \/sub-human +Join the room here, or open one\n/, args);
     assert.equal(must(r.json).hookSpecificOutput, undefined, `${args}: no secret in it`);
   }
   // a word of digits after help: the same list, hidden (it may be a PIN)
   const pin = w.hook('join', expand('help 4829'), { as: 'alice' });
-  assert.match(must(must(pin.json).reason), /^sub-human: commands:/);
+  assert.match(must(must(pin.json).reason), /^sub-human: \/sub-human +Join the room here/);
   assert.equal(must(must(pin.json).hookSpecificOutput).suppressOriginalPrompt, true);
 });
 

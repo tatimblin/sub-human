@@ -53,7 +53,7 @@ test('forward: the line names the machine and the port, no account; the joiner\'
   const m = must(shownInvite(shown), shown);
   assert.equal(m.line, `join devbox ${code} ${m.word} --forward ${port}`, 'the host name with no user, and the listener\'s port');
   assert.match(shown, /over their own ssh login to devbox/);
-  assert.match(shown, /They log in to devbox as themselves .*nothing is installed for them\. Their ssh must be allowed to forward ports/);
+  assert.doesNotMatch(shown, /They log in to devbox as themselves/, 'the forward\'s notes are the README\'s (0.6.0)');
   assert.equal(host.lib(() => listener.status()).rooms[code]?.mode, 'ssh-forward');
 
   const typed = remote.join(bob, `${m.line} ${m.pin} --as bob`);
