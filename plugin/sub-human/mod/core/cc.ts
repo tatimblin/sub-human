@@ -8,7 +8,8 @@
  *                             only makes the version unverified); since 0.7.0 also task-internal (the room task's
  *                             file is marked metadata._internal) and reap-rm (a closed room's session is deleted with
  *                             `claude rm`, not only stopped), quiet-plan (sub-human's own plan-mode rows drawn as
- *                             nothing: mod/core/quiet.ts)
+ *                             nothing: mod/core/quiet.ts) and keep-mode (#34: a review's closing call keeps the
+ *                             person's mode, its note's Send / Discard asked first)
  *   isGated(v)                v is one of them
  *   closeOff(features) -> Gated[]   features, deduplicated in GATED order, with what each implies: sign-off implies
  *                             plan-edit (a room plan edit goes through plan mode too)
@@ -21,7 +22,7 @@ import type { Hello } from './types.ts';
 
 export const isCcVersion = (v: unknown): v is string => typeof v === 'string' && /^\d+\.\d+\.\d+[0-9A-Za-z.+-]{0,40}$/.test(v) && !v.includes('..');
 
-export const GATED = ['room-session', 'tasks', 'plan-edit', 'sign-off', 'task-internal', 'reap-rm', 'quiet-plan'] as const;
+export const GATED = ['room-session', 'tasks', 'plan-edit', 'sign-off', 'task-internal', 'reap-rm', 'quiet-plan', 'keep-mode'] as const;
 export type Gated = typeof GATED[number];
 export type Cc = NonNullable<Hello['cc']>;
 
@@ -41,6 +42,7 @@ export const FALLBACK: Readonly<Record<Gated, string>> = Object.freeze({
   'task-internal': 'the room session lists its own "room open" task',
   'reap-rm': 'a closed room\'s session is stopped, not deleted',
   'quiet-plan': 'plan mode draws its own rows for a room review and a plan save',
+  'keep-mode': 'asking for changes on a room plan returns you to manual mode',
 });
 
 export function parseCc(v: unknown): Cc | null {

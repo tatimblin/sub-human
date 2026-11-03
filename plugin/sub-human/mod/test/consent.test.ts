@@ -12,9 +12,10 @@ const POST = 'mcp__plugin_sub-human_room__post'
 const READ = 'mcp__plugin_sub-human_room__read'
 
 /** The engine beneath: mod-hello answering `hello`, consent.ts answering in turn from `answers` (the last repeats). */
-type Options = { hello?: ReturnType<typeof helloOf> & { cc?: { version: string; verified: boolean | null; off: string[] } }; answers?: object[]; exit?: { deny: string } }
+/** ask: the person's answer on a card the module asks itself ($.ui.ask, an AskUserQuestion call); null: dismissed. */
+type Options = { hello?: ReturnType<typeof helloOf> & { cc?: { version: string; verified: boolean | null; off: string[] } }; answers?: object[]; exit?: { deny: string }; ask?: string | null }
 type Seen = { consent: { stdin: Record<string, unknown>; env: Record<string, string> | undefined }[]; beneathStop: number; beneathPre: string[]; tools: string[]; logs: string[] }
-function world(on: On, { hello = OUT, answers = [{ subHuman: { reviewOpen: false } }], exit }: Options = {}) {
+function world(on: On, { hello = OUT, answers = [{ subHuman: { reviewOpen: false } }], exit, ask }: Options = {}) {
   const seen: Seen = { consent: [], beneathStop: 0, beneathPre: [], tools: [], logs: [] }
   session(on, SID)
   on('session.cwd', () => ({ value: '/w' }))
@@ -31,7 +32,15 @@ function world(on: On, { hello = OUT, answers = [{ subHuman: { reviewOpen: false
   // ^mcp__plugin_sub-human_room__), another plugin's, the user's
   on('classic.PreToolUse', (_$, e) => { seen.beneathPre.push(e.tool); return {} })
   on('tool.check', () => ({ decision: 'allow' }))
-  on('tool.call', (_$, e) => { seen.tools.push(e.tool); return e.tool === 'ExitPlanMode' && exit ? exit : { result: 'ok', text: 'ok' } })
+  on('tool.call', (_$, e) => {
+    seen.tools.push(e.tool)
+    if (e.tool === 'AskUserQuestion' && ask !== undefined) {
+      if (ask === null) return { deny: 'The user doesn\'t want to proceed with this tool use.' }
+      const q = String(e.questions[0]?.question)
+      return { result: { questions: e.questions, answers: { [q]: ask } }, text: `"${q}"="${ask}"` }
+    }
+    return e.tool === 'ExitPlanMode' && exit ? exit : { result: 'ok', text: 'ok' }
+  })
   on('ui.render', () => ({ type: 'Text', children: ['the engine\'s line'] })) // the engine's drawing, beneath
   return seen
 }
@@ -170,6 +179,35 @@ test('M (live verify): an ExitPlanMode refused in the plan view goes to consent 
   expect(seen.consent.length).toBe(3)
   expect(seen.consent[2]?.stdin.tool_name).toBe(POST)
 })
+
+/** #34: a refusal with a note that consent asks the module to put on its own card first (subHuman.noteAsk). */
+function noteFirst(on: On, ask: string | null) {
+  const refusal = "The user doesn't want to proceed with this tool use. … the user said:\ncap pages at 100\n\nNote: The user's next message …"
+  const waits = 'sub-human: nothing is recorded yet: bob\'s note on abcdef012345 waits for its card (Send or Discard)'
+  const card = { question: 'room proposal abcdef012345: send bob\'s note to alice?', header: 'Room plan', options: ['Send', 'Discard'] }
+  const rejected = { hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: waits }, subHuman: { reviewOpen: true, noteWaits: true, noteAsk: card } }
+  const said = ask === 'Send' ? 'Recorded. bob objected to proposal abcdef012345. Nothing is to be built. Next, call ExitPlanMode now (no plan needed)'
+    : ask === 'Discard' ? 'bob discarded the note; nothing was recorded. Nothing is to be built. Next, call ExitPlanMode now (no plan needed)' : waits
+  const answered = { hookSpecificOutput: { hookEventName: 'NoteAnswer', additionalContext: said }, subHuman: { reviewOpen: true, noteWaits: ask === null } }
+  const seen = world(on, { answers: [{ subHuman: { reviewOpen: true, noteWaits: false } }, rejected, answered], exit: { deny: refusal }, ask })
+  return { seen, refusal, said, card }
+}
+
+for (const ask of ['Send', 'Discard', null] as const) {
+  test(`#34 keep-mode: a refusal with a note puts Send / Discard on the module's own card at once, in plan mode; the answer (${String(ask)}) goes to consent, and its line replaces the refusal's`, async ($, on) => {
+    const { seen, refusal, said, card } = noteFirst(on, ask)
+    await start($)
+    const r = await exitPlan($, 'proposal abcdef012345')
+    expect(seen.consent.map(c => c.stdin.hook_event_name)).toEqual(['PreToolUse', 'PostToolUseFailure', 'NoteAnswer'])
+    // the card: the module's own AskUserQuestion, never sent through consent's card rewrite (its own hooks pass it by)
+    expect(seen.tools).toEqual(['ExitPlanMode', 'AskUserQuestion'])
+    expect(seen.beneathPre).toContain('AskUserQuestion')
+    const answer = must(seen.consent[2], 'the answer\'s consent run').stdin
+    expect([answer.session_id, answer.sub_human_note]).toEqual([SID, ask])
+    expect(r.deny).toBe(`${refusal}\n\n${said}`)
+    expect(card.options).toEqual(['Send', 'Discard'])
+  })
+}
 
 test('M: an ExitPlanMode that ran (a Yes) is not a refusal: no consent run from tool.call', async ($, on) => {
   const seen = world(on)

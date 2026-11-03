@@ -71,6 +71,8 @@ type JoinRequest = AdmissionRequest;
 
 seatKey.arm();
 
+/** #34: the module's event for the person's Send / Discard on the note's card it asked itself (mod/consent.ts). */
+const NOTE_ANSWER = 'NoteAnswer';
 /** The room's post tool (hooks/handlers/consent.ts has the same: neither file loads the other's values). */
 const POST_TOOL = /^mcp__plugin_sub-human_room__post$/;
 
@@ -227,7 +229,7 @@ function shownText(me: Identity, hash: string): string | null {
 /** The seat's state, reduce one event (made from it), run the effects, store the state, write the answer. */
 function step(input: ConsentIn, me: Identity, make: (st: State) => ConsentEvent, show: Out['show'] = {}, quiet = false) {
   const start: State = { review: proposal.readReview(me), note: proposal.readConfirm(me), recheck: proposal.readRecheck(me), steer: proposal.readSteer(me) };
-  const ctx = { name: me.name, now: Date.now(), guardMs: env.testMs('SUB_HUMAN_YES_GUARD_MS') };
+  const ctx = { name: me.name, now: Date.now(), guardMs: env.testMs('SUB_HUMAN_YES_GUARD_MS'), keepMode: keepMode(input) };
   const first = review.reduce(start, make(start), ctx);
   if (first.notice) unsent.push(first.notice);
   let state = first.state;
@@ -239,6 +241,7 @@ function step(input: ConsentIn, me: Identity, make: (st: State) => ConsentEvent,
     if (e.do === 'save') { proposal.writeReview(me, e.review); disk.review = JSON.stringify(e.review); }
     else if (e.do === 'restorePlan') proposal.restorePlan({ phase: 'exiting', file: e.file, backup: e.backup, restored: false });
     else if (e.do === 'blankPlan') blankPlan(e.file);
+    else if (e.do === 'closePlan') { try { writeFileAtomic(e.file, e.text); } catch (err) { c.logError(err, 'consent: plan file (close)'); } }
     else if (e.do === 'answer') {
       const res = record(me, e.hash, { choice: e.choice, ...(e.notes !== undefined ? { notes: e.notes } : {}) });
       answers.set(e.hash, { choice: e.choice, res });
@@ -294,6 +297,9 @@ function write(input: ConsentIn, me: Identity, say: Say, state: State, answers: 
     case 'ask': {
       const s = say.show;
       if ('leave' in s) return c.pre('ask', say.text, { updatedInput: { plan: ccEnv.LEAVE_PLAN_TEXT } });
+      // #34: a person in auto mode leaves with the closing line as the plan ("Yes, and use auto mode" first): its
+      // "User approved Claude's plan" row is sub-human's, hidden
+      if ('close' in s) { quietOut = true; return c.pre('ask', say.text, { updatedInput: { plan: s.close } }); }
       if ('plan' in s) { quietOut = true; return c.pre('ask', say.text, { updatedInput: { plan: shownText(me, s.plan) } }); }
       if ('note' in s) return state.note && c.pre('ask', say.text, { updatedInput: proposal.confirmCard(state.note) });
       if ('admit' in s && show.admit) return c.pre('ask', `room ${me.code}: ${show.admit.name} asks to join`, { updatedInput: admission.card(show.admit, me.code) });
@@ -516,6 +522,7 @@ function preRoomTool(input: ConsentIn, me: Identity) {
  * the note from the transcript's tool_result, else from the refusal's own text (the line may not be on disk yet, or
  * be in a shape that gives no note: the refusal's text is the person's words either way). */
 function rejectedExit(input: ConsentIn, me: Identity) {
+  const before = proposal.readConfirm(me);
   step(input, me, st => {
     const id = input.tool_use_id || null;
     const fromDisk = id ? cc.planAnswer(lines(input), id) : null;
@@ -523,7 +530,22 @@ function rejectedExit(input: ConsentIn, me: Identity) {
     const answer = fromDisk && fromDisk.note !== null ? fromDisk : fromError.note !== null ? fromError : fromDisk ?? fromError;
     return { type: 'rejected', toolUseId: id, answer, target: st.review ? targetOf(me, st.review.hash) : null };
   });
+  // #34: a note this refusal opened, on a review closing outside plan mode: the module asks Send / Discard now, while
+  // plan mode is still on, before the closing call (its answer comes back as NoteAnswer)
+  const note = proposal.readConfirm(me);
+  const r = proposal.readReview(me);
+  if (keepMode(input) && note && JSON.stringify(note) !== JSON.stringify(before) && r && r.phase === 'exiting' && r.hash === note.hash) {
+    noteAskOut = { question: proposal.confirmQuestion(note), header: 'Room plan', options: ['Send', 'Discard'] };
+  }
 }
+/** #34: the person's Send / Discard on the note's card the module asked ($.ui.ask), or null for no answer. */
+function noteAnswer(input: ConsentIn, me: Identity) {
+  const got = input.sub_human_note;
+  const label = got === 'Send' || got === 'Discard' ? got : null;
+  step(input, me, st => ({ type: 'noteAnswer', label, target: st.note ? targetOf(me, st.note.hash) : null }));
+}
+/** #34 (the verdict's keep-mode on): a review's closing call keeps the person's mode, and Send / Discard comes first. */
+const keepMode = (input: ConsentIn): boolean => !verdict.off('keep-mode', { sid: input.session_id });
 function stop(input: ConsentIn, me: Identity) {
   step(input, me, st => ({ type: 'stop', mode: input.permission_mode, active: !!input.stop_hook_active, ...answerFacts(input, me, st.review, 'stop'),
     live: !st.review && !!st.note && isPending(me, st.note.hash) }));
@@ -542,6 +564,8 @@ let attachOut = '';
 let quietOut = false;
 /** A line for Claude Code's debug log (shim mode: subHuman.debug), never the person's. */
 let debugOut = '';
+/** #34: the note's card for the module to ask itself (shim mode: subHuman.noteAsk). */
+let noteAskOut: { question: string; header: string; options: string[] } | null = null;
 
 /** What an edit seeds into the plan file: the header and the base version's text (lib/consent/edit.ts seed). */
 function seedText(me: Identity, plan: string, base: number): string {
@@ -672,6 +696,7 @@ function dispatch(input: ConsentIn): void {
   attachOut = '';
   quietOut = false;
   debugOut = '';
+  noteAskOut = null;
   const r = c.capture(() => route(input));
   const note = unsent.length ? { systemMessage: `sub-human: ${unsent.join(' ')}` } : null;
   r.outputs.forEach((o, i) => c.out(note && i === 0 ? { ...o, ...note } : o));
@@ -723,6 +748,7 @@ function route(input: ConsentIn) {
   if (tool === 'ExitPlanMode' && ev === 'PreToolUse') return locked(preExit);
   if (tool === 'ExitPlanMode' && ev === 'PostToolUse') return locked(postExit);
   if (tool === 'ExitPlanMode' && ev === 'PostToolUseFailure') return locked(rejectedExit);
+  if (ev === NOTE_ANSWER) return locked(noteAnswer);
   if (/^mcp__plugin_sub-human_room__/.test(tool || '') && ev === 'PreToolUse') return locked(preRoomTool);
   if (ev === 'Stop') return locked(stop);
   if (ev === 'UserPromptSubmit') return locked(prompt);
@@ -757,7 +783,7 @@ function shimDispatch(input: ConsentIn) {
   const last = outputs.pop() ?? {};
   for (const o of outputs) process.stdout.write(JSON.stringify(o) + '\n');
   c.out({ ...last, subHuman: { reviewOpen: reviewOpen(input), noteWaits: noteWaits(input), ...(attachOut ? { attach: attachOut } : {}),
-    ...(quietOut ? { quiet: true } : {}), ...(debugOut ? { debug: debugOut } : {}) } });
+    ...(quietOut ? { quiet: true } : {}), ...(debugOut ? { debug: debugOut } : {}), ...(noteAskOut ? { noteAsk: noteAskOut } : {}) } });
 }
 
 /** Run by the hooks module (mod/core/shim.ts SHIM_MODE). */

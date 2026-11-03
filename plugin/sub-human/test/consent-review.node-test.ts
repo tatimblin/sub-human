@@ -41,6 +41,7 @@ const EVENTS: { [K in ConsentEvent['type']]: Extract<ConsentEvent, { type: K }> 
   answered: { type: 'answered', note: { kind: 'absent' }, target, afk: false, asked: true, answers: [{ hash: H, answer: { kind: 'answer', label: 'Agree' }, live: true }] },
   planFailed: { type: 'planFailed', early: false },
   rejected: { type: 'rejected', toolUseId: 'tu1', answer: { note: 'add a test' }, target },
+  noteAnswer: { type: 'noteAnswer', label: 'Send', target },
 };
 
 /** What a step did, compactly: the review's phase after it (none: cleared), the say's kind, the effects in order. */
@@ -56,32 +57,32 @@ const TABLE: Record<string, Record<ConsentEvent['type'], [string, string | null,
   none: {
     enter: ['entering', null, 'save,writePlan'], entered: ['none', null, ''], exit: ['none', null, ''],
     exited: ['none', null, ''], stop: ['none', null, ''], roomTool: ['none', null, ''], prompt: ['none', null, ''],
-    ask: ['none', 'deny', ''], answered: ['none', 'context', 'answer'], planFailed: ['none', null, ''], rejected: ['none', null, ''],
+    ask: ['none', 'deny', ''], answered: ['none', 'context', 'answer'], planFailed: ['none', null, ''], rejected: ['none', null, ''], noteAnswer: ['none', null, ''],
   },
   entering: {
     enter: ['entering', null, 'save,writePlan'], entered: ['entering', 'context', 'save,writePlan'], exit: ['shown', 'ask', 'save,writePlan'],
     exited: ['none', null, ''], stop: ['entering', 'context', ''], roomTool: ['entering', null, ''],
-    prompt: ['exiting', 'context', ''], ask: ['entering', 'deny', ''], answered: ['entering', 'context', 'answer'], planFailed: ['exiting', null, ''], rejected: ['entering', null, ''],
+    prompt: ['exiting', 'context', ''], ask: ['entering', 'deny', ''], answered: ['entering', 'context', 'answer'], planFailed: ['exiting', null, ''], rejected: ['entering', null, ''], noteAnswer: ['entering', null, ''],
   },
   shown: {
     enter: ['entering', null, 'restorePlan,save,writePlan'], entered: ['shown', null, ''], exit: ['exiting', 'ask', 'blankPlan'],
     exited: ['none', 'context', 'answer,restorePlan'], stop: ['exiting', 'context', ''], roomTool: ['exiting', 'deny', ''], prompt: ['exiting', 'context', ''],
-    ask: ['shown', 'deny', ''], answered: ['shown', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', 'context', ''],
+    ask: ['shown', 'deny', ''], answered: ['shown', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', 'context', ''], noteAnswer: ['shown', null, ''],
   },
   exiting: {
     enter: ['entering', null, 'restorePlan,save,writePlan'], entered: ['exiting', null, ''], exit: ['exiting', 'ask', 'blankPlan'],
     exited: ['none', 'context', 'restorePlan'], stop: ['exiting', 'context', ''], roomTool: ['exiting', 'deny', ''], prompt: ['exiting', 'context', ''],
-    ask: ['exiting', 'deny', ''], answered: ['exiting', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', null, ''],
+    ask: ['exiting', 'deny', ''], answered: ['exiting', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', null, ''], noteAnswer: ['exiting', null, ''],
   },
   unread: {
     enter: ['entering', null, 'restorePlan,save,writePlan'], entered: ['exiting', null, ''], exit: ['exiting', 'ask', 'blankPlan'],
     exited: ['none', 'context', 'answer,restorePlan'], stop: ['exiting', 'context', ''], roomTool: ['exiting', 'deny', ''], prompt: ['exiting', 'context', ''],
-    ask: ['exiting', 'deny', ''], answered: ['exiting', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', 'context', ''],
+    ask: ['exiting', 'deny', ''], answered: ['exiting', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', 'context', ''], noteAnswer: ['exiting', null, ''],
   },
   restore: {
     enter: ['restore', null, ''], entered: ['restore', 'context', ''], exit: ['exiting', 'ask', 'blankPlan'],
     exited: ['restore', null, ''], stop: ['restore', 'context', ''], roomTool: ['restore', null, ''], prompt: ['none', null, ''],
-    ask: ['restore', 'deny', ''], answered: ['restore', 'context', 'answer'], planFailed: ['exiting', null, ''], rejected: ['restore', null, ''],
+    ask: ['restore', 'deny', ''], answered: ['restore', 'context', 'answer'], planFailed: ['exiting', null, ''], rejected: ['restore', null, ''], noteAnswer: ['restore', null, ''],
   },
 };
 
@@ -589,4 +590,93 @@ test('0.7.0 frame: the plan view\'s first line says what it is for; it never ent
   // a framed text left in the plan file is never backed up as the person's own plan
   const entered = review.reduce({ review: null, note: null }, { ...EVENTS.enter, plan: { file: '/plans/x.md', text: shown } }, ctx);
   assert.equal(must(entered.state.review).backup, null);
+});
+
+// ---------- #34: the mode survives a review (quiet/SPIKES.md spike 1) ----------
+const keep = { ...ctx, keepMode: true };
+/** A review shown to a person who was in `mode` before it, refused with a note in its plan view. */
+function refusedWithNote(mode: string): State {
+  const s = review.reduce({ review: { ...REVIEWS.shown, mode }, note: null }, { type: 'rejected', toolUseId: 'tu1', answer: { note: 'use keyset paging' }, target }, keep);
+  assert.equal(rev(s).phase, 'exiting');
+  assert.equal(must(s.state.note).note, 'use keyset paging');
+  return s.state;
+}
+/** The answer effect ran and recorded (hooks/consent.ts step: clearNote on success). */
+const recordedSend = (s: ReviewStep): State => (s.effects.some(e => e.do === 'answer' && e.clearNote) ? { ...s.state, note: null } : s.state);
+const closingExit: ConsentEvent = { ...EVENTS.exit, toolUseId: 'tu3', answer: null };
+const exitedIn = (mode: string): ConsentEvent => ({ ...EVENTS.exited, toolUseId: 'tu3', mode, response: { plan: '', edited: false, isAgent: false, filePath: undefined } });
+
+test('#34 auto: Send comes first, in plan mode; the closing call shows only "Your note went to NAME. Nothing to build." (a non-empty plan: Enter keeps auto); its approved row is the module\'s to hide; the model hears nothing is to be built', () => {
+  const st = refusedWithNote('auto');
+  const send = review.reduce(st, { type: 'noteAnswer', label: 'Send', target }, keep);
+  assert.deepEqual(send.effects, [{ do: 'answer', hash: H, choice: 'Object', notes: 'use keyset paging', clearNote: true }]);
+  assert.equal(rev(send).closing, 'sent');
+  const said = review.textOf(parts(send), () => 'bob objected', true);
+  assert.match(said, /Nothing is to be built\. Next, call ExitPlanMode now \(no plan needed\): it only leaves plan mode, in the mode bob had before the review\.$/);
+  const exit = review.reduce(recordedSend(send), closingExit, keep);
+  assert.deepEqual(exit.effects, [{ do: 'closePlan', file: '/plans/x.md', text: 'Your note went to alice. Nothing to build.' }]);
+  assert.deepEqual(asked(exit).show, { close: 'Your note went to alice. Nothing to build.' });
+  // the person's Enter: "Yes, and use auto mode"; the plan file comes back; plainly nothing to build; no line for them
+  const done = review.reduce(exit.state, exitedIn('auto'), keep);
+  assert.deepEqual(shape(done), ['none', 'context', 'restorePlan']);
+  assert.match(review.textOf(parts(done), () => '', false), /^The room review is closed\. Nothing is to be built: it was a room plan review, not a plan to carry out\./);
+  assert.equal(done.notice, undefined);
+});
+
+test('#34 manual: the empty exit ("Yes, and switch to default" keeps manual, the model reads a neutral "approved exiting plan mode"); accept edits: the empty exit and one line, shift+tab', () => {
+  for (const mode of ['default', 'acceptEdits']) {
+    const send = review.reduce(refusedWithNote(mode), { type: 'noteAnswer', label: 'Send', target }, keep);
+    const exit = review.reduce(recordedSend(send), closingExit, keep);
+    assert.deepEqual(exit.effects, [{ do: 'blankPlan', file: '/plans/x.md' }], mode);
+    assert.deepEqual(asked(exit).show, { leave: true }, mode);
+    const done = review.reduce(exit.state, exitedIn('default'), keep);
+    assert.equal(done.notice, mode === 'acceptEdits' ? 'shift+tab returns you to accept edits' : undefined, mode);
+  }
+  // accept edits kept another way (shift+tab already): no line
+  const back = review.reduce(review.reduce(recordedSend(review.reduce(refusedWithNote('acceptEdits'), { type: 'noteAnswer', label: 'Send', target }, keep)), closingExit, keep).state, exitedIn('acceptEdits'), keep);
+  assert.equal(back.notice, undefined);
+});
+
+test('#34 Discard and no answer: Discard records nothing and says so before the exit; no answer keeps the note for its card (never lost), and the closing line says it is not sent', () => {
+  const discard = review.reduce(refusedWithNote('auto'), { type: 'noteAnswer', label: 'Discard', target }, keep);
+  assert.deepEqual([discard.state.note, discard.effects, rev(discard).closing], [null, [], 'discarded']);
+  assert.match(review.textOf(parts(discard), () => '', false), /discarded the note; nothing was recorded[^]*Nothing is to be built\. Next, call ExitPlanMode now/);
+  assert.deepEqual(asked(review.reduce(discard.state, closingExit, keep)).show, { close: 'Your note was not sent. Nothing to build.' });
+  const none = review.reduce(refusedWithNote('auto'), { type: 'noteAnswer', label: null, target }, keep);
+  assert.equal(must(none.state.note).note, 'use keyset paging', 'the note waits for its card');
+  assert.match(review.textOf(parts(none), () => '', false), /waits for its card \(Send or Discard\)/);
+  const exit = review.reduce(none.state, closingExit, keep);
+  assert.deepEqual(asked(exit).show, { close: 'Your note to alice is not sent yet. Nothing to build.' });
+  assert.equal(must(exit.state.note).note, 'use keyset paging');
+  // a Send whose record failed (the room unreachable): the hooks keep the note (clearNote only on success)
+  const failed = review.reduce(refusedWithNote('auto'), { type: 'noteAnswer', label: 'Send', target }, keep);
+  assert.deepEqual(asked(review.reduce(failed.state, closingExit, keep)).show, { close: 'Your note to alice is not sent yet. Nothing to build.' });
+  // a Send on a proposal no longer this seat's to answer: nothing recorded, the exit still follows
+  const stale = review.reduce(refusedWithNote('auto'), { type: 'noteAnswer', label: 'Send', target: null }, keep);
+  assert.deepEqual([stale.effects, stale.state.note], [[], null]);
+});
+
+test('#34 "No" on any exit dialog never loses the note: the closing call refused leaves the review closing and the note as it was; a noteAnswer with no review closing does nothing', () => {
+  for (const label of ['Send', null] as const) {
+    const st = review.reduce(refusedWithNote('auto'), { type: 'noteAnswer', label, target }, keep).state;
+    const exit = review.reduce(st, closingExit, keep);
+    const no = review.reduce(exit.state, { type: 'rejected', toolUseId: 'tu3', answer: { note: null }, target }, keep);
+    assert.deepEqual(no.state, exit.state, `${String(label)}: refused, nothing changes`);
+    assert.deepEqual(no.effects, []);
+    // the next prompt still in plan mode: the review asks to leave again; the note is still there
+    const prompt = review.reduce(no.state, { type: 'prompt', mode: 'plan', answer: null, target, live: true }, keep);
+    assert.deepEqual(prompt.state.note, exit.state.note);
+  }
+  assert.equal(review.reduce({ review: null, note: note('waiting') }, { type: 'noteAnswer', label: 'Send', target }, keep).say, null);
+  assert.equal(review.reduce({ review: REVIEWS.shown, note: note('waiting') }, { type: 'noteAnswer', label: 'Send', target }, keep).say, null);
+});
+
+test('#34 off (the verdict\'s keep-mode, or SUB_HUMAN_CC_OFF): the 0.6.0 exit, empty for every mode, no line', () => {
+  const off = { ...ctx, keepMode: false };
+  const st = review.reduce({ review: { ...REVIEWS.shown, mode: 'auto' }, note: null }, { type: 'rejected', toolUseId: 'tu1', answer: { note: 'x' }, target }, off).state;
+  const exit = review.reduce(st, closingExit, off);
+  assert.deepEqual(exit.effects, [{ do: 'blankPlan', file: '/plans/x.md' }]);
+  const done = review.reduce(exit.state, exitedIn('default'), off);
+  assert.match(review.textOf(parts(done), () => '', false), /The room review is closed; this was not a plan to carry out\./);
+  assert.equal(review.reduce({ review: { ...REVIEWS.exiting, mode: 'acceptEdits' }, note: null }, exitedIn('default'), off).notice, undefined);
 });

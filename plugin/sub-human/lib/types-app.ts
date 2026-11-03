@@ -133,6 +133,9 @@ export interface Review {
   shownAt?: number;
   /** the person had typed text in the prompt when the plan view opened: their keys may answer it, so a Yes is asked again */
   typing?: boolean;
+  /** #34: the note's Send / Discard, answered before the closing call (lib/consent/review.ts noteAnswer): the closing
+   * plan line of a person in auto mode says where it went */
+  closing?: 'sent' | 'discarded';
 }
 /**
  * members/NAME/session edit: a room plan edit in this seat's session (the plan tool's edit op opens it; the hooks run

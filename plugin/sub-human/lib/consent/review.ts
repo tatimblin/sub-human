@@ -37,6 +37,10 @@
  *     plan mode stays on, the person's own plan back in the file), never let through to leave plan mode.
  *   rejected: Claude Code runs no PostToolUse for a rejected plan view, so the module's tool.call hook reports it the
  *     moment ExitPlanMode's call comes back refused (mod/consent.ts); the review resolves there and then.
+ *   noteAnswer (#34, ctx.keepMode): a refusal that opened a note has the module ask its Send / Discard at once, while
+ *     plan mode is still on; the answer comes back here before the closing call (none: the note waits for its card).
+ *     The closing call then keeps the person's mode from before the review (leaving): auto exits with the closing line
+ *     as the plan (closePlan), manual and accept edits with the empty exit (accept edits: one line, shift+tab).
  *   roomTool: while a review is shown or closing any room tool is denied; while a note waits for its card the post
  *     tool is (the card decides what the room gets, so a paraphrase cannot go out first).
  * answerNeeded(review, event) says whether, and how, the handler reads the dialog's answer for an event.
@@ -69,8 +73,10 @@ import type { RoomCode } from '../brand.ts';
 /** recheck: a plan-view Yes that came as the view opened (within YES_GUARD_MS, or while the person had typed text in
  * the prompt), not recorded: the card asks once, and only its answer records. */
 export interface State { review: Review | null; note: Confirm | null; recheck?: Recheck | null | undefined; steer?: Steer | null | undefined }
-/** guardMs: YES_GUARD_MS unless the handler says otherwise (the tests shorten it: env.testMs). */
-export interface ReviewCtx { name: string; now: number; guardMs?: number }
+/** guardMs: YES_GUARD_MS unless the handler says otherwise (the tests shorten it: env.testMs). keepMode (#34, the
+ * verdict's keep-mode on): a review's closing call keeps the mode the person had before it (auto: a non-empty closing
+ * plan; manual and accept edits: the empty exit), and Send / Discard comes first (noteAnswer); off: the 0.6.0 exit. */
+export interface ReviewCtx { name: string; now: number; guardMs?: number; keepMode?: boolean }
 
 /** How the review's dialog closed (cc.planAnswer): note null for no note (Esc, a bare deny). */
 export interface ReviewAnswer { note: string | null }
@@ -105,7 +111,10 @@ export type ConsentEvent =
   | { type: 'ask'; admit: string | null; noteNamed: boolean; live: boolean; hit: Pending[]; reviewable: boolean }
   | { type: 'answered'; note: CardAnswer; target?: Target | null; afk: boolean; asked: boolean;
       answers: { hash: string; answer: CardAnswer; live: boolean; draft?: boolean }[] }
-  | { type: 'planFailed'; early: boolean };
+  | { type: 'planFailed'; early: boolean }
+  /** #34: the note's Send / Discard, asked by the module itself ($.ui.ask) right as the plan view refused with a
+   * note, while plan mode is still on; label null: no answer (dismissed, no one to ask): the note waits for its card */
+  | { type: 'noteAnswer'; label: 'Send' | 'Discard' | null; target?: Target | null };
 
 export type ConsentEffect =
   | { do: 'save'; review: Review }
@@ -113,6 +122,9 @@ export type ConsentEffect =
   | { do: 'restorePlan'; file: string; backup: string | null }
   /** the plan file emptied for the closing ExitPlanMode (lib/cc/env.ts LEAVE_PLAN_TEXT); restorePlan follows at exited */
   | { do: 'blankPlan'; file: string }
+  /** #34: the plan file holds only the review's closing line for the closing ExitPlanMode of a person who was in auto
+   * mode (a non-empty plan: its dialog's first row, preselected, keeps auto); restorePlan follows at exited */
+  | { do: 'closePlan'; file: string; text: string }
   | { do: 'answer'; hash: string; choice: 'Agree' | 'Object'; notes?: string; clearNote?: boolean };
 
 export type Part = string | { answer: string } | { ifRecorded: string };
@@ -121,7 +133,7 @@ export type Part = string | { answer: string } | { ifRecorded: string };
 export type Say =
   | { to: 'context'; parts: Part[] }
   | { to: 'deny'; context: Part[] }
-  | { to: 'ask'; text: string; show: { plan: string } | { card: string[] } | { note: true } | { admit: string } | { leave: true } };
+  | { to: 'ask'; text: string; show: { plan: string } | { card: string[] } | { note: true } | { admit: string } | { leave: true } | { close: string } };
 
 /** notice: a line for the person (the hook's systemMessage, a sub-human notice), beside what the model is told. */
 export interface ReviewStep { state: State; effects: ConsentEffect[]; say: Say | null; notice?: string }
@@ -164,6 +176,18 @@ export const NEXT = {
   note: (h: string) => `call AskUserQuestion with "objection ${h}"`,
   admit: (ref: string) => `call AskUserQuestion with "admit ${ref}"`,
 };
+
+/**
+ * #34: the plan text of a review's closing call for a person who was in auto mode: one line, never the proposal (the
+ * model reads "User has approved your plan" with it). The note sent: where it went; one that waits, discarded, or none.
+ */
+export function closingLine(r: Review, note: Confirm | null): string {
+  const to = r.from || 'the room';
+  if (note && note.hash === r.hash) return `Your note to ${to} is not sent yet. Nothing to build.`;
+  if (r.closing === 'sent') return `Your note went to ${to}. Nothing to build.`;
+  if (r.closing === 'discarded') return 'Your note was not sent. Nothing to build.';
+  return 'Room review closed. Nothing to build.';
+}
 
 /** The plan view's "Yes" that leaves the person's mode as it is, by mode, from the options Claude Code 2.1.296 offers
  * ("Yes, and use auto mode", "Yes, manually approve edits"; without auto mode "Yes, auto-accept edits" in the first
@@ -247,6 +271,13 @@ export const SAY = {
   noteWaits: (n: string, h: string): string => `sub-human: refused: ${n}'s note on proposal ${h} waits for Send or Discard on its card, which decides what the room gets. Post nothing about it; ${NEXT.note(h)}.`,
   nothingToShow: (h: string | undefined): string => `${h ? `proposal ${h}` : 'the room proposal'}: nothing to show (already answered, decided or unknown); nothing was recorded.`,
   reviewClosed: 'The room review is closed; this was not a plan to carry out.',
+  /** #34: after the closing call, keep-mode on: plainly, nothing is to be built */
+  reviewOver: 'The room review is closed. Nothing is to be built: it was a room plan review, not a plan to carry out.',
+  /** #34: the note answered on its card while plan mode was still on; the closing call is next */
+  noteSentExit: (n: string): string => `Nothing is to be built. Next, call ExitPlanMode now (no plan needed): it only leaves plan mode, in the mode ${n} had before the review.`,
+  noteDiscardedNow: (n: string, h: string): string => `${n} discarded the note; nothing was recorded and proposal ${h} still awaits ${n}'s answer. Nothing is to be built. Next, call ExitPlanMode now (no plan needed): it only leaves plan mode.`,
+  /** #34: accept edits has no exit that keeps it: the person's one line after the empty exit */
+  acceptEditsBack: 'shift+tab returns you to accept edits',
   /** a review opened in the person's own plan mode, closed without a Yes: its closing ExitPlanMode is denied (plan
    * mode stays on, as it was), never let through to leave it */
   closedInPlan: (n: string): string => `The room review is closed; ${n}'s plan mode stays on, as it was before it (no need to call ExitPlanMode).`,
@@ -331,7 +362,7 @@ export function answerNeeded(r: Review | null, ev: { type: ConsentEvent['type'];
     case 'stop': return ev.mode === 'plan' && r.phase !== 'restore' && r.phase !== 'entering' ? 'now' : null;
     case 'roomTool': return r.phase === 'shown' || r.phase === 'exiting' ? 'now' : null;
     case 'prompt': return (ev.mode === 'plan' && r.phase !== 'restore') || r.unread ? 'now' : null;
-    case 'enter': case 'entered': case 'planFailed': case 'rejected': case 'ask': case 'answered': return null;
+    case 'enter': case 'entered': case 'planFailed': case 'rejected': case 'ask': case 'answered': case 'noteAnswer': return null;
     default: return assertNever(ev.type, 'consent event');
   }
 }
@@ -485,10 +516,16 @@ function closeInPlan(prev: State, step: ReviewStep, ctx: ReviewCtx): ReviewStep 
  * plan file emptied too until exited (or the next prompt) puts the person's own plan back. The person answers it: the
  * hooks never leave plan mode for them.
  */
-function leaving(step: ReviewStep): ReviewStep {
+function leaving(step: ReviewStep, ctx: ReviewCtx): ReviewStep {
   const rv = step.state.review;
   if (step.say || !rv || rv.phase !== 'exiting') return step;
   const review: Review = rv.file ? { ...rv, restored: false } : rv;
+  // #34: from auto mode the empty exit's only Yes switches to default; a non-empty plan's dialog offers "Yes, and use
+  // auto mode" first, preselected, so the plan file holds only the closing line (quiet/SPIKES.md spike 1)
+  if (ctx.keepMode && rv.mode === 'auto' && rv.file) {
+    const text = closingLine(rv, step.state.note);
+    return { ...step, state: { ...step.state, review }, effects: [...step.effects, { do: 'closePlan', file: rv.file, text }], say: { to: 'ask', text: SAY.leaving, show: { close: text } } };
+  }
   const effects: ConsentEffect[] = rv.file ? [...step.effects, { do: 'blankPlan', file: rv.file }] : step.effects;
   return { ...step, state: { ...step.state, review }, effects, say: { to: 'ask', text: SAY.leaving, show: { leave: true } } };
 }
@@ -551,7 +588,7 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
       return closeInPlan(state, { state: { ...state, review: { ...back, phase: 'exiting', card: r.hash } }, effects, say: null }, ctx);
     }
 
-    case 'exit': return leaving(closeInPlan(state, exitStep(state, ev, ctx), ctx));
+    case 'exit': return leaving(closeInPlan(state, exitStep(state, ev, ctx), ctx), ctx);
 
     case 'exited': {
       const fallback = (base: State, effects: ConsentEffect[], hashes: string[]): ReviewStep => {
@@ -578,7 +615,10 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
         const [, effects] = restore(res.review);
         const card = cur.card ? SAY.cardInstead(n, cur.card) : '';
         const said = res.review.said ? `${res.review.said} ` : '';
-        return { state: { review: null, note: res.note }, effects, say: ctxSay(`${said}${SAY.reviewClosed}${card}`, ...doneUnless(res.review), ...(foreign.length ? foreign : backLine(effects))) };
+        const closed = ctx.keepMode ? SAY.reviewOver : SAY.reviewClosed;
+        // #34: accept edits has no exit that keeps it (the empty exit lands in manual): the person's one line
+        const back = ctx.keepMode && cur.mode === 'acceptEdits' && ev.mode !== 'acceptEdits' ? { notice: SAY.acceptEditsBack } : {};
+        return { state: { review: null, note: res.note }, effects, say: ctxSay(`${said}${closed}${card}`, ...doneUnless(res.review), ...(foreign.length ? foreign : backLine(effects))), ...back };
       }
       if (cur.phase !== 'shown') return none(state);
       // A "Yes" in the dialog: only a person can choose it (the exiting phase above is the hook's own allow).
@@ -730,6 +770,20 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
       if (noted) parts.splice(1, 0, { ifRecorded: SAY.noteFollow(n) }); // second: a long text is cut at its end
       else if (!ev.answers.some(a => a.draft && a.answer.kind === 'answer' && a.answer.label === 'Object')) parts.push(DONE);
       return { state, effects, say: ctxSay(...parts) };
+    }
+    case 'noteAnswer': {
+      const cf = state.note;
+      // only a review closing with its note open (the module asks right as the plan view refused with it)
+      if (!cf || !r || r.hash !== cf.hash || r.phase !== 'exiting') return none(state);
+      const h = cf.hash;
+      if (ev.label === null) return { state, effects: [], say: ctxSay(SAY.rejectedNote(n, h)) }; // the card later
+      // answered: the review's "the note waits for its card" line is no longer true
+      const { said: _s, ...answered } = r;
+      if (ev.label === 'Discard') return { state: { review: { ...answered, closing: 'discarded' }, note: null }, effects: [], say: ctxSay(SAY.noteDiscardedNow(n, h)) };
+      if (!ev.target || ev.target.hash !== h) return { state: { review: answered, note: null }, effects: [], say: ctxSay(SAY.stale(h), SAY.noteSentExit(n)) };
+      // Send: recorded (the note cleared only on success: a failed send waits for its card, never lost)
+      return { state: { review: { ...answered, closing: 'sent' }, note: cf }, effects: [{ do: 'answer', hash: h, choice: 'Object', notes: cf.note, clearNote: true }],
+        say: ctxSay({ ifRecorded: SAY.recorded }, ...(cf.note.trim() ? [{ ifRecorded: SAY.noteFollow(n) }] : []), { answer: h }, SAY.noteSentExit(n)) };
     }
     default: return assertNever(ev, 'consent event');
   }

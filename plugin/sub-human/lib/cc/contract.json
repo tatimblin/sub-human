@@ -241,6 +241,22 @@
    "note": "ExitPlanMode with an empty plan in its input (the consent hook's ask on a closing call sets updatedInput {plan: \"\"}) draws \" Exited plan mode\" and tells the model only \"User has approved exiting plan mode. You can now proceed.\"; with no plan in its input it reads the session plan file as it runs, where a plan would be drawn as \"User approved Claude's plan · TITLE\" and handed to the model as approved. So the hooks also empty the plan file for a closing call (lib/cc/env.ts LEAVE_PLAN_TEXT) and put the person's own plan back at PostToolUse(ExitPlanMode) (or the next prompt): never the person's private plan shown or handed over as approved. The person answers the closing call themselves (Claude Code's own \"exit plan mode?\")."
   },
   {
+   "id": "exitplan-keep-auto",
+   "section": 3,
+   "stability": "incidental",
+   "feature": "keep-mode",
+   "since": "2.1.296",
+   "search": [
+    "yes-resume-auto-mode",
+    "\"Yes, and use auto mode\"",
+    "User has approved exiting plan mode. You can now proceed."
+   ],
+   "shape": [
+    "Le[\"yes-resume-auto-mode\"]=~,He[\"yes-resume-auto-mode\"]=\"auto\""
+   ],
+   "note": "ExitPlanMode's dialog for a non-empty plan (the plan file's text: contract exitplan-normalize) offers \"Yes, and use auto mode\" (yes-resume-auto-mode) when auto is available, and its focus is the first row unless proactivity is \"ask\" with no auto row: Enter keeps auto. The empty plan's \"Exit plan mode?\" Yes always switches to default and tells the model \"User has approved exiting plan mode\" (quiet/SPIKES.md spike 1, live on 2.1.296). So a review's closing call keeps the mode the person had before it: auto with the closing line as the plan (lib/consent/review.ts leaving, closingLine), manual and accept edits with the empty exit (accept edits then one line: shift+tab). Off: the empty exit for every mode (0.6.0)."
+  },
+  {
    "id": "enterplan-in-plan-mode",
    "section": 3,
    "stability": "incidental",
@@ -1009,6 +1025,21 @@
     "useRenderInput(\"ToolResult\""
    ],
    "note": "ui.render ToolUse and ToolResult carry the call's tool_use_id, and an empty Box draws nothing for that row, also one drawn already once $.ui.invalidate('ui.render') runs (quiet/SPIKES.md spike 2, live on 2.1.296). EnterPlanMode's \"Entered plan mode / Claude is now exploring…\", ExitPlanMode's \"User approved / rejected Claude's plan\" and a denied call's red \"Error:\" are ToolResult rows; a denied call's red header is its ToolUse row. mod/consent.ts hides the rows of the calls consent names (subHuman.quiet: a review's EnterPlanMode outside plan mode, its plan view and closing call, an edit's save; mod/core/quiet.ts). Drawing only: the model reads every result as before. Off: the 0.6.0 rows."
+  },
+  {
+   "id": "module-ask-through-hooks",
+   "section": 10,
+   "stability": "incidental",
+   "feature": "keep-mode",
+   "since": "2.1.296",
+   "search": [
+    "\"ui.ask\":",
+    "takes the AskUserQuestion tool's input"
+   ],
+   "note": "$.ui.ask draws the engine's own AskUserQuestion dialog as a tool.call of AskUserQuestion through every hook but the calling one (the module's classic.PreToolUse and PostToolUse of AskUserQuestion included: mod/consent.ts passes them by while its own ask is in flight), resolves to the label chosen or the text typed under Other, and rejects when dismissed or with no one to ask; asked while plan mode is on, it draws as any card and the mode stays plan (quiet/SPIKES.md spike 1). #34 asks the note's Send / Discard so, before the review's closing call. Off: the model's AskUserQuestion card after the exit (0.6.0).",
+   "shape": [
+    "=await ~(\"ui.ask\",{tool:~,questions:[{question:~,header:~,options:~.map((~)=>({label:~,description:\"\"})),multiSelect:"
+   ]
   },
   {
    "id": "render-own-prompt-reentry",
