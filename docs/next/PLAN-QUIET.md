@@ -1,6 +1,6 @@
 # Quiet: sub-human's output and experience
 
-Status: plan, 2026-11-02. Nothing in it is built yet. Decisions marked **Owner** are open.
+Status: plan, 2026-11-02. Nothing in it is built yet. The owner decided D1, D3 and D4 the same day; D2 is open (see Decisions).
 
 Guiding principle: **as if Apple designed it: it just works.** The owner's three priorities, in order:
 
@@ -33,8 +33,8 @@ Each line is declared with its tier where it's written, using one helper per tie
 | Tier | Surface (verified on 2.1.296) | Gets |
 |---|---|---|
 | **Person** | `$.ui.log` notice: one `⏺ sub-human: …` line | Other people's words; a request that needs you; a decision; "New task for you"; a failure only you can fix, with one action |
-| **Decision** | The review band and pane; `$.ui.ask` | Agree or ask for changes; let someone in; the leave card |
-| **State** | The footer's SessionMode slot (dim, right-aligned) | Room, who's here, who's building and who's done, offline or queued |
+| **Decision** | The plan view, for the room's plan; `$.ui.ask` | Agree or ask for changes; let someone in; the leave card |
+| **State** | The agent-panel rows (a fixed label through the plugin's own `subagentStatusLine`); the band while something waits on you | Who's here, who's building and who's done, offline or queued |
 | **Away** | `$.ui.notify` | Something needs you while you're idle (at least 15 s quiet, at most once a minute) |
 | **Claude** | `additionalContext`, `$.session.append` isMeta, tool results | Everything Claude needs. It's never drawn and never restated. |
 | **Debug** | `$.ui.log({to:'debug'})` plus `~/.sub-human/logs/sub-human.log` | Receipts, recoveries, fallbacks, lifecycle, exceptions |
@@ -43,25 +43,27 @@ Never used for ambient state: `$.ui.status` (always amber `⚠`), the UPS `conti
 
 ## The target session
 
-**Budget:** 6 lines or fewer per person per session, down from 14–20 today. Every line below is a person-tier line. Everything else is in the footer, in a pane, or in the log.
+**Budget:** 6 lines or fewer per person per session, down from 14–20 today. Every line below is a person-tier line. Everything else is in a row, in the plan view, or in the log.
 
 ```
 ❯ /sub-human
 ⏺ sub-human: Joined panda-0976 with maya                                   (today: hook line + Claude's echo + hint suffix)
-                                                         footer → panda-0976 · maya, dev
+                                                         agent panel → panda-0976 ▸ maya · idle
+                                                                                  ▸ dev (you)
 
 ❯ @room hey, I'll take the HTTP side                                        (no "✓ sent": the prompt row is the receipt)
 ⏺ sub-human: maya: great, plan's coming up
 
-maya asks you to review plan paging v1   1: Review                          (a band above the prompt, not a transcript line)
-  └ 1 → a pane with the rendered plan · 1: Agree  2: Ask for changes  Esc: later
-⏺ sub-human: You asked maya for changes to paging v1: "clamp limit at 100, don't 400"
-                                                         mode stays ⏵⏵ auto mode on
-⏺ sub-human: Plan paging v2 agreed (maya, you)
+Plan paging v1 is ready   1: Open                                           (a band above the prompt if mid-turn)
+  └ plan mode: "Room plan · paging v1 · Yes agrees · Tell Claude what to change asks for changes"
+               then the plan, formatted and scrollable; mode stays ⏵⏵ auto mode on
+⏺ sub-human: Plan paging v1 · you asked for changes: "clamp limit at 100, don't 400"
+⏺ sub-human: Plan paging v2 agreed
 
 ⏺ sub-human: New task for you: http: GET /tasks paging
-                                                         footer → panda-0976 · maya, dev · maya ✓ store: listTasks
+                                                         row → maya ✓ store: listTasks
 ⏺ sub-human: maya's Claude: listTasks is pushed (8b2aab4)                   (Claude to Claude, the one line that matters)
+  ↓ enter maya's row, type "how's the store side going?" → the row answers from her task and activity
 
 ❯ /sub-human leave
   ╭ Left panda-0976. ─ 1. Done  2. ★ Star sub-human  (type to send feedback) ╮   (once per install)
@@ -70,9 +72,9 @@ maya asks you to review plan paging v1   1: Review                          (a b
 `debug.log` for the same session (`/sub-human debug tail`):
 
 ```
-21:03:12 join   seat dev · room panda-0976 · rows: none (footer presence)
+21:03:12 join   seat dev · room panda-0976 · rows spawned (room, maya)
 21:03:40 at-room #4 posted 14ms
-21:05:02 consent review band raised · paging v1 from maya
+21:05:02 consent plan view opened · paging v1 (maya's edit)
 21:05:55 consent changes sent · paging v1 · mode auto kept
 21:09:40 link   dropped (ECONNRESET) · back in 1.2s · 0 queued
 21:16:31 leave  title restored · task list reaped · card shown (1 of 2)
@@ -86,12 +88,12 @@ Each phase ships on its own, and the order follows impact per unit of effort. Fi
 
 - **One debug log.** `lib/log.ts` `debug(src, msg, {lvl, room, code, err})` writes JSONL to `<home>/logs/sub-human.log`. It rotates at 1 MB and keeps 3 files, and the existing masks are applied. It replaces eight scattered logs: `logError` stderr (`hooks/reply.ts:61`), the ad-hoc stderr in 6 hooks, `mcp-debug.log`, `module.log`, and the tail's `errorLog`. The link and listen daemon logs follow. The hooks module writes through `$.ui.log({to:'debug'})`, which feeds `claude --debug` for free, plus a per-session ring file. See COPY §4.
 - **Tier helpers** `person / state / claude / debug`. Each existing call site is moved to one helper, so a code reviewer can see every tier choice.
-- **Contract and gate.** Add an entry in `lib/cc/contract.json` for each new surface (band, pane, SessionMode, `ui.render` ToolUse/ToolResult, toast, notify, `$.store`), plus a gate in `mod/core/cc.ts:21`. Each new surface needs a stated fallback.
+- **Contract and gate.** Add an entry in `lib/cc/contract.json` for each new surface (band, SessionMode, `ui.render` ToolUse/ToolResult/TurnDuration and the plan-mode rows, `$.agent.spawn`, plugin `subagentStatusLine`, toast, notify, `$.store`), plus a gate in `mod/core/cc.ts:21`. Each new surface needs a stated fallback.
 - **A line-budget test**, as a ratchet like the ts-ratchet. A scripted two-seat scene counts person-tier lines per phase and fails if the count rises.
 
 ### Phase 1: the quiet pass (words only, no new surfaces). Expected 68 → about 30 lines
 
-- **Canonical lines** (COPY §3.1, about 50 moments): `Opened panda-0976`, `Joined panda-0976 with maya`, `Left panda-0976`, `maya asks you to review plan paging v1`, `dev asked for changes to plan paging v1:`, `Plan paging v2 agreed (you, dev)`, `New task for you: …`. Errors take one form: `<what didn't happen>. <one action>.`
+- **Canonical lines** (COPY §3.1, about 50 moments): `Opened panda-0976`, `Joined panda-0976 with maya`, `Left panda-0976`, `Plan paging v1 is ready · maya's edit`, `Plan paging v1 · dev asked for changes:`, `Plan paging v2 agreed`, `New task for you: …`. The plan lines override COPY §3.1's "maya asks you to review", by the owner's decision on shared ownership. Errors take one form: `<what didn't happen>. <one action>.`
 - **One speaker.** Use Claude Code's own `sub-human:` prefix. Drop `room:` and the literal `sub-human: sub-human:` (`hooks/consent.ts:644`).
 - **Delete receipts and hints, sending them to the debug log:**
   - `✓ sent` (`at-room.ts:156`, `mod/core/prompt.ts:181`);
@@ -113,7 +115,7 @@ Each phase ships on its own, and the order follows impact per unit of effort. Fi
   - Parameters are renamed, with the old names kept as aliases: `approvers → reviewers`, `suggest → for`, `object → changes`, `claim → take`.
 - **Readable plan names.** The default name comes from the plan's first heading, not `room` (`lib/plans.ts:33`). Names are slugified silently instead of refused. No hex ids are shown: the stub is the plan label (`hooks/consent.ts:417`).
 - **The vocabulary is fixed:**
-  - In: room, name, Claude, message, plan `name vN`, task, invite, review, agree, ask for changes, host.
+  - In: room, name, Claude, message, plan `name vN` (always the room's plan; an author is "maya's edit", never "maya's plan"), task, invite, review, agree, ask for changes, host.
   - Out: seat, proposal, row, card, sign off, "not sent out yet", "Claude wasn't asked".
 - **Help fits a screen.** It's 6 lines; topics (`help invite|join|host|debug`) hold the rest. The argument hint becomes `[invite | leave | help]`.
 - **Invite in one line.** `Invite ready until 18:16 · line and PIN below the prompt`, plus `Copy the invite?`. Rules, install and ssh notes move to `help invite` (`lib/remote/hosting.ts:143-242`).
@@ -129,65 +131,57 @@ Each phase ships on its own, and the order follows impact per unit of effort. Fi
   - raw `claude --bg` errors;
   - the host's refusal pasted into the joiner's error.
 
-### Phase 2: review without plan mode. Closes #34, #21, #9
+### Phase 2: the room's plan, in plan mode, made right. Closes #34, #21, #9
 
-Plan mode means "my Claude is about to build", and that's why reviewing someone else's plan in it can't be made to feel right. The plugin's own explanatory line is never drawn on that dialog (verified live), and the objection path drops the mode. **Use a band and a pane instead** (REVIEW.md):
+**The owner's decision (2026-11-02):** plan review stays in plan mode, because it's the best reading experience: the plan is formatted and scrollable. The perception to aim for: **it never feels like someone else's plan.** Everyone works on the room's plan. So the words drop the "maya asks you" framing, and the mechanics stop showing.
 
-- **Arrival:** one dim band above the prompt: `maya asks you to review plan paging v1   1: Review`. It works when idle and mid-turn, with no model turn and no transcript row.
-- **Review:** `1` opens a pane with the rendered plan (tables, code, scrolling). The action row sits above the plan: `1: Agree   2: Ask for changes   Esc: later`.
-- **Asking for changes:** `2` turns the row into a field, `What should change?`, and Enter sends.
-- **Result:** one line, e.g. `You asked maya for changes to paging v1: "…"`. The mode never changes, and the person's Claude gets the decision as context at its next turn.
-- **The author's own check** uses the same pane: `1: Send to dev   2: Keep editing`.
-- **Fallbacks:**
-  - Where no pane can be drawn, use `$.ui.ask` with Agree / Ask for changes and the plan printed just before it.
-  - With no hooks module, use the existing MCP elicitation `signoff`.
-- **Delete the plan-mode review:**
-  - most of `lib/consent/review.ts`;
-  - `hooks/consent.ts:386-498`;
-  - `mod/consent.ts:125-171,212-215`.
+- **Shared ownership in the words.**
+  - A new version arrives as `Plan paging v2 is ready · maya's edit` (not `maya asks you to review…`).
+  - A decision reads `Plan paging v2 agreed` (everyone) or `Plan paging v2 · dev asked for changes: "…"`.
+  - Asking for changes is a note on the room's plan, not a rejection of a person.
+  - The words are the same for the author and for the reviewer. The author's own check is just the first review.
+- **The plan text carries the frame.** The plugin's explanatory line is never drawn on that dialog (verified live), so the only reliable place for it is the plan text. The first line is a dim heading: `Room plan · paging v2 · Yes agrees · Tell Claude what to change asks for changes`. The plan follows, as written.
+- **Arrival through the band (D4):** `Plan paging v2 is ready   1: Open`. It shows mid-turn without interrupting. When idle, the plan view opens at the next turn as today.
+- **The mode survives (#34):**
+  - The Send/Discard choice comes first, while still in plan mode. The plan view then closes once, with a non-empty plan, so Claude Code offers the person's own mode.
+  - "No" on the exit question keeps the note and asks once more.
+  - The false "the mode is restored" text is deleted.
+  - **Spike first:** confirm the non-empty exit keeps auto on 2.1.296. A hook can't set the mode itself, because `setMode` comes only with a PermissionRequest allow, which the design rules forbid.
+- **Remove the plan-mode noise with `ui.render` (D4):**
+  - the successful save drawn as a red `Error:` (#9) → nothing;
+  - `Entered plan mode · Claude is now exploring…` when only reviewing → nothing;
+  - `User rejected Claude's plan: ╭ proposal a1b2… ╮` → `Asked for changes to paging v2`.
+  - **Spike:** find whether the ExitPlanMode dialog's "Ready to code?" title can be redrawn. If it can, it becomes `Room plan · paging v2`. If not, the heading line above carries it, and the title goes to the requests for Claude Code.
+- **Each plan gets its own plan file,** named after the plan, so the footer never shows the person's own unrelated plan path.
+- **Fallbacks stay as they are:** the `$.ui.ask` question, then MCP elicitation.
 
-  That's about 200 new lines against roughly 600–700 deleted.
-- **Risk:** the pane and band APIs are early access. They need the canary, contract entries and the fallback gate.
+### Phase 3: rows you can enter. **Owner's decision: keep them**
 
-### Phase 3: presence. **Owner: D1**
+**The owner's vision:** a row is a person. You enter it to DM that person, or ask how their work is going. So the rows stay, are quieted, and become something real rather than a fake process.
 
-The rows are the plan's one real product question, because they are the "subagents for humans" picture.
+**Quiet:**
+- Ship `subagentStatusLine` in the plugin's own `settings.json`. It needs no edit by the person and removes the paste-this step. It draws a fixed label per row, e.g. `dev · building http: GET /tasks` / `maya · idle` / `dev ✓ done`, and an ended row draws `""`, so it disappears. This ends the stale `Spawning dev participant row`.
+- Spawn rows from the module (`$.agent.spawn`): no `⏺ Agent(…) Backgrounded agent` block, no hand-back turns, no `row closed`.
+- Rebuild `TurnDuration` with `ui.render` while the plugin's rows are the only pending work: `✻ Done in 3s` in place of `Waiting for N background agents`. The plugin knows its own rows, so it can tell (D4).
+- The row label is the state tier. That's where maya would have seen `dev ✓ done`. The footer's SessionMode slot carries only the room code, with no second copy of who's there.
 
-**Option A, keep the rows and quiet them:**
-- Ship `subagentStatusLine` in the plugin's own `settings.json`, which works with no edit by the person. It gives a fixed label, hides ended rows, and removes the paste-this step.
-- Spawn rows from the module (`$.agent.spawn`): no transcript row, no hand-back turns, no `row closed`.
-- Hide the `Backgrounded agent` block with `ui.render`.
+**Enter a row to talk:**
+- **Typing into dev's row sends dev a direct message.** It shows as one line in dev's session, `maya → you: …`. Replying in maya's row continues the thread there. This is a new lane: a DM between two people. It isn't posted to the room's chat, and it's still signed and stored like any entry.
+- **"How's it going?"** The row answers from what the room already knows (dev's task, his recent room activity, whether his session is in a turn), with no interruption to dev. If the question needs dev's Claude, the row relays it Claude to Claude (`SendMessage` to `dev.CODE`), and the answer comes back into the row.
+- **The participant agent changes:**
+  - from `hold` alone to `hold`, `dm` and `status`;
+  - its brief goes from "read-only row: type in main with @room" to "this is dev; what you type here goes to them";
+  - the `mcp/hold.ts` lifecycle stays.
+- **Cost:** each row is a real agent again (about 7k tokens per spawn), now justified by real use. Keep the brief minimal, and never pin a model.
+- **Spike first:**
+  - Confirm that typed input to a background agent started by `$.agent.spawn` reaches it, and that its reply draws in the row.
+  - Decide whether a DM needs its own consent, like `@room`, which shows your exact words first. The suggestion is no, since you typed it.
 
-**What's left with A:**
-- `Waiting for N background agents` can only be hidden by rebuilding `TurnDuration` (its props carry no count).
-- A `1 shell` pill stays in the footer.
-- Each row costs about 7k tokens.
-- A row is still an agent you can open that does nothing.
-- A person's own `subagentStatusLine` overrides ours.
-
-**Option B, delete the rows (recommended):**
-- Who's in the room goes in the footer's SessionMode slot: `panda-0976 · maya, dev · dev ✓ http: GET /tasks paging`. Offline and queued states go there too.
-- Arrival tiers:
-  - a person line for words, requests and decisions, `dev finished …` and `New task for you`;
-  - a footer update for state;
-  - `$.ui.notify` only when something needs you while you're idle.
-- Delete:
-  - `agents/room.md` and `agents/participant.md`;
-  - `mcp/hold.ts` (386 lines);
-  - `mod/rows.ts`, the row handlers, the ROWS block and `statusline/`.
-- Add: a `presence` event in `lib/tail.ts`, `presenceLine` built from the existing `rowText`/`presenceOf`, and a SessionMode hook in `mod/deliver.ts`.
-
-**Why B:**
-- People read the rows as Claude doing work.
-- Three of the four row costs can't be removed.
-- An Apple-made version wouldn't show a person as a fake process.
-
-The "subagents for humans" feel comes from what already works: `@room`, Claude-to-Claude messages, plans and tasks, all inside your own session.
-
-**Either way:**
+**Also:**
 - Filter member `claude` out of every list of people.
-- Mark bookkeeping task #1 `metadata._internal`. Check this against the 5-second auto-reset first, because the same filtered list feeds it.
+- Mark bookkeeping task #1 `metadata._internal`. Check this against the 5-second auto-reset first.
 - Reap the room's `claude --bg` session when the room closes.
+- Remaining cost: a person's own `subagentStatusLine` overrides the plugin's. Doctor should say so.
 
 ### Phase 4: the guard stays out of the way. Closes #35
 
@@ -208,24 +202,30 @@ This research hit the false positives repeatedly: shell reads of plugin source, 
 | Release | Phases | Why that order |
 |---|---|---|
 | **0.6.0** | 0, 1, 4 | Words, debug log and guard. All of it is plugin-side on stable surfaces, and it brings the biggest drop in noise for the least risk. |
-| **0.7.0** | 2, 3 | Review pane and presence. Both have new-surface risk (early-access APIs), each with a fallback gate. |
+| **0.7.0** | 2 and 3's quieting | The room's plan in plan mode, made right, and quiet rows. Both build on early-access surfaces (`ui.render`, the band, `$.agent.spawn`) behind contract entries. |
+| **0.8.0** | 3's rows you can enter | DMs and "how's it going". It's a new lane, so it ships after its spike and a live two-person run. |
 
-## Design rules this plan would change (CLAUDE.md)
+## Design rules (CLAUDE.md)
 
-- **"Keep the agent-panel rows."** D1 option B drops this rule. Option A keeps it.
-- **"Consent is native. A proposal opens in the plan view."** Phase 2 keeps the rule's intent: native surfaces, and only the person's own answer (`via=human`) records agreement. It changes the surface to the review band and pane, with `$.ui.ask` and then the MCP question as fallbacks.
-- **"No writes to user settings files."** Still holds. The `subagentStatusLine` in option A goes in the plugin's own `settings.json`, never the person's.
+All of them hold. "Keep the agent-panel rows" and "Consent is native. A proposal opens in the plan view" are the owner's decisions here too. Rows gain a purpose: the room session's rule "takes no typed input" is about the room session, not about rows, so a row that relays a DM doesn't conflict with it. The `subagentStatusLine` goes in the plugin's own `settings.json`, never the person's.
 
-## Open decisions (Owner)
+## Decisions (owner, 2026-11-02)
 
-- **D1: rows.** Delete them for footer presence (B, recommended), or keep them quieted (A).
-- **D2: the leave card's limit.** At most two cards in total (one, then one more after a dismissal), or literally once. Recommended: two, as agreed.
-- **D3: the plan-view consent rule.** Move reviewing other people's plans out of plan mode (Phase 2, recommended), or keep plan mode and accept #34 and #21 as limits of Claude Code.
-- **D4: early-access surfaces** (band, pane, SessionMode). Build on them with fallback gates (recommended), or wait for them to stabilize and ship Phase 2 on `$.ui.ask` alone.
+- **D1, rows:** keep them. A row is a person: enter it to DM them or ask how their work is going (Phase 3).
+- **D2, the leave card's limit:** open. The default is at most two cards in total (one, then one more after a dismissal).
+- **D3, review:** plan mode stays, because it's formatted and scrollable. The plan is the room's plan, never someone else's (Phase 2).
+- **D4, early-access surfaces:** build on them, with contract entries and fallbacks; adjust as Claude Code changes.
+
+## Spikes before building
+
+1. **#34:** does closing the plan view with a non-empty plan, after the Send/Discard choice, keep auto mode on 2.1.296?
+2. **"Ready to code?" title:** can `ui.render` redraw the ExitPlanMode dialog's title?
+3. **Rows:** does typed input reach a `$.agent.spawn` background agent, and does its reply draw in the row?
+4. **Task #1:** does `metadata._internal` on task #1 interfere with the 5-second auto-reset?
 
 ## Requests for Claude Code (not blocking)
 
-- `TurnDuration` props with a pending-agents count. This only matters if D1 is A.
-- A way for a hook to set the ExitPlanMode dialog's title and the "ask" frame's wording. This only matters if Phase 2 is not built.
+- A pending-agents count in `TurnDuration`'s props, so the plugin need not rebuild the line.
+- A way for a hook to title the ExitPlanMode dialog. This only matters if spike 2 fails.
 - `${CLAUDE_PLUGIN_ROOT}` expanded in a plugin's `subagentStatusLine`.
 - MCP elicitation titled by the plugin's display name, not `MCP server "plugin:…" requests your input`.
