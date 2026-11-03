@@ -272,7 +272,7 @@ export const takeFallback = (code: string, text: string): string => text || `the
 
 /** What the model is told beside a seat the module took on its own (takeWake), as the skill tells it for /sub-human. */
 export const TAKE_CONTEXT: string = 'sub-human: the host let this machine in, and the hooks took this session\'s seat (no one typed this prompt). '
-  + 'The SUB-HUMAN block below is the seat\'s: your first action is the Agent call(s) under its ROWS line, exactly as written (when it lists any); then reply in one short line.';
+  + 'The SUB-HUMAN block below is the seat\'s: your first action is the Agent call(s) under its ROWS line, exactly as written (when it lists any); then end your turn without text.';
 
 /**
  * A let-in join's seat, taken by the module (mod/deliver.ts takeSeat), as a wake in wakeParts' form: one line the
