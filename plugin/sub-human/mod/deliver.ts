@@ -478,6 +478,7 @@ async function takeSeat($: EngineInterface, c: Child, a: { code: string; name: s
     };
     let reply = await run();
     if (reply.kind === 'stale') { await refresh($, sid).catch(() => {}); reply = await run(); }
+    if ((reply.kind === 'joined' || reply.kind === 'say') && reply.debug) $.ui.log(reply.debug, { to: 'debug' });
     if (reply.kind !== 'joined') {
       if (reply.kind === 'say' && !reply.lines.length) return; // nothing to take: the seat is taken already
       for (const line of [...reply.lines, takeFallback(a.code, a.text)]) $.ui.log(line);
@@ -665,6 +666,8 @@ export function registerDeliver(on: On): void {
       if (again) reply = await runJoin(again);
     }
     if (reply.kind === 'failed' || reply.kind === 'stale') void logFailure($, before, e.args, reply.lines[0]);
+    // what join.ts sent for the debug log (a lock's path, the room session's start error): never the person's line
+    if ((reply.kind === 'joined' || reply.kind === 'say') && reply.debug) $.ui.log(reply.debug, { to: 'debug' });
     if (reply.kind === 'joined') {
       joined = { sid, context: reply.context };
       try {

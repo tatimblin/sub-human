@@ -36,8 +36,6 @@ seatKey.arm();
 
 const ROOM_CLAUDE_AGENT = 'sub-human:room-claude';
 const PLUGIN_ROOT = PathMod.join(import.meta.dirname, '..', '..');
-/** A note in a join's message that the person must hear: the room's Claude could not start, or its last start failed. */
-const TROUBLE = /could not start|the last start failed: /;
 
 /** True when the input carries this session's module nonce (its lease's): the module's command.run hook ran it. */
 function attested(input: JoinIn): boolean {
@@ -55,12 +53,13 @@ function toReply(a: Answer, module: boolean): Reply {
   switch (a.kind) {
     case 'joined': {
       launcher.refresh(); // the opt-in row status launcher and the serve shim, now that this session has rows
-      // the bypass-permissions mode is the debug log's (the module's: mod/deliver.ts), never the join's line
-      const warn = TROUBLE.test(a.say) ? `sub-human: ${a.say}` : null;
-      return { kind: 'joined', context: contextBlock(a.me, a.lead), say: a.say, warn, module };
+      // the bypass-permissions mode is the debug log's (the module's: mod/deliver.ts), never the join's line; a classic
+      // answer warns only when the line says something did not work (a typed flag: lib/seats.ts trouble)
+      const warn = a.trouble ? `sub-human: ${a.say}` : null;
+      return { kind: 'joined', context: contextBlock(a.me, a.lead), say: a.say, warn, module, ...(a.debug ? { debug: a.debug } : {}) };
     }
-    case 'secret': return { kind: 'secret', text: a.text, refused: a.refused === true, module, ...(a.pinned ? { pinned: a.pinned } : {}) };
-    case 'say': case 'refused': return { kind: a.kind, text: a.text, module };
+    case 'secret': return { kind: 'secret', text: a.text, refused: a.refused === true, module, ...(a.pinned ? { pinned: a.pinned } : {}), ...(a.debug ? { debug: a.debug } : {}) };
+    case 'say': case 'refused': return { kind: a.kind, text: a.text, module, ...(a.debug ? { debug: a.debug } : {}) };
     default: return assertNever(a, 'answer');
   }
 }

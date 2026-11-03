@@ -153,8 +153,9 @@ export function readReply(run: RunOutput | null | undefined, { ms = null, error 
   const say = sub && typeof sub.say === 'string' ? sub : null;
   if (!o || !say) return failed();
   const hso: HookJsonSpecific = o.hookSpecificOutput && typeof o.hookSpecificOutput === 'object' ? o.hookSpecificOutput : {};
+  const debug = typeof say.debug === 'string' && say.debug ? { debug: say.debug.slice(0, 500) } : {};
   if (say.joined === true && typeof hso.additionalContext === 'string' && hso.additionalContext) {
-    return { kind: 'joined', context: hso.additionalContext, lines: noticeLines(say.say) };
+    return { kind: 'joined', context: hso.additionalContext, lines: noticeLines(say.say), ...debug };
   }
   const p: Loose<PinnedReport> | null = say.pinned && typeof say.pinned === 'object' ? say.pinned : null;
   const one = (s: unknown) => (typeof s === 'string' && s ? s.replace(/\n/g, ' ') : null);
@@ -167,7 +168,7 @@ export function readReply(run: RunOutput | null | undefined, { ms = null, error 
     ...(typeof p.ref === 'string' && /^[0-9a-f]{12}$/.test(p.ref) ? { ref: p.ref } : {}),
     ...(line ? { line } : {}),
   } : null;
-  return { kind: 'say', lines: noticeLines(say.say), refused: say.refused === true, shareable: say.shareable === true, ...(pinned ? { pinned } : {}) };
+  return { kind: 'say', lines: noticeLines(say.say), refused: say.refused === true, shareable: say.shareable === true, ...(pinned ? { pinned } : {}), ...debug };
 }
 
 /** What Claude Code draws before a plugin's status text ("  ⚠ sub-human: "), in cells, with a cell to spare. */

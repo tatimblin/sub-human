@@ -72,6 +72,16 @@ test('command: the payload is the UserPromptExpansion join.ts reads, marked as t
   assert.equal(joinPayload({ sid: 's1', cwd: '/w', args: '', nonce: NONCE, mode: 'bypassPermissions' }).permission_mode, 'bypassPermissions');
 });
 
+test('command (quiet): a reply\'s debug detail is read apart from its lines, for the debug log', async () => {
+  const { readReply } = await load();
+  const run = (o: unknown): RunOutput => ({ exitCode: 0, stdout: JSON.stringify(o), stderr: '' });
+  const said = readReply(run({ subHuman: { say: '✗ Room busy. Try again.', refused: true, shareable: false, debug: 'could not acquire /h/rooms/x/lock' } }));
+  assert.deepEqual(said, { kind: 'say', lines: ['✗ Room busy. Try again.'], refused: true, shareable: false, debug: 'could not acquire /h/rooms/x/lock' });
+  const joined = readReply(run({ subHuman: { say: 'Joined x', joined: true, shareable: true, debug: 'room session: starting again' }, hookSpecificOutput: { additionalContext: 'SUB-HUMAN: …' } }));
+  assert.equal(joined.kind === 'joined' ? joined.debug : null, 'room session: starting again');
+  assert.equal('debug' in readReply(run({ subHuman: { say: 'ok' } })), false);
+});
+
 test('command: #14 the bypass-permissions mode is never on the join\'s line (0.6.0: the debug log\'s, mod/deliver.ts)', async () => {
   const c = await load();
   assert.equal('bypassNoted' in c, false, 'no note to redo');

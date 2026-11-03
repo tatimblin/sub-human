@@ -74,7 +74,7 @@ const NOT_A_NAME = (n: string) => (PIN_WORD.test(n) ? `"${n}" looks like a PIN, 
 function seat(want: Wanted, ctx: VerbCtx): Answer {
   const t = seats.take(want, { pid: ctx.pid, session_id: ctx.sid, cwd: ctx.cwd, cur: ctx.cur, pubkey: ctx.pubkey });
   if (!t.ok) return t.refused ? refused(t.text) : say(t.text);
-  return { kind: 'joined', me: t.me, lead: t.lead, say: t.msg };
+  return { kind: 'joined', me: t.me, lead: t.lead, say: t.msg, ...(t.trouble ? { trouble: true } : {}), ...(t.debug ? { debug: t.debug } : {}) };
 }
 
 /** A link step's end: the seat to take, or what the person reads. */
@@ -95,8 +95,9 @@ function nameFor(as: string | undefined, cwd: string): { name: SeatName } | { er
 function status(cur: Identity, cwd: string): Answer {
   const host = identity.isHost(cur.code);
   if (!host) { try { linkSocket.start(cur.code); } catch { /* the doctor says why */ } } // its connection, if it stopped running
+  const rc = seats.ensureRoomClaude(cur.code, cwd, cur.name);
   return say(`you're ${cur.name} in room ${cur.code}, ${seats.withWhom(cur.code, cur.name)} · `
-    + `${host ? 'another machine: /sub-human invite · ' : ''}leave: /sub-human leave${seats.ensureRoomClaude(cur.code, cwd, cur.name)}`);
+    + `${host ? 'another machine: /sub-human invite · ' : ''}leave: /sub-human leave${rc.note ? `\n${rc.note}` : ''}`, rc.debug);
 }
 
 /** The seat this session's conversation came from (← the agent view forked it), moved here; null when none. */

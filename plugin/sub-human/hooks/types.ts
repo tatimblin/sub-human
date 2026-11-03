@@ -56,6 +56,8 @@ export interface SubHumanReport {
   refused?: boolean;
   shareable?: boolean;
   joined?: boolean;
+  /** a detail for Claude Code's debug log, never the person's line (the module writes it there) */
+  debug?: string;
   reviewOpen?: boolean;
   /** consent: a note of the seat waits for its card (the module then sends a room post to consent) */
   noteWaits?: boolean;
@@ -100,7 +102,7 @@ export interface HookOutput {
  */
 export type Reply =
   | (Extract<Answer, { kind: 'say' | 'refused' | 'secret' }> & { module: boolean })
-  | (Omit<Extract<Answer, { kind: 'joined' }>, 'me' | 'lead'> & { context: string; warn?: string | null; module: boolean })
+  | (Omit<Extract<Answer, { kind: 'joined' }>, 'me' | 'lead' | 'trouble'> & { context: string; warn?: string | null; module: boolean })
   | { kind: 'classic'; outputs?: object[]; exit?: number; stderr?: string };
 
 /** A hooks/handlers/<name>.ts module, as hooks/run.ts loads it, for its stdin type I. handle: the answer (or out()

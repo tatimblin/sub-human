@@ -18,7 +18,7 @@
 import * as hosting from '../remote/hosting.ts';
 import * as room from '../room.ts';
 import { parse } from '../cli/args.ts';
-import { HELP_HINT, hostOnly, refused, say, secret } from './answer.ts';
+import { HELP_HINT, failure, hostOnly, refused, say, secret } from './answer.ts';
 import { msgOf } from '../errors.ts';
 import { envStr } from '../env.ts';
 import type { Pinned, Verb } from './types.ts';
@@ -90,5 +90,5 @@ export const invite: Verb = (argv, { cur: seat }) => {
     // for this terminal only, never the model: it holds the PIN. Through the hooks module the line
     // and the PIN are pinned under the prompt, which Claude Code does not save (a notice is a transcript row)
     return secret(around(r.text), { pinned: { ...pinned, text: around(pinned.text), ...(pinned.cut !== undefined ? { cut: around(pinned.cut) } : {}), ...(card ? { line: r.line } : {}) } });
-  } catch (e) { return refused(msgOf(e)); }
+  } catch (e) { return failure(e, msgOf(e)); }
 };

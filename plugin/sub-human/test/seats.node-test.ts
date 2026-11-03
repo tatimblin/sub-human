@@ -52,12 +52,22 @@ function memoryRoom(t: TestContext, { isHost }: { isHost: boolean }) {
   return { code, mem, started };
 }
 
+test('seats (quiet): a room session that cannot start is one plain line and a typed flag; the claude --bg error is the debug log\'s', t => {
+  const { code } = memoryRoom(t, { isHost: true });
+  t.mock.method(seats.seam, 'startDetached', () => { throw new Error('claude --bg: spawn /opt/claude ENOENT'); });
+  const r = seats.enter({ code, name: sn('alice'), pid: process.pid, session_id: 'sa', cwd: '/x', pubkey: seatKey.publicPem(code, sn('alice')) });
+  assert.equal(r.ok, true);
+  assert.equal(r.ok && r.note, 'Room task list unavailable. Run /sub-human doctor.');
+  assert.match(r.ok ? String(r.debug) : '', /^room session: could not start \(claude --bg: spawn \/opt\/claude ENOENT\)$/);
+  assert.doesNotMatch(r.ok ? String(r.note) : '', /ENOENT|claude --bg/, 'never the raw error in the person\'s line');
+});
+
 test('seats: enter logs member_joined with the pubkey and machine; exit leaves, logs member_left once', t => {
   const { code, mem } = memoryRoom(t, { isHost: true });
   const pubkey = seatKey.publicPem(code, sn('alice'));
   const r = seats.enter({ code, name: sn('alice'), pid: process.pid, session_id: 'sa', cwd: '/x', pubkey });
   // noise pass H: a room session that starts says nothing (the room row shows it)
-  assert.deepEqual(r, { ok: true, note: '' }, 'the room session, not a member called claude');
+  assert.deepEqual(r, { ok: true, note: '', debug: '' }, 'the room session, not a member called claude');
   const joined = must(mem.readAll().at(-1));
   assert.deepEqual([joined.kind, joined.from, joined.pubkey, joined.machine], ['member_joined', 'alice', pubkey, identity.machineId()]);
   assert.equal(must(identity.resolveBySession('sa')).name, 'alice');
@@ -103,7 +113,7 @@ test('seats: a key other than the pinned one gives the seat back (AUTH)', t => {
 test('host gates: on a mirror-shaped store enter is the seat op only (no member_joined, no claude), exit starts no reaper and logs nothing, the watchdog and decide do nothing', t => {
   const { code, mem, started } = memoryRoom(t, { isHost: false });
   assert.equal(identity.isHost(code), false);
-  assert.deepEqual(seats.enter({ code, name: sn('alice'), pid: process.pid, session_id: 'sa', pubkey: seatKey.publicPem(code, sn('alice')) }), { ok: true, note: '' });
+  assert.deepEqual(seats.enter({ code, name: sn('alice'), pid: process.pid, session_id: 'sa', pubkey: seatKey.publicPem(code, sn('alice')) }), { ok: true, note: '', debug: '' });
   assert.equal(must(identity.resolveBySession('sa')).name, 'alice', 'this machine\'s indexes are written');
   assert.deepEqual(mem.readAll(), [], 'the host logs the join');
   assert.deepEqual([mem.members.read().claude, started], [undefined, []], 'no spawn claim');

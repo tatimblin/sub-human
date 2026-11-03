@@ -4,7 +4,7 @@
  */
 import * as envelope from '../room/envelope.ts';
 import * as store from '../room/store.ts';
-import { HELP_HINT, hostOnly, refused, say } from './answer.ts';
+import { HELP_HINT, failure, hostOnly, refused, say } from './answer.ts';
 import { msgOf } from '../errors.ts';
 import type { Verb } from './types.ts';
 import type { Signer } from '../remote/admission.ts';
@@ -23,5 +23,5 @@ export const admit: Verb = (argv, { cur: seat }) => {
     }
     const sign: Signer = p => envelope.sign(p, store.humanKey(cur.code, cur.name), { room: cur.code, from: cur.name });
     return say(adm.letIn(cur.code, ref, { by: cur.name, sign }).text);
-  } catch (e) { return refused(msgOf(e)); }
+  } catch (e) { return failure(e, msgOf(e)); }
 };

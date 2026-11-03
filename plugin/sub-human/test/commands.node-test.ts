@@ -9,6 +9,7 @@ import * as seats from '../lib/seats.ts';
 import * as identity from '../lib/identity.ts';
 import * as seatKey from '../hooks/seat-key.ts';
 import { HELP } from '../lib/commands/help.ts';
+import { failure } from '../lib/commands/answer.ts';
 import type { Answer } from '../lib/commands/types.ts';
 import type { Identity } from '../lib/identity.ts';
 import { sn } from './support/brands.ts';
@@ -28,6 +29,14 @@ function run(w: World, args: string, { seat = null, lease = true, pid = process.
   });
 }
 const text = (a: Answer) => (a.kind === 'joined' ? a.say : a.text);
+
+test('commands (quiet): a lock that did not hold is one plain line, its path the debug log\'s; the hidden rule keeps the detail', () => {
+  const lock = new Error('could not acquire /Users/me/.sub-human/rooms/vole-1234/invites.lock');
+  assert.deepEqual(failure(lock, lock.message), { kind: 'refused', text: 'Room busy. Try again.', debug: lock.message });
+  assert.deepEqual(failure(new Error('x'), 'room vole-1234 is hosted elsewhere'), { kind: 'refused', text: 'room vole-1234 is hosted elsewhere' });
+  assert.deepEqual(commands.hide(['invite'], failure(lock, lock.message)), { kind: 'secret', text: 'Room busy. Try again.', refused: true, debug: lock.message });
+  assert.equal(HELP.split('\n').length, 6, 'help is six lines');
+});
 
 test('commands: the table names every verb; help and doctor are the open ones', () => {
   assert.deepEqual(Object.keys(commands.TABLE).sort(), ['', 'admit', 'invite', 'join', 'kick', 'leave']);

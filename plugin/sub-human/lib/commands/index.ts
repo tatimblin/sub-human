@@ -71,5 +71,5 @@ export function hide(args: string[], a: Answer): Answer {
     return secret(`${a.say} · type /sub-human to bring the room to your Claude`);
   }
   if (!hidden || a.kind === 'secret') return a;
-  return secret(a.text, { refused: a.kind === 'refused' });
+  return secret(a.text, { refused: a.kind === 'refused', debug: a.debug });
 }

@@ -71,8 +71,8 @@ interface EnterOpts {
   /** take leaves the seat this pid held before itself, after this join worked (identity.join keepPrevious) */
   keepPrevious?: boolean | undefined;
 }
-/** identity.join's answer; note: what the join line adds (the room's Claude starting, or why it could not). */
-type EnterResult = JoinOutcome & { note?: string };
+/** identity.join's answer; note: the line the join adds when the room's Claude could not start; debug: its detail. */
+type EnterResult = JoinOutcome & { note?: string; debug?: string };
 
 const asSystem = (name: string) => ({ via: 'system', from: name, system: true });
 const WORKDIR = 'workdir'; // the room's working directory: {cwd}
@@ -83,22 +83,27 @@ function keepWorkdir(code: RoomCode, cwd: string | null | undefined): void {
   if (cwd && !kv.get(WORKDIR)) kv.set(WORKDIR, { cwd });
 }
 
+/** What starting the room's Claude says: note, the person's one plain line ('' when it started, or is starting again
+ * after a failed start: the watchdog's to retry), and debug, the detail (its error) for Claude Code's debug log. */
+interface RoomClaudeNote { note: string; debug: string }
+const ROOM_CLAUDE_DOWN = 'Room task list unavailable. Run /sub-human doctor.';
+
 /** Start the room's Claude (detached; claimSpawn is host only) in cwd, else the room's working directory, when none
- * runs. '' or the short systemMessage suffix the join hook shows. */
-function ensureRoomClaude(code: RoomCode, cwd: string | null | undefined, by: string): string {
+ * runs (RoomClaudeNote). */
+function ensureRoomClaude(code: RoomCode, cwd: string | null | undefined, by: string): RoomClaudeNote {
   let last: Member | null = null;
   try {
     last = identity.readMembers(code).claude ?? null;
     const c = roomClaude.claimSpawn(code, { by });
-    if (!c) return '';
+    if (!c) return { note: '', debug: '' };
     // the room's task list directory, made before the room session's task view first reads it (the room task comes with the first request)
     try { roomClaude.openTaskList(code); } catch { /* the room session's tail repairs it (lib/tasks.ts repair) */ }
     seam.startDetached({ code, cwd: cwd || (room.open(code).store.kv.get<{ cwd?: string }>(WORKDIR) ?? {}).cwd, ...c });
   } catch (e) {
-    return ` · the room session could not start (${(msgOf(e) || String(e)).slice(0, 200)}); /sub-human still works, but there is no room task list`;
+    return { note: ROOM_CLAUDE_DOWN, debug: `room session: could not start (${(msgOf(e) || String(e)).slice(0, 200)})` };
   }
-  // a start that works says nothing (the room row shows it); only a failure before it is worth a line
-  return last && last.spawn_error ? ` · the room session is starting again (the last start failed: ${last.spawn_error})` : '';
+  // a start that works says nothing (the room row shows it); a start after a failed one is the debug log's
+  return { note: '', debug: last && last.spawn_error ? `room session: starting again (the last start failed: ${last.spawn_error})` : '' };
 }
 
 function enter({ code, name, role = 'member', machine = identity.machineIn(code), account, pid, session_id, cwd, pubkey, keepPrevious }: EnterOpts): EnterResult {
@@ -108,7 +113,7 @@ function enter({ code, name, role = 'member', machine = identity.machineIn(code)
   if (account === undefined && machine && machine === identity.machineIn(code) && identity.isHost(code)) account = machine;
   const r: EnterResult = identity.join({ code, name, role, machine, account, pid, session_id, cwd, keepPrevious });
   if (!r.ok) return r;
-  if (!identity.isHost(code)) return { ...r, note: '' };
+  if (!identity.isHost(code)) return { ...r, note: '', debug: '' };
   keepWorkdir(code, cwd);
   try {
     // machine null: this machine's id could not be read; the seat joins without one (validate refuses a null machine)
@@ -118,7 +123,8 @@ function enter({ code, name, role = 'member', machine = identity.machineIn(code)
     identity.leave(code, name, {});
     return { ok: false, error: msgOf(e), code: 'AUTH' };
   }
-  return { ...r, note: ensureRoomClaude(code, cwd, name) };
+  const rc = ensureRoomClaude(code, cwd, name);
+  return { ...r, note: rc.note, debug: rc.debug };
 }
 
 function exit(code: RoomCode, name: SeatName, reason: string, { deadlineMs }: { deadlineMs?: number | undefined } = {}): boolean {
@@ -204,7 +210,8 @@ function back(code: RoomCode, name: SeatName): boolean {
 }
 
 /** take()'s answer: a seat taken (the mechanics block's lead line, the person's line), or a refusal / where it stands. */
-export type Taken = { ok: true; me: Identity; lead: string; msg: string } | { ok: false; text: string; refused: boolean };
+/** trouble: msg says the room's Claude could not start; debug: a detail for the debug log. */
+export type Taken = { ok: true; me: Identity; lead: string; msg: string; trouble?: boolean; debug?: string } | { ok: false; text: string; refused: boolean };
 /** take()'s process: the seat's claude pid and session, the seat this session holds now, and its key's public half. */
 interface TakeCtx { pid: number; session_id: string | undefined; cwd: string; cur: Identity | null; pubkey(code: RoomCode, name: SeatName): string }
 
@@ -290,7 +297,9 @@ function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd,
   const rebind = !host && !!(links.get(code) ?? {}).rebind;
   if (cur && same && !rebind) {
     joining().dropJoinAs(code);
-    return { ok: true, me: cur, lead: 'already joined', msg: `you're already in ${cur.code} as ${name}, ${withWhom(code, name)}${ensureRoomClaude(code, cwd, name)}` };
+    const rc = ensureRoomClaude(code, cwd, name);
+    return { ok: true, me: cur, lead: 'already joined', msg: `you're already in ${cur.code} as ${name}, ${withWhom(code, name)}${rc.note ? `\n${rc.note}` : ''}`,
+      ...(rc.note ? { trouble: true } : {}), ...(rc.debug ? { debug: rc.debug } : {}) };
   }
   // The seat's key: via=human posts and answers are signed with it, and the log pins it.
   let key: string;
@@ -326,7 +335,8 @@ function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd,
   // "as NAME" only for a name the person chose (not their default)
   const as = isDefault ? '' : ` as ${name}`;
   const msg = created ? `Opened ${code}${as}` : `${r.rejoin ? 'Rejoined' : 'Joined'} ${code}${as}${company(code, name)}`;
-  return { ok: true, me, lead: created ? 'room opened' : r.rejoin ? 'rejoined' : 'joined', msg: `${msg}${r.note}` };
+  return { ok: true, me, lead: created ? 'room opened' : r.rejoin ? 'rejoined' : 'joined', msg: `${msg}${r.note ? `\n${r.note}` : ''}`,
+    ...(r.note ? { trouble: true } : {}), ...(r.debug ? { debug: r.debug } : {}) };
 }
 
 /** Test seam: the room's Claude starts through this object, which a test may stub (test/seats.node-test.ts); an ES

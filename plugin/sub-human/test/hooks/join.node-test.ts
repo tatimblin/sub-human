@@ -285,7 +285,7 @@ test('NAME CODE joins a room whose claude runs: no spawn, no systemMessage; the 
   assert.equal(seat(w, 'bob').session_id, w.sid.bob);
 });
 
-test('joining a room with no live claude restarts it; a failed start is retried by the next join, which says why (a systemMessage)', async () => {
+test('joining a room with no live claude restarts it; a failed start is retried by the next join, quietly (the reason is the module\'s debug log)', async () => {
   const w = new World({ alice: 'sleep' });
   w.pid.bob = process.pid; w.sid.bob = 'aaaaaaaa-0000-4000-8000-000000000007';
   const r = w.hook('join', expand(`bob ${w.code}`), { as: 'bob' }); // SUB_HUMAN_CLAUDE=/usr/bin/false
@@ -295,7 +295,8 @@ test('joining a room with no live claude restarts it; a failed start is retried 
   assert.equal(seat(w, 'claude').job, null);
   const s = stub(w.code);
   const r2 = w.hook('join', expand(`bob ${w.code}`), { as: 'bob', env: { SUB_HUMAN_CLAUDE: s.bin } });
-  assert.match(must(must(r2.json).systemMessage), new RegExp(`^sub-human: you're already in ${w.code} as bob, with alice · the room session is starting again \\(the last start failed: .+\\)$`));
+  // 0.6.0: the watchdog's retry is no trouble for the person (no systemMessage, no "claude --bg" error in the line)
+  assert.equal(must(r2.json).systemMessage, undefined);
   assert.ok(await until(() => seat(w, 'claude').job === '0b500131'));
   assert.equal(bgCalls(s).length, 1);
   const r3 = w.hook('join', expand(`bob ${w.code}`), { as: 'bob', env: { SUB_HUMAN_CLAUDE: s.bin } });
@@ -310,7 +311,7 @@ test('a seated bare /sub-human restarts a room Claude that failed to start, and 
   const s = stub(w.code);
   const r = w.hook('join', expand(''), { as: 'bob', env: { SUB_HUMAN_CLAUDE: s.bin } });
   assert.equal(must(r.json).decision, 'block', 'still the status, no model turn');
-  assert.match(must(must(r.json).reason), new RegExp(`^sub-human: you're bob in room ${w.code}, with alice · .* · the room session is starting again \\(the last start failed: .+\\)$`));
+  assert.match(must(must(r.json).reason), new RegExp(`^sub-human: you're bob in room ${w.code}, with alice · .*leave: /sub-human leave$`), 'the retry says nothing; its reason is the debug log\'s');
   assert.ok(await until(() => seat(w, 'claude').job === '0b500131'));
   assert.equal(bgCalls(s).length, 1);
   const r2 = w.hook('join', expand(''), { as: 'bob', env: { SUB_HUMAN_CLAUDE: s.bin } });
