@@ -29,8 +29,11 @@ const READ_DOCTOR = /^\s*(?:[\w./~-]*\/)?sub-human\s+doctor(?:\s+(?:--quick|--js
 /** doctor that changes things: the person runs it. */
 const DOCTOR_WRITES = /(?:^|[\s;&|(`'"/])sub-human\s+doctor\b[^;&|\n]*--(?:fix|bundle)(?![\w-])/;
 const ENV_NAMES = /\bSUB_HUMAN_HOME\b/;
-/** The CLI commands a person runs in their own shell: an invite, letting a machine in or out, the link daemon, the room server, the web listener. */
-const PERSON_CLI = /(?:^|[\s;&|(`'"/])sub-human\s+(?:invite|admit|kick|listen|link|serve)(?![\w-])/;
+/** The CLI commands a person runs in their own shell: an invite, letting a machine in or out, the link daemon, the room
+ * server, the web listener. Matched only where the shell runs them (personCli: the CLI in tool position, or the script
+ * run by node or a shell, inside sh -c, eval, $(…) and a shell's heredoc), never in a note, a quoted string or a file a
+ * heredoc writes that only mentions one (#35). */
+const PERSON_VERBS: ReadonlySet<string> = new Set(['invite', 'admit', 'kick', 'listen', 'link', 'serve']);
 /** The host's serve shim asked to link a machine over an ssh login (`ssh you@host H/bin/serve --stdio CODE --link ID --login`),
  *  under any home path: a person's step (/sub-human join USER@HOST ROOM), as `sub-human serve` is. */
 const LOGIN_SERVE = /\bserve\b[^;&|\n]*--stdio\b[^;&|\n]*--login(?![\w-])/;
@@ -74,6 +77,93 @@ function homeSpellings({ home, realHome, userHome }: GuardCtx = {}): string[] {
     }
   }
   return [...out];
+}
+
+/** What runs a script by its path: the CLI shim run as `node …/scripts/sub-human invite` or `sh …/sub-human invite`. */
+const SCRIPT_RUNNERS: ReadonlySet<string> = new Set(['node', 'nodejs', 'bun', 'deno', 'npx', 'tsx', 'ts-node', 'sh', 'bash', 'zsh', 'dash', 'ksh']);
+/** What runs its words as a command of its own. */
+const RUNS_WORDS: ReadonlySet<string> = new Set(['eval', 'xargs', 'ssh', 'watch', 'flock', 'parallel']);
+
+/** The text between `(` at start - 1 and its closing `)`, and the index past it (the end when it never closes). */
+function balanced(text: string, start: number): [string, number] {
+  let depth = 0;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (c === '\\') { i++; continue; }
+    if (c === "'") { const j = text.indexOf("'", i + 1); i = j < 0 ? text.length : j; continue; }
+    if (c === '(') depth++;
+    else if (c === ')' && depth-- === 0) return [text.slice(start, i), i + 1];
+  }
+  return [text.slice(start), text.length];
+}
+
+/**
+ * A command line as the shell splits it: each command's words (quotes taken off, a quoted string one word), and the
+ * texts it runs as commands of their own: each $(…) and `…` (also inside double quotes), and the body of a heredoc fed
+ * to a shell (`bash <<EOF`). Any other heredoc's body is data (a file it writes, a script's input) and is left out.
+ */
+function shellWords(text: string): { cmds: string[][]; subs: string[] } {
+  const cmds: string[][] = [], subs: string[] = [];
+  let words: string[] = [], cur = '', has = false;
+  const pending: { hd: Heredoc; shell: boolean }[] = [];
+  const word = () => { if (has) words.push(cur); cur = ''; has = false; };
+  const end = () => { word(); if (words.length) cmds.push(words); words = []; };
+  const ownerIsShell = () => { const w = has ? [...words, cur] : words; return SHELLS.has(toolOf(w, toolAt(w))); };
+  for (let i = 0; i < text.length;) {
+    const c = text.charAt(i);
+    if (c === '\\') { cur += text.charAt(i + 1); has = true; i += 2; continue; }
+    if (c === "'") { const j = text.indexOf("'", i + 1); const to = j < 0 ? text.length : j; cur += text.slice(i + 1, to); has = true; i = to + 1; continue; }
+    if (c === '"') {
+      has = true;
+      for (i++; i < text.length && text[i] !== '"'; i++) {
+        if (text[i] === '\\') { cur += text.charAt(i + 1); i++; continue; }
+        if (text[i] === '$' && text[i + 1] === '(') { const [inner, next] = balanced(text, i + 2); subs.push(inner); cur += '_'; i = next - 1; continue; }
+        if (text[i] === '`') { const j = text.indexOf('`', i + 1); const to = j < 0 ? text.length : j; subs.push(text.slice(i + 1, to)); i = to; continue; }
+        cur += text.charAt(i);
+      }
+      i++; continue;
+    }
+    if (c === '$' && text[i + 1] === '(') { const [inner, next] = balanced(text, i + 2); subs.push(inner); cur += '_'; has = true; i = next; continue; }
+    if (c === '`') { const j = text.indexOf('`', i + 1); const to = j < 0 ? text.length : j; subs.push(text.slice(i + 1, to)); has = true; i = to + 1; continue; }
+    if (c === '<' && text[i + 1] === '<' && text[i + 2] !== '<') {
+      const hd = heredocAt(text, i);
+      if (hd) { pending.push({ hd: hd[0], shell: ownerIsShell() }); word(); i = hd[1]; continue; }
+    }
+    if (c === '\n') {
+      end(); i++;
+      // each heredoc this line opened: a shell's body is its commands; any other's is data
+      for (const p of pending.splice(0)) { const [body, , next] = heredocBody(text, i, p.hd); if (p.shell) subs.push(body); i = next; }
+      continue;
+    }
+    if (/\s/.test(c)) { word(); i++; continue; }
+    if (';&|()'.includes(c)) { end(); i++; continue; }
+    cur += c; has = true; i++;
+  }
+  end();
+  return { cmds, subs };
+}
+
+/** Whether the command line runs one of the person's CLI commands (PERSON_VERBS) where the shell would run it. */
+function personCli(text: string, depth = 0): boolean {
+  if (depth > 8) return true; // nested past reading: as if it did
+  const { cmds, subs } = shellWords(text);
+  for (const words of cmds) {
+    const i = toolAt(words);
+    const tool = toolOf(words, i);
+    const args = words.slice(i + 1);
+    const plain = args.filter(a => !a.startsWith('-'));
+    if (tool === 'sub-human' && PERSON_VERBS.has(plain[0] ?? '')) return true;
+    // node …/scripts/sub-human invite, sh …/sub-human invite
+    if (SCRIPT_RUNNERS.has(tool) && (plain[0] ?? '').split('/').pop() === 'sub-human' && PERSON_VERBS.has(plain[1] ?? '')) return true;
+    // sh -c '…', bash -lc "…": its string is commands
+    const c = SHELLS.has(tool) ? args.findIndex(a => /^-[a-zA-Z]*c[a-zA-Z]*$/.test(a)) : -1;
+    if (c >= 0 && personCli(args[c + 1] ?? '', depth + 1)) return true;
+    // eval WORDS, xargs [opts] CMD, ssh [opts] HOST CMD: the command starts at some word past the tool's own
+    if (RUNS_WORDS.has(tool) && args.some((_, k) => personCli(args.slice(k).join(' '), depth + 1))) return true;
+    // find -exec sub-human invite ;
+    if (tool === 'find') for (const run of findWords(args).execs) if (personCli(run.join(' '), depth + 1)) return true;
+  }
+  return subs.some(s => personCli(s, depth + 1));
 }
 
 /** bashVerdict reads ctx.realCwd / realPluginRoot for this command (ctx.cwd it reads for every command it can). */
@@ -229,6 +319,38 @@ function passedOn(before: string, sep: string, after: string): boolean {
   return q !== undefined && after.startsWith(q) && /^(?:\s|$)/.test(after.slice(1));
 }
 
+/**
+ * cmd without the body of each heredoc that no shell reads (`cat > f <<EOF`, `python3 - <<EOF`): that text is a file's
+ * contents or a program's input, not commands of this line (#35: a JS file's "4 / 2" read as a command naming "/"). A
+ * shell's heredoc (`bash <<EOF`) keeps its body: its lines are commands. Paths inside a body still count through the
+ * embedded scan (pathVerdict) and the store's spellings (verdictOf), which read the whole command.
+ */
+function dataHeredocsOut(cmd: string): string {
+  if (!cmd.includes('<<')) return cmd;
+  let out = '';
+  for (let i = 0; i < cmd.length;) {
+    const nl = cmd.indexOf('\n', i);
+    const end = nl < 0 ? cmd.length : nl;
+    const line = cmd.slice(i, end);
+    out += nl < 0 ? line : `${line}\n`;
+    i = nl < 0 ? cmd.length : nl + 1;
+    const opened: { hd: Heredoc; shell: boolean }[] = [];
+    for (let k = line.indexOf('<<'); k >= 0; k = line.indexOf('<<', k + 2)) {
+      if (line[k + 2] === '<' || line[k - 1] === '<') continue; // <<< is a here-string
+      const hd = heredocAt(line, k);
+      if (!hd) continue;
+      const w = wordsOf(line.slice(0, k).split(/\|\||&&|[;|&(]/).pop() ?? '');
+      opened.push({ hd: hd[0], shell: SHELLS.has(toolOf(w, toolAt(w))) });
+    }
+    for (const o of opened) {
+      const [body, close, next] = heredocBody(cmd, i, o.hd);
+      out += (o.shell ? body : '') + close;
+      i = next;
+    }
+  }
+  return out;
+}
+
 /** The reason a command reaches a protected path, or null (see the header: lexical, and it follows cd). */
 export function pathVerdict(cmd: string, ctx: GuardCtx = {}): string | null {
   const prot = protectedPaths(ctx);
@@ -308,10 +430,18 @@ export function pathVerdict(cmd: string, ctx: GuardCtx = {}): string | null {
     }
     return null;
   };
-  const why = commands(cmd);
+  // a heredoc's body is data unless a shell reads it (dataHeredocsOut): its lines are no commands of this one
+  const why = commands(dataHeredocsOut(cmd));
   if (why) return why;
-  // paths inside other words: an interpreter's code, a quoted string
-  for (const m of cmd.matchAll(EMBEDDED)) { const why = check(unquote(m[0]), base); if (why) return why; }
+  // paths inside other words: an interpreter's code, a quoted string. A bare "/" or a comment's "/*", "/**" ("//",
+  // division, a JSDoc block in code a heredoc writes) names no directory unless it is quoted on its own ('/' in
+  // os.walk('/') does) (#35: a scratch file's code read as "above the store")
+  for (const m of cmd.matchAll(EMBEDDED)) {
+    const w = unquote(m[0]);
+    const at = m.index, after = cmd.charAt(at + m[0].length);
+    if (/^\/+\**$/.test(w) && !(/['"]/.test(cmd.charAt(at - 1)) && /['"]/.test(after))) continue;
+    const why = check(w, base); if (why) return why;
+  }
   const [above] = aboves;
   if (walks && above) return above.p.above;
   return null;
@@ -479,13 +609,15 @@ function scanQuotes(cmd: string, start: Frame['k'], ticks: boolean): string | nu
   return out;
 }
 
+const ANSI_WHY = 'it has an ANSI-C quoted word ($\'…\') the guard cannot read whole';
+
 /** 'deny reason' for a Bash command, or null. */
 export function bashVerdict(command: unknown, ctx: GuardCtx = {}): string | null {
   const raw = typeof command === 'string' ? command : '';
   if (!raw.trim()) return null;
   // $'…' words read as the shell reads them (and '…' as the literal it is); one this cannot read is not placed, so it is denied
   const read = readQuotes(raw);
-  if (read === null) return 'it has an ANSI-C quoted word ($\'…\') the guard cannot read whole';
+  if (read === null) return ANSI_WHY;
   // a ${NAME:-word} is read both ways: NAME set (a variable, not placed) and unset (its word: "/h/${u:-h}ome")
   const unset = withDefaults(read);
   return verdictOf(read, ctx) ?? (unset !== read ? verdictOf(unset, ctx) : null);
@@ -498,7 +630,7 @@ const withDefaults = (cmd: string): string => cmd.replace(/\$\{[A-Za-z_][A-Za-z0
 function verdictOf(cmd: string, ctx: GuardCtx): string | null {
   if (READ_CLI.test(cmd) || READ_DOCTOR.test(cmd)) return null;
   if (DOCTOR_WRITES.test(cmd)) return DOCTOR_WHY;
-  if (PERSON_CLI.test(cmd) || LOGIN_SERVE.test(cmd)) return 'it makes an invite, lets a machine in or out, or speaks for the room\'s connection: the person does that in their own session (/sub-human invite, admit or kick) or in a terminal outside Claude Code, never with !, which would put an invite and its PIN into this conversation';
+  if (personCli(cmd) || LOGIN_SERVE.test(cmd)) return PERSON_WHY;
   if (ENV_NAMES.test(cmd)) return 'it names the store location variable (SUB_HUMAN_HOME)';
   if (DOT_HOME.test(cmd)) return 'it touches the room store (~/.sub-human)';
   for (const h of homeSpellings(ctx)) {
@@ -519,6 +651,8 @@ function verdictOf(cmd: string, ctx: GuardCtx): string | null {
 
 /** bashVerdict's reason for doctor --fix / --bundle: denyText gives it its own text (the store is not what it is about). */
 export const DOCTOR_WHY = 'doctor --fix and --bundle change or write files';
+/** bashVerdict's reason for the person's own CLI commands (PERSON_VERBS). */
+export const PERSON_WHY = 'it makes an invite, lets a machine in or out, or speaks for the room\'s connection: the person does that in their own session (/sub-human invite, admit or kick) or in a terminal outside Claude Code, never with !, which would put an invite and its PIN into this conversation';
 
 /** `SUB_HUMAN_HOME=<home> ` when home (absolute) is not the default ~/.sub-human, so a terminal acts on this folder
  *  (lib/text.ts homePrefix is the same rule, for node); '' otherwise. */
@@ -539,8 +673,17 @@ export const denyText = (why: string, root: unknown, homes: { home?: unknown; us
     return `ROOM-GUARD: sub-human ${why} (the shim, the home's modes, a bundle file), so they are the person's step: ${
       known ? `they run \`${homeEnv(homes.home, homes.userHome)}node ${root}/scripts/sub-human doctor --bundle\` (or --fix) ` : 'they run it '}in a terminal outside Claude Code. In a session, /sub-human doctor is the read-only check.`;
   }
-  return `${MSG} (Denied: ${why}.) Use the room MCP tools${known ? `, or \`${root}/scripts/sub-human read|who|tasks|show\`` : ''}.`;
+  return `${MSG} (Denied: ${why}.) ${alternative(why, root)}`;
 };
+
+/** What to do instead, by why a command was denied: each deny names the way that works (#35). */
+function alternative(why: string, root: unknown): string {
+  const cli = typeof root === 'string' && root.startsWith('/') ? `, or \`${root}/scripts/sub-human read|who|tasks|show\`` : '';
+  if (why === PERSON_WHY) return 'Ask the person to type it in their own session (/sub-human invite, admit or kick).';
+  if (why === STORE_ABOVE) return `Search or copy a narrower directory (the project), and use mktemp -d for scratch; read the room with the room MCP tools${cli}.`;
+  if (why === ANSI_WHY) return 'Write the path plainly, without $\'…\'.';
+  return `Use the room MCP tools${cli}; for scratch files, mktemp -d.`;
+}
 
 // ---------- Write / Edit / MultiEdit / NotebookEdit ----------
 /** The path the tool input names, or null. */
@@ -587,7 +730,7 @@ export function writeVerdict(candidates: unknown[], ctx: GuardCtx = {}, raw: unk
   return [...cands, String(raw || '')].some(c => DOT_SEGMENT.test(c)) ? 'it writes into the room store (~/.sub-human)' : null;
 }
 
-export const WRITE_DENY = (tool: string, p: string | null) => `${MSG} (Denied: ${tool} on ${p}.)`;
+export const WRITE_DENY = (tool: string, p: string | null): string => `${MSG} (Denied: ${tool} on ${p}.) Write in the project, or in a scratch directory from mktemp -d; post with the room MCP tools.`;
 
 // ---------- Read / Grep / Glob ----------
 /**
@@ -602,12 +745,19 @@ const DOT_HOME_END = /(?:^|\/)\.sub-human\/?$/;
 const homesOf = (ctx: GuardCtx): string[] => [ctx.home, ctx.realHome].filter((r): r is string => typeof r === 'string' && r.startsWith('/')).map(normalize);
 const secretRoots = (ctx: GuardCtx): string[] => homesOf(ctx).flatMap(h => SECRET_DIRS.map(d => (h === '/' ? '' : h) + '/' + d));
 
+/** Claude Code's own output of a tool call it kept to a file (<config>/projects/<project>/<session>/tool-results/…):
+ * the session's to read back, as it tells the model to (#35). */
+const TOOL_RESULTS = /\/projects\/[^/]+\/[^/]+\/tool-results\/[^/]+$/;
+export const isToolResults = (p: unknown): boolean => typeof p === 'string' && TOOL_RESULTS.test(normalize(p));
+
 /**
  * 'deny reason' for a Read whose target is any of candidates and lies under one of the home's secret directories
- * (SECRET_DIRS), or null. Before mod-hello answered, a path through ".sub-human/keys|listen|links" counts.
+ * (SECRET_DIRS), or null. Before mod-hello answered, a path through ".sub-human/keys|listen|links" counts. Claude Code's
+ * own tool results (isToolResults) are never denied, unless the file resolves somewhere else.
  */
 export function readVerdict(candidates: unknown[], ctx: GuardCtx = {}, raw: unknown = ''): string | null {
-  const cands = candidates.filter((c): c is string => typeof c === 'string' && !!c);
+  const cands = candidates.filter((c): c is string => typeof c === 'string' && !!c && !isToolResults(c));
+  if (isToolResults(raw) && !cands.length) return null;
   const roots = secretRoots(ctx);
   if (roots.length) return cands.some(c => roots.some(r => isUnder(c, r))) ? 'it reads a seat signing key or a link\'s secret' : null;
   return [...cands, String(raw || '')].some(c => SECRET_SEGMENT.test(c)) ? 'it reads a seat signing key or a link\'s secret (~/.sub-human)' : null;
@@ -642,7 +792,7 @@ export function searchTargets(tool: string, input: { path?: unknown; pattern?: u
   return [base, base ? base.replace(/\/$/, '') + '/' + prefix : prefix];
 }
 
-export const READ_DENY = (p: string | null, tool = 'Read') => `ROOM-GUARD: the seat signing keys, the links' secrets and the invite lines and PINs typed here are the people's own; a model never reads or searches them. (Denied: ${tool} on ${p || 'the working directory'}.)`;
+export const READ_DENY = (p: string | null, tool = 'Read'): string => `ROOM-GUARD: the seat signing keys, the links' secrets and the invite lines and PINs typed here are the people's own; a model never reads or searches them. (Denied: ${tool} on ${p || 'the working directory'}.) Read the room with the room MCP read tool; search the project, not the sub-human folder or a directory above it.`;
 
 // ---------- the room MCP tools ----------
 // hold runs only in a row subagent (agentId), never a main thread: mod/guard.ts's tool.call denies it (HOLD_DENY).

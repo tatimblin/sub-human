@@ -388,3 +388,42 @@ test('room-plan live: a backtick inside single quotes is a literal character, no
   deny('echo `cat /Users/u/.sub-human/keys/k`');
   deny("cd / && rg '`x`'");
 });
+
+test('#35: the person-only CLI only where the shell runs it; scratch work and Claude Code\'s tool results pass; each deny names the way that works', () => {
+  const ctx: GuardCtx = { home: '/Users/x/.sub-human', userHome: '/Users/x', cwd: '/Users/x/repos/app' };
+  const deny = (cmd: string) => assert.ok(g.bashVerdict(cmd, ctx), `should deny: ${cmd}`);
+  const allow = (cmd: string) => assert.equal(g.bashVerdict(cmd, ctx), null, `should allow: ${cmd}`);
+  // a note, a quoted string or a file a heredoc writes that mentions the CLI is no run of it
+  allow('python3 - <<\'EOF\'\nprint("/sub-human invite")\nEOF');
+  allow('echo "run /sub-human invite to share"');
+  allow('git commit -m "a; /sub-human invite"');
+  allow('git commit -m "$(cat <<\'EOF\'\nUse /sub-human invite to share\nEOF\n)"');
+  allow('printf \'%s\\n\' "/sub-human kick bob"');
+  // the real runs stay denied: in tool position, by the script's path, inside sh -c, eval, $(…), a shell's heredoc
+  for (const cmd of ['sub-human invite --pipe', 'node plugin/sub-human/scripts/sub-human invite', "sh -c 'cd x && sub-human invite'",
+    'bash -lc \'sub-human listen\'', 'eval "sub-human invite"', 'x=$(sub-human invite --pipe)', 'echo hi; sub-human admit 12',
+    '"$P/scripts/sub-human" kick bob', 'npx sub-human invite', 'ssh box sub-human invite', 'find . -name x -exec sub-human kick bob \\;',
+    'bash <<\'EOF\'\nsub-human invite\nEOF', 'SUB=1 nohup node ./scripts/sub-human serve --stdio x']) {
+    deny(cmd);
+    assert.equal(g.bashVerdict(cmd, ctx), g.PERSON_WHY, cmd);
+  }
+  // scratch: mktemp -d, and a heredoc's code (comments, division) run by node
+  allow('mktemp -d');
+  allow('d=$(mktemp -d) && cp -r src "$d"');
+  allow('tmp=$(mktemp -d); cp -r . "$tmp"; cd "$tmp"; node --test');
+  allow("cat > /tmp/store_patch.js <<'EOF'\n/** the store */\n// a comment\nconst a = 4 / 2;\nEOF\nnode /tmp/store_patch.js");
+  deny("python3 -c \"import os; print(list(os.walk('/')))\"");
+  deny('cat /**/keys/x.key');
+  deny("cat > /tmp/x <<'EOF'\nhi\nEOF\ncat ~/.sub-human/keys/k");
+  // Claude Code's own tool results are the session's to read back
+  const tr = '/Users/x/.claude/projects/-Users-x-repos/0b3c/tool-results/b1.txt';
+  assert.equal(g.readVerdict([tr], ctx, tr), null);
+  assert.equal(g.readVerdict([], {}, tr), null, 'before mod-hello answered too');
+  assert.ok(g.readVerdict([tr, '/Users/x/.sub-human/keys/k/a.key'], ctx, tr), 'unless it resolves into the keys');
+  // each deny names the alternative
+  assert.match(g.denyText(g.PERSON_WHY, '/p'), /Ask the person to type it in their own session \(\/sub-human invite, admit or kick\)\.$/);
+  assert.match(g.denyText('it searches or reads a directory above the room store, which holds the seat signing keys', '/p'), /narrower directory .*mktemp -d for scratch/);
+  assert.match(g.denyText('it touches the room store', '/p'), /Use the room MCP tools, or `\/p\/scripts\/sub-human read\|who\|tasks\|show`; for scratch files, mktemp -d\.$/);
+  assert.match(g.WRITE_DENY('Write', '/Users/x/.sub-human/x'), /mktemp -d/);
+  assert.match(g.READ_DENY('/Users/x/.sub-human/keys/k'), /room MCP read tool/);
+});
