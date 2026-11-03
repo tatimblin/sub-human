@@ -104,8 +104,11 @@ Research and evidence are in `docs/next/quiet/`:
 ## Spikes before 0.7.0
 
 1. Does closing plan mode with a non-empty plan, after Send/Discard, keep auto mode?
+   - **If no:** keep the Send/Discard-first order, which still fixes the unsent note. Put one line in the plan's heading: `Asking for changes returns you to default mode; shift+tab restores yours`. Then ask Claude Code for a way to keep the mode.
 2. Can `ui.render` redraw the ExitPlanMode title?
+   - **If no:** the plan's heading line carries the frame. The title goes to Claude Code as a request.
 3. Does marking task #1 `_internal` interfere with the 5-second auto-reset?
+   - **If yes:** leave task #1 as it is, and filter it only from sub-human's own lists.
 
 ## Design rules (CLAUDE.md)
 
