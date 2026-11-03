@@ -48,8 +48,7 @@ Never used for ambient state: `$.ui.status` (always amber `⚠`), the UPS `conti
 ```
 ❯ /sub-human
 ⏺ sub-human: Joined panda-0976 with maya                                   (today: hook line + Claude's echo + hint suffix)
-                                                         agent panel → panda-0976 ▸ maya · idle
-                                                                                  ▸ dev (you)
+                                                         agent panel → panda-0976 · maya, dev
 
 ❯ @room hey, I'll take the HTTP side                                        (no "✓ sent": the prompt row is the receipt)
 ⏺ sub-human: maya: great, plan's coming up
@@ -61,9 +60,9 @@ Plan paging v1 is ready   1: Open                                           (a b
 ⏺ sub-human: Plan paging v2 agreed
 
 ⏺ sub-human: New task for you: http: GET /tasks paging
-                                                         row → maya ✓ store: listTasks
+                                                         room row → panda-0976 · maya ✓ store: listTasks
 ⏺ sub-human: maya's Claude: listTasks is pushed (8b2aab4)                   (Claude to Claude, the one line that matters)
-  ↓ enter maya's row, type "how's the store side going?" → the row answers from her task and activity
+  ↓ enter the room row, type "maya, how's the store side going?" → it answers from her task and activity
 
 ❯ /sub-human leave
   ╭ Left panda-0976. ─ 1. Done  2. ★ Star sub-human  (type to send feedback) ╮   (once per install)
@@ -72,7 +71,7 @@ Plan paging v1 is ready   1: Open                                           (a b
 `debug.log` for the same session (`/sub-human debug tail`):
 
 ```
-21:03:12 join   seat dev · room panda-0976 · rows spawned (room, maya)
+21:03:12 join   seat dev · room panda-0976 · room row spawned
 21:03:40 at-room #4 posted 14ms
 21:05:02 consent plan view opened · paging v1 (maya's edit)
 21:05:55 consent changes sent · paging v1 · mode auto kept
@@ -155,33 +154,48 @@ Each phase ships on its own, and the order follows impact per unit of effort. Fi
 - **Each plan gets its own plan file,** named after the plan, so the footer never shows the person's own unrelated plan path.
 - **Fallbacks stay as they are:** the `$.ui.ask` question, then MCP elicitation.
 
-### Phase 3: rows you can enter. **Owner's decision: keep them**
+### Phase 3: one room row you can enter. **The owner's decision**
 
-**The owner's vision:** a row is a person. You enter it to DM that person, or ask how their work is going. So the rows stay, are quieted, and become something real rather than a fake process.
+**The owner's vision:** the agent panel shows **one row, the room.** Enter it and you see every person in the room. From there you can DM someone or ask how their work is going. The per-person participant rows go, so the panel is never a list of people at the top level.
 
-**Quiet:**
-- Ship `subagentStatusLine` in the plugin's own `settings.json`. It needs no edit by the person and removes the paste-this step. It draws a fixed label per row, e.g. `dev · building http: GET /tasks` / `maya · idle` / `dev ✓ done`, and an ended row draws `""`, so it disappears. This ends the stale `Spawning dev participant row`.
-- Spawn rows from the module (`$.agent.spawn`): no `⏺ Agent(…) Backgrounded agent` block, no hand-back turns, no `row closed`.
-- Rebuild `TurnDuration` with `ui.render` while the plugin's rows are the only pending work: `✻ Done in 3s` in place of `Waiting for N background agents`. The plugin knows its own rows, so it can tell (D4).
-- The row label is the state tier. That's where maya would have seen `dev ✓ done`. The footer's SessionMode slot carries only the room code, with no second copy of who's there.
+**The row in the panel** is quiet. Its fixed label comes from the plugin's own `subagentStatusLine` (in the plugin's `settings.json`, with no edit by the person):
 
-**Enter a row to talk:**
-- **Typing into dev's row sends dev a direct message.** It shows as one line in dev's session, `maya → you: …`. Replying in maya's row continues the thread there. This is a new lane: a DM between two people. It isn't posted to the room's chat, and it's still signed and stored like any entry.
-- **"How's it going?"** The row answers from what the room already knows (dev's task, his recent room activity, whether his session is in a turn), with no interruption to dev. If the question needs dev's Claude, the row relays it Claude to Claude (`SendMessage` to `dev.CODE`), and the answer comes back into the row.
-- **The participant agent changes:**
-  - from `hold` alone to `hold`, `dm` and `status`;
-  - its brief goes from "read-only row: type in main with @room" to "this is dev; what you type here goes to them";
-  - the `mcp/hold.ts` lifecycle stays.
-- **Cost:** each row is a real agent again (about 7k tokens per spawn), now justified by real use. Keep the brief minimal, and never pin a model.
-- **Spike first:**
-  - Confirm that typed input to a background agent started by `$.agent.spawn` reaches it, and that its reply draws in the row.
-  - Decide whether a DM needs its own consent, like `@room`, which shows your exact words first. The suggestion is no, since you typed it.
+```
+panda-0976 · maya, dev · dev building http: GET /tasks
+```
+
+- It ends with the room: an ended row draws `""`, so it disappears.
+- The stale `Spawning dev participant row` label, the `(+1)` and the `← 3 agents` count all go with the participant rows.
+
+**Inside the room:**
+
+```
+panda-0976
+  maya   ✓ store: listTasks          idle
+  dev    ◼ http: GET /tasks paging   building
+  you    (dev)
+
+  Type to talk: "maya, how's the store side going?" · "tell dev the cursor is base64url"
+```
+
+- **The roster** is a list of people only. The room's `claude` member and bookkeeping task #1 are never listed.
+- **A DM:** "tell maya …" sends maya a direct message. She sees one line, `dev → you: …`. Her reply comes back into the room row. This is a new lane between two people: it isn't posted to the room's chat, but it's signed and stored like any entry.
+- **"How's it going?"** is answered from what the room knows (the person's task, recent activity, whether they're in a turn), without interrupting them. If the question needs their Claude, the row passes it on Claude to Claude (`SendMessage` to `maya.CODE`), and the answer comes back into the row.
+
+**What changes:**
+- **Delete** `agents/participant.md`, the participant spawns in `agents/room.md`, and the nested-row bookkeeping in `mod/rows.ts` and `mod/core/rows.ts`. That leaves one row per member session instead of 1 + N, so about 7k tokens per spawn instead of 7k × (N+1).
+- **The room agent** goes from `Agent(sub-human:participant)` + `hold` to `hold` + `dm` + `status`. Its brief: "this is room panda-0976; what you type here goes to the people in it". Spawn it from the module (`$.agent.spawn`): no `⏺ Agent(…) Backgrounded agent` block, no hand-back turns, no `row closed`.
+- **The room session's panel** (`claude --bg`, which the person never sees) holds no participant rows either. It keeps only the task list.
+- **`Waiting for N background agents`** is redrawn as the normal `✻ Done in 3s` with `ui.render` while the room row is the only pending work.
+
+**Spike first:**
+- What a person sees on entering a background agent: its transcript. Can the roster be the agent's own first message, refreshed on joins and task changes without a model turn each time (`$.session.append` into the agent, or `ui.render` on its rows)?
+- Does typed input to a `$.agent.spawn` agent reach it, and does its reply draw?
+- Should a DM show your exact words first, the way `@room` does? Suggestion: no, since you typed it in the room yourself.
 
 **Also:**
-- Filter member `claude` out of every list of people.
-- Mark bookkeeping task #1 `metadata._internal`. Check this against the 5-second auto-reset first.
 - Reap the room's `claude --bg` session when the room closes.
-- Remaining cost: a person's own `subagentStatusLine` overrides the plugin's. Doctor should say so.
+- A person's own `subagentStatusLine` overrides the plugin's. Doctor says so.
 
 ### Phase 4: the guard stays out of the way. Closes #35
 
@@ -203,15 +217,18 @@ This research hit the false positives repeatedly: shell reads of plugin source, 
 |---|---|---|
 | **0.6.0** | 0, 1, 4 | Words, debug log and guard. All of it is plugin-side on stable surfaces, and it brings the biggest drop in noise for the least risk. |
 | **0.7.0** | 2 and 3's quieting | The room's plan in plan mode, made right, and quiet rows. Both build on early-access surfaces (`ui.render`, the band, `$.agent.spawn`) behind contract entries. |
-| **0.8.0** | 3's rows you can enter | DMs and "how's it going". It's a new lane, so it ships after its spike and a live two-person run. |
+| **0.8.0** | 3's room you can enter | DMs and "how's it going". It's a new lane, so it ships after its spike and a live two-person run. |
 
 ## Design rules (CLAUDE.md)
 
-All of them hold. "Keep the agent-panel rows" and "Consent is native. A proposal opens in the plan view" are the owner's decisions here too. Rows gain a purpose: the room session's rule "takes no typed input" is about the room session, not about rows, so a row that relays a DM doesn't conflict with it. The `subagentStatusLine` goes in the plugin's own `settings.json`, never the person's.
+- **"Keep the agent-panel rows. A member's panel shows the room row with the members inside it."** This becomes: one room row, with the members inside it as a roster, not as agents. The CLAUDE.md line changes when Phase 3 ships. The room session's panel no longer lists the humans, since nobody sees it.
+- **"Consent is native. A proposal opens in the plan view."** Holds (D3).
+- **"The room's Claude takes no typed input."** Still holds: that rule is about the room session (`claude --bg`). The room *row* in a member's panel does take input: DMs and questions.
+- **"No writes to user settings files."** Holds. The `subagentStatusLine` goes in the plugin's own `settings.json`.
 
 ## Decisions (owner, 2026-11-02)
 
-- **D1, rows:** keep them. A row is a person: enter it to DM them or ask how their work is going (Phase 3).
+- **D1, rows:** one row, the room. Enter it to see every person, DM one, or ask how their work is going. There are no per-person rows at the top level (Phase 3).
 - **D2, the leave card's limit:** open. The default is at most two cards in total (one, then one more after a dismissal).
 - **D3, review:** plan mode stays, because it's formatted and scrollable. The plan is the room's plan, never someone else's (Phase 2).
 - **D4, early-access surfaces:** build on them, with contract entries and fallbacks; adjust as Claude Code changes.
@@ -220,7 +237,7 @@ All of them hold. "Keep the agent-panel rows" and "Consent is native. A proposal
 
 1. **#34:** does closing the plan view with a non-empty plan, after the Send/Discard choice, keep auto mode on 2.1.296?
 2. **"Ready to code?" title:** can `ui.render` redraw the ExitPlanMode dialog's title?
-3. **Rows:** does typed input reach a `$.agent.spawn` background agent, and does its reply draw in the row?
+3. **The room row:** does typed input reach a `$.agent.spawn` background agent, and does its reply draw? Can its roster refresh without a model turn?
 4. **Task #1:** does `metadata._internal` on task #1 interfere with the 5-second auto-reset?
 
 ## Requests for Claude Code (not blocking)
