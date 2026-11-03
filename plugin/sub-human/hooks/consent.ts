@@ -294,7 +294,7 @@ function write(input: ConsentIn, me: Identity, say: Say, state: State, answers: 
     case 'ask': {
       const s = say.show;
       if ('leave' in s) return c.pre('ask', say.text, { updatedInput: { plan: ccEnv.LEAVE_PLAN_TEXT } });
-      if ('plan' in s) return c.pre('ask', say.text, { updatedInput: { plan: shownText(me, s.plan) } });
+      if ('plan' in s) { quietOut = true; return c.pre('ask', say.text, { updatedInput: { plan: shownText(me, s.plan) } }); }
       if ('note' in s) return state.note && c.pre('ask', say.text, { updatedInput: proposal.confirmCard(state.note) });
       if ('admit' in s && show.admit) return c.pre('ask', `room ${me.code}: ${show.admit.name} asks to join`, { updatedInput: admission.card(show.admit, me.code) });
       if ('card' in s && show.card) return c.pre('ask', say.text, { updatedInput: proposal.cardFor(show.card, me.code) });
@@ -490,6 +490,10 @@ function postExit(input: ConsentIn, me: Identity) {
 function postEnter(input: ConsentIn, me: Identity) {
   enterReview(input, me);
   step(input, me, st => ({ type: 'entered', plan: st.review && st.review.phase === 'entering' ? planOf(input) : { file: null, text: null } }));
+  // a review opened from outside plan mode: "Entered plan mode · Claude is now exploring…" is false (the person only
+  // reviews), so its row is the module's to hide; the person's own plan mode (review mode plan) keeps its row
+  const r = proposal.readReview(me);
+  if (r && r.phase === 'entering' && r.mode !== 'plan') quietOut = true;
 }
 
 /**
@@ -532,6 +536,12 @@ function prompt(input: ConsentIn, me: Identity) {
 // ---------- a room plan edit (lib/consent/edit.ts) ----------
 /** A line the module appends to this run's plan_mode attachment (shim mode: subHuman.attach). */
 let attachOut = '';
+/** This run's call is sub-human's own plan-mode call (shim mode: subHuman.quiet): a review's EnterPlanMode while the
+ * person was not in plan mode, a review's plan view or closing call, an edit's save. The module hides its rows
+ * (mod/consent.ts, ui.render ToolUse/ToolResult by tool_use_id); never a call of the person's own plan mode. */
+let quietOut = false;
+/** A line for Claude Code's debug log (shim mode: subHuman.debug), never the person's. */
+let debugOut = '';
 
 /** What an edit seeds into the plan file: the header and the base version's text (lib/consent/edit.ts seed). */
 function seedText(me: Identity, plan: string, base: number): string {
@@ -593,7 +603,10 @@ function editStep(input: ConsentIn, me: Identity, ev: edit.EditEvent): boolean {
   const event = String(input.hook_event_name);
   switch (say.to) {
     case 'context': c.context(event, say.text); break;
-    case 'deny': if (say.context) c.out(ccEnv.denyWithContext(say.text, say.context)); else c.deny(say.text); break;
+    case 'deny':
+      if (say.quiet) { quietOut = true; debugOut = say.text; } // the save worked: its rows hidden, the receipt to the debug log
+      if (say.context) c.out(ccEnv.denyWithContext(say.text, say.context)); else c.deny(say.text);
+      break;
     case 'leave': c.pre('ask', say.text, { updatedInput: { plan: ccEnv.LEAVE_PLAN_TEXT } }); break;
     case 'check': showCheck(input, me, say.hash, say.mode); break;
     case 'attach': if (event === ccEnv.PLAN_ATTACHMENT_EVENT) attachOut = say.text; else c.context(event, say.text); break;
@@ -657,6 +670,8 @@ function routeEdit(input: ConsentIn, me: Identity): boolean {
 function dispatch(input: ConsentIn): void {
   unsent = [];
   attachOut = '';
+  quietOut = false;
+  debugOut = '';
   const r = c.capture(() => route(input));
   const note = unsent.length ? { systemMessage: `sub-human: ${unsent.join(' ')}` } : null;
   r.outputs.forEach((o, i) => c.out(note && i === 0 ? { ...o, ...note } : o));
@@ -741,7 +756,8 @@ function shimDispatch(input: ConsentIn) {
   const outputs = r.outputs.filter(Boolean);
   const last = outputs.pop() ?? {};
   for (const o of outputs) process.stdout.write(JSON.stringify(o) + '\n');
-  c.out({ ...last, subHuman: { reviewOpen: reviewOpen(input), noteWaits: noteWaits(input), ...(attachOut ? { attach: attachOut } : {}) } });
+  c.out({ ...last, subHuman: { reviewOpen: reviewOpen(input), noteWaits: noteWaits(input), ...(attachOut ? { attach: attachOut } : {}),
+    ...(quietOut ? { quiet: true } : {}), ...(debugOut ? { debug: debugOut } : {}) } });
 }
 
 /** Run by the hooks module (mod/core/shim.ts SHIM_MODE). */

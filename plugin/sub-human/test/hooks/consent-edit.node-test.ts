@@ -78,9 +78,10 @@ test('edit: the capture, the receipt, a conflict and a refusal; the mode put bac
   const exit = edit.reduce(SEEDED, EVENTS.exit);
   assert.deepEqual(exit.effects, [{ do: 'put', plan: 'room', base: 1, text: '# v2 text\n', summary: 's' }], 'the header off, the Summary line the summary');
   const stored = edit.reduce(SEEDED, EVENTS.put);
-  // the receipt: the deny's reason is the person's line (drawn as the call's error), the mechanics are the model's context
+  // the receipt: the deny's reason (the model reads it; the person's rows of the call are hidden: quiet, #9), the
+  // mechanics are the model's context
   assert.deepEqual(stored.say, { to: 'deny', text: 'sub-human: plan room v2 saved, not agreed yet.',
-    context: `${edit.EDIT_SAY.storedNext} Now call ExitPlanMode({}) once more: it only leaves plan mode (Claude Code asks your person; not an approval: do not carry the plan out).` });
+    context: `${edit.EDIT_SAY.storedNext} Now call ExitPlanMode({}) once more: it only leaves plan mode (Claude Code asks your person; not an approval: do not carry the plan out).`, quiet: true });
   for (const ev of [EVENTS.put, { type: 'put' as const, outcome: { kind: 'refused' as const, why: 'x' } }, { type: 'put' as const, outcome: { kind: 'offline' as const, why: 'timeout' } },
     { type: 'put' as const, outcome: { kind: 'conflict' as const, version: 3, who: 'bob', summary: '', text: 'long\n'.repeat(500) } }]) {
     const say = edit.reduce(SEEDED, ev).say;
@@ -136,6 +137,35 @@ const write = (file: string, body: string, summary: string) => {
   fs.writeFileSync(file, `${t.slice(0, at).replace('Summary of this edit: ', `Summary of this edit: ${summary}`)}\n\n${body}`);
   return fs.readFileSync(file, 'utf8');
 };
+
+test('0.7.0 #9 (shim mode): the save\'s deny is quiet (the module hides its red rows; its receipt goes to the debug log); so is the author\'s check that follows; a conflict\'s is not', () => {
+  const w = new World({ alice: 'act', bob: 'sleep' });
+  const shim = { as: 'alice', env: { SUB_HUMAN_SHIM: '1' } };
+  const file = planFile(w, 'alice', null);
+  openEdit(w, 'alice');
+  w.hook('consent', ev('PostToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {}, tool_response: {} }), shim);
+  attach(w, 'alice', file);
+  const text = write(file, '# Paging\n\n1. cursor\n', 'first draft');
+  const save = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: text, planFilePath: file }, tool_use_id: 'tu1' }), shim);
+  assert.equal(decision(save), 'deny');
+  assert.equal(sub(save).quiet, true);
+  assert.equal(sub(save).debug, 'sub-human: plan room v1 saved; you review it before anyone else is asked.');
+  const check = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { planFilePath: file }, tool_use_id: 'tu2' }), shim);
+  assert.equal(decision(check), 'ask');
+  assert.equal(sub(check).quiet, true, 'the author\'s check is a review\'s plan view: its approved / rejected row is hidden too');
+  // another edit that meets a newer version: the conflict's deny is the model's work, drawn as Claude Code draws it
+  const w2 = new World({ alice: 'act', bob: 'sleep' });
+  const f2 = planFile(w2, 'alice', null);
+  openEdit(w2, 'alice');
+  w2.hook('consent', ev('PostToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {}, tool_response: {} }), shim);
+  attach(w2, 'alice', f2);
+  const t2 = write(f2, '# Paging\n', 'mine');
+  w2.lib(() => plans.put(storeOf(w2), { base: 0, text: '# Theirs\n' }, { by: 'bob' }));
+  const conflict = w2.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: t2, planFilePath: f2 }, tool_use_id: 'tu1' }), shim);
+  assert.equal(decision(conflict), 'deny');
+  assert.match(must(reason(conflict)), /not saved: v1 landed since v0/);
+  assert.equal(sub(conflict).quiet, undefined);
+});
 
 test('edit (hooks): seeded at the plan_mode attachment, stored at Pre(ExitPlanMode) with the receipt as the deny; the closing call shows the author\'s check, whose Yes sends it out; the person\'s plan file restored', () => {
   const w = new World({ alice: 'act', bob: 'sleep' });

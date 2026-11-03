@@ -1416,3 +1416,28 @@ test('consent (sign-off off): no review opens; a call meant to open one is denie
   assert.notEqual(decision(onEnter.pre), 'deny');
   assert.ok(onEnter.opened, 'the review opened');
 });
+
+test('0.7.0 quiet (shim mode, spike 2): a review\'s EnterPlanMode outside plan mode and its plan view are quiet calls (the module hides their rows); a review in the person\'s own plan mode keeps its "Entered plan mode"; no review, nothing quiet', () => {
+  const shim = { as: 'bob', env: { SUB_HUMAN_SHIM: '1' } };
+  const sub = (r: HookRun) => r.json?.subHuman ?? {};
+  const { w, hash } = world();
+  const file = path.join(w.userHome, '.claude', 'plans', 'quiet-one.md');
+  const tp = transcript(w, file);
+  const enter = w.enterPlan(ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {}, transcript_path: tp, tool_use_id: 'e1' }), shim);
+  assert.ok(enter.opened);
+  assert.equal(sub(enter).quiet, true, '"Entered plan mode · Claude is now exploring…" is false while bob only reviews');
+  const view = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: `proposal ${hash}` }, tool_use_id: 'tu1', transcript_path: tp }), shim);
+  assert.equal(decision(view), 'ask');
+  assert.equal(sub(view).quiet, true, 'the plan view: its "User approved / rejected Claude\'s plan" row is hidden');
+  // the person's own plan mode: the review opens there, its EnterPlanMode row stays (plan mode is theirs)
+  const two = world();
+  const f2 = path.join(two.w.userHome, '.claude', 'plans', 'quiet-two.md');
+  const own = two.w.enterPlan(ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'plan', tool_input: {}, transcript_path: transcript(two.w, f2) }), shim);
+  assert.ok(own.opened);
+  assert.equal(sub(own).quiet, undefined);
+  // no request waiting: the person's EnterPlanMode is theirs
+  const none = new World({ alice: 'act', bob: 'sleep' });
+  const mine = none.enterPlan(ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {} }), shim);
+  assert.equal(mine.opened, false);
+  assert.equal(sub(mine).quiet, undefined);
+});

@@ -26,6 +26,7 @@ import type * as shimMod from '../mod/core/shim.ts';
 import type * as stateMod from '../mod/core/state.ts';
 import type * as registerMod from '../mod/register.ts';
 import { must } from './support/must.ts';
+import * as quietCore from '../mod/core/quiet.ts';
 import { eid } from './support/brands.ts';
 
 /** A route action's text (submit, mid-turn-wake, log, append). */
@@ -678,4 +679,19 @@ test('prompt: an @room in a session surely without a seat is refused in at-room\
   assert.equal(p.unseatedRefusal({ session_id: 's1', prompt: '@room hi' }, mkHello({ seat: seatOf('a') })), null);
   const d = await load('mod/core/deliver.ts');
   assert.equal(d.rewakePrompt('one\ntwo\n'), '(for Claude) one\n(for Claude) two', 'every line for the model: no line for a person');
+});
+
+test('0.7.0 quiet: the hidden calls keep the newest QUIET_MAX ids, once each; a row hides only for an id kept; quiet-plan off hides none', () => {
+  let ids: string[] = [];
+  for (let i = 0; i < quietCore.QUIET_MAX + 5; i++) ids = quietCore.keepQuiet(ids, `t${i}`);
+  assert.equal(ids.length, quietCore.QUIET_MAX);
+  assert.equal(ids[0], 't5');
+  assert.deepEqual(quietCore.keepQuiet(['a', 'b'], 'a'), ['b', 'a'], 'once each, newest last');
+  assert.equal(quietCore.quietRow(['a'], 'a'), true);
+  for (const id of ['b', '', undefined, 3]) assert.equal(quietCore.quietRow(['a'], id), false, String(id));
+  const seat = { name: 'bob', code: 'otter-4821', role: 'member' as const, addr: 'bob.otter-4821' };
+  const hello: Hello = { sid: 's', home: '/h', realHome: '/h', userHome: null, pluginRoot: null, seat };
+  assert.equal(quietCore.quietOn(hello), true);
+  assert.equal(quietCore.quietOn(null), true);
+  assert.equal(quietCore.quietOn({ ...hello, cc: { version: '2.1.302', verified: false, off: ['quiet-plan'] } }), false);
 });

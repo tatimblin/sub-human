@@ -35,9 +35,9 @@ export type SubHumanCc = {
   /** Every internal sub-human relies on checked out on it; null: not checked yet (a check runs in the background). */
   verified: boolean | null;
   /** The features that run their fallback on it (mod/core/cc.ts GATED), SUB_HUMAN_CC_OFF's included. */
-  off: ('room-session' | 'tasks' | 'plan-edit' | 'sign-off' | 'task-internal' | 'reap-rm')[];
+  off: ('room-session' | 'tasks' | 'plan-edit' | 'sign-off' | 'task-internal' | 'reap-rm' | 'quiet-plan')[];
   /** The part of off that SUB_HUMAN_CC_OFF forced, not the version's check. */
-  forced?: ('room-session' | 'tasks' | 'plan-edit' | 'sign-off' | 'task-internal' | 'reap-rm')[];
+  forced?: ('room-session' | 'tasks' | 'plan-edit' | 'sign-off' | 'task-internal' | 'reap-rm' | 'quiet-plan')[];
 };
 
 declare module 'claude-code' {
@@ -65,6 +65,9 @@ declare module 'claude-code' {
       /** The room context waiting for the next prompt (mod/deliver.ts holds each pull event, mod/prompt.ts carries it
        * as context and clears what it carried): each event's lines by id, and how many lines its cap left out. */
       pulls: { next: number; items: { id: number; lines: string[] }[]; dropped: number } | null;
+      /** The tool calls whose rows the module draws as nothing (mod/core/quiet.ts): sub-human's own plan-mode calls
+       * consent named (subHuman.quiet), newest last, at most QUIET_MAX. */
+      quietCalls: string[];
     };
   }
 }

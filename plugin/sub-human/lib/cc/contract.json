@@ -999,6 +999,18 @@
    "note": "A ui.render rewrite of UserMessage text changes only the drawing; origin, isExpanded, task and from are pinned."
   },
   {
+   "id": "render-tool-rows-hide",
+   "section": 10,
+   "stability": "incidental",
+   "feature": "quiet-plan",
+   "since": "2.1.296",
+   "search": [
+    "useRenderInput(\"ToolUse\"",
+    "useRenderInput(\"ToolResult\""
+   ],
+   "note": "ui.render ToolUse and ToolResult carry the call's tool_use_id, and an empty Box draws nothing for that row, also one drawn already once $.ui.invalidate('ui.render') runs (quiet/SPIKES.md spike 2, live on 2.1.296). EnterPlanMode's \"Entered plan mode / Claude is now exploring…\", ExitPlanMode's \"User approved / rejected Claude's plan\" and a denied call's red \"Error:\" are ToolResult rows; a denied call's red header is its ToolUse row. mod/consent.ts hides the rows of the calls consent names (subHuman.quiet: a review's EnterPlanMode outside plan mode, its plan view and closing call, an edit's save; mod/core/quiet.ts). Drawing only: the model reads every result as before. Off: the 0.6.0 rows."
+  },
+  {
    "id": "render-own-prompt-reentry",
    "section": 10,
    "stability": "incidental",

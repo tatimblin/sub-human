@@ -85,7 +85,9 @@ export type EditSay =
   | { to: 'context'; text: string }
   /** text: the deny's reason, which the person sees too (Claude Code draws it as the call's error): short and in their
    * words; context: the model's mechanics, as the call's additionalContext (lib/cc/env.ts denyWithContext) */
-  | { to: 'deny'; text: string; context?: string }
+  /** quiet: the store's receipt (the save worked): the module hides the call's rows (#9), the receipt goes to the
+   * debug log, and the model reads it as ever */
+  | { to: 'deny'; text: string; context?: string; quiet?: true }
   | { to: 'attach'; text: string }
   /** the closing call as Claude Code's own "exit plan mode?" (a PreToolUse ask, the plan emptied) */
   | { to: 'leave'; text: string }
@@ -200,7 +202,7 @@ export function capture(file: string): { text: string; summary: string } | { err
 // ---------- the reducer ----------
 const none = (edit: PlanEdit | null): EditStep => ({ edit, effects: [], say: null });
 /** A deny: the person's line as its reason, the model's next step as its context. */
-const deny = (text: string, context: string): EditSay => ({ to: 'deny', text, context });
+const deny = (text: string, context: string, quiet = false): EditSay => ({ to: 'deny', text, context, ...(quiet ? { quiet: true as const } : {}) });
 
 /** The plan file back as it was before the seed, once: the effect, and the edit marked restored. */
 /** The model's line when an effect puts the person's own plan back (none when the file held nothing). */
@@ -296,11 +298,11 @@ export function reduce(edit: PlanEdit | null, ev: EditEvent): EditStep {
       // the person was in plan mode already (or entered it by hand: no EnterPlanMode of the edit's): it stays, and the edit is done
       if (e.mode === 'plan' || e.mode === undefined) {
         const [, effects] = restore(e);
-        return { edit: null, effects, say: deny(receipt, `${agreed}${EDIT_SAY.stayInPlan}${fileLine(effects)}${check ? ` ${EDIT_SAY.checkThen(check)}` : ''}`) };
+        return { edit: null, effects, say: deny(receipt, `${agreed}${EDIT_SAY.stayInPlan}${fileLine(effects)}${check ? ` ${EDIT_SAY.checkThen(check)}` : ''}`, true) };
       }
       const next: PlanEdit = { ...e, phase: 'stored', version: o.version, ...(o.unchanged ? { unchanged: true } : {}), ...(check ? { check } : {}) };
       const then = check && ev.showCheck ? SHOW_CHECK : `${LEAVE}${check ? ` ${EDIT_SAY.checkThen(check)}` : ''}`;
-      return { edit: next, effects: [{ do: 'save', edit: next }], say: deny(receipt, `${agreed}${then}`) };
+      return { edit: next, effects: [{ do: 'save', edit: next }], say: deny(receipt, `${agreed}${then}`, true) };
     }
     case 'exited': {
       const [, effects] = restore(e);

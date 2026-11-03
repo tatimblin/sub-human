@@ -36,7 +36,8 @@ import { prePayload, rejectedPayload } from './core/facts.ts';
 import { asHello } from './core/state.ts';
 import { facts, copies } from './deliver.ts';
 import { copyAsked, copyCard, copyOutcome, copySaid, copyTo, copyNews, clipboardCommands, COPY_QUESTION, COPIED, NO_TOOL, GONE } from './core/copy.ts';
-import type { EngineInterface, On } from 'claude-code';
+import { keepQuiet, quietOn, quietRow } from './core/quiet.ts';
+import type { EngineInterface, On, RenderElement } from 'claude-code';
 import type { Hello, RunOutput, SubHumanRead } from './core/types.ts';
 
 const HELLO = { plugin: 'sub-human', key: 'hello' } as const;
@@ -45,6 +46,7 @@ const PLAN_TOOL = 'mcp__plugin_sub-human_room__plan';
 /** The event consent takes a plan_mode attachment as (lib/cc/env.ts PLAN_ATTACHMENT_EVENT). */
 const PLAN_ATTACHMENT = 'PlanAttachment';
 const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' } as const;
+const QUIET = { plugin: 'sub-human', key: 'quietCalls' } as const;
 
 async function helloOf($: EngineInterface): Promise<Hello | null> {
   const { value } = await $.state.get(HELLO);
@@ -65,12 +67,38 @@ function runConsent($: EngineInterface, stdin: unknown, sid: unknown): Promise<R
   });
 }
 
-/** Consent's notices and its report: a systemMessage as $.ui.log lines, reviewOpen into $.state. */
-async function apply($: EngineInterface, { systemMessage, subHuman }: { systemMessage?: string; subHuman?: SubHumanRead | undefined }) {
+/** Consent's notices and its report: a systemMessage as $.ui.log lines, reviewOpen into $.state, a debug line to
+ * Claude Code's debug log, and a quiet call (toolUseId: the call the report is about) into the calls whose rows are
+ * hidden. */
+async function apply($: EngineInterface, { systemMessage, subHuman }: { systemMessage?: string; subHuman?: SubHumanRead | undefined }, toolUseId?: unknown) {
   if (systemMessage) for (const line of asNotice(systemMessage).split('\n')) if (line.trim()) $.ui.log(line);
+  if (subHuman && typeof subHuman.debug === 'string' && subHuman.debug) $.ui.log(subHuman.debug, { to: 'debug' });
   const open = reviewOpenOf(subHuman);
   if (open !== undefined) await $.state.set(REVIEW, open);
+  if (subHuman && subHuman.quiet === true && typeof toolUseId === 'string' && toolUseId) {
+    if (!quietOn(await helloOf($))) return;
+    const kept = await quietCalls($);
+    if (kept.includes(toolUseId)) return;
+    const next = keepQuiet(kept, toolUseId);
+    quiet = new Set(next);
+    await $.state.set(QUIET, next);
+    $.ui.invalidate('ui.render'); // a row drawn already (the result came before this report) is drawn again, hidden
+  }
 }
+
+/** The calls whose rows are hidden (mod/core/quiet.ts), in memory once read from $.state (kept there across a reload
+ * and a --resume: the rows are drawn again then). null: not read yet. */
+let quiet: Set<string> | null = null;
+async function quietCalls($: EngineInterface): Promise<string[]> {
+  if (quiet) return [...quiet];
+  const { value } = await $.state.get(QUIET);
+  const ids = Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+  quiet = new Set(ids);
+  return ids;
+}
+
+/** An empty drawing: the row is not drawn at all (live 2.1.296: an empty Box takes no line). */
+const EMPTY: RenderElement = { type: 'Box', props: {}, children: [] };
 
 /** The prompt holds typed text (the last PromptHint drawn said isDraft): module state, lost on reload (then false). */
 let draft = false;
@@ -132,7 +160,7 @@ export function registerConsent(on: On): void {
       const text = r.deny !== undefined ? r.deny : typeof r.text === 'string' ? r.text : '';
       const payload = rejectedPayload(e, { sid, cwd: await $.session.cwd().catch(() => undefined), facts: facts.of(sid), text });
       const { result, ...said } = toClassic('PostToolUseFailure', await runConsent($, payload, sid));
-      await apply($, said);
+      await apply($, said, e.tool_use_id);
       const lines = result.additionalContext ?? [];
       if (!lines.length) return r;
       return r.deny !== undefined ? { deny: [r.deny, ...lines].join('\n\n') } : { ...r, context: [...(r.context ?? []), ...lines] };
@@ -153,7 +181,7 @@ export function registerConsent(on: On): void {
     // ExitPlanMode: whether the person had typed text in the prompt as the view opens (their next keys go to it: item 8)
     const payload = e.tool === 'ExitPlanMode' && draft ? { ...base, sub_human_typing: true } : base;
     const { result, ...said } = toPre(await runConsent($, payload, sid));
-    await apply($, said);
+    await apply($, said, e.tool_use_id);
     // each answer written out, one branch per shape: the plugin directory reads no spread in a permission answer
     const ctx = result.additionalContext;
     const input = result.updatedInput;
@@ -177,7 +205,7 @@ export function registerConsent(on: On): void {
     }
     if (!seatedOrUnsure(await helloOf($), e.session_id)) return next(e);
     const { result, ...said } = toClassic('PostToolUse', await runConsent($, e, e.session_id));
-    await apply($, said);
+    await apply($, said, e.tool_use_id);
     return mergeClassic(result, await next(e));
   }).catch((_$, e, next) => next(e));
 
@@ -207,6 +235,19 @@ export function registerConsent(on: On): void {
     const line = subHuman && typeof subHuman.attach === 'string' ? subHuman.attach : '';
     return line ? { text: `${r.text}\n\n${line}` } : r;
   }).catch((_$, e, next) => next(e)); // no seed: the edit's ExitPlanMode seeds the file instead (lib/consent/edit.ts)
+
+  // sub-human's own plan-mode calls draw nothing (quiet/SPIKES.md spike 2): a review's false "Entered plan mode", its
+  // plan view's "User approved / rejected Claude's plan", an edit's red save (#9). Only the calls consent named
+  // (subHuman.quiet, by tool_use_id): a person's own plan mode and every other error draw as Claude Code draws them.
+  // Off with the verdict's quiet-plan (cc CONTRACT render-tool-rows-hide): the 0.6.0 rows.
+  on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
+    const ids = await quietCalls($);
+    return quietRow(ids, e.props.tool_use_id) ? EMPTY : next(e);
+  }).catch((_$, e, next) => next(e));
+  on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
+    const ids = await quietCalls($);
+    return quietRow(ids, e.props.tool_use_id) ? EMPTY : next(e);
+  }).catch((_$, e, next) => next(e));
 
   // observe only: whether the person is typing (PromptHint isDraft), for a plan view about to open (item 8)
   on('ui.render', { component: 'PromptHint' }, (_$, e, next) => {

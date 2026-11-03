@@ -12,7 +12,7 @@ const POST = 'mcp__plugin_sub-human_room__post'
 const READ = 'mcp__plugin_sub-human_room__read'
 
 /** The engine beneath: mod-hello answering `hello`, consent.ts answering in turn from `answers` (the last repeats). */
-type Options = { hello?: ReturnType<typeof helloOf>; answers?: object[]; exit?: { deny: string } }
+type Options = { hello?: ReturnType<typeof helloOf> & { cc?: { version: string; verified: boolean | null; off: string[] } }; answers?: object[]; exit?: { deny: string } }
 type Seen = { consent: { stdin: Record<string, unknown>; env: Record<string, string> | undefined }[]; beneathStop: number; beneathPre: string[]; tools: string[]; logs: string[] }
 function world(on: On, { hello = OUT, answers = [{ subHuman: { reviewOpen: false } }], exit }: Options = {}) {
   const seen: Seen = { consent: [], beneathStop: 0, beneathPre: [], tools: [], logs: [] }
@@ -224,4 +224,47 @@ test('author first: an ExitPlanMode refused with a note on the person\'s own new
   const runs = seen.consent.length
   await $.tool.call({ tool: READ })
   expect(seen.consent.length).toBe(runs)
+})
+
+/** A tool row as ui.render raises it, for the call id. */
+const toolRow = (component: 'ToolUse' | 'ToolResult', id: string, tool: string, isErrored = false) => ({
+  plugin: 'sub-human', surface: 'terminal' as const, component,
+  props: component === 'ToolUse'
+    ? { tool_use_id: id, tool, input: {}, isRunning: false, isErrored, isInterrupted: false }
+    : { tool_use_id: id, tool, output: 'User has approved your plan.', isErrored },
+})
+
+test('0.7.0 quiet rows (#9, spike 2): the rows of a call consent names quiet (a review\'s plan view, an edit\'s save) draw as nothing; any other call, and every call while quiet-plan is off, draws the engine\'s', async ($, on) => {
+  const view = { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: 'sign-off on plan paging v2', updatedInput: { plan: 'Room plan · paging v2 · …' } }, subHuman: { reviewOpen: true, quiet: true } }
+  const seen = world(on, { answers: [view, { subHuman: { reviewOpen: true } }] })
+  await start($)
+  await exitPlan($, 'plan paging v2')
+  const id = String(must(seen.consent[0], 'the plan view run').stdin.tool_use_id)
+  expect(id.length > 0).toBe(true)
+  for (const component of ['ToolUse', 'ToolResult'] as const) {
+    let ui = await $.ui.mount(toolRow(component, id, 'ExitPlanMode'))
+    expect((await ui.findAll({ type: 'Text' })).map(t => t.text)).toEqual([])
+    await ui.unmount()
+    // the person's own plan mode, or any other call: never hidden
+    ui = await $.ui.mount(toolRow(component, 'toolu_persons_own', 'ExitPlanMode', true))
+    expect((await ui.findAll({ type: 'Text' })).map(t => t.text)).toEqual(["the engine's line"])
+    await ui.unmount()
+  }
+  // a report that names no quiet call adds none
+  await exitPlan($, 'my own plan')
+  const other = String(must(seen.consent[1], 'the second run').stdin.tool_use_id)
+  const ui = await $.ui.mount(toolRow('ToolResult', other, 'ExitPlanMode'))
+  expect((await ui.findAll({ type: 'Text' })).map(t => t.text)).toEqual(["the engine's line"])
+  await ui.unmount()
+})
+
+test('0.7.0 quiet rows: with the verdict\'s quiet-plan off (SUB_HUMAN_CC_OFF or a failed render-tool-rows-hide), a quiet report hides nothing', async ($, on) => {
+  const view = { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: 'sign-off', updatedInput: { plan: 'x' } }, subHuman: { reviewOpen: true, quiet: true } }
+  const seen = world(on, { hello: { ...OUT, cc: { version: '2.1.302', verified: false, off: ['quiet-plan'] } }, answers: [view] })
+  await start($)
+  await exitPlan($, 'plan paging v2')
+  const id = String(must(seen.consent[0], 'the plan view run').stdin.tool_use_id)
+  const ui = await $.ui.mount(toolRow('ToolResult', id, 'ExitPlanMode'))
+  expect((await ui.findAll({ type: 'Text' })).map(t => t.text)).toEqual(["the engine's line"])
+  await ui.unmount()
 })

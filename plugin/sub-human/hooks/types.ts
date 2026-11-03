@@ -63,6 +63,9 @@ export interface SubHumanReport {
   noteWaits?: boolean;
   /** consent, for a plan_mode attachment: a line the module appends to the attachment's text (a room plan edit's seed) */
   attach?: string;
+  /** consent: this call is sub-human's own plan-mode call (a review's EnterPlanMode, plan view or closing call, an
+   * edit's save): the module hides its rows (mod/consent.ts) */
+  quiet?: boolean;
   /** an invite's line and PIN for the module's status line (never saved in the transcript) and how long it stays;
    * say then holds the text without them */
   pinned?: PinnedReport;
