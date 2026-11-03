@@ -150,9 +150,9 @@ In practice, the loose end already works through Claude-to-Claude coordination. 
 - each person's Claude owns one layer;
 - when the owner pivoted one layer, the other Claude updated its side on its own.
 
-Sync happens at the level of intent and contract, not by tracking files. So gap 2 shrinks from "build sync awareness" to two things:
-- make that propagation reliable;
-- make it visible. In the recorded scene, maya never saw dev's Claude reply to hers.
+Sync happens at the level of intent and contract, not by tracking files. So gap 2 shrinks from "build sync awareness" to making that propagation reliable. It must always arrive, even when the other person is idle or mid-turn.
+
+**The plugin adds no line of its own.** The receiving Claude decides whether to tell its person or quietly adjust, the same as with anything else it learns while working. That is the native behavior, and it fits "handle it behind the scenes".
 
 That also changes gap 1. The propagation the owner values *is* a teammate's action starting a turn in your session. The rule becomes:
 - **Claude-to-Claude coordination may wake your Claude.** That's the leverage.
