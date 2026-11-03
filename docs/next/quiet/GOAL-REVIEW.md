@@ -142,3 +142,19 @@ Pass criteria per scene: person lines, unasked turns (gap 1), mode changes, and 
 - **Spike-dependent fixes with no fallback.** #34 (spike 1) and the dialog title (spike 2). If spike 1 fails, the plan has no answer except a Claude Code request. The pane removes the dependency.
 - **The metric shapes the product.** A single-scene line-budget ratchet can only reward quieter versions of one workflow (gap 4).
 - **Host-only rooms.** "When the host sleeps, the room is down for everyone" holds back the loose end most, since coworkers work asynchronously. It's out of this plan's scope, but it belongs on the roadmap the goal implies.
+
+## Owner's note on gap 2 (2026-11-02)
+
+In practice, the loose end already works through Claude-to-Claude coordination. Here is the case the owner described:
+- one feature spans two modules, where one calls the other;
+- each person's Claude owns one layer;
+- when the owner pivoted one layer, the other Claude updated its side on its own.
+
+Sync happens at the level of intent and contract, not by tracking files. So gap 2 shrinks from "build sync awareness" to two things:
+- make that propagation reliable;
+- make it visible. In the recorded scene, maya never saw dev's Claude reply to hers.
+
+That also changes gap 1. The propagation the owner values *is* a teammate's action starting a turn in your session. The rule becomes:
+- **Claude-to-Claude coordination may wake your Claude.** That's the leverage.
+- **Ceremony may not.** Review dialogs, mode changes and receipts never start a turn in your session or change your mode.
+- **Where a person sits on the spectrum decides how much auto-follow they get.** Close pairs let the other Claude's changes flow in. Loose coworkers get a one-line notice and choose when to follow.
