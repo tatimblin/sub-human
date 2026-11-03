@@ -278,7 +278,7 @@ export function registerConsent(on: On): void {
   // sub-human's own plan-mode calls draw nothing (quiet/SPIKES.md spike 2): a review's false "Entered plan mode", its
   // plan view's "User approved / rejected Claude's plan", an edit's red save (#9). Only the calls consent named
   // (subHuman.quiet, by tool_use_id): a person's own plan mode and every other error draw as Claude Code draws them.
-  // Off with the verdict's quiet-plan (cc CONTRACT render-tool-rows-hide): the 0.6.0 rows.
+  // Off with the verdict's quiet-plan (cc CONTRACT render-tool-rows-hide): the rows as before 0.6.0.
   on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
     const ids = await quietCalls($);
     return quietRow(ids, e.props.tool_use_id) ? EMPTY : next(e);

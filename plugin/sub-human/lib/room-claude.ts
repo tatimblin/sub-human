@@ -264,7 +264,7 @@ function stopJob(job: string | null | undefined): boolean {
 
 /**
  * Delete a stopped job (`claude rm`), so the agent view and `claude agents` stop listing the closed room's session;
- * not while the version's verdict turns reap-rm off (cc CONTRACT bg-rm: then it stays, stopped, as in 0.6.0).
+ * not while the version's verdict turns reap-rm off (cc CONTRACT bg-rm: then it stays, stopped, as before 0.6.0).
  */
 function removeJob(job: string | null | undefined): boolean {
   if (!job || job === PENDING || verdictLib().off('reap-rm')) return false;

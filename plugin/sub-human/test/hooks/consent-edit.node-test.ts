@@ -138,7 +138,7 @@ const write = (file: string, body: string, summary: string) => {
   return fs.readFileSync(file, 'utf8');
 };
 
-test('0.7.0 #9 (shim mode): the save\'s deny is quiet (the module hides its red rows; its receipt goes to the debug log); so is the author\'s check that follows; a conflict\'s is not', () => {
+test('0.6.0 #9 (shim mode): the save\'s deny is quiet (the module hides its red rows; its receipt goes to the debug log); so is the author\'s check that follows; a conflict\'s is not', () => {
   const w = new World({ alice: 'act', bob: 'sleep' });
   const shim = { as: 'alice', env: { SUB_HUMAN_SHIM: '1' } };
   const file = planFile(w, 'alice', null);

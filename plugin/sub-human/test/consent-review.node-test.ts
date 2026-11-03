@@ -578,7 +578,7 @@ test('F (live validation): whenever the person\'s own plan file is put back, the
   assert.match(review.textOf(parts(prompt), () => '', false), /plan file is back as it was/);
 });
 
-test('0.7.0 frame: the plan view\'s first line says what it is for; it never enters a hash, so a framed Yes on the version records Agree', () => {
+test('0.6.0 frame: the plan view\'s first line says what it is for; it never enters a hash, so a framed Yes on the version records Agree', () => {
   assert.equal(review.frameLine(H, 'plan paging v2'), 'Room plan · paging v2 · Yes agrees · Tell Claude what to change asks for changes');
   assert.equal(review.frameLine(H, null), `Room plan · proposal ${H.slice(0, 6)} · Yes agrees · Tell Claude what to change asks for changes`);
   const shown = review.framed(TEXT, H, 'plan paging v2');
@@ -671,7 +671,7 @@ test('#34 "No" on any exit dialog never loses the note: the closing call refused
   assert.equal(review.reduce({ review: REVIEWS.shown, note: note('waiting') }, { type: 'noteAnswer', label: 'Send', target }, keep).say, null);
 });
 
-test('#34 off (the verdict\'s keep-mode, or SUB_HUMAN_CC_OFF): the 0.6.0 exit, empty for every mode, no line', () => {
+test('#34 off (the verdict\'s keep-mode, or SUB_HUMAN_CC_OFF): the exit as before 0.6.0, empty for every mode, no line', () => {
   const off = { ...ctx, keepMode: false };
   const st = review.reduce({ review: { ...REVIEWS.shown, mode: 'auto' }, note: null }, { type: 'rejected', toolUseId: 'tu1', answer: { note: 'x' }, target }, off).state;
   const exit = review.reduce(st, closingExit, off);

@@ -1425,7 +1425,7 @@ test('consent (sign-off off): no review opens; a call meant to open one is denie
   assert.ok(onEnter.opened, 'the review opened');
 });
 
-test('0.7.0 quiet (shim mode, spike 2): a review\'s EnterPlanMode outside plan mode and its plan view are quiet calls (the module hides their rows); a review in the person\'s own plan mode keeps its "Entered plan mode"; no review, nothing quiet', () => {
+test('0.6.0 quiet (shim mode, spike 2): a review\'s EnterPlanMode outside plan mode and its plan view are quiet calls (the module hides their rows); a review in the person\'s own plan mode keeps its "Entered plan mode"; no review, nothing quiet', () => {
   const shim = { as: 'bob', env: { SUB_HUMAN_SHIM: '1' } };
   const sub = (r: HookRun) => r.json?.subHuman ?? {};
   const { w, hash } = world();
@@ -1543,7 +1543,7 @@ test('#34 manual: Send first, then the empty exit ("Yes, and switch to default" 
   assert.equal(answers(ae.w).length, 1);
 });
 
-test('#34 off (SUB_HUMAN_CC_OFF=keep-mode): no card of the module\'s; the 0.6.0 exit, empty for auto too, and the note waits for the model\'s card', () => {
+test('#34 off (SUB_HUMAN_CC_OFF=keep-mode): no card of the module\'s; the exit as before 0.6.0, empty for auto too, and the note waits for the model\'s card', () => {
   const { w, hash, note, rej, close } = refuseWithNote('auto', { SUB_HUMAN_CC_OFF: 'keep-mode' });
   assert.equal(noteAsk(rej), undefined);
   assert.match(must(ctx(rej)), /First call ExitPlanMode now \(no plan needed\); then call AskUserQuestion with "objection /);

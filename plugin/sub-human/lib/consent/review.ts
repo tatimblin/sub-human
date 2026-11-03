@@ -75,7 +75,7 @@ import type { RoomCode } from '../brand.ts';
 export interface State { review: Review | null; note: Confirm | null; recheck?: Recheck | null | undefined; steer?: Steer | null | undefined }
 /** guardMs: YES_GUARD_MS unless the handler says otherwise (the tests shorten it: env.testMs). keepMode (#34, the
  * verdict's keep-mode on): a review's closing call keeps the mode the person had before it (auto: a non-empty closing
- * plan; manual and accept edits: the empty exit), and Send / Discard comes first (noteAnswer); off: the 0.6.0 exit. */
+ * plan; manual and accept edits: the empty exit), and Send / Discard comes first (noteAnswer); off: the empty exit, as before 0.6.0. */
 export interface ReviewCtx { name: string; now: number; guardMs?: number; keepMode?: boolean }
 
 /** How the review's dialog closed (cc.planAnswer): note null for no note (Esc, a bare deny). */

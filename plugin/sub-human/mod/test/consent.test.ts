@@ -272,7 +272,7 @@ const toolRow = (component: 'ToolUse' | 'ToolResult', id: string, tool: string, 
     : { tool_use_id: id, tool, output: 'User has approved your plan.', isErrored },
 })
 
-test('0.7.0 quiet rows (#9, spike 2): the rows of a call consent names quiet (a review\'s plan view, an edit\'s save) draw as nothing; any other call, and every call while quiet-plan is off, draws the engine\'s', async ($, on) => {
+test('0.6.0 quiet rows (#9, spike 2): the rows of a call consent names quiet (a review\'s plan view, an edit\'s save) draw as nothing; any other call, and every call while quiet-plan is off, draws the engine\'s', async ($, on) => {
   const view = { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: 'sign-off on plan paging v2', updatedInput: { plan: 'Room plan · paging v2 · …' } }, subHuman: { reviewOpen: true, quiet: true } }
   const seen = world(on, { answers: [view, { subHuman: { reviewOpen: true } }] })
   await start($)
@@ -296,7 +296,7 @@ test('0.7.0 quiet rows (#9, spike 2): the rows of a call consent names quiet (a 
   await ui.unmount()
 })
 
-test('0.7.0 quiet rows: with the verdict\'s quiet-plan off (SUB_HUMAN_CC_OFF or a failed render-tool-rows-hide), a quiet report hides nothing', async ($, on) => {
+test('0.6.0 quiet rows: with the verdict\'s quiet-plan off (SUB_HUMAN_CC_OFF or a failed render-tool-rows-hide), a quiet report hides nothing', async ($, on) => {
   const view = { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: 'sign-off', updatedInput: { plan: 'x' } }, subHuman: { reviewOpen: true, quiet: true } }
   const seen = world(on, { hello: { ...OUT, cc: { version: '2.1.302', verified: false, off: ['quiet-plan'] } }, answers: [view] })
   await start($)

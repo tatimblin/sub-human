@@ -254,7 +254,7 @@
    "shape": [
     "Le[\"yes-resume-auto-mode\"]=~,He[\"yes-resume-auto-mode\"]=\"auto\""
    ],
-   "note": "ExitPlanMode's dialog for a non-empty plan (the plan file's text: contract exitplan-normalize) offers \"Yes, and use auto mode\" (yes-resume-auto-mode) when auto is available, and its focus is the first row unless proactivity is \"ask\" with no auto row: Enter keeps auto. The empty plan's \"Exit plan mode?\" Yes always switches to default and tells the model \"User has approved exiting plan mode\" (quiet/SPIKES.md spike 1, live on 2.1.296). So a review's closing call keeps the mode the person had before it: auto with the closing line as the plan (lib/consent/review.ts leaving, closingLine), manual and accept edits with the empty exit (accept edits then one line: shift+tab). Off: the empty exit for every mode (0.6.0)."
+   "note": "ExitPlanMode's dialog for a non-empty plan (the plan file's text: contract exitplan-normalize) offers \"Yes, and use auto mode\" (yes-resume-auto-mode) when auto is available, and its focus is the first row unless proactivity is \"ask\" with no auto row: Enter keeps auto. The empty plan's \"Exit plan mode?\" Yes always switches to default and tells the model \"User has approved exiting plan mode\" (quiet/SPIKES.md spike 1, live on 2.1.296). So a review's closing call keeps the mode the person had before it: auto with the closing line as the plan (lib/consent/review.ts leaving, closingLine), manual and accept edits with the empty exit (accept edits then one line: shift+tab). Off: the empty exit for every mode (as before 0.6.0)."
   },
   {
    "id": "enterplan-in-plan-mode",
@@ -508,7 +508,7 @@
    "shape": [
     ".filter((~)=>!~.metadata?._internal);if(!this."
    ],
-   "note": "A task file whose metadata._internal is true is left out of every view (the task list, the TaskList tool, compaction's carry), while the 5 s auto-reset's own check reads every task, _internal included: an _internal task in_progress holds the list as a shown one does, and a list of only that task shows nothing (quiet/SPIKES.md spike 3, live on 2.1.296). The room task's file is marked so (lib/room/task-files.ts native; lib/cc/tasks.ts INTERNAL_KEY). Off: the 0.6.0 file, shown as \"room CODE open\"."
+   "note": "A task file whose metadata._internal is true is left out of every view (the task list, the TaskList tool, compaction's carry), while the 5 s auto-reset's own check reads every task, _internal included: an _internal task in_progress holds the list as a shown one does, and a list of only that task shows nothing (quiet/SPIKES.md spike 3, live on 2.1.296). The room task's file is marked so (lib/room/task-files.ts native; lib/cc/tasks.ts INTERNAL_KEY). Off: the file as before 0.6.0, shown as \"room CODE open\"."
   },
   {
    "id": "task-list-retention",
@@ -615,7 +615,7 @@
    "search": [
     "Delete a background session and its worktree. Unlike `stop`, works on already-exited sessions."
    ],
-   "note": "`claude rm <id>` deletes a background session (also one already stopped) so `claude agents` and the agent view's count no longer list it (cc.rmCmd). The reaper runs it after `claude stop` once the room session's process is gone (lib/room-claude.ts reap); the room session has no worktree. Off: stopped only (0.6.0), and the stopped session stays listed."
+   "note": "`claude rm <id>` deletes a background session (also one already stopped) so `claude agents` and the agent view's count no longer list it (cc.rmCmd). The reaper runs it after `claude stop` once the room session's process is gone (lib/room-claude.ts reap); the room session has no worktree. Off: stopped only (as before 0.6.0), and the stopped session stays listed."
   },
   {
    "id": "bg-logs",
@@ -1048,7 +1048,7 @@
     "useRenderInput(\"ToolUse\"",
     "useRenderInput(\"ToolResult\""
    ],
-   "note": "ui.render ToolUse and ToolResult carry the call's tool_use_id, and an empty Box draws nothing for that row, also one drawn already once $.ui.invalidate('ui.render') runs (quiet/SPIKES.md spike 2, live on 2.1.296). EnterPlanMode's \"Entered plan mode / Claude is now exploring…\", ExitPlanMode's \"User approved / rejected Claude's plan\" and a denied call's red \"Error:\" are ToolResult rows; a denied call's red header is its ToolUse row. mod/consent.ts hides the rows of the calls consent names (subHuman.quiet: a review's EnterPlanMode outside plan mode, its plan view and closing call, an edit's save; mod/core/quiet.ts). Drawing only: the model reads every result as before. Off: the 0.6.0 rows."
+   "note": "ui.render ToolUse and ToolResult carry the call's tool_use_id, and an empty Box draws nothing for that row, also one drawn already once $.ui.invalidate('ui.render') runs (quiet/SPIKES.md spike 2, live on 2.1.296). EnterPlanMode's \"Entered plan mode / Claude is now exploring…\", ExitPlanMode's \"User approved / rejected Claude's plan\" and a denied call's red \"Error:\" are ToolResult rows; a denied call's red header is its ToolUse row. mod/consent.ts hides the rows of the calls consent names (subHuman.quiet: a review's EnterPlanMode outside plan mode, its plan view and closing call, an edit's save; mod/core/quiet.ts). Drawing only: the model reads every result as before. Off: the rows as before 0.6.0."
   },
   {
    "id": "module-ask-through-hooks",
@@ -1060,7 +1060,7 @@
     "\"ui.ask\":",
     "takes the AskUserQuestion tool's input"
    ],
-   "note": "$.ui.ask draws the engine's own AskUserQuestion dialog as a tool.call of AskUserQuestion through every hook but the calling one (the module's classic.PreToolUse and PostToolUse of AskUserQuestion included: mod/consent.ts passes them by while its own ask is in flight), resolves to the label chosen or the text typed under Other, and rejects when dismissed or with no one to ask; asked while plan mode is on, it draws as any card and the mode stays plan (quiet/SPIKES.md spike 1). #34 asks the note's Send / Discard so, before the review's closing call. Off: the model's AskUserQuestion card after the exit (0.6.0).",
+   "note": "$.ui.ask draws the engine's own AskUserQuestion dialog as a tool.call of AskUserQuestion through every hook but the calling one (the module's classic.PreToolUse and PostToolUse of AskUserQuestion included: mod/consent.ts passes them by while its own ask is in flight), resolves to the label chosen or the text typed under Other, and rejects when dismissed or with no one to ask; asked while plan mode is on, it draws as any card and the mode stays plan (quiet/SPIKES.md spike 1). #34 asks the note's Send / Discard so, before the review's closing call. Off: the model's AskUserQuestion card after the exit (as before 0.6.0).",
    "shape": [
     "=await ~(\"ui.ask\",{tool:~,questions:[{question:~,header:~,options:~.map((~)=>({label:~,description:\"\"})),multiSelect:"
    ]

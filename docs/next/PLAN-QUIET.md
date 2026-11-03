@@ -1,6 +1,6 @@
 # Quiet: sub-human's output and experience
 
-Status: plan, 2026-11-02, cut down the same day. Nothing in it is built yet.
+Status: built, 2026-11-03, as one release, **0.6.0** (unreleased, untagged). It was planned as two (0.6.0 and 0.7.0); 0.6.0 never shipped, so both are in 0.6.0. What is left is the live re-run of the scenes (0.6.0 part two, item 6).
 
 **Goal** (the owner's north star): people use Claude in a room exactly as they do in Claude Code. The only difference is another person. They choose how closely they work, and neither holds the other back.
 
@@ -24,7 +24,7 @@ Research and evidence are in `docs/next/quiet/`:
 4. **Ceremony never interrupts.** Plan reviews, receipts and mode changes never start a turn mid-task or change someone's mode. Another person's Claude may wake yours: that's the collaboration.
 5. **One line per event, in plain words.** Errors take the form `<what didn't happen>. <one action>.`
 
-## 0.6.0: words and the guard. Plugin-only, stable surfaces
+## 0.6.0, part one: words and the guard. Plugin-only, stable surfaces. **Done**
 
 **Scope: the lines people saw in the recorded scene (EVALUATION's ledger), not all 1,165 strings.**
 
@@ -67,27 +67,40 @@ Research and evidence are in `docs/next/quiet/`:
   - Each deny names the alternative.
 - **In the same commits,** the copy that code depends on (COPY §3.3), and the small bugs: the "typed your PIN" bug (`lib/cli/host.ts:135`), and the lock path and raw `claude --bg` errors shown to people.
 
-## 0.7.0: plan mode made right, one quiet room row. Early-access surfaces behind contract entries
+## 0.6.0, part two (planned as 0.7.0): plan mode made right, one quiet room row. Trimmed after review (2026-11-02, quiet/WORTH.md)
 
-**The room's plan in plan mode** (D3). Closes #34, #21 and #9:
-- **The plan text carries the frame.** Its first line is `Room plan · paging v2 · Yes agrees · Tell Claude what to change asks for changes`.
-- **The mode survives (#34).** Send/Discard comes first, while still in plan mode, then one exit with a non-empty plan, and "No" keeps the note. Spike 1 comes first.
-- **`ui.render` hides:**
-  - the save's red `Error:`;
-  - the false `Entered plan mode` while only reviewing;
-  - the hex `User rejected Claude's plan`.
+**In:**
+1. **Done.** **#34, mode survival** (quiet/SPIKES.md, spike 1). It's a careful, separate commit, because it touches consent. A note or an agreement must never be lost. Gated: `keep-mode` (contract `exitplan-keep-auto`, `module-ask-through-hooks`).
+   - Send/Discard (`$.ui.ask`) comes first, while still in plan mode.
+   - The exit then depends on the mode the person had **before** the review:
+     - **Auto:** overwrite the plan file with one closing line (`Your note went to maya. Nothing to build.`), then exit with a non-empty plan. "Yes, and use auto mode" is preselected, so Enter keeps auto.
+     - **Manual:** exit with an empty plan. "Yes, and switch to default" keeps manual, and the model gets a neutral "approved exiting plan mode".
+     - **Accept-edits:** no exit keeps it. Use the empty exit, plus one line: `shift+tab returns you to accept edits`.
+   - Hide the resulting "User approved Claude's plan" row (item 3). Claude's context says plainly that nothing is to be built.
+2. **Done.** **One room row:** (gated: `room-row`, contract `module-agent-spawn-quiet`, `agent-offer-hides-type`; the module also spawns the row right after a restore, so a resume needs no prompt)
+   - Delete the participant rows (`agents/participant.md` and the nested-row bookkeeping).
+   - Spawn the room row from the module (`$.agent.spawn`): no `Backgrounded agent` block, no hand-back turns, no `row closed`.
+   - Test the row's lifecycle: resume, `/clear`, compaction, the row dying, and leave.
+3. **Done.** **A small `ui.render` pass:** (gated: `quiet-plan`)
+   - hide the save's red `Error:` (#9), unless an empty deny reason already draws nothing;
+   - hide the false `Entered plan mode` while only reviewing, and the `User rejected / approved Claude's plan` rows that a review produces (spike 2: all of these work, including rows already on screen, after `$.ui.invalidate`).
+4. **Done.** **Cheap and safe:** (task #1 `_internal` gated `task-internal`, the reap gated `reap-rm`)
+   - the plan text's frame line;
+   - filter member `claude` from every list of people;
+   - mark task #1 `metadata._internal` and keep it in progress until close. Spike 3, tested live: the 5-second auto-reset re-reads every task, `_internal` included, so it still holds the list. Also keep task #1 out of sub-human's own lists;
+   - reap the room's `claude --bg` session on close.
+5. **Skipped.** **Optional, behind a gate:** redraw `Waiting for N background agents` only when the room row is certainly the only pending work, so real `Baked for Ns` lines never disappear. Not small and not certain: `TurnDuration` carries no agent count, and a wrong redraw hides a real line. With one room row it now reads `Waiting for 1 background agent`; the README says so.
+6. **Remaining (live).** **Verify:** re-run the two-person scene plus a no-plan pairing scene. The unit, script and wiring tests, lint and `npm run probe` pass; the live scenes (real sessions, real cost) are not run yet. Pass criteria:
+   - 6 lines or fewer per person;
+   - no red `Error:` on save;
+   - no mode change on an objection;
+   - one row per session;
+   - no text written for Claude.
 
-  If spike 2 shows the "Ready to code?" title can be redrawn, it becomes `Room plan · paging v2`.
-- **One plan file per plan.**
-
-**One room row** (D1):
-- Delete the participant rows (`agents/participant.md` and the nested-row bookkeeping). Each session has one row, so about 7k tokens instead of 7k × (N+1).
-- Spawn it from the module (`$.agent.spawn`), so there's no `Backgrounded agent` block, no hand-back turns and no `row closed`.
-- **Its label is the presence:** `panda-0976 · maya, dev · dev building http: GET /tasks`. It comes from the plugin's own `settings.json` `subagentStatusLine`, with no edit by the person, and disappears when the room ends.
-- `ui.render` redraws `Waiting for N background agents` while the room row is the only pending work.
-- Filter member `claude` out of every list of people. Mark task #1 internal, if spike 3 allows. Reap the room's `claude --bg` session on close.
-
-**Verify:** re-run the two-person scene, plus one scene with no plan: a pair who just talk and build. Pass when each person sees 6 lines or fewer, with no red `Error:`, no mode change, no `Waiting for…`, no stale label and no text written for Claude.
+**Out (blocked or not worth it):**
+- **The row label as presence:** the plugin directory refuses a computed command path, and `${CLAUDE_PLUGIN_ROOT}` isn't expanded. Ask Claude Code instead.
+- **One plan file per plan:** Claude Code picks the file.
+- **Redrawing the "Ready to code?" title:** spike 2 shows it can't be done; the engine alone draws that dialog. The plan's first line carries the frame instead. Ask Claude Code for a title.
 
 ## Moved out of this plan
 
@@ -101,7 +114,7 @@ Research and evidence are in `docs/next/quiet/`:
 | File and branch sync tracking | Native `SendMessage` between the Claudes already keeps layers in sync. |
 | Pairing tools (watch or steer the other Claude) | A real gap for the close end, but a feature, not quieting. It's a candidate for the next plan. |
 
-## Spikes before 0.7.0
+## Spikes before part two (done: quiet/SPIKES.md)
 
 1. Does closing plan mode with a non-empty plan, after Send/Discard, keep auto mode?
    - **If no:** keep the Send/Discard-first order, which still fixes the unsent note. Put one line in the plan's heading: `Asking for changes returns you to default mode; shift+tab restores yours`. Then ask Claude Code for a way to keep the mode.
@@ -112,4 +125,4 @@ Research and evidence are in `docs/next/quiet/`:
 
 ## Design rules (CLAUDE.md)
 
-All of them hold. When 0.7.0 ships, "a member's panel shows the room row with the members inside it" becomes "one room row whose label names the members". The `subagentStatusLine` goes in the plugin's own `settings.json`, never the person's.
+All of them hold. The rule "a member's panel shows the room row with the members inside it" now reads "one room row whose label names the members" (done in CLAUDE.md). The `subagentStatusLine` goes in the plugin's own `settings.json`, never the person's.

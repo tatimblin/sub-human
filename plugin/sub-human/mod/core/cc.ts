@@ -5,7 +5,7 @@
  *   isCcVersion(v)            a Claude Code version as $.session.version spells it ("2.1.296", "2.1.300-dev"): safe in
  *                             a file name (<home>/cc/<version>.json)
  *   GATED                     the features a verdict can turn to their fallback (a failed entry of any other feature
- *                             only makes the version unverified); since 0.7.0 also task-internal (the room task's
+ *                             only makes the version unverified); since 0.6.0 also task-internal (the room task's
  *                             file is marked metadata._internal) and reap-rm (a closed room's session is deleted with
  *                             `claude rm`, not only stopped), quiet-plan (sub-human's own plan-mode rows drawn as
  *                             nothing: mod/core/quiet.ts), keep-mode (#34: a review's closing call keeps the

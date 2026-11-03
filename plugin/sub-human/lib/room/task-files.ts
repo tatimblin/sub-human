@@ -78,7 +78,7 @@ const STATUS: Readonly<Record<string, NativeStatus>> = { pending: 'pending', in_
 const isRoomTask = (code: RoomCode, t: FoldedTask): boolean => t.owner === 'room' && t.subject === `room ${code} open`;
 
 /** One folded task as its file. blocks: the ids whose blockedBy names it. internal: the room task is marked
- * metadata._internal (off: the 0.6.0 file, shown in the list, when the version's verdict turns task-internal off). */
+ * metadata._internal (off: the file as before 0.6.0, shown in the list, when the version's verdict turns task-internal off). */
 function native(code: RoomCode, t: FoldedTask, all: readonly FoldedTask[], internal = true): NativeTask {
   const blocks = all.filter(o => o.id !== t.id && o.blockedBy.includes(t.id)).map(o => o.id);
   const metadata: Record<string, unknown> = { room: code };

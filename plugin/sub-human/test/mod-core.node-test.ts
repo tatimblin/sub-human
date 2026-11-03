@@ -707,7 +707,7 @@ test('prompt: an @room in a session surely without a seat is refused in at-room\
   assert.equal(p.unseatedRefusal({ session_id: 's1', prompt: '@room hi' }, mkHello({ seat: seatOf('a') })), null);
 });
 
-test('0.7.0 quiet: the hidden calls keep the newest QUIET_MAX ids, once each; a row hides only for an id kept; quiet-plan off hides none', () => {
+test('0.6.0 quiet: the hidden calls keep the newest QUIET_MAX ids, once each; a row hides only for an id kept; quiet-plan off hides none', () => {
   let ids: string[] = [];
   for (let i = 0; i < quietCore.QUIET_MAX + 5; i++) ids = quietCore.keepQuiet(ids, `t${i}`);
   assert.equal(ids.length, quietCore.QUIET_MAX);

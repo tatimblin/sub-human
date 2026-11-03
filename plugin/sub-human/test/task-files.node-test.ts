@@ -37,7 +37,7 @@ test('task files: the schema\'s fields and nothing else; blocks is the reverse o
   assert.equal(taskFiles.nextId(code, tasks.slice(0, 2), { dir }), '4', 'the mark keeps 3 from coming back');
 });
 
-test('0.7.0: the room task\'s file is marked metadata._internal (Claude Code\'s views leave it out, its reset still counts it); only it; the verdict\'s task-internal off writes the 0.6.0 file', () => {
+test('0.6.0: the room task\'s file is marked metadata._internal (Claude Code\'s views leave it out, its reset still counts it); only it; the verdict\'s task-internal off writes the 0.6.0 file', () => {
   h.freshHome();
   const code = h.newRoom();
   const dir = path.join(h.tmpDir('sh-tf-'), 'tasks', `sh-${code}`);

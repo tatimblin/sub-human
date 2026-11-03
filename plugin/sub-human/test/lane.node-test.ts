@@ -275,7 +275,7 @@ test('stateLine: open proposals, my answer, who is away', () => {
   const bob = h.spawnSleeper();
   identity.join({ code, name: sn('bob'), role: 'member', pid: bob.pid, session_id: 's-b', cwd: '/tmp' });
   identity.leave(code, sn('bob'));
-  // the room session, stopped and left: no one to wait for, never listed as away (0.7.0)
+  // the room session, stopped and left: no one to wait for, never listed as away (0.6.0)
   identity.updateRoomClaude(code, () => ({ stopped_at: new Date().toISOString(), left_at: new Date().toISOString() }));
   prop('claude', H1, ['alice', 'bob']);
   assert.match(R.stateLine(ALICE), /^room now: proposal aaaaaa waiting on alice, bob · you: answer needed/);
