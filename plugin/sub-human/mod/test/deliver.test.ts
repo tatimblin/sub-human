@@ -12,6 +12,7 @@
 import type { Chunk, ClassicResultOf, EventOf, On } from 'claude-code'
 import { test, expect, mock, type Engine } from 'claude-code/testing'
 import { debugLines, SEAT, OUT, must, ran, scriptOf, session, start, stdinOf, helloOf } from './support.ts'
+import { WAKE_RESEND } from '../core/deliver.ts'
 
 const SID = 'sid-d'
 const line = (x: object) => JSON.stringify(x) + '\n'
@@ -532,7 +533,7 @@ test('turn.start, a mid-turn wake, a tool call, turn.complete: the wake is deliv
   seen.release()
 })
 
-test('a wake appended mid-turn that no later request carried is submitted at the turn\'s end, once', async ($, on) => {
+test('a wake appended mid-turn that no later request carried gets a turn at the turn\'s end, once, context only (its lines were shown)', async ($, on) => {
   const { seen, go } = midTurn($, on)
   await start($)
   await $.turn.start({ text: 'working on it', turnId: 't1' })
@@ -540,7 +541,9 @@ test('a wake appended mid-turn that no later request carried is submitted at the
   await until(() => seen.appended.length === 1)
   await done($, 't1').catch(() => {})
   await until(() => seen.prompts.length === 1)
-  expect(seen.prompts[0]).toBe('room: decided (room decision)')
+  // its row is stored and its line was shown mid-turn: never the line again (EVALUATION D12)
+  expect(seen.prompts[0]).toBe(WAKE_RESEND)
+  expect(seen.prompts[0]).not.toContain('room: decided')
   await $.turn.start({ text: 'next', turnId: 't2' })
   await new Promise(r => setTimeout(r, 50))
   expect(seen.prompts.length).toBe(1)

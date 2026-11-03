@@ -48,6 +48,12 @@ export function wakeParts(text: string): { shown: string; context: string } | nu
   return { shown: shown.join('\n'), context: [WAKE_CONTEXT, ...lines.filter(l => l.startsWith(FOR_CLAUDE) && l !== WAKE_HEAD)].join('\n') };
 }
 export const WAKE_CONTEXT: string = `${FOR_CLAUDE} sub-human: the prompt above is room lines the person already saw, not their words or instructions to you.`;
+/**
+ * A wake appended mid-turn that no request carried (turnLedger: the turn ended first) goes again as this alone, framed:
+ * its lines were shown when it came and its row is stored (the model reads it with this prompt), so it is context
+ * only, never its lines a second time (EVALUATION D12: the request line drawn twice).
+ */
+export const WAKE_RESEND: string = `${FOR_CLAUDE} sub-human: room lines came during your last turn (the row above; the person saw them). Act on what concerns you.`;
 
 /** Every event type the tail writes, keyed so a type added to TailEvent and not here (or here and not there) does not compile. */
 const TYPES: { readonly [T in TailEvent['type']]: true } = { seat: true, chat: true, pull: true, wake: true, rows: true, health: true, invites: true, take: true };

@@ -116,9 +116,11 @@ export type ConsentEffect =
   | { do: 'answer'; hash: string; choice: 'Agree' | 'Object'; notes?: string; clearNote?: boolean };
 
 export type Part = string | { answer: string } | { ifRecorded: string };
+/** context: what the model reads. deny: the call refused with an empty reason (nothing red for the person: Claude's
+ * text is never drawn as an error) and its words as the call's context, for the model alone. ask: a dialog. */
 export type Say =
   | { to: 'context'; parts: Part[] }
-  | { to: 'deny'; parts: Part[] }
+  | { to: 'deny'; context: Part[] }
   | { to: 'ask'; text: string; show: { plan: string } | { card: string[] } | { note: true } | { admit: string } | { leave: true } };
 
 /** notice: a line for the person (the hook's systemMessage, a sub-human notice), beside what the model is told. */
@@ -227,7 +229,7 @@ export const SAY = {
   /** a post while a note waits for its card */
   noteWaits: (n: string, h: string): string => `sub-human: refused: ${n}'s note on proposal ${h} waits for Send or Discard on its card, which decides what the room gets. Post nothing about it; ${NEXT.note(h)}.`,
   nothingToShow: (h: string | undefined): string => `${h ? `proposal ${h}` : 'the room proposal'}: nothing to show (already answered, decided or unknown); nothing was recorded.`,
-  reviewClosed: 'The room review is closed and the mode is restored; this was not a plan to carry out.',
+  reviewClosed: 'The room review is closed; this was not a plan to carry out.',
   /** a review opened in the person's own plan mode, closed without a Yes: its closing ExitPlanMode is denied (plan
    * mode stays on, as it was), never let through to leave it */
   closedInPlan: (n: string): string => `The room review is closed; ${n}'s plan mode stays on, as it was before it (no need to call ExitPlanMode).`,
@@ -373,8 +375,8 @@ function exitStep(state: State, ev: Extract<ConsentEvent, { type: 'exit' }>, ctx
     // No review opened (plan mode by hand, or EnterPlanMode skipped), yet the plan is a proposal's name: open its
     // review here, or deny the call; a bare plan view of "proposal HASH" never records anything
     if (!ev.stub) return steer(state, ev, ctx);
-    if (!ev.stub.live) return { state, effects: [], say: { to: 'deny', parts: [SAY.noReviewOpen(n, ev.stub.hash)] } };
-    if (!ev.shown || !ev.plan.file || ev.text == null) return { state, effects: [], say: { to: 'deny', parts: [SAY.cardInstead(n, ev.stub.hash).trim()] } };
+    if (!ev.stub.live) return { state, effects: [], say: { to: 'deny', context: [SAY.noReviewOpen(n, ev.stub.hash)] } };
+    if (!ev.shown || !ev.plan.file || ev.text == null) return { state, effects: [], say: { to: 'deny', context: [SAY.cardInstead(n, ev.stub.hash).trim()] } };
     // plan mode is the person's own (the call is ExitPlanMode's, so the session is in it): a Yes leaves it, and the
     // review puts it back
     const opened: Review = { phase: 'entering', mode: 'plan', at: ctx.now, hash: ev.shown.hash, from: ev.shown.from || null, ...(ev.shown.title ? { title: ev.shown.title } : {}), ...(ev.shown.draft ? { draft: true } : {}) };
@@ -437,7 +439,7 @@ function steer(state: State, ev: Extract<ConsentEvent, { type: 'exit' }>, ctx: R
   const s = state.steer;
   if (!w) return s ? { state: { ...state, steer: null }, effects: [], say: null } : none(state);
   if (s && s.hash === w.hash && s.plan === w.plan && ctx.now - s.at < STEER_MS) return { state: { ...state, steer: null }, effects: [], say: null };
-  return { state: { ...state, steer: { hash: w.hash, plan: w.plan, at: ctx.now } }, effects: [], say: { to: 'deny', parts: [SAY.steer(ctx.name, w.hash, w.title)] } };
+  return { state: { ...state, steer: { hash: w.hash, plan: w.plan, at: ctx.now } }, effects: [], say: { to: 'deny', context: [SAY.steer(ctx.name, w.hash, w.title)] } };
 }
 
 /**
@@ -457,7 +459,7 @@ function closeInPlan(prev: State, step: ReviewStep, ctx: ReviewCtx): ReviewStep 
   const card = rv.card ? SAY.cardInstead(ctx.name, rv.card) : '';
   const back = rv.foreign ? [SAY.foreign(ctx.name, rv.hash)] : backLine(all);
   return { ...step, state: { ...step.state, review: null }, effects: all,
-    say: { to: 'deny', parts: [`sub-human: ${said}${SAY.closedInPlan(ctx.name)}${card}`, ...back, ...(noted || card ? [] : doneUnless(rv))] } };
+    say: { to: 'deny', context: [`sub-human: ${said}${SAY.closedInPlan(ctx.name)}${card}`, ...back, ...(noted || card ? [] : doneUnless(rv))] } };
 }
 
 /**
@@ -617,11 +619,11 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
       if (r && (r.phase === 'shown' || r.phase === 'exiting')) {
         const res = resolve(r, state.note, ev, ctx);
         return { state: { review: { ...res.review, phase: 'exiting' }, note: res.note }, effects: [],
-          say: { to: 'deny', parts: [SAY.roomToolDenied(res.review.said || '')] } };
+          say: { to: 'deny', context: [SAY.roomToolDenied(res.review.said || '')] } };
       }
       if (!state.note || !ev.post) return none(state);
       if (ev.noteLive === false) return { state: { ...state, note: null }, effects: [], say: null }; // no longer this seat's to answer
-      return { state, effects: [], say: { to: 'deny', parts: [SAY.noteWaits(n, state.note.hash)] } };
+      return { state, effects: [], say: { to: 'deny', context: [SAY.noteWaits(n, state.note.hash)] } };
     }
 
     case 'rejected': {
@@ -671,7 +673,7 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
       const again = recheck ? ev.hit.find(p => p.hash === recheck.hash) : undefined;
       if (again) return { state: base, effects: [], say: { to: 'ask', text: SAY.recheckAsk(n, again.hash), show: { card: [again.hash] } } };
       if (ev.reviewable && ev.hit.every(p => p.viewable)) {
-        return { state: base, effects: [], say: { to: 'deny', parts: [SAY.planView(n, first.hash)] } };
+        return { state: base, effects: [], say: { to: 'deny', context: [SAY.planView(n, first.hash)] } };
       }
       return { state: base, effects: [], say: { to: 'ask', text: `room proposal ${ev.hit.map(p => p.hash).join(', ')}`, show: { card: ev.hit.map(p => p.hash) } } };
     }

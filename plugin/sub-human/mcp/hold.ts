@@ -76,7 +76,7 @@ function entryLine(e: Entry): string {
 const TOOL: ToolDefinition = {
   name: 'hold',
   title: 'sub-human row hold',
-  description: 'Internal to sub-human row agents (sub-human:participant with member, sub-human:room with room). '
+  description: 'Keep a room member\'s row open. Internal to sub-human row agents (sub-human:participant with member, sub-human:room with room). '
     + 'Keeps a status row open in the agent panel: it blocks for as long as the room lasts and returns only STOP, JOINED or RESPAWN lines. '
     + 'Never call it from a main session or any other agent; it is refused there.',
   inputSchema: {

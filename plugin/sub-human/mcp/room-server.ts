@@ -158,8 +158,9 @@ const CORE: ToolDefinition[] = [
   {
     name: 'post',
     title: 'Post to the room',
-    description: 'Post a note to the shared sub-human room as your human\'s Claude (labelled as yours, never as their words). '
-      + 'Members\' Claudes see it next turn; to reach one now, SendMessage it. For agreement use plan (ask).',
+    // the first sentence is for a person (a permission prompt shows it); the mechanics follow, for Claude
+    description: 'Send a message to the room as your person\'s Claude. '
+      + 'Labelled as yours, not their words. Claudes see it next turn; SendMessage reaches one now. For agreement use plan (ask).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -176,7 +177,7 @@ const CORE: ToolDefinition[] = [
   {
     name: 'read',
     title: 'Read the room',
-    description: `Read the sub-human room: ids, those entries in full; plan, a room plan; brief, its state; else your unseen entries (oldest first, ≤ ${READ_MAX}).`,
+    description: `Read the room's messages or a plan. ids: entries in full; plan: a plan; brief: its state; else unseen entries (oldest first, ≤ ${READ_MAX}).`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -191,9 +192,9 @@ const CORE: ToolDefinition[] = [
   {
     name: 'plan',
     title: 'The room plan',
-    description: 'Sub-human room plans. edit (fine in plan mode), then EnterPlanMode, edit the plan file, ExitPlanMode({}): the hooks '
-      + 'store the next version (your person checks it first). ask: people sign off on the current one. read. Only when told '
-      + 'to: put stores text instead; signoff asks your person.',
+    description: 'Draft, share or read a room plan. '
+      + 'edit (fine in plan mode), then EnterPlanMode, edit the plan file, ExitPlanMode({}): the hooks store the next version '
+      + '(your person reviews it first). ask: people review it. read. Only when told to: put stores text; signoff asks your person.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -453,7 +454,7 @@ function handle(msg: JsonRpcIncoming | null) {
         protocolVersion: negotiateProtocol(params && params.protocolVersion),
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: 'room', title: 'sub-human room', version: VERSION },
-        instructions: 'sub-human room tools. post: a note as your human\'s Claude. read: entries by id, or a room plan. plan: edit a room plan, ask people to sign off on it, read it; each person answers in their own session, never through you.',
+        instructions: 'Room tools. post sends a message; read reads messages or a plan; plan drafts, shares and reads plans. Each person agrees in their own session, never through you.',
       });
     case 'notifications/initialized':
       return;

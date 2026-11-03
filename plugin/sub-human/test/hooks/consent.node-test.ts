@@ -235,7 +235,8 @@ test('review: EnterPlanMode is let through only for a pending proposal and a rev
   // In a reviewable mode the card call is sent to the plan view; otherwise the card opens as before.
   const card = (mode: string) => w.hook('consent', { ...preAsk({ questions: [{ question: `proposal ${hash}` }] }), permission_mode: mode }, { as: 'alice' });
   assert.equal(decision(card('auto')), 'deny');
-  assert.match(must(reason(card('auto'))), new RegExp(`EnterPlanMode, then ExitPlanMode with plan "proposal ${hash}"`));
+  assert.equal(reason(card('auto')), '', 'no red reason: Claude\'s words are its context');
+  assert.match(must(ctx(card('auto'))), new RegExp(`EnterPlanMode, then ExitPlanMode with plan "proposal ${hash}"`));
   assert.equal(decision(card('plan')), 'ask');
 });
 
@@ -360,15 +361,16 @@ test('review: a room tool call after "Tell Claude what to change" records the ob
   // bob's Claude tries to post his note itself: denied, the note waits for bob's Send (nothing recorded), exit next.
   const r = w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__post', { permission_mode: 'plan', tool_input: { kind: 'say', text: note }, transcript_path: tp }), { as: 'bob' });
   assert.equal(decision(r), 'deny');
-  assert.match(must(reason(r)), /Nothing is recorded yet: bob's note on .* waits for Send or Discard.*Post nothing about the review\. First call ExitPlanMode now/);
-  assert.doesNotMatch(must(reason(r)), /#\d/);
+  assert.equal(reason(r), '', 'no red reason');
+  assert.match(must(ctx(r)), /Nothing is recorded yet: bob's note on .* waits for Send or Discard.*Post nothing about the review\. First call ExitPlanMode now/);
+  assert.doesNotMatch(must(ctx(r)), /#\d/);
   assert.deepEqual(answers(w), []);
   assert.equal(must(waiting(w)).note, note);
   assert.equal(must(review(w)).phase, 'exiting');
   // The exit: Claude Code's own "exit plan mode?" (the plan emptied), the plan file removed; still nothing recorded.
   leaves(w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu9', transcript_path: tp }), { as: 'bob' }));
   assert.equal(fs.readFileSync(file, 'utf8'), '');
-  assert.match(must(ctx(w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: {}, tool_response: { plan: null } }), { as: 'bob' }))), /review is closed and the mode is restored/);
+  assert.match(must(ctx(w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: {}, tool_response: { plan: null } }), { as: 'bob' }))), /review is closed; this was not a plan to carry out\./, 'never "the mode is restored": it was not (#34)');
   assert.equal(fs.existsSync(file), false);
   assert.deepEqual(answers(w), []);
   assert.equal(review(w), null);
@@ -924,7 +926,8 @@ test('H (live verify, verify1/08): plan mode by hand, the model skips EnterPlanM
   // a stub for a proposal that is not bob's to answer (answered now): denied, never a bare view
   const again = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: `proposal ${v3}` }, tool_use_id: 'tu8', transcript_path: tp }), { as: 'bob' });
   assert.equal(decision(again), 'deny');
-  assert.match(String(hso(again).permissionDecisionReason), /nothing was shown and nothing is recorded/);
+  assert.equal(hso(again).permissionDecisionReason, '', 'no red reason');
+  assert.match(String(hso(again).additionalContext), /nothing was shown and nothing is recorded/);
 });
 
 test('deny: a reject with a note waits for bob\'s Send; a bare reject records nothing', () => {
@@ -1162,7 +1165,8 @@ test('M (live verify, verify5/M): the plan view refused with a note: the module\
   w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: {}, tool_response: { plan: null } }), { as: 'bob' });
   assert.equal(review(w), null);
   const p = w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__post', { permission_mode: 'auto', tool_input: { kind: 'say', text: 'x' } }), { as: 'bob' });
-  assert.match(must(reason(p)), /^sub-human: refused: bob's note on proposal [0-9a-f]{12} waits for Send or Discard on its card/);
+  assert.equal(reason(p), '', 'no red reason');
+  assert.match(must(ctx(p)), /^sub-human: refused: bob's note on proposal [0-9a-f]{12} waits for Send or Discard on its card/);
   assert.equal(w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__read', { permission_mode: 'auto', tool_input: {} }), { as: 'bob' }).stdout, '');
   confirm(w, hash, 'Send');
   assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.text]), [['objection', 'human', note]]);
@@ -1269,7 +1273,8 @@ test('A (live validation, the repro seen here): in plan mode with his own plan, 
   const exit = (id: string, plan: string) => w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan, planFilePath: file }, tool_use_id: id, transcript_path: tp }), at);
   const first = exit('tu1', mine);
   assert.equal(decision(first), 'deny', 'no plan view of his own plan while the sign-off waits');
-  assert.match(must(reason(first)), new RegExp(`bob has a sign-off waiting \\(plan p\\d+ v1\\); this ExitPlanMode would show bob's own plan file instead.*call EnterPlanMode, then ExitPlanMode with plan "proposal ${hash}"`));
+  assert.equal(reason(first), '', 'no red reason');
+  assert.match(must(ctx(first)), new RegExp(`bob has a sign-off waiting \\(plan p\\d+ v1\\); this ExitPlanMode would show bob's own plan file instead.*call EnterPlanMode, then ExitPlanMode with plan "proposal ${hash}"`));
   assert.equal(fs.readFileSync(file, 'utf8'), mine, 'his plan file untouched');
   assert.equal(review(w), null);
   // the model follows it: EnterPlanMode (in plan mode), then ExitPlanMode: the proposal

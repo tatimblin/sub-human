@@ -46,7 +46,7 @@ const EVENTS: { [K in ConsentEvent['type']]: Extract<ConsentEvent, { type: K }> 
 /** What a step did, compactly: the review's phase after it (none: cleared), the say's kind, the effects in order. */
 const rev = (s: ReviewStep) => must(s.state.review, 'a review');
 /** The say's parts (a context or a deny). */
-const parts = (s: ReviewStep) => { const say = must(s.say, 'a say'); assert.ok(say.to === 'context' || say.to === 'deny', say.to); return say.parts; };
+const parts = (s: ReviewStep) => { const say = must(s.say, 'a say'); assert.ok(say.to === 'context' || say.to === 'deny', say.to); return say.to === 'deny' ? say.context : say.parts; };
 /** The say of an ask. */
 const asked = (s: ReviewStep) => { const say = must(s.say, 'a say'); assert.ok(say.to === 'ask', say.to); return say; };
 const shape = (s: ReviewStep) => [s.state.review ? s.state.review.phase : 'none', s.say ? s.say.to : null, s.effects.map(e => e.do).join(',')];

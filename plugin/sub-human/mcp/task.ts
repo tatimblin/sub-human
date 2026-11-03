@@ -22,7 +22,7 @@ const S = (d: string): JsonSchema => ({ type: 'string', description: d });
 const TOOL: ToolDefinition = {
   name: 'task',
   title: 'Change the room task list',
-  description: 'Change the sub-human room\'s shared task list; the host applies it at once and replies with the change or why not. '
+  description: 'Add or update a room task. The host applies it at once and replies with the change or why not. '
     + 'add needs subject; claim (for yourself), release and done (your own task) need id; done also needs evidence.',
   inputSchema: {
     type: 'object',

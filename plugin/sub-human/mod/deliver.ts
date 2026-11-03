@@ -10,7 +10,7 @@
  */
 import {
   tailArgv, tailEnv, lineBuffer, parseEvent, route, restartDelay, nextFails, noticeDue, turnLedger, spawnWanted, logLines,
-  rewakePrompt, wakeParts, holdPull, takeWake, takeFallback, DELIVERY_ERROR_NOTICE, TAIL_RESTART, REWAKE_TIMEOUT_MS,
+  rewakePrompt, wakeParts, holdPull, takeWake, takeFallback, DELIVERY_ERROR_NOTICE, TAIL_RESTART, REWAKE_TIMEOUT_MS, WAKE_RESEND,
 } from './core/deliver.ts';
 import { parseHello, localHello, homeOf, sidIndex } from './core/seat.ts';
 import { homeMark, BYPASS_DEBUG } from './core/constants.ts';
@@ -326,9 +326,10 @@ async function rewake($: EngineInterface, e: { session_id?: string }, member: bo
 
 async function midTurnWake($: EngineInterface, text: string) {
   if (!(await appendRow($, text))) return submitWake($, text);
-  // a clock that fails dates the row as never read: submitted again rather than lost
+  // a clock that fails dates the row as never read: submitted again rather than lost; its row is stored and its lines
+  // were shown, so context only (WAKE_RESEND)
   const at = await $.clock.now().catch(() => Infinity);
-  if (!turns.appended(text, at)) await submitWake($, text, { appended: true });
+  if (!turns.appended(text, at)) await submitWake($, WAKE_RESEND, { appended: true });
 }
 
 function stopChild(sid?: string) {
@@ -763,10 +764,11 @@ export function registerDeliver(on: On): void {
   });
 
   on('turn.complete', ($, e, next) => {
-    // a wake appended while the turn's last request was already out was never read: submit it after all (its row
-    // is stored, so a failed submit leaves it for the next request)
+    // a wake appended while the turn's last request was already out was never read: a turn for it after all, context
+    // only (its row is stored and its lines were shown: WAKE_RESEND, once however many), so a failed submit leaves it
+    // for the next request
     if (e.agentId === undefined) {
-      for (const text of turns.complete(e.turnId)) void submitWake($, text, { appended: true });
+      if (turns.complete(e.turnId).length) void submitWake($, WAKE_RESEND, { appended: true });
       // the turn the person's prompt started is over: back at the prompt (node hooks/run.ts presence, not awaited)
       if (presence.last === 'working' || presence.last === 'permission_prompt') {
         presence.last = 'idle';

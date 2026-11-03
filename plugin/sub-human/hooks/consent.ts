@@ -280,7 +280,8 @@ function write(input: ConsentIn, me: Identity, say: Say, state: State, answers: 
   const text = (parts: Parameters<typeof review.textOf>[0]) => review.textOf(parts, h => outcome(me, h, answers.get(h)), recorded);
   switch (say.to) {
     case 'context': return c.context(String(input.hook_event_name), text(say.parts));
-    case 'deny': return c.deny(text(say.parts));
+    // a review's deny: no red reason for the person, its words the model's (the call's context)
+    case 'deny': return c.out(ccEnv.denyWithContext('', text(say.context)));
     case 'ask': {
       const s = say.show;
       if ('leave' in s) return c.pre('ask', say.text, { updatedInput: { plan: ccEnv.LEAVE_PLAN_TEXT } });
