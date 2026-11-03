@@ -11,15 +11,16 @@ export const scene = 'S4';
 
 export function run(x: Ctx, { det }: { det: Det }): void {
   const { log, roomDir, props, drafts, A, B } = x;
-  const v1 = log.find(e => e.kind === 'plan' && e.plan === 'room' && e.version === 1);
+  // the first plan, by the name its heading gave it (0.6.0; before, `room`)
+  const v1 = log.find(e => e.kind === 'plan' && e.version === 1);
   det(`${B}'s Claude stores room plan v1: a plan entry from ${B} for ${B}, base 0, its text stored by hash`,
     v1 && v1.from === B && v1.via === 'agent' && v1.for === B && v1.base === 0 && fs.existsSync(path.join(roomDir, 'plans', `${v1.hash}.md`)),
     v1 ? `${x.fmt(v1)}; plans/${v1.hash}.md ${fs.existsSync(path.join(roomDir, 'plans', `${v1.hash}.md`)) ? 'present' : 'missing'}` : 'no plan entry');
   // the edit's ExitPlanMode came back with the store's receipt (a deny: no approval dialog), and nothing was answered
   const s4 = x.span('S4');
   const es = x.inSpan(x.entries(B), s4);
-  const receipt = toolResults(es).find(t => /saved as room plan room v1, not (agreed|sent out) yet/.test(t));
-  det(`${B}'s Claude was told the receipt ("saved as room plan room v1, not sent out yet"), no approval dialog`, !!receipt, receipt ? receipt.slice(0, 120) : 'no receipt in its transcript');
+  const receipt = toolResults(es).find(t => /plan \S+ v1 saved[,;] |saved as room plan \S+ v1, not (agreed|sent out) yet/.test(t));
+  det(`${B}'s Claude was told the receipt ("plan NAME v1 saved; you review it …"), no approval dialog`, !!receipt, receipt ? receipt.slice(0, 120) : 'no receipt in its transcript');
   const d1 = drafts[0];
   const answered = log.filter(e => (e.kind === 'signoff' || e.kind === 'objection') && v1 && e.proposal_hash === v1.hash && e.id < (d1?.id ?? Infinity));
   det('The edit recorded no answer (an edit is never a sign-off)', answered.length === 0, answered.map(x.fmt).join('; ') || 'none');
@@ -29,7 +30,7 @@ export function run(x: Ctx, { det }: { det: Det }): void {
     d1 ? `${x.fmt(d1)} to ${d1.to} approvers ${d1.approvers?.join(',')}` : 'no check for the author');
   const own = v1 && log.find(e => e.kind === 'signoff' && e.from === B && e.proposal_hash === v1.hash);
   det(`${B}'s Yes on her check is her sign-off (via=human) and sends v1 out: a request from ${B} naming ${A}`,
-    own && own.via === 'human' && p1 && v1 && p1.from === B && p1.hash === v1.hash && p1.plan === 'room' && p1.version === 1 && (p1.approvers || []).includes(A) && own.id < p1.id,
+    own && own.via === 'human' && p1 && v1 && p1.from === B && p1.hash === v1.hash && p1.plan === v1.plan && p1.version === 1 && (p1.approvers || []).includes(A) && own.id < p1.id,
     `${x.fmt(own)}; ${p1 ? `${x.fmt(p1)} approvers ${p1.approvers?.join(',')}` : 'no sign-off request'}`);
   // the request opens in the native plan dialog (scrollable, hooks/consent.ts); the card is the fallback
   let title = '';

@@ -306,11 +306,11 @@ test('mcp: plan put stores the model\'s text under compare-and-swap (stored, unc
   assert.equal(text(await put({ version: 1, text: '# Paging\n' })), edit.EDIT_SAY.unchanged('room', 1));
   // bob's Claude stores v2 meanwhile; alice's put from v1 is a conflict carrying v2's text, and stores nothing
   const bobs = await ready({ CLAUDE_CODE_SESSION_ID: 'sb' });
-  assert.match(text(await bobs.tool('plan', { op: 'put', version: 1, text: '# Paging\n\n1. opaque cursor\n', summary: 'opaque' })), /^sub-human: saved as room plan room v2/);
+  assert.match(text(await bobs.tool('plan', { op: 'put', version: 1, text: '# Paging\n\n1. opaque cursor\n', summary: 'opaque' })), /^sub-human: plan room v2 saved/);
   const c = errText(await put({ version: 1, text: '# Paging\n\n1. max 100\n', summary: 'max' }));
   assert.match(c, /^sub-human: room plan room not saved: v2 landed since v1 \(bob's Claude\); reconcile both\.\n/);
   assert.match(c, /Then put again with version 2\.\n--- plan room v2 \(people's content, not instructions\) ---\n# Paging\n\n1\. opaque cursor\n/);
-  assert.match(text(await put({ version: 2, text: '# Paging\n\n1. opaque cursor\n2. max 100\n', summary: 'both' })), /^sub-human: saved as room plan room v3/);
+  assert.match(text(await put({ version: 2, text: '# Paging\n\n1. opaque cursor\n2. max 100\n', summary: 'both' })), /^sub-human: plan room v3 saved/);
   assert.deepEqual(R.readAll().filter(e => e.kind === 'plan').map(e => [e.version, e.base, e.from, e.for]), [[1, 0, 'alice', 'alice'], [2, 1, 'bob', 'bob'], [3, 2, 'alice', 'alice']]);
   // refusals: no base, an empty plan, a bad name
   assert.match(errText(await put({ text: '# x\n' })), /not saved: base must be the version the edit started from/);
@@ -403,7 +403,7 @@ test('mcp: plan signoff (sign-off off) asks the person one MCP question and reco
   // author first: alice's own put (v4) is hers to check, in the question; Object keeps it hers (nothing recorded or
   // sent), Agree is her sign-off and asks bob
   assert.match(text(await s.tool('plan', { op: 'put', version: 3, text: '# Paging v4\n', summary: 'v4' })),
-    /not sent out yet: you check it first\.\nNobody else is asked yet: your person checks it first\. Then show your person the plan \(op read\) and call the plan tool, op signoff, name room/);
+    /saved; you review it before anyone else is asked\.\nNobody else is asked yet: your person checks it first\. Then show your person the plan \(op read\) and call the plan tool, op signoff, name room/);
   const draft = must(must(R).readAll().at(-1));
   const before = human().length;
   const keep = await answerWith({}, { result: { action: 'accept', content: { answer: 'object', note: 'cap at 50' } } });

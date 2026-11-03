@@ -38,7 +38,9 @@ export function run(x: Ctx, { det }: { det: Det; beh: Beh }): void {
   const sb = p1 && log.find(e => e.kind === 'signoff' && e.from === B && e.proposal_hash === p1.hash);
   det(`${B}'s agreement on v1 via=human (her Yes when she checked it)`, sb && sb.via === 'human', x.fmt(sb));
   // the next version, by A's Claude, on v1
-  const vs = log.filter(e => e.kind === 'plan' && e.plan === 'room').map(e => ({ v: e.version, base: e.base, from: e.from, id: e.id }));
+  // the first plan's versions, by the name its heading gave it (0.6.0; before, `room`)
+  const name = log.find(e => e.kind === 'plan' && e.version === 1)?.plan;
+  const vs = log.filter(e => e.kind === 'plan' && e.plan === name).map(e => ({ v: e.version, base: e.base, from: e.from, id: e.id }));
   const v2 = vs.find(v => v.v === 2);
   det(`v2 by ${A}'s Claude, on v1`, v2 && v2.from === A && v2.base === 1, vs.map(v => `v${v.v} base v${v.base} ${v.from} #${v.id}`).join(', ') || 'no versions');
   const last = vs.at(-1);

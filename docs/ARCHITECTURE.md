@@ -261,7 +261,7 @@ ExitPlanMode Pre                   ──► capture (its plan, else the file; h
                                        plan.put. Every outcome is the PreToolUse deny, so no approval dialog shows; its
                                        reason is the person's short line (drawn as the call's error), the model's next
                                        step its additionalContext (lib/cc/env.ts denyWithContext):
-   stored                          ──► "saved as room plan NAME vN, not sent out yet: you check it first" ─► the model's
+   stored                          ──► "plan NAME vN saved; you review it before anyone else is asked" ─► the model's
                                        next ExitPlanMode is the author's check: the edit ends (its plan file restored) and
                                        that call opens the review of the check (the plan view's ask, the version as its
                                        plan; the Yes sends it out). Where the plan view cannot show it (a mode no review

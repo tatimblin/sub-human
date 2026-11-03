@@ -114,10 +114,10 @@ export const EDIT_SAY = {
   noFileNext: 'No plan file is known for this session yet. Call EnterPlanMode first, then edit the plan file the hooks fill.',
   empty: (p: string): string => `sub-human: room plan ${p} not saved: the plan is empty.`,
   emptyNext: `The plan below the closing marker is empty. Write the plan there, then call ${EXIT} again.`,
-  stored: (p: string, v: number): string => `sub-human: saved as room plan ${p} v${v}, not agreed yet.`,
+  stored: (p: string, v: number): string => `sub-human: plan ${p} v${v} saved, not agreed yet.`,
   storedNext: 'Not agreed: anyone can ask for sign-off (the plan tool, op ask); each person answers in their own session.',
   /** stored, and the author's check made: nobody is asked until the person sends it out */
-  storedCheck: (p: string, v: number): string => `sub-human: saved as room plan ${p} v${v}, not sent out yet: you check it first.`,
+  storedCheck: (p: string, v: number): string => `sub-human: plan ${p} v${v} saved; you review it before anyone else is asked.`,
   checkNext: 'Nobody else is asked yet: your person checks it first.',
   checkThen: (h: string): string => `Then ${NEXT.open(h)}: your person sends it out or asks for changes.`,
   leftCheck: (p: string, v: number | undefined, h: string): string => `sub-human: plan mode closed with no approval: room plan ${p}${v ? ` v${v}` : ''} was stored, not sent out `

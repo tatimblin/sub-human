@@ -79,7 +79,7 @@ test('edit: the capture, the receipt, a conflict and a refusal; the mode put bac
   assert.deepEqual(exit.effects, [{ do: 'put', plan: 'room', base: 1, text: '# v2 text\n', summary: 's' }], 'the header off, the Summary line the summary');
   const stored = edit.reduce(SEEDED, EVENTS.put);
   // the receipt: the deny's reason is the person's line (drawn as the call's error), the mechanics are the model's context
-  assert.deepEqual(stored.say, { to: 'deny', text: 'sub-human: saved as room plan room v2, not agreed yet.',
+  assert.deepEqual(stored.say, { to: 'deny', text: 'sub-human: plan room v2 saved, not agreed yet.',
     context: `${edit.EDIT_SAY.storedNext} Now call ExitPlanMode({}) once more: it only leaves plan mode (Claude Code asks your person; not an approval: do not carry the plan out).` });
   for (const ev of [EVENTS.put, { type: 'put' as const, outcome: { kind: 'refused' as const, why: 'x' } }, { type: 'put' as const, outcome: { kind: 'offline' as const, why: 'timeout' } },
     { type: 'put' as const, outcome: { kind: 'conflict' as const, version: 3, who: 'bob', summary: '', text: 'long\n'.repeat(500) } }]) {
@@ -157,7 +157,7 @@ test('edit (hooks): seeded at the plan_mode attachment, stored at Pre(ExitPlanMo
   const text = write(file, '# Paging\n\n1. cursor\n', 'first draft');
   const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: text, planFilePath: file }, tool_use_id: 'tu1' }), { as: 'alice' });
   assert.equal(decision(pre), 'deny');
-  assert.equal(reason(pre), 'sub-human: saved as room plan room v1, not sent out yet: you check it first.');
+  assert.equal(reason(pre), 'sub-human: plan room v1 saved; you review it before anyone else is asked.');
   assert.match(must(hso(pre).additionalContext), /^Nobody else is asked yet: your person checks it first\. Now call ExitPlanMode\(\{\}\) once more: it shows the new version to your person in the plan view/);
   // the author's own check after the version (lib/proposal.ts check): a request addressed to alice alone
   const check = must(w.entries().at(-1));
@@ -201,7 +201,7 @@ test('edit (hooks): a conflict denies with the current version\'s text; the next
   assert.equal(w.entries().filter(e => e.kind === 'plan').length, 2, 'nothing stored for bob yet');
   const both = write(file, '# Paging\n\n1. opaque cursor\n2. max 100\n', 'opaque cursor and max 100');
   const again = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: both, planFilePath: file }, tool_use_id: 'tu2' }), { as: 'bob' });
-  assert.match(must(reason(again)), /^sub-human: saved as room plan room v3, not sent out yet: you check it first\.$/);
+  assert.match(must(reason(again)), /^sub-human: plan room v3 saved; you review it before anyone else is asked\.$/);
   assert.deepEqual(w.entries().filter(e => e.kind === 'plan').map(e => [e.version, e.base, e.from]), [[1, 0, 'alice'], [2, 1, 'alice'], [3, 2, 'bob']]);
 });
 
