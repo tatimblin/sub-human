@@ -134,6 +134,19 @@ export const shownHash = (r: Review): string | undefined => r.hash;
  * Claude's plan", so never the hex), else, for a request from before plans, "proposal HASH". hooks/consent.ts reads both. */
 export const stubFor = (h: string, title?: string | null): string => (title && /^plan [a-z0-9-]+ v\d+$/.test(title) ? title : `proposal ${h}`);
 
+/** The plan view's first line, its frame: Claude Code draws "Ready to code?" over every plan and no hook can redraw
+ * that title (quiet/SPIKES.md spike 2), so the plan's own first line says what the view is for. hooks/consent.ts writes
+ * it above the version's text in the plan file and the dialog's plan; unframe takes it off before any hash compare, so
+ * a stored version never carries it. */
+const FRAME_TAIL = ' · Yes agrees · Tell Claude what to change asks for changes';
+export const frameLine = (h: string, title?: string | null): string => `Room plan · ${planIn(title) ? String(title).replace(/^plan /, '') : `proposal ${h.slice(0, 6)}`}${FRAME_TAIL}`;
+export const framed = (text: string, h: string, title?: string | null): string => `${frameLine(h, title)}\n\n${text}`;
+const FRAMED = /^Room plan · [^\n]*?(?: · Yes agrees · Tell Claude what to change asks for changes)\n\n?/;
+/** The text with its frame line taken off (a text without one, as it is). */
+export const unframe = (t: string): string => t.replace(FRAMED, '');
+/** The hash a shown plan text has as a version (lib/plans.ts: hash12 of its text): its frame left out. */
+const planHash = (t: string): string => hash12(Buffer.from(unframe(t), 'utf8'));
+
 /** What the model does next. */
 export const NEXT = {
   /** open a proposal in the plan view (the hooks fall back to the card) */
@@ -348,7 +361,7 @@ const stub = (t: string) => !t.trim() || /^\s*(?:the room )?proposal\s+[0-9a-f]{
 /** What a review backs up of the plan file: the person's own plan, never a stub a model wrote ("proposal HASH"), which a
  * restore would put back for the closing ExitPlanMode to show as an older proposal's hash: null, so the restore
  * removes the file. */
-const personsPlan = (t: string | null | undefined): string | null => (typeof t === 'string' && !stub(t) ? t : null);
+const personsPlan = (t: string | null | undefined): string | null => (typeof t === 'string' && !stub(t) && !FRAMED.test(t) ? t : null);
 
 /** Post(ExitPlanMode) with no review shown although its dialog was a pending proposal's: tell the model. */
 function unshown(ev: Extract<ConsentEvent, { type: 'exited' }>, ctx: ReviewCtx, hashes: string[]): { effects: ConsentEffect[]; say: Say } | null {
@@ -356,7 +369,7 @@ function unshown(ev: Extract<ConsentEvent, { type: 'exited' }>, ctx: ReviewCtx, 
   const plan = typeof ev.response.plan === 'string' ? ev.response.plan : typeof ev.callPlan === 'string' ? ev.callPlan : '';
   let hit = ev.pending.filter(p => hashes.includes(p.hash));
   // its text, but not a plan of my own that I proposed (that is my plan, already in the room)
-  if (!hit.length && plan.trim()) { const h = hash12(Buffer.from(plan, 'utf8')); hit = ev.pending.filter(p => p.from !== ctx.name && p.hash === h); }
+  if (!hit.length && plan.trim()) { const h = planHash(plan); hit = ev.pending.filter(p => p.from !== ctx.name && p.hash === h); }
   if (!hit.length && plan.length < 300) hit = ev.pending.filter(p => ev.callNames.includes(p.hash));
   if (!hit.length && !plan.trim()) hit = ev.pending;
   const [first] = hit;
@@ -407,7 +420,7 @@ function exitStep(state: State, ev: Extract<ConsentEvent, { type: 'exit' }>, ctx
   const backup = review.file === ev.plan.file && !review.restored ? review.backup ?? null : personsPlan(ev.plan.text);
   // A plan of the model's own (not the proposal, not a stub) is never shown here: the model's input as sent, or the
   // plan Claude Code read from the file unless that is just what the file held before the review.
-  const mine = (t: unknown) => typeof t === 'string' && !stub(t) && t !== ev.text && hash12(Buffer.from(t, 'utf8')) !== shownHash(review);
+  const mine = (t: unknown) => typeof t === 'string' && !stub(t) && unframe(t) !== ev.text && planHash(t) !== shownHash(review);
   if (mine(ev.ownPlan) || (mine(ev.callPlan) && ev.callPlan !== backup)) review.foreign = true;
   if (!ev.shown) {
     const [back, e] = restore(review);
@@ -575,7 +588,7 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
       let line: Part[];
       let recheck: Recheck | null | undefined = state.recheck;
       let notice: string | undefined;
-      if (ev.response.edited || typeof plan !== 'string' || hash12(Buffer.from(plan, 'utf8')) !== shownHash(cur)) line = [SAY.edited(n, h)];
+      if (ev.response.edited || typeof plan !== 'string' || planHash(plan) !== shownHash(cur)) line = [SAY.edited(n, h)];
       else if (!ev.target || ev.target.hash !== cur.hash) line = [SAY.stale(h)];
       else if (quickYes(cur, ctx)) { // keys meant for the prompt may have answered it: the card asks once
         recheck = { hash: h, at: ctx.now };

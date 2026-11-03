@@ -576,3 +576,17 @@ test('F (live validation): whenever the person\'s own plan file is put back, the
   assert.deepEqual(shape(prompt), ['none', 'context', 'restorePlan']);
   assert.match(review.textOf(parts(prompt), () => '', false), /plan file is back as it was/);
 });
+
+test('0.7.0 frame: the plan view\'s first line says what it is for; it never enters a hash, so a framed Yes on the version records Agree', () => {
+  assert.equal(review.frameLine(H, 'plan paging v2'), 'Room plan · paging v2 · Yes agrees · Tell Claude what to change asks for changes');
+  assert.equal(review.frameLine(H, null), `Room plan · proposal ${H.slice(0, 6)} · Yes agrees · Tell Claude what to change asks for changes`);
+  const shown = review.framed(TEXT, H, 'plan paging v2');
+  assert.equal(review.unframe(shown), TEXT);
+  assert.equal(review.unframe(TEXT), TEXT, 'a text without a frame stays as it is');
+  const st: State = { review: { ...REVIEWS.shown, shownAt: 0 }, note: null };
+  const yes = review.reduce(st, { ...EVENTS.exited, response: { ...EVENTS.exited.response, plan: shown } }, ctx);
+  assert.deepEqual(yes.effects.flatMap(e => (e.do === 'answer' ? [e.choice] : [])), ['Agree']);
+  // a framed text left in the plan file is never backed up as the person's own plan
+  const entered = review.reduce({ review: null, note: null }, { ...EVENTS.enter, plan: { file: '/plans/x.md', text: shown } }, ctx);
+  assert.equal(must(entered.state.review).backup, null);
+});

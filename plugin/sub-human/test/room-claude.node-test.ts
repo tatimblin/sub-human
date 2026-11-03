@@ -184,7 +184,8 @@ test('room-claude: reap waits the grace, marks closing, completes the room task 
     const done = must(R.readAll().find(e => e.kind === 'task' && e.status === 'completed'));
     assert.deepEqual([done.from, done.via, done.owner], ['room', 'system', 'room'], 'the reaper\'s own entry');
     assert.ok(!R.readAll().some(e => e.kind === 'status' && e.to === 'claude'), 'nothing asked of a model');
-    assert.deepEqual(s.calls().map(c => c.argv), [['stop', 'cafe1234'], ['agents', '--json', '--all']], 'then looks for strays');
+    // 0.7.0: once its process is gone the stopped session is deleted too (claude rm: no stale row in the agent view)
+    assert.deepEqual(s.calls().map(c => c.argv), [['stop', 'cafe1234'], ['agents', '--json', '--all'], ['rm', 'cafe1234']], 'then looks for strays, then deletes it');
     assert.equal(must(s.calls()[0]).env.CLAUDE_PID, undefined, 'clean env for stop');
     assert.equal(must(s.calls()[0]).env.CLAUDE_CONFIG_DIR, cfg, 'stop reaches the same daemon (CLAUDE_CONFIG_DIR is passed)');
     const rec = must(identity.readMembers(code).claude);

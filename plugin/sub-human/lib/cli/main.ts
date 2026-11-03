@@ -206,9 +206,9 @@ function show(args: readonly string[]) {
   process.stdout.write(text.endsWith('\n') ? text : text + '\n');
 }
 
-/** code's people: who is in it, by name and role. */
+/** code's people: who is in it, by name and role (the room session, member claude, is no one's: never listed). */
 function whoIn(code: RoomCode) {
-  const ms = Object.values(identity.readMembers(code) || {}).filter(m => m && m.name && !m.left_at);
+  const ms = Object.values(identity.readMembers(code) || {}).filter(m => m && m.name && !m.left_at && m.role !== identity.ROOM_CLAUDE && m.name !== identity.ROOM_CLAUDE);
   if (!ms.length) return console.log(`(nobody in room ${code})`);
   for (const m of ms) console.log(`${m.name} (${m.role}${m.lapsed_at ? ', away' : ''}) in ${code}`);
 }

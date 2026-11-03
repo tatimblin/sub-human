@@ -32,7 +32,10 @@
  *
  * Claude Code's list reset (contract task-list-auto-reset: once every task is completed, a session showing the list
  * deletes every file) never fires while the room is open: the room task ("room CODE open", owner room) stays
- * in_progress until the reaper completes it (lib/tasks.ts closeRoomTask).
+ * in_progress until the reaper completes it (lib/tasks.ts closeRoomTask). Its file is marked metadata._internal (cc
+ * CONTRACT task-internal-hidden): Claude Code's views (the list, the TaskList tool, compaction's carry) leave it out,
+ * while the reset's own check still reads it, so it holds the list exactly as a shown task would (quiet/SPIKES.md
+ * spike 3), and an open room with no other task shows no list at all.
  */
 
 import fs from 'node:fs';
@@ -40,7 +43,7 @@ import path from 'node:path';
 import * as ccEnv from '../cc/env.ts';
 import * as ccTasks from '../cc/tasks.ts';
 import { withListLock, withTaskLock, STALE_MS } from '../cc/tasklock.ts';
-import { writeFileAtomic } from '../io.ts';
+import { writeFileAtomic, lazy } from '../io.ts';
 import { TASK_LIST_TOUCH_MS } from '../config.ts';
 import { errCode } from '../errors.ts';
 import * as identity from '../identity.ts';
@@ -48,6 +51,9 @@ import type { NativeTask, NativeStatus } from '../cc/tasks.ts';
 import type { FoldedTask } from '../types-app.ts';
 import type { Member, Members } from './types.ts';
 import type { RoomCode } from '../brand.ts';
+import type * as VerdictMod from '../cc/verdict.ts';
+
+const verdictLib = lazy<typeof VerdictMod>(import.meta.url, '../cc/verdict.ts');
 
 /** The room's list id: the room session's CLAUDE_CODE_TASK_LIST_ID. */
 const listId = (code: RoomCode): string => `sh-${code}`;
@@ -68,10 +74,15 @@ function dirOf(code: RoomCode, members?: Members | null): string {
 
 const STATUS: Readonly<Record<string, NativeStatus>> = { pending: 'pending', in_progress: 'in_progress', completed: 'completed' };
 
-/** One folded task as its file. blocks: the ids whose blockedBy names it. */
-function native(code: RoomCode, t: FoldedTask, all: readonly FoldedTask[]): NativeTask {
+/** The room's own task (lib/tasks.ts isRoomTask: owner room, "room CODE open"); task-files cannot import tasks.ts. */
+const isRoomTask = (code: RoomCode, t: FoldedTask): boolean => t.owner === 'room' && t.subject === `room ${code} open`;
+
+/** One folded task as its file. blocks: the ids whose blockedBy names it. internal: the room task is marked
+ * metadata._internal (off: the 0.6.0 file, shown in the list, when the version's verdict turns task-internal off). */
+function native(code: RoomCode, t: FoldedTask, all: readonly FoldedTask[], internal = true): NativeTask {
   const blocks = all.filter(o => o.id !== t.id && o.blockedBy.includes(t.id)).map(o => o.id);
   const metadata: Record<string, unknown> = { room: code };
+  if (internal && isRoomTask(code, t)) metadata[ccTasks.INTERNAL_KEY] = true;
   if (t.req) metadata.req = t.req;
   if (t.by) metadata.by = t.by;
   if (t.suggest) metadata.suggest = t.suggest;
@@ -85,7 +96,8 @@ function native(code: RoomCode, t: FoldedTask, all: readonly FoldedTask[]): Nati
 /** What project did: the ids written and removed; skipped, the recorded reason it wrote nothing. */
 interface Projected { wrote: string[]; removed: string[]; skipped?: string }
 
-function project(code: RoomCode, tasks: readonly FoldedTask[], { dir, now = Date.now() }: { dir?: string; now?: number } = {}): Projected {
+function project(code: RoomCode, tasks: readonly FoldedTask[], { dir, now = Date.now(), internal }: { dir?: string; now?: number; internal?: boolean } = {}): Projected {
+  internal ??= !verdictLib().off('task-internal');
   const wrote: string[] = [], removed: string[] = [];
   let ms: Members | null = null;
   try { ms = identity.readMembers(code); } catch { /* no record: the default dir */ }
@@ -101,7 +113,7 @@ function project(code: RoomCode, tasks: readonly FoldedTask[], { dir, now = Date
           try { fs.rmSync(file); removed.push(t.id); } catch { /* none */ }
           return;
         }
-        const text = ccTasks.taskJson(native(code, t, live));
+        const text = ccTasks.taskJson(native(code, t, live, internal));
         let cur: string | null = null;
         try { cur = fs.readFileSync(file, 'utf8'); } catch { /* none yet */ }
         if (cur === text) return;

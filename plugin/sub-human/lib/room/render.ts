@@ -407,7 +407,8 @@ function stateLine(me: LaneViewer | null | undefined, entries: readonly Readonly
     parts.push(s);
   }
   if (open.length > shown.length) parts.push(`+${open.length - shown.length} more open`);
-  const away = Object.values(members ?? {}).filter(m => m && (m.left_at || m.lapsed_at) && m.name !== name).map(m => m.name);
+  // people only: the room session (member claude) is no one to wait for
+  const away = Object.values(members ?? {}).filter(m => m && (m.left_at || m.lapsed_at) && m.name !== name && m.role !== 'claude' && m.name !== 'claude').map(m => m.name);
   if (away.length) parts.push(`away: ${away.join(', ')}`);
   return `room now: ${parts.join(' · ')}`;
 }

@@ -481,6 +481,20 @@
    "note": "A session whose task view is mounted (any interactive or --bg session with the list, attached or not) resets the list 5 s after it reads every task completed: under the list lock it raises .highwatermark and deletes every *.json (not dotfiles, not temp names). Observed detached in a --bg job (cc-2.1.296-tasks-plans.md S2.3). The reason the room task stays in_progress until the reaper (lib/tasks.ts closeRoomTask)."
   },
   {
+   "id": "task-internal-hidden",
+   "section": 4,
+   "stability": "incidental",
+   "feature": "task-internal",
+   "since": "2.1.296",
+   "search": [
+    "metadata?._internal"
+   ],
+   "shape": [
+    ".filter((~)=>!~.metadata?._internal);if(!this."
+   ],
+   "note": "A task file whose metadata._internal is true is left out of every view (the task list, the TaskList tool, compaction's carry), while the 5 s auto-reset's own check reads every task, _internal included: an _internal task in_progress holds the list as a shown one does, and a list of only that task shows nothing (quiet/SPIKES.md spike 3, live on 2.1.296). The room task's file is marked so (lib/room/task-files.ts native; lib/cc/tasks.ts INTERNAL_KEY). Off: the 0.6.0 file, shown as \"room CODE open\"."
+  },
+  {
    "id": "task-list-retention",
    "section": 4,
    "stability": "incidental",
@@ -575,6 +589,17 @@
     "Stop a background session. Its conversation is kept"
    ],
    "note": "`claude stop <id>` (cc.stopCmd)."
+  },
+  {
+   "id": "bg-rm",
+   "section": 5,
+   "stability": "API",
+   "feature": "reap-rm",
+   "since": "2.1.296",
+   "search": [
+    "Delete a background session and its worktree. Unlike `stop`, works on already-exited sessions."
+   ],
+   "note": "`claude rm <id>` deletes a background session (also one already stopped) so `claude agents` and the agent view's count no longer list it (cc.rmCmd). The reaper runs it after `claude stop` once the room session's process is gone (lib/room-claude.ts reap); the room session has no worktree. Off: stopped only (0.6.0), and the stopped session stays listed."
   },
   {
    "id": "bg-logs",

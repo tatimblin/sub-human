@@ -35,9 +35,9 @@ export type SubHumanCc = {
   /** Every internal sub-human relies on checked out on it; null: not checked yet (a check runs in the background). */
   verified: boolean | null;
   /** The features that run their fallback on it (mod/core/cc.ts GATED), SUB_HUMAN_CC_OFF's included. */
-  off: ('room-session' | 'tasks' | 'plan-edit' | 'sign-off')[];
+  off: ('room-session' | 'tasks' | 'plan-edit' | 'sign-off' | 'task-internal' | 'reap-rm')[];
   /** The part of off that SUB_HUMAN_CC_OFF forced, not the version's check. */
-  forced?: ('room-session' | 'tasks' | 'plan-edit' | 'sign-off')[];
+  forced?: ('room-session' | 'tasks' | 'plan-edit' | 'sign-off' | 'task-internal' | 'reap-rm')[];
 };
 
 declare module 'claude-code' {

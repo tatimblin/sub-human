@@ -5,7 +5,9 @@
  *   isCcVersion(v)            a Claude Code version as $.session.version spells it ("2.1.296", "2.1.300-dev"): safe in
  *                             a file name (<home>/cc/<version>.json)
  *   GATED                     the features a verdict can turn to their fallback (a failed entry of any other feature
- *                             only makes the version unverified)
+ *                             only makes the version unverified); since 0.7.0 also task-internal (the room task's
+ *                             file is marked metadata._internal) and reap-rm (a closed room's session is deleted with
+ *                             `claude rm`, not only stopped)
  *   isGated(v)                v is one of them
  *   closeOff(features) -> Gated[]   features, deduplicated in GATED order, with what each implies: sign-off implies
  *                             plan-edit (a room plan edit goes through plan mode too)
@@ -18,7 +20,7 @@ import type { Hello } from './types.ts';
 
 export const isCcVersion = (v: unknown): v is string => typeof v === 'string' && /^\d+\.\d+\.\d+[0-9A-Za-z.+-]{0,40}$/.test(v) && !v.includes('..');
 
-export const GATED = ['room-session', 'tasks', 'plan-edit', 'sign-off'] as const;
+export const GATED = ['room-session', 'tasks', 'plan-edit', 'sign-off', 'task-internal', 'reap-rm'] as const;
 export type Gated = typeof GATED[number];
 export type Cc = NonNullable<Hello['cc']>;
 
@@ -35,6 +37,8 @@ export const FALLBACK: Readonly<Record<Gated, string>> = Object.freeze({
   tasks: 'the room task list is off (tasks are kept in the room)',
   'plan-edit': 'plan edits use the plan tool',
   'sign-off': 'sign-off is a question Claude Code asks you, not the plan view',
+  'task-internal': 'the room session lists its own "room open" task',
+  'reap-rm': 'a closed room\'s session is stopped, not deleted',
 });
 
 export function parseCc(v: unknown): Cc | null {

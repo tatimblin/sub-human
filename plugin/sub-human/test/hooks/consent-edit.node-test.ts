@@ -6,7 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { World, hso, decision, reason, ctx } from './helpers.ts';
+import { World, hso, decision, reason, ctx, unframed, askedPlan } from './helpers.ts';
 import type { HookInput, HookRun } from './helpers.ts';
 import * as proposal from '../../lib/proposal.ts';
 import * as room from '../../lib/room.ts';
@@ -169,9 +169,10 @@ test('edit (hooks): seeded at the plan_mode attachment, stored at Pre(ExitPlanMo
   const close = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: text, planFilePath: file }, tool_use_id: 'tu2' }), { as: 'alice' });
   assert.equal(decision(close), 'ask');
   assert.match(must(reason(close)), /^your new version, plan room v1, for alice: nobody else is asked until you send it out/);
-  assert.deepEqual(hso(close).updatedInput, { plan: '# Paging\n\n1. cursor\n' });
+  assert.equal(unframed(askedPlan(close)), '# Paging\n\n1. cursor\n');
+  assert.match(String(askedPlan(close)), /^Room plan · room v1 · Yes agrees · Tell Claude what to change asks for changes\n\n/, 'the frame line names the plan and its version');
   assert.equal(editOf(w, 'alice'), null, 'the edit is over: the review has it');
-  assert.equal(fs.readFileSync(file, 'utf8'), '# Paging\n\n1. cursor\n', 'the view reads the version from the file');
+  assert.equal(unframed(fs.readFileSync(file, 'utf8')), '# Paging\n\n1. cursor\n', 'the view reads the version from the file');
   // alice's Yes there: her sign-off (via=human), and it sends v1 out to bob; her plan file back
   const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: { plan: '# Paging\n\n1. cursor\n' }, tool_use_id: 'tu2',
     tool_response: { plan: '# Paging\n\n1. cursor\n', filePath: file } }), { as: 'alice' });
@@ -252,7 +253,7 @@ test('edit (hooks, live 2026-10-17): the closing ExitPlanMode never sees the per
   const t2 = write(f2, '# Paging\n', 'first');
   w2.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: t2, planFilePath: f2 }, tool_use_id: 'tu1' }), { as: 'alice' });
   const shown = w2.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: t2, planFilePath: f2 }, tool_use_id: 'tu2' }), { as: 'alice' });
-  assert.deepEqual([decision(shown), hso(shown).updatedInput], ['ask', { plan: '# Paging\n' }]);
+  assert.deepEqual([decision(shown), unframed(askedPlan(shown))], ['ask', '# Paging\n']);
   w2.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: { plan: '# Paging\n' }, tool_use_id: 'tu2', tool_response: { plan: '# Paging\n', filePath: f2 } }), { as: 'alice' });
   assert.equal(fs.existsSync(f2), false);
 });

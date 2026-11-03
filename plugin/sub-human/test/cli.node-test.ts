@@ -171,7 +171,8 @@ test('cli: who / read / digest resolve by session id, then ancestry', () => {
   assert.equal(r.stdout, `alice (member) in ${code}\n`, 'nearest registered ancestor');
   r = cli(['who'], { CLAUDE_CODE_SESSION_ID: 'sbob' });
   assert.equal(r.stdout, `bob (member) in ${code}\n`, 'the session id wins');
-  // --room: that room's people (live: it was ignored)
+  // --room: that room's people (live: it was ignored); never the room session, member claude (0.7.0)
+  identity.updateRoomClaude(code, () => ({ pid: process.pid }));
   r = cli(['who', '--room', code]);
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(r.stdout.trim().split('\n').sort(), [`alice (member) in ${code}`, `bob (member) in ${code}`]);

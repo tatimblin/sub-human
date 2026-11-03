@@ -214,6 +214,15 @@ function blankPlan(file: string): void {
 
 type Out = { say: Say | null; show?: { admit?: JoinRequest | undefined; card?: Proposal[] } };
 
+/** What the plan view shows of a version: its text under the frame line (lib/consent/review.ts framed), or null. */
+function shownText(me: Identity, hash: string): string | null {
+  const text = proposal.read(me.code, hash);
+  if (text == null) return null;
+  let title: string | null = null;
+  try { title = proposal.title(me.code, hash) || null; } catch { /* no title: the frame names the hash */ }
+  return review.framed(text, hash, title);
+}
+
 
 /** The seat's state, reduce one event (made from it), run the effects, store the state, write the answer. */
 function step(input: ConsentIn, me: Identity, make: (st: State) => ConsentEvent, show: Out['show'] = {}, quiet = false) {
@@ -236,7 +245,7 @@ function step(input: ConsentIn, me: Identity, make: (st: State) => ConsentEvent,
       if (e.clearNote && !res.failed) state = { ...state, note: null };
     } else if (e.do === 'writePlan') {
       try {
-        const text = proposal.read(me.code, e.hash);
+        const text = shownText(me, e.hash);
         if (text == null) throw new Error(`proposal ${e.hash}: no stored text`);
         writeFileAtomic(e.file, text);
       } catch (err) {
@@ -285,7 +294,7 @@ function write(input: ConsentIn, me: Identity, say: Say, state: State, answers: 
     case 'ask': {
       const s = say.show;
       if ('leave' in s) return c.pre('ask', say.text, { updatedInput: { plan: ccEnv.LEAVE_PLAN_TEXT } });
-      if ('plan' in s) return c.pre('ask', say.text, { updatedInput: { plan: proposal.read(me.code, s.plan) } });
+      if ('plan' in s) return c.pre('ask', say.text, { updatedInput: { plan: shownText(me, s.plan) } });
       if ('note' in s) return state.note && c.pre('ask', say.text, { updatedInput: proposal.confirmCard(state.note) });
       if ('admit' in s && show.admit) return c.pre('ask', `room ${me.code}: ${show.admit.name} asks to join`, { updatedInput: admission.card(show.admit, me.code) });
       if ('card' in s && show.card) return c.pre('ask', say.text, { updatedInput: proposal.cardFor(show.card, me.code) });
@@ -412,7 +421,7 @@ function waitingOf(input: ConsentIn, me: Identity, ti: ConsentToolInput, plan: {
   const said = cc.lastHumanPrompt(lines(input));
   const p = (said ? proposal.namedIn(ps, said.text, me.code) : null) ?? proposal.picked(ps) ?? oldest;
   const text = typeof ti.plan === 'string' ? ti.plan : plan.text ?? '';
-  return { hash: p.hash, title: titleOf(me, p), plan: hash12(Buffer.from(text, 'utf8')) };
+  return { hash: p.hash, title: titleOf(me, p), plan: hash12(Buffer.from(review.unframe(text), 'utf8')) };
 }
 
 /** The stub the model is told to pass (lib/consent/review.ts stubFor), as a plan's whole text: "proposal HASH" is the
