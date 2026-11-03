@@ -80,7 +80,7 @@ test('prompt: an open review in plan mode adds consent\'s exit line to at-room\'
   const p = w.hook('prompt', ev({ prompt: '@room hello all', permission_mode: 'plan' }), { as: 'bob' });
   assert.equal(p.code, 0, p.stderr);
   assert.equal(must(p.json).continue, false);
-  assert.match(must(must(p.json).stopReason), /^✓ sent/);
+  assert.match(must(must(p.json).stopReason), /^Sent\b/);
   assert.equal(hso(p).additionalContext, undefined, 'no context on a stopped prompt');
   assert.equal(must(getReview()).phase, 'shown');
   assert.equal(w.entries().filter(e => e.kind === 'say' && e.text === 'hello all').length, 1);

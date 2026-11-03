@@ -40,3 +40,7 @@ export function session(on: On, sid: string): void {
   on('session.start', (_$, e) => ({ cwd: e.cwd }));
 }
 export const start = ($: Engine, isInteractive = true) => $.session.start({ cwd: '/w', surface: null, isInteractive });
+
+/** The lines a test's $.ui.log sent to Claude Code's debug log (to: 'debug'), never the transcript: kept apart from
+ * what the person sees. */
+export const debugLines: string[] = [];

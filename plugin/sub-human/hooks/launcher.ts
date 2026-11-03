@@ -87,10 +87,11 @@ function writeLauncher(root: string = process.env.CLAUDE_PLUGIN_ROOT || path.joi
 export { launcherBody, isTempRoot, writeLauncher };
 
 /** The launcher and the serve shim, best effort: a failure is a line on stderr (the rows show their names) and never
- * fails the hook it runs in. */
+ * fails the hook it runs in. A plugin root under a temp dir writes no launcher, and says nothing: that is no failure
+ * (hooks are silent on success; SUB_HUMAN_ALLOW_TMP_ROOT=1 allows it). */
 export function refresh(): void {
   try {
-    if (!writeLauncher()) process.stderr.write('sub-human row-launcher: plugin root is under a temp dir; not used for the row status line (set SUB_HUMAN_ALLOW_TMP_ROOT=1 to allow)\n');
+    writeLauncher();
   } catch (e) { process.stderr.write(`sub-human row-launcher error: ${e instanceof Error && e.stack || e}\n`); /* the rows show their names */ }
   try { shim.refresh(); } catch (e) { process.stderr.write(`sub-human serve shim error: ${e instanceof Error && e.message || e}\n`); }
 }

@@ -8,6 +8,7 @@ import * as rows from '../../lib/rows.ts';
 import type { Entry } from '../../lib/room/types.ts';
 import { lane as roomLane } from '../../lib/room/deliver.ts';
 import type * as PromptCore from '../../mod/core/prompt.ts';
+import { QUIET_ROW } from '../../mod/core/constants.ts';
 import { sn } from '../support/brands.ts';
 import { must } from '../support/must.ts';
 
@@ -78,7 +79,7 @@ const posted = (r: HookRun): string => {
   assert.equal(ans(r).reason, undefined);
   assert.equal(hso(r).hookEventName, 'UserPromptSubmit');
   assert.equal(hso(r).suppressOriginalPrompt, undefined, 'the human\'s prompt stays on screen');
-  assert.match(must(ans(r).stopReason), /^✓ sent/);
+  assert.match(must(ans(r).stopReason), /^Sent\b/);
   assert.doesNotMatch(must(ans(r).stopReason), /#\d/, 'people never see entry ids');
   return must(ans(r).stopReason);
 };
@@ -89,7 +90,7 @@ test('20 hostile strings after "@room " are logged byte-identical, via human, an
   for (const s of HOSTILE) {
     const r = atRoom(w, submit('@room ' + s), { as: 'alice' });
     const receipt = posted(r);
-    assert.equal(receipt, `✓ sent to room ${w.code} (Claude wasn't asked)`);
+    assert.equal(receipt, 'Sent');
     assert.doesNotMatch(receipt, /block|error|sub-human:/i);
   }
   const es = w.entries();
@@ -158,24 +159,24 @@ test('room Claude and non-members are refused; an empty post is refused', () => 
   assert.equal(w.entries().length + w2.entries().length + w3.entries().length, 0);
 });
 
-test('receipt is "✓ sent to room CODE (Claude wasn\'t asked)" plus the unwrap note, and nothing else (no id)', () => {
+test('receipt is "Sent" plus the unwrap note, and nothing else (no id, no room code: the module draws it as nothing)', () => {
   const w = new World({ claude: 'sleep', alice: 'act' });
   let r = atRoom(w, submit('@room hello'), { as: 'alice' });
-  assert.equal(posted(r), `✓ sent to room ${w.code} (Claude wasn't asked)`);
+  assert.equal(posted(r), 'Sent');
   r = atRoom(w, submit('@room \n\n<pasted_content id="1">\nA\n</pasted_content id="1">\n'), { as: 'alice' });
-  assert.equal(ans(r).stopReason, `✓ sent to room ${w.code} (Claude wasn't asked) (pasted text unwrapped)`);
+  assert.equal(ans(r).stopReason, 'Sent (pasted text unwrapped)');
   assert.equal(ans(r).systemMessage, undefined, 'systemMessage is not rendered with continue:false');
 });
 
 test('a paste that starts the prompt with @room posts its body (unwrapped), as a typed @room would', () => {
   const w = new World({ claude: 'sleep', alice: 'act' });
   const r = atRoom(w, submit('\n\n<pasted_content id="1">\n@room the long notes\nline two\n</pasted_content id="1">\n'), { as: 'alice' });
-  assert.equal(posted(r), `✓ sent to room ${w.code} (Claude wasn't asked) (pasted text unwrapped)`);
+  assert.equal(posted(r), 'Sent (pasted text unwrapped)');
   const e = must(w.entries().at(-1));
   assert.deepEqual([e.text, e.normalized], ['the long notes\nline two', true]);
 });
 
-test('a receipt is a one-line stop (continue:false), so the module shows its warning row as the receipt alone', async () => {
+test('a receipt is a one-line stop (continue:false), so the module draws its warning row as nothing (the person\'s row is the receipt)', async () => {
   const { receiptBook, STOP_FRAME } = await import(path.join(PLUGIN, 'mod', 'core', 'prompt.ts')) as typeof PromptCore;
   const w = new World({ claude: 'sleep', alice: 'act' });
   for (const p of ['@room hello']) {
@@ -187,7 +188,7 @@ test('a receipt is a one-line stop (continue:false), so the module shows its war
     const book = receiptBook();
     book.expect(ans(r).stopReason);
     const row = { type: 'system', content: [{ type: 'text', text: STOP_FRAME + ans(r).stopReason }] };
-    assert.deepEqual(must(book.rewrite(row)).content, [{ type: 'text', text: ans(r).stopReason }], p);
+    assert.deepEqual(must(book.rewrite(row)).content, [{ type: 'text', text: QUIET_ROW }], p);
   }
 });
 

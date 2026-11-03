@@ -4,16 +4,17 @@
  * seat's room and writes events; mod/core/deliver.ts route() maps each to a $ call. The child is the seat's only
  * delivery: nothing else tells the person or the model what happened in the room. It restarts with backoff and dies
  * with the module. A failed hello refresh keeps the last hello but as no session's, so the prefilters run node.
- * Failure: every lost event, child exit or wake nothing took counts in $.state deliveryErrors and shows
- * DELIVERY_ERROR_NOTICE (rate-limited), so the person learns the room may hold something they did not get.
+ * Failure: every lost event, child exit or wake nothing took counts in $.state deliveryErrors; a lost event or wake shows
+ * DELIVERY_ERROR_NOTICE (rate-limited), so the person learns the room may hold something they did not get. A child
+ * exit loses nothing (the next child resumes from its cursor): the debug log alone (TAIL_RESTART).
  */
 import {
   tailArgv, tailEnv, lineBuffer, parseEvent, route, restartDelay, nextFails, noticeDue, turnLedger, spawnWanted, logLines,
-  rewakePrompt, wakeParts, holdPull, takeWake, takeFallback, DELIVERY_ERROR_NOTICE, MOD_RESTART_TELL_FAILS, REWAKE_TIMEOUT_MS,
+  rewakePrompt, wakeParts, holdPull, takeWake, takeFallback, DELIVERY_ERROR_NOTICE, TAIL_RESTART, REWAKE_TIMEOUT_MS,
 } from './core/deliver.ts';
 import { parseHello, localHello, homeOf, sidIndex } from './core/seat.ts';
-import { homeMark } from './core/constants.ts';
-import { answersItself, bypassNoted, joinPayload, readReply, answerOf, cancels, leftName, goneAfter, failLogLine, appendCapped, MODULE_LOG, CONFIRM_AFTER_MS } from './core/command.ts';
+import { homeMark, BYPASS_DEBUG } from './core/constants.ts';
+import { answersItself, joinPayload, readReply, answerOf, cancels, leftName, goneAfter, failLogLine, appendCapped, MODULE_LOG, CONFIRM_AFTER_MS } from './core/command.ts';
 import { shimArgv, shimEnv, toClassic, asNotice, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { restoreNeeded } from './core/prefilter.ts';
 import { mergeClassic } from './core/prompt.ts';
@@ -39,6 +40,8 @@ const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' } as const;
 const ERRORS = { plugin: 'sub-human', key: 'deliveryErrors' } as const;
 const NONCE = { plugin: 'sub-human', key: 'nonce' } as const;
 const PULLS = { plugin: 'sub-human', key: 'pulls' } as const;
+/** The rows text the last typed prompt carried (mod/prompt.ts INJECTED): cleared on a resume, so it is said again. */
+const ROWS_SAID = { plugin: 'sub-human', key: 'rowsInjected' } as const;
 
 /** Nonce reads and mints in order: two refreshes at once for one session id must hand mod-hello the same one. */
 let minting: Promise<string | null> = Promise.resolve(null);
@@ -101,12 +104,14 @@ const versionOf = ($: EngineInterface): Promise<string | null> =>
 
 /** The versions whose fallbacks this module process has told the person about (ccNotice: once each). */
 const ccTold = new Set<string>();
-/** A seated session on a version with features off: one line, once per version, after the join's own lines. */
+/** A seated session on a version with features off: one line, once per version, after the join's own lines (the debug
+ * log's, unless the person turned them off with SUB_HUMAN_CC_OFF). */
 function tellCc($: EngineInterface, hello: NonNullable<ReturnType<typeof parseHello>>) {
   const line = hello.seat ? ccNotice(hello.cc) : null;
   if (!line || !hello.cc || ccTold.has(hello.cc.version)) return;
   ccTold.add(hello.cc.version);
-  const say = () => { $.ui.log(line); };
+  // a version not verified yet is the debug log's (sub-human doctor reports it); SUB_HUMAN_CC_OFF is the person's own
+  const say = () => { if (line.startsWith('SUB_HUMAN_CC_OFF')) $.ui.log(line); else $.ui.log(line, { to: 'debug' }); };
   try { $.clock.after(2 * CONFIRM_AFTER_MS, say); } catch { say(); }
 }
 
@@ -301,14 +306,20 @@ function submitWake($: EngineInterface, text: string, { appended = false, seen =
 /** A wake while a turn runs: appended and checked at the turn's end; submitted when it cannot be appended, or when
  * the turn ended before the row was stored (no turn's end would check it). */
 /**
- * After a resume: hooks/handlers/row-rewake.ts, not awaited (it was an asyncRewake command hook). Its exit 2 is the row
- * calls the resume lost: they go to the model as a wake (submitWake), shown to the person as one line. Never throws.
+ * After a resume. A member's rows come with the person's next prompt (the tail's rows event, held in $.state; the
+ * rows said before the resume are forgotten, so they are said again): no wake and no line, the debug log says so. The
+ * room session's: hooks/handlers/row-rewake.ts, not awaited (it was an asyncRewake command hook), whose exit 2 is the
+ * row calls the resume lost, as a framed wake (nobody reads its rows). Never throws.
  */
 async function rewake($: EngineInterface, e: { session_id?: string }, member: boolean) {
   try {
+    if (member) {
+      await $.state.set(ROWS_SAID, null);
+      $.ui.log('rows: resumed; the rows come back with the next prompt', { to: 'debug' });
+      return;
+    }
     const root = $.plugin.root;
     const run = await $.process.run(shimArgv(root, 'row-rewake'), { stdin: JSON.stringify(e), env: shimEnv(e, root), timeoutMs: REWAKE_TIMEOUT_MS });
-    // a member's: asUser, its one line shown and the row calls as context, also before the tail child named the seat
     if (run.exitCode === 2 && String(run.stderr || '').trim()) await submitWake($, rewakePrompt(run.stderr), { member });
   } catch { /* the restore's context lists the same rows for the next prompt */ }
 }
@@ -368,9 +379,11 @@ async function runChild($: EngineInterface, c: Child) {
     c.seat = null;
     c.stream = null;
     if (c.stopped || child !== c) return;
-    // the child runs for the session's life: until it is back, nothing reaches the session
+    // the child runs for the session's life: until it is back, nothing reaches the session; it resumes from its
+    // cursor, so nothing is lost: counted, and the debug log says so (TAIL_RESTART), never the person
     c.fails = nextFails(c.fails, (await now()) - started);
-    await noteError($, { tell: c.fails >= MOD_RESTART_TELL_FAILS });
+    try { $.ui.log(TAIL_RESTART(c.fails), { to: 'debug' }); } catch { /* nowhere to say it */ }
+    await noteError($, { tell: false });
     try {
       await new Promise<void>((resolve, reject) => { try { $.clock.after(restartDelay(c.fails - 1), resolve); } catch (err) { reject(err); } });
     } catch {
@@ -415,6 +428,7 @@ async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
         break;
       }
       case 'log': $.ui.log(a.text); break;
+      case 'debug': $.ui.log(a.text, { to: 'debug' }); break;
       case 'append': if (!(await appendRow($, a.text))) await noteError($); break; // refused or failed: lost
       case 'hold-pull': if (!(await holdPullEvent($, a.text))) await noteError($); break; // neither held nor appended: lost
       case 'hold-rows': await $.state.set(ROWS, a.text); break;
@@ -634,8 +648,9 @@ export function registerDeliver(on: On): void {
       joined = { sid, context: reply.context };
       try {
         const r = await next(e);
-        // the bypass note as the mode the command ran in: its expansion (the hook below, inside next) noted it (#14)
-        const lines = bypassNoted(reply.lines, facts.of(sid).permission_mode);
+        // the mode the command ran in (its expansion, inside next, noted it: #14): bypass-permissions is the debug log's
+        const lines = reply.lines;
+        if (facts.of(sid).permission_mode === 'bypassPermissions') $.ui.log(BYPASS_DEBUG, { to: 'debug' });
         // after the command's own row, which Claude Code adds once this hook returns
         const confirm = () => { for (const line of lines) $.ui.log(line); };
         try { $.clock.after(CONFIRM_AFTER_MS, confirm); } catch { confirm(); }

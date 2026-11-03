@@ -19,6 +19,11 @@ import { delivering, wakeContextOf, facts, presence, serialPulls } from './deliv
 import { pullContext, clearPulls } from './core/deliver.ts';
 import { asHello, asNonce } from './core/state.ts';
 import { rowsToSay, toolsDownStep, TOOLS_DOWN, TOOLS_DOWN_NOTICE } from './core/rows.ts';
+import { QUIET_ROW } from './core/constants.ts';
+
+/** A rewritten notice row that says nothing (QUIET_ROW). */
+const quiet = (row: { content?: unknown }): boolean => Array.isArray(row.content) && row.content.length === 1
+  && typeof row.content[0] === 'object' && row.content[0] !== null && 'text' in row.content[0] && row.content[0].text === QUIET_ROW;
 import type { ClassicHookInputs, EngineInterface, On } from 'claude-code';
 import type { Hello, Pulls, ShimResult } from './core/types.ts';
 
@@ -226,12 +231,14 @@ export function registerPrompt(on: On): void {
     return out;
   }).catch((_$, e, next) => failClosed(e.prompt) ?? next(e)); // a plain prompt goes on, as when a command hook fails
 
-  // The stop above is drawn as a warning row "Operation stopped by hook: ✓ sent" (cc CONTRACT ups-stop-frame): that
-  // row, and only one whose receipt is waiting, is kept as the receipt alone (cc CONTRACT
+  // The stop above is drawn as a warning row "Operation stopped by hook: Sent" (cc CONTRACT ups-stop-frame): that
+  // row, and only one whose receipt is waiting, says nothing for an @room that went through (QUIET_ROW: the person's
+  // own row is the receipt; the words go to the debug log), or the receipt alone (cc CONTRACT
   // session-append-notice-rewrite). The model's copy (an isMeta user row) says the @room line went to the room and
   // nothing is asked of it: read before the person's next words with no turn between, the bare frame read as a request.
-  on('session.append', (_$, e, next) => {
+  on('session.append', ($, e, next) => {
     const row = e.door === 'notice' ? receipts.rewrite(e.message) : receipts.modelRow(e.message);
+    if (row && e.door === 'notice' && quiet(row)) $.ui.log('@room: sent (receipt drawn as nothing)', { to: 'debug' });
     return next(row ? { ...e, message: row } : e);
   }).catch((_$, e, next) => next(e)); // a failure keeps the engine's words
 }

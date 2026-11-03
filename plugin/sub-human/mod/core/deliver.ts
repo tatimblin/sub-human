@@ -4,7 +4,8 @@
  *   seat -> follow it; chat -> $.ui.log per line (a notice is one line, cc CONTRACT ui-log-notice); pull -> held in $.state
  *   (holdPull) and carried as context beside the next prompt (pullContext, mod/prompt.ts), never a user row of its
  *   own, which the model read as one turn with the person's next words (stage 8e B); wake -> $.prompt.submit when idle, else append plus log, re-checked at the turn's end (turnLedger);
- *   rows -> held for the next prompt (the room Claude's ride on its wakes); health -> log plus append; take -> the
+ *   rows -> held for the next prompt (the room Claude's ride on its wakes); health -> log (quiet: the debug log) plus
+ *   append; take -> the
  *   module takes a let-in join's seat (the join shim, args '') and wakes the model with its block (takeWake).
  * Failure: pull is at most once (PULL_DELIVERY): the tail's cursor moves when the line is written, so a mod lost
  * before the next prompt carried it (a reload forgets nothing: it waits in $.state) drops it; a malformed event parses to null and is ignored.
@@ -23,8 +24,11 @@ export const MOD_RESTART_TELL_FAILS = 3;
 /** Wakes held for the next turn.start, newest kept: a session that never runs a turn again must not grow it. */
 export const PENDING_MAX = 20;
 /** What the person sees when something the room sent may not have reached the session (one line; $.ui.log puts
- * "sub-human: " before it). */
-export const DELIVERY_ERROR_NOTICE = "a room message didn't arrive here. Run /sub-human doctor.";
+ * "sub-human: " before it). A tail child that exits and restarts loses nothing (it resumes from its cursor): that is
+ * the debug log's (TAIL_RESTART), never this. */
+export const DELIVERY_ERROR_NOTICE = "A room message didn't arrive. Run /sub-human doctor.";
+/** The debug log's line for a tail child that exited and starts again after its backoff. */
+export const TAIL_RESTART = (fails: number): string => `tail: the room tail exited (${fails} in a row); restarting from its cursor`;
 
 export const PULL_DELIVERY = 'at-most-once';
 /** A wake's prompt starts with this "(for Claude)" head, so it never parses as a post (prompt.ts gateVerdict). */
@@ -96,7 +100,8 @@ export function parseEvent(line: string): TailEvent | null {
       const expired = Array.isArray(o.expired) ? o.expired.filter((r: unknown): r is string => typeof r === 'string') : [];
       return { type: 'invites', open: o.open.filter((r: unknown) => typeof r === 'string'), ...(expired.length ? { expired } : {}) };
     }
-    case 'pull': case 'wake': case 'health': return str(text) ? { type, text } : null;
+    case 'pull': case 'wake': return str(text) ? { type, text } : null;
+    case 'health': return str(text) ? { type, text, ...(o.quiet === true ? { quiet: true as const } : {}) } : null;
     case 'take': {
       const { code, name, check } = o;
       if (!isRoomCode(code)) return null;
@@ -134,7 +139,8 @@ export function route(
     case 'chat': return logLines(ev.lines);
     case 'pull': return [{ do: 'hold-pull', text: ev.text }];
     case 'rows': return [{ do: 'hold-rows', text: ev.text }];
-    case 'health': return [...logLines(ev.text), { do: 'append', text: `${FOR_CLAUDE} ${ev.text}` }];
+    // a quiet health line (the link down and back: nothing lost) goes to the debug log; Claude reads it either way
+    case 'health': return [...(ev.quiet ? [{ do: 'debug' as const, text: ev.text }] : logLines(ev.text)), { do: 'append', text: `${FOR_CLAUDE} ${ev.text}` }];
     case 'invites': return [{ do: 'invites', open: ev.open, ...(ev.expired ? { expired: ev.expired } : {}) }];
     case 'take': return [{ do: 'take', code: ev.code, name: ev.name, text: ev.text, ...(ev.check ? { check: ev.check } : {}) }];
     case 'wake': {
@@ -279,9 +285,6 @@ export const spawnWanted = (hello: Hello | null | undefined): boolean => !hello 
 
 /** row-rewake's budget (its asyncRewake command hook had 30 s: it waits for the seat up to REWAKE_WAIT_MS). */
 export const REWAKE_TIMEOUT_MS = 30_000;
-/** What the person sees of a rewake (the rest is for the model). */
-export const REWAKE_SHOWN = "sub-human: restoring this session's rows";
-
-/** row-rewake's stderr as a wake: one line the person sees (mod/render.ts draws a sub-human prompt without its "(for
- * Claude)" lines), the row calls for the model. */
-export const rewakePrompt = (stderr: unknown): string => [REWAKE_SHOWN, ...String(stderr ?? '').trim().split('\n').map(l => `${FOR_CLAUDE} ${l}`)].join('\n');
+/** row-rewake's stderr as the room session's wake (framed: nobody reads its rows; a member's rows come with the next
+ * prompt instead, no wake and no line: mod/deliver.ts rewake), every line for the model. */
+export const rewakePrompt = (stderr: unknown): string => String(stderr ?? '').trim().split('\n').map(l => `${FOR_CLAUDE} ${l}`).join('\n');

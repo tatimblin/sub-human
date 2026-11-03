@@ -188,7 +188,7 @@ test('shim: a real hook\'s output translates (at-room posting through prompt.ts)
   assert.equal(r.code, 0, r.stderr);
   const { result } = toClassic('UserPromptSubmit', { exitCode: r.code, stdout: r.stdout, stderr: r.stderr });
   assert.equal(result.preventContinuation, true);
-  assert.match(must(result.stopReason), /^✓ sent/);
+  assert.match(must(result.stopReason), /^Sent\b/);
 });
 
 test('shim: subHuman (a hook run with SUB_HUMAN_SHIM=1) comes out beside the result', async () => {
@@ -677,5 +677,5 @@ test('prompt: an @room in a session surely without a seat is refused in at-room\
   assert.equal(p.unseatedRefusal({ session_id: 's2', prompt: '@room hi' }, unseated), null, 'not this session\'s hello: node decides');
   assert.equal(p.unseatedRefusal({ session_id: 's1', prompt: '@room hi' }, mkHello({ seat: seatOf('a') })), null);
   const d = await load('mod/core/deliver.ts');
-  assert.equal(d.rewakePrompt('one\ntwo\n'), `${d.REWAKE_SHOWN}\n(for Claude) one\n(for Claude) two`);
+  assert.equal(d.rewakePrompt('one\ntwo\n'), '(for Claude) one\n(for Claude) two', 'every line for the model: no line for a person');
 });

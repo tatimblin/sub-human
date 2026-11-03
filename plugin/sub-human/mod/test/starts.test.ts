@@ -137,7 +137,7 @@ test('node starts per event: a seated member (before its tail child reports the 
     'Notification idle_prompt': 1, StopFailure: 1, // presence, not awaited
     '/compact': 2, // session-restore, mod-hello
     '/clear': 3, // session-restore, mod-hello, the tail child for the new session id
-    '--resume': 3, // session-restore, mod-hello, row-rewake (in the background)
+    '--resume': 2, // session-restore, mod-hello (a member's rows come with the next prompt: no row-rewake)
     '/sub-human': 2, // the join, mod-hello (the lease was written at session start)
     'session end': 0,
   })

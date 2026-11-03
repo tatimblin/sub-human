@@ -11,7 +11,7 @@
 // The test's $ has no state noun, so deliveryErrors shows here only through its notice.
 import type { Chunk, ClassicResultOf, EventOf, On } from 'claude-code'
 import { test, expect, mock, type Engine } from 'claude-code/testing'
-import { SEAT, OUT, must, ran, scriptOf, session, start, stdinOf, helloOf } from './support.ts'
+import { debugLines, SEAT, OUT, must, ran, scriptOf, session, start, stdinOf, helloOf } from './support.ts'
 
 const SID = 'sid-d'
 const line = (x: object) => JSON.stringify(x) + '\n'
@@ -25,7 +25,7 @@ async function until(cond: () => boolean, ms = 3000) {
   }
 }
 
-const NOTICE = "a room message didn't arrive here. Run /sub-human doctor."
+const NOTICE = "A room message didn't arrive. Run /sub-human doctor."
 type Opts = {
   hello?: ReturnType<typeof helloOf>, pieces?: string[], gate?: Promise<void>,
   /** How the session takes a prompt the module submits (n counts from 0): entered, dropped by a hook, or failed. */
@@ -88,7 +88,7 @@ function world(engine: Engine, on: On, { hello = OUT, pieces = [], gate = Promis
       return { value: { code: 0, signal: null } }
     } finally { seen.ended.push(n) }
   })
-  on('ui.log', (_$, e) => { seen.logs.push(e.text); return { value: undefined } })
+  on('ui.log', (_$, e) => { if (e.to === 'debug') debugLines.push(e.text); else seen.logs.push(e.text); return { value: undefined } })
   on('session.append', async (_$, e, next) => {
     if (e.message.type === 'system') return next(e) // the hidden home notice (stage 8f item 1), no delivery
     const text = e.message.content.map(b => b.text).join('')
@@ -382,7 +382,7 @@ test('delivery errors are told once per window, however many there are', async (
   seen.release()
 })
 
-test('a child that exits is started again after 1 s, doubling; one that ran over a minute starts the backoff over', async ($, on) => {
+test('a child that exits is started again after 1 s, doubling; one that ran over a minute starts the backoff over; the debug log says so, never the person', async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
   const seen = world($, on, {
     spawn: async function* (n) {
@@ -400,10 +400,11 @@ test('a child that exits is started again after 1 s, doubling; one that ran over
   await clock.advance(61_000); await spawned(3) // it exited after 61 s: the backoff starts over at 1 s
   await clock.advance(999); await spawned(3)
   await clock.advance(1); await spawned(4)
-  expect(seen.logs).toEqual([]) // a restart resumes from the child's cursor: nothing lost yet
+  expect(seen.logs).toEqual([]) // a restart resumes from the child's cursor: nothing lost
   await clock.advance(1000); await spawned(5)
   await clock.advance(2000); await spawned(6)
-  expect(seen.logs).toEqual([NOTICE]) // the third failure in a row: the room is going unheard
+  expect(seen.logs).toEqual([]) // 0.6.0: three in a row still lose nothing: the debug log's (claude --debug)
+  expect(debugLines).toContain('tail: the room tail exited (3 in a row); restarting from its cursor')
   for (const e of seen.spawns) expect(e.env?.CLAUDE_CODE_SESSION_ID).toBe(SID)
 })
 

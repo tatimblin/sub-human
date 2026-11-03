@@ -9,6 +9,7 @@
  * module and node read a prompt the same way.
  */
 import type { Hello, OriginLike, RunOutput, ShimResult } from './types.ts';
+import { QUIET_ROW } from './constants.ts';
 
 /** A prompt.submit event as the gate reads it. */
 type SubmitLike = { text?: unknown; origin?: OriginLike } | null | undefined;
@@ -168,17 +169,18 @@ export function mergeClassic(ours: ShimResult | null = {}, theirs: ShimResult | 
 }
 
 /** How Claude Code draws a UserPromptSubmit stop: a warning row "Operation stopped by hook: <stopReason>" (cc
- * CONTRACT ups-stop-frame). An @room's receipt ("✓ sent", "⧗ queued: …") is such a stop. */
+ * CONTRACT ups-stop-frame). An @room's receipt ("Sent", "⧗ queued: …") is such a stop. */
 export const STOP_FRAME = 'Operation stopped by hook: ';
 
 /** What the model reads in place of a receipt's stop row: the person's @room line was the room's, not a request. */
 export const RECEIPT_FOR_MODEL = (receipt: string): string => (receipt.startsWith('✗')
   // a refusal ("✗ …": the room session's, a not-posted @room): the prompt went nowhere, the room included
   ? `sub-human: the prompt above was refused and went nowhere (${receipt}); nothing is asked of you.`
-  : 'sub-human: that @room line went to the room; nothing is asked of you.');
+  : 'sub-human: @room message sent. No reply.');
 
-/** A "✓ sent to room CODE (Claude wasn't asked)" receipt after the session's first: "✓ sent" (its other notes kept). */
-export const SENT_AGAIN = (receipt: string): string => receipt.replace(/^✓ sent to room \S+ \(Claude wasn't asked\)/, '✓ sent');
+/** An @room that went through ("Sent", with its notes): the person's own row is its receipt, so its stop row says
+ * nothing (QUIET_ROW) and its words go to the debug log. */
+export const isSent = (receipt: string): boolean => /^Sent\b/.test(receipt);
 
 /** A row as session.append hands it, as far as receiptBook reads it. */
 type RowLike = { type?: unknown; content?: unknown };
@@ -186,15 +188,14 @@ type RowLike = { type?: unknown; content?: unknown };
 /**
  * The receipts this module's prompt hook stopped a prompt with, waiting for their warning row (session.append, door
  * notice). expect(reason) as the stop leaves the hook; rewrite(row) answers that row with the frame cut off, the
- * receipt alone (cc CONTRACT session-append-notice-rewrite; after the session's first "✓ sent to room …", "✓ sent"),
- * or null for any other row. Only a system row that is
+ * receipt alone (cc CONTRACT session-append-notice-rewrite), or, for an @room that went through (isSent), QUIET_ROW:
+ * the person's row is the receipt; or null for any other row. Only a system row that is
  * exactly the frame around a waiting receipt is ours: another plugin's stop, a second copy, or a row after a reload
  * keeps the engine's words. modelRow(row) answers the stop's isMeta user row (the model's copy) in RECEIPT_FOR_MODEL's
  * words, leaving the receipt waiting. A receipt whose row never came (a block beneath won) is forgotten after `max` more.
  */
 export function receiptBook(max = 8) {
   const waiting: { reason: string }[] = [];
-  let sent = false; // a "✓ sent to room …" receipt was drawn whole once in this session: the next ones are "✓ sent"
   const find = (reason: string) => waiting.findIndex(w => w.reason === reason);
   return {
     expect(reason: unknown): void {
@@ -210,10 +211,7 @@ export function receiptBook(max = 8) {
       const w = waiting[i]; // none at -1: no receipt waits for it
       if (!w) return null;
       waiting.splice(i, 1);
-      const whole = w.reason.startsWith('✓ sent to room ');
-      const text = whole && sent ? SENT_AGAIN(w.reason) : w.reason;
-      if (whole) sent = true;
-      return { ...row, content: [{ type: 'text', text }] };
+      return { ...row, content: [{ type: 'text', text: isSent(w.reason) ? QUIET_ROW : w.reason }] };
     },
     /** The stop's model row (an isMeta user row, the frame around a waiting receipt) in RECEIPT_FOR_MODEL's words; the
      * receipt stays waiting for its warning row. null: any other row. */

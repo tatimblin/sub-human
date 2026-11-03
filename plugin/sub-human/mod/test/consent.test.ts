@@ -4,7 +4,7 @@
 // beneath sees each call; the PreToolUse payload carries what the module last saw of the session (mod/core/facts.ts).
 import type { On } from 'claude-code'
 import { test, expect, type Engine } from 'claude-code/testing'
-import { seatOf, helloOf, must, ran, scriptOf, session, start, stdinOf } from './support.ts'
+import { debugLines, seatOf, helloOf, must, ran, scriptOf, session, start, stdinOf } from './support.ts'
 
 const OUT = helloOf(seatOf('bob'))
 const SID = 'sid-c'
@@ -18,7 +18,7 @@ function world(on: On, { hello = OUT, answers = [{ subHuman: { reviewOpen: false
   const seen: Seen = { consent: [], beneathStop: 0, beneathPre: [], tools: [], logs: [] }
   session(on, SID)
   on('session.cwd', () => ({ value: '/w' }))
-  on('ui.log', (_$, e) => { seen.logs.push(e.text); return { value: undefined } })
+  on('ui.log', (_$, e) => { if (e.to === 'debug') debugLines.push(e.text); else seen.logs.push(e.text); return { value: undefined } })
   on('process.run', (_$, e) => {
     const script = scriptOf(e)
     if (script === 'mod-hello.ts') return ran(JSON.stringify(hello))

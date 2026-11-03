@@ -6,7 +6,7 @@
 // line (--no-card) or no person at the prompt there is no card at all.
 import type { EventOf, On } from 'claude-code'
 import { test, expect, mock, type Engine } from 'claude-code/testing'
-import { OUT, ran, scriptOf, session, start, stdinOf } from './support.ts'
+import { debugLines, OUT, ran, scriptOf, session, start, stdinOf } from './support.ts'
 
 const SID = 'sid-copy'
 const SECRET = 'K'.repeat(38)
@@ -39,7 +39,7 @@ function world(engine: Engine, on: On, { ref, noCard = false, clip = [0] }: { re
   session(on, SID)
   on('session.cwd', () => ({ value: '/w' }))
   on('env.get', () => ({ value: undefined })) // no SUB_HUMAN_ROOM, no display: pbcopy is the only clipboard tool tried
-  on('ui.log', (_$, e) => { seen.logs.push(e.text); return { value: undefined } })
+  on('ui.log', (_$, e) => { if (e.to === 'debug') debugLines.push(e.text); else seen.logs.push(e.text); return { value: undefined } })
   on('ui.status', () => ({ value: undefined }))
   on('process.run', (_$, e) => {
     if (e.argv[0] === 'sh' && String(e.argv[1]).endsWith('/scripts/clip.sh')) {

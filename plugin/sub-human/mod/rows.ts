@@ -15,8 +15,8 @@
  *     are spawned (classic.PostToolUse); a hand-back whose report is a row's last word (`left`, `error`) is a row's
  *     too, also one this process never saw spawned (the agent view's fork: its "type /sub-human again" contradicted
  *     the fork's refusal, stage 8f item 1). A local agent's hand-back and notification come as prompts, so the drop
- *     is what takes them; its warning row reads "sub-human: row closed" (session.append) in place of Claude Code's
- *     "Prompt dropped by a hook: …" frame. No hook ends them without a row.
+ *     is what takes them; its warning row says nothing (session.append: QUIET_ROW, "row closed" to the debug log) in
+ *     place of Claude Code's "Prompt dropped by a hook: …" frame. No hook ends them without a row.
  * Failure: each .catch passes the event on as it is: the rows never disturb the session.
  */
 import { shimArgv, shimEnv, toClassic, toPre, SHIM_TIMEOUT_MS } from './core/shim.ts';
@@ -96,11 +96,12 @@ export function registerRows(on: On): void {
     rowAgents.delete(done);
     return { drop: ROW_ENDED };
   }).catch((_$, e, next) => next(e));
-  // that drop's warning row, "Prompt dropped by a hook: sub-human: row ended, nothing to do", reads "sub-human: row
-  // closed" (cc CONTRACT session-append-notice-rewrite): no hook takes a local agent's hand-back or notification
-  // without a row, and a rewrite keeps the row (a warning, at least one character)
-  on('session.append', { door: 'notice' }, (_$, e, next) => {
+  // that drop's warning row, "Prompt dropped by a hook: sub-human: row ended, nothing to do", says nothing (ROW_CLOSED,
+  // cc CONTRACT session-append-notice-rewrite): no hook takes a local agent's hand-back or notification without a row,
+  // and a rewrite keeps the row (a warning, at least one character); "row closed" goes to the debug log
+  on('session.append', { door: 'notice' }, ($, e, next) => {
     const row = rowEndedRow(e.message);
+    if (row) $.ui.log('rows: row closed', { to: 'debug' });
     return next(row ? { ...e, message: row } : e);
   }).catch((_$, e, next) => next(e)); // a failure keeps the engine's words
 

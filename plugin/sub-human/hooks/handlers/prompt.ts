@@ -1,6 +1,6 @@
 // plugin/sub-human/hooks/handlers/prompt.ts: UserPromptSubmit: one process for both prompt handlers (one node start
 // per prompt instead of two):
-//   1. hooks/handlers/at-room.ts handle(): an @room post (continue:false + "✓ sent"), a refusal (decision:block), and
+//   1. hooks/handlers/at-room.ts handle(): an @room post (continue:false + "Sent"), a refusal (decision:block), and
 //      "working" presence;
 //   2. hooks/consent.ts onPrompt(): a plan-view review left open by Esc is resolved (the person's note recorded)
 //      and, still in plan mode, the model is told to exit it first (additionalContext).

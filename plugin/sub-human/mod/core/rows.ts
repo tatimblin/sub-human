@@ -18,6 +18,8 @@
  *                                    the server held back, every participant spawn was refused for zero tools and the
  *                                    calls came back with each prompt); mod/prompt.ts says each text once
  */
+import { QUIET_ROW } from './constants.ts';
+
 export const PARTICIPANT = 'sub-human:participant';
 export const ROOM_AGENT = 'sub-human:room';
 
@@ -56,8 +58,9 @@ export const ROW_ENDED = 'sub-human: row ended, nothing to do';
  * How Claude Code draws a prompt.submit drop between turns: a warning row "Prompt dropped by a hook: <reason>"
  * (CONTRACT ups-stop-frame; mid-turn it is a toast and no row). @stability incidental */
 export const DROP_FRAME = 'Prompt dropped by a hook: ';
-/** What that row says instead: its level stays (a warning) and a rewrite needs a character, so the row itself stays. */
-export const ROW_CLOSED = 'sub-human: row closed';
+/** What that row says instead: nothing (QUIET_ROW; its level stays, and a rewrite needs a character, so the row itself
+ * stays); "row closed" goes to the debug log (mod/rows.ts). */
+export const ROW_CLOSED: string = QUIET_ROW;
 
 /** A row as session.append hands it, as far as rowEndedRow reads it. */
 type RowLike = { type?: unknown; content?: unknown };

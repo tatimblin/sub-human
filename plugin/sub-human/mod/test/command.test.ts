@@ -6,25 +6,26 @@
 // failed take the paths they should.
 import type { CommandRunInput, EventOf, On } from 'claude-code'
 import { test, expect, mock, type Engine } from 'claude-code/testing'
-import { BYPASS_NOTE } from '../core/constants.ts'
+import { BYPASS_DEBUG } from '../core/constants.ts'
 import { OUT, SEAT, helloOf, must, ran, scriptOf, session, start, stdinOf } from './support.ts'
 
 const SID = 'sid-c'
 
 /** The engine beneath: a session (its cwd), mod-hello, hooks/handlers/join.ts answering `join`, and the command itself (when the
  * hook passes it on: `ran` counts it, and a join's expansion raises classic.UserPromptExpansion as the engine does). */
-type Seen = { joins: { stdin: Record<string, unknown>; env: Record<string, string> | undefined }[]; logs: string[]; ran: number; expansions: EventOf['classic.UserPromptExpansion'][]; hellos: number; commands: string[]; files: Record<string, string> }
+type Seen = { joins: { stdin: Record<string, unknown>; env: Record<string, string> | undefined }[]; logs: string[]; debug: string[]; ran: number; expansions: EventOf['classic.UserPromptExpansion'][]; hellos: number; commands: string[]; files: Record<string, string> }
 /** What join.ts answers: its JSON (a string as is), a process.run result, or a rejection. */
 type Reply = string | { reject?: string; run?: ReturnType<typeof ran>; subHuman?: object; hookSpecificOutput?: object }
 type Options = { join?: Reply | ((stdin: Record<string, unknown>, seen: Seen) => Reply); room?: string; hello?: (seen: Seen) => ReturnType<typeof helloOf>; mode?: string }
 function world(engine: Engine, on: On, { join = {}, room, hello, mode }: Options = {}) {
-  const seen: Seen = { joins: [], logs: [], ran: 0, expansions: [], hellos: 0, commands: [], files: {} }
+  const seen: Seen = { joins: [], logs: [], debug: [], ran: 0, expansions: [], hellos: 0, commands: [], files: {} }
   on('fs.read', (_$, e) => { const text = seen.files[e.path]; if (text !== undefined) return { value: text }; throw new Error('ENOENT') })
   on('fs.write', (_$, e) => { seen.files[e.path] = e.text; return { value: undefined } })
   session(on, SID)
   on('session.cwd', () => ({ value: '/w' }))
   on('env.get', (_$, e) => ({ value: e.name === 'SUB_HUMAN_ROOM' ? room : undefined }))
-  on('ui.log', (_$, e) => { seen.logs.push(e.text); return { value: undefined } })
+  // the debug log (claude --debug) is not the transcript: kept apart
+  on('ui.log', (_$, e) => { (e.to === 'debug' ? seen.debug : seen.logs).push(e.text); return { value: undefined } })
   on('process.run', (_$, e) => {
     const script = scriptOf(e)
     if (script === 'mod-hello.ts') { seen.hellos++; return ran(JSON.stringify(hello ? hello(seen) : OUT)) }
@@ -139,11 +140,10 @@ test('a join that worked expands as before: the mechanics block reaches the expa
   expect(seen.logs).toEqual(['joined otter-4821 as alice, with bob · @room to talk'])
 })
 
-test('#14: the join\'s bypass-permissions note follows the mode its expansion ran in: bypass seen last, default when typed, no note',async ($, on) => {
+test('#14: the bypass-permissions mode follows the mode the join\'s expansion ran in: bypass seen last, default when typed, no debug line',async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
-  const say = 'joined otter-4821 as alice, with bob · @room to talk'
-  // join.ts adds the note from the mode in its stdin, as it does
-  const join = (stdin: Record<string, unknown>) => ({ hookSpecificOutput: { hookEventName: 'UserPromptExpansion', additionalContext: 'SUB-HUMAN: …' }, subHuman: { say: stdin.permission_mode === 'bypassPermissions' ? `${say}${BYPASS_NOTE}` : say, joined: true, shareable: true } })
+  const say = 'Joined otter-4821 as alice with bob'
+  const join = { hookSpecificOutput: { hookEventName: 'UserPromptExpansion', additionalContext: 'SUB-HUMAN: …' }, subHuman: { say, joined: true, shareable: true } }
   // bypass seen last, then shift+tab to default before /sub-human: no note
   const off = world($, on, { join, mode: 'default' })
   on('classic.SessionStart', () => ({}))
@@ -153,11 +153,12 @@ test('#14: the join\'s bypass-permissions note follows the mode its expansion ra
   expect(must(off.joins[0], 'the join').stdin.permission_mode).toBe('bypassPermissions')
   await clock.advance(200)
   expect(off.logs).toEqual([say])
+  expect(off.debug).not.toContain(BYPASS_DEBUG)
 })
 
-test('#14: default seen last, then shift+tab into bypass-permissions before /sub-human: the note is shown', async ($, on) => {
+test('#14: default seen last, then shift+tab into bypass-permissions before /sub-human: the debug log says so, never the join\'s line', async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
-  const say = 'joined otter-4821 as alice, with bob · @room to talk'
+  const say = 'Joined otter-4821 as alice with bob'
   const seen = world($, on, { join: { hookSpecificOutput: { hookEventName: 'UserPromptExpansion', additionalContext: 'SUB-HUMAN: …' }, subHuman: { say, joined: true, shareable: true } }, mode: 'bypassPermissions' })
   on('classic.SessionStart', () => ({}))
   await start($)
@@ -165,7 +166,8 @@ test('#14: default seen last, then shift+tab into bypass-permissions before /sub
   await typed($, 'alice')
   expect(must(seen.joins[0], 'the join').stdin.permission_mode).toBe('default')
   await clock.advance(200)
-  expect(seen.logs).toEqual([`${say}${BYPASS_NOTE}`])
+  expect(seen.logs).toEqual([say])
+  expect(seen.debug).toContain(BYPASS_DEBUG)
 })
 
 test('the room\'s Claude, the SDK and anything typed through Remote Control go to the classic hook; a shim that failed is one notice, and the command does not run', async ($, on) => {

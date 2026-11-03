@@ -5,6 +5,7 @@
 import type { On } from 'claude-code'
 import { test, expect, type ClassicFields, type Engine } from 'claude-code/testing'
 import { SEAT, helloOf, must, ran, scriptOf, session, start, stdinOf, type Seat } from './support.ts'
+import { QUIET_ROW } from '../core/constants.ts'
 
 const SID = 'sid-r'
 const ROW = { subagent_type: 'sub-human:room', prompt: 'room: otter-4821', description: 'otter-4821' }
@@ -127,7 +128,7 @@ test('stage 8e I.2 (live verify, remote/16b; shv9 carol): a row\'s hand-back ("l
   expect(entered.length).toBe(2)
 })
 
-test('live 2.1.296: a row-ended drop\'s warning row reads "sub-human: row closed", without Claude Code\'s frame; no other row changes', async ($, on) => {
+test('live 2.1.296: a row-ended drop\'s warning row says nothing (QUIET_ROW, a rewrite the engine keeps), without Claude Code\'s frame; no other row changes', async ($, on) => {
   world(on, { seat: null })
   const kept: string[] = []
   on('session.append', (_$, e, next) => {
@@ -146,8 +147,8 @@ test('live 2.1.296: a row-ended drop\'s warning row reads "sub-human: row closed
     return kept.at(-1)
   }
   const DROPPED = 'Prompt dropped by a hook: sub-human: row ended, nothing to do'
-  expect(await append(DROPPED)).toBe('sub-human: row closed')
-  expect(await append(DROPPED)).toBe('sub-human: row closed') // the hand-back's and the notification's: each its own row
+  expect(await append(DROPPED)).toBe(QUIET_ROW)
+  expect(await append(DROPPED)).toBe(QUIET_ROW) // the hand-back's and the notification's: each its own row
   expect(await append('Prompt dropped by a hook: another plugin')).toBe('Prompt dropped by a hook: another plugin')
   expect(await append(DROPPED, 'user')).toBe(DROPPED) // only the warning row
 })

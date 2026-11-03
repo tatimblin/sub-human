@@ -4,7 +4,7 @@
 // handle(input) under mod/prompt.ts's shim. In: the payload plus `sub_human_origin` and `sub_human_nonce`. An origin
 // counts only with this session's lease nonce, and only a typed one (composer, sdk, bridge; cc CONTRACT
 // prompt-origin-composer) may post: anything that can run node can claim an origin, only a lease reader the nonce.
-// Out: continue:false + "✓ sent" (the person's row stays, the model sees it next turn); a refusal of the person's own
+// Out: continue:false + "Sent" (drawn as nothing by the module; the person's row stays, the model sees it next turn); a refusal of the person's own
 // typed words (no seat, nothing after the tag, the room refused it) is a stop too, with the reason (refuse); decision:
 // block + suppressOriginalPrompt only where the text must never reach the model as the person's (no or another origin;
 // in the room's Claude a typed prompt is a stop with its hint, which the model reads as a refusal). Failure: no origin, a bad nonce or no seat
@@ -41,7 +41,7 @@ const block = (reason: string, extra: Partial<HookSpecificOutput> = {}) => out({
 });
 
 /** A refusal of the person's own typed words, to type again (no seat, nothing after the tag, the room refused or the
- * outcome is unknown): a stop with the reason, as "✓ sent" is (cc CONTRACT ups-stop-frame; mod/prompt.ts draws its
+ * outcome is unknown): a stop with the reason, as "Sent" is (cc CONTRACT ups-stop-frame; mod/prompt.ts draws its
  * warning row as the reason alone). A block would draw "UserPromptSubmit operation blocked by hook:" and put the
  * prompt back in the input, where refusals piled up and a later Enter sent them all. block stays for a prompt whose
  * words must not reach the model as the person's (no or another origin). */
@@ -152,8 +152,9 @@ function handle(input: PromptIn): void {
       : `⧗ queued: room ${me.code} is offline; this post goes out when the connection is back (${placed.queued} waiting)`;
     return out({ continue: false, stopReason: q, hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
   }
-  // it names who reads it, so under the stop's frame (cc CONTRACT ups-stop-frame) it reads as done, not as an error
-  const sent = `✓ sent to room ${me.code} (Claude wasn't asked)${normalized ? ' (pasted text unwrapped)' : ''}${entry.drafted ? " (Claude's wording)" : ''}`;
+  // the person's own row is the receipt: the module draws this stop's row as nothing (mod/prompt.ts), and without the
+  // module it reads "Operation stopped by hook: Sent" (cc CONTRACT ups-stop-frame), done, not an error
+  const sent = `Sent${normalized ? ' (pasted text unwrapped)' : ''}${entry.drafted ? " (Claude's wording)" : ''}`;
   out({ continue: false, stopReason: sent, hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
 }
 

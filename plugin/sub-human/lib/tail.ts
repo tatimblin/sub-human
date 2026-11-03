@@ -24,9 +24,10 @@
  *                             the batch moved a proposal); the room Claude's whole push block
  *   {type:'rows', text|null}  what the person's next prompt carries for Claude: pending-proposal reminders
  *                             (members) and the missing rows' Agent calls; sent at start and when it changes
- *   {type:'health', text}     a hash-chain break (one line per break); in a room hosted elsewhere linkLine each time
- *                             the link goes off and LINK_BACK once it is online again (one quiet line, no
- *                             "left"/"joined": the daemon renews the seat's lapsed lease)
+ *   {type:'health', text, quiet?}   a hash-chain break (one line per break); in a room hosted elsewhere linkLine each
+ *                             time the link goes off and LINK_BACK once it is online again (quiet: the debug log and
+ *                             Claude's context, no notice, unless posts were not sent; no "left"/"joined": the daemon
+ *                             renews the seat's lapsed lease)
  *   {type:'invites', open, expired?}   on the host, the refs of the open invite lines when the set changes (the module
  *                             takes an invite off its status line once it is used, burnt, cancelled or expired), and
  *                             the ones that just lapsed unused (the module tells the person who made it)
@@ -611,8 +612,11 @@ function startSession(me: Identity, ctx: TailCtx): Session {
     }
     const was = linkKey;
     linkKey = l && l.key;
-    if (l) emit([{ type: 'health', text: l.text }]);
-    else if (was) emit([{ type: 'health', text: flushed ? `${LINK_BACK}; ${flushed}` : LINK_BACK }]);
+    // offline and back again are quiet (the debug log; Claude still reads them): nothing was lost, and @room posts wait
+    // for the link; a line that says posts were not sent, or a link that stopped for good, is the person's
+    const lost = !!(fresh && f && f.unsent && f.unsent.length);
+    if (l) emit([{ type: 'health', text: l.text, ...(l.key === 'offline' ? { quiet: true as const } : {}) }]);
+    else if (was) emit([{ type: 'health', text: flushed ? `${LINK_BACK}; ${flushed}` : LINK_BACK, ...(lost ? {} : { quiet: true as const }) }]);
   }
   let invitesKey: string | null = null;
   // An invite's join request (lib/remote/admission.ts), on the host: this seat's card, opened by its Claude once; a

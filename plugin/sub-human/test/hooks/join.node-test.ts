@@ -374,11 +374,12 @@ test('NAME without CODE ignores a room where only the room\'s Claude is left, op
   assert.ok(seat(w, 'claude').closing, 'the orphan room was marked closing by the sweep');
 });
 
-test('bypass-permissions mode: the join systemMessage warns', () => {
+test('bypass-permissions mode: the join says nothing of it (0.6.0: the module\'s debug log), no warning systemMessage', () => {
   const w = new World({ claude: 'sleep' });
   w.pid.alice = process.pid; w.sid.alice = 'aaaaaaaa-0000-4000-8000-000000000008';
   const r = w.hook('join', { ...expand(`alice ${w.code}`), permission_mode: 'bypassPermissions' }, { as: 'alice' });
-  assert.match(must(must(r.json).systemMessage), /⚠ bypass-permissions mode: messages from other sessions can wait behind a dialog/);
+  assert.equal(must(r.json).systemMessage, undefined);
+  assert.doesNotMatch(r.stdout, /bypass/);
 });
 
 test('the bare command name "sub-human" is accepted too; other commands are ignored', () => {
@@ -781,10 +782,10 @@ test('through the module (PLAN-JOIN step 3): a take (no args, the room) with no 
   assert.match(must(typed.say), /^commands:/);
 });
 
-test('through the module (room-plan live): a join in bypass-permissions mode says so in its line', () => {
+test('through the module: a join in bypass-permissions mode is the same one line (the module\'s debug log says the mode)', () => {
   const w = new World({ claude: 'sleep', alice: 'sleep' });
   const bypass = must(must(viaModule(w, 'bob', `bob ${w.code}`, { mode: 'bypassPermissions' }).json).subHuman);
-  assert.match(must(bypass.say), /⚠ bypass-permissions mode: messages from other sessions can wait behind a dialog/);
+  assert.equal(must(bypass.say), `Joined ${w.code} as bob with alice`);
   const plain = must(must(viaModule(w, 'carol', `carol ${w.code}`, { mode: 'default' }).json).subHuman);
   assert.doesNotMatch(must(plain.say), /bypass/);
 });

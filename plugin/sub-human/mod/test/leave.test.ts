@@ -7,7 +7,7 @@
 // nobody types in, a second leave, a session seated again before it fires, or SUB_HUMAN_LEAVE_CARD=0.
 import type { EventOf, On } from 'claude-code'
 import { test, expect, mock, type Engine } from 'claude-code/testing'
-import { CODE, OUT, helloOf, ran, scriptOf, session, start, stdinOf } from './support.ts'
+import { debugLines, CODE, OUT, helloOf, ran, scriptOf, session, start, stdinOf } from './support.ts'
 
 const SID = 'sid-leave'
 const QUESTION = `You left room ${CODE}. Thanks for trying sub-human! Type below to send feedback.`
@@ -38,7 +38,7 @@ function world(on: On,{ refused = false, stillSeated = false, star = 0, opens = 
   on('session.version', () => ({ value: { version: '2.1.296' } }))
   on('fs.read', (_$, e) => { if (e.path.endsWith('/.claude-plugin/plugin.json')) return { value: '{"version":"9.9.9"}' }; throw new Error('ENOENT') })
   on('env.get', (_$, e) => ({ value: e.name === 'SUB_HUMAN_LEAVE_CARD' ? leaveCard : undefined }))
-  on('ui.log', (_$, e) => { seen.logs.push(e.text); return { value: undefined } })
+  on('ui.log', (_$, e) => { if (e.to === 'debug') debugLines.push(e.text); else seen.logs.push(e.text); return { value: undefined } })
   on('ui.status', () => ({ value: undefined }))
   on('command.run', (_$, e) => ({ text: `Session renamed to: ${e.args}` }))
   on('process.run', (_$, e) => {
