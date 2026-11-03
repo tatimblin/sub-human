@@ -182,16 +182,43 @@ panda-0976
 - **A DM:** "tell maya …" sends maya a direct message. She sees one line, `dev → you: …`. Her reply comes back into the room row. This is a new lane between two people: it isn't posted to the room's chat, but it's signed and stored like any entry.
 - **"How's it going?"** is answered from what the room knows (the person's task, recent activity, whether they're in a turn), without interrupting them. If the question needs their Claude, the row passes it on Claude to Claude (`SendMessage` to `maya.CODE`), and the answer comes back into the row.
 
+**The room row is the chat** (spike: `quiet/ROOM-ROW-SPIKE.md`, which works in the terminal on 2.1.296):
+
+```
+⏺ panda-0976
+    maya   ✓ store: listTasks          idle
+    dev    ◼ http: GET /tasks paging   building
+❯ the deploy is green, merging paging v2              ← your exact words, to the room (no receipt: the ❯ row is it)
+⏺ maya: pushed the cursor change                      ← arrives while you're in main too
+❯ tell maya the cursor is base64url                   ← a DM
+⏺ maya (DM): ok, switching the encoder now
+❯ how's dev doing?
+⏺ dev · ◼ http: GET /tasks paging · building · last edit 2m ago
+```
+
+- **Mechanism:**
+  - `$.agent.spawn` the room agent, which starts a keeper child that blocks in `hold`. The plugin answers every step of both through `turn.step`, so no model is ever asked.
+  - The person's typed text arrives in `session.append` (`agentId`, `origin: composer`), verbatim. It's posted as is, sent as a DM for "tell NAME …", or answered from room state for "how's NAME".
+  - Incoming lines and roster refreshes go through `$.session.send`, which the plugin answers itself.
+  - `ui.render`, scoped per message, hides the spawn prompt and the keeper block. It also replaces "Waiting for N background agents".
+  - The label comes from the plugin's own `subagentStatusLine`.
+- **Costs:** Claude Code's agent summarizer makes about one call per spawn. Never let `hold` tick, or it becomes one call every 30 s.
+- **`@room` stays** as the quick way to post from the main prompt, and on surfaces with no row (the desktop app and VS Code can't type into a background agent). People's lines still show once in main, and reach Claude as context, wherever they were typed.
+- **What has to pass before `@room` could be retired:**
+  - a row on every surface people use;
+  - contract entries and canary checks for `session.append` composer, `turn.step` answers and `$.session.send`;
+  - a ruling on provenance (answered steps are recorded as model-written);
+  - lifecycle tested: Esc/`x`, the keeper dying, `--resume`, `/clear`, compaction.
+
 **What changes:**
 - **Delete** `agents/participant.md`, the participant spawns in `agents/room.md`, and the nested-row bookkeeping in `mod/rows.ts` and `mod/core/rows.ts`. That leaves one row per member session instead of 1 + N, so about 7k tokens per spawn instead of 7k × (N+1).
 - **The room agent** goes from `Agent(sub-human:participant)` + `hold` to `hold` + `dm` + `status`. Its brief: "this is room panda-0976; what you type here goes to the people in it". Spawn it from the module (`$.agent.spawn`): no `⏺ Agent(…) Backgrounded agent` block, no hand-back turns, no `row closed`.
 - **The room session's panel** (`claude --bg`, which the person never sees) holds no participant rows either. It keeps only the task list.
 - **`Waiting for N background agents`** is redrawn as the normal `✻ Done in 3s` with `ui.render` while the room row is the only pending work.
 
-**Spike first:**
-- What a person sees on entering a background agent: its transcript. Can the roster be the agent's own first message, refreshed on joins and task changes without a model turn each time (`$.session.append` into the agent, or `ui.render` on its rows)?
-- Does typed input to a `$.agent.spawn` agent reach it, and does its reply draw?
-- Should a DM show your exact words first, the way `@room` does? Suggestion: no, since you typed it in the room yourself.
+**Spiked (2026-11-02):** typed input, drawing without a model turn, and spawn/label all work in the terminal. A DM shows your words once, as typed, with no consent card.
+
+**Still open:** the lifecycle cases above, and the provenance ruling.
 
 **Also:**
 - Reap the room's `claude --bg` session when the room closes.
@@ -237,7 +264,7 @@ This research hit the false positives repeatedly: shell reads of plugin source, 
 
 1. **#34:** does closing the plan view with a non-empty plan, after the Send/Discard choice, keep auto mode on 2.1.296?
 2. **"Ready to code?" title:** can `ui.render` redraw the ExitPlanMode dialog's title?
-3. **The room row:** does typed input reach a `$.agent.spawn` background agent, and does its reply draw? Can its roster refresh without a model turn?
+3. ~~The room row~~ **done:** yes in the terminal, no in the desktop app or VS Code (quiet/ROOM-ROW-SPIKE.md).
 4. **Task #1:** does `metadata._internal` on task #1 interfere with the 5-second auto-reset?
 
 ## Requests for Claude Code (not blocking)
