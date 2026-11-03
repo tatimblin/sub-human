@@ -150,7 +150,7 @@ In practice, the loose end already works through Claude-to-Claude coordination. 
 - each person's Claude owns one layer;
 - when the owner pivoted one layer, the other Claude updated its side on its own.
 
-Sync happens at the level of intent and contract, not by tracking files. So gap 2 shrinks from "build sync awareness" to making that propagation reliable. It must always arrive, even when the other person is idle or mid-turn.
+Sync happens at the level of intent and contract, not by tracking files. It uses Claude Code's native subagent messaging (`SendMessage`, addressed `NAME.CODE`), so delivery is Claude Code's job. **Gap 2 is closed: there is nothing to build.** The plugin's only duty is to stay out of the way: keep `NAME.CODE` addressing working, and keep the guard and hooks from touching those messages.
 
 **The plugin adds no line of its own.** The receiving Claude decides whether to tell its person or quietly adjust, the same as with anything else it learns while working. That is the native behavior, and it fits "handle it behind the scenes".
 
