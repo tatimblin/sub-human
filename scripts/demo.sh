@@ -741,10 +741,10 @@ S8() { # resilience: /clear in alice keeps rows; bob /exit + --continue: rows re
   $LIB wait-exited sh-bob --timeout 10 --what "bob's claude exited"
   start_seat bob --continue
   need $LIB ready sh-bob --timeout 90 || return 1
-  need wait_pane bob "$(panel_row "$(room)")" 60 --what "bob's room row is back with no prompt (row-rewake)" || return 1
+  need wait_pane bob "$(panel_row "$(room)")" 60 --what "bob's room row is back with no prompt (the hooks module spawns it)" || return 1
   need $LIB wait-idle sh-bob --timeout 60 || return 1
   settle alice bob
-  snap "bob is back with --continue: row-rewake brings his room row back with no typing"
+  snap "bob is back with --continue: the hooks module brings his room row back with no typing"
   local b2; b2=$($LIB log-max)
   submit alice "@room bob, are you back? the parser tests are done"
   need wait_log --kind say --from alice --via human --after "$b2" --timeout 30 || return 1

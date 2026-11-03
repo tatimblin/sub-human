@@ -21,14 +21,10 @@ export function run(x: Ctx, { det, beh }: { det: Det, beh: Beh }, T: Thresholds)
   const want = new RegExp(`^⏺ sub-human: Joined ${code} as ${B} with ${A}$`);
   det(`${B}'s join shows one line, "sub-human: Joined CODE as ${B} with ${A}", and no "blocked by hook" frame`, jn.notices.length === 1 && want.test(jn.notices[0] ?? '') && !jn.frame,
     `${jn.notices.length} join line(s)${jn.notices.length ? `: ${jn.notices.map(l => `"${l}"`).join('; ')}` : ''}; hook frame ${jn.frame ? `"${jn.frame}"` : 'none'} in ${x.capName('S2', B, 'last')}`);
-  const ha = x.holdsAt('S2', 'last', A), hb = x.holdsAt('S2', 'last', B), ho = x.holdsAt('S2', 'last', 'claude');
-  det(`Rows: ${B} nested in ${A}'s room row, ${A} in ${B}'s, both in the room's Claude's`, ha.room && (ha.members || []).includes(B) && hb.room && (hb.members || []).includes(A) && [A, B].every(n => (ho.members || []).includes(n)),
-    `holds-${A} ${JSON.stringify({ room: ha.room, members: ha.members })}; holds-${B} ${JSON.stringify({ room: hb.room, members: hb.members })}; holds-claude ${JSON.stringify(ho.members)}`);
   const br = panelRows(x.cap('S2', B, 'last'));
-  const top = br.filter(r => !r.nested);
-  det(`${B}'s panel: only the ${code} row at the top level (no stray participant row)`, top.length === 1 && top[0]?.label === code, br.map(r => r.line).join(' | ') || 'no rows');
-  const orr = panelRows(x.cap('S2', 'claude', 'last'));
-  det(`The room's Claude's panel lists ${A} and ${B}`, [A, B].every(n => orr.some(r => r.label === n)), orr.map(r => r.line).join(' | ') || 'none');
+  det(`${B}'s panel: one row, ${code}, and nothing nested in it`, br.length === 1 && br[0]?.label === code && !br[0]?.nested, br.map(r => r.line).join(' | ') || 'no rows');
+  const ar = panelRows(x.cap('S2', A, 'last'));
+  det(`${A}'s panel: one row, ${code}, and nothing nested in it`, ar.length === 1 && ar[0]?.label === code && !ar[0]?.nested, ar.map(r => r.line).join(' | ') || 'no rows');
   const n = x.roomClaudeTurns(x.span('S2'));
   beh(`The room's Claude spent at most ${T.roomClaudeJoinCalls} model calls on the join (its row spawn)`, n, T.roomClaudeJoinCalls, `${n} claude assistant messages in S2`);
   // the join as a group-chat line in A's pane: the hooks module's $.ui.log row "sub-human: B joined"

@@ -588,7 +588,7 @@ test('hooks.json: consent is the module\'s (mod/consent.ts); its classic.PreTool
   for (const ev of ['tool.check', 'classic.PermissionRequest']) assert.ok(!MOD.some(h => h.event === ev), ev);
   // each classic.PreToolUse returns next(e), or an object written out with a fixed deny or ask: the directory reads the
   // returns, and a module hook that answers skips the hooks beneath only when it denies or asks (cc CONTRACT classic-chain-order)
-  for (const f of ['consent.ts', 'rows.ts']) {
+  for (const f of ['consent.ts']) { // mod/rows.ts has no classic.PreToolUse any more (the room row is the module's own)
     const src = fs.readFileSync(path.join(PLUGIN, 'mod', f), 'utf8');
     const body = src.slice(src.indexOf("on('classic.PreToolUse'"), src.indexOf('}).catch(', src.indexOf("on('classic.PreToolUse'")));
     const rets = body.match(/return [^;]+;/g) || [];

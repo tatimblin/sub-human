@@ -140,7 +140,7 @@ test('lane: member push/pull/none table (vole-8126 shapes + proposals + tasks)',
   assert.equal(deliver(ALICE, d, { entries: R.readAll(), trust: room.trustOf }), 'notice');
 });
 
-test('lane: the room session reads nothing but another member\'s join (its rows turn): posts to claude, answers, decisions and tasks are none', () => {
+test('lane: the room session reads nothing (it keeps no rows): joins, posts to claude, answers, decisions and tasks are none', () => {
   fresh();
   const L = (e: Entry, es?: readonly Entry[]) => roomLane(ROOM_CLAUDE, e, es);
   const mine = prop('claude', H1, ['alice', 'bob']);
@@ -150,14 +150,14 @@ test('lane: the room session reads nothing but another member\'s join (its rows 
   const agentTo = agent('alice', 'question', { to: 'claude' });
   const mention = human('bob', 'say', { text: '@claude let us plan cursor paging' });
   const left = sys('member_left', {}, 'bob');
-  const joined = sys('member_joined', {}, 'carol');                        // push (the tail adds the row note)
+  const joined = sys('member_joined', {}, 'carol');
   const o1 = answer('bob', 'objection', H1, { text: 'clamp' });
   const dec = sys('decision', { proposal_hash: H1 }, 'room');
   const req = taskReq('bob', 'add', { subject: 'parser tests' });
   const t = task({ task_id: 2, owner: 'bob', status: 'pending', req: req.id });
   const ownJoin = sys('member_joined', {}, 'claude');
   const want: [Entry, Lane][] = [[mine, 'none'], [theirs, 'none'], [words, 'none'], [toRoomClaude, 'none'], [agentTo, 'none'], [mention, 'none'],
-    [left, 'none'], [joined, 'push'], [o1, 'none'], [dec, 'none'], [req, 'none'], [t, 'none'], [ownJoin, 'none']];
+    [left, 'none'], [joined, 'none'], [o1, 'none'], [dec, 'none'], [req, 'none'], [t, 'none'], [ownJoin, 'none']];
   for (const [e, l] of want) assert.equal(L(e), l, `#${e.id} without entries`);
   for (const [e, l] of want) assert.equal(L(e, R.readAll()), l, `#${e.id} with entries`);
   // a member named in the text is still woken by it

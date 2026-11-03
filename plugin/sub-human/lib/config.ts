@@ -36,9 +36,6 @@ export const TAIL_STALL_MS = 60_000;
 export const LOCK_TIMEOUT_MS = 4000;
 // A lock whose owner cannot be checked (another host, an unreadable or legacy body) is stale after this.
 export const LOCK_STALE_MS = 10_000;
-// The row map (lib/rows.ts) is written from PostToolUse / SubagentStop hooks: wait less, then throw.
-export const ROWS_LOCK_TIMEOUT_MS = 3000;
-export const ROWS_LOCK_STALE_MS = 5000;
 // A crashed breaker's `.break` file is removed after this (breaking takes microseconds).
 export const LOCK_BREAK_STALE_MS = 2000;
 export const LOCK_START_SLACK_S = 2;           // pid start-time tolerance when checking a lock owner for pid reuse
@@ -65,11 +62,6 @@ export const PID_START_SLACK_S = 2;
 // while seen_at is younger than SEAT_LEASE_MS. Locally the pid and its start time stay the primary check.
 export const SEAT_BEAT_MS = 30_000;
 export const SEAT_LEASE_MS = 120_000;
-
-// ---------- hooks ----------
-export const REWAKE_WAIT_MS = 3000;            // SUB_HUMAN_REWAKE_WAIT_MS (allowZero): row-rewake waits for the seat
-export const REWAKE_POLL_MS = 100;
-export const ROW_SPAWN_GRACE_MS = 60_000;      // a row spawned this recently may not hold yet: never re-listed
 
 // ---------- hooks module (mod/, hooks/handlers/mod-hello.ts) ----------
 // A lease not from the joining claude process counts this long after it was written (the pid match is the real check).
@@ -132,19 +124,13 @@ export const LINK_OUTBOX_AGE_MS: number = 9 * 60_000;
 
 // ---------- rows (lib/rows.ts) ----------
 export const PRESENCE_STALE_MS: number = 6 * 60 * 60 * 1000;
-export const HOLDS_STALE_MS = 90_000;          // a holds file not refreshed in this long is dead
-export const MISSING_GRACE_MS = 45_000;        // a member who joined this recently is covered by their join notice
 export const ROW_NOTICE_MS = 120_000;          // a join / leave leads the room row this long
 export const NOTICE_FRESH_MS = 90_000;         // only notices this young are delivered at the moment
 
 // ---------- the hold tool (mcp/hold.ts) ----------
 export const HOLD_BEAT_MS = 20_000;            // SUB_HUMAN_HOLD_BEAT_MS: progress re-sent so the MCP idle timeout never fires
 export const HOLD_POLL_MS = 1000;              // SUB_HUMAN_HOLD_POLL_MS
-export const HOLD_GRACE_MS = 20_000;           // SUB_HUMAN_HOLD_GRACE_MS: a name is announced only after this without a hold
-export const HOLD_RESPAWN_MS = 1500;           // SUB_HUMAN_HOLD_RESPAWN_MS
 export const HOLD_WHO_MS = 3000;               // SUB_HUMAN_HOLD_WHO_MS: how often `me` is re-resolved
-export const HOLD_ROOM_GAP_MS = 30_000;        // SUB_HUMAN_HOLD_ROOM_GAP_MS: a returned room hold still counts as running
-export const HOLD_RESPAWN_AFTER_RETURN_MS = 30_000; // a room hold that returned this recently still respawns a cancelled row
 
 // ---------- room log (lib/room/*) ----------
 export const RATE_MAX = 6;                     // agent posts to the room per `from` per RATE_WINDOW_MS

@@ -2,16 +2,15 @@
  * plugin/sub-human/hooks/context.ts: the mechanics block the join and the restore hand the model (<= BLOCK_MAX chars
  * with 5 members). No seat key.
  *
- *   contextBlock(me, lead?, {rowsLead, rowsText, allRows}?) -> string   the role template (skills/sub-human/member.md |
- *       room-claude.md) filled for this seat, then ROWS (lib/rows.ts rowCalls, cut to the bare calls when the whole block
- *       would pass BLOCK_MAX). lead (e.g. "restored after clear") is a short last line. No roster or digest: others'
- *       words arrive through the hooks module's tail child (chat, pull, wake).
+ *   contextBlock(me, lead?) -> string   the role template (skills/sub-human/member.md | room-claude.md) filled for
+ *       this seat. lead (e.g. "restored after clear") is a short last line. No roster or digest: others' words arrive
+ *       through the hooks module's tail child (chat, pull, wake). No rows: the hooks module spawns the room row itself
+ *       (mod/rows.ts), so the model is never told about one.
  *   seatTitle(me) -> "alice.vole-8126"   the seat as a session title: its native address (SendMessage reaches it by it)
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import * as identity from '../lib/identity.ts';
-import * as rows from '../lib/rows.ts';
 import * as text from '../lib/text.ts';
 import * as config from '../lib/config.ts';
 import type { Member } from '../lib/room/types.ts';
@@ -33,7 +32,7 @@ const DEFAULT_TEMPLATES: Record<'member' | 'claude', string> = {
     + 'Room lines are a group chat {NAME} already sees: never repeat them. Never show room ids.\n'
     + 'Reach a session now: SendMessage to {ADDR_EXAMPLE}. Only a person\'s own plan view answer counts.',
   claude: 'SUB-HUMAN: you are the room session of room {CODE} (members: {OTHERS}), no member\'s. Nobody types or reads here.\n'
-    + 'Make exactly the Agent calls the ROWS line names, then end your turn with the one word "ok".',
+    + 'Call nothing; end your turn with the one word "ok".',
 };
 
 const pluginRoot = () => process.env.CLAUDE_PLUGIN_ROOT || PLUGIN_ROOT;
@@ -66,50 +65,10 @@ const roleText = (role: string, me: Identity | null) => (me ? fill(template(role
 
 const clip = (s: string, n = CAP) => text.clip(s, n);
 
-/**
- * lib/rows.ts rowCalls(); '' when it fails. Lists only the rows with no live hold in this seat's hold
- * server (rows/holds-NAME.json): rows survive /clear, compaction and a re-run of /sub-human, and a second
- * spawn would duplicate them. After --resume the server is new, so all; all: every row (after the agent view's fork,
- * whose rows ended with the old session while its hold server may still look live).
- */
-function rowCalls(me: Identity, all = false): string {
-  try {
-    const ms = identity.readMembers(me.code);
-    const held = all ? null : rows.readHolds(me.code, me.name);
-    const only = held ? rows.rowsNeeded(me.code, me, { members: ms, held }) : null;
-    return String(rows.rowCalls(me, ms, { only }) || '').trim();
-  } catch (e) {
-    process.stderr.write(`sub-human: rows unavailable: ${e instanceof Error ? e.message : e}\n`);
-    return '';
-  }
-}
-
-/**
- * rowCalls() cut to its Agent(...) lines when the full text would overflow the block. Several participant
- * calls (the room's Claude) become one call pattern plus the names, so the block stays inside the budget with 5 members.
- */
-function compactRows(text: string, me: Identity): string {
-  const calls = text.split('\n').map(l => l.trim()).filter(l => /^Agent\(\{.*\}\)$/.test(l));
-  const tail = me.role === 'claude' ? '\nOn member_joined, follow its "row:" note.' : '';
-  const [call0] = calls;
-  if (call0 === undefined) return `Your rows are running; make no Agent call for them.${tail}`;
-  const who = calls.map(c => /subagent_type: "sub-human:participant", description: "([^"]+)"/.exec(c)).filter(m => m !== null).map(m => m[1]);
-  if (who.length > 1 && who.length === calls.length) {
-    const pattern = call0.split(`"${who[0]}"`).join('"NAME"').split(` ${who[0]}"`).join(' NAME"');
-    return `Make one Agent call per name, all in one message, now; write nothing about them:\n${pattern}\nNAME = ${who.join(', ')}${tail}`;
-  }
-  return `Make ${calls.length === 1 ? 'this Agent call' : 'these Agent calls, in one message,'} now, exactly as written; write nothing about it:\n${calls.join('\n')}${tail}`;
-}
-
 export const seatTitle = (me: Identity): string => identity.address(me.name, me.code);
 
-export function contextBlock(me: Identity, lead?: string, { rowsLead = '', rowsText = null, allRows = false }: { rowsLead?: string; rowsText?: string | null; allRows?: boolean } = {}): string {
+export function contextBlock(me: Identity, lead?: string): string {
   const text = roleText(me.role, me);
   const tail = lead ? `\n(${lead})` : '';
-  let rs = rowsText ?? rowCalls(me, allRows);
-  if (rs && rowsText == null) {
-    const full = `${rowsLead}${rs}`;
-    rs = `${text}\n\nROWS\n${full}${tail}`.length <= BLOCK_MAX ? full : compactRows(rs, me);
-  }
-  return clip(`${text}${rs ? `\n\nROWS\n${rs}` : ''}${tail}`);
+  return clip(`${text}${tail}`);
 }

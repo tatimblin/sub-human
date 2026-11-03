@@ -12,7 +12,7 @@
  *   list(code) -> [Task]               tasks.json, in id order ([] when absent)
  *   refold(code, entries)              writes fold(entries) as tasks.json
  *   summary(code, viewer) -> "tasks 3 open · #2 you · #4 bob" ('' with no tasks; "tasks: all N done")
- *   mine(code, name) -> open tasks owned by name (a participant row: `◼ #2 parser tests`)
+ *   mine(code, name) -> open tasks owned by name
  *   validate(input) -> {ok:true, req} | {ok:false, error}   the `task` tool's arguments
  *   check(task, req, by) -> null | reason   the ownership rules, pure (below)
  *   apply(store, input, {by}) -> {ok:true, task, text} | {ok:false, error}   host only (HOST_ONLY otherwise)

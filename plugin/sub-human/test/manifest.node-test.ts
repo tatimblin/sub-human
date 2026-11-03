@@ -229,13 +229,13 @@ test('budgets: the join\'s waits fit its hook timeout, and every lock gives up b
   assert.ok(waits <= join - 1000, `the join's waits (${waits} ms) leave under a second of its ${join} ms`);
   // a wedged lock is reported (LOCK) by the hook, never cut off by its timeout (SessionEnd: the shortest)
   const shortest = Math.min(...[...allHooks()].map(x => x.hook.timeout)) * 1000;
-  for (const [name, ms] of Object.entries({ LOCK_TIMEOUT_MS: config.LOCK_TIMEOUT_MS, ROWS_LOCK_TIMEOUT_MS: config.ROWS_LOCK_TIMEOUT_MS, REVIEW_LOCK_TIMEOUT_MS: config.REVIEW_LOCK_TIMEOUT_MS })) {
+  for (const [name, ms] of Object.entries({ LOCK_TIMEOUT_MS: config.LOCK_TIMEOUT_MS, REVIEW_LOCK_TIMEOUT_MS: config.REVIEW_LOCK_TIMEOUT_MS })) {
     assert.ok(ms < shortest, `${name} ${ms} ms, under the shortest hook timeout (${shortest} ms)`);
   }
   assert.ok(config.LINK_CALL_END_MS < timeoutOf('session-end.ts') * 1000);
 });
 
-test('hooks.json: no async hooks (the module runs presence and the rewake in the background)', () => {
+test('hooks.json: no async hooks (the module runs presence in the background)', () => {
   assert.deepEqual([...allHooks()].filter(x => x.hook.async || x.hook.asyncRewake).map(x => x.event), []);
 });
 
@@ -266,7 +266,8 @@ test('agents: no model key; Agent(...) restrictions name agents that exist', () 
       for (const t of must(types).split(',').map(s => s.trim())) assert.ok(names.has(t) || t === 'general-purpose', `${f}: unknown agent type ${t}`);
     }
   }
-  assert.match(frontmatter(path.join(dir, 'room.md')), /^tools: Agent\(sub-human:participant\), mcp__plugin_sub-human_room__hold$/m);
+  assert.match(frontmatter(path.join(dir, 'room.md')), /^tools: mcp__plugin_sub-human_room__hold$/m, 'the one room row: its hold only, no nested rows');
+  assert.ok(!names.has('sub-human:participant'), 'no participant rows');
 });
 
 test('SKILL.md: user-invoked only, and hold is not pre-allowed', () => {

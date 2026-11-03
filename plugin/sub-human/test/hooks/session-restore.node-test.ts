@@ -4,7 +4,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { World, fixture, identity, ctx, hso } from './helpers.ts';
-import * as rowsLib from '../../lib/rows.ts';
 import * as proposal from '../../lib/proposal.ts';
 import { propose } from '../support/plan.ts';
 import type { HookRun } from './helpers.ts';
@@ -12,7 +11,8 @@ import { sn } from '../support/brands.ts';
 import { must } from '../support/must.ts';
 
 const NEW_SID = '8cea5671-97a8-49c2-bcdb-4a62d51b6a18';
-const hasRows = () => typeof rowsLib.rowText === 'function';
+/** The context never asks the model to spawn a row (the room row is the hooks module's: mod/deliver.ts roomRow). */
+const noRows = (c: string, what?: string) => assert.doesNotMatch(c, /ROWS|Agent\(|sub-human:(room|participant)/, what);
 const ans = (r: HookRun) => must(r.json, 'a hook answer');
 const context = (r: HookRun) => must(ctx(r), 'context');
 const seat = (w: World, name: string) => must(w.members()[name], name);
@@ -34,11 +34,11 @@ test('session-restore: after /clear, rebinds the new session id by CLAUDE_PID an
   assert.equal(w.lib(() => identity.resolveBySession(w.sid.alice)), null, 'old session id dropped');
 });
 
-test('session-restore: ROWS asks to re-create rows only if missing after clear/compact; the room\'s Claude gets its block', () => {
+test('session-restore: after clear/compact the block alone, no row call; the room\'s Claude gets its block', () => {
   const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
   const r = w.hook('session-restore', { ...fixture('session-start-clear'), session_id: NEW_SID }, { as: 'alice', session: false });
   const c = context(r);
-  if (hasRows()) assert.match(c, /ROWS\n[^]*subagent_type: "sub-human:room"/, 'no live hold: the room row is listed');
+  noRows(c, 'the hooks module starts the room row again');
   const r2 = w.hook('session-restore', { ...fixture('session-start-clear'), source: 'compact' }, { as: 'alice' });
   assert.match(context(r2), /restored after compact/);
   const ro = w.hook('session-restore', { ...fixture('session-start-clear'), source: 'compact' }, { as: 'claude' });
@@ -46,7 +46,7 @@ test('session-restore: ROWS asks to re-create rows only if missing after clear/c
   assert.equal(hso(ro).sessionTitle, `claude.${w.code}`);
 });
 
-test('session-restore: --resume after the session ended rejoins the seat with a new pid and asks to re-create rows', () => {
+test('session-restore: --resume after the session ended rejoins the seat with a new pid (the room row is the module\'s to start again)', () => {
   const w = new World({ claude: 'sleep', alice: 'sleep', bob: 'sleep' });
   const oldSid = must(w.sid.alice);
   // exit: session-end marks alice left
@@ -58,7 +58,7 @@ test('session-restore: --resume after the session ended rejoins the seat with a 
   assert.equal(r.code, 0, r.stderr);
   const c = context(r);
   assert.ok(c.startsWith(`SUB-HUMAN: you are alice's Claude in room ${w.code}`) && c.endsWith('(restored after resume)'), c.slice(0, 100));
-  if (hasRows()) assert.match(c, /ROWS\n[^]*subagent_type: "sub-human:room"/);
+  noRows(c);
   const m = seat(w, 'alice');
   assert.equal(m.left_at, undefined);
   assert.equal(m.pid, process.pid);
@@ -155,7 +155,7 @@ function forkTranscripts(w: World, oldSid: string, newSid: string, { record = tr
   return path.join(dir, `${newSid}.jsonl`);
 }
 
-test('session-restore: a fork (← the agent view) takes the seat its old session holds, with no leave and no log line, and lists every row', () => {
+test('session-restore: a fork (← the agent view) takes the seat its old session holds, with no leave and no log line, and no row call', () => {
   const w = new World({ claude: 'sleep', alice: 'sleep', bob: 'sleep' });
   const oldSid = must(w.sid.alice);
   const oldPid = w.pid.alice; // the old process stays up as the agent view: its pid is alive
@@ -166,7 +166,7 @@ test('session-restore: a fork (← the agent view) takes the seat its old sessio
   assert.equal(r.code, 0, r.stderr);
   const c = context(r);
   assert.ok(c.startsWith(`SUB-HUMAN: you are alice's Claude in room ${w.code}`) && c.endsWith('(restored after the agent view)'), c.slice(-120));
-  if (hasRows()) assert.match(c, /ROWS\n[^]*subagent_type: "sub-human:room"/, "every row listed, held or not");
+  noRows(c, 'its room row ended with the old session: the module starts it again');
   assert.equal(hso(r).sessionTitle, `alice.${w.code}`);
   const m = seat(w, 'alice');
   assert.deepEqual([m.left_at, m.pid, m.session_id], [undefined, process.pid, NEW_SID]);

@@ -628,11 +628,11 @@ test('stage 8e G (live verify, remote/99x): the host\'s let-in wake is drawn as 
 // tail's take event has the module take the seat in a turn of its own, never the prompt that carried the line or PIN
 const PENDING = { ...helloOf(null), pending: true }
 const TAKE = { type: 'take', code: 'otter-4821', name: 'bob', text: 'the host let you in to room otter-4821: type /sub-human to join it as bob', check: 'check 3f9c-2a71' }
-const BLOCK = 'SUB-HUMAN: you are bob\'s Claude in room otter-4821 (with alice).\nROWS: Agent({subagent_type: "sub-human:room", description: "otter-4821"})'
+const BLOCK = 'SUB-HUMAN: you are bob\'s Claude in room otter-4821 (with alice).'
 const JOINED = { hookSpecificOutput: { hookEventName: 'UserPromptExpansion', additionalContext: BLOCK }, subHuman: { say: 'joined otter-4821 as bob, with alice', joined: true, shareable: true } }
 const YOU_RE_IN = 'You\'re in room otter-4821 as bob (check 3f9c-2a71, as the host\'s room line shows)'
 
-test('a take while idle: join.ts with no args, the nonce and the room; one prompt "You\'re in room …" (asUser) with the seat\'s block as context, which names the ROWS calls', async ($, on) => {
+test('a take while idle: join.ts with no args, the nonce and the room; one prompt "You\'re in room …" (asUser) with the seat\'s block as context, and no row call (the module starts the room row)', async ($, on) => {
   const seen = world($, on, { hello: PENDING, pieces: [line(TAKE)], joinOut: JOINED })
   await start($)
   await until(() => seen.prompts.length === 1).catch(() => { throw new Error(JSON.stringify(seen)) })
@@ -642,8 +642,8 @@ test('a take while idle: join.ts with no args, the nonce and the room; one promp
   expect(seen.prompts).toEqual([YOU_RE_IN])
   const said = [...(seen.contexts[0] ?? []), ...(must(seen.classic[0], 'the prompt\'s result').additionalContext ?? [])].join('\n')
   expect(said).toContain('(for Claude) SUB-HUMAN: you are bob\'s Claude in room otter-4821')
-  expect(said).toContain('(for Claude) ROWS: Agent({subagent_type: "sub-human:room"')
-  expect(said).toMatch(/your first action is the Agent call\(s\) under its ROWS line/)
+  expect(said).not.toMatch(/ROWS|Agent\(/)
+  expect(said).toMatch(/end your turn without text \(the room row starts by itself\)/)
   expect(seen.logs).toContain('joined otter-4821 as bob, with alice')
   expect(seen.joins.length).toBe(1)
   seen.release()

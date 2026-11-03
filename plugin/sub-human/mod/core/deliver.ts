@@ -4,7 +4,7 @@
  *   seat -> follow it; chat -> $.ui.log per line (a notice is one line, cc CONTRACT ui-log-notice); pull -> held in $.state
  *   (holdPull) and carried as context beside the next prompt (pullContext, mod/prompt.ts), never a user row of its
  *   own, which the model read as one turn with the person's next words (stage 8e B); wake -> $.prompt.submit when idle, else append plus log, re-checked at the turn's end (turnLedger);
- *   rows -> held for the next prompt (the room Claude's ride on its wakes); health -> log (quiet: the debug log) plus
+ *   rows -> held for the next prompt (proposal reminders); health -> log (quiet: the debug log) plus
  *   append; take -> the
  *   module takes a let-in join's seat (the join shim, args '') and wakes the model with its block (takeWake).
  * Failure: pull is at most once (PULL_DELIVERY): the tail's cursor moves when the line is written, so a mod lost
@@ -38,7 +38,7 @@ export const WAKE_HEAD: string = `${FOR_CLAUDE} sub-human room: lines from other
  * of the plugin runs (cc CONTRACT render-own-prompt-reentry), so the frame and every "(for Claude)" line would show as
  * typed. So a wake with lines for the person is submitted asUser with those lines alone (no frame), and its "(for
  * Claude)" lines ride as context the model alone reads (WAKE_CONTEXT first, in WAKE_HEAD's place); one with none is submitted framed, as is
- * every wake of the room's Claude (nobody reads its rows). null: submit it framed.
+ * every wake of the room's Claude (nobody reads it). null: submit it framed.
  */
 export function wakeParts(text: string): { shown: string; context: string } | null {
   const lines = String(text ?? '').split('\n');
@@ -121,8 +121,8 @@ function visibleLines(text: unknown): string[] {
   return String(text ?? '').split('\n').filter(l => l.trim() && !l.startsWith(FOR_CLAUDE));
 }
 
-function wakeText(text: string, rows: string | null): string {
-  return [WAKE_HEAD, text, rows || ''].filter(Boolean).join('\n');
+function wakeText(text: string): string {
+  return [WAKE_HEAD, text].filter(Boolean).join('\n');
 }
 
 export const logLines = (x: unknown): { do: 'log'; text: string }[] => (Array.isArray(x) ? x : String(x ?? '').split('\n'))
@@ -137,7 +137,7 @@ export const logLines = (x: unknown): { do: 'log'; text: string }[] => (Array.is
  */
 export function route(
   ev: TailEvent | null | undefined,
-  { turnRunning = false, role = 'member', rows = null }: { turnRunning?: boolean; role?: string; rows?: string | null } = {},
+  { turnRunning = false }: { turnRunning?: boolean } = {},
 ): DeliverAction[] {
   if (!ev) return [];
   switch (ev.type) {
@@ -150,8 +150,7 @@ export function route(
     case 'invites': return [{ do: 'invites', open: ev.open, ...(ev.expired ? { expired: ev.expired } : {}) }];
     case 'take': return [{ do: 'take', code: ev.code, name: ev.name, text: ev.text, ...(ev.check ? { check: ev.check } : {}) }];
     case 'wake': {
-      // The room's Claude has no person to type: its rows calls ride on its wakes. A member's go with the person's prompt.
-      const text = wakeText(ev.text, role === 'claude' ? rows : null);
+      const text = wakeText(ev.text);
       const seen = visibleLines(ev.text);
       if (!turnRunning) return [{ do: 'submit', text, seen }];
       return [...logLines(seen), { do: 'mid-turn-wake', text }];
@@ -272,12 +271,12 @@ export const takeFallback = (code: string, text: string): string => text || `the
 
 /** What the model is told beside a seat the module took on its own (takeWake), as the skill tells it for /sub-human. */
 export const TAKE_CONTEXT: string = 'sub-human: the host let this machine in, and the hooks took this session\'s seat (no one typed this prompt). '
-  + 'The SUB-HUMAN block below is the seat\'s: your first action is the Agent call(s) under its ROWS line, exactly as written (when it lists any); then end your turn without text.';
+  + 'The SUB-HUMAN block below is the seat\'s: end your turn without text (the room row starts by itself).';
 
 /**
  * A let-in join's seat, taken by the module (mod/deliver.ts takeSeat), as a wake in wakeParts' form: one line the
  * person sees ("You're in room CODE as NAME", with the check the host's room line shows), and as "(for Claude)" lines
- * the seat's mechanics block (the join's context), so the model makes the room row's calls as after a typed /sub-human.
+ * the seat's mechanics block (the join's context), as after a typed /sub-human.
  * The prompt holds no SECRET or PIN: a turn of its own, never the one that carried the line.
  */
 export function takeWake({ code, name, check, context }: { code: string; name: string; check?: string | undefined; context: string }): { text: string; shown: string } {
@@ -289,8 +288,3 @@ export function takeWake({ code, name, check, context }: { code: string; name: s
 /** Start the tail child unless the hello is sure the session has no seat. */
 export const spawnWanted = (hello: Hello | null | undefined): boolean => !hello || !!hello.seat || hello.pending === true;
 
-/** row-rewake's budget (its asyncRewake command hook had 30 s: it waits for the seat up to REWAKE_WAIT_MS). */
-export const REWAKE_TIMEOUT_MS = 30_000;
-/** row-rewake's stderr as the room session's wake (framed: nobody reads its rows; a member's rows come with the next
- * prompt instead, no wake and no line: mod/deliver.ts rewake), every line for the model. */
-export const rewakePrompt = (stderr: unknown): string => String(stderr ?? '').trim().split('\n').map(l => `${FOR_CLAUDE} ${l}`).join('\n');

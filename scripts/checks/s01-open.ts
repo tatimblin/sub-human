@@ -28,15 +28,14 @@ export function run(x: Ctx, { det }: { det: Det }, T: Thresholds): void {
   const ar = panelRows(x.cap('S1', A));
   det(`${A}'s panel: one ${code} row`, ar.filter(r => !r.nested).length === 1 && ar[0]?.label === code, ar.map(r => r.line).join(' | ') || 'no rows');
   const orr = panelRows(oc);
-  const holds = x.holdsAt('S1', 1, 'claude');
-  det(`The room's Claude's panel lists ${A}`, orr.some(r => r.label === A) && (holds.members || []).includes(A),
-    `claude rows: ${orr.map(r => r.line).join(' | ') || 'none'}; claude's holds (its session document) members ${JSON.stringify(holds.members || [])}`);
+  det('The room\'s Claude keeps no rows (each member\'s one room row is that member\'s hooks module\'s)', orr.length === 0,
+    `claude rows: ${orr.map(r => r.line).join(' | ') || 'none'}`);
   const dir = ms.claude && ms.claude.tasks_dir;
   det(`The room session's task list directory is made before it starts and recorded (members.json claude.tasks_dir ends tasks/sh-${code})`, !!dir && dir.endsWith(`/tasks/sh-${code}`) && fs.existsSync(dir),
     `claude.tasks_dir ${dir || 'missing'}${dir ? (fs.existsSync(dir) ? ' (exists)' : ' (missing on disk)') : ''}`);
-  // the room session runs only its rows turn: its only tool is Agent (a participant row), never a room tool or a plan
+  // the room session calls nothing: its one turn ends with "ok" (no rows, no room tool, no plan)
   const calls = x.toolUses(x.inSpan(x.entries('claude'), x.span('S1'))).map(c => c.name);
-  det('The room session\'s turn is rows only: every call it makes is an Agent call (a participant row)', calls.length > 0 && calls.every(n => n === 'Agent'),
+  det('The room session calls nothing (no rows, no room tool)', calls.length === 0,
     `${calls.length} call(s): ${[...new Set(calls)].join(', ') || 'none'}`);
   const j = x.entries(A).filter(e => e.attachment && e.attachment.type === 'hook_additional_context' && e.attachment.hookEvent === 'UserPromptExpansion').map(e => [e.attachment?.content].flat().join('\n'))[0] || '';
   const fillLen = (j.split('\n\nROWS\n')[0] ?? '').length;

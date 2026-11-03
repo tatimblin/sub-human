@@ -18,7 +18,7 @@ export const MCP_PREFIX = 'mcp__plugin_sub-human_room__';
 export const HOLD: string = MCP_PREFIX + 'hold';
 export const WRITE_TOOLS: readonly string[] = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'];
 const MSG = 'ROOM-GUARD: the room store is reached only through sub-human. Post with the room MCP tools; read with the room MCP read tool.';
-export const HOLD_DENY = 'sub-human: hold is for row agents only (sub-human:participant / sub-human:room); never call it yourself. Spawn the row agents listed under ROWS instead.';
+export const HOLD_DENY = 'sub-human: hold is for the room row agent only (sub-human:room, which sub-human starts itself); never call it yourself.';
 export const FAILED = 'ROOM-GUARD: guard failed; denied to be safe.';
 
 // ---------- Bash ----------

@@ -21,9 +21,9 @@
  *                             At most once: the cursor moves when the line is written
  *   {type:'wake', text}       what needs Claude now: to me / @me, a proposal for me, a decision on mine, a task
  *                             assigned to me, an objection to my proposal (members, with the room state line when
- *                             the batch moved a proposal); the room Claude's whole push block
+ *                             the batch moved a proposal); the room Claude gets none (it reads nothing)
  *   {type:'rows', text|null}  what the person's next prompt carries for Claude: pending-proposal reminders
- *                             (members) and the missing rows' Agent calls; sent at start and when it changes
+ *                             (members); sent at start and when it changes (the room row is the hooks module's own)
  *   {type:'health', text, quiet?}   a hash-chain break (one line per break); in a room hosted elsewhere linkLine each
  *                             time the link goes off and LINK_BACK once it is online again (quiet: the debug log and
  *                             Claude's context, no notice, unless posts were not sent; no "left"/"joined": the daemon
@@ -47,7 +47,6 @@ import * as config from './config.ts';
 import { envMs, envStr } from './env.ts';
 import { stageOf } from './consent/review.ts';
 import { lazy } from './io.ts';
-import * as rowsMod from './rows.ts';
 import * as identityMod from './identity.ts';
 import * as proposalMod from './proposal.ts';
 import * as sessionMod from './room/session.ts';
@@ -87,8 +86,8 @@ const joiningLib = lazy<typeof JoiningMod>(import.meta.url, './remote/joining.ts
 /** The room as a session reads it (lib/room.ts open): the calls made here. Tests hand in fakes. */
 type TailRoom = Pick<Room, 'readView' | 'tailer' | 'lastId' | 'getCursor' | 'verifyChain' | 'deliver' | 'chatLines' | 'line' | 'stateLine'>
   & { store?: Room['store'] | null };
-/** What an entry is for this seat (lib/room/deliver.ts): entries is the log at flush time; note is the joinNote of a member_joined. */
-type Judge = (e: Entry, entries?: readonly Readonly<Entry>[], note?: string) => Delivery;
+/** What an entry is for this seat (lib/room/deliver.ts): entries is the log at flush time. */
+type Judge = (e: Entry, entries?: readonly Readonly<Entry>[]) => Delivery;
 /** A rate-limited logger (errorLog): where it failed, and the error. */
 type Log = (where: string, e: unknown) => void;
 /** The tail's write: text (whole lines) and a callback once it is out. */
@@ -113,7 +112,6 @@ interface Timings {
 interface Item { e: Entry, away: boolean }
 type Pending<T> = T & { at: number };
 
-type RowsLib = Pick<typeof rowsMod, 'joinNote' | 'missingRows' | 'rowsNeeded' | 'readHolds' | 'sessionRowMap' | 'rowCalls'>;
 type IdentityLib = Pick<typeof identityMod, 'readMembers' | 'heartbeat'>;
 type ProposalLib = Pick<typeof proposalMod, 'pendingFor' | 'picked' | 'reminder' | 'readConfirm' | 'confirmCall' | 'showConfirm'>;
 type SessionLib = Pick<typeof sessionMod, 'shown' | 'markShown' | 'get' | 'put'> & Partial<Pick<typeof sessionMod, 'reported'>>;
@@ -124,7 +122,6 @@ type InvitesLib = Pick<typeof InvitesMod, 'inviteOpen'>;
 interface TailDeps {
   openRoom(code: RoomCode): TailRoom;
   heartbeat(me: Identity): unknown;
-  rows: RowsLib;
   session: SessionLib;
   roomClaude: RoomClaudeLib;
   identity: IdentityLib;
@@ -168,13 +165,12 @@ interface Session {
   killPoll(): void;
   stop(): void;
 }
-/** formatNdBatch / formatRoomClaudeBatch's ctx. */
+/** formatNdBatch's ctx. */
 interface FormatCtx {
   me: Identity;
   room: TailRoom;
   entries: readonly Readonly<Entry>[];
   judge: Judge;
-  joinNote(e: Entry): string;
   seen: Set<number>;
   leaveMs: number;
   /** ids the consent hook already told the model of (lib/room/session.ts reported): no room-context copy */
@@ -275,16 +271,6 @@ class Batcher<T extends { e: { id: number } } = Item> {
 }
 
 // ---------- formatters ----------
-/** The room session's block (its rows-only turn): one full line per join that wakes it, with its row note. */
-function formatRoomClaudeBatch(ready: Item[], { room: rm, entries, judge, joinNote, leaveMs }: FormatCtx): string[] {
-  const out: string[] = [];
-  for (const { e, away } of ready) {
-    const note = joinNote(e);
-    if (judge(e, entries, note) === 'wake') out.push(rm.line(e, { full: true }) + (away ? ` · away ${Math.round(leaveMs / 1000)}s+` : '') + (note ? ` · ${note}` : ''));
-  }
-  return out.length ? [...out, 'Make only the call its row note names, then end your turn with the one word "ok".'] : [];
-}
-
 /** The pull text: PULL_HEAD, then the newest lines that fit under PULL_CAP (a note says how many were left out)
  * (mod/core/constants.ts: the module carries it as context beside the person's next prompt). */
 function pullText(lines: string[]): string | null {
@@ -307,15 +293,14 @@ function pullText(lines: string[]): string | null {
  * leave ids sent as chat (session.markShown).
  */
 function formatNdBatch(ready: Item[], ctx: FormatCtx): { events: TailEvent[], moved: number[] } {
-  const { me, room: rm, entries, judge, joinNote, seen, reported, hinted } = ctx;
-  const chat: string[] = [], pull: string[] = [], wake: string[] = [], moved: number[] = [], pushed: Item[] = [];
+  const { me, room: rm, entries, judge, seen, reported, hinted } = ctx;
+  const chat: string[] = [], pull: string[] = [], wake: string[] = [], moved: number[] = [];
   let state = false;
   for (const p of ready) {
     const { e } = p;
     if (me.role !== 'claude' && isMove(e) && seen.has(e.id)) continue; // an earlier child already sent it
-    const d = judge(e, entries, me.role === 'claude' ? joinNote(e) : undefined);
+    const d = judge(e, entries);
     if (d === 'none') continue;
-    if (me.role === 'claude' && d === 'wake') { pushed.push(p); continue; }
     // a join the room's PIN line already announced (its check and the kick): no second, bare "joined"
     if (d === 'notice' && announced(e, entries)) { moved.push(e.id); continue; }
     // a plan version is context (lib/room/deliver.ts): the request on it is the person's one line, its summary in the plan view
@@ -339,39 +324,14 @@ function formatNdBatch(ready: Item[], ctx: FormatCtx): { events: TailEvent[], mo
     }
     if (STATE_KINDS.has(e.kind)) state = true;
   }
-  if (me.role === 'claude') wake.push(...formatRoomClaudeBatch(pushed, ctx));
   // no ids for a member: the plugin prompt's row is drawn expanded, (for Claude) lines included (people never see ids)
-  else if (state && wake.length) wake.push(`${FOR_CLAUDE} ${rm.stateLine(me, entries, { ids: false })}`);
+  if (state && wake.length) wake.push(`${FOR_CLAUDE} ${rm.stateLine(me, entries, { ids: false })}`);
   const events: TailEvent[] = [];
   if (chat.length) events.push({ type: 'chat', lines: chat });
   const pt = pullText(pull);
   if (pt) events.push({ type: 'pull', text: pt });
   if (wake.length) events.push({ type: 'wake', text: wake.join('\n') });
   return { events, moved };
-}
-
-const SPAWN_GRACE_MS = config.ROW_SPAWN_GRACE_MS;
-/**
- * The Agent calls for this seat's rows with no live hold, or null when they all run (or were just spawned). The
- * tail sends it as a `rows` event, so the person's next prompt carries it.
- */
-function missingRowsText(me: Identity, sid: string | null, {
-  now = Date.now(), rows = rowsMod, identity = identityMod,
-}: { now?: number, rows?: RowsLib, identity?: IdentityLib } = {}): string | null {
-  try {
-    const members = identity.readMembers(me.code);
-    // room Claude: missingRows skips members who joined under 45 s ago (their member_joined notice covers them)
-    let need = me.role === 'claude' ? rows.missingRows(me.code, me, { members })
-      : rows.rowsNeeded(me.code, me, { members, held: rows.readHolds(me.code, me.name) });
-    let map: ReturnType<RowsLib['sessionRowMap']> = {};
-    try { map = rows.sessionRowMap(me.code, sid); } catch { /* none */ }
-    const fresh = new Set(Object.values(map).filter(r => r && now - Date.parse(r.at as string) < SPAWN_GRACE_MS).map(r => r.name));
-    need = need.filter(n => !fresh.has(n));
-    if (!need.length) return null;
-    return `SUB-HUMAN ROWS: your ${me.role === 'claude' ? `rows for ${need.join(', ')} are` : 'room row is'} not running in this session. `
-      + 'Make the call below first, in the same message as anything else you do, exactly as written.\n'
-      + rows.rowCalls(me, members, { only: need });
-  } catch { return null; }
 }
 
 /** lib/proposal.ts reminder() for each proposal that names this member and awaits their answer; null for the room's Claude or none. */
@@ -478,8 +438,8 @@ function cursorKeeper(write: (id: number) => void, after: number, { log, dead }:
  * One settled batch as ONE write (at most one wake). Each entry is judged again against the log at flush time
  * (lane with entries: signed, decided, superseded); the cursor moves past the batch once it is written.
  */
-function flushBatch(ready: Item[], { me, rm, judge, joinNote, leaveMs, session, emit, cursor, hinted }: {
-  me: Identity, rm: TailRoom, judge: Judge, joinNote: (e: Entry) => string, leaveMs: number, session: SessionLib,
+function flushBatch(ready: Item[], { me, rm, judge, leaveMs, session, emit, cursor, hinted }: {
+  me: Identity, rm: TailRoom, judge: Judge, leaveMs: number, session: SessionLib,
   emit: (events: TailEvent[], done?: () => void) => unknown, cursor: Cursor, hinted: Set<string>,
 }): unknown {
   const [head] = ready;
@@ -489,7 +449,7 @@ function flushBatch(ready: Item[], { me, rm, judge, joinNote, leaveMs, session, 
   const seen = me.role === 'claude' || !rm.store ? new Set<number>() : session.shown(rm.store, me.name);
   let reported: ReadonlySet<number> = new Set();
   if (me.role !== 'claude' && rm.store && session.reported) { try { reported = session.reported(rm.store, me.name); } catch { /* none */ } }
-  const { events, moved } = formatNdBatch(ready, { me, room: rm, entries, judge, joinNote, leaveMs, seen, reported, hinted });
+  const { events, moved } = formatNdBatch(ready, { me, room: rm, entries, judge, leaveMs, seen, reported, hinted });
   if (!events.length) return done();
   if (moved.length && rm.store) { try { session.markShown(rm.store, me.name, moved, 'mod'); } catch { /* best effort */ } }
   return emit(events, done);
@@ -517,8 +477,8 @@ function timerLoop({ clock, t, log, s }: { clock: Clock, t: Timings, log: Log, s
 }
 
 function startSession(me: Identity, ctx: TailCtx): Session {
-  const { clock, fs, write, log, t, deps, sid } = ctx;
-  const { rows, session } = deps;
+  const { clock, fs, write, log, t, deps } = ctx;
+  const { session } = deps;
   const rm = deps.openRoom(me.code); // this session's room, held for its whole life (no re-binding)
   const emit = (events: TailEvent[], done: () => void = () => {}) => write(events.map(x => JSON.stringify(x)).join('\n') + '\n', done);
   // Where polling starts: taken before the backlog read, so nothing appended in between is missed (the
@@ -538,14 +498,8 @@ function startSession(me: Identity, ctx: TailCtx): Session {
   const cursor = cursorKeeper(saveCursor, after, { log, dead: () => s.dead });
   let seen = after;
   s.save = () => cursor.save();
-  const judge: Judge = (e, entries, note) => rm.deliver(me, e, { entries, note });
-  // member_joined: say whether that member's row already runs here, so only a missing one is spawned
-  const joinNote = (e: Entry) => {
-    if (e.kind !== 'member_joined') return '';
-    try { return rows.joinNote(me, e.from); } catch { return ''; }
-  };
-
-  const flushCtx = { me, rm, judge, joinNote, leaveMs: t.leaveMs, session, emit, cursor, hinted: new Set<string>() };
+  const judge: Judge = (e, entries) => rm.deliver(me, e, { entries });
+  const flushCtx = { me, rm, judge, leaveMs: t.leaveMs, session, emit, cursor, hinted: new Set<string>() };
   const onFlush = (ready: Item[]) => flushBatch(ready, flushCtx);
   const batch = new Batcher<Item>({ clock, settleMs, settleMaxMs, retryMs: t.backoffMs, onFlush, onError: e => log('flush', e) });
 
@@ -562,8 +516,8 @@ function startSession(me: Identity, ctx: TailCtx): Session {
       cursor.release(h.e.id);
       return s.save();
     }
-    // the entry-only answer (a superset of what the batch's judged one shows), a join as if its row were missing
-    if (judge(e, undefined, e.kind === 'member_joined' ? 'no row running' : '') === 'none') return s.save();
+    // the entry-only answer (a superset of what the batch's judged one shows)
+    if (judge(e, undefined) === 'none') return s.save();
     cursor.hold(e.id);
     if (e.kind === 'member_left') {
       const prev = held.get(e.from);
@@ -593,8 +547,7 @@ function startSession(me: Identity, ctx: TailCtx): Session {
   function sendRows() {
     let text: string | null = null;
     try {
-      const missing = missingRowsText(me, sid, { now: clock.now(), rows, identity: deps.identity });
-      text = [remindersText(me, rm, deps), missing].filter(Boolean).join('\n\n') || null;
+      text = remindersText(me, rm, deps) || null;
     } catch (e) { log('rows', e); return; }
     if (text === rowsSent) return;
     rowsSent = text;
@@ -719,7 +672,6 @@ function runTail({
   const d: Deps = {
     openRoom: deps.openRoom ?? ((code: RoomCode) => roomMod.open(code)),
     heartbeat: deps.heartbeat ?? ((me: Identity) => identityMod.heartbeat(me)),
-    rows: deps.rows ?? rowsMod,
     session: deps.session ?? sessionMod,
     roomClaude: deps.roomClaude ? constant(deps.roomClaude) : roomClaudeLib,
     identity: deps.identity ?? identityMod,

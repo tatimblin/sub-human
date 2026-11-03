@@ -1,4 +1,4 @@
-// lib/rows.ts: rowCalls text, spawn parsing, the row map, and deterministic row text.
+// lib/rows.ts: the room row's deterministic text, and the sweep of the row maps older versions kept.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -6,16 +6,9 @@ import os from 'node:os';
 import path from 'node:path';
 import * as rows from '../lib/rows.ts';
 import * as roomLib from '../lib/room.ts';
-import * as session from '../lib/room/session.ts';
-import type { Identity } from '../lib/identity.ts';
 import type { Entry, Member, Members } from '../lib/room/types.ts';
-import type { Task } from '../lib/types-app.ts';
-import { rc, sn, sid, eid } from './support/brands.ts';
-import { must } from './support/must.ts';
+import { rc, sn, eid } from './support/brands.ts';
 
-/** A seat as rows reads it. */
-type Seat = Pick<Identity, 'code' | 'name' | 'role'>;
-const me = (m: Seat): Seat => m;
 type RowOpts = NonNullable<Parameters<typeof rows.rowText>[1]>;
 
 /** A room written by hand (members.json + log.jsonl), independent of the identity / room writers. */
@@ -34,122 +27,14 @@ function makeRoom(members: (Pick<Member, 'name'> & Partial<Member>)[], entries: 
 }
 const H = '593da0aaaaaa';
 
-test('rowCalls: claude gets one participant call per active member; none for claude or left members', () => {
-  const { ms, code } = makeRoom([{ name: sn('claude') }, { name: sn('alice') }, { name: sn('bob') }, { name: sn('carol'), left_at: 'x' }]);
-  const t = rows.rowCalls({ code, name: sn('claude'), role: 'claude' }, ms);
-  assert.match(t, /Agent\(\{subagent_type: "sub-human:participant", description: "alice", prompt: "member: alice", run_in_background: true\}\)/);
-  assert.match(t, /description: "bob"/);
-  assert.doesNotMatch(t, /description: "carol"/);
-  assert.doesNotMatch(t, /description: "claude"/);
-  assert.match(t, /member_joined NAME/);
-  assert.match(t, /only when it says NAME has no row running/);
-  // the rows-only turn ends with a word: an empty reply costs a second model call ("no visible output")
-  assert.match(t, /then end your turn with the one word "ok"/);
-  assert.doesNotMatch(t, /carry on|no text/);
-  const none = rows.rowCalls({ code, name: sn('claude'), role: 'claude' }, { claude: must(ms.claude) });
-  assert.match(none, /No members yet/);
-});
-
-test('rowCalls: a member gets one room call labelled with the code, listing the other members (not claude, not self)', () => {
-  const { ms, code } = makeRoom([{ name: sn('claude') }, { name: sn('alice') }, { name: sn('bob') }, { name: sn('dave') }]);
-  const t = rows.rowCalls({ code, name: sn('alice'), role: 'member' }, ms);
-  assert.match(t, /subagent_type: "sub-human:room", description: "marmot-2509", prompt: "room: marmot-2509\\nmembers: bob, dave", run_in_background: true/);
-  assert.equal((t.match(/Agent\(/g) || []).length, 1);
-  // @ts-expect-error -- deliberate: alice, a record without its role
-  const solo = rows.rowCalls({ code, name: sn('alice'), role: 'member' }, [{ name: 'claude', role: 'claude' }, { name: 'alice' }]);
-  assert.match(solo, /members: \(none\)/);
-  assert.equal(rows.rowCalls(null, ms), '');
-});
-
-test('parseSpawn: name from the prompt, else the description; room code from prompt or description', () => {
-  // @ts-expect-error -- deliberate: empty records: parseSpawn reads only the names
-  const ms: Members = { alice: {}, bob: {} };
-  assert.deepEqual(rows.parseSpawn({ subagent_type: 'sub-human:participant', prompt: 'member: bob', description: 'whatever' }, ms), { kind: 'participant', name: 'bob' });
-  assert.deepEqual(rows.parseSpawn({ subagent_type: 'sub-human:participant', prompt: 'hold it', description: 'alice' }, ms), { kind: 'participant', name: 'alice' });
-  assert.equal(rows.parseSpawn({ subagent_type: 'sub-human:participant', prompt: 'x', description: 'zed' }, ms), null);
-  assert.deepEqual(rows.parseSpawn({ subagent_type: 'sub-human:room', prompt: 'room: otter-1234\nmembers: bob' }, ms), { kind: 'room', name: rc('otter-1234') });
-  assert.deepEqual(rows.parseSpawn({ subagent_type: 'sub-human:room', description: rc('otter-1234') }, ms), { kind: 'room', name: rc('otter-1234') });
-  assert.equal(rows.parseSpawn({ subagent_type: 'Explore', description: 'alice' }, ms), null);
-});
-
-test('row map: records per session, merges across sessions (/clear), forgets', () => {
-  const { code } = makeRoom([{ name: sn('claude') }, { name: sn('alice') }]);
-  rows.recordRow(code, 'sess-1', 'a1', { kind: 'participant', name: 'alice', parent: null });
-  rows.recordRow(code, 'sess-1', 'a2', { kind: 'room', name: code, parent: null });
-  rows.recordRow(code, 'sess-2', 'a3', { kind: 'participant', name: 'bob', parent: 'a2' });
-  const m = rows.readRowMap(code);
-  assert.deepEqual(Object.keys(m).sort(), ['a1', 'a2', 'a3']);
-  assert.equal(must(m.a3).parent, 'a2');
-  rows.forgetRow(code, 'a1');
-  assert.equal(rows.readRowMap(code).a1, undefined);
-  rows.writeHolds(code, sn('claude'), { members: ['alice'] });
-  assert.equal(Object.keys(rows.readRowMap(code)).length, 2, 'holds files are not row maps');
-});
-
 const prop = (approvers: string[], hash = H, extra: Partial<Entry> = {}) => ({ kind: 'proposal', via: 'human', from: 'alice', hash, approvers, path: `plans/${hash}.md`, ...extra });
 const answer = (from: string, kind: string, hash = H, extra: Partial<Entry> = {}) => ({ via: 'human', from, kind, proposal_hash: hash, ...extra });
 const decision = (hash = H) => ({ kind: 'decision', via: 'system', from: 'claude', proposal_hash: hash, text: 'agreed by all' });
 const fitsRow = (t: string) => assert.ok(Array.from(t.replace(/\x1b\[[0-9;]*m/g, '')).length <= rows.ROW_MAX, `"${t}" over ROW_MAX`);
 
-test('rowText (participant): proposal states from the room\'s Claude view, presence, and the open task', () => {
-  const { code, dir } = makeRoom([{ name: sn('claude') }, { name: sn('alice') }, { name: sn('bob') }], [
-    { kind: 'say', from: 'alice', via: 'human' },
-    prop(['alice', 'bob']),
-    answer('alice', 'signoff'),
-  ]);
-  const tasks: Task[] = [];
-  assert.equal(rows.rowText(code, { member: sn('alice'), viewer: 'claude', tasks }), '✓ agreed 593da0');
-  assert.equal(rows.rowText(code, { member: sn('bob'), viewer: 'claude', tasks }), '⚠ reviewing 593da0');
-  fs.mkdirSync(path.join(dir, 'presence'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'presence', 'alice.json'), JSON.stringify({ state: 'idle', at: new Date().toISOString() }));
-  assert.equal(rows.rowText(code, { member: sn('alice'), viewer: 'claude', tasks }), '✓ agreed 593da0 · idle');
-  const list = [
-    { id: '1', subject: 'room marmot-2509 open', status: 'in_progress', owner: 'room' },
-    { id: '2', subject: 'parser tests', status: 'in_progress', owner: 'bob' },
-    { id: '3', subject: 'docs', status: 'completed', owner: 'alice' },
-  ] as Task[]; // no blockedBy: rowText reads none
-  assert.equal(rows.rowText(code, { member: sn('bob'), viewer: 'claude', tasks: list }), '⚠ reviewing 593da0 · ◼ #2 parser tests');
-  assert.equal(rows.rowText(code, { member: sn('alice'), viewer: 'claude', tasks: list }), '✓ agreed 593da0 · idle', 'a completed task is not open');
-  // default source: <room>/tasks.json (the mirror), when lib/tasks.ts is absent or fails
-  fs.writeFileSync(path.join(dir, 'tasks.json'), JSON.stringify(list));
-  assert.match(rows.rowText(code, { member: sn('bob'), viewer: 'claude' }), /◼ #2 parser tests$/);
-});
-
-test('rowText (participant): objection (no entry id), decided, status after the decision, left, mail', () => {
-  const { code, dir } = makeRoom([{ name: sn('claude') }, { name: sn('alice') }, { name: sn('bob') }, { name: sn('carol'), left_at: 'x' }], [
-    prop(['alice', 'bob']),
-    answer('bob', 'objection', H, { text: 'no' }),
-    { kind: 'say', from: 'bob', via: 'agent', to: 'alice' },
-    { kind: 'say', from: 'bob', via: 'agent', to: 'alice' },
-  ]);
-  const tasks: Task[] = [];
-  assert.equal(rows.rowText(code, { member: sn('bob'), viewer: 'claude', tasks }), '✖ objected');
-  assert.equal(rows.rowText(code, { member: sn('bob'), viewer: 'alice', tasks }), '✖ objected · ✉ 2 for you');
-  assert.equal(rows.rowText(code, { member: sn('carol'), viewer: 'claude', tasks }), 'left');
-  assert.equal(rows.rowText(code, { member: sn('zed'), viewer: 'claude', tasks }), 'not in the room');
-  const add = (e: object) => fs.appendFileSync(path.join(dir, 'log.jsonl'), JSON.stringify({ id: rows.readLog(code).length + 1, at: new Date().toISOString(), to: 'room', ...e }) + '\n');
-  add(decision());
-  assert.equal(rows.rowText(code, { member: sn('alice'), viewer: 'claude', tasks }), '✖ blocked 593da0', 'bob objected: the closed proposal is blocked, not decided');
-  add({ kind: 'status', via: 'agent', from: 'alice', text: 'handler done,\n12/12 tests pass in test/tasks.node-test.ts and more words here' });
-  const t = rows.rowText(code, { member: sn('alice'), viewer: 'claude', tasks });
-  assert.match(t, /^Claude status: handler done, 12\/12 tests pass/);
-  fitsRow(t);
-  assert.equal(rows.rowText(code, { member: sn('bob'), viewer: 'claude', tasks }), '✖ blocked 593da0', 'no status from bob yet');
-});
-
-test('rowText (participant): a hashless proposal post counts for nothing, an old retract line changes nothing; propose() entries count whatever their via', () => {
-  const { code } = makeRoom([{ name: sn('claude') }, { name: sn('alice') }, { name: sn('bob') }], [
-    { kind: 'proposal', via: 'agent', from: 'bob', text: 'how about' },
-    prop(['bob'], H, { via: 'agent' }),
-    answer('bob', 'signoff'),
-    { kind: 'retract', via: 'system', from: 'bob', refs: [3] },
-  ]);
-  assert.equal(rows.rowText(code, { member: sn('bob'), viewer: 'claude', tasks: [] }), '✓ agreed 593da0');
-});
-
 test('rowText (room row): answer needed, agreed, objected, decided, mail and the task summary', () => {
   const { code } = makeRoom([{ name: sn('claude') }, { name: sn('alice') }, { name: sn('bob') }], [{ kind: 'say', from: 'alice', via: 'human' }]);
-  assert.equal(rows.rowText(code, { viewer: 'alice', taskSummary: '' }), '2 here', 'humans only: the room\'s Claude is headless');
+  assert.equal(rows.rowText(code, { viewer: 'alice', taskSummary: '' }), 'bob here', 'the others by name, humans only: the room\'s Claude is headless');
   const mk = (list: Partial<Entry>[]): Entry[] => list.map((e, i) => ({ id: i + 1, at: new Date().toISOString(), text: 'x', to: 'room', ...e }) as Entry); // {} lines: fillers
   const es = mk([prop(['alice', 'bob']), answer('bob', 'signoff'), { kind: 'say', from: 'claude', via: 'agent', to: 'alice' }]);
   const o = (extra?: RowOpts): RowOpts => ({ entries: es, taskSummary: '', ...extra });
@@ -180,13 +65,9 @@ test('rowText: every fixture stays within ROW_MAX; segments that do not fit are 
   const room = rows.rowText(code, { viewer: 'alice', entries: es, taskSummary: long });
   assert.equal(room, '⚠ your answer needed 593da0 · ✉ 1 for you', 'the summary does not fit: dropped, not cut');
   fitsRow(room);
-  const tasks = [{ id: '22', subject: 'a very long subject line about the parser and its many tests', status: 'pending', owner: 'bob' }] as Task[]; // no blockedBy
-  const p = rows.rowText(code, { member: sn('bob'), viewer: 'alice', entries: es, tasks });
-  assert.equal(p, '⚠ reviewing 593da0 · ◼ #22 a very long subject line ab…');
-  fitsRow(p);
-  for (const viewer of ['alice', 'bob', 'claude']) for (const name of [code, 'alice', 'bob']) {
-    fitsRow(rows.rowText(code, { member: name === code ? null : sn(name), viewer: viewer, entries: es, tasks, taskSummary: long }));
-    fitsRow(rows.rowText(code, { member: name === code ? null : sn(name), viewer: viewer, entries: es, tasks, taskSummary: long, color: true }));
+  for (const viewer of ['alice', 'bob', 'claude']) {
+    fitsRow(rows.rowText(code, { viewer, entries: es, taskSummary: long }));
+    fitsRow(rows.rowText(code, { viewer, entries: es, taskSummary: long, color: true }));
   }
   assert.equal(rows.fit(['x'.repeat(80)]).length, rows.ROW_MAX);
 });
@@ -198,76 +79,26 @@ test('rowText (room row): lib/tasks.ts summary(code, viewer) is used', () => {
     { id: '4', subject: 'docs', status: 'pending', owner: 'bob' },
     { id: '5', subject: 'old', status: 'completed', owner: 'bob' },
   ]);
-  assert.equal(rows.rowText(code, { viewer: 'alice', entries: [] }), '1 here · tasks 2 open · #2 you · #4 bob');
-  assert.equal(rows.rowText(code, { member: sn('alice'), viewer: 'bob', entries: [] }), '◼ #2 parser tests', 'participant row: tasks.mine()');
+  assert.equal(rows.rowText(code, { viewer: 'alice', entries: [] }), 'only you · tasks 2 open · #2 you · #4 bob');
 });
 
-test('missingRows: claude lists members without a live hold after the grace period; member checks its room row', () => {
-  const { code } = makeRoom([{ name: sn('claude') }, { name: sn('alice') }, { name: sn('bob'), joined_at: new Date().toISOString() }]);
-  assert.deepEqual(rows.missingRows(code, me({ code, name: sn('claude'), role: 'claude' })), ['alice'], 'bob just joined: grace');
-  rows.writeHolds(code, sn('claude'), { members: ['alice'] });
-  assert.deepEqual(rows.missingRows(code, me({ code, name: sn('claude'), role: 'claude' })), []);
-  assert.deepEqual(rows.missingRows(code, me({ code, name: sn('alice'), role: 'member' })), [code]);
-  rows.writeHolds(code, sn('alice'), { members: [], room: true });
-  assert.deepEqual(rows.missingRows(code, me({ code, name: sn('alice'), role: 'member' })), []);
-  session.put(roomLib.open(code).store, 'alice', 'holds', { pid: 999999, at: new Date().toISOString(), members: [], room: true });
-  assert.deepEqual(rows.missingRows(code, me({ code, name: sn('alice'), role: 'member' })), [code], 'dead server pid: not live');
+test('rowText (room row, one row): it names who else is here, at most three then "+N"; left and lapsed members and the room\'s Claude are not here', () => {
+  const { code } = makeRoom([{ name: sn('claude') }, { name: sn('alice') }, { name: sn('bob') }, { name: sn('carol') }, { name: sn('dave') }, { name: sn('erin') },
+    { name: sn('fred'), left_at: 'x' }, { name: sn('gus'), lapsed_at: 'x' }]);
+  assert.equal(rows.rowText(code, { viewer: 'alice', entries: [], taskSummary: '' }), 'bob, carol, dave +1 here');
+  assert.equal(rows.rowText(code, { viewer: 'erin', entries: [], taskSummary: '' }), 'alice, bob, carol +1 here');
+  const solo = makeRoom([{ name: sn('claude') }, { name: sn('alice') }]);
+  assert.equal(rows.rowText(solo.code, { viewer: 'alice', entries: [], taskSummary: '' }), 'only you');
 });
 
-test('joinNote: a member_joined notice says whether the row already runs here (live holds), so only a missing row is spawned', () => {
-  const { code } = makeRoom([{ name: sn('claude') }, { name: sn('alice') }, { name: sn('bob') }]);
-  const roomClaude: Seat = { code, name: sn('claude'), role: 'claude' };
-  assert.match(rows.joinNote(roomClaude, 'bob'), /bob has no row running; spawn it now: Agent sub-human:participant, description "bob", prompt "member: bob"/);
-  rows.writeHolds(code, sn('claude'), { members: ['bob'] });
-  assert.match(rows.joinNote(roomClaude, 'bob'), /bob's row is already running .*make NO Agent call/);
-  assert.match(rows.joinNote(roomClaude, 'alice'), /alice has no row running/);
-  session.put(roomLib.open(code).store, 'claude', 'holds', { pid: 999999, at: new Date().toISOString(), members: ['bob'], room: false });
-  assert.match(rows.joinNote(roomClaude, 'bob'), /no row running/, 'dead hold server: not running');
-  const alice: Seat = { code, name: sn('alice'), role: 'member' };
-  assert.equal(rows.joinNote(alice, 'bob'), `row: your room row is not running; spawn it now: ${rows.roomCall(code, ['bob'])}`);
-  rows.writeHolds(code, sn('alice'), { room: true });
-  assert.match(rows.joinNote(alice, 'bob'), /your room row adds bob by itself; make NO Agent call/);
-  assert.equal(rows.joinNote(alice, 'alice'), '');
-  assert.equal(rows.joinNote(alice, 'claude'), '');
-});
-
-test('joinNote (Phase 0 fix): a room hold between its JOINED return and the re-call still counts as running', () => {
-  const { code } = makeRoom([{ name: sn('claude') }, { name: sn('alice') }, { name: sn('bob') }]);
-  const alice: Seat = { code, name: sn('alice'), role: 'member' };
-  // hold.ts writes room:false + roomUntil while the room agent re-calls hold after "JOINED bob"
-  rows.writeHolds(code, sn('alice'), { members: [], room: false, roomUntil: Date.now() + 30_000 });
-  assert.equal(must(rows.readHolds(code, sn('alice'))).room, true);
-  assert.match(rows.joinNote(alice, 'bob'), /make NO Agent call/);
-  assert.doesNotMatch(rows.joinNote(alice, 'bob'), /not running|Agent\(/);
-  assert.deepEqual(rows.rowsNeeded(code, alice, { held: rows.readHolds(code, sn('alice')) }), []);
-  rows.writeHolds(code, sn('alice'), { members: [], room: false, roomUntil: Date.now() - 1 });
-  assert.equal(must(rows.readHolds(code, sn('alice'))).room, false, 'the gap expired: the row really stopped');
-  assert.match(rows.joinNote(alice, 'bob'), /not running/);
-});
-
-test('claude (headless --bg): rowCalls / rowsNeeded / joinNote ignore members.json\'s claude {job, pid} record', () => {
-  const { code, dir } = makeRoom([{ name: sn('alice') }, { name: sn('bob') }, { name: sn('carol'), left_at: 'x' }]);
-  const ms = JSON.parse(fs.readFileSync(path.join(dir, 'members.json'), 'utf8')) as Members;
-  ms.claude = { job: 'job-123', pid: process.pid, role: 'claude', name: sn('claude'), session_id: sid('sid-claude') };
-  fs.writeFileSync(path.join(dir, 'members.json'), JSON.stringify(ms));
-  const roomClaude: Seat = { code, name: sn('claude'), role: 'claude' };
-  const t = rows.rowCalls(roomClaude, ms);
-  assert.equal((t.match(/Agent\(/g) || []).length, 3, 'alice, bob + the NAME template in the join rule');
-  assert.doesNotMatch(t, /description: "(claude|carol)"/);
-  assert.deepEqual(rows.rowsNeeded(code, roomClaude, { members: ms }), ['alice', 'bob']);
-  rows.writeHolds(code, sn('claude'), { members: ['alice'] });
-  const held = rows.readHolds(code, sn('claude'));
-  assert.deepEqual(rows.rowsNeeded(code, roomClaude, { members: ms, held }), ['bob']);
-  const only = rows.rowCalls(roomClaude, ms, { only: ['bob'] });
-  assert.match(only, /description: "bob"/);
-  assert.doesNotMatch(only, /description: "alice", prompt/);
-  assert.match(rows.joinNote(roomClaude, 'bob'), /bob has no row running; spawn it now: Agent sub-human:participant, description "bob"/);
-  // the room's Claude\'s own record without a name field (contract: room Claude:{job, pid}) is still not a member
-  // @ts-expect-error -- deliberate: no name or role
-  ms.claude = { job: 'job-123', pid: process.pid };
-  assert.deepEqual(rows.rowsNeeded(code, roomClaude, { members: ms }), ['alice', 'bob']);
-  assert.deepEqual(rows.rowsNeeded(code, me({ code, name: sn('alice'), role: 'member' }), { members: ms }), [code]);
-  assert.match(rows.rowCalls(me({ code, name: sn('alice'), role: 'member' }), ms), /members: bob"/);
+test('pruneRowMaps: an older version\'s row map whose session holds no seat and whose rows are old goes; a fresh one stays', () => {
+  const { code } = makeRoom([{ name: sn('alice') }]);
+  const kv = roomLib.open(code).store.kv;
+  const old = new Date(Date.now() - 400 * 24 * 3600_000).toISOString();
+  kv.set('rows/sess-old', { byAgent: { a1: { kind: 'participant', name: 'bob', at: old } } });
+  kv.set('rows/sess-new', { byAgent: { a2: { kind: 'room', name: code, at: new Date().toISOString() } } });
+  assert.equal(rows.pruneRowMaps(code), 1);
+  assert.deepEqual(kv.list('rows/'), ['rows/sess-new']);
 });
 
 test('rowText: a proposal is named by its stored plan\'s title (clipped), not its hash', () => {
@@ -281,7 +112,7 @@ test('rowText: a proposal is named by its stored plan\'s title (clipped), not it
   assert.equal(rows.rowText(code, { viewer: 'alice', entries: es, taskSummary: '' }), '⚠ your answer needed Cursor paging for /users');
   assert.equal(rows.rowText(code, { viewer: 'bob', entries: es, taskSummary: '' }), 'proposal Cursor paging for /users 1/2 agreed (✓ you)');
   es.push(...mk([{}, {}, answer('alice', 'signoff', h1), decision(h1)]).slice(2));
-  assert.equal(rows.rowText(code, { member: sn('alice'), viewer: 'claude', entries: es, tasks: [] }), '✔ decided Cursor paging for /users');
+  assert.equal(rows.rowText(code, { viewer: 'alice', entries: es, taskSummary: '' }), '✔ decided Cursor paging for /users');
   const long = mk([prop(['alice'], h2)]);
   const t = rows.rowText(code, { viewer: 'alice', entries: long, taskSummary: '' });
   assert.equal(t, '⚠ your answer needed A very long proposal ti…');
@@ -300,16 +131,16 @@ test('rowText (room row): each room plan at a glance, the latest edited first, a
   const es: Entry[] = [pl('paging', 1, H('a')), pl('release', 1, H('b')), pl('api', 1, H('c')), pl('paging', 2, H('d'), 'bob')].map((e, i) => at(i, e));
   const code = rc('marmot-2509');
   const o = { entries: es, taskSummary: '' };
-  assert.match(rows.rowText(code, { viewer: 'carol', ...o }), /^\d+ here · paging v2 draft · api v1 draft · release v1 draft$/);
+  assert.match(rows.rowText(code, { viewer: 'carol', ...o }), /^alice, bob here · paging v2 draft · api v1 draft · \+1 plan$/);
   // a request on release v1, carol asked: it leads the row, and release is not repeated; then agreed by both
   const ask = at(4, { kind: 'proposal', hash: H('b'), approvers: ['alice', 'carol'], plan: 'release', version: 1, text: 'x' });
   const carol = rows.rowText(code, { viewer: 'carol', entries: [...es, ask], taskSummary: '' });
   assert.equal(carol, '⚠ your answer needed plan release v1 · +2 plans', 'the plans that do not fit are counted, never cut silently');
   assert.doesNotMatch(carol, /release v1 draft/);
   const bob = rows.rowText(code, { viewer: 'bob', entries: [...es, ask], taskSummary: '' });
-  assert.match(bob, /^\d+ here · paging v2 draft · api v1 draft · \+1 plan$/, 'not asked: the plans, latest edited first');
+  assert.match(bob, /^[^·]+ here · paging v2 draft · api v1 draft · \+1 plan$/, 'not asked: the plans, latest edited first');
   const more = ['a', 'b', 'c', 'd', 'e'].map((n, i) => at(i, pl(n, 1, H(String(i + 1)))));
-  assert.match(rows.rowText(code, { viewer: 'carol', entries: more, taskSummary: '' }), /^\d+ here · e v1 draft · d v1 draft · c v1 draft · \+2 plans$/);
+  assert.match(rows.rowText(code, { viewer: 'carol', entries: more, taskSummary: '' }), /^alice, bob here · e v1 draft · d v1 draft · \+3 plans$/);
 });
 
 test('rowText (room-plan live): each plan at its current version; a decision on an older one never reads as current, a half-agreed request is a count, the current draft survives fitting', () => {
@@ -336,16 +167,14 @@ test('rowText (room-plan live): each plan at its current version; a decision on 
   assert.doesNotMatch(paging, /decided|✓ agreed/, paging);
   // bob is asked on paging v3: his answer leads; the other plans are counted
   assert.equal(rows.rowText(code, { viewer: 'bob', entries: es, taskSummary: '' }), '⚠ your answer needed plan paging v3 · +2 plans');
-  // the participant row: alice's agreement is hers on v3, not the old decision on v1
-  assert.match(rows.rowText(code, { member: sn('alice'), viewer: 'bob', entries: es, tasks: [] }), /✓ agreed plan paging v3/);
-  assert.doesNotMatch(rows.rowText(code, { member: sn('bob'), viewer: 'alice', entries: es.slice(0, 10), tasks: [] }), /decided/, 'room v5 is current: the v1 decision is history');
+  assert.doesNotMatch(rows.rowText(code, { viewer: 'alice', entries: es.slice(0, 10), taskSummary: '' }), /decided/, 'room v5 is current: the v1 decision is history');
 });
 
 test('rowText (room-plan live): the join marker shows only who came after the viewer, never who was here before', () => {
   const { code } = makeRoom([{ name: sn('alice') }, { name: sn('bob') }, { name: sn('carol') }]);
   const at = (i: number, e: Partial<Entry>): Entry => ({ from: 'alice', kind: 'say', via: 'system', to: 'room', text: 'x', ...e, id: eid(i + 1), at: new Date(Date.now() - (5 - i) * 1000).toISOString() });
   const es = [at(0, { kind: 'member_joined', from: 'alice' }), at(1, { kind: 'member_joined', from: 'bob' })];
-  assert.doesNotMatch(rows.rowText(code, { viewer: 'bob', entries: es, taskSummary: '' }), /alice/, 'alice was here when bob came');
+  assert.doesNotMatch(rows.rowText(code, { viewer: 'bob', entries: es, taskSummary: '' }), /alice joined/, 'alice was here when bob came');
   assert.match(rows.rowText(code, { viewer: 'alice', entries: es, taskSummary: '' }), /^\+bob joined/);
   es.push(at(2, { kind: 'member_joined', from: 'carol' }));
   assert.match(rows.rowText(code, { viewer: 'bob', entries: es, taskSummary: '' }), /^\+carol joined/, 'one after him still shows');

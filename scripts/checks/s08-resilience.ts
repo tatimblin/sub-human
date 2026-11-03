@@ -24,12 +24,12 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   if (left && bcap) {
     const es = x.entries('bob').filter(e => e.timestamp !== undefined && e.timestamp > left.at && e.timestamp <= bcap.time && !e.isSidechain);
     const prompts = es.filter(e => e.type === 'user' && !e.isMeta && !metrics.trigger(e) && !(e.origin && e.origin.kind === 'task-notification') && !(Array.isArray(e.message && e.message.content) && metrics.blocksOf(e).every(c => c && c.type === 'tool_result')));
-    const wake = es.find(e => metrics.trigger(e) === 'rewake');
-    const call = wake && es.find(e => e.type === 'assistant' && e.timestamp !== undefined && wake.timestamp !== undefined && e.timestamp >= wake.timestamp && JSON.stringify(e.message?.content ?? null).includes('"Agent"'));
-    ok = !!wake && !!call && prompts.length === 0 && b2.filter(r => r.label === code).length === 1 && b2.filter(r => !r.nested).length === 1;
-    ev = `${wake ? `row-rewake wake ${wake.timestamp?.slice(11, 19)}` : 'no row-rewake wake'}; ${call ? `Agent call ${call.timestamp?.slice(11, 19)}` : 'no Agent call'}; ${prompts.length} prompt(s) from bob; rows ${b2.map(r => r.line).join(' | ') || 'none'}`;
+    // the hooks module spawns the row itself ($.agent.spawn): no wake, no Agent call of the model's
+    const call = es.find(e => e.type === 'assistant' && JSON.stringify(e.message?.content ?? null).includes('"Agent"'));
+    ok = !call && prompts.length === 0 && b2.filter(r => r.label === code).length === 1 && b2.length === 1;
+    ev = `${call ? `an Agent call ${call.timestamp?.slice(11, 19)}` : 'no Agent call'}; ${prompts.length} prompt(s) from bob; rows ${b2.map(r => r.line).join(' | ') || 'none'}`;
   }
-  det('bob\'s room row is back with no prompt (row-rewake), no duplicate rows', ok, ev);
+  det('bob\'s room row is back with no prompt and no model turn (the hooks module spawns it), no duplicate rows', ok, ev);
   const say = log.find(e => e.kind === 'say' && e.from === 'alice' && e.via === 'human' && back && e.id > back.id);
   // the tail child came back with the resumed session: alice's words reach bob (a chat row and his Claude's copy)
   const after = say ? x.entries('bob').filter(e => e.timestamp !== undefined && e.timestamp > say.at) : [];

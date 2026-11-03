@@ -20,31 +20,18 @@ export interface SessionDoc {
   edit?: PlanEdit;
   recheck?: Recheck;
   steer?: Steer;
-  holds?: Holds;
   blocks?: Record<string, number>;
   /** ids the consent hook already told this seat's model (a decision its answer made): the room context skips them */
   reported?: number[];
 }
 
 // ---------- lib/rows.ts ----------
-/** A seat's holds as readHolds returns them (mcp/hold.ts writes them to its session document). */
-export interface Holds {
-  pid: number;
-  at: string;
-  members: string[];
-  room: boolean;
-  roomUntil?: string;
-}
-/** One agent -> row record (rows/<session_id>.byAgent). */
+/** One agent -> row record (rows/<session_id>.byAgent: older versions kept them; lib/rows.ts pruneRowMaps sweeps them). */
 export interface RowRec {
   kind?: 'participant' | 'room';
   name: string;
   parent?: string | null;
-  at?: string; // recordRow stamps it; the status line's own guesses have none
-}
-export interface Spawn {
-  kind: 'participant' | 'room';
-  name: string;
+  at?: string;
 }
 
 // ---------- lib/tasks.ts ----------

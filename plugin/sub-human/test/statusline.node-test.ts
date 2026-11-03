@@ -52,65 +52,37 @@ test('statusline: only the agent-panel rows remain (no main status line)', () =>
   assert.equal((segments as Record<string, unknown>).state, undefined);
 });
 
-test('agentStatusline: claude rows by the row map, else by description; other tasks untouched; killed rows', () => {
-  const { code, add } = world(['claude', 'alice', 'bob']);
-  add('alice', 'proposal', prop(['alice', 'bob']));
-  add('alice', 'signoff', { proposal_hash: H });
-  fs.writeFileSync(path.join(identity.roomDir(code), 'tasks.json'), JSON.stringify([{ id: '2', subject: 'parser tests', status: 'in_progress', owner: 'bob' }]));
-  rows.recordRow(code, 'sid-claude', 'a1', { kind: 'participant', name: 'alice', parent: null });
-  const tasks = [
-    { id: 'a1', type: 'local_agent', status: 'running', description: 'alice watcher' },
-    { id: 'a2', type: 'local_agent', status: 'running', description: 'bob' },
-    { id: 'a3', type: 'local_agent', status: 'running', description: 'run tests' },
-    { id: 'a4', type: 'local_agent', status: 'killed', description: 'bob' },
-    { id: 'a5', type: 'local_agent', status: 'running', description: 'claude' },
-  ];
-  const out = agentStatusline({ session_id: 'sid-claude', tasks }, { env }).split('\n').map(rowOf);
-  assert.deepEqual(out, [
-    { id: 'a1', content: 'alice  ✓ agreed b7ca39' },
-    { id: 'a2', content: 'bob  ⚠ reviewing b7ca39 · ◼ #2 parser tests' },
-    { id: 'a4', content: 'bob  ⚠ row stopped' },
-  ]);
-  assert.equal(agentStatusline({ session_id: 'sid-claude', tasks: [tasks[2]] }, { env }), '', 'no row tasks: nothing');
-  assert.equal(agentStatusline({ session_id: 'sid-nobody', tasks }, { env }), '');
-  assert.equal(agentStatusline({}, { env }), '');
-});
-
-test('agentStatusline: a member\'s room row and the nested rows inside it (after /clear changed the session id)', () => {
+test('agentStatusline: the one room row, found by its description (the room code), names who else is here; other tasks untouched; a killed room row', () => {
   const { code, add } = world(['claude', 'alice', 'bob', 'carol']);
   add('carol', 'proposal', prop(['alice', 'bob']));
   add('bob', 'objection', { proposal_hash: H });
-  rows.recordRow(code, 'old-session', 'r1', { kind: 'room', name: code, parent: null });
-  rows.recordRow(code, 'old-session', 'c1', { kind: 'participant', name: 'bob', parent: 'r1' });
-  rows.recordRow(code, 'old-session', 'c2', { kind: 'participant', name: 'carol', parent: 'r1' });
   const tasks = [
-    { id: 'r1', status: 'running', description: code },
-    { id: 'c1', status: 'running', description: 'bob' },
-    { id: 'c2', status: 'killed', description: 'carol' },
+    { id: 'r1', type: 'local_agent', status: 'running', description: code },
+    { id: 'a2', type: 'local_agent', status: 'running', description: 'bob' },
+    { id: 'a3', type: 'local_agent', status: 'running', description: 'run tests' },
+    { id: 'r2', type: 'local_agent', status: 'killed', description: code },
   ];
   const out = agentStatusline({ session_id: 'sid-alice', tasks }, { env }).split('\n').map(rowOf);
+  assert.deepEqual(out.map(o => o.id), ['r1', 'r2'], 'the room row only: an agent named after a member is not a row');
   assert.match(must(out[0]).content, new RegExp(`^${code}  ⚠ your answer needed b7ca39`));
-  assert.deepEqual(out.slice(1), [
-    { id: 'c1', content: 'bob  ✖ objected' },
-    { id: 'c2', content: 'carol  (reconnecting)' },
-  ]);
+  assert.equal(must(out[1]).content, `${code}  ⚠ room row stopped`);
   for (const o of out) assert.ok(Array.from(o.content).length <= code.length + 2 + rows.ROW_MAX);
-  identity.leave(code, sn('carol'));
-  assert.equal(rowOf(agentStatusline({ session_id: 'sid-alice', tasks: [tasks[2]] }, { env })).content, 'carol  left');
-  const colored = rowOf(agentStatusline({ session_id: 'sid-alice', tasks: [tasks[0]] }, { env: {} })).content;
+  assert.equal(agentStatusline({ session_id: 'sid-alice', tasks: [tasks[2]] }, { env }), '', 'no row tasks: nothing');
+  assert.equal(agentStatusline({ session_id: 'sid-nobody', tasks }, { env }), '');
+  assert.equal(agentStatusline({}, { env }), '');
+  const colored = rowOf(agentStatusline({ session_id: 'sid-alice', tasks: [{ id: 'r1', status: 'running', description: code }] }, { env: {} })).content;
   assert.match(colored, /\x1b\[33m⚠ your answer needed b7ca39\x1b\[0m/);
+  const quiet = world(['claude', 'alice', 'bob', 'carol']);
+  assert.equal(rowOf(agentStatusline({ session_id: 'sid-alice', tasks: [{ id: 'r1', status: 'running', description: quiet.code }] }, { env })).content,
+    `${quiet.code}  bob, carol here`, 'who else is here, by name');
 });
 
-test('stage 8e I.7 (live verify, remote/16a): after this session left, its rows still get a label (the room row "you left", the others as before), never the row agent\'s own activity', () => {
+test('stage 8e I.7 (live verify, remote/16a): after this session left, its room row still gets a label ("you left"), never the row agent\'s own activity', () => {
   const { code } = world(['claude', 'alice', 'bob']);
-  rows.recordRow(code, 'sid-alice', 'r1', { kind: 'room', name: code, parent: null });
-  rows.recordRow(code, 'sid-alice', 'c1', { kind: 'participant', name: 'bob', parent: 'r1' });
   identity.leave(code, sn('alice'));
-  const tasks = [{ id: 'r1', status: 'running', description: 'Spawning participant row for bob' }, { id: 'c1', status: 'running', description: 'bob' }];
+  const tasks = [{ id: 'r1', status: 'running', description: code }];
   const out = agentStatusline({ session_id: 'sid-alice', tasks }, { env }).split('\n').filter(Boolean).map(rowOf);
-  assert.deepEqual(out.map(o => o.id), ['r1', 'c1']);
-  assert.equal(out[0]?.content, `${code}  you left · /sub-human joins again`);
-  assert.match(must(out[1]).content, /^bob  /);
+  assert.deepEqual(out, [{ id: 'r1', content: `${code}  you left · /sub-human joins again` }]);
   assert.equal(agentStatusline({ session_id: 'sid-never', tasks }, { env }), '', 'a session that held no seat: nothing');
 });
 

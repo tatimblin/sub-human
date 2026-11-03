@@ -79,8 +79,7 @@ test('/sub-human NAME with no open room: opens a room, joins as a member, spawns
   const c = must(hso(r).additionalContext);
   assert.ok(c.startsWith(`SUB-HUMAN: you are alice's Claude in room ${w.code}`), c.slice(0, 80));
   assert.doesNotMatch(c, /\{(NAME|CODE|OTHERS|ADDR_EXAMPLE|PLUGIN)\}/);
-  assert.match(c, /\nROWS\n/);
-  assert.match(c, /subagent_type: "sub-human:room"/);
+  assert.doesNotMatch(c, /ROWS|Agent\(|sub-human:room/, 'no row call: the hooks module starts the room row itself');
   const es = w.entries();
   assert.deepEqual([must(es[0]).kind, must(es[0]).from, must(es[0]).via], ['member_joined', 'alice', 'system']);
   // already seated: idempotent, no second room or room Claude
@@ -104,7 +103,7 @@ test('the room\'s Claude\'s launch /sub-human binds it (agent_type sub-human:roo
   assert.deepEqual([o.role, o.pid, o.job, o.session_id], ['claude', process.pid, '0b500131', w.sid.claude]);
   const c = must(hso(r).additionalContext);
   assert.ok(c.startsWith(`SUB-HUMAN: you are the room session of room ${w.code} (members: alice)`), c.slice(0, 100));
-  assert.match(c, /subagent_type: "sub-human:participant", description: "alice"/);
+  assert.doesNotMatch(c, /Agent\(|ROWS|participant/, 'the room session keeps no rows');
   assert.equal(w.entries().length, 0, 'the room\'s Claude logs no member_joined');
   const again = w.hook('join', input, { as: 'claude', env: { SUB_HUMAN_ROOM: w.code } });
   assert.equal(must(again.json).systemMessage, undefined);
@@ -674,23 +673,19 @@ function stubRoot() {
   return root;
 }
 
-test('block: <= 900 chars with 5 members (stub templates), placeholders filled, ROWS carries the row call(s)', () => {
+test('block: <= 900 chars with 5 members (stub templates), placeholders filled, and no row call (the room row is the hooks module\'s)', () => {
   const root = stubRoot();
   for (const role of ['member', 'claude'] as const) {
     const { text, code, common } = blockFor(role, root);
     assert.ok(text.length <= common.BLOCK_MAX, `${role} block is ${text.length} chars:\n${text}`);
     assert.doesNotMatch(text, /\{(NAME|CODE|OTHERS|ADDR_EXAMPLE|PLUGIN)\}/);
     assert.ok(text.includes(root), '{PLUGIN} filled');
-    const calls = text.match(/^Agent\(\{.*\}\)$/gm) || [];
+    assert.doesNotMatch(text, /Agent\(|ROWS/, `${role}: no row call`);
     if (role === 'member') {
       assert.match(text, new RegExp(`members: bob, carol, dave, erin\\)`), 'people only');
       assert.ok(text.includes(`bob.${code}`), 'ADDR_EXAMPLE = the first other human');
-      assert.equal(calls.length, 1);
-      assert.match(calls[0], /sub-human:room.*members: bob, carol, dave, erin/);
     } else {
       assert.match(text, /members: alice, bob, carol, dave, erin\)/);
-      assert.match(text, /^Agent\(\{subagent_type: "sub-human:participant", description: "NAME", prompt: "member: NAME", run_in_background: true\}\)$/m);
-      assert.match(text, /^NAME = alice, bob, carol, dave, erin$/m);
     }
   }
 });
@@ -714,11 +709,9 @@ test('block: no template file (or one without placeholders) falls back to the bu
     const got = blockFor(role, PLUGIN);
     const shipped = atReference(got.text, got.code);
     assert.doesNotMatch(shipped, /\{(NAME|CODE|OTHERS|ADDR_EXAMPLE|PLUGIN)\}/);
-    assert.match(shipped, /\nROWS\n/);
-    // D's budget: the template fill <= 1,400 with 5 members (the member's room upkeep block included), the whole block
-    // (with ROWS) <= 1,900
-    assert.ok(must(shipped.split('\n\nROWS\n')[0]).length <= 1400, `${role} fill ${must(shipped.split('\n\nROWS\n')[0]).length}`);
-    assert.ok(shipped.length <= 1900, `${role} shipped block ${shipped.length}`);
+    assert.doesNotMatch(shipped, /\nROWS\n/);
+    // D's budget: the whole block (the template fill: the member's room upkeep block included) <= 1,400 with 5 members
+    assert.ok(shipped.length <= 1400, `${role} shipped block ${shipped.length}`);
   }
 });
 

@@ -55,12 +55,12 @@ test('words: member text carries the mechanics (identity, address, @room, quotin
   }
 });
 
-test('words: the room session\'s fill and agent: rows only, no planning, no task tools, no room tools', () => {
+test('words: the room session\'s fill and agent: it calls nothing, no planning, no task writes, no room tools, no rows', () => {
   const fillT = read(ROOM_CLAUDE_FILL);
   for (const p of ['{CODE}', '{OTHERS}']) assert.ok(fillT.includes(p), `claude fill lacks ${p}`);
   assert.ok(fill(fillT).length <= 300, `claude fill is ${fill(fillT).length} chars`);
   assert.doesNotMatch(fillT, /TaskCreate|TaskUpdate|facilitate|propose|plan|@claude/);
-  // an empty reply makes Claude Code ask for a visible one: a second model call per rows-only turn
+  // an empty reply makes Claude Code ask for a visible one: a second model call for its one turn
   assert.match(fillT, /end your turn with the one word "ok"/);
   assert.doesNotMatch(fillT, /no text/);
 
@@ -71,7 +71,8 @@ test('words: the room session\'s fill and agent: rows only, no planning, no task
   assert.ok(body.length <= 500, `claude body is ${body.length} chars`);
   assert.doesNotMatch(body, /TaskCreate|TaskUpdate|propose|post|SendMessage|no text/);
   for (const s of ['idle session', 'end your turn with the one word "ok"', 'the plugin writes it', 'Never change it']) assert.ok(body.includes(s), `claude body lacks "${s}"`);
-  assert.deepEqual(must(fm.tools, 'tools').split(',').map(x => x.trim()), ['Agent(sub-human:participant)'], 'its rows only: no room tools, no Bash');
+  assert.deepEqual(must(fm.tools, 'tools').split(',').map(x => x.trim()), ['TaskList'], 'its own list, read only: no rows, no room tools, no Bash, no task writes');
+  assert.doesNotMatch(fillT + body, /Agent|ROWS|participant/, 'no rows: each member\'s room row is that member\'s');
 });
 
 test('words: SKILL.md allows only the live room tools (not hold: mod/guard.ts denies it to a main thread)', () => {
@@ -112,7 +113,7 @@ test('words: no text claims consent or commits for a human by example', () => {
 
 test('words: README covers the plan topics', () => {
   const t = read(README);
-  for (const s of ['/sub-human alice', 'Waiting for N background agents', 'claude logs', 'Space', '@room', 'Not yet',
+  for (const s of ['/sub-human alice', 'Waiting for 1 background agent', 'claude logs', 'Space', '@room', 'Not yet',
     'Agree', 'Object', 'sub-human tasks', 'Threat model', 'Bypass mode', 'function hooks', 'The room tail', 'SendMessage', 'claude.vole-8126', 'takes no typed input']) {
     assert.ok(t.includes(s), `README lacks "${s}"`);
   }

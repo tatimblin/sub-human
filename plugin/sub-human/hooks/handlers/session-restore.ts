@@ -9,8 +9,8 @@
 //   fork     a new claude process and a new session id: ← (the agent view) moved the conversation into a bg job
 //            (cc CONTRACT session-fork-continued-in). The old session's transcript, beside this one's, says which
 //            session it went on in, written just after the job starts: waited for up to FORK_RECORD_WAIT_MS. The
-//            seat the old session holds moves here (identity.adoptFork: no leave, no log line); its rows ended with
-//            the old session, so every row is listed. A fork with no such record (claude --resume X --fork-session
+//            seat the old session holds moves here (identity.adoptFork: no leave, no log line); its room row ended
+//            with the old session, so the hooks module starts it again. A fork with no such record (claude --resume X --fork-session
 //            typed by hand) takes no seat: the session it came from may still hold it. A fork whose old session sat
 //            in another sub-human folder (the hidden notice the hooks module appends names it, also after a leave;
 //            else its title an address NAME.CODE: SUB_HUMAN_HOME was set only in the shell, and the bg job drops it)
@@ -21,11 +21,9 @@
 //            session of this directory that changed just now holds a live seat (identity.forkUnread) also takes no seat:
 //            the person is told in one line (UNREAD) how to take it back. Nothing here throws past the hook: a fork
 //            that cannot be placed starts unseated.
-// Context = the same mechanics block as join (hooks/context.ts contextBlock: the role template filled + ROWS, i.e.
-// lib/rows.ts rowCalls(), which lists only the rows with no live hold: rows survive /clear and compaction, and
-// a re-spawn would duplicate the room row). On --resume the hold server is new, so every row is
-// listed. sessionTitle = the native address NAME.CODE (SendMessage / ListAgents reach the session by it:
-// cc CONTRACT session-title-address).
+// Context = the same mechanics block as join (hooks/context.ts contextBlock: the role template filled; the room row
+// is the hooks module's to start again, mod/rows.ts). sessionTitle = the native address NAME.CODE (SendMessage /
+// ListAgents reach the session by it: cc CONTRACT session-title-address).
 // A plan-view review left behind (hooks/consent.ts; members/NAME/review.json) is closed here: after clear or
 // resume always, after compact only when it is older than REVIEW_STALE_MS. The session plan file gets the
 // person's own text back (lib/proposal.ts restoreStale) and the review state is cleared.
@@ -35,7 +33,6 @@ import { envMs } from '../../lib/env.ts';
 import { sleepSync } from '../../lib/io.ts';
 import { projectDir } from '../../lib/cc/env.ts';
 import * as room from '../../lib/room.ts';
-import * as rows from '../../lib/rows.ts';
 import * as proposal from '../../lib/proposal.ts';
 import * as linkSocket from '../../lib/remote/link-socket.ts';
 import * as seatKey from '../seat-key.ts';
@@ -46,16 +43,6 @@ import { out, logError } from '../reply.ts';
 import * as launcher from '../launcher.ts';
 import type { HookIn } from '../types.ts';
 import type { Identity } from '../../lib/identity.ts';
-
-const RECREATE = 'Your rows are not running (they do not survive a resume or the agent view). Create them now, exactly as written:\n';
-const PARTIAL = 'Your other rows are still running; only the rows below are missing. Make only these calls, exactly as written:\n';
-
-/** The lead for the ROWS section: empty when nothing is missing (rowCalls then says the rows are intact). */
-function rowsLead(me: Identity): string {
-  const held = rows.readHolds(me.code, me.name);
-  if (!held) return RECREATE;
-  return rows.rowsNeeded(me.code, me, { held }).length ? PARTIAL : '';
-}
 
 /** The person's line for a fork that could not be placed (identity.forkUnread: addr the seat it may have come from). A
  * bare /sub-human looks for the record again (lib/commands/join.ts forked), and while the seat is live elsewhere says
@@ -143,7 +130,6 @@ export function handle(input: HookIn<'SessionStart'>): void {
   } catch (err) { logError(err, 'session-restore: review'); }
   launcher.refresh(); // the opt-in row status launcher and the serve shim, for this seat's rows
   const after = input.source === 'fork' ? 'the agent view' : input.source || 'start';
-  const fork = input.source === 'fork';
-  const text = contextBlock(me, `restored after ${after}`, { rowsLead: fork ? RECREATE : rowsLead(me), allRows: fork });
+  const text = contextBlock(me, `restored after ${after}`);
   out({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: text, sessionTitle: seatTitle(me) } });
 }

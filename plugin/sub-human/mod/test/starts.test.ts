@@ -125,7 +125,7 @@ test('node starts per event: a seated member (before its tail child reports the 
     'a plain prompt': 2, // prompt.ts (no tail child has reported the seat yet), presence "working" at the turn's start
     'an @room': 1, // prompt.ts: at-room signs the post
     'Bash, Read, Write': 0, 'Agent (Explore)': 0,
-    'Agent (a row)': 2, // row-guard, row-map
+    'Agent (a row)': 0, // a model's Agent call of the room row starts no node (the module spawns the row itself)
     'SubagentStop (Explore)': 0,
     'SubagentStop (a row)': 1, // row-hold
     AskUserQuestion: 2, EnterPlanMode: 2, // consent Pre and Post
@@ -137,7 +137,7 @@ test('node starts per event: a seated member (before its tail child reports the 
     'Notification idle_prompt': 1, StopFailure: 1, // presence, not awaited
     '/compact': 2, // session-restore, mod-hello
     '/clear': 3, // session-restore, mod-hello, the tail child for the new session id
-    '--resume': 2, // session-restore, mod-hello (a member's rows come with the next prompt: no row-rewake)
+    '--resume': 2, // session-restore, mod-hello (the room row is the module's $.agent.spawn: no node)
     '/sub-human': 2, // the join, mod-hello (the lease was written at session start)
     'session end': 0,
   })

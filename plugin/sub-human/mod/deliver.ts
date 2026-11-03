@@ -10,7 +10,7 @@
  */
 import {
   tailArgv, tailEnv, lineBuffer, parseEvent, route, restartDelay, nextFails, noticeDue, turnLedger, spawnWanted, logLines,
-  rewakePrompt, wakeParts, holdPull, takeWake, takeFallback, DELIVERY_ERROR_NOTICE, TAIL_RESTART, REWAKE_TIMEOUT_MS, WAKE_RESEND,
+  wakeParts, holdPull, takeWake, takeFallback, DELIVERY_ERROR_NOTICE, TAIL_RESTART, WAKE_RESEND,
 } from './core/deliver.ts';
 import { parseHello, localHello, homeOf, sidIndex } from './core/seat.ts';
 import { homeMark, BYPASS_DEBUG } from './core/constants.ts';
@@ -21,6 +21,8 @@ import { mergeClassic } from './core/prompt.ts';
 import { factsBook, type FactsBook } from './core/facts.ts';
 import { asHello, asNonce, mintNonce } from './core/state.ts';
 import { ccNotice } from './core/cc.ts';
+import { roomRowFor, liveRow, rowSpawn, spawnStep, spawnDone, type SpawnLedger } from './core/rows.ts';
+import { noteRow } from './rows.ts';
 import { copyBook, copyWake, copyTo, copyNews, clipboardCommands, AUTO_COPIED, NO_TOOL, type CopyBook } from './core/copy.ts';
 import {
   leaveQuestion, leaveOutcome, issueUrl, versionsLine, openCommands, openWith, LEAVE_OPTIONS, LEAVE_HEADER, REPO_URL,
@@ -34,14 +36,13 @@ import type { JoinReply, Pulls, TailEvent, TailSeat } from './core/types.ts';
 /** The tail child as the module tracks it; stream: its $.process.spawn stream, as stopChild ends it. */
 interface Child { sid: string; seat: TailSeat | null; stream: { return(value?: unknown): Promise<unknown> } | null; stopped: boolean; fails: number }
 
+/** The tail's `rows` event, held for the next typed prompt (mod/prompt.ts): the pending-proposal reminders. */
 const ROWS = { plugin: 'sub-human', key: 'rows' } as const;
 const HELLO = { plugin: 'sub-human', key: 'hello' } as const;
 const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' } as const;
 const ERRORS = { plugin: 'sub-human', key: 'deliveryErrors' } as const;
 const NONCE = { plugin: 'sub-human', key: 'nonce' } as const;
 const PULLS = { plugin: 'sub-human', key: 'pulls' } as const;
-/** The rows text the last typed prompt carried (mod/prompt.ts INJECTED): cleared on a resume, so it is said again. */
-const ROWS_SAID = { plugin: 'sub-human', key: 'rowsInjected' } as const;
 
 /** Nonce reads and mints in order: two refreshes at once for one session id must hand mod-hello the same one. */
 let minting: Promise<string | null> = Promise.resolve(null);
@@ -291,7 +292,7 @@ function submitWake($: EngineInterface, text: string, { appended = false, seen =
   return (async () => {
     let r = null;
     // a member's wake: its lines for the person bare (asUser), the rest as context (core/deliver.ts wakeParts); member:
-    // the caller knows the seat is a member's before the tail child said so (a resume's rewake races its seat event)
+    // the caller knows the seat is a member's before the tail child said so (a seat the module just took)
     const parts = (child && child.seat ? child.seat.role !== 'claude' : member) ? wakeParts(text) : null;
     if (parts) wakeContexts.set(parts.shown, parts.context);
     try { r = await $.prompt.submit(parts ? { text: parts.shown, asUser: true } : { text }); } catch { /* below */ } finally { if (parts) wakeContexts.delete(parts.shown); }
@@ -305,23 +306,36 @@ function submitWake($: EngineInterface, text: string, { appended = false, seen =
 
 /** A wake while a turn runs: appended and checked at the turn's end; submitted when it cannot be appended, or when
  * the turn ended before the row was stored (no turn's end would check it). */
+/** The room row's spawns this module process made (mod/core/rows.ts spawnStep). */
+let spawns: SpawnLedger = {};
+/** The room server's key in .mcp.json: the row's one tool, hold, is its. */
+const ROOM_SERVER = 'room';
 /**
- * After a resume. A member's rows come with the person's next prompt (the tail's rows event, held in $.state; the
- * rows said before the resume are forgotten, so they are said again): no wake and no line, the debug log says so. The
- * room session's: hooks/handlers/row-rewake.ts, not awaited (it was an asyncRewake command hook), whose exit 2 is the
- * row calls the resume lost, as a framed wake (nobody reads its rows). Never throws.
+ * The room row (agents/room.md), the module's own: at a main-loop turn's start and once a restore put the seat back
+ * (classic.SessionStart), for a member's seat of this session (mod/core/rows.ts roomRowFor), unless $.agent.list still
+ * runs one, spawned with $.agent.spawn (no Agent call of the model's, no "Backgrounded agent" block: cc CONTRACT
+ * module-agent-spawn-quiet) while the room server is connected (the row's one tool is its hold). So a join's own turn
+ * starts it, a resume, a fork or a /clear gets it back with no prompt, and a row that died at the next turn; spawnStep
+ * keeps a row that dies at once from looping. Not awaited; never throws.
  */
-async function rewake($: EngineInterface, e: { session_id?: string }, member: boolean) {
+async function roomRow($: EngineInterface) {
   try {
-    if (member) {
-      await $.state.set(ROWS_SAID, null);
-      $.ui.log('rows: resumed; the rows come back with the next prompt', { to: 'debug' });
-      return;
-    }
-    const root = $.plugin.root;
-    const run = await $.process.run(shimArgv(root, 'row-rewake'), { stdin: JSON.stringify(e), env: shimEnv(e, root), timeoutMs: REWAKE_TIMEOUT_MS });
-    if (run.exitCode === 2 && String(run.stderr || '').trim()) await submitWake($, rewakePrompt(run.stderr), { member });
-  } catch { /* the restore's context lists the same rows for the next prompt */ }
+    const code = roomRowFor(asHello((await $.state.get(HELLO)).value), await $.session.id());
+    if (!code || liveRow(await $.agent.list())) return;
+    if (!(await $.mcp.connect(ROOM_SERVER)).isConnected) return;
+    const step = spawnStep(spawns, code, await $.clock.now());
+    if (!step.spawn) return;
+    spawns = step.ledger;
+    let started = false;
+    try {
+      const r = await $.agent.spawn(rowSpawn(code));
+      // its id, for its hand-back: the answer's, else the list's (an answer a hook gave carries none)
+      const id = r.deny === undefined ? r.agentId ?? liveRow(await $.agent.list()) : null;
+      started = !!id;
+      if (id) { noteRow(id); $.ui.log(`rows: room row ${code} started`, { to: 'debug' }); }
+      else $.ui.log(`rows: room row ${code} not started${r.deny !== undefined ? `: ${r.deny}` : ''}`, { to: 'debug' });
+    } finally { spawns = spawnDone(spawns, code, started); }
+  } catch { /* the next turn tries again */ }
 }
 
 async function midTurnWake($: EngineInterface, text: string) {
@@ -408,17 +422,10 @@ async function toolDone<E extends { readonly agent_id?: string; readonly session
   return next(e);
 }
 
-async function heldRows($: EngineInterface): Promise<string | null> {
-  const { value } = await $.state.get(ROWS);
-  return typeof value === 'string' && value ? value : null;
-}
-
 /** One event's actions (mod/core/deliver.ts route). */
 async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
   if (!ev || c.stopped) return;
-  const role = c.seat && c.seat.role === 'claude' ? 'claude' : 'member';
-  const rows = ev.type === 'wake' && role === 'claude' ? await heldRows($) : null;
-  const actions = route(ev, { turnRunning: turns.running !== null, role, rows });
+  const actions = route(ev, { turnRunning: turns.running !== null });
   for (const a of actions) {
     switch (a.do) {
       case 'seat': {
@@ -742,8 +749,8 @@ export function registerDeliver(on: On): void {
   }).catch((_$, e, next) => next(e)); // never in the join's way: what ran beneath stands, or runs
 
   // a /clear (new session id), compact or resume: session-restore puts the seat back first (a /clear rebinds it to the
-  // new session id), unless this session surely has none; then the hello for that id, the tail child, and on resume
-  // the rows the resume lost (row-rewake, in the background: a wake once it answers)
+  // new session id), unless this session surely has none; then the hello for that id and the tail child (the room row
+  // comes back with no prompt once the seat is: roomRow)
   on('classic.SessionStart', async ($, e, next) => {
     facts.noteEvent(e);
     let ours = {};
@@ -755,10 +762,7 @@ export function registerDeliver(on: On): void {
       // a notice for the person (a fork whose seat is in a sub-human folder this process does not have)
       if (said.systemMessage) for (const line of asNotice(said.systemMessage).split('\n')) if (line.trim()) $.ui.log(line);
       try { await $.state.set(REVIEW, true); await refresh($, e.session_id); } catch { /* the next refresh tries again */ }
-      try {
-        const hello = asHello((await $.state.get(HELLO)).value);
-        if ((e.source === 'resume' || e.source === 'fork') && hello && hello.seat) void rewake($, e, hello.seat.role !== 'claude');
-      } catch { /* the rows come with the next prompt (the restore's context) */ }
+      void roomRow($); // the room row back with no prompt (a resume or a fork lost it; after a /clear it may still run)
     }
     try {
       // this session's hello first: one not said yet (classic.SessionStart can run before session.start's) is no seat
@@ -776,6 +780,8 @@ export function registerDeliver(on: On): void {
   });
 
   on('turn.start', ($, e, next) => {
+    // the room row, unless it runs (not awaited: the turn never waits for it)
+    void roomRow($);
     // a wake nothing took before goes into this turn, as any wake that lands mid-turn
     for (const text of turns.start(e.turnId)) void midTurnWake($, text).catch(() => {});
     // the person's typed prompt started this turn: now it is "working" (a stopped prompt starts none)

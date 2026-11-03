@@ -81,9 +81,7 @@ test('consent table: proposal, re-proposal, revise, signoffs, objection after si
     else assert.doesNotMatch(roomRow, /answer needed/, `${name}: ${roomRow}`);
   }
 
-  // proposal.matrix and the participant rows (each person's newest proposal), from one table
-  const latest: Record<string, string> = { alice: H3, bob: H2, carol: H2, dave: H1 };
-  const ROW: Record<string, string> = { agreed: '✓ agreed', objected: '✖ objected', needed: '⚠ reviewing', decided: '✔ decided' };
+  // proposal.matrix, from one table
   for (const h of [H1, H2, H3]) {
     const p = must(f.proposals.get(h));
     const m = w.lib(() => proposal.matrix(p, entries));
@@ -93,14 +91,6 @@ test('consent table: proposal, re-proposal, revise, signoffs, objection after si
     assert.deepEqual(m.objected, by('objected'), `matrix objected ${h.slice(0, 6)}`);
     assert.deepEqual(m.missing, by('needed'), `matrix missing ${h.slice(0, 6)}`);
     assert.equal(must(f.status(h)).state, h === H3 ? 'agreed' : 'open');
-  }
-  for (const name of people) {
-    const h = must(latest[name]);
-    const t = w.lib(() => rows.rowText(w.code, { member: sn(name), viewer: 'claude', entries, tasks: [] }));
-    const s = must(must(want[h])[name]);
-    assert.ok(t.startsWith(must(ROW[s])), `row ${name}: ${t}`);
-    if (s !== 'objected') assert.ok(t.includes(must(titles[h])), `row ${name} names the proposal by its title: ${t}`);
-    assert.doesNotMatch(t, /[0-9a-f]{6}/, `no bare hash in ${t}`);
   }
 });
 

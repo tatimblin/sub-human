@@ -8,7 +8,7 @@
     },
     "lib": {
       "any": 0,
-      "as": 127,
+      "as": 124,
       "nonNull": 0
     },
     "mcp": {
@@ -18,7 +18,7 @@
     },
     "mod/core": {
       "any": 0,
-      "as": 21,
+      "as": 20,
       "nonNull": 0
     },
     "mod/test": {
@@ -28,7 +28,7 @@
     },
     "mod": {
       "any": 0,
-      "as": 8,
+      "as": 7,
       "nonNull": 0
     },
     "statusline": {
@@ -38,7 +38,7 @@
     },
     "test": {
       "any": 0,
-      "as": 248,
+      "as": 244,
       "nonNull": 0
     },
     "scripts": {

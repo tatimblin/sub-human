@@ -892,6 +892,30 @@
    "note": "A background agent's final report reaches the main conversation as a message of its own (origin peer, \"Another Claude session sent a message:\" then <agent-message from=\"AGENT_ID\"> with the \"[Subagent hand-back]\" frame and the indented report), which starts a model turn; then a task notification (origin task-notification, <task-notification><task-id>AGENT_ID</task-id>…<status>completed</status>) starts another. A room row ends with the word left (its seat left the room) or error: mod/rows.ts takes the hand-back of a row it saw spawned and its task notification (session.receive consumed, else prompt.submit drop), so a row ending wakes no model (mod/core/rows.ts handbackFrom)."
   },
   {
+   "id": "module-agent-spawn-quiet",
+   "section": 10,
+   "stability": "incidental",
+   "feature": "room-row",
+   "since": "2.1.296",
+   "search": [
+    "\"agent.spawn\":\"{ deny }\"",
+    "\"agent.list\":{run:"
+   ],
+   "note": "$.agent.spawn({subagentType, description, prompt}) starts a background subagent under the plugin's origin and resolves {agentId} once it started; it draws no \"⏺ Agent(…) ⎿ Backgrounded agent\" block in the main transcript, the row is listed in the agent panel by its description (the room code) and can be entered, and $.agent.list lists it by type and status (quiet/ROOM-ROW-SPIKE.md Q3, live on 2.1.296). mod/deliver.ts roomRow spawns the one room row so at a main-loop turn's start for a member's seat, unless the list still runs one; the row's end is taken as before (subagent-handback-message). Off: no room row at all (the model is never told to spawn one)."
+  },
+  {
+   "id": "agent-offer-hides-type",
+   "section": 10,
+   "stability": "incidental",
+   "feature": "room-row",
+   "since": "2.1.296",
+   "search": [
+    "no { isOffered } (a boolean)",
+    "\"agent.offer\":\"{ isOffered: false }\""
+   ],
+   "note": "agent.offer {isOffered: false} hides an agent type from the model, in its listing and at dispatch, while a plugin's own $.agent.spawn of the type is no offer (the typings' agent.register note). mod/rows.ts hides sub-human:room, so only the module ever starts the room row."
+  },
+  {
    "id": "hook-events",
    "section": 10,
    "stability": "API",

@@ -2,11 +2,10 @@
  * plugin/sub-human/lib/room/deliver.ts: what one log entry is for one seat. Pure (the consent state comes from
  * consent.ts fold over the entries passed in, judged with the store's trust).
  *
- *   deliver(me, e, {entries?, trust, note?}) -> 'none' | 'context' | 'notice' | 'wake'
+ *   deliver(me, e, {entries?, trust}) -> 'none' | 'context' | 'notice' | 'wake'
  *       me = {name, role}; entries: the log as of now (judged: a proposal I already answered or that was decided,
  *       the proposal a decision or an answer belongs to, the request a task entry applied); without them the
  *       entry-only answer, which wakes for a superset of what the judged one wakes for (the tail's first filter).
- *       note: the room Claude's row note for a member_joined (lib/rows.ts joinNote; '' when unknown).
  *     none     never shown: my own entries (hook-written system decision/task entries are not "mine"), and what
  *              concerns neither me nor the room's state
  *     context  for Claude, no wake: the tail's room context, carried beside my next prompt
@@ -25,8 +24,8 @@
  *       v2 agreed"; one not agreed is context, since each objection's own line said it), another approver's
  *       objection on a proposal I approve. A plan version is context (its request is what a person sees).
  *       Everything else that is not mine is context.
- *     the room's session (role claude) reads nothing but its rows: another member's member_joined whose row note
- *       says no row is running (or is unknown) wakes it (its rows-only turn); everything else is none.
+ *     the room's session (role claude) reads nothing: every entry is none (it keeps no rows; each member's room row
+ *       is that member's hooks module's).
  *     card answers (both roles): a signoff is context (the decision carries it); an objection wakes the proposal's
  *       author only (to revise).
  *     decisions: a notice for the members in its proposal, context for everyone else; never a wake.
@@ -45,7 +44,6 @@ import type { Delivery, Entry, Lane, LaneViewer, Trust } from './types.ts';
 interface DeliverState {
   entries?: readonly Readonly<Entry>[] | undefined;
   trust?: Trust;
-  note?: string | undefined;
 }
 
 const esc = (s: string): string => s.replace(/[.]/g, '\\.');
@@ -53,15 +51,13 @@ const mentions = (text: unknown, name: string): boolean => new RegExp(`(^|[^A-Za
 /** Whether name is in proposal p: an approver or its author. */
 const inProposal = (p: Entry | null, name: string): boolean => !!p && (approversOf(p).includes(name) || p.from === name);
 const isMove = (e: Entry): boolean => e.kind === 'member_joined' || e.kind === 'member_left';
-/** The room Claude's row note says that row must be spawned (lib/rows.ts joinNote). */
-const SPAWN_NOTE = /no row running|is not running/;
 
 function lane(me: LaneViewer | null | undefined, e: Entry, entries?: readonly Readonly<Entry>[], trust: Trust = NO_TRUST): Lane {
   const name = (me && me.name) as string; // no seat: matches no from, to or approver
   const roomClaude = !!me && me.role === 'claude';
   const n = normalize(e);
   if (n.from === name && !(n.via === 'system' && (n.kind === 'decision' || n.kind === 'task'))) return 'none';
-  if (roomClaude) return n.kind === 'member_joined' ? 'push' : 'none'; // the room session keeps rows, and reads nothing else
+  if (roomClaude) return 'none'; // the room session reads nothing
   if (n.kind === 'decision') return 'pull'; // an outcome, not a request: personSees makes it a notice for those in it
   if (n.to === name || mentions(n.text, name)) return 'push';
   if ((n.kind === 'signoff' || n.kind === 'objection') && n.proposal_hash) {
@@ -112,10 +108,10 @@ function personSees(name: string, e: Entry, entries: readonly Readonly<Entry>[] 
   return e.kind === 'decision' ? inProposal(p, name) : !!p && approversOf(p).includes(name);
 }
 
-function deliver(me: LaneViewer | null | undefined, e: Entry, { entries, trust = NO_TRUST, note = '' }: DeliverState = {}): Delivery {
+function deliver(me: LaneViewer | null | undefined, e: Entry, { entries, trust = NO_TRUST }: DeliverState = {}): Delivery {
   const l = lane(me, e, entries, trust);
   const name = me && me.name;
-  if (me && me.role === 'claude') return l === 'push' && (!note || SPAWN_NOTE.test(note)) ? 'wake' : 'none';
+  if (me && me.role === 'claude') return 'none';
   if ((isMove(e) && e.via === 'system' && e.from !== name && e.from !== 'claude')) return 'notice';
   // the room's line for a machine its PIN let in, with its check and the kick: the people's join notice
   const joined = me ? linkJoined(e) : null;

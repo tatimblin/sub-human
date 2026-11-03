@@ -18,7 +18,7 @@ import { reviewOpenOf, seatedOrUnsure } from './core/prefilter.ts';
 import { delivering, wakeContextOf, facts, presence, serialPulls } from './deliver.ts';
 import { pullContext, clearPulls } from './core/deliver.ts';
 import { asHello, asNonce } from './core/state.ts';
-import { rowsToSay, toolsDownStep, TOOLS_DOWN, TOOLS_DOWN_NOTICE } from './core/rows.ts';
+import { toolsDownStep, TOOLS_DOWN, TOOLS_DOWN_NOTICE } from './core/rows.ts';
 import { QUIET_ROW } from './core/constants.ts';
 import type { ClassicHookInputs, EngineInterface, On } from 'claude-code';
 import type { Hello, Pulls, ShimResult } from './core/types.ts';
@@ -152,10 +152,11 @@ export function registerPrompt(on: On): void {
       // "working" once the turn starts (mod/deliver.ts turn.start): a prompt stopped or refused below starts none
       presence.pending = writesWorking(e.origin, hello, presenceOf(hello)) ? sid : null;
       if (delivering(sid)) {
-        // the held rows text rides once per change: on the first typed prompt after it changes, not on every prompt
+        // the held reminders text (the tail's rows event) rides once per change: on the first typed prompt after it
+        // changes, not on every prompt
         const { value: rows } = await $.state.get(ROWS);
         const { value: injected } = await $.state.get(INJECTED);
-        const held = typeof rows === 'string' && rows ? rows : null;
+        const say = typeof rows === 'string' && rows ? rows : null;
         const up = await roomUp($);
         // the room server down: the person and Claude are told once per time it goes down (TOOLS_DOWN)
         const { value: wasDown } = await $.state.get(TOOLS_DOWN_SAID);
@@ -165,8 +166,6 @@ export function registerPrompt(on: On): void {
           down = { ...down, context: [...(down.context ?? []), TOOLS_DOWN] };
         }
         if (step.down !== (wasDown === true)) await $.state.set(TOOLS_DOWN_SAID, step.down);
-        // a row's only tool is the room server's hold: while that server is down, the calls are not asked for (ROWS_DOWN once)
-        const say = rowsToSay(held, up);
         if (say && say !== injected) down = { ...down, context: [...(down.context ?? []), say] };
         if (say !== (injected ?? null)) await $.state.set(INJECTED, say); // none held: the same text again is a change
       }

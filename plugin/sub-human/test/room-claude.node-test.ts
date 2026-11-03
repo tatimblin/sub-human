@@ -72,8 +72,7 @@ test('room-claude: spawnPlan argv, --settings env, clean env (no member session 
   assert.equal(a[9], '--settings');
   assert.deepEqual(JSON.parse(must(a[10])), {
     env: { SUB_HUMAN_HOME: identity.home(), SUB_HUMAN_ROOM: code, CLAUDE_CODE_TASK_LIST_ID: `sh-${code}`, CLAUDE_CODE_ENABLE_TODO_TOOLS: '1' },
-    crossSessionInbound: 'refuse',
-    permissions: { allow: ['mcp__plugin_sub-human_room__hold'] }, // its rows' one tool: nobody answers a prompt there
+    crossSessionInbound: 'refuse', // and no permissions: it spawns no rows and calls nothing
   });
   assert.equal(a.at(-1), '/sub-human');
   assert.ok(!a.includes('--model'), 'no model is prescribed: the room\'s Claude uses the user\'s default');

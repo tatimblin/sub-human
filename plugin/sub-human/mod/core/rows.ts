@@ -1,34 +1,62 @@
 /**
- * plugin/sub-human/mod/core/rows.ts: which agents are the panel's rows, as pure functions. Owned here: lib/rows.ts
- * re-exports the agent types, and the module's row hooks (mod/rows.ts) start node only for a call or stop of one.
+ * plugin/sub-human/mod/core/rows.ts: the room row (agents/room.md), as pure functions. Owned here: lib/rows.ts
+ * re-exports the agent type; the module spawns the row itself (mod/deliver.ts roomRow: $.agent.spawn, never the
+ * model's Agent call) and takes its end quietly (mod/rows.ts).
  *
- *   PARTICIPANT, ROOM_AGENT     the row agents' types (agents/participant.md, agents/room.md, plugin-namespaced)
- *   isRow(type) -> bool         type is one of them
- *   spawnedId(response) -> id|null   the agent id an Agent call's response names (tool_response.agentId)
+ *   ROOM_AGENT, isRow(type)          the row agent's type (plugin-namespaced) and whether type is it
+ *   roomRowFor(hello, sid) -> code|null   the room whose row this session wants: a member's seat of this session id,
+ *                                    the verdict's room-row on (mod/core/cc.ts GATED); null for the room session, no
+ *                                    seat, another session's hello
+ *   liveRow(agents) -> id|null       a room row $.agent.list still runs (any status but completed, failed, killed)
+ *   rowSpawn(code)                   $.agent.spawn's input: description the room code (the row's label), prompt
+ *                                    "room: CODE"
+ *   spawnStep(ledger, code, now) -> {spawn, ledger}   whether a spawn may go now: one at a time per room, at most one
+ *                                    each ROW_RESPAWN_MS and ROW_SPAWNS_MAX per process, so a row that dies at once
+ *                                    never loops; spawnDone(ledger, code, started) ends one (one that started nothing
+ *                                    may go again at once)
  *   handbackFrom(text) -> id|null    the agent whose final report a delivery is (Claude Code's "[Subagent hand-back]"
  *                                    frame inside <agent-message from="ID">: cc CONTRACT subagent-handback-message)
- *   rowReportFrom(text) -> id|null   the agent whose hand-back is a room row's own last word (its report is exactly
- *                                    `left` or `error`, agents/room.md and participant.md): a row this process never saw
- *                                    spawned (the agent view's fork, or a reload) still ends without a turn
+ *   rowReportFrom(text) -> id|null   the agent whose hand-back is the room row's own last word (its report is exactly
+ *                                    `left` or `error`, agents/room.md): a row this process never saw spawned (the
+ *                                    agent view's fork, or a reload) still ends without a turn
  *   finishedFrom(text) -> id|null    the agent a task notification says finished (<task-notification> with
  *                                    <task-id>ID</task-id> and <status>completed</status>; the same CONTRACT entry)
- *   ROWS_DOWN, rowsToSay(held, up) -> text|null   what a typed prompt carries for the rows: the held rows calls while
- *                                    the room server is connected (a row agent's only tool is its hold), else ROWS_DOWN,
- *                                    so a row that cannot start is not asked for again and again (live 2026-10-17: with
- *                                    the server held back, every participant spawn was refused for zero tools and the
- *                                    calls came back with each prompt); mod/prompt.ts says each text once
  */
 import { QUIET_ROW } from './constants.ts';
+import type { Hello } from './types.ts';
 
-export const PARTICIPANT = 'sub-human:participant';
 export const ROOM_AGENT = 'sub-human:room';
 
-export const isRow = (type: unknown): boolean => type === PARTICIPANT || type === ROOM_AGENT;
+export const isRow = (type: unknown): boolean => type === ROOM_AGENT;
 
-export function spawnedId(response: unknown): string | null {
-  const r = response && typeof response === 'object' ? response as { agentId?: unknown; agent_id?: unknown; data?: { agentId?: unknown } } : {};
-  const id = r.agentId || r.agent_id || (r.data && r.data.agentId);
-  return typeof id === 'string' && id ? id : null;
+export function roomRowFor(hello: Hello | null | undefined, sid: unknown): string | null {
+  if (!hello || typeof sid !== 'string' || hello.sid !== sid || !hello.seat || hello.seat.role === 'claude') return null;
+  if (hello.cc && hello.cc.off.includes('room-row')) return null;
+  return hello.seat.code;
+}
+
+/** The statuses of an agent that no longer runs ($.agent.list keeps it listed a while). */
+const ENDED = new Set(['completed', 'failed', 'killed']);
+export function liveRow(agents: readonly { id: string; type: string; status: string }[]): string | null {
+  return agents.find(a => a.type === ROOM_AGENT && !ENDED.has(a.status))?.id ?? null;
+}
+
+export const rowSpawn = (code: string): { subagentType: string; description: string; prompt: string } => ({ subagentType: ROOM_AGENT, description: code, prompt: `room: ${code}` });
+
+export const ROW_RESPAWN_MS = 60_000;
+export const ROW_SPAWNS_MAX = 5;
+/** Per room: the spawns this process made, the last one's time, and whether one is under way. */
+export type SpawnLedger = Readonly<Record<string, { n: number; at: number; busy: boolean } | undefined>>;
+export function spawnStep(ledger: SpawnLedger, code: string, now: number): { spawn: boolean; ledger: SpawnLedger } {
+  const cur = ledger[code] ?? { n: 0, at: -Infinity, busy: false };
+  if (cur.busy || cur.n >= ROW_SPAWNS_MAX || now - cur.at < ROW_RESPAWN_MS) return { spawn: false, ledger };
+  return { spawn: true, ledger: { ...ledger, [code]: { n: cur.n + 1, at: now, busy: true } } };
+}
+/** The spawn under way for code is over; one that started no row (refused, failed) may be tried again at once (it
+ * still counts toward ROW_SPAWNS_MAX). */
+export function spawnDone(ledger: SpawnLedger, code: string, started = true): SpawnLedger {
+  const cur = ledger[code];
+  return cur ? { ...ledger, [code]: { ...cur, busy: false, ...(started ? {} : { at: -Infinity }) } } : ledger;
 }
 
 /** @cc [Subagent hand-back] The text below is the final report of a subagent this session delegated to.
@@ -39,7 +67,7 @@ export function handbackFrom(text: unknown): string | null {
   return m?.[1] ?? null; // the group always matches when m does
 }
 
-/** The report inside a hand-back's frame (the harness indents each of its lines) is exactly a row's last word. */
+/** The report inside a hand-back's frame (the harness indents each of its lines) is exactly the row's last word. */
 const ROW_REPORT = /<agent-message from="([\w-]+)">\s*\[Subagent hand-back\][^\n]*\n\s*(left|error)\s*<\/agent-message>/;
 export function rowReportFrom(text: unknown): string | null {
   const m = ROW_REPORT.exec(String(text ?? ''));
@@ -74,9 +102,6 @@ export function rowEndedRow<M extends RowLike>(row: M | null | undefined): M | n
   return { ...row, content: [{ type: 'text', text: ROW_CLOSED }] };
 }
 
-/** Said once, instead of the rows calls, while the room server is not connected in this session. */
-export const ROWS_DOWN = "SUB-HUMAN ROWS: the room's tools (plugin:sub-human:room) are not connected in this session, so its room row cannot start: don't spawn it. Tell the person once: /mcp reconnects plugin:sub-human:room. SendMessage to other Claudes and @room still work.";
-
 /** A seated session whose room server is not connected (Claude Code skipped or lost it: cc CONTRACT mcp-failure-cache),
  * told once per time it goes down: the person by a $.ui.log line, Claude by context. mod/prompt.ts asks on every typed
  * prompt of a seat ($.mcp.connect, which also connects a server the session has not yet). */
@@ -85,4 +110,3 @@ export const TOOLS_DOWN = "SUB-HUMAN: the room's tools (plugin:sub-human:room: p
 /** wasDown: said already for this time down; up: connected now. say: tell both now; down: what to remember. */
 export const toolsDownStep = (wasDown: boolean, up: boolean): { say: boolean; down: boolean } => ({ say: !up && !wasDown, down: !up });
 
-export const rowsToSay = (held: string | null, up: boolean): string | null => (held ? (up ? held : ROWS_DOWN) : null);

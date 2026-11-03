@@ -4,18 +4,14 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { World, fixture, hso, PLUGIN, identity, room } from './helpers.ts';
 import type { HookInput, HookLine, HookRun } from './helpers.ts';
-import * as rows from '../../lib/rows.ts';
 import type { Entry } from '../../lib/room/types.ts';
 import { lane as roomLane } from '../../lib/room/deliver.ts';
 import type * as PromptCore from '../../mod/core/prompt.ts';
 import { QUIET_ROW } from '../../mod/core/constants.ts';
-import { sn } from '../support/brands.ts';
 import { must } from '../support/must.ts';
 
 /** World.hook's options. */
 type HookOpts = NonNullable<Parameters<World['hook']>[2]>;
-/** The seat's rows are running: its hold server (this live test process) holds them. */
-const rowsRunning = (w: World, name: string, held: Parameters<typeof rows.writeHolds>[2]) => w.lib(() => rows.writeHolds(w.code, sn(name), held));
 
 // The 20 hostile strings from demo/test/room.test.js.
 const HOSTILE = [
@@ -320,7 +316,6 @@ test('no readable assistant text (no transcript, unreadable, torn lines, shapes 
 
 test('a plain prompt outputs nothing (the title, digest and rows are the mod\'s) and writes no presence (the mod is its one writer)', () => {
   const w = new World({ claude: 'sleep', alice: 'act' });
-  rowsRunning(w, 'alice', { room: true });
   const r = atRoom(w, submit('hello'), { as: 'alice' });
   assert.equal(r.code, 0, r.stderr);
   assert.equal(r.stdout, '');
@@ -334,7 +329,6 @@ test('a plain prompt outputs nothing (the title, digest and rows are the mod\'s)
 
 test('the room\'s Claude: a typed prompt is refused (but its launch), a peer, a notification, the mod\'s wake or a lost origin runs', () => {
   const w = new World({ claude: 'act', alice: 'sleep' });
-  rowsRunning(w, 'claude', { members: ['alice'] });
   const transcript = path.join(w.cwd, 'claude.jsonl');
   jsonl(transcript, [{ type: 'user', promptId: 'p-launch', message: { role: 'user', content: '/sub-human' } }]);
   const at = (p: string, origin: string | null, extra: HookInput = {}) => atRoom(w, { ...submit(p), transcript_path: transcript, prompt_id: 'p-now', sub_human_origin: origin, ...extra }, { as: 'claude' });

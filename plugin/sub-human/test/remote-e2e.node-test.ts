@@ -16,7 +16,6 @@ import * as store from '../lib/room/store.ts';
 import * as identity from '../lib/identity.ts';
 import * as proposal from '../lib/proposal.ts';
 import { propose } from './support/plan.ts';
-import * as rows from '../lib/rows.ts';
 import * as linkSocket from '../lib/remote/link-socket.ts';
 import { isAlive } from '../lib/io.ts';
 import { Machine, childOf, kill, stopDaemon } from './support/two-homes.ts';
@@ -115,10 +114,9 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   assert.doesNotMatch(events(carolSees, ['wake', 'chat']), /for bob only/);
   assert.match(events(carolSees, ['chat']), /bob: hello from afar/);
 
-  // bob's presence rides on beat: the host's rows show it
+  // bob's presence rides on beat: the host has it
   remote.hook('presence', { hook_event_name: 'Notification', notification_type: 'idle_prompt' }, bob);
   assert.equal(must(host.lib(() => store.open(code).kv.get<{ state: string }>('presence/bob'))).state, 'idle');
-  assert.match(host.lib(() => rows.rowText(code, { member: sn('bob'), viewer: 'alice' })), /idle/);
 
   // a second proposal for bob, prefetched before the link goes down
   const p2 = host.lib(() => propose(aliceMe, { text: '# Ship the lexer\n', approvers: ['bob'] }));
@@ -175,7 +173,6 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   remote.hook('session-end', { hook_event_name: 'SessionEnd', reason: 'logout' }, bob);
   assert.equal(texts(host.log(code)).at(-1), 'bob left (session ended)', 'Claude Code\'s token, in words');
   assert.equal(host.lib(() => store.open(code).kv.get('presence/bob', null)), null, 'his presence is gone with him');
-  assert.doesNotMatch(host.lib(() => rows.rowText(code, { member: sn('bob'), viewer: 'alice' })), /idle|prompt|working/);
   const current = childOf(daemon.pid);
   await h.until(() => !isAlive(daemon.pid), 8000, 50);
   assert.equal(isAlive(daemon.pid), false, 'the daemon exits once no seat of its machine is left');

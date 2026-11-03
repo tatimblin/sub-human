@@ -111,23 +111,23 @@ test('link-state: indicator wording', () => {
 
 test('room row: the link leads while offline or connecting again and closes the row while online; none for a room hosted here', t => {
   const code = rc('vole-0001');
-  // members by role only (rowText counts them); a link as the row reads it (no source)
+  // members by role only (rowText names the others); a link as the row reads it (no source)
   const o = (link: Partial<LinkState> | null) => ({
     entries: [], members: { alice: { role: 'member' }, bob: { role: 'member' } } as unknown as Members, taskSummary: 'tasks 1 open', link: link as LinkState | null, // deliberate: partial, as the comment above says
   });
-  assert.equal(rows.rowText(code, { viewer: 'alice', ...o(null) }), '2 here · tasks 1 open');
-  assert.equal(rows.rowText(code, { viewer: 'alice', ...o({ state: 'online' }) }), '2 here · tasks 1 open · ⇄ online');
-  assert.equal(rows.rowText(code, { viewer: 'alice', ...o({ state: 'connecting', attempt: 3 }) }), '… connecting (3) · 2 here · tasks 1 open');
-  assert.equal(rows.rowText(code, { viewer: 'alice', ...o({ state: 'offline', queued: 2 }) }), '✕ offline · 2 queued · 2 here · tasks 1 open');
+  assert.equal(rows.rowText(code, { viewer: 'alice', ...o(null) }), 'bob here · tasks 1 open');
+  assert.equal(rows.rowText(code, { viewer: 'alice', ...o({ state: 'online' }) }), 'bob here · tasks 1 open · ⇄ online');
+  assert.equal(rows.rowText(code, { viewer: 'alice', ...o({ state: 'connecting', attempt: 3 }) }), '… connecting (3) · bob here · tasks 1 open');
+  assert.equal(rows.rowText(code, { viewer: 'alice', ...o({ state: 'offline', queued: 2 }) }), '✕ offline · 2 queued · bob here · tasks 1 open');
   assert.match(rows.rowText(code, { viewer: 'alice', ...o({ state: 'offline' }), color: true }), /^\x1b\[33m✕ offline\x1b\[0m/, 'offline is a warning');
-  // item 15: stopped for good, this copy's "2 here" is stale: no count; a kick says so
+  // item 15: stopped for good, this copy's "bob here" is stale: no names; a kick says so
   assert.equal(rows.rowText(code, { viewer: 'alice', ...o({ state: 'stopped', lastReason: 'LINK_REVOKED' }) }), '✕ removed by the host · tasks 1 open');
   assert.equal(rows.rowText(code, { viewer: 'alice', ...o({ state: 'stopped', lastReason: 'ROOM_CLOSED' }) }), '✕ stopped · tasks 1 open');
   // read from the home when not given
   linked(t);
   writeState({ state: 'offline', queued: 1, pid: process.pid });
   queue(1);
-  assert.equal(rows.rowText(CODE, { viewer: 'alice', entries: [], members: {}, taskSummary: '' }), '✕ offline · 1 queued · 0 here');
+  assert.equal(rows.rowText(CODE, { viewer: 'alice', entries: [], members: {}, taskSummary: '' }), '✕ offline · 1 queued · only you');
 });
 
 test('link-state: a record with no pid, and no document\'s, no daemon wrote: not running, whatever state it says (#17)', t => {
@@ -145,7 +145,7 @@ test('room row: a record still saying online after its daemon died (kill -9) rea
   linked(t);
   const at = new Date(Date.now() - 120_000).toISOString();
   writeState({ state: 'online', since: at, attempt: 0, queued: 0, pid: await h.deadPid(), detail: 'online', at });
-  assert.equal(rows.rowText(CODE, { viewer: 'alice', entries: [], members: {}, taskSummary: '' }), '✕ not running (offline 2m) · 0 here');
+  assert.equal(rows.rowText(CODE, { viewer: 'alice', entries: [], members: {}, taskSummary: '' }), '✕ not running (offline 2m) · only you');
 });
 
 test('agent statusline: the room row carries the link state', t => {
