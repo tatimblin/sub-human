@@ -248,7 +248,8 @@ test('review: a planFilePath the model put in EnterPlanMode\'s input is ignored;
   fs.writeFileSync(victim, 'not a plan\n');
   const tp = transcript(w, file);
   const post = w.enterPlan(ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: { planFilePath: victim }, transcript_path: tp }), { as: 'bob' });
-  assert.match(must(ctx(post)), new RegExp(`only to show bob room proposal ${hash}`));
+  assert.match(must(ctx(post)), /only to show bob plan p\d+ v1\. /, 'the request by its label, never its hash');
+  assert.doesNotMatch(must(ctx(post)), new RegExp(hash));
   assert.equal(fs.readFileSync(victim, 'utf8'), 'not a plan\n', 'a path the model chose is never written');
   assert.equal(fs.readFileSync(file, 'utf8'), text, 'the session\'s plan file (its plan_mode attachment) shows the proposal');
   assert.equal(must(review(w)).file, file);
@@ -260,7 +261,8 @@ test('review: the dialog shows the canonical text from the plan file; a person\'
   const file = path.join(w.userHome, '.claude', 'plans', 'snug-rocket.md');
   fs.writeFileSync(file, 'bob\'s own plan\n');
   const tp = transcript(w, file);
-  assert.match(must(ctx(w.enterPlan(ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {} }), { as: 'bob' }))), new RegExp(`only to show bob room proposal ${hash}\\. Call ExitPlanMode now with plan "proposal ${hash}"`));
+  // the stub is the plan's label (Claude Code draws it in "User rejected Claude's plan"), never the hex
+  assert.match(must(ctx(w.enterPlan(ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {} }), { as: 'bob' }))), /only to show bob plan (p\d+) v1\. Call ExitPlanMode now with plan "plan \1 v1"/);
   const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: `proposal ${hash}` }, tool_use_id: 'tu1', transcript_path: tp }), { as: 'bob' });
   assert.equal(decision(pre), 'ask');
   // the request by its plan version (never a hash), and that agreeing is a sign-off on the text, not a go-ahead to build
@@ -1222,7 +1224,7 @@ test('A (live validation, the exact repro): bob holds his own plan in plan mode 
   assert.equal(enter.opened, true);
   assert.equal(reason(enter) ?? '', '', 'noise pass F: no "opening … for bob" line');
   assert.equal(fs.readFileSync(file, 'utf8'), text, 'the proposal is in the plan file before ExitPlanMode reads it');
-  assert.match(must(ctx(enter)), /only to show bob room proposal/);
+  assert.match(must(ctx(enter)), /only to show bob plan p\d+ v1/);
   // Claude Code reads the file into the call's plan (now the proposal); the hooks ask with the proposal's text either way
   const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: text, planFilePath: file }, tool_use_id: 'tu1', transcript_path: tp }), at);
   assert.equal(decision(pre), 'ask');
@@ -1274,7 +1276,8 @@ test('A (live validation, the repro seen here): in plan mode with his own plan, 
   const first = exit('tu1', mine);
   assert.equal(decision(first), 'deny', 'no plan view of his own plan while the sign-off waits');
   assert.equal(reason(first), '', 'no red reason');
-  assert.match(must(ctx(first)), new RegExp(`bob has a sign-off waiting \\(plan p\\d+ v1\\); this ExitPlanMode would show bob's own plan file instead.*call EnterPlanMode, then ExitPlanMode with plan "proposal ${hash}"`));
+  assert.match(must(ctx(first)), new RegExp(`bob has a sign-off waiting \\(plan p\\d+ v1\\); this ExitPlanMode would show bob's own plan file instead.*call EnterPlanMode, then ExitPlanMode with plan "plan p\\d+ v1"`));
+  assert.doesNotMatch(must(ctx(first)), new RegExp(hash), 'the label, never the hash');
   assert.equal(fs.readFileSync(file, 'utf8'), mine, 'his plan file untouched');
   assert.equal(review(w), null);
   // the model follows it: EnterPlanMode (in plan mode), then ExitPlanMode: the proposal

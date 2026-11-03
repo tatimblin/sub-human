@@ -40,7 +40,7 @@
  * base version's text; capture() takes it off again. The text below the marker is people's content, stored as it is.
  */
 
-import { oneLine } from '../text.ts';
+import { oneLine, headingName } from '../text.ts';
 import { NEXT } from './review.ts';
 import { assertNever } from '../../mod/core/never.ts';
 import type { PlanEdit } from '../types-app.ts';
@@ -62,7 +62,8 @@ export type EditEvent =
    * internal that changed) */
   /** showCheck: the plan view can show the author's check of a stored version (hooks/consent.ts: the person's mode is
    * one a review opens in, and sign-off is on), so the closing call opens it */
-  | { type: 'exit'; plan: PlanFile; text: string | null; mode?: string | undefined; showCheck?: boolean }
+  /** taken: the room's plan names, for a new plan edited with no name (its heading names it unless one is taken) */
+  | { type: 'exit'; plan: PlanFile; text: string | null; mode?: string | undefined; showCheck?: boolean; taken?: readonly string[] }
   | { type: 'put'; outcome: PutOutcome; showCheck?: boolean }
   | { type: 'exited' }
   | { type: 'stop'; mode: string | undefined; active: boolean }
@@ -274,7 +275,12 @@ export function reduce(edit: PlanEdit | null, ev: EditEvent): EditStep {
       const got = capture(ev.text ?? ev.plan.text ?? '');
       if ('error' in got) return { edit: e, effects: [], say: deny(EDIT_SAY.refused(e.plan, 'the plan file\'s header is broken'), `Not stored: ${got.error}. ${EDIT_SAY.refusedNext}`) };
       if (!got.text) return { edit: e, effects: [], say: deny(EDIT_SAY.empty(e.plan), EDIT_SAY.emptyNext) };
-      return { edit: e, effects: [{ do: 'put', plan: e.plan, base: e.base, text: got.text, summary: got.summary }], say: null };
+      // a new plan with no name is named from its first heading ("# Paging" -> paging), unless the room has that name
+      const heading = e.unnamed && e.base === 0 ? headingName(got.text) : null;
+      const named = heading && !(ev.taken ?? []).includes(heading) ? heading : null;
+      const { unnamed: _unnamed, ...rest } = e;
+      const at: PlanEdit = named ? { ...rest, plan: named } : e;
+      return { edit: at, effects: [{ do: 'put', plan: at.plan, base: at.base, text: got.text, summary: got.summary }], say: null };
     }
     case 'put': {
       const o = ev.outcome;

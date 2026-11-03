@@ -158,6 +158,8 @@ export interface PlanEdit {
   unchanged?: boolean;
   /** stored: the author's check of that version (lib/proposal.ts ask draft), which the person answers next */
   check?: string;
+  /** a new plan edited with no name: its first heading names it when it is stored (lib/consent/edit.ts), else `plan` */
+  unnamed?: true;
 }
 /** members/NAME/session recheck: a Yes that came as the plan view opened, recorded only once the person confirms it on
  * the card (lib/consent/review.ts); asked once. */

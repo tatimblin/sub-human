@@ -12,14 +12,16 @@ const hash12 = (t: string): string => crypto.createHash('sha256').update(Buffer.
 
 /**
  * A room review: an ExitPlanMode call that showed a room proposal in the plan dialog. Its recorded plan is the
- * model's "proposal <hash>" stub, or, when the hooks wrote the proposal into the plan file before the call (a later
+ * model's stub ("plan paging v1" since 0.6.0, the request's label in `labels`; "proposal <hash>" before, and for a
+ * request with no plan), or, when the hooks wrote the proposal into the plan file before the call (a later
  * review: the file's path is known from the first), the proposal's own text, which Claude Code records in its place
  * (hash12 of it is the proposal's hash). The no-dialog close after an objection ("approved exiting plan mode") is not one.
  */
-export function isReview(call: Block, es: TEntry[], hashes: Set<string>): boolean {
+export function isReview(call: Block, es: TEntry[], hashes: Set<string>, labels: ReadonlyMap<string, string> = new Map()): boolean {
   const plan = String((call.input || {}).plan || '');
   const stub = /^proposal ([0-9a-f]{12})\b/.exec(plan);
-  if (!(stub ? hashes.has(stub[1] ?? '') : hashes.has(hash12(plan)))) return false;
+  const label = labels.get(plan.trim().toLowerCase());
+  if (!(stub ? hashes.has(stub[1] ?? '') : label ? hashes.has(label) : hashes.has(hash12(plan)))) return false;
   const res = es.flatMap(e => (e.type === 'user' ? blocksOf(e) : [])).find(r => r && r.type === 'tool_result' && r.tool_use_id === call.id);
   const t = res ? (typeof res.content === 'string' ? res.content : JSON.stringify(res.content)) : '';
   return !/^User has approved exiting plan mode/.test(t);
@@ -57,11 +59,13 @@ export function run(x: Ctx, { det }: { det: Det; beh: Beh }): void {
   const before = new Set((readText(x.stateFile('plans-before.txt')) || '').split('\n').filter(Boolean));
   const after = x.stText('S5', 'last', 'plans.txt');
   const hashes = new Set([...props, ...drafts].map(p => p.hash));
+  // each request's label ("plan room v1"): the stub the model passes since 0.6.0
+  const labels = new Map([...props, ...drafts].flatMap(p => (typeof p.plan === 'string' && typeof p.version === 'number' && p.hash ? [[`plan ${p.plan} v${p.version}`, p.hash] as const] : [])));
   for (const seat of [A, B]) {
     const s5to = x.span('S5')?.to;
     const es = x.entries(seat).filter(e => !e.isSidechain && e.timestamp && e.timestamp >= x.runStart && s5to !== undefined && e.timestamp <= s5to); // this run's, up to S5's end
     const mode0 = (es.find(e => e.permissionMode) || {}).permissionMode;
-    const reviews = x.toolUses(es, 'ExitPlanMode').filter(c => isReview(c, es, hashes));
+    const reviews = x.toolUses(es, 'ExitPlanMode').filter(c => isReview(c, es, hashes, labels));
     const enters = es.filter(e => e.attachment && e.attachment.type === 'plan_mode');
     const exits = es.filter(e => e.attachment && e.attachment.type === 'plan_mode_exit');
     const lastMode = (es.filter(e => e.permissionMode).at(-1) || {}).permissionMode;

@@ -72,7 +72,7 @@ test('author first: a stored version asks its author alone (a draft); nobody els
   // nobody else is asked, nothing is decided; the plan reads as not sent out; asking for sign-off is refused
   assert.deepEqual(w.lib(() => proposal.pendingFor(seat(w, 'bob'))), []);
   assert.deepEqual(w.lib(() => proposal.pendingFor(seat(w, 'alice'))).map(p => [p.hash, p.draft]), [[hash, true]]);
-  assert.match(w.lib(() => plans.describe(w.code, 'room')), /^plan room v1 · not sent out yet \(alice checks it first\)/);
+  assert.match(w.lib(() => plans.describe(w.code, 'room')), /^plan room v1 · draft · alice reviewing/);
   assert.throws(() => w.lib(() => proposal.ask(seat(w, 'bob'), { plan: 'room' })), /not sent out yet: its author alice checks it first/);
   assert.throws(() => w.lib(() => proposal.ask(seat(w, 'alice'), { plan: 'room' })), /not sent out yet: alice checks it first \(call EnterPlanMode/);
   // alice's review opens her own version, with its own line

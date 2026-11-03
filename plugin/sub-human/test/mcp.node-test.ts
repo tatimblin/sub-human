@@ -250,7 +250,7 @@ test('mcp: plan edit opens an edit in the session (it stores nothing); ask asks 
   const s = await ready();
   // edit: the session's edit doc, base 0 for a new plan; nothing in the log
   // noise pass G: one line, ExitPlanMode({}) with no plan argument
-  assert.equal(text(await s.tool('plan', { op: 'edit' })), 'Editing room plan room (a new plan): call EnterPlanMode, edit the plan file the hooks fill, then ExitPlanMode({}) with no plan argument; the hooks store it.');
+  assert.equal(text(await s.tool('plan', { op: 'edit' })), 'Editing room plan room (a new plan: its first heading names it): call EnterPlanMode, edit the plan file the hooks fill, then ExitPlanMode({}) with no plan argument; the hooks store it.');
   const ed = must(proposal.readEdit(me));
   assert.deepEqual([ed.phase, ed.plan, ed.base], ['open', 'room', 0]);
   assert.equal(R.readAll().filter(e => e.kind === 'plan').length, 0, 'an edit stores nothing by itself');
@@ -275,7 +275,8 @@ test('mcp: plan edit opens an edit in the session (it stores nothing); ask asks 
   // refusals
   assert.match(errText(await s.tool('plan', { op: 'ask', approvers: ['zed'] })), /not in the room: zed/);
   assert.match(errText(await s.tool('plan', { op: 'ask', approvers: ['claude'] })), /people/);
-  assert.match(errText(await s.tool('plan', { op: 'edit', name: 'Bad Name!' })), /invalid plan name/);
+  // a name is slugged, never refused (EVALUATION R6)
+  assert.match(text(await s.tool('plan', { op: 'read', name: 'Bad Name!' })), /^no plan bad-name in this room/);
   assert.match(errText(await s.tool('plan', { op: 'nope' })), /op must be edit, put, ask, signoff or read/);
   proposal.writeReview(me, { phase: 'entering', at: Date.now() });
   assert.match(errText(await s.tool('plan', { op: 'edit' })), /a sign-off review is open/);
@@ -314,7 +315,7 @@ test('mcp: plan put stores the model\'s text under compare-and-swap (stored, unc
   // refusals: no base, an empty plan, a bad name
   assert.match(errText(await put({ text: '# x\n' })), /not saved: base must be the version the edit started from/);
   assert.match(errText(await put({ version: 3, text: '  ' })), /not saved: the plan is empty/);
-  assert.match(errText(await put({ name: 'Bad Name!', version: 0, text: '# x\n' })), /invalid plan name/);
+  assert.match(errText(await put({ name: 'Room!', version: 0, text: '# x\n' })), /not saved: v3 landed since v0/, 'slugged to room, an existing plan: a conflict, not a refusal of its name');
   assert.deepEqual(R.readAll().filter(e => e.via === 'human' || ['signoff', 'objection'].includes(e.kind)), [], 'no sign-off, nothing as a person');
   // the only requests: each version's author's own check, addressed to them alone (the stored ones: v1 alice, v2 bob, v3 alice)
   assert.deepEqual(R.readAll().filter(e => e.kind === 'proposal').map(e => [e.version, e.from, e.to, e.approvers]),

@@ -1,5 +1,6 @@
 /**
- * plugin/sub-human/lib/plans.ts: the room's plans. A plan has a name (default `room`) and versions v1, v2, ...; each
+ * plugin/sub-human/lib/plans.ts: the room's plans. A plan has a name (slugged: "Error handling" is error-handling; a new
+ * plan edited with none is named from its first heading, lib/consent/edit.ts, else `room`) and versions v1, v2, ...; each
  * version is a blob plans/<hash>.md (the room's blob store, lib/room/store.ts blobs) and a `plan` log entry (via agent,
  * from the editing seat, for its person). The fold is lib/room/consent.ts (Fold.plans, versionOf); a sign-off request
  * is a proposal on a version's hash (lib/proposal.ts ask), and a newer version of the same plan retires an undecided
@@ -24,7 +25,7 @@ import * as room from './room.ts';
 import * as config from './config.ts';
 import { RoomError, PLAN_NAME_RE } from './room/validate.ts';
 import { MirrorRoomStore } from './room/store-mirror.ts';
-import { planHash, oneLine, clip } from './text.ts';
+import { planHash, oneLine, clip, planSlug } from './text.ts';
 import type { Fold, PlanState, PlanVersion, RoomStore } from './room/types.ts';
 import type { RoomCode } from './brand.ts';
 import type { PutOutcome } from './consent/edit.ts';
@@ -53,7 +54,9 @@ interface PutArgs { plan?: unknown; base?: unknown; text?: unknown; summary?: un
  * current version. */
 type PlanSignoff = { state: 'draft' } | { state: 'unsent'; by: string } | { state: 'waiting'; on: string[]; objected: string[] } | { state: 'agreed'; by: string[] } | { state: 'objected'; by: string[] };
 
-const nameOf = (v: unknown): string => (v == null || v === '' ? DEFAULT_PLAN : String(v).trim().toLowerCase());
+/** A plan's name as given ("Error handling"), as the room names it ("error-handling"): slugged, never refused for its
+ * shape; none (or nothing left) is DEFAULT_PLAN. */
+const nameOf = (v: unknown): string => (v == null || v === '' ? DEFAULT_PLAN : planSlug(v) || DEFAULT_PLAN);
 
 function check(args: PutArgs): { plan: string; base: number; text: string; summary: string } | string {
   const plan = nameOf(args.plan);
@@ -85,7 +88,7 @@ function stateOf(f: Fold, p: PlanState): PlanSignoff {
 function stateText(s: PlanSignoff): string {
   switch (s.state) {
     case 'draft': return 'draft';
-    case 'unsent': return `not sent out yet (${s.by} checks it first)`;
+    case 'unsent': return `draft · ${s.by} reviewing`;
     case 'agreed': return `agreed (${s.by.join(', ')})`;
     case 'objected': return `not agreed (objected: ${s.by.join(', ')})`;
     case 'waiting': return [s.on.length ? `waiting on ${s.on.join(', ')}` : 'waiting', s.objected.length ? `objected: ${s.objected.join(', ')}` : ''].filter(Boolean).join(' · ');
@@ -167,5 +170,8 @@ function describe(code: RoomCode, name?: string | null, { history = false }: { h
     text ?? '(the text is missing on this machine)', `--- end of plan ${p.name} v${p.current.version} ---`].join('\n');
 }
 
-export { DEFAULT_PLAN, OPEN_MAX, put, request, outcome, current, textOf, stateOf, stateText, describe, historyLine, refOf, nameOf, who };
+/** The room's plan names (a new plan's heading may not take one). */
+const names = (code: RoomCode): string[] => [...(r => r.fold(r.readRecent()))(room.open(code)).plans.keys()];
+
+export { DEFAULT_PLAN, OPEN_MAX, put, request, outcome, current, textOf, stateOf, stateText, describe, historyLine, refOf, nameOf, names, who };
 export type { Put, PutArgs, PlanSignoff };

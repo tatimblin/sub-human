@@ -61,6 +61,19 @@ test('edit: every phase × every event, in one table', () => {
   }
 });
 
+test('edit (EVALUATION G14): a new plan edited with no name is named from its first heading, unless the room has that name', () => {
+  const fresh: PlanEdit = { ...SEEDED, base: 0, unnamed: true };
+  const exit = (text: string, taken: string[] = []) => edit.reduce(fresh, { type: 'exit', plan: FILE, text: edit.seed('c', 'room', 0, text), taken });
+  const named = exit('# GET /tasks paging\n\n1. cursor\n');
+  assert.deepEqual(named.effects.map(e => (e.do === 'put' ? [e.plan, e.base] : e.do)), [['get-tasks-paging', 0]]);
+  assert.equal(must(named.edit).plan, 'get-tasks-paging', 'the edit goes on under that name (its receipt, its check)');
+  assert.equal(must(named.edit).unnamed, undefined);
+  assert.deepEqual(exit('# Paging\n', ['paging']).effects.map(e => (e.do === 'put' ? e.plan : e.do)), ['room'], 'taken: the default');
+  assert.deepEqual(exit('no heading here\n').effects.map(e => (e.do === 'put' ? e.plan : e.do)), ['room']);
+  // a named edit, or one of an existing plan, keeps its name whatever its heading says
+  assert.deepEqual(edit.reduce(SEEDED, { type: 'exit', plan: FILE, text: edit.seed('c', 'room', 1, '# Paging\n') }).effects.map(e => (e.do === 'put' ? e.plan : e.do)), ['room']);
+});
+
 test('edit: the capture, the receipt, a conflict and a refusal; the mode put back; never an answer effect', () => {
   const exit = edit.reduce(SEEDED, EVENTS.exit);
   assert.deepEqual(exit.effects, [{ do: 'put', plan: 'room', base: 1, text: '# v2 text\n', summary: 's' }], 'the header off, the Summary line the summary');

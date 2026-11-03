@@ -172,4 +172,8 @@ test('S5 isReview: a "proposal <hash>" stub or a proposal\'s own text (Claude Co
   assert.equal(isReview({ id: 'c', input: { plan: text, planFilePath: '/x/plan.md' } }, es, hashes), false); // closing after an objection
   assert.equal(isReview({ id: 'd', input: { plan: 'my own plan' } }, es, hashes), false);
   assert.equal(isReview({ id: 'e', input: { plan: 'proposal 000000000000' } }, es, hashes), false); // no such proposal
+  // 0.6.0: the stub is the request's label
+  const labels = new Map([['plan room v1', 'c5010cdba765']]);
+  assert.equal(isReview({ id: 'a', input: { plan: 'plan room v1' } }, es, hashes, labels), true);
+  assert.equal(isReview({ id: 'a', input: { plan: 'plan room v9' } }, es, hashes, labels), false); // no such request
 });

@@ -415,10 +415,15 @@ function waitingOf(input: ConsentIn, me: Identity, ti: ConsentToolInput, plan: {
   return { hash: p.hash, title: titleOf(me, p), plan: hash12(Buffer.from(text, 'utf8')) };
 }
 
-/** "proposal HASH" (the stub the model is told to pass), as a plan's whole text: the hash, or null. */
-const stubHash = (t: unknown): string | null => {
-  const m = typeof t === 'string' ? /^\s*(?:the room )?proposal\s+([0-9a-f]{6,12})\s*\.?\s*$/i.exec(t) : null;
-  return m?.[1] ?? null; // the group always matches when m does
+/** The stub the model is told to pass (lib/consent/review.ts stubFor), as a plan's whole text: "proposal HASH" is the
+ * hash; "plan NAME vN" the hash of the pending request so titled (ps); else null. */
+const stubHash = (t: unknown, ps: () => readonly Proposal[] = () => [], me?: Identity): string | null => {
+  if (typeof t !== 'string') return null;
+  const m = /^\s*(?:the room )?proposal\s+([0-9a-f]{6,12})\s*\.?\s*$/i.exec(t);
+  if (m) return m[1] ?? null; // the group always matches when m does
+  const label = /^\s*(plan\s+[a-z0-9-]{1,24}\s+v\d+)\s*\.?\s*$/i.exec(t)?.[1]?.replace(/\s+/g, ' ').toLowerCase();
+  if (!label || !me) return null;
+  return ps().find(p => titleOf(me, p) === label)?.hash ?? null;
 };
 
 /** handoff: the closing call of a stored edit (showCheck): its plan and the model's own input are the edit's, never
@@ -438,7 +443,8 @@ function preExit(input: ConsentIn, me: Identity, handoff = false) {
       // plan there, the model's "proposal HASH" reaches no hook (the transcript's copy is written as the call ends, and
       // carries the file's text too); a request waiting then steers the call (waitingOf)
       const own = modelInput(input);
-      const word = stubHash(ti.plan) || stubHash(plan.text) || stubHash(own && own.plan);
+      const ps = () => proposal.pendingFor(me);
+      const word = stubHash(ti.plan, ps, me) || stubHash(plan.text, ps, me) || stubHash(own && own.plan, ps, me);
       if (!word) return { ...ev, waiting: waitingOf(input, me, ti, plan) };
       // the mode is plan already (the person's); a dialog whose Yes clears the context is still no place for a review
       const p = !ccEnv.clearContextOnPlanAccept(input.cwd) ? proposal.pendingFor(me).filter(x => proposal.viewable(x, me.code)).find(x => x.hash.startsWith(word)) : undefined;
@@ -628,7 +634,8 @@ function routeEdit(input: ConsentIn, me: Identity): boolean {
     const e = proposal.readEdit(me);
     // the author's check opens in this call when the plan view can show it in the person's own mode, sign-off on
     const shown = !!e && reviewable({ ...input, permission_mode: e.mode }) && !verdict.off('sign-off', { sid: input.session_id });
-    return editStep(input, me, { type: 'exit', plan: planOf(input), text: typeof ti.plan === 'string' ? ti.plan : null, mode: input.permission_mode, showCheck: shown }), true;
+    const taken = proposal.readEdit(me)?.unnamed ? { taken: plans.names(me.code) } : {};
+    return editStep(input, me, { type: 'exit', plan: planOf(input), text: typeof ti.plan === 'string' ? ti.plan : null, mode: input.permission_mode, showCheck: shown, ...taken }), true;
   }
   if (tool === 'ExitPlanMode' && ev === 'PostToolUse') return editStep(input, me, { type: 'exited' }), true;
   if (tool === 'ExitPlanMode' && ev === 'PostToolUseFailure') return true; // a dialog refused: an edit shows none
@@ -669,7 +676,7 @@ function signoffElsewhere(input: ConsentIn, me: Identity): void {
   if (input.tool_name === 'ExitPlanMode') {
     const ti: ConsentToolInput = input.tool_input ?? {};
     const own = modelInput(input);
-    const word = stubHash(ti.plan) || stubHash(own && own.plan);
+    const word = stubHash(ti.plan, () => ps, me) || stubHash(own && own.plan, () => ps, me);
     hit = word ? ps.find(x => x.hash.startsWith(word)) : undefined;
   }
   if (!hit) return;

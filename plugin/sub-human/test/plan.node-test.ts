@@ -58,12 +58,18 @@ test('put: a new plan from base 0; the next version only from the current one (e
   assert.deepEqual(must(R.fold(R.readRecent()).plans.get('room')).versions.map(v => [v.version, v.base, v.from]), [[1, 0, 'alice'], [2, 1, 'bob'], [3, 2, 'alice']]);
   assert.equal(must(plans.current(code)).hash, v3.hash);
   // refusals
-  const refusals: [plans.PutArgs, RegExp][] = [[{ base: 3, text: '  \n' }, /empty/], [{ plan: 'Bad Name', base: 0, text: 'x' }, /invalid plan name/], [{ base: -1, text: 'x' }, /base/],
+  const refusals: [plans.PutArgs, RegExp][] = [[{ base: 3, text: '  \n' }, /empty/], [{ base: -1, text: 'x' }, /base/],
     [{ base: 3, text: 'x'.repeat(256 * 1024 + 1) }, /too large/]];
   for (const [args, why] of refusals) {
     const r = plans.put(store, args, { by: 'alice' });
     assert.match(r.ok ? '' : r.error, why);
   }
+  // a name is slugged, never refused for its shape (EVALUATION R6: "error handling" was refused)
+  const named = plans.put(store, { plan: 'Error handling', base: 0, text: 'x' }, { by: 'alice' });
+  assert.equal(named.ok ? named.version.plan : named.error, 'error-handling');
+  assert.equal(plans.nameOf('GET /tasks: paging!'), 'get-tasks-paging');
+  assert.equal(plans.nameOf('!!!'), 'room', 'nothing left: the default');
+  assert.equal(plans.nameOf('a'.repeat(30)), 'a'.repeat(24));
 });
 
 test('put: at most 5 plans not agreed; an agreed one does not count', () => {
@@ -270,7 +276,7 @@ test('author first (lib/proposal.ts check): only the current version\'s author g
   assert.equal(proposal.check(me('alice'), 'room', 1), v1.hash);
   assert.equal(proposal.check(me('alice'), 'room', 1), v1.hash, 'the same check again: no second request');
   assert.equal(R.readAll().filter(e => e.kind === 'proposal').length, 1);
-  assert.match(plans.describe(code), /^room v1 · not sent out yet \(alice checks it first\)$/);
+  assert.match(plans.describe(code), /^room v1 · draft · alice reviewing$/);
   // a pending request of another plan, older: the review and the reminder still pick alice's own unsent version
   plans.put(store, { plan: 'other', base: 0, text: '# other' }, { by: 'bob' });
   const older = proposal.ask(me('bob'), { plan: 'other' });

@@ -36,7 +36,6 @@ import { agentPost, POST_KINDS } from '../lib/agent-post.ts';
 import * as cc from '../lib/cc/env.ts';
 import * as plans from '../lib/plans.ts';
 import { brief } from '../lib/room/brief.ts';
-import { PLAN_NAME_RE } from '../lib/room/validate.ts';
 import { decode, isObj, objAs } from '../lib/decode.ts';
 import { envFlag } from '../lib/env.ts';
 import * as verdict from '../lib/cc/verdict.ts';
@@ -344,7 +343,6 @@ function plan(me: Me, args: ToolArgs, meta: CallMeta): ToolResult | Promise<Tool
   if (args.op === 'put') return put(me, name, args);
   if (args.op === 'signoff') return signoff(me, name, args, meta);
   if (args.op !== 'edit') return text('refused: op must be edit, put, ask, signoff or read', true);
-  if (!PLAN_NAME_RE.test(name)) return text(`refused: invalid plan name "${name}" (a-z, 0-9 and -, up to 24)`, true);
   if (me.role === 'claude') return text('refused: the room session edits no plan', true);
   if (planEditOff()) {
     const cur = plans.current(me.code, name);
@@ -359,9 +357,11 @@ function plan(me: Me, args: ToolArgs, meta: CallMeta): ToolResult | Promise<Tool
     if (had && had.file && !had.restored) proposal.restorePlan({ phase: 'exiting', file: had.file, backup: typeof had.backup === 'string' ? had.backup : null, restored: false });
     const cur = plans.current(me.code, name);
     const base = cur ? cur.version : 0;
-    proposal.writeEdit(me, { phase: 'open', plan: name, base, at: Date.now() });
+    // a new plan the person named nothing: its first heading names it when stored (lib/consent/edit.ts)
+    const unnamed = !cur && (args.name == null || args.name === '');
+    proposal.writeEdit(me, { phase: 'open', plan: name, base, at: Date.now(), ...(unnamed ? { unnamed: true as const } : {}) });
     // one line (the hooks say the rest as each step comes): the model passed the plan text to ExitPlanMode when told more
-    return text(`Editing room plan ${name} (${cur ? `base v${base}, ${plans.who(cur)}` : 'a new plan'}): call EnterPlanMode, edit the plan file the hooks fill, then ExitPlanMode({}) with no plan argument; the hooks store it.`);
+    return text(`Editing room plan ${name} (${cur ? `base v${base}, ${plans.who(cur)}` : unnamed ? 'a new plan: its first heading names it' : 'a new plan'}): call EnterPlanMode, edit the plan file the hooks fill, then ExitPlanMode({}) with no plan argument; the hooks store it.`);
   });
 }
 

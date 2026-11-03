@@ -130,12 +130,16 @@ export interface ReviewStep { state: State; effects: ConsentEffect[]; say: Say |
 export const shownHash = (r: Review): string | undefined => r.hash;
 
 // ---------- the words: one mechanic per phase, short outcome lines ----------
+/** The plan the model passes to show a request: its label ("plan paging v1"; Claude Code draws it in "User rejected
+ * Claude's plan", so never the hex), else, for a request from before plans, "proposal HASH". hooks/consent.ts reads both. */
+export const stubFor = (h: string, title?: string | null): string => (title && /^plan [a-z0-9-]+ v\d+$/.test(title) ? title : `proposal ${h}`);
+
 /** What the model does next. */
 export const NEXT = {
   /** open a proposal in the plan view (the hooks fall back to the card) */
-  open: (h: string) => `call EnterPlanMode, then ExitPlanMode with plan "proposal ${h}"`,
+  open: (h: string, title?: string | null): string => `call EnterPlanMode, then ExitPlanMode with plan "${stubFor(h, title)}"`,
   /** entering: show the proposal the hooks picked */
-  show: (h: string) => `call ExitPlanMode now with plan "proposal ${h}"`,
+  show: (h: string, title?: string | null): string => `call ExitPlanMode now with plan "${stubFor(h, title)}"`,
   /** shown / exiting: close the review */
   exit: 'call ExitPlanMode now (no plan needed: the hooks close the review; your person leaves plan mode)',
   /** restore: put the person's mode back (plan mode: EnterPlanMode alone) */
@@ -204,11 +208,11 @@ export const SAY = {
   tooSoon: (n: string, h: string): string => `Nothing recorded yet: ${n}'s Yes came as the view opened, maybe keys meant for the prompt. Ask once on the card: ${NEXT.card(h)}; only that answer counts.`,
   tooSoonNotice: (title: string | null, h: string, typing: boolean): string => `your Yes on ${title ? `"${title}"` : `proposal ${h}`} came ${typing ? 'while you were typing' : 'right as the review opened'}, so it is not recorded yet: confirm it on the card that follows`,
   recheckAsk: (n: string, h: string): string => `room proposal ${h}: ${n}'s Yes came as the view opened; confirm it here`,
-  showOnly: (n: string, h: string): string => `sub-human: this plan mode is only to show ${n} room proposal ${h}. Call ExitPlanMode now with plan "proposal ${h}"; plan nothing (the hooks show its text).`,
+  showOnly: (n: string, h: string, title?: string | null): string => `sub-human: this plan mode is only to show ${n} ${requestName(h, title)}. Call ExitPlanMode now with plan "${stubFor(h, title)}"; plan nothing (the hooks show its text).`,
   exitNow: `sub-human: ${NEXT.exit}.`,
   /** an ExitPlanMode with no review open would show the person's own plan while a sign-off waits: denied once */
   steer: (n: string, h: string, title?: string | null): string => `sub-human: ${n} has a sign-off waiting (${requestName(h, title)}); this ExitPlanMode would show ${n}'s own plan file instead, so nothing was shown. `
-    + `To show the sign-off: ${NEXT.open(h)}. For ${n}'s own plan, call ExitPlanMode again.`,
+    + `To show the sign-off: ${NEXT.open(h, title)}. For ${n}'s own plan, call ExitPlanMode again.`,
   noReviewOpen: (n: string, h: string): string => `sub-human: proposal ${h} is not ${n}'s to answer now (already answered, decided or unknown); nothing was shown and nothing is recorded. Plan nothing for it.`,
   /** the plan dialog's reason line: for the person, not the model. The dialog's own words ("approve", "Yes, … edits")
    * are about coding; this line says the answer is a sign-off on the text only */
@@ -339,8 +343,8 @@ function resolve(r: Review, note: Confirm | null, ev: { answer?: ReviewAnswer | 
     note: { hash: t.hash, note: text, from: t.from, title: t.title, at: ctx.now, stage: 'waiting' } };
 }
 
-/** A blank plan, or the "proposal <hash>" stub the model is told to pass: not a plan of its own. */
-const stub = (t: string) => !t.trim() || /^\s*(?:the room )?proposal\s+[0-9a-f]{6,12}\s*\.?\s*$/i.test(t);
+/** A blank plan, or the stub the model is told to pass ("plan paging v1", "proposal <hash>"): not a plan of its own. */
+const stub = (t: string) => !t.trim() || /^\s*(?:the room )?proposal\s+[0-9a-f]{6,12}\s*\.?\s*$/i.test(t) || /^\s*plan\s+[a-z0-9-]{1,24}\s+v\d+\s*\.?\s*$/i.test(t);
 /** What a review backs up of the plan file: the person's own plan, never a stub a model wrote ("proposal HASH"), which a
  * restore would put back for the closing ExitPlanMode to show as an older proposal's hash: null, so the restore
  * removes the file. */
@@ -521,7 +525,7 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
       if (r.phase === 'restore') return { state, effects: [], say: ctxSay(SAY.exitNow) };
       if (r.phase !== 'entering') return none(state);
       const [review, effects] = showEarly(r, ev.plan);
-      return { state: { ...state, review }, effects, say: ctxSay(SAY.showOnly(n, r.hash || '')) };
+      return { state: { ...state, review }, effects, say: ctxSay(SAY.showOnly(n, r.hash || '', r.title)) };
     }
 
     case 'planFailed': {
@@ -604,7 +608,7 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
         next = ev.mode === 'plan' ? NEXT.exit : NEXT.restore(n, r.mode);
       } else if (ev.mode !== 'plan') return none(state);
       else if (r.mode === 'plan' && r.phase !== 'entering') return closedHere(state, r, ev, ctx); // plan mode is the person's
-      else if (r.phase === 'entering') next = `${NEXT.show(r.hash || '')} to show ${n} the room proposal`;
+      else if (r.phase === 'entering') next = `${NEXT.show(r.hash || '', r.title)} to show ${n} the room proposal`;
       else {
         const res = resolve(r, state.note, ev, ctx);
         review = { ...res.review, phase: 'exiting' };
