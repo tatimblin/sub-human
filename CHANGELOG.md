@@ -2,6 +2,25 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 0.6.0: words and the guard
+
+Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests. The wire protocol is still 5. The plan is `docs/next/PLAN-QUIET.md`; the words follow `docs/next/quiet/COPY.md`.
+
+### Changed
+- **One line per event, in plain words.** `Opened panda-0976`, `Joined panda-0976 with maya`, `Left panda-0976`: no teaching suffix (`as NAME` only for a name you chose). The room's plan is the room's: `Plan paging v1 is ready · maya's edit`, `Plan paging v1 · dev asked for changes: "…"`, `Plan paging v2 agreed`. A task added for you reads `New task for you: …`. A plan version alone, and a decision that did not agree, show nobody a line: the request on it, and each objection, are the lines. One speaker: the room's own lines have no second `room:`.
+- **What only says it worked is never drawn.** An `@room`'s `✓ sent`, a row's `row closed`, `restoring this session's rows` after a resume, `Claude Code X isn't verified`, the bypass-permissions warning, the link going down and back, and a tail restart (nothing lost) go to Claude Code's debug log (`claude --debug`). Claude Code keeps an empty warning row where a receipt or a row's end was. Hooks write nothing to stderr on success.
+- **Claude's text stays Claude's.** A review's deny has an empty reason (its words are the call's context), the false "the mode is restored" is gone, a mid-turn wake that no request read gets its turn context only (never its request line twice), and each room tool's description opens with one plain sentence (no parameter renamed).
+- **No echo after a join.** Claude makes the row's calls and ends its turn without text.
+- **Plan names people can read.** A name is slugged, never refused (`error handling` is `error-handling`); a new plan with no name takes its first heading's (`# Paging` is `paging`), else `room`. The stub that shows a request is its label (`plan paging v1`), not a hash, in "User rejected Claude's plan". A stored edit reads `plan paging v1 saved; you review it before anyone else is asked`.
+- **Help is six lines;** the plugin README lists every command. The argument hint is `[invite | leave | help]`.
+- **An invite is one line,** `Invite ready until 18:16 · line and PIN below the prompt`; its rules, the install, the ssh and key-check notes and how to cancel are in the README. The copy card asks `Copy the invite?`.
+- **The leave card is smaller and rarer:** `Left panda-0976.`, Done / ★ Star sub-human and the free-text row for feedback, at most twice per install, never again once starred (or once `gh` says you starred it). When it shows there is no separate `Left …` line. No `/rename` after a leave: the session is titled `NAME` at the next prompt, silently.
+
+### Fixed
+- **The guard stays out of the way (#35).** The person-only CLI (`sub-human invite`, `admit`, `kick`, …) is denied only where the shell would run it, so a heredoc, a note or a commit message that mentions `/sub-human invite` passes; `sub-human invite`, `node …/scripts/sub-human invite` and `sh -c '… sub-human invite'` are still denied. A heredoc's body is data unless a shell reads it, so a script written to `/tmp` and run with `node` is no longer read as searching `/`. `mktemp -d` scratch work and Claude Code's own `tool-results` reads pass. Each deny names what works instead.
+- `sub-human admit` no longer says the person "typed your PIN": admit answers a request made without it.
+- A lock that did not hold reads `Room busy. Try again.` (its path is in the debug log), and the room session's `claude --bg` errors no longer reach the join line: a retry says nothing, a start that failed says `Room task list unavailable. Run /sub-human doctor.`
+
 ## 0.5.8: a room's task list ends with its room session
 
 Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, and `npm run probe`. The wire protocol is still 5.
