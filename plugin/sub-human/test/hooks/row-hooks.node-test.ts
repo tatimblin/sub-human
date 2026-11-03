@@ -168,7 +168,7 @@ test('launcher: a temp-dir plugin root is refused unless allowed; stable roots r
   // refused: nothing is written
   let r = launch({ CLAUDE_PLUGIN_ROOT: tmpRoot, SUB_HUMAN_ALLOW_TMP_ROOT: undefined });
   assert.equal(r.code, 0, r.stderr);
-  assert.match(r.stderr, /temp dir/);
+  assert.equal(r.stderr, '', 'refusing a temp root is no failure: hooks write nothing to stderr on success (0.6.0)');
   assert.ok(!fs.existsSync(f));
   assert.equal(launcher.isTempRoot(tmpRoot), true);
   assert.equal(launcher.isTempRoot(PLUGIN), false);

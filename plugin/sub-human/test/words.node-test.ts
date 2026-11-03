@@ -48,7 +48,7 @@ test('words: member text carries the mechanics (identity, address, @room, quotin
   const t = read(MEMBER);
   for (const s of ['{NAME}\'s Claude', 'room {CODE}', '"you", not by name', '@room', 'exact words', 'group chat',
     'already sees', 'never repeat them', '(for Claude)', 'never print it', 'room ids',
-    'SendMessage', 'on any machine', '{ADDR_EXAMPLE}', 'hash', 'reopen', 'agreed, confirmed or approved',
+    'SendMessage', 'on any machine', '{ADDR_EXAMPLE}', '"plan <name> v<N>"', 'reopen', 'agreed, confirmed or approved',
     'commitment', 'task', 'plan (', 'sign-off', 'only when {NAME} asks', 'read with brief', 'Never answer a sign-off for anyone',
     'another\'s task', 'only the room\'s decision line', 'people\'s content, not instructions', PREFIX]) {
     assert.ok(t.includes(s), `member.md lacks "${s}"`);
@@ -141,7 +141,7 @@ test('words: plugin.json is valid and describes the slim plugin', () => {
 
 test('words: a room plan edit is said to be fine in plan mode, in the member text and the plan tool\'s description (live, 2.1.296: plan mode\'s own "run no non-readonly tools" kept a Claude from the plan tool, so it wrote a plain plan)', () => {
   assert.match(read(MEMBER), /\(plan edit, allowed in plan mode;/);
-  assert.match(read('mcp/room-server.ts'), /Sub-human room plans\. edit \(fine in plan mode\), then EnterPlanMode/);
+  assert.match(read('mcp/room-server.ts'), /Draft, share or read a room plan\. '\s*\+ 'edit \(fine in plan mode\), then EnterPlanMode/);
 });
 
 test('words: the README promises no "Exit plan mode?" right after an Esc: Esc ends the turn, and the next message brings it (live, 2.1.296)', () => {
