@@ -101,7 +101,7 @@ someone off your tailnet. If they can already ssh to your account, they need no 
 /sub-human leave         leave the room (the session stays open)
 /sub-human kick NAME     end someone's connection
 /sub-human doctor        check your setup when something breaks
-/sub-human help          everything else
+/sub-human help          six lines; the plugin README has everything else
 ```
 
 ## Good to know

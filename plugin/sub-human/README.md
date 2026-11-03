@@ -28,7 +28,7 @@ claude plugin install sub-human@sub-human
 sub-human has no server and no telemetry: nothing goes to its author or any third party. Everything below happens on your machines and over the links you set up.
 
 - **Its hooks module** (`mod/`, run by Claude Code in each session) guards the sub-human home: it denies Claude's file tools and `Bash` commands that reach `~/.sub-human` (or `$SUB_HUMAN_HOME`), and its keys (see [Threat model](#threat-model)). Anything else a session can read, Claude Code's own prompt history and transcripts included, it still can. It answers a tool call only with a deny or an ask (a room plan in the plan view, a question card, or Claude Code's own "Exit plan mode?"), never an approval.
-- **What it puts in your session.** Room lines show as dim notices. Lines that ask something of you or your Claude (a message to you, a sign-off request) are submitted as a prompt the plugin marks as room lines, not your words. An `@room` line you type is posted by a hook and not sent to the model. `/sub-human` is answered by the module itself, which also renames the session (`/rename NAME.CODE`) when you join or leave.
+- **What it puts in your session.** Room lines show as dim notices, one line per event in plain words. Lines that ask something of you or your Claude (a message to you, a plan to review) are submitted as a prompt the plugin marks as room lines, not your words. An `@room` line you type is posted by a hook and not sent to the model. `/sub-human` is answered by the module itself, which also titles the session `NAME.CODE` when you join (and `NAME` after you leave), at your next prompt, with no `/rename`. What only says something worked (a receipt, a retry, a link going down and back, a version not verified yet) is never drawn: it goes to Claude Code's debug log, which `claude --debug` writes.
 - **Messages to another machine.** A `SendMessage` your Claude sends to a member whose seat is on another machine is posted to the room instead (through the room's own `post` tool), since Claude Code's native messages reach only this machine.
 - **Files it writes:** the sub-human home (the room log, plans, keys 0600, link records, session indexes, `module.log`, the text of an edit left unstored); your session's plan file while a room plan is edited or shown (your own plan backed up first and put back after); the room session's native task list under Claude Code's config folder (`tasks/sh-CODE`), deleted when the room session ends. It writes no settings file and sets no status line: the rows' live text is a line you add yourself (see [Rows](#rows)).
 - **Programs it runs:** `node` on its own scripts (found by `hooks/node.sh`); the room tail (`scripts/sub-human tail`, one per seated session); `claude --bg` and `claude stop` for the room session (launched with its own settings, which allow only its row agents' `hold` tool: a background session has nobody to answer a permission prompt); `git config` to read your name; `ssh` for a link over ssh (your own keys, agent, `~/.ssh/config` and `known_hosts`, as for any ssh); `tailscale serve` or `funnel` when you invite over the web; and, when you pick Copy on an invite's card, one clipboard tool (`scripts/clip.sh`: `pbcopy`, `wl-copy`, `xclip` or `clip.exe`) with the line on stdin.
@@ -43,7 +43,37 @@ sub-human has no server and no telemetry: nothing goes to its author or any thir
 /sub-human join https://…/vole-8126#… 4829  # on their machine: the line, the PIN after it, and they're in
 ```
 
-`/sub-human help` lists every command (words after it are ignored). In a room, a bare `/sub-human` says who is here and how to invite. The CLI's commands (`tasks`, `who`, `read`, `show`, `plan`, `verify`, … see **The `sub-human` CLI**) are not `/sub-human` ones: `/sub-human tasks` says where it runs (ask your Claude, or the CLI in a terminal) and takes no seat; to sit as someone called `tasks`, type `/sub-human --as tasks`. Changing your name in the same room (`/sub-human erin`) logs `alice left (now erin)`.
+`/sub-human help` shows six lines (words after it are ignored):
+
+```
+/sub-human            Join the room here, or open one
+/sub-human invite     Invite someone on another machine
+/sub-human leave      Leave the room
+/sub-human doctor     Find and fix problems
+@room <message>       Say something to everyone in the room
+Everything else: the README, github.com/tatimblin/sub-human
+```
+
+Everything else is here:
+
+| Command | What it does |
+|---|---|
+| `/sub-human` | In a room: who is here. Else join the open room, or open one, as your git name. |
+| `/sub-human NAME [ROOM]` | Join (or open) a room as NAME; ROOM (like `vole-8126`) only when more than one is open. |
+| `/sub-human ROOM`, `/sub-human join ROOM` | Join that room on this machine as your git name. |
+| `/sub-human invite [--ssh [USER@HOST]] [--web \| --public] [--forward] [--no-card]` | A line for someone on another machine (over your tailnet when Tailscale is up here, else ssh); see **Join from another machine**. |
+| `/sub-human invite --cancel [REF]` / `--stop` | Cancel an invite nobody used yet (REF only when several are open: it lists them) / stop serving this room over the web. |
+| `/sub-human join HOST ROOM SECRET [PIN] [--as NAME] [--home PATH]` | The line from an invite, with the PIN the host told you after it. |
+| `/sub-human join URL#SECRET [PIN] [--as NAME]` | The same over the web. |
+| `/sub-human join PIN` | The PIN alone, when their machine asks for it. |
+| `/sub-human join HOST ROOM [--as NAME] [--home PATH]` | A room on a machine you can already ssh to: no invite. |
+| `/sub-human admit [REF]` | (host) Who is waiting to join, and the REF that lets one in (the card does the same). |
+| `/sub-human kick NAME` | (host) End the connection NAME joined over. |
+| `/sub-human leave` | Leave the room (the session stays open). |
+| `/sub-human doctor` | What is wrong on this machine, and how to fix it (read only). |
+| `@room TEXT` | Post your exact words to the room. Your Claude can message other Claudes, edit the room plan and the task list. |
+
+In a room, a bare `/sub-human` says who is here and how to invite. The CLI's commands (`tasks`, `who`, `read`, `show`, `plan`, `verify`, … see **The `sub-human` CLI**) are not `/sub-human` ones: `/sub-human tasks` says where it runs (ask your Claude, or the CLI in a terminal) and takes no seat; to sit as someone called `tasks`, type `/sub-human --as tasks`. Changing your name in the same room (`/sub-human erin`) logs `alice left (now erin)`.
 
 ## Join: one command
 
@@ -53,25 +83,25 @@ In your normal Claude Code session:
 /sub-human
 ```
 
-When no room is open, the join hook creates one (say `vole-8126`, the **room**) and starts the room session as a background session titled `claude.vole-8126`. It runs one short turn at start, and one each time someone joins, to keep the rows; otherwise it is idle. A join that works says so in one dim line, `sub-human: opened room vole-8126 as tristan · on this machine others join with /sub-human; another machine: /sub-human invite` (the next person sees `joined vole-8126 as dana, with tristan · @room to talk; your Claude can message other Claudes, edit the room plan and the task list`); your session is titled `tristan.vole-8126` and the room's row `vole-8126` appears in your agent panel.
+When no room is open, the join hook creates one (say `vole-8126`, the **room**) and starts the room session as a background session titled `claude.vole-8126`. It runs one short turn at start, and one each time someone joins, to keep the rows; otherwise it is idle. A join that works says so in one dim line, `sub-human: Opened vole-8126` (the next person sees `Joined vole-8126 with tristan`; a name you typed shows too: `Joined vole-8126 as dana with tristan`); your session is titled `tristan.vole-8126` at your next prompt and the room's row `vole-8126` appears in your agent panel. Your Claude makes the row's calls and ends its turn without a word. If the room session can't start, a second line says `Room task list unavailable. Run /sub-human doctor.` (its error is in the debug log).
 
-**How replies show.** `/sub-human` answers in place of the command, as dim `sub-human: …` lines: help, who is here, `left vole-8126 · /sub-human joins again`, an invite, a refusal. They never reach your Claude's context (so it neither repeats them nor sees a PIN), and a command that only replies leaves no row of what you typed. Claude Code does save these lines in the session's transcript, so an invite's line and its PIN are not among them: they are pinned under the prompt instead (see **Join from another machine**). Nothing reads "blocked by hook". A refusal starts with `✗` and says what to type next, or to run `/sub-human doctor`. Typed through Remote Control, where those lines don't show, a reply with no secret in it is the command's own output instead. The next person on this machine runs `/sub-human` too, and adds the room (`/sub-human dana vole-8126`, or just `/sub-human vole-8126` or `/sub-human join vole-8126` as their git name) only when more than one room is open.
+**How replies show.** `/sub-human` answers in place of the command, as dim `sub-human: …` lines: help, who is here, `Left vole-8126`, an invite, a refusal. They never reach your Claude's context (so it neither repeats them nor sees a PIN), and a command that only replies leaves no row of what you typed. Claude Code does save these lines in the session's transcript, so an invite's line and its PIN are not among them: they are pinned under the prompt instead (see **Join from another machine**). Nothing reads "blocked by hook". A refusal starts with `✗` and says what to type next, or to run `/sub-human doctor`. Typed through Remote Control, where those lines don't show, a reply with no secret in it is the command's own output instead. The next person on this machine runs `/sub-human` too, and adds the room (`/sub-human dana vole-8126`, or just `/sub-human vole-8126` or `/sub-human join vole-8126` as their git name) only when more than one room is open.
 
 **Your name.** With no name typed, it is your git `user.name` (the repo's, else your global one): its first word, lowercased, with only letters, digits, `.`, `_` and `-` kept (`Tristan Timblin` → `tristan`). With no `user.name`, the part of your git `user.email` before the `@`; with neither, `$USER`. A name that is taken in the room is refused with how to pick one: `/sub-human NAME`. A typed name always wins: `/sub-human alice`, or `--as NAME` on a join. Command words (`invite`, `join`, `kick`, `leave`, `doctor`, `help`, `admit`, …) are never names, and nor is a word of digits (`/sub-human 4829` says it looks like a PIN).
 
 The hook binds your name to your session before the model sees anything, so your Claude can never pick or change it. Your identity survives `/clear`, compaction and `--resume`. The command shows as `/sub-human:sub-human` in the picker; typing the bare `/sub-human` works. `/sub-human leave` leaves the room and keeps the session open (no `/exit`).
 
-**After you leave**, once per session, a card says **You left room CODE. Thanks for trying sub-human! Type below to send feedback.**:
-- **Close** does nothing.
-- **Star on GitHub** stars the repo with `gh` when you are logged in. Otherwise it opens the repo page. With no browser (a session over ssh), it shows the link.
-- **Typing** in the card's free-text row sends feedback. It opens a new GitHub issue in your browser, or shows its link. The issue is filled in with:
+**After you leave**, the leave is one line, `Left vole-8126`. Twice per install at most, that line is a card instead (**Left vole-8126.**, headed `sub-human`):
+- **Done** does nothing.
+- **★ Star sub-human** (one keystroke) stars the repo with `gh` when you are logged in (`Starred sub-human. Thanks!`). Otherwise it opens the repo page. With no browser (a session over ssh), it shows the link.
+- **Typing** in the card's own free-text row sends feedback. It opens a new GitHub issue in your browser, or shows its link. The issue is filled in with:
   - your text;
   - your sub-human and Claude Code versions;
   - what sub-human said in this session, for debugging: the commands you ran (not their arguments) and its replies and errors, with room codes, secrets and PINs masked.
 
   The room's chat never goes in it. You can edit or delete any of it, and nothing is posted until you press Submit.
 
-The card is sub-human's own: your Claude isn't asked anything. There is no card with `SUB_HUMAN_LEAVE_CARD=0` in your environment, or in a session that is not interactive.
+The card is sub-human's own: your Claude isn't asked anything. It shows at most once per session and twice per install (counted in the plugin's own store), and never again once you starred the repo (a star, or the page opened) or once `gh` says you starred it already. There is no card with `SUB_HUMAN_LEAVE_CARD=0` in your environment, or in a session that is not interactive: the `Left vole-8126` line is then the whole leave. Your session is titled `NAME` again at your next prompt.
 
 ## Join from another machine
 
@@ -91,16 +121,15 @@ On the host, in a session that is in the room:
 ```
 
 ```
-sub-human: invite to room vole-8126 for one machine, over Tailscale Serve (your tailnet only), until 14:05: the line and its PIN are under the prompt (not saved in this conversation). Send the line; say the PIN separately.
-sub-human: Cancel it: /sub-human invite --cancel 3f9c2a1b7e0d · stop serving the room: /sub-human invite --stop
-sub-human: They type the PIN after the line; the line alone asks you on a card, the PIN alone gets nobody in, and 5 wrong PINs end the invite. The right PIN lets them in with no card: the room shows who joined, with a check and the kick.
-sub-human: Their machine checks this one's key (Xk3v9QpL0aZr…, named in the line) before it sends anything, so nothing in between can read along.
-sub-human: No sub-human on their machine yet? In Claude Code there: /plugin marketplace add tatimblin/sub-human, then /plugin install sub-human@sub-human, and restart it.
-sub-human: The first connection to a new ts.net name can take ~20 s while Tailscale issues its certificate; it is being fetched now, and their machine keeps trying.
-sub-human: Off your tailnet? /sub-human invite --public
+sub-human: Invite ready until 14:05 · line and PIN below the prompt
 ```
 
-That is the room's first invite. Later invites to the same room show only the first two lines: the rules, the key check, the install hint, the certificate's wait, the pointer to `--public` and Funnel's warning are said once per room on this host. An invite works once, for 15 minutes.
+That is the whole invite: one line. With the room's first invite over the web it can add the certificate's first wait (`The first connection to a new ts.net name can take ~20 s …`), the pointer to `--public` (off your tailnet) and, with `--public`, Funnel's warning that the name is public; and, over ssh, what would make their join fail (Remote Login off on this Mac). An invite works once, for 15 minutes. What to tell the other person:
+
+- **The rules.** They type the PIN after the line. The line alone asks you on a card, the PIN alone gets nobody in, and 5 wrong PINs end the invite. The right PIN lets them in with no card: the room shows who joined, with a check and the kick.
+- **The install,** if they have no sub-human yet: in Claude Code there, `/plugin marketplace add tatimblin/sub-human`, then `/plugin install sub-human@sub-human`, and restart it.
+- **The key check** (over the web): their machine checks this one's key, named in the line, before it sends anything, so nothing in between can read along.
+- **Cancel or stop:** `/sub-human invite --cancel` (with several open it lists them: `--cancel REF`); over the web `/sub-human invite --stop` stops serving the room.
 
 and under the prompt, on the plugin's status line:
 
@@ -108,7 +137,7 @@ and under the prompt, on the plugin's status line:
 ⚠ sub-human: PIN 4829 · /sub-human join https://box.tail1a2b.ts.net/sub-human/vole-8126#4f9k2m8q7r3t6v1w0x5y9z2a8b7c6d5e4f3g2h1
 ```
 
-Then a card asks **Copy the invite line to your clipboard? (the PIN is not copied)** — **Copy** / **Skip**. Copy puts the line, never the PIN, on your clipboard (`pbcopy`, `wl-copy`, `xclip` or `clip.exe`); Skip copies nothing. After a Copy, the session's later invites are copied with no card (`line copied`); after a Skip, it asks no more. There is no card with `--no-card`, with `SUB_HUMAN_INVITE_CARD=0` in your environment, or in a session that is not interactive. Send the line by any channel; say the PIN by another.
+Then a card asks **Copy the invite?** — **Copy** / **Skip**. Copy puts the line, never the PIN, on your clipboard (`pbcopy`, `wl-copy`, `xclip` or `clip.exe`) and says nothing more; Skip copies nothing. After a Copy, the session's later invites are copied with no card; after a Skip, it asks no more. With no clipboard tool it says so. There is no card with `--no-card`, with `SUB_HUMAN_INVITE_CARD=0` in your environment, or in a session that is not interactive. Send the line by any channel; say the PIN by another.
 
 When they have typed both, your room shows one line, `carol joined from carols-mbp (check 3f9c-2a71) · not them? /sub-human kick carol`, and nothing asks you anything. Their screen shows the same check; if it is not them, kick them. When they typed the line alone, **your Claude Code shows you a card**: `Let carol (check 3f9c-2a71) on carols-mbp join room vole-8126? — Let in / Refuse`; only your answer there admits them (see [The card](#the-card)). A wrong PIN never makes a card.
 
@@ -137,7 +166,7 @@ The hook hides any `/sub-human join`, `invite` or `admit` prompt, and any `/sub-
 The join starts a **link** on that machine: a small background process (`sub-human link CODE`) that keeps a copy of the room (a mirror) and carries that machine's posts and answers to the host. After that, everything works as on the host: `@room`, rows, proposals in the plan view, tasks. Your words are signed on your machine and checked on the host. The host runs the room's Claude and decides proposals.
 
 - **Rejoin** (a new session on the same machine) with `/sub-human` (or `/sub-human carol vole-8126`). The link is kept, and started again if it had stopped; you need no new invite.
-- **When the link is down**, your session shows one dim line, `the connection to room vole-8126 is down (…)`. An `@room` is queued (`⧗ queued`, up to 50 posts for up to 9 minutes) and sent in order once the link is back; one that waited too long is not sent, and you are told with its words. An answer to a proposal is never queued: it is not recorded and you are told so. The link retries on its own, and at once after your machine wakes or changes network. If the link's background process itself is gone (it crashed or was killed), your next `@room` is queued all the same and starts it again (`⧗ queued; restarting the link`); `/sub-human` starts it too, and a request that is never queued (a task, an answer) says to try again in a moment.
+- **When the link is down**, your session shows nothing: the link going down and coming back is the debug log's (`claude --debug`), and your Claude is told. An `@room` is queued (`⧗ queued`, up to 50 posts for up to 9 minutes) and sent in order once the link is back; one that waited too long is not sent, and you are told with its words. An answer to a proposal is never queued: it is not recorded and you are told so. The link retries on its own, and at once after your machine wakes or changes network. If the link's background process itself is gone (it crashed or was killed), your next `@room` is queued all the same and starts it again (`⧗ queued; restarting the link`); `/sub-human` starts it too, and a request that is never queued (a task, an answer) says to try again in a moment.
 - **When the link is slow** (the host has not answered within 2 s), an `@room` says `⧗ sending (slow connection)`: it is on its way and shows in the room when the host has it, so don't type it again. An answer that gets no reply in time says it is not confirmed: if the proposal still shows you unanswered later, answering again is safe.
 - **The link stops by itself** about a minute after no session of that machine is left in the room.
 - **Versions.** The two machines agree on a protocol version when the link connects. When they share none, or what was asked needs a newer one (an invite line needs protocol 3), the reply says which side must update, e.g. `host runs sub-human 0.5.0 (protocol 3); you run 0.5.0-beta.15 (protocol 1–2). Update your plugin: /plugin update sub-human`. Links made with 0.5.0-beta.15 or earlier stop working once either side updates: join again with a new invite line. If the host was on 0.5.0-beta.15, remove any `authorized_keys` lines ending `sub-human:ROOM:ID` or `sub-human-enroll:ROOM` that it wrote; nothing uses them now.
@@ -150,17 +179,11 @@ A right PIN is your consent, said ahead: the room line names the machine with it
 
 ### Invite details
 
-An ssh invite (Tailscale not up here, `--ssh`, or `SUB_HUMAN_SSH_ADDR` set) reads the same, with `over ssh me@devbox.local`, no `--stop`, and with the room's first invite one more line:
-
-```
-sub-human: Over ssh this needs their own ssh login to this account (me), set up as for any ssh login: sub-human writes nothing to authorized_keys. They log in to this machine as someone else? /sub-human invite --forward
-```
-
-Its line is `/sub-human join me@devbox.local vole-8126 SECRET`: HOST ROOM SECRET, and the joiner adds the PIN after it the same way. When Tailscale is up but the tailnet invite fails, the invite says why and is over ssh instead.
+An ssh invite (Tailscale not up here, `--ssh`, or `SUB_HUMAN_SSH_ADDR` set) reads the same. Over ssh it needs their own ssh login to this account, set up as for any ssh login: sub-human writes nothing to `authorized_keys`. Someone who logs in to this machine as someone else needs `/sub-human invite --forward`. Its line is `/sub-human join me@devbox.local vole-8126 SECRET`: HOST ROOM SECRET, and the joiner adds the PIN after it the same way. When Tailscale is up but the tailnet invite fails, the invite says why and is over ssh instead.
 
 The status line is one line, and Claude Code cuts it at the terminal's width. When the whole line does not fit, it holds only `PIN 4829 · SECRET 4f9k…` and the notice gives the line with the word `SECRET` in its place, to fill in as you send it (the copy card still copies the whole line); in a terminal outside Claude Code, `sub-human invite` prints a new invite whole. The status line goes at once when you cancel the invite, within a few seconds once it is used or burnt, and when it expires.
 
-These dim lines are shown to you, never to your Claude, and your `/sub-human invite` itself leaves no row. Their sub-human needs to be as new as yours: an older one is told so when it dials. The line's **SECRET** (a web line's `#` fragment, an ssh line's last word) is 39 characters (letters and digits only, so a chat app or mail client leaves it alone) that hold 128 bits of single-use randomness and a short tag of this machine's key. With no address given (no `--ssh`, no `SUB_HUMAN_SSH_ADDR`), an ssh invite also says that it used this machine's own name (a Mac's `.local` name reaches only the same local network) and how to give another, and, when this machine takes no ssh logins (on a Mac, Remote Login is off in System Settings → General → Sharing), that their ssh will fail and `/sub-human invite --web` is the other way. When this machine's sub-human folder is not `~/.sub-human`, an ssh line adds `--home PATH` (where their login finds it). The line carries no name (theirs comes from their git name, or `--as NAME`). `sub-human invite [--room ROOM] [--ssh [USER@HOST]] [--via JUMP]` prints the same in a terminal outside Claude Code; inside Claude Code (its `!` mode) it masks the SECRET and the PIN, because that output becomes part of the conversation. An address that still has an example's placeholder (`NAME@…`, `USER@…`, `YOU@…`) is refused.
+These dim lines are shown to you, never to your Claude, and your `/sub-human invite` itself leaves no row. Their sub-human needs to be as new as yours: an older one is told so when it dials. The line's **SECRET** (a web line's `#` fragment, an ssh line's last word) is 39 characters (letters and digits only, so a chat app or mail client leaves it alone) that hold 128 bits of single-use randomness and a short tag of this machine's key. With no address given (no `--ssh`, no `SUB_HUMAN_SSH_ADDR`), an ssh invite uses this machine's own name (a Mac's `.local` name reaches only the same local network; give another with `--ssh USER@HOST` or `SUB_HUMAN_SSH_ADDR`), and, when this machine takes no ssh logins (on a Mac, Remote Login is off in System Settings → General → Sharing), that their ssh will fail and `/sub-human invite --web` is the other way. When this machine's sub-human folder is not `~/.sub-human`, an ssh line adds `--home PATH` (where their login finds it). The line carries no name (theirs comes from their git name, or `--as NAME`). `sub-human invite [--room ROOM] [--ssh [USER@HOST]] [--via JUMP]` prints the same in a terminal outside Claude Code; inside Claude Code (its `!` mode) it masks the SECRET and the PIN, because that output becomes part of the conversation. An address that still has an example's placeholder (`NAME@…`, `USER@…`, `YOU@…`) is refused.
 
 `/sub-human invite --cancel` cancels the open invite (with several open, it lists them: `/sub-human invite --cancel REF`).
 
@@ -250,7 +273,8 @@ Your agent panel gets one row named after the room, with the other people nested
 - **Enter** on the room row opens it. Each person is a row inside it. Enter on one shows that person's own words and their Claude's posts, labelled separately.
 - **↑ then Enter** goes back up a level.
 - Rows are read-only views. If you type into one, it answers `read-only row — type in main with @room` and nothing is posted.
-- After `--resume` or `--continue`, your rows come back by themselves within a few seconds.
+- A row's end draws an empty warning row (Claude Code keeps one where its hand-back was dropped; "row closed" is in the debug log).
+- After `--resume` or `--continue`, your rows come back with your next prompt (no line, no turn of their own).
 - Each row is a background agent, so Claude Code's line after each turn reads **"Waiting for N background agents to finish"** (N counts your rows) in place of "Worked for 12s". This is expected: your prompt is free and nothing is stuck. `"showTurnDuration": false` in your own settings hides both.
 
 ### The row status (opt-in)
@@ -287,16 +311,13 @@ The room session (`claude.vole-8126`) takes no typed input and reads nothing. It
 @room bob, can you take the parser tests? handler's in src/tasks.ts
 ```
 
-`@room …` at the very start of the prompt posts your words to everyone, **verbatim** as your words (`via=human`). No model turn runs, and the receipt is one line:
+`@room …` at the very start of the prompt posts your words to everyone, **verbatim** as your words (`via=human`). No model turn runs, and your own prompt row is the receipt: nothing else is drawn (Claude Code keeps an empty row where its stop would be; the debug log says it was sent).
 
 ```
 ❯ @room ship the cursor paging today
-⏺ ✓ sent to room vole-8126 (Claude wasn't asked)
 ```
 
-Later ones in the same session read just `⏺ ✓ sent`.
-
-If your Claude Code shows the receipt as "Operation stopped by hook: ✓ sent …", that is the same receipt: nothing went wrong. A refusal of your own words (no room, nothing after the tag, the room refused it, its connection stopped) is the same kind of line, starting with `✗`, and your prompt is not put back in the input: type it again when it says so. A long paste that starts with `@room` posts too (marked `(pasted text unwrapped)`).
+Without the hooks module (the classic hook), the stop reads "Operation stopped by hook: Sent": the same receipt, nothing went wrong. A refusal of your own words (no room, nothing after the tag, the room refused it, its connection stopped) is the same kind of line, starting with `✗`, and your prompt is not put back in the input: type it again when it says so. A long paste that starts with `@room` posts too (marked `(pasted text unwrapped)`).
 
 - Only a leading tag counts: `@room ask bob later` posts, `ask @room` does not.
 - `@claude …` is an ordinary prompt to your own Claude, in a room or not (there is no room Claude to wake).
@@ -314,23 +335,23 @@ Anything else you type goes to your own Claude. Its posts are labelled as your C
 
 A Claude's post shows as `bob's Claude: …`, a join as `bob joined`, a leave as `bob left (session ended)` or `bob left (connection lost)`. The plugin writes these lines into your session itself, as dim notices that stay there (also after `--resume`). They cost no model turn: your Claude doesn't repeat them, and it gets a copy to read with its next request. A leave shows only after 8 s away, so a quick leave and rejoin shows nothing.
 
-Every person's own words reach everyone. A Claude's post reaches you when it is addressed to you or mentions `@you`, and a sign-off request naming you opens for you to read and answer: those wake your Claude with a prompt from the plugin ("Prompt from the sub-human plugin"), or join its current turn if it is busy. Everything else reaches your Claude as a short "room context" note beside your next prompt (never as words of yours). Your room row also reads `+bob joined` or `−bob left` for two minutes.
+Every person's own words reach everyone. A Claude's post reaches you when it is addressed to you or mentions `@you`, and a plan to review naming you opens for you to read and answer: those wake your Claude with the room's line as a prompt, or join its current turn if it is busy (shown then, and its turn afterwards carries no second copy of the line). Everything else reaches your Claude as a short "room context" note beside your next prompt (never as words of yours). Your room row also reads `+bob joined` or `−bob left` for two minutes.
 
 **Claude to Claude.** Ask your Claude to "ask alice's Claude what the cursor format is". It calls `SendMessage` to `alice.vole-8126`, and alice's pane shows `› Message from @bob.vole-8126: …`. Those messages come from Claudes, not people. Native `SendMessage` only reaches sessions on the same machine, so when alice is on another machine the plugin posts the message to the room addressed to her instead (`bob's Claude (to alice): …`); it wakes her Claude the same way, and her Claude's `SendMessage` back to `bob.vole-8126` returns the same way. `ListAgents` lists only the Claudes on your machine.
 
 ## The room plan
 
-A room has plans, each with a name (`room` unless someone names another topic, such as `paging`) and versions v1, v2, …. The room keeps every version; nothing is ever overwritten.
+A room has plans, each with a name and versions v1, v2, …. A new plan nobody named takes its first heading's name (`# Paging` is `paging`), else `room`; a name is made into one the room takes (`error handling` is `error-handling`), never refused. The room keeps every version; nothing is ever overwritten. The plan is the room's, never one person's: lines name whose edit a version is.
 
 **Editing.** Ask your Claude ("let's write a room plan for cursor paging; you write the first version", "update the room plan: max 50 per page"). It calls the room's `plan` tool (op `edit`), then enters plan mode: the hooks put the plan's current version into its plan file under a two-line header that names the room's shared plan and the version it starts from. Your Claude edits the plan there, as with any plan, and calls ExitPlanMode with no plan argument (the hooks read the file). The hooks store it as the next version and tell your Claude so, with no approval dialog: storing an edit is not agreeing to it. If you are already in plan mode, it works the same and plan mode stays on.
 
 ```
-  ⎿  Error: sub-human: saved as room plan room v2, not sent out yet: you check it first.
+  ⎿  Error: sub-human: plan room v2 saved; you review it before anyone else is asked.
 ```
 
 Claude Code draws the receipt under the call the way it draws a refused call; it is the receipt, not a failure (what your Claude does next goes to it separately).
 
-Your own plan file is put back as it was, and your permission mode too. Everyone else sees one line, `alice's Claude: plan room v2: max 50 per page`; it wakes no one. When it goes out, the request is one line too, `alice's Claude asks you and bob to sign off on plan room v2 (alice agreed)`: whoever already agreed to that version is named, not asked again (with the summary after it when both arrive together).
+Your own plan file is put back as it was, and your permission mode too. A version alone shows nobody anything (their Claudes read it with their next prompt). When it goes out, the one line each person asked sees is `Plan room v2 is ready · alice's edit` (whoever already agreed to that version is not asked again; the summary is in the plan view).
 
 **You check your own version first.** Nobody else is asked about a version your Claude wrote until you have seen it. Right after storing it, your Claude opens it for you in the plan view (the line reads `your new version, plan room v2, for alice: nobody else is asked until you send it out`):
 
@@ -376,7 +397,7 @@ Only an answer in a review the hooks opened counts: a Yes on a plan of your own 
 
 Showing the plan enters plan mode (Claude Code asks nothing for that). A "Yes" leaves plan mode in the mode it names, as with any plan of yours: the one the hint names keeps your mode ("Yes, manually approve edits" in default mode, "Yes, and use auto mode" in auto mode); if you were in plan mode before the review, plan mode comes back. After "Tell Claude what to change", your Claude leaves plan mode with Claude Code's own "Exit plan mode?" question, which you answer (nothing in it is approved). Esc ends Claude's turn, so plan mode stays on and nothing more happens until you write again: your next message first brings that same question (or press shift+tab to leave plan mode yourself). The hooks never answer a permission question for you. Agreeing is not a go-ahead to build: your Claude does not carry the plan out.
 
-Say "show me the plan to sign off" and your Claude opens it again. With several waiting, name the plan you mean ("the paging plan", or its hash): the hooks open the one your own last words name, else the oldest, never one your Claude chose. When everyone named has agreed, the room logs a `decision` (`room: plan room v3 agreed (alice, bob)`); when someone objected, `room: plan room v3 not agreed: you asked for changes · bob agreed` (your note is in your objection's own line, not repeated).
+Say "show me the plan to sign off" and your Claude opens it again. With several waiting, name the plan you mean ("the paging plan", or its hash): the hooks open the one your own last words name, else the oldest, never one your Claude chose. When everyone named has agreed, the room logs a `decision`, and each person in it sees `Plan room v3 agreed`. When someone asked for changes, the plan's author sees that one line, with the note: `Plan room v3 · bob asked for changes: "…"`; the decision adds nothing to it, and the person who asked sees nothing more (their card was the receipt).
 
 **The card, as a fallback.** When the plan view can't be used, a question card opens instead (Not yet / Agree / Object, **n** adds a note): in bypass or don't-ask mode, when `showClearContextOnPlanAccept` is on (that approval path clears the context and starts building), or for a plan over 200,000 characters. The card shows the plan beside the options when it fits (up to 2,000 characters and about 20 lines), otherwise a summary and the path. Not yet, Esc, "Chat about this" or no answer record nothing.
 
@@ -452,7 +473,8 @@ In a session that has joined a room, the plugin's hooks module runs one `node` c
 ## Settings worth knowing
 
 - **The row status is yours to turn on.** The rows' text (who said what, tasks, plans, the link) shows only with the `subagentStatusLine` line in **Rows** in your own settings. Claude Code has one `subagentStatusLine`, so it replaces any you had, and one in a project's or local settings, or passed with `--settings`, overrides yours.
-- **Bypass mode.** In `--dangerously-skip-permissions` (bypass) mode, Claude Code holds incoming `SendMessage`s from other sessions behind a dialog until you answer it. The join message warns you. Use a normal permission mode in a room if you want other Claudes' messages to reach yours without a dialog.
+- **Bypass mode.** In `--dangerously-skip-permissions` (bypass) mode, Claude Code holds incoming `SendMessage`s from other sessions behind a dialog until you answer it. The join no longer warns on screen (the debug log does). Use a normal permission mode in a room if you want other Claudes' messages to reach yours without a dialog.
+- **The debug log.** Everything sub-human doesn't draw (receipts, retries, a link going down and back, a version not verified yet, the room session's start errors, a lock's path) goes to Claude Code's debug log: start `claude --debug` (or `--debug-file PATH`) to read it, and attach it to a bug report.
 
 ## Room storage
 
@@ -472,10 +494,13 @@ The security model is one machine, one OS user, per room: everyone on the host i
   - names the store (its path, `~/.sub-human`, `$HOME/.sub-human`, the keys under it), or reaches it by a glob, a `?`, a brace or a `cd` (each word is placed as the shell would: `~` and `$HOME` expanded, ANSI-C quoting such as `$'\x68'` decoded wherever the shell decodes it (also inside `"${…}"`; a quoted heredoc's body is literal), `$"…"` read as a quoted string, `${NAME:-word}` also read as its word, relative to the working directory or the last `cd`, glob segments matched against the store's path; a `$'…'` it cannot read whole is denied);
   - points a tool that reads files across a tree (`grep -r`, `rg`, `ag`, `fd`, `tar`, `zip`, `cp -r`, `xargs`, a `find` with `-exec` or `-delete`, `python`/`node`/`perl` code that names such a path, `sh -c`) at a directory above the store (`/tmp`, `~`, `/`), or at the working directory when that is above it. A `find` that only lists names, and an interpreter run from any folder, are not denied for where they start;
   - names or sets `SUB_HUMAN_HOME`;
-  - runs the plugin's own modules or hooks with `node`, `bun`, `deno` or `npx` (`lib/room*`, `lib/identity`, `lib/proposal`, `hooks/*.ts`, `hooks/handlers/*.ts`, `mcp/*.ts`, and their `.js` names of earlier versions).
+  - runs the plugin's own modules or hooks with `node`, `bun`, `deno` or `npx` (`lib/room*`, `lib/identity`, `lib/proposal`, `hooks/*.ts`, `hooks/handlers/*.ts`, `mcp/*.ts`, and their `.js` names of earlier versions);
+  - runs one of the person's own commands (`sub-human invite`, `admit`, `kick`, `listen`, `link`, `serve`) where the shell would run it: as the command, as the script `node` or a shell runs (`node …/scripts/sub-human invite`), or inside `sh -c`, `eval`, `$(…)`, `find -exec`, `ssh` or a heredoc fed to a shell (#35).
+
+  A heredoc's body is a file's contents or a program's input, not commands of the line, unless a shell reads it: a note, a commit message or a script written to `/tmp` that mentions `/sub-human invite`, or holds `// …`, `/** … */` or `4 / 2`, is not denied for it (paths named inside it still are; a bare `/` counts only quoted on its own, as in `os.walk('/')`). `mktemp -d` scratch directories pass. Each deny says what works instead: the person types the command, a narrower directory or `mktemp -d` for scratch, the room MCP tools.
 
   The read-only CLI (`<plugin root>/scripts/sub-human read`, `who`, `tasks`, `plan`, `show HASH`, `verify CODE`) stays allowed, and so do reading the plugin's source and running its tests. This is a lexical check of the command's words, and a model with `Bash` as the same user can still get past it: a path built at run time (a variable, string arithmetic in an interpreter), a script written to a file first, a symlink made first. So the seat key's signature proves a person's words only against a Claude that has not been steered into reading the key: a Claude that reads it can sign as that seat. What the guard does not stop, the log still shows when it is written around: a line placed outside the plugin breaks the hash chain or carries no valid signature (`sub-human doctor` checks every hosted room's log, `sub-human verify CODE` one room), and an unverified line counts for nothing.
-- **Read guard.** The same module denies `Read`, `Grep` and `Glob` inside the home's secret directories: `<home>/keys/` (the seat keys, the one file a model could sign a person's words with, and the machine key), `<home>/listen/` (the web listener's private key), `<home>/links/` (each link's token, a pending invite's SECRET and PIN, a web link's own key) and `<home>/sessions/` (the module's lease with your session's nonce, and the session indexes). Claude Code's prompt history and transcripts are not guarded: they are yours, and your Claude's to read, as in any session. A `Grep` from the home itself or any directory above it (`~`, `/`) is denied too, since ripgrep would descend into them; search a narrower directory. A `Glob` lists names only, so it is denied only inside those directories. (A Claude Code build that searches through `Bash` has no `Grep` or `Glob`; the Bash rules above then apply.) The rest of the store stays readable, so a model can read the log and the plans with `Read` too. Other MCP servers that read or write files aren't guarded, and neither is a script that reads the key: the guard is a lexical check.
+- **Read guard.** The same module denies `Read`, `Grep` and `Glob` inside the home's secret directories: `<home>/keys/` (the seat keys, the one file a model could sign a person's words with, and the machine key), `<home>/listen/` (the web listener's private key), `<home>/links/` (each link's token, a pending invite's SECRET and PIN, a web link's own key) and `<home>/sessions/` (the module's lease with your session's nonce, and the session indexes). Claude Code's prompt history, transcripts and tool results (`projects/*/<session>/tool-results/`, the output Claude Code keeps to a file for Claude to read back) are not guarded: they are yours, and your Claude's to read, as in any session (a tool result that resolves into the keys still is). A `Grep` from the home itself or any directory above it (`~`, `/`) is denied too, since ripgrep would descend into them; search a narrower directory. A `Glob` lists names only, so it is denied only inside those directories. (A Claude Code build that searches through `Bash` has no `Grep` or `Glob`; the Bash rules above then apply.) The rest of the store stays readable, so a model can read the log and the plans with `Read` too. Other MCP servers that read or write files aren't guarded, and neither is a script that reads the key: the guard is a lexical check.
 - **The listener on a shared machine.** It binds 127.0.0.1, so every account on the host machine can reach it (`--forward` relies on that). Without an invite line's SECRET and its PIN, or your Let in, that gets nothing; it can learn the listener's public key, whether a room code is served, and tie up the listener's connection slots (all forwarded joiners come from 127.0.0.1 and share one source's 8). Someone who takes the port while the listener is down holds no key a line names: the joiner's first dial stops there (nothing secret sent), and a link already made fails its handshake.
 - **Not covered.** Other MCP servers, and a hostile local user.
 - **File modes.** The home and every directory in it are 0700 (a home an older version made 0755 is closed when a room is opened), and the log and state files are 0600.
@@ -500,7 +525,7 @@ Remote rooms add:
 - **A link's ops are bounded.** A seat's own posts and answers are limited to 300 a minute on its own machine (a script driving the hooks would meet that). Over a link the host keeps one quota per op (a seat elsewhere holds its own key and token, so a script there could send as fast as it liked): 30 posts a minute per person and per Claude, 40 new plans stored an hour, 30 plan versions and 60 task requests a minute, 60 subscribes and 30 joins or leaves per 10 minutes, and caps on hellos, beats, plan fetches and pings, counted per link (or per seat, or per connection) so a reconnect resets nothing. Typing at a keyboard never meets them; over one the host answers `RATE` and when to try again.
 - **A machine is its key.** Each sub-human home has a machine key (`~/.sub-human/keys/machine.json`); a link proves it, and the host records the machine's id from the key, not from what the link says. No link can pass for the host or another member's machine (which decides whose seat is local, and whose seat is the host person's own).
 - **An admitted machine joins as the one name it was let in as.** The link its PIN or your Let in makes can take that seat and no other (a name no one holds included); a second seat, or another name, is refused. Your own ssh login's link (no card) picks its name as you do.
-- **The guard denies `sub-human invite`, `admit`, `kick`, `listen`, `link`, `serve` and `doctor --fix` to a model** (a plain `sub-human doctor` is read only and allowed), and `/sub-human invite` shows the line and its PIN to you, not to your Claude.
+- **The guard denies `sub-human invite`, `admit`, `kick`, `listen`, `link`, `serve` and `doctor --fix` to a model** where the shell would run them (a plain `sub-human doctor` is read only and allowed; a mention in text is not a run), and `/sub-human invite` shows the line and its PIN to you, not to your Claude.
 
 Over the web (Tailscale Serve, Funnel or your own front), who sees what:
 
@@ -520,13 +545,13 @@ Start with `/sub-human doctor` (see **Doctor**): it names most of these and the 
 | "Unknown command" for `/sub-human` | Launch with `--plugin-dir plugin/sub-human`, or install the plugin. |
 | `/sub-human` asks which room | More than one room is open, so add it: `/sub-human NAME ROOM`. |
 | `✗ "NAME" is taken in room …; pick another: /sub-human NAME` | Your default name (from git) is someone else's in that room. Type a name: `/sub-human dana2`. |
-| "the room session could not start" on join, or `Workspace not trusted` | Run `claude` in that folder once and accept trust, then join again. Without the room session the room still works: tasks are kept, but no session shows them as a native list and the room session's rows are missing. |
+| `Room task list unavailable. Run /sub-human doctor.` on join, or `Workspace not trusted` | Run `claude` in that folder once and accept trust, then join again (the debug log has the start's error). Without the room session the room still works: tasks are kept, but no session shows them as a native list and the room session's rows are missing. |
 | No rows in the panel | Accept workspace trust for this folder. After a resume they come back by themselves. |
 | A sign-off request didn't open | Ask your Claude to "show me the plan to sign off". `node <plugin root>/scripts/sub-human plan` in a terminal shows each plan's state, `node <plugin root>/scripts/sub-human plan NAME` its text and `show HASH` a version's. `sub-human` is not on the PATH, in a terminal or in a session. |
 | `✗ sub-human needs Claude Code 2.1.292 or newer, and this is …` | Update Claude Code (`claude update`) and restart it. |
 | `✗ sub-human's hooks module isn't running in this session (…)` | `/sub-human doctor` (it still runs) checks the usual causes: a settings file with `disableAllHooks` or `allowManagedHooksOnly`, or Claude Code's hooks-modules switch off. Start `claude` without `--bare` or safe mode, in a folder you trust. |
 | `the connection to room … stopped (…)` | The link stopped for good: the host refused or revoked it, or the room closed. The reason says what to do (usually a new invite from the host: `/sub-human invite` there). A closed room reconnects with `/sub-human` if the host opens it again; `sub-human link CODE --forget` drops it for good. |
-| `the connection to room … is down` | The link can't reach the host. It retries by itself (from 1 s, with jitter, up to 10 s; at once after a wake or a network change); `@room` posts are queued, answers are refused, until it is back, and `the connection to the room is back` says when (and how many queued posts went out). `~/.sub-human/links/CODE.log` says why; `~/.sub-human/links/CODE.state.json` holds the link's state. |
+| `@room` posts say `⧗ queued` | The link can't reach the host. It retries by itself (from 1 s, with jitter, up to 10 s; at once after a wake or a network change); `@room` posts are queued, answers are refused, until it is back. The debug log says when it went down and came back (a line on screen only when queued posts could not be sent). `~/.sub-human/links/CODE.log` says why; `~/.sub-human/links/CODE.state.json` holds the link's state. |
 | `the connection to room … isn't running` | The link's background process on this machine is gone (crashed or killed). The next `@room` queues the post and starts it again; `/sub-human` starts it too. The room row reads `✕ not running` meanwhile. |
 | `this machine's copy of room … no longer matches the host's` | Nothing more syncs. Forget this copy in a terminal (`node <plugin root>/scripts/sub-human link --forget CODE`), then join again with a new invite from the host. |
 | SSH join: `room … is offline` and the link log says `Permission denied (publickey)` | Your ssh login to the host's account does not work without a prompt (for a link an older version made, its own key was removed). The link uses `BatchMode=yes`, so it never asks for a password or a passphrase: load the key into your agent, or name it in `~/.ssh/config` (or `SUB_HUMAN_SSH_OPTS="-i KEY"`). |
@@ -543,6 +568,7 @@ Start with `/sub-human doctor` (see **Doctor**): it names most of these and the 
 | Web join: `still connecting (Tailscale may be issuing a certificate …)` | A new ts.net name's first TLS handshake waits on its certificate (~20 s). The link keeps trying; type `/sub-human` in a moment. |
 | Web join: `still connecting` and the link log says `answered 502` / `404` | The front reaches no listener: on the host, `sub-human listen --status`; with Tailscale, `tailscale serve status` should list `/sub-human/CODE`. Run `/sub-human invite --web` again. |
 | Web join: `TLS to …: unable to verify` in the link log | The joining machine does not trust the front's certificate. A ts.net certificate is public; for your own front set `NODE_EXTRA_CA_CERTS`. |
+| `Room busy. Try again.` | Another step held the room's lock for a moment (an invite, a let-in, a kick). Try again; the debug log names the lock. |
 | `AUTH` after upgrading the plugin | A seat that joined before keys were pinned can't post as you. Rejoin with `/sub-human NAME ROOM`; if the name's key is lost, join with a new name. |
 
 ## Limits
