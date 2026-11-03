@@ -73,7 +73,7 @@ test('old logs: a `retract` line is an ordinary system line that hides nothing; 
   assert.equal(room.line(f), '#1 bob[human] say "forged"');
   assert.doesNotMatch(room.fmt(f), /retracted/);
   assert.match(room.line(r), /^#2 bob\[system\] retract refs=#1 "peer-forged: #1"$/);
-  assert.deepEqual(room.chatLines(r, { viewer: 'alice' }), ['room: peer-forged: #1']);
+  assert.deepEqual(room.chatLines(r, { viewer: 'alice' }), ['peer-forged: #1'], 'the room\'s own line: no second speaker');
   assert.equal(roomLane(ALICE, f, all), 'push', 'the line it named still reaches people');
   assert.equal(roomLane(ALICE, r, all), 'pull');
   assert.equal(roomLane({ name: 'bob', role: 'member' }, r, all), 'none', 'written under bob\'s name: his own');
@@ -217,10 +217,17 @@ test('deliver (live verify, P): what asks the person is a notice, not context on
   const d1 = sys('decision', { proposal_hash: H1, text: 'objected: bob · agreed: alice', refs: [a1.id, o1.id] }, 'room');
   const all = R.readAll();
   assert.equal(D(ALICE, o1, all), 'notice', 'another approver\'s objection: alice sees it');
-  assert.equal(D(ALICE, d1, all), 'notice', 'the decision on a proposal alice is in');
-  assert.equal(D(BOB, d1, all), 'notice', 'bob completed it: shown, no wake');
+  assert.equal(D(ALICE, d1, all), 'context', 'a decision that did not agree: the objection\'s own line said it');
+  assert.equal(D(BOB, d1, all), 'context', 'bob asked for changes: his card was the receipt');
   assert.equal(D(CAROL, d1, all), 'context', 'not in it: context');
   assert.equal(D(CAROL, o1, all), 'context');
+  const a2 = answer('alice', 'signoff', H2);
+  const b2 = answer('bob', 'signoff', H2);
+  const d2 = sys('decision', { proposal_hash: H2, text: 'agreed: alice, bob', approvers: ['alice', 'bob'], refs: [a2.id, b2.id] }, 'room');
+  const all2 = R.readAll();
+  assert.equal(D(ALICE, d2, all2), 'notice', 'an agreed decision on a proposal alice is in');
+  assert.equal(D(BOB, d2, all2), 'notice', 'bob is in it too: shown, no wake');
+  assert.equal(D(CAROL, d2, all2), 'context', 'not in it: context');
 });
 
 test('deliver (noise pass A): the room\'s PIN-join line, with its check and the kick, is the people\'s join notice; the bare "joined" after it is not drawn again', () => {

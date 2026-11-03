@@ -57,7 +57,7 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   det(`carol's session took its seat on its own once let in: "You're in room ${code} as carol" in her pane`, took,
     took ? 'in state/S11/take-carol.txt' : 'not in state/S11/take-carol.txt (or not saved)');
 
-  const warned = /sub-human:(?:opened room|joined |in room )[^\n]*/.exec(x.cap('S11', 'carol') || '');
+  const warned = /sub-human:(?:opened room|joined |in room |Opened |Joined )[^\n]*/.exec(x.cap('S11', 'carol') || '');
   det('carol\'s join prints no line (a join that works shows no warning-styled systemMessage)', !warned, warned ? `"${warned[0]}" in ${x.capName('S11', 'carol')}` : `none in ${x.capName('S11', 'carol')}`);
 
   const say = log.find(e => e.kind === 'say' && e.from === 'carol' && e.via === 'human' && e.text === DEMO.carol11);

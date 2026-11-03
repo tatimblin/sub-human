@@ -193,10 +193,6 @@ const STATE_KINDS = new Set(['proposal', 'signoff', 'objection', 'decision']);
 /** An invite record that lapsed unused: past its expiry, never used or cancelled, tries left. */
 const lapsed = (r: unknown, now: number): boolean => isObj(r) && !r.used_at && !r.burnt_at && typeof r.expires_at === 'string'
   && now > Date.parse(r.expires_at) && Number(r.tries) > 0;
-/** A request addressed to its own asker, its one approver: the author's check (lib/room/consent.ts draft). */
-const isDraft = (e: Entry): boolean => e.to === e.from && Array.isArray(e.approvers) && e.approvers.length === 1 && e.approvers[0] === e.from;
-/** A plan version's summary from its first chat line ("bob's Claude: plan NAME vN: SUMMARY", made safe by chatLines), or ''. */
-const summaryOf = (first: string | undefined): string => (/^[^:]*: plan \S+ v\d+: (.*)$/.exec(first ?? '')?.[1] ?? '');
 const isMove = (e: Entry) => e.kind === 'member_joined' || e.kind === 'member_left';
 
 function timings(): Timings {
@@ -313,9 +309,6 @@ function formatNdBatch(ready: Item[], ctx: FormatCtx): { events: TailEvent[], mo
   const { me, room: rm, entries, judge, joinNote, seen, reported, hinted } = ctx;
   const chat: string[] = [], pull: string[] = [], wake: string[] = [], moved: number[] = [], pushed: Item[] = [];
   let state = false;
-  // a plan version and the sign-off request on it in one batch: one line, the request's, with the version's summary
-  const asked = new Set(ready.filter(({ e }) => e.kind === 'proposal' && e.hash && e.plan && !isDraft(e)).map(({ e }) => e.hash));
-  const folded = new Map<string, string>(); // hash -> the version's summary
   for (const p of ready) {
     const { e } = p;
     if (me.role !== 'claude' && isMove(e) && seen.has(e.id)) continue; // an earlier child already sent it
@@ -324,10 +317,8 @@ function formatNdBatch(ready: Item[], ctx: FormatCtx): { events: TailEvent[], mo
     if (me.role === 'claude' && d === 'wake') { pushed.push(p); continue; }
     // a join the room's PIN line already announced (its check and the kick): no second, bare "joined"
     if (d === 'notice' && announced(e, entries)) { moved.push(e.id); continue; }
-    if (d === 'notice' && e.kind === 'plan' && e.hash && asked.has(e.hash)) { folded.set(e.hash, summaryOf(rm.chatLines(e, { viewer: me.name, entries })[0])); continue; }
+    // a plan version is context (lib/room/deliver.ts): the request on it is the person's one line, its summary in the plan view
     const lines = rm.chatLines(e, { viewer: me.name, entries });
-    const summary = e.kind === 'proposal' && e.hash ? folded.get(e.hash) : undefined;
-    if (summary && lines[0] !== undefined) lines[0] += `: ${summary}`;
     // what the consent hook already told the model (the decision its answer made): the person's notice only
     const told = !!reported && reported.has(e.id);
     if (d === 'context') { if (!told) pull.push(...lines); continue; }

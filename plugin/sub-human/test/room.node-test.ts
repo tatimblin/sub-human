@@ -246,38 +246,39 @@ test('chatLines: group-chat lines with no ids, exact words, multi-line and long 
   assert.deepEqual(C(sys('member_left', { text: 'bob left' }, 'bob')), ['bob left']);
   assert.deepEqual(C(sys('member_left', { text: 'bob left (a\u001b[2Jb c)' }, 'bob')), ['bob left (a\ufffd[2Jb c)'], 'no control reaches the pane');
   assert.deepEqual(C(R.append({ kind: 'proposal', text: `proposal ${H1}: cursor paging`, hash: H1, approvers: ['alice'] }, { via: 'agent', from: 'claude' })), ['claude proposed: cursor paging (aaaaaa)']);
-  assert.deepEqual(C(R.append({ kind: 'objection', proposal_hash: H1, text: 'add the 400 test' }, { via: 'human', from: 'bob' })), ['bob objected to the proposal: add the 400 test']);
+  assert.deepEqual(C(R.append({ kind: 'objection', proposal_hash: H1, text: 'add the 400 test' }, { via: 'human', from: 'bob' })), ['The proposal · bob asked for changes: "add the 400 test"']);
   assert.deepEqual(C(R.append({ kind: 'signoff', proposal_hash: H1 }, { via: 'human', from: 'bob' })), ['bob agreed to the proposal']);
-  assert.deepEqual(C(sys('decision', { proposal_hash: H1, text: `agreed: alice, bob (proposal ${H1})` }, 'room')), ['room: decided (agreed: alice, bob)']);
-  assert.deepEqual(C(sys('task', { op: 'update', id: 2, subject: 'docs', owner: 'alice', status: 'in_progress' })), ['room: task "docs" in progress, owner you']);
+  assert.deepEqual(C(sys('decision', { proposal_hash: H1, text: `agreed: alice, bob (proposal ${H1})` }, 'room')), ['Decided (agreed: alice, bob)'], 'one speaker: no "room:"');
+  assert.deepEqual(C(sys('task', { op: 'update', id: 2, subject: 'docs', owner: 'alice', status: 'in_progress' })), ['task "docs" in progress, owner you']);
   // the rows' words, as `sub-human tasks` says them (live: the notice read "pending", the CLI "open")
-  assert.deepEqual(C(sys('task', { op: 'update', id: 2, subject: 'docs', owner: 'alice', status: 'completed' })), ['room: task "docs" done, owner you']);
-  // an add with a suggested owner: the suggested person's line says so; nobody else's names it (#19)
+  assert.deepEqual(C(sys('task', { op: 'update', id: 2, subject: 'docs', owner: 'alice', status: 'completed' })), ['task "docs" done, owner you']);
+  // an add for someone (suggested for them, or theirs): their line is "New task for you: SUBJECT"; nobody else's names it (#19)
   const sug = sys('task', { op: 'add', id: 3, subject: 'handler tests', status: 'pending', suggest: 'alice' });
-  assert.deepEqual(C(sug), ['room: task "handler tests" open, suggested for you (claim it to take it)']);
-  assert.deepEqual(C(sug, 'bob'), ['room: task "handler tests" open']);
+  assert.deepEqual(C(sug), ['New task for you: handler tests']);
+  assert.deepEqual(C(sug, 'bob'), ['task "handler tests" open']);
+  assert.deepEqual(C(sys('task', { op: 'add', id: 5, subject: 'http paging', status: 'pending', owner: 'alice' })), ['New task for you: http paging'], 'assigned to her: the same line');
   // with the log, an answer and a decision name their proposal by title (with two pending, which one was decided)
   const all = R.readAll();
   const W = (e: Entry, viewer = 'alice') => room.chatLines(e, { viewer, entries: R.readAll() });
   // a suggestion the viewer asked for herself is not said back to her
   const ownAsk = R.append({ kind: 'task_req', op: 'add', subject: 'own tests', suggest: 'alice' }, { via: 'agent', from: 'alice' });
   const own = sys('task', { op: 'add', id: 4, subject: 'own tests', status: 'pending', suggest: 'alice', req: ownAsk.id });
-  assert.deepEqual(W(own), ['room: task "own tests" open']);
-  assert.deepEqual(W(own, 'bob'), ['room: task "own tests" open']);
+  assert.deepEqual(W(own), ['task "own tests" open']);
+  assert.deepEqual(W(own, 'bob'), ['task "own tests" open']);
   assert.deepEqual(W(must(all.find(x => x.kind === 'signoff'))), ['bob agreed to "cursor paging" (aaaaaa)']);
-  assert.deepEqual(W(must(all.find(x => x.kind === 'objection'))), ['bob objected to "cursor paging" (aaaaaa): add the 400 test']);
-  assert.deepEqual(W(must(all.find(x => x.kind === 'decision'))), ['room: "cursor paging" (aaaaaa) agreed (you, bob)']);
+  assert.deepEqual(W(must(all.find(x => x.kind === 'objection'))), ['"cursor paging" (aaaaaa) · bob asked for changes: "add the 400 test"']);
+  assert.deepEqual(W(must(all.find(x => x.kind === 'decision'))), ['"cursor paging" (aaaaaa) agreed']);
   const p2 = R.append({ kind: 'proposal', text: `proposal ${H2}: Ship v3 Monday`, hash: H2, approvers: ['bob', 'carol'] }, { via: 'agent', from: 'alice' });
   const o2 = R.append({ kind: 'objection', proposal_hash: H2, text: 'keep status; clients depend on it' }, { via: 'human', from: 'bob' });
   const s2 = R.append({ kind: 'signoff', proposal_hash: H2 }, { via: 'human', from: 'carol' });
   const d2 = sys('decision', { proposal_hash: H2, text: `objected: bob · agreed: carol (proposal ${H2})`, refs: [p2.id, o2.id, s2.id] }, 'room');
-  // noise pass F: who asked for changes and who agreed; the note is the objection's own line, not said again
-  assert.deepEqual(W(d2), ['room: "Ship v3 Monday" (bbbbbb) not agreed: bob asked for changes · carol agreed']);
-  assert.deepEqual(W(d2, 'bob'), ['room: "Ship v3 Monday" (bbbbbb) not agreed: you asked for changes · carol agreed']);
+  // noise pass F: who asked for changes and who agreed (Claude's context: a person saw the objection's own line)
+  assert.deepEqual(W(d2), ['"Ship v3 Monday" (bbbbbb) not agreed · bob asked for changes · carol agreed']);
+  assert.deepEqual(W(d2, 'bob'), ['"Ship v3 Monday" (bbbbbb) not agreed · you asked for changes · carol agreed']);
   const o3 = R.append({ kind: 'objection', proposal_hash: H2 }, { via: 'human', from: 'dave' });
   const d3 = sys('decision', { proposal_hash: H2, text: `objected: dave (proposal ${H2})`, refs: [p2.id, o3.id] }, 'room');
-  assert.deepEqual(W(d3), ['room: "Ship v3 Monday" (bbbbbb) not agreed: dave objected']);
-  assert.deepEqual(C(d3), ['room: not agreed (objected: dave)'], 'without the log: no title');
+  assert.deepEqual(W(d3), ['"Ship v3 Monday" (bbbbbb) not agreed · dave asked for changes']);
+  assert.deepEqual(C(d3), ['Not agreed (objected: dave)'], 'without the log: no title');
   // a room plan's versions: "NAME's Claude: plan …" (noise pass F: no "for NAME" when it is NAME's own Claude, no hash);
   // a newer version names the sign-off request it retires
   const H3 = 'cccccccccccc', H4 = 'dddddddddddd';
@@ -285,25 +286,27 @@ test('chatLines: group-chat lines with no ids, exact words, multi-line and long 
     plan: 'limits', version, base: version - 1, for: from, summary }, { via: 'agent', from, system: true });
   assert.deepEqual(W(plan(H3, 1, 'alice', '100 a minute')), ["alice's Claude: plan limits v1: 100 a minute"]);
   const ask = R.append({ kind: 'proposal', text: `proposal ${H3}: plan limits v1`, hash: H3, approvers: ['alice', 'bob'], plan: 'limits', version: 1 }, { via: 'agent', from: 'alice' });
-  // the approvers are who is asked (never "from": live 2026-10-17 read "from you, frank" as the requester)
-  assert.deepEqual(W(ask), ["alice's Claude asks you and bob to sign off on plan limits v1"]);
-  assert.deepEqual(W({ ...ask, approvers: ['bob'] }, 'bob'), ["alice's Claude asks you to sign off on plan limits v1"]);
-  assert.deepEqual(W({ ...ask, approvers: ['bob', 'carol', 'dan'] }, 'zed'), ["alice's Claude asks bob, carol and dan to sign off on plan limits v1"]);
+  // the room's plan, never one person's: whose edit it is (never "from": live 2026-10-17 read "from you, frank" as the
+  // requester); who else is asked only for someone not asked (their Claude's context)
+  assert.deepEqual(W(ask), ['Plan limits v1 is ready · your edit']);
+  assert.deepEqual(W({ ...ask, approvers: ['bob'] }, 'bob'), ["Plan limits v1 is ready · alice's edit"]);
+  assert.deepEqual(W({ ...ask, approvers: ['bob', 'carol', 'dan'] }, 'zed'), ["Plan limits v1 is ready · alice's edit · for bob, carol and dan"]);
   // the author checked it first and agreed: she is not asked again (live 2.1.296: bob read "asks alice and you")
   const H5 = 'eeeeeeeeeeee';
   R.append({ kind: 'plan', text: 'plan docs v1: a guide', hash: H5, path: `plans/${H5}.md`, plan: 'docs', version: 1, base: 0, for: 'alice', summary: 'a guide' }, { via: 'agent', from: 'alice', system: true });
   const check = R.append({ kind: 'proposal', to: 'alice', text: `proposal ${H5}: plan docs v1`, hash: H5, approvers: ['alice'], plan: 'docs', version: 1 }, { via: 'agent', from: 'alice' });
-  assert.deepEqual(W(check), ["alice's Claude asks you to check plan docs v1 before it goes out"]);
+  assert.deepEqual(W(check), ['Plan docs v1 is a draft · your edit, in review']);
   human('alice', 'signoff', { proposal_hash: H5 });
   const out = R.append({ kind: 'proposal', text: `proposal ${H5}: plan docs v1`, hash: H5, approvers: ['alice', 'bob'], plan: 'docs', version: 1 }, { via: 'agent', from: 'alice' });
-  assert.deepEqual(W(out, 'bob'), ["alice's Claude asks you to sign off on plan docs v1 (alice agreed)"]);
-  assert.deepEqual(W(out), ["alice's Claude asks bob to sign off on plan docs v1 (you agreed)"]);
+  assert.deepEqual(W(out, 'bob'), ["Plan docs v1 is ready · alice's edit"]);
+  assert.deepEqual(W(out), ['Plan docs v1 is ready · your edit']);
+  assert.deepEqual(W(out, 'zed'), ["Plan docs v1 is ready · alice's edit · for bob (alice agreed)"], 'who else agreed, for someone not asked');
   human('bob', 'signoff', { proposal_hash: H5 });
-  assert.deepEqual(W(out, 'bob'), ["alice's Claude asks you to sign off on plan docs v1 (alice agreed)"], 'a later answer does not rewrite the request');
+  assert.deepEqual(W(out, 'bob'), ["Plan docs v1 is ready · alice's edit"], 'a later answer does not rewrite the request');
   const v2 = plan(H4, 2, 'bob', '60 a minute');
   // alice asked for v1's sign-off: her Claude is told v2 comes after it (deliver wakes it); bob, its editor, is not
   assert.deepEqual(W(v2), ["bob's Claude: plan limits v2: 60 a minute", `${room.CHAT_NEST}retires the sign-off request for plan limits v1`,
-    '(for Claude) this v2 of plan limits comes after v1, whose sign-off alice asked for. Tell alice what changed (read, plan "limits"); its author checks it first, and their Yes asks for sign-off.']);
+    '(for Claude) this v2 of plan limits comes after v1, whose review alice asked for. If alice asks what changed, read plan limits. Its author reviews it first; their Yes asks the others.']);
   assert.deepEqual(W(v2, 'bob'), ["bob's Claude: plan limits v2: 60 a minute", `${room.CHAT_NEST}retires the sign-off request for plan limits v1`]);
   assert.deepEqual(C(v2), ["bob's Claude: plan limits v2: 60 a minute"], 'without the log: no retires line');
   assert.deepEqual(C({ ...v2, for: 'carol' }, 'carol'), ["bob's Claude for you: plan limits v2: 60 a minute"], 'written for another: says so');

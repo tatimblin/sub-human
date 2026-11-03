@@ -145,12 +145,12 @@ export function pinIn(txt: string | null | undefined): string | null {
 
 /**
  * What a join showed in a capture (0.5.0-beta.7: the hooks module answers /sub-human itself): `notices`, the dim
- * "⏺ sub-human: opened room …" / "joined …" / "rejoined …" / "in room …" lines (first line of each, the pane may wrap
+ * "⏺ sub-human: Opened …" / "Joined …" / "Rejoined …" lines (before 0.6.0 "opened room …", "joined …", "in room …") (first line of each, the pane may wrap
  * it), and `frame`, the first hook frame drawn ("blocked by hook", "Operation stopped by hook", "hook error"), or null.
  */
 export function joinNotices(txt: string | null | undefined): { notices: string[], frame: string | null } {
   const lines = String(txt || '').split('\n');
-  const notices = lines.filter(l => /^\s*⏺ sub-human: (?:opened room|joined |rejoined |in room )/.test(l)).map(l => l.trim());
+  const notices = lines.filter(l => /^\s*⏺ sub-human: (?:opened room|joined |rejoined |in room |Opened |Joined |Rejoined )/.test(l)).map(l => l.trim());
   const f = lines.find(l => /blocked by hook|stopped by hook|hook error/i.test(l));
   return { notices, frame: f ? f.trim() : null };
 }

@@ -139,7 +139,7 @@ test('tail: silent before join, then the member push lane, settled into one batc
   assert.deepEqual(t.of('chat').flatMap(x => x.lines), [
     'bob: bob says hi',
     'carol joined',
-    'room: "claude proposes" (abcdef) decided (room decision)', // the decision names its proposal
+    '"claude proposes" (abcdef) decided (room decision)', // the decision names its proposal; one speaker, no "room:"
     'bob: words an old retract names',
     'bob: last ' + 'w'.repeat(390), // long text wraps at 400 code points
     '  │ ' + 'w'.repeat(210), // a continuation line is nested under its sender
@@ -149,9 +149,9 @@ test('tail: silent before join, then the member push lane, settled into one batc
     "bob's Claude (to you): q for alice",
     'claude proposed: claude proposes (bbbbbb)',
     "carol's Claude: carol: anyone on @alice docs?",
-    'room: task "docs" open, owner you',
+    'task "docs" open, owner you',
   ], t.text());
-  assert.match(t.of('pull').map(x => x.text).join('\n'), /\nroom: peer-forged\n/, 'the old retract: an ordinary pull line');
+  assert.match(t.of('pull').map(x => x.text).join('\n'), /\npeer-forged\n/, 'the old retract: an ordinary pull line');
   assert.doesNotMatch(t.chat().join('\n'), /#\d/, 'no ids in what the human sees');
   assert.deepEqual(t.forClaude().map(l => l.slice(0, 40)), ["(for Claude) to answer bob's Claude: Sen", '(for Claude) room now: proposal bbbbbb w']);
   assert.equal(t.forClaude()[0], `(for Claude) to answer bob's Claude: SendMessage bob.${code}`, 'a post to me names how to answer its Claude');
@@ -163,7 +163,7 @@ test('tail: silent before join, then the member push lane, settled into one batc
   assert.deepEqual(t.errs, []);
 });
 
-test('tail (room-plan live): a task added with me as its suggested owner is a chat line that says so, and no wake', () => {
+test('tail (room-plan live): a task added with me as its suggested owner is one chat line, "New task for you", and no wake', () => {
   h.freshHome();
   const { code } = h.register('alice');
   rows.writeHolds(code, sn('alice'), { room: true });
@@ -172,11 +172,11 @@ test('tail (room-plan live): a task added with me as its suggested owner is a ch
   t.advance(300);
   inRoom(code, r => r.append({ kind: 'task', op: 'add', id: 2, subject: 'handler tests', status: 'pending', suggest: 'alice' }, { via: 'system', from: 'room', system: true })); // #2
   t.advance(1000);
-  assert.deepEqual(t.lines(), ['room: task "handler tests" open, suggested for you (claim it to take it)'], t.text());
+  assert.deepEqual(t.lines(), ['New task for you: handler tests'], t.text());
   assert.deepEqual(t.of('wake'), []);
 });
 
-test('tail (live repro): another member\'s new version of a plan I asked to sign off and objected to wakes my Claude, saying so', () => {
+test('tail (quiet): another member\'s new version of a plan I asked about and objected to wakes nobody; my Claude\'s context says what it comes after', () => {
   h.freshHome();
   const { code } = h.register('alice');
   h.register('bob', 'member', 1, code);
@@ -190,10 +190,12 @@ test('tail (live repro): another member\'s new version of a plan I asked to sign
   t.advance(300);
   plans.put(store, { base: 1, text: 'goodbye world' }, { by: 'bob' });
   t.advance(1000);
-  const wake = t.of('wake').flatMap(x => x.text.split('\n'));
-  // noise pass F: no "for bob" when the Claude is bob's own, no hash
-  assert.deepEqual(wake.filter(l => !l.startsWith('(for Claude)')), ["bob's Claude: plan room v2", '  │ retires the sign-off request for plan room v1'], t.text());
-  assert.ok(wake.some(l => l.startsWith('(for Claude) this v2 of plan room comes after v1, whose sign-off alice asked for; objected: alice.')), t.text());
+  // the request on v2, once bob sends it, is the person's one line ("Plan room v2 is ready · bob's edit")
+  assert.deepEqual(t.of('wake'), [], t.text());
+  assert.deepEqual(t.chat(), [], t.text());
+  const pull = t.of('pull').map(x => x.text).join('\n');
+  assert.match(pull, /\nbob's Claude: plan room v2\n/, t.text());
+  assert.match(pull, /\(for Claude\) this v2 of plan room comes after v1, whose review alice asked for; objected: alice\./, t.text());
 });
 
 test('tail: a member sees every join as a chat line; with its room row running, no row-call invite', () => {
@@ -228,7 +230,7 @@ test('tail (noise pass E): a decision the consent hook already told the model is
   assert.equal(t.forClaude().filter(l => l.includes('to answer bob\'s Claude: SendMessage')).length, 1, t.text());
 });
 
-test('tail (noise pass F): a plan version and its sign-off request in one batch are one line, the request\'s, with the summary', () => {
+test('tail (quiet): a plan version and the request on it in one batch are one line, the request\'s; the summary is in the plan view', () => {
   h.freshHome();
   const { code } = h.register('alice');
   h.register('bob', 'member', 1, code);
@@ -240,7 +242,8 @@ test('tail (noise pass F): a plan version and its sign-off request in one batch 
   plans.put(store, { base: 0, text: '# Paging\n\nopaque cursor', summary: 'opaque cursor' }, { by: 'bob' });
   proposal.ask({ code, name: sn('bob') }, {});
   t.advance(1000);
-  assert.deepEqual(t.lines().filter(l => !l.startsWith('(for Claude)')), ["bob's Claude asks you and bob to sign off on plan room v1: opaque cursor"], t.text());
+  assert.deepEqual(t.of('chat'), [], 'no line for the version itself');
+  assert.deepEqual(t.of('wake').flatMap(x => x.text.split('\n')).filter(l => !l.startsWith('(for Claude)')), ["Plan room v1 is ready · bob's edit"], t.text());
 });
 
 test('tail (noise pass A): a machine its PIN let in shows its check and the kick as the join notice, once', () => {
@@ -254,7 +257,7 @@ test('tail (noise pass A): a machine its PIN let in shows its check and the kick
   sys(code, 'status', 'room', { text: notice });
   sys(code, 'member_joined', 'bob');
   t.advance(1000);
-  assert.deepEqual(t.chat(), [`room: ${notice}`], t.text());
+  assert.deepEqual(t.chat(), [notice], t.text());
   assert.equal(t.of('wake').length, 0, 'no wake: the person acts on it, not Claude');
 });
 

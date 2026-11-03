@@ -247,10 +247,10 @@ test('/sub-human leave: the seat leaves (as /exit would), the session stays; /su
   const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
   const r = w.hook('join', expand('leave'), { as: 'alice' });
   assert.equal(must(r.json).decision, 'block');
-  assert.equal(must(r.json).reason, `sub-human: left ${w.code} · /sub-human joins again`, 'a plain confirmation, not a refusal');
+  assert.equal(must(r.json).reason, `sub-human: Left ${w.code}`, 'a plain confirmation, not a refusal');
   assert.ok(seat(w, 'alice').left_at, 'alice left');
   assert.match(w.entries().map(e => e.text).join('\n'), /^alice left$/m);
-  assert.match(must(must(w.hook('join', expand('leave'), { as: 'alice' }).json).reason), /not in a room/);
+  assert.match(must(must(w.hook('join', expand('leave'), { as: 'alice' }).json).reason), /Not in a room/);
 });
 
 test('verify12 local/37: a leave asks ps once (one call for every seat\'s start time), not once per seat; a young lease needs none', () => {
@@ -263,7 +263,7 @@ test('verify12 local/37: a leave asks ps once (one call for every seat\'s start 
   try { fs.rmSync(log); } catch { /* none yet */ }
   const nonce = 'ab'.repeat(16);
   const left = w.hook('join', { ...expand('leave'), sub_human_via: 'command.run', sub_human_nonce: nonce }, { as: 'bob', modLease: false, env: { CLAUDE_PID: undefined, PATH: `${bin}:${process.env.PATH}` } });
-  assert.equal(must(must(left.json).subHuman).say, `left ${w.code} · /sub-human joins again`);
+  assert.equal(must(must(left.json).subHuman).say, `Left ${w.code}`);
   const calls = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter(Boolean) : [];
   assert.ok(calls.length <= 1, calls.join('\n'));
 });
@@ -758,10 +758,10 @@ test('through the module (command.run): every reply is {subHuman: {say}}, never 
   assert.equal(joined.decision, undefined);
   assert.match(must(must(joined.hookSpecificOutput).additionalContext), /^SUB-HUMAN: you are bob's Claude in room /);
   assert.equal(must(joined.subHuman).joined, true);
-  assert.match(must(must(joined.subHuman).say), new RegExp(`^joined ${w.code} as bob, with alice · @room to talk; your Claude can message other Claudes, edit the room plan and the task list`));
+  assert.equal(must(must(joined.subHuman).say), `Joined ${w.code} as bob with alice`);
   assert.equal(seat(w, 'bob').pid, process.pid, 'the seat\'s claude process is the shim\'s parent');
   const left = must(must(viaModule(w, 'bob', 'leave').json).subHuman);
-  assert.deepEqual([left.say, left.refused], [`left ${w.code} · /sub-human joins again`, false]);
+  assert.deepEqual([left.say, left.refused], [`Left ${w.code}`, false]);
 });
 
 test('through the module (PLAN-JOIN step 3): a take (no args, the room) with no let-in join of this session\'s says nothing and opens no room; seated, no status either', () => {

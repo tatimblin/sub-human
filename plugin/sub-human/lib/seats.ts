@@ -222,6 +222,13 @@ function withWhom(code: RoomCode, name: SeatName): string {
   return names.length > 3 ? `${names.length} others here` : `with ${names.join(', ')}`;
 }
 
+/** Who else is in the room, as a join line ends it: " with bob, carol", " with 5 others", or '' alone. */
+function company(code: RoomCode, name: SeatName): string {
+  const names = others(code, name).filter(n => n !== identity.ROOM_CLAUDE);
+  if (!names.length) return '';
+  return names.length > 3 ? ` with ${names.length} others` : ` with ${names.join(', ')}`;
+}
+
 /** An open room where name's seat is live and was taken from cwd (another session of this folder holds it): a bare
  * /sub-human opens no second room for that person. */
 function liveSeatHere(cwd: string, name: string): RoomCode | null {
@@ -315,9 +322,10 @@ function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd,
     try { shimLib().refresh(); } catch { /* best effort */ } // the serve shim a login link runs
   }
   const me: Identity = { code, name, role: 'member', pid, session_id: session_id || null, address: identity.address(name, code) };
-  const msg = created
-    ? `opened room ${code} as ${name} · on this machine others join with /sub-human; another machine: /sub-human invite`
-    : `${r.rejoin ? 'rejoined' : 'joined'} ${code} as ${name}, ${withWhom(code, name)} · @room to talk; your Claude can message other Claudes, edit the room plan and the task list`;
+  // one line, the event alone: how to invite, @room and the rest are in /sub-human help and the README
+  // "as NAME" only for a name the person chose (not their default)
+  const as = isDefault ? '' : ` as ${name}`;
+  const msg = created ? `Opened ${code}${as}` : `${r.rejoin ? 'Rejoined' : 'Joined'} ${code}${as}${company(code, name)}`;
   return { ok: true, me, lead: created ? 'room opened' : r.rejoin ? 'rejoined' : 'joined', msg: `${msg}${r.note}` };
 }
 

@@ -467,7 +467,7 @@ test('a /sub-human leave stops the child: the hello says no seat, nothing restar
 
 test('stage 8e I.11 (live verify, remote/16b): a leave stops the child though the hello still names the seat (a room hosted elsewhere lists it a moment longer); nothing restarts it', async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
-  const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT })], joinOut: { subHuman: { say: 'left otter-4821 · /sub-human joins again', refused: false, shareable: true } } })
+  const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT })], joinOut: { subHuman: { say: 'Left otter-4821', refused: false, shareable: true } } })
   on('command.run', () => ({}))
   on('env.get', () => ({ value: undefined }))
   await start($)

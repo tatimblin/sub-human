@@ -54,7 +54,7 @@ function world(on: On,{ refused = false, stillSeated = false, star = 0, opens = 
       if (args === 'leave') {
         if (refused) return ran(JSON.stringify({ subHuman: { say: 'this session is not in a room; /sub-human joins one.', refused: true, shareable: true } }))
         seated = stillSeated
-        return ran(JSON.stringify({ subHuman: { say: `left ${CODE} · /sub-human joins again`, refused: false, shareable: true } }))
+        return ran(JSON.stringify({ subHuman: { say: `Left ${CODE}`, refused: false, shareable: true } }))
       }
     }
     return ran(JSON.stringify({ subHuman: { reviewOpen: false } }))

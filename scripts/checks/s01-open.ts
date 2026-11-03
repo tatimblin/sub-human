@@ -22,8 +22,8 @@ export function run(x: Ctx, { det }: { det: Det }, T: Thresholds): void {
     `members.json claude role=${ms.claude && ms.claude.role} pid=${ms.claude && ms.claude.pid}; "${(/UserPromptExpansion says: [^\n]*/.exec(oc) || ['no join line'])[0]}" in ${x.capName('S1', 'claude')} (claude logs ${job})`);
   // since 0.5.0-beta.7 a join that works shows one dim notice from the hooks module (command.run), no hook frame
   const jn = joinNotices(x.cap('S1', A));
-  const want = new RegExp(`^⏺ sub-human: opened room ${code} as ${A} · on this machine others join with /sub-human`);
-  det(`${A}'s join shows one line, "sub-human: opened room CODE as ${A} · …", and no "blocked by hook" frame`, jn.notices.length === 1 && want.test(jn.notices[0] ?? '') && !jn.frame,
+  const want = new RegExp(`^⏺ sub-human: Opened ${code} as ${A}$`);
+  det(`${A}'s join shows one line, "sub-human: Opened CODE as ${A}", and no "blocked by hook" frame`, jn.notices.length === 1 && want.test(jn.notices[0] ?? '') && !jn.frame,
     `${jn.notices.length} join line(s)${jn.notices.length ? `: ${jn.notices.map(l => `"${l}"`).join('; ')}` : ''}; hook frame ${jn.frame ? `"${jn.frame}"` : 'none'} in ${x.capName('S1', A)}`);
   const ar = panelRows(x.cap('S1', A));
   det(`${A}'s panel: one ${code} row`, ar.filter(r => !r.nested).length === 1 && ar[0]?.label === code, ar.map(r => r.line).join(' | ') || 'no rows');

@@ -18,8 +18,8 @@ export function run(x: Ctx, { det, beh }: { det: Det, beh: Beh }, T: Thresholds)
   det(`member_joined ${B} (via system)`, j && j.via === 'system', x.fmt(j));
   // since 0.5.0-beta.7 a join that works shows one dim notice from the hooks module (command.run), no hook frame
   const jn = joinNotices(x.cap('S2', B, 'last'));
-  const want = new RegExp(`^⏺ sub-human: joined ${code} as ${B}, with ${A} · @room to talk; your Claude can message other Claudes, edit the room plan and the task list`);
-  det(`${B}'s join shows one line, "sub-human: joined CODE as ${B}, with ${A} · …", and no "blocked by hook" frame`, jn.notices.length === 1 && want.test(jn.notices[0] ?? '') && !jn.frame,
+  const want = new RegExp(`^⏺ sub-human: Joined ${code} as ${B} with ${A}$`);
+  det(`${B}'s join shows one line, "sub-human: Joined CODE as ${B} with ${A}", and no "blocked by hook" frame`, jn.notices.length === 1 && want.test(jn.notices[0] ?? '') && !jn.frame,
     `${jn.notices.length} join line(s)${jn.notices.length ? `: ${jn.notices.map(l => `"${l}"`).join('; ')}` : ''}; hook frame ${jn.frame ? `"${jn.frame}"` : 'none'} in ${x.capName('S2', B, 'last')}`);
   const ha = x.holdsAt('S2', 'last', A), hb = x.holdsAt('S2', 'last', B), ho = x.holdsAt('S2', 'last', 'claude');
   det(`Rows: ${B} nested in ${A}'s room row, ${A} in ${B}'s, both in the room's Claude's`, ha.room && (ha.members || []).includes(B) && hb.room && (hb.members || []).includes(A) && [A, B].every(n => (ho.members || []).includes(n)),

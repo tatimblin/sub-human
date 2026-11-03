@@ -199,17 +199,17 @@ test('tasks: an add from a plan is tagged with its current version; an unknown p
   assert.match(tasks.validate({ op: 'claim', id: '2', plan: 'room' }).ok ? '' : 'plan goes with add only', /plan goes with add only/);
 });
 
-test('deliver: a version nobody asked about is a notice for every other member, never a wake; nothing for its editor or the room session', () => {
+test('deliver: a version nobody asked about is context for every other member, never a notice or a wake; nothing for its editor or the room session', () => {
   const { R, store } = hosted();
   plans.put(store, { base: 0, text: 'v1' }, { by: 'bob' });
   const e = must(R.readAll().at(-1));
   const entries = R.readAll();
-  assert.equal(R.deliver({ name: 'alice', role: 'member' }, e, { entries }), 'notice');
+  assert.equal(R.deliver({ name: 'alice', role: 'member' }, e, { entries }), 'context', 'the request on it is the person\'s line');
   assert.equal(R.deliver({ name: 'bob', role: 'member' }, e, { entries }), 'none');
   assert.equal(R.deliver({ name: 'claude', role: 'claude' }, e, { entries }), 'none');
 });
 
-test('deliver: a new version after an open or objected sign-off request wakes who asked and who objected, with a line saying so', () => {
+test('deliver: a new version after an open or objected request wakes nobody (its own request will); its Claude\'s context says what it comes after', () => {
   const { code, R, store } = hosted();
   h.register('carol', 'member', 2, code);
   const me = (n: string) => ({ code, name: sn(n) });
@@ -224,15 +224,15 @@ test('deliver: a new version after an open or objected sign-off request wakes wh
   plans.put(store, { base: 1, text: 'goodbye world' }, { by: 'bob' });
   let e = last();
   const entries = R.readAll();
-  assert.equal(R.deliver(as('alice'), e, { entries }), 'wake', 'the asker (and objector) is woken: the revision comes back');
+  assert.equal(R.deliver(as('alice'), e, { entries }), 'context', 'the asker (and objector): context; the request on v2 is what wakes');
   assert.equal(R.deliver(as('bob'), e, { entries }), 'none', 'never its editor');
-  assert.equal(R.deliver(as('carol'), e, { entries }), 'notice', 'an approver who neither asked nor objected is only told');
+  assert.equal(R.deliver(as('carol'), e, { entries }), 'context');
   assert.equal(R.deliver({ name: 'claude', role: 'claude' }, e, { entries }), 'none');
-  assert.deepEqual(back(e, 'alice'), ['(for Claude) this v2 of plan room comes after v1, whose sign-off alice asked for; objected: alice. '
-    + 'Tell alice what changed (read, plan "room"); its author checks it first, and their Yes asks for sign-off.']);
+  assert.deepEqual(back(e, 'alice'), ['(for Claude) this v2 of plan room comes after v1, whose review alice asked for; objected: alice. '
+    + 'If alice asks what changed, read plan room. Its author reviews it first; their Yes asks the others.']);
   assert.deepEqual(back(e, 'carol'), []);
   assert.deepEqual(back(e, 'bob'), []);
-  assert.equal(R.deliver(as('alice'), e), 'notice', 'with no log to judge by: no wake');
+  assert.equal(R.deliver(as('alice'), e), 'context', 'with no log to judge by: no wake');
 
   // not agreed: carol asks on v2, alice objects, bob and carol agree, decided; bob's v3 wakes carol and alice
   const b = proposal.ask(me('carol'), {});
@@ -242,9 +242,9 @@ test('deliver: a new version after an open or objected sign-off request wakes wh
   assert.match(String(must(proposal.decide(code, b.hash)).text), /^objected: alice/);
   plans.put(store, { base: 2, text: 'bye' }, { by: 'bob' });
   e = last();
-  const after: [string, string][] = [['alice', 'wake'], ['carol', 'wake'], ['bob', 'none']];
+  const after: [string, string][] = [['alice', 'context'], ['carol', 'context'], ['bob', 'none']];
   for (const [n, want] of after) assert.equal(R.deliver(as(n), e, { entries: R.readAll() }), want, n);
-  assert.match(back(e, 'carol')[0] ?? '', /comes after v2, whose sign-off carol asked for; objected: alice\./);
+  assert.match(back(e, 'carol')[0] ?? '', /comes after v2, whose review carol asked for; objected: alice\./);
 
   // agreed: a version after it is news, not a request coming back; and one after a version nobody asked about
   const c = proposal.ask(me('alice'), {});

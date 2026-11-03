@@ -120,13 +120,15 @@ test('S9b: the pane check passes on nested lines and fails on a bare forged line
   assert.equal(bad['No new decision, sig'], false);
 });
 
-test('joinNotices: one dim join line (0.5.0-beta.7), its first line when wrapped; hook frames are found', () => {
-  // run take4, S1 alice (wrapped at the pane width) and S2 bob
-  const s1 = '⏺ sub-human: opened room husky-7354 as alice · on this machine others join with /sub-human; another machine: \n  /sub-human invite · starting the room session…\n\n❯ /sub-human:sub-human alice\n\n⏺ sub-human:room(husky-7354)\n';
-  assert.deepEqual(joinNotices(s1), { notices: ['⏺ sub-human: opened room husky-7354 as alice · on this machine others join with /sub-human; another machine:'], frame: null });
-  const s2 = '⏺ sub-human: joined husky-7354 as bob, with alice · @room to talk; your Claude can message other Claudes, edit the room plan and the task list\n\n⏺ sub-human:room(husky-7354)\n⏺ sub-human: alice: hi\n';
+test('joinNotices: one dim join line (0.5.0-beta.7; one line, no suffix, 0.6.0); hook frames are found', () => {
+  // S1 alice and S2 bob
+  const s1 = '⏺ sub-human: Opened husky-7354 as alice\n\n❯ /sub-human:sub-human alice\n\n⏺ sub-human:room(husky-7354)\n';
+  assert.deepEqual(joinNotices(s1), { notices: ['⏺ sub-human: Opened husky-7354 as alice'], frame: null });
+  const s2 = '⏺ sub-human: Joined husky-7354 as bob with alice\n\n⏺ sub-human:room(husky-7354)\n⏺ sub-human: alice: hi\n';
   assert.equal(joinNotices(s2).notices.length, 1); // the room row and a chat row are not join lines
-  assert.equal(joinNotices('⏺ UserPromptExpansion operation blocked by hook:\n  ⎿ sub-human: joined husky-7354 as bob\n').frame, '⏺ UserPromptExpansion operation blocked by hook:');
+  // an older plugin's line still counts as a join line
+  assert.equal(joinNotices('⏺ sub-human: opened room husky-7354 as alice · on this machine others join with /sub-human\n').notices.length, 1);
+  assert.equal(joinNotices('⏺ UserPromptExpansion operation blocked by hook:\n  ⎿ sub-human: Joined husky-7354 as bob\n').frame, '⏺ UserPromptExpansion operation blocked by hook:');
   assert.deepEqual(joinNotices(null), { notices: [], frame: null });
 });
 
@@ -139,22 +141,23 @@ test('S1/S2: the join check wants exactly one notice in the current format and n
     const r = runChecks(x, { scenes: [mod] })[mod.scene];
     return must(r).find(c => /join shows one line/.test(c.check))?.pass;
   };
-  const opened = '⏺ sub-human: opened room husky-7354 as alice · on this machine others join with /sub-human; another machine: \n  /sub-human invite\n';
+  const opened = '⏺ sub-human: Opened husky-7354 as alice\n';
   assert.equal(verdict(s1, 'alice', opened), true);
   assert.equal(verdict(s1, 'alice', ''), false); // no line at all: the module did not answer
   assert.equal(verdict(s1, 'alice', opened + opened), false); // two
-  assert.equal(verdict(s1, 'alice', '⏺ sub-human: opened room otter-0001 as alice · on this machine others join with /sub-human\n'), false); // another room
+  assert.equal(verdict(s1, 'alice', '⏺ sub-human: Opened otter-0001 as alice\n'), false); // another room
+  assert.equal(verdict(s1, 'alice', '⏺ sub-human: opened room husky-7354 as alice · on this machine others join with /sub-human\n'), false); // the old, taught line
   assert.equal(verdict(s1, 'alice', 'Operation stopped by hook:\n' + opened), false);
-  const joined = '⏺ sub-human: joined husky-7354 as bob, with alice · @room to talk; your Claude can message other Claudes, edit the room plan and the task list\n';
+  const joined = '⏺ sub-human: Joined husky-7354 as bob with alice\n';
   assert.equal(verdict(s2, 'bob', joined), true);
-  assert.equal(verdict(s2, 'bob', '⏺ sub-human: rejoined husky-7354 as bob, with alice · @room to talk; your Claude can message other Claudes, edit the room plan and the task list\n'), false);
+  assert.equal(verdict(s2, 'bob', '⏺ sub-human: Rejoined husky-7354 as bob with alice\n'), false);
   assert.equal(verdict(s2, 'bob', joined + '⏺ UserPromptExpansion operation blocked by hook\n'), false);
   // the film's people (screens/run.json seats): the same checks under their names
   const film = (mod: SceneModule, seat: string, pane: string) => runChecks(asCtx({ ...base, A: 'tristan', B: 'jess', cap: (_s, who) => (who === seat ? pane : '') }), { scenes: [mod] })[mod.scene]?.find(c => /join shows one line/.test(c.check));
   assert.equal(film(s1, 'tristan', opened.replace('as alice', 'as tristan'))?.pass, true);
   assert.equal(film(s1, 'tristan', opened)?.pass, false); // alice's line is not tristan's
-  assert.match(String(film(s2, 'jess', '')?.check), /^jess's join shows one line, "sub-human: joined CODE as jess, with tristan/);
-  assert.equal(film(s2, 'jess', '⏺ sub-human: joined husky-7354 as jess, with tristan · @room to talk; your Claude can message other Claudes, edit the room plan and the task list\n')?.pass, true);
+  assert.match(String(film(s2, 'jess', '')?.check), /^jess's join shows one line, "sub-human: Joined CODE as jess with tristan"/);
+  assert.equal(film(s2, 'jess', '⏺ sub-human: Joined husky-7354 as jess with tristan\n')?.pass, true);
 });
 
 test('S5 isReview: a "proposal <hash>" stub or a proposal\'s own text (Claude Code records the plan file); not the no-dialog close', () => {

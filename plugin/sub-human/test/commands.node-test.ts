@@ -53,8 +53,8 @@ test('commands: help (any words after it) and doctor run without the lease; ever
 
 test('commands: the hidden rule is the router\'s: join, invite, admit or a word of digits makes every say and refusal a secret', t => {
   const w = new World({ alice: 'sleep' }, { t });
-  assert.deepEqual(run(w, 'leave'), { kind: 'refused', text: 'this session is not in a room; /sub-human joins one.' });
-  assert.deepEqual(run(w, 'leave 4829'), { kind: 'secret', text: `usage: /sub-human leave. All commands: /sub-human help`, refused: true });
+  assert.deepEqual(run(w, 'leave'), { kind: 'refused', text: 'Not in a room. Run /sub-human to join.' });
+  assert.deepEqual(run(w, 'leave 4829'), { kind: 'secret', text: 'Usage: /sub-human leave', refused: true });
   for (const args of ['join', 'invite', 'admit', 'admit 4829', 'kick 123456']) assert.equal(run(w, args).kind, 'secret', args);
   const admit = run(w, 'admit', { seat: 'alice' });
   assert.deepEqual(admit, { kind: 'secret', text: `nobody is waiting to join room ${w.code}.`, refused: false }, 'not a refusal, still hidden');
@@ -85,8 +85,8 @@ test('commands: leave, kick, admit and invite; handoff is no verb (a reserved na
   assert.match(text(run(w, 'invite --pipe --web', { seat: 'alice' })), /pick one way at a time/);
   assert.match(text(run(w, 'admit zz', { seat: 'alice' })), /usage: \/sub-human admit/);
   assert.equal(run(w, 'handoff bob', { seat: 'alice' }).kind, 'refused', 'a reserved word, never a name');
-  assert.match(text(run(w, 'leave now', { seat: 'alice' })), /usage: \/sub-human leave/);
-  assert.deepEqual(run(w, 'leave', { seat: 'bob' }), { kind: 'say', text: `left ${w.code} · /sub-human joins again` });
+  assert.match(text(run(w, 'leave now', { seat: 'alice' })), /^Usage: \/sub-human leave$/);
+  assert.deepEqual(run(w, 'leave', { seat: 'bob' }), { kind: 'say', text: `Left ${w.code}` });
   assert.ok(must(w.members().bob).left_at);
 });
 
@@ -104,7 +104,7 @@ test('commands: NAME [ROOM], ROOM, join ROOM and the bare command take a seat; a
   assert.deepEqual(as('4829'), { kind: 'secret', text: '"4829" looks like a PIN, not a name: a PIN goes in as /sub-human join PIN once an invite line asks for it', refused: true });
   const j = as(`join ${w.code} --as bob`);
   assert.equal(j.kind, 'joined', text(j));
-  assert.match(text(j), new RegExp(`^joined ${w.code} as bob, with alice`));
+  assert.equal(text(j), `Joined ${w.code} as bob with alice`, 'one line: no teaching suffix');
   const again = as('');
   assert.equal(again.kind, 'say', 'seated: the bare command is the status');
   assert.match(text(again), new RegExp(`^you're bob in room ${w.code}, with alice · another machine: /sub-human invite · leave: /sub-human leave`));
@@ -129,7 +129,7 @@ test('commands: a CLI command (/sub-human tasks) says where it runs and takes no
   assert.ok(!identity.RESERVED.includes('tasks'));
   const as = run(w, '--as tasks', { seat: 'bob' });
   assert.equal(as.kind, 'joined', text(as));
-  assert.match(text(as), new RegExp(`^joined ${w.code} as tasks`));
+  assert.match(text(as), new RegExp(`^Joined ${w.code} as tasks`));
 });
 
 test('commands: every CLI command is a /sub-human verb (reserved) or a CLI verb (/sub-human answers where it runs)', async () => {

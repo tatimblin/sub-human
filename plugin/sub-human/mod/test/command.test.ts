@@ -118,11 +118,11 @@ test('item 2 (D): a terminal narrower than the whole line pins the PIN and SECRE
 })
 
 test('a reply with no secret is a notice here (the model never reads it, so never repeats it)', async ($, on) => {
-  const seen = world($, on, { join: { subHuman: { say: 'left otter-4821 · /sub-human joins again', refused: false, shareable: true } } })
+  const seen = world($, on, { join: { subHuman: { say: 'Left otter-4821', refused: false, shareable: true } } })
   await start($)
   const r = await typed($, 'leave')
   expect(r.text).toBeUndefined()
-  expect(seen.logs).toEqual(['left otter-4821 · /sub-human joins again'])
+  expect(seen.logs).toEqual(['Left otter-4821'])
   expect(seen.ran).toBe(0)
 })
 
@@ -206,14 +206,14 @@ test('a run that rejects (the shim\'s timeout) is one refusal with its time and 
 })
 
 test('a lease that lost the nonce (join.ts ran nothing): the module says hello again and runs it once more', async ($, on) => {
-  const seen = world($, on, { join: (_stdin, s) => (s.joins.length === 1 ? { subHuman: { lease: 'stale' } } : { subHuman: { say: 'left otter-4821 · /sub-human joins again', refused: false, shareable: true } }) })
+  const seen = world($, on, { join: (_stdin, s) => (s.joins.length === 1 ? { subHuman: { lease: 'stale' } } : { subHuman: { say: 'Left otter-4821', refused: false, shareable: true } }) })
   await start($)
   const hellos = seen.hellos
   await typed($, 'leave')
   expect(seen.joins.length).toBe(2)
   expect(seen.hellos).toBeGreaterThan(hellos)
   expect(must(seen.joins[1], 'the second join').stdin.sub_human_nonce).toBe(must(seen.joins[0], 'the first join').stdin.sub_human_nonce)
-  expect(seen.logs).toEqual(['left otter-4821 · /sub-human joins again'])
+  expect(seen.logs).toEqual(['Left otter-4821'])
 })
 
 test('a leave whose shim gave up but whose handler finished: the seat is gone, the notice says so and the session is titled with the name', async ($, on) => {
@@ -254,7 +254,7 @@ test('a member\'s session: /clear runs as usual', async ($, on) => {
 })
 
 test('12 (J): /sub-human leave renames the session to the name alone at once (its NAME.CODE address goes with the seat), not at the next prompt', async ($, on) => {
-  const seen = world($, on, { join: { subHuman: { say: 'left otter-4821 · /sub-human joins again', refused: false, shareable: true } } })
+  const seen = world($, on, { join: { subHuman: { say: 'Left otter-4821', refused: false, shareable: true } } })
   const clock = mock.clock(on, { now: 0 })
   await start($)
   await typed($, 'leave')
