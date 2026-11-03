@@ -20,12 +20,16 @@ import { pullContext, clearPulls } from './core/deliver.ts';
 import { asHello, asNonce } from './core/state.ts';
 import { rowsToSay, toolsDownStep, TOOLS_DOWN, TOOLS_DOWN_NOTICE } from './core/rows.ts';
 import { QUIET_ROW } from './core/constants.ts';
-
-/** A rewritten notice row that says nothing (QUIET_ROW). */
-const quiet = (row: { content?: unknown }): boolean => Array.isArray(row.content) && row.content.length === 1
-  && typeof row.content[0] === 'object' && row.content[0] !== null && 'text' in row.content[0] && row.content[0].text === QUIET_ROW;
 import type { ClassicHookInputs, EngineInterface, On } from 'claude-code';
 import type { Hello, Pulls, ShimResult } from './core/types.ts';
+
+/** A rewritten notice row that says nothing (QUIET_ROW). */
+function quiet(row: { content?: unknown }): boolean {
+  const c: unknown = row.content;
+  if (!Array.isArray(c) || c.length !== 1) return false;
+  const block: unknown = c[0];
+  return typeof block === 'object' && block !== null && 'text' in block && block.text === QUIET_ROW;
+}
 
 const HELLO = { plugin: 'sub-human', key: 'hello' } as const;
 const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' } as const;
