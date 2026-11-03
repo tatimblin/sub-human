@@ -25,6 +25,7 @@ import { copyBook, copyWake, copyTo, copyNews, clipboardCommands, AUTO_COPIED, N
 import {
   leaveQuestion, leaveOutcome, issueUrl, versionsLine, openCommands, openWith, LEAVE_OPTIONS, LEAVE_HEADER, REPO_URL,
   STARRED, STAR_TIMEOUT_MS, starOpened, starShown, issueOpened, issueShown, saidBook, sessionSnippet, type SaidBook,
+  LEAVE_CARD_KEY, STAR_CHECK_MS, asLeaveCard, leaveCardDue, leaveCardShown, leaveCardStarred,
 } from './core/leave.ts';
 import { assertNever } from './core/never.ts';
 import type { EngineInterface, On, SessionAppendArgs } from 'claude-code';
@@ -35,7 +36,6 @@ interface Child { sid: string; seat: TailSeat | null; stream: { return(value?: u
 
 const ROWS = { plugin: 'sub-human', key: 'rows' } as const;
 const HELLO = { plugin: 'sub-human', key: 'hello' } as const;
-const TITLED = { plugin: 'sub-human', key: 'titled' } as const;
 const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' } as const;
 const ERRORS = { plugin: 'sub-human', key: 'deliveryErrors' } as const;
 const NONCE = { plugin: 'sub-human', key: 'nonce' } as const;
@@ -541,30 +541,50 @@ async function offerCopy($: EngineInterface, ref: string) {
   } catch { /* the line stays pinned on the status line */ }
 }
 
+/** The leave card's state in the plugin's $.store (per install, kept between sessions); none: a fresh one. */
+const leaveCardOf = async ($: EngineInterface): Promise<ReturnType<typeof asLeaveCard> | null> => {
+  // no store to count in (it refused): no card, rather than one every session
+  try { return asLeaveCard(await $.store.get(LEAVE_CARD_KEY)); } catch { return null; }
+};
+const saveLeaveCard = ($: EngineInterface, s: ReturnType<typeof asLeaveCard>) => $.store.set(LEAVE_CARD_KEY, s).catch(() => {});
+
 /**
  * The leave card (mod/core/leave.ts): after a /sub-human leave went through, the module opens it itself ($.ui.ask:
- * Claude Code's own dialog, no model turn), then acts on the answer. Not when the session took a seat again or was
- * cleared (/clear: a new session id) before it fires, nor while a take runs (it waits for it, as offerCopy). Dismissed:
- * nothing. Never throws.
+ * Claude Code's own dialog, no model turn), then acts on the answer. The card is the leave's line: `lines` (the
+ * "Left CODE" notice) show only when no card does: gh says the repo is starred already (stored: never again), the
+ * session took a seat again or was cleared (/clear: a new session id) before it fires, or the dialog could not open.
+ * Not while a take runs (it waits for it, as offerCopy). Dismissed or Done: nothing. Never throws.
  */
-async function offerLeave($: EngineInterface, sid: string, code: string) {
+async function offerLeave($: EngineInterface, sid: string, code: string, lines: readonly string[]) {
+  const say = () => { for (const line of lines) $.ui.log(line); };
   try {
     for (let i = 0; taking.size && i < 20; i++) await new Promise<void>(resolve => { $.clock.after(500, resolve); });
     const now = asHello((await $.state.get(HELLO)).value);
-    if ((await $.session.id()) !== sid || (now && now.sid === sid && now.seat)) return;
-    const answer = await $.ui.ask(leaveQuestion(code), { options: LEAVE_OPTIONS, header: LEAVE_HEADER }).catch(() => null);
+    if ((await $.session.id()) !== sid || (now && now.sid === sid && now.seat)) { say(); return; }
+    let card = (await leaveCardOf($)) ?? asLeaveCard(undefined);
+    // starred already (gh, logged in): never ask again
+    const had = await $.process.run(['sh', `${$.plugin.root}/scripts/star.sh`, 'check'], { timeoutMs: STAR_CHECK_MS }).catch(() => null);
+    if (had && had.exitCode === 0) { await saveLeaveCard($, leaveCardStarred(card)); $.ui.log('leave card: starred already (gh)', { to: 'debug' }); say(); return; }
+    card = leaveCardShown(card);
+    await saveLeaveCard($, card);
+    const failed = Symbol('no dialog');
+    const answer = await $.ui.ask(leaveQuestion(code), { options: LEAVE_OPTIONS, header: LEAVE_HEADER }).catch((): typeof failed => failed);
+    if (answer === failed) { say(); return; }
     const out = leaveOutcome(answer);
     if (out.kind === 'close') return;
     if (out.kind === 'star') {
       const r = await $.process.run(['sh', `${$.plugin.root}/scripts/star.sh`], { timeoutMs: STAR_TIMEOUT_MS }).catch(() => null);
-      $.ui.log(r && r.exitCode === 0 ? STARRED : (await openUrl($, REPO_URL)) === 'opened' ? starOpened() : starShown());
+      const done = r && r.exitCode === 0 ? 'starred' : (await openUrl($, REPO_URL)) === 'opened' ? 'opened' : 'shown';
+      // starred, or the page opened (the plugin cannot see the click; asking again would nag): never again
+      if (done !== 'shown') await saveLeaveCard($, leaveCardStarred(card));
+      $.ui.log(done === 'starred' ? STARRED : done === 'opened' ? starOpened() : starShown());
       return;
     }
     // what went wrong this session, when something did (names masked: this seat's, and every one it has known)
     const session = said.anyFailed() ? sessionSnippet(said.lines(), [...names]) : '';
     const url = issueUrl({ text: out.text, versions: await versionsOf($), session });
     $.ui.log((await openUrl($, url)) === 'opened' ? issueOpened() : issueShown(url));
-  } catch { /* no card */ }
+  } catch { say(); }
 }
 
 /** The URL to the first browser opener that takes it, on stdin (scripts/open.sh: only this plugin's GitHub pages). */
@@ -670,23 +690,24 @@ export function registerDeliver(on: On): void {
       gone = now && now.sid === sid ? goneAfter(reply, mine, now.seat) : null;
       if (gone) reply = { ...reply, lines: [...reply.lines, gone] };
     }
-    // a leave: the address NAME.CODE goes with the seat now, not at the next prompt: the title is NAME
+    // a leave: the title becomes NAME at the next prompt, silently (mod/core/prompt.ts titleFor: sessionTitle, never a
+    // /rename and its "Session renamed" echo or "The user named this session" reminder)
     const left = leftName(e.args, reply, mine, { gone: !!gone });
-    if (left) {
-      // not from this hook (the engine refuses a command.run raised inside one): just after it, on the clock
-      const rename = () => { void $.command.run({ command: 'rename', args: left }).then(() => $.state.set(TITLED, { sid, addr: left }), () => { /* the next prompt titles it */ }); };
-      try { $.clock.after(CONFIRM_AFTER_MS, rename); } catch { /* no clock: the next prompt titles it (mod/core/prompt.ts titleFor) */ }
-      // the leave card (mod/core/leave.ts): a person at the prompt, once per session, after the rename
+    const { result, logs, status } = answerOf(reply, { columns: e.presentation && e.presentation.columns });
+    // the leave card (mod/core/leave.ts): a person at the prompt, once per session, at most twice per install, never
+    // once starred; when it shows it is the leave's line, so the "Left CODE" notice waits for it (offerLeave)
+    let card: string | null = null;
+    if (left && reply.kind === 'say') { // a leave that answered (one that did not keeps its failure lines on show)
       const code = mine ? mine.code : null;
-      if (code && !leaveOffered && interactive !== false && (await $.env.get('SUB_HUMAN_LEAVE_CARD').catch(() => undefined)) !== '0') {
+      if (code && !leaveOffered && interactive !== false && (await $.env.get('SUB_HUMAN_LEAVE_CARD').catch(() => undefined)) !== '0'
+        && (st => !!st && leaveCardDue(st))(await leaveCardOf($))) {
         leaveOffered = true;
-        try { $.clock.after(2 * CONFIRM_AFTER_MS, () => { void offerLeave($, sid, code); }); } catch { /* no clock: no card */ }
+        try { $.clock.after(2 * CONFIRM_AFTER_MS, () => { void offerLeave($, sid, code, logs); }); card = code; } catch { /* no clock: no card */ }
       }
     }
-    const { result, logs, status } = answerOf(reply, { columns: e.presentation && e.presentation.columns });
     said.command(e.args);
     const failedHere = reply.kind === 'failed' || reply.kind === 'stale' || (reply.kind === 'say' && reply.refused);
-    for (const line of logs) { $.ui.log(line); if (failedHere) said.failed(line); }
+    for (const line of card ? [] : logs) { $.ui.log(line); if (failedHere) said.failed(line); }
     if (status) {
       pinStatus($, status);
       // the copy card: a person at the prompt, and a line join.ts handed over (not --no-card); after this hook returned

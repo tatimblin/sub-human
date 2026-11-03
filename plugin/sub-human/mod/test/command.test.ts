@@ -218,7 +218,7 @@ test('a lease that lost the nonce (join.ts ran nothing): the module says hello a
   expect(seen.logs).toEqual(['Left otter-4821'])
 })
 
-test('a leave whose shim gave up but whose handler finished: the seat is gone, the notice says so and the session is titled with the name', async ($, on) => {
+test('a leave whose shim gave up but whose handler finished: the seat is gone, the notice says so; no /rename (the next prompt titles it)', async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
   let left = false
   const seen = world($, on, {
@@ -230,7 +230,7 @@ test('a leave whose shim gave up but whose handler finished: the seat is gone, t
   expect(seen.logs[0]).toMatch(/^✗ \/sub-human did not finish here/)
   expect(seen.logs[1]).toBe('this session\'s seat in otter-4821 is gone: the command finished after the wait · /sub-human joins again')
   await clock.advance(200)
-  expect(seen.commands).toContain('rename alice')
+  expect(seen.commands.filter(c => c.startsWith('rename'))).toEqual([])
 })
 
 test('in the room\'s Claude (SUB_HUMAN_ROOM set) the launch /sub-human is the classic hook\'s', async ($, on) => {
@@ -255,15 +255,15 @@ test('a member\'s session: /clear runs as usual', async ($, on) => {
   expect(seen.ran).toBe(1)
 })
 
-test('12 (J): /sub-human leave renames the session to the name alone at once (its NAME.CODE address goes with the seat), not at the next prompt', async ($, on) => {
+test('quiet (G9): /sub-human leave runs no /rename (its "Session renamed" echo and "The user named this session" reminder); the next prompt titles it NAME (sessionTitle)', async ($, on) => {
   const seen = world($, on, { join: { subHuman: { say: 'Left otter-4821', refused: false, shareable: true } } })
   const clock = mock.clock(on, { now: 0 })
   await start($)
   await typed($, 'leave')
-  expect(seen.commands).toEqual([]) // nothing from inside the hook: the engine refuses a command.run raised there
-  await clock.advance(200)
-  for (let i = 0; i < 20 && !seen.commands.includes('rename alice'); i++) await new Promise(r => setTimeout(r, 10))
-  expect(seen.commands).toEqual(['rename alice'])
+  await clock.advance(400)
+  await new Promise(r => setTimeout(r, 50))
+  expect(seen.commands).toEqual([])
+  expect(seen.logs).toEqual(['Left otter-4821']) // no store here: no card, the notice
 })
 
 test('12: a refused leave, or another command, renames nothing', async ($, on) => {
