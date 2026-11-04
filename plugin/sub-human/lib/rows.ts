@@ -23,10 +23,10 @@ import { lazy } from './io.ts';
 import * as text from './text.ts';
 import * as linkState from './room/link-state.ts';
 import {
-  ROW_MAX, ROW_TITLE_MAX, ROWS_TTL_MS,
+  ROW_MAX, ROW_TITLE_MAX, ROWS_TTL_MS, PRESENCE_STALE_MS,
 } from './config.ts';
 import type { RowRec } from './types-app.ts';
-import type { Entry, LinkState, Member, Members } from './room/types.ts';
+import type { Entry, LinkState, Member, Members, Presence, PresenceState } from './room/types.ts';
 // the room row's agent type is mod/core/rows.ts's (the module spawns it)
 import { ROOM_AGENT } from '../mod/core/rows.ts';
 import type { RoomCode, SeatName } from './brand.ts';
@@ -244,7 +244,7 @@ function roomText({ code, viewer, es, ms, now, c }: RowCtx, summary: string, lin
     const others = p.objectors.filter(x => x !== viewer && !(p.also[x] ?? []).includes(String(viewer)));
     if (!p.decided && others.length) parts.push(c.warn(`✖ ${plural(others.length, 'objection')}`));
   } else if (!linkState.stoppedForGood(link)) { // stopped (a kick, the room closed): this copy's count is stale
-    parts.push(c.dim(hereText(ms, viewer)));
+    parts.push(c.dim(hereOf(code, ms, viewer, now)));
   }
   if (viewer) {
     // read once the viewer or their Claude answered anything after it
@@ -257,14 +257,46 @@ function roomText({ code, viewer, es, ms, now, c }: RowCtx, summary: string, lin
   return fitPlans(parts, planSegs(es, code, named), tail, c);
 }
 
-/** Who is here, by name: the others than the viewer ("bob, carol here"; past HERE_NAMED names "+N"), else "only you"
- * (the room row is the only row: it names the people the participant rows of older versions showed one each). */
+/** A presence state as the row says it beside a name ("bob (working)"); idle says nothing. */
+const PRESENCE_WORDS: Record<PresenceState, string> = { working: 'working', idle: '', permission: 'needs them', error: 'stalled' };
+/** Each named seat's presence (presence/NAME: hooks/handlers/presence.ts writes it), when younger than
+ * PRESENCE_STALE_MS: an older one says nothing of now. */
+function presenceOf(code: RoomCode | null | undefined, names: readonly string[], now: number): Record<string, Presence> {
+  const out: Record<string, Presence> = {};
+  if (!code) return out;
+  for (const n of names) {
+    let p: Presence | null = null;
+    try { p = kvOf(code).get<Presence>(`presence/${n}`, null); } catch { /* none */ }
+    const at = p ? Date.parse(String(p.at)) : NaN;
+    if (p && Number.isFinite(at) && now - at < PRESENCE_STALE_MS) out[n] = p;
+  }
+  return out;
+}
+/** A name with what its presence says: "bob (working)", "carol (stalled: rate_limit)", "dan". */
+function withPresence(n: string, p: Presence | undefined): string {
+  const w: string = p ? PRESENCE_WORDS[p.state] ?? '' : ''; // a state this version does not know: the name alone
+  if (!w) return n;
+  return `${n} (${w}${p && p.state === 'error' && p.detail ? `: ${oneLine(p.detail)}` : ''})`;
+}
+
+/** The others than the viewer who are here (active, not the room session), in members order. */
+const othersHere = (ms: Member[], viewer: string | null | undefined): string[] => ms.filter(m => isActive(m) && !isRoomClaude(m) && m.name !== viewer).map(m => m.name);
+/** Who is here, by name, with what their presence says: the others than the viewer ("bob (working), carol here"; past
+ * HERE_NAMED names "+N"), else "only you" (the room row is the only row: it names the people). */
 const HERE_NAMED = 3;
-function hereText(ms: Member[], viewer: string | null | undefined): string {
-  const names = ms.filter(m => isActive(m) && !isRoomClaude(m) && m.name !== viewer).map(m => m.name);
+function hereText(ms: Member[], viewer: string | null | undefined, presence: Record<string, Presence> = {}): string {
+  const names = othersHere(ms, viewer);
   if (!names.length) return viewer ? 'only you' : '0 here';
   const more = names.length - HERE_NAMED;
-  return `${names.slice(0, HERE_NAMED).join(', ')}${more > 0 ? ` +${more}` : ''} here`;
+  return `${names.slice(0, HERE_NAMED).map(n => withPresence(n, presence[n])).join(', ')}${more > 0 ? ` +${more}` : ''} here`;
+}
+/** hereText over the room's members and the presence of those it names. */
+const hereOf = (code: RoomCode | null | undefined, ms: Member[], viewer: string | null | undefined, now: number): string =>
+  hereText(ms, viewer, presenceOf(code, othersHere(ms, viewer).slice(0, HERE_NAMED), now));
+/** Who else is here as viewer sees it: the room row's lead (mcp/hold.ts), read fresh each time (the row's label is
+ * its spawn's and goes stale). */
+function hereLine(code: RoomCode, viewer: string | null | undefined, { members, now = Date.now() }: { members?: MemberInput; now?: number } = {}): string {
+  return hereOf(code, memberList(members ?? readMembers(code)), viewer, now);
 }
 
 /** The id of name's last join in es (0: none). */
@@ -319,5 +351,5 @@ function rowText(code: RoomCode, { viewer, ...opts }: RowFor = {}): string {
 const rowLine = (label: string, text: string | null | undefined): string => (text ? `${label}  ${text}` : label);
 
 export {
-  ROOM_AGENT, ROW_MAX, rowText, rowLine, readLog, fit, pruneRowMaps, blockCount, setBlockCount,
+  ROOM_AGENT, ROW_MAX, rowText, rowLine, hereLine, readLog, fit, pruneRowMaps, blockCount, setBlockCount,
 };

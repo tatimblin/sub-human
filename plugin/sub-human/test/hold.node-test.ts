@@ -92,11 +92,11 @@ test('hold {room}: blocks with progress, streams the room\'s latest line and its
   const r = w.call({ room: w.code });
   assert.ok(await pending(r.p), 'blocks');
   assert.equal(must(w.progress[0]).token, `t${r.id}`);
-  assert.equal(must(w.progress[0]).message, `bob: say 1${hold.HINT}`);
+  assert.equal(must(w.progress[0]).message, `bob here · bob: say 1${hold.HINT}`);
   assert.match(hold.HINT, /read-only · talk in main \(@room\)$/);
   w.add('bob', 'say');
   await sleep(80);
-  assert.match(must(w.progress.at(-1)).message, /^bob: say 2/);
+  assert.match(must(w.progress.at(-1)).message, /^bob here · bob: say 2/);
   const n = w.progress.length;
   await sleep(250);
   assert.ok(w.progress.length > n, 'heartbeat keeps the idle timeout away');
@@ -104,8 +104,26 @@ test('hold {room}: blocks with progress, streams the room\'s latest line and its
   w.add('carol', 'member_joined', { via: 'system' });
   await sleep(120);
   assert.ok(await pending(r.p), 'a join never ends the hold: no model turn for it');
+  assert.match(must(w.progress.at(-1)).message, /^bob, carol here · /, 'the row says who is here now (never the spawn\'s label)');
   w.leaveMe();
   assert.match(textOf(await r.p), /^STOP: alice is no longer in room/);
+});
+
+test('hold: the row leads with who else is here and what their presence says; a presence older than PRESENCE_STALE_MS says nothing', async () => {
+  const w = setup(['claude', 'alice', 'bob', 'carol'], 'alice');
+  assert.equal(identity.writePresence(w.code, sn('bob'), { state: 'working' }), true);
+  assert.equal(identity.writePresence(w.code, sn('carol'), { state: 'error', detail: 'rate_limit' }), true);
+  const r = w.call({ room: w.code });
+  assert.ok(await pending(r.p));
+  assert.equal(must(w.progress[0]).message, `bob (working), carol (stalled: rate_limit) here · room ${w.code}${hold.HINT}`);
+  // carol's presence is old: her name alone; bob back at his prompt (idle): his name alone
+  const old = new Date(Date.now() - 7 * 60 * 60_000).toISOString();
+  fs.writeFileSync(path.join(w.dir, 'presence', 'carol.json'), JSON.stringify({ state: 'error', at: old, detail: 'rate_limit' }));
+  identity.writePresence(w.code, sn('bob'), { state: 'idle' });
+  await sleep(120);
+  assert.match(must(w.progress.at(-1)).message, /^bob, carol here · /);
+  w.leaveMe();
+  await r.p;
 });
 
 test('hold: a second room row is refused; the first one stays', async () => {
@@ -143,7 +161,7 @@ test('hold: a post marked provisional (old logs) shows at once, like any other',
   assert.ok(await pending(r.p));
   w.add('alice', 'say', { provisional: true }); // #1
   await sleep(100);
-  assert.match(must(w.progress.at(-1)).message, /^alice: say 1/);
+  assert.match(must(w.progress.at(-1)).message, /^alice here · alice: say 1/);
   w.leaveMe();
   await r.p;
 });

@@ -263,14 +263,15 @@ The host's machine holds the room's log and serves the links, so while it sleeps
 
 ## Rows
 
-Your agent panel gets one row, named after the room. sub-human starts it itself when you join (your Claude never spawns it), and with the row status on (below) it names who else is here:
+Your agent panel gets one row, named after the room. sub-human starts it itself when you join (your Claude never spawns it). The panel no longer lists people one row each: the room row's own line says who else is here, and what each is doing when their session says so (`working`; `needs them` while their Claude waits on them; `stalled` when it stopped on an error), then the room's latest line. No settings change is needed:
 
 ```
 ● main
-◯ vole-8126  bob, carol here · tasks 3 open · #2 you
+◯ vole-8126
+  bob (working), carol here · carol: pushed the store · read-only · talk in main (@room)
 ```
 
-- **Enter** on the room row opens it: the room's latest line, or a join or a leave, as it happens.
+- **Enter** on the room row opens it: who else is here and the room's latest line, or a join or a leave, as it happens.
 - **↑ then Enter** goes back to main.
 - The row is a read-only view. If you type into it, it answers `read-only row — type in main with @room` and nothing is posted.
 - The row's end (you left the room) draws an empty warning row (Claude Code keeps one where its hand-back was dropped; "row closed" is in the debug log).
@@ -279,7 +280,7 @@ Your agent panel gets one row, named after the room. sub-human starts it itself 
 
 ### The row status (opt-in)
 
-The row shows the room's code. To see the room's state in it too (who else is here, `⚠ your answer needed paging`, `tasks 3 open · #2 you · #4 bob`, each plan at a glance and the link's state), add this line to your own user settings, `~/.claude/settings.json` (inside its outer `{ }`, with a comma after the line before it):
+The row's label is the room's code. To see the room's state beside it too (who else is here, `⚠ your answer needed paging`, `tasks 3 open · #2 you · #4 bob`, each plan at a glance and the link's state), add this line to your own user settings, `~/.claude/settings.json` (inside its outer `{ }`, with a comma after the line before it):
 
 ```json
 "subagentStatusLine": { "type": "command", "command": "\"${SUB_HUMAN_HOME:-$HOME/.sub-human}/bin/row-status\"" }
@@ -335,7 +336,7 @@ Anything else you type goes to your own Claude. Its posts are labelled as your C
 
 A Claude's post shows as `bob's Claude: …`, a join as `bob joined`, a leave as `bob left (session ended)` or `bob left (connection lost)`. The plugin writes these lines into your session itself, as dim notices that stay there (also after `--resume`). They cost no model turn: your Claude doesn't repeat them, and it gets a copy to read with its next request. A leave shows only after 8 s away, so a quick leave and rejoin shows nothing.
 
-Every person's own words reach everyone. A Claude's post reaches you when it is addressed to you or mentions `@you`, and a plan to review naming you opens for you to read and answer: those wake your Claude with the room's line as a prompt, or join its current turn if it is busy (shown then, and its turn afterwards carries no second copy of the line). Everything else reaches your Claude as a short "room context" note beside your next prompt (never as words of yours). Your room row also reads `+bob joined` or `−bob left` for two minutes.
+Every person's own words reach everyone. A Claude's post reaches you when it is addressed to you or mentions `@you`, and a plan to review naming you opens for you to read and answer: those wake your Claude with the room's line as a prompt, or join its current turn if it is busy (shown then, and its turn afterwards carries no second copy of the line). Everything else reaches your Claude as a short "room context" note beside your next prompt (never as words of yours). Your room row also shows the join or the leave as it happens, and its list of who is here changes with it (with the row status on, its line reads `+bob joined` or `−bob left` for two minutes).
 
 **Claude to Claude.** Ask your Claude to "ask alice's Claude what the cursor format is". It calls `SendMessage` to `alice.vole-8126`, and alice's pane shows `› Message from @bob.vole-8126: …`. Those messages come from Claudes, not people. Native `SendMessage` only reaches sessions on the same machine, so when alice is on another machine the plugin posts the message to the room addressed to her instead (`bob's Claude (to alice): …`); it wakes her Claude the same way, and her Claude's `SendMessage` back to `bob.vole-8126` returns the same way. `ListAgents` lists only the Claudes on your machine.
 

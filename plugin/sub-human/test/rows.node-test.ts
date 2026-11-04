@@ -91,6 +91,19 @@ test('rowText (room row, one row): it names who else is here, at most three then
   assert.equal(rows.rowText(solo.code, { viewer: 'alice', entries: [], taskSummary: '' }), 'only you');
 });
 
+test('rowText and hereLine: a name says what its fresh presence says (working, needs them, stalled); idle and an old one say nothing', () => {
+  const { code } = makeRoom([{ name: sn('claude') }, { name: sn('alice') }, { name: sn('bob') }, { name: sn('carol') }, { name: sn('dave') }]);
+  const kv = roomLib.open(code).store.kv;
+  const now = Date.now();
+  kv.set('presence/bob', { state: 'working', at: new Date(now).toISOString() });
+  kv.set('presence/carol', { state: 'permission', at: new Date(now).toISOString() });
+  kv.set('presence/dave', { state: 'working', at: new Date(now - 7 * 3600_000).toISOString() });
+  assert.equal(rows.hereLine(code, 'alice', { now }), 'bob (working), carol (needs them), dave here');
+  assert.equal(rows.rowText(code, { viewer: 'dave', entries: [], taskSummary: '', now }), 'alice, bob (working), carol (needs them) here');
+  kv.set('presence/bob', { state: 'idle', at: new Date(now).toISOString() });
+  assert.equal(rows.hereLine(code, 'carol', { now }), 'alice, bob, dave here');
+});
+
 test('pruneRowMaps: an older version\'s row map whose session holds no seat and whose rows are old goes; a fresh one stays', () => {
   const { code } = makeRoom([{ name: sn('alice') }]);
   const kv = roomLib.open(code).store.kv;

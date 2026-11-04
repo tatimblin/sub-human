@@ -4,7 +4,8 @@
  * It keeps the room row open in the agent panel at zero tokens.
  *
  *   hold({room: CODE})     the member's sub-human:room row (agents/room.md, spawned by the hooks module: mod/rows.ts).
- *       Blocks while this seat is in the room, streaming the room's latest line (or a fresh join / leave) as
+ *       Blocks while this seat is in the room, streaming who else is here (lib/rows.ts hereLine: names and what
+ *       their presence says, read again every WHO_MS) then the room's latest line (or a fresh join / leave) as
  *       notifications/progress, re-sent every BEAT_MS so the MCP idle timeout never fires (cc CONTRACT
  *       mcp-progress-resets-idle-timeout). "STOP: ..." when this seat left (not on a kick: the row stays and shows it,
  *       so no row hands a turn back to the kicked person) or another room row already holds here (the newcomer ends).
@@ -19,6 +20,7 @@ import * as strs from '../lib/text.ts';
 import * as config from '../lib/config.ts';
 import { envMs } from '../lib/env.ts';
 import * as linkState from '../lib/room/link-state.ts';
+import { hereLine } from '../lib/rows.ts';
 import type { CallMeta, JsonRpcId, Me, PluginApi, PluginContext, ProgressToken, ToolArgs, ToolDefinition, ToolResult } from './types.ts';
 import type { Entry } from '../lib/room/types.ts';
 import { msgOf } from '../lib/errors.ts';
@@ -39,6 +41,9 @@ interface Hold {
   token: ProgressToken | undefined;
   n: number;
   msg: string;
+  /** who else is here (hereLine), the line's lead; hereAt: when it was read */
+  here: string;
+  hereAt: number;
   sentAt: number;
   code: RoomCode;
   started: number;
@@ -54,6 +59,7 @@ const MSG_MAX = config.HOLD_MSG_MAX; // + HINT fits the two lines a row view sho
 const END = 'End now without calling any tool.';
 // Shown on every progress line, right above the row view's input box: the row takes no input.
 const HINT = ' · read-only · talk in main (@room)';
+const SEP = ' · ';
 
 const clip = (s: string, n = MSG_MAX) => strs.clip(s, n);
 
@@ -123,12 +129,21 @@ class HoldServer {
     return { entries, moves, fresh };
   }
 
+  /** Who else is here for hold h's viewer, now ('' when it cannot be read). */
+  hereFor(h: Hold, now: number): string {
+    h.hereAt = now;
+    try { return hereLine(h.code, this.me ? this.me.name : null, { now }); } catch { return ''; }
+  }
+
+  /** The line a progress sends: who else is here, then the room's latest. */
+  line(h: Hold): string { return clip(h.here ? `${h.here}${SEP}${h.msg}` : h.msg); }
+
   progress(h: Hold, msg?: string): void {
     if (msg) h.msg = msg;
     h.sentAt = Date.now();
     if (h.token == null) return;
     h.n++;
-    try { this.ctx.progress(h.token, h.n, h.msg + HINT); } catch { /* client gone */ }
+    try { this.ctx.progress(h.token, h.n, this.line(h) + HINT); } catch { /* client gone */ }
   }
 
   finish(h: Hold, s: string): void {
@@ -171,6 +186,10 @@ class HoldServer {
       if (plain) this.progress(h, entryLine(plain));
       const move = this.newMove(h, now);
       if (move) this.progress(h, move);
+      if (now - h.hereAt >= this.WHO_MS) {
+        const here = this.hereFor(h, now);
+        if (here !== h.here) { h.here = here; this.progress(h); }
+      }
       // The beat keeps the call under the MCP tool idle timeout (cc CONTRACT mcp-progress-resets-idle-timeout).
       if (this.holds.has(h.id) && now - h.sentAt >= this.BEAT_MS) this.progress(h);
     }
@@ -219,7 +238,8 @@ class HoldServer {
     if (roomCode !== code) return early(`STOP: you are in room ${code}, not ${roomCode}. ${END}`);
     if (this.roomHolds(code).length) return early(`STOP: duplicate row: room ${code} already has its row. ${END}`);
     const now = Date.now();
-    const h: Hold = { id: meta.id, token: meta.progressToken, n: 0, msg: '', sentAt: 0, code, started: now, moves: new Set(), resolve: (_r: ToolResult): void => {} };
+    const h: Hold = { id: meta.id, token: meta.progressToken, n: 0, msg: '', here: '', hereAt: 0, sentAt: 0, code, started: now, moves: new Set(), resolve: (_r: ToolResult): void => {} };
+    h.here = this.hereFor(h, now);
     const last = this.readEntries(code).entries.findLast((e: Entry) => e.kind !== 'member_joined' && e.kind !== 'member_left');
     const move = this.newMove(h, now);
     h.msg = move || (last ? entryLine(last) : `room ${code}`);
