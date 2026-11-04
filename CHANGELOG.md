@@ -2,29 +2,33 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
-## 0.6.0: quiet: the words, the guard, plan mode that keeps your mode, one room row
+## 0.6.0: quiet: your mode kept, one room row, plainer lines
 
-Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, and `npm run probe`. The wire protocol is still 5. The plan is `docs/next/PLAN-QUIET.md` (one release: what was planned as 0.7.0 is in it too); the words follow `docs/next/quiet/COPY.md`.
+- **Asking for changes on a room plan keeps your mode.**
+- **One room row, and it says who's here.**
+- **No red errors or plan-mode noise from sub-human.**
+- **Plainer lines, and the guard no longer blocks scratch work.**
+
+Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, and `npm run probe`. The wire protocol is still 5.
 
 ### Changed
-- **Asking for changes on a room plan keeps your mode (#34).** When you answer the plan view with "Tell Claude what to change", Send / Discard for your note comes at once, while plan mode is still on, and is recorded right there (dismissed, the note waits for its card as before: nothing is lost). Leaving plan mode then keeps the mode you had: from auto, the closing dialog offers "Yes, and use auto mode" first (its plan is one closing line, `Your note went to maya. Nothing to build.`); from manual, the plain "exit plan mode?" keeps manual; from accept edits, one line says `shift+tab returns you to accept edits`. Claude is told plainly that nothing is to be built.
-- **One room row that says who's here.** The panel no longer lists people one row each: your agent panel has one row, the room's, and its line says who else is here and what each is doing when their session says so (`bob (working), carol here`), with no settings change. sub-human starts it itself (Claude makes no call for it, and no "Backgrounded agent" block or hand-back turn shows), brings it back by itself after `--resume`, `--continue`, `/clear` or the agent view, and at your next prompt if it stopped. The room session keeps no rows and runs only its first turn.
-- **Plan mode draws less of sub-human's own.** A plan save's receipt is no longer a red `Error:` (#9), and a review's `Entered plan mode · Claude is now exploring…` and `User approved / rejected Claude's plan` rows are hidden; your own plan mode draws as always. The plan view's first line says what it is for: `Room plan · paging v2 · Yes agrees · Tell Claude what to change asks for changes`.
-- **The room session is no person.** Member `claude` is left out of `sub-human who --room` and the "away:" list; its "room open" task is hidden from Claude Code's task views (it still holds the list open), and a closed room's background session is deleted (`claude rm`), so the agent view stops counting it.
-- Each of these runs only where the Claude Code version checks out (`lib/cc/contract.json`, `npm run probe`); where an entry fails, that part falls back to how it was before and `sub-human doctor` says which (features `keep-mode`, `room-row`, `quiet-plan`, `task-internal`, `reap-rm`).
-- **One line per event, in plain words.** `Opened panda-0976`, `Joined panda-0976 with maya`, `Left panda-0976`: no teaching suffix (`as NAME` only for a name you chose). The room's plan is the room's: `Plan paging v1 is ready · maya's edit`, `Plan paging v1 · dev asked for changes: "…"`, `Plan paging v2 agreed`. A task added for you reads `New task for you: …`. A plan version alone, and a decision that did not agree, show nobody a line: the request on it, and each objection, are the lines. One speaker: the room's own lines have no second `room:`.
-- **What only says it worked is never drawn.** An `@room`'s `✓ sent`, a row's `row closed`, `restoring this session's rows` after a resume, `Claude Code X isn't verified`, the bypass-permissions warning, the link going down and back, and a tail restart (nothing lost) go to Claude Code's debug log (`claude --debug`). Claude Code keeps an empty warning row where a receipt or a row's end was. Hooks write nothing to stderr on success.
-- **Claude's text stays Claude's.** A review's deny has an empty reason (its words are the call's context), the false "the mode is restored" is gone, a mid-turn wake that no request read gets its turn context only (never its request line twice), and each room tool's description opens with one plain sentence (no parameter renamed).
-- **No echo after a join.** Claude ends its turn without text.
-- **Plan names people can read.** A name is slugged, never refused (`error handling` is `error-handling`); a new plan with no name takes its first heading's (`# Paging` is `paging`), else `room`. The stub that shows a request is its label (`plan paging v1`), not a hash, in "User rejected Claude's plan". A stored edit reads `plan paging v1 saved; you review it before anyone else is asked`.
-- **Help is six lines;** the plugin README lists every command. The argument hint is `[invite | leave | help]`.
-- **An invite is one line,** `Invite ready until 18:16 · line and PIN below the prompt`; its rules, the install, the ssh and key-check notes and how to cancel are in the README. The copy card asks `Copy the invite?`.
-- **The leave card is smaller and rarer:** `Left panda-0976.`, Done / ★ Star sub-human and the free-text row for feedback, at most twice per install, never again once starred (or once `gh` says you starred it). When it shows there is no separate `Left …` line. No `/rename` after a leave: the session is titled `NAME` at the next prompt, silently.
+- **Your mode is kept (#34).** "Tell Claude what to change" in the plan view asks Send / Discard for your note right away, while plan mode is on; dismiss it and the note waits for its card. Plan mode then closes with one dialog that keeps the mode you had: from auto, its plan is one line (`Your note went to maya. Nothing to build.`) and Enter keeps auto; from manual, "Exit plan mode?" keeps manual; from accept edits, one line says `shift+tab returns you to accept edits`. Claude is told nothing is to be built.
+- **The plan view says what it is for.** Its first line is `Room plan · paging v2 · "Yes, manually approve edits" agrees and keeps your mode` (in auto mode it names "Yes, and use auto mode"; elsewhere `Yes agrees`). On your own new version it reads `Room plan · paging v2 (your new version) · Yes sends it out`.
+- **One room row that says who's here.** The panel no longer lists people one row each. Your panel has one row, the room's, and its line says who else is here and what each is doing (`bob (working), carol here`), with no settings change. sub-human starts it itself (no call of Claude's, no hand-back turn) and brings it back after `--resume`, `--continue`, `/clear` or the agent view.
+- **Plan mode draws less of sub-human's own.** A plan save is no longer a red `Error:` (#9), and a review's `Entered plan mode` and `User approved / rejected Claude's plan` rows are hidden. Your own plan mode draws as always.
+- **The room session is no person.** It is left out of `sub-human who --room` and the "away:" list, its "room open" task is hidden from the task list, and a closed room's background session is deleted, so the agent view stops counting it. It runs only its first prompt.
+- **One line per event.** `Opened panda-0976`, `Joined panda-0976 with maya`, `Left panda-0976`. Plan lines name whose edit it is: `Plan paging v1 is ready · maya's edit`, `Plan paging v1 · dev asked for changes: "…"`, `Plan paging v2 agreed`. A task added for you reads `New task for you: …`.
+- **What only says it worked is not drawn.** An `@room`'s `✓ sent`, a row's end, a link going down and back and similar receipts go to Claude Code's debug log (`claude --debug`).
+- **Claude's text stays Claude's:** no red deny reasons and no echo after a join.
+- **Plan names people can read.** `error handling` is `error-handling`; a plan with no name takes its first heading's, else `room`.
+- **Shorter help, invite and leave card.** Help is six lines (the README lists every command); an invite is one line; the leave card shows at most twice per install.
+- If your Claude Code version does not check out (`npm run probe`, `sub-human doctor`), each of these falls back to how it was and doctor says which.
 
 ### Fixed
-- **The guard stays out of the way (#35).** The person-only CLI (`sub-human invite`, `admit`, `kick`, …) is denied only where the shell would run it, so a heredoc, a note or a commit message that mentions `/sub-human invite` passes; `sub-human invite`, `node …/scripts/sub-human invite` and `sh -c '… sub-human invite'` are still denied. A heredoc's body is data unless a shell reads it, so a script written to `/tmp` and run with `node` is no longer read as searching `/`. `mktemp -d` scratch work and Claude Code's own `tool-results` reads pass. Each deny names what works instead.
-- `sub-human admit` no longer says the person "typed your PIN": admit answers a request made without it.
-- A lock that did not hold reads `Room busy. Try again.` (its path is in the debug log), and the room session's `claude --bg` errors no longer reach the join line: a retry says nothing, a start that failed says `Room task list unavailable. Run /sub-human doctor.`
+- **The guard stays out of the way (#35).** The person-only CLI (`sub-human invite`, `admit`, `kick`, …) is denied only where a shell would run it: a heredoc, a note or a commit message that mentions it passes, and so do `mktemp -d` scratch work and a script written to `/tmp`. Each deny names what works instead.
+- A `/clear`, `--resume` or a review left open too long no longer loses your own plan file after a review.
+- `sub-human admit` no longer says the person "typed your PIN".
+- A lock that did not hold reads `Room busy. Try again.`; a room session that failed to start says `Room task list unavailable. Run /sub-human doctor.`
 
 ## 0.5.8: a room's task list ends with its room session
 

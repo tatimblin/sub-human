@@ -164,7 +164,7 @@ export interface FrameFor { mode?: string | undefined; draft?: boolean | undefin
 const frameTail = ({ mode, draft }: FrameFor = {}): string => {
   const keep = KEEP[String(mode)];
   const yes = keep ? `"${keep}"` : 'Yes';
-  return draft ? ` (your draft) · ${yes} sends it out` : ` · ${yes} agrees${keep ? ' and keeps your mode' : ''}`;
+  return draft ? ` (your new version) · ${yes} sends it out` : ` · ${yes} agrees${keep ? ' and keeps your mode' : ''}`;
 };
 /** Every frame end there is: unframe takes off a frame written for any mode. */
 const FRAME_TAILS: string[] = [undefined, ...Object.keys(KEEP)].flatMap(mode => [frameTail({ mode }), frameTail({ mode, draft: true })]);

@@ -587,8 +587,8 @@ test('0.6.0 frame: the plan view\'s first line says what it is for; it never ent
   assert.equal(review.frameLine(H, 'plan paging v2', { mode: 'auto' }), 'Room plan · paging v2 · "Yes, and use auto mode" agrees and keeps your mode');
   assert.equal(review.frameLine(H, 'plan paging v2', { mode: 'plan' }), 'Room plan · paging v2 · Yes agrees');
   // the author's own draft: its Yes sends it out
-  assert.equal(review.frameLine(H, 'plan paging v2', { mode: 'acceptEdits', draft: true }), 'Room plan · paging v2 (your draft) · Yes sends it out');
-  assert.equal(review.frameLine(H, 'plan paging v2', { mode: 'default', draft: true }), 'Room plan · paging v2 (your draft) · "Yes, manually approve edits" sends it out');
+  assert.equal(review.frameLine(H, 'plan paging v2', { mode: 'acceptEdits', draft: true }), 'Room plan · paging v2 (your new version) · Yes sends it out');
+  assert.equal(review.frameLine(H, 'plan paging v2', { mode: 'default', draft: true }), 'Room plan · paging v2 (your new version) · "Yes, manually approve edits" sends it out');
   const shown = review.framed(TEXT, H, 'plan paging v2');
   assert.equal(review.unframe(shown), TEXT);
   for (const at of [{ mode: 'default' }, { mode: 'auto', draft: true }, { mode: 'plan', draft: true }, { mode: 'bypassPermissions' }]) {

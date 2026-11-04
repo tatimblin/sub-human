@@ -346,15 +346,11 @@ A room has plans, each with a name and versions v1, v2, …. A new plan nobody n
 
 **Editing.** Ask your Claude ("let's write a room plan for cursor paging; you write the first version", "update the room plan: max 50 per page"). It calls the room's `plan` tool (op `edit`), then enters plan mode: the hooks put the plan's current version into its plan file under a two-line header that names the room's shared plan and the version it starts from. Your Claude edits the plan there, as with any plan, and calls ExitPlanMode with no plan argument (the hooks read the file). The hooks store it as the next version and tell your Claude so, with no approval dialog: storing an edit is not agreeing to it. If you are already in plan mode, it works the same and plan mode stays on.
 
-```
-  ⎿  Error: sub-human: plan room v2 saved; you review it before anyone else is asked.
-```
-
-Claude Code draws the receipt under the call the way it draws a refused call; it is the receipt, not a failure (what your Claude does next goes to it separately).
+The save draws nothing in your session: no red `Error:` line and no plan-mode rows of sub-human's own (the receipt, `plan room v2 saved; you review it before anyone else is asked`, is in Claude Code's debug log, `claude --debug`). Your own plan mode draws as always.
 
 Your own plan file is put back as it was, and your permission mode too. A version alone shows nobody anything (their Claudes read it with their next prompt). When it goes out, the one line each person asked sees is `Plan room v2 is ready · alice's edit` (whoever already agreed to that version is not asked again; the summary is in the plan view).
 
-**You check your own version first.** Nobody else is asked about a version your Claude wrote until you have seen it. Right after storing it, your Claude opens it for you in the plan view (the line reads `your new version, plan room v2, for alice: nobody else is asked until you send it out`):
+**You check your own version first.** Nobody else is asked about a version your Claude wrote until you have seen it. Right after storing it, the plan view shows it to you, its first line `Room plan · room v2 (your new version) · Yes sends it out` (in manual mode it names `"Yes, manually approve edits"`, the Yes that keeps your mode):
 
 | You do | What happens |
 |---|---|
@@ -366,37 +362,36 @@ Until you send it out, nobody (you or another member's Claude) can ask for sign-
 
 **Two edits at once.** Each edit starts from a version. If someone else's version landed first, yours is not stored: your Claude is told so, with that version's text, and asked to keep both changes (asking you only where they truly conflict) and store again. So no edit silently replaces another. At most five plans may be open (not agreed) at a time.
 
-**Sign-off.** Your Yes on your own new version asks everyone. To ask again, or only some people, ask your Claude to "ask alice and me to sign off". It asks the room (op `ask`; any member's Claude may, once the version's author has sent it out) for the current version, naming approvers (by default everyone in the room). A newer version of the same plan retires the request on an older one: answers given there do not carry over, and the new version is asked again. When someone else's Claude stores that newer version, the Claude of whoever asked for the sign-off, and of anyone who objected, is told at once, so the revision comes back to you to read and, if you want, to ask about again. If you opened the room and sit in it again from another machine over your own ssh login (`/sub-human join USER@HOST ROOM`), your seats count as one approver: the answer you give last, from either, is yours, and the decision names one seat ("agreed: tristan (also laptop)"). Seats that joined by invite are each their own person, and so is every other seat on the host itself, since people can share a machine.
+**Sign-off.** Your Yes on your own new version asks everyone. To ask again, or only some people, ask your Claude to "ask alice and me to sign off". It asks the room (op `ask`; any member's Claude may, once the version's author has sent it out) for the current version, naming approvers (by default everyone in the room). A newer version of the same plan retires the request on an older one: answers given there do not carry over, and the new version is asked again once its author sends it out. A version alone wakes nobody: the other Claudes read it with their person's next prompt, and the request on it, when its author sends it out, is what reaches each person asked. If you opened the room and sit in it again from another machine over your own ssh login (`/sub-human join USER@HOST ROOM`), your seats count as one approver: the answer you give last, from either, is yours, and the decision names one seat ("agreed: tristan (also laptop)"). Seats that joined by invite are each their own person, and so is every other seat on the host itself, since people can share a machine.
 
-When a request names you, your Claude opens it in Claude Code's plan-approval dialog, the same view your own plans use. The plugin's hooks put the version's text there, byte for byte, whatever your Claude wrote:
+When a request names you, your Claude opens it in Claude Code's plan-approval dialog, the same view your own plans use. The plugin's hooks put the version's text there, byte for byte, whatever your Claude wrote, under one first line that says what the view is for and which Yes keeps your mode (Claude Code's own title, "Ready to code?", can't be changed):
 
 ```
  Ready to code?
  Here is Claude's plan:
  ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+  Room plan · paging v3 · "Yes, manually approve edits" agrees and keeps your mode
+
   Plan: cursor paging for GET /tasks
   …
-  │ sign-off on plan paging v3, asked by alice, for bob: agreeing signs off on this text, it is not a go-ahead
-  │ to build (PgUp/PgDn scroll). Agree: "Yes, manually approve edits" keeps your mode. Object: "Tell Claude
-  │ what to change" + why. Esc: decide later.
  ❯ 1. Yes, and use auto mode
    2. Yes, manually approve edits
    3. Tell Claude what to change
 ```
 
-**PgUp** and **PgDn** scroll the whole plan, however long.
+In auto mode the line names `"Yes, and use auto mode"` (the first option, so Enter keeps auto); in other modes it reads `Yes agrees`. sub-human's own plan-mode rows ("Entered plan mode", "User approved Claude's plan") are not drawn for a review. **PgUp** and **PgDn** scroll the whole plan, however long.
 
 | You do | Recorded |
 |---|---|
 | A **Yes** option | Your sign-off on that exact version (`via=human`). |
-| **Tell Claude what to change**, then type why | Nothing yet: a card asks `Send to alice as changes requested on "…": "…"?`. **Send** records your objection, with your words byte for byte; it blocks that version. **Discard** records nothing. Until you answer the card, your Claude's room posts are refused, so its own wording of your note cannot reach the room first. Once sent, the note goes to the plan's author: their Claude is told you asked for changes and that it may revise, as they decide; your Claude may write the next version itself when your note says how (or leave it to the author). Whoever writes a version checks it first, as above, and two written at once meet the compare-and-swap below. |
+| **Tell Claude what to change**, then type why | Nothing yet: right away, while plan mode is still on, a card asks `Send to alice as changes requested on "…": "…"?`. **Send** records your objection, with your words byte for byte; it blocks that version. **Discard** records nothing. Then plan mode closes with one dialog that keeps the mode you had (below). Dismiss the card and the note waits, never lost: ask your Claude for its card when you decide, and until you answer it your Claude's room posts are refused, so its own wording of your note cannot reach the room first. Once sent, the note goes to the plan's author: their Claude is told you asked for changes and that it may revise, as they decide; your Claude may write the next version itself when your note says how (or leave it to the author). Whoever writes a version checks it first, as above, and two written at once meet the compare-and-swap below. |
 | **Esc**, or Ctrl+G edits before a Yes | Nothing. |
 
 Only an answer in a review the hooks opened counts: a Yes on a plan of your own (even one with the very text of a version) records nothing, and your Claude's own edit never asks you for a Yes.
 
 **A Yes that may be keys meant for your prompt is asked again.** A review can open while you are typing, and the keys you meant for the prompt then go to the plan view (Enter picks its first option). So a Yes within 2 seconds of the view opening, or one given when you had typed text in the prompt as it opened, records nothing yet: a notice says so, and your Claude opens the question card for that request once. Only your answer there records.
 
-Showing the plan enters plan mode (Claude Code asks nothing for that). A "Yes" leaves plan mode in the mode it names, as with any plan of yours: the one the hint names keeps your mode ("Yes, manually approve edits" in default mode, "Yes, and use auto mode" in auto mode); if you were in plan mode before the review, plan mode comes back. After "Tell Claude what to change", your Claude leaves plan mode with Claude Code's own "Exit plan mode?" question, which you answer (nothing in it is approved). Esc ends Claude's turn, so plan mode stays on and nothing more happens until you write again: your next message first brings that same question (or press shift+tab to leave plan mode yourself). The hooks never answer a permission question for you. Agreeing is not a go-ahead to build: your Claude does not carry the plan out.
+Showing the plan enters plan mode (Claude Code asks nothing for that). A "Yes" leaves plan mode in the mode it names, as with any plan of yours: the one the first line names keeps your mode ("Yes, manually approve edits" in default mode, "Yes, and use auto mode" in auto mode); if you were in plan mode before the review, plan mode comes back. After "Tell Claude what to change" and the card, your Claude closes the review with one dialog that keeps your mode, which you answer (nothing in it is approved, and Claude is told nothing is to be built): from auto mode its plan is one line, `Your note went to alice. Nothing to build.`, and its first option, "Yes, and use auto mode", keeps auto; from manual mode it is Claude Code's "Exit plan mode?", whose Yes keeps manual; from accept edits, the same, and one line says `shift+tab returns you to accept edits`. Esc ends Claude's turn, so plan mode stays on and nothing more happens until you write again: your next message first brings that same question (or press shift+tab to leave plan mode yourself). The hooks never answer a permission question for you. Agreeing is not a go-ahead to build: your Claude does not carry the plan out.
 
 Say "show me the plan to sign off" and your Claude opens it again. With several waiting, name the plan you mean ("the paging plan", or its hash): the hooks open the one your own last words name, else the oldest, never one your Claude chose. When everyone named has agreed, the room logs a `decision`, and each person in it sees `Plan room v3 agreed`. When someone asked for changes, the plan's author sees that one line, with the note: `Plan room v3 · bob asked for changes: "…"`; the decision adds nothing to it, and the person who asked sees nothing more (their card was the receipt).
 

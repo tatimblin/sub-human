@@ -539,7 +539,7 @@ test('the room server down: told once per time it goes down (toolsDownStep)', as
   assert.deepEqual(toolsDownStep(true, false), { say: false, down: true }, 'still down: said already');
   assert.deepEqual(toolsDownStep(true, true), { say: false, down: false }, 'back up: forget it');
   assert.deepEqual(toolsDownStep(false, true), { say: false, down: false });
-  assert.match(TOOLS_DOWN_NOTICE, /@room and messages to other Claudes still work.*\/mcp/);
+  assert.equal(TOOLS_DOWN_NOTICE, 'Room tools not connected, so no room row. Run /mcp and reconnect plugin:sub-human:room.');
   assert.doesNotMatch(TOOLS_DOWN_NOTICE, /^sub-human: /, '$.ui.log adds the lead');
   assert.match(TOOLS_DOWN, /Don't call them/);
 });

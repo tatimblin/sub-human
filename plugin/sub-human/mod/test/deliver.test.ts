@@ -215,13 +215,13 @@ test('the room server down: a seated typed prompt tells the person (a notice) an
   let up = false
   on('mcp.connect', () => ({ value: up ? { isConnected: true, server: 'plugin:sub-human:room' } : { isConnected: false, reason: 'failed', message: 'Skipping connection (recent failure cached)' } }))
   const typed = (text: string) => $.prompt.submit({ text, origin: { kind: 'composer' }, wait: false })
-  const down = () => seen.logs.filter(l => /room's tools are not connected/.test(l)).length
+  const down = () => seen.logs.filter(l => /^Room tools not connected/.test(l)).length
   await start($)
   await until(() => seen.spawns.length === 1)
   await new Promise(r => setTimeout(r, 50))
   await typed('one')
   expect(down()).toBe(1)
-  expect(must(seen.logs.find(l => /room's tools are not connected/.test(l)))).toMatch(/@room and messages to other Claudes still work.*\/mcp/)
+  expect(must(seen.logs.find(l => /^Room tools not connected/.test(l)))).toMatch(/Run \/mcp and reconnect plugin:sub-human:room\.$/)
   expect((seen.contexts.at(-1) ?? []).join('\n')).toMatch(/^SUB-HUMAN: the room's tools .* are not connected in this session\. Don't call them/)
   await typed('two')
   expect(down()).toBe(1)
