@@ -104,16 +104,6 @@ test('rowText and hereLine: a name says what its fresh presence says (working, n
   assert.equal(rows.hereLine(code, 'carol', { now }), 'alice, bob, dave here');
 });
 
-test('pruneRowMaps: an older version\'s row map whose session holds no seat and whose rows are old goes; a fresh one stays', () => {
-  const { code } = makeRoom([{ name: sn('alice') }]);
-  const kv = roomLib.open(code).store.kv;
-  const old = new Date(Date.now() - 400 * 24 * 3600_000).toISOString();
-  kv.set('rows/sess-old', { byAgent: { a1: { kind: 'participant', name: 'bob', at: old } } });
-  kv.set('rows/sess-new', { byAgent: { a2: { kind: 'room', name: code, at: new Date().toISOString() } } });
-  assert.equal(rows.pruneRowMaps(code), 1);
-  assert.deepEqual(kv.list('rows/'), ['rows/sess-new']);
-});
-
 test('rowText: a proposal is named by its stored plan\'s title (clipped), not its hash', () => {
   const { code, dir } = makeRoom([{ name: sn('claude') }, { name: sn('alice') }, { name: sn('bob') }]);
   const h1 = 'c0ffee000001', h2 = 'c0ffee000002';

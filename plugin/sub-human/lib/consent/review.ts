@@ -75,7 +75,7 @@ import type { RoomCode } from '../brand.ts';
 export interface State { review: Review | null; note: Confirm | null; recheck?: Recheck | null | undefined; steer?: Steer | null | undefined }
 /** guardMs: YES_GUARD_MS unless the handler says otherwise (the tests shorten it: env.testMs). keepMode (#34, the
  * verdict's keep-mode on): a review's closing call keeps the mode the person had before it (auto: a non-empty closing
- * plan; manual and accept edits: the empty exit), and Send / Discard comes first (noteAnswer); off: the empty exit, as before 0.6.0. */
+ * plan; manual and accept edits: the empty exit), and Send / Discard comes first (noteAnswer); off: the empty exit for every mode. */
 export interface ReviewCtx { name: string; now: number; guardMs?: number; keepMode?: boolean }
 
 /** How the review's dialog closed (cc.planAnswer): note null for no note (Esc, a bare deny). */
@@ -147,6 +147,10 @@ export const shownHash = (r: Review): string | undefined => r.hash;
 /** The plan the model passes to show a request: its label ("plan paging v1"; Claude Code draws it in "User rejected
  * Claude's plan", so never the hex), else, for a request from before plans, "proposal HASH". hooks/consent.ts reads both. */
 export const stubFor = (h: string, title?: string | null): string => (title && /^plan [a-z0-9-]+ v\d+$/.test(title) ? title : `proposal ${h}`);
+/** A plan's whole text that is the stub "proposal HASH" (group 1: the hash). */
+export const STUB_PROPOSAL: RegExp = /^\s*(?:the room )?proposal\s+([0-9a-f]{6,12})\s*\.?\s*$/i;
+/** A plan's whole text that is the stub "plan NAME vN" (group 1: the label as written). */
+export const STUB_PLAN: RegExp = /^\s*(plan\s+[a-z0-9-]{1,24}\s+v\d+)\s*\.?\s*$/i;
 
 /** The plan view's "Yes" that leaves the person's mode as it is, by mode, from the options Claude Code 2.1.296 offers
  * ("Yes, and use auto mode", "Yes, manually approve edits"; without auto mode "Yes, auto-accept edits" in the first
@@ -399,7 +403,7 @@ function resolve(r: Review, note: Confirm | null, ev: { answer?: ReviewAnswer | 
 }
 
 /** A blank plan, or the stub the model is told to pass ("plan paging v1", "proposal <hash>"): not a plan of its own. */
-const stub = (t: string) => !t.trim() || /^\s*(?:the room )?proposal\s+[0-9a-f]{6,12}\s*\.?\s*$/i.test(t) || /^\s*plan\s+[a-z0-9-]{1,24}\s+v\d+\s*\.?\s*$/i.test(t);
+const stub = (t: string) => !t.trim() || STUB_PROPOSAL.test(t) || STUB_PLAN.test(t);
 /** What a review backs up of the plan file: the person's own plan, never a stub a model wrote ("proposal HASH"), which a
  * restore would put back for the closing ExitPlanMode to show as an older proposal's hash: null, so the restore
  * removes the file. */
@@ -532,7 +536,7 @@ function leaving(step: ReviewStep, ctx: ReviewCtx): ReviewStep {
   if (step.say || !rv || rv.phase !== 'exiting') return step;
   const review: Review = rv.file ? { ...rv, restored: false } : rv;
   // #34: from auto mode the empty exit's only Yes switches to default; a non-empty plan's dialog offers "Yes, and use
-  // auto mode" first, preselected, so the plan file holds only the closing line (quiet/SPIKES.md spike 1)
+  // auto mode" first, preselected, so the plan file holds only the closing line (docs/next/quiet/SPIKES.md spike 1)
   if (ctx.keepMode && rv.mode === 'auto' && rv.file) {
     const text = closingLine(rv, step.state.note);
     return { ...step, state: { ...step.state, review }, effects: [...step.effects, { do: 'closePlan', file: rv.file, text }], say: { to: 'ask', text: SAY.leaving, show: { close: text } } };

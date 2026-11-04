@@ -185,7 +185,10 @@ const isRec = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 export function registerConsent(on: On): void {
   on('tool.call', { tool: ['EnterPlanMode', 'ExitPlanMode', PLAN_TOOL] }, async ($, e, next) => {
     await $.state.set(REVIEW, true);
-    const r = await next(e);
+    // the loop the call runs in, for its classic.PreToolUse inside next (its event carries none): consent tells a
+    // subagent's ExitPlanMode from the main loop's by agent_id (hooks/consent.ts waitingOf, signoffElsewhere)
+    facts.stashAgent(e.tool_use_id, e.agentId);
+    const r = await next(e).finally(() => { facts.dropAgent(e.tool_use_id); });
     if (e.tool !== 'ExitPlanMode' || e.agentId || !(r.deny !== undefined || r.isError)) return r;
     try {
       const sid = await $.session.id();
@@ -288,15 +291,11 @@ export function registerConsent(on: On): void {
     return line ? { text: `${r.text}\n\n${line}` } : r;
   }).catch((_$, e, next) => next(e)); // no seed: the edit's ExitPlanMode seeds the file instead (lib/consent/edit.ts)
 
-  // sub-human's own plan-mode calls draw nothing (quiet/SPIKES.md spike 2): a review's false "Entered plan mode", its
-  // plan view's "User approved / rejected Claude's plan", an edit's red save (#9). Only the calls consent named
-  // (subHuman.quiet, by tool_use_id): a person's own plan mode and every other error draw as Claude Code draws them.
-  // Off with the verdict's quiet-plan (cc CONTRACT render-tool-rows-hide): the rows as before 0.6.0.
-  on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
-    const ids = await quietCalls($);
-    return quietRow(ids, e.props.tool_use_id) ? EMPTY : next(e);
-  }).catch((_$, e, next) => next(e));
-  on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
+  // sub-human's own plan-mode calls draw nothing (docs/next/quiet/SPIKES.md spike 2): a review's false "Entered plan
+  // mode", its plan view's "User approved / rejected Claude's plan", an edit's red save (#9). Only the calls consent
+  // named (subHuman.quiet, by tool_use_id): a person's own plan mode and every other error draw as Claude Code draws
+  // them. Off with the verdict's quiet-plan (cc CONTRACT render-tool-rows-hide): Claude Code's own rows.
+  on('ui.render', { component: ['ToolUse', 'ToolResult'] }, async ($, e, next) => {
     const ids = await quietCalls($);
     return quietRow(ids, e.props.tool_use_id) ? EMPTY : next(e);
   }).catch((_$, e, next) => next(e));

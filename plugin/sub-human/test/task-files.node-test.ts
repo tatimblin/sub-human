@@ -37,7 +37,7 @@ test('task files: the schema\'s fields and nothing else; blocks is the reverse o
   assert.equal(taskFiles.nextId(code, tasks.slice(0, 2), { dir }), '4', 'the mark keeps 3 from coming back');
 });
 
-test('0.6.0: the room task\'s file is marked metadata._internal (Claude Code\'s views leave it out, its reset still counts it); only it; the verdict\'s task-internal off writes the 0.6.0 file', () => {
+test('0.6.0: the room task\'s file is marked metadata._internal (Claude Code\'s views leave it out, its reset still counts it); only it', () => {
   h.freshHome();
   const code = h.newRoom();
   const dir = path.join(h.tmpDir('sh-tf-'), 'tasks', `sh-${code}`);
@@ -46,16 +46,6 @@ test('0.6.0: the room task\'s file is marked metadata._internal (Claude Code\'s 
   assert.deepEqual(must(ccTasks.readTask(dir, '1')).metadata, { room: code, _internal: true });
   assert.deepEqual(must(ccTasks.readTask(dir, '2')).metadata, { room: code }, 'another room\'s subject is no room task of this one');
   assert.equal(must(ccTasks.readTask(dir, '1')).status, 'in_progress', 'kept in progress: it holds off the reset until close');
-  const off = path.join(h.tmpDir('sh-tf-'), 'tasks', `sh-${code}`);
-  taskFiles.project(code, tasks, { dir: off, internal: false });
-  assert.deepEqual(must(ccTasks.readTask(off, '1')).metadata, { room: code });
-  const prev = process.env.SUB_HUMAN_CC_OFF;
-  process.env.SUB_HUMAN_CC_OFF = 'task-internal';
-  try {
-    const forced = path.join(h.tmpDir('sh-tf-'), 'tasks', `sh-${code}`);
-    taskFiles.project(code, tasks, { dir: forced });
-    assert.deepEqual(must(ccTasks.readTask(forced, '1')).metadata, { room: code }, 'SUB_HUMAN_CC_OFF=task-internal: the fallback');
-  } finally { if (prev === undefined) delete process.env.SUB_HUMAN_CC_OFF; else process.env.SUB_HUMAN_CC_OFF = prev; }
 });
 
 test('task files: the directory is the recorded one only when it is <config>/tasks/sh-CODE; else this process\'s config dir', () => {

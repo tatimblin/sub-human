@@ -1,6 +1,6 @@
 /**
- * plugin/sub-human/lib/lock.ts: the one lockfile helper (room log, members.json, proposals, the task mirror,
- * the row map). Zero dependencies; synchronous, because hooks are short synchronous processes.
+ * plugin/sub-human/lib/lock.ts: the one lockfile helper (room log, members.json, proposals, the task mirror).
+ * Zero dependencies; synchronous, because hooks are short synchronous processes.
  *
  *   withLock(lockPath, fn, {timeoutMs, staleMs, ErrorClass}?) -> fn()'s value
  *       Creates lockPath exclusively (O_EXCL), runs fn, removes it. The body is the owner: "PID HOST START",

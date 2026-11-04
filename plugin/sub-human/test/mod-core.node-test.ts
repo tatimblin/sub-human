@@ -270,7 +270,7 @@ test('deliver: the child\'s argv and env; lines out of pieces; only well-formed 
   assert.deepEqual(b.push('nes":["bob: hi"]}\n{"type":"rows","text":null}\n{"ty'), ['{"type":"chat","lines":["bob: hi"]}', '{"type":"rows","text":null}']);
   assert.equal(b.pending, '{"ty');
   assert.deepEqual(d.parseEvent('{"type":"chat","lines":["bob: hi"]}'), { type: 'chat', lines: ['bob: hi'] });
-  assert.deepEqual(d.parseEvent('{"type":"rows","text":""}'), { type: 'rows', text: null });
+  assert.deepEqual(d.parseEvent('{"type":"reminders","text":""}'), { type: 'reminders', text: null });
   assert.deepEqual(d.parseEvent('{"type":"seat","seat":null}'), { type: 'seat', seat: null });
   assert.equal(d.parseEvent('{"type":"wake"}'), null);
   assert.equal(d.parseEvent('{"type":"exec","text":"rm"}'), null);
@@ -289,7 +289,7 @@ test('deliver: the routing table: chat is a notice, pull held for the next promp
   // one $.ui.log per line: a notice is one line (a newline would be drawn as U+FFFD)
   assert.deepEqual(d.route({ type: 'chat', lines: ['bob: hi', '  │ more', 'carol joined'] }), [{ do: 'log', text: 'bob: hi' }, { do: 'log', text: '  │ more' }, { do: 'log', text: 'carol joined' }]);
   assert.deepEqual(d.route({ type: 'pull', text: 'Room since…' }), [{ do: 'hold-pull', text: 'Room since…' }], 'stage 8e B: never a user row of its own');
-  assert.deepEqual(d.route({ type: 'rows', text: null }), [{ do: 'hold-rows', text: null }]);
+  assert.deepEqual(d.route({ type: 'reminders', text: null }), [{ do: 'hold-reminders', text: null }]);
   assert.deepEqual(d.route({ type: 'seat', seat: null }), [{ do: 'seat', seat: null }]);
   const idle = d.route({ type: 'wake', text: 'room: decided\n(for Claude) room now: …' });
   assert.deepEqual(idle, [{ do: 'submit', text: `${d.WAKE_HEAD}\nroom: decided\n(for Claude) room now: …`, seen: ['room: decided'] }]);

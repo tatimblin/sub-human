@@ -232,8 +232,6 @@ class HoldServer {
     this.seat = this.seat && this.seat.code === cur.code && this.seat.name === cur.name ? this.seat : { code: cur.code, name: cur.name, pid: cur.pid };
     const code = cur.code;
     const roomCode = typeof args.room === 'string' ? args.room.trim() : '';
-    // an older row's call (a participant row of 0.5: {member}) has no row to keep any more
-    if (!roomCode && typeof args.member === 'string') return early(`STOP: rows are one room row now. ${END}`);
     if (!roomCode) return this.text('hold needs {room: CODE} (the room row).', true);
     if (roomCode !== code) return early(`STOP: you are in room ${code}, not ${roomCode}. ${END}`);
     if (this.roomHolds(code).length) return early(`STOP: duplicate row: room ${code} already has its row. ${END}`);

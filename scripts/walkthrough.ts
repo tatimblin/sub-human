@@ -308,7 +308,7 @@ function metricsSection(m: Metrics | undefined): string {
 <div class="metrics"><table><thead><tr><th>Metric</th><th>vole-8126</th><th>Phase 0</th>${S ? `<th>${esc(S.run)}</th>` : ''}<th>this run</th><th>vs vole</th><th>vs P0</th>${S ? `<th>vs ${esc(S.run)}</th>` : ''}</tr></thead><tbody>
 ${rows.map(([l, now, base, p0, prev]) => `<tr><td>${esc(l)}</td><td>${v(base)}</td><td>${v(p0)}</td>${S ? `<td>${v(prev)}</td>` : ''}<td>${v(now)}</td>${delta(now, base)}${delta(now, p0)}${S ? delta(now, prev) : ''}</tr>`).join('\n')}
 </tbody></table></div>
-<p class="note">Wake: a sub-human plugin prompt (${esc(R.total.pluginWakes ?? 0)}), a peer delivery or row-rewake that starts a turn.${R.total.chat ? ` Chat: ${esc(R.total.chat.notices)} rows shown with $.ui.log, ${esc(R.total.chat.pulls)} copies for the models, ${esc(R.total.chat.calls)} model calls they started.` : ''} Noise: the line kinds above; ✓ sent receipts excluded (${esc(R.total.noise.receipts)}). Reviews: ${esc(R.total.cards.count)} proposals, ${esc(R.total.cards.toCard)} call(s) to open + ${esc(R.total.cards.after)} after.</p>
+<p class="note">Wake: a sub-human plugin prompt (${esc(R.total.pluginWakes ?? 0)}), or a peer delivery that starts a turn.${R.total.chat ? ` Chat: ${esc(R.total.chat.notices)} rows shown with $.ui.log, ${esc(R.total.chat.pulls)} copies for the models, ${esc(R.total.chat.calls)} model calls they started.` : ''} Noise: the line kinds above; ✓ sent receipts excluded (${esc(R.total.noise.receipts)}). Reviews: ${esc(R.total.cards.count)} proposals, ${esc(R.total.cards.toCard)} call(s) to open + ${esc(R.total.cards.after)} after.</p>
 </section>`;
 }
 

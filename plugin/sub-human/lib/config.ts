@@ -9,9 +9,6 @@
 // SETTLE_MAX_MS after the batch's first entry.
 export const SETTLE_MS = 1500;                 // SUB_HUMAN_SETTLE_MS
 export const SETTLE_MAX_MS = 5000;             // SUB_HUMAN_SETTLE_MAX_MS
-// The headless room Claude waits longer (nobody watches its latency), so a burst lands as one turn.
-export const ROOM_CLAUDE_SETTLE_MS = 3000;
-export const ROOM_CLAUDE_SETTLE_MAX_MS = 10_000;
 // A member_left waits this long for a rejoin; a leave + rejoin inside it is no notice at all.
 export const LEAVE_SETTLE_MS = 8000;           // SUB_HUMAN_LEAVE_MS (tail, notices, rows, hold)
 export const UNSEATED_MS = 10_000;             // SUB_HUMAN_UNSEATED_MS: no seat yet, look it up this rarely
@@ -170,7 +167,6 @@ LINK_QUOTAS satisfies Record<string, Quota>;
 export const ROOM_GC_MS: number = 30 * 24 * 60 * 60_000;      // SUB_HUMAN_ROOM_GC_MS
 export const SESSION_INDEX_TTL_MS: number = 30 * 24 * 60 * 60_000;
 export const FORK_RECORD_WAIT_MS = 3000;     // SUB_HUMAN_FORK_WAIT_MS: session-restore waits for the old transcript's continued-in record
-export const ROWS_TTL_MS: number = 7 * 24 * 60 * 60_000;
 export const GC_EVERY_MS: number = 6 * 60 * 60_000;           // at most one sweep of the home this often (<home>/gc.json)
 export const GC_BUDGET_MS = 250;                      // a sweep stops when it has run this long; the next one goes on
 // lib/room/task-files.ts project: a live room's native task list folder older than this is touched, so Claude Code's

@@ -192,15 +192,16 @@ test('gc: a session index of an ended session goes after its TTL; a live one sta
   assert.equal(identity.pruneSessionIndexes(Date.now(), 1000 * DAY), 0, 'nothing younger than the TTL');
 });
 
-test('gc: a room\'s row map of an ended session goes after ROWS_TTL_MS; a live session\'s and a recent one stay', async t => {
+test('gc: a join deletes every row map older versions kept in the room (nothing reads or writes them now)', async t => {
   h.freshHome(t);
   const code = h.newRoom();
   assert.ok(identity.join({ code, name: sn('alice'), role: 'member', pid: process.pid, session_id: SID(3), cwd: '/' }).ok);
   const kv = store.open(code).kv;
-  const map = (days: number) => ({ byAgent: { a1: { kind: 'room', name: code, parent: null, at: new Date(Date.now() - days * DAY).toISOString() } } });
-  kv.set(`rows/${SID(3)}`, map(30));  // alice's live session: stays
-  kv.set(`rows/${SID(4)}`, map(30));  // an ended session: goes
-  kv.set(`rows/${SID(5)}`, map(1));   // recent: stays
-  assert.equal(gc.sweepRows(code), 1);
-  assert.deepEqual(kv.list('rows/'), [`rows/${SID(3)}`, `rows/${SID(5)}`].sort());
+  const map = { byAgent: { a1: { kind: 'room', name: code, parent: null, at: new Date().toISOString() } } };
+  kv.set(`rows/${SID(3)}`, map); // a live session's too
+  kv.set(`rows/${SID(4)}`, map);
+  kv.set('tasks', []);
+  assert.equal(gc.sweepRows(code), 2);
+  assert.deepEqual(kv.list('rows/'), []);
+  assert.deepEqual(kv.get('tasks', null), [], 'only rows/*');
 });

@@ -167,8 +167,9 @@ test('hold {room}: joins and settled leaves show as notices on the progress line
   void (r as Promise<ToolResult>).then(x => ended.push(x)); // a hold call answers with a Promise
   tick(60);
   add('bob', 'member_joined', 'bob joined');
-  assert.ok(until(() => progress.some(m => m.startsWith('bob joined')), 2000), progress.join('\n'));
-  assert.ok(progress.some(m => m === `bob joined${hold.HINT}`), progress.join('\n'));
+  // the line leads with who else is here (lib/rows.ts hereLine), then the notice
+  assert.ok(until(() => progress.some(m => m.includes(' · bob joined')), 2000), progress.join('\n'));
+  assert.ok(progress.some(m => m === `bob here · bob joined${hold.HINT}`), progress.join('\n'));
   assert.ok(!progress.some(m => /member_joined/.test(m)), 'no raw member_joined line');
   const n = progress.length;
   add('bob', 'member_left', 'bob left'); ms.bob.left_at = new Date().toISOString(); save();
@@ -178,9 +179,9 @@ test('hold {room}: joins and settled leaves show as notices on the progress line
   assert.ok(!progress.slice(n).some(m => /bob left|bob rejoined|member_left/.test(m)), progress.slice(n).join('\n'));
   add('bob', 'member_left', 'bob left'); ms.bob.left_at = new Date().toISOString(); save();
   tick(100);
-  assert.ok(!progress.some(m => m.startsWith('bob left')), 'not before it settles');
-  assert.ok(until(() => progress.some(m => m.startsWith('bob left')), 2000), progress.join('\n'));
-  assert.ok(progress.some(m => m === `bob left${hold.HINT}`));
+  assert.ok(!progress.some(m => m.includes(' · bob left')), 'not before it settles');
+  assert.ok(until(() => progress.some(m => m.includes(' · bob left')), 2000), progress.join('\n'));
+  assert.ok(progress.some(m => m === `only you · bob left${hold.HINT}`));
   who = null; // this seat leaves: the hold ends
   until(() => false, 100);
   await Promise.resolve();
@@ -194,7 +195,7 @@ test('hold {room}: joins and settled leaves show as notices on the progress line
 // ---------- the tail child sends joins and leaves as chat events ----------
 // lib/tail.ts in-process on a fake clock (test/tail.node-test.ts covers the loop itself; test/cli.node-test.ts the real child).
 const FAST = {
-  resolveMs: 100, unseatedMs: 100, pollMs: 50, settleMs: 300, settleMaxMs: 1000, roomClaudeSettleMs: 300, roomClaudeSettleMaxMs: 1000,
+  resolveMs: 100, unseatedMs: 100, pollMs: 50, settleMs: 300, settleMaxMs: 1000,
   leaveMs: 600, healthMs: 5000, backoffMs: 200, backoffMaxMs: 1000, errorLogMs: 60_000, stallMs: 5000,
 };
 interface TailHarness {

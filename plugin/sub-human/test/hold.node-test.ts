@@ -78,9 +78,6 @@ test('hold: tool definition and argument errors', async () => {
   const bad = await w.call({}).p;
   assert.match(textOf(bad), /hold needs/);
   assert.equal(must(bad).isError, true, 'a call without room is refused as an error');
-  const old = await w.call({ member: sn('claude') }).p;
-  assert.match(textOf(old), /^STOP: rows are one room row now/, "an older version's participant row ends");
-  assert.equal(must(old).isError, undefined, 'a STOP is an answer for the row, not an error');
   assert.match(textOf(await w.call({ room: rc('otter-1111') }).p), /^STOP: you are in room marmot-2509/);
   w.leaveMe();
   assert.match(textOf(await Promise.resolve(w.plug.call('hold', null, { room: w.code }, { id: 99 }))), /^STOP: not in a room/);

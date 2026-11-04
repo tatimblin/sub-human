@@ -5,15 +5,14 @@ import type { Block, TEntry } from '../metrics.ts';
 
 const wake = (id: number): TEntry => ({ type: 'user', origin: { kind: 'plugin', name: 'sub-human' }, message: { content: `sub-human: room entry #${id}` } });
 const rowDone: TEntry = { type: 'user', origin: { kind: 'task-notification' }, message: { content: '<task-notification><task-id>a1</task-id><output-file>/x</output-file></task-notification>' } };
-const rewake: TEntry = { type: 'user', origin: { kind: 'task-notification' }, message: { content: '<task-notification><summary>sub-human: restoring rows</summary></task-notification> sub-human: this session was resumed and its rows did not survive it.' } };
+const peer: TEntry = { type: 'user', origin: { kind: 'peer' }, isMeta: true, message: { content: 'x' } };
 const human: TEntry = { type: 'user', origin: { kind: 'human' }, message: { content: 'hi' } };
 const asst: TEntry = { type: 'assistant', message: { content: [{ type: 'text', text: 'ok' }] } };
 const toolRes: TEntry = { type: 'user', message: { content: [{ type: 'tool_result', content: 'x' }] } };
 
-test('trigger: plugin prompt, rewake, peer; its isMeta copy, row completions and humans are not room wakes', () => {
+test('trigger: plugin prompt, peer; its isMeta copy, row completions and humans are not room wakes', () => {
   assert.equal(trigger(wake(1)), 'plugin');
   assert.equal(trigger({ ...wake(1), isMeta: true }), null);
-  assert.equal(trigger(rewake), 'rewake');
   assert.equal(trigger({ type: 'user', origin: { kind: 'peer' }, message: { content: 'x' } }), 'peer');
   assert.equal(trigger(rowDone), null);
   assert.equal(trigger(human), null);
@@ -21,13 +20,13 @@ test('trigger: plugin prompt, rewake, peer; its isMeta copy, row completions and
 });
 
 test('wakes: adjacent notices that start one turn count once; a notice absorbed by a human prompt is no wake', () => {
-  const es: TEntry[] = [human, asst, wake(1), wake(2), asst, toolRes, asst, wake(3), human, asst, rowDone, rewake, asst,
+  const es: TEntry[] = [human, asst, wake(1), wake(2), asst, toolRes, asst, wake(3), human, asst, rowDone, peer, asst,
     { type: 'attachment', attachment: { type: 'hook_additional_context', hookEvent: 'UserPromptExpansion', content: ['abcd'] } },
     { type: 'attachment', attachment: { type: 'hook_additional_context', hookEvent: 'UserPromptSubmit', content: ['xy'] } }];
   const m = seatTranscriptMetrics([{ es }]);
   assert.equal(m.wakes.turns, 2);
   assert.equal(m.wakes.plugin, 3);
-  assert.equal(m.wakes.rewake, 1);
+  assert.equal(m.wakes.peer, 1);
   assert.equal(m.wakes.rowNotifications, 1);
   assert.deepEqual([m.injected.join, m.injected.total], [4, 6]);
 });

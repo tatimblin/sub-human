@@ -34,13 +34,13 @@ function quiet(row: { content?: unknown }): boolean {
 const HELLO = { plugin: 'sub-human', key: 'hello' } as const;
 const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' } as const;
 const TITLED = { plugin: 'sub-human', key: 'titled' } as const;
-const ROWS = { plugin: 'sub-human', key: 'rows' } as const;
+const REMINDERS = { plugin: 'sub-human', key: 'reminders' } as const;
 const SERVER = 'room'; // the room server's key in .mcp.json
 /** Whether the room server is connected in this session (unsure: yes, as before). */
 const roomUp = async ($: EngineInterface): Promise<boolean> => {
   try { return (await $.mcp.connect(SERVER)).isConnected; } catch { return true; }
 };
-const INJECTED = { plugin: 'sub-human', key: 'rowsInjected' } as const;
+const INJECTED = { plugin: 'sub-human', key: 'remindersInjected' } as const;
 const TOOLS_DOWN_SAID = { plugin: 'sub-human', key: 'toolsDown' } as const;
 const NONCE = { plugin: 'sub-human', key: 'nonce' } as const;
 const PULLS = { plugin: 'sub-human', key: 'pulls' } as const;
@@ -152,11 +152,11 @@ export function registerPrompt(on: On): void {
       // "working" once the turn starts (mod/deliver.ts turn.start): a prompt stopped or refused below starts none
       presence.pending = writesWorking(e.origin, hello, presenceOf(hello)) ? sid : null;
       if (delivering(sid)) {
-        // the held reminders text (the tail's rows event) rides once per change: on the first typed prompt after it
-        // changes, not on every prompt
-        const { value: rows } = await $.state.get(ROWS);
+        // the held reminders text (the tail's reminders event) rides once per change: on the first typed prompt after
+        // it changes, not on every prompt
+        const { value: reminders } = await $.state.get(REMINDERS);
         const { value: injected } = await $.state.get(INJECTED);
-        const say = typeof rows === 'string' && rows ? rows : null;
+        const say = typeof reminders === 'string' && reminders ? reminders : null;
         const up = await roomUp($);
         // the room server down: the person and Claude are told once per time it goes down (TOOLS_DOWN)
         const { value: wasDown } = await $.state.get(TOOLS_DOWN_SAID);

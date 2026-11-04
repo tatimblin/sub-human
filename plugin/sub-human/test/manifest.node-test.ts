@@ -209,11 +209,10 @@ test('hooks.json: SessionEnd starts node only for a session with a lease, a sess
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-test('hooks.json: every blocking hook has a timeout (<= 10 s, row-rewake aside); SessionEnd >= 3 s', () => {
+test('hooks.json: every hook has a timeout (<= 10 s); SessionEnd >= 3 s', () => {
   for (const { event, hook } of allHooks()) {
     assert.ok(Number.isFinite(hook.timeout) && hook.timeout > 0, `${event} ${scriptOf(hook.command)} has no timeout`);
-    if (!hook.async && !hook.asyncRewake) assert.ok(hook.timeout <= 10, `${event} ${scriptOf(hook.command)}: ${hook.timeout}s`);
-    assert.ok(hook.timeout <= 60, 'Claude Code caps hook budgets at 60 s');
+    assert.ok(hook.timeout <= 10, `${event} ${scriptOf(hook.command)}: ${hook.timeout}s`);
   }
   for (const g of groups('SessionEnd')) for (const hk of g.hooks) assert.ok(hk.timeout >= 3, `SessionEnd gets 1.5 s unless timeout is set (got ${hk.timeout})`);
 });

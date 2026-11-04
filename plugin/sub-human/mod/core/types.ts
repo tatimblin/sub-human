@@ -72,7 +72,7 @@ export interface JoinPayload {
 export type DeliverAction =
   | { do: 'log' | 'debug' | 'append' | 'mid-turn-wake' | 'hold-pull'; text: string }
   | { do: 'submit'; text: string; seen: string[] }
-  | { do: 'hold-rows'; text: string | null }
+  | { do: 'hold-reminders'; text: string | null }
   | { do: 'seat'; seat: TailSeat | null }
   | { do: 'invites'; open: string[]; expired?: string[] }
   | { do: 'take'; code: string; name: string; text: string; check?: string };

@@ -25,15 +25,6 @@ export interface SessionDoc {
   reported?: number[];
 }
 
-// ---------- lib/rows.ts ----------
-/** One agent -> row record (rows/<session_id>.byAgent: older versions kept them; lib/rows.ts pruneRowMaps sweeps them). */
-export interface RowRec {
-  kind?: 'participant' | 'room';
-  name: string;
-  parent?: string | null;
-  at?: string;
-}
-
 // ---------- lib/tasks.ts ----------
 /** One task on the room's list (the mirror tasks.json). */
 export interface Task {
@@ -196,7 +187,7 @@ export type TailEvent =
   | { type: 'chat', lines: string[] }
   | { type: 'pull', text: string }
   | { type: 'wake', text: string }
-  | { type: 'rows', text: string | null }
+  | { type: 'reminders', text: string | null }
   | { type: 'health', text: string; quiet?: true }
   | { type: 'invites', open: string[], expired?: string[] }
   | { type: 'take', code: string, name: string, text: string, check?: string };

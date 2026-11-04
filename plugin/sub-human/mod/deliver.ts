@@ -36,8 +36,8 @@ import type { JoinReply, Pulls, TailEvent, TailSeat } from './core/types.ts';
 /** The tail child as the module tracks it; stream: its $.process.spawn stream, as stopChild ends it. */
 interface Child { sid: string; seat: TailSeat | null; stream: { return(value?: unknown): Promise<unknown> } | null; stopped: boolean; fails: number }
 
-/** The tail's `rows` event, held for the next typed prompt (mod/prompt.ts): the pending-proposal reminders. */
-const ROWS = { plugin: 'sub-human', key: 'rows' } as const;
+/** The tail's `reminders` event, held for the next typed prompt (mod/prompt.ts): the pending-proposal reminders. */
+const REMINDERS = { plugin: 'sub-human', key: 'reminders' } as const;
 const HELLO = { plugin: 'sub-human', key: 'hello' } as const;
 const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' } as const;
 const ERRORS = { plugin: 'sub-human', key: 'deliveryErrors' } as const;
@@ -452,7 +452,7 @@ async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
       case 'debug': $.ui.log(a.text, { to: 'debug' }); break;
       case 'append': if (!(await appendRow($, a.text))) await noteError($); break; // refused or failed: lost
       case 'hold-pull': if (!(await holdPullEvent($, a.text))) await noteError($); break; // neither held nor appended: lost
-      case 'hold-rows': await $.state.set(ROWS, a.text); break;
+      case 'hold-reminders': await $.state.set(REMINDERS, a.text); break;
       case 'submit': void submitWake($, a.text, { seen: a.seen }); break; // not awaited: it resolves as the turn starts
       case 'mid-turn-wake': await midTurnWake($, a.text); break;
       case 'invites':
@@ -474,7 +474,7 @@ const taking = new Set<string>();
  * The seat is taken here, as a bare /sub-human would take it: join.ts through the shim with no args and the room
  * (sub_human_take: that join's seat or nothing, never a new room), then one wake in a turn of its own, never the prompt
  * that carried the line or the PIN (lib/remote/joining.ts's invariant): "You're in room CODE as NAME (check …)" for the
- * person, the seat's mechanics block for the model (takeWake), which then makes the room row's calls. Mid-turn: shown
+ * person, the seat's mechanics block for the model (takeWake); the room row is the module's own (roomRow). Mid-turn: shown
  * as a notice and appended, as any wake. A reply with nothing to take (the person typed /sub-human first) says nothing;
  * one that failed says why and the line that asks for a bare /sub-human (the tail's text). Never throws.
  */

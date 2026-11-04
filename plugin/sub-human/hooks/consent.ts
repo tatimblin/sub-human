@@ -441,9 +441,9 @@ function waitingOf(input: ConsentIn, me: Identity, ti: ConsentToolInput, plan: {
  * hash; "plan NAME vN" the hash of the pending request so titled (ps); else null. */
 const stubHash = (t: unknown, ps: () => readonly Proposal[] = () => [], me?: Identity): string | null => {
   if (typeof t !== 'string') return null;
-  const m = /^\s*(?:the room )?proposal\s+([0-9a-f]{6,12})\s*\.?\s*$/i.exec(t);
+  const m = review.STUB_PROPOSAL.exec(t);
   if (m) return m[1] ?? null; // the group always matches when m does
-  const label = /^\s*(plan\s+[a-z0-9-]{1,24}\s+v\d+)\s*\.?\s*$/i.exec(t)?.[1]?.replace(/\s+/g, ' ').toLowerCase();
+  const label = review.STUB_PLAN.exec(t)?.[1]?.replace(/\s+/g, ' ').toLowerCase();
   if (!label || !me) return null;
   return ps().find(p => titleOf(me, p) === label)?.hash ?? null;
 };

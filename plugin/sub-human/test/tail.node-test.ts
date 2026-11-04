@@ -25,7 +25,7 @@ import { rc, sn } from './support/brands.ts';
 import { must } from './support/must.ts';
 
 const FAST = {
-  resolveMs: 100, unseatedMs: 100, pollMs: 50, settleMs: 300, settleMaxMs: 1000, roomClaudeSettleMs: 300, roomClaudeSettleMaxMs: 1000,
+  resolveMs: 100, unseatedMs: 100, pollMs: 50, settleMs: 300, settleMaxMs: 1000,
   leaveMs: 600, healthMs: 5000, backoffMs: 200, backoffMaxMs: 1000, errorLogMs: 60_000, stallMs: 5000,
 };
 
@@ -149,7 +149,7 @@ test('tail: silent before join, then the member push lane, settled into one batc
   assert.doesNotMatch(t.chat().join('\n'), /#\d/, 'no ids in what the human sees');
   assert.deepEqual(t.forClaude().map(l => l.slice(0, 40)), ["(for Claude) to answer bob's Claude: Sen", '(for Claude) room now: proposal bbbbbb w']);
   assert.equal(t.forClaude()[0], `(for Claude) to answer bob's Claude: SendMessage bob.${code}`, 'a post to me names how to answer its Claude');
-  assert.doesNotMatch(t.of('rows').map(x => String(x.text)).join('\n'), /SUB-HUMAN ROWS|Agent\(/, 'no row call: the room row is the hooks module\'s');
+  assert.doesNotMatch(t.of('reminders').map(x => String(x.text)).join('\n'), /SUB-HUMAN ROWS|Agent\(/, 'no row call: the room row is the hooks module\'s');
   assert.ok(must(t.forClaude()[1]).startsWith(`(for Claude) room now: proposal ${H2.slice(0, 6)} waiting on alice · you: answer needed (`), t.forClaude()[1]);
   assert.ok(must(t.forClaude()[1]).includes(`"proposal ${H2}"`), 'the card call carries the full hash');
   assert.equal(cursor(code, 'alice'), 19);
@@ -560,7 +560,7 @@ test('tail: a member batch is chat + pull, a line to me is a wake; it says its s
   inRoom(code, r => r.append({ kind: 'question', text: 'q for alice', to: 'alice' }, { via: 'agent', from: 'bob' })); // #6 wake
   prop(code, 'claude', H2, ['alice']);                                                    // #7 a proposal for me: wake + state
   t.advance(2000);
-  assert.equal(t.writes, 1, 'ONE batch write (after the seat and rows events)');
+  assert.equal(t.writes, 1, 'ONE batch write (after the seat and reminders events)');
   const batch = t.events().filter(x => ['chat', 'pull', 'wake'].includes(x.type));
   assert.deepEqual(batch.map(x => x.type), ['chat', 'pull', 'wake'], 'chat first, then pull, then wake');
   assert.deepEqual(must(t.of('chat')[0]).lines, ['bob joined', 'bob: bob says hi']);
@@ -582,14 +582,14 @@ test('tail: rows says the pending reminders at start and when they change (never
   sys(code, 'member_joined', 'alice');                                                  // #1
   const t = startNd({ sid: 's' });
   t.advance(300);
-  const r = t.of('rows');
+  const r = t.of('reminders');
   assert.equal(r.length, 1);
   assert.equal(must(r[0]).text, null, 'nothing pending: nothing to say');
   t.advance(FAST.healthMs + 100);
-  assert.equal(t.of('rows').length, 1, 'unchanged: not sent again');
+  assert.equal(t.of('reminders').length, 1, 'unchanged: not sent again');
   prop(code, 'claude', H2, ['alice']);
   t.advance(FAST.healthMs);
-  assert.match(must(must(t.of('rows').at(-1)).text), new RegExp(H2.slice(0, 6)), 'a proposal awaiting me is reminded');
+  assert.match(must(must(t.of('reminders').at(-1)).text), new RegExp(H2.slice(0, 6)), 'a proposal awaiting me is reminded');
 });
 
 test('tail: a member\'s wake carries the room state without entry ids (the person sees the plugin prompt\'s row); the room\'s Claude\'s keeps them', () => {

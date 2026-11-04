@@ -22,7 +22,7 @@
  *   {type:'wake', text}       what needs Claude now: to me / @me, a proposal for me, a decision on mine, a task
  *                             assigned to me, an objection to my proposal (members, with the room state line when
  *                             the batch moved a proposal); the room Claude gets none (it reads nothing)
- *   {type:'rows', text|null}  what the person's next prompt carries for Claude: pending-proposal reminders
+ *   {type:'reminders', text|null}  what the person's next prompt carries for Claude: pending-proposal reminders
  *                             (members); sent at start and when it changes (the room row is the hooks module's own)
  *   {type:'health', text, quiet?}   a hash-chain break (one line per break); in a room hosted elsewhere linkLine each
  *                             time the link goes off and LINK_BACK once it is online again (quiet: the debug log and
@@ -44,7 +44,7 @@
 import nodeFs from 'node:fs';
 import * as realClock from './clock.ts';
 import * as config from './config.ts';
-import { envMs, envStr } from './env.ts';
+import { envMs } from './env.ts';
 import { stageOf } from './consent/review.ts';
 import { lazy } from './io.ts';
 import * as identityMod from './identity.ts';
@@ -99,8 +99,6 @@ interface Timings {
   pollMs: number;
   settleMs: number;
   settleMaxMs: number;
-  roomClaudeSettleMs: number;
-  roomClaudeSettleMaxMs: number;
   leaveMs: number;
   healthMs: number;
   backoffMs: number;
@@ -202,10 +200,6 @@ function timings(): Timings {
     pollMs: envMs('SUB_HUMAN_POLL_MS'),
     settleMs,
     settleMaxMs,
-    // The headless room Claude waits longer (nobody watches its latency), so a burst of answers, task requests or a
-    // join lands as one turn, unless the member values are set explicitly.
-    roomClaudeSettleMs: envStr('SUB_HUMAN_SETTLE_MS') ? settleMs : config.ROOM_CLAUDE_SETTLE_MS,
-    roomClaudeSettleMaxMs: envStr('SUB_HUMAN_SETTLE_MAX_MS') ? settleMaxMs : config.ROOM_CLAUDE_SETTLE_MAX_MS,
     leaveMs: envMs('SUB_HUMAN_LEAVE_MS'),
     healthMs: envMs('SUB_HUMAN_TAIL_HEALTH_MS'),
     backoffMs: config.TAIL_BACKOFF_MS,
@@ -493,8 +487,7 @@ function startSession(me: Identity, ctx: TailCtx): Session {
   saveCursor(after);
   // its calls (save, stalled, moved, killPoll, stop) are filled in below, before the loop reads them
   const s = { key: `${me.code}/${me.name}/${me.role}`, code: me.code, dead: false, lastTick: clock.now() } as Session;
-  const settleMs = me.role === 'claude' ? t.roomClaudeSettleMs : t.settleMs;
-  const settleMaxMs = me.role === 'claude' ? t.roomClaudeSettleMaxMs : t.settleMaxMs;
+  const { settleMs, settleMaxMs } = t;
   const cursor = cursorKeeper(saveCursor, after, { log, dead: () => s.dead });
   let seen = after;
   s.save = () => cursor.save();
@@ -543,15 +536,15 @@ function startSession(me: Identity, ctx: TailCtx): Session {
 
   // Health: the hash chain from this process's checkpoint (one line per break), the link of a room hosted elsewhere
   // (one line each time it goes down), and the room Claude's watchdog.
-  let breakKey: string | null = null, linkKey: string | null = null, flushKey: string | null | undefined, rowsSent: string | null | undefined;
-  function sendRows() {
+  let breakKey: string | null = null, linkKey: string | null = null, flushKey: string | null | undefined, remindersSent: string | null | undefined;
+  function sendReminders() {
     let text: string | null = null;
     try {
       text = remindersText(me, rm, deps) || null;
-    } catch (e) { log('rows', e); return; }
-    if (text === rowsSent) return;
-    rowsSent = text;
-    emit([{ type: 'rows', text }]);
+    } catch (e) { log('reminders', e); return; }
+    if (text === remindersSent) return;
+    remindersSent = text;
+    emit([{ type: 'reminders', text }]);
   }
   function linkHealth() {
     const st = deps.linkStatus(s.code);
@@ -605,7 +598,7 @@ function startSession(me: Identity, ctx: TailCtx): Session {
   }
   function health() {
     try { deps.heartbeat(me); } catch (e) { log('seat heartbeat', e); } // the seat's lease (identity.heartbeat)
-    sendRows();
+    sendReminders();
     if (rm.store && rm.store.isHost && me.role !== 'claude') { try { admitHealth(); } catch (e) { log('admission', e); } }
     if (rm.store && rm.store.isHost && me.role !== 'claude') { try { inviteHealth(rm.store); } catch (e) { log('invites', e); } }
     if (rm.store && !rm.store.isHost) linkHealth();
@@ -637,7 +630,7 @@ function startSession(me: Identity, ctx: TailCtx): Session {
   const healthLoop = timerLoop(loops, 'health check', health, t.healthMs);
   pollLoop.start(true);
   healthLoop.start(false);
-  sendRows();
+  sendReminders();
 
   s.stalled = () => clock.now() - s.lastTick > t.stallMs;
   s.killPoll = () => pollLoop.stop(); // tests: simulate a poll loop that died

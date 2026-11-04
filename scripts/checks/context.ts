@@ -6,11 +6,10 @@
  * ctx.A, B (the two people: A opened the room, B joined; screens/run.json seats, default alice and bob), remote
  * ({NAME: HOME}: a seat on another machine and its sub-human home there, --film's jess; run.json remote), rowsDir(NAME)
  * (that seat's rows/: in the host's room dir, or in its own mirror), sessionOf(NAME) (that seat's session document,
- * members/NAME/session.json, there: its delivery cursor, the notices it was shown, its holds), DEMO (the
+ * members/NAME/session.json, there: its delivery cursor, the notices it was shown), DEMO (the
  * scripted words), code, roomDir, log, members, roomClaudeSid, job, index (screens/index.json), home2 (S11's second home, carol's: by
  * default home's sibling), and the helpers of four modules:
- *   checks/captures.ts     the captures (cap, caps, capName, span, runStart) and the per-step state (st, stText, nativeTasks,
- *                          holdsAt)
+ *   checks/captures.ts     the captures (cap, caps, capName, span, runStart) and the per-step state (st, stText, nativeTasks)
  *   checks/transcripts.ts  the seats' transcripts (entries, inSpan, toolUses, assistantIds, peerIn, wakeIn, chatIn,
  *                          pullIn, chatTurn, roomClaudeTurns, replyAfter, noModelTurn, rowUserText, rowReply)
  *   checks/log.ts          the room log (byKind, fmt, logIn, props, drafts, shownLog, shownVia, chainOk)

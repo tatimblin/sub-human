@@ -66,7 +66,7 @@ test('judge: core, cosmetic and test failures gate nothing (unverified only); a 
   assert.deepEqual(judged(['a-tasks']).off, ['tasks']);
   assert.deepEqual(judged(['a-edit']).off, ['plan-edit']);
   assert.deepEqual(judged(['a-sign']).off, ['plan-edit', 'sign-off'], 'a plan edit goes through plan mode too');
-  assert.deepEqual(judged(['a-sign', 'a-room', 'a-tasks', 'a-core']).off, ['room-session', 'tasks', 'plan-edit', 'sign-off'], 'GATED order');
+  assert.deepEqual(judged(['a-sign', 'a-room', 'a-tasks', 'a-core']).off, ['tasks', 'plan-edit', 'sign-off'], 'GATED order; room-session gates nothing');
   // an entry reported changed on the version counts as failed there, though the probe found it
   assert.deepEqual(judged([], '9.0.1').failed, ['a-later']);
   assert.deepEqual(judged([], '2.1.900').failed, []);
@@ -118,7 +118,7 @@ test('read, record and off: kept per version under the home; a changed contract 
   assert.deepEqual(verdict.forced(), ['plan-edit', 'sign-off']);
   assert.equal(verdict.off('plan-edit'), true);
   assert.equal(verdict.off('tasks'), false);
-  assert.deepEqual(verdict.forced({ SUB_HUMAN_CC_OFF: 'tasks,room-session' }), ['room-session', 'tasks']);
+  assert.deepEqual(verdict.forced({ SUB_HUMAN_CC_OFF: 'room-row,tasks,room-session' }), ['tasks', 'room-row'], 'GATED order; room-session is no gate');
 });
 
 test('off with no version: the session lease\'s, else the version last seen on this machine', t => {

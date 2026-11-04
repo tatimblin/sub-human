@@ -4,7 +4,7 @@
  *   seat -> follow it; chat -> $.ui.log per line (a notice is one line, cc CONTRACT ui-log-notice); pull -> held in $.state
  *   (holdPull) and carried as context beside the next prompt (pullContext, mod/prompt.ts), never a user row of its
  *   own, which the model read as one turn with the person's next words (stage 8e B); wake -> $.prompt.submit when idle, else append plus log, re-checked at the turn's end (turnLedger);
- *   rows -> held for the next prompt (proposal reminders); health -> log (quiet: the debug log) plus
+ *   reminders -> held for the next prompt (proposal reminders); health -> log (quiet: the debug log) plus
  *   append; take -> the
  *   module takes a let-in join's seat (the join shim, args '') and wakes the model with its block (takeWake).
  * Failure: pull is at most once (PULL_DELIVERY): the tail's cursor moves when the line is written, so a mod lost
@@ -56,7 +56,7 @@ export const WAKE_CONTEXT: string = `${FOR_CLAUDE} sub-human: the prompt above i
 export const WAKE_RESEND: string = `${FOR_CLAUDE} sub-human: room lines came during your last turn (the row above; the person saw them). Act on what concerns you.`;
 
 /** Every event type the tail writes, keyed so a type added to TailEvent and not here (or here and not there) does not compile. */
-const TYPES: { readonly [T in TailEvent['type']]: true } = { seat: true, chat: true, pull: true, wake: true, rows: true, health: true, invites: true, take: true };
+const TYPES: { readonly [T in TailEvent['type']]: true } = { seat: true, chat: true, pull: true, wake: true, reminders: true, health: true, invites: true, take: true };
 const isType = (t: unknown): t is TailEvent['type'] => typeof t === 'string' && Object.hasOwn(TYPES, t);
 
 /** The room tail, on a node that runs the plugin (hooks/node.sh, as every node command Claude Code starts). */
@@ -100,7 +100,7 @@ export function parseEvent(line: string): TailEvent | null {
       return { type: 'seat', seat: rec(s) && str(s.name) && isRoomCode(s.code) ? { ...s, name: s.name, code: s.code } : null };
     }
     case 'chat': return Array.isArray(o.lines) && o.lines.length ? { type: 'chat', lines: o.lines.map(String) } : null;
-    case 'rows': return { type: 'rows', text: str(text) ? text : null };
+    case 'reminders': return { type: 'reminders', text: str(text) ? text : null };
     case 'invites': {
       if (!Array.isArray(o.open)) return null;
       const expired = Array.isArray(o.expired) ? o.expired.filter((r: unknown): r is string => typeof r === 'string') : [];
@@ -131,7 +131,7 @@ export const logLines = (x: unknown): { do: 'log'; text: string }[] => (Array.is
 
 /**
  * [action], each {do:'log'|'append'|'mid-turn-wake', text} | {do:'submit', text, seen} |
- * {do:'hold-rows', text|null} | {do:'seat', seat} | {do:'invites', open, expired?} (the room's open invite refs: the module unpins one not among them, and says so when it lapsed unused: expired). A mid-turn wake is appended now and handed to turnLedger, since the
+ * {do:'hold-reminders', text|null} | {do:'seat', seat} | {do:'invites', open, expired?} (the room's open invite refs: the module unpins one not among them, and says so when it lapsed unused: expired). A mid-turn wake is appended now and handed to turnLedger, since the
  * request in flight may not carry it. A submit's `seen` are the lines the person would see, logged when the submit
  * does not take the wake.
  */
@@ -144,7 +144,7 @@ export function route(
     case 'seat': return [{ do: 'seat', seat: ev.seat }];
     case 'chat': return logLines(ev.lines);
     case 'pull': return [{ do: 'hold-pull', text: ev.text }];
-    case 'rows': return [{ do: 'hold-rows', text: ev.text }];
+    case 'reminders': return [{ do: 'hold-reminders', text: ev.text }];
     // a quiet health line (the link down and back: nothing lost) goes to the debug log; Claude reads it either way
     case 'health': return [...(ev.quiet ? [{ do: 'debug' as const, text: ev.text }] : logLines(ev.text)), { do: 'append', text: `${FOR_CLAUDE} ${ev.text}` }];
     case 'invites': return [{ do: 'invites', open: ev.open, ...(ev.expired ? { expired: ev.expired } : {}) }];

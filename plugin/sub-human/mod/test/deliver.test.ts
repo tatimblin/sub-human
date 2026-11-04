@@ -200,7 +200,7 @@ test('a wake mid-turn whose append is refused falls back to a prompt, whole', as
 })
 
 test('rows are held and ride on the person\'s next typed prompt as context, once the child delivers', async ($, on) => {
-  const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT }) + line({ type: 'rows', text: 'SUB-HUMAN ROWS: your room row is not running' })] })
+  const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT }) + line({ type: 'reminders', text: 'SUB-HUMAN ROWS: your room row is not running' })] })
   const contexts = seen.contexts
   await start($)
   await until(() => seen.spawns.length === 1)
@@ -273,7 +273,7 @@ test('stage 8e B: a typed @room the plugin stops starts no turn, so the room con
 })
 
 test('the held rows text rides once per change: the same text on the next prompt is not added again; a changed text is', async ($, on) => {
-  const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT }) + line({ type: 'rows', text: 'proposal a1 still awaits alice' })] })
+  const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT }) + line({ type: 'reminders', text: 'proposal a1 still awaits alice' })] })
   const typed = (text: string) => $.prompt.submit({ text, origin: { kind: 'composer' }, wait: false })
   await start($)
   await until(() => seen.spawns.length === 1)
@@ -282,7 +282,7 @@ test('the held rows text rides once per change: the same text on the next prompt
   expect(seen.contexts.at(-1)).toEqual(['proposal a1 still awaits alice'])
   await typed('second')
   expect(seen.contexts.at(-1) ?? []).toEqual([])
-  seen.feed(line({ type: 'rows', text: 'proposal b2 still awaits alice' }))
+  seen.feed(line({ type: 'reminders', text: 'proposal b2 still awaits alice' }))
   await new Promise(r => setTimeout(r, 50))
   await typed('third')
   expect(seen.contexts.at(-1)).toEqual(['proposal b2 still awaits alice'])

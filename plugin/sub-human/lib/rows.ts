@@ -1,17 +1,19 @@
 /**
  * plugin/sub-human/lib/rows.ts: the room row in the agent panel, as text.
  * Reads the room log, members and presence; writes nothing but the blocks of a seat's session document
- * (hooks/handlers/row-hold.ts, lib/room/session.ts) and, when sweeping, the rows/* documents older versions kept.
+ * (hooks/handlers/row-hold.ts, lib/room/session.ts).
  *
  * One row per member session: the room row (agents/room.md, sub-human:room, labelled by the room code), which the
- * hooks module spawns itself ($.agent.spawn, mod/rows.ts): the model never spawns or sees a row call. It lives as long
- * as its viewer is in the room (mcp/hold.ts: one live room hold per session; a second is told "STOP: duplicate row").
+ * hooks module spawns itself ($.agent.spawn, mod/deliver.ts roomRow): the model never spawns or sees a row call. It
+ * lives as long as its viewer is in the room (mcp/hold.ts: one live room hold per session; a second is told "STOP:
+ * duplicate row").
  *
- * Row text is deterministic from the log, members and the presence/<name> documents, <= ROW_MAX chars, no label.
- * No entry ids (people never see them); task ids ("#2") are the room task list's numbers. A proposal is named by its
- * title (clipped to ROW_TITLE_MAX; the 6-char hash when there is none): rows are for people, and no tool call is made
- * from them. Proposals come from lib/room/consent.ts fold, the same state stateLine and the consent gate read. The
- * row names who else is here. Segments that do not fit are dropped.
+ * hereLine is who else is here (names and what their fresh presence says): the lead of the row's own line (mcp/hold.ts).
+ * rowText is the opt-in status line: deterministic from the log, members and the presence/<name> documents, <= ROW_MAX
+ * chars, no label. No entry ids (people never see them); task ids ("#2") are the room task list's numbers. A proposal
+ * is named by its title (clipped to ROW_TITLE_MAX; the 6-char hash when there is none): rows are for people, and no
+ * tool call is made from them. Proposals come from lib/room/consent.ts fold, the same state stateLine and the consent
+ * gate read. Segments that do not fit are dropped.
  */
 
 import * as identity from './identity.ts';
@@ -23,9 +25,8 @@ import { lazy } from './io.ts';
 import * as text from './text.ts';
 import * as linkState from './room/link-state.ts';
 import {
-  ROW_MAX, ROW_TITLE_MAX, ROWS_TTL_MS, PRESENCE_STALE_MS,
+  ROW_MAX, ROW_TITLE_MAX, PRESENCE_STALE_MS,
 } from './config.ts';
-import type { RowRec } from './types-app.ts';
 import type { Entry, LinkState, Member, Members, Presence, PresenceState } from './room/types.ts';
 // the room row's agent type is mod/core/rows.ts's (the module spawns it)
 import { ROOM_AGENT } from '../mod/core/rows.ts';
@@ -72,8 +73,6 @@ interface RowOpts {
 }
 /** rowText's options: who looks (viewer). */
 interface RowFor extends RowOpts { viewer?: string | null }
-/** The row map document rows/<session_id> older versions kept. */
-interface RowMap { byAgent?: Record<string, RowRec> }
 
 const { NAME_RE, oneLine } = text;
 
@@ -123,27 +122,6 @@ function memberList(members: MemberInput): Member[] {
 const isActive = (m: Member | null | undefined) => !!m && !m.left_at && !m.lapsed_at; // lapsed: lib/seats.ts sweep
 const isRoomClaude = (m: Member) => m.role === 'claude' || m.name === 'claude';
 function readMembers(code: RoomCode): Members { try { return identity.readMembers(code) || {}; } catch { return {}; } }
-
-// ---------- the rows/* documents of older versions (an agent -> row map per session) ----------
-const sessionKeys = (code: RoomCode): string[] => { try { return kvOf(code).list('rows/'); } catch { return []; } };
-
-/**
- * Drop the agent -> row maps older versions kept per session: a map whose newest row is ROWS_TTL_MS old and whose
- * session holds no live seat (identity.resolveBySession). lib/gc.ts sweepRows, at a join. Returns how many.
- */
-function pruneRowMaps(code: RoomCode, now: number = Date.now()): number {
-  const kv = kvOf(code);
-  let n = 0;
-  for (const k of sessionKeys(code)) {
-    const m: RowMap | null = kv.get(k, null);
-    const ats = m && m.byAgent && typeof m.byAgent === 'object' ? Object.values(m.byAgent).map(r => Date.parse(String(r && r.at))).filter(Number.isFinite) : [];
-    if (ats.length && now - Math.max(...ats) < ROWS_TTL_MS) continue;
-    if (identity.resolveBySession(k.slice('rows/'.length))) continue; // a live seat's session: its map stays
-    kv.delete(k);
-    n++;
-  }
-  return n;
-}
 
 /** A row agent's stops blocked so far (hooks/handlers/row-hold.ts; the seat's session document), and setting it. */
 interface RowHold { seat: SeatName; agent: string }
@@ -351,5 +329,5 @@ function rowText(code: RoomCode, { viewer, ...opts }: RowFor = {}): string {
 const rowLine = (label: string, text: string | null | undefined): string => (text ? `${label}  ${text}` : label);
 
 export {
-  ROOM_AGENT, ROW_MAX, rowText, rowLine, hereLine, readLog, fit, pruneRowMaps, blockCount, setBlockCount,
+  ROOM_AGENT, ROW_MAX, rowText, rowLine, hereLine, readLog, fit, blockCount, setBlockCount,
 };

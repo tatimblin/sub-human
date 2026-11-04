@@ -11,7 +11,7 @@ export function run(x: Ctx, { det, beh }: { det: Det, beh: Beh }, T: Thresholds)
   const B = metrics.BASELINE, P = metrics.PHASE0, S = metrics.PREV;
   const per = (s: string): string => `${s} ${M.seats[s]?.wakes.turns}`;
   beh(`Room-caused model wakes ≤ ${T.wakes} (${B.run} ${B.wakes.total}; Phase 0 ${P.wakes.total}; ${S.run} ${S.wakes.total})`, M.total.wakes, T.wakes,
-    `${M.total.wakes} wakes (${['claude', x.A, x.B].map(per).join(', ')}); plugin prompts (${M.total.pluginWakes}), peer deliveries and row-rewake that started a turn`);
+    `${M.total.wakes} wakes (${['claude', x.A, x.B].map(per).join(', ')}); plugin prompts (${M.total.pluginWakes}), and peer deliveries that started a turn`);
   // people's words, joins and leaves are chat rows plus an isMeta copy; none starts a model turn
   const C = M.total.chat;
   det('Chat bursts cost 0 model calls (chat is shown, never a wake)', C.notices > 0 && C.calls === 0,

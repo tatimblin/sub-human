@@ -1,9 +1,8 @@
 // Wiring: the session's hello and its SessionStart (mod/deliver.ts). Run with `npm run test:mods`.
 // A session with no session index starts no node at its start: the hello is the module's own (the home from the
 // environment, no seat), and its lease is written when /sub-human first runs. A /clear, compact or resume puts a seat
-// back through node session-restore, then says hello; a member's rows then come with its next prompt (0.6.0: no wake and
-// no line; the room session's resume still runs row-rewake, whose row calls are its wake). A session surely without a
-// seat does none of it.
+// back through node session-restore, then says hello; the room row comes back on its own (mod/deliver.ts roomRow: no
+// wake, no line). A session surely without a seat does none of it.
 import type { EventOf, On } from 'claude-code'
 import { test, expect, mock, type ClassicFields, type Engine } from 'claude-code/testing'
 import { debugLines, SEAT, helloOf, must, ran, scriptOf, session, start, stdinOf, type Seat } from './support.ts'
@@ -66,10 +65,9 @@ test('a session index: mod-hello at session start', async ($, on) => {
   expect(seen.runs[0]).toBe('mod-hello.ts')
 })
 
-test('a resumed seat: session-restore puts it back (its context and title), then the hello; a member\'s rows come with the next prompt: no row-rewake, no wake, no line', async ($, on) => {
+test('a resumed seat: session-restore puts it back (its context and title), then the hello; no wake, no line', async ($, on) => {
   const restore = { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: 'SUB-HUMAN: you are alice', sessionTitle: SEAT.addr } }
-  const calls = 'sub-human: this session was resumed and its rows did not survive it. Re-create them now, exactly as written:\nAgent({subagent_type: "sub-human:room"})\nMake only these calls, then end your turn with the one word "ok".'
-  const seen = world($, on, { indexed: true, seat: SEAT, answer: { 'session-restore.ts': { stdout: JSON.stringify(restore) }, 'row-rewake.ts': { exitCode: 2, stderr: calls } } })
+  const seen = world($, on, { indexed: true, seat: SEAT, answer: { 'session-restore.ts': { stdout: JSON.stringify(restore) } } })
   await start($)
   seen.runs.length = 0
   const r = await $.classic.SessionStart({ session_id: SID, source: 'resume', cwd: '/w', transcript_path: '/t.jsonl' })
@@ -78,9 +76,6 @@ test('a resumed seat: session-restore puts it back (its context and title), then
   await until(() => seen.runs.includes('mod-hello.ts'))
   await new Promise(resolve => setTimeout(resolve, 50))
   expect(seen.runs.slice(0, 2)).toEqual(['session-restore.ts', 'mod-hello.ts'])
-  // 0.6.0: "restoring this session's rows" is gone: the rows ride with the person's next prompt (the tail's rows
-  // event), said again since the resume
-  expect(seen.runs).not.toContain('row-rewake.ts')
   expect(seen.prompts).toEqual([])
 })
 
@@ -92,10 +87,9 @@ test('a session surely without a seat: compact, clear and resume start no node',
   expect(seen.runs).toEqual([])
 })
 
-test('a fork (← the agent view moved the conversation into a bg job, a new session id with no index): session-restore runs anyway and takes the old seat, then the hello names it; a member\'s rows come with the next prompt', async ($, on) => {
+test('a fork (← the agent view moved the conversation into a bg job, a new session id with no index): session-restore runs anyway and takes the old seat, then the hello names it; no wake, no line', async ($, on) => {
   const restore = { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: 'SUB-HUMAN: you are alice\n(restored after the agent view)', sessionTitle: SEAT.addr } }
-  const calls = 'sub-human: this session was resumed, and its rows are NOT running.\nAgent({subagent_type: "sub-human:room"})'
-  const seen = world($, on, { seat: SEAT, answer: { 'session-restore.ts': { stdout: JSON.stringify(restore) }, 'row-rewake.ts': { exitCode: 2, stderr: calls } } })
+  const seen = world($, on, { seat: SEAT, answer: { 'session-restore.ts': { stdout: JSON.stringify(restore) } } })
   await start($)
   expect(seen.runs).toEqual([]) // no index for the new id: the hello is the module's own
   const r = await $.classic.SessionStart({ session_id: SID, source: 'fork', cwd: '/w', transcript_path: '/t.jsonl' })
@@ -104,11 +98,10 @@ test('a fork (← the agent view moved the conversation into a bg job, a new ses
   expect(seen.runs.slice(0, 2)).toEqual(['session-restore.ts', 'mod-hello.ts'])
   expect(seen.stdin['session-restore.ts']?.source).toBe('fork')
   await new Promise(resolve => setTimeout(resolve, 50))
-  expect(seen.runs).not.toContain('row-rewake.ts')
   expect(seen.prompts).toEqual([])
 })
 
-test('a fork with nothing to take back: session-restore says nothing, no tail child, no rewake', async ($, on) => {
+test('a fork with nothing to take back: session-restore says nothing, no tail child', async ($, on) => {
   const seen = world($, on)
   await start($)
   const r = await $.classic.SessionStart({ session_id: SID, source: 'fork', cwd: '/w', transcript_path: '/t.jsonl' })
