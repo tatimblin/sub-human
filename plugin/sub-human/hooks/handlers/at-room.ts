@@ -7,10 +7,10 @@
 // Out: continue:false + "Sent" (drawn as nothing by the module; the person's row stays, the model sees it next turn); a refusal of the person's own
 // typed words (no seat, nothing after the tag, the room refused it) is a stop too, with the reason (refuse); decision:
 // block + suppressOriginalPrompt only where the text must never reach the model as the person's (no or another origin;
-// in the room's Claude a typed prompt is a stop with its hint, which the model reads as a refusal). Failure: no origin, a bad nonce or no seat
-// refuses, and the person types it again. In the room's session, a typed prompt is refused (it takes no typed input);
-// with no origin it runs, so a reload never loses its rows turn. It writes no presence: the module is its one writer
-// (mod/prompt.ts, through hooks/handlers/presence.ts).
+// in the room's Claude a prompt is a stop with its hint, which the model reads as a refusal). Failure: no origin, a bad nonce or no seat
+// refuses, and the person types it again. The room's session runs only its launch prompt (its first, /sub-human):
+// every other prompt is refused, whatever its origin (typed, a peer's message, a wake, none). It writes no presence:
+// the module is its one writer (mod/prompt.ts, through hooks/handlers/presence.ts).
 // A post the store refuses (RATE, AUTH, OFFLINE with the outbox full or the link over for good) blocks the prompt with
 // the reason. In a room hosted elsewhere whose link is down, the daemon queues the signed post instead
 // (lib/remote/outbox.ts) and "⧗ queued" ends the prompt; it is sent, in order, when the link is back. With no daemon
@@ -92,9 +92,9 @@ function firstPrompt(input: PromptIn): boolean {
   return !es.some(e => e && e.type === 'user' && !e.isMeta && e.promptId && e.promptId !== input.prompt_id && !e.isSidechain);
 }
 
-/** For a room Claude session: null when the prompt may run (anything not typed, the launch command), else the refusal. */
-function roomClaudeRefusal(me: Identity, input: PromptIn, prompt: string, origin: string | null): string | null {
-  if (origin === null || !TYPED_ORIGINS.includes(origin)) return null;
+/** For a room Claude session: null when the prompt may run (only its launch command, its first prompt), else the
+ * refusal, whatever the origin. */
+function roomClaudeRefusal(me: Identity, input: PromptIn, prompt: string): string | null {
   return LAUNCH.test(prompt) && firstPrompt(input) ? null : roomClaudeHint(me);
 }
 
@@ -113,8 +113,8 @@ function handle(input: PromptIn): void {
   const claimed = typeof input.sub_human_origin === 'string' ? input.sub_human_origin : null;
   const raw = prompt.startsWith('/') ? null : parse(prompt);
   const me = whoami(input);
-  if (me && me.role === 'claude') { // the origin unchecked: a forged one here only refuses more
-    const refusal = roomClaudeRefusal(me, input, prompt, claimed);
+  if (me && me.role === 'claude') { // whatever the origin: the room's session acts on no prompt but its launch
+    const refusal = roomClaudeRefusal(me, input, prompt);
     // a stop, as members' refusals are (item 13): no "UserPromptSubmit operation blocked by hook:" frame, nothing put
     // back in the input; the hint is the stop's reason, which the room's Claude reads too (it acts on nothing typed)
     if (refusal) return refuse(refusal);

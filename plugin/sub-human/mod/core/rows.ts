@@ -7,13 +7,15 @@
  *   roomRowFor(hello, sid) -> code|null   the room whose row this session wants: a member's seat of this session id,
  *                                    the verdict's room-row on (mod/core/cc.ts GATED); null for the room session, no
  *                                    seat, another session's hello
- *   liveRow(agents) -> id|null       a room row $.agent.list still runs (any status but completed, failed, killed)
+ *   liveRow(agents, code, skip) -> id|null   room code's row that $.agent.list still runs (any status but completed,
+ *                                    failed, killed), past the ids in skip
  *   rowSpawn(code)                   $.agent.spawn's input: description the room code (the row's label), prompt
  *                                    "room: CODE"
  *   spawnStep(ledger, code, now) -> {spawn, ledger}   whether a spawn may go now: one at a time per room, at most one
- *                                    each ROW_RESPAWN_MS and ROW_SPAWNS_MAX per process, so a row that dies at once
+ *                                    each ROW_RESPAWN_MS and ROW_SPAWNS_MAX in a row, so a row that dies at once
  *                                    never loops; spawnDone(ledger, code, started) ends one (one that started nothing
- *                                    may go again at once)
+ *                                    may go again at once); spawnLived (the row found live: the count starts over);
+ *                                    spawnForget (the seat changed: the room's ledger goes)
  *   handbackFrom(text) -> id|null    the agent whose final report a delivery is (Claude Code's "[Subagent hand-back]"
  *                                    frame inside <agent-message from="ID">: cc CONTRACT subagent-handback-message)
  *   rowReportFrom(text) -> id|null   the agent whose hand-back is the room row's own last word (its report is exactly
@@ -37,8 +39,10 @@ export function roomRowFor(hello: Hello | null | undefined, sid: unknown): strin
 
 /** The statuses of an agent that no longer runs ($.agent.list keeps it listed a while). */
 const ENDED = new Set(['completed', 'failed', 'killed']);
-export function liveRow(agents: readonly { id: string; type: string; status: string }[]): string | null {
-  return agents.find(a => a.type === ROOM_AGENT && !ENDED.has(a.status))?.id ?? null;
+/** The room row of room code that $.agent.list still runs (its description is the code: rowSpawn), past the ids in
+ * skip (rows listed before a spawn: not the one it started). A row of another room (the seat changed) is not it. */
+export function liveRow(agents: readonly { id: string; type: string; status: string; description?: string }[], code: string, skip: ReadonlySet<string> = new Set()): string | null {
+  return agents.find(a => a.type === ROOM_AGENT && a.description === code && !ENDED.has(a.status) && !skip.has(a.id))?.id ?? null;
 }
 
 export const rowSpawn = (code: string): { subagentType: string; description: string; prompt: string } => ({ subagentType: ROOM_AGENT, description: code, prompt: `room: ${code}` });
@@ -57,6 +61,18 @@ export function spawnStep(ledger: SpawnLedger, code: string, now: number): { spa
 export function spawnDone(ledger: SpawnLedger, code: string, started = true): SpawnLedger {
   const cur = ledger[code];
   return cur ? { ...ledger, [code]: { ...cur, busy: false, ...(started ? {} : { at: -Infinity }) } } : ledger;
+}
+/** A turn start found code's row live: it did not die at once, so its spawns count from none again (the cap is for
+ * rows that die quickly). */
+export function spawnLived(ledger: SpawnLedger, code: string): SpawnLedger {
+  const cur = ledger[code];
+  return cur && cur.n ? { ...ledger, [code]: { ...cur, n: 0 } } : ledger;
+}
+/** The seat changed (a leave, a take): code's ledger starts over. */
+export function spawnForget(ledger: SpawnLedger, code: string): SpawnLedger {
+  if (!(code in ledger)) return ledger;
+  const { [code]: _gone, ...rest } = ledger;
+  return rest;
 }
 
 /** @cc [Subagent hand-back] The text below is the final report of a subagent this session delegated to.

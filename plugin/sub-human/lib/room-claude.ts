@@ -10,7 +10,9 @@
  * daemon-env-filter), with the login basics filled in when missing. The room Claude's own env comes from the
  * --settings launch flag: SUB_HUMAN_HOME, SUB_HUMAN_ROOM,
  * CLAUDE_CODE_TASK_LIST_ID=sh-CODE, CLAUDE_CODE_ENABLE_TODO_TOOLS=1, the spawner's SUB_HUMAN_*_MS overrides, plus
- * crossSessionInbound "refuse" (a peer's message would start a turn; nobody needs to reach it). No --model: it runs on the user's default model. cwd is the joiner's: --bg refuses
+ * crossSessionInbound "refuse" (a peer's message would start a turn; nobody needs to reach it). No --model: it runs on the user's default model.
+ * Its agent (agents/room-claude.md) lists one tool, TaskList (read-only), so it has no other: an agent with no tools
+ * line gets every tool. cwd is the joiner's: --bg refuses
  * an untrusted cwd (a fresh temp dir is never trusted). Before it starts, openTaskList (the join, once its claim
  * holds: lib/seats.ts ensureRoomClaude) records the room session's native task list directory (members.claude.tasks_dir:
  * <its config dir>/tasks/sh-CODE) and makes it, so the session's task view watches a directory that exists (contract

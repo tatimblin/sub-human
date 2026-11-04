@@ -21,7 +21,7 @@ import { mergeClassic } from './core/prompt.ts';
 import { factsBook, type FactsBook } from './core/facts.ts';
 import { asHello, asNonce, mintNonce } from './core/state.ts';
 import { ccNotice } from './core/cc.ts';
-import { roomRowFor, liveRow, rowSpawn, spawnStep, spawnDone, type SpawnLedger } from './core/rows.ts';
+import { roomRowFor, liveRow, rowSpawn, spawnStep, spawnDone, spawnLived, spawnForget, type SpawnLedger } from './core/rows.ts';
 import { noteRow } from './rows.ts';
 import { copyBook, copyWake, copyTo, copyNews, clipboardCommands, AUTO_COPIED, NO_TOOL, type CopyBook } from './core/copy.ts';
 import {
@@ -316,12 +316,21 @@ const ROOM_SERVER = 'room';
  * runs one, spawned with $.agent.spawn (no Agent call of the model's, no "Backgrounded agent" block: cc CONTRACT
  * module-agent-spawn-quiet) while the room server is connected (the row's one tool is its hold). So a join's own turn
  * starts it, a resume, a fork or a /clear gets it back with no prompt, and a row that died at the next turn; spawnStep
- * keeps a row that dies at once from looping. Not awaited; never throws.
+ * keeps a row that dies at once from looping (a row found live starts its count over; a seat change forgets it). One
+ * run at a time (rowing, set before any await: SessionStart's and turn.start's would both spawn). Not awaited; never
+ * throws.
  */
-async function roomRow($: EngineInterface) {
+let rowing: Promise<void> | null = null;
+function roomRow($: EngineInterface): Promise<void> {
+  rowing ??= rowOnce($).finally(() => { rowing = null; });
+  return rowing;
+}
+async function rowOnce($: EngineInterface) {
   try {
     const code = roomRowFor(asHello((await $.state.get(HELLO)).value), await $.session.id());
-    if (!code || liveRow(await $.agent.list())) return;
+    if (!code) return;
+    const before = await $.agent.list();
+    if (liveRow(before, code)) { spawns = spawnLived(spawns, code); return; }
     if (!(await $.mcp.connect(ROOM_SERVER)).isConnected) return;
     const step = spawnStep(spawns, code, await $.clock.now());
     if (!step.spawn) return;
@@ -329,13 +338,17 @@ async function roomRow($: EngineInterface) {
     let started = false;
     try {
       const r = await $.agent.spawn(rowSpawn(code));
-      // its id, for its hand-back: the answer's, else the list's (an answer a hook gave carries none)
-      const id = r.deny === undefined ? r.agentId ?? liveRow(await $.agent.list()) : null;
+      // its id, for its hand-back: the answer's, else the list's new row of this room (an answer a hook gave carries none)
+      const id = r.deny === undefined ? r.agentId ?? liveRow(await $.agent.list(), code, new Set(before.map(a => a.id))) : null;
       started = !!id;
       if (id) { noteRow(id); $.ui.log(`rows: room row ${code} started`, { to: 'debug' }); }
       else $.ui.log(`rows: room row ${code} not started${r.deny !== undefined ? `: ${r.deny}` : ''}`, { to: 'debug' });
     } finally { spawns = spawnDone(spawns, code, started); }
   } catch { /* the next turn tries again */ }
+}
+/** The seat this session holds changed (a leave, a take): the rooms' spawn counts start over. */
+function seatChanged(...codes: (string | null | undefined)[]): void {
+  for (const code of codes) if (code) spawns = spawnForget(spawns, code);
 }
 
 async function midTurnWake($: EngineInterface, text: string) {
@@ -491,6 +504,7 @@ async function takeSeat($: EngineInterface, c: Child, a: { code: string; name: s
       for (const line of [...reply.lines, takeFallback(a.code, a.text)]) $.ui.log(line);
       return;
     }
+    seatChanged(...Object.keys(spawns), a.code); // the seat taken: its row's count starts over
     try { await refresh($, sid); childFor($, sid, asHello((await $.state.get(HELLO)).value)); } catch { /* the tail looks the seat up itself */ }
     const hello = asHello((await $.state.get(HELLO)).value);
     const seat = hello && hello.sid === sid ? hello.seat : null;
@@ -676,6 +690,7 @@ export function registerDeliver(on: On): void {
     // what join.ts sent for the debug log (a lock's path, the room session's start error): never the person's line
     if ((reply.kind === 'joined' || reply.kind === 'say') && reply.debug) $.ui.log(reply.debug, { to: 'debug' });
     if (reply.kind === 'joined') {
+      seatChanged(...Object.keys(spawns)); // a seat taken: whichever room it is, its row's count starts over
       joined = { sid, context: reply.context };
       try {
         const r = await next(e);
@@ -730,7 +745,7 @@ export function registerDeliver(on: On): void {
     if (!fresh) { try { await refresh($, sid); } catch { /* the next refresh tries again */ } }
     // a leave ends this session's delivery now, whatever the hello says: a room hosted elsewhere may still list the
     // seat for a moment (a session cut off kept its tail and heard "carol left" after its leave)
-    if (left || gone) stopChild(sid);
+    if (left || gone) { stopChild(sid); seatChanged(mine && mine.code); }
     else { try { childFor($, sid, asHello((await $.state.get(HELLO)).value)); } catch { /* next start tries again */ } }
     return result;
   }).catch((_$, e, next) => next(e)); // unsure: the classic hook beneath answers, as without the module

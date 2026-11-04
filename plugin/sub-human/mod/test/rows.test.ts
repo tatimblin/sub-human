@@ -91,6 +91,28 @@ test('the row that died (Esc, a crash, a /clear that ended it) comes back at a l
   expect(seen.spawns.length).toBe(5) // ROW_SPAWNS_MAX: a row that dies at once never loops
 })
 
+test('a resume\'s row and its first turn\'s at once spawn one row; a row of another room (an old seat\'s) is not this room\'s', async ($, on) => {
+  const seen = world(on)
+  await start($)
+  seen.agents.push({ id: 'old', type: 'sub-human:room', status: 'running', description: 'vole-1234' })
+  await Promise.all([$.classic.SessionStart({ session_id: SID, source: 'resume', cwd: '/w', permission_mode: 'default' }), $.turn.start({ text: 'hi', turnId: `t${++turns}` })])
+  await new Promise(r => setTimeout(r, 30))
+  expect(seen.spawns.length).toBe(1)
+  expect(seen.debug).toContain(`rows: room row ${CODE} started`)
+})
+
+test('a row that lived (found running at a turn) starts its spawn count over: it may come back after dying later', async ($, on) => {
+  const seen = world(on)
+  await start($)
+  for (let i = 0; i < 8; i++) {
+    seen.clock.now += MINUTE
+    await turn($) // spawns, or finds it live
+    await turn($) // found live: the count starts over
+    for (const a of seen.agents) a.status = 'killed'
+  }
+  expect(seen.spawns.length).toBe(8)
+})
+
 test('no room row: the room session keeps no row', async ($, on) => {
   const seen = world(on, { seat: seatOf('claude', 'claude') })
   await start($)

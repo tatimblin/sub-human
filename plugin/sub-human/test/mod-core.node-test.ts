@@ -483,9 +483,11 @@ test('the room row (one row, the module\'s own): wanted for a member\'s seat of 
   assert.equal(r.roomRowFor(mkHello({ seat: seatOf('claude', 'claude') }), 's1'), null, 'the room session keeps no row');
   assert.equal(r.roomRowFor({ ...member, cc: { version: '2.1.302', verified: false, off: ['room-row'] } }, 's1'), null, 'room-row off: no row at all');
   assert.equal(r.roomRowFor(null, 's1'), null);
-  const agent = (type: string, status: string, id = 'r1') => ({ id, type, status, description: 'x' });
-  assert.equal(r.liveRow([agent('sub-human:room', 'running')]), 'r1');
-  assert.equal(r.liveRow([agent('sub-human:room', 'completed'), agent('sub-human:room', 'killed', 'r2'), agent('Explore', 'running', 'e1')]), null);
+  const agent = (type: string, status: string, id = 'r1', description = 'otter-4821') => ({ id, type, status, description });
+  assert.equal(r.liveRow([agent('sub-human:room', 'running')], 'otter-4821'), 'r1');
+  assert.equal(r.liveRow([agent('sub-human:room', 'completed'), agent('sub-human:room', 'killed', 'r2'), agent('Explore', 'running', 'e1')], 'otter-4821'), null);
+  assert.equal(r.liveRow([agent('sub-human:room', 'running', 'old', 'vole-1234')], 'otter-4821'), null, 'another room\'s row (the seat changed) is not this room\'s');
+  assert.equal(r.liveRow([agent('sub-human:room', 'running', 'r0'), agent('sub-human:room', 'running', 'r3')], 'otter-4821', new Set(['r0'])), 'r3', 'a row listed before the spawn is not the one it started');
   assert.deepEqual(r.rowSpawn('otter-4821'), { subagentType: 'sub-human:room', description: 'otter-4821', prompt: 'room: otter-4821' });
   assert.equal(r.isRow('sub-human:room'), true);
   assert.equal(r.isRow('sub-human:participant'), false, 'no participant rows');
@@ -510,6 +512,14 @@ test('the room row (one row, the module\'s own): wanted for a member\'s seat of 
   const again = r.spawnStep(failed, 'vole-1234', 5001);
   assert.equal(again.spawn, true);
   assert.equal(again.ledger['vole-1234']?.n, 2);
+  // the cap is for rows that die quickly: a row found live starts the count over; a seat change forgets the room
+  const lived = r.spawnLived(ledger, 'otter-4821');
+  assert.equal(lived['otter-4821']?.n, 0);
+  assert.equal(r.spawnStep(lived, 'otter-4821', t + 10 * r.ROW_RESPAWN_MS).spawn, true, 'a row that lived may come back');
+  const forgot = r.spawnForget(ledger, 'otter-4821');
+  assert.equal(forgot['otter-4821'], undefined);
+  assert.equal(r.spawnStep(forgot, 'otter-4821', t + 1).spawn, true, 'a new seat: no wait, no cap');
+  assert.equal(r.spawnForget(forgot, 'otter-4821'), forgot);
 });
 
 test('rowEndedRow: only the warning row of a row-ended drop, as "sub-human: row closed"', async () => {

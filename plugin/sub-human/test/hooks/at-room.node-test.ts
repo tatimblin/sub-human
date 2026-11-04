@@ -327,19 +327,19 @@ test('a plain prompt outputs nothing (the title, digest and rows are the mod\'s)
   assert.equal(atRoom(w3, submit('hi')).stdout, '');
 });
 
-test('the room\'s Claude: a typed prompt is refused (but its launch), a peer, a notification, the mod\'s wake or a lost origin runs', () => {
+test('the room\'s Claude: every prompt is refused but its launch, whatever the origin (typed, a peer, a notification, a wake, none)', () => {
   const w = new World({ claude: 'act', alice: 'sleep' });
   const transcript = path.join(w.cwd, 'claude.jsonl');
   jsonl(transcript, [{ type: 'user', promptId: 'p-launch', message: { role: 'user', content: '/sub-human' } }]);
   const at = (p: string, origin: string | null, extra: HookInput = {}) => atRoom(w, { ...submit(p), transcript_path: transcript, prompt_id: 'p-now', sub_human_origin: origin, ...extra }, { as: 'claude' });
   for (const o of ['composer', 'sdk', 'bridge']) assert.match(refusedStop(at('hi from a viewer', o)), /^✗ the room's session \(claude\.\S+\) takes no typed input/, o);
   const runs = (r: HookRun) => !r.json || (r.json.decision !== 'block' && r.json.continue !== false);
-  for (const o of ['peer', 'peer-send-message', 'task-notification', 'plugin:sub-human']) {
-    assert.ok(runs(at('(for Claude) sub-human room: act on what concerns you\n#3 bob[agent] task_req', o)), o);
+  for (const o of ['peer', 'peer-send-message', 'task-notification', 'plugin:sub-human', null]) {
+    assert.match(refusedStop(at('(for Claude) sub-human room: act on what concerns you\n#3 bob[agent] task_req', o)), /takes no typed input/, String(o));
   }
   assert.ok(runs(at('/sub-human', 'composer', { prompt_id: 'p-launch' })), 'the launch, attested');
+  assert.ok(runs(at('/sub-human', null, { prompt_id: 'p-launch' })), 'the launch, whatever its origin');
   refusedStop(at('/sub-human', 'composer')); // not the session's first prompt
   refusedStop(at('/clear', 'composer'));     // a typed slash command
-  assert.ok(runs(at('hello', null)), 'no origin (a lost hand-off): the wake must not be lost');
   assert.equal(w.entries().length, 0);
 });
