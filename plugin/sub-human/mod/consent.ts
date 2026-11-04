@@ -37,6 +37,7 @@ import { asHello } from './core/state.ts';
 import { facts, copies } from './deliver.ts';
 import { copyAsked, copyCard, copyOutcome, copySaid, copyTo, copyNews, clipboardCommands, COPY_QUESTION, COPIED, NO_TOOL, GONE } from './core/copy.ts';
 import { keepQuiet, quietOn, quietRow } from './core/quiet.ts';
+import { NOTE_ANSWER } from './core/constants.ts';
 import type { EngineInterface, On, RenderElement } from 'claude-code';
 import type { Hello, RunOutput, SubHumanRead } from './core/types.ts';
 
@@ -97,11 +98,17 @@ async function quietCalls($: EngineInterface): Promise<string[]> {
   return ids;
 }
 
-/** #34: the module's own note card is in flight ($.ui.ask runs through this plugin's other AskUserQuestion hooks: cc
- * CONTRACT module-ask-through-hooks), so they pass it by. */
-let asking = false;
-/** The event consent takes the note card's answer as (hooks/consent.ts NOTE_ANSWER). */
-const NOTE_ANSWER = 'NoteAnswer';
+/** #34: the module's own note card while it is asked ($.ui.ask runs through this plugin's other AskUserQuestion hooks:
+ * cc CONTRACT module-ask-through-hooks), so they pass that card by, and only it: its exact question and header. */
+let asking: { question: string; header: string } | null = null;
+/** The AskUserQuestion call (or its input in a result) is the module's own note card: one of its questions is it. */
+function ownCard(input: unknown): boolean {
+  const a = asking;
+  if (!a || !isRec(input) || !Array.isArray(input.questions)) return false;
+  return input.questions.some((q: unknown) => isRec(q) && q.question === a.question && q.header === a.header);
+}
+/** The person's line when their Send / Discard on that card was not taken (consent did not answer): the note waits. */
+const NOTE_NOT_TAKEN = 'your note is not sent yet; it still waits. Ask your Claude for its card to Send or Discard it.';
 
 /** The note's card consent asked for (subHuman.noteAsk), checked, or null. */
 function noteAskOf(subHuman: SubHumanRead | undefined): { question: string; header: string; options: string[] } | null {
@@ -116,11 +123,11 @@ function noteAskOf(subHuman: SubHumanRead | undefined): { question: string; head
 /** The person's Send or Discard on the note's card, asked by the module itself; null when dismissed, typed over
  * ("Other": not a choice the card offers) or with no one to ask (-p). */
 async function askNote($: EngineInterface, ask: { question: string; header: string; options: string[] }): Promise<'Send' | 'Discard' | null> {
-  asking = true;
+  asking = { question: ask.question, header: ask.header };
   try {
     const got = await $.ui.ask(ask.question, { options: ask.options, header: ask.header });
     return got === 'Send' || got === 'Discard' ? got : null;
-  } catch { return null; } finally { asking = false; }
+  } catch { return null; } finally { asking = null; }
 }
 
 /** An empty drawing: the row is not drawn at all (live 2.1.296: an empty Box takes no line). */
@@ -194,10 +201,16 @@ export function registerConsent(on: On): void {
       if (ask) {
         const label = await askNote($, ask);
         // read as the refusal's own event: its context joins the refusal (toClassic keeps only the fields an event reads)
-        const answered = toClassic('PostToolUseFailure', await runConsent($, { hook_event_name: NOTE_ANSWER, session_id: sid, sub_human_note: label }, sid));
-        const { result: res, ...rest } = answered;
-        await apply($, rest);
-        if (res.additionalContext && res.additionalContext.length) lines = res.additionalContext;
+        const run = await runConsent($, { hook_event_name: NOTE_ANSWER, session_id: sid, sub_human_note: label }, sid).catch(() => null);
+        const answered = run ? toClassic('PostToolUseFailure', run) : null;
+        // consent did not answer (its report missing: it failed or timed out): the person's Send or Discard was not
+        // taken, so they hear that the note still waits (its card later); the model keeps the refusal's own line
+        if (!answered || !answered.subHuman) { if (label) $.ui.log(NOTE_NOT_TAKEN); }
+        else {
+          const { result: res, ...rest } = answered;
+          await apply($, rest);
+          if (res.additionalContext && res.additionalContext.length) lines = res.additionalContext;
+        }
       }
       if (!lines.length) return r;
       return r.deny !== undefined ? { deny: [r.deny, ...lines].join('\n\n') } : { ...r, context: [...(r.context ?? []), ...lines] };
@@ -205,7 +218,7 @@ export function registerConsent(on: On): void {
   }).catch((_$, e, next) => next(e)); // the flag stays as it was; past next, a failure returns the refusal as it came
 
   on('classic.PreToolUse', { tool: ['AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode', /^mcp__plugin_sub-human_room__/] }, async ($, e, next) => {
-    if (e.tool === 'AskUserQuestion' && asking) return next(e); // the module's own note card ($.ui.ask): not consent's
+    if (e.tool === 'AskUserQuestion' && ownCard(e)) return next(e); // the module's own note card ($.ui.ask): not consent's
     // the invite's copy card is the module's alone (the line is only in its memory): no node consent for it
     const copy = e.tool === 'AskUserQuestion' ? isCopyCard(e) : null;
     if (copy) {
@@ -238,7 +251,7 @@ export function registerConsent(on: On): void {
 
   on('classic.PostToolUse', { tool_name: ['AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode'] }, async ($, e, next) => {
     facts.noteEvent(e);
-    if (e.tool_name === 'AskUserQuestion' && asking) return next(e); // the module's own note card: its answer is read where it was asked
+    if (e.tool_name === 'AskUserQuestion' && ownCard(e.tool_input)) return next(e); // the module's own note card: its answer is read where it was asked
     if (e.tool_name === 'AskUserQuestion' && isCopyCard(e.tool_input, e.tool_response)) {
       return mergeClassic({ additionalContext: [await copyPost($, e)] }, await next(e));
     }

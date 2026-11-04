@@ -52,6 +52,7 @@ import * as envelope from '../lib/room/envelope.ts';
 import * as roomStore from '../lib/room/store.ts';
 import * as admission from '../lib/remote/admission.ts';
 import * as verdict from '../lib/cc/verdict.ts';
+import { NOTE_ANSWER } from '../mod/core/constants.ts';
 import type { AnyHookIn, CardQuestion, HookOutput, Recorded } from './types.ts';
 import type { Card, PlanEdit, Proposal, Review } from '../lib/types-app.ts';
 import type { AdmissionRequest } from '../lib/remote/admission.ts';
@@ -71,8 +72,6 @@ type JoinRequest = AdmissionRequest;
 
 seatKey.arm();
 
-/** #34: the module's event for the person's Send / Discard on the note's card it asked itself (mod/consent.ts). */
-const NOTE_ANSWER = 'NoteAnswer';
 /** The room's post tool (hooks/handlers/consent.ts has the same: neither file loads the other's values). */
 const POST_TOOL = /^mcp__plugin_sub-human_room__post$/;
 
@@ -216,15 +215,19 @@ function blankPlan(file: string): void {
 
 type Out = { say: Say | null; show?: { admit?: JoinRequest | undefined; card?: Proposal[] } };
 
-/** What the plan view shows of a version: its text under the frame line (lib/consent/review.ts framed), or null. */
-function shownText(me: Identity, hash: string): string | null {
+/** What the plan view shows of a version: its text under the frame line (lib/consent/review.ts framed: the Yes that
+ * keeps the review's mode; a draft's sends it out), or null. */
+function shownText(me: Identity, hash: string, r: Review | null): string | null {
   const text = proposal.read(me.code, hash);
   if (text == null) return null;
   let title: string | null = null;
   try { title = proposal.title(me.code, hash) || null; } catch { /* no title: the frame names the hash */ }
-  return review.framed(text, hash, title);
+  return review.framed(text, hash, title, { mode: r ? r.mode : undefined, draft: !!r && !!r.draft });
 }
 
+/** The review with what was just written to its plan file noted (Review.wrote: a stale restore knows it as its own). */
+const wroteTo = (st: State, file: string, text: string): State => (st.review && st.review.file === file
+  ? { ...st, review: { ...st.review, wrote: hash12(Buffer.from(text, 'utf8')) } } : st);
 
 /** The seat's state, reduce one event (made from it), run the effects, store the state, write the answer. */
 function step(input: ConsentIn, me: Identity, make: (st: State) => ConsentEvent, show: Out['show'] = {}, quiet = false) {
@@ -241,16 +244,20 @@ function step(input: ConsentIn, me: Identity, make: (st: State) => ConsentEvent,
     if (e.do === 'save') { proposal.writeReview(me, e.review); disk.review = JSON.stringify(e.review); }
     else if (e.do === 'restorePlan') proposal.restorePlan({ phase: 'exiting', file: e.file, backup: e.backup, restored: false });
     else if (e.do === 'blankPlan') blankPlan(e.file);
-    else if (e.do === 'closePlan') { try { writeFileAtomic(e.file, e.text); } catch (err) { c.logError(err, 'consent: plan file (close)'); } }
-    else if (e.do === 'answer') {
+    else if (e.do === 'closePlan') {
+      try { writeFileAtomic(e.file, e.text); state = wroteTo(state, e.file, e.text); } catch (err) { c.logError(err, 'consent: plan file (close)'); }
+    } else if (e.do === 'answer') {
       const res = record(me, e.hash, { choice: e.choice, ...(e.notes !== undefined ? { notes: e.notes } : {}) });
       answers.set(e.hash, { choice: e.choice, res });
       if (e.clearNote && !res.failed) state = { ...state, note: null };
+      // the closing line says the note went only when it was recorded (a stale or failed one did not go)
+      if (e.closing && res.entry && state.review) state = { ...state, review: { ...state.review, closing: 'sent' } };
     } else if (e.do === 'writePlan') {
       try {
-        const text = shownText(me, e.hash);
+        const text = shownText(me, e.hash, state.review);
         if (text == null) throw new Error(`proposal ${e.hash}: no stored text`);
         writeFileAtomic(e.file, text);
+        state = wroteTo(state, e.file, text);
       } catch (err) {
         c.logError(err, `consent: plan file${e.early ? ' (enter)' : ''}`);
         const f = review.reduce(state, { type: 'planFailed', early: e.early }, ctx);
@@ -300,7 +307,7 @@ function write(input: ConsentIn, me: Identity, say: Say, state: State, answers: 
       // #34: a person in auto mode leaves with the closing line as the plan ("Yes, and use auto mode" first): its
       // "User approved Claude's plan" row is sub-human's, hidden
       if ('close' in s) { quietOut = true; return c.pre('ask', say.text, { updatedInput: { plan: s.close } }); }
-      if ('plan' in s) { quietOut = true; return c.pre('ask', say.text, { updatedInput: { plan: shownText(me, s.plan) } }); }
+      if ('plan' in s) { quietOut = true; return c.pre('ask', say.text, { updatedInput: { plan: shownText(me, s.plan, state.review) } }); }
       if ('note' in s) return state.note && c.pre('ask', say.text, { updatedInput: proposal.confirmCard(state.note) });
       if ('admit' in s && show.admit) return c.pre('ask', `room ${me.code}: ${show.admit.name} asks to join`, { updatedInput: admission.card(show.admit, me.code) });
       if ('card' in s && show.card) return c.pre('ask', say.text, { updatedInput: proposal.cardFor(show.card, me.code) });

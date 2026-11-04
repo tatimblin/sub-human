@@ -123,6 +123,9 @@ export interface Review {
   /** #34: the note's Send / Discard, answered before the closing call (lib/consent/review.ts noteAnswer): the closing
    * plan line of a person in auto mode says where it went */
   closing?: 'sent' | 'discarded';
+  /** hash12 of what the review last wrote to the plan file (the framed version, the closing line): a stale review's
+   * restore (lib/proposal.ts restoreStale) puts the person's plan back over it, never over a file they wrote since */
+  wrote?: string;
 }
 /**
  * members/NAME/session edit: a room plan edit in this seat's session (the plan tool's edit op opens it; the hooks run

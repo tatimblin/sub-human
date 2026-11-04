@@ -158,7 +158,7 @@ const ctx = (r: HookRun) => hso(r).additionalContext;
 const askedPlan = (r: HookRun): unknown => { const u: unknown = hso(r).updatedInput; return u && typeof u === 'object' && 'plan' in u ? u.plan : undefined; };
 const unframed = (t: unknown): string => {
   const s = String(t);
-  if (!/^Room plan · [^\n]* · Yes agrees · Tell Claude what to change asks for changes\n\n/.test(s)) throw new Error(`no frame line: ${JSON.stringify(s.slice(0, 80))}`);
+  if (!/^Room plan · [^\n]* (?:agrees(?: and keeps your mode)?|sends it out)\n\n/.test(s)) throw new Error(`no frame line: ${JSON.stringify(s.slice(0, 80))}`);
   return s.replace(/^[^\n]*\n\n/, '');
 };
 

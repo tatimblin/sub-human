@@ -200,7 +200,7 @@ test('edit (hooks): seeded at the plan_mode attachment, stored at Pre(ExitPlanMo
   assert.equal(decision(close), 'ask');
   assert.match(must(reason(close)), /^your new version, plan room v1, for alice: nobody else is asked until you send it out/);
   assert.equal(unframed(askedPlan(close)), '# Paging\n\n1. cursor\n');
-  assert.match(String(askedPlan(close)), /^Room plan · room v1 · Yes agrees · Tell Claude what to change asks for changes\n\n/, 'the frame line names the plan and its version');
+  assert.match(String(askedPlan(close)), /^Room plan · room v1 \(your draft\) · (?:Yes|"Yes, [^"]+") sends it out\n\n/, 'the frame line names the plan and its version, and says the author\'s Yes sends it out');
   assert.equal(editOf(w, 'alice'), null, 'the edit is over: the review has it');
   assert.equal(unframed(fs.readFileSync(file, 'utf8')), '# Paging\n\n1. cursor\n', 'the view reads the version from the file');
   // alice's Yes there: her sign-off (via=human), and it sends v1 out to bob; her plan file back

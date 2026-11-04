@@ -1490,7 +1490,7 @@ test('#34 auto, Send first: the refusal asks the module for Send / Discard while
   assert.equal(sent.code, 0, sent.stderr);
   assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.proposal_hash, x.text]), [['objection', 'human', hash, note]], 'recorded once, the note byte for byte');
   assert.equal(waiting(w), null);
-  assert.match(must(ctx(sent)), /Nothing is to be built\. Next, call ExitPlanMode now/);
+  assert.match(must(ctx(sent)), /Next, call ExitPlanMode now/);
   assert.equal(must(review(w)).closing, 'sent');
   const { pre, inFile, post } = close('auto');
   closes(pre, 'Your note went to alice. Nothing to build.');
@@ -1549,8 +1549,38 @@ test('#34 off (SUB_HUMAN_CC_OFF=keep-mode): no card of the module\'s; the exit a
   assert.match(must(ctx(rej)), /First call ExitPlanMode now \(no plan needed\); then call AskUserQuestion with "objection /);
   const { pre, post } = close('default');
   leaves(pre);
-  assert.match(must(ctx(post)), /review is closed; this was not a plan to carry out\./);
+  assert.match(must(ctx(post)), /review is closed\. Nothing is to be built: it was a room plan review/);
   assert.equal(must(waiting(w)).note, note);
   confirm(w, hash, 'Send');
   assert.equal(answers(w).length, 1);
+});
+
+// ---------- a review left behind (/clear, --resume, stale): the person's own plan comes back ----------
+test('stale review: a plan file holding the framed version (the frame line on top) is the review\'s: /clear puts bob\'s own plan back', () => {
+  const { w, hash } = world();
+  const file = path.join(w.userHome, '.claude', 'plans', 'stale-framed.md');
+  fs.writeFileSync(file, 'bob\'s own plan\n');
+  const tp0 = transcript(w, file, null, { id: 'tu1', input: { plan: `proposal ${hash}` } });
+  w.enterPlan(ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {} }), { as: 'bob' });
+  w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu1', transcript_path: tp0 }), { as: 'bob' });
+  const shown = fs.readFileSync(file, 'utf8');
+  assert.match(shown, /^Room plan · [^\n]* · "Yes, manually approve edits" agrees and keeps your mode\n\n# Rename fetchUser/, 'the framed version, its Yes the one that keeps manual mode');
+  assert.equal(w.lib(() => proposal.restoreStale(seat(w, 'bob'), { force: true })), 'restored');
+  assert.equal(fs.readFileSync(file, 'utf8'), 'bob\'s own plan\n', 'bob\'s plan is back, never lost');
+  assert.equal(review(w), null);
+});
+
+test('stale review: the closing line keep-mode wrote is the review\'s too (restored), and a file bob wrote since is left alone', () => {
+  const { w, file, answer } = refuseWithNote('auto');
+  answer('Send');
+  const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu9' }), { as: 'bob', env: { SUB_HUMAN_SHIM: '1' } });
+  closes(pre, 'Your note went to alice. Nothing to build.');
+  assert.equal(fs.readFileSync(file, 'utf8'), 'Your note went to alice. Nothing to build.');
+  assert.equal(w.lib(() => proposal.restoreStale(seat(w, 'bob'), { force: true })), 'restored');
+  assert.equal(fs.readFileSync(file, 'utf8'), 'bob\'s own plan\n', 'bob\'s plan is back after a /clear at the closing call');
+  // a file bob wrote over the review's: his, not restored
+  const two = refuseWithNote('auto');
+  fs.writeFileSync(two.file, 'bob\'s newer plan\n');
+  assert.equal(two.w.lib(() => proposal.restoreStale(seat(two.w, 'bob'), { force: true })), 'cleared');
+  assert.equal(fs.readFileSync(two.file, 'utf8'), 'bob\'s newer plan\n');
 });

@@ -579,10 +579,21 @@ test('F (live validation): whenever the person\'s own plan file is put back, the
 });
 
 test('0.6.0 frame: the plan view\'s first line says what it is for; it never enters a hash, so a framed Yes on the version records Agree', () => {
-  assert.equal(review.frameLine(H, 'plan paging v2'), 'Room plan · paging v2 · Yes agrees · Tell Claude what to change asks for changes');
-  assert.equal(review.frameLine(H, null), `Room plan · proposal ${H.slice(0, 6)} · Yes agrees · Tell Claude what to change asks for changes`);
+  assert.equal(review.frameLine(H, 'plan paging v2'), 'Room plan · paging v2 · Yes agrees');
+  assert.equal(review.frameLine(H, null), `Room plan · proposal ${H.slice(0, 6)} · Yes agrees`);
+  // the Yes that keeps the person's mode, named (manual mode preselects "Yes, and use auto mode", and the dialog's
+  // reason line is not drawn: probe 9)
+  assert.equal(review.frameLine(H, 'plan paging v2', { mode: 'default' }), 'Room plan · paging v2 · "Yes, manually approve edits" agrees and keeps your mode');
+  assert.equal(review.frameLine(H, 'plan paging v2', { mode: 'auto' }), 'Room plan · paging v2 · "Yes, and use auto mode" agrees and keeps your mode');
+  assert.equal(review.frameLine(H, 'plan paging v2', { mode: 'plan' }), 'Room plan · paging v2 · Yes agrees');
+  // the author's own draft: its Yes sends it out
+  assert.equal(review.frameLine(H, 'plan paging v2', { mode: 'acceptEdits', draft: true }), 'Room plan · paging v2 (your draft) · Yes sends it out');
+  assert.equal(review.frameLine(H, 'plan paging v2', { mode: 'default', draft: true }), 'Room plan · paging v2 (your draft) · "Yes, manually approve edits" sends it out');
   const shown = review.framed(TEXT, H, 'plan paging v2');
   assert.equal(review.unframe(shown), TEXT);
+  for (const at of [{ mode: 'default' }, { mode: 'auto', draft: true }, { mode: 'plan', draft: true }, { mode: 'bypassPermissions' }]) {
+    assert.equal(review.unframe(review.framed(TEXT, H, 'plan paging v2', at)), TEXT, `unframed: ${JSON.stringify(at)}`);
+  }
   assert.equal(review.unframe(TEXT), TEXT, 'a text without a frame stays as it is');
   const st: State = { review: { ...REVIEWS.shown, shownAt: 0 }, note: null };
   const yes = review.reduce(st, { ...EVENTS.exited, response: { ...EVENTS.exited.response, plan: shown } }, ctx);
@@ -601,18 +612,26 @@ function refusedWithNote(mode: string): State {
   assert.equal(must(s.state.note).note, 'use keyset paging');
   return s.state;
 }
-/** The answer effect ran and recorded (hooks/consent.ts step: clearNote on success). */
-const recordedSend = (s: ReviewStep): State => (s.effects.some(e => e.do === 'answer' && e.clearNote) ? { ...s.state, note: null } : s.state);
+/** The answer effect ran and recorded (hooks/consent.ts step: clearNote, and closing 'sent', on success). */
+const recordedSend = (s: ReviewStep): State => {
+  const a = s.effects.find(e => e.do === 'answer');
+  if (!a || a.do !== 'answer' || !a.clearNote) return s.state;
+  return { ...s.state, note: null, review: a.closing && s.state.review ? { ...s.state.review, closing: 'sent' } : s.state.review };
+};
 const closingExit: ConsentEvent = { ...EVENTS.exit, toolUseId: 'tu3', answer: null };
 const exitedIn = (mode: string): ConsentEvent => ({ ...EVENTS.exited, toolUseId: 'tu3', mode, response: { plan: '', edited: false, isAgent: false, filePath: undefined } });
 
 test('#34 auto: Send comes first, in plan mode; the closing call shows only "Your note went to NAME. Nothing to build." (a non-empty plan: Enter keeps auto); its approved row is the module\'s to hide; the model hears nothing is to be built', () => {
   const st = refusedWithNote('auto');
   const send = review.reduce(st, { type: 'noteAnswer', label: 'Send', target }, keep);
-  assert.deepEqual(send.effects, [{ do: 'answer', hash: H, choice: 'Object', notes: 'use keyset paging', clearNote: true }]);
-  assert.equal(rev(send).closing, 'sent');
+  assert.deepEqual(send.effects, [{ do: 'answer', hash: H, choice: 'Object', notes: 'use keyset paging', clearNote: true, closing: true }]);
+  assert.equal(rev(send).closing, undefined, 'sent only once the record says so (the hooks set it)');
   const said = review.textOf(parts(send), () => 'bob objected', true);
-  assert.match(said, /Nothing is to be built\. Next, call ExitPlanMode now \(no plan needed\): it only leaves plan mode, in the mode bob had before the review\.$/);
+  assert.match(said, /bob objected Next, call ExitPlanMode now \(no plan needed: the hooks close the review; your person leaves plan mode\)\.$/);
+  assert.doesNotMatch(said, /Nothing is to be built|the mode bob had/, 'said once, at the close; no mode promise');
+  // a Send whose record did not go (stale): the closing line never says the note went
+  assert.deepEqual(asked(review.reduce(send.state, closingExit, keep)).show, { close: 'Your note to alice is not sent yet. Nothing to build.' });
+  assert.deepEqual(asked(review.reduce({ ...send.state, note: null }, closingExit, keep)).show, { close: 'Room review closed. Nothing to build.' });
   const exit = review.reduce(recordedSend(send), closingExit, keep);
   assert.deepEqual(exit.effects, [{ do: 'closePlan', file: '/plans/x.md', text: 'Your note went to alice. Nothing to build.' }]);
   assert.deepEqual(asked(exit).show, { close: 'Your note went to alice. Nothing to build.' });
@@ -640,7 +659,7 @@ test('#34 manual: the empty exit ("Yes, and switch to default" keeps manual, the
 test('#34 Discard and no answer: Discard records nothing and says so before the exit; no answer keeps the note for its card (never lost), and the closing line says it is not sent', () => {
   const discard = review.reduce(refusedWithNote('auto'), { type: 'noteAnswer', label: 'Discard', target }, keep);
   assert.deepEqual([discard.state.note, discard.effects, rev(discard).closing], [null, [], 'discarded']);
-  assert.match(review.textOf(parts(discard), () => '', false), /discarded the note; nothing was recorded[^]*Nothing is to be built\. Next, call ExitPlanMode now/);
+  assert.match(review.textOf(parts(discard), () => '', false), /discarded the note; nothing was recorded[^]*Next, call ExitPlanMode now/);
   assert.deepEqual(asked(review.reduce(discard.state, closingExit, keep)).show, { close: 'Your note was not sent. Nothing to build.' });
   const none = review.reduce(refusedWithNote('auto'), { type: 'noteAnswer', label: null, target }, keep);
   assert.equal(must(none.state.note).note, 'use keyset paging', 'the note waits for its card');
@@ -677,6 +696,6 @@ test('#34 off (the verdict\'s keep-mode, or SUB_HUMAN_CC_OFF): the exit as befor
   const exit = review.reduce(st, closingExit, off);
   assert.deepEqual(exit.effects, [{ do: 'blankPlan', file: '/plans/x.md' }]);
   const done = review.reduce(exit.state, exitedIn('default'), off);
-  assert.match(review.textOf(parts(done), () => '', false), /The room review is closed; this was not a plan to carry out\./);
+  assert.match(review.textOf(parts(done), () => '', false), /The room review is closed\. Nothing is to be built: it was a room plan review, not a plan to carry out\./);
   assert.equal(review.reduce({ review: { ...REVIEWS.exiting, mode: 'acceptEdits' }, note: null }, exitedIn('default'), off).notice, undefined);
 });
