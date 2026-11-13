@@ -9,7 +9,7 @@
  *                                                  picker swallowed the first Enter. With SH_DEMO_TYPING=1 (demo.sh
  *                                                  --film) the text is typed a key at a time, at a person's pace
  *   demo-lib.ts select-row <session> <label> [--key Down|Up]   move the agent-panel cursor (❯) onto the
- *                                                  row labelled <label> (└ children too), one key at a time
+ *                                                  row labelled <label>, one key at a time
  *   demo-lib.ts ready <session> [--timeout S]     handle the trust dialog (choose "Yes, I trust this folder"
  *                                                  explicitly), then wait for the prompt
  *   demo-lib.ts pane <session>                    print the pane as plain text
@@ -32,8 +32,11 @@
  *                        (or, with --task-done, until <room>/tasks.json has task ID completed);
  *                        with --quiet S, then keep at it until its background agents are done (only the room
  *                        row left in its panel) and no dialog has shown for S seconds
- *   demo-lib.ts wait-holds <seat> <name> [--timeout S]   wait until <seat>'s room server holds <name>'s row
- *                                                  (members/<seat>/session.json holds, fresh)
+ *   demo-lib.ts wait-row <seat> [--timeout S]     wait until <seat>'s room row holds the room: in its session's
+ *                                                  subagent transcripts, a room row (sub-human:room) whose hold call
+ *                                                  for the room has no result yet (checks/transcripts.ts holdingRow)
+ *   demo-lib.ts set-mode <session> <auto|default|acceptEdits>   shift+tab until the footer shows that mode (the
+ *                                                  person's own switch; --object-mode)
  *   demo-lib.ts member-field <name> <field>       print members.json[name][field] ('' if none)
  *   demo-lib.ts wait-member <name> <field> --not V [--timeout S]   wait until that field differs from V
  *   demo-lib.ts count --kind K [same filters]     print the count now
@@ -97,7 +100,8 @@ import { roomCode, readLog, strip } from './snap.ts';
 import type { LogEntry } from './snap.ts';
 import * as paths from './lib/paths.ts';
 import { readJson, jsonl, esc } from './lib/io.ts';
-import { panelRows, subagentRows, cardState, planState, joinLineIn, pinIn, admitCardState } from './lib/panes.ts';
+import { panelRows, subagentRows, cardState, planState, joinLineIn, pinIn, admitCardState, footerMode } from './lib/panes.ts';
+import { subagents, holdingRow } from './checks/transcripts.ts';
 import type { DialogState } from './lib/panes.ts';
 
 /**
@@ -456,13 +460,32 @@ async function approveUntil(o: Opts, T: number): Promise<number> {
   return exit(ok);
 }
 
-async function waitHolds(o: Opts, T: number): Promise<number> {
-  const seat = arg(o, 0), name = arg(o, 1);
-  return exit(await until(o.what || `${seat}'s room holds ${name}'s row`, T, () => {
-    const doc = readJson<{ holds?: { at: string, members?: string[] } } | null>(roomFile(path.join('members', seat, 'session.json')), null);
-    const h = doc && doc.holds;
-    return !!h && Date.now() - Date.parse(h.at) < 90_000 && (h.members || []).includes(name);
+/**
+ * The seat's room row is live: in the seat's session (members.json session_id; any session of the seat's folder when
+ * the host's record has none, as for a seat on another machine) a room-row subagent (agents/room.md) whose hold call
+ * for this room is blocking, i.e. Claude Code wrote the call and no result yet (a duplicate or a stopped row has its
+ * "STOP: …" result). This is the row the hooks module spawned holding, not just a panel line drawn while it starts.
+ */
+async function waitRow(o: Opts, T: number): Promise<number> {
+  const seat = arg(o, 0), code = roomCode() ?? '';
+  return exit(await until(o.what || `${seat}'s room row holds room ${code} (its hold call is blocking)`, T, () => {
+    const sid = (readJson<Record<string, { session_id?: string } | undefined>>(roomFile('members.json'), {})[seat] || {}).session_id;
+    return subagents(paths.seatProjectDir(seat), sid || null).some(s => holdingRow(s, code));
   }));
+}
+
+/** The person moves their seat to a permission mode with shift+tab (Claude Code's own cycle), as they would by hand. */
+async function setMode(o: Opts): Promise<number> {
+  const session = arg(o, 0), want = arg(o, 1);
+  if (!['auto', 'default', 'acceptEdits'].includes(want)) throw new Error(`set-mode: auto, default or acceptEdits, not ${want}`);
+  for (let i = 0; i < 7; i++) {
+    const m = footerMode(pane(session));
+    if (m === want) { record(`${session}: the person switched to ${want} mode (${i}× shift+tab)`, true, 0); return 0; }
+    await keys(session, ['BTab']);
+    await sleep(900);
+  }
+  record(`${session}: could not reach ${want} mode with shift+tab (footer: ${footerMode(pane(session)) ?? 'none'})`, false, 0);
+  return 1;
 }
 
 async function memberField(o: Opts): Promise<number> {
@@ -528,22 +551,36 @@ async function answerPlanView(session: string, pv: DialogState, choice: string, 
   if (choice === 'Object') { await literal(session, note || 'object'); await sleep(600); }
   await keys(session, ['Enter']);
   await sleep(1500);
-  // an objection: the model leaves plan mode first, with Claude Code's own "Exit plan mode?" (0.5.1: the person answers
-  // it, Yes), then the note is confirmed in one more question ("Send to claude as changes requested …? Send / Discard")
-  if (choice === 'Object') {
-    const leave = /Exit plan mode\?[\s\S]*❯\s*1\.\s*Yes/;
-    const send = /❯\s*1\.\s*Send\b/;
-    await until(`${session}: "Exit plan mode?" or the note's Send / Discard question`, 60, () => leave.test(pane(session)) || send.test(pane(session)));
-    if (leave.test(pane(session))) {
-      await keys(session, ['Enter']);
-      record(`${session}: answered Claude Code's "Exit plan mode?" (Yes)`, true, 0);
-      await sleep(1500);
-    }
-    await until(`${session}: the note's Send / Discard question`, 60, () => send.test(pane(session)));
-    if (send.test(pane(session))) { await keys(session, ['Enter']); await sleep(1500); }
-  }
+  if (choice === 'Object') await afterObjection(session);
   record(`${session}: answered in the plan view ${choice}${choice === 'Object' ? ` with note "${note}"` : ` (${want.label})`}`, true, 0);
   return 0;
+}
+
+/**
+ * After an objection's note, the person answers what follows, each with Enter on what is focused (as a person would):
+ * the note's Send / Discard (0.6.0 #34: the module asks it first, still in plan mode; before, after the exit), then the
+ * review's closing call: in auto, the plan view with only the closing line ("… Nothing to build.", "Yes, and use auto
+ * mode" focused), in manual and accept edits Claude Code's empty-plan "Exit plan mode?" (Yes). The option under the
+ * cursor is recorded: checks/s05-consent.ts compares the mode before and after. Done once Send is answered and the
+ * closing call was (or no dialog came for 30 s: the check then sees whatever mode is left).
+ */
+async function afterObjection(session: string): Promise<void> {
+  const leave = /Exit plan mode\?[\s\S]*❯\s*1\.\s*Yes/;
+  const send = /❯\s*1\.\s*Send\b/;
+  let sent = false, closed = false, calm = 0, last = 0;
+  await until(`${session}: the note's Send, then the review's closing call`, 120, () => {
+    if (Date.now() - last < 2500) return false; // the dialog just answered may still be drawn
+    const p = pane(session);
+    const close = planState(p) && /Nothing to build/.test(p) ? planState(p) : null;
+    const step = (what: string, then: () => void): false => { then(); calm = 0; last = Date.now(); record(`${session}: ${what}`, true, 0); keys(session, ['Enter']).catch(() => {}); return false; };
+    if (!sent && send.test(p)) return step('Send on the note\'s Send / Discard', () => { sent = true; });
+    if (leave.test(p)) return step('answered Claude Code\'s "Exit plan mode?" (Yes)', () => { closed = sent; });
+    if (sent && close) return step(`Enter on the closing plan view (focused: ${close.opts.find(x => x.cur)?.label ?? 'none'})`, () => { closed = true; });
+    if (sent && closed) return true;
+    if (sent && !planState(p)) { if (!calm) calm = Date.now(); return Date.now() - calm > 30_000; }
+    return false;
+  });
+  await sleep(1500);
 }
 
 /** Answer the fallback consent card: move onto the option, type the note (n), Enter, and confirm a review step. */
@@ -780,7 +817,8 @@ export const COMMANDS: Record<string, Command> = {
   'wait-room': waitRoom,
   'wait-log': waitLog,
   'approve-until': approveUntil,
-  'wait-holds': waitHolds,
+  'wait-row': waitRow,
+  'set-mode': setMode,
   'member-field': memberField,
   'wait-member': waitMember,
   'wait-idle': waitIdle,

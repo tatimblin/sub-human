@@ -6,13 +6,14 @@
  *   peerIn, wakeIn, chatIn, pullIn             peer messages, room wakes, chat rows and their isMeta copies
  *   chatTurn, roomClaudeTurns, replyAfter, noModelTurn   which model turns room traffic started
  *   rowUserText, rowReply                      the row subagents' transcripts
+ *   seatAgents(seat)                           a seat's subagents (subagents(): the room row, its hold calls, others)
  *   toolResults(es)                            the text of every tool_result (a tool's or a hook's answer)
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import * as metrics from '../metrics.ts';
 import * as paths from '../lib/paths.ts';
-import { readText, jsonl } from '../lib/io.ts';
+import { readText, readJson, jsonl } from '../lib/io.ts';
 import type { Block, TEntry } from '../metrics.ts';
 import type { Span } from './captures.ts';
 import type { LogEntry } from './log.ts';
@@ -41,6 +42,53 @@ const wakeIn = <E extends TEntry>(es: E[]): E[] => es.filter(e => metrics.trigge
 // the hooks module's chat rows ($.ui.log, "sub-human: …") and their isMeta copies for the model: chat never wakes it
 const chatIn = <E extends TEntry>(es: E[]): E[] => es.filter(metrics.isChatNotice);
 const pullIn = <E extends TEntry>(es: E[]): E[] => es.filter(metrics.isPull);
+
+/** The room row's one tool (agents/room.md). */
+export const HOLD_TOOL = 'mcp__plugin_sub-human_room__hold';
+/** One hold call of a subagent: when, the room it names, and its result's text (null: still blocking, or never answered). */
+export interface HoldCall { at: string, room: string, result: string | null }
+/** A subagent of one session (PROJECT/SESSION/subagents/agent-ID.jsonl, its agentType from agent-ID.meta.json). */
+export interface SubAgent { session: string, file: string, agentType: string, first: string, prompt: string, holds: HoldCall[] }
+
+const textOfContent = (c: string | Block[] | undefined): string => (typeof c === 'string' ? c : (c || []).filter(b => b.type === 'text').map(b => b.text ?? '').join('\n'));
+
+/** One subagent transcript and its meta file, read. */
+function subagent(dir: string, session: string, f: string): SubAgent {
+  const meta = readJson<{ agentType?: unknown } | null>(path.join(dir, f.replace(/\.jsonl$/, '.meta.json')), null);
+  const es = jsonl<TEntry>(path.join(dir, f));
+  const results = new Map<string, string>();
+  for (const e of es) {
+    if (e.type !== 'user') continue;
+    for (const c of blocksOf(e)) if (c.type === 'tool_result' && c.tool_use_id) results.set(c.tool_use_id, typeof c.content === 'string' ? c.content : JSON.stringify(c.content ?? ''));
+  }
+  const holds: HoldCall[] = es.filter(e => e.type === 'assistant').flatMap(e => blocksOf(e).filter(c => c.type === 'tool_use' && c.name === HOLD_TOOL)
+    .map(c => ({ at: e.timestamp ?? '', room: typeof c.input?.room === 'string' ? c.input.room : '', result: (c.id ? results.get(c.id) : undefined) ?? null })));
+  const u = es.find(e => e.type === 'user');
+  return { session, file: f, agentType: meta && typeof meta.agentType === 'string' ? meta.agentType : '', first: es.find(e => e.timestamp)?.timestamp ?? '',
+    prompt: textOfContent(u && u.message ? u.message.content : undefined), holds };
+}
+
+/**
+ * Every subagent of every session in a Claude Code project dir (a seat's: paths.seatProjectDir), oldest first: the room
+ * row (agentType sub-human:room, prompt "room: CODE", its hold calls), a Claude's own subagents, and any participant row
+ * an older build spawned. A subagent whose meta file is missing has agentType ''. `session`: only that session's.
+ */
+export function subagents(projectDir: string, session?: string | null): SubAgent[] {
+  let ds: string[] = [];
+  try { ds = fs.readdirSync(projectDir).filter(d => (!session || d === session) && fs.existsSync(path.join(projectDir, d, 'subagents'))); } catch { return []; }
+  const out: SubAgent[] = [];
+  for (const d of ds) {
+    const dir = path.join(projectDir, d, 'subagents');
+    let files: string[] = [];
+    try { files = fs.readdirSync(dir).filter(x => x.endsWith('.jsonl')); } catch { continue; }
+    for (const f of files) out.push(subagent(dir, d, f));
+  }
+  return out.sort((a, b) => (a.first < b.first ? -1 : a.first > b.first ? 1 : 0));
+}
+/** A room row: the agent type the hooks module spawns (agents/room.md), or, with no meta file, the prompt "room: CODE". */
+export const isRoomRow = (s: SubAgent, code: string): boolean => s.agentType === 'sub-human:room' || (!s.agentType && s.prompt.trim() === `room: ${code}`);
+/** A room row of room code whose hold is blocking (its last hold call for code has no result). */
+export const holdingRow = (s: SubAgent, code: string): boolean => isRoomRow(s, code) && s.holds.filter(h => h.room === code).at(-1)?.result === null;
 
 /** Each entry of a seat's row-subagent transcripts (…/SESSION/subagents/*.jsonl), with its file name. */
 function* rowEntries(seat: string): Generator<{ e: TEntry, file: string }> {
@@ -151,6 +199,10 @@ export function transcripts({ roomClaudeSid, projects }: { roomClaudeSid: string
     }
     return { pass: false, evidence: `no hook receipt for #${e.id} in ${seat}'s transcripts` };
   }
-  return { seatFiles, entries, inSpan, toolUses, assistantIds, peerIn, wakeIn, chatIn, pullIn, chatTurn, roomClaudeTurns, replyAfter, noModelTurn, rowUserText, rowReply };
+  /** A seat's subagents ('claude': the room session's, in whichever project dir its session is). */
+  const seatAgents = (seat: string): SubAgent[] => (seat === 'claude'
+    ? seatFiles('claude').flatMap(f => subagents(path.dirname(f), roomClaudeSid))
+    : subagents(paths.seatProjectDir(seat)));
+  return { seatFiles, entries, inSpan, toolUses, assistantIds, peerIn, wakeIn, chatIn, pullIn, chatTurn, roomClaudeTurns, replyAfter, noModelTurn, rowUserText, rowReply, seatAgents };
 }
 

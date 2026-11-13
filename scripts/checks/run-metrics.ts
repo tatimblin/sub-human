@@ -1,9 +1,34 @@
 // Metrics: the run's cost of the room against the baselines (scripts/baselines.json)
 import * as metrics from '../metrics.ts';
 import type { Ctx, Det, Beh } from './context.ts';
-import type { Thresholds } from '../metrics.ts';
+import type { Thresholds, TEntry } from '../metrics.ts';
+import { clip } from '../lib/io.ts';
 
 export const scene = 'Metrics';
+
+/** One scene's lines from sub-human in a seat's transcript. */
+export interface SceneLines { scene: string, lines: string[] }
+/**
+ * The lines sub-human wrote that seat saw, per scene of the run (each scene's span): the hooks module's $.ui.log rows
+ * and receipts, which Claude Code keeps in the transcript as system entries ("sub-human: …", "✓ sent"), a multi-line
+ * one counted by its lines; other people's words ("sub-human: bob: …", "bob's Claude …") are content and left out.
+ * The transcript, not the panes: a pane capture is a sample and misses a line drawn and scrolled away between snaps.
+ */
+export function linesPerScene(x: Ctx, seat: string): SceneLines[] {
+  const people = [...new Set([...Object.keys(x.members), x.A, x.B, 'carol'])].filter(n => n !== 'claude');
+  const mine = (e: TEntry): string[] => {
+    if (e.type !== 'system' || typeof e.content !== 'string') return [];
+    const c = e.content;
+    if (!c.startsWith('sub-human: ') && !/^[✓⧗] /.test(c)) return [];
+    const body = c.replace(/^sub-human: /, '');
+    return people.some(n => body.startsWith(`${n}: `) || body.startsWith(`${n}'s Claude`)) ? [] : c.split('\n');
+  };
+  const es = x.entries(seat).filter(e => !e.isSidechain);
+  return [...new Set(x.index.map(r => r.scene))].flatMap(sc => {
+    const s = x.span(sc);
+    return s ? [{ scene: sc, lines: x.inSpan(es, s).flatMap(mine) }] : [];
+  });
+}
 
 export function run(x: Ctx, { det, beh }: { det: Det, beh: Beh }, T: Thresholds): void {
   const M = x.metrics = metrics.measure({ screens: x.screens, home: x.home, code: x.code, seats: [x.A, x.B] });
@@ -20,6 +45,14 @@ export function run(x: Ctx, { det, beh }: { det: Det, beh: Beh }, T: Thresholds)
   beh(`UI noise lines per capture ≤ ${T.noisePerCapture} (${B.run} ${B.noise.perCapture}; Phase 0 ${P.noise.perCapture}; ${S.run} ${S.noise.perCapture})`, M.total.noise.perCapture, T.noisePerCapture,
     `${M.total.noise.lines} lines / ${M.total.noise.captures} captures = ${M.total.noise.perCapture} (excl. "Waiting for": ${M.total.noise.perCaptureExWaiting})`);
   det('No red or "hook error" lines in any capture', M.total.noise.red === 0 && M.total.noise.hookError === 0, `red lines ${M.total.noise.red}, "hook error" lines ${M.total.noise.hookError}`);
+  // release gate: sub-human's own lines a person sees, per scene (docs/next/quiet/PRINCIPLES.md: other people's words
+  // are content and not counted; nor are the native plan view, cards or rows)
+  for (const seat of [x.A, x.B]) {
+    const per = linesPerScene(x, seat);
+    const worst = per.reduce<SceneLines | null>((w, p) => (!w || p.lines.length > w.lines.length ? p : w), null);
+    beh(`${seat} sees at most ${T.linesPerScene} lines from sub-human in any scene`, worst ? worst.lines.length : null, T.linesPerScene,
+      worst ? `${per.map(p => `${p.scene} ${p.lines.length}`).join(', ')}; most in ${worst.scene}: ${worst.lines.map(l => `"${clip(l, 50)}"`).join(' ')}` : `no scene with ${seat}'s transcript`);
+  }
   // a plan-view review: ToolSearch + EnterPlanMode + ExitPlanMode to open, one reply (plus the exit after an objection)
   beh(`Model calls per review ≤ ${T.callsPerReview} on the approver's model (report)`, M.total.cards.count > 0 ? M.total.cards.perCard : null, T.callsPerReview,
     `${M.total.cards.count} reviews: ${M.total.cards.toCard} call(s) to open, ${M.total.cards.after} after the answer (avg ${M.total.cards.perCard})`);

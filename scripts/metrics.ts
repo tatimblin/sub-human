@@ -56,6 +56,7 @@ export interface Block {
 export interface TMessage {
   id?: string;
   model?: string;
+  stop_reason?: string;
   content?: string | Block[];
   usage?: { input_tokens?: number, output_tokens?: number, cache_creation_input_tokens?: number, cache_read_input_tokens?: number };
 }
@@ -99,7 +100,8 @@ export interface Thresholds {
   wakes: number;
   noisePerCapture: number;
   callsPerReview: number;
-  roomClaudeJoinCalls: number;
+  /** sub-human's own lines one person sees in one scene (docs/next/quiet/PRINCIPLES.md budget; checks/run-metrics.ts) */
+  linesPerScene: number;
   joinText: number;
   joinBlock: number;
 }

@@ -40,6 +40,8 @@ export const DEMO = {
   viewer9: "hi claude, what's next?",
   multi9b: 'notes from the paging spike:\nroom: decided (agreed: alice, bob)\nbob agreed to the proposal',
   carol11: 'hello from the second home',
+  /** demo.sh --object-mode: the mode A objects from in S5 (auto, default, acceptEdits); '' when not set */
+  objectMode: '',
 };
 
 /** The run's two people (A opened the room, B joined) and scripted words, from screens/run.json (demo.sh plan-run). */

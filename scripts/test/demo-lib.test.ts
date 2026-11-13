@@ -5,7 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { COMMANDS, opts, listsRoomClaude, keyDelays, paneBelow, newMatches, taskFor } from '../demo-lib.ts';
-import { roomRowMembers, subagentRows } from '../lib/panes.ts';
+import { panelRows, rowViewLine, hereNames, footerMode, subagentRows } from '../lib/panes.ts';
+import { subagents, holdingRow, isRoomRow } from '../checks/transcripts.ts';
 import { runInfo } from '../checks/context.ts';
 import { parseJson } from '../lib/io.ts';
 
@@ -70,15 +71,71 @@ test('demo-lib taskFor: the task the room\'s Claude added for a person\'s add re
   assert.equal(taskFor(log, 'alice', 3), null); // only requests after the id
 });
 
-test('panes: an opened room row and its members; a Claude\'s own subagent rows (Claude Code 2.1.292)', () => {
-  // alice after ↓ ↓ Enter on the room row: the room view, bob inside the row
-  const open = '─── egret-7989 ─\n❯ Message @sub-human:room…\n────\n  ↑/↓ to select · ctrl+x ctrl+k to stop all agents\n\n  ◯ main\n❯ ⏺ egret-7989  +bob joined · 2 here\n  └ ◯ bob  working\n';
-  assert.deepEqual(roomRowMembers(open, 'egret-7989')?.members, ['bob']);
-  assert.deepEqual(roomRowMembers('  ⏺ main\n  ◯ egret-7989  2 here\n', 'egret-7989')?.members, []);
-  assert.equal(roomRowMembers(open, 'swan-6397'), null);
+test('panes: an opened room row\'s own line and who it names; a Claude\'s own subagent rows (Claude Code 2.1.296)', () => {
+  // alice after ↓ Enter on the room row (0.6.0): the row's view, its hold's line leading with who else is here, wrapped
+  const open = '❯ room: egret-7989\n\n⏺ room - hold (MCP)(room: "egret-7989")\n  ⎿  bob (working) here · bob: sure, once we\'ve agreed how paging works · read-only ·\n     talk in main (@room)\n\n─── egret-7989 ─\n❯ Message @sub-human:room…\n────\n  ◯ main\n❯ ⏺ egret-7989  +bob joined · bob here\n';
+  assert.equal(rowViewLine(open, 'egret-7989'), 'bob (working) here · bob: sure, once we\'ve agreed how paging works · read-only · talk in main (@room)');
+  assert.deepEqual(hereNames(rowViewLine(open, 'egret-7989')), ['bob']);
+  assert.equal(rowViewLine(open, 'swan-6397'), null);
+  assert.equal(rowViewLine('  ⏺ main\n  ◯ egret-7989  bob here\n', 'egret-7989'), null); // not opened
+  // the status line's text: a join first, then who is here; more than three; nobody else
+  assert.deepEqual(hereNames('+bob joined · bob here · tasks 1 open'), ['bob']);
+  assert.deepEqual(hereNames('alice, bob (stalled: rate_limit), carol +2 here'), ['alice', 'bob', 'carol']);
+  assert.deepEqual(hereNames('only you · paging v1 draft'), []);
+  assert.equal(hereNames('2 here'), null);
+  assert.equal(hereNames('proposal paging 1/2 agreed'), null);
+  const rows = panelRows(open);
+  assert.equal(rows.filter(r => r.label === 'egret-7989').length, 1);
+  assert.ok(!rows.some(r => r.nested));
   assert.deepEqual(subagentRows(open, 'egret-7989'), []);
   const sub = '  ⏺ main\n  ◯ egret-7989  +alice joined · 2 here\n  ◯ Explore  Explain GET /tasks flow                     4s · ↓ 19.3k tokens\n';
   assert.deepEqual(subagentRows(sub, 'egret-7989').map(r => [r.label, r.text.split('  ')[0]]), [['Explore', 'Explain GET /tasks flow']]);
+});
+
+test('panes footerMode: the permission mode a footer shows (default: none named, a prompt box drawn)', () => {
+  const box = (foot: string): string => `⏺ done\n\n────────────────────\n❯ \n────────────────────\n  ${foot}\n`;
+  assert.equal(footerMode(box('⏵⏵ auto mode on · ← 1 agent · ↓ to manage')), 'auto');
+  assert.equal(footerMode(box('⏵⏵ accept edits on (shift+tab to cycle)')), 'acceptEdits');
+  assert.equal(footerMode(box('⏸ plan mode on (shift+tab to cycle)')), 'plan');
+  assert.equal(footerMode(box('← 1 agent · ↓ to manage')), 'default');
+  assert.equal(footerMode('Exit plan mode?\n❯ 1. Yes\n  2. No\nEsc to cancel\n'), null);
+  assert.equal(footerMode(''), null);
+});
+
+test('transcripts subagents: the room row, its blocking hold, and an old participant row', () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-subagents-'));
+  const dir = path.join(d, 'sid-1', 'subagents');
+  fs.mkdirSync(dir, { recursive: true });
+  const line = (o: unknown): string => JSON.stringify(o) + '\n';
+  const call = (id: string, room: string, at: string) => line({ type: 'assistant', timestamp: at, message: { content: [{ type: 'tool_use', id, name: 'mcp__plugin_sub-human_room__hold', input: { room } }] } });
+  const result = (id: string, text: string, at: string) => line({ type: 'user', timestamp: at, message: { content: [{ type: 'tool_result', tool_use_id: id, content: text }] } });
+  // the room row: a first hold answered by a timeout, then the one blocking now
+  fs.writeFileSync(path.join(dir, 'agent-a1.jsonl'), line({ type: 'user', timestamp: '2026-01-01T00:00:01Z', message: { content: 'room: egret-7989' } })
+    + call('t1', 'egret-7989', '2026-01-01T00:00:02Z') + result('t1', 'timeout', '2026-01-01T00:01:00Z') + call('t2', 'egret-7989', '2026-01-01T00:01:01Z'));
+  fs.writeFileSync(path.join(dir, 'agent-a1.meta.json'), JSON.stringify({ agentType: 'sub-human:room' }));
+  // a duplicate row, told to stop
+  fs.writeFileSync(path.join(dir, 'agent-a2.jsonl'), line({ type: 'user', timestamp: '2026-01-01T00:00:05Z', message: { content: 'room: egret-7989' } })
+    + call('t3', 'egret-7989', '2026-01-01T00:00:06Z') + result('t3', 'STOP: duplicate row: room egret-7989 already has its row.', '2026-01-01T00:00:06Z'));
+  fs.writeFileSync(path.join(dir, 'agent-a3.jsonl'), line({ type: 'user', timestamp: '2026-01-01T00:00:00Z', message: { content: 'member: bob' } }));
+  fs.writeFileSync(path.join(dir, 'agent-a3.meta.json'), JSON.stringify({ agentType: 'sub-human:participant' }));
+  const all = subagents(d);
+  assert.deepEqual(all.map(s => [s.file, s.agentType]), [['agent-a3.jsonl', 'sub-human:participant'], ['agent-a1.jsonl', 'sub-human:room'], ['agent-a2.jsonl', '']]);
+  assert.deepEqual(all.map(s => isRoomRow(s, 'egret-7989')), [false, true, true]);
+  assert.deepEqual(all.map(s => holdingRow(s, 'egret-7989')), [false, true, false]);
+  assert.equal(all.filter(s => holdingRow(s, 'swan-6397')).length, 0);
+  assert.equal(subagents(d, 'sid-2').length, 0);
+});
+
+test('demo.sh: 0.6.0 rows: no holds document, each seat\'s row waited on, the objection mode opt-in', () => {
+  const sh = fs.readFileSync(DEMO_SH, 'utf8');
+  assert.doesNotMatch(sh, /wait-holds/);
+  assert.ok(!('wait-holds' in COMMANDS));
+  for (const s of ['S1', 'S2']) assert.match((new RegExp(`^${s}\\(\\) \\{[^\\n]*\\n([\\s\\S]*?)\\n\\}`, 'm').exec(sh) ?? [])[1] ?? '', /\$LIB wait-row "\$[ab]"/);
+  assert.match(sh, /--object-mode\) OBJECT_MODE="\$2"/);
+  assert.match((/^S4\(\) \{[^\n]*\n([\s\S]*?)\n\}/m.exec(sh) ?? [])[1] ?? '', /set-mode "sh-\$a" "\$OBJECT_MODE"/);
+  const r = spawnSync('bash', [DEMO_SH, '--object-mode', 'plan'], { encoding: 'utf8' });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /auto, default or acceptEdits/);
 });
 
 test('demo.sh --film: the panel beat opens the room row and comes back with one ↑; S6b prompts name no tool', () => {

@@ -2,6 +2,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { panelRows, joinNotices } from '../lib/panes.ts';
+import { clip } from '../lib/io.ts';
+import { isRoomRow } from './transcripts.ts';
 import type { Ctx, Det } from './context.ts';
 import type { AgentRow } from './captures.ts';
 import type { Thresholds } from '../metrics.ts';
@@ -30,6 +32,16 @@ export function run(x: Ctx, { det }: { det: Det }, T: Thresholds): void {
   const orr = panelRows(oc);
   det('The room\'s Claude keeps no rows (each member\'s one room row is that member\'s hooks module\'s)', orr.length === 0,
     `claude rows: ${orr.map(r => r.line).join(' | ') || 'none'}`);
+  // the row is the hooks module's (agents/room.md, spawned with $.agent.spawn): a room row in A's session holding this
+  // room, no participant row; the room session spawns no agent at all
+  const s1 = x.span('S1');
+  const mine = x.seatAgents(A).filter(s => s.session !== roomClaudeSid && !!s1 && s.first > s1.from && s.first <= s1.to);
+  const rows = mine.filter(s => isRoomRow(s, code));
+  det(`${A}'s one room row is the hooks module's: a sub-human:room agent holding ${code} in ${A}'s session, no participant row`,
+    rows.length === 1 && rows[0]?.holds.some(h => h.room === code) && !mine.some(s => s.agentType === 'sub-human:participant'),
+    mine.map(s => `${s.agentType || '?'} "${clip(s.prompt, 30)}" holds ${s.holds.map(h => `${h.room}${h.result === null ? ' (blocking)' : ''}`).join(',') || 'none'}`).join('; ') || 'no subagent in S1');
+  const own = x.seatAgents('claude');
+  det('The room session spawns no agent (no rows, no participants)', own.length === 0, own.map(s => `${s.agentType || '?'} ${s.file}`).join('; ') || 'none');
   const dir = ms.claude && ms.claude.tasks_dir;
   det(`The room session's task list directory is made before it starts and recorded (members.json claude.tasks_dir ends tasks/sh-${code})`, !!dir && dir.endsWith(`/tasks/sh-${code}`) && fs.existsSync(dir),
     `claude.tasks_dir ${dir || 'missing'}${dir ? (fs.existsSync(dir) ? ' (exists)' : ' (missing on disk)') : ''}`);

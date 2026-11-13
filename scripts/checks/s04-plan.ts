@@ -4,10 +4,34 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readText, esc } from '../lib/io.ts';
 import { toolResults } from './transcripts.ts';
+import { isRed } from '../metrics.ts';
 import type { Ctx, Det } from './context.ts';
 import type { Step } from './captures.ts';
 
 export const scene = 'S4';
+
+/**
+ * The red "Error:" lines a plan save drew in seat's pane (the store's receipt is the save's deny; 0.6.0's ui.render
+ * pass hides its red result row, mod/core/quiet.ts): in the pane saved at the save (state/SCENE/save-SEAT.txt and
+ * .ansi) and in the seat's captures of the scene. A line counts when it reads "Error:" and is drawn red (the .ansi),
+ * or, with no .ansi, when it is a tool result row "⎿ Error: …". {lines, read}: the hits and the files read.
+ */
+export function saveErrors(x: Ctx, sc: string, seat: string): { lines: string[], read: string[] } {
+  const plain = (l: string): string => l.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
+  const files = [x.stateFile(sc, `save-${seat}.txt`), ...x.caps(sc, seat).map(r => path.join(x.screens, r.txt))];
+  const lines: string[] = [], read: string[] = [];
+  for (const f of files) {
+    const txt = readText(f);
+    if (txt == null) continue;
+    read.push(path.basename(f));
+    const ansi = readText(f.replace(/\.txt$/, '.ansi'));
+    const hits = ansi != null
+      ? ansi.split('\n').filter(l => /Error:/.test(plain(l)) && isRed(l)).map(plain)
+      : txt.split('\n').filter(l => /^\s*⎿\s+Error:/.test(l));
+    for (const h of hits) lines.push(`${path.basename(f)}: ${h.trim().slice(0, 100)}`);
+  }
+  return { lines, read };
+}
 
 export function run(x: Ctx, { det }: { det: Det }): void {
   const { log, roomDir, props, drafts, A, B } = x;
@@ -21,6 +45,10 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   const es = x.inSpan(x.entries(B), s4);
   const receipt = toolResults(es).find(t => /plan \S+ v1 saved[,;] |saved as room plan \S+ v1, not (agreed|sent out) yet/.test(t));
   det(`${B}'s Claude was told the receipt ("plan NAME v1 saved; you review it …"), no approval dialog`, !!receipt, receipt ? receipt.slice(0, 120) : 'no receipt in its transcript');
+  // release gate: the save draws no red "Error:" (the receipt is a deny; the person never sees it as one)
+  const se = saveErrors(x, 'S4', B);
+  det(`No red "Error:" in ${B}'s pane on the save of v1`, se.read.includes(`save-${B}.txt`) && se.lines.length === 0,
+    se.lines.length ? se.lines.slice(0, 3).join(' | ') : se.read.includes(`save-${B}.txt`) ? `none in ${se.read.length} pane(s)` : `state/S4/save-${B}.txt not saved`);
   const d1 = drafts[0];
   const answered = log.filter(e => (e.kind === 'signoff' || e.kind === 'objection') && v1 && e.proposal_hash === v1.hash && e.id < (d1?.id ?? Infinity));
   det('The edit recorded no answer (an edit is never a sign-off)', answered.length === 0, answered.map(x.fmt).join('; ') || 'none');

@@ -26,15 +26,47 @@ export function panelRows(txt: string | null | undefined): PanelRow[] {
   return out;
 }
 
-/** The room row and the members shown inside it (an opened room row: └ rows under it), or null: {room, members}. */
-export function roomRowMembers(txt: string | null | undefined, code: string): { room: PanelRow, members: string[] } | null {
-  const rows = panelRows(txt);
-  const i = rows.findIndex(r => !r.nested && r.label === code);
-  const room = rows[i];
-  if (i < 0 || !room) return null;
-  const members: string[] = [];
-  for (const r of rows.slice(i + 1)) { if (!r.nested) break; members.push(r.label); }
-  return { room, members };
+/**
+ * Who else a room row's text says is here (lib/rows.ts hereText: "bob here", "bob (working), carol here", "a, b, c +2
+ * here", "only you"): the names, each without what its presence says ([] for "only you"), or null when the text names
+ * nobody. The first such run in the text wins (the hold's line leads with it; the status line may put a join first).
+ */
+export function hereNames(text: string | null | undefined): string[] | null {
+  const t = String(text || '');
+  if (/(^|[\s·⎿])only you\b/.test(t)) return [];
+  const name = String.raw`[a-z][a-z0-9_-]*(?: \([^)]*\))?`;
+  const m = new RegExp(String.raw`(?:^|[\s·⎿])(${name}(?:, ${name})*)(?: \+\d+)? here\b`).exec(t);
+  return m ? (m[1] ?? '').split(', ').map(n => n.replace(/ \(.*$/, '')) : null;
+}
+
+/**
+ * The open room row's view (Enter on the room row; its input box is ruled "─ CODE ─"): the row's own line, the hold's
+ * progress (mcp/hold.ts: who else is here, the room's latest, " · read-only · talk in main (@room)"), drawn under the
+ * hold call (⎿) above that rule, its wrapped part joined back; null when the view is not open or shows no line.
+ */
+export function rowViewLine(txt: string | null | undefined, code: string): string | null {
+  const lines = String(txt || '').split('\n');
+  const rule = lines.findLastIndex(l => l.includes(`─ ${code} ─`));
+  if (rule < 0) return null;
+  const at = lines.slice(0, rule).findLastIndex(l => /^\s*⎿\s+\S/.test(l));
+  if (at < 0) return null;
+  const out = [(lines[at] ?? '').replace(/^\s*⎿\s+/, '').trim()];
+  for (const l of lines.slice(at + 1, rule)) { if (!/^\s{3,}\S/.test(l) || /^\s*[❯⏺⎿─]/.test(l)) break; out.push(l.trim()); }
+  return out.join(' ');
+}
+
+/** A permission mode as a capture's footer shows it ('default': none named). */
+export type FooterMode = 'auto' | 'acceptEdits' | 'plan' | 'bypassPermissions' | 'default';
+/** The permission mode a capture's footer shows, or null when no prompt box is drawn (a dialog over it, no Claude Code). */
+export function footerMode(txt: string | null | undefined): FooterMode | null {
+  const t = String(txt || '');
+  if (/⏵⏵ auto mode on/.test(t)) return 'auto';
+  if (/⏵⏵ accept edits on/.test(t)) return 'acceptEdits';
+  if (/⏸ plan mode on/.test(t)) return 'plan';
+  if (/bypass permissions on/.test(t)) return 'bypassPermissions';
+  const ls = t.split('\n');
+  const box = ls.some((l, i) => /^\s*❯/.test(l) && i > 0 && /^\s*─{10,}/.test(ls[i - 1] ?? ''));
+  return box && !/Would you like to proceed\?|Exit plan mode\?|Esc to cancel/.test(t) ? 'default' : null;
 }
 
 /** Top-level panel rows besides main and the room row: a Claude's own subagents (◯ Explore  Read server and store). */

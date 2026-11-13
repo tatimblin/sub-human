@@ -3,10 +3,48 @@
 // once is covered by the plugin's tests, test/plan.node-test.ts.)
 import crypto from 'node:crypto';
 import path from 'node:path';
-import { readText } from '../lib/io.ts';
+import { readText, clip } from '../lib/io.ts';
 import type { Ctx, Det, Beh } from './context.ts';
-import { blocksOf } from '../metrics.ts';
+import { blocksOf, trigger } from '../metrics.ts';
 import type { Block, TEntry } from '../metrics.ts';
+import { footerMode } from '../lib/panes.ts';
+import { saveErrors } from './s04-plan.ts';
+
+/** The tools that change files: an objector's Claude calling one before its person's next prompt started building. */
+const EDIT_TOOLS = /^(Edit|Write|MultiEdit|NotebookEdit)$/;
+/** A prompt the person typed (not a wake, a peer's message, a task notification, a meta copy or tool results). */
+export const typedPrompt = (e: TEntry): boolean => e.type === 'user' && !e.isMeta && !trigger(e)
+  && !(e.origin && (e.origin.kind === 'task-notification' || e.origin.kind === 'peer'))
+  && !(blocksOf(e).length > 0 && blocksOf(e).every(c => c.type === 'tool_result'));
+
+/**
+ * Release gate, after A's objection: his mode is the one he had before the review (0.6.0 #34, keep-mode: auto keeps
+ * auto, manual keeps manual; accept edits has no exit that keeps it, so it comes back as default with the one line
+ * "shift+tab returns you to accept edits", the designed limit), and his Claude does not start building before his next
+ * prompt. The mode before is A's footer when S4 began (state/S4/mode-A.txt, after --object-mode's shift+tab), the mode
+ * after his footer once the review closed (state/S5/mode-after-A.txt); each falls back to the transcript's
+ * permissionMode (the last before the request reached him; his next typed prompt's).
+ */
+function objectionGate(x: Ctx, det: Det, beh: Beh, ob: { at: string } | undefined, sentAt: string | undefined): void {
+  const { A, DEMO } = x;
+  const es = x.entries(A).filter(e => !e.isSidechain && e.timestamp).sort((a, b) => ((a.timestamp ?? '') < (b.timestamp ?? '') ? -1 : 1));
+  const next = ob ? es.find(e => (e.timestamp ?? '') > ob.at && typedPrompt(e)) : undefined;
+  const fb = footerMode(readText(x.stateFile('S4', `mode-${A}.txt`))), fa = footerMode(readText(x.stateFile('S5', `mode-after-${A}.txt`)));
+  const tb = sentAt ? es.filter(e => e.permissionMode && (e.timestamp ?? '') <= sentAt).at(-1)?.permissionMode : undefined;
+  const before = fb ?? tb ?? null, after = fa ?? next?.permissionMode ?? null;
+  const want = DEMO.objectMode || null;
+  const hint = /shift\+tab returns you to accept edits/.test([readText(x.stateFile('S5', `mode-after-${A}.txt`)), ...x.caps('S5', A).map(r => readText(path.join(x.screens, r.txt)))].join('\n'));
+  const kept = !!before && before === after;
+  const limit = before === 'acceptEdits' && after === 'default' && hint;
+  det(`No mode change on ${A}'s objection: his mode after the review is the one before it${want ? ` (${want}, --object-mode)` : ''}${before === 'acceptEdits' ? '; accept edits: or default with the "shift+tab returns you to accept edits" line' : ''}`,
+    (!want || before === want) && (kept || limit),
+    `before ${before ?? 'unknown'} (footer ${fb ?? '-'}, transcript ${tb ?? '-'}); after ${after ?? 'unknown'} (footer ${fa ?? '-'}, next prompt ${next?.permissionMode ?? '-'})${limit ? '; accept edits came back as default with the shift+tab line (the designed limit)' : ''}`);
+  // a model's behaviour, so warn-only: no file edit by A's Claude between the objection and A's next typed prompt
+  const between = ob ? es.filter(e => (e.timestamp ?? '') > ob.at && (!next || (e.timestamp ?? '') < (next.timestamp ?? ''))) : [];
+  const edits = x.toolUses(between).filter(c => EDIT_TOOLS.test(c.name ?? ''));
+  beh(`After the objection ${A}'s Claude does not start building: no file edits before ${A}'s next prompt`, ob ? edits.length : null, 0,
+    ob ? `${edits.length} edit call(s)${edits.length ? `: ${edits.map(c => `${c.name} ${clip(String((c.input || {}).file_path ?? ''), 40)}`).join(', ')}` : ''} between the objection (${ob.at.slice(11, 19)}) and ${next ? `the next prompt (${String(next.timestamp).slice(11, 19)})` : 'the end of the transcript'}` : 'no objection');
+}
 
 const hash12 = (t: string): string => crypto.createHash('sha256').update(Buffer.from(t, 'utf8')).digest('hex').slice(0, 12);
 
@@ -30,7 +68,7 @@ export function isReview(call: Block, es: TEntry[], hashes: Set<string>, labels:
 
 export const scene = 'S5';
 
-export function run(x: Ctx, { det }: { det: Det; beh: Beh }): void {
+export function run(x: Ctx, { det, beh }: { det: Det; beh: Beh }): void {
   const { log, props, drafts, DEMO, A, B } = x;
   const p1 = props[0], p2 = props.at(-1) !== p1 ? props.at(-1) : undefined;
   const ob = p1 && log.find(e => e.kind === 'objection' && e.from === A && e.proposal_hash === p1.hash);
@@ -43,6 +81,10 @@ export function run(x: Ctx, { det }: { det: Det; beh: Beh }): void {
   const vs = log.filter(e => e.kind === 'plan' && e.plan === name).map(e => ({ v: e.version, base: e.base, from: e.from, id: e.id }));
   const v2 = vs.find(v => v.v === 2);
   det(`v2 by ${A}'s Claude, on v1`, v2 && v2.from === A && v2.base === 1, vs.map(v => `v${v.v} base v${v.base} ${v.from} #${v.id}`).join(', ') || 'no versions');
+  objectionGate(x, det, beh, ob, p1?.at);
+  const se = saveErrors(x, 'S5', A);
+  det(`No red "Error:" in ${A}'s pane on the save of v2`, se.read.includes(`save-${A}.txt`) && se.lines.length === 0,
+    se.lines.length ? se.lines.slice(0, 3).join(' | ') : se.read.includes(`save-${A}.txt`) ? `none in ${se.read.length} pane(s)` : `state/S5/save-${A}.txt not saved`);
   const last = vs.at(-1);
   det('A new sign-off request on the latest version', p2 && last && p2.hash !== p1?.hash && p2.version === last.v && p2.id > last.id,
     p2 ? `${p1?.hash.slice(0, 6)} → ${p2.hash.slice(0, 6)} (#${p2.id}, v${p2.version})` : 'no request after the edits');
