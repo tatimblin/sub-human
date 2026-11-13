@@ -77,6 +77,20 @@ test('one room row, the module\'s own: a member\'s first turn spawns it ($.agent
   expect(seen.debug).toContain(`rows: room row ${CODE} started`)
 })
 
+test('a join spawns its row right away (live 2.1.296: the join\'s turn starts before the seat is taken, so turn.start finds none), and a turn after spawns no second', async ($, on) => {
+  const seen = world(on, { seat: null })
+  on('classic.UserPromptExpansion', () => ({})) // the join beneath
+  await start($)
+  await turn($)
+  expect(seen.spawns).toEqual([]) // no seat yet
+  seen.seat = SEAT
+  await $.classic.UserPromptExpansion({ expansion_type: 'slash_command', command_name: 'sub-human', command_args: 'alice', prompt: '/sub-human alice', session_id: SID })
+  await new Promise(r => setTimeout(r, 30))
+  expect(seen.spawns).toEqual([{ subagentType: 'sub-human:room', description: CODE, prompt: `room: ${CODE}` }])
+  await turn($)
+  expect(seen.spawns.length).toBe(1)
+})
+
 test('a resume, a fork or a /clear brings the room row back with no prompt (once the restore put the seat back); one still running is left alone', async ($, on) => {
   const seen = world(on)
   await start($)

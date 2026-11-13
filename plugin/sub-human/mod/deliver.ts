@@ -774,7 +774,10 @@ export function registerDeliver(on: On): void {
     // a leave ends this session's delivery now, whatever the hello says: a room hosted elsewhere may still list the
     // seat for a moment (a session cut off kept its tail and heard "carol left" after its leave)
     if (left || gone) { stopChild(sid); seatChanged(mine && mine.code); }
-    else { try { childFor($, sid, asHello((await $.state.get(HELLO)).value)); } catch { /* next start tries again */ } }
+    else {
+      try { childFor($, sid, asHello((await $.state.get(HELLO)).value)); } catch { /* next start tries again */ }
+      void roomRow($); // a join's row now: its turn started before the seat was taken, so turn.start found none
+    }
     return result;
   }).catch((_$, e, next) => next(e)); // unsure: the classic hook beneath answers, as without the module
 
@@ -788,6 +791,7 @@ export function registerDeliver(on: On): void {
     const r = took ? { additionalContext: [took.context] } : await next(e);
     try { await refresh($, e.session_id); } catch { /* the next refresh tries again */ }
     try { childFor($, e.session_id, asHello((await $.state.get(HELLO)).value)); } catch { /* next start tries again */ }
+    void roomRow($); // the join's row now, as for the command.run join above
     return r;
   }).catch((_$, e, next) => next(e)); // never in the join's way: what ran beneath stands, or runs
 
