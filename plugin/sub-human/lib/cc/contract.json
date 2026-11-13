@@ -506,9 +506,12 @@
     "metadata?._internal"
    ],
    "shape": [
-    ".filter((~)=>!~.metadata?._internal);if(!this."
+    ".filter((~)=>!~.metadata?._internal);if(!this.",
+    "=!0,~(~,this.#~).then(async(~)=>{if(~.length>0&&~.every((~)=>~.status===\"completed\")&&await ~(~,this.#~))",
+    "else if((await ~(~)).some((~)=>~.status!==\"completed\"))return!1;",
+    "if(~===null)continue;if(~.status!==\"completed\")return!1}"
    ],
-   "note": "A task file whose metadata._internal is true is left out of every view (the task list, the TaskList tool, compaction's carry), while the 5 s auto-reset's own check reads every task, _internal included: an _internal task in_progress holds the list as a shown one does, and a list of only that task shows nothing (docs/next/quiet/SPIKES.md spike 3, live on 2.1.296). The room task's file is marked so (lib/room/task-files.ts native; lib/cc/tasks.ts INTERNAL_KEY). Cosmetic: where it fails, the room session's list shows \"room CODE open\" too."
+   "note": "A task file whose metadata._internal is true is left out of every view (the task list, the TaskList tool, compaction's carry), while the 5 s auto-reset's own check reads every task, _internal included: an _internal task in_progress holds the list as a shown one does, and a list of only that task shows nothing (docs/next/quiet/SPIKES.md spike 3, live on 2.1.296). The shapes after the first are that check: the timer re-reads the list unfiltered and resets only when every task is completed, and resetTaskList re-checks every file (both stores) and refuses on any task not completed. The room task's file is marked so (lib/room/task-files.ts native; lib/cc/tasks.ts INTERNAL_KEY). Cosmetic where the view's filter fails: the room session's list shows \"room CODE open\" too."
   },
   {
    "id": "task-list-retention",

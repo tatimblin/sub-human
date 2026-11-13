@@ -14,7 +14,8 @@
  *   spawnStep(ledger, code, now) -> {spawn, ledger}   whether a spawn may go now: one at a time per room, at most one
  *                                    each ROW_RESPAWN_MS and ROW_SPAWNS_MAX in a row, so a row that dies at once
  *                                    never loops; spawnDone(ledger, code, started) ends one (one that started nothing
- *                                    may go again at once); spawnLived (the row found live: the count starts over);
+ *                                    may go again at once); spawnLived(ledger, code, now) (the row found
+ *                                    live ROW_RESPAWN_MS past its spawn: the count starts over);
  *                                    spawnForget (the seat changed: the room's ledger goes)
  *   handbackFrom(text) -> id|null    the agent whose final report a delivery is (Claude Code's "[Subagent hand-back]"
  *                                    frame inside <agent-message from="ID">: cc CONTRACT subagent-handback-message)
@@ -49,6 +50,8 @@ export const rowSpawn = (code: string): { subagentType: string; description: str
 
 export const ROW_RESPAWN_MS = 60_000;
 export const ROW_SPAWNS_MAX = 5;
+/** How long one run of mod/deliver.ts roomRow may hold the next one off (a hung spawn, list or connect). */
+export const ROW_RUN_MS = 30_000;
 /** Per room: the spawns this process made, the last one's time, and whether one is under way. */
 export type SpawnLedger = Readonly<Record<string, { n: number; at: number; busy: boolean } | undefined>>;
 export function spawnStep(ledger: SpawnLedger, code: string, now: number): { spawn: boolean; ledger: SpawnLedger } {
@@ -62,11 +65,12 @@ export function spawnDone(ledger: SpawnLedger, code: string, started = true): Sp
   const cur = ledger[code];
   return cur ? { ...ledger, [code]: { ...cur, busy: false, ...(started ? {} : { at: -Infinity }) } } : ledger;
 }
-/** A turn start found code's row live: it did not die at once, so its spawns count from none again (the cap is for
- * rows that die quickly). */
-export function spawnLived(ledger: SpawnLedger, code: string): SpawnLedger {
+/** A turn start at now found code's row live: once it has run ROW_RESPAWN_MS since its spawn it did not die at once,
+ * so its spawns count from none again (the cap is for rows that die quickly; one found live seconds after its spawn
+ * still counts). */
+export function spawnLived(ledger: SpawnLedger, code: string, now: number): SpawnLedger {
   const cur = ledger[code];
-  return cur && cur.n ? { ...ledger, [code]: { ...cur, n: 0 } } : ledger;
+  return cur && cur.n && now - cur.at >= ROW_RESPAWN_MS ? { ...ledger, [code]: { ...cur, n: 0 } } : ledger;
 }
 /** The seat changed (a leave, a take): code's ledger starts over. */
 export function spawnForget(ledger: SpawnLedger, code: string): SpawnLedger {

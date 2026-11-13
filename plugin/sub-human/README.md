@@ -350,7 +350,7 @@ The save draws nothing in your session: no red `Error:` line and no plan-mode ro
 
 Your own plan file is put back as it was, and your permission mode too. A version alone shows nobody anything (their Claudes read it with their next prompt). When it goes out, the one line each person asked sees is `Plan room v2 is ready · alice's edit` (whoever already agreed to that version is not asked again; the summary is in the plan view).
 
-**You check your own version first.** Nobody else is asked about a version your Claude wrote until you have seen it. Right after storing it, the plan view shows it to you, its first line `Room plan · room v2 (your new version) · Yes sends it out` (in manual mode it names `"Yes, manually approve edits"`, the Yes that keeps your mode):
+**You check your own version first.** Nobody else is asked about a version your Claude wrote until you have seen it. Right after storing it, the plan view shows it to you, its first line names the Yes that keeps your mode: `Room plan · room v2 (your new version) · "Yes, manually approve edits" sends it out` in manual mode, `"Yes, and use auto mode" sends it out` in auto mode, and `Yes sends it out` in any other mode:
 
 | You do | What happens |
 |---|---|

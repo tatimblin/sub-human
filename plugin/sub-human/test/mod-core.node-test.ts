@@ -271,6 +271,9 @@ test('deliver: the child\'s argv and env; lines out of pieces; only well-formed 
   assert.equal(b.pending, '{"ty');
   assert.deepEqual(d.parseEvent('{"type":"chat","lines":["bob: hi"]}'), { type: 'chat', lines: ['bob: hi'] });
   assert.deepEqual(d.parseEvent('{"type":"reminders","text":""}'), { type: 'reminders', text: null });
+  // 0.5's tail named it rows: a child still running from it keeps its reminders
+  assert.deepEqual(d.parseEvent('{"type":"rows","text":"sign off v2"}'), { type: 'reminders', text: 'sign off v2' });
+  assert.deepEqual(d.route({ type: 'reminders', text: 'sign off v2' }), d.route(must(d.parseEvent('{"type":"rows","text":"sign off v2"}'))));
   assert.deepEqual(d.parseEvent('{"type":"seat","seat":null}'), { type: 'seat', seat: null });
   assert.equal(d.parseEvent('{"type":"wake"}'), null);
   assert.equal(d.parseEvent('{"type":"exec","text":"rm"}'), null);
@@ -512,8 +515,11 @@ test('the room row (one row, the module\'s own): wanted for a member\'s seat of 
   const again = r.spawnStep(failed, 'vole-1234', 5001);
   assert.equal(again.spawn, true);
   assert.equal(again.ledger['vole-1234']?.n, 2);
-  // the cap is for rows that die quickly: a row found live starts the count over; a seat change forgets the room
-  const lived = r.spawnLived(ledger, 'otter-4821');
+  // the cap is for rows that die quickly: a row found live a minute past its spawn starts the count over (one found
+  // live seconds after it still counts); a seat change forgets the room
+  assert.equal(r.spawnLived(ledger, 'otter-4821', t + 1000), ledger, 'found live seconds after its spawn: the count stays');
+  assert.equal(r.spawnLived(ledger, 'otter-4821', t + r.ROW_RESPAWN_MS - 1)['otter-4821']?.n, r.ROW_SPAWNS_MAX);
+  const lived = r.spawnLived(ledger, 'otter-4821', t + r.ROW_RESPAWN_MS);
   assert.equal(lived['otter-4821']?.n, 0);
   assert.equal(r.spawnStep(lived, 'otter-4821', t + 10 * r.ROW_RESPAWN_MS).spawn, true, 'a row that lived may come back');
   const forgot = r.spawnForget(ledger, 'otter-4821');

@@ -21,7 +21,7 @@ import { mergeClassic } from './core/prompt.ts';
 import { factsBook, type FactsBook } from './core/facts.ts';
 import { asHello, asNonce, mintNonce } from './core/state.ts';
 import { ccNotice } from './core/cc.ts';
-import { roomRowFor, liveRow, rowSpawn, spawnStep, spawnDone, spawnLived, spawnForget, type SpawnLedger } from './core/rows.ts';
+import { roomRowFor, liveRow, rowSpawn, spawnStep, spawnDone, spawnLived, spawnForget, ROW_RUN_MS, type SpawnLedger } from './core/rows.ts';
 import { noteRow } from './rows.ts';
 import { copyBook, copyWake, copyTo, copyNews, clipboardCommands, AUTO_COPIED, NO_TOOL, type CopyBook } from './core/copy.ts';
 import {
@@ -316,24 +316,51 @@ const ROOM_SERVER = 'room';
  * runs one, spawned with $.agent.spawn (no Agent call of the model's, no "Backgrounded agent" block: cc CONTRACT
  * module-agent-spawn-quiet) while the room server is connected (the row's one tool is its hold). So a join's own turn
  * starts it, a resume, a fork or a /clear gets it back with no prompt, and a row that died at the next turn; spawnStep
- * keeps a row that dies at once from looping (a row found live starts its count over; a seat change forgets it). One
- * run at a time (rowing, set before any await: SessionStart's and turn.start's would both spawn). Not awaited; never
- * throws.
+ * keeps a row that dies at once from looping (a row found live a minute past its spawn starts its count over; a seat
+ * change forgets it). One run at a time (rowing, set before any await: SessionStart's and turn.start's would both
+ * spawn); a call while one runs is answered by it, and once it settles the room code is read again: a seat that
+ * changed meanwhile gets its own run. Each run lets go of rowing after ROW_RUN_MS (a hung spawn, list or connect
+ * blocks no later row; its spawn still ends its ledger entry, spawnDone, when it settles). Not awaited; never throws.
  */
 let rowing: Promise<void> | null = null;
+/** A roomRow call came while a run was under way. */
+let rowAsked = false;
 function roomRow($: EngineInterface): Promise<void> {
-  rowing ??= rowOnce($).finally(() => { rowing = null; });
+  if (rowing) { rowAsked = true; return rowing; }
+  rowing = (async () => {
+    let ran = await within($, rowOnce($), ROW_RUN_MS);
+    for (let i = 0; rowAsked && i < 3; i++) {
+      rowAsked = false;
+      const now = await within($, rowCode($), ROW_RUN_MS);
+      if (now === undefined || now === ran) break;
+      ran = await within($, rowOnce($), ROW_RUN_MS);
+    }
+  })().catch(() => {}).finally(() => { rowing = null; rowAsked = false; });
   return rowing;
 }
-async function rowOnce($: EngineInterface) {
+/** p's value, or undefined once it fails or ms pass first (no clock: no bound). */
+function within<T>($: EngineInterface, p: Promise<T>, ms: number): Promise<T | undefined> {
+  return new Promise(resolve => {
+    let timer: { cancel(): void } | null = null;
+    try { timer = $.clock.after(ms, () => { resolve(undefined); }); } catch { /* unbounded */ }
+    void p.then(resolve, () => { resolve(undefined); }).finally(() => { timer?.cancel(); });
+  });
+}
+/** The room whose row this session wants now (mod/core/rows.ts roomRowFor). */
+async function rowCode($: EngineInterface): Promise<string | null> {
+  return roomRowFor(asHello((await $.state.get(HELLO)).value), await $.session.id());
+}
+/** One run for the room the hello names now; resolves that code (null: none wanted, or the run failed). */
+async function rowOnce($: EngineInterface): Promise<string | null> {
+  let code: string | null = null;
   try {
-    const code = roomRowFor(asHello((await $.state.get(HELLO)).value), await $.session.id());
-    if (!code) return;
+    code = await rowCode($);
+    if (!code) return null;
     const before = await $.agent.list();
-    if (liveRow(before, code)) { spawns = spawnLived(spawns, code); return; }
-    if (!(await $.mcp.connect(ROOM_SERVER)).isConnected) return;
+    if (liveRow(before, code)) { spawns = spawnLived(spawns, code, await $.clock.now()); return code; }
+    if (!(await $.mcp.connect(ROOM_SERVER)).isConnected) return code;
     const step = spawnStep(spawns, code, await $.clock.now());
-    if (!step.spawn) return;
+    if (!step.spawn) return code;
     spawns = step.ledger;
     let started = false;
     try {
@@ -345,6 +372,7 @@ async function rowOnce($: EngineInterface) {
       else $.ui.log(`rows: room row ${code} not started${r.deny !== undefined ? `: ${r.deny}` : ''}`, { to: 'debug' });
     } finally { spawns = spawnDone(spawns, code, started); }
   } catch { /* the next turn tries again */ }
+  return code;
 }
 /** The seat this session holds changed (a leave, a take): the rooms' spawn counts start over. */
 function seatChanged(...codes: (string | null | undefined)[]): void {

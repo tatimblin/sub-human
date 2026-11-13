@@ -195,13 +195,14 @@ function noteFirst(on: On, ask: string | null, fail?: number) {
   return { seen, refusal, said, card, waits }
 }
 
-test('#34 keep-mode: consent failing on the person\'s Send leaves the refusal\'s line for the model, and tells the person in one line that the note still waits', async ($, on) => {
+test('#34 keep-mode: consent failing on the person\'s Send leaves the refusal\'s line for the model, and tells the person in one line that the note may not have gone', async ($, on) => {
   const { seen, refusal, waits } = noteFirst(on, 'Send', 2)
   await start($)
   const r = await exitPlan($, 'proposal abcdef012345')
   expect(seen.consent.map(c => c.stdin.hook_event_name)).toEqual(['PreToolUse', 'PostToolUseFailure', 'NoteAnswer'])
   expect(r.deny).toBe(`${refusal}\n\n${waits}`)
-  expect(seen.logs).toEqual(['your note is not sent yet; it still waits. Ask your Claude for its card to Send or Discard it.'])
+  // consent may have recorded the Send before it failed: the line claims neither way
+  expect(seen.logs).toEqual(['Your note may not have been sent; ask your Claude to check its card.'])
 })
 
 for (const ask of ['Send', 'Discard', null] as const) {
@@ -226,6 +227,20 @@ test('M: an ExitPlanMode that ran (a Yes) is not a refusal: no consent run from 
   const r = await $.tool.call({ tool: 'ExitPlanMode' })
   expect(r.text).toBe('ok')
   expect(seen.consent.map(c => c.stdin.hook_event_name)).toEqual(['PreToolUse'])
+})
+
+test('a subagent\'s ExitPlanMode reaches consent\'s PreToolUse with its agentId as agent_id; a main-loop one carries none', async ($, on) => {
+  const seen = world(on)
+  await start($)
+  // the call as a subagent's loop makes it: the engine keeps its agentId (AgentLoop), as core sets it on that loop's calls
+  // @ts-expect-error -- deliberate: $.tool.call's typed input has no agentId; the test engine carries it into tool.call
+  await $.tool.call({ tool: 'ExitPlanMode', agentId: 'a7' })
+  await $.tool.call({ tool: 'ExitPlanMode' })
+  expect(seen.consent.map(c => [c.stdin.hook_event_name, c.stdin.tool_name, c.stdin.agent_id])).toEqual([
+    ['PreToolUse', 'ExitPlanMode', 'a7'],
+    ['PreToolUse', 'ExitPlanMode', undefined],
+  ])
+  expect('agent_id' in must(seen.consent[1]).stdin).toBe(false)
 })
 
 test('8: the prompt holding typed text as the plan view opens goes with ExitPlanMode\'s consent payload (sub_human_typing); an empty prompt sends none', async ($, on) => {

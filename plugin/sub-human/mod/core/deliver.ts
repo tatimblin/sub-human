@@ -91,6 +91,8 @@ const rec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'o
 export function parseEvent(line: string): TailEvent | null {
   let o: unknown; // parsed JSON: each field is checked below before it is used
   try { o = JSON.parse(line); } catch { return null; }
+  // 0.5's tail named the reminders event `rows`: a tail child still running from it keeps its sign-off reminders (drop in 0.7.0)
+  if (rec(o) && o.type === 'rows') o = { ...o, type: 'reminders' };
   if (!rec(o) || !isType(o.type)) return null;
   const { type, text } = o;
   switch (type) {

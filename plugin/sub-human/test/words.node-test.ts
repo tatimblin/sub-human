@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { must } from './support/must.ts';
 import * as config from '../lib/config.ts';
+import * as review from '../lib/consent/review.ts';
 
 const ROOT = path.join(import.meta.dirname, '..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -130,6 +131,21 @@ test('words: the README\'s link quotas are lib/config.ts LINK_QUOTAS (posts, pla
   assert.equal(q.task.windowMs, 60_000);
   for (const s of want) assert.ok(t.includes(s), `README's quota list lacks "${s}"`);
   assert.ok(!t.includes('PIN must be 4 digits'), 'an older joiner is told to update (protocol skew), not about the PIN');
+});
+
+test('words: the README and the CHANGELOG name your own version\'s frame per mode as lib/consent/review.ts frameLine draws it', () => {
+  const H = 'abcdef0123456789';
+  const draft = (title: string, mode: string) => review.frameLine(H, `plan ${title}`, { mode, draft: true });
+  const tail = (mode: string) => draft('x', mode).replace(/^.*\(your new version\) · /, '');
+  assert.deepEqual(['default', 'auto', 'plan', 'acceptEdits'].map(tail), ['"Yes, manually approve edits" sends it out', '"Yes, and use auto mode" sends it out', 'Yes sends it out', 'Yes sends it out']);
+  const readme = read(README);
+  assert.ok(readme.includes(`\`${draft('room v2', 'default')}\` in manual mode`), 'README: the manual-mode draft frame');
+  assert.ok(readme.includes(`\`${tail('auto')}\` in auto mode`), 'README: the auto-mode draft frame');
+  assert.ok(readme.includes(`\`${tail('plan')}\` in any other mode`), 'README: the other modes\' draft frame');
+  const changelog = fs.readFileSync(path.join(ROOT, '..', '..', 'CHANGELOG.md'), 'utf8');
+  const v060 = must(/## 0\.6\.0[\s\S]*?(?=\n## )/.exec(changelog), 'the 0.6.0 section')[0];
+  assert.ok(v060.includes(`\`${draft('paging v2', 'default')}\``), 'CHANGELOG 0.6.0: the manual-mode draft frame');
+  assert.ok(v060.includes('in auto mode "Yes, and use auto mode"; elsewhere `Yes sends it out`'), 'CHANGELOG 0.6.0: the other modes');
 });
 
 test('words: plugin.json is valid and describes the slim plugin', () => {

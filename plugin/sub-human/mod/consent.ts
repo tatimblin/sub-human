@@ -107,8 +107,9 @@ function ownCard(input: unknown): boolean {
   if (!a || !isRec(input) || !Array.isArray(input.questions)) return false;
   return input.questions.some((q: unknown) => isRec(q) && q.question === a.question && q.header === a.header);
 }
-/** The person's line when their Send / Discard on that card was not taken (consent did not answer): the note waits. */
-const NOTE_NOT_TAKEN = 'your note is not sent yet; it still waits. Ask your Claude for its card to Send or Discard it.';
+/** The person's line when consent did not answer their Send / Discard on that card: it may have recorded the answer
+ * before it failed, so the line says only that the note may not have gone. */
+const NOTE_NOT_TAKEN = 'Your note may not have been sent; ask your Claude to check its card.';
 
 /** The note's card consent asked for (subHuman.noteAsk), checked, or null. */
 function noteAskOf(subHuman: SubHumanRead | undefined): { question: string; header: string; options: string[] } | null {
@@ -206,8 +207,8 @@ export function registerConsent(on: On): void {
         // read as the refusal's own event: its context joins the refusal (toClassic keeps only the fields an event reads)
         const run = await runConsent($, { hook_event_name: NOTE_ANSWER, session_id: sid, sub_human_note: label }, sid).catch(() => null);
         const answered = run ? toClassic('PostToolUseFailure', run) : null;
-        // consent did not answer (its report missing: it failed or timed out): the person's Send or Discard was not
-        // taken, so they hear that the note still waits (its card later); the model keeps the refusal's own line
+        // consent did not answer (its report missing: it failed or timed out): the person's Send or Discard may or may
+        // not have been recorded first, so they hear that it may not have gone; the model keeps the refusal's own line
         if (!answered || !answered.subHuman) { if (label) $.ui.log(NOTE_NOT_TAKEN); }
         else {
           const { result: res, ...rest } = answered;

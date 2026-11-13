@@ -7,6 +7,7 @@ import type { AgentInfo, On } from 'claude-code'
 import { test, expect, type Engine } from 'claude-code/testing'
 import { CODE, SEAT, helloOf, must, ran, scriptOf, seatOf, session, start, stdinOf, type Seat } from './support.ts'
 import { QUIET_ROW } from '../core/constants.ts'
+import { ROW_RUN_MS } from '../core/rows.ts'
 
 const SID = 'sid-r'
 const MINUTE = 60_000
@@ -15,14 +16,18 @@ type Agent = AgentInfo
 /** The engine beneath: mod-hello answering for `seat` (with `off`: the verdict's features off); row-hold answering
  * `answer`; $.agent.list answering `agents`, $.agent.spawn recording each spawn (and listing it as running), the room
  * server connected unless `down`; the clock at `clock.now`. */
-type Seen = { runs: { script: string; stdin: Record<string, unknown> }[]; beneathStop: number; spawns: Record<string, unknown>[]; agents: Agent[]; clock: { now: number }; offered: string[]; debug: string[] }
+type Seen = {
+  runs: { script: string; stdin: Record<string, unknown> }[]; beneathStop: number; spawns: Record<string, unknown>[]; agents: Agent[]; clock: { now: number }; offered: string[]; debug: string[]
+  /** the seat mod-hello answers (a test may change it); lists: $.agent.list calls; listHold, spawnHold: what those wait on first */
+  seat: Seat | null; lists: number; listHold: Promise<void> | null; spawnHold: Promise<void> | null
+}
 function world(on: On, { seat = SEAT, answer = {}, off = [], down = false }: { seat?: Seat | null; answer?: Record<string, unknown>; off?: string[]; down?: boolean } = {}) {
-  const seen: Seen = { runs: [], beneathStop: 0, spawns: [], agents: [], clock: { now: 1_000_000 }, offered: [], debug: [] }
+  const seen: Seen = { runs: [], beneathStop: 0, spawns: [], agents: [], clock: { now: 1_000_000 }, offered: [], debug: [], seat, lists: 0, listHold: null, spawnHold: null }
   session(on, SID)
   on('session.cwd', () => ({ value: '/w' }))
   on('process.run', (_$, e) => {
     const script = scriptOf(e)
-    if (script === 'mod-hello.ts') return ran(JSON.stringify({ ...helloOf(seat), ...(off.length ? { cc: { version: '2.1.302', verified: false, off } } : {}) }))
+    if (script === 'mod-hello.ts') return ran(JSON.stringify({ ...helloOf(seen.seat), ...(off.length ? { cc: { version: '2.1.302', verified: false, off } } : {}) }))
     seen.runs.push({ script, stdin: stdinOf(e) })
     const a = answer[script]
     return a === undefined ? ran('') : ran(JSON.stringify(a))
@@ -33,14 +38,19 @@ function world(on: On, { seat = SEAT, answer = {}, off = [], down = false }: { s
   on('ui.log', (_$, e) => { if (e.to === 'debug') seen.debug.push(e.text); return { value: undefined } })
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('clock.now', () => ({ value: seen.clock.now }))
-  on('agent.list', () => ({ value: seen.agents.map(a => ({ ...a })) }))
-  on('agent.spawn', (_$, e) => {
+  on('agent.list', async () => {
+    seen.lists++
+    if (seen.listHold) await seen.listHold
+    return { value: seen.agents.map(a => ({ ...a })) }
+  })
+  on('agent.spawn', async (_$, e) => {
     // the test engine hands the spawn on as the Agent tool's input (subagent_type), the engine as AgentSpawnInput
     const raw: Record<string, unknown> = { ...e }
     const type = String(e.subagentType ?? raw.subagent_type)
     seen.spawns.push({ subagentType: type, description: e.description, prompt: e.prompt })
     const id = `row${seen.spawns.length}`
     seen.agents.push({ id, type, status: 'running', description: e.description })
+    if (seen.spawnHold) await seen.spawnHold
     return { model: 'm', agentId: id } // the test engine keeps no hook's agentId (core sets it): $.agent.list names it
   })
   on('agent.offer', (_$, e) => { seen.offered.push(e.agent); return { isOffered: true } })
@@ -101,16 +111,66 @@ test('a resume\'s row and its first turn\'s at once spawn one row; a row of anot
   expect(seen.debug).toContain(`rows: room row ${CODE} started`)
 })
 
-test('a row that lived (found running at a turn) starts its spawn count over: it may come back after dying later', async ($, on) => {
+test('a row that lived (found running at a turn a minute past its spawn) starts its spawn count over: it may come back after dying later', async ($, on) => {
   const seen = world(on)
   await start($)
   for (let i = 0; i < 8; i++) {
     seen.clock.now += MINUTE
-    await turn($) // spawns, or finds it live
-    await turn($) // found live: the count starts over
+    await turn($) // spawns
+    seen.clock.now += MINUTE
+    await turn($) // found live a minute on: the count starts over
     for (const a of seen.agents) a.status = 'killed'
   }
   expect(seen.spawns.length).toBe(8)
+})
+
+test('a row found live only seconds after its spawn still counts: one that dies soon after each turn stops at five', async ($, on) => {
+  const seen = world(on)
+  await start($)
+  for (let i = 0; i < 8; i++) {
+    seen.clock.now += MINUTE
+    await turn($) // spawns
+    seen.clock.now += 5_000
+    await turn($) // found live, but too soon to say it lived
+    for (const a of seen.agents) a.status = 'killed'
+  }
+  expect(seen.spawns.length).toBe(5) // ROW_SPAWNS_MAX
+})
+
+test('a hung spawn lets go of the run after ROW_RUN_MS: a later turn runs again, and spawns none beside the one under way', async ($, on) => {
+  const seen = world(on)
+  const fire: (() => void)[] = []
+  on('clock.after', (_$, e, next) => e.ms === ROW_RUN_MS ? new Promise(resolve => { fire.push(() => { resolve({ value: undefined }) }) }) : next(e))
+  seen.spawnHold = new Promise(() => {}) // never settles
+  await start($)
+  await turn($)
+  expect(seen.spawns.length).toBe(1)
+  const lists = seen.lists
+  seen.clock.now += MINUTE
+  await turn($)
+  expect(seen.lists).toBe(lists) // the run under way answers it
+  for (const f of fire.splice(0)) f()
+  await new Promise(r => setTimeout(r, 30))
+  for (const a of seen.agents) a.status = 'killed'
+  seen.clock.now += MINUTE
+  await turn($)
+  expect(seen.lists).toBeGreaterThan(lists) // a run of its own
+  expect(seen.spawns.length).toBe(1) // the hung spawn is still under way (spawnDone has not run): none beside it
+})
+
+test('a call while a run is under way for one room, after the seat changed to another, gets a run of its own', async ($, on) => {
+  const seen = world(on)
+  let release = () => {}
+  await start($)
+  seen.listHold = new Promise(resolve => { release = resolve })
+  await turn($) // room CODE's run: held at $.agent.list
+  const OTHER = 'vole-1234'
+  seen.seat = { name: 'alice', code: OTHER, role: 'member', addr: `alice.${OTHER}` }
+  await $.classic.SessionStart({ session_id: SID, source: 'resume', cwd: '/w', permission_mode: 'default' }) // the hello now names OTHER
+  seen.listHold = null
+  release()
+  await new Promise(r => setTimeout(r, 50))
+  expect(seen.spawns.map(s => s.description)).toEqual([CODE, OTHER])
 })
 
 test('no room row: the room session keeps no row', async ($, on) => {
