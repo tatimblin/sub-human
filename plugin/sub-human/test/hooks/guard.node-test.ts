@@ -427,3 +427,25 @@ test('#35: the person-only CLI only where the shell runs it; scratch work and Cl
   assert.match(g.WRITE_DENY('Write', '/Users/x/.sub-human/x'), /mktemp -d/);
   assert.match(g.READ_DENY('/Users/x/.sub-human/keys/k'), /room MCP read tool/);
 });
+
+test('orca-6418 live: build commands with a /…/ regex or sed pattern in them are allowed; the store stays denied', () => {
+  const ctx: GuardCtx = { home: '/Users/u/.sub-human', userHome: '/Users/u', cwd: '/Users/u/repos/site' };
+  const deny = (cmd: string) => assert.ok(g.bashVerdict(cmd, ctx), `should deny: ${cmd}`);
+  const allow = (cmd: string) => assert.equal(g.bashVerdict(cmd, ctx), null, `should allow: ${cmd.slice(0, 120)}`);
+  // the four commands 0.5.8 denied as "a directory above the room store", verbatim
+  for (const cmd of [
+    "S=/private/tmp/claude-501/-Users-u-repos-whois-timblin-io/SESSION/scratchpad && mkdir -p $S/web && git show 77e81b7:src/components/sections/AllSites.vue > $S/web/AllSites.vue && cat > $S/extract.cjs <<'EOF'\nconst fs = require(\"fs\");\nconst s = fs.readFileSync(process.argv[2], \"utf8\");\nconst m = s.match(/sites: (\\[[\\s\\S]*?\\n      \\]),/)[1];\nconst sites = eval(m).map((x) => ({\n  title: x.title.trim(), company: x.company || \"Cohere\", url: x.url, icon: x.icon, year: x.year,\n  desc: x.desc.replace(/\\s+/g, \" \").trim(),\n}));\nconst out = { started: \"2016-05-12\", lastAdded: \"2026-03-14\", sites };\nfs.writeFileSync(process.argv[3], JSON.stringify(out, null, \"\\t\") + \"\\n\");\nconst by = {}; for (const x of sites) by[x.company] = (by[x.company] || 0) + 1;\nconsole.log(sites.length, by, sites.at(-1).year, sites.filter(x=>!/^https?:/.test(x.url)).map(x=>x.url));\nEOF\nnode $S/extract.cjs $S/web/AllSites.vue src/data/sites.json && diff <(python3 -I -c \"import json;print(json.dumps(json.load(open('/tmp/sites-mock/sites.json')),sort_keys=True))\") <(python3 -I -c \"import json;print(json.dumps(json.load(open('src/data/sites.json'))['sites'],sort_keys=True))\") >/dev/null && echo same-as-mock; python3 -I -c \"\nimport json,urllib.parse as u\nfor s in json.load(open('src/data/sites.json'))['sites']: print(s['year'], s['company'][:8].ljust(8), u.urlparse(s['url']).hostname, '|', s['title'])\"",
+    "git show 77e81b7:src/components/sections/AllSites.vue | node -e '\nconst fs = require(\"fs\");\nconst s = fs.readFileSync(0, \"utf8\");\nconst m = s.match(/sites: (\\[[\\s\\S]*?\\n      \\]),/)[1];\nconst sites = eval(m).map((x) => ({\n  title: x.title.trim(), company: x.company || \"Cohere\", url: x.url, icon: x.icon, year: x.year,\n  desc: x.desc.replace(/\\s+/g, \" \").trim(),\n}));\nfs.writeFileSync(\"src/data/sites.json\", JSON.stringify({ started: \"2016-05-12\", lastAdded: \"2026-03-14\", sites }, null, \"\\t\") + \"\\n\");\nconst by = {}; for (const x of sites) by[x.company] = (by[x.company] || 0) + 1;\nconsole.log(sites.length, by);\nfor (const x of sites) console.log(x.year, x.company.padEnd(18), new URL(x.url).hostname, \"|\", x.title);\n'",
+    "sed -i '' 's/\\t\\tline-height: 1.33;/\\t\\tline-height: var(--line-height-ui);/' src/components/SiteIndex.astro && grep -rhn \"@media (max-width\" src/components src/layouts | sort | uniq -c | sort -rn | head -5; sed -n 1,12p src/content/txt/mega-desk.mdx",
+    "sed -i '' '909s/005 of 006/005 of 007/' tests/txt.spec.ts && PW_PREBUILT=1 bunx playwright test tests/txt.spec.ts --project=chromium -g \"foot card\" 2>&1 | tail -4 && bun run test:unit 2>&1 | tail -4 && bunx astro check 2>&1 | tail -4"
+  ]) allow(cmd);
+  // the smallest lines 0.5.8 denied
+  allow("node -e 'const m = s.match(/sites: (x)/)'");
+  allow("git show HEAD:a.vue | node -e 'const m = s.match(/sites: (x)/)'");
+  allow("sed -i '' 's/\\t\\tline-height: 1.33;/\\t\\tline-height: var(--x);/' src/a.astro && grep -rhn \"@media (max-width\" src/components src/layouts | sort");
+  // the real denials stay
+  deny('cat /Users/u/.sub-human/keys/seat');
+  deny('grep -r secret ~');
+  deny('find / -name "*.key" -exec cat {} +');
+  deny("node -e 'require(\"fs\").readFileSync(\"/Users/u/.sub-human/keys/k\")'");
+});
