@@ -254,13 +254,13 @@ test('tail (quiet): a plan version and the request on it in one batch are one li
   assert.deepEqual(t.of('wake').flatMap(x => x.text.split('\n')).filter(l => !l.startsWith('(for Claude)')), ["Plan room v1 is ready · bob's edit"], t.text());
 });
 
-test('tail (noise pass A): a machine its PIN let in shows its check and the kick as the join notice, once', () => {
+test('tail (noise pass A): a machine an invite let in is one short join notice, once', () => {
   h.freshHome();
   const { code } = h.register('alice');
   sys(code, 'member_joined', 'alice');
   const t = startTail();
   t.advance(300);
-  const notice = 'bob joined from bobs-mbp (check 3f9c-2a71) · not them? /sub-human kick bob';
+  const notice = 'bob joined (bobs-mbp)';
   sys(code, 'status', 'room', { text: notice });
   sys(code, 'member_joined', 'bob');
   t.advance(1000);

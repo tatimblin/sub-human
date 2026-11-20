@@ -279,7 +279,8 @@ test('a web invite: invite --web behind a front shows URL#SECRET (the SECRET as 
   const req = must(host.lib(() => admission.admissions(store.open(code), { all: true }))[0], 'the admission record');
   assert.deepEqual([req.key, req.admitted_by], [lf0.transport.clientKey, 'pin'], 'let in by the PIN, bound to the key it came with');
   const check = inviteSecret.joinCheck(req.machine, req.key);
-  assert.match(host.log(code), new RegExp(`bob joined from \\S+ \\(${check}\\) · not them\\? /sub-human kick bob`), 'the room line names the check, with the kick');
+  assert.match(host.log(code), /bob joined \(\S+\)/, 'the room line says who joined');
+  assert.match(must(host.lib(() => admission.joinedVia(code, [{ name: 'bob' }])).get('bob'), 'who'), new RegExp(`, ${check} · not them\\? /sub-human kick bob$`), 'who names the check of the machine and its key, with the kick');
   assert.ok(await h.until(() => linkState(remote, code) === 'online', 15_000, 50), 'online once let in');
   assert.equal(must(remote.join(bob, '').json).decision, undefined, 'a bare /sub-human takes the seat');
   const link = must(Object.values(host.lib(() => hostLinks.links(store.open(code))))[0], 'the link');
@@ -308,7 +309,8 @@ test('a web invite in one line: URL#SECRET PIN links in one hidden step; the PIN
   const req = must(host.lib(() => admission.admissions(store.open(code), { all: true }))[0], 'the admission record');
   assert.deepEqual([req.key, req.admitted_by, req.name], [lf.transport.clientKey, 'pin', 'bob'], 'let in by the PIN, bound to the key it came with');
   const check = inviteSecret.joinCheck(req.machine, req.key);
-  assert.match(host.log(code), new RegExp(`bob joined from \\S+ \\(${check}\\) · not them\\? /sub-human kick bob`), 'the room line names the check, with the kick');
+  assert.match(host.log(code), /bob joined \(\S+\)/, 'the room line says who joined');
+  assert.match(must(host.lib(() => admission.joinedVia(code, [{ name: 'bob' }])).get('bob'), 'who'), new RegExp(`, ${check} · not them\\? /sub-human kick bob$`), 'who names the check of the machine and its key, with the kick');
   assert.ok(await h.until(() => linkState(remote, code) === 'online', 15_000, 50), 'online once let in');
   assert.equal(must(remote.join(bob, '').json).decision, undefined, 'a bare /sub-human takes the seat');
   const lg = fs.readFileSync(path.join(host.home, 'listen', 'listen.log'), 'utf8');

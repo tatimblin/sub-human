@@ -277,12 +277,12 @@ export const TAKE_CONTEXT: string = 'sub-human: the host let this machine in, an
 
 /**
  * A let-in join's seat, taken by the module (mod/deliver.ts takeSeat), as a wake in wakeParts' form: one line the
- * person sees ("You're in room CODE as NAME", with the check the host's room line shows), and as "(for Claude)" lines
- * the seat's mechanics block (the join's context), as after a typed /sub-human.
+ * person sees ("You're in room CODE as NAME (check …)", the check the host's `/sub-human who` shows), and as "(for
+ * Claude)" lines the seat's mechanics block (the join's context), as after a typed /sub-human.
  * The prompt holds no SECRET or PIN: a turn of its own, never the one that carried the line.
  */
 export function takeWake({ code, name, check, context }: { code: string; name: string; check?: string | undefined; context: string }): { text: string; shown: string } {
-  const shown = `You're in room ${code}${name ? ` as ${name}` : ''}${check ? ` (${check}, as the host's room line shows)` : ''}`;
+  const shown = `You're in room ${code}${name ? ` as ${name}` : ''}${check ? ` (${check})` : ''}`;
   const block = String(context ?? '').split('\n').filter(l => l.trim()).map(l => `${FOR_CLAUDE} ${l}`);
   return { shown, text: [shown, `${FOR_CLAUDE} ${TAKE_CONTEXT}`, ...block].join('\n') };
 }

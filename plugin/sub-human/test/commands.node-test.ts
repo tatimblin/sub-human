@@ -124,7 +124,7 @@ test('commands: a CLI command (/sub-human tasks) says where it runs and takes no
   const w = new World({ alice: 'sleep', bob: 'sleep' }, { t });
   const before = w.entries().length;
   for (const args of ['tasks', 'Who', 'show abc123', `plan ${w.code}`]) {
-    for (const seat of [null, 'alice']) {
+    for (const seat of args === 'Who' ? [null] : [null, 'alice']) { // in a room, /sub-human who lists its people (below)
       const a = run(w, args, { seat });
       const verb = must(args.split(' ')[0]).toLowerCase();
       assert.equal(a.kind, 'say', `${args} as ${seat}`);
@@ -139,6 +139,17 @@ test('commands: a CLI command (/sub-human tasks) says where it runs and takes no
   const as = run(w, '--as tasks', { seat: 'bob' });
   assert.equal(as.kind, 'joined', text(as));
   assert.match(text(as), new RegExp(`^Joined ${w.code} as tasks`));
+});
+
+test('commands: /sub-human who in a room lists its people, one line each, and takes no seat', t => {
+  const w = new World({ alice: 'sleep', bob: 'sleep' }, { t });
+  const before = w.entries().length;
+  const a = run(w, 'who', { seat: 'alice' });
+  assert.equal(a.kind, 'say', text(a));
+  assert.deepEqual(text(a).split('\n').sort(), [`alice (member) in ${w.code}`, `bob (member) in ${w.code}`]);
+  assert.match(text(run(w, 'Who', { seat: 'bob' })), new RegExp(`^alice \\(member\\) in ${w.code}`, 'm'));
+  assert.equal(w.entries().length, before, 'nothing logged');
+  assert.equal(must(w.lib(() => identity.resolveBySession(w.sid.alice))).name, 'alice', 'still alice');
 });
 
 test('commands: every CLI command is a /sub-human verb (reserved) or a CLI verb (/sub-human answers where it runs)', async () => {

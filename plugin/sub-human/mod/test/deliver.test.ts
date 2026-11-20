@@ -630,7 +630,7 @@ const PENDING = { ...helloOf(null), pending: true }
 const TAKE = { type: 'take', code: 'otter-4821', name: 'bob', text: 'the host let you in to room otter-4821: type /sub-human to join it as bob', check: 'check 3f9c-2a71' }
 const BLOCK = 'SUB-HUMAN: you are bob\'s Claude in room otter-4821 (with alice).'
 const JOINED = { hookSpecificOutput: { hookEventName: 'UserPromptExpansion', additionalContext: BLOCK }, subHuman: { say: 'joined otter-4821 as bob, with alice', joined: true, shareable: true } }
-const YOU_RE_IN = 'You\'re in room otter-4821 as bob (check 3f9c-2a71, as the host\'s room line shows)'
+const YOU_RE_IN = 'You\'re in room otter-4821 as bob (check 3f9c-2a71)'
 
 test('a take while idle: join.ts with no args, the nonce and the room; one prompt "You\'re in room …" (asUser) with the seat\'s block as context, and no row call (the module starts the room row)', async ($, on) => {
   const seen = world($, on, { hello: PENDING, pieces: [line(TAKE)], joinOut: JOINED })

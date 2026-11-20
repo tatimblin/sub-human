@@ -442,8 +442,8 @@ S2() { # B joins (--film: from another machine, over ssh: S2_ssh)
 # it, a 4-digit PIN (to A only: the hook's hidden reply, never A's Claude); the driver reads both off A's pane (never
 # through a model). B types the line with the PIN after it: her link reaches devbox through her own ssh login
 # (scripts/devbox.sh's sshd), checks the host's key against the line, then shows the host the SECRET and the PIN in
-# one hello. The right PIN lets her machine in with no card: A's room gets the line "B joined from B-laptop (check …)
-# · not them? /sub-human kick B", and B's hooks module takes her seat in a turn of its own ("You're in room …").
+# one hello. The right PIN lets her machine in with no card: A's room gets the line "B joined (B-laptop)" (the check
+# and the kick are A's /sub-human who), and B's hooks module takes her seat in a turn of its own ("You're in room …").
 S2_ssh() {
   local a=$SEAT_A b=$SEAT_B
   local before; before=$($LIB log-max)
@@ -462,7 +462,7 @@ S2_ssh() {
   snap "$a runs /sub-human invite: one line for $b's machine, /sub-human join devbox $(room) and its SECRET, and a 4-digit PIN apart, shown to $a only"
   mark join "$b joins from her machine over ssh: the line, and the PIN $a told her"
   submit "$b" "/sub-human $line $pin"
-  need wait_log --kind status --from room --text-has "$b joined from " --after "$before" --timeout 90 --what "the right PIN let $b's machine in with no card (the host's room line)" || return 1
+  need wait_log --kind status --from room --text-has "$b joined (" --after "$before" --timeout 90 --what "the right PIN let $b's machine in with no card (the host's room line)" || return 1
   $LIB link-shape "$LAPTOP/home/links/$(room).json" > "$d/link-file.json" 2>/dev/null
   mark seated "$b's session takes her seat on its own"
   need wait_pane "$b" "You're in room $(room) as $b" 90 --what "$b's hooks module took her seat in a turn of its own (no bare /sub-human)" || return 1

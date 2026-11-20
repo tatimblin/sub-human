@@ -62,6 +62,7 @@ import type * as RoomsMod from './doctor/rooms.ts';
 import type * as HostMod from './host.ts';
 import type * as ListenMod from './listen.ts';
 import type * as ShimMod from '../remote/shim.ts';
+import type * as SeatsMod from '../seats.ts';
 
 // Each command's own modules load when it runs (lazy, for start cost), so the tail and agent-statusline (run often)
 // never load the remote stack, doctor or the host commands.
@@ -78,6 +79,7 @@ const doctorLib = lazy<typeof DoctorMod>(import.meta.url, './doctor.ts');
 const hostLib = lazy<typeof HostMod>(import.meta.url, './host.ts');
 const listenLib = lazy<typeof ListenMod>(import.meta.url, './listen.ts');
 const shimLib = lazy<typeof ShimMod>(import.meta.url, '../remote/shim.ts');
+const seatsLib = lazy<typeof SeatsMod>(import.meta.url, '../seats.ts');
 
 function die(msg: string, code = 2): never {
   process.stderr.write(msg + '\n');
@@ -206,11 +208,10 @@ function show(args: readonly string[]) {
   process.stdout.write(text.endsWith('\n') ? text : text + '\n');
 }
 
-/** code's people: who is in it, by name and role (the room session, member claude, is no one's: never listed). */
+/** code's people: who is in it, by name and role (the room session, member claude, is no one's: never listed), and on
+ * the host where an invite's seat joined from, its check and the kick (lib/seats.ts whoLines). */
 function whoIn(code: RoomCode) {
-  const ms = Object.values(identity.readMembers(code) || {}).filter(m => m && m.name && !m.left_at && m.role !== identity.ROOM_CLAUDE && m.name !== identity.ROOM_CLAUDE);
-  if (!ms.length) return console.log(`(nobody in room ${code})`);
-  for (const m of ms) console.log(`${m.name} (${m.role}${m.lapsed_at ? ', away' : ''}) in ${code}`);
+  for (const l of seatsLib().whoLines(code)) console.log(l);
 }
 
 function who(args: readonly string[] = []) {

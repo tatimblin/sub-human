@@ -34,7 +34,7 @@
  *   {type:'take', code, name, text, check?}   a seatless session's invite join the host let in (lib/remote/joining.ts
  *                             pendingNews 'linked'), once: the module takes the seat in a new turn (mod/deliver.ts
  *                             takeSeat); text is what the person reads when it cannot (type /sub-human), check this
- *                             machine's join check, which the host's room line shows too
+ *                             machine's join check, which the host's /sub-human who shows too
  * An invite's join request (lib/remote/admission.ts, on the host) is one wake, once per seat; a lapsed request is
  * a health line. A session with no seat that started an invite join (its link file's join_sid) is looked up every
  * resolveMs until the host lets it in, with one chat line per answer (a seated session too: a kicked machine's copy

@@ -28,6 +28,8 @@
  *   ensureLinked). Another seat of this session is left only once the new one is taken ("switched rooms"; in the same
  *   room "now NAME", and the new seat's delivery cursor moves to the log's end), never on a refused join. Every take first runs lib/gc.ts sweep (at most every GC_EVERY_MS, within GC_BUDGET_MS), and a
  *   seat taken sweeps its room's row maps of ended sessions.
+ * whoLines: the room's people, one line each, as `/sub-human who` and `sub-human who` list them (on the host, with an
+ *   invite seat's machine, check and kick).
  */
 
 import * as identity from './identity.ts';
@@ -47,6 +49,7 @@ import { errCode, msgOf } from './errors.ts';
 import type { RoomCode, SeatName, MachineId } from './brand.ts';
 import type * as JoiningMod from './remote/joining.ts';
 import type * as GcMod from './gc.ts';
+import type * as AdmissionMod from './remote/admission.ts';
 import type * as WebhostMod from './remote/webhost.ts';
 import type * as ShimMod from './remote/shim.ts';
 
@@ -56,6 +59,8 @@ const shimLib = lazy<typeof ShimMod>(import.meta.url, './remote/shim.ts');
 // loaded only by take(): the session-end hook and the remote server never need the link or the listener
 const joining = lazy<typeof JoiningMod>(import.meta.url, './remote/joining.ts');
 const gc = lazy<typeof GcMod>(import.meta.url, './gc.ts');
+// loaded only by whoLines on the host: an invite's seats, where from and their check
+const admissionLib = lazy<typeof AdmissionMod>(import.meta.url, './remote/admission.ts');
 
 /** enter()'s seat: the join hook's, or the remote server's for a seat on another machine. */
 interface EnterOpts {
@@ -229,6 +234,24 @@ function withWhom(code: RoomCode, name: SeatName): string {
   return names.length > 3 ? `${names.length} others here` : `with ${names.join(', ')}`;
 }
 
+/**
+ * code's people, one line each: "carol2 (member) in CODE" (", away" when its lease lapsed); the room session (member
+ * claude) is no one's and never listed. On the host, a seat a machine took with an invite adds where it joined from,
+ * its check, a rename, who let it in and the kick (lib/remote/admission.ts joinedVia), which the room's join line
+ * leaves out: " · from carols-mbp, check 3f9c-2a71, wanted "carol" · not them? /sub-human kick carol2".
+ */
+function whoLines(code: RoomCode): string[] {
+  const ms = Object.values<Member>(identity.readMembers(code) || {})
+    .filter(m => m && m.name && !m.left_at && m.role !== identity.ROOM_CLAUDE && m.name !== identity.ROOM_CLAUDE);
+  if (!ms.length) return [`(nobody in room ${code})`];
+  let via = new Map<string, string>();
+  try { if (identity.isHost(code)) via = admissionLib().joinedVia(code, ms); } catch { /* the names alone */ }
+  return ms.map(m => {
+    const note = via.get(m.name);
+    return `${m.name} (${m.role}${m.lapsed_at ? ', away' : ''}) in ${code}${note ? ` · ${note}` : ''}`;
+  });
+}
+
 /** Who else is in the room, as a join line ends it: " with bob, carol", " with 5 others", or '' alone. */
 function company(code: RoomCode, name: SeatName): string {
   const names = others(code, name).filter(n => n !== identity.ROOM_CLAUDE);
@@ -343,4 +366,4 @@ function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd,
  * module's own exports are read-only. */
 const seam = { startDetached: (o: Parameters<typeof roomClaude.startDetached>[0]): number | undefined => roomClaude.startDetached(o) };
 
-export { enter, exit, sweep, back, ensureRoomClaude, seam, take, withWhom, liveSeatHere, forkedText };
+export { enter, exit, sweep, back, ensureRoomClaude, seam, take, withWhom, whoLines, liveSeatHere, forkedText };

@@ -457,16 +457,18 @@ function joinLeave(es: readonly Readonly<Entry>[] | null | undefined, viewer: st
 }
 
 /**
- * The room's line for a machine its PIN let in (lib/remote/server.ts linkJoinText): "NAME joined from MACHINE (check
- * …) · not them? /sub-human kick NAME". linkJoined: the NAME such a status line names, else null. announced: whether
- * member_joined e follows such a line for its name (no other join or leave of that name between): that line is the
- * person's join notice, so the bare "NAME joined" is not drawn again.
+ * The room's line for a machine an invite let in (lib/remote/server.ts redeem): "NAME joined (MACHINE)"; its check, a
+ * rename and the kick are `who`'s (an older host's line, still read: "NAME joined from MACHINE (check …) · not them?
+ * /sub-human kick NAME"). linkJoined: the NAME such a status line names, else null. announced: whether member_joined e
+ * follows such a line for its name (no other join or leave of that name between): that line is the person's join
+ * notice, so the bare "NAME joined" is not drawn again.
  */
-const LINK_JOIN = /^(\S+) joined from .* · not them\? \/sub-human kick \1$/;
+const LINK_JOIN = /^(\S+) joined \([^()\n]*\)$/;
+const LINK_JOIN_OLD = /^(\S+) joined from .* · not them\? \/sub-human kick \1$/;
 function linkJoined(e: Entry | null | undefined): string | null {
   if (!e || e.kind !== 'status' || e.via !== 'system' || e.from !== 'room') return null;
-  const m = LINK_JOIN.exec(String(e.text ?? ''));
-  return m?.[1] ?? null;
+  const t = String(e.text ?? '');
+  return (LINK_JOIN.exec(t) ?? LINK_JOIN_OLD.exec(t))?.[1] ?? null;
 }
 function announced(e: Entry, entries: readonly Readonly<Entry>[] | undefined): boolean {
   if (e.kind !== 'member_joined' || e.via !== 'system' || !isList(entries)) return false;

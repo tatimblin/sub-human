@@ -115,7 +115,7 @@ test('deliver (PLAN-JOIN step 3): a taken seat\'s wake is one line for the perso
   const d = await import('../mod/core/deliver.ts');
   const context = 'SUB-HUMAN: you are bob\'s Claude in room otter-4821 (with alice).\n\nROWS: Agent({…})';
   const w = d.takeWake({ code: 'otter-4821', name: 'bob', check: 'check 3f9c-2a71', context });
-  assert.equal(w.shown, 'You\'re in room otter-4821 as bob (check 3f9c-2a71, as the host\'s room line shows)');
+  assert.equal(w.shown, 'You\'re in room otter-4821 as bob (check 3f9c-2a71)');
   const parts = must(d.wakeParts(w.text), 'a member wake');
   assert.equal(parts.shown, w.shown, 'the person sees the one line');
   assert.deepEqual(parts.context.split('\n').slice(1), [

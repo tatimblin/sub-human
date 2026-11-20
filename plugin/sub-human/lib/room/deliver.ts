@@ -18,7 +18,7 @@
  *       objection on my own proposal. A new version of a plan wakes nobody: the request on it does, once its author
  *       sends it ("Plan paging v2 is ready · maya's edit"). A decision never wakes: it reports, it asks nothing.
  *     member notice: another person's say (not to me, no @me), another member's join or leave (not the room
- *       Claude's), the room's line for a machine its PIN let in (render.ts linkJoined: its check and the kick; the bare
+ *       Claude's), the room's line for a machine an invite let in (render.ts linkJoined: "NAME joined (MACHINE)"; the bare
  *       "joined" after it is not drawn again, render.ts announced; none for the one it names), a task someone else added with me as its suggested owner (`suggest`); and what asks the person, not the model: the room line that the log waits to split
  *       (restart the old sessions), an agreed decision on a proposal I am in (its approvers and author: "Plan paging
  *       v2 agreed"; one not agreed is none, since each objection's own line said it: context only without the log),
@@ -122,7 +122,7 @@ function deliver(me: LaneViewer | null | undefined, e: Entry, { entries, trust =
   if (me && me.role === 'claude') return 'none';
   if (saidBefore(e, entries)) return 'none';
   if ((isMove(e) && e.via === 'system' && e.from !== name && e.from !== 'claude')) return 'notice';
-  // the room's line for a machine its PIN let in, with its check and the kick: the people's join notice
+  // the room's line for a machine an invite let in ("NAME joined (MACHINE)"): the people's join notice
   const joined = me ? linkJoined(e) : null;
   if (joined) return joined === name ? 'none' : 'notice';
   if (l === 'push') return me && (isMove(e) || chat(me, e)) ? 'notice' : 'wake';

@@ -14,7 +14,8 @@
  *   named     `/sub-human NAME [ROOM]` (or `--as NAME`): join ROOM (else the one open room, else a new one) as NAME, leaving any other
  *             room; `/sub-human ROOM` (a room code alone): that room as the default name, never a person named after it.
  *             A word of digits is no name (it looks like a PIN), and a CLI command (CLI_VERBS: `/sub-human tasks`) says
- *             where it runs instead of taking a seat by that name
+ *             where it runs instead of taking a seat by that name; `/sub-human who` in a room lists its people
+ *             (seats.whoLines: on the host, an invite seat's machine, check, rename and kick, which the join line leaves out)
  *   join      `/sub-human join …`: ROOM (a room code alone): that room on this machine, as `/sub-human ROOM`;
  *             HOST ROOM SECRET, URL#SECRET or URL SECRET, each with the PIN after it or not: an invite line
  *             (joining.linkLine: link only, never the seat in that step; a PIN typed with it goes in the first hello,
@@ -154,6 +155,7 @@ export const named: Verb = (args, ctx) => {
   }
   const [name, code] = args;
   if (name === undefined) return refused(USAGE); // route() sends a bare /sub-human to bare
+  if (name.toLowerCase() === 'who' && args.length === 1 && ctx.cur) return say(seats.whoLines(ctx.cur.code).join('\n'));
   if (CLI_VERBS.includes(name.toLowerCase())) return cliHint(name.toLowerCase(), ctx.pluginRoot);
   // a SECRET-shaped word is never echoed, nor taken for a name or a room: it belongs in an invite line
   if (args.some(a => SECRET_WORD.test(a) || fragmentSecret(a) !== null)) return refused(`that looks like an invite line's SECRET: the whole line goes in as /sub-human join LINE PIN. ${USAGE}`);

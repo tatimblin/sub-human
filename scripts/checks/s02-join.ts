@@ -96,13 +96,14 @@ function remoteJoin(x: Ctx, det: Det, j: LogEntry | undefined, rh: string): void
     !/sub-human/.test(ak), `${ak.split('\n').filter(Boolean).length} line(s); ${/sub-human/.test(ak) ? 'a sub-human line' : 'none of sub-human\'s'}`);
 
   // the PIN typed on the line let her machine in with no card (lib/remote/invites.ts: admitted_by 'pin', no person's
-  // signature), and the room says who joined, from which machine, its check and the kick that undoes a stranger
+  // signature), and the room says who joined and from which machine, in one short line (its check and the kick that
+  // undoes a stranger are A's /sub-human who)
   const recs = Object.values(readJson<Record<string, Admission | null> | null>(path.join(x.roomDir, 'remote', 'invites.json'), {}) || {}).filter((r): r is Admission => !!(r && r.admission && r.name === B));
   const rec = recs.at(-1);
-  const linked = log.find(e => e.kind === 'status' && e.from === 'room' && typeof e.text === 'string' && e.text.startsWith(`${B} joined from `));
-  const lineOk = !!linked && /\(check [0-9a-f]{4}-[0-9a-f]{4}/.test(String(linked.text)) && String(linked.text).includes(`not them? /sub-human kick ${B}`);
+  const linked = log.find(e => e.kind === 'status' && e.from === 'room' && typeof e.text === 'string' && e.text.startsWith(`${B} joined (`));
+  const lineOk = !!linked && new RegExp(`^${esc(B)} joined \\([^()\\n]*\\)$`).test(String(linked.text));
   const carded = log.find(e => e.kind === 'status' && e.from === 'room' && typeof e.text === 'string' && e.text.startsWith(`${A} let ${B} (`));
-  det(`The right PIN let ${B}'s machine in with no card: the admission (ssh) is "let-in" by the PIN, signed by no one, and the room line "${B} joined from … (check …) · not them? /sub-human kick ${B}"`,
+  det(`The right PIN let ${B}'s machine in with no card: the admission (ssh) is "let-in" by the PIN, signed by no one, and the room line "${B} joined (…)"`,
     rec && rec.kind === 'ssh' && rec.admit === 'let-in' && rec.admitted_by === 'pin' && !rec.admit_sig && lineOk && !carded,
     rec ? `admission ${rec.kind} ${rec.admit} by ${rec.admitted_by}, label ${rec.label}; signature ${rec.admit_sig ? 'set' : 'none'}; ${x.fmt(linked)}${carded ? `; a card's line too: ${x.fmt(carded)}` : ''}` : `no admission record for ${B} in remote/invites.json`);
 
