@@ -53,15 +53,30 @@ Protocol: unchanged (the URL is parsed into today's specs).
 
 Owner decision (2026-11-20): a version that applies a reviewer's requested changes still opens in the author's plan view; nothing goes out in a person's name unread.
 
-### 0.8.0: the room row is the chat
+### 0.8.0: the room row is the group chat, and your Claude is your assistant
 
-Build `quiet/ROOM-ROW-SPIKE.md`'s recommended mechanism:
+Main is your space: you and your Claude. The room row is everyone else: a group chat with the people in the room. (Owner direction, 2026-11-20.)
+
+**You reach out to people, never to a Claude.** Each person's Claude reads what reaches them, like an executive assistant. It answers on their behalf when it's confident (a fact it knows: what they're on, whether tests pass, which branch), or leaves it for them (a decision, an opinion, anything it would be guessing at). Who answered is always shown: `tristan2: …` or `tristan2's Claude: …`.
+
+- **Typing in the row** posts your exact words. Naming someone (`tristan2, …` or `@tristan2`) reaches them, and their Claude decides. A line that names nobody is for the people; it wakes no Claude, and each Claude gets it only as context.
+- **What a Claude can answer** is left to its judgement, steered by its person in plain words ("handle questions for me", "send me everything"), never a setting. This fits the close/loose spectrum: an assistant answers less for a pair working closely and more for loose coworkers.
+- **A message left for you** waits in the row with an unread count on its label. Main stays quiet unless your Claude judges it time-sensitive, and then gets one line.
+- **Room lines leave main.** People's lines show in the row, not as notices in main. Your Claude still reads them as context.
+- **`@room` in main stays** as a shortcut for a quick line without leaving main.
+- **Claude-to-Claude coordination stays native and unseen** (SendMessage, PLAN-QUIET rule 1). A Claude shows in the row only when it answers something said there.
+- **Provenance:** the plugin writes nothing of its own in the row. Every line is a person's words or a named Claude's reply, shown with its author. Claude Code records the drawn lines as the row agent's; the author prefix keeps the record honest.
+
+Mechanism (`quiet/ROOM-ROW-SPIKE.md`, recommended):
 - A background keeper child does the blocking `hold`; the room row ends its turn and stays idle, so typed text arrives (`session.append`, door `prompt`, origin `composer`).
-- A `turn.step` hook answers each row step without the model: `tell NAME …` / `NAME, …` is a DM over `SendMessage NAME.CODE`; `how's NAME` answers from room state, or asks their Claude when wanted; anything else posts verbatim.
-- Incoming lines and replies drawn with `$.session.send`; chrome hidden with `ui.render`.
+- A `turn.step` hook answers each row step without the model: it posts the typed line and ends the step.
+- The named person's seat gets the line as their assistant's to triage: a wake for their Claude, with one rule in `member.md` (answer as `NAME's Claude` when sure, otherwise leave it for NAME).
+- Incoming lines drawn in the row with `$.session.send`; chrome hidden with `ui.render`.
 - New contract entries for each early-access surface, with a fallback: until it checks out, the row's label says `talk in main with @room`.
 
-Owner decision needed first: the provenance ruling (answered steps are recorded as model-written). Limit: terminal only.
+Limit: terminal only (the desktop app, VS Code and Remote Control can't type into a row).
+
+Open: a wake reaching a Claude mid-task. The interruption rule (Claude-to-Claude may wake) suggests the assistant answers at its next turn boundary, not by stopping work.
 
 Until 0.8.0 ships, the row's label must not look like a chat box: lead with `type in main` (`mcp/hold.ts` HINT).
 
@@ -72,4 +87,4 @@ Until 0.8.0 ships, the row's label must not look like a chat box: lead with `typ
 | 0.6.0 | small | quiet-070 as is |
 | 0.6.1 | medium | `$.ui.ask` passing consent (quiet-070's `ownCard`, generalised) |
 | 0.7.0 | medium | 0.6.0; wire protocol may move for the dropped note state |
-| 0.8.0 | large | provenance ruling; early-access hooks |
+| 0.8.0 | large | early-access hooks |
