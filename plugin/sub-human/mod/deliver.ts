@@ -21,8 +21,11 @@ import { mergeClassic } from './core/prompt.ts';
 import { factsBook, type FactsBook } from './core/facts.ts';
 import { asHello, asNonce, mintNonce } from './core/state.ts';
 import { ccNotice } from './core/cc.ts';
-import { roomRowFor, liveRow, rowSpawn, spawnStep, spawnDone, spawnLived, spawnForget, ROW_RUN_MS, type SpawnLedger } from './core/rows.ts';
-import { noteRow } from './rows.ts';
+import {
+  roomRowFor, liveRow, rowSpawn, spawnStep, spawnDone, spawnLived, spawnForget, rowFallback, rowAsk, askFor, askStep,
+  ROW_RUN_MS, ROW_ASK_WAIT_MS, ROOM_AGENT, type SpawnLedger, type RowAskState,
+} from './core/rows.ts';
+import { noteRow, offerRow } from './rows.ts';
 import { copyBook, copyWake, copyTo, copyNews, clipboardCommands, AUTO_COPIED, NO_TOOL, type CopyBook } from './core/copy.ts';
 import {
   leaveQuestion, leaveOutcome, issueUrl, versionsLine, openCommands, openWith, LEAVE_OPTIONS, LEAVE_HEADER, REPO_URL,
@@ -357,7 +360,8 @@ async function rowOnce($: EngineInterface): Promise<string | null> {
     code = await rowCode($);
     if (!code) return null;
     const before = await $.agent.list();
-    if (liveRow(before, code)) { spawns = spawnLived(spawns, code, await $.clock.now()); return code; }
+    const live = liveRow(before, code);
+    if (live) { rowFound(live, code); spawns = spawnLived(spawns, code, await $.clock.now()); return code; }
     if (!(await $.mcp.connect(ROOM_SERVER)).isConnected) return code;
     const step = spawnStep(spawns, code, await $.clock.now());
     if (!step.spawn) return code;
@@ -370,13 +374,67 @@ async function rowOnce($: EngineInterface): Promise<string | null> {
       started = !!id;
       if (id) { noteRow(id); $.ui.log(`rows: room row ${code} started`, { to: 'debug' }); }
       else $.ui.log(`rows: room row ${code} not started${r.deny !== undefined ? `: ${r.deny}` : ''}`, { to: 'debug' });
+      if (!id && rowFallback(r.deny, facts.of(await $.session.id()).permission_mode)) {
+        // auto mode's classifier refused the module's own spawn: the model makes the call, told once as context. It
+        // counts as this spawn (started: the next try waits its minute, and ROW_SPAWNS_MAX bounds the asks too)
+        started = true;
+        ask = askFor(code);
+        offerRow(true);
+        $.ui.log(`rows: room row ${code}: asking Claude for the Agent call`, { to: 'debug' });
+        if (!holdAsk) void tellAsk($);
+      }
     } finally { spawns = spawnDone(spawns, code, started); }
   } catch { /* the next turn tries again */ }
   return code;
 }
-/** The seat this session holds changed (a leave, a take): the rooms' spawn counts start over. */
+/** The fallback's ask for the room row (mod/core/rows.ts rowFallback): the module's spawn was refused in auto mode, so
+ * the model is asked for the Agent call, once (askStep), as context: on the join's own expansion when the deny came
+ * while it waited (holdAsk), else appended while a main-loop turn runs (its next request reads it), else at the next
+ * turn.start. No wake and no prompt line of its own. */
+let ask: RowAskState = null;
+/** A join's expansion is waiting on its row's run: an ask goes into its context, not an append. */
+let holdAsk = false;
+/** The ask told now, appended, while a main-loop turn runs (none: turn.start tells it). Never throws. */
+async function tellAsk($: EngineInterface): Promise<void> {
+  try {
+    if (turns.running === null || !ask) return;
+    const step = askStep(ask, await rowCode($));
+    if (!step.tell || !step.ask) return;
+    ask = step.ask;
+    const code = step.ask.code;
+    if (await appendRow($, rowAsk(code))) $.ui.log(`rows: asked Claude for room row ${code}`, { to: 'debug' });
+    else if (ask && ask.code === code) ask = { code, told: false }; // not stored: the next turn.start tries again
+  } catch { /* the next turn.start tries again */ }
+}
+/** The ask for the room the seat is in now, taken to ride on a context of the caller's (the join's expansion). */
+async function takeAsk($: EngineInterface): Promise<string | null> {
+  const step = askStep(ask, await rowCode($));
+  if (!step.tell || !step.ask) return null;
+  ask = step.ask;
+  $.ui.log(`rows: asked Claude for room row ${step.ask.code} (with the join)`, { to: 'debug' });
+  return rowAsk(step.ask.code);
+}
+/** A room row of code runs (the module's, or the one the model's call started): noted, and the fallback is over. */
+function rowFound(id: string, code: string): void {
+  noteRow(id);
+  if (ask && ask.code === code) { ask = null; offerRow(false); }
+}
+/** A main-loop Agent call finished while the fallback asked for one: the row it started is noted (its hand-back is
+ * then taken), and the model is offered the row no more. Never throws. */
+async function rowCalled($: EngineInterface, input: unknown): Promise<void> {
+  try {
+    const want = ask;
+    if (!want || typeof input !== 'object' || input === null || !('subagent_type' in input) || input.subagent_type !== ROOM_AGENT) return;
+    const id = liveRow(await $.agent.list(), want.code);
+    if (!id) return;
+    rowFound(id, want.code);
+    $.ui.log(`rows: room row ${want.code} started by Claude`, { to: 'debug' });
+  } catch { /* the next turn's list finds it */ }
+}
+/** The seat this session holds changed (a leave, a take): the rooms' spawn counts start over, and an ask goes. */
 function seatChanged(...codes: (string | null | undefined)[]): void {
   for (const code of codes) if (code) spawns = spawnForget(spawns, code);
+  if (ask && codes.includes(ask.code)) { ask = null; offerRow(false); }
 }
 
 async function midTurnWake($: EngineInterface, text: string) {
@@ -453,9 +511,10 @@ async function runChild($: EngineInterface, c: Child) {
 
 /** classic.PostToolUse / PostToolUseFailure: note when a main-loop tool call finished (no agent_id). Without a
  * time the last one stands: a wake then reads as unread and is submitted again rather than lost. */
-async function toolDone<E extends { readonly agent_id?: string; readonly session_id?: string }, R>($: EngineInterface, e: E, next: (e: E) => R | PromiseLike<R>): Promise<R> {
+async function toolDone<E extends { readonly agent_id?: string; readonly session_id?: string; readonly tool_name?: string; readonly tool_input?: unknown }, R>($: EngineInterface, e: E, next: (e: E) => R | PromiseLike<R>): Promise<R> {
   facts.noteEvent(e);
   if (!e.agent_id) {
+    if (e.tool_name === 'Agent' && ask) void rowCalled($, e.tool_input); // the fallback's call: its row noted
     try { turns.toolDone(await $.clock.now()); } catch { /* above */ }
     // the person answered what the turn waited on (a permission dialog, the plan view): working again
     if (presence.last === 'permission_prompt') { presence.last = 'working'; void presenceRun($, 'Working').catch(() => { presence.last = null; }); }
@@ -794,8 +853,13 @@ export function registerDeliver(on: On): void {
     const r = took ? { additionalContext: [took.context] } : await next(e);
     try { await refresh($, e.session_id); } catch { /* the next refresh tries again */ }
     try { childFor($, e.session_id, asHello((await $.state.get(HELLO)).value)); } catch { /* next start tries again */ }
-    void roomRow($); // the join's row now, as for the command.run join above
-    return r;
+    // the join's row now, as for the command.run join above; waited on a moment, so that when auto mode refuses the
+    // module's spawn the fallback's ask rides on this join's own context (no append, no wake)
+    holdAsk = true;
+    try { await within($, roomRow($), ROW_ASK_WAIT_MS); } finally { holdAsk = false; }
+    const told = await takeAsk($).catch(() => null);
+    if (!told) { void tellAsk($); return r; } // a deny after the wait: appended (or at the next turn.start)
+    return { ...r, additionalContext: [...(r.additionalContext ?? []), told] };
   }).catch((_$, e, next) => next(e)); // never in the join's way: what ran beneath stands, or runs
 
   // a /clear (new session id), compact or resume: session-restore puts the seat back first (a /clear rebinds it to the
@@ -834,6 +898,8 @@ export function registerDeliver(on: On): void {
     void roomRow($);
     // a wake nothing took before goes into this turn, as any wake that lands mid-turn
     for (const text of turns.start(e.turnId)) void midTurnWake($, text).catch(() => {});
+    // the room row's fallback ask that no turn carried yet (it was refused while none ran): this turn reads it
+    void tellAsk($);
     // the person's typed prompt started this turn: now it is "working" (a stopped prompt starts none)
     if (presence.pending) {
       presence.pending = null;

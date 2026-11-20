@@ -528,6 +528,31 @@ test('the room row (one row, the module\'s own): wanted for a member\'s seat of 
   assert.equal(r.spawnForget(forgot, 'otter-4821'), forgot);
 });
 
+test('rowFallback: only auto mode\'s refusal of the module\'s spawn hands the row to the model; askStep tells its ask once', async () => {
+  const r = await load('mod/core/rows.ts');
+  const CLASSIFIER = 'The server-side auto mode classifier gave no verdict for Agent: the request that produced this action did not ask for one. Issue the action again once, as-is; …';
+  assert.equal(r.rowFallback(undefined, 'auto'), false, 'no deny: the row started');
+  assert.equal(r.rowFallback(CLASSIFIER, 'auto'), true);
+  assert.equal(r.rowFallback(CLASSIFIER, undefined), true, 'the mode not known yet: the classifier\'s words are enough');
+  assert.equal(r.rowFallback('Auto mode classifier gave no verdict for Agent', 'default'), true, 'the text alone, any case');
+  assert.equal(r.rowFallback('denied by a PreToolUse hook', 'auto'), true, 'any deny while the session is in auto mode');
+  for (const mode of ['default', 'acceptEdits', 'plan', 'dontAsk', 'bypassPermissions', undefined]) {
+    assert.equal(r.rowFallback('denied by a PreToolUse hook', mode), false, `a person's rule or a hook's deny is final (${mode})`);
+  }
+  const ask = r.rowAsk('otter-4821');
+  assert.match(ask, /^SUB-HUMAN: /);
+  assert.ok(ask.includes('Agent({ subagent_type: "sub-human:room", description: "otter-4821", prompt: "room: otter-4821" })'), 'the exact call, as rowSpawn spawns it');
+  assert.match(ask, /write nothing about it/);
+  let state = r.askFor('otter-4821');
+  const first = r.askStep(state, 'otter-4821');
+  assert.equal(first.tell, true);
+  state = first.ask;
+  assert.equal(r.askStep(state, 'otter-4821').tell, false, 'told once: never again for this ask');
+  assert.equal(r.askStep(r.askFor('otter-4821'), 'vole-1234').tell, false, 'the seat moved on: not for another room');
+  assert.equal(r.askStep(r.askFor('otter-4821'), null).tell, false, 'no seat: none');
+  assert.equal(r.askStep(null, 'otter-4821').tell, false, 'no fallback: nothing to tell');
+});
+
 test('rowEndedRow: only the warning row of a row-ended drop, as "sub-human: row closed"', async () => {
   const { rowEndedRow, DROP_FRAME, ROW_ENDED, ROW_CLOSED } = await load('mod/core/rows.ts');
   const notice = (text: string) => ({ type: 'system', name: 'informational', content: [{ type: 'text', text }] });

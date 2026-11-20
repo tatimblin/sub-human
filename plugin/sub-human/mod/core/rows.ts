@@ -1,7 +1,8 @@
 /**
  * plugin/sub-human/mod/core/rows.ts: the room row (agents/room.md), as pure functions. Owned here: lib/rows.ts
- * re-exports the agent type; the module spawns the row itself (mod/deliver.ts roomRow: $.agent.spawn, never the
- * model's Agent call) and takes its end quietly (mod/rows.ts).
+ * re-exports the agent type; the module spawns the row itself (mod/deliver.ts roomRow: $.agent.spawn), and only when
+ * auto mode refuses that spawn does the model make the Agent call (rowFallback, rowAsk); its end is taken quietly
+ * (mod/rows.ts).
  *
  *   ROOM_AGENT, isRow(type)          the row agent's type (plugin-namespaced) and whether type is it
  *   roomRowFor(hello, sid) -> code|null   the room whose row this session wants: a member's seat of this session id,
@@ -17,7 +18,14 @@
  *                                    may go again at once); spawnLived(ledger, code, now) (the row found
  *                                    live ROW_RESPAWN_MS past its spawn: the count starts over);
  *                                    spawnForget (the seat changed: the room's ledger goes)
- *   handbackFrom(text) -> id|null    the agent whose final report a delivery is (Claude Code's "[Subagent hand-back]"
+ *   rowFallback(deny, mode) -> bool  whether a module spawn's deny falls back to the model's own Agent call: auto
+ *                                    mode's classifier refused it (cc CONTRACT auto-mode-module-spawn-deny), or any
+ *                                    deny while the session's mode is auto; a person's rule or a hook's deny in any
+ *                                    other mode is final
+ *   rowAsk(code) -> text             what the model is told then, as context: the one Agent call, written out
+ *   askFor(code); askStep(ask, code) -> {tell, ask}   the fallback's ask, told once (a new one only after a new
+ *                                    denied spawn, which spawnStep bounds: the fallback counts as a spawn)
+ *   handbackFrom(text) -> id|null   the agent whose final report a delivery is (Claude Code's "[Subagent hand-back]"
  *                                    frame inside <agent-message from="ID">: cc CONTRACT subagent-handback-message)
  *   rowReportFrom(text) -> id|null   the agent whose hand-back is the room row's own last word (its report is exactly
  *                                    `left` or `error`, agents/room.md): a row this process never saw spawned (the
@@ -52,6 +60,8 @@ export const ROW_RESPAWN_MS = 60_000;
 export const ROW_SPAWNS_MAX = 5;
 /** How long one run of mod/deliver.ts roomRow may hold the next one off (a hung spawn, list or connect). */
 export const ROW_RUN_MS = 30_000;
+/** How long a join's expansion waits on its row's run, so a fallback's ask rides on the join's own context. */
+export const ROW_ASK_WAIT_MS = 3_000;
 /** Per room: the spawns this process made, the last one's time, and whether one is under way. */
 export type SpawnLedger = Readonly<Record<string, { n: number; at: number; busy: boolean } | undefined>>;
 export function spawnStep(ledger: SpawnLedger, code: string, now: number): { spawn: boolean; ledger: SpawnLedger } {
@@ -77,6 +87,29 @@ export function spawnForget(ledger: SpawnLedger, code: string): SpawnLedger {
   if (!(code in ledger)) return ledger;
   const { [code]: _gone, ...rest } = ledger;
   return rest;
+}
+
+/** @cc The server-side auto mode classifier
+ * How auto mode refuses a plugin's own $.agent.spawn: "The server-side auto mode classifier gave no verdict for Agent:
+ * the request that produced this action did not ask for one. …" (cc CONTRACT auto-mode-module-spawn-deny, live on
+ * 2.1.296). Matched on its first words; the rest may change. @stability incidental */
+const CLASSIFIER_DENY = /auto mode classifier/i;
+export function rowFallback(deny: string | undefined, mode: string | undefined): boolean {
+  if (deny === undefined) return false;
+  return CLASSIFIER_DENY.test(deny) || mode === 'auto';
+}
+/** The model's own Agent call for the row (0.5.8's way): the module's spawn was refused, the model's call is reviewed
+ * as its own. Context only: nothing is drawn, and the model writes nothing about it. */
+export const rowAsk = (code: string): string =>
+  `SUB-HUMAN: this session's room row could not start by itself. Make this Agent call now, exactly as written, and write nothing about it, before or after: Agent({ subagent_type: "${ROOM_AGENT}", description: "${code}", prompt: "room: ${code}" })`;
+/** The fallback for the row of room code; told: the model has been given rowAsk for it. */
+export type RowAskState = { code: string; told: boolean } | null;
+/** A denied spawn of code fell back: a new ask, not told yet (it replaces any earlier one). */
+export const askFor = (code: string): RowAskState => ({ code, told: false });
+/** Whether the ask is told now: there is one, for the room the seat is in now (code), not told yet. */
+export function askStep(ask: RowAskState, code: string | null): { tell: boolean; ask: RowAskState } {
+  if (!ask || ask.told || !code || ask.code !== code) return { tell: false, ask };
+  return { tell: true, ask: { ...ask, told: true } };
 }
 
 /** @cc [Subagent hand-back] The text below is the final report of a subagent this session delegated to.

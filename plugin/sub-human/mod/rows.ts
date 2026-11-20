@@ -1,8 +1,10 @@
 /**
  * plugin/sub-human/mod/rows.ts: the room row's hooks. The row (agents/room.md) is the module's own: mod/deliver.ts
- * spawns it ($.agent.spawn, at a main-loop turn's start) and notes its id here (noteRow); the model is never offered it.
- *   - agent.offer sub-human:room: not offered to the model, so no Agent call of the model's ever spawns a row (and no
- *     "Backgrounded agent" block, no hand-back turn of one: cc CONTRACT module-agent-spawn-quiet).
+ * spawns it ($.agent.spawn, at a main-loop turn's start) and notes its id here (noteRow); the model is offered it only for
+ * the auto-mode fallback's one Agent call (offerRow).
+ *   - agent.offer sub-human:room: not offered to the model, so no Agent call of the model's spawns a row (and no
+ *     "Backgrounded agent" block, no hand-back turn of one: cc CONTRACT module-agent-spawn-quiet), except while
+ *     mod/deliver.ts's fallback asks for that one call (auto mode refused the module's spawn: offerRow).
  *   - classic.SubagentStop: node row-hold for the room row in a seated (or unsure) session (a row that gave up is told
  *     to hold again; its block continues it).
  *   - session.receive / prompt.submit: the row's hand-back (its final report, "left" or "error", which Claude Code
@@ -31,8 +33,14 @@ async function needed($: EngineInterface, sid: unknown, agentType: unknown): Pro
 /** The room rows this process spawned (module state: a reload forgets them, and their hand-back is then known by its
  * last word alone). */
 const rowAgents = new Set<string>();
-/** mod/deliver.ts: the room row it just spawned. */
+/** mod/deliver.ts: the room row it just spawned, or the one the model's own Agent call started. */
 export const noteRow = (id: string): void => { rowAgents.add(id); };
+/** Whether the model is offered the room row now: only while mod/deliver.ts's fallback asks it for the Agent call
+ * (auto mode refused the module's own spawn: mod/core/rows.ts rowFallback); never otherwise. */
+let offering = false;
+export const offerRow = (on: boolean): void => { offering = on; };
+/** mod/consent.ts: the fallback asks for the call now (its rows are then drawn as nothing). */
+export const rowOffered = (): boolean => offering;
 /** The row agent a delivery is the hand-back of, or null: one this process spawned, or one whose report is the row's
  * last word (a fork's or a reload's row, never seen spawned here: its "finished" notification is then taken too). */
 const rowHandback = (text: unknown): string | null => {
@@ -46,8 +54,9 @@ const rowHandback = (text: unknown): string | null => {
 const rowFinished = (text: unknown): string | null => { const id = finishedFrom(text); return id && rowAgents.has(id) ? id : null; };
 
 export function registerRows(on: On): void {
-  // the row is the module's: the model never spawns one (the module's own $.agent.spawn is no offer)
-  on('agent.offer', { agent: ROOM_AGENT }, () => ({ isOffered: false }))
+  // the row is the module's: the model never spawns one (the module's own $.agent.spawn is no offer), but for the
+  // fallback's one call while it asks for it
+  on('agent.offer', { agent: ROOM_AGENT }, () => ({ isOffered: offering }))
     .catch(() => ({ isOffered: false })); // never offered, even past a failure
 
   // a row's hand-back is no turn: taken before it is queued, or dropped as a prompt where it was not

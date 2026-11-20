@@ -1,6 +1,6 @@
 ---
 name: room
-description: sub-human room row: a silent background row labelled with the room code. The hooks module starts it; never spawn it.
+description: sub-human room row: a silent background row labelled with the room code. Spawn it only as sub-human's context says.
 background: true
 color: cyan
 tools: mcp__plugin_sub-human_room__hold

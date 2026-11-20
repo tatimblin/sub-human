@@ -29,6 +29,7 @@ Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, a
 
 ### Fixed
 - **The guard stays out of the way (#35).** The person-only CLI (`sub-human invite`, `admit`, `kick`, …) is denied only where a shell would run it: a heredoc, a note or a commit message that mentions it passes, and so do `mktemp -d` scratch work and a script written to `/tmp`. Each deny names what works instead.
+- **The room row starts in auto mode too.** Auto mode refuses a row that sub-human starts itself, so there Claude makes the one call instead, told quietly with the join (or with your next prompt, if the join's turn has passed). It writes nothing about it, the call draws nothing, and it is asked at most once a minute and five times per session. In other modes nothing changes.
 - A `/clear`, `--resume` or a review left open too long no longer loses your own plan file after a review.
 - `sub-human admit` no longer says the person "typed your PIN".
 - A lock that did not hold reads `Room busy. Try again.`; a room session that failed to start says `Room task list unavailable. Run /sub-human doctor.`

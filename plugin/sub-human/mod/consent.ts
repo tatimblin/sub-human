@@ -37,6 +37,8 @@ import { asHello } from './core/state.ts';
 import { facts, copies } from './deliver.ts';
 import { copyAsked, copyCard, copyOutcome, copySaid, copyTo, copyNews, clipboardCommands, COPY_QUESTION, COPIED, NO_TOOL, GONE } from './core/copy.ts';
 import { keepQuiet, quietOn, quietRow } from './core/quiet.ts';
+import { ROOM_AGENT } from './core/rows.ts';
+import { rowOffered } from './rows.ts';
 import { NOTE_ANSWER } from './core/constants.ts';
 import type { EngineInterface, On, RenderElement } from 'claude-code';
 import type { Hello, RunOutput, SubHumanRead } from './core/types.ts';
@@ -76,15 +78,20 @@ async function apply($: EngineInterface, { systemMessage, subHuman }: { systemMe
   if (subHuman && typeof subHuman.debug === 'string' && subHuman.debug) $.ui.log(subHuman.debug, { to: 'debug' });
   const open = reviewOpenOf(subHuman);
   if (open !== undefined) await $.state.set(REVIEW, open);
-  if (subHuman && subHuman.quiet === true && typeof toolUseId === 'string' && toolUseId) {
-    if (!quietOn(await helloOf($))) return;
-    const kept = await quietCalls($);
-    if (kept.includes(toolUseId)) return;
-    const next = keepQuiet(kept, toolUseId);
-    quiet = new Set(next);
-    await $.state.set(QUIET, next);
-    $.ui.invalidate('ui.render'); // a row drawn already (the result came before this report) is drawn again, hidden
-  }
+  if (subHuman && subHuman.quiet === true) await hideCall($, toolUseId);
+}
+
+/** The call toolUseId's rows drawn as nothing from now on (kept in $.state quietCalls), unless the verdict turns
+ * quiet-plan off. */
+async function hideCall($: EngineInterface, toolUseId: unknown) {
+  if (typeof toolUseId !== 'string' || !toolUseId) return;
+  if (!quietOn(await helloOf($))) return;
+  const kept = await quietCalls($);
+  if (kept.includes(toolUseId)) return;
+  const next = keepQuiet(kept, toolUseId);
+  quiet = new Set(next);
+  await $.state.set(QUIET, next);
+  $.ui.invalidate('ui.render'); // a row drawn already (the result came before this report) is drawn again, hidden
 }
 
 /** The calls whose rows are hidden (mod/core/quiet.ts), in memory once read from $.state (kept there across a reload
@@ -291,6 +298,16 @@ export function registerConsent(on: On): void {
     const line = subHuman && typeof subHuman.attach === 'string' ? subHuman.attach : '';
     return line ? { text: `${r.text}\n\n${line}` } : r;
   }).catch((_$, e, next) => next(e)); // no seed: the edit's ExitPlanMode seeds the file instead (lib/consent/edit.ts)
+
+  // the room row's fallback call (auto mode refused the module's own spawn, so the model makes it: mod/deliver.ts
+  // tellAsk) draws nothing either, as the module's spawn draws nothing; only that one agent type, from the main loop,
+  // while the fallback asks for it
+  on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
+    if (!e.agentId && rowOffered() && e.subagent_type === ROOM_AGENT) {
+      await hideCall($, e.tool_use_id).catch(() => {});
+    }
+    return next(e);
+  }).catch((_$, e, next) => next(e));
 
   // sub-human's own plan-mode calls draw nothing (docs/next/quiet/SPIKES.md spike 2): a review's false "Entered plan
   // mode", its plan view's "User approved / rejected Claude's plan", an edit's red save (#9). Only the calls consent

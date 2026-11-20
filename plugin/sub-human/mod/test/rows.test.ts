@@ -20,9 +20,12 @@ type Seen = {
   runs: { script: string; stdin: Record<string, unknown> }[]; beneathStop: number; spawns: Record<string, unknown>[]; agents: Agent[]; clock: { now: number }; offered: string[]; debug: string[]
   /** the seat mod-hello answers (a test may change it); lists: $.agent.list calls; listHold, spawnHold: what those wait on first */
   seat: Seat | null; lists: number; listHold: Promise<void> | null; spawnHold: Promise<void> | null
+  /** deny: what $.agent.spawn answers instead of starting a row (auto mode's classifier); appends: the session.append
+   * texts (the model's context rows) */
+  deny: string | null; appends: string[]
 }
-function world(on: On, { seat = SEAT, answer = {}, off = [], down = false }: { seat?: Seat | null; answer?: Record<string, unknown>; off?: string[]; down?: boolean } = {}) {
-  const seen: Seen = { runs: [], beneathStop: 0, spawns: [], agents: [], clock: { now: 1_000_000 }, offered: [], debug: [], seat, lists: 0, listHold: null, spawnHold: null }
+function world(on: On, { seat = SEAT, answer = {}, off = [], down = false, deny = null, watch = deny !== null }: { seat?: Seat | null; answer?: Record<string, unknown>; off?: string[]; down?: boolean; deny?: string | null; watch?: boolean } = {}) {
+  const seen: Seen = { runs: [], beneathStop: 0, spawns: [], agents: [], clock: { now: 1_000_000 }, offered: [], debug: [], seat, lists: 0, listHold: null, spawnHold: null, deny, appends: [] }
   session(on, SID)
   on('session.cwd', () => ({ value: '/w' }))
   on('process.run', (_$, e) => {
@@ -48,12 +51,20 @@ function world(on: On, { seat = SEAT, answer = {}, off = [], down = false }: { s
     const raw: Record<string, unknown> = { ...e }
     const type = String(e.subagentType ?? raw.subagent_type)
     seen.spawns.push({ subagentType: type, description: e.description, prompt: e.prompt })
+    if (seen.deny !== null) return { deny: seen.deny }
     const id = `row${seen.spawns.length}`
     seen.agents.push({ id, type, status: 'running', description: e.description })
     if (seen.spawnHold) await seen.spawnHold
     return { model: 'm', agentId: id } // the test engine keeps no hook's agentId (core sets it): $.agent.list names it
   })
   on('agent.offer', (_$, e) => { seen.offered.push(e.agent); return { isOffered: true } })
+  on('classic.PostToolUse', () => ({}))
+  if (watch) {
+    on('session.append', (_$, e, next) => {
+      if (e.message.type !== 'system') seen.appends.push(e.message.content.map(b => b.text).join(''))
+      return next(e)
+    })
+  }
   on('mcp.connect', () => ({ value: down ? { isConnected: false, reason: 'failed', message: 'Skipping connection (recent failure cached)' } : { isConnected: true, server: 'plugin:sub-human:room' } }))
   on('tool.check', () => ({ decision: 'allow' }))
   on('tool.call', () => ({ result: 'ok', text: 'ok' }))
@@ -309,4 +320,81 @@ test('live 2.1.296: a row-ended drop\'s warning row says nothing (QUIET_ROW, a r
   expect(await append(DROPPED)).toBe(QUIET_ROW) // the hand-back's and the notification's: each its own row
   expect(await append('Prompt dropped by a hook: another plugin')).toBe('Prompt dropped by a hook: another plugin')
   expect(await append(DROPPED, 'user')).toBe(DROPPED) // only the warning row
+})
+
+// auto mode (live 2.1.296): the classifier refuses the module's own spawn, so the model makes the Agent call, told once
+// as context (mod/core/rows.ts rowFallback, rowAsk)
+const CLASSIFIER = 'The server-side auto mode classifier gave no verdict for Agent: the request that produced this action did not ask for one. Issue the action again once, as-is; …'
+const ASK = `Agent({ subagent_type: "sub-human:room", description: "${CODE}", prompt: "room: ${CODE}" })`
+const offerRoom = ($: Engine) => $.agent.offer({ agent: 'sub-human:room', description: 'x', source: 'plugin', provider: { plugin: 'sub-human', tier: 'append' } })
+/** The model's own Agent call for the row finished: the call's PostToolUse, the row it started listed as running. */
+const modelCalled = async ($: Engine, seen: Seen, id = 'm1') => {
+  seen.agents.push({ id, type: 'sub-human:room', status: 'running', description: CODE })
+  await $.classic.PostToolUse({ session_id: SID, tool_name: 'Agent', tool_input: { subagent_type: 'sub-human:room', description: CODE, prompt: `room: ${CODE}` }, tool_response: {}, tool_use_id: 'u-agent' })
+  await new Promise(r => setTimeout(r, 30))
+}
+
+test('auto mode refused the module\'s spawn: the model is asked for the Agent call once, as context (no wake, no prompt), and offered the row until it runs', async ($, on) => {
+  const seen = world(on, { deny: CLASSIFIER })
+  const submits: string[] = []
+  on('prompt.submit', (_$, e, next) => { submits.push(e.text); return next(e) })
+  await start($)
+  await turn($)
+  expect(seen.spawns.length).toBe(1)
+  expect(seen.appends.filter(t => t.includes(ASK)).length).toBe(1) // this turn's next request reads it
+  expect(must(seen.appends.find(t => t.includes(ASK)))).toMatch(/write nothing about it/)
+  expect(seen.debug).toContain(`rows: room row ${CODE}: asking Claude for the Agent call`)
+  expect((await offerRoom($)).isOffered).toBe(true) // the model may make that one call
+  await turn($)
+  expect(seen.spawns.length).toBe(1) // the fallback counts as the spawn: within the minute, no second
+  expect(seen.appends.filter(t => t.includes(ASK)).length).toBe(1) // told once
+  await modelCalled($, seen)
+  expect(seen.debug).toContain(`rows: room row ${CODE} started by Claude`)
+  expect((await offerRoom($)).isOffered).toBe(false) // its row runs: hidden again
+  seen.clock.now += MINUTE
+  await turn($)
+  expect(seen.spawns.length).toBe(1) // $.agent.list runs the model's row: nothing more
+  expect(seen.appends.filter(t => t.includes(ASK)).length).toBe(1)
+  expect(submits).toEqual([]) // no wake
+})
+
+test('auto mode, a model that never makes the call: one ask per denied spawn, at most once a minute and five times (never a loop)', async ($, on) => {
+  const seen = world(on, { deny: CLASSIFIER })
+  await start($)
+  for (let i = 0; i < 8; i++) { await turn($); seen.clock.now += MINUTE }
+  expect(seen.spawns.length).toBe(5) // ROW_SPAWNS_MAX
+  expect(seen.appends.filter(t => t.includes(ASK)).length).toBe(5)
+})
+
+test('auto mode at a join: the ask rides on the join\'s own context (no append), as the classifier refused the spawn', async ($, on) => {
+  const seen = world(on, { seat: null, deny: CLASSIFIER })
+  on('classic.UserPromptExpansion', () => ({ additionalContext: ['SUB-HUMAN mechanics'] })) // the join beneath
+  await start($)
+  seen.seat = SEAT
+  const r = await $.classic.UserPromptExpansion({ expansion_type: 'slash_command', command_name: 'sub-human', command_args: 'alice', prompt: '/sub-human alice', session_id: SID, permission_mode: 'auto' })
+  expect(seen.spawns.length).toBe(1)
+  const context = r.additionalContext ?? []
+  expect(context[0]).toBe('SUB-HUMAN mechanics')
+  expect(context.filter(c => c.includes(ASK)).length).toBe(1)
+  await turn($) // the join's turn: nothing more to tell
+  expect(seen.appends.filter(t => t.includes(ASK))).toEqual([])
+})
+
+test('a deny in default mode is final (a person\'s rule, a hook): no ask, never offered', async ($, on) => {
+  const seen = world(on, { deny: 'denied by a PreToolUse hook' })
+  await start($)
+  await $.classic.UserPromptSubmit({ session_id: SID, prompt: 'hi', cwd: '/w', permission_mode: 'default', transcript_path: '/t.jsonl' })
+  await turn($)
+  expect(seen.spawns.length).toBe(1)
+  expect(seen.appends.filter(t => t.includes(ASK))).toEqual([])
+  expect((await offerRoom($)).isOffered).toBe(false)
+})
+
+test('the module\'s spawn that started the row asks the model for nothing', async ($, on) => {
+  const seen = world(on, { watch: true })
+  await start($)
+  await turn($)
+  expect(seen.debug).toContain(`rows: room row ${CODE} started`)
+  expect(seen.appends.filter(t => t.includes(ASK))).toEqual([])
+  expect((await offerRoom($)).isOffered).toBe(false)
 })

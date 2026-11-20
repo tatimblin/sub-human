@@ -916,7 +916,19 @@
     "no { isOffered } (a boolean)",
     "\"agent.offer\":\"{ isOffered: false }\""
    ],
-   "note": "agent.offer {isOffered: false} hides an agent type from the model, in its listing and at dispatch, while a plugin's own $.agent.spawn of the type is no offer (the typings' agent.register note). mod/rows.ts hides sub-human:room, so only the module ever starts the room row."
+   "note": "agent.offer {isOffered: false} hides an agent type from the model, in its listing and at dispatch, while a plugin's own $.agent.spawn of the type is no offer (the typings' agent.register note). mod/rows.ts hides sub-human:room, so only the module starts the room row, but for the auto-mode fallback's one call (auto-mode-module-spawn-deny), while it is offered."
+  },
+  {
+   "id": "auto-mode-module-spawn-deny",
+   "section": 10,
+   "stability": "incidental",
+   "feature": "rows",
+   "since": "2.1.296",
+   "search": [
+    "The server-side auto mode classifier",
+    "the request that produced this action did not ask for one"
+   ],
+   "note": "In auto mode a plugin's own $.agent.spawn is answered {deny: \"The server-side auto mode classifier gave no verdict for Agent: the request that produced this action did not ask for one. Issue the action again once, as-is; …\"} in about 2 ms: the classifier reviews an action against the model request that produced it, and a hook's spawn has none (live on 2.1.296, debug log `$.tool.call (sub-human): Agent answered in 2ms, 406 chars, denied`). The same spawn in default mode starts the row. mod/core/rows.ts rowFallback matches /auto mode classifier/i (or any deny while the session's mode is auto), and mod/deliver.ts then asks the model, as context once, for the Agent call itself (rowAsk), which the classifier reviews as the model's own; mod/rows.ts offers sub-human:room to the model only while it asks. Off (the text changed): the mode check alone still catches it."
   },
   {
    "id": "hook-events",
