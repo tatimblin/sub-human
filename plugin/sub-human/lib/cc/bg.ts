@@ -222,7 +222,8 @@ function runningVersion(pid: unknown, { timeoutMs = 3000 }: { timeoutMs?: number
   if (inPath?.[1]) return inPath[1];
   if (!path.isAbsolute(exe) || st.deleted) return null;
   const r = spawnSync(exe, ['--version'], { encoding: 'utf8', timeout: timeoutMs });
-  const m = /(\d+\.\d+\.\d+)/.exec(String(r.stdout || ''));
+  // only Claude Code's own answer ("2.1.296 (Claude Code)"): another binary's --version (uutils sleep's 0.10.0) is no version of it
+  const m = /(\d+\.\d+\.\d+)\s*\(Claude Code\)/.exec(String(r.stdout || ''));
   return m?.[1] ?? null;
 }
 
