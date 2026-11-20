@@ -304,6 +304,8 @@ snap() { # caption — capture the panes (the room's Claude via claude logs), an
   claude agents --json > "$d/agents.json" 2>/dev/null || true
   "$PLUGIN/scripts/sub-human" tasks --room "$r" > "$d/sub-human-tasks.txt" 2>&1 || true
   mkdir -p "$d/native-tasks"; cp "$HOME/.claude/tasks/sh-$r"/*.json "$d/native-tasks/" 2>/dev/null || true
+  # whether the room session's task list folder is there now, and what it holds (the reaper deletes it at the close)
+  if [ -d "$HOME/.claude/tasks/sh-$r" ]; then { echo "exists"; ls -A "$HOME/.claude/tasks/sh-$r"; } > "$d/tasks-dir.txt"; else echo "missing" > "$d/tasks-dir.txt"; fi
   ls "$HOME/.claude/plans" > "$d/plans.txt" 2>/dev/null || true   # the session plan files: a review restores the seat's
   cp "$BASE/plans-before.txt" "$SNAP_DIR/state/plans-before.txt" 2>/dev/null || true
 }
@@ -552,15 +554,17 @@ S4() { # let's plan: B's own Claude drafts room plan v1 (plan mode; the hooks st
   read_plan "$a"
 }
 
-# read_plan SEAT — page through the open plan view with PgDn to its end (the hook's "room proposal HASH" line),
-# snapping SEAT's pane after each page, so the walkthrough shows every part of the proposal is readable
+# read_plan SEAT — page through the open plan view with PgDn to its end (the hook's ask under the plan: "sign-off on
+# plan NAME vN, asked by …", or "room proposal HASH" for a request with no plan), snapping SEAT's pane after each
+# page, so the walkthrough shows every part of the proposal is readable
+PLAN_END_RE='room proposal [0-9a-f]{12}|│ sign-off on '
 read_plan() {
   local i=0
-  while [ $i -lt 15 ] && ! $LIB pane "sh-$1" | command grep -Eq "room proposal [0-9a-f]{12}"; do
+  while [ $i -lt 15 ] && ! $LIB pane "sh-$1" | command grep -Eq "$PLAN_END_RE"; do
     keys "$1" PageDown; paint "sh-$1"; i=$((i + 1))
     node "$REPO/scripts/snap.ts" "sh-$1" "$SCENE" "$1 reads the whole proposal in the plan view: PgDn, page $((i + 1))"
   done
-  local ok=fail; $LIB pane "sh-$1" | command grep -Eq "room proposal [0-9a-f]{12}" && ok=ok
+  local ok=fail; $LIB pane "sh-$1" | command grep -Eq "$PLAN_END_RE" && ok=ok
   record "$1 paged to the end of the proposal (${i}× PgDn)" "$ok"
 }
 
@@ -827,7 +831,7 @@ S10() { # leave: both exit → reap completes task 1 and stops the room's Claude
   need wait_log --kind member_left --from "$a" --after "$before" --timeout 30 || return 1
   # the leave reaches B as a chat line once it has settled (8 s with no rejoin)
   mkdir -p "$SNAP_DIR/state/S10"
-  wait_pane "$b" "^\s*(⏺ |⎿ )?(sub-human: )?$a left\s*$" 45 --what "$b sees the chat line \"$a left\" after the 8 s settle" && $LIB pane "sh-$b" > "$SNAP_DIR/state/S10/notice-$b.txt"
+  wait_pane "$b" "^\s*(⏺ |⎿ )?(sub-human: )?$a left( \([^()]*\))?\s*$" 45 --what "$b sees the chat line \"$a left\" after the 8 s settle" && $LIB pane "sh-$b" > "$SNAP_DIR/state/S10/notice-$b.txt"
   need $LIB wait-idle "sh-$b" --timeout 30 || return 1
   exit_seat "$b"
   need wait_log --kind member_left --from "$b" --after "$before" --timeout 30 || return 1

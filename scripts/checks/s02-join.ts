@@ -54,11 +54,18 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   const s2end = x.span('S2')?.to;
   const inS2 = (es: TEntry[]): TEntry[] => (j ? es.filter(e => e.timestamp !== undefined && e.timestamp > j.at && s2end !== undefined && e.timestamp <= s2end) : []);
   const notes = inS2(x.chatIn(x.entries(A))).filter(e => e.content === `sub-human: ${B} joined`);
-  const pulls = inS2(x.pullIn(x.entries(A))).filter(e => new RegExp(`^${esc(B)} joined$`, 'm').test(x.textOf(e.message && e.message.content)));
+  // the copy for A's Claude is held by the hooks module and rides as context beside A's next prompt (mod/deliver.ts
+  // holdPullEvent, mod/prompt.ts: "room since your last turn"), so it lands at A's next turn, after S2 when A is idle;
+  // an isMeta row is the fallback when it cannot be held
+  const joinedLine = new RegExp(`^${esc(B)} joined$`, 'm');
+  const afterJoin = (es: TEntry[]): TEntry[] => (j ? es.filter(e => e.timestamp !== undefined && e.timestamp > j.at) : []);
+  const pulls = afterJoin(x.pullIn(x.entries(A))).filter(e => joinedLine.test(x.textOf(e.message && e.message.content)));
+  const held = afterJoin(x.entries(A)).filter(e => e.attachment && e.attachment.type === 'hook_additional_context'
+    && [e.attachment.content].flat().some(c => typeof c === 'string' && joinedLine.test(c)));
   const woke = inS2(x.wakeIn(x.entries(A))).filter(e => x.textOf(e.message && e.message.content).includes(`${B} joined`));
   const ct = notes[0] ? x.chatTurn(A, notes[0]) : null;
-  det(`The join reached ${A} as one chat row and one copy for ${A}'s Claude, with no model turn`, notes.length === 1 && pulls.length === 1 && woke.length === 0 && ct && !ct.woke,
-    `${notes.length} chat row(s) "sub-human: ${B} joined"; ${pulls.length} isMeta copy(ies); ${woke.length} wake(s) carrying it; ${ct ? ct.evidence : 'no chat row'}`);
+  det(`The join reached ${A} as one chat row and one copy for ${A}'s Claude, with no model turn`, notes.length === 1 && pulls.length + held.length === 1 && woke.length === 0 && ct && !ct.woke,
+    `${notes.length} chat row(s) "sub-human: ${B} joined"; ${held.length} held cop${held.length === 1 ? 'y' : 'ies'} (context on ${A}'s next prompt${held[0]?.timestamp ? `, ${held[0].timestamp.slice(11, 19)}` : ''}), ${pulls.length} isMeta; ${woke.length} wake(s) carrying it; ${ct ? ct.evidence : 'no chat row'}`);
   const rh = x.remote && x.remote[B];
   if (rh) remoteJoin(x, det, j, rh);
 }

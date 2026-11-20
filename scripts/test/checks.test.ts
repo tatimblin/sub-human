@@ -176,4 +176,8 @@ test('S5 isReview: a "proposal <hash>" stub or a proposal\'s own text (Claude Co
   const labels = new Map([['plan room v1', 'c5010cdba765']]);
   assert.equal(isReview({ id: 'a', input: { plan: 'plan room v1' } }, es, hashes, labels), true);
   assert.equal(isReview({ id: 'a', input: { plan: 'plan room v9' } }, es, hashes, labels), false); // no such request
+  // 0.6.0: the plan file the hooks wrote carries the plan view's frame line above the version's text
+  assert.equal(isReview({ id: 'b', input: { plan: `Room plan · room v2 · "Yes, and use auto mode" agrees and keeps your mode\n\n${text}` } }, es, hashes), true);
+  assert.equal(isReview({ id: 'b', input: { plan: `Room plan · room v2 · Yes agrees\n\n${text}` } }, es, hashes), true);
+  assert.equal(isReview({ id: 'b', input: { plan: `Room plan · room v2 · Yes agrees\n\nanother text\n` } }, es, hashes), false);
 });

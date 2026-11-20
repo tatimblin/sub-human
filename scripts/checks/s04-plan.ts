@@ -74,11 +74,13 @@ export function run(x: Ctx, { det }: { det: Det }): void {
     det(`${seat} reads v1 in the native plan view (Yes / Tell Claude what to change), or on the fallback card`, view || (m && opts && /Consent/.test(t)),
       view ? `plan view showing "${title}" (${x.capName('S4', seat, st4)})` : m ? `card ${m[0]}; options ${opts ? 'Not yet/Agree/Object' : 'missing'} (${x.capName('S4', seat, st4)})` : `no plan view or card in ${x.capName('S4', seat, st4)}`);
   }
-  // A pages through the whole plan (PgDn) to its end: the hook's "room proposal HASH" line under it
+  // A pages through the whole plan (PgDn) to its end: the hook's ask under it, which names the request
+  // (lib/consent/review.ts requestName: "sign-off on plan NAME vN", or "room proposal HASH" for one with no plan)
   const pages = x.caps('S4', A).filter(r => /reads the whole proposal/.test(String(r.caption)));
   const lastPage = pages.at(-1);
   const endT = lastPage ? readText(path.join(x.screens, lastPage.txt)) || '' : x.cap('S4', A, firstPage(A)) || '';
-  const endOk = p1 && new RegExp(`room proposal ${esc(p1.hash)}`).test(endT);
-  det(`${A} reads the whole plan: PgDn pages through the plan view to its end (the "room proposal HASH" line)`, endOk && /Would you like to proceed\?/.test(endT),
-    `${pages.length} PgDn page capture(s) (${pages.map(r => r.txt).join(', ') || 'none'}); last shows ${endOk ? `"room proposal ${p1.hash}"` : 'no end line'}`);
+  const endLine = p1 ? (typeof p1.plan === 'string' && typeof p1.version === 'number' ? `sign-off on plan ${p1.plan} v${p1.version}` : `room proposal ${p1.hash}`) : null;
+  const endOk = !!endLine && new RegExp(`${esc(endLine)}\\b`).test(endT);
+  det(`${A} reads the whole plan: PgDn pages through the plan view to its end (the hook's "sign-off on plan NAME vN" line)`, endOk && /Would you like to proceed\?/.test(endT),
+    `${pages.length} PgDn page capture(s) (${pages.map(r => r.txt).join(', ') || 'none'}); last shows ${endOk ? `"${endLine}"` : `no end line${endLine ? ` ("${endLine}")` : ''}`}`);
 }

@@ -21,6 +21,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import type { RoomCode, SeatName } from '../../plugin/sub-human/lib/brand.ts';
 import type * as ContractMod from '../../plugin/sub-human/lib/cc/contract.ts';
+import type * as ReviewMod from '../../plugin/sub-human/lib/consent/review.ts';
 import type * as IdentityMod from '../../plugin/sub-human/lib/identity.ts';
 import type * as ProposalMod from '../../plugin/sub-human/lib/proposal.ts';
 import type * as LinkSocketMod from '../../plugin/sub-human/lib/remote/link-socket.ts';
@@ -50,6 +51,7 @@ export const PLUGIN = path.join(REPO, 'plugin', 'sub-human');
 /** The plugin libs the scripts load (plugin/sub-human/lib/<key>). */
 export interface PluginLibs {
   'cc/contract.ts': typeof ContractMod;
+  'consent/review.ts': typeof ReviewMod;
   'identity.ts': typeof IdentityMod;
   'proposal.ts': typeof ProposalMod;
   'remote/link-socket.ts': typeof LinkSocketMod;

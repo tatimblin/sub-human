@@ -9,6 +9,7 @@ import { blocksOf, trigger } from '../metrics.ts';
 import type { Block, TEntry } from '../metrics.ts';
 import { footerMode } from '../lib/panes.ts';
 import { saveErrors } from './s04-plan.ts';
+import { pluginLib } from '../lib/paths.ts';
 
 /** The tools that change files: an objector's Claude calling one before its person's next prompt started building. */
 const EDIT_TOOLS = /^(Edit|Write|MultiEdit|NotebookEdit)$/;
@@ -53,13 +54,15 @@ const hash12 = (t: string): string => crypto.createHash('sha256').update(Buffer.
  * model's stub ("plan paging v1" since 0.6.0, the request's label in `labels`; "proposal <hash>" before, and for a
  * request with no plan), or, when the hooks wrote the proposal into the plan file before the call (a later
  * review: the file's path is known from the first), the proposal's own text, which Claude Code records in its place
- * (hash12 of it is the proposal's hash). The no-dialog close after an objection ("approved exiting plan mode") is not one.
+ * (hash12 of it is the proposal's hash): under the plan view's frame line ("Room plan · NAME vN · …", 0.6.0), which
+ * the plugin's own unframe takes off first. The no-dialog close after an objection ("approved exiting plan mode") is not one.
  */
 export function isReview(call: Block, es: TEntry[], hashes: Set<string>, labels: ReadonlyMap<string, string> = new Map()): boolean {
   const plan = String((call.input || {}).plan || '');
   const stub = /^proposal ([0-9a-f]{12})\b/.exec(plan);
   const label = labels.get(plan.trim().toLowerCase());
-  if (!(stub ? hashes.has(stub[1] ?? '') : label ? hashes.has(label) : hashes.has(hash12(plan)))) return false;
+  const own = (): boolean => hashes.has(hash12(plan)) || hashes.has(hash12(pluginLib('consent/review.ts').unframe(plan)));
+  if (!(stub ? hashes.has(stub[1] ?? '') : label ? hashes.has(label) : own())) return false;
   const res = es.flatMap(e => (e.type === 'user' ? blocksOf(e) : [])).find(r => r && r.type === 'tool_result' && r.tool_use_id === call.id);
   const t = res ? (typeof res.content === 'string' ? res.content : JSON.stringify(res.content)) : '';
   return !/^User has approved exiting plan mode/.test(t);

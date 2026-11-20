@@ -42,9 +42,14 @@ export function run(x: Ctx, { det }: { det: Det }, T: Thresholds): void {
     mine.map(s => `${s.agentType || '?'} "${clip(s.prompt, 30)}" holds ${s.holds.map(h => `${h.room}${h.result === null ? ' (blocking)' : ''}`).join(',') || 'none'}`).join('; ') || 'no subagent in S1');
   const own = x.seatAgents('claude');
   det('The room session spawns no agent (no rows, no participants)', own.length === 0, own.map(s => `${s.agentType || '?'} ${s.file}`).join('; ') || 'none');
+  // on disk at S1's snap (state/S1/1/tasks-dir.txt): the reaper deletes the folder when a run's S10 closes the room
+  // (lib/room/task-files.ts remove), so the live folder says nothing after a run that closed it
   const dir = ms.claude && ms.claude.tasks_dir;
-  det(`The room session's task list directory is made before it starts and recorded (members.json claude.tasks_dir ends tasks/sh-${code})`, !!dir && dir.endsWith(`/tasks/sh-${code}`) && fs.existsSync(dir),
-    `claude.tasks_dir ${dir || 'missing'}${dir ? (fs.existsSync(dir) ? ' (exists)' : ' (missing on disk)') : ''}`);
+  const atS1 = x.stText('S1', 1, 'tasks-dir.txt');
+  const there = atS1 !== null ? /^exists$/m.test(atS1) : !!dir && fs.existsSync(dir);
+  const now = !!dir && fs.existsSync(dir);
+  det(`The room session's task list directory is made before it starts and recorded (members.json claude.tasks_dir ends tasks/sh-${code})`, !!dir && dir.endsWith(`/tasks/sh-${code}`) && there,
+    `claude.tasks_dir ${dir || 'missing'}${dir ? (atS1 !== null ? ` (at S1: ${there ? `exists, holding ${atS1.split('\n').slice(1).filter(Boolean).join(', ') || 'nothing'}` : 'missing'}; now ${now ? 'exists' : 'gone'})` : (now ? ' (exists)' : ' (missing on disk; no state/S1/1/tasks-dir.txt)')) : ''}`);
   // the room session calls nothing: its one turn ends with "ok" (no rows, no room tool, no plan)
   const calls = x.toolUses(x.inSpan(x.entries('claude'), x.span('S1'))).map(c => c.name);
   det('The room session calls nothing (no rows, no room tool)', calls.length === 0,
