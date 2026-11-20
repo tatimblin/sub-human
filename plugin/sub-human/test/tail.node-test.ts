@@ -220,6 +220,25 @@ test('tail (noise pass E): a decision the consent hook already told the model is
   assert.equal(t.forClaude().filter(l => l.includes('to answer bob\'s Claude: SendMessage')).length, 1, t.text());
 });
 
+test('tail (one line per event): an objection on my request is its one line, with its note; the decision it made is not said again', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  h.register('bob', 'member', 1, code);
+  sys(code, 'member_joined', 'alice');
+  const t = startTail();
+  t.advance(300);
+  prop(code, 'alice', H1, ['bob']);
+  t.advance(1000);
+  const before = t.events().length;
+  say(code, 'bob', 'clamp the page size', { kind: 'objection', proposal_hash: H1 });
+  sys(code, 'decision', 'room', { proposal_hash: H1, text: 'objected: bob' });
+  t.advance(1000);
+  const after = t.events().slice(before);
+  assert.deepEqual(after.map(e => e.type), ['wake'], t.text());
+  assert.match(t.text(), /clamp the page size/, 'the note reaches Claude, in the wake');
+  assert.doesNotMatch(JSON.stringify(after), /not agreed|Not agreed/, 'no second line for the decision, drawn or as context');
+});
+
 test('tail (quiet): a plan version and the request on it in one batch are one line, the request\'s; the summary is in the plan view', () => {
   h.freshHome();
   const { code } = h.register('alice');

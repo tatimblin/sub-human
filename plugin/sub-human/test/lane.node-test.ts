@@ -201,6 +201,9 @@ test('lane (P3 wakes): every person\'s words reach every member (a group chat), 
   const all3 = R.readAll();
   assert.equal(roomLane(ALICE, o3, all3), 'push', 'the objection wakes its author, to revise');
   assert.equal(roomLane(ALICE, d3, all3), 'pull', 'the decision after it does not');
+  // the author sees the objection once (its wake, with the note) and Claude gets it once: the decision adds nothing
+  const D3 = (e: Entry) => deliver(ALICE, e, { entries: all3, trust: room.trustOf });
+  assert.deepEqual([D3(o3), D3(d3)], ['wake', 'none'], 'one line for the author: the objection\'s wake');
 });
 
 test('deliver (live verify, P): what asks the person is a notice, not context only: a decision or another approver\'s objection on a proposal they are in', () => {
@@ -217,10 +220,13 @@ test('deliver (live verify, P): what asks the person is a notice, not context on
   const d1 = sys('decision', { proposal_hash: H1, text: 'objected: bob · agreed: alice', refs: [a1.id, o1.id] }, 'room');
   const all = R.readAll();
   assert.equal(D(ALICE, o1, all), 'notice', 'another approver\'s objection: alice sees it');
-  assert.equal(D(ALICE, d1, all), 'context', 'a decision that did not agree: the objection\'s own line said it');
-  assert.equal(D(BOB, d1, all), 'context', 'bob asked for changes: his card was the receipt');
-  assert.equal(D(CAROL, d1, all), 'context', 'not in it: context');
+  // one line per event: the objection reached each member once (alice's notice, carol's context), so the decision it
+  // made is not said again, to the person or to Claude
+  assert.equal(D(ALICE, d1, all), 'none', 'a decision that did not agree: the objection\'s own line said it');
+  assert.equal(D(BOB, d1, all), 'none', 'bob asked for changes: his card was the receipt');
+  assert.equal(D(CAROL, d1, all), 'none', 'not in it: the objection was her context');
   assert.equal(D(CAROL, o1, all), 'context');
+  assert.equal(D(ALICE, d1), 'context', 'without the log to judge by: context, as before');
   const a2 = answer('alice', 'signoff', H2);
   const b2 = answer('bob', 'signoff', H2);
   const d2 = sys('decision', { proposal_hash: H2, text: 'agreed: alice, bob', approvers: ['alice', 'bob'], refs: [a2.id, b2.id] }, 'room');

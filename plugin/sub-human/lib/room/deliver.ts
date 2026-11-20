@@ -21,14 +21,16 @@
  *       Claude's), the room's line for a machine its PIN let in (render.ts linkJoined: its check and the kick; the bare
  *       "joined" after it is not drawn again, render.ts announced; none for the one it names), a task someone else added with me as its suggested owner (`suggest`); and what asks the person, not the model: the room line that the log waits to split
  *       (restart the old sessions), an agreed decision on a proposal I am in (its approvers and author: "Plan paging
- *       v2 agreed"; one not agreed is context, since each objection's own line said it), another approver's
+ *       v2 agreed"; one not agreed is none, since each objection's own line said it: context only without the log),
+ *       another approver's
  *       objection on a proposal I approve. A plan version is context (its request is what a person sees).
  *       Everything else that is not mine is context.
  *     the room's session (role claude) reads nothing: every entry is none (it keeps no rows; each member's room row
  *       is that member's hooks module's).
  *     card answers (both roles): a signoff is context (the decision carries it); an objection wakes the proposal's
  *       author only (to revise).
- *     decisions: a notice for the members in its proposal, context for everyone else; never a wake.
+ *     decisions: an agreed one is a notice for the members in its proposal, context for everyone else; one not agreed
+ *       is none once an objection on it is in the log (that objection was its one line: saidBefore); never a wake.
  *   lane(me, e, entries?, trust?) -> 'push' | 'pull' | 'none'   deliver's first step (push: notice or wake; pull:
  *       context), kept for its table tests
  *   mentions(text, name) -> bool   "@name" anywhere in the text (case-insensitive, not part of a longer name)
@@ -93,6 +95,12 @@ const chat = (me: LaneViewer, e: Entry): boolean => e.via === 'human' && e.kind 
 /** A decision that did not agree (its text "objected: … · agreed: …"; one that agreed reads "agreed: …"). */
 const notAgreed = (e: Entry): boolean => /^objected: /.test(String(e.text ?? ''));
 
+/** A decision that did not agree, after an objection on its proposal: each objection already reached every member once
+ * (a wake for the author, with its note; a notice for another approver; context for the rest) and the signoffs before
+ * it were context, so the decision would only say it again. Without the log to judge by it stays context. */
+const saidBefore = (e: Entry, entries: readonly Readonly<Entry>[] | undefined): boolean => e.kind === 'decision' && notAgreed(e)
+  && !!entries && !!e.proposal_hash && entries.some(x => x.kind === 'objection' && x.proposal_hash === e.proposal_hash && x.id < e.id);
+
 /**
  * A pulled entry the person must see, though their Claude needs no wake: the agreed outcome of a proposal they are in
  * (its decision), and another approver's objection on a proposal they approve.
@@ -112,6 +120,7 @@ function deliver(me: LaneViewer | null | undefined, e: Entry, { entries, trust =
   const l = lane(me, e, entries, trust);
   const name = me && me.name;
   if (me && me.role === 'claude') return 'none';
+  if (saidBefore(e, entries)) return 'none';
   if ((isMove(e) && e.via === 'system' && e.from !== name && e.from !== 'claude')) return 'notice';
   // the room's line for a machine its PIN let in, with its check and the kick: the people's join notice
   const joined = me ? linkJoined(e) : null;

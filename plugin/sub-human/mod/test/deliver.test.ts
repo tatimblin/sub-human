@@ -644,7 +644,8 @@ test('a take while idle: join.ts with no args, the nonce and the room; one promp
   expect(said).toContain('(for Claude) SUB-HUMAN: you are bob\'s Claude in room otter-4821')
   expect(said).not.toMatch(/ROWS|Agent\(/)
   expect(said).toMatch(/end your turn without text \(the room row starts by itself\)/)
-  expect(seen.logs).toContain('joined otter-4821 as bob, with alice')
+  // one line for the join: the prompt row, not the seat's own line beside it
+  expect(seen.logs).not.toContain('joined otter-4821 as bob, with alice')
   expect(seen.joins.length).toBe(1)
   seen.release()
 })

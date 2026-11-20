@@ -502,7 +502,8 @@ const taking = new Set<string>();
  * The seat is taken here, as a bare /sub-human would take it: join.ts through the shim with no args and the room
  * (sub_human_take: that join's seat or nothing, never a new room), then one wake in a turn of its own, never the prompt
  * that carried the line or the PIN (lib/remote/joining.ts's invariant): "You're in room CODE as NAME (check …)" for the
- * person, the seat's mechanics block for the model (takeWake); the room row is the module's own (roomRow). Mid-turn: shown
+ * person, the join's one line (the seat's own "Joined …" line is not drawn beside it), the seat's mechanics block for
+ * the model (takeWake); the room row is the module's own (roomRow). Mid-turn: shown
  * as a notice and appended, as any wake. A reply with nothing to take (the person typed /sub-human first) says nothing;
  * one that failed says why and the line that asks for a bare /sub-human (the tail's text). Never throws.
  */
@@ -537,7 +538,9 @@ async function takeSeat($: EngineInterface, c: Child, a: { code: string; name: s
     const hello = asHello((await $.state.get(HELLO)).value);
     const seat = hello && hello.sid === sid ? hello.seat : null;
     const { text, shown } = takeWake({ code: seat ? seat.code : a.code, name: seat ? seat.name : a.name, check: a.check, context: reply.context });
-    for (const line of reply.lines) $.ui.log(line); // the seat's line, as a typed /sub-human's confirmation
+    // one line for the join: the wake's own ("You're in room …") says what the seat's first line ("Joined …") says, so
+    // only the notes after it are drawn
+    for (const line of reply.lines.slice(1)) $.ui.log(line);
     if (turns.running !== null) { $.ui.log(shown); await midTurnWake($, text); }
     else await submitWake($, text, { member: true, seen: [shown] });
   } catch { await noteError($); } finally { taking.delete(a.code); }
