@@ -51,7 +51,7 @@ Protocol: unchanged (the URL is parsed into today's specs).
 3. **One call stores a version.** `plan({op:'edit', text, summary})` stores it and returns the hash; drop the plan-file header and the enter/exit/deny round trips (`edit.ts`). The one gate left is the plan view: Yes sends it out.
 4. **After a send Claude says nothing.** Model context after Yes is one sentence; the file and mode restore silently.
 
-Owner decision: should a version that only applies the reviewer's requested changes skip the author's plan view and go straight out (`Sent v2 to tristan2`)? Default in this plan: no, keep the one view.
+Owner decision (2026-11-20): a version that applies a reviewer's requested changes still opens in the author's plan view; nothing goes out in a person's name unread.
 
 ### 0.8.0: the room row is the chat
 
