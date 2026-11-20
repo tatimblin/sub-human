@@ -14,6 +14,8 @@ import { propose, version as planVersion } from './support/plan.ts';
 import type { Room } from '../lib/room.ts';
 import { fsStore } from './support/fs-store.ts';
 import type { Entry } from '../lib/room/types.ts';
+import type { RoomCode } from '../lib/brand.ts';
+import { entryId } from '../lib/room/validate.ts';
 import type { ToolDefinition } from '../mcp/types.ts';
 import { sn } from './support/brands.ts';
 import { must } from './support/must.ts';
@@ -84,6 +86,12 @@ async function ready(env?: Record<string, string>, server?: string, capabilities
 /** A tools/call reply's first text. */
 const textOf = (r: RpcMsg) => must(r.result.content[0], 'a content item').text;
 const payload = <T = Entry>(r: RpcMsg): T => JSON.parse(textOf(r)) as T;
+/** A post's answer, {id} and nothing else (no echo of the record), and the entry it names, read back from the log. */
+const posted = (code: RoomCode, r: RpcMsg): Entry => {
+  const p = payload<Record<string, unknown>>(r);
+  assert.deepEqual(Object.keys(p), ['id'], 'post answers the id alone');
+  return must(room.open(code).readById([must(entryId(p.id), 'an entry id')])[0], `entry ${String(p.id)}`);
+};
 const errText = (r: RpcMsg) => { assert.equal(r.result.isError, true, JSON.stringify(r)); return textOf(r); };
 const text = (r: RpcMsg) => { assert.notEqual(r.result.isError, true, JSON.stringify(r)); return textOf(r); };
 
@@ -119,7 +127,7 @@ test('mcp: every tool errors until the parent session joins, then works without 
     assert.equal(errText(await s.tool(name, args)), 'not in a room; run /sub-human');
   }
   h.register('alice', 'member', process.pid, code);
-  const e = payload(await s.tool('post', { kind: 'status', text: 'hello' }));
+  const e = posted(code, await s.tool('post', { kind: 'status', text: 'hello' }));
   assert.deepEqual([e.from, e.via, e.kind], ['alice', 'agent', 'status']);
   await s.close();
 });
@@ -131,12 +139,12 @@ test('mcp: post is stamped from the parent pid (process.ppid), not env; system a
   identity.join({ code, name: sn('bob'), role: 'member', pid: bob.pid, session_id: 'sb' });
   // A forged CLAUDE_PID pointing at bob changes nothing: the server uses its parent.
   const s = await ready({ CLAUDE_PID: String(bob.pid) });
-  const e = payload(await s.tool('post', { kind: 'question', text: 'split auth into its own module?', refs: [1], to: 'bob' }));
+  const e = posted(code, await s.tool('post', { kind: 'question', text: 'split auth into its own module?', refs: [1], to: 'bob' }));
   assert.deepEqual([e.from, e.via, e.kind, e.to, e.refs], ['alice', 'agent', 'question', 'bob', [1]]);
   for (const kind of ['proposal', 'objection', 'signoff', 'plan_rev', 'decision', 'member_joined', 'member_left', 'task_req', 'nope']) {
     assert.match(errText(await s.tool('post', { kind, text: 'x', proposal_hash: 'abcdef012345' })), /refused: kind must be one of/, kind);
   }
-  const forged = payload(await s.tool('post', { kind: 'say', text: 'x', from: 'bob', via: 'human' }));
+  const forged = posted(code, await s.tool('post', { kind: 'say', text: 'x', from: 'bob', via: 'human' }));
   assert.deepEqual([forged.from, forged.via], ['alice', 'agent'], 'extra arguments are ignored');
   assert.match(errText(await s.tool('post', { kind: 'say', text: '   ' })), /empty/);
   R = room.open(code);
@@ -160,10 +168,10 @@ test('mcp: a post that repeats the person\'s objection note is refused, waiting 
   const twice = errText(await s.tool('post', { kind: 'say', text: 'alice objects: “open rate limiting  first”.' }));
   assert.equal(twice, `refused: that is alice's note on proposal ${hash}, which waits for alice's Send; posting it would relay it twice. call AskUserQuestion with "objection ${hash}" so alice can send or discard it.`);
   // an unrelated say passes
-  assert.equal(payload(await s.tool('post', { kind: 'say', text: 'rate limits look fine to me' })).text, 'rate limits look fine to me');
+  assert.equal(posted(code, await s.tool('post', { kind: 'say', text: 'rate limits look fine to me' })).text, 'rate limits look fine to me');
   // a short note matches only exactly
   proposal.writeConfirm(me, { hash, note: 'Not yet', from: 'bob', title: null, at: Date.now() });
-  assert.equal(payload(await s.tool('post', { kind: 'say', text: 'not yet sure about the paging' })).kind, 'say');
+  assert.equal(posted(code, await s.tool('post', { kind: 'say', text: 'not yet sure about the paging' })).kind, 'say');
   assert.match(errText(await s.tool('post', { kind: 'say', text: '"not yet"' })), /^refused: that is alice's note/);
   // the reverse order: Send pressed first (the objection recorded), the relay second
   proposal.clearConfirm(me);
@@ -185,7 +193,7 @@ test('stage 8e D (live verify, localb/03e): while a note on a proposal still pen
   proposal.writeConfirm(me, { hash, note: 'please use Keep a Changelog', from: 'bob', title: 'Add a CHANGELOG', at: Date.now(), stage: 'told' });
   assert.match(errText(await s.tool('post', { kind: 'say', text: 'test' })), new RegExp(`^sub-human: refused: alice's note on proposal ${hash} waits for Send or Discard on its card`));
   proposal.clearConfirm(me);
-  assert.equal(payload(await s.tool('post', { kind: 'say', text: 'test' })).text, 'test');
+  assert.equal(posted(code, await s.tool('post', { kind: 'say', text: 'test' })).text, 'test');
   await s.close();
 });
 
@@ -195,10 +203,10 @@ test('mcp: the seat is the one its session id names (CLAUDE_CODE_SESSION_ID); an
   const bob = h.spawnSleeper();
   identity.join({ code, name: sn('bob'), role: 'member', pid: bob.pid, session_id: 'sid-bob-1' });
   const s = await ready({ CLAUDE_CODE_SESSION_ID: 'sid-bob-1' });
-  assert.equal(payload(await s.tool('post', { kind: 'say', text: 'from bob\'s session' })).from, 'bob', 'the session id wins over the parent');
+  assert.equal(posted(code, await s.tool('post', { kind: 'say', text: 'from bob\'s session' })).from, 'bob', 'the session id wins over the parent');
   await s.close();
   const old = await ready({ CLAUDE_CODE_SESSION_ID: 'sid-before-clear' });
-  assert.equal(payload(await old.tool('post', { kind: 'say', text: 'after a /clear' })).from, 'alice', 'no seat holds that id: the parent pid');
+  assert.equal(posted(code, await old.tool('post', { kind: 'say', text: 'after a /clear' })).from, 'alice', 'no seat holds that id: the parent pid');
   await old.close();
 });
 

@@ -133,7 +133,7 @@ Full names are `mcp__plugin_sub-human_room__<tool>`.
 | `task` | room (`mcp/task.ts`) | no | Add or update a room task. |
 <!-- /gen:mcp-tools -->
 
-`hold` is allowed only for row subagents (the module's guard, `mod/guard.ts`, checks `agentId`); `task` and `plan` refuse the room session (it takes no requests and edits no plan), and `post` refuses `to: claude` (it reads nothing). The `task` tool's request is applied by the host at once (Tasks); `plan` opens an edit or asks for sign-off (Consent); `read` gains `plan` (`lib/plans.ts` describe) and `brief` (`lib/room/brief.ts`: plans, tasks, decisions and recent people's words, framed as people's content, cut to about 6 KB).
+`hold` is allowed only for row subagents (the module's guard, `mod/guard.ts`, checks `agentId`); `task` and `plan` refuse the room session (it takes no requests and edits no plan), and `post` refuses `to: claude` (it reads nothing). A post that lands answers `{"id": N}`, the entry's id alone, never the record (Claude wrote it; an echo only costs context); a refusal is its reason, as an error. The `task` tool's request is applied by the host at once (Tasks); `plan` opens an edit or asks for sign-off (Consent); `read` gains `plan` (`lib/plans.ts` describe) and `brief` (`lib/room/brief.ts`: plans, tasks, decisions and recent people's words, framed as people's content, cut to about 6 KB).
 
 ## The room store
 

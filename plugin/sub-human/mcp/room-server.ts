@@ -6,7 +6,7 @@
  * Identity: the session that spawned us (whoami below), re-resolved on every call since the session may join after the
  * server starts. The model never names itself. Not joined -> every core tool returns "not in a room; run /sub-human".
  *
- * Core tools: post (refused when it repeats the person's objection note: repeatsNote below), read (this member's
+ * Core tools: post (answers {id}, the entry's id alone; refused when it repeats the person's objection note: repeatsNote below), read (this member's
  * unseen entries, cursor mcp-<name>, skipping its own Claude's posts, at most READ_MAX; each one rendered line with
  * no signature material, a person's line whose signature does not verify marked "(unverified)"; with plan, a room plan:
  * lib/plans.ts describe; with brief, the room's state in one text: lib/room/brief.ts), plan (op edit: opens a room plan edit in this session, which the consent hooks run,
@@ -211,9 +211,11 @@ const CORE: ToolDefinition[] = [
   },
 ];
 
+/** post: the entry's id alone ({id}), not the record: the model wrote the text, so an echo only costs its context. A
+ * refusal is its reason, as an error. */
 function post(me: Me, args: ToolArgs) {
   const r = agentPost(me, args);
-  return r.ok ? json(r.entry) : text(r.error, true);
+  return r.ok ? json({ id: r.entry.id }) : text(r.error, true);
 }
 
 /** Entries as the model reads them: one rendered line each (render.line full), the trust marker in it. */
