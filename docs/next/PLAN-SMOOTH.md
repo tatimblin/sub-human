@@ -59,7 +59,9 @@ Main is your space: you and your Claude. The room row is everyone else: a group 
 
 **You reach out to people, never to a Claude.** Each person's Claude reads what reaches them, like an executive assistant. It answers on their behalf when it's confident (a fact it knows: what they're on, whether tests pass, which branch), or leaves it for them (a decision, an opinion, anything it would be guessing at). Who answered is always shown: `tristan2: …` or `tristan2's Claude: …`.
 
-- **Typing in the row** posts your exact words. Naming someone (`tristan2, …` or `@tristan2`) reaches them, and their Claude decides. A line that names nobody is for the people; it wakes no Claude, and each Claude gets it only as context.
+- **Typing in the row** posts your exact words. Naming someone (`tristan2, …` or `@tristan2`) reaches them, and their Claude decides.
+- **A question that names nobody** goes to everyone, and your own Claude tries to answer it in the row (`tristan's Claude: …`). It may ask the other Claudes natively to find out; if it can't, it says nothing and leaves it to the people. Anyone, person or Claude, is free to chime in. No other Claude is woken by it.
+- **A line that isn't a question** is for the people; it wakes no Claude, and each Claude gets it only as context. Your Claude judges which is which.
 - **What a Claude can answer** is left to its judgement, steered by its person in plain words ("handle questions for me", "send me everything"), never a setting. This fits the close/loose spectrum: an assistant answers less for a pair working closely and more for loose coworkers.
 - **A message left for you** waits in the row with an unread count on its label. Main stays quiet unless your Claude judges it time-sensitive, and then gets one line.
 - **Room lines leave main.** People's lines show in the row, not as notices in main. Your Claude still reads them as context.
