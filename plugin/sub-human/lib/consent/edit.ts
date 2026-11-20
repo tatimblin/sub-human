@@ -40,7 +40,7 @@
  * base version's text; capture() takes it off again. The text below the marker is people's content, stored as it is.
  */
 
-import { oneLine } from '../text.ts';
+import { oneLine, headingName } from '../text.ts';
 import { NEXT } from './review.ts';
 import { assertNever } from '../../mod/core/never.ts';
 import type { PlanEdit } from '../types-app.ts';
@@ -62,7 +62,8 @@ export type EditEvent =
    * internal that changed) */
   /** showCheck: the plan view can show the author's check of a stored version (hooks/consent.ts: the person's mode is
    * one a review opens in, and sign-off is on), so the closing call opens it */
-  | { type: 'exit'; plan: PlanFile; text: string | null; mode?: string | undefined; showCheck?: boolean }
+  /** taken: the room's plan names, for a new plan edited with no name (its heading names it unless one is taken) */
+  | { type: 'exit'; plan: PlanFile; text: string | null; mode?: string | undefined; showCheck?: boolean; taken?: readonly string[] }
   | { type: 'put'; outcome: PutOutcome; showCheck?: boolean }
   | { type: 'exited' }
   | { type: 'stop'; mode: string | undefined; active: boolean }
@@ -84,7 +85,9 @@ export type EditSay =
   | { to: 'context'; text: string }
   /** text: the deny's reason, which the person sees too (Claude Code draws it as the call's error): short and in their
    * words; context: the model's mechanics, as the call's additionalContext (lib/cc/env.ts denyWithContext) */
-  | { to: 'deny'; text: string; context?: string }
+  /** quiet: the store's receipt (the save worked): the module hides the call's rows (#9), the receipt goes to the
+   * debug log, and the model reads it as ever */
+  | { to: 'deny'; text: string; context?: string; quiet?: true }
   | { to: 'attach'; text: string }
   /** the closing call as Claude Code's own "exit plan mode?" (a PreToolUse ask, the plan emptied) */
   | { to: 'leave'; text: string }
@@ -113,10 +116,10 @@ export const EDIT_SAY = {
   noFileNext: 'No plan file is known for this session yet. Call EnterPlanMode first, then edit the plan file the hooks fill.',
   empty: (p: string): string => `sub-human: room plan ${p} not saved: the plan is empty.`,
   emptyNext: `The plan below the closing marker is empty. Write the plan there, then call ${EXIT} again.`,
-  stored: (p: string, v: number): string => `sub-human: saved as room plan ${p} v${v}, not agreed yet.`,
+  stored: (p: string, v: number): string => `sub-human: plan ${p} v${v} saved, not agreed yet.`,
   storedNext: 'Not agreed: anyone can ask for sign-off (the plan tool, op ask); each person answers in their own session.',
   /** stored, and the author's check made: nobody is asked until the person sends it out */
-  storedCheck: (p: string, v: number): string => `sub-human: saved as room plan ${p} v${v}, not sent out yet: you check it first.`,
+  storedCheck: (p: string, v: number): string => `sub-human: plan ${p} v${v} saved; you review it before anyone else is asked.`,
   checkNext: 'Nobody else is asked yet: your person checks it first.',
   checkThen: (h: string): string => `Then ${NEXT.open(h)}: your person sends it out or asks for changes.`,
   leftCheck: (p: string, v: number | undefined, h: string): string => `sub-human: plan mode closed with no approval: room plan ${p}${v ? ` v${v}` : ''} was stored, not sent out `
@@ -199,7 +202,7 @@ export function capture(file: string): { text: string; summary: string } | { err
 // ---------- the reducer ----------
 const none = (edit: PlanEdit | null): EditStep => ({ edit, effects: [], say: null });
 /** A deny: the person's line as its reason, the model's next step as its context. */
-const deny = (text: string, context: string): EditSay => ({ to: 'deny', text, context });
+const deny = (text: string, context: string, quiet = false): EditSay => ({ to: 'deny', text, context, ...(quiet ? { quiet: true as const } : {}) });
 
 /** The plan file back as it was before the seed, once: the effect, and the edit marked restored. */
 /** The model's line when an effect puts the person's own plan back (none when the file held nothing). */
@@ -274,7 +277,12 @@ export function reduce(edit: PlanEdit | null, ev: EditEvent): EditStep {
       const got = capture(ev.text ?? ev.plan.text ?? '');
       if ('error' in got) return { edit: e, effects: [], say: deny(EDIT_SAY.refused(e.plan, 'the plan file\'s header is broken'), `Not stored: ${got.error}. ${EDIT_SAY.refusedNext}`) };
       if (!got.text) return { edit: e, effects: [], say: deny(EDIT_SAY.empty(e.plan), EDIT_SAY.emptyNext) };
-      return { edit: e, effects: [{ do: 'put', plan: e.plan, base: e.base, text: got.text, summary: got.summary }], say: null };
+      // a new plan with no name is named from its first heading ("# Paging" -> paging), unless the room has that name
+      const heading = e.unnamed && e.base === 0 ? headingName(got.text) : null;
+      const named = heading && !(ev.taken ?? []).includes(heading) ? heading : null;
+      const { unnamed: _unnamed, ...rest } = e;
+      const at: PlanEdit = named ? { ...rest, plan: named } : e;
+      return { edit: at, effects: [{ do: 'put', plan: at.plan, base: at.base, text: got.text, summary: got.summary }], say: null };
     }
     case 'put': {
       const o = ev.outcome;
@@ -290,11 +298,11 @@ export function reduce(edit: PlanEdit | null, ev: EditEvent): EditStep {
       // the person was in plan mode already (or entered it by hand: no EnterPlanMode of the edit's): it stays, and the edit is done
       if (e.mode === 'plan' || e.mode === undefined) {
         const [, effects] = restore(e);
-        return { edit: null, effects, say: deny(receipt, `${agreed}${EDIT_SAY.stayInPlan}${fileLine(effects)}${check ? ` ${EDIT_SAY.checkThen(check)}` : ''}`) };
+        return { edit: null, effects, say: deny(receipt, `${agreed}${EDIT_SAY.stayInPlan}${fileLine(effects)}${check ? ` ${EDIT_SAY.checkThen(check)}` : ''}`, true) };
       }
       const next: PlanEdit = { ...e, phase: 'stored', version: o.version, ...(o.unchanged ? { unchanged: true } : {}), ...(check ? { check } : {}) };
       const then = check && ev.showCheck ? SHOW_CHECK : `${LEAVE}${check ? ` ${EDIT_SAY.checkThen(check)}` : ''}`;
-      return { edit: next, effects: [{ do: 'save', edit: next }], say: deny(receipt, `${agreed}${then}`) };
+      return { edit: next, effects: [{ do: 'save', edit: next }], say: deny(receipt, `${agreed}${then}`, true) };
     }
     case 'exited': {
       const [, effects] = restore(e);

@@ -152,6 +152,15 @@ const hso = (r: HookRun): HookSpecificOutput | Partial<HookSpecificOutput> => (r
 const decision = (r: HookRun) => hso(r).permissionDecision;
 const reason = (r: HookRun) => hso(r).permissionDecisionReason;
 const ctx = (r: HookRun) => hso(r).additionalContext;
+/** A plan the plan view shows (a file's text, a dialog's plan) without its frame line (lib/consent/review.ts framed),
+ * which must be there. */
+/** The plan an ask's updatedInput carries, or undefined. */
+const askedPlan = (r: HookRun): unknown => { const u: unknown = hso(r).updatedInput; return u && typeof u === 'object' && 'plan' in u ? u.plan : undefined; };
+const unframed = (t: unknown): string => {
+  const s = String(t);
+  if (!/^Room plan · [^\n]* (?:agrees(?: and keeps your mode)?|sends it out)\n\n/.test(s)) throw new Error(`no frame line: ${JSON.stringify(s.slice(0, 80))}`);
+  return s.replace(/^[^\n]*\n\n/, '');
+};
 
 /** Plan text with sub-human frontmatter. */
 const roomPlan = (code: RoomCode, approvers: string[], body = '# Plan\n\n1. add pagination\n', approval = 'all') =>
@@ -159,6 +168,6 @@ const roomPlan = (code: RoomCode, approvers: string[], body = '# Plan\n\n1. add 
 
 export {
   PLUGIN, HOOKS, identity, room, fixture, sleeper, baseEnv, withHome, sid, World,
-  hso, decision, reason, ctx, roomPlan,
+  hso, decision, reason, ctx, roomPlan, unframed, askedPlan,
 };
 export type { HookInput, HookLine, HookRun, Who };

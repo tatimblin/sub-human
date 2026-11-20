@@ -20,31 +20,9 @@ export interface SessionDoc {
   edit?: PlanEdit;
   recheck?: Recheck;
   steer?: Steer;
-  holds?: Holds;
   blocks?: Record<string, number>;
   /** ids the consent hook already told this seat's model (a decision its answer made): the room context skips them */
   reported?: number[];
-}
-
-// ---------- lib/rows.ts ----------
-/** A seat's holds as readHolds returns them (mcp/hold.ts writes them to its session document). */
-export interface Holds {
-  pid: number;
-  at: string;
-  members: string[];
-  room: boolean;
-  roomUntil?: string;
-}
-/** One agent -> row record (rows/<session_id>.byAgent). */
-export interface RowRec {
-  kind?: 'participant' | 'room';
-  name: string;
-  parent?: string | null;
-  at?: string; // recordRow stamps it; the status line's own guesses have none
-}
-export interface Spawn {
-  kind: 'participant' | 'room';
-  name: string;
 }
 
 // ---------- lib/tasks.ts ----------
@@ -133,6 +111,12 @@ export interface Review {
   shownAt?: number;
   /** the person had typed text in the prompt when the plan view opened: their keys may answer it, so a Yes is asked again */
   typing?: boolean;
+  /** #34: the note's Send / Discard, answered before the closing call (lib/consent/review.ts noteAnswer): the closing
+   * plan line of a person in auto mode says where it went */
+  closing?: 'sent' | 'discarded';
+  /** hash12 of what the review last wrote to the plan file (the framed version, the closing line): a stale review's
+   * restore (lib/proposal.ts restoreStale) puts the person's plan back over it, never over a file they wrote since */
+  wrote?: string;
 }
 /**
  * members/NAME/session edit: a room plan edit in this seat's session (the plan tool's edit op opens it; the hooks run
@@ -158,6 +142,8 @@ export interface PlanEdit {
   unchanged?: boolean;
   /** stored: the author's check of that version (lib/proposal.ts ask draft), which the person answers next */
   check?: string;
+  /** a new plan edited with no name: its first heading names it when it is stored (lib/consent/edit.ts), else `plan` */
+  unnamed?: true;
 }
 /** members/NAME/session recheck: a Yes that came as the plan view opened, recorded only once the person confirms it on
  * the card (lib/consent/review.ts); asked once. */
@@ -201,7 +187,7 @@ export type TailEvent =
   | { type: 'chat', lines: string[] }
   | { type: 'pull', text: string }
   | { type: 'wake', text: string }
-  | { type: 'rows', text: string | null }
-  | { type: 'health', text: string }
+  | { type: 'reminders', text: string | null }
+  | { type: 'health', text: string; quiet?: true }
   | { type: 'invites', open: string[], expired?: string[] }
   | { type: 'take', code: string, name: string, text: string, check?: string };

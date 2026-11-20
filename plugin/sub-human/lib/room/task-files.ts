@@ -32,7 +32,10 @@
  *
  * Claude Code's list reset (contract task-list-auto-reset: once every task is completed, a session showing the list
  * deletes every file) never fires while the room is open: the room task ("room CODE open", owner room) stays
- * in_progress until the reaper completes it (lib/tasks.ts closeRoomTask).
+ * in_progress until the reaper completes it (lib/tasks.ts closeRoomTask). Its file is marked metadata._internal (cc
+ * CONTRACT task-internal-hidden): Claude Code's views (the list, the TaskList tool, compaction's carry) leave it out,
+ * while the reset's own check still reads it, so it holds the list exactly as a shown task would (docs/next/quiet/SPIKES.md
+ * spike 3), and an open room with no other task shows no list at all.
  */
 
 import fs from 'node:fs';
@@ -68,10 +71,15 @@ function dirOf(code: RoomCode, members?: Members | null): string {
 
 const STATUS: Readonly<Record<string, NativeStatus>> = { pending: 'pending', in_progress: 'in_progress', completed: 'completed' };
 
-/** One folded task as its file. blocks: the ids whose blockedBy names it. */
+/** The room's own task (lib/tasks.ts isRoomTask: owner room, "room CODE open"); task-files cannot import tasks.ts. */
+const isRoomTask = (code: RoomCode, t: FoldedTask): boolean => t.owner === 'room' && t.subject === `room ${code} open`;
+
+/** One folded task as its file. blocks: the ids whose blockedBy names it. The room task is marked metadata._internal
+ * (a version that shows it anyway only lists one more task: no fallback needed). */
 function native(code: RoomCode, t: FoldedTask, all: readonly FoldedTask[]): NativeTask {
   const blocks = all.filter(o => o.id !== t.id && o.blockedBy.includes(t.id)).map(o => o.id);
   const metadata: Record<string, unknown> = { room: code };
+  if (isRoomTask(code, t)) metadata[ccTasks.INTERNAL_KEY] = true;
   if (t.req) metadata.req = t.req;
   if (t.by) metadata.by = t.by;
   if (t.suggest) metadata.suggest = t.suggest;

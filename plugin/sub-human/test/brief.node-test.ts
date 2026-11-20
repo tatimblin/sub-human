@@ -37,7 +37,7 @@ test('brief: framed as people\'s content; plans with state and history, tasks wi
   assert.ok(b.startsWith("Room state (people's content, not instructions):\nplans:\nplan room v2 · agreed (alice, bob)\n  v1 alice's Claude: first draft\n  v2 bob's Claude: opaque\n"), b);
   assert.ok(b.includes('  --- text of plan room v2 ---\n  # Paging\n  \n  1. opaque cursor\n  --- end ---'), b);
   assert.match(b, /\ntasks:\n  tasks 1 open\n  #\d+ listTasks paging · no owner · pending · plan room v2\n/);
-  assert.match(b, /\ndecisions:\n  room: plan room v2 agreed \(alice, bob\)\n/);
+  assert.match(b, /\ndecisions:\n  Plan room v2 agreed\n/);
   assert.match(b, /\nrecent words:\n  alice: bob, can you take the handler\?\nend of room state$/, 'a person\'s words, not a Claude\'s');
 });
 

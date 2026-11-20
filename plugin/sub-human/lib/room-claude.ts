@@ -10,7 +10,9 @@
  * daemon-env-filter), with the login basics filled in when missing. The room Claude's own env comes from the
  * --settings launch flag: SUB_HUMAN_HOME, SUB_HUMAN_ROOM,
  * CLAUDE_CODE_TASK_LIST_ID=sh-CODE, CLAUDE_CODE_ENABLE_TODO_TOOLS=1, the spawner's SUB_HUMAN_*_MS overrides, plus
- * crossSessionInbound "refuse" (a peer's message would start a turn; nobody needs to reach it). No --model: it runs on the user's default model. cwd is the joiner's: --bg refuses
+ * crossSessionInbound "refuse" (a peer's message would start a turn; nobody needs to reach it). No --model: it runs on the user's default model.
+ * Its agent (agents/room-claude.md) lists one tool, TaskList (read-only), so it has no other: an agent with no tools
+ * line gets every tool. cwd is the joiner's: --bg refuses
  * an untrusted cwd (a fresh temp dir is never trusted). Before it starts, openTaskList (the join, once its claim
  * holds: lib/seats.ts ensureRoomClaude) records the room session's native task list directory (members.claude.tasks_dir:
  * <its config dir>/tasks/sh-CODE) and makes it, so the session's task view watches a directory that exists (contract
@@ -34,7 +36,8 @@
  * Stopping: reap, after the last member leaves, waits graceMs (a quick rejoin cancels), claims claude.closing under
  * the lock (one reaper wins), completes the room task itself (lib/tasks.ts closeRoomTask: no model), stops the
  * job and any strays, ends the bound process if `claude stop` left it up (ensureGone), deletes the room session's
- * native task list once that process is gone (under the room's tasks lock; the log keeps every task, and a closing
+ * native task list and then the session itself (`claude rm`: a stopped one stays listed in the agent view) once that
+ * process is gone (under the room's tasks lock; the log keeps every task, and a closing
  * room is never joined or repaired again), and marks the room's Claude stopped and left. watchdog (the room Claude's tail and join's sweep) claims closing and starts the
  * reaper once no member has been live for orphanMs: members that crashed leave no SessionEnd, so this is what closes
  * their room. The orphan start is the latest left_at when every member left cleanly, else the first observation
@@ -55,7 +58,7 @@ import * as room from './room.ts';
 import * as tasks from './tasks.ts';
 import * as taskFiles from './room/task-files.ts';
 import { decodeOr, obj, opt, str } from './decode.ts';
-import { sleepSync } from './io.ts';
+import { sleepSync, lazy } from './io.ts';
 
 /** `start CODE JSON`: what spawnStart hands the detached helper. */
 const START_ARGS = obj({ cwd: opt(str), claim: opt(str), prevJob: opt(str) });
@@ -70,6 +73,9 @@ import type { RoomClaudePatch } from './identity.ts';
 import type { AgentJob } from './cc/bg.ts';
 import type { RoomCode } from './brand.ts';
 import { msgOf } from './errors.ts';
+import type * as VerdictMod from './cc/verdict.ts';
+
+const verdictLib = lazy<typeof VerdictMod>(import.meta.url, './cc/verdict.ts');
 
 /** What spawnPlan builds a launch from. */
 interface PlanOpts {
@@ -145,10 +151,8 @@ function spawnPlan({ code, cwd, home = identity.home(), pluginDir = pluginDirFor
       CLAUDE_CODE_TASK_LIST_ID: taskListId(code),
       CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
     },
+    // no permissions: the room session spawns no rows and calls nothing (each member's room row is that member's)
     crossSessionInbound: cc.ROOM_SESSION_INBOUND,
-    // its row agents' one tool: a background session has nobody to answer a permission prompt, and the plugin's
-    // hooks answer none (no allow anywhere); this session's own launch settings, never a settings file
-    permissions: { allow: ['mcp__plugin_sub-human_room__hold'] },
   };
   const args = ['--bg', '-n', `claude.${code}`];
   if (pluginDir) args.push('--plugin-dir', pluginDir);
@@ -255,6 +259,18 @@ const seam: { ensureGone: typeof ensureGone } = { ensureGone };
 function stopJob(job: string | null | undefined): boolean {
   if (!job || job === PENDING) return false;
   const r = spawnSync(claudeBin(), cc.stopCmd(job), {
+    env: cleanEnv(), encoding: 'utf8', timeout: config.SPAWN_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  return r.status === 0;
+}
+
+/**
+ * Delete a stopped job (`claude rm`), so the agent view and `claude agents` stop listing the closed room's session;
+ * not while the version's verdict turns reap-rm off (cc CONTRACT bg-rm: then it stays, stopped).
+ */
+function removeJob(job: string | null | undefined): boolean {
+  if (!job || job === PENDING || verdictLib().off('reap-rm')) return false;
+  const r = spawnSync(claudeBin(), cc.rmCmd(job), {
     env: cleanEnv(), encoding: 'utf8', timeout: config.SPAWN_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'],
   });
   return r.status === 0;
@@ -418,7 +434,7 @@ async function reap(code: RoomCode, {
   let job = identity.readMembers(code).claude?.job || o.job;
   if (job === PENDING && identity.readMembers(code).claude?.pid) job = findJob(code)?.id; // bound, starter died
   stopJob(job);
-  stopStrays(code, [job]); // a job the record lost would outlive the room
+  const strays = stopStrays(code, [job]); // a job the record lost would outlive the room
   // `claude stop` answering is not the process gone (live: the room's Claude, its MCP server and tail ran on for
   // minutes after stopped_at): the bound process, by its pid and start time, ends here if it is still up
   const gone = await seam.ensureGone(identity.readMembers(code).claude ?? o);
@@ -426,6 +442,8 @@ async function reap(code: RoomCode, {
   // a list it keeps (not all the plugin's, a lock held, the process not gone) Claude Code's retention sweep takes
   // (contract task-list-retention). The log keeps every task (sub-human tasks reads tasks.json)
   if (gone) { try { room.open(code).store.lock('tasks', () => taskFiles.remove(code)); } catch { /* it stays */ } }
+  // and the session itself, once its process is gone: a stopped job stays listed in the agent view (← N agents)
+  if (gone) for (const id of [job, ...strays]) removeJob(id);
   identity.updateRoomClaude(code, () => ({ stopped_at: new Date().toISOString() }));
   try { identity.leave(code, identity.ROOM_CLAUDE, {}); } catch { /* already left */ }
   try { identity.unindexClosed(code); } catch { /* the next look at the open rooms drops it */ }

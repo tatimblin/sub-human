@@ -19,8 +19,12 @@ The goal is narrow: **a model can't speak or consent as a person through anythin
 - **Invite secrets never reach a model.** The invite line's SECRET and its PIN are shown to the person only, and the
   hooks hide any join or invite prompt from the conversation.
 - **The store is guarded.** The plugin's hooks module denies Claude's file tools inside the sub-human home, and
-  denies `Bash` commands that name it or its keys. Everything else, Claude Code's own prompt history and
-  transcripts included, is your Claude's to read, as in any session.
+  denies `Bash` commands that name it or its keys. Everything else, Claude Code's own prompt history, transcripts and
+  tool results included, is your Claude's to read, as in any session. The person's own commands (`sub-human invite`,
+  `admit`, `kick`, `listen`, `link`, `serve`) are denied to a model where the shell would run them: as the command,
+  as the script `node` or a shell runs, inside `sh -c`, `eval`, `$(…)`, `find -exec`, `ssh` or a shell's heredoc. A
+  note, a quoted string or a file a heredoc writes that only mentions one is not a run of it, and scratch work in
+  `mktemp -d` directories passes (#35). Each deny names what works instead.
 
 ## Joining from another machine
 

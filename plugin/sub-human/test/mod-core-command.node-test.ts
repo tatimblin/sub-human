@@ -8,7 +8,7 @@ import type { JoinReply, RunOutput } from '../mod/core/types.ts';
 import type * as commandMod from '../mod/core/command.ts';
 import type * as inviteSecretMod from '../lib/remote/invite-secret.ts';
 import { must } from './support/must.ts';
-import { BYPASS_NOTE } from '../mod/core/constants.ts';
+import { BYPASS_DEBUG } from '../mod/core/constants.ts';
 
 const PLUGIN = path.join(import.meta.dirname, '..');
 const load = (): Promise<typeof commandMod> => import(path.join(PLUGIN, 'mod', 'core', 'command.ts'));
@@ -72,15 +72,21 @@ test('command: the payload is the UserPromptExpansion join.ts reads, marked as t
   assert.equal(joinPayload({ sid: 's1', cwd: '/w', args: '', nonce: NONCE, mode: 'bypassPermissions' }).permission_mode, 'bypassPermissions');
 });
 
-test('command: #14 a join\'s bypass-permissions note is redone for the mode its expansion ran in', async () => {
-  const { bypassNoted } = await load();
-  const say = 'joined vole-1234 as bob, with alice';
-  assert.deepEqual(bypassNoted([`${say}${BYPASS_NOTE}`], 'default'), [say], 'bypass then, default now: no note');
-  assert.deepEqual(bypassNoted([say], 'bypassPermissions'), [`${say}${BYPASS_NOTE}`], 'default then, bypass now: the note');
-  assert.deepEqual(bypassNoted([`${say}${BYPASS_NOTE}`], 'bypassPermissions'), [`${say}${BYPASS_NOTE}`], 'once, never twice');
-  assert.deepEqual(bypassNoted(['a', 'b'], 'bypassPermissions'), ['a', `b${BYPASS_NOTE}`], 'at the end of the last line');
-  assert.deepEqual(bypassNoted([], 'bypassPermissions'), []);
-  assert.deepEqual(bypassNoted([say], undefined), [say], 'unknown: no note');
+test('command (quiet): a reply\'s debug detail is read apart from its lines, for the debug log', async () => {
+  const { readReply } = await load();
+  const run = (o: unknown): RunOutput => ({ exitCode: 0, stdout: JSON.stringify(o), stderr: '' });
+  const said = readReply(run({ subHuman: { say: '✗ Room busy. Try again.', refused: true, shareable: false, debug: 'could not acquire /h/rooms/x/lock' } }));
+  assert.deepEqual(said, { kind: 'say', lines: ['✗ Room busy. Try again.'], refused: true, shareable: false, debug: 'could not acquire /h/rooms/x/lock' });
+  const joined = readReply(run({ subHuman: { say: 'Joined x', joined: true, shareable: true, debug: 'room session: starting again' }, hookSpecificOutput: { additionalContext: 'SUB-HUMAN: …' } }));
+  assert.equal(joined.kind === 'joined' ? joined.debug : null, 'room session: starting again');
+  assert.equal('debug' in readReply(run({ subHuman: { say: 'ok' } })), false);
+});
+
+test('command: #14 the bypass-permissions mode is never on the join\'s line (0.6.0: the debug log\'s, mod/deliver.ts)', async () => {
+  const c = await load();
+  assert.equal('bypassNoted' in c, false, 'no note to redo');
+  assert.match(BYPASS_DEBUG, /^join: bypass-permissions mode: /, 'the debug log names its component');
+  assert.equal(BYPASS_DEBUG.includes('\n'), false);
 });
 
 test('command: a reply is read as a join, a notice, or a failure (one line pointing to the doctor); a classic block is a failure here', async () => {

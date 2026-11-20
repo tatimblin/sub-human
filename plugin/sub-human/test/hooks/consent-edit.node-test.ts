@@ -6,7 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { World, hso, decision, reason, ctx } from './helpers.ts';
+import { World, hso, decision, reason, ctx, unframed, askedPlan } from './helpers.ts';
 import type { HookInput, HookRun } from './helpers.ts';
 import * as proposal from '../../lib/proposal.ts';
 import * as room from '../../lib/room.ts';
@@ -61,13 +61,27 @@ test('edit: every phase × every event, in one table', () => {
   }
 });
 
+test('edit (EVALUATION G14): a new plan edited with no name is named from its first heading, unless the room has that name', () => {
+  const fresh: PlanEdit = { ...SEEDED, base: 0, unnamed: true };
+  const exit = (text: string, taken: string[] = []) => edit.reduce(fresh, { type: 'exit', plan: FILE, text: edit.seed('c', 'room', 0, text), taken });
+  const named = exit('# GET /tasks paging\n\n1. cursor\n');
+  assert.deepEqual(named.effects.map(e => (e.do === 'put' ? [e.plan, e.base] : e.do)), [['get-tasks-paging', 0]]);
+  assert.equal(must(named.edit).plan, 'get-tasks-paging', 'the edit goes on under that name (its receipt, its check)');
+  assert.equal(must(named.edit).unnamed, undefined);
+  assert.deepEqual(exit('# Paging\n', ['paging']).effects.map(e => (e.do === 'put' ? e.plan : e.do)), ['room'], 'taken: the default');
+  assert.deepEqual(exit('no heading here\n').effects.map(e => (e.do === 'put' ? e.plan : e.do)), ['room']);
+  // a named edit, or one of an existing plan, keeps its name whatever its heading says
+  assert.deepEqual(edit.reduce(SEEDED, { type: 'exit', plan: FILE, text: edit.seed('c', 'room', 1, '# Paging\n') }).effects.map(e => (e.do === 'put' ? e.plan : e.do)), ['room']);
+});
+
 test('edit: the capture, the receipt, a conflict and a refusal; the mode put back; never an answer effect', () => {
   const exit = edit.reduce(SEEDED, EVENTS.exit);
   assert.deepEqual(exit.effects, [{ do: 'put', plan: 'room', base: 1, text: '# v2 text\n', summary: 's' }], 'the header off, the Summary line the summary');
   const stored = edit.reduce(SEEDED, EVENTS.put);
-  // the receipt: the deny's reason is the person's line (drawn as the call's error), the mechanics are the model's context
-  assert.deepEqual(stored.say, { to: 'deny', text: 'sub-human: saved as room plan room v2, not agreed yet.',
-    context: `${edit.EDIT_SAY.storedNext} Now call ExitPlanMode({}) once more: it only leaves plan mode (Claude Code asks your person; not an approval: do not carry the plan out).` });
+  // the receipt: the deny's reason (the model reads it; the person's rows of the call are hidden: quiet, #9), the
+  // mechanics are the model's context
+  assert.deepEqual(stored.say, { to: 'deny', text: 'sub-human: plan room v2 saved, not agreed yet.',
+    context: `${edit.EDIT_SAY.storedNext} Now call ExitPlanMode({}) once more: it only leaves plan mode (Claude Code asks your person; not an approval: do not carry the plan out).`, quiet: true });
   for (const ev of [EVENTS.put, { type: 'put' as const, outcome: { kind: 'refused' as const, why: 'x' } }, { type: 'put' as const, outcome: { kind: 'offline' as const, why: 'timeout' } },
     { type: 'put' as const, outcome: { kind: 'conflict' as const, version: 3, who: 'bob', summary: '', text: 'long\n'.repeat(500) } }]) {
     const say = edit.reduce(SEEDED, ev).say;
@@ -124,6 +138,35 @@ const write = (file: string, body: string, summary: string) => {
   return fs.readFileSync(file, 'utf8');
 };
 
+test('0.6.0 #9 (shim mode): the save\'s deny is quiet (the module hides its red rows; its receipt goes to the debug log); so is the author\'s check that follows; a conflict\'s is not', () => {
+  const w = new World({ alice: 'act', bob: 'sleep' });
+  const shim = { as: 'alice', env: { SUB_HUMAN_SHIM: '1' } };
+  const file = planFile(w, 'alice', null);
+  openEdit(w, 'alice');
+  w.hook('consent', ev('PostToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {}, tool_response: {} }), shim);
+  attach(w, 'alice', file);
+  const text = write(file, '# Paging\n\n1. cursor\n', 'first draft');
+  const save = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: text, planFilePath: file }, tool_use_id: 'tu1' }), shim);
+  assert.equal(decision(save), 'deny');
+  assert.equal(sub(save).quiet, true);
+  assert.equal(sub(save).debug, 'sub-human: plan room v1 saved; you review it before anyone else is asked.');
+  const check = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { planFilePath: file }, tool_use_id: 'tu2' }), shim);
+  assert.equal(decision(check), 'ask');
+  assert.equal(sub(check).quiet, true, 'the author\'s check is a review\'s plan view: its approved / rejected row is hidden too');
+  // another edit that meets a newer version: the conflict's deny is the model's work, drawn as Claude Code draws it
+  const w2 = new World({ alice: 'act', bob: 'sleep' });
+  const f2 = planFile(w2, 'alice', null);
+  openEdit(w2, 'alice');
+  w2.hook('consent', ev('PostToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {}, tool_response: {} }), shim);
+  attach(w2, 'alice', f2);
+  const t2 = write(f2, '# Paging\n', 'mine');
+  w2.lib(() => plans.put(storeOf(w2), { base: 0, text: '# Theirs\n' }, { by: 'bob' }));
+  const conflict = w2.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: t2, planFilePath: f2 }, tool_use_id: 'tu1' }), shim);
+  assert.equal(decision(conflict), 'deny');
+  assert.match(must(reason(conflict)), /not saved: v1 landed since v0/);
+  assert.equal(sub(conflict).quiet, undefined);
+});
+
 test('edit (hooks): seeded at the plan_mode attachment, stored at Pre(ExitPlanMode) with the receipt as the deny; the closing call shows the author\'s check, whose Yes sends it out; the person\'s plan file restored', () => {
   const w = new World({ alice: 'act', bob: 'sleep' });
   const file = planFile(w, 'alice', '# my own plan\n');
@@ -144,7 +187,7 @@ test('edit (hooks): seeded at the plan_mode attachment, stored at Pre(ExitPlanMo
   const text = write(file, '# Paging\n\n1. cursor\n', 'first draft');
   const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: text, planFilePath: file }, tool_use_id: 'tu1' }), { as: 'alice' });
   assert.equal(decision(pre), 'deny');
-  assert.equal(reason(pre), 'sub-human: saved as room plan room v1, not sent out yet: you check it first.');
+  assert.equal(reason(pre), 'sub-human: plan room v1 saved; you review it before anyone else is asked.');
   assert.match(must(hso(pre).additionalContext), /^Nobody else is asked yet: your person checks it first\. Now call ExitPlanMode\(\{\}\) once more: it shows the new version to your person in the plan view/);
   // the author's own check after the version (lib/proposal.ts check): a request addressed to alice alone
   const check = must(w.entries().at(-1));
@@ -156,9 +199,10 @@ test('edit (hooks): seeded at the plan_mode attachment, stored at Pre(ExitPlanMo
   const close = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: text, planFilePath: file }, tool_use_id: 'tu2' }), { as: 'alice' });
   assert.equal(decision(close), 'ask');
   assert.match(must(reason(close)), /^your new version, plan room v1, for alice: nobody else is asked until you send it out/);
-  assert.deepEqual(hso(close).updatedInput, { plan: '# Paging\n\n1. cursor\n' });
+  assert.equal(unframed(askedPlan(close)), '# Paging\n\n1. cursor\n');
+  assert.match(String(askedPlan(close)), /^Room plan · room v1 \(your new version\) · (?:Yes|"Yes, [^"]+") sends it out\n\n/, 'the frame line names the plan and its version, and says the author\'s Yes sends it out');
   assert.equal(editOf(w, 'alice'), null, 'the edit is over: the review has it');
-  assert.equal(fs.readFileSync(file, 'utf8'), '# Paging\n\n1. cursor\n', 'the view reads the version from the file');
+  assert.equal(unframed(fs.readFileSync(file, 'utf8')), '# Paging\n\n1. cursor\n', 'the view reads the version from the file');
   // alice's Yes there: her sign-off (via=human), and it sends v1 out to bob; her plan file back
   const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: { plan: '# Paging\n\n1. cursor\n' }, tool_use_id: 'tu2',
     tool_response: { plan: '# Paging\n\n1. cursor\n', filePath: file } }), { as: 'alice' });
@@ -188,7 +232,7 @@ test('edit (hooks): a conflict denies with the current version\'s text; the next
   assert.equal(w.entries().filter(e => e.kind === 'plan').length, 2, 'nothing stored for bob yet');
   const both = write(file, '# Paging\n\n1. opaque cursor\n2. max 100\n', 'opaque cursor and max 100');
   const again = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: both, planFilePath: file }, tool_use_id: 'tu2' }), { as: 'bob' });
-  assert.match(must(reason(again)), /^sub-human: saved as room plan room v3, not sent out yet: you check it first\.$/);
+  assert.match(must(reason(again)), /^sub-human: plan room v3 saved; you review it before anyone else is asked\.$/);
   assert.deepEqual(w.entries().filter(e => e.kind === 'plan').map(e => [e.version, e.base, e.from]), [[1, 0, 'alice'], [2, 1, 'alice'], [3, 2, 'bob']]);
 });
 
@@ -239,7 +283,7 @@ test('edit (hooks, live 2026-10-17): the closing ExitPlanMode never sees the per
   const t2 = write(f2, '# Paging\n', 'first');
   w2.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: t2, planFilePath: f2 }, tool_use_id: 'tu1' }), { as: 'alice' });
   const shown = w2.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: t2, planFilePath: f2 }, tool_use_id: 'tu2' }), { as: 'alice' });
-  assert.deepEqual([decision(shown), hso(shown).updatedInput], ['ask', { plan: '# Paging\n' }]);
+  assert.deepEqual([decision(shown), unframed(askedPlan(shown))], ['ask', '# Paging\n']);
   w2.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: { plan: '# Paging\n' }, tool_use_id: 'tu2', tool_response: { plan: '# Paging\n', filePath: f2 } }), { as: 'alice' });
   assert.equal(fs.existsSync(f2), false);
 });

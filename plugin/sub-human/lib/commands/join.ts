@@ -14,7 +14,8 @@
  *   named     `/sub-human NAME [ROOM]` (or `--as NAME`): join ROOM (else the one open room, else a new one) as NAME, leaving any other
  *             room; `/sub-human ROOM` (a room code alone): that room as the default name, never a person named after it.
  *             A word of digits is no name (it looks like a PIN), and a CLI command (CLI_VERBS: `/sub-human tasks`) says
- *             where it runs instead of taking a seat by that name
+ *             where it runs instead of taking a seat by that name; `/sub-human who` in a room lists its people
+ *             (seats.whoLines: on the host, an invite seat's machine, check, rename and kick, which the join line leaves out)
  *   join      `/sub-human join …`: ROOM (a room code alone): that room on this machine, as `/sub-human ROOM`;
  *             HOST ROOM SECRET, URL#SECRET or URL SECRET, each with the PIN after it or not: an invite line
  *             (joining.linkLine: link only, never the seat in that step; a PIN typed with it goes in the first hello,
@@ -74,7 +75,7 @@ const NOT_A_NAME = (n: string) => (PIN_WORD.test(n) ? `"${n}" looks like a PIN, 
 function seat(want: Wanted, ctx: VerbCtx): Answer {
   const t = seats.take(want, { pid: ctx.pid, session_id: ctx.sid, cwd: ctx.cwd, cur: ctx.cur, pubkey: ctx.pubkey });
   if (!t.ok) return t.refused ? refused(t.text) : say(t.text);
-  return { kind: 'joined', me: t.me, lead: t.lead, say: t.msg };
+  return { kind: 'joined', me: t.me, lead: t.lead, say: t.msg, ...(t.trouble ? { trouble: true } : {}), ...(t.debug ? { debug: t.debug } : {}) };
 }
 
 /** A link step's end: the seat to take, or what the person reads. */
@@ -95,8 +96,9 @@ function nameFor(as: string | undefined, cwd: string): { name: SeatName } | { er
 function status(cur: Identity, cwd: string): Answer {
   const host = identity.isHost(cur.code);
   if (!host) { try { linkSocket.start(cur.code); } catch { /* the doctor says why */ } } // its connection, if it stopped running
+  const rc = seats.ensureRoomClaude(cur.code, cwd, cur.name);
   return say(`you're ${cur.name} in room ${cur.code}, ${seats.withWhom(cur.code, cur.name)} · `
-    + `${host ? 'another machine: /sub-human invite · ' : ''}leave: /sub-human leave${seats.ensureRoomClaude(cur.code, cwd, cur.name)}`);
+    + `${host ? 'another machine: /sub-human invite · ' : ''}leave: /sub-human leave${rc.note ? `\n${rc.note}` : ''}`, rc.debug);
 }
 
 /** The seat this session's conversation came from (← the agent view forked it), moved here; null when none. */
@@ -153,6 +155,7 @@ export const named: Verb = (args, ctx) => {
   }
   const [name, code] = args;
   if (name === undefined) return refused(USAGE); // route() sends a bare /sub-human to bare
+  if (name.toLowerCase() === 'who' && args.length === 1 && ctx.cur) return say(seats.whoLines(ctx.cur.code).join('\n'));
   if (CLI_VERBS.includes(name.toLowerCase())) return cliHint(name.toLowerCase(), ctx.pluginRoot);
   // a SECRET-shaped word is never echoed, nor taken for a name or a room: it belongs in an invite line
   if (args.some(a => SECRET_WORD.test(a) || fragmentSecret(a) !== null)) return refused(`that looks like an invite line's SECRET: the whole line goes in as /sub-human join LINE PIN. ${USAGE}`);

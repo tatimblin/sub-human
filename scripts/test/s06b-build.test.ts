@@ -27,8 +27,8 @@ const TAP = '✔ GET /health (15ms)\nℹ tests 9\nℹ suites 0\nℹ pass 9\nℹ 
 // the people's own run, scrolled: the typed line is gone, the summary under it stays (a Claude's earlier failing run above)
 const SUMMARY = (pass: number, fail: number, ms: number): string => `     ℹ tests ${pass + fail}\n     ℹ suites 0\n     ℹ pass ${pass}\n     ℹ fail ${fail}\n     ℹ cancelled 0\n     ℹ skipped 0\n     ℹ todo 0\n     ℹ duration_ms ${ms}\n`;
 const PANE = `  ⎿  ℹ tests 9\n${SUMMARY(8, 1, 80.1)}\n⏺ one fails\n     ✔ GET /tasks pages (3ms)\n${SUMMARY(9, 0, 181.4)}\n⏺ All 9 pass.\n\n──────\n❯ \n`;
-// a person's pane with the room row opened (Enter on it): the other member inside it
-const ROOM = (other: string, code = 'husky-7354'): string => `─── ${code} ─\n❯ Message @sub-human:room…\n────\n  ↑/↓ to select · ctrl+x ctrl+k to stop all agents\n\n  ◯ main\n❯ ⏺ ${code}  +${other} joined · 2 here\n  └ ◯ ${other}  working\n`;
+// a person's pane with the room row opened (Enter on it, 0.6.0): the row's own line leads with the other person
+const ROOM = (other: string, code = 'husky-7354'): string => `❯ room: ${code}\n\n⏺ room - hold (MCP)(room: "${code}")\n  ⎿  ${other} here · ${other} joined · read-only · talk in main (@room)\n\n─── ${code} ─\n❯ Message @sub-human:room…\n────\n  ↑/↓ to select · ctrl+x ctrl+k to stop all agents\n\n  ◯ main\n❯ ⏺ ${code}  +${other} joined · ${other} here\n`;
 const SUB = '❯ \n────\n  ⏵⏵ auto mode on · ← 2 agents · ↓ to manage\n\n  ⏺ main\n  ◯ husky-7354  2 here\n  ◯ Explore  Read src/store.js listTasks          4s · ↓ 19.3k tokens\n';
 const at = (s: number): string => `2026-01-01T00:00:${String(s).padStart(2, '0')}.000Z`;
 
@@ -109,9 +109,12 @@ test('S6b: a failing run, a pane with no run, or a done from the wrong seat each
   assert.deepEqual(failed(world({ doneFrom: 'tristan' })), ["jess's Claude claims #3 and completes it on its own done request, with evidence"]);
 });
 
-test('S6b (film): the opened room row must show the other person; a subagent row must show in jess\'s panel', () => {
-  // the room row selected but not opened: no member rows under it
-  assert.deepEqual(failed(world({ roomB: '  ⏺ main\n❯ ◯ husky-7354  2 here\n' })), ['jess opens the husky-7354 row in the agent panel: tristan shows inside it']);
+test('S6b (film): the opened room row\'s line must name the other person; a subagent row must show in jess\'s panel', () => {
+  const OPEN = 'jess opens the husky-7354 row in the agent panel: its line leads with "tristan here", one row, nothing nested';
+  // the room row selected but not opened; its line naming nobody else; an old build's nested member row
+  assert.deepEqual(failed(world({ roomB: '  ⏺ main\n❯ ◯ husky-7354  tristan here\n' })), [OPEN]);
+  assert.deepEqual(failed(world({ roomB: ROOM('tristan').replace('  ⎿  tristan here · ', '  ⎿  only you · ') })), [OPEN]);
+  assert.deepEqual(failed(world({ roomB: `${ROOM('tristan')}  └ ◯ tristan  working\n` })), [OPEN]);
   assert.deepEqual(failed(world({ subB: '  ⏺ main\n  ◯ husky-7354  2 here\n  └ ◯ tristan  working\n' })), ["jess's Claude runs a subagent of its own: its row shows in jess's panel beside the room row"]);
   assert.deepEqual(failed(world({ subB: '' })), ["jess's Claude runs a subagent of its own: its row shows in jess's panel beside the room row"]);
 });

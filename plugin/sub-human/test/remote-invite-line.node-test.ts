@@ -313,7 +313,10 @@ test('a knock from a machine with the leaked line, then the right PIN from anoth
   const knocked = inviteSecret.joinCheck(mallory.id), joined = inviteSecret.joinCheck(carol.id);
   const line = must(roomLines(host).find(l => !!l?.startsWith('a machine that knocked without the PIN')), JSON.stringify(roomLines(host)));
   assert.equal(line, `a machine that knocked without the PIN (cameron, ${knocked}) was replaced by the one with the PIN (carol, ${joined}): its card is gone, and its join stops`);
-  assert.ok(roomLines(host).includes(`carol joined from carols-mbp (${joined}) · not them? /sub-human kick carol`));
+  assert.ok(roomLines(host).includes('carol joined (carols-mbp)'), JSON.stringify(roomLines(host)));
+  // the check and the kick are `who`'s, for the machine the seat is on
+  assert.equal(admission.joinedVia(code, [{ name: 'carol', machine: carol.id }]).get('carol'), `from carols-mbp, ${joined} · not them? /sub-human kick carol`);
+  assert.equal(admission.joinedVia(code, [{ name: 'carol', machine: mallory.id }]).size, 0, 'another machine\'s seat is not described by this record');
   // the knocking machine's link ends refused, with the PIN or without, and takes nothing back
   for (const more of [{ knock: true }, { pin: r.pin }]) {
     assert.equal(errOf(() => invites.redeemInvite(host, r.id, { machine: mallory.id, proven: mallory.id, as: { name: 'cameron', label: 'mbp' }, ...more })).reason, 'ADMIT_REFUSED');
@@ -365,8 +368,8 @@ test('five wrong PINs burn the invite; the right one after that is refused', t =
   assert.throws(() => invites.redeemInvite(host, z.id, { machine: m.id, proven: m.id, as: { name: 'x', label: 'x' }, pin: z.pin, now: Date.now() }), (e: RoomError) => e.reason === 'INVITE_BURNT');
 });
 
-test('over the web: the link the right PIN makes is bound to the Noise key its connection proved, and a card\'s too; the room line names the check; an invite line needs protocol 3', async t => {
-  const { host } = hostRoom(t);
+test('over the web: the link the right PIN makes is bound to the Noise key its connection proved, and a card\'s too; `who` names the check; an invite line needs protocol 3', async t => {
+  const { code, host } = hostRoom(t);
   const r = mint(host, 'ws');
   const carol = machine();
   const K = crypto.randomBytes(32).toString('base64url'), K2 = crypto.randomBytes(32).toString('base64url');
@@ -378,7 +381,8 @@ test('over the web: the link the right PIN makes is bound to the Noise key its c
   const link = must(hostLinks.links(host)[must(c.link)]);
   assert.deepEqual([link.key, link.seats, link.bound], [K, ['carol'], true]);
   const check = inviteSecret.joinCheck(carol.id, K);
-  assert.ok(roomLines(host).includes(`carol joined from carols-mbp (${check}) · not them? /sub-human kick carol`), JSON.stringify(roomLines(host)));
+  assert.ok(roomLines(host).includes('carol joined (carols-mbp)'), JSON.stringify(roomLines(host)));
+  assert.equal(admission.joinedVia(code, [{ name: 'carol' }]).get('carol'), `from carols-mbp, ${check} · not them? /sub-human kick carol`, 'the check of the machine and its web key');
   assert.deepEqual(admission.admissions(host), [], 'no card');
   c.close();
   // a knock's admission is bound to the key its connection proved: only that key redeems it once the card lets it in
@@ -472,7 +476,8 @@ test('R4 (live verify, verify6/11): a name that sits in the room from another ma
   assert.equal(byPin.as, 'carol2', 'the hello says the name the link is bound to');
   assert.deepEqual(must(hostLinks.links(host)[must(byPin.link)]).seats, ['carol2']);
   assert.deepEqual([admissionOf(host, p.id).name, admissionOf(host, p.id).asked_as], ['carol2', 'carol']);
-  assert.ok(roomLines(host).includes(`carol2 joined from carols-new-mbp (${inviteSecret.joinCheck(dave.id)}; wanted "carol", taken) · not them? /sub-human kick carol2`), JSON.stringify(roomLines(host)));
+  assert.ok(roomLines(host).includes('carol2 joined (carols-new-mbp)'), JSON.stringify(roomLines(host)));
+  assert.equal(admission.joinedVia(code, [{ name: 'carol2', machine: dave.id }]).get('carol2'), `from carols-new-mbp, ${inviteSecret.joinCheck(dave.id)}, wanted "carol" · not them? /sub-human kick carol2`, 'the rename is who\'s');
   byPin.close();
   // a join request with no PIN: the card
   const r = mint(host);

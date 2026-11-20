@@ -52,6 +52,7 @@ import * as envelope from '../lib/room/envelope.ts';
 import * as roomStore from '../lib/room/store.ts';
 import * as admission from '../lib/remote/admission.ts';
 import * as verdict from '../lib/cc/verdict.ts';
+import { NOTE_ANSWER } from '../mod/core/constants.ts';
 import type { AnyHookIn, CardQuestion, HookOutput, Recorded } from './types.ts';
 import type { Card, PlanEdit, Proposal, Review } from '../lib/types-app.ts';
 import type { AdmissionRequest } from '../lib/remote/admission.ts';
@@ -214,11 +215,24 @@ function blankPlan(file: string): void {
 
 type Out = { say: Say | null; show?: { admit?: JoinRequest | undefined; card?: Proposal[] } };
 
+/** What the plan view shows of a version: its text under the frame line (lib/consent/review.ts framed: the Yes that
+ * keeps the review's mode; a draft's sends it out), or null. */
+function shownText(me: Identity, hash: string, r: Review | null): string | null {
+  const text = proposal.read(me.code, hash);
+  if (text == null) return null;
+  let title: string | null = null;
+  try { title = proposal.title(me.code, hash) || null; } catch { /* no title: the frame names the hash */ }
+  return review.framed(text, hash, title, { mode: r ? r.mode : undefined, draft: !!r && !!r.draft });
+}
+
+/** The review with what was just written to its plan file noted (Review.wrote: a stale restore knows it as its own). */
+const wroteTo = (st: State, file: string, text: string): State => (st.review && st.review.file === file
+  ? { ...st, review: { ...st.review, wrote: hash12(Buffer.from(text, 'utf8')) } } : st);
 
 /** The seat's state, reduce one event (made from it), run the effects, store the state, write the answer. */
 function step(input: ConsentIn, me: Identity, make: (st: State) => ConsentEvent, show: Out['show'] = {}, quiet = false) {
   const start: State = { review: proposal.readReview(me), note: proposal.readConfirm(me), recheck: proposal.readRecheck(me), steer: proposal.readSteer(me) };
-  const ctx = { name: me.name, now: Date.now(), guardMs: env.testMs('SUB_HUMAN_YES_GUARD_MS') };
+  const ctx = { name: me.name, now: Date.now(), guardMs: env.testMs('SUB_HUMAN_YES_GUARD_MS'), keepMode: keepMode(input) };
   const first = review.reduce(start, make(start), ctx);
   if (first.notice) unsent.push(first.notice);
   let state = first.state;
@@ -230,15 +244,20 @@ function step(input: ConsentIn, me: Identity, make: (st: State) => ConsentEvent,
     if (e.do === 'save') { proposal.writeReview(me, e.review); disk.review = JSON.stringify(e.review); }
     else if (e.do === 'restorePlan') proposal.restorePlan({ phase: 'exiting', file: e.file, backup: e.backup, restored: false });
     else if (e.do === 'blankPlan') blankPlan(e.file);
-    else if (e.do === 'answer') {
+    else if (e.do === 'closePlan') {
+      try { writeFileAtomic(e.file, e.text); state = wroteTo(state, e.file, e.text); } catch (err) { c.logError(err, 'consent: plan file (close)'); }
+    } else if (e.do === 'answer') {
       const res = record(me, e.hash, { choice: e.choice, ...(e.notes !== undefined ? { notes: e.notes } : {}) });
       answers.set(e.hash, { choice: e.choice, res });
       if (e.clearNote && !res.failed) state = { ...state, note: null };
+      // the closing line says the note went only when it was recorded (a stale or failed one did not go)
+      if (e.closing && res.entry && state.review) state = { ...state, review: { ...state.review, closing: 'sent' } };
     } else if (e.do === 'writePlan') {
       try {
-        const text = proposal.read(me.code, e.hash);
+        const text = shownText(me, e.hash, state.review);
         if (text == null) throw new Error(`proposal ${e.hash}: no stored text`);
         writeFileAtomic(e.file, text);
+        state = wroteTo(state, e.file, text);
       } catch (err) {
         c.logError(err, `consent: plan file${e.early ? ' (enter)' : ''}`);
         const f = review.reduce(state, { type: 'planFailed', early: e.early }, ctx);
@@ -280,11 +299,15 @@ function write(input: ConsentIn, me: Identity, say: Say, state: State, answers: 
   const text = (parts: Parameters<typeof review.textOf>[0]) => review.textOf(parts, h => outcome(me, h, answers.get(h)), recorded);
   switch (say.to) {
     case 'context': return c.context(String(input.hook_event_name), text(say.parts));
-    case 'deny': return c.deny(text(say.parts));
+    // a review's deny: no red reason for the person, its words the model's (the call's context)
+    case 'deny': return c.out(ccEnv.denyWithContext('', text(say.context)));
     case 'ask': {
       const s = say.show;
       if ('leave' in s) return c.pre('ask', say.text, { updatedInput: { plan: ccEnv.LEAVE_PLAN_TEXT } });
-      if ('plan' in s) return c.pre('ask', say.text, { updatedInput: { plan: proposal.read(me.code, s.plan) } });
+      // #34: a person in auto mode leaves with the closing line as the plan ("Yes, and use auto mode" first): its
+      // "User approved Claude's plan" row is sub-human's, hidden
+      if ('close' in s) { quietOut = true; return c.pre('ask', say.text, { updatedInput: { plan: s.close } }); }
+      if ('plan' in s) { quietOut = true; return c.pre('ask', say.text, { updatedInput: { plan: shownText(me, s.plan, state.review) } }); }
       if ('note' in s) return state.note && c.pre('ask', say.text, { updatedInput: proposal.confirmCard(state.note) });
       if ('admit' in s && show.admit) return c.pre('ask', `room ${me.code}: ${show.admit.name} asks to join`, { updatedInput: admission.card(show.admit, me.code) });
       if ('card' in s && show.card) return c.pre('ask', say.text, { updatedInput: proposal.cardFor(show.card, me.code) });
@@ -411,13 +434,18 @@ function waitingOf(input: ConsentIn, me: Identity, ti: ConsentToolInput, plan: {
   const said = cc.lastHumanPrompt(lines(input));
   const p = (said ? proposal.namedIn(ps, said.text, me.code) : null) ?? proposal.picked(ps) ?? oldest;
   const text = typeof ti.plan === 'string' ? ti.plan : plan.text ?? '';
-  return { hash: p.hash, title: titleOf(me, p), plan: hash12(Buffer.from(text, 'utf8')) };
+  return { hash: p.hash, title: titleOf(me, p), plan: hash12(Buffer.from(review.unframe(text), 'utf8')) };
 }
 
-/** "proposal HASH" (the stub the model is told to pass), as a plan's whole text: the hash, or null. */
-const stubHash = (t: unknown): string | null => {
-  const m = typeof t === 'string' ? /^\s*(?:the room )?proposal\s+([0-9a-f]{6,12})\s*\.?\s*$/i.exec(t) : null;
-  return m?.[1] ?? null; // the group always matches when m does
+/** The stub the model is told to pass (lib/consent/review.ts stubFor), as a plan's whole text: "proposal HASH" is the
+ * hash; "plan NAME vN" the hash of the pending request so titled (ps); else null. */
+const stubHash = (t: unknown, ps: () => readonly Proposal[] = () => [], me?: Identity): string | null => {
+  if (typeof t !== 'string') return null;
+  const m = review.STUB_PROPOSAL.exec(t);
+  if (m) return m[1] ?? null; // the group always matches when m does
+  const label = review.STUB_PLAN.exec(t)?.[1]?.replace(/\s+/g, ' ').toLowerCase();
+  if (!label || !me) return null;
+  return ps().find(p => titleOf(me, p) === label)?.hash ?? null;
 };
 
 /** handoff: the closing call of a stored edit (showCheck): its plan and the model's own input are the edit's, never
@@ -437,7 +465,8 @@ function preExit(input: ConsentIn, me: Identity, handoff = false) {
       // plan there, the model's "proposal HASH" reaches no hook (the transcript's copy is written as the call ends, and
       // carries the file's text too); a request waiting then steers the call (waitingOf)
       const own = modelInput(input);
-      const word = stubHash(ti.plan) || stubHash(plan.text) || stubHash(own && own.plan);
+      const ps = () => proposal.pendingFor(me);
+      const word = stubHash(ti.plan, ps, me) || stubHash(plan.text, ps, me) || stubHash(own && own.plan, ps, me);
       if (!word) return { ...ev, waiting: waitingOf(input, me, ti, plan) };
       // the mode is plan already (the person's); a dialog whose Yes clears the context is still no place for a review
       const p = !ccEnv.clearContextOnPlanAccept(input.cwd) ? proposal.pendingFor(me).filter(x => proposal.viewable(x, me.code)).find(x => x.hash.startsWith(word)) : undefined;
@@ -474,6 +503,10 @@ function postExit(input: ConsentIn, me: Identity) {
 function postEnter(input: ConsentIn, me: Identity) {
   enterReview(input, me);
   step(input, me, st => ({ type: 'entered', plan: st.review && st.review.phase === 'entering' ? planOf(input) : { file: null, text: null } }));
+  // a review opened from outside plan mode: "Entered plan mode · Claude is now exploring…" is false (the person only
+  // reviews), so its row is the module's to hide; the person's own plan mode (review mode plan) keeps its row
+  const r = proposal.readReview(me);
+  if (r && r.phase === 'entering' && r.mode !== 'plan') quietOut = true;
 }
 
 /**
@@ -496,6 +529,7 @@ function preRoomTool(input: ConsentIn, me: Identity) {
  * the note from the transcript's tool_result, else from the refusal's own text (the line may not be on disk yet, or
  * be in a shape that gives no note: the refusal's text is the person's words either way). */
 function rejectedExit(input: ConsentIn, me: Identity) {
+  const before = proposal.readConfirm(me);
   step(input, me, st => {
     const id = input.tool_use_id || null;
     const fromDisk = id ? cc.planAnswer(lines(input), id) : null;
@@ -503,7 +537,22 @@ function rejectedExit(input: ConsentIn, me: Identity) {
     const answer = fromDisk && fromDisk.note !== null ? fromDisk : fromError.note !== null ? fromError : fromDisk ?? fromError;
     return { type: 'rejected', toolUseId: id, answer, target: st.review ? targetOf(me, st.review.hash) : null };
   });
+  // #34: a note this refusal opened, on a review closing outside plan mode: the module asks Send / Discard now, while
+  // plan mode is still on, before the closing call (its answer comes back as NoteAnswer)
+  const note = proposal.readConfirm(me);
+  const r = proposal.readReview(me);
+  if (keepMode(input) && note && JSON.stringify(note) !== JSON.stringify(before) && r && r.phase === 'exiting' && r.hash === note.hash) {
+    noteAskOut = { question: proposal.confirmQuestion(note), header: 'Room plan', options: ['Send', 'Discard'] };
+  }
 }
+/** #34: the person's Send / Discard on the note's card the module asked ($.ui.ask), or null for no answer. */
+function noteAnswer(input: ConsentIn, me: Identity) {
+  const got = input.sub_human_note;
+  const label = got === 'Send' || got === 'Discard' ? got : null;
+  step(input, me, st => ({ type: 'noteAnswer', label, target: st.note ? targetOf(me, st.note.hash) : null }));
+}
+/** #34 (the verdict's keep-mode on): a review's closing call keeps the person's mode, and Send / Discard comes first. */
+const keepMode = (input: ConsentIn): boolean => !verdict.off('keep-mode', { sid: input.session_id });
 function stop(input: ConsentIn, me: Identity) {
   step(input, me, st => ({ type: 'stop', mode: input.permission_mode, active: !!input.stop_hook_active, ...answerFacts(input, me, st.review, 'stop'),
     live: !st.review && !!st.note && isPending(me, st.note.hash) }));
@@ -516,6 +565,14 @@ function prompt(input: ConsentIn, me: Identity) {
 // ---------- a room plan edit (lib/consent/edit.ts) ----------
 /** A line the module appends to this run's plan_mode attachment (shim mode: subHuman.attach). */
 let attachOut = '';
+/** This run's call is sub-human's own plan-mode call (shim mode: subHuman.quiet): a review's EnterPlanMode while the
+ * person was not in plan mode, a review's plan view or closing call, an edit's save. The module hides its rows
+ * (mod/consent.ts, ui.render ToolUse/ToolResult by tool_use_id); never a call of the person's own plan mode. */
+let quietOut = false;
+/** A line for Claude Code's debug log (shim mode: subHuman.debug), never the person's. */
+let debugOut = '';
+/** #34: the note's card for the module to ask itself (shim mode: subHuman.noteAsk). */
+let noteAskOut: { question: string; header: string; options: string[] } | null = null;
 
 /** What an edit seeds into the plan file: the header and the base version's text (lib/consent/edit.ts seed). */
 function seedText(me: Identity, plan: string, base: number): string {
@@ -577,7 +634,10 @@ function editStep(input: ConsentIn, me: Identity, ev: edit.EditEvent): boolean {
   const event = String(input.hook_event_name);
   switch (say.to) {
     case 'context': c.context(event, say.text); break;
-    case 'deny': if (say.context) c.out(ccEnv.denyWithContext(say.text, say.context)); else c.deny(say.text); break;
+    case 'deny':
+      if (say.quiet) { quietOut = true; debugOut = say.text; } // the save worked: its rows hidden, the receipt to the debug log
+      if (say.context) c.out(ccEnv.denyWithContext(say.text, say.context)); else c.deny(say.text);
+      break;
     case 'leave': c.pre('ask', say.text, { updatedInput: { plan: ccEnv.LEAVE_PLAN_TEXT } }); break;
     case 'check': showCheck(input, me, say.hash, say.mode); break;
     case 'attach': if (event === ccEnv.PLAN_ATTACHMENT_EVENT) attachOut = say.text; else c.context(event, say.text); break;
@@ -627,7 +687,8 @@ function routeEdit(input: ConsentIn, me: Identity): boolean {
     const e = proposal.readEdit(me);
     // the author's check opens in this call when the plan view can show it in the person's own mode, sign-off on
     const shown = !!e && reviewable({ ...input, permission_mode: e.mode }) && !verdict.off('sign-off', { sid: input.session_id });
-    return editStep(input, me, { type: 'exit', plan: planOf(input), text: typeof ti.plan === 'string' ? ti.plan : null, mode: input.permission_mode, showCheck: shown }), true;
+    const taken = proposal.readEdit(me)?.unnamed ? { taken: plans.names(me.code) } : {};
+    return editStep(input, me, { type: 'exit', plan: planOf(input), text: typeof ti.plan === 'string' ? ti.plan : null, mode: input.permission_mode, showCheck: shown, ...taken }), true;
   }
   if (tool === 'ExitPlanMode' && ev === 'PostToolUse') return editStep(input, me, { type: 'exited' }), true;
   if (tool === 'ExitPlanMode' && ev === 'PostToolUseFailure') return true; // a dialog refused: an edit shows none
@@ -640,6 +701,9 @@ function routeEdit(input: ConsentIn, me: Identity): boolean {
 function dispatch(input: ConsentIn): void {
   unsent = [];
   attachOut = '';
+  quietOut = false;
+  debugOut = '';
+  noteAskOut = null;
   const r = c.capture(() => route(input));
   const note = unsent.length ? { systemMessage: `sub-human: ${unsent.join(' ')}` } : null;
   r.outputs.forEach((o, i) => c.out(note && i === 0 ? { ...o, ...note } : o));
@@ -668,7 +732,7 @@ function signoffElsewhere(input: ConsentIn, me: Identity): void {
   if (input.tool_name === 'ExitPlanMode') {
     const ti: ConsentToolInput = input.tool_input ?? {};
     const own = modelInput(input);
-    const word = stubHash(ti.plan) || stubHash(own && own.plan);
+    const word = stubHash(ti.plan, () => ps, me) || stubHash(own && own.plan, () => ps, me);
     hit = word ? ps.find(x => x.hash.startsWith(word)) : undefined;
   }
   if (!hit) return;
@@ -691,6 +755,7 @@ function route(input: ConsentIn) {
   if (tool === 'ExitPlanMode' && ev === 'PreToolUse') return locked(preExit);
   if (tool === 'ExitPlanMode' && ev === 'PostToolUse') return locked(postExit);
   if (tool === 'ExitPlanMode' && ev === 'PostToolUseFailure') return locked(rejectedExit);
+  if (ev === NOTE_ANSWER) return locked(noteAnswer);
   if (/^mcp__plugin_sub-human_room__/.test(tool || '') && ev === 'PreToolUse') return locked(preRoomTool);
   if (ev === 'Stop') return locked(stop);
   if (ev === 'UserPromptSubmit') return locked(prompt);
@@ -724,7 +789,8 @@ function shimDispatch(input: ConsentIn) {
   const outputs = r.outputs.filter(Boolean);
   const last = outputs.pop() ?? {};
   for (const o of outputs) process.stdout.write(JSON.stringify(o) + '\n');
-  c.out({ ...last, subHuman: { reviewOpen: reviewOpen(input), noteWaits: noteWaits(input), ...(attachOut ? { attach: attachOut } : {}) } });
+  c.out({ ...last, subHuman: { reviewOpen: reviewOpen(input), noteWaits: noteWaits(input), ...(attachOut ? { attach: attachOut } : {}),
+    ...(quietOut ? { quiet: true } : {}), ...(debugOut ? { debug: debugOut } : {}), ...(noteAskOut ? { noteAsk: noteAskOut } : {}) } });
 }
 
 /** Run by the hooks module (mod/core/shim.ts SHIM_MODE). */

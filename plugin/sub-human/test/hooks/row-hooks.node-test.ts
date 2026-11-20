@@ -1,6 +1,6 @@
-// hooks/handlers/row-map.ts (PostToolUse Agent), row-hold.ts (SubagentStop), row-guard.ts, row-rewake.ts, and
-// hooks/launcher.ts (the launcher a person's opt-in subagentStatusLine runs, written by a join or a restore).
-// Payload shapes are the ones logged in P0 (Claude Code 2.1.281).
+// hooks/handlers/row-hold.ts (SubagentStop) for the one room row, and hooks/launcher.ts (the launcher a person's
+// opt-in subagentStatusLine runs, written by a join or a restore). Payload shapes are the ones logged in P0 (Claude
+// Code 2.1.281).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -9,7 +9,6 @@ import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import * as identity from '../../lib/identity.ts';
-import * as rows from '../../lib/rows.ts';
 import * as launcher from '../../hooks/launcher.ts';
 import { pathToFileURL } from 'node:url';
 import type { HookLine } from './helpers.ts';
@@ -17,9 +16,7 @@ import { sn } from '../support/brands.ts';
 import { must } from '../support/must.ts';
 
 type Env = Record<string, string | undefined>;
-/** An Agent call's tool_input, as a row spawn sends it. */
-interface AgentInput { subagent_type: string; description: string; prompt: string; run_in_background?: boolean }
-/** One SessionStart group of hooks.json, as far as the rewake test reads it. */
+/** One group of hooks.json, as far as the tests read it. */
 interface HookGroup { matcher?: string; hooks: { command: string; asyncRewake?: boolean }[] }
 
 const PLUGIN = path.join(import.meta.dirname, '..', '..');
@@ -54,73 +51,25 @@ function launch(extra?: Env): { code: number | null; stderr: string } {
   const r = spawnSync(process.execPath, ['--input-type=module', '-e', `(await import(${JSON.stringify(url)})).refresh()`], { env: env(extra), encoding: 'utf8', timeout: 20_000 });
   return { code: r.status, stderr: r.stderr };
 }
-const launched = (agentId: string | undefined, ti: AgentInput) => ({ isAsync: true, status: 'async_launched', agentId, description: ti.description, prompt: ti.prompt });
-const post = (sid: string, ti: AgentInput, agentId: string | undefined, parent?: string) => ({
-  session_id: sid, hook_event_name: 'PostToolUse', tool_name: 'Agent', tool_input: ti, tool_response: launched(agentId, ti),
-  ...(parent ? { agent_id: parent, agent_type: 'sub-human:room' } : {}),
-});
-
-test('row-map: claude participant rows (name from the prompt even when the description differs)', () => {
+test('row-hold: blocks the room row when it stops while this seat is in the room (capped); lets STOP/left through; nothing for any other agent or seat', () => {
   const { code } = world(['claude', 'alice', 'bob']);
-  let r = hook('row-map', post('sid-claude', { subagent_type: 'sub-human:participant', description: 'alice', prompt: 'member: alice', run_in_background: true }, 'a1'));
-  assert.equal(r.code, 0, r.stderr);
-  assert.equal(r.stdout, '');
-  hook('row-map', post('sid-claude', { subagent_type: 'sub-human:participant', description: 'row for bob', prompt: 'member: bob' }, 'a2'));
-  hook('row-map', post('sid-claude', { subagent_type: 'Explore', description: 'alice', prompt: 'x' }, 'a3'));
-  hook('row-map', post('sid-claude', { subagent_type: 'sub-human:participant', description: 'alice', prompt: 'member: alice' }, undefined));
-  const m = rows.readRowMap(code);
-  assert.deepEqual(Object.keys(m).sort(), ['a1', 'a2']);
-  assert.deepEqual({ ...m.a1, at: undefined }, { kind: 'participant', name: 'alice', parent: null, at: undefined });
-  assert.equal(must(m.a2).name, 'bob');
-  assert.ok(Object.keys(rows.sessionRowMap(code, 'sid-claude')).length, 'the room\'s Claude session has its own map');
-});
-
-test('row-map: a member\'s room row and its nested children (parent = the spawning room agent)', () => {
-  const { code } = world(['claude', 'alice', 'bob', 'carol']);
-  hook('row-map', post('sid-alice', { subagent_type: 'sub-human:room', description: code, prompt: `room: ${code}\nmembers: bob, carol`, run_in_background: true }, 'r1'));
-  hook('row-map', post('sid-alice', { subagent_type: 'sub-human:participant', description: 'bob', prompt: 'member: bob' }, 'c1', 'r1'));
-  hook('row-map', post('sid-alice', { subagent_type: 'sub-human:participant', description: 'carol', prompt: 'carol' }, 'c2', 'r1'));
-  const m = rows.readRowMap(code);
-  assert.equal(must(m.r1).kind, 'room');
-  assert.equal(must(m.r1).name, code);
-  assert.equal(must(m.r1).parent, null);
-  assert.deepEqual([must(m.c1).name, must(m.c1).parent, must(m.c2).name, must(m.c2).parent], ['bob', 'r1', 'carol', 'r1']);
-});
-
-test('row-map: not in a room -> nothing written, exit 0', () => {
-  const { code } = world(['claude', 'alice']);
-  const r = hook('row-map', post('sid-nobody', { subagent_type: 'sub-human:participant', description: 'alice', prompt: 'member: alice' }, 'a1'));
-  assert.equal(r.code, 0);
-  assert.deepEqual(rows.readRowMap(code), {});
-});
-
-test('row-hold: blocks a row agent that stops while its member is present (capped); lets STOP/left through and forgets the row', () => {
-  const { code } = world(['claude', 'alice', 'bob']);
-  rows.recordRow(code, 'sid-claude', 'a1', { kind: 'participant', name: 'alice', parent: null });
-  const stop = (id: string, last: string, type = 'sub-human:participant', sid = 'sid-claude') => hook('row-hold', {
+  const stop = (id: string, last: string, type = 'sub-human:room', sid = 'sid-alice') => hook('row-hold', {
     session_id: sid, hook_event_name: 'SubagentStop', agent_id: id, agent_type: type, stop_hook_active: false, last_assistant_message: last,
   });
-  let r = stop('a1', 'error');
+  const r = stop('r1', 'error');
   assert.equal(must(r.json).decision, 'block');
-  assert.match(must(must(r.json).reason), /Call hold with \{"member": "alice"\} again now/);
-  for (let i = 0; i < 4; i++) assert.equal(must(stop('a1', 'error').json).decision, 'block');
-  assert.equal(stop('a1', 'error').json, null, 'capped');
-  assert.equal(stop('zz', 'error').json, null, 'unmapped agent');
+  assert.match(must(must(r.json).reason), new RegExp(`Call hold with \\{"room": "${code}"\\} again now`));
+  for (let i = 0; i < 4; i++) assert.equal(must(stop('r1', 'error').json).decision, 'block');
+  assert.equal(stop('r1', 'error').json, null, 'capped');
+  assert.equal(stop('r2', 'left').json, null, 'a row that ended for good');
+  assert.equal(stop('r3', 'STOP: duplicate row').json, null);
+  assert.equal(stop('a1', 'error', 'sub-human:participant').json, null, "an older version's participant row: let go");
   assert.equal(stop('a1', 'error', '').json, null, 'AgentSummary forks have no agent_type');
-  rows.recordRow(code, 'sid-claude', 'a2', { kind: 'participant', name: 'bob', parent: null });
-  assert.equal(stop('a2', 'left').json, null);
-  assert.equal(rows.readRowMap(code).a2, undefined, 'a finished row is forgotten');
-  // The member left: the row is still wanted (it reads "left" and comes back on rejoin).
-  rows.recordRow(code, 'sid-claude', 'a3', { kind: 'participant', name: 'bob', parent: null });
-  identity.leave(code, sn('bob'));
-  assert.equal(must(stop('a3', 'hmm').json).decision, 'block');
-  // The viewer left: no block.
-  identity.leave(code, sn('claude'));
-  assert.equal(stop('a3', 'hmm').json, null);
-  // The room row re-holds with its room code while this seat is in the room.
-  rows.recordRow(code, 'sid-alice', 'r1', { kind: 'room', name: code, parent: null });
-  r = stop('r1', '', 'sub-human:room', 'sid-alice');
-  assert.match(must(must(r.json).reason), new RegExp(`Call hold with \\{"room": "${code}"\\}`));
+  assert.equal(stop('r4', 'error', 'sub-human:room', 'sid-claude').json, null, 'the room session keeps no row');
+  assert.equal(stop('r5', 'error', 'sub-human:room', 'sid-nobody').json, null, 'not in a room');
+  // the viewer left: no block
+  identity.leave(code, sn('alice'));
+  assert.equal(stop('r6', 'hmm').json, null);
 });
 
 test('launcher: writes an executable launcher under SUB_HUMAN_HOME/bin that runs this plugin\'s agent-statusline', () => {
@@ -151,13 +100,12 @@ test('launcher: writes an executable launcher under SUB_HUMAN_HOME/bin that runs
   const dflt = spawnSync('/bin/sh', ['-c', `printf %s ${cmd}`], { env: { HOME: '/Users/x', PATH: process.env.PATH }, encoding: 'utf8' }).stdout;
   assert.equal(dflt, '/Users/x/.sub-human/bin/row-status');
   // End to end through the shell command, as Claude Code runs it (needs scripts/sub-human's dispatch, owner C).
-  rows.recordRow(code, 'sid-claude', 'a1', { kind: 'participant', name: 'alice', parent: null });
   const out = spawnSync('/bin/sh', ['-c', cmd], {
     env: env({ SUB_HUMAN_HOME: home, NO_COLOR: '1' }), encoding: 'utf8',
-    input: JSON.stringify({ session_id: 'sid-claude', tasks: [{ id: 'a1', type: 'local_agent', status: 'running', description: 'alice' }] }),
+    input: JSON.stringify({ session_id: 'sid-alice', tasks: [{ id: 'r1', type: 'local_agent', status: 'running', description: code }] }),
   });
   assert.equal(out.status, 0, out.stderr);
-  assert.match(out.stdout, /^\{"id":"a1","content":"alice {2}joined"\}\n?$/);
+  assert.equal(out.stdout.trim(), JSON.stringify({ id: 'r1', content: `${code}  only you` }));
 });
 
 test('launcher: a temp-dir plugin root is refused unless allowed; stable roots run first, newest first, a deleted root is skipped', () => {
@@ -168,7 +116,7 @@ test('launcher: a temp-dir plugin root is refused unless allowed; stable roots r
   // refused: nothing is written
   let r = launch({ CLAUDE_PLUGIN_ROOT: tmpRoot, SUB_HUMAN_ALLOW_TMP_ROOT: undefined });
   assert.equal(r.code, 0, r.stderr);
-  assert.match(r.stderr, /temp dir/);
+  assert.equal(r.stderr, '', 'refusing a temp root is no failure: hooks write nothing to stderr on success (0.6.0)');
   assert.ok(!fs.existsSync(f));
   assert.equal(launcher.isTempRoot(tmpRoot), true);
   assert.equal(launcher.isTempRoot(PLUGIN), false);
@@ -189,113 +137,35 @@ test('launcher: a temp-dir plugin root is refused unless allowed; stable roots r
   assert.equal(fs.statSync(path.join(home, 'bin')).mode & 0o777, 0o700);
 });
 
-test('row-guard: denies spawning a row whose hold is live in this session; allows the rest', () => {
-  const { code } = world(['claude', 'alice', 'bob']);
-  const pre = (sid: string, ti: AgentInput, parent?: string) => hook('row-guard', {
-    session_id: sid, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: ti,
-    ...(parent ? { agent_id: parent, agent_type: 'sub-human:room' } : {}),
-  });
-  const bob = { subagent_type: 'sub-human:participant', description: 'bob', prompt: 'member: bob', run_in_background: true };
-  const roomRow = { subagent_type: 'sub-human:room', description: code, prompt: `room: ${code}\nmembers: bob`, run_in_background: true };
-  assert.equal(pre('sid-alice', roomRow).stdout, '', 'nothing held yet');
-  assert.equal(pre('sid-alice', bob, 'room1').stdout, '');
-  rows.writeHolds(code, sn('alice'), { members: ['bob'], room: true }); // this test process = a live hold server
-  const d = must(must(pre('sid-alice', roomRow).json).hookSpecificOutput);
-  assert.equal(d.permissionDecision, 'deny');
-  assert.match(must(d.permissionDecisionReason), /already running/);
-  assert.equal(must(must(pre('sid-alice', bob, 'room1').json).hookSpecificOutput).permissionDecision, 'deny');
-  // The room Claude's rejoin spawn for bob: denied while room Claude's row for bob is live (it survived bob's leave).
-  rows.writeHolds(code, sn('claude'), { members: ['alice'] });
-  assert.equal(pre('sid-claude', bob).stdout, '', 'claude holds no bob row: allowed');
-  rows.writeHolds(code, sn('claude'), { members: ['alice', 'bob'] });
-  assert.equal(must(must(pre('sid-claude', bob).json).hookSpecificOutput).permissionDecision, 'deny');
-  assert.equal(pre('sid-claude', { subagent_type: 'Explore', description: 'bob', prompt: 'x' }).stdout, '', 'other agents untouched');
-});
-
-test('row-guard: a member never spawns a participant row from main, nor one for itself', () => {
-  const { code } = world(['claude', 'alice', 'bob']);
-  const pre = (sid: string, ti: AgentInput, parent?: string) => hook('row-guard', {
-    session_id: sid, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: ti,
-    ...(parent ? { agent_id: parent, agent_type: 'sub-human:room' } : {}),
-  });
-  const p = (name: string) => ({ subagent_type: 'sub-human:participant', description: name, prompt: name, run_in_background: true });
-  assert.equal(must(must(pre('sid-bob', p('bob')).json).hookSpecificOutput).permissionDecision, 'deny', 'main, self');
-  assert.equal(must(must(pre('sid-bob', p('alice')).json).hookSpecificOutput).permissionDecision, 'deny', 'main, other');
-  assert.equal(must(must(pre('sid-bob', p('bob'), 'room1').json).hookSpecificOutput).permissionDecision, 'deny', 'inside the room row, self');
-  assert.equal(pre('sid-bob', p('alice'), 'room1').stdout, '', 'inside the room row: allowed');
-  assert.equal(pre('sid-claude', p('alice')).stdout, '', 'the room\'s Claude spawns participant rows from main');
-  const roomRow = { subagent_type: 'sub-human:room', description: code, prompt: `room: ${code}\nmembers: alice`, run_in_background: true };
-  assert.equal(pre('sid-bob', roomRow).stdout, '', 'the room row itself is allowed');
-});
-
-// ---------- row-rewake (SessionStart resume, asyncRewake): exit 2 + calls on stderr wakes the model ----------
-const rewake = (sid: string, extra: Env = {}, source = 'resume') =>
-  hook('row-rewake', { session_id: sid, hook_event_name: 'SessionStart', source }, { SUB_HUMAN_REWAKE_WAIT_MS: '0', ...extra });
-
-test('row-rewake: a resumed member with no room row -> exit 2 with the room-row call on stderr', () => {
-  const { code } = world(['claude', 'alice', 'bob']);
-  const r = rewake('sid-alice');
-  assert.equal(r.code, 2, r.stderr);
-  assert.equal(r.stdout, '');
-  assert.ok(r.stderr.includes(rows.roomCall(code, ['bob'])), r.stderr);
-  assert.match(r.stderr, /resumed/);
-  assert.match(r.stderr, /its rows are NOT running/, 'said plainly: a model trusting the old task list restored nothing');
-  assert.match(r.stderr, /may still list them as running; that list is from before the resume/);
-  assert.match(r.stderr, /end your turn with the one word "ok"/, "a word, not an empty reply (that costs a second model call)");
-  // a live hold of this process: nothing to restore, no wake
-  rows.writeHolds(code, sn('alice'), { room: true });
-  assert.equal(rewake('sid-alice').code, 0);
-});
-
-test('row-rewake: a resumed claude gets only the missing participant rows', () => {
-  const { code } = world(['claude', 'alice', 'bob']);
-  rows.writeHolds(code, sn('claude'), { members: ['alice'] });
-  const r = rewake('sid-claude');
-  assert.equal(r.code, 2, r.stderr);
-  assert.ok(r.stderr.includes(rows.participantCall('bob')), r.stderr);
-  assert.ok(!r.stderr.includes(rows.participantCall('alice')), 'a held row is not re-created');
-});
-
-test('row-rewake: silent exit 0 when nothing is missing, outside a room, with no members, or not a resume', () => {
-  const { code } = world(['claude', 'alice', 'bob']);
-  rows.writeHolds(code, sn('alice'), { members: ['bob'], room: true });
-  rows.writeHolds(code, sn('claude'), { members: ['alice', 'bob'] });
-  for (const r of [rewake('sid-alice'), rewake('sid-claude'), rewake('sid-nobody'), rewake('sid-bob', {}, 'startup')]) {
-    assert.equal(r.code, 0, r.stderr);
-    assert.equal(r.stdout + r.stderr, '');
-  }
-  world(['claude']);
-  const r = rewake('sid-claude');
-  assert.equal(r.code, 0, r.stderr);
-  assert.equal(r.stderr, '');
-});
-
 test('the row hooks are the module\'s: hooks.json has no row PreToolUse, and no PostToolUse, SubagentStop or SessionStart entry', async () => {
   const cfg = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')) as { hooks: Record<string, HookGroup[]> };
   for (const ev of ['PostToolUse', 'SubagentStop', 'SessionStart']) assert.equal(cfg.hooks[ev], undefined, ev);
   // the one PreToolUse command hook is the EnterPlanMode mode note (item 7), no row hook
   assert.deepEqual((cfg.hooks.PreToolUse || []).map(g => g.matcher), ['EnterPlanMode']);
   const { HOOKS: MOD } = await import(path.join(PLUGIN, 'mod', 'register.ts')) as { HOOKS: { event: string; matcher: string; file: string; does: string }[] };
-  for (const ev of ['classic.PreToolUse', 'classic.PostToolUse', 'classic.SubagentStop']) assert.ok(MOD.some(h => h.event === ev && h.file === 'mod/rows.ts'), ev);
-  // a resume's rows come back through the module (classic.SessionStart: row-rewake in the background, its calls a wake)
-  assert.ok(MOD.some(h => h.event === 'classic.SessionStart' && h.file === 'mod/deliver.ts' && /row-rewake/.test(h.does)));
+  // the row is the module's: hidden from the model, spawned at a turn's start, its stop re-held; no Agent call hooks
+  assert.ok(MOD.some(h => h.event === 'agent.offer' && h.file === 'mod/rows.ts'));
+  assert.ok(MOD.some(h => h.event === 'classic.SubagentStop' && h.file === 'mod/rows.ts'));
+  assert.ok(MOD.some(h => h.event === 'turn.start' && h.file === 'mod/deliver.ts' && /\$\.agent\.spawn/.test(h.does)));
+  for (const ev of ['classic.PreToolUse', 'classic.PostToolUse']) assert.ok(!MOD.some(h => h.event === ev && h.file === 'mod/rows.ts'), ev);
+  assert.ok(!fs.existsSync(path.join(PLUGIN, 'agents', 'participant.md')), 'no participant rows');
 });
 
-test('row agents: a stray typed message gets the one-line read-only reply, then hold again', () => {
-  for (const f of ['room.md', 'participant.md']) {
+test('the room row agent: a stray typed message gets the one-line read-only reply, then hold again', () => {
+  for (const f of ['room.md']) {
     const s = fs.readFileSync(path.join(PLUGIN, 'agents', f), 'utf8');
     assert.ok(s.includes('`read-only row — type in main with @room`'), f);
     assert.match(s, /SAME message you call `hold` again/, f);
   }
 });
 
-test('row agents: descriptions are at most 125 chars each; no model key (rows inherit the session model), background, hold-only tools', () => {
-  for (const f of ['room.md', 'participant.md']) {
+test('the room row agent: its description is at most 125 chars; no model key (it inherits the session model), background, the hold its only tool', () => {
+  for (const f of ['room.md']) {
     const s = fs.readFileSync(path.join(PLUGIN, 'agents', f), 'utf8');
     const d = must(must(/^description: (.*)$/m.exec(s))[1]);
     assert.ok(Array.from(d).length <= 125, `${f}: ${d.length}`);
     assert.doesNotMatch(s, /^model:/m, `${f} prescribes no model`);
     assert.match(s, /^background: true$/m);
-    assert.match(s, /^tools: .*mcp__plugin_sub-human_room__hold$/m);
+    assert.match(s, /^tools: mcp__plugin_sub-human_room__hold$/m);
   }
 });

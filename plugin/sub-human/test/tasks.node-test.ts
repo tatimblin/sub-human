@@ -185,7 +185,6 @@ test('list and summary per viewer (tasks.json)', () => {
   assert.deepEqual(tasks.list(code).map(t => t.id), ['2', '3', '4', '5']);
   assert.equal(tasks.summary(code, 'alice'), 'tasks 3 open · #2 you · #4 bob');
   assert.equal(tasks.summary(code, 'bob'), 'tasks 3 open · #2 alice · #4 you');
-  assert.deepEqual(tasks.mine(code, sn('alice')).map(t => t.id), ['2']);
   // fold: the last snapshot per task; a delete removes it; an agent's line is no task
   assert.deepEqual(tasks.fold([
     ent('3', { owner: 'bob' }), ent('2', { status: 'in_progress', owner: 'alice', blockedBy: ['3'] }), ent('3', {}),

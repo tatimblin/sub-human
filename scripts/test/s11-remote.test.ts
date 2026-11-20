@@ -161,7 +161,7 @@ test('S11: carol from a second home passes every check over real evidence; a bro
   fs.writeFileSync(path.join(st, 'link-file.json'), JSON.stringify(shape(parseJson<{ token?: unknown, transport?: unknown }>(fs.readFileSync(linkFile, 'utf8')))));
   const at = new Date().toISOString();
   // her pane once the module took the seat (a stand-in)
-  fs.writeFileSync(path.join(st, 'take-carol.txt'), `⏺ sub-human: joined ${code} as carol\n❯ You're in room ${code} as carol (check 3f9c-2a71, as the host's room line shows)\n`);
+  fs.writeFileSync(path.join(st, 'take-carol.txt'), `❯ You're in room ${code} as carol (check 3f9c-2a71)\n`);
   const caps: [string, number, string][] = [['alice', 1, shown], ['alice', 2, `⏺ carol: ${DEMO.carol11}`], ['carol', 1, `❯ /sub-human\n  ⎿ joined ${code} as carol`]];
   fs.writeFileSync(path.join(screens, 'index.json'), JSON.stringify(caps.map(([seat, step]) => ({ scene: 'S11', session: `sh-${seat}`, step, time: at, txt: `S11-${step}-${seat}.txt`, room: code }))));
   for (const [seat, step, text] of caps) fs.writeFileSync(path.join(screens, `S11-${step}-${seat}.txt`), text);

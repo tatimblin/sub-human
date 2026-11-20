@@ -11,7 +11,7 @@
  *     stateLine(me, entries?)                                      render.ts over this room's log and members
  *     fold(entries?), proposal(hash, entries?), proposals(entries?), answers(hash, approvers?, entries?),
  *     answered(name, hash, entries?), decided(hash, entries?)      consent.ts over this room's log
- *     deliver(me, e, {entries, note}?)         deliver.ts: none | context | notice | wake for seat me
+ *     deliver(me, e, {entries}?)                 deliver.ts: none | context | notice | wake for seat me
  *     and the stateless helpers below}
  *   Stateless: line, chatLines, fmt, fold, deliver (each judging a person's line by trustOf: the store of the room
  *     the entry names; a caller holding the store it read from passes that store's trust instead), who, FOR_CLAUDE,

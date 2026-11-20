@@ -7,8 +7,10 @@
  *       out (a Claude's message to another keeps its blank lines and shows far more), and the head of a line only for Claude
  *   PULL_HEAD, PULL_END_OLD, PULL_CAP, pullDroppedLine   the room context the model reads with the person's next prompt
  *   HOME_MARK, homeMark(home)    the hidden notice that names a seated session's sub-human folder in its transcript
- *   BYPASS_NOTE    the end of a join's line in bypass-permissions mode (hooks/handlers/join.ts adds it; mod/deliver.ts
- *       redoes it for the mode the join's expansion ran in: mod/core/command.ts bypassNoted)
+ *   BYPASS_DEBUG   the debug log's line for a join in bypass-permissions mode (mod/deliver.ts, the mode the join's
+ *       expansion ran in: #14)
+ *   QUIET_ROW      what a warning row the plugin cannot take away says (a receipt, a row's end): its words go to debug
+ *   NOTE_ANSWER    the event consent takes the module's own note card's answer as
  */
 
 /** The tail child's first restart delay, doubled per failure in a row up to MOD_RESTART_MAX_MS. */
@@ -57,5 +59,14 @@ export const pullDroppedLine = (n: number) => `(${n} earlier ${n === 1 ? 'line' 
 export const HOME_MARK = 'sub-human: home ';
 export const homeMark = (home: string) => `${HOME_MARK}${home}`;
 
-/** The end of a join's line for the person when the session is in bypass-permissions mode (a member's seat). */
-export const BYPASS_NOTE = ' · ⚠ bypass-permissions mode: messages from other sessions can wait behind a dialog; restart in another mode to get them live';
+/** The debug log's line for a join in bypass-permissions mode (a member's seat): no notice (sub-human doctor says it). */
+export const BYPASS_DEBUG = 'join: bypass-permissions mode: messages from other sessions can wait behind a dialog; another mode gets them live';
+
+/** What a warning row the plugin cannot take away says in its place (an @room's receipt, a row's end): one space, the
+ * least a rewrite keeps (cc CONTRACT session-append-notice-rewrite: the row stays, its text needs a character). What
+ * it said goes to Claude Code's debug log ($.ui.log, to: 'debug'; claude --debug). */
+export const QUIET_ROW = ' ';
+
+/** The event node consent takes the person's Send / Discard as, on the note card the module asked itself
+ * (mod/consent.ts, hooks/consent.ts: #34). */
+export const NOTE_ANSWER = 'NoteAnswer';

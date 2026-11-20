@@ -2,6 +2,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { panelRows, joinNotices } from '../lib/panes.ts';
+import { clip } from '../lib/io.ts';
+import { isRoomRow } from './transcripts.ts';
 import type { Ctx, Det } from './context.ts';
 import type { AgentRow } from './captures.ts';
 import type { Thresholds } from '../metrics.ts';
@@ -22,21 +24,35 @@ export function run(x: Ctx, { det }: { det: Det }, T: Thresholds): void {
     `members.json claude role=${ms.claude && ms.claude.role} pid=${ms.claude && ms.claude.pid}; "${(/UserPromptExpansion says: [^\n]*/.exec(oc) || ['no join line'])[0]}" in ${x.capName('S1', 'claude')} (claude logs ${job})`);
   // since 0.5.0-beta.7 a join that works shows one dim notice from the hooks module (command.run), no hook frame
   const jn = joinNotices(x.cap('S1', A));
-  const want = new RegExp(`^⏺ sub-human: opened room ${code} as ${A} · on this machine others join with /sub-human`);
-  det(`${A}'s join shows one line, "sub-human: opened room CODE as ${A} · …", and no "blocked by hook" frame`, jn.notices.length === 1 && want.test(jn.notices[0] ?? '') && !jn.frame,
+  const want = new RegExp(`^⏺ sub-human: Opened ${code} as ${A}$`);
+  det(`${A}'s join shows one line, "sub-human: Opened CODE as ${A}", and no "blocked by hook" frame`, jn.notices.length === 1 && want.test(jn.notices[0] ?? '') && !jn.frame,
     `${jn.notices.length} join line(s)${jn.notices.length ? `: ${jn.notices.map(l => `"${l}"`).join('; ')}` : ''}; hook frame ${jn.frame ? `"${jn.frame}"` : 'none'} in ${x.capName('S1', A)}`);
   const ar = panelRows(x.cap('S1', A));
   det(`${A}'s panel: one ${code} row`, ar.filter(r => !r.nested).length === 1 && ar[0]?.label === code, ar.map(r => r.line).join(' | ') || 'no rows');
   const orr = panelRows(oc);
-  const holds = x.holdsAt('S1', 1, 'claude');
-  det(`The room's Claude's panel lists ${A}`, orr.some(r => r.label === A) && (holds.members || []).includes(A),
-    `claude rows: ${orr.map(r => r.line).join(' | ') || 'none'}; claude's holds (its session document) members ${JSON.stringify(holds.members || [])}`);
+  det('The room\'s Claude keeps no rows (each member\'s one room row is that member\'s hooks module\'s)', orr.length === 0,
+    `claude rows: ${orr.map(r => r.line).join(' | ') || 'none'}`);
+  // the row is the hooks module's (agents/room.md, spawned with $.agent.spawn): a room row in A's session holding this
+  // room, no participant row; the room session spawns no agent at all
+  const s1 = x.span('S1');
+  const mine = x.seatAgents(A).filter(s => s.session !== roomClaudeSid && !!s1 && s.first > s1.from && s.first <= s1.to);
+  const rows = mine.filter(s => isRoomRow(s, code));
+  det(`${A}'s one room row is the hooks module's: a sub-human:room agent holding ${code} in ${A}'s session, no participant row`,
+    rows.length === 1 && rows[0]?.holds.some(h => h.room === code) && !mine.some(s => s.agentType === 'sub-human:participant'),
+    mine.map(s => `${s.agentType || '?'} "${clip(s.prompt, 30)}" holds ${s.holds.map(h => `${h.room}${h.result === null ? ' (blocking)' : ''}`).join(',') || 'none'}`).join('; ') || 'no subagent in S1');
+  const own = x.seatAgents('claude');
+  det('The room session spawns no agent (no rows, no participants)', own.length === 0, own.map(s => `${s.agentType || '?'} ${s.file}`).join('; ') || 'none');
+  // on disk at S1's snap (state/S1/1/tasks-dir.txt): the reaper deletes the folder when a run's S10 closes the room
+  // (lib/room/task-files.ts remove), so the live folder says nothing after a run that closed it
   const dir = ms.claude && ms.claude.tasks_dir;
-  det(`The room session's task list directory is made before it starts and recorded (members.json claude.tasks_dir ends tasks/sh-${code})`, !!dir && dir.endsWith(`/tasks/sh-${code}`) && fs.existsSync(dir),
-    `claude.tasks_dir ${dir || 'missing'}${dir ? (fs.existsSync(dir) ? ' (exists)' : ' (missing on disk)') : ''}`);
-  // the room session runs only its rows turn: its only tool is Agent (a participant row), never a room tool or a plan
+  const atS1 = x.stText('S1', 1, 'tasks-dir.txt');
+  const there = atS1 !== null ? /^exists$/m.test(atS1) : !!dir && fs.existsSync(dir);
+  const now = !!dir && fs.existsSync(dir);
+  det(`The room session's task list directory is made before it starts and recorded (members.json claude.tasks_dir ends tasks/sh-${code})`, !!dir && dir.endsWith(`/tasks/sh-${code}`) && there,
+    `claude.tasks_dir ${dir || 'missing'}${dir ? (atS1 !== null ? ` (at S1: ${there ? `exists, holding ${atS1.split('\n').slice(1).filter(Boolean).join(', ') || 'nothing'}` : 'missing'}; now ${now ? 'exists' : 'gone'})` : (now ? ' (exists)' : ' (missing on disk; no state/S1/1/tasks-dir.txt)')) : ''}`);
+  // the room session calls nothing: its one turn ends with "ok" (no rows, no room tool, no plan)
   const calls = x.toolUses(x.inSpan(x.entries('claude'), x.span('S1'))).map(c => c.name);
-  det('The room session\'s turn is rows only: every call it makes is an Agent call (a participant row)', calls.length > 0 && calls.every(n => n === 'Agent'),
+  det('The room session calls nothing (no rows, no room tool)', calls.length === 0,
     `${calls.length} call(s): ${[...new Set(calls)].join(', ') || 'none'}`);
   const j = x.entries(A).filter(e => e.attachment && e.attachment.type === 'hook_additional_context' && e.attachment.hookEvent === 'UserPromptExpansion').map(e => [e.attachment?.content].flat().join('\n'))[0] || '';
   const fillLen = (j.split('\n\nROWS\n')[0] ?? '').length;

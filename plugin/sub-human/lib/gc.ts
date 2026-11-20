@@ -21,8 +21,8 @@
  *       aside    the folders set aside (`link --forget`'s rooms/CODE.forgotten-TIME, GC's rooms/CODE.gc-TIME with
  *                 keys/CODE.gc-TIME), deleted ROOM_GC_MS after they were set aside
  *       sessions  lib/identity.ts pruneSessionIndexes (by-sid and by-pid records of ended sessions, SESSION_INDEX_TTL_MS)
- *   sweepRows(code, {now?}) -> n   the room's agent -> row maps of sessions that ended without clearing them
- *       (lib/rows.ts pruneRowMaps, ROWS_TTL_MS)
+ *   sweepRows(code) -> n   the room's rows/* documents, every one: the agent -> row maps versions before the one room
+ *       row kept, which nothing reads or writes now
  * lib/seats.ts take runs both at a join: sweep() (a stat when not due), and sweepRows for the room joined.
  */
 
@@ -37,11 +37,8 @@ import { obj, str, opt } from './decode.ts';
 import { GC_BUDGET_MS, GC_EVERY_MS } from './config.ts';
 import { envMs } from './env.ts';
 import type { RoomCode } from './brand.ts';
-import type * as RowsMod from './rows.ts';
 import type * as TaskFilesMod from './room/task-files.ts';
 
-// lib/rows.ts loads the consent fold and the tasks: only a join that sweeps a room's rows needs it
-const rows = lazy<typeof RowsMod>(import.meta.url, './rows.ts');
 // the native task list's place: only a sweep that sets a hosted room aside needs it
 const taskFiles = lazy<typeof TaskFilesMod>(import.meta.url, './room/task-files.ts');
 
@@ -98,6 +95,12 @@ function sweep({ now = Date.now(), budgetMs = GC_BUDGET_MS, force = false, keep 
   return out;
 }
 
-function sweepRows(code: RoomCode, { now = Date.now() }: { now?: number } = {}): number { return rows().pruneRowMaps(code, now); }
+/** The room's rows/* documents deleted (older versions' row maps): how many. */
+function sweepRows(code: RoomCode): number {
+  const kv = store.open(code).kv;
+  let n = 0;
+  for (const k of kv.list('rows/')) { try { kv.delete(k); n++; } catch { /* the next join */ } }
+  return n;
+}
 
 export { sweep, sweepRows };

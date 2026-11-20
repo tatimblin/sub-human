@@ -3,7 +3,7 @@
 // person only; the joiner types the line (a hidden step: the model never sees the SECRET), the link daemon checks the
 // host's key against it and shows the host the SECRET, which knocks (the host's card waits), and the joiner types
 // `/sub-human join PIN` while it waits (hidden too), or types the PIN after the line, which sends it in the first hello
-// once the host's key is checked; the right PIN links the machine in that hello, with no card (a room line names its
+// once the host's key is checked; the right PIN links the machine in that hello, with no card (a short room line; /sub-human who names its
 // check and the kick), and the hooks module then takes the seat in a turn of its own (the tail's take event, the join
 // hook with sub_human_take: PLAN-JOIN step 3), its line naming the same check; a bare /sub-human still does, where no
 // module took it. The line with no PIN knocks: the host seat's Claude is woken to open the card (hooks/consent.ts), the
@@ -92,9 +92,9 @@ test('an invite over pipe: the host sees the line and the PIN apart; the line al
   assert.equal(m.dest, `pipe:${host.home}`);
   assert.equal(m.code, code);
   const { pin, word } = m;
-  assert.match(reason(out), /tell them its PIN apart from the line \(say it, or send it another way\): \d{4}\n/);
+  assert.match(reason(out), /tell them its PIN apart from the line \(say it, or send it another way\): \d{4}$/);
   assert.ok(!new RegExp(`join \\S+ \\S+ ${word}[^\\n]*${pin}`).test(reason(out)), 'the PIN is not on the line');
-  assert.match(reason(out), /The right PIN lets them in with no card: the room shows who joined, with a check and the kick\./);
+  assert.doesNotMatch(reason(out), /The right PIN lets them in with no card/, 'the rules are the README\'s (0.6.0)');
   assert.doesNotMatch(reason(out), /a card here asks you/);
   // noise pass C: no version line for the host (an older joiner is told when it dials)
   assert.doesNotMatch(reason(out), /They need sub-human/);
@@ -141,9 +141,11 @@ test('an invite over pipe: the host sees the line and the PIN apart; the line al
   const rec = must(host.lib(() => admission.admissions(store.open(code), { all: true }))[0], 'the admission record');
   assert.deepEqual([rec.admit, rec.admitted_by, rec.admit_sig, rec.name], ['let-in', 'pin', undefined, 'bob']);
   const said = host.lib(() => store.open(code).readAll()).filter(e => e.from === 'room' && e.kind === 'status').map(e => e.text).join('\n');
-  assert.match(said, /^bob joined from \S+ \(check [0-9a-f]{4}-[0-9a-f]{4}\) · not them\? \/sub-human kick bob$/m);
-  assert.doesNotMatch(said, /waiting for alice to let them in|let in by/);
-  const check = must(/\((check [0-9a-f]{4}-[0-9a-f]{4})\)/.exec(said), 'the room line\'s check')[1];
+  assert.match(said, /^bob joined \(\S+\)$/m);
+  assert.doesNotMatch(said, /waiting for alice to let them in|let in by|check [0-9a-f]{4}/);
+  // the check, the kick and the rest are /sub-human who's, on the host (below, once bob is seated)
+  const via = must(host.lib(() => admission.joinedVia(code, [{ name: 'bob' }])).get('bob'), 'who\'s note for bob');
+  const check = must(/(check [0-9a-f]{4}-[0-9a-f]{4})/.exec(via), 'who\'s check')[1];
 
   // bob's tail, with no seat: one take event (the command's answer said it already, so no chat), with the same check
   const told = events(await remote.tail(bob, 2));
@@ -158,6 +160,9 @@ test('an invite over pipe: the host sees the line and the PIN apart; the line al
   assert.ok(!ctx(seated).includes(pin) && !ctx(seated).includes(word), 'neither the PIN nor the SECRET is in the block');
   assert.ok(remote.lib(() => identityLib.readMembers(code)).bob, 'bob is seated');
   assert.equal('join_as' in linkFile(remote, code), false, 'the seat is taken: nothing pending');
+  await until(() => !!host.lib(() => identityLib.readMembers(code)).bob, 10000, 'bob seated on the host');
+  const who = reason(host.join(alice, 'who'));
+  assert.match(who, new RegExp(`^bob \\(member\\) in ${code} · from \\S+, ${check} · not them\\? /sub-human kick bob$`, 'm'), who);
   assert.deepEqual(subHuman(remote.take(bob, code)), { say: '', joined: false }, 'a second take (a tail started again): nothing, not a status');
   for (const f of [host.log(code), remote.log(code), fs.readFileSync(path.join(remote.home, 'links', `${code}.log`), 'utf8')]) {
     assert.ok(!f.includes(` ${pin}`) && !f.includes(word), 'neither the PIN nor the SECRET is in any log');
@@ -217,7 +222,8 @@ test('a knock (the line with no PIN): the host\'s tail wakes its Claude to open 
   assert.ok(remote.lib(() => identityLib.readMembers(code)).bob, 'bob is seated');
   const said = host.lib(() => store.open(code).readAll()).filter(e => e.from === 'room' && e.kind === 'status').map(e => e.text).join('\n');
   assert.match(said, /alice let bob \(check [0-9a-f]{4}-[0-9a-f]{4}\) on \S+ in; undo with: \/sub-human kick bob/);
-  assert.match(said, /bob's machine \(\S+\) joined the room, let in by alice; undo with: \/sub-human kick bob/);
+  assert.match(said, /^bob joined \(\S+\)$/m, 'a card\'s Let in gives the same short join line');
+  assert.match(reason(host.join(alice, 'who')), new RegExp(`^bob \\(member\\) in \\S+ · from \\S+, ${awaiting.check}, let in by alice · not them\\? /sub-human kick bob$`, 'm'));
   const admitted = must(host.lib(() => admission.find(code, req0.ref)));
   assert.equal(admitted.admit, 'let-in');
   assert.ok(admitted.admit_sig && (admitted.admit_sig as { from?: string }).from === 'alice', 'the answer is signed with alice\'s seat key');
@@ -240,7 +246,7 @@ test('an invite in one line: the line with the PIN after it links in one hidden 
   const rec = must(host.lib(() => admission.admissions(store.open(code), { all: true }))[0], 'the admission record');
   assert.deepEqual([rec.admit, rec.admitted_by, rec.name], ['let-in', 'pin', 'bob']);
   const said = host.lib(() => store.open(code).readAll()).filter(e => e.from === 'room' && e.kind === 'status').map(e => e.text).join('\n');
-  assert.match(said, /^bob joined from \S+ \(check [0-9a-f]{4}-[0-9a-f]{4}\) · not them\? \/sub-human kick bob$/m);
+  assert.match(said, /^bob joined \(\S+\)$/m);
   await until(() => remote.lib(() => linkSocket.status(code)).state === 'online', 10000, 'the link online');
   assert.equal(must(remote.join(bob, '').json).decision, undefined, 'a bare /sub-human takes the seat');
   assert.ok(remote.lib(() => identityLib.readMembers(code)).bob, 'bob is seated');

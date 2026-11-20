@@ -1,5 +1,6 @@
 // S7: stray typing in a row view: the read-only hint; nothing is posted
 import { clip, esc } from '../lib/io.ts';
+import { rowViewLine, hereNames } from '../lib/panes.ts';
 import type { Ctx, Det } from './context.ts';
 
 export const scene = 'S7';
@@ -11,6 +12,11 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   const viewing = new RegExp(`─ ${esc(code)} ─`).test(t);
   const hint = /read-only · talk in main \(@room\)/.test(t);
   det('alice\'s room row view shows the read-only hint where she typed', viewing && hint && /❯ x\b/.test(t), `${viewing ? `viewing ${code}` : 'not in the row view'}; hint ${hint ? 'shown' : 'missing'}; typed x ${/❯ x\b/.test(t) ? 'shown' : 'missing'} (${x.capName('S7', 'alice')})`);
+  // the row's own line (the hold's progress, mcp/hold.ts) leads with who else is here: bob, still in the room
+  const line = rowViewLine(t, code);
+  const names = hereNames(line);
+  det('alice\'s room row line leads with who else is here ("bob here · …")', !!line && !!names && names.includes('bob') && line.startsWith(names[0] ?? '\0'),
+    line ? `"${clip(line, 120)}" (${x.capName('S7', 'alice')})` : `no row line under the hold call in ${x.capName('S7', 'alice')}`);
   const posted = x.logIn(s).filter(e => e.from === 'alice');
   det('Nothing is posted', posted.length === 0, posted.length ? posted.map(x.fmt).join('; ') : 'no alice entries in S7');
   // A row is a subagent blocked in its hold call: text typed into its view is queued and reaches the row's

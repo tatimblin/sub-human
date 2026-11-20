@@ -29,15 +29,18 @@ export type SubHumanHello = {
   cc?: SubHumanCc;
 };
 
+/** A feature a Claude Code version's verdict can turn to its fallback (mod/core/cc.ts GATED, the same list). */
+export type SubHumanGated = 'tasks' | 'plan-edit' | 'sign-off' | 'reap-rm' | 'quiet-plan' | 'keep-mode' | 'room-row';
+
 /** A Claude Code version's verdict, as hooks/handlers/mod-hello.ts read it (mod/core/cc.ts parseCc). */
 export type SubHumanCc = {
   version: string;
   /** Every internal sub-human relies on checked out on it; null: not checked yet (a check runs in the background). */
   verified: boolean | null;
-  /** The features that run their fallback on it (mod/core/cc.ts GATED), SUB_HUMAN_CC_OFF's included. */
-  off: ('room-session' | 'tasks' | 'plan-edit' | 'sign-off')[];
+  /** The features that run their fallback on it, SUB_HUMAN_CC_OFF's included. */
+  off: SubHumanGated[];
   /** The part of off that SUB_HUMAN_CC_OFF forced, not the version's check. */
-  forced?: ('room-session' | 'tasks' | 'plan-edit' | 'sign-off')[];
+  forced?: SubHumanGated[];
 };
 
 declare module 'claude-code' {
@@ -47,11 +50,11 @@ declare module 'claude-code' {
       /** False only when hooks/consent.ts said no room review is open and no EnterPlanMode / ExitPlanMode ran
        * since (mod/consent.ts); unset or true: consent runs. */
       reviewMaybeOpen: boolean;
-      /** What the person's next prompt carries for Claude (pending-proposal reminders, missing row calls): the
-       * tail child's last rows event (mod/deliver.ts); null: nothing. */
-      rows: string | null;
-      /** The rows text mod/prompt.ts last added to a typed prompt: it rides again only once it changes; null: none. */
-      rowsInjected: string | null;
+      /** What the person's next prompt carries for Claude (pending-proposal reminders): the tail child's last
+       * reminders event (mod/deliver.ts); null: nothing. */
+      reminders: string | null;
+      /** The reminders text mod/prompt.ts last added to a typed prompt: it rides again only once it changes; null: none. */
+      remindersInjected: string | null;
       /** The room server was found not connected and the person told (mod/core/rows.ts TOOLS_DOWN), until it is up. */
       toolsDown: boolean;
       /** The session id and address mod/prompt.ts last set as the title: titled again after a /clear or a switch. */
@@ -65,6 +68,9 @@ declare module 'claude-code' {
       /** The room context waiting for the next prompt (mod/deliver.ts holds each pull event, mod/prompt.ts carries it
        * as context and clears what it carried): each event's lines by id, and how many lines its cap left out. */
       pulls: { next: number; items: { id: number; lines: string[] }[]; dropped: number } | null;
+      /** The tool calls whose rows the module draws as nothing (mod/core/quiet.ts): sub-human's own plan-mode calls
+       * consent named (subHuman.quiet), newest last, at most QUIET_MAX. */
+      quietCalls: string[];
     };
   }
 }

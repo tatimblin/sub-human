@@ -1,12 +1,15 @@
 /**
- * plugin/sub-human/mod/core/leave.ts: the card after a leave (docs/next/PLAN-LEAVE-CARD.md), as pure functions;
+ * plugin/sub-human/mod/core/leave.ts: the card after a leave (docs/next/quiet/COPY.md §6), as pure functions;
  * mod/deliver.ts makes the $ calls.
  *
  *   1. /sub-human leave went through in a session a person types in (mod/deliver.ts command.run, leftName): once per
- *      session, unless SUB_HUMAN_LEAVE_CARD=0, the session took a seat again or was cleared before it fires, the module
- *      opens the card itself ($.ui.ask: Claude Code's own AskUserQuestion dialog, no model turn): leaveQuestion(code),
- *      Close / Star on GitHub, and the dialog's own free-text row, where typing sends feedback.
- *   2. leaveOutcome reads the answer. Close, or the dialog dismissed: nothing. Star on GitHub: scripts/star.sh (gh,
+ *      session and at most LEAVE_CARD_MAX times per install (the plugin's $.store, LEAVE_CARD_KEY: leaveCardDue), never
+ *      once starred (Star worked or opened the page) or once gh says the repo is starred already (scripts/star.sh
+ *      check), unless SUB_HUMAN_LEAVE_CARD=0, the session took a seat again or was cleared before it fires: the module
+ *      opens the card itself ($.ui.ask: Claude Code's own AskUserQuestion dialog, no model turn): "Left CODE.", Done /
+ *      ★ Star sub-human, and the dialog's own free-text row, where typing sends feedback (no line says so). The card
+ *      is the leave's one line: when it shows, no "Left CODE" notice; when it does not, the notice alone.
+ *   2. leaveOutcome reads the answer. Done, or the dialog dismissed: nothing. ★ Star sub-human: scripts/star.sh (gh,
  *      when logged in), else the repo page opened (scripts/open.sh), else its URL in a notice. Text typed: GitHub's
  *      new-issue form, filled in (issueUrl), opened or shown the same way; the person reads it and presses Submit
  *      there. Nothing is posted for them.
@@ -14,23 +17,43 @@
  * (saidBook: command verbs, replies, errors; codes, SECRETs and PINs masked). Never the room's chat or an invite line.
  *
  *   LEAVE_HEADER, CLOSE, STAR, LEAVE_OPTIONS, leaveQuestion(code)   the card
+ *   LEAVE_CARD_KEY, LEAVE_CARD_MAX, asLeaveCard(v), leaveCardDue(s), leaveCardShown(s), leaveCardStarred(s)   how often
  *   leaveOutcome(answer) -> LeaveOutcome
  *   REPO, REPO_URL, issueUrl({text, versions, session}), versionsLine   where Star and feedback go
  *   saidBook(), sessionSnippet(lines)                               sub-human's own lines this session, masked
  *   openCommands(env) -> OpenCommand[], openWith                    the browser openers (scripts/open.sh runs one)
- *   STARRED, starOpened, starShown, issueOpened, issueShown         what the person sees
+ *   STARRED, starOpened, starShown, issueOpened, issueShown         what the person sees after the card
  */
 
 export const REPO = 'tatimblin/sub-human';
 export const REPO_URL: string = `https://github.com/${REPO}`;
 
-export const LEAVE_HEADER = 'Left room';
-export const CLOSE = 'Close';
-export const STAR = 'Star on GitHub';
+/** The card's header chip: the card has no plugin prefix, so the chip names the speaker (12 characters at most). */
+export const LEAVE_HEADER = 'sub-human';
+export const CLOSE = 'Done';
+export const STAR = '★ Star sub-human';
 /** The card's options, labels alone; the dialog adds its own free-text row ("Type something."), which is feedback. */
 export const LEAVE_OPTIONS: readonly string[] = [CLOSE, STAR];
 
-export const leaveQuestion = (code: string): string => `You left room ${code}. Thanks for trying sub-human! Type below to send feedback.`;
+export const leaveQuestion = (code: string): string => `Left ${code}.`;
+
+/** The plugin's $.store key (kept between sessions, per install) of how often the card showed and whether to stop. */
+export const LEAVE_CARD_KEY = 'leaveCard';
+/** At most this many cards per install. */
+export const LEAVE_CARD_MAX = 2;
+/** shown: cards this install showed; starred: Star worked, opened the page, or gh said the repo is starred already. */
+export interface LeaveCardState { shown: number; starred: boolean }
+/** The stored state, read as it may be (anything else: none shown yet). */
+export function asLeaveCard(v: unknown): LeaveCardState {
+  const o: { shown?: unknown; starred?: unknown } | null = v && typeof v === 'object' ? v : null;
+  const shown = o && typeof o.shown === 'number' && Number.isSafeInteger(o.shown) && o.shown > 0 ? o.shown : 0;
+  return { shown, starred: !!o && o.starred === true };
+}
+export const leaveCardDue = (s: LeaveCardState): boolean => !s.starred && s.shown < LEAVE_CARD_MAX;
+export const leaveCardShown = (s: LeaveCardState): LeaveCardState => ({ ...s, shown: s.shown + 1 });
+export const leaveCardStarred = (s: LeaveCardState): LeaveCardState => ({ ...s, starred: true });
+/** How long gh's "starred already?" may take before the card shows anyway. */
+export const STAR_CHECK_MS = 2000;
 
 /** What the person's answer does: nothing, star, or feedback (the text they typed). */
 export type LeaveOutcome = { kind: 'close' } | { kind: 'star' } | { kind: 'feedback'; text: string };
@@ -139,8 +162,8 @@ export async function openWith(run: OpenRunner, url: string, commands: readonly 
   return 'none';
 }
 
-export const STARRED: string = `★ starred ${REPO}, thank you`;
-export const starOpened = (): string => `opened ${REPO_URL}: the Star button is at the top right`;
-export const starShown = (): string => `star sub-human at ${REPO_URL}`;
-export const issueOpened = (): string => 'opened a feedback issue in your browser: check it and press Submit';
-export const issueShown = (url: string): string => `write your feedback here (nothing is sent until you press Submit): ${url}`;
+export const STARRED = 'Starred sub-human. Thanks!';
+export const starOpened = (): string => 'Opened sub-human on GitHub';
+export const starShown = (): string => `Star sub-human at github.com/${REPO}`;
+export const issueOpened = (): string => 'Opened your feedback on GitHub. Press Submit to send it.';
+export const issueShown = (url: string): string => `Your feedback, ready to send: ${url}`;

@@ -4,12 +4,13 @@
 // seated one runs hooks/handlers/prompt.ts with the origin in its stdin, and the shim's answer and notices reach the session.
 import type { ClassicResultOf, EventOf, On } from 'claude-code'
 import { test, expect, type Engine } from 'claude-code/testing'
-import { SEAT, OUT, must, ran, scriptOf, session, start, stdinOf, helloOf, seatOf } from './support.ts'
+import { debugLines, SEAT, OUT, must, ran, scriptOf, session, start, stdinOf, helloOf, seatOf } from './support.ts'
+import { QUIET_ROW } from '../core/constants.ts'
 
 const SID = 'sid-p'
 const NONCE = /^[0-9a-f]{32}$/
 /** An @room's receipt (hooks/handlers/at-room.ts): the stop reason the shim answers with. */
-const SENT = `✓ sent to room ${SEAT.code} (Claude wasn't asked)`
+const SENT = 'Sent'
 
 /**
  * The engine beneath the plugin: a session, mod-hello answering `hello`, hooks/handlers/prompt.ts answering `prompt`, and a
@@ -25,7 +26,7 @@ type Seen = {
 function world(engine: Engine, on: On, { hello = OUT, prompt = '', exitCode = 0 }: { hello?: ReturnType<typeof helloOf> | null; prompt?: string; exitCode?: number } = {}) {
   const seen: Seen = { scripts: [], stdin: [], env: [], presence: [], classic: [], logs: [], entered: [], contexts: [], hello, hellos: [] }
   session(on, SID)
-  on('ui.log', (_$, e) => { seen.logs.push(e.text); return { value: undefined } })
+  on('ui.log', (_$, e) => { if (e.to === 'debug') debugLines.push(e.text); else seen.logs.push(e.text); return { value: undefined } })
   on('process.run', (_$, e) => {
     const script = scriptOf(e)
     if (script === 'presence.ts') { seen.presence.push({ stdin: stdinOf(e), env: e.init?.env }); return ran('') }
@@ -102,7 +103,7 @@ test('a seated prompt runs hooks/handlers/prompt.ts with the origin, the session
   expect(seen.logs).toEqual(['bob joined'])
 })
 
-test('a typed @room posts through node: ✓ sent stops the prompt; sdk and bridge count as typed', async ($, on) => {
+test('a typed @room posts through node: Sent stops the prompt; sdk and bridge count as typed', async ($, on) => {
   const seen = world($, on, { prompt: JSON.stringify({ continue: false, stopReason: SENT }) })
   await start($)
   const kinds: Kind[] = ['composer', 'sdk', 'bridge']
@@ -132,7 +133,7 @@ function rows(on: On) {
   }
 }
 
-test('an @room receipt shows as itself: its stop\'s warning row loses "Operation stopped by hook: ", no other row does', async ($, on) => {
+test('an @room receipt says nothing: its stop\'s warning row is QUIET_ROW (the person\'s own row is the receipt), no other row changes', async ($, on) => {
   const seen = world($, on, { prompt: JSON.stringify({ continue: false, stopReason: SENT }) })
   const append = rows(on)
   await start($)
@@ -140,13 +141,13 @@ test('an @room receipt shows as itself: its stop\'s warning row loses "Operation
   await submit($, '@room ship it')
   expect(seen.classic[0]?.stopReason).toBe(SENT)
   // stage 8e B: the model's copy says the line went to the room and asks nothing of it
-  expect(await append($, `Operation stopped by hook: ${SENT}`, 'user', 'note')).toBe('sub-human: that @room line went to the room; nothing is asked of you.')
+  expect(await append($, `Operation stopped by hook: ${SENT}`, 'user', 'note')).toBe('sub-human: @room message sent. No reply.')
   expect(await append($, 'Operation stopped by hook: another plugin')).toBe('Operation stopped by hook: another plugin')
-  expect(await append($, `Operation stopped by hook: ${SENT}`)).toBe(SENT)
+  expect(await append($, `Operation stopped by hook: ${SENT}`)).toBe(QUIET_ROW)
+  expect(debugLines).toContain('@room: sent (receipt drawn as nothing)')
   expect(await append($, `Operation stopped by hook: ${SENT}`)).toBe(`Operation stopped by hook: ${SENT}`) // once per stop
-  // noise pass H: the session's next one is "✓ sent"
   await submit($, '@room and the tests')
-  expect(await append($, `Operation stopped by hook: ${SENT}`)).toBe('✓ sent')
+  expect(await append($, `Operation stopped by hook: ${SENT}`)).toBe(QUIET_ROW)
 })
 
 test('a refused @room (a block) leaves no receipt waiting', async ($, on) => {

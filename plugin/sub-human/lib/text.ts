@@ -93,8 +93,21 @@ const localHm = (iso: unknown): string => { const d = new Date(String(iso)); ret
 const TASK_WORDS: Readonly<Record<string, string>> = { pending: 'open', in_progress: 'in progress', completed: 'done' };
 const taskWord = (s: unknown): string => TASK_WORDS[String(s)] ?? String(s ?? '');
 
+/** A plan's name as people type it ("Error handling", "GET /tasks paging") as a name the room takes: lower case, a-z,
+ * 0-9 and single dashes, at most 24 (lib/room/validate.ts PLAN_NAME_RE); '' when nothing is left. */
+function planSlug(v: unknown): string {
+  const s = String(v ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return s.slice(0, 24).replace(/-+$/, '');
+}
+/** A new plan's name from its first heading ("# Paging" -> "paging"), or null when it has none that names anything. */
+function headingName(text: unknown): string | null {
+  const m = /^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t#]*$/m.exec(String(text ?? ''));
+  const s = m ? planSlug(m[1]) : '';
+  return s || null;
+}
+
 export {
   clip, oneLine, cliLine, cliCmd, homePrefix, localHm, taskWord, NAME_RE, CODE_RE, SID_SAFE, HASH_RE, MACHINE_RE, hash12, isProposalHash, planHash,
   isMachineId,
-  isSeatName, isRoomCode, isSessionId, seatName, roomCode, sessionId,
+  isSeatName, isRoomCode, isSessionId, seatName, roomCode, sessionId, planSlug, headingName,
 };

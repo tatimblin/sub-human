@@ -70,9 +70,9 @@ export interface JoinPayload {
 
 /** One $ call an event maps to (mod/core/deliver.ts route). */
 export type DeliverAction =
-  | { do: 'log' | 'append' | 'mid-turn-wake' | 'hold-pull'; text: string }
+  | { do: 'log' | 'debug' | 'append' | 'mid-turn-wake' | 'hold-pull'; text: string }
   | { do: 'submit'; text: string; seen: string[] }
-  | { do: 'hold-rows'; text: string | null }
+  | { do: 'hold-reminders'; text: string | null }
   | { do: 'seat'; seat: TailSeat | null }
   | { do: 'invites'; open: string[]; expired?: string[] }
   | { do: 'take'; code: string; name: string; text: string; check?: string };
@@ -95,8 +95,9 @@ export type PinnedStatus = Omit<PinnedReport, 'cut'> & { cut?: string[] };
 
 /** join.ts's reply (hooks/reply.ts render of a lib/commands/types.ts Answer), as the module reads it back
  * (mod/core/command.ts readReply): its say or joined, a lease that did not hold (stale), or no answer (failed). */
+/** debug: a detail join.ts sent for Claude Code's debug log (mod/deliver.ts writes it there, to: 'debug'). */
 export type JoinReply =
-  | { kind: 'joined'; context: string; lines: string[] }
-  | { kind: 'say'; lines: string[]; refused: boolean; shareable: boolean; pinned?: PinnedStatus }
+  | { kind: 'joined'; context: string; lines: string[]; debug?: string }
+  | { kind: 'say'; lines: string[]; refused: boolean; shareable: boolean; pinned?: PinnedStatus; debug?: string }
   | { kind: 'stale'; lines: string[] }
   | { kind: 'failed'; lines: string[] };

@@ -28,6 +28,8 @@
  *   ensureLinked). Another seat of this session is left only once the new one is taken ("switched rooms"; in the same
  *   room "now NAME", and the new seat's delivery cursor moves to the log's end), never on a refused join. Every take first runs lib/gc.ts sweep (at most every GC_EVERY_MS, within GC_BUDGET_MS), and a
  *   seat taken sweeps its room's row maps of ended sessions.
+ * whoLines: the room's people, one line each, as `/sub-human who` and `sub-human who` list them (on the host, with an
+ *   invite seat's machine, check and kick).
  */
 
 import * as identity from './identity.ts';
@@ -47,6 +49,7 @@ import { errCode, msgOf } from './errors.ts';
 import type { RoomCode, SeatName, MachineId } from './brand.ts';
 import type * as JoiningMod from './remote/joining.ts';
 import type * as GcMod from './gc.ts';
+import type * as AdmissionMod from './remote/admission.ts';
 import type * as WebhostMod from './remote/webhost.ts';
 import type * as ShimMod from './remote/shim.ts';
 
@@ -56,6 +59,8 @@ const shimLib = lazy<typeof ShimMod>(import.meta.url, './remote/shim.ts');
 // loaded only by take(): the session-end hook and the remote server never need the link or the listener
 const joining = lazy<typeof JoiningMod>(import.meta.url, './remote/joining.ts');
 const gc = lazy<typeof GcMod>(import.meta.url, './gc.ts');
+// loaded only by whoLines on the host: an invite's seats, where from and their check
+const admissionLib = lazy<typeof AdmissionMod>(import.meta.url, './remote/admission.ts');
 
 /** enter()'s seat: the join hook's, or the remote server's for a seat on another machine. */
 interface EnterOpts {
@@ -71,8 +76,8 @@ interface EnterOpts {
   /** take leaves the seat this pid held before itself, after this join worked (identity.join keepPrevious) */
   keepPrevious?: boolean | undefined;
 }
-/** identity.join's answer; note: what the join line adds (the room's Claude starting, or why it could not). */
-type EnterResult = JoinOutcome & { note?: string };
+/** identity.join's answer; note: the line the join adds when the room's Claude could not start; debug: its detail. */
+type EnterResult = JoinOutcome & { note?: string; debug?: string };
 
 const asSystem = (name: string) => ({ via: 'system', from: name, system: true });
 const WORKDIR = 'workdir'; // the room's working directory: {cwd}
@@ -83,22 +88,27 @@ function keepWorkdir(code: RoomCode, cwd: string | null | undefined): void {
   if (cwd && !kv.get(WORKDIR)) kv.set(WORKDIR, { cwd });
 }
 
+/** What starting the room's Claude says: note, the person's one plain line ('' when it started, or is starting again
+ * after a failed start: the watchdog's to retry), and debug, the detail (its error) for Claude Code's debug log. */
+interface RoomClaudeNote { note: string; debug: string }
+const ROOM_CLAUDE_DOWN = 'Room task list unavailable. Run /sub-human doctor.';
+
 /** Start the room's Claude (detached; claimSpawn is host only) in cwd, else the room's working directory, when none
- * runs. '' or the short systemMessage suffix the join hook shows. */
-function ensureRoomClaude(code: RoomCode, cwd: string | null | undefined, by: string): string {
+ * runs (RoomClaudeNote). */
+function ensureRoomClaude(code: RoomCode, cwd: string | null | undefined, by: string): RoomClaudeNote {
   let last: Member | null = null;
   try {
     last = identity.readMembers(code).claude ?? null;
     const c = roomClaude.claimSpawn(code, { by });
-    if (!c) return '';
+    if (!c) return { note: '', debug: '' };
     // the room's task list directory, made before the room session's task view first reads it (the room task comes with the first request)
     try { roomClaude.openTaskList(code); } catch { /* the room session's tail repairs it (lib/tasks.ts repair) */ }
     seam.startDetached({ code, cwd: cwd || (room.open(code).store.kv.get<{ cwd?: string }>(WORKDIR) ?? {}).cwd, ...c });
   } catch (e) {
-    return ` · the room session could not start (${(msgOf(e) || String(e)).slice(0, 200)}); /sub-human still works, but there is no room task list`;
+    return { note: ROOM_CLAUDE_DOWN, debug: `room session: could not start (${(msgOf(e) || String(e)).slice(0, 200)})` };
   }
-  // a start that works says nothing (the room row shows it); only a failure before it is worth a line
-  return last && last.spawn_error ? ` · the room session is starting again (the last start failed: ${last.spawn_error})` : '';
+  // a start that works says nothing (the room row shows it); a start after a failed one is the debug log's
+  return { note: '', debug: last && last.spawn_error ? `room session: starting again (the last start failed: ${last.spawn_error})` : '' };
 }
 
 function enter({ code, name, role = 'member', machine = identity.machineIn(code), account, pid, session_id, cwd, pubkey, keepPrevious }: EnterOpts): EnterResult {
@@ -108,7 +118,7 @@ function enter({ code, name, role = 'member', machine = identity.machineIn(code)
   if (account === undefined && machine && machine === identity.machineIn(code) && identity.isHost(code)) account = machine;
   const r: EnterResult = identity.join({ code, name, role, machine, account, pid, session_id, cwd, keepPrevious });
   if (!r.ok) return r;
-  if (!identity.isHost(code)) return { ...r, note: '' };
+  if (!identity.isHost(code)) return { ...r, note: '', debug: '' };
   keepWorkdir(code, cwd);
   try {
     // machine null: this machine's id could not be read; the seat joins without one (validate refuses a null machine)
@@ -118,7 +128,8 @@ function enter({ code, name, role = 'member', machine = identity.machineIn(code)
     identity.leave(code, name, {});
     return { ok: false, error: msgOf(e), code: 'AUTH' };
   }
-  return { ...r, note: ensureRoomClaude(code, cwd, name) };
+  const rc = ensureRoomClaude(code, cwd, name);
+  return { ...r, note: rc.note, debug: rc.debug };
 }
 
 function exit(code: RoomCode, name: SeatName, reason: string, { deadlineMs }: { deadlineMs?: number | undefined } = {}): boolean {
@@ -204,7 +215,8 @@ function back(code: RoomCode, name: SeatName): boolean {
 }
 
 /** take()'s answer: a seat taken (the mechanics block's lead line, the person's line), or a refusal / where it stands. */
-export type Taken = { ok: true; me: Identity; lead: string; msg: string } | { ok: false; text: string; refused: boolean };
+/** trouble: msg says the room's Claude could not start; debug: a detail for the debug log. */
+export type Taken = { ok: true; me: Identity; lead: string; msg: string; trouble?: boolean; debug?: string } | { ok: false; text: string; refused: boolean };
 /** take()'s process: the seat's claude pid and session, the seat this session holds now, and its key's public half. */
 interface TakeCtx { pid: number; session_id: string | undefined; cwd: string; cur: Identity | null; pubkey(code: RoomCode, name: SeatName): string }
 
@@ -220,6 +232,31 @@ function withWhom(code: RoomCode, name: SeatName): string {
   const names = others(code, name).filter(n => n !== identity.ROOM_CLAUDE);
   if (!names.length) return 'nobody else here yet';
   return names.length > 3 ? `${names.length} others here` : `with ${names.join(', ')}`;
+}
+
+/**
+ * code's people, one line each: "carol2 (member) in CODE" (", away" when its lease lapsed); the room session (member
+ * claude) is no one's and never listed. On the host, a seat a machine took with an invite adds where it joined from,
+ * its check, a rename, who let it in and the kick (lib/remote/admission.ts joinedVia), which the room's join line
+ * leaves out: " · from carols-mbp, check 3f9c-2a71, wanted "carol" · not them? /sub-human kick carol2".
+ */
+function whoLines(code: RoomCode): string[] {
+  const ms = Object.values<Member>(identity.readMembers(code) || {})
+    .filter(m => m && m.name && !m.left_at && m.role !== identity.ROOM_CLAUDE && m.name !== identity.ROOM_CLAUDE);
+  if (!ms.length) return [`(nobody in room ${code})`];
+  let via = new Map<string, string>();
+  try { if (identity.isHost(code)) via = admissionLib().joinedVia(code, ms); } catch { /* the names alone */ }
+  return ms.map(m => {
+    const note = via.get(m.name);
+    return `${m.name} (${m.role}${m.lapsed_at ? ', away' : ''}) in ${code}${note ? ` · ${note}` : ''}`;
+  });
+}
+
+/** Who else is in the room, as a join line ends it: " with bob, carol", " with 5 others", or '' alone. */
+function company(code: RoomCode, name: SeatName): string {
+  const names = others(code, name).filter(n => n !== identity.ROOM_CLAUDE);
+  if (!names.length) return '';
+  return names.length > 3 ? ` with ${names.length} others` : ` with ${names.join(', ')}`;
 }
 
 /** An open room where name's seat is live and was taken from cwd (another session of this folder holds it): a bare
@@ -283,7 +320,9 @@ function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd,
   const rebind = !host && !!(links.get(code) ?? {}).rebind;
   if (cur && same && !rebind) {
     joining().dropJoinAs(code);
-    return { ok: true, me: cur, lead: 'already joined', msg: `you're already in ${cur.code} as ${name}, ${withWhom(code, name)}${ensureRoomClaude(code, cwd, name)}` };
+    const rc = ensureRoomClaude(code, cwd, name);
+    return { ok: true, me: cur, lead: 'already joined', msg: `you're already in ${cur.code} as ${name}, ${withWhom(code, name)}${rc.note ? `\n${rc.note}` : ''}`,
+      ...(rc.note ? { trouble: true } : {}), ...(rc.debug ? { debug: rc.debug } : {}) };
   }
   // The seat's key: via=human posts and answers are signed with it, and the log pins it.
   let key: string;
@@ -315,14 +354,16 @@ function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd,
     try { shimLib().refresh(); } catch { /* best effort */ } // the serve shim a login link runs
   }
   const me: Identity = { code, name, role: 'member', pid, session_id: session_id || null, address: identity.address(name, code) };
-  const msg = created
-    ? `opened room ${code} as ${name} · on this machine others join with /sub-human; another machine: /sub-human invite`
-    : `${r.rejoin ? 'rejoined' : 'joined'} ${code} as ${name}, ${withWhom(code, name)} · @room to talk; your Claude can message other Claudes, edit the room plan and the task list`;
-  return { ok: true, me, lead: created ? 'room opened' : r.rejoin ? 'rejoined' : 'joined', msg: `${msg}${r.note}` };
+  // one line, the event alone: how to invite, @room and the rest are in /sub-human help and the README
+  // "as NAME" only for a name the person chose (not their default)
+  const as = isDefault ? '' : ` as ${name}`;
+  const msg = created ? `Opened ${code}${as}` : `${r.rejoin ? 'Rejoined' : 'Joined'} ${code}${as}${company(code, name)}`;
+  return { ok: true, me, lead: created ? 'room opened' : r.rejoin ? 'rejoined' : 'joined', msg: `${msg}${r.note ? `\n${r.note}` : ''}`,
+    ...(r.note ? { trouble: true } : {}), ...(r.debug ? { debug: r.debug } : {}) };
 }
 
 /** Test seam: the room's Claude starts through this object, which a test may stub (test/seats.node-test.ts); an ES
  * module's own exports are read-only. */
 const seam = { startDetached: (o: Parameters<typeof roomClaude.startDetached>[0]): number | undefined => roomClaude.startDetached(o) };
 
-export { enter, exit, sweep, back, ensureRoomClaude, seam, take, withWhom, liveSeatHere, forkedText };
+export { enter, exit, sweep, back, ensureRoomClaude, seam, take, withWhom, whoLines, liveSeatHere, forkedText };

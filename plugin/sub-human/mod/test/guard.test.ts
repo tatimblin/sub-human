@@ -107,9 +107,9 @@ test('a guard that fails denies only a call that mentions sub-human', async ($, 
 test('hold is denied to the main thread', async ($, on) => {
   const r = world(on)
   await hello($)
-  const res = await call($, { tool: 'mcp__plugin_sub-human_room__hold', member: 'bob' })
+  const res = await call($, { tool: 'mcp__plugin_sub-human_room__hold', room: 'otter-4821' })
   expect(denied(res)).toBe(true)
-  expect(String(res.deny ?? res.text)).toMatch(/hold is for row agents only/)
+  expect(String(res.deny ?? res.text)).toMatch(/hold is for the room row agent only/)
   expect(r).toEqual([])
 })
 

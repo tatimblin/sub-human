@@ -26,6 +26,7 @@ import type * as shimMod from '../mod/core/shim.ts';
 import type * as stateMod from '../mod/core/state.ts';
 import type * as registerMod from '../mod/register.ts';
 import { must } from './support/must.ts';
+import * as quietCore from '../mod/core/quiet.ts';
 import { eid } from './support/brands.ts';
 
 /** A route action's text (submit, mid-turn-wake, log, append). */
@@ -188,7 +189,7 @@ test('shim: a real hook\'s output translates (at-room posting through prompt.ts)
   assert.equal(r.code, 0, r.stderr);
   const { result } = toClassic('UserPromptSubmit', { exitCode: r.code, stdout: r.stdout, stderr: r.stderr });
   assert.equal(result.preventContinuation, true);
-  assert.match(must(result.stopReason), /^✓ sent/);
+  assert.match(must(result.stopReason), /^Sent\b/);
 });
 
 test('shim: subHuman (a hook run with SUB_HUMAN_SHIM=1) comes out beside the result', async () => {
@@ -269,7 +270,10 @@ test('deliver: the child\'s argv and env; lines out of pieces; only well-formed 
   assert.deepEqual(b.push('nes":["bob: hi"]}\n{"type":"rows","text":null}\n{"ty'), ['{"type":"chat","lines":["bob: hi"]}', '{"type":"rows","text":null}']);
   assert.equal(b.pending, '{"ty');
   assert.deepEqual(d.parseEvent('{"type":"chat","lines":["bob: hi"]}'), { type: 'chat', lines: ['bob: hi'] });
-  assert.deepEqual(d.parseEvent('{"type":"rows","text":""}'), { type: 'rows', text: null });
+  assert.deepEqual(d.parseEvent('{"type":"reminders","text":""}'), { type: 'reminders', text: null });
+  // 0.5's tail named it rows: a child still running from it keeps its reminders
+  assert.deepEqual(d.parseEvent('{"type":"rows","text":"sign off v2"}'), { type: 'reminders', text: 'sign off v2' });
+  assert.deepEqual(d.route({ type: 'reminders', text: 'sign off v2' }), d.route(must(d.parseEvent('{"type":"rows","text":"sign off v2"}'))));
   assert.deepEqual(d.parseEvent('{"type":"seat","seat":null}'), { type: 'seat', seat: null });
   assert.equal(d.parseEvent('{"type":"wake"}'), null);
   assert.equal(d.parseEvent('{"type":"exec","text":"rm"}'), null);
@@ -288,7 +292,7 @@ test('deliver: the routing table: chat is a notice, pull held for the next promp
   // one $.ui.log per line: a notice is one line (a newline would be drawn as U+FFFD)
   assert.deepEqual(d.route({ type: 'chat', lines: ['bob: hi', '  │ more', 'carol joined'] }), [{ do: 'log', text: 'bob: hi' }, { do: 'log', text: '  │ more' }, { do: 'log', text: 'carol joined' }]);
   assert.deepEqual(d.route({ type: 'pull', text: 'Room since…' }), [{ do: 'hold-pull', text: 'Room since…' }], 'stage 8e B: never a user row of its own');
-  assert.deepEqual(d.route({ type: 'rows', text: null }), [{ do: 'hold-rows', text: null }]);
+  assert.deepEqual(d.route({ type: 'reminders', text: null }), [{ do: 'hold-reminders', text: null }]);
   assert.deepEqual(d.route({ type: 'seat', seat: null }), [{ do: 'seat', seat: null }]);
   const idle = d.route({ type: 'wake', text: 'room: decided\n(for Claude) room now: …' });
   assert.deepEqual(idle, [{ do: 'submit', text: `${d.WAKE_HEAD}\nroom: decided\n(for Claude) room now: …`, seen: ['room: decided'] }]);
@@ -296,9 +300,6 @@ test('deliver: the routing table: chat is a notice, pull held for the next promp
   assert.equal(gateVerdict({ text: textOf(idle[0]), origin: { kind: 'plugin', name: 'sub-human' } }, undefined), null, 'a wake never reads as a "room:" post');
   const mid = d.route({ type: 'wake', text: 'room: decided\n(for Claude) room now: …' }, { turnRunning: true });
   assert.deepEqual(mid, [{ do: 'log', text: 'room: decided' }, { do: 'mid-turn-wake', text: textOf(idle[0]) }]);
-  const roomClaude = d.route({ type: 'wake', text: 'room now: …' }, { role: 'claude', rows: 'SUB-HUMAN ROWS: …' });
-  assert.equal(textOf(roomClaude[0]), `${d.WAKE_HEAD}\nroom now: …\nSUB-HUMAN ROWS: …`, 'the room\'s Claude\'s rows ride on its wakes');
-  assert.equal(textOf(d.route({ type: 'wake', text: 'x' }, { role: 'member', rows: 'R' })[0]).includes('R'), false, 'a member\'s go with the person\'s prompt');
   assert.deepEqual(d.route({ type: 'health', text: 'room log check: …' }).map(a => a.do), ['log', 'append']);
   assert.deepEqual(d.route(null), []);
 });
@@ -476,12 +477,80 @@ test('send without the room server (live 2026-10-17: held back, the relay fell t
   assert.equal(relayResult('alice', null).isDelivered, false);
 });
 
-test('rows while the room server is down: said once instead of the spawn calls a row could not make', async () => {
-  const { rowsToSay, ROWS_DOWN } = await load('mod/core/rows.ts');
-  assert.equal(rowsToSay('SUB-HUMAN ROWS: calls', true), 'SUB-HUMAN ROWS: calls');
-  assert.equal(rowsToSay('SUB-HUMAN ROWS: calls', false), ROWS_DOWN);
-  assert.equal(rowsToSay(null, false), null, 'nothing held: nothing said');
-  assert.match(ROWS_DOWN, /don't spawn it.*\/mcp reconnects plugin:sub-human:room/);
+test('the room row (one row, the module\'s own): wanted for a member\'s seat of this session with room-row on; live while $.agent.list runs it; spawned with the code as its label; a spawn at most once a minute and five times', async () => {
+  const r = await load('mod/core/rows.ts');
+  const member = mkHello({ seat: seatOf('alice') });
+  assert.equal(r.roomRowFor(member, 's1'), 'otter-4821');
+  assert.equal(r.roomRowFor(member, 's2'), null, 'another session\'s hello: not sure, no spawn');
+  assert.equal(r.roomRowFor(mkHello(), 's1'), null, 'no seat');
+  assert.equal(r.roomRowFor(mkHello({ seat: seatOf('claude', 'claude') }), 's1'), null, 'the room session keeps no row');
+  assert.equal(r.roomRowFor({ ...member, cc: { version: '2.1.302', verified: false, off: ['room-row'] } }, 's1'), null, 'room-row off: no row at all');
+  assert.equal(r.roomRowFor(null, 's1'), null);
+  const agent = (type: string, status: string, id = 'r1', description = 'otter-4821') => ({ id, type, status, description });
+  assert.equal(r.liveRow([agent('sub-human:room', 'running')], 'otter-4821'), 'r1');
+  assert.equal(r.liveRow([agent('sub-human:room', 'completed'), agent('sub-human:room', 'killed', 'r2'), agent('Explore', 'running', 'e1')], 'otter-4821'), null);
+  assert.equal(r.liveRow([agent('sub-human:room', 'running', 'old', 'vole-1234')], 'otter-4821'), null, 'another room\'s row (the seat changed) is not this room\'s');
+  assert.equal(r.liveRow([agent('sub-human:room', 'running', 'r0'), agent('sub-human:room', 'running', 'r3')], 'otter-4821', new Set(['r0'])), 'r3', 'a row listed before the spawn is not the one it started');
+  assert.deepEqual(r.rowSpawn('otter-4821'), { subagentType: 'sub-human:room', description: 'otter-4821', prompt: 'room: otter-4821' });
+  assert.equal(r.isRow('sub-human:room'), true);
+  assert.equal(r.isRow('sub-human:participant'), false, 'no participant rows');
+  let ledger = {};
+  let step = r.spawnStep(ledger, 'otter-4821', 1000);
+  assert.equal(step.spawn, true);
+  ledger = step.ledger;
+  assert.equal(r.spawnStep(ledger, 'otter-4821', 1001).spawn, false, 'one under way: none beside it');
+  ledger = r.spawnDone(ledger, 'otter-4821');
+  assert.equal(r.spawnStep(ledger, 'otter-4821', 1000 + r.ROW_RESPAWN_MS - 1).spawn, false, 'within the minute');
+  assert.equal(r.spawnStep(ledger, 'vole-1234', 1001).spawn, true, 'another room: its own ledger');
+  let t = 1000;
+  for (let i = 1; i < r.ROW_SPAWNS_MAX; i++) {
+    t += r.ROW_RESPAWN_MS;
+    step = r.spawnStep(ledger, 'otter-4821', t);
+    assert.equal(step.spawn, true, `spawn ${i + 1}`);
+    ledger = r.spawnDone(step.ledger, 'otter-4821');
+  }
+  assert.equal(r.spawnStep(ledger, 'otter-4821', t + 10 * r.ROW_RESPAWN_MS).spawn, false, 'a row that dies at once never loops');
+  // a spawn that started nothing (refused, failed) may go again at once, and still counts
+  const failed = r.spawnDone(r.spawnStep({}, 'vole-1234', 5000).ledger, 'vole-1234', false);
+  const again = r.spawnStep(failed, 'vole-1234', 5001);
+  assert.equal(again.spawn, true);
+  assert.equal(again.ledger['vole-1234']?.n, 2);
+  // the cap is for rows that die quickly: a row found live a minute past its spawn starts the count over (one found
+  // live seconds after it still counts); a seat change forgets the room
+  assert.equal(r.spawnLived(ledger, 'otter-4821', t + 1000), ledger, 'found live seconds after its spawn: the count stays');
+  assert.equal(r.spawnLived(ledger, 'otter-4821', t + r.ROW_RESPAWN_MS - 1)['otter-4821']?.n, r.ROW_SPAWNS_MAX);
+  const lived = r.spawnLived(ledger, 'otter-4821', t + r.ROW_RESPAWN_MS);
+  assert.equal(lived['otter-4821']?.n, 0);
+  assert.equal(r.spawnStep(lived, 'otter-4821', t + 10 * r.ROW_RESPAWN_MS).spawn, true, 'a row that lived may come back');
+  const forgot = r.spawnForget(ledger, 'otter-4821');
+  assert.equal(forgot['otter-4821'], undefined);
+  assert.equal(r.spawnStep(forgot, 'otter-4821', t + 1).spawn, true, 'a new seat: no wait, no cap');
+  assert.equal(r.spawnForget(forgot, 'otter-4821'), forgot);
+});
+
+test('rowFallback: only auto mode\'s refusal of the module\'s spawn hands the row to the model; askStep tells its ask once', async () => {
+  const r = await load('mod/core/rows.ts');
+  const CLASSIFIER = 'The server-side auto mode classifier gave no verdict for Agent: the request that produced this action did not ask for one. Issue the action again once, as-is; …';
+  assert.equal(r.rowFallback(undefined, 'auto'), false, 'no deny: the row started');
+  assert.equal(r.rowFallback(CLASSIFIER, 'auto'), true);
+  assert.equal(r.rowFallback(CLASSIFIER, undefined), true, 'the mode not known yet: the classifier\'s words are enough');
+  assert.equal(r.rowFallback('Auto mode classifier gave no verdict for Agent', 'default'), true, 'the text alone, any case');
+  assert.equal(r.rowFallback('denied by a PreToolUse hook', 'auto'), true, 'any deny while the session is in auto mode');
+  for (const mode of ['default', 'acceptEdits', 'plan', 'dontAsk', 'bypassPermissions', undefined]) {
+    assert.equal(r.rowFallback('denied by a PreToolUse hook', mode), false, `a person's rule or a hook's deny is final (${mode})`);
+  }
+  const ask = r.rowAsk('otter-4821');
+  assert.match(ask, /^SUB-HUMAN: /);
+  assert.ok(ask.includes('Agent({ subagent_type: "sub-human:room", description: "otter-4821", prompt: "room: otter-4821" })'), 'the exact call, as rowSpawn spawns it');
+  assert.match(ask, /write nothing about it/);
+  let state = r.askFor('otter-4821');
+  const first = r.askStep(state, 'otter-4821');
+  assert.equal(first.tell, true);
+  state = first.ask;
+  assert.equal(r.askStep(state, 'otter-4821').tell, false, 'told once: never again for this ask');
+  assert.equal(r.askStep(r.askFor('otter-4821'), 'vole-1234').tell, false, 'the seat moved on: not for another room');
+  assert.equal(r.askStep(r.askFor('otter-4821'), null).tell, false, 'no seat: none');
+  assert.equal(r.askStep(null, 'otter-4821').tell, false, 'no fallback: nothing to tell');
 });
 
 test('rowEndedRow: only the warning row of a row-ended drop, as "sub-human: row closed"', async () => {
@@ -501,7 +570,7 @@ test('the room server down: told once per time it goes down (toolsDownStep)', as
   assert.deepEqual(toolsDownStep(true, false), { say: false, down: true }, 'still down: said already');
   assert.deepEqual(toolsDownStep(true, true), { say: false, down: false }, 'back up: forget it');
   assert.deepEqual(toolsDownStep(false, true), { say: false, down: false });
-  assert.match(TOOLS_DOWN_NOTICE, /@room and messages to other Claudes still work.*\/mcp/);
+  assert.equal(TOOLS_DOWN_NOTICE, 'Room tools not connected, so no room row. Run /mcp and reconnect plugin:sub-human:room.');
   assert.doesNotMatch(TOOLS_DOWN_NOTICE, /^sub-human: /, '$.ui.log adds the lead');
   assert.match(TOOLS_DOWN, /Don't call them/);
 });
@@ -585,8 +654,9 @@ test('prefilter: rows, the restore and consent\'s PreToolUse start node only whe
   const seated = mkHello({ seat: seatOf('alice') }), unseated = mkHello();
   assert.equal(f.rowsNeeded(seated, 's1', 'sub-human:room'), true);
   assert.equal(f.rowsNeeded(seated, 's1', 'Explore'), false, 'any other agent');
-  assert.equal(f.rowsNeeded(unseated, 's1', 'sub-human:participant'), false);
-  assert.equal(f.rowsNeeded(unseated, 's2', 'sub-human:participant'), true, 'another session id: unsure');
+  assert.equal(f.rowsNeeded(seated, 's1', 'sub-human:participant'), false, 'an older version\'s participant row: no node');
+  assert.equal(f.rowsNeeded(unseated, 's1', 'sub-human:room'), false);
+  assert.equal(f.rowsNeeded(unseated, 's2', 'sub-human:room'), true, 'another session id: unsure');
   assert.equal(f.rowsNeeded(null, 's1', 'sub-human:room'), true, 'no hello: unsure');
   for (const source of ['clear', 'compact', 'resume']) {
     assert.equal(f.restoreNeeded(seated, 's1', source), true, source);
@@ -676,6 +746,19 @@ test('prompt: an @room in a session surely without a seat is refused in at-room\
   assert.equal(p.unseatedRefusal({ session_id: 's1', prompt: '@claude hi' }, unseated), null, 'outside a room @claude is a prompt');
   assert.equal(p.unseatedRefusal({ session_id: 's2', prompt: '@room hi' }, unseated), null, 'not this session\'s hello: node decides');
   assert.equal(p.unseatedRefusal({ session_id: 's1', prompt: '@room hi' }, mkHello({ seat: seatOf('a') })), null);
-  const d = await load('mod/core/deliver.ts');
-  assert.equal(d.rewakePrompt('one\ntwo\n'), `${d.REWAKE_SHOWN}\n(for Claude) one\n(for Claude) two`);
+});
+
+test('0.6.0 quiet: the hidden calls keep the newest QUIET_MAX ids, once each; a row hides only for an id kept; quiet-plan off hides none', () => {
+  let ids: string[] = [];
+  for (let i = 0; i < quietCore.QUIET_MAX + 5; i++) ids = quietCore.keepQuiet(ids, `t${i}`);
+  assert.equal(ids.length, quietCore.QUIET_MAX);
+  assert.equal(ids[0], 't5');
+  assert.deepEqual(quietCore.keepQuiet(['a', 'b'], 'a'), ['b', 'a'], 'once each, newest last');
+  assert.equal(quietCore.quietRow(['a'], 'a'), true);
+  for (const id of ['b', '', undefined, 3]) assert.equal(quietCore.quietRow(['a'], id), false, String(id));
+  const seat = { name: 'bob', code: 'otter-4821', role: 'member' as const, addr: 'bob.otter-4821' };
+  const hello: Hello = { sid: 's', home: '/h', realHome: '/h', userHome: null, pluginRoot: null, seat };
+  assert.equal(quietCore.quietOn(hello), true);
+  assert.equal(quietCore.quietOn(null), true);
+  assert.equal(quietCore.quietOn({ ...hello, cc: { version: '2.1.302', verified: false, off: ['quiet-plan'] } }), false);
 });

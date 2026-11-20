@@ -18,20 +18,29 @@ import { reviewOpenOf, seatedOrUnsure } from './core/prefilter.ts';
 import { delivering, wakeContextOf, facts, presence, serialPulls } from './deliver.ts';
 import { pullContext, clearPulls } from './core/deliver.ts';
 import { asHello, asNonce } from './core/state.ts';
-import { rowsToSay, toolsDownStep, TOOLS_DOWN, TOOLS_DOWN_NOTICE } from './core/rows.ts';
+import { toolsDownStep, TOOLS_DOWN, TOOLS_DOWN_NOTICE } from './core/rows.ts';
+import { QUIET_ROW } from './core/constants.ts';
 import type { ClassicHookInputs, EngineInterface, On } from 'claude-code';
 import type { Hello, Pulls, ShimResult } from './core/types.ts';
+
+/** A rewritten notice row that says nothing (QUIET_ROW). */
+function quiet(row: { content?: unknown }): boolean {
+  const c: unknown = row.content;
+  if (!Array.isArray(c) || c.length !== 1) return false;
+  const block: unknown = c[0];
+  return typeof block === 'object' && block !== null && 'text' in block && block.text === QUIET_ROW;
+}
 
 const HELLO = { plugin: 'sub-human', key: 'hello' } as const;
 const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' } as const;
 const TITLED = { plugin: 'sub-human', key: 'titled' } as const;
-const ROWS = { plugin: 'sub-human', key: 'rows' } as const;
+const REMINDERS = { plugin: 'sub-human', key: 'reminders' } as const;
 const SERVER = 'room'; // the room server's key in .mcp.json
 /** Whether the room server is connected in this session (unsure: yes, as before). */
 const roomUp = async ($: EngineInterface): Promise<boolean> => {
   try { return (await $.mcp.connect(SERVER)).isConnected; } catch { return true; }
 };
-const INJECTED = { plugin: 'sub-human', key: 'rowsInjected' } as const;
+const INJECTED = { plugin: 'sub-human', key: 'remindersInjected' } as const;
 const TOOLS_DOWN_SAID = { plugin: 'sub-human', key: 'toolsDown' } as const;
 const NONCE = { plugin: 'sub-human', key: 'nonce' } as const;
 const PULLS = { plugin: 'sub-human', key: 'pulls' } as const;
@@ -143,10 +152,11 @@ export function registerPrompt(on: On): void {
       // "working" once the turn starts (mod/deliver.ts turn.start): a prompt stopped or refused below starts none
       presence.pending = writesWorking(e.origin, hello, presenceOf(hello)) ? sid : null;
       if (delivering(sid)) {
-        // the held rows text rides once per change: on the first typed prompt after it changes, not on every prompt
-        const { value: rows } = await $.state.get(ROWS);
+        // the held reminders text (the tail's reminders event) rides once per change: on the first typed prompt after
+        // it changes, not on every prompt
+        const { value: reminders } = await $.state.get(REMINDERS);
         const { value: injected } = await $.state.get(INJECTED);
-        const held = typeof rows === 'string' && rows ? rows : null;
+        const say = typeof reminders === 'string' && reminders ? reminders : null;
         const up = await roomUp($);
         // the room server down: the person and Claude are told once per time it goes down (TOOLS_DOWN)
         const { value: wasDown } = await $.state.get(TOOLS_DOWN_SAID);
@@ -156,8 +166,6 @@ export function registerPrompt(on: On): void {
           down = { ...down, context: [...(down.context ?? []), TOOLS_DOWN] };
         }
         if (step.down !== (wasDown === true)) await $.state.set(TOOLS_DOWN_SAID, step.down);
-        // a row's only tool is the room server's hold: while that server is down, the calls are not asked for (ROWS_DOWN once)
-        const say = rowsToSay(held, up);
         if (say && say !== injected) down = { ...down, context: [...(down.context ?? []), say] };
         if (say !== (injected ?? null)) await $.state.set(INJECTED, say); // none held: the same text again is a change
       }
@@ -226,12 +234,14 @@ export function registerPrompt(on: On): void {
     return out;
   }).catch((_$, e, next) => failClosed(e.prompt) ?? next(e)); // a plain prompt goes on, as when a command hook fails
 
-  // The stop above is drawn as a warning row "Operation stopped by hook: ✓ sent" (cc CONTRACT ups-stop-frame): that
-  // row, and only one whose receipt is waiting, is kept as the receipt alone (cc CONTRACT
+  // The stop above is drawn as a warning row "Operation stopped by hook: Sent" (cc CONTRACT ups-stop-frame): that
+  // row, and only one whose receipt is waiting, says nothing for an @room that went through (QUIET_ROW: the person's
+  // own row is the receipt; the words go to the debug log), or the receipt alone (cc CONTRACT
   // session-append-notice-rewrite). The model's copy (an isMeta user row) says the @room line went to the room and
   // nothing is asked of it: read before the person's next words with no turn between, the bare frame read as a request.
-  on('session.append', (_$, e, next) => {
+  on('session.append', ($, e, next) => {
     const row = e.door === 'notice' ? receipts.rewrite(e.message) : receipts.modelRow(e.message);
+    if (row && e.door === 'notice' && quiet(row)) $.ui.log('@room: sent (receipt drawn as nothing)', { to: 'debug' });
     return next(row ? { ...e, message: row } : e);
   }).catch((_$, e, next) => next(e)); // a failure keeps the engine's words
 }

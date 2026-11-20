@@ -5,7 +5,8 @@
  *   - per session id, the transcript path and permission mode of the last main-loop classic event that carried them
  *     (UserPromptSubmit, PostToolUse, Stop, SessionStart, ...: noteEvent);
  *   - per tool_use_id, the agentId its tool.call carried, while that call runs (tool.call fires above classic.PreToolUse,
- *     which runs inside its next: stashAgent, agentOf, dropAgent).
+ *     which runs inside its next: stashAgent, agentOf, dropAgent): mod/consent.ts stashes it for EnterPlanMode,
+ *     ExitPlanMode and the plan tool, so consent tells a subagent's ExitPlanMode from the main loop's.
  * A permission mode can be stale: the person changed it (shift+tab) mid-turn with no event since. Unknown is undefined,
  * and the hook then reads it as it reads a missing field (consent: no review opens).
  * prePayload(e, facts) builds the classic PreToolUse payload from these.

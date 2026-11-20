@@ -12,7 +12,6 @@
  *   list(code) -> [Task]               tasks.json, in id order ([] when absent)
  *   refold(code, entries)              writes fold(entries) as tasks.json
  *   summary(code, viewer) -> "tasks 3 open · #2 you · #4 bob" ('' with no tasks; "tasks: all N done")
- *   mine(code, name) -> open tasks owned by name (a participant row: `◼ #2 parser tests`)
  *   validate(input) -> {ok:true, req} | {ok:false, error}   the `task` tool's arguments
  *   check(task, req, by) -> null | reason   the ownership rules, pure (below)
  *   apply(store, input, {by}) -> {ok:true, task, text} | {ok:false, error}   host only (HOST_ONLY otherwise)
@@ -53,7 +52,7 @@ import type { FoldedTask, Task, TaskReq } from './types-app.ts';
 import type { Entry, EntryInput, KvApi, RoomStore } from './room/types.ts';
 import type { Room } from './room.ts';
 import type { Projected } from './room/task-files.ts';
-import type { RoomCode, SeatName } from './brand.ts';
+import type { RoomCode } from './brand.ts';
 
 /** reqOf: a task_req or task entry's task fields. */
 interface ReqFields {
@@ -133,7 +132,6 @@ function refold(code: RoomCode, entries: readonly Readonly<Entry>[], kv: KvApi =
 }
 
 const isOpen = (t: Task) => OPEN.has(t.status || 'pending');
-const mine = (code: RoomCode, name: SeatName): Task[] => list(code).filter(t => isOpen(t) && t.owner === name);
 
 function summary(code: RoomCode, viewer: string | null | undefined): string {
   const all = list(code).filter(t => !isRoomTask(t, code));
@@ -339,7 +337,7 @@ function repair(store: RoomStore): Projected {
 }
 
 export {
-  OPS, list, foldAll, fold, refold, summary, mine, validate, check, apply, openRoomTask, closeRoomTask, repair, reqOf,
+  OPS, list, foldAll, fold, refold, summary, validate, check, apply, openRoomTask, closeRoomTask, repair, reqOf,
   requestText, isRoomTask,
 };
 export type { Applied };

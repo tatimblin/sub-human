@@ -18,7 +18,6 @@
 import type { JoinPayload, JoinReply, HookJson, HookJsonSpecific, Loose, OriginLike, PinnedStatus, RunOutput, SubHumanRead } from './types.ts';
 import type { PinnedReport } from '../../hooks/types.ts';
 import { copyLine } from './copy.ts';
-import { BYPASS_NOTE } from './constants.ts';
 
 /** The command as command.run names it (a plugin skill's name, or its bare form). */
 export const COMMANDS: readonly string[] = Object.freeze(['sub-human:sub-human', 'sub-human']);
@@ -68,19 +67,6 @@ export function joinPayload({ sid, cwd, args, nonce, mode, take }: { sid: unknow
 
 /** A join's confirmation waits this long, so it follows the command's own row (added after the hook returns). */
 export const CONFIRM_AFTER_MS = 150;
-
-/**
- * A join's confirmation lines with the bypass-permissions note (BYPASS_NOTE, at the end of the last line) as `mode`
- * says. join.ts decides it from the mode the module last saw before the command ran, which a shift+tab since the last
- * hook event leaves stale (#14); the command's own expansion, which runs inside command.run's next(e), carries the
- * mode it ran in, so mod/deliver.ts redoes the note from that. Only a member's join comes this way (the room's Claude
- * leaves /sub-human to the classic hook), so the note's role rule needs no check here.
- */
-export function bypassNoted(lines: readonly string[], mode: unknown): string[] {
-  const bare = lines.map(l => (l.endsWith(BYPASS_NOTE) ? l.slice(0, -BYPASS_NOTE.length) : l));
-  const last = bare.length - 1;
-  return mode === 'bypassPermissions' ? bare.map((l, i) => (i === last ? `${l}${BYPASS_NOTE}` : l)) : bare;
-}
 
 /** One notice per line (a newline in one is drawn as U+FFFD, cc CONTRACT ui-log-notice); blank lines dropped. */
 export const noticeLines = (text: unknown): string[] => String(text ?? '').split('\n').filter(l => l.trim());
@@ -167,8 +153,9 @@ export function readReply(run: RunOutput | null | undefined, { ms = null, error 
   const say = sub && typeof sub.say === 'string' ? sub : null;
   if (!o || !say) return failed();
   const hso: HookJsonSpecific = o.hookSpecificOutput && typeof o.hookSpecificOutput === 'object' ? o.hookSpecificOutput : {};
+  const debug = typeof say.debug === 'string' && say.debug ? { debug: say.debug.slice(0, 500) } : {};
   if (say.joined === true && typeof hso.additionalContext === 'string' && hso.additionalContext) {
-    return { kind: 'joined', context: hso.additionalContext, lines: noticeLines(say.say) };
+    return { kind: 'joined', context: hso.additionalContext, lines: noticeLines(say.say), ...debug };
   }
   const p: Loose<PinnedReport> | null = say.pinned && typeof say.pinned === 'object' ? say.pinned : null;
   const one = (s: unknown) => (typeof s === 'string' && s ? s.replace(/\n/g, ' ') : null);
@@ -181,7 +168,7 @@ export function readReply(run: RunOutput | null | undefined, { ms = null, error 
     ...(typeof p.ref === 'string' && /^[0-9a-f]{12}$/.test(p.ref) ? { ref: p.ref } : {}),
     ...(line ? { line } : {}),
   } : null;
-  return { kind: 'say', lines: noticeLines(say.say), refused: say.refused === true, shareable: say.shareable === true, ...(pinned ? { pinned } : {}) };
+  return { kind: 'say', lines: noticeLines(say.say), refused: say.refused === true, shareable: say.shareable === true, ...(pinned ? { pinned } : {}), ...debug };
 }
 
 /** What Claude Code draws before a plugin's status text ("  ⚠ sub-human: "), in cells, with a cell to spare. */

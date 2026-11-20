@@ -35,8 +35,12 @@ import { mergeClassic } from './core/prompt.ts';
 import { prePayload, rejectedPayload } from './core/facts.ts';
 import { asHello } from './core/state.ts';
 import { facts, copies } from './deliver.ts';
-import { copyAsked, copyCard, copyOutcome, copySaid, copyTo, clipboardCommands, COPY_QUESTION, COPIED, NO_TOOL, GONE } from './core/copy.ts';
-import type { EngineInterface, On } from 'claude-code';
+import { copyAsked, copyCard, copyOutcome, copySaid, copyTo, copyNews, clipboardCommands, COPY_QUESTION, COPIED, NO_TOOL, GONE } from './core/copy.ts';
+import { keepQuiet, quietOn, quietRow } from './core/quiet.ts';
+import { ROOM_AGENT } from './core/rows.ts';
+import { rowOffered } from './rows.ts';
+import { NOTE_ANSWER } from './core/constants.ts';
+import type { EngineInterface, On, RenderElement } from 'claude-code';
 import type { Hello, RunOutput, SubHumanRead } from './core/types.ts';
 
 const HELLO = { plugin: 'sub-human', key: 'hello' } as const;
@@ -45,6 +49,7 @@ const PLAN_TOOL = 'mcp__plugin_sub-human_room__plan';
 /** The event consent takes a plan_mode attachment as (lib/cc/env.ts PLAN_ATTACHMENT_EVENT). */
 const PLAN_ATTACHMENT = 'PlanAttachment';
 const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' } as const;
+const QUIET = { plugin: 'sub-human', key: 'quietCalls' } as const;
 
 async function helloOf($: EngineInterface): Promise<Hello | null> {
   const { value } = await $.state.get(HELLO);
@@ -65,12 +70,76 @@ function runConsent($: EngineInterface, stdin: unknown, sid: unknown): Promise<R
   });
 }
 
-/** Consent's notices and its report: a systemMessage as $.ui.log lines, reviewOpen into $.state. */
-async function apply($: EngineInterface, { systemMessage, subHuman }: { systemMessage?: string; subHuman?: SubHumanRead | undefined }) {
+/** Consent's notices and its report: a systemMessage as $.ui.log lines, reviewOpen into $.state, a debug line to
+ * Claude Code's debug log, and a quiet call (toolUseId: the call the report is about) into the calls whose rows are
+ * hidden. */
+async function apply($: EngineInterface, { systemMessage, subHuman }: { systemMessage?: string; subHuman?: SubHumanRead | undefined }, toolUseId?: unknown) {
   if (systemMessage) for (const line of asNotice(systemMessage).split('\n')) if (line.trim()) $.ui.log(line);
+  if (subHuman && typeof subHuman.debug === 'string' && subHuman.debug) $.ui.log(subHuman.debug, { to: 'debug' });
   const open = reviewOpenOf(subHuman);
   if (open !== undefined) await $.state.set(REVIEW, open);
+  if (subHuman && subHuman.quiet === true) await hideCall($, toolUseId);
 }
+
+/** The call toolUseId's rows drawn as nothing from now on (kept in $.state quietCalls), unless the verdict turns
+ * quiet-plan off. */
+async function hideCall($: EngineInterface, toolUseId: unknown) {
+  if (typeof toolUseId !== 'string' || !toolUseId) return;
+  if (!quietOn(await helloOf($))) return;
+  const kept = await quietCalls($);
+  if (kept.includes(toolUseId)) return;
+  const next = keepQuiet(kept, toolUseId);
+  quiet = new Set(next);
+  await $.state.set(QUIET, next);
+  $.ui.invalidate('ui.render'); // a row drawn already (the result came before this report) is drawn again, hidden
+}
+
+/** The calls whose rows are hidden (mod/core/quiet.ts), in memory once read from $.state (kept there across a reload
+ * and a --resume: the rows are drawn again then). null: not read yet. */
+let quiet: Set<string> | null = null;
+async function quietCalls($: EngineInterface): Promise<string[]> {
+  if (quiet) return [...quiet];
+  const { value } = await $.state.get(QUIET);
+  const ids = Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+  quiet = new Set(ids);
+  return ids;
+}
+
+/** #34: the module's own note card while it is asked ($.ui.ask runs through this plugin's other AskUserQuestion hooks:
+ * cc CONTRACT module-ask-through-hooks), so they pass that card by, and only it: its exact question and header. */
+let asking: { question: string; header: string } | null = null;
+/** The AskUserQuestion call (or its input in a result) is the module's own note card: one of its questions is it. */
+function ownCard(input: unknown): boolean {
+  const a = asking;
+  if (!a || !isRec(input) || !Array.isArray(input.questions)) return false;
+  return input.questions.some((q: unknown) => isRec(q) && q.question === a.question && q.header === a.header);
+}
+/** The person's line when consent did not answer their Send / Discard on that card: it may have recorded the answer
+ * before it failed, so the line says only that the note may not have gone. */
+const NOTE_NOT_TAKEN = 'Your note may not have been sent; ask your Claude to check its card.';
+
+/** The note's card consent asked for (subHuman.noteAsk), checked, or null. */
+function noteAskOf(subHuman: SubHumanRead | undefined): { question: string; header: string; options: string[] } | null {
+  const a: unknown = subHuman ? subHuman.noteAsk : undefined;
+  if (!a || typeof a !== 'object' || !('question' in a) || !('header' in a) || !('options' in a)) return null;
+  const { question, header, options } = a;
+  if (typeof question !== 'string' || typeof header !== 'string' || !Array.isArray(options)) return null;
+  const labels = options.filter((o): o is string => typeof o === 'string');
+  return question && labels.length >= 2 ? { question, header, options: labels } : null;
+}
+
+/** The person's Send or Discard on the note's card, asked by the module itself; null when dismissed, typed over
+ * ("Other": not a choice the card offers) or with no one to ask (-p). */
+async function askNote($: EngineInterface, ask: { question: string; header: string; options: string[] }): Promise<'Send' | 'Discard' | null> {
+  asking = { question: ask.question, header: ask.header };
+  try {
+    const got = await $.ui.ask(ask.question, { options: ask.options, header: ask.header });
+    return got === 'Send' || got === 'Discard' ? got : null;
+  } catch { return null; } finally { asking = null; }
+}
+
+/** An empty drawing: the row is not drawn at all (live 2.1.296: an empty Box takes no line). */
+const EMPTY: RenderElement = { type: 'Box', props: {}, children: [] };
 
 /** The prompt holds typed text (the last PromptHint drawn said isDraft): module state, lost on reload (then false). */
 let draft = false;
@@ -112,7 +181,7 @@ async function copyPost($: EngineInterface, e: { tool_use_id?: unknown; tool_inp
     });
     said = (await copyTo((name, init) => $.process.run(['sh', `${$.plugin.root}/scripts/clip.sh`, name], init), out.copy, commands)) === 'copied' ? COPIED : NO_TOOL;
   }
-  $.ui.log(said);
+  if (copyNews(said)) $.ui.log(said); else $.ui.log(`copy card: ${said}`, { to: 'debug' });
   return copySaid(said);
 }
 
@@ -124,7 +193,10 @@ const isRec = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 export function registerConsent(on: On): void {
   on('tool.call', { tool: ['EnterPlanMode', 'ExitPlanMode', PLAN_TOOL] }, async ($, e, next) => {
     await $.state.set(REVIEW, true);
-    const r = await next(e);
+    // the loop the call runs in, for its classic.PreToolUse inside next (its event carries none): consent tells a
+    // subagent's ExitPlanMode from the main loop's by agent_id (hooks/consent.ts waitingOf, signoffElsewhere)
+    facts.stashAgent(e.tool_use_id, e.agentId);
+    const r = await next(e).finally(() => { facts.dropAgent(e.tool_use_id); });
     if (e.tool !== 'ExitPlanMode' || e.agentId || !(r.deny !== undefined || r.isError)) return r;
     try {
       const sid = await $.session.id();
@@ -132,14 +204,32 @@ export function registerConsent(on: On): void {
       const text = r.deny !== undefined ? r.deny : typeof r.text === 'string' ? r.text : '';
       const payload = rejectedPayload(e, { sid, cwd: await $.session.cwd().catch(() => undefined), facts: facts.of(sid), text });
       const { result, ...said } = toClassic('PostToolUseFailure', await runConsent($, payload, sid));
-      await apply($, said);
-      const lines = result.additionalContext ?? [];
+      await apply($, said, e.tool_use_id);
+      let lines = result.additionalContext ?? [];
+      // #34: the note's Send / Discard first, asked here while plan mode is still on; consent records the answer and
+      // its line (nothing to build, the closing call next) replaces the refusal's "the card next"
+      const ask = noteAskOf(said.subHuman);
+      if (ask) {
+        const label = await askNote($, ask);
+        // read as the refusal's own event: its context joins the refusal (toClassic keeps only the fields an event reads)
+        const run = await runConsent($, { hook_event_name: NOTE_ANSWER, session_id: sid, sub_human_note: label }, sid).catch(() => null);
+        const answered = run ? toClassic('PostToolUseFailure', run) : null;
+        // consent did not answer (its report missing: it failed or timed out): the person's Send or Discard may or may
+        // not have been recorded first, so they hear that it may not have gone; the model keeps the refusal's own line
+        if (!answered || !answered.subHuman) { if (label) $.ui.log(NOTE_NOT_TAKEN); }
+        else {
+          const { result: res, ...rest } = answered;
+          await apply($, rest);
+          if (res.additionalContext && res.additionalContext.length) lines = res.additionalContext;
+        }
+      }
       if (!lines.length) return r;
       return r.deny !== undefined ? { deny: [r.deny, ...lines].join('\n\n') } : { ...r, context: [...(r.context ?? []), ...lines] };
     } catch { return r; }
   }).catch((_$, e, next) => next(e)); // the flag stays as it was; past next, a failure returns the refusal as it came
 
   on('classic.PreToolUse', { tool: ['AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode', /^mcp__plugin_sub-human_room__/] }, async ($, e, next) => {
+    if (e.tool === 'AskUserQuestion' && ownCard(e)) return next(e); // the module's own note card ($.ui.ask): not consent's
     // the invite's copy card is the module's alone (the line is only in its memory): no node consent for it
     const copy = e.tool === 'AskUserQuestion' ? isCopyCard(e) : null;
     if (copy) {
@@ -153,7 +243,7 @@ export function registerConsent(on: On): void {
     // ExitPlanMode: whether the person had typed text in the prompt as the view opens (their next keys go to it: item 8)
     const payload = e.tool === 'ExitPlanMode' && draft ? { ...base, sub_human_typing: true } : base;
     const { result, ...said } = toPre(await runConsent($, payload, sid));
-    await apply($, said);
+    await apply($, said, e.tool_use_id);
     // each answer written out, one branch per shape: the plugin directory reads no spread in a permission answer
     const ctx = result.additionalContext;
     const input = result.updatedInput;
@@ -172,12 +262,13 @@ export function registerConsent(on: On): void {
 
   on('classic.PostToolUse', { tool_name: ['AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode'] }, async ($, e, next) => {
     facts.noteEvent(e);
+    if (e.tool_name === 'AskUserQuestion' && ownCard(e.tool_input)) return next(e); // the module's own note card: its answer is read where it was asked
     if (e.tool_name === 'AskUserQuestion' && isCopyCard(e.tool_input, e.tool_response)) {
       return mergeClassic({ additionalContext: [await copyPost($, e)] }, await next(e));
     }
     if (!seatedOrUnsure(await helloOf($), e.session_id)) return next(e);
     const { result, ...said } = toClassic('PostToolUse', await runConsent($, e, e.session_id));
-    await apply($, said);
+    await apply($, said, e.tool_use_id);
     return mergeClassic(result, await next(e));
   }).catch((_$, e, next) => next(e));
 
@@ -207,6 +298,25 @@ export function registerConsent(on: On): void {
     const line = subHuman && typeof subHuman.attach === 'string' ? subHuman.attach : '';
     return line ? { text: `${r.text}\n\n${line}` } : r;
   }).catch((_$, e, next) => next(e)); // no seed: the edit's ExitPlanMode seeds the file instead (lib/consent/edit.ts)
+
+  // the room row's fallback call (auto mode refused the module's own spawn, so the model makes it: mod/deliver.ts
+  // tellAsk) draws nothing either, as the module's spawn draws nothing; only that one agent type, from the main loop,
+  // while the fallback asks for it
+  on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
+    if (!e.agentId && rowOffered() && e.subagent_type === ROOM_AGENT) {
+      await hideCall($, e.tool_use_id).catch(() => {});
+    }
+    return next(e);
+  }).catch((_$, e, next) => next(e));
+
+  // sub-human's own plan-mode calls draw nothing (docs/next/quiet/SPIKES.md spike 2): a review's false "Entered plan
+  // mode", its plan view's "User approved / rejected Claude's plan", an edit's red save (#9). Only the calls consent
+  // named (subHuman.quiet, by tool_use_id): a person's own plan mode and every other error draw as Claude Code draws
+  // them. Off with the verdict's quiet-plan (cc CONTRACT render-tool-rows-hide): Claude Code's own rows.
+  on('ui.render', { component: ['ToolUse', 'ToolResult'] }, async ($, e, next) => {
+    const ids = await quietCalls($);
+    return quietRow(ids, e.props.tool_use_id) ? EMPTY : next(e);
+  }).catch((_$, e, next) => next(e));
 
   // observe only: whether the person is typing (PromptHint isDraft), for a plan view about to open (item 8)
   on('ui.render', { component: 'PromptHint' }, (_$, e, next) => {

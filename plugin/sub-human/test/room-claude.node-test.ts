@@ -72,8 +72,7 @@ test('room-claude: spawnPlan argv, --settings env, clean env (no member session 
   assert.equal(a[9], '--settings');
   assert.deepEqual(JSON.parse(must(a[10])), {
     env: { SUB_HUMAN_HOME: identity.home(), SUB_HUMAN_ROOM: code, CLAUDE_CODE_TASK_LIST_ID: `sh-${code}`, CLAUDE_CODE_ENABLE_TODO_TOOLS: '1' },
-    crossSessionInbound: 'refuse',
-    permissions: { allow: ['mcp__plugin_sub-human_room__hold'] }, // its rows' one tool: nobody answers a prompt there
+    crossSessionInbound: 'refuse', // and no permissions: it spawns no rows and calls nothing
   });
   assert.equal(a.at(-1), '/sub-human');
   assert.ok(!a.includes('--model'), 'no model is prescribed: the room\'s Claude uses the user\'s default');
@@ -184,7 +183,8 @@ test('room-claude: reap waits the grace, marks closing, completes the room task 
     const done = must(R.readAll().find(e => e.kind === 'task' && e.status === 'completed'));
     assert.deepEqual([done.from, done.via, done.owner], ['room', 'system', 'room'], 'the reaper\'s own entry');
     assert.ok(!R.readAll().some(e => e.kind === 'status' && e.to === 'claude'), 'nothing asked of a model');
-    assert.deepEqual(s.calls().map(c => c.argv), [['stop', 'cafe1234'], ['agents', '--json', '--all']], 'then looks for strays');
+    // 0.6.0: once its process is gone the stopped session is deleted too (claude rm: no stale row in the agent view)
+    assert.deepEqual(s.calls().map(c => c.argv), [['stop', 'cafe1234'], ['agents', '--json', '--all'], ['rm', 'cafe1234']], 'then looks for strays, then deletes it');
     assert.equal(must(s.calls()[0]).env.CLAUDE_PID, undefined, 'clean env for stop');
     assert.equal(must(s.calls()[0]).env.CLAUDE_CONFIG_DIR, cfg, 'stop reaches the same daemon (CLAUDE_CONFIG_DIR is passed)');
     const rec = must(identity.readMembers(code).claude);

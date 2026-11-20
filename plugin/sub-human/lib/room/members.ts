@@ -103,8 +103,8 @@ function ops(s: OpsStore): Pick<MembersApi, 'join' | 'leave' | 'beat'> {
         m.left_at = new Date().toISOString();
         return ms;
       }) != null;
-      // their last presence ("permission", "working") is not theirs any more: rows and mirrors drop it
-      if (left) { try { s.kv.delete(`presence/${name}`); } catch { /* best effort: rows ignore a left seat's */ } }
+      // their last presence ("permission", "working") is not theirs any more: the store and mirrors drop it
+      if (left) { try { s.kv.delete(`presence/${name}`); } catch { /* best effort: the room row reads only seats still here */ } }
       return left;
     },
     beat(name, { presence, now = Date.now() } = {}) {

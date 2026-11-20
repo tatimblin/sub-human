@@ -1,32 +1,19 @@
 /**
- * plugin/sub-human/lib/commands/help.ts: `/sub-human help [anything]`, the full list of commands. Read only, and it runs
- * without the hooks module (a refusal points to it). Words after help are ignored: `/sub-human help join` is the list.
+ * plugin/sub-human/lib/commands/help.ts: `/sub-human help [anything]`: six lines, one per thing a person does in their
+ * first hour (docs/next/quiet/COPY.md §5.1). Every other command, flag and form (join lines, admit, kick, invite's
+ * flags, the row status line) is in the plugin's README. Read only, and it runs without the hooks module (a refusal
+ * points to it). Words after help are ignored: there are no topics.
  */
 import { say } from './answer.ts';
 import type { OpenVerb } from './types.ts';
 
 export const HELP: string = [
-  'commands:',
-  '  /sub-human                    in a room: who is here; else join the open room, or open one, as your git name',
-  '  /sub-human NAME [ROOM]        join (or open) a room as NAME; ROOM (like vole-8126) only when more than one is open',
-  '  /sub-human ROOM               join that room on this machine as your git name (also: /sub-human join ROOM)',
-  '  /sub-human invite             a line for someone on another machine to join this room (over your tailnet when Tailscale is up here, else ssh)',
-  '      --ssh [USER@HOST]              over ssh, at the address they reach this machine at (default: SUB_HUMAN_SSH_ADDR, else you@this-host)',
-  '      --web | --public               over the web: Tailscale Serve (your tailnet) or Tailscale Funnel (public)',
-  '      --stop                         stop serving this room over the web',
-  '      --cancel [ID]                  cancel an invite nobody used yet (ID: only when several are open; it lists them)',
-  '      --no-card                      no card offering to copy the line to your clipboard (the PIN is never copied)',
-  '  /sub-human join HOST ROOM SECRET [PIN] [--as NAME] [--home PATH]   the line from an invite, the PIN the host told you after it',
-  '  /sub-human join URL#SECRET [PIN] [--as NAME]              the same over the web',
-  '  /sub-human join PIN           the PIN alone, when their machine asks for it; then the host lets you in',
-  '  /sub-human join HOST ROOM [--as NAME] [--home PATH]   a room on a machine you can already ssh to: no invite',
-  '  /sub-human admit [ID]         (host) who is waiting to join, and the ID that lets one in (the card does the same)',
-  '  /sub-human kick NAME          (host) end the connection NAME joined over',
-  '  /sub-human leave              leave the room (the session stays open)',
-  '  /sub-human doctor             what is wrong on this machine, and how to fix it (read only)',
-  '  /sub-human help               this list',
-  '  @room TEXT    post your exact words to the room; your Claude can message other Claudes, edit the room plan and the task list',
-  'rows show names; for their live status (tasks, plans, sign-off, link) add the subagentStatusLine line in the README\'s Rows section to your ~/.claude/settings.json',
+  '/sub-human            Join the room here, or open one',
+  '/sub-human invite     Invite someone on another machine',
+  '/sub-human leave      Leave the room',
+  '/sub-human doctor     Find and fix problems',
+  '@room <message>       Say something to everyone in the room',
+  'Everything else: the README, github.com/tatimblin/sub-human',
 ].join('\n');
 
 export const help: OpenVerb = () => say(HELP);

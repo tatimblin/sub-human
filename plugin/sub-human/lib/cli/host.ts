@@ -132,7 +132,8 @@ function admit(args: readonly string[]): number {
   if (!req) return fail(`room ${code} has no join request ${ref} (admit with no ID lists them)`);
   if (!p.flags.yes && !p.flags.refuse) {
     if (!process.stdin.isTTY) return fail('not a terminal: add --yes to let them in (or --refuse)');
-    const yes = ask(`${adm.describe(req)} typed your PIN and wants to join room ${code}.\nLet them in? That machine joins the room and can post only as the people it brings. [y/N] `);
+    // admit answers a request made without the PIN (the right PIN lets a machine in with no card)
+    const yes = ask(`${adm.describe(req)} wants to join room ${code} without the PIN.\nLet them in? That machine joins the room and can post only as the people it brings. [y/N] `);
     if (!/^y(es)?$/i.test(yes)) return fail(`not let in; the request still waits (${text.cliLine(`admit ${req.ref} --refuse`)} ends it)`);
   }
   try {

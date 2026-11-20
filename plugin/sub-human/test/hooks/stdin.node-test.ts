@@ -1,7 +1,6 @@
 // Every hook handler on stdin it cannot use: empty, not JSON, or JSON that is not an object. Claude Code always sends an
-// object, but a hand run, a shim bug or a truncated pipe must not block the session (exit 2; row-rewake's exit 2 is its
-// asyncRewake message, and it finds its seat by CLAUDE_PID), print something that is not one JSON object, or hang past
-// the hook's timeout. Each runs as hooks.json and the hooks module run it: node hooks/run.ts <handler>, which reads stdin
+// object, but a hand run, a shim bug or a truncated pipe must not block the session (exit 2), print something that is
+// not one JSON object, or hang past the hook's timeout. Each runs as hooks.json and the hooks module run it: node hooks/run.ts <handler>, which reads stdin
 // once. The TaskCompleted gate's fail-closed case (exit 2 when the event name is readable) is in tasks.node-test.ts; the
 // join's hidden reply on a throw past parsing is in join.node-test.ts.
 import test from 'node:test';
@@ -71,12 +70,7 @@ for (const [handler, timeoutS] of TIMEOUTS) {
       const what = `${handler} on ${JSON.stringify(input)}`;
       assert.equal(r.error, undefined, `${what}: ${r.error}`);
       assert.ok(Date.now() - t0 < timeoutS * 1000, `${what}: took ${Date.now() - t0} ms`);
-      if (handler === 'row-rewake' && r.status === 2) {
-        // its one way to speak (asyncRewake): the seat, found by CLAUDE_PID, has no rows, so it asks for them
-        assert.match(r.stderr, /^sub-human: this session was resumed, and its rows are NOT running/, what);
-      } else {
-        assert.ok(r.status === 0 || r.status === 1, `${what}: exit ${r.status} (2 would block the session) ${r.stderr}`);
-      }
+      assert.ok(r.status === 0 || r.status === 1, `${what}: exit ${r.status} (2 would block the session) ${r.stderr}`);
       const out = r.stdout.trim();
       if (out) {
         let json: unknown;

@@ -33,7 +33,8 @@ test('deliver: the delivery-error notice is due once per window', async () => {
   assert.equal(d.noticeDue(1000, 1000 + d.MOD_DELIVERY_ERROR_LOG_MS - 1), false);
   assert.equal(d.noticeDue(1000, 1000 + d.MOD_DELIVERY_ERROR_LOG_MS), true);
   assert.equal(d.DELIVERY_ERROR_NOTICE.includes('\n'), false, 'a notice is one line');
-  assert.match(d.DELIVERY_ERROR_NOTICE, /^a room message didn't arrive here\. Run \/sub-human doctor\.$/);
+  assert.match(d.DELIVERY_ERROR_NOTICE, /^A room message didn't arrive\. Run \/sub-human doctor\.$/, '<what didn\'t happen>. <one action>.');
+  assert.match(d.TAIL_RESTART(3), /^tail: /, 'a restart is the debug log\'s line, never the person\'s');
 });
 
 test('deliver: the tail child gets the env a shimmed hook gets', async () => {
@@ -114,7 +115,7 @@ test('deliver (PLAN-JOIN step 3): a taken seat\'s wake is one line for the perso
   const d = await import('../mod/core/deliver.ts');
   const context = 'SUB-HUMAN: you are bob\'s Claude in room otter-4821 (with alice).\n\nROWS: Agent({…})';
   const w = d.takeWake({ code: 'otter-4821', name: 'bob', check: 'check 3f9c-2a71', context });
-  assert.equal(w.shown, 'You\'re in room otter-4821 as bob (check 3f9c-2a71, as the host\'s room line shows)');
+  assert.equal(w.shown, 'You\'re in room otter-4821 as bob (check 3f9c-2a71)');
   const parts = must(d.wakeParts(w.text), 'a member wake');
   assert.equal(parts.shown, w.shown, 'the person sees the one line');
   assert.deepEqual(parts.context.split('\n').slice(1), [

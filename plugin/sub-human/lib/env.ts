@@ -14,7 +14,7 @@
  *                 file or folder
  *   envMs(name, fallback = its default) -> number   a number of milliseconds, else fallback. Unset, empty,
  *       non-numeric, negative or infinite values give the fallback. 0 also gives the fallback, unless the knob is
- *       allowZero: only the waits where 0 means "do not wait" take it (the reaper and the rewake hook, which the tests
+ *       allowZero: only the waits where 0 means "do not wait" take it (the reaper, which the tests
  *       run with no wait). Everywhere else 0 would mean a busy loop or an instant flush, so it is ignored.
  *   testMs(name, fallback?) -> number        envMs, honoured only under the test preload (SUB_HUMAN_TEST=1, test/helpers.ts):
  *       a timing the tests shorten that would weaken a guard if a person (or a steered model) set it
@@ -51,16 +51,12 @@ export const ENV = {
   SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS: { kind: 'ms', does: 'the room\'s Claude with no human' },
   SUB_HUMAN_REAP_STOP_MS: { kind: 'ms', allowZero: true, does: 'after `claude stop`, the wait for the process' },
   SUB_HUMAN_REAP_GRACE_MS: { kind: 'ms', allowZero: true, does: 'a quick rejoin cancels the reap' },
-  SUB_HUMAN_REWAKE_WAIT_MS: { kind: 'ms', allowZero: true, does: 'row-rewake waits for the seat' },
   SUB_HUMAN_ROOM_GC_MS: { kind: 'ms', does: 'an idle room is set aside after this' },
   SUB_HUMAN_EXIT_INPUT_WAIT_MS: { kind: 'ms', does: 'consent: the wait for ExitPlanMode\'s input' },
   SUB_HUMAN_FORK_WAIT_MS: { kind: 'ms', does: 'session-restore: the fork\'s continued-in record' },
   SUB_HUMAN_HOLD_BEAT_MS: { kind: 'ms', does: 'the hold: progress re-sent' },
   SUB_HUMAN_HOLD_POLL_MS: { kind: 'ms', does: 'the hold\'s poll' },
-  SUB_HUMAN_HOLD_GRACE_MS: { kind: 'ms', does: 'the hold: a name is announced only after this' },
-  SUB_HUMAN_HOLD_RESPAWN_MS: { kind: 'ms', does: 'the hold\'s respawn' },
   SUB_HUMAN_HOLD_WHO_MS: { kind: 'ms', does: 'the hold: `me` re-resolved' },
-  SUB_HUMAN_HOLD_ROOM_GAP_MS: { kind: 'ms', does: 'the hold: a returned room hold still counts' },
   SUB_HUMAN_LINK_RETRY_MS: { kind: 'ms', does: 'the link daemon\'s first retry' },
   SUB_HUMAN_LINK_RETRY_MAX_MS: { kind: 'ms', does: 'the link daemon\'s longest retry' },
   SUB_HUMAN_LINK_PING_MS: { kind: 'ms', does: 'the link\'s ping' },
@@ -101,7 +97,7 @@ export const ENV = {
   SUB_HUMAN_WEB_FRONT: { kind: 'str', does: 'not a user knob: the tests\' and the lab\'s HTTPS front for --web (webFront)' },
   SUB_HUMAN_NODE: { kind: 'path', does: 'the node every plugin command runs on (hooks/node.sh), before any it looks for' },
   SUB_HUMAN_NODE_ROOT: { kind: 'path', does: 'not a user knob: hooks/node.sh looks for node\'s install places under this folder instead of / (the tests)' },
-  SUB_HUMAN_CC_OFF: { kind: 'str', does: 'features forced to their fallback, comma separated (room-session, tasks, plan-edit, sign-off): lib/cc/verdict.ts forced, for tests and live checks' },
+  SUB_HUMAN_CC_OFF: { kind: 'str', does: 'features forced to their fallback, comma separated (tasks, plan-edit, sign-off, reap-rm, quiet-plan, keep-mode, room-row): lib/cc/verdict.ts forced, for tests and live checks' },
 } as const;
 // the table's shape, checked apart from the table: an exported `satisfies` is a type an isolated declaration cannot infer
 ENV satisfies Record<`SUB_HUMAN_${string}`, Knob>;
@@ -133,16 +129,12 @@ export const MS_DEFAULTS: { readonly [N in Of<'ms'>]: number } = {
   SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS: config.ROOM_CLAUDE_ORPHAN_MS,
   SUB_HUMAN_REAP_STOP_MS: config.REAP_STOP_MS,
   SUB_HUMAN_REAP_GRACE_MS: config.REAP_GRACE_MS,
-  SUB_HUMAN_REWAKE_WAIT_MS: config.REWAKE_WAIT_MS,
   SUB_HUMAN_ROOM_GC_MS: config.ROOM_GC_MS,
   SUB_HUMAN_EXIT_INPUT_WAIT_MS: config.EXIT_INPUT_WAIT_MS,
   SUB_HUMAN_FORK_WAIT_MS: config.FORK_RECORD_WAIT_MS,
   SUB_HUMAN_HOLD_BEAT_MS: config.HOLD_BEAT_MS,
   SUB_HUMAN_HOLD_POLL_MS: config.HOLD_POLL_MS,
-  SUB_HUMAN_HOLD_GRACE_MS: config.HOLD_GRACE_MS,
-  SUB_HUMAN_HOLD_RESPAWN_MS: config.HOLD_RESPAWN_MS,
   SUB_HUMAN_HOLD_WHO_MS: config.HOLD_WHO_MS,
-  SUB_HUMAN_HOLD_ROOM_GAP_MS: config.HOLD_ROOM_GAP_MS,
   SUB_HUMAN_LINK_RETRY_MS: config.LINK_RETRY_MS,
   SUB_HUMAN_LINK_RETRY_MAX_MS: config.LINK_RETRY_MAX_MS,
   SUB_HUMAN_LINK_PING_MS: config.LINK_PING_MS,

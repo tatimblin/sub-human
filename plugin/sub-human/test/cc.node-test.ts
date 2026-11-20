@@ -396,6 +396,19 @@ test('shapeRe: ~ is one minified identifier, the rest is literal', () => {
   assert.ok(!cc.shapeRe('a.b(~)').test('aXb(c)'));
 });
 
+test('task-internal-hidden probes the 5 s reset\'s own check too: a reset that skipped _internal tasks fails the entry', () => {
+  const entry = must(cc.CONTRACT.find(e => e.id === 'task-internal-hidden'));
+  // 2.1.296's view filter, the reset timer and resetTaskList (hus), as the binary has them
+  const view = 'let r=e.filter((t)=>!t.metadata?._internal);if(!this.#x)';
+  const timer = 'this.#p=!0,H0(i,this.#r).then(async(e)=>{if(e.length>0&&e.every((n)=>n.status==="completed")&&await hus(i,this.#r))this.#c=[]';
+  const reset = 'let T=fe(d[y],b);if(T===null)continue;if(T.status!=="completed")return!1}}}else if((await H0(e)).some((h)=>h.status!=="completed"))return!1;';
+  const run = (text: string) => must(cc.probe(Buffer.from(text, 'latin1'), { entries: [entry] })[0]);
+  assert.equal(run(view + timer + reset).ok, true);
+  const skipping = timer.replace('e.length>0&&e.every(', 'e.length>0&&e.filter((t)=>!t.metadata?._internal).every(');
+  assert.equal(run(view + skipping + reset).ok, false, 'a timer that filters _internal out before its check');
+  assert.equal(run(view + timer).ok, false, 'resetTaskList\'s re-check is probed as well');
+});
+
 test('the plugin ships exactly one hooks module, at the path hooks.json names', () => {
   // cc CONTRACT hooks-json-modules / hooks-modules: an installed plugin's function hooks are the one module that
   // hooks/hooks.json names under `modules` (relative to hooks.json), loaded by default since 2.1.292.

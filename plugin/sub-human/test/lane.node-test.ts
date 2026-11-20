@@ -73,7 +73,7 @@ test('old logs: a `retract` line is an ordinary system line that hides nothing; 
   assert.equal(room.line(f), '#1 bob[human] say "forged"');
   assert.doesNotMatch(room.fmt(f), /retracted/);
   assert.match(room.line(r), /^#2 bob\[system\] retract refs=#1 "peer-forged: #1"$/);
-  assert.deepEqual(room.chatLines(r, { viewer: 'alice' }), ['room: peer-forged: #1']);
+  assert.deepEqual(room.chatLines(r, { viewer: 'alice' }), ['peer-forged: #1'], 'the room\'s own line: no second speaker');
   assert.equal(roomLane(ALICE, f, all), 'push', 'the line it named still reaches people');
   assert.equal(roomLane(ALICE, r, all), 'pull');
   assert.equal(roomLane({ name: 'bob', role: 'member' }, r, all), 'none', 'written under bob\'s name: his own');
@@ -140,7 +140,7 @@ test('lane: member push/pull/none table (vole-8126 shapes + proposals + tasks)',
   assert.equal(deliver(ALICE, d, { entries: R.readAll(), trust: room.trustOf }), 'notice');
 });
 
-test('lane: the room session reads nothing but another member\'s join (its rows turn): posts to claude, answers, decisions and tasks are none', () => {
+test('lane: the room session reads nothing (it keeps no rows): joins, posts to claude, answers, decisions and tasks are none', () => {
   fresh();
   const L = (e: Entry, es?: readonly Entry[]) => roomLane(ROOM_CLAUDE, e, es);
   const mine = prop('claude', H1, ['alice', 'bob']);
@@ -150,14 +150,14 @@ test('lane: the room session reads nothing but another member\'s join (its rows 
   const agentTo = agent('alice', 'question', { to: 'claude' });
   const mention = human('bob', 'say', { text: '@claude let us plan cursor paging' });
   const left = sys('member_left', {}, 'bob');
-  const joined = sys('member_joined', {}, 'carol');                        // push (the tail adds the row note)
+  const joined = sys('member_joined', {}, 'carol');
   const o1 = answer('bob', 'objection', H1, { text: 'clamp' });
   const dec = sys('decision', { proposal_hash: H1 }, 'room');
   const req = taskReq('bob', 'add', { subject: 'parser tests' });
   const t = task({ task_id: 2, owner: 'bob', status: 'pending', req: req.id });
   const ownJoin = sys('member_joined', {}, 'claude');
   const want: [Entry, Lane][] = [[mine, 'none'], [theirs, 'none'], [words, 'none'], [toRoomClaude, 'none'], [agentTo, 'none'], [mention, 'none'],
-    [left, 'none'], [joined, 'push'], [o1, 'none'], [dec, 'none'], [req, 'none'], [t, 'none'], [ownJoin, 'none']];
+    [left, 'none'], [joined, 'none'], [o1, 'none'], [dec, 'none'], [req, 'none'], [t, 'none'], [ownJoin, 'none']];
   for (const [e, l] of want) assert.equal(L(e), l, `#${e.id} without entries`);
   for (const [e, l] of want) assert.equal(L(e, R.readAll()), l, `#${e.id} with entries`);
   // a member named in the text is still woken by it
@@ -201,6 +201,9 @@ test('lane (P3 wakes): every person\'s words reach every member (a group chat), 
   const all3 = R.readAll();
   assert.equal(roomLane(ALICE, o3, all3), 'push', 'the objection wakes its author, to revise');
   assert.equal(roomLane(ALICE, d3, all3), 'pull', 'the decision after it does not');
+  // the author sees the objection once (its wake, with the note) and Claude gets it once: the decision adds nothing
+  const D3 = (e: Entry) => deliver(ALICE, e, { entries: all3, trust: room.trustOf });
+  assert.deepEqual([D3(o3), D3(d3)], ['wake', 'none'], 'one line for the author: the objection\'s wake');
 });
 
 test('deliver (live verify, P): what asks the person is a notice, not context only: a decision or another approver\'s objection on a proposal they are in', () => {
@@ -217,21 +220,34 @@ test('deliver (live verify, P): what asks the person is a notice, not context on
   const d1 = sys('decision', { proposal_hash: H1, text: 'objected: bob · agreed: alice', refs: [a1.id, o1.id] }, 'room');
   const all = R.readAll();
   assert.equal(D(ALICE, o1, all), 'notice', 'another approver\'s objection: alice sees it');
-  assert.equal(D(ALICE, d1, all), 'notice', 'the decision on a proposal alice is in');
-  assert.equal(D(BOB, d1, all), 'notice', 'bob completed it: shown, no wake');
-  assert.equal(D(CAROL, d1, all), 'context', 'not in it: context');
+  // one line per event: the objection reached each member once (alice's notice, carol's context), so the decision it
+  // made is not said again, to the person or to Claude
+  assert.equal(D(ALICE, d1, all), 'none', 'a decision that did not agree: the objection\'s own line said it');
+  assert.equal(D(BOB, d1, all), 'none', 'bob asked for changes: his card was the receipt');
+  assert.equal(D(CAROL, d1, all), 'none', 'not in it: the objection was her context');
   assert.equal(D(CAROL, o1, all), 'context');
+  assert.equal(D(ALICE, d1), 'context', 'without the log to judge by: context, as before');
+  const a2 = answer('alice', 'signoff', H2);
+  const b2 = answer('bob', 'signoff', H2);
+  const d2 = sys('decision', { proposal_hash: H2, text: 'agreed: alice, bob', approvers: ['alice', 'bob'], refs: [a2.id, b2.id] }, 'room');
+  const all2 = R.readAll();
+  assert.equal(D(ALICE, d2, all2), 'notice', 'an agreed decision on a proposal alice is in');
+  assert.equal(D(BOB, d2, all2), 'notice', 'bob is in it too: shown, no wake');
+  assert.equal(D(CAROL, d2, all2), 'context', 'not in it: context');
 });
 
-test('deliver (noise pass A): the room\'s PIN-join line, with its check and the kick, is the people\'s join notice; the bare "joined" after it is not drawn again', () => {
+test('deliver (noise pass A): the room\'s invite-join line, "NAME joined (MACHINE)", is the people\'s join notice; the bare "joined" after it is not drawn again', () => {
   fresh();
   const BOB = { name: 'bob', role: 'member' };
   const D = (me: LaneViewer, e: Entry, es?: readonly Entry[]) => deliver(me, e, { entries: es, trust: room.trustOf });
-  const line = sys('status', { text: 'carol2 joined from carols-mbp (check 3f9c-2a71; wanted "carol", taken) · not them? /sub-human kick carol2' }, 'room');
+  const line = sys('status', { text: 'carol2 joined (carols-mbp)' }, 'room');
   const join = sys('member_joined', {}, 'carol2');
   const all = R.readAll();
   assert.equal(render.linkJoined(line), 'carol2');
-  assert.equal(D(ALICE, line, all), 'notice', 'the host person sees who joined, with the check and the kick');
+  // an older host's line, with the check and the kick in it, is read the same way
+  assert.equal(render.linkJoined(sys('status', { text: 'carol3 joined from carols-mbp (check 3f9c-2a71; wanted "carol", taken) · not them? /sub-human kick carol3' }, 'room')), 'carol3');
+  assert.equal(render.linkJoined(sys('status', { text: 'carol joined (x) and more' }, 'room')), null, 'the whole line, nothing after it');
+  assert.equal(D(ALICE, line, all), 'notice', 'the host person sees who joined (the check and the kick are /sub-human who\'s)');
   assert.equal(D(BOB, line, all), 'notice');
   assert.equal(D({ name: 'carol2', role: 'member' }, line, all), 'none', 'the joiner has its own check on screen');
   assert.equal(D(ROOM_CLAUDE, line, all), 'none');
@@ -240,7 +256,7 @@ test('deliver (noise pass A): the room\'s PIN-join line, with its check and the 
   const back = sys('member_joined', {}, 'carol2');
   assert.equal(render.announced(back, [...all, later, back]), false, 'a later rejoin is drawn as ever');
   assert.equal(render.linkJoined(sys('status', { text: 'carol joined from x (check 1) · not them? /sub-human kick bob' }, 'room')), null, 'the kick names the one who joined');
-  assert.equal(render.linkJoined(human('alice', 'say', { text: 'carol joined from x (check 1) · not them? /sub-human kick carol' })), null, 'a person\'s words are never the room\'s line');
+  assert.equal(render.linkJoined(human('alice', 'say', { text: 'carol joined (x)' })), null, 'a person\'s words are never the room\'s line');
 });
 
 test('deliver (room-plan live): a decision is a notice for every approver and context for the rest; it never wakes', () => {
@@ -268,6 +284,8 @@ test('stateLine: open proposals, my answer, who is away', () => {
   const bob = h.spawnSleeper();
   identity.join({ code, name: sn('bob'), role: 'member', pid: bob.pid, session_id: 's-b', cwd: '/tmp' });
   identity.leave(code, sn('bob'));
+  // the room session, stopped and left: no one to wait for, never listed as away (0.6.0)
+  identity.updateRoomClaude(code, () => ({ stopped_at: new Date().toISOString(), left_at: new Date().toISOString() }));
   prop('claude', H1, ['alice', 'bob']);
   assert.match(R.stateLine(ALICE), /^room now: proposal aaaaaa waiting on alice, bob · you: answer needed/);
   answer('alice', 'signoff', H1);

@@ -3,23 +3,66 @@
 // once is covered by the plugin's tests, test/plan.node-test.ts.)
 import crypto from 'node:crypto';
 import path from 'node:path';
-import { readText } from '../lib/io.ts';
+import { readText, clip } from '../lib/io.ts';
 import type { Ctx, Det, Beh } from './context.ts';
-import { blocksOf } from '../metrics.ts';
+import { blocksOf, trigger } from '../metrics.ts';
 import type { Block, TEntry } from '../metrics.ts';
+import { footerMode } from '../lib/panes.ts';
+import { saveErrors } from './s04-plan.ts';
+import { pluginLib } from '../lib/paths.ts';
+
+/** The tools that change files: an objector's Claude calling one before its person's next prompt started building. */
+const EDIT_TOOLS = /^(Edit|Write|MultiEdit|NotebookEdit)$/;
+/** A prompt the person typed (not a wake, a peer's message, a task notification, a meta copy or tool results). */
+export const typedPrompt = (e: TEntry): boolean => e.type === 'user' && !e.isMeta && !trigger(e)
+  && !(e.origin && (e.origin.kind === 'task-notification' || e.origin.kind === 'peer'))
+  && !(blocksOf(e).length > 0 && blocksOf(e).every(c => c.type === 'tool_result'));
+
+/**
+ * Release gate, after A's objection: his mode is the one he had before the review (0.6.0 #34, keep-mode: auto keeps
+ * auto, manual keeps manual; accept edits has no exit that keeps it, so it comes back as default with the one line
+ * "shift+tab returns you to accept edits", the designed limit), and his Claude does not start building before his next
+ * prompt. The mode before is A's footer when S4 began (state/S4/mode-A.txt, after --object-mode's shift+tab), the mode
+ * after his footer once the review closed (state/S5/mode-after-A.txt); each falls back to the transcript's
+ * permissionMode (the last before the request reached him; his next typed prompt's).
+ */
+function objectionGate(x: Ctx, det: Det, beh: Beh, ob: { at: string } | undefined, sentAt: string | undefined): void {
+  const { A, DEMO } = x;
+  const es = x.entries(A).filter(e => !e.isSidechain && e.timestamp).sort((a, b) => ((a.timestamp ?? '') < (b.timestamp ?? '') ? -1 : 1));
+  const next = ob ? es.find(e => (e.timestamp ?? '') > ob.at && typedPrompt(e)) : undefined;
+  const fb = footerMode(readText(x.stateFile('S4', `mode-${A}.txt`))), fa = footerMode(readText(x.stateFile('S5', `mode-after-${A}.txt`)));
+  const tb = sentAt ? es.filter(e => e.permissionMode && (e.timestamp ?? '') <= sentAt).at(-1)?.permissionMode : undefined;
+  const before = fb ?? tb ?? null, after = fa ?? next?.permissionMode ?? null;
+  const want = DEMO.objectMode || null;
+  const hint = /shift\+tab returns you to accept edits/.test([readText(x.stateFile('S5', `mode-after-${A}.txt`)), ...x.caps('S5', A).map(r => readText(path.join(x.screens, r.txt)))].join('\n'));
+  const kept = !!before && before === after;
+  const limit = before === 'acceptEdits' && after === 'default' && hint;
+  det(`No mode change on ${A}'s objection: his mode after the review is the one before it${want ? ` (${want}, --object-mode)` : ''}${before === 'acceptEdits' ? '; accept edits: or default with the "shift+tab returns you to accept edits" line' : ''}`,
+    (!want || before === want) && (kept || limit),
+    `before ${before ?? 'unknown'} (footer ${fb ?? '-'}, transcript ${tb ?? '-'}); after ${after ?? 'unknown'} (footer ${fa ?? '-'}, next prompt ${next?.permissionMode ?? '-'})${limit ? '; accept edits came back as default with the shift+tab line (the designed limit)' : ''}`);
+  // a model's behaviour, so warn-only: no file edit by A's Claude between the objection and A's next typed prompt
+  const between = ob ? es.filter(e => (e.timestamp ?? '') > ob.at && (!next || (e.timestamp ?? '') < (next.timestamp ?? ''))) : [];
+  const edits = x.toolUses(between).filter(c => EDIT_TOOLS.test(c.name ?? ''));
+  beh(`After the objection ${A}'s Claude does not start building: no file edits before ${A}'s next prompt`, ob ? edits.length : null, 0,
+    ob ? `${edits.length} edit call(s)${edits.length ? `: ${edits.map(c => `${c.name} ${clip(String((c.input || {}).file_path ?? ''), 40)}`).join(', ')}` : ''} between the objection (${ob.at.slice(11, 19)}) and ${next ? `the next prompt (${String(next.timestamp).slice(11, 19)})` : 'the end of the transcript'}` : 'no objection');
+}
 
 const hash12 = (t: string): string => crypto.createHash('sha256').update(Buffer.from(t, 'utf8')).digest('hex').slice(0, 12);
 
 /**
  * A room review: an ExitPlanMode call that showed a room proposal in the plan dialog. Its recorded plan is the
- * model's "proposal <hash>" stub, or, when the hooks wrote the proposal into the plan file before the call (a later
+ * model's stub ("plan paging v1" since 0.6.0, the request's label in `labels`; "proposal <hash>" before, and for a
+ * request with no plan), or, when the hooks wrote the proposal into the plan file before the call (a later
  * review: the file's path is known from the first), the proposal's own text, which Claude Code records in its place
- * (hash12 of it is the proposal's hash). The no-dialog close after an objection ("approved exiting plan mode") is not one.
+ * (hash12 of it is the proposal's hash): under the plan view's frame line ("Room plan · NAME vN · …", 0.6.0), which
+ * the plugin's own unframe takes off first. The no-dialog close after an objection ("approved exiting plan mode") is not one.
  */
-export function isReview(call: Block, es: TEntry[], hashes: Set<string>): boolean {
+export function isReview(call: Block, es: TEntry[], hashes: Set<string>, labels: ReadonlyMap<string, string> = new Map()): boolean {
   const plan = String((call.input || {}).plan || '');
   const stub = /^proposal ([0-9a-f]{12})\b/.exec(plan);
-  if (!(stub ? hashes.has(stub[1] ?? '') : hashes.has(hash12(plan)))) return false;
+  const label = labels.get(plan.trim().toLowerCase());
+  const own = (): boolean => hashes.has(hash12(plan)) || hashes.has(hash12(pluginLib('consent/review.ts').unframe(plan)));
+  if (!(stub ? hashes.has(stub[1] ?? '') : label ? hashes.has(label) : own())) return false;
   const res = es.flatMap(e => (e.type === 'user' ? blocksOf(e) : [])).find(r => r && r.type === 'tool_result' && r.tool_use_id === call.id);
   const t = res ? (typeof res.content === 'string' ? res.content : JSON.stringify(res.content)) : '';
   return !/^User has approved exiting plan mode/.test(t);
@@ -28,7 +71,7 @@ export function isReview(call: Block, es: TEntry[], hashes: Set<string>): boolea
 
 export const scene = 'S5';
 
-export function run(x: Ctx, { det }: { det: Det; beh: Beh }): void {
+export function run(x: Ctx, { det, beh }: { det: Det; beh: Beh }): void {
   const { log, props, drafts, DEMO, A, B } = x;
   const p1 = props[0], p2 = props.at(-1) !== p1 ? props.at(-1) : undefined;
   const ob = p1 && log.find(e => e.kind === 'objection' && e.from === A && e.proposal_hash === p1.hash);
@@ -36,9 +79,15 @@ export function run(x: Ctx, { det }: { det: Det; beh: Beh }): void {
   const sb = p1 && log.find(e => e.kind === 'signoff' && e.from === B && e.proposal_hash === p1.hash);
   det(`${B}'s agreement on v1 via=human (her Yes when she checked it)`, sb && sb.via === 'human', x.fmt(sb));
   // the next version, by A's Claude, on v1
-  const vs = log.filter(e => e.kind === 'plan' && e.plan === 'room').map(e => ({ v: e.version, base: e.base, from: e.from, id: e.id }));
+  // the first plan's versions, by the name its heading gave it (0.6.0; before, `room`)
+  const name = log.find(e => e.kind === 'plan' && e.version === 1)?.plan;
+  const vs = log.filter(e => e.kind === 'plan' && e.plan === name).map(e => ({ v: e.version, base: e.base, from: e.from, id: e.id }));
   const v2 = vs.find(v => v.v === 2);
   det(`v2 by ${A}'s Claude, on v1`, v2 && v2.from === A && v2.base === 1, vs.map(v => `v${v.v} base v${v.base} ${v.from} #${v.id}`).join(', ') || 'no versions');
+  objectionGate(x, det, beh, ob, p1?.at);
+  const se = saveErrors(x, 'S5', A);
+  det(`No red "Error:" in ${A}'s pane on the save of v2`, se.read.includes(`save-${A}.txt`) && se.lines.length === 0,
+    se.lines.length ? se.lines.slice(0, 3).join(' | ') : se.read.includes(`save-${A}.txt`) ? `none in ${se.read.length} pane(s)` : `state/S5/save-${A}.txt not saved`);
   const last = vs.at(-1);
   det('A new sign-off request on the latest version', p2 && last && p2.hash !== p1?.hash && p2.version === last.v && p2.id > last.id,
     p2 ? `${p1?.hash.slice(0, 6)} → ${p2.hash.slice(0, 6)} (#${p2.id}, v${p2.version})` : 'no request after the edits');
@@ -57,11 +106,13 @@ export function run(x: Ctx, { det }: { det: Det; beh: Beh }): void {
   const before = new Set((readText(x.stateFile('plans-before.txt')) || '').split('\n').filter(Boolean));
   const after = x.stText('S5', 'last', 'plans.txt');
   const hashes = new Set([...props, ...drafts].map(p => p.hash));
+  // each request's label ("plan room v1"): the stub the model passes since 0.6.0
+  const labels = new Map([...props, ...drafts].flatMap(p => (typeof p.plan === 'string' && typeof p.version === 'number' && p.hash ? [[`plan ${p.plan} v${p.version}`, p.hash] as const] : [])));
   for (const seat of [A, B]) {
     const s5to = x.span('S5')?.to;
     const es = x.entries(seat).filter(e => !e.isSidechain && e.timestamp && e.timestamp >= x.runStart && s5to !== undefined && e.timestamp <= s5to); // this run's, up to S5's end
     const mode0 = (es.find(e => e.permissionMode) || {}).permissionMode;
-    const reviews = x.toolUses(es, 'ExitPlanMode').filter(c => isReview(c, es, hashes));
+    const reviews = x.toolUses(es, 'ExitPlanMode').filter(c => isReview(c, es, hashes, labels));
     const enters = es.filter(e => e.attachment && e.attachment.type === 'plan_mode');
     const exits = es.filter(e => e.attachment && e.attachment.type === 'plan_mode_exit');
     const lastMode = (es.filter(e => e.permissionMode).at(-1) || {}).permissionMode;

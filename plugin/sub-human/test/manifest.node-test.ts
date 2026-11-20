@@ -209,11 +209,10 @@ test('hooks.json: SessionEnd starts node only for a session with a lease, a sess
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-test('hooks.json: every blocking hook has a timeout (<= 10 s, row-rewake aside); SessionEnd >= 3 s', () => {
+test('hooks.json: every hook has a timeout (<= 10 s); SessionEnd >= 3 s', () => {
   for (const { event, hook } of allHooks()) {
     assert.ok(Number.isFinite(hook.timeout) && hook.timeout > 0, `${event} ${scriptOf(hook.command)} has no timeout`);
-    if (!hook.async && !hook.asyncRewake) assert.ok(hook.timeout <= 10, `${event} ${scriptOf(hook.command)}: ${hook.timeout}s`);
-    assert.ok(hook.timeout <= 60, 'Claude Code caps hook budgets at 60 s');
+    assert.ok(hook.timeout <= 10, `${event} ${scriptOf(hook.command)}: ${hook.timeout}s`);
   }
   for (const g of groups('SessionEnd')) for (const hk of g.hooks) assert.ok(hk.timeout >= 3, `SessionEnd gets 1.5 s unless timeout is set (got ${hk.timeout})`);
 });
@@ -229,13 +228,13 @@ test('budgets: the join\'s waits fit its hook timeout, and every lock gives up b
   assert.ok(waits <= join - 1000, `the join's waits (${waits} ms) leave under a second of its ${join} ms`);
   // a wedged lock is reported (LOCK) by the hook, never cut off by its timeout (SessionEnd: the shortest)
   const shortest = Math.min(...[...allHooks()].map(x => x.hook.timeout)) * 1000;
-  for (const [name, ms] of Object.entries({ LOCK_TIMEOUT_MS: config.LOCK_TIMEOUT_MS, ROWS_LOCK_TIMEOUT_MS: config.ROWS_LOCK_TIMEOUT_MS, REVIEW_LOCK_TIMEOUT_MS: config.REVIEW_LOCK_TIMEOUT_MS })) {
+  for (const [name, ms] of Object.entries({ LOCK_TIMEOUT_MS: config.LOCK_TIMEOUT_MS, REVIEW_LOCK_TIMEOUT_MS: config.REVIEW_LOCK_TIMEOUT_MS })) {
     assert.ok(ms < shortest, `${name} ${ms} ms, under the shortest hook timeout (${shortest} ms)`);
   }
   assert.ok(config.LINK_CALL_END_MS < timeoutOf('session-end.ts') * 1000);
 });
 
-test('hooks.json: no async hooks (the module runs presence and the rewake in the background)', () => {
+test('hooks.json: no async hooks (the module runs presence in the background)', () => {
   assert.deepEqual([...allHooks()].filter(x => x.hook.async || x.hook.asyncRewake).map(x => x.event), []);
 });
 
@@ -266,15 +265,16 @@ test('agents: no model key; Agent(...) restrictions name agents that exist', () 
       for (const t of must(types).split(',').map(s => s.trim())) assert.ok(names.has(t) || t === 'general-purpose', `${f}: unknown agent type ${t}`);
     }
   }
-  assert.match(frontmatter(path.join(dir, 'room.md')), /^tools: Agent\(sub-human:participant\), mcp__plugin_sub-human_room__hold$/m);
+  assert.match(frontmatter(path.join(dir, 'room.md')), /^tools: mcp__plugin_sub-human_room__hold$/m, 'the one room row: its hold only, no nested rows');
+  assert.ok(!names.has('sub-human:participant'), 'no participant rows');
 });
 
 test('SKILL.md: user-invoked only, and hold is not pre-allowed', () => {
   const fm = frontmatter(path.join(PLUGIN, 'skills', 'sub-human', 'SKILL.md'));
   assert.match(fm, /^disable-model-invocation: true$/m);
   assert.doesNotMatch(fm, /room__hold/);
-  assert.match(fm, /^description: .*\/sub-human \(as your git name\), \/sub-human invite .*\/sub-human join LINE PIN/m);
-  assert.match(fm, /^argument-hint: "\[invite \| join URL\[#SECRET\] \[PIN\] \| join PIN \| help\]"$/m, 'the common shapes only');
+  assert.match(fm, /^description: "Work with other people's Claude Code sessions in a shared room\. \/sub-human to join or open one\."$/m);
+  assert.match(fm, /^argument-hint: "\[invite \| leave \| help\]"$/m, 'no SECRET or PIN in the first thing a person sees');
 });
 
 test('manifests: plugin.json carries the version; the marketplace entry does not repeat it', () => {

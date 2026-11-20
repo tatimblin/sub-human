@@ -2,7 +2,7 @@
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import * as paths from '../lib/paths.ts';
-import { MAIN_ROW } from '../lib/panes.ts';
+import { MAIN_ROW, panelRows } from '../lib/panes.ts';
 import { readJson, readText, clip, esc } from '../lib/io.ts';
 import type { Ctx, Det } from './context.ts';
 import type { AgentRow, TaskRec } from './captures.ts';
@@ -60,6 +60,29 @@ export function run(x: Ctx, { det }: { det: Det }): void {
     }
   }
   det('No room entry ids (#N) in the members\' panes (task numbers aside)', hits.length === 0, hits.length ? `${hits.length} line(s): ${hits.slice(0, 4).join(' | ')}` : `none in ${memberCaps.length} captures`);
+
+  // run-wide, 0.6.0's rows: one room row per session (the hooks module's), nothing nested in it, no participant rows;
+  // the room session spawns none and runs only its launch turn
+  const many: string[] = [];
+  for (const r of memberCaps) {
+    const rows = panelRows(readText(path.join(screens, r.txt)));
+    const n = rows.filter(y => y.label === code).length, nested = rows.filter(y => y.nested);
+    if (n > 1 || nested.length) many.push(`${r.txt}: ${n} ${code} row(s)${nested.length ? `, nested ${nested.map(y => y.label).join(',')}` : ''}`);
+  }
+  det(`One ${code} row per session and nothing nested in it, in every capture of ${A} and ${B}`, many.length === 0,
+    many.length ? `${many.length} capture(s): ${many.slice(0, 3).join(' | ')}` : `${memberCaps.length} captures`);
+  const agents = [A, B, 'claude'].flatMap(n => x.seatAgents(n).filter(s => s.first >= x.runStart).map(s => ({ n, s })));
+  const part = agents.filter(({ s }) => s.agentType === 'sub-human:participant');
+  const roomAgents = agents.filter(({ n, s }) => n === 'claude' || s.session === roomClaudeSid);
+  det('No participant rows anywhere in the run, and no agent of the room session\'s', part.length === 0 && roomAgents.length === 0,
+    `${part.length} participant agent(s)${part.length ? ` (${part.slice(0, 3).map(({ n, s }) => `${n} ${s.file}`).join(', ')})` : ''}; ${roomAgents.length} agent(s) in the room session; ${agents.length} subagents of the run read`);
+  // the room session's model turns: every assistant message is in its launch turn (before its first turn end)
+  const ces = x.entries('claude').filter(e => !e.isSidechain);
+  const end = ces.findIndex(e => e.type === 'system' && e.subtype === 'turn_duration');
+  const firstEnd = end < 0 ? ces.findIndex(e => e.type === 'assistant' && e.message?.stop_reason === 'end_turn') : end;
+  const later = firstEnd < 0 ? [] : [...x.assistantIds(ces.slice(firstEnd + 1))];
+  det('The room session ran only its launch turn (no model call after it, all run)', ces.length > 0 && firstEnd >= 0 && later.length === 0,
+    ces.length ? `${x.assistantIds(ces).size} assistant message(s), ${later.length} after the launch turn ended${firstEnd < 0 ? ' (no turn end found)' : ` at ${String(ces[firstEnd]?.timestamp).slice(11, 19)}`}` : 'no room session transcript');
 
   // --film: B's machine reached the room over ssh to a private sshd (scripts/devbox.sh): it stops after S10
   if (x.remote && x.remote[B]) {

@@ -38,7 +38,7 @@ import * as session from './room/session.ts';
 import { writeFileAtomic } from './io.ts';
 import { clip, oneLine, hash12, isProposalHash } from './text.ts';
 import * as config from './config.ts';
-import { NEXT, showNote } from './consent/review.ts';
+import { NEXT, showNote, unframe } from './consent/review.ts';
 import type { Card, Confirm, PlanEdit, Proposal, Recheck, Review, Steer } from './types-app.ts';
 import type { Entry, Matrix, Member, Members, PlanVersion, ProposalState, Trust } from './room/types.ts';
 import type { Identity } from './identity.ts';
@@ -429,8 +429,9 @@ function restorePlan(st: Review | null | undefined): void {
 
 /**
  * A review left behind (the session restarted, or it has been open longer than REVIEW_STALE_MS): restore the
- * plan file when it still holds the proposal's text (a file the person wrote since is left alone) and clear
- * the state. force: the session restarted (/clear, --resume). Returns 'restored' | 'cleared' | null.
+ * plan file when it still holds what the review put there (the proposal's text, framed or not; what it last wrote,
+ * Review.wrote: the closing line; or nothing, the empty exit's blank), so a file the person wrote since is left alone,
+ * and clear the state. force: the session restarted (/clear, --resume). Returns 'restored' | 'cleared' | null.
  */
 function restoreStale(me: Me | null | undefined, { force = false, now = Date.now() }: { force?: boolean; now?: number } = {}): 'restored' | 'cleared' | null {
   if (!me || !me.code || !me.name) return null;
@@ -442,8 +443,10 @@ function restoreStale(me: Me | null | undefined, { force = false, now = Date.now
     if (st.file && !st.restored && st.hash) {
       let cur: Buffer | null = null;
       try { cur = fs.readFileSync(st.file); } catch { /* gone */ }
-      // the proposal's text, or nothing (emptied for the closing ExitPlanMode: lib/cc/env.ts LEAVE_PLAN_TEXT)
-      if (cur && (hash12(cur) === st.hash || !cur.length)) { restorePlan(st); out = 'restored'; }
+      // nothing (emptied for the closing ExitPlanMode: lib/cc/env.ts LEAVE_PLAN_TEXT), what the review last wrote,
+      // or the proposal's text under its frame line (lib/consent/review.ts framed) or without one
+      const ours = cur && (!cur.length || hash12(cur) === st.wrote || hash12(cur) === st.hash || hash12(Buffer.from(unframe(cur.toString('utf8')), 'utf8')) === st.hash);
+      if (ours) { restorePlan(st); out = 'restored'; }
     }
     clearReview(me);
     return out;

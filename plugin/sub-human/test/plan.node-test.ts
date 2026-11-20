@@ -58,12 +58,18 @@ test('put: a new plan from base 0; the next version only from the current one (e
   assert.deepEqual(must(R.fold(R.readRecent()).plans.get('room')).versions.map(v => [v.version, v.base, v.from]), [[1, 0, 'alice'], [2, 1, 'bob'], [3, 2, 'alice']]);
   assert.equal(must(plans.current(code)).hash, v3.hash);
   // refusals
-  const refusals: [plans.PutArgs, RegExp][] = [[{ base: 3, text: '  \n' }, /empty/], [{ plan: 'Bad Name', base: 0, text: 'x' }, /invalid plan name/], [{ base: -1, text: 'x' }, /base/],
+  const refusals: [plans.PutArgs, RegExp][] = [[{ base: 3, text: '  \n' }, /empty/], [{ base: -1, text: 'x' }, /base/],
     [{ base: 3, text: 'x'.repeat(256 * 1024 + 1) }, /too large/]];
   for (const [args, why] of refusals) {
     const r = plans.put(store, args, { by: 'alice' });
     assert.match(r.ok ? '' : r.error, why);
   }
+  // a name is slugged, never refused for its shape (EVALUATION R6: "error handling" was refused)
+  const named = plans.put(store, { plan: 'Error handling', base: 0, text: 'x' }, { by: 'alice' });
+  assert.equal(named.ok ? named.version.plan : named.error, 'error-handling');
+  assert.equal(plans.nameOf('GET /tasks: paging!'), 'get-tasks-paging');
+  assert.equal(plans.nameOf('!!!'), 'room', 'nothing left: the default');
+  assert.equal(plans.nameOf('a'.repeat(30)), 'a'.repeat(24));
 });
 
 test('put: at most 5 plans not agreed; an agreed one does not count', () => {
@@ -199,17 +205,17 @@ test('tasks: an add from a plan is tagged with its current version; an unknown p
   assert.match(tasks.validate({ op: 'claim', id: '2', plan: 'room' }).ok ? '' : 'plan goes with add only', /plan goes with add only/);
 });
 
-test('deliver: a version nobody asked about is a notice for every other member, never a wake; nothing for its editor or the room session', () => {
+test('deliver: a version nobody asked about is context for every other member, never a notice or a wake; nothing for its editor or the room session', () => {
   const { R, store } = hosted();
   plans.put(store, { base: 0, text: 'v1' }, { by: 'bob' });
   const e = must(R.readAll().at(-1));
   const entries = R.readAll();
-  assert.equal(R.deliver({ name: 'alice', role: 'member' }, e, { entries }), 'notice');
+  assert.equal(R.deliver({ name: 'alice', role: 'member' }, e, { entries }), 'context', 'the request on it is the person\'s line');
   assert.equal(R.deliver({ name: 'bob', role: 'member' }, e, { entries }), 'none');
   assert.equal(R.deliver({ name: 'claude', role: 'claude' }, e, { entries }), 'none');
 });
 
-test('deliver: a new version after an open or objected sign-off request wakes who asked and who objected, with a line saying so', () => {
+test('deliver: a new version after an open or objected request wakes nobody (its own request will); its Claude\'s context says what it comes after', () => {
   const { code, R, store } = hosted();
   h.register('carol', 'member', 2, code);
   const me = (n: string) => ({ code, name: sn(n) });
@@ -224,15 +230,15 @@ test('deliver: a new version after an open or objected sign-off request wakes wh
   plans.put(store, { base: 1, text: 'goodbye world' }, { by: 'bob' });
   let e = last();
   const entries = R.readAll();
-  assert.equal(R.deliver(as('alice'), e, { entries }), 'wake', 'the asker (and objector) is woken: the revision comes back');
+  assert.equal(R.deliver(as('alice'), e, { entries }), 'context', 'the asker (and objector): context; the request on v2 is what wakes');
   assert.equal(R.deliver(as('bob'), e, { entries }), 'none', 'never its editor');
-  assert.equal(R.deliver(as('carol'), e, { entries }), 'notice', 'an approver who neither asked nor objected is only told');
+  assert.equal(R.deliver(as('carol'), e, { entries }), 'context');
   assert.equal(R.deliver({ name: 'claude', role: 'claude' }, e, { entries }), 'none');
-  assert.deepEqual(back(e, 'alice'), ['(for Claude) this v2 of plan room comes after v1, whose sign-off alice asked for; objected: alice. '
-    + 'Tell alice what changed (read, plan "room"); its author checks it first, and their Yes asks for sign-off.']);
+  assert.deepEqual(back(e, 'alice'), ['(for Claude) this v2 of plan room comes after v1, whose review alice asked for; objected: alice. '
+    + 'If alice asks what changed, read plan room. Its author reviews it first; their Yes asks the others.']);
   assert.deepEqual(back(e, 'carol'), []);
   assert.deepEqual(back(e, 'bob'), []);
-  assert.equal(R.deliver(as('alice'), e), 'notice', 'with no log to judge by: no wake');
+  assert.equal(R.deliver(as('alice'), e), 'context', 'with no log to judge by: no wake');
 
   // not agreed: carol asks on v2, alice objects, bob and carol agree, decided; bob's v3 wakes carol and alice
   const b = proposal.ask(me('carol'), {});
@@ -242,9 +248,9 @@ test('deliver: a new version after an open or objected sign-off request wakes wh
   assert.match(String(must(proposal.decide(code, b.hash)).text), /^objected: alice/);
   plans.put(store, { base: 2, text: 'bye' }, { by: 'bob' });
   e = last();
-  const after: [string, string][] = [['alice', 'wake'], ['carol', 'wake'], ['bob', 'none']];
+  const after: [string, string][] = [['alice', 'context'], ['carol', 'context'], ['bob', 'none']];
   for (const [n, want] of after) assert.equal(R.deliver(as(n), e, { entries: R.readAll() }), want, n);
-  assert.match(back(e, 'carol')[0] ?? '', /comes after v2, whose sign-off carol asked for; objected: alice\./);
+  assert.match(back(e, 'carol')[0] ?? '', /comes after v2, whose review carol asked for; objected: alice\./);
 
   // agreed: a version after it is news, not a request coming back; and one after a version nobody asked about
   const c = proposal.ask(me('alice'), {});
@@ -270,7 +276,7 @@ test('author first (lib/proposal.ts check): only the current version\'s author g
   assert.equal(proposal.check(me('alice'), 'room', 1), v1.hash);
   assert.equal(proposal.check(me('alice'), 'room', 1), v1.hash, 'the same check again: no second request');
   assert.equal(R.readAll().filter(e => e.kind === 'proposal').length, 1);
-  assert.match(plans.describe(code), /^room v1 · not sent out yet \(alice checks it first\)$/);
+  assert.match(plans.describe(code), /^room v1 · draft · alice reviewing$/);
   // a pending request of another plan, older: the review and the reminder still pick alice's own unsent version
   plans.put(store, { plan: 'other', base: 0, text: '# other' }, { by: 'bob' });
   const older = proposal.ask(me('bob'), { plan: 'other' });

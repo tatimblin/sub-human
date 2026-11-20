@@ -9,18 +9,41 @@ import { spawnSync } from 'node:child_process';
 import {
   leaveQuestion, leaveOutcome, issueUrl, versionsLine, openCommands, openWith, saidBook, sessionSnippet,
   CLOSE, STAR, LEAVE_OPTIONS, LEAVE_HEADER, REPO_URL, FEEDBACK_MAX, SNIPPET_MAX, SNIPPET_LINES, OPEN_TIMEOUT_MS, URL_MAX, type OpenRunner,
+  asLeaveCard, leaveCardDue, leaveCardShown, leaveCardStarred, LEAVE_CARD_MAX, STARRED, starOpened, starShown, issueOpened, issueShown,
 } from '../mod/core/leave.ts';
 
 const CODE = 'otter-4821';
 const PLUGIN = path.join(import.meta.dirname, '..');
 
-test('leave card: the question, a short header, Close and Star on GitHub', () => {
-  assert.equal(leaveQuestion(CODE), `You left room ${CODE}. Thanks for trying sub-human! Type below to send feedback.`);
+test('leave card (COPY §6): "Left CODE.", the chip names the speaker, Done and ★ Star sub-human', () => {
+  assert.equal(leaveQuestion(CODE), `Left ${CODE}.`);
+  assert.equal(LEAVE_HEADER, 'sub-human');
   assert.ok(LEAVE_HEADER.length <= 12, 'the chip fits');
+  assert.deepEqual(LEAVE_OPTIONS, ['Done', '★ Star sub-human']);
   assert.deepEqual(LEAVE_OPTIONS, [CLOSE, STAR]);
+  // what the answers say, plainly
+  assert.equal(STARRED, 'Starred sub-human. Thanks!');
+  assert.equal(starOpened(), 'Opened sub-human on GitHub');
+  assert.equal(starShown(), 'Star sub-human at github.com/tatimblin/sub-human');
+  assert.equal(issueOpened(), 'Opened your feedback on GitHub. Press Submit to send it.');
+  assert.equal(issueShown('https://x'), 'Your feedback, ready to send: https://x');
 });
 
-test('leaveOutcome: Close or dismissed is nothing, Star stars, any other text is feedback', () => {
+test('leave card: at most LEAVE_CARD_MAX per install, never once starred; a stored state read as it may be', () => {
+  assert.equal(LEAVE_CARD_MAX, 2);
+  let s = asLeaveCard(undefined);
+  assert.deepEqual(s, { shown: 0, starred: false });
+  assert.equal(leaveCardDue(s), true);
+  s = leaveCardShown(s);
+  assert.equal(leaveCardDue(s), true, 'one shown: once more');
+  s = leaveCardShown(s);
+  assert.equal(leaveCardDue(s), false, 'two shown: never again');
+  assert.equal(leaveCardDue(leaveCardStarred(asLeaveCard(null))), false, 'starred: never');
+  assert.deepEqual(asLeaveCard({ shown: -3, starred: 'yes' }), { shown: 0, starred: false });
+  assert.deepEqual(asLeaveCard(JSON.parse(JSON.stringify(leaveCardStarred(leaveCardShown(asLeaveCard({})))))), { shown: 1, starred: true }, 'what $.store reads back');
+});
+
+test('leaveOutcome: Done or dismissed is nothing, Star stars, any other text is feedback', () => {
   assert.deepEqual(leaveOutcome(CLOSE), { kind: 'close' });
   assert.deepEqual(leaveOutcome(null), { kind: 'close' });
   assert.deepEqual(leaveOutcome('   '), { kind: 'close' });

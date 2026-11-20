@@ -9,7 +9,7 @@
   "wakes": 18,
   "noisePerCapture": 1.4,
   "callsPerReview": 5,
-  "roomClaudeJoinCalls": 2,
+  "linesPerScene": 6,
   "joinText": 1400,
   "joinBlock": 1900
  },

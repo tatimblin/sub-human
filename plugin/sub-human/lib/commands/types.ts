@@ -14,11 +14,14 @@ import type { RoomCode, SeatName } from '../brand.ts';
  *   joined   a seat taken: me, lead (the mechanics block's last line) and say (the person's one line)
  * The router (index.ts run) makes every say and refused of a prompt that may hold a PIN a secret, before any verb ran.
  */
+/** debug: a detail for Claude Code's debug log (the module writes it there, to: 'debug'), never the person's line (a
+ * lock's path, the room session's start error). joined trouble: its line says something did not work (the room's
+ * Claude could not start): a classic answer shows it as a warning. */
 export type Answer =
-  | { kind: 'say'; text: string }
-  | { kind: 'refused'; text: string }
-  | { kind: 'secret'; text: string; refused?: boolean; pinned?: Pinned }
-  | { kind: 'joined'; me: Identity; lead: string; say: string };
+  | { kind: 'say'; text: string; debug?: string }
+  | { kind: 'refused'; text: string; debug?: string }
+  | { kind: 'secret'; text: string; refused?: boolean; pinned?: Pinned; debug?: string }
+  | { kind: 'joined'; me: Identity; lead: string; say: string; trouble?: boolean; debug?: string };
 
 /** An invite's secret part, for the hooks module to draw where Claude Code saves nothing ($.ui.status, under the prompt):
  * status, the one line "PIN 4090 · <the invite line>"; text, what the notices say instead (no secret in it); ms, how

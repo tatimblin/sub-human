@@ -8,8 +8,6 @@ import fs from 'node:fs';
 import * as h from './helpers.ts';
 import * as room from '../lib/room.ts';
 import * as identity from '../lib/identity.ts';
-import * as rows from '../lib/rows.ts';
-import * as config from '../lib/config.ts';
 import { createFake } from '../lib/clock.ts';
 import * as tailLib from '../lib/tail.ts';
 import * as session from '../lib/room/session.ts';
@@ -27,12 +25,8 @@ import { rc, sn } from './support/brands.ts';
 import { must } from './support/must.ts';
 
 const FAST = {
-  resolveMs: 100, unseatedMs: 100, pollMs: 50, settleMs: 300, settleMaxMs: 1000, roomClaudeSettleMs: 300, roomClaudeSettleMaxMs: 1000,
+  resolveMs: 100, unseatedMs: 100, pollMs: 50, settleMs: 300, settleMaxMs: 1000,
   leaveMs: 600, healthMs: 5000, backoffMs: 200, backoffMaxMs: 1000, errorLogMs: 60_000, stallMs: 5000,
-};
-const DEFAULTS = {
-  ...FAST, settleMs: config.SETTLE_MS, settleMaxMs: config.SETTLE_MAX_MS, roomClaudeSettleMs: config.ROOM_CLAUDE_SETTLE_MS,
-  roomClaudeSettleMaxMs: config.ROOM_CLAUDE_SETTLE_MAX_MS, leaveMs: config.LEAVE_SETTLE_MS,
 };
 
 const handles = new Set<{ stop(): void }>();
@@ -139,7 +133,7 @@ test('tail: silent before join, then the member push lane, settled into one batc
   assert.deepEqual(t.of('chat').flatMap(x => x.lines), [
     'bob: bob says hi',
     'carol joined',
-    'room: "claude proposes" (abcdef) decided (room decision)', // the decision names its proposal
+    '"claude proposes" (abcdef) decided (room decision)', // the decision names its proposal; one speaker, no "room:"
     'bob: words an old retract names',
     'bob: last ' + 'w'.repeat(390), // long text wraps at 400 code points
     '  │ ' + 'w'.repeat(210), // a continuation line is nested under its sender
@@ -149,13 +143,13 @@ test('tail: silent before join, then the member push lane, settled into one batc
     "bob's Claude (to you): q for alice",
     'claude proposed: claude proposes (bbbbbb)',
     "carol's Claude: carol: anyone on @alice docs?",
-    'room: task "docs" open, owner you',
+    'task "docs" open, owner you',
   ], t.text());
-  assert.match(t.of('pull').map(x => x.text).join('\n'), /\nroom: peer-forged\n/, 'the old retract: an ordinary pull line');
+  assert.match(t.of('pull').map(x => x.text).join('\n'), /\npeer-forged\n/, 'the old retract: an ordinary pull line');
   assert.doesNotMatch(t.chat().join('\n'), /#\d/, 'no ids in what the human sees');
   assert.deepEqual(t.forClaude().map(l => l.slice(0, 40)), ["(for Claude) to answer bob's Claude: Sen", '(for Claude) room now: proposal bbbbbb w']);
   assert.equal(t.forClaude()[0], `(for Claude) to answer bob's Claude: SendMessage bob.${code}`, 'a post to me names how to answer its Claude');
-  assert.match(must(must(t.of('rows').at(-1)).text), /SUB-HUMAN ROWS: your room row is not running/, 'the missing row is the rows event');
+  assert.doesNotMatch(t.of('reminders').map(x => String(x.text)).join('\n'), /SUB-HUMAN ROWS|Agent\(/, 'no row call: the room row is the hooks module\'s');
   assert.ok(must(t.forClaude()[1]).startsWith(`(for Claude) room now: proposal ${H2.slice(0, 6)} waiting on alice · you: answer needed (`), t.forClaude()[1]);
   assert.ok(must(t.forClaude()[1]).includes(`"proposal ${H2}"`), 'the card call carries the full hash');
   assert.equal(cursor(code, 'alice'), 19);
@@ -163,24 +157,22 @@ test('tail: silent before join, then the member push lane, settled into one batc
   assert.deepEqual(t.errs, []);
 });
 
-test('tail (room-plan live): a task added with me as its suggested owner is a chat line that says so, and no wake', () => {
+test('tail (room-plan live): a task added with me as its suggested owner is one chat line, "New task for you", and no wake', () => {
   h.freshHome();
   const { code } = h.register('alice');
-  rows.writeHolds(code, sn('alice'), { room: true });
   sys(code, 'member_joined', 'alice');                                                        // #1
   const t = startTail();
   t.advance(300);
   inRoom(code, r => r.append({ kind: 'task', op: 'add', id: 2, subject: 'handler tests', status: 'pending', suggest: 'alice' }, { via: 'system', from: 'room', system: true })); // #2
   t.advance(1000);
-  assert.deepEqual(t.lines(), ['room: task "handler tests" open, suggested for you (claim it to take it)'], t.text());
+  assert.deepEqual(t.lines(), ['New task for you: handler tests'], t.text());
   assert.deepEqual(t.of('wake'), []);
 });
 
-test('tail (live repro): another member\'s new version of a plan I asked to sign off and objected to wakes my Claude, saying so', () => {
+test('tail (quiet): another member\'s new version of a plan I asked about and objected to wakes nobody; my Claude\'s context says what it comes after', () => {
   h.freshHome();
   const { code } = h.register('alice');
   h.register('bob', 'member', 1, code);
-  rows.writeHolds(code, sn('alice'), { room: true });
   sys(code, 'member_joined', 'alice');
   const store = room.open(code).store;
   plans.put(store, { base: 0, text: 'hello world' }, { by: 'alice' });
@@ -190,20 +182,21 @@ test('tail (live repro): another member\'s new version of a plan I asked to sign
   t.advance(300);
   plans.put(store, { base: 1, text: 'goodbye world' }, { by: 'bob' });
   t.advance(1000);
-  const wake = t.of('wake').flatMap(x => x.text.split('\n'));
-  // noise pass F: no "for bob" when the Claude is bob's own, no hash
-  assert.deepEqual(wake.filter(l => !l.startsWith('(for Claude)')), ["bob's Claude: plan room v2", '  │ retires the sign-off request for plan room v1'], t.text());
-  assert.ok(wake.some(l => l.startsWith('(for Claude) this v2 of plan room comes after v1, whose sign-off alice asked for; objected: alice.')), t.text());
+  // the request on v2, once bob sends it, is the person's one line ("Plan room v2 is ready · bob's edit")
+  assert.deepEqual(t.of('wake'), [], t.text());
+  assert.deepEqual(t.chat(), [], t.text());
+  const pull = t.of('pull').map(x => x.text).join('\n');
+  assert.match(pull, /\nbob's Claude: plan room v2\n/, t.text());
+  assert.match(pull, /\(for Claude\) this v2 of plan room comes after v1, whose review alice asked for; objected: alice\./, t.text());
 });
 
-test('tail: a member sees every join as a chat line; with its room row running, no row-call invite', () => {
+test('tail: a member sees every join as a chat line, and never a row call', () => {
   h.freshHome();
   const { code } = h.register('alice');
-  rows.writeHolds(code, sn('alice'), { room: true });
   sys(code, 'member_joined', 'alice');                         // #1
   const t = startTail();
   t.advance(300);
-  sys(code, 'member_joined', 'bob');                           // #2 the room row nests bob by itself: a chat line only
+  sys(code, 'member_joined', 'bob');                           // #2 a chat line only
   say(code, 'bob', 'hi');                                      // #3
   t.advance(1000);
   assert.deepEqual(t.lines(), ['bob joined', 'bob: hi'], t.text());
@@ -213,7 +206,6 @@ test('tail: a member sees every join as a chat line; with its room row running, 
 test('tail (noise pass E): a decision the consent hook already told the model is the person\'s notice only; the SendMessage hint goes once per peer', () => {
   h.freshHome();
   const { code } = h.register('alice');
-  rows.writeHolds(code, sn('alice'), { room: true });
   sys(code, 'member_joined', 'alice');
   const t = startTail();
   t.advance(300);
@@ -228,11 +220,29 @@ test('tail (noise pass E): a decision the consent hook already told the model is
   assert.equal(t.forClaude().filter(l => l.includes('to answer bob\'s Claude: SendMessage')).length, 1, t.text());
 });
 
-test('tail (noise pass F): a plan version and its sign-off request in one batch are one line, the request\'s, with the summary', () => {
+test('tail (one line per event): an objection on my request is its one line, with its note; the decision it made is not said again', () => {
   h.freshHome();
   const { code } = h.register('alice');
   h.register('bob', 'member', 1, code);
-  rows.writeHolds(code, sn('alice'), { room: true });
+  sys(code, 'member_joined', 'alice');
+  const t = startTail();
+  t.advance(300);
+  prop(code, 'alice', H1, ['bob']);
+  t.advance(1000);
+  const before = t.events().length;
+  say(code, 'bob', 'clamp the page size', { kind: 'objection', proposal_hash: H1 });
+  sys(code, 'decision', 'room', { proposal_hash: H1, text: 'objected: bob' });
+  t.advance(1000);
+  const after = t.events().slice(before);
+  assert.deepEqual(after.map(e => e.type), ['wake'], t.text());
+  assert.match(t.text(), /clamp the page size/, 'the note reaches Claude, in the wake');
+  assert.doesNotMatch(JSON.stringify(after), /not agreed|Not agreed/, 'no second line for the decision, drawn or as context');
+});
+
+test('tail (quiet): a plan version and the request on it in one batch are one line, the request\'s; the summary is in the plan view', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  h.register('bob', 'member', 1, code);
   sys(code, 'member_joined', 'alice');
   const t = startTail();
   t.advance(300);
@@ -240,28 +250,25 @@ test('tail (noise pass F): a plan version and its sign-off request in one batch 
   plans.put(store, { base: 0, text: '# Paging\n\nopaque cursor', summary: 'opaque cursor' }, { by: 'bob' });
   proposal.ask({ code, name: sn('bob') }, {});
   t.advance(1000);
-  assert.deepEqual(t.lines().filter(l => !l.startsWith('(for Claude)')), ["bob's Claude asks you and bob to sign off on plan room v1: opaque cursor"], t.text());
+  assert.deepEqual(t.of('chat'), [], 'no line for the version itself');
+  assert.deepEqual(t.of('wake').flatMap(x => x.text.split('\n')).filter(l => !l.startsWith('(for Claude)')), ["Plan room v1 is ready · bob's edit"], t.text());
 });
 
-test('tail (noise pass A): a machine its PIN let in shows its check and the kick as the join notice, once', () => {
+test('tail (noise pass A): a machine an invite let in is one short join notice, once', () => {
   h.freshHome();
   const { code } = h.register('alice');
-  rows.writeHolds(code, sn('alice'), { room: true });
   sys(code, 'member_joined', 'alice');
   const t = startTail();
   t.advance(300);
-  const notice = 'bob joined from bobs-mbp (check 3f9c-2a71) · not them? /sub-human kick bob';
+  const notice = 'bob joined (bobs-mbp)';
   sys(code, 'status', 'room', { text: notice });
   sys(code, 'member_joined', 'bob');
   t.advance(1000);
-  assert.deepEqual(t.chat(), [`room: ${notice}`], t.text());
+  assert.deepEqual(t.chat(), [notice], t.text());
   assert.equal(t.of('wake').length, 0, 'no wake: the person acts on it, not Claude');
 });
 
-/** The room session's wakes: each ends with the one line telling it what to do (lib/tail.ts formatRoomClaudeBatch). */
-const rowsTurns = (t: { lines(): string[] }): number => t.lines().filter(l => l.startsWith('Make only the call its row note names')).length;
-
-test('tail: the room session is woken only by a join whose row is not running: no post to it, no answer, no decision, no task request', () => {
+test('tail: the room session is never woken: not by a join, a post to it, an answer, a decision or a task request (it keeps no rows)', () => {
   h.freshHome();
   const { code } = h.register('claude', 'claude');
   sys(code, 'member_joined', 'claude');
@@ -273,47 +280,11 @@ test('tail: the room session is woken only by a join whose row is not running: n
   say(code, 'alice', '', { kind: 'objection', proposal_hash: H1, text: 'no' });                // #5
   inRoom(code, r => r.append({ kind: 'task_req', op: 'add', subject: 'parser tests' }, { via: 'agent', from: 'bob' })); // #6
   sys(code, 'decision', 'room', { proposal_hash: H1 });                                        // #7
-  say(code, 'alice', 'end', { to: 'claude' });                                                 // #8: no @claude any more, and a post to it is no wake
-  sys(code, 'member_joined', 'carol');                                                         // #9: her row is not running
-  t.advance(1500);
-  assert.deepEqual(t.ids(), [9], t.text());
-  assert.equal(rowsTurns(t), 1);
-  assert.match(t.text(), /#9 carol\[system\] member_joined .* · row: carol has no row running; spawn it now: Agent sub-human:participant/);
-  assert.match(t.text(), /Make only the call its row note names, then end your turn with the one word "ok"\./);
-  assert.doesNotMatch(t.text(), /room now:/, 'no room state: it reads nothing else');
-});
-
-test('tail: a member_joined notice says whether that row already runs (live holds), for the room\'s Claude', () => {
-  h.freshHome();
-  const { code } = h.register('claude', 'claude');
-  const t = startTail({ deps: { roomClaude: { watchdog: () => 'live' } } });
-  t.advance(300);
-  sys(code, 'member_joined', 'bob');                                     // #1 first join: no row yet, pushed with the call
-  t.advance(1500);
-  assert.match(t.text(), /member_joined/);
-  rows.writeHolds(code, sn('claude'), { members: ['bob'] });                   // the room Claude's bob row is now held
-  sys(code, 'member_left', 'bob');                                       // #2 pull
-  sys(code, 'member_joined', 'bob');                                     // #3 rejoin: the row survived, not pushed
-  say(code, 'bob', 'back', { to: 'claude' });                            // #4: no wake
-  t.advance(1500);
-  assert.deepEqual(t.ids(), [1], t.text());
-  assert.match(must(t.entries()[0]), /^#1 bob\[system\] member_joined .* · row: bob has no row running; spawn it now: Agent sub-human:participant, description "bob", prompt "member: bob"/);
-});
-
-test('tail: the room session settles longer by default (two joins 2 s apart are one batch: one rows turn)', () => {
-  h.freshHome();
-  const { code } = h.register('claude', 'claude');
-  sys(code, 'member_joined', 'claude');
-  const t = startTail({ timings: DEFAULTS, deps: { roomClaude: { watchdog: () => 'live' } } });
-  t.advance(300);
-  sys(code, 'member_joined', 'alice');                                  // #2
-  t.advance(2000);
-  sys(code, 'member_joined', 'bob');                                    // #3
-  t.advance(2900);
-  assert.equal(t.text(), '', 'still settling: 3 s of quiet after #3');
-  t.advance(500);
-  assert.deepEqual(t.ids(), [2, 3], t.text());
-  assert.equal(rowsTurns(t), 1, t.text());
+  say(code, 'alice', 'end', { to: 'claude' });                                                 // #8
+  sys(code, 'member_joined', 'carol');                                                         // #9
+  t.advance(4000);
+  assert.deepEqual(t.ids(), [], t.text());
+  assert.deepEqual([t.of('wake'), t.of('chat'), t.of('pull')], [[], [], []]);
 });
 
 test('tail: a steady trickle is cut into batches at the settle max; held ids keep the cursor back', () => {
@@ -597,7 +568,6 @@ const startNd = startTail;
 test('tail: a member batch is chat + pull, a line to me is a wake; it says its seat', () => {
   h.freshHome();
   const { code } = h.register('alice');
-  rows.writeHolds(code, sn('alice'), { room: true });
   sys(code, 'member_joined', 'alice');                                                  // #1
   const t = startNd({ sid: 'sid-a' });
   t.advance(300);
@@ -609,7 +579,7 @@ test('tail: a member batch is chat + pull, a line to me is a wake; it says its s
   inRoom(code, r => r.append({ kind: 'question', text: 'q for alice', to: 'alice' }, { via: 'agent', from: 'bob' })); // #6 wake
   prop(code, 'claude', H2, ['alice']);                                                    // #7 a proposal for me: wake + state
   t.advance(2000);
-  assert.equal(t.writes, 1, 'ONE batch write (after the seat and rows events)');
+  assert.equal(t.writes, 1, 'ONE batch write (after the seat and reminders events)');
   const batch = t.events().filter(x => ['chat', 'pull', 'wake'].includes(x.type));
   assert.deepEqual(batch.map(x => x.type), ['chat', 'pull', 'wake'], 'chat first, then pull, then wake');
   assert.deepEqual(must(t.of('chat')[0]).lines, ['bob joined', 'bob: bob says hi']);
@@ -625,46 +595,25 @@ test('tail: a member batch is chat + pull, a line to me is a wake; it says its s
   assert.deepEqual(t.errs, []);
 });
 
-test('tail: rows says the missing room row and the pending reminders at start and when they change; null clears', () => {
+test('tail: rows says the pending reminders at start and when they change (never a row call); null clears', () => {
   h.freshHome();
   const { code } = h.register('alice');
   sys(code, 'member_joined', 'alice');                                                  // #1
   const t = startNd({ sid: 's' });
   t.advance(300);
-  let r = t.of('rows');
+  const r = t.of('reminders');
   assert.equal(r.length, 1);
-  assert.match(must(must(r[0]).text), /^SUB-HUMAN ROWS: your room row is not running/);
+  assert.equal(must(r[0]).text, null, 'nothing pending: nothing to say');
   t.advance(FAST.healthMs + 100);
-  assert.equal(t.of('rows').length, 1, 'unchanged: not sent again');
-  rows.writeHolds(code, sn('alice'), { room: true });
-  t.advance(FAST.healthMs);
-  r = t.of('rows');
-  assert.equal(must(r.at(-1)).text, null, 'the row runs: cleared');
+  assert.equal(t.of('reminders').length, 1, 'unchanged: not sent again');
   prop(code, 'claude', H2, ['alice']);
   t.advance(FAST.healthMs);
-  assert.match(must(must(t.of('rows').at(-1)).text), new RegExp(H2.slice(0, 6)), 'a proposal awaiting me is reminded');
-});
-
-test('tail: the room session gets a join as one wake (its rows turn); nothing as pull or chat', () => {
-  h.freshHome();
-  const { code } = h.register('claude', 'claude');
-  rows.writeHolds(code, sn('claude'), { members: ['bob'] });
-  const t = startNd({ sid: 'so', deps: { roomClaude: { watchdog: () => 'live' } } });
-  t.advance(300);
-  say(code, 'bob', 'please add tests', { to: 'claude' });                               // #1: none
-  say(code, 'bob', 'bob to the room');                                                  // #2: none
-  sys(code, 'member_joined', 'carol');                                                  // #3: wake (no row)
-  t.advance(2000);
-  assert.deepEqual([t.of('chat'), t.of('pull')], [[], []]);
-  const wake = t.of('wake');
-  assert.equal(wake.length, 1);
-  assert.match(must(wake[0]).text, /^#3 carol\[system\] member_joined/);
+  assert.match(must(must(t.of('reminders').at(-1)).text), new RegExp(H2.slice(0, 6)), 'a proposal awaiting me is reminded');
 });
 
 test('tail: a member\'s wake carries the room state without entry ids (the person sees the plugin prompt\'s row); the room\'s Claude\'s keeps them', () => {
   h.freshHome();
   const { code } = h.register('alice');
-  rows.writeHolds(code, sn('alice'), { room: true });
   sys(code, 'member_joined', 'alice');                                                  // #1
   const t = startNd({ sid: 's' });
   t.advance(300);

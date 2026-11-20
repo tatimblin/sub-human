@@ -18,7 +18,7 @@ export type LogEntry = Entry & { id_?: unknown };
 /** How a join/leave line was shown to a seat. */
 export interface ShownRec { id: number, via: string, at?: string }
 /** A seat's session document (members/NAME/session.json), the parts the checks read. */
-export interface SessionDoc { v?: number, cursor?: number, shown?: { ids?: number[], log?: ShownRec[] }, holds?: { room?: string, members?: string[] } }
+export interface SessionDoc { v?: number, cursor?: number, shown?: { ids?: number[], log?: ShownRec[] } }
 
 export interface RoomLogOpts {
   home: string;

@@ -221,7 +221,26 @@ function markTold(code: RoomCode, { ref, name }: { ref: string; name: SeatName }
 
 const lapse = (code: RoomCode, { now = Date.now() }: { now?: number } = {}): AdmissionRequest[] => lapseAdmissions(hostStore(code), { now });
 
+/**
+ * For `who` on the host: each seat a machine joined with an invite (its admission let in and used), as one note:
+ * "from carols-mbp, check 3f9c-2a71, wanted "carol", let in by alice · not them? /sub-human kick carol2" (the room's
+ * own line says only "carol2 joined (carols-mbp)": server.ts). seats: the members to describe, by name and the
+ * machine their seat joined from (a record for another machine is another seat's). The newest record per name wins.
+ */
+function joinedVia(code: RoomCode, seats: readonly { name: string; machine?: string | null | undefined }[]): Map<string, string> {
+  const out = new Map<string, string>();
+  const used = admissions(hostStore(code), { all: true }).filter(r => r.admit === 'let-in' && r.used_at);
+  for (const s of seats) {
+    const r = used.filter(x => x.name === s.name && (!s.machine || x.machine === s.machine)).at(-1);
+    if (!r) continue;
+    const wanted = r.asked_as ? `, wanted "${r.asked_as}"` : '';
+    const by = r.admitted_by && r.admitted_by !== 'pin' ? `, let in by ${r.admitted_by}` : '';
+    out.set(s.name, `from ${r.label || 'another machine'}, ${fp(r)}${wanted}${by} · not them? /sub-human kick ${r.name}`);
+  }
+  return out;
+}
+
 export {
-  check, admissions, decide, lapseAdmissions, WAITING, pending, find, targets, describe, question, taken, card, letIn, refuse, markTold, lapse, LET_IN, REFUSE,
+  check, admissions, decide, lapseAdmissions, WAITING, pending, find, targets, describe, question, taken, card, letIn, refuse, markTold, lapse, joinedVia, LET_IN, REFUSE,
 };
 export type { Signer, Slotted, AdmissionRequest };

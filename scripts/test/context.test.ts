@@ -8,9 +8,9 @@ import { context } from '../checks/context.ts';
 // the API the scene modules read (checks/context.ts composes it from captures, transcripts, log and cost)
 const API = [
   'DEMO', 'A', 'B', 'remote', 'rowsDir', 'sessionOf', 'screens', 'home', 'home2', 'code', 'roomDir', 'log', 'members', 'roomClaudeSid', 'job', 'index', 'props', 'drafts', 'runStart',
-  'caps', 'cap', 'capName', 'span', 'stateDir', 'st', 'stText', 'nativeTasks', 'stateFile', 'holdsAt',
+  'caps', 'cap', 'capName', 'span', 'stateDir', 'st', 'stText', 'nativeTasks', 'stateFile',
   'seatFiles', 'entries', 'inSpan', 'toolUses', 'assistantIds', 'peerIn', 'wakeIn', 'chatIn', 'pullIn', 'chatTurn', 'roomClaudeTurns', 'textOf',
-  'byKind', 'fmt', 'logIn', 'replyAfter', 'shownLog', 'shownVia', 'noModelTurn', 'rowUserText', 'rowReply', 'chainOk', 'cost',
+  'byKind', 'fmt', 'logIn', 'replyAfter', 'shownLog', 'shownVia', 'noModelTurn', 'rowUserText', 'rowReply', 'seatAgents', 'chainOk', 'cost',
 ];
 
 function fixture() {
@@ -61,9 +61,6 @@ test('context: captures, state, log and transcripts helpers over a small run', (
   fs.writeFileSync(path.join(home, 'rooms', 'otter-0001', 'members', 'alice', 'session.json'), JSON.stringify({ v: 1, cursor: 2, shown: { ids: [1], log: [{ id: 1, via: 'mod', at: t(6) }] } }));
   assert.equal(x.shownVia('alice', 1), 'mod');
   assert.equal(x.sessionOf('alice')?.cursor, 2);
-  fs.writeFileSync(path.join(screens, 'state', 'S1', '2', 'session-claude.json'), JSON.stringify({ v: 1, holds: { members: ['alice'] } }));
-  assert.deepEqual(x.holdsAt('S1', 'last', 'claude').members, ['alice']);
-  assert.deepEqual(x.holdsAt('S1', 'last', 'bob'), {}, 'none saved');
   assert.deepEqual(x.inSpan([{ timestamp: t(20) }, { timestamp: t(50) }], x.span('S2')), [{ timestamp: t(20) }]);
   assert.match(x.cost(), /^≈ \$0\.00 /);
 });

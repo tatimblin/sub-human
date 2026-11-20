@@ -11,7 +11,8 @@
 // The test's $ has no state noun, so deliveryErrors shows here only through its notice.
 import type { Chunk, ClassicResultOf, EventOf, On } from 'claude-code'
 import { test, expect, mock, type Engine } from 'claude-code/testing'
-import { SEAT, OUT, must, ran, scriptOf, session, start, stdinOf, helloOf } from './support.ts'
+import { debugLines, SEAT, OUT, must, ran, scriptOf, session, start, stdinOf, helloOf } from './support.ts'
+import { WAKE_RESEND } from '../core/deliver.ts'
 
 const SID = 'sid-d'
 const line = (x: object) => JSON.stringify(x) + '\n'
@@ -25,7 +26,7 @@ async function until(cond: () => boolean, ms = 3000) {
   }
 }
 
-const NOTICE = "a room message didn't arrive here. Run /sub-human doctor."
+const NOTICE = "A room message didn't arrive. Run /sub-human doctor."
 type Opts = {
   hello?: ReturnType<typeof helloOf>, pieces?: string[], gate?: Promise<void>,
   /** How the session takes a prompt the module submits (n counts from 0): entered, dropped by a hook, or failed. */
@@ -88,7 +89,7 @@ function world(engine: Engine, on: On, { hello = OUT, pieces = [], gate = Promis
       return { value: { code: 0, signal: null } }
     } finally { seen.ended.push(n) }
   })
-  on('ui.log', (_$, e) => { seen.logs.push(e.text); return { value: undefined } })
+  on('ui.log', (_$, e) => { if (e.to === 'debug') debugLines.push(e.text); else seen.logs.push(e.text); return { value: undefined } })
   on('session.append', async (_$, e, next) => {
     if (e.message.type === 'system') return next(e) // the hidden home notice (stage 8f item 1), no delivery
     const text = e.message.content.map(b => b.text).join('')
@@ -199,7 +200,7 @@ test('a wake mid-turn whose append is refused falls back to a prompt, whole', as
 })
 
 test('rows are held and ride on the person\'s next typed prompt as context, once the child delivers', async ($, on) => {
-  const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT }) + line({ type: 'rows', text: 'SUB-HUMAN ROWS: your room row is not running' })] })
+  const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT }) + line({ type: 'reminders', text: 'SUB-HUMAN ROWS: your room row is not running' })] })
   const contexts = seen.contexts
   await start($)
   await until(() => seen.spawns.length === 1)
@@ -214,13 +215,13 @@ test('the room server down: a seated typed prompt tells the person (a notice) an
   let up = false
   on('mcp.connect', () => ({ value: up ? { isConnected: true, server: 'plugin:sub-human:room' } : { isConnected: false, reason: 'failed', message: 'Skipping connection (recent failure cached)' } }))
   const typed = (text: string) => $.prompt.submit({ text, origin: { kind: 'composer' }, wait: false })
-  const down = () => seen.logs.filter(l => /room's tools are not connected/.test(l)).length
+  const down = () => seen.logs.filter(l => /^Room tools not connected/.test(l)).length
   await start($)
   await until(() => seen.spawns.length === 1)
   await new Promise(r => setTimeout(r, 50))
   await typed('one')
   expect(down()).toBe(1)
-  expect(must(seen.logs.find(l => /room's tools are not connected/.test(l)))).toMatch(/@room and messages to other Claudes still work.*\/mcp/)
+  expect(must(seen.logs.find(l => /^Room tools not connected/.test(l)))).toMatch(/Run \/mcp and reconnect plugin:sub-human:room\.$/)
   expect((seen.contexts.at(-1) ?? []).join('\n')).toMatch(/^SUB-HUMAN: the room's tools .* are not connected in this session\. Don't call them/)
   await typed('two')
   expect(down()).toBe(1)
@@ -272,7 +273,7 @@ test('stage 8e B: a typed @room the plugin stops starts no turn, so the room con
 })
 
 test('the held rows text rides once per change: the same text on the next prompt is not added again; a changed text is', async ($, on) => {
-  const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT }) + line({ type: 'rows', text: 'proposal a1 still awaits alice' })] })
+  const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT }) + line({ type: 'reminders', text: 'proposal a1 still awaits alice' })] })
   const typed = (text: string) => $.prompt.submit({ text, origin: { kind: 'composer' }, wait: false })
   await start($)
   await until(() => seen.spawns.length === 1)
@@ -281,7 +282,7 @@ test('the held rows text rides once per change: the same text on the next prompt
   expect(seen.contexts.at(-1)).toEqual(['proposal a1 still awaits alice'])
   await typed('second')
   expect(seen.contexts.at(-1) ?? []).toEqual([])
-  seen.feed(line({ type: 'rows', text: 'proposal b2 still awaits alice' }))
+  seen.feed(line({ type: 'reminders', text: 'proposal b2 still awaits alice' }))
   await new Promise(r => setTimeout(r, 50))
   await typed('third')
   expect(seen.contexts.at(-1)).toEqual(['proposal b2 still awaits alice'])
@@ -382,7 +383,7 @@ test('delivery errors are told once per window, however many there are', async (
   seen.release()
 })
 
-test('a child that exits is started again after 1 s, doubling; one that ran over a minute starts the backoff over', async ($, on) => {
+test('a child that exits is started again after 1 s, doubling; one that ran over a minute starts the backoff over; the debug log says so, never the person', async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
   const seen = world($, on, {
     spawn: async function* (n) {
@@ -400,10 +401,11 @@ test('a child that exits is started again after 1 s, doubling; one that ran over
   await clock.advance(61_000); await spawned(3) // it exited after 61 s: the backoff starts over at 1 s
   await clock.advance(999); await spawned(3)
   await clock.advance(1); await spawned(4)
-  expect(seen.logs).toEqual([]) // a restart resumes from the child's cursor: nothing lost yet
+  expect(seen.logs).toEqual([]) // a restart resumes from the child's cursor: nothing lost
   await clock.advance(1000); await spawned(5)
   await clock.advance(2000); await spawned(6)
-  expect(seen.logs).toEqual([NOTICE]) // the third failure in a row: the room is going unheard
+  expect(seen.logs).toEqual([]) // 0.6.0: three in a row still lose nothing: the debug log's (claude --debug)
+  expect(debugLines).toContain('tail: the room tail exited (3 in a row); restarting from its cursor')
   for (const e of seen.spawns) expect(e.env?.CLAUDE_CODE_SESSION_ID).toBe(SID)
 })
 
@@ -467,7 +469,7 @@ test('a /sub-human leave stops the child: the hello says no seat, nothing restar
 
 test('stage 8e I.11 (live verify, remote/16b): a leave stops the child though the hello still names the seat (a room hosted elsewhere lists it a moment longer); nothing restarts it', async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
-  const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT })], joinOut: { subHuman: { say: 'left otter-4821 · /sub-human joins again', refused: false, shareable: true } } })
+  const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT })], joinOut: { subHuman: { say: 'Left otter-4821', refused: false, shareable: true } } })
   on('command.run', () => ({}))
   on('env.get', () => ({ value: undefined }))
   await start($)
@@ -531,7 +533,7 @@ test('turn.start, a mid-turn wake, a tool call, turn.complete: the wake is deliv
   seen.release()
 })
 
-test('a wake appended mid-turn that no later request carried is submitted at the turn\'s end, once', async ($, on) => {
+test('a wake appended mid-turn that no later request carried gets a turn at the turn\'s end, once, context only (its lines were shown)', async ($, on) => {
   const { seen, go } = midTurn($, on)
   await start($)
   await $.turn.start({ text: 'working on it', turnId: 't1' })
@@ -539,7 +541,9 @@ test('a wake appended mid-turn that no later request carried is submitted at the
   await until(() => seen.appended.length === 1)
   await done($, 't1').catch(() => {})
   await until(() => seen.prompts.length === 1)
-  expect(seen.prompts[0]).toBe('room: decided (room decision)')
+  // its row is stored and its line was shown mid-turn: never the line again (EVALUATION D12)
+  expect(seen.prompts[0]).toBe(WAKE_RESEND)
+  expect(seen.prompts[0]).not.toContain('room: decided')
   await $.turn.start({ text: 'next', turnId: 't2' })
   await new Promise(r => setTimeout(r, 50))
   expect(seen.prompts.length).toBe(1)
@@ -624,11 +628,11 @@ test('stage 8e G (live verify, remote/99x): the host\'s let-in wake is drawn as 
 // tail's take event has the module take the seat in a turn of its own, never the prompt that carried the line or PIN
 const PENDING = { ...helloOf(null), pending: true }
 const TAKE = { type: 'take', code: 'otter-4821', name: 'bob', text: 'the host let you in to room otter-4821: type /sub-human to join it as bob', check: 'check 3f9c-2a71' }
-const BLOCK = 'SUB-HUMAN: you are bob\'s Claude in room otter-4821 (with alice).\nROWS: Agent({subagent_type: "sub-human:room", description: "otter-4821"})'
+const BLOCK = 'SUB-HUMAN: you are bob\'s Claude in room otter-4821 (with alice).'
 const JOINED = { hookSpecificOutput: { hookEventName: 'UserPromptExpansion', additionalContext: BLOCK }, subHuman: { say: 'joined otter-4821 as bob, with alice', joined: true, shareable: true } }
-const YOU_RE_IN = 'You\'re in room otter-4821 as bob (check 3f9c-2a71, as the host\'s room line shows)'
+const YOU_RE_IN = 'You\'re in room otter-4821 as bob (check 3f9c-2a71)'
 
-test('a take while idle: join.ts with no args, the nonce and the room; one prompt "You\'re in room …" (asUser) with the seat\'s block as context, which names the ROWS calls', async ($, on) => {
+test('a take while idle: join.ts with no args, the nonce and the room; one prompt "You\'re in room …" (asUser) with the seat\'s block as context, and no row call (the module starts the room row)', async ($, on) => {
   const seen = world($, on, { hello: PENDING, pieces: [line(TAKE)], joinOut: JOINED })
   await start($)
   await until(() => seen.prompts.length === 1).catch(() => { throw new Error(JSON.stringify(seen)) })
@@ -638,9 +642,10 @@ test('a take while idle: join.ts with no args, the nonce and the room; one promp
   expect(seen.prompts).toEqual([YOU_RE_IN])
   const said = [...(seen.contexts[0] ?? []), ...(must(seen.classic[0], 'the prompt\'s result').additionalContext ?? [])].join('\n')
   expect(said).toContain('(for Claude) SUB-HUMAN: you are bob\'s Claude in room otter-4821')
-  expect(said).toContain('(for Claude) ROWS: Agent({subagent_type: "sub-human:room"')
-  expect(said).toMatch(/your first action is the Agent call\(s\) under its ROWS line/)
-  expect(seen.logs).toContain('joined otter-4821 as bob, with alice')
+  expect(said).not.toMatch(/ROWS|Agent\(/)
+  expect(said).toMatch(/end your turn without text \(the room row starts by itself\)/)
+  // one line for the join: the prompt row, not the seat's own line beside it
+  expect(seen.logs).not.toContain('joined otter-4821 as bob, with alice')
   expect(seen.joins.length).toBe(1)
   seen.release()
 })

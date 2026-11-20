@@ -63,6 +63,13 @@ const agentsCmd = (all = false): string[] => (all ? ['agents', '--json', '--all'
 const stopCmd = (id: unknown): string[] => ['stop', String(id)];
 
 /**
+ * argv to delete a bg session, a stopped one too, so `claude agents` and the agent view no longer list it.
+ * @cc Delete a background session and its worktree. Unlike `stop`, works on already-exited sessions.
+ * @stability API
+ */
+const rmCmd = (id: unknown): string[] => ['rm', String(id)];
+
+/**
  * Parse `claude agents --json` stdout into [{pid, id, sessionId, status, state, kind, name, cwd, startedAt}]
  * (missing fields null; interactive sessions have no id), or null when it isn't a JSON array.
  * status: idle|waiting|busy (live only); state: working|blocked|done|failed|stopped (bg only).
@@ -215,7 +222,8 @@ function runningVersion(pid: unknown, { timeoutMs = 3000 }: { timeoutMs?: number
   if (inPath?.[1]) return inPath[1];
   if (!path.isAbsolute(exe) || st.deleted) return null;
   const r = spawnSync(exe, ['--version'], { encoding: 'utf8', timeout: timeoutMs });
-  const m = /(\d+\.\d+\.\d+)/.exec(String(r.stdout || ''));
+  // only Claude Code's own answer ("2.1.296 (Claude Code)"): another binary's --version (uutils sleep's 0.10.0) is no version of it
+  const m = /(\d+\.\d+\.\d+)\s*\(Claude Code\)/.exec(String(r.stdout || ''));
   return m?.[1] ?? null;
 }
 
@@ -230,7 +238,7 @@ function runningVersion(pid: unknown, { timeoutMs = 3000 }: { timeoutMs?: number
 const ROOM_SESSION_INBOUND = 'refuse';
 
 export {
-  ROOM_SESSION_INBOUND, JOB_RE, parseDispatch, agentsCmd, stopCmd, parseAgentsJson, jobs, parseDaemonStatus, daemonStatus, exeState,
+  ROOM_SESSION_INBOUND, JOB_RE, parseDispatch, agentsCmd, stopCmd, rmCmd, parseAgentsJson, jobs, parseDaemonStatus, daemonStatus, exeState,
   runningVersion, CLIENT_ENV_DENY, clientEnv,
 };
 export type { AgentJob, JobsOpts, DaemonStatus, ExeStateOpts };

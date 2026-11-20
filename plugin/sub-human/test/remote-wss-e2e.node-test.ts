@@ -102,11 +102,10 @@ test('wss 1.1: the listener gives its key to a text request, refuses a handshake
   const { port, host, alice, code } = R;
   const shown = must(host.join(alice, 'invite --web', { SUB_HUMAN_WEB_FRONT: `http://127.0.0.1:${port}` }).json?.reason);
   assert.ok(shortShown(shown));
-  // noise pass C: the room's first invite says the key check and the install once; nothing on the older # form
-  assert.match(shown, /Their machine checks this one's key \(\S+…, named in the line\) before it sends anything/);
-  assert.match(shown, /No sub-human on their machine yet\? In Claude Code there: \/plugin marketplace add tatimblin\/sub-human, then \/plugin install sub-human@sub-human/);
+  // 0.6.0: the key check, the install, the rules and how to cancel or stop are the README's; nothing on the older # form
+  assert.doesNotMatch(shown, /Their machine checks this one's key|No sub-human on their machine yet|Cancel it:/);
   assert.doesNotMatch(shown, /An older sub-human|space in place of the #|They need sub-human/);
-  assert.match(shown, /\nCancel it: \/sub-human invite --cancel [0-9a-f]{12} · stop serving the room: \/sub-human invite --stop\n/);
+  assert.match(shown, /^sub-human: Invite ready \(over the web through 127\.0\.0\.1\) until \d\d:\d\d\. Send them this line:\n/);
   const pinned = Buffer.from(host.lib(() => listener.hostKey()), 'base64url');
   assert.equal(fs.statSync(path.join(host.home, 'listen', 'host-x25519.json')).mode & 0o777, 0o600);
   const ss = spawnSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN'], { encoding: 'utf8' }).stdout;
@@ -204,7 +203,7 @@ esac
   const again = must(host.join(alice, 'invite --web').json?.reason);
   assert.equal(lines().filter(l => l.startsWith('serve')).length, 1);
   assert.doesNotMatch(again, /~20 s|checks this one's key|5 wrong PINs|Off your tailnet/, 'once per room');
-  assert.equal(again.split('\n').length, 6, again);
+  assert.equal(again.split('\n').length, 5, again);
   // --public: opt-in, the serve path off first, then funnel, with the one-line CT warning
   const fun = host.join(alice, 'invite --public');
   assert.match(must(fun.json?.reason), /Tailscale Funnel \(public\)/);
@@ -280,7 +279,8 @@ test('a web invite: invite --web behind a front shows URL#SECRET (the SECRET as 
   const req = must(host.lib(() => admission.admissions(store.open(code), { all: true }))[0], 'the admission record');
   assert.deepEqual([req.key, req.admitted_by], [lf0.transport.clientKey, 'pin'], 'let in by the PIN, bound to the key it came with');
   const check = inviteSecret.joinCheck(req.machine, req.key);
-  assert.match(host.log(code), new RegExp(`bob joined from \\S+ \\(${check}\\) · not them\\? /sub-human kick bob`), 'the room line names the check, with the kick');
+  assert.match(host.log(code), /bob joined \(\S+\)/, 'the room line says who joined');
+  assert.match(must(host.lib(() => admission.joinedVia(code, [{ name: 'bob' }])).get('bob'), 'who'), new RegExp(`, ${check} · not them\\? /sub-human kick bob$`), 'who names the check of the machine and its key, with the kick');
   assert.ok(await h.until(() => linkState(remote, code) === 'online', 15_000, 50), 'online once let in');
   assert.equal(must(remote.join(bob, '').json).decision, undefined, 'a bare /sub-human takes the seat');
   const link = must(Object.values(host.lib(() => hostLinks.links(store.open(code))))[0], 'the link');
@@ -309,7 +309,8 @@ test('a web invite in one line: URL#SECRET PIN links in one hidden step; the PIN
   const req = must(host.lib(() => admission.admissions(store.open(code), { all: true }))[0], 'the admission record');
   assert.deepEqual([req.key, req.admitted_by, req.name], [lf.transport.clientKey, 'pin', 'bob'], 'let in by the PIN, bound to the key it came with');
   const check = inviteSecret.joinCheck(req.machine, req.key);
-  assert.match(host.log(code), new RegExp(`bob joined from \\S+ \\(${check}\\) · not them\\? /sub-human kick bob`), 'the room line names the check, with the kick');
+  assert.match(host.log(code), /bob joined \(\S+\)/, 'the room line says who joined');
+  assert.match(must(host.lib(() => admission.joinedVia(code, [{ name: 'bob' }])).get('bob'), 'who'), new RegExp(`, ${check} · not them\\? /sub-human kick bob$`), 'who names the check of the machine and its key, with the kick');
   assert.ok(await h.until(() => linkState(remote, code) === 'online', 15_000, 50), 'online once let in');
   assert.equal(must(remote.join(bob, '').json).decision, undefined, 'a bare /sub-human takes the seat');
   const lg = fs.readFileSync(path.join(host.home, 'listen', 'listen.log'), 'utf8');

@@ -57,6 +57,13 @@ const NATIVE = obj({
   blocks: opt(arr(str)), blockedBy: opt(arr(str)), metadata: opt(unknown_),
 });
 const STATUSES: ReadonlySet<string> = new Set(['pending', 'in_progress', 'completed']);
+/**
+ * The metadata key that keeps a task out of Claude Code's views (the list, TaskList, compaction's carry) while its
+ * auto-reset still counts it.
+ * @cc metadata?._internal
+ * @stability incidental
+ */
+export const INTERNAL_KEY = '_internal';
 const MARK = '.highwatermark';
 const ID_FILE = /^(\d+)\.json$/;
 

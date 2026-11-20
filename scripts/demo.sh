@@ -5,6 +5,10 @@
 #
 #   scripts/demo.sh [--windows] [--pause] [--only S6[,S7]] [--from S6] [--to S3] [--member-model MODEL] [--no-reset]
 #                   (--to: stop after that scene; a fresh run unless --from/--only is given too)
+#                   [--object-mode auto|default|acceptEdits]   (or SH_DEMO_OBJECT_MODE) S4 first puts SEAT_A in that
+#                   permission mode with shift+tab, so S5's objection is made from it (checks/s05-consent.ts: the
+#                   mode after the objection is the mode before). Unset: the seat's own mode (auto with most settings).
+#                   The release gate: --only S1,S2,S4,S5,S10 once per mode. No plan at all: --only S1,S2,S3,S10
 #   scripts/demo.sh --film [--take NAME] [same options]   a trailer take: the story scenes only (S1 S2 S3 S4 S5 S6b S10),
 #                   with tristan and jess in the seats (sh-tristan, sh-jess) instead of alice and bob,
 #                   seat panes 120×36, prompts typed a key at a time, every pane recorded by scripts/capture.ts into
@@ -63,6 +67,7 @@ ROOM_CLAUDE_COLS=200; ROOM_CLAUDE_ROWS=50   # a --bg session renders at 200 colu
 WINDOWS=0; PAUSE="${SUB_HUMAN_DEMO_PAUSE:-0}"; ONLY=""; FROM=""; TO=""; RESET=1
 FILM=0; TAKE=""
 MEMBER_MODEL=""   # empty: the seats use the user's default model; --member-model MODEL opts in
+OBJECT_MODE="${SH_DEMO_OBJECT_MODE:-}"   # --object-mode: the mode SEAT_A objects from in S5 (S4 sets it); empty: the seat's own
 
 case "${1:-}" in
   stop)
@@ -80,14 +85,16 @@ while [ $# -gt 0 ]; do
     --from) FROM="$2"; shift ;;
     --to) TO="$2"; shift ;;
     --member-model) MEMBER_MODEL="$2"; shift ;;
+    --object-mode) OBJECT_MODE="$2"; shift ;;
     --no-reset) RESET=0 ;;
     --film) FILM=1 ;;
     --take) TAKE="$2"; shift ;;
-    -h|--help) sed -n '2,42p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,46p' "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
   shift
 done
+case "$OBJECT_MODE" in ''|auto|default|acceptEdits) ;; *) echo "--object-mode: auto, default or acceptEdits, not $OBJECT_MODE" >&2; exit 2 ;; esac
 [ "$FILM" = 1 ] && { SEAT_A=tristan; SEAT_B=jess; }
 REMOTE=0; [ "$FILM" = 1 ] && REMOTE=1   # SEAT_B joins from another machine over ssh (S2)
 SEATS=("$SEAT_A" "$SEAT_B")
@@ -287,7 +294,7 @@ snap() { # caption — capture the panes (the room's Claude via claude logs), an
   local d="$SNAP_DIR/state/$SCENE/$STEP"   # this step's evidence (checks.ts reads state/SCENE/N)
   mkdir -p "$d"
   cp "$SUB_HUMAN_HOME/rooms/$r/members.json" "$SUB_HUMAN_HOME/rooms/$r"/rows/*.json "$d/" 2>/dev/null || true
-  # each seat's session document (its holds, the notices it was shown, its cursor) as session-NAME.json
+  # each seat's session document (the notices it was shown, its cursor, its review) as session-NAME.json
   local sd; for sd in "$SUB_HUMAN_HOME/rooms/$r"/members/*/session.json; do
     [ -f "$sd" ] && cp "$sd" "$d/session-$(basename "$(dirname "$sd")").json"
   done
@@ -297,6 +304,8 @@ snap() { # caption — capture the panes (the room's Claude via claude logs), an
   claude agents --json > "$d/agents.json" 2>/dev/null || true
   "$PLUGIN/scripts/sub-human" tasks --room "$r" > "$d/sub-human-tasks.txt" 2>&1 || true
   mkdir -p "$d/native-tasks"; cp "$HOME/.claude/tasks/sh-$r"/*.json "$d/native-tasks/" 2>/dev/null || true
+  # whether the room session's task list folder is there now, and what it holds (the reaper deletes it at the close)
+  if [ -d "$HOME/.claude/tasks/sh-$r" ]; then { echo "exists"; ls -A "$HOME/.claude/tasks/sh-$r"; } > "$d/tasks-dir.txt"; else echo "missing" > "$d/tasks-dir.txt"; fi
   ls "$HOME/.claude/plans" > "$d/plans.txt" 2>/dev/null || true   # the session plan files: a review restores the seat's
   cp "$BASE/plans-before.txt" "$SNAP_DIR/state/plans-before.txt" 2>/dev/null || true
 }
@@ -355,15 +364,25 @@ wait_card() {
 DWELL=""
 card_answer() { $LIB card "sh-$1" "$2" "${3:-}" ${DWELL:+--dwell "$DWELL"}; }
 
-# show_room SEAT OTHER (film): the person opens the room row in their agent panel (↓ onto it, Enter), and the members
-# show inside it (└ OTHER). A 2 s look, then back: ↑ to main and Enter (the room view closes, the cursor stays on main),
+# save_pane SEAT NAME — SEAT's pane now, as state/SCENE/NAME.txt (plain) and NAME.ansi (colours: a red line is red there)
+save_pane() {
+  local d="$SNAP_DIR/state/$SCENE"; mkdir -p "$d"
+  $LIB pane "sh-$1" > "$d/$2.txt"
+  tmux capture-pane -p -e -J -t "sh-$1:" > "$d/$2.ansi" 2>/dev/null
+  return 0
+}
+
+# show_room SEAT OTHER (film): the person opens the room row in their agent panel (↓ onto it, Enter): the row's view,
+# whose own line (the hold's, mcp/hold.ts) leads with who else is here ("OTHER here · …"; 0.6.0 has one row per session
+# and nothing nested in it). A 2 s look, then back: ↑ to main and Enter (the room view closes, the cursor stays on main),
 # then one ↑ to the prompt. One only: a second ↑ with the focus already on the prompt recalls the last prompt (S7, S8).
 show_room() {
   local s=$1 o=$2
   need $LIB wait-idle "sh-$s" --timeout 60 || return 1
   need $LIB select-row "sh-$s" "$(room)" || return 1
   keys "$s" Enter
-  need wait_pane "$s" "^\s*└\s*[⏺◯●]\s+$o(\s|$)" 15 --what "$s's panel shows $o inside the $(room) row" || return 1
+  need wait_pane "$s" "─ $(room) ─" 15 --what "$s's $(room) row view is open" || return 1
+  need wait_pane "$s" "^\s*⎿\s+$o( \([^)]*\))?(, [^·]*)? here\b" 15 --what "$s's room row line leads with \"$o here\"" || return 1
   mkdir -p "$SNAP_DIR/state/$SCENE"; $LIB pane "sh-$s" > "$SNAP_DIR/state/$SCENE/panel-$s.txt"
   sleep 2   # the look (no paint wait: the row's view keeps a live spinner and token count)
   need $LIB select-row "sh-$s" main --key Up || return 1
@@ -387,10 +406,12 @@ S1() { # A joins with no room open: the room is created and the headless room's 
   need $LIB wait-member claude pid --not "" --timeout 120 --what "the room's Claude job binds as member claude" || return 1
   claude_view
   need wait_pane "$a" "$(panel_row "$(room)")" 90 || return 1
-  need $LIB wait-holds claude "$a" --timeout 120 || return 1
+  # the row the hooks module spawned is holding (its hold call blocks: checks/transcripts.ts holdingRow); the room
+  # session holds no rows and runs only its launch turn, so there is nothing of its to wait on but its task list
+  need $LIB wait-row "$a" --timeout 120 || return 1
   need $LIB wait-task-list --timeout 120 || return 1
   settle "$a"
-  snap "$a runs /sub-human $a: room $(room) opened, the room's Claude started in the background; one $(room) row in $a's panel, a $a row in the room Claude's panel"
+  snap "$a runs /sub-human $a: room $(room) opened, the room's Claude started in the background; one $(room) row in $a's panel, none in the room Claude's"
 }
 
 S2() { # B joins (--film: from another machine, over ssh: S2_ssh)
@@ -406,10 +427,12 @@ S2() { # B joins (--film: from another machine, over ssh: S2_ssh)
   mkdir -p "$SNAP_DIR/state/S2"
   wait_pane "$a" "^\s*(⏺ |⎿ )?(sub-human: )?(room: )?$b joined(\s*$| from )" 60 --what "$a sees the chat line \"$b joined\"" && $LIB pane "sh-$a" > "$SNAP_DIR/state/S2/notice-$a.txt"
   need wait_pane "$b" "$(panel_row "$(room)")" 90 || return 1
-  need $LIB wait-holds claude "$b" --timeout 120 || return 1
-  need $LIB wait-holds "$a" "$b" --timeout 90 || return 1
+  need $LIB wait-row "$b" --timeout 120 || return 1
+  # each one room row's line names who else is here (lib/rows.ts: the status line rereads presence every 5 s)
+  need wait_pane "$a" "$(panel_row "$(room)").*[ ,·]$b( \([^)]*\))?(, [^·]*)? here\b" 60 --what "$a's room row names $b" || return 1
+  need wait_pane "$b" "$(panel_row "$(room)").*[ ,·]$a( \([^)]*\))?(, [^·]*)? here\b" 60 --what "$b's room row names $a" || return 1
   settle "$a" "$b"
-  snap "$b joins: $b nested in $a's room row, $a in $b's; the room's Claude lists both"
+  snap "$b joins: one $(room) row in each panel, nothing nested; $a's row names $b, $b's names $a; the room's Claude runs no turn"
   if [ "$FILM" = 1 ]; then
     mark panel "Everyone in the room shows up in your agent panel"
     show_room "$a" "$b" || return 1
@@ -421,15 +444,15 @@ S2() { # B joins (--film: from another machine, over ssh: S2_ssh)
 # it, a 4-digit PIN (to A only: the hook's hidden reply, never A's Claude); the driver reads both off A's pane (never
 # through a model). B types the line with the PIN after it: her link reaches devbox through her own ssh login
 # (scripts/devbox.sh's sshd), checks the host's key against the line, then shows the host the SECRET and the PIN in
-# one hello. The right PIN lets her machine in with no card: A's room gets the line "B joined from B-laptop (check …)
-# · not them? /sub-human kick B", and B's hooks module takes her seat in a turn of its own ("You're in room …").
+# one hello. The right PIN lets her machine in with no card: A's room gets the line "B joined (B-laptop)" (the check
+# and the kick are A's /sub-human who), and B's hooks module takes her seat in a turn of its own ("You're in room …").
 S2_ssh() {
   local a=$SEAT_A b=$SEAT_B
   local before; before=$($LIB log-max)
   local d="$SNAP_DIR/state/S2"; mkdir -p "$d"
   mark invite "$a invites $b's machine: one line, and a PIN told apart"
   submit "$a" "/sub-human invite"
-  need wait_pane "$a" "invite to room $(room) for one machine, over ssh devbox" 30 --what "$a's pane shows the ssh invite (to $a, never to $a's Claude)" || return 1
+  need wait_pane "$a" "Invite ready" 30 --what "$a's pane shows the ssh invite (to $a, never to $a's Claude)" || return 1
   local line; line=$($LIB join-line "sh-$a")
   [[ "$line" =~ ^join\ devbox\ $(room)\ [0-9a-z]{39}(\ --home\ [^ ]+)?$ ]] || { ABORT="S2: no \"join devbox $(room) SECRET\" line readable in $a's pane (read: ${line:-nothing})"; return 1; }
   local pin; pin=$($LIB join-pin "sh-$a")
@@ -441,7 +464,7 @@ S2_ssh() {
   snap "$a runs /sub-human invite: one line for $b's machine, /sub-human join devbox $(room) and its SECRET, and a 4-digit PIN apart, shown to $a only"
   mark join "$b joins from her machine over ssh: the line, and the PIN $a told her"
   submit "$b" "/sub-human $line $pin"
-  need wait_log --kind status --from room --text-has "$b joined from " --after "$before" --timeout 90 --what "the right PIN let $b's machine in with no card (the host's room line)" || return 1
+  need wait_log --kind status --from room --text-has "$b joined (" --after "$before" --timeout 90 --what "the right PIN let $b's machine in with no card (the host's room line)" || return 1
   $LIB link-shape "$LAPTOP/home/links/$(room).json" > "$d/link-file.json" 2>/dev/null
   mark seated "$b's session takes her seat on its own"
   need wait_pane "$b" "You're in room $(room) as $b" 90 --what "$b's hooks module took her seat in a turn of its own (no bare /sub-human)" || return 1
@@ -503,9 +526,17 @@ S4() { # let's plan: B's own Claude drafts room plan v1 (plan mode; the hooks st
   # her own plan view (0.5.0-beta.24: nobody else is asked about a version before its author), and her Yes sends it out
   local a=$SEAT_A b=$SEAT_B
   local before; before=$($LIB log-max)
+  # --object-mode: A's person puts his seat in that mode now (shift+tab), so S5's objection is made from it; either
+  # way A's mode before his review is kept as evidence (checks/s05-consent.ts compares it with the mode after)
+  if [ -n "$OBJECT_MODE" ]; then
+    need $LIB wait-idle "sh-$a" --timeout 60 || return 1
+    need $LIB set-mode "sh-$a" "$OBJECT_MODE" || return 1
+  fi
+  settle "$a"; save_pane "$a" "mode-$a"
   mark plan "$b asks her Claude to draft the room plan for cursor paging"
   submit "$b" "$PLAN4"
   need wait_log --kind plan --from "$b" --after "$before" --timeout 420 --what "$b's Claude stores room plan v1 (an edit in plan mode, the store's receipt)" || return 1
+  save_pane "$b" "save-$b"   # the save's call and result rows as drawn (no red Error: on a save)
   need wait_card "$b" "$b's own check of v1 is open (nobody else is asked yet)" || return 1
   mark check "$b checks her Claude's version first; nobody else is asked yet"
   paint "sh-$b"
@@ -523,15 +554,17 @@ S4() { # let's plan: B's own Claude drafts room plan v1 (plan mode; the hooks st
   read_plan "$a"
 }
 
-# read_plan SEAT — page through the open plan view with PgDn to its end (the hook's "room proposal HASH" line),
-# snapping SEAT's pane after each page, so the walkthrough shows every part of the proposal is readable
+# read_plan SEAT — page through the open plan view with PgDn to its end (the hook's ask under the plan: "sign-off on
+# plan NAME vN, asked by …", or "room proposal HASH" for a request with no plan), snapping SEAT's pane after each
+# page, so the walkthrough shows every part of the proposal is readable
+PLAN_END_RE='room proposal [0-9a-f]{12}|│ sign-off on '
 read_plan() {
   local i=0
-  while [ $i -lt 15 ] && ! $LIB pane "sh-$1" | command grep -Eq "room proposal [0-9a-f]{12}"; do
+  while [ $i -lt 15 ] && ! $LIB pane "sh-$1" | command grep -Eq "$PLAN_END_RE"; do
     keys "$1" PageDown; paint "sh-$1"; i=$((i + 1))
     node "$REPO/scripts/snap.ts" "sh-$1" "$SCENE" "$1 reads the whole proposal in the plan view: PgDn, page $((i + 1))"
   done
-  local ok=fail; $LIB pane "sh-$1" | command grep -Eq "room proposal [0-9a-f]{12}" && ok=ok
+  local ok=fail; $LIB pane "sh-$1" | command grep -Eq "$PLAN_END_RE" && ok=ok
   record "$1 paged to the end of the proposal (${i}× PgDn)" "$ok"
 }
 
@@ -543,12 +576,14 @@ S5() { # A objects with a note; his own Claude works the note in as v2, which he
   need card_answer "$a" Object "$NOTE5" || return 1
   need wait_log --kind objection --from "$a" --via human --after "$p1" --timeout 30 || return 1
   settle "$a" "$b"
-  snap "$a objects with a note (via=human, byte-exact); $b had agreed with her Yes"
+  save_pane "$a" "mode-after-$a"   # the footer's mode once the review closed (the same as state/S4/mode-A)
+  snap "$a objects with a note (via=human, byte-exact); $b had agreed with her Yes; $a's mode is the one he had"
   mark edits "$a asks his Claude to work his note into the plan"
   local e0; e0=$($LIB log-max)
   need $LIB wait-idle "sh-$a" --timeout 90 || return 1
   submit "$a" "$EDIT5A"
   need wait_log --kind plan --from "$a" --after "$e0" --timeout 600 --what "$a's Claude stores the next version" || return 1
+  save_pane "$a" "save-$a"
   need wait_card "$a" "$a's own check of his Claude's version is open" || return 1
   paint "sh-$a"
   settle "$b"
@@ -741,10 +776,10 @@ S8() { # resilience: /clear in alice keeps rows; bob /exit + --continue: rows re
   $LIB wait-exited sh-bob --timeout 10 --what "bob's claude exited"
   start_seat bob --continue
   need $LIB ready sh-bob --timeout 90 || return 1
-  need wait_pane bob "$(panel_row "$(room)")" 60 --what "bob's room row is back with no prompt (row-rewake)" || return 1
+  need wait_pane bob "$(panel_row "$(room)")" 60 --what "bob's room row is back with no prompt (the hooks module spawns it)" || return 1
   need $LIB wait-idle sh-bob --timeout 60 || return 1
   settle alice bob
-  snap "bob is back with --continue: row-rewake brings his room row back with no typing"
+  snap "bob is back with --continue: the hooks module brings his room row back with no typing"
   local b2; b2=$($LIB log-max)
   submit alice "@room bob, are you back? the parser tests are done"
   need wait_log --kind say --from alice --via human --after "$b2" --timeout 30 || return 1
@@ -796,7 +831,7 @@ S10() { # leave: both exit → reap completes task 1 and stops the room's Claude
   need wait_log --kind member_left --from "$a" --after "$before" --timeout 30 || return 1
   # the leave reaches B as a chat line once it has settled (8 s with no rejoin)
   mkdir -p "$SNAP_DIR/state/S10"
-  wait_pane "$b" "^\s*(⏺ |⎿ )?(sub-human: )?$a left\s*$" 45 --what "$b sees the chat line \"$a left\" after the 8 s settle" && $LIB pane "sh-$b" > "$SNAP_DIR/state/S10/notice-$b.txt"
+  wait_pane "$b" "^\s*(⏺ |⎿ )?(sub-human: )?$a left( \([^()]*\))?\s*$" 45 --what "$b sees the chat line \"$a left\" after the 8 s settle" && $LIB pane "sh-$b" > "$SNAP_DIR/state/S10/notice-$b.txt"
   need $LIB wait-idle "sh-$b" --timeout 30 || return 1
   exit_seat "$b"
   need wait_log --kind member_left --from "$b" --after "$before" --timeout 30 || return 1
@@ -820,7 +855,7 @@ PLAN11=$'# Carol reviews the parser tests\n\n1. carol reads the parser tests\n2.
 S11() { # remote: carol joins from a second home (another machine, on this one) over the pipe link; @room; a signoff
   local before; before=$($LIB log-max)
   submit alice "/sub-human invite --pipe --no-card"   # no copy card: it would hold alice's pane
-  need wait_pane alice "invite to room $(room)" 30 --what "alice's pane shows the invite line (to her, never to her Claude)" || return 1
+  need wait_pane alice "Invite ready" 30 --what "alice's pane shows the invite line (to her, never to her Claude)" || return 1
   local line; line=$($LIB join-line sh-alice)
   [ -n "$line" ] || { ABORT="S11: no invite line readable in alice's pane"; return 1; }
   local pin; pin=$($LIB join-pin sh-alice)   # shown to alice apart from the line; carol knocks without it
@@ -912,6 +947,8 @@ fresh=(); [ "$RESET" = 1 ] && fresh=(--fresh)
 remote=(); [ "$REMOTE" = 1 ] && remote=(--remote "$SEAT_B=$LAPTOP/home")
 $LIB plan-run "$SNAP_DIR/run.json" --all "${ALL[*]}" --seats "$SEAT_A $SEAT_B" ${remote[@]+"${remote[@]}"} ${fresh[@]+"${fresh[@]}"} ${run[@]+"${run[@]}"}
 $LIB run-words "$SNAP_DIR/run.json" say3 "$SAY3" plan4 "$PLAN4" note5 "$NOTE5" edit5a "$EDIT5A" edit5b "$EDIT5B"
+# the mode S5 objects from (checks/s05-consent.ts): set by --object-mode; a fresh run without it records none
+{ [ -n "$OBJECT_MODE" ] || [ "$RESET" = 1 ]; } && $LIB run-words "$SNAP_DIR/run.json" objectMode "$OBJECT_MODE"
 
 started=0; [ -z "$FROM" ] && started=1
 for SCENE in "${ALL[@]}"; do

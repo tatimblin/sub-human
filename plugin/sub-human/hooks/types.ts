@@ -27,6 +27,9 @@ export type AnyHookIn = Partial<BaseHookInput> & {
   sub_human_typing?: boolean;
   /** the module's PlanAttachment payload (mod/consent.ts: the plan_mode attachment's detail): the session's plan file */
   plan_file_path?: string;
+  /** #34, the module's NoteAnswer payload: the person's Send / Discard on the note's card the module asked itself
+   * ($.ui.ask), else null (dismissed, no one to ask) */
+  sub_human_note?: string | null;
   agent_type?: string;
   source?: string;
 };
@@ -56,11 +59,19 @@ export interface SubHumanReport {
   refused?: boolean;
   shareable?: boolean;
   joined?: boolean;
+  /** a detail for Claude Code's debug log, never the person's line (the module writes it there) */
+  debug?: string;
   reviewOpen?: boolean;
   /** consent: a note of the seat waits for its card (the module then sends a room post to consent) */
   noteWaits?: boolean;
   /** consent, for a plan_mode attachment: a line the module appends to the attachment's text (a room plan edit's seed) */
   attach?: string;
+  /** consent: this call is sub-human's own plan-mode call (a review's EnterPlanMode, plan view or closing call, an
+   * edit's save): the module hides its rows (mod/consent.ts) */
+  quiet?: boolean;
+  /** #34, consent: the plan view just refused with a note: the module asks its Send / Discard itself ($.ui.ask) while
+   * plan mode is still on, then hands the answer back (NoteAnswer) */
+  noteAsk?: { question: string; header: string; options: string[] };
   /** an invite's line and PIN for the module's status line (never saved in the transcript) and how long it stays;
    * say then holds the text without them */
   pinned?: PinnedReport;
@@ -100,7 +111,7 @@ export interface HookOutput {
  */
 export type Reply =
   | (Extract<Answer, { kind: 'say' | 'refused' | 'secret' }> & { module: boolean })
-  | (Omit<Extract<Answer, { kind: 'joined' }>, 'me' | 'lead'> & { context: string; warn?: string | null; module: boolean })
+  | (Omit<Extract<Answer, { kind: 'joined' }>, 'me' | 'lead' | 'trouble'> & { context: string; warn?: string | null; module: boolean })
   | { kind: 'classic'; outputs?: object[]; exit?: number; stderr?: string };
 
 /** A hooks/handlers/<name>.ts module, as hooks/run.ts loads it, for its stdin type I. handle: the answer (or out()

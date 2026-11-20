@@ -37,6 +37,17 @@ test('task files: the schema\'s fields and nothing else; blocks is the reverse o
   assert.equal(taskFiles.nextId(code, tasks.slice(0, 2), { dir }), '4', 'the mark keeps 3 from coming back');
 });
 
+test('0.6.0: the room task\'s file is marked metadata._internal (Claude Code\'s views leave it out, its reset still counts it); only it', () => {
+  h.freshHome();
+  const code = h.newRoom();
+  const dir = path.join(h.tmpDir('sh-tf-'), 'tasks', `sh-${code}`);
+  const tasks = [T('1', { subject: `room ${code} open`, owner: 'room', status: 'in_progress' }), T('2', { owner: 'room', subject: 'room other open' })];
+  taskFiles.project(code, tasks, { dir });
+  assert.deepEqual(must(ccTasks.readTask(dir, '1')).metadata, { room: code, _internal: true });
+  assert.deepEqual(must(ccTasks.readTask(dir, '2')).metadata, { room: code }, 'another room\'s subject is no room task of this one');
+  assert.equal(must(ccTasks.readTask(dir, '1')).status, 'in_progress', 'kept in progress: it holds off the reset until close');
+});
+
 test('task files: the directory is the recorded one only when it is <config>/tasks/sh-CODE; else this process\'s config dir', () => {
   h.freshHome();
   const code = h.newRoom();

@@ -171,7 +171,8 @@ test('cli: who / read / digest resolve by session id, then ancestry', () => {
   assert.equal(r.stdout, `alice (member) in ${code}\n`, 'nearest registered ancestor');
   r = cli(['who'], { CLAUDE_CODE_SESSION_ID: 'sbob' });
   assert.equal(r.stdout, `bob (member) in ${code}\n`, 'the session id wins');
-  // --room: that room's people (live: it was ignored)
+  // --room: that room's people (live: it was ignored); never the room session, member claude (0.6.0)
+  identity.updateRoomClaude(code, () => ({ pid: process.pid }));
   r = cli(['who', '--room', code]);
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(r.stdout.trim().split('\n').sort(), [`alice (member) in ${code}`, `bob (member) in ${code}`]);
@@ -421,9 +422,9 @@ test('R1 (live verify, verify6/12): after link CODE --forget, a process still ho
   store.forget(code);
   assert.equal(fs.existsSync(path.join(identity.home(), 'sessions', 'by-sid', `${idx.session_id}.json`)), false, 'the seat ends: its index is gone');
   assert.equal(identity.lastSeat(idx.session_id), null);
-  // what bob's hold server or tail would write next: refused, and no folder comes back
+  // what bob's tail would write next: refused, and no folder comes back
   const after = onDisk(store.open(code));
-  assert.throws(() => session.put(after, 'bob', 'holds', { pid: 1, at: new Date().toISOString(), members: [], room: false }), (e: Error & { code?: string }) => e.code === 'NO_ROOM');
+  assert.throws(() => session.put(after, 'bob', 'cursor', 1), (e: Error & { code?: string }) => e.code === 'NO_ROOM');
   assert.throws(() => after.kv.update('members/bob/session', () => ({ v: 1 })), (e: Error & { code?: string }) => e.code === 'NO_ROOM');
   assert.equal(fs.existsSync(must(after.dir)), false);
   assert.equal(store.roomExists(code), false);

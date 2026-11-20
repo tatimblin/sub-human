@@ -9,7 +9,7 @@
 // pane with the room row opened.
 import path from 'node:path';
 import { readJson, readText, clip } from '../lib/io.ts';
-import { roomRowMembers, subagentRows } from '../lib/panes.ts';
+import { panelRows, rowViewLine, hereNames, subagentRows } from '../lib/panes.ts';
 import type { Ctx, Det } from './context.ts';
 import type { TaskRec } from './captures.ts';
 
@@ -67,11 +67,16 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   const { log, roomDir, code, A, B } = x;
   const name: Record<'A' | 'B', string> = { A, B };
   const f = (...p: string[]): string => x.stateFile('S6b', ...p);
-  // S2 (film): each person opens the room row in their agent panel, and the other shows inside it
+  // S2 (film): each person opens the room row in their agent panel: its view's own line leads with the other, and the
+  // panel keeps one row for the room, nothing nested (0.6.0: no participant rows)
   for (const [who, other] of [[A, B], [B, A]] as const) {
-    const rm = roomRowMembers(readText(x.stateFile('S2', `panel-${who}.txt`)), code);
-    det(`${who} opens the ${code} row in the agent panel: ${other} shows inside it`, rm && rm.members.includes(other),
-      rm ? `${rm.room.line} | ${rm.members.map(n => `└ ${n}`).join(' | ') || 'no member rows'} (state/S2/panel-${who}.txt)` : `no ${code} row in state/S2/panel-${who}.txt`);
+    const t = readText(x.stateFile('S2', `panel-${who}.txt`));
+    const line = rowViewLine(t, code);
+    const names = hereNames(line);
+    const rows = panelRows(t);
+    det(`${who} opens the ${code} row in the agent panel: its line leads with "${other} here", one row, nothing nested`,
+      !!line && !!names && names.includes(other) && line.startsWith(names[0] ?? '\0') && rows.filter(r => r.label === code).length === 1 && !rows.some(r => r.nested),
+      line ? `"${clip(line, 120)}"; rows ${rows.map(r => r.line).join(' | ') || 'none'} (state/S2/panel-${who}.txt)` : `no open ${code} row view in state/S2/panel-${who}.txt`);
   }
   const sub = subagentRows(readText(f(`panel-subagent-${B}.txt`)), code);
   det(`${B}'s Claude runs a subagent of its own: its row shows in ${B}'s panel beside the room row`, sub.length > 0,

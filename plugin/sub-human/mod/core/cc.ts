@@ -4,8 +4,15 @@
  *
  *   isCcVersion(v)            a Claude Code version as $.session.version spells it ("2.1.296", "2.1.300-dev"): safe in
  *                             a file name (<home>/cc/<version>.json)
- *   GATED                     the features a verdict can turn to their fallback (a failed entry of any other feature
- *                             only makes the version unverified)
+ *   GATED                     the features a verdict can turn to their fallback (types/index.d.ts SubHumanGated; a
+ *                             failed entry of any other feature only makes the version unverified):
+ *                               tasks       the room session's native task list
+ *                               plan-edit   a room plan edit in plan mode
+ *                               sign-off    a sign-off in the plan view
+ *                               reap-rm     a closed room's session deleted with `claude rm`, not only stopped
+ *                               quiet-plan  sub-human's own plan-mode rows drawn as nothing (mod/core/quiet.ts)
+ *                               keep-mode   a review's closing call keeps the person's mode, Send / Discard first
+ *                               room-row    the one room row, spawned by the module (mod/deliver.ts roomRow)
  *   isGated(v)                v is one of them
  *   closeOff(features) -> Gated[]   features, deduplicated in GATED order, with what each implies: sign-off implies
  *                             plan-edit (a room plan edit goes through plan mode too)
@@ -18,8 +25,10 @@ import type { Hello } from './types.ts';
 
 export const isCcVersion = (v: unknown): v is string => typeof v === 'string' && /^\d+\.\d+\.\d+[0-9A-Za-z.+-]{0,40}$/.test(v) && !v.includes('..');
 
-export const GATED = ['room-session', 'tasks', 'plan-edit', 'sign-off'] as const;
-export type Gated = typeof GATED[number];
+/** types/index.d.ts SubHumanGated, the one list's type (a hello's cc.off). */
+export type Gated = NonNullable<Hello['cc']>['off'][number];
+/** Every Gated, in the order closeOff keeps (FALLBACK, a Record over Gated, holds each one too). */
+export const GATED: readonly Gated[] = ['tasks', 'plan-edit', 'sign-off', 'reap-rm', 'quiet-plan', 'keep-mode', 'room-row'];
 export type Cc = NonNullable<Hello['cc']>;
 
 export const isGated = (v: unknown): v is Gated => GATED.some(g => g === v);
@@ -31,10 +40,13 @@ export function closeOff(features: readonly unknown[]): Gated[] {
 }
 
 export const FALLBACK: Readonly<Record<Gated, string>> = Object.freeze({
-  'room-session': 'the room session may not start (the room keeps its tasks)',
   tasks: 'the room task list is off (tasks are kept in the room)',
   'plan-edit': 'plan edits use the plan tool',
   'sign-off': 'sign-off is a question Claude Code asks you, not the plan view',
+  'reap-rm': 'a closed room\'s session is stopped, not deleted',
+  'quiet-plan': 'plan mode draws its own rows for a room review and a plan save',
+  'keep-mode': 'asking for changes on a room plan returns you to manual mode',
+  'room-row': 'the agent panel shows no room row (@room and messages to other Claudes still work)',
 });
 
 export function parseCc(v: unknown): Cc | null {

@@ -4,26 +4,33 @@
  * seat's room and writes events; mod/core/deliver.ts route() maps each to a $ call. The child is the seat's only
  * delivery: nothing else tells the person or the model what happened in the room. It restarts with backoff and dies
  * with the module. A failed hello refresh keeps the last hello but as no session's, so the prefilters run node.
- * Failure: every lost event, child exit or wake nothing took counts in $.state deliveryErrors and shows
- * DELIVERY_ERROR_NOTICE (rate-limited), so the person learns the room may hold something they did not get.
+ * Failure: every lost event, child exit or wake nothing took counts in $.state deliveryErrors; a lost event or wake shows
+ * DELIVERY_ERROR_NOTICE (rate-limited), so the person learns the room may hold something they did not get. A child
+ * exit loses nothing (the next child resumes from its cursor): the debug log alone (TAIL_RESTART).
  */
 import {
   tailArgv, tailEnv, lineBuffer, parseEvent, route, restartDelay, nextFails, noticeDue, turnLedger, spawnWanted, logLines,
-  rewakePrompt, wakeParts, holdPull, takeWake, takeFallback, DELIVERY_ERROR_NOTICE, MOD_RESTART_TELL_FAILS, REWAKE_TIMEOUT_MS,
+  wakeParts, holdPull, takeWake, takeFallback, DELIVERY_ERROR_NOTICE, TAIL_RESTART, WAKE_RESEND,
 } from './core/deliver.ts';
 import { parseHello, localHello, homeOf, sidIndex } from './core/seat.ts';
-import { homeMark } from './core/constants.ts';
-import { answersItself, bypassNoted, joinPayload, readReply, answerOf, cancels, leftName, goneAfter, failLogLine, appendCapped, MODULE_LOG, CONFIRM_AFTER_MS } from './core/command.ts';
+import { homeMark, BYPASS_DEBUG } from './core/constants.ts';
+import { answersItself, joinPayload, readReply, answerOf, cancels, leftName, goneAfter, failLogLine, appendCapped, MODULE_LOG, CONFIRM_AFTER_MS } from './core/command.ts';
 import { shimArgv, shimEnv, toClassic, asNotice, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { restoreNeeded } from './core/prefilter.ts';
 import { mergeClassic } from './core/prompt.ts';
 import { factsBook, type FactsBook } from './core/facts.ts';
 import { asHello, asNonce, mintNonce } from './core/state.ts';
 import { ccNotice } from './core/cc.ts';
-import { copyBook, copyWake, copyTo, clipboardCommands, AUTO_COPIED, NO_TOOL, type CopyBook } from './core/copy.ts';
+import {
+  roomRowFor, liveRow, rowSpawn, spawnStep, spawnDone, spawnLived, spawnForget, rowFallback, rowAsk, askFor, askStep,
+  ROW_RUN_MS, ROW_ASK_WAIT_MS, ROOM_AGENT, type SpawnLedger, type RowAskState,
+} from './core/rows.ts';
+import { noteRow, offerRow } from './rows.ts';
+import { copyBook, copyWake, copyTo, copyNews, clipboardCommands, AUTO_COPIED, NO_TOOL, type CopyBook } from './core/copy.ts';
 import {
   leaveQuestion, leaveOutcome, issueUrl, versionsLine, openCommands, openWith, LEAVE_OPTIONS, LEAVE_HEADER, REPO_URL,
   STARRED, STAR_TIMEOUT_MS, starOpened, starShown, issueOpened, issueShown, saidBook, sessionSnippet, type SaidBook,
+  LEAVE_CARD_KEY, STAR_CHECK_MS, asLeaveCard, leaveCardDue, leaveCardShown, leaveCardStarred,
 } from './core/leave.ts';
 import { assertNever } from './core/never.ts';
 import type { EngineInterface, On, SessionAppendArgs } from 'claude-code';
@@ -32,9 +39,9 @@ import type { JoinReply, Pulls, TailEvent, TailSeat } from './core/types.ts';
 /** The tail child as the module tracks it; stream: its $.process.spawn stream, as stopChild ends it. */
 interface Child { sid: string; seat: TailSeat | null; stream: { return(value?: unknown): Promise<unknown> } | null; stopped: boolean; fails: number }
 
-const ROWS = { plugin: 'sub-human', key: 'rows' } as const;
+/** The tail's `reminders` event, held for the next typed prompt (mod/prompt.ts): the pending-proposal reminders. */
+const REMINDERS = { plugin: 'sub-human', key: 'reminders' } as const;
 const HELLO = { plugin: 'sub-human', key: 'hello' } as const;
-const TITLED = { plugin: 'sub-human', key: 'titled' } as const;
 const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' } as const;
 const ERRORS = { plugin: 'sub-human', key: 'deliveryErrors' } as const;
 const NONCE = { plugin: 'sub-human', key: 'nonce' } as const;
@@ -101,12 +108,14 @@ const versionOf = ($: EngineInterface): Promise<string | null> =>
 
 /** The versions whose fallbacks this module process has told the person about (ccNotice: once each). */
 const ccTold = new Set<string>();
-/** A seated session on a version with features off: one line, once per version, after the join's own lines. */
+/** A seated session on a version with features off: one line, once per version, after the join's own lines (the debug
+ * log's, unless the person turned them off with SUB_HUMAN_CC_OFF). */
 function tellCc($: EngineInterface, hello: NonNullable<ReturnType<typeof parseHello>>) {
   const line = hello.seat ? ccNotice(hello.cc) : null;
   if (!line || !hello.cc || ccTold.has(hello.cc.version)) return;
   ccTold.add(hello.cc.version);
-  const say = () => { $.ui.log(line); };
+  // a version not verified yet is the debug log's (sub-human doctor reports it); SUB_HUMAN_CC_OFF is the person's own
+  const say = () => { if (line.startsWith('SUB_HUMAN_CC_OFF')) $.ui.log(line); else $.ui.log(line, { to: 'debug' }); };
   try { $.clock.after(2 * CONFIRM_AFTER_MS, say); } catch { say(); }
 }
 
@@ -286,7 +295,7 @@ function submitWake($: EngineInterface, text: string, { appended = false, seen =
   return (async () => {
     let r = null;
     // a member's wake: its lines for the person bare (asUser), the rest as context (core/deliver.ts wakeParts); member:
-    // the caller knows the seat is a member's before the tail child said so (a resume's rewake races its seat event)
+    // the caller knows the seat is a member's before the tail child said so (a seat the module just took)
     const parts = (child && child.seat ? child.seat.role !== 'claude' : member) ? wakeParts(text) : null;
     if (parts) wakeContexts.set(parts.shown, parts.context);
     try { r = await $.prompt.submit(parts ? { text: parts.shown, asUser: true } : { text }); } catch { /* below */ } finally { if (parts) wakeContexts.delete(parts.shown); }
@@ -300,24 +309,140 @@ function submitWake($: EngineInterface, text: string, { appended = false, seen =
 
 /** A wake while a turn runs: appended and checked at the turn's end; submitted when it cannot be appended, or when
  * the turn ended before the row was stored (no turn's end would check it). */
+/** The room row's spawns this module process made (mod/core/rows.ts spawnStep). */
+let spawns: SpawnLedger = {};
+/** The room server's key in .mcp.json: the row's one tool, hold, is its. */
+const ROOM_SERVER = 'room';
 /**
- * After a resume: hooks/handlers/row-rewake.ts, not awaited (it was an asyncRewake command hook). Its exit 2 is the row
- * calls the resume lost: they go to the model as a wake (submitWake), shown to the person as one line. Never throws.
+ * The room row (agents/room.md), the module's own: at a main-loop turn's start and once a restore put the seat back
+ * (classic.SessionStart), for a member's seat of this session (mod/core/rows.ts roomRowFor), unless $.agent.list still
+ * runs one, spawned with $.agent.spawn (no Agent call of the model's, no "Backgrounded agent" block: cc CONTRACT
+ * module-agent-spawn-quiet) while the room server is connected (the row's one tool is its hold). So a join's own turn
+ * starts it, a resume, a fork or a /clear gets it back with no prompt, and a row that died at the next turn; spawnStep
+ * keeps a row that dies at once from looping (a row found live a minute past its spawn starts its count over; a seat
+ * change forgets it). One run at a time (rowing, set before any await: SessionStart's and turn.start's would both
+ * spawn); a call while one runs is answered by it, and once it settles the room code is read again: a seat that
+ * changed meanwhile gets its own run. Each run lets go of rowing after ROW_RUN_MS (a hung spawn, list or connect
+ * blocks no later row; its spawn still ends its ledger entry, spawnDone, when it settles). Not awaited; never throws.
  */
-async function rewake($: EngineInterface, e: { session_id?: string }, member: boolean) {
+let rowing: Promise<void> | null = null;
+/** A roomRow call came while a run was under way. */
+let rowAsked = false;
+function roomRow($: EngineInterface): Promise<void> {
+  if (rowing) { rowAsked = true; return rowing; }
+  rowing = (async () => {
+    let ran = await within($, rowOnce($), ROW_RUN_MS);
+    for (let i = 0; rowAsked && i < 3; i++) {
+      rowAsked = false;
+      const now = await within($, rowCode($), ROW_RUN_MS);
+      if (now === undefined || now === ran) break;
+      ran = await within($, rowOnce($), ROW_RUN_MS);
+    }
+  })().catch(() => {}).finally(() => { rowing = null; rowAsked = false; });
+  return rowing;
+}
+/** p's value, or undefined once it fails or ms pass first (no clock: no bound). */
+function within<T>($: EngineInterface, p: Promise<T>, ms: number): Promise<T | undefined> {
+  return new Promise(resolve => {
+    let timer: { cancel(): void } | null = null;
+    try { timer = $.clock.after(ms, () => { resolve(undefined); }); } catch { /* unbounded */ }
+    void p.then(resolve, () => { resolve(undefined); }).finally(() => { timer?.cancel(); });
+  });
+}
+/** The room whose row this session wants now (mod/core/rows.ts roomRowFor). */
+async function rowCode($: EngineInterface): Promise<string | null> {
+  return roomRowFor(asHello((await $.state.get(HELLO)).value), await $.session.id());
+}
+/** One run for the room the hello names now; resolves that code (null: none wanted, or the run failed). */
+async function rowOnce($: EngineInterface): Promise<string | null> {
+  let code: string | null = null;
   try {
-    const root = $.plugin.root;
-    const run = await $.process.run(shimArgv(root, 'row-rewake'), { stdin: JSON.stringify(e), env: shimEnv(e, root), timeoutMs: REWAKE_TIMEOUT_MS });
-    // a member's: asUser, its one line shown and the row calls as context, also before the tail child named the seat
-    if (run.exitCode === 2 && String(run.stderr || '').trim()) await submitWake($, rewakePrompt(run.stderr), { member });
-  } catch { /* the restore's context lists the same rows for the next prompt */ }
+    code = await rowCode($);
+    if (!code) return null;
+    const before = await $.agent.list();
+    const live = liveRow(before, code);
+    if (live) { rowFound(live, code); spawns = spawnLived(spawns, code, await $.clock.now()); return code; }
+    if (!(await $.mcp.connect(ROOM_SERVER)).isConnected) return code;
+    const step = spawnStep(spawns, code, await $.clock.now());
+    if (!step.spawn) return code;
+    spawns = step.ledger;
+    let started = false;
+    try {
+      const r = await $.agent.spawn(rowSpawn(code));
+      // its id, for its hand-back: the answer's, else the list's new row of this room (an answer a hook gave carries none)
+      const id = r.deny === undefined ? r.agentId ?? liveRow(await $.agent.list(), code, new Set(before.map(a => a.id))) : null;
+      started = !!id;
+      if (id) { noteRow(id); $.ui.log(`rows: room row ${code} started`, { to: 'debug' }); }
+      else $.ui.log(`rows: room row ${code} not started${r.deny !== undefined ? `: ${r.deny}` : ''}`, { to: 'debug' });
+      if (!id && rowFallback(r.deny, facts.of(await $.session.id()).permission_mode)) {
+        // auto mode's classifier refused the module's own spawn: the model makes the call, told once as context. It
+        // counts as this spawn (started: the next try waits its minute, and ROW_SPAWNS_MAX bounds the asks too)
+        started = true;
+        ask = askFor(code);
+        offerRow(true);
+        $.ui.log(`rows: room row ${code}: asking Claude for the Agent call`, { to: 'debug' });
+        if (!holdAsk) void tellAsk($);
+      }
+    } finally { spawns = spawnDone(spawns, code, started); }
+  } catch { /* the next turn tries again */ }
+  return code;
+}
+/** The fallback's ask for the room row (mod/core/rows.ts rowFallback): the module's spawn was refused in auto mode, so
+ * the model is asked for the Agent call, once (askStep), as context: on the join's own expansion when the deny came
+ * while it waited (holdAsk), else appended while a main-loop turn runs (its next request reads it), else at the next
+ * turn.start. No wake and no prompt line of its own. */
+let ask: RowAskState = null;
+/** A join's expansion is waiting on its row's run: an ask goes into its context, not an append. */
+let holdAsk = false;
+/** The ask told now, appended, while a main-loop turn runs (none: turn.start tells it). Never throws. */
+async function tellAsk($: EngineInterface): Promise<void> {
+  try {
+    if (turns.running === null || !ask) return;
+    const step = askStep(ask, await rowCode($));
+    if (!step.tell || !step.ask) return;
+    ask = step.ask;
+    const code = step.ask.code;
+    if (await appendRow($, rowAsk(code))) $.ui.log(`rows: asked Claude for room row ${code}`, { to: 'debug' });
+    else if (ask && ask.code === code) ask = { code, told: false }; // not stored: the next turn.start tries again
+  } catch { /* the next turn.start tries again */ }
+}
+/** The ask for the room the seat is in now, taken to ride on a context of the caller's (the join's expansion). */
+async function takeAsk($: EngineInterface): Promise<string | null> {
+  const step = askStep(ask, await rowCode($));
+  if (!step.tell || !step.ask) return null;
+  ask = step.ask;
+  $.ui.log(`rows: asked Claude for room row ${step.ask.code} (with the join)`, { to: 'debug' });
+  return rowAsk(step.ask.code);
+}
+/** A room row of code runs (the module's, or the one the model's call started): noted, and the fallback is over. */
+function rowFound(id: string, code: string): void {
+  noteRow(id);
+  if (ask && ask.code === code) { ask = null; offerRow(false); }
+}
+/** A main-loop Agent call finished while the fallback asked for one: the row it started is noted (its hand-back is
+ * then taken), and the model is offered the row no more. Never throws. */
+async function rowCalled($: EngineInterface, input: unknown): Promise<void> {
+  try {
+    const want = ask;
+    if (!want || typeof input !== 'object' || input === null || !('subagent_type' in input) || input.subagent_type !== ROOM_AGENT) return;
+    const id = liveRow(await $.agent.list(), want.code);
+    if (!id) return;
+    rowFound(id, want.code);
+    $.ui.log(`rows: room row ${want.code} started by Claude`, { to: 'debug' });
+  } catch { /* the next turn's list finds it */ }
+}
+/** The seat this session holds changed (a leave, a take): the rooms' spawn counts start over, and an ask goes. */
+function seatChanged(...codes: (string | null | undefined)[]): void {
+  for (const code of codes) if (code) spawns = spawnForget(spawns, code);
+  if (ask && codes.includes(ask.code)) { ask = null; offerRow(false); }
 }
 
 async function midTurnWake($: EngineInterface, text: string) {
   if (!(await appendRow($, text))) return submitWake($, text);
-  // a clock that fails dates the row as never read: submitted again rather than lost
+  // a clock that fails dates the row as never read: submitted again rather than lost; its row is stored and its lines
+  // were shown, so context only (WAKE_RESEND)
   const at = await $.clock.now().catch(() => Infinity);
-  if (!turns.appended(text, at)) await submitWake($, text, { appended: true });
+  if (!turns.appended(text, at)) await submitWake($, WAKE_RESEND, { appended: true });
 }
 
 function stopChild(sid?: string) {
@@ -368,9 +493,11 @@ async function runChild($: EngineInterface, c: Child) {
     c.seat = null;
     c.stream = null;
     if (c.stopped || child !== c) return;
-    // the child runs for the session's life: until it is back, nothing reaches the session
+    // the child runs for the session's life: until it is back, nothing reaches the session; it resumes from its
+    // cursor, so nothing is lost: counted, and the debug log says so (TAIL_RESTART), never the person
     c.fails = nextFails(c.fails, (await now()) - started);
-    await noteError($, { tell: c.fails >= MOD_RESTART_TELL_FAILS });
+    try { $.ui.log(TAIL_RESTART(c.fails), { to: 'debug' }); } catch { /* nowhere to say it */ }
+    await noteError($, { tell: false });
     try {
       await new Promise<void>((resolve, reject) => { try { $.clock.after(restartDelay(c.fails - 1), resolve); } catch (err) { reject(err); } });
     } catch {
@@ -384,9 +511,10 @@ async function runChild($: EngineInterface, c: Child) {
 
 /** classic.PostToolUse / PostToolUseFailure: note when a main-loop tool call finished (no agent_id). Without a
  * time the last one stands: a wake then reads as unread and is submitted again rather than lost. */
-async function toolDone<E extends { readonly agent_id?: string; readonly session_id?: string }, R>($: EngineInterface, e: E, next: (e: E) => R | PromiseLike<R>): Promise<R> {
+async function toolDone<E extends { readonly agent_id?: string; readonly session_id?: string; readonly tool_name?: string; readonly tool_input?: unknown }, R>($: EngineInterface, e: E, next: (e: E) => R | PromiseLike<R>): Promise<R> {
   facts.noteEvent(e);
   if (!e.agent_id) {
+    if (e.tool_name === 'Agent' && ask) void rowCalled($, e.tool_input); // the fallback's call: its row noted
     try { turns.toolDone(await $.clock.now()); } catch { /* above */ }
     // the person answered what the turn waited on (a permission dialog, the plan view): working again
     if (presence.last === 'permission_prompt') { presence.last = 'working'; void presenceRun($, 'Working').catch(() => { presence.last = null; }); }
@@ -394,17 +522,10 @@ async function toolDone<E extends { readonly agent_id?: string; readonly session
   return next(e);
 }
 
-async function heldRows($: EngineInterface): Promise<string | null> {
-  const { value } = await $.state.get(ROWS);
-  return typeof value === 'string' && value ? value : null;
-}
-
 /** One event's actions (mod/core/deliver.ts route). */
 async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
   if (!ev || c.stopped) return;
-  const role = c.seat && c.seat.role === 'claude' ? 'claude' : 'member';
-  const rows = ev.type === 'wake' && role === 'claude' ? await heldRows($) : null;
-  const actions = route(ev, { turnRunning: turns.running !== null, role, rows });
+  const actions = route(ev, { turnRunning: turns.running !== null });
   for (const a of actions) {
     switch (a.do) {
       case 'seat': {
@@ -415,9 +536,10 @@ async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
         break;
       }
       case 'log': $.ui.log(a.text); break;
+      case 'debug': $.ui.log(a.text, { to: 'debug' }); break;
       case 'append': if (!(await appendRow($, a.text))) await noteError($); break; // refused or failed: lost
       case 'hold-pull': if (!(await holdPullEvent($, a.text))) await noteError($); break; // neither held nor appended: lost
-      case 'hold-rows': await $.state.set(ROWS, a.text); break;
+      case 'hold-reminders': await $.state.set(REMINDERS, a.text); break;
       case 'submit': void submitWake($, a.text, { seen: a.seen }); break; // not awaited: it resolves as the turn starts
       case 'mid-turn-wake': await midTurnWake($, a.text); break;
       case 'invites':
@@ -439,7 +561,8 @@ const taking = new Set<string>();
  * The seat is taken here, as a bare /sub-human would take it: join.ts through the shim with no args and the room
  * (sub_human_take: that join's seat or nothing, never a new room), then one wake in a turn of its own, never the prompt
  * that carried the line or the PIN (lib/remote/joining.ts's invariant): "You're in room CODE as NAME (check …)" for the
- * person, the seat's mechanics block for the model (takeWake), which then makes the room row's calls. Mid-turn: shown
+ * person, the join's one line (the seat's own "Joined …" line is not drawn beside it), the seat's mechanics block for
+ * the model (takeWake); the room row is the module's own (roomRow). Mid-turn: shown
  * as a notice and appended, as any wake. A reply with nothing to take (the person typed /sub-human first) says nothing;
  * one that failed says why and the line that asks for a bare /sub-human (the tail's text). Never throws.
  */
@@ -463,16 +586,20 @@ async function takeSeat($: EngineInterface, c: Child, a: { code: string; name: s
     };
     let reply = await run();
     if (reply.kind === 'stale') { await refresh($, sid).catch(() => {}); reply = await run(); }
+    if ((reply.kind === 'joined' || reply.kind === 'say') && reply.debug) $.ui.log(reply.debug, { to: 'debug' });
     if (reply.kind !== 'joined') {
       if (reply.kind === 'say' && !reply.lines.length) return; // nothing to take: the seat is taken already
       for (const line of [...reply.lines, takeFallback(a.code, a.text)]) $.ui.log(line);
       return;
     }
+    seatChanged(...Object.keys(spawns), a.code); // the seat taken: its row's count starts over
     try { await refresh($, sid); childFor($, sid, asHello((await $.state.get(HELLO)).value)); } catch { /* the tail looks the seat up itself */ }
     const hello = asHello((await $.state.get(HELLO)).value);
     const seat = hello && hello.sid === sid ? hello.seat : null;
     const { text, shown } = takeWake({ code: seat ? seat.code : a.code, name: seat ? seat.name : a.name, check: a.check, context: reply.context });
-    for (const line of reply.lines) $.ui.log(line); // the seat's line, as a typed /sub-human's confirmation
+    // one line for the join: the wake's own ("You're in room …") says what the seat's first line ("Joined …") says, so
+    // only the notes after it are drawn
+    for (const line of reply.lines.slice(1)) $.ui.log(line);
     if (turns.running !== null) { $.ui.log(shown); await midTurnWake($, text); }
     else await submitWake($, text, { member: true, seen: [shown] });
   } catch { await noteError($); } finally { taking.delete(a.code); }
@@ -518,7 +645,7 @@ async function offerCopy($: EngineInterface, ref: string) {
     const line = copies.lineFor(ref, await copyNow($));
     if (!line) return;
     // Copy once: later invites are copied with no card, and no turn
-    if (choice === 'copy') { $.ui.log(await clip($, line, AUTO_COPIED)); return; }
+    if (choice === 'copy') { const said = await clip($, line, AUTO_COPIED); if (copyNews(said)) $.ui.log(said); else $.ui.log(`copy: ${said}`, { to: 'debug' }); return; }
     // no line for the person: the wake goes framed, as the plugin's own message (copy.ts copyWake)
     const text = copyWake(ref);
     if (turns.running !== null) await midTurnWake($, text);
@@ -526,30 +653,50 @@ async function offerCopy($: EngineInterface, ref: string) {
   } catch { /* the line stays pinned on the status line */ }
 }
 
+/** The leave card's state in the plugin's $.store (per install, kept between sessions); none: a fresh one. */
+const leaveCardOf = async ($: EngineInterface): Promise<ReturnType<typeof asLeaveCard> | null> => {
+  // no store to count in (it refused): no card, rather than one every session
+  try { return asLeaveCard(await $.store.get(LEAVE_CARD_KEY)); } catch { return null; }
+};
+const saveLeaveCard = ($: EngineInterface, s: ReturnType<typeof asLeaveCard>) => $.store.set(LEAVE_CARD_KEY, s).catch(() => {});
+
 /**
  * The leave card (mod/core/leave.ts): after a /sub-human leave went through, the module opens it itself ($.ui.ask:
- * Claude Code's own dialog, no model turn), then acts on the answer. Not when the session took a seat again or was
- * cleared (/clear: a new session id) before it fires, nor while a take runs (it waits for it, as offerCopy). Dismissed:
- * nothing. Never throws.
+ * Claude Code's own dialog, no model turn), then acts on the answer. The card is the leave's line: `lines` (the
+ * "Left CODE" notice) show only when no card does: gh says the repo is starred already (stored: never again), the
+ * session took a seat again or was cleared (/clear: a new session id) before it fires, or the dialog could not open.
+ * Not while a take runs (it waits for it, as offerCopy). Dismissed or Done: nothing. Never throws.
  */
-async function offerLeave($: EngineInterface, sid: string, code: string) {
+async function offerLeave($: EngineInterface, sid: string, code: string, lines: readonly string[]) {
+  const say = () => { for (const line of lines) $.ui.log(line); };
   try {
     for (let i = 0; taking.size && i < 20; i++) await new Promise<void>(resolve => { $.clock.after(500, resolve); });
     const now = asHello((await $.state.get(HELLO)).value);
-    if ((await $.session.id()) !== sid || (now && now.sid === sid && now.seat)) return;
-    const answer = await $.ui.ask(leaveQuestion(code), { options: LEAVE_OPTIONS, header: LEAVE_HEADER }).catch(() => null);
+    if ((await $.session.id()) !== sid || (now && now.sid === sid && now.seat)) { say(); return; }
+    let card = (await leaveCardOf($)) ?? asLeaveCard(undefined);
+    // starred already (gh, logged in): never ask again
+    const had = await $.process.run(['sh', `${$.plugin.root}/scripts/star.sh`, 'check'], { timeoutMs: STAR_CHECK_MS }).catch(() => null);
+    if (had && had.exitCode === 0) { await saveLeaveCard($, leaveCardStarred(card)); $.ui.log('leave card: starred already (gh)', { to: 'debug' }); say(); return; }
+    card = leaveCardShown(card);
+    await saveLeaveCard($, card);
+    const failed = Symbol('no dialog');
+    const answer = await $.ui.ask(leaveQuestion(code), { options: LEAVE_OPTIONS, header: LEAVE_HEADER }).catch((): typeof failed => failed);
+    if (answer === failed) { say(); return; }
     const out = leaveOutcome(answer);
     if (out.kind === 'close') return;
     if (out.kind === 'star') {
       const r = await $.process.run(['sh', `${$.plugin.root}/scripts/star.sh`], { timeoutMs: STAR_TIMEOUT_MS }).catch(() => null);
-      $.ui.log(r && r.exitCode === 0 ? STARRED : (await openUrl($, REPO_URL)) === 'opened' ? starOpened() : starShown());
+      const done = r && r.exitCode === 0 ? 'starred' : (await openUrl($, REPO_URL)) === 'opened' ? 'opened' : 'shown';
+      // starred, or the page opened (the plugin cannot see the click; asking again would nag): never again
+      if (done !== 'shown') await saveLeaveCard($, leaveCardStarred(card));
+      $.ui.log(done === 'starred' ? STARRED : done === 'opened' ? starOpened() : starShown());
       return;
     }
     // what went wrong this session, when something did (names masked: this seat's, and every one it has known)
     const session = said.anyFailed() ? sessionSnippet(said.lines(), [...names]) : '';
     const url = issueUrl({ text: out.text, versions: await versionsOf($), session });
     $.ui.log((await openUrl($, url)) === 'opened' ? issueOpened() : issueShown(url));
-  } catch { /* no card */ }
+  } catch { say(); }
 }
 
 /** The URL to the first browser opener that takes it, on stdin (scripts/open.sh: only this plugin's GitHub pages). */
@@ -630,12 +777,16 @@ export function registerDeliver(on: On): void {
       if (again) reply = await runJoin(again);
     }
     if (reply.kind === 'failed' || reply.kind === 'stale') void logFailure($, before, e.args, reply.lines[0]);
+    // what join.ts sent for the debug log (a lock's path, the room session's start error): never the person's line
+    if ((reply.kind === 'joined' || reply.kind === 'say') && reply.debug) $.ui.log(reply.debug, { to: 'debug' });
     if (reply.kind === 'joined') {
+      seatChanged(...Object.keys(spawns)); // a seat taken: whichever room it is, its row's count starts over
       joined = { sid, context: reply.context };
       try {
         const r = await next(e);
-        // the bypass note as the mode the command ran in: its expansion (the hook below, inside next) noted it (#14)
-        const lines = bypassNoted(reply.lines, facts.of(sid).permission_mode);
+        // the mode the command ran in (its expansion, inside next, noted it: #14): bypass-permissions is the debug log's
+        const lines = reply.lines;
+        if (facts.of(sid).permission_mode === 'bypassPermissions') $.ui.log(BYPASS_DEBUG, { to: 'debug' });
         // after the command's own row, which Claude Code adds once this hook returns
         const confirm = () => { for (const line of lines) $.ui.log(line); };
         try { $.clock.after(CONFIRM_AFTER_MS, confirm); } catch { confirm(); }
@@ -654,23 +805,24 @@ export function registerDeliver(on: On): void {
       gone = now && now.sid === sid ? goneAfter(reply, mine, now.seat) : null;
       if (gone) reply = { ...reply, lines: [...reply.lines, gone] };
     }
-    // a leave: the address NAME.CODE goes with the seat now, not at the next prompt: the title is NAME
+    // a leave: the title becomes NAME at the next prompt, silently (mod/core/prompt.ts titleFor: sessionTitle, never a
+    // /rename and its "Session renamed" echo or "The user named this session" reminder)
     const left = leftName(e.args, reply, mine, { gone: !!gone });
-    if (left) {
-      // not from this hook (the engine refuses a command.run raised inside one): just after it, on the clock
-      const rename = () => { void $.command.run({ command: 'rename', args: left }).then(() => $.state.set(TITLED, { sid, addr: left }), () => { /* the next prompt titles it */ }); };
-      try { $.clock.after(CONFIRM_AFTER_MS, rename); } catch { /* no clock: the next prompt titles it (mod/core/prompt.ts titleFor) */ }
-      // the leave card (mod/core/leave.ts): a person at the prompt, once per session, after the rename
+    const { result, logs, status } = answerOf(reply, { columns: e.presentation && e.presentation.columns });
+    // the leave card (mod/core/leave.ts): a person at the prompt, once per session, at most twice per install, never
+    // once starred; when it shows it is the leave's line, so the "Left CODE" notice waits for it (offerLeave)
+    let card: string | null = null;
+    if (left && reply.kind === 'say') { // a leave that answered (one that did not keeps its failure lines on show)
       const code = mine ? mine.code : null;
-      if (code && !leaveOffered && interactive !== false && (await $.env.get('SUB_HUMAN_LEAVE_CARD').catch(() => undefined)) !== '0') {
+      if (code && !leaveOffered && interactive !== false && (await $.env.get('SUB_HUMAN_LEAVE_CARD').catch(() => undefined)) !== '0'
+        && (st => !!st && leaveCardDue(st))(await leaveCardOf($))) {
         leaveOffered = true;
-        try { $.clock.after(2 * CONFIRM_AFTER_MS, () => { void offerLeave($, sid, code); }); } catch { /* no clock: no card */ }
+        try { $.clock.after(2 * CONFIRM_AFTER_MS, () => { void offerLeave($, sid, code, logs); }); card = code; } catch { /* no clock: no card */ }
       }
     }
-    const { result, logs, status } = answerOf(reply, { columns: e.presentation && e.presentation.columns });
     said.command(e.args);
     const failedHere = reply.kind === 'failed' || reply.kind === 'stale' || (reply.kind === 'say' && reply.refused);
-    for (const line of logs) { $.ui.log(line); if (failedHere) said.failed(line); }
+    for (const line of card ? [] : logs) { $.ui.log(line); if (failedHere) said.failed(line); }
     if (status) {
       pinStatus($, status);
       // the copy card: a person at the prompt, and a line join.ts handed over (not --no-card); after this hook returned
@@ -683,8 +835,11 @@ export function registerDeliver(on: On): void {
     if (!fresh) { try { await refresh($, sid); } catch { /* the next refresh tries again */ } }
     // a leave ends this session's delivery now, whatever the hello says: a room hosted elsewhere may still list the
     // seat for a moment (a session cut off kept its tail and heard "carol left" after its leave)
-    if (left || gone) stopChild(sid);
-    else { try { childFor($, sid, asHello((await $.state.get(HELLO)).value)); } catch { /* next start tries again */ } }
+    if (left || gone) { stopChild(sid); seatChanged(mine && mine.code); }
+    else {
+      try { childFor($, sid, asHello((await $.state.get(HELLO)).value)); } catch { /* next start tries again */ }
+      void roomRow($); // a join's row now: its turn started before the seat was taken, so turn.start found none
+    }
     return result;
   }).catch((_$, e, next) => next(e)); // unsure: the classic hook beneath answers, as without the module
 
@@ -698,12 +853,18 @@ export function registerDeliver(on: On): void {
     const r = took ? { additionalContext: [took.context] } : await next(e);
     try { await refresh($, e.session_id); } catch { /* the next refresh tries again */ }
     try { childFor($, e.session_id, asHello((await $.state.get(HELLO)).value)); } catch { /* next start tries again */ }
-    return r;
+    // the join's row now, as for the command.run join above; waited on a moment, so that when auto mode refuses the
+    // module's spawn the fallback's ask rides on this join's own context (no append, no wake)
+    holdAsk = true;
+    try { await within($, roomRow($), ROW_ASK_WAIT_MS); } finally { holdAsk = false; }
+    const told = await takeAsk($).catch(() => null);
+    if (!told) { void tellAsk($); return r; } // a deny after the wait: appended (or at the next turn.start)
+    return { ...r, additionalContext: [...(r.additionalContext ?? []), told] };
   }).catch((_$, e, next) => next(e)); // never in the join's way: what ran beneath stands, or runs
 
   // a /clear (new session id), compact or resume: session-restore puts the seat back first (a /clear rebinds it to the
-  // new session id), unless this session surely has none; then the hello for that id, the tail child, and on resume
-  // the rows the resume lost (row-rewake, in the background: a wake once it answers)
+  // new session id), unless this session surely has none; then the hello for that id and the tail child (the room row
+  // comes back with no prompt once the seat is: roomRow)
   on('classic.SessionStart', async ($, e, next) => {
     facts.noteEvent(e);
     let ours = {};
@@ -715,10 +876,7 @@ export function registerDeliver(on: On): void {
       // a notice for the person (a fork whose seat is in a sub-human folder this process does not have)
       if (said.systemMessage) for (const line of asNotice(said.systemMessage).split('\n')) if (line.trim()) $.ui.log(line);
       try { await $.state.set(REVIEW, true); await refresh($, e.session_id); } catch { /* the next refresh tries again */ }
-      try {
-        const hello = asHello((await $.state.get(HELLO)).value);
-        if ((e.source === 'resume' || e.source === 'fork') && hello && hello.seat) void rewake($, e, hello.seat.role !== 'claude');
-      } catch { /* the rows come with the next prompt (the restore's context) */ }
+      void roomRow($); // the room row back with no prompt (a resume or a fork lost it; after a /clear it may still run)
     }
     try {
       // this session's hello first: one not said yet (classic.SessionStart can run before session.start's) is no seat
@@ -736,8 +894,12 @@ export function registerDeliver(on: On): void {
   });
 
   on('turn.start', ($, e, next) => {
+    // the room row, unless it runs (not awaited: the turn never waits for it)
+    void roomRow($);
     // a wake nothing took before goes into this turn, as any wake that lands mid-turn
     for (const text of turns.start(e.turnId)) void midTurnWake($, text).catch(() => {});
+    // the room row's fallback ask that no turn carried yet (it was refused while none ran): this turn reads it
+    void tellAsk($);
     // the person's typed prompt started this turn: now it is "working" (a stopped prompt starts none)
     if (presence.pending) {
       presence.pending = null;
@@ -748,10 +910,11 @@ export function registerDeliver(on: On): void {
   });
 
   on('turn.complete', ($, e, next) => {
-    // a wake appended while the turn's last request was already out was never read: submit it after all (its row
-    // is stored, so a failed submit leaves it for the next request)
+    // a wake appended while the turn's last request was already out was never read: a turn for it after all, context
+    // only (its row is stored and its lines were shown: WAKE_RESEND, once however many), so a failed submit leaves it
+    // for the next request
     if (e.agentId === undefined) {
-      for (const text of turns.complete(e.turnId)) void submitWake($, text, { appended: true });
+      if (turns.complete(e.turnId).length) void submitWake($, WAKE_RESEND, { appended: true });
       // the turn the person's prompt started is over: back at the prompt (node hooks/run.ts presence, not awaited)
       if (presence.last === 'working' || presence.last === 'permission_prompt') {
         presence.last = 'idle';

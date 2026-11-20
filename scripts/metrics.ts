@@ -11,8 +11,8 @@
  * members.json claude.session_id (wherever it is), and that file is left out of the folder's member seat.
  *
  * - wakes: room-caused model turns: a user entry that is a sub-human plugin prompt (the hooks module's wake:
- *   origin {kind: plugin, name: sub-human}, not isMeta), a peer delivery (origin.kind peer), or the row-rewake
- *   wake (its text "sub-human: this session was resumed…"), followed in file order by an assistant message before
+ *   origin {kind: plugin, name: sub-human}, not isMeta) or a peer delivery (origin.kind peer),
+ *   followed in file order by an assistant message before
  *   the next user prompt. Adjacent triggers that start one turn count once. `plugin` counts the plugin prompts.
  * - chat: `notices` = the hooks module's $.ui.log rows (system, level notice, "sub-human: …": what the
  *   person sees), `pulls` = the room context for the model (since stage 8e a hook_additional_context beside the next
@@ -35,7 +35,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as paths from './lib/paths.ts';
-import { readJson, jsonl, textOf } from './lib/io.ts';
+import { readJson, jsonl } from './lib/io.ts';
 import baselinesJson from './baselines.json' with { type: 'json' };
 import type { Members } from '../plugin/sub-human/lib/room/types.ts';
 
@@ -56,6 +56,7 @@ export interface Block {
 export interface TMessage {
   id?: string;
   model?: string;
+  stop_reason?: string;
   content?: string | Block[];
   usage?: { input_tokens?: number, output_tokens?: number, cache_creation_input_tokens?: number, cache_read_input_tokens?: number };
 }
@@ -99,7 +100,8 @@ export interface Thresholds {
   wakes: number;
   noisePerCapture: number;
   callsPerReview: number;
-  roomClaudeJoinCalls: number;
+  /** sub-human's own lines one person sees in one scene (docs/next/quiet/PRINCIPLES.md budget; checks/run-metrics.ts) */
+  linesPerScene: number;
   joinText: number;
   joinBlock: number;
 }
@@ -120,7 +122,6 @@ export const NOISE: Record<string, RegExp> = {
   blocked: /blocked by hook/i,
   invalid: /Invalid tool parameters/,
 };
-const REWAKE = 'sub-human: this session was resumed';
 
 /** Earlier runs to compare against (scripts/baselines.json runs; compare picks which fill checks.json _metrics). */
 export const BASELINES: Baselines = baselinesJson;
@@ -172,16 +173,14 @@ function transcripts(seat: string, from: string, to: string, projects: string | 
     .map(t => ({ ...t, es: t.es.filter(e => !e.timestamp || (e.timestamp >= from && e.timestamp <= to)) }));
 }
 
-/** What started a room wake (metrics wakes): a plugin prompt, a peer delivery or the row-rewake. */
-export type Trigger = 'plugin' | 'peer' | 'rewake';
+/** What started a room wake (metrics wakes): a plugin prompt or a peer delivery. */
+export type Trigger = 'plugin' | 'peer';
 
 /** kind of room trigger a user entry is, or null */
 export function trigger(e: TEntry): Trigger | null {
   if (e.type !== 'user' || isToolResult(e)) return null;
   const k = e.origin && e.origin.kind;
-  const t = textOf(e.message && e.message.content);
   if (k === 'peer') return 'peer';
-  if (t.includes(REWAKE)) return 'rewake';
   if (k === 'plugin' && e.origin && e.origin.name === 'sub-human' && !e.isMeta) return 'plugin';
   return null;
 }
@@ -222,7 +221,7 @@ export function cardTurns(es: TEntry[]): CardTurn[] {
 }
 
 /** A seat's room wakes, by what started them. */
-export interface Wakes { turns: number, plugin: number, peer: number, rewake: number, rowNotifications: number, humanPrompts: number }
+export interface Wakes { turns: number, plugin: number, peer: number, rowNotifications: number, humanPrompts: number }
 /** Chat rows, their copies, and the model turns and calls chat alone started. */
 export interface Chat { notices: number, pulls: number, turns: number, calls: number, callsPerBurst?: number | null }
 /** One seat's transcript metrics. */
@@ -237,7 +236,7 @@ export interface SeatMetrics {
 const contextOf = (c: unknown): unknown[] => [c || []].flat();
 
 export function seatTranscriptMetrics(ts: Pick<Transcript, 'es'>[]): SeatMetrics {
-  const w: Wakes = { turns: 0, plugin: 0, peer: 0, rewake: 0, rowNotifications: 0, humanPrompts: 0 };
+  const w: Wakes = { turns: 0, plugin: 0, peer: 0, rowNotifications: 0, humanPrompts: 0 };
   const chat: Chat = { notices: 0, pulls: 0, turns: 0, calls: 0 };
   const inj: SeatMetrics['injected'] = { join: 0, total: 0, count: 0, byEvent: {} };
   const cards: CardTurn[] = [];

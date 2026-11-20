@@ -6,13 +6,13 @@
 // line (--no-card) or no person at the prompt there is no card at all.
 import type { EventOf, On } from 'claude-code'
 import { test, expect, mock, type Engine } from 'claude-code/testing'
-import { OUT, ran, scriptOf, session, start, stdinOf } from './support.ts'
+import { debugLines, OUT, ran, scriptOf, session, start, stdinOf } from './support.ts'
 
 const SID = 'sid-copy'
 const SECRET = 'K'.repeat(38)
 const PIN = '7093'
 const lineOf = (ref: string) => `/sub-human join https://box.tail1a2b.ts.net/sub-human/otter-4821#${SECRET}${ref.slice(-1)}`
-const QUESTION = 'Copy the invite line to your clipboard? (the PIN is not copied)'
+const QUESTION = 'Copy the invite?'
 
 /** Resolves once cond() holds (the wake goes out after the command returned), or rejects after ms. */
 async function until(cond: () => boolean, ms = 3000) {
@@ -39,7 +39,7 @@ function world(engine: Engine, on: On, { ref, noCard = false, clip = [0] }: { re
   session(on, SID)
   on('session.cwd', () => ({ value: '/w' }))
   on('env.get', () => ({ value: undefined })) // no SUB_HUMAN_ROOM, no display: pbcopy is the only clipboard tool tried
-  on('ui.log', (_$, e) => { seen.logs.push(e.text); return { value: undefined } })
+  on('ui.log', (_$, e) => { if (e.to === 'debug') debugLines.push(e.text); else seen.logs.push(e.text); return { value: undefined } })
   on('ui.status', () => ({ value: undefined }))
   on('process.run', (_$, e) => {
     if (e.argv[0] === 'sh' && String(e.argv[1]).endsWith('/scripts/clip.sh')) {
@@ -104,7 +104,9 @@ test('an invite with its line: one wake naming the ref only; the card on "copy i
   expect(seen.clip[0]?.stdin).not.toContain(PIN)
   expect(JSON.stringify(seen.clip[0]?.argv)).not.toContain(SECRET)
   expect(seen.clip[0]?.argv.slice(2)).toEqual(['pbcopy'])
-  expect(seen.logs).toContain('copied')
+  // a copy that worked is no news: the debug log's (0.6.0)
+  expect(seen.logs).not.toContain('copied')
+  expect(debugLines).toContain('copy card: copied')
   expect((post.additionalContext ?? []).join('\n')).toContain('Reply with nothing.')
   expect(JSON.stringify(post)).not.toContain(SECRET)
   expect(seen.prompts.length).toBe(1)
@@ -112,7 +114,8 @@ test('an invite with its line: one wake naming the ref only; the card on "copy i
   await typed($, 'invite'); await seen.tick()
   await until(() => seen.clip.length === 2)
   expect(seen.clip[1]?.stdin).toBe(lineOf(ref))
-  await until(() => seen.logs.includes('line copied'))
+  await until(() => debugLines.includes('copy: line copied'))
+  expect(seen.logs).not.toContain('line copied')
   expect(seen.prompts.length).toBe(1)
 })
 
@@ -139,7 +142,8 @@ test('Skip copies nothing; with no clipboard tool the card says so', async ($, o
   await ask($, ref)
   await answer($, seen, 'Skip')
   expect(seen.clip).toEqual([])
-  expect(seen.logs).toContain('not copied')
+  expect(debugLines).toContain('copy card: not copied')
+  expect(seen.logs).not.toContain('not copied')
   await ask($, ref)
   await answer($, seen, 'Copy')
   expect(seen.clip.length).toBeGreaterThan(0)

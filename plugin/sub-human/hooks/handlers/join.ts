@@ -13,8 +13,8 @@
 // runs this hooks.json hook itself) a reply is a block, drawn "UserPromptExpansion operation blocked by hook:
 // sub-human: …".
 // Out: a join that worked is the mechanics block (hooks/context.ts contextBlock) plus a one-line confirmation for the
-// person (module) or a systemMessage only when something in it is a warning (the room's Claude did not start, the
-// bypass-permissions mode; classic); the title comes on the next prompt (mod/prompt.ts). Everything else is a reply:
+// person (module) or a systemMessage only when something in it is a warning (the room's Claude did not start;
+// classic); the title comes on the next prompt (mod/prompt.ts). Everything else is a reply:
 // no model turn. A PIN must never reach the model: lib/commands/index.ts run answers every prompt that may hold one
 // as a secret, and a throw (fail) or a stdin that does not parse is answered the same way.
 import * as identity from '../../lib/identity.ts';
@@ -27,7 +27,6 @@ import PathMod from 'node:path';
 // the module's rules (mod/core): the command's names, which prompt may hold a PIN, and the nonce check
 import { COMMANDS, mayHoldSecret } from '../../mod/core/command.ts';
 import { attested as leaseAttests } from '../../mod/core/state.ts';
-import { BYPASS_NOTE } from '../../mod/core/constants.ts';
 import { assertNever } from '../../mod/core/never.ts';
 import type { JoinIn, Reply } from '../types.ts';
 import type { Answer } from '../../lib/commands/types.ts';
@@ -37,8 +36,6 @@ seatKey.arm();
 
 const ROOM_CLAUDE_AGENT = 'sub-human:room-claude';
 const PLUGIN_ROOT = PathMod.join(import.meta.dirname, '..', '..');
-/** A note in a join's message that the person must hear: the room's Claude could not start, or its last start failed. */
-const TROUBLE = /could not start|the last start failed: /;
 
 /** True when the input carries this session's module nonce (its lease's): the module's command.run hook ran it. */
 function attested(input: JoinIn): boolean {
@@ -52,16 +49,17 @@ function attested(input: JoinIn): boolean {
  * Through the module the line is a notice. Classic: no systemMessage, which Claude Code draws as a warning (the session
  * title and the room row say it worked), unless something in it is one.
  */
-function toReply(a: Answer, input: JoinIn, module: boolean): Reply {
+function toReply(a: Answer, module: boolean): Reply {
   switch (a.kind) {
     case 'joined': {
       launcher.refresh(); // the opt-in row status launcher and the serve shim, now that this session has rows
-      const bypass = input.permission_mode === 'bypassPermissions' && a.me.role !== 'claude' ? BYPASS_NOTE : '';
-      const warn = bypass || TROUBLE.test(a.say) ? `sub-human: ${a.say}${bypass}` : null;
-      return { kind: 'joined', context: contextBlock(a.me, a.lead), say: module ? `${a.say}${bypass}` : a.say, warn, module };
+      // the bypass-permissions mode is the debug log's (the module's: mod/deliver.ts), never the join's line; a classic
+      // answer warns only when the line says something did not work (a typed flag: lib/seats.ts trouble)
+      const warn = a.trouble ? `sub-human: ${a.say}` : null;
+      return { kind: 'joined', context: contextBlock(a.me, a.lead), say: a.say, warn, module, ...(a.debug ? { debug: a.debug } : {}) };
     }
-    case 'secret': return { kind: 'secret', text: a.text, refused: a.refused === true, module, ...(a.pinned ? { pinned: a.pinned } : {}) };
-    case 'say': case 'refused': return { kind: a.kind, text: a.text, module };
+    case 'secret': return { kind: 'secret', text: a.text, refused: a.refused === true, module, ...(a.pinned ? { pinned: a.pinned } : {}), ...(a.debug ? { debug: a.debug } : {}) };
+    case 'say': case 'refused': return { kind: a.kind, text: a.text, module, ...(a.debug ? { debug: a.debug } : {}) };
     default: return assertNever(a, 'answer');
   }
 }
@@ -85,7 +83,7 @@ export function handle(input: JoinIn): Reply | null {
     sid: input.session_id, cwd: input.cwd || process.cwd(), pid, roomClaudeAgent: input.agent_type === ROOM_CLAUDE_AGENT, module,
     pubkey: seatKey.publicPem, pluginRoot: PLUGIN_ROOT, seat: () => whoami(input),
   });
-  return toReply(a, input, module);
+  return toReply(a, module);
 }
 
 /** A throw anywhere, or a stdin that does not parse: still one reply, hidden unless the prompt surely holds no PIN (an

@@ -1,11 +1,11 @@
 // Wiring: the session's hello and its SessionStart (mod/deliver.ts). Run with `npm run test:mods`.
 // A session with no session index starts no node at its start: the hello is the module's own (the home from the
 // environment, no seat), and its lease is written when /sub-human first runs. A /clear, compact or resume puts a seat
-// back through node session-restore, then says hello; a resume also runs row-rewake in the background, whose row calls
-// become a wake. A session surely without a seat does none of it.
+// back through node session-restore, then says hello; the room row comes back on its own (mod/deliver.ts roomRow: no
+// wake, no line). A session surely without a seat does none of it.
 import type { EventOf, On } from 'claude-code'
 import { test, expect, mock, type ClassicFields, type Engine } from 'claude-code/testing'
-import { SEAT, helloOf, must, ran, scriptOf, session, start, stdinOf, type Seat } from './support.ts'
+import { debugLines, SEAT, helloOf, must, ran, scriptOf, session, start, stdinOf, type Seat } from './support.ts'
 
 const SID = 'sid-s'
 const HOME = '/u/.sub-human'
@@ -22,7 +22,7 @@ function world(_engine: Engine, on: On, { indexed = false, seat = null, answer =
   on('env.get', (_$, e) => ({ value: e.name === 'HOME' ? '/u' : undefined }))
   on('fs.exists', (_$, e) => ({ value: indexed && e.path === `${HOME}/sessions/by-sid/${SID}.json` }))
   on('fs.stat', (_$, e) => ({ value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: false, realPath: e.path } }))
-  on('ui.log', (_$, e) => { seen.logs.push(e.text); return { value: undefined } })
+  on('ui.log', (_$, e) => { if (e.to === 'debug') debugLines.push(e.text); else seen.logs.push(e.text); return { value: undefined } })
   on('process.run', (_$, e) => {
     const script = scriptOf(e)
     seen.runs.push(script)
@@ -65,23 +65,18 @@ test('a session index: mod-hello at session start', async ($, on) => {
   expect(seen.runs[0]).toBe('mod-hello.ts')
 })
 
-test('a resumed seat: session-restore puts it back (its context and title), then the hello, then row-rewake, whose calls are a wake', async ($, on) => {
+test('a resumed seat: session-restore puts it back (its context and title), then the hello; no wake, no line', async ($, on) => {
   const restore = { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: 'SUB-HUMAN: you are alice', sessionTitle: SEAT.addr } }
-  const calls = 'sub-human: this session was resumed and its rows did not survive it. Re-create them now, exactly as written:\nAgent({subagent_type: "sub-human:room"})\nMake only these calls, then end your turn with the one word "ok".'
-  const seen = world($, on, { indexed: true, seat: SEAT, answer: { 'session-restore.ts': { stdout: JSON.stringify(restore) }, 'row-rewake.ts': { exitCode: 2, stderr: calls } } })
+  const seen = world($, on, { indexed: true, seat: SEAT, answer: { 'session-restore.ts': { stdout: JSON.stringify(restore) } } })
   await start($)
   seen.runs.length = 0
   const r = await $.classic.SessionStart({ session_id: SID, source: 'resume', cwd: '/w', transcript_path: '/t.jsonl' })
   expect(r.additionalContext).toEqual(['SUB-HUMAN: you are alice'])
   expect(r.sessionTitle).toBe(SEAT.addr)
-  await until(() => seen.prompts.length === 1)
+  await until(() => seen.runs.includes('mod-hello.ts'))
+  await new Promise(resolve => setTimeout(resolve, 50))
   expect(seen.runs.slice(0, 2)).toEqual(['session-restore.ts', 'mod-hello.ts'])
-  expect(seen.runs).toContain('row-rewake.ts')
-  expect(seen.stdin['row-rewake.ts']?.source).toBe('resume')
-  // stage 8f item 6: a member's, submitted asUser with its one line alone (the row calls ride as context), also
-  // before the tail child named the seat (here it never does): never the framed prompt with its "(for Claude)" lines
-  expect(seen.prompts[0]).toBe("sub-human: restoring this session's rows")
-  expect(seen.asUser[0]).toBe(true)
+  expect(seen.prompts).toEqual([])
 })
 
 test('a session surely without a seat: compact, clear and resume start no node', async ($, on) => {
@@ -92,10 +87,9 @@ test('a session surely without a seat: compact, clear and resume start no node',
   expect(seen.runs).toEqual([])
 })
 
-test('a fork (← the agent view moved the conversation into a bg job, a new session id with no index): session-restore runs anyway and takes the old seat, then the hello names it, then row-rewake', async ($, on) => {
+test('a fork (← the agent view moved the conversation into a bg job, a new session id with no index): session-restore runs anyway and takes the old seat, then the hello names it; no wake, no line', async ($, on) => {
   const restore = { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: 'SUB-HUMAN: you are alice\n(restored after the agent view)', sessionTitle: SEAT.addr } }
-  const calls = 'sub-human: this session was resumed, and its rows are NOT running.\nAgent({subagent_type: "sub-human:room"})'
-  const seen = world($, on, { seat: SEAT, answer: { 'session-restore.ts': { stdout: JSON.stringify(restore) }, 'row-rewake.ts': { exitCode: 2, stderr: calls } } })
+  const seen = world($, on, { seat: SEAT, answer: { 'session-restore.ts': { stdout: JSON.stringify(restore) } } })
   await start($)
   expect(seen.runs).toEqual([]) // no index for the new id: the hello is the module's own
   const r = await $.classic.SessionStart({ session_id: SID, source: 'fork', cwd: '/w', transcript_path: '/t.jsonl' })
@@ -103,11 +97,11 @@ test('a fork (← the agent view moved the conversation into a bg job, a new ses
   expect(r.sessionTitle).toBe(SEAT.addr)
   expect(seen.runs.slice(0, 2)).toEqual(['session-restore.ts', 'mod-hello.ts'])
   expect(seen.stdin['session-restore.ts']?.source).toBe('fork')
-  await until(() => seen.prompts.length === 1)
-  expect(seen.stdin['row-rewake.ts']?.source).toBe('fork')
+  await new Promise(resolve => setTimeout(resolve, 50))
+  expect(seen.prompts).toEqual([])
 })
 
-test('a fork with nothing to take back: session-restore says nothing, no tail child, no rewake', async ($, on) => {
+test('a fork with nothing to take back: session-restore says nothing, no tail child', async ($, on) => {
   const seen = world($, on)
   await start($)
   const r = await $.classic.SessionStart({ session_id: SID, source: 'fork', cwd: '/w', transcript_path: '/t.jsonl' })
@@ -140,7 +134,7 @@ test('stage 8f item 1: a hello that names a seat in another folder appends the h
   expect(appended.length).toBe(1)
 })
 
-test('the hello carries the Claude Code version; a seated hello with features off says so once per version, after the join\'s lines', async ($, on) => {
+test('the hello carries the Claude Code version; a seated hello on a version not verified says so once per version, in the debug log alone', async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
   on('session.version', () => ({ value: { version: '2.1.302', base: '2.1.302' } }))
   const seen = world($, on, { indexed: true, seat: SEAT, cc: { version: '2.1.302', verified: false, off: ['tasks', 'plan-edit', 'sign-off'] } })
@@ -150,12 +144,14 @@ test('the hello carries the Claude Code version; a seated hello with features of
   expect(seen.stdin['mod-hello.ts']?.cc_version).toBe('2.1.302')
   expect(seen.logs).toEqual([])
   await clock.advance(400)
-  expect(seen.logs).toEqual(["Claude Code 2.1.302 isn't verified with sub-human yet: the room task list is off (tasks are kept in the room), plan edits use the plan tool, sign-off is a question Claude Code asks you, not the plan view. sub-human doctor has details."])
+  const said = "Claude Code 2.1.302 isn't verified with sub-human yet: the room task list is off (tasks are kept in the room), plan edits use the plan tool, sign-off is a question Claude Code asks you, not the plan view. sub-human doctor has details."
+  expect(seen.logs).toEqual([]) // 0.6.0: nothing on screen
+  expect(debugLines.filter(l => l === said).length).toBe(1)
   // another hello for the same version: nothing more
   await $.classic.SessionStart({ session_id: SID, source: 'resume', cwd: '/w', transcript_path: '/t.jsonl' })
   await until(() => hellos() === 2)
   await clock.advance(400)
-  expect(seen.logs.length).toBe(1)
+  expect(debugLines.filter(l => l === said).length).toBe(1)
 })
 
 test('a hello with no seat says nothing of the version', async ($, on) => {

@@ -25,13 +25,13 @@ export function reviewOpenOf(subHuman: SubHumanRead | null | undefined): boolean
 /** A seat is known for this session, or the module is not sure there is none: node may act. */
 export const seatedOrUnsure = (hello: Hello | null | undefined, sid: unknown): boolean => !sure(hello, sid) || !!(hello && hello.seat);
 
-/** The row hooks (row-guard, row-map, row-hold): only for a row agent (mod/core/rows.ts isRow), in a seated (or unsure)
- * session. Any other agent costs no node start. */
+/** The row hook (row-hold): only for the room row agent (mod/core/rows.ts isRow), in a seated (or unsure) session.
+ * Any other agent costs no node start. */
 export const rowsNeeded = (hello: Hello | null | undefined, sid: unknown, agentType: unknown): boolean => isRow(agentType) && seatedOrUnsure(hello, sid);
 
 const RESTORE_SOURCES = new Set(['clear', 'compact', 'resume', 'fork']);
 
-/** classic.SessionStart: session-restore (and on resume row-rewake) runs for clear, compact and resume unless the
+/** classic.SessionStart: session-restore runs for clear, compact and resume unless the
  * hello is this session's and says there is no seat and nothing to restore (restorable: the seat this session id last
  * held, or one this claude process holds; unset counts as false only in a hello that is this session's). A fork always
  * runs it: its new session id has no index, and only the old transcript says whose seat it continues (← the agent

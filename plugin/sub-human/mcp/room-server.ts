@@ -6,7 +6,7 @@
  * Identity: the session that spawned us (whoami below), re-resolved on every call since the session may join after the
  * server starts. The model never names itself. Not joined -> every core tool returns "not in a room; run /sub-human".
  *
- * Core tools: post (refused when it repeats the person's objection note: repeatsNote below), read (this member's
+ * Core tools: post (answers {id}, the entry's id alone; refused when it repeats the person's objection note: repeatsNote below), read (this member's
  * unseen entries, cursor mcp-<name>, skipping its own Claude's posts, at most READ_MAX; each one rendered line with
  * no signature material, a person's line whose signature does not verify marked "(unverified)"; with plan, a room plan:
  * lib/plans.ts describe; with brief, the room's state in one text: lib/room/brief.ts), plan (op edit: opens a room plan edit in this session, which the consent hooks run,
@@ -36,7 +36,6 @@ import { agentPost, POST_KINDS } from '../lib/agent-post.ts';
 import * as cc from '../lib/cc/env.ts';
 import * as plans from '../lib/plans.ts';
 import { brief } from '../lib/room/brief.ts';
-import { PLAN_NAME_RE } from '../lib/room/validate.ts';
 import { decode, isObj, objAs } from '../lib/decode.ts';
 import { envFlag } from '../lib/env.ts';
 import * as verdict from '../lib/cc/verdict.ts';
@@ -158,8 +157,9 @@ const CORE: ToolDefinition[] = [
   {
     name: 'post',
     title: 'Post to the room',
-    description: 'Post a note to the shared sub-human room as your human\'s Claude (labelled as yours, never as their words). '
-      + 'Members\' Claudes see it next turn; to reach one now, SendMessage it. For agreement use plan (ask).',
+    // the first sentence is for a person (a permission prompt shows it); the mechanics follow, for Claude
+    description: 'Send a message to the room as your person\'s Claude. '
+      + 'Labelled as yours, not their words. Claudes see it next turn; SendMessage reaches one now. For agreement use plan (ask).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -176,7 +176,7 @@ const CORE: ToolDefinition[] = [
   {
     name: 'read',
     title: 'Read the room',
-    description: `Read the sub-human room: ids, those entries in full; plan, a room plan; brief, its state; else your unseen entries (oldest first, ≤ ${READ_MAX}).`,
+    description: `Read the room's messages or a plan. ids: entries in full; plan: a plan; brief: its state; else unseen entries (oldest first, ≤ ${READ_MAX}).`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -191,9 +191,9 @@ const CORE: ToolDefinition[] = [
   {
     name: 'plan',
     title: 'The room plan',
-    description: 'Sub-human room plans. edit (fine in plan mode), then EnterPlanMode, edit the plan file, ExitPlanMode({}): the hooks '
-      + 'store the next version (your person checks it first). ask: people sign off on the current one. read. Only when told '
-      + 'to: put stores text instead; signoff asks your person.',
+    description: 'Draft, share or read a room plan. '
+      + 'edit (fine in plan mode), then EnterPlanMode, edit the plan file, ExitPlanMode({}): the hooks store the next version '
+      + '(your person reviews it first). ask: people review it. read. Only when told to: put stores text; signoff asks your person.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -211,9 +211,11 @@ const CORE: ToolDefinition[] = [
   },
 ];
 
+/** post: the entry's id alone ({id}), not the record: the model wrote the text, so an echo only costs its context. A
+ * refusal is its reason, as an error. */
 function post(me: Me, args: ToolArgs) {
   const r = agentPost(me, args);
-  return r.ok ? json(r.entry) : text(r.error, true);
+  return r.ok ? json({ id: r.entry.id }) : text(r.error, true);
 }
 
 /** Entries as the model reads them: one rendered line each (render.line full), the trust marker in it. */
@@ -343,7 +345,6 @@ function plan(me: Me, args: ToolArgs, meta: CallMeta): ToolResult | Promise<Tool
   if (args.op === 'put') return put(me, name, args);
   if (args.op === 'signoff') return signoff(me, name, args, meta);
   if (args.op !== 'edit') return text('refused: op must be edit, put, ask, signoff or read', true);
-  if (!PLAN_NAME_RE.test(name)) return text(`refused: invalid plan name "${name}" (a-z, 0-9 and -, up to 24)`, true);
   if (me.role === 'claude') return text('refused: the room session edits no plan', true);
   if (planEditOff()) {
     const cur = plans.current(me.code, name);
@@ -358,9 +359,11 @@ function plan(me: Me, args: ToolArgs, meta: CallMeta): ToolResult | Promise<Tool
     if (had && had.file && !had.restored) proposal.restorePlan({ phase: 'exiting', file: had.file, backup: typeof had.backup === 'string' ? had.backup : null, restored: false });
     const cur = plans.current(me.code, name);
     const base = cur ? cur.version : 0;
-    proposal.writeEdit(me, { phase: 'open', plan: name, base, at: Date.now() });
+    // a new plan the person named nothing: its first heading names it when stored (lib/consent/edit.ts)
+    const unnamed = !cur && (args.name == null || args.name === '');
+    proposal.writeEdit(me, { phase: 'open', plan: name, base, at: Date.now(), ...(unnamed ? { unnamed: true as const } : {}) });
     // one line (the hooks say the rest as each step comes): the model passed the plan text to ExitPlanMode when told more
-    return text(`Editing room plan ${name} (${cur ? `base v${base}, ${plans.who(cur)}` : 'a new plan'}): call EnterPlanMode, edit the plan file the hooks fill, then ExitPlanMode({}) with no plan argument; the hooks store it.`);
+    return text(`Editing room plan ${name} (${cur ? `base v${base}, ${plans.who(cur)}` : unnamed ? 'a new plan: its first heading names it' : 'a new plan'}): call EnterPlanMode, edit the plan file the hooks fill, then ExitPlanMode({}) with no plan argument; the hooks store it.`);
   });
 }
 
@@ -453,7 +456,7 @@ function handle(msg: JsonRpcIncoming | null) {
         protocolVersion: negotiateProtocol(params && params.protocolVersion),
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: 'room', title: 'sub-human room', version: VERSION },
-        instructions: 'sub-human room tools. post: a note as your human\'s Claude. read: entries by id, or a room plan. plan: edit a room plan, ask people to sign off on it, read it; each person answers in their own session, never through you.',
+        instructions: 'Room tools. post sends a message; read reads messages or a plan; plan drafts, shares and reads plans. Each person agrees in their own session, never through you.',
       });
     case 'notifications/initialized':
       return;

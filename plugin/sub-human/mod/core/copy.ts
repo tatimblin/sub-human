@@ -35,7 +35,7 @@
 import { FOR_CLAUDE } from './constants.ts';
 import { answerCard, type CardAnswer, type CardResponse, type CardSpec } from './card.ts';
 
-export const COPY_QUESTION = 'Copy the invite line to your clipboard? (the PIN is not copied)';
+export const COPY_QUESTION = 'Copy the invite?';
 export const COPY = 'Copy';
 export const SKIP = 'Skip';
 
@@ -154,12 +154,17 @@ export async function copyTo(run: Runner, line: string, commands: readonly Clipb
   return 'none';
 }
 
+/** What a copy that worked says: the debug log's alone (the person picked Copy; nothing to report). */
 export const COPIED = 'copied';
-/** A later invite in a session whose person picked Copy: copied with no card. */
+/** A later invite in a session whose person picked Copy: copied with no card (the debug log's). */
 export const AUTO_COPIED = 'line copied';
 export const NO_TOOL = 'No clipboard tool found; the line is pinned on your status line.';
 export const GONE = 'that invite is gone, run /sub-human invite again';
+/** Skip, or no answer: the debug log's alone. */
 export const NOT_COPIED = 'not copied';
+/** A copy outcome that is the person's to read (something did not happen they would expect: no tool, the invite
+ * gone); the rest are the debug log's. */
+export const copyNews = (said: string): boolean => said !== COPIED && said !== AUTO_COPIED && said !== NOT_COPIED;
 /** What the model reads after the card: that the person saw the outcome, and nothing is asked of it. */
 export const copySaid = (said: string): string => `sub-human: the copy card is answered (${said}); the person sees that. Reply with nothing.`;
 

@@ -103,8 +103,8 @@ test('notices.text and rowSegment: a leave carries the chat line\'s short reason
 test('rows.rowText: the room row leads with a recent join', () => {
   const es = [mv(1, 'member_joined', 'alice', 0), mv(2, 'member_joined', 'bob', 10)];
   const t = rows.rowText(CODE, { viewer: 'alice', entries: es, members: MEMBERS, now: T0 + 12_000, taskSummary: '' });
-  assert.equal(t, '+bob joined · 2 here');
-  assert.equal(rows.rowText(CODE, { viewer: 'alice', entries: es, members: MEMBERS, now: T0 + 400_000, taskSummary: '' }), '2 here');
+  assert.equal(t, '+bob joined · bob here');
+  assert.equal(rows.rowText(CODE, { viewer: 'alice', entries: es, members: MEMBERS, now: T0 + 400_000, taskSummary: '' }), 'bob here');
 });
 
 test('notices shown / markShown: ids merge and sort; via is required', () => {
@@ -142,7 +142,7 @@ test('session document: one per seat; a field written is read back, a cleared on
 });
 
 test('hold {room}: joins and settled leaves show as notices on the progress line; a quick round trip shows nothing', async t => {
-  const ENV = { SUB_HUMAN_HOLD_POLL_MS: '20', SUB_HUMAN_HOLD_GRACE_MS: '100000', SUB_HUMAN_HOLD_WHO_MS: '20', SUB_HUMAN_LEAVE_MS: '300' };
+  const ENV = { SUB_HUMAN_HOLD_POLL_MS: '20', SUB_HUMAN_HOLD_WHO_MS: '20', SUB_HUMAN_LEAVE_MS: '300' };
   const old = Object.fromEntries(Object.keys(ENV).map(k => [k, process.env[k]]));
   Object.assign(process.env, ENV);
   t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'], now: T0 });
@@ -158,19 +158,18 @@ test('hold {room}: joins and settled leaves show as notices on the progress line
   let id = 0;
   const add = (from: string, kind: string, text: string) => fs.appendFileSync(path.join(dir, 'log.jsonl'), JSON.stringify({ id: ++id, at: new Date().toISOString(), from, via: 'system', kind, to: 'room', text }) + '\n');
   add('alice', 'member_joined', 'alice joined');
-  const progress: string[] = []; // the room hold's line only (bob's row streams his own thread)
+  const progress: string[] = []; // the room hold's line
   const me = { code: CODE, name: sn('alice'), role: 'member' } as Me; // the fields hold reads
   let who: Me | null = me;
   const plug = hold.create({ identity, whoami: () => who, progress: (k, _n, m) => { if (k === 'r') progress.push(must(m)); }, onCancel: () => {}, log: () => {}, text: s => ({ content: [{ type: 'text', text: s as string }] }) });
-  // bob's row is already held, so the room hold does not return JOINED for him
   const ended: ToolResult[] = [];
-  const b = plug.call('hold', me, { member: sn('bob') }, { id: 1, progressToken: 'b' });
   const r = plug.call('hold', me, { room: CODE }, { id: 2, progressToken: 'r' });
-  for (const p of [b, r]) void (p as Promise<ToolResult>).then(x => ended.push(x)); // a hold call answers with a Promise
+  void (r as Promise<ToolResult>).then(x => ended.push(x)); // a hold call answers with a Promise
   tick(60);
   add('bob', 'member_joined', 'bob joined');
-  assert.ok(until(() => progress.some(m => m.startsWith('bob joined')), 2000), progress.join('\n'));
-  assert.ok(progress.some(m => m === `bob joined${hold.HINT}`), progress.join('\n'));
+  // the line leads with who else is here (lib/rows.ts hereLine), then the notice
+  assert.ok(until(() => progress.some(m => m.includes(' · bob joined')), 2000), progress.join('\n'));
+  assert.ok(progress.some(m => m === `bob here · bob joined${hold.HINT}`), progress.join('\n'));
   assert.ok(!progress.some(m => /member_joined/.test(m)), 'no raw member_joined line');
   const n = progress.length;
   add('bob', 'member_left', 'bob left'); ms.bob.left_at = new Date().toISOString(); save();
@@ -180,14 +179,14 @@ test('hold {room}: joins and settled leaves show as notices on the progress line
   assert.ok(!progress.slice(n).some(m => /bob left|bob rejoined|member_left/.test(m)), progress.slice(n).join('\n'));
   add('bob', 'member_left', 'bob left'); ms.bob.left_at = new Date().toISOString(); save();
   tick(100);
-  assert.ok(!progress.some(m => m.startsWith('bob left')), 'not before it settles');
-  assert.ok(until(() => progress.some(m => m.startsWith('bob left')), 2000), progress.join('\n'));
-  assert.ok(progress.some(m => m === `bob left${hold.HINT}`));
-  who = null; // this seat leaves: both holds end
+  assert.ok(!progress.some(m => m.includes(' · bob left')), 'not before it settles');
+  assert.ok(until(() => progress.some(m => m.includes(' · bob left')), 2000), progress.join('\n'));
+  assert.ok(progress.some(m => m === `only you · bob left${hold.HINT}`));
+  who = null; // this seat leaves: the hold ends
   until(() => false, 100);
   await Promise.resolve();
-  assert.equal(ended.length, 2, 'both holds return');
-  assert.ok(ended.every(x => /^STOP/.test(must(x.content[0]).text)), 'both holds return STOP');
+  assert.equal(ended.length, 1, 'the hold returns');
+  assert.ok(ended.every(x => /^STOP/.test(must(x.content[0]).text)), 'the hold returns STOP');
   } finally {
     for (const [k, v] of Object.entries(old)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
   }
@@ -196,7 +195,7 @@ test('hold {room}: joins and settled leaves show as notices on the progress line
 // ---------- the tail child sends joins and leaves as chat events ----------
 // lib/tail.ts in-process on a fake clock (test/tail.node-test.ts covers the loop itself; test/cli.node-test.ts the real child).
 const FAST = {
-  resolveMs: 100, unseatedMs: 100, pollMs: 50, settleMs: 300, settleMaxMs: 1000, roomClaudeSettleMs: 300, roomClaudeSettleMaxMs: 1000,
+  resolveMs: 100, unseatedMs: 100, pollMs: 50, settleMs: 300, settleMaxMs: 1000,
   leaveMs: 600, healthMs: 5000, backoffMs: 200, backoffMaxMs: 1000, errorLogMs: 60_000, stallMs: 5000,
 };
 interface TailHarness {
@@ -228,7 +227,6 @@ test('tail (member): a join and a settled leave are chat events; a quick round t
   R = room.open(code);
   h.register('alice', 'member', process.pid, code);
   sys('member_joined', 'alice');
-  rows.writeHolds(code, sn('alice'), { room: true, members: ['bob'] }); // her rows run: no row note is pushed
   const t = startTail();
   try {
     t.advance(400);

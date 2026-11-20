@@ -273,7 +273,7 @@ test('skew: a newer host\'s unknown entry kind, via and fields, an unknown docum
   assert.match(logged.join('\n'), /skipped: the host streamed "links"/);
   const es = mirror.readAll();
   const chat = es.map(e => room.chatLines(e, { viewer: 'alice', entries: es }).join(' / '));
-  assert.deepEqual(chat, ['room: a future room line', 'bob (via relay): not bob\'s own words', 'bob\'s Claude: plain']);
+  assert.deepEqual(chat, ['a future room line','bob (via relay): not bob\'s own words', 'bob\'s Claude: plain']);
   assert.ok(es.every(e => typeof room.line(e, { full: true }) === 'string'));
   assert.deepEqual(es.map(e => lane({ name: 'alice', role: 'member' }, e, es)), ['pull', 'pull', 'pull'], 'nothing unknown wakes anyone');
 });

@@ -123,9 +123,10 @@ function line(e: Entry, { full = false, trust = NO_TRUST }: { full?: boolean; tr
 }
 
 // ---------- chat rendering (what a human sees; no ids) ----------
-/** Who an entry is from, as a group chat names them: "bob", "bob's Claude", "claude", "room". */
+/** Who an entry is from, as a group chat names them: "bob", "bob's Claude", "claude"; '' for the room's own lines
+ * (one speaker: Claude Code's "sub-human:" prefix, never a second "room:"). */
 function chatWho(e: Entry, trust: Trust): string {
-  if (e.via === 'system') return 'room';
+  if (e.via === 'system') return '';
   const other = otherVia(e);
   if (other) return other;
   if (e.from === ROOM_CLAUDE) return ROOM_CLAUDE;
@@ -190,6 +191,9 @@ function retiredBy(e: Entry, entries: readonly Readonly<Entry>[] | undefined, tr
     .map(([old]) => proposalLabel(old, before) || `(${old.slice(0, 6)})`);
 }
 
+/** A line's first letter in capitals ("plan paging v2" -> "Plan paging v2"). */
+const cap = (t: string): string => t.charAt(0).toUpperCase() + t.slice(1);
+
 /** Names as a sentence lists them: "bob", "you and bob", "bob, carol and dan". */
 const and = (xs: readonly string[]): string => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs.at(-1) ?? ''}` : xs[0] ?? '');
 
@@ -197,24 +201,20 @@ const and = (xs: readonly string[]): string => (xs.length > 1 ? `${xs.slice(0, -
 const noteOf = (o: Entry): string => (o.text == null || /^Object$/.test(String(o.text)) ? '' : String(o.text));
 
 /**
- * A decision as people read it: 'plan api v3 agreed (you, bob)', or 'plan api v3 not agreed: you asked for changes ·
- * carol objected · bob agreed' (asked for changes: an objection with a note, which its objection line already showed;
- * the note is not said again). Without the proposal in entries: 'decided (agreed: bob)' / 'not agreed (objected: bob)'.
+ * A decision as people read it: 'Plan api v3 agreed' (the one a person sees: lib/room/deliver.ts), or, for Claude,
+ * 'Plan api v3 not agreed · you asked for changes · bob agreed' (the objection's own line said it, with its note).
+ * Without the proposal in entries: 'Decided (agreed: bob)' / 'Not agreed (objected: bob)'.
  */
 function decisionText(n: Entry, entries: readonly Readonly<Entry>[] | undefined, viewer?: string): string {
   const label = proposalLabel(n.proposal_hash, entries);
   const s = String(n.text ?? '').replace(/\s*\(proposal [0-9a-f]+\)\s*$/, '');
   const m = /^objected: ([^·]*?)(?: · agreed: (.*))?$/.exec(s);
-  if (!label || !entries) return m ? `not agreed (${s})` : `decided (${s})`; // no title to name it by (a label means entries are there)
+  if (!label || !entries) return m ? `Not agreed (${s})` : `Decided (${s})`; // no title to name it by (a label means entries are there)
   const names = (list: string): string[] => list.split(/,\s*/).filter(Boolean).map(x => (x === viewer ? 'you' : x));
-  if (!m) return /^agreed: /.test(s) ? `${label} agreed (${names(s.slice(8)).join(', ')})` : `${label} decided (${s})`;
-  const refs = new Set(n.refs ?? []);
-  const noted = new Set(entries.filter(x => x && refs.has(x.id) && x.kind === 'objection' && noteOf(x).trim()).map(x => x.from));
-  const objectors = (m[1] ?? '').split(/,\s*/).filter(Boolean);
-  const asked = names(objectors.filter(x => noted.has(x)).join(','));
-  const bare = names(objectors.filter(x => !noted.has(x)).join(','));
-  const parts = [asked.length && `${and(asked)} asked for changes`, bare.length && `${and(bare)} objected`, m[2] && `${and(names(m[2]))} agreed`].filter(Boolean);
-  return `${label} not agreed: ${parts.join(' · ')}`;
+  if (!m) return /^agreed: /.test(s) ? `${cap(label)} agreed` : `${cap(label)} decided (${s})`;
+  const asked = names(m[1] ?? '');
+  const parts = [asked.length && `${and(asked)} asked for changes`, m[2] && `${and(names(m[2]))} agreed`].filter(Boolean);
+  return `${cap(label)} not agreed · ${parts.join(' · ')}`;
 }
 
 /**
@@ -256,9 +256,16 @@ function chatBody(e: Entry, viewer: string | undefined, entries: readonly Readon
       const who = (n.approvers ?? []).filter(a => !m || m.signed[a] == null).map(you).filter((x): x is string => !!x);
       const to = and(who);
       const agreed = m && m.agreed.length ? ` (${and(m.agreed.map(a => you(a) ?? a))} agreed)` : '';
-      // the author's own check before it goes out (lib/proposal.ts check): addressed to its asker, its one approver
-      if (label && label.startsWith('plan ') && isDraft(n)) return { head: `${chatWho(n, trust)} asks ${you(n.from) ?? n.from} to check ${label} before it goes out`, text: '' };
-      if (label && label.startsWith('plan ')) return { head: `${chatWho(n, trust)} asks ${to || 'for sign-off'}${to ? ' to sign off on' : ' on'} ${label}${agreed}`, text: '' };
+      // the author's own review before anyone else is asked (lib/proposal.ts check): addressed to its asker alone
+      const by = n.from === viewer ? 'your' : `${n.from}'s`;
+      if (label && label.startsWith('plan ') && isDraft(n)) return { head: `${cap(label)} is a draft · ${by} edit, in review`, text: '' };
+      // the room's plan, never one person's: "Plan paging v1 is ready · maya's edit" for whom it asks; who else is
+      // asked, for anyone else (their Claude's context)
+      if (label && label.startsWith('plan ')) {
+        const asked = !!viewer && (n.approvers ?? []).includes(viewer);
+        const rest = asked ? '' : to ? ` · for ${to}${agreed}` : agreed;
+        return { head: `${cap(label)} is ready · ${by} edit${rest}`, text: '' };
+      }
       const h = n.hash ? ` (${String(n.hash).slice(0, 6)})` : '';
       return { head: `${chatWho(n, trust)} proposed`, text: `${t.replace(TITLE_PREFIX, '')}${h}` };
     }
@@ -272,17 +279,18 @@ function chatBody(e: Entry, viewer: string | undefined, entries: readonly Readon
     case 'signoff': return { head: `${humanName(e, trust)} agreed to ${about()}`, text: '' };
     case 'objection':
       return n.via === 'human' && n.proposal_hash
-        ? { head: `${humanName(e, trust)} objected to ${about()}`, text: noteOf(n) }
+        ? { head: `${cap(about())} · ${humanName(e, trust)} asked for changes`, text: noteOf(n).trim() ? `"${noteOf(n).trim()}"` : '' }
         : { head: chatWho(n, trust), text: t };
-    case 'decision': return { head: 'room', text: decisionText(n, entries, viewer) };
+    case 'decision': return { head: decisionText(n, entries, viewer), text: '' };
     case 'task': {
       // the rows' words (open, in progress, done), as the tasks CLI says them
       const status = n.status ? ` ${taskWord(n.status)}` : '';
-      // an add naming the viewer as its suggested owner, by someone else: said to them alone; they claim it themselves
+      // an add for the viewer (its owner, or suggested for them) by someone else: "New task for you: SUBJECT"
       const req = n.req && isList(entries) ? entries.find(x => x && x.id === n.req) : null;
-      const mine = n.op === 'add' && !n.owner && !!viewer && n.suggest === viewer && !(req && (req.by || req.from) === viewer)
-        ? ', suggested for you (claim it to take it)' : '';
-      return { head: 'room', text: `task "${n.subject || n.task_id || '?'}"${status}${n.owner ? `, owner ${you(n.owner)}` : ''}${mine}` };
+      const subject = n.subject || n.task_id || '?';
+      const forViewer = !!viewer && (n.owner === viewer || (!n.owner && n.suggest === viewer));
+      if (n.op === 'add' && forViewer && !(req && (req.by || req.from) === viewer)) return { head: `New task for you: ${subject}`, text: '' };
+      return { head: `task "${subject}"${status}${n.owner ? `, owner ${you(n.owner)}` : ''}`, text: '' };
     }
     case 'task_req': return { head: chatWho(n, trust), text: `asks to ${n.op} task "${n.subject || n.task_id || '?'}"` };
     case 'say': case 'question': case 'status':
@@ -335,14 +343,14 @@ function revisionLine(e: Entry, viewer: string | undefined, entries: readonly Re
   if (!r || (r.asker !== viewer && !r.objected.includes(viewer))) return null;
   const v = `v${String(e.version)}`;
   const objected = r.objected.length ? `; objected: ${r.objected.join(', ')}` : '';
-  return `${FOR_CLAUDE} this ${v} of plan ${r.plan} comes after v${r.version}, whose sign-off ${r.asker} asked for${objected}. `
-    + `Tell ${viewer} what changed (read, plan "${r.plan}"); its author checks it first, and their Yes asks for sign-off.`;
+  return `${FOR_CLAUDE} this ${v} of plan ${r.plan} comes after v${r.version}, whose review ${r.asker} asked for${objected}. `
+    + `If ${viewer} asks what changed, read plan ${r.plan}. Its author reviews it first; their Yes asks the others.`;
 }
 
 /** chatLines without the revision line. */
 function bodyLines(e: Entry, viewer: string | undefined, entries: readonly Readonly<Entry>[] | undefined, trust: Trust): string[] {
   const { head, text } = chatBody(e, viewer, entries, trust);
-  if (!text) return [head];
+  if (!text) return head ? [head] : [];
   // a message to one member keeps its blank lines; one Claude's to another (code, a diff) shows nearly whole
   const addressed = !!e.to && e.to !== 'room' && (e.kind === 'say' || e.kind === 'question');
   const peer = addressed && e.via === 'agent';
@@ -351,10 +359,11 @@ function bodyLines(e: Entry, viewer: string | undefined, entries: readonly Reado
   const cut = cps.length > max;
   const shown = cut ? cps.slice(0, max).join('') + ' [cut: the rest is in the room log]' : text;
   let lines = messageLines(safeText(shown), addressed);
-  if (!lines.length) return [head];
+  if (!lines.length) return head ? [head] : [];
   const more = Math.max(0, lines.length - linesMax);
   if (more) lines = lines.slice(0, linesMax);
-  lines[0] = `${head}: ${(lines[0] ?? '').replace(/^\s+/, '')}`; // lines is not empty
+  // the room's own line has no speaker: its text alone
+  lines[0] = head ? `${head}: ${(lines[0] ?? '').replace(/^\s+/, '')}` : (lines[0] ?? '').replace(/^\s+/, ''); // lines is not empty
   const nested = CHAT_WRAP - NEST.length;
   const out: string[] = [];
   lines.forEach((l, i) => {
@@ -391,13 +400,15 @@ function stateLine(me: LaneViewer | null | undefined, entries: readonly Readonly
     if (approversOf(p).includes(name)) {
       const a = answered(name, p.hash, entries, trust);
       // the open-the-card call is spelled out right in the notice: a model skipped it when it was only in the join text
-      const needed = `answer needed (call EnterPlanMode, then ExitPlanMode with plan "proposal ${p.hash}"; EnterPlanMode first even when plan mode is on)`;
+      const stub = v ? `plan ${v.plan} v${v.version}` : `proposal ${p.hash}`;
+      const needed = `answer needed (call EnterPlanMode, then ExitPlanMode with plan "${stub}"; EnterPlanMode first even when plan mode is on)`;
       s += ` · you: ${a ? (a.kind === 'signoff' ? 'agreed' : 'objected') : dec ? 'not answered' : needed}`;
     }
     parts.push(s);
   }
   if (open.length > shown.length) parts.push(`+${open.length - shown.length} more open`);
-  const away = Object.values(members ?? {}).filter(m => m && (m.left_at || m.lapsed_at) && m.name !== name).map(m => m.name);
+  // people only: the room session (member claude) is no one to wait for
+  const away = Object.values(members ?? {}).filter(m => m && (m.left_at || m.lapsed_at) && m.name !== name && m.role !== 'claude' && m.name !== 'claude').map(m => m.name);
   if (away.length) parts.push(`away: ${away.join(', ')}`);
   return `room now: ${parts.join(' · ')}`;
 }
@@ -446,16 +457,18 @@ function joinLeave(es: readonly Readonly<Entry>[] | null | undefined, viewer: st
 }
 
 /**
- * The room's line for a machine its PIN let in (lib/remote/server.ts linkJoinText): "NAME joined from MACHINE (check
- * …) · not them? /sub-human kick NAME". linkJoined: the NAME such a status line names, else null. announced: whether
- * member_joined e follows such a line for its name (no other join or leave of that name between): that line is the
- * person's join notice, so the bare "NAME joined" is not drawn again.
+ * The room's line for a machine an invite let in (lib/remote/server.ts redeem): "NAME joined (MACHINE)"; its check, a
+ * rename and the kick are `who`'s (an older host's line, still read: "NAME joined from MACHINE (check …) · not them?
+ * /sub-human kick NAME"). linkJoined: the NAME such a status line names, else null. announced: whether member_joined e
+ * follows such a line for its name (no other join or leave of that name between): that line is the person's join
+ * notice, so the bare "NAME joined" is not drawn again.
  */
-const LINK_JOIN = /^(\S+) joined from .* · not them\? \/sub-human kick \1$/;
+const LINK_JOIN = /^(\S+) joined \([^()\n]*\)$/;
+const LINK_JOIN_OLD = /^(\S+) joined from .* · not them\? \/sub-human kick \1$/;
 function linkJoined(e: Entry | null | undefined): string | null {
   if (!e || e.kind !== 'status' || e.via !== 'system' || e.from !== 'room') return null;
-  const m = LINK_JOIN.exec(String(e.text ?? ''));
-  return m?.[1] ?? null;
+  const t = String(e.text ?? '');
+  return (LINK_JOIN.exec(t) ?? LINK_JOIN_OLD.exec(t))?.[1] ?? null;
 }
 function announced(e: Entry, entries: readonly Readonly<Entry>[] | undefined): boolean {
   if (e.kind !== 'member_joined' || e.via !== 'system' || !isList(entries)) return false;

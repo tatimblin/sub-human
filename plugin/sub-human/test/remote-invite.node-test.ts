@@ -40,8 +40,9 @@ test('invite over ssh: the line with the host folder and no NAME, the PIN apart;
   assert.ok(hiddenBlock(shown), shown.stderr);
   assert.equal(must(shown.json).systemMessage, undefined, 'the SECRET and the PIN stay off Remote Control');
   assert.match(reason(shown), new RegExp(`\n  /sub-human join me@127\\.0\\.0\\.1:1 ${code} [0-9a-z]{39} --home ${esc(host.home)}\n`));
-  assert.match(reason(shown), /apart from the line \(say it, or send it another way\): \d{4}\n/);
-  assert.match(reason(shown), /their own ssh login to this account/);
+  assert.match(reason(shown), /apart from the line \(say it, or send it another way\): \d{4}$/);
+  assert.match(reason(shown), /^sub-human: Invite ready \(over ssh me@127\.0\.0\.1:1\) until /);
+  assert.doesNotMatch(reason(shown), /their own ssh login to this account/, 'the README\'s');
   assert.equal(fs.existsSync(ak), false, 'no door, no line');
   assert.match(reason(host.join(alice, 'invite --ssh -oProxyCommand=x@far')), /not a plain user@host/);
   assert.match(reason(host.join(alice, 'invite --ssh me@far --via jump')), /isn't an invite option/, 'no --via: a jump host is the joiner\'s own ssh config');
@@ -56,10 +57,12 @@ test('invite over ssh: the line with the host folder and no NAME, the PIN apart;
   Object.keys(host.extra).forEach(k => { if (!(k in aliasEnv)) delete host.extra[k]; });
   assert.ok(hiddenBlock(al), al.stderr);
   assert.match(reason(al), new RegExp(`\n  /sub-human join devbox ${code} [0-9a-z]{39} --home \\S+\n`));
-  assert.match(reason(al), /over ssh devbox, until \d\d:\d\d\./);
+  assert.match(reason(al), /\(over ssh devbox\) until \d\d:\d\d\./);
   const locs = Object.values(host.lib(() => store.open(code).kv.get<Invites>(invites.INVITES_KEY)) || {}).map(i => (i as { locator?: string }).locator); // an admission record has none
   assert.ok(locs.includes('ssh:dev@devbox'), JSON.stringify(locs));
-  host.join(alice, `invite --cancel ${must(/invite --cancel ([0-9a-f]{12})/.exec(reason(al)))[1]}`);
+  // its ref is no longer in the text (0.6.0): the record's, by its locator
+  const ref = must(Object.entries(host.lib(() => store.open(code).kv.get<Invites>(invites.INVITES_KEY)) || {}).find(([, i]) => 'locator' in i && i.locator === 'ssh:dev@devbox'))[0].slice(0, 12);
+  host.join(alice, `invite --cancel ${ref}`);
 
   // the CLI: --ssh alone (or nothing) is this machine's own address
   const cli = (args: string[], extra: Record<string, string> = {}) => spawnSync(process.execPath, [h.BIN, ...args], { env: host.env(null, { ...env, ...extra }), encoding: 'utf8' });

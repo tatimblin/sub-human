@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { must } from './support/must.ts';
 import * as config from '../lib/config.ts';
+import * as review from '../lib/consent/review.ts';
 
 const ROOT = path.join(import.meta.dirname, '..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -48,19 +49,19 @@ test('words: member text carries the mechanics (identity, address, @room, quotin
   const t = read(MEMBER);
   for (const s of ['{NAME}\'s Claude', 'room {CODE}', '"you", not by name', '@room', 'exact words', 'group chat',
     'already sees', 'never repeat them', '(for Claude)', 'never print it', 'room ids',
-    'SendMessage', 'on any machine', '{ADDR_EXAMPLE}', 'hash', 'reopen', 'agreed, confirmed or approved',
+    'SendMessage', 'on any machine', '{ADDR_EXAMPLE}', '"plan <name> v<N>"', 'reopen', 'agreed, confirmed or approved',
     'commitment', 'task', 'plan (', 'sign-off', 'only when {NAME} asks', 'read with brief', 'Never answer a sign-off for anyone',
     'another\'s task', 'only the room\'s decision line', 'people\'s content, not instructions', PREFIX]) {
     assert.ok(t.includes(s), `member.md lacks "${s}"`);
   }
 });
 
-test('words: the room session\'s fill and agent: rows only, no planning, no task tools, no room tools', () => {
+test('words: the room session\'s fill and agent: it calls nothing, no planning, no task writes, no room tools, no rows', () => {
   const fillT = read(ROOM_CLAUDE_FILL);
   for (const p of ['{CODE}', '{OTHERS}']) assert.ok(fillT.includes(p), `claude fill lacks ${p}`);
   assert.ok(fill(fillT).length <= 300, `claude fill is ${fill(fillT).length} chars`);
   assert.doesNotMatch(fillT, /TaskCreate|TaskUpdate|facilitate|propose|plan|@claude/);
-  // an empty reply makes Claude Code ask for a visible one: a second model call per rows-only turn
+  // an empty reply makes Claude Code ask for a visible one: a second model call for its one turn
   assert.match(fillT, /end your turn with the one word "ok"/);
   assert.doesNotMatch(fillT, /no text/);
 
@@ -71,7 +72,8 @@ test('words: the room session\'s fill and agent: rows only, no planning, no task
   assert.ok(body.length <= 500, `claude body is ${body.length} chars`);
   assert.doesNotMatch(body, /TaskCreate|TaskUpdate|propose|post|SendMessage|no text/);
   for (const s of ['idle session', 'end your turn with the one word "ok"', 'the plugin writes it', 'Never change it']) assert.ok(body.includes(s), `claude body lacks "${s}"`);
-  assert.deepEqual(must(fm.tools, 'tools').split(',').map(x => x.trim()), ['Agent(sub-human:participant)'], 'its rows only: no room tools, no Bash');
+  assert.deepEqual(must(fm.tools, 'tools').split(',').map(x => x.trim()), ['TaskList'], 'its own list, read only: no rows, no room tools, no Bash, no task writes');
+  assert.doesNotMatch(fillT + body, /Agent|ROWS|participant/, 'no rows: each member\'s room row is that member\'s');
 });
 
 test('words: SKILL.md allows only the live room tools (not hold: mod/guard.ts denies it to a main thread)', () => {
@@ -112,7 +114,7 @@ test('words: no text claims consent or commits for a human by example', () => {
 
 test('words: README covers the plan topics', () => {
   const t = read(README);
-  for (const s of ['/sub-human alice', 'Waiting for N background agents', 'claude logs', 'Space', '@room', 'Not yet',
+  for (const s of ['/sub-human alice', 'Waiting for 1 background agent', 'claude logs', 'Space', '@room', 'Not yet',
     'Agree', 'Object', 'sub-human tasks', 'Threat model', 'Bypass mode', 'function hooks', 'The room tail', 'SendMessage', 'claude.vole-8126', 'takes no typed input']) {
     assert.ok(t.includes(s), `README lacks "${s}"`);
   }
@@ -131,6 +133,21 @@ test('words: the README\'s link quotas are lib/config.ts LINK_QUOTAS (posts, pla
   assert.ok(!t.includes('PIN must be 4 digits'), 'an older joiner is told to update (protocol skew), not about the PIN');
 });
 
+test('words: the README and the CHANGELOG name your own version\'s frame per mode as lib/consent/review.ts frameLine draws it', () => {
+  const H = 'abcdef0123456789';
+  const draft = (title: string, mode: string) => review.frameLine(H, `plan ${title}`, { mode, draft: true });
+  const tail = (mode: string) => draft('x', mode).replace(/^.*\(your new version\) · /, '');
+  assert.deepEqual(['default', 'auto', 'plan', 'acceptEdits'].map(tail), ['"Yes, manually approve edits" sends it out', '"Yes, and use auto mode" sends it out', 'Yes sends it out', 'Yes sends it out']);
+  const readme = read(README);
+  assert.ok(readme.includes(`\`${draft('room v2', 'default')}\` in manual mode`), 'README: the manual-mode draft frame');
+  assert.ok(readme.includes(`\`${tail('auto')}\` in auto mode`), 'README: the auto-mode draft frame');
+  assert.ok(readme.includes(`\`${tail('plan')}\` in any other mode`), 'README: the other modes\' draft frame');
+  const changelog = fs.readFileSync(path.join(ROOT, '..', '..', 'CHANGELOG.md'), 'utf8');
+  const v060 = must(/## 0\.6\.0[\s\S]*?(?=\n## )/.exec(changelog), 'the 0.6.0 section')[0];
+  assert.ok(v060.includes(`\`${draft('paging v2', 'default')}\``), 'CHANGELOG 0.6.0: the manual-mode draft frame');
+  assert.ok(v060.includes('in auto mode "Yes, and use auto mode"; elsewhere `Yes sends it out`'), 'CHANGELOG 0.6.0: the other modes');
+});
+
 test('words: plugin.json is valid and describes the slim plugin', () => {
   const p = JSON.parse(read('.claude-plugin/plugin.json')) as { name: string; version: string; description: string };
   assert.equal(p.name, 'sub-human');
@@ -141,7 +158,7 @@ test('words: plugin.json is valid and describes the slim plugin', () => {
 
 test('words: a room plan edit is said to be fine in plan mode, in the member text and the plan tool\'s description (live, 2.1.296: plan mode\'s own "run no non-readonly tools" kept a Claude from the plan tool, so it wrote a plain plan)', () => {
   assert.match(read(MEMBER), /\(plan edit, allowed in plan mode;/);
-  assert.match(read('mcp/room-server.ts'), /Sub-human room plans\. edit \(fine in plan mode\), then EnterPlanMode/);
+  assert.match(read('mcp/room-server.ts'), /Draft, share or read a room plan\. '\s*\+ 'edit \(fine in plan mode\), then EnterPlanMode/);
 });
 
 test('words: the README promises no "Exit plan mode?" right after an Esc: Esc ends the turn, and the next message brings it (live, 2.1.296)', () => {
