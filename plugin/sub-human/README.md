@@ -280,7 +280,7 @@ Your agent panel gets one row, named after the room. sub-human starts it itself 
 ```
 
 - **↓ onto the row, then Enter** opens it. Type there and press Enter: your exact words go to the room, as `@room` posts them (signed as yours), and no Claude reads or answers them. Your line is drawn as `you: …`.
-- Room lines come in there with who said them: `carol: pushed the store`, `bob's Claude: tests pass`, `bob joined`. For now each is also shown in main, as before.
+- Room lines come in there with who said them: `carol: pushed the store`, `bob's Claude: tests pass`, `bob joined`, and only there: main shows no room lines. Main keeps what is yours: your Claude's own words (and a line it judges urgent), your plan views and reviews, your invites and `You're in room …` when you join, an `@room` receipt, and a line naming you (as the prompt your Claude answers). Your Claude still reads every room line.
 - **Name someone to ask them:** `bob, which branch are you on?` (or `bob: …`, or `@bob` anywhere). Bob's own Claude gets your line once its current turn is over, never in the middle of it, and answers in the room as `bob's Claude: …` when it's sure of the fact; otherwise it leaves the line for bob, who sees it in his row. Bob's main shows your line as one prompt line.
 - **A question that names nobody** (your line ends with `?`, like `anyone seen the CI failure?`) goes to your own Claude only, which answers in the room if it can. Any other line (`ok merging`) wakes no Claude. This is a fixed rule on the `?`, not your Claude guessing what you meant.
 - **↓ then Enter** (on `main`) goes back to main.

@@ -618,8 +618,11 @@ async function toolDone<E extends { readonly agent_id?: string; readonly session
 /** One event's actions (mod/core/deliver.ts route). */
 async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
   if (!ev || c.stopped) return;
-  // room-chat: what the person sees of the room is drawn in the row too (main keeps it for now)
+  // room-chat: what the person sees of the room is drawn in the row; a notice (a chat event) only there, once this
+  // process knows the row (Phase 3: room lines leave main; a wake's line stays main's prompt, a seatless join's
+  // answers and every other line main's)
   const shown = ev.type === 'chat' ? ev.lines : ev.type === 'wake' ? visibleLines(ev.text) : [];
+  const inRow = ev.type === 'chat' && !!chat.row;
   if (shown.length && c.seat) void chatLine($, c.sid, c.seat.code, shown.join('\n')).catch(() => {});
   const actions = route(ev, { turnRunning: turns.running !== null });
   for (const a of actions) {
@@ -631,7 +634,7 @@ async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
         if (!a.seat) { const h = asHello((await $.state.get(HELLO)).value); if (h && h.sid === c.sid && !spawnWanted(h)) stopChild(c.sid); }
         break;
       }
-      case 'log': $.ui.log(a.text); break;
+      case 'log': if (inRow) $.ui.log(`room: ${a.text}`, { to: 'debug' }); else $.ui.log(a.text); break;
       case 'debug': $.ui.log(a.text, { to: 'debug' }); break;
       case 'append': if (!(await appendRow($, a.text))) await noteError($); break; // refused or failed: lost
       case 'hold-pull': if (!(await holdPullEvent($, a.text))) await noteError($); break; // neither held nor appended: lost

@@ -16,10 +16,10 @@ type Seen = {
   /** what $.session.messages answers (an agent's rows: its keeper's hold result) */
   messages: { role: 'user' | 'assistant'; text: string; toolUses: []; toolResults?: { tool_use_id: string; text: string; isError: boolean }[] }[]
   /** main's prompts the module submitted, and the user rows it appended to main */
-  submits: string[]; appends: string[]
+  submits: string[]; appends: string[]; logs: string[]
 }
 function world(on: On, { off = [] }: { off?: string[] } = {}): Seen {
-  const seen: Seen = { agents: [], spawns: [], sends: [], posts: [], statuses: [], model: 0, store: new Map(), feed: () => {}, now: 1_000_000, messages: [], submits: [], appends: [] }
+  const seen: Seen = { agents: [], spawns: [], sends: [], posts: [], statuses: [], model: 0, store: new Map(), feed: () => {}, now: 1_000_000, messages: [], submits: [], appends: [], logs: [] }
   const fed: string[] = []
   let poke = () => {}
   seen.feed = ev => { fed.push(JSON.stringify(ev) + '\n'); poke() }
@@ -39,7 +39,7 @@ function world(on: On, { off = [] }: { off?: string[] } = {}): Seen {
       else await new Promise<void>(r => { poke = r })
     }
   })
-  on('ui.log', () => ({ value: undefined }))
+  on('ui.log', (_$, e) => { if (e.to !== 'debug') seen.logs.push(e.text); return { value: undefined } })
   on('ui.status', (_$, e) => { seen.statuses.push(e.text); return { value: undefined } })
   on('ui.invalidate', () => ({ value: undefined }))
   on('ui.render', (_$, e) => ({ type: 'Text', children: [`engine ${e.component}`] }))
@@ -163,6 +163,27 @@ test('room-chat: a room line from the tail is sent to the row, drawn there with 
   await typed($, 'on it')
   expect(seen.statuses.at(-1)).toBe(`${CODE} · bob here`)
   expect(seen.model).toBe(0)
+})
+
+test('room-chat (Phase 3): a room line (a notice) is drawn in the row only, never a line in main; room-chat off it is main\'s', async ($, on) => {
+  const seen = world(on)
+  await rowUp($, seen)
+  await step($, 'row1', 1)
+  seen.feed({ type: 'seat', seat: SEAT })
+  seen.feed({ type: 'chat', lines: ['bob joined', 'bob: hi all'] })
+  await settle()
+  expect(seen.sends.at(-1)).toEqual({ to: 'row1', text: 'bob joined\nbob: hi all' })
+  expect(seen.logs.filter(l => /bob/.test(l))).toEqual([])
+})
+
+test('room-chat off: a room line is main\'s notice, as in 0.7.0', async ($, on) => {
+  const seen = world(on, { off: ['room-chat'] })
+  await start($)
+  await turn($)
+  seen.feed({ type: 'seat', seat: SEAT })
+  seen.feed({ type: 'chat', lines: ['bob: hi all'] })
+  await settle()
+  expect(seen.logs).toContain('bob: hi all')
 })
 
 test('room-chat off (the verdict, or SUB_HUMAN_CC_OFF): the row is 0.7.0\'s read-only hold-row, and its steps are the model\'s', async ($, on) => {

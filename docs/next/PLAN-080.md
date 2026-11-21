@@ -88,6 +88,8 @@ Each surface the design relies on gets a contract entry (search string, `feature
   - the 0.6.1 invite dialogs.
 - `@room` in main still posts. Its receipt stays one line.
 
+**Phase 3 as built (0.8.0-beta.2):** a `chat` event (the notice lane: people's lines, Claudes' lines to the room, joins, leaves) goes to the row only once the module knows the row (`mod/deliver.ts` apply; the debug log keeps it); wakes stay main's prompt (a line naming you, your own question, a proposal or review for you), as do health lines, a seatless join's answers and the take's `You're in room …`. With `room-chat` off, or before the row is known after a reload, main shows them as in 0.7.0.
+
 ## Phase 4: plans made in the row are room plans
 - `plan …` typed in the row (or "let's plan X", judged by your Claude) hands the drafting to your main Claude: a wake with the request.
 - Main's Claude writes it with the plan tool (0.7.0 one-call edit), and your check opens in your plan view as now.
