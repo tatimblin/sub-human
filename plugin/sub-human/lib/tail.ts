@@ -19,9 +19,11 @@
  *   {type:'pull', text}       for Claude, no wake: the pull lane plus a copy of the chat lines, under the room
  *                             context's head and end (PULL_CAP); the module holds it for the person's next prompt.
  *                             At most once: the cursor moves when the line is written
- *   {type:'wake', text}       what needs Claude now: to me / @me, a proposal for me, a decision on mine, a task
- *                             assigned to me, an objection to my proposal (members, with the room state line when
- *                             the batch moved a proposal); the room Claude gets none (it reads nothing)
+ *   {type:'wake', text, chat?}   what needs Claude now: to me / @me / "me, …", my own untagged question, a proposal
+ *                             for me, a decision on mine, a task assigned to me, an objection to my proposal
+ *                             (members, with the room state line when the batch moved a proposal); the room Claude
+ *                             gets none (it reads nothing). chat: a person's line is among them (the module submits
+ *                             it for the turn's end, even mid-turn, its prompt row drawn as nothing)
  *   {type:'reminders', text|null}  what the person's next prompt carries for Claude: pending-proposal reminders
  *                             (members); sent at start and when it changes (the room row is the hooks module's own)
  *   {type:'here', text}       who else is here (lib/rows.ts hereLine), for the room row's status line under main's
@@ -294,6 +296,7 @@ function pullText(lines: string[]): string | null {
 function formatNdBatch(ready: Item[], ctx: FormatCtx): { events: TailEvent[], moved: number[] } {
   const { me, room: rm, entries, judge, seen, reported, hinted } = ctx;
   const chat: string[] = [], pull: string[] = [], wake: string[] = [], moved: number[] = [];
+  let chatWake = false;
   let state = false;
   for (const p of ready) {
     const { e } = p;
@@ -314,6 +317,7 @@ function formatNdBatch(ready: Item[], ctx: FormatCtx): { events: TailEvent[], mo
       continue;
     }
     wake.push(...lines);
+    if (e.kind === 'say' && e.via === 'human') chatWake = true; // a person's line naming me (or my own question)
     // a Claude's post addressed to me: answer that Claude, not the room (on another machine the post is how
     // its SendMessage arrived; mod/send.ts carries the reply back the same way)
     if (e.via === 'agent' && e.to === me.name && e.from && e.from !== me.name && !(hinted && hinted.has(e.from))) {
@@ -329,7 +333,7 @@ function formatNdBatch(ready: Item[], ctx: FormatCtx): { events: TailEvent[], mo
   if (chat.length) events.push({ type: 'chat', lines: chat });
   const pt = pullText(pull);
   if (pt) events.push({ type: 'pull', text: pt });
-  if (wake.length) events.push({ type: 'wake', text: wake.join('\n') });
+  if (wake.length) events.push({ type: 'wake', text: wake.join('\n'), ...(chatWake ? { chat: true as const } : {}) });
   return { events, moved };
 }
 

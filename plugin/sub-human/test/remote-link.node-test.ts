@@ -275,7 +275,7 @@ test('skew: a newer host\'s unknown entry kind, via and fields, an unknown docum
   const chat = es.map(e => room.chatLines(e, { viewer: 'alice', entries: es }).join(' / '));
   assert.deepEqual(chat, ['a future room line','bob (via relay): not bob\'s own words', 'bob\'s Claude: plain']);
   assert.ok(es.every(e => typeof room.line(e, { full: true }) === 'string'));
-  assert.deepEqual(es.map(e => lane({ name: 'alice', role: 'member' }, e, es)), ['pull', 'pull', 'pull'], 'nothing unknown wakes anyone');
+  assert.deepEqual(es.map(e => lane({ name: 'alice', role: 'member' }, e, es)), ['pull', 'pull', 'push'], 'nothing unknown wakes anyone (a Claude\'s known say to the room is the people\'s chat: 0.8.0)');
 });
 
 test('link: a lost connection is retried with decorrelated jitter: each delay in [retryMs, 3 x the last], at most retryMaxMs', async t => {

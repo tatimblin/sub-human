@@ -74,6 +74,12 @@ Each surface the design relies on gets a contract entry (search string, `feature
 - What a Claude answers is steered by its person in plain words ("handle questions for me"), never a setting.
 - Unread: a line left for you counts on your label until you open the row. Main gets one line only when your Claude judges it time-sensitive.
 
+**Phase 2 as built (0.8.0-beta.2):**
+- Naming: `@maya` anywhere, or a person's line led by `maya,` / `maya:` (case-insensitive, a member's name: `lib/room/deliver.ts` named).
+- **Deviation:** an untagged question is a fixed rule, not the Claude's judgement: a person's own line to the room that names nobody and ends with `?` wakes only their own Claude (`ownQuestion`). Judging every typed line would wake the asker's Claude in main per line.
+- These chat wakes go by `$.prompt.submit` even mid-turn (spike 4), so they wait for the turn's end. Their prompt row is **not** hidden: Claude Code raises a plugin's own submitted prompt's `ui.render` with that plugin as the origin, so every hook of it skips the row as re-entry (also from a `turn.complete` hook's frame; from the row's `turn.step` the submit is refused: it would wait on the turn that hook holds). It stays as owner decision 1's one quiet line.
+- A Claude's `say` to the room is a notice (drawn in every row, counted unread), as a person's line is; Claude to Claude stays SendMessage.
+
 ## Phase 3: room lines leave main
 - `lib/room/deliver.ts`: a person's `notice` lane is drawn in the row, not as `$.ui.log` in main. Context for Claude is unchanged.
 - Kept in main:

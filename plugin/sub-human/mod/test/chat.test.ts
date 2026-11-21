@@ -15,9 +15,11 @@ type Seen = {
   statuses: (string | undefined)[]; model: number; store: Map<string, unknown>; feed: (ev: object) => void; now: number
   /** what $.session.messages answers (an agent's rows: its keeper's hold result) */
   messages: { role: 'user' | 'assistant'; text: string; toolUses: []; toolResults?: { tool_use_id: string; text: string; isError: boolean }[] }[]
+  /** main's prompts the module submitted, and the user rows it appended to main */
+  submits: string[]; appends: string[]
 }
 function world(on: On, { off = [] }: { off?: string[] } = {}): Seen {
-  const seen: Seen = { agents: [], spawns: [], sends: [], posts: [], statuses: [], model: 0, store: new Map(), feed: () => {}, now: 1_000_000, messages: [] }
+  const seen: Seen = { agents: [], spawns: [], sends: [], posts: [], statuses: [], model: 0, store: new Map(), feed: () => {}, now: 1_000_000, messages: [], submits: [], appends: [] }
   const fed: string[] = []
   let poke = () => {}
   seen.feed = ev => { fed.push(JSON.stringify(ev) + '\n'); poke() }
@@ -42,6 +44,8 @@ function world(on: On, { off = [] }: { off?: string[] } = {}): Seen {
   on('ui.invalidate', () => ({ value: undefined }))
   on('ui.render', (_$, e) => ({ type: 'Text', children: [`engine ${e.component}`] }))
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  on('prompt.submit', (_$, e) => { seen.submits.push(e.text); return { text: e.text } })
+  on('session.append', (_$, e, next) => { if (!e.agentId && e.message.type === 'user') seen.appends.push(e.message.content.map(b => ('text' in b ? String(b.text) : '')).join('')); return next(e) })
   on('clock.now', () => ({ value: seen.now }))
   on('classic.SessionStart', () => ({}))
   on('classic.PostToolUse', () => ({}))
@@ -214,6 +218,24 @@ test('room-chat: one keeper call per turn of the row: a later step of that turn 
   expect(toolOf(await step($, 'row1', 0, 'tk'))?.name).toBe('Agent')
   expect(toolOf(await step($, 'row1', 0, 'tk'))).toBeUndefined() // the keeper not listed yet: still no second call
   expect(seen.model).toBe(0)
+})
+
+test('room-chat (Phase 2): a line naming this person is drawn in the row and wakes main by submit even mid-turn (never the mid-turn append)', async ($, on) => {
+  const seen = world(on)
+  await rowUp($, seen)
+  await step($, 'row1', 1)
+  seen.feed({ type: 'seat', seat: SEAT })
+  await $.turn.start({ text: 'working', turnId: 'busy' }) // main is mid-turn
+  seen.feed({ type: 'wake', text: 'bob: alice, which branch are you on?', chat: true })
+  await settle()
+  expect(seen.submits).toEqual(['bob: alice, which branch are you on?']) // Claude Code queues it for the turn's end
+  expect(seen.appends).toEqual([]) // no mid-turn append: it waits for the turn's end
+  expect(seen.sends.at(-1)).toEqual({ to: 'row1', text: 'bob: alice, which branch are you on?' }) // and it is in the row
+  // any other wake mid-turn is the append it was
+  seen.feed({ type: 'wake', text: 'claude proposed: x (abcdef)' })
+  await settle()
+  expect(seen.submits.length).toBe(1)
+  expect(seen.appends.length).toBe(1)
 })
 
 test('room-chat: a row main\'s model started (the fallback) is never sent to: its keeper\'s hold wakes it, and the keeper after a wake is not counted', async ($, on) => {

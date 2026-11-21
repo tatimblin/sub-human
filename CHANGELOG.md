@@ -2,6 +2,13 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 0.8.0-beta.2: the room row is the group chat, and your Claude is your assistant
+
+Tested on Claude Code 2.1.296.
+
+### Changed (beta.2)
+- **Ask someone by name.** A line led by `bob,` or `bob:` (or naming `@bob`) wakes bob's Claude once its turn is over; it answers in the room as `bob's Claude: …` when it's sure, else leaves the line for bob. A question that names nobody (it ends with `?`) wakes only your own Claude. A Claude's line to the room is drawn in every row.
+
 ## 0.8.0-beta.1: the room row is the group chat
 
 Tested on Claude Code 2.1.296.

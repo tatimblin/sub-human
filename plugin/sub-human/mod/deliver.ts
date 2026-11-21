@@ -643,7 +643,7 @@ async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
         showStatus($);
         break;
       }
-      case 'submit': void submitWake($, a.text, { seen: a.seen }); break; // not awaited: it resolves as the turn starts
+      case 'submit': void submitWake($, a.text, { seen: a.seen }); break; // not awaited: it resolves as the turn starts (a chat wake's: after the running one)
       case 'mid-turn-wake': await midTurnWake($, a.text); break;
       case 'invites':
         copies.keepOpen(a.open);

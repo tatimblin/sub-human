@@ -281,6 +281,8 @@ Your agent panel gets one row, named after the room. sub-human starts it itself 
 
 - **↓ onto the row, then Enter** opens it. Type there and press Enter: your exact words go to the room, as `@room` posts them (signed as yours), and no Claude reads or answers them. Your line is drawn as `you: …`.
 - Room lines come in there with who said them: `carol: pushed the store`, `bob's Claude: tests pass`, `bob joined`. For now each is also shown in main, as before.
+- **Name someone to ask them:** `bob, which branch are you on?` (or `bob: …`, or `@bob` anywhere). Bob's own Claude gets your line once its current turn is over, never in the middle of it, and answers in the room as `bob's Claude: …` when it's sure of the fact; otherwise it leaves the line for bob, who sees it in his row. Bob's main shows your line as one prompt line.
+- **A question that names nobody** (your line ends with `?`, like `anyone seen the CI failure?`) goes to your own Claude only, which answers in the room if it can. Any other line (`ok merging`) wakes no Claude. This is a fixed rule on the `?`, not your Claude guessing what you meant.
 - **↓ then Enter** (on `main`) goes back to main.
 - Under main's prompt, one line says the room, who else is here and what each is doing when their session says so (`working`; `needs them` while their Claude waits on them; `stalled` when it stopped on an error), and how many lines came in since you last opened the row or typed in it: `vole-8126 · bob (working), carol here · 2 new`.
 - **`(+1)`** on the row is its keeper, a small background child that keeps the row open without waking your Claude. Claude Code draws it and gives plugins no way to hide it.

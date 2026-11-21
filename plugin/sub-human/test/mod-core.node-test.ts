@@ -296,6 +296,10 @@ test('deliver: the routing table: chat is a notice, pull held for the next promp
   assert.deepEqual(d.route({ type: 'pull', text: 'Room since…' }), [{ do: 'hold-pull', text: 'Room since…' }], 'stage 8e B: never a user row of its own');
   assert.deepEqual(d.route({ type: 'reminders', text: null }), [{ do: 'hold-reminders', text: null }]);
   assert.deepEqual(d.route({ type: 'here', text: 'bob here' }), [{ do: 'here', text: 'bob here' }], 'the room row\'s status line');
+  // a chat wake (a person's line naming me, or my own question) is submitted even mid-turn: it waits for the turn's end (spike 4)
+  assert.deepEqual(d.route({ type: 'wake', text: 'bob: alice, which branch?', chat: true }, { turnRunning: true }), [{ do: 'submit', text: `${d.WAKE_HEAD}\nbob: alice, which branch?`, seen: ['bob: alice, which branch?'] }]);
+  assert.equal(must(d.route({ type: 'wake', text: 'x' }, { turnRunning: true }).at(-1)).do, 'mid-turn-wake', 'any other wake mid-turn: the append');
+  assert.deepEqual(d.parseEvent('{"type":"wake","text":"x","chat":true}'), { type: 'wake', text: 'x', chat: true });
   assert.deepEqual(d.route({ type: 'seat', seat: null }), [{ do: 'seat', seat: null }]);
   const idle = d.route({ type: 'wake', text: 'room: decided\n(for Claude) room now: …' });
   assert.deepEqual(idle, [{ do: 'submit', text: `${d.WAKE_HEAD}\nroom: decided\n(for Claude) room now: …`, seen: ['room: decided'] }]);

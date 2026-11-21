@@ -34,6 +34,14 @@
  *   lane(me, e, entries?, trust?) -> 'push' | 'pull' | 'none'   deliver's first step (push: notice or wake; pull:
  *       context), kept for its table tests
  *   mentions(text, name) -> bool   "@name" anywhere in the text (case-insensitive, not part of a longer name)
+ *   named(e, name) -> bool          e addresses name: @name anywhere, or (a person's say) a line led by "name," or
+ *                                   "name:" (case-insensitive), as the room row's chat names someone ("maya, which branch?")
+ *   ownQuestion(e, names) -> bool   a person's own say to the room that names nobody (no @, no member's "name," lead)
+ *                                   and ends with "?": it wakes that person's own Claude (0.8.0: a fixed rule, never a
+ *                                   judgement of every line); names: the room's members (from the log's joins); absent (no log):
+ *                                   a question whatever leads it, the superset an entry-only answer must be
+ *   member wake (0.8.0) also: my own untagged question (ownQuestion). member notice also: an agent's say to the room
+ *     (a Claude's answer in the chat, "maya's Claude: …"), as a person's.
  */
 
 import { normalize } from './rules.ts';
@@ -50,6 +58,20 @@ interface DeliverState {
 
 const esc = (s: string): string => s.replace(/[.]/g, '\\.');
 const mentions = (text: unknown, name: string): boolean => new RegExp(`(^|[^A-Za-z0-9_.-])@${esc(name)}(?![A-Za-z0-9_-])`, 'i').test(String(text ?? ''));
+/** A person's say led by "name," or "name:". */
+const led = (text: unknown, name: string): boolean => new RegExp(`^\\s*${esc(name)}\\s*[,:]`, 'i').test(String(text ?? ''));
+const named = (e: Entry, name: string): boolean => mentions(e.text, name) || (e.via === 'human' && e.kind === 'say' && led(e.text, name));
+/** The members a log names (each join's name), or null without the log. */
+const membersOf = (entries: readonly Readonly<Entry>[] | undefined): string[] | null =>
+  entries ? [...new Set(entries.filter(x => x.kind === 'member_joined').map(x => String(x.from)))] : null;
+function ownQuestion(e: Entry, names: readonly string[] | null): boolean {
+  const text = String(e.text ?? '').trim();
+  if (e.via !== 'human' || e.kind !== 'say' || (e.to && e.to !== 'room') || !text.endsWith('?')) return false;
+  if (/(^|[^A-Za-z0-9_.-])@[A-Za-z0-9]/.test(text)) return false;
+  return !names || !names.some(n => led(text, n)); // without the log: a question (the superset the tail's first filter needs)
+}
+/** An agent's say to the room: a Claude's line in the group chat. */
+const agentSay = (e: Entry): boolean => e.via === 'agent' && e.kind === 'say' && (!e.to || e.to === 'room');
 /** Whether name is in proposal p: an approver or its author. */
 const inProposal = (p: Entry | null, name: string): boolean => !!p && (approversOf(p).includes(name) || p.from === name);
 const isMove = (e: Entry): boolean => e.kind === 'member_joined' || e.kind === 'member_left';
@@ -58,10 +80,11 @@ function lane(me: LaneViewer | null | undefined, e: Entry, entries?: readonly Re
   const name = (me && me.name) as string; // no seat: matches no from, to or approver
   const roomClaude = !!me && me.role === 'claude';
   const n = normalize(e);
-  if (n.from === name && !(n.via === 'system' && (n.kind === 'decision' || n.kind === 'task'))) return 'none';
   if (roomClaude) return 'none'; // the room session reads nothing
+  if (n.from === name && ownQuestion(n, membersOf(entries))) return 'push'; // my own untagged question: my Claude
+  if (n.from === name && !(n.via === 'system' && (n.kind === 'decision' || n.kind === 'task'))) return 'none';
   if (n.kind === 'decision') return 'pull'; // an outcome, not a request: personSees makes it a notice for those in it
-  if (n.to === name || mentions(n.text, name)) return 'push';
+  if (n.to === name || named(n, name)) return 'push';
   if ((n.kind === 'signoff' || n.kind === 'objection') && n.proposal_hash) {
     if (n.kind === 'signoff') return 'pull';
     if (!entries) return 'push';
@@ -77,7 +100,7 @@ function lane(me: LaneViewer | null | undefined, e: Entry, entries?: readonly Re
     const req = entries.find(x => x.id === n.req);
     return req && (req.by || req.from) === name ? 'pull' : 'push';
   }
-  if (n.via === 'human') return 'push'; // a group chat: every person's own words reach every member
+  if (n.via === 'human' || agentSay(n)) return 'push'; // a group chat: every person's own words, and a Claude's line to the room, reach every member
   return 'pull';
 }
 
@@ -90,7 +113,8 @@ function suggestedTo(name: string, e: Entry, entries: readonly Readonly<Entry>[]
 }
 
 /** A member's pushed entry that is group chat, not a request: another person's own words not addressed to me. */
-const chat = (me: LaneViewer, e: Entry): boolean => e.via === 'human' && e.kind === 'say' && e.to !== me.name && !mentions(e.text, String(me.name));
+const chat = (me: LaneViewer, e: Entry): boolean => (e.via === 'human' || agentSay(e)) && e.kind === 'say' && e.to !== me.name
+  && !named(e, String(me.name)) && e.from !== me.name;
 
 /** A decision that did not agree (its text "objected: … · agreed: …"; one that agreed reads "agreed: …"). */
 const notAgreed = (e: Entry): boolean => /^objected: /.test(String(e.text ?? ''));
@@ -131,5 +155,5 @@ function deliver(me: LaneViewer | null | undefined, e: Entry, { entries, trust =
   return l === 'pull' ? 'context' : 'none';
 }
 
-export { deliver, lane, mentions };
+export { deliver, lane, mentions, named, ownQuestion };
 export type { DeliverState };
