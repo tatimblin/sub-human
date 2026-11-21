@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
-  copyAsked, copyCard, copyWake, copyLine, copyBook, clipboardCommands, copyTo, copyOutcome, copySaid,
+  copyAsked, copyCard, copyWake, copyLine, copyBook, clipboardCommands, copyTo, copyOutcome, copySaid, INSTALL_LINE,
   COPY_QUESTION, COPY, SKIP, COPIED, AUTO_COPIED, NO_TOOL, GONE, NOT_COPIED, CLIPBOARD_TIMEOUT_MS, type Runner,
 } from '../mod/core/copy.ts';
 import { readReply, answerOf } from '../mod/core/command.ts';
@@ -93,13 +93,19 @@ test('copy card: the PIN is never what is copied: join.ts\'s line excludes it, a
   const status = `PIN ${PIN} · ${LINE}`;
   const r = readReply({ exitCode: 0, stdout: JSON.stringify({ subHuman: { say: 'x', shareable: false, pinned: { status, ms: 5, ref: REF, line: LINE } } }), stderr: '' });
   const out = answerOf(r);
-  assert.equal(out.status?.line, LINE);
+  assert.equal(out.status?.line, `${INSTALL_LINE}\n${LINE}`, 'the install line above the join line, for someone with no sub-human yet');
   assert.ok(!out.status.line.split(/\s+/).includes(PIN));
   const bad = readReply({ exitCode: 0, stdout: JSON.stringify({ subHuman: { say: 'x', shareable: false, pinned: { status, ms: 5, ref: REF, line: `${LINE} ${PIN}` } } }), stderr: '' });
   assert.equal(answerOf(bad).status?.line, undefined, 'a line carrying a PIN is dropped');
   assert.equal(copyLine(`${LINE} ${PIN}`), null);
   assert.equal(copyLine(`${LINE}\n${PIN}`), null);
-  assert.equal(copyLine(LINE), LINE);
+  assert.equal(copyLine(LINE), `${INSTALL_LINE}\n${LINE}`);
+  assert.equal(copyLine(`${INSTALL_LINE}\n${LINE}`), `${INSTALL_LINE}\n${LINE}`, 'the pair as it is held: the same');
+  assert.equal(copyLine(`${INSTALL_LINE}\n${LINE} ${PIN}`), null, 'a PIN after the line, even under the install line');
+  assert.equal(copyLine(`${INSTALL_LINE}\n${LINE}\n${LINE}`), null, 'one line under it, no more');
+  assert.equal(copyLine(`something else\n${LINE}`), null, 'only the fixed install line goes above it');
+  assert.doesNotMatch(INSTALL_LINE, /(?:^|\s)\d{3,10}(?:\s|$)/, 'no PIN-shaped word in the install line');
+  assert.match(INSTALL_LINE, /claude plugin marketplace add tatimblin\/sub-human && claude plugin install sub-human@sub-human/);
   const noRef = readReply({ exitCode: 0, stdout: JSON.stringify({ subHuman: { say: 'x', shareable: false, pinned: { status, ms: 5, line: LINE } } }), stderr: '' });
   assert.equal(answerOf(noRef).status?.line, undefined, 'no ref: nothing to key the line by');
 });

@@ -13,6 +13,9 @@ const SECRET = 'K'.repeat(38)
 const PIN = '7093'
 const lineOf = (ref: string) => `/sub-human join https://box.tail1a2b.ts.net/sub-human/otter-4821#${SECRET}${ref.slice(-1)}`
 const QUESTION = 'Copy the invite?'
+/** What Copy puts on the clipboard: the install line for someone with no sub-human yet, then the line (0.6.1) */
+const INSTALL = 'No sub-human yet? In a terminal: claude plugin marketplace add tatimblin/sub-human && claude plugin install sub-human@sub-human, then restart Claude Code'
+const copiedOf = (ref: string) => `${INSTALL}\n${lineOf(ref)}`
 
 /** Resolves once cond() holds (the wake goes out after the command returned), or rejects after ms. */
 async function until(cond: () => boolean, ms = 3000) {
@@ -100,7 +103,7 @@ test('an invite with its line: one wake naming the ref only; the card on "copy i
   expect(JSON.stringify(seen.cards.at(-1))).toContain(QUESTION) // the card, in place of the model's call
   const post = await answer($, seen, 'Copy')
   expect(seen.clip.length).toBe(1)
-  expect(seen.clip[0]?.stdin).toBe(lineOf(ref))
+  expect(seen.clip[0]?.stdin).toBe(copiedOf(ref))
   expect(seen.clip[0]?.stdin).not.toContain(PIN)
   expect(JSON.stringify(seen.clip[0]?.argv)).not.toContain(SECRET)
   expect(seen.clip[0]?.argv.slice(2)).toEqual(['pbcopy'])
@@ -113,7 +116,7 @@ test('an invite with its line: one wake naming the ref only; the card on "copy i
   // Copy once: the session's next invite is copied with no card and no turn
   await typed($, 'invite'); await seen.tick()
   await until(() => seen.clip.length === 2)
-  expect(seen.clip[1]?.stdin).toBe(lineOf(ref))
+  expect(seen.clip[1]?.stdin).toBe(copiedOf(ref))
   await until(() => debugLines.includes('copy: line copied'))
   expect(seen.logs).not.toContain('line copied')
   expect(seen.prompts.length).toBe(1)
