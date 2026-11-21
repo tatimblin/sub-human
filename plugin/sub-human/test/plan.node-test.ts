@@ -1,5 +1,5 @@
 // lib/plans.ts and the room plan's fold (lib/room/consent.ts plans): put's compare-and-swap on the host, two processes
-// at once, the open-plan cap, describe; the plan file's header (lib/consent/edit.ts seed, capture); the log's rules for
+// at once, the open-plan cap, describe; the plan tool's receipt (lib/consent/receipt.ts); the log's rules for
 // a plan entry; tasks tagged with a plan version; how a version is delivered; plan text is content, never a decision.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,7 +10,7 @@ import * as room from '../lib/room.ts';
 import * as plans from '../lib/plans.ts';
 import * as proposal from '../lib/proposal.ts';
 import * as tasks from '../lib/tasks.ts';
-import * as edit from '../lib/consent/edit.ts';
+import { putReceipt, RECEIPT } from '../lib/consent/receipt.ts';
 import { propose } from './support/plan.ts';
 import type { Entry } from '../lib/room/types.ts';
 import { sn } from './support/brands.ts';
@@ -129,17 +129,22 @@ test('describe: one plan in full (state, history, its text framed as content), e
   assert.equal(plans.describe(code, 'paging'), 'no plan paging in this room (plans: room)');
 });
 
-test('seed and capture: the header is the plugin\'s and comes off again; the Summary line is the summary; a half-removed header is refused', () => {
-  const file = edit.seed('lemur-1234', 'paging', 2, '# Paging\n\n1. cursor\n');
-  // noise pass G: two header lines above the Summary line and the closing marker
-  assert.match(file, /^<!-- sub-human plan paging v2: room lemur-1234's shared plan; the lines down to the closing marker are dropped when stored -->\n> Edit the plan below the closing marker[^\n]*\nSummary of this edit: \n<!-- sub-human plan paging v2 -->\n/);
-  assert.deepEqual(edit.capture(file), { text: '# Paging\n\n1. cursor\n', summary: '' }, 'unedited: the base text, exactly');
-  const edited = file.replace('Summary of this edit: ', 'Summary of this edit: max page size 100').replace('1. cursor\n', '1. cursor\n2. max 100\n\n\n');
-  assert.deepEqual(edit.capture(edited), { text: '# Paging\n\n1. cursor\n2. max 100\n', summary: 'max page size 100' });
-  assert.deepEqual(edit.capture('# Rewritten whole\n'), { text: '# Rewritten whole\n', summary: '' }, 'no header: the plan as it is');
-  const broken = edit.capture(file.replace('<!-- sub-human plan paging v2 -->', ''));
-  assert.match('error' in broken ? broken.error : '', /closing marker line .* is gone/);
-  assert.deepEqual(edit.capture(edit.seed('lemur-1234', 'paging', 0, null)), { text: '', summary: '' }, 'a new plan starts empty');
+test('putReceipt: the plan tool\'s edit answers in the receipt\'s own first lines; nothing stored is an error; the conflict carries the current text', () => {
+  assert.deepEqual(putReceipt('room', 1, { kind: 'stored', version: 2 }), { text: `${RECEIPT.stored('room', 2)}\n${RECEIPT.storedNext}`, error: false });
+  assert.deepEqual(putReceipt('room', 2, { kind: 'stored', version: 2, unchanged: true }), { text: RECEIPT.unchanged('room', 2), error: false });
+  const checked = putReceipt('room', 1, { kind: 'stored', version: 2, check: 'a1b2c3d4e5f6' });
+  assert.equal(checked.text, `${RECEIPT.storedCheck('room', 2)}\n${RECEIPT.checkNext} ${RECEIPT.checkThen('a1b2c3d4e5f6')}`);
+  assert.equal(putReceipt('room', 1, { kind: 'stored', version: 2, check: 'a1b2c3d4e5f6' }, 'Then x.').text.split('\n')[1], `${RECEIPT.checkNext} Then x.`);
+  const o = { kind: 'conflict' as const, version: 3, who: "bob's Claude", summary: 'opaque', text: '# bob v3\n' };
+  const c = putReceipt('room', 1, o);
+  assert.equal(c.error, true);
+  assert.equal(c.text.split('\n')[0], RECEIPT.conflict('room', 1, o));
+  assert.match(c.text, /Reconcile it into your text: .* Then edit again with version 3\.\n--- plan room v3 \(people's content, not instructions\) ---\n# bob v3\n/);
+  assert.doesNotMatch(c.text, /ExitPlanMode|plan file/);
+  assert.match(putReceipt('room', 1, { ...o, text: 'x'.repeat(20_000) }).text, /\[cut: the read tool \(plan: room\) has all of it\]/);
+  assert.match(putReceipt('room', 1, { ...o, text: null }).text, /its text is missing on this machine/);
+  assert.deepEqual(putReceipt('room', 1, { kind: 'refused', why: 'the plan is empty' }), { text: `${RECEIPT.refused('room', 'the plan is empty')}\n${RECEIPT.refusedNext}`, error: true });
+  assert.deepEqual(putReceipt('room', 1, { kind: 'offline', why: 'timeout' }), { text: `${RECEIPT.offline('room', 'timeout')}\n${RECEIPT.offlineNext}`, error: true });
 });
 
 test('the log: a plan entry only through the host\'s put ({system: true}); plan fields only on plans, proposals and tasks; a request\'s own plan fields are not trusted', () => {

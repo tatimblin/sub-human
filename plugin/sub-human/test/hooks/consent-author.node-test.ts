@@ -1,7 +1,9 @@
 // The author first (0.5.0-beta.24): a version a person's Claude writes is that person's to check before anyone else is
 // asked (lib/proposal.ts check, a draft request addressed to them alone). Their plan view's Yes is their sign-off and
 // sends it out (sendOut: everyone present asked); "Tell Claude what to change" asks for another version, recording and
-// sending nothing; nobody else can ask for sign-off on it before that Yes. The hooks' path end to end (hooks/consent.ts).
+// sending nothing; nobody else can ask for sign-off on it before that Yes. The version is stored as the plan tool's edit
+// stores it (mcp/room-server.ts: lib/plans.ts outcome, then the check, then the receipt); the review is the hooks'
+// path end to end (hooks/consent.ts).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -10,8 +12,7 @@ import { World, hso, decision, reason, ctx } from './helpers.ts';
 import type { HookInput, HookRun } from './helpers.ts';
 import * as proposal from '../../lib/proposal.ts';
 import * as plans from '../../lib/plans.ts';
-import * as review from '../../lib/consent/review.ts';
-import * as edit from '../../lib/consent/edit.ts';
+import { putReceipt, RECEIPT } from '../../lib/consent/receipt.ts';
 import { sn } from '../support/brands.ts';
 import { must } from '../support/must.ts';
 
@@ -26,57 +27,46 @@ function transcript(w: World, planFile: string): string {
   return f;
 }
 
-/** alice's Claude writes room plan v1 in plan mode (the edit's hooks), and leaves plan mode: returns the receipt, the
- * closing context and alice's plan file. In bypass-permissions mode (one the plan view opens no review in), so the
- * closing call only leaves plan mode and her check opens later (aliceReviews); test/hooks/consent-edit.node-test.ts
- * has the closing call that shows it at once. */
-function aliceWrites(w: World): { pre: HookRun; post: HookRun; file: string } {
+/** alice's Claude writes room plan v1 as the plan tool's edit does (one call: stored, then her check): returns the
+ * receipt and alice's plan file (her own plan, which the review must leave as it was). */
+function aliceWrites(w: World): { receipt: string; file: string } {
   const file = path.join(w.userHome, '.claude', 'plans', 'alice-plan.md');
   fs.writeFileSync(file, '# my own plan\n');
-  w.lib(() => proposal.writeEdit(seat(w, 'alice'), { phase: 'open', plan: 'room', base: 0, at: Date.now() }));
-  const as = { as: 'alice' };
-  w.enterPlan(ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'bypassPermissions', tool_input: {} }), as);
-  w.hook('consent', ev('PlanAttachment', null, { permission_mode: 'plan', plan_file_path: file }), { ...as, env: { SUB_HUMAN_SHIM: '1' } });
-  const t = fs.readFileSync(file, 'utf8');
-  const at = t.indexOf('-->', t.indexOf('<!-- sub-human plan room v', 10)) + 3;
-  fs.writeFileSync(file, `${t.slice(0, at).replace('Summary of this edit: ', 'Summary of this edit: paging')}\n\n# Paging\n\n1. cursor\n`);
-  const text = fs.readFileSync(file, 'utf8');
-  const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: text, planFilePath: file }, tool_use_id: 'e1' }), as);
-  const leave = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: text }, tool_use_id: 'e2' }), as);
-  assert.deepEqual([decision(leave), hso(leave).updatedInput], ['ask', { plan: '' }], 'Claude Code\'s own "exit plan mode?": she leaves it');
-  const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'bypassPermissions', tool_input: {}, tool_use_id: 'e2', tool_response: { plan: '', filePath: file } }), as);
-  return { pre, post, file };
+  const receipt = w.lib(() => {
+    let o = plans.outcome(w.code, { plan: 'room', base: 0, text: '# Paging\n\n1. cursor\n', summary: 'paging' }, 'alice');
+    const check = o.kind === 'stored' ? proposal.check(seat(w, 'alice'), 'room', o.version) : null;
+    if (check && o.kind === 'stored') o = { ...o, check };
+    return putReceipt('room', 0, o).text;
+  });
+  return { receipt, file };
 }
 
-/** alice's review of her own new version: EnterPlanMode, then the plan view (ExitPlanMode "proposal HASH"). */
-function aliceReviews(w: World, hash: string, file: string): { tp: string; shown: HookRun } {
+/** alice's review of her own new version: EnterPlanMode, then the plan view (ExitPlanMode with plan stub). */
+function aliceReviews(w: World, stub: string, file: string): { tp: string; shown: HookRun } {
   const tp = transcript(w, file);
   const as = { as: 'alice' };
   const enter = w.enterPlan(ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {}, transcript_path: tp }), as);
   assert.equal(enter.opened, true);
-  const shown = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: `proposal ${hash}` }, tool_use_id: 'r1', transcript_path: tp }), as);
+  const shown = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: stub }, tool_use_id: 'r1', transcript_path: tp }), as);
   return { tp, shown };
 }
 
 test('author first: a stored version asks its author alone (a draft); nobody else can ask before their Yes; the Yes is their sign-off and sends it out to everyone', () => {
   const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
-  const { pre, post, file } = aliceWrites(w);
+  const { receipt, file } = aliceWrites(w);
   // the receipt: saved, not sent out; the next step is alice's own check
-  assert.equal(reason(pre), edit.EDIT_SAY.storedCheck('room', 1));
   const [draft] = requests(w);
   const hash = String(must(draft).hash);
   assert.deepEqual([draft?.from, draft?.to, draft?.approvers, draft?.via], ['alice', 'alice', ['alice'], 'agent']);
-  assert.match(must(hso(pre).additionalContext), new RegExp(`^Nobody else is asked yet: your person checks it first\\. .*Then ${review.NEXT.open(hash).replace(/[()]/g, '\\$&')}`));
-  assert.equal(must(ctx(post)), edit.EDIT_SAY.leftCheck('room', 1, hash) + ' The session plan file is back as it was before the edit (the person\'s own plan, unchanged).');
-  assert.equal(fs.readFileSync(file, 'utf8'), '# my own plan\n');
+  assert.equal(receipt, `${RECEIPT.storedCheck('room', 1)}\n${RECEIPT.checkNext} ${RECEIPT.checkThen(hash)}`);
   // nobody else is asked, nothing is decided; the plan reads as not sent out; asking for sign-off is refused
   assert.deepEqual(w.lib(() => proposal.pendingFor(seat(w, 'bob'))), []);
   assert.deepEqual(w.lib(() => proposal.pendingFor(seat(w, 'alice'))).map(p => [p.hash, p.draft]), [[hash, true]]);
   assert.match(w.lib(() => plans.describe(w.code, 'room')), /^plan room v1 · draft · alice reviewing/);
   assert.throws(() => w.lib(() => proposal.ask(seat(w, 'bob'), { plan: 'room' })), /not sent out yet: its author alice checks it first/);
   assert.throws(() => w.lib(() => proposal.ask(seat(w, 'alice'), { plan: 'room' })), /not sent out yet: alice checks it first \(call EnterPlanMode/);
-  // alice's review opens her own version, with its own line
-  const { tp, shown } = aliceReviews(w, hash, file);
+  // alice's review opens her own version ("plan room v1" names it), with its own line
+  const { tp, shown } = aliceReviews(w, 'plan room v1', file);
   assert.equal(decision(shown), 'ask');
   assert.match(must(reason(shown)), /^your new version, plan room v1, for alice: nobody else is asked until you send it out .*Send it out \(your own sign-off\): "Yes, manually approve edits" keeps your mode\. Keep editing: "Tell Claude what to change" \+ what\./);
   // her Yes: her sign-off, and the request to everyone present (bob); no decision yet
@@ -99,7 +89,7 @@ test('author first: "Tell Claude what to change" on your own version records and
   const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
   const { file } = aliceWrites(w);
   const hash = String(must(requests(w)[0]).hash);
-  const { tp } = aliceReviews(w, hash, file);
+  const { tp } = aliceReviews(w, `proposal ${hash}`, file);
   const r = w.hook('consent', ev('PostToolUseFailure', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'r1', transcript_path: tp, error: said('cap pages at 100') }), { as: 'alice' });
   assert.equal(r.code, 0, r.stderr);
   const told = must(ctx(r));
@@ -145,7 +135,7 @@ test('author first: in a room of one the Yes sends it out and decides it', () =>
   const w = new World({ claude: 'sleep', alice: 'act' });
   const { file } = aliceWrites(w);
   const hash = String(must(requests(w)[0]).hash);
-  const { tp } = aliceReviews(w, hash, file);
+  const { tp } = aliceReviews(w, `proposal ${hash}`, file);
   const yes = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: {}, tool_use_id: 'r1', transcript_path: tp,
     tool_response: { plan: '# Paging\n\n1. cursor\n', isAgent: false, filePath: file } }), { as: 'alice' });
   assert.match(must(ctx(yes)), /^alice sent plan room v1 out; the room decided: agreed: alice/);

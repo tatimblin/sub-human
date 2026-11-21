@@ -22,10 +22,6 @@
  *     ExitPlanMode's PreToolUse payload (sub_human_typing) so a plan-view Yes typed into by mistake is asked again.
  *   - classic.Stop: node consent (the open-review nudge) while a review may be open; its additionalContext continues
  *     the turn (cc CONTRACT stop-additional-context).
- *   - prompt.attachment plan_mode (main loop): node consent as a PlanAttachment event while a review or edit may be
- *     open, with the plan file the attachment names; consent seeds a room plan edit there and its subHuman.attach line
- *     is appended to the attachment's text. Not while the hello's verdict turns plan-edit off (no edit opens then: the
- *     plan tool's put stores one).
  * Failure: each .catch passes the event on (a nudge, a card and a review are not gates: nothing is recorded unless the
  * person answered).
  */
@@ -44,8 +40,6 @@ import type { Hello, RunOutput, SubHumanRead } from './core/types.ts';
 const HELLO = { plugin: 'sub-human', key: 'hello' } as const;
 /** The room's plan tool: its edit op opens an edit the hooks then run (consent must see the next plan mode). */
 const PLAN_TOOL = 'mcp__plugin_sub-human_room__plan';
-/** The event consent takes a plan_mode attachment as (lib/cc/env.ts PLAN_ATTACHMENT_EVENT). */
-const PLAN_ATTACHMENT = 'PlanAttachment';
 const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' } as const;
 const QUIET = { plugin: 'sub-human', key: 'quietCalls' } as const;
 
@@ -172,24 +166,6 @@ export function registerConsent(on: On): void {
     return mergeClassic(result, await next(e));
   }).catch((_$, e, next) => next(e)); // a nudge, not a gate: the turn ends as it would
 
-  // a room plan edit's seed: the plan file is known here, as the request is made (cc CONTRACT module-plan-mode-detail);
-  // consent writes the base version there and gives a line to append to the reminder (never replacing its text: it
-  // carries plan mode's own rules). Main loop only; nothing runs while no edit or review may be open.
-  on('prompt.attachment', { type: 'plan_mode' }, async ($, e, next) => {
-    const r = await next(e);
-    if (e.agentId || r.text == null) return r;
-    const file = e.detail ? e.detail.planFilePath : undefined;
-    if (typeof file !== 'string' || !file) return r;
-    const sid = await $.session.id();
-    const hello = await helloOf($);
-    if (!seatedOrUnsure(hello, sid) || !consentNeeded(hello, sid, await flagOf($))) return r;
-    if (hello && hello.cc && hello.cc.off.includes('plan-edit')) return r; // plan mode's edit is off: no edit to seed (the plan tool's put)
-    const payload = { hook_event_name: PLAN_ATTACHMENT, session_id: sid, cwd: await $.session.cwd().catch(() => undefined), plan_file_path: file, permission_mode: 'plan' };
-    const { subHuman, ...said } = toClassic(PLAN_ATTACHMENT, await runConsent($, payload, sid));
-    await apply($, { ...said, subHuman });
-    const line = subHuman && typeof subHuman.attach === 'string' ? subHuman.attach : '';
-    return line ? { text: `${r.text}\n\n${line}` } : r;
-  }).catch((_$, e, next) => next(e)); // no seed: the edit's ExitPlanMode seeds the file instead (lib/consent/edit.ts)
 
   // the room row's fallback call (auto mode refused the module's own spawn, so the model makes it: mod/deliver.ts
   // tellAsk) draws nothing either, as the module's spawn draws nothing; only that one agent type, from the main loop,

@@ -1,6 +1,6 @@
 /**
  * plugin/sub-human/lib/plans.ts: the room's plans. A plan has a name (slugged: "Error handling" is error-handling; a new
- * plan edited with none is named from its first heading, lib/consent/edit.ts, else `room`) and versions v1, v2, ...; each
+ * plan edited with none is named from its first heading, mcp/room-server.ts put, else `room`) and versions v1, v2, ...; each
  * version is a blob plans/<hash>.md (the room's blob store, lib/room/store.ts blobs) and a `plan` log entry (via agent,
  * from the editing seat, for its person). The fold is lib/room/consent.ts (Fold.plans, versionOf); a sign-off request
  * is a proposal on a version's hash (lib/proposal.ts ask), and a newer version of the same plan retires an undecided
@@ -11,12 +11,11 @@
  *       is a conflict that carries the current version and its text, for the editor to reconcile.
  *   request(code, args, by) -> Put   put on the host, or over the link's plan.put op from a mirror (its own lock would
  *       serialise nothing)
- *   outcome(code, args, by) -> PutOutcome   request's answer as the edit reducer and the plan tool's put read it
- *       (lib/consent/edit.ts): a link that did not answer is offline, any other RoomError refused
+ *   outcome(code, args, by) -> PutOutcome   request's answer as the plan tool's edit reads it (lib/consent/receipt.ts):
+ *       a link that did not answer is offline, any other RoomError refused
  *   current(code, name) -> PlanVersion | null; textOf(code, v) -> string | null; stateOf(fold, plan) -> PlanSignoff
  *   describe(code, name?) -> string   for the read tool and `sub-human plan`: the plan's text with its history and
  *       sign-off state, or every plan's one line
-The plan file an edit is made in (its header, seed and capture) is lib/consent/edit.ts.
  *
  * Plan text is people's content: it is stored and shown as it is, never read as instructions by any code here.
  */
@@ -28,7 +27,7 @@ import { MirrorRoomStore } from './room/store-mirror.ts';
 import { planHash, oneLine, clip, planSlug } from './text.ts';
 import type { Fold, PlanState, PlanVersion, RoomStore } from './room/types.ts';
 import type { RoomCode } from './brand.ts';
-import type { PutOutcome } from './consent/edit.ts';
+import type { PutOutcome } from './consent/receipt.ts';
 
 /** The plan an edit, a request or a read names when it names none. */
 const DEFAULT_PLAN = 'room';

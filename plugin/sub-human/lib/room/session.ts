@@ -9,7 +9,6 @@
  *             "mod", the tail child; older logs hold "monitor" and "prompt"), so a restarted tail child does not
  *             send them again (the last SHOWN_MAX)
  *    review   the plan-view review (lib/proposal.ts readReview; hooks/consent.ts)
- *    edit     a room plan edit in this session (lib/consent/edit.ts; the plan tool opens it)
  *    recheck  {hash, at}: a plan-view Yes that came as the view opened, asked again on the card (lib/proposal.ts readRecheck)
  *    steer    {hash, plan, at}: an ExitPlanMode that would have shown the person's own plan while a sign-off waited,
  *             denied once (lib/proposal.ts readSteer; lib/consent/review.ts)

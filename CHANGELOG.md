@@ -2,6 +2,15 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 0.7.0: plan feedback with no extra steps
+
+### Changed
+- **"Tell Claude what to change" is the send.** Your note goes to the plan's author the moment the plan view closes, as your objection with your words byte for byte, and you get one line: `Sent your changes to maya.` The Send / Discard card is gone, and so are its reminders. Plan mode still closes with one dialog that keeps your mode. If the room can't be reached, one line says your note didn't go: ask your Claude to send it again once you're back online.
+- **The author's Claude writes the next version.** It works from the note and asks its person only what the note leaves open; the reviewer's Claude no longer offers to write it too, so one new version gets written. That version opens in the author's own plan view before anyone else is asked, as before.
+- **One call stores a version.** Your Claude writes the whole plan and stores it with one `plan` tool call (op `edit`), with no trip through plan mode, no plan-file header and no closing call. If another version landed first, the call gets it back to work both in. Group planning is unchanged: versions, sign-off per version, and asking for changes back and forth. The `plan-edit` fallback is gone with it, and `put` still works as another name for `edit`.
+- **Quiet after a send.** When your Yes sends a version out, Claude is told so in one sentence.
+- **A room post starts no extra process.** With no note waiting for a card, a post outside a review no longer starts node for consent.
+
 ## 0.6.1: start with someone, join with one line
 
 ### Changed

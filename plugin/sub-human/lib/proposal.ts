@@ -26,7 +26,7 @@
  * already open still records (the hooks' answer paths).
  *
  * The session document (lib/room/session.ts) holds a seat's review (the plan view), recheck (a plan-view Yes that
- * came as the view opened, asked again on the card), edit and steer. A review opens the request the person's words
+ * came as the view opened, asked again on the card) and steer. A review opens the request the person's words
  * name (namedIn: a hash, or a plan's name), else the oldest. The line telling the model to open one is
  * lib/consent/review.ts NEXT, shared with lib/tail.ts remindersText.
  */
@@ -39,7 +39,7 @@ import { writeFileAtomic } from './io.ts';
 import { clip, oneLine, hash12, isProposalHash } from './text.ts';
 import * as config from './config.ts';
 import { NEXT, unframe } from './consent/review.ts';
-import type { Card, Confirm, PlanEdit, Proposal, Recheck, Review, Steer } from './types-app.ts';
+import type { Card, Confirm, Proposal, Recheck, Review, Steer } from './types-app.ts';
 import type { Entry, Matrix, Member, Members, PlanVersion, ProposalState, Trust } from './room/types.ts';
 import type { Identity } from './identity.ts';
 import type { RoomCode, ProposalHash } from './brand.ts';
@@ -450,12 +450,6 @@ function restoreStale(me: Me | null | undefined, { force = false, now = Date.now
   });
 }
 
-// ---------- a room plan edit in this session (lib/consent/edit.ts; hooks/consent.ts) ----------
-/** The session's edit (the plan tool's edit op opens it; hooks/consent.ts runs it under withReview). */
-const readEdit = (me: Me): PlanEdit | null => { try { return session.get(storeOf(me), me.name, 'edit') ?? null; } catch { return null; } };
-const writeEdit = (me: Me, e: PlanEdit): void => session.put(storeOf(me), me.name, 'edit', e);
-function clearEdit(me: Me): void { try { session.put(storeOf(me), me.name, 'edit', undefined); } catch { /* none */ } }
-
 /** A plan-view Yes waiting for its confirmation on the card (lib/consent/review.ts recheck): {hash, at} or null. */
 const readRecheck = (me: Me): Recheck | null => { try { return session.get(storeOf(me), me.name, 'recheck') ?? null; } catch { return null; } };
 const writeRecheck = (me: Me, r: Recheck): void => session.put(storeOf(me), me.name, 'recheck', r);
@@ -486,7 +480,7 @@ function repeatsNote(c: Pick<Confirm, 'note'> | null | undefined, text: unknown)
 export type { Asked, Sent };
 export {
   QUESTION_RE, ProposalError, readReview, writeReview, clearReview, withReview, restorePlan, restoreStale,
-  readEdit, writeEdit, clearEdit, readRecheck, writeRecheck, clearRecheck, readSteer, writeSteer, clearSteer, markReported, repeatsNote, namedIn, picked,
+  readRecheck, writeRecheck, clearRecheck, readSteer, writeSteer, clearSteer, markReported, repeatsNote, namedIn, picked,
   ask, check, sendOut, proposals, pendingFor, answerableFor, personOf, card, cardFor, question, preview, viewable, openCall,
   matrix, answer, decide, decision, humans, reminder, read, hash12, title,
 };

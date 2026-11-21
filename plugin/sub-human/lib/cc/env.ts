@@ -163,15 +163,6 @@ function clearContextOnPlanAccept(cwd: string | null | undefined, env: Env = pro
 
 // ---------- plan mode ----------
 
-/**
- * The event the hooks module sends consent for a `prompt.attachment` of type plan_mode (mod/consent.ts): its detail
- * carries the session's plan file (planFilePath) as a request is made, the one point that knows it before the model's
- * next call (PostToolUse(EnterPlanMode) does not: no plan_mode attachment and no slug in the transcript yet). A room
- * plan edit is seeded there (lib/consent/edit.ts), and a line appended to the attachment's text.
- * @cc "plan_mode_reentry"
- * @stability API
- */
-const PLAN_ATTACHMENT_EVENT = 'PlanAttachment';
 
 /**
  * EnterPlanMode runs in plan mode too (it checks only that the call is the main session's), and so do its PreToolUse
@@ -270,5 +261,5 @@ function matcherMatches(m: string | null | undefined, name: string, { toolEvent 
 
 export {
   ENV, sessionId, claudePid, taskListId, configDir, mcpFailureLeft, sanitizeId, tasksDir, plansDir, taskFile, projectDir, userSettingsFiles,
-  clearContextOnPlanAccept, globalConfigFile, modulesSwitch, cachedSwitch, matcherIsExact, matcherMatches, PLAN_ATTACHMENT_EVENT, ENTER_IN_PLAN_MODE, LEAVE_PLAN_TEXT, denyWithContext,
+  clearContextOnPlanAccept, globalConfigFile, modulesSwitch, cachedSwitch, matcherIsExact, matcherMatches, ENTER_IN_PLAN_MODE, LEAVE_PLAN_TEXT, denyWithContext,
 };

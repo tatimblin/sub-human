@@ -50,9 +50,8 @@
  * record), and a note on it records nothing and sends nothing: the model is told to write the next version (revise);
  * the card's Object on it says the same.
  *
- * A proposal is a sign-off request on one version of a room plan (lib/plans.ts). Editing a plan is lib/consent/edit.ts,
- * a reducer of its own: while an edit is open the hooks route plan mode to it, never here, so an edit's ExitPlanMode
- * never reaches a review and the person's own plan approved in the dialog is never an answer (only a review the hooks
+ * A proposal is a sign-off request on one version of a room plan (lib/plans.ts; a version is stored by the plan tool's
+ * edit, mcp/room-server.ts). The person's own plan approved in the dialog is never an answer (only a review the hooks
  * opened records one). Every comparison of the dialog's plan with the proposal goes through shownHash.
  */
 

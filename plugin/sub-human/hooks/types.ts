@@ -25,8 +25,6 @@ export type AnyHookIn = Partial<BaseHookInput> & {
   error?: string;
   /** the module's PreToolUse(ExitPlanMode) payload: the person had typed text in the prompt (PromptHint isDraft) */
   sub_human_typing?: boolean;
-  /** the module's PlanAttachment payload (mod/consent.ts: the plan_mode attachment's detail): the session's plan file */
-  plan_file_path?: string;
   agent_type?: string;
   source?: string;
 };
@@ -59,8 +57,6 @@ export interface SubHumanReport {
   /** a detail for Claude Code's debug log, never the person's line (the module writes it there) */
   debug?: string;
   reviewOpen?: boolean;
-  /** consent, for a plan_mode attachment: a line the module appends to the attachment's text (a room plan edit's seed) */
-  attach?: string;
   /** consent: this call is sub-human's own plan-mode call (a review's EnterPlanMode, plan view or closing call, an
    * edit's save): the module hides its rows (mod/consent.ts) */
   quiet?: boolean;

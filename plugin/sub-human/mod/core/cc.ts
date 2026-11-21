@@ -7,15 +7,13 @@
  *   GATED                     the features a verdict can turn to their fallback (types/index.d.ts SubHumanGated; a
  *                             failed entry of any other feature only makes the version unverified):
  *                               tasks       the room session's native task list
- *                               plan-edit   a room plan edit in plan mode
  *                               sign-off    a sign-off in the plan view
  *                               reap-rm     a closed room's session deleted with `claude rm`, not only stopped
  *                               quiet-plan  sub-human's own plan-mode rows drawn as nothing (mod/core/quiet.ts)
  *                               keep-mode   a review's closing call keeps the person's mode
  *                               room-row    the one room row, spawned by the module (mod/deliver.ts roomRow)
  *   isGated(v)                v is one of them
- *   closeOff(features) -> Gated[]   features, deduplicated in GATED order, with what each implies: sign-off implies
- *                             plan-edit (a room plan edit goes through plan mode too)
+ *   closeOff(features) -> Gated[]   features, deduplicated in GATED order
  *   FALLBACK                  gated feature -> what runs instead, in the person's words
  *   parseCc(v) -> cc | null   a hello's `cc` (types/index.d.ts SubHumanCc), each field checked
  *   ccNotice(cc) -> string | null   the one $.ui.log line for a version with features off (mod/deliver.ts says it once
@@ -28,20 +26,18 @@ export const isCcVersion = (v: unknown): v is string => typeof v === 'string' &&
 /** types/index.d.ts SubHumanGated, the one list's type (a hello's cc.off). */
 export type Gated = NonNullable<Hello['cc']>['off'][number];
 /** Every Gated, in the order closeOff keeps (FALLBACK, a Record over Gated, holds each one too). */
-export const GATED: readonly Gated[] = ['tasks', 'plan-edit', 'sign-off', 'reap-rm', 'quiet-plan', 'keep-mode', 'room-row'];
+export const GATED: readonly Gated[] = ['tasks', 'sign-off', 'reap-rm', 'quiet-plan', 'keep-mode', 'room-row'];
 export type Cc = NonNullable<Hello['cc']>;
 
 export const isGated = (v: unknown): v is Gated => GATED.some(g => g === v);
 
 export function closeOff(features: readonly unknown[]): Gated[] {
   const on = new Set(features.filter(isGated));
-  if (on.has('sign-off')) on.add('plan-edit');
   return GATED.filter(f => on.has(f));
 }
 
 export const FALLBACK: Readonly<Record<Gated, string>> = Object.freeze({
   tasks: 'the room task list is off (tasks are kept in the room)',
-  'plan-edit': 'plan edits use the plan tool',
   'sign-off': 'sign-off is a question Claude Code asks you, not the plan view',
   'reap-rm': 'a closed room\'s session is stopped, not deleted',
   'quiet-plan': 'plan mode draws its own rows for a room review and a plan save',

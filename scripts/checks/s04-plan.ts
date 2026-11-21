@@ -1,4 +1,4 @@
-// S4: B's own Claude drafts the room plan: an edit in plan mode the hooks store as v1 (the receipt, no approval
+// S4: B's own Claude drafts the room plan: one plan tool call stores it as v1 (the receipt, no approval
 // dialog); B checks it first in her own plan view (0.5.0-beta.24), her Yes sends it out, and A reads v1 in his
 import fs from 'node:fs';
 import path from 'node:path';
@@ -11,8 +11,7 @@ import type { Step } from './captures.ts';
 export const scene = 'S4';
 
 /**
- * The red "Error:" lines a plan save drew in seat's pane (the store's receipt is the save's deny; 0.6.0's ui.render
- * pass hides its red result row, mod/core/quiet.ts): in the pane saved at the save (state/SCENE/save-SEAT.txt and
+ * The red "Error:" lines a plan save drew in seat's pane (the store's receipt is the plan tool's result): in the pane saved at the save (state/SCENE/save-SEAT.txt and
  * .ansi) and in the seat's captures of the scene. A line counts when it reads "Error:" and is drawn red (the .ansi),
  * or, with no .ansi, when it is a tool result row "⎿ Error: …". {lines, read}: the hits and the files read.
  */
@@ -40,7 +39,7 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   det(`${B}'s Claude stores room plan v1: a plan entry from ${B} for ${B}, base 0, its text stored by hash`,
     v1 && v1.from === B && v1.via === 'agent' && v1.for === B && v1.base === 0 && fs.existsSync(path.join(roomDir, 'plans', `${v1.hash}.md`)),
     v1 ? `${x.fmt(v1)}; plans/${v1.hash}.md ${fs.existsSync(path.join(roomDir, 'plans', `${v1.hash}.md`)) ? 'present' : 'missing'}` : 'no plan entry');
-  // the edit's ExitPlanMode came back with the store's receipt (a deny: no approval dialog), and nothing was answered
+  // the plan tool's edit came back with the store's receipt (no approval dialog), and nothing was answered
   const s4 = x.span('S4');
   const es = x.inSpan(x.entries(B), s4);
   const receipt = toolResults(es).find(t => /plan \S+ v1 saved[,;] |saved as room plan \S+ v1, not (agreed|sent out) yet/.test(t));

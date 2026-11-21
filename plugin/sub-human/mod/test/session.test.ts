@@ -137,14 +137,14 @@ test('stage 8f item 1: a hello that names a seat in another folder appends the h
 test('the hello carries the Claude Code version; a seated hello on a version not verified says so once per version, in the debug log alone', async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
   on('session.version', () => ({ value: { version: '2.1.302', base: '2.1.302' } }))
-  const seen = world($, on, { indexed: true, seat: SEAT, cc: { version: '2.1.302', verified: false, off: ['tasks', 'plan-edit', 'sign-off'] } })
+  const seen = world($, on, { indexed: true, seat: SEAT, cc: { version: '2.1.302', verified: false, off: ['tasks', 'sign-off'] } })
   const hellos = () => seen.runs.filter(r => r === 'mod-hello.ts').length
   await start($)
   await until(() => hellos() === 1)
   expect(seen.stdin['mod-hello.ts']?.cc_version).toBe('2.1.302')
   expect(seen.logs).toEqual([])
   await clock.advance(400)
-  const said = "Claude Code 2.1.302 isn't verified with sub-human yet: the room task list is off (tasks are kept in the room), plan edits use the plan tool, sign-off is a question Claude Code asks you, not the plan view. sub-human doctor has details."
+  const said = "Claude Code 2.1.302 isn't verified with sub-human yet: the room task list is off (tasks are kept in the room), sign-off is a question Claude Code asks you, not the plan view. sub-human doctor has details."
   expect(seen.logs).toEqual([]) // 0.6.0: nothing on screen
   expect(debugLines.filter(l => l === said).length).toBe(1)
   // another hello for the same version: nothing more
