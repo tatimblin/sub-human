@@ -14,7 +14,7 @@ import {
 } from './core/deliver.ts';
 import { parseHello, localHello, homeOf, sidIndex } from './core/seat.ts';
 import { homeMark, BYPASS_DEBUG } from './core/constants.ts';
-import { answersItself, joinPayload, readReply, answerOf, cancels, leftName, goneAfter, failLogLine, appendCapped, MODULE_LOG, CONFIRM_AFTER_MS } from './core/command.ts';
+import { answersItself, joinPayload, readReply, answerOf, cancels, leftName, goneAfter, failLogLine, appendCapped, MODULE_LOG, CONFIRM_AFTER_MS, STALE } from './core/command.ts';
 import { shimArgv, shimEnv, toClassic, asNotice, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { restoreNeeded } from './core/prefilter.ts';
 import { mergeClassic } from './core/prompt.ts';
@@ -26,7 +26,12 @@ import {
   ROW_RUN_MS, ROW_ASK_WAIT_MS, ROOM_AGENT, type SpawnLedger, type RowAskState,
 } from './core/rows.ts';
 import { noteRow, offerRow } from './rows.ts';
-import { copyBook, copyWake, copyTo, copyNews, clipboardCommands, AUTO_COPIED, NO_TOOL, type CopyBook } from './core/copy.ts';
+import {
+  copyBook, copyTo, copyNews, copyChoiceOf, clipboardCommands, AUTO_COPIED, COPIED, NO_TOOL, GONE, NOT_COPIED,
+  COPY_QUESTION, COPY_HEADER, COPY_OPTIONS, type CopyBook,
+} from './core/copy.ts';
+import { walkFacts, walkOptions, walkAction, walkQuestion, NO_FACTS, HERE_LINE, WALK_HEADER, WALK_FACTS_MS, WALK_TURN_WAIT_MS, type WalkFacts } from './core/walk.ts';
+import { ownAsks, type OwnAsks } from './core/card.ts';
 import {
   leaveQuestion, leaveOutcome, issueUrl, versionsLine, openCommands, openWith, LEAVE_OPTIONS, LEAVE_HEADER, REPO_URL,
   STARRED, STAR_TIMEOUT_MS, starOpened, starShown, issueOpened, issueShown, saidBook, sessionSnippet, type SaidBook,
@@ -68,10 +73,13 @@ function nonceFor($: EngineInterface, sid: string): Promise<string | null> {
  * module sees notes the session's transcript path and permission mode; tool.call stashes the call's agentId. Module
  * state: a reload forgets it until the next event. */
 export const facts: FactsBook = factsBook();
-/** The invite lines the copy card may copy (mod/core/copy.ts), by ref: memory only, never written anywhere. Held when
- * /sub-human invite answers here, dropped once the invite is over (the tail's `invites` event, a cancel, its life);
- * mod/consent.ts reads it for the card. A reload forgets them (the card then says the invite is gone). */
+/** The invite lines the copy question may copy (mod/core/copy.ts), by ref: memory only, never written anywhere. Held
+ * when an invite answers here (typed, or from the question after a room opened), dropped once the invite is over (the
+ * tail's `invites` event, a cancel, its life). A reload forgets them. */
 export const copies: CopyBook = copyBook();
+/** The module's own $.ui.ask dialogs in flight (mod/core/card.ts ownAsks): mod/consent.ts's AskUserQuestion hooks pass
+ * each by. */
+export const asks: OwnAsks = ownAsks();
 /** The leave card (mod/core/leave.ts) was offered in this module process: once per session. */
 let leaveOffered = false;
 /** sub-human's own lines this session (command verbs, replies, delivery errors; never the room's chat), for the
@@ -79,7 +87,7 @@ let leaveOffered = false;
 const said: SaidBook = saidBook();
 /** Every seat name this module process has known, masked in that snippet. */
 const names = new Set<string>();
-/** Whether a person is at the prompt (session.start's isInteractive): no copy card in a `-p` run or the SDK. Module
+/** Whether a person is at the prompt (session.start's isInteractive): no copy question or walk question in a `-p` run or the SDK. Module
  * state; null until session.start said. */
 let interactive: boolean | null = null;
 /** The last presence the module wrote or saw for seat (address|sid). A typed prompt (mod/prompt.ts) only marks
@@ -630,27 +638,134 @@ function unpin($: EngineInterface): void {
 /** $.clock.now(), else the process's own clock (the copy book's times only compare with each other). */
 const copyNow = async ($: EngineInterface): Promise<number> => (await nowMs($)) ?? Date.now();
 
+/** An invite's reply as a typed invite's goes out: its line and PIN pinned on the status line, and, when join.ts handed
+ * over the line alone (not --no-card) and a person is at the prompt, the line held in `copies` and the copy question
+ * once this hook returned (offerCopy). */
+async function pinInvite($: EngineInterface, status: { status: string; ms: number; ref?: string; line?: string }): Promise<void> {
+  pinStatus($, status);
+  if (!status.line || !status.ref || interactive === false) return;
+  const ref = status.ref;
+  copies.hold(ref, status.line, (await copyNow($)) + status.ms);
+  try { $.clock.after(2 * CONFIRM_AFTER_MS, () => { void offerCopy($, ref); }); } catch { /* no clock: no question; the line stays pinned */ }
+}
+
 /**
- * The invite's copy card (mod/core/copy.ts): after /sub-human invite answered with a line, one wake asks the model to
- * call AskUserQuestion with "copy invite REF" (the ref only; the line stays in `copies`). Never on the same idle turn as
- * a take's wake: while a take runs it waits for it (at most ~10 s), then goes as any wake (framed: it has no line for
- * the person; mid-turn appended). An invite over before then gets no card. After the person picked Copy on a card this
- * session the line is copied with no card ("line copied"); after Skip nothing is offered. Never throws.
+ * The invite's copy question (mod/core/copy.ts): after an invite answered with a line, the module opens Claude Code's
+ * own dialog itself ($.ui.ask, no model turn): "Copy the invite?", Copy / Skip. Not while a take runs (it waits for
+ * it, at most ~10 s). An invite over before then gets no question, and one over before the answer copies nothing (it
+ * says so). After the person picked Copy this session a later line is copied with no question ("line copied"); after
+ * Skip nothing is offered. Dismissed, or text typed: nothing (the next invite asks again). Never throws.
  */
 async function offerCopy($: EngineInterface, ref: string) {
   try {
     const choice = copies.choice();
-    if (choice === 'skip') return; // Skip once: no card again this session
+    if (choice === 'skip') return; // Skip once: no question again this session
     for (let i = 0; taking.size && i < 20; i++) await new Promise<void>(resolve => { $.clock.after(500, resolve); });
     const line = copies.lineFor(ref, await copyNow($));
     if (!line) return;
-    // Copy once: later invites are copied with no card, and no turn
-    if (choice === 'copy') { const said = await clip($, line, AUTO_COPIED); if (copyNews(said)) $.ui.log(said); else $.ui.log(`copy: ${said}`, { to: 'debug' }); return; }
-    // no line for the person: the wake goes framed, as the plugin's own message (copy.ts copyWake)
-    const text = copyWake(ref);
-    if (turns.running !== null) await midTurnWake($, text);
-    else await submitWake($, text, { member: true });
+    const tell = (said: string) => { if (copyNews(said)) $.ui.log(said); else $.ui.log(`copy: ${said}`, { to: 'debug' }); };
+    // Copy once: later invites are copied with no question
+    if (choice === 'copy') { tell(await clip($, line, AUTO_COPIED)); return; }
+    const end = asks.begin(COPY_QUESTION, COPY_HEADER);
+    let answer: string;
+    try { answer = await $.ui.ask(COPY_QUESTION, { options: COPY_OPTIONS, header: COPY_HEADER }); } catch { tell(NOT_COPIED); return; } finally { end(); }
+    const picked = copyChoiceOf(answer);
+    if (picked) copies.choose(picked);
+    if (picked !== 'copy') { tell(NOT_COPIED); return; }
+    const still = copies.lineFor(ref, await copyNow($));
+    tell(still ? await clip($, still, COPIED) : GONE);
   } catch { /* the line stays pinned on the status line */ }
+}
+
+/**
+ * The question after a bare /sub-human opened a room (mod/core/walk.ts): armed by command.run before the join expands
+ * (armWalk: a person at the prompt, SUB_HUMAN_WALK not 0), node walk started at once in the background (what this
+ * machine can offer), then asked once the join's own turn ended (turn.complete), or, when no turn started within
+ * WALK_TURN_WAIT_MS, then. Module memory only; a reload forgets it (no question).
+ */
+interface WalkWait { sid: string; columns: unknown; facts: Promise<WalkFacts>; sawTurn: boolean }
+let walkWait: WalkWait | null = null;
+
+function armWalk($: EngineInterface, sid: string, columns: unknown): void {
+  const root = $.plugin.root;
+  const facts = $.process.run(shimArgv(root, 'walk'), { stdin: '{}', env: shimEnv({ session_id: sid }, root), timeoutMs: SHIM_TIMEOUT_MS })
+    .then(r => (r.exitCode === 0 ? walkFacts(readWalk(r.stdout)) : NO_FACTS), () => NO_FACTS);
+  const w: WalkWait = { sid, columns, facts, sawTurn: false };
+  walkWait = w;
+  // no turn for the join (none started in time): asked anyway
+  try { $.clock.after(WALK_TURN_WAIT_MS, () => { if (walkWait === w && !w.sawTurn) fireWalk($, w); }); } catch { /* the turn's end asks */ }
+}
+/** node walk's report: the last stdout line's subHuman.walk, else nothing. */
+function readWalk(stdout: string): unknown {
+  for (const line of stdout.trim().split('\n').reverse()) {
+    try {
+      const o: unknown = JSON.parse(line);
+      const sub: unknown = o && typeof o === 'object' ? Object.getOwnPropertyDescriptor(o, 'subHuman')?.value : undefined;
+      if (sub && typeof sub === 'object') return Object.getOwnPropertyDescriptor(sub, 'walk')?.value;
+    } catch { /* the next line */ }
+  }
+  return undefined;
+}
+/** The question, a moment after the turn's end (once: the wait is taken off first). */
+function fireWalk($: EngineInterface, w: WalkWait): void {
+  if (walkWait !== w) return;
+  walkWait = null;
+  try { $.clock.after(2 * CONFIRM_AFTER_MS, () => { void offerWalk($, w); }); } catch { void offerWalk($, w); }
+}
+
+/**
+ * Asks "Bring someone into CODE?" ($.ui.ask, no model turn) once nothing else runs: no take (offerCopy's wait), no turn
+ * (at most ~20 s; a turn still running then: no question), and only while this session still holds a member's seat
+ * in a room. Dismissed: nothing. This machine: one line. SSH or Tailscale (or an address typed): the typed command's own
+ * invite through the join shim (walkInvite). Never throws.
+ */
+async function offerWalk($: EngineInterface, w: WalkWait): Promise<void> {
+  try {
+    for (let i = 0; (taking.size || turns.running !== null) && i < 40; i++) await new Promise<void>(resolve => { $.clock.after(500, resolve); });
+    if (turns.running !== null) { $.ui.log('walk: a turn still runs; not asked', { to: 'debug' }); return; }
+    if ((await $.session.id()) !== w.sid) return;
+    const hello = asHello((await $.state.get(HELLO)).value);
+    const seat = hello && hello.sid === w.sid ? hello.seat : null;
+    if (!seat || seat.role === 'claude') return;
+    const found = (await within($, w.facts, WALK_FACTS_MS)) ?? NO_FACTS;
+    const question = walkQuestion(seat.code);
+    const end = asks.begin(question, WALK_HEADER);
+    let answer: string;
+    try { answer = await $.ui.ask(question, { options: walkOptions(found), header: WALK_HEADER }); } catch { $.ui.log('walk: not now', { to: 'debug' }); return; } finally { end(); }
+    const act = walkAction(answer);
+    $.ui.log(`walk: ${act.kind === 'invite' ? act.via : act.kind}`, { to: 'debug' });
+    if (act.kind === 'none') return;
+    if (act.kind === 'here') { $.ui.log(HERE_LINE); return; }
+    await walkInvite($, w.sid, act.args, w.columns);
+  } catch { /* no question: /sub-human invite still works */ }
+}
+
+/** The walk's invite: join.ts through the shim with the typed command's args (`invite --ssh [ADDR]`, `invite --web`),
+ * its reply out as a typed invite's (answerOf, then pinInvite): the line and PIN on the status line and in module memory
+ * only, never a transcript row or anything the model reads. A lease that did not hold: hello again, once more. */
+async function walkInvite($: EngineInterface, sid: string, args: string, columns: unknown): Promise<void> {
+  const root = $.plugin.root;
+  const run = async (): Promise<JoinReply> => {
+    try {
+      await ensureLease($, sid);
+      const nonce = asNonce((await $.state.get(NONCE)).value, sid);
+      if (!nonce) return { kind: 'stale', lines: [STALE] };
+      const r = await $.process.run(shimArgv(root, 'join'), {
+        stdin: JSON.stringify(joinPayload({ sid, cwd: await $.session.cwd(), args, nonce, mode: facts.of(sid).permission_mode })),
+        env: shimEnv({ session_id: sid }, root),
+        timeoutMs: SHIM_TIMEOUT_MS,
+      });
+      return readReply(r);
+    } catch (error) { return readReply(null, { error }); }
+  };
+  let reply = await run();
+  if (reply.kind === 'stale') { await refresh($, sid).catch(() => {}); reply = await run(); }
+  if ((reply.kind === 'joined' || reply.kind === 'say') && reply.debug) $.ui.log(reply.debug, { to: 'debug' });
+  said.command(args);
+  const failedHere = reply.kind === 'failed' || reply.kind === 'stale' || (reply.kind === 'say' && reply.refused);
+  const { logs, status } = answerOf(reply, { columns });
+  for (const line of logs) { $.ui.log(line); if (failedHere) said.failed(line); }
+  if (status) await pinInvite($, status);
 }
 
 /** The leave card's state in the plugin's $.store (per install, kept between sessions); none: a fresh one. */
@@ -680,7 +795,8 @@ async function offerLeave($: EngineInterface, sid: string, code: string, lines: 
     card = leaveCardShown(card);
     await saveLeaveCard($, card);
     const failed = Symbol('no dialog');
-    const answer = await $.ui.ask(leaveQuestion(code), { options: LEAVE_OPTIONS, header: LEAVE_HEADER }).catch((): typeof failed => failed);
+    const end = asks.begin(leaveQuestion(code), LEAVE_HEADER); // consent's AskUserQuestion hooks pass it by
+    const answer = await $.ui.ask(leaveQuestion(code), { options: LEAVE_OPTIONS, header: LEAVE_HEADER }).catch((): typeof failed => failed).finally(end);
     if (answer === failed) { say(); return; }
     const out = leaveOutcome(answer);
     if (out.kind === 'close') return;
@@ -781,6 +897,11 @@ export function registerDeliver(on: On): void {
     if ((reply.kind === 'joined' || reply.kind === 'say') && reply.debug) $.ui.log(reply.debug, { to: 'debug' });
     if (reply.kind === 'joined') {
       seatChanged(...Object.keys(spawns)); // a seat taken: whichever room it is, its row's count starts over
+      // a room this run opened: who's coming (mod/core/walk.ts), asked once the join's own turn is over; armed before the
+      // expansion, so that turn's start is seen. A person at the prompt only, unless SUB_HUMAN_WALK=0
+      if (reply.opened && interactive !== false && (await $.env.get('SUB_HUMAN_WALK').catch(() => undefined)) !== '0') {
+        armWalk($, sid, e.presentation && e.presentation.columns);
+      }
       joined = { sid, context: reply.context };
       try {
         const r = await next(e);
@@ -823,15 +944,9 @@ export function registerDeliver(on: On): void {
     said.command(e.args);
     const failedHere = reply.kind === 'failed' || reply.kind === 'stale' || (reply.kind === 'say' && reply.refused);
     for (const line of card ? [] : logs) { $.ui.log(line); if (failedHere) said.failed(line); }
-    if (status) {
-      pinStatus($, status);
-      // the copy card: a person at the prompt, and a line join.ts handed over (not --no-card); after this hook returned
-      if (status.line && status.ref && interactive !== false) {
-        const ref = status.ref;
-        copies.hold(ref, status.line, (await copyNow($)) + status.ms);
-        try { $.clock.after(2 * CONFIRM_AFTER_MS, () => { void offerCopy($, ref); }); } catch { /* no clock: no card; the line stays pinned */ }
-      }
-    } else if (cancels(e.args, reply, pinnedRef)) { if (pinnedRef) copies.drop(pinnedRef); unpin($); }
+    // an invite: pinned, and the copy question after this hook returned (a person at the prompt, a line join.ts handed over)
+    if (status) await pinInvite($, status);
+    else if (cancels(e.args, reply, pinnedRef)) { if (pinnedRef) copies.drop(pinnedRef); unpin($); }
     if (!fresh) { try { await refresh($, sid); } catch { /* the next refresh tries again */ } }
     // a leave ends this session's delivery now, whatever the hello says: a room hosted elsewhere may still list the
     // seat for a moment (a session cut off kept its tail and heard "carol left" after its leave)
@@ -896,6 +1011,7 @@ export function registerDeliver(on: On): void {
   on('turn.start', ($, e, next) => {
     // the room row, unless it runs (not awaited: the turn never waits for it)
     void roomRow($);
+    if (walkWait) walkWait.sawTurn = true; // the join's own turn: the question waits for its end
     // a wake nothing took before goes into this turn, as any wake that lands mid-turn
     for (const text of turns.start(e.turnId)) void midTurnWake($, text).catch(() => {});
     // the room row's fallback ask that no turn carried yet (it was refused while none ran): this turn reads it
@@ -915,6 +1031,8 @@ export function registerDeliver(on: On): void {
     // for the next request
     if (e.agentId === undefined) {
       if (turns.complete(e.turnId).length) void submitWake($, WAKE_RESEND, { appended: true });
+      // the join's own turn is over: who's coming (offerWalk)
+      if (walkWait && walkWait.sawTurn) fireWalk($, walkWait);
       // the turn the person's prompt started is over: back at the prompt (node hooks/run.ts presence, not awaited)
       if (presence.last === 'working' || presence.last === 'permission_prompt') {
         presence.last = 'idle';

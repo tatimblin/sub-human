@@ -4,9 +4,9 @@
  * webhost.ts hostWeb; --forward: webhost.ts hostForward, the web link over the joiner's own ssh login here), shown to the person only (a secret: it holds the PIN); --stop stops serving the room over the
  * web, --cancel cancels an unused invite (hosting.cancelInvite).
  *
- * The copy card (PLAN-JOIN step 5): the pinned form also carries the line alone (Pinned line, never the PIN), so the
- * hooks module can offer "Copy the invite line to your clipboard?" and copy it on the person's click (mod/core/copy.ts).
- * --no-card, or SUB_HUMAN_INVITE_CARD=0, leaves the line out: no card, nothing the module could copy.
+ * The copy question (PLAN-JOIN step 5): the pinned form also carries the line alone (Pinned line, never the PIN), so the
+ * hooks module can ask "Copy the invite?" itself and copy it on the person's click (mod/core/copy.ts). --no-card, or
+ * SUB_HUMAN_INVITE_CARD=0, leaves the line out: no question, nothing the module could copy.
  *
  * With no way named, the tailnet (Tailscale Serve, as --web) when Tailscale is up here (seam.tailnetUp: its CLI and
  * `tailscale status` naming this machine online, checked before the listener starts), else ssh; SUB_HUMAN_SSH_ADDR set
@@ -33,15 +33,20 @@ const ts = lazy<typeof TailscaleMod>(import.meta.url, '../remote/tailscale.ts');
 export const INVITE_USAGE: string = `usage: /sub-human invite (over your tailnet when Tailscale is up here, else ssh; --ssh for ssh, --forward for someone who logs in to this machine as themselves, --public for anyone on the internet; --no-card: no card offering to copy the line). ${HELP_HINT}`;
 export const OFF_TAILNET = 'Off your tailnet? /sub-human invite --public';
 
-/** Whether Tailscale is usable here: its CLI, and `tailscale status` naming this machine, online (no serve, no Funnel). */
-function tailnetUp(): boolean {
+/** Tailscale here: `up` (its CLI, and `tailscale status` naming this machine, online; no serve, no Funnel), `down` (the
+ * CLI, not online or not logged in), `none` (no CLI). */
+function tailnet(): 'up' | 'down' | 'none' {
   const b = ts().bin();
-  if (!b) return false;
-  try { return ts().self(b).online; } catch { return false; }
+  if (!b) return 'none';
+  try { return ts().self(b).online ? 'up' : 'down'; } catch { return 'down'; }
 }
+/** Whether Tailscale is usable here (tailnet `up`). */
+const tailnetUp = (): boolean => tailnet() === 'up';
 
-/** The tests' stubs: whether the tailnet is up here, the web invite itself, and the listener's state and stop. */
-export const seam: { tailnetUp: () => boolean; hostWeb: typeof WebhostMod.hostWeb; hostForward: typeof WebhostMod.hostForward; webState: typeof WebhostMod.webState; unhost: typeof WebhostMod.unhost } = {
+/** The tests' stubs: whether the tailnet is up here (and its state, for the question after a room opens:
+ * hooks/handlers/walk.ts), the web invite itself, and the listener's state and stop. */
+export const seam: { tailnet: () => 'up' | 'down' | 'none'; tailnetUp: () => boolean; hostWeb: typeof WebhostMod.hostWeb; hostForward: typeof WebhostMod.hostForward; webState: typeof WebhostMod.webState; unhost: typeof WebhostMod.unhost } = {
+  tailnet,
   tailnetUp,
   hostWeb: (...a) => webhost().hostWeb(...a),
   hostForward: (...a) => webhost().hostForward(...a),
@@ -85,7 +90,7 @@ export const invite: Verb = (argv, { cur: seat }) => {
     const tail = r.mode === 'tailscale' ? hosting.onceNotes(room.hostStore(cur.code), [['tailnet', OFF_TAILNET]]).map(t => `\n${t}`).join('') : '';
     const around = (t: string) => `${why}${t}${tail}`;
     const { pinned } = r;
-    // the line alone for the module's copy card, unless the person or their setup turned the card off
+    // the line alone for the module's copy question, unless the person or their setup turned the card off
     const card = !f['no-card'] && envStr('SUB_HUMAN_INVITE_CARD') !== '0';
     // for this terminal only, never the model: it holds the PIN. Through the hooks module the line
     // and the PIN are pinned under the prompt, which Claude Code does not save (a notice is a transcript row)

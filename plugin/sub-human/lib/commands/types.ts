@@ -28,7 +28,7 @@ export type Answer =
  * long the status stays (the invite's life). When status is wider than the terminal (the module knows its width),
  * short ("PIN 4090 · SECRET <word>") is pinned instead and cut is the notice text: the line with SECRET in place of
  * the word. ref: the invite's, so the module takes it off once the invite is used, burnt or cancelled. line: the invite
- * line alone, never the PIN, set only when the module may offer its copy card (lib/commands/invite.ts: not with
+ * line alone, never the PIN, set only when the module may ask to copy it (lib/commands/invite.ts: not with
  * --no-card or SUB_HUMAN_INVITE_CARD=0); the module keeps it in memory and writes it to the clipboard on the person's
  * Copy (mod/core/copy.ts). The classic hook still shows the whole text (Answer secret's text). */
 export interface Pinned { status: string; text: string; ms: number; short?: string; cut?: string; ref?: string; line?: string }

@@ -22,7 +22,7 @@
  *                       the line (protocol 3: its SECRET word; beta.15: word null, the PIN at its end) and the PIN
  *     join(opts) -> Promise<{seat, name, invite, pin, linkId, conf, join, pub}>   a joiner over one ssh path: its own
  *                       login to the host account, invite --ssh on the host's seat, the line typed on the joiner
- *                       (`/sub-human join DEST ROOM SECRET --as NAME`: the host's key checked, the SECRET
+ *                       (`/sub-human join ssh://DEST/ROOM#SECRET --as NAME`: the host's key checked, the SECRET
  *                       shown; with no PIN it knocks), the PIN while the host's card waits (`/sub-human join PIN`:
  *                       the right one lets it in, no card; an older host's card is answered Let in), the link online,
  *                       then a bare `/sub-human` (the seat). Against devbox-old (beta.15) its line has a 4-digit
@@ -306,9 +306,10 @@ export class Lab {
   hostInvite(hostSeat: SeatDriver, name: string, { dest = 'host@devbox' }: { dest?: string } = {}): { line: string, word: string | null, pin: string, text: string } {
     const r = hostSeat.expand(name, `invite --ssh ${dest}`);
     const text = r.out || '';
-    const m = /\/sub-human (join \S+ [a-z]+-\d{4} ([0-9a-z]{39})(?: --home \S+)?)\n/.exec(`${text}\n`);
+    // the one line shape (0.6.1: ssh://DEST/ROOM[?home=H]#SECRET), else an older host's DEST ROOM SECRET [--home H]
+    const m = /\/sub-human (join (?:ssh:\/\/[^\s#]+#([0-9a-z]{39})|\S+ [a-z]+-\d{4} ([0-9a-z]{39})(?: --home \S+)?))\n/.exec(`${text}\n`);
     const p = /apart from the line[^\n]*: (\d{4})\n/.exec(`${text}\n`);
-    if (m && p) return { line: m[1] ?? '', word: m[2] ?? '', pin: p[1] ?? '', text };
+    if (m && p) return { line: m[1] ?? '', word: m[2] ?? m[3] ?? '', pin: p[1] ?? '', text };
     const old = /\/sub-human (join \S+ [a-z]+-\d{4} (\d{4})(?: --via \S+)?)\n/.exec(`${text}\n`); // a beta.15 host's
     if (old) return { line: old[1] ?? '', word: null, pin: old[2] ?? '', text };
     throw new Error(`invite --ssh on ${hostSeat.svc}: no line and PIN in: ${text.slice(0, 300)}`);
@@ -323,7 +324,8 @@ export class Lab {
     const hostSeat = host || this.seat(hostSvc);
     const { line, word, pin, text } = this.hostInvite(hostSeat, hostName, { dest });
     const seat = this.seat(svc, { user, ...(opts.home ? { home: opts.home } : {}) });
-    const typed = seat.short(name, line, '-F', conf);
+    // a joiner before 0.6.1 (devbox-old) reads no ssh:// line: the person types it the old way, DEST ROOM SECRET [--home H]
+    const typed = seat.short(name, svc === 'devbox-old' ? positional(line) : line, '-F', conf);
     const refused = (out: string): Joined => ({ seat, name, invite: line, pin, text, linkId: null, conf, pub, linked: typed, admitted: null, join: { ok: false, out, ms: Date.now() - t0 } });
     if (!word) return refused(typed.out); // a beta.15 host's line: this joiner says the host must update
     if (!typed.ok) return refused(typed.out); // a beta.15 joiner refuses this host's line; or the host refused it
@@ -576,5 +578,13 @@ export async function runScenarios({ out, only, keep = false, echo = (l: string)
   const strict = process.env.LAB_STRICT === '1';
   const ok = !upError && results.length > 0 && results.every(r => r.status !== 'fail' && !(strict && r.status === 'bug'));
   return { ok, results, summary };
+}
+
+/** `join ssh://DEST/ROOM[?home=H]#SECRET` as a joiner before 0.6.1 types it: `join DEST ROOM SECRET [--home H]`. */
+export function positional(line: string): string {
+  const m = /^join ssh:\/\/([^/\s]+)\/([a-z]+-\d{4})(?:\?home=([^#\s]+))?#(\S+)$/.exec(line);
+  if (!m) return line;
+  const [, dest = '', room = '', home, secret = ''] = m;
+  return `join ${dest} ${room} ${secret}${home ? ` --home ${decodeURIComponent(home)}` : ''}`;
 }
 

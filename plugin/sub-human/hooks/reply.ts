@@ -71,7 +71,7 @@ export function render(reply: Reply | null | undefined | void): Rendered {
     case 'classic': return { outputs: reply.outputs ?? [], exit: reply.exit ?? 0, stderr: reply.stderr || '' };
     case 'joined': {
       const hso = { hookEventName: EXPANSION, additionalContext: reply.context };
-      if (reply.module) return { outputs: [{ hookSpecificOutput: hso, subHuman: { say: reply.say, joined: true, shareable: true, ...(reply.debug ? { debug: reply.debug } : {}) } }], exit: 0, stderr: '' };
+      if (reply.module) return { outputs: [{ hookSpecificOutput: hso, subHuman: { say: reply.say, joined: true, shareable: true, ...(reply.opened ? { opened: true } : {}), ...(reply.debug ? { debug: reply.debug } : {}) } }], exit: 0, stderr: '' };
       return { outputs: [{ ...(reply.warn ? { systemMessage: reply.warn } : {}), hookSpecificOutput: hso }], exit: 0, stderr: '' };
     }
     case 'say': case 'refused': case 'secret': {

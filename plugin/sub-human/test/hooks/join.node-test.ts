@@ -477,7 +477,7 @@ test('/sub-human invite: an invite line for my room, shown to me only (a hidden 
   const shown = must(w.hook('join', expand('invite --pipe'), { as: 'alice' }).json);
   assert.equal(shown.decision, 'block');
   assert.deepEqual([shown.systemMessage, shown.hookSpecificOutput], [undefined, { hookEventName: 'UserPromptExpansion', suppressOriginalPrompt: true }]);
-  const m = new RegExp(`\n  /sub-human join pipe:${w.home.replace(/[.]/g, '\\.')} ${w.code} ([0-9a-z]{39})\n`).exec(must(shown.reason));
+  const m = new RegExp(`\n  /sub-human join pipe:${w.home.replace(/[.]/g, '\\.')}/${w.code}#([0-9a-z]{39})\n`).exec(must(shown.reason));
   assert.ok(m, shown.reason);
   const pin = /tell them its PIN apart from the line \(say it, or send it another way\): (\d{4})$/.exec(must(shown.reason));
   assert.ok(pin, shown.reason);
@@ -485,7 +485,7 @@ test('/sub-human invite: an invite line for my room, shown to me only (a hidden 
   assert.doesNotMatch(must(shown.reason), /5 wrong PINs|Cancel it/);
   assert.match(must(shown.reason), /^sub-human: Invite ready \(from another sub-human folder on this machine\) until \d\d:\d\d\. Send them this line:\n/);
   const again = must(must(w.hook('join', expand('invite --pipe'), { as: 'alice' }).json).reason);
-  assert.notEqual(must(new RegExp(`${w.code} ([0-9a-z]{39})`).exec(again))[1], m[1], 'a new one each time');
+  assert.notEqual(must(new RegExp(`${w.code}#([0-9a-z]{39})`).exec(again))[1], m[1], 'a new one each time');
   // noise pass C: the rules (the README's since 0.6.0) never show
   assert.doesNotMatch(again, /5 wrong PINs/);
   assert.equal(again.split('\n').length, 5, again);
@@ -510,7 +510,7 @@ test('SECURITY: every join, invite and admit prompt (and any with a word of digi
   const hiddenReply = (r: HookRun) => r.json && r.json.decision === 'block' && r.json.hookSpecificOutput && r.json.hookSpecificOutput.suppressOriginalPrompt === true;
   const S = SECRET;
   const cases: [string, RegExp][] = [
-    ['join dev vole-1234 48291', /the line's SECRET \(its last long word\) did not come through whole/], // not a SECRET
+    ['join dev vole-1234 48291', /the line's SECRET \(its long last word, after the #\) did not come through whole/], // not a SECRET
     ['join dev vole-1234 482', /did not come through whole/],
     ['join dev vole-1234 4829', /did not come through whole/], // a 0.5.0-beta.15 line: no SECRET
     [`join dev vole-1234 ${S} 48291`, /a PIN is 4 digits: \/sub-human join LINE PIN/], // the line with a PIN after it: refused here only for a PIN that is none
@@ -528,6 +528,14 @@ test('SECURITY: every join, invite and admit prompt (and any with a word of digi
     [`join https://box/sub-human/vole-1234#${S.slice(0, 30)} 4829`, /did not come through whole/],
     [`join https://box/sub-human/vole-1234#${S} 48291`, /a PIN is 4 digits/],
     [`join https://box/sub-human/vole-1234#${S} ${S}`, /usage: \/sub-human join LINE PIN/],
+    // the one line shape over ssh (0.6.1)
+    [`join ssh://dev/vole-1234#${S} 48291`, /a PIN is 4 digits/],
+    [`join ssh://dev/vole-1234#${S.slice(0, 30)} 4829`, /did not come through whole/],
+    [`join ssh://dev/vole-1234#${S} 4829 x`, /usage: \/sub-human join LINE PIN/],
+    [`join ssh://dev/vole-1234?home=rel#${S}`, /the line's home "rel" isn't a plain absolute path/],
+    [`join ssh://dev/vole-1234?forward=x#${S} 4829`, /"x" isn't a port/],
+    [`join ssh://dev/vole-1234?y=1#${S} 4829`, /"y" isn't part of a join line/],
+    [`ssh://dev/vole-1234#${S} 4829`, /looks like an invite line's SECRET/],
     [`join https://box/sub-human/vole-1234#${S} 4829 x`, /usage/],
     [`join https://box/sub-human/vole-1234#${S} 4829 --home /x`, /--home goes with an ssh address/],
     [`join https://box/x/4829#${S} 4829`, /isn't a join address/],
@@ -734,13 +742,24 @@ test('classic (no module answering): a reply is the block reason alone, never al
 
 /** Run join.ts as the module's command.run hook does (mod/core/command.ts joinPayload): no CLAUDE_PID, the lease's
  * nonce, this test process as the claude process (the shim's parent). */
-function viaModule(w: World, name: string, args: string, { nonce = 'ab'.repeat(16), leaseNonce = nonce, mode, take }: { nonce?: string; leaseNonce?: string; mode?: string; take?: string } = {}) {
+function viaModule(w: World, name: string, args: string, { nonce = 'ab'.repeat(16), leaseNonce = nonce, mode, take, env = {} }: { nonce?: string; leaseNonce?: string; mode?: string; take?: string; env?: Record<string, string> } = {}) {
   w.pid[name] = process.pid;
   w.sid[name] = w.sid[name] || crypto.randomUUID();
   w.lib(() => identity.writeModLease(w.sid[name], { pid: process.pid, nonce: leaseNonce }));
   const payload = { ...expand(args), sub_human_via: 'command.run', sub_human_nonce: nonce, ...(mode ? { permission_mode: mode } : {}), ...(take ? { sub_human_take: take } : {}) };
-  return w.hook('join', payload, { as: name, modLease: false, env: { CLAUDE_PID: undefined } });
+  return w.hook('join', payload, { as: name, modLease: false, env: { CLAUDE_PID: undefined, ...env } });
 }
+
+test('through the module (0.6.1): a seat in a room this run opened says so (opened), so the module asks who\'s coming; a join of an open room does not', () => {
+  const plain = new World({}, { room: false });
+  const s = stub();
+  const open = must(must(viaModule(plain, 'alice', 'alice', { env: { SUB_HUMAN_CLAUDE: s.bin, SUB_HUMAN_PLUGIN_DIR: PLUGIN } }).json).subHuman);
+  assert.deepEqual([open.joined, open.opened], [true, true]);
+  assert.match(must(open.say), /^Opened [a-z]+-\d{4}/);
+  const w = new World({ claude: 'sleep', alice: 'sleep' });
+  const joined = must(must(viaModule(w, 'bob', `bob ${w.code}`).json).subHuman);
+  assert.deepEqual([joined.joined, joined.opened], [true, undefined]);
+});
 
 test('through the module (command.run): every reply is {subHuman: {say}}, never a block; a join that worked also carries the mechanics block and a one-line confirmation', () => {
   const w = new World({ claude: 'sleep', alice: 'sleep' });
@@ -748,7 +767,7 @@ test('through the module (command.run): every reply is {subHuman: {say}}, never 
   assert.equal(help.decision, undefined);
   assert.equal(must(help.subHuman).refused, false);
   assert.equal(must(help.subHuman).shareable, true, 'help holds no secret: the command\'s own output');
-  assert.match(must(must(help.subHuman).say), /^\/sub-human +Join the room here, or open one\n/);
+  assert.match(must(must(help.subHuman).say), /^\/sub-human +Join the room here, or open one and bring someone in\n/);
   const bad = must(must(viaModule(w, 'me', 'a b c').json).subHuman);
   assert.deepEqual([bad.refused, bad.shareable], [true, true]);
   assert.match(must(bad.say), /^✗ usage: \/sub-human \[NAME\]/);
@@ -796,11 +815,11 @@ test('SECURITY through the module: an invite and anything a PIN may be typed in 
   assert.doesNotMatch(must(inv.say), /: \d{4}\b/);
   assert.match(must(inv.say), /^Invite ready until \d\d:\d\d · line and PIN below the prompt$/, 'one line');
   // item 2 (D): the PIN first and short, then the line; nothing before it that costs width
-  assert.match(must(inv.pinned).status, new RegExp(`^PIN \\d{4} · /sub-human join pipe:\\S+ ${w.code} [0-9a-z]{39}$`));
+  assert.match(must(inv.pinned).status, new RegExp(`^PIN \\d{4} · /sub-human join pipe:\\S+/${w.code}#[0-9a-z]{39}$`));
   assert.ok(must(inv.pinned).ms > 14 * 60_000 && must(inv.pinned).ms <= 15 * 60_000);
   // for a terminal too narrow for the line: the PIN and the SECRET alone, and notices with SECRET in the word's place
   assert.match(must(must(inv.pinned).short), /^PIN \d{4} · SECRET [0-9a-z]{39}$/);
-  assert.match(must(must(inv.pinned).cut), new RegExp(`\\n  /sub-human join pipe:\\S+ ${w.code} SECRET$`));
+  assert.match(must(must(inv.pinned).cut), new RegExp(`\\n  /sub-human join pipe:\\S+/${w.code}#SECRET$`));
   const pin = must(/^PIN (\d{4})/.exec(must(inv.pinned).status))[1];
   assert.doesNotMatch(must(must(inv.pinned).cut), new RegExp(`[0-9a-z]{39}|PIN ${pin}|\\b${pin}\\b(?!.*${w.code})`));
   assert.match(must(must(inv.pinned).ref), /^[0-9a-f]{12}$/);
@@ -849,7 +868,7 @@ test('/sub-human help WORDS shows the six lines (no topics), without the module 
   for (const args of ['help', 'help join', 'help me please']) {
     const r = w.hook('join', expand(args), { as: 'alice', modLease: false });
     assert.equal(must(r.json).decision, 'block', args);
-    assert.match(must(must(r.json).reason), /^sub-human: \/sub-human +Join the room here, or open one\n/, args);
+    assert.match(must(must(r.json).reason), /^sub-human: \/sub-human +Join the room here, or open one and bring someone in\n/, args);
     assert.equal(must(r.json).hookSpecificOutput, undefined, `${args}: no secret in it`);
   }
   // a word of digits after help: the same list, hidden (it may be a PIN)
@@ -901,8 +920,11 @@ test('an invite line without its SECRET: a second sub-human folder has no login 
   for (const dest of ['pipe:/some/home', '/some/home']) {
     const r = w.hook('join', expand(`join ${dest} vole-1234 --as bob`), { as: 'me' });
     assert.equal(must(must(r.json).hookSpecificOutput).suppressOriginalPrompt, true, dest);
-    assert.match(must(must(r.json).reason), new RegExp(`that looks like an invite line without its SECRET: /sub-human join ${dest} vole-1234 SECRET`), dest);
+    assert.match(must(must(r.json).reason), new RegExp(`that looks like an invite line without its SECRET: /sub-human join pipe:/some/home/vole-1234#SECRET`), dest);
   }
+  const r = w.hook('join', expand('join pipe:/some/home/vole-1234 --as bob'), { as: 'me' });
+  assert.equal(must(must(r.json).hookSpecificOutput).suppressOriginalPrompt, true, 'the one line shape');
+  assert.match(must(must(r.json).reason), /without its SECRET: \/sub-human join pipe:\/some\/home\/vole-1234#SECRET/);
   assert.deepEqual(fs.readdirSync(w.home).filter(d => d === 'links'), [], 'no link written');
 });
 

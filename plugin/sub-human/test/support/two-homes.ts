@@ -237,9 +237,13 @@ function shownInvite(text: string): { line: string; dest: string; code: RoomCode
   const m = /\/sub-human (join ([^\s#]+)(?: ([a-z]+-\d{4}))?[ #]([0-9a-z]{39})((?: --(?:via|home|forward) \S+)*))\s*$/m.exec(text);
   const p = /apart from the line[^\n]*: (\d{4})\s*$/m.exec(text);
   if (!m || !p) return null;
-  const [, line = '', dest = '', named, word = ''] = m;
-  const code = roomCode(named || dest.split('/').pop() || ''); // a web line: the URL's last segment is the room
+  const [, line = '', head = '', named, word = ''] = m;
+  // the one line shape (ssh://DEST/ROOM[?…]#SECRET, pipe:HOME/ROOM#SECRET, a web URL#SECRET): the path's last segment
+  // is the room; dest is what comes before it for ssh and pipe, the URL for the web
+  const path = head.replace(/\?.*$/, '');
+  const code = roomCode(named || path.split('/').pop() || '');
   if (!code) return null;
+  const dest = !named && /^(?:ssh:|pipe:)/.test(path) ? path.slice(0, -(code.length + 1)) : head;
   return { line, dest, code, word, pin: p[1] ?? '' };
 }
 

@@ -145,7 +145,7 @@ film_repo() {
 # them after the defaults, so they win).
 #   A, the host: its ssh address is the alias devbox (the invite's line reads `/sub-human join devbox …`, never a user
 #      name; set, it also keeps a bare invite on ssh when Tailscale is up), its own ssh config (ssh -G devbox names the
-#      user for the invite's record), and no copy card after the invite (SUB_HUMAN_INVITE_CARD=0: it would hold A's pane)
+#      user for the invite's record), and no copy question after the invite (SUB_HUMAN_INVITE_CARD=0: it would hold A's pane)
 #   B, another machine: her own sub-human home, her own ssh config (devbox -> 127.0.0.1:SSH_PORT, her key and
 #      known_hosts: her own login to devbox) for every ssh sub-human runs there, and her machine's name on the host's card
 seat_env() {
@@ -175,7 +175,8 @@ write_launcher() {
 #!/usr/bin/env bash
 # launch.sh SEAT [claude args…] — a clean env: env -i, then only what a login shell would give (SH_SEAT_HOME, when
 # set, is that seat's SUB_HUMAN_HOME: S11's second home), then the lines of $BASE/seat-env/SEAT (KEY=VALUE, one
-# per line: --film's two machines, seat_env). The tmux
+# per line: --film's two machines, seat_env). SUB_HUMAN_WALK=0 for every seat: no "Bring someone into CODE?" question
+# after S1 opens the room (the scenes invite on their own, and the dialog would hold the opener's pane). The tmux
 # server's global env may carry CLAUDE_CODE_* vars from whichever Claude Code session started it: a seat
 # (and the room's Claude it spawns) must inherit none of them.
 seat=\$1; shift
@@ -183,7 +184,7 @@ cd "$BASE/\$seat" || exit 1
 extra=()
 if [ -f "$BASE/seat-env/\$seat" ]; then while IFS= read -r l; do [ -n "\$l" ] && extra+=("\$l"); done < "$BASE/seat-env/\$seat"; fi
 exec env -i HOME="$HOME" USER="${USER:-}" LOGNAME="${LOGNAME:-${USER:-}}" SHELL="${SHELL:-/bin/zsh}" \\
-  PATH="$PATH" TERM="\${TERM:-xterm-256color}" LANG="${LANG:-en_US.UTF-8}" TMPDIR="${TMPDIR:-/tmp/}" \\
+  PATH="$PATH" TERM="\${TERM:-xterm-256color}" LANG="${LANG:-en_US.UTF-8}" TMPDIR="${TMPDIR:-/tmp/}" SUB_HUMAN_WALK=0 \\
   SUB_HUMAN_HOME="\${SH_SEAT_HOME:-$SUB_HUMAN_HOME}" $FILM_ENV \${extra[@]+"\${extra[@]}"} \\
   claude "\$@"
 EOF
@@ -454,14 +455,14 @@ S2_ssh() {
   submit "$a" "/sub-human invite"
   need wait_pane "$a" "Invite ready" 30 --what "$a's pane shows the ssh invite (to $a, never to $a's Claude)" || return 1
   local line; line=$($LIB join-line "sh-$a")
-  [[ "$line" =~ ^join\ devbox\ $(room)\ [0-9a-z]{39}(\ --home\ [^ ]+)?$ ]] || { ABORT="S2: no \"join devbox $(room) SECRET\" line readable in $a's pane (read: ${line:-nothing})"; return 1; }
+  [[ "$line" =~ ^join\ ssh://devbox/$(room)(\?home=[^#\ ]+)?#[0-9a-z]{39}$ ]] || { ABORT="S2: no \"join ssh://devbox/$(room)#SECRET\" line readable in $a's pane (read: ${line:-nothing})"; return 1; }
   local pin; pin=$($LIB join-pin "sh-$a")
   [[ "$pin" =~ ^[0-9]{4}$ ]] || { ABORT="S2: no PIN readable apart from the line in $a's pane"; return 1; }
   echo "$line" > "$d/join-line.txt"   # the checks look for its SECRET in every transcript (it must be in none)
   echo "$pin" > "$d/join-pin.txt"     # and for the PIN typed after it
   record "the driver read $a's invite line and its PIN off $a's pane"
   settle "$a"
-  snap "$a runs /sub-human invite: one line for $b's machine, /sub-human join devbox $(room) and its SECRET, and a 4-digit PIN apart, shown to $a only"
+  snap "$a runs /sub-human invite: one line for $b's machine, /sub-human join ssh://devbox/$(room)#SECRET, and a 4-digit PIN apart, shown to $a only"
   mark join "$b joins from her machine over ssh: the line, and the PIN $a told her"
   submit "$b" "/sub-human $line $pin"
   need wait_log --kind status --from room --text-has "$b joined (" --after "$before" --timeout 90 --what "the right PIN let $b's machine in with no card (the host's room line)" || return 1

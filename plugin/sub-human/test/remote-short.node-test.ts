@@ -1,5 +1,5 @@
 // Invites end to end over the pipe transport, two homes on one machine (test/support/two-homes.ts): the host's
-// /sub-human invite --pipe shows `/sub-human join pipe:HOME ROOM SECRET` and, apart from it, a 4-digit PIN, to the
+// /sub-human invite --pipe shows `/sub-human join pipe:HOME/ROOM#SECRET` and, apart from it, a 4-digit PIN, to the
 // person only; the joiner types the line (a hidden step: the model never sees the SECRET), the link daemon checks the
 // host's key against it and shows the host the SECRET, which knocks (the host's card waits), and the joiner types
 // `/sub-human join PIN` while it waits (hidden too), or types the PIN after the line, which sends it in the first hello
@@ -422,7 +422,8 @@ test('an invite: the host CLI masks the SECRET and the PIN inside Claude Code, `
   stopDaemon(t, remote, code);
   const masked = spawnSync(process.execPath, [h.BIN, 'invite', '--pipe'], { env: { ...host.env(null), CLAUDECODE: '1' }, encoding: 'utf8' });
   assert.equal(masked.status, 0, masked.stderr);
-  assert.match(masked.stdout, /\/sub-human join \S+ \S+ ####\n/);
+  assert.match(masked.stdout, /\/sub-human join pipe:\S+#…\n/);
+  assert.doesNotMatch(masked.stdout, /#####/, 'the fragment reads #…, not the # and the mask run together');
   assert.match(masked.stdout, /another way\): ####\n/);
   assert.match(masked.stdout, /PIN and SECRET hidden/);
   const plain = spawnSync(process.execPath, [h.BIN, 'invite', '--pipe'], { env: host.env(null), encoding: 'utf8' });

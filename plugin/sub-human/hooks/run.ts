@@ -33,6 +33,7 @@ const LOADERS = {
   'row-hold': () => import('./handlers/row-hold.ts'),
   'session-restore': () => import('./handlers/session-restore.ts'),
   send: () => import('./handlers/send.ts'),
+  walk: () => import('./handlers/walk.ts'),
 } satisfies Record<string, () => Promise<object>>;
 type Name = keyof typeof LOADERS;
 /** A handler's stdin type: its module's own (handle's first parameter). */

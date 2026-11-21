@@ -17,12 +17,15 @@
  *             where it runs instead of taking a seat by that name; `/sub-human who` in a room lists its people
  *             (seats.whoLines: on the host, an invite seat's machine, check, rename and kick, which the join line leaves out)
  *   join      `/sub-human join …`: ROOM (a room code alone): that room on this machine, as `/sub-human ROOM`;
- *             HOST ROOM SECRET, URL#SECRET or URL SECRET, each with the PIN after it or not: an invite line
+ *             LINE, with the PIN after it or not: an invite line in its one shape (lineParts: ssh://DEST/ROOM[?home=H]#SECRET,
+ *             ssh://HOST/ROOM?forward=PORT#SECRET, https://HOST/…/ROOM#SECRET, pipe:HOME/ROOM#SECRET: the scheme picks
+ *             the spec, the room is the last path segment, the SECRET the fragment; the older positional forms HOST ROOM
+ *             SECRET [--home H | --forward PORT] and URL SECRET are still read)
  *             (joining.linkLine: link only, never the seat in that step; a PIN typed with it goes in the first hello,
  *             once the host's key is checked; over ssh through the person's own ssh login, --home as the line says);
  *             PIN (4 digits alone): the PIN the host's machine asked for, or one typed while a line with no PIN waits
  *             for the host's card (joining.givePin: the right one links at once; never the seat either); HOST ROOM: over
- *             the person's own ssh login (joining.linkLogin; the seat once linked); a pipe HOST with no SECRET is an
+ *             the person's own ssh login (joining.linkLogin; the seat once linked; ssh://DEST/ROOM alike); a pipe line with no SECRET is an
  *             invite line without its SECRET
  *   bindRoomClaude   the room Claude's own launch `/sub-human` (agent_type sub-human:room-claude + SUB_HUMAN_ROOM), or a
  *             debugging `/sub-human [ROOM]` in a room-claude agent session: binds the seat `claude`
@@ -44,6 +47,7 @@ import { HELP_HINT, USAGE, refused, say } from './answer.ts';
 import type { Answer, VerbCtx, Verb } from './types.ts';
 import type { Identity } from '../identity.ts';
 import type { JoinStep, Wanted } from '../remote/joining.ts';
+import type { LinkSpec } from '../remote/types-rest.ts';
 import type { RoomCode, SeatName, InviteSecret, Pin } from '../brand.ts';
 import type * as WsMod from '../remote/transports/ws.ts';
 import type * as SshMod from '../remote/transports/ssh.ts';
@@ -54,7 +58,7 @@ const wsT = lazy<typeof WsMod>(import.meta.url, '../remote/transports/ws.ts');
 const sshT = lazy<typeof SshMod>(import.meta.url, '../remote/transports/ssh.ts');
 
 export const JOIN_USAGE: string = `usage: /sub-human join LINE PIN (the line from an invite, the PIN the host told you after it; or the line alone, then /sub-human join PIN when it asks). ${HELP_HINT}`;
-const NOT_WHOLE = 'the line\'s SECRET (its last long word) did not come through whole: paste the whole line the host sent you';
+const NOT_WHOLE = 'the line\'s SECRET (its long last word, after the #) did not come through whole: paste the whole line the host sent you';
 const PIN_WORD = /^[0-9]{3,10}$/;
 const YOU_HINT = (d: string) => `"${d}" still has the example's placeholder: put your user name on that machine in place of ${d.split('@')[0]} (or just its ssh alias, e.g. dev)`;
 /** The CLI's commands that are no /sub-human verb (lib/cli/main.ts COMMANDS; a test keeps the two in step). They are not
@@ -161,7 +165,7 @@ export const named: Verb = (args, ctx) => {
   if (args.some(a => SECRET_WORD.test(a) || fragmentSecret(a) !== null)) return refused(`that looks like an invite line's SECRET: the whole line goes in as /sub-human join LINE PIN. ${USAGE}`);
   if (PIN_WORD.test(name)) return refused(NOT_A_NAME(name));
   if (code !== undefined && PIN_WORD.test(code)) return refused(`"${code}" looks like a PIN, not a room: a PIN goes in as /sub-human join PIN once an invite line asks for it`);
-  if (name.startsWith('-')) return refused(`"${name}" goes with join (/sub-human join HOST ROOM SECRET ${name} …). ${USAGE}`);
+  if (name.startsWith('-')) return refused(`"${name}" goes with join (/sub-human join LINE ${name} …). ${USAGE}`);
   if (!identity.isSeatName(name)) return refused(`"${name}" isn't a command or a name. ${USAGE}`);
   if (identity.RESERVED.includes(name.toLowerCase())) return refused(`"${name}" is reserved; pick another name. ${USAGE}`);
   if (code !== undefined && !identity.isRoomCode(code)) return refused(`"${code}" isn't a room (like vole-8126). ${USAGE}`);
@@ -209,28 +213,134 @@ function joinWeb(r: string[], flags: { as?: string; home?: string }, ctx: VerbCt
   return then(joining.linkLine({ name: n.name, code, word: w.word, transport, sid: ctx.sid, module: ctx.module === true, ...p }), ctx);
 }
 
-/** `/sub-human join HOST ROOM SECRET --forward PORT [PIN]`: an ssh-forward invite line, over the person's own ssh login
- * to the host machine (any account there) to its listener on loopback (transports/ws.ts tunnelSpec). */
-function joinForward(r: string[], flags: { as?: string; home?: string; forward: string }, ctx: VerbCtx): Answer {
-  const USAGE_F = `usage: /sub-human join HOST ROOM SECRET --forward PORT PIN (the line the host sent you, the PIN after it). ${HELP_HINT}`;
-  const [dest, code, word, extra, ...more] = r;
-  if (dest !== undefined && (/^[a-z]+:/.test(dest) || dest.startsWith('/'))) return refused(`--forward goes with the host machine's name or ssh alias, not "${dest}". ${USAGE_F}`);
-  if (dest === undefined || code === undefined || word === undefined || more.length) return refused(USAGE_F);
-  if (flags.home !== undefined) return refused('--home goes with a login to the host\'s own account, not with --forward');
-  const port = /^[0-9]{1,5}$/.test(flags.forward) ? Number(flags.forward) : 0;
-  if (!(port >= 1 && port <= 65535)) return refused(`"${flags.forward}" isn't a port: --forward PORT, as the line says`);
-  if (!identity.isRoomCode(code)) return refused(`"${code}" isn't a room (like vole-8126). ${USAGE_F}`);
-  if (sshT().placeholder(dest)) return refused(YOU_HINT(dest));
-  const d = sshT().dest(sshT().withUser(dest));
-  if (!d) return refused(`"${dest}" isn't a plain HOST, USER@HOST[:PORT] or ssh alias`);
+/** An invite line in its one shape (PLAN-SMOOTH 0.6.1), as typed: `SCHEME://WHERE/…/ROOM[?KEY=VALUE&…][#SECRET]`
+ * (ssh, https, http) or `pipe:/HOME/ROOM[#SECRET]`: the room is the path's last segment, the SECRET the fragment.
+ * Only the shape is read here; what each scheme accepts is checked where its spec is made (join below). null: not
+ * that shape (a repeated key too). */
+export interface LineParts {
+  scheme: 'ssh' | 'pipe' | 'http' | 'https';
+  /** what comes before the path: an ssh destination or a web host[:port]; '' for pipe */
+  where: string;
+  path: string;
+  code: string;
+  query: ReadonlyMap<string, string>;
+  word: string | null;
+}
+const LINE_RE = /^(ssh|https?):\/\/([^/?#\s]+)(\/[^?#\s]*)?(?:\?([^#\s]*))?(?:#(\S*))?$/;
+const PIPE_RE = /^(pipe):()(\/[^?#\s]*)(?:\?([^#\s]*))?(?:#(\S*))?$/;
+export function lineParts(typed: string): LineParts | null {
+  const m = LINE_RE.exec(typed) ?? PIPE_RE.exec(typed);
+  if (!m) return null;
+  const [, scheme = '', where = '', path = '', q = '', word] = m;
+  if (scheme !== 'ssh' && scheme !== 'pipe' && scheme !== 'http' && scheme !== 'https') return null;
+  const query = new Map<string, string>();
+  for (const kv of q.split('&').filter(Boolean)) {
+    const i = kv.indexOf('=');
+    const k = i < 0 ? kv : kv.slice(0, i);
+    if (query.has(k)) return null;
+    query.set(k, i < 0 ? '' : kv.slice(i + 1));
+  }
+  return { scheme, where, path, code: path.split('/').filter(Boolean).pop() ?? '', query, word: word === undefined || word === '' ? null : word };
+}
+
+const BAD_LINE = 'that isn\'t a whole join line (like ssh://you@devbox/vole-8126#SECRET). Paste the whole line the host sent you.';
+const BAD_HOME = (home: string | undefined, said = '--home') => `${said} "${home}" isn't a plain absolute path (the sub-human folder on that machine, e.g. /home/you/.sub-human).`;
+
+/** What a join line names, once its scheme's checks passed: the parts every line kind shares. */
+interface LineJoin { code: RoomCode; word: string | undefined; extra: string | undefined; as: string | undefined }
+
+/** An invite line's transport, once made: the SECRET, the PIN after it and the name checked, then the link step. */
+function linkWith(transport: LinkSpec, { code, word, extra, as }: LineJoin, ctx: VerbCtx): Answer {
   const w = secretOf(word);
   if ('error' in w) return refused(w.error);
   const pin = pinAfter(extra);
   if ('error' in pin) return refused(pin.error);
-  const n = nameFor(flags.as, ctx.cwd);
+  const n = nameFor(as, ctx.cwd);
   if ('error' in n) return refused(n.error);
-  const transport = wsT().tunnelSpec(d, port, code);
   return then(joining.linkLine({ name: n.name, code, word: w.word, transport, sid: ctx.sid, module: ctx.module === true, ...pin }), ctx);
+}
+
+/** An ssh invite line (`ssh://DEST/ROOM[?home=H]#SECRET`, or the older `DEST ROOM SECRET [--home H]`): through the
+ * person's own ssh login to the host (a login spec), as the line says; a jump host is the person's ~/.ssh/config's
+ * (ProxyJump on an alias), which ssh reads. */
+function sshLine(dest: string, home: string | undefined, j: LineJoin, ctx: VerbCtx): Answer {
+  if (sshT().placeholder(dest)) return refused(YOU_HINT(dest));
+  const full = sshT().withUser(dest);
+  if (!sshT().dest(full)) return refused(`"${dest}" isn't a plain USER@HOST[:PORT] or ssh alias`);
+  const transport = sshT().loginSpec(full, home !== undefined ? { home } : {});
+  if (!transport) return refused(BAD_HOME(home));
+  return linkWith(transport, j, ctx);
+}
+
+/** An ssh-forward invite line (`ssh://HOST/ROOM?forward=PORT#SECRET`, or the older `HOST ROOM SECRET --forward PORT`):
+ * over the person's own ssh login to the host machine (any account there) to its listener on loopback
+ * (transports/ws.ts tunnelSpec). */
+function forwardLine(dest: string, forward: string, j: LineJoin, ctx: VerbCtx): Answer {
+  const port = /^[0-9]{1,5}$/.test(forward) ? Number(forward) : 0;
+  if (!(port >= 1 && port <= 65535)) return refused(`"${forward}" isn't a port. ${BAD_LINE}`);
+  if (sshT().placeholder(dest)) return refused(YOU_HINT(dest));
+  const d = sshT().dest(sshT().withUser(dest));
+  if (!d) return refused(`"${dest}" isn't a plain HOST, USER@HOST[:PORT] or ssh alias`);
+  return linkWith(wsT().tunnelSpec(d, port, j.code), j, ctx);
+}
+
+/** A second sub-human folder on this machine (`pipe:/HOME/ROOM#SECRET`, or the older `pipe:/HOME ROOM SECRET`): tests
+ * and the demo. */
+function pipeLine(home: string, j: LineJoin, ctx: VerbCtx): Answer {
+  const transport = linkConnect.transportOf(`pipe:${home}`);
+  return transport ? linkWith(transport, j, ctx) : refused(`"${home}" isn't a sub-human folder on this machine`);
+}
+
+/** No SECRET over ssh: the join over the person's own ssh login (joining.linkLogin; the seat once linked). */
+function loginJoin(dest: string, code: RoomCode, home: string | undefined, as: string | undefined, ctx: VerbCtx): Answer {
+  if (sshT().placeholder(dest)) return refused(YOU_HINT(dest));
+  if (!sshT().dest(sshT().withUser(dest))) return refused(`"${sshT().withUser(dest)}" isn't a plain USER@HOST[:PORT] or ssh alias. ${JOIN_USAGE}`);
+  if (home !== undefined && !sshT().loginSpec(sshT().withUser(dest), { home })) return refused(BAD_HOME(home));
+  const n = nameFor(as, ctx.cwd);
+  if ('error' in n) return refused(n.error);
+  return then(joining.linkLogin({ dest, code, home, name: n.name, isDefault: as === undefined }), ctx);
+}
+
+/** `/sub-human join LINE [PIN]`, LINE in its one shape (lineParts): the scheme picks the spec (web: joinWeb). */
+function joinLine(r: string[], flags: { as?: string; home?: string; forward?: string }, ctx: VerbCtx): Answer {
+  const [typed = '', extra, ...more] = r;
+  if (flags.forward !== undefined) return refused(`--forward goes in the line itself (?forward=PORT). ${BAD_LINE}`);
+  if (/^https?:/.test(typed)) return joinWeb(r, flags, ctx); // its own reading: an older line's `URL SECRET` too
+  const l = lineParts(typed);
+  if (!l || !identity.isRoomCode(l.code)) return refused(BAD_LINE);
+  if (more.length) return refused(JOIN_USAGE);
+  const odd = [...l.query.keys()].find(k => k !== 'home' && k !== 'forward');
+  if (odd !== undefined) return refused(`"${odd}" isn't part of a join line. ${BAD_LINE}`);
+  const code = l.code;
+  const j: LineJoin = { code, word: l.word ?? undefined, extra, as: flags.as };
+  if (l.scheme === 'pipe') {
+    const home = l.path.slice(0, -(code.length + 1));
+    if (!home || l.query.size || flags.home !== undefined) return refused(BAD_LINE);
+    return l.word === null ? refused(joining.noSecret(`pipe:${home}`, code)) : pipeLine(home, j, ctx);
+  }
+  if (l.path !== `/${code}`) return refused(BAD_LINE);
+  const forward = l.query.get('forward'), lineHome = l.query.get('home');
+  if (lineHome !== undefined && flags.home !== undefined) return refused('the line names the host\'s sub-human folder already (?home=…): leave out --home');
+  if (lineHome !== undefined && !sshT().loginSpec('u@h', { home: lineHome })) return refused(BAD_HOME(lineHome, 'the line\'s home'));
+  const home = lineHome ?? flags.home;
+  if (forward !== undefined) {
+    if (home !== undefined) return refused(`?home goes with a login to the host's own account, not with ?forward. ${BAD_LINE}`);
+    return forwardLine(l.where, forward, j, ctx);
+  }
+  if (l.word !== null) return sshLine(l.where, home, j, ctx);
+  // no SECRET: the join over the person's own ssh login (a PIN after it means the line lost its SECRET)
+  if (extra !== undefined) return refused(NOT_WHOLE);
+  return loginJoin(l.where, code, home, flags.as, ctx);
+}
+
+/** The older positional forms (still read, no longer shown): `HOST ROOM SECRET --forward PORT [PIN]`. */
+function joinForward(r: string[], flags: { as?: string; home?: string; forward: string }, ctx: VerbCtx): Answer {
+  const [dest, code, word, extra, ...more] = r;
+  if (dest !== undefined && (/^[a-z]+:/.test(dest) || dest.startsWith('/'))) return refused(`--forward goes with the host machine's name or ssh alias, not "${dest}". ${JOIN_USAGE}`);
+  if (dest === undefined || code === undefined || word === undefined || more.length) return refused(JOIN_USAGE);
+  if (flags.home !== undefined) return refused('--home goes with a login to the host\'s own account, not with --forward');
+  if (!identity.isRoomCode(code)) return refused(`"${code}" isn't a room (like vole-8126). ${JOIN_USAGE}`);
+  return forwardLine(dest, flags.forward, { code, word, extra, as: flags.as }, ctx);
 }
 
 export const join: Verb = (argv, ctx) => {
@@ -240,51 +350,34 @@ export const join: Verb = (argv, ctx) => {
   if (flag) return refused(`"${flag}" isn't a join option. ${JOIN_USAGE}`);
   const r = p.rest;
   const { home, forward } = p.flags;
+  // the one line shape: the scheme decides (an older web line's `URL SECRET` too)
+  const [first = '', second] = r;
+  const pipeLine1 = /^pipe:\//.test(first) && (first.includes('#') || second === undefined || !identity.isRoomCode(second));
+  if (/^(?:ssh|https?):\/\//.test(first) || pipeLine1) return joinLine(r, p.flags, ctx);
   if (forward !== undefined) return joinForward(r, { ...p.flags, forward }, ctx);
-  if (/^https?:\/\//.test(r[0] || '')) return joinWeb(r, p.flags, ctx);
   if (r.length === 1 && invites.isShortPin(r[0])) { // `/sub-human join 4829`: the PIN an invite line's host asked for
     if (home !== undefined || p.flags.as !== undefined) return refused('the PIN goes alone: /sub-human join PIN (the name went with the line)');
     return then(joining.givePin(r[0], ctx.sid, ctx.module === true), ctx);
   }
   if (r.length === 1 && identity.isRoomCode(r[0])) { // `/sub-human join vole-8126`: that room on this machine
-    if (home !== undefined) return refused(`--home goes with the other machine's address: /sub-human join HOST ${r[0]}`);
+    if (home !== undefined) return refused(`--home goes with the other machine's address: /sub-human join ssh://HOST/${r[0]}`);
     const n = nameFor(p.flags.as, ctx.cwd);
     if ('error' in n) return refused(n.error);
     return seat({ name: n.name, code: r[0], isDefault: p.flags.as === undefined }, ctx);
   }
+  // the older positional forms: DEST ROOM [SECRET [PIN]] (DEST an ssh address, or pipe:HOME / HOME on this machine)
   const [dest, code, word, extra] = r;
   if (dest === undefined || code === undefined || r.length > 4) return refused(r.length === 1 && dest !== undefined ? (PIN_WORD.test(dest) ? 'a PIN is 4 digits: /sub-human join PIN' : `which room? ${JOIN_USAGE}`) : JOIN_USAGE);
   if (!identity.isRoomCode(code)) return refused(`"${code}" isn't a room (like vole-8126). ${JOIN_USAGE}`);
   const local = /^pipe:\//.test(dest) || dest.startsWith('/'); // a second home on this machine (tests, the demo)
+  const j: LineJoin = { code, word, extra, as: p.flags.as };
   if (word !== undefined) {
-    const w = secretOf(word);
-    if ('error' in w) return refused(w.error);
-    const pin = pinAfter(extra);
-    if ('error' in pin) return refused(pin.error);
-    const n = nameFor(p.flags.as, ctx.cwd);
-    if ('error' in n) return refused(n.error);
-    if (local) {
-      if (home !== undefined) return refused('--home goes with an ssh address');
-      const transport = linkConnect.transportOf(dest.startsWith('/') ? `pipe:${dest}` : dest);
-      return transport ? then(joining.linkLine({ name: n.name, code, word: w.word, transport, sid: ctx.sid, module: ctx.module === true, ...pin }), ctx) : refused(`"${dest}" isn't a sub-human folder on this machine`);
-    }
-    if (sshT().placeholder(dest)) return refused(YOU_HINT(dest));
-    const full = sshT().withUser(dest);
-    if (!sshT().dest(full)) return refused(`"${dest}" isn't a plain USER@HOST[:PORT] or ssh alias`);
-    // over ssh an invite line goes through the person's own ssh login to the host (a login spec), as the line says;
-    // a jump host is the person's ~/.ssh/config's (ProxyJump on an alias), which ssh reads
-    const transport = sshT().loginSpec(full, home !== undefined ? { home } : {});
-    if (!transport) return refused(`--home "${home}" isn't a plain absolute path (the sub-human folder on that machine, e.g. /home/you/.sub-human).`);
-    return then(joining.linkLine({ name: n.name, code, word: w.word, transport, sid: ctx.sid, module: ctx.module === true, ...pin }), ctx);
+    if (local) return home !== undefined ? refused('--home goes with an ssh address') : pipeLine(dest.replace(/^pipe:/, ''), j, ctx);
+    return sshLine(dest, home, j, ctx);
   }
   // no SECRET: over the person's own ssh login (a second home on this machine has none: the line lost its SECRET)
   if (local) return refused(joining.noSecret(dest, code));
-  if (sshT().placeholder(dest)) return refused(YOU_HINT(dest));
-  if (!sshT().dest(sshT().withUser(dest))) return refused(`"${sshT().withUser(dest)}" isn't a plain USER@HOST[:PORT] or ssh alias. ${JOIN_USAGE}`);
-  if (home !== undefined && !sshT().loginSpec(sshT().withUser(dest), { home })) return refused(`--home "${home}" isn't a plain absolute path (the sub-human folder on that machine, e.g. /home/you/.sub-human).`);
-  const n = nameFor(p.flags.as, ctx.cwd);
-  if ('error' in n) return refused(n.error);
-  return then(joining.linkLogin({ dest, code, home, name: n.name, isDefault: p.flags.as === undefined }), ctx);
+  return loginJoin(dest, code, home, p.flags.as, ctx);
 };
 
 /** The room Claude's own launch (see the header). */

@@ -78,6 +78,10 @@ export interface SubHumanReport {
   /** join: run by the module (sub_human_via "command.run") with a nonce this session's lease does not hold: nothing
    * ran; the module says hello again (which rewrites the lease) and asks once more */
   lease?: 'stale';
+  /** join: the seat was taken in a room this run just opened (the module then asks who's coming: mod/core/walk.ts) */
+  opened?: boolean;
+  /** walk: which ways this machine can bring someone in (mod/core/walk.ts WalkFacts; null: not known) */
+  walk?: { tailnet: 'up' | 'down' | 'none' | null; ssh: 'on' | 'off' | null; sshAddr: boolean };
 }
 
 /** An invite's pinned form as the module gets it: lib/commands/types.ts Pinned, less the text (say holds it). cut: the
@@ -111,7 +115,7 @@ export interface HookOutput {
  */
 export type Reply =
   | (Extract<Answer, { kind: 'say' | 'refused' | 'secret' }> & { module: boolean })
-  | (Omit<Extract<Answer, { kind: 'joined' }>, 'me' | 'lead' | 'trouble'> & { context: string; warn?: string | null; module: boolean })
+  | (Omit<Extract<Answer, { kind: 'joined' }>, 'me' | 'lead' | 'trouble'> & { context: string; warn?: string | null; module: boolean; opened?: boolean })
   | { kind: 'classic'; outputs?: object[]; exit?: number; stderr?: string };
 
 /** A hooks/handlers/<name>.ts module, as hooks/run.ts loads it, for its stdin type I. handle: the answer (or out()

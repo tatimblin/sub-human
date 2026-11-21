@@ -54,7 +54,8 @@ function maskPins(text: string, secrets: readonly (Secret | null | undefined)[],
   if (!inClaudeCode(env)) return text;
   const { redact } = redactLib();
   let out = text;
-  for (const p of secrets) if (p) out = out.split(p).join(redact(p));
+  // a line's SECRET as its URL's `#` fragment reads `#…` (not `#####`); anywhere else, and a PIN, as redact() shows it
+  for (const p of secrets) if (p) out = out.split(`#${p}`).join('#…').split(p).join(redact(p));
   return `${out}\n${PIN_HIDDEN}`;
 }
 

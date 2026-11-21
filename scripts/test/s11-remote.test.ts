@@ -63,6 +63,15 @@ test('panes: the line /sub-human invite showed and its PIN apart, also when the 
     assert.equal(joinLineIn(`⏺   /sub-human join devbox vole-1234 SECRET\n\n  ⚠ sub-human: ${w}`), `join devbox vole-1234 ${S}`, `the word: ${w}`);
   }
   assert.equal(joinLineIn(`  /sub-human join devbox vole-1234 ${S.slice(0, 20)}\n\n  ${S.slice(20)}`), null, 'a blank line is no wrap');
+  // the one line shape (0.6.1): ssh, ssh with the host's folder, an ssh forward, a pipe; whole, wrapped anywhere, and cut
+  const one = [`join ssh://devbox/vole-1234#${S}`, `join ssh://me@devbox:2222/vole-1234?home=${home}#${S}`, `join ssh://devbox/vole-1234?forward=7420#${S}`, `join pipe:${home}/vole-1234#${S}`];
+  for (const l of one) {
+    assert.equal(joinLineIn(`  ⚠ sub-human: PIN 8238 · /sub-human ${l}`), l, l);
+    for (const w of wraps(`/sub-human ${l}`)) assert.equal(joinLineIn(`⏺ sub-human: invite to room vole-1234\n\n  ${w}\n\n  and tell them its PIN`), l, w);
+    const cutOne = `⏺   /sub-human ${l.replace(S, 'SECRET')}\n\n  ⚠ sub-human: PIN 0412 · SECRET ${S}`;
+    assert.equal(joinLineIn(cutOne), l, `cut: ${l}`);
+    assert.equal(pinIn(cutOne), '0412');
+  }
   const card = 'Let carol (check 3f9c-2a71) on carols-mbp join room vole-1234? (admit 3f9c2a0b1c2d)\n❯ 1. Let in\n  2. Refuse\n  3. Type something';
   assert.deepEqual(admitCardState(card)?.opts.map(o => [o.n, o.label, o.cur]), [[1, 'Let in', true], [2, 'Refuse', false], [3, 'Type something', false]]);
   assert.equal(admitCardState('Agree to proposal abcdefabcdef?\n❯ 1. Agree'), null);
@@ -99,7 +108,7 @@ test('panes: the invite the plugin renders (status line whole and cut, and the t
   const wide = paneAt(400), narrow = paneAt(40);
   assert.ok(wide.includes('PIN ') && narrow.includes('· SECRET '), 'the whole line in a wide terminal, PIN and SECRET in a narrow one');
   const line = joinLineIn(wide), pin = pinIn(wide);
-  assert.match(line ?? '', new RegExp(`^join pipe:\\S+ ${code} [0-9a-z]{39}$`), wide);
+  assert.match(line ?? '', new RegExp(`^join pipe:\\S+/${code}#[0-9a-z]{39}$`), wide);
   assert.match(pin ?? '', /^\d{4}$/, wide);
   assert.equal(joinLineIn(narrow), line, `the cut form reads back to the same line: ${narrow}`);
   assert.equal(pinIn(narrow), pin);
@@ -107,7 +116,7 @@ test('panes: the invite the plugin renders (status line whole and cut, and the t
   // the classic text (no module, and `sub-human invite` in a terminal) of a second invite reads the same way
   const classic = host.join(alice, 'invite --pipe').json?.reason;
   assert.ok(typeof classic === 'string');
-  assert.match(joinLineIn(classic) ?? '', new RegExp(`^join pipe:\\S+ ${code} [0-9a-z]{39}$`));
+  assert.match(joinLineIn(classic) ?? '', new RegExp(`^join pipe:\\S+/${code}#[0-9a-z]{39}$`));
   assert.match(pinIn(classic) ?? '', /^\d{4}$/);
   // what the demo's driver reads off the narrow pane gets carol in
   const via = await remote.joinVia(host, alice, carol, { line: must(joinLineIn(narrow), 'the line'), pin: must(pinIn(narrow), 'the PIN') });

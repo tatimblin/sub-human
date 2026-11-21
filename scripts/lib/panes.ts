@@ -112,14 +112,15 @@ export function planState(p: string): DialogState | null {
 }
 
 /**
- * The line /sub-human invite showed in a capture, without its "/sub-human ", or null: "join DEST ROOM SECRET" (DEST
- * an ssh address or pipe:HOME; SECRET the line's 39 characters; then any --home) or "join URL#SECRET" (an older
- * host's "join URL SECRET" too). The pane may wrap it anywhere, at a space or inside a word (Claude Code hard-wraps,
+ * The line /sub-human invite showed in a capture, without its "/sub-human ", or null: "join LINE#SECRET" in the one
+ * line shape (0.6.1: ssh://DEST/ROOM[?home=H|?forward=PORT], https://HOST/…/ROOM, pipe:HOME/ROOM; SECRET the line's 39
+ * characters), or an older host's "join DEST ROOM SECRET" (DEST an ssh address or pipe:HOME; then any --home) or
+ * "join URL SECRET". The pane may wrap it anywhere, at a space or inside a word (Claude Code hard-wraps,
  * so tmux -J cannot join it): each line break becomes a mark (`markWraps`), the patterns read a mark between two words
  * as their space and one inside a word as nothing, and the words are put back together without it. The last one
  * shown wins.
  * The plugin shows it one of three ways (lib/remote/hosting.ts invitePinned and inviteText, mod/core/command.ts pinFor):
- *   whole on the status line under the prompt: "⚠ sub-human: PIN 8238 · /sub-human join DEST ROOM SECRET"
+ *   whole on the status line under the prompt: "⚠ sub-human: PIN 8238 · /sub-human join ssh://DEST/ROOM#SECRET"
  *   cut, when the terminal is narrower: the notice shows the line with the word SECRET in its place, and the status
  *     line "⚠ sub-human: PIN 8238 · SECRET <word>": the two are put back together here
  *   in the text, without the hooks module (and `sub-human invite` in a terminal): "  /sub-human join …"
@@ -128,7 +129,8 @@ export function planState(p: string): DialogState | null {
 export function joinLineIn(txt: string | null | undefined): string | null {
   const marked = markWraps(txt);
   const any = String.raw`[^\s\x1f]`; // a character of a word (\S, less the mark)
-  const url = `${lit('http')}(?:${IN}s)?${IN}${lit('://')}${IN}${word(String.raw`[^\s#\x1f]`)}`;
+  // the one line shape: a scheme, then everything up to the SECRET's # (an older web line's space)
+  const url = `(?:${lit('http')}(?:${IN}s)?${IN}${lit('://')}|${lit('ssh://')}|${lit('pipe:')})${IN}${word(String.raw`[^\s#\x1f]`)}`;
   const room = `${word('[a-z]')}${IN}-${IN}${count(String.raw`\d`, 4)}`;
   const head = `${lit('/sub-human')}${SP}${lit('join')}${SP}(?:(?<url>${url})(?<hash>${IN}#${IN}|${SP})|(?<dest>${word(any)})${SP}(?<room>${room})${SP})`; // a web line's SECRET: its URL's fragment
   const tail = `(?:${SP}${lit('--home')}${SP}(?<home>${word(any)}))?${END}`;
@@ -151,7 +153,7 @@ const WRAP = '\x1f';
  * In a pattern: a space between two words (or the break it became); a break inside a word (or none), only before a
  * character a word goes on with (not the next row's ⏺); a word's end.
  */
-const SP = String.raw`[ \x1f]`, IN = String.raw`(?:\x1f(?=[\w./:@~#-]))?`, END = String.raw`(?=[\s\x1f]|$)`;
+const SP = String.raw`[ \x1f]`, IN = String.raw`(?:\x1f(?=[\w./:@~#?=&-]))?`, END = String.raw`(?=[\s\x1f]|$)`;
 /** `s` as typed, a break allowed between any two of its characters. */
 const lit = (s: string): string => s.split('').map(c => c.replace(/[\\^$.*+?()[\]{}|/-]/g, String.raw`\$&`)).join(IN);
 /** One or more characters of class `c`, and exactly `n` of them, a break allowed between any two. */

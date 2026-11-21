@@ -31,14 +31,14 @@ sub-human has no server and no telemetry: nothing goes to its author or any thir
 - **What it puts in your session.** Room lines show as dim notices, one line per event in plain words. Lines that ask something of you or your Claude (a message to you, a plan to review) are submitted as a prompt the plugin marks as room lines, not your words. An `@room` line you type is posted by a hook and not sent to the model. `/sub-human` is answered by the module itself, which also titles the session `NAME.CODE` when you join (and `NAME` after you leave), at your next prompt, with no `/rename`. What only says something worked (a receipt, a retry, a link going down and back, a version not verified yet) is never drawn: it goes to Claude Code's debug log, which `claude --debug` writes.
 - **Messages to another machine.** A `SendMessage` your Claude sends to a member whose seat is on another machine is posted to the room instead (through the room's own `post` tool), since Claude Code's native messages reach only this machine.
 - **Files it writes:** the sub-human home (the room log, plans, keys 0600, link records, session indexes, `module.log`, the text of an edit left unstored); your session's plan file while a room plan is edited or shown (your own plan backed up first and put back after); the room session's native task list under Claude Code's config folder (`tasks/sh-CODE`), deleted when the room session ends. It writes no settings file and sets no status line: the row's live text is a line you add yourself (see [Rows](#rows)).
-- **Programs it runs:** `node` on its own scripts (found by `hooks/node.sh`); the room tail (`scripts/sub-human tail`, one per seated session); `claude --bg` and `claude stop` for the room session (launched with its own settings, which allow only its row agents' `hold` tool: a background session has nobody to answer a permission prompt); `git config` to read your name; `ssh` for a link over ssh (your own keys, agent, `~/.ssh/config` and `known_hosts`, as for any ssh); `tailscale serve` or `funnel` when you invite over the web; and, when you pick Copy on an invite's card, one clipboard tool (`scripts/clip.sh`: `pbcopy`, `wl-copy`, `xclip` or `clip.exe`) with the line on stdin.
+- **Programs it runs:** `node` on its own scripts (found by `hooks/node.sh`); the room tail (`scripts/sub-human tail`, one per seated session); `claude --bg` and `claude stop` for the room session (launched with its own settings, which allow only its row agents' `hold` tool: a background session has nobody to answer a permission prompt); `git config` to read your name; `ssh` for a link over ssh (your own keys, agent, `~/.ssh/config` and `known_hosts`, as for any ssh); `tailscale serve` or `funnel` when you invite over the web; and, when you pick Copy after an invite, one clipboard tool (`scripts/clip.sh`: `pbcopy`, `wl-copy`, `xclip` or `clip.exe`) with the line on stdin.
 - **Network:** ssh to the host you name; the web listener binds `127.0.0.1` only and is reached through Tailscale Serve or Funnel, or an HTTPS front of yours; a joiner connects to the address in the invite line. A web link is Noise-encrypted end to end (see [Threat model](#threat-model)).
 - **Credentials:** it reads no API key or token from your environment. Your ssh keys are used by `ssh` itself; the plugin's own keys (seat keys, the machine key, link tokens) live in the sub-human home, 0600.
 
 ## Start: three commands
 
 ```
-/sub-human                                  # open a room (or join the one open here) as your git name
+/sub-human                                  # open a room (or join the one open here) as your git name; it asks who's coming
 /sub-human invite                           # a line for someone on another machine, and a PIN to say apart
 /sub-human join https://…/vole-8126#… 4829  # on their machine: the line, the PIN after it, and they're in
 ```
@@ -46,7 +46,7 @@ sub-human has no server and no telemetry: nothing goes to its author or any thir
 `/sub-human help` shows six lines (words after it are ignored):
 
 ```
-/sub-human            Join the room here, or open one
+/sub-human            Join the room here, or open one and bring someone in
 /sub-human invite     Invite someone on another machine
 /sub-human leave      Leave the room
 /sub-human doctor     Find and fix problems
@@ -58,15 +58,14 @@ Everything else is here:
 
 | Command | What it does |
 |---|---|
-| `/sub-human` | In a room: who is here. Else join the open room, or open one, as your git name. |
+| `/sub-human` | In a room: who is here. Else join the open room, or open one, as your git name (then it asks who's coming). |
 | `/sub-human NAME [ROOM]` | Join (or open) a room as NAME; ROOM (like `vole-8126`) only when more than one is open. |
 | `/sub-human ROOM`, `/sub-human join ROOM` | Join that room on this machine as your git name. |
 | `/sub-human invite [--ssh [USER@HOST]] [--web \| --public] [--forward] [--no-card]` | A line for someone on another machine (over your tailnet when Tailscale is up here, else ssh); see **Join from another machine**. |
 | `/sub-human invite --cancel [REF]` / `--stop` | Cancel an invite nobody used yet (REF only when several are open: it lists them) / stop serving this room over the web. |
-| `/sub-human join HOST ROOM SECRET [PIN] [--as NAME] [--home PATH]` | The line from an invite, with the PIN the host told you after it. |
-| `/sub-human join URL#SECRET [PIN] [--as NAME]` | The same over the web. |
+| `/sub-human join LINE [PIN] [--as NAME]` | The line from an invite, with the PIN the host told you after it. One shape for every way in: `ssh://me@devbox/vole-8126#SECRET`, `ssh://devbox/vole-8126?forward=7420#SECRET`, `https://box.tail1a2b.ts.net/sub-human/vole-8126#SECRET`. |
 | `/sub-human join PIN` | The PIN alone, when their machine asks for it. |
-| `/sub-human join HOST ROOM [--as NAME] [--home PATH]` | A room on a machine you can already ssh to: no invite. |
+| `/sub-human join ssh://HOST/ROOM [--as NAME]` | A room on a machine you can already ssh to: no invite (`?home=PATH` when its sub-human folder is not `~/.sub-human`). |
 | `/sub-human who` | Who is in the room. On the host, each person who joined from another machine with where from, their check, a rename and the kick. |
 | `/sub-human admit [REF]` | (host) Who is waiting to join, and the REF that lets one in (the card does the same). |
 | `/sub-human kick NAME` | (host) End the connection NAME joined over. |
@@ -85,6 +84,14 @@ In your normal Claude Code session:
 ```
 
 When no room is open, the join hook creates one (say `vole-8126`, the **room**) and starts the room session as a background session titled `claude.vole-8126`. It runs one short turn at start; otherwise it is idle. A join that works says so in one dim line, `sub-human: Opened vole-8126` (the next person sees `Joined vole-8126 with tristan`; a name you typed shows too: `Joined vole-8126 as dana with tristan`); your session is titled `tristan.vole-8126` at your next prompt and the room's row `vole-8126` appears in your agent panel: sub-human starts it itself (your Claude makes no call for it) and your Claude ends its turn without a word. If the room session can't start, a second line says `Room task list unavailable. Run /sub-human doctor.` (its error is in the debug log).
+
+**Who's coming.** When your `/sub-human` opened the room, sub-human asks you next, once your Claude's turn is over: **Bring someone into vole-8126?** — **This machine** · **SSH** · **Tailscale**. The way this machine looks set up for is marked `(detected)` (Tailscale when your tailnet is up here, else SSH when Remote Login is on); Tailscale is left out when there is no `tailscale` here, SSH when Remote Login is off and Tailscale can be offered instead.
+- **Esc**: not now. Nothing happens; `/sub-human invite` still works later.
+- **This machine**: one line, `In another session here, type /sub-human`.
+- **SSH** or **Tailscale**: the same invite as `/sub-human invite --ssh` or `--web` ([below](#inviting-someone-sub-human-invite)): its line and PIN pinned under the prompt, then the copy question.
+- **An ssh address** typed in the dialog's own free-text row (`jess@devbox`, or an alias from your ssh config): an ssh invite at that address.
+
+The question is sub-human's own: your Claude isn't asked anything, and the line and PIN never reach it. There is no question when you joined a room already open, with `SUB_HUMAN_WALK=0` in your environment, or in a session that is not interactive.
 
 **How replies show.** `/sub-human` answers in place of the command, as dim `sub-human: …` lines: help, who is here, `Left vole-8126`, an invite, a refusal. They never reach your Claude's context (so it neither repeats them nor sees a PIN), and a command that only replies leaves no row of what you typed. Claude Code does save these lines in the session's transcript, so an invite's line and its PIN are not among them: they are pinned under the prompt instead (see **Join from another machine**). Nothing reads "blocked by hook". A refusal starts with `✗` and says what to type next, or to run `/sub-human doctor`. Typed through Remote Control, where those lines don't show, a reply with no secret in it is the command's own output instead. The next person on this machine runs `/sub-human` too, and adds the room (`/sub-human dana vole-8126`, or just `/sub-human vole-8126` or `/sub-human join vole-8126` as their git name) only when more than one room is open.
 
@@ -118,7 +125,7 @@ On the host, in a session that is in the room:
 /sub-human invite --ssh me@devbox.local:2222   # over ssh, at this address (an alias works: --ssh devbox)
 /sub-human invite --web                        # over your tailnet, by name
 /sub-human invite --forward                    # for someone who logs in to this machine as themselves (a shared dev box)
-/sub-human invite --no-card                    # no card offering to copy the line
+/sub-human invite --no-card                    # no question offering to copy the line
 ```
 
 ```
@@ -128,7 +135,7 @@ sub-human: Invite ready until 14:05 · line and PIN below the prompt
 That is the whole invite: one line. With the room's first invite over the web it can add the certificate's first wait (`The first connection to a new ts.net name can take ~20 s …`), the pointer to `--public` (off your tailnet) and, with `--public`, Funnel's warning that the name is public; and, over ssh, what would make their join fail (Remote Login off on this Mac). An invite works once, for 15 minutes. What to tell the other person:
 
 - **The rules.** They type the PIN after the line. The line alone asks you on a card, the PIN alone gets nobody in, and 5 wrong PINs end the invite. The right PIN lets them in with no card: the room shows who joined, and `/sub-human who` their check and the kick.
-- **The install,** if they have no sub-human yet: in Claude Code there, `/plugin marketplace add tatimblin/sub-human`, then `/plugin install sub-human@sub-human`, and restart it.
+- **The install,** if they have no sub-human yet: the copied line carries it above the join line (below); or, in Claude Code there, `/plugin marketplace add tatimblin/sub-human`, then `/plugin install sub-human@sub-human`, and restart it.
 - **The key check** (over the web): their machine checks this one's key, named in the line, before it sends anything, so nothing in between can read along.
 - **Cancel or stop:** `/sub-human invite --cancel` (with several open it lists them: `--cancel REF`); over the web `/sub-human invite --stop` stops serving the room.
 
@@ -138,17 +145,18 @@ and under the prompt, on the plugin's status line:
 ⚠ sub-human: PIN 4829 · /sub-human join https://box.tail1a2b.ts.net/sub-human/vole-8126#4f9k2m8q7r3t6v1w0x5y9z2a8b7c6d5e4f3g2h1
 ```
 
-Then a card asks **Copy the invite?** — **Copy** / **Skip**. Copy puts the line, never the PIN, on your clipboard (`pbcopy`, `wl-copy`, `xclip` or `clip.exe`) and says nothing more; Skip copies nothing. After a Copy, the session's later invites are copied with no card; after a Skip, it asks no more. With no clipboard tool it says so. There is no card with `--no-card`, with `SUB_HUMAN_INVITE_CARD=0` in your environment, or in a session that is not interactive. Send the line by any channel; say the PIN by another.
+Then sub-human asks **Copy the invite?** — **Copy (join + install line)** / **Skip** (its own question: your Claude isn't asked, and takes no turn). Copy puts the line, never the PIN, on your clipboard (`pbcopy`, `wl-copy`, `xclip` or `clip.exe`), under one line for someone with no sub-human yet (`No sub-human yet? In a terminal: claude plugin marketplace add tatimblin/sub-human && claude plugin install sub-human@sub-human, then restart Claude Code`), and says nothing more; Skip copies nothing; Esc copies nothing and the next invite asks again. After a Copy, the session's later invites are copied with no question; after a Skip, it asks no more. With no clipboard tool it says so. There is no question with `--no-card`, with `SUB_HUMAN_INVITE_CARD=0` in your environment, or in a session that is not interactive. Send the line by any channel; say the PIN by another.
 
 When they have typed both, your room shows one line, `carol joined (carols-mbp)`, and nothing asks you anything. `/sub-human who` shows her check (`carol (member) in vole-8126 · from carols-mbp, check 3f9c-2a71 · not them? /sub-human kick carol`); her screen shows the same check, and if it is not them, kick them. When they typed the line alone, **your Claude Code shows you a card**: `Let carol (check 3f9c-2a71) on carols-mbp join room vole-8126? — Let in / Refuse`; only your answer there admits them (see [The card](#the-card)). A wrong PIN never makes a card.
 
 ### Joining: `/sub-human join LINE PIN`
 
-On the other machine, the line the host sent you, with the PIN they told you after it:
+On the other machine, the line the host sent you, with the PIN they told you after it. Every line has one shape, whatever the way in: `SCHEME://WHERE/ROOM#SECRET`, the room the path's last part and the SECRET after the `#`:
 
 ```
-/sub-human join https://box.tail1a2b.ts.net/sub-human/vole-8126#4f9k2m8q7r3t6v1w0x5y9z2a8b7c6d5e4f3g2h1 4829
-/sub-human join me@devbox.local vole-8126 4f9k2m8q7r3t6v1w0x5y9z2a8b7c6d5e4f3g2h1 4829   # an ssh invite's line
+/sub-human join https://box.tail1a2b.ts.net/sub-human/vole-8126#4f9k2m8q7r3t6v1w0x5y9z2a8b7c6d5e4f3g2h1 4829   # over Tailscale
+/sub-human join ssh://me@devbox.local/vole-8126#4f9k2m8q7r3t6v1w0x5y9z2a8b7c6d5e4f3g2h1 4829                  # over ssh
+/sub-human join ssh://devbox/vole-8126?forward=7420#4f9k2m8q7r3t6v1w0x5y9z2a8b7c6d5e4f3g2h1 4829              # a shared machine
 ```
 
 The hook hides the prompt from the conversation, so neither the SECRET nor the PIN reaches your Claude. Your machine checks the host first, then shows it the SECRET and the PIN. The right PIN links the machine at once, and this session takes your seat on its own, in a turn of its own: `You're in room vole-8126 as carol (check 3f9c-2a71)`, the check the host's `/sub-human who` shows. Your room row appears as for any join.
@@ -156,8 +164,8 @@ The hook hides the prompt from the conversation, so neither the SECRET nor the P
 - **The line without the PIN** asks the host: `Asked the host to let you in to room vole-8126 (their card shows check 3f9c-2a71). If they gave you a PIN: /sub-human join PIN. This session takes your seat once they let you in`. When they click Let in, your seat is taken the same way. The request waits 10 minutes.
 - **A wrong PIN:** `wrong PIN (4 tries left). Check the digits with the host, then type it again: /sub-human join PIN`. Too soon after a wrong one: `too many PINs tried just now: wait 4 s, then type the PIN again` (that costs nothing). After the fifth wrong PIN, `this invite no longer works. Ask the host for a new one`. A wrong PIN never turns into a card on the host.
 - **An older host** asks for the PIN after the line: `the host's machine has your invite (5 PIN tries left). Type the 4-digit PIN they told you: /sub-human join PIN`.
-- **The line without its SECRET:** `/sub-human join HOST ROOM` is the join over your own ssh login (below), and says so; if ssh refuses that login, the reply adds that an invite line ends with a long SECRET. From a second sub-human folder on the same machine (`pipe:…`), which has no login path, it says the line lost its SECRET. An old web line, `URL SECRET` (a space, not `#`), still works.
-- **Over ssh without a login of your own:** `could not join room vole-8126: me@devbox refused your ssh login …`: ask the host for an invite over the web.
+- **The line without its SECRET:** `/sub-human join ssh://HOST/ROOM` is the join over your own ssh login (below), and says so; if ssh refuses that login, the reply adds that an invite line ends with a long SECRET. From a second sub-human folder on the same machine (`pipe:…`), which has no login path, it says the line lost its SECRET.
+- **A join that can't get through names the other way in,** in one line. Over ssh without a login of your own: `could not join room vole-8126: me@devbox refused your ssh login (sub-human uses your ssh keys or agent, never a password). Ask the host for a Tailscale line.`; with no sshd answering there on the first try, `Couldn't reach devbox over ssh (…). Ask the host for a Tailscale line.` A ts.net name your machine can't reach (it is not on the host's tailnet): `Couldn't reach box.tail1a2b.ts.net from this machine (…). Ask the host for an SSH line.` The link keeps trying meanwhile.
 - **Refused or lapsed:** the link stops with `the host refused to let this machine in` (or `did not let this machine in in time`); ask for a new invite.
 - **Someone in between, or a line for another host:** if the host that answered does not hold the key the line's SECRET names, the join stops (`… is not the one the invite line names: someone may be in between, or the line is for another host. Nothing secret was sent`). Check with the host.
 - **A session closed before the host answered** cannot take the seat on its own: once they have, a bare `/sub-human` on that machine takes it.
@@ -180,24 +188,24 @@ A right PIN is your consent, said ahead: the room line names the machine, `/sub-
 
 ### Invite details
 
-An ssh invite (Tailscale not up here, `--ssh`, or `SUB_HUMAN_SSH_ADDR` set) reads the same. Over ssh it needs their own ssh login to this account, set up as for any ssh login: sub-human writes nothing to `authorized_keys`. Someone who logs in to this machine as someone else needs `/sub-human invite --forward`. Its line is `/sub-human join me@devbox.local vole-8126 SECRET`: HOST ROOM SECRET, and the joiner adds the PIN after it the same way. When Tailscale is up but the tailnet invite fails, the invite says why and is over ssh instead.
+An ssh invite (Tailscale not up here, `--ssh`, or `SUB_HUMAN_SSH_ADDR` set) reads the same. Over ssh it needs their own ssh login to this account, set up as for any ssh login: sub-human writes nothing to `authorized_keys`. Someone who logs in to this machine as someone else needs `/sub-human invite --forward`. Its line is `/sub-human join ssh://me@devbox.local/vole-8126#SECRET`, and the joiner adds the PIN after it the same way. When Tailscale is up but the tailnet invite fails, the invite says why and is over ssh instead.
 
-The status line is one line, and Claude Code cuts it at the terminal's width. When the whole line does not fit, it holds only `PIN 4829 · SECRET 4f9k…` and the notice gives the line with the word `SECRET` in its place, to fill in as you send it (the copy card still copies the whole line); in a terminal outside Claude Code, `sub-human invite` prints a new invite whole. The status line goes at once when you cancel the invite, within a few seconds once it is used or burnt, and when it expires.
+The status line is one line, and Claude Code cuts it at the terminal's width. When the whole line does not fit, it holds only `PIN 4829 · SECRET 4f9k…` and the notice gives the line with the word `SECRET` in its place, to fill in as you send it (Copy still copies the whole line); in a terminal outside Claude Code, `sub-human invite` prints a new invite whole. The status line goes at once when you cancel the invite, within a few seconds once it is used or burnt, and when it expires.
 
-These dim lines are shown to you, never to your Claude, and your `/sub-human invite` itself leaves no row. Their sub-human needs to be as new as yours: an older one is told so when it dials. The line's **SECRET** (a web line's `#` fragment, an ssh line's last word) is 39 characters (letters and digits only, so a chat app or mail client leaves it alone) that hold 128 bits of single-use randomness and a short tag of this machine's key. With no address given (no `--ssh`, no `SUB_HUMAN_SSH_ADDR`), an ssh invite uses this machine's own name (a Mac's `.local` name reaches only the same local network; give another with `--ssh USER@HOST` or `SUB_HUMAN_SSH_ADDR`), and, when this machine takes no ssh logins (on a Mac, Remote Login is off in System Settings → General → Sharing), that their ssh will fail and `/sub-human invite --web` is the other way. When this machine's sub-human folder is not `~/.sub-human`, an ssh line adds `--home PATH` (where their login finds it). The line carries no name (theirs comes from their git name, or `--as NAME`). `sub-human invite [--room ROOM] [--ssh [USER@HOST]] [--via JUMP]` prints the same in a terminal outside Claude Code; inside Claude Code (its `!` mode) it masks the SECRET and the PIN, because that output becomes part of the conversation. An address that still has an example's placeholder (`NAME@…`, `USER@…`, `YOU@…`) is refused.
+These dim lines are shown to you, never to your Claude, and your `/sub-human invite` itself leaves no row. Their sub-human needs to be as new as yours: an older one is told so when it dials. The line's **SECRET** (the line's `#` fragment) is 39 characters (letters and digits only, so a chat app or mail client leaves it alone) that hold 128 bits of single-use randomness and a short tag of this machine's key. With no address given (no `--ssh`, no `SUB_HUMAN_SSH_ADDR`), an ssh invite uses this machine's own name (a Mac's `.local` name reaches only the same local network; give another with `--ssh USER@HOST` or `SUB_HUMAN_SSH_ADDR`), and, when this machine takes no ssh logins (on a Mac, Remote Login is off in System Settings → General → Sharing), that their ssh will fail and `/sub-human invite --web` is the other way. When this machine's sub-human folder is not `~/.sub-human`, an ssh line adds `?home=PATH` (where their login finds it). The line carries no name (theirs comes from their git name, or `--as NAME`). `sub-human invite [--room ROOM] [--ssh [USER@HOST]] [--via JUMP]` prints the same in a terminal outside Claude Code; inside Claude Code (its `!` mode) it masks the SECRET and the PIN, because that output becomes part of the conversation. An address that still has an example's placeholder (`NAME@…`, `USER@…`, `YOU@…`) is refused.
 
 `/sub-human invite --cancel` cancels the open invite (with several open, it lists them: `/sub-human invite --cancel REF`).
 
-### If you can already ssh to the host: `/sub-human join HOST ROOM`
+### If you can already ssh to the host: `/sub-human join ssh://HOST/ROOM`
 
 On your other machine:
 
 ```
-/sub-human join dev vole-8126                    # an alias from your ~/.ssh/config (its User, HostName, Port, ProxyJump)
-/sub-human join you@machine-a vole-8126
-/sub-human join you@devbox:2222 vole-8126                 # a port (a jump host: ProxyJump in your ~/.ssh/config)
-/sub-human join you@devbox vole-8126 --home /srv/sh       # the host's sub-human home is not ~/.sub-human
-/sub-human join dev vole-8126 --as carol                  # a name other than your git name
+/sub-human join ssh://dev/vole-8126                          # an alias from your ~/.ssh/config (its User, HostName, Port, ProxyJump)
+/sub-human join ssh://you@machine-a/vole-8126
+/sub-human join ssh://you@devbox:2222/vole-8126                # a port (a jump host: ProxyJump in your ~/.ssh/config)
+/sub-human join ssh://you@devbox/vole-8126?home=/srv/sh        # the host's sub-human home is not ~/.sub-human
+/sub-human join ssh://dev/vole-8126 --as carol                 # a name other than your git name
 ```
 
 That is the whole step: no invite, no PIN, no card. It links the machine and takes your seat at once; later rejoins are a bare `/sub-human` (or `/sub-human carol vole-8126`). Your login to that account is the admission, since whoever can run commands there could make an invite anyway. The room shows `a machine linked over your SSH login`.
@@ -214,7 +222,7 @@ Three ways in: **SSH** (the joiner's own ssh login to the host's account: with a
 You host in your account on a dev box; they can ssh to that box, but only as themselves (`bob@devbox`), and no Tailscale. `/sub-human invite --forward` starts the web listener (127.0.0.1 only) and shows:
 
 ```
-/sub-human join devbox vole-8126 k7q…3m --forward 7420
+/sub-human join ssh://devbox/vole-8126?forward=7420#k7q…3m
 ```
 
 They type it with the PIN after it, in Claude Code on their own computer. Their sub-human runs `ssh -W 127.0.0.1:7420 devbox` with their own keys and `~/.ssh/config` (their user name from it, or type `bob@devbox`), and carries the web link over it: the listener's key checked against the line, the PIN or your card, a Noise key of the link's own. No shell runs there and nothing is installed in their account. The host name is `SUB_HUMAN_SSH_ADDR` without its user, else this machine's name; `--port P` picks the listener's port. Their login must be allowed to forward ports: sshd's `AllowTcpForwarding` (on by default). When it is off, the join says so (`SSH_FORWARD_REFUSED`); ask the machine's admin. Each dial is one ssh login (the first join two), so a box behind MFA wants `ControlMaster` in their ssh config.
@@ -230,7 +238,7 @@ For friends who have no SSH account on your machine. The host runs [Tailscale](h
 /sub-human invite --stop           # stop serving this room over the web
 ```
 
-The line is `/sub-human join https://box.tail1a2b.ts.net/sub-human/vole-8126#SECRET`: the URL names the room, and the SECRET in its `#` fragment names this machine's listener key. The joiner types it with the PIN after it, as in [Joining](#joining-sub-human-join-line-pin). A tailnet invite ends with `Off your tailnet? /sub-human invite --public`; when a joiner's connection to a ts.net name times out, their join says the host may need `--public`.
+The line is `/sub-human join https://box.tail1a2b.ts.net/sub-human/vole-8126#SECRET`: the URL names the room, and the SECRET in its `#` fragment names this machine's listener key. The joiner types it with the PIN after it, as in [Joining](#joining-sub-human-join-line-pin). A tailnet invite ends with `Off your tailnet? /sub-human invite --public`; when a joiner's machine can't reach a ts.net name, their join says to ask you for an SSH line.
 
 What happens:
 
@@ -363,7 +371,7 @@ Until you send it out, nobody (you or another member's Claude) can ask for sign-
 
 **Two edits at once.** Each edit starts from a version. If someone else's version landed first, yours is not stored: your Claude is told so, with that version's text, and asked to keep both changes (asking you only where they truly conflict) and store again. So no edit silently replaces another. At most five plans may be open (not agreed) at a time.
 
-**Sign-off.** Your Yes on your own new version asks everyone. To ask again, or only some people, ask your Claude to "ask alice and me to sign off". It asks the room (op `ask`; any member's Claude may, once the version's author has sent it out) for the current version, naming approvers (by default everyone in the room). A newer version of the same plan retires the request on an older one: answers given there do not carry over, and the new version is asked again once its author sends it out. A version alone wakes nobody: the other Claudes read it with their person's next prompt, and the request on it, when its author sends it out, is what reaches each person asked. If you opened the room and sit in it again from another machine over your own ssh login (`/sub-human join USER@HOST ROOM`), your seats count as one approver: the answer you give last, from either, is yours, and the decision names one seat ("agreed: tristan (also laptop)"). Seats that joined by invite are each their own person, and so is every other seat on the host itself, since people can share a machine.
+**Sign-off.** Your Yes on your own new version asks everyone. To ask again, or only some people, ask your Claude to "ask alice and me to sign off". It asks the room (op `ask`; any member's Claude may, once the version's author has sent it out) for the current version, naming approvers (by default everyone in the room). A newer version of the same plan retires the request on an older one: answers given there do not carry over, and the new version is asked again once its author sends it out. A version alone wakes nobody: the other Claudes read it with their person's next prompt, and the request on it, when its author sends it out, is what reaches each person asked. If you opened the room and sit in it again from another machine over your own ssh login (`/sub-human join ssh://USER@HOST/ROOM`), your seats count as one approver: the answer you give last, from either, is yours, and the decision names one seat ("agreed: tristan (also laptop)"). Seats that joined by invite are each their own person, and so is every other seat on the host itself, since people can share a machine.
 
 When a request names you, your Claude opens it in Claude Code's plan-approval dialog, the same view your own plans use. The plugin's hooks put the version's text there, byte for byte, whatever your Claude wrote, under one first line that says what the view is for and which Yes keeps your mode (Claude Code's own title, "Ready to code?", can't be changed):
 
@@ -422,7 +430,7 @@ The room has one shared task list. The room session shows it as its native Claud
 | `tasks [--json] [--room ROOM]` | The room's shared task list (open, in progress, done: the rows' words, and the room's task lines; `--json` keeps the native `pending`, `in_progress`, `completed`); a task added from a room plan is tagged `[plan NAME vN]`. |
 | `plan [NAME] [--history] [--room ROOM]` | A room plan's current text, its versions and where its sign-off stands; with no NAME, each plan's line. |
 | `verify CODE` | A room's log checked: the hash chain over every segment and every person's line against the keys the room pins. Exit 1 when either fails. |
-| `invite [--room ROOM] [--ssh [USER@HOST[:PORT]]]` | An invite line (`/sub-human join DEST ROOM SECRET`) and its PIN apart, as `/sub-human invite` shows them; over ssh to this machine by default. |
+| `invite [--room ROOM] [--ssh [USER@HOST[:PORT]]]` | An invite line (`/sub-human join ssh://DEST/ROOM#SECRET`) and its PIN apart, as `/sub-human invite` shows them; over ssh to this machine by default. |
 | `invite [--room ROOM] --web \| --public [--port P]` | The same over the web: the listener and Tailscale Serve (or Funnel), and a URL + SECRET line with its PIN. |
 | `invite --stop`, `invite --cancel [REF]` | Stop serving a room over the web (its own Tailscale path goes off); cancel an invite nobody used. |
 | `listen [--port 7420] \| --start \| --stop \| --status` | The host's web listener (127.0.0.1 only); `/sub-human invite --web` starts it for you. |
@@ -515,7 +523,7 @@ Remote rooms add:
   - *The key binding* stops a stolen token: a link made over the web is bound to a key of its own (made for that link on the joiner's machine, proven on every connection by Noise XK), so its token alone gets nowhere. Over ssh the link rides the person's own login, which is the binding.
 - **The SECRET and the PIN are kept from the model.** `invite` shows them to the person only: through the hooks module the line and its PIN are pinned on the plugin's status line under the prompt until the invite expires, which Claude Code saves in no transcript (a `sub-human:` notice is saved there, so the notices only say where they are; without the module, the classic hook's hidden block shows them, never a systemMessage); in Claude Code's `!` shell `sub-human invite` masks both; every `/sub-human join`, `invite` and `admit` prompt, and any `/sub-human` prompt with a word of digits or a SECRET-shaped word (32 to 48 letters and digits), is answered with a hidden block before its form is even sorted out (a mistyped PIN, an unknown flag), and a SECRET-shaped word is never echoed back; for the same reason neither the line nor the PIN takes the seat in that step (the seat's context would go to the model with the prompt), and a bare `/sub-human` does once the host has let you in; the link file holds the SECRET (0600) until the token comes and the PIN only until the host answers it; neither is in a log or room line, and `doctor --bundle` cuts any lone 4- or 6-digit number. **History caveat:** what you type at Claude Code's prompt stays in its prompt history (the up arrow, `~/.claude/history.jsonl`) and in the session's transcript; the guards deny a model reading either (the Read and Bash guards above, lexical checks), and after a burn or a use the line and the PIN are worthless.
 - **Over SSH, the joiner's own login is the way in, and sub-human writes nothing to `authorized_keys`.** An ssh invite line still goes through its PIN (or the card), and the link it makes is bound to the one name, not the account owner's. Someone with no login on the host is invited over the web instead.
-- **An ssh login to the host's account is trusted as that account.** `/sub-human join USER@HOST ROOM` runs `serve --login` over the joiner's own login, and the server then makes a link with no invite, because that login could make one anyway. A restricted key can't get there: `serve --login` refuses to run under a forced command (`SSH_ORIGINAL_COMMAND` is set). Give someone a login to your account only if you would give them the account.
+- **An ssh login to the host's account is trusted as that account.** `/sub-human join ssh://USER@HOST/ROOM` runs `serve --login` over the joiner's own login, and the server then makes a link with no invite, because that login could make one anyway. A restricted key can't get there: `serve --login` refuses to run under a forced command (`SSH_ORIGINAL_COMMAND` is set). Give someone a login to your account only if you would give them the account.
 - **A link token is a seat-level credential** (over the web, together with the link's own key). The invite turns into a token once the PIN or the card let the machine in. It is stored in clear in `<home>/links/<CODE>.json` (0600, the same trust as the seat key) and hashed on the host. Whoever holds it can post as the seats joined over that link, never as anyone else: the host checks every entry's `from` against them and its signature against the key pinned in the log.
 - **Keys are pinned strictly.** A name is its key for the room's life, on every machine. A lost key, or the same name from a new machine, means a new name.
 - **Addressed posts are not private.** A post to one person (`to`) has its own rate limit, but the whole room reads the log, on every machine.
@@ -553,12 +561,12 @@ Start with `/sub-human doctor` (see **Doctor**): it names most of these and the 
 | `this machine's copy of room … no longer matches the host's` | Nothing more syncs. Forget this copy in a terminal (`node <plugin root>/scripts/sub-human link --forget CODE`), then join again with a new invite from the host. |
 | SSH join: `room … is offline` and the link log says `Permission denied (publickey)` | Your ssh login to the host's account does not work without a prompt (for a link an older version made, its own key was removed). The link uses `BatchMode=yes`, so it never asks for a password or a passphrase: load the key into your agent, or name it in `~/.ssh/config` (or `SUB_HUMAN_SSH_OPTS="-i KEY"`). |
 | SSH join: `Host key verification failed` in the link log | ssh has not seen the host yet and BatchMode can't ask. Run `ssh me@host true` once in your shell to accept its key. |
-| SSH join: `no room` in the link log | The host's folder is not where the line looked: an invite line from a host whose folder is not `~/.sub-human` carries `--home PATH`; type the whole line. |
+| SSH join: `no room` in the link log | The host's folder is not where the line looked: an invite line from a host whose folder is not `~/.sub-human` carries `?home=PATH`; type the whole line. |
 | `wrong PIN (N tries left) … /sub-human join PIN` | Check the digits with the host and type `/sub-human join PIN` again (after a wrong one, wait the seconds it says). After 5 the invite stops working: ask for a new one. |
-| `the line's SECRET … did not come through whole` | The long last word of the line was cut or changed by the way it was sent. Paste the whole line again. |
+| `the line's SECRET … did not come through whole` | The long word after the line's `#` was cut or changed by the way it was sent. Paste the whole line again. |
 | `Asked the host to let you in …` and nothing more | You typed the line without its PIN, and the host person has not answered their card yet (their Claude opens it; or `/sub-human admit` there). This session takes your seat once they let you in; if they gave you a PIN, `/sub-human join PIN` lets you in now. After 10 minutes it lapses: ask for a new invite. |
 | `… is not the one the invite line names … Nothing secret was sent` | Whoever answered (the ssh host your address reached, or the listener at that URL) does not hold the key the line's SECRET names: a wrong address or alias, a reinstalled host, another host with the same room, or someone in between. Check with the host. |
-| SSH invite: `refused your ssh login` | An ssh invite rides your own ssh login to the host's account, and you have none there (or it needs a password). Your own account on that machine? Ask for `/sub-human invite --forward`. Else `/sub-human invite --web`, or have a login set up. |
+| SSH invite: `refused your ssh login` | An ssh invite rides your own ssh login to the host's account, and you have none there (or it needs a password). Ask the host for a Tailscale line (`/sub-human invite --web`); your own account on that machine? `/sub-human invite --forward`; or have a login set up. |
 | SSH: `has no sub-human at ~/.sub-human/bin/serve` | You logged in as yourself, but the room is in someone else's account there. Ask them for `/sub-human invite --forward`. |
 | Forward join: `doesn't let … forward ports` | The machine's sshd turns forwarding off for your login (`AllowTcpForwarding no`, `DisableForwarding`). Ask its admin to allow local forwarding, or ask the host for another kind of invite. |
 | Web join: `the host did not prove the key this link pinned` | Whoever answered at that URL is not the listener the link was made for (a changed host key, the wrong front, or someone in between). Ask the host for a new invite. |

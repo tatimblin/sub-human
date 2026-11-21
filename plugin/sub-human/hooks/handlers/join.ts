@@ -35,6 +35,8 @@ import type { Answer } from '../../lib/commands/types.ts';
 seatKey.arm();
 
 const ROOM_CLAUDE_AGENT = 'sub-human:room-claude';
+/** lib/seats.ts take's lead for a seat in a room it just opened. */
+const OPENED = 'room opened';
 const PLUGIN_ROOT = PathMod.join(import.meta.dirname, '..', '..');
 
 /** True when the input carries this session's module nonce (its lease's): the module's command.run hook ran it. */
@@ -56,7 +58,8 @@ function toReply(a: Answer, module: boolean): Reply {
       // the bypass-permissions mode is the debug log's (the module's: mod/deliver.ts), never the join's line; a classic
       // answer warns only when the line says something did not work (a typed flag: lib/seats.ts trouble)
       const warn = a.trouble ? `sub-human: ${a.say}` : null;
-      return { kind: 'joined', context: contextBlock(a.me, a.lead), say: a.say, warn, module, ...(a.debug ? { debug: a.debug } : {}) };
+      // opened: the seat is in a room this run just opened (lib/seats.ts take's lead): the module then asks who's coming
+      return { kind: 'joined', context: contextBlock(a.me, a.lead), say: a.say, warn, module, ...(a.lead === OPENED ? { opened: true } : {}), ...(a.debug ? { debug: a.debug } : {}) };
     }
     case 'secret': return { kind: 'secret', text: a.text, refused: a.refused === true, module, ...(a.pinned ? { pinned: a.pinned } : {}), ...(a.debug ? { debug: a.debug } : {}) };
     case 'say': case 'refused': return { kind: a.kind, text: a.text, module, ...(a.debug ? { debug: a.debug } : {}) };

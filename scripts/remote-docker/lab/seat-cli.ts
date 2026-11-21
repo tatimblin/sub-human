@@ -22,7 +22,7 @@
  *   expand NAME ARGS              any `/sub-human ARGS` through the join hook (invite --ssh, kick, …)
  *   leave NAME                    SessionEnd for NAME, then its seat process stops
  *   short NAME LINE [SSH_OPT…]    `/sub-human LINE --as NAME`: an invite's line as the host showed it, one argument
- *                                 ("join DEST ROOM SECRET [--via J] [--home H]" or "join URL SECRET"; a 0.5.0-beta.15
+ *                                 ("join ssh://DEST/ROOM[?home=H]#SECRET", "join URL#SECRET", an older host's "join DEST ROOM SECRET [--home H]"; a 0.5.0-beta.15
  *                                 host's "join DEST ROOM PIN"): {ok, asked, knocked, waiting, linked, out, hidden}:
  *                                 asked once the host asks for the PIN (a host before the knock), knocked (and waiting)
  *                                 once the line with no PIN asked the host's card, waiting too once an older host

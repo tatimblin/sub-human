@@ -15,9 +15,9 @@
  *     a closing call; deny is a guard. With neither, the call goes on to the hooks beneath (next(e)), so the module
  *     never allows anything, and never skips another plugin's or the person's hooks unless it denies or asks.
  *   - classic.PostToolUse AskUserQuestion|EnterPlanMode|ExitPlanMode: node consent wherever a seat is or may be.
- *   - the invite's copy card (PLAN-JOIN step 5, mod/core/copy.ts): the module's alone, no node, since the invite line is
- *     only in its memory (mod/deliver.ts copies). Pre: the Copy / Skip card for "copy invite REF" while that line is
- *     held, else a deny that the invite is gone. Post: Copy writes the line (never the PIN) to a clipboard tool on stdin.
+ *   - the module's own dialogs ($.ui.ask: the note's Send / Discard here; the question after a room opened and the
+ *     invite's copy question, mod/deliver.ts): its AskUserQuestion hooks pass each by while it is asked (asks.mine: its
+ *     exact question and header), with next(e), never an answer of their own.
  *   - ui.render PromptHint: observed only (next(e) always): whether the prompt holds typed text, sent with an
  *     ExitPlanMode's PreToolUse payload (sub_human_typing) so a plan-view Yes typed into by mistake is asked again.
  *   - classic.Stop: node consent (the open-review nudge) while a review may be open; its additionalContext continues
@@ -34,8 +34,7 @@ import { consentNeeded, consentPreNeeded, reviewOpenOf, seatedOrUnsure } from '.
 import { mergeClassic } from './core/prompt.ts';
 import { prePayload, rejectedPayload } from './core/facts.ts';
 import { asHello } from './core/state.ts';
-import { facts, copies } from './deliver.ts';
-import { copyAsked, copyCard, copyOutcome, copySaid, copyTo, copyNews, clipboardCommands, COPY_QUESTION, COPIED, NO_TOOL, GONE } from './core/copy.ts';
+import { facts, asks } from './deliver.ts';
 import { keepQuiet, quietOn, quietRow } from './core/quiet.ts';
 import { ROOM_AGENT } from './core/rows.ts';
 import { rowOffered } from './rows.ts';
@@ -105,15 +104,6 @@ async function quietCalls($: EngineInterface): Promise<string[]> {
   return ids;
 }
 
-/** #34: the module's own note card while it is asked ($.ui.ask runs through this plugin's other AskUserQuestion hooks:
- * cc CONTRACT module-ask-through-hooks), so they pass that card by, and only it: its exact question and header. */
-let asking: { question: string; header: string } | null = null;
-/** The AskUserQuestion call (or its input in a result) is the module's own note card: one of its questions is it. */
-function ownCard(input: unknown): boolean {
-  const a = asking;
-  if (!a || !isRec(input) || !Array.isArray(input.questions)) return false;
-  return input.questions.some((q: unknown) => isRec(q) && q.question === a.question && q.header === a.header);
-}
 /** The person's line when consent did not answer their Send / Discard on that card: it may have recorded the answer
  * before it failed, so the line says only that the note may not have gone. */
 const NOTE_NOT_TAKEN = 'Your note may not have been sent; ask your Claude to check its card.';
@@ -131,11 +121,12 @@ function noteAskOf(subHuman: SubHumanRead | undefined): { question: string; head
 /** The person's Send or Discard on the note's card, asked by the module itself; null when dismissed, typed over
  * ("Other": not a choice the card offers) or with no one to ask (-p). */
 async function askNote($: EngineInterface, ask: { question: string; header: string; options: string[] }): Promise<'Send' | 'Discard' | null> {
-  asking = { question: ask.question, header: ask.header };
+  // #34: the module's own card, which this plugin's AskUserQuestion hooks pass by while it is asked (mod/core/card.ts ownAsks)
+  const end = asks.begin(ask.question, ask.header);
   try {
     const got = await $.ui.ask(ask.question, { options: ask.options, header: ask.header });
     return got === 'Send' || got === 'Discard' ? got : null;
-  } catch { return null; } finally { asking = null; }
+  } catch { return null; } finally { end(); }
 }
 
 /** An empty drawing: the row is not drawn at all (live 2.1.296: an empty Box takes no line). */
@@ -143,52 +134,6 @@ const EMPTY: RenderElement = { type: 'Box', props: {}, children: [] };
 
 /** The prompt holds typed text (the last PromptHint drawn said isDraft): module state, lost on reload (then false). */
 let draft = false;
-
-/** $.clock.now(), else the process's own clock (as mod/deliver.ts holds the copy book's times). */
-const nowOf = ($: EngineInterface): Promise<number> => $.clock.now().then(t => (typeof t === 'number' ? t : Date.now()), () => Date.now());
-
-/** The copy card's Pre: the card (Copy / Skip) in place of the call's input while the book holds the invite's line,
- * else a deny that says it is gone (mod/core/copy.ts). The ref is remembered by the call's id for its Post. */
-async function copyPre($: EngineInterface, asked: { ref: string | null }, toolUseId: unknown): Promise<{ ask: string; updatedInput: Record<string, unknown> } | { deny: string }> {
-  const now = await nowOf($);
-  const refs = copies.refs(now);
-  const ref = asked.ref ?? (refs.length === 1 ? refs[0] ?? null : null);
-  if (!ref || !copies.lineFor(ref, now)) return { deny: `sub-human: ${GONE}` };
-  if (typeof toolUseId === 'string') copies.ask(toolUseId, ref);
-  return { ask: `sub-human: copy invite ${ref}'s line to the clipboard?`, updatedInput: copyCard() };
-}
-
-/** The copy card's Post: the person's answer read (exact: an edited card is no answer); on Copy the line goes to the
- * first clipboard tool that takes it, on stdin. The person gets the outcome as a notice, the model as context. */
-async function copyPost($: EngineInterface, e: { tool_use_id?: unknown; tool_input?: unknown; tool_response?: unknown }): Promise<string> {
-  const now = await nowOf($);
-  // the ref the Pre showed this call's card for; else the one the call names, or the one invite held
-  const refs = copies.refs(now);
-  const ref = (typeof e.tool_use_id === 'string' ? copies.askedRef(e.tool_use_id) : null)
-    ?? copyAsked(e.tool_input)?.ref ?? (refs.length === 1 ? refs[0] ?? null : null);
-  const line = ref ? copies.lineFor(ref, now) : null;
-  const out = copyOutcome(isRec(e.tool_response) ? e.tool_response : null, isRec(e.tool_input) ? e.tool_input : null, line);
-  // the session's later invites: copied with no card after a Copy, no card after a Skip (mod/deliver.ts offerCopy)
-  if (out.choice) copies.choose(out.choice);
-  let said: string;
-  if ('say' in out) said = out.say;
-  else {
-    // the module's $ stays in the file that uses it: the same steps as mod/deliver.ts clip
-    const or = (p: Promise<string | undefined>) => p.catch(() => undefined);
-    const commands = clipboardCommands({
-      WAYLAND_DISPLAY: await or($.env.get('WAYLAND_DISPLAY')), DISPLAY: await or($.env.get('DISPLAY')),
-      WSL_DISTRO_NAME: await or($.env.get('WSL_DISTRO_NAME')), WSL_INTEROP: await or($.env.get('WSL_INTEROP')),
-    });
-    said = (await copyTo((name, init) => $.process.run(['sh', `${$.plugin.root}/scripts/clip.sh`, name], init), out.copy, commands)) === 'copied' ? COPIED : NO_TOOL;
-  }
-  if (copyNews(said)) $.ui.log(said); else $.ui.log(`copy card: ${said}`, { to: 'debug' });
-  return copySaid(said);
-}
-
-/** The AskUserQuestion call (or its result) is the copy card's: it asks "copy invite …", or shows the card's question. */
-const isCopyCard = (input: unknown, response?: unknown): ReturnType<typeof copyAsked> => copyAsked(input)
-  ?? (isRec(response) && JSON.stringify(response.questions ?? []).includes(COPY_QUESTION) ? { ref: null } : null);
-const isRec = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 export function registerConsent(on: On): void {
   on('tool.call', { tool: ['EnterPlanMode', 'ExitPlanMode', PLAN_TOOL] }, async ($, e, next) => {
@@ -229,14 +174,7 @@ export function registerConsent(on: On): void {
   }).catch((_$, e, next) => next(e)); // the flag stays as it was; past next, a failure returns the refusal as it came
 
   on('classic.PreToolUse', { tool: ['AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode', /^mcp__plugin_sub-human_room__/] }, async ($, e, next) => {
-    if (e.tool === 'AskUserQuestion' && ownCard(e)) return next(e); // the module's own note card ($.ui.ask): not consent's
-    // the invite's copy card is the module's alone (the line is only in its memory): no node consent for it
-    const copy = e.tool === 'AskUserQuestion' ? isCopyCard(e) : null;
-    if (copy) {
-      const card = await copyPre($, copy, e.tool_use_id);
-      if ('deny' in card) return { deny: card.deny };
-      return { ask: card.ask, updatedInput: card.updatedInput };
-    }
+    if (e.tool === 'AskUserQuestion' && asks.mine(e)) return next(e); // the module's own dialog ($.ui.ask): not consent's
     const sid = await $.session.id();
     if (!consentPreNeeded(await helloOf($), sid, e.tool, await flagOf($))) return next(e);
     const base = prePayload(e, { sid, cwd: await $.session.cwd().catch(() => undefined), facts: facts.of(sid), agentId: facts.agentOf(e.tool_use_id) });
@@ -262,10 +200,7 @@ export function registerConsent(on: On): void {
 
   on('classic.PostToolUse', { tool_name: ['AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode'] }, async ($, e, next) => {
     facts.noteEvent(e);
-    if (e.tool_name === 'AskUserQuestion' && ownCard(e.tool_input)) return next(e); // the module's own note card: its answer is read where it was asked
-    if (e.tool_name === 'AskUserQuestion' && isCopyCard(e.tool_input, e.tool_response)) {
-      return mergeClassic({ additionalContext: [await copyPost($, e)] }, await next(e));
-    }
+    if (e.tool_name === 'AskUserQuestion' && asks.mine(e.tool_input)) return next(e); // the module's own dialog: its answer is read where it was asked
     if (!seatedOrUnsure(await helloOf($), e.session_id)) return next(e);
     const { result, ...said } = toClassic('PostToolUse', await runConsent($, e, e.session_id));
     await apply($, said, e.tool_use_id);

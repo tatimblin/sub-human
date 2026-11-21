@@ -707,17 +707,18 @@ function runTail({
     let n: ReturnType<TailDeps['pendingNews']> = null;
     try { n = d.pendingNews(sid); } catch (e) { log('pending join', e); return false; }
     if (!n) { told = null; return false; }
-    if (n.state === 'waiting') return true;
+    if (n.state === 'waiting' && !n.text) return true;
     const take = n.state === 'linked' && !seated;
+    const again = take || n.state === 'waiting'; // look again soon: for the seat, or for what the host answers
     if (!take && !n.text) return false; // the command's own answer said it
     const key = take ? `${n.code}/take` : `${n.code}/${n.state}/${n.text}`; // a PIN asked for again (wrong, too soon) is news again
-    if (key === told) return take; // taking: look again soon, for the seat
+    if (key === told) return again;
     told = key;
     const ev: TailEvent = take
       ? { type: 'take', code: n.code, name: n.name ?? '', text: n.line ?? n.text, ...(n.check ? { check: n.check } : {}) }
       : { type: 'chat', lines: [n.text] };
     try { write(JSON.stringify(ev) + '\n', () => {}); } catch (e) { log('pending join', e); }
-    return take;
+    return again;
   };
 
   function stopSess() {

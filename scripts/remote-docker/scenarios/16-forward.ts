@@ -1,6 +1,6 @@
 // #27, a shared machine: alice hosts in the devbox account `host`; bob on joiner-a can ssh to the devbox only as its
 // other account, `joiner` (his own login there, never host's). alice's `/sub-human invite --forward` shows
-// `/sub-human join devbox CODE SECRET --forward PORT`; bob types it with the PIN, and his own `ssh -W 127.0.0.1:PORT`
+// `/sub-human join ssh://devbox/CODE?forward=PORT#SECRET`; bob types it with the PIN, and his own `ssh -W 127.0.0.1:PORT`
 // (real OpenSSH, through the WAN path) carries the web link to her listener on the devbox's loopback. Checked, against
 // a real sshd: with `AllowTcpForwarding no` (the lab's own setting) the join stops with SSH_FORWARD_REFUSED and the
 // invite keeps its tries; with forwarding allowed, the PIN lets him in (no card), the link comes online, posts flow,
@@ -10,7 +10,7 @@ import { WAN, delivered, converge, waitState } from './_lib.ts';
 import type { T } from '../lab.ts';
 
 const CONF = '/etc/ssh/sshd_config.d/lab.conf';
-const LINE_RE = /\/sub-human (join devbox ([a-z]+-\d{4}) ([0-9a-z]{39}) --forward (\d{1,5}))\n/;
+const LINE_RE = /\/sub-human (join ssh:\/\/devbox\/([a-z]+-\d{4})\?forward=(\d{1,5})#([0-9a-z]{39}))\n/; // 0.6.1: one URL
 const PIN_RE = /apart from the line[^\n]*: (\d{4})\n/;
 
 export const id = 'forward';
@@ -35,9 +35,9 @@ export async function run(t: T): Promise<void> {
     const shown = host.expand('alice', 'invite --forward');
     const m = LINE_RE.exec(`${shown.out}\n`), p = PIN_RE.exec(`${shown.out}\n`);
     if (m) t.ev.invite(m[1], p && p[1]);
-    if (!t.check('invite --forward shows `join devbox CODE SECRET --forward PORT` (no account in it) and the PIN apart, hidden from the model',
+    if (!t.check('invite --forward shows `join ssh://devbox/CODE?forward=PORT#SECRET` (no account in it) and the PIN apart, hidden from the model',
       !!m && !!p && m[2] === code && shown.json?.hookSpecificOutput?.suppressOriginalPrompt === true, (shown.out || '').slice(0, 240)) || !m || !p) return;
-    const [, line = '', , , port = ''] = m, [, pin = ''] = p;
+    const [, line = '', , port = ''] = m, [, pin = ''] = p;
     const lis = lab.exec('devbox', ['sh', '-c', `ss -ltnH 'sport = :${port}'`], { allowFail: true }).stdout;
     // ss -H: State Recv-Q Send-Q Local Peer; the local address is the 4th column
     const local = lis.trim().split(/\s+/)[3] ?? '';
