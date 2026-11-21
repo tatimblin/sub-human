@@ -124,7 +124,7 @@ function hostWeb(code: RoomCode, { funnel = false, port, by = null, now = Date.n
 }
 
 /**
- * An ssh-forward invite (`/sub-human invite --forward`): the line `/sub-human join HOST CODE SECRET --forward PORT`
+ * An ssh-forward invite (`/sub-human invite --forward`): the line `/sub-human join ssh://HOST/CODE?forward=PORT#SECRET`
  * for someone who logs in to this machine as themselves, not this account. Their ssh carries the web link to the
  * listener on loopback (transports/ws.ts tunnelSpec), so the SECRET's tag names the listener's key, as hostWeb's.
  * HOST: SUB_HUMAN_SSH_ADDR or this machine's name, with no user (each joiner's own ssh config or name fills it in).
@@ -145,7 +145,7 @@ function hostForward(code: RoomCode, { port, by = null, now = Date.now() }: { po
   const r = invitesLib().mintInvite(store, { kind: 'ws', locator, by, now });
   const secret = inviteSecretLib();
   const word = secret.encode(r.secret, secret.tagOf(r.secret, 'listener', hostKey));
-  const line = `/sub-human join ${host} ${code} ${word} --forward ${lport}`;
+  const line = `/sub-human join ssh://${host}/${code}?forward=${lport}#${word}`;
   // the forward's notes (their own login; AllowTcpForwarding), the key check and the install are the README's
   const parts = { code, how: `over their own ssh login to ${host}`, line, pin: r.pin, ref: r.ref, expires_at: r.expires_at, web: true };
   return {

@@ -10,12 +10,13 @@
 import type { EventOf, On } from 'claude-code'
 import { test, expect, mock, type Engine } from 'claude-code/testing'
 import { CODE, OUT, debugLines, ran, scriptOf, session, start, stdinOf } from './support.ts'
+import { INSTALL_LINE } from '../core/copy.ts'
 
 const SID = 'sid-walk'
 const SECRET = 'K'.repeat(39)
 const PIN = '7093'
 const REF = 'c0ffee00aa01'
-const LINE = `/sub-human join alice@box ${CODE} ${SECRET}`
+const LINE = `/sub-human join ssh://alice@box/${CODE}#${SECRET}`
 const QUESTION = `Bring someone into ${CODE}?`
 const BLOCK = 'SUB-HUMAN: you are alice\'s Claude in room otter-4821…'
 
@@ -143,7 +144,7 @@ test('SSH: the typed command\'s invite through the join shim; its line and PIN o
   await until(() => seen.cards.length === 2)
   expect(shown(seen, 1)?.question).toBe('Copy the invite?')
   await until(() => seen.clip.length === 1)
-  expect(seen.clip[0]).toBe(LINE)
+  expect(seen.clip[0]).toBe(`${INSTALL_LINE}\n${LINE}`)
   expect(seen.logs).toContain('invite to room otter-4821 for one machine, pinned under the prompt')
   expect(readable(seen)).not.toContain(SECRET)
   expect(readable(seen)).not.toContain(PIN)

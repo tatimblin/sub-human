@@ -16,6 +16,9 @@ const SECRET = 'K'.repeat(38)
 const PIN = '7093'
 const lineOf = (ref: string) => `/sub-human join https://box.tail1a2b.ts.net/sub-human/otter-4821#${SECRET}${ref.slice(-1)}`
 const QUESTION = 'Copy the invite?'
+/** What Copy puts on the clipboard: the install line for someone with no sub-human yet, then the line (0.6.1) */
+const INSTALL = 'No sub-human yet? In a terminal: claude plugin marketplace add tatimblin/sub-human && claude plugin install sub-human@sub-human, then restart Claude Code'
+const copiedOf = (ref: string) => `${INSTALL}\n${lineOf(ref)}`
 
 /** Resolves once cond() holds (the dialog opens after the command returned), or rejects after ms. */
 async function until(cond: () => boolean, ms = 3000) {
@@ -98,7 +101,7 @@ test('an invite with its line: the module asks itself (no model turn), Copy / Sk
   expect(seen.appends).toEqual([])
   expect(seen.scripts).not.toContain('consent.ts') // consent's hooks passed the module's own dialog by
   expect(seen.beneath).toEqual(['pre:AskUserQuestion']) // passed on to the hooks beneath, never answered by the module
-  expect(seen.clip[0]?.stdin).toBe(lineOf(ref))
+  expect(seen.clip[0]?.stdin).toBe(copiedOf(ref))
   expect(seen.clip[0]?.stdin).not.toContain(PIN)
   expect(JSON.stringify(seen.clip[0]?.argv)).not.toContain(SECRET)
   expect(seen.clip[0]?.argv.slice(2)).toEqual(['pbcopy'])
@@ -112,6 +115,7 @@ test('an invite with its line: the module asks itself (no model turn), Copy / Sk
   await typed($, 'invite'); await seen.tick()
   await until(() => seen.clip.length === 2)
   expect(seen.cards.length).toBe(1)
+  expect(seen.clip[1]?.stdin).toBe(copiedOf(ref))
   await until(() => debugLines.includes('copy: line copied'))
   expect(seen.logs).not.toContain('line copied')
 })

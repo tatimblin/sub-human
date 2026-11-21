@@ -455,14 +455,14 @@ S2_ssh() {
   submit "$a" "/sub-human invite"
   need wait_pane "$a" "Invite ready" 30 --what "$a's pane shows the ssh invite (to $a, never to $a's Claude)" || return 1
   local line; line=$($LIB join-line "sh-$a")
-  [[ "$line" =~ ^join\ devbox\ $(room)\ [0-9a-z]{39}(\ --home\ [^ ]+)?$ ]] || { ABORT="S2: no \"join devbox $(room) SECRET\" line readable in $a's pane (read: ${line:-nothing})"; return 1; }
+  [[ "$line" =~ ^join\ ssh://devbox/$(room)(\?home=[^#\ ]+)?#[0-9a-z]{39}$ ]] || { ABORT="S2: no \"join ssh://devbox/$(room)#SECRET\" line readable in $a's pane (read: ${line:-nothing})"; return 1; }
   local pin; pin=$($LIB join-pin "sh-$a")
   [[ "$pin" =~ ^[0-9]{4}$ ]] || { ABORT="S2: no PIN readable apart from the line in $a's pane"; return 1; }
   echo "$line" > "$d/join-line.txt"   # the checks look for its SECRET in every transcript (it must be in none)
   echo "$pin" > "$d/join-pin.txt"     # and for the PIN typed after it
   record "the driver read $a's invite line and its PIN off $a's pane"
   settle "$a"
-  snap "$a runs /sub-human invite: one line for $b's machine, /sub-human join devbox $(room) and its SECRET, and a 4-digit PIN apart, shown to $a only"
+  snap "$a runs /sub-human invite: one line for $b's machine, /sub-human join ssh://devbox/$(room)#SECRET, and a 4-digit PIN apart, shown to $a only"
   mark join "$b joins from her machine over ssh: the line, and the PIN $a told her"
   submit "$b" "/sub-human $line $pin"
   need wait_log --kind status --from room --text-has "$b joined (" --after "$before" --timeout 90 --what "the right PIN let $b's machine in with no card (the host's room line)" || return 1

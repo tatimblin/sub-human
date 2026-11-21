@@ -10,7 +10,8 @@
  * (`link CODE --forget` first); one that replaced a link that was down and was refused puts the old link file back.
  *
  * pendingNews: the invite join this session started, for the seatless session's tail (lib/tail.ts), which says each
- * state once: 'waiting' (dialing, or the card not answered), 'pin', 'linked' or 'refused'. text is '' when the
+ * state once: 'waiting' (dialing, or the card not answered; its text only when the first dial reached nothing, which
+ * names the other kind of line to ask for: reasons.ts OTHER_WAY), 'pin', 'linked' or 'refused'. text is '' when the
  * command's own answer said the same (join_told), so the person reads it once; 'linked' is the tail's take whatever
  * its text, with this machine's join check (checkOf) for the line that says the seat was taken. A stop from before the join's line
  * (the kicked link it replaced) is not its refusal.
@@ -26,7 +27,7 @@ import type { Link } from '../room/types.ts';
 import type { LinkSpec, SshSpec, WsSpec } from './types-rest.ts';
 import type { Outcome } from './hosting.ts';
 import { msgOf } from '../errors.ts';
-import { REVOKED } from '../reasons.ts';
+import { REVOKED, OTHER_WAY } from '../reasons.ts';
 import type { RoomCode, SeatName, InviteSecret, Pin } from '../brand.ts';
 import type * as WsMod from './transports/ws.ts';
 import type * as SshMod from './transports/ssh.ts';
@@ -51,7 +52,7 @@ const say = (text: string, refused = false): JoinStep => ({ kind: 'say', text, r
 const refuse = (text: string): JoinStep => say(text, true);
 
 export const NO_START = (code: RoomCode) => `the connection to room ${code} did not start. Run /sub-human doctor.`;
-const SECRET_HINT = (dest: string, code: RoomCode) => `No invite, so this went over your own ssh login; if the host sent you an invite line, it ends with a long SECRET: /sub-human join ${dest} ${code} SECRET`;
+const SECRET_HINT = (dest: string, code: RoomCode) => `No invite, so this went over your own ssh login; if the host sent you an invite line, it ends with a long SECRET: /sub-human join ssh://${dest}/${code}#SECRET`;
 
 /** A daemon still dialing the old host: stop it, so the start that follows dials the link file's new one. */
 export function restartLink(code: RoomCode): void {
@@ -139,7 +140,7 @@ export function givePin(pin: Pin, sid?: string | null, module = false): JoinStep
   const l = pinJoin(sid);
   if (!l) {
     const any = pendingJoins().find(j => typeof j.invite === 'string' && !j.awaiting);
-    return refuse(any ? `the host's machine has not asked for the PIN yet (room ${any.code}): wait a moment, then type it again` : 'no invite here is waiting for a PIN: type the invite line first (/sub-human join HOST ROOM SECRET), then the PIN when it asks');
+    return refuse(any ? `the host's machine has not asked for the PIN yet (room ${any.code}): wait a moment, then type it again` : 'no invite here is waiting for a PIN: type the invite line first (/sub-human join LINE), then the PIN when it asks');
   }
   const code = l.code, name = l.join_as;
   restartLink(code);
@@ -169,7 +170,7 @@ export function linkLogin({ dest: typed, code, home, name, isDefault }: {
   const o: Outcome = hosting.outcome(code);
   // no SECRET is no invite: the person's own ssh login is the way in, so a refusal says where an invite line differs
   if (o.state === 'refused') putBack(code, cur);
-  if (o.state === 'refused') return refuse(`could not reach room ${code} over ${at}: ${o.reason}. ${SECRET_HINT(typed, code)}`);
+  if (o.state === 'refused') return refuse(`could not reach room ${code} over ${at}: ${String(o.reason ?? '').replace(/\.$/, '')}. ${SECRET_HINT(typed, code)}`);
   if (o.state !== 'linked') {
     return say(`still connecting to room ${code} over ${at}${o.reason ? ` (${o.reason})` : ''}: no SECRET, so no invite. Type /sub-human ${name} ${code} in a moment; if it doesn't come up, /sub-human doctor says why.`);
   }
@@ -177,7 +178,7 @@ export function linkLogin({ dest: typed, code, home, name, isDefault }: {
 }
 
 /** A pipe join (a second sub-human folder on this machine) has no login path: the invite line has a SECRET. */
-export const noSecret = (dest: string, code: RoomCode): string => `that looks like an invite line without its SECRET: /sub-human join ${dest} ${code} SECRET (the long word the host sent with it).`;
+export const noSecret = (dest: string, code: RoomCode): string => `that looks like an invite line without its SECRET: /sub-human join ${dest.startsWith('/') ? `pipe:${dest}` : dest}/${code}#SECRET (the long word the host sent with it).`;
 
 /** A link this machine's invite join is waiting on: join_as names the seat it asked for. */
 export type PendingLink = Link & { join_as: SeatName };
@@ -276,5 +277,7 @@ export function pendingNews(sid: string | null | undefined): News | null {
     const check = checkOf(l);
     return { ...fresh({ code, name, state: 'linked', text: line }), line, ...(check ? { check } : {}) };
   }
+  // the first dial reached nothing: its one line names the other way in (said once; the link keeps trying)
+  if (!old && !l.token && !l.awaiting && OTHER_WAY.has(String(st.why ?? '')) && st.reason) return fresh({ code, name, state: 'waiting', text: st.reason });
   return { code, name, state: 'waiting', text: '' };
 }

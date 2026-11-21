@@ -21,7 +21,8 @@
  * handshake each write is cut into Noise messages of at most noise.MAX_PLAINTEXT bytes, one binary WebSocket message
  * each; a message that does not decrypt, or a text message, closes the conn (1002 / 1003). open connects within
  * WS_CONNECT_MS (45 s: a ts.net name's first TLS handshake waits on its certificate); a ts.net name it cannot reach
- * in that time (or resolve) says the host may need Funnel (offline: OFF_TAILNET_HINT).
+ * in that time (or resolve) says to ask the host for an SSH line instead (offline: WEB_UNREACHED, reasons.ts ASK_SSH); a
+ * tunnel whose ssh found no host there on the first dial, for a Tailscale line (SSH_UNREACHED, ASK_TAILSCALE).
  *
  * A spec with `tunnel` (an ssh-forward invite: `ws://127.0.0.1:PORT/sub-human/CODE`, tunnelSpec) reaches the listener
  * through the person's own ssh login to the host machine, any account there (./ssh.ts tunnel, `ssh -W`), in place of a
@@ -42,6 +43,7 @@ import type * as TransportsMod from './index.ts';
 import type * as SshMod from './ssh.ts';
 import type { SshDest } from '../types-rest.ts';
 import { isRoomCode } from '../../text.ts';
+import { ASK_SSH, ASK_TAILSCALE } from '../../reasons.ts';
 import { lazy } from '../../io.ts';
 
 // ssh only for a link that rides the person's own ssh login (a tunnel)
@@ -211,15 +213,16 @@ async function serverChannel(conn: Conn, { s, check = () => null, timeoutMs = HA
 }
 
 // a ts.net name the joiner's machine cannot reach (no answer within WS_CONNECT_MS, or no such name for it): a host's
-// Serve answers inside its tailnet only, so the host may need Funnel
+// Serve answers inside its tailnet only, so this machine is off it: the other way in is an ssh line
 const TS_NET_RE = /\.ts\.net\.?$/i;
 const UNREACHED_RE = /no WebSocket to \S+ within \d+ ms|ENOTFOUND|EAI_AGAIN/;
-const OFF_TAILNET_HINT = 'if this machine is not on the host\'s tailnet, the host may need /sub-human invite --public';
 
-/** connect()'s failure as OFFLINE, with the --public hint for a ts.net name it could not reach. */
+/** connect()'s failure as OFFLINE; a ts.net name it could not reach, as WEB_UNREACHED: one line naming the other way. */
 function offline(host: string, e: unknown): RoomError {
   const m = msgOf(e);
-  return new RoomError('OFFLINE', TS_NET_RE.test(host) && UNREACHED_RE.test(m) ? `${m} (${OFF_TAILNET_HINT})` : m);
+  return TS_NET_RE.test(host) && UNREACHED_RE.test(m)
+    ? new RoomError('OFFLINE', `Couldn't reach ${host.replace(/\.$/, '')} from this machine (${m}). ${ASK_SSH}`, 'WEB_UNREACHED')
+    : new RoomError('OFFLINE', m);
 }
 
 /** A tunnel's checked port (see WsSpec.tunnel), or INVALID. */
@@ -245,6 +248,9 @@ async function dial(spec: WsAddr & SpecBase & { tunnel?: SshDest | undefined }, 
       await Promise.race([used.exited, new Promise(r => setTimeout(r, 1000))]);
       const why = code ? sshT().forwardProblem(used.stderr(), tn, port, code, { first }) : null;
       if (why) throw why;
+      // the first dial found no sshd there (refused, timed out): the other way in is a Tailscale line
+      const p = sshT().classify(used.stderr());
+      if (first && p && (p.kind === 'refused' || p.kind === 'timeout')) throw new RoomError('OFFLINE', `Couldn't reach ${tn.host} over ssh (${sshT().lastLine(used.stderr())}). ${ASK_TAILSCALE}`, 'SSH_UNREACHED');
     }
     throw new RoomError('OFFLINE', `${msgOf(e)} (over ssh ${tn.user}@${tn.host})`);
   }
@@ -294,4 +300,4 @@ function tunnelSpec(d: SshDest, port: number, code: RoomCode): WsSpec {
   return { kind: 'ws', host: '127.0.0.1', port, path: `/sub-human/${code}`, tunnel: d };
 }
 
-export { parse, locator, urlOf, tunnelSpec, offline, OFF_TAILNET_HINT, PROLOGUE, clientChannel, serverChannel, firstAny, fetchKey, kind };
+export { parse, locator, urlOf, tunnelSpec, offline, PROLOGUE, clientChannel, serverChannel, firstAny, fetchKey, kind };

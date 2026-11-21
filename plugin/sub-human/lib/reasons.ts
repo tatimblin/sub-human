@@ -11,6 +11,8 @@
  *   isReason(x) -> bool  one of REASON_CODE's
  *   reasonOf(err) -> Reason | null   the error's reason, when it is one
  *   REVOKED              the reasons a link stops with when the host ended it or forgot its token: it never gets in again
+ *   OTHER_WAY            the reasons a join's first dial says to ask the host for the other kind of line (Tailscale or
+ *                        SSH): its message is the one line the joiner reads, `<what didn't happen>. <one action>.`
  *
  *   REASON_CODE          each reason's code (the source of Reason: a reason is added with the code it comes with);
  *                        null: a reason a link stops with, carried beside whatever code the stop had (OFFLINE by
@@ -48,6 +50,9 @@ export const REASON_CODE = {
   DAEMON_DOWN: 'OFFLINE', // no link daemon answers on this machine
   ADMIT_WAITING: 'OFFLINE', // the host person has not answered the card yet
   QUEUE_FULL: 'OFFLINE',
+  // an invite line's first dial found nothing to talk to: its message names the other way in (the link keeps trying)
+  WEB_UNREACHED: 'OFFLINE', // a ts.net name this machine cannot reach (off the host's tailnet): ask for an SSH line
+  SSH_UNREACHED: 'OFFLINE', // ssh to the host refused or timed out: ask for a Tailscale line
   // RATE
   QUOTA: 'RATE', // a link's per-op quota, lib/config.ts LINK_QUOTAS
   // PROTOCOL
@@ -79,3 +84,9 @@ export const reasonOf = (err: unknown): Reason | null => {
 
 /** The host ended the link (kick) or no longer knows its token: the token never gets in again. */
 export const REVOKED: ReadonlySet<string> = new Set<Reason>(['LINK_REVOKED', 'TOKEN_UNKNOWN']);
+
+/** A join's first dial that found nothing to talk to (see the header). */
+export const OTHER_WAY: ReadonlySet<string> = new Set<Reason>(['WEB_UNREACHED', 'SSH_UNREACHED']);
+/** The one action each of them names. */
+export const ASK_SSH = 'Ask the host for an SSH line.';
+export const ASK_TAILSCALE = 'Ask the host for a Tailscale line.';

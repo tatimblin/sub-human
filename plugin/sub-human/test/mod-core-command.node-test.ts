@@ -52,6 +52,15 @@ test('command: a word shaped like an invite line\'s SECRET is hidden wherever it
     assert.equal(hasPinWord(args), true, args);
   }
   assert.equal(hasPinWord('https://box.ts.net/sub-human/vole-1234#top'), false, 'a short fragment is no SECRET');
+  // the one line shape for every transport (0.6.1): ssh, ssh with the host's folder, an ssh forward, a pipe; typed with
+  // join or pasted without it, with the PIN after it or not
+  for (const line of [`ssh://me@devbox/vole-1234#${word}`, `ssh://devbox:2222/vole-1234?home=/srv/sh#${word}`, `ssh://devbox/vole-1234?forward=7420#${word}`, `pipe:/tmp/h2/vole-1234#${word}`]) {
+    for (const args of [`join ${line}`, `join ${line} 4829`, line, `${line} 4829`, `bob ${line}`]) {
+      assert.equal(mayHoldSecret(args), true, args);
+      assert.equal(hasPinWord(args), true, args);
+    }
+  }
+  assert.equal(hasPinWord('ssh://me@devbox/vole-1234'), false, 'a login line has no SECRET');
 });
 
 test('command: fragmentSecret reads a web line\'s SECRET from its URL', async () => {
@@ -114,6 +123,7 @@ test('verify12 local/37: a run that did not answer says how long it ran and what
   assert.equal(lastLine(`join dev vole-1234 4821 2hmejp4am3wm6rh3767dwrkeg99yyp05ry9js2b.`), 'join dev vole-1234 … …');
   assert.equal(lastLine('join https://box.ts.net/sub-human/vole-1234#2hmejp4am3wm6rh3767dwrkeg99yyp05ry9js2b 4821'), 'join https://box.ts.net/sub-human/vole-1234#… …', 'a web line keeps its URL; its fragment and the PIN after it go');
   assert.equal(lastLine('join dev vole-1234 2hmejp4am3wm6rh3767dwrkeg99yyp05ry9js2b 4821'), 'join dev vole-1234 … …', 'the line with its PIN after it');
+  assert.equal(lastLine('join ssh://me@devbox/vole-1234?forward=7420#2hmejp4am3wm6rh3767dwrkeg99yyp05ry9js2b 4821'), 'join ssh://me@devbox/vole-1234?forward=7420#… …', 'an ssh line too');
   assert.equal(lastLine('x'.repeat(400)).length, 160);
 });
 

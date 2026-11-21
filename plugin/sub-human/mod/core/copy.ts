@@ -19,7 +19,8 @@
  *      life drop it) copies nothing (GONE).
  *
  *   COPY_QUESTION, COPY_HEADER, COPY, SKIP, COPY_OPTIONS, copyChoiceOf(answer)   the question and its answer
- *   copyLine(line) -> string | null               a line the module may hold: one line, no PIN-shaped word in it
+ *   INSTALL_LINE, copyLine(line) -> string | null what the module may hold and copy: INSTALL_LINE, a newline, then the
+ *                                                 one invite line (no PIN-shaped word in either)
  *   copyBook()                                    the module's memory: hold, drop, keepOpen, lineFor, refs, choose, choice
  *   clipboardCommands(env) -> {name}[]            pbcopy, clip.exe (WSL), wl-copy (Wayland), xclip (X11), in order (scripts/clip.sh runs one)
  *   copyTo(run, line, commands) -> 'copied'|'none' each in turn until one exits 0; a missing tool, a failure or a
@@ -43,13 +44,17 @@ export const copyChoiceOf = (answer: string | null | undefined): CopyChoice => (
 
 const REF = /^[0-9a-f]{12}$/;
 const PIN_WORD = /^[0-9]{3,10}$/;
-/** line, when the module may hold and copy it: one line of at most 2000 characters with no word that could be a PIN
- * (3-10 digits standing alone), so a PIN never reaches the clipboard even if a line ever carried one; else null. */
+/** The line copied above an invite line, for someone with no sub-human yet (the PIN is never copied with either). */
+export const INSTALL_LINE = 'No sub-human yet? In a terminal: claude plugin marketplace add tatimblin/sub-human && claude plugin install sub-human@sub-human, then restart Claude Code';
+/** What the module may hold and copy for line: INSTALL_LINE, a newline, then the line (one line of at most 2000
+ * characters with no word that could be a PIN: 3-10 digits standing alone, so a PIN never reaches the clipboard even if
+ * a line ever carried one). line may already be that pair; any other newline, or a PIN-shaped word: null. */
 export function copyLine(line: unknown): string | null {
   if (typeof line !== 'string') return null;
-  const l = line.trim();
+  const t = line.trim();
+  const l = t.startsWith(`${INSTALL_LINE}\n`) ? t.slice(INSTALL_LINE.length + 1).trim() : t;
   if (!l || l.length > 2000 || /[\r\n]/.test(l)) return null;
-  return l.split(/\s+/).some(w => PIN_WORD.test(w)) ? null : l;
+  return l.split(/\s+/).some(w => PIN_WORD.test(w)) ? null : `${INSTALL_LINE}\n${l}`;
 }
 
 /** The module's memory of the lines it may copy, by invite ref (time passed in), and the session's choice. */

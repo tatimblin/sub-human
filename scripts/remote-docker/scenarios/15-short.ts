@@ -34,7 +34,7 @@ export async function run(t: T): Promise<void> {
   const shown = host.expand('alice', 'invite --ssh host@devbox');
   const m = LINE_RE.exec(`${shown.out}\n`), p = PIN_RE.exec(`${shown.out}\n`);
   if (m) t.ev.invite(m[1], p && p[1]); // before anything is logged: the evidence redacts them
-  if (!t.check('invite --ssh shows one line (/sub-human join host@devbox CODE SECRET, no NAME) and the PIN apart, hidden from the model', !!m && !!p && m[2] === 'host@devbox' && m[3] === code
+  if (!t.check('invite --ssh shows one line (/sub-human join ssh://host@devbox/CODE#SECRET, no NAME) and the PIN apart, hidden from the model', !!m && !!p && (m[2] ?? '').replace(/\?.*$/, '') === `ssh://host@devbox/${code}` && m[3] === undefined
     && shown.json && shown.json.hookSpecificOutput && shown.json.hookSpecificOutput.suppressOriginalPrompt === true && !shown.json.systemMessage, (shown.out || '').slice(0, 200)) || !m || !p) return;
   t.check('nothing of sub-human\'s in authorized_keys: no door, no line', !/sub-human/.test(ak()), `${ak().split('\n').filter(Boolean).length} line(s)`);
   const [, line = '', , , secret = ''] = m, [, pin = ''] = p; // LINE_RE's groups 1 and 4 and PIN_RE's 1 always match

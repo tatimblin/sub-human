@@ -4,7 +4,8 @@
  * model) and the CLI (lib/cli/host.ts). The joiner's side is joinLine() and givePin() below; the dial is the link
  * daemon's (lib/remote/link-connect.ts connectLink).
  *
- * hostInvite: an invite line `/sub-human join DEST ROOM SECRET [--home H]` and a 4-digit PIN the person
+ * hostInvite: an invite line `/sub-human join ssh://DEST/ROOM[?home=H]#SECRET` (a pipe: `pipe:HOME/ROOM#SECRET`) and a
+ * 4-digit PIN the person
  * tells apart (SECRET's tag names this home's machine key: lib/remote/invite-secret.ts). Over ssh the joiner's own
  * ssh login to this account runs the stable serve shim (shim.ts: it must be writable); nothing is written to
  * authorized_keys, and a joiner without a login here is invited over the web instead (webhost.ts). pipe: a second
@@ -17,7 +18,8 @@
  * picks the one open invite, or lists them when there are several.
  *
  * outcome watches the link daemon's hellos for up to LINK_JOIN_WAIT_MS: linked, pin (asked, or the last was wrong or
- * too soon), refused, or waiting (the card not answered yet, or slow). remoteLogin: whether this machine takes ssh
+ * too soon), refused, or waiting (the card not answered yet, or slow; otherWay: the first dial reached nothing, and its
+ * reason names the other kind of line to ask for). remoteLogin: whether this machine takes ssh
  * logins (null: cannot tell; SUB_HUMAN_REMOTE_LOGIN=on|off says it in tests); no network.
  */
 
@@ -34,6 +36,7 @@ import { RoomError } from '../room/validate.ts';
 import { localHm, isSeatName } from '../text.ts';
 import { INVITE_TTL_MS, LINK_JOIN_WAIT_MS } from '../config.ts';
 import { envStr } from '../env.ts';
+import { OTHER_WAY } from '../reasons.ts';
 import * as linkSocket from './link-socket.ts';
 import * as linkConnect from './link-connect.ts';
 import * as links from '../room/links.ts';
@@ -82,6 +85,8 @@ export interface Ended {
 export interface Outcome {
   state: 'linked' | 'pin' | 'refused' | 'waiting';
   reason?: string | undefined;
+  /** waiting: the first dial found nothing to talk to, and reason is the one line naming the other way in (OTHER_WAY) */
+  otherWay?: true;
 }
 
 const roomOf = (code: RoomCode) => roomMod.open(code);
@@ -214,7 +219,7 @@ function hostInvite(code: RoomCode, { ssh = true, pipe = false, by = null, now =
     const locator = linkConnect.pipeLocator();
     const r = invites.mintInvite(store, { kind: 'pipe', locator, by, now });
     const word = machineWord(r.secret);
-    const line = `/sub-human join ${locator} ${code} ${word}`;
+    const line = `/sub-human join ${locator}/${code}#${word}`;
     const parts = {
       code, how: 'from another sub-human folder on this machine', line, pin: r.pin, ref: r.ref, expires_at: r.expires_at,
     };
@@ -233,7 +238,7 @@ function hostInvite(code: RoomCode, { ssh = true, pipe = false, by = null, now =
   const ownHome = path.resolve(h) === path.join(os.homedir(), '.sub-human'); // where their login looks by default
   const r = invites.mintInvite(store, { kind: 'ssh', locator, by, now });
   const word = machineWord(r.secret);
-  const line = `/sub-human join ${dest} ${code} ${word}${ownHome ? '' : ` --home ${h}`}`;
+  const line = `/sub-human join ssh://${dest}/${code}${ownHome ? '' : `?home=${h}`}#${word}`;
   const reach = reachHints(dest, ssh === true && !envStr('SUB_HUMAN_SSH_ADDR'));
   // the ssh notes (their own login to this account; --forward; another name for this machine) are the README's
   const parts = { code, how: `over ssh ${dest}`, line, pin: r.pin, ref: r.ref, expires_at: r.expires_at, extra: reach.always };
@@ -324,6 +329,8 @@ function outcome(code: RoomCode, { waitMs = LINK_JOIN_WAIT_MS }: { waitMs?: numb
     if (stopped && stopped.why && PIN_REASONS.has(stopped.why) && lf && lf.pin_wanted) return { state: 'pin', ...(stopped.why !== 'PIN_NEEDED' ? { reason: stopped.reason } : {}) };
     if (stopped) return { state: 'refused', reason: stopped.reason };
     if (st.state === 'online' && lf && lf.token) return { state: 'linked' };
+    // the first dial reached nothing (off the host's tailnet, no sshd there): said now, while the link keeps trying
+    if (lf && !lf.token && OTHER_WAY.has(String(st.why ?? '')) && st.reason) return { state: 'waiting', reason: st.reason, otherWay: true };
     // a PIN typed while a knock waits, answered wrong or too soon: said, while the link keeps waiting for the card
     if (lf && lf.awaiting && lf.pin === undefined && lf.pin_wanted && lf.pin_wanted.why) return { state: 'pin', ...(lf.pin_wanted.message ? { reason: lf.pin_wanted.message } : {}) };
     if (st.state === 'offline' && lf && lf.awaiting && lf.pin === undefined) return { state: 'waiting', reason: st.reason };
@@ -355,6 +362,7 @@ function joinText(code: RoomCode, name: SeatName, o: Outcome, { tells = false }:
       + (tells ? 'This session takes your seat once they let you in' : 'Once they do, type /sub-human to join')
       + ` (the request waits ${minutes(configMod.ADMIT_TTL_MS)} minutes)`;
   }
+  if (o.otherWay && o.reason) return o.reason;
   const t: { kind?: string; host?: string } = lf.transport ?? {};
   const cert = t.kind === 'wss' && /\.ts\.net$/i.test(String(t.host || '')) && !o.reason
     ? ' (Tailscale may be issuing a certificate: the first connection to a ts.net name can take ~20 s; it keeps trying)' : '';
@@ -362,7 +370,7 @@ function joinText(code: RoomCode, name: SeatName, o: Outcome, { tells = false }:
 }
 
 /**
- * `/sub-human join DEST ROOM SECRET [PIN]` (or URL#SECRET, URL SECRET): the link file for an invite line, before any
+ * `/sub-human join LINE [PIN]` (ssh://DEST/ROOM#SECRET, URL#SECRET, pipe:HOME/ROOM#SECRET): the link file for an invite line, before any
  * dial: the transport (a web one with a fresh key of the link's own), the SECRET word, the PIN typed with it and
  * join_as. The daemon dials (lib/remote/link-connect.ts connectLink): the host key the line names first, then the
  * SECRET with the PIN; with no PIN the host asks for it.

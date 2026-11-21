@@ -51,7 +51,7 @@ test('forward: the line names the machine and the port, no account; the joiner\'
   assert.ok(hiddenBlock(out), out.stderr);
   const shown = must(out.json?.reason);
   const m = must(shownInvite(shown), shown);
-  assert.equal(m.line, `join devbox ${code} ${m.word} --forward ${port}`, 'the host name with no user, and the listener\'s port');
+  assert.equal(m.line, `join ssh://devbox/${code}?forward=${port}#${m.word}`, 'one URL: the host name with no user, the room, the listener\'s port, the SECRET as its fragment');
   assert.match(shown, /over their own ssh login to devbox/);
   assert.doesNotMatch(shown, /They log in to devbox as themselves/, 'the forward\'s notes are the README\'s (0.6.0)');
   assert.equal(host.lib(() => listener.status()).rooms[code]?.mode, 'ssh-forward');
@@ -88,9 +88,10 @@ test('forward: the line names the machine and the port, no account; the joiner\'
 });
 
 test('forward: an sshd that forwards nothing stops the join with what to ask for; no try is spent', async t => {
-  const { host, remote, alice, bob } = await rig(t, { FAKE_SSH_FAIL: 'noforward' });
+  const { port, host, remote, alice, bob, code } = await rig(t, { FAKE_SSH_FAIL: 'noforward' });
   const m = must(shownInvite(must(host.join(alice, 'invite --forward').json?.reason)));
-  const r = remote.join(bob, `${m.line} ${m.pin} --as bob`);
+  // the older positional form of the same line is still read
+  const r = remote.join(bob, `join devbox ${code} ${m.word} --forward ${port} ${m.pin} --as bob`);
   assert.match(must(r.json?.reason), /could not join room \S+: devbox's sshd doesn't let me@devbox forward ports \(its AllowTcpForwarding or DisableForwarding\)/);
 });
 
@@ -133,8 +134,17 @@ test('forward: argv, ssh\'s words, and the join\'s refusals', async t => {
   for (const [line, re] of [
     [`join devbox ${room} ${word} --forward 0`, /isn't a port/],
     [`join devbox ${room} ${word} --forward 7420 --home /x`, /--home goes with a login to the host's own account/],
-    [`join https://devbox/sub-human/${room} ${word} --forward 7420`, /goes with the host machine's name/],
-    [`join devbox ${room} --forward 7420`, /usage: \/sub-human join HOST ROOM SECRET --forward PORT/],
+    [`join https://devbox/sub-human/${room} ${word} --forward 7420`, /--forward goes in the line itself/],
+    [`join pipe:/x ${room} ${word} --forward 7420`, /goes with the host machine's name/],
+    [`join devbox ${room} --forward 7420`, /usage: \/sub-human join LINE PIN/],
+    // the one line shape
+    [`join ssh://devbox/${room}?forward=0#${word}`, /isn't a port/],
+    [`join ssh://devbox/${room}?forward=7420&home=/x#${word}`, /\?home goes with a login to the host's own account/],
+    [`join ssh://devbox/${room}?forward=7420&via=x#${word}`, /"via" isn't part of a join line/],
+    [`join ssh://devbox/${room}?forward=7420&forward=1#${word}`, /isn't a whole join line/],
+    [`join ssh://devbox/${room}?forward=7420#${word} --forward 7420`, /--forward goes in the line itself/],
+    [`join ssh://devbox/x/${room}?forward=7420#${word}`, /isn't a whole join line/],
+    [`join ssh://devbox/${room}?forward=7420#${word.slice(3)}`, /did not come through whole/],
   ] as const) {
     const r = remote.join(bob, line);
     assert.match(must(r.json?.reason, line), re, line);

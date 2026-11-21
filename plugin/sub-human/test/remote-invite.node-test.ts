@@ -1,5 +1,5 @@
 // The host's invite over ssh, without sshd (the dial through an ssh login is test/remote-invite-ssh.node-test.ts, and the
-// lab): `/sub-human invite` shows `/sub-human join DEST ROOM SECRET [--home H]` with the PIN apart and no
+// lab): `/sub-human invite` shows `/sub-human join ssh://DEST/ROOM[?home=H]#SECRET` with the PIN apart and no
 // NAME, and writes nothing to authorized_keys; the CLI's `sub-human invite` does the same in a terminal (the SECRET and
 // the PIN masked inside Claude Code); a linked machine given another invite to the same host through the same bastion
 // is linked already.
@@ -39,7 +39,7 @@ test('invite over ssh: the line with the host folder and no NAME, the PIN apart;
   const shown = host.join(alice, 'invite --ssh me@127.0.0.1:1');
   assert.ok(hiddenBlock(shown), shown.stderr);
   assert.equal(must(shown.json).systemMessage, undefined, 'the SECRET and the PIN stay off Remote Control');
-  assert.match(reason(shown), new RegExp(`\n  /sub-human join me@127\\.0\\.0\\.1:1 ${code} [0-9a-z]{39} --home ${esc(host.home)}\n`));
+  assert.match(reason(shown), new RegExp(`\n  /sub-human join ssh://me@127\\.0\\.0\\.1:1/${code}\\?home=${esc(host.home)}#[0-9a-z]{39}\n`));
   assert.match(reason(shown), /apart from the line \(say it, or send it another way\): \d{4}$/);
   assert.match(reason(shown), /^sub-human: Invite ready \(over ssh me@127\.0\.0\.1:1\) until /);
   assert.doesNotMatch(reason(shown), /their own ssh login to this account/, 'the README\'s');
@@ -56,7 +56,7 @@ test('invite over ssh: the line with the host folder and no NAME, the PIN apart;
   const al = host.join(alice, 'invite --ssh devbox');
   Object.keys(host.extra).forEach(k => { if (!(k in aliasEnv)) delete host.extra[k]; });
   assert.ok(hiddenBlock(al), al.stderr);
-  assert.match(reason(al), new RegExp(`\n  /sub-human join devbox ${code} [0-9a-z]{39} --home \\S+\n`));
+  assert.match(reason(al), new RegExp(`\n  /sub-human join ssh://devbox/${code}\\?home=\\S+#[0-9a-z]{39}\n`));
   assert.match(reason(al), /\(over ssh devbox\) until \d\d:\d\d\./);
   const locs = Object.values(host.lib(() => store.open(code).kv.get<Invites>(invites.INVITES_KEY)) || {}).map(i => (i as { locator?: string }).locator); // an admission record has none
   assert.ok(locs.includes('ssh:dev@devbox'), JSON.stringify(locs));
@@ -68,13 +68,13 @@ test('invite over ssh: the line with the host folder and no NAME, the PIN apart;
   const cli = (args: string[], extra: Record<string, string> = {}) => spawnSync(process.execPath, [h.BIN, ...args], { env: host.env(null, { ...env, ...extra }), encoding: 'utf8' });
   const out = cli(['invite', '--room', code], { SUB_HUMAN_SSH_ADDR: 'dev@box.example:2222' });
   assert.equal(out.status, 0, out.stderr);
-  assert.match(out.stdout, new RegExp(`\n  /sub-human join dev@box\\.example:2222 ${code} [0-9a-z]{39} --home \\S+\n`));
+  assert.match(out.stdout, new RegExp(`\n  /sub-human join ssh://dev@box\\.example:2222/${code}\\?home=\\S+#[0-9a-z]{39}\n`));
   // inside Claude Code (its ! shell: CLAUDECODE=1) the output is model input: the SECRET and the PIN are masked
   const inCc = cli(['invite', '--room', code], { SUB_HUMAN_SSH_ADDR: 'dev@box.example:2222', CLAUDECODE: '1' });
   assert.equal(inCc.status, 0, inCc.stderr);
   assert.doesNotMatch(inCc.stdout, /[0-9a-z]{39}/);
   assert.doesNotMatch(inCc.stdout, /another way\): \d{4}/);
-  assert.match(inCc.stdout, new RegExp(`${code} #### --home[\\s\\S]*PIN and SECRET hidden: this ran inside Claude Code.*/sub-human invite in the room`));
+  assert.match(inCc.stdout, new RegExp(`${code}\\?home=\\S+#####\n[\\s\\S]*PIN and SECRET hidden: this ran inside Claude Code.*/sub-human invite in the room`));
   assert.equal(cli(['invite', '--ssh', 'bad host', '--room', code]).status, 1);
   assert.equal(cli(['invite', '--pipe', '--web', '--room', code]).status, 2);
   assert.equal(cli(['admit', 'shk1.nope', '--yes']).status, 2);

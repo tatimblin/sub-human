@@ -91,7 +91,9 @@ test('ssh.loginFailure: what only the person can fix names the exact step; anyth
   const f = (s: string) => ssh.loginFailure(s, spec, rc('vole-1234'));
   assert.match(must(f('Host key verification failed.')), /Run `ssh me@devbox` once in a terminal, check and accept the key, then join again/);
   assert.match(must(ssh.loginFailure('Host key verification failed.', { ...spec, port: 2222 }, rc('vole-1234'))), /`ssh -p 2222 me@devbox`/);
-  assert.match(must(f('me@devbox: Permission denied (publickey).')), /refused your ssh login: sub-human logs in with your ssh keys or agent only, never a password\..*behind MFA \(an interactive login\), run `ssh me@devbox` yourself once first/);
+  // a refused login names the other way in, in one line: <what didn't happen>. <one action>.
+  assert.equal(f('me@devbox: Permission denied (publickey).'), 'me@devbox refused your ssh login (sub-human uses your ssh keys or agent, never a password). Ask the host for a Tailscale line.');
+  assert.match(must(f('(me@devbox) Verification code: \nme@devbox: Permission denied (keyboard-interactive).')), /^me@devbox wants an interactive login \(MFA\), and sub-human never answers ssh's questions\. Run `ssh me@devbox` yourself once, then join again$/);
   assert.match(must(f('sh: 1: /home/me/.sub-human/bin/serve: not found')), /me@devbox has no sub-human at ~\/\.sub-human\/bin\/serve\. If the room is in someone else's account on devbox, you can't join through theirs: ask them for \/sub-human invite --forward, which goes through your own login there\. If it's your own account, open the room there in Claude Code \(\/sub-human\), then join again; .*--home PATH/);
   assert.match(must(f('zsh:1: no such file or directory: /home/me/.sub-human/bin/serve')), /has no sub-human at/);
   assert.match(must(ssh.loginFailure('env: /srv/sh/bin/serve: No such file or directory', { ...spec, remoteHome: '/srv/sh' }, rc('vole-1234'))), /has no sub-human at \/srv\/sh\/bin\/serve\./);
@@ -103,6 +105,12 @@ test('ssh.loginFailure: what only the person can fix names the exact step; anyth
   assert.match(must(f('sub-human serve --login: refused: this connection came through a forced command')), /forced command/);
   assert.equal(f('ssh: connect to host devbox port 22: Connection refused'), null);
   assert.equal(f('ssh: connect to host devbox port 22: Operation timed out'), null);
+  // ...though a first dial that reaches no sshd names the other way in, while the link keeps trying (OFFLINE)
+  const off = must(ssh.unreached('ssh: connect to host devbox port 22: Connection refused\n', spec, { first: true }));
+  assert.deepEqual([off.code, off.reason, off.message], ['OFFLINE', 'SSH_UNREACHED', 'Couldn\'t reach devbox over ssh (ssh: connect to host devbox port 22: Connection refused). Ask the host for a Tailscale line.']);
+  assert.equal(ssh.unreached('ssh: connect to host devbox port 22: Operation timed out', spec, { first: true })?.reason, 'SSH_UNREACHED');
+  assert.equal(ssh.unreached('ssh: connect to host devbox port 22: Connection refused', spec), null, 'a link that connected before: a blip it rides out');
+  assert.equal(ssh.unreached('me@devbox: Permission denied (publickey).', spec, { first: true }), null, 'a refused login is loginProblem\'s');
   // item 15: a name ssh cannot resolve stops a login link's first connection with ssh's own words (no retrying forever);
   // a link that connected before keeps retrying (a laptop offline resolves nothing for a while)
   const dns = 'ssh: Could not resolve hostname devbox: nodename nor servname provided, or not known';
@@ -315,9 +323,9 @@ test('login e2e: an unknown host key fails at once with the exact ssh to run onc
   const b = setup(t, { FAKE_SSH_FAIL: 'denied' });
   const d = b.remote.join(b.bob, `join me@devbox ${b.code} --as bob`);
   stopDaemon(t, b.remote, b.code);
-  assert.match(must(must(d.json).reason), /me@devbox refused your ssh login: sub-human logs in with your ssh keys or agent only, never a password/);
+  assert.match(must(must(d.json).reason), /me@devbox refused your ssh login \(sub-human uses your ssh keys or agent, never a password\)\. Ask the host for a Tailscale line\. No invite/);
   // no SECRET is the login path, said so: a person who lost an invite line's SECRET learns where it goes
-  assert.match(must(must(d.json).reason), new RegExp(`No invite, so this went over your own ssh login; if the host sent you an invite line, it ends with a long SECRET: /sub-human join me@devbox ${b.code} SECRET$`));
+  assert.match(must(must(d.json).reason), new RegExp(`No invite, so this went over your own ssh login; if the host sent you an invite line, it ends with a long SECRET: /sub-human join ssh://me@devbox/${b.code}#SECRET$`));
 });
 
 test('login e2e: a pass-through forced command cannot use the login path', t => {
@@ -336,8 +344,8 @@ test('login join: the argument forms are told apart; bad parts are refused befor
   const { remote, bob, code } = setup(t);
   const bad = (args: string, re: RegExp) => { const r = remote.join(bob, args); assert.equal(must(r.json).decision, 'block', args); assert.match(must(must(r.json).reason), re, args); };
   bad(`join me@devbox --as bob`, /which room/);
-  bad(`join me@devbox ${code} extra --as bob`, /the line's SECRET \(its last long word\) did not come through whole/);
-  bad(`join me@devbox ${code} 4829 --as bob`, /the line's SECRET \(its last long word\) did not come through whole/);
+  bad(`join me@devbox ${code} extra --as bob`, /the line's SECRET \(its long last word, after the #\) did not come through whole/);
+  bad(`join me@devbox ${code} 4829 --as bob`, /the line's SECRET \(its long last word, after the #\) did not come through whole/);
   bad(`join me@devbox not-a-code --as bob`, /"not-a-code" isn't a room/);
   bad(`join -oProxyCommand=x@y ${code} --as bob`, /isn't a plain USER@HOST/);
   bad(`join me@devbox ${code} --as bob --via jump`, /"--via" isn't a join option/);
