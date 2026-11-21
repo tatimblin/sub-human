@@ -41,9 +41,9 @@ What a person sees after it:
 - **Gate:** `--only S1,S2,S4,S5,S10` for auto, default and acceptEdits, then `checks.ts`.
 - Then the 0.6.x release recipe.
 
-## Decisions for the owner
-1. **Step 3 removes the plan-mode edit entirely.** Recommended: yes. Today the model edits a plan file in plan mode, and that only adds round trips. The person still reads every version in their plan view before it goes out. The alternative is to keep it as an opt-in for when the person wants to type into the plan themselves.
-2. **A failed send** (host unreachable) is no longer kept for a retry card. Recommended: the model is told it didn't go. The person's note is still in the transcript, so they say "send it again" and their Claude reopens the review. The alternative is to keep a small retry path.
+## Owner decisions (2026-11-21)
+1. **Group planning is unchanged.** Versions, sending them back and forth, and sign-off per version all stay. Step 3 only changes how Claude writes a version. The plan-mode edit goes entirely: people never type into the plan file; they give feedback with "Tell Claude what to change".
+2. **A note that can't reach the host** (link down) is not queued: the outbox keeps out answers on purpose (`lib/remote/outbox.ts`: a late answer is worse than none, and its signature expires). The person gets one line, `Your note didn't reach the room; ask Claude to send it again when you're back online.` The model is told the same, with the note, so "send it again" reopens the review with nothing retyped.
 
 ## Order
 1, then 2 (they share the wording), then 4, then 3 (the biggest deletion, last so 1, 2 and 4 can ship as 0.7.0-beta if 3 slips).
