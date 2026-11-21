@@ -66,10 +66,10 @@ Each surface the design relies on gets a contract entry (search string, `feature
 - **Demo:** a new scene in which B types in the row, A's Claude answers a factual question as `A's Claude`, and A answers an opinion question himself. Checks: no model step in the row, no main line for a non-urgent message, and the unread count.
 - **Gate:** the three modes, plus the new scene.
 
-## Decisions for the owner
-1. **Where an assistant answer runs.** When a message names maya, her **main** Claude answers it: it has her context, so the answer is right. That takes a turn in her main session, visible there as a short exchange. The alternative is a background fork of her session that answers out of sight. Recommended: main, with the wake one quiet line, because a hidden fork answering in her name is the thing to avoid.
-2. **Provenance.** The transcript credits synthesized row lines to the model (`origin: model`). Recommended: accept it, with every drawn line carrying its real author (`maya:`, `maya's Claude:`), and say so in the README. The alternative is to wait for a plugin-origin step from Claude Code.
-3. **Desktop, VS Code and Remote Control can't type into a row** (`send_task_message` is unsupported). Recommended: the row there is read-only with its label, and `@room` is the way to talk. Fine for 0.8.0?
+## Owner decisions (2026-11-21: all three as recommended)
+1. **Where an assistant answer runs.** When a message names maya, her **main** Claude answers it: it has her context, so the answer is right. That takes a turn in her main session, visible there as a short exchange. The alternative is a background fork of her session that answers out of sight. Decided: main, with the wake one quiet line, because a hidden fork answering in her name is the thing to avoid.
+2. **Provenance.** The transcript credits synthesized row lines to the model (`origin: model`). Decided: accept it, with every drawn line carrying its real author (`maya:`, `maya's Claude:`), and say so in the README. The alternative is to wait for a plugin-origin step from Claude Code.
+3. **Desktop, VS Code and Remote Control can't type into a row** (`send_task_message` is unsupported). Decided: the row there is read-only with its label, and `@room` is the way to talk.
 
 ## Order and size
 Phase 0 first: each spike can change the phases after it. Then 1, 2, 3, 4. Phase 1 alone is shippable as 0.8.0-beta (the row as a chat for people, no assistants yet) if 2 slips.
