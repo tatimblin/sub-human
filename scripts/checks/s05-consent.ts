@@ -83,11 +83,12 @@ export function run(x: Ctx, { det, beh }: { det: Det; beh: Beh }): void {
   const name = log.find(e => e.kind === 'plan' && e.version === 1)?.plan;
   const vs = log.filter(e => e.kind === 'plan' && e.plan === name).map(e => ({ v: e.version, base: e.base, from: e.from, id: e.id }));
   const v2 = vs.find(v => v.v === 2);
-  det(`v2 by ${A}'s Claude, on v1`, v2 && v2.from === A && v2.base === 1, vs.map(v => `v${v.v} base v${v.base} ${v.from} #${v.id}`).join(', ') || 'no versions');
+  // 0.7.0: the author's Claude writes the next version from the objection's note, unasked
+  det(`v2 by ${B}'s Claude (the author's), on v1`, v2 && v2.from === B && v2.base === 1, vs.map(v => `v${v.v} base v${v.base} ${v.from} #${v.id}`).join(', ') || 'no versions');
   objectionGate(x, det, beh, ob, p1?.at);
-  const se = saveErrors(x, 'S5', A);
-  det(`No red "Error:" in ${A}'s pane on the save of v2`, se.read.includes(`save-${A}.txt`) && se.lines.length === 0,
-    se.lines.length ? se.lines.slice(0, 3).join(' | ') : se.read.includes(`save-${A}.txt`) ? `none in ${se.read.length} pane(s)` : `state/S5/save-${A}.txt not saved`);
+  const se = saveErrors(x, 'S5', B);
+  det(`No red "Error:" in ${B}'s pane on the save of v2`, se.read.includes(`save-${B}.txt`) && se.lines.length === 0,
+    se.lines.length ? se.lines.slice(0, 3).join(' | ') : se.read.includes(`save-${B}.txt`) ? `none in ${se.read.length} pane(s)` : `state/S5/save-${B}.txt not saved`);
   const last = vs.at(-1);
   det('A new sign-off request on the latest version', p2 && last && p2.hash !== p1?.hash && p2.version === last.v && p2.id > last.id,
     p2 ? `${p1?.hash.slice(0, 6)} → ${p2.hash.slice(0, 6)} (#${p2.id}, v${p2.version})` : 'no request after the edits');
