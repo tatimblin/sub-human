@@ -58,8 +58,10 @@ export const chat: {
   modelHolds: number;
   /** who else is here (the tail's here event), and the room lines drawn since the person last opened or typed in it */
   here: string;
+  /** the row opened before who's here was known: the first here event draws it as the row's first line */
+  rosterDue: boolean;
   unread: number;
-} = { row: null, gone: new Set(), waiting: [], lines: new Set(), quiet: new Set(), echo: new Set(), keepers: [], modelHolds: 0, here: '', unread: 0 };
+} = { row: null, gone: new Set(), waiting: [], lines: new Set(), quiet: new Set(), echo: new Set(), keepers: [], modelHolds: 0, here: '', rosterDue: false, unread: 0 };
 
 /** The status line under main's prompt, or undefined (no row). */
 export const chatStatus = (): string | undefined => (chat.row ? rowStatus(chat.row.code, chat.here, chat.unread) : undefined);

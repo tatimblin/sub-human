@@ -465,6 +465,7 @@ async function chatRow($: EngineInterface, sid: string, code: string, list: read
 async function chatSpawned($: EngineInterface, sid: string, code: string, id: string): Promise<void> {
   chat.row = { sid, code, id };
   chat.waiting.push({ line: chat.here || NOTHING });
+  chat.rosterDue = !chat.here; // not known yet: the tail's first here event draws it
   try { await $.store.set(CHAT_ROWS, keepRow(await $.store.get(CHAT_ROWS), sid, { code, id })); } catch { /* this process still has it */ }
   showStatus($);
 }
@@ -632,7 +633,13 @@ async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
       case 'append': if (!(await appendRow($, a.text))) await noteError($); break; // refused or failed: lost
       case 'hold-pull': if (!(await holdPullEvent($, a.text))) await noteError($); break; // neither held nor appended: lost
       case 'hold-reminders': await $.state.set(REMINDERS, a.text); break;
-      case 'here': chat.here = a.text; showStatus($); break;
+      case 'here': {
+        chat.here = a.text;
+        // a row that opened before who's here was known: its first line is the roster, once
+        if (chat.rosterDue && chat.row) { chat.rosterDue = false; void chatSay($, chat.row.id, a.text); }
+        showStatus($);
+        break;
+      }
       case 'submit': void submitWake($, a.text, { seen: a.seen }); break; // not awaited: it resolves as the turn starts
       case 'mid-turn-wake': await midTurnWake($, a.text); break;
       case 'invites':

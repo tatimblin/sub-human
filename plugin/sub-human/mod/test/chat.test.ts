@@ -106,6 +106,13 @@ test('room-chat: a turn spawns the row named the room code; its first step start
   expect(toolOf(k0)).toEqual({ name: 'mcp__plugin_sub-human_room__hold', input: { room: CODE, take: true } })
   expect(seen.model).toBe(0)
   expect(seen.store.get('chatRows')).toEqual({ [SID]: { code: CODE, id: 'row1' } })
+  // who is here, once the tail knows it: the row's first line, sent once
+  seen.feed({ type: 'here', text: 'bob here' })
+  await new Promise(r => setTimeout(r, 10))
+  expect(seen.sends.filter(x => x.text === 'bob here')).toEqual([{ to: 'row1', text: 'bob here' }])
+  seen.feed({ type: 'here', text: 'bob, carol here' })
+  await new Promise(r => setTimeout(r, 10))
+  expect(seen.sends.filter(x => x.text === 'bob, carol here')).toEqual([])
 })
 
 test('room-chat: a typed line is posted once as the person\'s exact words (node at-room, origin composer), drawn as "you: …", with no model step', async ($, on) => {
@@ -138,7 +145,7 @@ test('room-chat: a room line from the tail is sent to the row, drawn there with 
   await settle()
   expect(seen.sends.at(-1)).toEqual({ to: 'row1', text: 'bob: pushed the cursor change' })
   expect(seen.statuses.at(-1)).toBe(`${CODE} · bob here · 1 new`)
-  expect(textOf(await step($, 'row1', 0))).toBe('bob: pushed the cursor change')
+  expect(textOf(await step($, 'row1', 0))).toBe('bob here\nbob: pushed the cursor change') // the roster first (it opened before who's here was known)
   await $.session.append({ message: { type: 'assistant', role: 'assistant', content: [{ type: 'text', text: 'bob: pushed the cursor change' }] }, door: 'response', origin: { kind: 'model', model: 'm' }, uuid: 'u-line', agentId: 'row1' })
   const drawn = await $.ui.render({ surface: 'terminal', component: 'AssistantMessage', requestId: 'u-line', props: { text: 'bob: pushed the cursor change', isFirstOfReply: true, onScreen: null } })
   expect(JSON.stringify(drawn)).toContain('"bold":true')
