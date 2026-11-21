@@ -110,9 +110,9 @@ export interface Review {
   shownAt?: number;
   /** the person had typed text in the prompt when the plan view opened: their keys may answer it, so a Yes is asked again */
   typing?: boolean;
-  /** #34: the note's Send / Discard, answered before the closing call (lib/consent/review.ts noteAnswer): the closing
-   * plan line of a person in auto mode says where it went */
-  closing?: 'sent' | 'discarded';
+  /** the person's note was recorded (hooks/consent.ts, the answer effect's sentTo): the closing plan line of a person
+   * in auto mode says where it went */
+  closing?: 'sent';
   /** hash12 of what the review last wrote to the plan file (the framed version, the closing line): a stale review's
    * restore (lib/proposal.ts restoreStale) puts the person's plan back over it, never over a file they wrote since */
   wrote?: string;

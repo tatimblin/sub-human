@@ -41,7 +41,7 @@ const leaves = (r: HookRun, what = 'the closing call asks to leave plan mode') =
 const closes = (r: HookRun, line: string, what = 'the closing call keeps auto mode') => assert.deepEqual([decision(r), hso(r).updatedInput], ['ask', { plan: line }], what);
 /** The closing lines (lib/consent/review.ts closingLine), alice the proposer. */
 const CLOSED = 'Room review closed. Nothing to build.';
-const UNSENT = 'Your note to alice is not sent yet. Nothing to build.';
+const SENT = 'Your note went to alice. Nothing to build.';
 const decisions = (w: World) => w.entries().filter(e => e.kind === 'decision');
 
 test('consent: Pre rewrites only a call that names my pending proposal; model answers are dropped', () => {
@@ -209,21 +209,6 @@ const said = (text: string) => `The user doesn't want to proceed with this tool 
 const ev = (event: string, tool?: string | null, extra: HookInput = {}): HookInput => ({ hook_event_name: event, ...(tool ? { tool_name: tool } : {}), ...extra });
 /** bob's review state (his session document's review), or null. */
 const review = (w: World): Review | null => w.lib(() => proposal.readReview(seat(w, 'bob')));
-/** The note waiting for the person's Send (the session document's confirm), or null. */
-const waiting = (w: World, name = 'bob') => w.lib(() => proposal.readConfirm(seat(w, name)));
-/**
- * The confirm card for a waiting note: the model's AskUserQuestion naming `objection <hash>` (Pre asks with the
- * hooks' card), then the person's answer `label` on that card as shown. Returns {pre, post, card}.
- */
-function confirm(w: World, hash: string, label: string | null | undefined, { as = 'bob', resp = {} }: { as?: string; resp?: HookInput } = {}) {
-  const pre = w.hook('consent', preAsk({ questions: [{ question: `objection ${hash}`, header: 'x', options: [{ label: 'Send' }, { label: 'Discard' }] }] }), { as });
-  assert.equal(decision(pre), 'ask');
-  const card = cardOf(pre);
-  const q = must(card.questions[0]).question;
-  const post = w.hook('consent', postAsk({ ...card, answers: label == null ? {} : { [q]: label }, ...resp }), { as });
-  return { pre, post, card };
-}
-
 test('review: EnterPlanMode is let through only for a pending proposal and a reviewable mode (plan mode itself included); others untouched', () => {
   const { w, hash } = world();
   const enter = (mode: string | undefined) => w.enterPlan(ev('PreToolUse', 'EnterPlanMode', { permission_mode: mode, tool_input: {} }), { as: 'bob' });
@@ -331,7 +316,7 @@ test('review: "Tell Claude what to change" records an objection with the note by
       assert.match(must(ctx(r)), /Before anything else, call ExitPlanMode now/);
     }
     // The exit: back to auto (its closing line the only plan, never the proposal shown as approved), the file removed.
-    const line = viaStop ? UNSENT : CLOSED;
+    const line = viaStop ? SENT : CLOSED;
     closes(w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu9', transcript_path: tp }), { as: 'bob' }), line);
     assert.equal(fs.readFileSync(file, 'utf8'), line, 'only the closing line for the closing call (never a plan shown as approved)');
     const said = ctx(w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: {}, tool_use_id: 'tu9', tool_response: { plan: null } }), { as: 'bob' }));
@@ -342,18 +327,11 @@ test('review: "Tell Claude what to change" records an objection with the note by
   const esc = run('The user doesn\'t want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.', false);
   assert.match(must(esc), /closed the review .* without answering; nothing was recorded/);
   assert.deepEqual(answers(w), []);
-  // Feedback: nothing recorded yet; the note waits for bob's Send on the confirm card.
-  const obj = run(said(note), true);
-  assert.match(must(obj), /note on [0-9a-f]{12} waits for Send or Discard.*call AskUserQuestion with "objection /);
-  assert.deepEqual(answers(w), []);
-  assert.equal(must(waiting(w)).note, note);
-  assert.equal(review(w), null);
-  // Send: the objection, the note byte for byte.
-  const { post } = confirm(w, hash, 'Send');
-  assert.match(must(ctx(post)), /bob objected to proposal/);
+  // Feedback: the objection is recorded as the Stop reads it, the note byte for byte.
+  run(said(note), true);
   const a = answers(w);
   assert.deepEqual(a.map(x => [x.kind, x.via, x.from, x.proposal_hash, x.text]), [['objection', 'human', 'bob', hash, note]]);
-  assert.equal(waiting(w), null);
+  assert.equal(review(w), null);
 });
 
 test('review: a room tool call after "Tell Claude what to change" records the objection now and is denied with the exit', () => {
@@ -367,25 +345,21 @@ test('review: a room tool call after "Tell Claude what to change" records the ob
   // With no review open (alice), a room tool call is untouched; a read outside plan mode exits before loading.
   assert.equal(w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__post', { permission_mode: 'plan', tool_input: { text: note }, transcript_path: tp }), { as: 'alice' }).stdout, '');
   assert.equal(w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__read', { permission_mode: 'auto', tool_input: {}, transcript_path: tp }), { as: 'bob' }).stdout, '');
-  // bob's Claude tries to post his note itself: denied, the note waits for bob's Send (nothing recorded), exit next.
+  // bob's Claude tries to post his note itself: denied, the objection recorded with the note (via=human), exit next.
   const r = w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__post', { permission_mode: 'plan', tool_input: { kind: 'say', text: note }, transcript_path: tp }), { as: 'bob' });
   assert.equal(decision(r), 'deny');
   assert.equal(reason(r), '', 'no red reason');
-  assert.match(must(ctx(r)), /Nothing is recorded yet: bob's note on .* waits for Send or Discard.*Post nothing about the review\. First call ExitPlanMode now/);
+  assert.match(must(ctx(r)), /First call ExitPlanMode now.*bob objected to proposal/);
   assert.doesNotMatch(must(ctx(r)), /#\d/);
-  assert.deepEqual(answers(w), []);
-  assert.equal(must(waiting(w)).note, note);
+  assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.from, x.proposal_hash, x.text]), [['objection', 'human', 'bob', hash, note]]);
   assert.equal(must(review(w)).phase, 'exiting');
-  // The exit: Claude Code's own "exit plan mode?" (the plan emptied), the plan file removed; still nothing recorded.
-  closes(w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu9', transcript_path: tp }), { as: 'bob' }), UNSENT);
-  assert.equal(fs.readFileSync(file, 'utf8'), UNSENT);
-  assert.match(must(ctx(w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: {}, tool_response: { plan: UNSENT } }), { as: 'bob' }))), /review is closed\. Nothing is to be built/, 'never "the mode is restored"; nothing to build (#34)');
+  // The exit: Claude Code's own "exit plan mode?" (its closing line), the plan file removed; recorded once.
+  closes(w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu9', transcript_path: tp }), { as: 'bob' }), SENT);
+  assert.equal(fs.readFileSync(file, 'utf8'), SENT);
+  assert.match(must(ctx(w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: {}, tool_response: { plan: SENT } }), { as: 'bob' }))), /review is closed\. Nothing is to be built/, 'never "the mode is restored"; nothing to build (#34)');
   assert.equal(fs.existsSync(file), false);
-  assert.deepEqual(answers(w), []);
+  assert.equal(answers(w).length, 1);
   assert.equal(review(w), null);
-  // bob's Send on the card: recorded once, byte-exact (via=human).
-  confirm(w, hash, 'Send');
-  assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.text]), [['objection', 'human', note]]);
 });
 
 /**
@@ -420,19 +394,15 @@ test('review: a hook that runs while the dialog is open (no rejection line yet) 
   assert.match(must(ctx(early)), /bob's answer in the review of proposal [0-9a-f]{12} is not on record yet; nothing was recorded/);
   assert.doesNotMatch(must(ctx(early)), /without answering/);
   assert.deepEqual([must(review(w)).phase, must(review(w)).unread], ['exiting', true]);
-  assert.equal(waiting(w), null);
+  assert.deepEqual(answers(w), []);
   // bob answers "Tell Claude what to change" with his note: the line as the trial wrote it.
   fs.appendFileSync(tp, rejectionRows('tu1', note));
-  // The model's closing ExitPlanMode (it passes the plan back, as in the trial): no dialog, and the note is read now.
-  closes(w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: TEXT, planFilePath: file }, tool_use_id: 'tu2', transcript_path: tp }), { as: 'bob' }), UNSENT);
-  assert.equal(must(waiting(w)).note, note, 'the note waits byte-exact (confirm)');
-  const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: {}, tool_use_id: 'tu2', tool_response: { plan: null, filePath: file }, transcript_path: tp }), { as: 'bob' });
-  assert.match(must(ctx(post)), new RegExp(`Nothing is recorded yet: bob's note on ${hash} waits for Send or Discard on its card\\. Next, call AskUserQuestion with "objection ${hash}"`));
-  assert.deepEqual(answers(w), [], 'a note alone records nothing');
+  // The model's closing ExitPlanMode (it passes the plan back, as in the trial): no dialog; the note is read and recorded now.
+  w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: TEXT, planFilePath: file }, tool_use_id: 'tu2', transcript_path: tp }), { as: 'bob' });
+  assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.proposal_hash, x.text]), [['objection', 'human', hash, note]], 'byte-exact');
+  w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: {}, tool_use_id: 'tu2', tool_response: { plan: null, filePath: file }, transcript_path: tp }), { as: 'bob' });
   assert.equal(review(w), null);
-  // The card: bob's Send records the objection with his note.
-  confirm(w, hash, 'Send');
-  assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.text]), [['objection', 'human', note]]);
+  assert.equal(answers(w).length, 1);
 });
 
 test('review: the closing ExitPlanMode waits for a rejection line Claude Code has not written yet; Post reads it last; none at all is no answer', () => {
@@ -449,23 +419,20 @@ test('review: the closing ExitPlanMode waits for a rejection line Claude Code ha
     w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu2', transcript_path: tp }), { as: 'bob', env });
     return ctx(w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: {}, tool_use_id: 'tu2', tool_response: { plan: null, filePath: file }, transcript_path: tp }), { as: 'bob', env }));
   };
-  // The line lands while Pre(ExitPlanMode) polls for it.
-  const a = open('late');
-  const rows = path.join(w.cwd, 'rows.jsonl');
-  fs.writeFileSync(rows, rejectionRows('tu1', note));
-  const writer = spawn('sh', ['-c', `sleep 0.3; cat "${rows}" >> "${a.tp}"`], { stdio: 'ignore' });
-  const late = close(a.tp, a.file, { SUB_HUMAN_EXIT_INPUT_WAIT_MS: '5000' });
-  assert.match(must(late), /note on [0-9a-f]{12} waits for Send or Discard/);
-  assert.equal(must(waiting(w)).note, note);
-  writer.kill();
-  confirm(w, hash, 'Discard');
   // No line ever: Pre leaves it unread, Post settles it as closed without answering.
   const b = open('none');
   const none = close(b.tp, b.file, { SUB_HUMAN_EXIT_INPUT_WAIT_MS: '100' });
   assert.match(must(none), /bob closed the review of proposal [0-9a-f]{12} without answering; nothing was recorded/);
-  assert.equal(waiting(w), null);
   assert.equal(review(w), null);
   assert.deepEqual(answers(w), []);
+  // The line lands while Pre(ExitPlanMode) polls for it: the note is recorded.
+  const a = open('late');
+  const rows = path.join(w.cwd, 'rows.jsonl');
+  fs.writeFileSync(rows, rejectionRows('tu1', note));
+  const writer = spawn('sh', ['-c', `sleep 0.3; cat "${rows}" >> "${a.tp}"`], { stdio: 'ignore' });
+  close(a.tp, a.file, { SUB_HUMAN_EXIT_INPUT_WAIT_MS: '5000' });
+  writer.kill();
+  assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.text]), [['objection', 'human', note]]);
 });
 
 test('review: 2.1.292 runs Pre(ExitPlanMode) before the call\'s transcript line is written, with a blank plan: the only pending proposal is shown; the line is waited for', () => {
@@ -544,8 +511,7 @@ test('review: the note comes from the structured userFeedback field; the backup 
   ].map(l => JSON.stringify(l)).join('\n') + '\n');
   const r = w.hook('consent', ev('Stop', null, { permission_mode: 'plan', stop_hook_active: false, transcript_path: tp }), { as: 'bob' });
   assert.match(must(ctx(r)), /review is still open/);
-  assert.deepEqual(answers(w), [], 'a note alone records nothing');
-  assert.equal(must(waiting(w)).note, note, 'the note waits byte-exact');
+  assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.text]), [['objection', 'human', note]], 'recorded byte-exact');
   leaves(w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu9', transcript_path: tp }), { as: 'bob' }));
   assert.equal(fs.readFileSync(file, 'utf8'), '', 'emptied for the closing call');
   w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: {}, tool_response: { plan: null } }), { as: 'bob' });
@@ -553,26 +519,26 @@ test('review: the note comes from the structured userFeedback field; the backup 
   assert.ok(!fs.existsSync(path.join(w.memberDir('bob'), 'review.json.lock')), 'the lock is released');
 });
 
-test('shim mode (SUB_HUMAN_SHIM=1, mod/consent.ts): Stop always reports subHuman {reviewOpen, noteWaits} beside its usual output', () => {
+test('shim mode (SUB_HUMAN_SHIM=1, mod/consent.ts): Stop always reports subHuman {reviewOpen} beside its usual output', () => {
   const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
   const shim = { as: 'bob', env: { SUB_HUMAN_SHIM: '1' } };
   const stop = (extra: HookInput) => w.hook('consent', ev('Stop', null, { stop_hook_active: false, ...extra }), shim);
   // no review: nothing to say but the report
   let r = stop({ permission_mode: 'default' });
   assert.equal(r.code, 0, r.stderr);
-  assert.deepEqual(r.json, { subHuman: { reviewOpen: false, noteWaits: false } });
+  assert.deepEqual(r.json, { subHuman: { reviewOpen: false } });
   // a review still in restore: the nudge, and the report says it is open
   w.lib(() => proposal.writeReview(seat(w, 'bob'), { phase: 'restore', mode: 'default', at: Date.now() }));
   r = stop({ permission_mode: 'auto' });
   assert.match(must(ctx(r)), /restore bob's default mode/);
-  assert.deepEqual(must(r.json).subHuman, { reviewOpen: true, noteWaits: false });
+  assert.deepEqual(must(r.json).subHuman, { reviewOpen: true });
   // the restore done (mode back): consent clears the review, and says so
   r = stop({ permission_mode: 'default' });
-  assert.deepEqual(r.json, { subHuman: { reviewOpen: false, noteWaits: false } });
+  assert.deepEqual(r.json, { subHuman: { reviewOpen: false } });
   // unseated session: no review possible
   const u = new World({}, { room: false });
   const n = u.hook('consent', ev('Stop', null, { permission_mode: 'default' }), { env: { CLAUDE_PID: undefined, SUB_HUMAN_SHIM: '1' }, session: false });
-  assert.deepEqual(n.json, { subHuman: { reviewOpen: false, noteWaits: false } });
+  assert.deepEqual(n.json, { subHuman: { reviewOpen: false } });
   // without shim mode: unchanged (no output)
   assert.equal(w.hook('consent', ev('Stop', null, { permission_mode: 'default' }), { as: 'bob' }).stdout, '');
 });
@@ -600,7 +566,7 @@ test('hooks.json: consent is the module\'s (mod/consent.ts); its classic.PreTool
   }
 });
 
-test('consent: a room tool call other than post outside plan mode exits at once, loading nothing but its entry; in plan mode, or a post, it loads the rest', t => {
+test('consent: a room tool call (a post too) outside plan mode exits at once, loading nothing but its entry; in plan mode it loads the rest', t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-consent-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const preload = path.join(dir, 'loaded.js');
@@ -617,13 +583,14 @@ test('consent: a room tool call other than post outside plan mode exits at once,
     const line = r.stderr.split('\n').find(l => l.startsWith('LOADED '));
     return { stdout: r.stdout, loaded: (JSON.parse(must(line).slice(7)) as string[]).map(f => path.relative(PLUGIN, f)).filter(f => !f.startsWith('..')) };
   };
-  for (const mode of ['default', 'acceptEdits', 'auto', 'bypassPermissions', undefined]) {
-    const q = run(mode, 'read');
-    assert.equal(q.stdout, '', String(mode));
-    assert.deepEqual(q.loaded.sort(), ['hooks/handlers/consent.ts', 'hooks/reply.ts', 'hooks/run.ts'], String(mode));
+  for (const tool of ['read', 'post']) {
+    for (const mode of ['default', 'acceptEdits', 'auto', 'bypassPermissions', undefined]) {
+      const q = run(mode, tool);
+      assert.equal(q.stdout, '', `${tool} ${String(mode)}`);
+      assert.deepEqual(q.loaded.sort(), ['hooks/handlers/consent.ts', 'hooks/reply.ts', 'hooks/run.ts'], `${tool} ${String(mode)}`);
+    }
   }
   assert.ok(run('plan', 'read').loaded.includes('hooks/seat.ts'), 'plan mode: the review check runs');
-  assert.ok(run('auto', 'post').loaded.includes('hooks/seat.ts'), 'a post in any mode: a note may wait for its card (M)');
 });
 
 // ---------- the transcript race: the model's call is not on disk yet, and Claude Code dropped plan ----------
@@ -940,7 +907,7 @@ test('H (live verify, verify1/08): plan mode by hand, the model skips EnterPlanM
   assert.match(String(hso(again).additionalContext), /nothing was shown and nothing is recorded/);
 });
 
-test('deny: a reject with a note waits for bob\'s Send; a bare reject records nothing', () => {
+test('deny: a reject with a note records the objection with it; a bare reject records nothing', () => {
   const run = (note: string | null) => {
     const { w, v2, file, tp } = two();
     w.enterPlan(ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {}, transcript_path: tp }), { as: 'bob' });
@@ -955,203 +922,13 @@ test('deny: a reject with a note waits for bob\'s Send; a bare reject records no
     return { post, a: answers(w).map(x => [x.kind, x.via, x.from, x.proposal_hash, x.text]), v2 };
   };
   const withNote = run('This is hello world. I want v3 plan');
-  assert.deepEqual(withNote.a, [], 'the note waits for bob\'s Send');
-  assert.match(must(withNote.post), /note on [0-9a-f]{12} waits for Send or Discard/);
+  assert.deepEqual(withNote.a, [['objection', 'human', 'bob', withNote.v2, 'This is hello world. I want v3 plan']]);
   const bare = run(null);
   assert.deepEqual(bare.a, []);
   assert.match(must(bare.post), /closed the review of proposal [0-9a-f]{12} without answering; nothing was recorded/);
 });
 
-// ---------- a deny with a note never counts on its own: the confirm card ----------
-/** bob's plan view for alice's v3 is rejected with `note` (or bare), and the review closes. */
-function denied(note: string | null) {
-  const t = two();
-  const { w, file, tp } = t;
-  say(w, 'open the monday plan', tp);
-  w.enterPlan(ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {}, transcript_path: tp }), { as: 'bob' });
-  w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu1', transcript_path: tp }), { as: 'bob' });
-  const tpd = planDeny(w, file, 'tu1', note);
-  const stop = w.hook('consent', ev('Stop', null, { permission_mode: 'plan', stop_hook_active: false, transcript_path: tpd }), { as: 'bob' });
-  const post = ctx(w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: {}, tool_response: { plan: null } }), { as: 'bob' }));
-  return { ...t, stop: ctx(stop), post };
-}
-
-test('confirm: a reject\'s note; the card asks to send it to the proposer; Send records it (via=human, signed)', () => {
-  const { w, v3, post } = denied('open rate limiting');
-  assert.deepEqual(answers(w), [], 'the note alone records nothing');
-  assert.match(must(post), new RegExp(`call AskUserQuestion with "objection ${v3}"`));
-  const { pre, post: sent, card } = confirm(w, v3, 'Send');
-  const q = must(card.questions[0]);
-  assert.equal(q.question, 'Send to alice as changes requested on "plan monday v1": "open rate limiting"?');
-  assert.deepEqual(q.options.map(o => o.label), ['Send', 'Discard']);
-  assert.ok(q.options.every(o => o.preview === 'open rate limiting'), 'the whole note in the preview');
-  assert.deepEqual(Object.keys(card), ['questions'], 'nothing of the model\'s call survives');
-  assert.match(must(reason(pre)), /bob's note, to send or discard/);
-  assert.match(must(ctx(sent)), /^Recorded\..*bob objected to proposal/);
-  const a = answers(w);
-  assert.deepEqual(a.map(x => [x.kind, x.via, x.from, x.proposal_hash, x.text]), [['objection', 'human', 'bob', v3, 'open rate limiting']]);
-  assert.equal(w.lib(() => roomLib.open(w.code).trust(a[0])), 'verified', 'signed with bob\'s seat key');
-  assert.equal(waiting(w), null);
-  // Recorded once: the card again is not the confirm card any more (and the proposal is not pending for bob).
-  assert.equal(w.hook('consent', preAsk({ questions: [{ question: `objection ${v3}` }] }), { as: 'bob' }).stdout, '');
-});
-
-test('confirm: Discard records nothing and the proposal stays pending; a bare deny records nothing and leaves no note', () => {
-  const { w, v3 } = denied('open rate limiting');
-  const { post } = confirm(w, v3, 'Discard');
-  assert.match(must(ctx(post)), /bob discarded the note; nothing was recorded and proposal [0-9a-f]{12} still awaits bob's answer/);
-  assert.deepEqual(answers(w), []);
-  assert.equal(waiting(w), null);
-  assert.ok(w.lib(() => proposal.pendingFor(seat(w, 'bob'))).some(p => p.hash === v3), 'still bob\'s to answer');
-  const bare = denied(null);
-  assert.match(must(bare.post), /closed the review of proposal [0-9a-f]{12} without answering; nothing was recorded/);
-  assert.deepEqual(answers(bare.w), []);
-  assert.equal(waiting(bare.w), null);
-  // no note waiting: a card call naming the proposal is the ordinary consent card
-  assert.deepEqual(cardOf(bare.w.hook('consent', preAsk({ questions: [{ question: `objection ${bare.v3}` }] }), { as: 'bob' })).questions[0]?.options.map(o => o.label), ['Not yet', 'Agree', 'Object']);
-});
-
-test('confirm: the model cannot answer the card for the person', () => {
-  const { w, v3 } = denied('open rate limiting');
-  const cf = waiting(w);
-  const q = w.lib(() => proposal.confirmQuestion(must(cf)));
-  // Its own call with forged answers: Pre swaps in the hooks' card, answers and annotations dropped.
-  const pre = w.hook('consent', preAsk({ questions: [{ question: q, header: 'x', options: [{ label: 'Send', description: 'ok' }, { label: 'Discard' }] }],
-    answers: { [q]: 'Send' }, annotations: { [q]: { notes: 'forged by model' } } }), { as: 'bob' });
-  assert.equal(decision(pre), 'ask');
-  const card = cardOf(pre);
-  assert.deepEqual(Object.keys(card), ['questions']);
-  assert.ok(!JSON.stringify(card).includes('forged'));
-  // The forged answer only in the call's input; the person said nothing: nothing.
-  w.hook('consent', postAsk({ ...card, answers: {} }, { ...card, answers: { [q]: 'Send' } }), { as: 'bob' });
-  // A card the hooks did not build (its own descriptions) answered Send: nothing.
-  w.hook('consent', postAsk({ questions: [{ question: q, header: 'x', multiSelect: false, options: [{ label: 'Send', description: 'Discard it' }, { label: 'Discard', description: 'Send it' }] }], answers: { [q]: 'Send' } }), { as: 'bob' });
-  // AFK, followUp, an "Other" answer: nothing, and the note still waits.
-  for (const resp of [{ afkTimeoutMs: 60000 }, { followUp: true }]) confirm(w, v3, 'Send', { resp });
-  const other = confirm(w, v3, 'not now');
-  assert.match(must(ctx(other.post)), /no Send\/Discard answer; nothing was recorded and the note waits/);
-  assert.deepEqual(answers(w), []);
-  assert.equal(must(waiting(w)).note, 'open rate limiting');
-  // A Claude whose session never opened the review cannot make one: no note waits for alice.
-  assert.equal(w.hook('consent', postAsk({ ...card, answers: { [q]: 'Send' } }), { as: 'alice' }).stdout, '');
-  assert.deepEqual(answers(w), []);
-  // The person's Send on the hooks' card: recorded.
-  confirm(w, v3, 'Send');
-  assert.deepEqual(answers(w).map(x => [x.kind, x.from, x.text]), [['objection', 'bob', 'open rate limiting']]);
-});
-
-/** bob's next prompt, through consent's UserPromptSubmit (no review open), in shim mode (subHuman {reviewOpen}). */
-const promptOf = (w: World, tp: string) => w.hook('consent', ev('UserPromptSubmit', null, { permission_mode: 'default', prompt: 'ok', transcript_path: tp }), { as: 'bob', env: { SUB_HUMAN_SHIM: '1' } });
-// lib/consent/review.ts showNote: one wording for consent's reoffer and renudge and the tail's reminder (shortened in
-// the review fix pass: every model line under 160 characters, the same mechanics: the card's call, first, Esc no answer)
-const SHOW = (v3: string) => `First, call AskUserQuestion with "objection ${v3}".`;
-/** After an Esc on the card: the Esc is said to be no answer (the model sees "declined"), and the card due once more. */
-const SHOW_ESC = (v3: string) => `Esc was no answer, not a decline. First, call AskUserQuestion with "objection ${v3}".`;
-const REOFFER = (v3: string) => `bob's note on ${v3}: ${SHOW_ESC(v3)} Don't post or answer it yourself.`;
-const REOFFER_UNSHOWN = (v3: string) => `bob's note on ${v3}: its card was never shown. ${SHOW(v3)} Don't post or answer it yourself.`;
-const RENUDGE = (v3: string) => `bob's note on ${v3} still waits; Esc was no answer. First, call AskUserQuestion with "objection ${v3}". Don't post or answer it yourself.`;
-const stopOf = (w: World, tp: string, active = false) => w.hook('consent', ev('Stop', null, { permission_mode: 'default', stop_hook_active: active, transcript_path: tp }), { as: 'bob', env: { SUB_HUMAN_SHIM: '1' } });
-
-test('confirm: Stop nudges once when the card was never shown; shim mode reports it open until then; a new review of that proposal drops the note', () => {
-  const { w, v3, tp } = denied('open rate limiting');
-  const shim = { as: 'bob', env: { SUB_HUMAN_SHIM: '1' } };
-  const stop = () => w.hook('consent', ev('Stop', null, { permission_mode: 'default', stop_hook_active: false, transcript_path: tp }), shim);
-  const first = stop();
-  assert.match(must(ctx(first)), new RegExp(`bob's note on ${v3} waits: call AskUserQuestion with "objection ${v3}"`));
-  const again = stop();
-  assert.equal(ctx(again), undefined, 'once');
-  assert.equal(again.json?.subHuman?.reviewOpen, true, 'the next prompt offers it again (reoffer)');
-  assert.ok(waiting(w), 'still waiting for bob');
-  assert.equal(must(waiting(w)).stage, 'nudged', 'a nudge shows no card: not asked');
-  // the model ignored the nudge: the next prompt offers it again, saying the card was never shown
-  assert.equal(ctx(promptOf(w, tp)), REOFFER_UNSHOWN(v3));
-  assert.equal(ctx(stopOf(w, tp)), undefined, 'never shown: the Stop nudge was spent already, no renudge');
-  assert.equal(ctx(promptOf(w, tp)), undefined, 'once');
-  // bob opens the review again: the old note is superseded.
-  w.enterPlan(ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {}, transcript_path: tp }), { as: 'bob' });
-  assert.equal(waiting(w), null);
-  assert.deepEqual(answers(w), []);
-});
-
-test('confirm: a card interrupted before bob answered (Pre, no Post) is offered again once, at the next prompt', () => {
-  const { w, v3, tp } = denied('open rate limiting');
-  assert.equal(decision(w.hook('consent', preAsk({ questions: [{ question: `objection ${v3}` }] }), { as: 'bob' })), 'ask');
-  // no Post: bob pressed Esc on the card. Shim mode reports it open, so the module still runs node for the prompt.
-  const stop = w.hook('consent', ev('Stop', null, { permission_mode: 'default', stop_hook_active: false, transcript_path: tp }), { as: 'bob', env: { SUB_HUMAN_SHIM: '1' } });
-  assert.equal(ctx(stop), undefined, 'the card was shown: no Stop nudge');
-  assert.equal(stop.json?.subHuman?.reviewOpen, true);
-  // the tail's reminder that rides the same prompt says the same, not a softer "if bob asks"
-  assert.equal(reminders(w), `proposal ${v3}: bob's note is not recorded yet. ${SHOW_ESC(v3)} Don't reopen the review (that drops the note).`);
-  const first = promptOf(w, tp);
-  assert.equal(ctx(first), REOFFER(v3));
-  assert.equal(first.stdout.split('Esc was no answer').length, 2, 'exactly once');
-  assert.equal(first.json?.subHuman?.reviewOpen, true, 'the Stop of this turn may still nudge (renudge)');
-  // the model shows the card this turn (bob presses Esc again): no Stop nudge, nothing due any more
-  assert.equal(decision(w.hook('consent', preAsk({ questions: [{ question: `objection ${v3}` }] }), { as: 'bob' })), 'ask');
-  const shown = stopOf(w, tp);
-  assert.equal(ctx(shown), undefined, 'shown again: no renudge');
-  assert.equal(shown.json?.subHuman?.reviewOpen, true, 'stage 8e D: open until bob hears once what Send and Discard do');
-  // offered again: from the next change on, the reminder waits for bob to ask
-  assert.match(must(reminders(w)), new RegExp(`^proposal ${v3}: bob's note waits to be sent or discarded; if bob asks`));
-  const second = promptOf(w, tp);
-  assert.equal(ctx(second), undefined, 'once');
-  assert.match(must(second.json?.systemMessage), /^sub-human: your note on .* still waits, not sent\. On its card, Send posts it as your objection; Discard drops it and records nothing/);
-  assert.equal(second.json?.subHuman?.reviewOpen, false, 'told the person: nothing more is due');
-  assert.equal(must(promptOf(w, tp).json).systemMessage, undefined, 'the person is told once');
-  assert.equal(must(waiting(w)).note, 'open rate limiting', 'the note still waits');
-  assert.deepEqual(answers(w), []);
-  // offered again and shown: Send still records it
-  confirm(w, v3, 'Send');
-  assert.deepEqual(answers(w).map(x => [x.kind, x.from, x.text]), [['objection', 'bob', 'open rate limiting']]);
-});
-
-test('confirm: an interrupted card the model does not show again after reoffer: its Stop nudges once more, then never', () => {
-  const { w, v3, tp } = denied('open rate limiting');
-  assert.equal(decision(w.hook('consent', preAsk({ questions: [{ question: `objection ${v3}` }] }), { as: 'bob' })), 'ask');
-  // no Post (Esc); the model takes the "declined" for bob's choice and does not show the card on the next prompt
-  assert.equal(ctx(promptOf(w, tp)), REOFFER(v3));
-  assert.equal(ctx(stopOf(w, tp, true)), undefined, 'a Stop already continued: nothing');
-  const st = stopOf(w, tp);
-  assert.equal(ctx(st), RENUDGE(v3));
-  assert.equal(st.json?.subHuman?.reviewOpen, true, 'stage 8e D: open until bob hears once what Send and Discard do');
-  assert.equal(ctx(stopOf(w, tp)), undefined, 'once');
-  const third = promptOf(w, tp);
-  assert.equal(ctx(third), undefined, 'no third offer');
-  assert.match(must(third.json?.systemMessage), /still waits, not sent/);
-  assert.equal(third.json?.subHuman?.reviewOpen, false, 'nothing more is due: the module may skip node');
-  assert.match(must(reminders(w)), new RegExp(`^proposal ${v3}: bob's note waits to be sent or discarded; if bob asks`));
-  // shown after the nudge and interrupted again: the person's to ask for, never offered again
-  assert.equal(decision(w.hook('consent', preAsk({ questions: [{ question: `objection ${v3}` }] }), { as: 'bob' })), 'ask');
-  assert.equal(ctx(promptOf(w, tp)), undefined);
-  assert.equal(ctx(stopOf(w, tp)), undefined);
-  assert.equal(must(waiting(w)).note, 'open rate limiting', 'the note still waits');
-  assert.deepEqual(answers(w), []);
-});
-
-test('confirm: a renudge due for a proposal no longer bob\'s to answer drops the note instead', () => {
-  const { w, v3, tp } = denied('open rate limiting');
-  w.hook('consent', preAsk({ questions: [{ question: `objection ${v3}` }] }), { as: 'bob' });
-  promptOf(w, tp);
-  const gone = 'f'.repeat(12); // decided, retired or answered elsewhere meanwhile: not pending for bob
-  w.lib(() => proposal.writeConfirm(seat(w, 'bob'), { ...must(waiting(w)), hash: gone }));
-  assert.equal(ctx(stopOf(w, tp)), undefined);
-  assert.equal(waiting(w), null);
-});
-
-test('confirm: a card that closed with a Post (AFK, no Send/Discard) is not offered again: the model was told', () => {
-  const { w, v3, tp } = denied('open rate limiting');
-  confirm(w, v3, 'Send', { resp: { afkTimeoutMs: 60000 } });
-  assert.match(must(reminders(w)), /if bob asks, call AskUserQuestion/, 'told: the reminder no longer says now');
-  const p = promptOf(w, tp);
-  assert.equal(ctx(p), undefined);
-  assert.equal(p.json?.subHuman?.reviewOpen, false);
-  assert.equal(ctx(stopOf(w, tp)), undefined, 'told: no Stop nudge either');
-  confirm(w, v3, 'not now');
-  assert.equal(ctx(promptOf(w, tp)), undefined);
-  assert.equal(must(waiting(w)).note, 'open rate limiting');
-});
-
-test('M (live verify, verify5/M): the plan view refused with a note: the module\'s report (a PostToolUseFailure with the refusal) opens the note at once, tells the model and the person; a post while it waits is refused in any mode; Send records it', () => {
+test('M (live verify, verify5/M): the plan view refused with a note: the module\'s report (a PostToolUseFailure with the refusal) records the objection at once, tells the model and the person; posts pass after', () => {
   const { w, hash } = world();
   const file = path.join(w.userHome, '.claude', 'plans', 'm.md');
   const note = 'please also add a CODE_OF_CONDUCT';
@@ -1162,25 +939,14 @@ test('M (live verify, verify5/M): the plan view refused with a note: the module\
   const r = w.hook('consent', ev('PostToolUseFailure', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu1', transcript_path: tp, error: said(note) }), { as: 'bob' });
   assert.equal(r.code, 0, r.stderr);
   assert.equal(hso(r).hookEventName, 'PostToolUseFailure');
-  assert.match(must(ctx(r)), new RegExp(`^sub-human: nothing is recorded yet: bob's note on ${hash} waits for its card \\(Send or Discard\\)`));
-  assert.equal(r.json?.systemMessage, undefined, 'noise pass F: the card follows; no notice before it');
-  assert.equal(must(waiting(w)).note, note);
-  assert.deepEqual(answers(w), []);
-  // the model tries to post its paraphrase: refused while the note waits, whatever mode the module last saw
-  for (const mode of ['plan', 'auto']) {
-    const p = w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__post', { permission_mode: mode, tool_input: { kind: 'say', text: 'dave declined it' }, transcript_path: tp }), { as: 'bob' });
-    assert.equal(decision(p), 'deny', mode);
-  }
-  // the review closes as before (back to auto), the note still waiting; a post is still refused, a read is not
+  assert.equal(must(ctx(r)), `sub-human: First call ExitPlanMode now (no plan needed: the hooks close the review; your person leaves plan mode). bob objected to proposal ${hash}. bob's note went to the author; you may write its changes as the next version (plan, op edit). If it asks anything else (e.g. SendMessage NAME.CODE), do it. Don't repeat the note.`);
+  assert.equal(r.json?.systemMessage, 'sub-human: Sent your changes to alice.');
+  assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.from, x.proposal_hash, x.text]), [['objection', 'human', 'bob', hash, note]]);
+  // the review closes as before (back to auto); a post outside plan mode passes untouched
   w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: {}, tool_response: { plan: null } }), { as: 'bob' });
   assert.equal(review(w), null);
-  const p = w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__post', { permission_mode: 'auto', tool_input: { kind: 'say', text: 'x' } }), { as: 'bob' });
-  assert.equal(reason(p), '', 'no red reason');
-  assert.match(must(ctx(p)), /^sub-human: refused: bob's note on proposal [0-9a-f]{12} waits for Send or Discard on its card/);
-  assert.equal(w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__read', { permission_mode: 'auto', tool_input: {} }), { as: 'bob' }).stdout, '');
-  confirm(w, hash, 'Send');
-  assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.text]), [['objection', 'human', note]]);
-  assert.equal(w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__post', { permission_mode: 'auto', tool_input: { kind: 'say', text: 'x' } }), { as: 'bob' }).stdout, '', 'sent: posts pass again');
+  assert.equal(w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__post', { permission_mode: 'auto', tool_input: { kind: 'say', text: 'x' } }), { as: 'bob' }).stdout, '');
+  assert.equal(answers(w).length, 1);
 });
 
 test('H3 (live verify, verify5/H3): the person switched to plan mode mid-turn; the mode the EnterPlanMode call was made in (noted by the hooks.json hook) wins over the module\'s stale one: the review opens in plan mode and the Yes puts plan mode back', () => {
@@ -1371,28 +1137,25 @@ test('a review whose answer line comes in a shape the readers do not know: no an
     const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: {}, tool_use_id: 'tu2', tool_response: { plan: null }, transcript_path: tp }), { as: 'bob', env });
     assert.match(must(ctx(post)), /bob closed the review of proposal [0-9a-f]{12} without answering; nothing was recorded/);
     assert.equal(review(w), null);
-    assert.equal(waiting(w), null, 'no note made up');
-    assert.deepEqual(answers(w), []);
+    assert.deepEqual(answers(w), [], 'no note made up');
   }
-  // a refusal reported by the module with the transcript garbled: the note is the refusal's own text, and waits for Send
-  const f2 = open('rejected');
-  const note = 'clamp the page size';
-  const tpr = garbled(w, 'tu1', f2);
-  // its line on disk, the note in a field no reader knows: no note there, so the refusal's own text gives it
-  fs.appendFileSync(tpr, JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'tu1', is_error: true, content: { text: said(note) } }] } }) + '\n');
-  const rej = w.hook('consent', ev('PostToolUseFailure', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu1', transcript_path: tpr, error: said(note) }), { as: 'bob' });
-  assert.equal(rej.code, 0, rej.stderr);
-  assert.equal(must(waiting(w)).note, note);
-  assert.deepEqual(answers(w), [], 'a note alone records nothing');
-  w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: {}, tool_response: { plan: null } }), { as: 'bob' });
-  assert.equal(review(w), null);
-  confirm(w, hash, 'Discard');
-  assert.deepEqual(answers(w), []);
   // the person's Yes: the dialog's own answer (its PostToolUse), which no transcript decides
   const f3 = open('yes');
   const yes = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: {}, tool_use_id: 'tu1', tool_response: { plan: TEXT, filePath: f3 }, transcript_path: garbled(w, 'tu1', f3) }), { as: 'bob' });
   assert.match(must(ctx(yes)), new RegExp(`bob agreed to proposal ${hash}`));
   assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.from, x.proposal_hash]), [['signoff', 'human', 'bob', hash]]);
+  // a refusal reported by the module with the transcript garbled: the note is the refusal's own text, recorded
+  const { w: w2, hash: h2 } = world();
+  const f2 = path.join(w2.userHome, '.claude', 'plans', 'rejected.md');
+  w2.enterPlan(ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'auto', tool_input: {} }), { as: 'bob' });
+  assert.equal(decision(w2.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu1', transcript_path: transcript(w2, f2, null, { id: 'tu1', input: { plan: `proposal ${h2}` } }) }), { as: 'bob' })), 'ask');
+  const note = 'clamp the page size';
+  const tpr = garbled(w2, 'tu1', f2);
+  // its line on disk, the note in a field no reader knows: no note there, so the refusal's own text gives it
+  fs.appendFileSync(tpr, JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'tu1', is_error: true, content: { text: said(note) } }] } }) + '\n');
+  const rej = w2.hook('consent', ev('PostToolUseFailure', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu1', transcript_path: tpr, error: said(note) }), { as: 'bob' });
+  assert.equal(rej.code, 0, rej.stderr);
+  assert.deepEqual(answers(w2).map(x => [x.kind, x.via, x.text]), [['objection', 'human', note]]);
 });
 
 test('pick: the person\'s words in a shape the readers do not know name nothing: the review opens the oldest request', () => {
@@ -1450,7 +1213,7 @@ test('0.6.0 quiet (shim mode, spike 2): a review\'s EnterPlanMode outside plan m
   assert.equal(sub(mine).quiet, undefined);
 });
 
-// ---------- #34: the mode kept, Send / Discard first ----------
+// ---------- #34: the mode kept; the note records at the refusal ----------
 /**
  * bob, in `mode`, refuses the plan view with a note (the module reports it: PostToolUseFailure, shim mode); returns
  * the refusal's run, the plan file and the note. env: extra env for every run (SUB_HUMAN_CC_OFF).
@@ -1467,8 +1230,7 @@ function refuseWithNote(mode: string, env: Record<string, string> = {}) {
   const tp = transcript(w, file, { tool_use_id: 'tu1', is_error: true, content: said(note) });
   const rej = w.hook('consent', ev('PostToolUseFailure', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu1', transcript_path: tp, error: said(note) }), shim);
   assert.equal(rej.code, 0, rej.stderr);
-  /** the module's answer on its own card (NoteAnswer) */
-  const answer = (label: string | null) => w.hook('consent', { hook_event_name: 'NoteAnswer', sub_human_note: label }, shim);
+  assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.proposal_hash, x.text]), [['objection', 'human', hash, note]], 'recorded at the refusal, the note byte for byte');
   /** the model's closing ExitPlanMode, then its PostToolUse in `after` mode */
   const close = (after: string) => {
     const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu9', transcript_path: tp }), shim);
@@ -1476,25 +1238,16 @@ function refuseWithNote(mode: string, env: Record<string, string> = {}) {
     const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: after, tool_input: {}, tool_use_id: 'tu9', tool_response: { plan: inFile || null } }), shim);
     return { pre, inFile, post };
   };
-  return { w, hash, file, note, rej, answer, close };
+  return { w, file, rej, close };
 }
-const noteAsk = (r: HookRun) => r.json?.subHuman?.noteAsk;
 
-test('#34 auto, Send first: the refusal asks the module for Send / Discard while plan mode is on; Send records at once; the closing call keeps auto ("Your note went to alice"); the model hears nothing is to be built', () => {
-  const { w, hash, file, note, rej, answer, close } = refuseWithNote('auto');
-  const card = must(noteAsk(rej), 'the module asks Send / Discard itself');
-  assert.deepEqual(card.options, ['Send', 'Discard']);
-  assert.match(card.question, /cap pages at 100/);
-  assert.deepEqual(answers(w), [], 'nothing recorded before the person\'s Send');
-  const sent = answer('Send');
-  assert.equal(sent.code, 0, sent.stderr);
-  assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.proposal_hash, x.text]), [['objection', 'human', hash, note]], 'recorded once, the note byte for byte');
-  assert.equal(waiting(w), null);
-  assert.match(must(ctx(sent)), /Next, call ExitPlanMode now/);
+test('#34 auto: the note records at the refusal; the closing call keeps auto ("Your note went to alice"); the model hears nothing is to be built', () => {
+  const { w, file, rej, close } = refuseWithNote('auto');
+  assert.match(must(ctx(rej)), /First call ExitPlanMode now.* bob objected to proposal/);
   assert.equal(must(review(w)).closing, 'sent');
   const { pre, inFile, post } = close('auto');
-  closes(pre, 'Your note went to alice. Nothing to build.');
-  assert.equal(inFile, 'Your note went to alice. Nothing to build.', 'the plan file holds only the closing line');
+  closes(pre, SENT);
+  assert.equal(inFile, SENT, 'the plan file holds only the closing line');
   assert.equal(must(pre.json?.subHuman).quiet, true, 'its "User approved Claude\'s plan" row is hidden');
   assert.match(must(ctx(post)), /Nothing is to be built/);
   assert.equal(fs.readFileSync(file, 'utf8'), 'bob\'s own plan\n', 'bob\'s plan is back');
@@ -1502,56 +1255,26 @@ test('#34 auto, Send first: the refusal asks the module for Send / Discard while
   assert.equal(answers(w).length, 1, 'never recorded twice');
 });
 
-test('#34 Discard first: nothing recorded, the request still waits; the closing line says the note was not sent', () => {
-  const { w, hash, rej, answer, close } = refuseWithNote('auto');
-  assert.ok(noteAsk(rej));
-  const r = answer('Discard');
-  assert.match(must(ctx(r)), /discarded the note; nothing was recorded/);
-  assert.deepEqual(answers(w), []);
-  assert.equal(waiting(w), null);
-  assert.deepEqual(w.lib(() => proposal.pendingFor(seat(w, 'bob'))).map(p => p.hash), [hash], 'the request still awaits bob');
-  closes(close('auto').pre, 'Your note was not sent. Nothing to build.');
-});
-
-test('#34 the card dismissed (or no one to ask): the note is never lost: it waits for its card, the closing line says it is not sent, and Send on the card later records it', () => {
-  const { w, hash, note, rej, answer, close } = refuseWithNote('auto');
-  assert.ok(noteAsk(rej));
-  const r = answer(null);
-  assert.match(must(ctx(r)), /waits for its card/);
-  assert.equal(must(waiting(w)).note, note);
-  assert.deepEqual(answers(w), []);
-  closes(close('auto').pre, UNSENT);
-  assert.equal(must(waiting(w)).note, note, 'still waiting after the exit');
-  confirm(w, hash, 'Send');
-  assert.deepEqual(answers(w).map(x => [x.kind, x.text]), [['objection', note]]);
-});
-
-test('#34 manual: Send first, then the empty exit ("Yes, and switch to default" keeps manual); accept edits: the empty exit and the person\'s one line', () => {
+test('#34 manual: the note records, then the empty exit ("Yes, and switch to default" keeps manual); accept edits: the empty exit and the person\'s one line', () => {
   const manual = refuseWithNote('default');
-  assert.ok(noteAsk(manual.rej), 'Send / Discard first in every mode');
-  manual.answer('Send');
   const m = manual.close('default');
   leaves(m.pre);
   assert.equal(m.inFile, '', 'the empty exit');
   assert.equal(m.post.json?.systemMessage, undefined, 'no line: manual is kept');
   assert.equal(answers(manual.w).length, 1);
   const ae = refuseWithNote('acceptEdits');
-  ae.answer('Send');
   const a = ae.close('default');
   leaves(a.pre);
   assert.match(String(a.post.json?.systemMessage), /shift\+tab returns you to accept edits/);
   assert.equal(answers(ae.w).length, 1);
 });
 
-test('#34 off (SUB_HUMAN_CC_OFF=keep-mode): no card of the module\'s; the exit as before 0.6.0, empty for auto too, and the note waits for the model\'s card', () => {
-  const { w, hash, note, rej, close } = refuseWithNote('auto', { SUB_HUMAN_CC_OFF: 'keep-mode' });
-  assert.equal(noteAsk(rej), undefined);
-  assert.match(must(ctx(rej)), /First call ExitPlanMode now \(no plan needed\); then call AskUserQuestion with "objection /);
+test('#34 off (SUB_HUMAN_CC_OFF=keep-mode): the note records at the refusal; the exit as before 0.6.0, empty for auto too', () => {
+  const { w, rej, close } = refuseWithNote('auto', { SUB_HUMAN_CC_OFF: 'keep-mode' });
+  assert.match(must(ctx(rej)), /First call ExitPlanMode now.* bob objected to proposal/);
   const { pre, post } = close('default');
   leaves(pre);
   assert.match(must(ctx(post)), /review is closed\. Nothing is to be built: it was a room plan review/);
-  assert.equal(must(waiting(w)).note, note);
-  confirm(w, hash, 'Send');
   assert.equal(answers(w).length, 1);
 });
 
@@ -1571,11 +1294,10 @@ test('stale review: a plan file holding the framed version (the frame line on to
 });
 
 test('stale review: the closing line keep-mode wrote is the review\'s too (restored), and a file bob wrote since is left alone', () => {
-  const { w, file, answer } = refuseWithNote('auto');
-  answer('Send');
+  const { w, file } = refuseWithNote('auto');
   const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu9' }), { as: 'bob', env: { SUB_HUMAN_SHIM: '1' } });
-  closes(pre, 'Your note went to alice. Nothing to build.');
-  assert.equal(fs.readFileSync(file, 'utf8'), 'Your note went to alice. Nothing to build.');
+  closes(pre, SENT);
+  assert.equal(fs.readFileSync(file, 'utf8'), SENT);
   assert.equal(w.lib(() => proposal.restoreStale(seat(w, 'bob'), { force: true })), 'restored');
   assert.equal(fs.readFileSync(file, 'utf8'), 'bob\'s own plan\n', 'bob\'s plan is back after a /clear at the closing call');
   // a file bob wrote over the review's: his, not restored

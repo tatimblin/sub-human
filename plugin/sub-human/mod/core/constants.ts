@@ -66,5 +66,3 @@ export const BYPASS_DEBUG = 'join: bypass-permissions mode: messages from other 
  * it said goes to Claude Code's debug log ($.ui.log, to: 'debug'; claude --debug). */
 export const QUIET_ROW = ' ';
 
-/** The event node consent takes the person's Send / Discard as, on the note card the module asked itself
- * (mod/consent.ts, hooks/consent.ts: #34). */

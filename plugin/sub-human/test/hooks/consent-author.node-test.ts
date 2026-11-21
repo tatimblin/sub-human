@@ -104,7 +104,6 @@ test('author first: "Tell Claude what to change" on your own version records and
   assert.equal(r.code, 0, r.stderr);
   const told = must(ctx(r));
   assert.match(told, /^sub-human: First call ExitPlanMode now \(no plan needed: the hooks close the review; your person leaves plan mode\)\. Then: Nothing was sent or recorded: alice wants changes to their own new version \(plan room v1\)\. Write them as the plan's next version \(the plan tool, op edit, name room\); it comes back to alice before anyone else is asked\.$/);
-  assert.equal(w.lib(() => proposal.readConfirm(seat(w, 'alice'))), null, 'no note card: the note is for alice\'s own Claude');
   assert.deepEqual(answers(w), []);
   assert.equal(requests(w).length, 1, 'nothing sent out');
   // the closing call leaves plan mode (Claude Code's own question, which she answers); its Post does not tell the model

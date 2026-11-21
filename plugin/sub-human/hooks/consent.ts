@@ -97,6 +97,7 @@ function record(me: Identity, hash: string, a: { choice: 'Agree' | 'Object'; not
     const what = `your ${a.choice === 'Agree' ? 'agreement to' : 'objection to'} proposal ${hash}`;
     unsent.push(err.unknown // it went out and may still land: answering again is safe (one answer per person per proposal)
       ? `⧗ ${what} is not confirmed: ${err.message}. If the proposal still shows you unanswered, answer again: that is safe.`
+      : a.notes ? `✗ your note didn't reach the room (${err.message}). Ask Claude to send it again when you're back online.`
       : `✗ ${what} was not recorded: ${err.message}. Answer again once the room is reachable.`);
     return { failed: err.message, ...(err.unknown ? { unknown: true } : {}) };
   }
@@ -244,8 +245,11 @@ function step(input: ConsentIn, me: Identity, make: (st: State) => ConsentEvent,
     } else if (e.do === 'answer') {
       const res = record(me, e.hash, { choice: e.choice, ...(e.notes !== undefined ? { notes: e.notes } : {}) });
       answers.set(e.hash, { choice: e.choice, res });
-      // the closing line says the note went only when it was recorded (a stale or failed one did not go)
-      if (e.closing && res.entry && state.review) state = { ...state, review: { ...state.review, closing: 'sent' } };
+      // the person hears the note went, and the closing line says so, only when it was recorded (a stale or failed one did not go)
+      if (e.sentTo && res.entry) {
+        unsent.push(`Sent your changes to ${e.sentTo}.`);
+        if (state.review) state = { ...state, review: { ...state.review, closing: 'sent' } };
+      }
     } else if (e.do === 'writePlan') {
       try {
         const text = shownText(me, e.hash, state.review);

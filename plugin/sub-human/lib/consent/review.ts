@@ -116,8 +116,9 @@ export type ConsentEffect =
   /** #34: the plan file holds only the review's closing line for the closing ExitPlanMode of a person who was in auto
    * mode (a non-empty plan: its dialog's first row, preselected, keeps auto); restorePlan follows at exited */
   | { do: 'closePlan'; file: string; text: string }
-  /** closing: the review's closing line says the note went (Review.closing 'sent') once recorded */
-  | { do: 'answer'; hash: string; choice: 'Agree' | 'Object'; notes?: string; closing?: boolean };
+  /** sentTo: the person's note, to the request's asker: once recorded, the person is told it went (one line) and the
+   * review's closing line says so (Review.closing 'sent') */
+  | { do: 'answer'; hash: string; choice: 'Agree' | 'Object'; notes?: string; sentTo?: string };
 
 export type Part = string | { answer: string } | { ifRecorded: string };
 /** context: what the model reads. deny: the call refused with an empty reason (nothing red for the person: Claude's
@@ -523,7 +524,7 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
   const say: Say | null = !s ? ctxSay(...sent) : s.to === 'context' ? { ...s, parts: [...s.parts, ...sent] }
     : s.to === 'deny' ? { ...s, context: [...s.context, ...sent] } : s; // a dialog's ask carries no context: the room shows it
   return { ...step, state: { ...step.state, note: null }, say,
-    effects: [...step.effects, { do: 'answer', hash: cf.hash, choice: 'Object', notes: cf.note, closing: true }] };
+    effects: [...step.effects, { do: 'answer', hash: cf.hash, choice: 'Object', notes: cf.note, sentTo: cf.from || 'the room' }] };
 }
 
 function reduceOne(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewStep {
@@ -543,7 +544,7 @@ function reduceOne(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewStep {
       const now = r && r.file && r.file === ev.plan.file && !r.restored ? { file: r.file, text: typeof r.backup === 'string' ? r.backup : null } : ev.plan;
       const [shown, early] = showEarly(review, now);
       review = shown;
-      return { state: { ...state, review }, effects: [...effects, ...early], say: null };
+      return { state: { review, note: null }, effects: [...effects, ...early], say: null }; // a new review: the steer and recheck memos go
     }
 
     case 'entered': {

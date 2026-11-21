@@ -1,11 +1,11 @@
-// lib/consent/review.ts: the consent hook's reducer, as tables. Every review phase × every event, then every note
-// stage × every event that moves a note, then the facts each branch reads. Pure: no room, no files, no clock.
+// lib/consent/review.ts: the consent hook's reducer, as tables. Every review phase × every event, then a note
+// recorded at once, then the facts each branch reads. Pure: no room, no files, no clock.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as review from '../lib/consent/review.ts';
 import { hash12 } from '../lib/text.ts';
 import type { ConsentEvent, State, ReviewStep } from '../lib/consent/review.ts';
-import type { Confirm, NoteStage, Review } from '../lib/types-app.ts';
+import type { Review } from '../lib/types-app.ts';
 import { must } from './support/must.ts';
 
 const TEXT = '# Ship v3 Monday\n\n1. tag\n';
@@ -34,14 +34,13 @@ const EVENTS: { [K in ConsentEvent['type']]: Extract<ConsentEvent, { type: K }> 
   exit: { type: 'exit', toolUseId: 'tu2', answer: { note: null }, target, shown: { hash: H, from: 'alice' }, text: TEXT, plan, callPlan: `proposal ${H}`, ownPlan: undefined },
   exited: { type: 'exited', toolUseId: 'tu1', mode: 'default', answer: null, target, response: { plan: TEXT, edited: false, isAgent: false, filePath: undefined },
     callPlan: undefined, pending: [], callNames: [], reviewable: true },
-  stop: { type: 'stop', mode: 'plan', active: false, answer: { note: null }, target, live: true },
+  stop: { type: 'stop', mode: 'plan', active: false, answer: { note: null }, target },
   roomTool: { type: 'roomTool', mode: 'plan', answer: { note: null }, target },
-  prompt: { type: 'prompt', mode: 'plan', answer: { note: null }, target, live: true },
-  ask: { type: 'ask', admit: null, noteNamed: false, live: true, hit: pending, reviewable: true },
-  answered: { type: 'answered', note: { kind: 'absent' }, target, afk: false, asked: true, answers: [{ hash: H, answer: { kind: 'answer', label: 'Agree' }, live: true }] },
+  prompt: { type: 'prompt', mode: 'plan', answer: { note: null }, target },
+  ask: { type: 'ask', admit: null, hit: pending, reviewable: true },
+  answered: { type: 'answered', afk: false, asked: true, answers: [{ hash: H, answer: { kind: 'answer', label: 'Agree' }, live: true }] },
   planFailed: { type: 'planFailed', early: false },
   rejected: { type: 'rejected', toolUseId: 'tu1', answer: { note: 'add a test' }, target },
-  noteAnswer: { type: 'noteAnswer', label: 'Send', target },
 };
 
 /** What a step did, compactly: the review's phase after it (none: cleared), the say's kind, the effects in order. */
@@ -57,32 +56,32 @@ const TABLE: Record<string, Record<ConsentEvent['type'], [string, string | null,
   none: {
     enter: ['entering', null, 'save,writePlan'], entered: ['none', null, ''], exit: ['none', null, ''],
     exited: ['none', null, ''], stop: ['none', null, ''], roomTool: ['none', null, ''], prompt: ['none', null, ''],
-    ask: ['none', 'deny', ''], answered: ['none', 'context', 'answer'], planFailed: ['none', null, ''], rejected: ['none', null, ''], noteAnswer: ['none', null, ''],
+    ask: ['none', 'deny', ''], answered: ['none', 'context', 'answer'], planFailed: ['none', null, ''], rejected: ['none', null, ''],
   },
   entering: {
     enter: ['entering', null, 'save,writePlan'], entered: ['entering', 'context', 'save,writePlan'], exit: ['shown', 'ask', 'save,writePlan'],
     exited: ['none', null, ''], stop: ['entering', 'context', ''], roomTool: ['entering', null, ''],
-    prompt: ['exiting', 'context', ''], ask: ['entering', 'deny', ''], answered: ['entering', 'context', 'answer'], planFailed: ['exiting', null, ''], rejected: ['entering', null, ''], noteAnswer: ['entering', null, ''],
+    prompt: ['exiting', 'context', ''], ask: ['entering', 'deny', ''], answered: ['entering', 'context', 'answer'], planFailed: ['exiting', null, ''], rejected: ['entering', null, ''],
   },
   shown: {
     enter: ['entering', null, 'restorePlan,save,writePlan'], entered: ['shown', null, ''], exit: ['exiting', 'ask', 'blankPlan'],
     exited: ['none', 'context', 'answer,restorePlan'], stop: ['exiting', 'context', ''], roomTool: ['exiting', 'deny', ''], prompt: ['exiting', 'context', ''],
-    ask: ['shown', 'deny', ''], answered: ['shown', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', 'context', ''], noteAnswer: ['shown', null, ''],
+    ask: ['shown', 'deny', ''], answered: ['shown', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', 'context', 'answer'],
   },
   exiting: {
     enter: ['entering', null, 'restorePlan,save,writePlan'], entered: ['exiting', null, ''], exit: ['exiting', 'ask', 'blankPlan'],
     exited: ['none', 'context', 'restorePlan'], stop: ['exiting', 'context', ''], roomTool: ['exiting', 'deny', ''], prompt: ['exiting', 'context', ''],
-    ask: ['exiting', 'deny', ''], answered: ['exiting', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', null, ''], noteAnswer: ['exiting', null, ''],
+    ask: ['exiting', 'deny', ''], answered: ['exiting', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', null, ''],
   },
   unread: {
     enter: ['entering', null, 'restorePlan,save,writePlan'], entered: ['exiting', null, ''], exit: ['exiting', 'ask', 'blankPlan'],
     exited: ['none', 'context', 'answer,restorePlan'], stop: ['exiting', 'context', ''], roomTool: ['exiting', 'deny', ''], prompt: ['exiting', 'context', ''],
-    ask: ['exiting', 'deny', ''], answered: ['exiting', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', 'context', ''], noteAnswer: ['exiting', null, ''],
+    ask: ['exiting', 'deny', ''], answered: ['exiting', 'context', 'answer'], planFailed: ['exiting', null, 'restorePlan'], rejected: ['exiting', 'context', 'answer'],
   },
   restore: {
     enter: ['restore', null, ''], entered: ['restore', 'context', ''], exit: ['exiting', 'ask', 'blankPlan'],
     exited: ['restore', null, ''], stop: ['restore', 'context', ''], roomTool: ['restore', null, ''], prompt: ['none', null, ''],
-    ask: ['restore', 'deny', ''], answered: ['restore', 'context', 'answer'], planFailed: ['exiting', null, ''], rejected: ['restore', null, ''], noteAnswer: ['restore', null, ''],
+    ask: ['restore', 'deny', ''], answered: ['restore', 'context', 'answer'], planFailed: ['exiting', null, ''], rejected: ['restore', null, ''],
   },
 };
 
@@ -102,7 +101,7 @@ test('review: every phase × every event, in one table', () => {
 
 test('review: the reducer is pure: it never changes the state it was given', () => {
   for (const r of Object.values(REVIEWS)) for (const ev of Object.values(EVENTS)) {
-    const st: State = { review: r && structuredClone(r), note: note('asked') };
+    const st: State = { review: r && structuredClone(r), note: null };
     const before = JSON.stringify(st);
     review.reduce(st, ev, ctx);
     assert.equal(JSON.stringify(st), before, `${r && r.phase} × ${ev.type}`);
@@ -110,61 +109,23 @@ test('review: the reducer is pure: it never changes the state it was given', () 
 });
 
 // ---------- the note ----------
-const note = (stage: NoteStage | null, extra: Partial<Confirm> = {}): Confirm => ({ hash: H, note: 'open rate limiting', from: 'alice', title: 'Ship v3 Monday', at: 1, ...(stage ? { stage } : {}), ...extra });
-const ASK_NOTE: ConsentEvent = { type: 'ask', admit: null, noteNamed: true, live: true, hit: [], reviewable: true };
-const STOP: ConsentEvent = { type: 'stop', mode: 'default', active: false, live: true };
-const PROMPT: ConsentEvent = { type: 'prompt', mode: 'default', live: true };
-const card = (a: Extract<ConsentEvent, { type: 'answered' }>['note']): ConsentEvent => ({ type: 'answered', note: a, target, afk: false, asked: false, answers: [] });
-
-/** The note's stage after a step (none: dropped), the say's kind and effects. */
-const noteShape = (s: ReviewStep) => [s.state.note ? review.stageOf(s.state.note) : 'none', s.say ? s.say.to : null, s.effects.map(e => e.do).join(',')];
-
-// note stage × event (no review open) -> [stage after, say, effects]
-const NOTES: Record<NoteStage, Record<string, [string, string | null, string]>> = {
-  waiting: { stop: ['nudged', 'context', ''], prompt: ['waiting', null, ''], ask: ['asked', 'ask', ''], none: ['told', 'context', ''], other: ['told', 'context', ''], discard: ['none', 'context', ''], send: ['waiting', 'context', 'answer'] },
-  nudged: { stop: ['nudged', null, ''], prompt: ['told', 'context', ''], ask: ['asked', 'ask', ''], none: ['told', 'context', ''], other: ['told', 'context', ''], discard: ['none', 'context', ''], send: ['nudged', 'context', 'answer'] },
-  asked: { stop: ['asked', null, ''], prompt: ['reoffered', 'context', ''], ask: ['asked', 'ask', ''], none: ['told', 'context', ''], other: ['told', 'context', ''], discard: ['none', 'context', ''], send: ['asked', 'context', 'answer'] },
-  reoffered: { stop: ['told', 'context', ''], prompt: ['reoffered', null, ''], ask: ['told', 'ask', ''], none: ['told', 'context', ''], other: ['told', 'context', ''], discard: ['none', 'context', ''], send: ['reoffered', 'context', 'answer'] },
-  told: { stop: ['told', null, ''], prompt: ['told', null, ''], ask: ['told', 'ask', ''], none: ['told', 'context', ''], other: ['told', 'context', ''], discard: ['none', 'context', ''], send: ['told', 'context', 'answer'] },
-};
-const NOTE_EVENTS = {
-  stop: STOP, prompt: PROMPT, ask: ASK_NOTE,
-  none: card({ kind: 'none' }), other: card({ kind: 'other', label: 'later' }),
-  discard: card({ kind: 'answer', label: 'Discard' }), send: card({ kind: 'answer', label: 'Send' }),
-} satisfies Record<string, ConsentEvent>;
-
-test('note: every stage × every event that moves it, in one table; Send leaves it to the answer effect (clearNote)', () => {
-  for (const [stage, row] of Object.entries(NOTES) as [NoteStage, (typeof NOTES)[NoteStage]][]) {
-    assert.deepEqual(Object.keys(row).sort(), Object.keys(NOTE_EVENTS).sort(), stage);
-    for (const [k, ev] of Object.entries(NOTE_EVENTS)) {
-      assert.deepEqual(noteShape(review.reduce({ review: null, note: note(stage) }, ev, ctx)), row[k], `${stage} × ${k}`);
-    }
-  }
-  const send = review.reduce({ review: null, note: note('asked') }, NOTE_EVENTS.send, ctx);
-  assert.deepEqual(send.effects, [{ do: 'answer', hash: H, choice: 'Object', notes: 'open rate limiting', clearNote: true }]);
-  // the note sent: the model is told to act on what it asks of it (live: "ask cameron if…" was never asked)
-  assert.equal(review.textOf(parts(send), h => `[${h}]`, true), `${review.SAY.recorded} ${review.SAY.noteFollow('bob')} [${H}]`);
+test('note: a note the dialog closes with is the objection, recorded in the same step; the model reads the outcome and the note\'s follow-up', () => {
+  const s = review.reduce({ review: REVIEWS.shown, note: null }, { ...EVENTS.stop, answer: { note: 'clamp at 100' } }, ctx);
+  assert.deepEqual(s.effects, [{ do: 'answer', hash: H, choice: 'Object', notes: 'clamp at 100', sentTo: 'alice' }]);
+  assert.equal(s.state.note, null, 'nothing waits: no card');
+  const said = review.textOf(parts(s), h => `[${h}]`, true);
+  assert.ok(said.endsWith(`[${H}] ${review.SAY.noteFollow('bob')}`), said);
+  assert.ok(!review.textOf(parts(s), h => `[${h}]`, false).includes(review.SAY.noteFollow('bob')), 'not recorded: no follow-up');
+  // Esc, a blank note, and a request no longer this seat's record nothing
+  for (const answer of [{ note: null }, { note: '  ' }]) assert.deepEqual(review.reduce({ review: REVIEWS.shown, note: null }, { ...EVENTS.stop, answer }, ctx).effects, []);
+  assert.deepEqual(review.reduce({ review: REVIEWS.shown, note: null }, { ...EVENTS.stop, answer: { note: 'x' }, target: null }, ctx).effects, []);
+  // a note on the person's own new version is another version: nothing recorded
+  assert.deepEqual(review.reduce({ review: { ...REVIEWS.shown, draft: true }, note: null }, { ...EVENTS.stop, answer: { note: 'x' } }, ctx).effects, []);
 });
 
-test('note: one whose proposal is no longer the seat\'s is dropped wherever it is met; Send on a stale one too', () => {
-  assert.equal(review.reduce({ review: null, note: note('waiting') }, { ...STOP, live: false }, ctx).state.note, null);
-  assert.equal(review.reduce({ review: null, note: note('reoffered') }, { ...STOP, live: false }, ctx).state.note, null);
-  assert.equal(review.reduce({ review: null, note: note('asked') }, { ...PROMPT, live: false }, ctx).state.note, null);
-  const ask = review.reduce({ review: null, note: note('waiting') }, { ...ASK_NOTE, live: false }, ctx);
-  assert.deepEqual([ask.state.note, ask.say], [null, null]);
-  const stale = review.reduce({ review: null, note: note('asked') }, { ...NOTE_EVENTS.send, target: null } as ConsentEvent, ctx);
-  assert.deepEqual([stale.state.note, stale.effects], [null, []]);
-  // a Stop that continues a turn already (stop_hook_active) says nothing and moves nothing
-  assert.deepEqual(noteShape(review.reduce({ review: null, note: note('waiting') }, { ...STOP, active: true }, ctx)), ['waiting', null, '']);
-});
-
-test('openOf: a review on record, or a note consent must still offer (anything but told)', () => {
+test('openOf: a review on record', () => {
   assert.equal(review.openOf({ review: null, note: null }), false);
   assert.equal(review.openOf({ review: REVIEWS.restore, note: null }), true);
-  for (const s of ['waiting', 'nudged', 'asked', 'reoffered'] as NoteStage[]) assert.equal(review.openOf({ review: null, note: note(s) }), true, s);
-  // stage 8e D: told, it stays open until the person heard once what Send and Discard do
-  assert.equal(review.openOf({ review: null, note: note('told') }), true);
-  assert.equal(review.openOf({ review: null, note: note('told', { explained: true }) }), false);
 });
 
 // ---------- the facts each branch reads ----------
@@ -195,9 +156,6 @@ test('enter: the request the person\'s words name, else the oldest; never the mo
   assert.deepEqual(named.effects.map(e => e.do), ['save', 'writePlan'], 'no pick document any more');
   assert.equal(rev(enter({ said, named: 'cccccccccccc' })).hash, H, 'a name no longer pending: the oldest');
   assert.equal(named.say, null, 'entering says nothing (no permission answer: EnterPlanMode asks nothing anyway)');
-  // a review of the proposal the note waits on supersedes the note; another proposal's note stays
-  assert.equal(review.reduce({ review: null, note: note('waiting') }, EVENTS.enter, ctx).state.note, null);
-  assert.ok(review.reduce({ review: null, note: note('waiting', { hash: OTHER }) }, EVENTS.enter, ctx).state.note);
   // not reviewable (plan mode already, bypass, clear-context) or nothing viewable: Claude Code's own plan mode
   assert.deepEqual(shape(enter({ reviewable: false })), ['none', null, '']);
   assert.deepEqual(shape(enter({ pending: [] })), ['none', null, '']);
@@ -241,12 +199,9 @@ test('exit: the hook\'s proposal is the dialog whatever the call carries; a plan
   assert.deepEqual(shape(review.reduce({ review: REVIEWS.shown, note: null }, { ...EVENTS.exit, toolUseId: 'tu1' }, ctx)), ['shown', 'ask', '']);
 });
 
-test('the dialog closed: a note opens the note (nothing recorded), Esc nothing, an answer not on disk yet is unread', () => {
+test('the dialog closed: a note records, Esc nothing, an answer not on disk yet is unread', () => {
   const close = (answer: { note: string | null } | null, t: typeof target | null = target) => review.reduce({ review: REVIEWS.shown, note: null }, { ...EVENTS.stop, answer, target: t }, ctx);
-  const noted = close({ note: 'clamp at 100' });
-  assert.deepEqual(noted.state.note, { hash: H, note: 'clamp at 100', from: 'alice', title: 'Ship v3 Monday', at: 5000, stage: 'waiting' });
-  assert.equal(rev(noted).said, review.SAY.noted('bob', H));
-  assert.deepEqual(noted.effects, [], 'nothing recorded');
+  assert.deepEqual(close({ note: 'clamp at 100' }).effects.map(e => e.do), ['answer']);
   assert.equal(rev(close({ note: '  ' })).said, review.SAY.closed('bob', H));
   assert.equal(rev(close({ note: 'x' }, null)).said, review.SAY.stale(H), 'no longer this seat\'s to answer');
   const unread = close(null);
@@ -314,10 +269,9 @@ test('H (live verify): plan mode by hand, no EnterPlanMode: an ExitPlanMode whos
   assert.deepEqual([post.effects, post.say], [[], null]);
 });
 
-test('ask: a join request, then a waiting note, then the proposals the call names', () => {
-  const ask = (e: Partial<Extract<ConsentEvent, { type: 'ask' }>>, note: Confirm | null = null) => review.reduce({ review: null, note }, { ...EVENTS.ask, ...e }, ctx);
-  assert.deepEqual(ask({ admit: 'abcdefabcdef', noteNamed: true }, note('waiting')).say, { to: 'ask', text: '', show: { admit: 'abcdefabcdef' } });
-  assert.deepEqual(ask({ noteNamed: true }, note('waiting')).say, { to: 'ask', text: review.SAY.noteAsk('bob', H), show: { note: true } });
+test('ask: a join request, then the proposals the call names', () => {
+  const ask = (e: Partial<Extract<ConsentEvent, { type: 'ask' }>>) => review.reduce({ review: null, note: null }, { ...EVENTS.ask, ...e }, ctx);
+  assert.deepEqual(ask({ admit: 'abcdefabcdef' }).say, { to: 'ask', text: '', show: { admit: 'abcdefabcdef' } });
   assert.deepEqual(ask({ reviewable: false }).say, { to: 'ask', text: `room proposal ${H}`, show: { card: [H] } });
   assert.deepEqual(must(ask({ hit: [{ ...P0, viewable: false }] }).say).to, 'ask', 'too long for the plan view: the card');
   assert.deepEqual(ask({ hit: [] }).say, null, 'a question about something else');
@@ -348,38 +302,28 @@ test('words: every line the model is told is short; the mechanic per phase is on
   const call = (v: unknown): string => String(typeof v === 'function' ? Reflect.apply(v, undefined, ['bob', H, 'default', 'default']) : v);
   for (const v of Object.values(review.SAY)) lines.push(String(call(v)));
   for (const v of Object.values(review.NEXT)) lines.push(String(call(v)));
-  lines.push(review.showNote('bob', H), review.showNote('bob', H, true));
   for (const l of lines) assert.ok(l.length <= 280, `${l.length}: ${l}`);
   for (const l of Object.values(review.NEXT).map(call)) assert.ok(String(l).length <= 100, String(l));
 });
 
-test('words: the note\'s and review\'s longest lines stay under 160 characters with a 7-letter name; a composed text is capped', () => {
+test('words: the review\'s longest lines stay under 160 characters with a 7-letter name; a composed text is capped', () => {
   const n = 'tristan', h = 'abcdef012345';
-  const lines = {
-    noted: review.SAY.noted(n, h), nudge: review.SAY.nudge(n, h), renudge: review.SAY.renudge(n, h),
-    reoffer: review.SAY.reoffer(n, h, true), reofferUnshown: review.SAY.reoffer(n, h, false),
-    unshown: review.SAY.unshown(n, h, `"proposal ${h}"`),
-  };
-  for (const [k, s] of Object.entries(lines)) {
-    assert.ok(s.length < 160, `${k} is ${s.length}: ${s}`);
-    if (k !== 'unshown') assert.ok(s.includes(`call AskUserQuestion with "objection ${h}"`), `${k} still names the card's call`);
-  }
-  assert.match(lines.reoffer, /Esc was no answer, not a decline/, 'the Esc is said to be no answer');
-  assert.match(lines.unshown, /don't say they did/, 'the model is told not to claim an answer');
-  const long = review.textOf(Array.from({ length: 20 }, () => lines.noted), () => '', false);
+  const unshown = review.SAY.unshown(n, h, `"proposal ${h}"`);
+  assert.ok(unshown.length < 160, `${unshown.length}: ${unshown}`);
+  assert.match(unshown, /don't say they did/, 'the model is told not to claim an answer');
+  const long = review.textOf(Array.from({ length: 20 }, () => unshown), () => '', false);
   assert.equal(long.length, review.SAY_MAX);
   assert.ok(long.endsWith('…'));
 });
 
-test('M (live verify): the plan view refused with a note resolves at once: the note opens, the model hears nothing is recorded (in the refusal itself), the person gets a notice', () => {
+test('M (live verify): the plan view refused with a note resolves at once: the objection is recorded with it, the refusal says the closing call and the outcome', () => {
   const st: State = { review: REVIEWS.shown, note: null };
   const s = review.reduce(st, { type: 'rejected', toolUseId: 'tu1', answer: { note: 'please also add a CODE_OF_CONDUCT' }, target }, ctx);
   assert.equal(rev(s).phase, 'exiting');
-  assert.deepEqual([must(s.state.note).note, must(s.state.note).stage], ['please also add a CODE_OF_CONDUCT', 'waiting']);
-  assert.equal(must(s.say).to, 'context');
-  const said = review.textOf(parts(s), () => '', false);
-  assert.match(said, /^sub-human: nothing is recorded yet: bob's note on \w+ waits for its card \(Send or Discard\)[^]*post nothing about it[^]*ExitPlanMode[^]*AskUserQuestion with "objection /);
-  assert.equal(s.notice, undefined, 'noise pass F: no notice before the note\'s card');
+  assert.deepEqual(s.effects, [{ do: 'answer', hash: H, choice: 'Object', notes: 'please also add a CODE_OF_CONDUCT', sentTo: 'alice' }]);
+  const said = review.textOf(parts(s), () => 'bob objected.', true);
+  assert.equal(said, `sub-human: First ${review.NEXT.exit}. bob objected. ${review.SAY.noteFollow('bob')}`);
+  assert.equal(s.notice, undefined);
   // refused with no note: closed, nothing recorded, no notice
   const esc = review.reduce(st, { type: 'rejected', toolUseId: 'tu1', answer: { note: null }, target }, ctx);
   assert.deepEqual([esc.state.note, esc.notice], [null, undefined]);
@@ -396,7 +340,7 @@ test('live 2.1.296: Esc on a review the hooks put in plan mode leaves it open; o
   // the refusal's line: the model reads it only on its next turn
   assert.match(review.textOf(parts(esc), () => '', false), /closed the review of proposal \w+ without answering; nothing was recorded\. First call ExitPlanMode/);
   // the person's next prompt, still in plan mode: leave it first
-  const next = review.reduce(esc.state, { type: 'prompt', mode: 'plan', answer: null, target, live: true }, ctx);
+  const next = review.reduce(esc.state, { type: 'prompt', mode: 'plan', answer: null, target }, ctx);
   assert.equal(rev(next).phase, 'exiting');
   assert.match(review.textOf(parts(next), () => '', false), /Before anything else, call ExitPlanMode/);
   // that call: Claude Code's own "exit plan mode?", the plan emptied, which the person answers
@@ -405,30 +349,9 @@ test('live 2.1.296: Esc on a review the hooks put in plan mode leaves it open; o
   assert.equal(asked(leave).text, review.SAY.leaving);
 });
 
-test('M (live verify): while a note waits for its card the post tool is refused with the reason (any mode); other room tools pass; a note no longer live is dropped', () => {
-  for (const stage of ['waiting', 'nudged', 'asked', 'reoffered', 'told'] as NoteStage[]) {
-    const s = review.reduce({ review: null, note: note(stage) }, { type: 'roomTool', mode: 'auto', post: true, noteLive: true }, ctx);
-    assert.equal(must(s.say).to, 'deny', stage);
-    assert.match(review.textOf(parts(s), () => '', false), /^sub-human: refused: bob's note on proposal \w+ waits for Send or Discard on its card/);
-    assert.equal(must(s.state.note).stage, stage, 'the note stays as it was');
-  }
-  assert.equal(review.reduce({ review: null, note: note('waiting') }, { type: 'roomTool', mode: 'auto', post: false, noteLive: true }, ctx).say, null, 'read, task, propose pass');
-  assert.equal(review.reduce({ review: null, note: null }, { type: 'roomTool', mode: 'auto', post: true, noteLive: false }, ctx).say, null);
-  const gone = review.reduce({ review: null, note: note('waiting') }, { type: 'roomTool', mode: 'auto', post: true, noteLive: false }, ctx);
-  assert.deepEqual([gone.state.note, gone.say], [null, null]);
-  // a shown review is plan mode whatever mode the module last saw: any room tool is refused
+test('a shown review is plan mode whatever mode the module last saw: any room tool is refused', () => {
   assert.equal(must(review.reduce({ review: REVIEWS.shown, note: null }, { type: 'roomTool', mode: 'auto', answer: { note: null }, target }, ctx).say).to, 'deny');
-});
-
-test('stage 8e D (live verify, localb/03c-f): a note told already whose card went by again: the next prompt tells the person once what Send and Discard do; the note keeps waiting', () => {
-  const first = review.reduce({ review: null, note: note('told') }, PROMPT, ctx);
-  assert.equal(first.say, null, 'nothing more for the model');
-  assert.match(must(first.notice), /^your note on "Ship v3 Monday" still waits, not sent\. On its card, Send posts it as your objection; Discard drops it and records nothing/);
-  assert.deepEqual([must(first.state.note).stage, must(first.state.note).explained], ['told', true]);
-  const again = review.reduce(first.state, PROMPT, ctx);
-  assert.equal(again.notice, undefined, 'once');
-  assert.equal(must(again.state.note).hash, H, 'never dropped');
-  assert.equal(review.reduce({ review: null, note: note('told') }, { ...PROMPT, live: false }, ctx).notice, undefined, 'a note no longer live says nothing');
+  assert.equal(review.reduce({ review: null, note: null }, { type: 'roomTool', mode: 'auto' }, ctx).say, null);
 });
 
 test('the plan view\'s line names the request as people know it (plan NAME vN; a request from before plans by its title), and says agreeing is a sign-off on the text, not a go-ahead to build', () => {
@@ -516,11 +439,10 @@ test('A (live validation): a sign-off asked while the person is in plan mode hol
   assert.deepEqual(shape(esc), ['none', 'context', 'restorePlan']);
   assert.deepEqual(esc.effects[0], { do: 'restorePlan', file: own.file, backup: own.text });
   assert.match(review.textOf(parts(esc), () => '', false), /closed the review of proposal [0-9a-f]{12} without answering.*plan mode stays on.*plan file is back as it was/);
-  // a note in the view: the card comes next, the note waits
+  // a note in the view: recorded there and then, plan mode stays on
   const noted = review.reduce(shown.state, { type: 'rejected', toolUseId: 'tu2', answer: { note: 'add a test' }, target }, ctx);
-  assert.deepEqual([shape(noted)[0], must(noted.state.note).note], ['none', 'add a test']);
-  assert.match(review.textOf(parts(noted), () => '', false), /call AskUserQuestion with "objection /);
-  assert.equal(noted.notice, undefined);
+  assert.deepEqual(shape(noted), ['none', 'context', 'restorePlan,answer']);
+  assert.ok(review.textOf(parts(noted), () => '', true).endsWith(review.SAY.noteFollow('bob')));
   // the dialog closed with no report (an Esc that ended the turn): the next prompt or the turn's end closes it alike
   const closers: ConsentEvent[] = [{ ...EVENTS.prompt, answer: null }, { ...EVENTS.stop, answer: null }];
   for (const e of closers) {
@@ -605,36 +527,23 @@ test('0.6.0 frame: the plan view\'s first line says what it is for; it never ent
 
 // ---------- #34: the mode survives a review (quiet/SPIKES.md spike 1) ----------
 const keep = { ...ctx, keepMode: true };
-/** A review shown to a person who was in `mode` before it, refused with a note in its plan view. */
-function refusedWithNote(mode: string): State {
+/** A review shown to a person who was in `mode` before it, refused with a note in its plan view: the objection
+ * recorded (hooks/consent.ts step sets closing 'sent' once the answer effect records). */
+function refusedWithNote(mode: string, recorded = true): State {
   const s = review.reduce({ review: { ...REVIEWS.shown, mode }, note: null }, { type: 'rejected', toolUseId: 'tu1', answer: { note: 'use keyset paging' }, target }, keep);
   assert.equal(rev(s).phase, 'exiting');
-  assert.equal(must(s.state.note).note, 'use keyset paging');
-  return s.state;
+  assert.deepEqual(s.effects, [{ do: 'answer', hash: H, choice: 'Object', notes: 'use keyset paging', sentTo: 'alice' }]);
+  return recorded ? { ...s.state, review: { ...rev(s), closing: 'sent' } } : s.state;
 }
-/** The answer effect ran and recorded (hooks/consent.ts step: clearNote, and closing 'sent', on success). */
-const recordedSend = (s: ReviewStep): State => {
-  const a = s.effects.find(e => e.do === 'answer');
-  if (!a || a.do !== 'answer' || !a.clearNote) return s.state;
-  return { ...s.state, note: null, review: a.closing && s.state.review ? { ...s.state.review, closing: 'sent' } : s.state.review };
-};
 const closingExit: ConsentEvent = { ...EVENTS.exit, toolUseId: 'tu3', answer: null };
 const exitedIn = (mode: string): ConsentEvent => ({ ...EVENTS.exited, toolUseId: 'tu3', mode, response: { plan: '', edited: false, isAgent: false, filePath: undefined } });
 
-test('#34 auto: Send comes first, in plan mode; the closing call shows only "Your note went to NAME. Nothing to build." (a non-empty plan: Enter keeps auto); its approved row is the module\'s to hide; the model hears nothing is to be built', () => {
-  const st = refusedWithNote('auto');
-  const send = review.reduce(st, { type: 'noteAnswer', label: 'Send', target }, keep);
-  assert.deepEqual(send.effects, [{ do: 'answer', hash: H, choice: 'Object', notes: 'use keyset paging', clearNote: true, closing: true }]);
-  assert.equal(rev(send).closing, undefined, 'sent only once the record says so (the hooks set it)');
-  const said = review.textOf(parts(send), () => 'bob objected', true);
-  assert.match(said, /bob objected Next, call ExitPlanMode now \(no plan needed: the hooks close the review; your person leaves plan mode\)\.$/);
-  assert.doesNotMatch(said, /Nothing is to be built|the mode bob had/, 'said once, at the close; no mode promise');
-  // a Send whose record did not go (stale): the closing line never says the note went
-  assert.deepEqual(asked(review.reduce(send.state, closingExit, keep)).show, { close: 'Your note to alice is not sent yet. Nothing to build.' });
-  assert.deepEqual(asked(review.reduce({ ...send.state, note: null }, closingExit, keep)).show, { close: 'Room review closed. Nothing to build.' });
-  const exit = review.reduce(recordedSend(send), closingExit, keep);
+test('#34 auto: the closing call shows only "Your note went to NAME. Nothing to build." (a non-empty plan: Enter keeps auto); the model hears nothing is to be built', () => {
+  const exit = review.reduce(refusedWithNote('auto'), closingExit, keep);
   assert.deepEqual(exit.effects, [{ do: 'closePlan', file: '/plans/x.md', text: 'Your note went to alice. Nothing to build.' }]);
   assert.deepEqual(asked(exit).show, { close: 'Your note went to alice. Nothing to build.' });
+  // a note whose record did not go (stale, failed): the closing line never says it went
+  assert.deepEqual(asked(review.reduce(refusedWithNote('auto', false), closingExit, keep)).show, { close: 'Room review closed. Nothing to build.' });
   // the person's Enter: "Yes, and use auto mode"; the plan file comes back; plainly nothing to build; no line for them
   const done = review.reduce(exit.state, exitedIn('auto'), keep);
   assert.deepEqual(shape(done), ['none', 'context', 'restorePlan']);
@@ -642,52 +551,19 @@ test('#34 auto: Send comes first, in plan mode; the closing call shows only "You
   assert.equal(done.notice, undefined);
 });
 
-test('#34 manual: the empty exit ("Yes, and switch to default" keeps manual, the model reads a neutral "approved exiting plan mode"); accept edits: the empty exit and one line, shift+tab', () => {
+test('#34 manual: the empty exit; accept edits: the empty exit and one line, shift+tab; "No" on the exit dialog changes nothing', () => {
   for (const mode of ['default', 'acceptEdits']) {
-    const send = review.reduce(refusedWithNote(mode), { type: 'noteAnswer', label: 'Send', target }, keep);
-    const exit = review.reduce(recordedSend(send), closingExit, keep);
+    const exit = review.reduce(refusedWithNote(mode), closingExit, keep);
     assert.deepEqual(exit.effects, [{ do: 'blankPlan', file: '/plans/x.md' }], mode);
     assert.deepEqual(asked(exit).show, { leave: true }, mode);
     const done = review.reduce(exit.state, exitedIn('default'), keep);
     assert.equal(done.notice, mode === 'acceptEdits' ? 'shift+tab returns you to accept edits' : undefined, mode);
   }
-  // accept edits kept another way (shift+tab already): no line
-  const back = review.reduce(review.reduce(recordedSend(review.reduce(refusedWithNote('acceptEdits'), { type: 'noteAnswer', label: 'Send', target }, keep)), closingExit, keep).state, exitedIn('acceptEdits'), keep);
-  assert.equal(back.notice, undefined);
-});
-
-test('#34 Discard and no answer: Discard records nothing and says so before the exit; no answer keeps the note for its card (never lost), and the closing line says it is not sent', () => {
-  const discard = review.reduce(refusedWithNote('auto'), { type: 'noteAnswer', label: 'Discard', target }, keep);
-  assert.deepEqual([discard.state.note, discard.effects, rev(discard).closing], [null, [], 'discarded']);
-  assert.match(review.textOf(parts(discard), () => '', false), /discarded the note; nothing was recorded[^]*Next, call ExitPlanMode now/);
-  assert.deepEqual(asked(review.reduce(discard.state, closingExit, keep)).show, { close: 'Your note was not sent. Nothing to build.' });
-  const none = review.reduce(refusedWithNote('auto'), { type: 'noteAnswer', label: null, target }, keep);
-  assert.equal(must(none.state.note).note, 'use keyset paging', 'the note waits for its card');
-  assert.match(review.textOf(parts(none), () => '', false), /waits for its card \(Send or Discard\)/);
-  const exit = review.reduce(none.state, closingExit, keep);
-  assert.deepEqual(asked(exit).show, { close: 'Your note to alice is not sent yet. Nothing to build.' });
-  assert.equal(must(exit.state.note).note, 'use keyset paging');
-  // a Send whose record failed (the room unreachable): the hooks keep the note (clearNote only on success)
-  const failed = review.reduce(refusedWithNote('auto'), { type: 'noteAnswer', label: 'Send', target }, keep);
-  assert.deepEqual(asked(review.reduce(failed.state, closingExit, keep)).show, { close: 'Your note to alice is not sent yet. Nothing to build.' });
-  // a Send on a proposal no longer this seat's to answer: nothing recorded, the exit still follows
-  const stale = review.reduce(refusedWithNote('auto'), { type: 'noteAnswer', label: 'Send', target: null }, keep);
-  assert.deepEqual([stale.effects, stale.state.note], [[], null]);
-});
-
-test('#34 "No" on any exit dialog never loses the note: the closing call refused leaves the review closing and the note as it was; a noteAnswer with no review closing does nothing', () => {
-  for (const label of ['Send', null] as const) {
-    const st = review.reduce(refusedWithNote('auto'), { type: 'noteAnswer', label, target }, keep).state;
-    const exit = review.reduce(st, closingExit, keep);
-    const no = review.reduce(exit.state, { type: 'rejected', toolUseId: 'tu3', answer: { note: null }, target }, keep);
-    assert.deepEqual(no.state, exit.state, `${String(label)}: refused, nothing changes`);
-    assert.deepEqual(no.effects, []);
-    // the next prompt still in plan mode: the review asks to leave again; the note is still there
-    const prompt = review.reduce(no.state, { type: 'prompt', mode: 'plan', answer: null, target, live: true }, keep);
-    assert.deepEqual(prompt.state.note, exit.state.note);
-  }
-  assert.equal(review.reduce({ review: null, note: note('waiting') }, { type: 'noteAnswer', label: 'Send', target }, keep).say, null);
-  assert.equal(review.reduce({ review: REVIEWS.shown, note: note('waiting') }, { type: 'noteAnswer', label: 'Send', target }, keep).say, null);
+  const back = review.reduce(review.reduce(refusedWithNote('acceptEdits'), closingExit, keep).state, exitedIn('acceptEdits'), keep);
+  assert.equal(back.notice, undefined, 'accept edits kept another way (shift+tab already): no line');
+  const exit = review.reduce(refusedWithNote('auto'), closingExit, keep);
+  const no = review.reduce(exit.state, { type: 'rejected', toolUseId: 'tu3', answer: { note: null }, target }, keep);
+  assert.deepEqual([no.state, no.effects], [exit.state, []]);
 });
 
 test('#34 off (the verdict\'s keep-mode, or SUB_HUMAN_CC_OFF): the exit as before 0.6.0, empty for every mode, no line', () => {

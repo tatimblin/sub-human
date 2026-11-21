@@ -43,7 +43,7 @@ What a person sees after it:
 
 ## Owner decisions (2026-11-21)
 1. **Group planning is unchanged.** Versions, sending them back and forth, and sign-off per version all stay. Step 3 only changes how Claude writes a version. The plan-mode edit goes entirely: people never type into the plan file; they give feedback with "Tell Claude what to change".
-2. **A note that can't reach the host** (link down) is not queued: the outbox keeps out answers on purpose (`lib/remote/outbox.ts`: a late answer is worse than none, and its signature expires). The person gets one line, `Your note didn't reach the room; ask Claude to send it again when you're back online.` The model is told the same, with the note, so "send it again" reopens the review with nothing retyped.
+2. **A note that can't reach the host** (link down) is not queued: the outbox keeps out answers on purpose (`lib/remote/outbox.ts`: a late answer is worse than none, and its signature expires). The person gets one line, `your note didn't reach the room (WHY). Ask Claude to send it again when you're back online.` The model's line is unchanged (`SAY.failed`: open it again when they ask), and the note is in its transcript, so it can hand it back to paste: only the person's own answer in the plan view records an objection.
 
 ## Order
 1, then 2 (they share the wording), then 4, then 3 (the biggest deletion, last so 1, 2 and 4 can ship as 0.7.0-beta if 3 slips).

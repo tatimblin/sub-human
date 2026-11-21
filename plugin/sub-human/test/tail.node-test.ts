@@ -686,35 +686,6 @@ test('remindersText: the one a review opens next (the oldest unless named), the 
   assert.equal(tailLib.remindersText({ ...me, role: 'claude' }, room.open(code)), null);
 });
 
-test('remindersText: a note of mine waiting on the picked proposal points at the confirm card, not a new review', () => {
-  h.freshHome();
-  const { code } = h.register('alice');
-  const me = ident(code, 'alice', 'member');
-  inRoom(code, r => r.append({ kind: 'proposal', text: 'proposal dddddddddddd: Ship v3 Monday', hash: 'dddddddddddd', approvers: ['alice'] }, { via: 'agent', from: 'bob' }));
-  // a note on another proposal: the ordinary reminder
-  proposal.writeConfirm(me, { hash: 'aaaaaaaaaaaa', note: 'open rate limiting', from: 'bob', title: null, at: Date.now() });
-  assert.match(must(tailLib.remindersText(me, room.open(code))), /^proposal dddddddddddd still awaits alice's sign-off/);
-  // waiting, not yet offered again: show it now, as consent's reoffer on the same prompt says (never a softer line)
-  const cf = { hash: 'dddddddddddd', note: 'open rate limiting', from: 'bob', title: 'Ship v3 Monday', at: Date.now() };
-  for (const extra of [{}, { stage: 'waiting' as const }, { stage: 'nudged' as const }]) {
-    proposal.writeConfirm(me, { ...cf, ...extra });
-    assert.equal(tailLib.remindersText(me, room.open(code)),
-      'proposal dddddddddddd: alice\'s note is not recorded yet. First, call AskUserQuestion with "objection dddddddddddd". Don\'t reopen the review (that drops the note).');
-  }
-  // shown and interrupted (asked, no answer): the Esc is said to be no answer, as consent's reoffer says it
-  for (const extra of [{ stage: 'asked' as const }]) {
-    proposal.writeConfirm(me, { ...cf, ...extra });
-    assert.equal(tailLib.remindersText(me, room.open(code)),
-      'proposal dddddddddddd: alice\'s note is not recorded yet. Esc was no answer, not a decline. First, call AskUserQuestion with "objection dddddddddddd". Don\'t reopen the review (that drops the note).');
-  }
-  // offered again (or its no-answer close told): the card is alice's to ask for
-  for (const extra of [{ stage: 'reoffered' as const }, { stage: 'told' as const }]) {
-    proposal.writeConfirm(me, { ...cf, ...extra });
-    assert.equal(tailLib.remindersText(me, room.open(code)),
-      'proposal dddddddddddd: alice\'s note waits to be sent or discarded; if alice asks, call AskUserQuestion with "objection dddddddddddd". Don\'t reopen the review (that drops the note).');
-  }
-});
-
 test('tail: a session with no seat and a PIN join waiting looks again every resolveMs; let in, it asks the module once to take the seat (PLAN-JOIN step 3), or says why it stopped', () => {
   h.freshHome();
   const clock = createFake({ now: Date.now() });

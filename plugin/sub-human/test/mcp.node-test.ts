@@ -156,44 +156,22 @@ test('mcp: post is stamped from the parent pid (process.ppid), not env; system a
   bob.kill();
 });
 
-test('mcp: a post that repeats the person\'s objection note is refused, waiting for Send or just sent; others pass', async () => {
+test('mcp: a post that repeats the person\'s objection note, just sent, is refused; others pass', async () => {
   h.freshHome();
   const { code } = h.register('alice');
-  const me = { code, name: sn('alice'), role: 'member' };
   R = room.open(code);
   const s = await ready();
   const hash = 'abcdef012345';
-  proposal.writeConfirm(me, { hash, note: 'Open rate limiting\nfirst', from: 'bob', title: 'Ship v3', at: Date.now() });
-  // the note relayed (case, spacing and quotes aside): refused, pointing at the confirm card
-  const twice = errText(await s.tool('post', { kind: 'say', text: 'alice objects: “open rate limiting  first”.' }));
-  assert.equal(twice, `refused: that is alice's note on proposal ${hash}, which waits for alice's Send; posting it would relay it twice. call AskUserQuestion with "objection ${hash}" so alice can send or discard it.`);
+  R.append({ kind: 'objection', proposal_hash: hash, text: 'Open rate limiting\nfirst' }, { via: 'human', from: 'alice' });
+  // the note relayed (case, spacing and quotes aside): refused
+  assert.equal(errText(await s.tool('post', { kind: 'status', text: 'alice objects: “open rate limiting  first”.' })),
+    `refused: alice already sent that note as their objection to proposal ${hash}; the room shows it, so posting it would relay it twice.`);
   // an unrelated say passes
   assert.equal(posted(code, await s.tool('post', { kind: 'say', text: 'rate limits look fine to me' })).text, 'rate limits look fine to me');
   // a short note matches only exactly
-  proposal.writeConfirm(me, { hash, note: 'Not yet', from: 'bob', title: null, at: Date.now() });
+  R.append({ kind: 'objection', proposal_hash: 'abcdef999999', text: 'Not yet' }, { via: 'human', from: 'alice' });
   assert.equal(posted(code, await s.tool('post', { kind: 'say', text: 'not yet sure about the paging' })).kind, 'say');
-  assert.match(errText(await s.tool('post', { kind: 'say', text: '"not yet"' })), /^refused: that is alice's note/);
-  // the reverse order: Send pressed first (the objection recorded), the relay second
-  proposal.clearConfirm(me);
-  R.append({ kind: 'objection', proposal_hash: hash, text: 'Open rate limiting first' }, { via: 'human', from: 'alice' });
-  assert.equal(errText(await s.tool('post', { kind: 'status', text: 'alice objected: open rate limiting first' })),
-    `refused: alice already sent that note as their objection to proposal ${hash}; the room shows it, so posting it would relay it twice.`);
-  assert.equal(R.readAll().filter(e => e.via === 'agent').length, 2, 'only the two unrelated posts');
-  await s.close();
-});
-
-test('stage 8e D (live verify, localb/03e): while a note on a proposal still pending for the seat waits for its card, the server refuses any post (no hook ran); once it is gone posts pass', async () => {
-  h.freshHome();
-  const { code } = h.register('alice');
-  h.register('bob', 'member', 1, code);
-  const me = { code, name: sn('alice'), role: 'member' };
-  R = room.open(code);
-  const s = await ready();
-  const { hash } = propose({ code, name: sn('bob') }, { text: '# Add a CHANGELOG\n', approvers: ['alice'] });
-  proposal.writeConfirm(me, { hash, note: 'please use Keep a Changelog', from: 'bob', title: 'Add a CHANGELOG', at: Date.now(), stage: 'told' });
-  assert.match(errText(await s.tool('post', { kind: 'say', text: 'test' })), new RegExp(`^sub-human: refused: alice's note on proposal ${hash} waits for Send or Discard on its card`));
-  proposal.clearConfirm(me);
-  assert.equal(posted(code, await s.tool('post', { kind: 'say', text: 'test' })).text, 'test');
+  assert.match(errText(await s.tool('post', { kind: 'say', text: '"not yet"' })), /^refused: alice already sent that note/);
   await s.close();
 });
 

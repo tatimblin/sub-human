@@ -11,7 +11,7 @@
  *                               sign-off    a sign-off in the plan view
  *                               reap-rm     a closed room's session deleted with `claude rm`, not only stopped
  *                               quiet-plan  sub-human's own plan-mode rows drawn as nothing (mod/core/quiet.ts)
- *                               keep-mode   a review's closing call keeps the person's mode, Send / Discard first
+ *                               keep-mode   a review's closing call keeps the person's mode
  *                               room-row    the one room row, spawned by the module (mod/deliver.ts roomRow)
  *   isGated(v)                v is one of them
  *   closeOff(features) -> Gated[]   features, deduplicated in GATED order, with what each implies: sign-off implies

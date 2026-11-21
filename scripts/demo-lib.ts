@@ -557,27 +557,24 @@ async function answerPlanView(session: string, pv: DialogState, choice: string, 
 }
 
 /**
- * After an objection's note, the person answers what follows, each with Enter on what is focused (as a person would):
- * the note's Send / Discard (0.6.0 #34: the module asks it first, still in plan mode; before, after the exit), then the
- * review's closing call: in auto, the plan view with only the closing line ("… Nothing to build.", "Yes, and use auto
- * mode" focused), in manual and accept edits Claude Code's empty-plan "Exit plan mode?" (Yes). The option under the
- * cursor is recorded: checks/s05-consent.ts compares the mode before and after. Done once Send is answered and the
- * closing call was (or no dialog came for 30 s: the check then sees whatever mode is left).
+ * After an objection's note (sent as the plan view closes, 0.7.0), the person answers the review's closing call with
+ * Enter on what is focused (as a person would): in auto, the plan view with only the closing line ("… Nothing to
+ * build.", "Yes, and use auto mode" focused), in manual and accept edits Claude Code's empty-plan "Exit plan mode?"
+ * (Yes). The option under the cursor is recorded: checks/s05-consent.ts compares the mode before and after. Done once
+ * the closing call was answered (or no dialog came for 30 s: the check then sees whatever mode is left).
  */
 async function afterObjection(session: string): Promise<void> {
   const leave = /Exit plan mode\?[\s\S]*❯\s*1\.\s*Yes/;
-  const send = /❯\s*1\.\s*Send\b/;
-  let sent = false, closed = false, calm = 0, last = 0;
-  await until(`${session}: the note's Send, then the review's closing call`, 120, () => {
+  let closed = false, calm = 0, last = 0;
+  await until(`${session}: the review's closing call`, 120, () => {
     if (Date.now() - last < 2500) return false; // the dialog just answered may still be drawn
     const p = pane(session);
     const close = planState(p) && /Nothing to build/.test(p) ? planState(p) : null;
-    const step = (what: string, then: () => void): false => { then(); calm = 0; last = Date.now(); record(`${session}: ${what}`, true, 0); keys(session, ['Enter']).catch(() => {}); return false; };
-    if (!sent && send.test(p)) return step('Send on the note\'s Send / Discard', () => { sent = true; });
-    if (leave.test(p)) return step('answered Claude Code\'s "Exit plan mode?" (Yes)', () => { closed = sent; });
-    if (sent && close) return step(`Enter on the closing plan view (focused: ${close.opts.find(x => x.cur)?.label ?? 'none'})`, () => { closed = true; });
-    if (sent && closed) return true;
-    if (sent && !planState(p)) { if (!calm) calm = Date.now(); return Date.now() - calm > 30_000; }
+    const step = (what: string): false => { closed = true; calm = 0; last = Date.now(); record(`${session}: ${what}`, true, 0); keys(session, ['Enter']).catch(() => {}); return false; };
+    if (leave.test(p)) return step('answered Claude Code\'s "Exit plan mode?" (Yes)');
+    if (close) return step(`Enter on the closing plan view (focused: ${close.opts.find(x => x.cur)?.label ?? 'none'})`);
+    if (closed) return true;
+    if (!planState(p)) { if (!calm) calm = Date.now(); return Date.now() - calm > 30_000; }
     return false;
   });
   await sleep(1500);
