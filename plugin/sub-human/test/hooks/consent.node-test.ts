@@ -939,7 +939,7 @@ test('M (live verify, verify5/M): the plan view refused with a note: the module\
   const r = w.hook('consent', ev('PostToolUseFailure', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu1', transcript_path: tp, error: said(note) }), { as: 'bob' });
   assert.equal(r.code, 0, r.stderr);
   assert.equal(hso(r).hookEventName, 'PostToolUseFailure');
-  assert.equal(must(ctx(r)), `sub-human: First call ExitPlanMode now (no plan needed: the hooks close the review; your person leaves plan mode). bob objected to proposal ${hash}. bob's note went to the author; you may write its changes as the next version (plan, op edit). If it asks anything else (e.g. SendMessage NAME.CODE), do it. Don't repeat the note.`);
+  assert.equal(must(ctx(r)), `sub-human: First call ExitPlanMode now (no plan needed: the hooks close the review; your person leaves plan mode). bob objected to proposal ${hash}. bob's note went to the author, whose Claude writes the next version. If it asks anything else (e.g. SendMessage NAME.CODE), do it. Don't repeat the note.`);
   assert.equal(r.json?.systemMessage, 'sub-human: Sent your changes to alice.');
   assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.from, x.proposal_hash, x.text]), [['objection', 'human', 'bob', hash, note]]);
   // the review closes as before (back to auto); a post outside plan mode passes untouched

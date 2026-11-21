@@ -310,7 +310,7 @@ test('author first (noise pass I): an objection with a note tells its asker\'s C
   const bare = must(proposal.answer(me('carol'), a, { choice: 'Object' }).entry);
   const noted = must(proposal.answer(me('bob'), a, { choice: 'Object', notes: 'cap at 100' }).entry);
   const back = (e: Entry, viewer: string) => R.chatLines(e, { viewer, entries: R.readAll() }).filter(l => l.startsWith('(for Claude)'));
-  assert.deepEqual(back(noted, 'alice'), ['(for Claude) bob asked for changes (the note above); you may revise the plan (plan, op edit) if alice wants it.']);
+  assert.deepEqual(back(noted, 'alice'), ['(for Claude) bob asked for changes (the note above): write the next version from it now (plan, op edit); ask alice only what the note leaves open.']);
   assert.equal(R.deliver({ name: 'alice', role: 'member' }, noted, { entries: R.readAll() }), 'wake');
   assert.deepEqual(back(noted, 'carol'), []);
   assert.deepEqual(back(noted, 'bob'), []);

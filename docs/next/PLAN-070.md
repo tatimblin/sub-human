@@ -23,7 +23,7 @@ What a person sees after it:
 ### 2. The author's Claude drafts the next version
 - `lib/room/render.ts` `changesLine`, for the author's Claude only: draft the next version from the note now with the plan tool, and ask your person only what the note leaves open.
 - `SAY.noteFollow`, for the objector's Claude: the note went to the author. Drop "you may write its changes", so only one v2 gets written. Keep "if it asks anything else, do it".
-- `skills/sub-human/member.md` line 9: "only when NAME asks" gets an exception for writing the next version after someone requested changes on a plan of NAME's.
+- `skills/sub-human/member.md`: unchanged. Its "A `(for Claude)` line: do it" already covers `changesLine`, and the template is at its 1400-character budget.
 - The new version still opens in the author's plan view before anyone else is asked. This is already how it works (`proposal.check`); no change.
 
 ### 3. One call stores a version

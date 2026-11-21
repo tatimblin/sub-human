@@ -222,10 +222,9 @@ export const SAY_MAX = 600;
 export const SAY = {
   recorded: 'Recorded. The room shows it (and any note) already: post nothing about it. Agreeing is not a go-ahead to build; wait for the decision and your people.',
   /** after an objection with a note: the note is the person's words to the room and, often, to their own Claude ("ask
-   * cameron if…"); live 2026-10-17 the model took "post nothing" as "do nothing" and the question was never asked. Who
-   * writes the changes is not prescribed: this side may, when the note says how; the author's Claude is told it may too
-   * (lib/room/render.ts changesLine). */
-  noteFollow: (n: string): string => `${n}'s note went to the author; you may write its changes as the next version (plan, op edit). If it asks anything else (e.g. SendMessage NAME.CODE), do it. Don't repeat the note.`,
+   * cameron if…"); live 2026-10-17 the model took "post nothing" as "do nothing" and the question was never asked. The
+   * author's Claude writes the next version (0.7.0: lib/room/render.ts changesLine), so this side does not. */
+  noteFollow: (n: string): string => `${n}'s note went to the author, whose Claude writes the next version. If it asks anything else (e.g. SendMessage NAME.CODE), do it. Don't repeat the note.`,
   /** the author's Yes on their own new version: sent out (lib/proposal.ts sendOut) */
   /** others: who else was asked ("bob, carol"; '' in a room of one) */
   sent: (n: string, what: string, others: string, decided?: string | null): string => `${n} sent ${what} out${others ? `: ${others} asked to sign off` : ''}; `
