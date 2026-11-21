@@ -57,8 +57,13 @@ export function run(x: Ctx, { det }: { det: Det }, T: Thresholds): void {
   const calls = x.toolUses(x.inSpan(x.entries('claude'), x.span('S1'))).map(c => c.name);
   det('The room session calls nothing (no rows, no room tool)', calls.length === 0,
     `${calls.length} call(s): ${[...new Set(calls)].join(', ') || 'none'}`);
-  const j = x.entries(A).filter(e => e.attachment && e.attachment.type === 'hook_additional_context' && e.attachment.hookEvent === 'UserPromptExpansion').map(e => [e.attachment?.content].flat().join('\n'))[0] || '';
-  const fillLen = (j.split('\n\nROWS\n')[0] ?? '').length;
+  // this run's join (S1's span: the seat's folder keeps earlier runs' transcripts too). The row's fallback ask (auto mode
+  // refused the module's spawn: mod/core/rows.ts rowAsk, held into the join's expansion) rides in the same block; it is
+  // not the mechanics text, so it counts toward the whole block only
+  const j = x.inSpan(x.entries(A), s1).filter(e => e.attachment && e.attachment.type === 'hook_additional_context' && e.attachment.hookEvent === 'UserPromptExpansion').map(e => [e.attachment?.content].flat().join('\n'))[0] || '';
+  const ASK = /\n*SUB-HUMAN: this session's room row could not start by itself\.[^\n]*/;
+  const askLen = (ASK.exec(j)?.[0] ?? '').length;
+  const fillLen = (j.replace(ASK, '').split('\n\nROWS\n')[0] ?? '').length;
   det(`Member join block small: text ≤ ${T.joinText} chars, with ROWS ≤ ${T.joinBlock.toLocaleString('en-US')}`, j && fillLen <= T.joinText && j.length <= T.joinBlock,
-    `${A}'s join additionalContext ${j.length} chars (mechanics text ${fillLen}, ROWS ${j.length - fillLen})`);
+    `${A}'s join additionalContext ${j.length} chars (mechanics text ${fillLen}, ROWS ${j.length - fillLen - askLen}${askLen ? `, the row's fallback ask ${askLen}` : ''})`);
 }
