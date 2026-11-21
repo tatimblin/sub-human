@@ -827,3 +827,24 @@ test('tail (stage 8f item 2, live verify, verify10/remote/05f): a second join\'s
   assert.equal(t.of('chat').filter(e => e.lines.includes(text)).length, 2, 'said for each join');
   t.stop();
 });
+
+test('tail: a waiting join whose first dial reached nothing says its one line once, and keeps looking for what the host answers', () => {
+  h.freshHome();
+  const clock = createFake({ now: Date.now() });
+  const out: string[] = [];
+  const off = 'Couldn\'t reach box.ts.net from this machine (no WebSocket to box.ts.net within 45000 ms). Ask the host for an SSH line.';
+  let news: { state: 'waiting' | 'linked'; code: RoomCode; text: string; name?: string } | null = { state: 'waiting', code: rc('vole-1234'), text: off };
+  let asked = 0;
+  tailLib.runTail({
+    clock, lookup: () => null, timings: { ...FAST, resolveMs: 100, unseatedMs: 5000 }, sid: 'sid-1', err: () => {},
+    write: (s, d) => { out.push(s); d(); },
+    deps: { pendingNews: () => { asked++; return news; } },
+  });
+  const written = (type: string) => out.flatMap(s => s.split('\n').filter(Boolean)).filter(l => l.startsWith(`{"type":"${type}"`));
+  clock.advance(1000);
+  assert.deepEqual(written('chat'), [JSON.stringify({ type: 'chat', lines: [off] })], 'said once');
+  assert.ok(asked >= 8, `still looking every resolveMs (${asked})`);
+  news = { state: 'linked', code: rc('vole-1234'), text: '', name: 'bob' };
+  clock.advance(500);
+  assert.equal(written('take').length, 1, 'then let in: the take');
+});

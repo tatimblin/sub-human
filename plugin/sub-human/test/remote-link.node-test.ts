@@ -467,3 +467,29 @@ test('join news: what the join command already said is not said again by the tai
   links.set(code, { ...must(links.get(code)), join_told: 'something else' });
   assert.equal(must(joining.pendingNews('sid-1')).text, said);
 });
+
+test('join news: a first dial that reached nothing says the other way in, once, in one line; a dial that knocked, or a later blip, says nothing', async t => {
+  h.freshHome(t);
+  const joining = await import('../lib/remote/joining.ts');
+  const hosting = await import('../lib/remote/hosting.ts');
+  const code = rc('vole-9877');
+  const off = 'Couldn\'t reach box.tail1a2b.ts.net from this machine (no WebSocket to box.tail1a2b.ts.net within 45000 ms). Ask the host for an SSH line.';
+  const at = new Date(Date.now() - 1000).toISOString();
+  links.set(code, { code, transport: { kind: 'wss', host: 'box.tail1a2b.ts.net', path: `/sub-human/${code}`, hostKey: 'A'.repeat(43) }, invite: wordOf('x'), join_as: 'bob', join_sid: 'sid-1', created_at: at });
+  store.open(code).kv.set('link', { pid: process.pid, state: 'offline', since: new Date().toISOString(), reason: off, why: 'WEB_UNREACHED' });
+  assert.deepEqual(must(joining.pendingNews('sid-1')), { code, name: 'bob', state: 'waiting', text: off }, 'the tail says it (the link keeps trying)');
+  assert.deepEqual(hosting.outcome(code, { waitMs: 0 }), { state: 'waiting', reason: off, otherWay: true });
+  assert.equal(hosting.joinText(code, sn('bob'), hosting.outcome(code, { waitMs: 0 })), off, 'the command\'s own answer is that one line');
+  links.set(code, { ...must(links.get(code)), join_told: off });
+  assert.equal(must(joining.pendingNews('sid-1')).text, '', 'said by the command: the tail says nothing');
+  // an ssh tunnel's first dial alike, with the other way named the other way round
+  const ssh = 'Couldn\'t reach devbox over ssh (ssh: connect to host devbox port 22: Connection refused). Ask the host for a Tailscale line.';
+  const { join_told: _told, ...rest } = must(links.get(code));
+  links.set(code, rest);
+  store.open(code).kv.set('link', { pid: process.pid, state: 'offline', since: new Date().toISOString(), reason: ssh, why: 'SSH_UNREACHED' });
+  assert.equal(must(joining.pendingNews('sid-1')).text, ssh);
+  // any other offline: nothing yet
+  store.open(code).kv.set('link', { pid: process.pid, state: 'offline', since: new Date().toISOString(), reason: 'the host never answered' });
+  assert.equal(must(joining.pendingNews('sid-1')).text, '');
+  assert.equal(hosting.outcome(code, { waitMs: 0 }).otherWay, undefined);
+});

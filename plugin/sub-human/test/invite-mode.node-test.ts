@@ -81,7 +81,7 @@ test('invite: Tailscale not up here, --ssh, or SUB_HUMAN_SSH_ADDR set: ssh as be
   const down = stub(t, { up: false });
   const a = run(w, 'invite');
   assert.equal(down.web.length, 0);
-  assert.match(text(a), new RegExp(`/sub-human join \\S+ ${w.code} [0-9a-z]{39}`), 'an ssh line');
+  assert.match(text(a), new RegExp(`/sub-human join ssh://\\S+/${w.code}(?:\\?home=\\S+)?#[0-9a-z]{39}`), 'an ssh line');
   assert.doesNotMatch(text(a), /Off your tailnet/);
   const up = stub(t, { up: true });
   assert.doesNotMatch(text(run(w, 'invite --ssh')), /^WEB/, '--ssh is ssh');
@@ -89,7 +89,7 @@ test('invite: Tailscale not up here, --ssh, or SUB_HUMAN_SSH_ADDR set: ssh as be
   const was = process.env.SUB_HUMAN_SSH_ADDR;
   process.env.SUB_HUMAN_SSH_ADDR = 'dev@box.example';
   t.after(() => { if (was === undefined) delete process.env.SUB_HUMAN_SSH_ADDR; else process.env.SUB_HUMAN_SSH_ADDR = was; });
-  assert.match(text(run(w, 'invite')), new RegExp(`/sub-human join dev@box\\.example ${w.code} `), 'an ssh address set up: ssh');
+  assert.match(text(run(w, 'invite')), new RegExp(`/sub-human join ssh://dev@box\\.example/${w.code}[?#]`), 'an ssh address set up: ssh');
   assert.deepEqual([up.up, up.web.length], [0, 0]);
 });
 
@@ -101,7 +101,7 @@ test('invite: a tailnet invite that fails falls back to ssh and says why', t => 
   assert.equal(a.kind, 'secret');
   assert.equal(a.kind === 'secret' && a.refused, false);
   assert.match(text(a), /^Not over your tailnet: Tailscale Serve isn't enabled on your tailnet yet\. This invite is over ssh instead\.\n\n/);
-  assert.match(text(a), new RegExp(`/sub-human join \\S+ ${w.code} [0-9a-z]{39}`));
+  assert.match(text(a), new RegExp(`/sub-human join ssh://\\S+/${w.code}(?:\\?home=\\S+)?#[0-9a-z]{39}`));
   assert.match(pinnedOf(a)?.text ?? '', /^Not over your tailnet/);
   // asked for by name, the same failure is the answer
   assert.match(text(run(w, 'invite --web')), /Tailscale Serve isn't enabled/);
@@ -132,16 +132,17 @@ test('invite: tailnetUp is the CLI and its status (a fake tailscale; none at tha
   assert.equal(real(), false, 'not running');
 });
 
-test('ws offline: a ts.net name that never answers (or does not resolve) says the host may need --public', () => {
+test('ws offline: a ts.net name that never answers (or does not resolve) names the other way in: an SSH line', () => {
   const timeout = new Error('no WebSocket to box.tail1a2b.ts.net within 45000 ms');
-  const hint = wsT.OFF_TAILNET_HINT;
-  assert.match(hint, /\/sub-human invite --public/);
   const e = wsT.offline('box.tail1a2b.ts.net', timeout);
   assert.equal(e.code, 'OFFLINE');
-  assert.equal(e.message, `${timeout.message} (${hint})`);
-  assert.ok(wsT.offline('box.tail1a2b.ts.net', new Error('TLS to box.tail1a2b.ts.net:443: getaddrinfo ENOTFOUND box.tail1a2b.ts.net')).message.endsWith(`(${hint})`));
-  assert.equal(wsT.offline('box.tail1a2b.ts.net', new Error('wss://box.tail1a2b.ts.net/x answered 404 Not Found instead of a WebSocket upgrade')).message.includes(hint), false, 'it answered: not a reach problem');
-  assert.equal(wsT.offline('front.example', new Error('no WebSocket to front.example within 45000 ms')).message.includes(hint), false, 'not a ts.net name');
+  assert.equal(e.reason, 'WEB_UNREACHED');
+  assert.equal(e.message, `Couldn't reach box.tail1a2b.ts.net from this machine (${timeout.message}). Ask the host for an SSH line.`, '<what didn\'t happen>. <one action>.');
+  assert.equal(wsT.offline('box.tail1a2b.ts.net', new Error('TLS to box.tail1a2b.ts.net:443: getaddrinfo ENOTFOUND box.tail1a2b.ts.net')).reason, 'WEB_UNREACHED');
+  const answered = wsT.offline('box.tail1a2b.ts.net', new Error('wss://box.tail1a2b.ts.net/x answered 404 Not Found instead of a WebSocket upgrade'));
+  assert.equal(answered.reason, undefined, 'it answered: not a reach problem');
+  assert.doesNotMatch(answered.message, /SSH line/);
+  assert.equal(wsT.offline('front.example', new Error('no WebSocket to front.example within 45000 ms')).reason, undefined, 'not a ts.net name');
 });
 
 // PLAN-JOIN step 5: the line alone rides beside the pinned status for the module's copy card, never the PIN; --no-card

@@ -11,7 +11,7 @@ a host before that step still sends it to its card, which `admitcard` answers), 
 
 **Stage 7b (the invite redesign): nothing here was run either.** No Docker where it was done. Every ssh join is now
 the joiner's own ssh login to the host account (the lab authorizes the joiner's key there, as a person sets up any
-login: `lab.authorizeLogin`), with an invite line (`/sub-human join DEST ROOM SECRET`) typed first and the PIN when the
+login: `lab.authorizeLogin`), with an invite line (`/sub-human join ssh://DEST/ROOM#SECRET`) typed first and the PIN when the
 host asks (`seat-cli short` then `pin`); web joins check the listener's key against the line and run Noise XK. There is
 no enrollment door, no forced-command line and no `lab/attack.js` any more: the stranger, stolen-line-without-PIN and
 PIN-guessing cases are the plugin's unit tests (`test/remote-invite-ssh`, `remote-invite-line`, `remote-short`), and

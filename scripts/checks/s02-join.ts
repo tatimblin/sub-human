@@ -132,7 +132,7 @@ function remoteJoin(x: Ctx, det: Det, j: LogEntry | undefined, rh: string): void
   // those to the model); any other entry holding the SECRET or the PIN (typed after the line, or as "PIN NNNN": a
   // prompt, a meta copy, an answer, a tool call) is a leak
   const shown = (readText(x.stateFile('S2', 'join-line.txt')) || '').trim();
-  const secret = (/ ([0-9a-z]{39})(?: |$)/.exec(shown) || [])[1];
+  const secret = (/[ #]([0-9a-z]{39})(?: |$)/.exec(shown) || [])[1]; // an ssh://…#SECRET line (0.6.1), or an older DEST ROOM SECRET
   const pin = (readText(x.stateFile('S2', 'join-pin.txt')) || '').trim();
   const needles = secret && /^\d{4}$/.test(pin) ? [secret, `PIN ${pin}`, `join ${pin}`] : [];
   const files = [...new Set([A, B].flatMap(s => jsonlUnder(paths.seatProjectDir(s))).concat(x.seatFiles('claude')))];

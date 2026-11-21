@@ -192,6 +192,7 @@ test('doctor redactor: each rule alone', () => {
   const S = 'kqmnpzstvwxyabcdefghjkmnpqrstvwxyzabcde'; // no digit: SECRET's shape all the same
   assert.equal(red(`/sub-human join https://x.ts.net/sub-human/vole-1234#${S} 4829`), '/sub-human join https://x.ts.net/sub-human/vole-1234#<secret> <pin>');
   assert.equal(red(`/sub-human join https://x.ts.net/sub-human/vole-1234#${S}`), '/sub-human join https://x.ts.net/sub-human/vole-1234#<secret>');
+  assert.match(red(`/sub-human join ssh://devbox/vole-1234?forward=7420#${S} 4829`), /#<secret> <pin>$/, 'an ssh line\'s SECRET and PIN');
   assert.equal(red(`join https://x.ts.net/sub-human/vole-1234#${S} 48291 --as bob`), 'join https://x.ts.net/sub-human/vole-1234#<secret> <pin> --as bob', 'a PIN of another length too');
   assert.equal(red(`join dev vole-1234 ${S} 482`), 'join dev vole-1234 <secret> <pin>');
   assert.equal(red(`join dev vole-1234 ${S} --home /srv/sh`), 'join dev vole-1234 <secret> --home /srv/sh');

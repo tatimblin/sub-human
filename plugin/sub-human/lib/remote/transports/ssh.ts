@@ -11,7 +11,9 @@
  * `<home>/bin/serve --stdio CODE --link ID --login`; a forced-command key can never send --login (its line fixes the
  * arguments, and scripts/sub-human serve refuses --login under SSH_ORIGINAL_COMMAND). classify reads ssh's stderr in
  * one place (the link daemon, loginProblem, doctor); loginProblem is what stops a link (AUTH) until the person acts,
- * null for what may pass (a timeout, a refused connection).
+ * null for what may pass (a timeout, a refused connection); unreached is a first dial's refused or timed-out ssh,
+ * which names the other way in (SSH_UNREACHED: ask for a Tailscale line) while the link keeps trying. A refused login
+ * names it too.
  *
  * tunnel: the person's own login to the host machine as any account (`ssh -W 127.0.0.1:PORT`), a byte stream to the
  * host's web listener on its loopback, which the ws kind (./ws.ts, a spec with `tunnel`) speaks its Noise link over.
@@ -25,6 +27,7 @@ import childProcess from 'node:child_process';
 import * as textMod from '../../text.ts';
 import { envStr } from '../../env.ts';
 import { assertNever } from '../../../mod/core/never.ts';
+import { ASK_TAILSCALE } from '../../reasons.ts';
 
 /** SUB_HUMAN_SSH_OPTS: extra ssh options, space separated. */
 const sshOpts = (): string[] => String(envStr('SUB_HUMAN_SSH_OPTS') || '').split(/\s+/).filter(Boolean);
@@ -123,9 +126,6 @@ function loginSpec(text: string, { home, link = CryptoMod.randomBytes(6).toStrin
 
 const loginCommand = (spec: SshSpec): string => ['ssh', ...(spec.port ? ['-p', String(spec.port)] : []), `${spec.user}@${spec.host}`].join(' ');
 
-/** A login refused as USER: the joiner may have a login of their own there, not USER's. */
-const OTHER_ACCOUNT = (d: SshDest): string => `No login as ${d.user} on ${d.host}? Ask the room's host for /sub-human invite --forward: it goes through your own login there`;
-
 /** What ssh's stderr says went wrong, in one place: the link daemon (lib/remote/link-connect.ts), loginFailure and
  * doctor's hints read it. null: nothing this knows (the connection may still pass). */
 type SshProblem =
@@ -166,7 +166,8 @@ function loginProblem(stderr: string, spec: SshSpec, code: RoomCode, { first = f
   if (p.kind === 'mfa' && !/Permission denied/i.test(String(stderr || ''))) return null; // a prompt BatchMode refused: may pass once logged in by hand
   switch (p.kind) {
     case 'host-key': return { reason: 'SSH_HOST_KEY', message: `ssh doesn't know ${where}'s host key yet (or it changed), and sub-human never answers ssh's questions. Run \`${once}\` once in a terminal, check and accept the key, then join again` };
-    case 'denied': case 'mfa': return { reason: 'SSH_DENIED', message: `${where} refused your ssh login: sub-human logs in with your ssh keys or agent only, never a password. Check that \`${once}\` logs in without one, then join again; behind MFA (an interactive login), run \`${once}\` yourself once first. ${OTHER_ACCOUNT(spec)}` };
+    case 'denied': return { reason: 'SSH_DENIED', message: `${where} refused your ssh login (sub-human uses your ssh keys or agent, never a password). ${ASK_TAILSCALE}` };
+    case 'mfa': return { reason: 'SSH_DENIED', message: `${where} wants an interactive login (MFA), and sub-human never answers ssh's questions. Run \`${once}\` yourself once, then join again` };
     case 'no-shim': return { reason: 'SSH_NO_SHIM', message: `${where} has no sub-human at ${home}/bin/serve. If the room is in someone else's account on ${spec.host}, you can't join through theirs: ask them for /sub-human invite --forward, which goes through your own login there. If it's your own account, open the room there in Claude Code (/sub-human), then join again${spec.remoteHome ? '' : '; if its sub-human folder is somewhere else, add --home PATH'}` };
     case 'old-host': return { reason: 'SSH_OLD_HOST', message: `the sub-human on ${where} is too old for joining over an ssh login: update it there (/plugin update sub-human), or ask its host for an invite (/sub-human invite)` };
     case 'no-plugin': return { reason: 'SSH_NO_SHIM', message: `${where} found no sub-human plugin or node to run: on that machine, start Claude Code once, then join again` };
@@ -179,6 +180,17 @@ function loginProblem(stderr: string, spec: SshSpec, code: RoomCode, { first = f
     case 'refused': case 'timeout': case 'forward-refused': case 'forward-unreached': return null;
     default: return assertNever(p, 'ssh problem');
   }
+}
+
+/** ssh's last line that says what happened (its stderr's last non-empty line), for a one-line message. */
+const lastLine = (stderr: unknown): string => String(stderr || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean).at(-1) ?? 'no answer';
+
+/** A first dial's ssh that reached no sshd (refused, timed out): OFFLINE SSH_UNREACHED, naming the other way in; null
+ * for anything else (loginProblem's, or a link that connected before: a blip it rides out). */
+function unreached(stderr: string, spec: SshDest, { first = false }: { first?: boolean } = {}): RoomError | null {
+  const p = classify(stderr);
+  if (!first || !p || (p.kind !== 'refused' && p.kind !== 'timeout')) return null;
+  return new RoomError('OFFLINE', `Couldn't reach ${spec.host} over ssh (${lastLine(stderr)}). ${ASK_TAILSCALE}`, 'SSH_UNREACHED');
 }
 
 /** loginProblem's words alone. */
@@ -228,7 +240,7 @@ function forwardProblem(stderr: string, d: SshDest, port: number, code: RoomCode
       const why = loginProblem(stderr, { kind: 'ssh', ...d }, code, { first });
       return why ? new RoomError('AUTH', why.message, why.reason) : null;
     }
-    case 'denied': return new RoomError('AUTH', `${d.host} refused your ssh login as ${d.user}: sub-human logs in with your ssh keys or agent only, never a password. Check that \`${loginCommand({ kind: 'ssh', ...d })}\` logs in without one (your own user name there? join as USER@${d.host}), then join again`, 'SSH_DENIED');
+    case 'denied': return new RoomError('AUTH', `${d.host} refused your ssh login as ${d.user} (sub-human uses your ssh keys or agent, never a password). ${ASK_TAILSCALE}`, 'SSH_DENIED');
     case 'refused': case 'timeout': case 'no-shim': case 'old-host': case 'no-plugin': case 'no-room': case 'not-hosted': case 'serve-refused': return null;
     default: return assertNever(p, 'ssh problem');
   }
@@ -246,5 +258,5 @@ const kind: Required<KindEntry<SshSpec>> = {
 
 export {
   withUser, placeholder, dest, parse, locator, command, remoteCommand, loginSpec, loginCommand,
-  loginFailure, loginProblem, classify, forwardCommand, tunnel, forwardProblem, kind,
+  loginFailure, loginProblem, unreached, lastLine, classify, forwardCommand, tunnel, forwardProblem, kind,
 };

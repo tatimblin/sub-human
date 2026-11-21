@@ -56,7 +56,7 @@ test('ssh invite: the line names the person\'s own ssh login (and the host\'s fo
   assert.ok(hiddenBlock(out), out.stderr);
   const m = must(shownInvite(must(out.json?.reason)));
   assert.ok(m, must(out.json?.reason));
-  assert.equal(m.line, `join me@devbox ${code} ${m.word} --home ${host.home}`, 'a host folder that is not ~/.sub-human goes in the line');
+  assert.equal(m.line, `join ssh://me@devbox/${code}?home=${host.home}#${m.word}`, 'one URL: the login, the room, a host folder that is not ~/.sub-human, the SECRET as its fragment');
   assert.doesNotMatch(must(out.json?.reason), /Over ssh this needs their own ssh login/, 'the ssh notes are the README\'s (0.6.0)');
   assert.equal(fs.existsSync(ak), false, 'no line written');
   assert.ok(fs.existsSync(path.join(host.home, 'bin', 'serve')), 'the shim their login runs');
@@ -90,11 +90,12 @@ test('ssh invite: the line names the person\'s own ssh login (and the host\'s fo
   assert.equal(host.lib(() => hostLinks.links(store.open(code)))[linkId], undefined);
 });
 
-test('ssh invite: a joiner with no ssh login of their own there sends nothing (no try spent) and is told to ask for a web invite; a line for another host neither', async t => {
+test('ssh invite: a joiner with no ssh login of their own there sends nothing (no try spent) and is told to ask for a Tailscale line; a line for another host neither', async t => {
   const { host, remote, alice, bob, code } = rig(t, { FAKE_SSH_FAIL: 'denied' });
   const m = must(shownInvite(must(host.join(alice, 'invite --ssh me@devbox').json?.reason)));
-  const r = remote.join(bob, `${m.line} --as bob`);
-  assert.match(must(r.json?.reason), /could not join room \S+: me@devbox refused your ssh login: sub-human logs in with your ssh keys or agent only/);
+  // the older positional form of the same line is still read
+  const r = remote.join(bob, `join me@devbox ${code} ${m.word} --home ${host.home} --as bob`);
+  assert.match(must(r.json?.reason), /could not join room \S+: me@devbox refused your ssh login \(sub-human uses your ssh keys or agent, never a password\)\. Ask the host for a Tailscale line\.$/, 'the other way in, in one line');
   assert.equal(shortOf(host, code, m.word ? invites.inviteRef(inviteSecret.idOf(must(inviteSecret.decode(m.word)).secret)) : '').tries, 5);
 
   // a line whose tag names another host's machine key: the host's proof does not match, so the SECRET never goes

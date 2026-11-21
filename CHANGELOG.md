@@ -2,6 +2,13 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 0.6.1
+
+### Changed
+- **One line shape for every way in.** An invite line is one URL whatever the transport: `ssh://me@devbox/orca-6418#SECRET` (with `?home=PATH` when the host's sub-human folder is not `~/.sub-human`), `ssh://devbox/orca-6418?forward=7420#SECRET` for a shared machine, `https://node.ts.net/sub-human/orca-6418#SECRET` as before, and `pipe:/HOME/orca-6418#SECRET` for a second sub-human folder on one machine (tests, the demo). The joiner always types `/sub-human join LINE PIN` (the line alone knocks); `/sub-human join ssh://HOST/ROOM` is the join over your own ssh login. One parser reads it: the scheme picks the link, the room is the path's last part, the SECRET the `#` fragment. Hosts show the new shape; the older positional forms (`HOST ROOM SECRET [--home H]`, `HOST ROOM SECRET --forward PORT`, `HOST ROOM`, `URL SECRET`) are still read but no longer documented. A joiner on 0.6.0 cannot read an ssh line from a 0.6.1 host (the web line is unchanged). The wire protocol is unchanged (5), and the new line is answered hidden like every invite line: neither its SECRET nor the PIN after it reaches the model or the transcript.
+- **A failed join names the other way in.** A ts.net name this machine can't reach says `Couldn't reach box.ts.net from this machine (…). Ask the host for an SSH line.`; an ssh login refused says `… refused your ssh login (sub-human uses your ssh keys or agent, never a password). Ask the host for a Tailscale line.`, and an ssh host that doesn't answer on the first try `Couldn't reach devbox over ssh (…). Ask the host for a Tailscale line.` One line each, said once while the link keeps trying.
+- **The copied invite carries the install.** The copy card puts one line for someone with no sub-human yet above the join line: `No sub-human yet? In a terminal: claude plugin marketplace add tatimblin/sub-human && claude plugin install sub-human@sub-human, then restart Claude Code`. The PIN is still never copied.
+
 ## 0.6.0: quiet: your mode kept, one room row, plainer lines
 
 - **Asking for changes on a room plan keeps your mode.**

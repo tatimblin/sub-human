@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { World } from './hooks/helpers.ts';
 import * as commands from '../lib/commands/index.ts';
+import * as joinMod from '../lib/commands/join.ts';
 import * as seats from '../lib/seats.ts';
 import * as identity from '../lib/identity.ts';
 import * as seatKey from '../hooks/seat-key.ts';
@@ -77,6 +78,12 @@ test('commands: the hidden rule is the router\'s: join, invite, admit or a word 
   assert.equal(commands.hide(line, joined).kind, 'secret');
   assert.equal(commands.hide(line.slice(0, 2), joined).kind, 'secret', 'the line alone too');
   assert.deepEqual(commands.hide(line, { kind: 'say', text: 'x' }), { kind: 'secret', text: 'x', refused: false });
+  // the one line shape over ssh (0.6.1): hidden the same, whatever it answers, typed with join or without
+  for (const ssh of [`ssh://me@devbox/${w.code}#${'k'.repeat(39)}`, `ssh://devbox/${w.code}?forward=7420#${'k'.repeat(39)}`]) {
+    assert.equal(commands.hide(['join', ssh, '4829'], joined).kind, 'secret', ssh);
+    assert.equal(commands.hide([ssh], joined).kind, 'secret', `${ssh} alone`);
+    assert.deepEqual(commands.hide([ssh], { kind: 'refused', text: 'x' }), { kind: 'secret', text: 'x', refused: true });
+  }
   assert.deepEqual(commands.hide(['help'], { kind: 'say', text: 'x' }), { kind: 'say', text: 'x' });
 });
 
@@ -89,7 +96,7 @@ test('commands: leave, kick, admit and invite; handoff is no verb (a reserved na
   const inv = run(w, 'invite --pipe', { seat: 'alice' });
   assert.ok(inv.kind === 'secret', inv.kind);
   assert.equal(inv.refused, false, 'an invite is no refusal');
-  assert.match(text(inv), new RegExp(`/sub-human join pipe:\\S+ ${w.code} [0-9a-z]{39}\n`));
+  assert.match(text(inv), new RegExp(`/sub-human join pipe:\\S+/${w.code}#[0-9a-z]{39}\n`));
   assert.match(text(inv), /its PIN apart from the line \(say it, or send it another way\): \d{4}$/);
   assert.match(text(run(w, 'invite --pipe --web', { seat: 'alice' })), /pick one way at a time/);
   assert.match(text(run(w, 'admit zz', { seat: 'alice' })), /usage: \/sub-human admit/);
@@ -163,4 +170,41 @@ test('commands: the room\'s Claude agent session binds its seat and takes no oth
   const w = new World({ alice: 'sleep', claude: 'sleep' }, { t });
   assert.match(text(run(w, 'bob', { roomClaudeAgent: true })), /this session runs the room's Claude agent/);
   assert.match(text(run(w, 'leave', { seat: 'claude' })), new RegExp(`this session is the room's Claude of room ${w.code}; join from another session`));
+});
+
+test('join line: one shape for every transport (lineParts): the scheme, what is before the path, the room as its last segment, the query, the SECRET as the fragment', () => {
+  const S = 'k'.repeat(39);
+  const parts = (s: string) => { const l = joinMod.lineParts(s); return l && { ...l, query: Object.fromEntries(l.query) }; };
+  assert.deepEqual(parts(`ssh://me@devbox/vole-1234#${S}`), { scheme: 'ssh', where: 'me@devbox', path: '/vole-1234', code: 'vole-1234', query: {}, word: S });
+  assert.deepEqual(parts(`ssh://devbox:2222/vole-1234?home=/srv/sh#${S}`), { scheme: 'ssh', where: 'devbox:2222', path: '/vole-1234', code: 'vole-1234', query: { home: '/srv/sh' }, word: S });
+  assert.deepEqual(parts(`ssh://devbox/vole-1234?forward=7420#${S}`)?.query, { forward: '7420' });
+  assert.deepEqual(parts(`https://box.ts.net/sub-human/vole-1234#${S}`), { scheme: 'https', where: 'box.ts.net', path: '/sub-human/vole-1234', code: 'vole-1234', query: {}, word: S });
+  assert.deepEqual(parts(`pipe:/tmp/h2/vole-1234#${S}`), { scheme: 'pipe', where: '', path: '/tmp/h2/vole-1234', code: 'vole-1234', query: {}, word: S });
+  assert.equal(parts('ssh://me@devbox/vole-1234')?.word, null, 'no fragment: no SECRET (a login join over ssh)');
+  assert.equal(parts(`ssh://devbox/vole-1234?forward=1&forward=2#${S}`), null, 'a key twice');
+  for (const bad of ['devbox', 'ssh:/devbox/vole-1234', 'ftp://devbox/vole-1234', `ssh://devbox/vole-1234#${S} x`, 'pipe:relative/vole-1234']) assert.equal(parts(bad), null, bad);
+});
+
+test('join line: what is wrong with one is said hidden, never echoing its SECRET', t => {
+  const w = new World({ alice: 'sleep' }, { t });
+  const S = 'k'.repeat(39);
+  const cases: [string, RegExp][] = [
+    [`join ssh://devbox/x/${w.code}#${S}`, /isn't a whole join line/],
+    [`join ssh://devbox/not-a-room#${S}`, /isn't a whole join line/],
+    [`join ssh://devbox/${w.code}?via=x#${S}`, /"via" isn't part of a join line/],
+    [`join ssh://devbox/${w.code}?home=/a#${S} --home /b`, /names the host's sub-human folder already/],
+    [`join ssh://devbox/${w.code}?home=relative#${S}`, /isn't a plain absolute path/],
+    [`join ssh://YOU@devbox/${w.code}#${S}`, /placeholder/],
+    [`join ssh://devbox/${w.code}#${S.slice(4)}`, /did not come through whole/],
+    [`join ssh://devbox/${w.code}#${S} 4829 extra`, /usage: \/sub-human join LINE PIN/],
+    [`join ssh://devbox/${w.code} 4829`, /did not come through whole/],
+    [`join pipe:/tmp/none/${w.code}`, new RegExp(`without its SECRET: /sub-human join pipe:/tmp/none/${w.code}#SECRET`)],
+    [`join pipe:/tmp/none/${w.code}?x=1#${S}`, /isn't a whole join line/],
+  ];
+  for (const [args, re] of cases) {
+    const a = run(w, args);
+    assert.equal(a.kind, 'secret', args);
+    assert.match(text(a), re, args);
+    assert.ok(!text(a).includes(S), `${args}: no SECRET in the answer`);
+  }
 });
