@@ -107,7 +107,7 @@ test('a room opened: once the join\'s turn is over, the module asks itself (no m
   await until(() => seen.cards.length === 1)
   const q = shown(seen)
   expect(q?.question).toBe(QUESTION)
-  expect(q?.header).toBe('sub-human')
+  expect(q?.header).toBe('Invite')
   expect(q?.options.map(o => o.label)).toEqual(['This machine', 'SSH', 'Tailscale (detected)'])
   expect(q?.options.every(o => !o.description)).toBe(true)
   expect(seen.scripts).toContain('walk.ts')
@@ -135,7 +135,7 @@ test('This machine: one line, nothing run', async ($, on) => {
 })
 
 test('SSH: the typed command\'s invite through the join shim; its line and PIN only on the status line, then the copy question; never a notice, prompt or append', async ($, on) => {
-  const seen = world($, on, { answers: ['SSH', 'Copy'] })
+  const seen = world($, on, { answers: ['SSH', 'Copy (join + install line)'] })
   await open($, seen)
   await until(() => seen.invites.length === 1)
   expect(seen.invites).toEqual(['invite --ssh'])

@@ -20,8 +20,8 @@
  *   HERE_LINE                                                             This machine's one line
  */
 
-/** The dialog's header chip (12 characters at most): the dialog has no plugin prefix, so it names the speaker. */
-export const WALK_HEADER = 'sub-human';
+/** The dialog's header chip (12 characters at most); the copy question after it has the same. */
+export const WALK_HEADER = 'Invite';
 export const THIS_MACHINE = 'This machine';
 export const SSH = 'SSH';
 export const TAILSCALE = 'Tailscale';

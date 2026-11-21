@@ -75,7 +75,7 @@ function world(on: On, { ref, noCard = false, clip = [0], answers = [] }: { ref:
   on('tool.call', async (_$, e) => {
     seen.cards.push(e)
     if (seen.gate) await seen.gate
-    const answer = seen.answers.length ? seen.answers.shift() ?? null : 'Copy'
+    const answer = seen.answers.length ? seen.answers.shift() ?? null : 'Copy (join + install line)'
     if (answer === null) return { deny: 'The user doesn\'t want to proceed with this tool use.' }
     const q = e.tool === 'AskUserQuestion' ? String(e.questions[0]?.question) : ''
     return { result: { questions: e.tool === 'AskUserQuestion' ? e.questions : [], answers: { [q]: answer } }, text: `"${q}"="${answer}"` }
@@ -88,14 +88,14 @@ const everything = (seen: Seen) => JSON.stringify([seen.prompts, seen.appends, s
 
 test('an invite with its line: the module asks itself (no model turn), Copy / Skip; Copy puts the line, never the PIN, on the clipboard; then later lines with no question', async ($, on) => {
   const ref = 'c0ffee000001'
-  const seen = world(on, { ref, clip: [0, 0], answers: ['Copy'] })
+  const seen = world(on, { ref, clip: [0, 0], answers: ['Copy (join + install line)'] })
   await start($)
   await typed($, 'invite'); await seen.tick()
   await until(() => seen.clip.length === 1)
   const q = shown(seen)
   expect(q?.question).toBe(QUESTION)
-  expect(q?.header).toBe('sub-human')
-  expect(q?.options.map(o => o.label)).toEqual(['Copy', 'Skip'])
+  expect(q?.header).toBe('Invite')
+  expect(q?.options.map(o => o.label)).toEqual(['Copy (join + install line)', 'Skip'])
   expect(q?.options.every(o => !o.description)).toBe(true)
   expect(seen.prompts).toEqual([]) // no wake, no model turn
   expect(seen.appends).toEqual([])
@@ -135,7 +135,7 @@ test('Skip copies nothing and asks no more this session', async ($, on) => {
 
 test('dismissed (Esc): nothing copied, no line; the next invite asks again', async ($, on) => {
   const ref = 'c0ffee000006'
-  const seen = world(on, { ref, answers: [null, 'Copy'] })
+  const seen = world(on, { ref, answers: [null, 'Copy (join + install line)'] })
   await start($)
   await typed($, 'invite'); await seen.tick()
   await until(() => seen.cards.length === 1)

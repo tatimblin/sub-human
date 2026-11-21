@@ -29,9 +29,10 @@
  */
 
 export const COPY_QUESTION = 'Copy the invite?';
-/** The dialog's header chip: it has no plugin prefix, so the chip names the speaker (12 characters at most). */
-export const COPY_HEADER = 'sub-human';
-export const COPY = 'Copy';
+/** The dialog's header chip (12 characters at most), as the walk's (mod/core/walk.ts). Copy's label says what goes on
+ * the clipboard: the join line, with the install line above it for someone with no sub-human yet. */
+export const COPY_HEADER = 'Invite';
+export const COPY = 'Copy (join + install line)';
 export const SKIP = 'Skip';
 /** The dialog's options, labels alone ($.ui.ask takes no descriptions; the PIN is never copied, so none is needed). */
 export const COPY_OPTIONS: readonly string[] = [COPY, SKIP];
