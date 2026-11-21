@@ -29,6 +29,10 @@
  *   drawLine(text) -> RenderElement  a row line as drawn: no bullet, each line's author ("maya:", "maya's Claude:",
  *                                    "you:") bold
  *   keepRow(rows, sid, row) -> rows  the room row per session id ($.store), the newest ROWS_KEPT
+ *   planAsk(text) -> bool            a line typed into the row that asks for a room plan: it starts with `plan ` or
+ *                                    `/plan ` (case-insensitive; a fixed rule). It is not posted: main's Claude is asked
+ *                                    to write it (PLAN_ASK, the context beside the person's line), so the person's check
+ *                                    opens in their plan view as for any room plan
  */
 import type { RenderElement } from 'claude-code';
 import type { Hello } from './types.ts';
@@ -99,6 +103,9 @@ export function drawLine(text: string): RenderElement {
   });
   return { type: 'Box', props: { flexDirection: 'column' }, children: rows };
 }
+
+export const planAsk = (text: string): boolean => /^\s*\/?plan\s+\S/i.test(text);
+export const PLAN_ASK = "(for Claude) sub-human: the person typed the line above in the room row: a request for a room plan, not posted to the room. Write it as a room plan with the plan tool (op edit, one call); their check opens in their plan view first.";
 
 export type ChatRows = Readonly<Record<string, KeptRow | undefined>>;
 export const ROWS_KEPT: number = 20;

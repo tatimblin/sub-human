@@ -27,7 +27,7 @@
  *   - ui.render UserMessage, ToolUse, ToolResult of the rows above and the keeper's call: nothing.
  * Failure: each .catch passes the event on (a row step to its model, which can only start the keeper).
  */
-import { typedText, postNote, keeperCall, keeperHold, keeperStep, ended, woken, rowStatus, drawLine, KEEPER_AGENT, KEEPER_MAX } from './core/room-chat.ts';
+import { typedText, postNote, keeperCall, keeperHold, keeperStep, ended, woken, rowStatus, drawLine, planAsk, KEEPER_AGENT, KEEPER_MAX } from './core/room-chat.ts';
 import { shimArgv, shimEnv, toClassic, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { asNonce } from './core/state.ts';
 import { ROOM_AGENT } from './core/rows.ts';
@@ -66,6 +66,9 @@ export const chat: {
   lines: Set<string>;
   quiet: Set<string>;
   echo: Set<string>;
+  /** lines typed into the row that ask for a room plan: main's Claude is asked once the row's turn completes
+   * (mod/deliver.ts turn.complete; a submit from a turn.step hook is refused) */
+  planAsks: string[];
   /** the keeper spawns of the window (keeperStep), and the keeper holds handed to its model */
   keepers: number[];
   modelHolds: number;
@@ -74,7 +77,7 @@ export const chat: {
   /** the row opened before who's here was known: the first here event draws it as the row's first line */
   rosterDue: boolean;
   unread: number;
-} = { row: null, woke: false, keeperTurn: null, gone: new Set(), waiting: [], lines: new Set(), quiet: new Set(), echo: new Set(), keepers: [], modelHolds: 0, here: '', rosterDue: false, unread: 0 };
+} = { row: null, woke: false, keeperTurn: null, gone: new Set(), waiting: [], lines: new Set(), quiet: new Set(), echo: new Set(), planAsks: [], keepers: [], modelHolds: 0, here: '', rosterDue: false, unread: 0 };
 
 /** The status line under main's prompt, or undefined (no row). */
 export const chatStatus = (): string | undefined => (chat.row ? rowStatus(chat.row.code, chat.here, chat.unread) : undefined);
@@ -110,6 +113,8 @@ async function drain($: EngineInterface): Promise<string> {
   const out: string[] = [];
   for (const it of items) {
     if ('line' in it) { out.push(it.line); continue; }
+    // "plan …": no post; main's Claude writes it as a room plan (Phase 4)
+    if (planAsk(it.typed)) { chat.planAsks.push(it.typed); out.push(`you: ${it.typed}`); continue; }
     const note = await post($, it.typed);
     out.push(`you: ${it.typed}${note ? `\n${note}` : ''}`);
   }

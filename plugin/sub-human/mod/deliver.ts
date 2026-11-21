@@ -27,7 +27,7 @@ import {
 } from './core/rows.ts';
 import { noteRow, offerRow } from './rows.ts';
 import { chat, chatStatus, keeperOf, NOTHING } from './chat.ts';
-import { chatOn, chatSpawn, keepRow, rowOf, rowUuids, keeperStep } from './core/room-chat.ts';
+import { chatOn, chatSpawn, keepRow, rowOf, rowUuids, keeperStep, PLAN_ASK } from './core/room-chat.ts';
 import {
   copyBook, copyTo, copyNews, copyChoiceOf, clipboardCommands, AUTO_COPIED, COPIED, NO_TOOL, GONE, NOT_COPIED,
   COPY_QUESTION, COPY_HEADER, COPY_OPTIONS, type CopyBook,
@@ -621,7 +621,9 @@ async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
   // room-chat: what the person sees of the room is drawn in the row; a notice (a chat event) only there, once this
   // process knows the row (Phase 3: room lines leave main; a wake's line stays main's prompt, a seatless join's
   // answers and every other line main's)
-  const shown = ev.type === 'chat' ? ev.lines : ev.type === 'wake' ? visibleLines(ev.text) : [];
+  // (a wake of my own question carries my own line: the row drew it already, as "you: …")
+  const mine = c.seat ? `${c.seat.name}: ` : null;
+  const shown = ev.type === 'chat' ? ev.lines : ev.type === 'wake' ? visibleLines(ev.text).filter(l => !mine || !l.startsWith(mine)) : [];
   const inRow = ev.type === 'chat' && !!chat.row;
   if (shown.length && c.seat) void chatLine($, c.sid, c.seat.code, shown.join('\n')).catch(() => {});
   const actions = route(ev, { turnRunning: turns.running !== null });
@@ -1134,6 +1136,15 @@ export function registerDeliver(on: On): void {
   });
 
   on('turn.complete', ($, e, next) => {
+    // the room row's turn that drew a "plan …" line: main's Claude is asked for the room plan now, from this hook's
+    // frame (from the row's turn.step a submit is refused: it would wait on the turn that hook holds), queued for
+    // main's turn end; the person's line is the prompt, PLAN_ASK its context (mod/prompt.ts wakeContextOf)
+    if (e.agentId !== undefined && chat.row && e.agentId === chat.row.id) {
+      for (const text of chat.planAsks.splice(0)) {
+        wakeContexts.set(text, PLAN_ASK);
+        void $.prompt.submit({ text, asUser: true }).catch(() => null).finally(() => { wakeContexts.delete(text); });
+      }
+    }
     // a wake appended while the turn's last request was already out was never read: a turn for it after all, context
     // only (its row is stored and its lines were shown: WAKE_RESEND, once however many), so a failed submit leaves it
     // for the next request

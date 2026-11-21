@@ -8,6 +8,7 @@ Tested on Claude Code 2.1.296.
 
 ### Changed (beta.2)
 - **Ask someone by name.** A line led by `bob,` or `bob:` (or naming `@bob`) wakes bob's Claude once its turn is over; it answers in the room as `bob's Claude: …` when it's sure, else leaves the line for bob. A question that names nobody (it ends with `?`) wakes only your own Claude. A Claude's line to the room is drawn in every row.
+- **`plan …` in the row makes a room plan.** A line typed into the row that starts with `plan ` (or `/plan `) isn't posted: your Claude writes it as a room plan, and it opens in your plan view first.
 - **Room lines leave main.** People's lines, joins and leaves are drawn in the room row only (counted on main's status line); main keeps your Claude's words, your plan views, your invites and join line, `@room` receipts, and a line naming you. Your Claude still reads them all. With the row off (`room-chat`), main shows them as in 0.7.0.
 
 ## 0.8.0-beta.1: the room row is the group chat

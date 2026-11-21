@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   chatOn, chatSpawn, keeperCall, keeperHold, typedText, postNote, keeperStep, ended, woken, rowStatus, rowUuids, drawLine,
-  keepRow, rowOf, KEEPER_MAX, KEEPER_WINDOW_MS, ROWS_KEPT,
+  keepRow, rowOf, planAsk, KEEPER_MAX, KEEPER_WINDOW_MS, ROWS_KEPT,
 } from '../mod/core/room-chat.ts';
 import type { Hello } from '../mod/core/types.ts';
 import type { Gated } from '../mod/core/cc.ts';
@@ -59,6 +59,11 @@ test('room-chat: a hold that ended the keeper (STOP, cancelled) and one that did
   assert.equal(woken(`STOP: a newer row holds room ${CODE}.`), false);
   assert.equal(ended('The server-side auto mode classifier gave no verdict for mcp__plugin_sub-human_room__hold'), false);
   assert.equal(ended(undefined), false);
+});
+
+test('room-chat (Phase 4): a row line asking for a room plan starts with "plan " or "/plan " (a fixed rule)', () => {
+  for (const s of ['plan paging for GET /tasks', 'Plan: cursor paging', '/plan the release', '  PLAN x']) assert.equal(planAsk(s), !s.startsWith('Plan:'), s);
+  for (const s of ['planning is hard', 'plan', 'the plan looks good', 'bob, plan it?']) assert.equal(planAsk(s), false, s);
 });
 
 test('room-chat: the status line under main\'s prompt', () => {

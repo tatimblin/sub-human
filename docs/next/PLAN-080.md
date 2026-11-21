@@ -94,6 +94,8 @@ Each surface the design relies on gets a contract entry (search string, `feature
 - `plan …` typed in the row (or "let's plan X", judged by your Claude) hands the drafting to your main Claude: a wake with the request.
 - Main's Claude writes it with the plan tool (0.7.0 one-call edit), and your check opens in your plan view as now.
 
+**Phase 4 as built (0.8.0-beta.2):** a fixed rule, not a judgement: a line typed into the row that starts with `plan ` or `/plan ` (case-insensitive) is not posted; the row draws `you: plan …`, and once the row's turn completes main's Claude gets the line as a prompt (submitted from the `turn.complete` hook: a submit from the row's `turn.step` is refused) with one line of context: write it as a room plan with the plan tool (op edit). "let's plan X" in other words is an ordinary post.
+
 ## Phase 5: release
 - README (the row, talking to people, assistants), ARCHITECTURE, CHANGELOG, version 0.8.0.
 - **Wire protocol:** no change expected (posts, answers and wakes already exist), but check whether an assistant answer needs a marker beyond `via=agent` + `for`.
