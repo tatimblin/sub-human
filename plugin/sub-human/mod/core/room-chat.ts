@@ -8,8 +8,12 @@
  *   chatOn(hello) -> bool            the row is the chat: the verdict's room-row and room-chat both on
  *   chatSpawn(code)                  $.agent.spawn's input: name the room code (the row's label), prompt "chat: CODE"
  *   keeperCall(code)                 the room's Agent call for its keeper (background, prompt "keep: CODE")
- *   keeperHold(code)                 the keeper's hold input: {room, take: true} (it replaces an older keeper's hold of
- *                                    the room, so a /clear's new row ends the old one)
+ *   keeperHold(code, wake?)          the keeper's hold input: {room, take: true} (it replaces an older keeper's hold of
+ *                                    the room, so a /clear's new row ends the old one); wake: it returns "WAKE: …" once
+ *                                    someone else's line comes in, for a row the module does not send to (a row main's
+ *                                    model started: a plugin's send to it hands its whole run to its model, every hook
+ *                                    of the plugin skipped as re-entry; in auto mode with autoMode rules the send is
+ *                                    refused outright; live 2.1.296), so the keeper's end is what wakes it
  *   typedText(text) -> string|null   the person's exact words in a composer row of the row's view (the wrapper Claude
  *                                    Code puts around a line typed into a background agent: cc CONTRACT
  *                                    row-composer-append); null for any other row
@@ -17,8 +21,8 @@
  *                                    refusal or receipt ("⧗ queued: …")
  *   keeperStep(times, now) -> {spawn, times}   a keeper spawn may go now: at most KEEPER_MAX in KEEPER_WINDOW_MS (a
  *                                    keeper that dies at once looped ~200 requests in 25 s in the spike)
- *   ended(result) -> bool            a hold result that ends the keeper (STOP, cancelled); anything else (a deny, an
- *                                    error) is a hold that did not run
+ *   ended(result) -> bool            a hold result that ends the keeper (STOP, WAKE, cancelled); anything else (a
+ *                                    deny, an error) is a hold that did not run; woken(result): WAKE
  *   rowStatus(code, here, unread)    the one line under main's prompt: "CODE · maya, dev here · 2 new"
  *   rowUuids(jsonl) -> string[]      the uuids of a room transcript's synthesized rows (answeredWithoutRequest: cc
  *                                    CONTRACT step-answered-without-request), its lines to draw again after a resume
@@ -42,7 +46,7 @@ export const chatSpawn = (code: string): { subagentType: string; name: string; d
 export const keeperCall = (code: string): { subagent_type: string; description: string; prompt: string; run_in_background: true } =>
   ({ subagent_type: KEEPER_AGENT, description: 'keeper', prompt: `keep: ${code}`, run_in_background: true });
 
-export const keeperHold = (code: string): { room: string; take: true } => ({ room: code, take: true });
+export const keeperHold = (code: string, wake = false): { room: string; take: true; wake?: true } => ({ room: code, take: true, ...(wake ? { wake } : {}) });
 
 /** @cc The user sent a new message while you were working:
  * The wrapper around a line typed into a background agent's row (door prompt, origin composer), live on 2.1.296. */
@@ -67,7 +71,8 @@ export function keeperStep(times: readonly number[], now: number): { spawn: bool
   return { spawn: true, times: [...recent, now] };
 }
 
-export const ended = (result: unknown): boolean => typeof result === 'string' && /^\s*(?:STOP\b|\(cancelled\))/.test(result);
+export const ended = (result: unknown): boolean => typeof result === 'string' && /^\s*(?:STOP\b|WAKE\b|\(cancelled\))/.test(result);
+export const woken = (result: unknown): boolean => typeof result === 'string' && /^\s*WAKE\b/.test(result);
 
 export function rowStatus(code: string, here: string, unread: number): string {
   return [code, here, unread ? `${unread} new` : ''].filter(Boolean).join(' · ');
@@ -95,15 +100,18 @@ export function drawLine(text: string): RenderElement {
   return { type: 'Box', props: { flexDirection: 'column' }, children: rows };
 }
 
-export type ChatRows = Readonly<Record<string, { code: string; id: string } | undefined>>;
+export type ChatRows = Readonly<Record<string, KeptRow | undefined>>;
 export const ROWS_KEPT: number = 20;
-export function keepRow(rows: unknown, sid: string, row: { code: string; id: string }): ChatRows {
+/** A kept row: its room, its agent id, and wake (main's model started it: it is woken by its keeper's end, never sent to). */
+export type KeptRow = { code: string; id: string; wake?: true };
+export function keepRow(rows: unknown, sid: string, row: KeptRow): ChatRows {
   const keys = rows && typeof rows === 'object' ? Object.keys(rows).filter(k => k !== sid) : [];
   const was = keys.flatMap(k => { const r = rowOf(rows, k); return r ? [[k, r] as const] : []; });
   return { ...Object.fromEntries(was.slice(-(ROWS_KEPT - 1))), [sid]: row };
 }
 /** The row kept for sid, or null. */
-export function rowOf(rows: unknown, sid: string): { code: string; id: string } | null {
+export function rowOf(rows: unknown, sid: string): KeptRow | null {
   const v: unknown = rows && typeof rows === 'object' ? Object.getOwnPropertyDescriptor(rows, sid)?.value : undefined;
-  return v && typeof v === 'object' && 'code' in v && 'id' in v && typeof v.code === 'string' && typeof v.id === 'string' ? { code: v.code, id: v.id } : null;
+  if (!(v && typeof v === 'object' && 'code' in v && 'id' in v && typeof v.code === 'string' && typeof v.id === 'string')) return null;
+  return { code: v.code, id: v.id, ...('wake' in v && v.wake === true ? { wake: true as const } : {}) };
 }

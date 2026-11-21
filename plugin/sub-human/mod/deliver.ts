@@ -450,6 +450,7 @@ async function chatRow($: EngineInterface, sid: string, code: string, list: read
     const kept = rowOf(await $.store.get(CHAT_ROWS).catch(() => null), sid);
     if (!kept || kept.code !== code || chat.gone.has(kept.id)) return false;
     chat.row = { sid, ...kept };
+    if (kept.wake && !keeperOf(list, kept.id)) { chat.gone.add(kept.id); chat.row = null; return false; } // no send can wake it
     noteRow(kept.id);
     void chatRefind($, sid, kept.id);
   }
@@ -462,16 +463,18 @@ async function chatRow($: EngineInterface, sid: string, code: string, list: read
   return false;
 }
 /** The row spawned for sid (by the module, or the fallback's call), kept for a reload and a --resume. */
-async function chatSpawned($: EngineInterface, sid: string, code: string, id: string): Promise<void> {
-  chat.row = { sid, code, id };
+async function chatSpawned($: EngineInterface, sid: string, code: string, id: string, wake = false): Promise<void> {
+  chat.row = { sid, code, id, ...(wake ? { wake } : {}) };
   chat.waiting.push({ line: chat.here || NOTHING });
   chat.rosterDue = !chat.here; // not known yet: the tail's first here event draws it
-  try { await $.store.set(CHAT_ROWS, keepRow(await $.store.get(CHAT_ROWS), sid, { code, id })); } catch { /* this process still has it */ }
+  try { await $.store.set(CHAT_ROWS, keepRow(await $.store.get(CHAT_ROWS), sid, { code, id, ...(wake ? { wake } : {}) })); } catch { /* this process still has it */ }
   showStatus($);
 }
-/** A line for the row: it waits for the row's next step, which the send starts (the row idles between lines). */
+/** A line for the row: it waits for the row's next step, which the send starts (the row idles between lines); a row
+ * main's model started is never sent to (its keeper's end wakes it: mod/core/room-chat.ts keeperHold). */
 async function chatSay($: EngineInterface, id: string, line: string): Promise<boolean> {
   chat.waiting.push({ line });
+  if (chat.row && chat.row.id === id && chat.row.wake) return true;
   chat.echo.add(line); // its ❯ row is drawn as nothing (mod/chat.ts)
   const r = await $.session.send({ to: { agentId: id }, text: line }).catch(() => null);
   return !!r && r.isDelivered;
@@ -516,7 +519,7 @@ async function rowCalled($: EngineInterface, input: unknown): Promise<void> {
     const id = liveRow(await $.agent.list(), want.code);
     if (!id) return;
     rowFound(id, want.code);
-    if (want.chat) await chatSpawned($, await $.session.id(), want.code, id);
+    if (want.chat) await chatSpawned($, await $.session.id(), want.code, id, true);
     $.ui.log(`rows: room row ${want.code} started by Claude`, { to: 'debug' });
   } catch { /* the next turn's list finds it */ }
 }

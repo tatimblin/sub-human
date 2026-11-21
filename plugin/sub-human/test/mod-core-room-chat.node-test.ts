@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  chatOn, chatSpawn, keeperCall, keeperHold, typedText, postNote, keeperStep, ended, rowStatus, rowUuids, drawLine,
+  chatOn, chatSpawn, keeperCall, keeperHold, typedText, postNote, keeperStep, ended, woken, rowStatus, rowUuids, drawLine,
   keepRow, rowOf, KEEPER_MAX, KEEPER_WINDOW_MS, ROWS_KEPT,
 } from '../mod/core/room-chat.ts';
 import type { Hello } from '../mod/core/types.ts';
@@ -22,6 +22,7 @@ test('room-chat: on unless the verdict turns room-row or room-chat off; the spaw
   assert.deepEqual(chatSpawn(CODE), { subagentType: 'sub-human:room', name: CODE, description: 'type here', prompt: `chat: ${CODE}` });
   assert.deepEqual(keeperCall(CODE), { subagent_type: 'sub-human:keeper', description: 'keeper', prompt: `keep: ${CODE}`, run_in_background: true });
   assert.deepEqual(keeperHold(CODE), { room: CODE, take: true });
+  assert.deepEqual(keeperHold(CODE, true), { room: CODE, take: true, wake: true }, 'a row the module may not send to');
 });
 
 test('room-chat: a typed line\'s exact words out of Claude Code\'s wrapper; anything else is no typed line', () => {
@@ -53,6 +54,9 @@ test('room-chat: a keeper that dies at once is started at most KEEPER_MAX times 
 test('room-chat: a hold that ended the keeper (STOP, cancelled) and one that did not run', () => {
   assert.equal(ended(`STOP: a newer row holds room ${CODE}. End now without calling any tool.`), true);
   assert.equal(ended('(cancelled)'), true);
+  assert.equal(ended('WAKE: a new line in room x.'), true);
+  assert.equal(woken('WAKE: a new line in room x.'), true);
+  assert.equal(woken(`STOP: a newer row holds room ${CODE}.`), false);
   assert.equal(ended('The server-side auto mode classifier gave no verdict for mcp__plugin_sub-human_room__hold'), false);
   assert.equal(ended(undefined), false);
 });
@@ -93,5 +97,6 @@ test('room-chat: the row is kept per session id, the newest ROWS_KEPT', () => {
   assert.deepEqual(rowOf(rows, `s${ROWS_KEPT + 4}`), { code: CODE, id: `r${ROWS_KEPT + 4}` });
   assert.deepEqual(rowOf(keepRow(rows, 's1', { code: 'vole-1234', id: 'n' }), 's1'), { code: 'vole-1234', id: 'n' }, 'replaced');
   assert.equal(rowOf({ s: { code: 1 } }, 's'), null);
+  assert.deepEqual(rowOf(keepRow(rows, 'sw', { code: CODE, id: 'w', wake: true }), 'sw'), { code: CODE, id: 'w', wake: true }, 'a row main\'s model started');
   assert.equal(rowOf(null, 's'), null);
 });

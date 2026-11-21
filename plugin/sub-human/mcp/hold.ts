@@ -3,8 +3,10 @@
  * HoldServer (one per room server, i.e. per claude session) behind the plug-in contract.
  * It keeps the room row open in the agent panel at zero tokens.
  *
- *   hold({room: CODE, take?})   the member's sub-human:room row (agents/room.md, spawned by the hooks module: mod/rows.ts),
- *       or, with take, the room row's keeper (agents/keeper.md, room-chat: mod/chat.ts), whose hold replaces an older
+ *   hold({room: CODE, take?, wake?})   the member's sub-human:room row (agents/room.md, spawned by the hooks module:
+ *       mod/rows.ts), or, with take, the room row's keeper (agents/keeper.md, room-chat: mod/chat.ts), whose hold
+ *       returns "WAKE: …" with wake once someone else's line comes in (its end is what wakes a row the module may not
+ *       send to: mod/core/room-chat.ts), and replaces an older
  *       keeper's of the room (that one returns STOP: a /clear's new row ends the old). Blocks while this seat is in the
  *       room, streaming LEAD (the read-only row's label leads with how to talk; a keeper's has none), then who else is here (lib/rows.ts hereLine: names and what
  *       their presence says, read again every WHO_MS) then the room's latest line (or a fresh join / leave) as
@@ -51,6 +53,8 @@ interface Hold {
   started: number;
   /** a keeper's hold: its line has no LEAD (its row takes typing) */
   take: boolean;
+  /** a keeper's hold that returns once someone else's line comes in (its row's wake) */
+  wake: boolean;
   /** the joins and leaves this hold has shown */
   moves: Set<number>;
   resolve: (r: ToolResult) => void; // the blocked call's: set as the call blocks, before it is in holds
@@ -84,6 +88,7 @@ const TOOL: ToolDefinition = {
     properties: {
       room: { type: 'string', description: 'The room CODE from the row prompt "room: CODE".' },
       take: { type: 'boolean', description: 'The room row\'s keeper: replace an older keeper\'s hold of the room.' },
+      wake: { type: 'boolean', description: 'The room row\'s keeper: return once someone else\'s line comes in.' },
     },
     additionalProperties: false,
   },
@@ -191,6 +196,11 @@ class HoldServer {
       if (plain) this.progress(h, entryLine(plain));
       const move = this.newMove(h, now);
       if (move) this.progress(h, move);
+      const me = this.me;
+      if (h.wake && (move || fresh.some((e: Entry) => e.kind !== 'member_joined' && e.kind !== 'member_left' && (!me || e.from !== me.name)))) {
+        this.finish(h, `WAKE: a new line in room ${h.code}. ${END}`);
+        continue;
+      }
       if (now - h.hereAt >= this.WHO_MS) {
         const here = this.hereFor(h, now);
         if (here !== h.here) { h.here = here; this.progress(h); }
@@ -242,7 +252,7 @@ class HoldServer {
     if (args.take === true) for (const old of this.roomHolds(code)) this.finish(old, `STOP: a newer row holds room ${code}. ${END}`);
     else if (this.roomHolds(code).length) return early(`STOP: duplicate row: room ${code} already has its row. ${END}`);
     const now = Date.now();
-    const h: Hold = { id: meta.id, token: meta.progressToken, n: 0, msg: '', here: '', hereAt: 0, sentAt: 0, code, started: now, take: args.take === true, moves: new Set(), resolve: (_r: ToolResult): void => {} };
+    const h: Hold = { id: meta.id, token: meta.progressToken, n: 0, msg: '', here: '', hereAt: 0, sentAt: 0, code, started: now, take: args.take === true, wake: args.wake === true, moves: new Set(), resolve: (_r: ToolResult): void => {} };
     h.here = this.hereFor(h, now);
     const last = this.readEntries(code).entries.findLast((e: Entry) => e.kind !== 'member_joined' && e.kind !== 'member_left');
     const move = this.newMove(h, now);

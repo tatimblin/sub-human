@@ -13,9 +13,11 @@ const TYPED = (text: string) => `The user sent a new message while you were work
 type Seen = {
   agents: AgentInfo[]; spawns: Record<string, unknown>[]; sends: { to: string; text: string }[]; posts: Record<string, unknown>[]
   statuses: (string | undefined)[]; model: number; store: Map<string, unknown>; feed: (ev: object) => void; now: number
+  /** what $.session.messages answers (an agent's rows: its keeper's hold result) */
+  messages: { role: 'user' | 'assistant'; text: string; toolUses: []; toolResults?: { tool_use_id: string; text: string; isError: boolean }[] }[]
 }
 function world(on: On, { off = [] }: { off?: string[] } = {}): Seen {
-  const seen: Seen = { agents: [], spawns: [], sends: [], posts: [], statuses: [], model: 0, store: new Map(), feed: () => {}, now: 1_000_000 }
+  const seen: Seen = { agents: [], spawns: [], sends: [], posts: [], statuses: [], model: 0, store: new Map(), feed: () => {}, now: 1_000_000, messages: [] }
   const fed: string[] = []
   let poke = () => {}
   seen.feed = ev => { fed.push(JSON.stringify(ev) + '\n'); poke() }
@@ -54,7 +56,8 @@ function world(on: On, { off = [] }: { off?: string[] } = {}): Seen {
   })
   on('agent.offer', () => ({ isOffered: true }))
   on('session.send', (_$, e) => { seen.sends.push({ to: e.to, text: e.text }); return { isDelivered: true } })
-  on('session.messages', () => ({ value: [] }))
+  on('session.messages', () => ({ value: seen.messages }))
+  on('clock.sleep', () => ({ value: undefined }))
   on('store.get', (_$, e) => ({ value: seen.store.get(e.key) }))
   on('store.set', (_$, e) => { seen.store.set(e.key, JSON.parse(JSON.stringify(e.value))); return { value: undefined } })
   on('mcp.connect', () => ({ value: { isConnected: true, server: 'plugin:sub-human:room' } }))
@@ -73,8 +76,8 @@ const settle = () => new Promise(r => setTimeout(r, 40))
 let turns = 0
 const turn = async ($: Engine) => { await $.turn.start({ text: 'hi', turnId: `t${++turns}` }); await settle() }
 /** One step of agent id's loop: its chunks, and its result. */
-async function step($: Engine, agentId: string, index = 0) {
-  const input: TurnStepInput = { turnId: `s${++turns}`, index, model: 'm', messageCount: 1, agentId }
+async function step($: Engine, agentId: string, index = 0, turnId = `s${++turns}`) {
+  const input: TurnStepInput = { turnId, index, model: 'm', messageCount: 1, agentId }
   const s = $.turn.step(input)
   const chunks: Chunk<'turn.step'>[] = []
   let r = await s.next()
@@ -194,10 +197,48 @@ test('room-chat: a resume sends to the row kept for this session id (it comes ba
   expect(seen.model).toBe(0)
 })
 
-test('room-chat: main\'s model is refused its own Agent call for a row agent; the row\'s own keeper call goes on', async ($, on) => {
+test('room-chat: main\'s model is refused its own Agent call for a row agent; the row\'s keeper call goes on, but never a second while one lives', async ($, on) => {
   const seen = world(on)
   await rowUp($, seen)
   const call = (agentId?: string) => $.tool.call({ tool: 'Agent', tool_use_id: `t-${agentId ?? 'main'}`, subagent_type: 'sub-human:keeper', description: 'k', prompt: 'keep', ...(agentId ? { agentId } : {}) })
   expect(await call()).toEqual({ deny: 'sub-human starts the room row itself' })
+  expect(await call('row1')).toEqual({ deny: 'the room row has its keeper' }) // the row's model calling again
+  seen.agents = seen.agents.filter(a => a.id !== 'k1')
   expect(await call('row1')).toEqual({ result: 'ok', text: 'ok' })
+})
+
+test('room-chat: one keeper call per turn of the row: a later step of that turn (its model numbered it 0 again) draws, never spawns', async ($, on) => {
+  const seen = world(on)
+  await start($)
+  await turn($)
+  expect(toolOf(await step($, 'row1', 0, 'tk'))?.name).toBe('Agent')
+  expect(toolOf(await step($, 'row1', 0, 'tk'))).toBeUndefined() // the keeper not listed yet: still no second call
+  expect(seen.model).toBe(0)
+})
+
+test('room-chat: a row main\'s model started (the fallback) is never sent to: its keeper\'s hold wakes it, and the keeper after a wake is not counted', async ($, on) => {
+  const seen = world(on)
+  seen.store.set('chatRows', { [SID]: { code: CODE, id: 'w1', wake: true } })
+  seen.agents.push({ id: 'w1', type: 'sub-human:room', status: 'completed', description: 'type here', name: CODE })
+  seen.agents.push({ id: 'k1', type: 'sub-human:keeper', status: 'running', description: 'keeper', parentId: 'w1' })
+  await start($)
+  await turn($)
+  expect(seen.spawns).toEqual([])
+  seen.feed({ type: 'seat', seat: SEAT })
+  seen.feed({ type: 'chat', lines: ['bob: hi'] })
+  await settle()
+  expect(seen.sends).toEqual([]) // a send would hand its whole run to its model (re-entry), or be refused in auto mode
+  expect(toolOf(await step($, 'k1', 0))).toEqual({ name: 'mcp__plugin_sub-human_room__hold', input: { room: CODE, take: true, wake: true } })
+  seen.messages = [{ role: 'user', text: '', toolUses: [], toolResults: [{ tool_use_id: 'h', text: `WAKE: a new line in room ${CODE}. End now without calling any tool.`, isError: false }] }]
+  expect(textOf(await step($, 'k1', 1))).toBe('left')
+  seen.agents = seen.agents.filter(a => a.id !== 'k1')
+  // its "finished" notification is the row's turn: a keeper again, then the line
+  for (let i = 0; i < 6; i++) {
+    expect(toolOf(await step($, 'w1', 0, `wake${i}`))?.name).toBe('Agent')
+    seen.agents.push({ id: `kx${i}`, type: 'sub-human:keeper', status: 'running', description: 'keeper', parentId: 'w1' })
+    expect(textOf(await step($, `kx${i}`, 1))).toBe('left') // each keeper ends on a WAKE: never counted against the cap
+    seen.agents = seen.agents.filter(a => a.id !== `kx${i}`)
+  }
+  expect(textOf(await step($, 'w1', 1, 'wake5'))).toBe('bob: hi')
+  expect(seen.model).toBe(0)
 })

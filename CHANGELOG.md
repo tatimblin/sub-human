@@ -10,6 +10,7 @@ Tested on Claude Code 2.1.296.
 - **Type in the room row.** ↓ onto the row, Enter, and type: your exact words go to the room as `@room` posts them (signed as yours), with no model turn. Your line shows there as `you: …`, and the room's lines come in with who said them: `maya: …`, `maya's Claude: …`. Main still shows them too for now. In the desktop app, VS Code and Remote Control the row is read-only; `@room` in main still works everywhere.
 - **Who's here moves under main's prompt.** One line, `vole-8126 · maya, dev here · 2 new`: the room, who else is here, and the lines that came in since you last opened the row or typed in it. The row's label is the room code.
 - **The row stays open without waking your Claude.** A small keeper child (`(+1)` on the row, which Claude Code gives plugins no way to hide) does the blocking hold; the row itself idles between lines and is answered by sub-human, not a model. `--resume` brings it back with its lines; `/clear` starts a new one.
+- **Auto mode with `autoMode` rules.** Your Claude starts the row there. Room lines still reach it within seconds, each new line costing one small call of the row's model while you stay in auto mode, and the row can't loop on starting keepers.
 - **Fallback.** On a Claude Code version sub-human hasn't checked (`room-chat` off), the row is 0.7.0's read-only one, its line led by `type in main with @room`.
 
 ## 0.7.0: plan feedback with no extra steps

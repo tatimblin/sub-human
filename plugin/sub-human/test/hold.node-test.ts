@@ -73,7 +73,7 @@ const pending = async (p: Promise<unknown>, ms = 80) => (await Promise.race([p.t
 test('hold: tool definition and argument errors', async () => {
   const w = setup(['claude', 'alice'], 'alice');
   assert.deepEqual(w.plug.tools.map(t => t.name), ['hold']);
-  assert.deepEqual(Object.keys(must(w.plug.tools[0]).inputSchema.properties ?? {}), ['room', 'take'], 'the room row and its keeper only');
+  assert.deepEqual(Object.keys(must(w.plug.tools[0]).inputSchema.properties ?? {}), ['room', 'take', 'wake'], 'the room row and its keeper only');
   assert.equal(w.plug.call('nope', null, {}, {}), null);
   const bad = await w.call({}).p;
   assert.match(textOf(bad), /hold needs/);
@@ -133,6 +133,16 @@ test('hold: a keeper\'s hold (take) replaces the room\'s older hold, which retur
   assert.ok(!must(w.progress.at(-1)).message.startsWith(hold.LEAD), 'a keeper\'s line has no lead: its row takes typing');
   w.cancel(fresh.id);
   await fresh.p;
+});
+
+test('hold: a keeper\'s hold with wake returns WAKE once someone else\'s line comes in (its end wakes the row); its own line does not', async () => {
+  const w = setup(['claude', 'alice', 'bob'], 'alice');
+  const r = w.call({ room: w.code, take: true, wake: true });
+  assert.ok(await pending(r.p));
+  w.add('alice', 'say');
+  assert.ok(await pending(r.p, 400), 'alice\'s own line wakes nothing');
+  w.add('bob', 'say');
+  assert.match(textOf(await r.p), /^WAKE: a new line in room marmot-2509/);
 });
 
 test('hold: a second room row is refused; the first one stays', async () => {
