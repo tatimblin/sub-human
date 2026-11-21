@@ -397,7 +397,7 @@ test('mcp: plan signoff (sign-off off) asks the person one MCP question and reco
   assert.match(text(keep.res), /^sub-human: Nothing was sent or recorded: alice wants changes to their own new version \(plan room v4\)\..* alice's words: "cap at 50"$/);
   assert.equal(human().length, before);
   const send = await answerWith({}, { result: { action: 'accept', content: { answer: 'agree' } } });
-  assert.match(text(send.res), /alice sent plan room v4 out: bob asked to sign off; alice's Yes is their own sign-off/);
+  assert.match(text(send.res), /alice sent plan room v4 out to bob: nothing to build or post/);
   assert.deepEqual(must(R).readAll().filter(e => e.kind === 'proposal' && e.hash === draft.hash).map(e => [e.to, e.approvers]), [['alice', ['alice']], ['room', ['alice', 'bob']]]);
   for (const x of [on, noForm, bobs, s]) await x.close();
   bob.kill();

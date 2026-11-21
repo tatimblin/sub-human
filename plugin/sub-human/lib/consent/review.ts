@@ -226,10 +226,9 @@ export const SAY = {
    * author's Claude writes the next version (0.7.0: lib/room/render.ts changesLine), so this side does not. */
   noteFollow: (n: string): string => `${n}'s note went to the author, whose Claude writes the next version. If it asks anything else (e.g. SendMessage NAME.CODE), do it. Don't repeat the note.`,
   /** the author's Yes on their own new version: sent out (lib/proposal.ts sendOut) */
-  /** others: who else was asked ("bob, carol"; '' in a room of one) */
-  sent: (n: string, what: string, others: string, decided?: string | null): string => `${n} sent ${what} out${others ? `: ${others} asked to sign off` : ''}; `
-    + `${n}'s Yes is their own sign-off${decided ? `; the room decided: ${decided}` : ''}. The room shows it: post nothing about it.`,
-  sendFailed: (n: string, h: string, why: string): string => `${n}'s Yes on ${h} is recorded, but it did not go out (${why}). If ${n} asks, ask for sign-off (the plan tool, op ask).`,
+  /** others: who else was asked ("bob, carol"; '' in a room of one). One sentence (0.7.0): the room shows the rest */
+  sent: (n: string, what: string, others: string, decided?: string | null): string => `${n} sent ${what} out${others ? ` to ${others}` : ''}${decided ? `; the room decided: ${decided}` : ''}: nothing to build or post.`,
+  sendFailed: (n: string, h: string, why: string): string => `${n}'s Yes on ${h} is recorded, but it did not go out (${why}); nothing to build. If ${n} asks, ask for sign-off (the plan tool, op ask).`,
   /** the author's note on their own new version: another version, nothing sent or recorded */
   revise: (n: string, h: string, title?: string | null): string => `Nothing was sent or recorded: ${n} wants changes to their own new version (${requestName(h, title)}). Write them as the plan's next version (${editCall(title)}); it comes back to ${n} before anyone else is asked.`,
   agreed: (n: string, h: string, decided?: string | null): string => `${n} agreed to proposal ${h}${decided ? `; the room decided: ${decided} (${n} sees it: don't restate it)` : ''}.`,
@@ -624,7 +623,8 @@ function reduceOne(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewStep {
         const { said: _s, ...rest } = back;
         return { state: { ...state, recheck, review: { ...rest, phase: 'restore' } }, effects, say: ctxSay(...line, SAY.modeChanged(n, cur.mode), ...fileLine(effects)), ...withNotice };
       }
-      return { state: { ...state, recheck, review: null }, effects, say: ctxSay(...line, SAY.notAPlan, ...fileLine(effects)), ...withNotice };
+      // a draft's outcome line (SAY.sent / sendFailed) says it already: nothing to build
+      return { state: { ...state, recheck, review: null }, effects, say: ctxSay(...line, ...(cur.draft ? [] : [SAY.notAPlan]), ...fileLine(effects)), ...withNotice };
     }
 
     case 'stop': {

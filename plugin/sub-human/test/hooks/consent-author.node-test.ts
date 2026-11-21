@@ -82,7 +82,7 @@ test('author first: a stored version asks its author alone (a draft); nobody els
   // her Yes: her sign-off, and the request to everyone present (bob); no decision yet
   const yes = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: {}, tool_use_id: 'r1', transcript_path: tp,
     tool_response: { plan: '# Paging\n\n1. cursor\n', isAgent: false, filePath: file } }), { as: 'alice' });
-  assert.match(must(ctx(yes)), /^alice sent plan room v1 out: bob asked to sign off; alice's Yes is their own sign-off\. The room shows it: post nothing about it\. This was a room review/);
+  assert.match(must(ctx(yes)), /^alice sent plan room v1 out to bob: nothing to build or post\. The session plan file is back/);
   assert.deepEqual(answers(w).map(a => [a.kind, a.via, a.from, a.proposal_hash]), [['signoff', 'human', 'alice', hash]]);
   const sent = must(requests(w).at(-1));
   assert.deepEqual([sent.hash, sent.to, sent.approvers], [hash, 'room', ['alice', 'bob']]);
@@ -136,7 +136,7 @@ test('author first: the card fallback: Agree sends it out, Object records nothin
   assert.match(must(ctx(object.post)), /^Nothing was sent or recorded: alice wants changes to their own new version/);
   assert.deepEqual(answers(w), []);
   const agree = ask('Agree');
-  assert.match(must(ctx(agree.post)), /^alice sent plan room v1 out: bob asked to sign off/);
+  assert.match(must(ctx(agree.post)), /^alice sent plan room v1 out to bob/);
   assert.deepEqual(answers(w).map(a => [a.kind, a.from]), [['signoff', 'alice']]);
   assert.deepEqual(must(requests(w).at(-1)).approvers, ['alice', 'bob']);
 });
@@ -148,5 +148,5 @@ test('author first: in a room of one the Yes sends it out and decides it', () =>
   const { tp } = aliceReviews(w, hash, file);
   const yes = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: {}, tool_use_id: 'r1', transcript_path: tp,
     tool_response: { plan: '# Paging\n\n1. cursor\n', isAgent: false, filePath: file } }), { as: 'alice' });
-  assert.match(must(ctx(yes)), /^alice sent plan room v1 out; alice's Yes is their own sign-off; the room decided: agreed: alice/);
+  assert.match(must(ctx(yes)), /^alice sent plan room v1 out; the room decided: agreed: alice/);
 });

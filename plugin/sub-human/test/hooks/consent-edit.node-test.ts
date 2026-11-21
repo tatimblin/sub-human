@@ -206,7 +206,7 @@ test('edit (hooks): seeded at the plan_mode attachment, stored at Pre(ExitPlanMo
   // alice's Yes there: her sign-off (via=human), and it sends v1 out to bob; her plan file back
   const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: { plan: '# Paging\n\n1. cursor\n' }, tool_use_id: 'tu2',
     tool_response: { plan: '# Paging\n\n1. cursor\n', filePath: file } }), { as: 'alice' });
-  assert.match(must(ctx(post)), /alice sent plan room v1 out: bob asked to sign off/);
+  assert.match(must(ctx(post)), /alice sent plan room v1 out to bob/);
   assert.deepEqual(answers(w).map(e => [e.kind, e.from, e.via]), [['signoff', 'alice', 'human']]);
   const out = must(w.entries().filter(e => e.kind === 'proposal').at(-1));
   assert.deepEqual([out.to, out.approvers?.includes('bob')], ['room', true]);
