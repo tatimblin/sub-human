@@ -46,10 +46,8 @@ export function restoreNeeded(hello: Hello | null | undefined, sid: unknown, sou
 const ROOM_TOOL = /^mcp__plugin_sub-human_room__/;
 
 /** Consent's PreToolUse: on a room tool only while a review may be open (it acts only inside one: consentNeeded); on
- * the post tool, AskUserQuestion, EnterPlanMode and ExitPlanMode wherever a seat is or may be. The post tool always
- * goes: a note waiting for its card refuses it, and a cached "no note" flag skipped that live (stage 8e D). */
+ * AskUserQuestion, EnterPlanMode and ExitPlanMode wherever a seat is or may be. */
 export function consentPreNeeded(hello: Hello | null | undefined, sid: unknown, tool: unknown, reviewFlag: unknown): boolean {
-  if (ROOM_TOOL.test(String(tool)) && String(tool) !== POST_TOOL) return seatedOrUnsure(hello, sid) && consentNeeded(hello, sid, reviewFlag);
+  if (ROOM_TOOL.test(String(tool))) return seatedOrUnsure(hello, sid) && consentNeeded(hello, sid, reviewFlag);
   return seatedOrUnsure(hello, sid);
 }
-const POST_TOOL = 'mcp__plugin_sub-human_room__post';

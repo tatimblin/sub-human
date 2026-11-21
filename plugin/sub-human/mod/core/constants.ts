@@ -10,7 +10,6 @@
  *   BYPASS_DEBUG   the debug log's line for a join in bypass-permissions mode (mod/deliver.ts, the mode the join's
  *       expansion ran in: #14)
  *   QUIET_ROW      what a warning row the plugin cannot take away says (a receipt, a row's end): its words go to debug
- *   NOTE_ANSWER    the event consent takes the module's own note card's answer as
  */
 
 /** The tail child's first restart delay, doubled per failure in a row up to MOD_RESTART_MAX_MS. */
@@ -69,4 +68,3 @@ export const QUIET_ROW = ' ';
 
 /** The event node consent takes the person's Send / Discard as, on the note card the module asked itself
  * (mod/consent.ts, hooks/consent.ts: #34). */
-export const NOTE_ANSWER = 'NoteAnswer';

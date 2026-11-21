@@ -26,9 +26,9 @@
  * already open still records (the hooks' answer paths).
  *
  * The session document (lib/room/session.ts) holds a seat's review (the plan view), recheck (a plan-view Yes that
- * came as the view opened, asked again on the card) and confirm (a review's note waiting for the person's Send). A
- * review opens the request the person's words name (namedIn: a hash, or a plan's name), else the oldest. The lines telling the model to open a card are lib/consent/review.ts NEXT and showNote, shared with
- * consent's reoffer and lib/tail.ts remindersText.
+ * came as the view opened, asked again on the card), edit and steer. A review opens the request the person's words
+ * name (namedIn: a hash, or a plan's name), else the oldest. The line telling the model to open one is
+ * lib/consent/review.ts NEXT, shared with lib/tail.ts remindersText.
  */
 
 import fs from 'node:fs';
@@ -38,7 +38,7 @@ import * as session from './room/session.ts';
 import { writeFileAtomic } from './io.ts';
 import { clip, oneLine, hash12, isProposalHash } from './text.ts';
 import * as config from './config.ts';
-import { NEXT, showNote, unframe } from './consent/review.ts';
+import { NEXT, unframe } from './consent/review.ts';
 import type { Card, Confirm, PlanEdit, Proposal, Recheck, Review, Steer } from './types-app.ts';
 import type { Entry, Matrix, Member, Members, PlanVersion, ProposalState, Trust } from './room/types.ts';
 import type { Identity } from './identity.ts';
@@ -232,12 +232,9 @@ function namedIn(ps: Proposal[], prompt: string | null | undefined, code: RoomCo
  * version not sent out yet (a draft pending for a seat is its own), else the oldest. */
 const picked = (ps: Proposal[]): Proposal | null => ps.findLast(p => !!p.draft) ?? ps[0] ?? null;
 
-/** How the model opens proposal hash for its person (the plan view; the hooks fall back to the card), how it shows
- * the confirm card for a waiting note, and the line telling it to show that card now (after an Esc on it: that the
- * Esc was no answer): lib/consent/review.ts's lines, which the consent hook, the tail and the room server share. */
+/** How the model opens proposal hash for its person (the plan view; the hooks fall back to the card):
+ * lib/consent/review.ts's line, which the consent hook, the tail and the room server share. */
 const openCall: (h: string) => string = NEXT.open;
-const confirmCall: (h: string) => string = NEXT.note;
-const showConfirm: typeof showNote = showNote;
 /** A proposal as the re-ask lists it: `3fa2c1 "plan paging v3"` (the short hash alone without a title or a room). */
 type Listed = Pick<Proposal, 'hash'> & { entry?: Proposal['entry'] | undefined };
 function listed(code: RoomCode | undefined, p: Listed): string {
@@ -459,16 +456,6 @@ const readEdit = (me: Me): PlanEdit | null => { try { return session.get(storeOf
 const writeEdit = (me: Me, e: PlanEdit): void => session.put(storeOf(me), me.name, 'edit', e);
 function clearEdit(me: Me): void { try { session.put(storeOf(me), me.name, 'edit', undefined); } catch { /* none */ } }
 
-// ---------- a review's note, waiting for the person's Send (hooks/consent.ts) ----------
-/**
- * The session's confirm: {hash, note, from, title, at, stage} (lib/consent/review.ts: where its card stands). A plan review rejected with a note ("Tell Claude what
- * to change") records nothing by itself: the note waits here until the person answers the
- * confirm card. One per person: a newer note replaces it.
- */
-const readConfirm = (me: Me): Confirm | null => { try { return session.get(storeOf(me), me.name, 'confirm') ?? null; } catch { return null; } };
-const writeConfirm = (me: Me, c: Confirm): void => session.put(storeOf(me), me.name, 'confirm', c);
-function clearConfirm(me: Me): void { try { session.put(storeOf(me), me.name, 'confirm', undefined); } catch { /* none */ } }
-
 /** A plan-view Yes waiting for its confirmation on the card (lib/consent/review.ts recheck): {hash, at} or null. */
 const readRecheck = (me: Me): Recheck | null => { try { return session.get(storeOf(me), me.name, 'recheck') ?? null; } catch { return null; } };
 const writeRecheck = (me: Me, r: Recheck): void => session.put(storeOf(me), me.name, 'recheck', r);
@@ -481,20 +468,6 @@ const writeSteer = (me: Me, s: Steer): void => session.put(storeOf(me), me.name,
 /** The entries the consent hook just told the model of: the room context does not repeat them (best effort). */
 function markReported(me: Me, ids: number[]): void { try { session.markReported(storeOf(me), me.name, ids); } catch { /* the context repeats it */ } }
 function clearSteer(me: Me): void { try { session.put(storeOf(me), me.name, 'steer', undefined); } catch { /* none */ } }
-
-const CONFIRM_NOTE_MAX = 300;
-const CONFIRM_TITLE_MAX = 80;
-/** The confirm card's question: what Send does, in the person's words; the note clipped (the preview has it all). */
-const confirmQuestion = (c: Confirm): string => `Send ${c.from ? `to ${c.from} ` : ''}as changes requested on "${clip(c.title || `proposal ${c.hash}`, CONFIRM_TITLE_MAX)}": "${clip(String(c.note).replace(/\s+/g, ' ').trim(), CONFIRM_NOTE_MAX)}"?`;
-/** The AskUserQuestion input for a waiting note: Send records the objection with it, Discard records nothing. */
-function confirmCard(c: Confirm): Card {
-  const desc = {
-    Send: `Record your objection${c.from ? ` to ${c.from}'s proposal` : ''}, with this note`,
-    Discard: 'Record nothing; the proposal stays unanswered (reopen it any time)',
-  };
-  return { questions: [{ question: confirmQuestion(c), header: 'Consent', multiSelect: false,
-    options: (['Send', 'Discard'] as const).map(label => ({ label, description: desc[label], preview: String(c.note) })) }] };
-}
 
 /** Notes shorter than this match a post only when equal: "no" or "later" would match half the room's posts. */
 const NOTE_MATCH_MIN = 12;
@@ -513,7 +486,7 @@ function repeatsNote(c: Pick<Confirm, 'note'> | null | undefined, text: unknown)
 export type { Asked, Sent };
 export {
   QUESTION_RE, ProposalError, readReview, writeReview, clearReview, withReview, restorePlan, restoreStale,
-  readEdit, writeEdit, clearEdit, readConfirm, writeConfirm, clearConfirm, readRecheck, writeRecheck, clearRecheck, readSteer, writeSteer, clearSteer, markReported, confirmCard, confirmQuestion, repeatsNote, namedIn, picked,
+  readEdit, writeEdit, clearEdit, readRecheck, writeRecheck, clearRecheck, readSteer, writeSteer, clearSteer, markReported, repeatsNote, namedIn, picked,
   ask, check, sendOut, proposals, pendingFor, answerableFor, personOf, card, cardFor, question, preview, viewable, openCall,
-  confirmCall, showConfirm, matrix, answer, decide, decision, humans, reminder, read, hash12, title,
+  matrix, answer, decide, decision, humans, reminder, read, hash12, title,
 };

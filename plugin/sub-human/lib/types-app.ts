@@ -16,7 +16,6 @@ export interface SessionDoc {
   cursor?: number;
   shown?: { ids: number[]; log: { id: number; via: string; at: string }[] };
   review?: Review;
-  confirm?: Confirm;
   edit?: PlanEdit;
   recheck?: Recheck;
   steer?: Steer;
@@ -152,21 +151,13 @@ export interface Recheck { hash: string; at: number }
  * denied once because it would show the person's own plan file (lib/consent/review.ts steer): the request (hash) and
  * the plan text's hash12 (plan). The same call again passes: the person's own plan was meant. */
 export interface Steer { hash: string; plan: string; at: number }
-/** Where a review's note stands (lib/consent/review.ts): waiting (its card never shown), nudged (Stop asked for the card
- * once), asked (the card was shown; no Post yet), reoffered (an interrupted card offered again at the next prompt),
- * told (the model was told the card closed without an answer, or every offer is spent: the card is the person's to ask for). */
-export type NoteStage = 'waiting' | 'nudged' | 'asked' | 'reoffered' | 'told';
-/** members/NAME/confirm: a review's note waiting for the person's Send. */
+/** A review's note, within one consent step (lib/consent/review.ts reduce sends it at once). */
 export interface Confirm {
   hash: string;
   note: string;
   from: string | null;
   title: string | null;
   at: number;
-  /** absent: waiting (lib/consent/review.ts stageOf) */
-  stage?: NoteStage;
-  /** the person was told, once, what Send and Discard do after the card closed with no answer more than once (stage 8e D) */
-  explained?: true;
 }
 
 // ---------- lib/tail.ts ----------

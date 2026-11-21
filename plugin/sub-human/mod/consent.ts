@@ -5,18 +5,18 @@
  * {reviewOpen} report after every run (SUB_HUMAN_SHIM=1); unset counts as true.
  *   - tool.call EnterPlanMode|ExitPlanMode and the room's plan tool: sets reviewMaybeOpen (an edit counts as open). An ExitPlanMode the person refused in the plan view
  *     (its call comes back denied or as an error: Claude Code runs no PostToolUse for it) goes to node consent at once,
- *     as a PostToolUseFailure with the refusal's text: a note there opens now, its line rides on the refusal the model
- *     reads, and the person gets a notice (lib/consent/review.ts rejected).
+ *     as a PostToolUseFailure with the refusal's text: a note there is sent now, its outcome rides on the refusal the
+ *     model reads (lib/consent/review.ts rejected).
  *   - classic.PreToolUse AskUserQuestion|EnterPlanMode|ExitPlanMode and the room tools: node consent (a room tool other
- *     than post only while a review may be open: mod/core/prefilter.ts consentPreNeeded; post always, for a waiting note); its event carries the call alone, so the
+ *     only while a review may be open: mod/core/prefilter.ts consentPreNeeded); its event carries the call alone, so the
  *     payload gets session_id, transcript_path and permission_mode from what the module last saw (mod/core/facts.ts).
  *     It answers only deny or ask, each written out in its return (the plugin directory checks that the person keeps
  *     every permission decision): ask is the plan view of a review, a card, or Claude Code's own "exit plan mode?" for
  *     a closing call; deny is a guard. With neither, the call goes on to the hooks beneath (next(e)), so the module
  *     never allows anything, and never skips another plugin's or the person's hooks unless it denies or asks.
  *   - classic.PostToolUse AskUserQuestion|EnterPlanMode|ExitPlanMode: node consent wherever a seat is or may be.
- *   - the module's own dialogs ($.ui.ask: the note's Send / Discard here; the question after a room opened and the
- *     invite's copy question, mod/deliver.ts): its AskUserQuestion hooks pass each by while it is asked (asks.mine: its
+ *   - the module's own dialogs ($.ui.ask: the question after a room opened and the invite's copy question,
+ *     mod/deliver.ts): its AskUserQuestion hooks pass each by while it is asked (asks.mine: its
  *     exact question and header), with next(e), never an answer of their own.
  *   - ui.render PromptHint: observed only (next(e) always): whether the prompt holds typed text, sent with an
  *     ExitPlanMode's PreToolUse payload (sub_human_typing) so a plan-view Yes typed into by mistake is asked again.
@@ -38,7 +38,6 @@ import { facts, asks } from './deliver.ts';
 import { keepQuiet, quietOn, quietRow } from './core/quiet.ts';
 import { ROOM_AGENT } from './core/rows.ts';
 import { rowOffered } from './rows.ts';
-import { NOTE_ANSWER } from './core/constants.ts';
 import type { EngineInterface, On, RenderElement } from 'claude-code';
 import type { Hello, RunOutput, SubHumanRead } from './core/types.ts';
 
@@ -104,31 +103,6 @@ async function quietCalls($: EngineInterface): Promise<string[]> {
   return ids;
 }
 
-/** The person's line when consent did not answer their Send / Discard on that card: it may have recorded the answer
- * before it failed, so the line says only that the note may not have gone. */
-const NOTE_NOT_TAKEN = 'Your note may not have been sent; ask your Claude to check its card.';
-
-/** The note's card consent asked for (subHuman.noteAsk), checked, or null. */
-function noteAskOf(subHuman: SubHumanRead | undefined): { question: string; header: string; options: string[] } | null {
-  const a: unknown = subHuman ? subHuman.noteAsk : undefined;
-  if (!a || typeof a !== 'object' || !('question' in a) || !('header' in a) || !('options' in a)) return null;
-  const { question, header, options } = a;
-  if (typeof question !== 'string' || typeof header !== 'string' || !Array.isArray(options)) return null;
-  const labels = options.filter((o): o is string => typeof o === 'string');
-  return question && labels.length >= 2 ? { question, header, options: labels } : null;
-}
-
-/** The person's Send or Discard on the note's card, asked by the module itself; null when dismissed, typed over
- * ("Other": not a choice the card offers) or with no one to ask (-p). */
-async function askNote($: EngineInterface, ask: { question: string; header: string; options: string[] }): Promise<'Send' | 'Discard' | null> {
-  // #34: the module's own card, which this plugin's AskUserQuestion hooks pass by while it is asked (mod/core/card.ts ownAsks)
-  const end = asks.begin(ask.question, ask.header);
-  try {
-    const got = await $.ui.ask(ask.question, { options: ask.options, header: ask.header });
-    return got === 'Send' || got === 'Discard' ? got : null;
-  } catch { return null; } finally { end(); }
-}
-
 /** An empty drawing: the row is not drawn at all (live 2.1.296: an empty Box takes no line). */
 const EMPTY: RenderElement = { type: 'Box', props: {}, children: [] };
 
@@ -150,24 +124,7 @@ export function registerConsent(on: On): void {
       const payload = rejectedPayload(e, { sid, cwd: await $.session.cwd().catch(() => undefined), facts: facts.of(sid), text });
       const { result, ...said } = toClassic('PostToolUseFailure', await runConsent($, payload, sid));
       await apply($, said, e.tool_use_id);
-      let lines = result.additionalContext ?? [];
-      // #34: the note's Send / Discard first, asked here while plan mode is still on; consent records the answer and
-      // its line (nothing to build, the closing call next) replaces the refusal's "the card next"
-      const ask = noteAskOf(said.subHuman);
-      if (ask) {
-        const label = await askNote($, ask);
-        // read as the refusal's own event: its context joins the refusal (toClassic keeps only the fields an event reads)
-        const run = await runConsent($, { hook_event_name: NOTE_ANSWER, session_id: sid, sub_human_note: label }, sid).catch(() => null);
-        const answered = run ? toClassic('PostToolUseFailure', run) : null;
-        // consent did not answer (its report missing: it failed or timed out): the person's Send or Discard may or may
-        // not have been recorded first, so they hear that it may not have gone; the model keeps the refusal's own line
-        if (!answered || !answered.subHuman) { if (label) $.ui.log(NOTE_NOT_TAKEN); }
-        else {
-          const { result: res, ...rest } = answered;
-          await apply($, rest);
-          if (res.additionalContext && res.additionalContext.length) lines = res.additionalContext;
-        }
-      }
+      const lines = result.additionalContext ?? [];
       if (!lines.length) return r;
       return r.deny !== undefined ? { deny: [r.deny, ...lines].join('\n\n') } : { ...r, context: [...(r.context ?? []), ...lines] };
     } catch { return r; }
