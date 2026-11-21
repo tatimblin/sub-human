@@ -1,9 +1,12 @@
-// Wiring: the invite's copy card (PLAN-JOIN step 5; mod/deliver.ts command.run, mod/consent.ts AskUserQuestion). Run
-// with `npm run test:mods`. The card's rules are tested in node (test/mod-core-copy.node-test.ts). This checks the hooks:
-// a typed /sub-human invite whose reply carries the line submits one wake that names the invite's ref only (never the
-// line, its SECRET or the PIN); the model's "copy invite REF" call is shown as the card; Copy runs a clipboard tool with
-// the line on stdin (a stub here: nothing writes a real clipboard), Skip runs none, an invite gone says so, and with no
-// line (--no-card) or no person at the prompt there is no card at all.
+// Wiring: the invite's copy question (PLAN-JOIN step 5; 0.6.1: no model turn; mod/deliver.ts command.run, offerCopy).
+// Run with `npm run test:mods`. The question's rules are tested in node (test/mod-core-copy.node-test.ts). This checks
+// the hooks: a typed /sub-human invite whose reply carries the line opens the module's own dialog ($.ui.ask: an
+// AskUserQuestion call, no prompt submitted, no wake), "Copy the invite?", Copy / Skip and no descriptions, which
+// consent's hooks pass by (no node consent for it; nothing answered allow); Copy runs a clipboard tool with the line on
+// stdin (a stub here: nothing writes a real clipboard), Skip runs none and asks no more, a dismissed dialog copies
+// nothing and the next invite asks again, an invite gone before the answer copies nothing and says so, and with no line
+// (--no-card) or no person at the prompt there is no question at all. Never the line, its SECRET or the PIN anywhere
+// the model or the transcript reads.
 import type { EventOf, On } from 'claude-code'
 import { test, expect, mock, type Engine } from 'claude-code/testing'
 import { debugLines, OUT, ran, scriptOf, session, start, stdinOf } from './support.ts'
@@ -14,7 +17,7 @@ const PIN = '7093'
 const lineOf = (ref: string) => `/sub-human join https://box.tail1a2b.ts.net/sub-human/otter-4821#${SECRET}${ref.slice(-1)}`
 const QUESTION = 'Copy the invite?'
 
-/** Resolves once cond() holds (the wake goes out after the command returned), or rejects after ms. */
+/** Resolves once cond() holds (the dialog opens after the command returned), or rejects after ms. */
 async function until(cond: () => boolean, ms = 3000) {
   const t0 = Date.now()
   while (!cond()) {
@@ -24,14 +27,15 @@ async function until(cond: () => boolean, ms = 3000) {
 }
 
 type Seen = {
-  prompts: string[]; contexts: string[]; logs: string[]; appends: string[]
-  clip: { argv: readonly string[]; stdin: string | undefined }[]; ids: string[]; cards: EventOf['tool.call'][]; tick: () => Promise<unknown>
-  advance: (ms: number) => Promise<unknown>
+  prompts: string[]; logs: string[]; appends: string[]; scripts: string[]; beneath: string[]
+  clip: { argv: readonly string[]; stdin: string | undefined }[]; cards: EventOf['tool.call'][]; tick: () => Promise<unknown>
+  advance: (ms: number) => Promise<unknown>; answers: (string | null)[]; gate: Promise<void> | null
 }
 /** The engine beneath: mod-hello, join.ts answering an invite (with the line unless noCard) or a cancel, clipboard
- * tools answering `clip` (exit codes in order; then 127), the prompts the module submits, and the card calls. */
-function world(engine: Engine, on: On, { ref, noCard = false, clip = [0] }: { ref: string; noCard?: boolean; clip?: number[] }) {
-  const seen: Seen = { prompts: [], contexts: [], logs: [], appends: [], clip: [], ids: [], cards: [], tick: async () => {}, advance: async () => {} }
+ * tools answering `clip` (exit codes in order; then 127), the dialog answered from `answers` in order (null: dismissed;
+ * past the end: Copy), held while `gate` is set. */
+function world(on: On, { ref, noCard = false, clip = [0], answers = [] }: { ref: string; noCard?: boolean; clip?: number[]; answers?: (string | null)[] }) {
+  const seen: Seen = { prompts: [], logs: [], appends: [], scripts: [], beneath: [], clip: [], cards: [], tick: async () => {}, advance: async () => {}, answers, gate: null }
   const clock = mock.clock(on, { now: 1_000_000 })
   seen.tick = () => clock.advance(1000)
   seen.advance = (ms: number) => clock.advance(ms)
@@ -47,6 +51,7 @@ function world(engine: Engine, on: On, { ref, noCard = false, clip = [0] }: { re
       return ran('', clip[seen.clip.length - 1] ?? 127)
     }
     const script = scriptOf(e)
+    seen.scripts.push(script)
     if (script === 'mod-hello.ts') return ran(JSON.stringify(OUT))
     if (script === 'join.ts') {
       const args = String(stdinOf(e).command_args)
@@ -56,138 +61,131 @@ function world(engine: Engine, on: On, { ref, noCard = false, clip = [0] }: { re
     }
     return ran(JSON.stringify({ subHuman: { reviewOpen: false } }))
   })
-  on('prompt.submit', async (_$, e) => {
-    seen.prompts.push(e.text)
-    const r = await engine.classic.UserPromptSubmit({ prompt: e.text, session_id: SID, permission_mode: 'default' })
-    seen.contexts.push(...(e.context ?? []), ...(r.additionalContext ?? []))
-    return { text: e.text }
-  })
+  on('prompt.submit', (_$, e) => { seen.prompts.push(e.text); return { text: e.text } })
   on('session.append', async (_$, e, next) => { seen.appends.push(e.message.content.map(b => b.text).join('')); return next(e) })
   on('classic.UserPromptSubmit', () => ({}))
-  // beneath the module: the call's id as the engine gave it, and the card as the tool got it (after the Pre's updatedInput)
-  on('classic.PreToolUse', (_$, e) => { seen.ids.push(String(e.tool_use_id)); return {} })
-  on('classic.PostToolUse', () => ({}))
+  // beneath the module: what reached the hooks under it (a pass-by goes on to them; an answer of the module's would not)
+  on('classic.PreToolUse', (_$, e) => { seen.beneath.push(`pre:${e.tool}`); return {} })
+  on('classic.PostToolUse', (_$, e) => { seen.beneath.push(`post:${e.tool_name}`); return {} })
   on('tool.check', () => ({ decision: 'allow' }))
-  on('tool.call', (_$, e) => { seen.cards.push(e); return { result: 'ok', text: 'ok' } })
+  // the dialog: the person's answer, as AskUserQuestion's result carries it; a dismissal is a deny
+  on('tool.call', async (_$, e) => {
+    seen.cards.push(e)
+    if (seen.gate) await seen.gate
+    const answer = seen.answers.length ? seen.answers.shift() ?? null : 'Copy'
+    if (answer === null) return { deny: 'The user doesn\'t want to proceed with this tool use.' }
+    const q = e.tool === 'AskUserQuestion' ? String(e.questions[0]?.question) : ''
+    return { result: { questions: e.tool === 'AskUserQuestion' ? e.questions : [], answers: { [q]: answer } }, text: `"${q}"="${answer}"` }
+  })
   return seen
 }
 const typed = ($: Engine, args: string) => $.command.run({ command: 'sub-human:sub-human', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 400 } })
-/** The model's call for the card: "copy invite REF", as the wake asks. */
-const ask = ($: Engine, ref: string) => $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: `copy invite ${ref}`, header: 'Invite', multiSelect: false, options: [{ label: 'Copy', description: '' }, { label: 'Skip', description: '' }] }] })
-/** The card's Post, answered with label on the card the tool showed (the Pre's updatedInput), by the call's id. */
-function answer($: Engine, seen: Seen, label: string) {
-  const call = seen.cards.at(-1)
-  const questions = call && call.tool === 'AskUserQuestion' ? call.questions : []
-  return $.classic.PostToolUse({
-    session_id: SID, tool_name: 'AskUserQuestion', tool_use_id: seen.ids.at(-1) ?? '', tool_input: { questions },
-    tool_response: { questions, answers: { [QUESTION]: label } },
-  })
-}
-const everything = (seen: Seen) => JSON.stringify([seen.prompts, seen.contexts, seen.appends, seen.logs])
+const shown = (seen: Seen) => { const c = seen.cards.at(-1); return c && c.tool === 'AskUserQuestion' ? c.questions[0] : undefined }
+const everything = (seen: Seen) => JSON.stringify([seen.prompts, seen.appends, seen.logs])
 
-test('an invite with its line: one wake naming the ref only; the card on "copy invite REF"; Copy puts the line, never the PIN, on the clipboard', async ($, on) => {
+test('an invite with its line: the module asks itself (no model turn), Copy / Skip; Copy puts the line, never the PIN, on the clipboard; then later lines with no question', async ($, on) => {
   const ref = 'c0ffee000001'
-  const seen = world($, on, { ref, clip: [0, 0] })
+  const seen = world(on, { ref, clip: [0, 0], answers: ['Copy'] })
   await start($)
   await typed($, 'invite'); await seen.tick()
-  await until(() => seen.prompts.length === 1)
-  // noise pass D: one framed line for the model, no line drawn as the person's, no room-lines context
-  expect(seen.prompts[0]).toBe(`(for Claude) sub-human: the person made invite ${ref}. Call AskUserQuestion with the question "copy invite ${ref}" (the hooks show their Copy / Skip card and copy; you never see the line or its PIN), then reply with nothing.`)
-  expect(seen.contexts.join('\n')).not.toContain("room's lines")
-  expect(everything(seen)).not.toContain(SECRET)
-  expect(everything(seen)).not.toContain(PIN)
-  await ask($, ref)
-  expect(JSON.stringify(seen.cards.at(-1))).toContain(QUESTION) // the card, in place of the model's call
-  const post = await answer($, seen, 'Copy')
-  expect(seen.clip.length).toBe(1)
+  await until(() => seen.clip.length === 1)
+  const q = shown(seen)
+  expect(q?.question).toBe(QUESTION)
+  expect(q?.header).toBe('sub-human')
+  expect(q?.options.map(o => o.label)).toEqual(['Copy', 'Skip'])
+  expect(q?.options.every(o => !o.description)).toBe(true)
+  expect(seen.prompts).toEqual([]) // no wake, no model turn
+  expect(seen.appends).toEqual([])
+  expect(seen.scripts).not.toContain('consent.ts') // consent's hooks passed the module's own dialog by
+  expect(seen.beneath).toEqual(['pre:AskUserQuestion']) // passed on to the hooks beneath, never answered by the module
   expect(seen.clip[0]?.stdin).toBe(lineOf(ref))
   expect(seen.clip[0]?.stdin).not.toContain(PIN)
   expect(JSON.stringify(seen.clip[0]?.argv)).not.toContain(SECRET)
   expect(seen.clip[0]?.argv.slice(2)).toEqual(['pbcopy'])
-  // a copy that worked is no news: the debug log's (0.6.0)
+  expect(JSON.stringify(seen.cards)).not.toContain(SECRET)
+  // a copy that worked is no news: the debug log's
+  await until(() => debugLines.includes('copy: copied'))
   expect(seen.logs).not.toContain('copied')
-  expect(debugLines).toContain('copy card: copied')
-  expect((post.additionalContext ?? []).join('\n')).toContain('Reply with nothing.')
-  expect(JSON.stringify(post)).not.toContain(SECRET)
-  expect(seen.prompts.length).toBe(1)
-  // Copy once: the session's next invite is copied with no card and no turn
+  expect(everything(seen)).not.toContain(SECRET)
+  expect(everything(seen)).not.toContain(PIN)
+  // Copy once: the session's next invite is copied with no question
   await typed($, 'invite'); await seen.tick()
   await until(() => seen.clip.length === 2)
-  expect(seen.clip[1]?.stdin).toBe(lineOf(ref))
+  expect(seen.cards.length).toBe(1)
   await until(() => debugLines.includes('copy: line copied'))
   expect(seen.logs).not.toContain('line copied')
-  expect(seen.prompts.length).toBe(1)
 })
 
-test('Skip once: the session\'s next invite offers no card', async ($, on) => {
+test('Skip copies nothing and asks no more this session', async ($, on) => {
   const ref = 'c0ffee000004'
-  const seen = world($, on, { ref })
+  const seen = world(on, { ref, answers: ['Skip'] })
   await start($)
   await typed($, 'invite'); await seen.tick()
-  await until(() => seen.prompts.length === 1)
-  await ask($, ref)
-  await answer($, seen, 'Skip')
+  await until(() => seen.cards.length === 1)
+  await until(() => debugLines.includes('copy: not copied'))
   await typed($, 'invite'); await seen.tick(); await seen.tick()
   await new Promise(r => setTimeout(r, 200))
-  expect(seen.prompts.length).toBe(1)
+  expect(seen.cards.length).toBe(1)
   expect(seen.clip).toEqual([])
 })
 
-test('Skip copies nothing; with no clipboard tool the card says so', async ($, on) => {
-  const ref = 'c0ffee000002'
-  const seen = world($, on, { ref, clip: [] })
+test('dismissed (Esc): nothing copied, no line; the next invite asks again', async ($, on) => {
+  const ref = 'c0ffee000006'
+  const seen = world(on, { ref, answers: [null, 'Copy'] })
   await start($)
   await typed($, 'invite'); await seen.tick()
-  await until(() => seen.prompts.length === 1)
-  await ask($, ref)
-  await answer($, seen, 'Skip')
+  await until(() => seen.cards.length === 1)
+  await new Promise(r => setTimeout(r, 100))
   expect(seen.clip).toEqual([])
-  expect(debugLines).toContain('copy card: not copied')
-  expect(seen.logs).not.toContain('not copied')
-  await ask($, ref)
-  await answer($, seen, 'Copy')
-  expect(seen.clip.length).toBeGreaterThan(0)
-  expect(seen.logs).toContain('No clipboard tool found; the line is pinned on your status line.')
+  expect(seen.logs.filter(l => /cop/i.test(l))).toEqual([])
+  await typed($, 'invite'); await seen.tick()
+  await until(() => seen.clip.length === 1)
+  expect(seen.cards.length).toBe(2)
 })
 
-test('an invite cancelled before the answer: a card already shown copies nothing, and a new one is refused', async ($, on) => {
+test('no clipboard tool: the person is told, in one line', async ($, on) => {
+  const seen = world(on, { ref: 'c0ffee000002', clip: [] })
+  await start($)
+  await typed($, 'invite'); await seen.tick()
+  await until(() => seen.logs.includes('No clipboard tool found; the line is pinned on your status line.'))
+  expect(seen.clip.length).toBe(1)
+})
+
+test('an invite cancelled before the answer copies nothing and says it is gone', async ($, on) => {
   const ref = 'c0ffee000003'
-  const seen = world($, on, { ref })
+  const seen = world(on, { ref })
+  let open = () => {}
+  seen.gate = new Promise<void>(r => { open = r })
   await start($)
   await typed($, 'invite'); await seen.tick()
-  await until(() => seen.prompts.length === 1)
-  await ask($, ref)
+  await until(() => seen.cards.length === 1)
   await typed($, `invite --cancel ${ref}`)
-  await answer($, seen, 'Copy')
+  open()
+  await until(() => seen.logs.includes('that invite is gone, run /sub-human invite again'))
   expect(seen.clip).toEqual([])
-  expect(seen.logs).toContain('that invite is gone, run /sub-human invite again')
-  const calls = seen.cards.length
-  const r = await ask($, ref)
-  expect(JSON.stringify(r)).toContain('that invite is gone, run /sub-human invite again')
-  expect(seen.cards.length).toBe(calls) // denied: no card shown
 })
 
-test('no card with --no-card (no line handed over)', async ($, on) => {
-  const seen = world($, on, { ref: 'c0ffee000004', noCard: true })
+test('no question with --no-card (no line handed over)', async ($, on) => {
+  const seen = world(on, { ref: 'c0ffee000004', noCard: true })
   await start($)
   await typed($, 'invite --no-card'); await seen.tick()
   await new Promise(r => setTimeout(r, 400))
+  expect(seen.cards).toEqual([])
   expect(seen.prompts).toEqual([])
-  const r = await ask($, 'c0ffee000004')
-  expect(JSON.stringify(r)).toContain('that invite is gone')
 })
 
-test('no card in a session nobody types in (-p, the SDK)', async ($, on) => {
-  const seen = world($, on, { ref: 'c0ffee000005' })
+test('no question in a session nobody types in (-p, the SDK)', async ($, on) => {
+  const seen = world(on, { ref: 'c0ffee000005' })
   await start($, false)
   await typed($, 'invite'); await seen.tick()
   await new Promise(r => setTimeout(r, 400))
+  expect(seen.cards).toEqual([])
   expect(seen.prompts).toEqual([])
 })
 
 test('noise pass H: an invite that lapses unused tells its maker in one line', async ($, on) => {
   const ref = 'c0ffee000005'
-  const seen = world($, on, { ref, noCard: true })
+  const seen = world(on, { ref, noCard: true })
   await start($)
   await typed($, 'invite')
   await seen.advance(900_000)

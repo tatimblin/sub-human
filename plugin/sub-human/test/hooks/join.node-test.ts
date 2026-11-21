@@ -734,13 +734,24 @@ test('classic (no module answering): a reply is the block reason alone, never al
 
 /** Run join.ts as the module's command.run hook does (mod/core/command.ts joinPayload): no CLAUDE_PID, the lease's
  * nonce, this test process as the claude process (the shim's parent). */
-function viaModule(w: World, name: string, args: string, { nonce = 'ab'.repeat(16), leaseNonce = nonce, mode, take }: { nonce?: string; leaseNonce?: string; mode?: string; take?: string } = {}) {
+function viaModule(w: World, name: string, args: string, { nonce = 'ab'.repeat(16), leaseNonce = nonce, mode, take, env = {} }: { nonce?: string; leaseNonce?: string; mode?: string; take?: string; env?: Record<string, string> } = {}) {
   w.pid[name] = process.pid;
   w.sid[name] = w.sid[name] || crypto.randomUUID();
   w.lib(() => identity.writeModLease(w.sid[name], { pid: process.pid, nonce: leaseNonce }));
   const payload = { ...expand(args), sub_human_via: 'command.run', sub_human_nonce: nonce, ...(mode ? { permission_mode: mode } : {}), ...(take ? { sub_human_take: take } : {}) };
-  return w.hook('join', payload, { as: name, modLease: false, env: { CLAUDE_PID: undefined } });
+  return w.hook('join', payload, { as: name, modLease: false, env: { CLAUDE_PID: undefined, ...env } });
 }
+
+test('through the module (0.6.1): a seat in a room this run opened says so (opened), so the module asks who\'s coming; a join of an open room does not', () => {
+  const plain = new World({}, { room: false });
+  const s = stub();
+  const open = must(must(viaModule(plain, 'alice', 'alice', { env: { SUB_HUMAN_CLAUDE: s.bin, SUB_HUMAN_PLUGIN_DIR: PLUGIN } }).json).subHuman);
+  assert.deepEqual([open.joined, open.opened], [true, true]);
+  assert.match(must(open.say), /^Opened [a-z]+-\d{4}/);
+  const w = new World({ claude: 'sleep', alice: 'sleep' });
+  const joined = must(must(viaModule(w, 'bob', `bob ${w.code}`).json).subHuman);
+  assert.deepEqual([joined.joined, joined.opened], [true, undefined]);
+});
 
 test('through the module (command.run): every reply is {subHuman: {say}}, never a block; a join that worked also carries the mechanics block and a one-line confirmation', () => {
   const w = new World({ claude: 'sleep', alice: 'sleep' });
@@ -748,7 +759,7 @@ test('through the module (command.run): every reply is {subHuman: {say}}, never 
   assert.equal(help.decision, undefined);
   assert.equal(must(help.subHuman).refused, false);
   assert.equal(must(help.subHuman).shareable, true, 'help holds no secret: the command\'s own output');
-  assert.match(must(must(help.subHuman).say), /^\/sub-human +Join the room here, or open one\n/);
+  assert.match(must(must(help.subHuman).say), /^\/sub-human +Join the room here, or open one and bring someone in\n/);
   const bad = must(must(viaModule(w, 'me', 'a b c').json).subHuman);
   assert.deepEqual([bad.refused, bad.shareable], [true, true]);
   assert.match(must(bad.say), /^✗ usage: \/sub-human \[NAME\]/);
@@ -849,7 +860,7 @@ test('/sub-human help WORDS shows the six lines (no topics), without the module 
   for (const args of ['help', 'help join', 'help me please']) {
     const r = w.hook('join', expand(args), { as: 'alice', modLease: false });
     assert.equal(must(r.json).decision, 'block', args);
-    assert.match(must(must(r.json).reason), /^sub-human: \/sub-human +Join the room here, or open one\n/, args);
+    assert.match(must(must(r.json).reason), /^sub-human: \/sub-human +Join the room here, or open one and bring someone in\n/, args);
     assert.equal(must(r.json).hookSpecificOutput, undefined, `${args}: no secret in it`);
   }
   // a word of digits after help: the same list, hidden (it may be a PIN)

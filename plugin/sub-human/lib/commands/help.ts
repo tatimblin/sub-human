@@ -8,7 +8,7 @@ import { say } from './answer.ts';
 import type { OpenVerb } from './types.ts';
 
 export const HELP: string = [
-  '/sub-human            Join the room here, or open one',
+  '/sub-human            Join the room here, or open one and bring someone in',
   '/sub-human invite     Invite someone on another machine',
   '/sub-human leave      Leave the room',
   '/sub-human doctor     Find and fix problems',

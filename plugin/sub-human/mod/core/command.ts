@@ -155,7 +155,7 @@ export function readReply(run: RunOutput | null | undefined, { ms = null, error 
   const hso: HookJsonSpecific = o.hookSpecificOutput && typeof o.hookSpecificOutput === 'object' ? o.hookSpecificOutput : {};
   const debug = typeof say.debug === 'string' && say.debug ? { debug: say.debug.slice(0, 500) } : {};
   if (say.joined === true && typeof hso.additionalContext === 'string' && hso.additionalContext) {
-    return { kind: 'joined', context: hso.additionalContext, lines: noticeLines(say.say), ...debug };
+    return { kind: 'joined', context: hso.additionalContext, lines: noticeLines(say.say), ...(say.opened === true ? { opened: true } : {}), ...debug };
   }
   const p: Loose<PinnedReport> | null = say.pinned && typeof say.pinned === 'object' ? say.pinned : null;
   const one = (s: unknown) => (typeof s === 'string' && s ? s.replace(/\n/g, ' ') : null);

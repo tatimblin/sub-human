@@ -2,6 +2,12 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 0.6.1: start with someone, join with one line
+
+### Changed
+- **Opening a room asks who's coming.** When `/sub-human` opens a room, sub-human asks you itself once your Claude's turn is over, with no turn of Claude's: `Bring someone into vole-8126?` — This machine · SSH · Tailscale. The way this machine looks set up for is marked `(detected)` (Tailscale when your tailnet is up here, else SSH when Remote Login is on), and one that cannot work is left out (Tailscale with no `tailscale` here; SSH when Remote Login is off and Tailscale can be offered). This machine is one line, `In another session here, type /sub-human`. SSH or Tailscale makes the same invite as `/sub-human invite --ssh` or `--web`: its line and PIN pinned under the prompt, never in the transcript or Claude's context. Type an ssh address (`jess@devbox`, or an alias) in the dialog's free-text row for an ssh invite at that address. Esc does nothing. Joining a room already open asks nothing, nor does a session that is not interactive; `SUB_HUMAN_WALK=0` turns the question off.
+- **Copying an invite takes no turn of Claude's.** `Copy the invite?` — Copy / Skip is now sub-human's own question, asked right after the invite (typed, or from the question above), with no prompt sent to Claude and no `copy invite …` call. Esc copies nothing and the next invite asks again; after Copy or Skip it behaves as before. `scripts/clip.sh` still does the copying, with the line on stdin and never the PIN.
+
 ## 0.6.0: quiet: your mode kept, one room row, plainer lines
 
 - **Asking for changes on a room plan keeps your mode.**

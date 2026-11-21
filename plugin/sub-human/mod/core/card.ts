@@ -1,10 +1,10 @@
 /**
  * plugin/sub-human/mod/core/card.ts: the person's answer on an AskUserQuestion card the hooks built. One reading
  * for every card whose answer the hooks act on: the fallback consent card (lib/proposal.ts card), a review note's
- * confirm card (Send / Discard), a join request's card (lib/remote/admission.ts), and the invite's copy card, which the
- * hooks module reads itself (mod/core/copy.ts). Here so both read it one way: lib/consent/card.ts re-exports it.
- * Pure: no I/O. The tool_response is Claude Code's (the person's answer in the dialog), never the
- * model's; the tool_input is the model's call, read only to tell which card the call was.
+ * confirm card (Send / Discard) and a join request's card (lib/remote/admission.ts). Here so node and the module read it
+ * one way: lib/consent/card.ts re-exports it. Pure: no I/O. The tool_response is Claude Code's (the person's answer in
+ * the dialog), never the model's; the tool_input is the model's call, read only to tell which card the call was.
+ * Also ownAsks: the hooks module's own $.ui.ask dialogs in flight, which its AskUserQuestion hooks pass by.
  *
  *   answerCard(spec, response, input?, {exact?}) -> CardAnswer
  *     absent   the call was not this card: its question is in neither the card shown nor the call (nor, exact
@@ -69,4 +69,26 @@ export function answerCard(spec: CardSpec, response: CardResponse | null | undef
   if (!spec.options.some(o => o.label === label)) return { kind: 'other', label };
   const note = record(record(r.annotations)?.[spec.question])?.notes;
   return typeof note === 'string' ? { kind: 'answer', label, notes: note } : { kind: 'answer', label };
+}
+
+/**
+ * The hooks module's own dialogs while they are asked ($.ui.ask: the note's Send / Discard, the question after a room
+ * opened, the copy question). $.ui.ask runs through this plugin's other AskUserQuestion hooks (cc CONTRACT
+ * module-ask-through-hooks), so they pass each by, and only it: its exact question and header. begin returns its end.
+ */
+export interface OwnAsks { begin(question: string, header: string): () => void; mine(input: unknown): boolean }
+export function ownAsks(): OwnAsks {
+  const live: { question: string; header: string }[] = [];
+  const isRec = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+  return {
+    begin(question, header) {
+      const a = { question, header };
+      live.push(a);
+      return () => { const i = live.indexOf(a); if (i >= 0) live.splice(i, 1); };
+    },
+    mine(input) {
+      if (!live.length || !isRec(input) || !Array.isArray(input.questions)) return false;
+      return input.questions.some((q: unknown) => isRec(q) && live.some(a => q.question === a.question && q.header === a.header));
+    },
+  };
 }
