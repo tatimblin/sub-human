@@ -339,3 +339,115 @@ The rule "one room row, nothing nested" can be met in main only as `(+1)`; insid
 - Plan mode, wakes mid-task and provenance (spikes 3–5).
 - The desktop app and VS Code.
 - The real plugin.
+
+---
+
+## 0.8.0 spikes (Phase 0: 3, 4, 5)
+
+Claude Code 2.1.296, 2026-11-21. These are PLAN-080's spikes 3 (plan mode inside a row), 4 (a wake reaching a busy main) and 5 (provenance of synthesized row lines).
+
+**Verdict:**
+1. **Plan mode can't run inside a row.** `EnterPlanMode`, `ExitPlanMode` and `AskUserQuestion` are refused to every subagent, whatever its `tools:` list says. No dialog is drawn anywhere, no tool hook fires, and the mode doesn't change. Phase 4's default stands: the row hands the drafting to main.
+2. **A wake never interrupts, but the real plugin's path for a busy main delivers it mid-turn, not at the turn boundary.**
+   - `$.session.append`, 0.6.0's mid-turn path, is read by the running turn at its next tool boundary, silently.
+   - `$.prompt.submit` waits in the queue and runs as a turn of its own once the current turn ends. It shows one queued line in main at once.
+   - A naming wake that asks for an answer should use the submit.
+3. **Synthesized lines can be restyled and scoped to the room, and the transcript does mark them, though not on screen.**
+   - The JSONL row has `answeredWithoutRequest: true`, `isUnmetered: true` and a `msg_hook_…` id, but still the session's model name.
+   - `ui.render AssistantMessage`, keyed by the row's uuid, can draw `maya: …` without the `⏺` bullet in the room's view only.
+   - ctrl+o still heads each line with the model's name.
+   - **New problem:** after `--resume`, the person's own typed lines are gone from the row's view.
+
+### Evidence
+
+- **The probe** is `/tmp/probe-row080b/`, a copy of `/tmp/probe-row080/` with its paths changed. It is not committed.
+  - The mock is on `127.0.0.1:8768`.
+  - The tmux sessions were `rr080b-a` (spikes 3 and 5), `rr080b-b` (resume) and `rr080b-c` (spike 4), all killed, and the mock is stopped.
+  - The binary strings are in `strings.txt`, the same 2.1.296 dump.
+- **Changes from the 0.8.0 probe:**
+  - `mod/register.ts`:
+    - `TOOL <name> <json>` typed into the row makes the room's next synthesized step that tool call.
+    - `SPAWNPLAN` spawns `rr:planroom`, the room with `permissionMode: plan`.
+    - `SLOWTURN <kind> <ms>` passes on to the mock and schedules a wake in `<ms>`.
+    - `WAKEIDLE <kind> <ms>` drops the prompt and then wakes the idle main.
+    - Each kind is the real plugin's call: `submit` is `$.prompt.submit({text, asUser: true})` (`mod/deliver.ts` submitWake) and `append` is `$.session.append` of a user row (`appendRow`, used by midTurnWake).
+    - It logs classic `PreToolUse`/`PostToolUse` and `ui.render AssistantMessage`, and `mode/restyle` (`props`, `tree`, `treenext`) rewrites the room's lines.
+  - `hooks.json` adds shell `PreToolUse`, `PostToolUse`, `PostToolUseFailure` and `PermissionRequest` loggers (`log/classic.log`).
+  - `mock.mjs`:
+    - A prompt holding `SLOWTURN` gets a slow turn: 4 × `Bash(sleep 3)`, each reply delayed 1.5 s, then `slow done`. That is about 20 s.
+    - Each request's log line lists which messages carry `WAKEMARK` and in which block (`wake`).
+  - `cfg/settings.json` allows `Bash(sleep:*)` beside `hold`.
+  - Launched with `--permission-mode default` (this config otherwise opens in auto).
+- **Pane captures** are in `caps/NN-*.txt` (and `.ansi`). The logs are `log/mod.log`, `log/classic.log`, `log/mock.log` and `log/debug.log`. Transcripts are in `cfg/projects/-private-tmp-probe-row080b-work/`.
+
+### Spike 3: plan mode inside a row
+
+| Question | Result | Evidence |
+|---|---|---|
+| **(a) Allowed for a subagent?** | **No.** A synthesized `EnterPlanMode` call from the room's step gets the tool result `Error: No such tool available: EnterPlanMode. EnterPlanMode is not available inside subagents. Complete the task with the tools provided and return findings to the orchestrator.` `ExitPlanMode` (with a `plan`) and `AskUserQuestion` get the same error. The room's `tools:` listed all three. The binary builds a set that every subagent is denied: `function D(e){return new Set([mu,xk,…,Qo,…])}var Rot=D("external")`, where `mu`/`vw` = `"ExitPlanMode"`, `xk` = `"EnterPlanMode"` and `Qo` = `"AskUserQuestion"`. A second guard sits behind it: `EnterPlanMode`'s own `validateInput` refuses any `agentId` (`Only the main session can enter plan mode.`). | `03-enterplan`, `04-exitplan`; transcript `agent-a0854efba9163f60e.jsonl` |
+| …with the session already in plan mode | **The same error.** The set is applied when the tool is looked up, before any mode check. | `05-exitplan-mainplan` |
+| …with `permissionMode: plan` in the agent's frontmatter | **Ignored:** `Plugin agent file …/planroom.md sets permissionMode, which is ignored for plugin agents. Use .claude/agents/ for this level of control.` The spawn carried `permissionMode: "default"`. Plugin agents also have their `hooks` and `mcpServers` ignored (`K5t=["permissionMode","hooks","mcpServers"]`). | debug.log 17:07:55; mod.log 17:12:52 |
+| **(b) Does the plan dialog draw?** | **Nowhere.** No plan view, no `Exit plan mode?` and no question card appear, either in the row's view or in main. The row shows the call's error under the step, and the step goes on. | `03`–`05`, `06-main-after-planmode` |
+| **(c) Do hooks fire?** | **None.** No module `tool.call`, no module `classic.PreToolUse`, and no shell `PreToolUse`, `PostToolUse`, `PostToolUseFailure` or `PermissionRequest`. The only rows are `session.append` door `tool-result` with the error text. Consent would see nothing. For comparison, the keeper's `Agent` and `hold` calls did fire both, and the shell `PreToolUse` carried `agent_id` and `agent_type`. **The module's `classic.PreToolUse` payload has no `agent_id`**: its keys were `room`, `tool` and `tool_use_id`, which is why `mod/consent.ts` stashes `tool.call`'s `agentId` by `tool_use_id`. | `log/classic.log` (0 lines for the three tools); mod.log 17:08:12–17:12:17 |
+| **(d) Does the mode change?** | **No.** Main's footer stayed `manual mode on`. But **shift+tab inside the row's view cycles the session's own mode**: main's footer then read `plan mode on`. A row has no mode of its own. | `05`, `06-main-after-planmode` |
+
+So plan mode can't run in a row in any form. Phase 4's default, handing the drafting to main, is the only way. The row can't ask a question either (`AskUserQuestion` is refused there too): any card a row-started action needs must come from main (`$.ui.ask`, or main's own Claude).
+
+### Spike 4: a wake reaching a busy main
+
+These are the real plugin's two calls (`mod/deliver.ts`). The tail's `route` sends a `wake` to `submitWake` when main is idle, and to `midTurnWake` (an append) while a main-loop turn runs.
+
+| Call | Main busy: a 20 s turn of 4 tool calls, wake sent at +2.5 s | Main idle | Evidence |
+|---|---|---|---|
+| **`$.prompt.submit({text, asUser: true})`** | **Queued until the turn ends. It neither interrupts nor is injected.** It is drawn at once under the running turn, as a dim `› Prompt from the rr plugin` over `❯ WAKEMARK …`, and the spinner keeps going. Requests 6–9 of the running turn don't carry it. It runs as a turn of its own about 0.1 s after the `slow done` reply (request 10, the last message). The submit's promise resolved only then, 18 s after the call. The transcript has an `enqueue` at the call and a `dequeue` at the start, and the user row carries `queuePriority: "later"`, `promptSource: "system"` and origin `{kind: "plugin", name, asUser: true}`. | **A turn at once** (about 20 ms from enqueue to dequeue), drawn as the same two lines. | `30`–`32`, `35`; mock n=5–10, 16 |
+| **`$.session.append` of a user row** (stored `isMeta: true`, origin `{kind: "plugin"}`) | **Injected into the running turn at its next tool boundary.** No interrupt and no new turn. The next request carries it as an extra text block in the tool-result user message (request 12, message 20: `tool_result,text*`). **Main draws nothing**, in the transcript or in ctrl+o. If it is appended after the turn's last request went out (wake at +19.2 s, during the final 1.5 s reply), **no request reads it**: the turn ends and nothing starts, so the row waits for whatever request comes next. 0.6.0's `WAKE_RESEND` covers exactly this case. | **Stored. No turn starts and nothing is drawn.** It rides on the next request: the person's next prompt carried it as an extra block (request 17, message 34). | `33`, `34`, `36`, `37`, `38-main-ctrlo`; mock n=11–22 |
+
+Answers:
+- **(a)** Neither call interrupts. The submit is delivered at the next turn boundary, as a turn of its own (queue priority `later`). The append is read inside the running turn at its next tool boundary. It is not a `queued_command` attachment, which is how a person's mid-turn typing arrives: it is merged into the tool-result message.
+- **(b)** With the submit, the person sees the queued `› Prompt from the <plugin> plugin` and `❯ <text>` lines under the running turn at once, and later the turn they start. With the append, they see nothing.
+- **(c)** Idle: the submit starts a turn at once. The append starts none and waits for the next request.
+
+**For PLAN-080 Phase 2:** 0.6.0's route means a named Claude that is busy reads "maya, …" in the middle of its task, as an extra block after a tool result, and may answer (post) or change course mid-task. To get spike 4's intended "delivered at its next turn boundary", an assistant wake (a line naming the person) should go by `$.prompt.submit` even while a turn runs. It then gets its own turn after the current one, and its queued line is the "one quiet line" of owner decision 1. The mid-turn append stays for context-only lines. While it is queued, the line shows its text in main at once, so the shown part (`wakeParts`) has to be what the person may see.
+
+### Spike 5: provenance of synthesized row lines
+
+| Question | Result | Evidence |
+|---|---|---|
+| **(a) What the transcript records** | The room's JSONL keeps every synthesized step as `type: "assistant"` with:<br>• `message.model: "claude-opus-5-5"` (the session's model);<br>• `message.id: "msg_hook_<uuid>"` (a model reply's is `msg_…` from the API);<br>• usage all zeros and no `requestId`;<br>• **`answeredWithoutRequest: true`** and **`isUnmetered: true`**;<br>• no `isMeta`.<br>Binary: `if(y&&T.type==="assistant")T.answeredWithoutRequest=!0` when a step made no request (`n.requests===0`), and `msg_hook_${randomUUID()}` for the hook's `message_start`. `session.append` still reports `origin: {kind: "model", model: "claude-opus-5-5"}`. So the record *does* carry a marker, in two fields a reader can key on. Only the model name and the append origin credit the model. | `agent-a0854efba9163f60e.jsonl` (all 10 assistant rows) |
+| **(b) `ui.render AssistantMessage` in the row's view** | **It works, and can be scoped to the room.**<br>• It fires for each of the room's lines with `requestId` equal to the row's uuid: the same uuid as `session.append`'s `e.uuid` and the transcript's `uuid` (`c30cd975…` in all three). The module keeps the uuids of `session.append` rows whose `agentId` is the room's (door `response`), and answers only those. Main's own `⏺ ok.` was drawn untouched (`ours=false`).<br>• Three rewrites, all drawn:<br>  - `props.text` rewritten: `⏺ maya: ✓ …`. The bullet stays.<br>  - a tree of its own (`Box` › `Text` bold cyan `maya: ` + `Text` text): `maya: ✓ …` with **no bullet**.<br>  - a tree wrapping `next(e)`: a dim `maya (via room)` line above the engine's own `⏺ ✓ …`.<br>• The rewrite applies in ctrl+o as well. Only rows drawn (or redrawn) after the switch change; rows already in the scrollback keep their old drawing. | `10-restyle-props`, `11-restyle-tree`, `12-restyle-treenext`, `14-main-scoped`; mod.log `ui.render AssistantMessage … ours=` |
+| **(c) Marked as non-model on screen?** | **No.**<br>• **ctrl+o** heads every line, synthesized or not, with `09:13 AM claude-opus-5-5`. That header isn't part of `AssistantMessage`'s props, so no hook reaches it.<br>• **`claude --resume`**: main's transcript holds no room line at all. The row, brought back by sending to its stored id, redraws its synthesized lines as plain `⏺ …`, with nothing to set them apart.<br>• **New:** after the resume, **the person's own typed lines are gone from the row's view and from its ctrl+o**. Those are the composer rows, `isMeta` with the "while you were working" wrapper. The spawn prompt is gone too. Live, before the restart, they were drawn as `❯ hello from the person`. A resumed row shows only the plugin's half of the chat. | `13-room-ctrlo`, `20-room-after-resume`, `21-resumed-ctrlo` |
+
+What this means for Phase 1:
+- Draw room lines with a tree rewrite: no bullet, author prefix.
+  - Scope it by the row uuids `session.append` reports for the room's agent id.
+  - Persist those uuids with the room's id, or on resume read the room's JSONL for rows with `answeredWithoutRequest` (they are the plugin's own), so a resumed view is re-scoped.
+- The "no echo" rule loses the person's words after a resume. Either the step's confirmation carries them (`you: the deploy is green`, drawn by the plugin and therefore kept), or the loss is accepted.
+- Owner decision 2 stands, but the README can say more: the transcript records each line as "answered without a model request" (`answeredWithoutRequest`). Only the model name and the ctrl+o header still credit the model.
+
+### Changes to PLAN-080
+
+- **Phase 0, item 3:** closed, and the answer is no. In Phase 4, drop "If spike 3 shows plan mode works inside the row, the check could open there instead". The row can't ask questions either, so any card it needs comes from main.
+- **Phase 2:** a line naming a person wakes their Claude by `$.prompt.submit`, even mid-turn. It is queued and runs as its own turn after the current one, with its queued line the one quiet line in main. 0.6.0's mid-turn append is kept for context-only lines. The route needs a wake kind of its own for this, since today `route` turns every wake into `mid-turn-wake` while a turn runs.
+- **Phase 1:**
+  - The tree rewrite of `AssistantMessage`, scoped by uuid, with the uuids persisted.
+  - Decide whether the confirmation step repeats the person's words, since they don't survive a resume.
+- **Owner decision 2 / README:** mention `answeredWithoutRequest` as the transcript's marker.
+- **Contract entries** (`feature: room-chat`; each search string found in `strings.txt`):
+  - `is not available inside subagents`: EnterPlanMode, ExitPlanMode and AskUserQuestion are refused to every subagent, before any hook.
+  - `Only the main session can enter plan mode.`: EnterPlanMode's own guard.
+  - `which is ignored for plugin agents`: a plugin agent's `permissionMode`, `hooks` and `mcpServers` are ignored.
+  - `answeredWithoutRequest`: a step answered with no request is marked so in the transcript. `msg_hook_` is its message id prefix.
+  - `Prompt from the `: a plugin's queued prompt is drawn under the running turn.
+  - `queuePriority="later"`: a plugin's `$.prompt.submit` waits for the turn's end (1 hit). The live run showed this; the string only shows that the field exists.
+  - `ui.render AssistantMessage` `requestId` is the row's uuid: from the typings ("the message id for a message") and seen live. No binary string is needed; the `test:mods` wiring test can cover it.
+
+### Not tested
+
+- Real models.
+- A user or project agent in `.claude/agents/` (whose `permissionMode` is honoured). The tools are refused by the same set regardless, but this wasn't run.
+- The teammate path (`Oc()`), where a teammate's `ExitPlanMode` is sent to its team lead's inbox for approval. This is swarm mode, not a background subagent.
+- A wake while main waits on a permission dialog or the plan view, or while the person is inside the row's view.
+- Esc while a plugin prompt is queued (whether it is kept, dropped, or put back in the box).
+- Two queued wakes in one turn: their order, and whether they merge.
+- The restyle after a resume, re-scoped from the JSONL. The `requestId` matching the disk uuid was seen, but the re-scoping was not run.
+- The desktop app, VS Code and the real plugin.

@@ -18,7 +18,7 @@ The spike proved the core: words arrive via `session.append`, `turn.step` answer
    - The keeper dying (the next stop wakes main): can the room's next step respawn it quietly?
    - `--resume`, `--continue`, `/clear` and compaction, with the row coming back (0.6.0 already respawns the hold-row).
 2. **Auto mode.** 0.6.0 found that the classifier denies a module's `$.agent.spawn`. Does it also deny the keeper's `Agent` call made from a synthesized `turn.step` of the row? If it does, find the fallback (the spawn made by main's Claude, as in 0.6.0, and the keeper the same way).
-3. **Plan mode inside a row.** Does a subagent's EnterPlanMode / ExitPlanMode draw its plan view in the row's view, and does consent's PreToolUse see it (`agent_id`)? If not, the row hands the drafting to main (the default below) and only shows the result.
+3. **Plan mode inside a row.** Does a subagent's EnterPlanMode / ExitPlanMode draw its plan view in the row's view, and does consent's PreToolUse see it (`agent_id`)? Answered: no (results below).
 4. **A wake mid-task.** maya's Claude is busy when a message names her. Confirm it is delivered at its next turn boundary, not by interrupting.
 5. **Provenance.** Synthesized steps are recorded as `origin: model`. Check whether `ui.render AssistantMessage` can mark them as plugin lines in the drawn view. Every line carries its author prefix regardless.
 6. **The label of an idle row.** Since 0.6.0 the row's label is its hold's progress text. The plugin sets no `subagentStatusLine` (CLAUDE.md: it would override the person's own). An idle row holds nothing, so try these in order:
@@ -49,6 +49,15 @@ Each surface the design relies on gets a contract entry (search string, `feature
 - **Label (owner decision 1A):** the row reads the room code. Who's here and the unread count go on one `$.ui.status` line under main's prompt: `panda-0976 · maya, dev here · 2 new`.
 - **`(+1)`:** the owner doesn't want it. The plugin can't hide it, so it goes in a Claude Code request (a hook to draw or hide panel rows) and stays until then. The other keeper (a background shell) has no `(+1)`, but it draws a blank row in main per room stop, so it is not used.
 
+**Results of spikes 3, 4 and 5** (2026-11-21, ROOM-ROW-SPIKE.md "0.8.0 spikes (Phase 0: 3, 4, 5)"):
+- **Plan mode in a row: no.** EnterPlanMode, ExitPlanMode and AskUserQuestion are refused to every subagent, no hook fires, and no dialog draws. A row also has no mode of its own: shift+tab there changes main's. So row plans are drafted by main (Phase 4), and any question the row needs comes from main.
+- **A wake reaching a busy Claude.** The real plugin's mid-turn path (`$.session.append`) is read inside the running turn at the next tool boundary: mid-task, and drawn nowhere. `$.prompt.submit` queues the wake until the turn ends and draws `› Prompt from the sub-human plugin` at once. So Phase 2's naming wakes go by `$.prompt.submit`, even mid-turn, and the append stays for context-only lines.
+- **Provenance.** Synthesized rows are marked in the transcript (`answeredWithoutRequest: true`, `msg_hook_` ids, zero usage) but still name the model, and ctrl+o heads them with it. `ui.render AssistantMessage`, scoped by the row's message uuids, draws them as `maya: …` with no bullet. After `--resume`, the person's own typed lines are gone from the row's view.
+
+### Phase 1 changes from spikes 3, 4 and 5
+- Room lines are drawn with the scoped `AssistantMessage` rewrite (`maya: …`). The scope is re-found on resume from the room transcript's `answeredWithoutRequest` rows.
+- **Your own lines:** the native `❯` row is hidden, and sub-human draws `you: …` itself, so a resumed row keeps both halves of the chat with one line each.
+
 ## Phase 1: the row takes typing and draws the room
 - `sub-human:room` becomes idle and resumable.
   - Its first synthesized step spawns `sub-human:keeper` (background), which does the blocking `hold` with no tick.
@@ -76,7 +85,6 @@ Each surface the design relies on gets a contract entry (search string, `feature
 ## Phase 4: plans made in the row are room plans
 - `plan …` typed in the row (or "let's plan X", judged by your Claude) hands the drafting to your main Claude: a wake with the request.
 - Main's Claude writes it with the plan tool (0.7.0 one-call edit), and your check opens in your plan view as now.
-- If spike 3 shows plan mode works inside the row, the check could open there instead. That would be a follow-up, not 0.8.0.
 
 ## Phase 5: release
 - README (the row, talking to people, assistants), ARCHITECTURE, CHANGELOG, version 0.8.0.
