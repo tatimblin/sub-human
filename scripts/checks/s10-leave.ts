@@ -3,7 +3,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import * as paths from '../lib/paths.ts';
 import { MAIN_ROW, panelRows, oneRoomRow } from '../lib/panes.ts';
-import { rowStrays } from './transcripts.ts';
+import { rowStrays, isChatRow, rowKeepers, KEEPERS_MAX } from './transcripts.ts';
 import { readJson, readText, clip, esc } from '../lib/io.ts';
 import type { Ctx, Det } from './context.ts';
 import type { AgentRow, TaskRec } from './captures.ts';
@@ -75,6 +75,16 @@ export function run(x: Ctx, { det }: { det: Det }): void {
     many.length ? `${many.length} capture(s): ${many.slice(0, 3).join(' | ')}` : `${memberCaps.length} captures`);
   const strays = [A, B].flatMap(n => rowStrays(x.seatAgents(n).filter(s => s.first >= x.runStart), code).map(s => `${n} ${s.agentType || '?'} ${s.file}`));
   det('Nothing runs under a room row but its keeper (the row\'s subagents, all run)', strays.length === 0, strays.length ? strays.slice(0, 4).join('; ') : 'none');
+  // room-chat on: every step of the row is the module's (its lines answered without a model; only its keeper's Agent
+  // call may go to the row's model, in auto mode), and a keeper is started again at most KEEPERS_MAX times in 10 min
+  const chatRows = [A, B].flatMap(n => { const all = x.seatAgents(n).filter(s => s.first >= x.runStart); return all.filter(s => isChatRow(s, code)).map(r => ({ n, r, ...rowKeepers(all, r, code) })); });
+  if (chatRows.length) {
+    det(`Each room row starts its keeper again at most ${KEEPERS_MAX} times in any 10 minutes (the cap; all run)`, chatRows.every(c => c.peak <= KEEPERS_MAX),
+      chatRows.map(c => `${c.n}: ${c.keepers.length} keeper(s), at most ${c.peak} in 10 min (${c.r.file})`).join('; '));
+    const wrote = chatRows.filter(c => c.r.modelText.length);
+    det('No room row writes text of its model\'s (every line it shows is the module\'s answer)', wrote.length === 0,
+      wrote.length ? wrote.map(c => `${c.n}: ${c.r.modelText.length} text block(s), first "${clip(c.r.modelText[0], 100)}" (${c.r.file})`).join('; ') : `${chatRows.length} row(s): none`);
+  }
   const agents = [A, B, 'claude'].flatMap(n => x.seatAgents(n).filter(s => s.first >= x.runStart).map(s => ({ n, s })));
   const part = agents.filter(({ s }) => s.agentType === 'sub-human:participant');
   const roomAgents = agents.filter(({ n, s }) => n === 'claude' || s.session === roomClaudeSid);

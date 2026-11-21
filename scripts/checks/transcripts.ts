@@ -52,7 +52,7 @@ export interface HoldCall { at: string, room: string, result: string | null }
  * `id` the agent id (ID), `parent` the agent that spawned it (meta parentAgentId: a keeper's is its room row), '' for
  * main's own.
  */
-export interface SubAgent { session: string, file: string, id: string, parent: string, agentType: string, first: string, prompt: string, holds: HoldCall[] }
+export interface SubAgent { session: string, file: string, id: string, parent: string, agentType: string, first: string, prompt: string, holds: HoldCall[], modelText: string[] }
 
 const textOfContent = (c: string | Block[] | undefined): string => (typeof c === 'string' ? c : (c || []).filter(b => b.type === 'text').map(b => b.text ?? '').join('\n'));
 
@@ -67,10 +67,14 @@ function subagent(dir: string, session: string, f: string): SubAgent {
   }
   const holds: HoldCall[] = es.filter(e => e.type === 'assistant').flatMap(e => blocksOf(e).filter(c => c.type === 'tool_use' && c.name === HOLD_TOOL)
     .map(c => ({ at: e.timestamp ?? '', room: typeof c.input?.room === 'string' ? c.input.room : '', result: (c.id ? results.get(c.id) : undefined) ?? null })));
+  // text its model wrote: an assistant entry the hooks module did not answer (a turn.step answer is marked
+  // answeredWithoutRequest: cc CONTRACT step-answered-without-request)
+  const modelText = es.filter(e => e.type === 'assistant' && !e.answeredWithoutRequest)
+    .flatMap(e => blocksOf(e).filter(c => c.type === 'text' && (c.text ?? '').trim()).map(c => c.text ?? ''));
   const u = es.find(e => e.type === 'user');
   return { session, file: f, id: f.replace(/^agent-/, '').replace(/\.jsonl$/, ''), parent: meta && typeof meta.parentAgentId === 'string' ? meta.parentAgentId : '',
     agentType: meta && typeof meta.agentType === 'string' ? meta.agentType : '', first: es.find(e => e.timestamp)?.timestamp ?? '',
-    prompt: textOfContent(u && u.message ? u.message.content : undefined), holds };
+    prompt: textOfContent(u && u.message ? u.message.content : undefined), holds, modelText };
 }
 
 /**
@@ -94,11 +98,20 @@ export function subagents(projectDir: string, session?: string | null): SubAgent
  * A room row: the agent type the hooks module spawns (agents/room.md), or, with no meta file, its prompt: "chat: CODE"
  * (0.8.0, room-chat on: the row idles, its keeper holds) or "room: CODE" (room-chat off: the row itself holds).
  */
-export const isRoomRow = (s: SubAgent, code: string): boolean => s.agentType === 'sub-human:room' || (!s.agentType && (s.prompt.trim() === `room: ${code}` || s.prompt.trim() === `chat: ${code}`));
+export const isRoomRow = (s: SubAgent, code: string): boolean => {
+  const p = s.prompt.trim(), named = /^(?:room|chat): (\S+)$/.exec(p);
+  // a row whose prompt names another room is that room's (an earlier run's, in the same seat folder)
+  if (named && named[1] !== code) return false;
+  return s.agentType === 'sub-human:room' || (!s.agentType && !!named);
+};
 /** A room row that is the room's chat (room-chat on): its prompt "chat: CODE". */
 export const isChatRow = (s: SubAgent, code: string): boolean => isRoomRow(s, code) && s.prompt.trim() === `chat: ${code}`;
 /** A chat row's keeper (agents/keeper.md, the row's background child): its type, or, with no meta file, "keep: CODE". */
-export const isKeeper = (s: SubAgent, code: string): boolean => s.agentType === 'sub-human:keeper' || (!s.agentType && s.prompt.trim() === `keep: ${code}`);
+export const isKeeper = (s: SubAgent, code: string): boolean => {
+  const named = /^keep: (\S+)$/.exec(s.prompt.trim());
+  if (named && named[1] !== code) return false;
+  return s.agentType === 'sub-human:keeper' || (!s.agentType && !!named);
+};
 /** Whether s's last hold call for code has no result (still blocking). */
 const blocking = (s: SubAgent, code: string): boolean => s.holds.filter(h => h.room === code).at(-1)?.result === null;
 /** A room row (room-chat off) or a keeper (on) of room code whose hold is blocking (its last hold call for code has no result). */
@@ -115,6 +128,16 @@ export const rowHolds = (all: readonly SubAgent[], code: string): boolean => all
 /** Whether room row `row` held code at all: its own hold call (room-chat off), or its keeper's (on). */
 export const rowHeld = (all: readonly SubAgent[], row: SubAgent, code: string): boolean =>
   row.holds.some(h => h.room === code) || all.some(k => k.session === row.session && isKeeper(k, code) && (!k.parent || k.parent === row.id) && k.holds.some(h => h.room === code));
+/** The cap on a row's keepers (mod/core/room-chat.ts KEEPER_MAX in KEEPER_WINDOW_MS): the most started in any window. */
+export const KEEPERS_MAX = 5, KEEPERS_WINDOW_MS = 10 * 60_000;
+/** The keepers room row `row` started (meta parentAgentId), oldest first, and the most of them in any KEEPERS_WINDOW_MS. */
+export function rowKeepers(all: readonly SubAgent[], row: SubAgent, code: string): { keepers: SubAgent[], peak: number } {
+  const keepers = all.filter(k => k.session === row.session && isKeeper(k, code) && k.parent === row.id);
+  const ts = keepers.map(k => Date.parse(k.first)).filter(t => !Number.isNaN(t)).sort((a, b) => a - b);
+  let peak = 0;
+  for (const [i, t] of ts.entries()) peak = Math.max(peak, ts.slice(i).filter(u => u - t < KEEPERS_WINDOW_MS).length);
+  return { keepers, peak };
+}
 /**
  * What a session's room rows nest (room-chat on: each row's only child its keeper): the subagents whose parent is a
  * room row of code and that are not its keeper. [] is right.

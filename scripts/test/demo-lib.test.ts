@@ -6,7 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { COMMANDS, opts, listsRoomClaude, keyDelays, paneBelow, newMatches, taskFor } from '../demo-lib.ts';
 import { panelRows, rowViewLine, hereNames, footerMode, subagentRows, roomStatus, oneRoomRow } from '../lib/panes.ts';
-import { subagents, holdingRow, isRoomRow, isChatRow, isKeeper, rowHolds, rowHeld, rowStrays } from '../checks/transcripts.ts';
+import { subagents, holdingRow, isRoomRow, isChatRow, isKeeper, rowHolds, rowHeld, rowStrays, rowKeepers, KEEPERS_MAX } from '../checks/transcripts.ts';
 import { runInfo } from '../checks/context.ts';
 import { parseJson } from '../lib/io.ts';
 
@@ -162,6 +162,7 @@ test('transcripts subagents: the 0.8.0 chat row holds through its keeper; nothin
   assert.deepEqual([isRoomRow(row, 'tapir-0763'), isChatRow(row, 'tapir-0763'), isKeeper(keep, 'tapir-0763'), isRoomRow(keep, 'tapir-0763')], [true, true, true, false]);
   assert.equal(holdingRow(keep, 'tapir-0763'), true);
   assert.equal(holdingRow(row, 'tapir-0763'), false); // the row itself holds nothing
+  assert.deepEqual([isRoomRow(row, 'swan-6397'), isKeeper(keep, 'swan-6397')], [false, false]); // an earlier run's room in the same folder
   assert.equal(rowHolds(all, 'tapir-0763'), true);
   assert.equal(rowHeld(all, row, 'tapir-0763'), true);
   assert.deepEqual(rowStrays(all, 'tapir-0763'), []);
@@ -174,6 +175,37 @@ test('transcripts subagents: the 0.8.0 chat row holds through its keeper; nothin
   put('x', { agentType: 'Explore', parentAgentId: 'row', spawnDepth: 2 }, prompt('read the store', '2026-01-01T00:00:04Z'));
   all = subagents(d);
   assert.deepEqual(rowStrays(all, 'tapir-0763').map(s => s.id), ['x']);
+});
+
+test('transcripts rowKeepers and modelText: a row that respawns its keeper past the cap, and writes text of its model\'s', () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-subagents-'));
+  const dir = path.join(d, 'sid-1', 'subagents');
+  fs.mkdirSync(dir, { recursive: true });
+  const line = (o: unknown): string => JSON.stringify(o) + '\n';
+  const put = (id: string, meta: unknown, ...ls: string[]): void => {
+    fs.writeFileSync(path.join(dir, `agent-${id}.jsonl`), ls.join(''));
+    fs.writeFileSync(path.join(dir, `agent-${id}.meta.json`), JSON.stringify(meta));
+  };
+  const at = (s: number): string => new Date(Date.parse('2026-01-01T00:00:00Z') + s * 1000).toISOString();
+  // the module's answer (answeredWithoutRequest) is no model text; the run vole-7874's row wrote its own
+  put('row', { agentType: 'sub-human:room', name: 'vole-7874' }, line({ type: 'user', timestamp: at(0), message: { content: 'chat: vole-7874' } }),
+    line({ type: 'assistant', timestamp: at(1), answeredWithoutRequest: true, message: { content: [{ type: 'text', text: 'only you' }] } }));
+  for (let i = 0; i < 5; i++) put(`k${i}`, { agentType: 'sub-human:keeper', parentAgentId: 'row' }, line({ type: 'user', timestamp: at(2 + i * 60), message: { content: 'keep: vole-7874' } }));
+  let all = subagents(d);
+  let row = all.find(x => x.id === 'row');
+  assert.ok(row);
+  assert.deepEqual(row.modelText, []);
+  assert.deepEqual([rowKeepers(all, row, 'vole-7874').keepers.length, rowKeepers(all, row, 'vole-7874').peak], [5, 5]);
+  // a sixth inside the window: past the cap; one after it starts a window of its own
+  put('k5', { agentType: 'sub-human:keeper', parentAgentId: 'row' }, line({ type: 'user', timestamp: at(300), message: { content: 'keep: vole-7874' } }));
+  put('k6', { agentType: 'sub-human:keeper', parentAgentId: 'row' }, line({ type: 'user', timestamp: at(5000), message: { content: 'keep: vole-7874' } }));
+  fs.appendFileSync(path.join(dir, 'agent-row.jsonl'), line({ type: 'assistant', timestamp: at(400), message: { content: [{ type: 'text', text: "I've started the background keeper again" }] } }));
+  all = subagents(d);
+  row = all.find(x => x.id === 'row');
+  assert.ok(row);
+  assert.deepEqual([rowKeepers(all, row, 'vole-7874').keepers.length, rowKeepers(all, row, 'vole-7874').peak], [7, 6]);
+  assert.ok(rowKeepers(all, row, 'vole-7874').peak > KEEPERS_MAX);
+  assert.deepEqual(row.modelText, ["I've started the background keeper again"]);
 });
 
 test('demo.sh: 0.6.0 rows: no holds document, each seat\'s row waited on, the objection mode opt-in', () => {
